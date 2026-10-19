@@ -5,7 +5,7 @@
 ## التقنية
 
 - TypeScript + NestJS، خادم واحد بوحدات: `identity`، `materials`، `uploads`، `workflow`، `notifications`، `integrations`.
-- PostgreSQL (Prisma أو Drizzle؛ يحسمه وكيل العقود في ADR). Redis للطابور.
+- PostgreSQL: الترحيلات SQL خام عبر node-pg-migrate والوصول عبر Drizzle بأنواع مستبطَنة من المخطط (ADR 0001). Redis للطابور.
 - يُبنى ضد `contracts/openapi.yaml`؛ أنواع الطلبات والاستجابات تُولَّد منه ولا تُكتب يدويًا.
 
 ## قواعد الحزمة

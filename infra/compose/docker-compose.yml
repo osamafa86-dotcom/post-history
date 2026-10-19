@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "${POSTGRES_PORT}:5432"
+      - "127.0.0.1:${POSTGRES_PORT}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -19,21 +19,22 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
     ports:
-      - "${REDIS_PORT}:6379"
+      - "127.0.0.1:${REDIS_PORT}:6379"
     volumes:
       - redis-data:/data
 
   minio:
+    # TODO(SEC: supply chain): pin to a RELEASE.* tag in the infra agent's first ticket (tag lookup unavailable from the orchestrator container).
     image: minio/minio:latest
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
     ports:
-      - "${S3_PORT}:9000"
-      - "${S3_CONSOLE_PORT}:9001"
+      - "127.0.0.1:${S3_PORT}:9000"
+      - "127.0.0.1:${S3_CONSOLE_PORT}:9001"
     volumes:
       - minio-data:/data
     healthcheck:
@@ -55,7 +56,7 @@ services:
       echo buckets ready"
 
   tusd:
-    image: tusproject/tusd:latest
+    image: tusproject/tusd:v2.10.1
     depends_on:
       minio-init:
         condition: service_completed_successfully
@@ -65,6 +66,8 @@ services:
       AWS_REGION: ${S3_REGION}
     # R2 requires all non-trailing parts to have the same size: min part size == preferred part size.
     # Part size is fixed per upload session; the phone-side chunk size is independent (tusd buffers to .part).
+    # TUSD_HOOK_SECRET is NOT wired yet: tusd cannot add static headers. Endpoint + auth are decided in ADR SEC-06.
+    # TUSD_EXTRA_FLAGS is empty locally; set "-behind-proxy" only behind a real proxy.
     command: >
       -port=8080
       -base-path=/files/
@@ -78,10 +81,10 @@ services:
       -hooks-enabled-events=pre-create,post-finish
       -hooks-http-retry=5
       -hooks-http-backoff=2
-      -behind-proxy
       -show-greeting=false
+      ${TUSD_EXTRA_FLAGS}
     ports:
-      - "${TUSD_PORT}:8080"
+      - "127.0.0.1:${TUSD_PORT}:8080"
 
 volumes:
   postgres-data:

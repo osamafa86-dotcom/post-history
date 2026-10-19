@@ -13,35 +13,40 @@ jobs:
     name: contracts (openapi + json schemas)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
       - name: Lint OpenAPI
-        run: npx -y @redocly/cli@latest lint contracts/openapi.yaml
+        run: npx -y @redocly/cli@2.65.0 lint contracts/openapi.yaml
       - name: Compile JSON schemas
         run: |
           for f in contracts/schemas/*.json; do
             echo "== $f"
-            npx -y -p ajv-cli@5 -p ajv-formats@2 ajv compile --spec=draft2020 -c ajv-formats -s "$f"
+            npx -y -p ajv-cli@5.0.0 -p ajv-formats@2.1.1 ajv compile --spec=draft2020 -c ajv-formats -s "$f"
           done
 
   secrets:
     name: secret scan
     runs-on: ubuntu-latest
+    # gitleaks-action lists PR commits via the API: needs pull-requests:read. Comments disabled (least privilege).
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
 
   compose:
     name: compose config
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Validate docker compose file
         run: |
           cp infra/compose/.env.example infra/compose/.env
