@@ -64,11 +64,20 @@ jobs:
           GITLEAKS_ENABLE_COMMENTS: "false"
 
   compose:
-    name: compose config
+    name: compose (config, pull, smoke)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Validate docker compose file
         run: |
           cp infra/compose/.env.example infra/compose/.env
-          docker compose -f infra/compose/docker-compose.yml config > /dev/null
+          sed -i "s/^TUSD_HOOK_SECRET=.*/TUSD_HOOK_SECRET=$(openssl rand -hex 32)/" infra/compose/.env
+          docker compose -f infra/compose/docker-compose.yml config -q
+      # Fails on a tag or digest that does not exist in the registry (ADR 0004).
+      - name: Pull images
+        run: docker compose -f infra/compose/docker-compose.yml pull -q
+      - name: Smoke test (tusd only via proxy, hook token kept out of logs and responses)
+        run: infra/compose/smoke.sh
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/compose/docker-compose.yml down -v
