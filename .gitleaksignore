@@ -1,0 +1,4 @@
+# بصمات نتائج gitleaks المؤكدة كإيجابيات كاذبة. كل سطر يحتاج تعليقًا بالسبب ومراجعة وكيل الأمن.
+# قيمة مثال مصطنعة لرمز رفع في contracts/openapi.yaml (eyJhbGciOiJFZERTQSJ9.e30.c2lnbmF0dXJl = {"alg":"EdDSA"}.{}."signature")،
+# أُزيلت من الشجرة في الـ commit التالي وبقيت في تاريخ الفرع فقط (الطلب 4).
+8a1a8eeeec7cefdf09a77f155f2f371fbdf71901:contracts/openapi.yaml:generic-api-key:1266
