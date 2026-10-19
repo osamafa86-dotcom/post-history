@@ -128,3 +128,37 @@ final class AuthSessionTests: XCTestCase {
         XCTAssertEqual(APIErrorMapper.map(ErrorResponse.error(409, body, nil, URLError(.badServerResponse))), .server(code: "idempotency_key_reused", status: 409))
     }
 }
+
+final class AuthRevocationTests: XCTestCase {
+    private func stored(expiresIn: TimeInterval) -> StoredSession {
+        StoredSession(accessToken: "access-1", refreshToken: "refresh-1", expiresAt: Date().addingTimeInterval(expiresIn), userId: UUID(), roles: [])
+    }
+
+    func testRevokedSessionEmitsEventAndClearsStore() async throws {
+        let store = InMemoryTokenStore(stored(expiresIn: 0)); let gw = FakeGateway(); gw.rejectRefresh = true
+        let auth = AuthSession(store: store, gateway: gw)
+        let stream = await auth.events()
+        let collector = Task { for await e in stream { return e }; return AuthEvent.signedOut }
+        let detectedAt = Date()
+        do { _ = try await auth.validAccessToken(); XCTFail() } catch { XCTAssertEqual(error as? AuthError, .sessionExpired) }
+        let event = await collector.value
+        guard case .sessionRevoked(let at) = event else { return XCTFail("expected sessionRevoked, got \(event)") }
+        XCTAssertLessThan(abs(at.timeIntervalSince(detectedAt)), 2, "client reacts within the same request")
+        XCTAssertNil(try store.load())
+        XCTAssertEqual(gw.refreshCalls, 1)
+    }
+
+    func testForgetLocallyClearsWithoutNetworkAndEmitsSignedOut() async throws {
+        let store = InMemoryTokenStore(stored(expiresIn: 600)); let gw = FakeGateway()
+        let auth = AuthSession(store: store, gateway: gw)
+        let stream = await auth.events()
+        let collector = Task { for await e in stream { return e }; return AuthEvent.sessionRevoked(at: Date()) }
+        await auth.forgetLocally()
+        let event = await collector.value
+        XCTAssertEqual(event, .signedOut)
+        XCTAssertNil(try store.load())
+        XCTAssertEqual(gw.logoutCalls.count, 0, "no network call during an emergency wipe")
+        let signedIn = await auth.isSignedIn
+        XCTAssertFalse(signedIn)
+    }
+}

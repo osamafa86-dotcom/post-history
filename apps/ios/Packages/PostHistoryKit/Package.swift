@@ -10,6 +10,7 @@ let package = Package(
         .library(name: "AuthCore", targets: ["AuthCore"]),
         .library(name: "UploadCore", targets: ["UploadCore"]),
         .library(name: "FormEngine", targets: ["FormEngine"]),
+        .library(name: "DeviceSecurity", targets: ["DeviceSecurity"]),
         .executable(name: "form-conformance", targets: ["form-conformance"]),
     ],
     dependencies: [
@@ -29,5 +30,8 @@ let package = Package(
         .target(name: "FormEngine", dependencies: ["PostHistoryAPI"]),
         .testTarget(name: "FormEngineTests", dependencies: ["FormEngine"]),
         .executableTarget(name: "form-conformance", dependencies: ["FormEngine"]),
+        // أمان الجهاز (SEC-01، جانب الجهاز): المسح الطارئ بخطوات مرتبة وتقرير بما مُسح وما تعذّر، دون تسجيل مسارات.
+        .target(name: "DeviceSecurity"),
+        .testTarget(name: "DeviceSecurityTests", dependencies: ["DeviceSecurity"]),
     ]
 )

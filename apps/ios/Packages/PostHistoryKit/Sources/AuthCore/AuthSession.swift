@@ -1,6 +1,13 @@
 import Foundation
 import PostHistoryAPI
 
+/// أحداث الهوية التي تهم الواجهة: إبطال الجلسة عن بُعد يُكتشف حين يرفض الخادم رمز التحديث (العقد: الإبطال يُفحص عند كل طلب).
+public enum AuthEvent: Equatable, Sendable {
+    /// رُفض رمز التحديث: الجلسة أُبطلت (من الإدارة أو من جهاز آخر) أو انتهت. مُسحت الرموز محليًا.
+    case sessionRevoked(at: Date)
+    case signedOut
+}
+
 /// حالة الهوية على الجهاز: دخول، رمز وصول صالح (مع تحديث تلقائي بتدوير رمز التحديث)، وإبطال.
 /// التحديث أحادي المسار: الطلبات المتزامنة تنتظر تحديثًا واحدًا، لأن رمز التحديث يُبطل عند أول استخدام.
 public actor AuthSession {
@@ -13,6 +20,7 @@ public actor AuthSession {
     private let refreshLeeway: TimeInterval
     private var current: StoredSession?
     private var refreshInFlight: Task<StoredSession, Error>?
+    private var subscribers: [UUID: AsyncStream<AuthEvent>.Continuation] = [:]
 
     public init(store: any TokenStore, gateway: any AuthGateway, refreshLeeway: TimeInterval = 60, now: @escaping Clock = { Date() }) {
         self.store = store
@@ -24,6 +32,26 @@ public actor AuthSession {
 
     public var isSignedIn: Bool { current != nil }
     public var session: StoredSession? { current }
+
+    public func events() -> AsyncStream<AuthEvent> {
+        let id = UUID()
+        let (stream, continuation) = AsyncStream<AuthEvent>.makeStream()
+        subscribers[id] = continuation
+        continuation.onTermination = { [weak self] _ in Task { await self?.removeSubscriber(id) } }
+        return stream
+    }
+
+    private func removeSubscriber(_ id: UUID) { subscribers[id] = nil }
+    private func emit(_ event: AuthEvent) { subscribers.values.forEach { $0.yield(event) } }
+
+    /// ينسى الجلسة محليًا دون أي اتصال (المسح الطارئ): يمسح المخزن ويلغي تحديثًا جاريًا. لا يُسجَّل شيء.
+    public func forgetLocally() {
+        refreshInFlight?.cancel()
+        refreshInFlight = nil
+        current = nil
+        try? store.clear()
+        emit(.signedOut)
+    }
 
     public func login(email: String, password: String, totpCode: String?) async throws -> StoredSession {
         do {
@@ -68,6 +96,7 @@ public actor AuthSession {
             return fresh
         } catch AuthError.sessionExpired {
             current = nil
+            emit(.sessionRevoked(at: now()))
             throw AuthError.sessionExpired
         }
     }
