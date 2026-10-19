@@ -20,7 +20,7 @@ export class TusdHooksController {
   @HttpCode(200)
   async handle(@Param('hook_token') token: string, @Body() body: unknown): Promise<TusdHookResponse> {
     // الرمز أولًا وقبل أي قراءة للجسم: رمز خاطئ = 401 دون أثر
-    if (!constantTimeEqual(token, this.config.TUSD_HOOK_SECRET)) throw ApiError.unauthorized();
+    if (!this.validToken(token)) throw ApiError.unauthorized();
     let hook: TusdHookRequest;
     try {
       hook = validateBody<TusdHookRequest>('/internal/tusd-hooks/{hook_token}', 'post', body);
@@ -35,5 +35,13 @@ export class TusdHooksController {
       throw err;
     }
     return this.hooks.handle(hook);
+  }
+
+  /** الرمز الحالي، أو السابق في فترة التدوير الانتقالية. المقارنتان تُحسبان دائمًا (زمن ثابت). */
+  private validToken(token: string): boolean {
+    const current = constantTimeEqual(token, this.config.TUSD_HOOK_SECRET);
+    const { TUSD_HOOK_SECRET_PREVIOUS: previous, TUSD_HOOK_SECRET_PREVIOUS_UNTIL: until } = this.config;
+    const previousOk = previous ? constantTimeEqual(token, previous) : false;
+    return current || (previousOk && Date.now() < Date.parse(until!));
   }
 }

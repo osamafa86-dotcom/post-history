@@ -2,8 +2,8 @@ import { Inject, Injectable, type OnApplicationBootstrap, type OnApplicationShut
 import { and, asc, desc, eq, isNotNull, lt, sql, type SQL } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import type { Logger } from 'pino';
-import { APP_CONFIG, type AppConfig } from '../config/config';
-import { encryptField } from '../common/crypto';
+import { APP_CONFIG, type AppConfig, fieldKeyring } from '../config/config';
+import type { FieldKeyring } from '../common/crypto';
 import { pgError } from '../common/db-errors';
 import { ApiError } from '../common/errors';
 import { LOGGER } from '../common/logger';
@@ -50,7 +50,7 @@ export interface ListQuery {
 
 @Injectable()
 export class MaterialsService implements OnApplicationBootstrap, OnApplicationShutdown {
-  private readonly fieldKey: Buffer;
+  private readonly fieldKeys: FieldKeyring;
   private sweepTimer: NodeJS.Timeout | undefined;
 
   constructor(
@@ -59,7 +59,7 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
     @Inject(LOGGER) private readonly logger: Logger,
     private readonly forms: FormsService,
   ) {
-    this.fieldKey = Buffer.from(config.FIELD_ENCRYPTION_KEY, 'base64');
+    this.fieldKeys = fieldKeyring(config);
   }
 
   onApplicationBootstrap(): void {
@@ -159,7 +159,7 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
           sensitivityInjured: body.sensitivity.injured,
           sensitivityGraphic: body.sensitivity.graphic,
           ...displayName,
-          gpsEnc: body.gps ? encryptField(this.fieldKey, Buffer.from(JSON.stringify(body.gps))) : null,
+          gpsEnc: body.gps ? this.fieldKeys.encrypt(Buffer.from(JSON.stringify(body.gps))) : null,
           formVersion: body.form_version,
           dynamicFields: storedDynamicFields(body.dynamic_fields, check.visible),
         })
