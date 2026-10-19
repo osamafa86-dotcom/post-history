@@ -23,7 +23,7 @@ export const CATALOG = [
   { name: "performance", mode: "pending", criterion: "معاينة مقطع 10 دقائق بدقة 1080p ضمن الهدف المقيس في التأسيس، وبحث نصي أقل من ثانيتين في 95% من الطلبات على فهرس وحمل متفق عليهما" },
   { name: "urgent-template-export", mode: "pending", criterion: "تركيب طبقات الهوية على مقطع دقيقتين بدقة 1080p في زمن أقل من مدة المقطع على خادم التصدير المعتمد" },
   { name: "task-killers", mode: "field", criterion: "رفع 1 غيغابايت على جهازي Xiaomi وSamsung بعد قفل الشاشة 30 دقيقة يكتمل دون تدخل بعد شاشة التهيئة" },
-  { name: "timestamp-alignment", mode: "pending", criterion: "محاذاة صوتية بين النسخة الخفيفة والأصل بإزاحة لا تتجاوز 40 مللي ثانية على عشرة ملفات هاتف بمعدل إطارات متغير وفجوات زمنية" },
+  { name: "timestamp-alignment", mode: "field", criterion: "محاذاة صوتية بين النسخة الخفيفة والأصل بإزاحة لا تتجاوز 40 مللي ثانية على عشرة ملفات هاتف بمعدل إطارات متغير وفجوات زمنية" },
 ];
 
 export const NAMES = CATALOG.map((t) => t.name);

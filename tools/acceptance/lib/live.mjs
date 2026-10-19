@@ -55,3 +55,10 @@ export async function eventsOfType(http, token, type) {
   }
   return out;
 }
+
+/** A real upload session through POST /uploads, as the owner of the material does. Returns what the hook cases need. */
+export async function createUploadSession(http, token, { materialId, size, kind = "original", clientSha256 = null, filename = "clip.mp4" }) {
+  const r = await http.call(token, "POST", "/uploads", { body: { material_id: materialId, kind, size_bytes: size, filename, ...(clientSha256 ? { client_sha256: clientSha256 } : {}) } });
+  if (r.status !== 201) throw new Error(`POST /uploads answered ${r.status}: ${String(r.text).slice(0, 200)}`);
+  return { id: r.body.id, token: r.body.upload_token, size };
+}

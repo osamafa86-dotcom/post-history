@@ -86,7 +86,8 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   check("the same transition under a NEW key is a real second attempt (409 invalid_transition)", fresh.status === 409, `status ${fresh.status}`);
 
   const failed = fails.length > 0;
-  finish(doc, failed ? "fail" : unimplemented ? "partial" : "pass", {
+  // never "pass": this is a substitute, and a pass on the row would read as the payment criterion being met
+  finish(doc, failed ? "fail" : "partial", {
     variant: "idempotency-key-on-writes",
     write_operations_total: writeOps.length, write_operations_checked: checked, write_operations_unimplemented: unimplemented,
     behaviour_scenarios: 8, failures: fails.length,

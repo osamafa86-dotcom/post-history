@@ -1,7 +1,7 @@
 // receipt-notification: one task for the supervisor within 60 s of technical verification in 95% of runs;
 // an unacknowledged urgent task escalates after the timeout.
 //   RECEIPT_API_URL  RECEIPT_TOKENS (one per role)  RECEIPT_RUNS
-//   full chain (needs the hook, S3 and the database):  HOOK_BASE_URL HOOK_TOKEN HOOK_OBJECT_PREFIX HOOK_BUCKET  S3_*  LIVE_DATABASE_URL
+//   full chain (needs the hook and S3; upload sessions come from POST /uploads):  HOOK_BASE_URL HOOK_TOKEN HOOK_OBJECT_PREFIX HOOK_BUCKET  S3_*
 //   RECEIPT_ESCALATION_SECONDS  the server's ESCALATION_URGENT_SECONDS (the harness injects a short one)
 // Three measurements:
 //   A. creation → supervisor task            (N runs, urgent and normal mixed; no duplicates, reporter not notified of own incoming)
@@ -10,9 +10,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { newResult, finish, writeResult, parseArgs, banner } from "../lib/measurement.mjs";
 import { byName } from "../lib/catalog.mjs";
-import { client, materialBody, percentile, sleep } from "../lib/live.mjs";
+import { client, createUploadSession, materialBody, percentile, sleep } from "../lib/live.mjs";
 import { hookClient, simulateUpload, waitFor } from "../lib/hooks.mjs";
-import { openDb } from "../lib/live-db.mjs";
 import { s3FromEnv } from "../lib/s3.mjs";
 
 export async function run(argv = process.argv.slice(2), env = process.env) {
@@ -50,20 +49,19 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   check("no missing, duplicate or misdirected task", missing + duplicates + wrongRecipient === 0, `missing=${missing} dup=${duplicates} wrong=${wrongRecipient}`);
 
   // B + C need the hook, storage and database
-  const full = env.HOOK_BASE_URL && env.HOOK_TOKEN && env.LIVE_DATABASE_URL && s3FromEnv(env);
+  const full = env.HOOK_BASE_URL && env.HOOK_TOKEN && s3FromEnv(env);
   const m = { noSecondAssignment: 0, technicalVerified: 0, verifiedRuns: 0, latB: [], receiptsOk: 0, shaOk: 0, esc1: [], esc2: [], escQuiet: null, escBefore: 0 };
   if (full) {
     const hooks = hookClient({ baseUrl: env.HOOK_BASE_URL, token: env.HOOK_TOKEN });
-    const s3 = s3FromEnv(env), db = openDb(env.LIVE_DATABASE_URL);
+    const s3 = s3FromEnv(env);
     const bucket = env.HOOK_BUCKET ?? "uploads", prefix = env.HOOK_OBJECT_PREFIX ?? "tus/";
-    const me = (await http.get(tokens.reporter, "/auth/me")).body;
     await s3.ensureBucket(bucket);
     try {
       const runsB = Number(env.RECEIPT_VERIFY_RUNS ?? 8);
       for (let i = 0; i < runsB; i++) {
         const mat = await create("normal", `b${i}`);
         const bytes = Buffer.alloc(200_000 + i * 1000, i + 1);
-        const session = await db.uploadSession({ materialId: mat.id, createdBy: me.user_id ?? me.id, size: bytes.length });
+        const session = await createUploadSession(http, tokens.reporter, { materialId: mat.id, size: bytes.length });
         const up = await simulateUpload({ hooks, s3, bucket, prefix, session, bytes });
         const got = await waitFor(async () => (await inbox("reporter")).find((n) => n.material_id === mat.id && n.type === "upload.verified"), { timeoutMs: 30_000 });
         if (!got.value) { check(`run ${i}: receipt notification arrives`, false); continue; }
@@ -109,7 +107,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       await sleep((timeout + 4) * 1000);
       m.escQuiet = !(await inbox("editor_in_chief")).some((n) => n.material_id === quiet.id && n.type === "notification.escalated");
       check("an acknowledged task never escalates", m.escQuiet);
-    } finally { await db.close(); }
+    } finally { /* nothing to close: no direct database access */ }
   }
 
   latA.sort((a, b) => a - b);

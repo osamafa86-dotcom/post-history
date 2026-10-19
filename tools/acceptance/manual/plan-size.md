@@ -18,7 +18,7 @@ UPLOAD_S3_BUCKET=$S3_BUCKET_UPLOADS UPLOAD_S3_PREFIX=$TUSD_OBJECT_PREFIX node ru
 
 # الحمل المتزامن: 60 رفعًا بملفات 2 غيغابايت عبر tusd الحقيقي (الخادم يتحقق ويرسل الإيصال)
 LOAD_MODE=tus LOAD_TUS_ENDPOINT=http://127.0.0.1:8080/files/ LOAD_CONCURRENCY=60 LOAD_SIZE_MB=2048 \
-LOAD_API_URL=… LOAD_TOKENS=… HOOK_BASE_URL=… HOOK_TOKEN=… LIVE_DATABASE_URL=… S3_ENDPOINT=… S3_ACCESS_KEY=… S3_SECRET_KEY=… node run.mjs concurrent-load
+LOAD_API_URL=… LOAD_TOKENS=… HOOK_BASE_URL=… HOOK_TOKEN=… S3_ENDPOINT=… S3_ACCESS_KEY=… S3_SECRET_KEY=… node run.mjs concurrent-load
 ```
 
 `UPLOAD_SIZE_MB=5120` وحده يرفع نتيجة `upload-resume` إلى `pass` إن تحقق كل شيء. أما `concurrent-load` فيبقى `partial` ما لم يُقَس قرص خادم الرفع المؤقت (لا أداة له بعد)، ومعيار «لا تدهور» افتراضي من الجودة (انظر رأس السكربت) إلى أن تحدد الخطة رقمًا.

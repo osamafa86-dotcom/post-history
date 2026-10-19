@@ -1,0 +1,11 @@
+{
+  "card_version": 1,
+  "test_name": "timestamp-alignment",
+  "performed_on": "YYYY-MM-DD",
+  "performed_by_role": "field_supervisor",
+  "measured_by": "",
+  "files": [
+    { "model": "", "vfr": null, "has_gaps": null, "offset_ms": null }
+  ],
+  "observations": ""
+}

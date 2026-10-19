@@ -1,5 +1,5 @@
 // concurrent-load: 60 concurrent uploads of 2 GB; no degradation in notification time, none in the upload server's temp disk.
-//   LOAD_API_URL  LOAD_TOKENS  + HOOK_BASE_URL HOOK_TOKEN HOOK_OBJECT_PREFIX HOOK_BUCKET  S3_*  LIVE_DATABASE_URL
+//   LOAD_API_URL  LOAD_TOKENS  + HOOK_BASE_URL HOOK_TOKEN HOOK_OBJECT_PREFIX HOOK_BUCKET  S3_*   (sessions from POST /uploads)
 //   LOAD_CONCURRENCY=60  LOAD_SIZE_MB=1 (CI: the hook/S3/verification path, tusd played by this script)
 //   LOAD_MODE=tus LOAD_TUS_ENDPOINT=http://…/files/  LOAD_SIZE_MB=2048  the real path: every upload goes through tusd (plan size; manual, see README)
 // "No degradation" has no number in the plan. Working criterion until the field trial (coordinator decision), stated in every result: the p95 time from upload finish to the
@@ -8,9 +8,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { newResult, finish, writeResult, parseArgs, banner } from "../lib/measurement.mjs";
 import { byName } from "../lib/catalog.mjs";
-import { client, materialBody, percentile } from "../lib/live.mjs";
+import { client, createUploadSession, materialBody, percentile } from "../lib/live.mjs";
 import { hookClient, simulateUpload, waitFor } from "../lib/hooks.mjs";
-import { openDb } from "../lib/live-db.mjs";
 import { s3FromEnv } from "../lib/s3.mjs";
 import { makeSyntheticFile, resumableUpload } from "../lib/tus.mjs";
 
@@ -19,8 +18,8 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   banner(byName("concurrent-load"));
   const doc = newResult("concurrent-load", { device: { platform: "server" }, upload_path: "n/a" });
   const s3 = s3FromEnv(env);
-  if (!env.LOAD_API_URL || !env.HOOK_BASE_URL || !env.LIVE_DATABASE_URL || !s3) {
-    console.error("ENVIRONMENT: LOAD_API_URL, HOOK_BASE_URL, LIVE_DATABASE_URL and S3_* are required; nothing measured");
+  if (!env.LOAD_API_URL || !env.HOOK_BASE_URL || !s3) {
+    console.error("ENVIRONMENT: LOAD_API_URL, HOOK_BASE_URL and S3_* are required; nothing measured");
     return { code: 2, doc: null };
   }
   const tokens = JSON.parse(env.LOAD_TOKENS ?? "{}");
@@ -29,14 +28,12 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   const maxRatio = Number(env.LOAD_MAX_RATIO ?? 5), maxExtra = Number(env.LOAD_MAX_EXTRA_S ?? 10);
   const http = client(env.LOAD_API_URL), hooks = hookClient({ baseUrl: env.HOOK_BASE_URL, token: env.HOOK_TOKEN });
   const bucket = env.HOOK_BUCKET ?? "uploads", prefix = env.HOOK_OBJECT_PREFIX ?? "tus/";
-  const db = openDb(env.LIVE_DATABASE_URL);
   let synth = null;
   const fails = [];
   const check = (name, ok, why = "") => { if (!ok) { fails.push(name); console.log(`FAIL ${name} ${why}`); } };
 
   try {
     await s3.ensureBucket(bucket);
-    const me = (await http.get(tokens.reporter, "/auth/me")).body;
     const fv = (await http.get(tokens.reporter, "/forms/current")).body.version;
     // one deterministic body reused for every upload keeps memory flat; each object is still a separate S3 write
     const tusMode = env.LOAD_MODE === "tus";
@@ -45,7 +42,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
 
     const one = async (tag) => {
       const mat = (await http.call(tokens.reporter, "POST", "/materials", { body: materialBody(fv, `load-${tag}-${randomUUID().slice(0, 8)}`) })).body;
-      const session = await db.uploadSession({ materialId: mat.id, createdBy: me.user_id ?? me.id, size });
+      const session = await createUploadSession(http, tokens.reporter, { materialId: mat.id, size });
       return { mat, session };
     };
     const tus = env.LOAD_MODE === "tus";
@@ -91,5 +88,5 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     if (args["dry-run"]) writeResult(doc, { dryRun: true });
     else console.log("wrote", writeResult(doc, { slug: `${N}x${sizeMb}mb` }));
     return { code: fails.length ? 1 : 0, doc };
-  } finally { await db.close(); synth?.cleanup(); }
+  } finally { synth?.cleanup(); }
 }

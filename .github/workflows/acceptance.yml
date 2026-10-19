@@ -31,6 +31,9 @@ jobs:
       - name: Form conformance (forms against upload-form.json, reference vs expectations)
         working-directory: tools/acceptance
         run: node form-conformance/run.mjs
+      - name: Unified acceptance report (job summary; the gate reads this table)
+        working-directory: tools/acceptance
+        run: node report.mjs --summary
       - name: Static pii-leak and tenant-isolation (no result file written)
         working-directory: tools/acceptance
         run: node run.mjs pii-leak tenant-isolation dynamic-fields --dry-run

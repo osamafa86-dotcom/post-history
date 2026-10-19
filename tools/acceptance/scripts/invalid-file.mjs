@@ -6,9 +6,8 @@
 import { randomUUID } from "node:crypto";
 import { newResult, finish, writeResult, parseArgs, banner } from "../lib/measurement.mjs";
 import { byName } from "../lib/catalog.mjs";
-import { client, eventsOfType, materialBody, percentile } from "../lib/live.mjs";
+import { client, createUploadSession, eventsOfType, materialBody, percentile } from "../lib/live.mjs";
 import { hookClient, simulateUpload, waitFor } from "../lib/hooks.mjs";
-import { openDb } from "../lib/live-db.mjs";
 import { s3FromEnv } from "../lib/s3.mjs";
 import { createHash } from "node:crypto";
 
@@ -70,15 +69,13 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   // Phase 2 (needs S3, the database and the API): files that arrive and then turn out to be invalid end in `failed`
   // with the right reason, the material's original track fails, and a good file in the same batch is still verified.
   const s3 = s3FromEnv(env);
-  const full = s3 && env.LIVE_DATABASE_URL && env.INVALID_API_URL;
+  const full = s3 && env.INVALID_API_URL;
   const reasons = {};
   if (full) {
     const tokens = JSON.parse(env.INVALID_TOKENS ?? "{}");
     const http = client(env.INVALID_API_URL);
-    const db = openDb(env.LIVE_DATABASE_URL);
     try {
       await s3.ensureBucket(bucket);
-      const me = (await http.get(tokens.reporter, "/auth/me")).body;
       const fv = (await http.get(tokens.reporter, "/forms/current")).body.version;
       const mk = async (tag) => { const r = await http.call(tokens.reporter, "POST", "/materials", { body: materialBody(fv, `invalid-${tag}-${randomUUID().slice(0, 8)}`) }); if (r.status !== 201) throw new Error(`create material failed: ${r.status} ${r.text.slice(0, 200)}`); return r.body; };
       const good = Buffer.alloc(300_000, 7), sha = (b) => createHash("sha256").update(b).digest("hex");
@@ -92,7 +89,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       const made = [];
       for (const [label, c, expected] of cases) {
         const mat = await mk(label.replace(/\W/g, ""));
-        const session = await db.uploadSession({ materialId: mat.id, createdBy: me.user_id ?? me.id, size: c.size, clientSha256: c.clientSha256 });
+        const session = await createUploadSession(http, tokens.reporter, { materialId: mat.id, size: c.size, clientSha256: c.clientSha256 });
         await simulateUpload({ hooks: hc, s3, bucket, prefix, session, bytes: c.bytes });
         made.push({ label, mat, session, expected });
       }
@@ -112,7 +109,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
           check(`${x.label}: the material's technical state is failed`, orig.technical_state === "failed", `state ${orig.technical_state}`);
         } else check(`${x.label}: still verified in the same batch`, ev?.type === "upload.verified", ev ? ev.type : "no event");
       }
-    } finally { await db.close(); }
+    } finally { /* nothing to close: no direct database access */ }
   }
 
   latencies.sort((a, b) => a - b);
@@ -123,7 +120,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     hook_calls: latencies.length, hook_latency_ms_p50: percentile(latencies, 50), hook_latency_ms_p95: p95, hook_latency_ms_max: latencies.at(-1),
     batch_good_files_accepted: accepted3, batch_good_files_expected: 3, failures: fails.length,
     failed_reasons_checked: full ? Object.keys(reasons).join(",") : "none",
-  }, [full ? "المرحلة 2: ملفات وصلت ثم ثبت أنها غير صالحة (بصمة العميل، غياب الكائن، اختلاف الحجم) انتهت إلى failed بسببها الصحيح مع بقاء الجيد في الدفعة نفسها" : "المرحلة 2 (الوصول إلى failed) لم تُشغَّل: تحتاج S3 وقاعدة البيانات", "لم يُقَس رفض الملف التالف أو الترميز غير المدعوم (عامل الوسائط)، ولا رسالة الرفض على الهاتف؛ فالنتيجة جزئية"].join("؛ "));
+  }, [full ? "المرحلة 2: ملفات وصلت ثم ثبت أنها غير صالحة (بصمة العميل، غياب الكائن، اختلاف الحجم) انتهت إلى failed بسببها الصحيح مع بقاء الجيد في الدفعة نفسها" : "المرحلة 2 (الوصول إلى failed) لم تُشغَّل: تحتاج S3 وواجهة الخادم", "لم يُقَس رفض الملف التالف أو الترميز غير المدعوم (عامل الوسائط)، ولا رسالة الرفض على الهاتف؛ فالنتيجة جزئية"].join("؛ "));
   if (args["dry-run"]) writeResult(doc, { dryRun: true });
   else console.log("wrote", writeResult(doc, { slug: "tusd-hook" }));
   return { code: fails.length ? 1 : 0, doc };

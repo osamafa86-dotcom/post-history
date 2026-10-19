@@ -72,33 +72,21 @@ export async function seed({ databaseUrl, apiUrl }) {
     if (!notificationB) await new Promise((r) => setTimeout(r, 200));
   }
 
-  const uploadToken = randomBytes(16).toString("base64url");
-  const session = (await q(
-    `INSERT INTO upload_sessions (material_id, created_by, kind, state, size_bytes, filename, part_size_bytes, upload_token_hash, expires_at)
-     VALUES ($1, $2, 'original', 'created', 1000, 'clip.mp4', 16777216, $3, now() + interval '1 hour') RETURNING id`,
-    [mB.id, users.reporter_b.id, sha256(uploadToken)],
-  )).rows[0].id;
-  const sessionA = (await q(
-    `INSERT INTO upload_sessions (material_id, created_by, kind, state, size_bytes, filename, part_size_bytes, upload_token_hash, expires_at)
-     VALUES ($1, $2, 'original', 'created', 1000, 'clip.mp4', 16777216, $3, now() + interval '1 hour') RETURNING id`,
-    [mA.id, users.reporter.id, sha256(randomBytes(8))],
-  )).rows[0].id;
-
-  // upload sessions for the hook cases: each with its own token so cases cannot interfere with each other
-  const hookSession = async (state, expiresSql = "now() + interval '1 hour'") => {
-    const token = randomBytes(16).toString("base64url");
-    const id = (await q(
-      `INSERT INTO upload_sessions (material_id, created_by, kind, state, size_bytes, filename, part_size_bytes, upload_token_hash, expires_at)
-       VALUES ($1, $2, 'original', $3, 1000, 'clip.mp4', 16777216, $4, ${expiresSql}) RETURNING id`,
-      [mA.id, users.reporter.id, state, sha256(token)],
-    )).rows[0].id;
-    return { id, token, size: 1000 };
+  // upload sessions come from POST /uploads like a reporter's app would make them; the database is touched only to
+  // push a session into a state the API cannot reach quickly (expired) or without a media file (completed)
+  const apiSession = async (token, materialId, size = 1000) => {
+    const r = await write(token, "POST", "/uploads", { material_id: materialId, kind: "original", size_bytes: size, filename: "clip.mp4" });
+    return { id: r.id, token: r.upload_token, size };
   };
+  const session = (await apiSession(tokens.reporter_b, mB.id)).id;
+  const sessionA = (await apiSession(tokens.reporter, mA.id)).id;
   const hookSessions = {
-    ok: [await hookSession("created"), await hookSession("created"), await hookSession("created"), await hookSession("created")],
-    expired: await hookSession("created", "now() - interval '1 minute'"),
-    finished: await hookSession("completed"),
+    ok: [await apiSession(tokens.reporter, mA.id), await apiSession(tokens.reporter, mA.id), await apiSession(tokens.reporter, mA.id), await apiSession(tokens.reporter, mA.id)],
+    expired: await apiSession(tokens.reporter, mA.id),
+    finished: await apiSession(tokens.reporter, mA.id),
   };
+  await q(`UPDATE upload_sessions SET expires_at = now() - interval '1 minute' WHERE id = $1`, [hookSessions.expired.id]);
+  await q(`UPDATE upload_sessions SET state = 'completed' WHERE id = $1`, [hookSessions.finished.id]);
 
   await pool.end();
   const { reporter_b: _b, supervisor_b: _sb, ...roleTokens } = tokens;
@@ -109,6 +97,6 @@ export async function seed({ databaseUrl, apiUrl }) {
       other_reporter_upload_id: session, other_reporter_notification_id: notificationB,
       own_material_id: mA.id, sensitive_field_keys: [],
     },
-    canaries, formVersion, uploads: { sessionB: session, tokenB: uploadToken, sessionA, materialA: mA.id, materialB: mB.id, hookSessions },
+    canaries, formVersion, uploads: { sessionB: session, sessionA, materialA: mA.id, materialB: mB.id, hookSessions },
   };
 }
