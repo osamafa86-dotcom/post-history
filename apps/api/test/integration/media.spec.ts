@@ -5,10 +5,12 @@ import { MEDIA_STREAM } from '../../src/outbox/media-stream';
 import { OBJECT_STORAGE, type ObjectStorage } from '../../src/verification/object-storage';
 import { createHarness, drainOutbox, type Harness, seedUploadSession, seedUser } from './harness';
 
+/** تخزين بديل بحاويتين: كائنات الرفع في uploads والمشتقات في media، كل مفتاح في حاويته. */
 class FakeStorage implements ObjectStorage {
   sizes = new Map<string, number>();
-  async head(_bucket: string, key: string) {
-    const size = this.sizes.get(key);
+  async head(bucket: string, key: string) {
+    const expected = key.startsWith('derived/') ? 'media' : 'uploads';
+    const size = bucket === expected ? this.sizes.get(key) : undefined;
     return size === undefined ? null : { size };
   }
   async read(): Promise<never> {
@@ -190,6 +192,19 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
       const another = await completed();
       await h.pool.query(`UPDATE upload_sessions SET material_id = $2 WHERE id = $1`, [another.id, o.materialId]);
       expect((await getSession(another.id).expect(200)).body.material_has_proxy).toBe(true);
+    });
+
+    it('looks the derivative up in the media bucket (S3_BUCKET_MEDIA), not the uploads bucket', async () => {
+      expect(h.config.S3_BUCKET_MEDIA).toBe('media');
+      expect(h.config.S3_BUCKET_MEDIA).not.toBe(h.config.S3_BUCKET_UPLOADS);
+      const o = await verifiedOriginal();
+      const head = jest.spyOn(storage, 'head');
+      try {
+        await derive(o.fileId, proxy(o.materialId, o.fileId)).expect(200);
+        expect(head).toHaveBeenLastCalledWith('media', expect.stringMatching(/^derived\//));
+      } finally {
+        head.mockRestore();
+      }
     });
 
     it('refuses keys outside the derived prefix of the source, a missing object, a non-original source, and unknown files', async () => {

@@ -90,11 +90,11 @@ export class MediaService {
       const [source] = await tx.select().from(materialFiles).where(eq(materialFiles.id, fileId)).for('share');
       if (!source) throw ApiError.notFound();
       if (source.kind !== 'original' || source.state !== 'verified') throw conflict('Derivatives are made from a verified original only.');
-      // المشتق في مساحته وحدها: لا يشير العامل إلى كائن مادة أخرى أو إلى الأصل نفسه
+      // المشتق في مساحته وحدها: حاوية المشتقات (لا حاوية الرفع، فلا يُسجَّل كائن رفع مشتقًا)، تحت مسار مصدره
       if (!body.storage_key.startsWith(`derived/${source.materialId}/${source.id}/`) || body.storage_key.includes('..')) {
         throw ApiError.validation({ fields: ['/storage_key'] });
       }
-      const head = await this.storage.head(this.config.S3_BUCKET_UPLOADS, body.storage_key);
+      const head = await this.storage.head(this.config.S3_BUCKET_MEDIA, body.storage_key);
       if (!head || head.size !== body.size_bytes) throw ApiError.validation({ fields: ['/storage_key', '/size_bytes'] });
 
       const sha256 = Buffer.from(body.sha256, 'hex');
