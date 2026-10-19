@@ -134,6 +134,9 @@ describe('production configuration', () => {
     expect(() => loadConfig({ ...base, NODE_ENV: 'production' } as NodeJS.ProcessEnv)).toThrow(/REDIS_URL.*S3_ENDPOINT|S3_ENDPOINT.*REDIS_URL/);
     expect(() =>
       loadConfig({ ...base, NODE_ENV: 'production', REDIS_URL: 'redis://r', UPLOAD_VERIFIER: 'external' } as NodeJS.ProcessEnv),
+    ).toThrow(/MEDIA_WORKER_TOKEN/);
+    expect(() =>
+      loadConfig({ ...base, NODE_ENV: 'production', REDIS_URL: 'redis://r', UPLOAD_VERIFIER: 'external', MEDIA_WORKER_TOKEN: 'm'.repeat(40) } as NodeJS.ProcessEnv),
     ).not.toThrow();
     expect(() => loadConfig({ ...base, NODE_ENV: 'development' } as NodeJS.ProcessEnv)).not.toThrow();
   });

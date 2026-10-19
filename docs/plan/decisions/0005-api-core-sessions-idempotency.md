@@ -165,6 +165,29 @@
 - **اختبار سباق المكنسة** (`reconcile.spec.ts`): المكنسة وpost-finish المتأخر معًا بالترتيبين، ثماني جولات: استلام
   واحد وحدث واحد وانتقال فني واحد في كل جولة.
 
+## إضافات التذكرة 9 (جانب الخادم من واجهة عامل الوسائط، ADR 0006)
+
+- **الطابور** (`outbox/media-stream.ts`): حين `UPLOAD_VERIFIER=external` يضيف ناشر Outbox، داخل النشر نفسه،
+  `upload.original_received` و`upload.proxy_received` إلى `media:events` (`XADD MAXLEN ~ MEDIA_STREAM_MAXLEN`، افتراضي
+  100000) بحقلين `event_id` و`event` (الحدث بصيغة العقد عبر `serializeOutboxEvent` المشتركة مع `GET /events`).
+  Redis غائب أو معطل = يرمي فيُعاد الحدث بالتراجع الأسي؛ التسليم «مرة على الأقل».
+- **النقاط** (`media/`، خارج `/v1`، `internalOnly`): `GET /internal/media/sessions/{id}`، و`POST …/verification`،
+  و`POST /internal/media/files/{file_id}/derivatives`. المصادقة `Authorization: Bearer MEDIA_WORKER_TOKEN` (32–256 من
+  `[A-Za-z0-9_-]`، منفصل عن رمز tusd، مطلوب في الإنتاج مع `external`) بمقارنة ثابتة الزمن تُحسب دائمًا، والفشل أو
+  غياب الرمز 404؛ الترويسة لا تُسجَّل. التحقق: الخادم يقفل الجلسة، ويقرر بنفسه من بلاغ «verified»: غياب الكائن
+  `storage_error`، والحجم المخالف للجلسة أو لـ HEAD `invalid_file`، وبصمة العميل المخالفة `checksum_mismatch`، ثم
+  `recordVerification` نفسها، ثم يكتب البيانات الفنية: `duration_ms/start_pts_us/width/height` في أعمدتها والباقي
+  في `technical`. التكرار الموافق للنتيجة المسجلة 200 بها والمخالف 409 `upload_state_conflict`. المشتق: من أصل
+  متحقق فقط، ومفتاحه تحت `derived/<material_id>/<file_id>/` وموجود في التخزين بالحجم المبلَّغ، ومتساوي الأثر على
+  (`derived_from_id`, `kind`) بالفهرس الفريد الجزئي. لا حدث Outbox للمشتق (لا يغيّر أيًّا من الحالات الثلاث).
+- **المخططات مؤقتة** (`media/media-schemas.ts`) بقرار المنسّق: مغلقة كلها (`additionalProperties: false`)، و`technical`
+  قائمة بيضاء تطابق `material_file_technical_keys()` في القاعدة؛ تُستبدل بإحالات إلى العقد حين يضيف وكيل العقود
+  المسارات الثلاثة (فحص تغطية العقد يعدّها «extra» حتى ذلك الحين، تحذيرًا).
+- **الترحيل** `20261019100009000_media_file_technical` (بموافقة المنسّق): `technical jsonb` بقيد قائمة بيضاء في
+  القاعدة أيضًا (وسوم الملف لا تُخزَّن)، و`head_sha256`/`tail_sha256` (32 بايتًا) بفهرس `(size_bytes, head_sha256)`،
+  وفهرس فريد جزئي على `(derived_from_id, kind)`. `technical` غير مكشوف في `/v1`.
+- `UPLOAD_VERIFIER` يبقى `in_process|external`. ضبط `external` وprofile `media` في compose عند وكيل البنية.
+
 ## الدليل
 
 اختبارات التكامل على Postgres في مهمة CI `api` (`apps/api/test/integration/`): الإبطال الفوري، التدوير وكشف إعادة
