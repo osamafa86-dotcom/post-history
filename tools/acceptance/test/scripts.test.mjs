@@ -223,3 +223,58 @@ test("waitFor returns the value as soon as the probe has one, and null after the
   assert.equal(miss.value, null);
   assert.equal(percentile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 95), 10);
 });
+
+import { buildReport } from "../report.mjs";
+import { RULES } from "../field/cards.mjs";
+
+const fq = () => {
+  const sc = (extra = {}) => ({ offset_before_bytes: 500_000_000, offset_after_resume_bytes: 490_000_000, completed: true, interventions_after_restart: 0, server_sha256_match: true, ...extra });
+  return {
+    card_version: 1, test_name: "force-quit-restart", performed_on: "2026-11-06", performed_by_role: "field_supervisor",
+    device: { platform: "ios", vendor: "apple", model: "iPhone 13", os_version: "18.1" }, app_version: "0.2.0", network: { type: "wifi" },
+    upload: { path: "tusd", file_size_bytes: 1073741824, file_sha256: "b".repeat(64), part_size_bytes: 16_777_216 },
+    scenarios: { force_quit: sc(), battery_depleted: sc(), reboot: sc(), low_storage: sc({ free_storage_mb_at_start: 700 }) }, observations: "",
+  };
+};
+
+test("force-quit-restart card: passes only when every scenario resumes from what arrived and completes", () => {
+  const ok = cardToResult(fq());
+  assert.equal(ok.doc.result, "partial");
+  assert.ok(validateMeasurement(ok.doc).ok);
+  const zero = fq(); zero.scenarios.reboot.offset_after_resume_bytes = 0;
+  assert.match(cardToResult(zero).doc.notes, /reboot: restarted from zero/);
+  const far = fq(); far.scenarios.force_quit.offset_after_resume_bytes = 400_000_000;
+  assert.match(cardToResult(far).doc.notes, /more than one part/);
+  const roomy = fq(); roomy.scenarios.low_storage.free_storage_mb_at_start = 5000;
+  assert.equal(cardToResult(roomy).doc.result, "fail");
+  const blank = fq(); blank.scenarios.battery_depleted.completed = null;
+  assert.ok(cardToResult(blank).missing.some((m) => m.includes("battery_depleted.completed")));
+  assert.equal(RULES["force-quit-restart"].SCENARIOS.length, 4);
+});
+
+test("timestamp-alignment card: ten VFR files with gaps within 40 ms is a full pass; one outlier fails the card", () => {
+  const files = Array.from({ length: 10 }, (_, i) => ({ model: `phone-${i}`, vfr: true, has_gaps: true, offset_ms: i % 2 ? -20 : 12 }));
+  const card = { card_version: 1, test_name: "timestamp-alignment", performed_on: "2026-11-09", measured_by: "media-align 0.1", files, observations: "" };
+  const ok = cardToResult(card);
+  assert.equal(ok.doc.result, "pass");
+  assert.deepEqual(checkResult("2026-11-09-timestamp-alignment-ten-files.json", ok.doc), []);
+  const bad = structuredClone(card); bad.files[3].offset_ms = 55;
+  assert.match(cardToResult(bad).doc.notes, /files\[3\]: offset 55 ms/);
+  const few = structuredClone(card); few.files.length = 9;
+  assert.ok(cardToResult(few).missing.some((m) => m.includes("at least 10")));
+  const unmeasured = structuredClone(card); delete unmeasured.measured_by;
+  assert.ok(cardToResult(unmeasured).missing.some((m) => m.includes("measured_by")));
+});
+
+test("unified report lists every acceptance row, keeps the latest result per profile and never invents a pass", () => {
+  const mk = (test_name, result, started_at, extra = {}) => ({ doc: { schema_version: 1, tool: "acceptance", role: "qa", test_name, started_at, ended_at: started_at, result, metrics: { n: 1 }, ...extra }, file: `docs/measurements/acceptance/${test_name}-${started_at.slice(0, 10)}.json` });
+  const md = buildReport([
+    mk("pii-leak", "partial", "2026-10-19T10:00:00Z"),
+    mk("pii-leak", "fail", "2026-10-20T10:00:00Z"),
+    mk("upload-resume", "pass", "2026-10-20T10:00:00Z", { metrics: { sha256_match: true } }),
+  ], new Date("2026-10-21T00:00:00Z"));
+  assert.match(md, /\| pii-leak \| automated \| ❌ fail/, "the latest run decides, and a fail pulls the row down");
+  assert.match(md, /\| upload-resume \| automated \| ✅ pass/);
+  assert.match(md, /\| payout \| pending \| — لا نتيجة/, "rows without a result are listed, not hidden");
+  assert.match(md, /pass 1، partial 0، fail 1/);
+});

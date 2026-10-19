@@ -1,0 +1,17 @@
+{
+  "card_version": 1,
+  "test_name": "force-quit-restart",
+  "performed_on": "YYYY-MM-DD",
+  "performed_by_role": "field_supervisor",
+  "device": { "platform": "android", "vendor": "", "model": "", "os_version": "" },
+  "app_version": "",
+  "network": { "type": "wifi" },
+  "upload": { "path": "tusd", "file_size_bytes": 1073741824, "file_sha256": "", "part_size_bytes": 16777216 },
+  "scenarios": {
+    "force_quit": { "offset_before_bytes": null, "offset_after_resume_bytes": null, "completed": null, "interventions_after_restart": null, "server_sha256_match": null },
+    "battery_depleted": { "offset_before_bytes": null, "offset_after_resume_bytes": null, "completed": null, "interventions_after_restart": null, "server_sha256_match": null },
+    "reboot": { "offset_before_bytes": null, "offset_after_resume_bytes": null, "completed": null, "interventions_after_restart": null, "server_sha256_match": null },
+    "low_storage": { "free_storage_mb_at_start": null, "offset_before_bytes": null, "offset_after_resume_bytes": null, "completed": null, "interventions_after_restart": null, "server_sha256_match": null }
+  },
+  "observations": ""
+}

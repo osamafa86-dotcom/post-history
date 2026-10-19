@@ -36,9 +36,15 @@ node validate-results.mjs                    # بوابة CI على كل ملف 
 | `performance` | زمن قراءة الواجهة تحت حمل (قائمة، تفصيل، صندوق) ويفشل عند p95 فوق 2 ثانية؛ البحث النصي ومعاينة 10 دقائق غير موجودين فلا يُدَّعيان. |
 | `dynamic-fields` | الجزء المشترك (`form-conformance/`) وحيًّا على الخادم: نشر إصدار، بوابة v0، التاريخ المقروء، إكمال مسودة قديمة بإصدار أحدث، وكل الحالات المشتركة عبر `POST /materials`. `pass` يتطلب أيضًا نتائج web وios وandroid متطابقة. |
 | `task-killers` | ميداني: `field/task-killers.md` ثم `field/record-card.mjs`. |
+| `force-quit-restart` | ميداني: `field/force-quit-restart.md` (أربعة سيناريوهات: قتل قسري، نفاد البطارية، إعادة تشغيل، مساحة أقل من 1 غيغابايت) والحكم آلي من البطاقة. |
+| `timestamp-alignment` | ميداني + وسائط: `field/timestamp-alignment.md`؛ عشرة مقاطع VFR بفجوات، والإزاحة تقيسها أداة الوسائط وتُسجَّل باسمها، ينجح عند ≤ 40 مللي ثانية في كلها. |
 | الباقي | ملف لكل اسم يطبع المعيار ويرجع `pending` حتى توجد الحزمة المقيسة. |
 
 لا يكتب أي سكربت `pass` دون أن يكون الدليل كله حاضرًا: فحص لم يُنفَّذ (مثل الجزء الحي) يُنتج `partial`، ويرفض `validate-results.mjs` أي `pass` مع مقياس يعلن أن الدليل ناقص.
+
+## تقرير القبول الموحّد
+
+`node report.mjs [--out=REPORT.md]` يجمع كل ملفات `docs/measurements/` (كل الأدوات) في جدولين: صفوف جدول اختبارات القبول الاثنين والعشرين بحالة كل صف (لا نتيجة ظاهرة لا مخفية)، وكل النتائج الأحدث لكل أداة/اختبار/ملف شبكة بأرقامها. يعمل في CI ويُكتب في ملخص الوظيفة، والنسخة المرجعية للبوابة `docs/measurements/REPORT.md` تُولَّد عند مراجعة البوابة. الصف لا يكون `pass` إلا بنتيجة `pass`، وأي `fail` في أحدث تشغيل يسحب الصف إلى `fail`.
 
 ## التشغيل الحي ضد الخادم
 
@@ -47,6 +53,6 @@ cd apps/api && npm ci && src/db/migrate.sh up && npm run build      # DATABASE_U
 cd ../../tools/acceptance && node live/run.mjs [--dry-run]
 ```
 
-يبدأ `live/run.mjs` الخادم المبني بأسرار مؤقتة عشوائية، ويزرع `live/seed.mjs` قاعدة اصطناعية (مكتبان، مستخدم لكل دور، مراسل ومشرف في مكتب آخر، مواد بإحداثيات وعناوين كناري)، ثم يشغّل: `tenant-isolation`، `duplicate-payment`، `invalid-file`، `receipt-notification`، `concurrent-load`، `performance`، ثم `pii-leak` (يقرأ سجلات كل ما سبقه)، و`dynamic-fields` أخيرًا لأنه ينشر نموذجًا يصير الحالي بحقول مطلوبة. بـ `LIVE_REDIS_URL` و`LIVE_S3_*` يتحقق الخادم فعليًا ويُشارك حد المعدل في Redis؛ بدونهما تُشغَّل الأجزاء التي لا تحتاجهما فقط. `--only=a,b` يشغّل بعضها. بلا `--dry-run` تُكتب النتائج في `docs/measurements/acceptance/`. وظيفة `live` في `.github/workflows/acceptance.yml` تشغّله بـ `--dry-run`.
+جلسات الرفع كلها من `POST /uploads` الحقيقي كما يفعل تطبيق المراسل؛ لا إدراج مباشر في القاعدة إلا لدفع جلسة إلى حالة لا يبلغها الـ API بسرعة (منتهية الصلاحية، أو `completed` بلا ملف) في حالات الخطّاف. يبدأ `live/run.mjs` الخادم المبني بأسرار مؤقتة عشوائية، ويزرع `live/seed.mjs` قاعدة اصطناعية (مكتبان، مستخدم لكل دور، مراسل ومشرف في مكتب آخر، مواد بإحداثيات وعناوين كناري)، ثم يشغّل: `tenant-isolation`، `duplicate-payment`، `invalid-file`، `receipt-notification`، `concurrent-load`، `performance`، ثم `pii-leak` (يقرأ سجلات كل ما سبقه)، و`dynamic-fields` أخيرًا لأنه ينشر نموذجًا يصير الحالي بحقول مطلوبة. بـ `LIVE_REDIS_URL` و`LIVE_S3_*` يتحقق الخادم فعليًا ويُشارك حد المعدل في Redis؛ بدونهما تُشغَّل الأجزاء التي لا تحتاجهما فقط. `--only=a,b` يشغّل بعضها. بلا `--dry-run` تُكتب النتائج في `docs/measurements/acceptance/`. وظيفة `live` في `.github/workflows/acceptance.yml` تشغّله بـ `--dry-run`.
 
 العمليات التي لم تُنفَّذ بعد في الخادم (404 دون اعتماد) تُحسب `unimplemented` وتُبقي النتيجة `partial`؛ تتحول إلى حالات فعلية تلقائيًا حين تُنفَّذ.
