@@ -13,6 +13,11 @@ BASE="http://127.0.0.1:${TUSD_PORT}"
 
 fail() { echo "!! $*" >&2; exit 1; }
 
+# Healthchecks gate up --wait; still retry briefly so a slow first connection is not a failure.
+for _ in $(seq 1 15); do
+  curl -fsS -o /dev/null -X OPTIONS "$BASE/files/" && break
+  sleep 1
+done
 curl -fsS -o /dev/null -X OPTIONS "$BASE/files/" || fail "tusd not reachable through tusd-proxy"
 [ "$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/metrics")" = 404 ] || fail "/metrics exposed through proxy"
 bindings="$(docker inspect -f '{{json .HostConfig.PortBindings}}' "$("${COMPOSE[@]}" ps -q tusd)")"
