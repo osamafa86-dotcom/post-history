@@ -136,7 +136,9 @@ jobs:
           cp infra/compose/.env.example infra/compose/.env
           sed -i -e "s/^TUSD_HOOK_SECRET=.*/TUSD_HOOK_SECRET=$(openssl rand -hex 32)/" \
                  -e "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" \
-                 -e "s|^FIELD_ENCRYPTION_KEY=.*|FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)|" infra/compose/.env
+                 -e "s|^FIELD_ENCRYPTION_KEY=.*|FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)|" \
+                 -e "s/^S3_MEDIA_ACCESS_KEY=.*/S3_MEDIA_ACCESS_KEY=media-worker-ci/" \
+                 -e "s/^S3_MEDIA_SECRET_KEY=.*/S3_MEDIA_SECRET_KEY=$(openssl rand -hex 16)/" infra/compose/.env
           docker compose -f infra/compose/docker-compose.yml config -q
           docker compose -f infra/compose/docker-compose.yml --profile api config -q
       # Fails on a tag or digest that does not exist in the registry (ADR 0004).
@@ -144,6 +146,8 @@ jobs:
         run: docker compose -f infra/compose/docker-compose.yml --profile api pull -q
       - name: Smoke test (tusd only via proxy, hook token kept out of logs and responses)
         run: infra/compose/smoke.sh
+      - name: Media worker storage user is least-privilege (ADR 0006)
+        run: infra/minio/check-media-policy.sh
       - name: Hook path end to end with the API (SEC-06)
         run: infra/compose/e2e-hooks.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
