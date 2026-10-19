@@ -9,6 +9,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "npm run generate:api-types && tsc -p tsconfig.json --noEmit",
     "start": "node dist/main.js",
+    "cli:approve-admin-recovery": "node dist/cli/approve-admin-recovery.js",
+    "cli:reencrypt-fields": "node dist/cli/reencrypt-fields.js",
     "db:migrate": "src/db/migrate.sh up",
     "db:pull": "scripts/db-pull.sh",
     "db:check-schema": "scripts/check-drizzle-schema.sh",

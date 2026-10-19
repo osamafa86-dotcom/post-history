@@ -1,6 +1,7 @@
 import { BlockList, isIP } from 'node:net';
 import { availableParallelism } from 'node:os';
 import { z } from 'zod';
+import { FieldKeyring } from '../common/crypto';
 
 export function parseCidr(cidr: string): { address: string; prefix: number; family: 'ipv4' | 'ipv6' } | null {
   const [address, bits] = cidr.split('/');
@@ -51,6 +52,14 @@ const schema = z.object({
   FIELD_ENCRYPTION_KEY: z
     .string()
     .refine((v) => Buffer.from(v, 'base64').length === 32, 'must be 32 bytes, base64-encoded'),
+  // رقم إصدار المفتاح الحالي (1–255) يُكتب بايتًا أول في كل حقل مشفر. التدوير: المفتاح القديم ورقمه إلى *_PREVIOUS
+  // (يُقرأ به فقط)، ومفتاح جديد برقم جديد هنا (يُكتب به)
+  FIELD_ENCRYPTION_KEY_VERSION: z.coerce.number().int().min(1).max(255).default(1),
+  FIELD_ENCRYPTION_KEY_PREVIOUS: z
+    .string()
+    .refine((v) => Buffer.from(v, 'base64').length === 32, 'must be 32 bytes, base64-encoded')
+    .optional(),
+  FIELD_ENCRYPTION_KEY_PREVIOUS_VERSION: z.coerce.number().int().min(1).max(255).optional(),
 
   // محاولات الدخول لكل بريد ولكل عنوان IP (عنوان واحد قد يجمع مكتبًا كاملًا خلف NAT)
   LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(10),
@@ -59,9 +68,18 @@ const schema = z.object({
 
   // طلب استعادة الحساب ينتظر اعتماد المشرف هذه المدة ثم ينتهي
   RECOVERY_REQUEST_TTL_SECONDS: z.coerce.number().int().min(300).default(24 * 3600),
+  // مخرج الطوارئ (أمر CLI لاعتماد استعادة مدير النظام): بصمة SHA-256 (hex) لرمز التشغيل المحفوظ في الخزنة؛ الرمز نفسه لا
+  // يوضع في البيئة. غير مضبوط = طريق الخزنة معطّل ويبقى طريق مديرَين
+  BREAK_GLASS_TOKEN_SHA256: z
+    .string()
+    .regex(/^[0-9a-fA-F]{64}$/, 'must be a hex SHA-256 digest')
+    .optional(),
 
   // SEC-06: الرمز في مسار عنوان الخطّاف
   TUSD_HOOK_SECRET: z.string().min(32).max(128),
+  // تدوير بلا انقطاع: الرمز السابق يُقبل حتى TUSD_HOOK_SECRET_PREVIOUS_UNTIL (وقت ISO 8601) ثم يُرفض وحده دون إعادة تشغيل
+  TUSD_HOOK_SECRET_PREVIOUS: z.string().min(32).max(128).optional(),
+  TUSD_HOOK_SECRET_PREVIOUS_UNTIL: z.string().datetime({ offset: true }).optional(),
   TUSD_OBJECT_PREFIX: z.string().default(''),
   // true حين يرسل tusd حدث post-create (-hooks-enabled-events): الجلسة تبقى created حتى ينجح إنشاء الرفع فعلًا
   TUSD_POST_CREATE_HOOK: z
@@ -77,7 +95,17 @@ const schema = z.object({
   UPLOAD_SESSION_TTL_SECONDS: z.coerce.number().int().min(60).default(24 * 3600),
   // مسار الرفع (بند القرارات 3، يُحسم بعد النموذج الأولي): tusd، أو direct حيث يعلن العميل الاكتمال بنفسه
   UPLOAD_PATH: z.enum(['tusd', 'direct']).default('tusd'),
+  // مكنسة تسوية جلسات in_progress التي ضاع post-finish لها: تُفحص في التخزين بعد هذه المدة بلا تغيير
+  UPLOAD_RECONCILE_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  UPLOAD_RECONCILE_INTERVAL_MS: z.coerce.number().int().min(1000).default(60_000),
+  UPLOAD_RECONCILE_STALE_SECONDS: z.coerce.number().int().min(30).default(300),
+  UPLOAD_RECONCILE_BATCH: z.coerce.number().int().min(1).max(500).default(50),
   S3_BUCKET_UPLOADS: z.string().min(1),
+  // حاوية المشتقات (derived/<material_id>/<file_id>/…) التي يكتب فيها عامل الوسائط؛ غير حاوية الرفع (ADR 0006)
+  S3_BUCKET_MEDIA: z.string().min(1).default('media'),
   // التخزين الذي يقرأ منه التحقق داخل الخادم (MinIO محليًا، R2 في الإنتاج)
   S3_ENDPOINT: z.string().optional(),
   S3_REGION: z.string().default('auto'),
@@ -86,6 +114,13 @@ const schema = z.object({
   // in_process: يتحقق الخادم من الملفات المكتملة بنفسه؛ external: عامل الوسائط يفعل ذلك والخادم لا يقرأ التخزين
   UPLOAD_VERIFIER: z.enum(['in_process', 'external']).default('in_process'),
   VERIFY_POLL_INTERVAL_MS: z.coerce.number().int().min(100).default(2000),
+  // UPLOAD_VERIFIER=external: أحداث الاستلام تُنشر إلى Redis Stream `media:events` بطول أقصى تقريبي (ADR 0006)
+  MEDIA_STREAM_MAXLEN: z.coerce.number().int().min(1000).default(100_000),
+  // رمز عامل الوسائط لنقاط /internal/media/* (ترويسة Bearer)، منفصل عن TUSD_HOOK_SECRET؛ غير مضبوط = النقاط 404
+  MEDIA_WORKER_TOKEN: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{32,256}$/, 'must be 32-256 characters of [A-Za-z0-9_-]')
+    .optional(),
   // عدد الملفات التي تُحسب بصماتها معًا؛ كل واحد يشغل اتصالًا من المجمع طوال قراءته، فيبقى أقل من DATABASE_POOL_MAX
   VERIFY_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
   // خيوط حساب SHA-256 (worker_threads)؛ افتراضيًا عدد الأنوية ناقص واحد يبقى لخيط الحدث
@@ -127,11 +162,22 @@ export function storageConfigured(c: { S3_ENDPOINT?: string; S3_ACCESS_KEY?: str
 }
 
 const validated = schema.superRefine((c, ctx) => {
+  if (Boolean(c.TUSD_HOOK_SECRET_PREVIOUS) !== Boolean(c.TUSD_HOOK_SECRET_PREVIOUS_UNTIL)) {
+    ctx.addIssue({ code: 'custom', path: ['TUSD_HOOK_SECRET_PREVIOUS_UNTIL'], message: 'set together with TUSD_HOOK_SECRET_PREVIOUS' });
+  }
+  if (Boolean(c.FIELD_ENCRYPTION_KEY_PREVIOUS) !== (c.FIELD_ENCRYPTION_KEY_PREVIOUS_VERSION !== undefined)) {
+    ctx.addIssue({ code: 'custom', path: ['FIELD_ENCRYPTION_KEY_PREVIOUS_VERSION'], message: 'set together with FIELD_ENCRYPTION_KEY_PREVIOUS' });
+  } else if (c.FIELD_ENCRYPTION_KEY_PREVIOUS_VERSION === c.FIELD_ENCRYPTION_KEY_VERSION) {
+    ctx.addIssue({ code: 'custom', path: ['FIELD_ENCRYPTION_KEY_PREVIOUS_VERSION'], message: 'must differ from FIELD_ENCRYPTION_KEY_VERSION' });
+  }
   if (c.UPLOAD_VERIFIER === 'in_process' && c.VERIFY_CONCURRENCY >= c.DATABASE_POOL_MAX) {
     ctx.addIssue({ code: 'custom', path: ['VERIFY_CONCURRENCY'], message: 'must be lower than DATABASE_POOL_MAX' });
   }
   if (c.NODE_ENV !== 'production') return;
   if (!c.REDIS_URL) ctx.addIssue({ code: 'custom', path: ['REDIS_URL'], message: 'required in production' });
+  if (c.UPLOAD_VERIFIER === 'external' && !c.MEDIA_WORKER_TOKEN) {
+    ctx.addIssue({ code: 'custom', path: ['MEDIA_WORKER_TOKEN'], message: 'required in production when UPLOAD_VERIFIER=external' });
+  }
   if (c.UPLOAD_VERIFIER !== 'in_process') return;
   for (const k of ['S3_ENDPOINT', 'S3_ACCESS_KEY', 'S3_SECRET_KEY'] as const) {
     if (!c[k]) ctx.addIssue({ code: 'custom', path: [k], message: 'required in production when UPLOAD_VERIFIER=in_process' });
@@ -160,4 +206,14 @@ export function addressAllowed(list: BlockList, address: string | undefined): bo
   const family = isIP(addr);
   if (!family) return false;
   return list.check(addr, family === 4 ? 'ipv4' : 'ipv6');
+}
+
+/** حلقة مفاتيح الحقول المشفرة من البيئة: الحالي للكتابة والقراءة، والسابق (إن ضُبط) للقراءة فقط. */
+export function fieldKeyring(c: AppConfig): FieldKeyring {
+  return new FieldKeyring(
+    { version: c.FIELD_ENCRYPTION_KEY_VERSION, key: Buffer.from(c.FIELD_ENCRYPTION_KEY, 'base64') },
+    c.FIELD_ENCRYPTION_KEY_PREVIOUS
+      ? { version: c.FIELD_ENCRYPTION_KEY_PREVIOUS_VERSION!, key: Buffer.from(c.FIELD_ENCRYPTION_KEY_PREVIOUS, 'base64') }
+      : undefined,
+  );
 }

@@ -125,18 +125,7 @@ export class SessionService {
 
   /** يبطل كل جلسات المستخدم ورموز رفعه المفتوحة وأجهزة إشعاره (فقد الهاتف). */
   async revokeAll(tx: Executor, userId: string): Promise<void> {
-    await tx
-      .update(refreshTokens)
-      .set({ revokedAt: sql`now()` })
-      .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)));
-    await tx
-      .update(uploadSessions)
-      .set({ uploadTokenHash: null })
-      .where(and(eq(uploadSessions.createdBy, userId), sql`${uploadSessions.state} IN ('created', 'in_progress')`));
-    await tx
-      .update(pushDevices)
-      .set({ revokedAt: sql`now()` })
-      .where(and(eq(pushDevices.userId, userId), isNull(pushDevices.revokedAt)));
+    await revokeAllAccess(tx, userId);
   }
 
   async chainHead(
@@ -159,3 +148,19 @@ export class SessionService {
 }
 
 export const JWT_OPTIONS = { issuer: JWT_ISSUER, algorithm: 'HS256' as const };
+
+/** إبطال كل وصول الحساب: سلاسل التحديث، ورموز الرفع المفتوحة، وأجهزة الإشعار. يستعمله أمر CLI أيضًا (بلا Nest). */
+export async function revokeAllAccess(tx: Executor, userId: string): Promise<void> {
+  await tx
+    .update(refreshTokens)
+    .set({ revokedAt: sql`now()` })
+    .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)));
+  await tx
+    .update(uploadSessions)
+    .set({ uploadTokenHash: null })
+    .where(and(eq(uploadSessions.createdBy, userId), sql`${uploadSessions.state} IN ('created', 'in_progress')`));
+  await tx
+    .update(pushDevices)
+    .set({ revokedAt: sql`now()` })
+    .where(and(eq(pushDevices.userId, userId), isNull(pushDevices.revokedAt)));
+}

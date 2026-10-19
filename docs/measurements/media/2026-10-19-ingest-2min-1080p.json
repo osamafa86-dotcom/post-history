@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "media",
+  "test_name": "media-ingest-2min-1080p",
+  "started_at": "2026-10-19T20:29:41.536Z",
+  "ended_at": "2026-10-19T20:30:14.807Z",
+  "result": "partial",
+  "device": {
+    "platform": "server",
+    "model": "cloud container, 4 vCPU"
+  },
+  "upload_path": "n/a",
+  "file": {
+    "size_bytes": 244015015,
+    "duration_s": 120.022,
+    "bitrate_kbps": 16265,
+    "codec": "h264",
+    "vfr": false,
+    "hdr": false
+  },
+  "metrics": {
+    "probe_s": 0.454,
+    "sha256_and_fingerprint_s": 0.283,
+    "sha256_mb_per_s": 862.2,
+    "proxy_480p_s": 12.775,
+    "total_s": 13.512,
+    "realtime_factor": 8.88,
+    "proxy_size_bytes": 6736815,
+    "proxy_bitrate_kbps": 449,
+    "start_pts_us_source": 3500000,
+    "start_pts_us_proxy": 3500000,
+    "ffmpeg_version": "8.0.1",
+    "acceptance": "total_s < duration_s and proxy start_pts == source start_pts"
+  },
+  "notes": "ملف اصطناعي (testsrc2 مع ضجيج، H.264 بمعدل ~16 Mbps، AAC، start_pts = 3.5 ث) على حاوية سحابية بـ 4 أنوية افتراضية، لا على خادم الوسائط المعتمد. البصمة قيست من ملف محلي في ذاكرة الصفحات بعد كتابته مباشرة: هي سقف المعالج لا زمن القراءة من التخزين؛ في الخدمة يحدّها عرض النطاق إلى MinIO/R2. النسخة الخفيفة libx264 veryfast crf 28 بإطار مفتاحي كل ثانية مع -copyts. الأمر: python bench/run_bench.py داخل صورة workers/media. النتيجة partial: المعيار من وضع الأداة لا من جدول القبول، والقياس على ملف اصطناعي وعتاد غير معتمد؛ يُرفع إلى pass بقياس على خادم الوسائط وبقراءة من التخزين."
+}

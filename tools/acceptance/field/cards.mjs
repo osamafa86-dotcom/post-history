@@ -52,6 +52,8 @@ export const RULES = {
       if (!card.app_version) missing.push("app_version");
       if (!/^[0-9a-f]{64}$/.test(card.upload?.file_sha256 ?? "")) missing.push("upload.file_sha256");
       if (!num(card.upload?.part_size_bytes)) missing.push("upload.part_size_bytes");
+      // optional: the phone's own PATCH payload when it differs from the server's part size (iOS background sessions send 64 MiB or more)
+      if (card.upload?.request_bytes !== undefined && !num(card.upload.request_bytes)) missing.push("upload.request_bytes (a number, or leave it out)");
       for (const sc of this.SCENARIOS) {
         const s = card.scenarios?.[sc];
         if (!s) { missing.push(`scenarios.${sc}`); continue; }
@@ -63,12 +65,14 @@ export const RULES = {
     },
     judge(card) {
       const part = card.upload.part_size_bytes, reasons = [], metrics = {};
+      // the largest legitimate step back is one request in flight: the phone's request size when recorded, else the server part size
+      const request = card.upload.request_bytes ?? part;
       for (const sc of this.SCENARIOS) {
         const s = card.scenarios[sc];
-        // "resume from what arrived": the server offset after the restart may fall back by at most one part, never to zero
+        // "resume from what arrived": the server offset after the restart may fall back by at most one request, never to zero
         const regressed = s.offset_before_bytes - s.offset_after_resume_bytes;
         if (s.offset_before_bytes > 0 && s.offset_after_resume_bytes === 0) reasons.push(`${sc}: restarted from zero`);
-        else if (regressed > part) reasons.push(`${sc}: went back ${regressed} bytes, more than one part (${part})`);
+        else if (regressed > request) reasons.push(`${sc}: went back ${regressed} bytes, more than one request (${request})`);
         if (!s.completed) reasons.push(`${sc}: did not complete`);
         else if (s.server_sha256_match !== true) reasons.push(`${sc}: server SHA-256 differs`);
         if (s.interventions_after_restart > 0) reasons.push(`${sc}: ${s.interventions_after_restart} intervention(s) after the restart`);
@@ -77,7 +81,7 @@ export const RULES = {
       }
       if (card.scenarios.low_storage.free_storage_mb_at_start >= 1024) reasons.push(`low_storage: ${card.scenarios.low_storage.free_storage_mb_at_start} MB free is not under 1 GB`);
       return {
-        reasons, metrics: { platform: card.device.platform, vendor: card.device.vendor, app_version: card.app_version, part_size_bytes: part, ...metrics },
+        reasons, metrics: { platform: card.device.platform, vendor: card.device.vendor, app_version: card.app_version, part_size_bytes: part, request_bytes: request, ...metrics },
         platform: card.device.platform, file: { size_bytes: card.upload.file_size_bytes ?? 0 }, network: { profile: card.network?.type ?? "field" }, upload_path: card.upload.path ?? "tusd",
         okNote: "نجح هذا الجهاز بسيناريوهاته الأربعة؛ المعيار يحتاج جهاز iOS وأندرويد فعليين على الأقل، فهذه النتيجة جزئية للمعيار",
       };

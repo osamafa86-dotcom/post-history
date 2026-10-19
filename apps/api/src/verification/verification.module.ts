@@ -20,6 +20,6 @@ const unconfigured: ObjectStorage = {
     },
     VerificationWorker,
   ],
-  exports: [VerificationWorker],
+  exports: [VerificationWorker, OBJECT_STORAGE],
 })
 export class VerificationModule {}

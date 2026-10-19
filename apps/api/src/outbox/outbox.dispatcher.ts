@@ -1,11 +1,14 @@
 import { Inject, Injectable, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
 import { and, asc, eq, isNull, lte, sql } from 'drizzle-orm';
+import type Redis from 'ioredis';
 import type { Logger } from 'pino';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { LOGGER } from '../common/logger';
+import { REDIS } from '../common/redis.module';
 import { DB, type Database, type Tx } from '../database/database.module';
 import { fanOut } from '../notifications/fanout';
 import { outboxEvents } from '../database/schema/schema';
+import { appendMediaEvent, isMediaEvent } from './media-stream';
 
 export type OutboxRow = typeof outboxEvents.$inferSelect;
 
@@ -18,19 +21,25 @@ export interface OutboxPublisher {
 }
 export const OUTBOX_PUBLISHER = Symbol('OUTBOX_PUBLISHER');
 
-/** الناشر في التأسيس: إشعارات صندوق الوارد، ثم سطر سجل بمعرّف الحدث ونوعه فقط (لا الحمولة). */
+/**
+ * الناشر في التأسيس: إشعارات صندوق الوارد، وأحداث الاستلام إلى طابور عامل الوسائط حين يكون هو المُتحقق
+ * (UPLOAD_VERIFIER=external)، ثم سطر سجل بمعرّف الحدث ونوعه فقط (لا الحمولة).
+ */
 @Injectable()
 export class InboxOutboxPublisher implements OutboxPublisher {
   constructor(
     @Inject(LOGGER) private readonly logger: Logger,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(REDIS) private readonly redis: Redis | null,
   ) {}
   async publish(event: OutboxRow, tx: Tx): Promise<void> {
     const created = await fanOut(tx, event, {
       locale: this.config.NOTIFICATION_LOCALE,
       escalationSeconds: { urgent: this.config.ESCALATION_URGENT_SECONDS, important: this.config.ESCALATION_IMPORTANT_SECONDS },
     });
-    this.logger.debug({ event_id: event.id, type: event.type, notifications: created }, 'outbox event published');
+    const queued = this.config.UPLOAD_VERIFIER === 'external' && isMediaEvent(event);
+    if (queued) await appendMediaEvent(this.redis, event, this.config.MEDIA_STREAM_MAXLEN);
+    this.logger.debug({ event_id: event.id, type: event.type, notifications: created, media_queued: queued }, 'outbox event published');
   }
 }
 
