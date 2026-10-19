@@ -11,6 +11,7 @@ on:
       - "infra/compose/**"
       - "infra/proxy/**"
       - "infra/tusd/**"
+      - "infra/ingest/**"
       - ".github/workflows/netlab.yml"
   workflow_dispatch:
     inputs:
@@ -66,6 +67,20 @@ jobs:
           assert m["loss_mode"] == "netem", m["loss_mode"]
           assert "driver-error" not in m["events"], m["events"]
           print("netlab smoke ok:", {k: m[k] for k in ("loss_mode", "bytes_uploaded", "goodput_kbps", "resumes")})
+          EOF
+      # Which endpoint survives which block (ADR 0011): main vs a separate ingest name and address.
+      - name: Blocking simulation (DNS, IP, SNI) for the ingest domain
+        if: github.event_name == 'pull_request'
+        run: |
+          python3 tools/netlab/blocking.py --out "$RUNNER_TEMP/blocking.json"
+          python3 - "$RUNNER_TEMP/blocking.json" <<'EOF'
+          import json, sys
+          m = json.load(open(sys.argv[1]))["metrics"]
+          for k in ("baseline_all_ok", "main_blocked_by_each_main_block", "ingest_survives_each_main_block",
+                    "ingest_blocked_once_named_or_addressed"):
+              assert m[k] is True, (k, m[k])
+          assert m["ingest_shared_survives_ip_main"] is False, m["ingest_shared_survives_ip_main"]
+          print("blocking simulation ok")
           EOF
       - name: Measure
         if: github.event_name == 'workflow_dispatch'

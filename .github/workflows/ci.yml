@@ -154,6 +154,8 @@ jobs:
         run: infra/minio/check-media-policy.sh
       - name: Hook path end to end with the API (SEC-06)
         run: infra/compose/e2e-hooks.sh
+      - name: Ingest gate accepts only short attestation tokens bound to the session (ADR 0011)
+        run: infra/ingest/test-gate.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
@@ -168,7 +170,7 @@ jobs:
         run: infra/compose/smoke-media.sh
       - name: Tear down
         if: always()
-        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media down -v
+        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media down -v --remove-orphans
 
   media:
     name: media (probe, sha256, proxy on synthetic files with FFmpeg 8)
