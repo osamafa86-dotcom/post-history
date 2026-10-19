@@ -152,6 +152,16 @@ jobs:
         run: infra/compose/smoke.sh
       - name: Hook path end to end with the API (SEC-06)
         run: infra/compose/e2e-hooks.sh
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Concurrent creates with one upload token yield one upload (SEC-06)
+        run: |
+          (cd tools/acceptance && npm ci --no-audit --no-fund)
+          set -a; . infra/compose/.env; set +a
+          DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB" \
+          API_URL="http://127.0.0.1:$API_PORT/v1" TUS_URL="http://127.0.0.1:$TUSD_PORT/files/" \
+            node infra/compose/e2e-duplicate-create.mjs
       - name: Tear down
         if: always()
         run: docker compose -f infra/compose/docker-compose.yml --profile api down -v
