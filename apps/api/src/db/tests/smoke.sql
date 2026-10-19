@@ -279,6 +279,25 @@ INSERT INTO user_permissions (user_id, permission, granted_by, reason)
 VALUES ('00000000-0000-4000-8000-000000000012', 'sensitive_location:read', '00000000-0000-4000-8000-000000000012', 're-granted');
 SELECT pg_temp.assert((SELECT count(*) = 2 FROM user_permissions), 'history kept across revoke and re-grant');
 
+-- ---------- v0.1 (ADR 0010) ----------
+SELECT pg_temp.assert(
+  (SELECT row_version >= 2 FROM materials WHERE id = '00000000-0000-4000-8000-000000000101'),
+  'row_version bumps on every material write');
+SELECT pg_temp.expect_error($q$
+  UPDATE upload_sessions SET upload_token_expires_at = expires_at + interval '1 day' WHERE id = '00000000-0000-4000-8000-000000000201' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE users SET totp_pending_secret_enc = '\x01' WHERE id = '00000000-0000-4000-8000-000000000011' $q$, '23514');
+UPDATE users SET credential_reset_required = true, totp_pending_secret_enc = '\x01' WHERE id = '00000000-0000-4000-8000-000000000011';
+INSERT INTO recovery_requests (id, user_id, state, expires_at)
+VALUES ('00000000-0000-4000-8000-000000000901', '00000000-0000-4000-8000-000000000011', 'pending_approval', now() + interval '1 day');
+SELECT pg_temp.expect_error($q$
+  UPDATE recovery_requests SET reset_token_hash = sha256('t'::bytea), reset_token_expires_at = now() + interval '15 minutes'
+  WHERE id = '00000000-0000-4000-8000-000000000901' $q$, '23514');
+UPDATE recovery_requests SET state = 'approved', decided_at = now(), approved_by = '00000000-0000-4000-8000-000000000012',
+  verification_note = 'phone', reset_token_hash = sha256('t'::bytea), reset_token_expires_at = now() + interval '15 minutes'
+WHERE id = '00000000-0000-4000-8000-000000000901';
+UPDATE notifications SET recovery_request_id = '00000000-0000-4000-8000-000000000901';
+
 -- ---------- indexing policy (ADR 0002) ----------
 SELECT pg_temp.assert(
   NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexdef ILIKE '%USING gin%'),
