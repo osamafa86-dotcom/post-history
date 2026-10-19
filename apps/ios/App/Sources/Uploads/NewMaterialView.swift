@@ -96,7 +96,10 @@ struct NewMaterialView: View {
     /// النسخة الأصلية من PhotosUI تُنقل كملف (`FileRepresentation`) بلا إعادة ترميز.
     private func importPicked(_ item: PhotosPickerItem?) async {
         guard let item else { return }
-        if let movie = try? await item.loadTransferable(type: PickedFile.self) { importFile(movie.url) }
+        guard let picked = try? await item.loadTransferable(type: PickedFile.self) else { return }
+        importFile(picked.url)
+        // النسخة المؤقتة من Photos لا تبقى خارج سياسة الحذف المحلي.
+        try? FileManager.default.removeItem(at: picked.url)
     }
 
     private func importFile(_ url: URL) {

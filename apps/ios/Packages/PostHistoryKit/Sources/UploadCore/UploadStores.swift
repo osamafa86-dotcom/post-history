@@ -118,6 +118,12 @@ public final class KeychainUploadSecretStore: UploadSecretStore, @unchecked Send
         let status = SecItemDelete(query(id) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw UploadStoreError.keychain(status) }
     }
+
+    /// يحذف كل رموز الرفع (أول تشغيل بعد تثبيت جديد؛ المسح الطارئ لاحقًا).
+    public func removeAll() throws {
+        let status = SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service] as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw UploadStoreError.keychain(status) }
+    }
 }
 #endif
 

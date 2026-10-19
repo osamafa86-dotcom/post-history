@@ -5,9 +5,13 @@ import PostHistoryAPI
 /// خادم tus محاكى: يحتفظ بما وصل فعلًا، ويرد على كل PATCH حسب نص مكتوب مسبقًا (نجاح، قبول جزئي ثم انقطاع، خطأ، تعليق كأن التطبيق قُتل).
 final class FakeTransport: TusTransport, @unchecked Sendable {
     enum Behavior { case ok, partial(Int64), fail(TusError), hang }
+    /// قاعدة الإنشاء الواحد على الخادم: `pre-create` يحجز الجلسة، وأي إنشاء ثانٍ بالرمز نفسه يُرفض بـ 403.
+    enum CreateBehavior { case ok, lostResponse }
 
     let lock = NSLock()
     var script: [Behavior]
+    var createScript: [CreateBehavior] = []
+    var created = false
     var serverBytes = Data()
     var serverOffset: Int64 = 0
     var patches: [(offset: Int64, length: Int64)] = []
@@ -17,19 +21,31 @@ final class FakeTransport: TusTransport, @unchecked Sendable {
     var pendingKeys: [TusTaskKey] = []
     var headError: TusError?
     weak var delegate: TusTransportDelegate?
-    let uploadURL = URL(string: "https://ingest.example.invalid/files/abc123")!
+    var uploadURL = URL(string: "https://ingest.example.invalid/files/abc123")!
 
     init(script: [Behavior] = []) { self.script = script }
 
     func setDelegate(_ delegate: TusTransportDelegate?) async { lock.withLock { self.delegate = delegate } }
 
     func createUpload(_ request: TusCreateRequest) async throws -> URL {
-        lock.withLock { creates.append(request) }
-        return uploadURL
+        try lock.withLock {
+            creates.append(request)
+            if created { throw TusError.unauthorized }
+            created = true
+            uploadURL = request.endpoint.appendingPathComponent(request.metadata["upload_session_id"] ?? "abc123")
+            let b: CreateBehavior = createScript.isEmpty ? .ok : createScript.removeFirst()
+            if case .lostResponse = b { throw TusError.transport("reset") }
+            return uploadURL
+        }
     }
 
     func currentOffset(uploadURL: URL, token: String) async throws -> Int64 {
-        try lock.withLock { headCalls += 1; if let e = headError { throw e }; return serverOffset }
+        try lock.withLock {
+            headCalls += 1
+            if let e = headError { throw e }
+            guard created, uploadURL == self.uploadURL else { throw TusError.gone }
+            return serverOffset
+        }
     }
 
     func schedulePatch(_ request: TusPatchRequest) async throws {

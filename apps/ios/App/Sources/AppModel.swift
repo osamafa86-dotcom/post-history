@@ -18,6 +18,12 @@ final class AppModel: ObservableObject {
     let uploads: UploadQueueModel
 
     init(store: any TokenStore = KeychainTokenStore(), baseURL: String = AppConfiguration.apiBaseURL) {
+        // Keychain يبقى بعد حذف التطبيق: أول تشغيل بعد تثبيت جديد يمسح جلسة مستخدم سابق (العلامة تُحذف مع التطبيق).
+        if !UserDefaults.standard.bool(forKey: "hasLaunchedBefore") {
+            try? store.clear()
+            try? KeychainUploadSecretStore().removeAll()
+            UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
+        }
         // مسارات /auth/* بلا معترض كي لا يدخل التحديث في حلقة.
         let plain = PostHistoryAPIAPIConfiguration(basePath: baseURL)
         let auth = AuthSession(store: store, gateway: APIAuthGateway(configuration: plain))

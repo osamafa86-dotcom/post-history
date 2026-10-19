@@ -86,6 +86,8 @@ final class UploadEngineTests: XCTestCase {
         XCTAssertEqual(first.chunkFiles.count, 2, "window of two prepared chunks on disk")
 
         let second = Harness(name: "kill", store: first.sharedStore, secrets: first.sharedSecrets, dir: first.dir)
+        second.transport.created = true // the upload exists on the server across the relaunch
+        second.transport.uploadURL = first.transport.uploadURL
         second.transport.serverBytes = first.transport.serverBytes
         second.transport.serverOffset = 4 // the killed task never reached the server
         await second.engine.resumeAll()
@@ -103,6 +105,8 @@ final class UploadEngineTests: XCTestCase {
         _ = await first.engine.waitUntil(rec.id) { $0.inFlightOffset == 4 }
 
         let second = Harness(name: "bg", store: first.sharedStore, secrets: first.sharedSecrets, dir: first.dir)
+        second.transport.created = true // the upload exists on the server across the relaunch
+        second.transport.uploadURL = first.transport.uploadURL
         second.transport.serverBytes = first.transport.serverBytes
         second.transport.serverOffset = 4
         second.transport.activeKeys = [TusTaskKey(uploadId: rec.id, offset: 4)]
@@ -125,6 +129,8 @@ final class UploadEngineTests: XCTestCase {
         try FileManager.default.removeItem(at: first.chunksDir)
 
         let second = Harness(name: "reboot", store: first.sharedStore, secrets: first.sharedSecrets, dir: first.dir)
+        second.transport.created = true // the upload exists on the server across the relaunch
+        second.transport.uploadURL = first.transport.uploadURL
         second.transport.serverBytes = first.transport.serverBytes + first.bytes[4..<6]
         second.transport.serverOffset = 6 // the system delivered part of the chunk before the reboot
         await second.engine.resumeAll()
@@ -133,6 +139,20 @@ final class UploadEngineTests: XCTestCase {
         XCTAssertEqual(second.transport.patches.map(\.offset), [6])
         XCTAssertEqual(second.transport.patches.map(\.length), [4])
         XCTAssertEqual(second.transport.serverBytes, first.bytes)
+    }
+
+    func testLostCreateResponseResumesByHeadOnDeterministicURL() async throws {
+        // رد إنشاء tus ضاع بعد أن حجز الخادم الجلسة: الإنشاء الثاني يُرفض 403، فيُستأنف من HEAD على الرابط الحتمي لا الفشل كمنتهٍ.
+        let h = Harness(name: "lostcreate")
+        h.transport.createScript = [.lostResponse]
+        let rec = try await h.enqueue()
+        let done = await h.engine.waitUntil(rec.id) { $0.phase.isTerminal }
+        XCTAssertEqual(done?.phase, .verified(receiptNumber: "R-202610-000042"))
+        XCTAssertEqual(h.transport.creates.count, 2, "one retry, rejected by the server's single-create rule")
+        XCTAssertEqual(done?.tusUploadURL, URL(string: "https://ingest.example.invalid/files/\(h.api.sessionId.uuidString.lowercased())"))
+        XCTAssertEqual(h.transport.headCalls, 1)
+        XCTAssertEqual(h.transport.serverBytes, h.bytes)
+        XCTAssertEqual(h.api.createBodies.count, 1, "no second upload session")
     }
 
     func testGoneUploadFailsAsAbortedAndExpiredTokenAsExpired() async throws {

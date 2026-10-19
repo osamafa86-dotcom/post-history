@@ -175,9 +175,17 @@ public actor UploadEngine: TusTransportDelegate {
                     setPhase(&rec, .creatingUpload)
                 case .creatingUpload:
                     guard let remote = rec.remote else { setPhase(&rec, .creatingSession); continue }
-                    let url = try await transport.createUpload(TusCreateRequest(endpoint: remote.tusEndpoint, token: try token(rec.id), length: rec.sizeBytes, metadata: remote.tusMetadata))
-                    rec.tusUploadURL = url
-                    rec.confirmedOffset = 0
+                    let uploadToken = try token(rec.id)
+                    do {
+                        rec.tusUploadURL = try await transport.createUpload(TusCreateRequest(endpoint: remote.tusEndpoint, token: uploadToken, length: rec.sizeBytes, metadata: remote.tusMetadata))
+                        rec.confirmedOffset = 0
+                    } catch TusError.unauthorized {
+                        // ضاع رد الإنشاء (انقطاع أو قتل التطبيق بعد الإرسال): الخادم حجز الجلسة في pre-create ويرفض إنشاءً ثانيًا بالرمز نفسه.
+                        // الرابط حتمي (نقطة tus + معرّف الجلسة، لأن ChangeFileInfo.ID = معرّف الجلسة)، فيُسأل عنه HEAD ويُستأنف منه.
+                        let deterministic = Self.deterministicUploadURL(endpoint: remote.tusEndpoint, sessionId: remote.uploadSessionId)
+                        rec.confirmedOffset = try await transport.currentOffset(uploadURL: deterministic, token: uploadToken)
+                        rec.tusUploadURL = deterministic
+                    }
                     setPhase(&rec, .transferring)
                 case .transferring:
                     if rec.confirmedOffset >= rec.sizeBytes { setPhase(&rec, .completing); continue }
@@ -322,6 +330,11 @@ public actor UploadEngine: TusTransportDelegate {
     }
 
     private func emit(_ event: UploadEvent) { subscribers.values.forEach { $0.yield(event) } }
+
+    /// رابط رفع tus الذي يثبّته الخادم في `pre-create`: `<tus_endpoint><upload_session_id>`.
+    public static func deterministicUploadURL(endpoint: URL, sessionId: UUID) -> URL {
+        endpoint.appendingPathComponent(sessionId.uuidString.lowercased())
+    }
 
     static func failure(_ reason: UploadSession.FailureReason?) -> UploadFailure {
         switch reason {
