@@ -87,7 +87,7 @@ services:
       -s3-min-part-size=${TUSD_PART_SIZE_BYTES}
       -s3-disable-content-hashes=${TUSD_DISABLE_CONTENT_HASHES}
       -hooks-http-forward-headers=Authorization
-      -hooks-enabled-events=pre-create,post-finish
+      -hooks-enabled-events=pre-create,post-create,post-finish
       -hooks-http-retry=5
       -hooks-http-backoff=2s
       -show-greeting=false
@@ -95,6 +95,11 @@ services:
       ${TUSD_EXTRA_FLAGS}
     # No published port: reachable only through tusd-proxy. "hooks" is where the API listens for hooks;
     # tusd has a fixed address there so the API can allow /internal/* from it alone (INTERNAL_ALLOWED_CIDRS).
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/metrics"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
     networks:
       uploads: {}
       hooks:
@@ -102,9 +107,18 @@ services:
 
   tusd-proxy:
     image: nginx:1.28.3-alpine
-    depends_on: [tusd]
+    depends_on:
+      tusd:
+        condition: service_healthy
     volumes:
       - ../proxy/tusd.conf:/etc/nginx/conf.d/default.conf:ro
+    # Healthy only when a request crosses the proxy to tusd: GET /files/ is 405 from tusd
+    # (-disable-download), 502/504 while tusd is unreachable.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -S -q -O /dev/null http://127.0.0.1:8080/files/ 2>&1 | grep -q 'HTTP/1.1 405'"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
     ports:
       - "127.0.0.1:${TUSD_PORT}:8080"
     networks: [default, uploads]
@@ -137,6 +151,7 @@ services:
       INTERNAL_ALLOWED_CIDRS: ${INTERNAL_ALLOWED_CIDRS}
       TUSD_HOOK_SECRET: ${TUSD_HOOK_SECRET}
       TUSD_OBJECT_PREFIX: ${TUSD_OBJECT_PREFIX}
+      TUSD_POST_CREATE_HOOK: ${TUSD_POST_CREATE_HOOK}
       S3_BUCKET_UPLOADS: ${S3_BUCKET_UPLOADS}
       S3_ENDPOINT: ${S3_ENDPOINT}
       S3_REGION: ${S3_REGION}
@@ -168,3 +183,5 @@ networks:
     ipam:
       config:
         - subnet: 172.30.250.0/29  # fixed: INTERNAL_ALLOWED_CIDRS=172.30.250.2/32 depends on it
+          # Dynamic addresses (API, others) come from .4-.7 only, so nothing can take tusd's .2 first.
+          ip_range: 172.30.250.4/30

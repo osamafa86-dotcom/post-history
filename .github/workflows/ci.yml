@@ -92,6 +92,9 @@ jobs:
           cache: npm
           cache-dependency-path: apps/api/package-lock.json
       - run: npm ci
+      # Majors are held back in Dependabot until after the field trial: gate high-severity advisories here.
+      - name: Audit runtime dependencies (high and above)
+        run: npm audit --omit=dev --audit-level=high
       - name: Start MinIO (same image and digest as infra/compose)
         run: |
           image="$(sed -n 's/^ *image: \(pgsty\/minio:.*\)$/\1/p' ../../infra/compose/docker-compose.yml)"

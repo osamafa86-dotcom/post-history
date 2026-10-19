@@ -13,6 +13,11 @@ BASE="http://127.0.0.1:${TUSD_PORT}"
 
 fail() { echo "!! $*" >&2; exit 1; }
 
+# Healthchecks gate up --wait; still retry briefly so a slow first connection is not a failure.
+for _ in $(seq 1 15); do
+  curl -fsS -o /dev/null -X OPTIONS "$BASE/files/" && break
+  sleep 1
+done
 curl -fsS -o /dev/null -X OPTIONS "$BASE/files/" || fail "tusd not reachable through tusd-proxy"
 [ "$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/metrics")" = 404 ] || fail "/metrics exposed through proxy"
 bindings="$(docker inspect -f '{{json .HostConfig.PortBindings}}' "$("${COMPOSE[@]}" ps -q tusd)")"
@@ -25,7 +30,12 @@ code="$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/files/does-not-matter")"
 # No API on the hooks network yet: pre-create fails at transport level, the case where tusd echoes the hook URL.
 body="$(curl -sS -X POST -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 10' "$BASE/files/")"
 case "$body" in *"$TUSD_HOOK_SECRET"*) fail "hook token in client response" ;; esac
-"${COMPOSE[@]}" logs tusd | grep -q 'tusd-hooks/\[REDACTED\]' || fail "redaction marker missing from tusd log"
+# tusd's log reaches docker through the redaction filter asynchronously: poll instead of reading once.
+for _ in $(seq 1 30); do
+  "${COMPOSE[@]}" logs tusd | grep -q 'tusd-hooks/\[REDACTED\]' && break
+  sleep 1
+done
+"${COMPOSE[@]}" logs tusd | grep -q 'tusd-hooks/\[REDACTED\]' || fail "redaction marker missing from tusd log after 30s"
 if "${COMPOSE[@]}" logs tusd | grep -qF "$TUSD_HOOK_SECRET"; then fail "hook token in tusd log"; fi
 
 echo "compose smoke: ok"

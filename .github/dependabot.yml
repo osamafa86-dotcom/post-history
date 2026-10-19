@@ -1,4 +1,7 @@
 version: 2
+# Weekly, one grouped PR of minor+patch updates per directory. Major versions are ignored until after the
+# field trial (coordinator decision, 2026-10-19). Security updates stay on: they are a separate Dependabot
+# feature (repository settings) and are grouped apart from version updates.
 updates:
   - package-ecosystem: github-actions
     directory: /
@@ -6,7 +9,14 @@ updates:
       interval: weekly
     commit-message:
       prefix: "ci"
-  # No package.json exists yet; the globs pick up packages as they are added.
+    groups:
+      actions-minor-patch:
+        applies-to: version-updates
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+  # No package.json at the root; the globs pick up packages as they are added.
   - package-ecosystem: npm
     directories:
       - /
@@ -18,3 +28,13 @@ updates:
     open-pull-requests-limit: 10
     commit-message:
       prefix: "deps"
+    groups:
+      npm-minor-patch:
+        applies-to: version-updates
+        update-types: [minor, patch]
+      npm-security:
+        applies-to: security-updates
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

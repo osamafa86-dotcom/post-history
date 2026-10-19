@@ -7,7 +7,7 @@
 | الملف | الغرض |
 | --- | --- |
 | `scenarios/*.yaml` | السيناريوهات الثلاثة (`office`، `field-weak`، `field-switch`) |
-| `compose.netlab.yml` | طبقة فوق compose الأساسي: toxiproxy أمام `tusd-proxy`، وبديل خطّاف `api` على شبكة `hooks` |
+| `compose.netlab.yml` | طبقة فوق compose الأساسي: toxiproxy أمام `tusd-proxy`، وحاوية `netlab-loss` لفقد الحزم (netem أو iptables)، وبديل خطّاف `api` على شبكة `hooks` |
 | `hook_stub.py` | بديل نقطة الخطّاف (SEC-06) إلى أن يوجد الخادم: يقارن الرمز ويقبل كل رفع |
 | `netlab.py` | عميل tus يرفع عبر السيناريو ويكتب النتيجة بمخطط `contracts/schemas/measurement.json` |
 
@@ -31,9 +31,19 @@ python3 tools/netlab/netlab.py run --scenario office --size-mb 500 \
 - `resumes`: مرات الاستئناف عبر `HEAD` بعد فشل؛ `connection_failures`.
 - `checksum_match`: SHA-256 للأصل مقابل الكائن في MinIO (عبر `mc` في حاوية على شبكة compose؛ tusd يعمل بـ `-disable-download`).
 
+## معيار `field-network-upload` على مرحلتين (قرار المنسّق، 2026-10-19)
+
+1. **(أ) netlab في CI:** ملف 100 MB على `field-weak` بفقد netem (سير عمل `netlab` يدويًا بالقيم الافتراضية). المقياسان:
+   - `efficiency_vs_mathis` ≥ 0.70: الإنتاجية خلال وقت الاتصال (`goodput_connected_kbps`، بلا فترات الثقب الأسود) مقسومة على min(حد Mathis، سعة الرابط). حد Mathis = 1.22 × MSS ÷ (RTT × √p)، وهو نحو 86 kbit/s عند RTT 300 ms وفقد 30%.
+   - `bytes_lost_on_resume` = 0: كل استئناف يبدأ من آخر إزاحة أكّدها الخادم أو بعدها.
+
+   النتيجة `partial` إن تحقق الاثنان (`stage_a_ok: true`)، و`fail` إن لم يتحققا. الأداة لا تكتب `pass` أبدًا.
+2. **(ب) القياس اليدوي:** 1 GB على جهاز وشبكة فعليين في الأسبوع الخامس، وهو وحده الذي يعطي `pass`.
+
 ## حدود معروفة
 
-- toxiproxy لا يحاكي فقد الحزم: `field-weak` يُسجَّل بـ `loss_pct: 0` والهدف 30% في `notes`.
+- الفقد: `metrics.loss_mode` يقول كيف طُبِّق. `netem` مرجعي، و`iptables-statistic` (مضيف بلا `sch_netem`) يقلل أثر الفقد على TCP. تشغيل بفقد يُجرى وحده لأن الإعداد يخص الوسيط كله.
+- القياس المرجعي على مشغّل GitHub: سير عمل `netlab` يدويًا (`workflow_dispatch`)، والنتيجة artifact تُرفع إلى `docs/measurements/netlab/`.
 - القياس من عميل اصطناعي على الخادم نفسه، لا من هاتف.
 - toxiproxy يقرأ من العميل قبل أن يسلّم (مخزن داخلي)، فما «أرسله» العميل ليس ما وصل؛ الإزاحة الحقيقية من `HEAD` فقط. لذلك يجب أن تتجاوز مهلة العميل زمن الجزء على أبطأ ملف (1 MiB على 0.5 ميغابت/ث ≈ 17 ث).
 - إزالة سم `bandwidth` من وسيط فيه نقل جارٍ قد تعلق واجهة toxiproxy؛ التبديل يعيد إنشاء الوسيط بدل تعديل سمومه.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""netlab — رفع tus عبر شبكة محاكاة (toxiproxy) وقياس الجلسة.
+"""netlab — رفع tus عبر شبكة محاكاة (toxiproxy + فقد حزم بـ iptables) وقياس الجلسة.
 
 يسجّل لكل جلسة رفع: أطول نافذة اتصال متواصل، زمن كل جزء (طلب PATCH)، عدد الاستئنافات،
 ونجاح التطابق (SHA-256 للأصل مقابل الكائن في التخزين). يكتب النتيجة بمخطط
@@ -19,18 +19,23 @@ import os
 import platform
 import statistics
 import subprocess
+import sys
 import threading
 import time
 import urllib.parse
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-# معيار field-network-upload في الخطة: ملف 1 غيغابايت. ما دونه، أو دون محاكاة الفقد، لا يُسجَّل pass.
-CRITERION_MIN_BYTES = 1 << 30
+# معيار field-network-upload على مرحلتين (قرار المنسّق): (أ) netlab في CI بفقد netem على 100 MB:
+# كفاءة ≥ 70% من حد Mathis وصفر بايت مفقود عند الاستئناف، وتُسجَّل partial؛ (ب) 1 GB على جهاز وشبكة
+# فعليين هو وحده الذي يعطي pass. لذلك لا تكتب هذه الأداة pass أبدًا.
+STAGE_A_MIN_EFFICIENCY = 0.70
+MSS_BYTES = 1448
 TOXI_API = os.environ.get("NETLAB_TOXIPROXY_API", "http://127.0.0.1:8474")
 UPSTREAM = os.environ.get("NETLAB_UPSTREAM", "tusd-proxy:8080")
 COMPOSE_ENV = os.path.join(HERE, "..", "..", "infra", "compose", ".env")
 COMPOSE_NETWORK = os.environ.get("NETLAB_COMPOSE_NETWORK", "post-history_default")
+LOSS_CONTAINER = os.environ.get("NETLAB_LOSS_CONTAINER", "post-history-netlab-loss-1")
 MC_IMAGE = "pgsty/mc:RELEASE.2026-10-18T00-00-00Z@sha256:6ecdaec70bc5e8cf9d0e9a70c190f3beb1c83f11617ff4333f1fcd71ab1daf18"
 
 
@@ -52,9 +57,17 @@ def toxi(method, path, body=None):
     )
     # NETLAB الإداري محلي: لا وكيل HTTP.
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with opener.open(req, timeout=10) as r:
-        data = r.read()
-        return json.loads(data) if data else None
+    for attempt in range(3):
+        try:
+            with opener.open(req, timeout=15) as r:
+                data = r.read()
+                return json.loads(data) if data else None
+        except urllib.error.HTTPError:
+            raise
+        except OSError:
+            if attempt == 2:
+                raise
+            time.sleep(1)
 
 
 def kbps_to_toxi_rate(kbps):
@@ -86,6 +99,60 @@ def setup_proxy(sc, profile=None):
     return name
 
 
+def _sidecar(*cmd, check=True):
+    return subprocess.run(["docker", "exec", LOSS_CONTAINER, *cmd], capture_output=True, text=True, check=check)
+
+
+def set_loss(pct, delay_ms=0):
+    """فقد حزم حقيقي على مستوى IP في فضاء شبكة toxiproxy، ويعيد الوضع المستخدم.
+
+    netem (إن وُجدت sch_netem في النواة): تأخير + فقد على الساق toxiproxy → tusd-proxy وحدها، فيرى TCP
+    عليها زمن ذهاب وإياب حقيقيًا مع الفقد، وتبقى واجهة toxiproxy الإدارية سليمة. وإلا iptables statistic: فقد بلا تأخير على
+    الساق toxiproxy → tusd-proxy، وأثره على TCP أقل من الواقع. pct=0 يزيل الاثنين.
+    الإعداد يخص الوسيط كله، فسيناريو بفقد يُشغَّل وحده."""
+    _sidecar("tc", "qdisc", "del", "dev", "eth0", "root", check=False)
+    listed = _sidecar("iptables", "-w", "-S", "OUTPUT").stdout
+    for line in listed.splitlines():
+        if "netlab-loss" in line or "netlab-blackout" in line:
+            _sidecar("iptables", "-w", "-D", *line.split()[1:])
+    if pct <= 0:
+        return "none"
+    port = UPSTREAM.rsplit(":", 1)[1]
+    impair = ["netem", "loss", f"{pct}%"] + (["delay", f"{delay_ms}ms"] if delay_ms else [])
+    # netem only on the data leg (toxiproxy -> tusd-proxy): a 4-band prio whose priomap sends everything to
+    # band 1, netem on band 4, and a u32 filter for the upstream port. Without it the toxiproxy control API
+    # (8474) is impaired too and the scenario driver times out.
+    filtered = [
+        ["tc", "qdisc", "add", "dev", "eth0", "root", "handle", "1:", "prio", "bands", "4", "priomap"] + ["0"] * 16,
+        ["tc", "qdisc", "add", "dev", "eth0", "parent", "1:4", "handle", "40:"] + impair,
+        ["tc", "filter", "add", "dev", "eth0", "parent", "1:0", "protocol", "ip", "u32",
+         "match", "ip", "dport", port, "0xffff", "flowid", "1:4"],
+    ]
+    r = None
+    for cmd in filtered:
+        r = _sidecar(*cmd, check=False)
+        if r.returncode:
+            break
+    else:
+        return "netem"
+    _sidecar("tc", "qdisc", "del", "dev", "eth0", "root", check=False)
+    print(f"netem unavailable ({r.stderr.strip()}); falling back to iptables statistic", file=sys.stderr)
+    _sidecar("iptables", "-w", "-A", "OUTPUT", "-p", "tcp", "--dport", UPSTREAM.rsplit(":", 1)[1],
+             "-m", "comment", "--comment", "netlab-loss",
+             "-m", "statistic", "--mode", "random", "--probability", f"{pct / 100:.4f}", "-j", "DROP")
+    return "iptables-statistic"
+
+
+def set_blackout(on):
+    """يسقط كل ما يخرج إلى tusd-proxy (on) أو يزيل ذلك؛ أول قاعدة في OUTPUT فتسبق قاعدة الفقد."""
+    rule = ["OUTPUT", "-p", "tcp", "--dport", UPSTREAM.rsplit(":", 1)[1],
+            "-m", "comment", "--comment", "netlab-blackout", "-j", "DROP"]
+    if on:
+        _sidecar("iptables", "-w", "-I", *rule)
+    else:
+        _sidecar("iptables", "-w", "-D", *rule, check=False)
+
+
 class Driver(threading.Thread):
     """ينفّذ أحداث السيناريو (انقطاع، تبديل شبكة) على خط زمني من بداية الرفع."""
 
@@ -112,16 +179,14 @@ class Driver(threading.Thread):
     def _blackout(self, ev, t0):
         k = 1
         while self._wait_until(t0 + k * ev["every_s"] * self.scale):
-            # timeout=0: لا يمر شيء والاتصال يبقى معلقًا حتى إزالة السم (ثقب أسود لا قطع).
-            for stream in ("upstream", "downstream"):
-                toxi("POST", f"/proxies/{self.name_}/toxics",
-                     {"name": f"blackout_{stream}", "type": "timeout", "stream": stream,
-                      "attributes": {"timeout": 0}})
+            # ثقب أسود في النواة: إسقاط كل حزم الساق toxiproxy → tusd-proxy، فيتعلق الاتصال ولا يُقطع.
+            # لا عبر سموم toxiproxy: إضافتها على اتصال معلّق تحت الفقد تحجب واجهته الإدارية عشرات الثواني.
+            set_blackout(True)
             self.log.append((round(now() - t0, 1), "blackout-start"))
             if not self._wait_until(now() + ev["duration_s"] * self.scale):
+                set_blackout(False)
                 return
-            for stream in ("upstream", "downstream"):
-                toxi("DELETE", f"/proxies/{self.name_}/toxics/blackout_{stream}")
+            set_blackout(False)
             self.log.append((round(now() - t0, 1), "blackout-end"))
             k += 1
 
@@ -144,6 +209,8 @@ class Session:
         self.connected_since = None
         self.resumes = 0
         self.failures = 0
+        self.confirmed = 0       # آخر إزاحة أكّدها الخادم في رد PATCH
+        self.bytes_lost = 0      # بايتات مؤكدة عاد HEAD بإزاحة قبلها (يجب أن تبقى صفرًا)
 
     def ok(self, started):
         if self.connected_since is None:
@@ -215,6 +282,7 @@ def upload(path, size, host, chunk, deadline, s, timeout):
                     if st != 200:
                         raise IOError(f"head: HTTP {st}")
                     offset = int(h["upload-offset"])
+                    s.bytes_lost += max(0, s.confirmed - offset)
                     s.resumes += 1
                     need_head = False
                     s.ok(t)
@@ -228,6 +296,7 @@ def upload(path, size, host, chunk, deadline, s, timeout):
                 if st != 204:
                     raise IOError(f"patch: HTTP {st}")
                 offset = int(h["upload-offset"])
+                s.confirmed = offset
                 s.parts.append((now() - t, n, True))
                 s.ok(t)
                 backoff = 1
@@ -297,6 +366,10 @@ def run(a):
     src_hash = sha256_file(path)
 
     name = setup_proxy(sc)
+    loss_mode = set_loss(sc["loss_pct"], sc["latency_ms"])
+    if loss_mode == "netem":
+        # التأخير صار على مستوى الحزمة؛ سم latency في toxiproxy كان سيضاعفه.
+        toxi("DELETE", f"/proxies/{name}/toxics/lat")
     events = []
     driver = Driver(name, sc, events)
     driver.scale = a.event_scale
@@ -309,6 +382,7 @@ def run(a):
     driver.stop.set()
     ended_at = utc()
     toxi("DELETE", f"/proxies/{name}")
+    set_loss(0)
 
     complete = url is not None and offset == size
     match = complete and sha256_remote(url) == src_hash
@@ -326,6 +400,7 @@ def run(a):
         "client_timeout_s": a.timeout_s,
         "parts_ok": len(ok_parts),
         "parts_failed": sum(1 for p in s.parts if not p[2]),
+        "loss_mode": loss_mode,
     }
     if ok_parts:
         m.update({
@@ -336,16 +411,33 @@ def run(a):
         })
     m["events"] = ";".join(f"{t}s:{e}" for t, e in events) or "none"
 
-    emulated = sc["name"] != "field-weak"
-    meets_criterion = size >= CRITERION_MIN_BYTES and emulated
-    if complete and not match:
+    # الكفاءة: الإنتاجية خلال وقت الاتصال (بلا فترات الثقب الأسود) مقابل min(حد Mathis، سعة الرابط).
+    down_s, start = 0.0, None
+    for t, e in events:
+        if e == "blackout-start":
+            start = t
+        elif e == "blackout-end" and start is not None:
+            down_s, start = down_s + t - start, None
+    if start is not None:
+        down_s += max(0.0, elapsed - start)
+    connected_s = max(1e-9, elapsed - down_s)
+    m["bytes_lost_on_resume"] = s.bytes_lost
+    m["goodput_connected_kbps"] = round(offset * 8 / 1000 / connected_s, 1)
+    stage_a = None
+    if sc["loss_pct"] and sc["latency_ms"]:
+        mathis = 1.22 * MSS_BYTES * 8 / (sc["latency_ms"] / 1000 * (sc["loss_pct"] / 100) ** 0.5) / 1000
+        capacity = min(mathis, sc["uplink_kbps"])
+        m["mathis_limit_kbps"] = round(mathis, 1)
+        m["efficiency_vs_mathis"] = round(m["goodput_connected_kbps"] / capacity, 3)
+        if loss_mode == "netem":
+            stage_a = m["efficiency_vs_mathis"] >= STAGE_A_MIN_EFFICIENCY and s.bytes_lost == 0
+            m["stage_a_ok"] = stage_a
+    if (complete and not match) or s.bytes_lost or stage_a is False:
         result = "fail"
-    elif match and meets_criterion:
-        result = "pass"
     else:
         result = "partial"
     network = {"profile": sc["name"], "uplink_kbps": sc["uplink_kbps"],
-               "loss_pct": sc["loss_pct"] if emulated else 0}
+               "loss_pct": sc["loss_pct"]}
     if sc["events"]:
         network["disconnect_every_s"] = sc["events"][0]["every_s"]
     network["longest_connected_window_s"] = m["longest_connected_window_s"]
@@ -366,9 +458,12 @@ def run(a):
         "metrics": m,
         "notes": (f"toxiproxy 2.12.0 -> nginx tusd-proxy -> tusd v2.10.1 -> MinIO (local compose). "
                   f"Client: tools/netlab/netlab.py, time box {a.max_seconds}s, event scale {a.event_scale}. "
-                  + ("" if emulated else f"loss_pct target {sc['loss_pct']} not emulated by toxiproxy (ADR 0005). ")
-                  + ("" if size >= CRITERION_MIN_BYTES else
-                     f"partial: file below the {CRITERION_MIN_BYTES >> 20} MiB criterion size. ")
+                  + {"netem": f"loss {sc['loss_pct']}% + delay {sc['latency_ms']}ms via tc netem in toxiproxy's netns. ",
+                     "iptables-statistic": f"loss {sc['loss_pct']}% via iptables statistic, no packet delay "
+                                           "(host lacks sch_netem): TCP impact understated (ADR 0005). ",
+                     "none": ""}[loss_mode]
+                  + "netlab never records pass: field-network-upload stage (b) is 1 GB on a real device and network "
+                    f"(stage (a): efficiency >= {STAGE_A_MIN_EFFICIENCY:.0%} of Mathis, zero bytes lost on resume, netem). "
                   + "Connected window = client-observed time from first successful request to next failure."),
     }
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)

@@ -1,0 +1,83 @@
+name: netlab
+
+# GitHub-hosted Ubuntu runners have sch_netem, unlike some dev hosts: real packet delay + loss (ADR 0005).
+# - pull_request: short field-weak smoke that must run in netem mode.
+# - workflow_dispatch: field-network-upload stage (a) measurement (100 MB, netem); the result JSON is an
+#   artifact to commit to docs/measurements/netlab/. Recorded partial: stage (b) is 1 GB on a real device.
+on:
+  pull_request:
+    paths:
+      - "tools/netlab/**"
+      - "infra/compose/**"
+      - "infra/proxy/**"
+      - "infra/tusd/**"
+      - ".github/workflows/netlab.yml"
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: office | field-weak | field-switch
+        default: field-weak
+      size_mb:
+        description: field-network-upload stage (a) is 100 MB; stage (b) (1 GB) is on a real device
+        default: "100"
+      max_seconds:
+        description: time box (GitHub job limit is 6h)
+        default: "19800"
+
+permissions:
+  contents: read
+
+jobs:
+  netlab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      NO_PROXY: 127.0.0.1,localhost
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Containers cannot load kernel modules: sch_netem must be loaded on the runner itself.
+      - name: Load sch_netem
+        run: |
+          sudo modprobe sch_netem || {
+            sudo apt-get update -q
+            sudo apt-get install -y -q "linux-modules-extra-$(uname -r)"
+            sudo modprobe sch_netem
+          }
+          lsmod | grep sch_netem
+      - name: Start compose with the netlab overlay
+        run: |
+          cp infra/compose/.env.example infra/compose/.env
+          sed -i "s/^TUSD_HOOK_SECRET=.*/TUSD_HOOK_SECRET=$(openssl rand -hex 32)/" infra/compose/.env
+          docker compose -f infra/compose/docker-compose.yml -f tools/netlab/compose.netlab.yml up -d --wait
+      - name: Smoke (field-weak, netem required)
+        if: github.event_name == 'pull_request'
+        run: |
+          python3 tools/netlab/netlab.py run --scenario field-weak --size-mb 4 --max-seconds 240 \
+            --workdir "$RUNNER_TEMP" --out "$RUNNER_TEMP/netlab.json"
+          python3 - "$RUNNER_TEMP/netlab.json" <<'EOF'
+          import json, sys
+          m = json.load(open(sys.argv[1]))["metrics"]
+          # At 30% loss + 300 ms a single 1 MiB part may not finish in 4 min: only the mode is asserted.
+          assert m["loss_mode"] == "netem", m["loss_mode"]
+          assert "driver-error" not in m["events"], m["events"]
+          print("netlab smoke ok:", {k: m[k] for k in ("loss_mode", "bytes_uploaded", "goodput_kbps", "resumes")})
+          EOF
+      - name: Measure
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SCENARIO: ${{ inputs.scenario }}
+          SIZE_MB: ${{ inputs.size_mb }}
+          MAX_SECONDS: ${{ inputs.max_seconds }}
+        run: |
+          python3 tools/netlab/netlab.py run --scenario "$SCENARIO" --size-mb "$SIZE_MB" \
+            --max-seconds "$MAX_SECONDS" --workdir "$RUNNER_TEMP" \
+            --out "$RUNNER_TEMP/out/$(date -u +%F)-tusd-$SCENARIO-${SIZE_MB}mb-gha.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: netlab-result
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: ignore
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/compose/docker-compose.yml -f tools/netlab/compose.netlab.yml down -v
