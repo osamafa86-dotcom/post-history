@@ -33,7 +33,7 @@ npm run db:pull              # بعد كل ترحيل مدمج: يعيد است�
 ```
 
 المتغيرات في `.env.example`. الهيكل: `identity/` (الجلسات، SEC-02؛ `principal.ts` الأدوار والنطاقات و`@Roles`)، `forms/` (الإصدارات والتحقق المشترك من الحقول الديناميكية)، `materials/` (النطاق في الاستعلام، جدول الانتقالات، الحجب)، `notifications/` (التوزيع من Outbox إلى صندوق الوارد، القوالب في `messages.ts`، read/ack)، `events/` (`GET /events`)، `verification/` (SHA-256 على الخادم بتوازٍ `VERIFY_CONCURRENCY` في مجمّع خيوط `hash-pool.ts`، و`recordVerification` لعامل الوسائط)، `push-devices/`، `permissions/`، `identity/account.service.ts` (الجلسات والاستعادة بقاعدة تسلسل الأدوار)، `uploads/uploads.service.ts`، `notifications/escalation.worker.ts`، `idempotency/`، `outbox/` (`writeOutboxEvent(tx, …)`
-يقبل معاملة فقط + المُرسل)، `uploads/` (خطّافات tusd، SEC-06؛ `upload-reconciler.ts` تسوية ما ضاع post-finish له)، `cli/` (أوامر التشغيل: `approve-admin-recovery` مخرج الطوارئ)، `common/contract.ts` (التحقق من الأجسام بمخططات العقد نفسها)، `common/crypto.ts` (`FieldKeyring`: الحقول المشفرة بإصدار مفتاح).
+يقبل معاملة فقط + المُرسل)، `uploads/` (خطّافات tusd، SEC-06؛ `upload-reconciler.ts` تسوية ما ضاع post-finish له)، `cli/` (أوامر التشغيل: `approve-admin-recovery` مخرج الطوارئ، `reencrypt-fields` بعد تدوير مفتاح الحقول)، `common/contract.ts` (التحقق من الأجسام بمخططات العقد نفسها)، `common/crypto.ts` (`FieldKeyring`: الحقول المشفرة بإصدار مفتاح).
 القرارات في ADR 0005.
 
 ## الاختبار

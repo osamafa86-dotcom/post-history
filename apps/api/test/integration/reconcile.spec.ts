@@ -89,6 +89,30 @@ describe('upload reconciliation (in_progress sessions whose post-finish was lost
     expect((await session(fresh.id)).state).toBe('in_progress');
   });
 
+  it('racing a late post-finish never receives the upload twice', async () => {
+    const postFinish = (id: string) =>
+      request(h.app.getHttpServer())
+        .post(`/internal/tusd-hooks/${h.config.TUSD_HOOK_SECRET}`)
+        .send({
+          Type: 'post-finish',
+          Event: {
+            Upload: { ID: id, Size: 1000, Offset: 1000, MetaData: { upload_session_id: id }, Storage: { Type: 's3store', Bucket: 'uploads', Key: `tus/${id}` } },
+            HTTPRequest: { Method: 'PATCH', URI: `/files/${id}`, Header: {} },
+          },
+        });
+    for (let round = 0; round < 8; round++) {
+      const s = await stale();
+      storage.keys.add(`tus/${s.id}`);
+      // الترتيب يتبدل بين الجولات: مرة تبدأ المكنسة ومرة الخطّاف
+      const [first, second] = round % 2 ? [() => postFinish(s.id).expect(200), () => reconciler.reconcileBatch(500)] : [() => reconciler.reconcileBatch(500), () => postFinish(s.id).expect(200)];
+      await Promise.all([first(), second()]);
+      expect((await session(s.id)).state).toBe('completed');
+      expect(await events(s.id)).toEqual(['upload.original_received']);
+      const { rows } = await h.pool.query(`SELECT count(*)::int AS n FROM material_transitions WHERE material_id = $1 AND to_state = 'original_received'`, [s.materialId]);
+      expect(rows[0].n).toBe(1);
+    }
+  });
+
   it('a storage outage changes nothing and does not throw', async () => {
     const s = await stale();
     storage.keys.add(`tus/${s.id}`);
