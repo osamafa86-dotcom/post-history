@@ -18,3 +18,5 @@ rules:
   path-params-defined: error
   spec-strict-refs: off
   security-defined: error
+  # يتعثر على `required` داخل if/then/else التي لا تكرر properties الأصل؛ ajv في الوضع الصارم يتحقق منها فعلًا
+  no-required-schema-properties-undefined: off

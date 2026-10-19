@@ -50,12 +50,15 @@ CREATE TABLE refresh_tokens (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id         uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   token_hash      bytea NOT NULL UNIQUE,          -- sha256 للرمز؛ الرمز نفسه لا يُخزَّن
-  installation_id uuid,
+  installation_id uuid,                           -- معرّف التثبيت الذي ولّده التطبيق؛ ليس معرّف جهاز
+  platform        text,
   created_at      timestamptz NOT NULL DEFAULT now(),
+  last_seen_at    timestamptz,
   expires_at      timestamptz NOT NULL,
   revoked_at      timestamptz,
   replaced_by     uuid REFERENCES refresh_tokens (id),
-  CONSTRAINT refresh_tokens_hash_len CHECK (octet_length(token_hash) = 32)
+  CONSTRAINT refresh_tokens_hash_len CHECK (octet_length(token_hash) = 32),
+  CONSTRAINT refresh_tokens_platform_check CHECK (platform IS NULL OR platform IN ('ios', 'android', 'web'))
 );
 CREATE INDEX refresh_tokens_user_active_idx ON refresh_tokens (user_id) WHERE revoked_at IS NULL;
 

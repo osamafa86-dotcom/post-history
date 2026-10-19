@@ -170,6 +170,18 @@ SELECT pg_temp.expect_error($q$
 SELECT pg_temp.expect_error($q$
   INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
   VALUES ('material.deleted', 'material', '00000000-0000-4000-8000-000000000101', 'material.deleted:x', '{}') $q$, '23514');
+-- القائمة البيضاء: مفتاح خارجها (عنوان المادة) مرفوض حتى لو لم يكن في قائمة الممنوعات الصريحة
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('material.created', 'material', '00000000-0000-4000-8000-000000000101', 'material.created:wl-test',
+          '{"material_id": "00000000-0000-4000-8000-000000000101", "priority": "normal", "title": "اسم يكشف الحدث"}') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('notification.escalated', 'notification', '00000000-0000-4000-8000-000000000101', 'notification.escalated:wl-test',
+          '{"notification_id": "00000000-0000-4000-8000-000000000101", "escalation_level": 1, "source_name": "x"}') $q$, '23514');
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('upload.verified', 'upload', '00000000-0000-4000-8000-000000000201', 'upload.verified:00000000-0000-4000-8000-000000000201',
+        '{"material_id": "00000000-0000-4000-8000-000000000101", "upload_session_id": "00000000-0000-4000-8000-000000000201", "kind": "original", "receipt_number": "R-202610-000001"}');
 SELECT pg_temp.expect_error($q$
   INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
   VALUES ('material.created', 'material', '00000000-0000-4000-8000-000000000101', 'short', '{}') $q$, '23514');
@@ -187,6 +199,16 @@ UPDATE notifications SET state = 'acknowledged', read_at = now(), acknowledged_a
 INSERT INTO notification_deliveries (notification_id, channel, status) SELECT id, 'apns', 'failed' FROM notifications;
 INSERT INTO notification_deliveries (notification_id, channel, status) SELECT id, 'in_app', 'delivered' FROM notifications;
 SELECT pg_temp.expect_error($q$ INSERT INTO notification_deliveries (notification_id, channel) SELECT id, 'pigeon' FROM notifications $q$, '23514');
+
+-- ---------- sessions (refresh tokens) ----------
+INSERT INTO refresh_tokens (user_id, token_hash, installation_id, platform, expires_at, last_seen_at)
+VALUES ('00000000-0000-4000-8000-000000000011', sha256('rt1'::bytea), gen_random_uuid(), 'ios', now() + interval '30 days', now());
+SELECT pg_temp.expect_error($q$
+  INSERT INTO refresh_tokens (user_id, token_hash, platform, expires_at)
+  VALUES ('00000000-0000-4000-8000-000000000011', sha256('rt2'::bytea), 'blackberry', now() + interval '1 day') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+  VALUES ('00000000-0000-4000-8000-000000000011', sha256('rt1'::bytea), now() + interval '1 day') $q$, '23505');
 
 -- ---------- idempotency keys ----------
 INSERT INTO idempotency_keys (user_id, key, request_fingerprint, state, response_status, response_body)

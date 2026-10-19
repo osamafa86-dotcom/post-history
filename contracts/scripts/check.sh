@@ -11,7 +11,13 @@ AJV_COMMON=(--spec=draft2020 -c ajv-formats --allow-union-types)
 failures=0
 
 echo "== redocly lint (warnings are errors)"
-npx -y @redocly/cli@latest lint --config contracts/redocly.yaml contracts/openapi.yaml
+lint_out="$(npx -y @redocly/cli@latest lint --config contracts/redocly.yaml contracts/openapi.yaml 2>&1)" || { printf '%s\n' "$lint_out"; exit 1; }
+printf '%s\n' "$lint_out" | tail -n 3
+if printf '%s\n' "$lint_out" | grep -qE 'You have [0-9]+ warning'; then
+  printf '%s\n' "$lint_out"
+  echo "!! redocly warnings are not allowed (contracts/redocly.yaml)"
+  exit 1
+fi
 
 for schema in contracts/schemas/*.json; do
   name="$(basename "$schema" .json)"

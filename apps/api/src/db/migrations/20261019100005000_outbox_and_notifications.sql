@@ -2,6 +2,38 @@
 -- Outbox: الحدث يُكتب في معاملة الحفظ نفسها؛ المُرسل يقرأ بـ FOR UPDATE SKIP LOCKED ويعلّم published_at.
 -- الإشعارات تبقى في صندوق الوارد حتى لو فشلت قناة الهاتف؛ حالة التسليم لكل قناة في جدول مستقل.
 
+-- القائمة البيضاء لمفاتيح حمولة كل نوع حدث (ADR SEC-03)؛ تطابق allOf في contracts/schemas/outbox-event.json.
+-- أي مفتاح خارجها يُرفض، فلا تدخل أسماء ولا عناوين ولا إحداثيات ولا معرّفات أجهزة إلى Outbox ومنه إلى القنوات.
+CREATE FUNCTION outbox_payload_allowed_keys(event_type text) RETURNS text[]
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT CASE
+    WHEN event_type IN ('material.created', 'material.urgent_received', 'material.updated', 'material.version_created',
+                        'material.acknowledged', 'material.change_requested', 'material.accepted_for_production',
+                        'material.reserved', 'material.released', 'material.contributors_set', 'material.published')
+      THEN ARRAY['material_id', 'priority', 'office_id', 'material_version', 'editorial_state', 'technical_state',
+                 'rights_state', 'reserved_by', 'note_timecode_ms']
+    WHEN event_type IN ('material.technical_transition', 'material.editorial_transition', 'material.rights_transition')
+      THEN ARRAY['material_id', 'priority', 'office_id', 'track', 'from', 'to', 'note_timecode_ms']
+    WHEN event_type IN ('upload.started', 'upload.proxy_received', 'upload.original_received', 'upload.verified',
+                        'upload.deduplicated', 'upload.failed')
+      THEN ARRAY['material_id', 'upload_session_id', 'file_id', 'kind', 'priority', 'receipt_number', 'failure_reason',
+                 'duplicate_of_file_id']
+    WHEN event_type = 'form.published'          THEN ARRAY['version']
+    WHEN event_type = 'ai.draft_ready'          THEN ARRAY['material_id', 'job_id', 'route']
+    WHEN event_type = 'notification.escalated'  THEN ARRAY['notification_id', 'material_id', 'priority', 'escalation_level', 'escalated_to']
+    WHEN event_type IN ('auth.recovery_requested', 'auth.recovery_approved') THEN ARRAY['recovery_request_id', 'office_id']
+    ELSE ARRAY[]::text[]
+  END
+$$;
+
+CREATE FUNCTION outbox_payload_is_whitelisted(event_type text, payload jsonb) RETURNS boolean
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT jsonb_typeof(payload) = 'object'
+     AND NOT EXISTS (
+       SELECT 1 FROM jsonb_object_keys(payload) AS k
+       WHERE NOT (k = ANY (outbox_payload_allowed_keys(event_type))))
+$$;
+
 CREATE TABLE outbox_events (
   id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   type            text NOT NULL,
@@ -28,8 +60,8 @@ CREATE TABLE outbox_events (
   CONSTRAINT outbox_events_idempotency_key_len CHECK (char_length(idempotency_key) BETWEEN 8 AND 200),
   CONSTRAINT outbox_events_idempotency_key_key UNIQUE (idempotency_key),
   CONSTRAINT outbox_events_payload_is_object CHECK (jsonb_typeof(payload) = 'object'),
-  -- الحمولة قد تصل إلى قنوات خارجية: لا إحداثيات ولا معرّفات أجهزة ولا رموز دفع
-  CONSTRAINT outbox_events_payload_no_pii CHECK (NOT (payload ?| ARRAY['gps', 'lat', 'lng', 'device_id', 'push_token'])),
+  -- الحمولة قد تصل إلى قنوات خارجية: مفاتيح القائمة البيضاء لنوع الحدث فقط (تشمل منع gps/device_id/push_token ضمنًا)
+  CONSTRAINT outbox_events_payload_whitelisted CHECK (outbox_payload_is_whitelisted(type, payload)),
   CONSTRAINT outbox_events_attempts_nonneg CHECK (attempts >= 0)
 );
 -- طابور المُرسل: ما لم يُنشر بعد، بترتيب الوصول
@@ -92,3 +124,5 @@ CREATE TRIGGER notification_deliveries_set_updated_at BEFORE UPDATE ON notificat
 DROP TABLE notification_deliveries;
 DROP TABLE notifications;
 DROP TABLE outbox_events;
+DROP FUNCTION outbox_payload_is_whitelisted(text, jsonb);
+DROP FUNCTION outbox_payload_allowed_keys(text);

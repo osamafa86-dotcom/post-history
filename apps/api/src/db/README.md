@@ -35,7 +35,7 @@ DATABASE_URL=postgres://posthistory:<password>@localhost:5432/posthistory_test a
 8. **حصص المساهمين = 100.00** قيد مؤجل (`DEFERRABLE INITIALLY DEFERRED`) حتى يمر الاستبدال الكامل داخل معاملة واحدة. الخادم يحوّل `23514` باسم القيد `material_contributors_sum_100` إلى `422 shares_not_100`.
 9. **رقم الإيصال** `R-YYYYMM-NNNNNN` يسنده محفّز عند تحوّل ملف `original` إلى `verified` ولا يتغير بعدها.
 10. **سجل التدقيق** إلحاقي بسلسلة تجزئة: لا UPDATE ولا DELETE ولا TRUNCATE (محفّزات ترفع `42501`).
-11. **لا بيانات كاشفة في الحمولات:** قيد `outbox_events_payload_no_pii` يرفض مفاتيح `gps`/`lat`/`lng`/`device_id`/`push_token`؛ الإحداثيات في `materials.gps_enc` مشفرة على مستوى الحقل بمفتاح التطبيق.
+11. **لا بيانات كاشفة في الحمولات:** قيد `outbox_events_payload_whitelisted` يرفض أي مفتاح خارج القائمة البيضاء لنوع الحدث (`outbox_payload_allowed_keys`، تطابق `allOf` في `contracts/schemas/outbox-event.json`؛ ADR SEC-03). الإحداثيات في `materials.gps_enc` مشفرة على مستوى الحقل بمفتاح التطبيق. حجب حقول `sensitive`/`location` من `dynamic_fields` في الاستجابات مسؤولية طبقة الاستعلام في الخادم بحسب `x-pii-roles` في العقد.
 12. **الأسرار** مُجزَّأة (`*_hash`، sha256 أو argon2id) أو مشفرة (`*_enc`) ولا تُخزَّن خامًا.
 
 ## ترحيل جديد

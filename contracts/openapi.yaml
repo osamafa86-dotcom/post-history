@@ -27,6 +27,18 @@ info:
     - **لا بيانات كاشفة:** الإحداثيات الدقيقة (`gps`) تُكتب ولا تُقرأ من هذه الواجهة، وتُخزَّن مشفرة.
       حمولات الإشعارات والأحداث تحمل رقم المادة وحالتها فقط.
     - **الإصدار في المسار** (`/v1`). كسر التوافق يعني `/v2`، لا تعديل صامت.
+    - **الأدوار على كل مسار (`x-roles`):** كل عملية تحمل قائمة الأدوار المسموح لها؛ `authenticated` = أي
+      دور بجلسة صالحة، والقائمة الفارغة = بلا مصادقة. النطاق يُطبَّق في طبقة الاستعلام: المراسل يرى
+      مواده، والمشرف مواد مراسلي نطاقه (مكتب أو محافظة)، والإنتاج المواد المقبولة للإنتاج،
+      ورئيس التحرير ومدير النظام ومسؤول الحقوق كل المواد. ما خارج النطاق يعود `404`.
+    - **قاعدة الحجب (ADR SEC-03):** قيم `dynamic_fields` التي حقلها في إصدار النموذج موسوم `sensitive`
+      أو من نوع `location` تُحذف من كل استجابة (المفتاح غائب ويُذكر في `redacted_field_keys`) إلا
+      للأدوار في `x-pii-roles` أدناه، ولا تدخل أي إشعار أو حدث أو تصدير أو قناة خارجية.
+      الإحداثيات `gps` لا تعود لأحد من هذه الواجهة.
+    - **خطّافات tusd داخلية (ADR SEC-06):** تصل إلى `/internal/tusd-hooks/{hook_token}` خارج `/v1`،
+      معزولة شبكيًا وبرمز من البيئة؛ العام لا يرى هذه النقطة.
+
+    ## الأخطاء
 
     ## الأخطاء
 
@@ -35,6 +47,10 @@ info:
 servers:
   - url: https://api.example.invalid/v1
     description: يُستبدل بنطاق الشبكة عند النشر
+
+# الأدوار المخوّلة برؤية الحقول الحساسة وحقول الموقع في dynamic_fields (مشرف نطاق المادة فقط).
+# المكان الوحيد الذي تُعدَّل فيه القائمة؛ القرار البشري النهائي معلّق (ADR SEC-03).
+x-pii-roles: [system_admin, editor_in_chief, supervisor]
 
 tags:
   - name: auth
@@ -57,8 +73,10 @@ paths:
       summary: دخول بكلمة المرور ثم رمز TOTP
       description: >-
         المصادقة الثنائية إلزامية لكل الطاقم بعد التفعيل؛ غياب `totp_code` لحساب مفعَّل يعيد
-        `401 totp_required`. الجلسة تحمل رمز وصول قصير العمر ورمز تحديث.
+        `401 totp_required`. البريد غير الموجود وكلمة المرور الخاطئة يعيدان `401 unauthorized` نفسه
+        بالرسالة نفسها. الجلسة تحمل رمز وصول قصير العمر ورمز تحديث.
       operationId: login
+      x-roles: []
       security: []
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -83,6 +101,7 @@ paths:
       summary: تحديث الجلسة برمز التحديث
       description: يبطل رمز التحديث المستخدم ويصدر زوجًا جديدًا (تدوير). الرمز المبطَل مسبقًا يعيد `401`.
       operationId: refreshSession
+      x-roles: []
       security: []
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -109,6 +128,7 @@ paths:
       tags: [auth]
       summary: إنهاء الجلسة الحالية أو كل جلسات المستخدم (عند فقد الهاتف)
       operationId: logout
+      x-roles: [authenticated]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -131,6 +151,7 @@ paths:
       tags: [auth]
       summary: المستخدم الحالي وأدواره ونطاقاته
       operationId: getMe
+      x-roles: [authenticated]
       responses:
         "200":
           description: المستخدم
@@ -139,14 +160,62 @@ paths:
               schema: { $ref: "#/components/schemas/Me" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /auth/sessions:
+    get:
+      tags: [auth]
+      summary: جلسات المستخدم الحالي على كل أجهزته
+      description: لعرض «أين أنا مسجَّل» وإبطال ما ليس له؛ لا معرّفات أجهزة، فقط معرّف التثبيت الذي ولّده التطبيق.
+      operationId: listSessions
+      x-roles: [authenticated]
+      responses:
+        "200":
+          description: الجلسات النشطة
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/UserSession" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/sessions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: معرّف الجلسة
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [auth]
+      summary: إبطال جلسة عن بُعد (فقد الهاتف)
+      description: >-
+        يبطل رمز التحديث ويُسقط رمز الوصول المرتبط عند أول طلب تالٍ (الإبطال يُفحص عند كل طلب).
+        المستخدم يبطل جلساته، ومشرف النطاق أو مدير النظام يبطل جلسات مراسل في نطاقه بعد بلاغ فقد الهاتف؛
+        يُسجَّل في سجل التدقيق.
+      operationId: revokeSession
+      x-roles: [authenticated, supervisor, system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "204": { description: أُبطلت }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /auth/recovery:
     post:
       tags: [auth]
       summary: بدء استعادة الحساب عند فقد الهاتف (رمز احتياطي ثم اعتماد المشرف)
       description: >-
-        يتحقق الخادم من الرمز الاحتياطي ويفتح طلب استعادة بانتظار اعتماد مشرف نطاق المراسل.
-        لا يصدر رمز وصول قبل الاعتماد. الطلب يبطل كل الجلسات القائمة للحساب فورًا.
+        يتحقق الخادم من الرمز الاحتياطي ويفتح طلب استعادة بانتظار اعتماد مشرف نطاق المراسل، الذي يصله
+        معرّف الطلب عبر إشعار داخلي لا عبر هذه الاستجابة. الاستجابة `202` نفسها سواء صحّ الرمز أم لا
+        (لا كشف لصحة الرموز الاحتياطية)، مع حد معدل صارم وإقفال بعد محاولات متكررة. لا يصدر رمز وصول
+        قبل الاعتماد. الطلب الصحيح يبطل كل الجلسات القائمة للحساب فورًا.
       operationId: startRecovery
+      x-roles: []
       security: []
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -159,14 +228,13 @@ paths:
               required: [email, backup_code]
               properties:
                 email: { type: string, format: email }
-                backup_code: { type: string, minLength: 8 }
+                backup_code: { type: string, minLength: 8, writeOnly: true }
       responses:
         "202":
-          description: طلب الاستعادة بانتظار اعتماد المشرف
+          description: قُبل الطلب (الاستجابة نفسها لأي رمز؛ لا تدل على صحته)
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/RecoveryRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
+              schema: { $ref: "#/components/schemas/RecoveryAccepted" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
 
@@ -184,6 +252,7 @@ paths:
         يعتمد المشرف الطلب بعد التحقق خارج النظام من هوية المراسل. الاعتماد يصدر رابط إعادة تهيئة
         كلمة المرور والمصادقة الثنائية بصلاحية قصيرة، ويُسجَّل في سجل التدقيق.
       operationId: approveRecovery
+      x-roles: [supervisor, system_admin]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -217,6 +286,7 @@ paths:
         النطاق يُطبَّق في طبقة الاستعلام: المراسل يرى مواده فقط، والمشرف مواد مراسلي نطاقه،
         والإنتاج المواد المقبولة للإنتاج. الترتيب الافتراضي الأحدث أولًا.
       operationId: listMaterials
+      x-roles: [reporter, supervisor, producer, editor_in_chief, rights_officer, system_admin]
       parameters:
         - name: editorial_state
           in: query
@@ -269,6 +339,7 @@ paths:
         يتحقق الخادم من `dynamic_fields` بمخطط النموذج ذي الإصدار `form_version`. إن أُرسل `contributors`
         وجب أن يكون مجموع الحصص 100 بالضبط وإلا `422 shares_not_100`.
       operationId: createMaterial
+      x-roles: [reporter]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -294,6 +365,7 @@ paths:
       tags: [materials]
       summary: قراءة مادة
       operationId: getMaterial
+      x-roles: [reporter, supervisor, producer, editor_in_chief, rights_officer, system_admin]
       responses:
         "200":
           description: المادة
@@ -310,6 +382,7 @@ paths:
         تعديل مادة بعد الاعتماد (`accepted` فما بعد) يرفع `version` ويعيد الحالة التحريرية إلى
         `final_review` لأن ما يُعتمد هو إصدار محدد. الحالات لا تُعدَّل هنا بل عبر `transitions`.
       operationId: updateMaterial
+      x-roles: [reporter, supervisor, editor_in_chief, system_admin]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -336,6 +409,7 @@ paths:
       tags: [materials]
       summary: سجل انتقالات المادة في المسارات الثلاثة
       operationId: listTransitions
+      x-roles: [reporter, supervisor, producer, editor_in_chief, rights_officer, system_admin]
       responses:
         "200":
           description: الانتقالات بترتيب وقوعها
@@ -378,6 +452,7 @@ paths:
 
         الانتقالات الفنية يكتبها الخادم من أحداث الرفع ولا يستدعيها العميل إلا لإعادة المحاولة بعد الفشل.
       operationId: transitionMaterial
+      x-roles: [reporter, supervisor, producer, editor_in_chief, rights_officer, system_admin]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -407,6 +482,7 @@ paths:
         يستبدل مجموعة المساهمين كاملة. مجموع `share_percent` يجب أن يساوي 100.00 بالضبط، وهو قيد في
         قاعدة البيانات لا اتفاقًا؛ المخالفة تعيد `422 shares_not_100`. يملكه مسؤول الحقوق.
       operationId: setContributors
+      x-roles: [rights_officer, system_admin]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -436,6 +512,7 @@ paths:
         `material.reserved`. مادة محجوزة لمنتج آخر تعيد `409 already_reserved`. يُحرَّر الحجز تلقائيًا
         بعد فترة خمول تحددها الإدارة.
       operationId: reserveMaterial
+      x-roles: [producer, editor_in_chief]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       responses:
@@ -452,6 +529,7 @@ paths:
       tags: [materials]
       summary: تحرير الحجز (صاحبه أو المشرف)
       operationId: releaseMaterial
+      x-roles: [producer, supervisor, editor_in_chief, system_admin]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       responses:
@@ -470,6 +548,7 @@ paths:
         على الأصل في قائمة انتظار العميل. `client_fingerprint` يرشّح المكررات فقط ولا يمنح أي حق؛ الربط
         الفعلي بملف موجود لا يتم إلا بتطابق `sha256` الكاملة على الخادم.
       operationId: createUploadSession
+      x-roles: [reporter]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -479,10 +558,10 @@ paths:
             schema: { $ref: "#/components/schemas/UploadSessionCreate" }
       responses:
         "201":
-          description: جلسة الرفع ومعلومات الاتصال بخادم tus
+          description: جلسة الرفع ومعلومات الاتصال بخادم tus؛ رمز الرفع يظهر هنا فقط
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/UploadSession" }
+              schema: { $ref: "#/components/schemas/UploadSessionCreated" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -496,6 +575,7 @@ paths:
       tags: [uploads]
       summary: حالة جلسة الرفع
       operationId: getUploadSession
+      x-roles: [reporter, supervisor, editor_in_chief, system_admin]
       responses:
         "200":
           description: الجلسة
@@ -511,21 +591,21 @@ paths:
       - $ref: "#/components/parameters/UploadId"
     post:
       tags: [uploads]
-      summary: إشعار اكتمال الرفع — يسجّل حدث Outbox ويطلق خط المعالجة
+      summary: إعلان العميل اكتمال رفعه (مسار الرفع المباشر إلى التخزين فقط)
       description: >-
-        يستدعيه مُستقبِل hooks خادم tusd (حدث `post-finish`) بسر الـ hook، أو العميل نفسه في مسار
-        الرفع المباشر إلى التخزين (بند القرارات 3) برمز الوصول. الاستدعاء المكرر لجلسة مكتملة يعيد
-        `202` نفسها (منع التكرار بمعرّف الجلسة ومفتاح منع التكرار). يُحسب `sha256` على الخادم بعد
-        التجميع إن لم يُرسل، وتُقارن ببصمة العميل إن أرسلها؛ الاختلاف ينقل الجلسة إلى `failed`.
-        عند مطابقة البصمة للأصل يصدر رقم إيصال ويصل المراسلَ إشعار «تم الاستلام بنجاح».
+        لمسار الرفع المباشر (بند القرارات 3) يعلن العميل أنه أنهى الرفع؛ في مسار tusd لا يُستدعى هذا
+        المسار لأن الاكتمال يصل من خطّاف `post-finish` إلى `/internal/tusd-hooks/{hook_token}`.
+        الخادم لا يثق بأي شيء من المستدعي: يشتق مفتاح التخزين من جلسة الرفع، ويقرأ الحجم من التخزين،
+        ويحسب SHA-256 دائمًا بعد التجميع. ما يرسله العميل (`reported_sha256`) معلوماتي يُقارن فقط ولا يُحفظ؛
+        الاختلاف بينه وبين بصمة الخادم ينقل الجلسة إلى `failed` بسبب `checksum_mismatch`.
+        الاستدعاء المكرر لجلسة مكتملة يعيد `202` نفسها. عند تحقق الأصل يصدر رقم إيصال ويصل المراسلَ
+        إشعار «تم الاستلام بنجاح».
       operationId: completeUpload
-      security:
-        - bearerAuth: []
-        - tusdHookSecret: []
+      x-roles: [reporter]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema: { $ref: "#/components/schemas/UploadComplete" }
@@ -536,11 +616,54 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
+  /internal/tusd-hooks/{hook_token}:
+    servers:
+      - url: http://api.internal:3000
+        description: شبكة داخلية فقط؛ لا يمر عبر Cloudflare ولا يُكشف على الإنترنت
+    parameters:
+      - name: hook_token
+        in: path
+        required: true
+        description: >-
+          رمز عشوائي من متغير البيئة `TUSD_HOOK_SECRET` يحقنه الإعداد في عنوان الخطّاف
+          (`-hooks-http=…/internal/tusd-hooks/$TUSD_HOOK_SECRET`)؛ يُقارن بزمن ثابت ويُحجب من سجلات الوصول.
+        schema: { type: string, minLength: 32, maxLength: 128 }
+    post:
+      tags: [uploads]
+      summary: مُستقبِل خطّافات tusd (داخلي؛ pre-create وpost-finish) — ADR SEC-06
+      x-internal: true
+      description: >-
+        نقطة واحدة تستقبل أحداث tusd بصيغته (نوع الحدث في الجسم). `pre-create`: يتحقق الخادم من رمز
+        الرفع في ترويسة `Authorization` المُمرَّرة من tusd، ومن أن `upload_session_id` في البيانات الوصفية
+        يخص جلسة بحالة `created`/`in_progress` لم تنتهِ صلاحيتها وحجمها يطابق `Upload.Size`، وإلا يرفض
+        الرفع. `post-finish`: يسجّل الاكتمال ويكتب حدث Outbox داخل المعاملة نفسها ويطلق التجميع والتحقق؛
+        مفتاح التخزين يُقرأ من `Upload.Storage` ويُطابَق مع ما تتوقعه الجلسة، ولا تُحفظ أي بصمة من الخطّاف.
+        التكرار (tusd يعيد المحاولة) يعيد `200` نفسها بمعرّف الرفع. مصادقة المستدعي: الرمز في المسار
+        + العزل الشبكي؛ mTLS عبر وسيط خيار للإنتاج (وكيل الرفع والبنية).
+      operationId: tusdHook
+      x-roles: []
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TusdHookRequest" }
+      responses:
+        "200":
+          description: استجابة الخطّاف بصيغة tusd (قد ترفض الرفع في pre-create)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TusdHookResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
   /forms:
     get:
       tags: [forms]
       summary: قائمة إصدارات النموذج (الإدارة)
       operationId: listForms
+      x-roles: [system_admin, editor_in_chief]
       responses:
         "200":
           description: الإصدارات من الأحدث إلى الأقدم
@@ -564,6 +687,7 @@ paths:
         يعني أنه لا يظهر في الإصدار الجديد؛ بيانات المواد القديمة تبقى مقروءة بإصدارها. يتحقق الخادم
         من الجسم بمخطط `schemas/upload-form.json` ومن أن كل `condition.field` يشير إلى حقل موجود.
       operationId: publishForm
+      x-roles: [system_admin]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -590,6 +714,7 @@ paths:
         يعيد أحدث إصدار منشور. مع `material_type` تُحذف الحقول التي لا تنطبق على هذا النوع، ويبقى
         `version` هو نفسه. العميل يحفظ الإصدار مع المسودة ويرسله في `form_version` عند الإنشاء.
       operationId: getCurrentForm
+      x-roles: [authenticated]
       parameters:
         - name: material_type
           in: query
@@ -609,6 +734,7 @@ paths:
       tags: [forms]
       summary: نموذج بإصدار محدد (لقراءة المواد القديمة ومسودات الهاتف)
       operationId: getFormVersion
+      x-roles: [authenticated]
       parameters:
         - name: version
           in: path
@@ -629,6 +755,7 @@ paths:
       tags: [notifications]
       summary: صندوق الوارد (يبقى الإشعار حتى لو فشلت قناة الهاتف)
       operationId: listNotifications
+      x-roles: [authenticated]
       parameters:
         - name: unread_only
           in: query
@@ -652,6 +779,7 @@ paths:
       tags: [notifications]
       summary: وسم الإشعار مقروءًا (قُرئ)
       operationId: readNotification
+      x-roles: [authenticated]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       responses:
@@ -669,6 +797,7 @@ paths:
         يوقف سلسلة التصعيد لهذا الإشعار. «اطّلعت» على إشعار «مادة واردة» ينقل المادة إلى
         `acknowledged` ويُعلم المراسل أن مادته شوهدت.
       operationId: ackNotification
+      x-roles: [authenticated]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       responses:
@@ -685,6 +814,7 @@ paths:
         `installation_id` يولّده التطبيق عند أول تشغيل ولا يُشتق من معرّفات الجهاز. رمز الدفع يُحفظ
         مشفرًا ولا يُعاد في أي استجابة ولا يدخل أي حمولة إشعار.
       operationId: registerPushDevice
+      x-roles: [authenticated]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -708,6 +838,7 @@ paths:
       tags: [notifications]
       summary: إلغاء تسجيل جهاز (تسجيل الخروج أو فقد الهاتف)
       operationId: unregisterPushDevice
+      x-roles: [authenticated]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       responses:
@@ -720,6 +851,7 @@ paths:
       tags: [events]
       summary: قراءة أحداث Outbox (لوحة الإدارة والمراقبة)
       operationId: listEvents
+      x-roles: [system_admin]
       parameters:
         - name: after
           in: query
@@ -746,11 +878,6 @@ components:
       type: http
       scheme: bearer
       description: رمز وصول قصير العمر من `/auth/login` أو `/auth/refresh`
-    tusdHookSecret:
-      type: apiKey
-      in: header
-      name: X-Hook-Secret
-      description: سر مشترك بين مُستقبِل hooks خادم tusd والخادم الرئيسي؛ من البيئة فقط
 
   parameters:
     IdempotencyKey:
@@ -928,6 +1055,25 @@ components:
         kind: { type: string, enum: [office, governorate] }
         id: { type: string, description: معرّف المكتب أو اسم المحافظة }
 
+    RecoveryAccepted:
+      type: object
+      description: استجابة ثابتة لا تدل على صحة الرمز
+      required: [accepted]
+      properties:
+        accepted: { type: boolean, const: true }
+
+    UserSession:
+      type: object
+      required: [id, created_at, expires_at, current]
+      properties:
+        id: { type: string, format: uuid }
+        installation_id: { type: [string, "null"], format: uuid, description: معرّف التثبيت الذي ولّده التطبيق؛ ليس معرّف جهاز }
+        platform: { type: [string, "null"], enum: [ios, android, web, null] }
+        created_at: { type: string, format: date-time }
+        last_seen_at: { type: [string, "null"], format: date-time }
+        expires_at: { type: string, format: date-time }
+        current: { type: boolean, description: هل هي الجلسة التي أرسلت الطلب }
+
     RecoveryRequest:
       type: object
       required: [id, state, created_at]
@@ -1093,6 +1239,12 @@ components:
             files:
               type: array
               items: { $ref: "#/components/schemas/MaterialFile" }
+            redacted_field_keys:
+              type: array
+              description: >-
+                مفاتيح `dynamic_fields` التي حُذفت من هذه الاستجابة بقاعدة الحجب (حقول `sensitive` أو
+                `location`) لأن دور المستدعي ليس في `x-pii-roles`؛ فارغة للمخوّلين.
+              items: { type: string }
             created_at: { type: string, format: date-time }
             updated_at: { type: string, format: date-time }
       example:
@@ -1133,6 +1285,7 @@ components:
             receipt_number: null
             created_at: "2026-10-19T09:41:12Z"
             verified_at: null
+        redacted_field_keys: [incident_location]
         created_at: "2026-10-19T09:40:03Z"
         updated_at: "2026-10-19T09:41:12Z"
 
@@ -1206,7 +1359,7 @@ components:
 
     UploadSession:
       type: object
-      required: [id, material_id, kind, state, size_bytes, tus_endpoint, upload_token, tus_metadata, part_size_bytes, bytes_received, expires_at, created_at]
+      required: [id, material_id, kind, state, size_bytes, tus_endpoint, tus_metadata, part_size_bytes, bytes_received, expires_at, created_at]
       properties:
         id: { type: string, format: uuid }
         material_id: { type: string, format: uuid }
@@ -1217,9 +1370,6 @@ components:
           enum: [created, in_progress, completed, verified, failed, deduplicated]
         size_bytes: { type: integer, minimum: 1 }
         tus_endpoint: { type: string, format: uri, description: نقطة إنشاء الرفع (tus 1.0) }
-        upload_token:
-          type: string
-          description: "رمز قصير العمر يرسله العميل في `Authorization: Bearer` إلى خادم الرفع"
         tus_metadata:
           type: object
           description: أزواج تُرسل كما هي في `Upload-Metadata`؛ تحمل معرّف الجلسة ليربطها الـ hook بالمادة
@@ -1263,7 +1413,6 @@ components:
         state: in_progress
         size_bytes: 2147483648
         tus_endpoint: https://ingest.example.invalid/files/
-        upload_token: eyJhbGciOiJFZERTQSJ9.e30.c2lnbmF0dXJl
         tus_metadata: { upload_session_id: 5d6c7b8a-9f0e-4d1c-8b2a-3c4d5e6f7a8b, filename: IMG_0421.MOV }
         part_size_bytes: 16777216
         bytes_received: 335544320
@@ -1277,17 +1426,101 @@ components:
         created_at: "2026-10-19T09:40:03Z"
         updated_at: "2026-10-19T10:02:44Z"
 
+    UploadSessionCreated:
+      description: استجابة الإنشاء فقط؛ رمز الرفع لا يُعاد في أي قراءة لاحقة
+      allOf:
+        - $ref: "#/components/schemas/UploadSession"
+        - type: object
+          required: [upload_token, upload_token_expires_at]
+          properties:
+            upload_token:
+              type: string
+              description: "رمز قصير العمر يرسله العميل في `Authorization: Bearer` إلى خادم الرفع؛ يُحفظ مُجزَّأً على الخادم"
+            upload_token_expires_at: { type: string, format: date-time }
+
     UploadComplete:
       type: object
-      required: [size_bytes, storage_key]
+      description: كل ما هنا معلوماتي؛ الخادم يحسب البصمة والحجم بنفسه ويشتق مفتاح التخزين من الجلسة
       properties:
-        size_bytes: { type: integer, minimum: 1 }
-        storage_key: { type: string, minLength: 1, description: مفتاح الكائن في مخزن الرفع }
-        tus_upload_id: { type: [string, "null"], description: معرّف الرفع لدى tusd إن كان المسار tusd }
-        sha256:
+        reported_sha256:
           type: [string, "null"]
           pattern: "^[0-9a-f]{64}$"
-          description: تُحسب على الخادم بعد التجميع إن لم تُرسل
+          description: بصمة يبلّغ عنها العميل للمقارنة فقط؛ لا تُحفظ ولا تُعتمد
+
+    TusdHookRequest:
+      type: object
+      description: جسم خطّاف tusd (الإصدار 2) كما يرسله؛ المفاتيح بحالة tusd نفسها
+      required: [Type, Event]
+      properties:
+        Type:
+          type: string
+          enum: [pre-create, post-finish, post-create, post-receive, post-terminate, pre-finish]
+        Event:
+          type: object
+          required: [Upload, HTTPRequest]
+          properties:
+            Upload:
+              type: object
+              required: [Size, MetaData]
+              properties:
+                ID: { type: [string, "null"], description: فارغ في pre-create }
+                Size: { type: integer, minimum: 0 }
+                Offset: { type: integer, minimum: 0 }
+                MetaData:
+                  type: object
+                  description: ما أرسله العميل في `Upload-Metadata`؛ يلزم `upload_session_id`
+                  required: [upload_session_id]
+                  properties:
+                    upload_session_id: { type: string, format: uuid }
+                  additionalProperties: { type: string }
+                Storage:
+                  type: [object, "null"]
+                  description: يملؤه tusd بعد الإنشاء؛ يُطابَق مع ما تتوقعه الجلسة ولا يُعتمد وحده
+                  properties:
+                    Type: { type: string }
+                    Bucket: { type: string }
+                    Key: { type: string }
+                  additionalProperties: true
+              additionalProperties: true
+            HTTPRequest:
+              type: object
+              description: ترويسة `Authorization` المُمرَّرة تحمل رمز الرفع؛ لا تُسجَّل في السجلات
+              properties:
+                Method: { type: string }
+                URI: { type: string }
+                RemoteAddr: { type: string }
+                Header:
+                  type: object
+                  additionalProperties:
+                    type: array
+                    items: { type: string }
+              additionalProperties: true
+          additionalProperties: true
+
+    TusdHookResponse:
+      type: object
+      description: صيغة استجابة خطّاف tusd؛ `RejectUpload` في pre-create يوقف الرفع برسالة للعميل
+      properties:
+        RejectUpload: { type: boolean, default: false }
+        HTTPResponse:
+          type: object
+          properties:
+            StatusCode: { type: integer, minimum: 100, maximum: 599 }
+            Body: { type: string }
+            Header:
+              type: object
+              additionalProperties: { type: string }
+        ChangeFileInfo:
+          type: object
+          description: pre-create فقط؛ يسمح بتثبيت `ID` ومسار التخزين على ما تحدده الجلسة
+          properties:
+            ID: { type: string }
+            MetaData:
+              type: object
+              additionalProperties: { type: string }
+            Storage:
+              type: object
+              additionalProperties: { type: string }
 
     Transition:
       type: object
