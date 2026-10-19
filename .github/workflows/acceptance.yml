@@ -3,16 +3,16 @@ name: acceptance
 on:
   push:
     branches: [main]
-    paths-ignore: ['**/*.md', 'docs/plan/**', 'docs/security/**', 'docs/ops/**']
+    paths-ignore: ['docs/security/**', 'docs/ops/**']
   pull_request:
-    paths-ignore: ['**/*.md', 'docs/plan/**', 'docs/security/**', 'docs/ops/**']
+    paths-ignore: ['docs/security/**', 'docs/ops/**']
 
 permissions:
   contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   acceptance:
