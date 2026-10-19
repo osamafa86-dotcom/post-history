@@ -15,6 +15,7 @@ import { ROOT, newResult, finish, writeResult, parseArgs, banner } from "../lib/
 import { byName } from "../lib/catalog.mjs";
 import { loadWaivers } from "../lib/waivers.mjs";
 
+const SELF_SESSION = new Set(["POST /auth/logout", "DELETE /auth/sessions"]);
 const METHODS = ["get", "post", "put", "patch", "delete"];
 // Resources whose out-of-scope access must answer 404 (never 403, which would confirm existence).
 const SCOPED = [
@@ -36,6 +37,9 @@ export function buildMatrix(api) {
       const op = item[method];
       const id = `${method.toUpperCase()} ${path}`;
       if (path.startsWith("/internal/")) continue; // network-isolated hooks, covered by the SEC-06 tests
+      // these revoke the caller's own session(s): sending them in a role sweep would log the test tokens out.
+      // Their access rules are covered by the server's auth tests.
+      if (SELF_SESSION.has(id)) continue;
       if (!Array.isArray(op["x-roles"])) { problems.push({ source: id, path: "x-roles", kind: "missing-x-roles" }); continue; }
       const allowed = op["x-roles"];
       const unknown = allowed.filter((r) => r !== "authenticated" && !roles.includes(r));
@@ -73,7 +77,21 @@ export function buildMatrix(api) {
 export async function execute(cases, { baseUrl, tokens, fixtures, fetchImpl = fetch }) {
   const results = [];
   const url = (p, id) => baseUrl.replace(/\/$/, "") + p.replace(/\{[^}]+\}/g, () => id ?? randomUUID());
+  // A route the server does not have answers 404 even without credentials; an implemented, protected one answers 401.
+  // Such operations are reported as unimplemented rather than failed, and they keep the result at "partial".
+  const exists = new Map();
+  const routeExists = async (c) => {
+    const key = `${c.method} ${c.path}`;
+    if (!exists.has(key)) {
+      const write = c.method !== "get";
+      const res = await fetchImpl(url(c.path), { method: c.method.toUpperCase(), headers: write ? { "idempotency-key": randomUUID(), "content-type": "application/json" } : {}, body: write ? "{}" : undefined });
+      await res.text();
+      exists.set(key, res.status !== 404);
+    }
+    return exists.get(key);
+  };
   for (const c of cases) {
+    if (!(await routeExists(c))) { results.push({ ...c, outcome: "unimplemented", why: "route not served (404 without credentials)" }); continue; }
     if (c.kind !== "anonymous" && !tokens[c.role]) { results.push({ ...c, outcome: "skipped", why: `no token for ${c.role}` }); continue; }
     if (c.fixture && !fixtures[c.fixture]) { results.push({ ...c, outcome: "skipped", why: `no fixture ${c.fixture}` }); continue; }
     const headers = { accept: "application/json" };
@@ -129,12 +147,13 @@ export async function run(argv = process.argv.slice(2)) {
   }
   const failed = exec?.filter((r) => r.outcome === "fail").length ?? 0;
   const skipped = exec?.filter((r) => r.outcome === "skipped").length ?? 0;
-  const executed = exec ? exec.length - skipped : 0;
+  const unimplemented = exec?.filter((r) => r.outcome === "unimplemented").length ?? 0;
+  const executed = exec ? exec.length - skipped - unimplemented : 0;
   const waivedCount = m.problems.length - open.length;
   const result = open.length || stale.length || failed ? "fail" : exec && executed === m.cases.length && !waivedCount ? "pass" : "partial";
   finish(doc, result, {
     operations: m.operations, cases_total: m.cases.length, ...Object.fromEntries(Object.entries(byKind).map(([k, v]) => [`cases_${k.replace(/-/g, "_")}`, v])),
-    contract_problems_open: open.length, contract_problems_waived: waivedCount, cases_executed: executed, cases_failed: failed, cases_skipped: skipped, live_checked: Boolean(exec),
+    contract_problems_open: open.length, contract_problems_waived: waivedCount, cases_executed: executed, cases_failed: failed, cases_skipped: skipped, cases_unimplemented: unimplemented, live_checked: Boolean(exec),
   }, [exec ? null : "هيكل الحالات من العقد فقط؛ التنفيذ ضد الخادم لم يجرِ بعد فالنتيجة جزئية",
       waivedCount ? `${waivedCount} ثغرة توثيق في العقد مُستثناة بإذن مكتوب في waivers/tenant-isolation.json` : null,
       "v0 بلا مؤسسات: عزل المؤسسات والفهارس والنسخ المؤقتة والفواتير يُضاف مع المرحلة التجارية ويبقى خارج هذه النتيجة"].filter(Boolean).join("؛ "));

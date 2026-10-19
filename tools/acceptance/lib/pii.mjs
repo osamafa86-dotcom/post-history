@@ -3,13 +3,15 @@
 
 // Keys that must never appear in any API response, event, notification or export.
 export const REVEALING_KEYS = new Set([
-  "gps", "gps_lat", "gps_lng", "lat", "lng", "lon", "latitude", "longitude", "coordinates", "shot_at",
+  "gps", "gps_lat", "gps_lng", "lat", "lng", "lon", "latitude", "longitude", "coordinates",
   "device_id", "device_model", "serial_number", "imei", "idfv", "advertising_id",
   "push_token", "fcm_token", "apns_token",
   "source_name", "protected_source",
 ]);
-// External channels and Outbox payloads additionally carry no contact data (outbox-event.json propertyNames).
-export const CHANNEL_KEYS = new Set([...REVEALING_KEYS, "email", "phone"]);
+// External channels, exports and Outbox payloads additionally carry no contact data (outbox-event.json propertyNames)
+// and no exact shot time: shot_at is an editorial necessity inside the newsroom API but revealing outside it
+// (threat model A2, owner decision recorded 2026-10-19).
+export const CHANNEL_KEYS = new Set([...REVEALING_KEYS, "email", "phone", "shot_at"]);
 
 const VALUE_PATTERNS = [
   ["coordinate-pair", /-?\d{1,3}\.\d{4,}\s*[,;/ ]\s*-?\d{1,3}\.\d{4,}/],

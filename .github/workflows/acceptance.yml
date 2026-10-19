@@ -49,3 +49,40 @@ jobs:
           UPLOAD_ENDPOINT: http://127.0.0.1:8080/files/
           UPLOAD_SIZE_MB: "64"
         run: node run.mjs upload-resume --dry-run
+
+  live:
+    name: live acceptance (API + Postgres: pii-leak, tenant-isolation, idempotency, tusd hook, receipt-notification)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: posthistory_test
+          POSTGRES_USER: posthistory
+          POSTGRES_PASSWORD: ci-only
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U posthistory -d posthistory_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://posthistory:ci-only@localhost:5432/posthistory_test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Build the API and migrate the database
+        working-directory: apps/api
+        run: |
+          npm ci
+          src/db/migrate.sh up
+          npm run build
+      - name: Install the acceptance tools
+        working-directory: tools/acceptance
+        run: npm ci
+      - name: Live run (the API starts with throwaway secrets; nothing is written to docs/measurements)
+        working-directory: tools/acceptance
+        run: node live/run.mjs --dry-run
