@@ -118,11 +118,36 @@ class UploadEngineTest {
         fake.sessionState = "verified"; fake.receipt = "R-202610-000002"
         assertEquals(RunOutcome.Finished, engine().run("t1"))
         val after = fake.log.drop(logBefore)
-        assertEquals("HEAD /files/u1", after.first { it.startsWith("HEAD") || it.startsWith("POST /files") || it.startsWith("PATCH") })
+        assertEquals("HEAD /files/${fake.sessionId}", after.first { it.startsWith("HEAD") || it.startsWith("POST /files") || it.startsWith("PATCH") })
         assertEquals(1, fake.sessionCreates.get())
         assertEquals(1, fake.creates.get())
         assertEquals(fileSha, serverBytesSha())
         assertEquals(UploadState.VERIFIED, store.get("t1")!!.state)
+    }
+
+    @Test fun `a lost create response is recovered through the deterministic upload url, never a second creation`() = runBlocking {
+        queue()
+        fake.loseCreateResponseAt.add(1)
+        fake.sessionState = "verified"; fake.receipt = "R-202610-000003"
+        assertEquals(RunOutcome.Finished, engine().run("t1"))
+        assertEquals(2, fake.creates.get()) // the lost one, then the retry the server answers with 403
+        assertEquals(1, fake.uploads.size)
+        assertEquals("HEAD /files/${fake.sessionId}", fake.log.first { it.startsWith("HEAD") })
+        assertEquals(fileSha, serverBytesSha())
+        val t = store.get("t1")!!
+        assertEquals(UploadState.VERIFIED, t.state)
+        assertEquals(server.url("/files/${fake.sessionId}").toString(), t.tusUploadUrl)
+    }
+
+    @Test fun `a 403 on creation with no upload behind it is terminal`() = runBlocking {
+        queue()
+        fake.rejectCreate = true
+        assertEquals(RunOutcome.Finished, engine().run("t1"))
+        val t = store.get("t1")!!
+        assertEquals(UploadState.FAILED, t.state)
+        assertEquals(UploadFailure.SESSION_EXPIRED, t.failure)
+        assertEquals(listOf("POST /files/", "HEAD /files/${fake.sessionId}"), fake.log.filter { it.contains("/files") })
+        assertEquals(0, fake.patches.get())
     }
 
     @Test fun `a lapsed upload token is a terminal failure, not a loop`() = runBlocking {

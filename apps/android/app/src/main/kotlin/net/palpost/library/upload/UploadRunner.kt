@@ -1,7 +1,6 @@
 package net.palpost.library.upload
 
 import android.content.Context
-import android.os.BatteryManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.palpost.library.AppContainer
@@ -20,10 +19,9 @@ class UploadRunner(private val context: Context, private val container: AppConta
     fun interface Progress { fun update(done: Int, total: Int, percent: Int?) }
 
     suspend fun runAll(shouldStop: () -> Boolean, progress: Progress): Boolean = withContext(Dispatchers.IO) {
-        val engine = UploadEngine(
-            store = container.uploadStore, files = container.fileSource, uploadsApi = container.uploadsApi,
-            allowFullHash = { batteryAllowsHashing() },
-        )
+        // The full SHA-256 is always computed: it is one read of the file, far cheaper than its upload, and it is
+        // what ties the server's receipt to the bytes on this phone (security review of #52).
+        val engine = UploadEngine(store = container.uploadStore, files = container.fileSource, uploadsApi = container.uploadsApi)
         var remaining = false
         val pending = container.uploadStore.pending()
         pending.forEachIndexed { index, task ->
@@ -44,12 +42,5 @@ class UploadRunner(private val context: Context, private val container: AppConta
             }
         }
         remaining
-    }
-
-    /** The full SHA-256 is one extra read of the file: skipped on a low battery unless charging. */
-    private fun batteryAllowsHashing(): Boolean {
-        val bm = context.getSystemService(BatteryManager::class.java) ?: return true
-        val level = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-        return bm.isCharging || level < 0 || level >= 20
     }
 }

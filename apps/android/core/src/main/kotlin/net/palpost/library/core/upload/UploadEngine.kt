@@ -150,7 +150,11 @@ class UploadEngine(
             val url = try {
                 transport.create(current.tusEndpoint!!, token, current.sizeBytes, mapOf("upload_session_id" to current.sessionId!!, "filename" to current.filename))
             } catch (e: ProtocolException) {
-                return classify(current, e)
+                // The server allows one tus creation per session (pre-create reserves it, SEC-06). A 403 here
+                // after a lost 201 means the upload already exists under its deterministic id (= session id):
+                // adopt it instead of failing, since the reporter's bytes may already be there.
+                if (TusTransport.status(e) == 403) recoverExistingUpload(current, token) ?: return classify(current, e)
+                else return classify(current, e)
             } catch (e: IOException) {
                 throw Transient(e)
             }
@@ -186,6 +190,18 @@ class UploadEngine(
             return null
         }
         return if (shouldStop()) RunOutcome.Stopped else throw Transient(IOException("upload ended early at $confirmed"))
+    }
+
+    /** `HEAD <tus_endpoint><session_id>`: the URL the server gave this session (ChangeFileInfo.ID). Null when it is not there. */
+    private fun recoverExistingUpload(task: UploadTask, token: String): String? {
+        val url = task.tusEndpoint!!.trimEnd('/') + "/" + task.sessionId!!
+        return try {
+            transport.offset(url, token); url
+        } catch (e: ProtocolException) {
+            if (TusTransport.status(e) == null) throw Transient(e) else null
+        } catch (e: IOException) {
+            throw Transient(e)
+        }
     }
 
     /** A persisted write from a non-suspending callback: the store is synchronous underneath on both platforms. */

@@ -30,6 +30,10 @@ class FakeTusd(private val baseUrl: () -> String, private val now: () -> Long) :
     val cutAtPatch = HashSet<Int>()
     /** PATCH numbers answered with a 5xx before anything is stored. */
     val serverErrorAtPatch = HashSet<Int>()
+    /** Create numbers (1-based) whose 201 never reaches the client although the upload was created. */
+    val loseCreateResponseAt = HashSet<Int>()
+    /** The pre-create hook rejects every creation (session not reserved / wrong state) and no upload exists. */
+    var rejectCreate = false
     val patches = AtomicInteger()
     val creates = AtomicInteger()
     val heads = AtomicInteger()
@@ -54,11 +58,14 @@ class FakeTusd(private val baseUrl: () -> String, private val now: () -> Long) :
             path == "/files/" && method == "POST" -> {
                 authorizations.add(request.getHeader("Authorization"))
                 if (request.getHeader("Authorization") != "Bearer $token") return json(401, "{}")
-                creates.incrementAndGet()
-                val id = "u${creates.get()}"
-                uploads[id] = ByteArrayOutputStream()
-                declaredSizes[id] = request.getHeader("Upload-Length")!!.toLong()
-                MockResponse().setResponseCode(201).setHeader("Location", "/files/$id").setHeader("Tus-Resumable", "1.0.0")
+                val n = creates.incrementAndGet()
+                if (rejectCreate) return MockResponse().setResponseCode(403)
+                // Like the real pre-create hook: one creation per session/token, id = session id, 403 afterwards.
+                if (uploads.containsKey(sessionId)) return MockResponse().setResponseCode(403)
+                uploads[sessionId] = ByteArrayOutputStream()
+                declaredSizes[sessionId] = request.getHeader("Upload-Length")!!.toLong()
+                if (n in loseCreateResponseAt) return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
+                MockResponse().setResponseCode(201).setHeader("Location", "/files/$sessionId").setHeader("Tus-Resumable", "1.0.0")
             }
             path.startsWith("/files/") -> {
                 authorizations.add(request.getHeader("Authorization"))
