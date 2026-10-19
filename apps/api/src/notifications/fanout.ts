@@ -104,8 +104,8 @@ async function audience(
 
 /**
  * طلب استعادة: مهمة لمن يملك اعتماده بمعرّف الطلب، وتنبيه لصاحب الحساب على أجهزته القائمة. بلا مادة.
- * من يملك الاعتماد يتبع قاعدة التسلسل (identity/principal.ts): مشرفو نطاق صاحب الحساب، إلا إن كان دوره أعلى من
- * المشرف فمديرو النظام وحدهم (غير صاحب الحساب نفسه).
+ * من يملك الاعتماد يتبع قاعدة التسلسل (identity/principal.ts): مشرفو نطاق صاحب الحساب، إلا إن كان دوره المشرف أو
+ * أعلى فمديرو النظام وحدهم (غير صاحب الحساب نفسه).
  */
 async function recoveryRequested(tx: Tx, event: OutboxRow, payload: Record<string, unknown>, opts: FanOutOptions): Promise<number> {
   const requestId = typeof payload.recovery_request_id === 'string' ? payload.recovery_request_id : undefined;
@@ -118,7 +118,7 @@ async function recoveryRequested(tx: Tx, event: OutboxRow, payload: Record<strin
   if (!owner) return 0;
   const ownerRoles = await tx.select({ role: userRoles.role }).from(userRoles).where(eq(userRoles.userId, owner.id));
   const approvers =
-    highestRank(ownerRoles.map((r) => r.role as RoleName)) > highestRank(['supervisor'])
+    highestRank(ownerRoles.map((r) => r.role as RoleName)) >= highestRank(['supervisor'])
       ? await systemAdmins(tx)
       : await audience(tx, 'supervisors', { reporterId: owner.id, officeId: owner.officeId, governorate: owner.governorate });
   const rows = [

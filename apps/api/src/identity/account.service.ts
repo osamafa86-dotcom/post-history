@@ -178,13 +178,13 @@ export class AccountService {
 }
 
 /**
- * مطابقة النطاق وحدها لا تكفي: حساب دوره أعلى من دور المقرِّر لا يقرر فيه إلا مدير النظام، ولا يقرر أحد في حسابه
+ * مطابقة النطاق وحدها لا تكفي: حساب دوره مساوٍ لدور المقرِّر أو أعلى لا يقرر فيه إلا مدير النظام، ولا يقرر أحد في حسابه
  * هو (استعادة مدير النظام يعتمدها مدير نظام آخر). المورد ظاهر للمقرِّر بنطاقه، فالرفض 403 لا 404.
  */
 async function assertHierarchy(tx: Executor, p: Principal, targetUserId: string): Promise<void> {
   const roles = await tx.select({ role: userRoles.role }).from(userRoles).where(eq(userRoles.userId, targetUserId));
   if (!mayDecideFor(p, targetUserId, roles.map((r) => r.role as RoleName))) {
-    throw new ApiError(403, 'forbidden_scope', 'This account outranks the caller; a system administrator must decide.');
+    throw new ApiError(403, 'forbidden_scope', 'This account is not below the caller in rank; a system administrator must decide.');
   }
 }
 

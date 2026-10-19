@@ -84,10 +84,11 @@ export function highestRank(roles: readonly RoleName[]): number {
 
 /**
  * قاعدة التسلسل في إبطال جلسات حساب آخر واعتماد استعادته، فوق مطابقة النطاق: لا أحد يقرر في حسابه هو؛ مدير النظام
- * يقرر في أي حساب آخر (ومنه حساب مدير نظام آخر)؛ وغيره لا يقرر في حساب دوره الأعلى أعلى من دور المقرِّر الأعلى.
+ * يقرر في أي حساب آخر (ومنه حساب مدير نظام آخر)؛ وغيره يقرر فقط في حساب دوره الأعلى أدنى من دور المقرِّر الأعلى،
+ * فالحساب المساوي (مشرف نظير) لمدير النظام وحده، منعًا للاستيلاء الأفقي.
  */
 export function mayDecideFor(p: Principal, targetUserId: string, targetRoles: readonly RoleName[]): boolean {
   if (targetUserId === p.userId) return false;
   if (hasRole(p, 'system_admin')) return true;
-  return highestRank(targetRoles) <= highestRank(p.roles.map((r) => r.role));
+  return highestRank(targetRoles) < highestRank(p.roles.map((r) => r.role));
 }
