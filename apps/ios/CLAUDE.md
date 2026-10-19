@@ -5,7 +5,7 @@
 ## الهيكل والأوامر
 
 - `Packages/PostHistoryKit/` حزمة SwiftPM (تُبنى وتُختبر على Linux وmacOS): `PostHistoryAPI` مولَّد من العقد (لا يُعدَّل يدويًا)، `AuthCore` (الهوية وKeychain)، ثم `UploadCore` و`FormEngine`.
-- `App/` تطبيق SwiftUI رقيق؛ مشروع Xcode يُولَّد: `cd apps/ios && xcodegen generate` (ADR 0006).
+- `App/` تطبيق SwiftUI رقيق؛ مشروع Xcode يُولَّد: `cd apps/ios && xcodegen generate` (ADR 0009).
 - `scripts/generate-api.sh` بعد كل تغيير في `contracts/openapi.yaml`؛ CI يفشل إن اختلف الناتج.
 - الاختبارات: `cd Packages/PostHistoryKit && swift test`. النصوص في `App/Resources/Localizable.xcstrings` (ar/en).
 

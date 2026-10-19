@@ -1,4 +1,4 @@
-# 0006 — iOS: عميل API مولَّد بـ openapi-generator (swift6) وحزمة SwiftPM ومشروع XcodeGen
+# 0009 — iOS: عميل API مولَّد بـ openapi-generator (swift6)، حزمة SwiftPM ومشروع XcodeGen، ونواة الرفع
 
 - الحالة: مقبول
 - التاريخ: 2026-10-19
