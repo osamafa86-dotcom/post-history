@@ -21,9 +21,11 @@ class MediaToolError(RuntimeError):
     """فشل ffmpeg/ffprobe. الرسالة تحمل ذيل stderr فقط؛ لا تُسجَّل في قنوات خارجية لأنها قد تحمل مسارات."""
 
 
-def run(args: Sequence[str], timeout_s: float) -> bytes:
+def run(args: Sequence[str], timeout_s: float, cwd: str | os.PathLike | None = None) -> bytes:
+    """`cwd` = مجلد المهمة المؤقت، فلا يُحل مسار نسبي من داخل ملف مرفوع إلى ملفات العامل. stdin مغلق."""
     try:
-        proc = subprocess.run(list(args), capture_output=True, timeout=timeout_s, check=False, env=CHILD_ENV)
+        proc = subprocess.run(list(args), capture_output=True, timeout=timeout_s, check=False, env=CHILD_ENV,
+                              cwd=cwd, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired as err:
         raise MediaToolError(f"{args[0]} timed out after {timeout_s:.0f}s") from err
     if proc.returncode != 0:

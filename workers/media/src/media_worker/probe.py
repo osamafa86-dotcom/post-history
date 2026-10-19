@@ -81,7 +81,7 @@ def _frame_timing(path: Path, timeout_s: float) -> tuple[int, bool, float | None
     out = run(
         [FFPROBE, "-v", "error", *INPUT_GUARD, "-select_streams", "v:0", "-show_entries", "packet=pts_time",
          "-of", "csv=p=0", str(path)],
-        timeout_s,
+        timeout_s, cwd=path.parent,
     )
     pts = sorted(t for line in out.decode().split() if (t := _seconds(line.strip(","))) is not None)
     if len(pts) < 3:
@@ -96,11 +96,12 @@ def _frame_timing(path: Path, timeout_s: float) -> tuple[int, bool, float | None
 
 
 def probe(path: Path, timeout_s: float = 120) -> Probe:
+    path = Path(path).resolve()
     try:
         raw = run(
             [FFPROBE, "-v", "error", *INPUT_GUARD, "-print_format", "json", "-show_format", "-show_streams",
              str(path)],
-            timeout_s,
+            timeout_s, cwd=path.parent,
         )
         info = json.loads(raw)
     except (MediaToolError, json.JSONDecodeError) as err:
