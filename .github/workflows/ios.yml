@@ -35,7 +35,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: swift build
-      - run: swift test
+      - name: Start tusd v2.10.1 (file store) for the live transport test
+        run: |
+          curl -sSL -o /tmp/tusd.tgz https://github.com/tus/tusd/releases/download/v2.10.1/tusd_linux_amd64.tar.gz
+          tar -xzf /tmp/tusd.tgz -C /tmp
+          mkdir -p /tmp/tusd-data
+          nohup /tmp/tusd_linux_amd64/tusd -port 8080 -upload-dir /tmp/tusd-data -base-path /files/ > /tmp/tusd.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS -X OPTIONS http://127.0.0.1:8080/files/ -H 'Tus-Resumable: 1.0.0' -o /dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/tusd.log; exit 1
+      - name: Unit tests (resume scenarios, auth, form conformance) and live tusd transport test
+        env:
+          TUSD_URL: http://127.0.0.1:8080/files/
+        run: swift test
 
   ios:
     name: ios (xcodebuild app + package unit tests, macOS)
@@ -46,6 +60,13 @@ jobs:
       - name: Package unit tests
         working-directory: apps/ios/Packages/PostHistoryKit
         run: swift test
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Form conformance (ios.json judged by the shared cases through run.mjs --compare)
+        run: |
+          (cd apps/ios/Packages/PostHistoryKit && swift run form-conformance ../../../../tools/acceptance/form-conformance/cases.json /tmp/ios.json)
+          (cd tools/acceptance && npm ci --no-audit --no-fund && node form-conformance/run.mjs --compare=/tmp/ios.json)
       - name: Generate the Xcode project
         working-directory: apps/ios
         run: |
