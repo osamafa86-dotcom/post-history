@@ -32,7 +32,7 @@
 2. `POST /internal/media/sessions/{upload_session_id}/verification` بجسم
    `{ result: "verified" | "invalid_file" | "storage_error", sha256, size_bytes, head_sha256, tail_sha256, technical }`
    الخادم يقفل الجلسة؛ إن لم تكن `completed` يعيد `200` بالنتيجة المسجلة إن طابقت و`409` إن خالفت. يتحقق أن `size_bytes` يساوي حجم الجلسة وحجم الكائن في التخزين (`HEAD`)، ويقارن `client_sha256` بنفسه فيقرر `checksum_mismatch`، ثم يستدعي `recordVerification`، ويكتب `technical` (أدناه) على الملف الجديد. يعيد `{ file_id, receipt_number }`.
-3. `POST /internal/media/files/{file_id}/derivatives` بجسم `{ kind: "proxy", storage_key, sha256, size_bytes, technical }` ← ملف جديد `kind=proxy` و`proxy_mode=normal` و`derived_from_id=file_id` و`state=verified`. متساوٍ الأثر على (`derived_from_id`، `kind`). `storage_key` في حاوية المشتقات (`S3_BUCKET_MEDIA`) ويجب أن يساوي `proxies/<material_id>/<file_id>/proxy-480p.mp4`.
+3. `POST /internal/media/files/{file_id}/derivatives` بجسم `{ kind: "proxy", storage_key, sha256, size_bytes, technical }` ← ملف جديد `kind=proxy` و`proxy_mode=normal` و`derived_from_id=file_id` و`state=verified`. متساوٍ الأثر على (`derived_from_id`، `kind`). `storage_key` في حاوية المشتقات (`S3_BUCKET_MEDIA`) ويجب أن يساوي `derived/<material_id>/<file_id>/proxy-480p.mp4`.
 
 `technical`: `duration_ms`، `start_pts_us`، `width`، `height` (أعمدة موجودة)، والباقي (`container`، `video_codec`، `audio_codec`، `frame_rate`، `avg_frame_rate`، `vfr`، `frame_count`، `max_frame_gap_ms`، `has_gaps`، `rotation`، `hdr`، `bit_depth`، `audio_sample_rate`، `audio_channels`) في عمود جديد. قائمة بيضاء مغلقة: العامل لا ينقل وسوم الملف أبدًا (فيها الإحداثيات وطراز الجهاز)، والخادم يرفض أي مفتاح آخر.
 
@@ -45,7 +45,7 @@
 - `MEDIA_WORKER_TOKEN` (≥ 32 حرفًا، `[A-Za-z0-9_-]`) منفصل عن `TUSD_HOOK_SECRET` حتى لا يمتد تسريب أحدهما إلى الآخر؛ يُدار كبقية الأسرار (SEC-05) ولا يوضع في `.env.example`.
 - ترويسة لا مقطع مسار: العامل كودنا ويستطيع إرسال الترويسات، فلا يتكرر تسريب الرمز في سجلات tusd وأخطائه (SEC-06). المقارنة ثابتة الزمن، والترويسة لا تُسجَّل، والرد عند الفشل `404` كبقية `/internal/*`.
 - `internalOnly` مقصور على عنوان العامل الثابت (محليًا `172.30.250.3` على شبكة `hooks` الداخلية).
-- مستخدم تخزين خاص بالعامل: قراءة على حاوية الرفع، وكتابة على `proxies/` في حاوية المشتقات فقط، بلا حذف (العميل نفسه يرفض الكتابة في غير حاوية المشتقات).
+- مستخدم تخزين خاص بالعامل: قراءة `uploads/tus/*`، وكتابة `media/derived/*` فقط، بلا حذف ولا سرد (قرار المنسّق؛ المستخدم في طلب البنية 45). العميل نفسه يرفض الكتابة خارج `derived/` في حاوية المشتقات.
 
 ## ما يلزم من غيري
 

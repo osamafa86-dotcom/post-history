@@ -204,6 +204,9 @@ services:
       MEDIA_SCRATCH_DIR: /scratch
     read_only: true
     tmpfs: [/tmp]
+    # يعالج ملفات غير موثوقة: بلا صلاحيات نواة ولا رفع امتيازات (مراجعة الأمن على #41)
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     volumes:
       - media-scratch:/scratch
     networks:

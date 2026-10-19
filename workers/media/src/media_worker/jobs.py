@@ -20,7 +20,7 @@ from .api import InternalApi
 from .hashing import digest_file, digest_stream
 from .probe import InvalidMediaError, Probe, probe
 from .proxy import make_proxy
-from .storage import ObjectMissing
+from .storage import DERIVED_PREFIX, ObjectMissing
 
 log = logging.getLogger("media_worker.jobs")
 
@@ -39,7 +39,7 @@ class Buckets:
 
 
 def proxy_key(material_id: str, file_id: str) -> str:
-    return f"proxies/{material_id}/{file_id}/proxy-480p.mp4"
+    return f"{DERIVED_PREFIX}{material_id}/{file_id}/proxy-480p.mp4"
 
 
 def _download(storage: Storage, bucket: str, key: str, dst: Path):

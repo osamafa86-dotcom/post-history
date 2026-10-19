@@ -27,9 +27,10 @@ def test_rejects_unsafe_keys(key: str):
         s._url("uploads", key)
 
 
-def test_writes_only_to_the_derived_bucket(tmp_path):
+@pytest.mark.parametrize("bucket,key", [("uploads", "derived/m/f/p.mp4"), ("media", "tus/abc"), ("media", "proxies/x")])
+def test_writes_only_under_derived_in_the_media_bucket(tmp_path, bucket: str, key: str):
     s = S3Storage("http://minio:9000", "auto", "a", "b", writable_bucket="media")
     f = tmp_path / "x"
     f.write_bytes(b"x")
     with pytest.raises(PermissionError):
-        s.put_file("uploads", "orig/key", f, "0" * 64, "video/mp4")
+        s.put_file(bucket, key, f, "0" * 64, "video/mp4")

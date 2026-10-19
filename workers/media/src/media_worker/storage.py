@@ -1,7 +1,7 @@
 """عميل S3 صغير (MinIO محليًا، R2 في الإنتاج) بتوقيع AWS SigV4 ومسار بنمط path-style.
 
 ثلاث عمليات فقط: HEAD وGET تدفقي للأصل، وPUT لملف مشتق جديد. لا حذف ولا كتابة فوق مفتاح الأصل:
-`put` يرفض أي حاوية غير حاوية المشتقات التي أُعطيت للعميل عند إنشائه.
+`put` يرفض أي حاوية غير حاوية المشتقات وأي مفتاح خارج `derived/`.
 """
 
 from __future__ import annotations
@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 CHUNK = 8 * 1024 * 1024
+# مستخدم التخزين يكتب هنا فقط (media/derived/*)؛ العميل يفرض القيد نفسه
+DERIVED_PREFIX = "derived/"
 # اتصال مباشر: متغيرات HTTP(S)_PROXY في البيئة لا تمرّر الأصل ولا التوقيع عبر وسيط
 DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -105,7 +107,7 @@ class S3Storage:
                 yield chunk
 
     def put_file(self, bucket: str, key: str, path: Path, sha256_hex: str, content_type: str) -> None:
-        if bucket != self.writable_bucket:
+        if bucket != self.writable_bucket or not key.startswith(DERIVED_PREFIX):
             raise PermissionError("the worker writes derived files only")
         size = path.stat().st_size
         with open(path, "rb") as fh:
