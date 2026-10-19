@@ -35,7 +35,7 @@ public enum SHA256Stream {
             hasher.update(data: data)
             remaining -= Int64(data.count)
         }
-        if let length, remaining > 0 { throw UploadError.sourceTruncated }
+        if length != nil, remaining > 0 { throw UploadError.sourceTruncated }
         return Array(hasher.finalize())
     }
 }
