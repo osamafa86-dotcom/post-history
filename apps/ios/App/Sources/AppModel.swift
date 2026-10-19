@@ -64,6 +64,8 @@ final class AppModel: ObservableObject {
         let engine = uploads.engine
         let auth = self.auth
         let steps: [WipeStep] = [
+            // قرار المنسّق: إبطال كل الجلسات على الخادم بأفضل جهد (≤3 ث) قبل المحو؛ لا ينتظره المحو ولا يفشل بسببه.
+            WipeStep(name: "revoke_remote") { await auth.revokeEverywhereBestEffort(timeout: 3) ? 1 : 0 },
             WipeStep(name: "uploads") { await engine.wipeAll() },
             WipeStep(name: "session") { await auth.forgetLocally(); return 1 },
             WipeStep(name: "upload_tokens") { try KeychainUploadSecretStore().removeAll(); return 1 },

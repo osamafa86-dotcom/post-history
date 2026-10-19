@@ -44,6 +44,20 @@ public actor AuthSession {
     private func removeSubscriber(_ id: UUID) { subscribers[id] = nil }
     private func emit(_ event: AuthEvent) { subscribers.values.forEach { $0.yield(event) } }
 
+    /// قبل المسح الطارئ (قرار المنسّق): إبطال كل الجلسات على الخادم بأفضل جهد ضمن مهلة قصيرة؛ لا ينتظره المحو ولا يفشل بسببه.
+    /// يعيد `true` إن قبل الخادم الطلب ضمن المهلة. لا يُسجَّل شيء.
+    public func revokeEverywhereBestEffort(timeout: TimeInterval = 3) async -> Bool {
+        guard let s = current else { return false }
+        let gateway = self.gateway
+        return await withTaskGroup(of: Bool.self) { group in
+            group.addTask { (try? await gateway.logout(allSessions: true, accessToken: s.accessToken)) != nil }
+            group.addTask { try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000)); return false }
+            let first = await group.next() ?? false
+            group.cancelAll()
+            return first
+        }
+    }
+
     /// ينسى الجلسة محليًا دون أي اتصال (المسح الطارئ): يمسح المخزن ويلغي تحديثًا جاريًا. لا يُسجَّل شيء.
     public func forgetLocally() {
         refreshInFlight?.cancel()

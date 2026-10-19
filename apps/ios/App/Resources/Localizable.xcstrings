@@ -1742,13 +1742,13 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "يمحو من هذا الهاتف فورًا ودون اتصال: الجلسة ورموز الرفع وحالة الرفع والأجزاء والملفات المستوردة والمصغّرات وذاكرة الصور. لا يمس مكتبة الصور ولا ما وصل إلى الخادم."
+            "value": "يحاول أولًا إبطال كل جلساتك على الخادم (ثلاث ثوانٍ على الأكثر، إن توفّر اتصال) ثم يمحو من هذا الهاتف فورًا: الجلسة ورموز الرفع وحالة الرفع والأجزاء والملفات المستوردة والمصغّرات وذاكرة الصور. لا يمس مكتبة الصور ولا ما وصل إلى الخادم."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Immediately and offline erases from this phone: the session, upload tokens, upload state, chunks, imported files, thumbnails and image caches. It does not touch the photo library or anything already on the server."
+            "value": "First tries to revoke all your sessions on the server (at most three seconds, if reachable), then immediately erases from this phone: the session, upload tokens, upload state, chunks, imported files, thumbnails and image caches. It does not touch the photo library or anything already on the server."
           }
         }
       }
@@ -2055,6 +2055,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Settings"
+          }
+        }
+      }
+    },
+    "wipe.step.revoke_remote": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إبطال الجلسات على الخادم (إن توفّر اتصال)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revoke sessions on the server (if reachable)"
           }
         }
       }

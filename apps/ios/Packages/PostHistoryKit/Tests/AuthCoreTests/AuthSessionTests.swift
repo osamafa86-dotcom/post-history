@@ -10,6 +10,7 @@ final class FakeGateway: AuthGateway, @unchecked Sendable {
     let lock = NSLock()
     var loginCalls = 0, refreshCalls = 0, logoutCalls: [(Bool, String)] = []
     var refreshDelay: UInt64 = 0
+    var logoutDelay: UInt64 = 0
     var rejectRefresh = false
     var rejectLoginStatus: Int?
     var rejectLoginCode: ModelError.Code?
@@ -34,7 +35,10 @@ final class FakeGateway: AuthGateway, @unchecked Sendable {
         if rejectRefresh { throw errorResponse(401, code: .unauthorized) }
         return session(n + 1)
     }
-    func logout(allSessions: Bool, accessToken: String) async throws { lock.withLock { logoutCalls.append((allSessions, accessToken)) } }
+    func logout(allSessions: Bool, accessToken: String) async throws {
+        lock.withLock { logoutCalls.append((allSessions, accessToken)) }
+        if logoutDelay > 0 { try await Task.sleep(nanoseconds: logoutDelay) }
+    }
 }
 
 final class AuthSessionTests: XCTestCase {
@@ -146,6 +150,28 @@ final class AuthRevocationTests: XCTestCase {
         XCTAssertLessThan(abs(at.timeIntervalSince(detectedAt)), 2, "client reacts within the same request")
         XCTAssertNil(try store.load())
         XCTAssertEqual(gw.refreshCalls, 1)
+    }
+
+    func testBestEffortRevokeReturnsWithinTimeoutWhenServerHangs() async throws {
+        let gw = FakeGateway(); gw.logoutDelay = 10_000_000_000
+        let auth = AuthSession(store: InMemoryTokenStore(stored(expiresIn: 600)), gateway: gw)
+        let started = Date()
+        let sent = await auth.revokeEverywhereBestEffort(timeout: 0.2)
+        XCTAssertFalse(sent)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2, "the wipe never waits for the network")
+        XCTAssertEqual(gw.logoutCalls.first?.0, true, "all sessions, so upload tokens are revoked too")
+        let signedIn = await auth.isSignedIn
+        XCTAssertTrue(signedIn, "best-effort revoke does not clear local state; forgetLocally does")
+    }
+
+    func testBestEffortRevokeReportsSuccessWhenServerAnswers() async throws {
+        let gw = FakeGateway()
+        let auth = AuthSession(store: InMemoryTokenStore(stored(expiresIn: 600)), gateway: gw)
+        let sent = await auth.revokeEverywhereBestEffort(timeout: 3)
+        XCTAssertTrue(sent)
+        let signedOutAuth = AuthSession(store: InMemoryTokenStore(), gateway: gw)
+        let none = await signedOutAuth.revokeEverywhereBestEffort(timeout: 3)
+        XCTAssertFalse(none, "nothing to revoke without a session")
     }
 
     func testForgetLocallyClearsWithoutNetworkAndEmitsSignedOut() async throws {
