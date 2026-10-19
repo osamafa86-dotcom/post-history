@@ -10,8 +10,12 @@ set -a; . "$DIR/.env"; set +a
 MC="$(sed -n 's/^ *image: \(pgsty\/mc:.*\)$/\1/p' "$DIR/docker-compose.yml")"
 NET="${COMPOSE_PROJECT_NAME:-post-history}_default"
 
-adm() { docker run --rm -i --network "$NET" -e MC_HOST_a="http://$S3_ACCESS_KEY:$S3_SECRET_KEY@minio:9000" "$MC" "$@"; }
-wrk() { docker run --rm -i --network "$NET" -e MC_HOST_w="http://$S3_MEDIA_ACCESS_KEY:$S3_MEDIA_SECRET_KEY@minio:9000" "$MC" "$@"; }
+# Keys stay out of argv (SEC-05): exported here, passed to docker by name only.
+export MC_HOST_a="http://$S3_ACCESS_KEY:$S3_SECRET_KEY@minio:9000"
+export MC_HOST_w="http://$S3_MEDIA_ACCESS_KEY:$S3_MEDIA_SECRET_KEY@minio:9000"
+adm() { docker run --rm -i --network "$NET" -e MC_HOST_a "$MC" "$@"; }
+wrk() { docker run --rm -i --network "$NET" -e MC_HOST_w "$MC" "$@"; }
+wrk_put() { echo z | wrk pipe "$1"; }
 fails=0
 expect() { # expect ALLOW|deny <description> <command...>
   local want="$1" what="$2"; shift 2
@@ -25,9 +29,9 @@ echo seed | adm pipe "a/$S3_BUCKET_UPLOADS/elsewhere/policy-check" >/dev/null
 
 expect ALLOW "read upload prefix"      wrk cat "w/$S3_BUCKET_UPLOADS/${TUSD_OBJECT_PREFIX}policy-check"
 expect deny  "read outside the prefix" wrk cat "w/$S3_BUCKET_UPLOADS/elsewhere/policy-check"
-expect ALLOW "write derived/"          sh -c "echo z | docker run --rm -i --network $NET -e MC_HOST_w=http://$S3_MEDIA_ACCESS_KEY:$S3_MEDIA_SECRET_KEY@minio:9000 $MC pipe w/$S3_BUCKET_MEDIA/derived/policy-check"
-expect deny  "write outside derived/"  sh -c "echo z | docker run --rm -i --network $NET -e MC_HOST_w=http://$S3_MEDIA_ACCESS_KEY:$S3_MEDIA_SECRET_KEY@minio:9000 $MC pipe w/$S3_BUCKET_MEDIA/other"
-expect deny  "write the upload bucket" sh -c "echo z | docker run --rm -i --network $NET -e MC_HOST_w=http://$S3_MEDIA_ACCESS_KEY:$S3_MEDIA_SECRET_KEY@minio:9000 $MC pipe w/$S3_BUCKET_UPLOADS/${TUSD_OBJECT_PREFIX}x"
+expect ALLOW "write derived/"          wrk_put "w/$S3_BUCKET_MEDIA/derived/policy-check"
+expect deny  "write outside derived/"  wrk_put "w/$S3_BUCKET_MEDIA/other"
+expect deny  "write the upload bucket" wrk_put "w/$S3_BUCKET_UPLOADS/${TUSD_OBJECT_PREFIX}x"
 expect deny  "delete an original"      wrk rm "w/$S3_BUCKET_UPLOADS/${TUSD_OBJECT_PREFIX}policy-check"
 expect deny  "delete a derivative"     wrk rm "w/$S3_BUCKET_MEDIA/derived/policy-check"
 expect deny  "list the upload bucket"  wrk ls "w/$S3_BUCKET_UPLOADS/"
