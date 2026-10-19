@@ -21,6 +21,9 @@ export async function startApi({ databaseUrl, port = 13000, apiDir = join(ROOT, 
     LOG_LEVEL: "info",
     S3_BUCKET_UPLOADS: "uploads",
     TUSD_OBJECT_PREFIX: "tus/",
+    // the contract makes client_sha256 required: run the live paths strict, so a script that forgets it goes red here
+    // (a server without the switch ignores it)
+    UPLOAD_REQUIRE_CLIENT_SHA256: "true",
     OUTBOX_DISPATCHER_ENABLED: "true",
     OUTBOX_POLL_INTERVAL_MS: "200",
     RESERVATION_SWEEP_ENABLED: "false",

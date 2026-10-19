@@ -74,8 +74,10 @@ export async function seed({ databaseUrl, apiUrl }) {
 
   // upload sessions come from POST /uploads like a reporter's app would make them; the database is touched only to
   // push a session into a state the API cannot reach quickly (expired) or without a media file (completed)
+  // client_sha256 is required: each seeded session declares a deterministic stand-in file of its size
   const apiSession = async (token, materialId, size = 1000) => {
-    const r = await write(token, "POST", "/uploads", { material_id: materialId, kind: "original", size_bytes: size, filename: "clip.mp4" });
+    const stand = createHash("sha256").update(Buffer.alloc(size, 0x5a)).digest("hex");
+    const r = await write(token, "POST", "/uploads", { material_id: materialId, kind: "original", size_bytes: size, filename: "clip.mp4", client_sha256: stand });
     return { id: r.id, token: r.upload_token, size };
   };
   const session = (await apiSession(tokens.reporter_b, mB.id)).id;

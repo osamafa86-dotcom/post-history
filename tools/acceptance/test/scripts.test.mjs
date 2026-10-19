@@ -7,6 +7,10 @@ import { run as piiLeak, liveChecks } from "../scripts/pii-leak.mjs";
 import { buildMatrix, execute } from "../scripts/tenant-isolation.mjs";
 import { scan, CHANNEL_KEYS } from "../lib/pii.mjs";
 import { validateMeasurement } from "../lib/measurement.mjs";
+import { createUploadSession, sha256Hex } from "../lib/live.mjs";
+import { readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const quiet = async (fn) => { const l = console.log; console.log = () => {}; try { return await fn(); } finally { console.log = l; } };
 const env = (url) => ({ UPLOAD_ENDPOINT: url, UPLOAD_SIZE_MB: "12", UPLOAD_CHUNK_MB: "2" });
@@ -291,4 +295,40 @@ test("report shows the netlab stage (a) numbers: loss mode, efficiency against M
   const md = buildReport([entry], new Date("2026-10-21T00:00:00Z"));
   assert.match(md, /loss_mode=netem، efficiency_vs_mathis=0\.82، bytes_lost_on_resume=0/);
   assert.match(md, /\| field-network-upload \| pending \| ◐ partial/);
+});
+
+// client_sha256 is required by the contract: every acceptance path that opens an upload session declares its file.
+test("createUploadSession always sends the file's size and SHA-256, and refuses to be called without them", async () => {
+  const seen = [];
+  const http = { call: async (_t, _m, _p, { body }) => { seen.push(body); return { status: 201, body: { id: "s", upload_token: "t" } }; } };
+  const bytes = Buffer.alloc(1234, 3);
+  await createUploadSession(http, "tok", { materialId: "m", bytes });
+  assert.equal(seen[0].client_sha256, sha256Hex(bytes));
+  assert.equal(seen[0].size_bytes, 1234);
+  const given = "a".repeat(64);
+  await createUploadSession(http, "tok", { materialId: "m", size: 77, clientSha256: given });
+  assert.deepEqual([seen[1].size_bytes, seen[1].client_sha256], [77, given]);
+  await assert.rejects(createUploadSession(http, "tok", { materialId: "m", size: 77 }), /needs the file/);
+  await assert.rejects(createUploadSession(http, "tok", { materialId: "m", size: 77, clientSha256: "nope" }), /needs the file/);
+  assert.equal(seen.length, 2);
+});
+
+test("no acceptance script or helper posts /uploads without client_sha256", () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const offenders = [], direct = [];
+  for (const dir of ["scripts", "lib", "live", "field"]) {
+    for (const f of readdirSync(join(root, dir)).filter((x) => x.endsWith(".mjs"))) {
+      const src = readFileSync(join(root, dir, f), "utf8");
+      if (/["']POST["'],\s*["']\/uploads["']/.test(src)) {
+        direct.push(`${dir}/${f}`);
+        if (!src.includes("client_sha256")) offenders.push(`${dir}/${f}`);
+      }
+      // callers of the helper pass the file (bytes) or its digest; none relies on a default
+      for (const m of src.matchAll(/createUploadSession\(http, [^,]+,\s*\{([^}]*)\}/g)) {
+        if (!/\bbytes\b|clientSha256/.test(m[1])) offenders.push(`${dir}/${f}: createUploadSession without bytes or clientSha256`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, []);
+  assert.deepEqual(direct.sort(), ["lib/live.mjs", "live/seed.mjs"]);
 });

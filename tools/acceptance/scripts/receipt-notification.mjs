@@ -61,7 +61,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       for (let i = 0; i < runsB; i++) {
         const mat = await create("normal", `b${i}`);
         const bytes = Buffer.alloc(200_000 + i * 1000, i + 1);
-        const session = await createUploadSession(http, tokens.reporter, { materialId: mat.id, size: bytes.length });
+        const session = await createUploadSession(http, tokens.reporter, { materialId: mat.id, bytes });
         const up = await simulateUpload({ hooks, s3, bucket, prefix, session, bytes });
         const got = await waitFor(async () => (await inbox("reporter")).find((n) => n.material_id === mat.id && n.type === "upload.verified"), { timeoutMs: 30_000 });
         if (!got.value) { check(`run ${i}: receipt notification arrives`, false); continue; }
