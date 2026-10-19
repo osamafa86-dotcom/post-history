@@ -311,6 +311,29 @@ def upload(path, size, host, chunk, deadline, s, timeout):
     return url, offset
 
 
+def run_external(cmd, host, path, size, chunk, deadline_s, timeout, s):
+    """عميل خارجي (مثل نواة الرفع في apps/ios على Linux): يُشغَّل بالأمر المعطى ويطبع ملخص الجلسة JSON في آخر سطر
+    من stdout بمفاتيح: url_path, offset, complete, parts [[seconds, bytes, ok]], windows [s], resumes, failures,
+    bytes_lost. المقاييس تُحسب هنا بالتعريفات نفسها؛ العميل لا يحسب كفاءة ولا يكتب نتيجة."""
+    full = cmd
+    for k, v in {"host": host, "endpoint": f"http://{host}/files/", "file": path, "size": size, "chunk": chunk,
+                 "timeout": timeout, "max_seconds": int(deadline_s)}.items():
+        full = full.replace("{" + k + "}", str(v))
+    r = subprocess.run(full, shell=True, capture_output=True, text=True, timeout=deadline_s + 120)
+    sys.stderr.write(r.stderr[-4000:])
+    line = next((ln for ln in reversed(r.stdout.splitlines()) if ln.strip().startswith("{")), None)
+    if line is None:
+        raise RuntimeError(f"external client printed no summary (exit {r.returncode})")
+    d = json.loads(line)
+    s.parts = [(float(p[0]), int(p[1]), bool(p[2])) for p in d.get("parts", [])]
+    s.windows = [float(w) for w in d.get("windows", [])]
+    s.resumes = int(d.get("resumes", 0))
+    s.failures = int(d.get("failures", 0))
+    s.bytes_lost = int(d.get("bytes_lost", 0))
+    s.confirmed = int(d.get("offset", 0))
+    return d.get("url_path"), int(d.get("offset", 0))
+
+
 def sha256_file(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -377,7 +400,11 @@ def run(a):
     started_at, t0 = utc(), now()
     driver.start()
     s = Session()
-    url, offset = upload(path, size, f"127.0.0.1:{sc['listen_port']}", chunk, t0 + a.max_seconds, s, a.timeout_s)
+    host = f"127.0.0.1:{sc['listen_port']}"
+    if a.client_cmd:
+        url, offset = run_external(a.client_cmd, host, path, size, chunk, a.max_seconds, a.timeout_s, s)
+    else:
+        url, offset = upload(path, size, host, chunk, t0 + a.max_seconds, s, a.timeout_s)
     elapsed = now() - t0
     driver.stop.set()
     ended_at = utc()
@@ -444,20 +471,20 @@ def run(a):
     out = {
         "schema_version": 1,
         "tool": "netlab",
-        "role": "infra",
+        "role": a.role,
         "test_name": a.test_name,
         "decision_ref": 3,
         "started_at": started_at,
         "ended_at": ended_at,
         "result": result,
-        "device": {"platform": "server", "model": "netlab python client (stdlib)",
+        "device": {"platform": "server", "model": a.client_label or "netlab python client (stdlib)",
                    "os_version": f"{platform.system()} {platform.release()}"},
         "network": network,
         "upload_path": "tusd",
         "file": {"size_bytes": size, "codec": "synthetic-random"},
         "metrics": m,
         "notes": (f"toxiproxy 2.12.0 -> nginx tusd-proxy -> tusd v2.10.1 -> MinIO (local compose). "
-                  f"Client: tools/netlab/netlab.py, time box {a.max_seconds}s, event scale {a.event_scale}. "
+                  f"Client: {a.client_label or 'tools/netlab/netlab.py'}, time box {a.max_seconds}s, event scale {a.event_scale}. "
                   + {"netem": f"loss {sc['loss_pct']}% + delay {sc['latency_ms']}ms via tc netem in toxiproxy's netns. ",
                      "iptables-statistic": f"loss {sc['loss_pct']}% via iptables statistic, no packet delay "
                                            "(host lacks sch_netem): TCP impact understated (ADR 0007). ",
@@ -486,6 +513,10 @@ def main():
     r.add_argument("--event-scale", type=float, default=1.0, help="<1 لتجربة سريعة فقط؛ القياس بـ 1")
     r.add_argument("--max-seconds", type=int, default=7200)
     r.add_argument("--test-name", default="field-network-upload")
+    r.add_argument("--client-cmd", help="عميل خارجي بدل عميل بايثون؛ أمر صدفة بعناصر {host} {endpoint} {file} {size} {chunk} {timeout} {max_seconds} "
+                                        "يطبع ملخص الجلسة JSON في آخر سطر (انظر run_external)")
+    r.add_argument("--client-label", help="وصف العميل في device.model والملاحظات (مع --client-cmd)")
+    r.add_argument("--role", default="infra", help="من أجرى القياس (role في النتيجة)")
     r.add_argument("--out", required=True)
     a = p.parse_args()
     run(a)

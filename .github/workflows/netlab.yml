@@ -7,6 +7,8 @@ name: netlab
 on:
   pull_request:
     paths:
+      - "apps/ios/Packages/PostHistoryKit/Sources/UploadCore/**"
+      - "apps/ios/Packages/PostHistoryKit/Sources/upload-netlab/**"
       - "tools/netlab/**"
       - "infra/compose/**"
       - "infra/proxy/**"
@@ -23,6 +25,9 @@ on:
       max_seconds:
         description: time box (GitHub job limit is 6h)
         default: "19800"
+      client:
+        description: python (tools/netlab) | swift (apps/ios UploadCore on Linux)
+        default: python
 
 permissions:
   contents: read
@@ -67,16 +72,25 @@ jobs:
           assert "driver-error" not in m["events"], m["events"]
           print("netlab smoke ok:", {k: m[k] for k in ("loss_mode", "bytes_uploaded", "goodput_kbps", "resumes")})
           EOF
+      - name: Build the Swift upload client (apps/ios UploadCore, Linux)
+        if: github.event_name == 'workflow_dispatch' && inputs.client == 'swift'
+        run: .github/scripts/netlab-swift-client.sh build
       - name: Measure
         if: github.event_name == 'workflow_dispatch'
         env:
           SCENARIO: ${{ inputs.scenario }}
           SIZE_MB: ${{ inputs.size_mb }}
           MAX_SECONDS: ${{ inputs.max_seconds }}
+          CLIENT: ${{ inputs.client }}
         run: |
-          python3 tools/netlab/netlab.py run --scenario "$SCENARIO" --size-mb "$SIZE_MB" \
-            --max-seconds "$MAX_SECONDS" --workdir "$RUNNER_TEMP" \
-            --out "$RUNNER_TEMP/out/$(date -u +%F)-tusd-$SCENARIO-${SIZE_MB}mb-gha.json"
+          if [ "$CLIENT" = "swift" ]; then
+            .github/scripts/netlab-swift-client.sh measure "$SCENARIO" "$SIZE_MB" "$MAX_SECONDS" \
+              "$RUNNER_TEMP/out/$(date -u +%F)-tusd-$SCENARIO-${SIZE_MB}mb-ios-core-gha.json"
+          else
+            python3 tools/netlab/netlab.py run --scenario "$SCENARIO" --size-mb "$SIZE_MB" \
+              --max-seconds "$MAX_SECONDS" --workdir "$RUNNER_TEMP" \
+              --out "$RUNNER_TEMP/out/$(date -u +%F)-tusd-$SCENARIO-${SIZE_MB}mb-gha.json"
+          fi
       # The result file is also printed: it is committed to docs/measurements/netlab/ as written here
       # (no secrets or revealing data: synthetic file, local compose).
       - name: Print the result file
@@ -86,6 +100,60 @@ jobs:
         if: always()
         with:
           name: netlab-result
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: ignore
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/compose/docker-compose.yml -f tools/netlab/compose.netlab.yml down -v
+
+  # Stage (a) of field-network-upload for the iOS upload core (apps/ios UploadCore run on Linux through
+  # netlab.py --client-cmd): one runner per scenario so a lossy scenario never shares toxiproxy's netns.
+  # 100 MB on field-weak at the Mathis limit (~86 kbit/s at 300 ms / 30% loss) needs hours, so the PR run is
+  # time-boxed and recorded partial; the complete 100 MB field-weak run is the workflow_dispatch with client=swift.
+  netlab-ios-core:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: office
+            max_seconds: 600
+          - scenario: field-switch
+            max_seconds: 1500
+          - scenario: field-weak
+            max_seconds: 2400
+    env:
+      NO_PROXY: 127.0.0.1,localhost
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Load sch_netem
+        run: |
+          sudo modprobe sch_netem || {
+            sudo apt-get update -q
+            sudo apt-get install -y -q "linux-modules-extra-$(uname -r)"
+            sudo modprobe sch_netem
+          }
+          lsmod | grep sch_netem
+      - name: Build the Swift upload client (apps/ios UploadCore, Linux)
+        run: .github/scripts/netlab-swift-client.sh build
+      - name: Start compose with the netlab overlay
+        run: |
+          cp infra/compose/.env.example infra/compose/.env
+          sed -i "s/^TUSD_HOOK_SECRET=.*/TUSD_HOOK_SECRET=$(openssl rand -hex 32)/" infra/compose/.env
+          docker compose -f infra/compose/docker-compose.yml -f tools/netlab/compose.netlab.yml up -d --wait
+      - name: Measure 100 MB with the iOS upload core (time-boxed)
+        run: |
+          .github/scripts/netlab-swift-client.sh measure "${{ matrix.scenario }}" 100 "${{ matrix.max_seconds }}" \
+            "$RUNNER_TEMP/out/$(date -u +%F)-tusd-${{ matrix.scenario }}-100mb-ios-core-gha.json"
+      - name: Print the result file
+        if: always()
+        run: for f in "$RUNNER_TEMP"/out/*.json; do [ -f "$f" ] && { echo "== $(basename "$f")"; cat "$f"; }; done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: netlab-ios-core-${{ matrix.scenario }}
           path: ${{ runner.temp }}/out/
           if-no-files-found: ignore
       - name: Tear down
