@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "concurrent-load",
+  "started_at": "2026-10-19T19:43:22.575Z",
+  "ended_at": "2026-10-19T19:43:53.147Z",
+  "result": "partial",
+  "metrics": {
+    "concurrency": 8,
+    "file_size_mb": 256,
+    "verified_ok": 8,
+    "sha256_ok": 8,
+    "notification_s_p50_baseline": 0.746,
+    "notification_s_p95_baseline": 1.239,
+    "notification_s_p50_load": 4.714,
+    "notification_s_p95_load": 5.309,
+    "notification_s_max_load": 5.309,
+    "wall_s": 11.9,
+    "degradation_ratio_p95": 4.28,
+    "degradation_threshold": "5x or +10s",
+    "hook_latency_ms_p95": 1804,
+    "upload_path_real_tusd": false,
+    "upload_server_temp_disk_measured": false,
+    "failures": 0
+  },
+  "device": {
+    "platform": "server"
+  },
+  "upload_path": "n/a",
+  "notes": "مسار الخطّاف وS3 والتحقق على الخادم (tusd مُحاكى) بملفات 256 ميغابايت؛ لا قياس لقرص خادم الرفع المؤقت، وحد «لا تدهور» معيار عامل بقرار المنسّق حتى التجربة الميدانية؛ حجم الخطة (60 × 2 غيغابايت عبر tusd) سكربت يدوي؛ قياس وكيل الخادم للتذكرة 6: البناء من الفرع agent/api/hash-workers-admin-guard@c7c4251 (البصمة في مجمّع worker_threads)، VERIFY_CONCURRENCY=8 وVERIFY_HASH_THREADS=3، على جهاز واحد بأربع أنوية يشغّل MinIO وPostgres وRedis والخادم والسكربت معًا؛ قراءة 8 كائنات 256 ميغابايت من MinIO بلا بصمة تستغرق وحدها 3.7 ث مقابل 0.84 ث لكائن واحد على الجهاز نفسه، فهي الحد الأدنى هنا"
+}
