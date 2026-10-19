@@ -41,4 +41,10 @@ sealed interface AuthState {
     data class SignedOut(val reason: SignOutReason?) : AuthState
 }
 
-enum class SignOutReason { USER, SESSION_REVOKED }
+enum class SignOutReason {
+    USER,
+    /** The server refused the refresh token (SEC-02): someone ended this session, possibly after a lost phone. */
+    SESSION_REVOKED,
+    /** The reporter erased everything on this device (SEC-01). */
+    WIPED,
+}

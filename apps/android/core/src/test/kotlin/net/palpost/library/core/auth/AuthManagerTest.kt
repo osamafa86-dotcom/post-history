@@ -101,6 +101,19 @@ class AuthManagerTest {
         assertEquals(2, server.requestCount)
     }
 
+    @Test fun `a revoked session is rejected locally within the same call, measured`() = runBlocking {
+        store.write(SessionTokens("a1", "r1", now + 600_000, "u"))
+        server.enqueue(unauthorized)
+        server.enqueue(unauthorized)
+        val started = System.nanoTime()
+        try { me.getMe(); fail("expected 401") } catch (e: ClientException) { assertEquals(401, e.statusCode) }
+        val elapsedMs = (System.nanoTime() - started) / 1_000_000
+        println("MEASUREMENT revoked-token-rejected-locally-ms=$elapsedMs")
+        assertNull(store.read())
+        assertEquals(AuthState.SignedOut(SignOutReason.SESSION_REVOKED), manager.state.value)
+        assertTrue("local revocation took ${'$'}elapsedMs ms", elapsedMs < 2_000)
+    }
+
     @Test fun `a second 401 after the retry is final`() = runBlocking {
         store.write(SessionTokens("a1", "r1", now + 600_000, "u"))
         server.enqueue(unauthorized)
@@ -169,6 +182,22 @@ class AuthManagerTest {
     @Test fun `tokens never print`() {
         val s = SessionTokens("secret-access", "secret-refresh", 1L, "u").toString()
         assertTrue(!s.contains("secret"))
+    }
+
+    @Test fun `best-effort revocation before a wipe is bounded and never fails the caller`() = runBlocking {
+        store.write(SessionTokens("a1", "r1", now + 600_000, "u"))
+        server.enqueue(MockResponse().setResponseCode(204))
+        assertTrue(manager.revokeAllSessionsBestEffort())
+        assertTrue(server.takeRequest().body.readUtf8().contains("\"all_sessions\":true"))
+        assertEquals("a1", store.read()?.accessToken) // local state untouched: the wipe erases it next
+
+        server.enqueue(MockResponse().setResponseCode(204).setHeadersDelay(5, TimeUnit.SECONDS))
+        val started = System.nanoTime()
+        assertEquals(false, manager.revokeAllSessionsBestEffort(timeoutMs = 300))
+        assertTrue((System.nanoTime() - started) / 1_000_000 < 2_000)
+
+        server.enqueue(MockResponse().setResponseCode(500))
+        assertEquals(false, manager.revokeAllSessionsBestEffort())
     }
 
     @Test fun `logout clears the device even when the server is unreachable`() = runBlocking {
