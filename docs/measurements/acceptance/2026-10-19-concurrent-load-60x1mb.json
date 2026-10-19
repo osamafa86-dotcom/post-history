@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "concurrent-load",
+  "started_at": "2026-10-19T18:50:06.022Z",
+  "ended_at": "2026-10-19T18:50:15.105Z",
+  "result": "partial",
+  "metrics": {
+    "concurrency": 60,
+    "file_size_mb": 1,
+    "verified_ok": 60,
+    "sha256_ok": 60,
+    "notification_s_p50_baseline": 0.444,
+    "notification_s_p95_baseline": 0.448,
+    "notification_s_p50_load": 2.326,
+    "notification_s_p95_load": 3.331,
+    "notification_s_max_load": 3.344,
+    "wall_s": 4.3,
+    "degradation_ratio_p95": 7.44,
+    "degradation_threshold": "5x or +10s",
+    "hook_latency_ms_p95": 433,
+    "upload_path_real_tusd": false,
+    "upload_server_temp_disk_measured": false,
+    "failures": 0
+  },
+  "device": {
+    "platform": "server"
+  },
+  "upload_path": "n/a",
+  "notes": "مسار الخطّاف وS3 والتحقق على الخادم (tusd مُحاكى) بملفات 1 ميغابايت؛ لا قياس لقرص خادم الرفع المؤقت، وحد «لا تدهور» افتراضي من الجودة (لا رقم له في الخطة)؛ حجم الخطة (60 × 2 غيغابايت عبر tusd) سكربت يدوي"
+}

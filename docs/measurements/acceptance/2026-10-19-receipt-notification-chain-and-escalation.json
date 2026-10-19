@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "receipt-notification",
+  "started_at": "2026-10-19T18:49:45.165Z",
+  "ended_at": "2026-10-19T18:50:06.019Z",
+  "result": "partial",
+  "metrics": {
+    "runs": 20,
+    "creation_to_task_within_60s_pct": 100,
+    "creation_to_task_s_p95": 0.25,
+    "missing_tasks": 0,
+    "duplicate_tasks": 0,
+    "misdirected": 0,
+    "verification_chain_measured": true,
+    "verified_runs": 8,
+    "verification_to_receipt_s_p95": 0.455,
+    "receipts_ok": 8,
+    "server_sha256_ok": 8,
+    "escalation_measured": true,
+    "escalation_timeout_s": 3,
+    "escalation_to_editor_s": 3.366,
+    "escalation_to_admin_s": 6.536,
+    "acknowledged_task_stayed_quiet": true,
+    "supervisor_task_created_before_verification": true,
+    "failures": 0
+  },
+  "device": {
+    "platform": "server"
+  },
+  "upload_path": "n/a",
+  "notes": "المشرف يتلقى مهمته عند الإنشاء (قبل رفع الأصل وتحققه)، لا عند التحقق الفني؛ فعبارة «خلال 60 ثانية من التحقق الفني» لا تُقاس حرفيًا وسؤالها مرفوع للمنسّق، والنتيجة جزئية إلى أن يُحسم؛ التحقق والتصعيد قيسا بمهلة محقونة وتخزين S3 فعلي وهوك tusd مُحاكى (لا tusd حقيقي)"
+}

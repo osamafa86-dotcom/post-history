@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "tenant-isolation",
+  "started_at": "2026-10-19T18:49:42.705Z",
+  "ended_at": "2026-10-19T18:49:44.128Z",
+  "result": "partial",
+  "metrics": {
+    "operations": 31,
+    "cases_total": 231,
+    "cases_anonymous": 28,
+    "cases_role": 196,
+    "cases_permission_masking": 2,
+    "cases_scope": 3,
+    "cases_list_leak": 2,
+    "contract_problems_open": 0,
+    "contract_problems_waived": 5,
+    "cases_executed": 164,
+    "cases_failed": 0,
+    "cases_skipped": 2,
+    "cases_unimplemented": 65,
+    "live_checked": true
+  },
+  "device": {
+    "platform": "server"
+  },
+  "upload_path": "n/a",
+  "notes": "5 ثغرة توثيق في العقد مُستثناة بإذن مكتوب في waivers/tenant-isolation.json؛ v0 بلا مؤسسات: عزل المؤسسات والفهارس والنسخ المؤقتة والفواتير يُضاف مع المرحلة التجارية ويبقى خارج هذه النتيجة"
+}
