@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "pii-leak",
+  "started_at": "2026-10-19T17:18:24.956Z",
+  "ended_at": "2026-10-19T17:18:25.070Z",
+  "result": "partial",
+  "metrics": {
+    "waived_open_findings": 2,
+    "static_examples_scanned": 9,
+    "static_response_schemas_scanned": 34,
+    "static_response_examples_scanned": 0,
+    "static_findings": 2,
+    "detector_controls_missed": 0,
+    "live_checked": false,
+    "live_requests": 0,
+    "live_findings": 0
+  },
+  "device": {
+    "platform": "server"
+  },
+  "upload_path": "n/a",
+  "notes": "الفحص الساكن فقط (العقد والأمثلة)؛ الجزء الحي ضد الخادم لم يُنفَّذ بعد، فالنتيجة جزئية لا تدّعي نجاح المعيار كاملًا؛ 2 موضع مُستثنى بإذن مكتوب في waivers/pii-leak.json ويبقى مفتوحًا حتى حسم العقد"
+}

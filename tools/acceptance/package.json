@@ -1,0 +1,18 @@
+{
+  "name": "post-history-acceptance",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Acceptance test runner: one script per row of the acceptance table in the plan",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "list": "node run.mjs --list",
+    "test": "node --test \"test/*.test.mjs\"",
+    "validate-results": "node validate-results.mjs"
+  },
+  "dependencies": {
+    "ajv": "8.18.0",
+    "ajv-formats": "3.0.1",
+    "yaml": "2.8.1"
+  }
+}

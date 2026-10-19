@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "tenant-isolation",
+  "started_at": "2026-10-19T17:18:25.073Z",
+  "ended_at": "2026-10-19T17:18:25.150Z",
+  "result": "partial",
+  "metrics": {
+    "operations": 32,
+    "cases_total": 239,
+    "cases_anonymous": 29,
+    "cases_role": 203,
+    "cases_permission_masking": 2,
+    "cases_scope": 3,
+    "cases_list_leak": 2,
+    "contract_problems_open": 0,
+    "contract_problems_waived": 5,
+    "cases_executed": 0,
+    "cases_failed": 0,
+    "cases_skipped": 0,
+    "live_checked": false
+  },
+  "device": {
+    "platform": "server"
+  },
+  "upload_path": "n/a",
+  "notes": "هيكل الحالات من العقد فقط؛ التنفيذ ضد الخادم لم يجرِ بعد فالنتيجة جزئية؛ 5 ثغرة توثيق في العقد مُستثناة بإذن مكتوب في waivers/tenant-isolation.json؛ v0 بلا مؤسسات: عزل المؤسسات والفهارس والنسخ المؤقتة والفواتير يُضاف مع المرحلة التجارية ويبقى خارج هذه النتيجة"
+}

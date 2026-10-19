@@ -1,0 +1,233 @@
+{
+  "version": 1,
+  "fields": [
+    {
+      "key": "headline",
+      "type": "short_text",
+      "label": {
+        "ar": "العنوان",
+        "en": "Headline"
+      },
+      "required": true,
+      "validation": {
+        "min_length": 3,
+        "max_length": 20
+      }
+    },
+    {
+      "key": "code",
+      "type": "short_text",
+      "label": {
+        "ar": "الرمز",
+        "en": "Code"
+      },
+      "required": false,
+      "validation": {
+        "pattern": "^[A-Z]{2}-\\d{3}$"
+      }
+    },
+    {
+      "key": "notes",
+      "type": "long_text",
+      "label": {
+        "ar": "ملاحظات",
+        "en": "Notes"
+      },
+      "required": false,
+      "validation": {
+        "max_length": 50
+      }
+    },
+    {
+      "key": "count",
+      "type": "number",
+      "label": {
+        "ar": "العدد",
+        "en": "Count"
+      },
+      "required": false,
+      "validation": {
+        "min": 0,
+        "max": 100
+      }
+    },
+    {
+      "key": "category",
+      "type": "select",
+      "label": {
+        "ar": "الفئة",
+        "en": "Category"
+      },
+      "required": true,
+      "validation": {
+        "options": [
+          {
+            "value": "news",
+            "label": {
+              "ar": "خبر",
+              "en": "News"
+            }
+          },
+          {
+            "value": "feature",
+            "label": {
+              "ar": "تقرير",
+              "en": "Feature"
+            }
+          },
+          {
+            "value": "other",
+            "label": {
+              "ar": "أخرى",
+              "en": "Other"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "key": "tags",
+      "type": "multi_select",
+      "label": {
+        "ar": "الوسوم",
+        "en": "Tags"
+      },
+      "required": false,
+      "validation": {
+        "min_items": 0,
+        "max_items": 2,
+        "options": [
+          {
+            "value": "x",
+            "label": {
+              "ar": "س",
+              "en": "X"
+            }
+          },
+          {
+            "value": "y",
+            "label": {
+              "ar": "ص",
+              "en": "Y"
+            }
+          },
+          {
+            "value": "z",
+            "label": {
+              "ar": "ع",
+              "en": "Z"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "key": "event_time",
+      "type": "datetime",
+      "label": {
+        "ar": "وقت الحدث",
+        "en": "Event time"
+      },
+      "required": false,
+      "validation": {
+        "not_before": "2026-01-01T00:00:00Z",
+        "not_after": "2026-12-31T23:59:59Z"
+      }
+    },
+    {
+      "key": "consent",
+      "type": "boolean",
+      "label": {
+        "ar": "الموافقة",
+        "en": "Consent"
+      },
+      "required": true
+    },
+    {
+      "key": "producer",
+      "type": "staff_member",
+      "label": {
+        "ar": "المنتج",
+        "en": "Producer"
+      },
+      "required": false
+    },
+    {
+      "key": "photo",
+      "type": "attachment",
+      "label": {
+        "ar": "صورة",
+        "en": "Photo"
+      },
+      "required": false,
+      "validation": {
+        "accept": [
+          "image/*",
+          "application/pdf"
+        ],
+        "max_size_bytes": 1000000,
+        "max_items": 2
+      }
+    },
+    {
+      "key": "other_detail",
+      "type": "short_text",
+      "label": {
+        "ar": "تفاصيل",
+        "en": "Detail"
+      },
+      "required": true,
+      "condition": {
+        "field": "category",
+        "equals": "other"
+      },
+      "validation": {
+        "max_length": 40
+      }
+    },
+    {
+      "key": "interview_guest",
+      "type": "short_text",
+      "label": {
+        "ar": "الضيف",
+        "en": "Guest"
+      },
+      "required": true,
+      "material_types": [
+        "interview"
+      ]
+    },
+    {
+      "key": "handout_terms",
+      "type": "multi_select",
+      "label": {
+        "ar": "شروط",
+        "en": "Terms"
+      },
+      "required": true,
+      "condition": {
+        "field": "tags",
+        "equals": "z"
+      },
+      "validation": {
+        "min_items": 1,
+        "options": [
+          {
+            "value": "h1",
+            "label": {
+              "ar": "أ",
+              "en": "A"
+            }
+          },
+          {
+            "value": "h2",
+            "label": {
+              "ar": "ب",
+              "en": "B"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

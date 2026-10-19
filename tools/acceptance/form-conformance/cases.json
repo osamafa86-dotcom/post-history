@@ -1,0 +1,1131 @@
+{
+ "schema_version": 1,
+ "forms": {
+  "main": "forms/main.json"
+ },
+ "cases": [
+  {
+   "id": "minimal-valid",
+   "description": "only the required fields",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "all-fields-valid",
+   "description": "every field filled and valid",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "code": "AB-123",
+    "notes": "ok",
+    "count": 50,
+    "tags": [
+     "x",
+     "y"
+    ],
+    "event_time": "2026-06-01T10:00:00Z",
+    "producer": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+    "photo": [
+     {
+      "mime": "image/png",
+      "size_bytes": 500000
+     }
+    ]
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "optional-empties-skip-rules",
+   "description": "empty optional values skip every other rule",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "code": "",
+    "notes": null,
+    "tags": [],
+    "photo": []
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "required-missing",
+   "description": "required text missing",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "category": "news",
+    "consent": true
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "headline",
+      "code": "required"
+     }
+    ]
+   }
+  },
+  {
+   "id": "required-empty-string",
+   "description": "empty string counts as missing, not as a length error",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "",
+    "category": "news",
+    "consent": true
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "headline",
+      "code": "required"
+     }
+    ]
+   }
+  },
+  {
+   "id": "required-null",
+   "description": "null counts as missing",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": null,
+    "category": "news",
+    "consent": true
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "headline",
+      "code": "required"
+     }
+    ]
+   }
+  },
+  {
+   "id": "text-wrong-type",
+   "description": "number where text is expected",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": 5,
+    "category": "news",
+    "consent": true
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "headline",
+      "code": "type"
+     }
+    ]
+   }
+  },
+  {
+   "id": "min-length-boundary-ok",
+   "description": "exactly min_length code points",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "abc",
+    "category": "news",
+    "consent": true
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "min-length-too-short",
+   "description": "one below min_length",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "ab",
+    "category": "news",
+    "consent": true
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "headline",
+      "code": "min_length"
+     }
+    ]
+   }
+  },
+  {
+   "id": "max-length-boundary-ok",
+   "description": "exactly max_length code points",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "aaaaaaaaaaaaaaaaaaaa",
+    "category": "news",
+    "consent": true
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "max-length-too-long",
+   "description": "one above max_length",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "aaaaaaaaaaaaaaaaaaaaa",
+    "category": "news",
+    "consent": true
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "headline",
+      "code": "max_length"
+     }
+    ]
+   }
+  },
+  {
+   "id": "length-counts-code-points-ok",
+   "description": "20 astral emoji = 20 code points (40 UTF-16 units) is within max_length 20",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+    "category": "news",
+    "consent": true
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "length-counts-code-points-too-long",
+   "description": "21 astral emoji exceeds max_length",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+    "category": "news",
+    "consent": true
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "headline",
+      "code": "max_length"
+     }
+    ]
+   }
+  },
+  {
+   "id": "length-counts-code-points-too-short",
+   "description": "2 astral emoji = 2 code points is below min_length 3 although 4 UTF-16 units",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "😀😀",
+    "category": "news",
+    "consent": true
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "headline",
+      "code": "min_length"
+     }
+    ]
+   }
+  },
+  {
+   "id": "length-arabic-combining-marks",
+   "description": "Arabic with diacritics counts each mark as a code point (7 here)",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "مَرحبًا",
+    "category": "news",
+    "consent": true
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "length-no-trimming",
+   "description": "whitespace is content: three spaces satisfy min_length 3",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "   ",
+    "category": "news",
+    "consent": true
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "pattern-ok",
+   "description": "matches the pattern",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "code": "AB-123"
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "pattern-mismatch",
+   "description": "lowercase letters",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "code": "ab-123"
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "code",
+      "code": "pattern"
+     }
+    ]
+   }
+  },
+  {
+   "id": "long-text-max",
+   "description": "51 code points in a 50 limit",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "notes": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn"
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "notes",
+      "code": "max_length"
+     }
+    ]
+   }
+  },
+  {
+   "id": "number-min-boundary-ok",
+   "description": "min is inclusive",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "count": 0
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "number-max-boundary-ok",
+   "description": "max is inclusive",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "count": 100
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "number-below-min",
+   "description": "below min",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "count": -1
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "count",
+      "code": "min"
+     }
+    ]
+   }
+  },
+  {
+   "id": "number-above-max",
+   "description": "above max",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "count": 100.5
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "count",
+      "code": "max"
+     }
+    ]
+   }
+  },
+  {
+   "id": "number-as-string",
+   "description": "numeric string is not a number",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "count": "5"
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "count",
+      "code": "type"
+     }
+    ]
+   }
+  },
+  {
+   "id": "select-invalid-option",
+   "description": "value not among options",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "bogus",
+    "consent": true
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "category",
+      "code": "option"
+     }
+    ]
+   }
+  },
+  {
+   "id": "select-missing",
+   "description": "required select missing",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "consent": true
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "category",
+      "code": "required"
+     }
+    ]
+   }
+  },
+  {
+   "id": "multi-select-ok",
+   "description": "two valid options",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "tags": [
+     "x",
+     "y"
+    ]
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "multi-select-too-many",
+   "description": "three options over max_items 2 (also reveals condition on z)",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "tags": [
+     "x",
+     "y",
+     "z"
+    ],
+    "handout_terms": [
+     "h1"
+    ]
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "tags",
+      "code": "max_items"
+     }
+    ]
+   }
+  },
+  {
+   "id": "multi-select-bad-option",
+   "description": "unknown option",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "tags": [
+     "w"
+    ]
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "tags",
+      "code": "option"
+     }
+    ]
+   }
+  },
+  {
+   "id": "multi-select-not-array",
+   "description": "string instead of array",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "tags": "x"
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "tags",
+      "code": "type"
+     }
+    ]
+   }
+  },
+  {
+   "id": "datetime-ok",
+   "description": "inside the window",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "event_time": "2026-06-01T10:00:00Z"
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "datetime-offset-ok",
+   "description": "offset form is compared as an instant",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "event_time": "2026-06-01T10:00:00+03:00"
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "datetime-not-before-boundary-ok",
+   "description": "not_before is inclusive",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "event_time": "2026-01-01T00:00:00Z"
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "datetime-before",
+   "description": "one second before not_before",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "event_time": "2025-12-31T23:59:59Z"
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "event_time",
+      "code": "not_before"
+     }
+    ]
+   }
+  },
+  {
+   "id": "datetime-after",
+   "description": "after not_after",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "event_time": "2027-01-01T00:00:00Z"
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "event_time",
+      "code": "not_after"
+     }
+    ]
+   }
+  },
+  {
+   "id": "datetime-offset-instant-before",
+   "description": "02:00 at +03:00 on 1 Jan is 23:00Z on 31 Dec, before not_before",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "event_time": "2026-01-01T02:00:00+03:00"
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "event_time",
+      "code": "not_before"
+     }
+    ]
+   }
+  },
+  {
+   "id": "datetime-date-only",
+   "description": "a date without time is not a date-time",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "event_time": "2026-06-01"
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "event_time",
+      "code": "type"
+     }
+    ]
+   }
+  },
+  {
+   "id": "boolean-false-satisfies-required",
+   "description": "false is a present value",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": false
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "boolean-missing",
+   "description": "required boolean missing",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news"
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "consent",
+      "code": "required"
+     }
+    ]
+   }
+  },
+  {
+   "id": "boolean-as-string",
+   "description": "\"true\" is not a boolean",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": "true"
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "consent",
+      "code": "type"
+     }
+    ]
+   }
+  },
+  {
+   "id": "staff-member-ok",
+   "description": "uuid",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "producer": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "staff-member-not-uuid",
+   "description": "not a uuid",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "producer": "not-a-uuid"
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "producer",
+      "code": "type"
+     }
+    ]
+   }
+  },
+  {
+   "id": "attachment-wildcard-ok",
+   "description": "image/* accepts image/png",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "photo": [
+     {
+      "mime": "image/png",
+      "size_bytes": 10
+     }
+    ]
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "attachment-wrong-type",
+   "description": "video is not accepted",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "photo": [
+     {
+      "mime": "video/mp4",
+      "size_bytes": 10
+     }
+    ]
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "photo",
+      "code": "accept"
+     }
+    ]
+   }
+  },
+  {
+   "id": "attachment-too-big",
+   "description": "one byte over max_size_bytes",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "photo": [
+     {
+      "mime": "image/jpeg",
+      "size_bytes": 1000001
+     }
+    ]
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "photo",
+      "code": "max_size_bytes"
+     }
+    ]
+   }
+  },
+  {
+   "id": "attachment-size-boundary-ok",
+   "description": "exactly max_size_bytes",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "photo": [
+     {
+      "mime": "application/pdf",
+      "size_bytes": 1000000
+     }
+    ]
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "attachment-too-many",
+   "description": "three files over max_items 2",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "photo": [
+     {
+      "mime": "image/png",
+      "size_bytes": 1
+     },
+     {
+      "mime": "image/png",
+      "size_bytes": 1
+     },
+     {
+      "mime": "image/png",
+      "size_bytes": 1
+     }
+    ]
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "photo",
+      "code": "max_items"
+     }
+    ]
+   }
+  },
+  {
+   "id": "condition-hidden-field-ignored",
+   "description": "other_detail is hidden when category is news; its value is dropped, even a wrong-typed one",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "other_detail": 5
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "condition-shown-required",
+   "description": "category other makes other_detail required",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "other",
+    "consent": true
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "other_detail",
+      "code": "required"
+     }
+    ]
+   }
+  },
+  {
+   "id": "condition-shown-ok",
+   "description": "category other with detail",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "other",
+    "consent": true,
+    "other_detail": "details"
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "condition-shown-validated",
+   "description": "shown field is validated (41 > 40)",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "other",
+    "consent": true,
+    "other_detail": "ddddddddddddddddddddddddddddddddddddddddd"
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "other_detail",
+      "code": "max_length"
+     }
+    ]
+   }
+  },
+  {
+   "id": "condition-on-multi-select-contains",
+   "description": "condition equals on a multi_select means contains",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "tags": [
+     "z"
+    ]
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "handout_terms",
+      "code": "required"
+     }
+    ]
+   }
+  },
+  {
+   "id": "condition-on-multi-select-absent",
+   "description": "handout_terms stays hidden without z",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "tags": [
+     "x"
+    ]
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "material-type-hidden",
+   "description": "interview_guest applies to interview only; report ignores it",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "material-type-shown-required",
+   "description": "interview requires the guest",
+   "form": "main",
+   "material_type": "interview",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "interview_guest",
+      "code": "required"
+     }
+    ]
+   }
+  },
+  {
+   "id": "material-type-shown-ok",
+   "description": "interview with guest",
+   "form": "main",
+   "material_type": "interview",
+   "values": {
+    "headline": "Hello",
+    "category": "news",
+    "consent": true,
+    "interview_guest": "A. Guest"
+   },
+   "expect": {
+    "valid": true,
+    "errors": []
+   }
+  },
+  {
+   "id": "several-errors-in-form-order",
+   "description": "errors come back sorted by field order in the form",
+   "form": "main",
+   "material_type": "report",
+   "values": {
+    "category": "bogus"
+   },
+   "expect": {
+    "valid": false,
+    "errors": [
+     {
+      "field": "headline",
+      "code": "required"
+     },
+     {
+      "field": "category",
+      "code": "option"
+     },
+     {
+      "field": "consent",
+      "code": "required"
+     }
+    ]
+   }
+  }
+ ]
+}

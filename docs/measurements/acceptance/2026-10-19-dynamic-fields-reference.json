@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "dynamic-fields",
+  "started_at": "2026-10-19T17:18:25.156Z",
+  "ended_at": "2026-10-19T17:18:25.292Z",
+  "result": "partial",
+  "metrics": {
+    "conformance_cases": 57,
+    "reference_cases_matching": 57,
+    "platforms_judged": "none",
+    "all_three_clients_identical": false,
+    "server_publish_and_old_drafts_checked": false
+  },
+  "device": {
+    "platform": "other"
+  },
+  "upload_path": "n/a",
+  "notes": "الجزء المشترك فقط (اختبار المطابقة)؛ نشر الإصدار مع بقاء السجلات القديمة قابلة للقراءة وإكمال المسودات القديمة يحتاجان الخادم ولم يُقاسا بعد"
+}
