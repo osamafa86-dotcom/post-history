@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://post-history/contracts/schemas/timeline.json",
+  "title": "Timeline",
+  "description": "الخط الزمني المشترك بين المحرر ووكيل المونتاج الآلي. هيكل أولي لمرحلة التأسيس؛ نقاط القص بزمن المصدر بالملّي ثانية لا برقم الإطار. يكتمل في المرحلة التجارية بمسارات متعددة.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "material_id", "material_version", "clips"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "material_id": { "type": "string", "format": "uuid" },
+    "material_version": { "type": "integer", "minimum": 1 },
+    "source_start_pts_us": {
+      "description": "نقطة البداية الزمنية للأصل كما حُفظت في النسخة الخفيفة",
+      "type": "integer"
+    },
+    "clips": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_file_id", "in_ms", "out_ms"],
+        "properties": {
+          "source_file_id": { "type": "string", "format": "uuid" },
+          "in_ms": { "type": "integer", "minimum": 0 },
+          "out_ms": { "type": "integer", "minimum": 1 },
+          "label": { "type": "string" }
+        }
+      }
+    },
+    "markers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["at_ms", "text"],
+        "properties": {
+          "at_ms": { "type": "integer", "minimum": 0 },
+          "text": { "type": "string" },
+          "author_id": { "type": "string", "format": "uuid" }
+        }
+      }
+    }
+  }
+}

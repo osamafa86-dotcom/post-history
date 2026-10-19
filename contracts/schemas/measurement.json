@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://post-history/contracts/schemas/measurement.json",
+  "title": "Measurement",
+  "description": "نتيجة تشغيل واحد لأداة قياس. ملف واحد لكل تشغيل في docs/measurements/<tool>/. لا بيانات كاشفة.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tool", "role", "started_at", "ended_at", "result", "metrics"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "tool": {
+      "type": "string",
+      "enum": ["netlab", "asr-bench", "render-bench", "acceptance", "ios-app", "android-app", "web", "other"]
+    },
+    "role": {
+      "description": "الوكيل أو الشخص الذي أجرى القياس",
+      "type": "string"
+    },
+    "test_name": {
+      "description": "اسم اختبار القبول من الخطة إن كان القياس يخصه",
+      "type": "string"
+    },
+    "decision_ref": {
+      "description": "رقم البند في ملحق القرارات",
+      "type": "integer"
+    },
+    "started_at": { "type": "string", "format": "date-time" },
+    "ended_at": { "type": "string", "format": "date-time" },
+    "result": { "type": "string", "enum": ["pass", "fail", "partial", "info"] },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "platform": { "type": "string", "enum": ["ios", "android", "server", "browser", "other"] },
+        "model": { "type": "string" },
+        "os_version": { "type": "string" },
+        "free_storage_mb": { "type": "integer" }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": { "type": "string", "description": "اسم سيناريو netlab أو «field»" },
+        "uplink_kbps": { "type": "number" },
+        "loss_pct": { "type": "number" },
+        "disconnect_every_s": { "type": "number" },
+        "longest_connected_window_s": { "type": "number" }
+      }
+    },
+    "upload_path": { "type": "string", "enum": ["tusd", "direct", "ietf", "n/a"] },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "size_bytes": { "type": "integer" },
+        "duration_s": { "type": "number" },
+        "bitrate_kbps": { "type": "number" },
+        "codec": { "type": "string" },
+        "vfr": { "type": "boolean" },
+        "hdr": { "type": "boolean" }
+      }
+    },
+    "metrics": {
+      "description": "قيم رقمية بأسماء واضحة بوحداتها، مثل part_time_s_p50 أو wer_pct أو refusal_rate_pct أو render_time_s",
+      "type": "object",
+      "additionalProperties": { "type": ["number", "string", "boolean"] }
+    },
+    "provider": {
+      "description": "لقياسات الذكاء الاصطناعي: المزوّد والنموذج",
+      "type": "string"
+    },
+    "cost_usd": { "type": "number" },
+    "notes": { "type": "string" }
+  }
+}
