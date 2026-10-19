@@ -15,13 +15,13 @@ public struct Me: Sendable, Codable, Hashable {
     /** مكتب المستخدم */
     public var officeId: UUID?
     public var totpEnabled: Bool
-    /** الجلسة مقيّدة بعد استعادة الحساب حتى `/auth/totp/confirm` (أُضيف في v0.1) */
-    public var credentialResetRequired: Bool? = false
+    /** الجلسة مقيّدة بعد استعادة الحساب حتى `/auth/totp/confirm`؛ غيابه = false (أُضيف في v0.1) */
+    public var credentialResetRequired: Bool?
     public var roles: [Role]
     /** الصلاحيات المستقلة الممنوحة حاليًا؛ فارغة لمعظم المستخدمين */
     public var permissions: Set<Permission>
 
-    public init(userId: UUID, email: String, officeId: UUID? = nil, totpEnabled: Bool, credentialResetRequired: Bool? = false, roles: [Role], permissions: Set<Permission>) {
+    public init(userId: UUID, email: String, officeId: UUID? = nil, totpEnabled: Bool, credentialResetRequired: Bool? = nil, roles: [Role], permissions: Set<Permission>) {
         self.userId = userId
         self.email = email
         self.officeId = officeId
