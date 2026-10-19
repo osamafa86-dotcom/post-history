@@ -13,6 +13,7 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 - `tusd-proxy` يعيد حل اسم `tusd` عبر DNS الخاص بـ Docker (`resolver 127.0.0.11`): الاسم الثابت في `proxy_pass` يُحل مرة عند البدء، فيعيد 502 إن تغيّر عنوان tusd بعد إعادة إنشائه.
 - كل المنافذ مربوطة بـ `127.0.0.1` محليًا. الصور مثبّتة بوسم إصدار؛ MinIO وmc بناء مجتمعي (`pgsty/*`) بالوسم والبصمة (ADR 0004).
 - tusd بلا منفذ منشور، خلف `tusd-proxy` (nginx، `infra/proxy/tusd.conf`) على شبكة `uploads` الداخلية؛ الخطّاف على شبكة `hooks` الداخلية.
+- شبكة `media` الداخلية (ADR 0006): عامل الوسائط بعنوان ثابت `172.30.251.2`، والخادم وMinIO وRedis بعناوين ديناميكية من `.8/29`. Docker يأخذ البوابة من داخل `ip_range`، فلا يُضيَّق النطاق تحت حاجة الحاويات. مستخدم MinIO للعامل (`infra/minio/init.sh`) يقرأ بادئة الرفع ويكتب `derived/` في حاوية الوسائط فقط، ويُتحقق منه في CI (`infra/minio/check-media-policy.sh`).
 - `-behind-proxy` لا يُفعَّل إلا خلف وكيل فعلي (عبر `TUSD_EXTRA_FLAGS`)، لأنه يجعل tusd يثق بترويسات `X-Forwarded-*`.
 - أمر واحد يشغّل كل شيء من الصفر: `docker compose -f infra/compose/docker-compose.yml up -d`. والخادم معه: `--profile api` (من المصدر في `node:22`، مع `npm ci` والترحيل والبناء عند البدء)، ويُبنى له `REDIS_URL` و`DATABASE_URL` و`S3_*` من `.env` نفسه.
 
