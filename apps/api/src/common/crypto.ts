@@ -59,6 +59,10 @@ export class FieldKeyring {
     return Buffer.concat([decipher.update(blob.subarray(1 + IV_LEN + TAG_LEN)), decipher.final()]);
   }
 
+  get currentVersion(): number {
+    return this.current.version;
+  }
+
   /** هل كُتب الحقل بمفتاح غير الحالي (مرشّح لإعادة التشفير عند التدوير)؟ */
   isStale(blob: Buffer): boolean {
     return blob[0] !== this.current.version;
