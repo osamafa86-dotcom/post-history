@@ -1,0 +1,14 @@
+# ميدان ضعيف: 0.5 ميغابت/ث رفعًا، فقد 30% (غير محاكى في toxiproxy، انظر ADR 0005)،
+# انقطاع كل دقيقتين لمدة 20 ثانية (ثقب أسود: البيانات لا تمر والاتصالات القائمة تتعلق).
+{
+  "name": "field-weak",
+  "listen_port": 18082,
+  "uplink_kbps": 500,
+  "downlink_kbps": 1000,
+  "latency_ms": 300,
+  "jitter_ms": 150,
+  "loss_pct": 30,
+  "events": [
+    {"type": "blackout", "every_s": 120, "duration_s": 20}
+  ]
+}

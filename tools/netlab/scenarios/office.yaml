@@ -1,0 +1,11 @@
+# مكتب: 20 ميغابت/ث رفعًا، مستقر. (JSON صالح كـ YAML ليُقرأ بمكتبة بايثون القياسية)
+{
+  "name": "office",
+  "listen_port": 18081,
+  "uplink_kbps": 20000,
+  "downlink_kbps": 50000,
+  "latency_ms": 10,
+  "jitter_ms": 2,
+  "loss_pct": 0,
+  "events": []
+}

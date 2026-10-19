@@ -1,0 +1,21 @@
+# تبديل شبكة كل 3 دقائق بين Wi-Fi وخلوي: كل تبديل يقطع الاتصالات القائمة (تغيّر العنوان)
+# ويبدّل ملف السرعة والتأخير.
+{
+  "name": "field-switch",
+  "listen_port": 18083,
+  "uplink_kbps": 5000,
+  "downlink_kbps": 20000,
+  "latency_ms": 30,
+  "jitter_ms": 10,
+  "loss_pct": 0,
+  "events": [
+    {
+      "type": "switch",
+      "every_s": 180,
+      "profiles": [
+        {"label": "wifi", "uplink_kbps": 5000, "downlink_kbps": 20000, "latency_ms": 30, "jitter_ms": 10},
+        {"label": "cellular", "uplink_kbps": 1000, "downlink_kbps": 4000, "latency_ms": 120, "jitter_ms": 40}
+      ]
+    }
+  ]
+}
