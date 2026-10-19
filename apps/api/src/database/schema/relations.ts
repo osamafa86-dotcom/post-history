@@ -1,0 +1,268 @@
+import { relations } from "drizzle-orm/relations";
+import { offices, users, refreshTokens, recoveryRequests, pushDevices, uploadForms, materials, materialTransitions, materialFiles, uploadSessions, outboxEvents, notifications, userPermissions, recoveryCodes, materialContributors, userRoles, idempotencyKeys, notificationDeliveries } from "./schema";
+
+export const usersRelations = relations(users, ({one, many}) => ({
+	office: one(offices, {
+		fields: [users.officeId],
+		references: [offices.id]
+	}),
+	refreshTokens: many(refreshTokens),
+	recoveryRequests_approvedBy: many(recoveryRequests, {
+		relationName: "recoveryRequests_approvedBy_users_id"
+	}),
+	recoveryRequests_userId: many(recoveryRequests, {
+		relationName: "recoveryRequests_userId_users_id"
+	}),
+	pushDevices: many(pushDevices),
+	uploadForms: many(uploadForms),
+	materials_reporterId: many(materials, {
+		relationName: "materials_reporterId_users_id"
+	}),
+	materials_reservedBy: many(materials, {
+		relationName: "materials_reservedBy_users_id"
+	}),
+	materialTransitions: many(materialTransitions),
+	uploadSessions: many(uploadSessions),
+	outboxEvents: many(outboxEvents),
+	notifications: many(notifications),
+	userPermissions_grantedBy: many(userPermissions, {
+		relationName: "userPermissions_grantedBy_users_id"
+	}),
+	userPermissions_revokedBy: many(userPermissions, {
+		relationName: "userPermissions_revokedBy_users_id"
+	}),
+	userPermissions_userId: many(userPermissions, {
+		relationName: "userPermissions_userId_users_id"
+	}),
+	recoveryCodes: many(recoveryCodes),
+	materialContributors: many(materialContributors),
+	userRoles_grantedBy: many(userRoles, {
+		relationName: "userRoles_grantedBy_users_id"
+	}),
+	userRoles_userId: many(userRoles, {
+		relationName: "userRoles_userId_users_id"
+	}),
+	idempotencyKeys: many(idempotencyKeys),
+}));
+
+export const officesRelations = relations(offices, ({many}) => ({
+	users: many(users),
+	materials: many(materials),
+}));
+
+export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => ({
+	refreshToken: one(refreshTokens, {
+		fields: [refreshTokens.replacedBy],
+		references: [refreshTokens.id],
+		relationName: "refreshTokens_replacedBy_refreshTokens_id"
+	}),
+	refreshTokens: many(refreshTokens, {
+		relationName: "refreshTokens_replacedBy_refreshTokens_id"
+	}),
+	user: one(users, {
+		fields: [refreshTokens.userId],
+		references: [users.id]
+	}),
+}));
+
+export const recoveryRequestsRelations = relations(recoveryRequests, ({one}) => ({
+	user_approvedBy: one(users, {
+		fields: [recoveryRequests.approvedBy],
+		references: [users.id],
+		relationName: "recoveryRequests_approvedBy_users_id"
+	}),
+	user_userId: one(users, {
+		fields: [recoveryRequests.userId],
+		references: [users.id],
+		relationName: "recoveryRequests_userId_users_id"
+	}),
+}));
+
+export const pushDevicesRelations = relations(pushDevices, ({one}) => ({
+	user: one(users, {
+		fields: [pushDevices.userId],
+		references: [users.id]
+	}),
+}));
+
+export const uploadFormsRelations = relations(uploadForms, ({one, many}) => ({
+	user: one(users, {
+		fields: [uploadForms.publishedBy],
+		references: [users.id]
+	}),
+	materials: many(materials),
+}));
+
+export const materialsRelations = relations(materials, ({one, many}) => ({
+	uploadForm: one(uploadForms, {
+		fields: [materials.formVersion],
+		references: [uploadForms.version]
+	}),
+	office: one(offices, {
+		fields: [materials.officeId],
+		references: [offices.id]
+	}),
+	user_reporterId: one(users, {
+		fields: [materials.reporterId],
+		references: [users.id],
+		relationName: "materials_reporterId_users_id"
+	}),
+	user_reservedBy: one(users, {
+		fields: [materials.reservedBy],
+		references: [users.id],
+		relationName: "materials_reservedBy_users_id"
+	}),
+	materialTransitions: many(materialTransitions),
+	materialFiles: many(materialFiles),
+	uploadSessions: many(uploadSessions),
+	notifications: many(notifications),
+	materialContributors: many(materialContributors),
+}));
+
+export const materialTransitionsRelations = relations(materialTransitions, ({one}) => ({
+	user: one(users, {
+		fields: [materialTransitions.actorId],
+		references: [users.id]
+	}),
+	material: one(materials, {
+		fields: [materialTransitions.materialId],
+		references: [materials.id]
+	}),
+}));
+
+export const materialFilesRelations = relations(materialFiles, ({one, many}) => ({
+	materialFile: one(materialFiles, {
+		fields: [materialFiles.derivedFromId],
+		references: [materialFiles.id],
+		relationName: "materialFiles_derivedFromId_materialFiles_id"
+	}),
+	materialFiles: many(materialFiles, {
+		relationName: "materialFiles_derivedFromId_materialFiles_id"
+	}),
+	material: one(materials, {
+		fields: [materialFiles.materialId],
+		references: [materials.id]
+	}),
+	uploadSession: one(uploadSessions, {
+		fields: [materialFiles.uploadSessionId],
+		references: [uploadSessions.id],
+		relationName: "materialFiles_uploadSessionId_uploadSessions_id"
+	}),
+	uploadSessions_duplicateOfFileId: many(uploadSessions, {
+		relationName: "uploadSessions_duplicateOfFileId_materialFiles_id"
+	}),
+	uploadSessions_fileId: many(uploadSessions, {
+		relationName: "uploadSessions_fileId_materialFiles_id"
+	}),
+}));
+
+export const uploadSessionsRelations = relations(uploadSessions, ({one, many}) => ({
+	materialFiles: many(materialFiles, {
+		relationName: "materialFiles_uploadSessionId_uploadSessions_id"
+	}),
+	user: one(users, {
+		fields: [uploadSessions.createdBy],
+		references: [users.id]
+	}),
+	materialFile_duplicateOfFileId: one(materialFiles, {
+		fields: [uploadSessions.duplicateOfFileId],
+		references: [materialFiles.id],
+		relationName: "uploadSessions_duplicateOfFileId_materialFiles_id"
+	}),
+	materialFile_fileId: one(materialFiles, {
+		fields: [uploadSessions.fileId],
+		references: [materialFiles.id],
+		relationName: "uploadSessions_fileId_materialFiles_id"
+	}),
+	material: one(materials, {
+		fields: [uploadSessions.materialId],
+		references: [materials.id]
+	}),
+}));
+
+export const outboxEventsRelations = relations(outboxEvents, ({one, many}) => ({
+	user: one(users, {
+		fields: [outboxEvents.actorId],
+		references: [users.id]
+	}),
+	notifications: many(notifications),
+}));
+
+export const notificationsRelations = relations(notifications, ({one, many}) => ({
+	outboxEvent: one(outboxEvents, {
+		fields: [notifications.eventId],
+		references: [outboxEvents.id]
+	}),
+	material: one(materials, {
+		fields: [notifications.materialId],
+		references: [materials.id]
+	}),
+	user: one(users, {
+		fields: [notifications.userId],
+		references: [users.id]
+	}),
+	notificationDeliveries: many(notificationDeliveries),
+}));
+
+export const userPermissionsRelations = relations(userPermissions, ({one}) => ({
+	user_grantedBy: one(users, {
+		fields: [userPermissions.grantedBy],
+		references: [users.id],
+		relationName: "userPermissions_grantedBy_users_id"
+	}),
+	user_revokedBy: one(users, {
+		fields: [userPermissions.revokedBy],
+		references: [users.id],
+		relationName: "userPermissions_revokedBy_users_id"
+	}),
+	user_userId: one(users, {
+		fields: [userPermissions.userId],
+		references: [users.id],
+		relationName: "userPermissions_userId_users_id"
+	}),
+}));
+
+export const recoveryCodesRelations = relations(recoveryCodes, ({one}) => ({
+	user: one(users, {
+		fields: [recoveryCodes.userId],
+		references: [users.id]
+	}),
+}));
+
+export const materialContributorsRelations = relations(materialContributors, ({one}) => ({
+	material: one(materials, {
+		fields: [materialContributors.materialId],
+		references: [materials.id]
+	}),
+	user: one(users, {
+		fields: [materialContributors.userId],
+		references: [users.id]
+	}),
+}));
+
+export const userRolesRelations = relations(userRoles, ({one}) => ({
+	user_grantedBy: one(users, {
+		fields: [userRoles.grantedBy],
+		references: [users.id],
+		relationName: "userRoles_grantedBy_users_id"
+	}),
+	user_userId: one(users, {
+		fields: [userRoles.userId],
+		references: [users.id],
+		relationName: "userRoles_userId_users_id"
+	}),
+}));
+
+export const idempotencyKeysRelations = relations(idempotencyKeys, ({one}) => ({
+	user: one(users, {
+		fields: [idempotencyKeys.userId],
+		references: [users.id]
+	}),
+}));
+
+export const notificationDeliveriesRelations = relations(notificationDeliveries, ({one}) => ({
+	notification: one(notifications, {
+		fields: [notificationDeliveries.notificationId],
+		references: [notifications.id]
+	}),
+}));
