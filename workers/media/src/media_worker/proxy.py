@@ -37,7 +37,7 @@ def proxy_args(src: Path, dst: Path, source: Probe) -> list[str]:
         *INPUT_GUARD, "-copyts", "-i", str(src),
         "-map", "0:v:0", "-map", "0:a:0?",
         # الوسوم العامة ووسوم كل مسار (قد يحمل المسار نفسه موقعًا أو طراز الجهاز)
-        "-map_metadata", "-1", "-map_metadata:s:v", "-1", "-map_metadata:s:a", "-1", "-map_chapters", "-1",
+        "-map_metadata", "-1", "-map_metadata:s", "-1", "-map_chapters", "-1",
         "-vf", scale, "-fps_mode", "passthrough",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-profile:v", "high",
         "-force_key_frames", "expr:gte(t,n_forced*1)",
@@ -58,7 +58,7 @@ def make_proxy(src: Path, dst: Path, source: Probe | None = None) -> Probe:
     partial = dst.with_name(dst.name + ".partial")
     timeout = max(120.0, source.duration_ms / 1000 * 4)
     try:
-        run(proxy_args(src, partial, source), timeout)
+        run(proxy_args(src, partial, source), timeout, cwd=partial.parent)
         result = probe(partial)
         if abs(result.start_pts_us - source.start_pts_us) > START_PTS_TOLERANCE_US:
             raise ProxyTimingError(
