@@ -4,15 +4,20 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Acceptance test runner: one script per row of the acceptance table in the plan",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "list": "node run.mjs --list",
     "test": "node --test \"test/*.test.mjs\"",
-    "validate-results": "node validate-results.mjs"
+    "validate-results": "node validate-results.mjs",
+    "live": "node live/run.mjs"
   },
   "dependencies": {
+    "@node-rs/argon2": "2.2.2",
     "ajv": "8.18.0",
     "ajv-formats": "3.0.1",
+    "pg": "8.23.1",
     "yaml": "2.8.1"
   }
 }

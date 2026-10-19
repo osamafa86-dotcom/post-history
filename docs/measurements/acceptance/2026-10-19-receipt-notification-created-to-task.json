@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "receipt-notification",
+  "started_at": "2026-10-19T18:05:27.936Z",
+  "ended_at": "2026-10-19T18:05:32.139Z",
+  "result": "partial",
+  "metrics": {
+    "runs": 20,
+    "within_60s_pct": 100,
+    "latency_s_p50": 0.245,
+    "latency_s_p95": 0.254,
+    "latency_s_max": 0.257,
+    "missing_notifications": 0,
+    "duplicate_tasks": 0,
+    "wrong_recipient": 0,
+    "measured_from": "material.created",
+    "verification_to_task_measured": false,
+    "urgent_escalation_measured": false
+  },
+  "device": {
+    "platform": "server"
+  },
+  "upload_path": "n/a",
+  "notes": "يقيس من حدث الإنشاء إلى وصول المهمة في صندوق المشرف؛ التحقق الفني (عامل الوسائط) وعامل التصعيد للعاجل غير موجودين بعد فلم يُقَس الزمن من التحقق ولا التصعيد، فالنتيجة جزئية"
+}

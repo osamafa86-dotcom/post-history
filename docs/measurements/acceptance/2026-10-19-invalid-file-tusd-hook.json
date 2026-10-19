@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "invalid-file",
+  "started_at": "2026-10-19T18:05:27.833Z",
+  "ended_at": "2026-10-19T18:05:27.934Z",
+  "result": "partial",
+  "metrics": {
+    "hook_calls": 18,
+    "hook_latency_ms_p50": 5,
+    "hook_latency_ms_p95": 12,
+    "hook_latency_ms_max": 12,
+    "batch_good_files_accepted": 3,
+    "batch_good_files_expected": 3,
+    "failures": 0
+  },
+  "device": {
+    "platform": "server"
+  },
+  "upload_path": "tusd",
+  "notes": "الجزء الخادمي عبر الخطّاف الداخلي فقط؛ رفض الملف التالف أو غير المدعوم بعد الرفع (عامل الوسائط) ورسالة الرفض على الهاتف لم يُقاسا بعد، فالنتيجة جزئية"
+}
