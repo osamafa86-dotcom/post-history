@@ -57,9 +57,17 @@ def toxi(method, path, body=None):
     )
     # NETLAB الإداري محلي: لا وكيل HTTP.
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with opener.open(req, timeout=10) as r:
-        data = r.read()
-        return json.loads(data) if data else None
+    for attempt in range(3):
+        try:
+            with opener.open(req, timeout=15) as r:
+                data = r.read()
+                return json.loads(data) if data else None
+        except urllib.error.HTTPError:
+            raise
+        except OSError:
+            if attempt == 2:
+                raise
+            time.sleep(1)
 
 
 def kbps_to_toxi_rate(kbps):
@@ -98,8 +106,8 @@ def _sidecar(*cmd, check=True):
 def set_loss(pct, delay_ms=0):
     """فقد حزم حقيقي على مستوى IP في فضاء شبكة toxiproxy، ويعيد الوضع المستخدم.
 
-    netem (إن وُجدت sch_netem في النواة): تأخير + فقد على كل ما يخرج من toxiproxy، فيرى TCP
-    على الساق المقيَّدة زمن ذهاب وإياب حقيقيًا مع الفقد. وإلا iptables statistic: فقد بلا تأخير على
+    netem (إن وُجدت sch_netem في النواة): تأخير + فقد على الساق toxiproxy → tusd-proxy وحدها، فيرى TCP
+    عليها زمن ذهاب وإياب حقيقيًا مع الفقد، وتبقى واجهة toxiproxy الإدارية سليمة. وإلا iptables statistic: فقد بلا تأخير على
     الساق toxiproxy → tusd-proxy، وأثره على TCP أقل من الواقع. pct=0 يزيل الاثنين.
     الإعداد يخص الوسيط كله، فسيناريو بفقد يُشغَّل وحده."""
     _sidecar("tc", "qdisc", "del", "dev", "eth0", "root", check=False)
@@ -109,12 +117,25 @@ def set_loss(pct, delay_ms=0):
             _sidecar("iptables", "-w", "-D", *line.split()[1:])
     if pct <= 0:
         return "none"
-    netem = ["tc", "qdisc", "add", "dev", "eth0", "root", "netem", "loss", f"{pct}%"]
-    if delay_ms:
-        netem[7:7] = ["delay", f"{delay_ms}ms"]
-    r = _sidecar(*netem, check=False)
-    if r.returncode == 0:
+    port = UPSTREAM.rsplit(":", 1)[1]
+    impair = ["netem", "loss", f"{pct}%"] + (["delay", f"{delay_ms}ms"] if delay_ms else [])
+    # netem only on the data leg (toxiproxy -> tusd-proxy): a 4-band prio whose priomap sends everything to
+    # band 1, netem on band 4, and a u32 filter for the upstream port. Without it the toxiproxy control API
+    # (8474) is impaired too and the scenario driver times out.
+    filtered = [
+        ["tc", "qdisc", "add", "dev", "eth0", "root", "handle", "1:", "prio", "bands", "4", "priomap"] + ["0"] * 16,
+        ["tc", "qdisc", "add", "dev", "eth0", "parent", "1:4", "handle", "40:"] + impair,
+        ["tc", "filter", "add", "dev", "eth0", "parent", "1:0", "protocol", "ip", "u32",
+         "match", "ip", "dport", port, "0xffff", "flowid", "1:4"],
+    ]
+    r = None
+    for cmd in filtered:
+        r = _sidecar(*cmd, check=False)
+        if r.returncode:
+            break
+    else:
         return "netem"
+    _sidecar("tc", "qdisc", "del", "dev", "eth0", "root", check=False)
     print(f"netem unavailable ({r.stderr.strip()}); falling back to iptables statistic", file=sys.stderr)
     _sidecar("iptables", "-w", "-A", "OUTPUT", "-p", "tcp", "--dport", UPSTREAM.rsplit(":", 1)[1],
              "-m", "comment", "--comment", "netlab-loss",

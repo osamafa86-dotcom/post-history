@@ -59,6 +59,7 @@ jobs:
           m = json.load(open(sys.argv[1]))["metrics"]
           # At 30% loss + 300 ms a single 1 MiB part may not finish in 4 min: only the mode is asserted.
           assert m["loss_mode"] == "netem", m["loss_mode"]
+          assert "driver-error" not in m["events"], m["events"]
           print("netlab smoke ok:", {k: m[k] for k in ("loss_mode", "bytes_uploaded", "goodput_kbps", "resumes")})
           EOF
       - name: Measure
