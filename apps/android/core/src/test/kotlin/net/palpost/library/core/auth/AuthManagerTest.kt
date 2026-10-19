@@ -101,6 +101,19 @@ class AuthManagerTest {
         assertEquals(2, server.requestCount)
     }
 
+    @Test fun `a revoked session is rejected locally within the same call, measured`() = runBlocking {
+        store.write(SessionTokens("a1", "r1", now + 600_000, "u"))
+        server.enqueue(unauthorized)
+        server.enqueue(unauthorized)
+        val started = System.nanoTime()
+        try { me.getMe(); fail("expected 401") } catch (e: ClientException) { assertEquals(401, e.statusCode) }
+        val elapsedMs = (System.nanoTime() - started) / 1_000_000
+        println("MEASUREMENT revoked-token-rejected-locally-ms=$elapsedMs")
+        assertNull(store.read())
+        assertEquals(AuthState.SignedOut(SignOutReason.SESSION_REVOKED), manager.state.value)
+        assertTrue("local revocation took ${'$'}elapsedMs ms", elapsedMs < 2_000)
+    }
+
     @Test fun `a second 401 after the retry is final`() = runBlocking {
         store.write(SessionTokens("a1", "r1", now + 600_000, "u"))
         server.enqueue(unauthorized)

@@ -33,6 +33,12 @@ class KeystoreSealer(private val alias: String) {
         return cipher.doFinal(blob.copyOfRange(2 + ivLen, blob.size))
     }
 
+    /** Removes the key; whatever was sealed with it can never be opened again. A new key is made on next use. */
+    fun destroyKey() {
+        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        if (keyStore.containsAlias(alias)) keyStore.deleteEntry(alias)
+    }
+
     fun sealString(s: String): String = Base64.encodeToString(seal(s.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
     fun openString(b64: String): String = String(open(Base64.decode(b64, Base64.NO_WRAP)), Charsets.UTF_8)
 

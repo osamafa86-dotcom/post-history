@@ -71,6 +71,9 @@ class AuthManager(
         }
     }
 
+    /** Forgets the session on this device without telling the server (the wipe does it; the server session lapses on its own). */
+    fun forgetSession(reason: SignOutReason) = signOut(reason)
+
     private fun signOut(reason: SignOutReason) {
         store.clear()
         _state.value = AuthState.SignedOut(reason)

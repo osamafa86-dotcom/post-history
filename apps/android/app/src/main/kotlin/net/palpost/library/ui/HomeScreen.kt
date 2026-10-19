@@ -29,12 +29,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import net.palpost.library.AppContainer
+import net.palpost.library.PostHistoryApp
 import net.palpost.library.R
+import net.palpost.library.ui.security.EmergencyWipeDialog
 import net.palpost.library.api.models.Me
 import net.palpost.library.api.models.RoleName
 
-data class HomeUiState(val me: Me? = null, val loading: Boolean = true, val error: String? = null, val signingOut: Boolean = false)
+data class HomeUiState(val me: Me? = null, val loading: Boolean = true, val error: String? = null, val signingOut: Boolean = false, val wiping: Boolean = false)
 
 class HomeViewModel(private val app: Application, private val container: AppContainer) : ViewModel() {
     private val _state = MutableStateFlow(HomeUiState())
@@ -57,6 +62,13 @@ class HomeViewModel(private val app: Application, private val container: AppCont
         if (_state.value.signingOut) return
         _state.update { it.copy(signingOut = true) }
         viewModelScope.launch { container.auth.logout(allSessions) }
+    }
+
+    /** SEC-01 emergency wipe: everything on the device, now; the server is not told (no network needed). */
+    fun emergencyWipe() {
+        if (_state.value.wiping) return
+        _state.update { it.copy(wiping = true) }
+        viewModelScope.launch { (app as PostHistoryApp).emergencyWipe() }
     }
 }
 
@@ -99,6 +111,11 @@ fun HomeScreen(container: AppContainer, onOpenForm: () -> Unit, onNewMaterial: (
             TextButton(onClick = onOpenForm, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_open_form)) }
             OutlinedButton(onClick = { vm.logout(allSessions = false) }, enabled = !s.signingOut, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_logout)) }
             TextButton(onClick = { vm.logout(allSessions = true) }, enabled = !s.signingOut, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_logout_all)) }
+            var confirmWipe by remember { mutableStateOf(false) }
+            TextButton(onClick = { confirmWipe = true }, enabled = !s.wiping, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.home_emergency_wipe), color = MaterialTheme.colorScheme.error)
+            }
+            if (confirmWipe) EmergencyWipeDialog(busy = s.wiping, onConfirm = { vm.emergencyWipe() }, onDismiss = { confirmWipe = false })
         }
     }
 }
