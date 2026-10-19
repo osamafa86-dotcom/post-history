@@ -56,9 +56,19 @@ const schema = z.object({
   LOGIN_RATE_LIMIT_IP_MAX: z.coerce.number().int().min(1).default(100),
   LOGIN_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).default(900),
 
+  // طلب استعادة الحساب ينتظر اعتماد المشرف هذه المدة ثم ينتهي
+  RECOVERY_REQUEST_TTL_SECONDS: z.coerce.number().int().min(300).default(24 * 3600),
+
   // SEC-06: الرمز في مسار عنوان الخطّاف
   TUSD_HOOK_SECRET: z.string().min(32).max(128),
   TUSD_OBJECT_PREFIX: z.string().default(''),
+  // ما يُعاد للعميل عند إنشاء جلسة رفع: نقطة tus العامة، وحجم الجزء الثابت (R2 يشترط تساويه، ≥ 5 MiB)
+  TUS_PUBLIC_ENDPOINT: z.string().url().default('http://localhost:8080/files/'),
+  TUSD_PART_SIZE_BYTES: z.coerce.number().int().min(5 * 1024 * 1024).default(16 * 1024 * 1024),
+  // عمر الجلسة ورمز الرفع معًا (عمود expires_at واحد في المخطط)
+  UPLOAD_SESSION_TTL_SECONDS: z.coerce.number().int().min(60).default(24 * 3600),
+  // مسار الرفع (بند القرارات 3، يُحسم بعد النموذج الأولي): tusd، أو direct حيث يعلن العميل الاكتمال بنفسه
+  UPLOAD_PATH: z.enum(['tusd', 'direct']).default('tusd'),
   S3_BUCKET_UPLOADS: z.string().min(1),
   // التخزين الذي يقرأ منه التحقق داخل الخادم (MinIO محليًا، R2 في الإنتاج)
   S3_ENDPOINT: z.string().optional(),

@@ -2,10 +2,12 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { APP_CONFIG, type AppConfig } from '../config/config';
+import { AccountService } from './account.service';
 import { AuthController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
 import { JWT_OPTIONS, SessionService } from './session.service';
+import { RateLimitsService } from './rate-limits.service';
 
 @Module({
   imports: [
@@ -19,7 +21,7 @@ import { JWT_OPTIONS, SessionService } from './session.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [SessionService, AuthService, { provide: APP_GUARD, useClass: AuthGuard }],
+  providers: [SessionService, AuthService, AccountService, RateLimitsService, { provide: APP_GUARD, useClass: AuthGuard }],
   exports: [SessionService],
 })
 export class IdentityModule {}

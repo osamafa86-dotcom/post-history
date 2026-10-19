@@ -123,6 +123,15 @@ describe('tusd hooks (/internal/tusd-hooks/{hook_token}, SEC-06)', () => {
     expect((await session(s.id)).failure_reason).toBe('storage_error');
   });
 
+  it('pre-create without upload_session_id metadata is rejected in the tusd format (400 to the client), not 422', async () => {
+    for (const MetaData of [{}, { upload_session_id: 'not-a-uuid' }]) {
+      const res = await hook({ Type: 'pre-create', Event: { Upload: { Size: 10, MetaData }, HTTPRequest: { Header: {} } } }).expect(200);
+      expect(res.body).toEqual({ RejectUpload: true, HTTPResponse: { StatusCode: 400, Body: 'upload_session_id metadata is required' } });
+    }
+    // ما ليس بصيغة tusd أصلًا (بلا Event.Upload) يبقى 422 كما في العقد
+    await hook({ Type: 'pre-create' }).expect(422);
+  });
+
   it('post-finish for an unknown session is 404; a malformed body is 422', async () => {
     const id = randomUUID();
     await hook(postFinish(id, `tus/${id}`)).expect(404);

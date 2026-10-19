@@ -3,7 +3,7 @@ import { validateBody } from '../../src/common/contract';
 import { ApiError } from '../../src/common/errors';
 import { redactPath } from '../../src/common/logger';
 import { addressAllowed, blockListOf, loadConfig } from '../../src/config/config';
-import { requiresIdempotencyKey } from '../../src/idempotency/idempotency.interceptor';
+import { requiresIdempotencyKey, withoutTokens } from '../../src/idempotency/idempotency.interceptor';
 import { MemoryRateLimiter, rateLimitKeyMaterial, ResilientRateLimiter } from '../../src/identity/rate-limiter';
 
 describe('canonicalJson', () => {
@@ -136,5 +136,16 @@ describe('production configuration', () => {
       loadConfig({ ...base, NODE_ENV: 'production', REDIS_URL: 'redis://r', UPLOAD_VERIFIER: 'external' } as NodeJS.ProcessEnv),
     ).not.toThrow();
     expect(() => loadConfig({ ...base, NODE_ENV: 'development' } as NodeJS.ProcessEnv)).not.toThrow();
+  });
+});
+
+describe('withoutTokens', () => {
+  it('drops token fields before an idempotent response is stored', () => {
+    expect(withoutTokens({ id: 'x', upload_token: 's', token: 't', nested: { upload_token: 'kept' } })).toEqual({
+      id: 'x',
+      nested: { upload_token: 'kept' },
+    });
+    expect(withoutTokens(null)).toBeNull();
+    expect(withoutTokens([1])).toEqual([1]);
   });
 });

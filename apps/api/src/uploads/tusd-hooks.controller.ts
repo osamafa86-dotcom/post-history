@@ -18,10 +18,22 @@ export class TusdHooksController {
   @Public()
   @Post(':hook_token')
   @HttpCode(200)
-  handle(@Param('hook_token') token: string, @Body() body: unknown): Promise<TusdHookResponse> {
+  async handle(@Param('hook_token') token: string, @Body() body: unknown): Promise<TusdHookResponse> {
     // الرمز أولًا وقبل أي قراءة للجسم: رمز خاطئ = 401 دون أثر
     if (!constantTimeEqual(token, this.config.TUSD_HOOK_SECRET)) throw ApiError.unauthorized();
-    const hook = validateBody<TusdHookRequest>('/internal/tusd-hooks/{hook_token}', 'post', body);
+    let hook: TusdHookRequest;
+    try {
+      hook = validateBody<TusdHookRequest>('/internal/tusd-hooks/{hook_token}', 'post', body);
+    } catch (err) {
+      // pre-create حقيقي من tusd (فيه Event.Upload) بلا upload_session_id صالح طلبُ عميل خاطئ لا عطل خادم:
+      // رفض بصيغة tusd (400 للعميل)، لأن 422 هنا يحوّله tusd إلى 500 فيعيد العملاء المحاولة بلا نهاية.
+      // الجسم الذي ليس بصيغة tusd أصلًا يبقى 422 كما في العقد.
+      const b = body as { Type?: unknown; Event?: { Upload?: unknown } } | null;
+      if (b?.Type === 'pre-create' && b.Event?.Upload && typeof b.Event.Upload === 'object') {
+        return { RejectUpload: true, HTTPResponse: { StatusCode: 400, Body: 'upload_session_id metadata is required' } };
+      }
+      throw err;
+    }
     return this.hooks.handle(hook);
   }
 }

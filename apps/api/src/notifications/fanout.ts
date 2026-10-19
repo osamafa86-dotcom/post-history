@@ -32,8 +32,9 @@ const RULES: Record<string, { audience: Audience; assignment: boolean; skipUrgen
  * فإعادة إرسال الحدث لا تكرر الإشعار. يعيد عدد الإشعارات الجديدة.
  */
 export async function fanOut(tx: Tx, event: OutboxRow, opts: FanOutOptions): Promise<number> {
-  const rule = RULES[event.type];
   const payload = event.payload as Record<string, unknown>;
+  if (event.type === 'auth.recovery_requested') return recoveryRequested(tx, event, payload, opts);
+  const rule = RULES[event.type];
   const materialId = typeof payload.material_id === 'string' ? payload.material_id : undefined;
   if (!rule || !materialId) return 0;
   if (event.type === 'upload.verified' && (payload.kind !== 'original' || typeof payload.receipt_number !== 'string')) return 0;
@@ -99,3 +100,35 @@ async function audience(
   return rows.map((r) => r.userId);
 }
 
+
+/**
+ * طلب استعادة: مهمة لمشرفي نطاق صاحب الحساب (مكتبه أو محافظة مكتبه أو كل شيء) بمعرّف الطلب، وتنبيه لصاحب
+ * الحساب على أجهزته القائمة. بلا مادة.
+ */
+async function recoveryRequested(tx: Tx, event: OutboxRow, payload: Record<string, unknown>, opts: FanOutOptions): Promise<number> {
+  const requestId = typeof payload.recovery_request_id === 'string' ? payload.recovery_request_id : undefined;
+  if (!requestId) return 0;
+  const [owner] = await tx
+    .select({ id: users.id, officeId: users.officeId, governorate: offices.governorate })
+    .from(users)
+    .leftJoin(offices, eq(offices.id, users.officeId))
+    .where(eq(users.id, event.aggregateId));
+  if (!owner) return 0;
+  const supervisors = await audience(tx, 'supervisors', { reporterId: owner.id, officeId: owner.officeId, governorate: owner.governorate });
+  const rows = [
+    ...supervisors
+      .filter((id) => id !== owner.id)
+      .map((userId) => ({
+        userId,
+        title: notificationTitle('auth.recovery_requested', opts.locale, { ref: requestId }),
+        assignmentState: 'assigned' as const,
+      })),
+    { userId: owner.id, title: notificationTitle('auth.recovery_requested.self', opts.locale, { ref: '' }), assignmentState: null },
+  ];
+  const inserted = await tx
+    .insert(notifications)
+    .values(rows.map((r) => ({ ...r, eventId: event.id, type: event.type, materialId: null, priority: 'important' })))
+    .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
+    .returning({ id: notifications.id });
+  return inserted.length;
+}

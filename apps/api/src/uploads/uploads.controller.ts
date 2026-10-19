@@ -1,0 +1,33 @@
+import { Body, Controller, Get, HttpCode, Param, Post, Req } from '@nestjs/common';
+import type { Request } from 'express';
+import { validateBody } from '../common/contract';
+import type { components } from '../generated/api';
+import { RehydrateOnReplay } from '../idempotency/replay';
+import { Roles } from '../identity/principal';
+import { UploadsService } from './uploads.service';
+
+@Controller('uploads')
+export class UploadsController {
+  constructor(private readonly uploads: UploadsService) {}
+
+  @Post()
+  @Roles('reporter')
+  @RehydrateOnReplay(UploadsService)
+  create(@Body() body: unknown, @Req() req: Request): Promise<components['schemas']['UploadSessionCreated']> {
+    return this.uploads.create(req.principal!, validateBody('/uploads', 'post', body));
+  }
+
+  @Get(':id')
+  @Roles('reporter', 'supervisor', 'editor_in_chief', 'system_admin')
+  get(@Param('id') id: string, @Req() req: Request): Promise<components['schemas']['UploadSession']> {
+    return this.uploads.get(req.principal!, id);
+  }
+
+  @Post(':id/complete')
+  @HttpCode(202)
+  @Roles('reporter')
+  async complete(@Param('id') id: string, @Body() body: unknown, @Req() req: Request): Promise<void> {
+    const input = validateBody<components['schemas']['UploadComplete']>('/uploads/{id}/complete', 'post', body ?? {});
+    await this.uploads.complete(req.principal!, id, input.reported_sha256);
+  }
+}

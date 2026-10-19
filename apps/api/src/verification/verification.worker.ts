@@ -5,7 +5,7 @@ import { APP_CONFIG, type AppConfig, storageConfigured } from '../config/config'
 import { LOGGER } from '../common/logger';
 import { DB, type Database } from '../database/database.module';
 import { uploadSessions } from '../database/schema/schema';
-import { OBJECT_STORAGE, type ObjectStorage } from './object-storage';
+import { OBJECT_STORAGE, type ObjectStorage, StorageConfigError } from './object-storage';
 import { inspectUpload, recordVerification } from './verification';
 
 /**
@@ -58,8 +58,13 @@ export class VerificationWorker implements OnApplicationBootstrap, OnApplication
       try {
         outcome = await inspectUpload(this.storage, this.config.S3_BUCKET_UPLOADS, session);
       } catch (err) {
-        // عطل مؤقت في التخزين: تبقى الجلسة completed وتتأخر في الطابور ليُعاد لاحقًا دون أن تحجب غيرها
-        this.logger.warn({ upload_session_id: session.id, err_name: (err as Error)?.name }, 'verification deferred');
+        // عطل مؤقت في التخزين أو خطأ تهيئة: تبقى الجلسة completed وتتأخر في الطابور ليُعاد لاحقًا دون أن تحجب غيرها.
+        // خطأ التهيئة (حاوية مفقودة أو بلا صلاحية) ينبَّه بمستوى error لأنه لا يزول وحده.
+        const configError = err instanceof StorageConfigError;
+        this.logger[configError ? 'error' : 'warn'](
+          { upload_session_id: session.id, err_name: (err as Error)?.name },
+          configError ? 'verification blocked: object storage misconfigured' : 'verification deferred',
+        );
         await tx.update(uploadSessions).set({ updatedAt: sql`now()` }).where(eq(uploadSessions.id, session.id));
         // تنتهي الدفعة هنا: التخزين المعطّل لا يُستدعى في حلقة متصلة
         return false;

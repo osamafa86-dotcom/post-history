@@ -110,6 +110,8 @@ jobs:
         run: npm run test:coverage
       - name: Build
         run: npm run build
+      - name: Contract coverage (warning only)
+        run: npm run contract:coverage
 
   secrets:
     name: secret scan
