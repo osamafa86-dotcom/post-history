@@ -124,3 +124,5 @@ networks:
     ipam:
       config:
         - subnet: 172.30.250.0/29  # fixed: INTERNAL_ALLOWED_CIDRS=172.30.250.2/32 depends on it
+          # Dynamic addresses (API, others) come from .4-.7 only, so nothing can take tusd's .2 first.
+          ip_range: 172.30.250.4/30

@@ -17,3 +17,11 @@ services:
     volumes:
       - ../../tools/netlab/hook_stub.py:/netlab/hook_stub.py:ro
     networks: [hooks]
+
+  # Real IP-level packet loss without sch_netem (ADR 0005): iptables "statistic" drops on toxiproxy's
+  # upstream leg (toxiproxy -> tusd-proxy). Shares toxiproxy's network namespace; netlab.py sets the rule.
+  netlab-loss:
+    image: nicolaka/netshoot:v0.13@sha256:a20c2531bf35436ed3766cd6cfe89d352b050ccc4d7005ce6400adf97503da1b
+    network_mode: "service:toxiproxy"
+    cap_add: [NET_ADMIN]
+    command: ["sleep", "infinity"]

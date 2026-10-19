@@ -29,5 +29,6 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 ## CI
 
 - `contracts`: redocly lint + ajv compile. `secrets`: gitleaks. `compose`: config + pull + `infra/compose/smoke.sh`.
+- `netlab` (`.github/workflows/netlab.yml`): فحص قصير لـ field-weak بوضع netem على كل PR يمس netlab أو compose، وقياس كامل يدويًا.
 - Dependabot (`.github/dependabot.yml`): `github-actions` وnpm أسبوعيًا.
 - كل حزمة تضيف وظيفتها الخاصة حين يوجد كود.

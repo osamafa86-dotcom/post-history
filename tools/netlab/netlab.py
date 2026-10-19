@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""netlab — رفع tus عبر شبكة محاكاة (toxiproxy) وقياس الجلسة.
+"""netlab — رفع tus عبر شبكة محاكاة (toxiproxy + فقد حزم بـ iptables) وقياس الجلسة.
 
 يسجّل لكل جلسة رفع: أطول نافذة اتصال متواصل، زمن كل جزء (طلب PATCH)، عدد الاستئنافات،
 ونجاح التطابق (SHA-256 للأصل مقابل الكائن في التخزين). يكتب النتيجة بمخطط
@@ -25,12 +25,13 @@ import urllib.parse
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-# معيار field-network-upload في الخطة: ملف 1 غيغابايت. ما دونه، أو دون محاكاة الفقد، لا يُسجَّل pass.
+# معيار field-network-upload في الخطة: ملف 1 غيغابايت. ما دونه لا يُسجَّل pass.
 CRITERION_MIN_BYTES = 1 << 30
 TOXI_API = os.environ.get("NETLAB_TOXIPROXY_API", "http://127.0.0.1:8474")
 UPSTREAM = os.environ.get("NETLAB_UPSTREAM", "tusd-proxy:8080")
 COMPOSE_ENV = os.path.join(HERE, "..", "..", "infra", "compose", ".env")
 COMPOSE_NETWORK = os.environ.get("NETLAB_COMPOSE_NETWORK", "post-history_default")
+LOSS_CONTAINER = os.environ.get("NETLAB_LOSS_CONTAINER", "post-history-netlab-loss-1")
 MC_IMAGE = "pgsty/mc:RELEASE.2026-10-18T00-00-00Z@sha256:6ecdaec70bc5e8cf9d0e9a70c190f3beb1c83f11617ff4333f1fcd71ab1daf18"
 
 
@@ -84,6 +85,35 @@ def setup_proxy(sc, profile=None):
                               "upstream": UPSTREAM, "enabled": True})
     apply_profile(name, profile or sc)
     return name
+
+
+def _sidecar(*cmd, check=True):
+    return subprocess.run(["docker", "exec", LOSS_CONTAINER, *cmd], capture_output=True, text=True, check=check)
+
+
+def set_loss(pct, delay_ms=0):
+    """فقد حزم حقيقي على مستوى IP في فضاء شبكة toxiproxy، ويعيد الوضع المستخدم.
+
+    netem (إن وُجدت sch_netem في النواة): تأخير + فقد على كل ما يخرج من toxiproxy، فيرى TCP
+    على الساق المقيَّدة زمن ذهاب وإياب حقيقيًا مع الفقد. وإلا iptables statistic: فقد بلا تأخير على
+    الساق toxiproxy → tusd-proxy، وأثره على TCP أقل من الواقع. pct=0 يزيل الاثنين.
+    الإعداد يخص الوسيط كله، فسيناريو بفقد يُشغَّل وحده."""
+    _sidecar("tc", "qdisc", "del", "dev", "eth0", "root", check=False)
+    listed = _sidecar("iptables", "-w", "-S", "OUTPUT").stdout
+    for line in listed.splitlines():
+        if "netlab-loss" in line:
+            _sidecar("iptables", "-w", "-D", *line.split()[1:])
+    if pct <= 0:
+        return "none"
+    netem = ["tc", "qdisc", "add", "dev", "eth0", "root", "netem", "loss", f"{pct}%"]
+    if delay_ms:
+        netem[6:6] = ["delay", f"{delay_ms}ms"]
+    if _sidecar(*netem, check=False).returncode == 0:
+        return "netem"
+    _sidecar("iptables", "-w", "-A", "OUTPUT", "-p", "tcp", "--dport", UPSTREAM.rsplit(":", 1)[1],
+             "-m", "comment", "--comment", "netlab-loss",
+             "-m", "statistic", "--mode", "random", "--probability", f"{pct / 100:.4f}", "-j", "DROP")
+    return "iptables-statistic"
 
 
 class Driver(threading.Thread):
@@ -297,6 +327,10 @@ def run(a):
     src_hash = sha256_file(path)
 
     name = setup_proxy(sc)
+    loss_mode = set_loss(sc["loss_pct"], sc["latency_ms"])
+    if loss_mode == "netem":
+        # التأخير صار على مستوى الحزمة؛ سم latency في toxiproxy كان سيضاعفه.
+        toxi("DELETE", f"/proxies/{name}/toxics/lat")
     events = []
     driver = Driver(name, sc, events)
     driver.scale = a.event_scale
@@ -309,6 +343,7 @@ def run(a):
     driver.stop.set()
     ended_at = utc()
     toxi("DELETE", f"/proxies/{name}")
+    set_loss(0)
 
     complete = url is not None and offset == size
     match = complete and sha256_remote(url) == src_hash
@@ -326,6 +361,7 @@ def run(a):
         "client_timeout_s": a.timeout_s,
         "parts_ok": len(ok_parts),
         "parts_failed": sum(1 for p in s.parts if not p[2]),
+        "loss_mode": loss_mode,
     }
     if ok_parts:
         m.update({
@@ -336,8 +372,7 @@ def run(a):
         })
     m["events"] = ";".join(f"{t}s:{e}" for t, e in events) or "none"
 
-    emulated = sc["name"] != "field-weak"
-    meets_criterion = size >= CRITERION_MIN_BYTES and emulated
+    meets_criterion = size >= CRITERION_MIN_BYTES
     if complete and not match:
         result = "fail"
     elif match and meets_criterion:
@@ -345,7 +380,7 @@ def run(a):
     else:
         result = "partial"
     network = {"profile": sc["name"], "uplink_kbps": sc["uplink_kbps"],
-               "loss_pct": sc["loss_pct"] if emulated else 0}
+               "loss_pct": sc["loss_pct"]}
     if sc["events"]:
         network["disconnect_every_s"] = sc["events"][0]["every_s"]
     network["longest_connected_window_s"] = m["longest_connected_window_s"]
@@ -366,7 +401,10 @@ def run(a):
         "metrics": m,
         "notes": (f"toxiproxy 2.12.0 -> nginx tusd-proxy -> tusd v2.10.1 -> MinIO (local compose). "
                   f"Client: tools/netlab/netlab.py, time box {a.max_seconds}s, event scale {a.event_scale}. "
-                  + ("" if emulated else f"loss_pct target {sc['loss_pct']} not emulated by toxiproxy (ADR 0005). ")
+                  + {"netem": f"loss {sc['loss_pct']}% + delay {sc['latency_ms']}ms via tc netem in toxiproxy's netns. ",
+                     "iptables-statistic": f"loss {sc['loss_pct']}% via iptables statistic, no packet delay "
+                                           "(host lacks sch_netem): TCP impact understated (ADR 0005). ",
+                     "none": ""}[loss_mode]
                   + ("" if size >= CRITERION_MIN_BYTES else
                      f"partial: file below the {CRITERION_MIN_BYTES >> 20} MiB criterion size. ")
                   + "Connected window = client-observed time from first successful request to next failure."),
