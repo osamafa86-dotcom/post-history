@@ -25,6 +25,8 @@ import urllib.parse
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# معيار field-network-upload في الخطة: ملف 1 غيغابايت. ما دونه، أو دون محاكاة الفقد، لا يُسجَّل pass.
+CRITERION_MIN_BYTES = 1 << 30
 TOXI_API = os.environ.get("NETLAB_TOXIPROXY_API", "http://127.0.0.1:8474")
 UPSTREAM = os.environ.get("NETLAB_UPSTREAM", "tusd-proxy:8080")
 COMPOSE_ENV = os.path.join(HERE, "..", "..", "infra", "compose", ".env")
@@ -335,6 +337,13 @@ def run(a):
     m["events"] = ";".join(f"{t}s:{e}" for t, e in events) or "none"
 
     emulated = sc["name"] != "field-weak"
+    meets_criterion = size >= CRITERION_MIN_BYTES and emulated
+    if complete and not match:
+        result = "fail"
+    elif match and meets_criterion:
+        result = "pass"
+    else:
+        result = "partial"
     network = {"profile": sc["name"], "uplink_kbps": sc["uplink_kbps"],
                "loss_pct": sc["loss_pct"] if emulated else 0}
     if sc["events"]:
@@ -344,11 +353,11 @@ def run(a):
         "schema_version": 1,
         "tool": "netlab",
         "role": "infra",
-        "test_name": "upload-resume",
+        "test_name": a.test_name,
         "decision_ref": 3,
         "started_at": started_at,
         "ended_at": ended_at,
-        "result": "pass" if match else ("fail" if complete else "partial"),
+        "result": result,
         "device": {"platform": "server", "model": "netlab python client (stdlib)",
                    "os_version": f"{platform.system()} {platform.release()}"},
         "network": network,
@@ -358,6 +367,8 @@ def run(a):
         "notes": (f"toxiproxy 2.12.0 -> nginx tusd-proxy -> tusd v2.10.1 -> MinIO (local compose). "
                   f"Client: tools/netlab/netlab.py, time box {a.max_seconds}s, event scale {a.event_scale}. "
                   + ("" if emulated else f"loss_pct target {sc['loss_pct']} not emulated by toxiproxy (ADR 0005). ")
+                  + ("" if size >= CRITERION_MIN_BYTES else
+                     f"partial: file below the {CRITERION_MIN_BYTES >> 20} MiB criterion size. ")
                   + "Connected window = client-observed time from first successful request to next failure."),
     }
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
@@ -379,6 +390,7 @@ def main():
     r.add_argument("--timeout-s", type=int, default=60, help="مهلة خمول المقبس للعميل")
     r.add_argument("--event-scale", type=float, default=1.0, help="<1 لتجربة سريعة فقط؛ القياس بـ 1")
     r.add_argument("--max-seconds", type=int, default=7200)
+    r.add_argument("--test-name", default="field-network-upload")
     r.add_argument("--out", required=True)
     a = p.parse_args()
     run(a)

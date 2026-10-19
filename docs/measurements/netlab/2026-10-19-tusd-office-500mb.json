@@ -2,11 +2,11 @@
   "schema_version": 1,
   "tool": "netlab",
   "role": "infra",
-  "test_name": "upload-resume",
+  "test_name": "field-network-upload",
   "decision_ref": 3,
   "started_at": "2026-10-19T17:39:44Z",
   "ended_at": "2026-10-19T17:43:31Z",
-  "result": "pass",
+  "result": "partial",
   "device": {
     "platform": "server",
     "model": "netlab python client (stdlib)",
@@ -42,5 +42,5 @@
     "part_times_s": "1.7,1.8,1.8,1.9,1.7,1.8,1.8,1.9,1.7,1.8,1.8,1.9,1.7,1.8,1.8,1.9,1.8,1.8,1.8,1.9,1.8,1.8,1.8,1.9,1.7,1.8,1.8,1.9,1.8,1.8,1.8,1.9,1.8,1.8,1.8,1.9,1.7,1.8,1.8,1.9,1.8,1.8,1.8,1.9,1.8,1.8,1.8,1.9,1.8,1.8,1.9,1.9,1.7,1.8,1.8,1.9,1.7,1.8,1.8,1.9,1.8,1.8,1.8,1.9,1.7,1.8,1.8,1.9,1.8,1.8,1.9,1.9,1.7,1.8,1.8,1.9,1.8,1.8,1.9,1.9,1.7,1.8,1.8,1.9,1.7,1.8,1.9,1.9,1.8,1.8,1.8,1.9,1.8,1.8,1.8,1.9,1.7,1.8,1.9,1.9,1.7,1.8,1.8,1.9,1.7,1.8,1.9,1.9,1.7,1.8,1.8,1.9,1.8,1.8,1.9,1.9,1.7,1.8,1.9,1.9,1.7,1.8,1.8,1.9,1.8",
     "events": "none"
   },
-  "notes": "toxiproxy 2.12.0 -> nginx tusd-proxy -> tusd v2.10.1 -> MinIO (local compose). Client: tools/netlab/netlab.py, time box 7200s, event scale 1.0. Connected window = client-observed time from first successful request to next failure."
+  "notes": "toxiproxy 2.12.0 -> nginx tusd-proxy -> tusd v2.10.1 -> MinIO (local compose). Client: tools/netlab/netlab.py, time box 7200s, event scale 1.0. partial: file below the 1024 MiB criterion size. Connected window = client-observed time from first successful request to next failure."
 }

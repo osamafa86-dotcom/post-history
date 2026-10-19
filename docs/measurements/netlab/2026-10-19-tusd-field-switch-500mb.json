@@ -2,11 +2,11 @@
   "schema_version": 1,
   "tool": "netlab",
   "role": "infra",
-  "test_name": "upload-resume",
+  "test_name": "field-network-upload",
   "decision_ref": 3,
   "started_at": "2026-10-19T17:39:29Z",
   "ended_at": "2026-10-19T18:03:40Z",
-  "result": "pass",
+  "result": "partial",
   "device": {
     "platform": "server",
     "model": "netlab python client (stdlib)",
@@ -43,5 +43,5 @@
     "part_times_s": "3.4,3.4,3.5,3.5,3.5,3.5,3.6,3.5,3.4,3.5,3.5,3.5,3.5,3.5,3.6,3.6,3.4,3.4,3.5,3.5,3.5,3.5,3.5,3.6,3.4,3.4,3.5,3.5,3.5,3.5,3.6,3.6,3.4,3.5,3.5,3.5,3.5,3.5,3.6,3.6,3.4,3.4,3.5,3.5,3.5,3.5,3.6,3.6,3.4,3.4,3.5,17.1,17.1,17.1,17.1,17.0,17.1,17.1,17.1,17.1,17.1,3.6,3.6,3.4,3.4,3.5,3.5,3.5,3.5,3.6,3.6,3.4,3.5,3.5,3.5,3.5,3.5,3.5,3.6,3.4,3.4,3.5,3.5,3.5,3.5,3.5,3.6,3.4,3.4,3.5,3.5,3.5,3.5,3.5,3.6,3.4,3.4,3.5,3.5,3.5,3.5,3.6,3.6,3.4,3.4,3.5,3.5,3.5,3.5,3.6,3.6,3.4,17.0,17.1,17.1,17.1,17.1,17.1,17.0,17.1,17.1,17.1,3.5,3.5,3.5,3.6,3.4,3.4,3.5,3.5,3.5,3.5,3.5,3.6,3.4,3.4,3.5,3.5,3.5,3.5,3.5,3.6,3.4,3.4,3.5,3.5,3.5,3.5,3.6,3.5,3.4,3.4,3.5,3.5,3.5,3.5,3.6,3.6,3.4,3.4,3.5,3.5,3.5,3.5,3.5,3.6,3.4,3.5,3.5,3.5,3.5,3.6,3.5,17.2,17.0,17.0,17.0,17.1,17.1,17.1,17.1,17.2,17.0,3.4,3.5,3.5,3.5,3.5,3.6,3.4,3.4,3.5,3.5,3.5,3.5,3.5,3.6,3.4,3.4,3.4,3.5,3.5,3.5,3.5,3.6,3.4,3.4,3.4,3.5,3.5,3.5,3.5,3.6,3.4,3.4,3.4,3.5,3.5,3.5,3.5,3.6,3.4,3.4,3.4,3.5,3.5,3.5,3.5,3.6,3.4,3.4,3.4,3.5,3.5,17.1,17.1,17.2,17.0,17.0,17.0,17.0,17.1,17.1,17.1,3.4,3.4,3.2",
     "events": "180.2s:switch-cellular;360.2s:switch-wifi;540.2s:switch-cellular;720.2s:switch-wifi;900.2s:switch-cellular;1080.1s:switch-wifi;1260.2s:switch-cellular;1440.2s:switch-wifi"
   },
-  "notes": "toxiproxy 2.12.0 -> nginx tusd-proxy -> tusd v2.10.1 -> MinIO (local compose). Client: tools/netlab/netlab.py, time box 1500s, event scale 1.0. Connected window = client-observed time from first successful request to next failure."
+  "notes": "toxiproxy 2.12.0 -> nginx tusd-proxy -> tusd v2.10.1 -> MinIO (local compose). Client: tools/netlab/netlab.py, time box 1500s, event scale 1.0. partial: file below the 1024 MiB criterion size. Connected window = client-observed time from first successful request to next failure."
 }

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "tool": "netlab",
   "role": "infra",
-  "test_name": "upload-resume",
+  "test_name": "field-network-upload",
   "decision_ref": 3,
   "started_at": "2026-10-19T17:39:29Z",
   "ended_at": "2026-10-19T17:54:43Z",
@@ -43,5 +43,5 @@
     "part_times_s": "17.4,17.3,17.5,17.4,17.5,17.5,17.4,17.4,17.4,17.5,17.3,17.4,17.6,17.7,17.3,17.3,17.5,17.3,17.4,17.4,17.4,17.3,17.3,17.4,17.5,17.4,17.7,17.5,17.2,17.4,17.4,17.3,17.4,17.5,17.5,17.3,17.4,17.4,17.4",
     "events": "120.1s:blackout-start;140.1s:blackout-end;240.1s:blackout-start;260.1s:blackout-end;360.1s:blackout-start;380.1s:blackout-end;480.1s:blackout-start;500.1s:blackout-end;600.1s:blackout-start;620.1s:blackout-end;720.1s:blackout-start;740.2s:blackout-end;840.1s:blackout-start;860.1s:blackout-end"
   },
-  "notes": "toxiproxy 2.12.0 -> nginx tusd-proxy -> tusd v2.10.1 -> MinIO (local compose). Client: tools/netlab/netlab.py, time box 900s, event scale 1.0. loss_pct target 30 not emulated by toxiproxy (ADR 0005). Connected window = client-observed time from first successful request to next failure."
+  "notes": "toxiproxy 2.12.0 -> nginx tusd-proxy -> tusd v2.10.1 -> MinIO (local compose). Client: tools/netlab/netlab.py, time box 900s, event scale 1.0. loss_pct target 30 not emulated by toxiproxy (ADR 0005). partial: file below the 1024 MiB criterion size. Connected window = client-observed time from first successful request to next failure."
 }
