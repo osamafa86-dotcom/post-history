@@ -23,3 +23,9 @@
 - كل خطوة وظيفة صغيرة قابلة للإعادة دون إنشاء أصل أو حدث جديد (idempotent).
 - ملفات العينة الحقيقية لا تُرفع إلى المستودع؛ اختبارات CI على ملفات اصطناعية بمعدل إطارات متغير وفجوات زمنية.
 - `tools/render-bench`: زمن تصدير القالب العاجل بطبقات Remotion قصيرة بقناة شفافية يركّبها FFmpeg، مقابل libass؛ النتائج في `docs/measurements/render-bench/`.
+
+## الحالة
+
+- منجز (التذكرة 1، الطلب الأول): `src/media_worker/` — `probe` (البيانات الفنية بقائمة بيضاء بلا وسوم، كشف المعدل المتغير والفجوات، `start_pts` من مسار الفيديو)، `hashing` (SHA-256 والبصمة الرخيصة في قراءة واحدة)، `proxy` (480p بـ `-copyts` وإطار مفتاحي كل ثانية، بلا وسوم). الصورة تثبّت Python 3.12 وFFmpeg 8.0.1 بالبصمة، والاختبارات تعمل داخلها (وظيفة `media` في CI).
+- مقترح: واجهة الخادم في ADR 0006 (`/internal/media/*` وRedis Stream `media:events`). الخدمة المستهلكة وprofile compose في الطلب الثاني بعد الموافقة.
+- التشغيل محليًا: `docker build --target test -t media-worker:test workers/media && docker run --rm media-worker:test`.
