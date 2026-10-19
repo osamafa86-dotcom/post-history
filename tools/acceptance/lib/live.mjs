@@ -41,3 +41,17 @@ export function canon(v) {
   if (v && typeof v === "object") return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canon(v[k])}`).join(",")}}`;
   return JSON.stringify(v);
 }
+
+/** All events of a type from GET /events, following next_after until exhausted. */
+export async function eventsOfType(http, token, type) {
+  const out = [];
+  let after = "";
+  for (let i = 0; i < 200; i++) {
+    const r = await http.get(token, `/events?type=${encodeURIComponent(type)}&limit=100${after ? `&after=${after}` : ""}`);
+    if (r.status !== 200) throw new Error(`GET /events answered ${r.status}`);
+    out.push(...(r.body.items ?? []));
+    if (!r.body.next_after || !(r.body.items ?? []).length) break;
+    after = r.body.next_after;
+  }
+  return out;
+}

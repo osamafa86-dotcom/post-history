@@ -70,13 +70,13 @@ function readRange(path, offset, length) {
  * Returns the facts the acceptance criterion is judged on; never throws on a server-side protocol surprise
  * that is itself a finding (it reports it in `violations`).
  */
-export async function resumableUpload({ endpoint, file, size, chunkSize, interruptAt, metadata = {} }) {
+export async function resumableUpload({ endpoint, file, size, chunkSize, interruptAt, metadata = {}, headers = {} }) {
   const violations = [];
   const log = { interruptions: 0, networkSwitches: 0, resumeOffsets: [], bytesSent: 0, headCalls: 0, patchCalls: 0, restartsFromZero: 0 };
   const meta = Object.entries({ filename: "synthetic.bin", ...metadata }).map(([k, v]) => `${k} ${Buffer.from(String(v)).toString("base64")}`).join(",");
   let agent = freshAgent(endpoint);
 
-  const created = await request(endpoint, { method: "POST", agent, headers: { ...TUS, "Upload-Length": String(size), "Upload-Metadata": meta, "Content-Length": "0" } });
+  const created = await request(endpoint, { method: "POST", agent, headers: { ...TUS, ...headers, "Upload-Length": String(size), "Upload-Metadata": meta, "Content-Length": "0" } });
   if (created.status !== 201 || !created.headers.location) throw new Error(`tus create failed: HTTP ${created.status}`);
   const location = new URL(created.headers.location, endpoint).toString();
 
@@ -85,7 +85,7 @@ export async function resumableUpload({ endpoint, file, size, chunkSize, interru
   let justCut = false;
   const t0 = Date.now();
   for (let guard = 0; guard < 10_000; guard++) {
-    const head = await request(location, { method: "HEAD", agent, headers: TUS });
+    const head = await request(location, { method: "HEAD", agent, headers: { ...TUS, ...headers } });
     log.headCalls++;
     if (head.status !== 200) throw new Error(`tus HEAD failed: HTTP ${head.status}`);
     const offset = Number(head.headers["upload-offset"]);
@@ -104,7 +104,7 @@ export async function resumableUpload({ endpoint, file, size, chunkSize, interru
     log.patchCalls++;
     const res = await request(location, {
       method: "PATCH", agent, body, abortAfter: cutAt,
-      headers: { ...TUS, "Content-Type": "application/offset+octet-stream", "Upload-Offset": String(offset), "Content-Length": String(len) },
+      headers: { ...TUS, ...headers, "Content-Type": "application/offset+octet-stream", "Upload-Offset": String(offset), "Content-Length": String(len) },
     });
     if (res.aborted) {
       log.bytesSent += cutAt;

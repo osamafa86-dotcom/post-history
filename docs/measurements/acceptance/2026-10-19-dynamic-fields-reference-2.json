@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "dynamic-fields",
+  "started_at": "2026-10-19T18:50:25.106Z",
+  "ended_at": "2026-10-19T18:50:26.167Z",
+  "result": "partial",
+  "metrics": {
+    "conformance_cases": 57,
+    "reference_cases_matching": 57,
+    "platforms_judged": "none",
+    "all_three_clients_identical": false,
+    "server_checked_live": true,
+    "server_cases_matching": 57,
+    "server_publish": true,
+    "server_current_is_new": true,
+    "server_stale_version_conflicts": true,
+    "server_old_version_readable": true,
+    "server_old_record_unchanged": true,
+    "server_v0_gate_sensitive": true,
+    "server_v0_gate_location": true,
+    "server_old_draft_invalid_completion_rejected": true,
+    "server_old_draft_completed_with_new_version": true
+  },
+  "device": {
+    "platform": "other"
+  },
+  "upload_path": "n/a",
+  "notes": "الخادم الحي: النشر والبوابة v0 والتاريخ المقروء وإكمال المسودة القديمة وكل حالات المطابقة المشتركة عبر POST /materials؛ لم تُقدَّم نتائج الواجهات الثلاث (web وios وandroid) متطابقة بعد، فلا يُدّعى المعيار كاملًا"
+}

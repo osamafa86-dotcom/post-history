@@ -15,7 +15,13 @@ if (!databaseUrl) { console.error("DATABASE_URL is required"); process.exit(2); 
 
 let stack, worst = 0;
 try {
-  stack = await startApi({ databaseUrl, port: Number(args.port ?? 13000) });
+  // optional backing services: with them the server verifies uploads against real object storage and shares the rate limit via Redis
+  const s3 = process.env.LIVE_S3_ENDPOINT ? { endpoint: process.env.LIVE_S3_ENDPOINT, accessKey: process.env.LIVE_S3_ACCESS_KEY, secretKey: process.env.LIVE_S3_SECRET_KEY, region: process.env.LIVE_S3_REGION } : undefined;
+  if (s3) {
+    const { s3FromEnv } = await import("../lib/s3.mjs");
+    await s3FromEnv({ S3_ENDPOINT: s3.endpoint, S3_ACCESS_KEY: s3.accessKey, S3_SECRET_KEY: s3.secretKey, S3_REGION: s3.region }).ensureBucket("uploads");
+  }
+  stack = await startApi({ databaseUrl, port: Number(args.port ?? 13000), redisUrl: process.env.LIVE_REDIS_URL, s3 });
   const s = await seed({ databaseUrl, apiUrl: stack.apiUrl });
   let sha = "unknown";
   try { sha = execFileSync("git", ["rev-parse", "--short", "HEAD"]).toString().trim(); } catch { /* not a checkout */ }
@@ -26,17 +32,22 @@ try {
     TENANT_BASE_URL: stack.apiUrl, TENANT_TOKENS: tokens, TENANT_FIXTURES: JSON.stringify(s.fixtures),
     IDEM_BASE_URL: stack.apiUrl, IDEM_TOKENS: tokens,
     HOOK_BASE_URL: stack.baseUrl, HOOK_TOKEN: stack.hookToken, HOOK_SESSIONS: JSON.stringify(s.uploads.hookSessions),
+    INVALID_API_URL: stack.apiUrl, INVALID_TOKENS: tokens, DYN_API_URL: stack.apiUrl, DYN_TOKENS: tokens,
     HOOK_OBJECT_PREFIX: stack.objectPrefix, HOOK_BUCKET: stack.bucket,
+    LIVE_DATABASE_URL: databaseUrl, RECEIPT_ESCALATION_SECONDS: String(stack.escalationSeconds),
+    ...(s3 ? { S3_ENDPOINT: s3.endpoint, S3_ACCESS_KEY: s3.accessKey, S3_SECRET_KEY: s3.secretKey, S3_REGION: s3.region ?? "us-east-1" } : {}),
+    LOAD_API_URL: stack.apiUrl, LOAD_TOKENS: tokens, PERF_API_URL: stack.apiUrl, PERF_TOKENS: tokens,
     RECEIPT_API_URL: stack.apiUrl, RECEIPT_TOKENS: tokens, RECEIPT_RUNS: process.env.RECEIPT_RUNS ?? "20",
   };
   Object.assign(process.env, common);
-  const note = `الخادم من main@${sha} على Postgres 16 محلي بقاعدة مؤقتة؛ لا Cloudflare ولا S3 ولا tusd في هذا التشغيل`;
+  const note = `الخادم من main@${sha} على Postgres 16 بقاعدة مؤقتة${process.env.LIVE_REDIS_URL ? " وRedis" : ""}${s3 ? " وتخزين S3" : ""}؛ بلا Cloudflare ولا tusd (الخطّاف مُحاكى)`;
   const passthrough = args["dry-run"] ? ["--dry-run"] : [];
   setLogSource(() => stack.logs());
-  // pii-leak last: it also reads the server logs produced by everything before it
-  const names = ["tenant-isolation", "duplicate-payment", "invalid-file", "receipt-notification", "pii-leak"];
+    // pii-leak reads the server logs of everything before it; dynamic-fields last: it publishes the shared form, which becomes the current form (with required fields) for every later material
+  const names = ["tenant-isolation", "duplicate-payment", "invalid-file", "receipt-notification", "concurrent-load", "performance", "pii-leak", "dynamic-fields"];
   const summary = [];
-  for (const name of names) {
+  const only = typeof args.only === "string" ? args.only.split(",") : null;
+  for (const name of names.filter((n) => !only || only.includes(n))) {
     const mod = await import(`../scripts/${name}.mjs`);
     try {
       const { code, doc } = await mod.run(passthrough);

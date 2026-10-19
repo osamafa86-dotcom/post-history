@@ -2,9 +2,13 @@
 // Plan row "استئناف الرفع" (5 GiB, three interruptions, network switch). CI runs a small file against the local tusd;
 // the full-size run is `UPLOAD_SIZE_MB=5120` against the compose stack and is what the gate result must come from.
 //   UPLOAD_ENDPOINT=http://127.0.0.1:8080/files/  UPLOAD_SIZE_MB=64  UPLOAD_CHUNK_MB=4  UPLOAD_INTERRUPTIONS=3
+// Hash verification: when tusd runs with -disable-download (the compose stack) it cannot be read back over HTTP, so with
+//   UPLOAD_S3_ENDPOINT UPLOAD_S3_ACCESS_KEY UPLOAD_S3_SECRET_KEY UPLOAD_S3_BUCKET [UPLOAD_S3_PREFIX]
+// the stored object is streamed from S3/MinIO instead; without them it falls back to GET on the upload URL.
 import { newResult, finish, writeResult, parseArgs, banner } from "../lib/measurement.mjs";
 import { byName } from "../lib/catalog.mjs";
 import { makeSyntheticFile, resumableUpload, serverSha256 } from "../lib/tus.mjs";
+import { s3FromEnv, tusObjectKey } from "../lib/s3.mjs";
 
 const MiB = 1 << 20;
 
@@ -35,7 +39,16 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       console.error(`ENVIRONMENT: could not drive tusd at ${endpoint}: ${e.message}`);
       return { code: 2, doc: null }; // no server = nothing measured, no result file
     }
-    const remote = await serverSha256(up.location);
+    const s3 = s3FromEnv(env, "UPLOAD_S3");
+    let remote, hashSource;
+    if (s3) {
+      const key = tusObjectKey(env.UPLOAD_S3_PREFIX ?? "", up.location);
+      remote = { sha256: await s3.sha256(env.UPLOAD_S3_BUCKET ?? "uploads", key), status: "s3" };
+      hashSource = "s3";
+    } else {
+      remote = await serverSha256(up.location);
+      hashSource = "http-get";
+    }
     const resent = up.bytesSent - size;
     const problems = [...up.violations];
     if (up.interruptions < wanted) problems.push(`only ${up.interruptions}/${wanted} interruptions happened`);
@@ -44,7 +57,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     if (remote.sha256 && remote.sha256 !== synth.sha256) problems.push("server SHA-256 differs from the local file");
     problems.forEach((p) => console.log(`FAIL ${p}`));
     const verified = Boolean(remote.sha256);
-    if (!verified) console.log(`SHA-256 not verified: GET answered HTTP ${remote.status}`);
+    if (!verified) console.log(`SHA-256 not verified (${hashSource}): ${remote.status}`);
 
     // the row is a 5 GiB criterion: a smaller file proves the mechanism, not the gate
     const fullSize = sizeMb >= 5120;
@@ -61,9 +74,10 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       total_time_s: Number((up.durationMs / 1000).toFixed(2)),
       sha256_match: verified ? remote.sha256 === synth.sha256 : "unverified",
       protocol_violations: up.violations.length,
+      hash_source: hashSource,
     }, [`تبديل الشبكة هنا إعادة بناء مجمّع الاتصالات على الجهاز نفسه؛ تغيّر العنوان الحقيقي يقيسه netlab والاختبار الميداني`,
         sizeMb < 5120 ? `الحجم ${sizeMb} ميغابايت للتحقق الآلي؛ معيار البوابة ملف 5 غيغابايت (UPLOAD_SIZE_MB=5120)` : null,
-        verified ? null : "الخادم لا يقدّم GET فلم تُتحقق البصمة",
+        verified ? null : "لم تُتحقق البصمة: الخادم لا يقدّم GET ولا إعدادات S3",
         env.UPLOAD_ENV_NOTE ?? null].filter(Boolean).join("؛ "));
     if (args["dry-run"]) writeResult(doc, { dryRun: true });
     else console.log("wrote", writeResult(doc, { slug: `${sizeMb}mb` }));
