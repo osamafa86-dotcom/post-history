@@ -1,5 +1,5 @@
 // Shared helpers for the live (server-backed) acceptance scripts.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -56,9 +56,16 @@ export async function eventsOfType(http, token, type) {
   return out;
 }
 
-/** A real upload session through POST /uploads, as the owner of the material does. Returns what the hook cases need. */
-export async function createUploadSession(http, token, { materialId, size, kind = "original", clientSha256 = null, filename = "clip.mp4" }) {
-  const r = await http.call(token, "POST", "/uploads", { body: { material_id: materialId, kind, size_bytes: size, filename, ...(clientSha256 ? { client_sha256: clientSha256 } : {}) } });
+export const sha256Hex = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+/**
+ * A real upload session through POST /uploads, as the owner of the material does. Returns what the hook cases need.
+ * `client_sha256` is required by the contract, so the file is always declared: pass its `bytes` (size and SHA-256
+ * follow), or its `size` with its `clientSha256`. A deliberately wrong digest is a legitimate argument; none is not.
+ */
+export async function createUploadSession(http, token, { materialId, bytes = null, size = bytes?.length, clientSha256 = bytes ? sha256Hex(bytes) : null, kind = "original", filename = "clip.mp4" }) {
+  if (!Number.isInteger(size) || !/^[0-9a-f]{64}$/.test(clientSha256 ?? "")) throw new Error("createUploadSession needs the file: bytes, or size and a 64-hex clientSha256");
+  const r = await http.call(token, "POST", "/uploads", { body: { material_id: materialId, kind, size_bytes: size, filename, client_sha256: clientSha256 } });
   if (r.status !== 201) throw new Error(`POST /uploads answered ${r.status}: ${String(r.text).slice(0, 200)}`);
   return { id: r.body.id, token: r.body.upload_token, size };
 }
