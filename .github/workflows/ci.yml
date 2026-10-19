@@ -194,5 +194,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
-      - name: Media measurements match measurement.json
-        run: npx -y -p ajv-cli@5.0.0 -p ajv-formats@2.1.1 ajv validate --spec=draft2020 -c ajv-formats -s contracts/schemas/measurement.json -d "docs/measurements/media/*.json"
+      - name: Media and render-bench measurements match measurement.json
+        run: |
+          npx -y -p ajv-cli@5.0.0 -p ajv-formats@2.1.1 ajv validate --spec=draft2020 -c ajv-formats -s contracts/schemas/measurement.json -d "docs/measurements/media/*.json"
+          npx -y -p ajv-cli@5.0.0 -p ajv-formats@2.1.1 ajv validate --spec=draft2020 -c ajv-formats -s contracts/schemas/measurement.json -d "docs/measurements/render-bench/*.json"

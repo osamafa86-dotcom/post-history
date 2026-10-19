@@ -21,12 +21,12 @@
   - الإزاحة المضافة: صوت − صورة في الناتج، ناقص المقدار نفسه في المصدر.
   - انزياح العلامات بين المصدر والناتج.
   - انحراف المدة.
-- **النتيجة:** `pass` فقط إن قيست المجموعة كلها ونجحت كل حالة، وإلا `partial` أو `fail`. تُكتب في `docs/measurements/media/` بقرار المنسّق للتذكرة 2.
+- **النتيجة:** `pass` فقط إن قيست المجموعة كلها ونجحت كل حالة، وإلا `partial` أو `fail`. تُكتب في `docs/measurements/render-bench/` (`tools/CLAUDE.md`).
 - **الاختبار:** `test_av_sync.py` يشغّل الحالتين القصيرتين، ويتحقق من أن الكاشف يرى تأخيرًا مصطنعًا قدره 100 ms، فلا يمر القياس لأن الكاشف أعمى.
 - **التحصين:** القراءة كما في العامل (`INPUT_GUARD`، `-nostdin`، بيئة نظيفة). لا ملفات حقيقية ولا مزوّد خارجي.
 
 ```bash
 docker build --target base -t media-worker:base workers/media
 docker run --rm -v "$PWD":/repo -w /repo -e PYTHONPATH=/repo/workers/media/src --entrypoint python \
-  media-worker:base tools/render-bench/av_sync.py --out docs/measurements/media/<date>-proxy-av-sync.json
+  media-worker:base tools/render-bench/av_sync.py --out docs/measurements/render-bench/<date>-proxy-av-sync.json
 ```

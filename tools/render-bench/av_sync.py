@@ -15,7 +15,7 @@
 لا ملفات حقيقية ولا مزوّد خارجي. القراءة بالتحصين نفسه (`INPUT_GUARD`، `-nostdin`، بيئة نظيفة).
 
     PYTHONPATH=workers/media/src python tools/render-bench/av_sync.py \
-        --out docs/measurements/media/<date>-proxy-av-sync.json
+        --out docs/measurements/render-bench/<date>-proxy-av-sync.json
 """
 
 from __future__ import annotations
