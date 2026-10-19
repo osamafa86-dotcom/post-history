@@ -1,0 +1,10 @@
+[project]
+name = "media-worker"
+version = "0.1.0"
+description = "عامل الوسائط: البيانات الفنية، النسخة الخفيفة، البصمة"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -p no:cacheprovider"
