@@ -83,17 +83,25 @@ class AuthManager(
      * racing this request; a failure or timeout changes nothing locally and is recorded nowhere.
      */
     suspend fun revokeAllSessionsBestEffort(timeoutMs: Long = 3_000): Boolean {
-        val token = store.read()?.accessToken ?: return false
+        var tokens = store.read() ?: return false
+        val started = clock()
+        // A lapsed access token would make the server answer 401 and the revocation fail silently: rotate
+        // first, inside the same budget (the wipe's guard keeps a 401 here from starting a second wipe).
+        if (tokens.accessExpiresAtEpochMs - EXPIRY_SLACK_MS <= started) {
+            tokens = withTimeoutOrNull(timeoutMs) { withContext(Dispatchers.IO) { refreshBlocking(tokens.accessToken) } } ?: return false
+        }
+        val token = tokens.accessToken
+        val remainingMs = (timeoutMs - (clock() - started)).coerceAtLeast(200)
         val request = Request.Builder()
             .url("$baseUrl/auth/logout")
             .header(AUTHORIZATION, "Bearer $token")
             .post("""{"all_sessions":true}""".toRequestBody("application/json".toMediaType()))
             .build()
         // OkHttp's per-call deadline bounds connect, write and read together; the coroutine timeout is a backstop.
-        return withTimeoutOrNull(timeoutMs + 500) {
+        return withTimeoutOrNull(remainingMs + 500) {
             withContext(Dispatchers.IO) {
                 try {
-                    httpClient.newCall(request).apply { timeout().timeout(timeoutMs, TimeUnit.MILLISECONDS) }.execute().use { it.isSuccessful }
+                    httpClient.newCall(request).apply { timeout().timeout(remainingMs, TimeUnit.MILLISECONDS) }.execute().use { it.isSuccessful }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {

@@ -203,6 +203,17 @@ class AuthManagerTest {
         assertEquals(false, manager.revokeAllSessionsBestEffort())
     }
 
+    @Test fun `best-effort revocation rotates a lapsed access token first`() = runBlocking {
+        store.write(SessionTokens("old", "r1", now + 5_000, "u"))
+        server.enqueue(json(200, sessionJson("new", "r2")))
+        server.enqueue(MockResponse().setResponseCode(204))
+        assertTrue(manager.revokeAllSessionsBestEffort())
+        assertEquals("/v1/auth/refresh", server.takeRequest().path)
+        val logout = server.takeRequest()
+        assertEquals("/v1/auth/logout", logout.path)
+        assertEquals("Bearer new", logout.getHeader("Authorization"))
+    }
+
     @Test fun `logout clears the device even when the server is unreachable`() = runBlocking {
         store.write(SessionTokens("a1", "r1", now + 600_000, "u"))
         server.enqueue(MockResponse().setResponseCode(500))
