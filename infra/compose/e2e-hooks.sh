@@ -27,6 +27,8 @@ code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: applic
   -d '{"Type":"pre-create","Event":{}}' "http://127.0.0.1:${API_PORT}/internal/tusd-hooks/${TUSD_HOOK_SECRET}")"
 case "$code" in 403|404) ;; *) fail "/internal from outside tusd's address: expected 403/404, got $code" ;; esac
 
-if "${COMPOSE[@]}" logs api | grep -qF "$TUSD_HOOK_SECRET"; then fail "hook token in API log"; fi
+# Captured first: with pipefail, `logs | grep -q` can turn a match into a SIGPIPE failure and hide it.
+api_log="$("${COMPOSE[@]}" logs api)"
+if grep -qF "$TUSD_HOOK_SECRET" <<<"$api_log"; then fail "hook token in API log"; fi
 
 echo "e2e hooks: ok"
