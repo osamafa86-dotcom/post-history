@@ -33,11 +33,15 @@ info:
       دور بجلسة صالحة، والقائمة الفارغة = بلا مصادقة. النطاق يُطبَّق في طبقة الاستعلام: المراسل يرى
       مواده، والمشرف مواد مراسلي نطاقه (مكتب أو محافظة)، والإنتاج المواد المقبولة للإنتاج،
       ورئيس التحرير ومدير النظام ومسؤول الحقوق كل المواد. ما خارج النطاق يعود `404`.
-    - **قاعدة الحجب (ADR SEC-03):** قيم `dynamic_fields` التي حقلها في إصدار النموذج موسوم `sensitive`
-      أو من نوع `location` تُحذف من كل استجابة (المفتاح غائب ويُذكر في `redacted_field_keys`) إلا
-      لمن يحمل الصلاحية المقابلة (`sensitive_location:read` أو `protected_source:read`؛ تُعرَّف في تذكرة 2)،
-      ولا تدخل أي إشعار أو حدث أو تصدير أو قناة خارجية. في v0 يرفض `POST /forms` هذه الحقول أصلًا.
-      الإحداثيات `gps` لا تعود لأحد من هذه الواجهة.
+    - **الصلاحيات المستقلة (`x-permissions`، ADR SEC-03):** رؤية القيم الكاشفة ليست دورًا بل صلاحية تُمنح
+      لمستخدم بعينه وتُسحب: `sensitive_location:read` لحقول الموقع، و`protected_source:read` للحقول الموسومة
+      `sensitive`. لا منح افتراضي لأي دور ولا لمدير النظام تلقائيًا (يمنح نفسه صراحة). العملية التي تحمل
+      `x-permissions` تعيد القيم غير المحجوبة لحامل الصلاحية فقط، وكل منح وسحب وكل قراءة فعلية لقيمة
+      غير محجوبة تُسجَّل في سجل التدقيق. الصلاحيات الحالية للمستخدم في `Me.permissions`.
+    - **قاعدة الحجب:** قيم `dynamic_fields` التي حقلها في إصدار النموذج موسوم `sensitive` أو من نوع
+      `location` تُحذف من كل استجابة (المفتاح غائب ويُذكر في `redacted_field_keys`) إلا لمن يحمل الصلاحية
+      المقابلة، ولا تدخل أي إشعار أو حدث أو تصدير أو قناة خارجية بأي صلاحية. في v0 يرفض `POST /forms`
+      هذه الحقول أصلًا (بوابة v0 حتى SEC-04). الإحداثيات `gps` لا تعود لأحد من هذه الواجهة.
     - **خطّافات tusd داخلية (ADR SEC-06):** تصل إلى `/internal/tusd-hooks/{hook_token}` خارج `/v1`،
       معزولة شبكيًا وبرمز من البيئة؛ العام لا يرى هذه النقطة.
 
@@ -51,10 +55,6 @@ servers:
   - url: https://api.example.invalid/v1
     description: يُستبدل بنطاق الشبكة عند النشر
 
-# الأدوار المخوّلة برؤية الحقول الحساسة وحقول الموقع في dynamic_fields — مؤقت: قرار المالك (2026-10-19)
-# أن الرؤية صلاحيتان مستقلتان تُمنحان لمستخدمين بعينهم (sensitive_location:read، protected_source:read)
-# بلا منح افتراضي لأي دور؛ تذكرة 2 (SEC-03) تستبدل هذه القائمة بالصلاحيات. في v0 لا توجد هذه الحقول أصلًا.
-x-pii-roles: []
 
 tags:
   - name: auth
@@ -273,6 +273,57 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /users/{id}/permissions/{permission}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: معرّف المستخدم
+        schema: { type: string, format: uuid }
+      - name: permission
+        in: path
+        required: true
+        description: الصلاحية
+        schema: { $ref: "#/components/schemas/Permission" }
+    put:
+      tags: [auth]
+      summary: منح صلاحية مستقلة لمستخدم بعينه (مدير النظام)
+      description: >-
+        المنح لا يأتي من الدور؛ مدير النظام يمنحه صراحة حتى لنفسه. ذاتي التكرار: المنح القائم يعيد `204`
+        نفسها. يُسجَّل في سجل التدقيق من منح ولمن ومتى ولماذا.
+      operationId: grantPermission
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500, description: سبب المنح؛ يُحفظ في سجل الصلاحيات لا في تفاصيل التدقيق }
+      responses:
+        "204": { description: مُنحت (أو كانت ممنوحة) }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+    delete:
+      tags: [auth]
+      summary: سحب صلاحية مستقلة (مدير النظام)
+      description: السحب يسري عند الطلب التالي. ذاتي التكرار. يُسجَّل في سجل التدقيق.
+      operationId: revokePermission
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "204": { description: سُحبت (أو لم تكن ممنوحة) }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /materials:
     get:
       tags: [materials]
@@ -282,6 +333,7 @@ paths:
         والإنتاج المواد المقبولة للإنتاج. الترتيب الافتراضي الأحدث أولًا.
       operationId: listMaterials
       x-roles: [reporter, supervisor, producer, editor_in_chief, rights_officer, system_admin]
+      x-permissions: [sensitive_location:read, protected_source:read]
       parameters:
         - name: editorial_state
           in: query
@@ -361,6 +413,7 @@ paths:
       summary: قراءة مادة
       operationId: getMaterial
       x-roles: [reporter, supervisor, producer, editor_in_chief, rights_officer, system_admin]
+      x-permissions: [sensitive_location:read, protected_source:read]
       responses:
         "200":
           description: المادة
@@ -1025,7 +1078,7 @@ components:
 
     Me:
       type: object
-      required: [user_id, email, roles, totp_enabled]
+      required: [user_id, email, roles, permissions, totp_enabled]
       properties:
         user_id: { type: string, format: uuid }
         email: { type: string, format: email }
@@ -1034,6 +1087,16 @@ components:
         roles:
           type: array
           items: { $ref: "#/components/schemas/Role" }
+        permissions:
+          type: array
+          description: الصلاحيات المستقلة الممنوحة حاليًا؛ فارغة لمعظم المستخدمين
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/Permission" }
+
+    Permission:
+      type: string
+      description: صلاحية مستقلة تُمنح لمستخدم بعينه لا لدور (قرار المالك 2026-10-19، ADR SEC-03)
+      enum: [sensitive_location:read, protected_source:read]
 
     Role:
       type: object
@@ -1247,7 +1310,7 @@ components:
               type: array
               description: >-
                 مفاتيح `dynamic_fields` التي حُذفت من هذه الاستجابة بقاعدة الحجب (حقول `sensitive` أو
-                `location`) لأن دور المستدعي ليس في `x-pii-roles`؛ فارغة للمخوّلين.
+                `location`) لأن المستدعي لا يحمل الصلاحية المقابلة؛ فارغة لحاملها.
               items: { type: string }
             created_at: { type: string, format: date-time }
             updated_at: { type: string, format: date-time }

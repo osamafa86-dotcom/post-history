@@ -227,17 +227,42 @@ SELECT pg_temp.expect_error($q$
 
 -- ---------- audit log: hash chain + append-only ----------
 INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
-VALUES ('00000000-0000-4000-8000-000000000012', 'recovery.approved', 'user', '00000000-0000-4000-8000-000000000011', '{"note": "verified by phone call"}');
+VALUES ('00000000-0000-4000-8000-000000000012', 'recovery.approved', 'user', '00000000-0000-4000-8000-000000000011', '{"recovery_request_id": "00000000-0000-4000-8000-000000000901"}');
+-- قائمة بيضاء لتفاصيل التدقيق: لا نص حر
+SELECT pg_temp.expect_error($q$
+  INSERT INTO audit_log (actor_id, action, details)
+  VALUES ('00000000-0000-4000-8000-000000000012', 'recovery.approved', '{"note": "verified by phone call with the source"}') $q$, '23514');
 INSERT INTO audit_log (actor_id, action, target_type, target_id)
 VALUES ('00000000-0000-4000-8000-000000000012', 'material.transition', 'material', '00000000-0000-4000-8000-000000000101');
 SELECT pg_temp.assert(
   (SELECT a2.prev_hash = a1.hash AND a1.prev_hash IS NULL
-     FROM audit_log a1 JOIN audit_log a2 ON a2.id = a1.id + 1
+     FROM audit_log a1 JOIN audit_log a2 ON a2.id = (SELECT min(id) FROM audit_log WHERE id > a1.id)
     WHERE a1.id = (SELECT min(id) FROM audit_log)),
   'audit log rows are hash-chained');
 SELECT pg_temp.expect_error($q$ UPDATE audit_log SET action = 'tampered' $q$, '42501');
 SELECT pg_temp.expect_error($q$ DELETE FROM audit_log $q$, '42501');
 SELECT pg_temp.expect_error($q$ TRUNCATE audit_log $q$, '42501');
+
+-- ---------- user permissions (SEC-03) ----------
+INSERT INTO user_permissions (user_id, permission, granted_by, reason)
+VALUES ('00000000-0000-4000-8000-000000000012', 'sensitive_location:read', '00000000-0000-4000-8000-000000000012', 'field supervisor for the Gaza office');
+SELECT pg_temp.assert(
+  (SELECT count(*) = 1 FROM audit_log WHERE action = 'permission.granted' AND details ->> 'permission' = 'sensitive_location:read'),
+  'grant writes an audit row');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO user_permissions (user_id, permission, granted_by, reason)
+  VALUES ('00000000-0000-4000-8000-000000000012', 'sensitive_location:read', '00000000-0000-4000-8000-000000000012', 'dup') $q$, '23505');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO user_permissions (user_id, permission, granted_by, reason)
+  VALUES ('00000000-0000-4000-8000-000000000012', 'materials:delete', '00000000-0000-4000-8000-000000000012', 'x') $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE user_permissions SET reason = 'edited' WHERE revoked_at IS NULL $q$, '23514');
+SELECT pg_temp.expect_error($q$ DELETE FROM user_permissions $q$, '42501');
+UPDATE user_permissions SET revoked_by = '00000000-0000-4000-8000-000000000012', revoked_at = now() WHERE revoked_at IS NULL;
+SELECT pg_temp.assert((SELECT count(*) = 1 FROM audit_log WHERE action = 'permission.revoked'), 'revoke writes an audit row');
+-- بعد السحب يمكن المنح من جديد (سجل تاريخي + منحة نشطة واحدة)
+INSERT INTO user_permissions (user_id, permission, granted_by, reason)
+VALUES ('00000000-0000-4000-8000-000000000012', 'sensitive_location:read', '00000000-0000-4000-8000-000000000012', 're-granted');
+SELECT pg_temp.assert((SELECT count(*) = 2 FROM user_permissions), 'history kept across revoke and re-grant');
 
 -- ---------- indexing policy (ADR 0002) ----------
 SELECT pg_temp.assert(
