@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "invalid-file",
+  "started_at": "2026-10-19T23:39:39.303Z",
+  "ended_at": "2026-10-19T23:40:57.476Z",
+  "result": "partial",
+  "metrics": {
+    "hostile_cases": 4,
+    "hostile_cases_rejected": 4,
+    "callout_hits": 0,
+    "failures": 0
+  },
+  "device": {
+    "platform": "server",
+    "model": "compose on a GitHub-hosted runner: api + tusd + minio + redis + media-worker"
+  },
+  "upload_path": "tusd",
+  "notes": "عامل الوسائط: قوائم HLS وconcat بامتداد فيديو وملف مقطوع تنتهي failed بسبب invalid_file بلا مشتق ولا اتصال خارج الحاوية؛ لم يُقَس ترميز غير مدعوم ولا رسالة الرفض على الهاتف ولا ملف تالف حقيقي من هاتف؛ مستمع الاتصال الخارجي يثبت أن شيئًا لم يخرج لكنه ليس كاشفًا مجرَّبًا (FFmpeg الافتراضي لا يجلب مقاطع http من قائمة محلية أصلًا)؛ طبقة المنع نفسها (protocol_whitelist) اختبارها في workers/media"
+}
