@@ -17,14 +17,35 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
-      - name: Lint OpenAPI
-        run: npx -y @redocly/cli@2.65.0 lint contracts/openapi.yaml
-      - name: Compile JSON schemas
-        run: |
-          for f in contracts/schemas/*.json; do
-            echo "== $f"
-            npx -y -p ajv-cli@5.0.0 -p ajv-formats@2.1.1 ajv compile --spec=draft2020 -c ajv-formats -s "$f"
-          done
+      - name: Lint OpenAPI, compile schemas, validate examples
+        run: contracts/scripts/check.sh
+
+  db:
+    name: db (migrations up/down + smoke test)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: posthistory_test
+          POSTGRES_USER: posthistory
+          POSTGRES_PASSWORD: ci-only
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U posthistory -d posthistory_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Migrate up, smoke test, down, up
+        env:
+          DATABASE_URL: postgres://posthistory:ci-only@localhost:5432/posthistory_test
+        run: apps/api/src/db/scripts/check.sh
 
   secrets:
     name: secret scan
