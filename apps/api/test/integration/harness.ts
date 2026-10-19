@@ -6,8 +6,8 @@ import { Pool } from 'pg';
 import type { Logger } from 'pino';
 import { AppModule, configureApp } from '../../src/app.module';
 import { createLogger } from '../../src/common/logger';
-import { encryptField, randomToken, sha256 } from '../../src/common/crypto';
-import { type AppConfig, loadConfig } from '../../src/config/config';
+import { randomToken, sha256 } from '../../src/common/crypto';
+import { type AppConfig, fieldKeyring, loadConfig } from '../../src/config/config';
 import { OutboxDispatcher } from '../../src/outbox/outbox.dispatcher';
 
 export interface Harness {
@@ -57,11 +57,10 @@ export async function seedUser(
   const email = `user-${randomUUID()}@example.test`;
   const password = randomToken(12);
   const totpSecret = opts.totp ? Buffer.from(randomToken(20)) : undefined;
-  const key = Buffer.from(h.config.FIELD_ENCRYPTION_KEY, 'base64');
   const { rows } = await h.pool.query<{ id: string }>(
     `INSERT INTO users (email, password_hash, totp_enabled, totp_secret_enc, status)
      VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-    [email, await hash(password), !!totpSecret, totpSecret ? encryptField(key, totpSecret) : null, opts.status ?? 'active'],
+    [email, await hash(password), !!totpSecret, totpSecret ? fieldKeyring(h.config).encrypt(totpSecret) : null, opts.status ?? 'active'],
   );
   const id = rows[0]!.id;
   for (const r of opts.roles ?? [{ role: 'reporter' }]) {
@@ -84,7 +83,7 @@ export async function ensureForm(h: Harness): Promise<void> {
 export async function seedUploadSession(
   h: Harness,
   reporterId: string,
-  opts: { kind?: string; size?: number; state?: string; expiresInSeconds?: number } = {},
+  opts: { kind?: string; size?: number; state?: string; expiresInSeconds?: number; updatedSecondsAgo?: number } = {},
 ): Promise<{ id: string; materialId: string; uploadToken: string }> {
   await ensureForm(h);
   const { rows: m } = await h.pool.query<{ id: string }>(
@@ -95,10 +94,21 @@ export async function seedUploadSession(
   );
   const uploadToken = randomToken();
   const { rows } = await h.pool.query<{ id: string }>(
+    // updated_at يُضبط عند الإدراج فقط (محفّز التحديث يعيده إلى now())
     `INSERT INTO upload_sessions (material_id, created_by, kind, state, size_bytes, filename, part_size_bytes,
-       upload_token_hash, expires_at)
-     VALUES ($1, $2, $3, $4, $5, 'clip.mp4', 16777216, $6, now() + make_interval(secs => $7)) RETURNING id`,
-    [m[0]!.id, reporterId, opts.kind ?? 'original', opts.state ?? 'created', opts.size ?? 1000, sha256(uploadToken), opts.expiresInSeconds ?? 3600],
+       upload_token_hash, expires_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, 'clip.mp4', 16777216, $6, now() + make_interval(secs => $7), now() - make_interval(secs => $8))
+     RETURNING id`,
+    [
+      m[0]!.id,
+      reporterId,
+      opts.kind ?? 'original',
+      opts.state ?? 'created',
+      opts.size ?? 1000,
+      sha256(uploadToken),
+      opts.expiresInSeconds ?? 3600,
+      opts.updatedSecondsAgo ?? 0,
+    ],
   );
   return { id: rows[0]!.id, materialId: m[0]!.id, uploadToken };
 }

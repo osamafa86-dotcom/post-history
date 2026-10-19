@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { createHarness, type Harness, seedUploadSession, seedUser } from './harness';
 
@@ -218,6 +218,24 @@ describe('tusd hooks (/internal/tusd-hooks/{hook_token}, SEC-06)', () => {
       expect(res.body.code).toBe('not_found');
     } finally {
       await outside.close();
+    }
+  });
+
+  it('accepts the previous hook secret only until its transition deadline', async () => {
+    const previous = randomBytes(24).toString('hex');
+    for (const [until, status] of [
+      [new Date(Date.now() + 60_000).toISOString(), 200],
+      [new Date(Date.now() - 1_000).toISOString(), 401],
+    ] as const) {
+      const rot = await createHarness({ env: { TUSD_HOOK_SECRET_PREVIOUS: previous, TUSD_HOOK_SECRET_PREVIOUS_UNTIL: until } });
+      try {
+        const post = (token: string) => request(rot.app.getHttpServer()).post(`/internal/tusd-hooks/${token}`).send({ Type: 'post-receive', Event: {} });
+        await post(rot.config.TUSD_HOOK_SECRET).expect((r) => expect(r.status).not.toBe(401));
+        await post(previous).expect((r) => expect(r.status === 401 ? 401 : 200).toBe(status));
+        await post('x'.repeat(48)).expect(401);
+      } finally {
+        await rot.close();
+      }
     }
   });
 
