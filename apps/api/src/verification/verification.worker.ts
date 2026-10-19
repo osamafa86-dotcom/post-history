@@ -12,7 +12,8 @@ import { inspectUpload, recordVerification } from './verification';
  * التحقق داخل الخادم إلى أن يوجد عامل الوسائط (UPLOAD_VERIFIER=in_process). الطابور هو حالة الجلسة نفسها:
  * كل جلسة `completed` تُقفل بـ FOR UPDATE SKIP LOCKED وتُفحص وتُطبَّق نتيجتها بـ recordVerification، فعدة نسخ
  * تعمل معًا ولا يضيع شيء بإعادة التشغيل. عامل الوسائط يحل محله بضبط UPLOAD_VERIFIER=external واستدعاء
- * recordVerification نفسها.
+ * recordVerification نفسها. تُحسب حتى VERIFY_CONCURRENCY بصمة معًا (SKIP LOCKED يوزّع الجلسات على الحلقات دون تداخل):
+ * التسلسل كان يجعل آخر رفعة في دفعة متزامنة تنتظر مجموع قراءات ما قبلها.
  */
 @Injectable()
 export class VerificationWorker implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -74,12 +75,25 @@ export class VerificationWorker implements OnApplicationBootstrap, OnApplication
     });
   }
 
+  /**
+   * يفرغ الطابور بعدد `concurrency` من الحلقات المتوازية ويعيد عدد ما تحقق منه. كل حلقة تقف عند أول فراغ أو عطل
+   * تخزين، فالتخزين المعطّل لا يُستدعى أكثر من `concurrency` مرة في الدفعة.
+   */
+  async drain(concurrency = this.config.VERIFY_CONCURRENCY): Promise<number> {
+    let verified = 0;
+    const loop = async () => {
+      while (!this.stopped && (await this.verifyNext())) verified++;
+    };
+    const results = await Promise.allSettled(Array.from({ length: concurrency }, loop));
+    const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+    if (failed) throw failed.reason;
+    return verified;
+  }
+
   private schedule(): void {
     if (this.stopped) return;
     this.timer = setTimeout(() => {
-      this.running = (async () => {
-        while (!this.stopped && (await this.verifyNext()));
-      })()
+      this.running = this.drain()
         .catch((err: unknown) => this.logger.error({ err_name: (err as Error)?.name }, 'verification failed'))
         .finally(() => this.schedule());
     }, this.config.VERIFY_POLL_INTERVAL_MS);

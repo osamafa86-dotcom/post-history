@@ -10,6 +10,16 @@ import { UploadsService } from './uploads.service';
 export class UploadsController {
   constructor(private readonly uploads: UploadsService) {}
 
+  /**
+   * ينشئ جلسة رفع برمز يظهر مرة واحدة. الرمز يُقبل في خطّاف pre-create ما دامت الجلسة `created` فقط، ويفتح إنشاء رفع
+   * واحد؛ الاستئناف (HEAD/PATCH) لا يحتاجه. إعادة الطلب بالمفتاح نفسه تصدر رمزًا جديدًا ما دامت `created`، وبعدها 409
+   * `upload_state_conflict` وتلزم جلسة جديدة.
+   * - TUSD_POST_CREATE_HOOK=false: الجلسة تصير `in_progress` عند قبول pre-create، فإن فشل الإنشاء لدى tusd بعده لزمت
+   *   جلسة جديدة.
+   * - TUSD_POST_CREATE_HOOK=true: تبقى `created` حتى post-create (نجاح الإنشاء)، ففشل الإنشاء يُعاد بالرمز نفسه.
+   *   الشباك المتبقي: بين قبول pre-create ووصول post-create يُقبل pre-create آخر بالرمز نفسه، مثبَّتًا على معرّف
+   *   الجلسة نفسه، فلا يفتح الرمز المسرّب رفعًا منفصلًا.
+   */
   @Post()
   @Roles('reporter')
   @RehydrateOnReplay(UploadsService)

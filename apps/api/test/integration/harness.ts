@@ -8,6 +8,7 @@ import { AppModule, configureApp } from '../../src/app.module';
 import { createLogger } from '../../src/common/logger';
 import { encryptField, randomToken, sha256 } from '../../src/common/crypto';
 import { type AppConfig, loadConfig } from '../../src/config/config';
+import { OutboxDispatcher } from '../../src/outbox/outbox.dispatcher';
 
 export interface Harness {
   app: INestApplication;
@@ -118,4 +119,22 @@ export async function loginAs(
 export async function currentFormVersion(h: Harness): Promise<number> {
   const { rows } = await h.pool.query<{ v: number | null }>(`SELECT max(version) AS v FROM upload_forms`);
   return rows[0]!.v ?? 0;
+}
+
+/**
+ * يرسل كل أحداث Outbox المستحقة. ملفات الاختبار تعمل معًا على قاعدة واحدة، فقد يكون حدثٌ مقفلًا عند مُرسل ملف آخر
+ * (SKIP LOCKED) فيعيد الإرسال هنا صفرًا قبل أن تُثبَّت إشعاراته؛ لذا ينتظر حتى لا يبقى حدث مستحق غير منشور.
+ */
+export async function drainOutbox(h: Harness, timeoutMs = 10_000): Promise<void> {
+  const dispatcher = h.app.get(OutboxDispatcher);
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    while ((await dispatcher.dispatchBatch(500)) > 0);
+    const { rows } = await h.pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM outbox_events WHERE published_at IS NULL AND attempts = 0 AND next_attempt_at <= now()`,
+    );
+    if (rows[0]!.n === 0) return;
+    if (Date.now() > deadline) throw new Error(`outbox not drained: ${rows[0]!.n} events pending`);
+    await new Promise((r) => setTimeout(r, 25));
+  }
 }

@@ -107,7 +107,10 @@ export class UploadsService implements ReplayRehydrator {
     });
   }
 
-  /** إعادة POST /uploads بالمفتاح نفسه: الرد المحفوظ بلا رمز، فيُصدر رمز جديد للجلسة نفسها ويبطل السابق. */
+  /**
+   * إعادة POST /uploads بالمفتاح نفسه: الرد المحفوظ بلا رمز، فيُصدر رمز جديد للجلسة نفسها ويبطل السابق. ما دامت
+   * `created` فقط، لأن الرمز لا يُقبل بعدها (tusd-hooks.service.ts).
+   */
   async rehydrate(stored: unknown, req: Request): Promise<unknown> {
     const body = stored as UploadSession;
     const token = randomToken();
@@ -115,7 +118,7 @@ export class UploadsService implements ReplayRehydrator {
       .update(uploadSessions)
       .set({ uploadTokenHash: sha256(token) })
       .where(sql`${uploadSessions.id} = ${body.id} AND ${uploadSessions.createdBy} = ${req.auth!.userId}
-        AND ${uploadSessions.state} IN ('created', 'in_progress')`)
+        AND ${uploadSessions.state} = 'created'`)
       .returning();
     if (!session) throw new ApiError(409, 'upload_state_conflict', 'This upload session no longer accepts uploads.');
     return { ...this.toDto(session, null), upload_token: token, upload_token_expires_at: iso(session.expiresAt)! };

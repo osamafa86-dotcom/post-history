@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { EscalationWorker } from '../../src/notifications/escalation.worker';
-import { OutboxDispatcher } from '../../src/outbox/outbox.dispatcher';
-import { createHarness, ensureForm, type Harness, loginAs } from './harness';
+import { createHarness, drainOutbox, ensureForm, type Harness, loginAs } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
 
@@ -10,7 +9,6 @@ type Actor = Awaited<ReturnType<typeof loginAs>>;
 describe('escalation of unacknowledged urgent tasks', () => {
   let h: Harness;
   let worker: EscalationWorker;
-  let dispatcher: OutboxDispatcher;
   let reporter: Actor;
   let supervisor: Actor;
   let editor: Actor;
@@ -19,7 +17,6 @@ describe('escalation of unacknowledged urgent tasks', () => {
   beforeAll(async () => {
     h = await createHarness({ env: { ESCALATION_URGENT_SECONDS: '2', ESCALATION_IMPORTANT_SECONDS: '7' } });
     worker = h.app.get(EscalationWorker);
-    dispatcher = h.app.get(OutboxDispatcher);
     await ensureForm(h);
     const office = (await h.pool.query<{ id: string }>(`INSERT INTO offices (name_ar, name_en) VALUES ('م', 'o') RETURNING id`)).rows[0]!.id;
     reporter = await loginAs(h, [{ role: 'reporter' }], { officeId: office });
@@ -33,7 +30,7 @@ describe('escalation of unacknowledged urgent tasks', () => {
 
   const http = () => request(h.app.getHttpServer());
   const drain = async () => {
-    while ((await dispatcher.dispatchBatch(500)) > 0);
+    await drainOutbox(h);
   };
   const inbox = async (a: Actor) =>
     (await http().get('/v1/notifications?limit=100').set('Authorization', `Bearer ${a.token}`).expect(200)).body.items as Array<Record<string, any>>;

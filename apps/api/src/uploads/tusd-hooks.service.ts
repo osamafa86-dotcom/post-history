@@ -43,6 +43,8 @@ export class TusdHooksService {
     switch (hook.Type) {
       case 'pre-create':
         return this.preCreate(hook);
+      case 'post-create':
+        return this.config.TUSD_POST_CREATE_HOOK ? this.postCreate(hook) : ACCEPT;
       case 'post-finish':
         return this.postFinish(hook);
       default:
@@ -65,19 +67,33 @@ export class TusdHooksService {
         !session ||
         !session.uploadTokenHash ||
         !timingSafeEqual(session.uploadTokenHash, sha256(token)) ||
-        !['created', 'in_progress'].includes(session.state) ||
+        // الرمز يفتح إنشاء رفع واحد: بعد إنشائه تصبح الجلسة in_progress فلا يُقبل ثانية (الاستئناف عبر PATCH لا يمر
+        // بهذا الخطّاف). إلى أن يفصل العقد عمر الرمز عن عمر الجلسة، هذا ما يحد من رمز مسرّب.
+        session.state !== 'created' ||
         new Date(session.expiresAt) <= new Date() ||
         Number(session.sizeBytes) !== hook.Event.Upload.Size
       ) {
         return REJECT;
       }
       const storageKey = this.expectedStorageKey(session.id);
+      // مع post-create تبقى الجلسة created هنا: إن فشل الإنشاء لدى tusd بعد القبول يُعاد بالرمز نفسه. والشباك بين
+      // الحدثين يقبل pre-create ثانيًا بالرمز نفسه، لكنه مثبَّت على معرّف الجلسة نفسه (ChangeFileInfo.ID).
       await tx
         .update(uploadSessions)
-        .set({ state: 'in_progress', storageKey })
+        .set(this.config.TUSD_POST_CREATE_HOOK ? { storageKey } : { state: 'in_progress', storageKey })
         .where(eq(uploadSessions.id, session.id));
       return { RejectUpload: false, ChangeFileInfo: { ID: session.id } };
     });
+  }
+
+  /** نجح إنشاء الرفع لدى tusd: created → in_progress فلا يُقبل الرمز بعدها. التكرار وما بعد created بلا أثر. */
+  private async postCreate(hook: TusdHookRequest): Promise<TusdHookResponse> {
+    const sessionId = hook.Event.Upload.MetaData.upload_session_id;
+    await this.db
+      .update(uploadSessions)
+      .set({ state: 'in_progress' })
+      .where(sql`${uploadSessions.id} = ${sessionId} AND ${uploadSessions.state} = 'created'`);
+    return ACCEPT;
   }
 
   private async postFinish(hook: TusdHookRequest): Promise<TusdHookResponse> {

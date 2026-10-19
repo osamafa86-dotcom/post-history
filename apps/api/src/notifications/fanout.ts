@@ -1,6 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { Tx } from '../database/database.module';
 import { materials, notifications, offices, userRoles, users } from '../database/schema/schema';
+import { highestRank, type RoleName } from '../identity/principal';
 import type { OutboxRow } from '../outbox/outbox.dispatcher';
 import { materialRef, notificationTitle, type Locale } from './messages';
 
@@ -102,8 +103,9 @@ async function audience(
 
 
 /**
- * طلب استعادة: مهمة لمشرفي نطاق صاحب الحساب (مكتبه أو محافظة مكتبه أو كل شيء) بمعرّف الطلب، وتنبيه لصاحب
- * الحساب على أجهزته القائمة. بلا مادة.
+ * طلب استعادة: مهمة لمن يملك اعتماده بمعرّف الطلب، وتنبيه لصاحب الحساب على أجهزته القائمة. بلا مادة.
+ * من يملك الاعتماد يتبع قاعدة التسلسل (identity/principal.ts): مشرفو نطاق صاحب الحساب، إلا إن كان دوره المشرف أو
+ * أعلى فمديرو النظام وحدهم (غير صاحب الحساب نفسه).
  */
 async function recoveryRequested(tx: Tx, event: OutboxRow, payload: Record<string, unknown>, opts: FanOutOptions): Promise<number> {
   const requestId = typeof payload.recovery_request_id === 'string' ? payload.recovery_request_id : undefined;
@@ -114,9 +116,13 @@ async function recoveryRequested(tx: Tx, event: OutboxRow, payload: Record<strin
     .leftJoin(offices, eq(offices.id, users.officeId))
     .where(eq(users.id, event.aggregateId));
   if (!owner) return 0;
-  const supervisors = await audience(tx, 'supervisors', { reporterId: owner.id, officeId: owner.officeId, governorate: owner.governorate });
+  const ownerRoles = await tx.select({ role: userRoles.role }).from(userRoles).where(eq(userRoles.userId, owner.id));
+  const approvers =
+    highestRank(ownerRoles.map((r) => r.role as RoleName)) >= highestRank(['supervisor'])
+      ? await systemAdmins(tx)
+      : await audience(tx, 'supervisors', { reporterId: owner.id, officeId: owner.officeId, governorate: owner.governorate });
   const rows = [
-    ...supervisors
+    ...approvers
       .filter((id) => id !== owner.id)
       .map((userId) => ({
         userId,
@@ -131,4 +137,13 @@ async function recoveryRequested(tx: Tx, event: OutboxRow, payload: Record<strin
     .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
     .returning({ id: notifications.id });
   return inserted.length;
+}
+
+async function systemAdmins(tx: Tx): Promise<string[]> {
+  const rows = await tx
+    .selectDistinct({ userId: userRoles.userId })
+    .from(userRoles)
+    .innerJoin(users, eq(users.id, userRoles.userId))
+    .where(and(eq(userRoles.role, 'system_admin'), eq(users.status, 'active')));
+  return rows.map((r) => r.userId);
 }

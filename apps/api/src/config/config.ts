@@ -62,6 +62,11 @@ const schema = z.object({
   // SEC-06: الرمز في مسار عنوان الخطّاف
   TUSD_HOOK_SECRET: z.string().min(32).max(128),
   TUSD_OBJECT_PREFIX: z.string().default(''),
+  // true حين يرسل tusd حدث post-create (-hooks-enabled-events): الجلسة تبقى created حتى ينجح إنشاء الرفع فعلًا
+  TUSD_POST_CREATE_HOOK: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
   // ما يُعاد للعميل عند إنشاء جلسة رفع: نقطة tus العامة، وحجم الجزء الثابت (R2 يشترط تساويه، ≥ 5 MiB)
   TUS_PUBLIC_ENDPOINT: z.string().url().default('http://localhost:8080/files/'),
   TUSD_PART_SIZE_BYTES: z.coerce.number().int().min(5 * 1024 * 1024).default(16 * 1024 * 1024),
@@ -78,6 +83,8 @@ const schema = z.object({
   // in_process: يتحقق الخادم من الملفات المكتملة بنفسه؛ external: عامل الوسائط يفعل ذلك والخادم لا يقرأ التخزين
   UPLOAD_VERIFIER: z.enum(['in_process', 'external']).default('in_process'),
   VERIFY_POLL_INTERVAL_MS: z.coerce.number().int().min(100).default(2000),
+  // عدد الملفات التي تُحسب بصماتها معًا؛ كل واحد يشغل اتصالًا من المجمع طوال قراءته، فيبقى أقل من DATABASE_POOL_MAX
+  VERIFY_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
 
   // حجز الإنتاج يُحرَّر تلقائيًا بعد هذا الخمول (15 دقيقة افتراضيًا)
   RESERVATION_IDLE_SECONDS: z.coerce.number().int().min(60).default(900),
@@ -110,6 +117,9 @@ export function storageConfigured(c: { S3_ENDPOINT?: string; S3_ACCESS_KEY?: str
 }
 
 const validated = schema.superRefine((c, ctx) => {
+  if (c.UPLOAD_VERIFIER === 'in_process' && c.VERIFY_CONCURRENCY >= c.DATABASE_POOL_MAX) {
+    ctx.addIssue({ code: 'custom', path: ['VERIFY_CONCURRENCY'], message: 'must be lower than DATABASE_POOL_MAX' });
+  }
   if (c.NODE_ENV !== 'production') return;
   if (!c.REDIS_URL) ctx.addIssue({ code: 'custom', path: ['REDIS_URL'], message: 'required in production' });
   if (c.UPLOAD_VERIFIER !== 'in_process') return;

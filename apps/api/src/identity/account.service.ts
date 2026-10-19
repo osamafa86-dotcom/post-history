@@ -4,11 +4,11 @@ import { APP_CONFIG, type AppConfig } from '../config/config';
 import { sha256 } from '../common/crypto';
 import { ApiError } from '../common/errors';
 import { DB, type Database, type Executor } from '../database/database.module';
-import { auditLog, offices, recoveryCodes, recoveryRequests, refreshTokens, users } from '../database/schema/schema';
+import { auditLog, offices, recoveryCodes, recoveryRequests, refreshTokens, userRoles, users } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import { iso } from '../materials/material-store';
 import { writeOutboxEvent } from '../outbox/outbox';
-import { hasRole, type Principal, supervisesUser } from './principal';
+import { hasRole, mayDecideFor, type Principal, type RoleName, supervisesUser } from './principal';
 import type { RateLimiter } from './rate-limiter';
 import { RateLimitsService } from './rate-limits.service';
 import { SessionService } from './session.service';
@@ -66,6 +66,7 @@ export class AccountService {
       if (!s) throw ApiError.notFound();
       const own = s.userId === p.userId;
       if (!own && !hasRole(p, 'system_admin') && !supervisesUser(p, s)) throw ApiError.notFound();
+      if (!own) await assertHierarchy(tx, p, s.userId);
       await tx.update(refreshTokens).set({ revokedAt: sql`now()` }).where(eq(refreshTokens.id, s.id));
       if (!own) {
         await audit(tx, p.userId, 'session.revoked', s.userId, { session_id: s.id, target_user_id: s.userId });
@@ -140,6 +141,7 @@ export class AccountService {
         .where(eq(recoveryRequests.id, id))
         .for('update', { of: recoveryRequests });
       if (!r || (!hasRole(p, 'system_admin') && !supervisesUser(p, r))) throw ApiError.notFound();
+      await assertHierarchy(tx, p, r.userId);
       if (r.state === 'pending_approval' && new Date(r.expiresAt) <= new Date()) {
         // يُثبَّت الانتهاء ثم يُرفض الاعتماد خارج المعاملة (الرمي داخلها كان سيلغي هذا التحديث)
         await tx.update(recoveryRequests).set({ state: 'expired', decidedAt: sql`now()` }).where(eq(recoveryRequests.id, r.id));
@@ -172,6 +174,17 @@ export class AccountService {
     });
     if (result === 'expired') throw new ApiError(409, 'recovery_state_conflict', 'The recovery request has expired.');
     return result;
+  }
+}
+
+/**
+ * مطابقة النطاق وحدها لا تكفي: حساب دوره مساوٍ لدور المقرِّر أو أعلى لا يقرر فيه إلا مدير النظام، ولا يقرر أحد في حسابه
+ * هو (استعادة مدير النظام يعتمدها مدير نظام آخر). المورد ظاهر للمقرِّر بنطاقه، فالرفض 403 لا 404.
+ */
+async function assertHierarchy(tx: Executor, p: Principal, targetUserId: string): Promise<void> {
+  const roles = await tx.select({ role: userRoles.role }).from(userRoles).where(eq(userRoles.userId, targetUserId));
+  if (!mayDecideFor(p, targetUserId, roles.map((r) => r.role as RoleName))) {
+    throw new ApiError(403, 'forbidden_scope', 'This account is not below the caller in rank; a system administrator must decide.');
   }
 }
 

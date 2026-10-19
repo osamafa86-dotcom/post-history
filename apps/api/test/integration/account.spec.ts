@@ -1,8 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { schemaValidator } from '../../src/common/contract';
-import { OutboxDispatcher } from '../../src/outbox/outbox.dispatcher';
-import { createHarness, type Harness, loginAs, seedUser } from './harness';
+import { createHarness, drainOutbox, type Harness, loginAs, seedUser } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
 
@@ -74,6 +73,26 @@ describe('account: sessions and recovery', () => {
       await revoke(admin.token, thirdId).expect(204);
       await revoke(admin.token, thirdId).expect(404);
     });
+
+    it('scope is not enough: an equal or higher-ranked account is revoked only by a system admin, an admin by another admin', async () => {
+      const sup = await loginAs(h, [{ role: 'supervisor', scopeKind: 'office', scopeId: officeA }]);
+      const peer = await loginAs(h, [{ role: 'supervisor', scopeKind: 'office', scopeId: officeA }], { officeId: officeA });
+      const editor = await loginAs(h, [{ role: 'editor_in_chief' }], { officeId: officeA });
+      const admin = await loginAs(h, [{ role: 'system_admin' }], { officeId: officeA });
+      const otherAdmin = await loginAs(h, [{ role: 'system_admin' }]);
+      const firstSession = async (a: Actor) => (await sessions(a.token).expect(200)).body.items[0].id as string;
+
+      expect((await revoke(sup.token, await firstSession(editor)).expect(403)).body.code).toBe('forbidden_scope');
+      await revoke(sup.token, await firstSession(admin)).expect(403);
+      await revoke(sup.token, await firstSession(peer)).expect(403);
+      await revoke(admin.token, await firstSession(peer)).expect(204);
+      await revoke(admin.token, await firstSession(editor)).expect(204);
+      await revoke(otherAdmin.token, await firstSession(admin)).expect(204);
+      const { rows } = await h.pool.query(`SELECT count(*)::int AS n FROM audit_log WHERE action = 'session.revoked' AND target_id = ANY($1)`, [
+        [editor.id, admin.id, peer.id],
+      ]);
+      expect(rows[0].n).toBe(3);
+    });
   });
 
   describe('/auth/recovery', () => {
@@ -106,8 +125,7 @@ describe('account: sessions and recovery', () => {
       await seedCode(reporter.id, 'QRSTUVWXYZ2345');
       await start(reporter.email, 'QRSTUVWXYZ2345').expect(202);
       const [req] = await requests(reporter.id);
-      const dispatcher = h.app.get(OutboxDispatcher);
-      while ((await dispatcher.dispatchBatch(500)) > 0);
+      await drainOutbox(h);
       const inbox = async (a: Actor) =>
         (await http().get('/v1/notifications?limit=100').set('Authorization', `Bearer ${a.token}`).expect(200)).body.items as Array<Record<string, string>>;
       expect((await inbox(sup)).some((n) => n.type === 'auth.recovery_requested' && n.title?.includes(req.id))).toBe(true);
@@ -155,6 +173,47 @@ describe('account: sessions and recovery', () => {
         .send({ verification_note: 'x' })
         .expect(409);
       expect(await requests(reporter.id)).toEqual([{ id: req.id, state: 'expired' }]);
+    });
+
+    it('scope is not enough: a supervisor or editor-in-chief recovery goes to system admins, and an admin cannot approve their own', async () => {
+      const sup = await loginAs(h, [{ role: 'supervisor', scopeKind: 'all', scopeId: '' }]);
+      const peer = await loginAs(h, [{ role: 'supervisor', scopeKind: 'office', scopeId: officeA }], { officeId: officeA });
+      const editor = await loginAs(h, [{ role: 'editor_in_chief' }], { officeId: officeA });
+      const admin = await loginAs(h, [{ role: 'system_admin' }], { officeId: officeA });
+      const otherAdmin = await loginAs(h, [{ role: 'system_admin' }]);
+      await seedCode(editor.id, 'EDITORCODE2345');
+      await seedCode(admin.id, 'ADMINCODEX2345');
+      await seedCode(peer.id, 'PEERCODEXY2345');
+      await start(editor.email, 'EDITORCODE2345').expect(202);
+      await start(admin.email, 'ADMINCODEX2345').expect(202);
+      await start(peer.email, 'PEERCODEXY2345').expect(202);
+      const [editorReq] = await requests(editor.id);
+      const [adminReq] = await requests(admin.id);
+      const [peerReq] = await requests(peer.id);
+      const approve = (a: Actor, id: string) =>
+        http().post(`/v1/auth/recovery/${id}/approve`).set('Authorization', `Bearer ${a.token}`).send({ verification_note: 'verified in person' });
+
+      await drainOutbox(h);
+      const tasks = async (a: Actor) =>
+        ((await http().get('/v1/notifications?limit=100').set('Authorization', `Bearer ${a.token}`).expect(200)).body.items as Array<Record<string, string>>)
+          .filter((n) => n.type === 'auth.recovery_requested' && n.assignment_state === 'assigned')
+          .map((n) => n.title);
+      expect((await tasks(sup)).some((t) => t?.includes(editorReq.id))).toBe(false);
+      expect((await tasks(sup)).some((t) => t?.includes(peerReq.id))).toBe(false);
+      expect((await tasks(otherAdmin)).some((t) => t?.includes(peerReq.id))).toBe(true);
+      expect((await tasks(otherAdmin)).some((t) => t?.includes(editorReq.id))).toBe(true);
+      expect((await tasks(otherAdmin)).some((t) => t?.includes(adminReq.id))).toBe(true);
+      expect((await tasks(admin)).some((t) => t?.includes(adminReq.id))).toBe(false);
+
+      expect((await approve(sup, editorReq.id).expect(403)).body.code).toBe('forbidden_scope');
+      await approve(sup, adminReq.id).expect(403);
+      await approve(sup, peerReq.id).expect(403);
+      await approve(otherAdmin, peerReq.id).expect(200);
+      await approve(admin, adminReq.id).expect(403);
+      expect(await requests(admin.id)).toEqual([{ id: adminReq.id, state: 'pending_approval' }]);
+      await approve(otherAdmin, adminReq.id).expect(200);
+      await approve(admin, editorReq.id).expect(401); // جلسات المدير أُبطلت للتو باعتماد استعادته
+      await approve(otherAdmin, editorReq.id).expect(200);
     });
 
     it('rate-limits recovery attempts per email and address', async () => {

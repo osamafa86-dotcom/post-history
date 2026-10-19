@@ -58,6 +58,46 @@ describe('tusd hooks (/internal/tusd-hooks/{hook_token}, SEC-06)', () => {
     expect(row.storage_key).toBe(`tus/${s.id}`);
   });
 
+  it('the upload token opens one upload only: a second pre-create on an in_progress session is rejected', async () => {
+    const s = await seedUploadSession(h, reporterId);
+    await hook(preCreate(s.id, { token: s.uploadToken })).expect(200);
+    const again = await hook(preCreate(s.id, { token: s.uploadToken })).expect(200);
+    expect(again.body.RejectUpload).toBe(true);
+    expect((await session(s.id)).state).toBe('in_progress');
+  });
+
+  it('post-create is ignored while TUSD_POST_CREATE_HOOK is off', async () => {
+    const s = await seedUploadSession(h, reporterId);
+    expect((await hook({ ...preCreate(s.id), Type: 'post-create' }).expect(200)).body).toEqual({ RejectUpload: false });
+    expect((await session(s.id)).state).toBe('created');
+  });
+
+  describe('with TUSD_POST_CREATE_HOOK=true', () => {
+    let hp: Harness;
+    beforeAll(async () => {
+      hp = await createHarness({ env: { TUSD_POST_CREATE_HOOK: 'true' } });
+    });
+    afterAll(() => hp.close());
+    const hookP = (body: object) => request(hp.app.getHttpServer()).post(`/internal/tusd-hooks/${hp.config.TUSD_HOOK_SECRET}`).send(body);
+
+    it('pre-create keeps the session created (a failed tusd create retries with the same token); post-create moves it on', async () => {
+      const s = await seedUploadSession(hp, reporterId);
+      for (let i = 0; i < 2; i++) {
+        expect((await hookP(preCreate(s.id, { token: s.uploadToken })).expect(200)).body).toEqual({ RejectUpload: false, ChangeFileInfo: { ID: s.id } });
+        expect(await session(s.id)).toMatchObject({ state: 'created', storage_key: `tus/${s.id}` });
+      }
+      await hookP({ ...preCreate(s.id), Type: 'post-create' }).expect(200);
+      expect((await session(s.id)).state).toBe('in_progress');
+      expect((await hookP(preCreate(s.id, { token: s.uploadToken })).expect(200)).body.RejectUpload).toBe(true);
+      // tusd يعيد post-create أحيانًا: بلا أثر، ثم post-finish يكمل كالمعتاد
+      await hookP({ ...preCreate(s.id), Type: 'post-create' }).expect(200);
+      await hookP(postFinish(s.id, `tus/${s.id}`)).expect(200);
+      expect((await session(s.id)).state).toBe('completed');
+      await hookP({ ...preCreate(s.id), Type: 'post-create' }).expect(200);
+      expect((await session(s.id)).state).toBe('completed');
+    });
+  });
+
   it.each([
     ['missing token', async (s: { uploadToken: string }) => ({ token: undefined as string | undefined, size: 1000, s })],
     ['wrong token', async (s: { uploadToken: string }) => ({ token: 'wrong-token', size: 1000, s })],
