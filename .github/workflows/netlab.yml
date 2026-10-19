@@ -1,6 +1,6 @@
 name: netlab
 
-# GitHub-hosted Ubuntu runners have sch_netem, unlike some dev hosts: real packet delay + loss (ADR 0005).
+# GitHub-hosted Ubuntu runners have sch_netem, unlike some dev hosts: real packet delay + loss (ADR 0007).
 # - pull_request: short field-weak smoke that must run in netem mode.
 # - workflow_dispatch: field-network-upload stage (a) measurement (100 MB, netem); the result JSON is an
 #   artifact to commit to docs/measurements/netlab/. Recorded partial: stage (b) is 1 GB on a real device.
