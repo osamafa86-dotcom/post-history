@@ -20,6 +20,7 @@ final class UploadServices: @unchecked Sendable {
     let documentsDirectory: URL
     let uploadsDirectory: URL
     let chunksDirectory: URL
+    let stateDirectory: URL
 
     private init() {
         let config = URLSessionConfiguration.background(withIdentifier: Self.backgroundSessionIdentifier)
@@ -30,9 +31,10 @@ final class UploadServices: @unchecked Sendable {
         documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         uploadsDirectory = documentsDirectory.appendingPathComponent("Uploads", isDirectory: true)
         chunksDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("UploadChunks", isDirectory: true)
-        for dir in [uploadsDirectory, chunksDirectory] {
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            // الملفات المحلية للمراسل لا تدخل النسخ الاحتياطي (iCloud/iTunes).
+        stateDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("UploadState", isDirectory: true)
+        for dir in [uploadsDirectory, chunksDirectory, stateDirectory] {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: UploadFileProtection.attributes)
+            // الملفات المحلية للمراسل وحالة الرفع (تحمل رابط tus) لا تدخل النسخ الاحتياطي (iCloud/iTunes).
             var values = URLResourceValues()
             values.isExcludedFromBackup = true
             var url = dir
@@ -44,8 +46,7 @@ final class UploadServices: @unchecked Sendable {
         var env = UploadEngine.Environment()
         env.documentsDirectory = documentsDirectory
         env.isBackground = { true } // جزء كبير افتراضيًا: الرفع يستمر بعد خروج التطبيق إلى الخلفية
-        let stateDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("UploadState", isDirectory: true)
-        return UploadEngine(store: try FileUploadStateStore(directory: stateDir), secrets: KeychainUploadSecretStore(), api: GeneratedUploadAPI(configuration: api),
+        return UploadEngine(store: try FileUploadStateStore(directory: stateDirectory), secrets: KeychainUploadSecretStore(), api: GeneratedUploadAPI(configuration: api),
                             transport: transport, slicer: ChunkSlicer(chunksDirectory: chunksDirectory), environment: env)
     }
 

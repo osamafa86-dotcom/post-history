@@ -1,6 +1,26 @@
 import Foundation
 
-/// حالة الرفع على القرص: ملف JSON لكل سجل يُكتب ذريًا. يبقى بعد إنهاء التطبيق وإعادة تشغيل الجهاز.
+/// حماية الملفات على iOS: مقروءة بعد أول فتح للجهاز فقط (تطابق Keychain `AfterFirstUnlock`)؛ الحماية الكاملة تمنع القراءة حين يوقظ
+/// النظام التطبيق لحدث جلسة خلفية والجهاز مقفل. على المنصات الأخرى لا خيار.
+public enum UploadFileProtection {
+    public static var writingOptions: Data.WritingOptions {
+        #if os(iOS)
+        return [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+        #else
+        return [.atomic]
+        #endif
+    }
+    public static var attributes: [FileAttributeKey: Any] {
+        #if os(iOS)
+        return [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
+        #else
+        return [:]
+        #endif
+    }
+}
+
+/// حالة الرفع على القرص: ملف JSON لكل سجل يُكتب ذريًا بحماية الملفات. يبقى بعد إنهاء التطبيق وإعادة تشغيل الجهاز.
+/// يحمل رابط رفع tus (قدرة بحد ذاتها بعد `pre-create`)، فالمجلد يُستثنى من النسخ الاحتياطي في التطبيق ولا يُنسخ خارج الجهاز.
 public protocol UploadStateStore: Sendable {
     func loadAll() throws -> [UploadRecord]
     func save(_ record: UploadRecord) throws
@@ -53,7 +73,7 @@ public final class FileUploadStateStore: UploadStateStore, @unchecked Sendable {
     }
 
     public func save(_ record: UploadRecord) throws {
-        try encoder.encode(record).write(to: url(record.id), options: .atomic)
+        try encoder.encode(record).write(to: url(record.id), options: UploadFileProtection.writingOptions)
     }
 
     public func remove(id: UUID) throws {

@@ -62,7 +62,7 @@ public struct ChunkSlicer: Sendable {
         let reader = try FileHandle(forReadingFrom: source)
         defer { try? reader.close() }
         try reader.seek(toOffset: UInt64(offset))
-        FileManager.default.createFile(atPath: target.path, contents: nil)
+        FileManager.default.createFile(atPath: target.path, contents: nil, attributes: UploadFileProtection.attributes)
         let writer = try FileHandle(forWritingTo: target)
         defer { try? writer.close() }
         var remaining = length
