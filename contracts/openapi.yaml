@@ -45,7 +45,7 @@ info:
     - **خطّافات tusd داخلية (ADR SEC-06):** تصل إلى `/internal/tusd-hooks/{hook_token}` خارج `/v1`،
       معزولة شبكيًا وبرمز من البيئة؛ العام لا يرى هذه النقطة.
 
-    - **v0.1 (بعد تجميد الدورة الأولى، ADR 0010):** إضافات لا تكسر عملاء v0 فقط. الحقل الجديد في استجابة
+    - **v0.1 (بعد تجميد الدورة الأولى، ADR 0012):** إضافات لا تكسر عملاء v0 فقط. الحقل الجديد في استجابة
       اختياري للعميل، والترويسة الجديدة في طلب اختيارية؛ ما يكسر يذهب إلى `/v2`. قيم `Error.code` قائمة مفتوحة:
       على العميل معاملة الرمز المجهول كخطأ عام بحسب حالة HTTP.
     - **التزامن المتفائل:** `GET` للمادة يعيد `ETag: "<row_version>"`، وتعديلاتها (`PATCH`، الانتقال، المساهمون،
@@ -1375,8 +1375,7 @@ components:
         totp_enabled: { type: boolean }
         credential_reset_required:
           type: boolean
-          default: false
-          description: الجلسة مقيّدة بعد استعادة الحساب حتى `/auth/totp/confirm` (أُضيف في v0.1)
+          description: الجلسة مقيّدة بعد استعادة الحساب حتى `/auth/totp/confirm`؛ غيابه = false (أُضيف في v0.1)
         roles:
           type: array
           items: { $ref: "#/components/schemas/Role" }
@@ -1727,7 +1726,7 @@ components:
           type: [string, "null"]
           pattern: "^[0-9a-f]{64}$"
           description: >-
-            بصمة SHA-256 للملف كاملًا يحسبها العميل قبل الإنشاء. على كل عميل إرسالها (ADR 0010): الخادم يقارنها ببصمته بعد
+            بصمة SHA-256 للملف كاملًا يحسبها العميل قبل الإنشاء. على كل عميل إرسالها (ADR 0012): الخادم يقارنها ببصمته بعد
             التجميع فيخرج عامل الوسائط من قاعدة الثقة، والقرار `checksum_mismatch` للخادم وحده. تبقى اختيارية في المخطط
             حتى تُحدَّث اختبارات الخادم والقبول التي تنشئ جلسات بدونها، ثم تصير إلزامية بتغيير عقد منسّق.
         client_fingerprint:
@@ -1774,13 +1773,7 @@ components:
           enum: [sha256, crc32c]
           default: sha256
           description: خوارزمية checksum للجزء الواحد التي يقبلها خادم الرفع
-        expires_at: { type: string, format: date-time, description: انتهاء الجلسة إن لم تكتمل }
-        upload_token_expires_at:
-          type: [string, "null"]
-          format: date-time
-          description: >-
-            انتهاء رمز الرفع (قد يسبق انتهاء الجلسة)؛ الرمز نفسه لا يُعاد في أي قراءة. فارغ إن أُبطل الرمز
-            (خروج أو تعليق أو استعادة). أُضيف في v0.1.
+        expires_at: { type: string, format: date-time, description: انتهاء الجلسة إن لم تكتمل؛ انتهاء رمز الرفع في `UploadSessionCreated.upload_token_expires_at` وقد يسبقه }
         file_id:
           type: [string, "null"]
           format: uuid

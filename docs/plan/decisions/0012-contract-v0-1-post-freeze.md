@@ -1,4 +1,4 @@
-# 0010 — عقد v0.1 بعد التجميد: إضافات متوافقة مع عملاء v0، وما يُستثنى ولماذا
+# 0012 — عقد v0.1 بعد التجميد: إضافات متوافقة مع عملاء v0، وما يُستثنى ولماذا
 
 - الحالة: مقترح (يُدمج عند انتهاء التجميد 2026-11-02)
 - التاريخ: 2026-10-19
@@ -27,7 +27,7 @@
 | التزامن المتفائل | `Material.row_version` و`ETag` على قراءة المادة وكتاباتها؛ `If-Match` اختياري على `PATCH` والانتقال والمساهمين والحجز ونشر النموذج؛ `412 precondition_failed` | الترويسة اختيارية؛ العميل الذي لا يرسلها يعمل كما كان |
 | حد المعدل المتدهور | ترويسة `X-Rate-Limiter: degraded` على الدخول، و`GET /health` (داخلي) بحقل `rate_limiter` | ترويسة وحقل جديدان فقط |
 | استعادة المدير | `403 admin_quorum_required` لحساب مدير نظام (إجراء الشخصين من سطر الأوامر)؛ `PUT /users/{id}/status` للتعليق وإعادة التفعيل؛ `POST /auth/recovery/complete` و`POST /auth/totp/confirm` وجلسة مقيّدة بـ `403 credential_reset_required`؛ `Me.credential_reset_required`؛ `Notification.recovery_request_id` | مسارات وحقول جديدة؛ الحساب المستعاد لم يكن له مسار إكمال أصلًا |
-| رمز الرفع | `UploadSession.upload_token_expires_at` (والعمود)؛ `403 forbidden_role` لدور ليس في `x-roles` | حقل جديد ورمز خطأ جديد |
+| رمز الرفع | العمود `upload_sessions.upload_token_expires_at` مستقلًا عن انتهاء الجلسة، ويُعرض في `UploadSessionCreated` كما كان (لا في قراءة الجلسة: إضافته إلى `UploadSession` تعيد ترتيب مُهيِّئ Swift المولَّد فتكسر شيفرة العميل)؛ `403 forbidden_role` لدور ليس في `x-roles` | عمود جديد ورمز خطأ جديد |
 | `client_sha256` | «على كل عميل إرسالها» في الوصف؛ الإلزام في المخطط مؤجل؛ `reported_sha256` عند الاكتمال كما هو | **انظر أدناه** |
 | `/internal/media/*` | المسارات الثلاث ومخططاتها (`MediaSession`، `MediaVerification`، `MediaVerificationResult`، `MediaDerivative`، `MediaTechnical`) ونظام `mediaWorkerToken` كما في ADR 0006 | داخلية `x-internal`؛ لا يُولَّد لها عميل |
 | الأحجام والمرفق | «ميغابايت» = MiB = 1,048,576 بايت في كل وصف؛ قيمة `attachment` في `$defs/attachmentValue` (`upload_session_id`، `mime_type`، `size_bytes`) والخادم يرفض قيمة غير فارغة حتى يُفعَّل رفع المرفقات | وصف وتعريف جديد |

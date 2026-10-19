@@ -1,5 +1,5 @@
 -- Up Migration
--- عقد v0.1 بعد التجميد (ADR 0010):
+-- عقد v0.1 بعد التجميد (ADR 0012):
 -- 1) materials.row_version: يرتفع مع كل كتابة على المادة (ETag/If-Match، 412)؛ بخلاف version الذي يرتفع بعد الاعتماد.
 -- 2) upload_sessions.upload_token_expires_at: انتهاء رمز الرفع مستقلًا عن انتهاء الجلسة؛ NULL = الرمز مُبطَل.
 -- 3) إعادة التعيين الإلزامية بعد الاستعادة: users.credential_reset_required وسر TOTP المعلّق،

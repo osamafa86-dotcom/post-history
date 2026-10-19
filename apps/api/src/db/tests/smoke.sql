@@ -279,7 +279,7 @@ INSERT INTO user_permissions (user_id, permission, granted_by, reason)
 VALUES ('00000000-0000-4000-8000-000000000012', 'sensitive_location:read', '00000000-0000-4000-8000-000000000012', 're-granted');
 SELECT pg_temp.assert((SELECT count(*) = 2 FROM user_permissions), 'history kept across revoke and re-grant');
 
--- ---------- v0.1 (ADR 0010) ----------
+-- ---------- v0.1 (ADR 0012) ----------
 SELECT pg_temp.assert(
   (SELECT row_version >= 2 FROM materials WHERE id = '00000000-0000-4000-8000-000000000101'),
   'row_version bumps on every material write');
