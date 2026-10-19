@@ -11,7 +11,7 @@ import type Redis from 'ioredis';
 import type { Logger } from 'pino';
 import { LOGGER } from '../common/logger';
 import { REDIS } from '../common/redis.module';
-import { MemoryRateLimiter, RedisRateLimiter, ResilientRateLimiter, type RateLimiter } from './rate-limiter';
+import { MemoryRateLimiter, rateLimitKeyMaterial, RedisRateLimiter, ResilientRateLimiter, type RateLimiter } from './rate-limiter';
 import { auditLog } from '../database/schema/schema';
 import { SessionService } from './session.service';
 
@@ -39,13 +39,14 @@ export class AuthService {
     const windowMs = config.LOGIN_RATE_LIMIT_WINDOW_SECONDS * 1000;
     // الحدّان يتشاركان حالة صحة Redis: نوبة التعطل تُبلَّغ مرة واحدة
     const health = this.limiterHealth();
+    const keyMaterial = rateLimitKeyMaterial(config.JWT_SECRET);
     this.byIp = new ResilientRateLimiter(
-      new RedisRateLimiter(redis, 'login-ip', config.LOGIN_RATE_LIMIT_IP_MAX, windowMs),
+      new RedisRateLimiter(redis, 'login-ip', config.LOGIN_RATE_LIMIT_IP_MAX, windowMs, keyMaterial),
       new MemoryRateLimiter(config.LOGIN_RATE_LIMIT_IP_MAX, windowMs),
       health,
     );
     this.byEmailIp = new ResilientRateLimiter(
-      new RedisRateLimiter(redis, 'login-email-ip', config.LOGIN_RATE_LIMIT_MAX, windowMs),
+      new RedisRateLimiter(redis, 'login-email-ip', config.LOGIN_RATE_LIMIT_MAX, windowMs, keyMaterial),
       new MemoryRateLimiter(config.LOGIN_RATE_LIMIT_MAX, windowMs),
       health,
     );

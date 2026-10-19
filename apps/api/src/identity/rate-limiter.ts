@@ -1,5 +1,5 @@
 import type Redis from 'ioredis';
-import { sha256 } from '../common/crypto';
+import { createHmac, hkdfSync } from 'node:crypto';
 
 // زيادة ذرية تضبط عمر النافذة عند أول محاولة فقط (نافذة ثابتة).
 const RECORD = `local c = redis.call('INCR', KEYS[1])
@@ -8,7 +8,8 @@ return c`;
 
 /**
  * حد معدل بنافذة ثابتة في Redis، مشترك بين كل نسخ الخادم. يعدّ ما يسجّله المستدعي فقط (المحاولات الفاشلة).
- * المفاتيح مجزّأة: لا بريد ولا عنوان IP خامًا في Redis.
+ * المفاتيح HMAC-SHA256 بمفتاح مشتق من سر الخادم: لا بريد ولا عنوان IP خامًا في Redis، ولا يمكن عكسها بتجربة
+ * كل العناوين كما مع تجزئة عارية (فضاء IPv4 صغير).
  */
 export class RedisRateLimiter implements RateLimiter {
   constructor(
@@ -16,10 +17,11 @@ export class RedisRateLimiter implements RateLimiter {
     private readonly name: string,
     private readonly max: number,
     private readonly windowMs: number,
+    private readonly keyMaterial: Buffer,
   ) {}
 
   private key(raw: string): string {
-    return `rl:${this.name}:${sha256(raw).toString('hex')}`;
+    return `rl:${this.name}:${createHmac('sha256', this.keyMaterial).update(raw).digest('hex')}`;
   }
 
   /** ثواني الانتظار إن بلغ المفتاح الحد، وإلا 0. لا يسجّل شيئًا. */
@@ -37,6 +39,11 @@ export class RedisRateLimiter implements RateLimiter {
   async reset(raw: string): Promise<void> {
     await this.redis.del(this.key(raw));
   }
+}
+
+/** مفتاح HMAC لمفاتيح حد المعدل، مشتق (HKDF) من سر الخادم فلا يُضاف سر جديد ولا يُستعمل السر نفسه مباشرة. */
+export function rateLimitKeyMaterial(serverSecret: string): Buffer {
+  return Buffer.from(hkdfSync('sha256', serverSecret, Buffer.alloc(0), 'post-history/login-rate-limit-keys', 32));
 }
 
 export interface RateLimiter {

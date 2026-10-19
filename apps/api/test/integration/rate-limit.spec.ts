@@ -34,6 +34,11 @@ describe('login rate limit across instances (Redis)', () => {
       expect(keys.length).toBeGreaterThan(0);
       expect(keys.join(' ')).not.toContain(user.email);
       expect(keys.join(' ')).not.toContain('127.0.0.1');
+      // HMAC بمفتاح الخادم، لا تجزئة عارية يمكن عكسها بتجربة العناوين
+      const { createHash } = await import('node:crypto');
+      for (const ip of ['127.0.0.1', '::ffff:127.0.0.1', '::1']) {
+        expect(keys.join(' ')).not.toContain(createHash('sha256').update(ip).digest('hex'));
+      }
     } finally {
       redis.disconnect();
     }

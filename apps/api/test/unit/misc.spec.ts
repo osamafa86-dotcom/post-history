@@ -4,7 +4,7 @@ import { ApiError } from '../../src/common/errors';
 import { redactPath } from '../../src/common/logger';
 import { addressAllowed, blockListOf, loadConfig } from '../../src/config/config';
 import { requiresIdempotencyKey } from '../../src/idempotency/idempotency.interceptor';
-import { MemoryRateLimiter, ResilientRateLimiter } from '../../src/identity/rate-limiter';
+import { MemoryRateLimiter, rateLimitKeyMaterial, ResilientRateLimiter } from '../../src/identity/rate-limiter';
 
 describe('canonicalJson', () => {
   it('is independent of key order and drops undefined', () => {
@@ -109,5 +109,15 @@ describe('ResilientRateLimiter', () => {
     expect(await rl.retryAfter('k')).toBe(0);
     expect(events.recovered).toHaveBeenCalledTimes(1);
     expect(calls).toEqual(['primary', 'primary']);
+  });
+});
+
+describe('rateLimitKeyMaterial', () => {
+  it('derives a stable 32-byte key per server secret, different across secrets', () => {
+    const a = rateLimitKeyMaterial('a'.repeat(40));
+    expect(a).toHaveLength(32);
+    expect(rateLimitKeyMaterial('a'.repeat(40)).equals(a)).toBe(true);
+    expect(rateLimitKeyMaterial('b'.repeat(40)).equals(a)).toBe(false);
+    expect(a.toString('utf8')).not.toContain('aaaa');
   });
 });
