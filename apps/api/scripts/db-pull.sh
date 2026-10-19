@@ -12,4 +12,4 @@ DRIZZLE_OUT="$tmp" npx drizzle-kit pull --config drizzle.config.ts > /dev/null
 
 mkdir -p "$OUT"
 cp "$tmp/schema.ts" "$tmp/relations.ts" "$OUT/"
-node scripts/fix-drizzle-schema.js "$OUT/schema.ts"
+node scripts/fix-drizzle-schema.js "$OUT/schema.ts" "$OUT/relations.ts"

@@ -308,6 +308,7 @@ export const uploadSessions = pgTable("upload_sessions", {
 	failureReason: text("failure_reason"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	hookReservedUntil: timestamp("hook_reserved_until", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("upload_sessions_expiry_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(state = ANY (ARRAY['created'::text, 'in_progress'::text]))`),
 	index("upload_sessions_inflight_idx").using("btree", table.state.asc().nullsLast().op("timestamptz_ops"), table.updatedAt.asc().nullsLast().op("text_ops")).where(sql`(state = ANY (ARRAY['created'::text, 'in_progress'::text]))`),
@@ -338,6 +339,7 @@ export const uploadSessions = pgTable("upload_sessions", {
 	check("upload_sessions_dedup_has_target", sql`(state = 'deduplicated'::text) = (duplicate_of_file_id IS NOT NULL)`),
 	check("upload_sessions_failed_has_reason", sql`(state = 'failed'::text) = (failure_reason IS NOT NULL)`),
 	check("upload_sessions_failure_reason_check", sql`(failure_reason IS NULL) OR (failure_reason = ANY (ARRAY['checksum_mismatch'::text, 'invalid_file'::text, 'expired'::text, 'aborted'::text, 'storage_error'::text]))`),
+	check("upload_sessions_hook_reserved_created_only", sql`(hook_reserved_until IS NULL) OR (state = 'created'::text)`),
 	check("upload_sessions_filename_len", sql`(char_length(filename) >= 1) AND (char_length(filename) <= 255)`),
 	check("upload_sessions_fingerprint_is_object", sql`(client_fingerprint IS NULL) OR (jsonb_typeof(client_fingerprint) = 'object'::text)`),
 	check("upload_sessions_kind_check", sql`kind = ANY (ARRAY['original'::text, 'proxy'::text, 'voice_note'::text])`),

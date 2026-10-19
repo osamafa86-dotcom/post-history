@@ -94,7 +94,7 @@ export class UploadsService implements ReplayRehydrator {
       }
       await tx
         .update(uploadSessions)
-        .set({ state: 'completed', storageKey: `${this.config.TUSD_OBJECT_PREFIX}${session.id}` })
+        .set({ state: 'completed', storageKey: `${this.config.TUSD_OBJECT_PREFIX}${session.id}`, hookReservedUntil: null })
         .where(eq(uploadSessions.id, session.id));
       await writeOutboxEvent(tx, {
         type: session.kind === 'proxy' ? 'upload.proxy_received' : 'upload.original_received',

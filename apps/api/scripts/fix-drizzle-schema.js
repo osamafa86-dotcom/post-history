@@ -1,7 +1,7 @@
 // تصحيحات حتمية على ناتج drizzle-kit pull (scripts/db-pull.sh). كل تصحيح يفشل بصوت عالٍ إن تغيّر الناتج.
 const { readFileSync, writeFileSync } = require('node:fs');
 
-const [, , file] = process.argv;
+const [, , file, relationsFile] = process.argv;
 let src = readFileSync(file, 'utf8');
 
 function fix(name, pattern, replacement) {
@@ -24,3 +24,15 @@ fix(
 );
 
 writeFileSync(file, src);
+
+// 4) ترتيب الأسماء في سطر استيراد relations.ts يتبع فهرس Postgres ويختلف بين قاعدتين؛ يُرتَّب أبجديًا
+if (relationsFile) {
+  const rel = readFileSync(relationsFile, 'utf8');
+  const sorted = rel.replace(/^import \{ ([^}]+) \} from "\.\/schema";$/m, (_, names) =>
+    `import { ${names.split(', ').sort().join(', ')} } from "./schema";`,
+  );
+  if (sorted === rel && !/^import \{ [^}]+ \} from "\.\/schema";$/m.test(rel)) {
+    throw new Error('drizzle fixup "relations-import" did not match; update scripts/fix-drizzle-schema.js');
+  }
+  writeFileSync(relationsFile, sorted);
+}

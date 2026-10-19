@@ -80,14 +80,21 @@ describe('tusd hooks (/internal/tusd-hooks/{hook_token}, SEC-06)', () => {
     afterAll(() => hp.close());
     const hookP = (body: object) => request(hp.app.getHttpServer()).post(`/internal/tusd-hooks/${hp.config.TUSD_HOOK_SECRET}`).send(body);
 
-    it('pre-create keeps the session created (a failed tusd create retries with the same token); post-create moves it on', async () => {
+    it('pre-create reserves the session; a failed tusd create retries with the same token once the reservation lapses', async () => {
       const s = await seedUploadSession(hp, reporterId);
-      for (let i = 0; i < 2; i++) {
-        expect((await hookP(preCreate(s.id, { token: s.uploadToken })).expect(200)).body).toEqual({ RejectUpload: false, ChangeFileInfo: { ID: s.id } });
-        expect(await session(s.id)).toMatchObject({ state: 'created', storage_key: `tus/${s.id}` });
-      }
+      expect((await hookP(preCreate(s.id, { token: s.uploadToken })).expect(200)).body).toEqual({ RejectUpload: false, ChangeFileInfo: { ID: s.id } });
+      const reserved = await session(s.id);
+      expect(reserved).toMatchObject({ state: 'created', storage_key: `tus/${s.id}` });
+      const seconds = (new Date(reserved.hook_reserved_until).getTime() - Date.now()) / 1000;
+      expect(seconds).toBeGreaterThan(50);
+      expect(seconds).toBeLessThanOrEqual(61);
+      // tusd لا يرفض المعرّف المكرّر: pre-create ثانٍ والحجز حي يُرفض
+      expect((await hookP(preCreate(s.id, { token: s.uploadToken })).expect(200)).body.RejectUpload).toBe(true);
+      // لم يصل post-create (فشل الإنشاء لدى tusd) وانقضى الحجز: يُعاد بالرمز نفسه
+      await hp.pool.query(`UPDATE upload_sessions SET hook_reserved_until = now() - interval '1 second' WHERE id = $1`, [s.id]);
+      expect((await hookP(preCreate(s.id, { token: s.uploadToken })).expect(200)).body.RejectUpload).toBe(false);
       await hookP({ ...preCreate(s.id), Type: 'post-create' }).expect(200);
-      expect((await session(s.id)).state).toBe('in_progress');
+      expect(await session(s.id)).toMatchObject({ state: 'in_progress', hook_reserved_until: null });
       expect((await hookP(preCreate(s.id, { token: s.uploadToken })).expect(200)).body.RejectUpload).toBe(true);
       // tusd يعيد post-create أحيانًا: بلا أثر، ثم post-finish يكمل كالمعتاد
       await hookP({ ...preCreate(s.id), Type: 'post-create' }).expect(200);
@@ -95,6 +102,21 @@ describe('tusd hooks (/internal/tusd-hooks/{hook_token}, SEC-06)', () => {
       expect((await session(s.id)).state).toBe('completed');
       await hookP({ ...preCreate(s.id), Type: 'post-create' }).expect(200);
       expect((await session(s.id)).state).toBe('completed');
+    });
+
+    it('two concurrent pre-creates for one session: exactly one is accepted', async () => {
+      for (let round = 0; round < 5; round++) {
+        const s = await seedUploadSession(hp, reporterId);
+        const results = await Promise.all([0, 1, 2].map(() => hookP(preCreate(s.id, { token: s.uploadToken })).expect(200)));
+        expect(results.filter((r) => r.body.RejectUpload === false)).toHaveLength(1);
+      }
+    });
+
+    it('post-finish without a post-create clears the reservation with the state', async () => {
+      const s = await seedUploadSession(hp, reporterId);
+      await hookP(preCreate(s.id, { token: s.uploadToken })).expect(200);
+      await hookP(postFinish(s.id, `tus/${s.id}`)).expect(200);
+      expect(await session(s.id)).toMatchObject({ state: 'completed', hook_reserved_until: null });
     });
   });
 

@@ -68,6 +68,8 @@ const schema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  // مع post-create: مدة حجز الجلسة بعد قبول pre-create؛ يُرفض أي pre-create آخر قبل انقضائها أو قبل post-create
+  TUSD_PRE_CREATE_RESERVATION_SECONDS: z.coerce.number().int().min(5).max(3600).default(60),
   // ما يُعاد للعميل عند إنشاء جلسة رفع: نقطة tus العامة، وحجم الجزء الثابت (R2 يشترط تساويه، ≥ 5 MiB)
   TUS_PUBLIC_ENDPOINT: z.string().url().default('http://localhost:8080/files/'),
   TUSD_PART_SIZE_BYTES: z.coerce.number().int().min(5 * 1024 * 1024).default(16 * 1024 * 1024),
