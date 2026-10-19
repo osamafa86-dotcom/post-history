@@ -244,7 +244,14 @@ test("force-quit-restart card: passes only when every scenario resumes from what
   const zero = fq(); zero.scenarios.reboot.offset_after_resume_bytes = 0;
   assert.match(cardToResult(zero).doc.notes, /reboot: restarted from zero/);
   const far = fq(); far.scenarios.force_quit.offset_after_resume_bytes = 400_000_000;
-  assert.match(cardToResult(far).doc.notes, /more than one part/);
+  assert.match(cardToResult(far).doc.notes, /more than one request \(16777216\)/);
+  // iOS background sessions send bigger requests: a step back of 64 MiB is fine once the card records that request size, and still not past it
+  const ios = fq(); ios.upload.request_bytes = 67_108_864; ios.scenarios.force_quit.offset_after_resume_bytes = 440_000_000;
+  assert.equal(cardToResult(ios).doc.result, "partial");
+  ios.scenarios.force_quit.offset_after_resume_bytes = 400_000_000;
+  assert.match(cardToResult(ios).doc.notes, /more than one request \(67108864\)/);
+  const badReq = fq(); badReq.upload.request_bytes = "64MiB";
+  assert.ok(cardToResult(badReq).missing.some((m) => m.includes("request_bytes")));
   const roomy = fq(); roomy.scenarios.low_storage.free_storage_mb_at_start = 5000;
   assert.equal(cardToResult(roomy).doc.result, "fail");
   const blank = fq(); blank.scenarios.battery_depleted.completed = null;
