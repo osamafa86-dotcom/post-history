@@ -188,8 +188,11 @@ class AuthManagerTest {
         store.write(SessionTokens("a1", "r1", now + 600_000, "u"))
         server.enqueue(MockResponse().setResponseCode(204))
         assertTrue(manager.revokeAllSessionsBestEffort())
-        assertTrue(server.takeRequest().body.readUtf8().contains("\"all_sessions\":true"))
-        assertEquals("a1", store.read()?.accessToken) // local state untouched: the wipe erases it next
+        val req = server.takeRequest()
+        assertEquals("/v1/auth/logout", req.path)
+        assertEquals("Bearer a1", req.getHeader("Authorization"))
+        assertTrue(req.body.readUtf8().contains("\"all_sessions\":true"))
+        assertEquals("a1", store.read()?.accessToken) // local state untouched: the wipe erases it in parallel
 
         server.enqueue(MockResponse().setResponseCode(204).setHeadersDelay(5, TimeUnit.SECONDS))
         val started = System.nanoTime()

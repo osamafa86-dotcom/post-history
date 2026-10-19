@@ -2,7 +2,9 @@ package net.palpost.library.core.auth
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import net.palpost.library.api.apis.AuthApi
 import net.palpost.library.api.infrastructure.ClientException
@@ -15,9 +17,12 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -73,19 +78,27 @@ class AuthManager(
     }
 
     /**
-     * Best effort before an emergency wipe: ask the server to end every session of this user, bounded by
-     * [timeoutMs]; a failure or timeout changes nothing locally and is not reported anywhere. The wipe
-     * itself never waits beyond this and never depends on the answer.
+     * Best effort alongside an emergency wipe: ask the server to end every session of this user, bounded by
+     * [timeoutMs]. The access token is read once, here, so the local erase can run at the same time without
+     * racing this request; a failure or timeout changes nothing locally and is recorded nowhere.
      */
     suspend fun revokeAllSessionsBestEffort(timeoutMs: Long = 3_000): Boolean {
-        if (store.read() == null) return false
-        return withTimeoutOrNull(timeoutMs) {
-            try {
-                sessionApi.logout(LogoutRequest(allSessions = true)); true
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                false
+        val token = store.read()?.accessToken ?: return false
+        val request = Request.Builder()
+            .url("$baseUrl/auth/logout")
+            .header(AUTHORIZATION, "Bearer $token")
+            .post("""{"all_sessions":true}""".toRequestBody("application/json".toMediaType()))
+            .build()
+        // OkHttp's per-call deadline bounds connect, write and read together; the coroutine timeout is a backstop.
+        return withTimeoutOrNull(timeoutMs + 500) {
+            withContext(Dispatchers.IO) {
+                try {
+                    httpClient.newCall(request).apply { timeout().timeout(timeoutMs, TimeUnit.MILLISECONDS) }.execute().use { it.isSuccessful }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    false
+                }
             }
         } ?: false
     }
