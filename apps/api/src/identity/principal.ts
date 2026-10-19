@@ -55,3 +55,14 @@ declare module 'express' {
     principal?: Principal;
   }
 }
+
+/** هل يغطي مشرفٌ هذا المستخدم (كل شيء، أو مكتبه، أو محافظة مكتبه)؟ لإبطال جلساته واعتماد استعادته. */
+export function supervisesUser(p: Principal, user: { officeId: string | null; governorate: string | null }): boolean {
+  return p.roles.some(
+    (r) =>
+      r.role === 'supervisor' &&
+      (r.scopeKind === 'all' ||
+        (r.scopeKind === 'office' && user.officeId !== null && r.scopeId === user.officeId) ||
+        (r.scopeKind === 'governorate' && user.governorate !== null && r.scopeId === user.governorate)),
+  );
+}

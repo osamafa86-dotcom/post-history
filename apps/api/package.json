@@ -14,7 +14,8 @@
     "db:check-schema": "scripts/check-drizzle-schema.sh",
     "test": "npm run generate:api-types && jest --selectProjects unit",
     "test:integration": "npm run generate:api-types && jest --selectProjects integration --runInBand",
-    "test:coverage": "npm run generate:api-types && jest --runInBand --coverage"
+    "test:coverage": "npm run generate:api-types && jest --runInBand --coverage",
+    "contract:coverage": "node scripts/contract-coverage.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1152.0",

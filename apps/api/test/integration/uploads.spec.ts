@@ -1,0 +1,148 @@
+import { createHash, randomUUID } from 'node:crypto';
+import request from 'supertest';
+import { schemaValidator } from '../../src/common/contract';
+import { createHarness, ensureForm, type Harness, loginAs } from './harness';
+
+type Actor = Awaited<ReturnType<typeof loginAs>>;
+
+describe('upload sessions (/v1/uploads)', () => {
+  let h: Harness;
+  let office: string;
+  let reporter: Actor;
+  let other: Actor;
+  let supervisor: Actor;
+  beforeAll(async () => {
+    h = await createHarness();
+    await ensureForm(h);
+    office = (await h.pool.query<{ id: string }>(`INSERT INTO offices (name_ar, name_en) VALUES ('م', 'o') RETURNING id`)).rows[0]!.id;
+    reporter = await loginAs(h, [{ role: 'reporter' }], { officeId: office });
+    other = await loginAs(h, [{ role: 'reporter' }], { officeId: office });
+    supervisor = await loginAs(h, [{ role: 'supervisor', scopeKind: 'office', scopeId: office }]);
+  });
+  afterAll(() => h.close());
+
+  const http = () => request(h.app.getHttpServer());
+  const write = (a: Actor, url: string, body?: object, key = randomUUID()) =>
+    http().post(url).set('Authorization', `Bearer ${a.token}`).set('Idempotency-Key', key).send(body);
+  const material = async (a: Actor = reporter) =>
+    (
+      await write(a, '/v1/materials', {
+        title: 'Footage for upload',
+        material_types: ['report'],
+        governorate: 'gaza',
+        city: 'gaza',
+        priority: 'normal',
+        sensitivity: { minors: false, injured: false, graphic: false },
+        display_name: { mode: 'network' },
+        form_version: 1,
+        dynamic_fields: {},
+      }).expect(201)
+    ).body.id as string;
+  const preCreate = (sessionId: string, token: string, size: number) =>
+    http()
+      .post(`/internal/tusd-hooks/${h.config.TUSD_HOOK_SECRET}`)
+      .send({
+        Type: 'pre-create',
+        Event: { Upload: { Size: size, MetaData: { upload_session_id: sessionId } }, HTTPRequest: { Header: { Authorization: [`Bearer ${token}`] } } },
+      })
+      .expect(200);
+
+  it('creates a session: token shown once and stored hashed, contract shape, event, and the hook accepts it', async () => {
+    const materialId = await material();
+    const res = await write(reporter, '/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 2048, filename: 'IMG_0001.MOV' }).expect(201);
+    const valid = schemaValidator('UploadSessionCreated');
+    expect(valid(res.body) ? [] : valid.errors).toEqual([]);
+    expect(res.body).toMatchObject({
+      material_id: materialId,
+      state: 'created',
+      tus_metadata: { upload_session_id: res.body.id, filename: 'IMG_0001.MOV' },
+      part_size_bytes: h.config.TUSD_PART_SIZE_BYTES,
+      checksum_algorithm: 'sha256',
+    });
+    const { rows } = await h.pool.query(`SELECT upload_token_hash FROM upload_sessions WHERE id = $1`, [res.body.id]);
+    expect(rows[0].upload_token_hash.equals(createHash('sha256').update(res.body.upload_token).digest())).toBe(true);
+    const { rows: ev } = await h.pool.query(`SELECT type FROM outbox_events WHERE aggregate_id = $1`, [res.body.id]);
+    expect(ev.map((e) => e.type)).toEqual(['upload.started']);
+    expect((await preCreate(res.body.id, res.body.upload_token, 2048)).body.RejectUpload).toBe(false);
+  });
+
+  it('a replay with the same key mints a new token for the same session and never stores the token', async () => {
+    const materialId = await material();
+    const key = randomUUID();
+    const body = { material_id: materialId, kind: 'proxy', proxy_mode: 'urgent', size_bytes: 4096, filename: 'proxy.mp4' };
+    const first = await write(reporter, '/v1/uploads', body, key).expect(201);
+    const second = await write(reporter, '/v1/uploads', body, key).expect(201);
+    expect(second.headers['idempotent-replayed']).toBe('true');
+    expect(second.body.id).toBe(first.body.id);
+    expect(second.body.upload_token).not.toBe(first.body.upload_token);
+    const { rows } = await h.pool.query(`SELECT response_body FROM idempotency_keys WHERE key = $1`, [key]);
+    expect(rows[0].response_body).not.toHaveProperty('upload_token');
+    expect(JSON.stringify(rows[0].response_body)).not.toContain(first.body.upload_token);
+    expect((await preCreate(first.body.id, first.body.upload_token, 4096)).body.RejectUpload).toBe(true);
+    expect((await preCreate(first.body.id, second.body.upload_token, 4096)).body.RejectUpload).toBe(false);
+  });
+
+  it("refuses other people's materials (404), other roles (403), and proxy_mode on an original (422)", async () => {
+    const materialId = await material();
+    await write(other, '/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 1, filename: 'a' }).expect(404);
+    await write(supervisor, '/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 1, filename: 'a' }).expect(403);
+    await write(reporter, '/v1/uploads', { material_id: materialId, kind: 'original', proxy_mode: 'normal', size_bytes: 1, filename: 'a' }).expect(422);
+    await write(reporter, '/v1/uploads', { material_id: randomUUID(), kind: 'original', size_bytes: 1, filename: 'a' }).expect(404);
+  });
+
+  it('GET returns the session without the token to the owner and to a supervisor in scope, 404 to others', async () => {
+    const materialId = await material();
+    const created = (await write(reporter, '/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 10, filename: 'f.mov' }).expect(201)).body;
+    const mine = await http().get(`/v1/uploads/${created.id}`).set('Authorization', `Bearer ${reporter.token}`).expect(200);
+    const valid = schemaValidator('UploadSession');
+    expect(valid(mine.body) ? [] : valid.errors).toEqual([]);
+    expect(mine.body).not.toHaveProperty('upload_token');
+    expect(mine.body.receipt_number).toBeNull();
+    await http().get(`/v1/uploads/${created.id}`).set('Authorization', `Bearer ${supervisor.token}`).expect(200);
+    await http().get(`/v1/uploads/${created.id}`).set('Authorization', `Bearer ${other.token}`).expect(404);
+  });
+
+  it('complete is for the direct path only: 409 on a tusd session', async () => {
+    const materialId = await material();
+    const created = (await write(reporter, '/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 10, filename: 'f' }).expect(201)).body;
+    expect((await write(reporter, `/v1/uploads/${created.id}/complete`, {}).expect(409)).body.code).toBe('upload_state_conflict');
+  });
+
+  describe('direct upload path', () => {
+    let direct: Harness;
+    let owner: Actor;
+    beforeAll(async () => {
+      direct = await createHarness({ env: { UPLOAD_PATH: 'direct' } });
+      owner = await loginAs(direct, [{ role: 'reporter' }], { officeId: office });
+    });
+    afterAll(() => direct.close());
+
+    const post = (url: string, body?: object) =>
+      request(direct.app.getHttpServer()).post(url).set('Authorization', `Bearer ${owner.token}`).set('Idempotency-Key', randomUUID()).send(body);
+
+    it('completes once (repeat is 202), derives the storage key, and rejects a mismatching reported checksum', async () => {
+      const materialId = (
+        await post('/v1/materials', {
+          title: 'Direct upload material',
+          material_types: ['report'],
+          governorate: 'gaza',
+          city: 'gaza',
+          priority: 'normal',
+          sensitivity: { minors: false, injured: false, graphic: false },
+          display_name: { mode: 'network' },
+          form_version: 1,
+          dynamic_fields: {},
+        }).expect(201)
+      ).body.id;
+      const sha = 'a'.repeat(64);
+      const s = (await post('/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 10, filename: 'f', client_sha256: sha }).expect(201)).body;
+      expect((await post(`/v1/uploads/${s.id}/complete`, { reported_sha256: 'b'.repeat(64) }).expect(422)).body.code).toBe('checksum_mismatch');
+      await post(`/v1/uploads/${s.id}/complete`, { reported_sha256: sha }).expect(202);
+      await post(`/v1/uploads/${s.id}/complete`, {}).expect(202);
+      const { rows } = await direct.pool.query(`SELECT state, storage_key FROM upload_sessions WHERE id = $1`, [s.id]);
+      expect(rows[0]).toEqual({ state: 'completed', storage_key: `tus/${s.id}` });
+      const { rows: ev } = await direct.pool.query(`SELECT type FROM outbox_events WHERE aggregate_id = $1 ORDER BY id`, [s.id]);
+      expect(ev.map((e) => e.type)).toEqual(['upload.started', 'upload.original_received']);
+    });
+  });
+});

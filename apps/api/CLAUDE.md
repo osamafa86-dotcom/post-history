@@ -28,10 +28,11 @@ src/db/migrate.sh up
 npm run typecheck            # يولّد src/generated/api.d.ts من contracts/openapi.yaml (لا يُلتزم)
 npm test                     # وحدات
 npm run test:integration     # تكامل على Postgres (أسرار الاختبار تُولَّد عشوائيًا في test/integration/env.ts)
+npm run contract:coverage    # بعد build: عمليات العقد غير المنفَّذة (تحذير في CI)
 npm run db:pull              # بعد كل ترحيل مدمج: يعيد استبطان src/database/schema (CI يفشل إن اختلف)
 ```
 
-المتغيرات في `.env.example`. الهيكل: `identity/` (الجلسات، SEC-02؛ `principal.ts` الأدوار والنطاقات و`@Roles`)، `forms/` (الإصدارات والتحقق المشترك من الحقول الديناميكية)، `materials/` (النطاق في الاستعلام، جدول الانتقالات، الحجب)، `notifications/` (التوزيع من Outbox إلى صندوق الوارد، القوالب في `messages.ts`، read/ack)، `events/` (`GET /events`)، `verification/` (SHA-256 على الخادم و`recordVerification` لعامل الوسائط)، `push-devices/`، `notifications/escalation.worker.ts`، `idempotency/`، `outbox/` (`writeOutboxEvent(tx, …)`
+المتغيرات في `.env.example`. الهيكل: `identity/` (الجلسات، SEC-02؛ `principal.ts` الأدوار والنطاقات و`@Roles`)، `forms/` (الإصدارات والتحقق المشترك من الحقول الديناميكية)، `materials/` (النطاق في الاستعلام، جدول الانتقالات، الحجب)، `notifications/` (التوزيع من Outbox إلى صندوق الوارد، القوالب في `messages.ts`، read/ack)، `events/` (`GET /events`)، `verification/` (SHA-256 على الخادم و`recordVerification` لعامل الوسائط)، `push-devices/`، `permissions/`، `identity/account.service.ts` (الجلسات والاستعادة)، `uploads/uploads.service.ts`، `notifications/escalation.worker.ts`، `idempotency/`، `outbox/` (`writeOutboxEvent(tx, …)`
 يقبل معاملة فقط + المُرسل)، `uploads/` (خطّافات tusd، SEC-06)، `common/contract.ts` (التحقق من الأجسام بمخططات العقد نفسها).
 القرارات في ADR 0005.
 

@@ -7,12 +7,8 @@ import { ApiError } from '../common/errors';
 import { DB, type Database } from '../database/database.module';
 import { userPermissions, userRoles, users } from '../database/schema/schema';
 import type { components } from '../generated/api';
-import type Redis from 'ioredis';
-import type { Logger } from 'pino';
-import { LOGGER } from '../common/logger';
-import { REDIS } from '../common/redis.module';
-import { MemoryRateLimiter, rateLimitKeyMaterial, RedisRateLimiter, ResilientRateLimiter, type RateLimiter } from './rate-limiter';
-import { auditLog } from '../database/schema/schema';
+import type { RateLimiter } from './rate-limiter';
+import { RateLimitsService } from './rate-limits.service';
 import { SessionService } from './session.service';
 
 type Session = components['schemas']['Session'];
@@ -33,19 +29,10 @@ export class AuthService {
     @Inject(DB) private readonly db: Database,
     @Inject(APP_CONFIG) config: AppConfig,
     private readonly sessions: SessionService,
-    @Inject(REDIS) redis: Redis | null,
-    @Inject(LOGGER) private readonly logger: Logger,
+    limits: RateLimitsService,
   ) {
-    const windowMs = config.LOGIN_RATE_LIMIT_WINDOW_SECONDS * 1000;
-    // الحدّان يتشاركان حالة صحة Redis: نوبة التعطل تُبلَّغ مرة واحدة
-    const health = this.limiterHealth();
-    const keyMaterial = rateLimitKeyMaterial(config.JWT_SECRET);
-    const limiter = (name: string, max: number): RateLimiter =>
-      redis
-        ? new ResilientRateLimiter(new RedisRateLimiter(redis, name, max, windowMs, keyMaterial), new MemoryRateLimiter(max, windowMs), health)
-        : new MemoryRateLimiter(max, windowMs);
-    this.byIp = limiter('login-ip', config.LOGIN_RATE_LIMIT_IP_MAX);
-    this.byEmailIp = limiter('login-email-ip', config.LOGIN_RATE_LIMIT_MAX);
+    this.byIp = limits.create('login-ip', config.LOGIN_RATE_LIMIT_IP_MAX);
+    this.byEmailIp = limits.create('login-email-ip', config.LOGIN_RATE_LIMIT_MAX);
     this.fieldKey = Buffer.from(config.FIELD_ENCRYPTION_KEY, 'base64');
     this.dummyHash = argon2Hash(randomToken());
   }
@@ -97,33 +84,6 @@ export class AuthService {
         roles: await this.roles(user!.id),
       };
     });
-  }
-
-  /**
-   * Redis معطّل لا يُسقط حد الدخول: يتراجع إلى الذاكرة بالحدود نفسها لكل نسخة، مع تحذير في السجل وصف في
-   * سجل التدقيق عند بدء النوبة وعند العودة إلى Redis (قرار المنسّق؛ ADR 0005).
-   */
-  private limiterHealth(): { degraded(err: unknown): void; recovered(): void } {
-    let degraded = false;
-    const audit = (action: string) =>
-      this.db
-        .insert(auditLog)
-        .values({ action, targetType: 'system', details: { reason_code: 'redis_unavailable' }, hash: Buffer.alloc(32) })
-        .catch((err: unknown) => this.logger.error({ err_name: (err as Error)?.name }, 'audit write failed'));
-    return {
-      degraded: (err) => {
-        if (degraded) return;
-        degraded = true;
-        this.logger.warn({ err_name: (err as Error)?.name }, 'login rate limiter degraded to in-memory');
-        void audit('rate_limiter.degraded');
-      },
-      recovered: () => {
-        if (!degraded) return;
-        degraded = false;
-        this.logger.info('login rate limiter recovered (redis)');
-        void audit('rate_limiter.recovered');
-      },
-    };
   }
 
   async refresh(refreshToken: string): Promise<Session> {

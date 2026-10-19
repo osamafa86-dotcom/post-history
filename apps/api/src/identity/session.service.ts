@@ -106,6 +106,15 @@ export class SessionService {
     });
   }
 
+  /** جلسات المستخدم النشطة (رؤوس السلاسل غير المبطَلة وغير المنتهية). */
+  async listActive(userId: string): Promise<Array<typeof refreshTokens.$inferSelect>> {
+    return this.db
+      .select()
+      .from(refreshTokens)
+      .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt), gt(refreshTokens.expiresAt, sql`now()`)))
+      .orderBy(refreshTokens.createdAt);
+  }
+
   /** يبطل الجلسة التي ينتمي إليها sid (رأس سلسلتها). */
   async revokeChain(tx: Executor, sid: string): Promise<void> {
     const head = await this.chainHead(tx, sid);
@@ -130,7 +139,7 @@ export class SessionService {
       .where(and(eq(pushDevices.userId, userId), isNull(pushDevices.revokedAt)));
   }
 
-  private async chainHead(
+  async chainHead(
     executor: Executor,
     sid: string,
   ): Promise<{ id: string; user_id: string; revoked_at: string | null; expires_at: string } | undefined> {

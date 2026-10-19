@@ -1,6 +1,6 @@
 import { type CallHandler, type ExecutionContext, HttpException, Inject, Injectable, type NestInterceptor } from '@nestjs/common';
 import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
-import { Reflector } from '@nestjs/core';
+import { ModuleRef, Reflector } from '@nestjs/core';
 import { and, eq, sql } from 'drizzle-orm';
 import type { Request } from 'express';
 import { catchError, from, mergeMap, type Observable, throwError } from 'rxjs';
@@ -10,6 +10,7 @@ import { ApiError, StoredResponse } from '../common/errors';
 import { toErrorResponse } from '../common/error.filter';
 import { DB, type Database } from '../database/database.module';
 import { idempotencyKeys } from '../database/schema/schema';
+import { REPLAY_KEY, type ReplayRehydrator } from './replay';
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const KEY_PATTERN = /^[\x21-\x7e]{8,128}$/;
@@ -31,6 +32,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
   constructor(
     @Inject(DB) private readonly db: Database,
     private readonly reflector: Reflector,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
@@ -47,7 +49,16 @@ export class IdempotencyInterceptor implements NestInterceptor {
       this.reflector.get<number>(HTTP_CODE_METADATA, context.getHandler()) ?? (req.method === 'POST' ? 201 : 200);
 
     // أخطاء المطالبة نفسها (إعادة، 409، 422) تمر كما هي؛ التسوية تخص ما بعد تنفيذ المعالج فقط
+    const rehydrator = this.reflector.get<new (...args: never[]) => ReplayRehydrator>(REPLAY_KEY, context.getHandler());
     return from(this.claim(userId, key, fingerprint)).pipe(
+      // الإعادة: ما حُذف عند الحفظ (رموز) يُعاد بناؤه بمعالج المسار إن وُجد، لا يُخزَّن رمز أبدًا
+      catchError((err: unknown) =>
+        err instanceof StoredResponse && rehydrator && err.status < 300
+          ? from(this.moduleRef.get(rehydrator, { strict: false }).rehydrate(err.body, req)).pipe(
+              mergeMap((body) => throwError(() => new StoredResponse(err.status, body))),
+            )
+          : throwError(() => err),
+      ),
       mergeMap(() =>
         next.handle().pipe(
           mergeMap(async (body) => {
@@ -106,7 +117,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
   private async complete(userId: string, key: string, status: number, body: unknown): Promise<void> {
     await this.db
       .update(idempotencyKeys)
-      .set({ state: 'completed', responseStatus: status, responseBody: body as never })
+      .set({ state: 'completed', responseStatus: status, responseBody: withoutTokens(body) as never })
       .where(and(eq(idempotencyKeys.userId, userId), eq(idempotencyKeys.key, key)));
   }
 
@@ -115,4 +126,10 @@ export class IdempotencyInterceptor implements NestInterceptor {
       .delete(idempotencyKeys)
       .where(and(eq(idempotencyKeys.userId, userId), eq(idempotencyKeys.key, key), eq(idempotencyKeys.state, 'in_progress')));
   }
+}
+
+/** لا تُحفظ الرموز في جدول المفاتيح (قاعدة المخطط): كل مفتاح علوي اسمه token أو ينتهي بـ _token يُحذف قبل الحفظ. */
+export function withoutTokens(body: unknown): unknown {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return body;
+  return Object.fromEntries(Object.entries(body).filter(([k]) => k !== 'token' && !k.endsWith('_token')));
 }

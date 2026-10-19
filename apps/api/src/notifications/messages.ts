@@ -10,6 +10,12 @@ export const NOTIFICATION_TITLES: Record<string, Record<Locale, string>> = {
   'material.accepted_for_production': { ar: 'مادة #{ref} مقبولة للإنتاج', en: 'Material #{ref} accepted for production' },
   'material.published': { ar: 'نُشرت مادتك #{ref}', en: 'Your material #{ref} was published' },
   'notification.escalated': { ar: 'تصعيد: لم يُقرّ استلام المادة #{ref}', en: 'Escalation: material #{ref} not acknowledged' },
+  // معرّف الطلب في العنوان لأن Notification في العقد لا يحمل حقلًا له؛ المشرف يحتاجه للاعتماد. لا بيانات شخصية.
+  'auth.recovery_requested': { ar: 'طلب استعادة حساب بانتظار اعتمادك: {ref}', en: 'Account recovery awaiting your approval: {ref}' },
+  'auth.recovery_requested.self': {
+    ar: 'طُلبت استعادة حسابك؛ إن لم تطلبها فأبلغ مشرفك',
+    en: 'Recovery of your account was requested; tell your supervisor if it was not you',
+  },
   'upload.verified': {
     ar: 'تم الاستلام بنجاح — المادة #{ref}، الإيصال {receipt}',
     en: 'Received successfully — material #{ref}, receipt {receipt}',
