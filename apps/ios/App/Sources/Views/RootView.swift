@@ -13,6 +13,10 @@ struct RootView: View {
                 LoginView()
             case .signedIn:
                 HomeView()
+            case .revoked:
+                SessionRevokedView()
+            case .wiped(let report):
+                WipedView(report: report)
             }
             // إخفاء المحتوى في مبدّل التطبيقات: غطاء حين لا يكون المشهد نشطًا.
             if scenePhase != .active {

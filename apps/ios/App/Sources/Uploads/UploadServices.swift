@@ -76,4 +76,5 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(deleteLocalAfterReceipt, forKey: "deleteLocalAfterReceipt") }
     }
     init() { deleteLocalAfterReceipt = UserDefaults.standard.bool(forKey: "deleteLocalAfterReceipt") }
+    func reload() { deleteLocalAfterReceipt = UserDefaults.standard.bool(forKey: "deleteLocalAfterReceipt") }
 }

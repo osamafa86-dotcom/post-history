@@ -108,6 +108,24 @@ public actor UploadEngine: TusTransportDelegate {
         setPhase(&rec, .cancelled)
     }
 
+    /// المسح الطارئ أو إبطال الجلسة: يلغي كل مهام النقل الخلفية ويحذف كل السجلات وملفات الأجزاء ورموز الرفع. لا يُسجَّل شيء.
+    /// لا يلمس الملفات الأصلية؛ حذفها على طبقة التطبيق (`LocalDataWiper`).
+    public func wipeAll() async -> Int {
+        let ids = Array(records.keys)
+        for id in ids {
+            retryTasks[id]?.cancel()
+            retryTasks[id] = nil
+            await transport.cancel(uploadId: id)
+            slicer.discardAll(uploadId: id)
+            try? secrets.removeToken(for: id)
+            try? store.remove(id: id)
+        }
+        records.removeAll()
+        busy.removeAll()
+        resyncing.removeAll()
+        return ids.count
+    }
+
     /// يحذف سجلًا منتهيًا وآثاره (لا يحذف الملف الأصلي؛ حذفه قرار المراسل في الواجهة).
     public func remove(_ id: UUID) throws {
         guard let rec = records[id], rec.phase.isTerminal else { return }

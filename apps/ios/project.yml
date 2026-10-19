@@ -32,6 +32,8 @@ targets:
         product: UploadCore
       - package: PostHistoryKit
         product: FormEngine
+      - package: PostHistoryKit
+        product: DeviceSecurity
     info:
       path: App/Info.plist
       properties:
