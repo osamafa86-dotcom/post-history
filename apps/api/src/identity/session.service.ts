@@ -4,7 +4,7 @@ import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { randomToken, sha256 } from '../common/crypto';
 import { DB, type Database, type Executor } from '../database/database.module';
-import { refreshTokens, uploadSessions, users } from '../database/schema/schema';
+import { pushDevices, refreshTokens, uploadSessions, users } from '../database/schema/schema';
 import type { AuthContext } from './auth.guard';
 
 export interface IssuedTokens {
@@ -114,7 +114,7 @@ export class SessionService {
     }
   }
 
-  /** يبطل كل جلسات المستخدم ورموز رفعه المفتوحة (فقد الهاتف). */
+  /** يبطل كل جلسات المستخدم ورموز رفعه المفتوحة وأجهزة إشعاره (فقد الهاتف). */
   async revokeAll(tx: Executor, userId: string): Promise<void> {
     await tx
       .update(refreshTokens)
@@ -124,6 +124,10 @@ export class SessionService {
       .update(uploadSessions)
       .set({ uploadTokenHash: null })
       .where(and(eq(uploadSessions.createdBy, userId), sql`${uploadSessions.state} IN ('created', 'in_progress')`));
+    await tx
+      .update(pushDevices)
+      .set({ revokedAt: sql`now()` })
+      .where(and(eq(pushDevices.userId, userId), isNull(pushDevices.revokedAt)));
   }
 
   private async chainHead(

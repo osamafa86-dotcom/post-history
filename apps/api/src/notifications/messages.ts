@@ -9,6 +9,7 @@ export const NOTIFICATION_TITLES: Record<string, Record<Locale, string>> = {
   'material.change_requested': { ar: 'طلب تعديل على مادتك #{ref}', en: 'Changes requested on your material #{ref}' },
   'material.accepted_for_production': { ar: 'مادة #{ref} مقبولة للإنتاج', en: 'Material #{ref} accepted for production' },
   'material.published': { ar: 'نُشرت مادتك #{ref}', en: 'Your material #{ref} was published' },
+  'notification.escalated': { ar: 'تصعيد: لم يُقرّ استلام المادة #{ref}', en: 'Escalation: material #{ref} not acknowledged' },
   'upload.verified': {
     ar: 'تم الاستلام بنجاح — المادة #{ref}، الإيصال {receipt}',
     en: 'Received successfully — material #{ref}, receipt {receipt}',

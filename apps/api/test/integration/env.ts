@@ -12,3 +12,6 @@ process.env.OUTBOX_DISPATCHER_ENABLED = 'false';
 process.env.LOGIN_RATE_LIMIT_MAX = '5';
 process.env.LOGIN_RATE_LIMIT_IP_MAX = '10000';
 process.env.RESERVATION_SWEEP_ENABLED = 'false';
+process.env.REDIS_URL ??= 'redis://localhost:6379';
+// التحقق تقوده الاختبارات باستدعاء verifyNext مع تخزين بديل في الذاكرة (harness)، فلا حلقة خلفية ولا S3
+process.env.UPLOAD_VERIFIER = 'external';

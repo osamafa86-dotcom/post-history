@@ -4,7 +4,7 @@ import { ApiError } from '../../src/common/errors';
 import { redactPath } from '../../src/common/logger';
 import { addressAllowed, blockListOf, loadConfig } from '../../src/config/config';
 import { requiresIdempotencyKey } from '../../src/idempotency/idempotency.interceptor';
-import { FixedWindowRateLimiter } from '../../src/identity/rate-limiter';
+import { MemoryRateLimiter, rateLimitKeyMaterial, ResilientRateLimiter } from '../../src/identity/rate-limiter';
 
 describe('canonicalJson', () => {
   it('is independent of key order and drops undefined', () => {
@@ -32,25 +32,6 @@ describe('requiresIdempotencyKey', () => {
     ['POST', '/internal/tusd-hooks/x', false],
   ])('%s %s → %s', (method, path, expected) => {
     expect(requiresIdempotencyKey(method, path)).toBe(expected);
-  });
-});
-
-describe('FixedWindowRateLimiter', () => {
-  it('blocks once recorded failures reach max, resets after the window or on reset()', () => {
-    let now = 0;
-    const rl = new FixedWindowRateLimiter(2, 10_000, () => now);
-    expect(rl.retryAfter('k')).toBe(0);
-    rl.record('k');
-    expect(rl.retryAfter('k')).toBe(0);
-    rl.record('k');
-    expect(rl.retryAfter('k')).toBe(10);
-    expect(rl.retryAfter('other')).toBe(0);
-    now = 10_000;
-    expect(rl.retryAfter('k')).toBe(0);
-    rl.record('k');
-    rl.record('k');
-    rl.reset('k');
-    expect(rl.retryAfter('k')).toBe(0);
   });
 });
 
@@ -100,5 +81,60 @@ describe('contract validation precision', () => {
     expect(() =>
       validateBody('/materials/{id}/contributors', 'put', { contributors: [{ ...body.contributors[0], share_percent: 33.333 }] }),
     ).toThrow();
+  });
+});
+
+describe('ResilientRateLimiter', () => {
+  it('falls back while the primary fails, reports each transition once, and returns to the primary', async () => {
+    let up = false;
+    const calls: string[] = [];
+    const primary = {
+      retryAfter: async () => {
+        if (!up) throw new Error('down');
+        calls.push('primary');
+        return 0;
+      },
+      record: async () => undefined,
+      reset: async () => undefined,
+    };
+    const fallback = new MemoryRateLimiter(1, 60_000);
+    const events = { degraded: jest.fn(), recovered: jest.fn() };
+    const rl = new ResilientRateLimiter(primary, fallback, events);
+    await fallback.record('k');
+    expect(await rl.retryAfter('k')).toBeGreaterThan(0);
+    expect(await rl.retryAfter('k')).toBeGreaterThan(0);
+    expect(events.degraded).toHaveBeenCalledTimes(1);
+    up = true;
+    expect(await rl.retryAfter('k')).toBe(0);
+    expect(await rl.retryAfter('k')).toBe(0);
+    expect(events.recovered).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(['primary', 'primary']);
+  });
+});
+
+describe('rateLimitKeyMaterial', () => {
+  it('derives a stable 32-byte key per server secret, different across secrets', () => {
+    const a = rateLimitKeyMaterial('a'.repeat(40));
+    expect(a).toHaveLength(32);
+    expect(rateLimitKeyMaterial('a'.repeat(40)).equals(a)).toBe(true);
+    expect(rateLimitKeyMaterial('b'.repeat(40)).equals(a)).toBe(false);
+    expect(a.toString('utf8')).not.toContain('aaaa');
+  });
+});
+
+describe('production configuration', () => {
+  const base = {
+    DATABASE_URL: 'postgres://x',
+    JWT_SECRET: 'j'.repeat(40),
+    FIELD_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'),
+    TUSD_HOOK_SECRET: 't'.repeat(40),
+    S3_BUCKET_UPLOADS: 'uploads',
+  };
+  it('requires Redis and storage in production, but not outside it', () => {
+    expect(() => loadConfig({ ...base, NODE_ENV: 'production' } as NodeJS.ProcessEnv)).toThrow(/REDIS_URL.*S3_ENDPOINT|S3_ENDPOINT.*REDIS_URL/);
+    expect(() =>
+      loadConfig({ ...base, NODE_ENV: 'production', REDIS_URL: 'redis://r', UPLOAD_VERIFIER: 'external' } as NodeJS.ProcessEnv),
+    ).not.toThrow();
+    expect(() => loadConfig({ ...base, NODE_ENV: 'development' } as NodeJS.ProcessEnv)).not.toThrow();
   });
 });

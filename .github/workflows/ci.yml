@@ -48,7 +48,7 @@ jobs:
         run: apps/api/src/db/scripts/check.sh
 
   api:
-    name: api (typecheck, unit, integration on Postgres)
+    name: api (typecheck, unit, integration on Postgres and Redis)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -64,8 +64,18 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - "6379:6379"
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     env:
       DATABASE_URL: postgres://posthistory:ci-only@localhost:5432/posthistory_test
+      REDIS_URL: redis://localhost:6379
     defaults:
       run:
         working-directory: apps/api
