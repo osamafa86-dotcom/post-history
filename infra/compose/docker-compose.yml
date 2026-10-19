@@ -165,6 +165,10 @@ services:
       PORT: "3000"
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      # عامل الوسائط (ADR 0006): external = أحداث الاستلام إلى media:events بدل التحقق داخل الخادم.
+      # فارغ = in_process. مع profile media يُضبط UPLOAD_VERIFIER=external وMEDIA_WORKER_TOKEN في .env.
+      UPLOAD_VERIFIER: ${UPLOAD_VERIFIER:-}
+      MEDIA_WORKER_TOKEN: ${MEDIA_WORKER_TOKEN:-}
       JWT_SECRET: ${JWT_SECRET}
       FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY}
       # Rotation and break-glass (docs/ops/runbook.md); empty = unset for the API.
@@ -217,11 +221,19 @@ services:
       S3_BUCKET_UPLOADS: ${S3_BUCKET_UPLOADS}
       S3_BUCKET_MEDIA: ${S3_BUCKET_MEDIA}
       MEDIA_SCRATCH_DIR: /scratch
+    # يعالج ملفات غير موثوقة (مراجعة الأمن على #41): جذر للقراءة فقط، بلا صلاحيات نواة ولا رفع امتيازات،
+    # مستخدم الصورة غير الجذر، وحدود ذاكرة ومعالج وعمليات تحصر أثر ملف يستنزف FFmpeg.
+    # مجلد العمل /scratch حجم لا tmpfs: الأصل قد يبلغ غيغابايتات، وtmpfs يحسبه من الذاكرة المحدودة هنا.
     read_only: true
-    tmpfs: [/tmp]
-    # يعالج ملفات غير موثوقة: بلا صلاحيات نواة ولا رفع امتيازات (مراجعة الأمن على #41)
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    user: "10001:10001"
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    mem_limit: ${MEDIA_WORKER_MEM_LIMIT:-2g}
+    memswap_limit: ${MEDIA_WORKER_MEM_LIMIT:-2g}
+    cpus: ${MEDIA_WORKER_CPUS:-2}
+    pids_limit: 256
+    restart: unless-stopped
     volumes:
       - media-scratch:/scratch
     # شبكة media الداخلية وحدها (لا خروج): الخادم وRedis وMinIO. العنوان الثابت هو ما في INTERNAL_ALLOWED_CIDRS.

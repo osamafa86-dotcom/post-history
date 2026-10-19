@@ -138,9 +138,13 @@ jobs:
                  -e "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" \
                  -e "s|^FIELD_ENCRYPTION_KEY=.*|FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)|" \
                  -e "s/^S3_MEDIA_ACCESS_KEY=.*/S3_MEDIA_ACCESS_KEY=media-worker-ci/" \
-                 -e "s/^S3_MEDIA_SECRET_KEY=.*/S3_MEDIA_SECRET_KEY=$(openssl rand -hex 16)/" infra/compose/.env
+                 -e "s/^S3_MEDIA_SECRET_KEY=.*/S3_MEDIA_SECRET_KEY=$(openssl rand -hex 16)/" \
+                 -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" \
+                 -e "s/^REDIS_PASSWORD=.*/REDIS_PASSWORD=$(openssl rand -hex 16)/" \
+                 -e "s/^S3_SECRET_KEY=.*/S3_SECRET_KEY=$(openssl rand -hex 16)/" infra/compose/.env
           docker compose -f infra/compose/docker-compose.yml config -q
           docker compose -f infra/compose/docker-compose.yml --profile api config -q
+          docker compose -f infra/compose/docker-compose.yml --profile api --profile media config -q
       # Fails on a tag or digest that does not exist in the registry (ADR 0004).
       - name: Pull images
         run: docker compose -f infra/compose/docker-compose.yml --profile api pull -q
@@ -160,9 +164,11 @@ jobs:
           DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB" \
           API_URL="http://127.0.0.1:$API_PORT/v1" TUS_URL="http://127.0.0.1:$TUSD_PORT/files/" \
             node infra/compose/e2e-duplicate-create.mjs
+      - name: Media worker hardened, on the media network only, reaches /internal/media (ADR 0006)
+        run: infra/compose/smoke-media.sh
       - name: Tear down
         if: always()
-        run: docker compose -f infra/compose/docker-compose.yml --profile api down -v
+        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media down -v
 
   media:
     name: media (probe, sha256, proxy on synthetic files with FFmpeg 8)
