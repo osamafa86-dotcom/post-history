@@ -25,9 +25,11 @@ export class TusdHooksController {
     try {
       hook = validateBody<TusdHookRequest>('/internal/tusd-hooks/{hook_token}', 'post', body);
     } catch (err) {
-      // pre-create بلا upload_session_id صالح طلبُ عميل خاطئ لا عطل خادم: رفض بصيغة tusd (400 للعميل).
-      // ردٌّ 422 هنا يحوّله tusd إلى 500 فيعيد العملاء المحاولة بلا نهاية.
-      if ((body as { Type?: unknown } | null)?.Type === 'pre-create') {
+      // pre-create حقيقي من tusd (فيه Event.Upload) بلا upload_session_id صالح طلبُ عميل خاطئ لا عطل خادم:
+      // رفض بصيغة tusd (400 للعميل)، لأن 422 هنا يحوّله tusd إلى 500 فيعيد العملاء المحاولة بلا نهاية.
+      // الجسم الذي ليس بصيغة tusd أصلًا يبقى 422 كما في العقد.
+      const b = body as { Type?: unknown; Event?: { Upload?: unknown } } | null;
+      if (b?.Type === 'pre-create' && b.Event?.Upload && typeof b.Event.Upload === 'object') {
         return { RejectUpload: true, HTTPResponse: { StatusCode: 400, Body: 'upload_session_id metadata is required' } };
       }
       throw err;
