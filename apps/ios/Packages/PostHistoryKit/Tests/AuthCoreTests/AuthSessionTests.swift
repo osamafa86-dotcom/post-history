@@ -121,7 +121,8 @@ final class AuthSessionTests: XCTestCase {
     }
 
     func testErrorMapperHandlesTransportAndServerCodes() {
-        XCTAssertEqual(APIErrorMapper.map(URLError(.notConnectedToInternet)), .transport("URLError"))
+        // اسم النوع يختلف بين Darwin (NSError) وLinux (URLError)؛ المهم التصنيف لا النص.
+        guard case .transport = APIErrorMapper.map(URLError(.notConnectedToInternet)) else { return XCTFail("URLError must map to transport") }
         let body = try! JSONEncoder().encode(ModelError(code: .idempotencyKeyReused, message: "m", requestId: "r"))
         XCTAssertEqual(APIErrorMapper.map(ErrorResponse.error(422, body, nil, URLError(.badServerResponse))), .validation)
         XCTAssertEqual(APIErrorMapper.map(ErrorResponse.error(409, body, nil, URLError(.badServerResponse))), .server(code: "idempotency_key_reused", status: 409))
