@@ -22,3 +22,11 @@
 - لا إحداثيات دقيقة تخرج إلا مشفرة واختيارية.
 - كل نص في ملفات موارد بالعربية والإنجليزية.
 - اختبارات Espresso، وسكربت اختبار ميداني على جهازي Xiaomi وSamsung بعد قفل الشاشة 30 دقيقة، ونتائجه بمخطط `measurement.json` في `docs/measurements/android-app/`.
+
+## بنية المشروع (الحالة بعد الطلب الأول)
+
+- `api/` — العميل المولَّد في البناء من `contracts/openapi.yaml` (OpenAPI Generator، Kotlin + OkHttp + Moshi، دوال معلّقة). لا ملف مصدر مكتوب يدويًا فيه؛ انظر ADR 0006 لمهمة `prepareContractView`.
+- `core/` — Kotlin صِرف يُختبر على JVM: `FormValidator` (قواعد `form-conformance` نفسها، 57/57)، و`AuthManager` (الدخول، تدوير رمز التحديث مرة واحدة للطلبات المتزامنة، الإبطال).
+- `app/` — Compose: الدخول، الحساب، معاينة النموذج الديناميكي. الرموز في `KeystoreTokenStore` (AES-GCM في Android Keystore). النصوص في `res/values` (عربية افتراضية) و`res/values-en`؛ `MissingTranslation` خطأ في lint.
+- البناء محليًا: `cd apps/android && ./gradlew :core:test :app:assembleDebug :app:lintDebug` (يحتاج Android SDK 36 وJDK 17+). عنوان الخادم بـ `-PapiBaseUrl=https://…/v1` للإصدار؛ debug يشير إلى `http://10.0.2.2:3000/v1`.
+- CI: `.github/workflows/android.yml` يبني ويختبر ويشغّل الحكم المشترك على `core/build/form-conformance/android.json`.

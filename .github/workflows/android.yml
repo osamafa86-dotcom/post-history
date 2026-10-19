@@ -1,0 +1,60 @@
+name: android
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/android/**"
+      - "contracts/**"
+      - "tools/acceptance/form-conformance/**"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "apps/android/**"
+      - "contracts/**"
+      - "tools/acceptance/form-conformance/**"
+      - ".github/workflows/android.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: android (generate client, unit tests, lint, form conformance)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/android
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      # Validates the committed wrapper jar checksum and caches Gradle; the Android SDK comes with the runner image.
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      - name: Generate the API client from contracts/openapi.yaml and compile every module
+        run: ./gradlew --no-daemon :api:build :core:build :app:assembleDebug
+      - name: Unit tests (JVM modules and the app)
+        run: ./gradlew --no-daemon :core:test :app:testDebugUnitTest
+      - name: Lint (missing translations are errors)
+        run: ./gradlew --no-daemon :app:lintDebug
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Form conformance judged by the shared runner (same cases as web, iOS and the server)
+        working-directory: .
+        run: |
+          (cd tools/acceptance && npm ci --no-audit --no-fund)
+          node tools/acceptance/form-conformance/run.mjs --compare=apps/android/core/build/form-conformance/android.json
+      - name: Keep reports on failure
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: android-reports
+          path: |
+            apps/android/**/build/reports/
+            apps/android/**/build/test-results/
+          retention-days: 7

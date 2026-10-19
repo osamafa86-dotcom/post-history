@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- العربية هي اللغة الافتراضية؛ الإنجليزية في values-en. كل نص واجهة هنا، لا في الكود. -->
+<resources>
+    <string name="app_name">المكتبة المرئية</string>
+
+    <!-- الدخول -->
+    <string name="login_title">تسجيل الدخول</string>
+    <string name="login_email">البريد الإلكتروني</string>
+    <string name="login_password">كلمة المرور</string>
+    <string name="login_totp">رمز التحقق (6 أرقام)</string>
+    <string name="login_totp_help">من تطبيق المصادقة على هاتفك</string>
+    <string name="login_submit">دخول</string>
+    <string name="login_in_progress">جارٍ الدخول…</string>
+    <string name="login_session_revoked">أُنهيت جلستك على هذا الجهاز. سجّل الدخول من جديد.</string>
+
+    <!-- أخطاء الخادم برموزها الثابتة -->
+    <string name="err_unauthorized">البريد أو كلمة المرور غير صحيحة.</string>
+    <string name="err_totp_required">أدخل رمز التحقق من تطبيق المصادقة.</string>
+    <string name="err_rate_limited">محاولات كثيرة. انتظر قليلًا ثم حاول مرة أخرى.</string>
+    <string name="err_validation_failed">تحقق من البيانات المدخلة.</string>
+    <string name="err_offline">لا اتصال بالخادم. تحقق من الشبكة وحاول مرة أخرى.</string>
+    <string name="err_server">خلل في الخادم. حاول لاحقًا.</string>
+    <string name="err_not_found">غير موجود.</string>
+    <string name="err_unknown">حدث خطأ غير متوقع.</string>
+    <string name="err_request_id">رقم الطلب: %1$s</string>
+
+    <!-- الرئيسية -->
+    <string name="home_title">حسابي</string>
+    <string name="home_signed_in_as">مسجّل الدخول باسم %1$s</string>
+    <string name="home_roles">الأدوار: %1$s</string>
+    <string name="home_no_roles">لا أدوار</string>
+    <string name="home_loading">جارٍ التحميل…</string>
+    <string name="home_logout">تسجيل الخروج</string>
+    <string name="home_logout_all">إنهاء كل الجلسات على كل الأجهزة</string>
+    <string name="home_open_form">معاينة نموذج الرفع</string>
+    <string name="action_retry">إعادة المحاولة</string>
+    <string name="action_back">رجوع</string>
+
+    <!-- أسماء الأدوار -->
+    <string name="role_system_admin">مدير النظام</string>
+    <string name="role_editor_in_chief">رئيس التحرير</string>
+    <string name="role_supervisor">مشرف</string>
+    <string name="role_producer">إنتاج</string>
+    <string name="role_finance">مالية</string>
+    <string name="role_reporter">مراسل</string>
+    <string name="role_rights_officer">مسؤول الحقوق</string>
+
+    <!-- أنواع المواد -->
+    <string name="material_type_breaking">عاجل</string>
+    <string name="material_type_report">تقرير</string>
+    <string name="material_type_interview">مقابلة</string>
+    <string name="material_type_raw_footage">مادة خام</string>
+    <string name="material_type_aerial">تصوير جوي</string>
+    <string name="material_type_press_conference">مؤتمر صحفي</string>
+    <string name="material_type_eyewitness">شاهد عيان</string>
+    <string name="material_type_photos">صور</string>
+
+    <!-- النموذج الديناميكي -->
+    <string name="form_title">نموذج الرفع</string>
+    <string name="form_version">الإصدار %1$d</string>
+    <string name="form_material_type">نوع المادة</string>
+    <string name="form_validate">تحقق</string>
+    <string name="form_valid">كل الحقول صالحة.</string>
+    <string name="form_invalid">%1$d حقل يحتاج تصحيحًا.</string>
+    <string name="form_required_mark">*</string>
+    <string name="form_select_placeholder">اختر…</string>
+    <string name="form_bool_yes">نعم</string>
+    <string name="form_bool_no">لا</string>
+    <string name="form_datetime_hint">مثل 2026-10-19T14:30:00+03:00</string>
+    <string name="form_datetime_now">الآن</string>
+    <string name="form_staff_member_hint">معرّف عضو الطاقم</string>
+    <string name="form_attachment_pick">اختيار ملفات</string>
+    <string name="form_attachment_count">%1$d ملف مختار</string>
+    <string name="form_attachment_none">لم يُختر ملف</string>
+    <string name="form_location_unsupported">حقل الموقع غير مدعوم في هذا الإصدار.</string>
+
+    <!-- أخطاء الحقول برموز اختبار المطابقة -->
+    <string name="field_err_required">هذا الحقل مطلوب.</string>
+    <string name="field_err_type">القيمة ليست من النوع المطلوب.</string>
+    <string name="field_err_min_length">الحد الأدنى %1$d حرفًا.</string>
+    <string name="field_err_max_length">الحد الأقصى %1$d حرفًا.</string>
+    <string name="field_err_pattern">الصيغة غير مطابقة.</string>
+    <string name="field_err_min">الحد الأدنى %1$s.</string>
+    <string name="field_err_max">الحد الأقصى %1$s.</string>
+    <string name="field_err_option">اختر من القائمة.</string>
+    <string name="field_err_min_items">اختر %1$d على الأقل.</string>
+    <string name="field_err_max_items">اختر %1$d على الأكثر.</string>
+    <string name="field_err_not_before">لا يسبق %1$s.</string>
+    <string name="field_err_not_after">لا يتجاوز %1$s.</string>
+    <string name="field_err_accept">نوع الملف غير مقبول.</string>
+    <string name="field_err_max_size_bytes">حجم الملف يتجاوز %1$s.</string>
+</resources>
