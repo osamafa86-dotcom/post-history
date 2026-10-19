@@ -76,6 +76,11 @@ jobs:
     env:
       DATABASE_URL: postgres://posthistory:ci-only@localhost:5432/posthistory_test
       REDIS_URL: redis://localhost:6379
+      # S3 adapter integration test against the pinned MinIO image (ADR 0004); started in a step below
+      # because job services cannot pass MinIO's "server /data" command.
+      S3_TEST_ENDPOINT: http://localhost:9000
+      S3_TEST_ACCESS_KEY: ci-minio
+      S3_TEST_SECRET_KEY: ci-minio-secret
     defaults:
       run:
         working-directory: apps/api
@@ -87,6 +92,14 @@ jobs:
           cache: npm
           cache-dependency-path: apps/api/package-lock.json
       - run: npm ci
+      - name: Start MinIO (same image and digest as infra/compose)
+        run: |
+          image="$(sed -n 's/^ *image: \(pgsty\/minio:.*\)$/\1/p' ../../infra/compose/docker-compose.yml)"
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER="$S3_TEST_ACCESS_KEY" -e MINIO_ROOT_PASSWORD="$S3_TEST_SECRET_KEY" \
+            "$image" server /data
+          for i in $(seq 1 30); do curl -fsS http://localhost:9000/minio/health/ready && exit 0; sleep 1; done
+          docker logs minio; exit 1
       - name: Migrate up (existing migrations as-is)
         run: src/db/migrate.sh up
       - name: Drizzle schema matches migrations (ADR 0001)
@@ -122,13 +135,18 @@ jobs:
       - name: Validate docker compose file
         run: |
           cp infra/compose/.env.example infra/compose/.env
-          sed -i "s/^TUSD_HOOK_SECRET=.*/TUSD_HOOK_SECRET=$(openssl rand -hex 32)/" infra/compose/.env
+          sed -i -e "s/^TUSD_HOOK_SECRET=.*/TUSD_HOOK_SECRET=$(openssl rand -hex 32)/" \
+                 -e "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" \
+                 -e "s|^FIELD_ENCRYPTION_KEY=.*|FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)|" infra/compose/.env
           docker compose -f infra/compose/docker-compose.yml config -q
+          docker compose -f infra/compose/docker-compose.yml --profile api config -q
       # Fails on a tag or digest that does not exist in the registry (ADR 0004).
       - name: Pull images
-        run: docker compose -f infra/compose/docker-compose.yml pull -q
+        run: docker compose -f infra/compose/docker-compose.yml --profile api pull -q
       - name: Smoke test (tusd only via proxy, hook token kept out of logs and responses)
         run: infra/compose/smoke.sh
+      - name: Hook path end to end with the API (SEC-06)
+        run: infra/compose/e2e-hooks.sh
       - name: Tear down
         if: always()
-        run: docker compose -f infra/compose/docker-compose.yml down -v
+        run: docker compose -f infra/compose/docker-compose.yml --profile api down -v
