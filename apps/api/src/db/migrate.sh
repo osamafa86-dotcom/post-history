@@ -17,10 +17,10 @@ action="${1:-up}"
 shift || true
 case "$action" in
   up|down|redo)
-    exec npx -y node-pg-migrate@8 "$action" "$@" -m "$DIR" -t schema_migrations --check-order --verbose=false
+    exec npx -y node-pg-migrate@8.0.4 "$action" "$@" -m "$DIR" -t schema_migrations --check-order --verbose=false
     ;;
   create)
-    exec npx -y node-pg-migrate@8 create "$@" -m "$DIR" -j sql --migration-filename-format utc
+    exec npx -y node-pg-migrate@8.0.4 create "$@" -m "$DIR" -j sql --migration-filename-format utc
     ;;
   *)
     echo "unknown action: $action (up|down|redo|create)" >&2

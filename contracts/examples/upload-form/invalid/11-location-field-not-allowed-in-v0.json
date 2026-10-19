@@ -1,0 +1,14 @@
+{
+  "version": 3,
+  "fields": [
+    {
+      "key": "incident_location",
+      "type": "location",
+      "label": {
+        "ar": "موقع الحادثة",
+        "en": "Incident location"
+      },
+      "required": false
+    }
+  ]
+}

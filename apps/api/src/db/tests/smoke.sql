@@ -57,6 +57,9 @@ VALUES (1, '{}', '{"version": 1, "fields": [{"key": "notes", "type": "long_text"
 SELECT pg_temp.expect_error($q$ INSERT INTO upload_forms (version, schema) VALUES (2, '{"version": 3, "fields": []}') $q$, '23514');
 SELECT pg_temp.expect_error($q$ INSERT INTO upload_forms (version, schema) VALUES (2, '{"version": 2}') $q$, '23514');
 SELECT pg_temp.expect_error($q$ INSERT INTO upload_forms (version, material_types, schema) VALUES (2, '{podcast}', '{"version": 2, "fields": []}') $q$, '23514');
+-- بوابة v0: لا حقل حساس ولا حقل موقع
+SELECT pg_temp.expect_error($q$ INSERT INTO upload_forms (version, schema) VALUES (2, '{"version": 2, "fields": [{"key": "source_name", "type": "short_text", "label": {"ar": "م", "en": "s"}, "required": false, "sensitive": true}]}') $q$, '23514');
+SELECT pg_temp.expect_error($q$ INSERT INTO upload_forms (version, schema) VALUES (2, '{"version": 2, "fields": [{"key": "loc", "type": "location", "label": {"ar": "م", "en": "l"}, "required": false}]}') $q$, '23514');
 
 -- ---------- materials ----------
 INSERT INTO materials (id, reporter_id, office_id, title, material_types, governorate, city, priority,

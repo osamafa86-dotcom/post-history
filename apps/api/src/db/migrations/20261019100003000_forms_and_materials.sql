@@ -13,7 +13,10 @@ CREATE TABLE upload_forms (
   CONSTRAINT upload_forms_schema_is_object CHECK (jsonb_typeof(schema) = 'object'),
   CONSTRAINT upload_forms_schema_version_matches CHECK (schema ? 'version' AND (schema ->> 'version')::integer = version),
   CONSTRAINT upload_forms_schema_has_fields CHECK (schema ? 'fields' AND jsonb_typeof(schema -> 'fields') = 'array'),
-  CONSTRAINT upload_forms_material_types_known CHECK (material_types <@ allowed_material_types())
+  CONSTRAINT upload_forms_material_types_known CHECK (material_types <@ allowed_material_types()),
+  -- بوابة v0 (مراجعة الأمن على الطلب 4): لا حقول حساسة ولا حقول موقع حتى SEC-03/SEC-04؛ يُحذف بترحيل مع رفع البوابة
+  CONSTRAINT upload_forms_no_sensitive_fields_v0 CHECK (
+    NOT jsonb_path_exists(schema, '$.fields[*] ? (@.sensitive == true || @.type == "location")'))
 );
 
 CREATE TABLE materials (

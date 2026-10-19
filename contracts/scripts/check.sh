@@ -6,12 +6,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
-AJV=(npx -y -p ajv-cli@5 -p ajv-formats@2 ajv)
+AJV=(npx -y -p ajv-cli@5.0.0 -p ajv-formats@2.1.1 ajv)
 AJV_COMMON=(--spec=draft2020 -c ajv-formats --allow-union-types)
 failures=0
 
 echo "== redocly lint (warnings are errors)"
-lint_out="$(npx -y @redocly/cli@latest lint --config contracts/redocly.yaml contracts/openapi.yaml 2>&1)" || { printf '%s\n' "$lint_out"; exit 1; }
+lint_out="$(npx -y @redocly/cli@2.65.0 lint --config contracts/redocly.yaml contracts/openapi.yaml 2>&1)" || { printf '%s\n' "$lint_out"; exit 1; }
 printf '%s\n' "$lint_out" | tail -n 3
 if printf '%s\n' "$lint_out" | grep -qE 'You have [0-9]+ warning'; then
   printf '%s\n' "$lint_out"

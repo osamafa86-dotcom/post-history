@@ -119,6 +119,8 @@ CREATE TABLE idempotency_keys (
   CONSTRAINT idempotency_keys_completed_has_response CHECK (state <> 'completed' OR response_status IS NOT NULL)
 );
 CREATE INDEX idempotency_keys_expires_idx ON idempotency_keys (expires_at);
+COMMENT ON COLUMN idempotency_keys.response_body IS
+  'جسم الاستجابة المحفوظ للتكرار. لا يُحفظ لأي مسار يعيد رمزًا (مسارات /auth/* لا تقبل Idempotency-Key أصلًا).';
 
 -- Down Migration
 DROP TABLE idempotency_keys;

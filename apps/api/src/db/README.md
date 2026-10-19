@@ -36,7 +36,9 @@ DATABASE_URL=postgres://posthistory:<password>@localhost:5432/posthistory_test a
 9. **رقم الإيصال** `R-YYYYMM-NNNNNN` يسنده محفّز عند تحوّل ملف `original` إلى `verified` ولا يتغير بعدها.
 10. **سجل التدقيق** إلحاقي بسلسلة تجزئة: لا UPDATE ولا DELETE ولا TRUNCATE (محفّزات ترفع `42501`).
 11. **لا بيانات كاشفة في الحمولات:** قيد `outbox_events_payload_whitelisted` يرفض أي مفتاح خارج القائمة البيضاء لنوع الحدث (`outbox_payload_allowed_keys`، تطابق `allOf` في `contracts/schemas/outbox-event.json`؛ ADR SEC-03). الإحداثيات في `materials.gps_enc` مشفرة على مستوى الحقل بمفتاح التطبيق. حجب حقول `sensitive`/`location` من `dynamic_fields` في الاستجابات مسؤولية طبقة الاستعلام في الخادم بحسب `x-pii-roles` في العقد.
-12. **الأسرار** مُجزَّأة (`*_hash`، sha256 أو argon2id) أو مشفرة (`*_enc`) ولا تُخزَّن خامًا.
+12. **الأسرار** مُجزَّأة (`*_hash`، sha256 أو argon2id) أو مشفرة (`*_enc`) ولا تُخزَّن خامًا. `idempotency_keys.response_body` لا يحفظ أي استجابة تحمل رمزًا (مسارات `/auth/*` خارج آلية المفاتيح).
+13. **دوران منفصلان** (SEC-05، ينفّذه وكيل البنية): دور الترحيل يملك الجداول ويشغّل `migrate.sh`؛ دور التشغيل الذي يتصل به الخادم لا يملك جدولًا ولا صلاحية `TRIGGER`، وعلى `audit_log` صلاحية `INSERT` و`SELECT` فقط، وإلا كانت محفّزات الإلحاق شكلية (`ALTER TABLE … DISABLE TRIGGER` متاح للمالك). يُختبر في `smoke.sql` حين يوجد الدوران.
+14. **بوابة v0 للحقول الحساسة:** قيد `upload_forms_no_sensitive_fields_v0` يرفض أي نموذج فيه حقل `sensitive` أو `location` حتى SEC-04؛ يُحذف بترحيل مع رفع البوابة في العقد.
 
 ## ترحيل جديد
 

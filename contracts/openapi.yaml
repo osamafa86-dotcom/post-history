@@ -14,11 +14,13 @@ info:
 
     - **الحالات الثلاث مستقلة:** لكل مادة `technical_state` (ماذا وصل) و`editorial_state` (من وافق)
       و`rights_state` (ما يُسمح به). لا حقل حالة واحد، وكل انتقال يُسجَّل بمن نفّذه ومتى ولماذا.
-    - **مفتاح منع التكرار على كل كتابة:** كل طلب `POST`/`PUT`/`PATCH`/`DELETE` يحمل ترويسة `Idempotency-Key`
+    - **مفتاح منع التكرار على كل كتابة منشئة للموارد:** كل طلب `POST`/`PUT`/`PATCH`/`DELETE` خارج `/auth/*` يحمل ترويسة `Idempotency-Key`
       (نص عشوائي من 8 إلى 128 حرفًا، يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة).
       المفتاح مقيّد بالمستخدم ويُحفظ 24 ساعة. التكرار بالمفتاح نفسه والجسم نفسه يعيد الاستجابة الأولى
       نفسها (الحالة والجسم). المفتاح نفسه بجسم مختلف يُرفض بـ `422 idempotency_key_reused`، والطلب الذي
-      ما زال قيد التنفيذ بالمفتاح نفسه يُرفض بـ `409 idempotency_in_progress`.
+      ما زال قيد التنفيذ بالمفتاح نفسه يُرفض بـ `409 idempotency_in_progress`. مسارات الهوية (`/auth/*`)
+      مستثناة: استجاباتها تحمل رموزًا ولا يجوز حفظها في جدول المفاتيح، وتكرارها آمن بطبيعته (الدخول يصدر
+      جلسة جديدة، والتحديث يدوّر الرمز، والإبطال والخروج والاسترداد ذاتية التكرار).
     - **Outbox:** كل تغيير حالة يكتب حدثًا بمخطط `schemas/outbox-event.json` في جدول Outbox داخل معاملة
       الحفظ نفسها؛ مُرسل مستقل يقرأه ويوزّعه على القنوات. التحديثات اللحظية تصل عبر WebSocket على
       `/v1/ws` بالأحداث نفسها.
@@ -33,7 +35,8 @@ info:
       ورئيس التحرير ومدير النظام ومسؤول الحقوق كل المواد. ما خارج النطاق يعود `404`.
     - **قاعدة الحجب (ADR SEC-03):** قيم `dynamic_fields` التي حقلها في إصدار النموذج موسوم `sensitive`
       أو من نوع `location` تُحذف من كل استجابة (المفتاح غائب ويُذكر في `redacted_field_keys`) إلا
-      للأدوار في `x-pii-roles` أدناه، ولا تدخل أي إشعار أو حدث أو تصدير أو قناة خارجية.
+      لمن يحمل الصلاحية المقابلة (`sensitive_location:read` أو `protected_source:read`؛ تُعرَّف في تذكرة 2)،
+      ولا تدخل أي إشعار أو حدث أو تصدير أو قناة خارجية. في v0 يرفض `POST /forms` هذه الحقول أصلًا.
       الإحداثيات `gps` لا تعود لأحد من هذه الواجهة.
     - **خطّافات tusd داخلية (ADR SEC-06):** تصل إلى `/internal/tusd-hooks/{hook_token}` خارج `/v1`،
       معزولة شبكيًا وبرمز من البيئة؛ العام لا يرى هذه النقطة.
@@ -48,9 +51,10 @@ servers:
   - url: https://api.example.invalid/v1
     description: يُستبدل بنطاق الشبكة عند النشر
 
-# الأدوار المخوّلة برؤية الحقول الحساسة وحقول الموقع في dynamic_fields (مشرف نطاق المادة فقط).
-# المكان الوحيد الذي تُعدَّل فيه القائمة؛ القرار البشري النهائي معلّق (ADR SEC-03).
-x-pii-roles: [system_admin, editor_in_chief, supervisor]
+# الأدوار المخوّلة برؤية الحقول الحساسة وحقول الموقع في dynamic_fields — مؤقت: قرار المالك (2026-10-19)
+# أن الرؤية صلاحيتان مستقلتان تُمنحان لمستخدمين بعينهم (sensitive_location:read، protected_source:read)
+# بلا منح افتراضي لأي دور؛ تذكرة 2 (SEC-03) تستبدل هذه القائمة بالصلاحيات. في v0 لا توجد هذه الحقول أصلًا.
+x-pii-roles: []
 
 tags:
   - name: auth
@@ -73,13 +77,12 @@ paths:
       summary: دخول بكلمة المرور ثم رمز TOTP
       description: >-
         المصادقة الثنائية إلزامية لكل الطاقم بعد التفعيل؛ غياب `totp_code` لحساب مفعَّل يعيد
-        `401 totp_required`. البريد غير الموجود وكلمة المرور الخاطئة يعيدان `401 unauthorized` نفسه
-        بالرسالة نفسها. الجلسة تحمل رمز وصول قصير العمر ورمز تحديث.
+        `401 totp_required` (لا يُعاد إلا بعد التحقق من كلمة المرور وضمن حد المعدل). البريد غير الموجود
+        وكلمة المرور الخاطئة يعيدان `401 unauthorized` نفسه بالرسالة نفسها. الجلسة تحمل رمز وصول قصير العمر
+        ورمز تحديث.
       operationId: login
       x-roles: []
       security: []
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -103,8 +106,6 @@ paths:
       operationId: refreshSession
       x-roles: []
       security: []
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -129,8 +130,6 @@ paths:
       summary: إنهاء الجلسة الحالية أو كل جلسات المستخدم (عند فقد الهاتف)
       operationId: logout
       x-roles: [authenticated]
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: false
         content:
@@ -141,7 +140,7 @@ paths:
                 all_sessions:
                   type: boolean
                   default: false
-                  description: إبطال كل جلسات المستخدم ورموز تحديثه على كل الأجهزة
+                  description: إبطال كل جلسات المستخدم ورموز تحديثه ورموز الرفع المفتوحة على كل الأجهزة
       responses:
         "204": { description: أُنهيت }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -197,8 +196,6 @@ paths:
         يُسجَّل في سجل التدقيق.
       operationId: revokeSession
       x-roles: [authenticated, supervisor, system_admin]
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "204": { description: أُبطلت }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -212,13 +209,12 @@ paths:
       description: >-
         يتحقق الخادم من الرمز الاحتياطي ويفتح طلب استعادة بانتظار اعتماد مشرف نطاق المراسل، الذي يصله
         معرّف الطلب عبر إشعار داخلي لا عبر هذه الاستجابة. الاستجابة `202` نفسها سواء صحّ الرمز أم لا
-        (لا كشف لصحة الرموز الاحتياطية)، مع حد معدل صارم وإقفال بعد محاولات متكررة. لا يصدر رمز وصول
-        قبل الاعتماد. الطلب الصحيح يبطل كل الجلسات القائمة للحساب فورًا.
+        (لا كشف لصحة الرموز الاحتياطية)، مع حد معدل لكل بريد ولكل عنوان IP وإقفال بعد محاولات متكررة.
+        لا يصدر رمز وصول قبل الاعتماد، ولا تُبطل الجلسات القائمة إلا عند اعتماد المشرف (رمز مسرّب لا يكفي
+        لإخراج المراسل من أجهزته)؛ الطلب الصحيح يُسجَّل في التدقيق ويصل المراسلَ تنبيه على أجهزته القائمة.
       operationId: startRecovery
       x-roles: []
       security: []
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -228,7 +224,7 @@ paths:
               required: [email, backup_code]
               properties:
                 email: { type: string, format: email }
-                backup_code: { type: string, minLength: 8, writeOnly: true }
+                backup_code: { type: string, minLength: 10, pattern: "^[A-Z2-7]{10,}$", writeOnly: true, description: base32 بطول 10 فأكثر }
       responses:
         "202":
           description: قُبل الطلب (الاستجابة نفسها لأي رمز؛ لا تدل على صحته)
@@ -249,12 +245,11 @@ paths:
       tags: [auth]
       summary: اعتماد المشرف لطلب استعادة حساب في نطاقه
       description: >-
-        يعتمد المشرف الطلب بعد التحقق خارج النظام من هوية المراسل. الاعتماد يصدر رابط إعادة تهيئة
-        كلمة المرور والمصادقة الثنائية بصلاحية قصيرة، ويُسجَّل في سجل التدقيق.
+        يعتمد المشرف الطلب بعد التحقق خارج النظام من هوية المراسل. الاعتماد يبطل كل جلسات الحساب ورموز
+        رفعه المفتوحة، ويصدر رابط إعادة تهيئة كلمة المرور والمصادقة الثنائية بصلاحية قصيرة، ويُسجَّل في
+        سجل التدقيق.
       operationId: approveRecovery
       x-roles: [supervisor, system_admin]
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -373,7 +368,6 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Material" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
     patch:
       tags: [materials]
@@ -423,7 +417,6 @@ paths:
                     type: array
                     items: { $ref: "#/components/schemas/TransitionRecord" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
     post:
       tags: [materials]
@@ -583,7 +576,6 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/UploadSession" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /uploads/{id}/complete:
@@ -598,6 +590,7 @@ paths:
         الخادم لا يثق بأي شيء من المستدعي: يشتق مفتاح التخزين من جلسة الرفع، ويقرأ الحجم من التخزين،
         ويحسب SHA-256 دائمًا بعد التجميع. ما يرسله العميل (`reported_sha256`) معلوماتي يُقارن فقط ولا يُحفظ؛
         الاختلاف بينه وبين بصمة الخادم ينقل الجلسة إلى `failed` بسبب `checksum_mismatch`.
+        لا يُقبل مفتاح تخزين من العميل بأي حال. المستدعي يجب أن يكون منشئ الجلسة (`created_by`) وإلا `404`.
         الاستدعاء المكرر لجلسة مكتملة يعيد `202` نفسها. عند تحقق الأصل يصدر رقم إيصال ويصل المراسلَ
         إشعار «تم الاستلام بنجاح».
       operationId: completeUpload
@@ -686,6 +679,9 @@ paths:
         مساويًا للإصدار الحالي + 1 وإلا `409 form_version_conflict` (يمنع نشرين متزامنين). حذف حقل
         يعني أنه لا يظهر في الإصدار الجديد؛ بيانات المواد القديمة تبقى مقروءة بإصدارها. يتحقق الخادم
         من الجسم بمخطط `schemas/upload-form.json` ومن أن كل `condition.field` يشير إلى حقل موجود.
+        **بوابة v0:** أي حقل بـ `sensitive: true` أو من نوع `location` يُرفض بـ
+        `422 sensitive_fields_not_supported_v0` (وقيد مقابل في قاعدة البيانات) إلى أن يُنفَّذ التشفير على
+        مستوى الحقل والحجب بالصلاحيات (SEC-03/SEC-04).
       operationId: publishForm
       x-roles: [system_admin]
       parameters:
@@ -886,7 +882,8 @@ components:
       required: true
       description: >-
         مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة.
-        انظر «القواعد الحاكمة».
+        انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول
+        المفاتيح أبدًا.
       schema: { type: string, minLength: 8, maxLength: 128 }
     MaterialId:
       name: id
@@ -929,7 +926,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Forbidden:
-      description: خارج نطاق الدور (المادة أو المراسل ليسا في نطاق المستخدم)
+      description: إجراء لا يملكه الدور على مورد داخل نطاقه (مثل مراسل يحاول اعتماد انتقال)؛ ما خارج النطاق يعود 404 لا 403
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -983,6 +980,7 @@ components:
             - upload_state_conflict
             - checksum_mismatch
             - form_version_conflict
+            - sensitive_fields_not_supported_v0
             - recovery_state_conflict
             - internal_error
         message: { type: string }
@@ -1013,8 +1011,12 @@ components:
       type: object
       required: [access_token, refresh_token, expires_at, user_id, roles]
       properties:
-        access_token: { type: string, description: JWT قصير العمر }
-        refresh_token: { type: string, description: يُدوَّر عند كل تحديث }
+        access_token:
+          type: string
+          description: >-
+            JWT بعمر لا يتجاوز 15 دقيقة يحمل معرّف الجلسة؛ الإبطال يُفحص عند كل طلب بقائمة إبطال لا بانتظار
+            الانتهاء (SEC-02)
+        refresh_token: { type: string, description: يُدوَّر عند كل تحديث؛ يُحفظ مُجزَّأً فقط }
         expires_at: { type: string, format: date-time, description: انتهاء رمز الوصول }
         user_id: { type: string, format: uuid }
         roles:
@@ -1186,7 +1188,9 @@ components:
         form_version: { type: integer, minimum: 1, description: إصدار النموذج الذي رُسمت به الحقول الديناميكية }
         dynamic_fields:
           type: object
-          description: قيم الحقول الديناميكية مفتاحها `key` الحقل؛ يتحقق الخادم بمخطط النموذج ذي الإصدار
+          description: >-
+            قيم الحقول الديناميكية مفتاحها `key` الحقل؛ يتحقق الخادم بمخطط النموذج ذي الإصدار. في v0 لا
+            يحتوي أي نموذج حقلًا حساسًا أو حقل موقع (بوابة `POST /forms`)، فلا بيانات كاشفة هنا حتى SEC-04.
           additionalProperties: true
         contributors:
           type: array
@@ -1285,7 +1289,7 @@ components:
             receipt_number: null
             created_at: "2026-10-19T09:41:12Z"
             verified_at: null
-        redacted_field_keys: [incident_location]
+        redacted_field_keys: []
         created_at: "2026-10-19T09:40:03Z"
         updated_at: "2026-10-19T09:41:12Z"
 
