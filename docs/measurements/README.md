@@ -10,5 +10,5 @@
 التحقق محليًا:
 
 ```bash
-npx -y -p ajv-cli@5 -p ajv-formats@2 ajv validate --spec=draft2020 -c ajv-formats -s contracts/schemas/measurement.json -d "docs/measurements/**/*.json"
+npx -y -p ajv-cli@5.0.0 -p ajv-formats@2.1.1 ajv validate --spec=draft2020 -c ajv-formats -s contracts/schemas/measurement.json -d "docs/measurements/**/*.json"
 ```

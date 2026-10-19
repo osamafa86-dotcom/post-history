@@ -6,6 +6,11 @@
 *.p12
 *.keystore
 *.jks
+*.mobileprovision
+google-services.json
+GoogleService-Info.plist
+*.tfvars
+*.tfvars.json
 
 # node
 node_modules/

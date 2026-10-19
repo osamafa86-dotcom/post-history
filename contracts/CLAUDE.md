@@ -17,7 +17,7 @@
 3. الإصدار في المسار (`/v1`). كسر التوافق = `/v2`، لا تعديل صامت.
 4. الحقول الديناميكية تُحفظ بـ `form_version` ولا تُفسَّر دون نسخة النموذج.
 5. لا بيانات كاشفة في أي استجابة عامة: الإحداثيات الدقيقة لا تخرج من الخادم إلا لأدوار محددة.
-6. الفحص قبل الدفع: `npx -y @redocly/cli@latest lint contracts/openapi.yaml` و`npx -y -p ajv-cli@5 -p ajv-formats@2 ajv compile --spec=draft2020 -c ajv-formats -s <schema>` لكل مخطط (الإضافة `ajv-formats` لازمة لصيغ `date-time` و`uuid`).
+6. الفحص قبل الدفع: `npx -y @redocly/cli@2.65.0 lint contracts/openapi.yaml` و`npx -y -p ajv-cli@5.0.0 -p ajv-formats@2.1.1 ajv compile --spec=draft2020 -c ajv-formats -s <schema>` لكل مخطط (الإضافة `ajv-formats` لازمة لصيغ `date-time` و`uuid`).
 
 ## ترتيب العمل في التأسيس
 

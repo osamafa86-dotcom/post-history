@@ -48,5 +48,5 @@
 
 ```bash
 docker compose -f infra/compose/docker-compose.yml up -d   # Postgres, Redis, MinIO, tusd
-npx -y @redocly/cli@latest lint contracts/openapi.yaml      # فحص العقد
+npx -y @redocly/cli@2.65.0 lint contracts/openapi.yaml      # فحص العقد
 ```
