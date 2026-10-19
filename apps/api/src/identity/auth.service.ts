@@ -17,8 +17,9 @@ type LoginRequest = components['schemas']['LoginRequest'];
 
 @Injectable()
 export class AuthService {
+  // المحاولات الفاشلة لكل (بريد، عنوان)، ولكل عنوان بحد أعلى ضد رش كلمات المرور على حسابات كثيرة
   private readonly byIp: FixedWindowRateLimiter;
-  private readonly byEmail: FixedWindowRateLimiter;
+  private readonly byEmailIp: FixedWindowRateLimiter;
   private readonly fieldKey: Buffer;
   // يُتحقق منه عند غياب المستخدم حتى لا يكشف زمن الاستجابة وجود البريد
   private readonly dummyHash: Promise<string>;
@@ -30,14 +31,16 @@ export class AuthService {
   ) {
     const windowMs = config.LOGIN_RATE_LIMIT_WINDOW_SECONDS * 1000;
     this.byIp = new FixedWindowRateLimiter(config.LOGIN_RATE_LIMIT_IP_MAX, windowMs);
-    this.byEmail = new FixedWindowRateLimiter(config.LOGIN_RATE_LIMIT_MAX, windowMs);
+    this.byEmailIp = new FixedWindowRateLimiter(config.LOGIN_RATE_LIMIT_MAX, windowMs);
     this.fieldKey = Buffer.from(config.FIELD_ENCRYPTION_KEY, 'base64');
     this.dummyHash = argon2Hash(randomToken());
   }
 
   async login(body: LoginRequest, ip: string): Promise<Session> {
     const email = body.email.trim().toLowerCase();
-    const wait = Math.max(this.byIp.hit(`ip:${ip}`), this.byEmail.hit(`email:${email}`));
+    const ipKey = ip;
+    const pairKey = `${email}|${ip}`;
+    const wait = Math.max(this.byIp.retryAfter(ipKey), this.byEmailIp.retryAfter(pairKey));
     if (wait > 0) {
       throw new ApiError(429, 'rate_limited', 'Too many attempts.', undefined, { 'Retry-After': String(wait) });
     }
@@ -53,24 +56,32 @@ export class AuthService {
       .from(users)
       .where(sql`lower(${users.email}) = ${email}`);
 
-    const passwordOk = await argon2Verify(user?.passwordHash ?? (await this.dummyHash), body.password).catch(() => false);
-    if (!user || !passwordOk || user.status !== 'active') throw ApiError.unauthorized();
+    const fail = (): never => {
+      this.byIp.record(ipKey);
+      this.byEmailIp.record(pairKey);
+      throw ApiError.unauthorized();
+    };
 
-    if (user.totpEnabled) {
+    const passwordOk = await argon2Verify(user?.passwordHash ?? (await this.dummyHash), body.password).catch(() => false);
+    if (!user || !passwordOk || user.status !== 'active') fail();
+
+    if (user!.totpEnabled) {
+      // غياب الرمز بعد كلمة مرور صحيحة ليس تخمينًا فلا يُعد فشلًا
       if (!body.totp_code) throw new ApiError(401, 'totp_required', 'TOTP code required.');
-      const secret = decryptField(this.fieldKey, user.totpSecretEnc!);
-      if (!verifyTotp(secret, body.totp_code)) throw ApiError.unauthorized();
+      const secret = decryptField(this.fieldKey, user!.totpSecretEnc!);
+      if (!verifyTotp(secret, body.totp_code)) fail();
     }
+    this.byEmailIp.reset(pairKey);
 
     return this.db.transaction(async (tx) => {
-      const issued = await this.sessions.issue(tx, user.id);
-      await tx.update(users).set({ lastLoginAt: sql`now()` }).where(eq(users.id, user.id));
+      const issued = await this.sessions.issue(tx, user!.id);
+      await tx.update(users).set({ lastLoginAt: sql`now()` }).where(eq(users.id, user!.id));
       return {
         access_token: issued.accessToken,
         refresh_token: issued.refreshToken,
         expires_at: issued.accessExpiresAt.toISOString(),
-        user_id: user.id,
-        roles: await this.roles(user.id),
+        user_id: user!.id,
+        roles: await this.roles(user!.id),
       };
     });
   }

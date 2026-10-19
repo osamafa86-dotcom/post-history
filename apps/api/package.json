@@ -13,7 +13,8 @@
     "db:pull": "scripts/db-pull.sh",
     "db:check-schema": "scripts/check-drizzle-schema.sh",
     "test": "npm run generate:api-types && jest --selectProjects unit",
-    "test:integration": "npm run generate:api-types && jest --selectProjects integration --runInBand"
+    "test:integration": "npm run generate:api-types && jest --selectProjects integration --runInBand",
+    "test:coverage": "npm run generate:api-types && jest --runInBand --coverage"
   },
   "dependencies": {
     "@nestjs/common": "11.2.7",

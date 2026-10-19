@@ -16,15 +16,17 @@ export interface Harness {
   close(): Promise<void>;
 }
 
-export async function createHarness(extra: { controllers?: unknown[]; logger?: Logger } = {}): Promise<Harness> {
-  const config = loadConfig();
+export async function createHarness(
+  extra: { controllers?: unknown[]; logger?: Logger; env?: Record<string, string> } = {},
+): Promise<Harness> {
+  const config = loadConfig({ ...process.env, ...extra.env });
   const logger = extra.logger ?? createLogger('silent');
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule.forRoot(config, logger)],
     controllers: (extra.controllers ?? []) as never[],
   }).compile();
   const app = moduleRef.createNestApplication({ logger: false });
-  configureApp(app, logger);
+  configureApp(app, config, logger);
   await app.init();
   const pool = new Pool({ connectionString: config.DATABASE_URL, max: 4 });
   return {

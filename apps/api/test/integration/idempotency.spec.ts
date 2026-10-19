@@ -29,9 +29,11 @@ class TestWritesController {
 describe('Idempotency-Key', () => {
   let h: Harness;
   let token: string;
+  let userId: string;
   beforeAll(async () => {
     h = await createHarness({ controllers: [TestWritesController] });
     const user = await seedUser(h);
+    userId = user.id;
     const res = await request(h.app.getHttpServer())
       .post('/v1/auth/login')
       .send({ email: user.email, password: user.password });
@@ -78,6 +80,32 @@ describe('Idempotency-Key', () => {
     expect(second.body.code).toBe('idempotency_in_progress');
     release();
     expect((await firstDone).status).toBe(201);
+  });
+
+  it('a request stuck in progress past the 5-minute lease is taken over by a retry with the same body', async () => {
+    const key = randomUUID();
+    await post(key, { value: 'a' }).expect(201);
+    const stuck = async (age: string) =>
+      h.pool.query(
+        `UPDATE idempotency_keys SET state = 'in_progress', response_status = NULL, response_body = NULL,
+           created_at = now() - $3::interval WHERE user_id = $1 AND key = $2`,
+        [userId, key, age],
+      );
+    await stuck('4 minutes');
+    expect((await post(key, { value: 'a' }).expect(409)).body.code).toBe('idempotency_in_progress');
+    await stuck('6 minutes');
+    // جسم مختلف لا يتولى الحجز المتروك
+    expect((await post(key, { value: 'b' }).expect(422)).body.code).toBe('idempotency_key_reused');
+    await post(key, { value: 'a' }).expect(201);
+    expect(executions).toBe(2);
+  });
+
+  it('an expired key (24h) is reusable, even with a different body', async () => {
+    const key = randomUUID();
+    await post(key, { value: 'a' }).expect(201);
+    await h.pool.query(`UPDATE idempotency_keys SET expires_at = now() - interval '1 second' WHERE key = $1`, [key]);
+    await post(key, { value: 'b' }).expect(201);
+    expect(executions).toBe(2);
   });
 
   it('stores 4xx outcomes and replays them; 5xx releases the key for a retry', async () => {

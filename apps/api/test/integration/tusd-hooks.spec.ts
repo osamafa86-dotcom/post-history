@@ -130,6 +130,20 @@ describe('tusd hooks (/internal/tusd-hooks/{hook_token}, SEC-06)', () => {
     expect((await session(s.id)).state).toBe('created');
   });
 
+  it('/internal/* answers 404 to socket addresses outside INTERNAL_ALLOWED_CIDRS, even with X-Forwarded-For', async () => {
+    const outside = await createHarness({ env: { INTERNAL_ALLOWED_CIDRS: '10.0.0.0/8', TRUSTED_PROXY_CIDRS: '127.0.0.1/32' } });
+    try {
+      const res = await request(outside.app.getHttpServer())
+        .post(`/internal/tusd-hooks/${outside.config.TUSD_HOOK_SECRET}`)
+        .set('X-Forwarded-For', '10.1.2.3')
+        .send({})
+        .expect(404);
+      expect(res.body.code).toBe('not_found');
+    } finally {
+      await outside.close();
+    }
+  });
+
   it('is not reachable under /v1', async () => {
     await request(h.app.getHttpServer()).post(`/v1/internal/tusd-hooks/${h.config.TUSD_HOOK_SECRET}`).send({}).expect(404);
   });
