@@ -98,7 +98,7 @@ services:
     networks:
       uploads: {}
       hooks:
-        ipv4_address: ${TUSD_HOOKS_IP}
+        ipv4_address: 172.30.250.2
 
   tusd-proxy:
     image: nginx:1.28.3-alpine
@@ -123,4 +123,4 @@ networks:
     internal: true
     ipam:
       config:
-        - subnet: ${TUSD_HOOKS_SUBNET}
+        - subnet: 172.30.250.0/29  # fixed: INTERNAL_ALLOWED_CIDRS=172.30.250.2/32 depends on it

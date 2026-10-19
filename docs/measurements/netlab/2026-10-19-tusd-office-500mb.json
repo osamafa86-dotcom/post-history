@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "tool": "netlab",
+  "role": "infra",
+  "test_name": "field-network-upload",
+  "decision_ref": 3,
+  "started_at": "2026-10-19T17:39:44Z",
+  "ended_at": "2026-10-19T17:43:31Z",
+  "result": "partial",
+  "device": {
+    "platform": "server",
+    "model": "netlab python client (stdlib)",
+    "os_version": "Linux 6.18.44-fc-v139"
+  },
+  "network": {
+    "profile": "office",
+    "uplink_kbps": 20000,
+    "loss_pct": 0,
+    "longest_connected_window_s": 227.4
+  },
+  "upload_path": "tusd",
+  "file": {
+    "size_bytes": 524288000,
+    "codec": "synthetic-random"
+  },
+  "metrics": {
+    "upload_complete": true,
+    "checksum_match": true,
+    "bytes_uploaded": 524288000,
+    "elapsed_s": 227.4,
+    "goodput_kbps": 18447.9,
+    "resumes": 0,
+    "connection_failures": 0,
+    "longest_connected_window_s": 227.4,
+    "client_chunk_bytes": 4194304,
+    "client_timeout_s": 60,
+    "parts_ok": 125,
+    "parts_failed": 0,
+    "part_time_s_p50": 1.82,
+    "part_time_s_p90": 1.89,
+    "part_time_s_max": 1.94,
+    "part_times_s": "1.7,1.8,1.8,1.9,1.7,1.8,1.8,1.9,1.7,1.8,1.8,1.9,1.7,1.8,1.8,1.9,1.8,1.8,1.8,1.9,1.8,1.8,1.8,1.9,1.7,1.8,1.8,1.9,1.8,1.8,1.8,1.9,1.8,1.8,1.8,1.9,1.7,1.8,1.8,1.9,1.8,1.8,1.8,1.9,1.8,1.8,1.8,1.9,1.8,1.8,1.9,1.9,1.7,1.8,1.8,1.9,1.7,1.8,1.8,1.9,1.8,1.8,1.8,1.9,1.7,1.8,1.8,1.9,1.8,1.8,1.9,1.9,1.7,1.8,1.8,1.9,1.8,1.8,1.9,1.9,1.7,1.8,1.8,1.9,1.7,1.8,1.9,1.9,1.8,1.8,1.8,1.9,1.8,1.8,1.8,1.9,1.7,1.8,1.9,1.9,1.7,1.8,1.8,1.9,1.7,1.8,1.9,1.9,1.7,1.8,1.8,1.9,1.8,1.8,1.9,1.9,1.7,1.8,1.9,1.9,1.7,1.8,1.8,1.9,1.8",
+    "events": "none"
+  },
+  "notes": "toxiproxy 2.12.0 -> nginx tusd-proxy -> tusd v2.10.1 -> MinIO (local compose). Client: tools/netlab/netlab.py, time box 7200s, event scale 1.0. partial: file below the 1024 MiB criterion size. Connected window = client-observed time from first successful request to next failure."
+}
