@@ -28,11 +28,7 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 
 ## CI
 
-<<<<<<< HEAD
-- `contracts`: redocly lint + ajv compile. `secrets`: gitleaks. `compose`: config + pull + `infra/compose/smoke.sh`.
+- `contracts`: redocly lint + ajv compile. `secrets`: gitleaks. `compose`: config + pull + `infra/compose/smoke.sh` + `infra/compose/e2e-hooks.sh` (مسار الخطّاف مع الخادم). `api`: يشغّل MinIO المثبّت لاختبار محوّل S3، و`npm audit --audit-level=high` (وكذلك `acceptance`).
 - `netlab` (`.github/workflows/netlab.yml`): فحص قصير لـ field-weak بوضع netem على كل PR يمس netlab أو compose، وقياس كامل يدويًا.
-=======
-- `contracts`: redocly lint + ajv compile. `secrets`: gitleaks. `compose`: config + pull + `infra/compose/smoke.sh` + `infra/compose/e2e-hooks.sh` (مسار الخطّاف مع الخادم). `api`: يشغّل MinIO المثبّت لاختبار محوّل S3.
->>>>>>> origin/main
-- Dependabot (`.github/dependabot.yml`): `github-actions` وnpm أسبوعيًا.
+- Dependabot (`.github/dependabot.yml`): طلب أسبوعي لـ minor+patch لكل مجلد، والإصدارات الرئيسية مُتجاهلة حتى ما بعد التجربة الميدانية. لذلك يحرس `npm audit` الثغرات العالية، وتُراجَع تنبيهات Dependabot أسبوعيًا ويُبلَّغ المنسّق بما يستدعي ترقية رئيسية.
 - كل حزمة تضيف وظيفتها الخاصة حين يوجد كود.

@@ -22,6 +22,10 @@ jobs:
       - name: Install
         working-directory: tools/acceptance
         run: npm ci
+      # Majors are held back in Dependabot until after the field trial: gate high-severity advisories here.
+      - name: Audit runtime dependencies (high and above)
+        working-directory: tools/acceptance
+        run: npm audit --omit=dev --audit-level=high
       - name: Unit tests (scripts against mock servers, detectors, conformance, field cards)
         working-directory: tools/acceptance
         run: npm test
