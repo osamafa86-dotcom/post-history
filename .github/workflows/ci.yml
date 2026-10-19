@@ -47,6 +47,49 @@ jobs:
           DATABASE_URL: postgres://posthistory:ci-only@localhost:5432/posthistory_test
         run: apps/api/src/db/scripts/check.sh
 
+  api:
+    name: api (typecheck, unit, integration on Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: posthistory_test
+          POSTGRES_USER: posthistory
+          POSTGRES_PASSWORD: ci-only
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U posthistory -d posthistory_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://posthistory:ci-only@localhost:5432/posthistory_test
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+      - run: npm ci
+      - name: Migrate up (existing migrations as-is)
+        run: src/db/migrate.sh up
+      - name: Drizzle schema matches migrations (ADR 0001)
+        run: scripts/check-drizzle-schema.sh
+      - name: Typecheck (types generated from contracts/openapi.yaml)
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Integration tests
+        run: npm run test:integration
+      - name: Build
+        run: npm run build
+
   secrets:
     name: secret scan
     runs-on: ubuntu-latest
