@@ -104,6 +104,8 @@ const schema = z.object({
   UPLOAD_RECONCILE_STALE_SECONDS: z.coerce.number().int().min(30).default(300),
   UPLOAD_RECONCILE_BATCH: z.coerce.number().int().min(1).max(500).default(50),
   S3_BUCKET_UPLOADS: z.string().min(1),
+  // حاوية المشتقات (derived/<material_id>/<file_id>/…) التي يكتب فيها عامل الوسائط؛ غير حاوية الرفع (ADR 0006)
+  S3_BUCKET_MEDIA: z.string().min(1).default('media'),
   // التخزين الذي يقرأ منه التحقق داخل الخادم (MinIO محليًا، R2 في الإنتاج)
   S3_ENDPOINT: z.string().optional(),
   S3_REGION: z.string().default('auto'),
