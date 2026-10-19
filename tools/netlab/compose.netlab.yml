@@ -1,6 +1,6 @@
 # طبقة netlab فوق compose الأساسي:
 #   docker compose -f infra/compose/docker-compose.yml -f tools/netlab/compose.netlab.yml up -d --wait
-# toxiproxy أمام tusd-proxy (المسار الحقيقي للعميل)، وبديل خطّاف باسم api على شبكة hooks الداخلية.
+# toxiproxy أمام tusd-proxy (المسار الحقيقي للعميل)، وبديل خطّاف (hook-stub، باسم api على شبكة hooks الداخلية).
 services:
   toxiproxy:
     image: ghcr.io/shopify/toxiproxy:2.12.0
@@ -9,11 +9,14 @@ services:
       - "127.0.0.1:8474:8474"
       - "127.0.0.1:18081-18083:18081-18083"
 
-  api:
+  # Named hook-stub (not api) so it never merges with the real api service; reachable as "api" on hooks.
+  hook-stub:
     image: python:3.13-alpine
     command: ["python", "-u", "/netlab/hook_stub.py"]
     environment:
       TUSD_HOOK_SECRET: "${TUSD_HOOK_SECRET:?set in .env (openssl rand -hex 32)}"
     volumes:
       - ../../tools/netlab/hook_stub.py:/netlab/hook_stub.py:ro
-    networks: [hooks]
+    networks:
+      hooks:
+        aliases: [api]
