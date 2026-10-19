@@ -32,7 +32,7 @@ npm run db:pull              # بعد كل ترحيل مدمج: يعيد است�
 
 المتغيرات في `.env.example`. الهيكل: `identity/` (الجلسات، SEC-02)، `idempotency/`، `outbox/` (`writeOutboxEvent(tx, …)`
 يقبل معاملة فقط + المُرسل)، `uploads/` (خطّافات tusd، SEC-06)، `common/contract.ts` (التحقق من الأجسام بمخططات العقد نفسها).
-القرارات في ADR 0004.
+القرارات في ADR 0005.
 
 ## الاختبار
 
