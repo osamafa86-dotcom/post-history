@@ -297,6 +297,37 @@ test("report shows the netlab stage (a) numbers: loss mode, efficiency against M
   assert.match(md, /\| field-network-upload \| pending \| ◐ partial/);
 });
 
+// the media pipeline run measures cut-back accuracy from frame timestamps and plants revealing tags it must never see again
+import { cutBack, hostilePayloads, LEAK_VALUES } from "../lib/media-clips.mjs";
+import { run as mediaE2e } from "../scripts/media-e2e.mjs";
+
+test("cutBack: identical timestamps agree, a shifted proxy is caught, a missing frame stream is infinite", () => {
+  const frames = Array.from({ length: 300 }, (_, i) => 5 + i / 30 + (i > 150 ? 0.7 : 0)); // a gap in the middle, start at 5 s
+  const same = cutBack(frames, frames);
+  assert.equal(same.maxMs, 0);
+  assert.equal(same.points.length, 10);
+  const shifted = cutBack(frames, frames.map((t) => t + 0.1));
+  assert.ok(shifted.maxMs > 90, `shift of 100 ms reads as ${shifted.maxMs}`);
+  assert.equal(cutBack(frames, []).maxMs, Infinity);
+  assert.deepEqual(cutBack(frames, frames, { seed: 7 }).points, cutBack(frames, frames, { seed: 7 }).points);
+});
+
+test("the planted revealing tags are seen by the scanner wherever they appear, and the hostile payloads are what the rejection checks expect", () => {
+  assert.equal(LEAK_VALUES.length, 3);
+  for (const v of LEAK_VALUES) assert.ok(scan([`log line with ${v}`], { keys: false, canaries: LEAK_VALUES }).length > 0, "canary seen");
+  assert.equal(scan(["worker started, event done outcome=verified+proxy"], { keys: false, canaries: LEAK_VALUES }).length, 0);
+  const bad = hostilePayloads({ calloutUrl: "http://203.0.113.1:9/canary" });
+  assert.deepEqual(bad.map((b) => b.label), ["hls-local-file", "concat-local-file", "hls-callout"]);
+  assert.ok(bad[0].bytes.toString().includes("file:///"));
+  assert.ok(bad[1].bytes.toString().startsWith("ffconcat"));
+  assert.ok(bad[2].bytes.toString().includes("http://203.0.113.1:9/canary"));
+});
+
+test("media-e2e without its environment measures nothing (exit 2, no result)", async () => {
+  const out = await mediaE2e(["--dry-run"], {});
+  assert.deepEqual([out.code, out.doc], [2, null]);
+});
+
 // client_sha256 is required by the contract: every acceptance path that opens an upload session declares its file.
 test("createUploadSession always sends the file's size and SHA-256, and refuses to be called without them", async () => {
   const seen = [];
