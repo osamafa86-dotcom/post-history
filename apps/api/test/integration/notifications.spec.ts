@@ -2,15 +2,13 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { schemaValidator } from '../../src/common/contract';
 import { DB, type Database } from '../../src/database/database.module';
-import { OutboxDispatcher } from '../../src/outbox/outbox.dispatcher';
 import { writeOutboxEvent } from '../../src/outbox/outbox';
-import { createHarness, ensureForm, type Harness, loginAs } from './harness';
+import { createHarness, drainOutbox, ensureForm, type Harness, loginAs } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
 
 describe('notifications and events', () => {
   let h: Harness;
-  let dispatcher: OutboxDispatcher;
   let officeA: string;
   let reporter: Actor;
   let supervisor: Actor;
@@ -20,7 +18,6 @@ describe('notifications and events', () => {
 
   beforeAll(async () => {
     h = await createHarness();
-    dispatcher = h.app.get(OutboxDispatcher);
     await ensureForm(h);
     const office = async () =>
       (await h.pool.query<{ id: string }>(`INSERT INTO offices (name_ar, name_en, governorate) VALUES ('م', 'o', 'gaza') RETURNING id`)).rows[0]!.id;
@@ -39,7 +36,7 @@ describe('notifications and events', () => {
   const post = (a: Actor, url: string, body?: object) =>
     http().post(url).set('Authorization', `Bearer ${a.token}`).set('Idempotency-Key', randomUUID()).send(body);
   const drain = async () => {
-    while ((await dispatcher.dispatchBatch(500)) > 0);
+    await drainOutbox(h);
   };
   const inbox = async (a: Actor) => (await get(a, '/v1/notifications?limit=100').expect(200)).body;
   const createMaterial = async (priority = 'normal') =>

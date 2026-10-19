@@ -65,7 +65,9 @@ export class TusdHooksService {
         !session ||
         !session.uploadTokenHash ||
         !timingSafeEqual(session.uploadTokenHash, sha256(token)) ||
-        !['created', 'in_progress'].includes(session.state) ||
+        // الرمز يفتح إنشاء رفع واحد: بعد قبوله تصبح الجلسة in_progress فلا يُقبل ثانية (الاستئناف عبر PATCH لا يمر
+        // بهذا الخطّاف). إلى أن يفصل العقد عمر الرمز عن عمر الجلسة، هذا ما يحد من رمز مسرّب.
+        session.state !== 'created' ||
         new Date(session.expiresAt) <= new Date() ||
         Number(session.sizeBytes) !== hook.Event.Upload.Size
       ) {

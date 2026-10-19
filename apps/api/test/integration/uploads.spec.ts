@@ -80,6 +80,8 @@ describe('upload sessions (/v1/uploads)', () => {
     expect(JSON.stringify(rows[0].response_body)).not.toContain(first.body.upload_token);
     expect((await preCreate(first.body.id, first.body.upload_token, 4096)).body.RejectUpload).toBe(true);
     expect((await preCreate(first.body.id, second.body.upload_token, 4096)).body.RejectUpload).toBe(false);
+    // بعد بدء الرفع لا يُصدر رمز جديد: الرمز لا يُقبل إلا في created
+    expect((await write(reporter, '/v1/uploads', body, key).expect(409)).body.code).toBe('upload_state_conflict');
   });
 
   it("refuses other people's materials (404), other roles (403), and proxy_mode on an original (422)", async () => {

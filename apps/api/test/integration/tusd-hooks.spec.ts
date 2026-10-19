@@ -58,6 +58,14 @@ describe('tusd hooks (/internal/tusd-hooks/{hook_token}, SEC-06)', () => {
     expect(row.storage_key).toBe(`tus/${s.id}`);
   });
 
+  it('the upload token opens one upload only: a second pre-create on an in_progress session is rejected', async () => {
+    const s = await seedUploadSession(h, reporterId);
+    await hook(preCreate(s.id, { token: s.uploadToken })).expect(200);
+    const again = await hook(preCreate(s.id, { token: s.uploadToken })).expect(200);
+    expect(again.body.RejectUpload).toBe(true);
+    expect((await session(s.id)).state).toBe('in_progress');
+  });
+
   it.each([
     ['missing token', async (s: { uploadToken: string }) => ({ token: undefined as string | undefined, size: 1000, s })],
     ['wrong token', async (s: { uploadToken: string }) => ({ token: 'wrong-token', size: 1000, s })],

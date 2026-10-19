@@ -66,3 +66,28 @@ export function supervisesUser(p: Principal, user: { officeId: string | null; go
         (r.scopeKind === 'governorate' && user.governorate !== null && r.scopeId === user.governorate)),
   );
 }
+
+/** رتبة الدور في تسلسل الطاقم: الأدوار التنفيذية في القاع، ثم المشرف، ثم رئيس التحرير، ثم مدير النظام. */
+const ROLE_RANK: Record<RoleName, number> = {
+  reporter: 1,
+  producer: 1,
+  finance: 1,
+  rights_officer: 1,
+  supervisor: 2,
+  editor_in_chief: 3,
+  system_admin: 4,
+};
+
+export function highestRank(roles: readonly RoleName[]): number {
+  return roles.reduce((max, r) => Math.max(max, ROLE_RANK[r] ?? 0), 0);
+}
+
+/**
+ * قاعدة التسلسل في إبطال جلسات حساب آخر واعتماد استعادته، فوق مطابقة النطاق: لا أحد يقرر في حسابه هو؛ مدير النظام
+ * يقرر في أي حساب آخر (ومنه حساب مدير نظام آخر)؛ وغيره لا يقرر في حساب دوره الأعلى أعلى من دور المقرِّر الأعلى.
+ */
+export function mayDecideFor(p: Principal, targetUserId: string, targetRoles: readonly RoleName[]): boolean {
+  if (targetUserId === p.userId) return false;
+  if (hasRole(p, 'system_admin')) return true;
+  return highestRank(targetRoles) <= highestRank(p.roles.map((r) => r.role));
+}

@@ -1,16 +1,28 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
 import request from 'supertest';
-import { OutboxDispatcher } from '../../src/outbox/outbox.dispatcher';
 import { OBJECT_STORAGE, type ObjectStorage } from '../../src/verification/object-storage';
 import { VerificationWorker } from '../../src/verification/verification.worker';
-import { createHarness, type Harness, loginAs, seedUploadSession } from './harness';
+import { createHarness, drainOutbox, type Harness, loginAs, seedUploadSession } from './harness';
 
 /** تخزين بديل في الذاكرة يُقرأ على دفعات صغيرة ليُختبر الحساب التدفقي. */
 class MemoryStorage implements ObjectStorage {
   objects = new Map<string, Buffer>();
   failing = false;
+  /** تأخير كل قراءة رأس ليظهر التداخل، وعدّاد القراءات الجارية معًا وأقصاه. */
+  delayMs = 0;
+  heads = 0;
+  inFlight = 0;
+  maxInFlight = 0;
   async head(_bucket: string, key: string) {
+    this.heads++;
+    this.inFlight++;
+    this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
+    try {
+      if (this.delayMs) await new Promise((r) => setTimeout(r, this.delayMs));
+    } finally {
+      this.inFlight--;
+    }
     if (this.failing) throw new Error('storage down');
     const o = this.objects.get(key);
     return o ? { size: o.length } : null;
@@ -39,6 +51,9 @@ describe('in-process upload verification (SHA-256 on the server)', () => {
   afterAll(() => h.close());
   beforeEach(() => {
     storage.failing = false;
+    storage.delayMs = 0;
+    storage.heads = 0;
+    storage.maxInFlight = 0;
   });
 
   /** جلسة بلغت completed (كما يتركها post-finish) وكائنها في التخزين. */
@@ -79,8 +94,7 @@ describe('in-process upload verification (SHA-256 on the server)', () => {
     ]);
 
     // إشعار الاستلام برقم الإيصال يصل المراسل
-    const dispatcher = h.app.get(OutboxDispatcher);
-    while ((await dispatcher.dispatchBatch(500)) > 0);
+    await drainOutbox(h);
     const inbox = await request(h.app.getHttpServer()).get('/v1/notifications').set('Authorization', `Bearer ${reporter.token}`).expect(200);
     expect(inbox.body.items.find((n: { material_id: string }) => n.material_id === s.materialId).title).toContain(file.receipt_number);
   });
@@ -121,5 +135,35 @@ describe('in-process upload verification (SHA-256 on the server)', () => {
     storage.failing = false;
     await drainVerification();
     expect((await row(`SELECT state FROM upload_sessions WHERE id = $1`, s.id)).state).toBe('verified');
+  });
+
+  it('verifies up to VERIFY_CONCURRENCY files at once, each exactly once', async () => {
+    const batch = await Promise.all(Array.from({ length: 6 }, () => completed()));
+    storage.delayMs = 100;
+    expect(h.config.VERIFY_CONCURRENCY).toBe(4);
+    expect(await worker.drain()).toBe(6);
+    expect(storage.maxInFlight).toBe(4);
+    expect(storage.heads).toBe(6);
+    for (const s of batch) {
+      expect((await row(`SELECT state FROM upload_sessions WHERE id = $1`, s.id)).state).toBe('verified');
+      expect((await events(s.id)).map((e) => e.type)).toEqual(['upload.verified']);
+    }
+  });
+
+  it('with concurrency 1 the files are read one after another', async () => {
+    await Promise.all(Array.from({ length: 3 }, () => completed()));
+    storage.delayMs = 20;
+    expect(await worker.drain(1)).toBe(3);
+    expect(storage.maxInFlight).toBe(1);
+  });
+
+  it('a storage outage costs at most one storage call per parallel loop', async () => {
+    const batch = await Promise.all(Array.from({ length: 6 }, () => completed()));
+    storage.failing = true;
+    expect(await worker.drain(4)).toBe(0);
+    expect(storage.heads).toBeLessThanOrEqual(4);
+    for (const s of batch) expect((await row(`SELECT state FROM upload_sessions WHERE id = $1`, s.id)).state).toBe('completed');
+    storage.failing = false;
+    expect(await worker.drain()).toBe(6);
   });
 });
