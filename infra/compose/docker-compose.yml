@@ -93,8 +93,12 @@ services:
       -show-greeting=false
       -disable-download
       ${TUSD_EXTRA_FLAGS}
-    # No published port: reachable only through tusd-proxy. "hooks" is where the API listens for hooks.
-    networks: [uploads, hooks]
+    # No published port: reachable only through tusd-proxy. "hooks" is where the API listens for hooks;
+    # tusd has a fixed address there so the API can allow /internal/* from it alone (INTERNAL_ALLOWED_CIDRS).
+    networks:
+      uploads: {}
+      hooks:
+        ipv4_address: ${TUSD_HOOKS_IP}
 
   tusd-proxy:
     image: nginx:1.28.3-alpine
@@ -117,3 +121,6 @@ networks:
     internal: true
   hooks:
     internal: true
+    ipam:
+      config:
+        - subnet: ${TUSD_HOOKS_SUBNET}
