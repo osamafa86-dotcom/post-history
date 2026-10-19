@@ -51,15 +51,16 @@ public struct UploadSessionCreated: Sendable, Codable, Hashable {
     /** نقطة إنشاء الرفع (tus 1.0) */
     public var tusEndpoint: String
     public var tusMetadata: UploadSessionTusMetadata
-    /** حجم الجزء الثابت لهذه الجلسة بين الخادم والتخزين؛ يُثبَّت عند البدء ولا يتغير */
+    /** حجم الجزء الثابت بالبايت لهذه الجلسة بين الخادم والتخزين (1 MiB حدًا أدنى)؛ يُثبَّت عند البدء ولا يتغير */
     public var partSizeBytes: Int
     public var bytesReceived: Int
     /** هل يعرض الخادم مسار المسودة التجريبي (تجربة iOS، بند القرارات 14) */
     public var ietfResumable: Bool? = false
     /** خوارزمية checksum للجزء الواحد التي يقبلها خادم الرفع */
     public var checksumAlgorithm: ChecksumAlgorithm? = .sha256
-    /** انتهاء الرمز والجلسة إن لم تكتمل */
+    /** انتهاء الجلسة إن لم تكتمل */
     public var expiresAt: Date
+    public var uploadTokenExpiresAt: Date
     /** ملف المادة الناتج بعد الاكتمال */
     public var fileId: UUID?
     /** عند `deduplicated`: الملف الموجود المطابق بالبصمة الكاملة */
@@ -71,9 +72,8 @@ public struct UploadSessionCreated: Sendable, Codable, Hashable {
     public var updatedAt: Date?
     /** رمز قصير العمر يرسله العميل في `Authorization: Bearer` إلى خادم الرفع؛ يُحفظ مُجزَّأً على الخادم */
     public var uploadToken: String
-    public var uploadTokenExpiresAt: Date
 
-    public init(id: UUID, materialId: UUID, kind: Kind, state: State, sizeBytes: Int, tusEndpoint: String, tusMetadata: UploadSessionTusMetadata, partSizeBytes: Int, bytesReceived: Int, ietfResumable: Bool? = false, checksumAlgorithm: ChecksumAlgorithm? = .sha256, expiresAt: Date, fileId: UUID? = nil, duplicateOfFileId: UUID? = nil, failureReason: FailureReason? = nil, receiptNumber: String? = nil, createdAt: Date, updatedAt: Date? = nil, uploadToken: String, uploadTokenExpiresAt: Date) {
+    public init(id: UUID, materialId: UUID, kind: Kind, state: State, sizeBytes: Int, tusEndpoint: String, tusMetadata: UploadSessionTusMetadata, partSizeBytes: Int, bytesReceived: Int, ietfResumable: Bool? = false, checksumAlgorithm: ChecksumAlgorithm? = .sha256, expiresAt: Date, uploadTokenExpiresAt: Date, fileId: UUID? = nil, duplicateOfFileId: UUID? = nil, failureReason: FailureReason? = nil, receiptNumber: String? = nil, createdAt: Date, updatedAt: Date? = nil, uploadToken: String) {
         self.id = id
         self.materialId = materialId
         self.kind = kind
@@ -86,6 +86,7 @@ public struct UploadSessionCreated: Sendable, Codable, Hashable {
         self.ietfResumable = ietfResumable
         self.checksumAlgorithm = checksumAlgorithm
         self.expiresAt = expiresAt
+        self.uploadTokenExpiresAt = uploadTokenExpiresAt
         self.fileId = fileId
         self.duplicateOfFileId = duplicateOfFileId
         self.failureReason = failureReason
@@ -93,7 +94,6 @@ public struct UploadSessionCreated: Sendable, Codable, Hashable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.uploadToken = uploadToken
-        self.uploadTokenExpiresAt = uploadTokenExpiresAt
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -109,6 +109,7 @@ public struct UploadSessionCreated: Sendable, Codable, Hashable {
         case ietfResumable = "ietf_resumable"
         case checksumAlgorithm = "checksum_algorithm"
         case expiresAt = "expires_at"
+        case uploadTokenExpiresAt = "upload_token_expires_at"
         case fileId = "file_id"
         case duplicateOfFileId = "duplicate_of_file_id"
         case failureReason = "failure_reason"
@@ -116,7 +117,6 @@ public struct UploadSessionCreated: Sendable, Codable, Hashable {
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case uploadToken = "upload_token"
-        case uploadTokenExpiresAt = "upload_token_expires_at"
     }
 
     // Encodable protocol methods
@@ -135,6 +135,7 @@ public struct UploadSessionCreated: Sendable, Codable, Hashable {
         try container.encodeIfPresent(ietfResumable, forKey: .ietfResumable)
         try container.encodeIfPresent(checksumAlgorithm, forKey: .checksumAlgorithm)
         try container.encode(expiresAt, forKey: .expiresAt)
+        try container.encode(uploadTokenExpiresAt, forKey: .uploadTokenExpiresAt)
         try container.encodeIfPresent(fileId, forKey: .fileId)
         try container.encodeIfPresent(duplicateOfFileId, forKey: .duplicateOfFileId)
         try container.encodeIfPresent(failureReason, forKey: .failureReason)
@@ -142,7 +143,6 @@ public struct UploadSessionCreated: Sendable, Codable, Hashable {
         try container.encode(createdAt, forKey: .createdAt)
         try container.encodeIfPresent(updatedAt, forKey: .updatedAt)
         try container.encode(uploadToken, forKey: .uploadToken)
-        try container.encode(uploadTokenExpiresAt, forKey: .uploadTokenExpiresAt)
     }
 }
 

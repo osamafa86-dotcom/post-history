@@ -14,9 +14,9 @@ public struct UploadSessionCreateClientFingerprint: Sendable, Codable, Hashable 
     public static let headSha256Rule = StringRule(minLength: nil, maxLength: nil, pattern: "^[0-9a-f]{64}$")
     public static let tailSha256Rule = StringRule(minLength: nil, maxLength: nil, pattern: "^[0-9a-f]{64}$")
     public var sizeBytes: Int
-    /** أول ميغابايت */
+    /** SHA-256 لأول 1 MiB (1,048,576 بايت)؛ الملف الأصغر = الملف كله */
     public var headSha256: String
-    /** آخر ميغابايت */
+    /** SHA-256 لآخر 1 MiB؛ الملف الأصغر = الملف كله */
     public var tailSha256: String
     public var shotAt: Date?
 

@@ -28,10 +28,14 @@ public struct ModelError: Sendable, Codable, Hashable {
         case formVersionConflict = "form_version_conflict"
         case sensitiveFieldsNotSupportedV0 = "sensitive_fields_not_supported_v0"
         case recoveryStateConflict = "recovery_state_conflict"
+        case preconditionFailed = "precondition_failed"
+        case forbiddenRole = "forbidden_role"
+        case adminQuorumRequired = "admin_quorum_required"
+        case credentialResetRequired = "credential_reset_required"
         case internalError = "internal_error"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
-    /** رمز ثابت يتفرّع عليه العميل؛ الرسالة للبشر فقط */
+    /** رمز ثابت يتفرّع عليه العميل؛ الرسالة للبشر فقط. قائمة مفتوحة؛ الرمز المجهول = خطأ عام */
     public var code: Code
     public var message: String
     /** لتتبع الطلب في السجلات */

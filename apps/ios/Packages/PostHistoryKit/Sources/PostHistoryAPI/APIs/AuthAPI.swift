@@ -24,7 +24,7 @@ open class AuthAPI {
     /**
      اعتماد المشرف لطلب استعادة حساب في نطاقه
      - POST /auth/recovery/{id}/approve
-     - يعتمد المشرف الطلب بعد التحقق خارج النظام من هوية المراسل. الاعتماد يبطل كل جلسات الحساب ورموز رفعه المفتوحة، ويصدر رابط إعادة تهيئة كلمة المرور والمصادقة الثنائية بصلاحية قصيرة، ويُسجَّل في سجل التدقيق.
+     - يعتمد المشرف الطلب بعد التحقق خارج النظام من هوية المراسل. الاعتماد يبطل كل جلسات الحساب ورموز رفعه المفتوحة، ويصدر رمز إعادة تعيين قصير العمر يصل المستخدم خارج هذه الاستجابة، ويضع الحساب في حالة «إعادة تعيين إلزامية» حتى `/auth/recovery/complete` و`/auth/totp/confirm`، ويُسجَّل في سجل التدقيق. حساب مدير نظام لا يُعتمد من هنا أبدًا: `403 admin_quorum_required` (إجراء الشخصين من سطر الأوامر، ADR 0005 ودليل التشغيل). حساب مساوٍ لدور المقرِّر أو أعلى: `403 forbidden_scope`.
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -50,6 +50,82 @@ open class AuthAPI {
         let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
 
         let localVariableRequestBuilder: RequestBuilder<RecoveryRequest>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     إكمال الاستعادة — كلمة مرور جديدة وبدء تسجيل مصادقة ثنائية جديدة
+     
+     - parameter completeRecoveryRequest: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RecoveryCompletion
+     */
+    open class func completeRecovery(completeRecoveryRequest: CompleteRecoveryRequest, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> RecoveryCompletion {
+        return try await completeRecoveryWithRequestBuilder(completeRecoveryRequest: completeRecoveryRequest, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     إكمال الاستعادة — كلمة مرور جديدة وبدء تسجيل مصادقة ثنائية جديدة
+     - POST /auth/recovery/complete
+     - يستهلك رمز إعادة التعيين (مرة واحدة) ويضع كلمة المرور الجديدة ويولّد سر TOTP جديدًا يبطل القديم. الجلسة الناتجة مقيّدة: كل مسار غير `/auth/totp/confirm` و`/auth/logout` و`/auth/me` يرد `403 credential_reset_required` حتى تأكيد الرمز. الرمز المستهلك أو المنتهي `401`.
+     - parameter completeRecoveryRequest: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<RecoveryCompletion> 
+     */
+    open class func completeRecoveryWithRequestBuilder(completeRecoveryRequest: CompleteRecoveryRequest, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<RecoveryCompletion> {
+        let localVariablePath = "/auth/recovery/complete"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: completeRecoveryRequest, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<RecoveryCompletion>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: false, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     تأكيد تسجيل المصادقة الثنائية الجديدة ورفع قيد الجلسة
+     
+     - parameter confirmTotpRequest: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: Session
+     */
+    open class func confirmTotp(confirmTotpRequest: ConfirmTotpRequest, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> Session {
+        return try await confirmTotpWithRequestBuilder(confirmTotpRequest: confirmTotpRequest, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     تأكيد تسجيل المصادقة الثنائية الجديدة ورفع قيد الجلسة
+     - POST /auth/totp/confirm
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter confirmTotpRequest: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<Session> 
+     */
+    open class func confirmTotpWithRequestBuilder(confirmTotpRequest: ConfirmTotpRequest, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Session> {
+        let localVariablePath = "/auth/totp/confirm"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: confirmTotpRequest, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<Session>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
@@ -197,6 +273,7 @@ open class AuthAPI {
      دخول بكلمة المرور ثم رمز TOTP
      - POST /auth/login
      - المصادقة الثنائية إلزامية لكل الطاقم بعد التفعيل؛ غياب `totp_code` لحساب مفعَّل يعيد `401 totp_required` (لا يُعاد إلا بعد التحقق من كلمة المرور وضمن حد المعدل). البريد غير الموجود وكلمة المرور الخاطئة يعيدان `401 unauthorized` نفسه بالرسالة نفسها. الجلسة تحمل رمز وصول قصير العمر ورمز تحديث.
+     - responseHeaders: [X-Rate-Limiter(String)]
      - parameter loginRequest: (body)  
      - parameter apiConfiguration: The configuration for the http request.
      - returns: RequestBuilder<Session> 
@@ -386,6 +463,54 @@ open class AuthAPI {
         let localVariableRequestBuilder: RequestBuilder<Void>.Type = apiConfiguration.requestBuilderFactory.getNonDecodableBuilder()
 
         return localVariableRequestBuilder.init(method: "DELETE", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     تعليق حساب أو إعادة تفعيله (مدير النظام)
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف المستخدم 
+     - parameter setUserStatusRequest: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: Void
+     */
+    open class func setUserStatus(idempotencyKey: String, id: UUID, setUserStatusRequest: SetUserStatusRequest, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) {
+        return try await setUserStatusWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, setUserStatusRequest: setUserStatusRequest, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     تعليق حساب أو إعادة تفعيله (مدير النظام)
+     - PUT /users/{id}/status
+     - التعليق يبطل كل جلسات الحساب ورموز رفعه فورًا؛ إعادة التفعيل لا تعيد الجلسات. لا يعلّق المدير حسابه، وحساب مدير نظام آخر لا يُعلَّق من هنا: `403 admin_quorum_required`. ذاتي التكرار، ويُسجَّل في التدقيق.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف المستخدم 
+     - parameter setUserStatusRequest: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<Void> 
+     */
+    open class func setUserStatusWithRequestBuilder(idempotencyKey: String, id: UUID, setUserStatusRequest: SetUserStatusRequest, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Void> {
+        var localVariablePath = "/users/{id}/status"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: setUserStatusRequest, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<Void>.Type = apiConfiguration.requestBuilderFactory.getNonDecodableBuilder()
+
+        return localVariableRequestBuilder.init(method: "PUT", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
 
     /**

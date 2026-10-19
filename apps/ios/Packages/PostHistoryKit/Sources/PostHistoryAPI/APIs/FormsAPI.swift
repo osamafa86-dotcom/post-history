@@ -137,11 +137,12 @@ open class FormsAPI {
      
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
      - parameter uploadForm: (body)  
+     - parameter ifMatch: (header) قيمة &#x60;ETag&#x60; الأخيرة التي رآها العميل (&#x60;\&quot;&lt;row_version&gt;\&quot;&#x60; للمادة، &#x60;\&quot;&lt;version&gt;\&quot;&#x60; للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ &#x60;412 precondition_failed&#x60; دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. (optional)
      - parameter apiConfiguration: The configuration for the http request.
      - returns: UploadForm
      */
-    open class func publishForm(idempotencyKey: String, uploadForm: UploadForm, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> UploadForm {
-        return try await publishFormWithRequestBuilder(idempotencyKey: idempotencyKey, uploadForm: uploadForm, apiConfiguration: apiConfiguration).execute().body
+    open class func publishForm(idempotencyKey: String, uploadForm: UploadForm, ifMatch: String? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> UploadForm {
+        return try await publishFormWithRequestBuilder(idempotencyKey: idempotencyKey, uploadForm: uploadForm, ifMatch: ifMatch, apiConfiguration: apiConfiguration).execute().body
     }
 
     /**
@@ -153,10 +154,11 @@ open class FormsAPI {
        - name: bearerAuth
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
      - parameter uploadForm: (body)  
+     - parameter ifMatch: (header) قيمة &#x60;ETag&#x60; الأخيرة التي رآها العميل (&#x60;\&quot;&lt;row_version&gt;\&quot;&#x60; للمادة، &#x60;\&quot;&lt;version&gt;\&quot;&#x60; للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ &#x60;412 precondition_failed&#x60; دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. (optional)
      - parameter apiConfiguration: The configuration for the http request.
      - returns: RequestBuilder<UploadForm> 
      */
-    open class func publishFormWithRequestBuilder(idempotencyKey: String, uploadForm: UploadForm, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<UploadForm> {
+    open class func publishFormWithRequestBuilder(idempotencyKey: String, uploadForm: UploadForm, ifMatch: String? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<UploadForm> {
         let localVariablePath = "/forms"
         let localVariableURLString = apiConfiguration.basePath + localVariablePath
         let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: uploadForm, codableHelper: apiConfiguration.codableHelper)
@@ -166,6 +168,7 @@ open class FormsAPI {
         let localVariableNillableHeaders: [String: (any Sendable)?] = [
             "Content-Type": "application/json",
             "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+            "If-Match": ifMatch?.asParameter(codableHelper: apiConfiguration.codableHelper),
         ]
 
         let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
