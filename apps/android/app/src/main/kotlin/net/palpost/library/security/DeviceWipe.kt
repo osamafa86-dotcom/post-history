@@ -19,7 +19,8 @@ import java.io.File
  * step even if one fails (see WipeSequence). The same list serves the emergency wipe the reporter triggers
  * and the automatic wipe after the server revokes the session. Nothing here logs anything.
  *
- * Stores the app owns and what happens to each:
+ * Stores the app owns and what happens to each (plus, for the emergency path only, `server_sessions`: every
+ * session of the user ended on the server when the request got through in time):
  *  - transfers: scheduled job / foreground service stopped, progress and result notifications cancelled
  *  - session: Keystore-sealed tokens removed from the `session` preferences, the Keystore key destroyed
  *  - upload_queue: every Room table cleared, then the database files deleted (`uploads.db`, `-wal`, `-shm`)
@@ -32,7 +33,15 @@ import java.io.File
 class DeviceWipe(private val context: Context, private val container: AppContainer) {
     val targets: List<String> get() = steps(SignOutReason.WIPED).map { it.name }
 
-    suspend fun emergency(): WipeReport = run(SignOutReason.WIPED)
+    /**
+     * Emergency: first a best-effort request to end every session on the server (at most three seconds,
+     * ignored if offline or refused), then the local erase, which never waits for or depends on that answer.
+     */
+    suspend fun emergency(): WipeReport {
+        val serverRevoked = container.auth.revokeAllSessionsBestEffort(timeoutMs = 3_000)
+        val local = run(SignOutReason.WIPED)
+        return if (serverRevoked) local.copy(wiped = listOf("server_sessions") + local.wiped) else local
+    }
 
     /** After a 401 on refresh the tokens are already gone; everything else goes now. */
     suspend fun afterRevocation(): WipeReport = run(SignOutReason.SESSION_REVOKED)

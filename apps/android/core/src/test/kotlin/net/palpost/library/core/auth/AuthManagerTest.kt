@@ -184,6 +184,22 @@ class AuthManagerTest {
         assertTrue(!s.contains("secret"))
     }
 
+    @Test fun `best-effort revocation before a wipe is bounded and never fails the caller`() = runBlocking {
+        store.write(SessionTokens("a1", "r1", now + 600_000, "u"))
+        server.enqueue(MockResponse().setResponseCode(204))
+        assertTrue(manager.revokeAllSessionsBestEffort())
+        assertTrue(server.takeRequest().body.readUtf8().contains("\"all_sessions\":true"))
+        assertEquals("a1", store.read()?.accessToken) // local state untouched: the wipe erases it next
+
+        server.enqueue(MockResponse().setResponseCode(204).setHeadersDelay(5, TimeUnit.SECONDS))
+        val started = System.nanoTime()
+        assertEquals(false, manager.revokeAllSessionsBestEffort(timeoutMs = 300))
+        assertTrue((System.nanoTime() - started) / 1_000_000 < 2_000)
+
+        server.enqueue(MockResponse().setResponseCode(500))
+        assertEquals(false, manager.revokeAllSessionsBestEffort())
+    }
+
     @Test fun `logout clears the device even when the server is unreachable`() = runBlocking {
         store.write(SessionTokens("a1", "r1", now + 600_000, "u"))
         server.enqueue(MockResponse().setResponseCode(500))

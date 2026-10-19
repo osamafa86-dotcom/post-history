@@ -3,6 +3,7 @@ package net.palpost.library.core.auth
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import net.palpost.library.api.apis.AuthApi
 import net.palpost.library.api.infrastructure.ClientException
 import net.palpost.library.api.models.LoginRequest
@@ -69,6 +70,24 @@ class AuthManager(
         } finally {
             signOut(SignOutReason.USER)
         }
+    }
+
+    /**
+     * Best effort before an emergency wipe: ask the server to end every session of this user, bounded by
+     * [timeoutMs]; a failure or timeout changes nothing locally and is not reported anywhere. The wipe
+     * itself never waits beyond this and never depends on the answer.
+     */
+    suspend fun revokeAllSessionsBestEffort(timeoutMs: Long = 3_000): Boolean {
+        if (store.read() == null) return false
+        return withTimeoutOrNull(timeoutMs) {
+            try {
+                sessionApi.logout(LogoutRequest(allSessions = true)); true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                false
+            }
+        } ?: false
     }
 
     /** Forgets the session on this device without telling the server (the wipe does it; the server session lapses on its own). */

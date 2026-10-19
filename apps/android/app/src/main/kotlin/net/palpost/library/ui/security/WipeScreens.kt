@@ -80,6 +80,7 @@ fun WipeDoneScreen(report: WipeReport?, revoked: Boolean, onContinue: () -> Unit
 @Composable
 fun wipeTargetLabel(name: String): String = stringResource(
     when (name) {
+        "server_sessions" -> R.string.wipe_target_server_sessions
         "transfers" -> R.string.wipe_target_transfers
         "session" -> R.string.wipe_target_session
         "upload_queue" -> R.string.wipe_target_upload_queue

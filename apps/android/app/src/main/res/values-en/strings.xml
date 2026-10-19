@@ -191,7 +191,7 @@
 
     <string name="home_emergency_wipe">Emergency wipe of this device</string>
     <string name="wipe_title">Erase everything from this phone?</string>
-    <string name="wipe_body">Erased now, without a connection: your session and its tokens, the upload queue and its progress, file permissions, settings and temporary files. What already reached the server stays there. Your original files in the gallery are not touched.</string>
+    <string name="wipe_body">If a connection exists the server is asked to end all your sessions (three seconds at most; the wipe does not wait for it). Then erased now, without a connection: your session and its tokens, the upload queue and its progress, file permissions, settings and temporary files. What already reached the server stays there. Your original files in the gallery are not touched.</string>
     <string name="wipe_understand">I understand this cannot be undone</string>
     <string name="wipe_confirm">Erase now</string>
     <string name="wipe_in_progress">Erasing…</string>
@@ -205,6 +205,7 @@
     <string name="wipe_report_failed_help">Retry from Settings → Apps → Clear data, or uninstall the app.</string>
     <string name="wipe_originals_note">Original files in the gallery are yours; they are deleted from the gallery or with “Delete local copy” after the receipt, not from here.</string>
     <string name="wipe_continue">Continue</string>
+    <string name="wipe_target_server_sessions">All your sessions ended on the server (the request got through in time)</string>
     <string name="wipe_target_transfers">Running uploads and their notifications</string>
     <string name="wipe_target_session">Session, tokens and encryption key</string>
     <string name="wipe_target_upload_queue">Upload queue, progress and its database</string>
