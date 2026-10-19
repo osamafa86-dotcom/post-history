@@ -1,4 +1,5 @@
 import { BlockList, isIP } from 'node:net';
+import { availableParallelism } from 'node:os';
 import { z } from 'zod';
 
 export function parseCidr(cidr: string): { address: string; prefix: number; family: 'ipv4' | 'ipv6' } | null {
@@ -85,6 +86,13 @@ const schema = z.object({
   VERIFY_POLL_INTERVAL_MS: z.coerce.number().int().min(100).default(2000),
   // عدد الملفات التي تُحسب بصماتها معًا؛ كل واحد يشغل اتصالًا من المجمع طوال قراءته، فيبقى أقل من DATABASE_POOL_MAX
   VERIFY_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
+  // خيوط حساب SHA-256 (worker_threads)؛ افتراضيًا عدد الأنوية ناقص واحد يبقى لخيط الحدث
+  VERIFY_HASH_THREADS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(64)
+    .default(Math.max(1, availableParallelism() - 1)),
 
   // حجز الإنتاج يُحرَّر تلقائيًا بعد هذا الخمول (15 دقيقة افتراضيًا)
   RESERVATION_IDLE_SECONDS: z.coerce.number().int().min(60).default(900),

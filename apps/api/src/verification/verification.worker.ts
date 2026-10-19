@@ -5,6 +5,7 @@ import { APP_CONFIG, type AppConfig, storageConfigured } from '../config/config'
 import { LOGGER } from '../common/logger';
 import { DB, type Database } from '../database/database.module';
 import { uploadSessions } from '../database/schema/schema';
+import { HashPool } from './hash-pool';
 import { OBJECT_STORAGE, type ObjectStorage, StorageConfigError } from './object-storage';
 import { inspectUpload, recordVerification } from './verification';
 
@@ -13,13 +14,15 @@ import { inspectUpload, recordVerification } from './verification';
  * كل جلسة `completed` تُقفل بـ FOR UPDATE SKIP LOCKED وتُفحص وتُطبَّق نتيجتها بـ recordVerification، فعدة نسخ
  * تعمل معًا ولا يضيع شيء بإعادة التشغيل. عامل الوسائط يحل محله بضبط UPLOAD_VERIFIER=external واستدعاء
  * recordVerification نفسها. تُحسب حتى VERIFY_CONCURRENCY بصمة معًا (SKIP LOCKED يوزّع الجلسات على الحلقات دون تداخل):
- * التسلسل كان يجعل آخر رفعة في دفعة متزامنة تنتظر مجموع قراءات ما قبلها.
+ * التسلسل كان يجعل آخر رفعة في دفعة متزامنة تنتظر مجموع قراءات ما قبلها. البصمة نفسها تُحسب في مجمّع خيوط
+ * (VERIFY_HASH_THREADS) لأن حسابها على خيط الحدث يسلسل الحلقات من جديد ويحجب الطلبات.
  */
 @Injectable()
 export class VerificationWorker implements OnApplicationBootstrap, OnApplicationShutdown {
   private timer: NodeJS.Timeout | undefined;
   private running: Promise<unknown> | undefined;
   private stopped = false;
+  private pool: HashPool | undefined;
 
   constructor(
     @Inject(DB) private readonly db: Database,
@@ -42,6 +45,7 @@ export class VerificationWorker implements OnApplicationBootstrap, OnApplication
     this.stopped = true;
     clearTimeout(this.timer);
     await this.running;
+    await this.pool?.close();
   }
 
   /** يتحقق من جلسة مكتملة واحدة؛ يعيد false إن لم تبقَ واحدة. */
@@ -57,7 +61,9 @@ export class VerificationWorker implements OnApplicationBootstrap, OnApplication
       if (!session) return false;
       let outcome;
       try {
-        outcome = await inspectUpload(this.storage, this.config.S3_BUCKET_UPLOADS, session);
+        this.pool ??= new HashPool(this.config.VERIFY_HASH_THREADS);
+        const pool = this.pool;
+        outcome = await inspectUpload(this.storage, this.config.S3_BUCKET_UPLOADS, session, (stream) => pool.hash(stream));
       } catch (err) {
         // عطل مؤقت في التخزين أو خطأ تهيئة: تبقى الجلسة completed وتتأخر في الطابور ليُعاد لاحقًا دون أن تحجب غيرها.
         // خطأ التهيئة (حاوية مفقودة أو بلا صلاحية) ينبَّه بمستوى error لأنه لا يزول وحده.
