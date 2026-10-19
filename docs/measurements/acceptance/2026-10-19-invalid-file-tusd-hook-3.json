@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "invalid-file",
+  "started_at": "2026-10-19T19:02:53.552Z",
+  "ended_at": "2026-10-19T19:02:54.383Z",
+  "result": "partial",
+  "metrics": {
+    "hook_calls": 28,
+    "hook_latency_ms_p50": 6,
+    "hook_latency_ms_p95": 15,
+    "hook_latency_ms_max": 22,
+    "batch_good_files_accepted": 3,
+    "batch_good_files_expected": 3,
+    "failures": 0,
+    "failed_reasons_checked": "checksum_mismatch,storage_error,invalid_file"
+  },
+  "device": {
+    "platform": "server"
+  },
+  "upload_path": "tusd",
+  "notes": "المرحلة 2: ملفات وصلت ثم ثبت أنها غير صالحة (بصمة العميل، غياب الكائن، اختلاف الحجم) انتهت إلى failed بسببها الصحيح مع بقاء الجيد في الدفعة نفسها؛ لم يُقَس رفض الملف التالف أو الترميز غير المدعوم (عامل الوسائط)، ولا رسالة الرفض على الهاتف؛ فالنتيجة جزئية"
+}
