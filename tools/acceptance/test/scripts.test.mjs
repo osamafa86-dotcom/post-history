@@ -196,3 +196,30 @@ test("canon treats JSON bodies with different key order as the same response", (
   assert.equal(canon({ a: 1, b: { c: [1, { y: 2, x: 1 }] } }), canon({ b: { c: [1, { x: 1, y: 2 }] }, a: 1 }));
   assert.notEqual(canon({ a: 1 }), canon({ a: 2 }));
 });
+
+import { s3FromEnv, tusObjectKey } from "../lib/s3.mjs";
+import { eventsOfType, percentile } from "../lib/live.mjs";
+import { waitFor } from "../lib/hooks.mjs";
+
+test("tusd object keys: prefix plus the id before the multipart '+', whatever the URL shape", () => {
+  assert.equal(tusObjectKey("tus/", "http://h:8080/files/abc123+MULTIPART"), "tus/abc123");
+  assert.equal(tusObjectKey("", "http://h/files/abc123/"), "abc123");
+  assert.equal(s3FromEnv({}), null, "no S3 settings means no S3 client, never a half-configured one");
+});
+
+test("eventsOfType follows pages and throws on a non-200 instead of reporting an empty list", async () => {
+  const pages = [{ items: [{ id: "1" }, { id: "2" }], next_after: "2" }, { items: [{ id: "3" }], next_after: "3" }, { items: [], next_after: "3" }];
+  let i = 0;
+  const ok = { get: async () => ({ status: 200, body: pages[i++] }) };
+  assert.deepEqual((await eventsOfType(ok, "t", "x")).map((e) => e.id), ["1", "2", "3"]);
+  await assert.rejects(eventsOfType({ get: async () => ({ status: 422, body: {} }) }, "t", "x"), /422/);
+});
+
+test("waitFor returns the value as soon as the probe has one, and null after the budget", async () => {
+  let n = 0;
+  const hit = await waitFor(async () => (++n >= 3 ? "ready" : null), { timeoutMs: 2000, everyMs: 5 });
+  assert.equal(hit.value, "ready");
+  const miss = await waitFor(async () => null, { timeoutMs: 50, everyMs: 10 });
+  assert.equal(miss.value, null);
+  assert.equal(percentile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 95), 10);
+});
