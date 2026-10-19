@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "upload-resume",
+  "started_at": "2026-10-19T17:19:17.730Z",
+  "ended_at": "2026-10-19T17:19:19.007Z",
+  "result": "partial",
+  "metrics": {
+    "interruptions": 3,
+    "network_switches_simulated": 3,
+    "resume_count": 3,
+    "restarts_from_zero": 0,
+    "bytes_sent": 67108864,
+    "bytes_resent": 0,
+    "resent_pct": 0,
+    "chunk_size_bytes": 4194304,
+    "patch_calls": 18,
+    "total_time_s": 0.37,
+    "sha256_match": true,
+    "protocol_violations": 0
+  },
+  "device": {
+    "platform": "server"
+  },
+  "network": {
+    "profile": "loopback"
+  },
+  "upload_path": "tusd",
+  "file": {
+    "size_bytes": 67108864
+  },
+  "notes": "تبديل الشبكة هنا إعادة بناء مجمّع الاتصالات على الجهاز نفسه؛ تغيّر العنوان الحقيقي يقيسه netlab والاختبار الميداني؛ الحجم 64 ميغابايت للتحقق الآلي؛ معيار البوابة ملف 5 غيغابايت (UPLOAD_SIZE_MB=5120)؛ tusd v2.10.1 رسمي بمخزن ملفات محلي على الجهاز نفسه (لا S3 ولا وكيل)"
+}

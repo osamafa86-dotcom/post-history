@@ -1,0 +1,20 @@
+{
+  "card_version": 1,
+  "test_name": "task-killers",
+  "performed_on": "YYYY-MM-DD",
+  "performed_by_role": "field_supervisor",
+  "device": { "vendor": "xiaomi", "model": "", "os_version": "", "free_storage_mb": null },
+  "app_version": "",
+  "network": { "type": "wifi", "note": "" },
+  "upload": { "path": "tusd", "file_size_bytes": 1073741824, "file_sha256": "" },
+  "steps": {
+    "onboarding_completed": null,
+    "battery_percent_at_start": null,
+    "locked_minutes": null,
+    "interventions_before_complete": null,
+    "completed": null,
+    "completed_minutes_after_start": null,
+    "server_sha256_match": null
+  },
+  "observations": ""
+}

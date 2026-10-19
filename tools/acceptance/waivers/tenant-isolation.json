@@ -1,0 +1,7 @@
+[
+  { "source": "GET /materials", "path": "responses.403", "kind": "missing-response", "reason": "x-roles excludes finance, so a finance caller gets 403, but the operation declares no 403 response. Documentation gap only; the rule itself (role not listed = 403) is what the live cases assert.", "raised_to": "contracts agent via orchestrator (QA PR acceptance-skeleton)" },
+  { "source": "GET /materials/{id}", "path": "responses.403", "kind": "missing-response", "reason": "Same gap: roles outside x-roles (finance) get 403, undeclared.", "raised_to": "contracts agent via orchestrator (QA PR acceptance-skeleton)" },
+  { "source": "GET /materials/{id}/transitions", "path": "responses.403", "kind": "missing-response", "reason": "Same gap.", "raised_to": "contracts agent via orchestrator (QA PR acceptance-skeleton)" },
+  { "source": "GET /uploads/{id}", "path": "responses.403", "kind": "missing-response", "reason": "Same gap.", "raised_to": "contracts agent via orchestrator (QA PR acceptance-skeleton)" },
+  { "source": "POST /uploads/{id}/complete", "path": "responses.403", "kind": "missing-response", "reason": "Same gap.", "raised_to": "contracts agent via orchestrator (QA PR acceptance-skeleton)" }
+]
