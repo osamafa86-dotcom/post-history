@@ -62,6 +62,11 @@ const schema = z.object({
   // SEC-06: الرمز في مسار عنوان الخطّاف
   TUSD_HOOK_SECRET: z.string().min(32).max(128),
   TUSD_OBJECT_PREFIX: z.string().default(''),
+  // true حين يرسل tusd حدث post-create (-hooks-enabled-events): الجلسة تبقى created حتى ينجح إنشاء الرفع فعلًا
+  TUSD_POST_CREATE_HOOK: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
   // ما يُعاد للعميل عند إنشاء جلسة رفع: نقطة tus العامة، وحجم الجزء الثابت (R2 يشترط تساويه، ≥ 5 MiB)
   TUS_PUBLIC_ENDPOINT: z.string().url().default('http://localhost:8080/files/'),
   TUSD_PART_SIZE_BYTES: z.coerce.number().int().min(5 * 1024 * 1024).default(16 * 1024 * 1024),
