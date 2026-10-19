@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "fields": [
+    { "key": "sig", "type": "signature", "label": { "ar": "توقيع", "en": "Signature" }, "required": false }
+  ]
+}

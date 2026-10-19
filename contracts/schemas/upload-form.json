@@ -2,40 +2,99 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://post-history/contracts/schemas/upload-form.json",
   "title": "UploadForm",
-  "description": "نموذج الرفع الديناميكي الذي تضبطه الإدارة. هذه المجموعة الفرعية المسموحة وحدها ترسمها الواجهات الثلاث (الويب، iOS، أندرويد) ويتحقق بها الخادم.",
+  "description": "نموذج الرفع الديناميكي الذي تضبطه الإدارة. هذه المجموعة الفرعية المسموحة وحدها ترسمها الواجهات الثلاث (الويب، iOS، أندرويد) ويتحقق بها الخادم. كل إصدار لقطة كاملة غير قابلة للتعديل؛ المادة تحفظ رقم الإصدار الذي رُفعت به.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "fields"],
   "properties": {
-    "version": { "type": "integer", "minimum": 1 },
+    "version": {
+      "description": "رقم إصدار متزايد؛ عند النشر يساوي الإصدار الحالي + 1",
+      "type": "integer",
+      "minimum": 1
+    },
     "material_types": {
-      "description": "أنواع المواد التي يظهر معها هذا النموذج؛ فارغ = الكل",
+      "description": "أنواع المواد التي يظهر معها هذا النموذج؛ فارغ أو غائب = الكل",
       "type": "array",
-      "items": { "type": "string" }
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/materialType" }
     },
     "fields": {
+      "description": "بترتيب العرض؛ مفاتيح الحقول فريدة داخل الإصدار",
       "type": "array",
       "items": { "$ref": "#/$defs/field" }
+    },
+    "published_at": {
+      "description": "يكتبه الخادم عند النشر؛ يُتجاهل في الطلب",
+      "type": "string",
+      "format": "date-time"
+    },
+    "published_by": {
+      "description": "يكتبه الخادم عند النشر؛ يُتجاهل في الطلب",
+      "type": ["string", "null"],
+      "format": "uuid"
     }
   },
   "$defs": {
+    "materialType": {
+      "type": "string",
+      "enum": ["breaking", "report", "interview", "raw_footage", "aerial", "press_conference", "eyewitness", "photos"]
+    },
     "localized": {
       "type": "object",
       "additionalProperties": false,
       "required": ["ar", "en"],
       "properties": {
-        "ar": { "type": "string", "minLength": 1 },
-        "en": { "type": "string", "minLength": 1 }
+        "ar": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "en": { "type": "string", "minLength": 1, "maxLength": 200 }
       }
     },
     "condition": {
-      "description": "يظهر الحقل فقط حين يساوي حقل آخر قيمة محددة",
+      "description": "يظهر الحقل فقط حين يساوي حقل آخر في النموذج نفسه قيمة محددة (أو يحتويها إن كان الحقل الآخر multi_select). يتحقق الخادم من أن `field` يشير إلى مفتاح موجود وليس الحقل نفسه.",
       "type": "object",
       "additionalProperties": false,
       "required": ["field", "equals"],
       "properties": {
-        "field": { "type": "string" },
+        "field": { "$ref": "#/$defs/fieldKey" },
         "equals": { "type": ["string", "number", "boolean"] }
+      }
+    },
+    "fieldKey": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+    "option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "label"],
+      "properties": {
+        "value": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "label": { "$ref": "#/$defs/localized" }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "min_length": { "description": "short_text و long_text", "type": "integer", "minimum": 0 },
+        "max_length": { "description": "short_text و long_text", "type": "integer", "minimum": 1 },
+        "min": { "description": "number", "type": "number" },
+        "max": { "description": "number", "type": "number" },
+        "pattern": { "description": "short_text؛ تعبير نمطي بصيغة ECMA-262 يدعمه الطرفان", "type": "string", "maxLength": 500 },
+        "options": {
+          "description": "لـ select و multi_select؛ القيم فريدة",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 200,
+          "items": { "$ref": "#/$defs/option" }
+        },
+        "min_items": { "description": "multi_select و attachment", "type": "integer", "minimum": 0 },
+        "max_items": { "description": "multi_select و attachment", "type": "integer", "minimum": 1 },
+        "accept": {
+          "description": "attachment: أنواع MIME المقبولة",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^[a-z]+/[a-z0-9.+*-]+$" }
+        },
+        "max_size_bytes": { "description": "attachment: الحد الأقصى لحجم المرفق الواحد", "type": "integer", "minimum": 1 },
+        "not_before": { "description": "datetime: أقدم تاريخ مقبول", "type": "string", "format": "date-time" },
+        "not_after": { "description": "datetime: أحدث تاريخ مقبول", "type": "string", "format": "date-time" }
       }
     },
     "field": {
@@ -43,8 +102,9 @@
       "additionalProperties": false,
       "required": ["key", "type", "label", "required"],
       "properties": {
-        "key": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+        "key": { "$ref": "#/$defs/fieldKey" },
         "type": {
+          "description": "أنواع الحقول العشرة؛ نوع تفاعل جديد يحتاج إصدارًا من التطبيق",
           "type": "string",
           "enum": [
             "short_text",
@@ -63,50 +123,78 @@
         "help": { "$ref": "#/$defs/localized" },
         "required": { "type": "boolean" },
         "sensitive": {
-          "description": "يُشفَّر على مستوى الحقل ولا يُعرض خارج الأدوار المخوّلة",
+          "description": "يُشفَّر على مستوى الحقل ولا يُعرض خارج الأدوار المخوّلة ولا يدخل أي إشعار أو تصدير",
           "type": "boolean",
           "default": false
         },
         "searchable": {
-          "description": "تطلب الإدارة ترقيته إلى فهرس تعبيري أو عمود مُولَّد",
+          "description": "تطلب الإدارة ترقيته إلى فهرس تعبيري أو عمود مُولَّد (لا فهرس GIN شامل)؛ لا يجتمع مع sensitive",
           "type": "boolean",
           "default": false
         },
-        "default": {},
-        "material_types": { "type": "array", "items": { "type": "string" } },
+        "default": {
+          "description": "قيمة افتراضية من نوع الحقل نفسه",
+          "type": ["string", "number", "boolean", "array", "null"]
+        },
+        "material_types": {
+          "description": "يظهر الحقل مع هذه الأنواع فقط؛ فارغ أو غائب = الكل",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/materialType" }
+        },
         "condition": { "$ref": "#/$defs/condition" },
-        "validation": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "min_length": { "type": "integer", "minimum": 0 },
-            "max_length": { "type": "integer", "minimum": 1 },
-            "min": { "type": "number" },
-            "max": { "type": "number" },
-            "pattern": { "type": "string" },
-            "options": {
-              "description": "لـ select و multi_select",
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["value", "label"],
-                "properties": {
-                  "value": { "type": "string" },
-                  "label": { "$ref": "#/$defs/localized" }
-                }
-              }
-            },
-            "max_items": { "type": "integer", "minimum": 1 },
-            "accept": {
-              "description": "أنواع MIME المقبولة للمرفق",
-              "type": "array",
-              "items": { "type": "string" }
-            }
+        "validation": { "$ref": "#/$defs/validation" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "enum": ["select", "multi_select"] } } },
+          "then": {
+            "required": ["validation"],
+            "properties": { "validation": { "type": "object", "required": ["options"] } }
+          },
+          "else": {
+            "properties": { "validation": { "type": "object", "not": { "type": "object", "required": ["options"] } } }
           }
+        },
+        {
+          "if": { "properties": { "type": { "const": "attachment" } } },
+          "then": {
+            "required": ["validation"],
+            "properties": { "validation": { "type": "object", "required": ["accept", "max_size_bytes"] } }
+          },
+          "else": {
+            "properties": { "validation": { "type": "object", "not": { "anyOf": [{ "type": "object", "required": ["accept"] }, { "type": "object", "required": ["max_size_bytes"] }] } } }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "enum": ["multi_select", "attachment"] } } },
+          "else": {
+            "properties": { "validation": { "type": "object", "not": { "anyOf": [{ "type": "object", "required": ["min_items"] }, { "type": "object", "required": ["max_items"] }] } } }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "enum": ["short_text", "long_text"] } } },
+          "else": {
+            "properties": { "validation": { "type": "object", "not": { "anyOf": [{ "type": "object", "required": ["min_length"] }, { "type": "object", "required": ["max_length"] }, { "type": "object", "required": ["pattern"] }] } } }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "number" } } },
+          "else": {
+            "properties": { "validation": { "type": "object", "not": { "anyOf": [{ "type": "object", "required": ["min"] }, { "type": "object", "required": ["max"] }] } } }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "datetime" } } },
+          "else": {
+            "properties": { "validation": { "type": "object", "not": { "anyOf": [{ "type": "object", "required": ["not_before"] }, { "type": "object", "required": ["not_after"] }] } } }
+          }
+        },
+        {
+          "if": { "properties": { "sensitive": { "const": true } }, "required": ["sensitive"] },
+          "then": { "properties": { "searchable": { "const": false } } }
         }
-      }
+      ]
     }
   }
 }

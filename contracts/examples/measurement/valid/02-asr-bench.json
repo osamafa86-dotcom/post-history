@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "tool": "asr-bench",
+  "role": "ai",
+  "decision_ref": 7,
+  "started_at": "2026-11-05T08:00:00Z",
+  "ended_at": "2026-11-05T09:10:00Z",
+  "result": "info",
+  "upload_path": "n/a",
+  "provider": "local/whisper-large-v3-q5",
+  "metrics": { "wer_pct": 18.4, "refusal_rate_pct": 0, "names_hallucinated_pct": 2.1, "cost_per_minute_usd": 0.004 },
+  "cost_usd": 0.12
+}

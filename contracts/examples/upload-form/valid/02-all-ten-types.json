@@ -1,0 +1,107 @@
+{
+  "version": 2,
+  "material_types": ["interview", "report", "press_conference"],
+  "published_at": "2026-10-19T08:00:00Z",
+  "published_by": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+  "fields": [
+    {
+      "key": "guest_name",
+      "type": "short_text",
+      "label": { "ar": "اسم الضيف", "en": "Guest name" },
+      "help": { "ar": "كما يرغب الضيف في ظهوره", "en": "As the guest wants to appear" },
+      "required": true,
+      "material_types": ["interview"],
+      "validation": { "min_length": 2, "max_length": 80 }
+    },
+    {
+      "key": "guest_title",
+      "type": "short_text",
+      "label": { "ar": "صفة الضيف", "en": "Guest title" },
+      "required": false,
+      "material_types": ["interview"],
+      "condition": { "field": "guest_name", "equals": "" },
+      "validation": { "max_length": 80, "pattern": "^[^\\n]*$" }
+    },
+    {
+      "key": "summary",
+      "type": "long_text",
+      "label": { "ar": "ملخص", "en": "Summary" },
+      "required": false,
+      "validation": { "max_length": 4000 }
+    },
+    {
+      "key": "casualties_count",
+      "type": "number",
+      "label": { "ar": "عدد المصابين", "en": "Casualties" },
+      "required": false,
+      "default": 0,
+      "validation": { "min": 0, "max": 100000 }
+    },
+    {
+      "key": "footage_source",
+      "type": "select",
+      "label": { "ar": "مصدر اللقطات", "en": "Footage source" },
+      "required": true,
+      "default": "own",
+      "searchable": true,
+      "validation": {
+        "options": [
+          { "value": "own", "label": { "ar": "تصوير المراسل", "en": "Reporter's own" } },
+          { "value": "handout", "label": { "ar": "مادة مقدَّمة", "en": "Handout" } }
+        ]
+      }
+    },
+    {
+      "key": "handout_terms",
+      "type": "multi_select",
+      "label": { "ar": "شروط المادة المقدَّمة", "en": "Handout terms" },
+      "required": true,
+      "condition": { "field": "footage_source", "equals": "handout" },
+      "validation": {
+        "min_items": 1,
+        "max_items": 3,
+        "options": [
+          { "value": "credit", "label": { "ar": "ذكر المصدر", "en": "Credit required" } },
+          { "value": "no_resale", "label": { "ar": "لا يُباع", "en": "No resale" } },
+          { "value": "time_limited", "label": { "ar": "محدود المدة", "en": "Time limited" } }
+        ]
+      }
+    },
+    {
+      "key": "event_time",
+      "type": "datetime",
+      "label": { "ar": "وقت الحدث", "en": "Event time" },
+      "required": false,
+      "validation": { "not_before": "2020-01-01T00:00:00Z" }
+    },
+    {
+      "key": "incident_location",
+      "type": "location",
+      "label": { "ar": "موقع الحادثة", "en": "Incident location" },
+      "required": false,
+      "sensitive": true
+    },
+    {
+      "key": "consent_obtained",
+      "type": "boolean",
+      "label": { "ar": "أُخذت موافقة الضيف", "en": "Guest consent obtained" },
+      "required": true,
+      "material_types": ["interview"],
+      "default": false
+    },
+    {
+      "key": "field_producer",
+      "type": "staff_member",
+      "label": { "ar": "المنتج الميداني", "en": "Field producer" },
+      "required": false
+    },
+    {
+      "key": "press_release",
+      "type": "attachment",
+      "label": { "ar": "البيان الصحفي", "en": "Press release" },
+      "required": false,
+      "material_types": ["press_conference"],
+      "validation": { "accept": ["application/pdf", "image/*"], "max_size_bytes": 10485760, "max_items": 2 }
+    }
+  ]
+}

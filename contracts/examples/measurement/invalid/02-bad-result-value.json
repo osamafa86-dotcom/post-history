@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "tool": "netlab",
+  "role": "infra",
+  "started_at": "2026-11-03T10:00:00Z",
+  "ended_at": "2026-11-03T11:42:10Z",
+  "result": "ok",
+  "metrics": {}
+}

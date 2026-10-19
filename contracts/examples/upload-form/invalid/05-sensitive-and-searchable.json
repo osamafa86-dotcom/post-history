@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "fields": [
+    { "key": "source_name", "type": "short_text", "label": { "ar": "اسم المصدر", "en": "Source name" }, "required": false, "sensitive": true, "searchable": true }
+  ]
+}

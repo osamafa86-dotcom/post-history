@@ -2,50 +2,97 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://post-history/contracts/schemas/outbox-event.json",
   "title": "OutboxEvent",
-  "description": "حدث يُحفظ في جدول Outbox داخل معاملة الحفظ نفسها ثم يُرسل من طابور قابل لإعادة المحاولة. idempotency_key يمنع إنشاء مهمتين أو رسالتين لتكرار واحد.",
+  "description": "حدث يُحفظ في جدول Outbox داخل معاملة الحفظ نفسها ثم يُرسل من طابور قابل لإعادة المحاولة. idempotency_key يمنع إنشاء مهمتين أو رسالتين لتكرار واحد. الأحداث نفسها تُبث على WebSocket وتُقرأ من GET /v1/events.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "type", "aggregate_type", "aggregate_id", "occurred_at", "idempotency_key", "payload"],
   "properties": {
-    "id": { "type": "string", "description": "تسلسلي أو ULID" },
+    "id": {
+      "description": "تسلسلي متزايد (رقم الصف في جدول Outbox) بصيغة نصية؛ يُستخدم مؤشرًا في `after`",
+      "type": "string",
+      "pattern": "^[0-9]{1,19}$"
+    },
     "type": {
       "type": "string",
       "enum": [
         "material.created",
         "material.urgent_received",
+        "material.updated",
+        "material.version_created",
+        "material.technical_transition",
+        "material.editorial_transition",
+        "material.rights_transition",
+        "material.acknowledged",
+        "material.change_requested",
+        "material.accepted_for_production",
+        "material.reserved",
+        "material.released",
+        "material.contributors_set",
+        "material.published",
+        "upload.started",
         "upload.proxy_received",
         "upload.original_received",
         "upload.verified",
+        "upload.deduplicated",
         "upload.failed",
-        "material.editorial_transition",
-        "material.rights_transition",
-        "material.reserved",
-        "material.released",
-        "material.change_requested",
-        "material.accepted_for_production",
+        "form.published",
         "ai.draft_ready",
-        "material.published",
-        "notification.escalated"
+        "notification.escalated",
+        "auth.recovery_requested",
+        "auth.recovery_approved"
       ]
     },
-    "aggregate_type": { "type": "string", "enum": ["material", "upload", "notification"] },
+    "aggregate_type": { "type": "string", "enum": ["material", "upload", "notification", "form", "user"] },
     "aggregate_id": { "type": "string", "format": "uuid" },
     "occurred_at": { "type": "string", "format": "date-time" },
-    "idempotency_key": { "type": "string", "minLength": 8 },
-    "actor_id": { "type": ["string", "null"], "format": "uuid" },
-    "payload": {
-      "description": "لا أسماء مصادر محمية ولا إحداثيات دقيقة هنا؛ الحمولة قد تصل إلى قنوات خارجية",
-      "type": "object",
-      "additionalProperties": true
+    "idempotency_key": {
+      "description": "فريد لكل حدث؛ يُشتق تحديدًا من (النوع، المجمّع، سبب الحدث) فيتكرر الاستدعاء دون أن يتكرر الحدث",
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 200
     },
+    "actor_id": {
+      "description": "من نفّذ؛ فارغ للأحداث التي يكتبها الخادم (hooks الرفع، التصعيد)",
+      "type": ["string", "null"],
+      "format": "uuid"
+    },
+    "payload": {
+      "description": "لا أسماء مصادر محمية ولا إحداثيات دقيقة ولا معرّفات أجهزة ولا رموز دفع هنا؛ الحمولة قد تصل إلى قنوات خارجية. تكفي معرّفات المادة والحالات والأولوية.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "material_id": { "type": "string", "format": "uuid" },
+        "priority": { "type": "string", "enum": ["urgent", "important", "normal"] },
+        "track": { "type": "string", "enum": ["technical", "editorial", "rights"] },
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "receipt_number": { "type": ["string", "null"], "pattern": "^R-[0-9]{6}-[0-9]{6}$" }
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["gps"] },
+          { "required": ["lat"] },
+          { "required": ["lng"] },
+          { "required": ["device_id"] },
+          { "required": ["push_token"] }
+        ]
+      }
+    },
+    "published_at": {
+      "description": "متى أخرجه المُرسل من Outbox؛ فارغ ما دام في الانتظار",
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "attempts": { "type": "integer", "minimum": 0 },
     "delivery": {
+      "description": "حالة الإرسال لكل قناة (تُقرأ من جدول تسليم الإشعارات)",
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["channel", "status"],
         "properties": {
-          "channel": { "type": "string", "enum": ["in_app", "websocket", "apns", "fcm", "email", "telegram", "whatsapp", "sms"] },
+          "channel": { "type": "string", "enum": ["in_app", "websocket", "apns", "fcm", "web_push", "email", "telegram", "whatsapp", "sms"] },
           "status": { "type": "string", "enum": ["pending", "sent", "delivered", "read", "failed"] },
           "attempts": { "type": "integer", "minimum": 0 },
           "last_error": { "type": ["string", "null"] }

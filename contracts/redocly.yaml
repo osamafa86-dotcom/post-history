@@ -1,0 +1,20 @@
+# إعداد فحص العقد. يُستدعى من contracts/scripts/check.sh محليًا وفي CI.
+# كل القواعد الموصى بها أخطاء لا تحذيرات: التحذير المتجاهَل يصبح كسرًا للتوافق لاحقًا.
+extends:
+  - recommended
+rules:
+  operation-4xx-response: error
+  operation-operationId: error
+  operation-operationId-unique: error
+  operation-summary: error
+  operation-description: off
+  tag-description: error
+  info-license: error
+  no-invalid-schema-examples: error
+  no-invalid-media-type-examples: error
+  no-unused-components: error
+  no-unresolved-refs: error
+  no-ambiguous-paths: error
+  path-params-defined: error
+  spec-strict-refs: off
+  security-defined: error

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "tool": "ios-app",
+  "role": "ios",
+  "started_at": "2026-11-03T10:00:00Z",
+  "ended_at": "2026-11-03T10:30:00Z",
+  "result": "pass",
+  "metrics": { "resume_ok": true },
+  "gps": { "lat": 31.5, "lng": 34.4 }
+}
