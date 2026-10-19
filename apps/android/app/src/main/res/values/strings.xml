@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- العربية هي اللغة الافتراضية؛ الإنجليزية في values-en. كل نص واجهة هنا، لا في الكود. -->
+<resources>
+    <string name="app_name">المكتبة المرئية</string>
+
+    <!-- الدخول -->
+    <string name="login_title">تسجيل الدخول</string>
+    <string name="login_email">البريد الإلكتروني</string>
+    <string name="login_password">كلمة المرور</string>
+    <string name="login_totp">رمز التحقق (6 أرقام)</string>
+    <string name="login_totp_help">من تطبيق المصادقة على هاتفك</string>
+    <string name="login_submit">دخول</string>
+    <string name="login_in_progress">جارٍ الدخول…</string>
+    <string name="login_session_revoked">أُنهيت جلستك على هذا الجهاز. سجّل الدخول من جديد.</string>
+
+    <!-- أخطاء الخادم برموزها الثابتة -->
+    <string name="err_unauthorized">البريد أو كلمة المرور غير صحيحة.</string>
+    <string name="err_totp_required">أدخل رمز التحقق من تطبيق المصادقة.</string>
+    <string name="err_rate_limited">محاولات كثيرة. انتظر قليلًا ثم حاول مرة أخرى.</string>
+    <string name="err_validation_failed">تحقق من البيانات المدخلة.</string>
+    <string name="err_offline">لا اتصال بالخادم. تحقق من الشبكة وحاول مرة أخرى.</string>
+    <string name="err_server">خلل في الخادم. حاول لاحقًا.</string>
+    <string name="err_not_found">غير موجود.</string>
+    <string name="err_unknown">حدث خطأ غير متوقع.</string>
+    <string name="err_request_id">رقم الطلب: %1$s</string>
+
+    <!-- الرئيسية -->
+    <string name="home_title">حسابي</string>
+    <string name="home_signed_in_as">مسجّل الدخول باسم %1$s</string>
+    <string name="home_roles">الأدوار: %1$s</string>
+    <string name="home_no_roles">لا أدوار</string>
+    <string name="home_loading">جارٍ التحميل…</string>
+    <string name="home_logout">تسجيل الخروج</string>
+    <string name="home_logout_all">إنهاء كل الجلسات على كل الأجهزة</string>
+    <string name="home_open_form">معاينة نموذج الرفع</string>
+    <string name="action_retry">إعادة المحاولة</string>
+    <string name="action_back">رجوع</string>
+
+    <!-- أسماء الأدوار -->
+    <string name="role_system_admin">مدير النظام</string>
+    <string name="role_editor_in_chief">رئيس التحرير</string>
+    <string name="role_supervisor">مشرف</string>
+    <string name="role_producer">إنتاج</string>
+    <string name="role_finance">مالية</string>
+    <string name="role_reporter">مراسل</string>
+    <string name="role_rights_officer">مسؤول الحقوق</string>
+
+    <!-- أنواع المواد -->
+    <string name="material_type_breaking">عاجل</string>
+    <string name="material_type_report">تقرير</string>
+    <string name="material_type_interview">مقابلة</string>
+    <string name="material_type_raw_footage">مادة خام</string>
+    <string name="material_type_aerial">تصوير جوي</string>
+    <string name="material_type_press_conference">مؤتمر صحفي</string>
+    <string name="material_type_eyewitness">شاهد عيان</string>
+    <string name="material_type_photos">صور</string>
+
+    <!-- النموذج الديناميكي -->
+    <string name="form_title">نموذج الرفع</string>
+    <string name="form_version">الإصدار %1$d</string>
+    <string name="form_material_type">نوع المادة</string>
+    <string name="form_validate">تحقق</string>
+    <string name="form_valid">كل الحقول صالحة.</string>
+    <string name="form_invalid">%1$d حقل يحتاج تصحيحًا.</string>
+    <string name="form_required_mark">*</string>
+    <string name="form_select_placeholder">اختر…</string>
+    <string name="form_bool_yes">نعم</string>
+    <string name="form_bool_no">لا</string>
+    <string name="form_datetime_hint">مثل 2026-10-19T14:30:00+03:00</string>
+    <string name="form_datetime_now">الآن</string>
+    <string name="form_staff_member_hint">معرّف عضو الطاقم</string>
+    <string name="form_attachment_pick">اختيار ملفات</string>
+    <string name="form_attachment_count">%1$d ملف مختار</string>
+    <string name="form_attachment_none">لم يُختر ملف</string>
+    <string name="form_location_unsupported">حقل الموقع غير مدعوم في هذا الإصدار.</string>
+
+    <!-- أخطاء الحقول برموز اختبار المطابقة -->
+    <string name="field_err_required">هذا الحقل مطلوب.</string>
+    <string name="field_err_type">القيمة ليست من النوع المطلوب.</string>
+    <string name="field_err_min_length">الحد الأدنى %1$d حرفًا.</string>
+    <string name="field_err_max_length">الحد الأقصى %1$d حرفًا.</string>
+    <string name="field_err_pattern">الصيغة غير مطابقة.</string>
+    <string name="field_err_min">الحد الأدنى %1$s.</string>
+    <string name="field_err_max">الحد الأقصى %1$s.</string>
+    <string name="field_err_option">اختر من القائمة.</string>
+    <string name="field_err_min_items">اختر %1$d على الأقل.</string>
+    <string name="field_err_max_items">اختر %1$d على الأكثر.</string>
+    <string name="field_err_not_before">لا يسبق %1$s.</string>
+    <string name="field_err_not_after">لا يتجاوز %1$s.</string>
+    <string name="field_err_accept">نوع الملف غير مقبول.</string>
+    <string name="field_err_max_size_bytes">حجم الملف يتجاوز %1$s.</string>
+
+    <!-- إشعارات الرفع (لا اسم ملف ولا عنوان ولا مكان) -->
+    <string name="notif_channel_progress">تقدم الرفع</string>
+    <string name="notif_channel_results">نتائج الرفع</string>
+    <string name="notif_progress_title">رفع المواد</string>
+    <string name="notif_progress_waiting">بانتظار الشبكة…</string>
+    <string name="notif_progress_text">الملف %1$d من %2$d — %3$d٪</string>
+    <string name="notif_received_title">تم الاستلام بنجاح</string>
+    <string name="notif_received_text">رقم الإيصال %1$s</string>
+    <string name="notif_received_no_receipt">وصل الملف وجارٍ إصدار الإيصال.</string>
+    <string name="notif_failed_title">توقف رفع</string>
+    <string name="notif_failed_text">افتح التطبيق لمعرفة السبب وإعادة المحاولة.</string>
+
+    <!-- الرئيسية: الإجراءات -->
+    <string name="home_new_material">مادة جديدة</string>
+    <string name="home_uploads">قائمة الرفع</string>
+    <string name="home_setup">تهيئة الجهاز للرفع في الخلفية</string>
+
+    <!-- الأولوية واسم الظهور -->
+    <string name="priority_urgent">عاجل</string>
+    <string name="priority_important">مهم</string>
+    <string name="priority_normal">عادي</string>
+    <string name="display_real_name">الاسم الحقيقي</string>
+    <string name="display_pseudonym">اسم مستعار</string>
+    <string name="display_network">باسم الشبكة</string>
+
+    <!-- مادة جديدة -->
+    <string name="material_new_title">مادة جديدة</string>
+    <string name="material_file_section">الملف الأصلي</string>
+    <string name="material_pick_file">اختيار من المعرض</string>
+    <string name="material_file_chosen">مختار (%1$s)؛ يُرفع كما هو دون ضغط</string>
+    <string name="material_file_none">لم يُختر ملف</string>
+    <string name="material_file_required">اختر الملف الأصلي أولًا.</string>
+    <string name="material_title">العنوان</string>
+    <string name="material_title_help">من 5 إلى 80 حرفًا</string>
+    <string name="material_types">نوع المادة</string>
+    <string name="material_governorate">المحافظة</string>
+    <string name="material_city">المدينة أو البلدة</string>
+    <string name="material_priority">الأولوية</string>
+    <string name="material_sensitivity">الحساسية</string>
+    <string name="material_sensitivity_help">أسئلة إلزامية؛ أي «نعم» يفعّل التمويه والتحذير ويحوّل المعالجة إلى المسار المحلي.</string>
+    <string name="material_sensitivity_minors">تظهر فيها وجوه قاصرين؟</string>
+    <string name="material_sensitivity_injured">تظهر فيها إصابات؟</string>
+    <string name="material_sensitivity_graphic">مشاهد صادمة؟</string>
+    <string name="material_sensitivity_required">أجب عن أسئلة الحساسية الثلاثة.</string>
+    <string name="material_display_name">اسم الظهور للعموم</string>
+    <string name="material_pseudonym">الاسم المستعار</string>
+    <string name="material_submit">حفظ وبدء الرفع</string>
+    <string name="material_submitting">جارٍ الحفظ…</string>
+    <string name="material_submit_help">يُنشأ سجل المادة فورًا ويصل المشرف إشعار «مادة واردة»، ثم يُرفع الأصل في الخلفية ويستأنف من آخر ما وصل بعد أي انقطاع.</string>
+
+    <!-- قائمة الرفع -->
+    <string name="uploads_title">قائمة الرفع</string>
+    <string name="uploads_empty">لا مواد في قائمة الرفع.</string>
+    <string name="uploads_resume">استئناف الآن</string>
+    <string name="uploads_bytes">%1$s من %2$s</string>
+    <string name="uploads_receipt">رقم الإيصال: %1$s</string>
+    <string name="uploads_retry">إعادة المحاولة بجلسة جديدة</string>
+    <string name="uploads_local_copy_title">الملف ما زال على هاتفك</string>
+    <string name="uploads_local_copy_body">وصل الأصل وتم التحقق منه وصدر الإيصال. حذف النسخة المحلية قرارك أنت؛ يُنصح به إن كان بقاؤها على الهاتف خطرًا عليك.</string>
+    <string name="uploads_delete_local">احذف النسخة المحلية</string>
+    <string name="uploads_keep_local">أبقِها</string>
+    <string name="uploads_delete_in_gallery">تعذّر الحذف من هنا؛ احذف الملف من تطبيق المعرض أو الملفات.</string>
+    <string name="upload_state_queued">في الانتظار</string>
+    <string name="upload_state_hashing">حساب البصمة على الجهاز…</string>
+    <string name="upload_state_creating">إنشاء جلسة الرفع…</string>
+    <string name="upload_state_uploading">جارٍ الرفع</string>
+    <string name="upload_state_awaiting_receipt">وصل الملف؛ بانتظار التحقق والإيصال</string>
+    <string name="upload_state_verified">وصل الأصل وتم التحقق منه</string>
+    <string name="upload_state_deduplicated">الملف موجود مسبقًا (مطابق بالبصمة)</string>
+    <string name="upload_state_failed">توقف</string>
+    <string name="upload_failure_session_expired">انتهت جلسة الرفع قبل اكتماله.</string>
+    <string name="upload_failure_checksum">بصمة الملف على الخادم لا تطابق بصمته على الجهاز.</string>
+    <string name="upload_failure_invalid_file">رفض الخادم الملف.</string>
+    <string name="upload_failure_rejected">رفض الخادم إنشاء جلسة الرفع.</string>
+    <string name="upload_failure_file_unavailable">لم يعد الملف متاحًا على الجهاز.</string>
+    <string name="upload_failure_storage">خلل في التخزين على الخادم.</string>
+    <string name="upload_failure_aborted">أُلغي الرفع.</string>
+    <string name="upload_failure_unknown">توقف الرفع لسبب غير معروف.</string>
+
+    <!-- تهيئة قاتلات المهام -->
+    <string name="setup_title">تهيئة الرفع في الخلفية</string>
+    <string name="setup_intro">على أجهزة %1$s يوقف مدير البطارية التطبيقات بعد قفل الشاشة فيتوقف الرفع. الخطوات التالية تستثني هذا التطبيق. التطبيق لا يطلب أي صلاحية؛ أنت تغيّر الإعدادات بنفسك.</string>
+    <string name="setup_notifications_title">إشعار التقدم</string>
+    <string name="setup_notifications_body">يعرض التطبيق إشعارًا دائمًا أثناء الرفع (بلا اسم ملف ولا عنوان). اسمح بالإشعارات ليظهر.</string>
+    <string name="setup_allow">السماح</string>
+    <string name="setup_battery_title">استثناء من توفير البطارية</string>
+    <string name="setup_battery_body">في القائمة التي ستُفتح اختر «كل التطبيقات»، ثم ابحث عن هذا التطبيق واختر «عدم التحسين» أو «غير مقيّد».</string>
+    <string name="setup_battery_body_samsung">في القائمة التي ستُفتح اختر «الكل»، ثم ابحث عن هذا التطبيق واختر «عدم التحسين». ثم أكمل خطوة «التطبيقات النائمة».</string>
+    <string name="setup_xiaomi_saver_title">توفير البطارية للتطبيق: بلا قيود</string>
+    <string name="setup_xiaomi_saver_body">في صفحة التطبيق اختر «بلا قيود» (No restrictions) بدل «ذكي» أو «توفير».</string>
+    <string name="setup_autostart_title">التشغيل التلقائي</string>
+    <string name="setup_autostart_body_xiaomi">فعّل «التشغيل التلقائي» لهذا التطبيق في قائمة إدارة التشغيل التلقائي.</string>
+    <string name="setup_autostart_body_huawei">في «إدارة التشغيل» أطفئ الإدارة التلقائية لهذا التطبيق وفعّل الخيارات الثلاثة (التشغيل التلقائي، التشغيل الثانوي، العمل في الخلفية).</string>
+    <string name="setup_autostart_body_generic">فعّل التشغيل التلقائي أو «السماح بالعمل في الخلفية» لهذا التطبيق.</string>
+    <string name="setup_samsung_sleep_title">التطبيقات النائمة</string>
+    <string name="setup_samsung_sleep_body">افتح «حدود استخدام الخلفية» ثم «التطبيقات التي لا تنام أبدًا» وأضف هذا التطبيق. تأكد أيضًا أنه ليس في «التطبيقات النائمة» أو «النائمة بعمق».</string>
+    <string name="setup_lock_title">تثبيت التطبيق في قائمة التطبيقات الأخيرة</string>
+    <string name="setup_lock_body_xiaomi">افتح التطبيقات الأخيرة، اضغط مطوّلًا على بطاقة هذا التطبيق، ثم اضغط رمز القفل.</string>
+    <string name="setup_lock_body_samsung">افتح التطبيقات الأخيرة، اضغط أيقونة التطبيق أعلى بطاقته، ثم «قفل هذا التطبيق».</string>
+    <string name="setup_lock_body_generic">افتح التطبيقات الأخيرة واقفل بطاقة هذا التطبيق إن كان الجهاز يتيح ذلك.</string>
+    <string name="setup_open_settings">افتح الإعدادات</string>
+    <string name="setup_status_done">تم ✓</string>
+    <string name="setup_status_pending">لم يتم بعد</string>
+    <string name="setup_footer">اختبار القبول: رفع 1 غيغابايت بعد قفل الشاشة 30 دقيقة يكتمل دون تدخل بعد هذه الشاشة وحدها.</string>
+    <string name="setup_finish">أكملتُ الخطوات</string>
+    <string name="setup_finish_anyway">متابعة دون استثناء البطارية</string>
+    <string name="vendor_xiaomi">Xiaomi / Redmi / POCO</string>
+    <string name="vendor_samsung">Samsung</string>
+    <string name="vendor_huawei">Huawei / Honor</string>
+    <string name="vendor_oppo">OPPO / Realme / OnePlus</string>
+    <string name="vendor_vivo">vivo / iQOO</string>
+    <string name="vendor_other">هذا الجهاز</string>
+</resources>

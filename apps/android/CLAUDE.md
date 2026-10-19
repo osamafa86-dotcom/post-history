@@ -22,3 +22,13 @@
 - لا إحداثيات دقيقة تخرج إلا مشفرة واختيارية.
 - كل نص في ملفات موارد بالعربية والإنجليزية.
 - اختبارات Espresso، وسكربت اختبار ميداني على جهازي Xiaomi وSamsung بعد قفل الشاشة 30 دقيقة، ونتائجه بمخطط `measurement.json` في `docs/measurements/android-app/`.
+
+## بنية المشروع (الحالة بعد الطلبين الأول والثاني)
+
+- `api/` — العميل المولَّد في البناء من `contracts/openapi.yaml` (OpenAPI Generator، Kotlin + OkHttp + Moshi، دوال معلّقة). لا ملف مصدر مكتوب يدويًا فيه؛ انظر ADR 0008 لمهمة `prepareContractView`.
+- `core/` — Kotlin صِرف يُختبر على JVM: `FormValidator` (قواعد `form-conformance` نفسها، 57/57)، و`AuthManager` (الدخول، تدوير رمز التحديث مرة واحدة للطلبات المتزامنة، الإبطال)، ونواة الرفع: `UploadEngine` (آلة حالات تُحفظ بعد كل طلب أكّده الخادم: بصمة على الجهاز → `POST /uploads` بمفتاح ثابت → إنشاء tus → استئناف من `HEAD` → انتظار الإيصال) و`TusTransport` فوق `tus-java-client`. اختبارات الاستئناف بخادم tus مزيّف: قطع في منتصف الطلب، 5xx، قتل العملية ثم تشغيل جديد، انتهاء الرمز، اختلاف البصمة.
+- `app/` — Compose: الدخول، الحساب، مادة جديدة (الحقول الثابتة + النموذج الديناميكي + الملف الأصلي من Photo Picker بصلاحية دائمة دون نسخ)، قائمة الرفع (التقدم، رقم الإيصال، إعادة المحاولة، تذكير بارز بحذف النسخة المحلية بقرار المراسل)، وشاشة تهيئة قاتلات المهام بحسب المصنّع (`ui/setup/TaskKillerGuide.kt`؛ بلا `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`). المضيف: `UploadJobService` (UIDT، أندرويد 14+) و`UploadForegroundService` (`dataSync`، 10–13) و`BootReceiver` (10–13). الطابور في Room (`data/UploadDatabase.kt`) ورمز الرفع مختوم بـ `KeystoreSealer`. الإشعارات بلا اسم ملف ولا عنوان. النصوص في `res/values` (عربية افتراضية) و`res/values-en`؛ `MissingTranslation` خطأ في lint.
+- البناء محليًا: `cd apps/android && ./gradlew :core:test :app:assembleDebug :app:lintDebug` (يحتاج Android SDK 36 وJDK 17+). عنوان الخادم بـ `-PapiBaseUrl=https://…/v1` للإصدار؛ debug يشير إلى `http://10.0.2.2:3000/v1`.
+- CI: `.github/workflows/android.yml` يبني ويختبر ويشغّل الحكم المشترك على `core/build/form-conformance/android.json`.
+- الاختبار الميداني: `apps/android/docs/field-test-android.md` (يكمّل ورقتَي الجودة `task-killers` و`force-quit-restart`).
+- مؤجَّل إلى التذكرة 2: الوسيط على الجهاز (Media3 Transformer)، قفل BiometricPrompt، المسح الطارئ، FCM، Play Integrity، اختبارات Espresso.

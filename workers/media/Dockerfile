@@ -7,6 +7,8 @@ COPY --from=ffmpeg /ffmpeg /ffprobe /usr/local/bin/
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONPATH=/app/src
 RUN useradd --system --uid 10001 --home-dir /app media
 WORKDIR /app
+COPY requirements.txt ./
+RUN pip install --require-hashes --no-deps --only-binary=:all: -r requirements.txt
 COPY pyproject.toml ./
 COPY src ./src
 
@@ -19,5 +21,8 @@ USER media
 CMD ["python", "-m", "pytest", "-q"]
 
 FROM base AS runtime
+# قرص مؤقت للتنزيل والنسخ الخفيفة؛ يُركَّب حجمًا في compose
+RUN install -d -o media -g media /scratch
 USER media
 ENTRYPOINT ["python", "-m", "media_worker"]
+CMD ["serve"]
