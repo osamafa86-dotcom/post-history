@@ -36,3 +36,20 @@ export async function writeOutboxEvent(tx: Tx, event: NewOutboxEvent): Promise<b
     .returning({ id: outboxEvents.id });
   return rows.length > 0;
 }
+
+/** الحدث بصيغة العقد (`outbox-event.json`): ما يقرؤه `GET /events` ويُنشر إلى طابور عامل الوسائط. */
+export function serializeOutboxEvent(e: typeof outboxEvents.$inferSelect): ContractEvent {
+  const iso = (v: string | null) => (v === null ? null : new Date(v).toISOString());
+  return {
+    id: String(e.id),
+    type: e.type as OutboxEventType,
+    aggregate_type: e.aggregateType as OutboxAggregateType,
+    aggregate_id: e.aggregateId,
+    occurred_at: iso(e.occurredAt)!,
+    idempotency_key: e.idempotencyKey,
+    actor_id: e.actorId,
+    payload: e.payload as ContractEvent['payload'],
+    published_at: iso(e.publishedAt),
+    attempts: e.attempts,
+  } as ContractEvent;
+}

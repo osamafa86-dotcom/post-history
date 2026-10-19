@@ -112,6 +112,13 @@ const schema = z.object({
   // in_process: يتحقق الخادم من الملفات المكتملة بنفسه؛ external: عامل الوسائط يفعل ذلك والخادم لا يقرأ التخزين
   UPLOAD_VERIFIER: z.enum(['in_process', 'external']).default('in_process'),
   VERIFY_POLL_INTERVAL_MS: z.coerce.number().int().min(100).default(2000),
+  // UPLOAD_VERIFIER=external: أحداث الاستلام تُنشر إلى Redis Stream `media:events` بطول أقصى تقريبي (ADR 0006)
+  MEDIA_STREAM_MAXLEN: z.coerce.number().int().min(1000).default(100_000),
+  // رمز عامل الوسائط لنقاط /internal/media/* (ترويسة Bearer)، منفصل عن TUSD_HOOK_SECRET؛ غير مضبوط = النقاط 404
+  MEDIA_WORKER_TOKEN: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{32,256}$/, 'must be 32-256 characters of [A-Za-z0-9_-]')
+    .optional(),
   // عدد الملفات التي تُحسب بصماتها معًا؛ كل واحد يشغل اتصالًا من المجمع طوال قراءته، فيبقى أقل من DATABASE_POOL_MAX
   VERIFY_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
   // خيوط حساب SHA-256 (worker_threads)؛ افتراضيًا عدد الأنوية ناقص واحد يبقى لخيط الحدث
@@ -166,6 +173,9 @@ const validated = schema.superRefine((c, ctx) => {
   }
   if (c.NODE_ENV !== 'production') return;
   if (!c.REDIS_URL) ctx.addIssue({ code: 'custom', path: ['REDIS_URL'], message: 'required in production' });
+  if (c.UPLOAD_VERIFIER === 'external' && !c.MEDIA_WORKER_TOKEN) {
+    ctx.addIssue({ code: 'custom', path: ['MEDIA_WORKER_TOKEN'], message: 'required in production when UPLOAD_VERIFIER=external' });
+  }
   if (c.UPLOAD_VERIFIER !== 'in_process') return;
   for (const k of ['S3_ENDPOINT', 'S3_ACCESS_KEY', 'S3_SECRET_KEY'] as const) {
     if (!c[k]) ctx.addIssue({ code: 'custom', path: [k], message: 'required in production when UPLOAD_VERIFIER=in_process' });
