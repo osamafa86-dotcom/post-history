@@ -38,6 +38,8 @@ const schema = z.object({
   INTERNAL_ALLOWED_CIDRS: cidrList.prefault('127.0.0.1/32,::1/128'),
 
   DATABASE_URL: z.string().min(1),
+  // Redis مشترك بين نسخ الخادم (حد المعدل الآن، الطوابير لاحقًا)
+  REDIS_URL: z.string().min(1),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).default(10),
 
   JWT_SECRET: z.string().min(32),
@@ -58,6 +60,14 @@ const schema = z.object({
   TUSD_HOOK_SECRET: z.string().min(32).max(128),
   TUSD_OBJECT_PREFIX: z.string().default(''),
   S3_BUCKET_UPLOADS: z.string().min(1),
+  // التخزين الذي يقرأ منه التحقق داخل الخادم (MinIO محليًا، R2 في الإنتاج)
+  S3_ENDPOINT: z.string().optional(),
+  S3_REGION: z.string().default('auto'),
+  S3_ACCESS_KEY: z.string().optional(),
+  S3_SECRET_KEY: z.string().optional(),
+  // in_process: يتحقق الخادم من الملفات المكتملة بنفسه؛ external: عامل الوسائط يفعل ذلك والخادم لا يقرأ التخزين
+  UPLOAD_VERIFIER: z.enum(['in_process', 'external']).default('in_process'),
+  VERIFY_POLL_INTERVAL_MS: z.coerce.number().int().min(100).default(2000),
 
   // حجز الإنتاج يُحرَّر تلقائيًا بعد هذا الخمول (15 دقيقة افتراضيًا)
   RESERVATION_IDLE_SECONDS: z.coerce.number().int().min(60).default(900),
@@ -69,6 +79,11 @@ const schema = z.object({
   // لغة عناوين الإشعارات المخزنة (القوالب بالعربية والإنجليزية في notifications/messages.ts)
   NOTIFICATION_LOCALE: z.enum(['ar', 'en']).default('ar'),
 
+  // مهلة الإقرار قبل تصعيد مهمة لم يُقرّ استلامها (ثوانٍ) لكل أولوية، ثم المهلة نفسها لكل مستوى تالٍ
+  ESCALATION_URGENT_SECONDS: z.coerce.number().int().min(1).default(600),
+  ESCALATION_IMPORTANT_SECONDS: z.coerce.number().int().min(1).default(3600),
+  ESCALATION_POLL_INTERVAL_MS: z.coerce.number().int().min(100).default(15000),
+
   OUTBOX_DISPATCHER_ENABLED: z
     .enum(['true', 'false'])
     .default('true')
@@ -77,13 +92,21 @@ const schema = z.object({
   OUTBOX_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(50),
 });
 
-export type AppConfig = z.infer<typeof schema>;
+export type AppConfig = z.infer<typeof validated>;
+// التحقق داخل الخادم يحتاج بيانات التخزين كاملة
+const validated = schema.superRefine((c, ctx) => {
+  if (c.UPLOAD_VERIFIER !== 'in_process') return;
+  for (const k of ['S3_ENDPOINT', 'S3_ACCESS_KEY', 'S3_SECRET_KEY'] as const) {
+    if (!c[k]) ctx.addIssue({ code: 'custom', path: [k], message: 'required when UPLOAD_VERIFIER=in_process' });
+  }
+});
+
 export const APP_CONFIG = Symbol('APP_CONFIG');
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   // المتغير الفارغ (كما في .env.example المنسوخ) = غير مضبوط، فتسري القيمة الافتراضية
   const defined = Object.fromEntries(Object.entries(env).filter(([, v]) => v !== ''));
-  const parsed = schema.safeParse(defined);
+  const parsed = validated.safeParse(defined);
   if (!parsed.success) {
     // أسماء المتغيرات فقط؛ لا تُطبع القيم
     const names = [...new Set(parsed.error.issues.map((i) => i.path.join('.')))];
