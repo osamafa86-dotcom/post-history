@@ -207,7 +207,7 @@
           "$ref": "#/$defs/fieldKey"
         },
         "type": {
-          "description": "أنواع الحقول العشرة؛ نوع تفاعل جديد يحتاج إصدارًا من التطبيق؛ النوع location غير مسموح في نماذج v0",
+          "description": "أنواع الحقول العشرة؛ نوع تفاعل جديد يحتاج إصدارًا من التطبيق. النوع location يُعرض لحامل الصلاحية sensitive_location:read فقط وغير مسموح في نماذج v0",
           "type": "string",
           "enum": [
             "short_text",
@@ -232,7 +232,7 @@
           "type": "boolean"
         },
         "sensitive": {
-          "description": "يُشفَّر على مستوى الحقل ولا يُعرض خارج الأدوار المخوّلة ولا يدخل أي إشعار أو تصدير؛ غير مسموح في v0 (انظر allOf)",
+          "description": "يُشفَّر على مستوى الحقل ولا يُعرض إلا لحامل الصلاحية protected_source:read ولا يدخل أي إشعار أو تصدير؛ غير مسموح في v0 (انظر allOf)",
           "type": "boolean",
           "default": false
         },
