@@ -29,6 +29,10 @@ jobs:
   secrets:
     name: secret scan
     runs-on: ubuntu-latest
+    # gitleaks-action lists PR commits via the API: needs pull-requests:read. Comments disabled (least privilege).
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,6 +40,7 @@ jobs:
       - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
 
   compose:
     name: compose config
