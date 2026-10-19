@@ -17,8 +17,9 @@ export class UploadsController {
    * - TUSD_POST_CREATE_HOOK=false: الجلسة تصير `in_progress` عند قبول pre-create، فإن فشل الإنشاء لدى tusd بعده لزمت
    *   جلسة جديدة.
    * - TUSD_POST_CREATE_HOOK=true: تبقى `created` حتى post-create (نجاح الإنشاء)، ففشل الإنشاء يُعاد بالرمز نفسه.
-   *   الشباك المتبقي: بين قبول pre-create ووصول post-create يُقبل pre-create آخر بالرمز نفسه، مثبَّتًا على معرّف
-   *   الجلسة نفسه، فلا يفتح الرمز المسرّب رفعًا منفصلًا.
+   *   قبول pre-create يحجز الجلسة (TUSD_PRE_CREATE_RESERVATION_SECONDS، افتراضي 60 ث)، وأي pre-create آخر يُرفض حتى
+   *   post-create أو انقضاء الحجز؛ لأن tusd لا يرفض المعرّف المكرّر فيتشارك إنشاءان الكائن نفسه. إعادة المحاولة
+   *   بعد فشل الإنشاء تنتظر انقضاء الحجز.
    */
   @Post()
   @Roles('reporter')

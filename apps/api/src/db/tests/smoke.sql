@@ -136,6 +136,10 @@ SELECT pg_temp.expect_error($q$ UPDATE upload_sessions SET state = 'failed' WHER
 SELECT pg_temp.expect_error($q$ UPDATE upload_sessions SET part_size_bytes = 1024 WHERE id = '00000000-0000-4000-8000-000000000201' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE upload_sessions SET proxy_mode = 'urgent' WHERE id = '00000000-0000-4000-8000-000000000201' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE upload_sessions SET state = 'deduplicated' WHERE id = '00000000-0000-4000-8000-000000000201' $q$, '23514');
+-- حجز pre-create لا يبقى بعد خروج الجلسة من created
+UPDATE upload_sessions SET hook_reserved_until = now() + interval '60 seconds' WHERE id = '00000000-0000-4000-8000-000000000201';
+SELECT pg_temp.expect_error($q$ UPDATE upload_sessions SET state = 'in_progress' WHERE id = '00000000-0000-4000-8000-000000000201' $q$, '23514');
+UPDATE upload_sessions SET hook_reserved_until = NULL WHERE id = '00000000-0000-4000-8000-000000000201';
 
 INSERT INTO material_files (id, material_id, kind, state, upload_session_id, storage_key, size_bytes)
 VALUES ('00000000-0000-4000-8000-000000000301', '00000000-0000-4000-8000-000000000101', 'original', 'received',

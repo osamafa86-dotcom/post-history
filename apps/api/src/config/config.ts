@@ -1,4 +1,5 @@
 import { BlockList, isIP } from 'node:net';
+import { availableParallelism } from 'node:os';
 import { z } from 'zod';
 
 export function parseCidr(cidr: string): { address: string; prefix: number; family: 'ipv4' | 'ipv6' } | null {
@@ -67,6 +68,8 @@ const schema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  // مع post-create: مدة حجز الجلسة بعد قبول pre-create؛ يُرفض أي pre-create آخر قبل انقضائها أو قبل post-create
+  TUSD_PRE_CREATE_RESERVATION_SECONDS: z.coerce.number().int().min(5).max(3600).default(60),
   // ما يُعاد للعميل عند إنشاء جلسة رفع: نقطة tus العامة، وحجم الجزء الثابت (R2 يشترط تساويه، ≥ 5 MiB)
   TUS_PUBLIC_ENDPOINT: z.string().url().default('http://localhost:8080/files/'),
   TUSD_PART_SIZE_BYTES: z.coerce.number().int().min(5 * 1024 * 1024).default(16 * 1024 * 1024),
@@ -85,6 +88,13 @@ const schema = z.object({
   VERIFY_POLL_INTERVAL_MS: z.coerce.number().int().min(100).default(2000),
   // عدد الملفات التي تُحسب بصماتها معًا؛ كل واحد يشغل اتصالًا من المجمع طوال قراءته، فيبقى أقل من DATABASE_POOL_MAX
   VERIFY_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
+  // خيوط حساب SHA-256 (worker_threads)؛ افتراضيًا عدد الأنوية ناقص واحد يبقى لخيط الحدث
+  VERIFY_HASH_THREADS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(64)
+    .default(Math.max(1, availableParallelism() - 1)),
 
   // حجز الإنتاج يُحرَّر تلقائيًا بعد هذا الخمول (15 دقيقة افتراضيًا)
   RESERVATION_IDLE_SECONDS: z.coerce.number().int().min(60).default(900),

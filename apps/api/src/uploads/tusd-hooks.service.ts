@@ -76,22 +76,33 @@ export class TusdHooksService {
         return REJECT;
       }
       const storageKey = this.expectedStorageKey(session.id);
-      // مع post-create تبقى الجلسة created هنا: إن فشل الإنشاء لدى tusd بعد القبول يُعاد بالرمز نفسه. والشباك بين
-      // الحدثين يقبل pre-create ثانيًا بالرمز نفسه، لكنه مثبَّت على معرّف الجلسة نفسه (ChangeFileInfo.ID).
-      await tx
+      if (!this.config.TUSD_POST_CREATE_HOOK) {
+        await tx.update(uploadSessions).set({ state: 'in_progress', storageKey }).where(eq(uploadSessions.id, session.id));
+        return { RejectUpload: false, ChangeFileInfo: { ID: session.id } };
+      }
+      // مع post-create تبقى الجلسة created فيُعاد إنشاء فشل لدى tusd بالرمز نفسه. لكن tusd لا يرفض المعرّف المكرّر:
+      // إنشاءان بمعرّف الجلسة يتشاركان الكائن. فتُحجز الجلسة هنا ذريًا (الصف مقفل) ويُرفض أي pre-create آخر ما دام
+      // الحجز حيًّا؛ post-create يُفرج عنه، وانقضاء المهلة يسمح بإعادة إنشاء فشل.
+      const [reserved] = await tx
         .update(uploadSessions)
-        .set(this.config.TUSD_POST_CREATE_HOOK ? { storageKey } : { state: 'in_progress', storageKey })
-        .where(eq(uploadSessions.id, session.id));
-      return { RejectUpload: false, ChangeFileInfo: { ID: session.id } };
+        .set({
+          storageKey,
+          hookReservedUntil: sql`now() + make_interval(secs => ${this.config.TUSD_PRE_CREATE_RESERVATION_SECONDS})`,
+        })
+        .where(
+          sql`${uploadSessions.id} = ${session.id} AND (${uploadSessions.hookReservedUntil} IS NULL OR ${uploadSessions.hookReservedUntil} <= now())`,
+        )
+        .returning({ id: uploadSessions.id });
+      return reserved ? { RejectUpload: false, ChangeFileInfo: { ID: session.id } } : REJECT;
     });
   }
 
-  /** نجح إنشاء الرفع لدى tusd: created → in_progress فلا يُقبل الرمز بعدها. التكرار وما بعد created بلا أثر. */
+  /** نجح إنشاء الرفع لدى tusd: created → in_progress ويُفرج عن الحجز، فلا يُقبل الرمز بعدها. التكرار وما بعد created بلا أثر. */
   private async postCreate(hook: TusdHookRequest): Promise<TusdHookResponse> {
     const sessionId = hook.Event.Upload.MetaData.upload_session_id;
     await this.db
       .update(uploadSessions)
-      .set({ state: 'in_progress' })
+      .set({ state: 'in_progress', hookReservedUntil: null })
       .where(sql`${uploadSessions.id} = ${sessionId} AND ${uploadSessions.state} = 'created'`);
     return ACCEPT;
   }
@@ -118,7 +129,7 @@ export class TusdHooksService {
       if (!keyMatches || !bucketMatches) {
         await tx
           .update(uploadSessions)
-          .set({ state: 'failed', failureReason: 'storage_error' })
+          .set({ state: 'failed', failureReason: 'storage_error', hookReservedUntil: null })
           .where(eq(uploadSessions.id, session.id));
         await writeOutboxEvent(tx, {
           type: 'upload.failed',
@@ -134,7 +145,7 @@ export class TusdHooksService {
       // ثم ينقل الجلسة إلى verified/failed(checksum_mismatch) وينشئ material_files. هنا: الاكتمال فقط.
       await tx
         .update(uploadSessions)
-        .set({ state: 'completed', storageKey: expectedKey, tusUploadId: hook.Event.Upload.ID ?? sql`tus_upload_id` })
+        .set({ state: 'completed', storageKey: expectedKey, tusUploadId: hook.Event.Upload.ID ?? sql`tus_upload_id`, hookReservedUntil: null })
         .where(eq(uploadSessions.id, session.id));
       // المسار الفني للمادة يكتبه الخادم وحده: pending → proxy_received → original_received
       const material = await lockMaterial(tx, session.materialId);

@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { offices, users, refreshTokens, recoveryRequests, pushDevices, uploadForms, materials, materialTransitions, materialFiles, uploadSessions, outboxEvents, notifications, userPermissions, recoveryCodes, materialContributors, userRoles, idempotencyKeys, notificationDeliveries } from "./schema";
+import { idempotencyKeys, materialContributors, materialFiles, materialTransitions, materials, notificationDeliveries, notifications, offices, outboxEvents, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
 
 export const usersRelations = relations(users, ({one, many}) => ({
 	office: one(offices, {

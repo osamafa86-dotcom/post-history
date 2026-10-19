@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import type { Tx } from '../database/database.module';
 import { materialFiles, uploadSessions } from '../database/schema/schema';
 import { applyTransition, lockMaterial } from '../materials/material-store';
 import { transitionOwners } from '../materials/transitions';
 import { writeOutboxEvent } from '../outbox/outbox';
+import { hashInline, type HashResult } from './hash-pool';
 import type { ObjectStorage } from './object-storage';
 
 export type UploadSessionRow = typeof uploadSessions.$inferSelect;
@@ -16,21 +16,21 @@ export type VerificationOutcome =
 /**
  * يقرأ الكائن من التخزين تدفقيًا ويحسب SHA-256 على الخادم (لا يثق بأي بصمة من العميل أو الخطّاف، ADR SEC-06).
  * الحجم يُقرأ من التخزين؛ اختلافه عن حجم الجلسة ملف غير صالح. بصمة العميل، إن وُجدت، تُقارن فقط.
+ * `hash` يحسب البصمة من التدفق: في الخيط نفسه افتراضيًا، أو في مجمّع خيوط (HashPool) عند الخادم.
  */
-export async function inspectUpload(storage: ObjectStorage, bucket: string, session: UploadSessionRow): Promise<VerificationOutcome> {
+export async function inspectUpload(
+  storage: ObjectStorage,
+  bucket: string,
+  session: UploadSessionRow,
+  hash: (stream: AsyncIterable<unknown>) => Promise<HashResult> = hashInline,
+): Promise<VerificationOutcome> {
   if (!session.storageKey) return { result: 'failed', reason: 'storage_error' };
   const head = await storage.head(bucket, session.storageKey);
   if (!head) return { result: 'failed', reason: 'storage_error' };
   if (head.size !== Number(session.sizeBytes)) return { result: 'failed', reason: 'invalid_file' };
 
-  const hash = createHash('sha256');
-  let read = 0;
-  for await (const chunk of await storage.read(bucket, session.storageKey)) {
-    hash.update(chunk as Buffer);
-    read += (chunk as Buffer).length;
-  }
+  const { sha256, bytes: read } = await hash(await storage.read(bucket, session.storageKey));
   if (read !== head.size) return { result: 'failed', reason: 'invalid_file' };
-  const sha256 = hash.digest();
   if (session.clientSha256 && !session.clientSha256.equals(sha256)) return { result: 'failed', reason: 'checksum_mismatch' };
   return { result: 'verified', sha256, sizeBytes: read };
 }
