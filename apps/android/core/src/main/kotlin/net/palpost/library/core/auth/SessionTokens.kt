@@ -9,6 +9,9 @@ data class SessionTokens(
     val accessExpiresAtEpochMs: Long,
     val userId: String,
 ) {
+    /** Never the tokens: a data class would print them into any log or exception message. */
+    override fun toString(): String = "SessionTokens(userId=$userId, accessExpiresAtEpochMs=$accessExpiresAtEpochMs)"
+
     companion object {
         fun from(session: Session) = SessionTokens(
             accessToken = session.accessToken,

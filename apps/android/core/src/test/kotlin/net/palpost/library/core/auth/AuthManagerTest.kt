@@ -146,6 +146,31 @@ class AuthManagerTest {
         assertNull(store.read())
     }
 
+    @Test fun `the session bearer never leaves the API host and foreign credentials are left alone`() = runBlocking {
+        store.write(SessionTokens("a1", "r1", now + 600_000, "u"))
+        val other = MockWebServer().also { it.start() }
+        try {
+            other.enqueue(unauthorized)
+            other.enqueue(unauthorized)
+            val call = manager.authenticatedClient.newCall(okhttp3.Request.Builder().url(other.url("/v1/auth/me")).build()).execute()
+            assertEquals(401, call.code)
+            assertNull(other.takeRequest().getHeader("Authorization"))
+            assertEquals(1, other.requestCount) // no refresh, no retry for another host
+            // A caller-supplied credential on the API host is sent as is and not swapped for the session on 401.
+            server.enqueue(unauthorized)
+            val own = manager.authenticatedClient.newCall(okhttp3.Request.Builder().url(server.url("/v1/auth/me")).header("Authorization", "Bearer upload-token").build()).execute()
+            assertEquals(401, own.code)
+            assertEquals("Bearer upload-token", server.takeRequest().getHeader("Authorization"))
+            assertEquals(1, server.requestCount)
+            assertEquals("a1", store.read()?.accessToken)
+        } finally { other.shutdown() }
+    }
+
+    @Test fun `tokens never print`() {
+        val s = SessionTokens("secret-access", "secret-refresh", 1L, "u").toString()
+        assertTrue(!s.contains("secret"))
+    }
+
     @Test fun `logout clears the device even when the server is unreachable`() = runBlocking {
         store.write(SessionTokens("a1", "r1", now + 600_000, "u"))
         server.enqueue(MockResponse().setResponseCode(500))
