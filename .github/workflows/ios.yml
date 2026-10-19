@@ -1,0 +1,60 @@
+name: ios
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps/ios/**", "contracts/**", ".github/workflows/ios.yml"]
+  pull_request:
+    paths: ["apps/ios/**", "contracts/**", ".github/workflows/ios.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  api-client:
+    name: ios api client matches contracts/openapi.yaml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      # Java 21 is preinstalled on ubuntu-latest; openapi-generator-cli downloads the pinned 7.26.0 jar.
+      - name: Regenerate the Swift client (openapi-generator 7.26.0) and require no diff
+        run: |
+          apps/ios/scripts/generate-api.sh
+          git diff --exit-code --stat -- apps/ios/Packages/PostHistoryKit/Sources/PostHistoryAPI
+
+  package-linux:
+    name: ios package (swift build + unit tests, Linux)
+    runs-on: ubuntu-latest
+    container: swift:6.1-noble
+    defaults:
+      run:
+        working-directory: apps/ios/Packages/PostHistoryKit
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: swift build
+      - run: swift test
+
+  ios:
+    name: ios (xcodebuild app + package unit tests, macOS)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: xcodebuild -version
+      - name: Package unit tests
+        working-directory: apps/ios/Packages/PostHistoryKit
+        run: swift test
+      - name: Generate the Xcode project
+        working-directory: apps/ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Build the app for the iOS simulator
+        working-directory: apps/ios
+        run: |
+          set -o pipefail
+          xcodebuild build -project PostHistory.xcodeproj -scheme PostHistory \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO -quiet

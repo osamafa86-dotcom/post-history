@@ -1,0 +1,52 @@
+# مشروع Xcode يُولَّد من هذا الملف بـ XcodeGen (`xcodegen generate` في apps/ios)؛ ملف .xcodeproj لا يُلتزم به.
+name: PostHistory
+options:
+  bundleIdPrefix: net.palpost
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: ar
+  xcodeVersion: "16.0"
+  createIntermediateGroups: true
+packages:
+  PostHistoryKit:
+    path: Packages/PostHistoryKit
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    SWIFT_STRICT_CONCURRENCY: complete
+    # عنوان الخادم (مسار /v1) يُثبَّت عند البناء؛ القيمة الافتراضية من العقد وتُستبدل بنطاق الشبكة عند النشر.
+    PH_API_BASE_URL: https://api.example.invalid/v1
+targets:
+  PostHistory:
+    type: application
+    platform: iOS
+    sources:
+      - path: App/Sources
+      - path: App/Resources
+    dependencies:
+      - package: PostHistoryKit
+        product: PostHistoryAPI
+      - package: PostHistoryKit
+        product: AuthCore
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: PostHistory
+        CFBundleDevelopmentRegion: ar
+        CFBundleLocalizations: [ar, en]
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        ITSAppUsesNonExemptEncryption: false
+        PHAPIBaseURL: $(PH_API_BASE_URL)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.palpost.posthistory
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: false
+schemes:
+  PostHistory:
+    build:
+      targets:
+        PostHistory: all
+    run:
+      config: Debug
