@@ -11,6 +11,7 @@ import net.palpost.library.api.models.RefreshSessionRequest
 import net.palpost.library.api.models.Session
 import okhttp3.Authenticator
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -35,6 +36,7 @@ class AuthManager(
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val publicAuthApi = AuthApi(baseUrl, httpClient)
+    private val apiHost: HttpUrl = baseUrl.toHttpUrl()
     private val refreshLock = Any()
     private val _state = MutableStateFlow<AuthState>(store.read()?.let { AuthState.SignedIn(it.userId) } ?: AuthState.SignedOut(null))
     val state: StateFlow<AuthState> = _state
@@ -95,23 +97,29 @@ class AuthManager(
         }
     }
 
+    /** The session token goes only to the API host, and only onto requests that carry no credential of their own. */
     fun bearerInterceptor(): Interceptor = Interceptor { chain ->
         val request = chain.request()
-        if (isPublicAuthPath(request.url) || request.header(AUTHORIZATION) != null) return@Interceptor chain.proceed(request)
+        if (!isApiHost(request.url) || isPublicAuthPath(request.url) || request.header(AUTHORIZATION) != null) return@Interceptor chain.proceed(request)
         var tokens = store.read() ?: return@Interceptor chain.proceed(request)
         if (tokens.accessExpiresAtEpochMs - EXPIRY_SLACK_MS <= clock()) tokens = refreshBlocking(tokens.accessToken) ?: tokens
         chain.proceed(request.withBearer(tokens.accessToken))
     }
 
+    /** Refreshes and retries only requests whose bearer this manager attached (marked by [SessionBearer]). */
     fun authenticator(): Authenticator = Authenticator { _, response ->
-        if (isPublicAuthPath(response.request.url)) return@Authenticator null
+        if (response.request.tag(SessionBearer::class.java) == null) return@Authenticator null
         if (response.priorResponse != null) return@Authenticator null // one refresh, one retry
         val sent = response.request.header(AUTHORIZATION)?.removePrefix("Bearer ") ?: return@Authenticator null
         val fresh = refreshBlocking(sent) ?: return@Authenticator null
         if (fresh.accessToken == sent) null else response.request.withBearer(fresh.accessToken)
     }
 
-    private fun Request.withBearer(token: String) = newBuilder().header(AUTHORIZATION, "Bearer $token").build()
+    private object SessionBearer
+
+    private fun Request.withBearer(token: String) = newBuilder().header(AUTHORIZATION, "Bearer $token").tag(SessionBearer::class.java, SessionBearer).build()
+
+    private fun isApiHost(url: HttpUrl): Boolean = url.host == apiHost.host && url.port == apiHost.port && url.scheme == apiHost.scheme
 
     private fun isPublicAuthPath(url: HttpUrl): Boolean {
         val path = url.encodedPath

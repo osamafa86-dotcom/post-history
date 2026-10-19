@@ -16,13 +16,17 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // Base URL of the API (`/v1`). Debug builds point at the local compose stack; release builds get the
-        // network domain at build time through -PapiBaseUrl=… so no environment is hard-coded in the source.
-        buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("apiBaseUrl") ?: "http://10.0.2.2:3000/v1"}\"")
     }
 
+    // Base URL of the API (`/v1`). Debug builds point at the local compose stack unless -PapiBaseUrl=… says
+    // otherwise; a release build must be given an https URL explicitly (checked in preReleaseBuild below).
+    val apiBaseUrl = project.findProperty("apiBaseUrl")?.toString()
     buildTypes {
+        debug {
+            buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl ?: "http://10.0.2.2:3000/v1"}\"")
+        }
         release {
+            buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl ?: ""}\"")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -54,6 +58,13 @@ android {
         // Every user-facing string must exist in both languages (CLAUDE.md §4.4).
         error += listOf("MissingTranslation", "ExtraTranslation")
         abortOnError = true
+    }
+}
+
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    val url = providers.gradleProperty("apiBaseUrl").orElse("")
+    doFirst {
+        check(url.get().startsWith("https://")) { "Release builds need -PapiBaseUrl=https://<api host>/v1 (got '${url.get()}')." }
     }
 }
 
