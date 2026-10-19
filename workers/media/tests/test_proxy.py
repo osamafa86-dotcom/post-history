@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import LEAKY_TAGS, rotated, synth
+from conftest import LEAKY_TAGS, STREAM_TAGS, rotated, synth
 from media_worker.ffmpeg import FFPROBE, run
 from media_worker.hashing import digest_file
 from media_worker.probe import probe
@@ -71,6 +71,18 @@ def test_proxy_drops_location_and_device_tags(tmp_path: Path):
         assert value not in dump
     tags = json.loads(dump)
     assert "location" not in json.dumps(tags).lower()
+
+
+def test_proxy_drops_stream_level_tags(tmp_path: Path):
+    # Matroska يحفظ وسوم المسار الحرة؛ MP4 يسقط أغلبها، فالاختبار على الأصعب
+    src = synth(tmp_path / "src.mkv", seconds=2, stream_tags=True)
+    tags_in = run([FFPROBE, "-v", "error", "-show_entries", "stream_tags", "-of", "json", str(src)], 30).decode()
+    assert STREAM_TAGS["comment"] in tags_in
+    make_proxy(src, tmp_path / "p.mp4")
+    dump = run([FFPROBE, "-v", "error", "-show_entries", "format_tags:stream_tags", "-of", "json",
+                str(tmp_path / "p.mp4")], 30).decode()
+    for value in STREAM_TAGS.values():
+        assert value not in dump
 
 
 def test_refuses_to_overwrite_original(basic_clip: Path):

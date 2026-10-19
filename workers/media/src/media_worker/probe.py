@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass
 from fractions import Fraction
 from pathlib import Path
 
-from .ffmpeg import FFPROBE, MediaToolError, run
+from .ffmpeg import ALLOWED_DEMUXERS, FFPROBE, INPUT_GUARD, MediaToolError, run
 
 # تذبذب مدد الإطارات تحت هذه النسبة من الوسيط يُعد تقريبًا للمؤقت لا معدلًا متغيرًا (29.97 بمقياس 1/600 يتأرجح بين 20 و21 نبضة = 5%)
 VFR_TOLERANCE = 0.10
@@ -79,7 +79,7 @@ def _rotation(stream: dict) -> int:
 def _frame_timing(path: Path, timeout_s: float) -> tuple[int, bool, float | None, bool]:
     """يقرأ توقيتات حزم الفيديو دون فك ترميزها: العدد، هل المعدل متغير، أطول فاصل، هل توجد فجوات."""
     out = run(
-        [FFPROBE, "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time",
+        [FFPROBE, "-v", "error", *INPUT_GUARD, "-select_streams", "v:0", "-show_entries", "packet=pts_time",
          "-of", "csv=p=0", str(path)],
         timeout_s,
     )
@@ -98,7 +98,8 @@ def _frame_timing(path: Path, timeout_s: float) -> tuple[int, bool, float | None
 def probe(path: Path, timeout_s: float = 120) -> Probe:
     try:
         raw = run(
-            [FFPROBE, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", str(path)],
+            [FFPROBE, "-v", "error", *INPUT_GUARD, "-print_format", "json", "-show_format", "-show_streams",
+             str(path)],
             timeout_s,
         )
         info = json.loads(raw)
@@ -107,6 +108,9 @@ def probe(path: Path, timeout_s: float = 120) -> Probe:
 
     streams = info.get("streams") or []
     fmt = info.get("format") or {}
+    # INPUT_GUARD يمنع ما سواها في ffprobe نفسه؛ الفحص هنا يثبت ذلك صراحة قبل أي معالجة لاحقة
+    if not set((fmt.get("format_name") or "").split(",")) & set(ALLOWED_DEMUXERS):
+        raise InvalidMediaError("container format not allowed")
     # صور الغلاف المضمّنة مسار فيديو بإطار واحد؛ لا تُحسب فيديو
     video = next((s for s in streams if s.get("codec_type") == "video"
                   and not (s.get("disposition") or {}).get("attached_pic")), None)

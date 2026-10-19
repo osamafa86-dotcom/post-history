@@ -5,7 +5,8 @@
 - التوقيت: `-copyts` و`-fps_mode passthrough` يحفظان طابع كل إطار كما هو في الأصل (ومنه `start_pts`)،
   فلا تُكرر إطارات ولا تُسقط في الملفات متغيرة المعدل، ونقطة القص على النسخة الخفيفة تقع على الإطار نفسه في الأصل.
 - إطار مفتاحي كل ثانية للتنقل في المحرر.
-- لا وسوم: `-map_metadata -1` يسقط الإحداثيات وطراز الجهاز ورقمه من النسخة المعروضة.
+- لا وسوم: `-map_metadata -1` ومثيلاه لكل مسار تسقط الإحداثيات وطراز الجهاز ورقمه من النسخة المعروضة.
+- المدخل مقيد بقائمة الحاويات والبروتوكول `file` وحده (`INPUT_GUARD`).
 - HDR يُخفَّض إلى 8 بت هنا دون خريطة ألوان؛ التحويل إلى SDR بخريطة مناسبة خطوة لاحقة (البند 4 في CLAUDE.md).
 """
 
@@ -14,7 +15,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from .ffmpeg import FFMPEG, run
+from .ffmpeg import FFMPEG, INPUT_GUARD, run
 from .probe import Probe, probe
 
 PROXY_SHORT_SIDE = 480
@@ -33,9 +34,10 @@ def proxy_args(src: Path, dst: Path, source: Probe) -> list[str]:
     scale = f"scale='if(gt(iw,ih),-2,{short})':'if(gt(iw,ih),{short},-2)',format=yuv420p"
     return [
         FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
-        "-copyts", "-i", str(src),
+        *INPUT_GUARD, "-copyts", "-i", str(src),
         "-map", "0:v:0", "-map", "0:a:0?",
-        "-map_metadata", "-1", "-map_chapters", "-1",
+        # الوسوم العامة ووسوم كل مسار (قد يحمل المسار نفسه موقعًا أو طراز الجهاز)
+        "-map_metadata", "-1", "-map_metadata:s:v", "-1", "-map_metadata:s:a", "-1", "-map_chapters", "-1",
         "-vf", scale, "-fps_mode", "passthrough",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-profile:v", "high",
         "-force_key_frames", "expr:gte(t,n_forced*1)",
