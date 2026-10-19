@@ -28,6 +28,10 @@ targets:
         product: PostHistoryAPI
       - package: PostHistoryKit
         product: AuthCore
+      - package: PostHistoryKit
+        product: UploadCore
+      - package: PostHistoryKit
+        product: FormEngine
     info:
       path: App/Info.plist
       properties:
