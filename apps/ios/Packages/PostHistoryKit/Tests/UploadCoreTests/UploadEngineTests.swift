@@ -54,7 +54,6 @@ final class UploadEngineTests: XCTestCase {
         XCTAssertEqual(h.transport.creates.first?.token, h.api.token)
         XCTAssertTrue(h.chunkFiles.isEmpty, "chunk files are deleted once the server confirms them")
         XCTAssertNil(try h.sharedSecrets.token(for: rec.id), "the upload token is dropped after the receipt")
-        XCTAssertEqual(h.transport.patches[0].checksum, Data(try SHA256Stream.digest(of: h.source, offset: 0, length: 4)).base64EncodedString())
     }
 
     func testResumesFromServerOffsetAfterInterruptionMidChunk() async throws {
@@ -209,7 +208,7 @@ final class UploadEngineTests: XCTestCase {
         var rec = UploadRecord(materialId: UUID(), kind: .proxy, proxyMode: .urgent, sourcePath: "Uploads/a.mov", filename: "a.mov", mimeType: "video/mp4", sizeBytes: 123)
         rec.phase = .transferring
         rec.remote = RemoteSession(uploadSessionId: UUID(), tusEndpoint: URL(string: "https://ingest.example.invalid/files/")!, tusMetadata: ["upload_session_id": "x"], partSizeBytes: 16 << 20, checksumAlgorithm: "sha256", expiresAt: Date(), uploadTokenExpiresAt: Date())
-        rec.prepared = [PreparedChunk(offset: 0, length: 64, fileName: "p.part", sha256Base64: "AAAA")]
+        rec.prepared = [PreparedChunk(offset: 0, length: 64, fileName: "p.part")]
         try store.save(rec)
         let loaded = try store.loadAll()
         XCTAssertEqual(loaded.count, 1)
@@ -238,7 +237,7 @@ final class UploadEngineTests: XCTestCase {
         let plan = ChunkPlanner.chunksToPrepare(sizeBytes: 10, confirmedOffset: 4, chunkSize: 4, prepared: [], window: 2)
         XCTAssertEqual(plan.map(\.offset), [4, 8])
         XCTAssertEqual(plan.map(\.length), [4, 2])
-        let prepared = [PreparedChunk(offset: 4, length: 4, fileName: "a", sha256Base64: ""), PreparedChunk(offset: 8, length: 2, fileName: "b", sha256Base64: "")]
+        let prepared = [PreparedChunk(offset: 4, length: 4, fileName: "a"), PreparedChunk(offset: 8, length: 2, fileName: "b")]
         XCTAssertEqual(ChunkPlanner.reconcile(prepared: prepared, serverOffset: 8).keep.map(\.offset), [8])
         XCTAssertEqual(ChunkPlanner.reconcile(prepared: prepared, serverOffset: 5).keep.count, 0)
         XCTAssertEqual(ChunkPlanner.chunksToPrepare(sizeBytes: 10, confirmedOffset: 4, chunkSize: 4, prepared: prepared, window: 2).count, 0)

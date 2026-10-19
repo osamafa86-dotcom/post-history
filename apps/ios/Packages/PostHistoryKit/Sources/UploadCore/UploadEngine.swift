@@ -184,8 +184,7 @@ public actor UploadEngine: TusTransportDelegate {
                     if rec.inFlightOffset != nil || resyncing.contains(id) { return } // بانتظار حدث النقل أو موضع الخادم
                     try prepareWindow(&rec)
                     guard let chunk = rec.prepared.first, let uploadURL = rec.tusUploadURL else { throw UploadError.sourceTruncated }
-                    let request = TusPatchRequest(key: TusTaskKey(uploadId: rec.id, offset: chunk.offset), uploadURL: uploadURL, token: try token(rec.id), chunk: chunk, chunkFile: slicer.url(of: chunk),
-                                                  checksumAlgorithm: rec.remote?.checksumAlgorithm == "sha256" ? "sha256" : nil)
+                    let request = TusPatchRequest(key: TusTaskKey(uploadId: rec.id, offset: chunk.offset), uploadURL: uploadURL, token: try token(rec.id), chunk: chunk, chunkFile: slicer.url(of: chunk))
                     rec.inFlightOffset = chunk.offset
                     save(rec)
                     try await transport.schedulePatch(request)

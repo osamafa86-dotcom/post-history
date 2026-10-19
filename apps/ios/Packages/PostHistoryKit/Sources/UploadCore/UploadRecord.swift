@@ -42,19 +42,17 @@ public enum UploadFailure: String, Codable, Equatable, Sendable {
     case rejected = "rejected"
 }
 
-/// جزء مُجهَّز على القرص بانتظار إرساله: موضعه وطوله وبصمته (ترويسة `Upload-Checksum`).
+/// جزء مُجهَّز على القرص بانتظار إرساله: موضعه وطوله. لا بصمة لكل جزء (قرار ADR 0009: tusd لا يدعم امتداد checksum؛ السلامة ببصمة الملف كاملًا).
 public struct PreparedChunk: Codable, Equatable, Sendable {
     public var offset: Int64
     public var length: Int64
     /// اسم ملف الجزء داخل مجلد الأجزاء (لا مسار مطلق؛ المجلد يتغير بين عمليات التشغيل على iOS).
     public var fileName: String
-    public var sha256Base64: String
 
-    public init(offset: Int64, length: Int64, fileName: String, sha256Base64: String) {
+    public init(offset: Int64, length: Int64, fileName: String) {
         self.offset = offset
         self.length = length
         self.fileName = fileName
-        self.sha256Base64 = sha256Base64
     }
 
     public var end: Int64 { offset + length }

@@ -37,9 +37,8 @@ public struct TusPatchRequest: Sendable, Equatable {
     public var token: String
     public var chunk: PreparedChunk
     public var chunkFile: URL
-    public var checksumAlgorithm: String?
-    public init(key: TusTaskKey, uploadURL: URL, token: String, chunk: PreparedChunk, chunkFile: URL, checksumAlgorithm: String?) {
-        self.key = key; self.uploadURL = uploadURL; self.token = token; self.chunk = chunk; self.chunkFile = chunkFile; self.checksumAlgorithm = checksumAlgorithm
+    public init(key: TusTaskKey, uploadURL: URL, token: String, chunk: PreparedChunk, chunkFile: URL) {
+        self.key = key; self.uploadURL = uploadURL; self.token = token; self.chunk = chunk; self.chunkFile = chunkFile
     }
 }
 
@@ -54,7 +53,7 @@ public enum TusError: Error, Equatable, Sendable {
     case unauthorized
     /// `404`/`410`: الرفع لم يعد موجودًا.
     case gone
-    /// `460`: بصمة الجزء خالفت ما وصل (tus checksum extension)؛ يُعاد إرسال الجزء.
+    /// `460`: بصمة الجزء خالفت ما وصل (tus checksum extension؛ لا يُرسل التطبيق بصمة، يبقى للتصنيف)؛ يُعاد إرسال الجزء.
     case checksumMismatch
     /// حالة أخرى غير قابلة للإعادة.
     case http(Int)
@@ -153,7 +152,6 @@ public final class URLSessionTusTransport: NSObject, TusTransport, URLSessionDat
         var r = request("PATCH", req.uploadURL, token: req.token)
         r.setValue(String(req.chunk.offset), forHTTPHeaderField: "Upload-Offset")
         r.setValue("application/offset+octet-stream", forHTTPHeaderField: "Content-Type")
-        if let algorithm = req.checksumAlgorithm { r.setValue("\(algorithm) \(req.chunk.sha256Base64)", forHTTPHeaderField: "Upload-Checksum") }
         let task = session.uploadTask(with: r, fromFile: req.chunkFile)
         task.taskDescription = req.key.description
         task.resume()

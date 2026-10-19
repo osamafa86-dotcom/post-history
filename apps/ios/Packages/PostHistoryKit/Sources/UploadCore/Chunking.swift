@@ -49,7 +49,7 @@ public enum ChunkPlanner {
     }
 }
 
-/// يكتب ملفات الأجزاء في مجلد الأجزاء ويحسب بصمتها، ويحذفها بعد التأكيد.
+/// يكتب ملفات الأجزاء في مجلد الأجزاء ويحذفها بعد التأكيد.
 public struct ChunkSlicer: Sendable {
     public let chunksDirectory: URL
 
@@ -72,7 +72,7 @@ public struct ChunkSlicer: Sendable {
             try writer.write(contentsOf: data)
             remaining -= Int64(data.count)
         }
-        return PreparedChunk(offset: offset, length: length, fileName: name, sha256Base64: try SHA256Stream.base64(of: target, offset: 0, length: length))
+        return PreparedChunk(offset: offset, length: length, fileName: name)
     }
 
     public func url(of chunk: PreparedChunk) -> URL { chunksDirectory.appendingPathComponent(chunk.fileName) }

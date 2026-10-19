@@ -13,7 +13,7 @@ public enum SHA256Stream {
         try digest(of: url, offset: 0, length: nil).map { String(format: "%02x", $0) }.joined()
     }
 
-    /// بصمة النطاق [offset, offset+length) بترميز base64 كما تتوقعها ترويسة `Upload-Checksum`.
+    /// بصمة النطاق [offset, offset+length) بترميز base64 (للاختبارات والقياس؛ لا تُرسل لكل جزء، ADR 0009).
     public static func base64(of url: URL, offset: Int64, length: Int64) throws -> String {
         Data(try digest(of: url, offset: offset, length: length)).base64EncodedString()
     }

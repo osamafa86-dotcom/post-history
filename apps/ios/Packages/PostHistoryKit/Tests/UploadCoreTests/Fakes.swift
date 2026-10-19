@@ -10,7 +10,7 @@ final class FakeTransport: TusTransport, @unchecked Sendable {
     var script: [Behavior]
     var serverBytes = Data()
     var serverOffset: Int64 = 0
-    var patches: [(offset: Int64, length: Int64, checksum: String)] = []
+    var patches: [(offset: Int64, length: Int64)] = []
     var creates: [TusCreateRequest] = []
     var headCalls = 0
     var activeKeys: Set<TusTaskKey> = []
@@ -35,7 +35,7 @@ final class FakeTransport: TusTransport, @unchecked Sendable {
     func schedulePatch(_ request: TusPatchRequest) async throws {
         let data = try Data(contentsOf: request.chunkFile)
         let (target, outcome): (TusTransportDelegate?, TusPatchOutcome?) = lock.withLock {
-            patches.append((request.chunk.offset, request.chunk.length, request.chunk.sha256Base64))
+            patches.append((request.chunk.offset, request.chunk.length))
             let b: Behavior = script.isEmpty ? .ok : script.removeFirst()
             if request.chunk.offset != serverOffset { return (self.delegate, .failed(.offsetMismatch)) }
             switch b {
