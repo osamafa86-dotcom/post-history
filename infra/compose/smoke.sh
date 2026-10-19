@@ -25,7 +25,12 @@ code="$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/files/does-not-matter")"
 # No API on the hooks network yet: pre-create fails at transport level, the case where tusd echoes the hook URL.
 body="$(curl -sS -X POST -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 10' "$BASE/files/")"
 case "$body" in *"$TUSD_HOOK_SECRET"*) fail "hook token in client response" ;; esac
-"${COMPOSE[@]}" logs tusd | grep -q 'tusd-hooks/\[REDACTED\]' || fail "redaction marker missing from tusd log"
+# tusd's log reaches docker through the redaction filter asynchronously: poll instead of reading once.
+for _ in $(seq 1 30); do
+  "${COMPOSE[@]}" logs tusd | grep -q 'tusd-hooks/\[REDACTED\]' && break
+  sleep 1
+done
+"${COMPOSE[@]}" logs tusd | grep -q 'tusd-hooks/\[REDACTED\]' || fail "redaction marker missing from tusd log after 30s"
 if "${COMPOSE[@]}" logs tusd | grep -qF "$TUSD_HOOK_SECRET"; then fail "hook token in tusd log"; fi
 
 echo "compose smoke: ok"

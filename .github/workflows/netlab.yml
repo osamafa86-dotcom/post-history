@@ -2,7 +2,8 @@ name: netlab
 
 # GitHub-hosted Ubuntu runners have sch_netem, unlike some dev hosts: real packet delay + loss (ADR 0005).
 # - pull_request: short field-weak smoke that must run in netem mode.
-# - workflow_dispatch: a full measurement; the result JSON is an artifact to commit to docs/measurements/netlab/.
+# - workflow_dispatch: field-network-upload stage (a) measurement (100 MB, netem); the result JSON is an
+#   artifact to commit to docs/measurements/netlab/. Recorded partial: stage (b) is 1 GB on a real device.
 on:
   pull_request:
     paths:
@@ -17,7 +18,8 @@ on:
         description: office | field-weak | field-switch
         default: field-weak
       size_mb:
-        default: "1024"
+        description: field-network-upload stage (a) is 100 MB; stage (b) (1 GB) is on a real device
+        default: "100"
       max_seconds:
         description: time box (GitHub job limit is 6h)
         default: "19800"
@@ -33,6 +35,15 @@ jobs:
       NO_PROXY: 127.0.0.1,localhost
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Containers cannot load kernel modules: sch_netem must be loaded on the runner itself.
+      - name: Load sch_netem
+        run: |
+          sudo modprobe sch_netem || {
+            sudo apt-get update -q
+            sudo apt-get install -y -q "linux-modules-extra-$(uname -r)"
+            sudo modprobe sch_netem
+          }
+          lsmod | grep sch_netem
       - name: Start compose with the netlab overlay
         run: |
           cp infra/compose/.env.example infra/compose/.env

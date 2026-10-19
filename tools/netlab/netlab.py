@@ -19,14 +19,18 @@ import os
 import platform
 import statistics
 import subprocess
+import sys
 import threading
 import time
 import urllib.parse
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-# معيار field-network-upload في الخطة: ملف 1 غيغابايت. ما دونه لا يُسجَّل pass.
-CRITERION_MIN_BYTES = 1 << 30
+# معيار field-network-upload على مرحلتين (قرار المنسّق): (أ) netlab في CI بفقد netem على 100 MB:
+# كفاءة ≥ 70% من حد Mathis وصفر بايت مفقود عند الاستئناف، وتُسجَّل partial؛ (ب) 1 GB على جهاز وشبكة
+# فعليين هو وحده الذي يعطي pass. لذلك لا تكتب هذه الأداة pass أبدًا.
+STAGE_A_MIN_EFFICIENCY = 0.70
+MSS_BYTES = 1448
 TOXI_API = os.environ.get("NETLAB_TOXIPROXY_API", "http://127.0.0.1:8474")
 UPSTREAM = os.environ.get("NETLAB_UPSTREAM", "tusd-proxy:8080")
 COMPOSE_ENV = os.path.join(HERE, "..", "..", "infra", "compose", ".env")
@@ -107,9 +111,11 @@ def set_loss(pct, delay_ms=0):
         return "none"
     netem = ["tc", "qdisc", "add", "dev", "eth0", "root", "netem", "loss", f"{pct}%"]
     if delay_ms:
-        netem[6:6] = ["delay", f"{delay_ms}ms"]
-    if _sidecar(*netem, check=False).returncode == 0:
+        netem[7:7] = ["delay", f"{delay_ms}ms"]
+    r = _sidecar(*netem, check=False)
+    if r.returncode == 0:
         return "netem"
+    print(f"netem unavailable ({r.stderr.strip()}); falling back to iptables statistic", file=sys.stderr)
     _sidecar("iptables", "-w", "-A", "OUTPUT", "-p", "tcp", "--dport", UPSTREAM.rsplit(":", 1)[1],
              "-m", "comment", "--comment", "netlab-loss",
              "-m", "statistic", "--mode", "random", "--probability", f"{pct / 100:.4f}", "-j", "DROP")
@@ -174,6 +180,8 @@ class Session:
         self.connected_since = None
         self.resumes = 0
         self.failures = 0
+        self.confirmed = 0       # آخر إزاحة أكّدها الخادم في رد PATCH
+        self.bytes_lost = 0      # بايتات مؤكدة عاد HEAD بإزاحة قبلها (يجب أن تبقى صفرًا)
 
     def ok(self, started):
         if self.connected_since is None:
@@ -245,6 +253,7 @@ def upload(path, size, host, chunk, deadline, s, timeout):
                     if st != 200:
                         raise IOError(f"head: HTTP {st}")
                     offset = int(h["upload-offset"])
+                    s.bytes_lost += max(0, s.confirmed - offset)
                     s.resumes += 1
                     need_head = False
                     s.ok(t)
@@ -258,6 +267,7 @@ def upload(path, size, host, chunk, deadline, s, timeout):
                 if st != 204:
                     raise IOError(f"patch: HTTP {st}")
                 offset = int(h["upload-offset"])
+                s.confirmed = offset
                 s.parts.append((now() - t, n, True))
                 s.ok(t)
                 backoff = 1
@@ -372,11 +382,29 @@ def run(a):
         })
     m["events"] = ";".join(f"{t}s:{e}" for t, e in events) or "none"
 
-    meets_criterion = size >= CRITERION_MIN_BYTES
-    if complete and not match:
+    # الكفاءة: الإنتاجية خلال وقت الاتصال (بلا فترات الثقب الأسود) مقابل min(حد Mathis، سعة الرابط).
+    down_s, start = 0.0, None
+    for t, e in events:
+        if e == "blackout-start":
+            start = t
+        elif e == "blackout-end" and start is not None:
+            down_s, start = down_s + t - start, None
+    if start is not None:
+        down_s += max(0.0, elapsed - start)
+    connected_s = max(1e-9, elapsed - down_s)
+    m["bytes_lost_on_resume"] = s.bytes_lost
+    m["goodput_connected_kbps"] = round(offset * 8 / 1000 / connected_s, 1)
+    stage_a = None
+    if sc["loss_pct"] and sc["latency_ms"]:
+        mathis = 1.22 * MSS_BYTES * 8 / (sc["latency_ms"] / 1000 * (sc["loss_pct"] / 100) ** 0.5) / 1000
+        capacity = min(mathis, sc["uplink_kbps"])
+        m["mathis_limit_kbps"] = round(mathis, 1)
+        m["efficiency_vs_mathis"] = round(m["goodput_connected_kbps"] / capacity, 3)
+        if loss_mode == "netem":
+            stage_a = m["efficiency_vs_mathis"] >= STAGE_A_MIN_EFFICIENCY and s.bytes_lost == 0
+            m["stage_a_ok"] = stage_a
+    if (complete and not match) or s.bytes_lost or stage_a is False:
         result = "fail"
-    elif match and meets_criterion:
-        result = "pass"
     else:
         result = "partial"
     network = {"profile": sc["name"], "uplink_kbps": sc["uplink_kbps"],
@@ -405,8 +433,8 @@ def run(a):
                      "iptables-statistic": f"loss {sc['loss_pct']}% via iptables statistic, no packet delay "
                                            "(host lacks sch_netem): TCP impact understated (ADR 0005). ",
                      "none": ""}[loss_mode]
-                  + ("" if size >= CRITERION_MIN_BYTES else
-                     f"partial: file below the {CRITERION_MIN_BYTES >> 20} MiB criterion size. ")
+                  + "netlab never records pass: field-network-upload stage (b) is 1 GB on a real device and network "
+                    f"(stage (a): efficiency >= {STAGE_A_MIN_EFFICIENCY:.0%} of Mathis, zero bytes lost on resume, netem). "
                   + "Connected window = client-observed time from first successful request to next failure."),
     }
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)

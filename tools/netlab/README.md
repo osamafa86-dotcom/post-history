@@ -31,6 +31,15 @@ python3 tools/netlab/netlab.py run --scenario office --size-mb 500 \
 - `resumes`: مرات الاستئناف عبر `HEAD` بعد فشل؛ `connection_failures`.
 - `checksum_match`: SHA-256 للأصل مقابل الكائن في MinIO (عبر `mc` في حاوية على شبكة compose؛ tusd يعمل بـ `-disable-download`).
 
+## معيار `field-network-upload` على مرحلتين (قرار المنسّق، 2026-10-19)
+
+1. **(أ) netlab في CI:** ملف 100 MB على `field-weak` بفقد netem (سير عمل `netlab` يدويًا بالقيم الافتراضية). المقياسان:
+   - `efficiency_vs_mathis` ≥ 0.70: الإنتاجية خلال وقت الاتصال (`goodput_connected_kbps`، بلا فترات الثقب الأسود) مقسومة على min(حد Mathis، سعة الرابط). حد Mathis = 1.22 × MSS ÷ (RTT × √p)، وهو نحو 86 kbit/s عند RTT 300 ms وفقد 30%.
+   - `bytes_lost_on_resume` = 0: كل استئناف يبدأ من آخر إزاحة أكّدها الخادم أو بعدها.
+
+   النتيجة `partial` إن تحقق الاثنان (`stage_a_ok: true`)، و`fail` إن لم يتحققا. الأداة لا تكتب `pass` أبدًا.
+2. **(ب) القياس اليدوي:** 1 GB على جهاز وشبكة فعليين في الأسبوع الخامس، وهو وحده الذي يعطي `pass`.
+
 ## حدود معروفة
 
 - الفقد: `metrics.loss_mode` يقول كيف طُبِّق. `netem` مرجعي، و`iptables-statistic` (مضيف بلا `sch_netem`) يقلل أثر الفقد على TCP. تشغيل بفقد يُجرى وحده لأن الإعداد يخص الوسيط كله.
