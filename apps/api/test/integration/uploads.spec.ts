@@ -5,6 +5,9 @@ import { createHarness, ensureForm, type Harness, loginAs } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
 
+/** حجم الملف وبصمته الصحيحة كما يرسلهما التطبيق (ملف اصطناعي بالحجم المعلن). */
+const file = (size: number) => ({ size_bytes: size, client_sha256: createHash('sha256').update(Buffer.alloc(size, 7)).digest('hex') });
+
 describe('upload sessions (/v1/uploads)', () => {
   let h: Harness;
   let office: string;
@@ -49,7 +52,7 @@ describe('upload sessions (/v1/uploads)', () => {
 
   it('creates a session: token shown once and stored hashed, contract shape, event, and the hook accepts it', async () => {
     const materialId = await material();
-    const res = await write(reporter, '/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 2048, filename: 'IMG_0001.MOV' }).expect(201);
+    const res = await write(reporter, '/v1/uploads', { material_id: materialId, kind: 'original', ...file(2048), filename: 'IMG_0001.MOV' }).expect(201);
     const valid = schemaValidator('UploadSessionCreated');
     expect(valid(res.body) ? [] : valid.errors).toEqual([]);
     expect(res.body).toMatchObject({
@@ -69,7 +72,7 @@ describe('upload sessions (/v1/uploads)', () => {
   it('a replay with the same key mints a new token for the same session and never stores the token', async () => {
     const materialId = await material();
     const key = randomUUID();
-    const body = { material_id: materialId, kind: 'proxy', proxy_mode: 'urgent', size_bytes: 4096, filename: 'proxy.mp4' };
+    const body = { material_id: materialId, kind: 'proxy', proxy_mode: 'urgent', ...file(4096), filename: 'proxy.mp4' };
     const first = await write(reporter, '/v1/uploads', body, key).expect(201);
     const second = await write(reporter, '/v1/uploads', body, key).expect(201);
     expect(second.headers['idempotent-replayed']).toBe('true');
@@ -86,15 +89,15 @@ describe('upload sessions (/v1/uploads)', () => {
 
   it("refuses other people's materials (404), other roles (403), and proxy_mode on an original (422)", async () => {
     const materialId = await material();
-    await write(other, '/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 1, filename: 'a' }).expect(404);
-    await write(supervisor, '/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 1, filename: 'a' }).expect(403);
-    await write(reporter, '/v1/uploads', { material_id: materialId, kind: 'original', proxy_mode: 'normal', size_bytes: 1, filename: 'a' }).expect(422);
-    await write(reporter, '/v1/uploads', { material_id: randomUUID(), kind: 'original', size_bytes: 1, filename: 'a' }).expect(404);
+    await write(other, '/v1/uploads', { material_id: materialId, kind: 'original', ...file(1), filename: 'a' }).expect(404);
+    await write(supervisor, '/v1/uploads', { material_id: materialId, kind: 'original', ...file(1), filename: 'a' }).expect(403);
+    await write(reporter, '/v1/uploads', { material_id: materialId, kind: 'original', proxy_mode: 'normal', ...file(1), filename: 'a' }).expect(422);
+    await write(reporter, '/v1/uploads', { material_id: randomUUID(), kind: 'original', ...file(1), filename: 'a' }).expect(404);
   });
 
   it('GET returns the session without the token to the owner and to a supervisor in scope, 404 to others', async () => {
     const materialId = await material();
-    const created = (await write(reporter, '/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 10, filename: 'f.mov' }).expect(201)).body;
+    const created = (await write(reporter, '/v1/uploads', { material_id: materialId, kind: 'original', ...file(10), filename: 'f.mov' }).expect(201)).body;
     const mine = await http().get(`/v1/uploads/${created.id}`).set('Authorization', `Bearer ${reporter.token}`).expect(200);
     const valid = schemaValidator('UploadSession');
     expect(valid(mine.body) ? [] : valid.errors).toEqual([]);
@@ -106,8 +109,43 @@ describe('upload sessions (/v1/uploads)', () => {
 
   it('complete is for the direct path only: 409 on a tusd session', async () => {
     const materialId = await material();
-    const created = (await write(reporter, '/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 10, filename: 'f' }).expect(201)).body;
+    const created = (await write(reporter, '/v1/uploads', { material_id: materialId, kind: 'original', ...file(10), filename: 'f' }).expect(201)).body;
     expect((await write(reporter, `/v1/uploads/${created.id}/complete`, {}).expect(409)).body.code).toBe('upload_state_conflict');
+  });
+
+  describe('UPLOAD_REQUIRE_CLIENT_SHA256', () => {
+    const materialBody = {
+      title: 'Checksum required',
+      material_types: ['report'],
+      governorate: 'gaza',
+      city: 'gaza',
+      priority: 'normal',
+      sensitivity: { minors: false, injured: false, graphic: false },
+      display_name: { mode: 'network' },
+      form_version: 1,
+      dynamic_fields: {},
+    };
+
+    it('off (default): a session without client_sha256 is still created', async () => {
+      expect(h.config.UPLOAD_REQUIRE_CLIENT_SHA256).toBe(false);
+      const materialId = await material();
+      await write(reporter, '/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 10, filename: 'f' }).expect(201);
+    });
+
+    it('on: a session without client_sha256 is rejected with 422 naming the field; with it, created', async () => {
+      const strict = await createHarness({ env: { UPLOAD_REQUIRE_CLIENT_SHA256: 'true' } });
+      try {
+        const owner = await loginAs(strict, [{ role: 'reporter' }], { officeId: office });
+        const post = (url: string, body: object) =>
+          request(strict.app.getHttpServer()).post(url).set('Authorization', `Bearer ${owner.token}`).set('Idempotency-Key', randomUUID()).send(body);
+        const materialId = (await post('/v1/materials', materialBody).expect(201)).body.id;
+        const res = await post('/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 10, filename: 'f' }).expect(422);
+        expect(res.body).toMatchObject({ code: 'validation_failed', details: { fields: ['/client_sha256'] } });
+        await post('/v1/uploads', { material_id: materialId, kind: 'original', ...file(10), filename: 'f' }).expect(201);
+      } finally {
+        await strict.close();
+      }
+    });
   });
 
   describe('direct upload path', () => {
@@ -136,8 +174,8 @@ describe('upload sessions (/v1/uploads)', () => {
           dynamic_fields: {},
         }).expect(201)
       ).body.id;
-      const sha = 'a'.repeat(64);
-      const s = (await post('/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 10, filename: 'f', client_sha256: sha }).expect(201)).body;
+      const sha = file(10).client_sha256;
+      const s = (await post('/v1/uploads', { material_id: materialId, kind: 'original', ...file(10), filename: 'f' }).expect(201)).body;
       expect((await post(`/v1/uploads/${s.id}/complete`, { reported_sha256: 'b'.repeat(64) }).expect(422)).body.code).toBe('checksum_mismatch');
       await post(`/v1/uploads/${s.id}/complete`, { reported_sha256: sha }).expect(202);
       await post(`/v1/uploads/${s.id}/complete`, {}).expect(202);

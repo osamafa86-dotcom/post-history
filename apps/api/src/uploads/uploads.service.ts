@@ -29,6 +29,8 @@ export class UploadsService implements ReplayRehydrator {
 
   async create(p: Principal, body: UploadSessionCreate): Promise<UploadSessionCreated> {
     if (body.proxy_mode && body.kind !== 'proxy') throw ApiError.validation({ fields: ['/proxy_mode'] });
+    // يصير client_sha256 مطلوبًا في عقد v0.1؛ إلى أن يُدمج يفرضه هذا المتغير بالرد نفسه الذي سيعطيه التحقق بالعقد (422)
+    if (this.config.UPLOAD_REQUIRE_CLIENT_SHA256 && !body.client_sha256) throw ApiError.validation({ fields: ['/client_sha256'] });
     return this.db.transaction(async (tx) => {
       const material = await findScoped(tx, p, body.material_id, { forUpdate: true });
       // المراسل يرفع لمواده فقط؛ مادة غيره غير موجودة بالنسبة إليه
