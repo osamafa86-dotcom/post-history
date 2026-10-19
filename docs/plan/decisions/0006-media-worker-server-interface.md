@@ -8,7 +8,7 @@
 ## السياق
 
 - الخادم يتحقق اليوم داخله (`UPLOAD_VERIFIER=in_process`): يقفل كل جلسة `completed` ويحسب SHA-256 ثم يستدعي `recordVerification` التي تكتب ملف المادة ورقم الإيصال والمسار الفني وحدث Outbox في معاملة واحدة. عامل الوسائط يحل محله.
-- لا طابور أحداث بعد: ناشر Outbox يوزّع على صندوق الوارد فقط. الأحداث المتاحة للعامل: `upload.original_received` و`upload.proxy_received` (الجلسة `completed`) و`upload.verified`.
+- لا طابور أحداث بعد: ناشر Outbox يوزّع على صندوق الوارد فقط. الأحداث المتاحة للعامل: `upload.original_received` و`upload.proxy_received` (الجلسة `completed`).
 - العامل يحتاج الملف محليًا على أي حال (ffprobe والنسخة الخفيفة يقرآن عشوائيًا)، فالتنزيل نفسه يحسب البصمة في قراءة واحدة.
 - العقد مجمّد: `MaterialFile` لا يحمل الترميز ولا معدل الإطارات ولا علامة المعدل المتغير، ولا يوجد عمود لبصمة الخادم الرخيصة.
 
@@ -24,11 +24,11 @@
 
 ### الطابور (جانب الخادم)
 
-ناشر Outbox يضيف، داخل النشر نفسه، الأحداث `upload.original_received` و`upload.proxy_received` (للتحقق) و`upload.verified` (للنسخة الخفيفة) إلى Redis Stream `media:events` (`XADD … MAXLEN ~ 100000`) بحقلين: `event_id` و`event` (JSON الحدث كما في `outbox-event.json`؛ الحمولة قائمة بيضاء لا كاشف فيها). العامل يقرأ بمجموعة مستهلكين `media`، ويؤكد بـ `XACK` بعد نجاح الخطوات، ويستعيد المعلّق بـ `XAUTOCLAIM` بعد مهلة. التسليم «مرة على الأقل»، والنقاط أدناه متساوية الأثر عند التكرار.
+ناشر Outbox يضيف، داخل النشر نفسه، الأحداث `upload.original_received` و`upload.proxy_received` إلى Redis Stream `media:events` (`XADD … MAXLEN ~ 100000`) بحقلين: `event_id` و`event` (JSON الحدث كما في `outbox-event.json`؛ الحمولة قائمة بيضاء لا كاشف فيها). العامل يقرأ بمجموعة مستهلكين `media`، ويؤكد بـ `XACK` بعد نجاح الخطوات، ويستعيد المعلّق بـ `XAUTOCLAIM` بعد مهلة. التسليم «مرة على الأقل»، والنقاط أدناه متساوية الأثر عند التكرار.
 
 ### النقاط (`x-internal`، خارج `/v1`، لا يُولَّد لها عميل)
 
-1. `GET /internal/media/sessions/{upload_session_id}` ← `{ material_id, kind, state, size_bytes, storage_key, proxy_mode, material_has_proxy, file_id }` (`file_id` بعد التحقق). لا يعيد بصمة العميل (المقارنة في الخادم).
+1. `GET /internal/media/sessions/{upload_session_id}` ← `{ material_id, kind, state, size_bytes, storage_key, proxy_mode, material_has_proxy }`. لا يعيد بصمة العميل (المقارنة في الخادم).
 2. `POST /internal/media/sessions/{upload_session_id}/verification` بجسم
    `{ result: "verified" | "invalid_file" | "storage_error", sha256, size_bytes, head_sha256, tail_sha256, technical }`
    الخادم يقفل الجلسة؛ إن لم تكن `completed` يعيد `200` بالنتيجة المسجلة إن طابقت و`409` إن خالفت. يتحقق أن `size_bytes` يساوي حجم الجلسة وحجم الكائن في التخزين (`HEAD`)، ويقارن `client_sha256` بنفسه فيقرر `checksum_mismatch`، ثم يستدعي `recordVerification`، ويكتب `technical` (أدناه) على الملف الجديد. يعيد `{ file_id, receipt_number }`.
@@ -38,7 +38,11 @@
 
 ### تدفق العامل
 
-مهمتان مستقلتان، كل منهما متساوية الأثر: **عند `upload.*_received`**: (1) `GET` الجلسة؛ إن لم تكن `completed` يؤكد الحدث ويتوقف. (2) ينزّل الكائن إلى قرص مؤقت ويحسب SHA-256 والبصمة الرخيصة في القراءة نفسها. (3) ffprobe؛ الفشل = `invalid_file`. (4) `POST verification`. **عند `upload.verified` لأصل**: إن كان مرئيًا و`material_has_proxy=false`، نسخة 480p بـ `-copyts` (تحفظ `start_pts` وطابع كل إطار) تُرفع إلى حاوية المشتقات ثم `POST derivatives`. الفصل يكلّف تنزيلًا ثانيًا للأصل، ويضمن أن فشل النسخة لا يعيد التحقق ولا يؤخره. بعد كل مهمة `XACK` وحذف الملفات المؤقتة؛ العطل المؤقت يُعاد حتى 5 مرات ثم يُنقل الحدث إلى `media:dead`. الأصل يُقرأ فقط.
+مهمة واحدة متساوية الأثر عند `upload.*_received`: (1) `GET` الجلسة؛ إن لم تكن `completed` يؤكد الحدث ويتوقف، إلا أصلًا `verified` بلا نسخة خفيفة (فشلت الخطوة 5 في تسليم سابق). (2) ينزّل الكائن إلى مجلد المهمة ويحسب SHA-256 والبصمة الرخيصة في القراءة نفسها. (3) ffprobe؛ الفشل = `invalid_file`. (4) `POST verification` (الفشل بلا بصمة ولا بيانات فنية)؛ الرد `{ state, file_id, receipt_number, failure_reason }`، وتكرار بلاغ موافق يعيد النتيجة المسجلة نفسها، فيستأنف التسليم المعاد بعد فشل الخطوة 5 دون تحقق جديد. (5) لأصل مرئي و`material_has_proxy=false`: نسخة 480p بـ `-copyts` من الملف المنزَّل نفسه (بلا تنزيل ثانٍ) تُرفع إلى حاوية المشتقات ثم `POST derivatives`. بعد المهمة `XACK` وحذف مجلدها؛ العطل المؤقت يُعاد حتى 5 مرات ثم يُنقل الحدث إلى `media:dead`. الأصل يُقرأ فقط.
+
+### قاعدة الثقة
+
+حين لا يرسل العميل `client_sha256`، يكون العامل ضمن قاعدة الثقة لبصمة الأصل ورقم الإيصال: البصمة المحفوظة هي ما حسبه هو، والخادم يتحقق من الحجم فقط. لذلك يصير `client_sha256` إلزاميًا للأصل في نافذة العقد القادمة (قرار المنسّق)، فتعود البصمة دليلًا مستقلًا من جهتين.
 
 ### المصادقة والأسرار
 

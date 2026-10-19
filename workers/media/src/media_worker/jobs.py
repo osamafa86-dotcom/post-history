@@ -1,10 +1,14 @@
-"""مهمتا العامل لكل حدث، وكلتاهما متساوية الأثر عند التكرار (التسليم «مرة على الأقل»):
+"""مهمة العامل لكل حدث `upload.original_received` / `upload.proxy_received`، متساوية الأثر عند التكرار
+(التسليم «مرة على الأقل»):
 
-- `upload.original_received` / `upload.proxy_received` ← التحقق: تنزيل تدفقي مع SHA-256 والبصمة الرخيصة،
-  ثم البيانات الفنية، ثم إبلاغ الخادم. جلسة لم تعد `completed` تُتجاوز.
-- `upload.verified` لأصل ← النسخة الخفيفة 480p إن لم تصل نسخة من الهاتف، تُرفع إلى حاوية المشتقات ويُبلَّغ بها.
+1. تنزيل تدفقي للكائن إلى مجلد المهمة مع SHA-256 والبصمة الرخيصة في القراءة نفسها.
+2. البيانات الفنية (ffprobe)؛ الفشل = `invalid_file`.
+3. إبلاغ الخادم (`POST …/verification`). الخادم يقرر الحجم ومطابقة بصمة العميل ويكتب النتيجة.
+4. لأصل مرئي تحقق ولا نسخة خفيفة له من الهاتف: نسخة 480p من الملف المنزَّل نفسه، تُرفع إلى حاوية المشتقات تحت
+   `derived/<material_id>/<file_id>/` ويُبلَّغ بها (`POST …/derivatives`).
 
-الأصل يُقرأ فقط. الملفات المحلية في مجلد مؤقت لكل مهمة يُحذف في كل الأحوال.
+إعادة التسليم بعد تحقق سابق (فشلت الخطوة 4): الجلسة `verified` والأصل بلا نسخة، فيُعاد البلاغ نفسه، والخادم يعيد
+النتيجة المسجلة ومعها `file_id`، ثم تُكمَل الخطوة 4. الأصل يُقرأ فقط، ومجلد المهمة يُحذف في كل الأحوال.
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .api import InternalApi
+from .api import InternalApi, Session
 from .hashing import digest_file, digest_stream
 from .probe import InvalidMediaError, Probe, probe
 from .proxy import make_proxy
@@ -52,6 +56,10 @@ def _download(storage: Storage, bucket: str, key: str, dst: Path):
         return digest_stream(tee())
 
 
+def _wants_proxy(session: Session) -> bool:
+    return session.kind == "original" and not session.material_has_proxy
+
+
 class Jobs:
     def __init__(self, api: InternalApi, storage: Storage, buckets: Buckets, scratch: Path | None = None):
         self.api = api
@@ -61,60 +69,55 @@ class Jobs:
 
     def handle(self, event: dict) -> str:
         """يعيد وصفًا قصيرًا لما حدث (للسجل والاختبارات)."""
-        kind = event.get("type")
-        payload = event.get("payload") or {}
-        session_id = payload.get("upload_session_id")
-        if not session_id:
+        session_id = (event.get("payload") or {}).get("upload_session_id")
+        if event.get("type") not in VERIFY_EVENTS or not session_id:
             return "ignored"
-        if kind in VERIFY_EVENTS:
-            return self.verify(session_id)
-        if kind == "upload.verified" and payload.get("kind") == "original":
-            return self.proxy(session_id)
-        return "ignored"
+        return self.process(session_id)
 
-    def verify(self, session_id: str) -> str:
+    def process(self, session_id: str) -> str:
         session = self.api.get_session(session_id)
-        if session.state != "completed":
+        resume = session.state == "verified" and _wants_proxy(session)
+        if session.state != "completed" and not resume:
             return f"skip:{session.state}"
-        with tempfile.TemporaryDirectory(dir=self.scratch, prefix="verify-") as tmp:
+        with tempfile.TemporaryDirectory(dir=self.scratch, prefix="job-") as tmp:
             local = Path(tmp) / "source"
             try:
                 if not session.storage_key:
                     raise ObjectMissing("no storage key")
                 digest = _download(self.storage, self.buckets.uploads, session.storage_key, local)
             except ObjectMissing:
+                if resume:
+                    return "skip:missing-after-verify"
                 self.api.report_verification(session_id, {"result": "storage_error"})
                 return "storage_error"
 
-            body = {"result": "verified", "sha256": digest.sha256, **digest.fingerprint()}
+            # الفشل يُبلَّغ بلا بصمة ولا بيانات فنية: لا شيء منه يُخزَّن
             if digest.size_bytes != session.size_bytes:
-                body["result"] = "invalid_file"
-            else:
-                try:
-                    body["technical"] = probe(local).to_dict()
-                except InvalidMediaError:
-                    body["result"] = "invalid_file"
-            self.api.report_verification(session_id, body)
-            return body["result"]
+                self.api.report_verification(session_id, {"result": "invalid_file"})
+                return "invalid_file"
+            try:
+                info: Probe = probe(local)
+            except InvalidMediaError:
+                self.api.report_verification(session_id, {"result": "invalid_file"})
+                return "invalid_file"
 
-    def proxy(self, session_id: str) -> str:
-        session = self.api.get_session(session_id)
-        if session.kind != "original" or session.state != "verified" or not session.file_id:
-            return "skip:not-verified-original"
-        if session.material_has_proxy:
-            return "skip:has-proxy"
-        with tempfile.TemporaryDirectory(dir=self.scratch, prefix="proxy-") as tmp:
-            local, out = Path(tmp) / "source", Path(tmp) / "proxy-480p.mp4"
-            _download(self.storage, self.buckets.uploads, session.storage_key or "", local)
-            source: Probe = probe(local)
-            if source.video_codec is None:
-                return "skip:no-video"
-            result = make_proxy(local, out, source)
-            d = digest_file(out)
-            key = proxy_key(session.material_id, session.file_id)
-            self.storage.put_file(self.buckets.derived, key, out, d.sha256, "video/mp4")
-            self.api.add_derivative(session.file_id, {
-                "kind": "proxy", "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
-                "technical": result.to_dict(),
+            result = self.api.report_verification(session_id, {
+                "result": "verified", "sha256": digest.sha256, **digest.fingerprint(), "technical": info.to_dict(),
             })
-            return "proxy"
+            if result.get("state") != "verified":
+                return result.get("failure_reason") or "failed"
+            if not _wants_proxy(session) or info.video_codec is None:
+                return "verified"
+            return self._proxy(session, result["file_id"], local, info)
+
+    def _proxy(self, session: Session, file_id: str, local: Path, info: Probe) -> str:
+        out = local.with_name("proxy-480p.mp4")
+        made = make_proxy(local, out, info)
+        d = digest_file(out)
+        key = proxy_key(session.material_id, file_id)
+        self.storage.put_file(self.buckets.derived, key, out, d.sha256, "video/mp4")
+        self.api.add_derivative(file_id, {
+            "kind": "proxy", "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
+            "technical": made.to_dict(),
+        })
+        return "verified+proxy"

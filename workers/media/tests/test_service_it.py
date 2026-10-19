@@ -76,9 +76,12 @@ class FakeServer:
                 if method == "GET":
                     return self._reply(200, s)
                 if self.path.endswith("/verification"):
-                    s["state"] = "verified" if body["result"] == "verified" else "failed"
-                    s["file_id"] = str(uuid.uuid4())
-                    return self._reply(200, {"file_id": s["file_id"]})
+                    if s["state"] == "completed":
+                        s["state"] = "verified" if body["result"] == "verified" else "failed"
+                        s["file_id"] = str(uuid.uuid4())
+                    return self._reply(200, {"state": s["state"], "file_id": s.get("file_id"),
+                                             "receipt_number": None, "failure_reason": None})
+                s["material_has_proxy"] = True
                 return self._reply(200, {})
 
             def do_GET(self):
@@ -116,13 +119,13 @@ def _publish(r, type_: str, session_id: str, material_id: str) -> None:
     r.xadd(STREAM, {"event_id": "1", "event": json.dumps(event)})
 
 
-def test_end_to_end_verify_then_proxy(env, tmp_path: Path):
+def test_end_to_end_verify_and_proxy(env, tmp_path: Path):
     r, storage, buckets = env
     clip = synth(tmp_path / "src.mp4", seconds=3, size="1280x720", start_offset=4).read_bytes()
     sid, mid, key = str(uuid.uuid4()), str(uuid.uuid4()), "tus/abc123"
     _s3("PUT", f"/{buckets.uploads}/{key}", clip)
     server = FakeServer({"material_id": mid, "kind": "original", "state": "completed", "size_bytes": len(clip),
-                         "storage_key": key, "material_has_proxy": False})
+                         "storage_key": key, "proxy_mode": None, "material_has_proxy": False})
     try:
         svc = Service(r, Jobs(InternalApi(server.url, TOKEN), storage, buckets, tmp_path), "it", block_ms=500)
         svc.ensure_group()
@@ -133,8 +136,6 @@ def test_end_to_end_verify_then_proxy(env, tmp_path: Path):
         assert verification["sha256"] == hashlib.sha256(clip).hexdigest()
         assert verification["technical"]["start_pts_us"] == 4_000_000
 
-        _publish(r, "upload.verified", sid, mid)
-        assert svc.run_once() == 1
         derivative = next(b for m, p, b in server.calls if p.endswith("/derivatives"))
         file_id = server.session["file_id"]
         assert derivative["storage_key"] == proxy_key(mid, file_id)
@@ -142,9 +143,13 @@ def test_end_to_end_verify_then_proxy(env, tmp_path: Path):
         out.write_bytes(b"".join(storage.read(buckets.derived, derivative["storage_key"])))
         assert hashlib.sha256(out.read_bytes()).hexdigest() == derivative["sha256"]
         assert probe(out).start_pts_us == 4_000_000 and probe(out).height == 480
-        # الأصل لم يتغير، ولا شيء معلّق في المجموعة
+        # الأصل لم يتغير، ولا شيء معلّق، وإعادة التسليم لا تكرر شيئًا
         assert b"".join(storage.read(buckets.uploads, key)) == clip
         assert r.xpending(STREAM, GROUP)["pending"] == 0
+        _publish(r, "upload.original_received", sid, mid)
+        calls = len(server.calls)
+        assert svc.run_once() == 1
+        assert len(server.calls) == calls + 1  # GET فقط
     finally:
         server.close()
 

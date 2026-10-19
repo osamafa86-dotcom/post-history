@@ -35,7 +35,6 @@ class Session:
     size_bytes: int
     storage_key: str | None
     material_has_proxy: bool
-    file_id: str | None
 
 
 class InternalApi:
@@ -72,10 +71,11 @@ class InternalApi:
         return Session(
             id=session_id, material_id=d["material_id"], kind=d["kind"], state=d["state"],
             size_bytes=int(d["size_bytes"]), storage_key=d.get("storage_key"),
-            material_has_proxy=bool(d.get("material_has_proxy")), file_id=d.get("file_id"),
+            material_has_proxy=bool(d.get("material_has_proxy")),
         )
 
     def report_verification(self, session_id: str, body: dict) -> dict:
+        """يعيد `{state, file_id, receipt_number, failure_reason}`؛ تكرار بلاغ موافق يعيد النتيجة المسجلة نفسها."""
         return self._call("POST", f"/internal/media/sessions/{session_id}/verification", body)
 
     def add_derivative(self, file_id: str, body: dict) -> dict:

@@ -31,10 +31,15 @@ class FakeStorage:
 
 
 class FakeApi:
+    """Mimics the server side of ADR 0006 (apps/api/src/media): decides, replays, refuses mismatches."""
+
+    FILE_ID = "f0000000-0000-4000-8000-000000000001"
+
     def __init__(self, session: Session) -> None:
         self.session = session
         self.verifications: list[dict] = []
         self.derivatives: list[tuple[str, dict]] = []
+        self.sha256: str | None = None
 
     def get_session(self, session_id: str) -> Session:
         assert session_id == self.session.id
@@ -42,12 +47,21 @@ class FakeApi:
 
     def report_verification(self, session_id: str, body: dict) -> dict:
         self.verifications.append(body)
-        if body["result"] == "verified":
-            self.session = replace(self.session, state="verified", file_id="f0000000-0000-4000-8000-000000000001")
+        if body["result"] != "verified":
+            # the server's schema forbids a hash or technical data on a failure report
+            assert "sha256" not in body and "technical" not in body
+        if self.session.state == "verified":
+            assert body.get("sha256") == self.sha256, "replay must match"
+        elif body["result"] == "verified":
+            self.sha256 = body["sha256"]
+            self.session = replace(self.session, state="verified")
         else:
             self.session = replace(self.session, state="failed")
-        return {"file_id": self.session.file_id}
+            return {"state": "failed", "file_id": None, "failure_reason": body["result"]}
+        return {"state": "verified", "file_id": self.FILE_ID, "receipt_number": None, "failure_reason": None}
 
     def add_derivative(self, file_id: str, body: dict) -> dict:
+        assert body["storage_key"].startswith(f"derived/{self.session.material_id}/{file_id}/")
         self.derivatives.append((file_id, body))
-        return {}
+        self.session = replace(self.session, material_has_proxy=True)
+        return {"file_id": "d0000000-0000-4000-8000-000000000001"}

@@ -15,16 +15,16 @@ MID = "4a000000-0000-4000-8000-000000000001"
 BUCKETS = Buckets(uploads="uploads", derived="media")
 
 
-def _setup(data: bytes, *, kind="original", state="completed", size=None, key="u/1", has_proxy=False):
+def _setup(data: bytes, *, kind="original", state="completed", size=None, key="tus/1", has_proxy=False):
     storage = FakeStorage()
     if key:
         storage.objects[("uploads", key)] = data
     api = FakeApi(Session(id=SID, material_id=MID, kind=kind, state=state, size_bytes=len(data) if size is None
-                          else size, storage_key=key, material_has_proxy=has_proxy, file_id=None))
+                          else size, storage_key=key, material_has_proxy=has_proxy))
     return api, storage, Jobs(api, storage, BUCKETS)
 
 
-def _event(type_, kind="original"):
+def _event(type_="upload.original_received", kind="original"):
     return {"type": type_, "payload": {"material_id": MID, "upload_session_id": SID, "kind": kind}}
 
 
@@ -35,81 +35,94 @@ def tagged_clip(tmp_path_factory) -> bytes:
     return path.read_bytes()
 
 
-def test_verify_reports_sha256_fingerprint_and_technical(tagged_clip: bytes):
+def test_original_is_verified_then_proxied_from_the_same_download(tagged_clip: bytes, tmp_path: Path):
     api, storage, jobs = _setup(tagged_clip)
-    assert jobs.handle(_event("upload.original_received")) == "verified"
+    assert jobs.handle(_event()) == "verified+proxy"
     [body] = api.verifications
     assert body["sha256"] == hashlib.sha256(tagged_clip).hexdigest()
     assert body["size_bytes"] == len(tagged_clip)
     assert body["head_sha256"] == hashlib.sha256(tagged_clip[:1 << 20]).hexdigest()
     t = body["technical"]
     assert t["start_pts_us"] == 2_000_000 and t["vfr"] and t["video_codec"] == "h264"
-    dumped = json.dumps(body)
     for value in LEAKY_TAGS.values():
-        assert value not in dumped
-    # الأصل كما هو، ولا كتابة على التخزين في التحقق
-    assert storage.objects[("uploads", "u/1")] == tagged_clip and storage.puts == []
+        assert value not in json.dumps(body)
+
+    key = proxy_key(MID, FakeApi.FILE_ID)
+    assert key.startswith(f"derived/{MID}/{FakeApi.FILE_ID}/")
+    assert storage.puts == [("media", key)]
+    [(fid, d)] = api.derivatives
+    assert fid == FakeApi.FILE_ID and d["kind"] == "proxy" and d["technical"]["height"] == 360
+    out = tmp_path / "p.mp4"
+    out.write_bytes(storage.objects[("media", key)])
+    assert probe(out).start_pts_us == 2_000_000
+    # الأصل كما هو
+    assert storage.objects[("uploads", "tus/1")] == tagged_clip
 
 
-def test_redelivered_event_after_verification_is_skipped(tagged_clip: bytes):
-    api, _, jobs = _setup(tagged_clip)
-    jobs.handle(_event("upload.original_received"))
-    assert jobs.handle(_event("upload.original_received")) == "skip:verified"
-    assert len(api.verifications) == 1
+def test_redelivery_after_full_success_is_skipped(tagged_clip: bytes):
+    api, storage, jobs = _setup(tagged_clip)
+    jobs.handle(_event())
+    assert jobs.handle(_event()) == "skip:verified"
+    assert len(api.verifications) == 1 and len(storage.puts) == 1
 
 
-def test_size_mismatch_is_invalid(tagged_clip: bytes):
+def test_redelivery_after_proxy_failure_resumes_with_replayed_verification(tagged_clip: bytes, monkeypatch):
+    api, storage, jobs = _setup(tagged_clip)
+    import media_worker.jobs as jobs_mod
+
+    def boom(*a, **k):
+        raise RuntimeError("encoder died")
+
+    monkeypatch.setattr(jobs_mod, "make_proxy", boom)
+    with pytest.raises(RuntimeError):
+        jobs.handle(_event())
+    assert api.session.state == "verified" and storage.puts == []
+    monkeypatch.undo()
+    assert jobs.handle(_event()) == "verified+proxy"
+    assert len(api.verifications) == 2 and api.verifications[0]["sha256"] == api.verifications[1]["sha256"]
+
+
+def test_proxy_upload_is_not_reverified(tagged_clip: bytes):
+    api, storage, jobs = _setup(tagged_clip, kind="proxy")
+    assert jobs.handle(_event("upload.proxy_received", kind="proxy")) == "verified"
+    assert storage.puts == []
+    assert jobs.handle(_event("upload.proxy_received", kind="proxy")) == "skip:verified"
+
+
+def test_no_worker_proxy_when_phone_sent_one(tagged_clip: bytes):
+    api, storage, jobs = _setup(tagged_clip, has_proxy=True)
+    assert jobs.handle(_event()) == "verified"
+    assert storage.puts == [] and api.derivatives == []
+
+
+def test_audio_original_has_no_proxy(tmp_path: Path):
+    api, storage, jobs = _setup(synth(tmp_path / "a.m4a", video=False).read_bytes())
+    assert jobs.handle(_event()) == "verified"
+    assert storage.puts == []
+
+
+def test_size_mismatch_is_invalid_without_hash(tagged_clip: bytes):
     api, _, jobs = _setup(tagged_clip, size=len(tagged_clip) + 1)
-    assert jobs.handle(_event("upload.original_received")) == "invalid_file"
-    assert "technical" not in api.verifications[0]
+    assert jobs.handle(_event()) == "invalid_file"
+    assert api.verifications == [{"result": "invalid_file"}]
 
 
-def test_unreadable_media_is_invalid():
+def test_unreadable_media_is_invalid_without_hash():
     api, _, jobs = _setup(b"definitely not media" * 1000)
-    assert jobs.handle(_event("upload.proxy_received", kind="proxy")) == "invalid_file"
-    assert api.verifications[0]["sha256"]
+    assert jobs.handle(_event()) == "invalid_file"
+    assert api.verifications == [{"result": "invalid_file"}]
 
 
 def test_missing_object_is_storage_error():
     api, storage, jobs = _setup(b"x" * 10)
     storage.objects.clear()
-    assert jobs.handle(_event("upload.original_received")) == "storage_error"
+    assert jobs.handle(_event()) == "storage_error"
     assert api.verifications == [{"result": "storage_error"}]
-
-
-def test_proxy_after_verification_goes_to_derived_bucket(tagged_clip: bytes, tmp_path: Path):
-    api, storage, jobs = _setup(tagged_clip)
-    jobs.handle(_event("upload.original_received"))
-    assert jobs.handle(_event("upload.verified")) == "proxy"
-    file_id = api.session.file_id
-    key = proxy_key(MID, file_id)
-    assert storage.puts == [("media", key)]
-    [(fid, body)] = api.derivatives
-    assert fid == file_id and body["kind"] == "proxy" and body["storage_key"] == key
-    assert body["technical"]["start_pts_us"] == 2_000_000 and body["technical"]["height"] == 360
-    out = tmp_path / "p.mp4"
-    out.write_bytes(storage.objects[("media", key)])
-    assert probe(out).start_pts_us == 2_000_000
-    assert storage.objects[("uploads", "u/1")] == tagged_clip
-
-
-def test_no_proxy_when_phone_sent_one(tagged_clip: bytes):
-    api, storage, jobs = _setup(tagged_clip, has_proxy=True)
-    jobs.handle(_event("upload.original_received"))
-    assert jobs.handle(_event("upload.verified")) == "skip:has-proxy"
-    assert storage.puts == [] and api.derivatives == []
-
-
-def test_no_proxy_for_audio(tmp_path: Path):
-    api, storage, jobs = _setup(synth(tmp_path / "a.m4a", video=False).read_bytes())
-    jobs.handle(_event("upload.original_received"))
-    assert jobs.handle(_event("upload.verified")) == "skip:no-video"
-    assert storage.puts == []
 
 
 @pytest.mark.parametrize("event", [
     {"type": "material.created", "payload": {"material_id": MID}},
-    {"type": "upload.verified", "payload": {"material_id": MID, "upload_session_id": SID, "kind": "proxy"}},
+    {"type": "upload.verified", "payload": {"material_id": MID, "upload_session_id": SID, "kind": "original"}},
     {},
 ])
 def test_unrelated_events_ignored(event: dict):
