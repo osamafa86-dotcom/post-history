@@ -27,10 +27,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   netlab:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    # Long measurements only when dispatched by hand; PR smoke is capped to protect the Actions budget.
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 350 || 60 }}
     env:
       NO_PROXY: 127.0.0.1,localhost
     steps:

@@ -3,15 +3,22 @@ name: ci
 on:
   push:
     branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
   pull_request:
+    paths-ignore: ['docs/**', '**/*.md']
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   contracts:
     name: contracts (openapi + json schemas)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -23,6 +30,7 @@ jobs:
   db:
     name: db (migrations up/down + smoke test)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16-alpine
@@ -50,6 +58,7 @@ jobs:
   api:
     name: api (typecheck, unit, integration on Postgres and Redis)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16-alpine
@@ -119,6 +128,7 @@ jobs:
   secrets:
     name: secret scan
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # gitleaks-action lists PR commits via the API: needs pull-requests:read. Comments disabled (least privilege).
     permissions:
       contents: read
@@ -135,6 +145,7 @@ jobs:
   compose:
     name: compose (config, pull, smoke)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Validate docker compose file
