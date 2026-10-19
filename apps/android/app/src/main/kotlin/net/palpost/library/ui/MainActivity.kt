@@ -5,7 +5,11 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import net.palpost.library.PostHistoryApp
+import net.palpost.library.core.auth.AuthState
+import net.palpost.library.upload.UploadScheduler
 import net.palpost.library.ui.theme.PostHistoryTheme
 
 class MainActivity : ComponentActivity() {
@@ -18,5 +22,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             PostHistoryTheme { AppRoot(container) }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Opening the app is the moment a transfer resumes after a force stop or a reboot (Android 14+).
+        val container = (application as PostHistoryApp).container
+        if (container.auth.state.value is AuthState.SignedIn) lifecycleScope.launch { UploadScheduler.resumePending(this@MainActivity) }
     }
 }

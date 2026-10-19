@@ -18,10 +18,16 @@ on:
 permissions:
   contents: read
 
+# Same spend rules as ci.yml: a newer push to the same PR cancels the older run, and no job can hang.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   android:
     name: android (generate client, unit tests, lint, form conformance)
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: apps/android

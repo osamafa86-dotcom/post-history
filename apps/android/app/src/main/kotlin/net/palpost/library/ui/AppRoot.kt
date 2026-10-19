@@ -10,8 +10,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.palpost.library.AppContainer
 import net.palpost.library.core.auth.AuthState
 import net.palpost.library.core.auth.SignOutReason
+import net.palpost.library.ui.material.NewMaterialScreen
+import net.palpost.library.ui.setup.TaskKillerSetupScreen
+import net.palpost.library.ui.uploads.UploadsScreen
 
-private enum class Screen { Home, FormPreview }
+private enum class Screen { Home, FormPreview, NewMaterial, Uploads, Setup, SetupThenNewMaterial }
 
 @Composable
 fun AppRoot(container: AppContainer) {
@@ -22,8 +25,18 @@ fun AppRoot(container: AppContainer) {
             var screen by rememberSaveable { mutableStateOf(Screen.Home) }
             BackHandler(enabled = screen != Screen.Home) { screen = Screen.Home }
             when (screen) {
-                Screen.Home -> HomeScreen(container, onOpenForm = { screen = Screen.FormPreview })
+                Screen.Home -> HomeScreen(
+                    container,
+                    onOpenForm = { screen = Screen.FormPreview },
+                    onNewMaterial = { screen = if (container.settings.taskKillerSetupDone) Screen.NewMaterial else Screen.SetupThenNewMaterial },
+                    onUploads = { screen = Screen.Uploads },
+                    onSetup = { screen = Screen.Setup },
+                )
                 Screen.FormPreview -> FormPreviewScreen(container, onBack = { screen = Screen.Home })
+                Screen.NewMaterial -> NewMaterialScreen(container, onBack = { screen = Screen.Home }, onQueued = { screen = Screen.Uploads })
+                Screen.Uploads -> UploadsScreen(container, onBack = { screen = Screen.Home })
+                Screen.Setup -> TaskKillerSetupScreen(container, onDone = { screen = Screen.Home }, onBack = { screen = Screen.Home })
+                Screen.SetupThenNewMaterial -> TaskKillerSetupScreen(container, onDone = { screen = Screen.NewMaterial }, onBack = { screen = Screen.Home })
             }
         }
     }
