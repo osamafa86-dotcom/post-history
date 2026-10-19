@@ -113,7 +113,7 @@ def set_loss(pct, delay_ms=0):
     _sidecar("tc", "qdisc", "del", "dev", "eth0", "root", check=False)
     listed = _sidecar("iptables", "-w", "-S", "OUTPUT").stdout
     for line in listed.splitlines():
-        if "netlab-loss" in line:
+        if "netlab-loss" in line or "netlab-blackout" in line:
             _sidecar("iptables", "-w", "-D", *line.split()[1:])
     if pct <= 0:
         return "none"
@@ -143,6 +143,16 @@ def set_loss(pct, delay_ms=0):
     return "iptables-statistic"
 
 
+def set_blackout(on):
+    """يسقط كل ما يخرج إلى tusd-proxy (on) أو يزيل ذلك؛ أول قاعدة في OUTPUT فتسبق قاعدة الفقد."""
+    rule = ["OUTPUT", "-p", "tcp", "--dport", UPSTREAM.rsplit(":", 1)[1],
+            "-m", "comment", "--comment", "netlab-blackout", "-j", "DROP"]
+    if on:
+        _sidecar("iptables", "-w", "-I", *rule)
+    else:
+        _sidecar("iptables", "-w", "-D", *rule, check=False)
+
+
 class Driver(threading.Thread):
     """ينفّذ أحداث السيناريو (انقطاع، تبديل شبكة) على خط زمني من بداية الرفع."""
 
@@ -169,16 +179,14 @@ class Driver(threading.Thread):
     def _blackout(self, ev, t0):
         k = 1
         while self._wait_until(t0 + k * ev["every_s"] * self.scale):
-            # timeout=0: لا يمر شيء والاتصال يبقى معلقًا حتى إزالة السم (ثقب أسود لا قطع).
-            for stream in ("upstream", "downstream"):
-                toxi("POST", f"/proxies/{self.name_}/toxics",
-                     {"name": f"blackout_{stream}", "type": "timeout", "stream": stream,
-                      "attributes": {"timeout": 0}})
+            # ثقب أسود في النواة: إسقاط كل حزم الساق toxiproxy → tusd-proxy، فيتعلق الاتصال ولا يُقطع.
+            # لا عبر سموم toxiproxy: إضافتها على اتصال معلّق تحت الفقد تحجب واجهته الإدارية عشرات الثواني.
+            set_blackout(True)
             self.log.append((round(now() - t0, 1), "blackout-start"))
             if not self._wait_until(now() + ev["duration_s"] * self.scale):
+                set_blackout(False)
                 return
-            for stream in ("upstream", "downstream"):
-                toxi("DELETE", f"/proxies/{self.name_}/toxics/blackout_{stream}")
+            set_blackout(False)
             self.log.append((round(now() - t0, 1), "blackout-end"))
             k += 1
 
