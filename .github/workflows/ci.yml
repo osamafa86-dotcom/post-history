@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    name: contracts (openapi + json schemas)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Lint OpenAPI
+        run: npx -y @redocly/cli@latest lint contracts/openapi.yaml
+      - name: Compile JSON schemas
+        run: |
+          for f in contracts/schemas/*.json; do
+            echo "== $f"
+            npx -y ajv-cli@5 compile --spec=draft2020 -s "$f"
+          done
+
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  compose:
+    name: compose config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate docker compose file
+        run: |
+          cp infra/compose/.env.example infra/compose/.env
+          docker compose -f infra/compose/docker-compose.yml config > /dev/null

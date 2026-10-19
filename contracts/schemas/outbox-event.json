@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://post-history/contracts/schemas/outbox-event.json",
+  "title": "OutboxEvent",
+  "description": "حدث يُحفظ في جدول Outbox داخل معاملة الحفظ نفسها ثم يُرسل من طابور قابل لإعادة المحاولة. idempotency_key يمنع إنشاء مهمتين أو رسالتين لتكرار واحد.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "type", "aggregate_type", "aggregate_id", "occurred_at", "idempotency_key", "payload"],
+  "properties": {
+    "id": { "type": "string", "description": "تسلسلي أو ULID" },
+    "type": {
+      "type": "string",
+      "enum": [
+        "material.created",
+        "material.urgent_received",
+        "upload.proxy_received",
+        "upload.original_received",
+        "upload.verified",
+        "upload.failed",
+        "material.editorial_transition",
+        "material.rights_transition",
+        "material.reserved",
+        "material.released",
+        "material.change_requested",
+        "material.accepted_for_production",
+        "ai.draft_ready",
+        "material.published",
+        "notification.escalated"
+      ]
+    },
+    "aggregate_type": { "type": "string", "enum": ["material", "upload", "notification"] },
+    "aggregate_id": { "type": "string", "format": "uuid" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "idempotency_key": { "type": "string", "minLength": 8 },
+    "actor_id": { "type": ["string", "null"], "format": "uuid" },
+    "payload": {
+      "description": "لا أسماء مصادر محمية ولا إحداثيات دقيقة هنا؛ الحمولة قد تصل إلى قنوات خارجية",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "delivery": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["channel", "status"],
+        "properties": {
+          "channel": { "type": "string", "enum": ["in_app", "websocket", "apns", "fcm", "email", "telegram", "whatsapp", "sms"] },
+          "status": { "type": "string", "enum": ["pending", "sent", "delivered", "read", "failed"] },
+          "attempts": { "type": "integer", "minimum": 0 },
+          "last_error": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

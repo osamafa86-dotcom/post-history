@@ -1,0 +1,549 @@
+openapi: 3.1.0
+info:
+  title: post-history API
+  version: 0.1.0
+  description: |
+    واجهة منصة المكتبة المرئية — الإصدار v0 لمرحلة التأسيس.
+    التحديثات اللحظية تصل عبر WebSocket على `/v1/ws` بالأحداث نفسها المعرّفة في `schemas/outbox-event.json`.
+    كل عملية كتابة تقبل ترويسة `Idempotency-Key`.
+servers:
+  - url: https://api.example.invalid/v1
+    description: يُستبدل بنطاق الشبكة عند النشر
+
+tags:
+  - name: auth
+  - name: materials
+  - name: uploads
+  - name: forms
+  - name: notifications
+  - name: events
+
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: دخول بكلمة المرور ثم رمز TOTP
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+                totp_code: { type: string, description: مطلوب لكل الطاقم بعد التفعيل }
+      responses:
+        "200":
+          description: جلسة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /auth/recovery:
+    post:
+      tags: [auth]
+      summary: بدء استعادة الحساب عند فقد الهاتف (بمساعدة المشرف ورموز احتياطية)
+      operationId: startRecovery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, backup_code]
+              properties:
+                email: { type: string, format: email }
+                backup_code: { type: string }
+      responses:
+        "202": { description: طلب الاستعادة بانتظار اعتماد المشرف }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /materials:
+    get:
+      tags: [materials]
+      summary: قائمة المواد ضمن نطاق المستخدم
+      operationId: listMaterials
+      parameters:
+        - { name: editorial_state, in: query, schema: { $ref: "#/components/schemas/EditorialState" } }
+        - { name: technical_state, in: query, schema: { $ref: "#/components/schemas/TechnicalState" } }
+        - { name: rights_state, in: query, schema: { $ref: "#/components/schemas/RightsState" } }
+        - { name: priority, in: query, schema: { $ref: "#/components/schemas/Priority" } }
+        - { name: governorate, in: query, schema: { type: string } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        "200":
+          description: صفحة مواد
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Material" }
+                  next_cursor: { type: [string, "null"] }
+    post:
+      tags: [materials]
+      summary: إنشاء سجل مادة قبل بدء الرفع (يطلق إشعار «مادة واردة»)
+      operationId: createMaterial
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MaterialCreate" }
+      responses:
+        "201":
+          description: المادة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Material" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /materials/{id}:
+    parameters:
+      - $ref: "#/components/parameters/MaterialId"
+    get:
+      tags: [materials]
+      summary: قراءة مادة
+      operationId: getMaterial
+      responses:
+        "200":
+          description: المادة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Material" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [materials]
+      summary: تعديل الحقول الوصفية (لا الحالات)
+      operationId: updateMaterial
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MaterialUpdate" }
+      responses:
+        "200":
+          description: المادة بعد التعديل
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Material" }
+
+  /materials/{id}/transitions:
+    parameters:
+      - $ref: "#/components/parameters/MaterialId"
+    post:
+      tags: [materials]
+      summary: انتقال في أحد المسارات الثلاثة (تحريري، فني، حقوق) مع السبب
+      operationId: transitionMaterial
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Transition" }
+      responses:
+        "200":
+          description: المادة بعد الانتقال
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Material" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /uploads:
+    post:
+      tags: [uploads]
+      summary: إنشاء جلسة رفع لملف يخص مادة (أصل أو نسخة خفيفة)
+      operationId: createUploadSession
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UploadSessionCreate" }
+      responses:
+        "201":
+          description: جلسة الرفع ومعلومات الاتصال بخادم tus
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadSession" }
+
+  /uploads/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [uploads]
+      summary: حالة جلسة الرفع
+      operationId: getUploadSession
+      responses:
+        "200":
+          description: الجلسة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadSession" }
+
+  /uploads/{id}/complete:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [uploads]
+      summary: إشعار اكتمال من خادم الرفع (hook) — يسجّل حدث Outbox ويطلق خط المعالجة
+      operationId: completeUpload
+      security:
+        - tusdHookSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [size_bytes]
+              properties:
+                size_bytes: { type: integer, minimum: 1 }
+                storage_key: { type: string }
+                sha256: { type: [string, "null"], description: تُحسب على الخادم بعد التجميع إن لم تُرسل }
+      responses:
+        "202": { description: قُبل؛ المعالجة غير متزامنة }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /forms/current:
+    get:
+      tags: [forms]
+      summary: نموذج الرفع الحالي (بمخطط schemas/upload-form.json) لنوع مادة معيّن
+      operationId: getCurrentForm
+      parameters:
+        - { name: material_type, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: النموذج
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadForm" }
+
+  /forms/{version}:
+    get:
+      tags: [forms]
+      summary: نموذج بإصدار محدد (لقراءة المواد القديمة ومسودات الهاتف)
+      operationId: getFormVersion
+      parameters:
+        - { name: version, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200":
+          description: النموذج
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadForm" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /notifications:
+    get:
+      tags: [notifications]
+      summary: صندوق الوارد (يبقى الإشعار حتى لو فشلت قناة الهاتف)
+      operationId: listNotifications
+      parameters:
+        - { name: unread_only, in: query, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: إشعارات
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Notification" }
+
+  /notifications/{id}/ack:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [notifications]
+      summary: إقرار الاستلام («اطّلعت» للمشرف، «أقرّ الاستلام» للمنتج)
+      operationId: ackNotification
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "204": { description: تم }
+
+  /events:
+    get:
+      tags: [events]
+      summary: قراءة أحداث Outbox (لوحة الإدارة والمراقبة)
+      operationId: listEvents
+      parameters:
+        - { name: after, in: query, schema: { type: string, description: مؤشر تسلسلي } }
+        - { name: type, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: أحداث
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/OutboxEvent" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+    tusdHookSecret:
+      type: apiKey
+      in: header
+      name: X-Hook-Secret
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 128 }
+    MaterialId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Error:
+      description: خطأ
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+
+    Session:
+      type: object
+      required: [access_token, expires_at, roles]
+      properties:
+        access_token: { type: string }
+        expires_at: { type: string, format: date-time }
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/Role" }
+
+    Role:
+      type: object
+      required: [name, scopes]
+      properties:
+        name:
+          type: string
+          enum: [system_admin, editor_in_chief, supervisor, producer, finance, reporter, rights_officer]
+        scopes:
+          type: array
+          description: المكاتب أو المحافظات التي يراها الدور
+          items: { type: string }
+
+    TechnicalState:
+      type: string
+      description: ماذا وصل
+      enum: [pending, proxy_received, original_received, verified, failed]
+
+    EditorialState:
+      type: string
+      description: من وافق
+      enum: [inbox, acknowledged, reviewing, needs_changes, accepted, in_production, final_review, published, rejected]
+
+    RightsState:
+      type: string
+      description: ما يُسمح به
+      enum: [unknown, documented, sellable, blocked, withdrawn]
+
+    Priority:
+      type: string
+      enum: [urgent, important, normal]
+
+    DisplayName:
+      type: object
+      required: [mode]
+      properties:
+        mode: { type: string, enum: [real_name, pseudonym, network] }
+        pseudonym: { type: [string, "null"] }
+
+    Contributor:
+      type: object
+      required: [user_id, share_percent]
+      properties:
+        user_id: { type: string, format: uuid }
+        role: { type: string, enum: [photographer, reporter, editor] }
+        share_percent: { type: number, minimum: 0, maximum: 100 }
+
+    MaterialCreate:
+      type: object
+      required: [title, material_types, governorate, city, priority, sensitivity, display_name, form_version, dynamic_fields]
+      properties:
+        title: { type: string, minLength: 5, maxLength: 80 }
+        material_types:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [breaking, report, interview, raw_footage, aerial, press_conference, eyewitness, photos]
+        governorate: { type: string }
+        city: { type: string }
+        shot_at: { type: [string, "null"], format: date-time, description: تُقرأ من الملف وتُصحَّح يدويًا }
+        priority: { $ref: "#/components/schemas/Priority" }
+        sensitivity:
+          type: object
+          required: [minors, injured, graphic]
+          properties:
+            minors: { type: boolean }
+            injured: { type: boolean }
+            graphic: { type: boolean }
+        display_name: { $ref: "#/components/schemas/DisplayName" }
+        form_version: { type: integer, minimum: 1 }
+        dynamic_fields:
+          type: object
+          description: قيم الحقول الديناميكية وفق form_version؛ يتحقق الخادم بمخطط النموذج
+          additionalProperties: true
+        contributors:
+          type: array
+          items: { $ref: "#/components/schemas/Contributor" }
+        voice_note_upload_id: { type: [string, "null"], format: uuid }
+
+    MaterialUpdate:
+      type: object
+      properties:
+        title: { type: string, minLength: 5, maxLength: 80 }
+        material_types:
+          type: array
+          items: { type: string }
+        governorate: { type: string }
+        city: { type: string }
+        shot_at: { type: [string, "null"], format: date-time }
+        priority: { $ref: "#/components/schemas/Priority" }
+        dynamic_fields:
+          type: object
+          additionalProperties: true
+
+    Material:
+      allOf:
+        - $ref: "#/components/schemas/MaterialCreate"
+        - type: object
+          required: [id, version, technical_state, editorial_state, rights_state, created_at, reporter_id]
+          properties:
+            id: { type: string, format: uuid }
+            version: { type: integer, minimum: 1, description: يرتفع مع كل تعديل بعد الاعتماد }
+            reporter_id: { type: string, format: uuid }
+            technical_state: { $ref: "#/components/schemas/TechnicalState" }
+            editorial_state: { $ref: "#/components/schemas/EditorialState" }
+            rights_state: { $ref: "#/components/schemas/RightsState" }
+            reserved_by: { type: [string, "null"], format: uuid, description: المنتج الذي حجز المادة }
+            files:
+              type: array
+              items: { $ref: "#/components/schemas/MaterialFile" }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    MaterialFile:
+      type: object
+      required: [id, kind, state]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [original, proxy, hls, audio, thumbnail, voice_note] }
+        state: { type: string, enum: [uploading, received, verified, failed] }
+        size_bytes: { type: [integer, "null"] }
+        sha256: { type: [string, "null"], description: تُحسب على الخادم بعد التجميع }
+        duration_ms: { type: [integer, "null"] }
+        start_pts_us: { type: [integer, "null"], description: نقطة البداية الزمنية للأصل؛ تحفظها النسخة الخفيفة }
+        receipt_number: { type: [string, "null"], description: رقم إيصال الاستلام للمراسل }
+
+    UploadSessionCreate:
+      type: object
+      required: [material_id, kind, size_bytes, filename]
+      properties:
+        material_id: { type: string, format: uuid }
+        kind: { type: string, enum: [original, proxy, voice_note] }
+        size_bytes: { type: integer, minimum: 1 }
+        filename: { type: string }
+        proxy_mode: { type: [string, "null"], enum: [urgent, normal, original_only, null] }
+        client_fingerprint:
+          type: [object, "null"]
+          description: بصمة رخيصة لترشيح المكررات فقط (لا تمنح أي حق)
+          properties:
+            size_bytes: { type: integer }
+            head_sha256: { type: string, description: أول ميغابايت }
+            tail_sha256: { type: string, description: آخر ميغابايت }
+            shot_at: { type: [string, "null"], format: date-time }
+
+    UploadSession:
+      type: object
+      required: [id, material_id, kind, state, tus_endpoint, part_size_bytes]
+      properties:
+        id: { type: string, format: uuid }
+        material_id: { type: string, format: uuid }
+        kind: { type: string }
+        state: { type: string, enum: [created, in_progress, completed, verified, failed, deduplicated] }
+        tus_endpoint: { type: string, format: uri }
+        upload_token: { type: string, description: رمز قصير العمر لخادم الرفع }
+        part_size_bytes:
+          type: integer
+          description: حجم الجزء الثابت لهذه الجلسة؛ يختاره العميل من قياس الشبكة عند البدء
+        bytes_received: { type: integer, minimum: 0 }
+        ietf_resumable: { type: boolean, description: هل الخادم يعرض مسار المسودة التجريبي (تجربة iOS) }
+
+    Transition:
+      type: object
+      required: [track, to, reason]
+      properties:
+        track: { type: string, enum: [editorial, technical, rights] }
+        to: { type: string }
+        reason: { type: string, minLength: 1 }
+        note_timecode_ms: { type: [integer, "null"], description: تعليق مثبت على ثانية محددة }
+
+    UploadForm:
+      type: object
+      description: نموذج ديناميكي بمخطط schemas/upload-form.json
+      required: [version, fields]
+      properties:
+        version: { type: integer, minimum: 1 }
+        material_types: { type: array, items: { type: string } }
+        fields:
+          type: array
+          items: { type: object, additionalProperties: true }
+
+    Notification:
+      type: object
+      required: [id, type, created_at, state]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        material_id: { type: [string, "null"], format: uuid }
+        title: { type: string, description: بلا أسماء مصادر محمية ولا موقع دقيق }
+        state: { type: string, enum: [sent, delivered, read, acknowledged] }
+        assignment_state: { type: [string, "null"], enum: [assigned, acknowledged, null] }
+        created_at: { type: string, format: date-time }
+
+    OutboxEvent:
+      type: object
+      description: راجع schemas/outbox-event.json
+      required: [id, type, aggregate_type, aggregate_id, occurred_at, idempotency_key]
+      properties:
+        id: { type: string }
+        type: { type: string }
+        aggregate_type: { type: string }
+        aggregate_id: { type: string }
+        occurred_at: { type: string, format: date-time }
+        idempotency_key: { type: string }
+        payload: { type: object, additionalProperties: true }
+
+security:
+  - bearerAuth: []

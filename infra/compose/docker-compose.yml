@@ -1,0 +1,89 @@
+name: post-history
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT}:6379"
+    volumes:
+      - redis-data:/data
+
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    ports:
+      - "${S3_PORT}:9000"
+      - "${S3_CONSOLE_PORT}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${S3_ACCESS_KEY} ${S3_SECRET_KEY} &&
+      mc mb --ignore-existing local/${S3_BUCKET_UPLOADS} &&
+      mc mb --ignore-existing local/${S3_BUCKET_MEDIA} &&
+      echo buckets ready"
+
+  tusd:
+    image: tusproject/tusd:latest
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+      AWS_REGION: ${S3_REGION}
+    # R2 requires all non-trailing parts to have the same size: min part size == preferred part size.
+    # Part size is fixed per upload session; the phone-side chunk size is independent (tusd buffers to .part).
+    command: >
+      -port=8080
+      -base-path=/files/
+      -s3-endpoint=${S3_ENDPOINT}
+      -s3-bucket=${S3_BUCKET_UPLOADS}
+      -s3-part-size=${TUSD_PART_SIZE_BYTES}
+      -s3-min-part-size=${TUSD_PART_SIZE_BYTES}
+      -s3-disable-content-hashes=${TUSD_DISABLE_CONTENT_HASHES}
+      -hooks-http=${TUSD_HOOK_URL}
+      -hooks-http-forward-headers=Authorization
+      -hooks-enabled-events=pre-create,post-finish
+      -hooks-http-retry=5
+      -hooks-http-backoff=2
+      -behind-proxy
+      -show-greeting=false
+    ports:
+      - "${TUSD_PORT}:8080"
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

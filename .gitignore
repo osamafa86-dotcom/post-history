@@ -1,0 +1,50 @@
+# secrets & local env
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.keystore
+*.jks
+
+# node
+node_modules/
+dist/
+.next/
+coverage/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# apple
+apps/ios/DerivedData/
+apps/ios/*.xcworkspace/xcuserdata/
+apps/ios/*.xcodeproj/xcuserdata/
+
+# android
+apps/android/.gradle/
+apps/android/build/
+apps/android/**/build/
+apps/android/local.properties
+
+# infra
+.terraform/
+*.tfstate
+*.tfstate.*
+infra/compose/data/
+
+# media samples (never commit real footage)
+samples/
+*.mov
+*.mp4
+*.mxf
+*.wav
+
+# os / editors
+.DS_Store
+.idea/
+.vscode/
