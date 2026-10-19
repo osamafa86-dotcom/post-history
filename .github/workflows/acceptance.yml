@@ -51,7 +51,7 @@ jobs:
         run: node run.mjs upload-resume --dry-run
 
   live:
-    name: live acceptance (API + Postgres: pii-leak, tenant-isolation, idempotency, tusd hook, receipt-notification)
+    name: "live acceptance (API + Postgres - pii-leak, tenant-isolation, idempotency, tusd hook, receipt-notification)"
     runs-on: ubuntu-latest
     services:
       postgres:
