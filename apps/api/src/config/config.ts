@@ -66,6 +66,9 @@ const schema = z.object({
     .default('true')
     .transform((v) => v === 'true'),
 
+  // لغة عناوين الإشعارات المخزنة (القوالب بالعربية والإنجليزية في notifications/messages.ts)
+  NOTIFICATION_LOCALE: z.enum(['ar', 'en']).default('ar'),
+
   OUTBOX_DISPATCHER_ENABLED: z
     .enum(['true', 'false'])
     .default('true')

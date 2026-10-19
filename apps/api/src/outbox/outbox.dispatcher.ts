@@ -3,23 +3,31 @@ import { and, asc, eq, isNull, lte, sql } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { LOGGER } from '../common/logger';
-import { DB, type Database } from '../database/database.module';
+import { DB, type Database, type Tx } from '../database/database.module';
+import { fanOut } from '../notifications/fanout';
 import { outboxEvents } from '../database/schema/schema';
 
 export type OutboxRow = typeof outboxEvents.$inferSelect;
 
-/** وجهة الأحداث (WebSocket، الإشعارات، الطوابير). الفشل يرمي فيُعاد المحاولة لاحقًا. */
+/**
+ * وجهة الأحداث (صندوق الوارد، ولاحقًا WebSocket والهاتف). تُستدعى داخل معاملة المُرسل: ما تكتبه في القاعدة
+ * يُثبَّت مع علامة النشر معًا أو لا يُثبَّت. الفشل يرمي فيُعاد المحاولة لاحقًا.
+ */
 export interface OutboxPublisher {
-  publish(event: OutboxRow): Promise<void>;
+  publish(event: OutboxRow, tx: Tx): Promise<void>;
 }
 export const OUTBOX_PUBLISHER = Symbol('OUTBOX_PUBLISHER');
 
-/** الناشر الافتراضي في التأسيس: يسجّل معرّف الحدث ونوعه فقط (لا الحمولة). القنوات في التذكرة التالية. */
+/** الناشر في التأسيس: إشعارات صندوق الوارد، ثم سطر سجل بمعرّف الحدث ونوعه فقط (لا الحمولة). */
 @Injectable()
-export class LogOutboxPublisher implements OutboxPublisher {
-  constructor(@Inject(LOGGER) private readonly logger: Logger) {}
-  async publish(event: OutboxRow): Promise<void> {
-    this.logger.debug({ event_id: event.id, type: event.type }, 'outbox event published');
+export class InboxOutboxPublisher implements OutboxPublisher {
+  constructor(
+    @Inject(LOGGER) private readonly logger: Logger,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+  ) {}
+  async publish(event: OutboxRow, tx: Tx): Promise<void> {
+    const created = await fanOut(tx, event, this.config.NOTIFICATION_LOCALE);
+    this.logger.debug({ event_id: event.id, type: event.type, notifications: created }, 'outbox event published');
   }
 }
 
@@ -66,10 +74,14 @@ export class OutboxDispatcher implements OnApplicationBootstrap, OnApplicationSh
       let published = 0;
       for (const event of batch) {
         try {
-          await this.publisher.publish(event);
+          // نقطة حفظ لكل حدث: فشل حدث لا يلغي ما كتبته الأحداث الأخرى في الدفعة
+          await tx.execute(sql`SAVEPOINT outbox_event`);
+          await this.publisher.publish(event, tx);
+          await tx.execute(sql`RELEASE SAVEPOINT outbox_event`);
           await tx.update(outboxEvents).set({ publishedAt: sql`now()` }).where(eq(outboxEvents.id, event.id));
           published += 1;
         } catch (err) {
+          await tx.execute(sql`ROLLBACK TO SAVEPOINT outbox_event`);
           const backoff = Math.min(2 ** event.attempts, MAX_BACKOFF_SECONDS);
           await tx
             .update(outboxEvents)

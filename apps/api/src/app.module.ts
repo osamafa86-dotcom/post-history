@@ -13,6 +13,8 @@ import { OutboxModule } from './outbox/outbox.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { FormsModule } from './forms/forms.module';
 import { MaterialsModule } from './materials/materials.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { EventsModule } from './events/events.module';
 
 @Module({})
 export class AppModule {
@@ -20,7 +22,7 @@ export class AppModule {
     return {
       module: AppModule,
       global: true,
-      imports: [DatabaseModule, IdentityModule, OutboxModule, UploadsModule, FormsModule, MaterialsModule],
+      imports: [DatabaseModule, IdentityModule, OutboxModule, UploadsModule, FormsModule, MaterialsModule, NotificationsModule, EventsModule],
       controllers: [HealthController],
       providers: [
         { provide: APP_CONFIG, useValue: config },
