@@ -75,6 +75,8 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--extra-compose", help="ملف compose إضافي (مثل تخطي npm ci على مضيف بلا شبكة داخل الحاويات)")
     ap.add_argument("--settle-s", type=float, default=20.0, help="مدة المسبار بعد التدوير")
+    ap.add_argument("--mode", choices=["previous", "single"], default="previous",
+                    help="previous: الخادم يقبل الرمز السابق مؤقتًا (TUSD_HOOK_SECRET_PREVIOUS)؛ single: رمز واحد")
     a = ap.parse_args()
 
     env = read_env()
@@ -105,11 +107,20 @@ def main():
     started_at, r0 = utc(), time.monotonic()
     new = secrets.token_hex(32)
     set_env("TUSD_HOOK_SECRET", new)
-    # الخادم أولًا (يقبل الرمز الجديد وحده)، ثم tusd: النافذة = من توقف الخادم القديم إلى بدء tusd الجديد.
+    if a.mode == "previous":
+        # الخادم يقبل القديم والجديد معًا حتى UNTIL، فلا نافذة عدم تطابق بين إعادة إنشاء الخادم وtusd.
+        until = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=15)).isoformat(timespec="seconds")
+        set_env("TUSD_HOOK_SECRET_PREVIOUS", old)
+        set_env("TUSD_HOOK_SECRET_PREVIOUS_UNTIL", until)
+    # الخادم أولًا، ثم tusd.
     compose("up", "-d", "--no-deps", "--force-recreate", "--wait", "api", extra=a.extra_compose)
     t_api = time.monotonic() - r0
     compose("up", "-d", "--no-deps", "--force-recreate", "--wait", "tusd", extra=a.extra_compose)
     rotation_s = time.monotonic() - r0
+    if a.mode == "previous":
+        # يُزال من المصدر بعد التدوير؛ الخادم يرفض القديم وحده بعد UNTIL دون إعادة تشغيل.
+        set_env("TUSD_HOOK_SECRET_PREVIOUS", "")
+        set_env("TUSD_HOOK_SECRET_PREVIOUS_UNTIL", "")
     time.sleep(a.settle_s)
     stop.set()
     p.join()
@@ -117,6 +128,9 @@ def main():
 
     results.sort()
     bad = [t for t, code in results if code != 403]
+    api_phase = (r0 - t0, r0 - t0 + t_api)
+    bad_api_phase = [t for t in bad if api_phase[0] <= t <= api_phase[1]]
+    bad_after_api = [t for t in bad if t > api_phase[1]]
     after = [code for t, code in results if t > (r0 - t0) + rotation_s + 5]
     logs = compose("logs", "tusd", extra=a.extra_compose)
     leaked = (old in logs) or (new in logs)
@@ -127,6 +141,9 @@ def main():
         "hook_outage_window_s": round(bad[-1] - bad[0], 1) if bad else 0.0,
         "probes_total": len(results),
         "probes_failed": len(bad),
+        "probes_failed_during_api_restart": len(bad_api_phase),
+        "probes_failed_after_api_restart": len(bad_after_api),
+        "mode": a.mode,
         "healthy_after_rotation": healthy_after,
         "secret_in_tusd_log": leaked,
         "within_one_hour": rotation_s < 3600,
@@ -142,8 +159,11 @@ def main():
         "metrics": metrics,
         "notes": ("SEC-05 rotation drill: TUSD_HOOK_SECRET rotated in infra/compose/.env, api then tusd recreated "
                   "while a prober created uploads with a random token every 0.25 s (403 = hook path healthy). "
-                  "The outage window is the API restart: the API accepts one hook token, so tusd's hooks fail "
-                  "until both sides carry the new one (ADR SEC-05)."),
+                  + ("Mode previous: the API also accepts the old token until TUSD_HOOK_SECRET_PREVIOUS_UNTIL, so no "
+                     "token mismatch; failures left are the restarts themselves (one API replica in compose). "
+                     if a.mode == "previous" else
+                     "Mode single: the API accepts one hook token, so hooks fail until both sides carry the new one. ")
+                  + "ADR SEC-05."),
     }
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w") as fh:

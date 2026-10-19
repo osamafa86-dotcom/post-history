@@ -127,6 +127,67 @@
   لكائن واحد، فالتخزين المشترك للأنوية نفسها هو الحد هنا لا البصمة. يلزم القياس على جهاز يفصل التخزين عن الخادم
   (كما عند وكيل الجودة) قبل الحكم على الهدف.
 
+## إضافات التذكرة 7 (التسوية، تدوير المفاتيح والرموز، مخرج الطوارئ)
+
+- **مكنسة تسوية الرفع** (`uploads/upload-reconciler.ts`، `UPLOAD_RECONCILE_*`): جلسة `in_progress` بلا تغيير منذ
+  `UPLOAD_RECONCILE_STALE_SECONDS` (افتراضي 300) تُفحص في التخزين بقفل SKIP LOCKED على الصف الذي يقفله post-finish.
+  الكائن النهائي لا يوجد في s3store إلا بعد اكتمال الرفع، فوجوده استلام بالمنطق نفسه الذي ينفذه post-finish
+  (`uploads/upload-completion.ts`، وpost-finish متأخر بعدها بلا أثر)، وغيابه بعد انتهاء الجلسة `failed(expired)`،
+  وغيابه قبلها رفع جارٍ يُؤجَّل فحصه. عطل التخزين يوقف الدفعة. تعمل حين يكون المسار tusd والتخزين مضبوطًا.
+- **إصدار مفتاح الحقول المشفرة** (`FieldKeyring` في `common/crypto.ts`): الصيغة `version (1) || iv || tag || ct` وبايت
+  الإصدار AAD مصادَق عليه. الكتابة بـ `FIELD_ENCRYPTION_KEY`/`_VERSION`، والقراءة به أو بـ
+  `FIELD_ENCRYPTION_KEY_PREVIOUS`/`_PREVIOUS_VERSION`. التدوير: نقل الحالي ورقمه إلى `*_PREVIOUS`، ومفتاح جديد برقم
+  جديد، ثم إعادة تشفير ما يعلّمه `isStale` (أداة إعادة التشفير لاحقًا)، ثم إزالة السابق. **كسر صيغة مقصود قبل بيانات
+  الإنتاج**: الحقول المكتوبة بالصيغة السابقة (بلا بايت إصدار) في قواعد التطوير لا تُقرأ؛ تُعاد تهيئتها.
+- **تدوير رمز خطّاف tusd** (`TUSD_HOOK_SECRET_PREVIOUS` + `TUSD_HOOK_SECRET_PREVIOUS_UNTIL`): السابق يُقبل حتى الوقت
+  المحدد ثم يُرفض وحده دون إعادة تشغيل؛ المقارنتان تُحسبان دائمًا بزمن ثابت، والمسار محجوب في السجلات كما كان.
+- **مخرج الطوارئ** (`identity/admin-recovery.ts`، `cli/approve-admin-recovery.ts`، `npm run cli:approve-admin-recovery`):
+  اعتماد استعادة **مدير نظام** فقط من سطر الأوامر بتأكيد شخصين: `two-admins` (مديرا نظام آخران فاعلان برمزي TOTP)
+  أو `vault` (رمز الخزنة مقارنًا ببصمته `BREAK_GLASS_TOKEN_SHA256` + شخص ثانٍ فاعل، مدير نظام أو رئيس تحرير، برمز
+  TOTP وهو المعتمِد المسجَّل لأن القيد يشترط `approved_by`). الرموز تُقرأ من الطرفية لا من الوسائط. الاعتماد يمر بالدالة
+  نفسها التي يستعملها مسار الواجهة (`identity/recovery-approval.ts`)، ويُسجَّل `auth.recovery_approved` بـ
+  `reason_code` (و`auth.recovery_confirmed` للمدير الثاني)، وكل تحقق فاشل `auth.recovery_cli_rejected`. الإجراء
+  التشغيلي في `docs/ops/runbook.md` عند وكيل البنية.
+
+## إضافات التذكرة 8 (إعادة التشفير، اختبارات التدوير والسباق)
+
+- **أداة إعادة التشفير** (`common/reencrypt.ts`، `npm run cli:reencrypt-fields [-- --dry-run] [--batch 500]`): تمر على
+  كل عمود في `ENCRYPTED_COLUMNS` (`users.totp_secret_enc`، `materials.gps_enc`، `push_devices.token_enc`؛ أي عمود
+  `*_enc` جديد يُضاف هنا) وتعيد تشفير ما بايت إصداره غير الحالي إلى المفتاح الحالي، بترتيب مفتاح الصف على دفعات.
+  **بلا أقفال**: كل تحديث مشروط بأن القيمة لم تتغير منذ القراءة (يُعد `skipped` إن تغيرت)، فتُشغَّل والخادم يعمل ولا
+  تحجب طلباته (نسخة أولى بـ `FOR UPDATE` حجبت مُرسل Outbox في الاختبارات). الاستئناف بلا حالة: الصف يُثبَّت وحده
+  وإعادة التشغيل لا ترى إلا القديم. ما لا يُفك يُعد `failed` ويُتجاوز ويخرج الأمر بـ 1. تطبع أعدادًا فقط. التدوير
+  الكامل: مفتاح جديد برقم جديد والقديم في `*_PREVIOUS` ← `cli:reencrypt-fields` ← `--dry-run` حتى `stale = 0` لكل
+  عمود ← إزالة `*_PREVIOUS`. إزالة السابق قبل ذلك تجعل قراءة الصفوف القديمة خطأ خادم (تسجيل الدخول بالمصادقة
+  الثنائية لأصحابها).
+- **اختبار التدوير** (`field-rotation.spec.ts`): قيمة بالمفتاح القديم تُقرأ عبر الـ API (تسجيل دخول TOTP) بعد التدوير،
+  وتفشل بلا السابق قبل إعادة التشفير، وتُقرأ بلاه بعدها؛ والتشغيل الثاني لا يمس شيئًا.
+- **اختبار سباق المكنسة** (`reconcile.spec.ts`): المكنسة وpost-finish المتأخر معًا بالترتيبين، ثماني جولات: استلام
+  واحد وحدث واحد وانتقال فني واحد في كل جولة.
+
+## إضافات التذكرة 9 (جانب الخادم من واجهة عامل الوسائط، ADR 0006)
+
+- **الطابور** (`outbox/media-stream.ts`): حين `UPLOAD_VERIFIER=external` يضيف ناشر Outbox، داخل النشر نفسه،
+  `upload.original_received` و`upload.proxy_received` إلى `media:events` (`XADD MAXLEN ~ MEDIA_STREAM_MAXLEN`، افتراضي
+  100000) بحقلين `event_id` و`event` (الحدث بصيغة العقد عبر `serializeOutboxEvent` المشتركة مع `GET /events`).
+  Redis غائب أو معطل = يرمي فيُعاد الحدث بالتراجع الأسي؛ التسليم «مرة على الأقل».
+- **النقاط** (`media/`، خارج `/v1`، `internalOnly`): `GET /internal/media/sessions/{id}`، و`POST …/verification`،
+  و`POST /internal/media/files/{file_id}/derivatives`. المصادقة `Authorization: Bearer MEDIA_WORKER_TOKEN` (32–256 من
+  `[A-Za-z0-9_-]`، منفصل عن رمز tusd، مطلوب في الإنتاج مع `external`) بمقارنة ثابتة الزمن تُحسب دائمًا، والفشل أو
+  غياب الرمز 404؛ الترويسة لا تُسجَّل. التحقق: الخادم يقفل الجلسة، ويقرر بنفسه من بلاغ «verified»: غياب الكائن
+  `storage_error`، والحجم المخالف للجلسة أو لـ HEAD `invalid_file`، وبصمة العميل المخالفة `checksum_mismatch`، ثم
+  `recordVerification` نفسها، ثم يكتب البيانات الفنية: `duration_ms/start_pts_us/width/height` في أعمدتها والباقي
+  في `technical`. التكرار الموافق للنتيجة المسجلة 200 بها والمخالف 409 `upload_state_conflict`. المشتق: من أصل
+  متحقق فقط، ومفتاحه تحت `derived/<material_id>/<file_id>/` وموجود في التخزين بالحجم المبلَّغ، ومتساوي الأثر على
+  (`derived_from_id`, `kind`) بالفهرس الفريد الجزئي. لا حدث Outbox للمشتق (لا يغيّر أيًّا من الحالات الثلاث).
+- **المخططات مؤقتة** (`media/media-schemas.ts`) بقرار المنسّق: مغلقة كلها (`additionalProperties: false`)، و`technical`
+  قائمة بيضاء تطابق `material_file_technical_keys()` في القاعدة؛ تُستبدل بإحالات إلى العقد حين يضيف وكيل العقود
+  المسارات الثلاثة (فحص تغطية العقد يعدّها «extra» حتى ذلك الحين، تحذيرًا).
+- **الترحيل** `20261019100009000_media_file_technical` (بموافقة المنسّق): `technical jsonb` بقيد قائمة بيضاء في
+  القاعدة أيضًا (وسوم الملف لا تُخزَّن)، و`head_sha256`/`tail_sha256` (32 بايتًا) بفهرس `(size_bytes, head_sha256)`،
+  وفهرس فريد جزئي على `(derived_from_id, kind)`. `technical` غير مكشوف في `/v1`.
+- `UPLOAD_VERIFIER` يبقى `in_process|external`. ضبط `external` وprofile `media` في compose عند وكيل البنية.
+
 ## الدليل
 
 اختبارات التكامل على Postgres في مهمة CI `api` (`apps/api/test/integration/`): الإبطال الفوري، التدوير وكشف إعادة

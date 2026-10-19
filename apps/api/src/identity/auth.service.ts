@@ -1,8 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { hash as argon2Hash, verify as argon2Verify } from '@node-rs/argon2';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { APP_CONFIG, type AppConfig } from '../config/config';
-import { decryptField, randomToken, verifyTotp } from '../common/crypto';
+import { APP_CONFIG, type AppConfig, fieldKeyring } from '../config/config';
+import { type FieldKeyring, randomToken, verifyTotp } from '../common/crypto';
 import { ApiError } from '../common/errors';
 import { DB, type Database } from '../database/database.module';
 import { userPermissions, userRoles, users } from '../database/schema/schema';
@@ -21,7 +21,7 @@ export class AuthService {
   // المحاولات الفاشلة لكل (بريد، عنوان)، ولكل عنوان بحد أعلى ضد رش كلمات المرور على حسابات كثيرة
   private readonly byIp: RateLimiter;
   private readonly byEmailIp: RateLimiter;
-  private readonly fieldKey: Buffer;
+  private readonly fieldKeys: FieldKeyring;
   // يُتحقق منه عند غياب المستخدم حتى لا يكشف زمن الاستجابة وجود البريد
   private readonly dummyHash: Promise<string>;
 
@@ -33,7 +33,7 @@ export class AuthService {
   ) {
     this.byIp = limits.create('login-ip', config.LOGIN_RATE_LIMIT_IP_MAX);
     this.byEmailIp = limits.create('login-email-ip', config.LOGIN_RATE_LIMIT_MAX);
-    this.fieldKey = Buffer.from(config.FIELD_ENCRYPTION_KEY, 'base64');
+    this.fieldKeys = fieldKeyring(config);
     this.dummyHash = argon2Hash(randomToken());
   }
 
@@ -68,7 +68,7 @@ export class AuthService {
     if (user!.totpEnabled) {
       // غياب الرمز بعد كلمة مرور صحيحة ليس تخمينًا فلا يُعد فشلًا
       if (!body.totp_code) throw new ApiError(401, 'totp_required', 'TOTP code required.');
-      const secret = decryptField(this.fieldKey, user!.totpSecretEnc!);
+      const secret = this.fieldKeys.decrypt(user!.totpSecretEnc!);
       if (!verifyTotp(secret, body.totp_code)) await fail();
     }
     await this.byEmailIp.reset(pairKey);

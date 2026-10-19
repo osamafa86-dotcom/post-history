@@ -134,8 +134,26 @@ describe('production configuration', () => {
     expect(() => loadConfig({ ...base, NODE_ENV: 'production' } as NodeJS.ProcessEnv)).toThrow(/REDIS_URL.*S3_ENDPOINT|S3_ENDPOINT.*REDIS_URL/);
     expect(() =>
       loadConfig({ ...base, NODE_ENV: 'production', REDIS_URL: 'redis://r', UPLOAD_VERIFIER: 'external' } as NodeJS.ProcessEnv),
+    ).toThrow(/MEDIA_WORKER_TOKEN/);
+    expect(() =>
+      loadConfig({ ...base, NODE_ENV: 'production', REDIS_URL: 'redis://r', UPLOAD_VERIFIER: 'external', MEDIA_WORKER_TOKEN: 'm'.repeat(40) } as NodeJS.ProcessEnv),
     ).not.toThrow();
     expect(() => loadConfig({ ...base, NODE_ENV: 'development' } as NodeJS.ProcessEnv)).not.toThrow();
+  });
+
+  it('previous field key and hook secret come with their pair, and the key versions differ', () => {
+    const prev = Buffer.alloc(32, 1).toString('base64');
+    expect(() => loadConfig({ ...base, FIELD_ENCRYPTION_KEY_PREVIOUS: prev } as NodeJS.ProcessEnv)).toThrow(/FIELD_ENCRYPTION_KEY_PREVIOUS_VERSION/);
+    expect(() =>
+      loadConfig({ ...base, FIELD_ENCRYPTION_KEY_PREVIOUS: prev, FIELD_ENCRYPTION_KEY_PREVIOUS_VERSION: '1' } as NodeJS.ProcessEnv),
+    ).toThrow(/FIELD_ENCRYPTION_KEY_PREVIOUS_VERSION/);
+    expect(() =>
+      loadConfig({ ...base, FIELD_ENCRYPTION_KEY_VERSION: '2', FIELD_ENCRYPTION_KEY_PREVIOUS: prev, FIELD_ENCRYPTION_KEY_PREVIOUS_VERSION: '1' } as NodeJS.ProcessEnv),
+    ).not.toThrow();
+    expect(() => loadConfig({ ...base, TUSD_HOOK_SECRET_PREVIOUS: 'p'.repeat(40) } as NodeJS.ProcessEnv)).toThrow(/TUSD_HOOK_SECRET_PREVIOUS_UNTIL/);
+    expect(() =>
+      loadConfig({ ...base, TUSD_HOOK_SECRET_PREVIOUS: 'p'.repeat(40), TUSD_HOOK_SECRET_PREVIOUS_UNTIL: '2026-11-01T12:00:00Z' } as NodeJS.ProcessEnv),
+    ).not.toThrow();
   });
 });
 
@@ -148,4 +166,5 @@ describe('withoutTokens', () => {
     expect(withoutTokens(null)).toBeNull();
     expect(withoutTokens([1])).toEqual([1]);
   });
+
 });
