@@ -16,7 +16,7 @@
 
 ## القرار
 
-toxiproxy 2.12.0 كطبقة compose (`tools/netlab/compose.netlab.yml`) أمام `tusd-proxy`، أي على المسار الذي سيسلكه العميل فعلًا. الأداة `tools/netlab/netlab.py` (مكتبة بايثون القياسية) هي عميل tus يقيس من جهة العميل ويتحقق من التطابق بـ SHA-256 لما يعيده tusd، وتكتب بمخطط `measurement.json`.
+toxiproxy 2.12.0 كطبقة compose (`tools/netlab/compose.netlab.yml`) أمام `tusd-proxy`، أي على المسار الذي سيسلكه العميل فعلًا. الأداة `tools/netlab/netlab.py` (مكتبة بايثون القياسية) هي عميل tus يقيس من جهة العميل ويتحقق من التطابق بـ SHA-256 للكائن في MinIO (tusd بلا تنزيل)، وتكتب بمخطط `measurement.json`.
 
 - `field-weak`: 500 kbit/s رفعًا، تأخير 300±150 ms، ثقب أسود 20 ث كل 120 ث. **الفقد 30% لا يُحاكى**؛ النتيجة تسجّل `loss_pct: 0` وتذكر الهدف في `notes`، فلا تُقرأ كأنها حققت السيناريو كاملًا.
 - `field-switch`: كل 180 ث تُقطع الاتصالات القائمة ويتبدّل الملف بين Wi-Fi (5 Mbit/s، 30 ms) وخلوي (1 Mbit/s، 120 ms).

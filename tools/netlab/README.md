@@ -29,7 +29,7 @@ python3 tools/netlab/netlab.py run --scenario office --size-mb 500 \
 - `longest_connected_window_s`: أطول مدة من أول طلب ناجح إلى الفشل التالي، كما يراها العميل.
 - `part_time_s_p50/p90/max` و`part_times_s`: زمن كل PATCH ناجح؛ `parts_failed` للمحاولات المقطوعة (tusd يحفظ ما وصل منها).
 - `resumes`: مرات الاستئناف عبر `HEAD` بعد فشل؛ `connection_failures`.
-- `checksum_match`: SHA-256 للأصل مقابل ما يعيده tusd (عبر `tusd-proxy` بلا محاكاة).
+- `checksum_match`: SHA-256 للأصل مقابل الكائن في MinIO (عبر `mc` في حاوية على شبكة compose؛ tusd يعمل بـ `-disable-download`).
 
 ## حدود معروفة
 

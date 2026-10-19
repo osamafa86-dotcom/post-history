@@ -2,7 +2,7 @@
 """netlab — رفع tus عبر شبكة محاكاة (toxiproxy) وقياس الجلسة.
 
 يسجّل لكل جلسة رفع: أطول نافذة اتصال متواصل، زمن كل جزء (طلب PATCH)، عدد الاستئنافات،
-ونجاح التطابق (SHA-256 للأصل مقابل ما يعيده tusd). يكتب النتيجة بمخطط
+ونجاح التطابق (SHA-256 للأصل مقابل الكائن في التخزين). يكتب النتيجة بمخطط
 contracts/schemas/measurement.json. مكتبة بايثون القياسية فقط.
 
 مثال:
@@ -18,6 +18,7 @@ import json
 import os
 import platform
 import statistics
+import subprocess
 import threading
 import time
 import urllib.parse
@@ -26,7 +27,9 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOXI_API = os.environ.get("NETLAB_TOXIPROXY_API", "http://127.0.0.1:8474")
 UPSTREAM = os.environ.get("NETLAB_UPSTREAM", "tusd-proxy:8080")
-DIRECT = os.environ.get("NETLAB_DIRECT", "127.0.0.1:8080")  # tusd-proxy بلا محاكاة، للتحقق فقط
+COMPOSE_ENV = os.path.join(HERE, "..", "..", "infra", "compose", ".env")
+COMPOSE_NETWORK = os.environ.get("NETLAB_COMPOSE_NETWORK", "post-history_default")
+MC_IMAGE = "pgsty/mc:RELEASE.2026-10-18T00-00-00Z@sha256:6ecdaec70bc5e8cf9d0e9a70c190f3beb1c83f11617ff4333f1fcd71ab1daf18"
 
 
 def now():
@@ -245,17 +248,29 @@ def sha256_file(path):
     return h.hexdigest()
 
 
+def read_env(path):
+    env = {}
+    with open(path) as fh:
+        for line in fh:
+            if "=" in line and not line.lstrip().startswith("#"):
+                k, v = line.rstrip("\n").split("=", 1)
+                env[k.strip()] = v
+    return env
+
+
 def sha256_remote(url_path):
-    conn = http.client.HTTPConnection(DIRECT, timeout=60)
-    conn.request("GET", url_path)
-    r = conn.getresponse()
-    if r.status != 200:
-        return None
+    """يقرأ الكائن من MinIO مباشرة (tusd بلا تنزيل: -disable-download). مفتاح tusd في S3 =
+    البادئة + معرّف الرفع قبل «+» (معرّف الرفع متعدد الأجزاء)."""
+    env = read_env(COMPOSE_ENV)
+    key = env.get("TUSD_OBJECT_PREFIX", "") + url_path.rstrip("/").rsplit("/", 1)[-1].split("+", 1)[0]
+    mc_host = f"http://{env['S3_ACCESS_KEY']}:{env['S3_SECRET_KEY']}@minio:9000"
+    p = subprocess.Popen(["docker", "run", "--rm", "--network", COMPOSE_NETWORK, "-e", "MC_HOST_local",
+                          MC_IMAGE, "cat", f"local/{env['S3_BUCKET_UPLOADS']}/{key}"],
+                         stdout=subprocess.PIPE, env={**os.environ, "MC_HOST_local": mc_host})
     h = hashlib.sha256()
-    for b in iter(lambda: r.read(1 << 20), b""):
+    for b in iter(lambda: p.stdout.read(1 << 20), b""):
         h.update(b)
-    conn.close()
-    return h.hexdigest()
+    return h.hexdigest() if p.wait() == 0 else None
 
 
 def make_file(path, size_mb):
