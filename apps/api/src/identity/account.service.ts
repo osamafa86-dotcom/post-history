@@ -4,11 +4,12 @@ import { APP_CONFIG, type AppConfig } from '../config/config';
 import { sha256 } from '../common/crypto';
 import { ApiError } from '../common/errors';
 import { DB, type Database, type Executor } from '../database/database.module';
-import { auditLog, offices, recoveryCodes, recoveryRequests, refreshTokens, userRoles, users } from '../database/schema/schema';
+import { offices, recoveryCodes, recoveryRequests, refreshTokens, userRoles, users } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import { iso } from '../materials/material-store';
 import { writeOutboxEvent } from '../outbox/outbox';
 import { hasRole, mayDecideFor, type Principal, type RoleName, supervisesUser } from './principal';
+import { audit, recordRecoveryApproval } from './recovery-approval';
 import type { RateLimiter } from './rate-limiter';
 import { RateLimitsService } from './rate-limits.service';
 import { SessionService } from './session.service';
@@ -149,27 +150,13 @@ export class AccountService {
       }
       if (r.state !== 'pending_approval') throw new ApiError(409, 'recovery_state_conflict', `The recovery request is ${r.state}.`);
 
-      const [approved] = await tx
-        .update(recoveryRequests)
-        .set({ state: 'approved', approvedBy: p.userId, verificationNote, decidedAt: sql`now()` })
-        .where(eq(recoveryRequests.id, r.id))
-        .returning();
-      await this.sessions.revokeAll(tx, r.userId);
-      await audit(tx, p.userId, 'auth.recovery_approved', r.userId, { recovery_request_id: r.id, target_user_id: r.userId });
-      await writeOutboxEvent(tx, {
-        type: 'auth.recovery_approved',
-        aggregateType: 'user',
-        aggregateId: r.userId,
-        idempotencyKey: `auth.recovery_approved:${r.id}`,
-        actorId: p.userId,
-        payload: { recovery_request_id: r.id, ...(r.officeId ? { office_id: r.officeId } : {}) },
-      });
+      const approved = await recordRecoveryApproval(tx, r, p.userId, verificationNote);
       return {
-        id: approved!.id,
+        id: approved.id,
         state: 'approved',
-        created_at: iso(approved!.createdAt)!,
-        approved_by: approved!.approvedBy,
-        expires_at: iso(approved!.expiresAt),
+        created_at: iso(approved.createdAt)!,
+        approved_by: approved.approvedBy,
+        expires_at: iso(approved.expiresAt),
       };
     });
     if (result === 'expired') throw new ApiError(409, 'recovery_state_conflict', 'The recovery request has expired.');
@@ -186,9 +173,4 @@ async function assertHierarchy(tx: Executor, p: Principal, targetUserId: string)
   if (!mayDecideFor(p, targetUserId, roles.map((r) => r.role as RoleName))) {
     throw new ApiError(403, 'forbidden_scope', 'This account is not below the caller in rank; a system administrator must decide.');
   }
-}
-
-/** سجل التدقيق: مفاتيح القائمة البيضاء فقط (audit_details_allowed_keys)، والتجزئة يحسبها المحفّز. */
-async function audit(tx: Executor, actorId: string | null, action: string, targetUserId: string, details: Record<string, string>): Promise<void> {
-  await tx.insert(auditLog).values({ actorId, action, targetType: 'user', targetId: targetUserId, details, hash: Buffer.alloc(32) });
 }
