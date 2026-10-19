@@ -7,8 +7,7 @@ import { ApiError } from '../common/errors';
 import { DB, type Database } from '../database/database.module';
 import { uploadSessions } from '../database/schema/schema';
 import type { components } from '../generated/api';
-import { applyTransition, lockMaterial, technicalTargetOnReceive } from '../materials/material-store';
-import { writeOutboxEvent, type OutboxEventType } from '../outbox/outbox';
+import { markReceived, markUploadFailed } from './upload-completion';
 
 export type TusdHookRequest = components['schemas']['TusdHookRequest'];
 export type TusdHookResponse = components['schemas']['TusdHookResponse'];
@@ -19,12 +18,6 @@ const REJECT: TusdHookResponse = {
 };
 
 const ACCEPT: TusdHookResponse = { RejectUpload: false };
-
-const RECEIVED_EVENT: Record<string, OutboxEventType> = {
-  original: 'upload.original_received',
-  proxy: 'upload.proxy_received',
-  voice_note: 'upload.original_received',
-};
 
 /** خطّافات tusd (ADR SEC-06). الخادم لا يثق بشيء من الخطّاف إلا ما يطابق جلسة الرفع المحفوظة. */
 @Injectable()
@@ -76,22 +69,33 @@ export class TusdHooksService {
         return REJECT;
       }
       const storageKey = this.expectedStorageKey(session.id);
-      // مع post-create تبقى الجلسة created هنا: إن فشل الإنشاء لدى tusd بعد القبول يُعاد بالرمز نفسه. والشباك بين
-      // الحدثين يقبل pre-create ثانيًا بالرمز نفسه، لكنه مثبَّت على معرّف الجلسة نفسه (ChangeFileInfo.ID).
-      await tx
+      if (!this.config.TUSD_POST_CREATE_HOOK) {
+        await tx.update(uploadSessions).set({ state: 'in_progress', storageKey }).where(eq(uploadSessions.id, session.id));
+        return { RejectUpload: false, ChangeFileInfo: { ID: session.id } };
+      }
+      // مع post-create تبقى الجلسة created فيُعاد إنشاء فشل لدى tusd بالرمز نفسه. لكن tusd لا يرفض المعرّف المكرّر:
+      // إنشاءان بمعرّف الجلسة يتشاركان الكائن. فتُحجز الجلسة هنا ذريًا (الصف مقفل) ويُرفض أي pre-create آخر ما دام
+      // الحجز حيًّا؛ post-create يُفرج عنه، وانقضاء المهلة يسمح بإعادة إنشاء فشل.
+      const [reserved] = await tx
         .update(uploadSessions)
-        .set(this.config.TUSD_POST_CREATE_HOOK ? { storageKey } : { state: 'in_progress', storageKey })
-        .where(eq(uploadSessions.id, session.id));
-      return { RejectUpload: false, ChangeFileInfo: { ID: session.id } };
+        .set({
+          storageKey,
+          hookReservedUntil: sql`now() + make_interval(secs => ${this.config.TUSD_PRE_CREATE_RESERVATION_SECONDS})`,
+        })
+        .where(
+          sql`${uploadSessions.id} = ${session.id} AND (${uploadSessions.hookReservedUntil} IS NULL OR ${uploadSessions.hookReservedUntil} <= now())`,
+        )
+        .returning({ id: uploadSessions.id });
+      return reserved ? { RejectUpload: false, ChangeFileInfo: { ID: session.id } } : REJECT;
     });
   }
 
-  /** نجح إنشاء الرفع لدى tusd: created → in_progress فلا يُقبل الرمز بعدها. التكرار وما بعد created بلا أثر. */
+  /** نجح إنشاء الرفع لدى tusd: created → in_progress ويُفرج عن الحجز، فلا يُقبل الرمز بعدها. التكرار وما بعد created بلا أثر. */
   private async postCreate(hook: TusdHookRequest): Promise<TusdHookResponse> {
     const sessionId = hook.Event.Upload.MetaData.upload_session_id;
     await this.db
       .update(uploadSessions)
-      .set({ state: 'in_progress' })
+      .set({ state: 'in_progress', hookReservedUntil: null })
       .where(sql`${uploadSessions.id} = ${sessionId} AND ${uploadSessions.state} = 'created'`);
     return ACCEPT;
   }
@@ -113,43 +117,9 @@ export class TusdHooksService {
       const expectedKey = session.storageKey ?? this.expectedStorageKey(session.id);
       const keyMatches = storage?.Key === expectedKey;
       const bucketMatches = storage?.Bucket === undefined || storage.Bucket === this.config.S3_BUCKET_UPLOADS;
-      const base = { material_id: session.materialId, upload_session_id: session.id, kind: session.kind };
-
-      if (!keyMatches || !bucketMatches) {
-        await tx
-          .update(uploadSessions)
-          .set({ state: 'failed', failureReason: 'storage_error' })
-          .where(eq(uploadSessions.id, session.id));
-        await writeOutboxEvent(tx, {
-          type: 'upload.failed',
-          aggregateType: 'upload',
-          aggregateId: session.id,
-          idempotencyKey: `upload.failed:${session.id}`,
-          payload: { ...base, failure_reason: 'storage_error' },
-        });
-        return ACCEPT;
-      }
-
-      // الحجم الفعلي وSHA-256 يحسبهما عامل الوسائط من التخزين بعد التجميع (لا يُحفظ شيء من الخطّاف)،
-      // ثم ينقل الجلسة إلى verified/failed(checksum_mismatch) وينشئ material_files. هنا: الاكتمال فقط.
-      await tx
-        .update(uploadSessions)
-        .set({ state: 'completed', storageKey: expectedKey, tusUploadId: hook.Event.Upload.ID ?? sql`tus_upload_id` })
-        .where(eq(uploadSessions.id, session.id));
-      // المسار الفني للمادة يكتبه الخادم وحده: pending → proxy_received → original_received
-      const material = await lockMaterial(tx, session.materialId);
-      const target = material && technicalTargetOnReceive(session.kind, material.technicalState);
-      if (material && target) {
-        await applyTransition(tx, material, { track: 'technical', to: target, reason: `${session.kind} upload received`, actorId: null });
-      }
-      const type = RECEIVED_EVENT[session.kind]!;
-      await writeOutboxEvent(tx, {
-        type,
-        aggregateType: 'upload',
-        aggregateId: session.id,
-        idempotencyKey: `${type}:${session.id}`,
-        payload: base,
-      });
+      if (!keyMatches || !bucketMatches) await markUploadFailed(tx, session, 'storage_error');
+      // الحجم الفعلي وSHA-256 يحسبهما المُتحقق من التخزين بعد التجميع (لا يُحفظ شيء من الخطّاف). هنا: الاكتمال فقط.
+      else await markReceived(tx, session, expectedKey, hook.Event.Upload.ID ?? undefined);
       return ACCEPT;
     });
   }

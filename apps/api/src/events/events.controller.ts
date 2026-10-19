@@ -6,7 +6,7 @@ import { DB, type Database } from '../database/database.module';
 import { outboxEvents } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import { Roles } from '../identity/principal';
-import { iso } from '../materials/material-store';
+import { serializeOutboxEvent } from '../outbox/outbox';
 
 type OutboxEvent = components['schemas']['OutboxEvent'];
 
@@ -31,18 +31,7 @@ export class EventsController {
       .where(where.length ? and(...where) : undefined)
       .orderBy(asc(outboxEvents.id))
       .limit(q.limit ?? 50);
-    const items: OutboxEvent[] = rows.map((e) => ({
-      id: String(e.id),
-      type: e.type as OutboxEvent['type'],
-      aggregate_type: e.aggregateType as OutboxEvent['aggregate_type'],
-      aggregate_id: e.aggregateId,
-      occurred_at: iso(e.occurredAt)!,
-      idempotency_key: e.idempotencyKey,
-      actor_id: e.actorId,
-      payload: e.payload as OutboxEvent['payload'],
-      published_at: iso(e.publishedAt),
-      attempts: e.attempts,
-    })) as OutboxEvent[];
+    const items = rows.map(serializeOutboxEvent) as OutboxEvent[];
     // المؤشر التالي آخر حدث مقروء؛ صفحة فارغة تعيد المؤشر نفسه ليستأنف المراقِب منه
     return { items, next_after: items.length ? items[items.length - 1]!.id : (q.after ?? null) };
   }

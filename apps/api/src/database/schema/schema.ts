@@ -255,8 +255,13 @@ export const materialFiles = pgTable("material_files", {
 	verifiedAt: timestamp("verified_at", { withTimezone: true, mode: 'string' }),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	technical: jsonb(),
+	headSha256: bytea("head_sha256"),
+	tailSha256: bytea("tail_sha256"),
 }, (table) => [
-	index("material_files_material_kind_idx").using("btree", table.materialId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops")),
+	index("material_files_material_kind_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("uuid_ops")),
+	index("material_files_size_head_idx").using("btree", table.sizeBytes.asc().nullsLast().op("bytea_ops"), table.headSha256.asc().nullsLast().op("bytea_ops")).where(sql`(head_sha256 IS NOT NULL)`),
+	uniqueIndex("material_files_derived_kind_key").using("btree", table.derivedFromId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops")).where(sql`(derived_from_id IS NOT NULL)`),
 	uniqueIndex("material_files_receipt_number_key").using("btree", table.receiptNumber.asc().nullsLast().op("text_ops")).where(sql`(receipt_number IS NOT NULL)`),
 	index("material_files_sha256_idx").using("btree", table.sha256.asc().nullsLast().op("bytea_ops")).where(sql`(sha256 IS NOT NULL)`),
 	foreignKey({
@@ -269,6 +274,9 @@ export const materialFiles = pgTable("material_files", {
 			foreignColumns: [materials.id],
 			name: "material_files_material_id_fkey"
 		}).onDelete("cascade"),
+	check("material_files_head_sha256_len", sql`(head_sha256 IS NULL) OR (octet_length(head_sha256) = 32)`),
+	check("material_files_tail_sha256_len", sql`(tail_sha256 IS NULL) OR (octet_length(tail_sha256) = 32)`),
+	check("material_files_technical_whitelisted", sql`(technical IS NULL) OR material_file_technical_is_whitelisted(technical)`),
 	check("material_files_dims_positive", sql`((width IS NULL) OR (width > 0)) AND ((height IS NULL) OR (height > 0))`),
 	check("material_files_kind_check", sql`kind = ANY (ARRAY['original'::text, 'proxy'::text, 'hls'::text, 'audio'::text, 'thumbnail'::text, 'voice_note'::text])`),
 	check("material_files_proxy_mode_check", sql`(proxy_mode IS NULL) OR (proxy_mode = ANY (ARRAY['urgent'::text, 'normal'::text]))`),
@@ -308,6 +316,7 @@ export const uploadSessions = pgTable("upload_sessions", {
 	failureReason: text("failure_reason"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	hookReservedUntil: timestamp("hook_reserved_until", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("upload_sessions_expiry_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(state = ANY (ARRAY['created'::text, 'in_progress'::text]))`),
 	index("upload_sessions_inflight_idx").using("btree", table.state.asc().nullsLast().op("timestamptz_ops"), table.updatedAt.asc().nullsLast().op("text_ops")).where(sql`(state = ANY (ARRAY['created'::text, 'in_progress'::text]))`),
@@ -338,6 +347,7 @@ export const uploadSessions = pgTable("upload_sessions", {
 	check("upload_sessions_dedup_has_target", sql`(state = 'deduplicated'::text) = (duplicate_of_file_id IS NOT NULL)`),
 	check("upload_sessions_failed_has_reason", sql`(state = 'failed'::text) = (failure_reason IS NOT NULL)`),
 	check("upload_sessions_failure_reason_check", sql`(failure_reason IS NULL) OR (failure_reason = ANY (ARRAY['checksum_mismatch'::text, 'invalid_file'::text, 'expired'::text, 'aborted'::text, 'storage_error'::text]))`),
+	check("upload_sessions_hook_reserved_created_only", sql`(hook_reserved_until IS NULL) OR (state = 'created'::text)`),
 	check("upload_sessions_filename_len", sql`(char_length(filename) >= 1) AND (char_length(filename) <= 255)`),
 	check("upload_sessions_fingerprint_is_object", sql`(client_fingerprint IS NULL) OR (jsonb_typeof(client_fingerprint) = 'object'::text)`),
 	check("upload_sessions_kind_check", sql`kind = ANY (ARRAY['original'::text, 'proxy'::text, 'voice_note'::text])`),

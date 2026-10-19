@@ -136,6 +136,10 @@ SELECT pg_temp.expect_error($q$ UPDATE upload_sessions SET state = 'failed' WHER
 SELECT pg_temp.expect_error($q$ UPDATE upload_sessions SET part_size_bytes = 1024 WHERE id = '00000000-0000-4000-8000-000000000201' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE upload_sessions SET proxy_mode = 'urgent' WHERE id = '00000000-0000-4000-8000-000000000201' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE upload_sessions SET state = 'deduplicated' WHERE id = '00000000-0000-4000-8000-000000000201' $q$, '23514');
+-- حجز pre-create لا يبقى بعد خروج الجلسة من created
+UPDATE upload_sessions SET hook_reserved_until = now() + interval '60 seconds' WHERE id = '00000000-0000-4000-8000-000000000201';
+SELECT pg_temp.expect_error($q$ UPDATE upload_sessions SET state = 'in_progress' WHERE id = '00000000-0000-4000-8000-000000000201' $q$, '23514');
+UPDATE upload_sessions SET hook_reserved_until = NULL WHERE id = '00000000-0000-4000-8000-000000000201';
 
 INSERT INTO material_files (id, material_id, kind, state, upload_session_id, storage_key, size_bytes)
 VALUES ('00000000-0000-4000-8000-000000000301', '00000000-0000-4000-8000-000000000101', 'original', 'received',
@@ -156,6 +160,17 @@ INSERT INTO material_files (id, material_id, kind, state, proxy_mode, sha256, ve
 VALUES ('00000000-0000-4000-8000-000000000302', '00000000-0000-4000-8000-000000000101', 'proxy', 'verified', 'normal', sha256('p'::bytea), now());
 SELECT pg_temp.assert((SELECT receipt_number IS NULL FROM material_files WHERE id = '00000000-0000-4000-8000-000000000302'), 'no receipt for proxy');
 SELECT pg_temp.expect_error($q$ UPDATE material_files SET receipt_number = 'R-202610-000001' WHERE id = '00000000-0000-4000-8000-000000000302' $q$, '23514');
+-- البيانات الفنية قائمة بيضاء مغلقة (لا وسوم ملف)، والبصمة الرخيصة 32 بايتًا، ومشتق واحد من كل نوع لكل مصدر
+UPDATE material_files SET technical = '{"video_codec": "h264", "vfr": true, "frame_rate": 29.97}', head_sha256 = sha256('h'::bytea),
+  tail_sha256 = sha256('t'::bytea) WHERE id = '00000000-0000-4000-8000-000000000301';
+SELECT pg_temp.expect_error($q$ UPDATE material_files SET technical = '{"video_codec": "h264", "location": "+31.77+035.23/"}' WHERE id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE material_files SET technical = '[]' WHERE id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE material_files SET head_sha256 = 'short'::bytea WHERE id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
+INSERT INTO material_files (material_id, kind, state, derived_from_id, proxy_mode)
+VALUES ('00000000-0000-4000-8000-000000000101', 'proxy', 'received', '00000000-0000-4000-8000-000000000301', 'normal');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_files (material_id, kind, state, derived_from_id, proxy_mode)
+  VALUES ('00000000-0000-4000-8000-000000000101', 'proxy', 'received', '00000000-0000-4000-8000-000000000301', 'normal') $q$, '23505');
 SELECT pg_temp.expect_error($q$
   INSERT INTO material_files (material_id, kind, proxy_mode) VALUES ('00000000-0000-4000-8000-000000000101', 'original', 'urgent') $q$, '23514');
 

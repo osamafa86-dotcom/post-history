@@ -18,6 +18,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { EventsModule } from './events/events.module';
 import { PushDevicesModule } from './push-devices/push-devices.module';
 import { VerificationModule } from './verification/verification.module';
+import { MediaModule } from './media/media.module';
 import { PermissionsModule } from './permissions/permissions.module';
 
 @Module({})
@@ -26,7 +27,7 @@ export class AppModule {
     return {
       module: AppModule,
       global: true,
-      imports: [DatabaseModule, RedisModule, IdentityModule, OutboxModule, UploadsModule, FormsModule, MaterialsModule, NotificationsModule, EventsModule, PushDevicesModule, VerificationModule, PermissionsModule],
+      imports: [DatabaseModule, RedisModule, IdentityModule, OutboxModule, UploadsModule, FormsModule, MaterialsModule, NotificationsModule, EventsModule, PushDevicesModule, VerificationModule, PermissionsModule, MediaModule],
       controllers: [HealthController],
       providers: [
         { provide: APP_CONFIG, useValue: config },
@@ -51,6 +52,9 @@ export function configureApp(app: INestApplication, config: AppConfig, logger: L
     exclude: [
       { path: 'health', method: RequestMethod.GET },
       { path: 'internal/tusd-hooks/:hook_token', method: RequestMethod.POST },
+      { path: 'internal/media/sessions/:id', method: RequestMethod.GET },
+      { path: 'internal/media/sessions/:id/verification', method: RequestMethod.POST },
+      { path: 'internal/media/files/:file_id/derivatives', method: RequestMethod.POST },
     ],
   });
   app.enableShutdownHooks();
