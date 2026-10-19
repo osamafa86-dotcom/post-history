@@ -92,3 +92,13 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ JWT_SECRET: 'too-short-secret-value' } as NodeJS.ProcessEnv)).not.toThrow(/too-short/);
   });
 });
+
+describe('contract validation precision', () => {
+  it('accepts two-decimal shares like 33.33 under multipleOf 0.01', () => {
+    const body = { contributors: [{ user_id: '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d', role: 'reporter', share_percent: 33.33 }] };
+    expect(() => validateBody('/materials/{id}/contributors', 'put', body)).not.toThrow();
+    expect(() =>
+      validateBody('/materials/{id}/contributors', 'put', { contributors: [{ ...body.contributors[0], share_percent: 33.333 }] }),
+    ).toThrow();
+  });
+});

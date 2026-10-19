@@ -7,6 +7,7 @@ import { ApiError } from '../common/errors';
 import { DB, type Database } from '../database/database.module';
 import { uploadSessions } from '../database/schema/schema';
 import type { components } from '../generated/api';
+import { applyTransition, lockMaterial, technicalTargetOnReceive } from '../materials/material-store';
 import { writeOutboxEvent, type OutboxEventType } from '../outbox/outbox';
 
 export type TusdHookRequest = components['schemas']['TusdHookRequest'];
@@ -119,6 +120,12 @@ export class TusdHooksService {
         .update(uploadSessions)
         .set({ state: 'completed', storageKey: expectedKey, tusUploadId: hook.Event.Upload.ID ?? sql`tus_upload_id` })
         .where(eq(uploadSessions.id, session.id));
+      // المسار الفني للمادة يكتبه الخادم وحده: pending → proxy_received → original_received
+      const material = await lockMaterial(tx, session.materialId);
+      const target = material && technicalTargetOnReceive(session.kind, material.technicalState);
+      if (material && target) {
+        await applyTransition(tx, material, { track: 'technical', to: target, reason: `${session.kind} upload received`, actorId: null });
+      }
       const type = RECEIVED_EVENT[session.kind]!;
       await writeOutboxEvent(tx, {
         type,

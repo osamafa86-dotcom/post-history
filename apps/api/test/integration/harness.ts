@@ -99,3 +99,21 @@ export async function seedUploadSession(
   );
   return { id: rows[0]!.id, materialId: m[0]!.id, uploadToken };
 }
+
+export async function loginAs(
+  h: Harness,
+  roles: Array<{ role: string; scopeKind?: string; scopeId?: string }>,
+  opts: { officeId?: string } = {},
+): Promise<SeededUser & { token: string }> {
+  const user = await seedUser(h, { roles });
+  if (opts.officeId) await h.pool.query(`UPDATE users SET office_id = $2 WHERE id = $1`, [user.id, opts.officeId]);
+  const { default: request } = await import('supertest');
+  const res = await request(h.app.getHttpServer()).post('/v1/auth/login').send({ email: user.email, password: user.password });
+  if (res.status !== 200) throw new Error(`login failed: ${res.status}`);
+  return { ...user, token: res.body.access_token };
+}
+
+export async function currentFormVersion(h: Harness): Promise<number> {
+  const { rows } = await h.pool.query<{ v: number | null }>(`SELECT max(version) AS v FROM upload_forms`);
+  return rows[0]!.v ?? 0;
+}

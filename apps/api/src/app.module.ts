@@ -11,6 +11,8 @@ import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor';
 import { IdentityModule } from './identity/identity.module';
 import { OutboxModule } from './outbox/outbox.module';
 import { UploadsModule } from './uploads/uploads.module';
+import { FormsModule } from './forms/forms.module';
+import { MaterialsModule } from './materials/materials.module';
 
 @Module({})
 export class AppModule {
@@ -18,7 +20,7 @@ export class AppModule {
     return {
       module: AppModule,
       global: true,
-      imports: [DatabaseModule, IdentityModule, OutboxModule, UploadsModule],
+      imports: [DatabaseModule, IdentityModule, OutboxModule, UploadsModule, FormsModule, MaterialsModule],
       controllers: [HealthController],
       providers: [
         { provide: APP_CONFIG, useValue: config },

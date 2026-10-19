@@ -59,6 +59,13 @@ const schema = z.object({
   TUSD_OBJECT_PREFIX: z.string().default(''),
   S3_BUCKET_UPLOADS: z.string().min(1),
 
+  // حجز الإنتاج يُحرَّر تلقائيًا بعد هذا الخمول (15 دقيقة افتراضيًا)
+  RESERVATION_IDLE_SECONDS: z.coerce.number().int().min(60).default(900),
+  RESERVATION_SWEEP_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+
   OUTBOX_DISPATCHER_ENABLED: z
     .enum(['true', 'false'])
     .default('true')

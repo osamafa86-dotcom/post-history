@@ -93,6 +93,12 @@ describe('tusd hooks (/internal/tusd-hooks/{hook_token}, SEC-06)', () => {
     expect(await events(s.id)).toEqual([
       { type: 'upload.original_received', payload: { material_id: s.materialId, upload_session_id: s.id, kind: 'original' } },
     ]);
+    // المسار الفني للمادة يتقدم بانتقال يكتبه الخادم (actor فارغ) مرة واحدة رغم التكرار
+    const { rows: m } = await h.pool.query(`SELECT technical_state FROM materials WHERE id = $1`, [s.materialId]);
+    expect(m[0].technical_state).toBe('original_received');
+    const { rows: t } = await h.pool.query(`SELECT from_state, to_state, actor_id FROM material_transitions WHERE material_id = $1`, [s.materialId]);
+    expect(t).toEqual([{ from_state: 'pending', to_state: 'original_received', actor_id: null }]);
+    expect((await events(s.materialId)).map((e) => e.type)).toEqual(['material.technical_transition']);
   });
 
   it('post-finish with a storage key that does not match the session fails it with storage_error', async () => {
