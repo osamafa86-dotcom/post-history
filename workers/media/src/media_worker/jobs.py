@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .api import InternalApi, Session
+from .api import ApiConflict, InternalApi, Session
 from .hashing import digest_file, digest_stream
 from .probe import InvalidMediaError, Probe, probe
 from .proxy import make_proxy
@@ -66,6 +66,18 @@ class Jobs:
         self.storage = storage
         self.buckets = buckets
         self.scratch = scratch
+
+    def report_failure(self, event: object, result: str) -> str:
+        """يبلّغ الخادم بفشل نهائي فتنتقل الجلسة إلى failed بدل أن تبقى completed بلا أثر. الخادم يرد 409 إن كانت
+        الجلسة قد قُضي فيها (مثلًا تحققت ثم فشلت النسخة الخفيفة)، فلا يقلب تحققًا ناجحًا إلى فشل."""
+        session_id = ((event if isinstance(event, dict) else {}).get("payload") or {}).get("upload_session_id")
+        if not session_id:
+            return "no-session"
+        try:
+            reply = self.api.report_verification(session_id, {"result": result})
+        except ApiConflict:
+            return "already-decided"
+        return f"reported:{reply.get('state', '?')}"
 
     def handle(self, event: dict) -> str:
         """يعيد وصفًا قصيرًا لما حدث (للسجل والاختبارات)."""

@@ -1,8 +1,12 @@
 """الخدمة: تستهلك Redis Stream `media:events` بمجموعة مستهلكين وتشغّل `Jobs` لكل حدث (ADR 0006).
 
 - `XREADGROUP` للجديد و`XAUTOCLAIM` لما علق عند مستهلك توقف (بعد `MEDIA_CLAIM_IDLE_MS`).
-- النجاح أو الرفض النهائي أو التعارض ← `XACK`. العطل المؤقت ← بلا تأكيد فيُعاد لاحقًا.
-- بعد `MEDIA_MAX_DELIVERIES` محاولة يُنقل الحدث إلى `media:dead` ويُؤكد، فلا يحجب حدث معطوب الطابور.
+- النجاح أو التجاوز ← `XACK`. العطل المؤقت ← بلا تأكيد فيُعاد لاحقًا.
+- الفشل النهائي، أو تجاوز `MEDIA_MAX_DELIVERIES` محاولة: يُبلَّغ الخادم بنتيجة فشل (فلا تبقى الجلسة `completed` بلا
+  أثر)، ثم يُنقل الحدث إلى `media:dead` مع السبب ويُؤكد، فلا يحجب حدث معطوب الطابور ولا يختفي بصمت.
+- رفض المصادقة (401/403/404) خطأ تهيئة لا حكم على الحدث: يُعاد الحدث نفسه بتراجع أسّي حتى `MEDIA_AUTH_BACKOFF_MAX_S`
+  دون إقرار ودون احتساب محاولة، فيمر تدوير `MEDIA_WORKER_TOKEN` دون فقد أحداث.
+- عند الإقلاع تُحذف مجلدات مهام قديمة في `/scratch` تركها عامل قُتل أثناء مهمة.
 - السجل: معرّف الحدث ونوعه والنتيجة فقط؛ لا حمولة ولا مفاتيح تخزين ولا رسائل ffmpeg.
 """
 
@@ -11,14 +15,16 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import signal
 import socket
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import redis
 
-from .api import ApiConflict, ApiRejected, InternalApi
+from .api import ApiAuthError, ApiConflict, ApiRejected, InternalApi
 from .jobs import Buckets, Jobs
 from .probe import InvalidMediaError
 from .proxy import ProxyTimingError
@@ -32,17 +38,31 @@ GROUP = "media"
 # أخطاء لا تزول بإعادة المحاولة على الملف نفسه
 # (فشل ffmpeg قد يكون نفاد ذاكرة أو مهلة، فيُعاد حتى MEDIA_MAX_DELIVERIES ثم يُنقل إلى media:dead)
 PERMANENT = (ApiRejected, ApiConflict, InvalidMediaError, ProxyTimingError, ValueError, KeyError)
+# نتيجة الفشل التي تُبلَّغ للخادم: الملف نفسه غير صالح، أو تعذّرت معالجته عندنا
+FILE_FAULTS = (InvalidMediaError, ProxyTimingError)
+AUTH_BACKOFF_FIRST_S = 1.0
+
+
+def clean_scratch(scratch: Path) -> int:
+    """يحذف مجلدات المهام (`job-*`) المتروكة؛ يُستدعى عند الإقلاع قبل أي مهمة، فلا يمس مهمة جارية."""
+    removed = 0
+    for d in scratch.glob("job-*"):
+        if d.is_dir():
+            shutil.rmtree(d, ignore_errors=True)
+            removed += 1
+    return removed
 
 
 @dataclass(frozen=True)
 class Config:
-    redis_url: str
+    # repr=False: الحقول السرية لا تظهر في repr ولا في أي استثناء أو سجل يطبع الإعداد
+    redis_url: str = field(repr=False)
     api_url: str
-    token: str
+    token: str = field(repr=False)
     s3_endpoint: str
     s3_region: str
-    s3_access_key: str
-    s3_secret_key: str
+    s3_access_key: str = field(repr=False)
+    s3_secret_key: str = field(repr=False)
     bucket_uploads: str
     bucket_derived: str
     scratch: Path
@@ -50,6 +70,7 @@ class Config:
     block_ms: int = 5000
     claim_idle_ms: int = 15 * 60 * 1000
     max_deliveries: int = 5
+    auth_backoff_max_s: float = 300.0
 
     @classmethod
     def from_env(cls) -> Config:
@@ -63,13 +84,17 @@ class Config:
             consumer=e.get("MEDIA_CONSUMER", socket.gethostname()),
             claim_idle_ms=int(e.get("MEDIA_CLAIM_IDLE_MS", 15 * 60 * 1000)),
             max_deliveries=int(e.get("MEDIA_MAX_DELIVERIES", 5)),
+            auth_backoff_max_s=float(e.get("MEDIA_AUTH_BACKOFF_MAX_S", 300)),
         )
 
 
 class Service:
     def __init__(self, r: redis.Redis, jobs: Jobs, consumer: str, block_ms: int = 5000,
-                 claim_idle_ms: int = 15 * 60 * 1000, max_deliveries: int = 5):
+                 claim_idle_ms: int = 15 * 60 * 1000, max_deliveries: int = 5, auth_backoff_max_s: float = 300.0,
+                 sleep=time.sleep):
         self.r = r
+        self.auth_backoff_max_s = auth_backoff_max_s
+        self.sleep = sleep
         self.jobs = jobs
         self.consumer = consumer
         self.block_ms = block_ms
@@ -89,24 +114,58 @@ class Service:
         pending = self.r.xpending_range(STREAM, GROUP, min=entry_id, max=entry_id, count=1)
         return int(pending[0]["times_delivered"]) if pending else 1
 
-    def process(self, entry_id: str, fields: dict) -> str:
-        if self._deliveries(entry_id) > self.max_deliveries:
-            self.r.xadd(DEAD, {"entry_id": entry_id, **fields}, maxlen=10000, approximate=True)
-            self.r.xack(STREAM, GROUP, entry_id)
-            log.error("event dead-lettered entry=%s", entry_id)
-            return "dead"
-        event: object = None
+    def _dead_letter(self, entry_id: str, fields: dict, event: object, reason: str, result: str) -> str:
         try:
-            event = json.loads(fields.get("event", "{}"))
-            outcome = self.jobs.handle(event)
-        except PERMANENT as err:
-            outcome = f"permanent:{type(err).__name__}"
-        except Exception as err:  # عطل مؤقت (تخزين، شبكة، 5xx): يبقى معلّقًا ويُستعاد لاحقًا
-            log.warning("event deferred entry=%s error=%s", entry_id, type(err).__name__)
-            return f"deferred:{type(err).__name__}"
+            reported = self.jobs.report_failure(event, result)
+        except Exception as err:  # الإبلاغ نفسه فشل: يُنقل الحدث على أي حال حتى لا يحجب الطابور، والسبب محفوظ
+            reported = f"report-failed:{type(err).__name__}"
+        self.r.xadd(DEAD, {"entry_id": entry_id, **fields, "reason": reason, "reported": reported},
+                    maxlen=10000, approximate=True)
         self.r.xack(STREAM, GROUP, entry_id)
-        kind = event.get("type") if isinstance(event, dict) else None
-        log.info("event done entry=%s type=%s outcome=%s", entry_id, kind, outcome)
+        log.error("event dead-lettered entry=%s reason=%s reported=%s", entry_id, reason, reported)
+        return f"dead:{reason}"
+
+    def _wait(self, seconds: float) -> None:
+        """انتظار يقطعه SIGTERM خلال ثانية، لا بعد انتهاء تراجع قد يبلغ دقائق."""
+        left = seconds
+        while not self.stopped and left > 0:
+            step = min(1.0, left)
+            self.sleep(step)
+            left -= step
+
+    def _parse(self, fields: dict) -> object:
+        try:
+            return json.loads(fields.get("event", "{}"))
+        except ValueError:
+            return None
+
+    def process(self, entry_id: str, fields: dict) -> str:
+        event = self._parse(fields)
+        if self._deliveries(entry_id) > self.max_deliveries:
+            return self._dead_letter(entry_id, fields, event, "max_deliveries", "storage_error")
+        if not isinstance(event, dict):
+            return self._dead_letter(entry_id, fields, event, "malformed_event", "storage_error")
+        delay = AUTH_BACKOFF_FIRST_S
+        while True:
+            try:
+                outcome = self.jobs.handle(event)
+                break
+            except ApiAuthError:
+                if self.stopped:
+                    return "deferred:auth"
+                # الحدث يبقى عند هذا المستهلك: يُجدَّد خموله (JUSTID لا يزيد عدد التسليم) فلا يأخذه غيره
+                log.warning("internal API refused the worker token; retrying entry=%s in %.0fs", entry_id, delay)
+                self._wait(delay)
+                self.r.xclaim(STREAM, GROUP, self.consumer, min_idle_time=0, message_ids=[entry_id], justid=True)
+                delay = min(delay * 2, self.auth_backoff_max_s)
+            except PERMANENT as err:
+                result = "invalid_file" if isinstance(err, FILE_FAULTS) else "storage_error"
+                return self._dead_letter(entry_id, fields, event, type(err).__name__, result)
+            except Exception as err:  # عطل مؤقت (تخزين، شبكة، 5xx، ffmpeg): يبقى معلّقًا ويُستعاد لاحقًا
+                log.warning("event deferred entry=%s error=%s", entry_id, type(err).__name__)
+                return f"deferred:{type(err).__name__}"
+        self.r.xack(STREAM, GROUP, entry_id)
+        log.info("event done entry=%s type=%s outcome=%s", entry_id, event.get("type"), outcome)
         return outcome
 
     def next_entries(self) -> list[tuple[str, dict]]:
@@ -134,11 +193,13 @@ def main() -> None:
                         format='{"level":"%(levelname)s","msg":"%(message)s","logger":"%(name)s"}')
     cfg = Config.from_env()
     cfg.scratch.mkdir(parents=True, exist_ok=True)
+    if removed := clean_scratch(cfg.scratch):
+        log.warning("removed %d stale job directories from scratch", removed)
     storage = S3Storage(cfg.s3_endpoint, cfg.s3_region, cfg.s3_access_key, cfg.s3_secret_key, cfg.bucket_derived)
     jobs = Jobs(InternalApi(cfg.api_url, cfg.token), storage, Buckets(cfg.bucket_uploads, cfg.bucket_derived),
                 cfg.scratch)
     svc = Service(redis.Redis.from_url(cfg.redis_url, decode_responses=True), jobs, cfg.consumer, cfg.block_ms,
-                  cfg.claim_idle_ms, cfg.max_deliveries)
+                  cfg.claim_idle_ms, cfg.max_deliveries, cfg.auth_backoff_max_s)
 
     def stop(*_):
         svc.stopped = True

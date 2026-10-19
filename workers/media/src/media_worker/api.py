@@ -22,6 +22,11 @@ class ApiRejected(RuntimeError):
     """رفض نهائي (4xx غير 409/429): إعادة المحاولة لا تغيّره."""
 
 
+class ApiAuthError(RuntimeError):
+    """401/403/404 من النقاط الداخلية: الخادم يرد 404 على رمز غير مطابق (كبقية `/internal/*`)، فلا يُميَّز عن
+    تهيئة خاطئة أو رمز دُوِّر للتو. يُعاد المحاولة بتراجع ولا يُقَرّ الحدث، فلا تضيع أحداث أثناء تدوير الرمز."""
+
+
 class ApiConflict(RuntimeError):
     """409: الخادم سجّل نتيجة مختلفة لهذه الجلسة؛ الحدث منتهٍ."""
 
@@ -60,6 +65,8 @@ class InternalApi:
             label = f"{method} {path}: HTTP {err.code}"
             if err.code == 409:
                 raise ApiConflict(label) from None
+            if err.code in (401, 403, 404):
+                raise ApiAuthError(label) from None
             if err.code == 429 or err.code >= 500:
                 raise ApiError(label) from None
             raise ApiRejected(label) from None
