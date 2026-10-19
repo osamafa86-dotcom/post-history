@@ -8,7 +8,9 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 
 ## compose (`infra/compose/`)
 
-- Postgres 16، Redis 7 (بكلمة مرور)، MinIO (بديل S3 محليًا)، tusd. `.env.example` يوثّق المتغيرات بلا قيم؛ `.env` لا يُرفع.
+- Postgres 16، Redis 7 (بكلمة مرور تمر من البيئة إلى ملف إعداد، لا في سطر الأوامر)، MinIO (بديل S3 محليًا)، tusd. `.env.example` يوثّق المتغيرات بلا قيم؛ `.env` لا يُرفع.
+- الأسرار في الإنتاج (SEC-05): SOPS بمفاتيح age في مستودع تشغيل خاص، تُفك على الخادم إلى tmpfs وتُقرأ بـ `env_file:`؛ لا قيمة في ملف compose ولا في سطر الأوامر. التدوير والاستعادة الطارئة في `docs/ops/runbook.md`، وتمرين التدوير `infra/secrets/rotate_hook_secret.py`.
+- `tusd-proxy` يعيد حل اسم `tusd` عبر DNS الخاص بـ Docker (`resolver 127.0.0.11`): الاسم الثابت في `proxy_pass` يُحل مرة عند البدء، فيعيد 502 إن تغيّر عنوان tusd بعد إعادة إنشائه.
 - كل المنافذ مربوطة بـ `127.0.0.1` محليًا. الصور مثبّتة بوسم إصدار؛ MinIO وmc بناء مجتمعي (`pgsty/*`) بالوسم والبصمة (ADR 0004).
 - tusd بلا منفذ منشور، خلف `tusd-proxy` (nginx، `infra/proxy/tusd.conf`) على شبكة `uploads` الداخلية؛ الخطّاف على شبكة `hooks` الداخلية.
 - `-behind-proxy` لا يُفعَّل إلا خلف وكيل فعلي (عبر `TUSD_EXTRA_FLAGS`)، لأنه يجعل tusd يثق بترويسات `X-Forwarded-*`.
