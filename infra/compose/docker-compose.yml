@@ -73,6 +73,8 @@ services:
       - ../tusd/entrypoint.sh:/usr/local/bin/tusd-entrypoint.sh:ro
     # R2 requires all non-trailing parts to have the same size: min part size == preferred part size.
     # Part size is fixed per upload session; the phone-side chunk size is independent (tusd buffers to .part).
+    # Bucket and object prefix must match what the API reads (S3_BUCKET_UPLOADS, TUSD_OBJECT_PREFIX).
+    # -disable-download: anyone holding an upload URL could otherwise GET the original (ADR SEC-06).
     # Authorization is forwarded for pre-create (upload token); the API must never log it.
     # TUSD_EXTRA_FLAGS is empty locally; set "-behind-proxy" only behind a real proxy.
     command: >
@@ -80,6 +82,7 @@ services:
       -base-path=/files/
       -s3-endpoint=${S3_ENDPOINT}
       -s3-bucket=${S3_BUCKET_UPLOADS}
+      -s3-object-prefix=${TUSD_OBJECT_PREFIX}
       -s3-part-size=${TUSD_PART_SIZE_BYTES}
       -s3-min-part-size=${TUSD_PART_SIZE_BYTES}
       -s3-disable-content-hashes=${TUSD_DISABLE_CONTENT_HASHES}
@@ -88,6 +91,7 @@ services:
       -hooks-http-retry=5
       -hooks-http-backoff=2s
       -show-greeting=false
+      -disable-download
       ${TUSD_EXTRA_FLAGS}
     # No published port: reachable only through tusd-proxy. "hooks" is where the API listens for hooks.
     networks: [uploads, hooks]
