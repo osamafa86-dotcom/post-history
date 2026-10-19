@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "fields": [
+    {
+      "key": "notes",
+      "type": "long_text",
+      "label": { "ar": "ملاحظات", "en": "Notes" },
+      "required": false,
+      "validation": { "max_length": 2000 }
+    }
+  ]
+}

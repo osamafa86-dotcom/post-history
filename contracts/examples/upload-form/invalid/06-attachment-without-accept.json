@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "fields": [
+    { "key": "doc", "type": "attachment", "label": { "ar": "مستند", "en": "Document" }, "required": false, "validation": { "max_size_bytes": 1000 } }
+  ]
+}

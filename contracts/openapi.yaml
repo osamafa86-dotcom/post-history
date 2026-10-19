@@ -2,52 +2,219 @@ openapi: 3.1.0
 info:
   title: post-history API
   version: 0.1.0
+  summary: واجهة منصة المكتبة المرئية — الإصدار v0 لمرحلة التأسيس
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
   description: |
-    واجهة منصة المكتبة المرئية — الإصدار v0 لمرحلة التأسيس.
-    التحديثات اللحظية تصل عبر WebSocket على `/v1/ws` بالأحداث نفسها المعرّفة في `schemas/outbox-event.json`.
-    كل عملية كتابة تقبل ترويسة `Idempotency-Key`.
+    واجهة منصة المكتبة المرئية لشبكة فلسطين بوست — الإصدار v0 لمرحلة التأسيس (الرفع، المواد بحالاتها
+    الثلاث، النماذج الديناميكية، الوارد الحي، الإشعارات). لا متجر ولا دفتر أستاذ ولا محرر في هذا الإصدار.
+
+    ## القواعد الحاكمة
+
+    - **الحالات الثلاث مستقلة:** لكل مادة `technical_state` (ماذا وصل) و`editorial_state` (من وافق)
+      و`rights_state` (ما يُسمح به). لا حقل حالة واحد، وكل انتقال يُسجَّل بمن نفّذه ومتى ولماذا.
+    - **مفتاح منع التكرار على كل كتابة منشئة للموارد:** كل طلب `POST`/`PUT`/`PATCH`/`DELETE` خارج `/auth/*` يحمل ترويسة `Idempotency-Key`
+      (نص عشوائي من 8 إلى 128 حرفًا، يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة).
+      المفتاح مقيّد بالمستخدم ويُحفظ 24 ساعة. التكرار بالمفتاح نفسه والجسم نفسه يعيد الاستجابة الأولى
+      نفسها (الحالة والجسم). المفتاح نفسه بجسم مختلف يُرفض بـ `422 idempotency_key_reused`، والطلب الذي
+      ما زال قيد التنفيذ بالمفتاح نفسه يُرفض بـ `409 idempotency_in_progress`. مسارات الهوية (`/auth/*`)
+      مستثناة: استجاباتها تحمل رموزًا ولا يجوز حفظها في جدول المفاتيح، وتكرارها آمن بطبيعته (الدخول يصدر
+      جلسة جديدة، والتحديث يدوّر الرمز، والإبطال والخروج والاسترداد ذاتية التكرار).
+    - **Outbox:** كل تغيير حالة يكتب حدثًا بمخطط `schemas/outbox-event.json` في جدول Outbox داخل معاملة
+      الحفظ نفسها؛ مُرسل مستقل يقرأه ويوزّعه على القنوات. التحديثات اللحظية تصل عبر WebSocket على
+      `/v1/ws` بالأحداث نفسها.
+    - **النماذج الديناميكية بإصدار:** الحقول الديناميكية تُحفظ مع `form_version` ولا تُفسَّر دون نسخة
+      النموذج. النموذج بمخطط `schemas/upload-form.json`.
+    - **لا بيانات كاشفة:** الإحداثيات الدقيقة (`gps`) تُكتب ولا تُقرأ من هذه الواجهة، وتُخزَّن مشفرة.
+      حمولات الإشعارات والأحداث تحمل رقم المادة وحالتها فقط.
+    - **الإصدار في المسار** (`/v1`). كسر التوافق يعني `/v2`، لا تعديل صامت.
+    - **الأدوار على كل مسار (`x-roles`):** كل عملية تحمل قائمة الأدوار المسموح لها؛ `authenticated` = أي
+      دور بجلسة صالحة، والقائمة الفارغة = بلا مصادقة. النطاق يُطبَّق في طبقة الاستعلام: المراسل يرى
+      مواده، والمشرف مواد مراسلي نطاقه (مكتب أو محافظة)، والإنتاج المواد المقبولة للإنتاج،
+      ورئيس التحرير ومدير النظام ومسؤول الحقوق كل المواد. ما خارج النطاق يعود `404`.
+    - **قاعدة الحجب (ADR SEC-03):** قيم `dynamic_fields` التي حقلها في إصدار النموذج موسوم `sensitive`
+      أو من نوع `location` تُحذف من كل استجابة (المفتاح غائب ويُذكر في `redacted_field_keys`) إلا
+      لمن يحمل الصلاحية المقابلة (`sensitive_location:read` أو `protected_source:read`؛ تُعرَّف في تذكرة 2)،
+      ولا تدخل أي إشعار أو حدث أو تصدير أو قناة خارجية. في v0 يرفض `POST /forms` هذه الحقول أصلًا.
+      الإحداثيات `gps` لا تعود لأحد من هذه الواجهة.
+    - **خطّافات tusd داخلية (ADR SEC-06):** تصل إلى `/internal/tusd-hooks/{hook_token}` خارج `/v1`،
+      معزولة شبكيًا وبرمز من البيئة؛ العام لا يرى هذه النقطة.
+
+    ## الأخطاء
+
+    ## الأخطاء
+
+    كل استجابة `4xx`/`5xx` جسمها `Error` برمز ثابت (`code`) يمكن للعملاء التفرّع عليه، ورسالة بشرية،
+    و`request_id` لتتبع الطلب في السجلات.
 servers:
   - url: https://api.example.invalid/v1
     description: يُستبدل بنطاق الشبكة عند النشر
 
+# الأدوار المخوّلة برؤية الحقول الحساسة وحقول الموقع في dynamic_fields — مؤقت: قرار المالك (2026-10-19)
+# أن الرؤية صلاحيتان مستقلتان تُمنحان لمستخدمين بعينهم (sensitive_location:read، protected_source:read)
+# بلا منح افتراضي لأي دور؛ تذكرة 2 (SEC-03) تستبدل هذه القائمة بالصلاحيات. في v0 لا توجد هذه الحقول أصلًا.
+x-pii-roles: []
+
 tags:
   - name: auth
+    description: الهوية — الدخول بكلمة المرور ورمز TOTP، تحديث الجلسة، واستعادة الحساب بمساعدة المشرف.
   - name: materials
+    description: المواد بحالاتها الثلاث المستقلة، وسجل انتقالاتها، والمساهمون وحصصهم، وحجز الإنتاج.
   - name: uploads
+    description: جلسات الرفع المجزّأ القابل للاستئناف (tus) للأصل والنسخة الخفيفة والملاحظة الصوتية.
   - name: forms
+    description: نموذج الرفع الديناميكي الذي تضبطه الإدارة، بإصدارات غير قابلة للتعديل.
   - name: notifications
+    description: صندوق الوارد والإشعارات وتسجيل أجهزة الهاتف؛ التمييز بين «أُسند» و«أقرّ الاستلام».
   - name: events
+    description: قراءة أحداث Outbox للوحة الإدارة والمراقبة.
 
 paths:
   /auth/login:
     post:
       tags: [auth]
       summary: دخول بكلمة المرور ثم رمز TOTP
+      description: >-
+        المصادقة الثنائية إلزامية لكل الطاقم بعد التفعيل؛ غياب `totp_code` لحساب مفعَّل يعيد
+        `401 totp_required` (لا يُعاد إلا بعد التحقق من كلمة المرور وضمن حد المعدل). البريد غير الموجود
+        وكلمة المرور الخاطئة يعيدان `401 unauthorized` نفسه بالرسالة نفسها. الجلسة تحمل رمز وصول قصير العمر
+        ورمز تحديث.
       operationId: login
+      x-roles: []
+      security: []
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [email, password]
-              properties:
-                email: { type: string, format: email }
-                password: { type: string }
-                totp_code: { type: string, description: مطلوب لكل الطاقم بعد التفعيل }
+            schema: { $ref: "#/components/schemas/LoginRequest" }
       responses:
         "200":
           description: جلسة
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Session" }
-        "401": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: تحديث الجلسة برمز التحديث
+      description: يبطل رمز التحديث المستخدم ويصدر زوجًا جديدًا (تدوير). الرمز المبطَل مسبقًا يعيد `401`.
+      operationId: refreshSession
+      x-roles: []
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: جلسة جديدة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: إنهاء الجلسة الحالية أو كل جلسات المستخدم (عند فقد الهاتف)
+      operationId: logout
+      x-roles: [authenticated]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                all_sessions:
+                  type: boolean
+                  default: false
+                  description: إبطال كل جلسات المستخدم ورموز تحديثه ورموز الرفع المفتوحة على كل الأجهزة
+      responses:
+        "204": { description: أُنهيت }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: المستخدم الحالي وأدواره ونطاقاته
+      operationId: getMe
+      x-roles: [authenticated]
+      responses:
+        "200":
+          description: المستخدم
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/sessions:
+    get:
+      tags: [auth]
+      summary: جلسات المستخدم الحالي على كل أجهزته
+      description: لعرض «أين أنا مسجَّل» وإبطال ما ليس له؛ لا معرّفات أجهزة، فقط معرّف التثبيت الذي ولّده التطبيق.
+      operationId: listSessions
+      x-roles: [authenticated]
+      responses:
+        "200":
+          description: الجلسات النشطة
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/UserSession" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/sessions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: معرّف الجلسة
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [auth]
+      summary: إبطال جلسة عن بُعد (فقد الهاتف)
+      description: >-
+        يبطل رمز التحديث ويُسقط رمز الوصول المرتبط عند أول طلب تالٍ (الإبطال يُفحص عند كل طلب).
+        المستخدم يبطل جلساته، ومشرف النطاق أو مدير النظام يبطل جلسات مراسل في نطاقه بعد بلاغ فقد الهاتف؛
+        يُسجَّل في سجل التدقيق.
+      operationId: revokeSession
+      x-roles: [authenticated, supervisor, system_admin]
+      responses:
+        "204": { description: أُبطلت }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /auth/recovery:
     post:
       tags: [auth]
-      summary: بدء استعادة الحساب عند فقد الهاتف (بمساعدة المشرف ورموز احتياطية)
+      summary: بدء استعادة الحساب عند فقد الهاتف (رمز احتياطي ثم اعتماد المشرف)
+      description: >-
+        يتحقق الخادم من الرمز الاحتياطي ويفتح طلب استعادة بانتظار اعتماد مشرف نطاق المراسل، الذي يصله
+        معرّف الطلب عبر إشعار داخلي لا عبر هذه الاستجابة. الاستجابة `202` نفسها سواء صحّ الرمز أم لا
+        (لا كشف لصحة الرموز الاحتياطية)، مع حد معدل لكل بريد ولكل عنوان IP وإقفال بعد محاولات متكررة.
+        لا يصدر رمز وصول قبل الاعتماد، ولا تُبطل الجلسات القائمة إلا عند اعتماد المشرف (رمز مسرّب لا يكفي
+        لإخراج المراسل من أجهزته)؛ الطلب الصحيح يُسجَّل في التدقيق ويصل المراسلَ تنبيه على أجهزته القائمة.
       operationId: startRecovery
+      x-roles: []
+      security: []
       requestBody:
         required: true
         content:
@@ -57,41 +224,117 @@ paths:
               required: [email, backup_code]
               properties:
                 email: { type: string, format: email }
-                backup_code: { type: string }
+                backup_code: { type: string, minLength: 10, pattern: "^[A-Z2-7]{10,}$", writeOnly: true, description: base32 بطول 10 فأكثر }
       responses:
-        "202": { description: طلب الاستعادة بانتظار اعتماد المشرف }
-        "400": { $ref: "#/components/responses/Error" }
+        "202":
+          description: قُبل الطلب (الاستجابة نفسها لأي رمز؛ لا تدل على صحته)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecoveryAccepted" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/recovery/{id}/approve:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: معرّف طلب الاستعادة
+        schema: { type: string, format: uuid }
+    post:
+      tags: [auth]
+      summary: اعتماد المشرف لطلب استعادة حساب في نطاقه
+      description: >-
+        يعتمد المشرف الطلب بعد التحقق خارج النظام من هوية المراسل. الاعتماد يبطل كل جلسات الحساب ورموز
+        رفعه المفتوحة، ويصدر رابط إعادة تهيئة كلمة المرور والمصادقة الثنائية بصلاحية قصيرة، ويُسجَّل في
+        سجل التدقيق.
+      operationId: approveRecovery
+      x-roles: [supervisor, system_admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [verification_note]
+              properties:
+                verification_note:
+                  type: string
+                  minLength: 1
+                  description: كيف تحقق المشرف من الهوية (يُسجَّل في التدقيق)
+      responses:
+        "200":
+          description: الطلب بعد الاعتماد
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecoveryRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /materials:
     get:
       tags: [materials]
       summary: قائمة المواد ضمن نطاق المستخدم
+      description: >-
+        النطاق يُطبَّق في طبقة الاستعلام: المراسل يرى مواده فقط، والمشرف مواد مراسلي نطاقه،
+        والإنتاج المواد المقبولة للإنتاج. الترتيب الافتراضي الأحدث أولًا.
       operationId: listMaterials
+      x-roles: [reporter, supervisor, producer, editor_in_chief, rights_officer, system_admin]
       parameters:
-        - { name: editorial_state, in: query, schema: { $ref: "#/components/schemas/EditorialState" } }
-        - { name: technical_state, in: query, schema: { $ref: "#/components/schemas/TechnicalState" } }
-        - { name: rights_state, in: query, schema: { $ref: "#/components/schemas/RightsState" } }
-        - { name: priority, in: query, schema: { $ref: "#/components/schemas/Priority" } }
-        - { name: governorate, in: query, schema: { type: string } }
-        - { name: cursor, in: query, schema: { type: string } }
-        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - name: editorial_state
+          in: query
+          description: تصفية بالحالة التحريرية
+          schema: { $ref: "#/components/schemas/EditorialState" }
+        - name: technical_state
+          in: query
+          description: تصفية بالحالة الفنية
+          schema: { $ref: "#/components/schemas/TechnicalState" }
+        - name: rights_state
+          in: query
+          description: تصفية بحالة الحقوق
+          schema: { $ref: "#/components/schemas/RightsState" }
+        - name: priority
+          in: query
+          description: تصفية بالأولوية
+          schema: { $ref: "#/components/schemas/Priority" }
+        - name: governorate
+          in: query
+          description: محافظة التصوير
+          schema: { type: string }
+        - name: reporter_id
+          in: query
+          description: المراسل (ضمن نطاق المستخدم)
+          schema: { type: string, format: uuid }
+        - name: shot_after
+          in: query
+          description: تاريخ التصوير من (شامل)
+          schema: { type: string, format: date-time }
+        - name: shot_before
+          in: query
+          description: تاريخ التصوير إلى (غير شامل)
+          schema: { type: string, format: date-time }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
       responses:
         "200":
           description: صفحة مواد
           content:
             application/json:
-              schema:
-                type: object
-                required: [items]
-                properties:
-                  items:
-                    type: array
-                    items: { $ref: "#/components/schemas/Material" }
-                  next_cursor: { type: [string, "null"] }
+              schema: { $ref: "#/components/schemas/MaterialPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
     post:
       tags: [materials]
       summary: إنشاء سجل مادة قبل بدء الرفع (يطلق إشعار «مادة واردة»)
+      description: >-
+        تُنشأ المادة بحالاتها الابتدائية `pending`/`inbox`/`unknown` وبحدث `material.created`
+        (و`material.urgent_received` إن كانت الأولوية عاجلة) في Outbox داخل المعاملة نفسها.
+        يتحقق الخادم من `dynamic_fields` بمخطط النموذج ذي الإصدار `form_version`. إن أُرسل `contributors`
+        وجب أن يكون مجموع الحصص 100 بالضبط وإلا `422 shares_not_100`.
       operationId: createMaterial
+      x-roles: [reporter]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -105,7 +348,10 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Material" }
-        "422": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
   /materials/{id}:
     parameters:
@@ -114,17 +360,23 @@ paths:
       tags: [materials]
       summary: قراءة مادة
       operationId: getMaterial
+      x-roles: [reporter, supervisor, producer, editor_in_chief, rights_officer, system_admin]
       responses:
         "200":
           description: المادة
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Material" }
-        "404": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
     patch:
       tags: [materials]
       summary: تعديل الحقول الوصفية (لا الحالات)
+      description: >-
+        تعديل مادة بعد الاعتماد (`accepted` فما بعد) يرفع `version` ويعيد الحالة التحريرية إلى
+        `final_review` لأن ما يُعتمد هو إصدار محدد. الحالات لا تُعدَّل هنا بل عبر `transitions`.
       operationId: updateMaterial
+      x-roles: [reporter, supervisor, editor_in_chief, system_admin]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -138,14 +390,62 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Material" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
   /materials/{id}/transitions:
     parameters:
       - $ref: "#/components/parameters/MaterialId"
+    get:
+      tags: [materials]
+      summary: سجل انتقالات المادة في المسارات الثلاثة
+      operationId: listTransitions
+      x-roles: [reporter, supervisor, producer, editor_in_chief, rights_officer, system_admin]
+      responses:
+        "200":
+          description: الانتقالات بترتيب وقوعها
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/TransitionRecord" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
     post:
       tags: [materials]
       summary: انتقال في أحد المسارات الثلاثة (تحريري، فني، حقوق) مع السبب
+      description: |
+        الانتقالات المسموحة في v0 (ما ليس هنا يُرفض بـ `409 invalid_transition`):
+
+        | المسار | من | إلى | من يملكه |
+        | --- | --- | --- | --- |
+        | technical | pending | proxy_received, original_received, failed | الخادم (hook الرفع) |
+        | technical | proxy_received | original_received, failed | الخادم |
+        | technical | original_received | verified, failed | الخادم (بعد مطابقة البصمة) |
+        | technical | failed | pending | المراسل (إعادة الرفع) |
+        | editorial | inbox | acknowledged, rejected | المشرف |
+        | editorial | acknowledged | reviewing, rejected | المشرف |
+        | editorial | reviewing | needs_changes, accepted, rejected | المشرف |
+        | editorial | needs_changes | reviewing | المراسل (بعد الرد) |
+        | editorial | accepted | in_production | الإنتاج (عبر الحجز) |
+        | editorial | in_production | final_review, accepted | الإنتاج |
+        | editorial | final_review | published, in_production | رئيس التحرير |
+        | editorial | published | final_review | رئيس التحرير (إصدار جديد) |
+        | rights | unknown | documented | مسؤول الحقوق |
+        | rights | documented | sellable, blocked | مسؤول الحقوق (sellable في المرحلة التجارية) |
+        | rights | sellable | blocked, withdrawn | مسؤول الحقوق / رئيس التحرير |
+        | rights | blocked | documented | مسؤول الحقوق |
+
+        الانتقالات الفنية يكتبها الخادم من أحداث الرفع ولا يستدعيها العميل إلا لإعادة المحاولة بعد الفشل.
       operationId: transitionMaterial
+      x-roles: [reporter, supervisor, producer, editor_in_chief, rights_officer, system_admin]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -159,13 +459,89 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Material" }
-        "409": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /materials/{id}/contributors:
+    parameters:
+      - $ref: "#/components/parameters/MaterialId"
+    put:
+      tags: [materials]
+      summary: توثيق المساهمين وحصصهم (الاستبدال الكامل؛ المجموع 100 بالضبط)
+      description: >-
+        يستبدل مجموعة المساهمين كاملة. مجموع `share_percent` يجب أن يساوي 100.00 بالضبط، وهو قيد في
+        قاعدة البيانات لا اتفاقًا؛ المخالفة تعيد `422 shares_not_100`. يملكه مسؤول الحقوق.
+      operationId: setContributors
+      x-roles: [rights_officer, system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ContributorsSet" }
+      responses:
+        "200":
+          description: المادة بعد التوثيق
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Material" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /materials/{id}/reservation:
+    parameters:
+      - $ref: "#/components/parameters/MaterialId"
+    post:
+      tags: [materials]
+      summary: حجز المادة للإنتاج باسم المستخدم الحالي
+      description: >-
+        يقفل المادة باسم المنتج وينقلها إلى `in_production` إن كانت `accepted`، ويكتب حدث
+        `material.reserved`. مادة محجوزة لمنتج آخر تعيد `409 already_reserved`. يُحرَّر الحجز تلقائيًا
+        بعد فترة خمول تحددها الإدارة.
+      operationId: reserveMaterial
+      x-roles: [producer, editor_in_chief]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: الحجز
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [materials]
+      summary: تحرير الحجز (صاحبه أو المشرف)
+      operationId: releaseMaterial
+      x-roles: [producer, supervisor, editor_in_chief, system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "204": { description: حُرِّر }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /uploads:
     post:
       tags: [uploads]
-      summary: إنشاء جلسة رفع لملف يخص مادة (أصل أو نسخة خفيفة)
+      summary: إنشاء جلسة رفع لملف يخص مادة (أصل أو نسخة خفيفة أو ملاحظة صوتية)
+      description: >-
+        تعيد نقطة tus ورمزًا قصير العمر وحجم الجزء الثابت لهذه الجلسة. يرسل العميل
+        `tus_metadata` كما هي في ترويسة `Upload-Metadata` عند إنشاء رفع tus. النسخة الخفيفة لها الأولوية
+        على الأصل في قائمة انتظار العميل. `client_fingerprint` يرشّح المكررات فقط ولا يمنح أي حق؛ الربط
+        الفعلي بملف موجود لا يتم إلا بتطابق `sha256` الكاملة على الخادم.
       operationId: createUploadSession
+      x-roles: [reporter]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -175,148 +551,406 @@ paths:
             schema: { $ref: "#/components/schemas/UploadSessionCreate" }
       responses:
         "201":
-          description: جلسة الرفع ومعلومات الاتصال بخادم tus
+          description: جلسة الرفع ومعلومات الاتصال بخادم tus؛ رمز الرفع يظهر هنا فقط
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/UploadSession" }
+              schema: { $ref: "#/components/schemas/UploadSessionCreated" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
   /uploads/{id}:
     parameters:
-      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - $ref: "#/components/parameters/UploadId"
     get:
       tags: [uploads]
       summary: حالة جلسة الرفع
       operationId: getUploadSession
+      x-roles: [reporter, supervisor, editor_in_chief, system_admin]
       responses:
         "200":
           description: الجلسة
           content:
             application/json:
               schema: { $ref: "#/components/schemas/UploadSession" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /uploads/{id}/complete:
     parameters:
-      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - $ref: "#/components/parameters/UploadId"
     post:
       tags: [uploads]
-      summary: إشعار اكتمال من خادم الرفع (hook) — يسجّل حدث Outbox ويطلق خط المعالجة
+      summary: إعلان العميل اكتمال رفعه (مسار الرفع المباشر إلى التخزين فقط)
+      description: >-
+        لمسار الرفع المباشر (بند القرارات 3) يعلن العميل أنه أنهى الرفع؛ في مسار tusd لا يُستدعى هذا
+        المسار لأن الاكتمال يصل من خطّاف `post-finish` إلى `/internal/tusd-hooks/{hook_token}`.
+        الخادم لا يثق بأي شيء من المستدعي: يشتق مفتاح التخزين من جلسة الرفع، ويقرأ الحجم من التخزين،
+        ويحسب SHA-256 دائمًا بعد التجميع. ما يرسله العميل (`reported_sha256`) معلوماتي يُقارن فقط ولا يُحفظ؛
+        الاختلاف بينه وبين بصمة الخادم ينقل الجلسة إلى `failed` بسبب `checksum_mismatch`.
+        لا يُقبل مفتاح تخزين من العميل بأي حال. المستدعي يجب أن يكون منشئ الجلسة (`created_by`) وإلا `404`.
+        الاستدعاء المكرر لجلسة مكتملة يعيد `202` نفسها. عند تحقق الأصل يصدر رقم إيصال ويصل المراسلَ
+        إشعار «تم الاستلام بنجاح».
       operationId: completeUpload
-      security:
-        - tusdHookSecret: []
+      x-roles: [reporter]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UploadComplete" }
+      responses:
+        "202": { description: قُبل؛ المعالجة غير متزامنة }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /internal/tusd-hooks/{hook_token}:
+    servers:
+      - url: http://api.internal:3000
+        description: شبكة داخلية فقط؛ لا يمر عبر Cloudflare ولا يُكشف على الإنترنت
+    parameters:
+      - name: hook_token
+        in: path
+        required: true
+        description: >-
+          رمز عشوائي من متغير البيئة `TUSD_HOOK_SECRET` يحقنه الإعداد في عنوان الخطّاف
+          (`-hooks-http=…/internal/tusd-hooks/$TUSD_HOOK_SECRET`)؛ يُقارن بزمن ثابت ويُحجب من سجلات الوصول.
+        schema: { type: string, minLength: 32, maxLength: 128 }
+    post:
+      tags: [uploads]
+      summary: مُستقبِل خطّافات tusd (داخلي؛ pre-create وpost-finish) — ADR SEC-06
+      x-internal: true
+      description: >-
+        نقطة واحدة تستقبل أحداث tusd بصيغته (نوع الحدث في الجسم). `pre-create`: يتحقق الخادم من رمز
+        الرفع في ترويسة `Authorization` المُمرَّرة من tusd، ومن أن `upload_session_id` في البيانات الوصفية
+        يخص جلسة بحالة `created`/`in_progress` لم تنتهِ صلاحيتها وحجمها يطابق `Upload.Size`، وإلا يرفض
+        الرفع. `post-finish`: يسجّل الاكتمال ويكتب حدث Outbox داخل المعاملة نفسها ويطلق التجميع والتحقق؛
+        مفتاح التخزين يُقرأ من `Upload.Storage` ويُطابَق مع ما تتوقعه الجلسة، ولا تُحفظ أي بصمة من الخطّاف.
+        التكرار (tusd يعيد المحاولة) يعيد `200` نفسها بمعرّف الرفع. مصادقة المستدعي: الرمز في المسار
+        + العزل الشبكي؛ mTLS عبر وسيط خيار للإنتاج (وكيل الرفع والبنية).
+      operationId: tusdHook
+      x-roles: []
+      security: []
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [size_bytes]
-              properties:
-                size_bytes: { type: integer, minimum: 1 }
-                storage_key: { type: string }
-                sha256: { type: [string, "null"], description: تُحسب على الخادم بعد التجميع إن لم تُرسل }
+            schema: { $ref: "#/components/schemas/TusdHookRequest" }
       responses:
-        "202": { description: قُبل؛ المعالجة غير متزامنة }
-        "409": { $ref: "#/components/responses/Error" }
+        "200":
+          description: استجابة الخطّاف بصيغة tusd (قد ترفض الرفع في pre-create)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TusdHookResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /forms:
+    get:
+      tags: [forms]
+      summary: قائمة إصدارات النموذج (الإدارة)
+      operationId: listForms
+      x-roles: [system_admin, editor_in_chief]
+      responses:
+        "200":
+          description: الإصدارات من الأحدث إلى الأقدم
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/FormVersionSummary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [forms]
+      summary: نشر إصدار جديد من النموذج (الإدارة)
+      description: >-
+        الإصدارات غير قابلة للتعديل: كل تغيير إصدار جديد كامل (لقطة لا فرق). يرسل العميل `version`
+        مساويًا للإصدار الحالي + 1 وإلا `409 form_version_conflict` (يمنع نشرين متزامنين). حذف حقل
+        يعني أنه لا يظهر في الإصدار الجديد؛ بيانات المواد القديمة تبقى مقروءة بإصدارها. يتحقق الخادم
+        من الجسم بمخطط `schemas/upload-form.json` ومن أن كل `condition.field` يشير إلى حقل موجود.
+        **بوابة v0:** أي حقل بـ `sensitive: true` أو من نوع `location` يُرفض بـ
+        `422 sensitive_fields_not_supported_v0` (وقيد مقابل في قاعدة البيانات) إلى أن يُنفَّذ التشفير على
+        مستوى الحقل والحجب بالصلاحيات (SEC-03/SEC-04).
+      operationId: publishForm
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UploadForm" }
+      responses:
+        "201":
+          description: الإصدار المنشور
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadForm" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
   /forms/current:
     get:
       tags: [forms]
-      summary: نموذج الرفع الحالي (بمخطط schemas/upload-form.json) لنوع مادة معيّن
+      summary: نموذج الرفع الحالي لنوع مادة معيّن
+      description: >-
+        يعيد أحدث إصدار منشور. مع `material_type` تُحذف الحقول التي لا تنطبق على هذا النوع، ويبقى
+        `version` هو نفسه. العميل يحفظ الإصدار مع المسودة ويرسله في `form_version` عند الإنشاء.
       operationId: getCurrentForm
+      x-roles: [authenticated]
       parameters:
-        - { name: material_type, in: query, schema: { type: string } }
+        - name: material_type
+          in: query
+          description: نوع المادة لتصفية الحقول
+          schema: { $ref: "#/components/schemas/MaterialType" }
       responses:
         "200":
           description: النموذج
           content:
             application/json:
               schema: { $ref: "#/components/schemas/UploadForm" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /forms/{version}:
     get:
       tags: [forms]
       summary: نموذج بإصدار محدد (لقراءة المواد القديمة ومسودات الهاتف)
       operationId: getFormVersion
+      x-roles: [authenticated]
       parameters:
-        - { name: version, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - name: version
+          in: path
+          required: true
+          description: رقم الإصدار
+          schema: { type: integer, minimum: 1 }
       responses:
         "200":
           description: النموذج
           content:
             application/json:
               schema: { $ref: "#/components/schemas/UploadForm" }
-        "404": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /notifications:
     get:
       tags: [notifications]
       summary: صندوق الوارد (يبقى الإشعار حتى لو فشلت قناة الهاتف)
       operationId: listNotifications
+      x-roles: [authenticated]
       parameters:
-        - { name: unread_only, in: query, schema: { type: boolean, default: false } }
+        - name: unread_only
+          in: query
+          description: غير المقروء فقط
+          schema: { type: boolean, default: false }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
       responses:
         "200":
-          description: إشعارات
+          description: صفحة إشعارات، الأحدث أولًا
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/Notification" }
+              schema: { $ref: "#/components/schemas/NotificationPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
-  /notifications/{id}/ack:
+  /notifications/{id}/read:
     parameters:
-      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - $ref: "#/components/parameters/NotificationId"
     post:
       tags: [notifications]
-      summary: إقرار الاستلام («اطّلعت» للمشرف، «أقرّ الاستلام» للمنتج)
-      operationId: ackNotification
+      summary: وسم الإشعار مقروءًا (قُرئ)
+      operationId: readNotification
+      x-roles: [authenticated]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "204": { description: تم }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /notifications/{id}/ack:
+    parameters:
+      - $ref: "#/components/parameters/NotificationId"
+    post:
+      tags: [notifications]
+      summary: إقرار الاستلام («اطّلعت» للمشرف، «أقرّ الاستلام» للمنتج)
+      description: >-
+        يوقف سلسلة التصعيد لهذا الإشعار. «اطّلعت» على إشعار «مادة واردة» ينقل المادة إلى
+        `acknowledged` ويُعلم المراسل أن مادته شوهدت.
+      operationId: ackNotification
+      x-roles: [authenticated]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "204": { description: تم }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /push-devices:
+    put:
+      tags: [notifications]
+      summary: تسجيل جهاز لإشعارات الهاتف أو المتصفح (أو تحديث رمزه)
+      description: >-
+        `installation_id` يولّده التطبيق عند أول تشغيل ولا يُشتق من معرّفات الجهاز. رمز الدفع يُحفظ
+        مشفرًا ولا يُعاد في أي استجابة ولا يدخل أي حمولة إشعار.
+      operationId: registerPushDevice
+      x-roles: [authenticated]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PushDeviceRegistration" }
+      responses:
+        "204": { description: سُجِّل }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /push-devices/{installation_id}:
+    parameters:
+      - name: installation_id
+        in: path
+        required: true
+        description: معرّف التثبيت الذي ولّده التطبيق
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [notifications]
+      summary: إلغاء تسجيل جهاز (تسجيل الخروج أو فقد الهاتف)
+      operationId: unregisterPushDevice
+      x-roles: [authenticated]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "204": { description: أُلغي }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /events:
     get:
       tags: [events]
       summary: قراءة أحداث Outbox (لوحة الإدارة والمراقبة)
       operationId: listEvents
+      x-roles: [system_admin]
       parameters:
-        - { name: after, in: query, schema: { type: string, description: مؤشر تسلسلي } }
-        - { name: type, in: query, schema: { type: string } }
+        - name: after
+          in: query
+          description: معرّف آخر حدث مقروء؛ تعاد الأحداث التي تليه
+          schema: { type: string }
+        - name: type
+          in: query
+          description: تصفية بنوع الحدث
+          schema: { type: string }
+        - $ref: "#/components/parameters/Limit"
       responses:
         "200":
-          description: أحداث
+          description: أحداث بترتيب تسلسلي
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/OutboxEvent" }
+              schema: { $ref: "#/components/schemas/EventPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
-    tusdHookSecret:
-      type: apiKey
-      in: header
-      name: X-Hook-Secret
+      description: رمز وصول قصير العمر من `/auth/login` أو `/auth/refresh`
 
   parameters:
     IdempotencyKey:
       name: Idempotency-Key
       in: header
       required: true
+      description: >-
+        مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة.
+        انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول
+        المفاتيح أبدًا.
       schema: { type: string, minLength: 8, maxLength: 128 }
     MaterialId:
       name: id
       in: path
       required: true
+      description: معرّف المادة
       schema: { type: string, format: uuid }
+    UploadId:
+      name: id
+      in: path
+      required: true
+      description: معرّف جلسة الرفع
+      schema: { type: string, format: uuid }
+    NotificationId:
+      name: id
+      in: path
+      required: true
+      description: معرّف الإشعار
+      schema: { type: string, format: uuid }
+    Cursor:
+      name: cursor
+      in: query
+      description: مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor`
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      description: حجم الصفحة
+      schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
 
   responses:
-    Error:
-      description: خطأ
+    BadRequest:
+      description: طلب غير صالح (معاملات استعلام أو مؤشر غير مفهوم)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: لا جلسة صالحة، أو رمز TOTP مطلوب أو خاطئ
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: إجراء لا يملكه الدور على مورد داخل نطاقه (مثل مراسل يحاول اعتماد انتقال)؛ ما خارج النطاق يعود 404 لا 403
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: غير موجود، أو موجود خارج النطاق (لا يُفرَّق بينهما لغير المخوّلين)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: تعارض حالة (انتقال غير مسموح، حجز قائم، إصدار نموذج متجاوز، طلب قيد التنفيذ بالمفتاح نفسه)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    UnprocessableEntity:
+      description: فشل التحقق (الحقول الثابتة أو الديناميكية، مجموع الحصص، إعادة استخدام المفتاح بجسم مختلف)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: تجاوز حد المعدل؛ أعد المحاولة بعد `Retry-After`
+      headers:
+        Retry-After:
+          description: ثوانٍ قبل إعادة المحاولة
+          schema: { type: integer, minimum: 1 }
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -324,18 +958,79 @@ components:
   schemas:
     Error:
       type: object
-      required: [code, message]
+      required: [code, message, request_id]
       properties:
-        code: { type: string }
+        code:
+          type: string
+          description: رمز ثابت يتفرّع عليه العميل؛ الرسالة للبشر فقط
+          enum:
+            - bad_request
+            - unauthorized
+            - totp_required
+            - forbidden_scope
+            - not_found
+            - rate_limited
+            - validation_failed
+            - dynamic_fields_invalid
+            - shares_not_100
+            - idempotency_key_reused
+            - idempotency_in_progress
+            - invalid_transition
+            - already_reserved
+            - upload_state_conflict
+            - checksum_mismatch
+            - form_version_conflict
+            - sensitive_fields_not_supported_v0
+            - recovery_state_conflict
+            - internal_error
         message: { type: string }
-        details: { type: object, additionalProperties: true }
+        request_id: { type: string, description: لتتبع الطلب في السجلات }
+        details:
+          type: object
+          additionalProperties: true
+          description: تفاصيل آلية (مثل مسارات الحقول الفاشلة)؛ لا بيانات كاشفة
+      example:
+        code: invalid_transition
+        message: الانتقال من inbox إلى published غير مسموح في المسار التحريري
+        request_id: 01J9ZK2W5N6Q7R8S9T0V1W2X3Y
+        details: { track: editorial, from: inbox, to: published }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8, writeOnly: true }
+        totp_code:
+          type: string
+          pattern: "^[0-9]{6}$"
+          writeOnly: true
+          description: مطلوب لكل الطاقم بعد التفعيل
 
     Session:
       type: object
-      required: [access_token, expires_at, roles]
+      required: [access_token, refresh_token, expires_at, user_id, roles]
       properties:
-        access_token: { type: string }
-        expires_at: { type: string, format: date-time }
+        access_token:
+          type: string
+          description: >-
+            JWT بعمر لا يتجاوز 15 دقيقة يحمل معرّف الجلسة؛ الإبطال يُفحص عند كل طلب بقائمة إبطال لا بانتظار
+            الانتهاء (SEC-02)
+        refresh_token: { type: string, description: يُدوَّر عند كل تحديث؛ يُحفظ مُجزَّأً فقط }
+        expires_at: { type: string, format: date-time, description: انتهاء رمز الوصول }
+        user_id: { type: string, format: uuid }
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/Role" }
+
+    Me:
+      type: object
+      required: [user_id, email, roles, totp_enabled]
+      properties:
+        user_id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        office_id: { type: [string, "null"], format: uuid, description: مكتب المستخدم }
+        totp_enabled: { type: boolean }
         roles:
           type: array
           items: { $ref: "#/components/schemas/Role" }
@@ -344,92 +1039,188 @@ components:
       type: object
       required: [name, scopes]
       properties:
-        name:
-          type: string
-          enum: [system_admin, editor_in_chief, supervisor, producer, finance, reporter, rights_officer]
+        name: { $ref: "#/components/schemas/RoleName" }
         scopes:
           type: array
-          description: المكاتب أو المحافظات التي يراها الدور
-          items: { type: string }
+          description: المكاتب أو المحافظات التي يراها الدور؛ فارغ = كل شيء (لمدير النظام ورئيس التحرير)
+          items: { $ref: "#/components/schemas/Scope" }
+
+    RoleName:
+      type: string
+      description: أدوار الطاقم في مرحلة التأسيس؛ أدوار المشترين والمؤسسات في المرحلة التجارية
+      enum: [system_admin, editor_in_chief, supervisor, producer, finance, reporter, rights_officer]
+
+    Scope:
+      type: object
+      required: [kind, id]
+      properties:
+        kind: { type: string, enum: [office, governorate] }
+        id: { type: string, description: معرّف المكتب أو اسم المحافظة }
+
+    RecoveryAccepted:
+      type: object
+      description: استجابة ثابتة لا تدل على صحة الرمز
+      required: [accepted]
+      properties:
+        accepted: { type: boolean, const: true }
+
+    UserSession:
+      type: object
+      required: [id, created_at, expires_at, current]
+      properties:
+        id: { type: string, format: uuid }
+        installation_id: { type: [string, "null"], format: uuid, description: معرّف التثبيت الذي ولّده التطبيق؛ ليس معرّف جهاز }
+        platform: { type: [string, "null"], enum: [ios, android, web, null] }
+        created_at: { type: string, format: date-time }
+        last_seen_at: { type: [string, "null"], format: date-time }
+        expires_at: { type: string, format: date-time }
+        current: { type: boolean, description: هل هي الجلسة التي أرسلت الطلب }
+
+    RecoveryRequest:
+      type: object
+      required: [id, state, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        state: { type: string, enum: [pending_approval, approved, rejected, expired] }
+        created_at: { type: string, format: date-time }
+        approved_by: { type: [string, "null"], format: uuid }
+        expires_at: { type: [string, "null"], format: date-time, description: انتهاء صلاحية الطلب أو الرابط }
 
     TechnicalState:
       type: string
-      description: ماذا وصل
+      description: ماذا وصل — pending → proxy_received → original_received → verified؛ failed من أي حالة
       enum: [pending, proxy_received, original_received, verified, failed]
 
     EditorialState:
       type: string
-      description: من وافق
+      description: من وافق — inbox → acknowledged → reviewing → accepted → in_production → final_review → published
       enum: [inbox, acknowledged, reviewing, needs_changes, accepted, in_production, final_review, published, rejected]
 
     RightsState:
       type: string
-      description: ما يُسمح به
+      description: ما يُسمح به — unknown → documented → sellable؛ blocked و withdrawn يوقفان الإتاحة
       enum: [unknown, documented, sellable, blocked, withdrawn]
 
     Priority:
       type: string
+      description: تحدد مسار التنبيه وزمن الاستجابة المطلوب
       enum: [urgent, important, normal]
+
+    MaterialType:
+      type: string
+      enum: [breaking, report, interview, raw_footage, aerial, press_conference, eyewitness, photos]
+
+    Sensitivity:
+      type: object
+      description: سؤال إلزامي؛ أي علم مفعَّل يفعّل التمويه والتحذير ويحوّل المعالجة الآلية إلى المسار المحلي
+      required: [minors, injured, graphic]
+      properties:
+        minors: { type: boolean }
+        injured: { type: boolean }
+        graphic: { type: boolean }
 
     DisplayName:
       type: object
+      description: اسم الظهور للعموم؛ الارتباط الداخلي بالمراسل ثابت لاحتساب عمولته
       required: [mode]
       properties:
         mode: { type: string, enum: [real_name, pseudonym, network] }
-        pseudonym: { type: [string, "null"] }
+        pseudonym: { type: [string, "null"], minLength: 1, maxLength: 80 }
+
+    GpsPoint:
+      type: object
+      description: >-
+        إحداثيات اختيارية تُكتب فقط؛ تُخزَّن مشفرة على مستوى الحقل ولا تُقرأ من هذه الواجهة ولا تظهر في
+        أي معاينة أو إشعار أو تصدير.
+      required: [lat, lng]
+      writeOnly: true
+      properties:
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lng: { type: number, minimum: -180, maximum: 180 }
+        accuracy_m: { type: [number, "null"], minimum: 0 }
 
     Contributor:
       type: object
-      required: [user_id, share_percent]
+      required: [user_id, role, share_percent]
       properties:
         user_id: { type: string, format: uuid }
-        role: { type: string, enum: [photographer, reporter, editor] }
-        share_percent: { type: number, minimum: 0, maximum: 100 }
+        role: { type: string, enum: [photographer, reporter, editor, fixer] }
+        share_percent:
+          type: number
+          minimum: 0
+          maximum: 100
+          multipleOf: 0.01
+          description: بدقة منزلتين عشريتين؛ مجموع المساهمين في المادة = 100.00
+
+    ContributorsSet:
+      type: object
+      required: [contributors]
+      properties:
+        contributors:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/Contributor" }
 
     MaterialCreate:
       type: object
       required: [title, material_types, governorate, city, priority, sensitivity, display_name, form_version, dynamic_fields]
       properties:
-        title: { type: string, minLength: 5, maxLength: 80 }
+        title:
+          type: string
+          minLength: 5
+          maxLength: 80
+          description: الحدود تعدّلها الإدارة؛ هذه حدود v0
         material_types:
           type: array
           minItems: 1
-          items:
-            type: string
-            enum: [breaking, report, interview, raw_footage, aerial, press_conference, eyewitness, photos]
-        governorate: { type: string }
-        city: { type: string }
-        shot_at: { type: [string, "null"], format: date-time, description: تُقرأ من الملف وتُصحَّح يدويًا }
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/MaterialType" }
+        governorate: { type: string, minLength: 1, maxLength: 64 }
+        city: { type: string, minLength: 1, maxLength: 64 }
+        shot_at:
+          type: [string, "null"]
+          format: date-time
+          description: تُقرأ من الملف وتُصحَّح يدويًا
         priority: { $ref: "#/components/schemas/Priority" }
-        sensitivity:
-          type: object
-          required: [minors, injured, graphic]
-          properties:
-            minors: { type: boolean }
-            injured: { type: boolean }
-            graphic: { type: boolean }
+        sensitivity: { $ref: "#/components/schemas/Sensitivity" }
         display_name: { $ref: "#/components/schemas/DisplayName" }
-        form_version: { type: integer, minimum: 1 }
+        gps: { $ref: "#/components/schemas/GpsPoint" }
+        form_version: { type: integer, minimum: 1, description: إصدار النموذج الذي رُسمت به الحقول الديناميكية }
         dynamic_fields:
           type: object
-          description: قيم الحقول الديناميكية وفق form_version؛ يتحقق الخادم بمخطط النموذج
+          description: >-
+            قيم الحقول الديناميكية مفتاحها `key` الحقل؛ يتحقق الخادم بمخطط النموذج ذي الإصدار. في v0 لا
+            يحتوي أي نموذج حقلًا حساسًا أو حقل موقع (بوابة `POST /forms`)، فلا بيانات كاشفة هنا حتى SEC-04.
           additionalProperties: true
         contributors:
           type: array
+          description: إن أُرسلت وجب أن يكون المجموع 100؛ إن غابت فالمراسل مساهم وحيد بـ 100
           items: { $ref: "#/components/schemas/Contributor" }
-        voice_note_upload_id: { type: [string, "null"], format: uuid }
+        voice_note_upload_id:
+          type: [string, "null"]
+          format: uuid
+          description: جلسة رفع الملاحظة الصوتية إن سبقت إنشاء المادة
 
     MaterialUpdate:
       type: object
+      minProperties: 1
       properties:
         title: { type: string, minLength: 5, maxLength: 80 }
         material_types:
           type: array
-          items: { type: string }
-        governorate: { type: string }
-        city: { type: string }
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/MaterialType" }
+        governorate: { type: string, minLength: 1, maxLength: 64 }
+        city: { type: string, minLength: 1, maxLength: 64 }
         shot_at: { type: [string, "null"], format: date-time }
         priority: { $ref: "#/components/schemas/Priority" }
+        sensitivity: { $ref: "#/components/schemas/Sensitivity" }
+        display_name: { $ref: "#/components/schemas/DisplayName" }
+        form_version:
+          type: integer
+          minimum: 1
+          description: يُرسل مع `dynamic_fields` عند إكمال مسودة قديمة بإصدار أحدث
         dynamic_fields:
           type: object
           additionalProperties: true
@@ -438,33 +1229,110 @@ components:
       allOf:
         - $ref: "#/components/schemas/MaterialCreate"
         - type: object
-          required: [id, version, technical_state, editorial_state, rights_state, created_at, reporter_id]
+          required: [id, version, reporter_id, office_id, technical_state, editorial_state, rights_state, files, created_at, updated_at]
           properties:
             id: { type: string, format: uuid }
             version: { type: integer, minimum: 1, description: يرتفع مع كل تعديل بعد الاعتماد }
-            reporter_id: { type: string, format: uuid }
+            reporter_id: { type: string, format: uuid, description: الارتباط الداخلي الثابت بالمراسل }
+            office_id: { type: [string, "null"], format: uuid, description: مكتب المراسل عند الإنشاء (نطاق المادة) }
             technical_state: { $ref: "#/components/schemas/TechnicalState" }
             editorial_state: { $ref: "#/components/schemas/EditorialState" }
             rights_state: { $ref: "#/components/schemas/RightsState" }
             reserved_by: { type: [string, "null"], format: uuid, description: المنتج الذي حجز المادة }
+            reserved_at: { type: [string, "null"], format: date-time }
             files:
               type: array
               items: { $ref: "#/components/schemas/MaterialFile" }
+            redacted_field_keys:
+              type: array
+              description: >-
+                مفاتيح `dynamic_fields` التي حُذفت من هذه الاستجابة بقاعدة الحجب (حقول `sensitive` أو
+                `location`) لأن دور المستدعي ليس في `x-pii-roles`؛ فارغة للمخوّلين.
+              items: { type: string }
             created_at: { type: string, format: date-time }
             updated_at: { type: string, format: date-time }
+      example:
+        id: 7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b
+        version: 1
+        reporter_id: 1e2d3c4b-5a69-4788-9796-a5b4c3d2e1f0
+        office_id: 0f1e2d3c-4b5a-4697-8877-665544332211
+        title: مؤتمر صحفي للدفاع المدني في مدينة غزة
+        material_types: [press_conference]
+        governorate: غزة
+        city: غزة
+        shot_at: "2026-10-19T09:30:00Z"
+        priority: important
+        sensitivity: { minors: false, injured: false, graphic: false }
+        display_name: { mode: network, pseudonym: null }
+        form_version: 1
+        dynamic_fields: { guest_name: المتحدث باسم الدفاع المدني, guest_title: متحدث }
+        contributors:
+          - { user_id: 1e2d3c4b-5a69-4788-9796-a5b4c3d2e1f0, role: photographer, share_percent: 100 }
+        voice_note_upload_id: null
+        technical_state: proxy_received
+        editorial_state: acknowledged
+        rights_state: unknown
+        reserved_by: null
+        reserved_at: null
+        files:
+          - id: 9c8b7a6f-5e4d-4c3b-a2a1-0f9e8d7c6b5a
+            kind: proxy
+            state: received
+            proxy_mode: normal
+            size_bytes: 68157440
+            sha256: null
+            mime_type: video/mp4
+            duration_ms: 540000
+            start_pts_us: 0
+            width: 960
+            height: 540
+            receipt_number: null
+            created_at: "2026-10-19T09:41:12Z"
+            verified_at: null
+        redacted_field_keys: []
+        created_at: "2026-10-19T09:40:03Z"
+        updated_at: "2026-10-19T09:41:12Z"
+
+    MaterialPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Material" }
+        next_cursor: { type: [string, "null"] }
+
+    ReceiptNumber:
+      type: [string, "null"]
+      description: رقم إيصال الاستلام للمراسل؛ يصدر عند مطابقة بصمة الأصل. الصيغة R-YYYYMM-NNNNNN
+      pattern: "^R-[0-9]{6}-[0-9]{6}$"
 
     MaterialFile:
       type: object
-      required: [id, kind, state]
+      required: [id, kind, state, created_at]
       properties:
         id: { type: string, format: uuid }
-        kind: { type: string, enum: [original, proxy, hls, audio, thumbnail, voice_note] }
+        kind:
+          type: string
+          description: الأصل لا يُمس؛ كل معالجة تنتج ملفًا جديدًا
+          enum: [original, proxy, hls, audio, thumbnail, voice_note]
         state: { type: string, enum: [uploading, received, verified, failed] }
-        size_bytes: { type: [integer, "null"] }
-        sha256: { type: [string, "null"], description: تُحسب على الخادم بعد التجميع }
-        duration_ms: { type: [integer, "null"] }
-        start_pts_us: { type: [integer, "null"], description: نقطة البداية الزمنية للأصل؛ تحفظها النسخة الخفيفة }
-        receipt_number: { type: [string, "null"], description: رقم إيصال الاستلام للمراسل }
+        proxy_mode: { type: [string, "null"], enum: [urgent, normal, null], description: وضع النسخة الخفيفة }
+        size_bytes: { type: [integer, "null"], minimum: 0 }
+        sha256:
+          type: [string, "null"]
+          pattern: "^[0-9a-f]{64}$"
+          description: تُحسب على الخادم بعد التجميع
+        mime_type: { type: [string, "null"] }
+        duration_ms: { type: [integer, "null"], minimum: 0 }
+        start_pts_us:
+          type: [integer, "null"]
+          description: نقطة البداية الزمنية للأصل؛ تحفظها النسخة الخفيفة لمحاذاة نقاط القص
+        width: { type: [integer, "null"], minimum: 1 }
+        height: { type: [integer, "null"], minimum: 1 }
+        receipt_number: { $ref: "#/components/schemas/ReceiptNumber" }
+        created_at: { type: string, format: date-time }
+        verified_at: { type: [string, "null"], format: date-time }
 
     UploadSessionCreate:
       type: object
@@ -473,77 +1341,313 @@ components:
         material_id: { type: string, format: uuid }
         kind: { type: string, enum: [original, proxy, voice_note] }
         size_bytes: { type: integer, minimum: 1 }
-        filename: { type: string }
-        proxy_mode: { type: [string, "null"], enum: [urgent, normal, original_only, null] }
+        filename: { type: string, minLength: 1, maxLength: 255, description: اسم الملف على الجهاز؛ لا يُعرض خارج النطاق }
+        mime_type: { type: [string, "null"] }
+        proxy_mode:
+          type: [string, "null"]
+          enum: [urgent, normal, null]
+          description: لـ proxy فقط
+        client_sha256:
+          type: [string, "null"]
+          pattern: "^[0-9a-f]{64}$"
+          description: بصمة اختيارية يحسبها التطبيق في المقدمة حين تسمح البطارية؛ تُقارن بالبصمة على الخادم
         client_fingerprint:
           type: [object, "null"]
           description: بصمة رخيصة لترشيح المكررات فقط (لا تمنح أي حق)
+          required: [size_bytes, head_sha256, tail_sha256]
           properties:
-            size_bytes: { type: integer }
-            head_sha256: { type: string, description: أول ميغابايت }
-            tail_sha256: { type: string, description: آخر ميغابايت }
+            size_bytes: { type: integer, minimum: 1 }
+            head_sha256: { type: string, pattern: "^[0-9a-f]{64}$", description: أول ميغابايت }
+            tail_sha256: { type: string, pattern: "^[0-9a-f]{64}$", description: آخر ميغابايت }
             shot_at: { type: [string, "null"], format: date-time }
 
     UploadSession:
       type: object
-      required: [id, material_id, kind, state, tus_endpoint, part_size_bytes]
+      required: [id, material_id, kind, state, size_bytes, tus_endpoint, tus_metadata, part_size_bytes, bytes_received, expires_at, created_at]
       properties:
         id: { type: string, format: uuid }
         material_id: { type: string, format: uuid }
-        kind: { type: string }
-        state: { type: string, enum: [created, in_progress, completed, verified, failed, deduplicated] }
-        tus_endpoint: { type: string, format: uri }
-        upload_token: { type: string, description: رمز قصير العمر لخادم الرفع }
+        kind: { type: string, enum: [original, proxy, voice_note] }
+        state:
+          type: string
+          description: created → in_progress → completed → verified؛ failed أو deduplicated نهائيتان
+          enum: [created, in_progress, completed, verified, failed, deduplicated]
+        size_bytes: { type: integer, minimum: 1 }
+        tus_endpoint: { type: string, format: uri, description: نقطة إنشاء الرفع (tus 1.0) }
+        tus_metadata:
+          type: object
+          description: أزواج تُرسل كما هي في `Upload-Metadata`؛ تحمل معرّف الجلسة ليربطها الـ hook بالمادة
+          required: [upload_session_id]
+          properties:
+            upload_session_id: { type: string, format: uuid }
+          additionalProperties: { type: string }
         part_size_bytes:
           type: integer
-          description: حجم الجزء الثابت لهذه الجلسة؛ يختاره العميل من قياس الشبكة عند البدء
+          minimum: 1048576
+          description: حجم الجزء الثابت لهذه الجلسة بين الخادم والتخزين؛ يُثبَّت عند البدء ولا يتغير
         bytes_received: { type: integer, minimum: 0 }
-        ietf_resumable: { type: boolean, description: هل الخادم يعرض مسار المسودة التجريبي (تجربة iOS) }
+        ietf_resumable:
+          type: boolean
+          default: false
+          description: هل يعرض الخادم مسار المسودة التجريبي (تجربة iOS، بند القرارات 14)
+        checksum_algorithm:
+          type: string
+          enum: [sha256, crc32c]
+          default: sha256
+          description: خوارزمية checksum للجزء الواحد التي يقبلها خادم الرفع
+        expires_at: { type: string, format: date-time, description: انتهاء الرمز والجلسة إن لم تكتمل }
+        file_id:
+          type: [string, "null"]
+          format: uuid
+          description: ملف المادة الناتج بعد الاكتمال
+        duplicate_of_file_id:
+          type: [string, "null"]
+          format: uuid
+          description: "عند `deduplicated`: الملف الموجود المطابق بالبصمة الكاملة"
+        failure_reason:
+          type: [string, "null"]
+          enum: [checksum_mismatch, invalid_file, expired, aborted, storage_error, null]
+        receipt_number: { $ref: "#/components/schemas/ReceiptNumber" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: [string, "null"], format: date-time }
+      example:
+        id: 5d6c7b8a-9f0e-4d1c-8b2a-3c4d5e6f7a8b
+        material_id: 7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b
+        kind: original
+        state: in_progress
+        size_bytes: 2147483648
+        tus_endpoint: https://ingest.example.invalid/files/
+        tus_metadata: { upload_session_id: 5d6c7b8a-9f0e-4d1c-8b2a-3c4d5e6f7a8b, filename: IMG_0421.MOV }
+        part_size_bytes: 16777216
+        bytes_received: 335544320
+        ietf_resumable: false
+        checksum_algorithm: sha256
+        expires_at: "2026-10-26T09:40:03Z"
+        file_id: null
+        duplicate_of_file_id: null
+        failure_reason: null
+        receipt_number: null
+        created_at: "2026-10-19T09:40:03Z"
+        updated_at: "2026-10-19T10:02:44Z"
+
+    UploadSessionCreated:
+      description: استجابة الإنشاء فقط؛ رمز الرفع لا يُعاد في أي قراءة لاحقة
+      allOf:
+        - $ref: "#/components/schemas/UploadSession"
+        - type: object
+          required: [upload_token, upload_token_expires_at]
+          properties:
+            upload_token:
+              type: string
+              description: "رمز قصير العمر يرسله العميل في `Authorization: Bearer` إلى خادم الرفع؛ يُحفظ مُجزَّأً على الخادم"
+            upload_token_expires_at: { type: string, format: date-time }
+
+    UploadComplete:
+      type: object
+      description: كل ما هنا معلوماتي؛ الخادم يحسب البصمة والحجم بنفسه ويشتق مفتاح التخزين من الجلسة
+      properties:
+        reported_sha256:
+          type: [string, "null"]
+          pattern: "^[0-9a-f]{64}$"
+          description: بصمة يبلّغ عنها العميل للمقارنة فقط؛ لا تُحفظ ولا تُعتمد
+
+    TusdHookRequest:
+      type: object
+      description: جسم خطّاف tusd (الإصدار 2) كما يرسله؛ المفاتيح بحالة tusd نفسها
+      required: [Type, Event]
+      properties:
+        Type:
+          type: string
+          enum: [pre-create, post-finish, post-create, post-receive, post-terminate, pre-finish]
+        Event:
+          type: object
+          required: [Upload, HTTPRequest]
+          properties:
+            Upload:
+              type: object
+              required: [Size, MetaData]
+              properties:
+                ID: { type: [string, "null"], description: فارغ في pre-create }
+                Size: { type: integer, minimum: 0 }
+                Offset: { type: integer, minimum: 0 }
+                MetaData:
+                  type: object
+                  description: ما أرسله العميل في `Upload-Metadata`؛ يلزم `upload_session_id`
+                  required: [upload_session_id]
+                  properties:
+                    upload_session_id: { type: string, format: uuid }
+                  additionalProperties: { type: string }
+                Storage:
+                  type: [object, "null"]
+                  description: يملؤه tusd بعد الإنشاء؛ يُطابَق مع ما تتوقعه الجلسة ولا يُعتمد وحده
+                  properties:
+                    Type: { type: string }
+                    Bucket: { type: string }
+                    Key: { type: string }
+                  additionalProperties: true
+              additionalProperties: true
+            HTTPRequest:
+              type: object
+              description: ترويسة `Authorization` المُمرَّرة تحمل رمز الرفع؛ لا تُسجَّل في السجلات
+              properties:
+                Method: { type: string }
+                URI: { type: string }
+                RemoteAddr: { type: string }
+                Header:
+                  type: object
+                  additionalProperties:
+                    type: array
+                    items: { type: string }
+              additionalProperties: true
+          additionalProperties: true
+
+    TusdHookResponse:
+      type: object
+      description: صيغة استجابة خطّاف tusd؛ `RejectUpload` في pre-create يوقف الرفع برسالة للعميل
+      properties:
+        RejectUpload: { type: boolean, default: false }
+        HTTPResponse:
+          type: object
+          properties:
+            StatusCode: { type: integer, minimum: 100, maximum: 599 }
+            Body: { type: string }
+            Header:
+              type: object
+              additionalProperties: { type: string }
+        ChangeFileInfo:
+          type: object
+          description: pre-create فقط؛ يسمح بتثبيت `ID` ومسار التخزين على ما تحدده الجلسة
+          properties:
+            ID: { type: string }
+            MetaData:
+              type: object
+              additionalProperties: { type: string }
+            Storage:
+              type: object
+              additionalProperties: { type: string }
 
     Transition:
       type: object
       required: [track, to, reason]
       properties:
         track: { type: string, enum: [editorial, technical, rights] }
+        to:
+          type: string
+          description: الحالة الهدف ضمن قيم المسار؛ انظر جدول الانتقالات في وصف العملية
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+        note_timecode_ms:
+          type: [integer, "null"]
+          minimum: 0
+          description: تعليق مثبت على ثانية محددة (مثل طلب تعديل عند 00:42)
+
+    TransitionRecord:
+      type: object
+      required: [id, track, from, to, reason, actor_id, occurred_at]
+      properties:
+        id: { type: string }
+        track: { type: string, enum: [editorial, technical, rights] }
+        from: { type: string }
         to: { type: string }
-        reason: { type: string, minLength: 1 }
-        note_timecode_ms: { type: [integer, "null"], description: تعليق مثبت على ثانية محددة }
+        reason: { type: string }
+        note_timecode_ms: { type: [integer, "null"], minimum: 0 }
+        actor_id: { type: [string, "null"], format: uuid, description: فارغ للانتقالات التي يكتبها الخادم }
+        occurred_at: { type: string, format: date-time }
+
+    Reservation:
+      type: object
+      required: [material_id, reserved_by, reserved_at, releases_at]
+      properties:
+        material_id: { type: string, format: uuid }
+        reserved_by: { type: string, format: uuid }
+        reserved_at: { type: string, format: date-time }
+        releases_at: { type: string, format: date-time, description: التحرير التلقائي بعد الخمول }
 
     UploadForm:
+      $ref: "./schemas/upload-form.json"
+
+    FormVersionSummary:
       type: object
-      description: نموذج ديناميكي بمخطط schemas/upload-form.json
-      required: [version, fields]
+      required: [version, published_at, field_count]
       properties:
         version: { type: integer, minimum: 1 }
-        material_types: { type: array, items: { type: string } }
-        fields:
-          type: array
-          items: { type: object, additionalProperties: true }
+        published_at: { type: string, format: date-time }
+        published_by: { type: [string, "null"], format: uuid }
+        field_count: { type: integer, minimum: 0 }
+        is_current: { type: boolean }
 
     Notification:
       type: object
-      required: [id, type, created_at, state]
+      required: [id, type, state, priority, created_at]
       properties:
         id: { type: string, format: uuid }
-        type: { type: string }
+        type:
+          type: string
+          description: نوع حدث Outbox الذي ولّد الإشعار (schemas/outbox-event.json)
         material_id: { type: [string, "null"], format: uuid }
-        title: { type: string, description: بلا أسماء مصادر محمية ولا موقع دقيق }
-        state: { type: string, enum: [sent, delivered, read, acknowledged] }
-        assignment_state: { type: [string, "null"], enum: [assigned, acknowledged, null] }
+        title:
+          type: string
+          description: رقم المادة وحالتها فقط؛ بلا أسماء مصادر محمية ولا موقع دقيق ولا عناوين تكشف الحدث
+        priority: { $ref: "#/components/schemas/Priority" }
+        state:
+          type: string
+          description: أعلى مرحلة بلغها الإشعار عبر أي قناة
+          enum: [sent, delivered, read, acknowledged]
+        assignment_state:
+          type: [string, "null"]
+          enum: [assigned, acknowledged, null]
+          description: للمهام فقط؛ «أُسند» ثم «أقرّ الاستلام» حين يضغط المستلم
+        escalation_level: { type: integer, minimum: 0, description: 0 = لم يُصعَّد }
         created_at: { type: string, format: date-time }
+        read_at: { type: [string, "null"], format: date-time }
+        acknowledged_at: { type: [string, "null"], format: date-time }
+      example:
+        id: 3a2b1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d
+        type: material.urgent_received
+        material_id: 7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b
+        title: "مادة عاجلة واردة #7b4a1f6e — وصلت المعاينة"
+        priority: urgent
+        state: delivered
+        assignment_state: assigned
+        escalation_level: 0
+        created_at: "2026-10-19T09:41:13Z"
+        read_at: null
+        acknowledged_at: null
+
+    NotificationPage:
+      type: object
+      required: [items, next_cursor, unread_count]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Notification" }
+        next_cursor: { type: [string, "null"] }
+        unread_count: { type: integer, minimum: 0 }
+
+    PushDeviceRegistration:
+      type: object
+      required: [installation_id, platform, token]
+      properties:
+        installation_id:
+          type: string
+          format: uuid
+          description: يولّده التطبيق عند أول تشغيل؛ ليس معرّف جهاز
+        platform: { type: string, enum: [ios, android, web] }
+        token: { type: string, minLength: 1, writeOnly: true, description: رمز APNs أو FCM أو Web Push }
+        app_version: { type: [string, "null"], maxLength: 32 }
 
     OutboxEvent:
+      $ref: "./schemas/outbox-event.json"
+
+    EventPage:
       type: object
-      description: راجع schemas/outbox-event.json
-      required: [id, type, aggregate_type, aggregate_id, occurred_at, idempotency_key]
+      required: [items, next_after]
       properties:
-        id: { type: string }
-        type: { type: string }
-        aggregate_type: { type: string }
-        aggregate_id: { type: string }
-        occurred_at: { type: string, format: date-time }
-        idempotency_key: { type: string }
-        payload: { type: object, additionalProperties: true }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/OutboxEvent" }
+        next_after:
+          type: [string, "null"]
+          description: يُمرَّر في `after` للصفحة التالية
 
 security:
   - bearerAuth: []

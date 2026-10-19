@@ -1,0 +1,9 @@
+{
+  "id": "6",
+  "type": "material.created",
+  "aggregate_type": "material",
+  "aggregate_id": "7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b",
+  "occurred_at": "2026-10-19T09:40:03Z",
+  "idempotency_key": "material.created:7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b",
+  "payload": { "material_id": "7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b", "priority": "normal", "headline": "عنوان يكشف الحدث" }
+}

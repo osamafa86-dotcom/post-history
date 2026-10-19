@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "fields": [
+    { "key": "GuestName", "type": "short_text", "label": { "ar": "اسم", "en": "Name" }, "required": false }
+  ]
+}

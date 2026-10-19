@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "fields": [
+    { "key": "source", "type": "select", "label": { "ar": "المصدر", "en": "Source" }, "required": true }
+  ]
+}

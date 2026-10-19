@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "fields": [
+    { "key": "count", "type": "number", "label": { "ar": "عدد", "en": "Count" }, "required": false, "validation": { "max_length": 5 } }
+  ]
+}

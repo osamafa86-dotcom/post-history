@@ -1,0 +1,256 @@
+-- اختبار دخاني للمخطط: يثبت أن القيود والمحفزات تعمل كما يصفها العقد وADRs.
+-- يعمل داخل معاملة واحدة تُرجَع في النهاية فلا يترك أثرًا. التشغيل: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/smoke.sql
+\set ON_ERROR_STOP on
+\o /dev/null
+BEGIN;
+
+CREATE FUNCTION pg_temp.expect_error(stmt text, expected_sqlstate text) RETURNS void
+LANGUAGE plpgsql AS $$
+BEGIN
+  BEGIN
+    EXECUTE stmt;
+    SET CONSTRAINTS ALL IMMEDIATE;   -- يُطلق القيود المؤجلة الآن بدل نهاية المعاملة
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE = expected_sqlstate THEN
+      RETURN;
+    END IF;
+    RAISE EXCEPTION 'expected SQLSTATE % but got % (%) for: %', expected_sqlstate, SQLSTATE, SQLERRM, stmt
+      USING ERRCODE = 'assert_failure';
+  END;
+  RAISE EXCEPTION 'expected failure % but statement succeeded: %', expected_sqlstate, stmt
+    USING ERRCODE = 'assert_failure';
+END $$;
+
+CREATE FUNCTION pg_temp.assert(cond boolean, msg text) RETURNS void
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF NOT COALESCE(cond, false) THEN
+    RAISE EXCEPTION 'assertion failed: %', msg USING ERRCODE = 'assert_failure';
+  END IF;
+END $$;
+
+-- ---------- seed ----------
+INSERT INTO offices (id, name_ar, name_en, governorate)
+VALUES ('00000000-0000-4000-8000-000000000001', 'مكتب غزة', 'Gaza office', 'غزة');
+
+INSERT INTO users (id, email, password_hash, office_id) VALUES
+  ('00000000-0000-4000-8000-000000000011', 'reporter@example.invalid',   'argon2id$test', '00000000-0000-4000-8000-000000000001'),
+  ('00000000-0000-4000-8000-000000000012', 'supervisor@example.invalid', 'argon2id$test', '00000000-0000-4000-8000-000000000001'),
+  ('00000000-0000-4000-8000-000000000013', 'producer@example.invalid',   'argon2id$test', NULL),
+  ('00000000-0000-4000-8000-000000000014', 'rights@example.invalid',     'argon2id$test', NULL);
+
+INSERT INTO user_roles (user_id, role, scope_kind, scope_id) VALUES
+  ('00000000-0000-4000-8000-000000000011', 'reporter',   'all', ''),
+  ('00000000-0000-4000-8000-000000000012', 'supervisor', 'office', '00000000-0000-4000-8000-000000000001'),
+  ('00000000-0000-4000-8000-000000000013', 'producer',   'all', ''),
+  ('00000000-0000-4000-8000-000000000014', 'rights_officer', 'all', '');
+
+SELECT pg_temp.expect_error($q$
+  INSERT INTO user_roles (user_id, role, scope_kind, scope_id)
+  VALUES ('00000000-0000-4000-8000-000000000012', 'supervisor', 'all', 'office-1') $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE users SET email = 'REPORTER@example.invalid' WHERE id = '00000000-0000-4000-8000-000000000012' $q$, '23505');
+
+-- ---------- forms ----------
+INSERT INTO upload_forms (version, material_types, schema, published_by)
+VALUES (1, '{}', '{"version": 1, "fields": [{"key": "notes", "type": "long_text", "label": {"ar": "ملاحظات", "en": "Notes"}, "required": false}]}',
+        '00000000-0000-4000-8000-000000000012');
+SELECT pg_temp.expect_error($q$ INSERT INTO upload_forms (version, schema) VALUES (2, '{"version": 3, "fields": []}') $q$, '23514');
+SELECT pg_temp.expect_error($q$ INSERT INTO upload_forms (version, schema) VALUES (2, '{"version": 2}') $q$, '23514');
+SELECT pg_temp.expect_error($q$ INSERT INTO upload_forms (version, material_types, schema) VALUES (2, '{podcast}', '{"version": 2, "fields": []}') $q$, '23514');
+-- بوابة v0: لا حقل حساس ولا حقل موقع
+SELECT pg_temp.expect_error($q$ INSERT INTO upload_forms (version, schema) VALUES (2, '{"version": 2, "fields": [{"key": "source_name", "type": "short_text", "label": {"ar": "م", "en": "s"}, "required": false, "sensitive": true}]}') $q$, '23514');
+SELECT pg_temp.expect_error($q$ INSERT INTO upload_forms (version, schema) VALUES (2, '{"version": 2, "fields": [{"key": "loc", "type": "location", "label": {"ar": "م", "en": "l"}, "required": false}]}') $q$, '23514');
+
+-- ---------- materials ----------
+INSERT INTO materials (id, reporter_id, office_id, title, material_types, governorate, city, priority,
+                       sensitivity_minors, sensitivity_injured, sensitivity_graphic, display_name_mode, form_version, dynamic_fields)
+VALUES ('00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000011', '00000000-0000-4000-8000-000000000001',
+        'مؤتمر صحفي للدفاع المدني', '{press_conference}', 'غزة', 'غزة', 'important', false, false, false, 'network', 1, '{"notes": "x"}');
+
+SELECT pg_temp.assert(
+  (SELECT technical_state = 'pending' AND editorial_state = 'inbox' AND rights_state = 'unknown' AND version = 1
+     FROM materials WHERE id = '00000000-0000-4000-8000-000000000101'),
+  'new material starts in pending/inbox/unknown');
+
+SELECT pg_temp.expect_error($q$ UPDATE materials SET priority = 'critical' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET editorial_state = 'approved' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET display_name_mode = 'pseudonym' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET material_types = '{podcast}' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET material_types = '{}' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET reserved_by = '00000000-0000-4000-8000-000000000013' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET dynamic_fields = '[]' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET form_version = 99 WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23503');
+
+-- updated_at يتغير مع التحديث
+UPDATE materials SET city = 'خان يونس' WHERE id = '00000000-0000-4000-8000-000000000101';
+SELECT pg_temp.assert((SELECT updated_at >= created_at FROM materials WHERE id = '00000000-0000-4000-8000-000000000101'), 'updated_at maintained');
+
+-- ---------- contributors: sum must be exactly 100.00 ----------
+SET CONSTRAINTS ALL DEFERRED;
+INSERT INTO material_contributors (material_id, user_id, role, share_percent) VALUES
+  ('00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000011', 'photographer', 60.00),
+  ('00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000013', 'editor', 40.00);
+SET CONSTRAINTS ALL IMMEDIATE;   -- 60 + 40 = 100 → يمر
+
+SET CONSTRAINTS ALL DEFERRED;
+SELECT pg_temp.expect_error($q$
+  UPDATE material_contributors SET share_percent = 30.00
+  WHERE material_id = '00000000-0000-4000-8000-000000000101' AND user_id = '00000000-0000-4000-8000-000000000013' $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
+SELECT pg_temp.expect_error($q$
+  DELETE FROM material_contributors
+  WHERE material_id = '00000000-0000-4000-8000-000000000101' AND user_id = '00000000-0000-4000-8000-000000000013' $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_contributors (material_id, user_id, role, share_percent)
+  VALUES ('00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000014', 'fixer', 0.01) $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_contributors (material_id, user_id, role, share_percent)
+  VALUES ('00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000014', 'fixer', 100.001) $q$, '23514');
+-- الاستبدال الكامل داخل معاملة (PUT /materials/{id}/contributors) يمر لأن القيد مؤجل
+SET CONSTRAINTS ALL DEFERRED;
+DELETE FROM material_contributors WHERE material_id = '00000000-0000-4000-8000-000000000101';
+INSERT INTO material_contributors (material_id, user_id, role, share_percent) VALUES
+  ('00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000011', 'photographer', 33.33),
+  ('00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000013', 'editor', 33.33),
+  ('00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000014', 'fixer', 33.34);
+SET CONSTRAINTS ALL IMMEDIATE;
+SELECT pg_temp.assert((SELECT sum(share_percent) = 100.00 FROM material_contributors WHERE material_id = '00000000-0000-4000-8000-000000000101'), 'shares sum to 100');
+
+-- ---------- transitions ----------
+INSERT INTO material_transitions (material_id, track, from_state, to_state, reason, actor_id)
+VALUES ('00000000-0000-4000-8000-000000000101', 'editorial', 'inbox', 'acknowledged', 'اطّلعت', '00000000-0000-4000-8000-000000000012');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_transitions (material_id, track, from_state, to_state, reason)
+  VALUES ('00000000-0000-4000-8000-000000000101', 'editorial', 'inbox', 'inbox', 'no-op') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_transitions (material_id, track, from_state, to_state, reason)
+  VALUES ('00000000-0000-4000-8000-000000000101', 'legal', 'a', 'b', 'x') $q$, '23514');
+
+-- ---------- uploads & files & receipt ----------
+INSERT INTO upload_sessions (id, material_id, created_by, kind, size_bytes, filename, part_size_bytes, expires_at)
+VALUES ('00000000-0000-4000-8000-000000000201', '00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000011',
+        'original', 2147483648, 'IMG_0421.MOV', 16777216, now() + interval '7 days');
+SELECT pg_temp.expect_error($q$ UPDATE upload_sessions SET bytes_received = 2147483649 WHERE id = '00000000-0000-4000-8000-000000000201' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE upload_sessions SET state = 'failed' WHERE id = '00000000-0000-4000-8000-000000000201' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE upload_sessions SET part_size_bytes = 1024 WHERE id = '00000000-0000-4000-8000-000000000201' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE upload_sessions SET proxy_mode = 'urgent' WHERE id = '00000000-0000-4000-8000-000000000201' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE upload_sessions SET state = 'deduplicated' WHERE id = '00000000-0000-4000-8000-000000000201' $q$, '23514');
+
+INSERT INTO material_files (id, material_id, kind, state, upload_session_id, storage_key, size_bytes)
+VALUES ('00000000-0000-4000-8000-000000000301', '00000000-0000-4000-8000-000000000101', 'original', 'received',
+        '00000000-0000-4000-8000-000000000201', 'uploads/abc', 2147483648);
+UPDATE upload_sessions SET state = 'completed', bytes_received = size_bytes, file_id = '00000000-0000-4000-8000-000000000301'
+WHERE id = '00000000-0000-4000-8000-000000000201';
+
+-- التحقق دون بصمة مرفوض؛ ومعها يصدر رقم إيصال
+SELECT pg_temp.expect_error($q$ UPDATE material_files SET state = 'verified', verified_at = now() WHERE id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
+UPDATE material_files SET state = 'verified', verified_at = now(), sha256 = sha256('abc'::bytea)
+WHERE id = '00000000-0000-4000-8000-000000000301';
+SELECT pg_temp.assert((SELECT receipt_number ~ '^R-[0-9]{6}-[0-9]{6}$' FROM material_files WHERE id = '00000000-0000-4000-8000-000000000301'),
+  'receipt number assigned on verified original');
+SELECT pg_temp.expect_error($q$ UPDATE material_files SET receipt_number = 'R-202610-999999' WHERE id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE material_files SET receipt_number = NULL WHERE id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
+-- لا إيصال لغير الأصل
+INSERT INTO material_files (id, material_id, kind, state, proxy_mode, sha256, verified_at)
+VALUES ('00000000-0000-4000-8000-000000000302', '00000000-0000-4000-8000-000000000101', 'proxy', 'verified', 'normal', sha256('p'::bytea), now());
+SELECT pg_temp.assert((SELECT receipt_number IS NULL FROM material_files WHERE id = '00000000-0000-4000-8000-000000000302'), 'no receipt for proxy');
+SELECT pg_temp.expect_error($q$ UPDATE material_files SET receipt_number = 'R-202610-000001' WHERE id = '00000000-0000-4000-8000-000000000302' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_files (material_id, kind, proxy_mode) VALUES ('00000000-0000-4000-8000-000000000101', 'original', 'urgent') $q$, '23514');
+
+-- ---------- outbox & notifications ----------
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, actor_id, payload)
+VALUES ('material.created', 'material', '00000000-0000-4000-8000-000000000101',
+        'material.created:00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000011',
+        '{"material_id": "00000000-0000-4000-8000-000000000101", "priority": "important"}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('material.created', 'material', '00000000-0000-4000-8000-000000000101', 'material.created:00000000-0000-4000-8000-000000000101', '{}') $q$, '23505');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('upload.verified', 'upload', '00000000-0000-4000-8000-000000000201', 'upload.verified:x', '{"gps": {"lat": 1, "lng": 2}}') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('material.deleted', 'material', '00000000-0000-4000-8000-000000000101', 'material.deleted:x', '{}') $q$, '23514');
+-- القائمة البيضاء: مفتاح خارجها (عنوان المادة) مرفوض حتى لو لم يكن في قائمة الممنوعات الصريحة
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('material.created', 'material', '00000000-0000-4000-8000-000000000101', 'material.created:wl-test',
+          '{"material_id": "00000000-0000-4000-8000-000000000101", "priority": "normal", "title": "اسم يكشف الحدث"}') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('notification.escalated', 'notification', '00000000-0000-4000-8000-000000000101', 'notification.escalated:wl-test',
+          '{"notification_id": "00000000-0000-4000-8000-000000000101", "escalation_level": 1, "source_name": "x"}') $q$, '23514');
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('upload.verified', 'upload', '00000000-0000-4000-8000-000000000201', 'upload.verified:00000000-0000-4000-8000-000000000201',
+        '{"material_id": "00000000-0000-4000-8000-000000000101", "upload_session_id": "00000000-0000-4000-8000-000000000201", "kind": "original", "receipt_number": "R-202610-000001"}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('material.created', 'material', '00000000-0000-4000-8000-000000000101', 'short', '{}') $q$, '23514');
+SELECT pg_temp.assert((SELECT published_at IS NULL AND attempts = 0 FROM outbox_events WHERE idempotency_key = 'material.created:00000000-0000-4000-8000-000000000101'),
+  'new outbox event is pending');
+
+INSERT INTO notifications (user_id, event_id, type, material_id, title, priority, assignment_state, escalate_at)
+SELECT '00000000-0000-4000-8000-000000000012', id, type, '00000000-0000-4000-8000-000000000101', 'مادة واردة #00000000', 'important', 'assigned', now() + interval '5 minutes'
+FROM outbox_events WHERE idempotency_key = 'material.created:00000000-0000-4000-8000-000000000101';
+SELECT pg_temp.expect_error($q$
+  INSERT INTO notifications (user_id, event_id, type, title)
+  SELECT '00000000-0000-4000-8000-000000000012', id, type, 'dup' FROM outbox_events LIMIT 1 $q$, '23505');
+SELECT pg_temp.expect_error($q$ UPDATE notifications SET state = 'read' $q$, '23514');
+UPDATE notifications SET state = 'acknowledged', read_at = now(), acknowledged_at = now(), assignment_state = 'acknowledged';
+INSERT INTO notification_deliveries (notification_id, channel, status) SELECT id, 'apns', 'failed' FROM notifications;
+INSERT INTO notification_deliveries (notification_id, channel, status) SELECT id, 'in_app', 'delivered' FROM notifications;
+SELECT pg_temp.expect_error($q$ INSERT INTO notification_deliveries (notification_id, channel) SELECT id, 'pigeon' FROM notifications $q$, '23514');
+
+-- ---------- sessions (refresh tokens) ----------
+INSERT INTO refresh_tokens (user_id, token_hash, installation_id, platform, expires_at, last_seen_at)
+VALUES ('00000000-0000-4000-8000-000000000011', sha256('rt1'::bytea), gen_random_uuid(), 'ios', now() + interval '30 days', now());
+SELECT pg_temp.expect_error($q$
+  INSERT INTO refresh_tokens (user_id, token_hash, platform, expires_at)
+  VALUES ('00000000-0000-4000-8000-000000000011', sha256('rt2'::bytea), 'blackberry', now() + interval '1 day') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+  VALUES ('00000000-0000-4000-8000-000000000011', sha256('rt1'::bytea), now() + interval '1 day') $q$, '23505');
+
+-- ---------- idempotency keys ----------
+INSERT INTO idempotency_keys (user_id, key, request_fingerprint, state, response_status, response_body)
+VALUES ('00000000-0000-4000-8000-000000000011', 'c9f1e0d2-7a4b-4c3d-9e8f-0a1b2c3d4e5f', sha256('POST/v1/materials{}'::bytea), 'completed', 201, '{"id": "x"}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO idempotency_keys (user_id, key, request_fingerprint)
+  VALUES ('00000000-0000-4000-8000-000000000011', 'c9f1e0d2-7a4b-4c3d-9e8f-0a1b2c3d4e5f', sha256('x'::bytea)) $q$, '23505');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO idempotency_keys (user_id, key, request_fingerprint) VALUES ('00000000-0000-4000-8000-000000000011', 'short', sha256('x'::bytea)) $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO idempotency_keys (user_id, key, request_fingerprint, state)
+  VALUES ('00000000-0000-4000-8000-000000000011', 'another-key-0001', sha256('x'::bytea), 'completed') $q$, '23514');
+
+-- ---------- audit log: hash chain + append-only ----------
+INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+VALUES ('00000000-0000-4000-8000-000000000012', 'recovery.approved', 'user', '00000000-0000-4000-8000-000000000011', '{"note": "verified by phone call"}');
+INSERT INTO audit_log (actor_id, action, target_type, target_id)
+VALUES ('00000000-0000-4000-8000-000000000012', 'material.transition', 'material', '00000000-0000-4000-8000-000000000101');
+SELECT pg_temp.assert(
+  (SELECT a2.prev_hash = a1.hash AND a1.prev_hash IS NULL
+     FROM audit_log a1 JOIN audit_log a2 ON a2.id = a1.id + 1
+    WHERE a1.id = (SELECT min(id) FROM audit_log)),
+  'audit log rows are hash-chained');
+SELECT pg_temp.expect_error($q$ UPDATE audit_log SET action = 'tampered' $q$, '42501');
+SELECT pg_temp.expect_error($q$ DELETE FROM audit_log $q$, '42501');
+SELECT pg_temp.expect_error($q$ TRUNCATE audit_log $q$, '42501');
+
+-- ---------- indexing policy (ADR 0002) ----------
+SELECT pg_temp.assert(
+  NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexdef ILIKE '%USING gin%'),
+  'no GIN index anywhere (dynamic fields are JSONB without a blanket GIN)');
+SELECT pg_temp.assert(
+  (SELECT count(*) = 4 FROM pg_indexes WHERE schemaname = 'public' AND indexname IN
+    ('materials_board_idx', 'materials_reporter_idx', 'materials_governorate_shot_idx', 'materials_technical_inflight_idx')),
+  'composite B-tree indexes on high-frequency material columns exist');
+SELECT pg_temp.assert(
+  (SELECT count(*) = 1 FROM pg_indexes WHERE indexname = 'outbox_events_pending_idx' AND indexdef ILIKE '%WHERE (published_at IS NULL)%'),
+  'outbox dispatcher partial index exists');
+
+\o
+\echo smoke OK
+ROLLBACK;

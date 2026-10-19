@@ -2,55 +2,236 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://post-history/contracts/schemas/outbox-event.json",
   "title": "OutboxEvent",
-  "description": "حدث يُحفظ في جدول Outbox داخل معاملة الحفظ نفسها ثم يُرسل من طابور قابل لإعادة المحاولة. idempotency_key يمنع إنشاء مهمتين أو رسالتين لتكرار واحد.",
+  "description": "حدث يُحفظ في جدول Outbox داخل معاملة الحفظ نفسها ثم يُرسل من طابور قابل لإعادة المحاولة. idempotency_key يمنع إنشاء مهمتين أو رسالتين لتكرار واحد. الأحداث نفسها تُبث على WebSocket وتُقرأ من GET /v1/events. حمولة كل نوع حدث قائمة بيضاء مغلقة (ADR SEC-03): لا أسماء ولا عناوين ولا إحداثيات ولا معرّفات أجهزة، لأن الحمولة قد تصل إلى قنوات خارجية.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "type", "aggregate_type", "aggregate_id", "occurred_at", "idempotency_key", "payload"],
   "properties": {
-    "id": { "type": "string", "description": "تسلسلي أو ULID" },
+    "id": {
+      "description": "تسلسلي متزايد (رقم الصف في جدول Outbox) بصيغة نصية؛ يُستخدم مؤشرًا في `after`",
+      "type": "string",
+      "pattern": "^[0-9]{1,19}$"
+    },
     "type": {
       "type": "string",
       "enum": [
         "material.created",
         "material.urgent_received",
+        "material.updated",
+        "material.version_created",
+        "material.technical_transition",
+        "material.editorial_transition",
+        "material.rights_transition",
+        "material.acknowledged",
+        "material.change_requested",
+        "material.accepted_for_production",
+        "material.reserved",
+        "material.released",
+        "material.contributors_set",
+        "material.published",
+        "upload.started",
         "upload.proxy_received",
         "upload.original_received",
         "upload.verified",
+        "upload.deduplicated",
         "upload.failed",
-        "material.editorial_transition",
-        "material.rights_transition",
-        "material.reserved",
-        "material.released",
-        "material.change_requested",
-        "material.accepted_for_production",
+        "form.published",
         "ai.draft_ready",
-        "material.published",
-        "notification.escalated"
+        "notification.escalated",
+        "auth.recovery_requested",
+        "auth.recovery_approved"
       ]
     },
-    "aggregate_type": { "type": "string", "enum": ["material", "upload", "notification"] },
+    "aggregate_type": { "type": "string", "enum": ["material", "upload", "notification", "form", "user"] },
     "aggregate_id": { "type": "string", "format": "uuid" },
     "occurred_at": { "type": "string", "format": "date-time" },
-    "idempotency_key": { "type": "string", "minLength": 8 },
-    "actor_id": { "type": ["string", "null"], "format": "uuid" },
-    "payload": {
-      "description": "لا أسماء مصادر محمية ولا إحداثيات دقيقة هنا؛ الحمولة قد تصل إلى قنوات خارجية",
-      "type": "object",
-      "additionalProperties": true
+    "idempotency_key": {
+      "description": "فريد لكل حدث؛ يُشتق تحديدًا من (النوع، المجمّع، سبب الحدث) فيتكرر الاستدعاء دون أن يتكرر الحدث",
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 200
     },
+    "actor_id": {
+      "description": "من نفّذ؛ فارغ للأحداث التي يكتبها الخادم (hooks الرفع، التصعيد)",
+      "type": ["string", "null"],
+      "format": "uuid"
+    },
+    "payload": {
+      "description": "مفاتيح معرّفات وحالات فقط؛ المجموعة المسموحة لكل نوع في allOf أدناه. المفاتيح الكاشفة ممنوعة في كل الأنواع.",
+      "type": "object",
+      "propertyNames": {
+        "not": { "enum": ["gps", "lat", "lng", "latitude", "longitude", "device_id", "push_token", "title", "source_name", "email", "phone"] }
+      }
+    },
+    "published_at": {
+      "description": "متى أخرجه المُرسل من Outbox؛ فارغ ما دام في الانتظار",
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "attempts": { "type": "integer", "minimum": 0 },
     "delivery": {
+      "description": "حالة الإرسال لكل قناة (تُقرأ من جدول تسليم الإشعارات)",
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["channel", "status"],
         "properties": {
-          "channel": { "type": "string", "enum": ["in_app", "websocket", "apns", "fcm", "email", "telegram", "whatsapp", "sms"] },
+          "channel": { "type": "string", "enum": ["in_app", "websocket", "apns", "fcm", "web_push", "email", "telegram", "whatsapp", "sms"] },
           "status": { "type": "string", "enum": ["pending", "sent", "delivered", "read", "failed"] },
           "attempts": { "type": "integer", "minimum": 0 },
           "last_error": { "type": ["string", "null"] }
         }
       }
     }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "enum": [
+        "material.created", "material.urgent_received", "material.updated", "material.version_created",
+        "material.acknowledged", "material.change_requested", "material.accepted_for_production",
+        "material.reserved", "material.released", "material.contributors_set", "material.published"] } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "material" },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["material_id", "priority"],
+            "properties": {
+              "material_id": { "$ref": "#/$defs/uuid" },
+              "priority": { "$ref": "#/$defs/priority" },
+              "office_id": { "$ref": "#/$defs/nullableUuid" },
+              "material_version": { "type": "integer", "minimum": 1 },
+              "editorial_state": { "type": "string" },
+              "technical_state": { "type": "string" },
+              "rights_state": { "type": "string" },
+              "reserved_by": { "$ref": "#/$defs/nullableUuid" },
+              "note_timecode_ms": { "type": ["integer", "null"], "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["material.technical_transition", "material.editorial_transition", "material.rights_transition"] } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "material" },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["material_id", "priority", "track", "from", "to"],
+            "properties": {
+              "material_id": { "$ref": "#/$defs/uuid" },
+              "priority": { "$ref": "#/$defs/priority" },
+              "office_id": { "$ref": "#/$defs/nullableUuid" },
+              "track": { "type": "string", "enum": ["technical", "editorial", "rights"] },
+              "from": { "type": "string" },
+              "to": { "type": "string" },
+              "note_timecode_ms": { "type": ["integer", "null"], "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "enum": [
+        "upload.started", "upload.proxy_received", "upload.original_received", "upload.verified", "upload.deduplicated", "upload.failed"] } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "upload" },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["material_id", "kind"],
+            "properties": {
+              "material_id": { "$ref": "#/$defs/uuid" },
+              "upload_session_id": { "$ref": "#/$defs/uuid" },
+              "file_id": { "$ref": "#/$defs/nullableUuid" },
+              "kind": { "type": "string", "enum": ["original", "proxy", "voice_note"] },
+              "priority": { "$ref": "#/$defs/priority" },
+              "receipt_number": { "type": ["string", "null"], "pattern": "^R-[0-9]{6}-[0-9]{6}$" },
+              "failure_reason": { "type": ["string", "null"], "enum": ["checksum_mismatch", "invalid_file", "expired", "aborted", "storage_error", null] },
+              "duplicate_of_file_id": { "$ref": "#/$defs/nullableUuid" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "form.published" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "form" },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["version"],
+            "properties": { "version": { "type": "integer", "minimum": 1 } }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "ai.draft_ready" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "material" },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["material_id", "job_id"],
+            "properties": {
+              "material_id": { "$ref": "#/$defs/uuid" },
+              "job_id": { "$ref": "#/$defs/uuid" },
+              "route": { "type": "string", "enum": ["cloud", "local"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "notification.escalated" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "notification" },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["notification_id", "escalation_level"],
+            "properties": {
+              "notification_id": { "$ref": "#/$defs/uuid" },
+              "material_id": { "$ref": "#/$defs/nullableUuid" },
+              "priority": { "$ref": "#/$defs/priority" },
+              "escalation_level": { "type": "integer", "minimum": 1 },
+              "escalated_to": { "$ref": "#/$defs/uuid" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["auth.recovery_requested", "auth.recovery_approved"] } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "user" },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["recovery_request_id"],
+            "properties": {
+              "recovery_request_id": { "$ref": "#/$defs/uuid" },
+              "office_id": { "$ref": "#/$defs/nullableUuid" }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "uuid": { "type": "string", "format": "uuid" },
+    "nullableUuid": { "type": ["string", "null"], "format": "uuid" },
+    "priority": { "type": "string", "enum": ["urgent", "important", "normal"] }
   }
 }
