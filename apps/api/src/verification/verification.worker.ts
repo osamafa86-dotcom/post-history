@@ -1,7 +1,7 @@
 import { Inject, Injectable, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
 import { asc, eq, sql } from 'drizzle-orm';
 import type { Logger } from 'pino';
-import { APP_CONFIG, type AppConfig } from '../config/config';
+import { APP_CONFIG, type AppConfig, storageConfigured } from '../config/config';
 import { LOGGER } from '../common/logger';
 import { DB, type Database } from '../database/database.module';
 import { uploadSessions } from '../database/schema/schema';
@@ -28,7 +28,13 @@ export class VerificationWorker implements OnApplicationBootstrap, OnApplication
   ) {}
 
   onApplicationBootstrap(): void {
-    if (this.config.UPLOAD_VERIFIER === 'in_process') this.schedule();
+    if (this.config.UPLOAD_VERIFIER !== 'in_process') return;
+    if (!storageConfigured(this.config)) {
+      // خارج الإنتاج فقط (الإنتاج يرفض البدء بلا تخزين): الجلسات تبقى completed حتى يُضبط التخزين
+      this.logger.warn('object storage is not configured: in-process upload verification is off');
+      return;
+    }
+    this.schedule();
   }
 
   async onApplicationShutdown(): Promise<void> {

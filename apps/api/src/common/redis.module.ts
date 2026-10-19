@@ -13,7 +13,11 @@ export const REDIS = Symbol('REDIS');
       provide: REDIS,
       inject: [APP_CONFIG, LOGGER],
       // أوامر لا تنتظر Redis معطّلًا: تفشل فورًا ويتراجع المستدعي إلى احتياطه
-      useFactory: (config: AppConfig, logger: Logger) => {
+      useFactory: (config: AppConfig, logger: Logger): Redis | null => {
+        if (!config.REDIS_URL) {
+          logger.warn('REDIS_URL is not set: login rate limits are per instance (not allowed in production)');
+          return null;
+        }
         const redis = new Redis(config.REDIS_URL, { maxRetriesPerRequest: 1, enableOfflineQueue: false });
         let lastLog = 0;
         redis.on('error', (err: Error) => {
@@ -29,9 +33,9 @@ export const REDIS = Symbol('REDIS');
   exports: [REDIS],
 })
 export class RedisModule implements OnApplicationShutdown {
-  constructor(@Inject(REDIS) private readonly redis: Redis) {}
+  constructor(@Inject(REDIS) private readonly redis: Redis | null) {}
 
   async onApplicationShutdown(): Promise<void> {
-    await this.redis.quit().catch(() => this.redis.disconnect());
+    await this.redis?.quit().catch(() => this.redis?.disconnect());
   }
 }

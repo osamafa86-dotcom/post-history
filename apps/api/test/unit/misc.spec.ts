@@ -121,3 +121,20 @@ describe('rateLimitKeyMaterial', () => {
     expect(a.toString('utf8')).not.toContain('aaaa');
   });
 });
+
+describe('production configuration', () => {
+  const base = {
+    DATABASE_URL: 'postgres://x',
+    JWT_SECRET: 'j'.repeat(40),
+    FIELD_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'),
+    TUSD_HOOK_SECRET: 't'.repeat(40),
+    S3_BUCKET_UPLOADS: 'uploads',
+  };
+  it('requires Redis and storage in production, but not outside it', () => {
+    expect(() => loadConfig({ ...base, NODE_ENV: 'production' } as NodeJS.ProcessEnv)).toThrow(/REDIS_URL.*S3_ENDPOINT|S3_ENDPOINT.*REDIS_URL/);
+    expect(() =>
+      loadConfig({ ...base, NODE_ENV: 'production', REDIS_URL: 'redis://r', UPLOAD_VERIFIER: 'external' } as NodeJS.ProcessEnv),
+    ).not.toThrow();
+    expect(() => loadConfig({ ...base, NODE_ENV: 'development' } as NodeJS.ProcessEnv)).not.toThrow();
+  });
+});

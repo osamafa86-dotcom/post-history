@@ -38,8 +38,8 @@ const schema = z.object({
   INTERNAL_ALLOWED_CIDRS: cidrList.prefault('127.0.0.1/32,::1/128'),
 
   DATABASE_URL: z.string().min(1),
-  // Redis مشترك بين نسخ الخادم (حد المعدل الآن، الطوابير لاحقًا)
-  REDIS_URL: z.string().min(1),
+  // Redis مشترك بين نسخ الخادم (حد المعدل الآن، الطوابير لاحقًا). مطلوب في الإنتاج؛ غيابه خارجه = حدود في الذاكرة
+  REDIS_URL: z.string().min(1).optional(),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).default(10),
 
   JWT_SECRET: z.string().min(32),
@@ -93,11 +93,18 @@ const schema = z.object({
 });
 
 export type AppConfig = z.infer<typeof validated>;
-// التحقق داخل الخادم يحتاج بيانات التخزين كاملة
+// الإنتاج يتطلب Redis وبيانات التخزين للتحقق داخل الخادم؛ خارج الإنتاج يعمل الخادم بدونهما مع تحذير عند البدء
+// (التشغيل المحلي وتشغيل القبول الحي لا يحتاجان Redis ولا MinIO).
+export function storageConfigured(c: { S3_ENDPOINT?: string; S3_ACCESS_KEY?: string; S3_SECRET_KEY?: string }): boolean {
+  return Boolean(c.S3_ENDPOINT && c.S3_ACCESS_KEY && c.S3_SECRET_KEY);
+}
+
 const validated = schema.superRefine((c, ctx) => {
+  if (c.NODE_ENV !== 'production') return;
+  if (!c.REDIS_URL) ctx.addIssue({ code: 'custom', path: ['REDIS_URL'], message: 'required in production' });
   if (c.UPLOAD_VERIFIER !== 'in_process') return;
   for (const k of ['S3_ENDPOINT', 'S3_ACCESS_KEY', 'S3_SECRET_KEY'] as const) {
-    if (!c[k]) ctx.addIssue({ code: 'custom', path: [k], message: 'required when UPLOAD_VERIFIER=in_process' });
+    if (!c[k]) ctx.addIssue({ code: 'custom', path: [k], message: 'required in production when UPLOAD_VERIFIER=in_process' });
   }
 });
 

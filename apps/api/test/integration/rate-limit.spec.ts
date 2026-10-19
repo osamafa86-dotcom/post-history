@@ -1,6 +1,8 @@
 import request from 'supertest';
 import { createHarness, type Harness, seedUser } from './harness';
 
+const login = (h: Harness, body: object) => request(h.app.getHttpServer()).post('/v1/auth/login').send(body);
+
 // حد الدخول في Redis مشترك بين النسخ: المحاولات الفاشلة على نسختين تُعدّ معًا.
 describe('login rate limit across instances (Redis)', () => {
   let a: Harness;
@@ -14,7 +16,6 @@ describe('login rate limit across instances (Redis)', () => {
     await b.close();
   });
 
-  const login = (h: Harness, body: object) => request(h.app.getHttpServer()).post('/v1/auth/login').send(body);
 
   it('failures on two instances share one budget and both instances then refuse', async () => {
     const user = await seedUser(a);
@@ -28,7 +29,7 @@ describe('login rate limit across instances (Redis)', () => {
     const user = await seedUser(a);
     await login(a, { email: user.email, password: 'wrong-password' }).expect(401);
     const Redis = (await import('ioredis')).default;
-    const redis = new Redis(a.config.REDIS_URL);
+    const redis = new Redis(a.config.REDIS_URL!);
     try {
       const keys = await redis.keys('rl:*');
       expect(keys.length).toBeGreaterThan(0);
@@ -59,6 +60,20 @@ describe('login rate limit across instances (Redis)', () => {
       expect(after[0].n - before[0].n).toBe(1);
     } finally {
       await down.close();
+    }
+  });
+});
+
+describe('without REDIS_URL (development only)', () => {
+  it('still limits failed logins per instance', async () => {
+    const h = await createHarness({ env: { REDIS_URL: '' } });
+    try {
+      expect(h.config.REDIS_URL).toBeUndefined();
+      const user = await seedUser(h);
+      for (let i = 0; i < 5; i++) await login(h, { email: user.email, password: 'wrong-password' }).expect(401);
+      await login(h, { email: user.email, password: user.password }).expect(429);
+    } finally {
+      await h.close();
     }
   });
 });

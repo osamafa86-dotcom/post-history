@@ -33,23 +33,19 @@ export class AuthService {
     @Inject(DB) private readonly db: Database,
     @Inject(APP_CONFIG) config: AppConfig,
     private readonly sessions: SessionService,
-    @Inject(REDIS) redis: Redis,
+    @Inject(REDIS) redis: Redis | null,
     @Inject(LOGGER) private readonly logger: Logger,
   ) {
     const windowMs = config.LOGIN_RATE_LIMIT_WINDOW_SECONDS * 1000;
     // الحدّان يتشاركان حالة صحة Redis: نوبة التعطل تُبلَّغ مرة واحدة
     const health = this.limiterHealth();
     const keyMaterial = rateLimitKeyMaterial(config.JWT_SECRET);
-    this.byIp = new ResilientRateLimiter(
-      new RedisRateLimiter(redis, 'login-ip', config.LOGIN_RATE_LIMIT_IP_MAX, windowMs, keyMaterial),
-      new MemoryRateLimiter(config.LOGIN_RATE_LIMIT_IP_MAX, windowMs),
-      health,
-    );
-    this.byEmailIp = new ResilientRateLimiter(
-      new RedisRateLimiter(redis, 'login-email-ip', config.LOGIN_RATE_LIMIT_MAX, windowMs, keyMaterial),
-      new MemoryRateLimiter(config.LOGIN_RATE_LIMIT_MAX, windowMs),
-      health,
-    );
+    const limiter = (name: string, max: number): RateLimiter =>
+      redis
+        ? new ResilientRateLimiter(new RedisRateLimiter(redis, name, max, windowMs, keyMaterial), new MemoryRateLimiter(max, windowMs), health)
+        : new MemoryRateLimiter(max, windowMs);
+    this.byIp = limiter('login-ip', config.LOGIN_RATE_LIMIT_IP_MAX);
+    this.byEmailIp = limiter('login-email-ip', config.LOGIN_RATE_LIMIT_MAX);
     this.fieldKey = Buffer.from(config.FIELD_ENCRYPTION_KEY, 'base64');
     this.dummyHash = argon2Hash(randomToken());
   }
