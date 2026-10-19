@@ -2,6 +2,7 @@
 # ويبدّل ملف السرعة والتأخير.
 {
   "name": "field-switch",
+  "client_chunk_mb": 2,
   "listen_port": 18083,
   "uplink_kbps": 5000,
   "downlink_kbps": 20000,

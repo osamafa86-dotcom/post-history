@@ -67,7 +67,9 @@ def apply_profile(name, p):
                                              "attributes": {"latency": p["latency_ms"], "jitter": p["jitter_ms"]}})
 
 
-def setup_proxy(sc):
+def setup_proxy(sc, profile=None):
+    """ينشئ الوسيط من جديد بملف السرعة. الحذف يقطع الاتصالات القائمة؛ إزالة سم bandwidth
+    من وسيط فيه نقل جارٍ قد تعلق واجهة toxiproxy، لذلك لا تُعدَّل السموم على وسيط حي."""
     name = "netlab-" + sc["name"]
     try:
         toxi("DELETE", f"/proxies/{name}")
@@ -75,7 +77,7 @@ def setup_proxy(sc):
         pass
     toxi("POST", "/proxies", {"name": name, "listen": f"0.0.0.0:{sc['listen_port']}",
                               "upstream": UPSTREAM, "enabled": True})
-    apply_profile(name, sc)
+    apply_profile(name, profile or sc)
     return name
 
 
@@ -86,28 +88,32 @@ class Driver(threading.Thread):
         super().__init__(daemon=True)
         self.name_, self.sc, self.log = name, sc, log
         self.stop = threading.Event()
+        self.scale = 1.0
 
     def run(self):
         t0 = now()
-        for ev in self.sc["events"]:
-            if ev["type"] == "blackout":
-                self._blackout(ev, t0)
-            elif ev["type"] == "switch":
-                self._switch(ev, t0)
+        try:
+            for ev in self.sc["events"]:
+                if ev["type"] == "blackout":
+                    self._blackout(ev, t0)
+                elif ev["type"] == "switch":
+                    self._switch(ev, t0)
+        except Exception as e:  # السيناريو لم يكتمل: يظهر في النتيجة ولا يُخفى
+            self.log.append((round(now() - t0, 1), f"driver-error:{type(e).__name__}"))
 
     def _wait_until(self, t):
         return not self.stop.wait(max(0, t - now()))
 
     def _blackout(self, ev, t0):
         k = 1
-        while self._wait_until(t0 + k * ev["every_s"]):
+        while self._wait_until(t0 + k * ev["every_s"] * self.scale):
             # timeout=0: لا يمر شيء والاتصال يبقى معلقًا حتى إزالة السم (ثقب أسود لا قطع).
             for stream in ("upstream", "downstream"):
                 toxi("POST", f"/proxies/{self.name_}/toxics",
                      {"name": f"blackout_{stream}", "type": "timeout", "stream": stream,
                       "attributes": {"timeout": 0}})
             self.log.append((round(now() - t0, 1), "blackout-start"))
-            if not self._wait_until(now() + ev["duration_s"]):
+            if not self._wait_until(now() + ev["duration_s"] * self.scale):
                 return
             for stream in ("upstream", "downstream"):
                 toxi("DELETE", f"/proxies/{self.name_}/toxics/blackout_{stream}")
@@ -116,12 +122,10 @@ class Driver(threading.Thread):
 
     def _switch(self, ev, t0):
         k = 1
-        while self._wait_until(t0 + k * ev["every_s"]):
+        while self._wait_until(t0 + k * ev["every_s"] * self.scale):
             prof = ev["profiles"][k % len(ev["profiles"])]
             # تغيّر الشبكة = عنوان جديد: الاتصالات القائمة تنقطع.
-            toxi("POST", f"/proxies/{self.name_}", {"enabled": False})
-            apply_profile(self.name_, prof)
-            toxi("POST", f"/proxies/{self.name_}", {"enabled": True})
+            setup_proxy(self.sc, prof)
             self.log.append((round(now() - t0, 1), "switch-" + prof["label"]))
             k += 1
 
@@ -152,7 +156,7 @@ class Session:
             self.connected_since = None
 
 
-def request(host, method, path, headers, body_file=None, offset=0, length=0, timeout=15, progress=None):
+def request(host, method, path, headers, body_file=None, offset=0, length=0, timeout=60, progress=None):
     conn = http.client.HTTPConnection(host, timeout=timeout)
     try:
         conn.putrequest(method, path, skip_accept_encoding=True)
@@ -175,7 +179,7 @@ def request(host, method, path, headers, body_file=None, offset=0, length=0, tim
         conn.close()
 
 
-def upload(path, size, host, chunk, deadline, s):
+def upload(path, size, host, chunk, deadline, s, timeout):
     tus = {"Tus-Resumable": "1.0.0"}
     meta = "filename " + base64.b64encode(os.path.basename(path).encode()).decode()
     url = None
@@ -185,7 +189,8 @@ def upload(path, size, host, chunk, deadline, s):
         if t > deadline:
             return None, 0
         try:
-            st, h = request(host, "POST", "/files/", {**tus, "Upload-Length": str(size), "Upload-Metadata": meta})
+            st, h = request(host, "POST", "/files/", {**tus, "Upload-Length": str(size), "Upload-Metadata": meta},
+                           timeout=timeout)
             if st != 201:
                 raise IOError(f"create: HTTP {st}")
             url = urllib.parse.urlsplit(h["location"]).path
@@ -201,7 +206,7 @@ def upload(path, size, host, chunk, deadline, s):
             t = now()
             try:
                 if need_head:
-                    st, h = request(host, "HEAD", url, tus)
+                    st, h = request(host, "HEAD", url, tus, timeout=timeout)
                     if st != 200:
                         raise IOError(f"head: HTTP {st}")
                     offset = int(h["upload-offset"])
@@ -214,7 +219,7 @@ def upload(path, size, host, chunk, deadline, s):
                 st, h = request(host, "PATCH", url,
                                 {**tus, "Upload-Offset": str(offset),
                                  "Content-Type": "application/offset+octet-stream",
-                                 "Content-Length": str(n)}, f, offset, n)
+                                 "Content-Length": str(n)}, f, offset, n, timeout=timeout)
                 if st != 204:
                     raise IOError(f"patch: HTTP {st}")
                 offset = int(h["upload-offset"])
@@ -277,10 +282,12 @@ def run(a):
     name = setup_proxy(sc)
     events = []
     driver = Driver(name, sc, events)
+    driver.scale = a.event_scale
+    chunk = (a.chunk_mb or sc.get("client_chunk_mb", 4)) << 20
     started_at, t0 = utc(), now()
     driver.start()
     s = Session()
-    url, offset = upload(path, size, f"127.0.0.1:{sc['listen_port']}", a.chunk_mb << 20, t0 + a.max_seconds, s)
+    url, offset = upload(path, size, f"127.0.0.1:{sc['listen_port']}", chunk, t0 + a.max_seconds, s, a.timeout_s)
     elapsed = now() - t0
     driver.stop.set()
     ended_at = utc()
@@ -298,7 +305,8 @@ def run(a):
         "resumes": s.resumes,
         "connection_failures": s.failures,
         "longest_connected_window_s": round(max(s.windows), 1) if s.windows else 0,
-        "client_chunk_bytes": a.chunk_mb << 20,
+        "client_chunk_bytes": chunk,
+        "client_timeout_s": a.timeout_s,
         "parts_ok": len(ok_parts),
         "parts_failed": sum(1 for p in s.parts if not p[2]),
     }
@@ -333,7 +341,7 @@ def run(a):
         "file": {"size_bytes": size, "codec": "synthetic-random"},
         "metrics": m,
         "notes": (f"toxiproxy 2.12.0 -> nginx tusd-proxy -> tusd v2.10.1 -> MinIO (local compose). "
-                  f"Client: tools/netlab/netlab.py, time box {a.max_seconds}s. "
+                  f"Client: tools/netlab/netlab.py, time box {a.max_seconds}s, event scale {a.event_scale}. "
                   + ("" if emulated else f"loss_pct target {sc['loss_pct']} not emulated by toxiproxy (ADR 0005). ")
                   + "Connected window = client-observed time from first successful request to next failure."),
     }
@@ -352,7 +360,9 @@ def main():
     r.add_argument("--size-mb", type=int, default=500)
     r.add_argument("--file", help="ملف اصطناعي موجود (لا ملفات مراسلين)")
     r.add_argument("--workdir", default=os.environ.get("TMPDIR", "/tmp"))
-    r.add_argument("--chunk-mb", type=int, default=4)
+    r.add_argument("--chunk-mb", type=int, help="حجم PATCH؛ الافتراضي client_chunk_mb في السيناريو")
+    r.add_argument("--timeout-s", type=int, default=60, help="مهلة خمول المقبس للعميل")
+    r.add_argument("--event-scale", type=float, default=1.0, help="<1 لتجربة سريعة فقط؛ القياس بـ 1")
     r.add_argument("--max-seconds", type=int, default=7200)
     r.add_argument("--out", required=True)
     a = p.parse_args()

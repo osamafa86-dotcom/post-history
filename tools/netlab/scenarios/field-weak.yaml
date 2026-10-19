@@ -2,6 +2,7 @@
 # انقطاع كل دقيقتين لمدة 20 ثانية (ثقب أسود: البيانات لا تمر والاتصالات القائمة تتعلق).
 {
   "name": "field-weak",
+  "client_chunk_mb": 1,
   "listen_port": 18082,
   "uplink_kbps": 500,
   "downlink_kbps": 1000,
