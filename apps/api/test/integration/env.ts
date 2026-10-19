@@ -11,3 +11,4 @@ process.env.TUSD_OBJECT_PREFIX = 'tus/';
 process.env.OUTBOX_DISPATCHER_ENABLED = 'false';
 process.env.LOGIN_RATE_LIMIT_MAX = '5';
 process.env.LOGIN_RATE_LIMIT_IP_MAX = '10000';
+process.env.RESERVATION_SWEEP_ENABLED = 'false';

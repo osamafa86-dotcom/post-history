@@ -63,12 +63,22 @@ describe('auth (/v1/auth/*)', () => {
     expect(JSON.stringify(res.body)).not.toContain('not-an-email');
   });
 
-  it('rate-limits login attempts per email with Retry-After', async () => {
+  it('rate-limits failed attempts per email and address with Retry-After', async () => {
     const user = await seedUser(h);
     for (let i = 0; i < 5; i++) await login({ email: user.email, password: 'wrong-password' }).expect(401);
     const res = await login({ email: user.email, password: user.password }).expect(429);
     expect(res.body.code).toBe('rate_limited');
     expect(Number(res.headers['retry-after'])).toBeGreaterThan(0);
+  });
+
+  it('successful logins do not consume the failure budget', async () => {
+    const user = await seedUser(h);
+    for (let i = 0; i < 8; i++) await login({ email: user.email, password: user.password }).expect(200);
+    for (let i = 0; i < 4; i++) await login({ email: user.email, password: 'wrong-password' }).expect(401);
+    await login({ email: user.email, password: user.password }).expect(200);
+    // النجاح يصفّر عدّاد (البريد، العنوان)
+    for (let i = 0; i < 4; i++) await login({ email: user.email, password: 'wrong-password' }).expect(401);
+    await login({ email: user.email, password: user.password }).expect(200);
   });
 
   it('GET /auth/me returns roles and active permissions; 401 without a token', async () => {

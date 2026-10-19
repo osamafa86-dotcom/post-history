@@ -8,7 +8,7 @@ async function bootstrap(): Promise<void> {
   const config = loadConfig();
   const logger = createLogger(config.LOG_LEVEL);
   const app = await NestFactory.create(AppModule.forRoot(config, logger), { logger: new PinoNestLogger(logger) });
-  configureApp(app, logger);
+  configureApp(app, config, logger);
   await app.listen(config.PORT, config.HOST);
   logger.info({ port: config.PORT }, 'api listening');
 }

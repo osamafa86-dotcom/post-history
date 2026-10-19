@@ -93,6 +93,12 @@ describe('tusd hooks (/internal/tusd-hooks/{hook_token}, SEC-06)', () => {
     expect(await events(s.id)).toEqual([
       { type: 'upload.original_received', payload: { material_id: s.materialId, upload_session_id: s.id, kind: 'original' } },
     ]);
+    // المسار الفني للمادة يتقدم بانتقال يكتبه الخادم (actor فارغ) مرة واحدة رغم التكرار
+    const { rows: m } = await h.pool.query(`SELECT technical_state FROM materials WHERE id = $1`, [s.materialId]);
+    expect(m[0].technical_state).toBe('original_received');
+    const { rows: t } = await h.pool.query(`SELECT from_state, to_state, actor_id FROM material_transitions WHERE material_id = $1`, [s.materialId]);
+    expect(t).toEqual([{ from_state: 'pending', to_state: 'original_received', actor_id: null }]);
+    expect((await events(s.materialId)).map((e) => e.type)).toEqual(['material.technical_transition']);
   });
 
   it('post-finish with a storage key that does not match the session fails it with storage_error', async () => {
@@ -128,6 +134,20 @@ describe('tusd hooks (/internal/tusd-hooks/{hook_token}, SEC-06)', () => {
     const body = { ...postFinish(s.id, `tus/${s.id}`), Type: 'post-receive' };
     expect((await hook(body).expect(200)).body).toEqual({ RejectUpload: false });
     expect((await session(s.id)).state).toBe('created');
+  });
+
+  it('/internal/* answers 404 to socket addresses outside INTERNAL_ALLOWED_CIDRS, even with X-Forwarded-For', async () => {
+    const outside = await createHarness({ env: { INTERNAL_ALLOWED_CIDRS: '10.0.0.0/8', TRUSTED_PROXY_CIDRS: '127.0.0.1/32' } });
+    try {
+      const res = await request(outside.app.getHttpServer())
+        .post(`/internal/tusd-hooks/${outside.config.TUSD_HOOK_SECRET}`)
+        .set('X-Forwarded-For', '10.1.2.3')
+        .send({})
+        .expect(404);
+      expect(res.body.code).toBe('not_found');
+    } finally {
+      await outside.close();
+    }
   });
 
   it('is not reachable under /v1', async () => {

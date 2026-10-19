@@ -16,15 +16,17 @@ export interface Harness {
   close(): Promise<void>;
 }
 
-export async function createHarness(extra: { controllers?: unknown[]; logger?: Logger } = {}): Promise<Harness> {
-  const config = loadConfig();
+export async function createHarness(
+  extra: { controllers?: unknown[]; logger?: Logger; env?: Record<string, string> } = {},
+): Promise<Harness> {
+  const config = loadConfig({ ...process.env, ...extra.env });
   const logger = extra.logger ?? createLogger('silent');
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule.forRoot(config, logger)],
     controllers: (extra.controllers ?? []) as never[],
   }).compile();
   const app = moduleRef.createNestApplication({ logger: false });
-  configureApp(app, logger);
+  configureApp(app, config, logger);
   await app.init();
   const pool = new Pool({ connectionString: config.DATABASE_URL, max: 4 });
   return {
@@ -96,4 +98,22 @@ export async function seedUploadSession(
     [m[0]!.id, reporterId, opts.kind ?? 'original', opts.state ?? 'created', opts.size ?? 1000, sha256(uploadToken), opts.expiresInSeconds ?? 3600],
   );
   return { id: rows[0]!.id, materialId: m[0]!.id, uploadToken };
+}
+
+export async function loginAs(
+  h: Harness,
+  roles: Array<{ role: string; scopeKind?: string; scopeId?: string }>,
+  opts: { officeId?: string } = {},
+): Promise<SeededUser & { token: string }> {
+  const user = await seedUser(h, { roles });
+  if (opts.officeId) await h.pool.query(`UPDATE users SET office_id = $2 WHERE id = $1`, [user.id, opts.officeId]);
+  const { default: request } = await import('supertest');
+  const res = await request(h.app.getHttpServer()).post('/v1/auth/login').send({ email: user.email, password: user.password });
+  if (res.status !== 200) throw new Error(`login failed: ${res.status}`);
+  return { ...user, token: res.body.access_token };
+}
+
+export async function currentFormVersion(h: Harness): Promise<number> {
+  const { rows } = await h.pool.query<{ v: number | null }>(`SELECT max(version) AS v FROM upload_forms`);
+  return rows[0]!.v ?? 0;
 }

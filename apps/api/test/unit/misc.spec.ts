@@ -2,7 +2,7 @@ import { canonicalJson } from '../../src/common/canonical-json';
 import { validateBody } from '../../src/common/contract';
 import { ApiError } from '../../src/common/errors';
 import { redactPath } from '../../src/common/logger';
-import { loadConfig } from '../../src/config/config';
+import { addressAllowed, blockListOf, loadConfig } from '../../src/config/config';
 import { requiresIdempotencyKey } from '../../src/idempotency/idempotency.interceptor';
 import { FixedWindowRateLimiter } from '../../src/identity/rate-limiter';
 
@@ -36,14 +36,39 @@ describe('requiresIdempotencyKey', () => {
 });
 
 describe('FixedWindowRateLimiter', () => {
-  it('blocks after max hits and resets after the window', () => {
+  it('blocks once recorded failures reach max, resets after the window or on reset()', () => {
     let now = 0;
     const rl = new FixedWindowRateLimiter(2, 10_000, () => now);
-    expect([rl.hit('k'), rl.hit('k')]).toEqual([0, 0]);
-    expect(rl.hit('k')).toBe(10);
-    expect(rl.hit('other')).toBe(0);
+    expect(rl.retryAfter('k')).toBe(0);
+    rl.record('k');
+    expect(rl.retryAfter('k')).toBe(0);
+    rl.record('k');
+    expect(rl.retryAfter('k')).toBe(10);
+    expect(rl.retryAfter('other')).toBe(0);
     now = 10_000;
-    expect(rl.hit('k')).toBe(0);
+    expect(rl.retryAfter('k')).toBe(0);
+    rl.record('k');
+    rl.record('k');
+    rl.reset('k');
+    expect(rl.retryAfter('k')).toBe(0);
+  });
+});
+
+describe('addressAllowed', () => {
+  const list = blockListOf(['127.0.0.1/32', '172.16.0.0/12', '::1/128']);
+  it.each([
+    ['127.0.0.1', true],
+    ['::ffff:127.0.0.1', true],
+    ['172.20.0.5', true],
+    ['::1', true],
+    ['8.8.8.8', false],
+    ['::ffff:8.8.8.8', false],
+    [undefined, false],
+  ])('%s → %s', (addr, expected) => {
+    expect(addressAllowed(list, addr)).toBe(expected);
+  });
+  it('rejects malformed CIDR configuration by name', () => {
+    expect(() => loadConfig({ INTERNAL_ALLOWED_CIDRS: '10.0.0.0/33' } as NodeJS.ProcessEnv)).toThrow(/INTERNAL_ALLOWED_CIDRS/);
   });
 });
 
@@ -65,5 +90,15 @@ describe('loadConfig', () => {
   it('names invalid variables without echoing their values', () => {
     expect(() => loadConfig({ JWT_SECRET: 'too-short-secret-value' } as NodeJS.ProcessEnv)).toThrow(/JWT_SECRET/);
     expect(() => loadConfig({ JWT_SECRET: 'too-short-secret-value' } as NodeJS.ProcessEnv)).not.toThrow(/too-short/);
+  });
+});
+
+describe('contract validation precision', () => {
+  it('accepts two-decimal shares like 33.33 under multipleOf 0.01', () => {
+    const body = { contributors: [{ user_id: '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d', role: 'reporter', share_percent: 33.33 }] };
+    expect(() => validateBody('/materials/{id}/contributors', 'put', body)).not.toThrow();
+    expect(() =>
+      validateBody('/materials/{id}/contributors', 'put', { contributors: [{ ...body.contributors[0], share_percent: 33.333 }] }),
+    ).toThrow();
   });
 });

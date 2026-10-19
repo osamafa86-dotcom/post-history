@@ -83,10 +83,8 @@ jobs:
         run: scripts/check-drizzle-schema.sh
       - name: Typecheck (types generated from contracts/openapi.yaml)
         run: npm run typecheck
-      - name: Unit tests
-        run: npm test
-      - name: Integration tests
-        run: npm run test:integration
+      - name: Unit and integration tests with coverage report
+        run: npm run test:coverage
       - name: Build
         run: npm run build
 
