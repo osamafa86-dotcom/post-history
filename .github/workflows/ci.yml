@@ -187,8 +187,14 @@ jobs:
             -e MEDIA_IT_S3_SECRET_KEY=ci-only-secret media-worker:test python -m pytest -q -rs
       - name: Runtime image builds
         run: docker build --target runtime -t media-worker:runtime workers/media
+      - name: Proxy A/V sync on synthetic marker clips (tools/render-bench)
+        run: |
+          docker run --rm -v "$PWD/tools/render-bench:/bench:ro" -w /bench -e PYTHONPATH=/app/src:/bench \
+            media-worker:test python -m pytest -q -p no:cacheprovider test_av_sync.py
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
-      - name: Media measurements match measurement.json
-        run: npx -y -p ajv-cli@5.0.0 -p ajv-formats@2.1.1 ajv validate --spec=draft2020 -c ajv-formats -s contracts/schemas/measurement.json -d "docs/measurements/media/*.json"
+      - name: Media and render-bench measurements match measurement.json
+        run: |
+          npx -y -p ajv-cli@5.0.0 -p ajv-formats@2.1.1 ajv validate --spec=draft2020 -c ajv-formats -s contracts/schemas/measurement.json -d "docs/measurements/media/*.json"
+          npx -y -p ajv-cli@5.0.0 -p ajv-formats@2.1.1 ajv validate --spec=draft2020 -c ajv-formats -s contracts/schemas/measurement.json -d "docs/measurements/render-bench/*.json"
