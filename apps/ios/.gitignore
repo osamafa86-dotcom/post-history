@@ -1,0 +1,8 @@
+# يُولَّد من project.yml بـ XcodeGen
+*.xcodeproj
+*.xcworkspace
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+scripts/node_modules/

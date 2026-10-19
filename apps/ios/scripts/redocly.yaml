@@ -1,0 +1,6 @@
+# إعداد تجميع العقد لمولّد عميل iOS: يحل الإحالات الخارجية (schemas/*.json) ويحذف المسارات الداخلية (x-internal، ADR SEC-06).
+apis:
+  ios:
+    root: ../../../contracts/openapi.yaml
+    decorators:
+      remove-x-internal: on
