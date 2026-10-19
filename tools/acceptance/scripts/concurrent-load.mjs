@@ -2,7 +2,7 @@
 //   LOAD_API_URL  LOAD_TOKENS  + HOOK_BASE_URL HOOK_TOKEN HOOK_OBJECT_PREFIX HOOK_BUCKET  S3_*  LIVE_DATABASE_URL
 //   LOAD_CONCURRENCY=60  LOAD_SIZE_MB=1 (CI: the hook/S3/verification path, tusd played by this script)
 //   LOAD_MODE=tus LOAD_TUS_ENDPOINT=http://…/files/  LOAD_SIZE_MB=2048  the real path: every upload goes through tusd (plan size; manual, see README)
-// "No degradation" has no number in the plan. Assumption, stated in every result: the p95 time from upload finish to the
+// "No degradation" has no number in the plan. Working criterion until the field trial (coordinator decision), stated in every result: the p95 time from upload finish to the
 // reporter's receipt notification under load stays within LOAD_MAX_RATIO (default 5x) of the same p95 measured one upload
 // at a time, or within LOAD_MAX_EXTRA_S (default 10 s) of it, whichever is larger.
 import { createHash, randomUUID } from "node:crypto";
@@ -87,7 +87,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       notification_s_p50_load: percentile(sec(loaded), 50), notification_s_p95_load: pLoad, notification_s_max_load: sec(loaded).at(-1),
       wall_s: Number(wall.toFixed(1)), degradation_ratio_p95: Number((pLoad / pBase).toFixed(2)), degradation_threshold: `${maxRatio}x or +${maxExtra}s`,
       hook_latency_ms_p95: hooks.latencies.length ? percentile([...hooks.latencies].sort((a, b) => a - b), 95) : "n/a", upload_path_real_tusd: tus, upload_server_temp_disk_measured: false, failures: fails.length,
-    }, `${tus ? "عبر tusd حقيقي" : "مسار الخطّاف وS3 والتحقق على الخادم (tusd مُحاكى)"} بملفات ${sizeMb} ميغابايت؛ لا قياس لقرص خادم الرفع المؤقت، وحد «لا تدهور» افتراضي من الجودة (لا رقم له في الخطة)؛ حجم الخطة (60 × 2 غيغابايت عبر tusd) سكربت يدوي`);
+    }, `${tus ? "عبر tusd حقيقي" : "مسار الخطّاف وS3 والتحقق على الخادم (tusd مُحاكى)"} بملفات ${sizeMb} ميغابايت؛ لا قياس لقرص خادم الرفع المؤقت، وحد «لا تدهور» معيار عامل بقرار المنسّق حتى التجربة الميدانية؛ حجم الخطة (60 × 2 غيغابايت عبر tusd) سكربت يدوي`);
     if (args["dry-run"]) writeResult(doc, { dryRun: true });
     else console.log("wrote", writeResult(doc, { slug: `${N}x${sizeMb}mb` }));
     return { code: fails.length ? 1 : 0, doc };

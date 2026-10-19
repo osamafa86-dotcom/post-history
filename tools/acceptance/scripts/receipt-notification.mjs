@@ -51,7 +51,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
 
   // B + C need the hook, storage and database
   const full = env.HOOK_BASE_URL && env.HOOK_TOKEN && env.LIVE_DATABASE_URL && s3FromEnv(env);
-  const m = { verifiedRuns: 0, latB: [], receiptsOk: 0, shaOk: 0, esc1: [], esc2: [], escQuiet: null, escBefore: 0 };
+  const m = { noSecondAssignment: 0, technicalVerified: 0, verifiedRuns: 0, latB: [], receiptsOk: 0, shaOk: 0, esc1: [], esc2: [], escQuiet: null, escBefore: 0 };
   if (full) {
     const hooks = hookClient({ baseUrl: env.HOOK_BASE_URL, token: env.HOOK_TOKEN });
     const s3 = s3FromEnv(env), db = openDb(env.LIVE_DATABASE_URL);
@@ -70,11 +70,18 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
         m.verifiedRuns++;
         m.latB.push((Date.now() - up.finishedAt) / 1000);
         if (/R-\d{6}-\d{6}/.test(got.value.title)) m.receiptsOk++;
-        const file = (await http.get(tokens.reporter, `/materials/${mat.id}`)).body.files?.find((f) => f.kind === "original");
+        // owner decision: the supervisor is assigned once, at creation; verification updates the row and notifies the reporter, no second assignment
+        const mine = (await inbox("supervisor")).filter((n) => n.material_id === mat.id);
+        if (mine.length === 1) m.noSecondAssignment++;
+        const detail = (await http.get(tokens.reporter, `/materials/${mat.id}`)).body;
+        if (detail.technical_state === "verified") m.technicalVerified++;
+        const file = detail.files?.find((f) => f.kind === "original");
         if (file?.state === "verified" && file.sha256 === createHash("sha256").update(bytes).digest("hex") && got.value.title.includes(file.receipt_number)) m.shaOk++;
       }
       check("every verified upload notified the reporter with a receipt number", m.verifiedRuns === runsB && m.receiptsOk === runsB, `${m.receiptsOk}/${runsB}`);
       check("server SHA-256 equals the bytes written, and the notification carries that file's receipt", m.shaOk === runsB, `${m.shaOk}/${runsB}`);
+      check("verification leaves exactly one supervisor assignment per material (no second task)", m.noSecondAssignment === runsB, `${m.noSecondAssignment}/${runsB}`);
+      check("verification moves the material's technical state to verified", m.technicalVerified === runsB, `${m.technicalVerified}/${runsB}`);
       check("receipt notification within 60 s of verification in 95% of runs", m.latB.filter((l) => l <= 60).length / runsB >= 0.95);
 
       // C. escalation: injected timeout, polled by the server every few hundred ms
@@ -111,9 +118,10 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     runs, creation_to_task_within_60s_pct: Number(((within60 / runs) * 100).toFixed(1)), creation_to_task_s_p95: percentile(latA, 95), missing_tasks: missing, duplicate_tasks: duplicates, misdirected: wrongRecipient,
     verification_chain_measured: Boolean(full), verified_runs: m.verifiedRuns, verification_to_receipt_s_p95: full ? percentile(m.latB, 95) : "n/a", receipts_ok: m.receiptsOk, server_sha256_ok: m.shaOk,
     escalation_measured: Boolean(full), escalation_timeout_s: Number(env.RECEIPT_ESCALATION_SECONDS ?? 3), escalation_to_editor_s: m.esc1[0] ?? "n/a", escalation_to_admin_s: m.esc2[0] ?? "n/a", acknowledged_task_stayed_quiet: m.escQuiet ?? "n/a",
-    supervisor_task_created_before_verification: true, failures: fails.length,
-  }, ["المشرف يتلقى مهمته عند الإنشاء (قبل رفع الأصل وتحققه)، لا عند التحقق الفني؛ فعبارة «خلال 60 ثانية من التحقق الفني» لا تُقاس حرفيًا وسؤالها مرفوع للمنسّق، والنتيجة جزئية إلى أن يُحسم",
-      full ? "التحقق والتصعيد قيسا بمهلة محقونة وتخزين S3 فعلي وهوك tusd مُحاكى (لا tusd حقيقي)" : "سلسلة التحقق والتصعيد لم تُشغَّل (تحتاج الخطّاف وS3 وقاعدة البيانات)"].join("؛ "));
+    supervisor_assigned_once_at_creation: true, no_second_assignment_runs: m.noSecondAssignment, technical_verified_runs: m.technicalVerified, failures: fails.length,
+  }, ["قرار المنسّق: تعيين المشرف عند الإنشاء (الوارد الحي يرى المادة فور وصول بياناتها)، و`upload.verified` يحدّث الحالة الفنية ويُشعر المراسل بالإيصال دون تعيين ثانٍ؛ والاختبار يتحقق من الأمرين",
+      "عبارة «60 ثانية من التحقق الفني» تُقاس هنا على إشعار الإيصال للمراسل بعد التحقق، وعلى وصول المهمة للمشرف بعد الإنشاء",
+      full ? "التحقق والتصعيد قيسا بمهلة محقونة وتخزين S3 فعلي وهوك tusd مُحاكى (لا tusd حقيقي)؛ النتيجة جزئية لغياب عامل الوسائط وتجربة الأجهزة" : "سلسلة التحقق والتصعيد لم تُشغَّل (تحتاج الخطّاف وS3 وقاعدة البيانات)"].join("؛ "));
   if (args["dry-run"]) writeResult(doc, { dryRun: true });
   else console.log("wrote", writeResult(doc, { slug: full ? "chain-and-escalation" : "created-to-task" }));
   return { code: fails.length ? 1 : 0, doc };
