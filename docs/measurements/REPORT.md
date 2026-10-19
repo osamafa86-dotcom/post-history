@@ -44,6 +44,6 @@
 | receipt-notification | acceptance | — | ◐ partial | creation_to_task_within_60s_pct=100، verification_to_receipt_s_p95=0.35، escalation_to_editor_s=3.48، escalation_to_admin_s=6.23 | 2026-10-19 | 3 | `docs/measurements/acceptance/2026-10-19-receipt-notification-chain-and-escalation-2.json` |
 | tenant-isolation | acceptance | — | ◐ partial | cases_executed=229، cases_failed=0، cases_unimplemented=0 | 2026-10-19 | 4 | `docs/measurements/acceptance/2026-10-19-tenant-isolation-live-3.json` |
 | upload-resume | acceptance | loopback | ◐ partial | size_bytes=67108864، interruptions=3، resent_pct=0، sha256_match=true | 2026-10-19 | 3 | `docs/measurements/acceptance/2026-10-19-upload-resume-64mb-3.json` |
-| field-network-upload | netlab | field-switch | ◐ partial | upload_complete=true، checksum_match=true، goodput_kbps=2890.5، resumes=8 | 2026-10-19 | 1 | `docs/measurements/netlab/2026-10-19-tusd-field-switch-500mb.json` |
-| field-network-upload | netlab | field-weak | ◐ partial | upload_complete=false، checksum_match=false، goodput_kbps=404.5، resumes=7 | 2026-10-19 | 1 | `docs/measurements/netlab/2026-10-19-tusd-field-weak-500mb.json` |
-| field-network-upload | netlab | office | ◐ partial | upload_complete=true، checksum_match=true، goodput_kbps=18447.9، resumes=0 | 2026-10-19 | 1 | `docs/measurements/netlab/2026-10-19-tusd-office-500mb.json` |
+| field-network-upload | netlab | field-switch | ◐ partial | upload_complete=true، checksum_match=true | 2026-10-19 | 1 | `docs/measurements/netlab/2026-10-19-tusd-field-switch-500mb.json` |
+| field-network-upload | netlab | field-weak | ◐ partial | upload_complete=false، checksum_match=false | 2026-10-19 | 1 | `docs/measurements/netlab/2026-10-19-tusd-field-weak-500mb.json` |
+| field-network-upload | netlab | office | ◐ partial | upload_complete=true، checksum_match=true | 2026-10-19 | 1 | `docs/measurements/netlab/2026-10-19-tusd-office-500mb.json` |

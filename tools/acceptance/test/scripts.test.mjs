@@ -278,3 +278,10 @@ test("unified report lists every acceptance row, keeps the latest result per pro
   assert.match(md, /\| payout \| pending \| — لا نتيجة/, "rows without a result are listed, not hidden");
   assert.match(md, /pass 1، partial 0، fail 1/);
 });
+
+test("report shows the netlab stage (a) numbers: loss mode, efficiency against Mathis and bytes lost on resume", () => {
+  const entry = { doc: { schema_version: 1, tool: "netlab", role: "infra", test_name: "field-network-upload", started_at: "2026-10-20T08:00:00Z", ended_at: "2026-10-20T08:20:00Z", result: "partial", network: { profile: "field-weak" }, metrics: { loss_mode: "netem", efficiency_vs_mathis: 0.82, bytes_lost_on_resume: 0, upload_complete: true, checksum_match: true, goodput_kbps: 300 } }, file: "docs/measurements/netlab/x.json" };
+  const md = buildReport([entry], new Date("2026-10-21T00:00:00Z"));
+  assert.match(md, /loss_mode=netem، efficiency_vs_mathis=0\.82، bytes_lost_on_resume=0/);
+  assert.match(md, /\| field-network-upload \| pending \| ◐ partial/);
+});

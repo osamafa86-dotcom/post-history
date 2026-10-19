@@ -11,7 +11,7 @@ import { ROOT, parseArgs } from "./lib/measurement.mjs";
 
 const HEADLINE = {
   "upload-resume": ["file.size_bytes", "interruptions", "resent_pct", "sha256_match"],
-  "field-network-upload": ["upload_complete", "checksum_match", "goodput_kbps", "resumes"],
+  "field-network-upload": ["loss_mode", "efficiency_vs_mathis", "bytes_lost_on_resume", "upload_complete", "checksum_match"],
   "receipt-notification": ["creation_to_task_within_60s_pct", "verification_to_receipt_s_p95", "escalation_to_editor_s", "escalation_to_admin_s"],
   "concurrent-load": ["concurrency", "file_size_mb", "notification_s_p95_load", "degradation_ratio_p95"],
   performance: ["list_materials_ms_p95", "material_detail_ms_p95", "inbox_ms_p95"],
@@ -46,8 +46,8 @@ export function buildReport(entries, now = new Date()) {
     if (!cur || Date.parse(doc.started_at) > Date.parse(cur.doc.started_at)) latest.set(k, { doc, file });
   }
   const rows = [...latest.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([k, { doc, file }]) => {
-    const head = (HEADLINE[doc.test_name] ?? Object.keys(doc.metrics)).slice(0, 4)
-      .map((m) => [m.split(".").pop(), get(doc, m)]).filter(([, v]) => v !== undefined && v !== null).map(([m, v]) => `${m}=${fmt(v)}`).join("، ");
+    const head = (HEADLINE[doc.test_name] ?? Object.keys(doc.metrics))
+      .map((m) => [m.split(".").pop(), get(doc, m)]).filter(([, v]) => v !== undefined && v !== null).slice(0, 4).map(([m, v]) => `${m}=${fmt(v)}`).join("، ");
     return `| ${doc.test_name ?? "—"} | ${doc.tool} | ${doc.network?.profile ?? "—"} | ${ICON[doc.result]} | ${head || "—"} | ${doc.started_at.slice(0, 10)} | ${count.get(k)} | \`${file}\` |`;
   });
 
