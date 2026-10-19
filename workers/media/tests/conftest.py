@@ -10,15 +10,18 @@ from media_worker.ffmpeg import FFMPEG, run
 
 # وسوم بصيغة iPhone تحمل إحداثيات وطراز الجهاز؛ يجب ألا تظهر في أي مخرج
 LEAKY_TAGS = {
-    "com.apple.quicktime.location.ISO6709": "+31.7767+035.2345+000.000/",
+    # قيم غير واقعية عمدًا كما في أدوات القبول
+    "com.apple.quicktime.location.ISO6709": "+00.0001+000.0001+000.000/",
     "com.apple.quicktime.make": "TestMaker",
     "com.apple.quicktime.model": "TestPhone 1",
 }
 
+STREAM_TAGS = {"location": "+00.0002+000.0002/", "comment": "stream-level-device-serial-0000"}
+
 
 def synth(path: Path, *, seconds: float = 4, size: str = "640x360", rate: int = 30, vfr_drop: bool = False,
           gap: tuple[float, float] | None = None, start_offset: float = 0.0, audio: bool = True,
-          video: bool = True, leaky_tags: bool = False) -> Path:
+          video: bool = True, leaky_tags: bool = False, stream_tags: bool = False) -> Path:
     args = [FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-y"]
     if video:
         args += ["-f", "lavfi", "-i", f"testsrc2=size={size}:rate={rate}:duration={seconds}"]
@@ -42,6 +45,9 @@ def synth(path: Path, *, seconds: float = 4, size: str = "640x360", rate: int = 
         args += ["-movflags", "use_metadata_tags"]
         for k, v in LEAKY_TAGS.items():
             args += ["-metadata", f"{k}={v}"]
+    if stream_tags:
+        for k, v in STREAM_TAGS.items():
+            args += ["-metadata:s:v:0", f"{k}={v}"]
     args.append(str(path))
     run(args, timeout_s=120)
     return path

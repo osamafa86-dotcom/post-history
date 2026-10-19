@@ -9,6 +9,13 @@ from collections.abc import Sequence
 FFMPEG = os.environ.get("FFMPEG_BIN", "ffmpeg")
 FFPROBE = os.environ.get("FFPROBE_BIN", "ffprobe")
 
+# الملفات من المراسلين غير موثوقة: يُقبل من الحاويات ما تنتجه الهواتف والكاميرات فقط، ولا بروتوكول غير الملف المحلي.
+# قائمة HLS أو concat متنكرة بامتداد .mp4 تستطيع وإلا أن تقرأ ملفات العامل (/proc/self/environ) وتضمّنها في المخرج.
+ALLOWED_DEMUXERS = ("mov", "matroska", "mpegts", "aac", "wav", "ogg", "mp3")
+INPUT_GUARD = ["-format_whitelist", ",".join(ALLOWED_DEMUXERS), "-protocol_whitelist", "file"]
+# العملية الفرعية لا ترث بيئة العامل (رمز الخادم، مفاتيح التخزين)
+CHILD_ENV = {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"), "LC_ALL": "C"}
+
 
 class MediaToolError(RuntimeError):
     """فشل ffmpeg/ffprobe. الرسالة تحمل ذيل stderr فقط؛ لا تُسجَّل في قنوات خارجية لأنها قد تحمل مسارات."""
@@ -16,7 +23,7 @@ class MediaToolError(RuntimeError):
 
 def run(args: Sequence[str], timeout_s: float) -> bytes:
     try:
-        proc = subprocess.run(list(args), capture_output=True, timeout=timeout_s, check=False)
+        proc = subprocess.run(list(args), capture_output=True, timeout=timeout_s, check=False, env=CHILD_ENV)
     except subprocess.TimeoutExpired as err:
         raise MediaToolError(f"{args[0]} timed out after {timeout_s:.0f}s") from err
     if proc.returncode != 0:

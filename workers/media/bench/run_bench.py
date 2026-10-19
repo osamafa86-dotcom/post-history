@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import platform
 import tempfile
 import time
 from datetime import datetime, timezone
@@ -25,16 +24,6 @@ from media_worker.proxy import make_proxy
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-
-
-def cpu_model() -> str:
-    try:
-        for line in Path("/proc/cpuinfo").read_text().splitlines():
-            if line.startswith("model name"):
-                return line.split(":", 1)[1].strip()
-    except OSError:
-        pass
-    return platform.processor() or "unknown"
 
 
 def make_source(path: Path, seconds: int) -> None:
@@ -79,12 +68,10 @@ def main() -> None:
         "test_name": "media-ingest-2min-1080p",
         "started_at": started,
         "ended_at": ended,
-        "result": "pass" if total < duration_s and out.start_pts_us == info.start_pts_us else "fail",
-        "device": {
-            "platform": "server",
-            "model": f"{cpu_model()} x{os.cpu_count()} vCPU",
-            "os_version": platform.release(),
-        },
+        # pass لا يُكتب من هنا: المعيار من وضع الأداة والعتاد قد لا يكون المعتمد؛ يُرفع يدويًا بقياس معتمد
+        "result": "partial" if total < duration_s and out.start_pts_us == info.start_pts_us else "fail",
+        # عدد الأنوية فقط: طراز المعالج ونواة المضيف بصمة بيئة لا تخدم القياس
+        "device": {"platform": "server", "model": f"{os.cpu_count()} vCPU"},
         "upload_path": "n/a",
         "file": {
             "size_bytes": digest.size_bytes,

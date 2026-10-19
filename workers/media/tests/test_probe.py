@@ -57,6 +57,28 @@ def test_invalid_files_rejected(tmp_path: Path, content: bytes):
         probe(f)
 
 
+HLS_READS_LOCAL_FILE = b"#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:10.0,\nfile:///etc/hostname\n#EXT-X-ENDLIST\n"
+CONCAT_READS_LOCAL_FILE = b"ffconcat version 1.0\nfile '/etc/hostname'\n"
+
+
+@pytest.mark.parametrize("name", ["evil.mp4", "evil.m3u8", "source"])
+@pytest.mark.parametrize("content", [HLS_READS_LOCAL_FILE, CONCAT_READS_LOCAL_FILE])
+def test_playlists_and_concat_lists_are_rejected(tmp_path: Path, name: str, content: bytes):
+    # ملف مرفوع يتنكر قائمة تشير إلى ملف محلي: يُرفض في probe قبل أي نسخة
+    f = tmp_path / name
+    f.write_bytes(content)
+    with pytest.raises(InvalidMediaError):
+        probe(f)
+
+
+def test_child_process_gets_no_worker_secrets(monkeypatch):
+    from media_worker import ffmpeg
+
+    monkeypatch.setenv("MEDIA_WORKER_TOKEN", "x" * 40)
+    out = ffmpeg.run(["env"], timeout_s=10).decode()
+    assert "MEDIA_WORKER_TOKEN" not in out and "S3_SECRET_KEY" not in out
+
+
 def test_truncated_file_rejected(tmp_path: Path, basic_clip: Path):
     # moov في آخر الملف (بلا faststart): قطع الذيل يجعله غير قابل للقراءة
     data = basic_clip.read_bytes()
