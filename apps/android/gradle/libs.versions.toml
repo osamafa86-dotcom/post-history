@@ -12,6 +12,7 @@ lifecycle = "2.9.4"
 coreKtx = "1.17.0"
 room = "2.8.5"
 junit = "4.13.2"
+tusJavaClient = "0.5.1"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -33,6 +34,7 @@ androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "
 androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 junit = { module = "junit:junit", version.ref = "junit" }
+tus-java-client = { module = "io.tus.java.client:tus-java-client", version.ref = "tusJavaClient" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -14,6 +14,7 @@ java {
 
 dependencies {
     api(project(":api"))
+    implementation(libs.tus.java.client)
     implementation(libs.kotlinx.coroutines.core)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
