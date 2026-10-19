@@ -9,7 +9,8 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 ## compose (`infra/compose/`)
 
 - Postgres 16، Redis 7 (بكلمة مرور)، MinIO (بديل S3 محليًا)، tusd. `.env.example` يوثّق المتغيرات بلا قيم؛ `.env` لا يُرفع.
-- كل المنافذ مربوطة بـ `127.0.0.1` محليًا. الصور مثبّتة بوسم إصدار (MinIO وmc ما زالا `latest` حتى تثبيتهما في أول تذكرة لوكيل البنية مع ADR).
+- كل المنافذ مربوطة بـ `127.0.0.1` محليًا. الصور مثبّتة بوسم إصدار؛ MinIO وmc بناء مجتمعي (`pgsty/*`) بالوسم والبصمة (ADR 0004).
+- tusd بلا منفذ منشور، خلف `tusd-proxy` (nginx، `infra/proxy/tusd.conf`) على شبكة `uploads` الداخلية؛ الخطّاف على شبكة `hooks` الداخلية.
 - `-behind-proxy` لا يُفعَّل إلا خلف وكيل فعلي (عبر `TUSD_EXTRA_FLAGS`)، لأنه يجعل tusd يثق بترويسات `X-Forwarded-*`.
 - أمر واحد يشغّل كل شيء من الصفر: `docker compose -f infra/compose/docker-compose.yml up -d`.
 
@@ -17,7 +18,7 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 
 - R2 يشترط تساوي كل الأجزاء عدا الأخير وحدًا أدنى 5 MiB: `-s3-min-part-size` = `-s3-part-size`.
 - `.part` المؤقت يحفظ ما دون الحد الأدنى؛ القرص المؤقت لخادم الرفع = الرفعات المتزامنة × حجم الجزء، ويُقاس في اختبار الحمل.
-- خطّافات tusd (`pre-create`، `post-finish`) إلى نقطة داخلية واحدة خارج `/v1` العام؛ نقطة النهاية وآلية المصادقة (رمز من البيئة أو عزل شبكي + mTLS) تُحسم في ADR `SEC-06` مع وكيل العقود. tusd لا يضيف ترويسات ثابتة، فلا يُعتمد على `X-Hook-Secret` قبل ذلك.
+- خطّافات tusd (`pre-create`، `post-finish`) إلى `TUSD_HOOK_URL/TUSD_HOOK_SECRET` (ADR `SEC-06`). `infra/tusd/entrypoint.sh` يحجب الرمز من سجل tusd، والوكيل يحجب أجسام `500` لأن tusd يضع فيها عنوان الخطّاف.
 - علم المسودة التجريبي (`EnableExperimentalProtocol`) خلف متغير بيئة لتجربة iOS فقط.
 - نطاق الرفع: خلف وكيل Cloudflare افتراضيًا (الأجزاء 1–10 ميغابايت تحت حد جسم الطلب). خيار `ingest.` غير مُوكَّل بمصادقة App Attest/Play Integrity وJWT قصير يُقاس في النموذج الأولي مقابل كشفه لهجمات الحجب، ويُوثّق في ADR.
 
@@ -27,5 +28,6 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 
 ## CI
 
-- `contracts`: redocly lint + ajv compile. `secrets`: gitleaks. `compose`: config.
+- `contracts`: redocly lint + ajv compile. `secrets`: gitleaks. `compose`: config + pull + `infra/compose/smoke.sh`.
+- Dependabot (`.github/dependabot.yml`): `github-actions` وnpm أسبوعيًا.
 - كل حزمة تضيف وظيفتها الخاصة حين يوجد كود.

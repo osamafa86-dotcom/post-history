@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
+  # No package.json exists yet; the globs pick up packages as they are added.
+  - package-ecosystem: npm
+    directories:
+      - /
+      - /apps/*
+      - /workers/*
+      - /tools/*
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps"
