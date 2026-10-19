@@ -8,6 +8,13 @@ let package = Package(
     products: [
         .library(name: "PostHistoryAPI", targets: ["PostHistoryAPI"]),
         .library(name: "AuthCore", targets: ["AuthCore"]),
+        .library(name: "UploadCore", targets: ["UploadCore"]),
+        .library(name: "FormEngine", targets: ["FormEngine"]),
+        .executable(name: "form-conformance", targets: ["form-conformance"]),
+    ],
+    dependencies: [
+        // SHA-256 على Linux (الاختبارات وCI)؛ على منصات Apple يُستخدم CryptoKit.
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.10.0"),
     ],
     targets: [
         // عميل API مولَّد من contracts/openapi.yaml عبر scripts/generate-api.sh؛ لا يُعدَّل يدويًا.
@@ -15,5 +22,12 @@ let package = Package(
         // الهوية: دخول/تحديث/إبطال حسب العقد، الرموز في Keychain، معترض يضيف Bearer ويحدّث عند 401.
         .target(name: "AuthCore", dependencies: ["PostHistoryAPI"]),
         .testTarget(name: "AuthCoreTests", dependencies: ["AuthCore"]),
+        // نواة الرفع: tus 1.0 عبر URLSession خلفية بأجزاء كبيرة، استئناف من آخر جزء مؤكد، بصمة SHA-256، انتظار الإيصال.
+        .target(name: "UploadCore", dependencies: ["PostHistoryAPI", .product(name: "Crypto", package: "swift-crypto")]),
+        .testTarget(name: "UploadCoreTests", dependencies: ["UploadCore"]),
+        // راسم النماذج: التحقق المشترك (form-conformance) وقيم الحقول؛ الواجهة في App/.
+        .target(name: "FormEngine", dependencies: ["PostHistoryAPI"]),
+        .testTarget(name: "FormEngineTests", dependencies: ["FormEngine"]),
+        .executableTarget(name: "form-conformance", dependencies: ["FormEngine"]),
     ]
 )
