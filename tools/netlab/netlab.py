@@ -460,7 +460,7 @@ def run(a):
                   f"Client: tools/netlab/netlab.py, time box {a.max_seconds}s, event scale {a.event_scale}. "
                   + {"netem": f"loss {sc['loss_pct']}% + delay {sc['latency_ms']}ms via tc netem in toxiproxy's netns. ",
                      "iptables-statistic": f"loss {sc['loss_pct']}% via iptables statistic, no packet delay "
-                                           "(host lacks sch_netem): TCP impact understated (ADR 0005). ",
+                                           "(host lacks sch_netem): TCP impact understated (ADR 0007). ",
                      "none": ""}[loss_mode]
                   + "netlab never records pass: field-network-upload stage (b) is 1 GB on a real device and network "
                     f"(stage (a): efficiency >= {STAGE_A_MIN_EFFICIENCY:.0%} of Mathis, zero bytes lost on resume, netem). "

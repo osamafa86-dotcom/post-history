@@ -172,8 +172,19 @@ jobs:
       # Tests run in the worker image itself, so CI uses the same pinned FFmpeg as production.
       - name: Build test image (Python 3.12 + FFmpeg 8.0.1, pinned by digest)
         run: docker build --target test -t media-worker:test workers/media
-      - name: Pipeline tests on synthetic VFR, gapped, offset and tagged clips
-        run: docker run --rm media-worker:test
+      # Real Redis and MinIO for the stream -> worker -> internal API -> derived bucket test (ADR 0006).
+      - name: Start Redis and MinIO for the integration test
+        run: |
+          docker network create media-it
+          docker run -d --name media-it-redis --network media-it redis:7-alpine
+          docker run -d --name media-it-minio --network media-it -e MINIO_ROOT_USER=ci-access \
+            -e MINIO_ROOT_PASSWORD=ci-only-secret pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372 server /data
+          for i in $(seq 1 30); do docker exec media-it-minio mc ready local >/dev/null 2>&1 && break; sleep 1; done
+      - name: Pipeline, job and integration tests on synthetic VFR, gapped, offset and tagged clips
+        run: |
+          docker run --rm --network media-it -e MEDIA_IT_REQUIRED=1 -e MEDIA_IT_REDIS_URL=redis://media-it-redis:6379 \
+            -e MEDIA_IT_S3_ENDPOINT=http://media-it-minio:9000 -e MEDIA_IT_S3_ACCESS_KEY=ci-access \
+            -e MEDIA_IT_S3_SECRET_KEY=ci-only-secret media-worker:test python -m pytest -q -rs
       - name: Runtime image builds
         run: docker build --target runtime -t media-worker:runtime workers/media
       - name: Proxy A/V sync on synthetic marker clips (tools/render-bench)

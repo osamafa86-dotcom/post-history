@@ -193,11 +193,48 @@ services:
       - "127.0.0.1:${API_PORT}:3000"
     networks: [default, hooks, media]
 
+  media-worker:
+    # عامل الوسائط (ADR 0006): يستهلك media:events ويستدعي /internal/media/* على الخادم. لا منفذ منشور.
+    profiles: [media]
+    build:
+      context: ../../workers/media
+      target: runtime
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      MEDIA_API_URL: http://api:3000
+      # فارغ = العامل يرفض البدء (≥ 32 حرفًا). لا يُفرض هنا كي لا يتعطل compose بلا profile media.
+      MEDIA_WORKER_TOKEN: ${MEDIA_WORKER_TOKEN:-}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_REGION: ${S3_REGION}
+      # مستخدم MinIO الخاص بالعامل (infra/minio/init.sh): قراءة بادئة الرفع وكتابة media/derived/ فقط
+      S3_ACCESS_KEY: ${S3_MEDIA_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_MEDIA_SECRET_KEY:-}
+      S3_BUCKET_UPLOADS: ${S3_BUCKET_UPLOADS}
+      S3_BUCKET_MEDIA: ${S3_BUCKET_MEDIA}
+      MEDIA_SCRATCH_DIR: /scratch
+    read_only: true
+    tmpfs: [/tmp]
+    # يعالج ملفات غير موثوقة: بلا صلاحيات نواة ولا رفع امتيازات (مراجعة الأمن على #41)
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - media-scratch:/scratch
+    # شبكة media الداخلية وحدها (لا خروج): الخادم وRedis وMinIO. العنوان الثابت هو ما في INTERNAL_ALLOWED_CIDRS.
+    networks:
+      media:
+        ipv4_address: 172.30.251.2
+
 volumes:
   postgres-data:
   redis-data:
   minio-data:
   api-node-modules:
+  media-scratch:
 
 networks:
   default: {}

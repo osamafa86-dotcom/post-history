@@ -8,7 +8,7 @@
 ## السياق
 
 - الخادم يتحقق اليوم داخله (`UPLOAD_VERIFIER=in_process`): يقفل كل جلسة `completed` ويحسب SHA-256 ثم يستدعي `recordVerification` التي تكتب ملف المادة ورقم الإيصال والمسار الفني وحدث Outbox في معاملة واحدة. عامل الوسائط يحل محله.
-- لا طابور أحداث بعد: ناشر Outbox يوزّع على صندوق الوارد فقط. الأحداث المتاحة للعامل: `upload.original_received` و`upload.proxy_received` (الجلسة `completed`) و`upload.verified`.
+- لا طابور أحداث بعد: ناشر Outbox يوزّع على صندوق الوارد فقط. الأحداث المتاحة للعامل: `upload.original_received` و`upload.proxy_received` (الجلسة `completed`).
 - العامل يحتاج الملف محليًا على أي حال (ffprobe والنسخة الخفيفة يقرآن عشوائيًا)، فالتنزيل نفسه يحسب البصمة في قراءة واحدة.
 - العقد مجمّد: `MaterialFile` لا يحمل الترميز ولا معدل الإطارات ولا علامة المعدل المتغير، ولا يوجد عمود لبصمة الخادم الرخيصة.
 
@@ -32,26 +32,30 @@
 2. `POST /internal/media/sessions/{upload_session_id}/verification` بجسم
    `{ result: "verified" | "invalid_file" | "storage_error", sha256, size_bytes, head_sha256, tail_sha256, technical }`
    الخادم يقفل الجلسة؛ إن لم تكن `completed` يعيد `200` بالنتيجة المسجلة إن طابقت و`409` إن خالفت. يتحقق أن `size_bytes` يساوي حجم الجلسة وحجم الكائن في التخزين (`HEAD`)، ويقارن `client_sha256` بنفسه فيقرر `checksum_mismatch`، ثم يستدعي `recordVerification`، ويكتب `technical` (أدناه) على الملف الجديد. يعيد `{ file_id, receipt_number }`.
-3. `POST /internal/media/files/{file_id}/derivatives` بجسم `{ kind: "proxy", storage_key, sha256, size_bytes, technical }` ← ملف جديد `kind=proxy` و`proxy_mode=normal` و`derived_from_id=file_id` و`state=verified`. متساوٍ الأثر على (`derived_from_id`، `kind`). `storage_key` يجب أن يبدأ بالبادئة المشتقة لهذه المادة.
+3. `POST /internal/media/files/{file_id}/derivatives` بجسم `{ kind: "proxy", storage_key, sha256, size_bytes, technical }` ← ملف جديد `kind=proxy` و`proxy_mode=normal` و`derived_from_id=file_id` و`state=verified`. متساوٍ الأثر على (`derived_from_id`، `kind`). `storage_key` في حاوية المشتقات (`S3_BUCKET_MEDIA`) ويجب أن يساوي `derived/<material_id>/<file_id>/proxy-480p.mp4`.
 
 `technical`: `duration_ms`، `start_pts_us`، `width`، `height` (أعمدة موجودة)، والباقي (`container`، `video_codec`، `audio_codec`، `frame_rate`، `avg_frame_rate`، `vfr`، `frame_count`، `max_frame_gap_ms`، `has_gaps`، `rotation`، `hdr`، `bit_depth`، `audio_sample_rate`، `audio_channels`) في عمود جديد. قائمة بيضاء مغلقة: العامل لا ينقل وسوم الملف أبدًا (فيها الإحداثيات وطراز الجهاز)، والخادم يرفض أي مفتاح آخر.
 
 ### تدفق العامل
 
-عند `upload.*_received`: (1) `GET` الجلسة؛ إن لم تكن `completed` يؤكد الحدث ويتوقف. (2) ينزّل الكائن إلى قرص مؤقت ويحسب SHA-256 والبصمة الرخيصة في القراءة نفسها. (3) ffprobe؛ الفشل = `invalid_file`. (4) `POST verification`. (5) إن كان أصلًا مرئيًا و`material_has_proxy=false`: نسخة 480p بـ `-copyts` (تحفظ `start_pts` وطابع كل إطار) تُرفع إلى `derived/<material_id>/<file_id>/proxy-480p.mp4` ثم `POST derivatives`. (6) `XACK` وحذف الملفات المؤقتة. الأصل يُقرأ فقط.
+مهمة واحدة متساوية الأثر عند `upload.*_received`: (1) `GET` الجلسة؛ إن لم تكن `completed` يؤكد الحدث ويتوقف، إلا أصلًا `verified` بلا نسخة خفيفة (فشلت الخطوة 5 في تسليم سابق). (2) ينزّل الكائن إلى مجلد المهمة ويحسب SHA-256 والبصمة الرخيصة في القراءة نفسها. (3) ffprobe؛ الفشل = `invalid_file`. (4) `POST verification` (الفشل بلا بصمة ولا بيانات فنية)؛ الرد `{ state, file_id, receipt_number, failure_reason }`، وتكرار بلاغ موافق يعيد النتيجة المسجلة نفسها، فيستأنف التسليم المعاد بعد فشل الخطوة 5 دون تحقق جديد. (5) لأصل مرئي و`material_has_proxy=false`: نسخة 480p بـ `-copyts` من الملف المنزَّل نفسه (بلا تنزيل ثانٍ) تُرفع إلى حاوية المشتقات ثم `POST derivatives`. بعد المهمة `XACK` وحذف مجلدها؛ العطل المؤقت يُعاد حتى 5 مرات ثم يُنقل الحدث إلى `media:dead`. الأصل يُقرأ فقط.
+
+### قاعدة الثقة
+
+حين لا يرسل العميل `client_sha256`، يكون العامل ضمن قاعدة الثقة لبصمة الأصل ورقم الإيصال: البصمة المحفوظة هي ما حسبه هو، والخادم يتحقق من الحجم فقط. لذلك يصير `client_sha256` إلزاميًا للأصل في نافذة العقد القادمة (قرار المنسّق)، فتعود البصمة دليلًا مستقلًا من جهتين.
 
 ### المصادقة والأسرار
 
 - `MEDIA_WORKER_TOKEN` (≥ 32 حرفًا، `[A-Za-z0-9_-]`) منفصل عن `TUSD_HOOK_SECRET` حتى لا يمتد تسريب أحدهما إلى الآخر؛ يُدار كبقية الأسرار (SEC-05) ولا يوضع في `.env.example`.
 - ترويسة لا مقطع مسار: العامل كودنا ويستطيع إرسال الترويسات، فلا يتكرر تسريب الرمز في سجلات tusd وأخطائه (SEC-06). المقارنة ثابتة الزمن، والترويسة لا تُسجَّل، والرد عند الفشل `404` كبقية `/internal/*`.
-- `internalOnly` مقصور على عنوان العامل الثابت على شبكة compose داخلية (`media`) مشتركة بين الخادم والعامل وMinIO وRedis فقط.
-- مستخدم تخزين خاص بالعامل: قراءة على بادئة الرفع، وكتابة على `derived/` فقط، بلا حذف.
+- `internalOnly` مقصور على عنوان العامل الثابت (محليًا `172.30.251.2` على شبكة `media` الداخلية، #45).
+- مستخدم تخزين خاص بالعامل: قراءة `uploads/tus/*`، وكتابة `media/derived/*` فقط، بلا حذف ولا سرد (قرار المنسّق؛ المستخدم في طلب البنية 45). العميل نفسه يرفض الكتابة خارج `derived/` في حاوية المشتقات.
 
 ## ما يلزم من غيري
 
 - **وكيل الخادم:** النقاط الثلاث، والنشر إلى `media:events`، وضبط `UPLOAD_VERIFIER=external` في compose مع profile `media`. ما دام العامل متوقفًا تبقى الجلسات `completed`، والرجوع إلى `in_process` يستأنفها.
 - **وكيل العقود (PR مستقل، ترحيل):** `material_files.technical jsonb` (غير مكشوف في `/v1` حتى فك التجميد)، و`material_files.head_sha256`/`tail_sha256 bytea` مع فهرس على (`size_bytes`، `head_sha256`) لترشيح المكررات مسبقًا عند إنشاء الجلسة، وفهرس فريد جزئي على (`derived_from_id`، `kind`). وتثبيت معنى «ميغابايت» في `client_fingerprint` بـ 1 MiB = 1,048,576 بايت (ما يحسبه العامل الآن)، وأن الملف الأصغر رأسه وذيله الملف كله.
-- **وكيل الرفع والبنية:** شبكة `media` الداخلية بعنوان ثابت للعامل، ومستخدم MinIO بالصلاحيات أعلاه.
+- **وكيل الرفع والبنية (منفَّذ في #45):** شبكة `media` الداخلية بعنوان العامل الثابت `172.30.251.2` في `INTERNAL_ALLOWED_CIDRS`، ومستخدم MinIO للعامل (`S3_MEDIA_ACCESS_KEY`) بالصلاحيات أعلاه مع فحص في CI. خدمة `media-worker` في compose تستعمل الاثنين.
 
 ## الدليل
 

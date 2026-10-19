@@ -27,5 +27,5 @@
 ## الحالة
 
 - منجز (التذكرة 1، الطلب الأول): `src/media_worker/` — `probe` (البيانات الفنية بقائمة بيضاء بلا وسوم، كشف المعدل المتغير والفجوات، `start_pts` من مسار الفيديو)، `hashing` (SHA-256 والبصمة الرخيصة في قراءة واحدة)، `proxy` (480p بـ `-copyts` وإطار مفتاحي كل ثانية، بلا وسوم). الصورة تثبّت Python 3.12 وFFmpeg 8.0.1 بالبصمة، والاختبارات تعمل داخلها (وظيفة `media` في CI).
-- مقترح: واجهة الخادم في ADR 0006 (`/internal/media/*` وRedis Stream `media:events`). الخدمة المستهلكة وprofile compose في الطلب الثاني بعد الموافقة.
+- منجز (الطلب الثاني): `service` يستهلك Redis Stream `media:events` (مجموعة `media`، `XAUTOCLAIM`، `media:dead` بعد 5 محاولات)، `jobs` (التحقق عند `*_received`، النسخة الخفيفة عند `upload.verified`)، `api` عميل `/internal/media/*`، `storage` عميل S3 بتوقيع SigV4 بلا اعتماديات. profile `media` في compose. يعمل طرفًا لطرف حين ينفّذ الخادم جانبه من ADR 0006 (مقترح).
 - التشغيل محليًا: `docker build --target test -t media-worker:test workers/media && docker run --rm media-worker:test`.

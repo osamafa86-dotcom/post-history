@@ -1,4 +1,4 @@
-"""أداة سطر أوامر للتجربة والقياس: python -m media_worker {probe,digest,proxy} FILE [OUT]"""
+"""python -m media_worker serve (الخدمة) | {probe,digest,proxy} FILE [OUT] (للتجربة والقياس)"""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from .proxy import make_proxy
 def main() -> None:
     parser = argparse.ArgumentParser(prog="media_worker")
     sub = parser.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("serve")
     for name in ("probe", "digest"):
         sub.add_parser(name).add_argument("file", type=Path)
     p = sub.add_parser("proxy")
@@ -22,6 +23,11 @@ def main() -> None:
     p.add_argument("out", type=Path)
     args = parser.parse_args()
 
+    if args.cmd == "serve":
+        from .service import main as serve
+
+        serve()
+        return
     if args.cmd == "probe":
         out = probe(args.file).to_dict()
     elif args.cmd == "digest":
