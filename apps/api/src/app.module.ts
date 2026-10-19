@@ -6,6 +6,7 @@ import { internalOnly } from './common/internal-only';
 import { ErrorFilter } from './common/error.filter';
 import { LOGGER, requestLogging } from './common/logger';
 import { DatabaseModule } from './database/database.module';
+import { RedisModule } from './common/redis.module';
 import { HealthController } from './health/health.controller';
 import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor';
 import { IdentityModule } from './identity/identity.module';
@@ -15,6 +16,8 @@ import { FormsModule } from './forms/forms.module';
 import { MaterialsModule } from './materials/materials.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { EventsModule } from './events/events.module';
+import { PushDevicesModule } from './push-devices/push-devices.module';
+import { VerificationModule } from './verification/verification.module';
 
 @Module({})
 export class AppModule {
@@ -22,7 +25,7 @@ export class AppModule {
     return {
       module: AppModule,
       global: true,
-      imports: [DatabaseModule, IdentityModule, OutboxModule, UploadsModule, FormsModule, MaterialsModule, NotificationsModule, EventsModule],
+      imports: [DatabaseModule, RedisModule, IdentityModule, OutboxModule, UploadsModule, FormsModule, MaterialsModule, NotificationsModule, EventsModule, PushDevicesModule, VerificationModule],
       controllers: [HealthController],
       providers: [
         { provide: APP_CONFIG, useValue: config },

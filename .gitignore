@@ -58,3 +58,7 @@ samples/
 
 # local compose overrides (e.g. exposing tusd-proxy to a phone on the LAN)
 docker-compose.override.yml
+
+# local redis snapshots
+dump.rdb
+*.rdb

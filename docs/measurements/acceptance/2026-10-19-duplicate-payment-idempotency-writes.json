@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "duplicate-payment",
+  "started_at": "2026-10-19T18:05:27.426Z",
+  "ended_at": "2026-10-19T18:05:27.831Z",
+  "result": "partial",
+  "metrics": {
+    "variant": "idempotency-key-on-writes",
+    "write_operations_total": 15,
+    "write_operations_checked": 9,
+    "write_operations_unimplemented": 6,
+    "behaviour_scenarios": 8,
+    "failures": 0
+  },
+  "device": {
+    "platform": "server"
+  },
+  "upload_path": "n/a",
+  "notes": "بديل مؤقت لمعيار الدفع المكرر: يقيس مفتاح منع التكرار على كل كتابة موجودة، ولا يدّعي معيار البوابة المالية (لا دفع في التأسيس)؛ 6 عملية كتابة في العقد لم تُنفَّذ بعد في الخادم فلم تُقَس"
+}

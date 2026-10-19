@@ -6,7 +6,9 @@
 // Live mode (PII_BASE_URL set): crawls API responses, notifications and events as each role and looks for
 // seeded canaries and revealing patterns. Tokens come from the environment, never from files or arguments.
 //   PII_BASE_URL=http://127.0.0.1:3000/v1  PII_TOKENS='{"reporter":"…","producer":"…"}'
-//   PII_CANARIES='["synthetic-source-name","12.3456789,98.7654321"]'  PII_PRIVILEGED='["rights_officer"]'
+//   PII_CANARIES='["12.3456789","98.7654321"]'   seeded values that must appear in no response at all
+//   PII_CHANNEL_CANARIES='["seeded-title"]'      values allowed in newsroom API bodies but never in notifications or events
+//   PII_PRIVILEGED='["rights_officer"]'
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import YAML from "yaml";
@@ -95,8 +97,15 @@ export function staticChecks() {
   return { findings, scanned, reachableSchemas: reachable.size, reachableProps, responseExamples: responseExamples.length, missedControls };
 }
 
+let logSource = null;
+/** Lets a harness that owns the server process hand over its captured logs; they are scanned for the canaries too. */
+export const setLogSource = (fn) => { logSource = fn; };
+
+// What the live run does not reach yet. Until each exists and is crawled, the row cannot be reported as pass.
+const UNCOVERED = "previews-and-derivatives,exports,external-channels(push/sms/telegram),client-device";
+
 /** Live crawl; `fetchImpl` is injectable for the self-test. */
-export async function liveChecks({ baseUrl, tokens, canaries, privileged = [], fetchImpl = fetch }) {
+export async function liveChecks({ baseUrl, tokens, canaries, channelCanaries = [], privileged = [], fetchImpl = fetch }) {
   const findings = [];
   let requests = 0;
   const get = async (role, path) => {
@@ -116,14 +125,22 @@ export async function liveChecks({ baseUrl, tokens, canaries, privileged = [], f
       if (r.status >= 500) findings.push({ source: `${role} GET ${path}`, path: "$", kind: `server-error-${r.status}` });
       if (path === "/materials" && Array.isArray(r.body?.items)) materialIds.push(...r.body.items.slice(0, 20).map((m) => m.id).filter(Boolean));
       if (isPrivileged && !alwaysScan) continue; // privileged readers may see unmasked API values, never channel payloads
-      scan(r.body, { keys, canaries }).forEach((f) => findings.push({ source: `${role} GET ${path}`, ...f }));
+      // channelCanaries (titles, names) are legitimate inside newsroom API bodies but must never reach notifications or events
+      const here = alwaysScan ? [...canaries, ...channelCanaries] : canaries;
+      scan(r.body, { keys, canaries: here }).forEach((f) => findings.push({ source: `${role} GET ${path}`, ...f }));
     }
     if (!isPrivileged) {
       for (const id of materialIds) {
-        const r = await get(role, `/materials/${id}`);
-        scan(r.body, { keys: REVEALING_KEYS, canaries }).forEach((f) => findings.push({ source: `${role} GET /materials/{id}`, ...f }));
+        for (const suffix of ["", "/transitions"]) {
+          const r = await get(role, `/materials/${id}${suffix}`);
+          scan(r.body, { keys: REVEALING_KEYS, canaries }).forEach((f) => findings.push({ source: `${role} GET /materials/{id}${suffix}`, ...f }));
+        }
       }
     }
+  }
+  if (logSource) {
+    scan(logSource(), { keys: false, canaries: [...canaries, ...channelCanaries] }).forEach((f) => findings.push({ source: "server logs", ...f }));
+    requests++;
   }
   return { findings, requests };
 }
@@ -142,6 +159,7 @@ export async function run(argv = process.argv.slice(2)) {
     live = await liveChecks({
       baseUrl: process.env.PII_BASE_URL, tokens,
       canaries: JSON.parse(process.env.PII_CANARIES ?? "[]"),
+      channelCanaries: JSON.parse(process.env.PII_CHANNEL_CANARIES ?? "[]"),
       privileged: JSON.parse(process.env.PII_PRIVILEGED ?? "[]"),
     });
   }
@@ -157,7 +175,7 @@ export async function run(argv = process.argv.slice(2)) {
   console.log(live ? `live: ${live.requests} requests; findings=${live.findings.length}` : "live: skipped (no PII_BASE_URL)");
 
   const failed = all.length > 0 || s.missedControls.length > 0 || unusedWaivers.length > 0;
-  finish(doc, failed ? "fail" : live && !waivedHits ? "pass" : "partial", {
+  finish(doc, failed ? "fail" : "partial", {
     waived_open_findings: waivedHits,
     static_examples_scanned: s.scanned,
     static_response_schemas_scanned: s.reachableSchemas,
@@ -166,8 +184,10 @@ export async function run(argv = process.argv.slice(2)) {
     detector_controls_missed: s.missedControls.length,
     live_checked: Boolean(live),
     live_requests: live?.requests ?? 0,
+    channels_not_covered: UNCOVERED,
+    server_logs_scanned: Boolean(live && logSource),
     live_findings: live?.findings.length ?? 0,
-  }, [live ? null : "الفحص الساكن فقط (العقد والأمثلة)؛ الجزء الحي ضد الخادم لم يُنفَّذ بعد، فالنتيجة جزئية لا تدّعي نجاح المعيار كاملًا",
+  }, [live ? `الجزء الحي غطّى استجابات الواجهة والإشعارات والأحداث${logSource ? " وسجلات الخادم" : ""}؛ لم تُغطَّ بعد: ${UNCOVERED}` : "الفحص الساكن فقط (العقد والأمثلة)؛ الجزء الحي ضد الخادم لم يُنفَّذ بعد، فالنتيجة جزئية لا تدّعي نجاح المعيار كاملًا",
      waivedHits ? `${waivedHits} موضع مُستثنى بإذن مكتوب في waivers/pii-leak.json ويبقى مفتوحًا حتى حسم العقد` : null].filter(Boolean).join("؛ "));
   if (!args["dry-run"]) console.log("wrote", writeResult(doc, { slug: live ? "live" : "static" }));
   else writeResult(doc, { dryRun: true });

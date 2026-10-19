@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, count, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { ApiError } from '../common/errors';
 import { DB, type Database } from '../database/database.module';
-import { notifications } from '../database/schema/schema';
+import { notifications, outboxEvents } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import type { Principal } from '../identity/principal';
 import { applyTransition, iso, lockMaterial, roleCovers } from '../materials/material-store';
@@ -83,6 +83,13 @@ export class NotificationsService {
           escalateAt: null,
         })
         .where(eq(notifications.id, n.id));
+      // إقرار التصعيد يوقف سلسلة الإشعار الأصلي أيضًا: أحدٌ تولّى الأمر
+      if (n.type === 'notification.escalated') {
+        const [event] = await tx.select({ payload: outboxEvents.payload }).from(outboxEvents).where(eq(outboxEvents.id, n.eventId));
+        const original = (event?.payload as { notification_id?: string } | undefined)?.notification_id;
+        if (original) await tx.update(notifications).set({ escalateAt: null }).where(eq(notifications.id, original));
+        return;
+      }
       if (!INCOMING.includes(n.type) || !n.materialId) return;
       const m = await lockMaterial(tx, n.materialId);
       if (m && m.editorialState === 'inbox' && roleCovers(p, 'supervisor', m)) {

@@ -4,7 +4,13 @@ import { materials, notifications, offices, userRoles, users } from '../database
 import type { OutboxRow } from '../outbox/outbox.dispatcher';
 import { materialRef, notificationTitle, type Locale } from './messages';
 
-type Audience = 'supervisors' | 'producers' | 'reporter';
+type Audience = 'supervisors' | 'producers' | 'reporter' | 'escalated_to';
+
+export interface FanOutOptions {
+  locale: Locale;
+  /** مهلة الإقرار قبل التصعيد بالثواني لكل أولوية؛ العادية لا تُصعَّد. */
+  escalationSeconds: { urgent: number; important: number };
+}
 
 /** من يُشعَر بكل نوع حدث، وهل هي مهمة («أُسند» ثم «أقرّ الاستلام»). ما ليس هنا لا يولّد إشعارًا. */
 const RULES: Record<string, { audience: Audience; assignment: boolean; skipUrgent?: boolean }> = {
@@ -17,13 +23,15 @@ const RULES: Record<string, { audience: Audience; assignment: boolean; skipUrgen
   'material.published': { audience: 'reporter', assignment: false },
   // إشعار الاستلام: يصل حين يتحقق الأصل ويصدر رقم الإيصال
   'upload.verified': { audience: 'reporter', assignment: false },
+  // التصعيد يصل المستخدم المسمّى في الحدث؛ لا يُصعَّد هو نفسه (السلسلة تتقدم على الإشعار الأصلي)
+  'notification.escalated': { audience: 'escalated_to', assignment: true },
 };
 
 /**
  * يحوّل حدث Outbox إلى إشعارات في صندوق الوارد داخل معاملة المُرسل نفسها. ذاتي التكرار: (user_id, event_id) فريد،
  * فإعادة إرسال الحدث لا تكرر الإشعار. يعيد عدد الإشعارات الجديدة.
  */
-export async function fanOut(tx: Tx, event: OutboxRow, locale: Locale): Promise<number> {
+export async function fanOut(tx: Tx, event: OutboxRow, opts: FanOutOptions): Promise<number> {
   const rule = RULES[event.type];
   const payload = event.payload as Record<string, unknown>;
   const materialId = typeof payload.material_id === 'string' ? payload.material_id : undefined;
@@ -38,9 +46,15 @@ export async function fanOut(tx: Tx, event: OutboxRow, locale: Locale): Promise<
   if (!m) return 0;
   if (rule.skipUrgent && m.priority === 'urgent') return 0;
 
-  const recipients = await audience(tx, rule.audience, m);
+  const recipients =
+    rule.audience === 'escalated_to'
+      ? typeof payload.escalated_to === 'string'
+        ? [payload.escalated_to]
+        : []
+      : await audience(tx, rule.audience, m);
   if (recipients.length === 0) return 0;
-  const title = notificationTitle(event.type, locale, {
+  const delay = rule.assignment && rule.audience !== 'escalated_to' ? opts.escalationSeconds[m.priority as 'urgent'] : undefined;
+  const title = notificationTitle(event.type, opts.locale, {
     ref: materialRef(m.id),
     receipt: typeof payload.receipt_number === 'string' ? payload.receipt_number : undefined,
   });
@@ -55,6 +69,7 @@ export async function fanOut(tx: Tx, event: OutboxRow, locale: Locale): Promise<
         title,
         priority: m.priority,
         assignmentState: rule.assignment ? 'assigned' : null,
+        escalateAt: delay ? sql`now() + make_interval(secs => ${delay})` : null,
       })),
     )
     .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
@@ -64,7 +79,7 @@ export async function fanOut(tx: Tx, event: OutboxRow, locale: Locale): Promise<
 
 async function audience(
   tx: Tx,
-  who: Audience,
+  who: Exclude<Audience, 'escalated_to'>,
   m: { reporterId: string; officeId: string | null; governorate: string | null },
 ): Promise<string[]> {
   if (who === 'reporter') return [m.reporterId];

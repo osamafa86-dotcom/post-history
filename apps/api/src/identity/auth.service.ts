@@ -7,7 +7,12 @@ import { ApiError } from '../common/errors';
 import { DB, type Database } from '../database/database.module';
 import { userPermissions, userRoles, users } from '../database/schema/schema';
 import type { components } from '../generated/api';
-import { FixedWindowRateLimiter } from './rate-limiter';
+import type Redis from 'ioredis';
+import type { Logger } from 'pino';
+import { LOGGER } from '../common/logger';
+import { REDIS } from '../common/redis.module';
+import { MemoryRateLimiter, rateLimitKeyMaterial, RedisRateLimiter, ResilientRateLimiter, type RateLimiter } from './rate-limiter';
+import { auditLog } from '../database/schema/schema';
 import { SessionService } from './session.service';
 
 type Session = components['schemas']['Session'];
@@ -18,8 +23,8 @@ type LoginRequest = components['schemas']['LoginRequest'];
 @Injectable()
 export class AuthService {
   // المحاولات الفاشلة لكل (بريد، عنوان)، ولكل عنوان بحد أعلى ضد رش كلمات المرور على حسابات كثيرة
-  private readonly byIp: FixedWindowRateLimiter;
-  private readonly byEmailIp: FixedWindowRateLimiter;
+  private readonly byIp: RateLimiter;
+  private readonly byEmailIp: RateLimiter;
   private readonly fieldKey: Buffer;
   // يُتحقق منه عند غياب المستخدم حتى لا يكشف زمن الاستجابة وجود البريد
   private readonly dummyHash: Promise<string>;
@@ -28,10 +33,19 @@ export class AuthService {
     @Inject(DB) private readonly db: Database,
     @Inject(APP_CONFIG) config: AppConfig,
     private readonly sessions: SessionService,
+    @Inject(REDIS) redis: Redis | null,
+    @Inject(LOGGER) private readonly logger: Logger,
   ) {
     const windowMs = config.LOGIN_RATE_LIMIT_WINDOW_SECONDS * 1000;
-    this.byIp = new FixedWindowRateLimiter(config.LOGIN_RATE_LIMIT_IP_MAX, windowMs);
-    this.byEmailIp = new FixedWindowRateLimiter(config.LOGIN_RATE_LIMIT_MAX, windowMs);
+    // الحدّان يتشاركان حالة صحة Redis: نوبة التعطل تُبلَّغ مرة واحدة
+    const health = this.limiterHealth();
+    const keyMaterial = rateLimitKeyMaterial(config.JWT_SECRET);
+    const limiter = (name: string, max: number): RateLimiter =>
+      redis
+        ? new ResilientRateLimiter(new RedisRateLimiter(redis, name, max, windowMs, keyMaterial), new MemoryRateLimiter(max, windowMs), health)
+        : new MemoryRateLimiter(max, windowMs);
+    this.byIp = limiter('login-ip', config.LOGIN_RATE_LIMIT_IP_MAX);
+    this.byEmailIp = limiter('login-email-ip', config.LOGIN_RATE_LIMIT_MAX);
     this.fieldKey = Buffer.from(config.FIELD_ENCRYPTION_KEY, 'base64');
     this.dummyHash = argon2Hash(randomToken());
   }
@@ -40,7 +54,7 @@ export class AuthService {
     const email = body.email.trim().toLowerCase();
     const ipKey = ip;
     const pairKey = `${email}|${ip}`;
-    const wait = Math.max(this.byIp.retryAfter(ipKey), this.byEmailIp.retryAfter(pairKey));
+    const wait = Math.max(await this.byIp.retryAfter(ipKey), await this.byEmailIp.retryAfter(pairKey));
     if (wait > 0) {
       throw new ApiError(429, 'rate_limited', 'Too many attempts.', undefined, { 'Retry-After': String(wait) });
     }
@@ -56,22 +70,21 @@ export class AuthService {
       .from(users)
       .where(sql`lower(${users.email}) = ${email}`);
 
-    const fail = (): never => {
-      this.byIp.record(ipKey);
-      this.byEmailIp.record(pairKey);
+    const fail = async (): Promise<never> => {
+      await Promise.all([this.byIp.record(ipKey), this.byEmailIp.record(pairKey)]);
       throw ApiError.unauthorized();
     };
 
     const passwordOk = await argon2Verify(user?.passwordHash ?? (await this.dummyHash), body.password).catch(() => false);
-    if (!user || !passwordOk || user.status !== 'active') fail();
+    if (!user || !passwordOk || user.status !== 'active') await fail();
 
     if (user!.totpEnabled) {
       // غياب الرمز بعد كلمة مرور صحيحة ليس تخمينًا فلا يُعد فشلًا
       if (!body.totp_code) throw new ApiError(401, 'totp_required', 'TOTP code required.');
       const secret = decryptField(this.fieldKey, user!.totpSecretEnc!);
-      if (!verifyTotp(secret, body.totp_code)) fail();
+      if (!verifyTotp(secret, body.totp_code)) await fail();
     }
-    this.byEmailIp.reset(pairKey);
+    await this.byEmailIp.reset(pairKey);
 
     return this.db.transaction(async (tx) => {
       const issued = await this.sessions.issue(tx, user!.id);
@@ -84,6 +97,33 @@ export class AuthService {
         roles: await this.roles(user!.id),
       };
     });
+  }
+
+  /**
+   * Redis معطّل لا يُسقط حد الدخول: يتراجع إلى الذاكرة بالحدود نفسها لكل نسخة، مع تحذير في السجل وصف في
+   * سجل التدقيق عند بدء النوبة وعند العودة إلى Redis (قرار المنسّق؛ ADR 0005).
+   */
+  private limiterHealth(): { degraded(err: unknown): void; recovered(): void } {
+    let degraded = false;
+    const audit = (action: string) =>
+      this.db
+        .insert(auditLog)
+        .values({ action, targetType: 'system', details: { reason_code: 'redis_unavailable' }, hash: Buffer.alloc(32) })
+        .catch((err: unknown) => this.logger.error({ err_name: (err as Error)?.name }, 'audit write failed'));
+    return {
+      degraded: (err) => {
+        if (degraded) return;
+        degraded = true;
+        this.logger.warn({ err_name: (err as Error)?.name }, 'login rate limiter degraded to in-memory');
+        void audit('rate_limiter.degraded');
+      },
+      recovered: () => {
+        if (!degraded) return;
+        degraded = false;
+        this.logger.info('login rate limiter recovered (redis)');
+        void audit('rate_limiter.recovered');
+      },
+    };
   }
 
   async refresh(refreshToken: string): Promise<Session> {

@@ -26,7 +26,10 @@ export class InboxOutboxPublisher implements OutboxPublisher {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
   async publish(event: OutboxRow, tx: Tx): Promise<void> {
-    const created = await fanOut(tx, event, this.config.NOTIFICATION_LOCALE);
+    const created = await fanOut(tx, event, {
+      locale: this.config.NOTIFICATION_LOCALE,
+      escalationSeconds: { urgent: this.config.ESCALATION_URGENT_SECONDS, important: this.config.ESCALATION_IMPORTANT_SECONDS },
+    });
     this.logger.debug({ event_id: event.id, type: event.type, notifications: created }, 'outbox event published');
   }
 }

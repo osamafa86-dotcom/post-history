@@ -100,7 +100,7 @@ test("tenant execute: a server that serves another reporter's material fails the
   const bad = await execute(cases, { baseUrl: leaky.url, tokens: { reporter: "t" }, fixtures: { other_reporter_material_id: "abc" } });
   leaky.close();
   assert.equal(bad[0].outcome, "fail");
-  const tight = await fakeApi(() => ({ status: 404 }));
+  const tight = await fakeApi((req) => ({ status: req.headers.authorization ? 404 : 401 }));
   const ok = await execute(cases, { baseUrl: tight.url, tokens: { reporter: "t" }, fixtures: { other_reporter_material_id: "abc" } });
   tight.close();
   assert.equal(ok[0].outcome, "pass");
@@ -170,4 +170,29 @@ test("results validator rejects bad names, unknown tests, pass-without-evidence 
   assert.ok(checkResult("2026-11-05-x.json", { ...doc, result: "pass", metrics: { ...doc.metrics, sha256_match: "unverified" } }).some((e) => e.includes("result is pass")));
   assert.ok(checkResult("2026-11-05-x.json", { ...doc, notes: "at geo:31.5,34.4" }).some((e) => e.includes("revealing")));
   assert.deepEqual(checkResult("2026-11-05-x.json", { ...doc, device: { ...doc.device, model: "SM-S918B" } }), [], "device.model is allowed");
+});
+
+test("tenant execute: a route the server does not have is unimplemented, not a pass or a fail", async () => {
+  const cases = [{ kind: "role", op: "GET /uploads/{id}", method: "get", path: "/uploads/{id}", role: "finance", expect: "403" }];
+  const none = await fakeApi(() => ({ status: 404 }));
+  const out = await execute(cases, { baseUrl: none.url, tokens: { finance: "t" }, fixtures: {} });
+  none.close();
+  assert.equal(out[0].outcome, "unimplemented");
+});
+
+import { setLogSource } from "../scripts/pii-leak.mjs";
+import { canon } from "../lib/live.mjs";
+
+test("pii-leak live crawl also scans the server logs for canaries", async () => {
+  const clean = await fakeApi(() => ({ body: { items: [] } }));
+  setLogSource(() => '{"msg":"request","path":"/v1/materials"}\n{"msg":"oops 12.34567891"}');
+  const r = await liveChecks({ baseUrl: clean.url, tokens: { producer: "t" }, canaries: ["12.34567891"] });
+  setLogSource(null);
+  clean.close();
+  assert.deepEqual(r.findings.map((f) => f.source), ["server logs"]);
+});
+
+test("canon treats JSON bodies with different key order as the same response", () => {
+  assert.equal(canon({ a: 1, b: { c: [1, { y: 2, x: 1 }] } }), canon({ b: { c: [1, { x: 1, y: 2 }] }, a: 1 }));
+  assert.notEqual(canon({ a: 1 }), canon({ a: 2 }));
 });

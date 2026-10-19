@@ -1,16 +1,1 @@
-[
-  {
-    "source": "openapi schema MaterialCreate",
-    "path": "MaterialCreate.shot_at",
-    "kind": "revealing-property-in-response-schema",
-    "reason": "Material extends MaterialCreate, so shot_at is returned to every role with access to the material. Threat model A2 classes the exact shot time as maximal sensitivity (EXIF/QuickTime, shot_at) while the owner's 2026-10-19 decision gates only sensitive_location:read and protected_source:read. Open contract question, not a verdict.",
-    "raised_to": "contracts agent via orchestrator (QA PR acceptance-skeleton)"
-  },
-  {
-    "source": "openapi schema Material example",
-    "path": "$.shot_at",
-    "kind": "forbidden-key",
-    "reason": "Same open question as MaterialCreate.shot_at: the Material example returns it unmasked.",
-    "raised_to": "contracts agent via orchestrator (QA PR acceptance-skeleton)"
-  }
-]
+[]

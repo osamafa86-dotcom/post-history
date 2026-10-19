@@ -17,14 +17,16 @@ export interface Harness {
 }
 
 export async function createHarness(
-  extra: { controllers?: unknown[]; logger?: Logger; env?: Record<string, string> } = {},
+  extra: { controllers?: unknown[]; logger?: Logger; env?: Record<string, string>; overrides?: Array<[unknown, unknown]> } = {},
 ): Promise<Harness> {
   const config = loadConfig({ ...process.env, ...extra.env });
   const logger = extra.logger ?? createLogger('silent');
-  const moduleRef = await Test.createTestingModule({
+  let builder = Test.createTestingModule({
     imports: [AppModule.forRoot(config, logger)],
     controllers: (extra.controllers ?? []) as never[],
-  }).compile();
+  });
+  for (const [token, value] of extra.overrides ?? []) builder = builder.overrideProvider(token as never).useValue(value);
+  const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication({ logger: false });
   configureApp(app, config, logger);
   await app.init();
