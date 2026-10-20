@@ -35,6 +35,7 @@ const RULES: Record<string, { audience: Audience; assignment: boolean; skipUrgen
 export async function fanOut(tx: Tx, event: OutboxRow, opts: FanOutOptions): Promise<number> {
   const payload = event.payload as Record<string, unknown>;
   if (event.type === 'auth.recovery_requested') return recoveryRequested(tx, event, payload, opts);
+  if (event.type === 'auth.recovery_completed') return recoveryCompleted(tx, event, opts);
   const rule = RULES[event.type];
   const materialId = typeof payload.material_id === 'string' ? payload.material_id : undefined;
   if (!rule || !materialId) return 0;
@@ -128,8 +129,11 @@ async function recoveryRequested(tx: Tx, event: OutboxRow, payload: Record<strin
         userId,
         title: notificationTitle('auth.recovery_requested', opts.locale, { ref: requestId }),
         assignmentState: 'assigned' as const,
+        // v0.1: المعتمِد يفتح الطلب من هذا الحقل (العنوان يبقى يحمله لعملاء v0)
+        recoveryRequestId: requestId,
       })),
-    { userId: owner.id, title: notificationTitle('auth.recovery_requested.self', opts.locale, { ref: '' }), assignmentState: null },
+    // صاحب الحساب يُنبَّه بلا معرّف الطلب: لا شيء له يفعله به، وقد يكون جهازه المفقود هو من يقرأ
+    { userId: owner.id, title: notificationTitle('auth.recovery_requested.self', opts.locale, { ref: '' }), assignmentState: null, recoveryRequestId: null },
   ];
   const inserted = await tx
     .insert(notifications)
@@ -146,4 +150,23 @@ async function systemAdmins(tx: Tx): Promise<string[]> {
     .innerJoin(users, eq(users.id, userRoles.userId))
     .where(and(eq(userRoles.role, 'system_admin'), eq(users.status, 'active')));
   return rows.map((r) => r.userId);
+}
+
+/** إكمال الاستعادة (ضابط ADR 0012): تنبيه لصاحب الحساب وحده بلا معرّف الطلب، فيعرف إن استُولي على حسابه. */
+async function recoveryCompleted(tx: Tx, event: OutboxRow, opts: FanOutOptions): Promise<number> {
+  const inserted = await tx
+    .insert(notifications)
+    .values({
+      userId: event.aggregateId,
+      eventId: event.id,
+      type: event.type,
+      materialId: null,
+      priority: 'important',
+      title: notificationTitle('auth.recovery_completed', opts.locale, { ref: '' }),
+      assignmentState: null,
+      recoveryRequestId: null,
+    })
+    .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
+    .returning({ id: notifications.id });
+  return inserted.length;
 }

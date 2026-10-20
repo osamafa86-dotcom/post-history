@@ -10,12 +10,13 @@ import { iso } from '../materials/material-store';
 import { writeOutboxEvent } from '../outbox/outbox';
 import { hasRole, mayDecideFor, type Principal, type RoleName, supervisesUser } from './principal';
 import { audit, recordRecoveryApproval } from './recovery-approval';
+import { RESET_TOKEN_DELIVERY, type ResetTokenDelivery } from './reset-token-delivery';
 import type { RateLimiter } from './rate-limiter';
 import { RateLimitsService } from './rate-limits.service';
-import { SessionService } from './session.service';
+import { revokeAllAccess, SessionService } from './session.service';
 
 type UserSession = components['schemas']['UserSession'];
-type RecoveryRequest = components['schemas']['RecoveryRequest'];
+type RecoveryApproval = components['schemas']['RecoveryApproval'];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -30,6 +31,7 @@ export class AccountService {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly sessions: SessionService,
     limits: RateLimitsService,
+    @Inject(RESET_TOKEN_DELIVERY) private readonly resetTokens: ResetTokenDelivery,
   ) {
     this.recoveryByEmail = limits.create('recovery-email', config.LOGIN_RATE_LIMIT_MAX);
     this.recoveryByIp = limits.create('recovery-ip', config.LOGIN_RATE_LIMIT_IP_MAX);
@@ -120,12 +122,14 @@ export class AccountService {
   }
 
   /**
-   * اعتماد مشرف نطاق المراسل أو مدير النظام بعد التحقق خارج النظام: يبطل كل جلسات الحساب ورموز رفعه وأجهزة إشعاره.
-   * الطلب المعتمد أو المرفوض أو المنتهي = 409 recovery_state_conflict.
+   * اعتماد مشرف نطاق المراسل أو مدير النظام بعد التحقق خارج النظام: يبطل كل جلسات الحساب ورموز رفعه وأجهزة إشعاره،
+   * ويصدر رمز إعادة التعيين (يُعاد هنا مرة واحدة ما لم تتولَّ قناة التسليم المحقونة إيصاله). حساب مدير نظام لا يُعتمد
+   * من الواجهة أبدًا (403 admin_quorum_required: إجراء الشخصين من سطر الأوامر). الطلب المعتمد أو المرفوض أو المنتهي
+   * = 409 recovery_state_conflict، فإعادة الاعتماد لا تعيد الرمز أبدًا (ولا Idempotency-Key على /auth/*).
    */
-  async approveRecovery(p: Principal, id: string, verificationNote: string): Promise<RecoveryRequest> {
+  async approveRecovery(p: Principal, id: string, verificationNote: string): Promise<RecoveryApproval> {
     if (!UUID.test(id)) throw ApiError.notFound();
-    const result = await this.db.transaction(async (tx): Promise<RecoveryRequest | 'expired'> => {
+    const result = await this.db.transaction(async (tx) => {
       const [r] = await tx
         .select({
           id: recoveryRequests.id,
@@ -142,31 +146,84 @@ export class AccountService {
         .where(eq(recoveryRequests.id, id))
         .for('update', { of: recoveryRequests });
       if (!r || (!hasRole(p, 'system_admin') && !supervisesUser(p, r))) throw ApiError.notFound();
+      if ((await rolesOf(tx, r.userId)).includes('system_admin')) throw adminQuorumRequired();
       await assertHierarchy(tx, p, r.userId);
       if (r.state === 'pending_approval' && new Date(r.expiresAt) <= new Date()) {
         // يُثبَّت الانتهاء ثم يُرفض الاعتماد خارج المعاملة (الرمي داخلها كان سيلغي هذا التحديث)
         await tx.update(recoveryRequests).set({ state: 'expired', decidedAt: sql`now()` }).where(eq(recoveryRequests.id, r.id));
-        return 'expired';
+        return 'expired' as const;
       }
       if (r.state !== 'pending_approval') throw new ApiError(409, 'recovery_state_conflict', `The recovery request is ${r.state}.`);
-
-      const approved = await recordRecoveryApproval(tx, r, p.userId, verificationNote);
-      return {
-        id: approved.id,
-        state: 'approved',
-        created_at: iso(approved.createdAt)!,
-        approved_by: approved.approvedBy,
-        expires_at: iso(approved.expiresAt),
-      };
+      return recordRecoveryApproval(tx, r, p.userId, verificationNote, this.config.RECOVERY_RESET_TOKEN_TTL_SECONDS);
     });
     if (result === 'expired') throw new ApiError(409, 'recovery_state_conflict', 'The recovery request has expired.');
-    return result;
+
+    const { approved, resetToken } = result;
+    const expiresAt = iso(approved.resetTokenExpiresAt)!;
+    const deliveredElsewhere = await this.resetTokens.deliver({
+      token: resetToken,
+      expiresAt,
+      targetUserId: approved.userId,
+      recoveryRequestId: approved.id,
+    });
+    return {
+      id: approved.id,
+      state: 'approved',
+      created_at: iso(approved.createdAt)!,
+      approved_by: approved.approvedBy,
+      expires_at: iso(approved.expiresAt),
+      ...(deliveredElsewhere ? {} : { reset_token: resetToken }),
+      reset_token_expires_at: expiresAt,
+    };
   }
+
+  // ---------- حالة الحساب ----------
+
+  /**
+   * تعليق حساب أو إعادة تفعيله (مدير النظام). التعليق يبطل كل وصول الحساب فورًا، وإعادة التفعيل لا تعيد شيئًا منه.
+   * لا يغيّر المدير حالة حسابه، وحساب مدير نظام آخر لا يُمس من هنا في الاتجاهين (403 admin_quorum_required): تعليقه
+   * يُنقص النصاب، وإعادة تفعيل مدير معلَّق بقرار شخص واحد تفتح الباب نفسه. ذاتي التكرار: الحالة القائمة = 204 بلا أثر.
+   * التدقيق بـ reason_code وحده (لا نص حر، SEC-03)، وحدث user.status_changed بحمولة القائمة البيضاء.
+   */
+  async setUserStatus(p: Principal, userId: string, status: 'active' | 'suspended'): Promise<void> {
+    if (!UUID.test(userId)) throw ApiError.notFound();
+    if (userId === p.userId) throw new ApiError(403, 'forbidden_scope', 'An administrator cannot change the status of their own account.');
+    await this.db.transaction(async (tx) => {
+      const [u] = await tx.select({ id: users.id, status: users.status }).from(users).where(eq(users.id, userId)).for('update');
+      if (!u) throw ApiError.notFound();
+      if ((await rolesOf(tx, userId)).includes('system_admin')) throw adminQuorumRequired();
+      if (u.status === status) return;
+      if (u.status !== 'active' && u.status !== 'suspended') {
+        throw new ApiError(409, 'invalid_transition', `The account is in ${u.status}.`);
+      }
+      const [changed] = await tx.update(users).set({ status }).where(eq(users.id, userId)).returning({ at: sql<string>`now()` });
+      if (status === 'suspended') await revokeAllAccess(tx, userId);
+      const reasonCode = status === 'suspended' ? 'suspended' : 'reactivated';
+      await audit(tx, p.userId, `user.${reasonCode}`, userId, { target_user_id: userId, reason_code: reasonCode });
+      const occurredAt = new Date(changed!.at).toISOString();
+      await writeOutboxEvent(tx, {
+        type: 'user.status_changed',
+        aggregateType: 'user',
+        aggregateId: userId,
+        // كل تغيير حالة حدث مستقل؛ لحظة المعاملة تميّزه (التكرار بالطلب نفسه يمنعه Idempotency-Key قبل الوصول هنا)
+        idempotencyKey: `user.status_changed:${userId}:${occurredAt}`,
+        actorId: p.userId,
+        payload: { user_id: userId, status, reason_code: reasonCode, actor_id: p.userId, occurred_at: occurredAt },
+      });
+    });
+  }
+}
+
+const adminQuorumRequired = () =>
+  new ApiError(403, 'admin_quorum_required', 'A system administrator account is changed only by the two-person procedure.');
+
+async function rolesOf(tx: Executor, userId: string): Promise<string[]> {
+  return (await tx.select({ role: userRoles.role }).from(userRoles).where(eq(userRoles.userId, userId))).map((r) => r.role);
 }
 
 /**
  * مطابقة النطاق وحدها لا تكفي: حساب دوره مساوٍ لدور المقرِّر أو أعلى لا يقرر فيه إلا مدير النظام، ولا يقرر أحد في حسابه
- * هو (استعادة مدير النظام يعتمدها مدير نظام آخر). المورد ظاهر للمقرِّر بنطاقه، فالرفض 403 لا 404.
+ * هو (وحساب مدير النظام نفسه خارج الواجهة كلها: admin_quorum_required). المورد ظاهر للمقرِّر بنطاقه، فالرفض 403 لا 404.
  */
 async function assertHierarchy(tx: Executor, p: Principal, targetUserId: string): Promise<void> {
   const roles = await tx.select({ role: userRoles.role }).from(userRoles).where(eq(userRoles.userId, targetUserId));

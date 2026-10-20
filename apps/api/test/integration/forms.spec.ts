@@ -32,6 +32,15 @@ describe('forms (/v1/forms)', () => {
     ],
   });
 
+  it('If-Match names the current version: a stale one is 412 before the version check, the current one publishes', async () => {
+    const current = await currentFormVersion(h);
+    const withIfMatch = (ifMatch: string, body: object) =>
+      http().post('/v1/forms').set('Authorization', `Bearer ${admin}`).set('Idempotency-Key', randomUUID()).set('If-Match', ifMatch).send(body);
+    expect((await withIfMatch(`"${current + 7}"`, form(current + 1)).expect(412)).body.code).toBe('precondition_failed');
+    expect(await currentFormVersion(h)).toBe(current);
+    await withIfMatch(`"${current}"`, form(current + 1)).expect(201);
+  });
+
   it('publishes version current+1, writes form.published, and serves it as current', async () => {
     const v = (await currentFormVersion(h)) + 1;
     const res = await publish(admin, form(v)).expect(201);
@@ -86,7 +95,7 @@ describe('forms (/v1/forms)', () => {
   });
 
   it('enforces roles: reporters cannot publish or list (403 before anything else)', async () => {
-    expect((await publish(reporter, form(1)).expect(403)).body.code).toBe('forbidden_scope');
+    expect((await publish(reporter, form(1)).expect(403)).body.code).toBe('forbidden_role');
     await http().get('/v1/forms').set('Authorization', `Bearer ${reporter}`).expect(403);
   });
 

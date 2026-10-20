@@ -5,6 +5,8 @@
  *   node dist/cli/approve-admin-recovery.js --request <id> --mode vault --approver <userId> --note "<كيف تُحقق منه>"
  *
  * رموز TOTP ورمز الخزنة تُقرأ من الطرفية وحدها (لا من الوسائط، فلا تبقى في سجل الأوامر أو قائمة العمليات)، ولا تُطبع.
+ * عند النجاح يُطبع رمز إعادة التعيين مرة واحدة على stdout ليسلّمه المعتمِد لصاحب الحساب خارج النظام (v0.1)؛ لا يُخزَّن إلا
+ * ببصمته ولا يُعاد طبعه، فلا يُوجَّه stdout إلى ملف أو سجل.
  */
 import { createInterface } from 'node:readline';
 import { Writable } from 'node:stream';
@@ -95,8 +97,13 @@ export async function main(argv: string[]): Promise<number> {
   const pool = new Pool({ connectionString: config.DATABASE_URL, max: 1 });
   try {
     const db = drizzle(pool, { schema });
-    const done = await approveAdminRecovery(db, { keyring: fieldKeyring(config), breakGlassTokenSha256: config.BREAK_GLASS_TOKEN_SHA256 }, input);
+    const done = await approveAdminRecovery(db, {
+        keyring: fieldKeyring(config),
+        breakGlassTokenSha256: config.BREAK_GLASS_TOKEN_SHA256,
+        resetTokenTtlSeconds: config.RECOVERY_RESET_TOKEN_TTL_SECONDS,
+      }, input);
     process.stdout.write(`approved recovery ${done.requestId}; all sessions of ${done.targetUserId} revoked\n`);
+    process.stdout.write(`reset token (shown once, valid until ${done.resetTokenExpiresAt}): ${done.resetToken}\n`);
     return 0;
   } catch (err) {
     if (err instanceof AdminRecoveryError) {

@@ -109,6 +109,7 @@ function toDto(n: typeof notifications.$inferSelect): Notification {
     state: n.state as Notification['state'],
     assignment_state: n.assignmentState as Notification['assignment_state'],
     escalation_level: n.escalationLevel,
+    recovery_request_id: n.recoveryRequestId,
     created_at: iso(n.createdAt)!,
     read_at: iso(n.readAt),
     acknowledged_at: iso(n.acknowledgedAt),

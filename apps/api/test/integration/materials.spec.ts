@@ -130,7 +130,7 @@ describe('materials (/v1/materials)', () => {
     });
 
     it('only reporters create; roles outside x-roles get 403 before any lookup', async () => {
-      expect((await as(producer).write('post', '/v1/materials', createBody()).expect(403)).body.code).toBe('forbidden_scope');
+      expect((await as(producer).write('post', '/v1/materials', createBody()).expect(403)).body.code).toBe('forbidden_role');
       await as(finance).get('/v1/materials').expect(403);
       await as(finance).get(`/v1/materials/${randomUUID()}`).expect(403);
     });

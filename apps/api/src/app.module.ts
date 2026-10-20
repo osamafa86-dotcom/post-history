@@ -3,6 +3,7 @@ import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import type { Logger } from 'pino';
 import { APP_CONFIG, type AppConfig, blockListOf } from './config/config';
 import { internalOnly } from './common/internal-only';
+import { EtagInterceptor } from './common/preconditions';
 import { ErrorFilter } from './common/error.filter';
 import { LOGGER, requestLogging } from './common/logger';
 import { DatabaseModule } from './database/database.module';
@@ -18,6 +19,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { EventsModule } from './events/events.module';
 import { PushDevicesModule } from './push-devices/push-devices.module';
 import { VerificationModule } from './verification/verification.module';
+import { AttestationModule } from './attestation/attestation.module';
 import { MediaModule } from './media/media.module';
 import { PermissionsModule } from './permissions/permissions.module';
 
@@ -27,12 +29,13 @@ export class AppModule {
     return {
       module: AppModule,
       global: true,
-      imports: [DatabaseModule, RedisModule, IdentityModule, OutboxModule, UploadsModule, FormsModule, MaterialsModule, NotificationsModule, EventsModule, PushDevicesModule, VerificationModule, PermissionsModule, MediaModule],
+      imports: [DatabaseModule, RedisModule, IdentityModule, OutboxModule, UploadsModule, FormsModule, MaterialsModule, NotificationsModule, EventsModule, PushDevicesModule, VerificationModule, PermissionsModule, MediaModule, AttestationModule],
       controllers: [HealthController],
       providers: [
         { provide: APP_CONFIG, useValue: config },
         { provide: LOGGER, useValue: logger },
         { provide: APP_FILTER, useClass: ErrorFilter },
+        { provide: APP_INTERCEPTOR, useClass: EtagInterceptor },
         { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
       ],
       exports: [APP_CONFIG, LOGGER],
@@ -44,6 +47,8 @@ export class AppModule {
 export function configureApp(app: INestApplication, config: AppConfig, logger: Logger): void {
   const express = app.getHttpAdapter().getInstance() as { disable(name: string): void; set(name: string, value: unknown): void };
   express.disable('x-powered-by');
+  // لا ETag تلقائي ضعيف: ETag الوحيد هو row_version للمادة (If-Match، عقد v0.1)، فلا يخلط العميل بينهما
+  express.set('etag', false);
   // X-Forwarded-For يُقبل من الوكلاء الموثوقين وحدهم (نطاقات Cloudflare)؛ وإلا req.ip = عنوان المقبس
   express.set('trust proxy', config.TRUSTED_PROXY_CIDRS.length > 0 ? config.TRUSTED_PROXY_CIDRS : false);
   app.use(requestLogging(logger));

@@ -38,8 +38,14 @@ export class RateLimitsService {
       : new MemoryRateLimiter(max, windowMs);
   }
 
+  /** حال حد المعدل لـ /health (عقد v0.1): redis، أو degraded حين يعمل في ذاكرة العملية (Redis معطل أو غير مضبوط). */
+  mode(): 'redis' | 'degraded' {
+    return this.redis && !this.degradedNow ? 'redis' : 'degraded';
+  }
+
+  private degradedNow = false;
+
   private healthReporter(): { degraded(err: unknown): void; recovered(): void } {
-    let degraded = false;
     const audit = (action: string) =>
       this.db
         .insert(auditLog)
@@ -47,14 +53,14 @@ export class RateLimitsService {
         .catch((err: unknown) => this.logger.error({ err_name: (err as Error)?.name }, 'audit write failed'));
     return {
       degraded: (err) => {
-        if (degraded) return;
-        degraded = true;
+        if (this.degradedNow) return;
+        this.degradedNow = true;
         this.logger.warn({ err_name: (err as Error)?.name }, 'rate limiter degraded to in-memory');
         void audit('rate_limiter.degraded');
       },
       recovered: () => {
-        if (!degraded) return;
-        degraded = false;
+        if (!this.degradedNow) return;
+        this.degradedNow = false;
         this.logger.info('rate limiter recovered (redis)');
         void audit('rate_limiter.recovered');
       },

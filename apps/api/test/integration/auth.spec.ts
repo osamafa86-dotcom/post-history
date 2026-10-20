@@ -91,6 +91,7 @@ describe('auth (/v1/auth/*)', () => {
     const me = await http().get('/v1/auth/me').set('Authorization', `Bearer ${session.access_token}`).expect(200);
     expect(me.body).toEqual({
       user_id: user.id,
+      credential_reset_required: false,
       email: user.email,
       office_id: null,
       totp_enabled: false,
