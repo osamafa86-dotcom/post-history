@@ -64,7 +64,7 @@ def main():
     subprocess.run([sys.executable, tok, "keygen", keys, "--names",
                     "app.example,ingest.example,ingest-shared.example"], check=True)
     env = dict(os.environ, INGEST_TLS_DIR=os.path.join(keys, "tls"),
-               INGEST_TOKEN_PUBLIC_KEY=open(os.path.join(keys, "public.b64")).read())
+               INGEST_TOKEN_PUBLIC_KEYS="k1:" + open(os.path.join(keys, "public.b64")).read())
     compose("up", "-d", "--wait", env=env)
 
     started_at, metrics, table = utc(), {}, []
