@@ -17,7 +17,7 @@ concurrency:
 jobs:
   web:
     name: web (lint, types, contracts, forms, BFF and browser)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     timeout-minutes: 15
     services:
       redis:
@@ -72,7 +72,7 @@ jobs:
 
   contracts:
     name: contracts (openapi + json schemas)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -84,7 +84,7 @@ jobs:
 
   db:
     name: db (migrations up/down + smoke test)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     timeout-minutes: 20
     services:
       postgres:
@@ -124,7 +124,7 @@ jobs:
 
   api:
     name: api (typecheck, unit, integration on Postgres and Redis)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     timeout-minutes: 30
     services:
       postgres:
@@ -194,7 +194,7 @@ jobs:
 
   compose:
     name: compose (config, pull, smoke)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -245,7 +245,7 @@ jobs:
 
   media:
     name: media (probe, sha256, proxy on synthetic files with FFmpeg 8)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Tests run in the worker image itself, so CI uses the same pinned FFmpeg as production.
