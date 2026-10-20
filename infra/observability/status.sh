@@ -38,10 +38,14 @@ echo
 echo "■ طابور الوسائط"
 groups="$(rcli XINFO GROUPS media:events)"
 if [ -z "$groups" ] || grep -q ERR <<<"$groups"; then echo "  لا طابور بعد"; else
-  num() { v="$(field "$1" <<<"$groups" | tr -dc 0-9)"; echo "${v:-0}"; }
-  echo "  بانتظار المعالجة:      $(num lag)"
-  echo "  قيد المعالجة:          $(num pending)"
-  echo "  عمّال متصلون:          $(num consumers)"
+  # كل مجموعة وحدها: media لعامل الوسائط، وai لعامل التفريغ إن وُجدت.
+  num() { awk -v g="$1" -v k="$2" 'NR%2==1{key=$0} NR%2==0{if(key=="name")cur=$0; else if(cur==g && key==k){print $0+0; f=1; exit}} END{if(!f)print 0}' <<<"$groups"; }
+  echo "  بانتظار المعالجة:      $(num media lag)"
+  echo "  قيد المعالجة:          $(num media pending)"
+  echo "  عمّال متصلون:          $(num media consumers)"
+  if grep -qx ai <<<"$groups"; then
+    echo "  التفريغ بانتظار:       $(num ai lag)، قيد المعالجة $(num ai pending)، عمّال $(num ai consumers)"
+  fi
 fi
 dead="$(rcli XLEN media:dead | tr -dc 0-9)"; echo "  معزولة (media:dead):   ${dead:-0}"
 echo
