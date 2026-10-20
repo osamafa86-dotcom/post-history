@@ -21,6 +21,9 @@ env:
   # Local transcription worker (workers/ai, ADR 0020): transcript-draft runs in media e2e with the ai profile. Flip to "1" once infra swaps the
   # ai-worker image in compose for workers/ai and the server side (#107, #108) is on main; until then the step is skipped.
   AI_ENABLE_TRANSCRIPT: "0"
+  # Admin notification rules and real escalation (contract v0.2, #98): notification-delivery creates rules, waits one escalation step (60 s, the
+  # contract minimum) and deletes them. Flip to "1" once #98 is on main.
+  RULES_ACCEPTANCE: "0"
 
 jobs:
   acceptance:
