@@ -51,6 +51,9 @@ info:
     - **التزامن المتفائل:** `GET` للمادة يعيد `ETag: "<row_version>"`، وتعديلاتها (`PATCH`، الانتقال، المساهمون،
       الحجز) تقبل `If-Match` اختياريًا؛ عدم المطابقة `412 precondition_failed` دون أي أثر. نشر النموذج يقبل
       `If-Match: "<الإصدار الحالي>"` بالمعنى نفسه إضافة إلى شرط `version = الحالي + 1`.
+    - **نطاق ingest (SEC-07، ADR 0011):** حين `UploadSession.ingest_token_required` يرسل العميل ترويسة
+      `Ingest-Token: <JWT>` على كل طلب tus مع `Authorization: Bearer <upload token>`. ردود البوابة بلا جسم: `401` (مفقود
+      أو تالف أو منتهٍ: رمز جديد ثم HEAD)، `403` (رمز لجلسة أخرى)، `429` (حد المعدل).
     - **الأحجام** بالبايت في الحقول، وحيث يُذكر «ميغابايت» فالمقصود MiB = 1,048,576 بايت.
 
     ## الأخطاء
@@ -788,6 +791,93 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
+  /device-attestations/challenge:
+    post:
+      tags: [uploads]
+      summary: تحدٍّ لشهادة الجهاز (App Attest أو Play Integrity) — SEC-07
+      description: تحدٍّ عشوائي 32 بايتًا، يُستهلك مرة واحدة، عمره 300 ث، مربوط بالمستخدم.
+      operationId: createAttestationChallenge
+      x-roles: [reporter]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: التحدي
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttestationChallenge" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /device-attestations:
+    post:
+      tags: [uploads]
+      summary: تسجيل مفتاح App Attest للتثبيت (iOS فقط، مرة لكل تثبيت) — SEC-07
+      description: >-
+        يتحقق الخادم من سلسلة Apple المثبّتة والتحدي و`rpIdHash`، ويحفظ المفتاح العام وعدّاده. `key_id` معرّف تثبيت
+        (بيانات كاشفة): يُخزَّن ببصمته ولا يُسجَّل ولا يُعاد. المفتاح المسجَّل لمستخدم آخر `409`.
+      operationId: registerAttestationKey
+      x-roles: [reporter]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AttestationKeyRegistration" }
+      responses:
+        "201":
+          description: مُسجَّل
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [key_ref]
+                properties:
+                  key_ref: { type: string, format: uuid, description: مرجع داخلي للمفتاح؛ ليس key_id }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { $ref: "#/components/responses/Gone" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /uploads/{id}/ingest-token:
+    parameters:
+      - $ref: "#/components/parameters/UploadId"
+    post:
+      tags: [uploads]
+      summary: رمز بوابة ingest لجلسة رفع بعد التحقق من شهادة الجهاز — SEC-07
+      description: >-
+        `clientData = challenge ‖ upload_session_id` (وهو `requestHash` على أندرويد). يعيد JWT ES256 بعمر ≤ 15 دقيقة
+        مربوطًا بالجلسة (`aud: "ingest"`، `sid`، `iat`، `exp`، `jti`، `plat`)، تتحقق منه البوابة بالمفتاح العام وحده.
+        فشل الشهادة `403 attestation_failed`، العدّاد غير المتزايد `409 assertion_replay`، التحدي المنتهي أو المستهلك
+        `410 challenge_expired`، وتعذّر Google `503 attestation_unavailable` (يبقى العميل على النطاق الرئيسي إن عرضه
+        الخادم). جلسة غيره أو غير موجودة `404`.
+      operationId: createIngestToken
+      x-roles: [reporter]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IngestTokenRequest" }
+      responses:
+        "200":
+          description: الرمز
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IngestToken" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { $ref: "#/components/responses/Gone" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
   /internal/tusd-hooks/{hook_token}:
     servers:
       - url: http://api.internal:3000
@@ -1277,6 +1367,20 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    Gone:
+      description: '`challenge_expired`: التحدي منتهٍ أو مستهلَك؛ اطلب تحديًا جديدًا'
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ServiceUnavailable:
+      description: '`attestation_unavailable`: مزوّد الشهادة (Google) غير متاح؛ أعد المحاولة لاحقًا'
+      headers:
+        Retry-After:
+          description: ثوانٍ قبل إعادة المحاولة
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
     PreconditionFailed:
       description: '`If-Match` لا يطابق الحالة الراهنة (`precondition_failed`)؛ أعد القراءة ثم أعد المحاولة'
       content:
@@ -1329,6 +1433,11 @@ components:
             - forbidden_role
             - admin_quorum_required
             - credential_reset_required
+            - attestation_failed
+            - challenge_expired
+            - assertion_replay
+            - attestation_key_conflict
+            - attestation_unavailable
             - internal_error
         message: { type: string }
         request_id: { type: string, description: لتتبع الطلب في السجلات }
@@ -1733,9 +1842,10 @@ components:
           type: [string, "null"]
           pattern: "^[0-9a-f]{64}$"
           description: >-
-            بصمة SHA-256 للملف كاملًا يحسبها العميل قبل الإنشاء. على كل عميل إرسالها (ADR 0012): الخادم يقارنها ببصمته بعد
-            التجميع فيخرج عامل الوسائط من قاعدة الثقة، والقرار `checksum_mismatch` للخادم وحده. تبقى اختيارية في المخطط
-            حتى تُحدَّث اختبارات الخادم والقبول التي تنشئ جلسات بدونها، ثم تصير إلزامية بتغيير عقد منسّق.
+            بصمة SHA-256 للملف كاملًا يحسبها العميل قبل الإنشاء؛ على كل عميل إرسالها (ADR 0012): الخادم يقارنها ببصمته بعد
+            التجميع فيخرج عامل الوسائط من قاعدة الثقة، والقرار `checksum_mismatch` للخادم وحده. الخادم يفرضها اليوم بـ
+            `UPLOAD_REQUIRE_CLIENT_SHA256`؛ تصير مفتاحًا إلزاميًا في المخطط مع تحديث اختبارات الخادم المرتبطة بهذا العلم، ويبقى
+            نوعها قابلًا لـ null حتى v0.2 كي لا تنكسر شيفرة Swift وKotlin المولّدة.
         client_fingerprint:
           type: [object, "null"]
           description: بصمة رخيصة لترشيح المكررات فقط (لا تمنح أي حق)
@@ -1771,6 +1881,12 @@ components:
           minimum: 1048576
           description: حجم الجزء الثابت بالبايت لهذه الجلسة بين الخادم والتخزين (1 MiB حدًا أدنى)؛ يُثبَّت عند البدء ولا يتغير
         bytes_received: { type: integer, minimum: 0 }
+        ingest_token_required:
+          type: boolean
+          description: >-
+            حين يكون true فـ `tus_endpoint` على نطاق `ingest.` (ADR 0011، SEC-07): يطلب العميل رمزًا من
+            `POST /uploads/{id}/ingest-token` ويرسله في ترويسة `Ingest-Token` على كل طلب tus مع `Authorization` كما هي.
+            الخادم وحده يقرر النطاق؛ لا تبديل آلي في العميل. غيابه = false (أُضيف في v0.1).
         ietf_resumable:
           type: boolean
           default: false
@@ -1826,6 +1942,60 @@ components:
               type: string
               description: "رمز قصير العمر يرسله العميل في `Authorization: Bearer` إلى خادم الرفع؛ يُحفظ مُجزَّأً على الخادم"
             upload_token_expires_at: { type: string, format: date-time }
+
+    AttestationChallenge:
+      type: object
+      required: [challenge_id, challenge, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        challenge: { type: string, pattern: "^[A-Za-z0-9_-]{43}$", description: 32 بايتًا base64url بلا حشو }
+        expires_at: { type: string, format: date-time }
+
+    AttestationKeyRegistration:
+      type: object
+      additionalProperties: false
+      required: [platform, key_id, attestation, challenge_id]
+      properties:
+        platform: { type: string, const: ios }
+        key_id: { type: string, minLength: 1, maxLength: 128, writeOnly: true, description: معرّف مفتاح App Attest (base64)؛ يُخزَّن ببصمته }
+        attestation: { type: string, minLength: 1, maxLength: 16384, writeOnly: true, description: كائن CBOR بترميز base64 }
+        challenge_id: { type: string, format: uuid }
+
+    IngestTokenRequest:
+      oneOf:
+        - $ref: "#/components/schemas/IngestTokenRequestIos"
+        - $ref: "#/components/schemas/IngestTokenRequestAndroid"
+      discriminator:
+        propertyName: platform
+        mapping:
+          ios: "#/components/schemas/IngestTokenRequestIos"
+          android: "#/components/schemas/IngestTokenRequestAndroid"
+
+    IngestTokenRequestIos:
+      type: object
+      additionalProperties: false
+      required: [platform, key_id, assertion, challenge_id]
+      properties:
+        platform: { type: string, const: ios }
+        key_id: { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        assertion: { type: string, minLength: 1, maxLength: 8192, writeOnly: true, description: تأكيد App Attest (CBOR base64) }
+        challenge_id: { type: string, format: uuid }
+
+    IngestTokenRequestAndroid:
+      type: object
+      additionalProperties: false
+      required: [platform, integrity_token, challenge_id]
+      properties:
+        platform: { type: string, const: android }
+        integrity_token: { type: string, minLength: 1, maxLength: 16384, writeOnly: true, description: رمز Play Integrity }
+        challenge_id: { type: string, format: uuid }
+
+    IngestToken:
+      type: object
+      required: [token, expires_at]
+      properties:
+        token: { type: string, description: "JWT ES256 يُرسل في ترويسة `Ingest-Token` على كل طلب tus إلى نطاق ingest" }
+        expires_at: { type: string, format: date-time, description: "≤ 15 دقيقة؛ عند 401 من البوابة يطلب العميل رمزًا جديدًا ثم HEAD" }
 
     UploadComplete:
       type: object

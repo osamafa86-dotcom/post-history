@@ -298,6 +298,20 @@ UPDATE recovery_requests SET state = 'approved', decided_at = now(), approved_by
 WHERE id = '00000000-0000-4000-8000-000000000901';
 UPDATE notifications SET recovery_request_id = '00000000-0000-4000-8000-000000000901';
 
+-- ---------- device attestation keys (SEC-07) ----------
+INSERT INTO device_attestation_keys (id, user_id, key_id_hash, public_key)
+VALUES ('00000000-0000-4000-8000-000000000a01', '00000000-0000-4000-8000-000000000011', sha256('key-1'::bytea), '\x04');
+UPDATE device_attestation_keys SET sign_count = 1, last_used_at = now() WHERE id = '00000000-0000-4000-8000-000000000a01';
+SELECT pg_temp.expect_error($q$
+  UPDATE device_attestation_keys SET last_used_at = now() + interval '1 second' WHERE id = '00000000-0000-4000-8000-000000000a01' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE device_attestation_keys SET sign_count = 0 WHERE id = '00000000-0000-4000-8000-000000000a01' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO device_attestation_keys (user_id, key_id_hash, public_key)
+  VALUES ('00000000-0000-4000-8000-000000000012', sha256('key-1'::bytea), '\x04') $q$, '23505');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO device_attestation_keys (user_id, key_id_hash, public_key) VALUES ('00000000-0000-4000-8000-000000000012', '\x01', '\x04') $q$, '23514');
+
 -- ---------- indexing policy (ADR 0002) ----------
 SELECT pg_temp.assert(
   NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexdef ILIKE '%USING gin%'),
