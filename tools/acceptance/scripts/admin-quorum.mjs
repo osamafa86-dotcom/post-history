@@ -12,6 +12,7 @@ import { createHmac } from "node:crypto";
 import { newResult, finish, writeResult, parseArgs, banner } from "../lib/measurement.mjs";
 import { byName } from "../lib/catalog.mjs";
 import { client } from "../lib/live.mjs";
+import { loadWaivers } from "../lib/waivers.mjs";
 import { checker, gateOff } from "../lib/core-gate.mjs";
 import { freshFetch } from "../lib/http.mjs";
 
@@ -35,6 +36,7 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
   const http = client(env.QUORUM_API_URL, deps.fetchImpl ?? freshFetch);
   const doc = newResult("admin-quorum", { device: { platform: "server" }, upload_path: "n/a" });
   const { fails, check } = checker();
+  const waivers = loadWaivers("admin-quorum");
   const setStatus = (token, id, status) => http.call(token, "PUT", `/users/${id}/status`, { body: { status } });
   const me = async (token) => (await http.get(token, "/auth/me")).status;
 
@@ -65,6 +67,7 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
   });
   // a command that could not even start (missing build, bad path) is not a refusal: only the CLI's own answer counts
   const notStarted = (r) => r.error || r.status === 127 || /Cannot find module|MODULE_NOT_FOUND|command not found/.test(`${r.stderr}`);
+  let guardGap = false;
   const cliRan = Boolean(env.QUORUM_CLI_ONE && env.QUORUM_CLI_GUARD && env.QUORUM_CLI_TWO);
   if (cliRan) {
     const one = cli(env.QUORUM_CLI_ONE);
@@ -73,13 +76,20 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
     check("command line, two approvers: accepted", !notStarted(two) && two.status === 0, `exit ${two.status} ${String(two.stderr).slice(0, 120)}`);
     if (tokenB) check("... and the target admin's access is revoked", (await me(tokenB)) === 401);
     const guard = cli(env.QUORUM_CLI_GUARD);
-    check("command line, guard: a suspension that leaves fewer than two active admins is refused for that reason (quorum)", !notStarted(guard) && guard.status === 1 && /quorum/.test(`${guard.stderr}${guard.stdout}`), `exit ${guard.status} ${String(guard.stderr).slice(0, 120)}`);
+    check("command line, guard: a suspension that leaves fewer than two active admins is refused", !notStarted(guard) && guard.status !== 0, `exit ${guard.status} ${String(guard.stderr).slice(0, 120)}`);
+    // known finding (waivers/admin-quorum.json): the refusal is right (the database trigger) but the CLI reports it as `failed: Error`, not `refused (quorum)`
+    const finding = { source: "set-admin-status CLI, guard path", path: "message of the refusal", kind: "guard-not-reported-as-quorum" };
+    const named = /refused \(quorum\)/.test(`${guard.stderr}${guard.stdout}`);
+    guardGap = !named;
+    if (!named && waivers.isWaived(finding)) console.log("waived: the guard refuses but the CLI does not say `refused (quorum)` (waivers/admin-quorum.json)");
+    else check("... and the CLI says so: refused (quorum)", named, String(guard.stderr).slice(0, 120));
+    if (named) for (const w of waivers.stale([])) { fails.push(`stale waiver ${w.kind}`); console.log(`FAIL  stale waiver ${w.kind}: the CLI now says refused (quorum): delete it from waivers/admin-quorum.json`); }
     if (env.QUORUM_TOKEN_C) check("... and the admin it targeted still works", (await me(env.QUORUM_TOKEN_C)) === 200);
   } else console.log("note the two-person command line was not given (QUORUM_CLI_ONE, QUORUM_CLI_TWO, QUORUM_CLI_GUARD): that part is not measured");
 
-  finish(doc, fails.length ? "fail" : cliRan ? "pass" : "partial", {
-    api_admin_target_refused: onAdmin.status === 403, api_self_refused: onSelf.status === 403, ordinary_user_suspended: first.status === 204, cli_checked: cliRan,
-  }, cliRan ? "الواجهة وسطر الأوامر ثنائي الأشخاص والحارس" : "جزء الواجهة فقط؛ سطر الأوامر ثنائي الأشخاص لم يُقَس (لم يُعطَ أمره) فلا pass");
+  finish(doc, fails.length ? "fail" : cliRan && !guardGap ? "pass" : "partial", {
+    api_admin_target_refused: onAdmin.status === 403, api_self_refused: onSelf.status === 403, ordinary_user_suspended: first.status === 204, cli_checked: cliRan, guard_reported_as_quorum: cliRan ? !guardGap : "n/a",
+  }, cliRan ? `الواجهة وسطر الأوامر ثنائي الأشخاص والحارس${guardGap ? "؛ الحارس يرفض (محفّز القاعدة) لكن الأمر يبلّغ failed: Error لا refused (quorum): ثغرة معروفة في waivers/admin-quorum.json فلا pass" : ""}` : "جزء الواجهة فقط؛ سطر الأوامر ثنائي الأشخاص لم يُقَس (لم يُعطَ أمره) فلا pass");
   if (args["dry-run"]) writeResult(doc, { dryRun: true }); else console.log("wrote", writeResult(doc, { slug: "api" }));
   return { code: fails.length ? 1 : 0, doc };
 }
