@@ -1,9 +1,0 @@
-[
-  {
-    "source": "set-admin-status CLI, guard path",
-    "path": "message of the refusal",
-    "kind": "guard-not-reported-as-quorum",
-    "reason": "Suspending the last-but-one active system admin by the vault path is refused (the admin_quorum_min_two trigger raises, nothing changes, the target keeps working), but the CLI answers `failed: Error` with exit 1 instead of `refused (quorum)`: identity/admin-status.ts reads err.constraint from the thrown error, while drizzle wraps the Postgres error in `cause`; common/db-errors.ts already unwraps it. The refusal is correct, only its message is not.",
-    "raised_to": "agent 2 (server), comment on #97"
-  }
-]
