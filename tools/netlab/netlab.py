@@ -18,6 +18,7 @@ import json
 import os
 import platform
 import statistics
+import shlex
 import subprocess
 import sys
 import threading
@@ -211,6 +212,7 @@ class Session:
         self.failures = 0
         self.confirmed = 0       # آخر إزاحة أكّدها الخادم في رد PATCH
         self.bytes_lost = 0      # بايتات مؤكدة عاد HEAD بإزاحة قبلها (يجب أن تبقى صفرًا)
+        self.aborted = None      # عميل خارجي لم يُنهِ بعد الحد الزمني ("client-timeout"): لا حكم على المرحلة (أ)
 
     def ok(self, started):
         if self.connected_since is None:
@@ -314,12 +316,26 @@ def upload(path, size, host, chunk, deadline, s, timeout):
 def run_external(cmd, host, path, size, chunk, deadline_s, timeout, s):
     """عميل خارجي (مثل نواة الرفع في apps/ios على Linux): يُشغَّل بالأمر المعطى ويطبع ملخص الجلسة JSON في آخر سطر
     من stdout بمفاتيح: url_path, offset, complete, parts [[seconds, bytes, ok]], windows [s], resumes, failures,
-    bytes_lost. المقاييس تُحسب هنا بالتعريفات نفسها؛ العميل لا يحسب كفاءة ولا يكتب نتيجة."""
-    full = cmd
-    for k, v in {"host": host, "endpoint": f"http://{host}/files/", "file": path, "size": size, "chunk": chunk,
-                 "timeout": timeout, "max_seconds": int(deadline_s)}.items():
-        full = full.replace("{" + k + "}", str(v))
-    r = subprocess.run(full, shell=True, capture_output=True, text=True, timeout=deadline_s + 120)
+    bytes_lost. المقاييس تُحسب هنا بالتعريفات نفسها؛ العميل لا يحسب كفاءة ولا يكتب نتيجة.
+    الأمر يُقسَّم بـ shlex ويُشغَّل بلا صدفة؛ العناصر {host} {endpoint} {file} {size} {chunk} {timeout} {max_seconds}
+    تُستبدل داخل كل وسيط. إن لم يُنهِ العميل بعد الحد الزمني + 120 ث يُقتل وتُكتب النتيجة partial بما هو معلوم
+    (لا ملخص: الإزاحة 0) مع حدث client-timeout، كما ينتهي عميل بايثون عند الحد."""
+    subst = {"host": host, "endpoint": f"http://{host}/files/", "file": path, "size": size, "chunk": chunk,
+             "timeout": timeout, "max_seconds": int(deadline_s)}
+    argv = []
+    for token in shlex.split(cmd):
+        for k, v in subst.items():
+            token = token.replace("{" + k + "}", str(v))
+        argv.append(token)
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=deadline_s + 120)
+    except subprocess.TimeoutExpired as e:
+        err = e.stderr.decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
+        sys.stderr.write(err[-4000:])
+        sys.stderr.write(f"\nexternal client did not finish within {deadline_s + 120:.0f}s; killed, result partial\n")
+        s.close()
+        s.aborted = "client-timeout"
+        return None, 0
     sys.stderr.write(r.stderr[-4000:])
     line = next((ln for ln in reversed(r.stdout.splitlines()) if ln.strip().startswith("{")), None)
     if line is None:
@@ -436,6 +452,8 @@ def run(a):
             "part_time_s_max": round(max(ok_parts), 2),
             "part_times_s": ",".join(f"{x:.1f}" for x in ok_parts),
         })
+    if s.aborted:
+        events.append((round(elapsed, 1), s.aborted))
     m["events"] = ";".join(f"{t}s:{e}" for t, e in events) or "none"
 
     # الكفاءة: الإنتاجية خلال وقت الاتصال (بلا فترات الثقب الأسود) مقابل min(حد Mathis، سعة الرابط).
@@ -456,7 +474,7 @@ def run(a):
         capacity = min(mathis, sc["uplink_kbps"])
         m["mathis_limit_kbps"] = round(mathis, 1)
         m["efficiency_vs_mathis"] = round(m["goodput_connected_kbps"] / capacity, 3)
-        if loss_mode == "netem":
+        if loss_mode == "netem" and not s.aborted:
             stage_a = m["efficiency_vs_mathis"] >= STAGE_A_MIN_EFFICIENCY and s.bytes_lost == 0
             m["stage_a_ok"] = stage_a
     if (complete and not match) or s.bytes_lost or stage_a is False:

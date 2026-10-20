@@ -2,7 +2,8 @@
 # يبني عميل القياس Swift (apps/ios UploadCore) داخل حاوية swift ويشغّله عبر netlab.py --client-cmd.
 # البناء والتشغيل داخل الحاوية نفسها (--network host) كي لا نحتاج Swift على المشغّل ولا ربطًا ساكنًا لـ FoundationNetworking.
 set -euo pipefail
-IMAGE="swift:6.1-noble"
+# swift:6.1-noble مثبّتة بالبصمة (قائمة البيان amd64+arm64) كي لا يتغيّر ما يُقاس به بين تشغيل وآخر.
+IMAGE="swift@sha256:04b28d4aff67fa4ff4029d6e27dd40f9737cc69cc558a37b06f18b3dceb8942f"
 PKG="$PWD/apps/ios/Packages/PostHistoryKit"
 BIN="/src/.build/release/upload-netlab"
 case "${1:-}" in
