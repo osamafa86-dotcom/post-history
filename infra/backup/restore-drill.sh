@@ -31,12 +31,14 @@ started_at="$(utc)"
 dump="$(ls -1 "$BACKUP_DIR"/pg/*.dump.cms | sort | tail -1)"
 ts="$(basename "$dump" .dump.cms)"
 dump_epoch="$(date -u -d "${ts:0:4}-${ts:4:2}-${ts:6:2}T${ts:9:2}:${ts:11:2}:${ts:13:2}Z" +%s)"
-# The private key stays 0600 in a 0700 directory owned by the caller; the helper containers run as uid 0, the owner.
+# The private key stays 0600 in a 0700 directory owned by the caller; the helper containers run as the caller's
+# uid (the backup service drops every capability, so even uid 0 cannot read a file it does not own).
 install -m 600 "$KEY" "$WORK/key.pem"
+ME="$(id -u):$(id -g)"
 
 # فك التشفير بصورة النسخ نفسها (openssl فيها)، داخل مجلد عمل مؤقت يُحذف في النهاية.
 t0=$(date +%s.%N)
-"${COMPOSE[@]}" run --rm --no-deps -T --user 0:0 -v "$BACKUP_DIR:/backups:ro" -v "$WORK:/work" --entrypoint sh backup -c \
+"${COMPOSE[@]}" run --rm --no-deps -T --user "$ME" -v "$BACKUP_DIR:/backups:ro" -v "$WORK:/work" --entrypoint sh backup -c \
   "openssl cms -decrypt -binary -inform DER -inkey /work/key.pem -in /backups/pg/$ts.dump.cms -out /work/db.dump"
 t1=$(date +%s.%N)
 
@@ -67,7 +69,7 @@ find "$BACKUP_DIR/objects" -name '*.cms' -type f | shuf -n "$SAMPLE" > "$WORK/sa
 objects=0 obj_mismatch=0
 while IFS= read -r f; do
   rel="${f#"$BACKUP_DIR"/objects/}"; rel="${rel%.cms}"
-  sums="$("${COMPOSE[@]}" run --rm --no-deps -T --user 0:0 -v "$BACKUP_DIR:/backups:ro" -v "$WORK:/work:ro" --entrypoint sh backup -c '
+  sums="$("${COMPOSE[@]}" run --rm --no-deps -T --user "$ME" -v "$BACKUP_DIR:/backups:ro" -v "$WORK:/work:ro" --entrypoint sh backup -c '
     proto="${S3_ENDPOINT%%://*}"; host="${S3_ENDPOINT#*://}"
     export MC_HOST_src="${proto}://${S3_BACKUP_ACCESS_KEY}:${S3_BACKUP_SECRET_KEY}@${host}"
     a=$(openssl cms -decrypt -binary -inform DER -inkey /work/key.pem -in "/backups/objects/$1.cms" | sha256sum | cut -d" " -f1)

@@ -12,7 +12,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK="$(mktemp -d)"
 export TRIAL_PROJECT="${TRIAL_PROJECT:-post-history-trial-ci}" TRIAL_ENV_FILE="$WORK/trial.env"
 T="$ROOT/infra/field-trial/trial.sh"
-cleanup() { [ "${KEEP:-0}" = 1 ] || "$T" down -v --remove-orphans >/dev/null 2>&1 || true; rm -rf "$WORK"; }
+cleanup() {
+  [ "${KEEP:-0}" = 1 ] || "$T" down -v --remove-orphans >/dev/null 2>&1 || true
+  # Backup files belong to uid 70 (the backup image): removed through a container, the caller may not own them.
+  docker run --rm -v "$WORK:/w" postgres:16-alpine rm -rf /w/backups >/dev/null 2>&1 || true
+  rm -rf "$WORK"
+}
 trap cleanup EXIT
 fail() { echo "!! $*" >&2; "$T" logs --tail 40 caddy caddy-ingest ingest-gate api backup >&2 || true; exit 1; }
 hex() { openssl rand -hex "$1"; }
