@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "tool": "netlab",
+  "role": "infra",
+  "test_name": "field-network-upload",
+  "decision_ref": 3,
+  "started_at": "2026-10-19T22:59:06Z",
+  "ended_at": "2026-10-20T04:30:09Z",
+  "result": "fail",
+  "device": {
+    "platform": "server",
+    "model": "netlab python client (stdlib)",
+    "os_version": "Linux 6.17.0-1022-azure"
+  },
+  "network": {
+    "profile": "field-weak",
+    "uplink_kbps": 500,
+    "loss_pct": 30,
+    "disconnect_every_s": 120,
+    "longest_connected_window_s": 93.7
+  },
+  "upload_path": "tusd",
+  "file": {
+    "size_bytes": 104857600,
+    "codec": "synthetic-random"
+  },
+  "metrics": {
+    "upload_complete": false,
+    "checksum_match": false,
+    "bytes_uploaded": 80159927,
+    "elapsed_s": 19863.4,
+    "goodput_kbps": 32.3,
+    "resumes": 273,
+    "connection_failures": 274,
+    "longest_connected_window_s": 93.7,
+    "client_chunk_bytes": 1048576,
+    "client_timeout_s": 60,
+    "parts_ok": 0,
+    "parts_failed": 274,
+    "loss_mode": "netem",
+    "events": "120.1s:blackout-start;140.1s:blackout-end;240.1s:blackout-start;260.1s:blackout-end;360.1s:blackout-start;380.1s:blackout-end;480.1s:blackout-start;500.1s:blackout-end;600.1s:blackout-start;620.1s:blackout-end;720.1s:blackout-start;740.1s:blackout-end;840.1s:blackout-start;860.1s:blackout-end;960.1s:blackout-start;980.1s:blackout-end;1080.1s:blackout-start;1100.1s:blackout-end;1200.1s:blackout-start;1220.1s:blackout-end;1320.1s:blackout-start;1340.1s:blackout-end;1440.1s:blackout-start;1460.1s:blackout-end;1560.1s:blackout-start;1580.1s:blackout-end;1680.1s:blackout-start;1700.1s:blackout-end;1800.1s:blackout-start;1820.1s:blackout-end;1920.1s:blackout-start;1940.1s:blackout-end;2040.1s:blackout-start;2060.1s:blackout-end;2160.1s:blackout-start;2180.1s:blackout-end;2280.1s:blackout-start;2300.1s:blackout-end;2400.1s:blackout-start;2420.1s:blackout-end;2520.1s:blackout-start;2540.1s:blackout-end;2640.1s:blackout-start;2660.1s:blackout-end;2760.1s:blackout-start;2780.1s:blackout-end;2880.1s:blackout-start;2900.1s:blackout-end;3000.1s:blackout-start;3020.1s:blackout-end;3120.1s:blackout-start;3140.1s:blackout-end;3240.1s:blackout-start;3260.1s:blackout-end;3360.1s:blackout-start;3380.1s:blackout-end;3480.1s:blackout-start;3500.1s:blackout-end;3600.1s:blackout-start;3620.1s:blackout-end;3720.1s:blackout-start;3740.1s:blackout-end;3840.1s:blackout-start;3860.1s:blackout-end;3960.1s:blackout-start;3980.1s:blackout-end;4080.1s:blackout-start;4100.1s:blackout-end;4200.1s:blackout-start;4220.1s:blackout-end;4320.1s:blackout-start;4340.1s:blackout-end;4440.1s:blackout-start;4460.1s:blackout-end;4560.1s:blackout-start;4580.1s:blackout-end;4680.1s:blackout-start;4700.1s:blackout-end;4800.1s:blackout-start;4820.1s:blackout-end;4920.1s:blackout-start;4940.1s:blackout-end;5040.1s:blackout-start;5060.1s:blackout-end;5160.1s:blackout-start;5180.1s:blackout-end;5280.1s:blackout-start;5300.1s:blackout-end;5400.1s:blackout-start;5420.1s:blackout-end;5520.1s:blackout-start;5540.1s:blackout-end;5640.1s:blackout-start;5660.1s:blackout-end;5760.1s:blackout-start;5780.1s:blackout-end;5880.1s:blackout-start;5900.1s:blackout-end;6000.1s:blackout-start;6020.1s:blackout-end;6120.1s:blackout-start;6140.1s:blackout-end;6240.1s:blackout-start;6260.2s:blackout-end;6360.1s:blackout-start;6380.1s:blackout-end;6480.1s:blackout-start;6500.1s:blackout-end;6600.1s:blackout-start;6620.1s:blackout-end;6720.1s:blackout-start;6740.1s:blackout-end;6840.1s:blackout-start;6860.1s:blackout-end;6960.1s:blackout-start;6980.1s:blackout-end;7080.1s:blackout-start;7100.1s:blackout-end;7200.1s:blackout-start;7220.1s:blackout-end;7320.1s:blackout-start;7340.1s:blackout-end;7440.1s:blackout-start;7460.1s:blackout-end;7560.1s:blackout-start;7580.1s:blackout-end;7680.1s:blackout-start;7700.1s:blackout-end;7800.1s:blackout-start;7820.1s:blackout-end;7920.1s:blackout-start;7940.1s:blackout-end;8040.1s:blackout-start;8060.1s:blackout-end;8160.1s:blackout-start;8180.1s:blackout-end;8280.1s:blackout-start;8300.1s:blackout-end;8400.1s:blackout-start;8420.1s:blackout-end;8520.1s:blackout-start;8540.1s:blackout-end;8640.1s:blackout-start;8660.1s:blackout-end;8760.1s:blackout-start;8780.1s:blackout-end;8880.1s:blackout-start;8900.2s:blackout-end;9000.1s:blackout-start;9020.1s:blackout-end;9120.1s:blackout-start;9140.1s:blackout-end;9240.1s:blackout-start;9260.1s:blackout-end;9360.1s:blackout-start;9380.1s:blackout-end;9480.1s:blackout-start;9500.1s:blackout-end;9600.1s:blackout-start;9620.1s:blackout-end;9720.1s:blackout-start;9740.1s:blackout-end;9840.1s:blackout-start;9860.1s:blackout-end;9960.1s:blackout-start;9980.1s:blackout-end;10080.1s:blackout-start;10100.1s:blackout-end;10200.1s:blackout-start;10220.1s:blackout-end;10320.1s:blackout-start;10340.1s:blackout-end;10440.1s:blackout-start;10460.1s:blackout-end;10560.1s:blackout-start;10580.1s:blackout-end;10680.1s:blackout-start;10700.1s:blackout-end;10800.1s:blackout-start;10820.1s:blackout-end;10920.1s:blackout-start;10940.1s:blackout-end;11040.1s:blackout-start;11060.1s:blackout-end;11160.1s:blackout-start;11180.1s:blackout-end;11280.1s:blackout-start;11300.1s:blackout-end;11400.1s:blackout-start;11420.1s:blackout-end;11520.1s:blackout-start;11540.1s:blackout-end;11640.1s:blackout-start;11660.1s:blackout-end;11760.1s:blackout-start;11780.1s:blackout-end;11880.1s:blackout-start;11900.1s:blackout-end;12000.1s:blackout-start;12020.1s:blackout-end;12120.1s:blackout-start;12140.1s:blackout-end;12240.1s:blackout-start;12260.1s:blackout-end;12360.1s:blackout-start;12380.1s:blackout-end;12480.1s:blackout-start;12500.1s:blackout-end;12600.1s:blackout-start;12620.1s:blackout-end;12720.1s:blackout-start;12740.1s:blackout-end;12840.1s:blackout-start;12860.1s:blackout-end;12960.1s:blackout-start;12980.1s:blackout-end;13080.1s:blackout-start;13100.1s:blackout-end;13200.1s:blackout-start;13220.1s:blackout-end;13320.1s:blackout-start;13340.1s:blackout-end;13440.1s:blackout-start;13460.1s:blackout-end;13560.1s:blackout-start;13580.1s:blackout-end;13680.1s:blackout-start;13700.1s:blackout-end;13800.1s:blackout-start;13820.1s:blackout-end;13920.1s:blackout-start;13940.1s:blackout-end;14040.1s:blackout-start;14060.1s:blackout-end;14160.1s:blackout-start;14180.1s:blackout-end;14280.1s:blackout-start;14300.1s:blackout-end;14400.1s:blackout-start;14420.1s:blackout-end;14520.1s:blackout-start;14540.1s:blackout-end;14640.1s:blackout-start;14660.1s:blackout-end;14760.1s:blackout-start;14780.1s:blackout-end;14880.1s:blackout-start;14900.1s:blackout-end;15000.1s:blackout-start;15020.1s:blackout-end;15120.1s:blackout-start;15140.1s:blackout-end;15240.1s:blackout-start;15260.1s:blackout-end;15360.1s:blackout-start;15380.1s:blackout-end;15480.1s:blackout-start;15500.2s:blackout-end;15600.1s:blackout-start;15620.1s:blackout-end;15720.1s:blackout-start;15740.1s:blackout-end;15840.1s:blackout-start;15860.1s:blackout-end;15960.1s:blackout-start;15980.1s:blackout-end;16080.1s:blackout-start;16100.1s:blackout-end;16200.1s:blackout-start;16220.1s:blackout-end;16320.1s:blackout-start;16340.1s:blackout-end;16440.1s:blackout-start;16460.1s:blackout-end;16560.1s:blackout-start;16580.1s:blackout-end;16680.1s:blackout-start;16700.1s:blackout-end;16800.1s:blackout-start;16820.1s:blackout-end;16920.1s:blackout-start;16940.1s:blackout-end;17040.1s:blackout-start;17060.1s:blackout-end;17160.1s:blackout-start;17180.1s:blackout-end;17280.1s:blackout-start;17300.1s:blackout-end;17400.1s:blackout-start;17420.1s:blackout-end;17520.1s:blackout-start;17540.1s:blackout-end;17640.1s:blackout-start;17660.1s:blackout-end;17760.1s:blackout-start;17780.1s:blackout-end;17880.1s:blackout-start;17900.1s:blackout-end;18000.1s:blackout-start;18020.1s:blackout-end;18120.1s:blackout-start;18140.1s:blackout-end;18240.1s:blackout-start;18260.1s:blackout-end;18360.1s:blackout-start;18380.1s:blackout-end;18480.1s:blackout-start;18500.1s:blackout-end;18600.1s:blackout-start;18620.1s:blackout-end;18720.1s:blackout-start;18740.1s:blackout-end;18840.1s:blackout-start;18860.1s:blackout-end;18960.1s:blackout-start;18980.1s:blackout-end;19080.1s:blackout-start;19100.1s:blackout-end;19200.1s:blackout-start;19220.1s:blackout-end;19320.1s:blackout-start;19340.1s:blackout-end;19440.1s:blackout-start;19460.1s:blackout-end;19560.1s:blackout-start;19580.1s:blackout-end;19680.1s:blackout-start;19700.1s:blackout-end;19800.1s:blackout-start;19820.1s:blackout-end",
+    "bytes_lost_on_resume": 0,
+    "goodput_connected_kbps": 38.7,
+    "mathis_limit_kbps": 86.0,
+    "efficiency_vs_mathis": 0.45,
+    "stage_a_ok": false
+  },
+  "notes": "toxiproxy 2.12.0 -> nginx tusd-proxy -> tusd v2.10.1 -> MinIO (local compose). Client: tools/netlab/netlab.py, time box 19800s, event scale 1.0. loss 30% + delay 300ms via tc netem in toxiproxy's netns. netlab never records pass: field-network-upload stage (b) is 1 GB on a real device and network (stage (a): efficiency >= 70% of Mathis, zero bytes lost on resume, netem). Connected window = client-observed time from first successful request to next failure. [Added on commit, values unchanged: GitHub Actions workflow_dispatch run 39338574868 on 57f9d6c, before the ADR 0007 amendment of 2026-10-20 (#77), so it was judged against Mathis and records stage_a_ok false. Under the amended criterion this run is the Python reference client itself at 1 MiB parts, not a client under test; field-weak now defaults to 256 KiB parts, so it is not a valid --reference for later runs.]"
+}
