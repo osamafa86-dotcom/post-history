@@ -106,7 +106,7 @@ def summarize(events, size):
     end = next((e for e in events if e["ev"] == "end"), None)
     final_offset = max(confirmed, end["confirmed"]) if end else confirmed
     return {
-        "parts_ok": len(parts), "parts_failed": failures, "resumes": resumes, "connection_failures": failures,
+        "parts": parts, "parts_ok": len(parts), "parts_failed": failures, "resumes": resumes, "connection_failures": failures,
         "bytes_lost_on_resume": bytes_lost, "confirmed": final_offset, "windows": windows, "part_times": part_times,
         "hash_s": hash_s, "transfer_start_s": start_t, "end": end,
     }
@@ -150,7 +150,7 @@ def main():
     if driver:
         driver.start()
     client_events, rc = run_client(a.runner, path, tus_url, part_bytes, a.max_seconds,
-                                   log=lambda ev: print(json.dumps(ev), flush=True) if ev["ev"] != "part" or ev.get("to", 0) % (10 * part_bytes) == 0 else None)
+                                   log=lambda ev: print(json.dumps(ev), flush=True) if ev["ev"] != "part" or ev["to"] // (10 << 20) != ev["from"] // (10 << 20) else None)
     elapsed_total = nl.now() - t0
     if driver:
         driver.stop.set()
