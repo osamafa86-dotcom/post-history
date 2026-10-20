@@ -436,9 +436,9 @@ SELECT pg_temp.expect_error($q$
   UPDATE material_exports SET state = 'ready' WHERE source_file_id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
 SELECT pg_temp.expect_error($q$
   UPDATE material_exports SET state = 'failed', failure_reason = 'because' WHERE source_file_id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
-INSERT INTO material_files (id, material_id, kind, state, derived_from_id, mime_type, verified_at)
+INSERT INTO material_files (id, material_id, kind, state, derived_from_id, mime_type, sha256, verified_at)
 VALUES ('00000000-0000-4000-8000-000000000303', '00000000-0000-4000-8000-000000000101', 'export', 'verified',
-        '00000000-0000-4000-8000-000000000301', 'application/zip', now());
+        '00000000-0000-4000-8000-000000000301', 'application/zip', sha256('zip'::bytea), now());
 UPDATE material_exports SET state = 'ready', file_id = '00000000-0000-4000-8000-000000000303'
 WHERE source_file_id = '00000000-0000-4000-8000-000000000301';
 INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
