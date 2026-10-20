@@ -25,7 +25,7 @@ python3 tools/netlab/netlab.py run --scenario office --size-mb 500 \
 
 **عميل خارجي (`--client-cmd`):** يُقاس عميل رفع آخر بالتعريفات نفسها: أمر صدفة بعناصر `{endpoint}` `{host}` `{file}` `{size}` `{chunk}` `{timeout}` `{max_seconds}` يطبع في آخر سطر من stdout ملخص الجلسة JSON (`url_path`، `offset`، `complete`، `parts` كمصفوفة `[seconds, bytes, ok]`، `windows`، `resumes`، `failures`، `bytes_lost`؛ انظر `run_external`)، وتبقى المقاييس والكفاءة والبصمة من هنا. `--client-label` يصف العميل في `device.model`، و`--role` من أجرى القياس. العميل الأول: نواة الرفع في iOS على Linux (`apps/ios/Packages/PostHistoryKit`، الهدف `upload-netlab`، عبر `.github/scripts/netlab-swift-client.sh`؛ سير العمل `netlab-ios`: سيناريو واحد قصير على الطلبات والقياس الكامل بـ `workflow_dispatch`). الأمر يُقسَّم بـ `shlex` ويُشغَّل بلا صدفة؛ إن لم يُنهِ العميل بعد `--max-seconds` + 120 ث يُقتل وتُكتب النتيجة `partial` بحدث `client-timeout` بلا حكم على المرحلة (أ).
 
-الخيارات: `--chunk-mb` (حجم طلب PATCH؛ الافتراضي `client_chunk_mb` في السيناريو)، `--timeout-s` (مهلة خمول المقبس، 60)، `--event-scale` (لتجربة سريعة فقط؛ القياس المرجعي بـ 1)، `--max-seconds` (حد زمني؛ إن انتهى قبل الاكتمال فالنتيجة `partial`)، `--file` (ملف اصطناعي موجود). الملف الاصطناعي يُولَّد عشوائيًا في `--workdir` ولا يُرفع إلى المستودع.
+الخيارات: `--chunk-kb` أو `--chunk-mb` (حجم طلب PATCH؛ الافتراضي من السيناريو: 256 KiB في `field-weak`)، `--timeout-s` (مهلة خمول المقبس، 60)، `--event-scale` (لتجربة سريعة فقط؛ القياس المرجعي بـ 1)، `--max-seconds` (حد زمني؛ إن انتهى قبل الاكتمال فالنتيجة `partial`)، `--file` (ملف اصطناعي موجود). الملف الاصطناعي يُولَّد عشوائيًا في `--workdir` ولا يُرفع إلى المستودع.
 
 ## ما يُقاس (`metrics`)
 
@@ -34,13 +34,22 @@ python3 tools/netlab/netlab.py run --scenario office --size-mb 500 \
 - `resumes`: مرات الاستئناف عبر `HEAD` بعد فشل؛ `connection_failures`.
 - `checksum_match`: SHA-256 للأصل مقابل الكائن في MinIO (عبر `mc` في حاوية على شبكة compose؛ tusd يعمل بـ `-disable-download`).
 
-## معيار `field-network-upload` على مرحلتين (قرار المنسّق، 2026-10-19)
+## معيار `field-network-upload` على مرحلتين (قرار المنسّق، 2026-10-19؛ معدَّل 2026-10-20، ADR 0007)
 
-1. **(أ) netlab في CI:** ملف 100 MB على `field-weak` بفقد netem (سير عمل `netlab` يدويًا بالقيم الافتراضية). المقياسان:
-   - `efficiency_vs_mathis` ≥ 0.70: الإنتاجية خلال وقت الاتصال (`goodput_connected_kbps`، بلا فترات الثقب الأسود) مقسومة على min(حد Mathis، سعة الرابط). حد Mathis = 1.22 × MSS ÷ (RTT × √p)، وهو نحو 86 kbit/s عند RTT 300 ms وفقد 30%.
+1. **(أ) netlab في CI:** ملف 100 MB على `field-weak` بفقد netem، وجزء 256 KiB افتراضيًا. الشروط:
+   - `efficiency_vs_reference` ≥ 0.70: الإنتاجية خلال وقت الاتصال (`goodput_connected_kbps`، بلا فترات الثقب الأسود) مقسومة على إنتاجية عميل بايثون المرجعي بالشروط نفسها (السيناريو، والفقد، والجزء، والمشغّل). المرجع من:
+     - `--reference-seconds N`: عميل بايثون أولًا في التشغيل نفسه.
+     - أو `--reference FILE`: نتيجة بايثون مؤرَّخة بـ `reference_run: true`، عمرها ≤ 30 يومًا، تُرفض قبل القياس إن خالفت السيناريو أو الجزء.
    - `bytes_lost_on_resume` = 0: كل استئناف يبدأ من آخر إزاحة أكّدها الخادم أو بعدها.
+   - البصمة مطابقة إن اكتمل الرفع.
 
-   النتيجة `partial` إن تحقق الاثنان (`stage_a_ok: true`)، و`fail` إن لم يتحققا. الأداة لا تكتب `pass` أبدًا.
+   النتيجة `partial` إن تحقق ذلك (`stage_a_ok: true`)، و`fail` إن لم يتحقق، والأداة لا تكتب `pass` أبدًا. `efficiency_vs_mathis` إعلامي فقط: حد Mathis خارج صلاحيته عند فقد ≥ ~5%. عميل بايثون وحده هو المرجع (`reference_run: true`) ولا يُحكم عليه.
+
+   مثال لعميل خارجي:
+   ```bash
+   python3 tools/netlab/netlab.py run --scenario field-weak --size-mb 100 --max-seconds 19800 \
+     --client-cmd "<cmd {endpoint} {file} {chunk} …>" --reference-seconds 1800 --role ios --out …
+   ```
 2. **(ب) القياس اليدوي:** 1 GB على جهاز وشبكة فعليين في الأسبوع الخامس، وهو وحده الذي يعطي `pass`.
 
 ## حدود معروفة

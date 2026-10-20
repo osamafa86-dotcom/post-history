@@ -27,10 +27,12 @@ import urllib.parse
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-# معيار field-network-upload على مرحلتين (قرار المنسّق): (أ) netlab في CI بفقد netem على 100 MB:
-# كفاءة ≥ 70% من حد Mathis وصفر بايت مفقود عند الاستئناف، وتُسجَّل partial؛ (ب) 1 GB على جهاز وشبكة
-# فعليين هو وحده الذي يعطي pass. لذلك لا تكتب هذه الأداة pass أبدًا.
+# معيار field-network-upload على مرحلتين (قرار المنسّق، وتعديل ADR 0007 في 2026-10-20): (أ) netlab في CI بفقد netem
+# على 100 MB: إنتاجية العميل في وقت الاتصال ≥ 70% من عميل بايثون المرجعي بالشروط نفسها (الشبكة والسيناريو والجزء
+# والمشغّل)، وصفر بايت مفقود عند الاستئناف، والبصمة مطابقة إن اكتمل، وتُسجَّل partial؛ (ب) 1 GB على جهاز وشبكة
+# فعليين هو وحده الذي يعطي pass. لذلك لا تكتب هذه الأداة pass أبدًا. حد Mathis يبقى إعلاميًا: لا يصلح عند فقد ≥ ~5%.
 STAGE_A_MIN_EFFICIENCY = 0.70
+REFERENCE_MAX_AGE_DAYS = 30
 MSS_BYTES = 1448
 TOXI_API = os.environ.get("NETLAB_TOXIPROXY_API", "http://127.0.0.1:8474")
 UPSTREAM = os.environ.get("NETLAB_UPSTREAM", "tusd-proxy:8080")
@@ -396,14 +398,13 @@ def pct(xs, p):
     return xs[min(len(xs) - 1, int(round(p / 100 * (len(xs) - 1))))]
 
 
-def run(a):
-    with open(os.path.join(HERE, "scenarios", a.scenario + ".yaml")) as fh:
-        sc = json.loads("".join(line for line in fh if not line.lstrip().startswith("#")))
-    path = a.file or os.path.join(a.workdir, f"netlab-synthetic-{a.size_mb}mb.bin")
-    make_file(path, a.size_mb)
-    size = os.path.getsize(path)
-    src_hash = sha256_file(path)
+def load_scenario(name):
+    with open(os.path.join(HERE, "scenarios", name + ".yaml")) as fh:
+        return json.loads("".join(line for line in fh if not line.lstrip().startswith("#")))
 
+
+def session(a, sc, path, size, chunk, client_cmd, max_seconds):
+    """جلسة رفع واحدة عبر السيناريو: الوكيل والفقد ومشغّل الأحداث ثم العميل (بايثون أو خارجي) ثم التنظيف."""
     name = setup_proxy(sc)
     loss_mode = set_loss(sc["loss_pct"], sc["latency_ms"])
     if loss_mode == "netem":
@@ -412,20 +413,102 @@ def run(a):
     events = []
     driver = Driver(name, sc, events)
     driver.scale = a.event_scale
-    chunk = (a.chunk_mb or sc.get("client_chunk_mb", 4)) << 20
     started_at, t0 = utc(), now()
     driver.start()
     s = Session()
     host = f"127.0.0.1:{sc['listen_port']}"
-    if a.client_cmd:
-        url, offset = run_external(a.client_cmd, host, path, size, chunk, a.max_seconds, a.timeout_s, s)
+    if client_cmd:
+        url, offset = run_external(client_cmd, host, path, size, chunk, max_seconds, a.timeout_s, s)
     else:
-        url, offset = upload(path, size, host, chunk, t0 + a.max_seconds, s, a.timeout_s)
+        url, offset = upload(path, size, host, chunk, t0 + max_seconds, s, a.timeout_s)
     elapsed = now() - t0
     driver.stop.set()
     ended_at = utc()
     toxi("DELETE", f"/proxies/{name}")
     set_loss(0)
+    if s.aborted:
+        events.append((round(elapsed, 1), s.aborted))
+    return {"s": s, "url": url, "offset": offset, "elapsed": elapsed, "events": events, "loss_mode": loss_mode,
+            "started_at": started_at, "ended_at": ended_at}
+
+
+def connected_seconds(events, elapsed):
+    """وقت الاتصال = المدة ناقص فترات الثقب الأسود المجدولة في السيناريو."""
+    down_s, start = 0.0, None
+    for t, e in events:
+        if e == "blackout-start":
+            start = t
+        elif e == "blackout-end" and start is not None:
+            down_s, start = down_s + t - start, None
+    if start is not None:
+        down_s += max(0.0, elapsed - start)
+    return max(1e-9, elapsed - down_s)
+
+
+def load_reference(path, scenario, loss_mode, chunk, today=None):
+    """ملف مرجعي مؤرَّخ: نتيجة عميل بايثون (reference_run) للسيناريو ونمط الفقد وحجم الجزء أنفسها، عمرها
+    REFERENCE_MAX_AGE_DAYS يومًا على الأكثر (loss_mode=None يؤجّل فحص نمط الفقد إلى ما بعد ضبطه). يعيد (إنتاجية وقت
+    الاتصال kbps، وصف المصدر، العمر بالأيام، نمط الفقد) أو يرفع ValueError."""
+    with open(path) as fh:
+        ref = json.load(fh)
+    m = ref.get("metrics", {})
+    problems = []
+    if ref.get("tool") != "netlab" or not m.get("reference_run"):
+        problems.append("not a netlab reference run (python client)")
+    if ref.get("network", {}).get("profile") != scenario:
+        problems.append(f"scenario {ref.get('network', {}).get('profile')} != {scenario}")
+    if loss_mode is not None and m.get("loss_mode") != loss_mode:
+        problems.append(f"loss mode {m.get('loss_mode')} != {loss_mode}")
+    if m.get("client_chunk_bytes") != chunk:
+        problems.append(f"chunk {m.get('client_chunk_bytes')} != {chunk}")
+    if not m.get("goodput_connected_kbps"):
+        problems.append("no goodput")
+    ended = dt.datetime.fromisoformat(ref.get("ended_at", "1970-01-01T00:00:00Z").replace("Z", "+00:00"))
+    age = ((today or dt.datetime.now(dt.timezone.utc)) - ended).total_seconds() / 86400
+    if age > REFERENCE_MAX_AGE_DAYS:
+        problems.append(f"{age:.0f} days old (max {REFERENCE_MAX_AGE_DAYS})")
+    if problems:
+        raise ValueError(f"reference {path} rejected: " + "; ".join(problems))
+    return (float(m["goodput_connected_kbps"]), f"{os.path.basename(path)} ({ref['ended_at']})", round(age, 1),
+            m.get("loss_mode"))
+
+
+def stage_a(efficiency_vs_reference, bytes_lost, complete, match):
+    """المرحلة (أ): ≥ 70% من المرجع، وصفر بايت مفقود عند الاستئناف، والبصمة مطابقة إن اكتمل الرفع."""
+    return efficiency_vs_reference >= STAGE_A_MIN_EFFICIENCY and bytes_lost == 0 and (match or not complete)
+
+
+def run(a):
+    sc = load_scenario(a.scenario)
+    path = a.file or os.path.join(a.workdir, f"netlab-synthetic-{a.size_mb}mb.bin")
+    make_file(path, a.size_mb)
+    size = os.path.getsize(path)
+    src_hash = sha256_file(path)
+    if a.chunk_kb:
+        chunk = a.chunk_kb << 10
+    elif a.chunk_mb:
+        chunk = a.chunk_mb << 20
+    elif sc.get("client_chunk_kb"):
+        chunk = sc["client_chunk_kb"] << 10
+    else:
+        chunk = sc.get("client_chunk_mb", 4) << 20
+
+    # المرجع: عميل بايثون بالملف والجزء والسيناريو أنفسها على المشغّل نفسه، قبل العميل المقيس (أو ملف مرجعي مؤرَّخ).
+    reference = None
+    if a.client_cmd and a.reference and not a.reference_seconds:
+        reference = load_reference(a.reference, sc["name"], None, chunk)   # rejected before hours of measuring
+    if a.client_cmd and a.reference_seconds:
+        r = session(a, sc, path, size, chunk, None, a.reference_seconds)
+        ref_kbps = round(r["offset"] * 8 / 1000 / connected_seconds(r["events"], r["elapsed"]), 1)
+        reference = (ref_kbps, f"same run ({a.reference_seconds}s python client, {r['offset']} bytes)", 0.0,
+                     r["loss_mode"])
+        print(f"reference: python client {ref_kbps} kbit/s over connected time", flush=True)
+
+    run_ = session(a, sc, path, size, chunk, a.client_cmd, a.max_seconds)
+    s, url, offset, elapsed, events, loss_mode = (run_[k] for k in ("s", "url", "offset", "elapsed", "events", "loss_mode"))
+    started_at, ended_at = run_["started_at"], run_["ended_at"]
+    if reference is not None and reference[3] != loss_mode:
+        raise SystemExit(f"reference loss mode {reference[3]} != this run's {loss_mode}: not comparable")
 
     complete = url is not None and offset == size
     match = complete and sha256_remote(url) == src_hash
@@ -452,32 +535,32 @@ def run(a):
             "part_time_s_max": round(max(ok_parts), 2),
             "part_times_s": ",".join(f"{x:.1f}" for x in ok_parts),
         })
-    if s.aborted:
-        events.append((round(elapsed, 1), s.aborted))
     m["events"] = ";".join(f"{t}s:{e}" for t, e in events) or "none"
 
-    # الكفاءة: الإنتاجية خلال وقت الاتصال (بلا فترات الثقب الأسود) مقابل min(حد Mathis، سعة الرابط).
-    down_s, start = 0.0, None
-    for t, e in events:
-        if e == "blackout-start":
-            start = t
-        elif e == "blackout-end" and start is not None:
-            down_s, start = down_s + t - start, None
-    if start is not None:
-        down_s += max(0.0, elapsed - start)
-    connected_s = max(1e-9, elapsed - down_s)
+    # الإنتاجية خلال وقت الاتصال (بلا فترات الثقب الأسود).
     m["bytes_lost_on_resume"] = s.bytes_lost
-    m["goodput_connected_kbps"] = round(offset * 8 / 1000 / connected_s, 1)
-    stage_a = None
+    m["goodput_connected_kbps"] = round(offset * 8 / 1000 / connected_seconds(events, elapsed), 1)
     if sc["loss_pct"] and sc["latency_ms"]:
+        # إعلامي فقط: حد Mathis يفترض فقدًا صغيرًا بلا مهلات إعادة إرسال، وهو خارج صلاحيته عند فقد ≥ ~5% (ADR 0007).
         mathis = 1.22 * MSS_BYTES * 8 / (sc["latency_ms"] / 1000 * (sc["loss_pct"] / 100) ** 0.5) / 1000
-        capacity = min(mathis, sc["uplink_kbps"])
         m["mathis_limit_kbps"] = round(mathis, 1)
-        m["efficiency_vs_mathis"] = round(m["goodput_connected_kbps"] / capacity, 3)
+        m["efficiency_vs_mathis"] = round(m["goodput_connected_kbps"] / min(mathis, sc["uplink_kbps"]), 3)
+    verdict = None
+    if not a.client_cmd:
+        # عميل بايثون نفسه هو المرجع: لا يُحكم عليه بنفسه، ونتيجته صالحة ملفًا مرجعيًا 30 يومًا.
+        m["reference_run"] = True
+    elif reference is not None:
+        ref_kbps, source, age, _ = reference
+        m["reference_goodput_connected_kbps"] = ref_kbps
+        m["reference_source"] = source
+        m["reference_age_days"] = age
+        m["efficiency_vs_reference"] = round(m["goodput_connected_kbps"] / ref_kbps, 3) if ref_kbps else 0.0
         if loss_mode == "netem" and not s.aborted:
-            stage_a = m["efficiency_vs_mathis"] >= STAGE_A_MIN_EFFICIENCY and s.bytes_lost == 0
-            m["stage_a_ok"] = stage_a
-    if (complete and not match) or s.bytes_lost or stage_a is False:
+            verdict = stage_a(m["efficiency_vs_reference"], s.bytes_lost, complete, match)
+            m["stage_a_ok"] = verdict
+    else:
+        m["reference_source"] = "none (no --reference or --reference-seconds): stage (a) not judged"
+    if (complete and not match) or s.bytes_lost or verdict is False:
         result = "fail"
     else:
         result = "partial"
@@ -508,7 +591,9 @@ def run(a):
                                            "(host lacks sch_netem): TCP impact understated (ADR 0007). ",
                      "none": ""}[loss_mode]
                   + "netlab never records pass: field-network-upload stage (b) is 1 GB on a real device and network "
-                    f"(stage (a): efficiency >= {STAGE_A_MIN_EFFICIENCY:.0%} of Mathis, zero bytes lost on resume, netem). "
+                    f"(stage (a), ADR 0007 as amended 2026-10-20: connected-time goodput >= {STAGE_A_MIN_EFFICIENCY:.0%} "
+                    "of the python reference client under the same conditions, zero bytes lost on resume, checksum "
+                    "match if complete, netem; efficiency_vs_mathis is informational). "
                   + "Connected window = client-observed time from first successful request to next failure."),
     }
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
@@ -526,7 +611,8 @@ def main():
     r.add_argument("--size-mb", type=int, default=500)
     r.add_argument("--file", help="ملف اصطناعي موجود (لا ملفات مراسلين)")
     r.add_argument("--workdir", default=os.environ.get("TMPDIR", "/tmp"))
-    r.add_argument("--chunk-mb", type=int, help="حجم PATCH؛ الافتراضي client_chunk_mb في السيناريو")
+    r.add_argument("--chunk-mb", type=int, help="حجم PATCH بالميغابايت؛ الافتراضي من السيناريو")
+    r.add_argument("--chunk-kb", type=int, help="حجم PATCH بالكيلوبايت (مثل 256 في field-weak)؛ يتقدّم على --chunk-mb")
     r.add_argument("--timeout-s", type=int, default=60, help="مهلة خمول المقبس للعميل")
     r.add_argument("--event-scale", type=float, default=1.0, help="<1 لتجربة سريعة فقط؛ القياس بـ 1")
     r.add_argument("--max-seconds", type=int, default=7200)
@@ -535,6 +621,9 @@ def main():
                                         "يطبع ملخص الجلسة JSON في آخر سطر (انظر run_external)")
     r.add_argument("--client-label", help="وصف العميل في device.model والملاحظات (مع --client-cmd)")
     r.add_argument("--role", default="infra", help="من أجرى القياس (role في النتيجة)")
+    r.add_argument("--reference-seconds", type=int, default=0,
+                   help="مع --client-cmd: يشغّل عميل بايثون المرجعي أولًا هذه المدة بالشروط نفسها، ومنه efficiency_vs_reference")
+    r.add_argument("--reference", help="مع --client-cmd: نتيجة مرجعية مؤرَّخة لعميل بايثون (السيناريو والفقد والجزء أنفسها، ≤ 30 يومًا)")
     r.add_argument("--out", required=True)
     a = p.parse_args()
     run(a)
