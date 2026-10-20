@@ -1,4 +1,5 @@
 import request from 'supertest';
+import { schemaValidator } from '../../src/common/contract';
 import { createHarness, type Harness } from './harness';
 
 describe('GET /health', () => {
@@ -10,8 +11,28 @@ describe('GET /health', () => {
 
   it('reports ok with a request id and without leaking versions', async () => {
     const res = await request(h.app.getHttpServer()).get('/health').expect(200);
-    expect(res.body).toEqual({ status: 'ok' });
+    expect(res.body).toEqual({ status: 'ok', rate_limiter: 'redis' });
+    const valid = schemaValidator('Health');
+    expect(valid(res.body) ? [] : valid.errors).toEqual([]);
     expect(res.headers['x-request-id']).toEqual(expect.any(String));
+    expect(res.headers['x-rate-limiter']).toBeUndefined();
+  });
+
+  it('reports a degraded rate limiter (in-memory) on /health only: without Redis, and after Redis fails', async () => {
+    for (const REDIS_URL of ['', 'redis://127.0.0.1:1']) {
+      const d = await createHarness({ env: { REDIS_URL } });
+      try {
+        const http = () => request(d.app.getHttpServer());
+        // Redis المعطل يُكتشف عند أول استعمال لحد المعدل
+        const login = await http().post('/v1/auth/login').send({ email: 'nobody@example.test', password: 'wrong-password' });
+        expect(login.headers['x-rate-limiter']).toBeUndefined();
+        const res = await http().get('/health').expect(200);
+        expect(res.body).toEqual({ status: 'ok', rate_limiter: 'degraded' });
+        expect(res.headers['x-rate-limiter']).toBe('degraded');
+      } finally {
+        await d.close();
+      }
+    }
   });
 
   it('unknown routes return the contract error shape', async () => {

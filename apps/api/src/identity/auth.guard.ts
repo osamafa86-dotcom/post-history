@@ -48,7 +48,8 @@ export class AuthGuard implements CanActivate {
       context.getClass(),
     ]);
     if (roles && !roles.includes('authenticated') && !hasRole(req.principal, ...(roles as RoleName[]))) {
-      throw new ApiError(403, 'forbidden_scope', 'This role may not perform this operation.');
+      // v0.1: الدور خارج x-roles للعملية رمزه forbidden_role (لا يكشف وجود مورد)، وforbidden_scope لما داخل النطاق
+      throw new ApiError(403, 'forbidden_role', 'This role may not perform this operation.');
     }
     return true;
   }

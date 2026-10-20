@@ -128,8 +128,11 @@ async function recoveryRequested(tx: Tx, event: OutboxRow, payload: Record<strin
         userId,
         title: notificationTitle('auth.recovery_requested', opts.locale, { ref: requestId }),
         assignmentState: 'assigned' as const,
+        // v0.1: المعتمِد يفتح الطلب من هذا الحقل (العنوان يبقى يحمله لعملاء v0)
+        recoveryRequestId: requestId,
       })),
-    { userId: owner.id, title: notificationTitle('auth.recovery_requested.self', opts.locale, { ref: '' }), assignmentState: null },
+    // صاحب الحساب يُنبَّه بلا معرّف الطلب: لا شيء له يفعله به، وقد يكون جهازه المفقود هو من يقرأ
+    { userId: owner.id, title: notificationTitle('auth.recovery_requested.self', opts.locale, { ref: '' }), assignmentState: null, recoveryRequestId: null },
   ];
   const inserted = await tx
     .insert(notifications)

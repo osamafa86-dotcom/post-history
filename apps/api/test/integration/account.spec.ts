@@ -129,10 +129,16 @@ describe('account: sessions and recovery', () => {
       const inbox = async (a: Actor) =>
         (await http().get('/v1/notifications?limit=100').set('Authorization', `Bearer ${a.token}`).expect(200)).body.items as Array<Record<string, string>>;
       expect((await inbox(sup)).some((n) => n.type === 'auth.recovery_requested' && n.title?.includes(req.id))).toBe(true);
+      // v0.1: معرّف الطلب حقل مستقل للمعتمِد، لا للمالك
+      const task = (await inbox(sup)).find((n) => n.recovery_request_id === req.id)!;
+      expect(task).toMatchObject({ type: 'auth.recovery_requested', assignment_state: 'assigned' });
+      const validNotification = schemaValidator('Notification');
+      expect(validNotification(task) ? [] : validNotification.errors).toEqual([]);
       expect((await inbox(outside)).some((n) => n.title?.includes(req.id))).toBe(false);
       const own = (await inbox(reporter)).filter((n) => n.type === 'auth.recovery_requested');
       expect(own).toHaveLength(1);
       expect(own[0]!.title).not.toContain(req.id);
+      expect(own[0]!.recovery_request_id).toBeNull();
     });
 
     it('approval by a supervisor in scope revokes all sessions, is audited, and cannot happen twice', async () => {

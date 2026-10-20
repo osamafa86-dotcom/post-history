@@ -22,6 +22,6 @@ import { RateLimitsService } from './rate-limits.service';
   ],
   controllers: [AuthController],
   providers: [SessionService, AuthService, AccountService, RateLimitsService, { provide: APP_GUARD, useClass: AuthGuard }],
-  exports: [SessionService],
+  exports: [SessionService, RateLimitsService],
 })
 export class IdentityModule {}

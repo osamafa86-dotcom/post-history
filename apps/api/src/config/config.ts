@@ -93,12 +93,15 @@ const schema = z.object({
   TUSD_PART_SIZE_BYTES: z.coerce.number().int().min(5 * 1024 * 1024).default(16 * 1024 * 1024),
   // عمر الجلسة ورمز الرفع معًا (عمود expires_at واحد في المخطط)
   UPLOAD_SESSION_TTL_SECONDS: z.coerce.number().int().min(60).default(24 * 3600),
+  // عمر رمز الرفع مستقلًا عن الجلسة (عقد v0.1): يلزم لبدء الرفع فقط (pre-create) لا لاستئنافه، ولا يتجاوز عمر الجلسة.
+  // إعادة POST /uploads بالمفتاح نفسه تصدر رمزًا جديدًا بالعمر نفسه ما دامت الجلسة created
+  UPLOAD_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).default(3600),
   // مسار الرفع (بند القرارات 3، يُحسم بعد النموذج الأولي): tusd، أو direct حيث يعلن العميل الاكتمال بنفسه
   UPLOAD_PATH: z.enum(['tusd', 'direct']).default('tusd'),
-  // true: إنشاء جلسة رفع بلا client_sha256 يُرفض (422)؛ يُفعَّل مع عقد v0.1 الذي يجعله مطلوبًا
+  // true (افتراضيًا مع عقد v0.1، ADR 0012: «على كل عميل إرسالها»): إنشاء جلسة رفع بلا client_sha256 يُرفض (422)
   UPLOAD_REQUIRE_CLIENT_SHA256: z
     .enum(['true', 'false'])
-    .default('false')
+    .default('true')
     .transform((v) => v === 'true'),
   // مكنسة تسوية جلسات in_progress التي ضاع post-finish لها: تُفحص في التخزين بعد هذه المدة بلا تغيير
   UPLOAD_RECONCILE_ENABLED: z

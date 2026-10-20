@@ -157,7 +157,7 @@ export async function revokeAllAccess(tx: Executor, userId: string): Promise<voi
     .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)));
   await tx
     .update(uploadSessions)
-    .set({ uploadTokenHash: null })
+    .set({ uploadTokenHash: null, uploadTokenExpiresAt: null })
     .where(and(eq(uploadSessions.createdBy, userId), sql`${uploadSessions.state} IN ('created', 'in_progress')`));
   await tx
     .update(pushDevices)

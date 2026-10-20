@@ -62,8 +62,14 @@ describe('upload sessions (/v1/uploads)', () => {
       part_size_bytes: h.config.TUSD_PART_SIZE_BYTES,
       checksum_algorithm: 'sha256',
     });
-    const { rows } = await h.pool.query(`SELECT upload_token_hash FROM upload_sessions WHERE id = $1`, [res.body.id]);
+    const { rows } = await h.pool.query(`SELECT upload_token_hash, upload_token_expires_at FROM upload_sessions WHERE id = $1`, [res.body.id]);
     expect(rows[0].upload_token_hash.equals(createHash('sha256').update(res.body.upload_token).digest())).toBe(true);
+    // الرمز ينتهي قبل الجلسة (v0.1): عمر الرمز مستقل ولا يتجاوزها
+    expect(new Date(res.body.upload_token_expires_at).getTime()).toBe(new Date(rows[0].upload_token_expires_at).getTime());
+    const tokenTtl = (Date.parse(res.body.upload_token_expires_at) - Date.now()) / 1000;
+    expect(tokenTtl).toBeGreaterThan(h.config.UPLOAD_TOKEN_TTL_SECONDS - 60);
+    expect(tokenTtl).toBeLessThanOrEqual(h.config.UPLOAD_TOKEN_TTL_SECONDS);
+    expect(Date.parse(res.body.upload_token_expires_at)).toBeLessThan(Date.parse(res.body.expires_at));
     const { rows: ev } = await h.pool.query(`SELECT type FROM outbox_events WHERE aggregate_id = $1`, [res.body.id]);
     expect(ev.map((e) => e.type)).toEqual(['upload.started']);
     expect((await preCreate(res.body.id, res.body.upload_token, 2048)).body.RejectUpload).toBe(false);
@@ -126,21 +132,21 @@ describe('upload sessions (/v1/uploads)', () => {
       dynamic_fields: {},
     };
 
-    it('off (default): a session without client_sha256 is still created', async () => {
-      expect(h.config.UPLOAD_REQUIRE_CLIENT_SHA256).toBe(false);
+    it('on by default with the v0.1 contract: a session without client_sha256 is rejected with 422 naming the field', async () => {
+      expect(h.config.UPLOAD_REQUIRE_CLIENT_SHA256).toBe(true);
       const materialId = await material();
-      await write(reporter, '/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 10, filename: 'f' }).expect(201);
+      const res = await write(reporter, '/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 10, filename: 'f' }).expect(422);
+      expect(res.body).toMatchObject({ code: 'validation_failed', details: { fields: ['/client_sha256'] } });
     });
 
-    it('on: a session without client_sha256 is rejected with 422 naming the field; with it, created', async () => {
-      const strict = await createHarness({ env: { UPLOAD_REQUIRE_CLIENT_SHA256: 'true' } });
+    it('off: a session without client_sha256 is still created; with it, too', async () => {
+      const strict = await createHarness({ env: { UPLOAD_REQUIRE_CLIENT_SHA256: 'false' } });
       try {
         const owner = await loginAs(strict, [{ role: 'reporter' }], { officeId: office });
         const post = (url: string, body: object) =>
           request(strict.app.getHttpServer()).post(url).set('Authorization', `Bearer ${owner.token}`).set('Idempotency-Key', randomUUID()).send(body);
         const materialId = (await post('/v1/materials', materialBody).expect(201)).body.id;
-        const res = await post('/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 10, filename: 'f' }).expect(422);
-        expect(res.body).toMatchObject({ code: 'validation_failed', details: { fields: ['/client_sha256'] } });
+        await post('/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 10, filename: 'f' }).expect(201);
         await post('/v1/uploads', { material_id: materialId, kind: 'original', ...file(10), filename: 'f' }).expect(201);
       } finally {
         await strict.close();

@@ -6,25 +6,42 @@ import { DB, type Database, type Tx } from '../database/database.module';
 import { materialFiles, uploadSessions } from '../database/schema/schema';
 import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
 import { recordVerification, type UploadSessionRow, type VerificationOutcome } from '../verification/verification';
-import { type MediaDerivativeBody, type MediaVerificationBody, splitTechnical } from './media-schemas';
+import type { components } from '../generated/api';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export interface MediaSessionView {
-  material_id: string;
-  kind: string;
-  state: string;
-  size_bytes: number;
-  storage_key: string | null;
-  proxy_mode: string | null;
-  material_has_proxy: boolean;
-}
+export type MediaSessionView = components['schemas']['MediaSession'];
+export type MediaVerificationResult = components['schemas']['MediaVerificationResult'];
+export type MediaVerificationBody = components['schemas']['MediaVerification'];
+export type MediaDerivativeBody = components['schemas']['MediaDerivative'];
+type MediaTechnical = components['schemas']['MediaTechnical'];
 
-export interface MediaVerificationResult {
-  state: 'verified' | 'failed';
-  file_id: string | null;
-  receipt_number: string | null;
-  failure_reason: string | null;
+/** ما يُخزَّن في material_files.technical؛ يطابق material_file_technical_keys() في القاعدة. الباقي (المدة، بداية
+ * الإطارات، الأبعاد) أعمدة. المخطط في العقد (MediaTechnical) مغلق، فلا يصل مفتاح خارج هذه القائمة أصلًا. */
+const TECHNICAL_JSON_KEYS = [
+  'container',
+  'video_codec',
+  'audio_codec',
+  'frame_rate',
+  'avg_frame_rate',
+  'vfr',
+  'frame_count',
+  'max_frame_gap_ms',
+  'has_gaps',
+  'rotation',
+  'hdr',
+  'bit_depth',
+  'audio_sample_rate',
+  'audio_channels',
+] as const;
+
+function splitTechnical(t: MediaTechnical): {
+  columns: { durationMs: number; startPtsUs: number; width: number | null; height: number | null };
+  json: Record<string, unknown>;
+} {
+  const json: Record<string, unknown> = {};
+  for (const k of TECHNICAL_JSON_KEYS) if (t[k] !== undefined) json[k] = t[k];
+  return { columns: { durationMs: t.duration_ms, startPtsUs: t.start_pts_us, width: t.width ?? null, height: t.height ?? null }, json };
 }
 
 const conflict = (msg: string) => new ApiError(409, 'upload_state_conflict', msg);
@@ -49,11 +66,11 @@ export class MediaService {
     // بصمة العميل لا تُعاد: المقارنة في الخادم وحده
     return {
       material_id: s.materialId,
-      kind: s.kind,
-      state: s.state,
+      kind: s.kind as MediaSessionView['kind'],
+      state: s.state as MediaSessionView['state'],
       size_bytes: Number(s.sizeBytes),
       storage_key: s.storageKey,
-      proxy_mode: s.proxyMode,
+      proxy_mode: s.proxyMode as MediaSessionView['proxy_mode'],
       material_has_proxy: await this.hasProxy(this.db, s.materialId),
     };
   }
@@ -161,10 +178,10 @@ export class MediaService {
       .leftJoin(materialFiles, eq(materialFiles.id, uploadSessions.fileId))
       .where(eq(uploadSessions.id, sessionId));
     return {
-      state: row!.state as 'verified' | 'failed',
+      state: row!.state as MediaVerificationResult['state'],
       file_id: row!.fileId,
       receipt_number: row!.receipt ?? null,
-      failure_reason: row!.failureReason,
+      failure_reason: row!.failureReason as MediaVerificationResult['failure_reason'],
     };
   }
 
