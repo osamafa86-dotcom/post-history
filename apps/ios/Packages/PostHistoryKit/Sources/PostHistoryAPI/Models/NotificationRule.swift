@@ -62,7 +62,7 @@ public struct NotificationRule: Sendable, Codable, Hashable {
     public var scopeKind: ScopeKind? = .all
     /** معرّف المكتب أو اسم المحافظة؛ فارغ مع `all` */
     public var scopeId: String? = ""
-    public var recipientRoles: Set<Role>?
+    public var recipientRoles: Set<RoleName>?
     public var recipientPermissions: Set<Permission>?
     public var channels: Set<NotificationChannel>
     public var delaySeconds: Int? = 0
@@ -81,7 +81,7 @@ public struct NotificationRule: Sendable, Codable, Hashable {
     public var createdAt: Date
     public var updatedAt: Date
 
-    public init(name: String, eventType: EventType, priorities: Set<Priority>? = nil, materialTypes: Set<MaterialType>? = nil, scopeKind: ScopeKind? = .all, scopeId: String? = "", recipientRoles: Set<Role>? = nil, recipientPermissions: Set<Permission>? = nil, channels: Set<NotificationChannel>, delaySeconds: Int? = 0, quietHours: NotificationRuleInputQuietHours? = nil, digestIntervalMinutes: Int? = nil, assignment: Bool? = false, escalation: [NotificationEscalationStep]? = nil, enabled: Bool? = true, id: UUID, rowVersion: Int, createdBy: UUID? = nil, updatedBy: UUID? = nil, createdAt: Date, updatedAt: Date) {
+    public init(name: String, eventType: EventType, priorities: Set<Priority>? = nil, materialTypes: Set<MaterialType>? = nil, scopeKind: ScopeKind? = .all, scopeId: String? = "", recipientRoles: Set<RoleName>? = nil, recipientPermissions: Set<Permission>? = nil, channels: Set<NotificationChannel>, delaySeconds: Int? = 0, quietHours: NotificationRuleInputQuietHours? = nil, digestIntervalMinutes: Int? = nil, assignment: Bool? = false, escalation: [NotificationEscalationStep]? = nil, enabled: Bool? = true, id: UUID, rowVersion: Int, createdBy: UUID? = nil, updatedBy: UUID? = nil, createdAt: Date, updatedAt: Date) {
         self.name = name
         self.eventType = eventType
         self.priorities = priorities
