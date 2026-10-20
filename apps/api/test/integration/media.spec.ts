@@ -43,10 +43,11 @@ const technical = {
 describe('media worker interface (/internal/media/*, ADR 0006)', () => {
   const storage = new FakeStorage();
   const token = randomBytes(32).toString('base64url');
+  const aiToken = randomBytes(32).toString('base64url');
   let h: Harness;
   let reporterId: string;
   beforeAll(async () => {
-    h = await createHarness({ env: { MEDIA_WORKER_TOKEN: token }, overrides: [[OBJECT_STORAGE, storage]] });
+    h = await createHarness({ env: { MEDIA_WORKER_TOKEN: token, AI_WORKER_TOKEN: aiToken }, overrides: [[OBJECT_STORAGE, storage]] });
     reporterId = (await seedUser(h)).id;
   });
   afterAll(() => h.close());
@@ -178,6 +179,31 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
       expect((await getSession(s.id).expect(200)).body.state).toBe('completed');
       const fresh = await seedUploadSession(h, reporterId);
       await verify(fresh.id, report(1000)).expect(409);
+    });
+  });
+
+  describe('AI_WORKER_TOKEN (local transcription worker)', () => {
+    it('is refused (404) everywhere except derivatives of kind transcript or captions', async () => {
+      const s = await completed();
+      await getSession(s.id, aiToken).expect(404);
+      await auth(http().post(`/internal/media/sessions/${s.id}/verification`), aiToken).send(report()).expect(404);
+      const fileId = (await verify(s.id, report()).expect(200)).body.file_id as string;
+      const derived = (kind: string, t: string) =>
+        auth(http().post(`/internal/media/files/${fileId}/derivatives`), t).send({
+          kind,
+          storage_key: `derived/${s.materialId}/${fileId}/${kind}.vtt`,
+          sha256: hex(randomBytes(32)),
+          size_bytes: 10,
+          technical: { duration_ms: 1000, start_pts_us: 0 },
+        });
+      for (const kind of ['proxy', 'thumbnail', 'hls', 'audio']) await derived(kind, aiToken).expect(404);
+      // للنوعين المسموحين يتجاوز الرمز المصادقة ويلقى ما يلقاه رمز عامل الوسائط نفسه (التحقق بمخطط العقد بعدها)
+      for (const kind of ['transcript', 'captions']) {
+        const viaAi = await derived(kind, aiToken);
+        expect(viaAi.status).not.toBe(404);
+        expect(viaAi.status).toBe((await derived(kind, token)).status);
+        await derived(kind, 'x'.repeat(43)).expect(404);
+      }
     });
   });
 
