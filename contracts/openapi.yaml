@@ -257,14 +257,12 @@ paths:
         يعتمد المشرف الطلب بعد التحقق خارج النظام من هوية المراسل. الاعتماد يبطل كل جلسات الحساب ورموز
         رفعه المفتوحة، ويعيد رمز إعادة التعيين **مرة واحدة** في هذه الاستجابة للمشرف المعتمِد، الذي يسلّمه للمراسل خارج
         النظام. الرمز حساس: لا يدخل سجلًا ولا Outbox ولا إشعارًا، ويُخزَّن ببصمته فقط، وصلاحيته ≤ 24 ساعة، ومربوط بالحساب
-        المستعاد. التكرار بمفتاح منع التكرار نفسه لا يعيد الرمز (حالة الطلب `approved` دون `reset_token`). الحساب في حالة
+        المستعاد. لا `Idempotency-Key` هنا (مسارات `/auth/*`) كي لا يُحفظ الرمز في جدول المفاتيح؛ إعادة اعتماد طلب معتمد ترد `409 recovery_state_conflict` ولا تعيد الرمز. الحساب في حالة
         «إعادة تعيين إلزامية» حتى `/auth/recovery/complete` و`/auth/totp/confirm`، والاعتماد يُسجَّل في التدقيق.
         حساب مدير نظام لا يُعتمد من هنا أبدًا: `403 admin_quorum_required` (إجراء الشخصين من سطر الأوامر، ADR 0005
         ودليل التشغيل). حساب مساوٍ لدور المقرِّر أو أعلى: `403 forbidden_scope`.
       operationId: approveRecovery
       x-roles: [supervisor, system_admin]
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1570,8 +1568,8 @@ components:
               minLength: 32
               maxLength: 256
               description: >-
-                يُعاد مرة واحدة للمشرف المعتمِد ليسلّمه للمراسل خارج النظام؛ لا يُسجَّل ولا يُخزَّن إلا ببصمته؛ لا يُعاد عند
-                التكرار. حسابات مديري النظام لا تصل هنا (`admin_quorum_required`): رمزها يصدره سطر الأوامر ثنائي الأشخاص.
+                يُعاد مرة واحدة للمشرف المعتمِد ليسلّمه للمراسل خارج النظام؛ لا يُسجَّل ولا يُخزَّن إلا ببصمته (ولا في جدول مفاتيح
+                منع التكرار)؛ لا يُعاد عند التكرار. حسابات مديري النظام لا تصل هنا (`admin_quorum_required`): رمزها يصدره سطر الأوامر ثنائي الأشخاص.
             reset_token_expires_at: { type: string, format: date-time, description: ≤ 24 ساعة من الاعتماد }
 
     RecoveryRequest:
@@ -1841,7 +1839,7 @@ components:
 
     UploadSessionCreate:
       type: object
-      required: [material_id, kind, size_bytes, filename]
+      required: [material_id, kind, size_bytes, filename, client_sha256]
       properties:
         material_id: { type: string, format: uuid }
         kind: { type: string, enum: [original, proxy, voice_note] }
@@ -1856,10 +1854,10 @@ components:
           type: [string, "null"]
           pattern: "^[0-9a-f]{64}$"
           description: >-
-            بصمة SHA-256 للملف كاملًا يحسبها العميل قبل الإنشاء؛ على كل عميل إرسالها (ADR 0012): الخادم يقارنها ببصمته بعد
-            التجميع فيخرج عامل الوسائط من قاعدة الثقة، والقرار `checksum_mismatch` للخادم وحده. الخادم يفرضها اليوم بـ
-            `UPLOAD_REQUIRE_CLIENT_SHA256`؛ تصير مفتاحًا إلزاميًا في المخطط مع تحديث اختبارات الخادم المرتبطة بهذا العلم، ويبقى
-            نوعها قابلًا لـ null حتى v0.2 كي لا تنكسر شيفرة Swift وKotlin المولّدة.
+            بصمة SHA-256 للملف كاملًا يحسبها العميل قبل الإنشاء؛ إلزامية منذ v0.1 (ADR 0012): الخادم يقارنها ببصمته بعد
+            التجميع فيخرج عامل الوسائط من قاعدة الثقة، والقرار `checksum_mismatch` للخادم وحده. المفتاح إلزامي، والقيمة
+            `null` تُرفض بـ `422 validation_failed`. النوع يبقى قابلًا لـ null في v0.1 فقط كي لا تنكسر شيفرة Swift وKotlin
+            المولّدة التي تمرر قيمة اختيارية؛ يصير `string` غير قابل لـ null في v0.2.
         client_fingerprint:
           type: [object, "null"]
           description: بصمة رخيصة لترشيح المكررات فقط (لا تمنح أي حق)
