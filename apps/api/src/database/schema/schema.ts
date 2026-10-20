@@ -539,7 +539,7 @@ export const outboxEvents = pgTable("outbox_events", {
 }, (table) => [
 	index("outbox_events_aggregate_idx").using("btree", table.aggregateType.asc().nullsLast().op("int8_ops"), table.aggregateId.asc().nullsLast().op("uuid_ops"), table.id.asc().nullsLast().op("int8_ops")),
 	index("outbox_events_pending_idx").using("btree", table.nextAttemptAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("timestamptz_ops")).where(sql`(published_at IS NULL)`),
-	index("outbox_events_type_idx").using("btree", table.type.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("text_ops")),
+	index("outbox_events_type_idx").using("btree", table.type.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
 	foreignKey({
 			columns: [table.actorId],
 			foreignColumns: [users.id],
