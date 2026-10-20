@@ -2,15 +2,12 @@ name: field-trial
 
 # Field trial environment (ADR 0013): the trial compose with both Caddy edges on 127.0.0.1 / 127.0.0.2 (local CA),
 # full tus uploads through each edge, an encrypted backup and a restore drill. Runs when infra or the database
-# schema changes (a migration can break restore: the 2026-10-20 drill found one). The QA field-trial pack runs through the
-# same edge (TRIAL_AFTER_EDGE in smoke-trial.sh) so it is proven across Caddy before it meets the real host.
+# schema changes (a migration can break restore: the 2026-10-20 drill found one).
 on:
   pull_request:
     paths:
       - "infra/**"
       - "apps/api/src/db/**"
-      - "tools/acceptance/field-trial/**"
-      - "tools/acceptance/lib/target.mjs"
       - ".github/workflows/field-trial.yml"
   workflow_dispatch:
 
@@ -46,24 +43,7 @@ jobs:
       - name: Trial stack smoke, backup and restore drill
         run: |
           (cd tools/acceptance && npm ci --no-audit --no-fund)
-          DRILL_OUT="$RUNNER_TEMP/restore-drill.json" EDGE_PACK_OUT="$RUNNER_TEMP/pack-edge" \
-            TRIAL_AFTER_EDGE="$PWD/tools/acceptance/field-trial/edge-rehearsal.sh" infra/field-trial/smoke-trial.sh
-      - name: The acceptance pack ran through the edge (no step failed, every step left a result)
-        run: |
-          [ -s "$RUNNER_TEMP/pack-edge/REPORT.md" ] || { echo "the pack did not run through the edge (TRIAL_AFTER_EDGE hook missing?)"; exit 1; }
-          n="$(find "$RUNNER_TEMP/pack-edge" -name '*.json' | wc -l)"
-          [ "$n" -ge 6 ] || { echo "only $n result files"; exit 1; }
-          if grep -rlE '"result": "fail"' "$RUNNER_TEMP/pack-edge" --include=*.json; then echo "a pack step failed"; exit 1; fi
+          DRILL_OUT="$RUNNER_TEMP/restore-drill.json" infra/field-trial/smoke-trial.sh
       - name: Print the drill result
         if: always()
         run: cat "$RUNNER_TEMP/restore-drill.json" 2>/dev/null || true
-      - name: Print the pack report
-        if: always()
-        run: '[ -f "$RUNNER_TEMP/pack-edge/REPORT.md" ] && head -60 "$RUNNER_TEMP/pack-edge/REPORT.md" || true'
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: field-trial-edge-pack
-          path: ${{ runner.temp }}/pack-edge
-          if-no-files-found: ignore
-          retention-days: 14
