@@ -2,6 +2,7 @@
 // reporter and supervisor in another office), a published form, materials carrying canary values, and
 // the fixtures the scope cases need. Everything is synthetic and random per run.
 import { randomBytes, randomUUID, createHash } from "node:crypto";
+import { freshFetch } from "../lib/http.mjs";
 import pg from "pg";
 import { hash } from "@node-rs/argon2";
 
@@ -32,7 +33,7 @@ export async function seed({ databaseUrl, apiUrl }) {
   users.supervisor_b = await user("supervisor-b", "supervisor", { scopeKind: "office", scopeId: officeB });
 
   const login = async (u) => {
-    const res = await fetch(`${apiUrl}/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: u.email, password }) });
+    const res = await freshFetch(`${apiUrl}/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: u.email, password }) });
     if (res.status !== 200) throw new Error(`seed login failed (${res.status}) for ${u.email.split("-")[0]}`);
     return (await res.json()).access_token;
   };
@@ -44,7 +45,7 @@ export async function seed({ databaseUrl, apiUrl }) {
   await q(`INSERT INTO upload_forms (version, schema) VALUES ($1, $2)`, [formVersion, { version: formVersion, fields: [] }]);
 
   const write = async (token, method, path, body) => {
-    const res = await fetch(`${apiUrl}${path}`, { method, headers: { authorization: `Bearer ${token}`, "idempotency-key": randomUUID(), "content-type": "application/json" }, body: JSON.stringify(body) });
+    const res = await freshFetch(`${apiUrl}${path}`, { method, headers: { authorization: `Bearer ${token}`, "idempotency-key": randomUUID(), "content-type": "application/json" }, body: JSON.stringify(body) });
     const text = await res.text();
     if (res.status >= 300) throw new Error(`seed ${method} ${path} -> ${res.status}`);
     return text ? JSON.parse(text) : null;

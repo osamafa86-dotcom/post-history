@@ -1,0 +1,100 @@
+name: netlab-android
+
+# Stage (a) of field-network-upload for the Android upload core: the app's UploadEngine (apps/android/core) runs
+# on the JVM (apps/android/netlab-runner) against the same toxiproxy/netem stack as tools/netlab, driven by
+# apps/android/netlab/measure.py, which reuses netlab.py as a module and reads the runner's session summary in
+# netlab's own terms (parts, windows, resumes, bytes lost on resume; efficiency vs the Mathis limit and the MinIO
+# checksum are netlab's).
+# - pull_request (Android core, the runner, the measurement script, netlab.py or this file changed): one short
+#   scenario (office, 100 MB, 240 s) proves the runner still works and writes a valid result. One runner, minutes.
+# - workflow_dispatch: the real measurement, one scenario or all three. field-weak at the Mathis limit
+#   (~86 kbit/s at 300 ms / 30% loss) needs hours for 100 MB; size_mb and max_seconds bound it.
+# The result is never pass: partial, or fail when netlab's stage (a) rule says so. The result JSON is printed,
+# validated against contracts/schemas/measurement.json and uploaded as an artifact to commit to
+# docs/measurements/netlab/ (no secrets or revealing data: synthetic file, local compose).
+on:
+  pull_request:
+    paths:
+      - "apps/android/core/**"
+      - "apps/android/netlab/**"
+      - "apps/android/netlab-runner/**"
+      - "tools/netlab/netlab.py"
+      - ".github/workflows/netlab-android.yml"
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: office | field-switch | field-weak | all
+        default: field-weak
+      size_mb:
+        description: field-network-upload stage (a) is 100 MB; stage (b) (1 GB) is on a real device
+        default: "100"
+      max_seconds:
+        description: time box per scenario (GitHub job limit is 6h)
+        default: "19800"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  android-core:
+    runs-on: ubuntu-latest
+    # Long measurements only when dispatched by hand; the PR smoke is capped to protect the Actions budget.
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 350 || 20 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: ${{ github.event_name == 'pull_request' && fromJSON('["office"]') || (inputs.scenario == 'all' && fromJSON('["office","field-switch","field-weak"]') || fromJSON(format('["{0}"]', inputs.scenario))) }}
+    env:
+      NO_PROXY: 127.0.0.1,localhost
+      SIZE_MB: ${{ github.event_name == 'pull_request' && '100' || inputs.size_mb }}
+      MAX_SECONDS: ${{ github.event_name == 'pull_request' && '240' || inputs.max_seconds }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Containers cannot load kernel modules: sch_netem must be loaded on the runner itself.
+      - name: Load sch_netem
+        run: |
+          sudo modprobe sch_netem || {
+            sudo apt-get update -q
+            sudo apt-get install -y -q "linux-modules-extra-$(uname -r)"
+            sudo modprobe sch_netem
+          }
+          lsmod | grep sch_netem
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: true
+      - name: Build the runner (generates the API client from contracts/openapi.yaml)
+        working-directory: apps/android
+        run: ./gradlew --no-daemon -q :netlab-runner:installDist
+      - name: Start compose with the netlab overlay
+        run: |
+          cp infra/compose/.env.example infra/compose/.env
+          sed -i "s/^TUSD_HOOK_SECRET=.*/TUSD_HOOK_SECRET=$(openssl rand -hex 32)/" infra/compose/.env
+          docker compose -f infra/compose/docker-compose.yml -f tools/netlab/compose.netlab.yml up -d --wait
+      - name: Measure with the Android upload core (time-boxed)
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          python3 apps/android/netlab/measure.py --scenario "${{ matrix.scenario }}" --size-mb "$SIZE_MB" --max-seconds "$MAX_SECONDS" \
+            --workdir "$RUNNER_TEMP" --out "$RUNNER_TEMP/out/$(date -u +%F)-android-upload-core-${{ matrix.scenario }}-${SIZE_MB}mb.json" || true
+      - name: Print and validate the result file (contracts/schemas/measurement.json)
+        if: always()
+        run: |
+          for f in "$RUNNER_TEMP"/out/*.json; do [ -f "$f" ] && { echo "== $(basename "$f")"; cat "$f"; }; done
+          npm --prefix tools/acceptance ci --no-audit --no-fund
+          node tools/acceptance/validate-results.mjs "$RUNNER_TEMP/out"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: android-upload-core-${{ matrix.scenario }}
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: ignore
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/compose/docker-compose.yml -f tools/netlab/compose.netlab.yml down -v

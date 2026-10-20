@@ -1,0 +1,146 @@
+# بيئة التجربة الميدانية (ADR 0013): طبقة فوق compose الأساسي، فيها بوابة ingest (ADR 0011). تُشغَّل بـ
+# infra/field-trial/trial.sh (يجمع الملفات والـ profiles وملفي البيئة). الأسرار من ملف SOPS المفكوك إلى tmpfs
+# (SEC-05)، لا من سطر الأوامر. profiles: api, media (الأساس)، ingest، edge، backup.
+services:
+  postgres:
+    restart: unless-stopped
+  redis:
+    restart: unless-stopped
+  minio:
+    restart: unless-stopped
+  tusd:
+    restart: unless-stopped
+  tusd-proxy:
+    restart: unless-stopped
+  api:
+    restart: unless-stopped
+    environment:
+      # Caddy reaches the API through a port on 127.0.0.1, so the API sees the default network's gateway as the peer.
+      # Trusting that one address (not 172.16.0.0/12) lets req.ip come from Caddy's X-Forwarded-For while no other
+      # container can forge it; without it every client shares one rate-limit bucket.
+      TRUSTED_PROXY_CIDRS: "${TRUSTED_PROXY_CIDRS:-172.30.240.1/32}"
+  media-worker:
+    restart: unless-stopped
+
+  # بوابة ingest (ADR 0011) خلف Caddy: HTTP على 127.0.0.1، وCaddy يُنهي TLS على عنوان ingest. معرَّفة هنا كاملة
+  # (لا فوق infra/ingest/compose.ingest.yml الذي يشترط شهادة للنموذج الأولي).
+  ingest-gate:
+    profiles: [ingest]
+    image: nginx:1.28.3-alpine
+    restart: unless-stopped
+    depends_on:
+      tusd-proxy:
+        condition: service_healthy
+    environment:
+      INGEST_TOKEN_PUBLIC_KEY: "${INGEST_TOKEN_PUBLIC_KEY:?SPKI base64 of the ingest token verification key}"
+    volumes:
+      - ../ingest/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../ingest/ingest_token.js:/etc/nginx/njs/ingest_token.js:ro
+      - ../ingest/listen-plain.conf:/etc/nginx/ingest-listen.conf:ro
+    ports:
+      - "127.0.0.1:${INGEST_PORT:-8443}:8080"
+    user: "101:101"
+    read_only: true
+    tmpfs: ["/tmp:size=64m"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8080"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    networks: [default, uploads]
+
+  # الوكيلان الأماميان: نسخة Caddy لكل نطاق، على شبكة المضيف لتربط عنوانها العام (bind) وتصل إلى الخدمات على
+  # 127.0.0.1. نسختان لا واحدة: مخزن شهادات Caddy واحد لكل عملية، فنسخة واحدة تقدّم شهادة أي اسم على أي عنوان.
+  caddy:
+    profiles: [edge]
+    image: caddy:2.10.2-alpine
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      MAIN_DOMAIN: "${MAIN_DOMAIN:?}"
+      MAIN_IP: "${MAIN_IP:?}"
+      ACME_EMAIL: "${ACME_EMAIL:?}"
+      CADDY_GLOBAL_EXTRA: "${CADDY_GLOBAL_EXTRA:-}"
+      CLOUDFLARE_CIDRS: "${CLOUDFLARE_CIDRS:?Cloudflare edge ranges, space separated}"
+      API_PORT: "${API_PORT}"
+      TUSD_PORT: "${TUSD_PORT}"
+    volumes:
+      - ../field-trial/Caddyfile.main:/etc/caddy/Caddyfile:ro
+      - caddy-main-data:/data
+      - caddy-main-config:/config
+    read_only: true
+    tmpfs: ["/tmp:size=16m"]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+
+  caddy-ingest:
+    profiles: [edge]
+    image: caddy:2.10.2-alpine
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      INGEST_DOMAIN: "${INGEST_DOMAIN:?}"
+      INGEST_IP: "${INGEST_IP:?}"
+      ACME_EMAIL: "${ACME_EMAIL:?}"
+      CADDY_GLOBAL_EXTRA: "${CADDY_GLOBAL_EXTRA:-}"
+      INGEST_PORT: "${INGEST_PORT:-8443}"
+    volumes:
+      - ../field-trial/Caddyfile.ingest:/etc/caddy/Caddyfile:ro
+      - caddy-ingest-data:/data
+      - caddy-ingest-config:/config
+    read_only: true
+    tmpfs: ["/tmp:size=16m"]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+
+  # نسخ يومي مشفّر بالمفتاح العام (infra/backup)؛ الاستعادة: infra/backup/restore-drill.sh.
+  backup:
+    profiles: [backup]
+    build: ../backup
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      PGHOST: postgres
+      PGUSER: "${POSTGRES_USER}"
+      PGPASSWORD: "${POSTGRES_PASSWORD}"
+      PGDATABASE: "${POSTGRES_DB}"
+      S3_ENDPOINT: http://minio:9000
+      S3_BACKUP_ACCESS_KEY: "${S3_BACKUP_ACCESS_KEY:?}"
+      S3_BACKUP_SECRET_KEY: "${S3_BACKUP_SECRET_KEY:?}"
+      S3_BUCKET_UPLOADS: "${S3_BUCKET_UPLOADS}"
+      S3_BUCKET_MEDIA: "${S3_BUCKET_MEDIA}"
+      BACKUP_HOUR_UTC: "${BACKUP_HOUR_UTC:-2}"
+      BACKUP_KEEP_DAYS: "${BACKUP_KEEP_DAYS:-14}"
+      BACKUP_REMOTE_URL: "${BACKUP_REMOTE_URL:-}"
+      BACKUP_REMOTE_ACCESS_KEY: "${BACKUP_REMOTE_ACCESS_KEY:-}"
+      BACKUP_REMOTE_SECRET_KEY: "${BACKUP_REMOTE_SECRET_KEY:-}"
+      BACKUP_REMOTE_BUCKET: "${BACKUP_REMOTE_BUCKET:-}"
+    volumes:
+      - "${BACKUP_DIR:?}:/backups"
+      - "${BACKUP_RECIPIENT_CERT:?}:/run/backup/recipient.crt:ro"
+    read_only: true
+    tmpfs: ["/tmp:size=64m"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+# Fixed subnet for the default network: its gateway (172.30.240.1) is the peer the API and the ingest gate see for
+# Caddy's connections, and the only address they trust for X-Forwarded-For (TRUSTED_PROXY_CIDRS, listen-plain.conf).
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.240.0/24
+
+volumes:
+  caddy-main-data:
+  caddy-main-config:
+  caddy-ingest-data:
+  caddy-ingest-config:
