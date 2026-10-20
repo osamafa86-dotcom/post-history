@@ -31,4 +31,5 @@
 - منجز (التذكرة 2): `tools/render-bench/av_sync.py`، تزامن الصوت والصورة في النسخة الخفيفة (النتيجة في `docs/measurements/render-bench/`).
 - منجز (التذكرة 3): الفشل النهائي يُبلَّغ للخادم ثم يُنقل إلى `media:dead` مع السبب؛ 401/403/404 خطأ تهيئة يُعاد بتراجع أسّي (`MEDIA_AUTH_BACKOFF_MAX_S`) دون إقرار؛ تنظيف `/scratch` عند الإقلاع؛ `repr=False` على الأسرار؛ قياس التنزيل الكامل لملف 4K (`bench/download_bench.py`).
 - منجز (التذكرة 4): المصغّرات (`thumbnails`: `poster.jpg` و`contact-sheet.jpg` في `derived/<material_id>/<file_id>/`)؛ كشف HLG/PQ وخريطة ألوان إلى SDR في النسخة الخفيفة والمصغّرات (قياس التزامن على HDR في `docs/measurements/render-bench/`)؛ عزل الحدث بسبب `config_error` بعد `MEDIA_AUTH_ISOLATE_AFTER_S` وأداة `requeue-dead`؛ 410 `media_resource_gone` ← `media:dead` بسبب `gone` بلا إعادة.
+- منجز (التذكرة 5): `hls` (خلف `MEDIA_ENABLE_HLS`)، `waveform` (‏`kind=audio`)، `phash` (بصمة إدراكية، تُرسل خلف `MEDIA_ENABLE_PHASH` حين يقبلها العقد)؛ قياس HLS في `docs/measurements/render-bench/`.
 - التشغيل محليًا: `docker build --target test -t media-worker:test workers/media && docker run --rm media-worker:test`.

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "tool": "render-bench",
+  "role": "media",
+  "test_name": "hls-2min-1080p",
+  "started_at": "2026-10-20T12:10:16.465Z",
+  "ended_at": "2026-10-20T12:10:32.365Z",
+  "result": "pass",
+  "device": {
+    "platform": "server",
+    "model": "4 vCPU"
+  },
+  "upload_path": "n/a",
+  "metrics": {
+    "proxy_s": 7.116,
+    "hls_package_s": 0.07,
+    "total_s": 7.186,
+    "segments": 30,
+    "segment_s_max": 4.0,
+    "segment_s_min": 4.0,
+    "hls_duration_s": 120.0,
+    "source_video_duration_s": 120.0,
+    "duration_drift_ms": 0.0,
+    "hls_bytes": 263878,
+    "threshold_ms": 40.0,
+    "ffmpeg_version": "8.0.1"
+  },
+  "notes": "مصدر اصطناعي 120 ث 1080p30 (مقطع av_sync). HLS fMP4 بمقاطع ~4 ث من النسخة الخفيفة بإعادة تغليف (-c copy، -copyts) بلا ترميز ثانٍ، فزمن HLS هو التغليف وحده وزمن النسخة الخفيفة مذكور منفصلًا. حاوية سحابية، لا خادم الوسائط المعتمد."
+}
