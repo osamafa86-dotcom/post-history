@@ -208,6 +208,19 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
       expect((await getSession(another.id).expect(200)).body.material_has_proxy).toBe(true);
     });
 
+    it('registers a thumbnail beside the proxy: dimensions without duration, its mime type, no proxy_mode; one without dimensions is 422', async () => {
+      const o = await verifiedOriginal();
+      const key = `derived/${o.materialId}/${o.fileId}/poster.jpg`;
+      storage.sizes.set(key, 120);
+      const thumb = { kind: 'thumbnail', storage_key: key, sha256: hex(randomBytes(32)), size_bytes: 120, mime_type: 'image/jpeg', technical: { width: 640, height: 360 } };
+      await derive(o.fileId, proxy(o.materialId, o.fileId)).expect(200);
+      const res = await derive(o.fileId, thumb).expect(200);
+      const { rows } = await h.pool.query(`SELECT kind, mime_type, proxy_mode, width, height, duration_ms FROM material_files WHERE id = $1`, [res.body.file_id]);
+      expect(rows[0]).toEqual({ kind: 'thumbnail', mime_type: 'image/jpeg', proxy_mode: null, width: 640, height: 360, duration_ms: null });
+      await derive(o.fileId, { ...thumb, technical: {} }).expect(422);
+      await derive(o.fileId, { ...thumb, mime_type: undefined }).expect(422);
+    });
+
     it('looks the derivative up in the media bucket (S3_BUCKET_MEDIA), not the uploads bucket', async () => {
       expect(h.config.S3_BUCKET_MEDIA).toBe('media');
       expect(h.config.S3_BUCKET_MEDIA).not.toBe(h.config.S3_BUCKET_UPLOADS);

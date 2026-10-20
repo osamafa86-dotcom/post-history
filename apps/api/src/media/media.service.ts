@@ -36,13 +36,17 @@ const TECHNICAL_JSON_KEYS = [
 ] as const;
 
 function splitTechnical(t: MediaTechnical): {
-  columns: { durationMs: number; startPtsUs: number; width: number | null; height: number | null };
+  columns: { durationMs: number | null; startPtsUs: number | null; width: number | null; height: number | null };
   json: Record<string, unknown>;
 } {
   const json: Record<string, unknown> = {};
   for (const k of TECHNICAL_JSON_KEYS) if (t[k] !== undefined) json[k] = t[k];
-  return { columns: { durationMs: t.duration_ms, startPtsUs: t.start_pts_us, width: t.width ?? null, height: t.height ?? null }, json };
+  // المصغّرة صورة: بلا مدة ولا بداية إطارات (العقد يلزمهما للتحقق وللمشتقات الزمنية وحدها)
+  return { columns: { durationMs: t.duration_ms ?? null, startPtsUs: t.start_pts_us ?? null, width: t.width ?? null, height: t.height ?? null }, json };
 }
+
+// mime_type إلزامي للمصغّرة في العقد؛ للمشتقات الزمنية افتراضه بحسب النوع
+const DEFAULT_MIME: Record<string, string> = { proxy: 'video/mp4', hls: 'application/vnd.apple.mpegurl', audio: 'audio/mp4', thumbnail: 'image/jpeg' };
 
 const conflict = (msg: string) => new ApiError(409, 'upload_state_conflict', msg);
 // الرمز صحيح (فحصه قبل هذه الطبقة، وفشله 404 لإخفاء النقطة) لكن الجلسة أو الملف المصدر غير موجود: حدث متقادم ينقله
@@ -129,8 +133,9 @@ export class MediaService {
           storageKey: body.storage_key,
           sizeBytes: body.size_bytes,
           sha256,
-          mimeType: 'video/mp4',
-          proxyMode: 'normal',
+          mimeType: body.mime_type ?? DEFAULT_MIME[body.kind]!,
+          // proxy_mode للنسخة الخفيفة وحدها (قيد material_files_proxy_mode_only_proxy)
+          proxyMode: body.kind === 'proxy' ? 'normal' : null,
           verifiedAt: sql`now()` as never,
           ...columns,
           technical: json,
