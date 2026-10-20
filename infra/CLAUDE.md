@@ -22,7 +22,8 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 
 - `trial.sh` يجمع compose الأساسي و`docker-compose.trial.yml` والـ profiles (`api` `media` `ingest` `edge` `backup`) وملفي البيئة: `.env.example` ثم الأسرار من tmpfs (`/run/post-history/trial.env`).
 - نسخة Caddy لكل نطاق (`Caddyfile.main` على MAIN_IP، و`Caddyfile.ingest` على INGEST_IP)، على شبكة المضيف. نسختان لا واحدة: مخزن الشهادات واحد للعملية، فنسخة واحدة تقدّم شهادة أي اسم على أي عنوان (رسب في الاختبار).
-- النسخ: `infra/backup/backup.sh` يشفّر بشهادة المستلم (CMS) ومستخدم MinIO للقراءة فقط. التمرين `infra/backup/restore-drill.sh`، والاستعادة الفاشلة نتيجة `fail` لا انهيار.
+- النسخ: `infra/backup/backup.sh` يشفّر بشهادة المستلم (CMS) ومستخدم MinIO للقراءة فقط. التمرين `infra/backup/restore-drill.sh`، والاستعادة الفاشلة نتيجة `fail` لا انهيار، والناجحة `partial` لا `pass` (المرآة وفاصل النسخ غير مقيسة).
+- عنوان العميل: شبكة `default` ثابتة (`172.30.240.0/24`)، والخادم والبوابة يثقان ببوابتها `172.30.240.1` وحدها، وCaddy الرئيسي يقبل `CF-Connecting-IP` من `CLOUDFLARE_CIDRS` وحدها. الدخان يثبت أن عنوانين لا يتشاركان سلة حد الدخول.
 - الفحص: `smoke-trial.sh` (CI، على 127.0.0.1 و127.0.0.2 بشهادات محلية)، و`preflight.sh` على المضيف. ما يوفّره المالك في `docs/ops/field-trial-hosting.md`.
 
 ## tusd (`infra/tusd/`)

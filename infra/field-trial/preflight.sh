@@ -3,7 +3,8 @@
 #   sudo infra/field-trial/preflight.sh                 # قبل التشغيل: المضيف والشبكة والأسرار والنسخ
 #   sudo infra/field-trial/preflight.sh --running       # وبعد التشغيل: الوكيلان والصحة وآخر نسخة
 #   ... --json docs/measurements/ops/$(date +%F)-field-trial-preflight.json
-# لا يطبع قيمة سرية أبدًا: يفحص وجود المفاتيح وأطوالها فقط. الحدود الدنيا من docs/ops/field-trial-hosting.md،
+# لا يطبع قيمة سرية أبدًا: يفحص وجود المفاتيح وأطوالها فقط. ولا يكتب النطاقين وعنوانيهما في stdout ولا في الـ JSON:
+# تُستبدل بأسمائها الرمزية (MAIN_DOMAIN، INGEST_IP…) لأن النتيجة تُرفع إلى المستودع (ADR 0011). الحدود الدنيا من docs/ops/field-trial-hosting.md،
 # وتُغيَّر بالبيئة (MIN_CPUS MIN_RAM_GB MIN_DATA_FREE_GB MIN_BACKUP_FREE_GB).
 set -uo pipefail
 
@@ -21,9 +22,14 @@ MIN_CPUS="${MIN_CPUS:-4}" MIN_RAM_GB="${MIN_RAM_GB:-16}"
 MIN_DATA_FREE_GB="${MIN_DATA_FREE_GB:-500}" MIN_BACKUP_FREE_GB="${MIN_BACKUP_FREE_GB:-500}"
 
 pass=0 fail=0 warn=0 results=()
-ok()   { pass=$((pass + 1)); results+=("ok|$1"); printf 'ok    %s\n' "$1"; }
-bad()  { fail=$((fail + 1)); results+=("FAIL|$1"); printf 'FAIL  %s\n' "$1"; }
-note() { warn=$((warn + 1)); results+=("warn|$1"); printf 'warn  %s\n' "$1"; }
+mask() {
+  local s="$1" k v
+  for k in INGEST_DOMAIN MAIN_DOMAIN INGEST_IP MAIN_IP; do v="${!k:-}"; [ -n "$v" ] && s="${s//"$v"/$k}"; done
+  printf '%s' "$s"
+}
+ok()   { local m; m="$(mask "$1")"; pass=$((pass + 1)); results+=("ok|$m"); printf 'ok    %s\n' "$m"; }
+bad()  { local m; m="$(mask "$1")"; fail=$((fail + 1)); results+=("FAIL|$m"); printf 'FAIL  %s\n' "$m"; }
+note() { local m; m="$(mask "$1")"; warn=$((warn + 1)); results+=("warn|$m"); printf 'warn  %s\n' "$m"; }
 check() { if eval "$2" >/dev/null 2>&1; then ok "$1"; else bad "$1"; fi; }
 ver_ge() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -1)" = "$2" ]; }
 started_at="$(date -u +%FT%TZ)"
@@ -53,7 +59,8 @@ if [ -f "$ENV_FILE" ]; then
   val() { sed -n "s/^$1=//p" "$ENV_FILE" | tail -1; }
   for k in MAIN_DOMAIN INGEST_DOMAIN MAIN_IP INGEST_IP ACME_EMAIL POSTGRES_PASSWORD REDIS_PASSWORD S3_SECRET_KEY \
            TUSD_HOOK_SECRET JWT_SECRET FIELD_ENCRYPTION_KEY MEDIA_WORKER_TOKEN S3_MEDIA_ACCESS_KEY S3_MEDIA_SECRET_KEY \
-           INGEST_TOKEN_PUBLIC_KEY S3_BACKUP_ACCESS_KEY S3_BACKUP_SECRET_KEY BACKUP_DIR BACKUP_RECIPIENT_CERT; do
+           INGEST_TOKEN_PUBLIC_KEY S3_BACKUP_ACCESS_KEY S3_BACKUP_SECRET_KEY BACKUP_DIR BACKUP_RECIPIENT_CERT \
+           CLOUDFLARE_CIDRS; do
     [ -n "$(val "$k")" ] && ok "secret set: $k" || bad "secret set: $k"
   done
   for k in POSTGRES_PASSWORD REDIS_PASSWORD S3_SECRET_KEY TUSD_HOOK_SECRET JWT_SECRET MEDIA_WORKER_TOKEN S3_BACKUP_SECRET_KEY; do
@@ -61,6 +68,11 @@ if [ -f "$ENV_FILE" ]; then
     [ "${#v}" -ge 32 ] && ok "secret length >= 32: $k" || bad "secret length >= 32: $k"
     case "$v" in *change-me*|*example*) bad "placeholder value: $k" ;; esac
   done
+  tp="$(val TRUSTED_PROXY_CIDRS)"
+  case "${tp:-172.30.240.1/32}" in
+    172.30.240.1/32) ok "TRUSTED_PROXY_CIDRS is the default network gateway alone" ;;
+    *) bad "TRUSTED_PROXY_CIDRS must be 172.30.240.1/32 alone (a wider range lets any container forge the client address)" ;;
+  esac
   [ "$(val UPLOAD_VERIFIER)" = external ] && ok "UPLOAD_VERIFIER=external (media worker verifies)" || bad "UPLOAD_VERIFIER=external"
   [ -z "$(val CADDY_GLOBAL_EXTRA)" ] && ok "no test-only Caddy option (local_certs)" || bad "CADDY_GLOBAL_EXTRA must be empty on the trial host"
   MAIN_DOMAIN="$(val MAIN_DOMAIN)" INGEST_DOMAIN="$(val INGEST_DOMAIN)" MAIN_IP="$(val MAIN_IP)" INGEST_IP="$(val INGEST_IP)"
@@ -133,6 +145,8 @@ if [ "$RUNNING" = 1 ]; then
   [ ! -f "$BACKUP_DIR/last-failure.json" ] || [ "$last" -nt "$BACKUP_DIR/last-failure.json" ] && ok "no backup failure since the last success" \
     || bad "a backup failed after the last success ($BACKUP_DIR/last-failure.json)"
   check "all trial containers running" "! \"$ROOT/infra/field-trial/trial.sh\" ps --format '{{.State}}' | grep -qv running"
+  check "default network gateway is 172.30.240.1 (the address TRUSTED_PROXY_CIDRS trusts)" \
+    "[ \"\$(docker network inspect ${TRIAL_PROJECT:-post-history-trial}_default -f '{{(index .IPAM.Config 0).Gateway}}')\" = 172.30.240.1 ]"
 fi
 
 echo "preflight: $pass ok, $warn warn, $fail FAIL"

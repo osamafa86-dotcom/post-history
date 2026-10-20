@@ -2,6 +2,7 @@
   "schema_version": 1,
   "tool": "other",
   "role": "infra",
+  "test_name": "recovery",
   "started_at": "2026-10-20T00:56:35Z",
   "ended_at": "2026-10-20T00:56:45Z",
   "result": "fail",

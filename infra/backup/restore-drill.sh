@@ -5,7 +5,10 @@
 # العدّ عند النسخ (المستعاد >= المعدود)، وعينة كائنات تُفك وتُطابق بصمتها مع الكائن الحي. النتيجة بمخطط
 # contracts/schemas/measurement.json.
 # البيئة: COMPOSE (أمر compose بملفاته، الافتراضي compose المحلي)، BACKUP_DIR على المضيف، SAMPLE (20)،
-# DRILL_ENV (local أو اسم المضيف؛ يدخل في النتيجة)، وملف البيئة نفسه لـ compose (S3_* و POSTGRES_*).
+# DRILL_ENV (local أو اسم المضيف؛ يدخل في النتيجة)، DRILL_TMP (مجلد العمل، الافتراضي /dev/shm)، وملف البيئة نفسه لـ
+# compose (S3_* و POSTGRES_*).
+# النتيجة partial أو fail ولا تكون pass أبدًا: معيار recovery في الخطة يشترط الاستعادة من النسخة المعزولة لدى المزوّد
+# الثاني، وفقدًا ≤ 15 دقيقة، واستعادة ≤ 4 ساعات، والتمرين يقرأ BACKUP_DIR على المضيف ولا يقيس فاصل النسخ.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,7 +25,8 @@ read -r -a COMPOSE <<<"${COMPOSE:-docker compose -f $HERE/../compose/docker-comp
 BACKUP_DIR="${BACKUP_DIR:?host directory with the backups}"
 SAMPLE="${SAMPLE:-20}"
 NAME="drill-$$"
-WORK="$(mktemp -d)"
+# المفتاح الخاص والتفريغ المفكوك على tmpfs، فلا يبقى نص القاعدة الصريح في كتل حرة على قرص المضيف.
+WORK="$(mktemp -d -p "${DRILL_TMP:-/dev/shm}")"
 cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; rm -rf "$WORK"; }
 trap cleanup EXIT
 
@@ -92,14 +96,16 @@ cat > "$OUT" <<EOF
   "schema_version": 1,
   "tool": "other",
   "role": "infra",
+  "test_name": "recovery",
   "started_at": "$started_at",
   "ended_at": "$ended_at",
-  "result": "$( [ "$result" = pass ] && [ "${DRILL_ENV:-local}" = local ] && echo partial || echo "$result")",
+  "result": "$( [ "$result" = pass ] && echo partial || echo fail)",
   "device": {"platform": "server", "model": "${DRILL_ENV:-local} docker compose"},
   "metrics": {
     "dump_bytes_encrypted": $(wc -c < "$dump"),
     "decrypt_s": $decrypt_s,
     "pg_restore_s": $restore_s,
+    "pg_restore_within_4h": $(awk "BEGIN { print ($restore_s <= 14400) ? \"true\" : \"false\" }"),
     "backup_age_h": $rpo_h,
     "pg_restore_errors": $restore_errors,
     "tables_compared": $tables,
@@ -109,8 +115,8 @@ cat > "$OUT" <<EOF
     "objects_mismatched": $obj_mismatch,
     "drill_passed": $( [ "$result" = pass ] && echo true || echo false )
   },
-  "notes": "ADR 0013 restore drill: latest encrypted pg_dump decrypted with the offline recipient key, restored into a throwaway postgres:16-alpine, row counts compared with the counts taken at backup time (restored >= counted), and a sample of encrypted objects decrypted and compared by SHA-256 with the live objects. Environment: ${DRILL_ENV:-local}; partial unless run on the trial host."
+  "notes": "ADR 0013 restore drill: latest encrypted pg_dump decrypted with the offline recipient key, restored into a throwaway postgres:16-alpine, row counts compared with the counts taken at backup time (restored >= counted), and a sample of encrypted objects decrypted and compared by SHA-256 with the live objects. Restored >= counted: rows added between the count and the dump are allowed, so extra or duplicated rows are not checked. Never pass: restoring from the isolated copy at the second provider, the backup interval (loss <= 15 min) and a full-size restore time are not measured here. Environment: ${DRILL_ENV:-local}."
 }
 EOF
-echo "restore drill: $result (restore_errors=$restore_errors tables=$tables missing=$missing fewer_rows=$mismatched objects=$objects mismatched=$obj_mismatch)"
+echo "restore drill: $result, recorded as $( [ "$result" = pass ] && echo partial || echo fail) (restore_errors=$restore_errors tables=$tables missing=$missing fewer_rows=$mismatched objects=$objects mismatched=$obj_mismatch)"
 [ "$result" = pass ]

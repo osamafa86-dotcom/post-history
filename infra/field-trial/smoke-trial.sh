@@ -33,6 +33,7 @@ MAIN_IP=127.0.0.1
 INGEST_IP=127.0.0.2
 ACME_EMAIL=ci@example.invalid
 CADDY_GLOBAL_EXTRA=local_certs
+CLOUDFLARE_CIDRS=127.0.0.0/8
 POSTGRES_PASSWORD=$(hex 16)
 REDIS_PASSWORD=$(hex 16)
 S3_SECRET_KEY=$(hex 16)
@@ -80,6 +81,17 @@ if curl -sS --max-time 10 -o /dev/null --cacert "$WORK/ca.crt" --resolve ingest.
 if curl -sS --max-time 10 -o /dev/null --cacert "$WORK/ca.crt" --resolve main.localhost:443:127.0.0.2 https://main.localhost/health 2>/dev/null; then
   fail "the main name answers on the ingest address"; fi
 echo "edge routing and address isolation: ok"
+
+# Client address through the edge (Caddy trusts CF-Connecting-IP from CLOUDFLARE_CIDRS, the API trusts the default
+# network gateway alone): ten failed logins for one email from address A fill that (email, address) bucket, so the
+# eleventh from A is 429 while the same email from B is still 401. One shared bucket would make B 429 too.
+login() { c -o /dev/null -w '%{http_code}' -X POST https://main.localhost/v1/auth/login -H 'Content-Type: application/json' \
+            -H "CF-Connecting-IP: $1" -d "{\"email\":\"$email\",\"password\":\"wrong-password-$(hex 4)\"}"; }
+email="edge-ip-$(hex 4)@example.com"
+for _ in $(seq 1 10); do [ "$(login 198.51.100.1)" = 401 ] || fail "login through the edge should be 401"; done
+[ "$(login 198.51.100.1)" = 429 ] || fail "11th failed login from one client address should be 429"
+[ "$(login 198.51.100.2)" = 401 ] || fail "another client address shares the rate-limit bucket (client address lost at the edge)"
+echo "client address through the edge: ok"
 
 (cd "$ROOT/tools/acceptance" && [ -d node_modules ] || npm ci --no-audit --no-fund >/dev/null)
 DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB" \

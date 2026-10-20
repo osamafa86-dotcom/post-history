@@ -14,6 +14,11 @@ services:
     restart: unless-stopped
   api:
     restart: unless-stopped
+    environment:
+      # Caddy reaches the API through a port on 127.0.0.1, so the API sees the default network's gateway as the peer.
+      # Trusting that one address (not 172.16.0.0/12) lets req.ip come from Caddy's X-Forwarded-For while no other
+      # container can forge it; without it every client shares one rate-limit bucket.
+      TRUSTED_PROXY_CIDRS: "${TRUSTED_PROXY_CIDRS:-172.30.240.1/32}"
   media-worker:
     restart: unless-stopped
 
@@ -58,6 +63,7 @@ services:
       MAIN_IP: "${MAIN_IP:?}"
       ACME_EMAIL: "${ACME_EMAIL:?}"
       CADDY_GLOBAL_EXTRA: "${CADDY_GLOBAL_EXTRA:-}"
+      CLOUDFLARE_CIDRS: "${CLOUDFLARE_CIDRS:?Cloudflare edge ranges, space separated}"
       API_PORT: "${API_PORT}"
       TUSD_PORT: "${TUSD_PORT}"
     volumes:
@@ -124,6 +130,14 @@ services:
     tmpfs: ["/tmp:size=64m"]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+
+# Fixed subnet for the default network: its gateway (172.30.240.1) is the peer the API and the ingest gate see for
+# Caddy's connections, and the only address they trust for X-Forwarded-For (TRUSTED_PROXY_CIDRS, listen-plain.conf).
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.240.0/24
 
 volumes:
   caddy-main-data:

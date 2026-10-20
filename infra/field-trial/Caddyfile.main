@@ -5,16 +5,26 @@
 	email {$ACME_EMAIL}
 	admin off
 	{$CADDY_GLOBAL_EXTRA}
+	# عنوان العميل من CF-Connecting-IP فقط حين يأتي الاتصال من نطاقات Cloudflare؛ غير ذلك عنوان النظير نفسه.
+	servers {
+		trusted_proxies static {$CLOUDFLARE_CIDRS}
+		client_ip_headers CF-Connecting-IP
+	}
 }
 
 {$MAIN_DOMAIN} {
 	bind {$MAIN_IP}
 	# الخادم: الواجهة العامة فقط. /internal/* (الخطّافات ونقاط العامل) لا يُوجَّه من هنا أبدًا.
+	# X-Forwarded-For عنوان العميل وحده، فيثق الخادم بعنوان بوابة Docker وحدها (TRUSTED_PROXY_CIDRS).
 	handle /v1/* {
-		reverse_proxy 127.0.0.1:{$API_PORT}
+		reverse_proxy 127.0.0.1:{$API_PORT} {
+			header_up X-Forwarded-For {client_ip}
+		}
 	}
 	handle /health {
-		reverse_proxy 127.0.0.1:{$API_PORT}
+		reverse_proxy 127.0.0.1:{$API_PORT} {
+			header_up X-Forwarded-For {client_ip}
+		}
 	}
 	# الرفع: tusd-proxy كما في compose. tusd يبني Location بـ http، والعميل هنا على https.
 	handle /files/* {
