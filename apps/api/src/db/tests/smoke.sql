@@ -332,8 +332,33 @@ SET CONSTRAINTS ALL DEFERRED;
 UPDATE users SET status = 'active' WHERE id = '00000000-0000-4000-8000-000000000023';
 DELETE FROM user_roles WHERE user_id = '00000000-0000-4000-8000-000000000022' AND role = 'system_admin';
 SET CONSTRAINTS ALL IMMEDIATE;
+-- ثغرتا التجاوز في معاملة واحدة (مراجعة الأمن): تعليق ثم حذف الدور، وحذف المستخدم (CASCADE للدور)
+SET CONSTRAINTS ALL DEFERRED;
+SELECT pg_temp.expect_error($q$
+  WITH s AS (UPDATE users SET status = 'suspended' WHERE id = '00000000-0000-4000-8000-000000000021' RETURNING id)
+  DELETE FROM user_roles WHERE user_id IN (SELECT id FROM s) AND role = 'system_admin' $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
+SELECT pg_temp.expect_error($q$ DELETE FROM users WHERE id = '00000000-0000-4000-8000-000000000021' $q$, '23514');
+SET CONSTRAINTS ALL IMMEDIATE;
 SELECT pg_temp.expect_error($q$
   UPDATE recovery_requests SET reset_token_expires_at = decided_at + interval '25 hours' WHERE id = '00000000-0000-4000-8000-000000000901' $q$, '23514');
+
+-- ---------- auth.recovery_completed + audit approved_by ----------
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('auth.recovery_completed', 'user', '00000000-0000-4000-8000-000000000011', 'auth.recovery_completed:smoke:1',
+        '{"recovery_request_id": "00000000-0000-4000-8000-000000000901"}');
+INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+VALUES ('00000000-0000-4000-8000-000000000011', 'auth.recovery_completed', 'user', '00000000-0000-4000-8000-000000000011',
+        '{"recovery_request_id": "00000000-0000-4000-8000-000000000901", "approved_by": "00000000-0000-4000-8000-000000000012"}');
+
+-- ---------- user.status_changed (whitelisted payload) ----------
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('user.status_changed', 'user', '00000000-0000-4000-8000-000000000011', 'user.status_changed:smoke:1',
+        '{"user_id": "00000000-0000-4000-8000-000000000011", "status": "suspended", "reason_code": "suspended"}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('user.status_changed', 'user', '00000000-0000-4000-8000-000000000011', 'user.status_changed:smoke:2',
+          '{"user_id": "00000000-0000-4000-8000-000000000011", "status": "suspended", "reason": "free text"}') $q$, '23514');
 
 -- ---------- indexing policy (ADR 0002) ----------
 SELECT pg_temp.assert(

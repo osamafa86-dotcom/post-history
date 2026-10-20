@@ -1,0 +1,15 @@
+{
+  "id": "1301",
+  "type": "user.status_changed",
+  "aggregate_type": "user",
+  "aggregate_id": "1e2d3c4b-5a69-4788-9796-a5b4c3d2e1f0",
+  "occurred_at": "2026-10-20T08:00:00Z",
+  "idempotency_key": "user.status_changed:1e2d3c4b-5a69-4788-9796-a5b4c3d2e1f0:1",
+  "actor_id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+  "payload": {
+    "user_id": "1e2d3c4b-5a69-4788-9796-a5b4c3d2e1f0",
+    "status": "suspended",
+    "reason_code": "suspended",
+    "note": "phone lost at checkpoint"
+  }
+}
