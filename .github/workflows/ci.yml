@@ -210,6 +210,8 @@ jobs:
                  -e "s|^FIELD_ENCRYPTION_KEY=.*|FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)|" \
                  -e "s/^S3_MEDIA_ACCESS_KEY=.*/S3_MEDIA_ACCESS_KEY=media-worker-ci/" \
                  -e "s/^S3_MEDIA_SECRET_KEY=.*/S3_MEDIA_SECRET_KEY=$(openssl rand -hex 16)/" \
+                 -e "s/^S3_AI_ACCESS_KEY=.*/S3_AI_ACCESS_KEY=ai-worker-ci/" \
+                 -e "s/^S3_AI_SECRET_KEY=.*/S3_AI_SECRET_KEY=$(openssl rand -hex 16)/" \
                  -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" \
                  -e "s/^REDIS_PASSWORD=.*/REDIS_PASSWORD=$(openssl rand -hex 16)/" \
                  -e "s/^S3_SECRET_KEY=.*/S3_SECRET_KEY=$(openssl rand -hex 16)/" infra/compose/.env
@@ -221,7 +223,7 @@ jobs:
         run: docker compose -f infra/compose/docker-compose.yml --profile api pull -q
       - name: Smoke test (tusd only via proxy, hook token kept out of logs and responses)
         run: infra/compose/smoke.sh
-      - name: Media worker storage user is least-privilege (ADR 0006)
+      - name: Media and AI worker storage users are least-privilege (ADR 0006, ADR 0019)
         run: infra/minio/check-media-policy.sh
       - name: Hook path end to end with the API (SEC-06)
         run: infra/compose/e2e-hooks.sh

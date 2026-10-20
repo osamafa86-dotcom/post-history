@@ -60,17 +60,23 @@ if curl -sS --max-time 10 -o /dev/null -D - -X OPTIONS -H 'Tus-Resumable: 1.0.0'
 [ "$(rcli ping | tr -d '\r')" = PONG ] && ok "redis:ping" || bad "redis:ping" "no PONG"
 "$T" exec -T minio mc ready local >/dev/null 2>&1 && ok "minio:ready" || bad "minio:ready" "not ready"
 
-# مستهلك media:events: متوقف إن كان في الطابور عمل (معلّق أو لم يُقرأ) وآخر نشاط لكل مستهلك أقدم من MEDIA_STALL_S.
+# مستهلكو media:events، كل مجموعة وحدها (media لعامل الوسائط، ai لعامل التفريغ إن وُجدت): متوقفة إن كان في طابورها عمل
+# (معلّق أو لم يُقرأ) وآخر نشاط لكل مستهلك فيها أقدم من MEDIA_STALL_S. مجموعة غير موجودة = لا حدث لم يُستهلك.
 groups="$(rcli XINFO GROUPS media:events)"
-if [ -z "$groups" ] || grep -q ERR <<<"$groups"; then
-  ok "media:consumer"   # لا طابور بعد: لا حدث لم يُستهلك
-else
-  read -r pending lag consumers <<<"$(awk 'NR%2==1{k=$0} NR%2==0{v[k]=$0} END{print v["pending"]+0, v["lag"]+0, v["consumers"]+0}' <<<"$groups")"
-  idle_min="$(rcli XINFO CONSUMERS media:events media | awk 'NR%2==1{k=$0} NR%2==0 && k=="idle"{if(m==""||$0<m)m=$0} END{print m+0}')"
+gfield() { awk -v g="$1" -v k="$2" 'NR%2==1{key=$0} NR%2==0{if(key=="name")cur=$0; else if(cur==g && key==k){print $0+0; f=1; exit}} END{if(!f)print 0}' <<<"$groups"; }
+check_group() { # check_group <group> <check-name>
+  if [ -z "$groups" ] || grep -q ERR <<<"$groups" || ! awk -v g="$1" 'NR%2==1{key=$0} NR%2==0 && key=="name" && $0==g{f=1} END{exit !f}' <<<"$groups"; then
+    ok "$2"; return
+  fi
+  local pending lag consumers idle_min
+  pending="$(gfield "$1" pending)" lag="$(gfield "$1" lag)" consumers="$(gfield "$1" consumers)"
+  idle_min="$(rcli XINFO CONSUMERS media:events "$1" | awk 'NR%2==1{k=$0} NR%2==0 && k=="idle"{if(m==""||$0<m)m=$0} END{print m+0}')"
   if [ "$((pending + lag))" -gt 0 ] && { [ "$consumers" -eq 0 ] || [ "$idle_min" -gt $((MEDIA_STALL_S * 1000)) ]; }; then
-    bad "media:consumer" "work queued and no consumer active for ${MEDIA_STALL_S}s"
-  else ok "media:consumer"; fi
-fi
+    bad "$2" "work queued and no consumer active for ${MEDIA_STALL_S}s"
+  else ok "$2"; fi
+}
+check_group media media:consumer
+check_group ai ai:consumer
 
 # --- القرص
 for p in / /var/lib/docker "$BACKUP_DIR"; do
