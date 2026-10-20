@@ -12,14 +12,18 @@ case "${1:-}" in
       swift build -c release --product upload-netlab
     ;;
   measure)
-    scenario="$2"; size_mb="$3"; max_seconds="$4"; out="$5"
+    scenario="$2"; size_mb="$3"; max_seconds="$4"; out="$5"; reference_seconds="${6:-0}"
     # netlab.py يستبدل {endpoint} {file} {chunk} {timeout} {max_seconds}؛ الملف في RUNNER_TEMP يُركَّب بالمسار نفسه داخل الحاوية.
+    # حجم الجزء من السيناريو (256 KiB في field-weak بعد تعديل ADR 0007) فلا يُحدَّد هنا.
     client="docker run --rm --network host -v $PKG:/src -v $RUNNER_TEMP:$RUNNER_TEMP $IMAGE $BIN \
       --file {file} --endpoint {endpoint} --chunk-bytes {chunk} --timeout-s {timeout} --max-seconds {max_seconds}"
+    # المرجع (المرحلة (أ) بعد التعديل): عميل بايثون أولًا في التشغيل نفسه بالشروط نفسها؛ 0 = بلا حكم على المرحلة (أ).
+    reference=()
+    if [ "$reference_seconds" -gt 0 ]; then reference=(--reference-seconds "$reference_seconds"); fi
     python3 tools/netlab/netlab.py run --scenario "$scenario" --size-mb "$size_mb" --max-seconds "$max_seconds" \
-      --workdir "$RUNNER_TEMP" --out "$out" --role ios \
+      --workdir "$RUNNER_TEMP" --out "$out" --role ios "${reference[@]}" \
       --client-cmd "$client" \
       --client-label "apps/ios UploadCore (PostHistoryKit upload-netlab, Swift 6.1 on Linux)"
     ;;
-  *) echo "usage: $0 build | measure <scenario> <size_mb> <max_seconds> <out.json>" >&2; exit 2 ;;
+  *) echo "usage: $0 build | measure <scenario> <size_mb> <max_seconds> <out.json> [reference_seconds]" >&2; exit 2 ;;
 esac
