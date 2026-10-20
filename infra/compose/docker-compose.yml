@@ -72,6 +72,8 @@ services:
       TUSD_OBJECT_PREFIX: ${TUSD_OBJECT_PREFIX}
       S3_MEDIA_ACCESS_KEY: ${S3_MEDIA_ACCESS_KEY:-}
       S3_MEDIA_SECRET_KEY: ${S3_MEDIA_SECRET_KEY:-}
+      S3_BACKUP_ACCESS_KEY: ${S3_BACKUP_ACCESS_KEY:-}
+      S3_BACKUP_SECRET_KEY: ${S3_BACKUP_SECRET_KEY:-}
     volumes:
       - ../minio/init.sh:/init.sh:ro
 

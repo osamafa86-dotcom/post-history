@@ -1,0 +1,44 @@
+# الوكيل الأمامي للنطاق الرئيسي في بيئة التجربة (ADR 0013): TLS بشهادة ACME تلقائية على MAIN_IP وحده.
+# نسخة Caddy مستقلة لكل نطاق (Caddyfile.ingest للآخر): لكل منهما عنوانه ومخزن شهاداته، فلا يقدّم عنوان الرئيسي
+# شهادة ingest ولا العكس، والسبر النشط لا يربط العنوانين (ADR 0011). على شبكة المضيف، والخدمات على 127.0.0.1.
+{
+	email {$ACME_EMAIL}
+	admin off
+	{$CADDY_GLOBAL_EXTRA}
+}
+
+{$MAIN_DOMAIN} {
+	bind {$MAIN_IP}
+	# الخادم: الواجهة العامة فقط. /internal/* (الخطّافات ونقاط العامل) لا يُوجَّه من هنا أبدًا.
+	handle /v1/* {
+		reverse_proxy 127.0.0.1:{$API_PORT}
+	}
+	handle /health {
+		reverse_proxy 127.0.0.1:{$API_PORT}
+	}
+	# الرفع: tusd-proxy كما في compose. tusd يبني Location بـ http، والعميل هنا على https.
+	handle /files/* {
+		reverse_proxy 127.0.0.1:{$TUSD_PORT} {
+			flush_interval -1
+			header_down Location ^http:// https://
+			transport http {
+				read_timeout 300s
+				write_timeout 300s
+			}
+		}
+	}
+	handle {
+		respond 404
+	}
+	log {
+		output stdout
+		# المسار والحالة والمدة؛ بلا ترويسات (فيها الرموز) ولا عنوان العميل.
+		format filter {
+			request>headers delete
+			request>remote_ip delete
+			request>client_ip delete
+			request>remote_port delete
+			resp_headers delete
+		}
+	}
+}

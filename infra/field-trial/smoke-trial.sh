@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# دخان بيئة التجربة كاملة (ADR 0013) على المضيف المحلي أو مشغّل CI: النطاقان على 127.0.0.1 و127.0.0.2 بشهادات
+# سلطة Caddy المحلية (local_certs)، وأسرار عشوائية في ملف مؤقت بصلاحية 0400. يتحقق من:
+#   1) الوكيل: الصحة والرفع على الرئيسي، 404 لـ /internal وغيره، التحويل من http، وعزل العنوانين (لا اسم على عنوان الآخر)،
+#   2) بوابة ingest خلف الوكيل: 401 بلا رمز، ورفع كامل برمز صالح، ورفع كامل عبر الرئيسي (e2e-edge-upload.mjs)،
+#   3) نسخة احتياطية مشفّرة ثم تمرين استعادة ناجح (infra/backup/restore-drill.sh)،
+#   4) لا رمز ولا عنوان عميل في سجل الوكيل.
+# يحتاج tools/acceptance (npm ci). KEEP=1 يبقي البيئة قائمة. TRIAL_EXTRA_COMPOSE للاختبار المحلي فقط.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+WORK="$(mktemp -d)"
+export TRIAL_PROJECT="${TRIAL_PROJECT:-post-history-trial-ci}" TRIAL_ENV_FILE="$WORK/trial.env"
+T="$ROOT/infra/field-trial/trial.sh"
+cleanup() { [ "${KEEP:-0}" = 1 ] || "$T" down -v --remove-orphans >/dev/null 2>&1 || true; rm -rf "$WORK"; }
+trap cleanup EXIT
+fail() { echo "!! $*" >&2; "$T" logs --tail 40 caddy caddy-ingest ingest-gate api backup >&2 || true; exit 1; }
+hex() { openssl rand -hex "$1"; }
+
+python3 "$ROOT/infra/ingest/test_token.py" keygen "$WORK/ingest" >/dev/null
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 2 -subj /CN=backup-drill \
+  -keyout "$WORK/recipient.key" -out "$WORK/recipient.crt" 2>/dev/null
+mkdir -p "$WORK/backups" && chmod 777 "$WORK/backups"   # uid 70 in the backup image writes here
+cat > "$TRIAL_ENV_FILE" <<ENV
+MAIN_DOMAIN=main.localhost
+INGEST_DOMAIN=ingest.localhost
+MAIN_IP=127.0.0.1
+INGEST_IP=127.0.0.2
+ACME_EMAIL=ci@example.invalid
+CADDY_GLOBAL_EXTRA=local_certs
+POSTGRES_PASSWORD=$(hex 16)
+REDIS_PASSWORD=$(hex 16)
+S3_SECRET_KEY=$(hex 16)
+TUSD_HOOK_SECRET=$(hex 32)
+JWT_SECRET=$(hex 32)
+FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)
+MEDIA_WORKER_TOKEN=$(hex 32)
+S3_MEDIA_ACCESS_KEY=media-worker-ci
+S3_MEDIA_SECRET_KEY=$(hex 16)
+UPLOAD_VERIFIER=external
+INGEST_TOKEN_PUBLIC_KEY=$(cat "$WORK/ingest/public.b64")
+INGEST_PORT=8443
+S3_BACKUP_ACCESS_KEY=backup-ci
+S3_BACKUP_SECRET_KEY=$(hex 16)
+BACKUP_DIR=$WORK/backups
+BACKUP_RECIPIENT_CERT=$WORK/recipient.crt
+ENV
+chmod 400 "$TRIAL_ENV_FILE"
+set -a; . "$ROOT/infra/compose/.env.example"; . "$TRIAL_ENV_FILE"; set +a
+
+"$T" up -d --wait --build
+
+# Two Caddy instances, two local CAs (separate certificate stores): trust both.
+{ "$T" exec -T caddy cat /data/caddy/pki/authorities/local/root.crt
+  "$T" exec -T caddy-ingest cat /data/caddy/pki/authorities/local/root.crt; } > "$WORK/ca.crt"
+c() { curl -sS --max-time 20 --cacert "$WORK/ca.crt" --resolve "main.localhost:443:127.0.0.1" \
+           --resolve "ingest.localhost:443:127.0.0.2" "$@"; }
+code() { c -o /dev/null -w '%{http_code}' "$@" || echo 000; }
+for _ in $(seq 1 30); do [ "$(code https://main.localhost/health)" = 200 ] && break; sleep 2; done
+
+[ "$(code https://main.localhost/health)" = 200 ] || fail "main /health through the edge"
+hdr="$(c -o /dev/null -D - -X OPTIONS https://main.localhost/files/ -H 'Tus-Resumable: 1.0.0')"
+grep -qi '^tus-resumable:' <<<"$hdr" || fail "main /files/ does not reach tusd"
+# The edge routes /internal nowhere, whatever the token: a random one keeps the real secret out of the access log.
+[ "$(code -X POST "https://main.localhost/internal/tusd-hooks/$(hex 32)")" = 404 ] || fail "/internal reachable through the edge"
+[ "$(code https://main.localhost/)" = 404 ] || fail "main / should be 404"
+[ "$(curl -sS -o /dev/null -w '%{http_code}' --resolve main.localhost:80:127.0.0.1 http://main.localhost/health)" = 308 ] \
+  || fail "http is not redirected to https"
+[ "$(code -X POST https://ingest.localhost/files/ -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 1')" = 401 ] \
+  || fail "ingest without a token should be 401 at the gate"
+[ "$(code https://ingest.localhost/v1/health)" = 404 ] || fail "ingest serves more than /files/"
+# Address isolation: each name answers on its own address only (active probing does not link A and B).
+if curl -sS --max-time 10 -o /dev/null --cacert "$WORK/ca.crt" --resolve ingest.localhost:443:127.0.0.1 https://ingest.localhost/files/ 2>/dev/null; then
+  fail "the ingest name answers on the main address"; fi
+if curl -sS --max-time 10 -o /dev/null --cacert "$WORK/ca.crt" --resolve main.localhost:443:127.0.0.2 https://main.localhost/health 2>/dev/null; then
+  fail "the main name answers on the ingest address"; fi
+echo "edge routing and address isolation: ok"
+
+(cd "$ROOT/tools/acceptance" && [ -d node_modules ] || npm ci --no-audit --no-fund >/dev/null)
+DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB" \
+API_URL="http://127.0.0.1:$API_PORT/v1" CA_FILE="$WORK/ca.crt" INGEST_SIGNING_KEY="$WORK/ingest/signing.pem" \
+  node "$ROOT/infra/field-trial/e2e-edge-upload.mjs" || fail "uploads through the edge"
+
+"$T" run --rm -T backup once || fail "backup once"
+[ -s "$WORK/backups/last-success.json" ] || fail "no last-success.json"
+COMPOSE="$T" BACKUP_DIR="$WORK/backups" DRILL_ENV=local \
+  "$ROOT/infra/backup/restore-drill.sh" --key "$WORK/recipient.key" --out "${DRILL_OUT:-$WORK/drill.json}" || fail "restore drill"
+
+# Captured first: with pipefail, `logs | grep -q` can turn a match into a SIGPIPE failure and hide it.
+edge_log="$("$T" logs caddy caddy-ingest ingest-gate)"
+if grep -qF "$TUSD_HOOK_SECRET" <<<"$edge_log"; then fail "hook secret in an edge log"; fi
+if grep -qE '"(remote_ip|client_ip)"' <<<"$edge_log"; then fail "client address in the edge log"; fi
+if grep -qiE 'ingest-token|authorization' <<<"$edge_log"; then fail "request headers in the edge log"; fi
+echo "field trial smoke: ok"

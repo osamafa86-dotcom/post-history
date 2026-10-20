@@ -18,6 +18,13 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 - `-behind-proxy` لا يُفعَّل إلا خلف وكيل فعلي (عبر `TUSD_EXTRA_FLAGS`)، لأنه يجعل tusd يثق بترويسات `X-Forwarded-*`.
 - أمر واحد يشغّل كل شيء من الصفر: `docker compose -f infra/compose/docker-compose.yml up -d`. والخادم معه: `--profile api` (من المصدر في `node:22`، مع `npm ci` والترحيل والبناء عند البدء)، ويُبنى له `REDIS_URL` و`DATABASE_URL` و`S3_*` من `.env` نفسه.
 
+## بيئة التجربة (`infra/field-trial/`، `infra/backup/`، ADR 0013)
+
+- `trial.sh` يجمع compose الأساسي و`docker-compose.trial.yml` والـ profiles (`api` `media` `ingest` `edge` `backup`) وملفي البيئة: `.env.example` ثم الأسرار من tmpfs (`/run/post-history/trial.env`).
+- نسخة Caddy لكل نطاق (`Caddyfile.main` على MAIN_IP، و`Caddyfile.ingest` على INGEST_IP)، على شبكة المضيف. نسختان لا واحدة: مخزن الشهادات واحد للعملية، فنسخة واحدة تقدّم شهادة أي اسم على أي عنوان (رسب في الاختبار).
+- النسخ: `infra/backup/backup.sh` يشفّر بشهادة المستلم (CMS) ومستخدم MinIO للقراءة فقط. التمرين `infra/backup/restore-drill.sh`، والاستعادة الفاشلة نتيجة `fail` لا انهيار.
+- الفحص: `smoke-trial.sh` (CI، على 127.0.0.1 و127.0.0.2 بشهادات محلية)، و`preflight.sh` على المضيف. ما يوفّره المالك في `docs/ops/field-trial-hosting.md`.
+
 ## tusd (`infra/tusd/`)
 
 - R2 يشترط تساوي كل الأجزاء عدا الأخير وحدًا أدنى 5 MiB: `-s3-min-part-size` = `-s3-part-size`.
@@ -33,6 +40,7 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 ## CI
 
 - `contracts`: redocly lint + ajv compile. `secrets`: gitleaks. `compose`: config + pull + `infra/compose/smoke.sh` + `infra/compose/e2e-hooks.sh` (مسار الخطّاف مع الخادم) + `infra/compose/smoke-media.sh` (تحصين العامل وعزله) + `infra/ingest/test-gate.sh` (بوابة ingest). `api`: يشغّل MinIO المثبّت لاختبار محوّل S3، و`npm audit --audit-level=high` (وكذلك `acceptance`).
+- `field-trial` (`.github/workflows/field-trial.yml`): `infra/field-trial/smoke-trial.sh` على كل PR يمس `infra/**` أو `apps/api/src/db/**`.
 - `netlab` (`.github/workflows/netlab.yml`): فحص قصير لـ field-weak بوضع netem ومحاكاة الحجب (`blocking.py`) على كل PR يمس netlab أو compose أو ingest، وقياس كامل يدويًا.
 - Dependabot (`.github/dependabot.yml`): طلب أسبوعي لـ minor+patch لكل مجلد، والإصدارات الرئيسية مُتجاهلة حتى ما بعد التجربة الميدانية. لذلك يحرس `npm audit` الثغرات العالية، وتُراجَع تنبيهات Dependabot أسبوعيًا ويُبلَّغ المنسّق بما يستدعي ترقية رئيسية.
 - كل حزمة تضيف وظيفتها الخاصة حين يوجد كود.
