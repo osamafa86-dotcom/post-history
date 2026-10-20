@@ -31,11 +31,11 @@ public struct UploadSessionCreate: Sendable, Codable, Hashable {
     public var mimeType: String?
     /** لـ proxy فقط */
     public var proxyMode: ProxyMode?
-    /** بصمة SHA-256 للملف كاملًا يحسبها العميل قبل الإنشاء؛ على كل عميل إرسالها (ADR 0012): الخادم يقارنها ببصمته بعد التجميع فيخرج عامل الوسائط من قاعدة الثقة، والقرار `checksum_mismatch` للخادم وحده. الخادم يفرضها اليوم بـ `UPLOAD_REQUIRE_CLIENT_SHA256`؛ تصير مفتاحًا إلزاميًا في المخطط مع تحديث اختبارات الخادم المرتبطة بهذا العلم، ويبقى نوعها قابلًا لـ null حتى v0.2 كي لا تنكسر شيفرة Swift وKotlin المولّدة. */
+    /** بصمة SHA-256 للملف كاملًا يحسبها العميل قبل الإنشاء؛ إلزامية منذ v0.1 (ADR 0012): الخادم يقارنها ببصمته بعد التجميع فيخرج عامل الوسائط من قاعدة الثقة، والقرار `checksum_mismatch` للخادم وحده. المفتاح إلزامي، والقيمة `null` تُرفض بـ `422 validation_failed`. النوع يبقى قابلًا لـ null في v0.1 فقط كي لا تنكسر شيفرة Swift وKotlin المولّدة التي تمرر قيمة اختيارية؛ يصير `string` غير قابل لـ null في v0.2. */
     public var clientSha256: String?
     public var clientFingerprint: UploadSessionCreateClientFingerprint?
 
-    public init(materialId: UUID, kind: Kind, sizeBytes: Int, filename: String, mimeType: String? = nil, proxyMode: ProxyMode? = nil, clientSha256: String? = nil, clientFingerprint: UploadSessionCreateClientFingerprint? = nil) {
+    public init(materialId: UUID, kind: Kind, sizeBytes: Int, filename: String, mimeType: String? = nil, proxyMode: ProxyMode? = nil, clientSha256: String?, clientFingerprint: UploadSessionCreateClientFingerprint? = nil) {
         self.materialId = materialId
         self.kind = kind
         self.sizeBytes = sizeBytes
@@ -67,7 +67,7 @@ public struct UploadSessionCreate: Sendable, Codable, Hashable {
         try container.encode(filename, forKey: .filename)
         try container.encodeIfPresent(mimeType, forKey: .mimeType)
         try container.encodeIfPresent(proxyMode, forKey: .proxyMode)
-        try container.encodeIfPresent(clientSha256, forKey: .clientSha256)
+        try container.encode(clientSha256, forKey: .clientSha256)
         try container.encodeIfPresent(clientFingerprint, forKey: .clientFingerprint)
     }
 }
