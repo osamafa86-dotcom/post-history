@@ -156,13 +156,19 @@ def test_end_to_end_verify_and_proxy(env, tmp_path: Path):
         out.write_bytes(b"".join(storage.read(buckets.derived, derivative["storage_key"])))
         assert hashlib.sha256(out.read_bytes()).hexdigest() == derivative["sha256"]
         assert probe(out).start_pts_us == 4_000_000 and probe(out).height == 480
-        # الأصل لم يتغير، ولا شيء معلّق، وإعادة التسليم لا تكرر شيئًا
+        # الأصل لم يتغير، ولا شيء معلّق، وإعادة التسليم لا ترمّز ولا ترفع من جديد: تكرر البلاغ وتعيد تسجيل المرفوعة
         assert b"".join(storage.read(buckets.uploads, key)) == clip
         assert r.xpending(STREAM, GROUP)["pending"] == 0
         _publish(r, "upload.original_received", sid, mid)
         calls = len(server.calls)
         assert svc.run_once() == 1
-        assert len(server.calls) == calls + 1  # GET فقط
+        again = server.calls[calls:]
+        assert [(m, p.rsplit("/", 1)[-1]) for m, p, _ in again] == [
+            ("GET", sid), ("POST", "verification"), ("POST", "derivatives")]
+        assert {k: again[2][2][k] for k in ("kind", "storage_key", "sha256")} == {
+            k: derivative[k] for k in ("kind", "storage_key", "sha256")}
+        assert hashlib.sha256(b"".join(storage.read(buckets.derived, derivative["storage_key"]))).hexdigest() \
+            == derivative["sha256"]
     finally:
         server.close()
 
