@@ -6,6 +6,7 @@ import { APP_CONFIG, type AppConfig, fieldKeyring } from '../config/config';
 import type { FieldKeyring } from '../common/crypto';
 import { pgError } from '../common/db-errors';
 import { ApiError } from '../common/errors';
+import { assertIfMatch } from '../common/preconditions';
 import { LOGGER } from '../common/logger';
 import { DB, type Database, type Tx } from '../database/database.module';
 import { materialContributors, materials, materialTransitions, offices } from '../database/schema/schema';
@@ -175,10 +176,11 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
     });
   }
 
-  async update(p: Principal, id: string, body: MaterialUpdate): Promise<MaterialDto> {
+  async update(p: Principal, id: string, body: MaterialUpdate, ifMatch?: string): Promise<MaterialDto> {
     return this.write(p, async (tx) => {
       const m = await findScoped(tx, p, id, { forUpdate: true });
       if (!m) throw ApiError.notFound();
+      assertIfMatch(ifMatch, m.rowVersion);
       const mayEdit =
         (hasRole(p, 'reporter') && m.reporterId === p.userId) ||
         roleCovers(p, 'supervisor', m) ||
@@ -239,10 +241,11 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
 
   // ---------- الانتقالات ----------
 
-  async transition(p: Principal, id: string, body: Transition): Promise<MaterialDto> {
+  async transition(p: Principal, id: string, body: Transition, ifMatch?: string): Promise<MaterialDto> {
     return this.write(p, async (tx) => {
       const m = await findScoped(tx, p, id, { forUpdate: true });
       if (!m) throw ApiError.notFound();
+      assertIfMatch(ifMatch, m.rowVersion);
       const from = m[STATE_COLUMN[body.track]];
       const owners = transitionOwners(body.track, from, body.to);
       if (!owners) {
@@ -278,11 +281,12 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
 
   // ---------- المساهمون ----------
 
-  async setContributors(p: Principal, id: string, contributors: Contributor[]): Promise<MaterialDto> {
+  async setContributors(p: Principal, id: string, contributors: Contributor[], ifMatch?: string): Promise<MaterialDto> {
     assertContributors(contributors);
     return this.write(p, async (tx) => {
       const m = await findScoped(tx, p, id, { forUpdate: true });
       if (!m) throw ApiError.notFound();
+      assertIfMatch(ifMatch, m.rowVersion);
       await this.replaceContributors(tx, m.id, contributors);
       await writeOutboxEvent(tx, {
         type: 'material.contributors_set',
@@ -298,10 +302,11 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
 
   // ---------- الحجز ----------
 
-  async reserve(p: Principal, id: string): Promise<Reservation> {
+  async reserve(p: Principal, id: string, ifMatch?: string): Promise<Reservation> {
     return this.db.transaction(async (tx) => {
       const m = await findScoped(tx, p, id, { forUpdate: true });
       if (!m) throw ApiError.notFound();
+      assertIfMatch(ifMatch, m.rowVersion);
       if (m.editorialState !== 'accepted' && m.editorialState !== 'in_production') {
         throw new ApiError(409, 'invalid_transition', 'Only accepted materials can be reserved for production.', {
           track: 'editorial',

@@ -63,6 +63,9 @@ export class TusdHooksService {
         // الرمز يفتح إنشاء رفع واحد: بعد إنشائه تصبح الجلسة in_progress فلا يُقبل ثانية (الاستئناف عبر PATCH لا يمر
         // بهذا الخطّاف). إلى أن يفصل العقد عمر الرمز عن عمر الجلسة، هذا ما يحد من رمز مسرّب.
         session.state !== 'created' ||
+        // انتهاء الرمز (عمود مستقل في v0.1، لا يتجاوز انتهاء الجلسة)
+        !session.uploadTokenExpiresAt ||
+        new Date(session.uploadTokenExpiresAt) <= new Date() ||
         new Date(session.expiresAt) <= new Date() ||
         Number(session.sizeBytes) !== hook.Event.Upload.Size
       ) {

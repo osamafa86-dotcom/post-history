@@ -104,7 +104,13 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
         proxy_mode: null,
         material_has_proxy: false,
       });
-      await getSession('00000000-0000-4000-8000-000000000000').expect(404);
+      // v0.1: الرمز صحيح والجلسة غير موجودة = 410 media_resource_gone (حدث متقادم)، والرمز الخاطئ يبقى 404
+      const gone = '00000000-0000-4000-8000-000000000000';
+      expect((await getSession(gone).expect(410)).body.code).toBe('media_resource_gone');
+      expect((await getSession('not-a-uuid').expect(410)).body.code).toBe('media_resource_gone');
+      expect((await verify(gone, report()).expect(410)).body.code).toBe('media_resource_gone');
+      await getSession(gone, 'x'.repeat(43)).expect(404);
+      await auth(http().post(`/internal/media/sessions/${gone}/verification`), 'x'.repeat(43)).send(report()).expect(404);
     });
   });
 
@@ -202,6 +208,19 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
       expect((await getSession(another.id).expect(200)).body.material_has_proxy).toBe(true);
     });
 
+    it('registers a thumbnail beside the proxy: dimensions without duration, its mime type, no proxy_mode; one without dimensions is 422', async () => {
+      const o = await verifiedOriginal();
+      const key = `derived/${o.materialId}/${o.fileId}/poster.jpg`;
+      storage.sizes.set(key, 120);
+      const thumb = { kind: 'thumbnail', storage_key: key, sha256: hex(randomBytes(32)), size_bytes: 120, mime_type: 'image/jpeg', technical: { width: 640, height: 360 } };
+      await derive(o.fileId, proxy(o.materialId, o.fileId)).expect(200);
+      const res = await derive(o.fileId, thumb).expect(200);
+      const { rows } = await h.pool.query(`SELECT kind, mime_type, proxy_mode, width, height, duration_ms FROM material_files WHERE id = $1`, [res.body.file_id]);
+      expect(rows[0]).toEqual({ kind: 'thumbnail', mime_type: 'image/jpeg', proxy_mode: null, width: 640, height: 360, duration_ms: null });
+      await derive(o.fileId, { ...thumb, technical: {} }).expect(422);
+      await derive(o.fileId, { ...thumb, mime_type: undefined }).expect(422);
+    });
+
     it('looks the derivative up in the media bucket (S3_BUCKET_MEDIA), not the uploads bucket', async () => {
       expect(h.config.S3_BUCKET_MEDIA).toBe('media');
       expect(h.config.S3_BUCKET_MEDIA).not.toBe(h.config.S3_BUCKET_UPLOADS);
@@ -227,7 +246,10 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
       await derive(o.fileId, body).expect(422);
       const p = await derive(o.fileId, proxy(o.materialId, o.fileId)).expect(200);
       await derive(p.body.file_id, proxy(o.materialId, p.body.file_id)).expect(409);
-      await derive('00000000-0000-4000-8000-000000000000', proxy(o.materialId, o.fileId)).expect(404);
+      expect((await derive('00000000-0000-4000-8000-000000000000', proxy(o.materialId, o.fileId)).expect(410)).body.code).toBe('media_resource_gone');
+      await auth(http().post('/internal/media/files/00000000-0000-4000-8000-000000000000/derivatives'), 'x'.repeat(43))
+        .send(proxy(o.materialId, o.fileId))
+        .expect(404);
     });
   });
 

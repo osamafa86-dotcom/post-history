@@ -6,28 +6,52 @@ import { DB, type Database, type Tx } from '../database/database.module';
 import { materialFiles, uploadSessions } from '../database/schema/schema';
 import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
 import { recordVerification, type UploadSessionRow, type VerificationOutcome } from '../verification/verification';
-import { type MediaDerivativeBody, type MediaVerificationBody, splitTechnical } from './media-schemas';
+import type { components } from '../generated/api';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export interface MediaSessionView {
-  material_id: string;
-  kind: string;
-  state: string;
-  size_bytes: number;
-  storage_key: string | null;
-  proxy_mode: string | null;
-  material_has_proxy: boolean;
+export type MediaSessionView = components['schemas']['MediaSession'];
+export type MediaVerificationResult = components['schemas']['MediaVerificationResult'];
+export type MediaVerificationBody = components['schemas']['MediaVerification'];
+export type MediaDerivativeBody = components['schemas']['MediaDerivative'];
+type MediaTechnical = components['schemas']['MediaTechnical'];
+
+/** ما يُخزَّن في material_files.technical؛ يطابق material_file_technical_keys() في القاعدة. الباقي (المدة، بداية
+ * الإطارات، الأبعاد) أعمدة. المخطط في العقد (MediaTechnical) مغلق، فلا يصل مفتاح خارج هذه القائمة أصلًا. */
+const TECHNICAL_JSON_KEYS = [
+  'container',
+  'video_codec',
+  'audio_codec',
+  'frame_rate',
+  'avg_frame_rate',
+  'vfr',
+  'frame_count',
+  'max_frame_gap_ms',
+  'has_gaps',
+  'rotation',
+  'hdr',
+  'bit_depth',
+  'audio_sample_rate',
+  'audio_channels',
+] as const;
+
+function splitTechnical(t: MediaTechnical): {
+  columns: { durationMs: number | null; startPtsUs: number | null; width: number | null; height: number | null };
+  json: Record<string, unknown>;
+} {
+  const json: Record<string, unknown> = {};
+  for (const k of TECHNICAL_JSON_KEYS) if (t[k] !== undefined) json[k] = t[k];
+  // المصغّرة صورة: بلا مدة ولا بداية إطارات (العقد يلزمهما للتحقق وللمشتقات الزمنية وحدها)
+  return { columns: { durationMs: t.duration_ms ?? null, startPtsUs: t.start_pts_us ?? null, width: t.width ?? null, height: t.height ?? null }, json };
 }
 
-export interface MediaVerificationResult {
-  state: 'verified' | 'failed';
-  file_id: string | null;
-  receipt_number: string | null;
-  failure_reason: string | null;
-}
+// mime_type إلزامي للمصغّرة في العقد؛ للمشتقات الزمنية افتراضه بحسب النوع
+const DEFAULT_MIME: Record<string, string> = { proxy: 'video/mp4', hls: 'application/vnd.apple.mpegurl', audio: 'audio/mp4', thumbnail: 'image/jpeg' };
 
 const conflict = (msg: string) => new ApiError(409, 'upload_state_conflict', msg);
+// الرمز صحيح (فحصه قبل هذه الطبقة، وفشله 404 لإخفاء النقطة) لكن الجلسة أو الملف المصدر غير موجود: حدث متقادم ينقله
+// العامل إلى media:dead بدل إعادة المحاولة (عقد v0.1)
+const gone = () => new ApiError(410, 'media_resource_gone', 'The upload session or source file does not exist.');
 
 /**
  * جانب الخادم من واجهة عامل الوسائط (ADR 0006). الخادم يبقى الكاتب الوحيد: العامل يبلّغ ما حسبه، والخادم يتحقق
@@ -43,26 +67,26 @@ export class MediaService {
   ) {}
 
   async session(id: string): Promise<MediaSessionView> {
-    if (!UUID.test(id)) throw ApiError.notFound();
+    if (!UUID.test(id)) throw gone();
     const [s] = await this.db.select().from(uploadSessions).where(eq(uploadSessions.id, id));
-    if (!s) throw ApiError.notFound();
+    if (!s) throw gone();
     // بصمة العميل لا تُعاد: المقارنة في الخادم وحده
     return {
       material_id: s.materialId,
-      kind: s.kind,
-      state: s.state,
+      kind: s.kind as MediaSessionView['kind'],
+      state: s.state as MediaSessionView['state'],
       size_bytes: Number(s.sizeBytes),
       storage_key: s.storageKey,
-      proxy_mode: s.proxyMode,
+      proxy_mode: s.proxyMode as MediaSessionView['proxy_mode'],
       material_has_proxy: await this.hasProxy(this.db, s.materialId),
     };
   }
 
   async verify(id: string, body: MediaVerificationBody): Promise<MediaVerificationResult> {
-    if (!UUID.test(id)) throw ApiError.notFound();
+    if (!UUID.test(id)) throw gone();
     return this.db.transaction(async (tx) => {
       const [s] = await tx.select().from(uploadSessions).where(eq(uploadSessions.id, id)).for('update');
-      if (!s) throw ApiError.notFound();
+      if (!s) throw gone();
       if (s.state !== 'completed') return this.replay(tx, s, body);
 
       const outcome = await this.decide(s, body);
@@ -85,10 +109,10 @@ export class MediaService {
   }
 
   async derive(fileId: string, body: MediaDerivativeBody): Promise<{ file_id: string }> {
-    if (!UUID.test(fileId)) throw ApiError.notFound();
+    if (!UUID.test(fileId)) throw gone();
     return this.db.transaction(async (tx) => {
       const [source] = await tx.select().from(materialFiles).where(eq(materialFiles.id, fileId)).for('share');
-      if (!source) throw ApiError.notFound();
+      if (!source) throw gone();
       if (source.kind !== 'original' || source.state !== 'verified') throw conflict('Derivatives are made from a verified original only.');
       // المشتق في مساحته وحدها: حاوية المشتقات (لا حاوية الرفع، فلا يُسجَّل كائن رفع مشتقًا)، تحت مسار مصدره
       if (!body.storage_key.startsWith(`derived/${source.materialId}/${source.id}/`) || body.storage_key.includes('..')) {
@@ -109,8 +133,9 @@ export class MediaService {
           storageKey: body.storage_key,
           sizeBytes: body.size_bytes,
           sha256,
-          mimeType: 'video/mp4',
-          proxyMode: 'normal',
+          mimeType: body.mime_type ?? DEFAULT_MIME[body.kind]!,
+          // proxy_mode للنسخة الخفيفة وحدها (قيد material_files_proxy_mode_only_proxy)
+          proxyMode: body.kind === 'proxy' ? 'normal' : null,
           verifiedAt: sql`now()` as never,
           ...columns,
           technical: json,
@@ -163,10 +188,10 @@ export class MediaService {
       .leftJoin(materialFiles, eq(materialFiles.id, uploadSessions.fileId))
       .where(eq(uploadSessions.id, sessionId));
     return {
-      state: row!.state as 'verified' | 'failed',
+      state: row!.state as MediaVerificationResult['state'],
       file_id: row!.fileId,
       receipt_number: row!.receipt ?? null,
-      failure_reason: row!.failureReason,
+      failure_reason: row!.failureReason as MediaVerificationResult['failure_reason'],
     };
   }
 

@@ -88,7 +88,12 @@ export async function seed({ databaseUrl, apiUrl }) {
     expired: await apiSession(tokens.reporter, mA.id),
     finished: await apiSession(tokens.reporter, mA.id),
   };
-  await q(`UPDATE upload_sessions SET expires_at = now() - interval '1 minute' WHERE id = $1`, [hookSessions.expired.id]);
+  // v0.1: the upload token cannot outlive its session (check upload_sessions_token_expiry_within_session), so both move
+  await q(
+    `UPDATE upload_sessions SET expires_at = now() - interval '1 minute',
+       upload_token_expires_at = least(upload_token_expires_at, now() - interval '1 minute') WHERE id = $1`,
+    [hookSessions.expired.id],
+  );
   await q(`UPDATE upload_sessions SET state = 'completed' WHERE id = $1`, [hookSessions.finished.id]);
 
   await pool.end();

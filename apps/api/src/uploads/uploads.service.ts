@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { eq, sql } from 'drizzle-orm';
+import { eq, type SQL, sql } from 'drizzle-orm';
 import type { Request } from 'express';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { randomToken, sha256 } from '../common/crypto';
@@ -55,6 +55,7 @@ export class UploadsService implements ReplayRehydrator {
           clientFingerprint: body.client_fingerprint ?? null,
           uploadTokenHash: sha256(token),
           expiresAt: sql`now() + make_interval(secs => ${this.config.UPLOAD_SESSION_TTL_SECONDS})` as never,
+          uploadTokenExpiresAt: this.tokenExpiry(sql`now() + make_interval(secs => ${this.config.UPLOAD_SESSION_TTL_SECONDS})`),
         })
         .returning();
       await writeOutboxEvent(tx, {
@@ -65,7 +66,7 @@ export class UploadsService implements ReplayRehydrator {
         actorId: p.userId,
         payload: { material_id: material.id, upload_session_id: session!.id, kind: body.kind, priority: material.priority },
       });
-      return { ...this.toDto(session!, null), upload_token: token, upload_token_expires_at: iso(session!.expiresAt)! };
+      return { ...this.toDto(session!, null), upload_token: token, upload_token_expires_at: iso(session!.uploadTokenExpiresAt)! };
     });
   }
 
@@ -118,12 +119,17 @@ export class UploadsService implements ReplayRehydrator {
     const token = randomToken();
     const [session] = await this.db
       .update(uploadSessions)
-      .set({ uploadTokenHash: sha256(token) })
+      .set({ uploadTokenHash: sha256(token), uploadTokenExpiresAt: this.tokenExpiry(uploadSessions.expiresAt) })
       .where(sql`${uploadSessions.id} = ${body.id} AND ${uploadSessions.createdBy} = ${req.auth!.userId}
         AND ${uploadSessions.state} = 'created'`)
       .returning();
     if (!session) throw new ApiError(409, 'upload_state_conflict', 'This upload session no longer accepts uploads.');
-    return { ...this.toDto(session, null), upload_token: token, upload_token_expires_at: iso(session.expiresAt)! };
+    return { ...this.toDto(session, null), upload_token: token, upload_token_expires_at: iso(session.uploadTokenExpiresAt)! };
+  }
+
+  /** انتهاء رمز الرفع: بعد UPLOAD_TOKEN_TTL_SECONDS ولا يتجاوز انتهاء الجلسة (قيد upload_sessions_token_expiry_within_session). */
+  private tokenExpiry(sessionExpiry: SQL | typeof uploadSessions.expiresAt): never {
+    return sql`least(now() + make_interval(secs => ${this.config.UPLOAD_TOKEN_TTL_SECONDS}), ${sessionExpiry})` as never;
   }
 
   private async visible(p: Principal, id: string): Promise<SessionRow> {
@@ -141,13 +147,17 @@ export class UploadsService implements ReplayRehydrator {
   }
 
   private toDto(s: SessionRow, receipt: string | null): UploadSession {
+    // SEC-07: الخادم وحده يقرر نطاق ingest (لا تبديل آلي في العميل)، لمسار tus فقط. القرار بالإعداد لا لكل جلسة: لا عمود
+    // له في v0.1، فتبديله أثناء رفع جارٍ ينقل استئنافه إلى النطاق الآخر (يُضبط قبل فتح الجلسات لا أثناءها).
+    const ingest = this.config.INGEST_REQUIRED && s.uploadPath === 'tusd';
     return {
       id: s.id,
       material_id: s.materialId,
       kind: s.kind as UploadSession['kind'],
       state: s.state as UploadSession['state'],
       size_bytes: Number(s.sizeBytes),
-      tus_endpoint: this.config.TUS_PUBLIC_ENDPOINT,
+      tus_endpoint: ingest ? this.config.INGEST_TUS_ENDPOINT! : this.config.TUS_PUBLIC_ENDPOINT,
+      ingest_token_required: ingest,
       tus_metadata: { upload_session_id: s.id, filename: s.filename },
       part_size_bytes: s.partSizeBytes,
       bytes_received: Number(s.bytesReceived),

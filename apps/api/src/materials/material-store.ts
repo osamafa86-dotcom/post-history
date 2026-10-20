@@ -168,6 +168,7 @@ export async function toMaterialDtos(executor: Executor, p: Principal, rows: Mat
         })),
       created_at: iso(m.createdAt)!,
       updated_at: iso(m.updatedAt)!,
+      row_version: m.rowVersion,
     });
   }
   return dtos;
