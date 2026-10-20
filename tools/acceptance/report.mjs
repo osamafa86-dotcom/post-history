@@ -5,8 +5,8 @@
 //   node report.mjs --out=REPORT.md       also write a file
 //   node report.mjs --summary             append to $GITHUB_STEP_SUMMARY (CI)
 import { appendFileSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
-import { CATALOG } from "./lib/catalog.mjs";
+import { basename, join, relative } from "node:path";
+import { CATALOG, EXTRA } from "./lib/catalog.mjs";
 import { ROOT, parseArgs } from "./lib/measurement.mjs";
 
 const HEADLINE = {
@@ -53,7 +53,7 @@ export function buildReport(entries, now = new Date()) {
 
   const byTest = new Map();
   for (const { doc } of entries) {
-    if (doc.tool !== "acceptance" && !CATALOG.some((t) => t.name === doc.test_name)) continue;
+    if (doc.tool !== "acceptance" && ![...CATALOG, ...EXTRA].some((t) => t.name === doc.test_name)) continue;
     const t = doc.test_name;
     if (!byTest.has(t)) byTest.set(t, []);
     byTest.get(t).push(doc);
@@ -70,6 +70,7 @@ export function buildReport(entries, now = new Date()) {
     const st = status(t.name);
     return `| ${t.name} | ${t.mode} | ${ICON[st]} | ${t.criterion.length > 90 ? `${t.criterion.slice(0, 90)}…` : t.criterion} |`;
   });
+  const extra = EXTRA.map((t) => `| ${t.name} | ${t.source} | ${t.mode} | ${ICON[status(t.name)]} | ${t.criterion.length > 90 ? `${t.criterion.slice(0, 90)}…` : t.criterion} |`);
   const tally = CATALOG.reduce((o, t) => ({ ...o, [status(t.name)]: (o[status(t.name)] ?? 0) + 1 }), {});
 
   return [
@@ -85,6 +86,20 @@ export function buildReport(entries, now = new Date()) {
     "| --- | --- | --- | --- |",
     ...table,
     "",
+    "## اختبارات الأمن خارج جدول الخطة (SEC-01..SEC-07)",
+    "",
+    "| الاختبار | القرار | النمط | الحالة | المعيار |",
+    "| --- | --- | --- | --- | --- |",
+    ...extra,
+    "",
+    "## ثغرات معروفة مستثناة بإذن مكتوب (`tools/acceptance/waivers/`)",
+    "",
+    "تُبقي النتيجة `partial` وتصير فشلًا حين يُصلح السبب (الإعفاء يسقط).",
+    "",
+    "| الاختبار | الثغرة | رُفعت إلى |",
+    "| --- | --- | --- |",
+    ...waiverRows(),
+    "",
     "## كل النتائج (الأحدث لكل أداة/اختبار/ملف شبكة)",
     "",
     "| الاختبار | الأداة | الشبكة | الحالة | الأرقام | التاريخ | التشغيلات | الملف |",
@@ -93,6 +108,10 @@ export function buildReport(entries, now = new Date()) {
     "",
   ].join("\n");
 }
+
+const WAIVERS_DIR = join(ROOT, "tools/acceptance/waivers");
+const waiverRows = () => readdirSync(WAIVERS_DIR).filter((f) => f.endsWith(".json")).sort().flatMap((f) =>
+  JSON.parse(readFileSync(join(WAIVERS_DIR, f), "utf8")).map((w) => `| ${basename(f, ".json")} | ${w.kind}: ${w.source} | ${w.raised_to} |`));
 
 export function loadEntries(dir = join(ROOT, "docs/measurements")) {
   return [...files(dir)].map((f) => ({ doc: JSON.parse(readFileSync(f, "utf8")), file: relative(ROOT, f) }));
