@@ -200,6 +200,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Images pinned by digest (ADR 0004)
         run: infra/compose/check-pinned.sh
+      - name: Trial host bootstrap and update, dry run in Ubuntu 24.04 without network (ADR 0013)
+        run: infra/deploy/test-dry-run.sh
       - name: Validate docker compose file
         run: |
           cp infra/compose/.env.example infra/compose/.env
