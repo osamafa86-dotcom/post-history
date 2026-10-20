@@ -31,6 +31,11 @@ export const CATALOG = [
 export const EXTRA = [
   { name: "session-revocation", mode: "automated", source: "SEC-01", criterion: "رمز مبطَل (جلسة أو كل الجلسات) يُرفض على الخادم وعلى مسار الرفع خلال ثوانٍ، والرفع الجاري يتوقف عند الجزء التالي" },
   { name: "field-upload-1gb", mode: "field", source: "plan stage (b)", criterion: "رفع 1 غيغابايت على شبكة ميدانية فعلية على iPhone وXiaomi وSamsung: يكتمل ببصمة خادم مطابقة وصفر بايت مفقود وبلا تدخل بشري بعد البدء" },
+  { name: "notification-delivery", mode: "automated", source: "core gate", criterion: "حدث استلام ← إشعار للمستلمين بحسب القواعد خلال زمن مقيس (≤ 10 ثوانٍ)، حمولة من القائمة البيضاء فقط، و«اطّلعت» يوقف التصعيد" },
+  { name: "reservation-conflict", mode: "automated", source: "core gate", criterion: "حجز مادة من مستخدمين متزامنين: واحد فقط ينجح والباقي 409 already_reserved، وحدث حجز واحد" },
+  { name: "optimistic-concurrency", mode: "automated", source: "core gate", criterion: "تعديلان متزامنان بـ If-Match واحد: واحد 200 والآخر 412 دون أثر ودون فقد تحديث" },
+  { name: "admin-quorum", mode: "automated", source: "core gate", criterion: "تعليق مدير نظام من الواجهة مرفوض، ومن سطر الأوامر ثنائي الأشخاص مقبول، والحارس يمنع النزول عن مديرين" },
+  { name: "download-url", mode: "automated", source: "core gate", criterion: "رابط قراءة موقّع للمشتقات المتحقق منها فقط، ينتهي خلال ≤ 10 دقائق ولا يكشف شيئًا، والأصل 404" },
   { name: "emergency-wipe", mode: "field", source: "SEC-01", criterion: "على جهاز فعلي بعد المسح الطارئ: لا شيء من المخازن الموثّقة يبقى، ويتم المسح بلا اتصال خلال ثوانٍ، ويعمل الدخول من جديد" },
 ];
 

@@ -23,7 +23,7 @@ export function client(baseUrl, fetchImpl = freshFetch) {
     const text = await res.text();
     let json = null;
     try { json = JSON.parse(text); } catch { /* keep text */ }
-    return { status: res.status, body: json ?? text, text };
+    return { status: res.status, body: json ?? text, text, headers: Object.fromEntries(res.headers) };
   };
   return { call, get: (t, p) => call(t, "GET", p) };
 }
