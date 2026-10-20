@@ -125,7 +125,7 @@ export class AccountService {
    * اعتماد مشرف نطاق المراسل أو مدير النظام بعد التحقق خارج النظام: يبطل كل جلسات الحساب ورموز رفعه وأجهزة إشعاره،
    * ويصدر رمز إعادة التعيين (يُعاد هنا مرة واحدة ما لم تتولَّ قناة التسليم المحقونة إيصاله). حساب مدير نظام لا يُعتمد
    * من الواجهة أبدًا (403 admin_quorum_required: إجراء الشخصين من سطر الأوامر). الطلب المعتمد أو المرفوض أو المنتهي
-   * = 409 recovery_state_conflict؛ تكرار الطلب نفسه بمفتاح منع التكرار يعيد الاستجابة الأولى بلا الرمز.
+   * = 409 recovery_state_conflict، فإعادة الاعتماد لا تعيد الرمز أبدًا (ولا Idempotency-Key على /auth/*).
    */
   async approveRecovery(p: Principal, id: string, verificationNote: string): Promise<RecoveryApproval> {
     if (!UUID.test(id)) throw ApiError.notFound();

@@ -148,20 +148,13 @@ describe('account: sessions and recovery', () => {
       await seedCode(reporter.id, 'MNOPQRSTUV2345');
       await start(reporter.email, 'MNOPQRSTUV2345').expect(202);
       const [req] = await requests(reporter.id);
-      const approve = (a: Actor, body: object = { verification_note: 'called the reporter on the office line' }, key = randomUUID()) =>
-        http().post(`/v1/auth/recovery/${req.id}/approve`).set('Authorization', `Bearer ${a.token}`).set('Idempotency-Key', key).send(body);
+      const approve = (a: Actor, body: object = { verification_note: 'called the reporter on the office line' }) =>
+        http().post(`/v1/auth/recovery/${req.id}/approve`).set('Authorization', `Bearer ${a.token}`).send(body);
 
       await approve(reporter).expect(403);
       await approve(outside).expect(404);
       await approve(sup, {}).expect(422);
-      // v0.1: الاعتماد يحمل Idempotency-Key
-      await http()
-        .post(`/v1/auth/recovery/${req.id}/approve`)
-        .set('Authorization', `Bearer ${sup.token}`)
-        .send({ verification_note: 'x' })
-        .expect(422);
-      const key = randomUUID();
-      const res = await approve(sup, undefined, key).expect(200);
+      const res = await approve(sup).expect(200);
       expect(res.body).toMatchObject({ id: req.id, state: 'approved', approved_by: sup.id, reset_token: expect.any(String) });
       const valid = schemaValidator('RecoveryApproval');
       expect(valid(res.body) ? [] : valid.errors).toEqual([]);
@@ -172,13 +165,15 @@ describe('account: sessions and recovery', () => {
       );
       expect(stored[0].reset_token_hash.equals(createHash('sha256').update(res.body.reset_token).digest())).toBe(true);
       expect(stored[0].bounded).toBe(true);
-      const replay = await approve(sup, undefined, key).expect(200);
-      expect(replay.body).toEqual({ ...res.body, reset_token: undefined });
-      expect(replay.body).not.toHaveProperty('reset_token');
-      const { rows: keys } = await h.pool.query(`SELECT response_body::text AS body FROM idempotency_keys WHERE key = $1`, [key]);
-      expect(keys[0].body).not.toContain(res.body.reset_token);
       await http().get('/v1/auth/me').set('Authorization', `Bearer ${reporter.token}`).expect(401);
-      expect((await approve(sup).expect(409)).body.code).toBe('recovery_state_conflict');
+      // إعادة الاعتماد 409 بلا الرمز، ولا شيء في جدول مفاتيح منع التكرار (/auth/* خارجه)
+      const again = await approve(sup).expect(409);
+      expect(again.body.code).toBe('recovery_state_conflict');
+      expect(JSON.stringify(again.body)).not.toContain(res.body.reset_token);
+      const { rows: keys } = await h.pool.query(`SELECT count(*)::int AS n FROM idempotency_keys WHERE response_body::text LIKE $1`, [
+        `%${res.body.reset_token}%`,
+      ]);
+      expect(keys[0].n).toBe(0);
       const { rows } = await h.pool.query(`SELECT action FROM audit_log WHERE target_id = $1 AND action LIKE 'auth.recovery%' ORDER BY id`, [reporter.id]);
       expect(rows.map((r) => r.action)).toEqual(['auth.recovery_requested', 'auth.recovery_approved']);
       const { rows: notes } = await h.pool.query(`SELECT details FROM audit_log WHERE target_id = $1`, [reporter.id]);

@@ -10,8 +10,8 @@ import { Roles } from './principal';
 type Session = components['schemas']['Session'];
 type Me = components['schemas']['Me'];
 
-// مسارات /auth/* مستثناة من Idempotency-Key (العقد): استجاباتها تحمل رموزًا ولا تُحفظ؛ عدا اعتماد الاستعادة (v0.1)
-// الذي يُحفظ رده بلا رمز إعادة التعيين.
+// مسارات /auth/* مستثناة من Idempotency-Key (العقد): استجاباتها تحمل رموزًا ولا تُحفظ، ومنها رمز إعادة التعيين في
+// استجابة اعتماد الاستعادة (إعادة الاعتماد 409 ولا تعيده).
 @Controller('auth')
 export class AuthController {
   constructor(

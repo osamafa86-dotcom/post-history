@@ -17,12 +17,9 @@ const KEY_PATTERN = /^[\x21-\x7e]{8,128}$/;
 // طلب «قيد التنفيذ» أقدم من هذا يُعد متروكًا (انهيار العملية) فيُسمح للتكرار بالجسم نفسه أن يتولاه
 const IN_PROGRESS_LEASE = '5 minutes';
 
-// اعتماد الاستعادة تحت /auth لكنه يحمل المفتاح (v0.1): ردّه المحفوظ بلا reset_token (withoutTokens)، فالتكرار لا يعيد الرمز
-const AUTH_WITH_KEY = /^\/v1\/auth\/recovery\/[^/]+\/approve$/;
-
-/** هل يخضع المسار لـ Idempotency-Key؟ كل كتابة تحت /v1 عدا /v1/auth/* (العقد، «القواعد الحاكمة»)، إلا ما في AUTH_WITH_KEY. */
+/** هل يخضع المسار لـ Idempotency-Key؟ كل كتابة تحت /v1 عدا /v1/auth/* (العقد، «القواعد الحاكمة»). */
 export function requiresIdempotencyKey(method: string, path: string): boolean {
-  return WRITE_METHODS.has(method) && path.startsWith('/v1/') && (!path.startsWith('/v1/auth/') || AUTH_WITH_KEY.test(path));
+  return WRITE_METHODS.has(method) && path.startsWith('/v1/') && !path.startsWith('/v1/auth/');
 }
 
 /**
