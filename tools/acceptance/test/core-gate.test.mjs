@@ -126,3 +126,10 @@ test("download-url: links carry ids only and signature parameters", () => {
   assert.ok(inspectLink("https://s3.example/derived/dl-1234-clip.mov?X-Amz-Signature=a", { filenameStems: ["dl-1234"] }).length);
   assert.ok(inspectLink(`${ok}&filename=clip`).length, "an unexpected query parameter is flagged");
 });
+
+test("admin-quorum: a command that never started is not a refusal", async () => {
+  const base = { QUORUM_API_URL: "http://x/v1", QUORUM_TOKENS: JSON.stringify(TOKENS), QUORUM_USERS: JSON.stringify({ system_admin_id: "system_admin", system_admin_b_id: "system_admin_b", victim_id: "victim" }) };
+  const broken = "echo \"Error: Cannot find module '/x/dist/cli/set-admin-status.js'\" >&2; exit 1";
+  const r = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: broken, QUORUM_CLI_TWO: "true", QUORUM_CLI_GUARD: "echo 'refused (quorum)' >&2; exit 1" }), { fetchImpl: fakeApi() }));
+  assert.equal(r.code, 1);
+});

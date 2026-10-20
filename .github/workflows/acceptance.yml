@@ -133,7 +133,9 @@ jobs:
         working-directory: tools/acceptance
         env:
           DYN_PLATFORM_FILES: ${{ github.workspace }}/apps/web/.artifacts/web.json
-        run: node live/run.mjs --dry-run 2>&1 | tee "$RUNNER_TEMP/live.log"
+        run: |
+          set -o pipefail
+          node live/run.mjs --dry-run 2>&1 | tee "$RUNNER_TEMP/live.log"
       - name: dynamic-fields gate judged the web client and the live server together (ios and android join when their files are handed over)
         run: |
           grep -E "^reference 57/57; platforms: web 57/57$" "$RUNNER_TEMP/live.log"

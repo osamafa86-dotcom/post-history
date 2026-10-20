@@ -63,15 +63,17 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
     },
     encoding: "utf8", timeout: 120_000,
   });
+  // a command that could not even start (missing build, bad path) is not a refusal: only the CLI's own answer counts
+  const notStarted = (r) => r.error || r.status === 127 || /Cannot find module|MODULE_NOT_FOUND|command not found/.test(`${r.stderr}`);
   const cliRan = Boolean(env.QUORUM_CLI_ONE && env.QUORUM_CLI_GUARD && env.QUORUM_CLI_TWO);
   if (cliRan) {
     const one = cli(env.QUORUM_CLI_ONE);
-    check("command line, one approver: refused and nothing changes", one.status !== 0 && (!tokenB || (await me(tokenB)) === 200), `exit ${one.status}`);
+    check("command line, one approver: refused and nothing changes", !notStarted(one) && one.status !== 0 && (!tokenB || (await me(tokenB)) === 200), `exit ${one.status}`);
     const two = cli(env.QUORUM_CLI_TWO);
-    check("command line, two approvers: accepted", two.status === 0, `exit ${two.status} ${String(two.stderr).slice(0, 120)}`);
+    check("command line, two approvers: accepted", !notStarted(two) && two.status === 0, `exit ${two.status} ${String(two.stderr).slice(0, 120)}`);
     if (tokenB) check("... and the target admin's access is revoked", (await me(tokenB)) === 401);
     const guard = cli(env.QUORUM_CLI_GUARD);
-    check("command line, guard: a suspension that leaves fewer than two active admins is refused for that reason (quorum)", guard.status === 1 && /quorum/.test(`${guard.stderr}${guard.stdout}`), `exit ${guard.status} ${String(guard.stderr).slice(0, 120)}`);
+    check("command line, guard: a suspension that leaves fewer than two active admins is refused for that reason (quorum)", !notStarted(guard) && guard.status === 1 && /quorum/.test(`${guard.stderr}${guard.stdout}`), `exit ${guard.status} ${String(guard.stderr).slice(0, 120)}`);
     if (env.QUORUM_TOKEN_C) check("... and the admin it targeted still works", (await me(env.QUORUM_TOKEN_C)) === 200);
   } else console.log("note the two-person command line was not given (QUORUM_CLI_ONE, QUORUM_CLI_TWO, QUORUM_CLI_GUARD): that part is not measured");
 

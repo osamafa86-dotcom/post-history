@@ -15,7 +15,7 @@ if (!databaseUrl) { console.error("DATABASE_URL is required"); process.exit(2); 
 
 /** The two-person admin CLI (apps/api dist/cli/set-admin-status.js) as the commands admin-quorum runs: refused with one approver, accepted with two, and the quorum guard through the vault path. */
 function quorumCli(stack, s) {
-  const run = `cd "${stack.apiDir}" && node dist/cli/set-admin-status.js`;
+  const run = `node "${stack.apiDir}/dist/cli/set-admin-status.js"`;
   return {
     QUORUM_CLI_ENV: JSON.stringify({ ...stack.cliEnv, VAULT_TOKEN: stack.vaultToken }),
     QUORUM_TOTP: JSON.stringify({ a: s.totp.system_admin, c: s.totp.system_admin_c, e: s.totp.editor_in_chief }),
