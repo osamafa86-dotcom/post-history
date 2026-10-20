@@ -102,7 +102,107 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
                'result', 'reason_code', 'role', 'scope_kind', 'scope_id', 'approved_by', 'rule_id']::text[]
 $$;
 
+-- 6) حزمة التصدير عند الطلب لا عند الاستيعاب (#99): نوع مشتق export، وطلب لكل أصل، وحدث export.requested.
+--    الحزمة لا تحمل بيانات كاشفة أبدًا مهما كانت صلاحيات الطالب (CLAUDE.md §5: «لا بيانات كاشفة في أي تصدير»).
+ALTER TABLE material_files DROP CONSTRAINT material_files_kind_check;
+ALTER TABLE material_files ADD CONSTRAINT material_files_kind_check
+  CHECK (kind IN ('original', 'proxy', 'hls', 'audio', 'thumbnail', 'voice_note', 'export'));
+
+CREATE TABLE material_exports (
+  source_file_id uuid PRIMARY KEY REFERENCES material_files (id) ON DELETE CASCADE,
+  material_id    uuid NOT NULL REFERENCES materials (id) ON DELETE CASCADE,
+  requested_by   uuid NOT NULL REFERENCES users (id),
+  state          text NOT NULL DEFAULT 'requested',
+  file_id        uuid REFERENCES material_files (id) ON DELETE SET NULL,
+  failure_reason text,
+  requested_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at     timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT material_exports_state_check CHECK (state IN ('requested', 'ready', 'failed')),
+  CONSTRAINT material_exports_ready_has_file CHECK ((state = 'ready') = (file_id IS NOT NULL)),
+  CONSTRAINT material_exports_failure_reason_check CHECK (
+    (state = 'failed') = (failure_reason IS NOT NULL) AND (failure_reason IS NULL OR failure_reason IN ('source_unavailable', 'build_failed')))
+);
+CREATE INDEX material_exports_material_idx ON material_exports (material_id);
+CREATE TRIGGER material_exports_set_updated_at BEFORE UPDATE ON material_exports
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+ALTER TABLE outbox_events DROP CONSTRAINT outbox_events_type_check;
+ALTER TABLE outbox_events ADD CONSTRAINT outbox_events_type_check CHECK (type IN (
+    'material.created', 'material.urgent_received', 'material.updated', 'material.version_created',
+    'material.technical_transition', 'material.editorial_transition', 'material.rights_transition',
+    'material.acknowledged', 'material.change_requested', 'material.accepted_for_production',
+    'material.reserved', 'material.released', 'material.contributors_set', 'material.published',
+    'upload.started', 'upload.proxy_received', 'upload.original_received', 'upload.verified',
+    'upload.deduplicated', 'upload.failed',
+    'form.published', 'ai.draft_ready', 'notification.escalated',
+    'auth.recovery_requested', 'auth.recovery_approved', 'user.status_changed', 'auth.recovery_completed',
+    'export.requested'));
+
+CREATE OR REPLACE FUNCTION outbox_payload_allowed_keys(event_type text) RETURNS text[]
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT CASE
+    WHEN event_type IN ('material.created', 'material.urgent_received', 'material.updated', 'material.version_created',
+                        'material.acknowledged', 'material.change_requested', 'material.accepted_for_production',
+                        'material.reserved', 'material.released', 'material.contributors_set', 'material.published')
+      THEN ARRAY['material_id', 'priority', 'office_id', 'material_version', 'editorial_state', 'technical_state',
+                 'rights_state', 'reserved_by', 'note_timecode_ms']
+    WHEN event_type IN ('material.technical_transition', 'material.editorial_transition', 'material.rights_transition')
+      THEN ARRAY['material_id', 'priority', 'office_id', 'track', 'from', 'to', 'note_timecode_ms']
+    WHEN event_type IN ('upload.started', 'upload.proxy_received', 'upload.original_received', 'upload.verified',
+                        'upload.deduplicated', 'upload.failed')
+      THEN ARRAY['material_id', 'upload_session_id', 'file_id', 'kind', 'priority', 'receipt_number', 'failure_reason',
+                 'duplicate_of_file_id']
+    WHEN event_type = 'form.published'          THEN ARRAY['version']
+    WHEN event_type = 'ai.draft_ready'          THEN ARRAY['material_id', 'job_id', 'route']
+    WHEN event_type = 'notification.escalated'  THEN ARRAY['notification_id', 'material_id', 'priority', 'escalation_level', 'escalated_to']
+    WHEN event_type IN ('auth.recovery_requested', 'auth.recovery_approved') THEN ARRAY['recovery_request_id', 'office_id']
+    WHEN event_type = 'user.status_changed'     THEN ARRAY['user_id', 'status', 'reason_code', 'actor_id', 'occurred_at']
+    WHEN event_type = 'auth.recovery_completed' THEN ARRAY['recovery_request_id', 'office_id']
+    WHEN event_type = 'export.requested'        THEN ARRAY['material_id', 'source_file_id', 'requested_by']
+    ELSE ARRAY[]::text[]
+  END
+$$;
+
 -- Down Migration
+CREATE OR REPLACE FUNCTION outbox_payload_allowed_keys(event_type text) RETURNS text[]
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT CASE
+    WHEN event_type IN ('material.created', 'material.urgent_received', 'material.updated', 'material.version_created',
+                        'material.acknowledged', 'material.change_requested', 'material.accepted_for_production',
+                        'material.reserved', 'material.released', 'material.contributors_set', 'material.published')
+      THEN ARRAY['material_id', 'priority', 'office_id', 'material_version', 'editorial_state', 'technical_state',
+                 'rights_state', 'reserved_by', 'note_timecode_ms']
+    WHEN event_type IN ('material.technical_transition', 'material.editorial_transition', 'material.rights_transition')
+      THEN ARRAY['material_id', 'priority', 'office_id', 'track', 'from', 'to', 'note_timecode_ms']
+    WHEN event_type IN ('upload.started', 'upload.proxy_received', 'upload.original_received', 'upload.verified',
+                        'upload.deduplicated', 'upload.failed')
+      THEN ARRAY['material_id', 'upload_session_id', 'file_id', 'kind', 'priority', 'receipt_number', 'failure_reason',
+                 'duplicate_of_file_id']
+    WHEN event_type = 'form.published'          THEN ARRAY['version']
+    WHEN event_type = 'ai.draft_ready'          THEN ARRAY['material_id', 'job_id', 'route']
+    WHEN event_type = 'notification.escalated'  THEN ARRAY['notification_id', 'material_id', 'priority', 'escalation_level', 'escalated_to']
+    WHEN event_type IN ('auth.recovery_requested', 'auth.recovery_approved') THEN ARRAY['recovery_request_id', 'office_id']
+    WHEN event_type = 'user.status_changed'     THEN ARRAY['user_id', 'status', 'reason_code', 'actor_id', 'occurred_at']
+    WHEN event_type = 'auth.recovery_completed' THEN ARRAY['recovery_request_id', 'office_id']
+    ELSE ARRAY[]::text[]
+  END
+$$;
+
+ALTER TABLE outbox_events DROP CONSTRAINT outbox_events_type_check;
+ALTER TABLE outbox_events ADD CONSTRAINT outbox_events_type_check CHECK (type IN (
+    'material.created', 'material.urgent_received', 'material.updated', 'material.version_created',
+    'material.technical_transition', 'material.editorial_transition', 'material.rights_transition',
+    'material.acknowledged', 'material.change_requested', 'material.accepted_for_production',
+    'material.reserved', 'material.released', 'material.contributors_set', 'material.published',
+    'upload.started', 'upload.proxy_received', 'upload.original_received', 'upload.verified',
+    'upload.deduplicated', 'upload.failed',
+    'form.published', 'ai.draft_ready', 'notification.escalated',
+    'auth.recovery_requested', 'auth.recovery_approved', 'user.status_changed', 'auth.recovery_completed'));
+
+DROP TABLE material_exports;
+ALTER TABLE material_files DROP CONSTRAINT material_files_kind_check;
+ALTER TABLE material_files ADD CONSTRAINT material_files_kind_check
+  CHECK (kind IN ('original', 'proxy', 'hls', 'audio', 'thumbnail', 'voice_note'));
 CREATE OR REPLACE FUNCTION audit_details_allowed_keys() RETURNS text[]
 LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
   SELECT ARRAY['permission', 'target_user_id', 'material_id', 'file_id', 'upload_session_id', 'field_keys', 'track',

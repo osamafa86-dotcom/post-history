@@ -49,7 +49,8 @@
         "auth.recovery_requested",
         "auth.recovery_approved",
         "user.status_changed",
-        "auth.recovery_completed"
+        "auth.recovery_completed",
+        "export.requested"
       ]
     },
     "aggregate_type": {
@@ -567,6 +568,42 @@
               "occurred_at": {
                 "type": "string",
                 "format": "date-time"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "export.requested"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "material"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "material_id",
+              "source_file_id",
+              "requested_by"
+            ],
+            "properties": {
+              "material_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "source_file_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "requested_by": {
+                "$ref": "#/$defs/uuid"
               }
             }
           }

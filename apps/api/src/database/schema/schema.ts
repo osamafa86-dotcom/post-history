@@ -1,61 +1,10 @@
 import { bytea } from "../bytea"
-import { pgTable, index, foreignKey, check, uuid, text, integer, time, boolean, timestamp, unique, jsonb, bigint, uniqueIndex, type AnyPgColumn, primaryKey, numeric, smallint, pgSequence } from "drizzle-orm/pg-core"
+import { pgTable, uuid, text, timestamp, index, foreignKey, unique, check, integer, jsonb, bigint, uniqueIndex, type AnyPgColumn, boolean, time, primaryKey, numeric, smallint, pgSequence } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 
 export const schemaMigrationsIdSeq = pgSequence("schema_migrations_id_seq", {  startWith: "1", increment: "1", minValue: "1", maxValue: "2147483647", cache: "1", cycle: false })
 export const receiptNumberSeq = pgSequence("receipt_number_seq", {  startWith: "1", increment: "1", minValue: "1", maxValue: "999999", cache: "1", cycle: false })
-
-export const notificationRules = pgTable("notification_rules", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	name: text().notNull(),
-	eventType: text("event_type").notNull(),
-	priorities: text().array(),
-	materialTypes: text("material_types").array(),
-	scopeKind: text("scope_kind").default('all').notNull(),
-	scopeId: text("scope_id").default('').notNull(),
-	recipientRoles: text("recipient_roles").array().default([""]).notNull(),
-	recipientPermissions: text("recipient_permissions").array().default([""]).notNull(),
-	channels: text().array().notNull(),
-	delaySeconds: integer("delay_seconds").default(0).notNull(),
-	quietHoursStart: time("quiet_hours_start"),
-	quietHoursEnd: time("quiet_hours_end"),
-	quietHoursTz: text("quiet_hours_tz"),
-	digestIntervalMinutes: integer("digest_interval_minutes"),
-	assignment: boolean().default(false).notNull(),
-	enabled: boolean().default(true).notNull(),
-	rowVersion: integer("row_version").default(1).notNull(),
-	createdBy: uuid("created_by"),
-	updatedBy: uuid("updated_by"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("notification_rules_event_idx").using("btree", table.eventType.asc().nullsLast().op("text_ops"), table.enabled.asc().nullsLast().op("text_ops")),
-	foreignKey({
-			columns: [table.createdBy],
-			foreignColumns: [users.id],
-			name: "notification_rules_created_by_fkey"
-		}),
-	foreignKey({
-			columns: [table.updatedBy],
-			foreignColumns: [users.id],
-			name: "notification_rules_updated_by_fkey"
-		}),
-	check("notification_rules_channels_check", sql`(cardinality(channels) >= 1) AND (channels <@ ARRAY['in_app'::text, 'websocket'::text, 'apns'::text, 'fcm'::text, 'web_push'::text, 'email'::text, 'telegram'::text, 'whatsapp'::text, 'sms'::text])`),
-	check("notification_rules_delay_range", sql`(delay_seconds >= 0) AND (delay_seconds <= 86400)`),
-	check("notification_rules_digest_range", sql`(digest_interval_minutes IS NULL) OR ((digest_interval_minutes >= 15) AND (digest_interval_minutes <= 1440))`),
-	check("notification_rules_event_type_check", sql`event_type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'ai.draft_ready'::text])`),
-	check("notification_rules_has_recipient", sql`(cardinality(recipient_roles) + cardinality(recipient_permissions)) >= 1`),
-	check("notification_rules_material_types_check", sql`(material_types IS NULL) OR ((cardinality(material_types) >= 1) AND (material_types <@ allowed_material_types()))`),
-	check("notification_rules_name_len", sql`(char_length(name) >= 1) AND (char_length(name) <= 120)`),
-	check("notification_rules_permissions_check", sql`recipient_permissions <@ ARRAY['sensitive_location:read'::text, 'protected_source:read'::text]`),
-	check("notification_rules_priorities_check", sql`(priorities IS NULL) OR ((cardinality(priorities) >= 1) AND (priorities <@ ARRAY['urgent'::text, 'important'::text, 'normal'::text]))`),
-	check("notification_rules_quiet_hours_consistent", sql`((quiet_hours_start IS NULL) = (quiet_hours_end IS NULL)) AND ((quiet_hours_start IS NULL) = (quiet_hours_tz IS NULL))`),
-	check("notification_rules_roles_check", sql`recipient_roles <@ ARRAY['system_admin'::text, 'editor_in_chief'::text, 'supervisor'::text, 'producer'::text, 'finance'::text, 'reporter'::text, 'rights_officer'::text]`),
-	check("notification_rules_row_version_pos", sql`row_version >= 1`),
-	check("notification_rules_scope_id_check", sql`(scope_kind = 'all'::text) = (scope_id = ''::text)`),
-	check("notification_rules_scope_kind_check", sql`scope_kind = ANY (ARRAY['all'::text, 'office'::text, 'governorate'::text])`),
-]);
 
 export const offices = pgTable("offices", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
@@ -217,33 +166,6 @@ export const auditLog = pgTable("audit_log", {
 	check("audit_log_prev_hash_len", sql`(prev_hash IS NULL) OR (octet_length(prev_hash) = 32)`),
 ]);
 
-export const users = pgTable("users", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	email: text().notNull(),
-	passwordHash: text("password_hash").notNull(),
-	totpSecretEnc: bytea("totp_secret_enc"),
-	totpEnabled: boolean("totp_enabled").default(false).notNull(),
-	status: text().default('active').notNull(),
-	officeId: uuid("office_id"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	lastLoginAt: timestamp("last_login_at", { withTimezone: true, mode: 'string' }),
-	credentialResetRequired: boolean("credential_reset_required").default(false).notNull(),
-	totpPendingSecretEnc: bytea("totp_pending_secret_enc"),
-	legalNameEnc: bytea("legal_name_enc"),
-}, (table) => [
-	uniqueIndex("users_email_lower_key").using("btree", sql`lower(email)`),
-	index("users_office_idx").using("btree", table.officeId.asc().nullsLast().op("uuid_ops")).where(sql`(office_id IS NOT NULL)`),
-	foreignKey({
-			columns: [table.officeId],
-			foreignColumns: [offices.id],
-			name: "users_office_id_fkey"
-		}),
-	check("users_status_check", sql`status = ANY (ARRAY['active'::text, 'suspended'::text, 'recovery'::text])`),
-	check("users_totp_consistent", sql`(NOT totp_enabled) OR (totp_secret_enc IS NOT NULL)`),
-	check("users_totp_pending_only_during_reset", sql`(totp_pending_secret_enc IS NULL) OR credential_reset_required`),
-]);
-
 export const uploadSessions = pgTable("upload_sessions", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	materialId: uuid("material_id").notNull(),
@@ -315,154 +237,6 @@ export const uploadSessions = pgTable("upload_sessions", {
 	check("upload_sessions_upload_path_check", sql`upload_path = ANY (ARRAY['tusd'::text, 'direct'::text, 'ietf'::text])`),
 ]);
 
-export const materialFiles = pgTable("material_files", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	materialId: uuid("material_id").notNull(),
-	kind: text().notNull(),
-	state: text().default('uploading').notNull(),
-	uploadSessionId: uuid("upload_session_id"),
-	derivedFromId: uuid("derived_from_id"),
-	storageKey: text("storage_key"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	sizeBytes: bigint("size_bytes", { mode: "number" }),
-	sha256: bytea("sha256"),
-	mimeType: text("mime_type"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	durationMs: bigint("duration_ms", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	startPtsUs: bigint("start_pts_us", { mode: "number" }),
-	width: integer(),
-	height: integer(),
-	proxyMode: text("proxy_mode"),
-	receiptNumber: text("receipt_number"),
-	verifiedAt: timestamp("verified_at", { withTimezone: true, mode: 'string' }),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	technical: jsonb(),
-	headSha256: bytea("head_sha256"),
-	tailSha256: bytea("tail_sha256"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	perceptualHash: bigint("perceptual_hash", { mode: "number" }).array(),
-}, (table) => [
-	uniqueIndex("material_files_derived_kind_key").using("btree", table.derivedFromId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops")).where(sql`(derived_from_id IS NOT NULL)`),
-	index("material_files_material_kind_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("uuid_ops")),
-	uniqueIndex("material_files_receipt_number_key").using("btree", table.receiptNumber.asc().nullsLast().op("text_ops")).where(sql`(receipt_number IS NOT NULL)`),
-	index("material_files_sha256_idx").using("btree", table.sha256.asc().nullsLast().op("bytea_ops")).where(sql`(sha256 IS NOT NULL)`),
-	index("material_files_size_head_idx").using("btree", table.sizeBytes.asc().nullsLast().op("bytea_ops"), table.headSha256.asc().nullsLast().op("bytea_ops")).where(sql`(head_sha256 IS NOT NULL)`),
-	foreignKey({
-			columns: [table.derivedFromId],
-			foreignColumns: [table.id],
-			name: "material_files_derived_from_id_fkey"
-		}),
-	foreignKey({
-			columns: [table.materialId],
-			foreignColumns: [materials.id],
-			name: "material_files_material_id_fkey"
-		}).onDelete("cascade"),
-	check("material_files_dims_positive", sql`((width IS NULL) OR (width > 0)) AND ((height IS NULL) OR (height > 0))`),
-	check("material_files_head_sha256_len", sql`(head_sha256 IS NULL) OR (octet_length(head_sha256) = 32)`),
-	check("material_files_kind_check", sql`kind = ANY (ARRAY['original'::text, 'proxy'::text, 'hls'::text, 'audio'::text, 'thumbnail'::text, 'voice_note'::text])`),
-	check("material_files_perceptual_hash_size", sql`(perceptual_hash IS NULL) OR (((cardinality(perceptual_hash) >= 1) AND (cardinality(perceptual_hash) <= 32)) AND (array_position(perceptual_hash, NULL::bigint) IS NULL))`),
-	check("material_files_perceptual_hash_video_only", sql`(perceptual_hash IS NULL) OR (kind = 'original'::text)`),
-	check("material_files_proxy_mode_check", sql`(proxy_mode IS NULL) OR (proxy_mode = ANY (ARRAY['urgent'::text, 'normal'::text]))`),
-	check("material_files_proxy_mode_only_proxy", sql`(proxy_mode IS NULL) OR (kind = 'proxy'::text)`),
-	check("material_files_receipt_format", sql`(receipt_number IS NULL) OR (receipt_number ~ '^R-[0-9]{6}-[0-9]{6}$'::text)`),
-	check("material_files_receipt_only_original", sql`(receipt_number IS NULL) OR (kind = 'original'::text)`),
-	check("material_files_sha256_len", sql`(sha256 IS NULL) OR (octet_length(sha256) = 32)`),
-	check("material_files_size_nonneg", sql`(size_bytes IS NULL) OR (size_bytes >= 0)`),
-	check("material_files_state_check", sql`state = ANY (ARRAY['uploading'::text, 'received'::text, 'verified'::text, 'failed'::text])`),
-	check("material_files_tail_sha256_len", sql`(tail_sha256 IS NULL) OR (octet_length(tail_sha256) = 32)`),
-	check("material_files_technical_whitelisted", sql`(technical IS NULL) OR material_file_technical_is_whitelisted(technical)`),
-	check("material_files_verified_consistent", sql`(state = 'verified'::text) = (verified_at IS NOT NULL)`),
-	check("material_files_verified_has_sha", sql`(state <> 'verified'::text) OR (sha256 IS NOT NULL)`),
-]);
-
-export const materials = pgTable("materials", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	reporterId: uuid("reporter_id").notNull(),
-	officeId: uuid("office_id"),
-	title: text().notNull(),
-	materialTypes: text("material_types").array().notNull(),
-	governorate: text().notNull(),
-	city: text().notNull(),
-	shotAt: timestamp("shot_at", { withTimezone: true, mode: 'string' }),
-	priority: text().notNull(),
-	sensitivityMinors: boolean("sensitivity_minors").notNull(),
-	sensitivityInjured: boolean("sensitivity_injured").notNull(),
-	sensitivityGraphic: boolean("sensitivity_graphic").notNull(),
-	displayNameMode: text("display_name_mode").notNull(),
-	displayNamePseudonym: text("display_name_pseudonym"),
-	gpsEnc: bytea("gps_enc"),
-	formVersion: integer("form_version").notNull(),
-	dynamicFields: jsonb("dynamic_fields").default({}).notNull(),
-	technicalState: text("technical_state").default('pending').notNull(),
-	editorialState: text("editorial_state").default('inbox').notNull(),
-	rightsState: text("rights_state").default('unknown').notNull(),
-	version: integer().default(1).notNull(),
-	reservedBy: uuid("reserved_by"),
-	reservedAt: timestamp("reserved_at", { withTimezone: true, mode: 'string' }),
-	originalHeight: integer("original_height"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	originalDurationMs: bigint("original_duration_ms", { mode: "number" }),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
-	acknowledgedBy: uuid("acknowledged_by"),
-	acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true, mode: 'string' }),
-}, (table) => [
-	index("materials_board_idx").using("btree", table.officeId.asc().nullsLast().op("uuid_ops"), table.editorialState.asc().nullsLast().op("uuid_ops"), table.priority.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
-	index("materials_cursor_idx").using("btree", table.createdAt.desc().nullsFirst().op("timestamptz_ops"), table.id.desc().nullsFirst().op("uuid_ops")),
-	index("materials_governorate_shot_idx").using("btree", table.governorate.asc().nullsLast().op("text_ops"), table.shotAt.desc().nullsFirst().op("text_ops")),
-	index("materials_reporter_idx").using("btree", table.reporterId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("uuid_ops")),
-	index("materials_reserved_idx").using("btree", table.reservedBy.asc().nullsLast().op("uuid_ops"), table.reservedAt.asc().nullsLast().op("uuid_ops")).where(sql`(reserved_by IS NOT NULL)`),
-	index("materials_rights_idx").using("btree", table.rightsState.asc().nullsLast().op("text_ops"), table.editorialState.asc().nullsLast().op("timestamptz_ops"), table.updatedAt.desc().nullsFirst().op("text_ops")),
-	index("materials_shot_cursor_idx").using("btree", table.shotAt.desc().nullsFirst().op("uuid_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")),
-	index("materials_technical_inflight_idx").using("btree", table.technicalState.asc().nullsLast().op("text_ops"), table.updatedAt.asc().nullsLast().op("text_ops")).where(sql`(technical_state = ANY (ARRAY['pending'::text, 'proxy_received'::text, 'original_received'::text]))`),
-	index("materials_updated_cursor_idx").using("btree", table.updatedAt.desc().nullsFirst().op("uuid_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")),
-	foreignKey({
-			columns: [table.acknowledgedBy],
-			foreignColumns: [users.id],
-			name: "materials_acknowledged_by_fkey"
-		}),
-	foreignKey({
-			columns: [table.formVersion],
-			foreignColumns: [uploadForms.version],
-			name: "materials_form_version_fkey"
-		}),
-	foreignKey({
-			columns: [table.officeId],
-			foreignColumns: [offices.id],
-			name: "materials_office_id_fkey"
-		}),
-	foreignKey({
-			columns: [table.reporterId],
-			foreignColumns: [users.id],
-			name: "materials_reporter_id_fkey"
-		}),
-	foreignKey({
-			columns: [table.reservedBy],
-			foreignColumns: [users.id],
-			name: "materials_reserved_by_fkey"
-		}),
-	check("materials_acknowledged_consistent", sql`(acknowledged_by IS NULL) = (acknowledged_at IS NULL)`),
-	check("materials_display_name_mode_check", sql`display_name_mode = ANY (ARRAY['real_name'::text, 'pseudonym'::text, 'network'::text])`),
-	check("materials_dynamic_fields_is_object", sql`jsonb_typeof(dynamic_fields) = 'object'::text`),
-	check("materials_editorial_state_check", sql`editorial_state = ANY (ARRAY['inbox'::text, 'acknowledged'::text, 'reviewing'::text, 'needs_changes'::text, 'accepted'::text, 'in_production'::text, 'final_review'::text, 'published'::text, 'rejected'::text])`),
-	check("materials_original_duration_nonneg", sql`(original_duration_ms IS NULL) OR (original_duration_ms >= 0)`),
-	check("materials_original_height_positive", sql`(original_height IS NULL) OR (original_height > 0)`),
-	check("materials_priority_check", sql`priority = ANY (ARRAY['urgent'::text, 'important'::text, 'normal'::text])`),
-	check("materials_pseudonym_consistent", sql`(display_name_mode = 'pseudonym'::text) = (display_name_pseudonym IS NOT NULL)`),
-	check("materials_reservation_consistent", sql`(reserved_by IS NULL) = (reserved_at IS NULL)`),
-	check("materials_rights_state_check", sql`rights_state = ANY (ARRAY['unknown'::text, 'documented'::text, 'sellable'::text, 'blocked'::text, 'withdrawn'::text])`),
-	check("materials_row_version_positive", sql`row_version >= 1`),
-	check("materials_technical_state_check", sql`technical_state = ANY (ARRAY['pending'::text, 'proxy_received'::text, 'original_received'::text, 'verified'::text, 'failed'::text])`),
-	check("materials_title_len", sql`(char_length(title) >= 1) AND (char_length(title) <= 200)`),
-	check("materials_types_known", sql`material_types <@ allowed_material_types()`),
-	check("materials_types_nonempty", sql`cardinality(material_types) >= 1`),
-	check("materials_version_positive", sql`version >= 1`),
-]);
-
 export const recoveryRequests = pgTable("recovery_requests", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	userId: uuid("user_id").notNull(),
@@ -522,36 +296,117 @@ export const deviceAttestationKeys = pgTable("device_attestation_keys", {
 	check("device_attestation_keys_sign_count_nonneg", sql`sign_count >= 0`),
 ]);
 
-export const outboxEvents = pgTable("outbox_events", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "outbox_events_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	type: text().notNull(),
-	aggregateType: text("aggregate_type").notNull(),
-	aggregateId: uuid("aggregate_id").notNull(),
-	occurredAt: timestamp("occurred_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	idempotencyKey: text("idempotency_key").notNull(),
-	actorId: uuid("actor_id"),
-	payload: jsonb().default({}).notNull(),
-	publishedAt: timestamp("published_at", { withTimezone: true, mode: 'string' }),
-	attempts: integer().default(0).notNull(),
-	nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	lastError: text("last_error"),
+export const users = pgTable("users", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	email: text().notNull(),
+	passwordHash: text("password_hash").notNull(),
+	totpSecretEnc: bytea("totp_secret_enc"),
+	totpEnabled: boolean("totp_enabled").default(false).notNull(),
+	status: text().default('active').notNull(),
+	officeId: uuid("office_id"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastLoginAt: timestamp("last_login_at", { withTimezone: true, mode: 'string' }),
+	credentialResetRequired: boolean("credential_reset_required").default(false).notNull(),
+	totpPendingSecretEnc: bytea("totp_pending_secret_enc"),
+	legalNameEnc: bytea("legal_name_enc"),
 }, (table) => [
-	index("outbox_events_aggregate_idx").using("btree", table.aggregateType.asc().nullsLast().op("int8_ops"), table.aggregateId.asc().nullsLast().op("uuid_ops"), table.id.asc().nullsLast().op("int8_ops")),
-	index("outbox_events_pending_idx").using("btree", table.nextAttemptAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("timestamptz_ops")).where(sql`(published_at IS NULL)`),
-	index("outbox_events_type_idx").using("btree", table.type.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
+	uniqueIndex("users_email_lower_key").using("btree", sql`lower(email)`),
+	index("users_office_idx").using("btree", table.officeId.asc().nullsLast().op("uuid_ops")).where(sql`(office_id IS NOT NULL)`),
 	foreignKey({
-			columns: [table.actorId],
-			foreignColumns: [users.id],
-			name: "outbox_events_actor_id_fkey"
+			columns: [table.officeId],
+			foreignColumns: [offices.id],
+			name: "users_office_id_fkey"
 		}),
-	unique("outbox_events_idempotency_key_key").on(table.idempotencyKey),
-	check("outbox_events_aggregate_type_check", sql`aggregate_type = ANY (ARRAY['material'::text, 'upload'::text, 'notification'::text, 'form'::text, 'user'::text])`),
-	check("outbox_events_attempts_nonneg", sql`attempts >= 0`),
-	check("outbox_events_idempotency_key_len", sql`(char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 200)`),
-	check("outbox_events_payload_is_object", sql`jsonb_typeof(payload) = 'object'::text`),
-	check("outbox_events_payload_whitelisted", sql`CHECK (outbox_payload_is_whitelisted(type, payload`),
-	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text])`),
+	check("users_status_check", sql`status = ANY (ARRAY['active'::text, 'suspended'::text, 'recovery'::text])`),
+	check("users_totp_consistent", sql`(NOT totp_enabled) OR (totp_secret_enc IS NOT NULL)`),
+	check("users_totp_pending_only_during_reset", sql`(totp_pending_secret_enc IS NULL) OR credential_reset_required`),
+]);
+
+export const materials = pgTable("materials", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	reporterId: uuid("reporter_id").notNull(),
+	officeId: uuid("office_id"),
+	title: text().notNull(),
+	materialTypes: text("material_types").array().notNull(),
+	governorate: text().notNull(),
+	city: text().notNull(),
+	shotAt: timestamp("shot_at", { withTimezone: true, mode: 'string' }),
+	priority: text().notNull(),
+	sensitivityMinors: boolean("sensitivity_minors").notNull(),
+	sensitivityInjured: boolean("sensitivity_injured").notNull(),
+	sensitivityGraphic: boolean("sensitivity_graphic").notNull(),
+	displayNameMode: text("display_name_mode").notNull(),
+	displayNamePseudonym: text("display_name_pseudonym"),
+	gpsEnc: bytea("gps_enc"),
+	formVersion: integer("form_version").notNull(),
+	dynamicFields: jsonb("dynamic_fields").default({}).notNull(),
+	technicalState: text("technical_state").default('pending').notNull(),
+	editorialState: text("editorial_state").default('inbox').notNull(),
+	rightsState: text("rights_state").default('unknown').notNull(),
+	version: integer().default(1).notNull(),
+	reservedBy: uuid("reserved_by"),
+	reservedAt: timestamp("reserved_at", { withTimezone: true, mode: 'string' }),
+	originalHeight: integer("original_height"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	originalDurationMs: bigint("original_duration_ms", { mode: "number" }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
+	acknowledgedBy: uuid("acknowledged_by"),
+	acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("materials_board_idx").using("btree", table.officeId.asc().nullsLast().op("uuid_ops"), table.editorialState.asc().nullsLast().op("timestamptz_ops"), table.priority.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("materials_cursor_idx").using("btree", table.createdAt.desc().nullsFirst().op("uuid_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")),
+	index("materials_governorate_shot_idx").using("btree", table.governorate.asc().nullsLast().op("timestamptz_ops"), table.shotAt.desc().nullsFirst().op("text_ops")),
+	index("materials_reporter_idx").using("btree", table.reporterId.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("materials_reserved_idx").using("btree", table.reservedBy.asc().nullsLast().op("uuid_ops"), table.reservedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(reserved_by IS NOT NULL)`),
+	index("materials_rights_idx").using("btree", table.rightsState.asc().nullsLast().op("timestamptz_ops"), table.editorialState.asc().nullsLast().op("timestamptz_ops"), table.updatedAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("materials_shot_cursor_idx").using("btree", table.shotAt.desc().nullsFirst().op("timestamptz_ops"), table.id.desc().nullsFirst().op("uuid_ops")),
+	index("materials_technical_inflight_idx").using("btree", table.technicalState.asc().nullsLast().op("timestamptz_ops"), table.updatedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(technical_state = ANY (ARRAY['pending'::text, 'proxy_received'::text, 'original_received'::text]))`),
+	index("materials_updated_cursor_idx").using("btree", table.updatedAt.desc().nullsFirst().op("timestamptz_ops"), table.id.desc().nullsFirst().op("uuid_ops")),
+	foreignKey({
+			columns: [table.acknowledgedBy],
+			foreignColumns: [users.id],
+			name: "materials_acknowledged_by_fkey"
+		}),
+	foreignKey({
+			columns: [table.formVersion],
+			foreignColumns: [uploadForms.version],
+			name: "materials_form_version_fkey"
+		}),
+	foreignKey({
+			columns: [table.officeId],
+			foreignColumns: [offices.id],
+			name: "materials_office_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.reporterId],
+			foreignColumns: [users.id],
+			name: "materials_reporter_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.reservedBy],
+			foreignColumns: [users.id],
+			name: "materials_reserved_by_fkey"
+		}),
+	check("materials_acknowledged_consistent", sql`(acknowledged_by IS NULL) = (acknowledged_at IS NULL)`),
+	check("materials_display_name_mode_check", sql`display_name_mode = ANY (ARRAY['real_name'::text, 'pseudonym'::text, 'network'::text])`),
+	check("materials_dynamic_fields_is_object", sql`jsonb_typeof(dynamic_fields) = 'object'::text`),
+	check("materials_editorial_state_check", sql`editorial_state = ANY (ARRAY['inbox'::text, 'acknowledged'::text, 'reviewing'::text, 'needs_changes'::text, 'accepted'::text, 'in_production'::text, 'final_review'::text, 'published'::text, 'rejected'::text])`),
+	check("materials_original_duration_nonneg", sql`(original_duration_ms IS NULL) OR (original_duration_ms >= 0)`),
+	check("materials_original_height_positive", sql`(original_height IS NULL) OR (original_height > 0)`),
+	check("materials_priority_check", sql`priority = ANY (ARRAY['urgent'::text, 'important'::text, 'normal'::text])`),
+	check("materials_pseudonym_consistent", sql`(display_name_mode = 'pseudonym'::text) = (display_name_pseudonym IS NOT NULL)`),
+	check("materials_reservation_consistent", sql`(reserved_by IS NULL) = (reserved_at IS NULL)`),
+	check("materials_rights_state_check", sql`rights_state = ANY (ARRAY['unknown'::text, 'documented'::text, 'sellable'::text, 'blocked'::text, 'withdrawn'::text])`),
+	check("materials_row_version_positive", sql`row_version >= 1`),
+	check("materials_technical_state_check", sql`technical_state = ANY (ARRAY['pending'::text, 'proxy_received'::text, 'original_received'::text, 'verified'::text, 'failed'::text])`),
+	check("materials_title_len", sql`(char_length(title) >= 1) AND (char_length(title) <= 200)`),
+	check("materials_types_known", sql`material_types <@ allowed_material_types()`),
+	check("materials_types_nonempty", sql`cardinality(material_types) >= 1`),
+	check("materials_version_positive", sql`version >= 1`),
 ]);
 
 export const notifications = pgTable("notifications", {
@@ -609,6 +464,187 @@ export const notifications = pgTable("notifications", {
 	check("notifications_priority_check", sql`priority = ANY (ARRAY['urgent'::text, 'important'::text, 'normal'::text])`),
 	check("notifications_read_consistent", sql`(state = ANY (ARRAY['read'::text, 'acknowledged'::text])) = (read_at IS NOT NULL)`),
 	check("notifications_state_check", sql`state = ANY (ARRAY['sent'::text, 'delivered'::text, 'read'::text, 'acknowledged'::text])`),
+]);
+
+export const materialFiles = pgTable("material_files", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	materialId: uuid("material_id").notNull(),
+	kind: text().notNull(),
+	state: text().default('uploading').notNull(),
+	uploadSessionId: uuid("upload_session_id"),
+	derivedFromId: uuid("derived_from_id"),
+	storageKey: text("storage_key"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	sizeBytes: bigint("size_bytes", { mode: "number" }),
+	sha256: bytea("sha256"),
+	mimeType: text("mime_type"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	durationMs: bigint("duration_ms", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	startPtsUs: bigint("start_pts_us", { mode: "number" }),
+	width: integer(),
+	height: integer(),
+	proxyMode: text("proxy_mode"),
+	receiptNumber: text("receipt_number"),
+	verifiedAt: timestamp("verified_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	technical: jsonb(),
+	headSha256: bytea("head_sha256"),
+	tailSha256: bytea("tail_sha256"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	perceptualHash: bigint("perceptual_hash", { mode: "number" }).array(),
+}, (table) => [
+	uniqueIndex("material_files_derived_kind_key").using("btree", table.derivedFromId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops")).where(sql`(derived_from_id IS NOT NULL)`),
+	index("material_files_material_kind_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("uuid_ops")),
+	uniqueIndex("material_files_receipt_number_key").using("btree", table.receiptNumber.asc().nullsLast().op("text_ops")).where(sql`(receipt_number IS NOT NULL)`),
+	index("material_files_sha256_idx").using("btree", table.sha256.asc().nullsLast().op("bytea_ops")).where(sql`(sha256 IS NOT NULL)`),
+	index("material_files_size_head_idx").using("btree", table.sizeBytes.asc().nullsLast().op("bytea_ops"), table.headSha256.asc().nullsLast().op("bytea_ops")).where(sql`(head_sha256 IS NOT NULL)`),
+	foreignKey({
+			columns: [table.derivedFromId],
+			foreignColumns: [table.id],
+			name: "material_files_derived_from_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.materialId],
+			foreignColumns: [materials.id],
+			name: "material_files_material_id_fkey"
+		}).onDelete("cascade"),
+	check("material_files_dims_positive", sql`((width IS NULL) OR (width > 0)) AND ((height IS NULL) OR (height > 0))`),
+	check("material_files_head_sha256_len", sql`(head_sha256 IS NULL) OR (octet_length(head_sha256) = 32)`),
+	check("material_files_kind_check", sql`kind = ANY (ARRAY['original'::text, 'proxy'::text, 'hls'::text, 'audio'::text, 'thumbnail'::text, 'voice_note'::text, 'export'::text])`),
+	check("material_files_perceptual_hash_size", sql`(perceptual_hash IS NULL) OR (((cardinality(perceptual_hash) >= 1) AND (cardinality(perceptual_hash) <= 32)) AND (array_position(perceptual_hash, NULL::bigint) IS NULL))`),
+	check("material_files_perceptual_hash_video_only", sql`(perceptual_hash IS NULL) OR (kind = 'original'::text)`),
+	check("material_files_proxy_mode_check", sql`(proxy_mode IS NULL) OR (proxy_mode = ANY (ARRAY['urgent'::text, 'normal'::text]))`),
+	check("material_files_proxy_mode_only_proxy", sql`(proxy_mode IS NULL) OR (kind = 'proxy'::text)`),
+	check("material_files_receipt_format", sql`(receipt_number IS NULL) OR (receipt_number ~ '^R-[0-9]{6}-[0-9]{6}$'::text)`),
+	check("material_files_receipt_only_original", sql`(receipt_number IS NULL) OR (kind = 'original'::text)`),
+	check("material_files_sha256_len", sql`(sha256 IS NULL) OR (octet_length(sha256) = 32)`),
+	check("material_files_size_nonneg", sql`(size_bytes IS NULL) OR (size_bytes >= 0)`),
+	check("material_files_state_check", sql`state = ANY (ARRAY['uploading'::text, 'received'::text, 'verified'::text, 'failed'::text])`),
+	check("material_files_tail_sha256_len", sql`(tail_sha256 IS NULL) OR (octet_length(tail_sha256) = 32)`),
+	check("material_files_technical_whitelisted", sql`(technical IS NULL) OR material_file_technical_is_whitelisted(technical)`),
+	check("material_files_verified_consistent", sql`(state = 'verified'::text) = (verified_at IS NOT NULL)`),
+	check("material_files_verified_has_sha", sql`(state <> 'verified'::text) OR (sha256 IS NOT NULL)`),
+]);
+
+export const notificationRules = pgTable("notification_rules", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	name: text().notNull(),
+	eventType: text("event_type").notNull(),
+	priorities: text().array(),
+	materialTypes: text("material_types").array(),
+	scopeKind: text("scope_kind").default('all').notNull(),
+	scopeId: text("scope_id").default('').notNull(),
+	recipientRoles: text("recipient_roles").array().default([""]).notNull(),
+	recipientPermissions: text("recipient_permissions").array().default([""]).notNull(),
+	channels: text().array().notNull(),
+	delaySeconds: integer("delay_seconds").default(0).notNull(),
+	quietHoursStart: time("quiet_hours_start"),
+	quietHoursEnd: time("quiet_hours_end"),
+	quietHoursTz: text("quiet_hours_tz"),
+	digestIntervalMinutes: integer("digest_interval_minutes"),
+	assignment: boolean().default(false).notNull(),
+	enabled: boolean().default(true).notNull(),
+	rowVersion: integer("row_version").default(1).notNull(),
+	createdBy: uuid("created_by"),
+	updatedBy: uuid("updated_by"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("notification_rules_event_idx").using("btree", table.eventType.asc().nullsLast().op("text_ops"), table.enabled.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [users.id],
+			name: "notification_rules_created_by_fkey"
+		}),
+	foreignKey({
+			columns: [table.updatedBy],
+			foreignColumns: [users.id],
+			name: "notification_rules_updated_by_fkey"
+		}),
+	check("notification_rules_channels_check", sql`(cardinality(channels) >= 1) AND (channels <@ ARRAY['in_app'::text, 'websocket'::text, 'apns'::text, 'fcm'::text, 'web_push'::text, 'email'::text, 'telegram'::text, 'whatsapp'::text, 'sms'::text])`),
+	check("notification_rules_delay_range", sql`(delay_seconds >= 0) AND (delay_seconds <= 86400)`),
+	check("notification_rules_digest_range", sql`(digest_interval_minutes IS NULL) OR ((digest_interval_minutes >= 15) AND (digest_interval_minutes <= 1440))`),
+	check("notification_rules_event_type_check", sql`event_type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'ai.draft_ready'::text])`),
+	check("notification_rules_has_recipient", sql`(cardinality(recipient_roles) + cardinality(recipient_permissions)) >= 1`),
+	check("notification_rules_material_types_check", sql`(material_types IS NULL) OR ((cardinality(material_types) >= 1) AND (material_types <@ allowed_material_types()))`),
+	check("notification_rules_name_len", sql`(char_length(name) >= 1) AND (char_length(name) <= 120)`),
+	check("notification_rules_permissions_check", sql`recipient_permissions <@ ARRAY['sensitive_location:read'::text, 'protected_source:read'::text]`),
+	check("notification_rules_priorities_check", sql`(priorities IS NULL) OR ((cardinality(priorities) >= 1) AND (priorities <@ ARRAY['urgent'::text, 'important'::text, 'normal'::text]))`),
+	check("notification_rules_quiet_hours_consistent", sql`((quiet_hours_start IS NULL) = (quiet_hours_end IS NULL)) AND ((quiet_hours_start IS NULL) = (quiet_hours_tz IS NULL))`),
+	check("notification_rules_roles_check", sql`recipient_roles <@ ARRAY['system_admin'::text, 'editor_in_chief'::text, 'supervisor'::text, 'producer'::text, 'finance'::text, 'reporter'::text, 'rights_officer'::text]`),
+	check("notification_rules_row_version_pos", sql`row_version >= 1`),
+	check("notification_rules_scope_id_check", sql`(scope_kind = 'all'::text) = (scope_id = ''::text)`),
+	check("notification_rules_scope_kind_check", sql`scope_kind = ANY (ARRAY['all'::text, 'office'::text, 'governorate'::text])`),
+]);
+
+export const materialExports = pgTable("material_exports", {
+	sourceFileId: uuid("source_file_id").primaryKey().notNull(),
+	materialId: uuid("material_id").notNull(),
+	requestedBy: uuid("requested_by").notNull(),
+	state: text().default('requested').notNull(),
+	fileId: uuid("file_id"),
+	failureReason: text("failure_reason"),
+	requestedAt: timestamp("requested_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("material_exports_material_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.fileId],
+			foreignColumns: [materialFiles.id],
+			name: "material_exports_file_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.materialId],
+			foreignColumns: [materials.id],
+			name: "material_exports_material_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.requestedBy],
+			foreignColumns: [users.id],
+			name: "material_exports_requested_by_fkey"
+		}),
+	foreignKey({
+			columns: [table.sourceFileId],
+			foreignColumns: [materialFiles.id],
+			name: "material_exports_source_file_id_fkey"
+		}).onDelete("cascade"),
+	check("material_exports_failure_reason_check", sql`((state = 'failed'::text) = (failure_reason IS NOT NULL)) AND ((failure_reason IS NULL) OR (failure_reason = ANY (ARRAY['source_unavailable'::text, 'build_failed'::text])))`),
+	check("material_exports_ready_has_file", sql`(state = 'ready'::text) = (file_id IS NOT NULL)`),
+	check("material_exports_state_check", sql`state = ANY (ARRAY['requested'::text, 'ready'::text, 'failed'::text])`),
+]);
+
+export const outboxEvents = pgTable("outbox_events", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "outbox_events_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	type: text().notNull(),
+	aggregateType: text("aggregate_type").notNull(),
+	aggregateId: uuid("aggregate_id").notNull(),
+	occurredAt: timestamp("occurred_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	idempotencyKey: text("idempotency_key").notNull(),
+	actorId: uuid("actor_id"),
+	payload: jsonb().default({}).notNull(),
+	publishedAt: timestamp("published_at", { withTimezone: true, mode: 'string' }),
+	attempts: integer().default(0).notNull(),
+	nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastError: text("last_error"),
+}, (table) => [
+	index("outbox_events_aggregate_idx").using("btree", table.aggregateType.asc().nullsLast().op("int8_ops"), table.aggregateId.asc().nullsLast().op("uuid_ops"), table.id.asc().nullsLast().op("int8_ops")),
+	index("outbox_events_pending_idx").using("btree", table.nextAttemptAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("timestamptz_ops")).where(sql`(published_at IS NULL)`),
+	index("outbox_events_type_idx").using("btree", table.type.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
+	foreignKey({
+			columns: [table.actorId],
+			foreignColumns: [users.id],
+			name: "outbox_events_actor_id_fkey"
+		}),
+	unique("outbox_events_idempotency_key_key").on(table.idempotencyKey),
+	check("outbox_events_aggregate_type_check", sql`aggregate_type = ANY (ARRAY['material'::text, 'upload'::text, 'notification'::text, 'form'::text, 'user'::text])`),
+	check("outbox_events_attempts_nonneg", sql`attempts >= 0`),
+	check("outbox_events_idempotency_key_len", sql`(char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 200)`),
+	check("outbox_events_payload_is_object", sql`jsonb_typeof(payload) = 'object'::text`),
+	check("outbox_events_payload_whitelisted", sql`CHECK (outbox_payload_is_whitelisted(type, payload`),
+	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text])`),
 ]);
 
 export const recoveryCodes = pgTable("recovery_codes", {

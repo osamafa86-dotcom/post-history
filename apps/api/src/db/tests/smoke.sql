@@ -426,6 +426,29 @@ UPDATE notifications SET rule_id = '00000000-0000-4000-8000-000000000b01';
 DELETE FROM notification_rules WHERE id = '00000000-0000-4000-8000-000000000b01';
 SELECT pg_temp.assert((SELECT count(*) = 0 FROM notification_rule_escalations), 'escalations go with their rule');
 SELECT pg_temp.assert(NOT EXISTS (SELECT 1 FROM notifications WHERE rule_id IS NOT NULL) AND EXISTS (SELECT 1 FROM notifications), 'notifications keep their row when the rule is deleted');
+-- حزمة التصدير: طلب لكل أصل، والجاهز يشير إلى مشتق export، والفشل بسبب من القائمة
+INSERT INTO material_exports (source_file_id, material_id, requested_by)
+VALUES ('00000000-0000-4000-8000-000000000301', '00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000012');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_exports (source_file_id, material_id, requested_by)
+  VALUES ('00000000-0000-4000-8000-000000000301', '00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000012') $q$, '23505');
+SELECT pg_temp.expect_error($q$
+  UPDATE material_exports SET state = 'ready' WHERE source_file_id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE material_exports SET state = 'failed', failure_reason = 'because' WHERE source_file_id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
+INSERT INTO material_files (id, material_id, kind, state, derived_from_id, mime_type, verified_at)
+VALUES ('00000000-0000-4000-8000-000000000303', '00000000-0000-4000-8000-000000000101', 'export', 'verified',
+        '00000000-0000-4000-8000-000000000301', 'application/zip', now());
+UPDATE material_exports SET state = 'ready', file_id = '00000000-0000-4000-8000-000000000303'
+WHERE source_file_id = '00000000-0000-4000-8000-000000000301';
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('export.requested', 'material', '00000000-0000-4000-8000-000000000101', 'export.requested:smoke:1',
+        '{"material_id": "00000000-0000-4000-8000-000000000101", "source_file_id": "00000000-0000-4000-8000-000000000301",
+          "requested_by": "00000000-0000-4000-8000-000000000012"}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('export.requested', 'material', '00000000-0000-4000-8000-000000000101', 'export.requested:smoke:2',
+          '{"material_id": "00000000-0000-4000-8000-000000000101", "permissions": ["sensitive_location:read"]}') $q$, '23514');
 INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
 VALUES ('00000000-0000-4000-8000-000000000012', 'notification_rule.deleted', 'notification_rule', '00000000-0000-4000-8000-000000000b01',
         '{"rule_id": "00000000-0000-4000-8000-000000000b01"}');

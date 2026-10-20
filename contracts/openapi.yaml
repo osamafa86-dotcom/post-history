@@ -661,8 +661,8 @@ paths:
       tags: [materials]
       summary: رابط قراءة موقّع قصير العمر لمشتق من المادة (v0.1)
       description: >-
-        للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail`) في حالة `verified`. الأصل والملاحظة الصوتية لا يُعطيان
-        رابطًا هنا (`404`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين
+        للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail`) في حالة `verified`. الأصل والملاحظة الصوتية وحزمة التصدير
+        لا تُعطى رابطًا هنا (`404`؛ الحزمة من `/materials/{id}/export/download-url`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين
         ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا
         معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`).
       operationId: getMaterialFileDownloadUrl
@@ -680,6 +680,78 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /materials/{id}/export:
+    parameters:
+      - $ref: "#/components/parameters/MaterialId"
+    get:
+      tags: [materials]
+      summary: حالة حزمة التصدير لبرامج المونتاج (v0.2)
+      operationId: getMaterialExport
+      x-roles: [producer, editor_in_chief, rights_officer, system_admin]
+      responses:
+        "200":
+          description: الحالة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MaterialExport" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [materials]
+      summary: طلب حزمة التصدير (الأصل، النسخة الخفيفة، الجانبيات، FCPXML/EDL، SHA256SUMS)
+      description: >-
+        تُبنى عند الطلب لا عند الاستيعاب (#99): يُكتب الطلب وحدث `export.requested` (المادة، والأصل، والطالب) في معاملة
+        واحدة، ويبنيها عامل الوسائط ويسجّلها مشتقًا `export`. طلب لكل أصل: إن كانت جاهزة أو قيد البناء أُعيدت حالتها
+        (`200`) دون حدث جديد، وإن فشلت أُعيد طلبها (`202`). **لا بيانات كاشفة في الحزمة أبدًا** مهما كانت صلاحيات الطالب
+        (CLAUDE.md §5): لا إحداثيات ولا معرّف جهاز ولا مصدر محمي ولا اسم حقيقي، فلا يحمل الحدث صلاحيات. بأدوار من يحق له
+        تنزيل الأصل، وضمن نطاقه.
+      operationId: requestMaterialExport
+      x-roles: [producer, editor_in_chief, rights_officer, system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: طلب قائم (جاهز أو قيد البناء)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MaterialExport" }
+        "202":
+          description: سُجّل الطلب
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MaterialExport" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /materials/{id}/export/download-url:
+    parameters:
+      - $ref: "#/components/parameters/MaterialId"
+    get:
+      tags: [materials]
+      summary: رابط تنزيل موقّع لحزمة التصدير
+      description: >-
+        كرابط المشتقات (`FileDownloadUrl`، ≤ 10 دقائق، `no-store`، بالمعرّفات وحدها) لكن بأدوار تنزيل الأصل لأن الحزمة
+        تضم الأصل. قبل الجاهزية `409 export_not_ready`. يُسجَّل كل إصدار رابط في التدقيق (`material_id`، `file_id`).
+      operationId: getMaterialExportDownloadUrl
+      x-roles: [producer, editor_in_chief, rights_officer, system_admin]
+      responses:
+        "200":
+          description: الرابط
+          headers:
+            Cache-Control:
+              description: "`no-store`"
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileDownloadUrl" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /materials/{id}/duplicates:
     parameters:
@@ -1095,7 +1167,8 @@ paths:
       summary: تسجيل مشتق أنتجه العامل (داخلي، ADR 0006)
       x-internal: true
       description: >-
-        ينشئ ملفًا جديدًا `kind=proxy` و`proxy_mode=normal` و`derived_from_id=file_id` و`state=verified`. متساوٍ الأثر
+        ينشئ ملفًا جديدًا بنوع `kind` و`derived_from_id=file_id` و`state=verified` (و`proxy_mode=normal` للنسخة الخفيفة وحدها؛
+        و`export` يجعل طلب التصدير `ready`). متساوٍ الأثر
         على (`derived_from_id`، `kind`): الطلب نفسه يعيد الملف نفسه، ومشتق مختلف للمصدر والنوع نفسيهما `409`.
         `storage_key` يجب أن يبدأ بالبادئة المشتقة للمصدر (`derived/<material_id>/<file_id>/`) وإلا `422`. الملف
         المصدر غير الموجود برمز صحيح `410 media_resource_gone`.
@@ -1663,6 +1736,7 @@ components:
             - attestation_key_conflict
             - attestation_unavailable
             - media_resource_gone
+            - export_not_ready
             - internal_error
         message: { type: string }
         request_id: { type: string, description: لتتبع الطلب في السجلات }
@@ -2483,26 +2557,44 @@ components:
       description: >-
         `proxy` و`hls` و`audio` مشتقات زمنية: `technical` يحمل `duration_ms` و`start_pts_us`. `thumbnail` صورة (الملصق
         أو ورقة اللقطات): `duration_ms` اختياري، و`width` و`height` إلزاميان غير فارغين، و`mime_type` إلزامي. `proxy_mode`
-        يكتبه الخادم `normal` للنسخة الخفيفة وحدها و`NULL` لغيرها.
+        يكتبه الخادم `normal` للنسخة الخفيفة وحدها و`NULL` لغيرها. `export` حزمة التصدير (#99، v0.2): `application/zip`،
+        و`technical` هو `technical` الأصل؛ تُبنى عند الطلب (`export.requested`) لا عند الاستيعاب، ولا تحمل بيانات كاشفة.
       properties:
-        kind: { type: string, enum: [proxy, thumbnail, hls, audio] }
+        kind: { type: string, enum: [proxy, thumbnail, hls, audio, export] }
         storage_key: { type: string, minLength: 1, maxLength: 1024, pattern: "^[A-Za-z0-9/_.-]+$" }
         sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
         size_bytes: { type: integer, minimum: 1 }
         mime_type:
           type: string
           description: "`application/json` لموجة الصوت (`audio`، #93)"
-          enum: [image/jpeg, image/webp, video/mp4, application/vnd.apple.mpegurl, audio/mp4, application/json]
+          enum: [image/jpeg, image/webp, video/mp4, application/vnd.apple.mpegurl, audio/mp4, application/json, application/zip]
         technical: { $ref: "#/components/schemas/MediaTechnical" }
-      if: { properties: { kind: { const: thumbnail } } }
-      then:
-        required: [mime_type]
-        properties:
-          mime_type: { enum: [image/jpeg, image/webp] }
-          technical:
-            required: [width, height]
-            properties: { width: { type: integer }, height: { type: integer } }
-      else: { properties: { technical: { required: [duration_ms, start_pts_us] } } }
+      allOf:
+        - if: { properties: { kind: { const: thumbnail } } }
+          then:
+            required: [mime_type]
+            properties:
+              mime_type: { enum: [image/jpeg, image/webp] }
+              technical:
+                required: [width, height]
+                properties: { width: { type: integer }, height: { type: integer } }
+          else: { properties: { technical: { required: [duration_ms, start_pts_us] } } }
+        - if: { properties: { kind: { const: export } } }
+          then: { required: [mime_type], properties: { mime_type: { const: application/zip } } }
+
+    MaterialExport:
+      type: object
+      required: [state, source_file_id, file_id, requested_at]
+      properties:
+        state:
+          type: string
+          enum: [none, requested, ready, failed]
+          description: "`none` = لم يُطلب بعد"
+        source_file_id: { type: [string, "null"], format: uuid, description: الأصل؛ `null` مع `none` إن لم يُتحقق الأصل بعد }
+        file_id: { type: [string, "null"], format: uuid, description: الحزمة حين تجهز }
+        requested_by: { type: [string, "null"], format: uuid }
+        requested_at: { type: [string, "null"], format: date-time }
+        failure_reason: { type: [string, "null"], enum: [source_unavailable, build_failed, null] }
 
     DuplicateCandidate:
       type: object
