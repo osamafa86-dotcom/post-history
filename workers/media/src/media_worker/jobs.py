@@ -6,11 +6,13 @@
 3. إبلاغ الخادم (`POST …/verification`). الخادم يقرر الحجم ومطابقة بصمة العميل ويكتب النتيجة.
 4. لأصل مرئي تحقق: المصغّرات (إطار ملصق وصفيحة اتصال) في `derived/<material_id>/<file_id>/`. خطوة غير مانعة:
    فشلها يُسجَّل ولا يعيد الحدث ولا يمنع النسخة الخفيفة.
-5. لأصل مرئي تحقق ولا نسخة خفيفة له من الهاتف: نسخة 480p من الملف المنزَّل نفسه، تُرفع إلى حاوية المشتقات تحت
-   `derived/<material_id>/<file_id>/` ويُبلَّغ بها (`POST …/derivatives`).
+5. لكل أصل مرئي تحقق، حتى حين أرسل الهاتف نسخته الخفيفة: نسخة الخادم 480p من الملف المنزَّل نفسه، تُرفع إلى حاوية
+   المشتقات تحت `derived/<material_id>/<file_id>/` ويُبلَّغ بها (`POST …/derivatives`). العمّال اللاحقون (التفريغ)
+   يقرؤونها هي لا نسخة الهاتف.
 
-إعادة التسليم بعد تحقق سابق (فشلت الخطوة 4): الجلسة `verified` والأصل بلا نسخة، فيُعاد البلاغ نفسه، والخادم يعيد
-النتيجة المسجلة ومعها `file_id`، ثم تُكمَل الخطوة 4. الأصل يُقرأ فقط، ومجلد المهمة يُحذف في كل الأحوال.
+إعادة التسليم بعد تحقق سابق: الجلسة `verified`، فيُعاد البلاغ نفسه، والخادم يعيد النتيجة المسجلة ومعها `file_id`.
+إن كانت نسخة الخادم مرفوعة يُعاد تسجيلها كما هي (الخادم يقبل التكرار المطابق) ولا تُرمَّز من جديد فلا تتغير بصمتها،
+وإلا تُكمَل الخطوة 5. الأصل يُقرأ فقط، ومجلد المهمة يُحذف في كل الأحوال.
 """
 
 from __future__ import annotations
@@ -41,6 +43,7 @@ VERIFY_EVENTS = {"upload.original_received", "upload.proxy_received"}
 class Storage(Protocol):
     def read(self, bucket: str, key: str) -> Iterable[bytes]: ...
     def put_file(self, bucket: str, key: str, path: Path, sha256_hex: str, content_type: str) -> None: ...
+    def head(self, bucket: str, key: str) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -84,10 +87,6 @@ def _download(storage: Storage, bucket: str, key: str, dst: Path):
         return digest_stream(tee())
 
 
-def _wants_proxy(session: Session) -> bool:
-    return session.kind == "original" and not session.material_has_proxy
-
-
 class Jobs:
     def __init__(self, api: InternalApi, storage: Storage, buckets: Buckets, scratch: Path | None = None,
                  enable_hls: bool = False, enable_phash: bool = False, enable_export: bool = False):
@@ -121,7 +120,7 @@ class Jobs:
 
     def process(self, session_id: str) -> str:
         session = self.api.get_session(session_id)
-        resume = session.state == "verified" and _wants_proxy(session)
+        resume = session.state == "verified" and session.kind == "original"
         if session.state != "completed" and not resume:
             return f"skip:{session.state}"
         with tempfile.TemporaryDirectory(dir=self.scratch, prefix="job-") as tmp:
@@ -164,7 +163,10 @@ class Jobs:
                 if info.video_codec:
                     outcome += self._thumbnails(session, file_id, local, info)
             proxy_path = None
-            if info.video_codec and _wants_proxy(session):
+            if info.video_codec and resume and self._proxy_exists(session, file_id):
+                self._register_existing_proxy(session, file_id, local)
+                return outcome + "+proxy-existing"
+            if info.video_codec:
                 proxy_path, proxy_info = self._proxy(session, file_id, local, info)
                 outcome += "+proxy"
                 if self.enable_hls:
@@ -256,6 +258,23 @@ class Jobs:
         }):
             return "+thumbnails-unregistered"
         return "+thumbnails"
+
+    def _proxy_exists(self, session: Session, file_id: str) -> bool:
+        try:
+            self.storage.head(self.buckets.derived, proxy_key(session.material_id, file_id))
+            return True
+        except ObjectMissing:
+            return False
+
+    def _register_existing_proxy(self, session: Session, file_id: str, local: Path) -> None:
+        """رُفعت في تسليم سابق ولم يُقَرّ الحدث (تعطل بعد الرفع أو قبل الإقرار): تُنزَّل وتُسجَّل كما هي."""
+        out = local.with_name("proxy-480p.mp4")
+        key = proxy_key(session.material_id, file_id)
+        d = _download(self.storage, self.buckets.derived, key, out)
+        self.api.add_derivative(file_id, {
+            "kind": "proxy", "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
+            "technical": probe(out).to_dict(),
+        })
 
     def _proxy(self, session: Session, file_id: str, local: Path, info: Probe) -> tuple[Path, Probe]:
         out = local.with_name("proxy-480p.mp4")
