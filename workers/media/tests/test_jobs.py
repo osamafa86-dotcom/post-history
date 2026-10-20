@@ -7,7 +7,7 @@ import pytest
 from conftest import LEAKY_TAGS, synth
 from fakes import FakeApi, FakeStorage
 from media_worker.api import Session
-from media_worker.jobs import Buckets, Jobs, contact_sheet_key, poster_key, proxy_key
+from media_worker.jobs import Buckets, Jobs, contact_sheet_key, poster_key, proxy_key, waveform_key
 from media_worker.probe import probe
 
 SID = "5e000000-0000-4000-8000-000000000001"
@@ -39,7 +39,7 @@ def tagged_clip(tmp_path_factory) -> bytes:
 
 def test_original_is_verified_then_proxied_from_the_same_download(tagged_clip: bytes, tmp_path: Path):
     api, storage, jobs = _setup(tagged_clip)
-    assert jobs.handle(_event()) == "verified+thumbnails+proxy"
+    assert jobs.handle(_event()) == "verified+waveform+thumbnails+proxy"
     [body] = api.verifications
     assert body["sha256"] == hashlib.sha256(tagged_clip).hexdigest()
     assert body["size_bytes"] == len(tagged_clip)
@@ -52,8 +52,10 @@ def test_original_is_verified_then_proxied_from_the_same_download(tagged_clip: b
     key = proxy_key(MID, FakeApi.FILE_ID)
     assert key.startswith(f"derived/{MID}/{FakeApi.FILE_ID}/")
     thumbs = [("media", poster_key(MID, FakeApi.FILE_ID)), ("media", contact_sheet_key(MID, FakeApi.FILE_ID))]
-    assert storage.puts == [*thumbs, ("media", key)]
-    (tf, t), (fid, d) = api.derivatives
+    wave = ("media", waveform_key(MID, FakeApi.FILE_ID))
+    assert storage.puts == [wave, *thumbs, ("media", key)]
+    (_, w), (tf, t), (fid, d) = api.derivatives
+    assert w["kind"] == "audio" and json.loads(storage.objects[wave])["points_per_minute"] == 100
     assert t["kind"] == "thumbnail" and t["storage_key"] == thumbs[0][1] and t["technical"]["height"] == 360
     assert fid == FakeApi.FILE_ID and d["kind"] == "proxy" and d["technical"]["height"] == 360
     for _, k in thumbs:
@@ -72,7 +74,7 @@ def test_redelivery_after_full_success_is_skipped(tagged_clip: bytes):
     api, storage, jobs = _setup(tagged_clip)
     jobs.handle(_event())
     assert jobs.handle(_event()) == "skip:verified"
-    assert len(api.verifications) == 1 and len(storage.puts) == 3
+    assert len(api.verifications) == 1 and len(storage.puts) == 4
 
 
 def test_redelivery_after_proxy_failure_resumes_with_replayed_verification(tagged_clip: bytes, monkeypatch):
@@ -86,7 +88,7 @@ def test_redelivery_after_proxy_failure_resumes_with_replayed_verification(tagge
     with pytest.raises(RuntimeError):
         jobs.handle(_event())
     # المصغّرات سبقت النسخة الخفيفة؛ الاستئناف يكمل النسخة وحدها
-    assert api.session.state == "verified" and len(storage.puts) == 2
+    assert api.session.state == "verified" and len(storage.puts) == 3
     monkeypatch.undo()
     assert jobs.handle(_event()) == "verified+proxy"
     assert len(api.verifications) == 2 and api.verifications[0]["sha256"] == api.verifications[1]["sha256"]
@@ -101,15 +103,16 @@ def test_proxy_upload_is_not_reverified(tagged_clip: bytes):
 
 def test_no_worker_proxy_when_phone_sent_one(tagged_clip: bytes):
     api, storage, jobs = _setup(tagged_clip, has_proxy=True)
-    assert jobs.handle(_event()) == "verified+thumbnails"
-    assert [k for _, k in storage.puts] == [poster_key(MID, FakeApi.FILE_ID), contact_sheet_key(MID, FakeApi.FILE_ID)]
-    assert [d["kind"] for _, d in api.derivatives] == ["thumbnail"]
+    assert jobs.handle(_event()) == "verified+waveform+thumbnails"
+    assert [k for _, k in storage.puts] == [waveform_key(MID, FakeApi.FILE_ID), poster_key(MID, FakeApi.FILE_ID),
+                                            contact_sheet_key(MID, FakeApi.FILE_ID)]
+    assert [d["kind"] for _, d in api.derivatives] == ["audio", "thumbnail"]
 
 
 def test_unregistered_thumbnails_do_not_block_the_proxy(tagged_clip: bytes):
     api, storage, jobs = _setup(tagged_clip, reject_thumbnails=True)
-    assert jobs.handle(_event()) == "verified+thumbnails-unregistered+proxy"
-    assert len(storage.puts) == 3 and [d["kind"] for _, d in api.derivatives] == ["proxy"]
+    assert jobs.handle(_event()) == "verified+waveform+thumbnails-unregistered+proxy"
+    assert len(storage.puts) == 4 and [d["kind"] for _, d in api.derivatives] == ["audio", "proxy"]
 
 
 def test_thumbnail_failure_does_not_block_the_proxy(tagged_clip: bytes, monkeypatch):
@@ -120,13 +123,23 @@ def test_thumbnail_failure_does_not_block_the_proxy(tagged_clip: bytes, monkeypa
 
     monkeypatch.setattr(jobs_mod, "poster", boom)
     api, storage, jobs = _setup(tagged_clip)
-    assert jobs.handle(_event()) == "verified+thumbnails-failed+proxy"
+    assert jobs.handle(_event()) == "verified+waveform+thumbnails-failed+proxy"
 
 
 def test_audio_original_has_no_proxy(tmp_path: Path):
     api, storage, jobs = _setup(synth(tmp_path / "a.m4a", video=False).read_bytes())
-    assert jobs.handle(_event()) == "verified"
-    assert storage.puts == []
+    assert jobs.handle(_event()) == "verified+waveform"
+    assert [k for _, k in storage.puts] == [waveform_key(MID, FakeApi.FILE_ID)]
+
+
+def test_hls_and_phash_behind_flags(tagged_clip: bytes):
+    api, storage, jobs = _setup(tagged_clip)
+    jobs.enable_hls = jobs.enable_phash = True
+    assert jobs.handle(_event()).endswith("+proxy+hls")
+    assert len(api.verifications[0]["perceptual_hash"]) >= 1
+    keys = [k for _, k in storage.puts if "/hls/" in k]
+    assert keys[0].endswith(f"{FakeApi.FILE_ID}/hls/index.m3u8") and any(k.endswith(".m4s") for k in keys)
+    assert api.derivatives[-1][1]["kind"] == "hls"
 
 
 def test_size_mismatch_is_invalid_without_hash(tagged_clip: bytes):

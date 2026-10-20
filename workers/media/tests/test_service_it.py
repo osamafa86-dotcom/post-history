@@ -92,7 +92,7 @@ class FakeServer:
                         s["file_id"] = str(uuid.uuid4())
                     return self._reply(200, {"state": s["state"], "file_id": s.get("file_id"),
                                              "receipt_number": None, "failure_reason": None})
-                if body["kind"] == "thumbnail":
+                if body["kind"] != "proxy":
                     return self._reply(422)  # الخادم الحالي لا يقبل إلا proxy (ADR 0006)
                 s["material_has_proxy"] = True
                 return self._reply(200, {})

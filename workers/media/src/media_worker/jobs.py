@@ -26,7 +26,10 @@ from .api import ApiConflict, ApiRejected, InternalApi, Session
 from .hashing import digest_file, digest_stream
 from .probe import InvalidMediaError, Probe, probe
 from .proxy import make_proxy
+from .hls import make_hls
+from .phash import video_phash
 from .thumbnails import contact_sheet, poster
+from .waveform import write_waveform
 from .storage import DERIVED_PREFIX, ObjectMissing
 
 log = logging.getLogger("media_worker.jobs")
@@ -57,6 +60,15 @@ def contact_sheet_key(material_id: str, file_id: str) -> str:
     return f"{DERIVED_PREFIX}{material_id}/{file_id}/contact-sheet.jpg"
 
 
+def waveform_key(material_id: str, file_id: str) -> str:
+    return f"{DERIVED_PREFIX}{material_id}/{file_id}/waveform.json"
+
+
+def hls_prefix(material_id: str, file_id: str) -> str:
+    # تحت مساحة ملف المصدر: الخادم يقبل المشتق في derived/<material_id>/<file_id>/ وحدها (ADR 0006)
+    return f"{DERIVED_PREFIX}{material_id}/{file_id}/hls/"
+
+
 def _download(storage: Storage, bucket: str, key: str, dst: Path):
     """يكتب الكائن إلى ملف محلي ويحسب البصمة في القراءة نفسها."""
     with open(dst, "wb") as fh:
@@ -72,7 +84,11 @@ def _wants_proxy(session: Session) -> bool:
 
 
 class Jobs:
-    def __init__(self, api: InternalApi, storage: Storage, buckets: Buckets, scratch: Path | None = None):
+    def __init__(self, api: InternalApi, storage: Storage, buckets: Buckets, scratch: Path | None = None,
+                 enable_hls: bool = False, enable_phash: bool = False):
+        # العلمان مطفآن إلى أن يقبل العقد نوع hls (#58) وحقل البصمة الإدراكية
+        self.enable_hls = enable_hls
+        self.enable_phash = enable_phash
         self.api = api
         self.storage = storage
         self.buckets = buckets
@@ -124,19 +140,70 @@ class Jobs:
                 self.api.report_verification(session_id, {"result": "invalid_file"})
                 return "invalid_file"
 
-            result = self.api.report_verification(session_id, {
-                "result": "verified", "sha256": digest.sha256, **digest.fingerprint(), "technical": info.to_dict(),
-            })
+            body = {"result": "verified", "sha256": digest.sha256, **digest.fingerprint(), "technical": info.to_dict()}
+            if self.enable_phash and info.video_codec:
+                try:  # غير مانعة: فشل البصمة لا يُفشل التحقق، والحقل يُترك خارج الجسم
+                    body["perceptual_hash"] = video_phash(local)
+                except Exception as err:  # noqa: BLE001
+                    log.warning("perceptual hash skipped session=%s error=%s", session_id, type(err).__name__)
+            result = self.api.report_verification(session_id, body)
             if result.get("state") != "verified":
                 return result.get("failure_reason") or "failed"
-            if session.kind != "original" or info.video_codec is None:
+            if session.kind != "original":
                 return "verified"
-            outcome = "verified"
+            file_id, outcome = result["file_id"], "verified"
             if not resume:
-                outcome += self._thumbnails(session, result["file_id"], local, info)
-            if _wants_proxy(session):
-                outcome += self._proxy(session, result["file_id"], local, info)
+                if info.audio_codec:
+                    outcome += self._waveform(session, file_id, local, info)
+                if info.video_codec:
+                    outcome += self._thumbnails(session, file_id, local, info)
+            if info.video_codec and _wants_proxy(session):
+                proxy_path, proxy_info = self._proxy(session, file_id, local, info)
+                outcome += "+proxy"
+                if self.enable_hls:
+                    outcome += self._hls(session, file_id, proxy_path, proxy_info)
             return outcome
+
+    def _register(self, file_id: str, body: dict) -> bool:
+        """تسجيل مشتق غير مانع: نوع لا يقبله الخادم بعد (422) أو مسجّل بغيره (409) لا يعيد الحدث."""
+        try:
+            self.api.add_derivative(file_id, body)
+            return True
+        except (ApiRejected, ApiConflict) as err:
+            log.warning("derivative not registered kind=%s file=%s error=%s", body["kind"], file_id,
+                        type(err).__name__)
+            return False
+
+    def _waveform(self, session: Session, file_id: str, local: Path, info: Probe) -> str:
+        try:
+            path = write_waveform(local, local.with_name("waveform.json"), info.duration_ms)
+            d = digest_file(path)
+            key = waveform_key(session.material_id, file_id)
+            self.storage.put_file(self.buckets.derived, key, path, d.sha256, "application/json")
+        except Exception as err:  # noqa: BLE001
+            log.warning("waveform skipped file=%s error=%s", file_id, type(err).__name__)
+            return "+waveform-failed"
+        ok = self._register(file_id, {"kind": "audio", "storage_key": key, "sha256": d.sha256,
+                                      "size_bytes": d.size_bytes,
+                                      "technical": {"duration_ms": info.duration_ms, "start_pts_us": info.start_pts_us,
+                                                    "container": "json"}})
+        return "+waveform" if ok else "+waveform-unregistered"
+
+    def _hls(self, session: Session, file_id: str, proxy_path: Path, proxy_info: Probe) -> str:
+        try:
+            files = make_hls(proxy_path, proxy_path.with_name("hls"), proxy_info.duration_ms)
+            prefix = hls_prefix(session.material_id, file_id)
+            for f in files:
+                ctype = {"m3u8": "application/vnd.apple.mpegurl", "m4s": "video/iso.segment"}.get(
+                    f.suffix.lstrip("."), "video/mp4")
+                self.storage.put_file(self.buckets.derived, prefix + f.name, f, digest_file(f).sha256, ctype)
+        except Exception as err:  # noqa: BLE001
+            log.warning("hls skipped file=%s error=%s", file_id, type(err).__name__)
+            return "+hls-failed"
+        d = digest_file(files[0])
+        ok = self._register(file_id, {"kind": "hls", "storage_key": prefix + files[0].name, "sha256": d.sha256,
+                                      "size_bytes": d.size_bytes, "technical": proxy_info.to_dict()})
+        return "+hls" if ok else "+hls-unregistered"
 
     def _thumbnails(self, session: Session, file_id: str, local: Path, info: Probe) -> str:
         """غير مانعة: أي فشل هنا يُسجَّل ويُترك، والمصغّرات يمكن توليدها لاحقًا من الأصل."""
@@ -152,21 +219,17 @@ class Jobs:
             return "+thumbnails-failed"
         (poster_thumb, key), _ = made
         d = digest_file(poster_thumb.path)
-        try:
-            # الصفيحة بجوار الملصق باسم ثابت؛ يُسجَّل الملصق وحده لأن (derived_from_id، kind) فريد في الخادم
-            self.api.add_derivative(file_id, {
-                "kind": "thumbnail", "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
-                "technical": {"duration_ms": 0, "start_pts_us": round((poster_thumb.at_s or 0) * 1_000_000),
-                              "width": poster_thumb.width, "height": poster_thumb.height,
-                              "container": "jpeg", "video_codec": "mjpeg"},
-            })
-        except (ApiRejected, ApiConflict) as err:
-            # الخادم لا يقبل نوع thumbnail بعد: الملفان مرفوعان في مكانهما المتوقع، والتسجيل يلحق
-            log.warning("thumbnail not registered file=%s error=%s", file_id, type(err).__name__)
+        # الصفيحة بجوار الملصق باسم ثابت؛ يُسجَّل الملصق وحده لأن (derived_from_id، kind) فريد في الخادم
+        if not self._register(file_id, {
+            "kind": "thumbnail", "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
+            "technical": {"duration_ms": 0, "start_pts_us": round((poster_thumb.at_s or 0) * 1_000_000),
+                          "width": poster_thumb.width, "height": poster_thumb.height,
+                          "container": "jpeg", "video_codec": "mjpeg"},
+        }):
             return "+thumbnails-unregistered"
         return "+thumbnails"
 
-    def _proxy(self, session: Session, file_id: str, local: Path, info: Probe) -> str:
+    def _proxy(self, session: Session, file_id: str, local: Path, info: Probe) -> tuple[Path, Probe]:
         out = local.with_name("proxy-480p.mp4")
         made = make_proxy(local, out, info)
         d = digest_file(out)
@@ -176,4 +239,4 @@ class Jobs:
             "kind": "proxy", "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
             "technical": made.to_dict(),
         })
-        return "+proxy"
+        return out, made
