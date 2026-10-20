@@ -12,13 +12,16 @@
 // Known finding (waivers/session-revocation.json): tusd serves the next PATCH of an upload already created without asking the
 // server, so an in-flight transfer is not stopped server-side until the ingest gate (ADR 0011) or a post-receive hook exists.
 import { createHash, randomBytes } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { synthClip } from "../lib/media-clips.mjs";
 import { newResult, finish, writeResult, parseArgs, banner } from "../lib/measurement.mjs";
 import { client, createUploadSession, eventsOfType, materialBody, sleep } from "../lib/live.mjs";
 import { waitFor } from "../lib/hooks.mjs";
 import { loadWaivers } from "../lib/waivers.mjs";
 import { seed } from "../live/seed.mjs";
 
-const PART = 8 * 1024 * 1024, PARTS = 3;
 const b64 = (s) => Buffer.from(String(s)).toString("base64");
 const TUS = { "Tus-Resumable": "1.0.0" };
 
@@ -67,7 +70,14 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   // ---- the upload A has in flight, and an upload token not used yet
   let inflight = null, unused = null, location = null;
   const tusCreate = (session, size) => fetch(tusUrl, { method: "POST", headers: { ...TUS, "Upload-Length": String(size), "Upload-Metadata": `upload_session_id ${b64(session.id)},filename ${b64("r.bin")}`, Authorization: `Bearer ${session.token}` } });
-  const file = Buffer.alloc(PART * PARTS, 7), fileSha = createHash("sha256").update(file).digest("hex");
+  // a VALID clip (random pixels at a fixed bitrate, about 6 MB) split in three: a constant-byte file would end `invalid_file` on its
+  // content and say nothing about what the server does with a revoked user's finished upload
+  let file = Buffer.alloc(0);
+  if (tusUrl) {
+    const dir = mkdtempSync(join(tmpdir(), "revoke-"));
+    try { file = readFileSync(synthClip(join(dir, "inflight.mp4"), { seconds: 6, size: "640x360", rate: 25, noise: true, tags: false })); } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
+  const PART = Math.ceil(file.length / 3), fileSha = createHash("sha256").update(file).digest("hex");
   if (tusUrl) {
     const fv = (await api.get(A.access_token, "/forms/current")).body.version;
     const mk = async (tag) => (await api.call(A.access_token, "POST", "/materials", { body: materialBody(fv, `revocation-${tag}-${Date.now()}`) })).body;
