@@ -55,6 +55,9 @@ jobs:
           cp infra/compose/.env.example infra/compose/.env
           sed -i "s/^TUSD_HOOK_SECRET=.*/TUSD_HOOK_SECRET=$(openssl rand -hex 32)/" infra/compose/.env
           docker compose -f infra/compose/docker-compose.yml -f tools/netlab/compose.netlab.yml up -d --wait
+      - name: Stage (a) reference rule (unit tests, ADR 0007 as amended)
+        if: github.event_name == 'pull_request'
+        run: python3 tools/netlab/test_reference.py
       - name: Smoke (field-weak, netem required)
         if: github.event_name == 'pull_request'
         run: |
