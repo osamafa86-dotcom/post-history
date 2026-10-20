@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "proxy-accuracy",
+  "started_at": "2026-10-19T23:39:39.303Z",
+  "ended_at": "2026-10-19T23:40:57.476Z",
+  "result": "partial",
+  "metrics": {
+    "cut_points": 10,
+    "cut_matched_by_frame_index": true,
+    "cut_worst_gap_ms": 0,
+    "cut_tolerance_ms": 40,
+    "frames_original": 489,
+    "frames_proxy": 489,
+    "start_pts_gap_us": 0,
+    "phone_upload_s": 0.26,
+    "phone_upload_to_verified_s": 0.82,
+    "long_clip_proxy_ready_s": 33.01,
+    "long_clip_duration_s": 120,
+    "leak_hits_worker_logs": 0,
+    "leak_hits_database": 0,
+    "leak_hits_api": 0,
+    "leak_hits_proxy_tags": 0,
+    "original_unchanged": true,
+    "failures": 0
+  },
+  "device": {
+    "platform": "server",
+    "model": "compose on a GitHub-hosted runner: api + tusd + minio + redis + media-worker"
+  },
+  "upload_path": "tusd",
+  "file": {
+    "size_bytes": 233586969,
+    "duration_s": 120,
+    "codec": "h264",
+    "vfr": false,
+    "hdr": false
+  },
+  "notes": "لم يُقَس: HDR بألوان صحيحة في النسخة الخفيفة، ولا ملف هاتف حقيقي (المقاطع اصطناعية من FFmpeg)؛ المصغّرة لا يولّدها عامل الوسائط بعد فلا تُقاس. زمن «اكتمال الرفع ← توفر النسخة الخفيفة» للمقطع الطويل رقم معلوماتي: الخطة لا تحدد له معيارًا"
+}

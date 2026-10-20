@@ -3,8 +3,9 @@ import { JwtService } from '@nestjs/jwt';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { randomToken, sha256 } from '../common/crypto';
-import { DB, type Database, type Executor } from '../database/database.module';
+import { DB, type Database, type Executor, type Tx } from '../database/database.module';
 import { pushDevices, refreshTokens, uploadSessions, users } from '../database/schema/schema';
+import { abortRevokedUpload } from '../uploads/upload-completion';
 import type { AuthContext } from './auth.guard';
 
 export interface IssuedTokens {
@@ -124,7 +125,7 @@ export class SessionService {
   }
 
   /** يبطل كل جلسات المستخدم ورموز رفعه المفتوحة وأجهزة إشعاره (فقد الهاتف). */
-  async revokeAll(tx: Executor, userId: string): Promise<void> {
+  async revokeAll(tx: Tx, userId: string): Promise<void> {
     await revokeAllAccess(tx, userId);
   }
 
@@ -149,16 +150,22 @@ export class SessionService {
 
 export const JWT_OPTIONS = { issuer: JWT_ISSUER, algorithm: 'HS256' as const };
 
-/** إبطال كل وصول الحساب: سلاسل التحديث، ورموز الرفع المفتوحة، وأجهزة الإشعار. يستعمله أمر CLI أيضًا (بلا Nest). */
-export async function revokeAllAccess(tx: Executor, userId: string): Promise<void> {
+/**
+ * إبطال كل وصول الحساب: سلاسل التحديث، وأجهزة الإشعار، وجلسات الرفع الحية. يستعمله أمر CLI أيضًا (بلا Nest).
+ * جلسة الرفع الحية (لم تُنشأ بعد، أو جارية، أو اكتملت بانتظار التحقق) يُصفَّر رمزها وتفشل `aborted` في المعاملة نفسها،
+ * فلا يصدر لها إيصال ولا حدث وسائط بعد الإبطال؛ وكل نقطة اكتمال تعيد الفحص (uploadAccessRevoked) لما يسبق قفل الصف.
+ */
+export async function revokeAllAccess(tx: Tx, userId: string): Promise<void> {
   await tx
     .update(refreshTokens)
     .set({ revokedAt: sql`now()` })
     .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)));
-  await tx
+  const live = await tx
     .update(uploadSessions)
     .set({ uploadTokenHash: null })
-    .where(and(eq(uploadSessions.createdBy, userId), sql`${uploadSessions.state} IN ('created', 'in_progress')`));
+    .where(and(eq(uploadSessions.createdBy, userId), sql`${uploadSessions.state} IN ('created', 'in_progress', 'completed')`))
+    .returning();
+  for (const session of live) await abortRevokedUpload(tx, session);
   await tx
     .update(pushDevices)
     .set({ revokedAt: sql`now()` })

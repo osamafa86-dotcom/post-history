@@ -87,7 +87,7 @@ export class UploadsService implements ReplayRehydrator {
       if (session.uploadPath !== 'direct') {
         throw new ApiError(409, 'upload_state_conflict', 'Completion arrives from the upload server for this session.');
       }
-      if (session.state === 'failed' || new Date(session.expiresAt) <= new Date()) {
+      if (session.state === 'failed' || new Date(session.expiresAt) <= new Date() || !session.uploadTokenHash) {
         throw new ApiError(409, 'upload_state_conflict', 'This upload session can no longer be completed.');
       }
       // البصمة المبلَّغ عنها تُقارن ببصمة الإنشاء إن وُجدت؛ اختلافهما لا يحتاج قراءة التخزين ليُرفض

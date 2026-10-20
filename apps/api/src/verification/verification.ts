@@ -4,6 +4,7 @@ import { materialFiles, uploadSessions } from '../database/schema/schema';
 import { applyTransition, lockMaterial } from '../materials/material-store';
 import { transitionOwners } from '../materials/transitions';
 import { writeOutboxEvent } from '../outbox/outbox';
+import { abortRevokedUpload, uploadAccessRevoked } from '../uploads/upload-completion';
 import { hashInline, type HashResult } from './hash-pool';
 import type { ObjectStorage } from './object-storage';
 
@@ -40,7 +41,12 @@ export async function inspectUpload(
  * (الخادم الآن، عامل الوسائط لاحقًا): ملف المادة، رقم الإيصال (محفّز القاعدة عند تحقق الأصل)، حالة الجلسة،
  * المسار الفني للمادة، وحدث upload.verified أو upload.failed.
  */
-export async function recordVerification(tx: Tx, session: UploadSessionRow, outcome: VerificationOutcome): Promise<void> {
+export async function recordVerification(tx: Tx, session: UploadSessionRow, outcome: VerificationOutcome): Promise<'applied' | 'aborted'> {
+  // نتيجة تصل لجلسة أُبطل وصول صاحبها بعد اكتمالها: لا ملف ولا إيصال ولا upload.verified
+  if (await uploadAccessRevoked(tx, session)) {
+    await abortRevokedUpload(tx, session);
+    return 'aborted';
+  }
   const base = { material_id: session.materialId, upload_session_id: session.id, kind: session.kind };
   const material = await lockMaterial(tx, session.materialId);
 
@@ -59,7 +65,7 @@ export async function recordVerification(tx: Tx, session: UploadSessionRow, outc
     if (session.kind === 'original' && material && transitionOwners('technical', material.technicalState, 'failed')) {
       await applyTransition(tx, material, { track: 'technical', to: 'failed', reason: `original ${outcome.reason}`, actorId: null });
     }
-    return;
+    return 'applied';
   }
 
   // الأصل لا يُمس: ملف جديد لكل جلسة. يُدرج received ثم يُرقّى إلى verified ليسند المحفّز رقم الإيصال.
@@ -95,4 +101,5 @@ export async function recordVerification(tx: Tx, session: UploadSessionRow, outc
   if (session.kind === 'original' && material && transitionOwners('technical', material.technicalState, 'verified')) {
     await applyTransition(tx, material, { track: 'technical', to: 'verified', reason: 'original checksum verified', actorId: null });
   }
+  return 'applied';
 }

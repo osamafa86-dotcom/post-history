@@ -1,0 +1,9 @@
+[
+  {
+    "source": "tusd PATCH after revocation",
+    "path": "next part of an upload already created",
+    "kind": "inflight-continues",
+    "reason": "tusd serves PATCH of an existing upload without asking the server; only the creation passes the pre-create hook. After every session of the user is revoked, an upload in flight keeps being accepted and completes. Stopping it needs the ingest gate's short token on every request (ADR 0011) or a post-receive hook that answers StopUpload for a revoked user; neither is in the stack the acceptance run uses.",
+    "raised_to": "coordinator (QA PR sec01-acceptance)"
+  }
+]

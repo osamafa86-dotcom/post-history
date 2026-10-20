@@ -297,6 +297,37 @@ test("report shows the netlab stage (a) numbers: loss mode, efficiency against M
   assert.match(md, /\| field-network-upload \| pending \| ◐ partial/);
 });
 
+// the media pipeline run measures cut-back accuracy from frame timestamps and plants revealing tags it must never see again
+import { cutBack, hostilePayloads, LEAK_VALUES } from "../lib/media-clips.mjs";
+import { run as mediaE2e } from "../scripts/media-e2e.mjs";
+
+test("cutBack: identical timestamps agree, a shifted proxy is caught, a missing frame stream is infinite", () => {
+  const frames = Array.from({ length: 300 }, (_, i) => 5 + i / 30 + (i > 150 ? 0.7 : 0)); // a gap in the middle, start at 5 s
+  const same = cutBack(frames, frames);
+  assert.equal(same.maxMs, 0);
+  assert.equal(same.points.length, 10);
+  const shifted = cutBack(frames, frames.map((t) => t + 0.1));
+  assert.ok(shifted.maxMs > 90, `shift of 100 ms reads as ${shifted.maxMs}`);
+  assert.equal(cutBack(frames, []).maxMs, Infinity);
+  assert.deepEqual(cutBack(frames, frames, { seed: 7 }).points, cutBack(frames, frames, { seed: 7 }).points);
+});
+
+test("the planted revealing tags are seen by the scanner wherever they appear, and the hostile payloads are what the rejection checks expect", () => {
+  assert.equal(LEAK_VALUES.length, 3);
+  for (const v of LEAK_VALUES) assert.ok(scan([`log line with ${v}`], { keys: false, canaries: LEAK_VALUES }).length > 0, "canary seen");
+  assert.equal(scan(["worker started, event done outcome=verified+proxy"], { keys: false, canaries: LEAK_VALUES }).length, 0);
+  const bad = hostilePayloads({ calloutUrl: "http://203.0.113.1:9/canary" });
+  assert.deepEqual(bad.map((b) => b.label), ["hls-local-file", "concat-local-file", "hls-callout"]);
+  assert.ok(bad[0].bytes.toString().includes("file:///"));
+  assert.ok(bad[1].bytes.toString().startsWith("ffconcat"));
+  assert.ok(bad[2].bytes.toString().includes("http://203.0.113.1:9/canary"));
+});
+
+test("media-e2e without its environment measures nothing (exit 2, no result)", async () => {
+  const out = await mediaE2e(["--dry-run"], {});
+  assert.deepEqual([out.code, out.doc], [2, null]);
+});
+
 // client_sha256 is required by the contract: every acceptance path that opens an upload session declares its file.
 test("createUploadSession always sends the file's size and SHA-256, and refuses to be called without them", async () => {
   const seen = [];
@@ -331,4 +362,69 @@ test("no acceptance script or helper posts /uploads without client_sha256", () =
   }
   assert.deepEqual(offenders, []);
   assert.deepEqual(direct.sort(), ["lib/live.mjs", "live/seed.mjs"]);
+});
+
+import { NAMES } from "../lib/catalog.mjs";
+import { run as sessionRevocation } from "../scripts/session-revocation.mjs";
+
+const wipeCard = (platform) => {
+  const stores = Object.fromEntries(RULES["emergency-wipe"].STORES[platform].map((s) => [s, { empty: true, checked_with: "screen or command" }]));
+  return {
+    card_version: 1, test_name: "emergency-wipe", performed_on: "2026-11-10", performed_by_role: "field_supervisor",
+    device: { platform, vendor: platform === "ios" ? "apple" : "google", model: "device", os_version: "18.1" }, app_version: "0.3.0",
+    setup: { upload_progress_pct_at_wipe: 40 },
+    online_wipe: { seconds: 2.1, server_sessions_listed_empty: true, old_access_token_refused: true },
+    offline_wipe: { seconds: 1.4 }, stores, relogin: { works_without_restart: true, new_material_works: true }, observations: "",
+  };
+};
+
+test("emergency-wipe card: a clean wipe is one platform's partial; a surviving store, a slow wipe or a live token fail it", () => {
+  for (const p of ["ios", "android"]) {
+    const ok = cardToResult(wipeCard(p));
+    assert.equal(ok.doc.result, "partial");
+    assert.ok(validateMeasurement(ok.doc).ok);
+    assert.deepEqual(checkResult(`2026-11-10-emergency-wipe-${p}.json`, ok.doc), []);
+  }
+  const left = wipeCard("android"); left.stores.upload_queue.empty = false;
+  assert.match(cardToResult(left).doc.notes, /upload_queue: not empty/);
+  const slow = wipeCard("ios"); slow.offline_wipe.seconds = 9;
+  assert.equal(cardToResult(slow).doc.result, "fail");
+  const live = wipeCard("ios"); live.online_wipe.old_access_token_refused = false;
+  assert.equal(cardToResult(live).doc.result, "fail");
+});
+
+test("emergency-wipe card: blanks and a store of the other platform are refused, not failed", () => {
+  const blank = wipeCard("ios"); blank.stores.chunks.empty = null;
+  assert.ok(cardToResult(blank).missing.some((m) => m.includes("stores.chunks.empty")));
+  const nochk = wipeCard("ios"); nochk.stores.caches.checked_with = "";
+  assert.ok(cardToResult(nochk).missing.some((m) => m.includes("caches.checked_with")));
+  const wrong = wipeCard("ios"); wrong.stores.upload_queue = { empty: true, checked_with: "x" };
+  assert.ok(cardToResult(wrong).missing.some((m) => m.includes("not a store of ios")));
+  const gone = wipeCard("android"); delete gone.stores.file_grants;
+  assert.ok(cardToResult(gone).missing.some((m) => m.includes("file_grants")));
+});
+
+test("the catalog carries the SEC-01 tests beside the plan rows, and session-revocation without its environment measures nothing", async () => {
+  assert.ok(NAMES.includes("session-revocation") && NAMES.includes("emergency-wipe"));
+  const { code, doc } = await quiet(() => sessionRevocation(["--dry-run"], {}));
+  assert.equal(code, 2);
+  assert.equal(doc, null);
+});
+
+import { client } from "../lib/live.mjs";
+
+test("client repeats a read or a keyed write once after a stale keep-alive socket, with the same key, and never an unkeyed write", async () => {
+  const stale = () => Object.assign(new TypeError("fetch failed"), { cause: { code: "UND_ERR_SOCKET" } });
+  const seen = [];
+  let n = 1;
+  const once = async (url, init) => { seen.push(init.headers["idempotency-key"]); if (n-- > 0) throw stale(); return new Response("{}", { status: 200 }); };
+  assert.equal((await client("http://x", once).get("t", "/a")).status, 200);
+  n = 1; seen.length = 0;
+  assert.equal((await client("http://x", once).call("t", "POST", "/m", {})).status, 200);
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0], seen[1], "the retry reuses the Idempotency-Key");
+  n = 1;
+  await assert.rejects(() => client("http://x", once).call("t", "POST", "/auth/login", { key: null }));
+  n = 2;
+  await assert.rejects(() => client("http://x", once).get("t", "/a"), "a second failure is real");
 });

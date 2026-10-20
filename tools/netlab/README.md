@@ -8,8 +8,9 @@
 | --- | --- |
 | `scenarios/*.yaml` | السيناريوهات الثلاثة (`office`، `field-weak`، `field-switch`) |
 | `compose.netlab.yml` | طبقة فوق compose الأساسي: toxiproxy أمام `tusd-proxy`، وحاوية `netlab-loss` لفقد الحزم (netem أو iptables)، وبديل خطّاف `api` على شبكة `hooks` |
-| `hook_stub.py` | بديل نقطة الخطّاف (SEC-06) إلى أن يوجد الخادم: يقارن الرمز ويقبل كل رفع |
+| `hook_stub.py` | بديل نقطة الخطّاف (SEC-06) إلى أن يوجد الخادم: يقارن الرمز ويقبل كل رفع، ويثبّت معرّف tus على `upload_session_id` كالخادم |
 | `netlab.py` | عميل tus يرفع عبر السيناريو ويكتب النتيجة بمخطط `contracts/schemas/measurement.json` |
+| `blocking.py` + `compose.blocking.yml` + `blocking/` | محاكاة حجب DNS/IP/SNI للنطاق الرئيسي ولنطاق ingest (ADR 0011): أي نقطة رفع تبقى تعمل تحت أي حجب. `python3 tools/netlab/blocking.py --out docs/measurements/netlab/$(date +%F)-ingest-blocking.json` (يشغّل compose وحده وينزله) |
 
 ## التشغيل
 
