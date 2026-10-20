@@ -59,6 +59,7 @@ def test_no_telemetry(tmp_path):
     import sys
 
     env = {k: v for k, v in os.environ.items() if k != "ORT_DISABLE_TELEMETRY"}
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
     code = "from ai_worker.transcribe import disable_telemetry; disable_telemetry(); from faster_whisper.vad import get_vad_model; get_vad_model()"
     out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stderr[-500:]

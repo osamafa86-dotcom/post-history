@@ -4,9 +4,10 @@
 فقط، متحقق منها بالبصمة قبل بدء العامل (ADR 0019)، ولا يُنزَّل شيء هنا: العامل بلا خروج شبكي، فالمادة لا تغادر
 الحاوية أيًّا كان وسم حساسيتها.
 
-الطوابع على الخط الزمني للنسخة الخفيفة كما يعرضه المشغّل: الصفر بداية الحاوية، ويُضاف تأخر أول إطار صوت مفكوك عنها
-(النسخة الخفيفة تُصنع بـ `-copyts`، فقد يبدأ الصوت بعد الصورة). المرجع زمن أول إطار مفكوك لا `start_time` المعلن،
-لأنه ما تبدأ منه العينة صفر في `decode_audio` (ومنه عينات التمهيد في AAC).
+الطوابع على خط زمن الأصل كما يشترط العقد (v0.2، `MediaDerivative`): الصفر هو `start_pts_us`، بداية مسار الفيديو كما
+يقيسها عامل الوسائط (والنسخة الخفيفة تحفظها بـ `-copyts`)، أو بداية الحاوية لملف بلا فيديو. يُضاف إلى طوابع النموذج
+فرق أول إطار صوت مفكوك عن هذا الصفر؛ المرجع زمن الإطار المفكوك لا `start_time` المعلن، لأنه ما تبدأ منه العينة صفر في
+`decode_audio` (ومنه عينات التمهيد في AAC). صوت يبدأ قبل الصورة يعطي فرقًا سالبًا، والطوابع لا تنزل تحت الصفر.
 """
 
 from __future__ import annotations
@@ -47,7 +48,11 @@ def media_timing(path: Path) -> MediaTiming:
         audio = next((s for s in c.streams if s.type == "audio"), None)
         if audio is None:
             raise NoAudioError("no audio stream")
-        start_us = int(c.start_time or 0)
+        video = next((s for s in c.streams if s.type == "video"), None)
+        if video is not None and video.start_time is not None and video.time_base is not None:
+            start_us = round(float(video.start_time * video.time_base) * 1e6)
+        else:
+            start_us = int(c.start_time or 0)
         audio_start_s = start_us / 1e6
         for frame in c.decode(audio):
             if frame.time is not None:
@@ -57,7 +62,7 @@ def media_timing(path: Path) -> MediaTiming:
         if duration_s <= 0 and audio.duration is not None and audio.time_base is not None:
             duration_s = float(audio.duration * audio.time_base)
         return MediaTiming(duration_s=duration_s, start_pts_us=start_us,
-                           audio_offset_s=max(0.0, audio_start_s - start_us / 1e6))
+                           audio_offset_s=audio_start_s - start_us / 1e6)
 
 
 def disable_telemetry() -> None:
@@ -97,9 +102,13 @@ class FasterWhisperEngine:
         segments, _ = self.model.transcribe(audio, language="ar", beam_size=self.beam_size,
                                             word_timestamps=True, vad_filter=self.vad)
         off = timing.audio_offset_s
+
+        def at(t: float) -> float:
+            return max(0.0, t + off)
+
         out = [
-            Segment(start=s.start + off, end=s.end + off, text=s.text,
-                    words=tuple(Word(w.start + off, w.end + off, w.word, w.probability) for w in (s.words or [])))
+            Segment(start=at(s.start), end=at(s.end), text=s.text,
+                    words=tuple(Word(at(w.start), at(w.end), w.word, w.probability) for w in (s.words or [])))
             for s in segments
         ]
         return Transcript(out, timing, decode_s=t1 - t0, transcribe_s=time.perf_counter() - t1)

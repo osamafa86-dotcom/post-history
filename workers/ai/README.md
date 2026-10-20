@@ -20,7 +20,7 @@
 
 | المتغير | الافتراضي | المعنى |
 | --- | --- | --- |
-| `AI_ENABLE_TRANSCRIPT` | `false` | يشغّل التفريغ؛ يبقى مطفأ إلى أن يقبل العقد النوعين |
+| `AI_ENABLE_TRANSCRIPT` | `false` | يشغّل التفريغ؛ يبقى مطفأ إلى أن يقبل الخادم الرمز والحدث (النوعان في عقد v0.2) |
 | `REDIS_URL`، `AI_API_URL`، `AI_WORKER_TOKEN` | — | الطابور والخادم (الرمز ≥ 32 حرفًا، لا يُسجَّل) |
 | `S3_ENDPOINT`، `S3_ACCESS_KEY`، `S3_SECRET_KEY`، `S3_BUCKET_MEDIA` | — | حاوية المشتقات وحدها |
 | `AI_MODELS_DIR`، `AI_MODEL` | `/models`، `faster-whisper-large-v3-turbo` | الأوزان من حجم `ai-models` |
@@ -42,6 +42,5 @@ docker run --rm --network none -v <tiny>:/models/tiny:ro -e AI_IT_MODEL_DIR=/mod
 
 ## ما ينتظر غيري (ADR 0020)
 
-- **العقود:** `transcript` و`captions` (#96).
 - **الخادم:** `upload.verified` في `media:events`، و`AI_WORKER_TOKEN`، و`172.30.251.3` في `INTERNAL_ALLOWED_CIDRS`.
 - **البنية:** مستخدم MinIO للعامل، وخدمة `ai-worker` في compose على هذه الصورة.
