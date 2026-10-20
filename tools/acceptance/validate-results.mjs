@@ -25,7 +25,7 @@ export function checkResult(path, doc) {
   if (doc.started_at && doc.ended_at && Date.parse(doc.ended_at) < Date.parse(doc.started_at)) errs.push("ended_at precedes started_at");
   if (doc.tool === "acceptance") {
     if (!doc.test_name) errs.push("acceptance results must carry test_name");
-    else if (!NAMES.includes(doc.test_name)) errs.push(`test_name "${doc.test_name}" is not a row of the acceptance table`);
+    else if (!NAMES.includes(doc.test_name)) errs.push(`test_name "${doc.test_name}" is not a row of the acceptance table or a security acceptance test (lib/catalog.mjs)`);
   }
   // "pass" may not coexist with a metric that says the evidence is missing
   if (doc.result === "pass") {
