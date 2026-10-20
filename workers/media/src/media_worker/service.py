@@ -5,7 +5,9 @@
 - الفشل النهائي، أو تجاوز `MEDIA_MAX_DELIVERIES` محاولة: يُبلَّغ الخادم بنتيجة فشل (فلا تبقى الجلسة `completed` بلا
   أثر)، ثم يُنقل الحدث إلى `media:dead` مع السبب ويُؤكد، فلا يحجب حدث معطوب الطابور ولا يختفي بصمت.
 - رفض المصادقة (401/403/404) خطأ تهيئة لا حكم على الحدث: يُعاد الحدث نفسه بتراجع أسّي حتى `MEDIA_AUTH_BACKOFF_MAX_S`
-  دون إقرار ودون احتساب محاولة، فيمر تدوير `MEDIA_WORKER_TOKEN` دون فقد أحداث.
+  دون إقرار ودون احتساب محاولة، فيمر تدوير `MEDIA_WORKER_TOKEN` دون فقد أحداث. إن طال (مجموع الانتظار ≥
+  `MEDIA_AUTH_ISOLATE_AFTER_S`) يُعزل الحدث في `media:dead` بسبب `config_error` دون إبلاغ الخادم بفشل (الملف بريء)،
+  ويتابع العامل؛ بعد إصلاح التهيئة يعيده `python -m media_worker requeue-dead config_error` إلى الطابور.
 - عند الإقلاع تُحذف مجلدات مهام قديمة في `/scratch` تركها عامل قُتل أثناء مهمة.
 - السجل: معرّف الحدث ونوعه والنتيجة فقط؛ لا حمولة ولا مفاتيح تخزين ولا رسائل ffmpeg.
 """
@@ -71,6 +73,7 @@ class Config:
     claim_idle_ms: int = 15 * 60 * 1000
     max_deliveries: int = 5
     auth_backoff_max_s: float = 300.0
+    auth_isolate_after_s: float = 1800.0
 
     @classmethod
     def from_env(cls) -> Config:
@@ -85,15 +88,17 @@ class Config:
             claim_idle_ms=int(e.get("MEDIA_CLAIM_IDLE_MS", 15 * 60 * 1000)),
             max_deliveries=int(e.get("MEDIA_MAX_DELIVERIES", 5)),
             auth_backoff_max_s=float(e.get("MEDIA_AUTH_BACKOFF_MAX_S", 300)),
+            auth_isolate_after_s=float(e.get("MEDIA_AUTH_ISOLATE_AFTER_S", 1800)),
         )
 
 
 class Service:
     def __init__(self, r: redis.Redis, jobs: Jobs, consumer: str, block_ms: int = 5000,
                  claim_idle_ms: int = 15 * 60 * 1000, max_deliveries: int = 5, auth_backoff_max_s: float = 300.0,
-                 sleep=time.sleep):
+                 sleep=time.sleep, auth_isolate_after_s: float = 1800.0):
         self.r = r
         self.auth_backoff_max_s = auth_backoff_max_s
+        self.auth_isolate_after_s = auth_isolate_after_s
         self.sleep = sleep
         self.jobs = jobs
         self.consumer = consumer
@@ -114,11 +119,14 @@ class Service:
         pending = self.r.xpending_range(STREAM, GROUP, min=entry_id, max=entry_id, count=1)
         return int(pending[0]["times_delivered"]) if pending else 1
 
-    def _dead_letter(self, entry_id: str, fields: dict, event: object, reason: str, result: str) -> str:
-        try:
-            reported = self.jobs.report_failure(event, result)
-        except Exception as err:  # الإبلاغ نفسه فشل: يُنقل الحدث على أي حال حتى لا يحجب الطابور، والسبب محفوظ
-            reported = f"report-failed:{type(err).__name__}"
+    def _dead_letter(self, entry_id: str, fields: dict, event: object, reason: str, result: str | None) -> str:
+        if result is None:
+            reported = "not-reported"
+        else:
+            try:
+                reported = self.jobs.report_failure(event, result)
+            except Exception as err:  # الإبلاغ نفسه فشل: يُنقل الحدث على أي حال حتى لا يحجب الطابور، والسبب محفوظ
+                reported = f"report-failed:{type(err).__name__}"
         self.r.xadd(DEAD, {"entry_id": entry_id, **fields, "reason": reason, "reported": reported},
                     maxlen=10000, approximate=True)
         self.r.xack(STREAM, GROUP, entry_id)
@@ -145,7 +153,7 @@ class Service:
             return self._dead_letter(entry_id, fields, event, "max_deliveries", "storage_error")
         if not isinstance(event, dict):
             return self._dead_letter(entry_id, fields, event, "malformed_event", "storage_error")
-        delay = AUTH_BACKOFF_FIRST_S
+        delay, waited = AUTH_BACKOFF_FIRST_S, 0.0
         while True:
             try:
                 outcome = self.jobs.handle(event)
@@ -153,9 +161,13 @@ class Service:
             except ApiAuthError:
                 if self.stopped:
                     return "deferred:auth"
+                if waited >= self.auth_isolate_after_s:
+                    # خطأ تهيئة طويل لا يسد الطابور: يُعزل الحدث بلا حكم على الملف، ويُعاد لاحقًا بـ requeue-dead
+                    return self._dead_letter(entry_id, fields, event, "config_error", None)
                 # الحدث يبقى عند هذا المستهلك: يُجدَّد خموله (JUSTID لا يزيد عدد التسليم) فلا يأخذه غيره
                 log.warning("internal API refused the worker token; retrying entry=%s in %.0fs", entry_id, delay)
                 self._wait(delay)
+                waited += delay
                 self.r.xclaim(STREAM, GROUP, self.consumer, min_idle_time=0, message_ids=[entry_id], justid=True)
                 delay = min(delay * 2, self.auth_backoff_max_s)
             except PERMANENT as err:
@@ -176,6 +188,18 @@ class Service:
         res = self.r.xreadgroup(GROUP, self.consumer, {STREAM: ">"}, count=1, block=self.block_ms)
         return res[0][1] if res else []
 
+    def requeue_dead(self, reason: str) -> int:
+        """يعيد أحداث `media:dead` ذات السبب المعطى إلى الطابور (بعد إصلاح التهيئة مثلًا) ويحذفها من الموتى."""
+        moved = 0
+        for dead_id, fields in self.r.xrange(DEAD):
+            if fields.get("reason") != reason:
+                continue
+            original = {k: v for k, v in fields.items() if k in ("event_id", "event")}
+            self.r.xadd(STREAM, original)
+            self.r.xdel(DEAD, dead_id)
+            moved += 1
+        return moved
+
     def run_once(self) -> int:
         entries = self.next_entries()
         for entry_id, fields in entries:
@@ -186,6 +210,12 @@ class Service:
         self.ensure_group()
         while not self.stopped:
             self.run_once()
+
+
+def requeue_main(reason: str) -> None:
+    """أداة تشغيل: `python -m media_worker requeue-dead <reason>`؛ تكفيها REDIS_URL."""
+    svc = Service(redis.Redis.from_url(os.environ["REDIS_URL"], decode_responses=True), None, "requeue")  # type: ignore[arg-type]
+    print(f"requeued {svc.requeue_dead(reason)} event(s) with reason={reason}")
 
 
 def main() -> None:
@@ -199,7 +229,8 @@ def main() -> None:
     jobs = Jobs(InternalApi(cfg.api_url, cfg.token), storage, Buckets(cfg.bucket_uploads, cfg.bucket_derived),
                 cfg.scratch)
     svc = Service(redis.Redis.from_url(cfg.redis_url, decode_responses=True), jobs, cfg.consumer, cfg.block_ms,
-                  cfg.claim_idle_ms, cfg.max_deliveries, cfg.auth_backoff_max_s)
+                  cfg.claim_idle_ms, cfg.max_deliveries, cfg.auth_backoff_max_s,
+                  auth_isolate_after_s=cfg.auth_isolate_after_s)
 
     def stop(*_):
         svc.stopped = True

@@ -90,6 +90,8 @@ class FakeServer:
                         s["file_id"] = str(uuid.uuid4())
                     return self._reply(200, {"state": s["state"], "file_id": s.get("file_id"),
                                              "receipt_number": None, "failure_reason": None})
+                if body["kind"] == "thumbnail":
+                    return self._reply(422)  # الخادم الحالي لا يقبل إلا proxy (ADR 0006)
                 s["material_has_proxy"] = True
                 return self._reply(200, {})
 
@@ -145,7 +147,7 @@ def test_end_to_end_verify_and_proxy(env, tmp_path: Path):
         assert verification["sha256"] == hashlib.sha256(clip).hexdigest()
         assert verification["technical"]["start_pts_us"] == 4_000_000
 
-        derivative = next(b for m, p, b in server.calls if p.endswith("/derivatives"))
+        derivative = next(b for m, p, b in server.calls if p.endswith("/derivatives") and b["kind"] == "proxy")
         file_id = server.session["file_id"]
         assert derivative["storage_key"] == proxy_key(mid, file_id)
         out = tmp_path / "p.mp4"
@@ -226,5 +228,31 @@ def test_refused_token_backs_off_and_keeps_the_event(env, tmp_path: Path):
         assert sum(waits) == pytest.approx(1 + 2 + 2)
         assert server.session["state"] == "verified"
         assert r.xlen(DEAD) == 0 and r.xpending(STREAM, GROUP)["pending"] == 0
+    finally:
+        server.close()
+
+
+def test_long_config_error_isolates_the_event_then_requeue_restores_it(env, tmp_path: Path):
+    r, storage, buckets = env
+    clip = synth(tmp_path / "src.mp4", seconds=2).read_bytes()
+    _s3("PUT", f"/{buckets.uploads}/tus/cfg", clip)
+    server = FakeServer(_clip_session("tus/cfg", clip), refuse_first=1000)
+    try:
+        svc = Service(r, Jobs(InternalApi(server.url, TOKEN), storage, buckets, tmp_path), "it", block_ms=200,
+                      auth_backoff_max_s=4.0, auth_isolate_after_s=10.0, sleep=lambda s: None)
+        svc.ensure_group()
+        _publish(r, "upload.original_received", str(uuid.uuid4()), server.session["material_id"])
+        assert svc.run_once() == 1
+        # عُزل بسبب config_error دون إبلاغ الخادم بفشل (الملف بريء)، والطابور لم يُسد
+        [(_, dead)] = r.xrange(DEAD)
+        assert dead["reason"] == "config_error" and dead["reported"] == "not-reported"
+        assert all(m == "GET" for m, _, _ in server.calls)
+        assert r.xpending(STREAM, GROUP)["pending"] == 0 and server.session["state"] == "completed"
+
+        # بعد إصلاح الرمز: requeue-dead يعيده فيُعالج طبيعيًا
+        server.refuse_first = 0
+        assert svc.requeue_dead("config_error") == 1 and r.xlen(DEAD) == 0
+        assert svc.run_once() == 1
+        assert server.session["state"] == "verified"
     finally:
         server.close()

@@ -7,7 +7,8 @@
 - إطار مفتاحي كل ثانية للتنقل في المحرر.
 - لا وسوم: `-map_metadata -1` ومثيلاه لكل مسار تسقط الإحداثيات وطراز الجهاز ورقمه من النسخة المعروضة.
 - المدخل مقيد بقائمة الحاويات والبروتوكول `file` وحده (`INPUT_GUARD`).
-- HDR يُخفَّض إلى 8 بت هنا دون خريطة ألوان؛ التحويل إلى SDR بخريطة مناسبة خطوة لاحقة (البند 4 في CLAUDE.md).
+- HDR (HLG أو PQ): خريطة ألوان إلى SDR BT.709 بـ zscale + tonemap (hable)، فلا تظهر النسخة باهتة أو محروقة؛
+  والمخرج موسوم bt709 صراحة. القياس في `tools/render-bench` (حالتا HLG وPQ).
 """
 
 from __future__ import annotations
@@ -27,11 +28,32 @@ class ProxyTimingError(RuntimeError):
     """النسخة الناتجة لا تحفظ start_pts الأصل؛ لا تُستخدم لأن نقاط القص عليها ستنزاح."""
 
 
-def proxy_args(src: Path, dst: Path, source: Probe) -> list[str]:
-    short = min(PROXY_SHORT_SIDE, min(source.width or PROXY_SHORT_SIDE, source.height or PROXY_SHORT_SIDE))
+def video_filter(source: Probe, short_side: int) -> str:
+    """تصغير بالضلع القصير (بلا تكبير) ثم خريطة ألوان إلى SDR إن كان المصدر HDR، وأخيرًا 8 بت 4:2:0.
+    يُستعمل للنسخة الخفيفة وللمصغّرات معًا."""
+    short = min(short_side, min(source.width or short_side, source.height or short_side))
     short -= short % 2
     # ffmpeg يطبّق الدوران قبل المرشحات، فـ iw/ih هنا أبعاد العرض الفعلية
-    scale = f"scale='if(gt(iw,ih),-2,{short})':'if(gt(iw,ih),{short},-2)',format=yuv420p"
+    chain = [f"scale='if(gt(iw,ih),-2,{short})':'if(gt(iw,ih),{short},-2)'"]
+    if source.hdr:
+        # التصغير أولًا: الخريطة بأعداد عشرية على 480p أرخص بكثير منها على 4K
+        tin = source.color_transfer
+        pin = source.color_primaries if source.color_primaries not in (None, "unknown") else "bt2020"
+        min_ = source.color_space if source.color_space not in (None, "unknown") else "bt2020nc"
+        chain += [
+            f"zscale=tin={tin}:pin={pin}:min={min_}:t=linear:npl=100",
+            "format=gbrpf32le", "zscale=p=bt709", "tonemap=tonemap=hable:desat=0",
+            "zscale=t=bt709:m=bt709:r=tv",
+        ]
+    chain.append("format=yuv420p")
+    return ",".join(chain)
+
+
+SDR_TAGS = ["-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709"]
+
+
+def proxy_args(src: Path, dst: Path, source: Probe) -> list[str]:
+    scale = video_filter(source, PROXY_SHORT_SIDE)
     return [
         FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
         *INPUT_GUARD, "-copyts", "-i", str(src),
@@ -41,6 +63,7 @@ def proxy_args(src: Path, dst: Path, source: Probe) -> list[str]:
         "-vf", scale, "-fps_mode", "passthrough",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-profile:v", "high",
         "-force_key_frames", "expr:gte(t,n_forced*1)",
+        *(SDR_TAGS if source.hdr else []),
         "-c:a", "aac", "-b:a", "96k", "-ac", "2",
         "-movflags", "+faststart",
         "-f", "mp4", str(dst),

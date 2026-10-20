@@ -4,7 +4,9 @@
 1. تنزيل تدفقي للكائن إلى مجلد المهمة مع SHA-256 والبصمة الرخيصة في القراءة نفسها.
 2. البيانات الفنية (ffprobe)؛ الفشل = `invalid_file`.
 3. إبلاغ الخادم (`POST …/verification`). الخادم يقرر الحجم ومطابقة بصمة العميل ويكتب النتيجة.
-4. لأصل مرئي تحقق ولا نسخة خفيفة له من الهاتف: نسخة 480p من الملف المنزَّل نفسه، تُرفع إلى حاوية المشتقات تحت
+4. لأصل مرئي تحقق: المصغّرات (إطار ملصق وصفيحة اتصال) في `derived/<material_id>/<file_id>/`. خطوة غير مانعة:
+   فشلها يُسجَّل ولا يعيد الحدث ولا يمنع النسخة الخفيفة.
+5. لأصل مرئي تحقق ولا نسخة خفيفة له من الهاتف: نسخة 480p من الملف المنزَّل نفسه، تُرفع إلى حاوية المشتقات تحت
    `derived/<material_id>/<file_id>/` ويُبلَّغ بها (`POST …/derivatives`).
 
 إعادة التسليم بعد تحقق سابق (فشلت الخطوة 4): الجلسة `verified` والأصل بلا نسخة، فيُعاد البلاغ نفسه، والخادم يعيد
@@ -20,10 +22,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .api import ApiConflict, InternalApi, Session
+from .api import ApiConflict, ApiRejected, InternalApi, Session
 from .hashing import digest_file, digest_stream
 from .probe import InvalidMediaError, Probe, probe
 from .proxy import make_proxy
+from .thumbnails import contact_sheet, poster
 from .storage import DERIVED_PREFIX, ObjectMissing
 
 log = logging.getLogger("media_worker.jobs")
@@ -44,6 +47,14 @@ class Buckets:
 
 def proxy_key(material_id: str, file_id: str) -> str:
     return f"{DERIVED_PREFIX}{material_id}/{file_id}/proxy-480p.mp4"
+
+
+def poster_key(material_id: str, file_id: str) -> str:
+    return f"{DERIVED_PREFIX}{material_id}/{file_id}/poster.jpg"
+
+
+def contact_sheet_key(material_id: str, file_id: str) -> str:
+    return f"{DERIVED_PREFIX}{material_id}/{file_id}/contact-sheet.jpg"
 
 
 def _download(storage: Storage, bucket: str, key: str, dst: Path):
@@ -118,9 +129,42 @@ class Jobs:
             })
             if result.get("state") != "verified":
                 return result.get("failure_reason") or "failed"
-            if not _wants_proxy(session) or info.video_codec is None:
+            if session.kind != "original" or info.video_codec is None:
                 return "verified"
-            return self._proxy(session, result["file_id"], local, info)
+            outcome = "verified"
+            if not resume:
+                outcome += self._thumbnails(session, result["file_id"], local, info)
+            if _wants_proxy(session):
+                outcome += self._proxy(session, result["file_id"], local, info)
+            return outcome
+
+    def _thumbnails(self, session: Session, file_id: str, local: Path, info: Probe) -> str:
+        """غير مانعة: أي فشل هنا يُسجَّل ويُترك، والمصغّرات يمكن توليدها لاحقًا من الأصل."""
+        try:
+            made = [(poster(local, local.with_name("poster.jpg"), info), poster_key(session.material_id, file_id)),
+                    (contact_sheet(local, local.with_name("contact-sheet.jpg"), info),
+                     contact_sheet_key(session.material_id, file_id))]
+            for thumb, key in made:
+                d = digest_file(thumb.path)
+                self.storage.put_file(self.buckets.derived, key, thumb.path, d.sha256, "image/jpeg")
+        except Exception as err:  # noqa: BLE001
+            log.warning("thumbnails skipped file=%s error=%s", file_id, type(err).__name__)
+            return "+thumbnails-failed"
+        (poster_thumb, key), _ = made
+        d = digest_file(poster_thumb.path)
+        try:
+            # الصفيحة بجوار الملصق باسم ثابت؛ يُسجَّل الملصق وحده لأن (derived_from_id، kind) فريد في الخادم
+            self.api.add_derivative(file_id, {
+                "kind": "thumbnail", "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
+                "technical": {"duration_ms": 0, "start_pts_us": round((poster_thumb.at_s or 0) * 1_000_000),
+                              "width": poster_thumb.width, "height": poster_thumb.height,
+                              "container": "jpeg", "video_codec": "mjpeg"},
+            })
+        except (ApiRejected, ApiConflict) as err:
+            # الخادم لا يقبل نوع thumbnail بعد: الملفان مرفوعان في مكانهما المتوقع، والتسجيل يلحق
+            log.warning("thumbnail not registered file=%s error=%s", file_id, type(err).__name__)
+            return "+thumbnails-unregistered"
+        return "+thumbnails"
 
     def _proxy(self, session: Session, file_id: str, local: Path, info: Probe) -> str:
         out = local.with_name("proxy-480p.mp4")
@@ -132,4 +176,4 @@ class Jobs:
             "kind": "proxy", "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
             "technical": made.to_dict(),
         })
-        return "verified+proxy"
+        return "+proxy"
