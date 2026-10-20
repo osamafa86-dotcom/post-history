@@ -13,7 +13,7 @@
 // server, so an in-flight transfer is not stopped server-side until the ingest gate (ADR 0011) or a post-receive hook exists.
 import { createHash, randomBytes } from "node:crypto";
 import { newResult, finish, writeResult, parseArgs, banner } from "../lib/measurement.mjs";
-import { client, createUploadSession, materialBody, sleep } from "../lib/live.mjs";
+import { client, createUploadSession, eventsOfType, materialBody, sleep } from "../lib/live.mjs";
 import { waitFor } from "../lib/hooks.mjs";
 import { loadWaivers } from "../lib/waivers.mjs";
 import { seed } from "../live/seed.mjs";
@@ -125,6 +125,14 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
         return ["verified", "failed", "deduplicated"].includes(r.state) ? r : null;
       }, { timeoutMs: 120_000, everyMs: 500 });
       m.inflight_final_state = done.value?.state ?? "timeout";
+      // what the server did with the bytes of a revoked user: receipt, failure reason and the events it emitted for this upload
+      const last = done.value ?? (await api.get(C.access_token, `/uploads/${inflight.id}`)).body;
+      m.inflight_receipt_issued = Boolean(last.receipt_number);
+      m.inflight_failure_reason = last.failure_reason ?? "none";
+      const admin = s.tokens.system_admin;
+      for (const [key, type] of [["received", "upload.original_received"], ["verified", "upload.verified"], ["failed", "upload.failed"]]) {
+        m[`inflight_event_${key}`] = (await eventsOfType(api, admin, type)).some((e) => e.aggregate_id === inflight.id);
+      }
     }
     const verdict = (f) => (waivers.isWaived(f) ? "waived" : "open");
     for (const f of findings) {
@@ -143,6 +151,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   const notes = [
     fails.length ? `فشل: ${fails.join("؛ ")}` : null,
     `«خلال ثوانٍ» حُوِّل إلى رقم مقترح: ≤ ${maxS} ث من رد استدعاء الإبطال إلى أول رفض (القيم المقيسة في المقاييس، -1 = لم يُرفض ضمن 15 ث)`,
+    m.inflight_final_state ? `الرفع الجاري بعد الإبطال: الحالة النهائية ${m.inflight_final_state}، السبب ${m.inflight_failure_reason}، إيصال ${m.inflight_receipt_issued ? "صدر" : "لم يصدر"}، أحداث: استلام ${m.inflight_event_received}، تحقق ${m.inflight_event_verified}، فشل ${m.inflight_event_failed}؛ الخادم لا يفحص الإبطال عند post-finish (tusd-hooks.service.ts) فاكتمال الرفع غير مضمون الرفض بسبب الإبطال، وما سُجّل هو ما حدث في هذا التشغيل` : null,
     waivedCount ? `${waivedCount} ثغرة معروفة مستثناة بإذن مكتوب في waivers/session-revocation.json: الرفع الجاري يبقى مقبولًا عند tusd بعد الإبطال لأن tusd لا يسأل الخادم عن PATCH لاحق؛ يوقفه رمز بوابة ingest القصير (ADR 0011) أو خطّاف post-receive، ولم يُبنيا في هذه الحزمة` : null,
     ...notMeasured,
     "لم يُقَس: إبطال من جهاز المشرف عبر الإدارة (واجهة)، وزمن العميل (الهاتف) إلى المسح، ونسخة واحدة من الخادم بلا تأخير توزيع بين نسخ",
