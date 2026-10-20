@@ -4,6 +4,18 @@
 	email {$ACME_EMAIL}
 	admin off
 	{$CADDY_GLOBAL_EXTRA}
+	# سجل الأخطاء (الافتراضي) يحمل الطلب كاملًا حين يفشل وكيل عكسي: ترويساته (الرموز) وعنوان العميل. يُرشَّح كالوصول.
+	log default {
+		output stdout
+		format filter {
+			request>headers delete
+			request>remote_ip delete
+			request>client_ip delete
+			request>remote_port delete
+			request>uri regexp (/files/)[^?]*|\?.* $1-
+			resp_headers delete
+		}
+	}
 }
 
 {$INGEST_DOMAIN} {
@@ -28,8 +40,8 @@
 			request>client_ip delete
 			request>remote_port delete
 			resp_headers delete
-			# معرّف الرفع في /files/<id> قدرة حاملة (SEC-06): يُحذف من السجل.
-			request>uri regexp ^/files/[^?]+ /files/-
+			# معرّف الرفع في /files/<id> قدرة حاملة (SEC-06)، والاستعلام قد يحمل ما يرسله العميل: يُحذفان من السجل.
+			request>uri regexp (/files/)[^?]*|\?.* $1-
 		}
 	}
 }

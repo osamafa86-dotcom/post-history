@@ -7,7 +7,8 @@
 # الخطوات بالترتيب، وكل خطوة تُعاد بأمان (idempotent):
 #   os          Ubuntu 24.04 وroot
 #   packages    الحزم، وDocker من مستودعه بإصدارات مثبّتة (apt-mark hold) وتدوير سجلات الحاويات
-#   user        مستخدم خدمة غير جذر (posthistory) يملك نسخة المستودع، وليس في مجموعة docker (تعادل root)
+#   user        مستخدم خدمة غير جذر (posthistory) لنقطة /health الداخلية، خارج مجموعة docker (تعادل root). شجرة المستودع
+#               ملك root وغير قابلة للكتابة لغيره: root ينفّذ منها unseal.sh وtrial.sh عند كل إقلاع.
 #   firewall    ufw: SSH، و80/443 على العنوانين وحدهما
 #   dirs        /etc/post-history (0700)، /srv/post-history/backups (uid 70، 0700)، /run/post-history (tmpfs)
 #   secrets     تُولَّد مرة واحدة وتُشفَّر بـ age فورًا إلى مفتاح المضيف ومفتاح المالك (trial.env.age)؛ النص الصريح
@@ -15,7 +16,8 @@
 #   images      سحب الصور (بالبصمة، check-pinned.sh) وبناء صورة النسخ
 #   preflight   preflight.sh قبل التشغيل
 #   start       trial.sh up -d --wait، ومعه النسخ اليومي المجدول وتدويره (خدمة backup، BACKUP_KEEP_DAYS)
-#   systemd     وحدة post-history-trial: unseal ثم التشغيل بعد كل إقلاع
+#   systemd     وحدة post-history-trial (unseal ثم التشغيل بعد كل إقلاع)، ومؤقّت الصحة كل دقيقة مع التنبيه، ونقطة /health
+#               الداخلية (127.0.0.1:9180، مستخدم الخدمة)، وتدوير سجل التنبيهات
 #   verify      preflight.sh --running --json
 #
 # --dry-run --root DIR: لا يمس النظام. أوامر النظام (apt، ufw، docker، systemctl، useradd) تُطبع بـ "+ " ولا
@@ -103,7 +105,9 @@ say user
 if [ "$DRY" = 1 ] || ! id "$SERVICE_USER" >/dev/null 2>&1; then
   run useradd --system --home-dir /srv/post-history --shell /usr/sbin/nologin "$SERVICE_USER"
 fi
-run chown -R "$SERVICE_USER:$SERVICE_USER" "$APP"
+# root ينفّذ من هذه الشجرة، فلا يكتبها غيره (ملاحظة الأمن على #91).
+run chown -R root:root "$APP"
+run chmod -R go-w "$APP"
 
 say firewall
 run ufw default deny incoming
@@ -207,8 +211,58 @@ TimeoutStartSec=900
 WantedBy=multi-user.target
 EOF
 chmod 0644 "$unit"
+units="$PREFIX/etc/systemd/system"
+cat > "$units/post-history-health.service" <<UNIT
+[Unit]
+Description=post-history trial health checks and alerts (ADR 0013)
+After=post-history-trial.service
+
+[Service]
+Type=oneshot
+RuntimeDirectory=post-history-health
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+ExecStart=$APP/infra/observability/healthcheck.sh --json /run/post-history-health/health.json --alert
+SuccessExitStatus=1
+UNIT
+cat > "$units/post-history-health.timer" <<UNIT
+[Unit]
+Description=post-history trial health checks every minute
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=1min
+
+[Install]
+WantedBy=timers.target
+UNIT
+cat > "$units/post-history-health-endpoint.service" <<UNIT
+[Unit]
+Description=post-history internal aggregated /health on 127.0.0.1:9180 (ADR 0013)
+After=post-history-health.service
+
+[Service]
+User=$SERVICE_USER
+ExecStart=/usr/bin/python3 $APP/infra/observability/health-endpoint.py --file /run/post-history-health/health.json --port 9180
+Restart=always
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+chmod 0644 "$units"/post-history-health*
+install -d -m 0755 "$PREFIX/etc/logrotate.d"
+printf '%s\n' '/var/log/post-history/*.log {' '  weekly' '  rotate 8' '  compress' '  missingok' '  notifempty' '}' \
+  > "$PREFIX/etc/logrotate.d/post-history"
+# التنبيه بالبريد اختياري: عنوان هنا وsendmail محلي (مثل msmtp-mta) يضبطه المالك. السجل يُكتب دائمًا.
+[ -f "$ETC/alert.conf" ] || printf '%s\n' '# ALERT_EMAIL_TO=ops@example.org' 'ALERT_EMAIL_TO=' > "$ETC/alert.conf"
+install -d -m 0750 "$PREFIX/var/log/post-history"
 run systemctl daemon-reload
 run systemctl enable post-history-trial.service
+run systemctl enable --now post-history-health.timer post-history-health-endpoint.service
 
 say verify
 run "$APP/infra/field-trial/preflight.sh" --running --json "$APP/docs/measurements/ops/$(date -u +%F)-field-trial-preflight.json"

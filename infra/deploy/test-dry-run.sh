@@ -72,6 +72,17 @@ done
 [ -z "$(find "$R" -name 'trial.env' -not -path "$R/run/*")" ] || fail "plaintext secrets outside /run"
 grep -q '"max-size": "50m"' "$R/etc/docker/daemon.json" || fail "container log rotation missing"
 grep -q '^ExecStartPre=/repo/infra/deploy/unseal.sh$' "$R/etc/systemd/system/post-history-trial.service" || fail "unit does not unseal"
+SD="$R/etc/systemd/system"
+grep -q '^ExecStart=/repo/infra/observability/healthcheck.sh --json /run/post-history-health/health.json --alert$' \
+  "$SD/post-history-health.service" || fail "health unit"
+grep -q '^OnUnitActiveSec=1min$' "$SD/post-history-health.timer" || fail "health timer not every minute"
+grep -q '^User=posthistory$' "$SD/post-history-health-endpoint.service" || fail "/health endpoint not run as the service user"
+grep -q -- '--port 9180' "$SD/post-history-health-endpoint.service" || fail "/health endpoint port"
+grep -q 'rotate 8' "$R/etc/logrotate.d/post-history" || fail "alert log rotation"
+grep -q '^ALERT_EMAIL_TO=$' "$E/alert.conf" || fail "alert.conf template"
+grep -qF "+ chown -R root:root /repo" "$W/out" || fail "repository tree not given to root"
+grep -qF "+ chown -R posthistory" "$W/out" && fail "repository tree given to the service user (root runs it)"
+grep -qF "+ systemctl enable --now post-history-health.timer post-history-health-endpoint.service" "$W/out" || fail "health units not enabled"
 echo "permissions and sealing: ok"
 
 # Every key of trial.env.example is set (optional ones aside); secrets are long; none is printed.
@@ -109,6 +120,7 @@ bash /repo/infra/deploy/update.sh --dry-run >"$W/up" 2>&1 || { cat "$W/up"; fail
 F="$W/up"
 order "+ /repo/infra/field-trial/trial.sh run --rm -T backup once" "fetch -q origin"
 order "fetch -q origin" "trial.sh up -d --no-deps --wait postgres redis minio"
+grep -q "runuser" "$F" && fail "update runs git as another user than root"
 order "up -d --no-deps --wait tusd tusd-proxy ingest-gate" "up -d --no-deps --wait api"
 grep -A1 -F "up -d --no-deps --wait api" "$F" | tail -1 | grep -qF "wait until: API /health 200" || fail "no health check right after the API restart"
 order "up -d --no-deps --wait api" "up -d --no-deps --wait media-worker"

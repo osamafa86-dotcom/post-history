@@ -25,7 +25,8 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 - النسخ: `infra/backup/backup.sh` يشفّر بشهادة المستلم (CMS، AES-256-GCM)، بمستخدم MinIO للقراءة فقط ودور Postgres `backup_reader` للقراءة فقط. التمرين `infra/backup/restore-drill.sh`، والاستعادة الفاشلة نتيجة `fail` لا انهيار، والناجحة `partial` لا `pass` (المرآة وفاصل النسخ غير مقيسة).
 - عنوان العميل: شبكة `default` ثابتة (`172.30.240.0/24`)، والخادم والبوابة يثقان ببوابتها `172.30.240.1` وحدها، وCaddy الرئيسي يقبل `CF-Connecting-IP` من `CLOUDFLARE_CIDRS` وحدها. الدخان يثبت أن عنوانين لا يتشاركان سلة حد الدخول.
 - النشر: `infra/deploy/bootstrap.sh` (أمر واحد على Ubuntu 24.04؛ الأسرار مختومة بـ age لمفتاحي المضيف والمالك، والصريح على tmpfs فقط عبر `unseal.sh`)، و`update.sh` (نسخة قبلية، إعادة تشغيل متدرجة، تراجع). الفحص الجاف `infra/deploy/test-dry-run.sh` في وظيفة compose بلا شبكة.
-- الفحص: `smoke-trial.sh` (CI، على 127.0.0.1 و127.0.0.2 بشهادات محلية)، و`preflight.sh` على المضيف. ما يوفّره المالك في `docs/ops/field-trial-hosting.md`.
+- المراقبة: `infra/observability/healthcheck.sh` (مؤقّت كل دقيقة، تنبيه بسجل وبريد محلي اختياري)، و`health-endpoint.py` (`/health` على 127.0.0.1:9180)، و`status.sh` (لوحة عربية للمشرف). السجلات: Caddy يرشّح سجلي الوصول والأخطاء معًا، والدخان يبحث عن وسم مزروع في كل السجلات.
+- الفحص: `smoke-trial.sh` (CI، على 127.0.0.1 و127.0.0.2 بشهادات محلية، ومعه حزمة القبول عبر الحافة)، و`preflight.sh` على المضيف. ما يوفّره المالك في `docs/ops/field-trial-hosting.md`.
 
 ## tusd (`infra/tusd/`)
 
