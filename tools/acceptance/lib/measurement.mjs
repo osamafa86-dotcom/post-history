@@ -47,7 +47,8 @@ export function finish(doc, result, metrics = {}, notes) {
 }
 
 /** Validates then writes docs/measurements/acceptance/<date>-<test>-<slug>.json unless dryRun. */
-export function writeResult(doc, { slug = "run", dir = RESULTS_DIR, dryRun = false } = {}) {
+// ACCEPTANCE_RESULTS_DIR redirects every script's result files (the field-trial pack collects one run in its own folder)
+export function writeResult(doc, { slug = "run", dir = process.env.ACCEPTANCE_RESULTS_DIR || RESULTS_DIR, dryRun = false } = {}) {
   const { ok, errors } = validateMeasurement(doc);
   if (!ok) throw new Error(`result for ${doc.test_name} does not match measurement.json:\n  ${errors.join("\n  ")}`);
   if (dryRun) return null;

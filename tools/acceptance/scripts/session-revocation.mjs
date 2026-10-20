@@ -30,8 +30,9 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   const args = parseArgs(argv);
   const test = { name: "session-revocation", criterion: "SEC-01: رمز مبطَل يُرفض خلال ثوانٍ (على الخادم وعلى مسار الرفع)، والرفع الجاري يتوقف عند الجزء التالي" };
   banner(test);
-  if (!env.REVOKE_API_URL || !env.DATABASE_URL) {
-    console.error("ENVIRONMENT: REVOKE_API_URL and DATABASE_URL are required; nothing measured");
+  const remote = Boolean(env.REVOKE_REPORTER_EMAIL);   // a remote host: the reporter's login and an admin token instead of the seeded database
+  if (!env.REVOKE_API_URL || (!env.DATABASE_URL && !(remote && env.REVOKE_REPORTER_PASSWORD && env.REVOKE_ADMIN_TOKEN))) {
+    console.error("ENVIRONMENT: REVOKE_API_URL and DATABASE_URL (or REVOKE_REPORTER_EMAIL/PASSWORD and REVOKE_ADMIN_TOKEN) are required; nothing measured");
     return { code: 2, doc: null };
   }
   const maxS = Number(env.REVOKE_MAX_S ?? 5), tusUrl = env.REVOKE_TUS_URL;
@@ -41,7 +42,9 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   const check = (name, ok, why = "") => { if (!ok) { fails.push(name); console.log(`FAIL ${name} ${why}`); } else console.log(`ok   ${name}`); };
   const m = {};
 
-  const s = await seed({ databaseUrl: env.DATABASE_URL, apiUrl: env.REVOKE_API_URL });
+  const s = remote
+    ? { users: { reporter: { email: env.REVOKE_REPORTER_EMAIL } }, password: env.REVOKE_REPORTER_PASSWORD, tokens: { system_admin: env.REVOKE_ADMIN_TOKEN } }
+    : await seed({ databaseUrl: env.DATABASE_URL, apiUrl: env.REVOKE_API_URL });
   const api = client(env.REVOKE_API_URL);
   const reporter = s.users.reporter;
   const login = async () => {

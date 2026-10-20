@@ -186,6 +186,16 @@ jobs:
           export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
           export REVOKE_ENV_LABEL="compose on a GitHub-hosted runner: api + tusd + minio + redis + postgres"
           node tools/acceptance/scripts/session-revocation.mjs --out-dir="$RUNNER_TEMP/out"
+      - name: Field-trial pack rehearsal (the same command a trial host gets, against this stack)
+        run: |
+          set -a; . infra/compose/.env; set +a
+          export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
+          FT_ACCOUNTS="$(API_URL="http://127.0.0.1:$API_PORT/v1" node tools/acceptance/field-trial/rehearsal-accounts.mjs)"
+          export FT_ACCOUNTS FT_TUS_URL="http://127.0.0.1:$TUSD_PORT/files/"
+          node tools/acceptance/run.mjs --target "http://127.0.0.1:$API_PORT" --confirm --out-dir="$RUNNER_TEMP/pack"
+      - name: Print the pack report
+        if: always()
+        run: '[ -f "$RUNNER_TEMP/pack/REPORT.md" ] && head -60 "$RUNNER_TEMP/pack/REPORT.md" || true'
       - name: Print the result files (committed to docs/measurements/acceptance/ as written here)
         if: always()
         run: for f in "$RUNNER_TEMP"/out/*.json; do [ -f "$f" ] && { echo "== $(basename "$f")"; cat "$f"; }; done
@@ -193,7 +203,9 @@ jobs:
         if: always()
         with:
           name: media-e2e-results
-          path: ${{ runner.temp }}/out
+          path: |
+            ${{ runner.temp }}/out
+            ${{ runner.temp }}/pack
           if-no-files-found: ignore
           retention-days: 14
       - name: Stack logs on failure

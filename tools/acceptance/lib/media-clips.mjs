@@ -57,6 +57,14 @@ export function durationSeconds(path) {
   return Number(run(FFPROBE, ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path]).toString().trim());
 }
 
+/** Width and height of the first video/image stream (a JPEG is one), or null when ffprobe cannot read it. */
+export function imageSize(path) {
+  try {
+    const [w, h] = run(FFPROBE, ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0:s=x", path]).toString().trim().split("x").map(Number);
+    return w > 0 && h > 0 ? { width: w, height: h } : null;
+  } catch { return null; }
+}
+
 export function sha256File(path) {
   return new Promise((resolve, reject) => {
     const h = createHash("sha256");

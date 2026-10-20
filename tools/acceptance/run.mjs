@@ -3,6 +3,7 @@
 //   node run.mjs --list
 //   node run.mjs pii-leak tenant-isolation [--dry-run]     run named tests (results go to docs/measurements/acceptance/)
 //   node run.mjs all --dry-run                               every test; pending ones are reported, not failed
+//   FT_ACCOUNTS=… node run.mjs --target https://host --confirm   the field-trial pack against a remote host (field-trial/pack.mjs)
 // Exit: 0 all ran ok (or pending), 1 a criterion failed, 2 an environment was unreachable and nothing was measured.
 import { CATALOG, EXTRA, byName } from "./lib/catalog.mjs";
 import { EXIT_PENDING } from "./lib/pending.mjs";
@@ -12,6 +13,10 @@ const args = parseArgs(process.argv.slice(2));
 if (args.list) {
   for (const t of [...CATALOG, ...EXTRA]) console.log(`${t.name.padEnd(24)} ${t.mode.padEnd(10)} ${t.criterion}`);
   process.exit(0);
+}
+if (args.target) {
+  const { runPack } = await import("./field-trial/pack.mjs");
+  process.exit(await runPack(args));
 }
 const wanted = args._.includes("all") || !args._.length ? CATALOG.map((t) => t.name) : args._;
 const unknown = wanted.filter((n) => !byName(n));
