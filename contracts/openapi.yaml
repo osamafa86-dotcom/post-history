@@ -2211,9 +2211,9 @@ components:
       type: object
       description: >-
         قائمة بيضاء مغلقة من ffprobe؛ العامل لا ينقل وسوم الملف أبدًا (فيها الإحداثيات وطراز الجهاز) والخادم يرفض أي مفتاح
-        آخر. الأربعة الأولى أعمدة في `material_files` والباقي في `material_files.technical`.
+        آخر. الأربعة الأولى أعمدة في `material_files` والباقي في `material_files.technical`. المفاتيح الإلزامية بحسب
+        السياق: `duration_ms` و`start_pts_us` للتحقق وللمشتقات الزمنية، و`width` و`height` للمصغّرة.
       additionalProperties: false
-      required: [duration_ms, start_pts_us]
       properties:
         duration_ms: { type: integer, minimum: 0 }
         start_pts_us: { type: integer, minimum: -4503599627370496, maximum: 4503599627370496 }
@@ -2261,7 +2261,9 @@ components:
         technical: { $ref: "#/components/schemas/MediaTechnical" }
       description: النجاح يحمل البصمة والحجم والبصمة الرخيصة والبيانات الفنية؛ الفشل لا يحمل `sha256` ولا `technical`
       if: { properties: { result: { const: verified } } }
-      then: { required: [sha256, size_bytes, head_sha256, tail_sha256, technical] }
+      then:
+        required: [sha256, size_bytes, head_sha256, tail_sha256, technical]
+        properties: { technical: { required: [duration_ms, start_pts_us] } }
       else: { not: { anyOf: [{ required: [sha256] }, { required: [technical] }] } }
 
     MediaVerificationResult:
@@ -2279,12 +2281,26 @@ components:
       type: object
       additionalProperties: false
       required: [kind, storage_key, sha256, size_bytes, technical]
+      description: >-
+        `proxy` و`hls` و`audio` مشتقات زمنية: `technical` يحمل `duration_ms` و`start_pts_us`. `thumbnail` صورة (الملصق
+        أو ورقة اللقطات): `duration_ms` اختياري، و`width` و`height` إلزاميان غير فارغين، و`mime_type` إلزامي. `proxy_mode`
+        يكتبه الخادم `normal` للنسخة الخفيفة وحدها و`NULL` لغيرها.
       properties:
-        kind: { type: string, const: proxy }
+        kind: { type: string, enum: [proxy, thumbnail, hls, audio] }
         storage_key: { type: string, minLength: 1, maxLength: 1024, pattern: "^[A-Za-z0-9/_.-]+$" }
         sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
         size_bytes: { type: integer, minimum: 1 }
+        mime_type: { type: string, enum: [image/jpeg, image/webp, video/mp4, application/vnd.apple.mpegurl, audio/mp4] }
         technical: { $ref: "#/components/schemas/MediaTechnical" }
+      if: { properties: { kind: { const: thumbnail } } }
+      then:
+        required: [mime_type]
+        properties:
+          mime_type: { enum: [image/jpeg, image/webp] }
+          technical:
+            required: [width, height]
+            properties: { width: { type: integer }, height: { type: integer } }
+      else: { properties: { technical: { required: [duration_ms, start_pts_us] } } }
 
     FormVersionSummary:
       type: object
