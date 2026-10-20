@@ -1,6 +1,7 @@
 import { and, asc, eq, getTableColumns, inArray, sql, type SQL } from 'drizzle-orm';
 import type { Executor, Tx } from '../database/database.module';
-import { auditLog, materialContributors, materialFiles, materials, materialTransitions, offices, uploadForms } from '../database/schema/schema';
+import { auditLog, materialContributors, materialFiles, materials, materialTransitions, offices, uploadForms, users } from '../database/schema/schema';
+import type { FieldKeyring } from '../common/crypto';
 import type { UploadForm } from '../forms/dynamic-fields';
 import type { components } from '../generated/api';
 import type { Principal, RoleName } from '../identity/principal';
@@ -94,10 +95,26 @@ export function technicalTargetOnReceive(kind: string, current: string): string 
   return undefined;
 }
 
-/** يبني استجابات Material لعدة صفوف دفعة واحدة، مع الحجب وتسجيل كل قراءة غير محجوبة لحقل حساس. */
-export async function toMaterialDtos(executor: Executor, p: Principal, rows: MaterialRow[], idleSeconds: number): Promise<MaterialDto[]> {
+/**
+ * يبني استجابات Material لعدة صفوف دفعة واحدة، مع الحجب وتسجيل كل قراءة غير محجوبة لحقل حساس. الاسم الحقيقي للمراسل
+ * (v0.2) لحامل protected_source:read وحده ويغيب مفتاحه لغيره؛ يُفك بالحلقة ويُسجَّل مع بقية الحقول المكشوفة.
+ */
+export async function toMaterialDtos(
+  executor: Executor,
+  p: Principal,
+  rows: MaterialRow[],
+  idleSeconds: number,
+  keyring?: FieldKeyring,
+): Promise<MaterialDto[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
+  const legalNames = new Map<string, string | null>();
+  if (keyring && p.permissions.has('protected_source:read')) {
+    const reporters = [...new Set(rows.map((r) => r.reporterId))];
+    for (const u of await executor.select({ id: users.id, enc: users.legalNameEnc }).from(users).where(inArray(users.id, reporters))) {
+      legalNames.set(u.id, u.enc ? keyring.decrypt(u.enc).toString('utf8') : null);
+    }
+  }
   const files = await executor.select().from(materialFiles).where(inArray(materialFiles.materialId, ids)).orderBy(asc(materialFiles.createdAt));
   const contributors = await executor
     .select()
@@ -112,6 +129,8 @@ export async function toMaterialDtos(executor: Executor, p: Principal, rows: Mat
   const dtos: MaterialDto[] = [];
   for (const m of rows) {
     const { fields, redacted, disclosed } = redactDynamicFields(forms.get(m.formVersion), m.dynamicFields as Record<string, unknown>, p.permissions);
+    const legalName = legalNames.get(m.reporterId);
+    if (legalName != null) disclosed.push('reporter_legal_name');
     if (disclosed.length > 0) {
       await executor.insert(auditLog).values({
         actorId: p.userId,
@@ -148,8 +167,12 @@ export async function toMaterialDtos(executor: Executor, p: Principal, rows: Mat
       rights_state: m.rightsState as MaterialDto['rights_state'],
       reserved_by: reservationLive ? m.reservedBy : null,
       reserved_at: reservationLive ? iso(m.reservedAt) : null,
+      acknowledged_by: m.acknowledgedBy,
+      acknowledged_at: iso(m.acknowledgedAt),
+      ...(legalNames.has(m.reporterId) ? { reporter_legal_name: legalName ?? null } : {}),
       files: files
-        .filter((f) => f.materialId === m.id)
+        // حزمة التصدير ليست MaterialFile في العقد؛ حالتها من /materials/{id}/export
+        .filter((f) => f.materialId === m.id && f.kind !== 'export')
         .map((f) => ({
           id: f.id,
           kind: f.kind as 'original',
@@ -202,9 +225,11 @@ export async function applyTransition(
 ): Promise<MaterialRow> {
   const column = STATE_COLUMN[t.track];
   const from = m[column];
+  // «اطّلعت» (v0.2): من نقل المادة من inbox إلى acknowledged ومتى، فيراه المراسل
+  const seen = t.track === 'editorial' && t.to === 'acknowledged' && t.actorId ? { acknowledgedBy: t.actorId, acknowledgedAt: sql`now()` } : {};
   const [updated] = await tx
     .update(materials)
-    .set({ [column]: t.to, ...extra })
+    .set({ [column]: t.to, ...seen, ...extra })
     .where(eq(materials.id, m.id))
     .returning();
   const [record] = await tx

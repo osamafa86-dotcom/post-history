@@ -1,3 +1,4 @@
+import { schemaFileValidator } from '../../src/common/contract';
 import { generateKeyPairSync } from 'node:crypto';
 import { FcmSender, type PushPayload } from '../../src/push/push-senders';
 
@@ -9,7 +10,7 @@ describe('FCM sender', () => {
       token_uri: 'https://oauth.test/token',
     }),
   ).toString('base64');
-  const payload: PushPayload = { notification_id: 'n1', type: 'material.urgent_received', material_id: 'm1', priority: 'urgent', title: 'مادة عاجلة واردة #m1' };
+  const payload: PushPayload = { channel: 'fcm', notification_id: 'n1', type: 'material.urgent_received', material_id: 'm1', priority: 'urgent', title: 'مادة عاجلة واردة #m1' };
   const sender = (status: number, body: object = {}, seen: string[] = []) =>
     new FcmSender('proj', account, (async (url: string, init: RequestInit) => {
       if (url.includes('oauth.test')) return new Response(JSON.stringify({ access_token: 'at' }), { status: 200 });
@@ -34,5 +35,15 @@ describe('FCM sender', () => {
     expect(await sender(400, { error: { status: 'INVALID_ARGUMENT' } }).send('t', payload)).toBe('invalid_token');
     expect(await sender(503).send('t', payload)).toBe('retry');
     expect(await sender(429).send('t', payload)).toBe('retry');
+  });
+
+  it('the payload matches the channel whitelist of the contract, and a revealing key is refused', () => {
+    const valid = schemaFileValidator('notification-channel-payload.json');
+    const real = { ...payload, notification_id: '7d8f4c1e-2b3a-4c5d-8e9f-0a1b2c3d4e5f', material_id: '1d8f4c1e-2b3a-4c5d-8e9f-0a1b2c3d4e5f' };
+    expect(valid(real)).toBe(true);
+    expect(valid({ ...real, escalation_level: 2 })).toBe(true);
+    expect(valid({ ...real, gps: '31.5,34.4' })).toBe(false);
+    expect(valid({ ...real, channel: 'sms', escalation_level: 1 })).toBe(false);
+    expect(valid({ ...real, title: 'x'.repeat(121) })).toBe(false);
   });
 });

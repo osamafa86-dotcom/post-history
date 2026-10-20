@@ -4,7 +4,8 @@ import type { OutboxRow } from './outbox.dispatcher';
 
 /** طابور عامل الوسائط (ADR 0006): Redis Stream بمجموعة مستهلكين `media` يديرها العامل. */
 export const MEDIA_STREAM = 'media:events';
-const MEDIA_EVENT_TYPES: ReadonlySet<OutboxEventType> = new Set(['upload.original_received', 'upload.proxy_received']);
+// export.requested (v0.2): عامل الوسائط يبني حزمة التصدير عند الطلب ويسجّلها مشتقًا export
+const MEDIA_EVENT_TYPES: ReadonlySet<OutboxEventType> = new Set(['upload.original_received', 'upload.proxy_received', 'export.requested']);
 
 export class MediaQueueUnavailableError extends Error {
   override name = 'MediaQueueUnavailableError';

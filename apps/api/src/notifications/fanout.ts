@@ -1,10 +1,11 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { Tx } from '../database/database.module';
-import { materials, notifications, offices, userRoles, users } from '../database/schema/schema';
+import { materials, notificationRuleEscalations, notifications, offices, userRoles, users } from '../database/schema/schema';
 import { highestRank, type RoleName } from '../identity/principal';
 import type { OutboxRow } from '../outbox/outbox.dispatcher';
 import { enqueuePush } from '../push/push-delivery.worker';
 import { materialRef, notificationTitle, type Locale } from './messages';
+import { applyRules, enabledRules } from './rule-fanout';
 
 type Audience = 'supervisors' | 'producers' | 'reporter' | 'escalated_to';
 
@@ -43,31 +44,35 @@ export async function fanOut(tx: Tx, event: OutboxRow, opts: FanOutOptions): Pro
   const payload = event.payload as Record<string, unknown>;
   if (event.type === 'auth.recovery_requested') return recoveryRequested(tx, event, payload, opts);
   if (event.type === 'auth.recovery_completed') return recoveryCompleted(tx, event, opts);
-  const rule = RULES[event.type];
   const materialId = typeof payload.material_id === 'string' ? payload.material_id : undefined;
-  if (!rule || !materialId) return 0;
-  if (event.type === 'upload.verified' && (payload.kind !== 'original' || typeof payload.receipt_number !== 'string')) return 0;
+  const receipt = typeof payload.receipt_number === 'string' ? payload.receipt_number : undefined;
+  const custom = materialId && RULEABLE.test(event.type) ? await enabledRules(tx, event.type) : [];
+  const rule = RULES[event.type];
+  if ((!rule && custom.length === 0) || !materialId) return 0;
 
   const [m] = await tx
-    .select({ id: materials.id, reporterId: materials.reporterId, officeId: materials.officeId, priority: materials.priority, governorate: offices.governorate })
+    .select({
+      id: materials.id,
+      reporterId: materials.reporterId,
+      officeId: materials.officeId,
+      priority: materials.priority,
+      materialTypes: materials.materialTypes,
+      governorate: offices.governorate,
+    })
     .from(materials)
     .leftJoin(offices, eq(offices.id, materials.officeId))
     .where(eq(materials.id, materialId));
   if (!m) return 0;
+  if (custom.length > 0) return applyRules(tx, event, m, custom, { locale: opts.locale, push: opts.push, receipt });
+  if (!rule) return 0;
+  if (event.type === 'upload.verified' && (payload.kind !== 'original' || !receipt)) return 0;
   if (rule.skipUrgent && m.priority === 'urgent') return 0;
+  if (event.type === 'notification.escalated') return escalated(tx, event, payload, m, opts);
 
-  const recipients =
-    rule.audience === 'escalated_to'
-      ? typeof payload.escalated_to === 'string'
-        ? [payload.escalated_to]
-        : []
-      : await audience(tx, rule.audience, m);
+  const recipients = await audience(tx, rule.audience as Exclude<Audience, 'escalated_to'>, m);
   if (recipients.length === 0) return 0;
   const delay = rule.assignment && rule.audience !== 'escalated_to' ? opts.escalationSeconds[m.priority as 'urgent'] : undefined;
-  const title = notificationTitle(event.type, opts.locale, {
-    ref: materialRef(m.id),
-    receipt: typeof payload.receipt_number === 'string' ? payload.receipt_number : undefined,
-  });
+  const title = notificationTitle(event.type, opts.locale, { ref: materialRef(m.id), receipt });
   const rows = await tx
     .insert(notifications)
     .values(
@@ -85,6 +90,51 @@ export async function fanOut(tx: Tx, event: OutboxRow, opts: FanOutOptions): Pro
     .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
     .returning({ id: notifications.id });
   if (opts.push && rule.push) await enqueuePush(tx, rows.map((r) => r.id));
+  return rows.length;
+}
+
+// الأحداث التي تقبل قواعد الإدارة (notification_rules_event_type_check)
+const RULEABLE = /^(material|upload|ai)\./;
+
+/**
+ * إشعار التصعيد للمستخدم المسمّى في الحدث، بمستوى التصعيد. إن جاء من سلسلة قاعدة فالقاعدة نفسها، والدفع على قنوات
+ * مستواها وحدها؛ وإلا فسلم التصعيد الافتراضي بالدفع.
+ */
+async function escalated(
+  tx: Tx,
+  event: OutboxRow,
+  payload: Record<string, unknown>,
+  m: { id: string; priority: string },
+  opts: FanOutOptions,
+): Promise<number> {
+  const to = typeof payload.escalated_to === 'string' ? payload.escalated_to : undefined;
+  const level = typeof payload.escalation_level === 'number' ? payload.escalation_level : 0;
+  const originalId = typeof payload.notification_id === 'string' ? payload.notification_id : undefined;
+  if (!to) return 0;
+  const [original] = originalId ? await tx.select({ ruleId: notifications.ruleId }).from(notifications).where(eq(notifications.id, originalId)) : [];
+  const ruleId = original?.ruleId ?? null;
+  const [step] = ruleId
+    ? await tx
+        .select({ channels: notificationRuleEscalations.channels })
+        .from(notificationRuleEscalations)
+        .where(and(eq(notificationRuleEscalations.ruleId, ruleId), eq(notificationRuleEscalations.level, level)))
+    : [];
+  const rows = await tx
+    .insert(notifications)
+    .values({
+      userId: to,
+      eventId: event.id,
+      type: event.type,
+      materialId: m.id,
+      title: notificationTitle(event.type, opts.locale, { ref: materialRef(m.id) }),
+      priority: m.priority,
+      ruleId,
+      assignmentState: 'assigned',
+      escalationLevel: level,
+    })
+    .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
+    .returning({ id: notifications.id });
+  if (opts.push) await enqueuePush(tx, rows.map((r) => r.id), step ? { channels: step.channels } : {});
   return rows.length;
 }
 

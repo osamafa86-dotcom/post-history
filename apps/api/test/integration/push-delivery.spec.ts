@@ -82,7 +82,7 @@ describe('push delivery to registered devices', () => {
     const pushed = [...apns.sent, ...fcm.sent].filter((s) => s.payload.material_id === id);
     expect(pushed.map((s) => s.token).sort()).toEqual(['apns-sup-1', 'fcm-sup-1']);
     for (const { payload } of pushed) {
-      expect(Object.keys(payload).sort()).toEqual(['material_id', 'notification_id', 'priority', 'title', 'type']);
+      expect(Object.keys(payload).sort()).toEqual(['channel', 'material_id', 'notification_id', 'priority', 'title', 'type']);
       expect(payload).toMatchObject({ type: 'material.urgent_received', priority: 'urgent' });
       expect(JSON.stringify(payload)).not.toContain('Sensitive title');
     }

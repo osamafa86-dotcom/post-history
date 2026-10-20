@@ -3,15 +3,18 @@ import { connect, type ClientHttp2Session, constants } from 'node:http2';
 import { GoogleServiceAccountAuth, GoogleUnavailable } from '../common/google-auth';
 
 /**
- * حمولة الدفع: قائمة بيضاء ثابتة. العنوان من قوالب messages.ts (رقم المادة وحالتها فقط)، والباقي معرّفات. لا عنوان
- * مادة ولا اسم مصدر ولا موقع ولا اسم مستخدم، ولا يُبنى شيء هنا من حقول حرة.
+ * حمولة الدفع: القائمة البيضاء المغلقة في العقد (schemas/notification-channel-payload.json، v0.2). العنوان من قوالب
+ * messages.ts (رقم المادة وحالتها فقط)، والباقي معرّفات. لا عنوان مادة ولا اسم مصدر ولا موقع ولا اسم مستخدم، ولا يُبنى
+ * شيء هنا من حقول حرة. تُتحقق بالمخطط قبل كل إرسال (push-delivery.worker).
  */
 export interface PushPayload {
+  channel: 'apns' | 'fcm';
   notification_id: string;
   type: string;
   material_id: string | null;
   priority: 'urgent' | 'important' | 'normal';
   title: string;
+  escalation_level?: number;
 }
 
 /** نتيجة إرسال إلى جهاز واحد: ok، أو رمز الجهاز لم يعد صالحًا (يُبطل)، أو خطأ مؤقت يُعاد. */
@@ -46,6 +49,7 @@ export class ApnsSender implements PushSender {
       type: payload.type,
       material_id: payload.material_id,
       priority: payload.priority,
+      ...(payload.escalation_level !== undefined ? { escalation_level: payload.escalation_level } : {}),
     });
     try {
       const { status, reason } = await this.request(deviceToken, body, payload.priority === 'normal' ? '5' : '10');
@@ -133,6 +137,7 @@ export class FcmSender implements PushSender {
               type: payload.type,
               material_id: payload.material_id ?? '',
               priority: payload.priority,
+              ...(payload.escalation_level !== undefined ? { escalation_level: String(payload.escalation_level) } : {}),
             },
             android: { priority: payload.priority === 'normal' ? 'NORMAL' : 'HIGH' },
           },

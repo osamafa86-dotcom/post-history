@@ -6,6 +6,7 @@ import type { FieldKeyring } from '../common/crypto';
 import { LOGGER } from '../common/logger';
 import { DB, type Database, type Tx } from '../database/database.module';
 import { notificationDeliveries, notifications, pushDevices } from '../database/schema/schema';
+import { schemaFileValidator } from '../common/contract';
 import { APNS_SENDER, FCM_SENDER, type PushPayload, type PushSender } from './push-senders';
 
 const PLATFORM_OF: Record<string, string> = { apns: 'ios', fcm: 'android' };
@@ -13,13 +14,24 @@ const PLATFORM_OF: Record<string, string> = { apns: 'ios', fcm: 'android' };
 /**
  * يضع تسليم الدفع لإشعارات أُنشئت للتو في المعاملة نفسها التي أنشأتها: صف لكل قناة لها جهاز نشط لدى المستلم
  * (apns لـ iOS وfcm لأندرويد؛ دفع الويب لم يُنفَّذ). الإشعار يبقى في صندوق الوارد أيًّا كان مصير التسليم.
+ * channels يحصر القنوات (قاعدة التنبيه)، وnotBeforeSeconds يؤجل أول محاولة (تأخير القاعدة وساعات الهدوء): العامل
+ * لا يأخذ صفًا قبل updated_at.
  */
-export async function enqueuePush(tx: Tx, notificationIds: string[]): Promise<void> {
+export async function enqueuePush(
+  tx: Tx,
+  notificationIds: string[],
+  opts: { channels?: readonly string[]; notBeforeSeconds?: number } = {},
+): Promise<void> {
   if (notificationIds.length === 0) return;
+  const channels = (opts.channels ?? ['apns', 'fcm']).filter((c) => c === 'apns' || c === 'fcm');
+  if (channels.length === 0) return;
+  const platforms = channels.map((c) => (c === 'apns' ? 'ios' : 'android'));
   await tx.execute(sql`
-    INSERT INTO notification_deliveries (notification_id, channel)
-    SELECT DISTINCT n.id, CASE d.platform WHEN 'ios' THEN 'apns' ELSE 'fcm' END
-      FROM notifications n JOIN push_devices d ON d.user_id = n.user_id AND d.revoked_at IS NULL AND d.platform IN ('ios', 'android')
+    INSERT INTO notification_deliveries (notification_id, channel, updated_at)
+    SELECT DISTINCT n.id, CASE d.platform WHEN 'ios' THEN 'apns' ELSE 'fcm' END,
+           now() + make_interval(secs => ${opts.notBeforeSeconds ?? 0})
+      FROM notifications n JOIN push_devices d ON d.user_id = n.user_id AND d.revoked_at IS NULL
+       AND d.platform IN (${sql.join(platforms.map((p) => sql`${p}`), sql`, `)})
      WHERE n.id IN (${sql.join(notificationIds.map((id) => sql`${id}::uuid`), sql`, `)})
     ON CONFLICT DO NOTHING`);
 }
@@ -70,6 +82,7 @@ export class PushDeliveryWorker implements OnApplicationBootstrap, OnApplication
           materialId: notifications.materialId,
           priority: notifications.priority,
           title: notifications.title,
+          escalationLevel: notifications.escalationLevel,
         })
         .from(notificationDeliveries)
         .innerJoin(notifications, eq(notifications.id, notificationDeliveries.notificationId))
@@ -87,7 +100,17 @@ export class PushDeliveryWorker implements OnApplicationBootstrap, OnApplication
 
   private async deliver(
     tx: Tx,
-    d: { notificationId: string; channel: string; attempts: number; userId: string; type: string; materialId: string | null; priority: string; title: string },
+    d: {
+      notificationId: string;
+      channel: string;
+      attempts: number;
+      userId: string;
+      type: string;
+      materialId: string | null;
+      priority: string;
+      title: string;
+      escalationLevel: number;
+    },
   ): Promise<void> {
     const sender = this.senders[d.channel];
     const devices = await tx
@@ -110,12 +133,16 @@ export class PushDeliveryWorker implements OnApplicationBootstrap, OnApplication
     if (devices.length === 0) return void (await finish('failed', 'no_device', true));
 
     const payload: PushPayload = {
+      channel: d.channel as PushPayload['channel'],
       notification_id: d.notificationId,
       type: d.type,
       material_id: d.materialId,
       priority: d.priority as PushPayload['priority'],
       title: d.title,
+      ...(d.type === 'notification.escalated' ? { escalation_level: d.escalationLevel } : {}),
     };
+    // القائمة البيضاء للعقد قبل أن يغادر شيء الخادم: ما لا يطابقها لا يُرسل أبدًا (فشل نهائي)
+    if (!schemaFileValidator('notification-channel-payload.json')(payload)) return void (await finish('failed', 'payload_rejected', true));
     const results = await Promise.all(
       devices.map(async (dev) => {
         let token: string;
