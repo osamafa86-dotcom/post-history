@@ -266,7 +266,7 @@ services:
     image: python:3.12-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
     command: ["python3", "/ai/fetch_models.py", "--lock", "/ai/models.lock", "--dest", "/models"]
     environment:
-      AI_MODELS: ${AI_MODELS:-ggml-large-v3-turbo-q5_0}
+      AI_MODELS: ${AI_MODELS:-faster-whisper-large-v3-turbo}
     volumes:
       - ../ai/fetch_models.py:/ai/fetch_models.py:ro
       - ../ai/models.lock:/ai/models.lock:ro
@@ -277,24 +277,29 @@ services:
     restart: "no"
     networks: [default]
 
-  # عامل الذكاء الاصطناعي المحلي (ADR 0019): تحصين عامل الوسائط نفسه، والأوزان للقراءة فقط، وشبكة media الداخلية وحدها
-  # (لا خروج: المواد الحساسة لا تصل إلى مزوّد خارجي). المعالج افتراضيًا، والرسومي بـ infra/ai/compose.gpu.yml.
-  # الصورة الآن بيئة تشغيل دنيا (infra/ai/runtime: whisper.cpp) تنتظر المستهلك؛ صورة workers/ai تحل محلها بتغيير build.
+  # عامل التفريغ المحلي (ADR 0019، 0020؛ صورة workers/ai): يستهلك media:events بمجموعة ai ويسجّل مسودتي التفريغ عبر
+  # /internal على الخادم. تحصين عامل الوسائط نفسه، والأوزان للقراءة فقط، وشبكة media الداخلية وحدها (لا خروج: المواد
+  # الموسومة بالحساسية لا تصل إلى مزوّد خارجي). التفريغ خلف AI_ENABLE_TRANSCRIPT (true، وغيرها = مطفأ).
   ai-worker:
     profiles: [ai]
     build:
-      context: ../ai/runtime
+      context: ../../workers/ai
       target: runtime
-    entrypoint: ["sleep", "infinity"]
     depends_on:
       ai-models:
         condition: service_completed_successfully
       minio-init:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     environment:
+      AI_ENABLE_TRANSCRIPT: ${AI_ENABLE_TRANSCRIPT:-false}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      AI_API_URL: http://api:3000
       AI_MODELS_DIR: /models
-      AI_MODEL: ${AI_MODEL:-ggml-large-v3-turbo-q5_0}
+      AI_MODEL: ${AI_MODEL:-faster-whisper-large-v3-turbo}
       AI_SCRATCH_DIR: /scratch
+      # رمز العامل لنقطة المشتقات (≥ 32 حرفًا)، والخادم يقبل منه transcript/captions وحدهما.
       AI_WORKER_TOKEN: ${AI_WORKER_TOKEN:-}
       S3_ENDPOINT: ${S3_ENDPOINT}
       S3_REGION: ${S3_REGION}

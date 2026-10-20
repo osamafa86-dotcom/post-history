@@ -18,9 +18,9 @@ env:
   # Core-gate acceptance (reservation-conflict, optimistic-concurrency, admin-quorum, notification-delivery, download-url) against the
   # server work of #69 and #75, now on main. "0" turns the five back into PENDING (they print it and write nothing).
   CORE_ACCEPTANCE: "1"
-  # Local transcription worker (workers/ai, ADR 0020): transcript-draft runs in media e2e with the ai profile. Flip to "1" once infra swaps the
-  # ai-worker image in compose for workers/ai and the server side (#107, #108) is on main; until then the step is skipped.
-  AI_ENABLE_TRANSCRIPT: "0"
+  # Local transcription worker (workers/ai, ADR 0020): transcript-draft runs in media e2e with the ai profile, the worker on the production
+  # model (faster-whisper large-v3-turbo) with AI_ENABLE_TRANSCRIPT=true. "0" leaves the ai profile out and skips the step.
+  AI_ENABLE_TRANSCRIPT: "1"
 
 jobs:
   acceptance:
@@ -164,7 +164,7 @@ jobs:
   media-e2e:
     name: "media e2e (full compose stack: upload, worker, proxy, hostile files)"
     runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
-    timeout-minutes: 20
+    timeout-minutes: 40  # the ai profile fetches the production weights (1.6 GB) and transcribes six clips
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -195,7 +195,8 @@ jobs:
       - name: Start the stack (API from source, tusd, MinIO, Redis, Postgres, media worker)
         run: |
           profiles="--profile api --profile media"
-          [ "$AI_ENABLE_TRANSCRIPT" = 1 ] && profiles="$profiles --profile ai"
+          # The worker reads "true" (workers/ai Config); the workflow switch is "1".
+          if [ "$AI_ENABLE_TRANSCRIPT" = 1 ]; then profiles="$profiles --profile ai"; export AI_ENABLE_TRANSCRIPT=true; fi
           docker compose -f infra/compose/docker-compose.yml $profiles up -d --wait --build
       - name: Media pipeline end to end (results are printed and kept as an artifact; nothing is written to docs/measurements)
         run: |

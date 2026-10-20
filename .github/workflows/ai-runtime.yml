@@ -1,11 +1,13 @@
 name: ai-runtime
 
-# Local AI worker runtime (ADR 0019): whisper.cpp from a pinned commit, weights fetched once by sha256 into a volume,
-# the worker hardened like the media worker on the internal network only. Smoke on ggml-tiny with a synthetic tone.
+# Local transcription worker in compose (ADR 0019, 0020): the workers/ai image, weights fetched once by sha256 into a volume,
+# the worker hardened like the media worker on the internal network only. Smoke on pinned faster-whisper tiny with a synthetic tone;
+# the end-to-end transcript (event to registered drafts) is transcript-draft in acceptance's media e2e.
 on:
   pull_request:
     paths:
       - "infra/ai/**"
+      - "workers/ai/**"
       - "infra/compose/docker-compose.yml"
       - ".github/workflows/ai-runtime.yml"
   workflow_dispatch:
@@ -31,11 +33,13 @@ jobs:
                  -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" \
                  -e "s/^REDIS_PASSWORD=.*/REDIS_PASSWORD=$(openssl rand -hex 16)/" \
                  -e "s/^S3_SECRET_KEY=.*/S3_SECRET_KEY=$(openssl rand -hex 16)/" \
+                 -e "s/^AI_WORKER_TOKEN=.*/AI_WORKER_TOKEN=$(openssl rand -hex 32)/" \
+                 -e "s/^S3_AI_ACCESS_KEY=.*/S3_AI_ACCESS_KEY=ai-worker-ci/" \
+                 -e "s/^S3_AI_SECRET_KEY=.*/S3_AI_SECRET_KEY=$(openssl rand -hex 16)/" \
                  -e "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" \
                  -e "s|^FIELD_ENCRYPTION_KEY=.*|FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)|" infra/compose/.env
           docker compose -f infra/compose/docker-compose.yml --profile ai config -q
-          docker compose -f infra/compose/docker-compose.yml -f infra/ai/compose.gpu.yml --profile ai config -q
-      - name: Smoke (fetch by pin, refuse a mismatch, offline re-check, hardening, no egress, whisper-cli runs)
+      - name: Smoke (fetch by pin, refuse a mismatch, offline re-check, hardening, no egress, queue group, engine runs)
         run: infra/ai/smoke-ai.sh
       - name: Tear down
         if: always()
