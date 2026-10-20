@@ -4,7 +4,7 @@
 
 ## صفوف جدول اختبارات القبول
 
-الخلاصة: pass 0، partial 11، fail 0، info 0، بلا نتيجة 11 من 22.
+الخلاصة: pass 0، partial 12، fail 0، info 0، بلا نتيجة 10 من 22.
 
 | الاختبار | النمط | الحالة | المعيار |
 | --- | --- | --- | --- |
@@ -23,7 +23,7 @@
 | refund | pending | — لا نتيجة | قيد عكسي صحيح لكل مساهم قبل الصرف وبعده، وظهوره في تقريري الإدارة والمصور |
 | rights-exclusivity | pending | — لا نتيجة | منع بيع مادة محظورة أو مجهولة الحقوق أو مشتقة منها، ومنع بيع الحصرية مرتين بما يشمل الطلبا… |
 | payout | pending | — لا نتيجة | وصول مبلغ حقيقي إلى مراسلين في غزة والضفة عبر قناة واحدة على الأقل خلال 7 أيام، برسوم ومتط… |
-| recovery | pending | — لا نتيجة | استعادة قاعدة البيانات وعينة أصول من النسخة المعزولة لدى المزوّد الثاني ضمن الهدفين: فقد ل… |
+| recovery | pending | ◐ partial | استعادة قاعدة البيانات وعينة أصول من النسخة المعزولة لدى المزوّد الثاني ضمن الهدفين: فقد ل… |
 | availability | pending | — لا نتيجة | إسقاط خادم وقاعدة بيانات ونشر أثناء الحمل؛ زمن التعافي يثبت الهدف المعلن |
 | ai-eval | pending | — لا نتيجة | تقييم على مجموعة الـ 100 مادة: لا تحريف وقائعي جسيم، وتوثيق نسبة الرفض لكل مزوّد على العين… |
 | performance | pending | ◐ partial | معاينة مقطع 10 دقائق بدقة 1080p ضمن الهدف المقيس في التأسيس، وبحث نصي أقل من ثانيتين في 95… |
@@ -45,7 +45,6 @@
 | الاختبار | الثغرة | رُفعت إلى |
 | --- | --- | --- |
 | session-revocation | inflight-continues: tusd PATCH after revocation | coordinator (QA PR sec01-acceptance) |
-| session-revocation | inflight-completes: upload completion after revocation | coordinator, ticket for agent 2 (server) |
 | tenant-isolation | missing-response: GET /materials | contracts agent via orchestrator (QA PR acceptance-skeleton) |
 | tenant-isolation | missing-response: GET /materials/{id} | contracts agent via orchestrator (QA PR acceptance-skeleton) |
 | tenant-isolation | missing-response: GET /materials/{id}/transitions | contracts agent via orchestrator (QA PR acceptance-skeleton) |
@@ -64,9 +63,11 @@
 | pii-leak | acceptance | — | ◐ partial | live_requests=236، live_findings=0، static_findings=0 | 2026-10-19 | 4 | `docs/measurements/acceptance/2026-10-19-pii-leak-live-3.json` |
 | proxy-accuracy | acceptance | — | ◐ partial | cut_points=10، cut_matched_by_frame_index=true، cut_worst_gap_ms=0، cut_tolerance_ms=40 | 2026-10-19 | 1 | `docs/measurements/acceptance/2026-10-19-proxy-accuracy-media-e2e.json` |
 | receipt-notification | acceptance | — | ◐ partial | creation_to_task_within_60s_pct=100، verification_to_receipt_s_p95=0.35، escalation_to_editor_s=3.48، escalation_to_admin_s=6.23 | 2026-10-19 | 3 | `docs/measurements/acceptance/2026-10-19-receipt-notification-chain-and-escalation-2.json` |
-| session-revocation | acceptance | — | ◐ partial | criterion_proposed_s=5، single_access_refused_s=0.01، single_refresh_refused_s=0.01، single_listed_after=false | 2026-10-20 | 2 | `docs/measurements/acceptance/2026-10-20-session-revocation-api-and-tusd-2.json` |
+| recovery | acceptance | — | ◐ partial | tables_compared=20، rows_compared=44، tables_with_rows=17، tables_mismatched=0 | 2026-10-20 | 1 | `docs/measurements/acceptance/2026-10-20-recovery-pg-dump-restore.json` |
+| session-revocation | acceptance | — | ◐ partial | criterion_proposed_s=5، single_access_refused_s=0.01، single_refresh_refused_s=0.01، single_listed_after=false | 2026-10-20 | 3 | `docs/measurements/acceptance/2026-10-20-session-revocation-api-and-tusd-3.json` |
 | tenant-isolation | acceptance | — | ◐ partial | cases_executed=229، cases_failed=0، cases_unimplemented=0 | 2026-10-19 | 4 | `docs/measurements/acceptance/2026-10-19-tenant-isolation-live-3.json` |
 | upload-resume | acceptance | loopback | ◐ partial | size_bytes=67108864، interruptions=3، resent_pct=0، sha256_match=true | 2026-10-19 | 3 | `docs/measurements/acceptance/2026-10-19-upload-resume-64mb-3.json` |
+| — | netlab | blocking | ◐ partial | none__main__ok=true، none__main__stage=done، none__main__time_s=0.05، none__ingest__ok=true | 2026-10-19 | 1 | `docs/measurements/netlab/2026-10-19-ingest-blocking.json` |
 | field-network-upload | netlab | field-switch | ◐ partial | upload_complete=true، checksum_match=true | 2026-10-19 | 1 | `docs/measurements/netlab/2026-10-19-tusd-field-switch-500mb.json` |
 | field-network-upload | netlab | field-weak | ◐ partial | upload_complete=false، checksum_match=false | 2026-10-19 | 1 | `docs/measurements/netlab/2026-10-19-tusd-field-weak-500mb.json` |
 | field-network-upload | netlab | office | ◐ partial | upload_complete=true، checksum_match=true | 2026-10-19 | 1 | `docs/measurements/netlab/2026-10-19-tusd-office-500mb.json` |
