@@ -96,6 +96,55 @@ open class MaterialsAPI {
     }
 
     /**
+     رابط قراءة موقّع قصير العمر لمشتق من المادة (v0.1)
+     
+     - parameter id: (path) معرّف المادة 
+     - parameter fileId: (path) ملف مشتق من ملفات المادة 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: FileDownloadUrl
+     */
+    open class func getMaterialFileDownloadUrl(id: UUID, fileId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> FileDownloadUrl {
+        return try await getMaterialFileDownloadUrlWithRequestBuilder(id: id, fileId: fileId, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     رابط قراءة موقّع قصير العمر لمشتق من المادة (v0.1)
+     - GET /materials/{id}/files/{file_id}/download-url
+     - للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail`) في حالة `verified`. الأصل والملاحظة الصوتية لا يُعطيان رابطًا هنا (`404`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`).
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - responseHeaders: [Cache-Control(String)]
+     - parameter id: (path) معرّف المادة 
+     - parameter fileId: (path) ملف مشتق من ملفات المادة 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<FileDownloadUrl> 
+     */
+    open class func getMaterialFileDownloadUrlWithRequestBuilder(id: UUID, fileId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<FileDownloadUrl> {
+        var localVariablePath = "/materials/{id}/files/{file_id}/download-url"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let fileIdPreEscape = "\(APIHelper.mapValueToPathItem(fileId))"
+        let fileIdPostEscape = fileIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{file_id}", with: fileIdPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<FileDownloadUrl>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      قائمة المواد ضمن نطاق المستخدم
      
      - parameter editorialState: (query) تصفية بالحالة التحريرية (optional)
