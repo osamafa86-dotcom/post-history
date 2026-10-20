@@ -13,7 +13,8 @@ import { audit, recordRecoveryApproval } from './recovery-approval';
 import { RESET_TOKEN_DELIVERY, type ResetTokenDelivery } from './reset-token-delivery';
 import type { RateLimiter } from './rate-limiter';
 import { RateLimitsService } from './rate-limits.service';
-import { revokeAllAccess, SessionService } from './session.service';
+import { SessionService } from './session.service';
+import { recordStatusChange } from './user-status';
 
 type UserSession = components['schemas']['UserSession'];
 type RecoveryApproval = components['schemas']['RecoveryApproval'];
@@ -196,20 +197,7 @@ export class AccountService {
       if (u.status !== 'active' && u.status !== 'suspended') {
         throw new ApiError(409, 'invalid_transition', `The account is in ${u.status}.`);
       }
-      const [changed] = await tx.update(users).set({ status }).where(eq(users.id, userId)).returning({ at: sql<string>`now()` });
-      if (status === 'suspended') await revokeAllAccess(tx, userId);
-      const reasonCode = status === 'suspended' ? 'suspended' : 'reactivated';
-      await audit(tx, p.userId, `user.${reasonCode}`, userId, { target_user_id: userId, reason_code: reasonCode });
-      const occurredAt = new Date(changed!.at).toISOString();
-      await writeOutboxEvent(tx, {
-        type: 'user.status_changed',
-        aggregateType: 'user',
-        aggregateId: userId,
-        // كل تغيير حالة حدث مستقل؛ لحظة المعاملة تميّزه (التكرار بالطلب نفسه يمنعه Idempotency-Key قبل الوصول هنا)
-        idempotencyKey: `user.status_changed:${userId}:${occurredAt}`,
-        actorId: p.userId,
-        payload: { user_id: userId, status, reason_code: reasonCode, actor_id: p.userId, occurred_at: occurredAt },
-      });
+      await recordStatusChange(tx, p.userId, userId, status);
     });
   }
 }

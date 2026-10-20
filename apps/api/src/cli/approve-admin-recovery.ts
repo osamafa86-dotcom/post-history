@@ -53,7 +53,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
  * قارئ أسطر واحد للعملية كلها (واجهة readline لكل سؤال تبتلع ما بعد السطر الأول حين تأتي المدخلات دفعة واحدة)،
  * بلا صدى للرموز. انتهاء المدخلات قبل الجواب خطأ لا خروج صامت.
  */
-function lineReader(): { ask(prompt: string): Promise<string>; close(): void } {
+export function lineReader(): { ask(prompt: string): Promise<string>; close(): void } {
   const muted = new Writable({ write: (_chunk, _enc, cb) => cb() });
   const rl = createInterface({ input: process.stdin, output: muted, terminal: process.stdin.isTTY ?? false });
   const lines = rl[Symbol.asyncIterator]();
