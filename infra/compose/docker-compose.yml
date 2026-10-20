@@ -173,6 +173,8 @@ services:
       # فارغ = in_process. مع profile media يُضبط UPLOAD_VERIFIER=external وMEDIA_WORKER_TOKEN في .env.
       UPLOAD_VERIFIER: ${UPLOAD_VERIFIER:-}
       MEDIA_WORKER_TOKEN: ${MEDIA_WORKER_TOKEN:-}
+      # رمز عامل التفريغ (ADR 0019) لنقطة المشتقات: transcript/captions فقط. فارغ = النقطة ترفضه.
+      AI_WORKER_TOKEN: ${AI_WORKER_TOKEN:-}
       # شهادة الجهاز ورمز ingest (ADR 0011، SEC-07). فارغ = ATTESTATION_MODE=off والمسارات 404.
       ATTESTATION_MODE: ${ATTESTATION_MODE:-}
       APP_ATTEST_APP_ID: ${APP_ATTEST_APP_ID:-}
@@ -293,6 +295,7 @@ services:
       AI_MODELS_DIR: /models
       AI_MODEL: ${AI_MODEL:-ggml-large-v3-turbo-q5_0}
       AI_SCRATCH_DIR: /scratch
+      AI_WORKER_TOKEN: ${AI_WORKER_TOKEN:-}
       S3_ENDPOINT: ${S3_ENDPOINT}
       S3_REGION: ${S3_REGION}
       # مستخدم MinIO الخاص بالعامل (infra/minio/init.sh): قراءة derived/*/proxy-480p.mp4 وكتابة derived/*/transcript.* فقط
