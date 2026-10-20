@@ -15,9 +15,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # Core-gate acceptance (reservation-conflict, optimistic-concurrency, admin-quorum, notification-delivery, download-url) measures server
-  # work that lands with #69 and #75. Set to "1" in the PR that rebases onto them; until then the scripts print PENDING and write nothing.
-  CORE_ACCEPTANCE: "0"
+  # Core-gate acceptance (reservation-conflict, optimistic-concurrency, admin-quorum, notification-delivery, download-url) against the
+  # server work of #69 and #75, now on main. "0" turns the five back into PENDING (they print it and write nothing).
+  CORE_ACCEPTANCE: "1"
 
 jobs:
   acceptance:

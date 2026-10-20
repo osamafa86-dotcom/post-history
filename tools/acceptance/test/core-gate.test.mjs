@@ -103,10 +103,12 @@ test("admin-quorum: the API half is partial alone, pass with the command line, a
   const base = { QUORUM_API_URL: "http://x/v1", QUORUM_TOKENS: JSON.stringify(TOKENS), QUORUM_USERS: JSON.stringify({ system_admin_id: "system_admin", system_admin_b_id: "system_admin_b", victim_id: "victim" }) };
   const alone = await quiet(() => quorum(["--dry-run"], setEnv(base), { fetchImpl: fakeApi() }));
   assert.equal(alone.code, 0); assert.equal(alone.doc.result, "partial"); assert.equal(alone.doc.metrics.cli_checked, false);
-  const withCli = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: "exit 3", QUORUM_CLI_GUARD: "exit 4", QUORUM_CLI_TWO: "test -n \"$TARGET_ID\"" }), { fetchImpl: fakeApi() }));
+  const withCli = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: "exit 3", QUORUM_CLI_GUARD: "echo 'refused (quorum)' >&2; exit 1", QUORUM_CLI_TWO: "test -n \"$TARGET_ID\"" }), { fetchImpl: fakeApi() }));
   assert.equal(withCli.doc.result, "pass");
-  const lax = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: "true", QUORUM_CLI_GUARD: "exit 4", QUORUM_CLI_TWO: "true" }), { fetchImpl: fakeApi() }));
+  const lax = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: "true", QUORUM_CLI_GUARD: "echo 'refused (quorum)' >&2; exit 1", QUORUM_CLI_TWO: "true" }), { fetchImpl: fakeApi() }));
   assert.equal(lax.code, 1, "a single approver accepted by the command line is a failure");
+  const wrongReason = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: "exit 3", QUORUM_CLI_GUARD: "exit 1", QUORUM_CLI_TWO: "true" }), { fetchImpl: fakeApi() }));
+  assert.equal(wrongReason.code, 1, "a guard refusal for another reason does not prove the quorum guard");
 });
 
 test("notification-delivery: right recipients and keys pass (partial below 20 runs); a stray recipient, a leaked coordinate or an off-list payload key fail", async () => {
