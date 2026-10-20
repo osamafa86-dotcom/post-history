@@ -37,6 +37,7 @@ public struct ModelError: Sendable, Codable, Hashable {
         case assertionReplay = "assertion_replay"
         case attestationKeyConflict = "attestation_key_conflict"
         case attestationUnavailable = "attestation_unavailable"
+        case mediaResourceGone = "media_resource_gone"
         case internalError = "internal_error"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
