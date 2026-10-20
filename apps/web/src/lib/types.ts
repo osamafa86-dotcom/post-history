@@ -1,0 +1,13 @@
+import type { components, operations } from "@/generated/schema";
+export type Session = components["schemas"]["Session"];
+export type Me = components["schemas"]["Me"];
+export type Permission = components["schemas"]["Permission"];
+export type Material = components["schemas"]["Material"];
+export type MaterialPage = components["schemas"]["MaterialPage"];
+export type MaterialFile = components["schemas"]["MaterialFile"];
+export type MaterialType = components["schemas"]["MaterialType"];
+export type Field = components["schemas"]["field"];
+// $defs كلمة للمخطط وليست خاصية في بيانات JSON (المولّد يضيفها في النوع الخارجي).
+export type Form = Omit<components["schemas"]["UploadForm"], "$defs">;
+export type Values = Material["dynamic_fields"];
+export type MaterialQuery = NonNullable<operations["listMaterials"]["parameters"]["query"]>;
