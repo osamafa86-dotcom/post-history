@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "infra",
+  "test_name": "recovery",
+  "started_at": "2026-10-20T02:02:10Z",
+  "ended_at": "2026-10-20T02:02:18Z",
+  "result": "partial",
+  "device": {
+    "platform": "server",
+    "model": "GitHub Actions runner, docker compose (field-trial workflow)"
+  },
+  "metrics": {
+    "dump_bytes_encrypted": 96371,
+    "decrypt_s": 0.38,
+    "pg_restore_s": 4.79,
+    "backup_age_h": 0.0,
+    "pg_restore_errors": 0,
+    "tables_compared": 20,
+    "tables_missing": 0,
+    "tables_fewer_rows": 0,
+    "objects_sampled": 4,
+    "objects_mismatched": 0,
+    "drill_passed": true
+  },
+  "notes": "ADR 0013 restore drill, as printed by the field-trial workflow (run 39356594606, job 118412686808) on 8b48c73, after #73 schema-qualified the CHECK functions: latest encrypted pg_dump decrypted with the offline recipient key, restored into a throwaway postgres:16-alpine, row counts compared with the counts taken at backup time, and every encrypted object decrypted and compared by SHA-256 with the live object. The earlier failing drill (2026-10-20-restore-drill-local.json) is kept as the finding. Partial: CI runner, not the trial host."
+}

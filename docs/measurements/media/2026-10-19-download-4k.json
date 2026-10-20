@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "media",
+  "test_name": "media-download-to-disk-4k",
+  "started_at": "2026-10-19T23:27:24.713Z",
+  "ended_at": "2026-10-19T23:28:34.117Z",
+  "result": "info",
+  "device": {
+    "platform": "server",
+    "model": "4 vCPU"
+  },
+  "upload_path": "n/a",
+  "file": {
+    "size_bytes": 757239593,
+    "duration_s": 120.0,
+    "bitrate_kbps": 50483,
+    "codec": "h264",
+    "vfr": false,
+    "hdr": false
+  },
+  "metrics": {
+    "download_s": 3.332,
+    "download_mb_per_s": 227.3,
+    "peak_rss_mb_download_process": 59.0,
+    "probe_s": 0.987,
+    "scratch_bytes_needed": 757239593,
+    "resolution": "3840x2160",
+    "source_generate_s": 60.7,
+    "sha256_matches_upload": true,
+    "ffmpeg_version": "8.0.1"
+  },
+  "notes": "ملف 4K اصطناعي (3840x2160، 30 إطارًا/ث، دقيقتان، H.264 بنحو 50 Mbps) يُرفع إلى MinIO محلي ثم ينزّله العامل بمسار المهمة نفسه (jobs._download: قراءة تدفقية بأجزاء 8 MiB مع SHA-256 والبصمة الرخيصة) في عملية فرعية جديدة. الذاكرة ثابتة لا تتبع حجم الملف (ذروة العملية كلها نحو 59 MB، منها المفسّر)، والقرص المطلوب في /scratch يساوي حجم الأصل (ومعه النسخة الخفيفة أثناء المهمة). MinIO على المضيف نفسه، فزمن التنزيل سقف لا يمثل عرض النطاق إلى R2 في الإنتاج. النتيجة info: لا معيار قبول لهذا البند. الأمر: python bench/download_bench.py داخل صورة workers/media."
+}

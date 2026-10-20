@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "infra",
+  "test_name": "recovery",
+  "started_at": "2026-10-20T00:56:35Z",
+  "ended_at": "2026-10-20T00:56:45Z",
+  "result": "fail",
+  "device": {
+    "platform": "server",
+    "model": "local docker compose"
+  },
+  "metrics": {
+    "dump_bytes_encrypted": 96211,
+    "decrypt_s": 0.84,
+    "pg_restore_s": 3.86,
+    "backup_age_h": 0.0,
+    "pg_restore_errors": 2,
+    "tables_compared": 20,
+    "tables_missing": 0,
+    "tables_fewer_rows": 1,
+    "objects_sampled": 4,
+    "objects_mismatched": 0,
+    "drill_passed": false
+  },
+  "notes": "ADR 0013 restore drill: latest encrypted pg_dump decrypted with the offline recipient key, restored into a throwaway postgres:16-alpine, row counts compared with the counts taken at backup time (restored >= counted), and a sample of encrypted objects decrypted and compared by SHA-256 with the live objects. Environment: local; partial unless run on the trial host. Finding: pg_restore fails on outbox_events (0 of 20 rows) because the CHECK function outbox_payload_is_whitelisted calls outbox_payload_allowed_keys unqualified, and pg_dump restores with an empty search_path; the notifications foreign key then fails too. Reproduced in isolation and fixed there by schema-qualifying the call (public.outbox_payload_allowed_keys) or SET search_path on the function; with the fix applied to the live database the same drill passed (20 tables, 4 of 4 objects). The migration belongs to the data agent (apps/api/src/db)."
+}

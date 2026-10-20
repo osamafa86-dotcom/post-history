@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "tool": "android-app",
+  "role": "android",
+  "test_name": "field-network-upload",
+  "decision_ref": 3,
+  "started_at": "2026-10-20T01:30:16Z",
+  "ended_at": "2026-10-20T02:05:41Z",
+  "result": "fail",
+  "device": {
+    "platform": "server",
+    "model": "UploadEngine + TusTransport (apps/android/core on JVM, tus-java-client 0.5.1)",
+    "os_version": "Linux 7.0.0-1017-azure"
+  },
+  "network": {
+    "profile": "field-weak",
+    "uplink_kbps": 500,
+    "loss_pct": 30,
+    "disconnect_every_s": 120,
+    "longest_connected_window_s": 748.0
+  },
+  "upload_path": "tusd",
+  "file": {
+    "size_bytes": 104857600,
+    "codec": "synthetic-random"
+  },
+  "metrics": {
+    "upload_complete": false,
+    "checksum_match": false,
+    "device_sha256_matches_source": true,
+    "bytes_uploaded": 6990926,
+    "elapsed_s": 2124.0,
+    "hash_s": 0.5,
+    "goodput_kbps": 26.3,
+    "resumes": 5,
+    "connection_failures": 5,
+    "longest_connected_window_s": 748.0,
+    "client_chunk_bytes": 1048576,
+    "client_timeout_s": 90,
+    "request_target_s": 20,
+    "parts_ok": 47,
+    "parts_failed": 5,
+    "loss_mode": "netem",
+    "engine_outcome": "Stopped",
+    "engine_state": "UPLOADING",
+    "runner_exit_code": 2,
+    "part_time_s_p50": 29.35,
+    "part_time_s_p90": 58.53,
+    "part_time_s_max": 67.86,
+    "part_times_s": "57.5,24.3,40.5,54.0,29.3,17.2,27.3,65.0,22.8,27.4,26.0,66.0,30.1,18.0,23.5,57.2,20.8,28.4,17.3,29.4,23.2,17.3,55.7,27.7,20.1,27.7,59.7,25.5,25.7,19.7,29.4,67.9,31.3,26.2,53.9,17.9,50.6,57.5,33.1,17.2,58.5,28.6,43.0,58.0,36.4,67.3,51.4",
+    "request_bytes_min": 131072,
+    "request_bytes_median": 131072,
+    "request_bytes_max": 152640,
+    "events": "120.1s:blackout-start;140.2s:blackout-end;240.1s:blackout-start;260.2s:blackout-end;360.1s:blackout-start;380.1s:blackout-end;480.1s:blackout-start;500.1s:blackout-end;600.1s:blackout-start;620.1s:blackout-end;720.1s:blackout-start;740.1s:blackout-end;840.1s:blackout-start;860.1s:blackout-end;960.1s:blackout-start;980.1s:blackout-end;1080.1s:blackout-start;1100.1s:blackout-end;1200.1s:blackout-start;1220.1s:blackout-end;1320.1s:blackout-start;1340.1s:blackout-end;1440.1s:blackout-start;1460.1s:blackout-end;1560.1s:blackout-start;1580.1s:blackout-end;1680.1s:blackout-start;1700.1s:blackout-end;1800.1s:blackout-start;1820.1s:blackout-end;1920.1s:blackout-start;1940.1s:blackout-end;2040.1s:blackout-start;2060.1s:blackout-end",
+    "bytes_lost_on_resume": 0,
+    "goodput_connected_kbps": 31.4,
+    "mathis_limit_kbps": 86.0,
+    "efficiency_vs_mathis": 0.365,
+    "stage_a_ok": false
+  },
+  "notes": "Client: the Android app's UploadEngine (hash on device -> session -> tus create -> resume from HEAD, PATCH sized to the observed rate for ~20 s per request between 128 KiB and the session part size, read timeout 90 s, backoff 2/5/15/30/60 s restarting whenever the server took bytes) run on the JVM by apps/android/netlab-runner; POST/GET /uploads answered by an in-process stub (netlab has no API). Stack: toxiproxy -> nginx tusd-proxy -> tusd -> MinIO (netlab overlay). Time box 2100s, event scale 1.0. loss 30% + delay 300ms via tc netem. elapsed_s counts the transfer only; hash_s is the on-device SHA-256 before the first byte. bytes_uploaded is what the server holds (acknowledged requests and HEAD offsets, tusd keeps the bytes of a cut request); resumes counts each HEAD after a failure. Never pass: field-network-upload stage (b) is 1 GB on a real device and network (stage (a): efficiency >= 70% of Mathis, zero bytes lost on resume, netem, checksum match). Run-3 definitions (before the runner's netlab-terms summary): part_time_s_* was the interval between consecutive acknowledgements, including backoff waits, and parts_failed equalled connection_failures; later runs use netlab's PATCH duration and count a cut request as a failed part."
+}
