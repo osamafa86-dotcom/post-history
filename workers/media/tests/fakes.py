@@ -6,7 +6,7 @@ import hashlib
 from dataclasses import replace
 from pathlib import Path
 
-from media_worker.api import Session
+from media_worker.api import ApiRejected, Session
 from media_worker.storage import ObjectMissing
 
 
@@ -35,8 +35,9 @@ class FakeApi:
 
     FILE_ID = "f0000000-0000-4000-8000-000000000001"
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, reject_thumbnails: bool = False) -> None:
         self.session = session
+        self.reject_thumbnails = reject_thumbnails
         self.verifications: list[dict] = []
         self.derivatives: list[tuple[str, dict]] = []
         self.sha256: str | None = None
@@ -62,6 +63,9 @@ class FakeApi:
 
     def add_derivative(self, file_id: str, body: dict) -> dict:
         assert body["storage_key"].startswith(f"derived/{self.session.material_id}/{file_id}/")
+        if body["kind"] == "thumbnail" and self.reject_thumbnails:
+            raise ApiRejected("POST derivatives: HTTP 422")  # كما يرد الخادم قبل أن يقبل نوع thumbnail
         self.derivatives.append((file_id, body))
-        self.session = replace(self.session, material_has_proxy=True)
+        if body["kind"] == "proxy":
+            self.session = replace(self.session, material_has_proxy=True)
         return {"file_id": "d0000000-0000-4000-8000-000000000001"}

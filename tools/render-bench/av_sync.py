@@ -51,6 +51,8 @@ class Case:
     rate: int = 30
     vfr: bool = False
     start_offset: float = 0.0
+    # HDR: دالة النقل (arib-std-b67 = HLG، smpte2084 = PQ)؛ المصدر HEVC 10 بت BT.2020 كما تسجّل الهواتف
+    hdr_transfer: str | None = None
 
 
 CASES = (
@@ -58,6 +60,9 @@ CASES = (
     Case("120s-1080p30", 120),
     # كما تسجّل الهواتف: معدل متغير وبداية غير صفرية
     Case("10s-1080p30-vfr-offset", 10, vfr=True, start_offset=3.5),
+    # HDR: النسخة الخفيفة تمر بخريطة ألوان إلى SDR؛ يُقاس أنها لا تمس التزامن ولا المدة
+    Case("10s-1080p30-hlg", 10, start_offset=1.5, hdr_transfer="arib-std-b67"),
+    Case("10s-1080p30-pq", 10, start_offset=1.5, hdr_transfer="smpte2084"),
 )
 
 
@@ -75,8 +80,15 @@ def make_source(case: Case, path: Path) -> None:
             "-f", "lavfi", "-i", video, "-f", "lavfi", "-i", audio]
     if case.vfr:
         args += ["-fps_mode", "vfr"]
-    args += ["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-g", str(case.rate),
-             "-c:a", "aac", "-b:a", "128k"]
+    if case.hdr_transfer:
+        t = case.hdr_transfer
+        args += ["-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le",
+                 "-x265-params", f"log-level=error:pools=none:keyint={case.rate}:colorprim=bt2020:transfer={t}"
+                                 ":colormatrix=bt2020nc",
+                 "-color_primaries", "bt2020", "-color_trc", t, "-colorspace", "bt2020nc", "-tag:v", "hvc1"]
+    else:
+        args += ["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-g", str(case.rate)]
+    args += ["-c:a", "aac", "-b:a", "128k"]
     if case.start_offset:
         args += ["-output_ts_offset", str(case.start_offset)]
     args.append(str(path))
@@ -176,8 +188,14 @@ def measure(case: Case, workdir: Path) -> dict:
     complete = expected == result["marks_source"] == result["marks_proxy"]
     within = all(result[k] <= THRESHOLD_MS for k in (
         "av_offset_added_ms_max", "video_mark_shift_ms_max", "audio_mark_shift_ms_max", "duration_drift_ms"))
+    sdr_ok = True
+    if case.hdr_transfer:
+        # المصدر HDR فعلًا، والنسخة SDR (لا HDR ولا 10 بت)
+        result["source_hdr_detected"] = src_probe.hdr
+        result["proxy_is_sdr"] = not out_probe.hdr and out_probe.bit_depth in (8, None)
+        sdr_ok = result["source_hdr_detected"] and result["proxy_is_sdr"]
     result["complete"] = complete
-    result["pass"] = complete and within
+    result["pass"] = complete and within and sdr_ok
     return result
 
 
@@ -218,7 +236,8 @@ def main() -> None:
         "device": {"platform": "server", "model": f"{os.cpu_count()} vCPU"},
         "upload_path": "n/a",
         "metrics": metrics,
-        "notes": ("مقاطع اصطناعية بعلامات تزامن (ومضة + نبضة 1 kHz كل ثانيتين) عبر make_proxy نفسه. "
+        "notes": ("مقاطع اصطناعية بعلامات تزامن (ومضة + نبضة 1 kHz كل ثانيتين) عبر make_proxy نفسه، ومنها حالتا HDR "
+                  "(HEVC 10 بت BT.2020 بـ HLG وPQ) تمر بخريطة الألوان إلى SDR. "
                   "الإزاحة المضافة = (صوت − صورة) في الناتج ناقص المقدار نفسه في المصدر؛ المعيار 40 ms لها "
                   "ولانزياح العلامات ولانحراف المدة. الأمر: python tools/render-bench/av_sync.py داخل صورة "
                   "workers/media."),

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import statistics
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from fractions import Fraction
 from pathlib import Path
 
@@ -48,9 +48,19 @@ class Probe:
     bit_depth: int | None
     audio_sample_rate: int | None
     audio_channels: int | None
+    # للمعالجة داخل العامل فقط (خريطة الألوان)، ولا تُرسل إلى الخادم: technical قائمة بيضاء مغلقة عنده
+    color_transfer: str | None = field(default=None, compare=False)
+    color_primaries: str | None = field(default=None, compare=False)
+    color_space: str | None = field(default=None, compare=False)
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        for k in INTERNAL_KEYS:
+            d.pop(k)
+        return d
+
+
+INTERNAL_KEYS = ("color_transfer", "color_primaries", "color_space")
 
 
 def _rate(value: str | None) -> float | None:
@@ -161,4 +171,7 @@ def probe(path: Path, timeout_s: float = 120) -> Probe:
         bit_depth=bit_depth,
         audio_sample_rate=int(audio["sample_rate"]) if audio and audio.get("sample_rate") else None,
         audio_channels=int(audio["channels"]) if audio and audio.get("channels") else None,
+        color_transfer=video.get("color_transfer") if video else None,
+        color_primaries=video.get("color_primaries") if video else None,
+        color_space=video.get("color_space") if video else None,
     )
