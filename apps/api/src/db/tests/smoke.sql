@@ -360,6 +360,20 @@ SELECT pg_temp.expect_error($q$
   VALUES ('user.status_changed', 'user', '00000000-0000-4000-8000-000000000011', 'user.status_changed:smoke:2',
           '{"user_id": "00000000-0000-4000-8000-000000000011", "status": "suspended", "reason": "free text"}') $q$, '23514');
 
+-- ---------- restore with an empty search_path (pg_restore) ----------
+-- pg_restore يعمل بـ search_path فارغ ويطبّق قيود CHECK على كل صف يُستعاد؛ دوال القيود يجب أن تعمل هكذا (#71).
+SET LOCAL search_path = '';
+SELECT pg_temp.assert(public.outbox_payload_is_whitelisted('material.created', '{"material_id": "00000000-0000-4000-8000-000000000101", "priority": "normal"}'::jsonb),
+  'outbox whitelist works with an empty search_path');
+SELECT pg_temp.assert(NOT public.outbox_payload_is_whitelisted('material.created', '{"gps": {}}'::jsonb),
+  'outbox whitelist still rejects with an empty search_path');
+SELECT pg_temp.assert(public.audit_details_is_whitelisted('{"result": "ok"}'::jsonb), 'audit whitelist works with an empty search_path');
+SELECT pg_temp.assert(public.material_file_technical_is_whitelisted('{"vfr": true}'::jsonb), 'technical whitelist works with an empty search_path');
+INSERT INTO public.outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('material.created', 'material', '00000000-0000-4000-8000-000000000101', 'material.created:restore-sim',
+        '{"material_id": "00000000-0000-4000-8000-000000000101", "priority": "normal"}');
+SET LOCAL search_path TO DEFAULT;
+
 -- ---------- indexing policy (ADR 0002) ----------
 SELECT pg_temp.assert(
   NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexdef ILIKE '%USING gin%'),

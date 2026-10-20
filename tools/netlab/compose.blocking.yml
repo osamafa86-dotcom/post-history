@@ -1,0 +1,68 @@
+# محاكاة حجب النطاق الرئيسي ونطاق ingest. (ADR 0011)، فوق compose الأساسي وطبقتي netlab وingest:
+#   docker compose -f infra/compose/docker-compose.yml -f tools/netlab/compose.netlab.yml \
+#     -f infra/ingest/compose.ingest.yml -f tools/netlab/compose.blocking.yml up -d --wait
+# يشغّلها tools/netlab/blocking.py. العنوان A (edge-a): app.example وingest-shared.example؛ العنوان B (edge-b):
+# ingest.example. العميل على الشبكتين، وقواعد الحجب (iptables) في حاوية العميل نفسها: على مسار العميل كالرقيب.
+services:
+  edge-main:
+    image: nginx:1.28.3-alpine
+    depends_on:
+      tusd-proxy:
+        condition: service_healthy
+    environment:
+      INGEST_TOKEN_PUBLIC_KEY: "${INGEST_TOKEN_PUBLIC_KEY:?}"
+    volumes:
+      - ../../tools/netlab/blocking/edge-main.conf:/etc/nginx/nginx.conf:ro
+      - ../ingest/ingest_token.js:/etc/nginx/njs/ingest_token.js:ro
+      - "${INGEST_TLS_DIR:?}:/run/ingest:ro"
+    user: "101:101"
+    read_only: true
+    tmpfs: ["/tmp:size=64m"]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8443"]
+      interval: 2s
+      retries: 15
+    networks:
+      uploads: {}
+      edge-a:
+        ipv4_address: 172.30.252.2
+
+  ingest-gate:
+    networks:
+      edge-b:
+        ipv4_address: 172.30.253.2
+
+  blocking-dns:
+    image: python:3.13-alpine
+    command: ["python", "-u", "/netlab/dns_stub.py"]
+    environment:
+      DNS_RECORDS: "app.example=172.30.252.2,ingest-shared.example=172.30.252.2,ingest.example=172.30.253.2"
+    volumes:
+      - ../../tools/netlab/blocking/dns_stub.py:/netlab/dns_stub.py:ro
+    networks:
+      edge-a:
+        ipv4_address: 172.30.252.3
+
+  blocking-client:
+    image: nicolaka/netshoot:v0.13@sha256:a20c2531bf35436ed3766cd6cfe89d352b050ccc4d7005ce6400adf97503da1b
+    cap_add: [NET_ADMIN]
+    command: ["sleep", "infinity"]
+    volumes:
+      - ../../tools/netlab/blocking/client.py:/netlab/client.py:ro
+      - "${INGEST_TLS_DIR:?}:/run/ingest:ro"
+    networks:
+      edge-a:
+        ipv4_address: 172.30.252.4
+      edge-b:
+        ipv4_address: 172.30.253.4
+
+# Fixed addresses only on these networks: no ip_range, so Docker keeps .1 as the gateway.
+networks:
+  edge-a:
+    ipam:
+      config:
+        - subnet: 172.30.252.0/28
+  edge-b:
+    ipam:
+      config:
+        - subnet: 172.30.253.0/28

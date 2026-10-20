@@ -1,0 +1,63 @@
+{
+  "card_version": 1,
+  "test_name": "emergency-wipe",
+  "performed_on": "YYYY-MM-DD",
+  "performed_by_role": "field_supervisor",
+  "device": {
+    "platform": "android",
+    "vendor": "",
+    "model": "",
+    "os_version": ""
+  },
+  "app_version": "",
+  "setup": {
+    "upload_progress_pct_at_wipe": null
+  },
+  "online_wipe": {
+    "seconds": null,
+    "server_sessions_listed_empty": null,
+    "old_access_token_refused": null
+  },
+  "offline_wipe": {
+    "seconds": null
+  },
+  "stores": {
+    "server_sessions": {
+      "empty": null,
+      "checked_with": ""
+    },
+    "transfers": {
+      "empty": null,
+      "checked_with": ""
+    },
+    "session": {
+      "empty": null,
+      "checked_with": ""
+    },
+    "upload_queue": {
+      "empty": null,
+      "checked_with": ""
+    },
+    "file_grants": {
+      "empty": null,
+      "checked_with": ""
+    },
+    "preferences": {
+      "empty": null,
+      "checked_with": ""
+    },
+    "caches_and_files": {
+      "empty": null,
+      "checked_with": ""
+    }
+  },
+  "relogin": {
+    "works_without_restart": null,
+    "new_material_works": null
+  },
+  "preserved_by_design": {
+    "photo_library_untouched": null,
+    "task_switcher_content_hidden": null
+  },
+  "observations": ""
+}
