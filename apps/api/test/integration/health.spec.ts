@@ -35,6 +35,17 @@ describe('GET /health', () => {
     }
   });
 
+  it('outside INTERNAL_ALLOWED_CIDRS: status only, never the rate limiter state, even when degraded', async () => {
+    const outside = await createHarness({ env: { REDIS_URL: '', INTERNAL_ALLOWED_CIDRS: '10.255.255.0/24' } });
+    try {
+      const res = await request(outside.app.getHttpServer()).get('/health').expect(200);
+      expect(res.body).toEqual({ status: 'ok' });
+      expect(res.headers['x-rate-limiter']).toBeUndefined();
+    } finally {
+      await outside.close();
+    }
+  });
+
   it('unknown routes return the contract error shape', async () => {
     const res = await request(h.app.getHttpServer()).get('/v1/nope').expect(404);
     expect(res.body).toEqual({ code: 'not_found', message: 'Not found.', request_id: res.headers['x-request-id'] });
