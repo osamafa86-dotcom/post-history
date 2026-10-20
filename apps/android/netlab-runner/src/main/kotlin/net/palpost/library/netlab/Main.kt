@@ -26,7 +26,7 @@ import java.util.UUID
  * each PATCH request (a cut request counts as a failed part), windows (connected stretches from the first
  * successful request to the next failure), resumes (HEAD after a failure), failures, bytes_lost (a HEAD
  * below what the server had confirmed). netlab computes efficiency, checksum and the verdict from it;
- * apps/android/netlab/measure.py reads the same line until netlab.py carries the contract.
+ * apps/android/netlab/measure.sh runs it through `netlab.py run --client-cmd`.
  * `POST /uploads` and `GET /uploads/{id}` are answered by an embedded stub (netlab has no API server):
  * the session carries the given tus endpoint, part size and a token the netlab hook stub accepts.
  *

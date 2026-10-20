@@ -44,10 +44,18 @@ class UploadEngine(
 ) {
     data class Config(
         val maxRequestPayloadBytes: Int = 16 * 1024 * 1024,
-        /** Floor for a PATCH on a slow link; the ceiling is the session's part size. */
-        val minRequestPayloadBytes: Int = 128 * 1024,
-        /** A PATCH is sized so that it ends within this on the link as observed ([RequestSizer]). */
-        val requestTargetMs: Long = 20_000,
+        /**
+         * Floor for a PATCH on a slow link; the ceiling is the session's part size. 256 KiB is the part the
+         * netlab reference client uses on field-weak (ADR 0007, amendment of 2026-10-20): at ~43 kbit/s it
+         * ends in ~50 s, inside a connected window and the read timeout.
+         */
+        val minRequestPayloadBytes: Int = 256 * 1024,
+        /**
+         * A PATCH is sized so that it ends within this on the link as observed ([RequestSizer]). 40 s leaves
+         * room for one 20 s blackout before the 90 s read timeout and halves the per-request cost measured
+         * with 20 s (connection, 100-continue, tail recovery on a 300 ms lossy link).
+         */
+        val requestTargetMs: Long = 40_000,
         val chunkBytes: Int = TusTransport.DEFAULT_CHUNK_BYTES,
         val backoffMs: List<Long> = listOf(2_000, 5_000, 15_000, 30_000, 60_000),
         /** How long one run keeps polling for the receipt before handing back [RunOutcome.Pending]. */
