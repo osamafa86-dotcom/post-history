@@ -10,6 +10,7 @@ import { recoveryRequests, userPermissions, userRoles, users } from '../database
 import type { components } from '../generated/api';
 import type { RateLimiter } from './rate-limiter';
 import { RateLimitsService } from './rate-limits.service';
+import { writeOutboxEvent } from '../outbox/outbox';
 import { audit } from './recovery-approval';
 import { type IssuedTokens, SessionService } from './session.service';
 
@@ -29,6 +30,7 @@ export class AuthService {
   private readonly byIp: RateLimiter;
   private readonly byEmailIp: RateLimiter;
   private readonly completeByIp: RateLimiter;
+  private readonly completeByToken: RateLimiter;
   private readonly confirmByUser: RateLimiter;
   private readonly fieldKeys: FieldKeyring;
   // يُتحقق منه عند غياب المستخدم حتى لا يكشف زمن الاستجابة وجود البريد
@@ -42,7 +44,9 @@ export class AuthService {
   ) {
     this.byIp = limits.create('login-ip', config.LOGIN_RATE_LIMIT_IP_MAX);
     this.byEmailIp = limits.create('login-email-ip', config.LOGIN_RATE_LIMIT_MAX);
-    this.completeByIp = limits.create('recovery-complete-ip', config.LOGIN_RATE_LIMIT_MAX);
+    // العنوان قد يجمع مكتبًا خلف NAT فحدّه واسع كحد الدخول لكل عنوان؛ الحد الضيق ببصمة الرمز
+    this.completeByIp = limits.create('recovery-complete-ip', config.LOGIN_RATE_LIMIT_IP_MAX);
+    this.completeByToken = limits.create('recovery-complete-token', config.LOGIN_RATE_LIMIT_MAX);
     this.confirmByUser = limits.create('totp-confirm-user', config.LOGIN_RATE_LIMIT_MAX);
     this.fieldKeys = fieldKeyring(config);
     this.dummyHash = argon2Hash(randomToken());
@@ -142,7 +146,9 @@ export class AuthService {
    * المعدل لكل عنوان. الرمز وكلمة المرور والسر لا يدخل شيء منها سجلًا أو تدقيقًا.
    */
   async completeRecovery(resetToken: string, newPassword: string, ip: string): Promise<RecoveryCompletion> {
-    const wait = await this.completeByIp.retryAfter(ip);
+    // حد المعدل بالعنوان وببصمة الرمز (ADR 0012): رمز بعينه لا يُجرَّب عليه من عناوين كثيرة
+    const tokenKey = sha256(resetToken).toString('hex');
+    const wait = Math.max(await this.completeByIp.retryAfter(ip), await this.completeByToken.retryAfter(tokenKey));
     if (wait > 0) throw new ApiError(429, 'rate_limited', 'Too many attempts.', undefined, { 'Retry-After': String(wait) });
 
     const usable = and(
@@ -154,7 +160,7 @@ export class AuthService {
       eq(users.credentialResetRequired, true),
     );
     const rejected = async (): Promise<never> => {
-      await this.completeByIp.record(ip);
+      await Promise.all([this.completeByIp.record(ip), this.completeByToken.record(tokenKey)]);
       throw ApiError.unauthorized();
     };
     // فحص رخيص قبل argon2: الرمز الخاطئ لا يكلّف تجزئة كلمة مرور
@@ -170,7 +176,13 @@ export class AuthService {
     const done = await this.db.transaction(async (tx) => {
       // يُعاد الشرط تحت القفل: إكمالان متزامنان للرمز نفسه، ينجح أحدهما فقط
       const [r] = await tx
-        .select({ id: recoveryRequests.id, userId: recoveryRequests.userId, email: users.email })
+        .select({
+          id: recoveryRequests.id,
+          userId: recoveryRequests.userId,
+          approvedBy: recoveryRequests.approvedBy,
+          email: users.email,
+          officeId: users.officeId,
+        })
         .from(recoveryRequests)
         .innerJoin(users, eq(users.id, recoveryRequests.userId))
         .where(usable)
@@ -181,7 +193,20 @@ export class AuthService {
         .update(users)
         .set({ passwordHash, totpEnabled: false, totpSecretEnc: null, totpPendingSecretEnc: this.fieldKeys.encrypt(secret) })
         .where(eq(users.id, r.userId));
-      await audit(tx, r.userId, 'auth.recovery_completed', r.userId, { recovery_request_id: r.id, target_user_id: r.userId });
+      // التدقيق بمعرّف الطلب والمعتمِد فيُقرأ أي استيلاء من السجل، والحدث يُنبّه صاحب الحساب (ضوابط ADR 0012)
+      await audit(tx, r.userId, 'auth.recovery_completed', r.userId, {
+        recovery_request_id: r.id,
+        target_user_id: r.userId,
+        ...(r.approvedBy ? { approved_by: r.approvedBy } : {}),
+      });
+      await writeOutboxEvent(tx, {
+        type: 'auth.recovery_completed',
+        aggregateType: 'user',
+        aggregateId: r.userId,
+        idempotencyKey: `auth.recovery_completed:${r.id}`,
+        actorId: r.userId,
+        payload: { recovery_request_id: r.id, ...(r.officeId ? { office_id: r.officeId } : {}) },
+      });
       const issued = await this.sessions.issue(tx, r.userId);
       return { userId: r.userId, email: r.email, issued };
     });

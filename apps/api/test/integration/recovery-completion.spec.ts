@@ -1,8 +1,8 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { base32Decode, totp } from '../../src/common/crypto';
 import { schemaValidator } from '../../src/common/contract';
-import { createHarness, type Harness, loginAs, seedUser } from './harness';
+import { createHarness, drainOutbox, type Harness, loginAs, seedUser } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
 
@@ -69,6 +69,24 @@ describe('recovery completion (/auth/recovery/complete, /auth/totp/confirm)', ()
     expect(audits.map((a) => a.action)).toEqual(['auth.recovery_approved', 'auth.reset_token_issued', 'auth.recovery_completed']);
     expect(JSON.stringify(audits)).not.toContain(resetToken);
     expect(JSON.stringify(audits)).not.toContain(secret_base32);
+    // ضوابط ADR 0012: الإكمال مُدقَّق بالمعتمِد، وحدثه يُنبّه صاحب الحساب
+    const { rows: completedAudit } = await h.pool.query(
+      `SELECT actor_id, details FROM audit_log WHERE target_id = $1 AND action = 'auth.recovery_completed'`,
+      [user.id],
+    );
+    expect(completedAudit).toEqual([{ actor_id: user.id, details: { recovery_request_id: requestId, target_user_id: user.id, approved_by: sup.id } }]);
+    const { rows: ev } = await h.pool.query(`SELECT payload::text AS payload, actor_id FROM outbox_events WHERE idempotency_key = $1`, [
+      `auth.recovery_completed:${requestId}`,
+    ]);
+    expect(ev).toHaveLength(1);
+    expect(JSON.parse(ev[0].payload)).toEqual({ recovery_request_id: requestId, office_id: office });
+    expect(ev[0].payload).not.toContain(resetToken);
+    await drainOutbox(h);
+    const { rows: alert } = await h.pool.query(`SELECT title, recovery_request_id FROM notifications WHERE user_id = $1 AND type = 'auth.recovery_completed'`, [
+      user.id,
+    ]);
+    expect(alert).toHaveLength(1);
+    expect(alert[0].recovery_request_id).toBeNull();
 
     // الجلسة المقيّدة: me والخروج والتأكيد فقط
     const restricted = res.body.session.access_token;
@@ -157,5 +175,13 @@ describe('recovery completion (/auth/recovery/complete, /auth/totp/confirm)', ()
       .expect(200);
     const { rows } = await h.pool.query(`SELECT totp_pending_secret_enc, credential_reset_required FROM users WHERE id = $1`, [user.id]);
     expect(rows[0]).toEqual({ totp_pending_secret_enc: null, credential_reset_required: true });
+  });
+
+  // آخر الملف: يستنفد عدّاد العنوان المشترك أيضًا
+  it('completion is rate-limited per reset token', async () => {
+    const guessed = randomBytes(32).toString('base64url');
+    for (let i = 0; i < 5; i++) await complete(guessed).expect(401);
+    const limited = await complete(guessed).expect(429);
+    expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
   });
 });

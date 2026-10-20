@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
+import { schemaValidator } from '../../src/common/contract';
+import { and, eq } from 'drizzle-orm';
+import { DB, type Database } from '../../src/database/database.module';
+import { outboxEvents } from '../../src/database/schema/schema';
+import { serializeOutboxEvent } from '../../src/outbox/outbox';
 import { createHarness, type Harness, loginAs, seedUploadSession } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
@@ -35,6 +40,23 @@ describe('account status (PUT /users/{id}/status)', () => {
     expect(await audits(reporter.id)).toEqual([
       { actor_id: admin.id, action: 'user.suspended', details: { target_user_id: reporter.id, reason_code: 'suspended' } },
     ]);
+    // حدث واحد بحمولة القائمة البيضاء، يطابق مخطط العقد
+    const ev = await h.app
+      .get<Database>(DB)
+      .select()
+      .from(outboxEvents)
+      .where(and(eq(outboxEvents.type, 'user.status_changed'), eq(outboxEvents.aggregateId, reporter.id)));
+    expect(ev).toHaveLength(1);
+    const event = serializeOutboxEvent(ev[0]);
+    const valid = schemaValidator('OutboxEvent');
+    expect(valid(event) ? [] : valid.errors).toEqual([]);
+    expect(event.payload).toEqual({
+      user_id: reporter.id,
+      status: 'suspended',
+      reason_code: 'suspended',
+      actor_id: admin.id,
+      occurred_at: expect.any(String),
+    });
   });
 
   it('reactivation lets the user log in again but restores no session', async () => {

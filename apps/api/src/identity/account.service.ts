@@ -183,7 +183,7 @@ export class AccountService {
    * تعليق حساب أو إعادة تفعيله (مدير النظام). التعليق يبطل كل وصول الحساب فورًا، وإعادة التفعيل لا تعيد شيئًا منه.
    * لا يغيّر المدير حالة حسابه، وحساب مدير نظام آخر لا يُمس من هنا في الاتجاهين (403 admin_quorum_required): تعليقه
    * يُنقص النصاب، وإعادة تفعيل مدير معلَّق بقرار شخص واحد تفتح الباب نفسه. ذاتي التكرار: الحالة القائمة = 204 بلا أثر.
-   * التدقيق بـ reason_code وحده (لا نص حر، SEC-03). لا حدث Outbox: لا نوع له في العقد.
+   * التدقيق بـ reason_code وحده (لا نص حر، SEC-03)، وحدث user.status_changed بحمولة القائمة البيضاء.
    */
   async setUserStatus(p: Principal, userId: string, status: 'active' | 'suspended'): Promise<void> {
     if (!UUID.test(userId)) throw ApiError.notFound();
@@ -196,10 +196,20 @@ export class AccountService {
       if (u.status !== 'active' && u.status !== 'suspended') {
         throw new ApiError(409, 'invalid_transition', `The account is in ${u.status}.`);
       }
-      await tx.update(users).set({ status }).where(eq(users.id, userId));
+      const [changed] = await tx.update(users).set({ status }).where(eq(users.id, userId)).returning({ at: sql<string>`now()` });
       if (status === 'suspended') await revokeAllAccess(tx, userId);
       const reasonCode = status === 'suspended' ? 'suspended' : 'reactivated';
       await audit(tx, p.userId, `user.${reasonCode}`, userId, { target_user_id: userId, reason_code: reasonCode });
+      const occurredAt = new Date(changed!.at).toISOString();
+      await writeOutboxEvent(tx, {
+        type: 'user.status_changed',
+        aggregateType: 'user',
+        aggregateId: userId,
+        // كل تغيير حالة حدث مستقل؛ لحظة المعاملة تميّزه (التكرار بالطلب نفسه يمنعه Idempotency-Key قبل الوصول هنا)
+        idempotencyKey: `user.status_changed:${userId}:${occurredAt}`,
+        actorId: p.userId,
+        payload: { user_id: userId, status, reason_code: reasonCode, actor_id: p.userId, occurred_at: occurredAt },
+      });
     });
   }
 }

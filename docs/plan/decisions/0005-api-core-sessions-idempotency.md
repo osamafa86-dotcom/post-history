@@ -202,7 +202,7 @@
 - **نصاب المديرين**: حساب يحمل `system_admin` لا يُعتمد استعادته ولا تُغيَّر حالته من الواجهة لأحد (`403
   admin_quorum_required`)؛ يبقى أمر CLI ثنائي الأشخاص، ومحفّز القاعدة (ترحيل وكيل العقود) يمنع النزول عن مديرَين
   فاعلَين. `PUT /users/{id}/status` ذاتي التكرار، والتعليق يبطل كل الوصول، والتدقيق بـ `reason_code`
-  (`suspended`/`reactivated`) وحده بلا نص حر؛ لا حدث Outbox لأن العقد لا يعرّف نوعًا له. تغيير المدير حالة نفسه
+  (`suspended`/`reactivated`) وحده بلا نص حر، وحدث `user.status_changed`. تغيير المدير حالة نفسه
   `403 forbidden_scope`.
 - **دورة الاستعادة**: الاعتماد (من الواجهة أو CLI) يصدر رمزًا عشوائيًا 256 بت يُخزَّن ببصمته، صلاحيته
   `RECOVERY_RESET_TOKEN_TTL_SECONDS` (≤ 24 ساعة، افتراض 12)، ويضع `credential_reset_required` ويُسقط أي سر TOTP معلّق
@@ -215,6 +215,10 @@
   credential_reset_required`؛ والمصادقة والتحديث يرفضان الجلسة المقيّدة بعد `reset_token_expires_at` للطلب المكتمل.
   `/auth/totp/confirm` (بحد معدل لكل حساب) ينقل السر المعلّق فاعلًا ويرفع القيد ويبطل كل جلسات الحساب ويصدر جلسة
   كاملة؛ خارج الدورة `409 recovery_state_conflict`.
+- **ضوابط ADR 0012 على الإكمال**: تدقيق `auth.recovery_completed` بـ `recovery_request_id` و`approved_by`، وحدث
+  `auth.recovery_completed` يُنزَّل تنبيهًا في صندوق صاحب الحساب وحده (بلا معرّف الطلب)، وحد معدل ضيق ببصمة الرمز
+  (`LOGIN_RATE_LIMIT_MAX`) وواسع بالعنوان (`LOGIN_RATE_LIMIT_IP_MAX`، عنوان المكتب خلف NAT). تغيير حالة الحساب يكتب
+  `user.status_changed` بحمولة القائمة البيضاء.
 - **Notification.recovery_request_id**: لمهمة المعتمِد وحدها، و`null` لتنبيه صاحب الحساب.
 
 ## الدليل
