@@ -27,6 +27,10 @@ class ApiAuthError(RuntimeError):
     تهيئة خاطئة أو رمز دُوِّر للتو. يُعاد المحاولة بتراجع ولا يُقَرّ الحدث، فلا تضيع أحداث أثناء تدوير الرمز."""
 
 
+class ApiGone(RuntimeError):
+    """410 `media_resource_gone`: الرمز صحيح والجلسة أو الملف غير موجود (عقد v0.1). نهائي، ولا إبلاغ بعده."""
+
+
 class ApiConflict(RuntimeError):
     """409: الخادم سجّل نتيجة مختلفة لهذه الجلسة؛ الحدث منتهٍ."""
 
@@ -65,6 +69,8 @@ class InternalApi:
             label = f"{method} {path}: HTTP {err.code}"
             if err.code == 409:
                 raise ApiConflict(label) from None
+            if err.code == 410:
+                raise ApiGone(label) from None
             if err.code in (401, 403, 404):
                 raise ApiAuthError(label) from None
             if err.code == 429 or err.code >= 500:

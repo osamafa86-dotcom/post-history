@@ -48,11 +48,11 @@ class FakeServer:
     """يطبّق شكل نقاط ADR 0006 بحالة في الذاكرة؛ يرفض أي طلب بلا الرمز الصحيح."""
 
     def __init__(self, session: dict, fail_with: int | None = None, refuse_first: int = 0,
-                 reject_verified: bool = False):
+                 reject_verified: bool = False, gone: bool = False):
         # refuse_first: أول N طلبات تُرد بـ 404 كأن الرمز دُوِّر ولم يصل العامل بعد
         # reject_verified: بلاغ «verified» يُرد بـ 422 (رفض نهائي)، وبلاغ الفشل يُقبل
         self.session, self.fail_with = session, fail_with
-        self.refuse_first, self.reject_verified = refuse_first, reject_verified
+        self.refuse_first, self.reject_verified, self.gone = refuse_first, reject_verified, gone
         self.calls: list[tuple[str, str, dict | None]] = []
         outer = self
 
@@ -77,6 +77,8 @@ class FakeServer:
                 if outer.refuse_first > 0:
                     outer.refuse_first -= 1
                     return self._reply(404)
+                if outer.gone:
+                    return self._reply(410, {"code": "media_resource_gone"})
                 if outer.fail_with:
                     return self._reply(outer.fail_with)
                 s = outer.session
@@ -254,5 +256,24 @@ def test_long_config_error_isolates_the_event_then_requeue_restores_it(env, tmp_
         assert svc.requeue_dead("config_error") == 1 and r.xlen(DEAD) == 0
         assert svc.run_once() == 1
         assert server.session["state"] == "verified"
+    finally:
+        server.close()
+
+
+def test_gone_is_dead_lettered_at_once_without_retry_or_report(env, tmp_path: Path):
+    r, storage, buckets = env
+    server = FakeServer({}, gone=True)
+    waits: list[float] = []
+    try:
+        svc = Service(r, Jobs(InternalApi(server.url, TOKEN), storage, buckets, tmp_path), "it", block_ms=200,
+                      sleep=waits.append)
+        svc.ensure_group()
+        _publish(r, "upload.original_received", str(uuid.uuid4()), str(uuid.uuid4()))
+        assert svc.run_once() == 1
+        [(_, dead)] = r.xrange(DEAD)
+        assert dead["reason"] == "gone" and dead["reported"] == "not-reported"
+        # طلب واحد (GET) ولا انتظار: 410 نهائي، بخلاف 404 الذي يبقى خطأ تهيئة (الاختبار أعلاه)
+        assert [m for m, _, _ in server.calls] == ["GET"] and waits == []
+        assert r.xpending(STREAM, GROUP)["pending"] == 0
     finally:
         server.close()

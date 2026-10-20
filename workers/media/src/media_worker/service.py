@@ -8,6 +8,8 @@
   دون إقرار ودون احتساب محاولة، فيمر تدوير `MEDIA_WORKER_TOKEN` دون فقد أحداث. إن طال (مجموع الانتظار ≥
   `MEDIA_AUTH_ISOLATE_AFTER_S`) يُعزل الحدث في `media:dead` بسبب `config_error` دون إبلاغ الخادم بفشل (الملف بريء)،
   ويتابع العامل؛ بعد إصلاح التهيئة يعيده `python -m media_worker requeue-dead config_error` إلى الطابور.
+- 410 (`media_resource_gone`: الرمز صحيح والجلسة أو الملف غير موجود) ← `media:dead` بسبب `gone` فورًا، بلا إعادة
+  محاولة وبلا إبلاغ (لا شيء يُبلَّغ عنه).
 - عند الإقلاع تُحذف مجلدات مهام قديمة في `/scratch` تركها عامل قُتل أثناء مهمة.
 - السجل: معرّف الحدث ونوعه والنتيجة فقط؛ لا حمولة ولا مفاتيح تخزين ولا رسائل ffmpeg.
 """
@@ -26,7 +28,7 @@ from pathlib import Path
 
 import redis
 
-from .api import ApiAuthError, ApiConflict, ApiRejected, InternalApi
+from .api import ApiAuthError, ApiConflict, ApiGone, ApiRejected, InternalApi
 from .jobs import Buckets, Jobs
 from .probe import InvalidMediaError
 from .proxy import ProxyTimingError
@@ -170,6 +172,8 @@ class Service:
                 waited += delay
                 self.r.xclaim(STREAM, GROUP, self.consumer, min_idle_time=0, message_ids=[entry_id], justid=True)
                 delay = min(delay * 2, self.auth_backoff_max_s)
+            except ApiGone:
+                return self._dead_letter(entry_id, fields, event, "gone", None)
             except PERMANENT as err:
                 result = "invalid_file" if isinstance(err, FILE_FAULTS) else "storage_error"
                 return self._dead_letter(entry_id, fields, event, type(err).__name__, result)
