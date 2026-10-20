@@ -410,3 +410,21 @@ test("the catalog carries the SEC-01 tests beside the plan rows, and session-rev
   assert.equal(code, 2);
   assert.equal(doc, null);
 });
+
+import { client } from "../lib/live.mjs";
+
+test("client repeats a read or a keyed write once after a stale keep-alive socket, with the same key, and never an unkeyed write", async () => {
+  const stale = () => Object.assign(new TypeError("fetch failed"), { cause: { code: "UND_ERR_SOCKET" } });
+  const seen = [];
+  let n = 1;
+  const once = async (url, init) => { seen.push(init.headers["idempotency-key"]); if (n-- > 0) throw stale(); return new Response("{}", { status: 200 }); };
+  assert.equal((await client("http://x", once).get("t", "/a")).status, 200);
+  n = 1; seen.length = 0;
+  assert.equal((await client("http://x", once).call("t", "POST", "/m", {})).status, 200);
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0], seen[1], "the retry reuses the Idempotency-Key");
+  n = 1;
+  await assert.rejects(() => client("http://x", once).call("t", "POST", "/auth/login", { key: null }));
+  n = 2;
+  await assert.rejects(() => client("http://x", once).get("t", "/a"), "a second failure is real");
+});
