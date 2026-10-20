@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://post-history/contracts/schemas/attachment-value.json",
+  "title": "AttachmentValue",
+  "description": "شكل قيمة حقل attachment في dynamic_fields (v0.1): مصفوفة بطول max_items على الأكثر، كل عنصر مرجع إلى جلسة رفع للمادة نفسها لا الملف نفسه. يتحقق العميل من mime_type وsize_bytes مقابل accept وmax_size_bytes قبل الرفع، ويعيد الخادم التحقق. رفع المرفقات نفسه لم يُفعَّل بعد: الخادم يرفض قيمة غير فارغة لحقل attachment بـ 422 dynamic_fields_invalid حتى يُضاف نوع الجلسة attachment.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "upload_session_id",
+      "mime_type",
+      "size_bytes"
+    ],
+    "properties": {
+      "upload_session_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "mime_type": {
+        "type": "string",
+        "pattern": "^[a-z]+/[a-z0-9.+-]+$",
+        "maxLength": 127
+      },
+      "size_bytes": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  }
+}

@@ -279,6 +279,87 @@ INSERT INTO user_permissions (user_id, permission, granted_by, reason)
 VALUES ('00000000-0000-4000-8000-000000000012', 'sensitive_location:read', '00000000-0000-4000-8000-000000000012', 're-granted');
 SELECT pg_temp.assert((SELECT count(*) = 2 FROM user_permissions), 'history kept across revoke and re-grant');
 
+-- ---------- v0.1 (ADR 0012) ----------
+SELECT pg_temp.assert(
+  (SELECT row_version >= 2 FROM materials WHERE id = '00000000-0000-4000-8000-000000000101'),
+  'row_version bumps on every material write');
+SELECT pg_temp.expect_error($q$
+  UPDATE upload_sessions SET upload_token_expires_at = expires_at + interval '1 day' WHERE id = '00000000-0000-4000-8000-000000000201' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE users SET totp_pending_secret_enc = '\x01' WHERE id = '00000000-0000-4000-8000-000000000011' $q$, '23514');
+UPDATE users SET credential_reset_required = true, totp_pending_secret_enc = '\x01' WHERE id = '00000000-0000-4000-8000-000000000011';
+INSERT INTO recovery_requests (id, user_id, state, expires_at)
+VALUES ('00000000-0000-4000-8000-000000000901', '00000000-0000-4000-8000-000000000011', 'pending_approval', now() + interval '1 day');
+SELECT pg_temp.expect_error($q$
+  UPDATE recovery_requests SET reset_token_hash = sha256('t'::bytea), reset_token_expires_at = now() + interval '15 minutes'
+  WHERE id = '00000000-0000-4000-8000-000000000901' $q$, '23514');
+UPDATE recovery_requests SET state = 'approved', decided_at = now(), approved_by = '00000000-0000-4000-8000-000000000012',
+  verification_note = 'phone', reset_token_hash = sha256('t'::bytea), reset_token_expires_at = now() + interval '15 minutes'
+WHERE id = '00000000-0000-4000-8000-000000000901';
+UPDATE notifications SET recovery_request_id = '00000000-0000-4000-8000-000000000901';
+
+-- ---------- device attestation keys (SEC-07) ----------
+INSERT INTO device_attestation_keys (id, user_id, key_id_hash, public_key)
+VALUES ('00000000-0000-4000-8000-000000000a01', '00000000-0000-4000-8000-000000000011', sha256('key-1'::bytea), '\x04');
+UPDATE device_attestation_keys SET sign_count = 1, last_used_at = now() WHERE id = '00000000-0000-4000-8000-000000000a01';
+SELECT pg_temp.expect_error($q$
+  UPDATE device_attestation_keys SET last_used_at = now() + interval '1 second' WHERE id = '00000000-0000-4000-8000-000000000a01' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE device_attestation_keys SET sign_count = 0 WHERE id = '00000000-0000-4000-8000-000000000a01' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO device_attestation_keys (user_id, key_id_hash, public_key)
+  VALUES ('00000000-0000-4000-8000-000000000012', sha256('key-1'::bytea), '\x04') $q$, '23505');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO device_attestation_keys (user_id, key_id_hash, public_key) VALUES ('00000000-0000-4000-8000-000000000012', '\x01', '\x04') $q$, '23514');
+
+-- ---------- admin quorum guard ----------
+INSERT INTO users (id, email, password_hash) VALUES
+  ('00000000-0000-4000-8000-000000000021', 'admin1@example.invalid', 'argon2id$test'),
+  ('00000000-0000-4000-8000-000000000022', 'admin2@example.invalid', 'argon2id$test'),
+  ('00000000-0000-4000-8000-000000000023', 'admin3@example.invalid', 'argon2id$test');
+INSERT INTO user_roles (user_id, role) VALUES
+  ('00000000-0000-4000-8000-000000000021', 'system_admin'),
+  ('00000000-0000-4000-8000-000000000022', 'system_admin'),
+  ('00000000-0000-4000-8000-000000000023', 'system_admin');
+SET CONSTRAINTS ALL IMMEDIATE;
+UPDATE users SET status = 'suspended' WHERE id = '00000000-0000-4000-8000-000000000023';   -- 3 → 2: allowed
+SET CONSTRAINTS ALL DEFERRED;
+SELECT pg_temp.expect_error($q$ UPDATE users SET status = 'suspended' WHERE id = '00000000-0000-4000-8000-000000000022' $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
+SELECT pg_temp.expect_error($q$ DELETE FROM user_roles WHERE user_id = '00000000-0000-4000-8000-000000000021' AND role = 'system_admin' $q$, '23514');
+-- تبديل مدير بآخر داخل معاملة واحدة مسموح (الفحص مؤجل)
+SET CONSTRAINTS ALL DEFERRED;
+UPDATE users SET status = 'active' WHERE id = '00000000-0000-4000-8000-000000000023';
+DELETE FROM user_roles WHERE user_id = '00000000-0000-4000-8000-000000000022' AND role = 'system_admin';
+SET CONSTRAINTS ALL IMMEDIATE;
+-- ثغرتا التجاوز في معاملة واحدة (مراجعة الأمن): تعليق ثم حذف الدور، وحذف المستخدم (CASCADE للدور)
+SET CONSTRAINTS ALL DEFERRED;
+SELECT pg_temp.expect_error($q$
+  WITH s AS (UPDATE users SET status = 'suspended' WHERE id = '00000000-0000-4000-8000-000000000021' RETURNING id)
+  DELETE FROM user_roles WHERE user_id IN (SELECT id FROM s) AND role = 'system_admin' $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
+SELECT pg_temp.expect_error($q$ DELETE FROM users WHERE id = '00000000-0000-4000-8000-000000000021' $q$, '23514');
+SET CONSTRAINTS ALL IMMEDIATE;
+SELECT pg_temp.expect_error($q$
+  UPDATE recovery_requests SET reset_token_expires_at = decided_at + interval '25 hours' WHERE id = '00000000-0000-4000-8000-000000000901' $q$, '23514');
+
+-- ---------- auth.recovery_completed + audit approved_by ----------
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('auth.recovery_completed', 'user', '00000000-0000-4000-8000-000000000011', 'auth.recovery_completed:smoke:1',
+        '{"recovery_request_id": "00000000-0000-4000-8000-000000000901"}');
+INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+VALUES ('00000000-0000-4000-8000-000000000011', 'auth.recovery_completed', 'user', '00000000-0000-4000-8000-000000000011',
+        '{"recovery_request_id": "00000000-0000-4000-8000-000000000901", "approved_by": "00000000-0000-4000-8000-000000000012"}');
+
+-- ---------- user.status_changed (whitelisted payload) ----------
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('user.status_changed', 'user', '00000000-0000-4000-8000-000000000011', 'user.status_changed:smoke:1',
+        '{"user_id": "00000000-0000-4000-8000-000000000011", "status": "suspended", "reason_code": "suspended"}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('user.status_changed', 'user', '00000000-0000-4000-8000-000000000011', 'user.status_changed:smoke:2',
+          '{"user_id": "00000000-0000-4000-8000-000000000011", "status": "suspended", "reason": "free text"}') $q$, '23514');
+
 -- ---------- restore with an empty search_path (pg_restore) ----------
 -- pg_restore يعمل بـ search_path فارغ ويطبّق قيود CHECK على كل صف يُستعاد؛ دوال القيود يجب أن تعمل هكذا (#71).
 SET LOCAL search_path = '';

@@ -58,6 +58,94 @@ open class UploadsAPI {
     }
 
     /**
+     تحدٍّ لشهادة الجهاز (App Attest أو Play Integrity) — SEC-07
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: AttestationChallenge
+     */
+    open class func createAttestationChallenge(idempotencyKey: String, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> AttestationChallenge {
+        return try await createAttestationChallengeWithRequestBuilder(idempotencyKey: idempotencyKey, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     تحدٍّ لشهادة الجهاز (App Attest أو Play Integrity) — SEC-07
+     - POST /device-attestations/challenge
+     - تحدٍّ عشوائي 32 بايتًا، يُستهلك مرة واحدة، عمره 300 ث، مربوط بالمستخدم.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<AttestationChallenge> 
+     */
+    open class func createAttestationChallengeWithRequestBuilder(idempotencyKey: String, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<AttestationChallenge> {
+        let localVariablePath = "/device-attestations/challenge"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<AttestationChallenge>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     رمز بوابة ingest لجلسة رفع بعد التحقق من شهادة الجهاز — SEC-07
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف جلسة الرفع 
+     - parameter ingestTokenRequest: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: IngestToken
+     */
+    open class func createIngestToken(idempotencyKey: String, id: UUID, ingestTokenRequest: IngestTokenRequest, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> IngestToken {
+        return try await createIngestTokenWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, ingestTokenRequest: ingestTokenRequest, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     رمز بوابة ingest لجلسة رفع بعد التحقق من شهادة الجهاز — SEC-07
+     - POST /uploads/{id}/ingest-token
+     - `clientData = challenge ‖ upload_session_id` (وهو `requestHash` على أندرويد). يعيد JWT ES256 بعمر ≤ 15 دقيقة مربوطًا بالجلسة (`aud: \"ingest\"`، `sid`، `iat`، `exp`، `jti`، `plat`)، تتحقق منه البوابة بالمفتاح العام وحده. فشل الشهادة `403 attestation_failed`، العدّاد غير المتزايد `409 assertion_replay`، التحدي المنتهي أو المستهلك `410 challenge_expired`، وتعذّر Google `503 attestation_unavailable` (يبقى العميل على النطاق الرئيسي إن عرضه الخادم). جلسة غيره أو غير موجودة `404`.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف جلسة الرفع 
+     - parameter ingestTokenRequest: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<IngestToken> 
+     */
+    open class func createIngestTokenWithRequestBuilder(idempotencyKey: String, id: UUID, ingestTokenRequest: IngestTokenRequest, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<IngestToken> {
+        var localVariablePath = "/uploads/{id}/ingest-token"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: ingestTokenRequest, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<IngestToken>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      إنشاء جلسة رفع لملف يخص مادة (أصل أو نسخة خفيفة أو ملاحظة صوتية)
      
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
@@ -140,5 +228,48 @@ open class UploadsAPI {
         let localVariableRequestBuilder: RequestBuilder<UploadSession>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     تسجيل مفتاح App Attest للتثبيت (iOS فقط، مرة لكل تثبيت) — SEC-07
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter attestationKeyRegistration: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RegisterAttestationKey201Response
+     */
+    open class func registerAttestationKey(idempotencyKey: String, attestationKeyRegistration: AttestationKeyRegistration, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> RegisterAttestationKey201Response {
+        return try await registerAttestationKeyWithRequestBuilder(idempotencyKey: idempotencyKey, attestationKeyRegistration: attestationKeyRegistration, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     تسجيل مفتاح App Attest للتثبيت (iOS فقط، مرة لكل تثبيت) — SEC-07
+     - POST /device-attestations
+     - يتحقق الخادم من سلسلة Apple المثبّتة والتحدي و`rpIdHash`، ويحفظ المفتاح العام وعدّاده. `key_id` معرّف تثبيت (بيانات كاشفة): يُخزَّن ببصمته ولا يُسجَّل ولا يُعاد. المفتاح المسجَّل لمستخدم آخر `409`.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter attestationKeyRegistration: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<RegisterAttestationKey201Response> 
+     */
+    open class func registerAttestationKeyWithRequestBuilder(idempotencyKey: String, attestationKeyRegistration: AttestationKeyRegistration, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<RegisterAttestationKey201Response> {
+        let localVariablePath = "/device-attestations"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: attestationKeyRegistration, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<RegisterAttestationKey201Response>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
 }

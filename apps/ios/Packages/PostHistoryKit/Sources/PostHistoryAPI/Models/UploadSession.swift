@@ -50,14 +50,16 @@ public struct UploadSession: Sendable, Codable, Hashable {
     /** نقطة إنشاء الرفع (tus 1.0) */
     public var tusEndpoint: String
     public var tusMetadata: UploadSessionTusMetadata
-    /** حجم الجزء الثابت لهذه الجلسة بين الخادم والتخزين؛ يُثبَّت عند البدء ولا يتغير */
+    /** حجم الجزء الثابت بالبايت لهذه الجلسة بين الخادم والتخزين (1 MiB حدًا أدنى)؛ يُثبَّت عند البدء ولا يتغير */
     public var partSizeBytes: Int
     public var bytesReceived: Int
+    /** حين يكون true فـ `tus_endpoint` على نطاق `ingest.` (ADR 0011، SEC-07): يطلب العميل رمزًا من `POST /uploads/{id}/ingest-token` ويرسله في ترويسة `Ingest-Token` على كل طلب tus مع `Authorization` كما هي. الخادم وحده يقرر النطاق؛ لا تبديل آلي في العميل. غيابه = false (أُضيف في v0.1). */
+    public var ingestTokenRequired: Bool?
     /** هل يعرض الخادم مسار المسودة التجريبي (تجربة iOS، بند القرارات 14) */
     public var ietfResumable: Bool? = false
     /** خوارزمية checksum للجزء الواحد التي يقبلها خادم الرفع */
     public var checksumAlgorithm: ChecksumAlgorithm? = .sha256
-    /** انتهاء الرمز والجلسة إن لم تكتمل */
+    /** انتهاء الجلسة إن لم تكتمل؛ انتهاء رمز الرفع في `UploadSessionCreated.upload_token_expires_at` وقد يسبقه */
     public var expiresAt: Date
     /** ملف المادة الناتج بعد الاكتمال */
     public var fileId: UUID?
@@ -69,7 +71,7 @@ public struct UploadSession: Sendable, Codable, Hashable {
     public var createdAt: Date
     public var updatedAt: Date?
 
-    public init(id: UUID, materialId: UUID, kind: Kind, state: State, sizeBytes: Int, tusEndpoint: String, tusMetadata: UploadSessionTusMetadata, partSizeBytes: Int, bytesReceived: Int, ietfResumable: Bool? = false, checksumAlgorithm: ChecksumAlgorithm? = .sha256, expiresAt: Date, fileId: UUID? = nil, duplicateOfFileId: UUID? = nil, failureReason: FailureReason? = nil, receiptNumber: String? = nil, createdAt: Date, updatedAt: Date? = nil) {
+    public init(id: UUID, materialId: UUID, kind: Kind, state: State, sizeBytes: Int, tusEndpoint: String, tusMetadata: UploadSessionTusMetadata, partSizeBytes: Int, bytesReceived: Int, ingestTokenRequired: Bool? = nil, ietfResumable: Bool? = false, checksumAlgorithm: ChecksumAlgorithm? = .sha256, expiresAt: Date, fileId: UUID? = nil, duplicateOfFileId: UUID? = nil, failureReason: FailureReason? = nil, receiptNumber: String? = nil, createdAt: Date, updatedAt: Date? = nil) {
         self.id = id
         self.materialId = materialId
         self.kind = kind
@@ -79,6 +81,7 @@ public struct UploadSession: Sendable, Codable, Hashable {
         self.tusMetadata = tusMetadata
         self.partSizeBytes = partSizeBytes
         self.bytesReceived = bytesReceived
+        self.ingestTokenRequired = ingestTokenRequired
         self.ietfResumable = ietfResumable
         self.checksumAlgorithm = checksumAlgorithm
         self.expiresAt = expiresAt
@@ -100,6 +103,7 @@ public struct UploadSession: Sendable, Codable, Hashable {
         case tusMetadata = "tus_metadata"
         case partSizeBytes = "part_size_bytes"
         case bytesReceived = "bytes_received"
+        case ingestTokenRequired = "ingest_token_required"
         case ietfResumable = "ietf_resumable"
         case checksumAlgorithm = "checksum_algorithm"
         case expiresAt = "expires_at"
@@ -124,6 +128,7 @@ public struct UploadSession: Sendable, Codable, Hashable {
         try container.encode(tusMetadata, forKey: .tusMetadata)
         try container.encode(partSizeBytes, forKey: .partSizeBytes)
         try container.encode(bytesReceived, forKey: .bytesReceived)
+        try container.encodeIfPresent(ingestTokenRequired, forKey: .ingestTokenRequired)
         try container.encodeIfPresent(ietfResumable, forKey: .ietfResumable)
         try container.encodeIfPresent(checksumAlgorithm, forKey: .checksumAlgorithm)
         try container.encode(expiresAt, forKey: .expiresAt)

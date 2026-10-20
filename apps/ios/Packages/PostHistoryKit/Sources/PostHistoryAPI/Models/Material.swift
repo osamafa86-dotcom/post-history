@@ -15,6 +15,7 @@ public struct Material: Sendable, Codable, Hashable {
     public static let cityRule = StringRule(minLength: 1, maxLength: 64, pattern: nil)
     public static let formVersionRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     public static let versionRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
+    public static let rowVersionRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     /** الحدود تعدّلها الإدارة؛ هذه حدود v0 */
     public var title: String
     public var materialTypes: Set<MaterialType>
@@ -28,7 +29,7 @@ public struct Material: Sendable, Codable, Hashable {
     public var gps: GpsPoint?
     /** إصدار النموذج الذي رُسمت به الحقول الديناميكية */
     public var formVersion: Int
-    /** قيم الحقول الديناميكية مفتاحها `key` الحقل؛ يتحقق الخادم بمخطط النموذج ذي الإصدار. في v0 لا يحتوي أي نموذج حقلًا حساسًا أو حقل موقع (بوابة `POST /forms`)، فلا بيانات كاشفة هنا حتى SEC-04. */
+    /** قيم الحقول الديناميكية مفتاحها `key` الحقل؛ يتحقق الخادم بمخطط النموذج ذي الإصدار. في v0 لا يحتوي أي نموذج حقلًا حساسًا أو حقل موقع (بوابة `POST /forms`)، فلا بيانات كاشفة هنا حتى SEC-04. قيمة حقل `attachment` بالشكل `schemas/attachment-value.json`. */
     public var dynamicFields: [String: JSONValue]
     /** إن أُرسلت وجب أن يكون المجموع 100؛ إن غابت فالمراسل مساهم وحيد بـ 100 */
     public var contributors: [Contributor]?
@@ -52,8 +53,10 @@ public struct Material: Sendable, Codable, Hashable {
     public var redactedFieldKeys: [String]?
     public var createdAt: Date
     public var updatedAt: Date
+    /** يرتفع مع كل كتابة على المادة (بخلاف `version` الذي يرتفع مع التعديل بعد الاعتماد)؛ قيمة `ETag`. أُضيف في v0.1 فقد يغيب عند خادم v0. */
+    public var rowVersion: Int?
 
-    public init(title: String, materialTypes: Set<MaterialType>, governorate: String, city: String, shotAt: Date? = nil, priority: Priority, sensitivity: Sensitivity, displayName: DisplayName, gps: GpsPoint? = nil, formVersion: Int, dynamicFields: [String: JSONValue], contributors: [Contributor]? = nil, voiceNoteUploadId: UUID? = nil, id: UUID, version: Int, reporterId: UUID, officeId: UUID?, technicalState: TechnicalState, editorialState: EditorialState, rightsState: RightsState, reservedBy: UUID? = nil, reservedAt: Date? = nil, files: [MaterialFile], redactedFieldKeys: [String]? = nil, createdAt: Date, updatedAt: Date) {
+    public init(title: String, materialTypes: Set<MaterialType>, governorate: String, city: String, shotAt: Date? = nil, priority: Priority, sensitivity: Sensitivity, displayName: DisplayName, gps: GpsPoint? = nil, formVersion: Int, dynamicFields: [String: JSONValue], contributors: [Contributor]? = nil, voiceNoteUploadId: UUID? = nil, id: UUID, version: Int, reporterId: UUID, officeId: UUID?, technicalState: TechnicalState, editorialState: EditorialState, rightsState: RightsState, reservedBy: UUID? = nil, reservedAt: Date? = nil, files: [MaterialFile], redactedFieldKeys: [String]? = nil, createdAt: Date, updatedAt: Date, rowVersion: Int? = nil) {
         self.title = title
         self.materialTypes = materialTypes
         self.governorate = governorate
@@ -80,6 +83,7 @@ public struct Material: Sendable, Codable, Hashable {
         self.redactedFieldKeys = redactedFieldKeys
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.rowVersion = rowVersion
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -109,6 +113,7 @@ public struct Material: Sendable, Codable, Hashable {
         case redactedFieldKeys = "redacted_field_keys"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case rowVersion = "row_version"
     }
 
     // Encodable protocol methods
@@ -141,6 +146,7 @@ public struct Material: Sendable, Codable, Hashable {
         try container.encodeIfPresent(redactedFieldKeys, forKey: .redactedFieldKeys)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(rowVersion, forKey: .rowVersion)
     }
 }
 

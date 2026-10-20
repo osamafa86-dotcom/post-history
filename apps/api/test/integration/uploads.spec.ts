@@ -126,13 +126,8 @@ describe('upload sessions (/v1/uploads)', () => {
       dynamic_fields: {},
     };
 
-    it('off (default): a session without client_sha256 is still created', async () => {
-      expect(h.config.UPLOAD_REQUIRE_CLIENT_SHA256).toBe(false);
-      const materialId = await material();
-      await write(reporter, '/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 10, filename: 'f' }).expect(201);
-    });
-
-    it('on: a session without client_sha256 is rejected with 422 naming the field; with it, created', async () => {
+    // يرد التحقق نفسه (422) سواء رفضه العقد (حقل مطلوب، المسار '/') أو الخادم (المسار '/client_sha256')
+    it('a session without client_sha256 is rejected with 422 validation_failed; with it, created', async () => {
       const strict = await createHarness({ env: { UPLOAD_REQUIRE_CLIENT_SHA256: 'true' } });
       try {
         const owner = await loginAs(strict, [{ role: 'reporter' }], { officeId: office });
@@ -140,7 +135,7 @@ describe('upload sessions (/v1/uploads)', () => {
           request(strict.app.getHttpServer()).post(url).set('Authorization', `Bearer ${owner.token}`).set('Idempotency-Key', randomUUID()).send(body);
         const materialId = (await post('/v1/materials', materialBody).expect(201)).body.id;
         const res = await post('/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 10, filename: 'f' }).expect(422);
-        expect(res.body).toMatchObject({ code: 'validation_failed', details: { fields: ['/client_sha256'] } });
+        expect(res.body.code).toBe('validation_failed');
         await post('/v1/uploads', { material_id: materialId, kind: 'original', ...file(10), filename: 'f' }).expect(201);
       } finally {
         await strict.close();
