@@ -26,5 +26,12 @@ export const CATALOG = [
   { name: "timestamp-alignment", mode: "field", criterion: "محاذاة صوتية بين النسخة الخفيفة والأصل بإزاحة لا تتجاوز 40 مللي ثانية على عشرة ملفات هاتف بمعدل إطارات متغير وفجوات زمنية" },
 ];
 
-export const NAMES = CATALOG.map((t) => t.name);
-export const byName = (name) => CATALOG.find((t) => t.name === name);
+// Acceptance tests that come from the security decisions (docs/security/threat-model.md, SEC-01..SEC-07), not from a row of
+// the plan's table. They have scripts and results like any other, but are not counted in the 22-row status table.
+export const EXTRA = [
+  { name: "session-revocation", mode: "automated", source: "SEC-01", criterion: "رمز مبطَل (جلسة أو كل الجلسات) يُرفض على الخادم وعلى مسار الرفع خلال ثوانٍ، والرفع الجاري يتوقف عند الجزء التالي" },
+  { name: "emergency-wipe", mode: "field", source: "SEC-01", criterion: "على جهاز فعلي بعد المسح الطارئ: لا شيء من المخازن الموثّقة يبقى، ويتم المسح بلا اتصال خلال ثوانٍ، ويعمل الدخول من جديد" },
+];
+
+export const NAMES = [...CATALOG, ...EXTRA].map((t) => t.name);
+export const byName = (name) => [...CATALOG, ...EXTRA].find((t) => t.name === name);

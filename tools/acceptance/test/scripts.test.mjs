@@ -363,3 +363,68 @@ test("no acceptance script or helper posts /uploads without client_sha256", () =
   assert.deepEqual(offenders, []);
   assert.deepEqual(direct.sort(), ["lib/live.mjs", "live/seed.mjs"]);
 });
+
+import { NAMES } from "../lib/catalog.mjs";
+import { run as sessionRevocation } from "../scripts/session-revocation.mjs";
+
+const wipeCard = (platform) => {
+  const stores = Object.fromEntries(RULES["emergency-wipe"].STORES[platform].map((s) => [s, { empty: true, checked_with: "screen or command" }]));
+  return {
+    card_version: 1, test_name: "emergency-wipe", performed_on: "2026-11-10", performed_by_role: "field_supervisor",
+    device: { platform, vendor: platform === "ios" ? "apple" : "google", model: "device", os_version: "18.1" }, app_version: "0.3.0",
+    setup: { upload_progress_pct_at_wipe: 40 },
+    online_wipe: { seconds: 2.1, server_sessions_listed_empty: true, old_access_token_refused: true },
+    offline_wipe: { seconds: 1.4 }, stores, relogin: { works_without_restart: true, new_material_works: true }, observations: "",
+  };
+};
+
+test("emergency-wipe card: a clean wipe is one platform's partial; a surviving store, a slow wipe or a live token fail it", () => {
+  for (const p of ["ios", "android"]) {
+    const ok = cardToResult(wipeCard(p));
+    assert.equal(ok.doc.result, "partial");
+    assert.ok(validateMeasurement(ok.doc).ok);
+    assert.deepEqual(checkResult(`2026-11-10-emergency-wipe-${p}.json`, ok.doc), []);
+  }
+  const left = wipeCard("android"); left.stores.upload_queue.empty = false;
+  assert.match(cardToResult(left).doc.notes, /upload_queue: not empty/);
+  const slow = wipeCard("ios"); slow.offline_wipe.seconds = 9;
+  assert.equal(cardToResult(slow).doc.result, "fail");
+  const live = wipeCard("ios"); live.online_wipe.old_access_token_refused = false;
+  assert.equal(cardToResult(live).doc.result, "fail");
+});
+
+test("emergency-wipe card: blanks and a store of the other platform are refused, not failed", () => {
+  const blank = wipeCard("ios"); blank.stores.chunks.empty = null;
+  assert.ok(cardToResult(blank).missing.some((m) => m.includes("stores.chunks.empty")));
+  const nochk = wipeCard("ios"); nochk.stores.caches.checked_with = "";
+  assert.ok(cardToResult(nochk).missing.some((m) => m.includes("caches.checked_with")));
+  const wrong = wipeCard("ios"); wrong.stores.upload_queue = { empty: true, checked_with: "x" };
+  assert.ok(cardToResult(wrong).missing.some((m) => m.includes("not a store of ios")));
+  const gone = wipeCard("android"); delete gone.stores.file_grants;
+  assert.ok(cardToResult(gone).missing.some((m) => m.includes("file_grants")));
+});
+
+test("the catalog carries the SEC-01 tests beside the plan rows, and session-revocation without its environment measures nothing", async () => {
+  assert.ok(NAMES.includes("session-revocation") && NAMES.includes("emergency-wipe"));
+  const { code, doc } = await quiet(() => sessionRevocation(["--dry-run"], {}));
+  assert.equal(code, 2);
+  assert.equal(doc, null);
+});
+
+import { client } from "../lib/live.mjs";
+
+test("client repeats a read or a keyed write once after a stale keep-alive socket, with the same key, and never an unkeyed write", async () => {
+  const stale = () => Object.assign(new TypeError("fetch failed"), { cause: { code: "UND_ERR_SOCKET" } });
+  const seen = [];
+  let n = 1;
+  const once = async (url, init) => { seen.push(init.headers["idempotency-key"]); if (n-- > 0) throw stale(); return new Response("{}", { status: 200 }); };
+  assert.equal((await client("http://x", once).get("t", "/a")).status, 200);
+  n = 1; seen.length = 0;
+  assert.equal((await client("http://x", once).call("t", "POST", "/m", {})).status, 200);
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0], seen[1], "the retry reuses the Idempotency-Key");
+  n = 1;
+  await assert.rejects(() => client("http://x", once).call("t", "POST", "/auth/login", { key: null }));
+  n = 2;
+  await assert.rejects(() => client("http://x", once).get("t", "/a"), "a second failure is real");
+});

@@ -83,8 +83,8 @@ export class MediaService {
       if (s.state !== 'completed') return this.replay(tx, s, body);
 
       const outcome = await this.decide(s, body);
-      await recordVerification(tx, s, outcome);
-      if (outcome.result === 'verified') {
+      const applied = await recordVerification(tx, s, outcome);
+      if (applied === 'applied' && outcome.result === 'verified') {
         const { columns, json } = splitTechnical(body.technical!);
         const [after] = await tx.select({ fileId: uploadSessions.fileId }).from(uploadSessions).where(eq(uploadSessions.id, s.id));
         await tx
@@ -164,8 +164,10 @@ export class MediaService {
       const [file] = await tx.select({ sha256: materialFiles.sha256 }).from(materialFiles).where(eq(materialFiles.id, s.fileId!));
       if (file?.sha256?.equals(Buffer.from(body.sha256!, 'hex'))) return this.result(tx, s.id);
     } else if (s.state === 'failed') {
-      // فشل قرره الخادم من بلاغ «verified» (حجم أو بصمة عميل) يعود بالنتيجة نفسها عند تكرار البلاغ
-      const decidedByServer = body.result === 'verified' && ['invalid_file', 'checksum_mismatch', 'storage_error'].includes(s.failureReason ?? '');
+      // فشل قرره الخادم من بلاغ «verified» (حجم أو بصمة عميل) يعود بالنتيجة نفسها عند تكرار البلاغ، وكذلك جلسة أُلغيت
+      // لإبطال وصول صاحبها (aborted) أيًّا كان البلاغ: لا شيء للعامل يغيّره فيها
+      const decidedByServer =
+        s.failureReason === 'aborted' || (body.result === 'verified' && ['invalid_file', 'checksum_mismatch', 'storage_error'].includes(s.failureReason ?? ''));
       if (decidedByServer || body.result === s.failureReason) return this.result(tx, s.id);
     }
     throw conflict(`The upload session is ${s.state}.`);
