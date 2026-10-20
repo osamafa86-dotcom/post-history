@@ -24,7 +24,7 @@ export INGEST_REQUIRED=true INGEST_TUS_ENDPOINT="https://ingest.localhost:${INGE
 COMPOSE=(docker compose -f "$CDIR/docker-compose.yml" -f "$HERE/compose.ingest.yml"
          ${E2E_EXTRA_COMPOSE:+-f "$E2E_EXTRA_COMPOSE"} --profile api)
 
-fail() { echo "!! $*" >&2; "${COMPOSE[@]}" logs --tail 40 api ingest-gate >&2 || true; exit 1; }
+fail() { echo "!! $*" >&2; "${COMPOSE[@]}" logs --tail 40 api ingest-gate tusd-proxy >&2 || true; exit 1; }
 
 "${COMPOSE[@]}" up -d --wait   # recreates the API with the attestation settings above
 
@@ -34,7 +34,7 @@ PLAY_PACKAGE="$PLAY_INTEGRITY_PACKAGE_NAME" PLAY_CERT="$PLAY_INTEGRITY_CERT_SHA2
   node "$HERE/e2e-attested-upload.mjs" || fail "server + gate"
 
 # Captured first: with pipefail, `logs | grep -q` can turn a match into a SIGPIPE failure and hide it.
-logs="$("${COMPOSE[@]}" logs api ingest-gate)"
+logs="$("${COMPOSE[@]}" logs api ingest-gate tusd-proxy tusd)"
 if grep -qF "$INGEST_TOKEN_SIGNING_KEY" <<<"$logs"; then fail "signing key in a log"; fi
 if grep -qE 'eyJ[A-Za-z0-9_-]{20,}\.eyJ' <<<"$logs"; then fail "a JWT in a log"; fi
 echo "attested upload e2e: ok"
