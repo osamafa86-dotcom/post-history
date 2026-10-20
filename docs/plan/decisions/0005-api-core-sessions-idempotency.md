@@ -180,13 +180,42 @@
   في `technical`. التكرار الموافق للنتيجة المسجلة 200 بها والمخالف 409 `upload_state_conflict`. المشتق: من أصل
   متحقق فقط، ومفتاحه تحت `derived/<material_id>/<file_id>/` وموجود في التخزين بالحجم المبلَّغ، ومتساوي الأثر على
   (`derived_from_id`, `kind`) بالفهرس الفريد الجزئي. لا حدث Outbox للمشتق (لا يغيّر أيًّا من الحالات الثلاث).
-- **المخططات مؤقتة** (`media/media-schemas.ts`) بقرار المنسّق: مغلقة كلها (`additionalProperties: false`)، و`technical`
-  قائمة بيضاء تطابق `material_file_technical_keys()` في القاعدة؛ تُستبدل بإحالات إلى العقد حين يضيف وكيل العقود
-  المسارات الثلاثة (فحص تغطية العقد يعدّها «extra» حتى ذلك الحين، تحذيرًا).
+- **المخططات** كانت مؤقتة في `media/media-schemas.ts` بقرار المنسّق، واستُبدلت في v0.1 بالتحقق من مخططات العقد نفسها
+  (`MediaVerification`، `MediaDerivative`) وأنواعها المولّدة.
 - **الترحيل** `20261019100009000_media_file_technical` (بموافقة المنسّق): `technical jsonb` بقيد قائمة بيضاء في
   القاعدة أيضًا (وسوم الملف لا تُخزَّن)، و`head_sha256`/`tail_sha256` (32 بايتًا) بفهرس `(size_bytes, head_sha256)`،
   وفهرس فريد جزئي على `(derived_from_id, kind)`. `technical` غير مكشوف في `/v1`.
 - `UPLOAD_VERIFIER` يبقى `in_process|external`. ضبط `external` وprofile `media` في compose عند وكيل البنية.
+
+## إضافات v0.1 (تنفيذ العقد بعد التجميد، ADR 0012)
+
+لا قرار جديد هنا؛ تفاصيل تنفيذ ما قرره العقد وقرارات المنسّق في التذكرة:
+
+- **التزامن المتفائل**: `ETag: "<row_version>"` على استجابات المادة (معترض عام يقرأ `row_version` من الجسم، والإعادة
+  من جدول منع التكرار تضعه أيضًا؛ ETag الضعيف في Express معطّل). `If-Match` يُفحص بعد قفل الصف داخل المعاملة،
+  وعدم المطابقة أو الصيغة الخاطئة `412 precondition_failed` بلا أثر. نشر النموذج: `If-Match` = الإصدار الحالي.
+- **الأدوار**: الدور خارج `x-roles` صار `403 forbidden_role` (كان `forbidden_scope`)، وبقي `forbidden_scope` لما داخل
+  الدور خارج النطاق.
+- **الصحة**: `rate_limiter: redis|degraded` وترويسة `X-Rate-Limiter: degraded` على `/health` وحدها.
+- **رمز الرفع**: `upload_token_expires_at = least(now + UPLOAD_TOKEN_TTL_SECONDS, expires_at)` عند الإنشاء والإعادة،
+  وpre-create يرفض المنتهي؛ الإبطال يصفّر العمودين. `UPLOAD_REQUIRE_CLIENT_SHA256` افتراضه `true`.
+- **نصاب المديرين**: حساب يحمل `system_admin` لا يُعتمد استعادته ولا تُغيَّر حالته من الواجهة لأحد (`403
+  admin_quorum_required`)؛ يبقى أمر CLI ثنائي الأشخاص، ومحفّز القاعدة (ترحيل وكيل العقود) يمنع النزول عن مديرَين
+  فاعلَين. `PUT /users/{id}/status` ذاتي التكرار، والتعليق يبطل كل الوصول، والتدقيق بـ `reason_code`
+  (`suspended`/`reactivated`) وحده بلا نص حر؛ لا حدث Outbox لأن العقد لا يعرّف نوعًا له. تغيير المدير حالة نفسه
+  `403 forbidden_scope`.
+- **دورة الاستعادة**: الاعتماد (من الواجهة أو CLI) يصدر رمزًا عشوائيًا 256 بت يُخزَّن ببصمته، صلاحيته
+  `RECOVERY_RESET_TOKEN_TTL_SECONDS` (≤ 24 ساعة، افتراض 12)، ويضع `credential_reset_required` ويُسقط أي سر TOTP معلّق
+  سابق؛ التدقيق يسجل `auth.reset_token_issued` بلا القيمة، ولا شيء منه في Outbox أو الإشعارات. التسليم عبر مزوّد
+  قابل للحقن (`RESET_TOKEN_DELIVERY`)، والافتراضي يعيده مرة في استجابة الاعتماد؛ الاعتماد صار يحمل `Idempotency-Key`
+  والرد المحفوظ بلا `reset_token` فالتكرار لا يعيده. CLI يطبعه مرة على stdout. في «إعادة التعيين الإلزامية» يُرفض
+  الدخول العادي بالرد الموحد. `/auth/recovery/complete` يستهلك الرمز مرة (المجهول والمستهلك والمنتهي 401 واحد، بحد
+  معدل لكل عنوان)، ويضع كلمة المرور، ويحذف السر القديم ويخزّن الجديد معلّقًا مشفرًا، ويصدر جلسة مقيّدة. القيد يُفرض
+  في الحارس العام: علامة `@AllowDuringCredentialReset` على `me` و`logout` و`totp/confirm` وحدها، والباقي `403
+  credential_reset_required`؛ والمصادقة والتحديث يرفضان الجلسة المقيّدة بعد `reset_token_expires_at` للطلب المكتمل.
+  `/auth/totp/confirm` (بحد معدل لكل حساب) ينقل السر المعلّق فاعلًا ويرفع القيد ويبطل كل جلسات الحساب ويصدر جلسة
+  كاملة؛ خارج الدورة `409 recovery_state_conflict`.
+- **Notification.recovery_request_id**: لمهمة المعتمِد وحدها، و`null` لتنبيه صاحب الحساب.
 
 ## الدليل
 

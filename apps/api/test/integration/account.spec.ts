@@ -148,16 +148,35 @@ describe('account: sessions and recovery', () => {
       await seedCode(reporter.id, 'MNOPQRSTUV2345');
       await start(reporter.email, 'MNOPQRSTUV2345').expect(202);
       const [req] = await requests(reporter.id);
-      const approve = (a: Actor, body: object = { verification_note: 'called the reporter on the office line' }) =>
-        http().post(`/v1/auth/recovery/${req.id}/approve`).set('Authorization', `Bearer ${a.token}`).send(body);
+      const approve = (a: Actor, body: object = { verification_note: 'called the reporter on the office line' }, key = randomUUID()) =>
+        http().post(`/v1/auth/recovery/${req.id}/approve`).set('Authorization', `Bearer ${a.token}`).set('Idempotency-Key', key).send(body);
 
       await approve(reporter).expect(403);
       await approve(outside).expect(404);
       await approve(sup, {}).expect(422);
-      const res = await approve(sup).expect(200);
-      expect(res.body).toMatchObject({ id: req.id, state: 'approved', approved_by: sup.id });
-      const valid = schemaValidator('RecoveryRequest');
+      // v0.1: الاعتماد يحمل Idempotency-Key
+      await http()
+        .post(`/v1/auth/recovery/${req.id}/approve`)
+        .set('Authorization', `Bearer ${sup.token}`)
+        .send({ verification_note: 'x' })
+        .expect(422);
+      const key = randomUUID();
+      const res = await approve(sup, undefined, key).expect(200);
+      expect(res.body).toMatchObject({ id: req.id, state: 'approved', approved_by: sup.id, reset_token: expect.any(String) });
+      const valid = schemaValidator('RecoveryApproval');
       expect(valid(res.body) ? [] : valid.errors).toEqual([]);
+      // الرمز ببصمته وحدها، ≤ 24 ساعة، ولا يعود عند التكرار بالمفتاح نفسه
+      const { rows: stored } = await h.pool.query(
+        `SELECT reset_token_hash, reset_token_expires_at <= decided_at + interval '24 hours' AS bounded FROM recovery_requests WHERE id = $1`,
+        [req.id],
+      );
+      expect(stored[0].reset_token_hash.equals(createHash('sha256').update(res.body.reset_token).digest())).toBe(true);
+      expect(stored[0].bounded).toBe(true);
+      const replay = await approve(sup, undefined, key).expect(200);
+      expect(replay.body).toEqual({ ...res.body, reset_token: undefined });
+      expect(replay.body).not.toHaveProperty('reset_token');
+      const { rows: keys } = await h.pool.query(`SELECT response_body::text AS body FROM idempotency_keys WHERE key = $1`, [key]);
+      expect(keys[0].body).not.toContain(res.body.reset_token);
       await http().get('/v1/auth/me').set('Authorization', `Bearer ${reporter.token}`).expect(401);
       expect((await approve(sup).expect(409)).body.code).toBe('recovery_state_conflict');
       const { rows } = await h.pool.query(`SELECT action FROM audit_log WHERE target_id = $1 AND action LIKE 'auth.recovery%' ORDER BY id`, [reporter.id]);
@@ -176,12 +195,13 @@ describe('account: sessions and recovery', () => {
       await http()
         .post(`/v1/auth/recovery/${req.id}/approve`)
         .set('Authorization', `Bearer ${admin.token}`)
+        .set('Idempotency-Key', randomUUID())
         .send({ verification_note: 'x' })
         .expect(409);
       expect(await requests(reporter.id)).toEqual([{ id: req.id, state: 'expired' }]);
     });
 
-    it('scope is not enough: a supervisor or editor-in-chief recovery goes to system admins, and an admin cannot approve their own', async () => {
+    it('scope is not enough: a supervisor or editor-in-chief recovery goes to system admins; an admin account is never approved here', async () => {
       const sup = await loginAs(h, [{ role: 'supervisor', scopeKind: 'all', scopeId: '' }]);
       const peer = await loginAs(h, [{ role: 'supervisor', scopeKind: 'office', scopeId: officeA }], { officeId: officeA });
       const editor = await loginAs(h, [{ role: 'editor_in_chief' }], { officeId: officeA });
@@ -197,7 +217,11 @@ describe('account: sessions and recovery', () => {
       const [adminReq] = await requests(admin.id);
       const [peerReq] = await requests(peer.id);
       const approve = (a: Actor, id: string) =>
-        http().post(`/v1/auth/recovery/${id}/approve`).set('Authorization', `Bearer ${a.token}`).send({ verification_note: 'verified in person' });
+        http()
+          .post(`/v1/auth/recovery/${id}/approve`)
+          .set('Authorization', `Bearer ${a.token}`)
+          .set('Idempotency-Key', randomUUID())
+          .send({ verification_note: 'verified in person' });
 
       await drainOutbox(h);
       const tasks = async (a: Actor) =>
@@ -215,11 +239,11 @@ describe('account: sessions and recovery', () => {
       await approve(sup, adminReq.id).expect(403);
       await approve(sup, peerReq.id).expect(403);
       await approve(otherAdmin, peerReq.id).expect(200);
-      await approve(admin, adminReq.id).expect(403);
+      // v0.1: حساب مدير النظام لا يُعتمد من الواجهة لأحد، ولا لنفسه (إجراء الشخصين من سطر الأوامر)
+      expect((await approve(admin, adminReq.id).expect(403)).body.code).toBe('admin_quorum_required');
+      expect((await approve(otherAdmin, adminReq.id).expect(403)).body.code).toBe('admin_quorum_required');
       expect(await requests(admin.id)).toEqual([{ id: adminReq.id, state: 'pending_approval' }]);
-      await approve(otherAdmin, adminReq.id).expect(200);
-      await approve(admin, editorReq.id).expect(401); // جلسات المدير أُبطلت للتو باعتماد استعادته
-      await approve(otherAdmin, editorReq.id).expect(200);
+      await approve(admin, editorReq.id).expect(200);
     });
 
     it('rate-limits recovery attempts per email and address', async () => {

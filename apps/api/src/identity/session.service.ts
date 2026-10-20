@@ -4,7 +4,7 @@ import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { randomToken, sha256 } from '../common/crypto';
 import { DB, type Database, type Executor } from '../database/database.module';
-import { pushDevices, refreshTokens, uploadSessions, users } from '../database/schema/schema';
+import { pushDevices, recoveryRequests, refreshTokens, uploadSessions, users } from '../database/schema/schema';
 import type { AuthContext } from './auth.guard';
 
 export interface IssuedTokens {
@@ -71,11 +71,13 @@ export class SessionService {
       return null;
     }
     const [user] = await this.db
-      .select({ status: users.status })
+      .select({ status: users.status, credentialResetRequired: users.credentialResetRequired, resetWindowOpen: resetWindowOpen() })
       .from(users)
       .where(eq(users.id, claims.sub));
     if (user?.status !== 'active') return null;
-    return { userId: claims.sub, sessionId: claims.sid };
+    // الجلسة المقيّدة تنتهي بانتهاء مهلة رمز إعادة التعيين، ولو بقي في رمز الوصول عمر
+    if (user.credentialResetRequired && !user.resetWindowOpen) return null;
+    return { userId: claims.sub, sessionId: claims.sid, credentialResetRequired: user.credentialResetRequired };
   }
 
   /** يدوّر رمز التحديث. إعادة استخدام رمز دُوِّر سابقًا تُعد سرقة فتُبطل الجلسة كلها. */
@@ -95,8 +97,13 @@ export class SessionService {
         if (reused?.replacedBy) await this.revokeChain(tx, reused.id);
         return null;
       }
-      const [user] = await tx.select({ status: users.status }).from(users).where(eq(users.id, current.userId));
+      const [user] = await tx
+        .select({ status: users.status, credentialResetRequired: users.credentialResetRequired, resetWindowOpen: resetWindowOpen() })
+        .from(users)
+        .where(eq(users.id, current.userId));
       if (user?.status !== 'active') return null;
+      // تحديث الجلسة المقيّدة مسموح حتى reset_token_expires_at للطلب المكتمل، ثم 401 واستعادة جديدة من أولها
+      if (user.credentialResetRequired && !user.resetWindowOpen) return null;
       const issued = await this.issue(tx, current.userId, {
         installationId: current.installationId,
         platform: current.platform,
@@ -145,6 +152,16 @@ export class SessionService {
       SELECT id, user_id, revoked_at, expires_at FROM chain WHERE replaced_by IS NULL`);
     return result.rows[0];
   }
+}
+
+/**
+ * مهلة الجلسة المقيّدة لصاحب الصف في users: طلب استعادة أُكمل بـ /auth/recovery/complete ولم تنقضِ مهلة رمزه.
+ * قبل الإكمال لا جلسة أصلًا (الاعتماد أبطل كل شيء والدخول مرفوض)، فلا يُفتح بها غير المسار المقيّد.
+ */
+function resetWindowOpen() {
+  // users.id مكتوب صراحة: داخل الاختيار يرسم Drizzle العمود بلا اسم جدوله فيُقرأ "id" عمودًا من rr
+  return sql<boolean>`EXISTS (SELECT 1 FROM ${recoveryRequests} rr
+    WHERE rr.user_id = users.id AND rr.completed_at IS NOT NULL AND rr.reset_token_expires_at > now())`;
 }
 
 export const JWT_OPTIONS = { issuer: JWT_ISSUER, algorithm: 'HS256' as const };

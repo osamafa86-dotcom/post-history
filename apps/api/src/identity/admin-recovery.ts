@@ -32,9 +32,9 @@ export class AdminRecoveryError extends Error {
  */
 export async function approveAdminRecovery(
   db: Database,
-  deps: { keyring: FieldKeyring; breakGlassTokenSha256?: string },
+  deps: { keyring: FieldKeyring; breakGlassTokenSha256?: string; resetTokenTtlSeconds: number },
   input: AdminRecoveryInput,
-): Promise<{ requestId: string; targetUserId: string; approvedBy: string }> {
+): Promise<{ requestId: string; targetUserId: string; approvedBy: string; resetToken: string; resetTokenExpiresAt: string }> {
   const reasonCode = input.mode === 'two_admins' ? 'cli_two_admins' : 'cli_vault';
   const outcome = await db.transaction(async (tx) => {
     const [r] = await tx
@@ -84,7 +84,7 @@ export async function approveAdminRecovery(
     }
     if (!verified) return { rejected: true as const, targetUserId: r.userId };
 
-    await recordRecoveryApproval(tx, r, people[0]!.userId, input.note, reasonCode);
+    const { approved, resetToken } = await recordRecoveryApproval(tx, r, people[0]!.userId, input.note, deps.resetTokenTtlSeconds, reasonCode);
     if (input.mode === 'two_admins') {
       await audit(tx, people[1]!.userId, 'auth.recovery_confirmed', r.userId, {
         recovery_request_id: r.id,
@@ -92,7 +92,13 @@ export async function approveAdminRecovery(
         reason_code: reasonCode,
       });
     }
-    return { rejected: false as const, targetUserId: r.userId, approvedBy: people[0]!.userId };
+    return {
+      rejected: false as const,
+      targetUserId: r.userId,
+      approvedBy: people[0]!.userId,
+      resetToken,
+      resetTokenExpiresAt: approved.resetTokenExpiresAt!,
+    };
   });
 
   if (outcome.rejected) {
@@ -106,7 +112,13 @@ export async function approveAdminRecovery(
     );
     throw new AdminRecoveryError('verification_failed', 'verification failed');
   }
-  return { requestId: input.requestId, targetUserId: outcome.targetUserId, approvedBy: outcome.approvedBy };
+  return {
+    requestId: input.requestId,
+    targetUserId: outcome.targetUserId,
+    approvedBy: outcome.approvedBy,
+    resetToken: outcome.resetToken,
+    resetTokenExpiresAt: new Date(outcome.resetTokenExpiresAt).toISOString(),
+  };
 }
 
 async function rolesOf(tx: Tx, userId: string): Promise<string[]> {

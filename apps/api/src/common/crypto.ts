@@ -13,6 +13,42 @@ export function randomToken(bytes = 32): string {
   return randomBytes(bytes).toString('base64url');
 }
 
+const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+/** RFC 4648 بلا حشو (صيغة أسرار TOTP في تطبيقات المصادقة). */
+export function base32Encode(data: Buffer): string {
+  let bits = 0;
+  let value = 0;
+  let out = '';
+  for (const byte of data) {
+    value = (value << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      out += BASE32[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) out += BASE32[(value << (5 - bits)) & 31];
+  return out;
+}
+
+export function base32Decode(text: string): Buffer {
+  let bits = 0;
+  let value = 0;
+  const out: number[] = [];
+  for (const ch of text.replace(/=+$/, '')) {
+    const idx = BASE32.indexOf(ch);
+    if (idx < 0) throw new Error('invalid base32');
+    value = (value << 5) | idx;
+    bits += 5;
+    if (bits >= 8) {
+      out.push((value >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(out);
+}
+
 // صيغة الحقل المشفر (مثل users.totp_secret_enc، materials.gps_enc): version (1) || iv (12) || tag (16) || ciphertext،
 // AES-256-GCM، وبايت الإصدار بيانات مصادَق عليها (AAD) فلا يُبدَّل. الإصدار يسمّي المفتاح فيُدوَّر بلا إعادة تشفير فورية:
 // الكتابة بالحالي، والقراءة بأي مفتاح في الحلقة (الحالي والسابق).
