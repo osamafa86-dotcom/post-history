@@ -14,19 +14,14 @@ public struct SetUserStatusRequest: Sendable, Codable, Hashable {
         case suspended = "suspended"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
-    public static let reasonRule = StringRule(minLength: 1, maxLength: 500, pattern: nil)
     public var status: Status
-    /** يُحفظ في سجل التدقيق؛ طريقة التحقق ورقم الإجراء فقط، لا أسماء ولا أرقام هواتف (كـ `--note` في دليل التشغيل) */
-    public var reason: String
 
-    public init(status: Status, reason: String) {
+    public init(status: Status) {
         self.status = status
-        self.reason = reason
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case status
-        case reason
     }
 
     // Encodable protocol methods
@@ -34,7 +29,6 @@ public struct SetUserStatusRequest: Sendable, Codable, Hashable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(status, forKey: .status)
-        try container.encode(reason, forKey: .reason)
     }
 }
 

@@ -255,12 +255,16 @@ paths:
       summary: اعتماد المشرف لطلب استعادة حساب في نطاقه
       description: >-
         يعتمد المشرف الطلب بعد التحقق خارج النظام من هوية المراسل. الاعتماد يبطل كل جلسات الحساب ورموز
-        رفعه المفتوحة، ويصدر رمز إعادة تعيين قصير العمر يصل المستخدم خارج هذه الاستجابة، ويضع الحساب في حالة
-        «إعادة تعيين إلزامية» حتى `/auth/recovery/complete` و`/auth/totp/confirm`، ويُسجَّل في سجل التدقيق.
+        رفعه المفتوحة، ويعيد رمز إعادة التعيين **مرة واحدة** في هذه الاستجابة للمشرف المعتمِد، الذي يسلّمه للمراسل خارج
+        النظام. الرمز حساس: لا يدخل سجلًا ولا Outbox ولا إشعارًا، ويُخزَّن ببصمته فقط، وصلاحيته ≤ 24 ساعة، ومربوط بالحساب
+        المستعاد. التكرار بمفتاح منع التكرار نفسه لا يعيد الرمز (حالة الطلب `approved` دون `reset_token`). الحساب في حالة
+        «إعادة تعيين إلزامية» حتى `/auth/recovery/complete` و`/auth/totp/confirm`، والاعتماد يُسجَّل في التدقيق.
         حساب مدير نظام لا يُعتمد من هنا أبدًا: `403 admin_quorum_required` (إجراء الشخصين من سطر الأوامر، ADR 0005
         ودليل التشغيل). حساب مساوٍ لدور المقرِّر أو أعلى: `403 forbidden_scope`.
       operationId: approveRecovery
       x-roles: [supervisor, system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -275,10 +279,10 @@ paths:
                   description: كيف تحقق المشرف من الهوية (يُسجَّل في التدقيق)
       responses:
         "200":
-          description: الطلب بعد الاعتماد
+          description: الطلب بعد الاعتماد، ومعه رمز إعادة التعيين في الاستجابة الأولى فقط
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/RecoveryRequest" }
+              schema: { $ref: "#/components/schemas/RecoveryApproval" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -354,7 +358,8 @@ paths:
       summary: تعليق حساب أو إعادة تفعيله (مدير النظام)
       description: >-
         التعليق يبطل كل جلسات الحساب ورموز رفعه فورًا؛ إعادة التفعيل لا تعيد الجلسات. لا يعلّق المدير حسابه، وحساب مدير
-        نظام آخر لا يُعلَّق من هنا: `403 admin_quorum_required`. ذاتي التكرار، ويُسجَّل في التدقيق.
+        نظام آخر لا يُعلَّق من هنا: `403 admin_quorum_required`. ذاتي التكرار. يُسجَّل في التدقيق بـ `reason_code`
+        (`suspended` أو `reactivated`) وحده؛ لا نص حر (SEC-03).
       operationId: setUserStatus
       x-roles: [system_admin]
       parameters:
@@ -365,14 +370,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [status, reason]
+              required: [status]
               properties:
                 status: { type: string, enum: [active, suspended] }
-                reason:
-                  type: string
-                  minLength: 1
-                  maxLength: 500
-                  description: يُحفظ في سجل التدقيق؛ طريقة التحقق ورقم الإجراء فقط، لا أسماء ولا أرقام هواتف (كـ `--note` في دليل التشغيل)
       responses:
         "204": { description: طُبِّق (أو كان مطبَّقًا) }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -1559,6 +1559,20 @@ components:
         last_seen_at: { type: [string, "null"], format: date-time }
         expires_at: { type: string, format: date-time }
         current: { type: boolean, description: هل هي الجلسة التي أرسلت الطلب }
+
+    RecoveryApproval:
+      allOf:
+        - $ref: "#/components/schemas/RecoveryRequest"
+        - type: object
+          properties:
+            reset_token:
+              type: string
+              minLength: 32
+              maxLength: 256
+              description: >-
+                يُعاد مرة واحدة للمشرف المعتمِد ليسلّمه للمراسل خارج النظام؛ لا يُسجَّل ولا يُخزَّن إلا ببصمته؛ لا يُعاد عند
+                التكرار. حسابات مديري النظام لا تصل هنا (`admin_quorum_required`): رمزها يصدره سطر الأوامر ثنائي الأشخاص.
+            reset_token_expires_at: { type: string, format: date-time, description: ≤ 24 ساعة من الاعتماد }
 
     RecoveryRequest:
       type: object
