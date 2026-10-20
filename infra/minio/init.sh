@@ -34,16 +34,17 @@ if [ -n "${S3_AI_ACCESS_KEY:-}" ] && [ -n "${S3_AI_SECRET_KEY:-}" ]; then
   "Version": "2012-10-17",
   "Statement": [
     {"Effect": "Allow", "Action": ["s3:GetObject"],
-     "Resource": ["arn:aws:s3:::$S3_BUCKET_MEDIA/derived/*/proxy-480p.mp4"]},
+     "Resource": ["arn:aws:s3:::$S3_BUCKET_MEDIA/derived/*/*/proxy-480p.mp4"]},
     {"Effect": "Allow", "Action": ["s3:PutObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
-     "Resource": ["arn:aws:s3:::$S3_BUCKET_MEDIA/derived/*/transcript.*", "arn:aws:s3:::$S3_BUCKET_MEDIA/derived/*/captions.*"]}
+     "Resource": ["arn:aws:s3:::$S3_BUCKET_MEDIA/derived/*/*/transcript.json", "arn:aws:s3:::$S3_BUCKET_MEDIA/derived/*/*/transcript.vtt",
+                  "arn:aws:s3:::$S3_BUCKET_MEDIA/derived/*/*/captions.vtt"]}
   ]
 }
 JSON
   mc admin user add local "$S3_AI_ACCESS_KEY" "$S3_AI_SECRET_KEY" >/dev/null
   mc admin policy create local ai-worker "$policy" >/dev/null 2>&1 || mc admin policy update local ai-worker "$policy" >/dev/null 2>&1 || true
   mc admin policy attach local ai-worker --user "$S3_AI_ACCESS_KEY" >/dev/null 2>&1 || true
-  echo "ai worker user ready (read ${S3_BUCKET_MEDIA}/derived/*/proxy-480p.mp4, write ${S3_BUCKET_MEDIA}/derived/*/{transcript,captions}.*)"
+  echo "ai worker user ready (read ${S3_BUCKET_MEDIA}/derived/*/*/proxy-480p.mp4, write derived/*/*/{transcript.json,transcript.vtt,captions.vtt})"
 fi
 # مستخدم النسخ الاحتياطي (ADR 0013): سرد وقراءة على الحاويتين، بلا كتابة ولا حذف.
 if [ -n "${S3_BACKUP_ACCESS_KEY:-}" ] && [ -n "${S3_BACKUP_SECRET_KEY:-}" ]; then
