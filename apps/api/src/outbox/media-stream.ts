@@ -2,9 +2,16 @@ import type Redis from 'ioredis';
 import { type OutboxEventType, serializeOutboxEvent } from './outbox';
 import type { OutboxRow } from './outbox.dispatcher';
 
-/** طابور عامل الوسائط (ADR 0006): Redis Stream بمجموعة مستهلكين `media` يديرها العامل. */
+/**
+ * طابور عامل الوسائط (ADR 0006): Redis Stream بمجموعة مستهلكين `media` يديرها العامل. `upload.verified` لعامل التفريغ
+ * المحلي (مجموعته الخاصة على الطابور نفسه)؛ عامل الوسائط يتجاوز ما لا يخصه.
+ */
 export const MEDIA_STREAM = 'media:events';
-const MEDIA_EVENT_TYPES: ReadonlySet<OutboxEventType> = new Set(['upload.original_received', 'upload.proxy_received']);
+const MEDIA_EVENT_TYPES: ReadonlySet<OutboxEventType> = new Set([
+  'upload.original_received',
+  'upload.proxy_received',
+  'upload.verified',
+]);
 
 export class MediaQueueUnavailableError extends Error {
   override name = 'MediaQueueUnavailableError';
