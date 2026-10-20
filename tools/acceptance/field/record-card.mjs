@@ -1,6 +1,6 @@
 // Turns a filled field-sheet card into a measurement.json result under docs/measurements/acceptance/.
 //   node tools/acceptance/field/record-card.mjs <card.json> [--dry-run]
-// Cards: task-killers, force-quit-restart, timestamp-alignment (see cards.mjs and the matching .md sheet).
+// Cards: task-killers, force-quit-restart, emergency-wipe, field-upload-1gb, timestamp-alignment (see cards.mjs and the matching .md sheet).
 import { readFileSync } from "node:fs";
 import { newResult, finish, writeResult, parseArgs } from "../lib/measurement.mjs";
 import { scan, CHANNEL_KEYS } from "../lib/pii.mjs";

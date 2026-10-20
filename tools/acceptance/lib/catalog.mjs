@@ -30,6 +30,7 @@ export const CATALOG = [
 // the plan's table. They have scripts and results like any other, but are not counted in the 22-row status table.
 export const EXTRA = [
   { name: "session-revocation", mode: "automated", source: "SEC-01", criterion: "رمز مبطَل (جلسة أو كل الجلسات) يُرفض على الخادم وعلى مسار الرفع خلال ثوانٍ، والرفع الجاري يتوقف عند الجزء التالي" },
+  { name: "field-upload-1gb", mode: "field", source: "plan stage (b)", criterion: "رفع 1 غيغابايت على شبكة ميدانية فعلية على iPhone وXiaomi وSamsung: يكتمل ببصمة خادم مطابقة وصفر بايت مفقود وبلا تدخل بشري بعد البدء" },
   { name: "emergency-wipe", mode: "field", source: "SEC-01", criterion: "على جهاز فعلي بعد المسح الطارئ: لا شيء من المخازن الموثّقة يبقى، ويتم المسح بلا اتصال خلال ثوانٍ، ويعمل الدخول من جديد" },
 ];
 

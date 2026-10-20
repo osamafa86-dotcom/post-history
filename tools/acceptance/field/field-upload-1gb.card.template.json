@@ -1,0 +1,22 @@
+{
+  "card_version": 1,
+  "test_name": "field-upload-1gb",
+  "performed_on": "YYYY-MM-DD",
+  "performed_by_role": "field_supervisor",
+  "device": { "platform": "android", "vendor": "xiaomi", "model": "", "os_version": "" },
+  "app_version": "",
+  "network": { "type": "cellular", "generation": "4g", "signal": "fair" },
+  "upload": { "path": "tusd", "file_size_bytes": 1073741824, "file_sha256": "" },
+  "transfer": {
+    "total_minutes": null,
+    "interruptions_observed": null,
+    "auto_resumes": null,
+    "bytes_lost": null,
+    "bytes_resent_on_resume": null,
+    "interventions": null,
+    "completed": null,
+    "server_sha256_match": null,
+    "receipt_id": ""
+  },
+  "observations": ""
+}
