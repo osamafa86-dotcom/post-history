@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { FieldKeyring } from '../common/crypto';
+import { pgError } from '../common/db-errors';
 import type { Database } from '../database/database.module';
 import { userRoles, users } from '../database/schema/schema';
 import { AdminRecoveryError, type Approver, confirmTwoPeople } from './admin-recovery';
@@ -43,7 +44,7 @@ export async function setAdminStatus(
     });
   } catch (err) {
     // محفّز النصاب (admin_quorum_min_two): لا يُعلَّق مدير يترك أقل من مديرَين فاعلَين
-    if ((err as { constraint?: string }).constraint === 'admin_quorum_min_two') {
+    if (pgError(err).constraint === 'admin_quorum_min_two') {
       throw new AdminRecoveryError('quorum', 'suspending this administrator would leave fewer than two active administrators');
     }
     throw err;
