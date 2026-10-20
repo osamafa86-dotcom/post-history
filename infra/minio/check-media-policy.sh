@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# يتحقق من صلاحيات مستخدم عامل الوسائط في MinIO (ADR 0006): قراءة بادئة الرفع وكتابة derived/ فقط.
-# يحتاج compose قائمًا و S3_MEDIA_ACCESS_KEY/S3_MEDIA_SECRET_KEY مضبوطين في infra/compose/.env.
+# يتحقق من صلاحيات مستخدم عامل الوسائط في MinIO (ADR 0006): قراءة بادئة الرفع وكتابة derived/ فقط؛ ومستخدم عامل
+# التفريغ (ADR 0019) إن ضُبط: قراءة derived/*/proxy-480p.mp4 وكتابة derived/*/transcript.* فقط.
+# يحتاج compose قائمًا و S3_MEDIA_ACCESS_KEY/S3_MEDIA_SECRET_KEY (وS3_AI_* اختياريًا) مضبوطين في infra/compose/.env.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../compose" && pwd)"
@@ -35,6 +36,24 @@ expect deny  "write the upload bucket" wrk_put "w/$S3_BUCKET_UPLOADS/${TUSD_OBJE
 expect deny  "delete an original"      wrk rm "w/$S3_BUCKET_UPLOADS/${TUSD_OBJECT_PREFIX}policy-check"
 expect deny  "delete a derivative"     wrk rm "w/$S3_BUCKET_MEDIA/derived/policy-check"
 expect deny  "list the upload bucket"  wrk ls "w/$S3_BUCKET_UPLOADS/"
+
+
+if [ -n "${S3_AI_ACCESS_KEY:-}" ] && [ -n "${S3_AI_SECRET_KEY:-}" ]; then
+  export MC_HOST_t="http://$S3_AI_ACCESS_KEY:$S3_AI_SECRET_KEY@minio:9000"
+  ai() { docker run --rm -i --network "$NET" -e MC_HOST_t "$MC" "$@"; }
+  ai_put() { echo z | ai pipe "$1"; }
+  echo seed | adm pipe "a/$S3_BUCKET_MEDIA/derived/policy-check/proxy-480p.mp4" >/dev/null
+  echo seed | adm pipe "a/$S3_BUCKET_MEDIA/derived/policy-check/thumb.jpg" >/dev/null
+  expect ALLOW "ai: read the 480p proxy"        ai cat "t/$S3_BUCKET_MEDIA/derived/policy-check/proxy-480p.mp4"
+  expect deny  "ai: read another derivative"    ai cat "t/$S3_BUCKET_MEDIA/derived/policy-check/thumb.jpg"
+  expect deny  "ai: read an original"           ai cat "t/$S3_BUCKET_UPLOADS/${TUSD_OBJECT_PREFIX}policy-check"
+  expect ALLOW "ai: write a transcript"         ai_put "t/$S3_BUCKET_MEDIA/derived/policy-check/transcript.json"
+  expect deny  "ai: overwrite the proxy"        ai_put "t/$S3_BUCKET_MEDIA/derived/policy-check/proxy-480p.mp4"
+  expect deny  "ai: write outside transcript.*" ai_put "t/$S3_BUCKET_MEDIA/derived/policy-check/other.txt"
+  expect deny  "ai: write outside derived/"     ai_put "t/$S3_BUCKET_MEDIA/transcript.json"
+  expect deny  "ai: delete a transcript"        ai rm "t/$S3_BUCKET_MEDIA/derived/policy-check/transcript.json"
+  expect deny  "ai: list the media bucket"      ai ls "t/$S3_BUCKET_MEDIA/"
+fi
 
 [ "$fails" -eq 0 ] || { echo "!! media worker policy: $fails unexpected result(s)" >&2; exit 1; }
 echo "media worker policy: ok"
