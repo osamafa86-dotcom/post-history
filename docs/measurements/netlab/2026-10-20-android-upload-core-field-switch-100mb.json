@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "tool": "android-app",
+  "role": "android",
+  "test_name": "field-network-upload",
+  "decision_ref": 3,
+  "started_at": "2026-10-20T01:27:13Z",
+  "ended_at": "2026-10-20T01:30:09Z",
+  "result": "partial",
+  "device": {
+    "platform": "server",
+    "model": "UploadEngine + TusTransport (apps/android/core on JVM, tus-java-client 0.5.1)",
+    "os_version": "Linux 7.0.0-1017-azure"
+  },
+  "network": {
+    "profile": "field-switch",
+    "uplink_kbps": 5000,
+    "loss_pct": 0,
+    "disconnect_every_s": 180,
+    "longest_connected_window_s": 173.7
+  },
+  "upload_path": "tusd",
+  "file": {
+    "size_bytes": 104857600,
+    "codec": "synthetic-random"
+  },
+  "metrics": {
+    "upload_complete": true,
+    "checksum_match": true,
+    "device_sha256_matches_source": true,
+    "bytes_uploaded": 104857600,
+    "elapsed_s": 175.1,
+    "hash_s": 0.5,
+    "goodput_kbps": 4791.1,
+    "resumes": 0,
+    "connection_failures": 0,
+    "longest_connected_window_s": 173.7,
+    "client_chunk_bytes": 2097152,
+    "client_timeout_s": 90,
+    "request_target_s": 20,
+    "parts_ok": 50,
+    "parts_failed": 0,
+    "loss_mode": "none",
+    "engine_outcome": "Finished",
+    "engine_state": "VERIFIED",
+    "runner_exit_code": 0,
+    "part_time_s_p50": 3.47,
+    "part_time_s_p90": 3.5,
+    "part_time_s_max": 3.52,
+    "part_times_s": "3.4,3.5,3.5,3.5,3.5,3.5,3.5,3.5,3.4,3.5,3.4,3.5,3.5,3.5,3.5,3.5,3.4,3.4,3.5,3.5,3.5,3.5,3.5,3.5,3.4,3.4,3.4,3.5,3.5,3.5,3.5,3.5,3.4,3.4,3.5,3.5,3.5,3.5,3.5,3.5,3.4,3.5,3.5,3.5,3.5,3.5,3.5,3.5,3.4,3.4",
+    "request_bytes_min": 2097152,
+    "request_bytes_median": 2097152,
+    "request_bytes_max": 2097152,
+    "events": "none",
+    "bytes_lost_on_resume": 0,
+    "goodput_connected_kbps": 4791.1
+  },
+  "notes": "Client: the Android app's UploadEngine (hash on device -> session -> tus create -> resume from HEAD, PATCH sized to the observed rate for ~20 s per request between 128 KiB and the session part size, read timeout 90 s, backoff 2/5/15/30/60 s restarting whenever the server took bytes) run on the JVM by apps/android/netlab-runner; POST/GET /uploads answered by an in-process stub (netlab has no API). Stack: toxiproxy -> nginx tusd-proxy -> tusd -> MinIO (netlab overlay). Time box 600s, event scale 1.0. elapsed_s counts the transfer only; hash_s is the on-device SHA-256 before the first byte. bytes_uploaded is what the server holds (acknowledged requests and HEAD offsets, tusd keeps the bytes of a cut request); resumes counts each HEAD after a failure. Never pass: field-network-upload stage (b) is 1 GB on a real device and network (stage (a): efficiency >= 70% of Mathis, zero bytes lost on resume, netem, checksum match)."
+}
