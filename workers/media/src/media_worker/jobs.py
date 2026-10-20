@@ -142,7 +142,10 @@ class Jobs:
 
             body = {"result": "verified", "sha256": digest.sha256, **digest.fingerprint(), "technical": info.to_dict()}
             if self.enable_phash and info.video_codec:
-                body["perceptual_hash"] = video_phash(local)
+                try:  # غير مانعة: فشل البصمة لا يُفشل التحقق، والحقل يُترك خارج الجسم
+                    body["perceptual_hash"] = video_phash(local)
+                except Exception as err:  # noqa: BLE001
+                    log.warning("perceptual hash skipped session=%s error=%s", session_id, type(err).__name__)
             result = self.api.report_verification(session_id, body)
             if result.get("state") != "verified":
                 return result.get("failure_reason") or "failed"

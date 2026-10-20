@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
 
-from conftest import synth
-from media_worker.ffmpeg import FFMPEG, run
+import pytest
+
+from conftest import LEAKY_TAGS, synth
+from media_worker.ffmpeg import FFMPEG, MediaToolError, run
 from media_worker.hls import make_hls, playlist_duration_s
 from media_worker.phash import matches, video_phash
 from media_worker.probe import probe
@@ -19,6 +21,22 @@ def test_hls_from_proxy_keeps_duration(tmp_path: Path):
     assert 2 <= len(segs) <= 4
     # القائمة تجمع مقاطع الفيديو؛ مدة الحاوية تشمل حواف AAC، فالمقارنة بمدة الفيديو الاسمية (10 ث، 300 إطار)
     assert abs(playlist_duration_s(files[0]) - 10.0) <= 0.04
+
+
+def test_hls_carries_no_tags(tmp_path: Path):
+    src = synth(tmp_path / "src.mov", seconds=6, leaky_tags=True)
+    info = make_proxy(src, tmp_path / "proxy.mp4")
+    for f in make_hls(tmp_path / "proxy.mp4", tmp_path / "hls", info.duration_ms):
+        data = f.read_bytes()
+        for value in LEAKY_TAGS.values():
+            assert value.encode() not in data, f.name
+
+
+def test_waveform_stops_when_audio_outlasts_declared_duration(tmp_path: Path):
+    # كأن الحاوية تعلن ثانيتين بينما الصوت عشر ثوانٍ
+    src = synth(tmp_path / "src.mp4", seconds=10, size="320x240")
+    with pytest.raises(MediaToolError):
+        write_waveform(src, tmp_path / "w.json", 2000)
 
 
 def test_waveform_100_points_per_minute_without_tags(tmp_path: Path):

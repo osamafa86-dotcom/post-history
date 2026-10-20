@@ -20,7 +20,7 @@
     "segment_s_min": 4.0,
     "hls_duration_s": 120.0,
     "source_video_duration_s": 120.0,
-    "duration_drift_ms": 0.0,
+    "playlist_duration_drift_ms": 0.0,
     "hls_bytes": 263878,
     "threshold_ms": 40.0,
     "ffmpeg_version": "8.0.1"

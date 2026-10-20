@@ -49,6 +49,7 @@ def main() -> None:
     result = {
         "schema_version": 1, "tool": "render-bench", "role": "media", "test_name": "hls-2min-1080p",
         "started_at": started, "ended_at": av_sync.now(),
+        # يثبت اتساق مدة القائمة لا تزامن الصوت والصورة داخل المقاطع (ذاك في av_sync)
         "result": "pass" if drift_ms <= av_sync.THRESHOLD_MS else "fail",
         "device": {"platform": "server", "model": f"{os.cpu_count()} vCPU"},
         "upload_path": "n/a",
@@ -56,7 +57,7 @@ def main() -> None:
             "proxy_s": round(proxy_s, 3), "hls_package_s": round(hls_s, 3), "total_s": round(proxy_s + hls_s, 3),
             "segments": len(segments), "segment_s_max": max(seg_durs), "segment_s_min": min(seg_durs),
             "hls_duration_s": round(hls_dur, 3), "source_video_duration_s": round(nominal, 3),
-            "duration_drift_ms": round(drift_ms, 3), "hls_bytes": size,
+            "playlist_duration_drift_ms": round(drift_ms, 3), "hls_bytes": size,
             "threshold_ms": av_sync.THRESHOLD_MS, "ffmpeg_version": ffmpeg.version(),
         },
         "notes": ("مصدر اصطناعي 120 ث 1080p30 (مقطع av_sync). HLS fMP4 بمقاطع ~4 ث من النسخة الخفيفة بإعادة تغليف "
