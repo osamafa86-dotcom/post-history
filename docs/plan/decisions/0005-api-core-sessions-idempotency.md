@@ -237,6 +237,30 @@
   `user.status_changed` بحمولة القائمة البيضاء.
 - **Notification.recovery_request_id**: لمهمة المعتمِد وحدها، و`null` لتنبيه صاحب الحساب.
 
+## جانب الخادم من SEC-07 (تنفيذ ADR 0011 كما في عقد v0.1)
+
+لا قرار جديد؛ تفاصيل التنفيذ:
+
+- **الوضع** `ATTESTATION_MODE`: `off` افتراضيًا (المسارات الثلاثة 404 ولا جلسة تطلب ingest)، و`test` لا يُقبل في الإنتاج
+  (جذر اختبار بدل جذر Apple، وحكم Play Integrity غير موقّع)، و`production`. الاختبار يمر بشيفرة التحقق الحقيقية نفسها
+  بسلسلة شهادات اصطناعية.
+- **App Attest**: جذر Apple مثبّت في الكود (بصمته في `app-attest.ts`)، فاكّ CBOR محدود يرفض ما لا يحتاجه، والتحقق بالترتيب:
+  السلسلة وصلاحية كل شهادة، الـ nonce في الامتداد `1.2.840.113635.100.8.2`، المعرّف = SHA-256 للمفتاح العام، `rpIdHash`،
+  العدّاد صفر، `aaguid` (التطويري خارج الإنتاج بإذن صريح). التأكيد: التوقيع على `SHA-256(authData ‖ SHA-256(clientData))`
+  بالمفتاح المخزَّن، والعدّاد يُحدَّث ذريًا بشرط تجاوزه (وإلا `409 assertion_replay`) فوق محفّز القاعدة.
+- **Play Integrity**: `decodeIntegrityToken` بحساب خدمة (منحة JWT bearer)، `400` فشل شهادة، و5xx/429/الشبكة `503
+  attestation_unavailable` مع `Retry-After`. شروط الحكم كما في ADR 0011، ولا يُقرأ `accountDetails`.
+- **التحديات**: Redis `ingest:challenge:<id>` بعمر 300 ث و`GETDEL`؛ تحدي مستخدم آخر أو مستهلك أو منتهٍ `410`.
+  `clientData = challenge ‖ upload_session_id` (البايتات الخام ثم النص).
+- **الرمز**: JWT ES256 بـ `kid` و`aud=ingest` و`sid` و`iat` و`exp` و`jti` و`plat`، عمره `INGEST_TOKEN_TTL_SECONDS` (≤ 900)
+  ولا يتجاوز انتهاء الجلسة. يُصدر لجلسة tus حية يملكها المستدعي فقط. إعادة الطلب بالمفتاح نفسه تصدر رمزًا جديدًا بالانتهاء
+  الأول نفسه (الرمز لا يُحفظ في جدول المفاتيح). التدوير: البوابة تحمل العامّين فترة، والخادم يوقّع بالجديد وحده.
+- **الإبطال**: `revokeAllAccess` يبطل مفاتيح App Attest للحساب، فالهاتف المفقود لا يصدر رموزًا، ولا يُعاد تسجيل مفتاح مبطَل.
+- **التدقيق**: `device_attestation.registered|rejected` و`ingest_token.issued|rejected` بالمعرّفات و`reason_code` (سبب الرفض
+  الداخلي أو البيئة أو المنصة)؛ `key_id` لا يدخل التدقيق ولا السجل، والعميل يرى `403 attestation_failed` واحدًا.
+- **`ingest_token_required`** بالإعداد (`INGEST_REQUIRED`) لمسار tus، مع `tus_endpoint = INGEST_TUS_ENDPOINT`؛ لا عمود
+  لكل جلسة في v0.1.
+
 ## الدليل
 
 اختبارات التكامل على Postgres في مهمة CI `api` (`apps/api/test/integration/`): الإبطال الفوري، التدوير وكشف إعادة

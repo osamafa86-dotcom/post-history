@@ -4,7 +4,7 @@ import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { randomToken, sha256 } from '../common/crypto';
 import { DB, type Database, type Executor, type Tx } from '../database/database.module';
-import { pushDevices, recoveryRequests, refreshTokens, uploadSessions, users } from '../database/schema/schema';
+import { deviceAttestationKeys, pushDevices, recoveryRequests, refreshTokens, uploadSessions, users } from '../database/schema/schema';
 import { abortRevokedUpload } from '../uploads/upload-completion';
 import type { AuthContext } from './auth.guard';
 
@@ -183,6 +183,11 @@ export async function revokeAllAccess(tx: Tx, userId: string): Promise<void> {
     .where(and(eq(uploadSessions.createdBy, userId), sql`${uploadSessions.state} IN ('created', 'in_progress', 'completed')`))
     .returning();
   for (const session of live) await abortRevokedUpload(tx, session);
+  // مفاتيح App Attest للحساب (SEC-07): الجهاز المفقود لا يصدر رموز ingest بعد الإبطال؛ التثبيت الجديد يسجّل مفتاحًا جديدًا
+  await tx
+    .update(deviceAttestationKeys)
+    .set({ revokedAt: sql`now()` })
+    .where(and(eq(deviceAttestationKeys.userId, userId), isNull(deviceAttestationKeys.revokedAt)));
   await tx
     .update(pushDevices)
     .set({ revokedAt: sql`now()` })

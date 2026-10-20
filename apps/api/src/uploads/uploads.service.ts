@@ -147,13 +147,17 @@ export class UploadsService implements ReplayRehydrator {
   }
 
   private toDto(s: SessionRow, receipt: string | null): UploadSession {
+    // SEC-07: الخادم وحده يقرر نطاق ingest (لا تبديل آلي في العميل)، لمسار tus فقط. القرار بالإعداد لا لكل جلسة: لا عمود
+    // له في v0.1، فتبديله أثناء رفع جارٍ ينقل استئنافه إلى النطاق الآخر (يُضبط قبل فتح الجلسات لا أثناءها).
+    const ingest = this.config.INGEST_REQUIRED && s.uploadPath === 'tusd';
     return {
       id: s.id,
       material_id: s.materialId,
       kind: s.kind as UploadSession['kind'],
       state: s.state as UploadSession['state'],
       size_bytes: Number(s.sizeBytes),
-      tus_endpoint: this.config.TUS_PUBLIC_ENDPOINT,
+      tus_endpoint: ingest ? this.config.INGEST_TUS_ENDPOINT! : this.config.TUS_PUBLIC_ENDPOINT,
+      ingest_token_required: ingest,
       tus_metadata: { upload_session_id: s.id, filename: s.filename },
       part_size_bytes: s.partSizeBytes,
       bytes_received: Number(s.bytesReceived),
