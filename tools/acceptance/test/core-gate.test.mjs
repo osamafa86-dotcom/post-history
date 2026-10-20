@@ -103,10 +103,16 @@ test("admin-quorum: the API half is partial alone, pass with the command line, a
   const base = { QUORUM_API_URL: "http://x/v1", QUORUM_TOKENS: JSON.stringify(TOKENS), QUORUM_USERS: JSON.stringify({ system_admin_id: "system_admin", system_admin_b_id: "system_admin_b", victim_id: "victim" }) };
   const alone = await quiet(() => quorum(["--dry-run"], setEnv(base), { fetchImpl: fakeApi() }));
   assert.equal(alone.code, 0); assert.equal(alone.doc.result, "partial"); assert.equal(alone.doc.metrics.cli_checked, false);
-  const withCli = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: "exit 3", QUORUM_CLI_GUARD: "exit 4", QUORUM_CLI_TWO: "test -n \"$TARGET_ID\"" }), { fetchImpl: fakeApi() }));
-  assert.equal(withCli.doc.result, "pass");
-  const lax = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: "true", QUORUM_CLI_GUARD: "exit 4", QUORUM_CLI_TWO: "true" }), { fetchImpl: fakeApi() }));
+  const withCli = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: "exit 3", QUORUM_CLI_GUARD: "echo 'failed: Error' >&2; exit 1", QUORUM_CLI_TWO: "test -n \"$TARGET_ID\"" }), { fetchImpl: fakeApi() }));
+  assert.equal(withCli.code, 0);
+  assert.equal(withCli.doc.result, "partial", "the guard refuses but does not say quorum: the waived finding caps the result");
+  assert.equal(withCli.doc.metrics.guard_reported_as_quorum, false);
+  const fixed = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: "exit 3", QUORUM_CLI_GUARD: "echo 'refused (quorum)' >&2; exit 1", QUORUM_CLI_TWO: "true" }), { fetchImpl: fakeApi() }));
+  assert.equal(fixed.code, 1, "once the CLI says refused (quorum) the waiver is stale and must be deleted");
+  const lax = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: "true", QUORUM_CLI_GUARD: "echo 'failed: Error' >&2; exit 1", QUORUM_CLI_TWO: "true" }), { fetchImpl: fakeApi() }));
   assert.equal(lax.code, 1, "a single approver accepted by the command line is a failure");
+  const wrongReason = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: "exit 3", QUORUM_CLI_GUARD: "exit 0", QUORUM_CLI_TWO: "true" }), { fetchImpl: fakeApi() }));
+  assert.equal(wrongReason.code, 1, "a guard that lets the suspension through fails");
 });
 
 test("notification-delivery: right recipients and keys pass (partial below 20 runs); a stray recipient, a leaked coordinate or an off-list payload key fail", async () => {
@@ -123,4 +129,11 @@ test("download-url: links carry ids only and signature parameters", () => {
   assert.deepEqual(inspectLink(ok, { filenameStems: ["dl-1234"] }), []);
   assert.ok(inspectLink("https://s3.example/derived/dl-1234-clip.mov?X-Amz-Signature=a", { filenameStems: ["dl-1234"] }).length);
   assert.ok(inspectLink(`${ok}&filename=clip`).length, "an unexpected query parameter is flagged");
+});
+
+test("admin-quorum: a command that never started is not a refusal", async () => {
+  const base = { QUORUM_API_URL: "http://x/v1", QUORUM_TOKENS: JSON.stringify(TOKENS), QUORUM_USERS: JSON.stringify({ system_admin_id: "system_admin", system_admin_b_id: "system_admin_b", victim_id: "victim" }) };
+  const broken = "echo \"Error: Cannot find module '/x/dist/cli/set-admin-status.js'\" >&2; exit 1";
+  const r = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: broken, QUORUM_CLI_TWO: "true", QUORUM_CLI_GUARD: "echo 'failed: Error' >&2; exit 1" }), { fetchImpl: fakeApi() }));
+  assert.equal(r.code, 1);
 });
