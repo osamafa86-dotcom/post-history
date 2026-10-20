@@ -1,0 +1,9 @@
+{
+  "channel": "fcm",
+  "notification_id": "3a2b1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d",
+  "type": "material.created",
+  "priority": "normal",
+  "material_id": "7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b",
+  "title": "مادة واردة #7b4a1f6e",
+  "dynamic_fields": { "guest_name": "مثال" }
+}

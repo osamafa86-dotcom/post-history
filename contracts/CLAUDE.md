@@ -9,6 +9,7 @@
 - `schemas/measurement.json` — صيغة نتائج القياس.
 - `schemas/outbox-event.json` — صيغة أحداث Outbox.
 - `schemas/attachment-value.json` — شكل قيمة حقل المرفق في `dynamic_fields` (v0.1).
+- `schemas/notification-channel-payload.json` — القائمة البيضاء لحمولة القنوات الخارجية وإشعارات الهاتف (v0.2، ADR 0018).
 - `schemas/timeline.json` — الخط الزمني المشترك بين المحرر ووكيل المونتاج (هيكل أولي؛ يكتمل في المرحلة التجارية).
 - `examples/<schema>/{valid,invalid}/*.json` — اختبار العقد: أمثلة يجب أن تُقبل وأخرى يجب أن تُرفض لكل مخطط.
 - `redocly.yaml` — إعداد الفحص؛ كل القواعد الموصى بها أخطاء لا تحذيرات.

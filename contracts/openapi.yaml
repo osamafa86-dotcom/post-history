@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: post-history API
-  version: 0.1.1
+  version: 0.2.0
   summary: واجهة منصة المكتبة المرئية — الإصدار v0 لمرحلة التأسيس
   license:
     name: Proprietary
@@ -78,6 +78,8 @@ tags:
     description: صندوق الوارد والإشعارات وتسجيل أجهزة الهاتف؛ التمييز بين «أُسند» و«أقرّ الاستلام».
   - name: events
     description: قراءة أحداث Outbox للوحة الإدارة والمراقبة.
+  - name: dashboard
+    description: قراءات مجمّعة للوحة غرفة الأخبار، بلا بيانات كاشفة (v0.2).
 
 paths:
   /auth/login:
@@ -474,6 +476,15 @@ paths:
           in: query
           description: تاريخ التصوير إلى (غير شامل)
           schema: { type: string, format: date-time }
+        - name: sort
+          in: query
+          description: >-
+            الترتيب (v0.2): الأحدث إنشاءً (الافتراضي)، الأقدم إنشاءً، الأحدث تصويرًا، الأحدث تعديلًا. لكل قيمة فهرس مؤشر
+            (ADR 0002)؛ المؤشر يخص الترتيب الذي صدر به، وتغيير `sort` مع مؤشر قديم `400`.
+          schema:
+            type: string
+            enum: [created_desc, created_asc, shot_desc, updated_desc]
+            default: created_desc
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
       responses:
@@ -666,6 +677,39 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/FileDownloadUrl" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /materials/{id}/duplicates:
+    parameters:
+      - $ref: "#/components/parameters/MaterialId"
+    get:
+      tags: [materials]
+      summary: مواد قد تكون مكررة لهذه المادة (v0.2)
+      description: >-
+        مرشّحون من نطاق المستدعي وحده، بثلاث درجات: `sha256` (الأصل نفسه بايتًا ببايت)، `cheap_hash` (الحجم وأول وآخر
+        MiB)، و`perceptual` (متوسط مسافة هامنغ لبصمات الإطارات ≤ 10، ADR 0018). ترشيح لا حكم: لا يغيّر حالة ولا حقًا.
+        لا يعيد عنوانًا ولا اسمًا ولا موقعًا؛ معرّفات وحالات فقط. مادة خارج النطاق لا تظهر ولا يُلمَّح إليها.
+      operationId: listMaterialDuplicates
+      x-roles: [supervisor, producer, editor_in_chief, rights_officer, system_admin]
+      parameters:
+        - name: limit
+          in: query
+          description: الحد الأقصى للمرشّحين
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        "200":
+          description: المرشّحون مرتبين بالأقوى أولًا
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/DuplicateCandidate" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -1231,6 +1275,141 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /notification-rules:
+    get:
+      tags: [notifications]
+      summary: قواعد التنبيه (الإدارة، v0.2)
+      operationId: listNotificationRules
+      x-roles: [system_admin, editor_in_chief]
+      responses:
+        "200":
+          description: كل القواعد، المفعّلة وغير المفعّلة
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/NotificationRule" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [notifications]
+      summary: إنشاء قاعدة تنبيه
+      description: >-
+        من يُبلَّغ عن حدث (بالدور، ويُحصر الدور المقيّد بنطاق المادة، أو بالصلاحية)، بأي قنوات، بعد أي تأخير، مع ساعات
+        هدوء لغير العاجل وملخص دوري وسلسلة تصعيد. القنوات الخارجية تحمل الحمولة المبيّضة وحدها
+        (`schemas/notification-channel-payload.json`). يُسجَّل في التدقيق بـ `rule_id` وحده.
+      operationId: createNotificationRule
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NotificationRuleInput" }
+      responses:
+        "201":
+          description: القاعدة
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationRule" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /notification-rules/{rule_id}:
+    parameters:
+      - name: rule_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [notifications]
+      summary: قراءة قاعدة تنبيه
+      operationId: getNotificationRule
+      x-roles: [system_admin, editor_in_chief]
+      responses:
+        "200":
+          description: القاعدة
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationRule" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [notifications]
+      summary: استبدال قاعدة تنبيه كاملة (مع سلسلة تصعيدها)
+      operationId: replaceNotificationRule
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NotificationRuleInput" }
+      responses:
+        "200":
+          description: القاعدة بعد الاستبدال
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationRule" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+    delete:
+      tags: [notifications]
+      summary: حذف قاعدة تنبيه (الإشعارات التي ولّدتها تبقى، و`rule_id` فيها يصير فارغًا)
+      operationId: deleteNotificationRule
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204": { description: حُذفت }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+
+  /dashboard/newsroom:
+    get:
+      tags: [dashboard]
+      summary: لوحة غرفة الأخبار المجمّعة (v0.2)
+      description: >-
+        عدّادات الحالات الثلاث ضمن نطاق المستدعي، والمحجوز، وآخر الإيصالات، والمتأخر عن الإقرار. معرّفات وأرقام وحالات
+        فقط: لا عناوين ولا أسماء ولا مواقع ولا حقول ديناميكية. اللقطة لحظية؛ التحديث الحي من `/events` وWebSocket.
+      operationId: getNewsroomDashboard
+      x-roles: [supervisor, producer, editor_in_chief, rights_officer, system_admin]
+      responses:
+        "200":
+          description: اللقطة
+          headers:
+            Cache-Control:
+              description: "`no-store`"
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NewsroomDashboard" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /push-devices:
     put:
       tags: [notifications]
@@ -1787,6 +1966,18 @@ components:
             rights_state: { $ref: "#/components/schemas/RightsState" }
             reserved_by: { type: [string, "null"], format: uuid, description: المنتج الذي حجز المادة }
             reserved_at: { type: [string, "null"], format: date-time }
+            acknowledged_by:
+              type: [string, "null"]
+              format: uuid
+              description: من ضغط «اطّلعت» (انتقال `inbox → acknowledged`)؛ يراه المراسل. أُضيف في v0.2 فقد يغيب
+            acknowledged_at: { type: [string, "null"], format: date-time, description: متى؛ أُضيف في v0.2 فقد يغيب }
+            reporter_legal_name:
+              type: [string, "null"]
+              maxLength: 200
+              description: >-
+                الاسم الحقيقي للمراسل (v0.2). يعود لحامل `protected_source:read` وحده، ويغيب المفتاح لغيره؛ كل قراءة تُسجَّل
+                في التدقيق (`material.sensitive_read`، `field_keys: [reporter_legal_name]`). لا يدخل إشعارًا ولا حدثًا ولا
+                تصديرًا. `null` = غير مسجّل.
             files:
               type: array
               items: { $ref: "#/components/schemas/MaterialFile" }
@@ -2259,12 +2450,20 @@ components:
         head_sha256: { type: string, pattern: "^[0-9a-f]{64}$", description: "أول 1 MiB؛ الملف الأصغر = الملف كله" }
         tail_sha256: { type: string, pattern: "^[0-9a-f]{64}$", description: "آخر 1 MiB؛ الملف الأصغر = الملف كله" }
         technical: { $ref: "#/components/schemas/MediaTechnical" }
-      description: النجاح يحمل البصمة والحجم والبصمة الرخيصة والبيانات الفنية؛ الفشل لا يحمل `sha256` ولا `technical`
+        perceptual_hash:
+          type: array
+          minItems: 1
+          maxItems: 32
+          description: >-
+            البصمة الإدراكية للفيديو (v0.2، #93): pHash (DCT 32×32) لإطار كل ثانيتين، حتى 32 إطارًا، كل عنصر 64 بت بـ 16
+            حرف hex. اختيارية وللأصل الفيديو وحده؛ ترشيح للمكررات لا يمنح حقًا ولا يغيّر حالة.
+          items: { type: string, pattern: "^[0-9a-f]{16}$" }
+      description: النجاح يحمل البصمة والحجم والبصمة الرخيصة والبيانات الفنية؛ الفشل لا يحمل `sha256` ولا `technical` ولا `perceptual_hash`
       if: { properties: { result: { const: verified } } }
       then:
         required: [sha256, size_bytes, head_sha256, tail_sha256, technical]
         properties: { technical: { required: [duration_ms, start_pts_us] } }
-      else: { not: { anyOf: [{ required: [sha256] }, { required: [technical] }] } }
+      else: { not: { anyOf: [{ required: [sha256] }, { required: [technical] }, { required: [perceptual_hash] }] } }
 
     MediaVerificationResult:
       x-internal: true
@@ -2290,7 +2489,10 @@ components:
         storage_key: { type: string, minLength: 1, maxLength: 1024, pattern: "^[A-Za-z0-9/_.-]+$" }
         sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
         size_bytes: { type: integer, minimum: 1 }
-        mime_type: { type: string, enum: [image/jpeg, image/webp, video/mp4, application/vnd.apple.mpegurl, audio/mp4] }
+        mime_type:
+          type: string
+          description: "`application/json` لموجة الصوت (`audio`، #93)"
+          enum: [image/jpeg, image/webp, video/mp4, application/vnd.apple.mpegurl, audio/mp4, application/json]
         technical: { $ref: "#/components/schemas/MediaTechnical" }
       if: { properties: { kind: { const: thumbnail } } }
       then:
@@ -2301,6 +2503,200 @@ components:
             required: [width, height]
             properties: { width: { type: integer }, height: { type: integer } }
       else: { properties: { technical: { required: [duration_ms, start_pts_us] } } }
+
+    DuplicateCandidate:
+      type: object
+      required: [material_id, file_id, match, editorial_state, priority, created_at]
+      properties:
+        material_id: { type: string, format: uuid }
+        file_id: { type: string, format: uuid, description: الأصل المطابق في المادة المرشّحة }
+        match:
+          type: string
+          enum: [sha256, cheap_hash, perceptual]
+          description: أقوى درجة تطابق
+        distance:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 64
+          description: متوسط مسافة هامنغ لـ `perceptual`؛ `null` لغيرها
+        editorial_state: { $ref: "#/components/schemas/EditorialState" }
+        priority: { $ref: "#/components/schemas/Priority" }
+        created_at: { type: string, format: date-time }
+
+    NotificationChannel:
+      type: string
+      description: القنوات الخارجية (`email`، `telegram`، `whatsapp`، `sms`) تحمل الحمولة المبيّضة وحدها
+      enum: [in_app, websocket, apns, fcm, web_push, email, telegram, whatsapp, sms]
+
+    NotificationEscalationStep:
+      type: object
+      additionalProperties: false
+      required: [level, after_seconds, recipient_roles, channels]
+      properties:
+        level: { type: integer, minimum: 1, maximum: 5 }
+        after_seconds: { type: integer, minimum: 60, maximum: 86400, description: من الإشعار الأول إن لم يُقرّ الاستلام }
+        recipient_roles:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/Role" }
+        channels:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/NotificationChannel" }
+
+    NotificationRuleInput:
+      type: object
+      additionalProperties: false
+      required: [name, event_type, channels]
+      description: >-
+        قاعدة تنبيه تضبطها الإدارة (الخطة: «قواعد تضبطها الإدارة»). يلزم مستلم واحد على الأقل (دور أو صلاحية). مستويات
+        التصعيد متتالية من 1 بلا فجوات و`after_seconds` متزايد، وإلا `422 validation_failed`.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120, description: اسم إداري؛ لا يظهر في أي إشعار }
+        event_type:
+          type: string
+          description: أحداث المواد والرفع ومسودة الذكاء الاصطناعي وحدها (schemas/outbox-event.json)
+          enum:
+            - material.created
+            - material.urgent_received
+            - material.updated
+            - material.version_created
+            - material.technical_transition
+            - material.editorial_transition
+            - material.rights_transition
+            - material.acknowledged
+            - material.change_requested
+            - material.accepted_for_production
+            - material.reserved
+            - material.released
+            - material.contributors_set
+            - material.published
+            - upload.started
+            - upload.proxy_received
+            - upload.original_received
+            - upload.verified
+            - upload.deduplicated
+            - upload.failed
+            - ai.draft_ready
+        priorities:
+          type: [array, "null"]
+          minItems: 1
+          uniqueItems: true
+          description: "`null` = كل الأولويات"
+          items: { $ref: "#/components/schemas/Priority" }
+        material_types:
+          type: [array, "null"]
+          minItems: 1
+          uniqueItems: true
+          description: "`null` = كل الأنواع"
+          items: { $ref: "#/components/schemas/MaterialType" }
+        office_id: { type: [string, "null"], format: uuid, description: "`null` = كل المكاتب" }
+        recipient_roles:
+          type: array
+          uniqueItems: true
+          default: []
+          items: { $ref: "#/components/schemas/Role" }
+        recipient_permissions:
+          type: array
+          uniqueItems: true
+          default: []
+          items: { $ref: "#/components/schemas/Permission" }
+        channels:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/NotificationChannel" }
+        delay_seconds: { type: integer, minimum: 0, maximum: 86400, default: 0 }
+        quiet_hours:
+          type: [object, "null"]
+          additionalProperties: false
+          required: [start, end, timezone]
+          description: لا تنطبق على `urgent`؛ ما يقع فيها يُؤجَّل إلى نهايتها أو يدخل الملخص
+          properties:
+            start: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+            end: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+            timezone: { type: string, minLength: 1, maxLength: 64, description: "IANA، مثل Asia/Gaza" }
+        digest_interval_minutes:
+          type: [integer, "null"]
+          minimum: 15
+          maximum: 1440
+          description: "`null` = فوري؛ غير ذلك ملخص دوري بدل الإشعارات المتفرقة (لا ينطبق على `urgent`)"
+        escalation:
+          type: array
+          maxItems: 5
+          default: []
+          items: { $ref: "#/components/schemas/NotificationEscalationStep" }
+        enabled: { type: boolean, default: true }
+
+    NotificationRule:
+      allOf:
+        - $ref: "#/components/schemas/NotificationRuleInput"
+        - type: object
+          required: [id, row_version, created_at, updated_at]
+          properties:
+            id: { type: string, format: uuid }
+            row_version: { type: integer, minimum: 1, description: قيمة `ETag` }
+            created_by: { type: [string, "null"], format: uuid }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    StateCount:
+      type: object
+      required: [state, count]
+      properties:
+        state: { type: string }
+        count: { type: integer, minimum: 0 }
+
+    NewsroomDashboard:
+      type: object
+      required: [generated_at, editorial, technical, rights, urgent_open, reserved, recent_receipts, overdue_acknowledgements]
+      properties:
+        generated_at: { type: string, format: date-time }
+        editorial:
+          type: array
+          description: عدّاد لكل حالة تحريرية ضمن النطاق (الحالات الصفرية تُحذف)
+          items: { $ref: "#/components/schemas/StateCount" }
+        technical:
+          type: array
+          items: { $ref: "#/components/schemas/StateCount" }
+        rights:
+          type: array
+          items: { $ref: "#/components/schemas/StateCount" }
+        urgent_open:
+          type: integer
+          minimum: 0
+          description: مواد عاجلة لم تبلغ `published` ولا `rejected`
+        reserved:
+          type: array
+          maxItems: 50
+          description: المحجوز الآن، الأقدم حجزًا أولًا
+          items:
+            type: object
+            required: [material_id, reserved_by, reserved_at, priority, editorial_state]
+            properties:
+              material_id: { type: string, format: uuid }
+              reserved_by: { type: string, format: uuid }
+              reserved_at: { type: string, format: date-time }
+              priority: { $ref: "#/components/schemas/Priority" }
+              editorial_state: { $ref: "#/components/schemas/EditorialState" }
+        recent_receipts:
+          type: array
+          maxItems: 20
+          description: آخر الإيصالات الصادرة، الأحدث أولًا
+          items:
+            type: object
+            required: [material_id, receipt_number, verified_at, priority]
+            properties:
+              material_id: { type: string, format: uuid }
+              receipt_number: { type: string, pattern: "^R-[0-9]{6}-[0-9]{6}$" }
+              verified_at: { type: string, format: date-time }
+              priority: { $ref: "#/components/schemas/Priority" }
+        overdue_acknowledgements:
+          type: integer
+          minimum: 0
+          description: إشعارات مهام حان تصعيدها ولم يُقرّ استلامها (ضمن النطاق)
 
     FormVersionSummary:
       type: object
@@ -2338,6 +2734,10 @@ components:
           type: [string, "null"]
           format: uuid
           description: لإشعارات `auth.recovery_*` فقط؛ يفتح منه المشرف طلب الاعتماد (أُضيف في v0.1)
+        rule_id:
+          type: [string, "null"]
+          format: uuid
+          description: قاعدة التنبيه التي ولّدته؛ `null` للقواعد الافتراضية أو قاعدة حُذفت (أُضيف في v0.2)
         created_at: { type: string, format: date-time }
         read_at: { type: [string, "null"], format: date-time }
         acknowledged_at: { type: [string, "null"], format: date-time }
