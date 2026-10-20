@@ -11,6 +11,13 @@ import { loadSuite, checkForms, judge, runReference } from "../form-conformance/
 import { randomUUID } from "node:crypto";
 import { client, materialBody } from "../lib/live.mjs";
 
+const CLIENTS = ["web", "ios", "android"];
+// `pass` needs everything at once: no failure, the live server part ran, and all three clients were judged on the shared cases.
+export function decide({ failed, serverRan, platforms }) {
+  const threeClients = CLIENTS.every((p) => platforms.includes(p));
+  return { result: failed ? "fail" : serverRan && threeClients ? "pass" : "partial", threeClients, missing: CLIENTS.filter((p) => !platforms.includes(p)) };
+}
+
 export async function run(argv = process.argv.slice(2), env = process.env) {
   const args = parseArgs(argv);
   banner(byName("dynamic-fields"));
@@ -19,7 +26,9 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
 
   const formProblems = checkForms(forms);
   const refWrong = judge(results, suite);
-  const platforms = (typeof args.platforms === "string" ? args.platforms.split(",") : []).map((f) => JSON.parse(readFileSync(f, "utf8")));
+  // client result files: --platforms=a.json,b.json and/or DYN_PLATFORM_FILES (CI hands over the file each client job produced)
+  const files = [args.platforms, env.DYN_PLATFORM_FILES].flatMap((v) => (typeof v === "string" ? v.split(",") : [])).filter(Boolean);
+  const platforms = files.map((f) => JSON.parse(readFileSync(f, "utf8")));
   const verdicts = platforms.map((p) => ({ platform: p.platform, wrong: judge(p.results, suite) }));
   [...formProblems.map((p) => `form invalid: ${p}`), ...refWrong.map((w) => `reference ${w.id}: ${w.why}`),
     ...verdicts.flatMap((v) => v.wrong.map((w) => `${v.platform} ${w.id}: ${w.why}`))].forEach((l) => console.log(`FAIL ${l}`));
@@ -67,9 +76,9 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   console.log(`reference ${suite.cases.length - refWrong.length}/${suite.cases.length}; platforms: ${verdicts.map((v) => `${v.platform} ${suite.cases.length - v.wrong.length}/${suite.cases.length}`).join(", ") || "none supplied"}`);
 
   const failed = serverFailed || formProblems.length + refWrong.length + verdicts.reduce((n, v) => n + v.wrong.length, 0) > 0;
-  const threeClients = ["web", "ios", "android"].every((p) => names.includes(p));
-  const threeIdentical = !failed && ["web", "ios", "android"].every((p) => names.includes(p));
-  finish(doc, failed ? "fail" : server.ran && threeIdentical ? "pass" : "partial", {
+  const { result, threeClients, missing } = decide({ failed, serverRan: server.ran, platforms: names });
+  const threeIdentical = !failed && threeClients;
+  finish(doc, result, {
     conformance_cases: suite.cases.length,
     reference_cases_matching: suite.cases.length - refWrong.length,
     platforms_judged: names.join(",") || "none",
@@ -78,7 +87,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     server_cases_matching: server.ran ? server.matching : "n/a",
     ...Object.fromEntries(Object.entries(server.checks).map(([k, v]) => [`server_${k}`, v])),
   }, [server.ran ? "الخادم الحي: النشر والبوابة v0 والتاريخ المقروء وإكمال المسودة القديمة وكل حالات المطابقة المشتركة عبر POST /materials" : "الجزء الخادمي الحي لم يُشغَّل (DYN_API_URL)",
-      threeIdentical ? null : "لم تُقدَّم نتائج الواجهات الثلاث (web وios وandroid) متطابقة بعد، فلا يُدّعى المعيار كاملًا"].filter(Boolean).join("؛ "));
+      threeIdentical ? null : `لم تُقدَّم نتائج الواجهات الثلاث متطابقة بعد (الناقص: ${missing.join("، ")})، فلا يُدّعى المعيار كاملًا`].filter(Boolean).join("؛ "));
   if (args["dry-run"]) writeResult(doc, { dryRun: true });
   else console.log("wrote", writeResult(doc, { slug: names.length ? names.join("-") : "reference" }));
   return { code: failed ? 1 : 0, doc };

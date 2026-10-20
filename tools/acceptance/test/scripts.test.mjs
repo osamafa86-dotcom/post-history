@@ -452,3 +452,33 @@ test("field-upload-1gb card: clean card is a valid partial; loss, intervention, 
   const noReceipt = upload1gb(); noReceipt.transfer.receipt_id = "";
   assert.ok(cardToResult(noReceipt).missing.some((m) => m.includes("receipt_id")));
 });
+
+import { decide as dynDecide, run as runDynamic } from "../scripts/dynamic-fields.mjs";
+import { mkdtempSync, writeFileSync as wf, readFileSync as rf } from "node:fs";
+import { tmpdir } from "node:os";
+import { join as pj } from "node:path";
+import { runReference as dynReference } from "../form-conformance/run.mjs";
+
+test("dynamic-fields gate: pass needs the live server part and all three clients; any wrong case is a fail", async () => {
+  assert.equal(dynDecide({ failed: false, serverRan: true, platforms: ["web", "ios", "android"] }).result, "pass");
+  assert.equal(dynDecide({ failed: false, serverRan: true, platforms: ["web"] }).result, "partial");
+  assert.deepEqual(dynDecide({ failed: false, serverRan: true, platforms: ["web"] }).missing, ["ios", "android"]);
+  assert.equal(dynDecide({ failed: false, serverRan: false, platforms: ["web", "ios", "android"] }).result, "partial");
+  assert.equal(dynDecide({ failed: true, serverRan: true, platforms: ["web", "ios", "android"] }).result, "fail");
+
+  // the web file reaches the gate through DYN_PLATFORM_FILES, as the CI job hands it over
+  const { results } = dynReference();
+  const dir = mkdtempSync(pj(tmpdir(), "dyn-"));
+  const good = pj(dir, "web.json"); wf(good, JSON.stringify({ platform: "web", results }));
+  const quiet = console.log; console.log = () => {};
+  try {
+    const a = await runDynamic(["--dry-run"], { DYN_PLATFORM_FILES: good });
+    assert.equal(a.doc.result, "partial");
+    assert.equal(a.doc.metrics.platforms_judged, "web");
+    assert.match(a.doc.notes, /ios، android/);
+    const wrong = { ...results, [Object.keys(results)[0]]: { valid: !Object.values(results)[0].valid, errors: [] } };
+    const bad = pj(dir, "bad.json"); wf(bad, JSON.stringify({ platform: "web", results: wrong }));
+    const b = await runDynamic(["--dry-run"], { DYN_PLATFORM_FILES: bad });
+    assert.equal(b.doc.result, "fail");
+  } finally { console.log = quiet; }
+});

@@ -119,9 +119,20 @@ jobs:
       - name: Install the acceptance tools
         working-directory: tools/acceptance
         run: npm ci
+      - name: Web client result on the shared form cases (the file the dynamic-fields gate judges)
+        working-directory: apps/web
+        run: |
+          npm ci --no-audit --no-fund
+          node --import tsx scripts/form-conformance.ts
       - name: Live run (the API starts with throwaway secrets; nothing is written to docs/measurements)
         working-directory: tools/acceptance
-        run: node live/run.mjs --dry-run
+        env:
+          DYN_PLATFORM_FILES: ${{ github.workspace }}/apps/web/.artifacts/web.json
+        run: node live/run.mjs --dry-run 2>&1 | tee "$RUNNER_TEMP/live.log"
+      - name: dynamic-fields gate judged the web client and the live server together (ios and android join when their files are handed over)
+        run: |
+          grep -E "^reference 57/57; platforms: web 57/57$" "$RUNNER_TEMP/live.log"
+          grep -E "^dynamic-fields +partial$" "$RUNNER_TEMP/live.log"
       - name: upload-resume against tusd on S3 with downloads disabled (hash read from MinIO, as in compose)
         working-directory: tools/acceptance
         env:
