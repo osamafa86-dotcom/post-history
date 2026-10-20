@@ -7,6 +7,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import net.palpost.library.core.auth.AuthState
 import net.palpost.library.core.auth.SignOutReason
 import net.palpost.library.core.security.WipeReport
@@ -22,20 +24,27 @@ class PostHistoryApp : Application() {
     private val _lastWipe = MutableStateFlow<WipeReport?>(null)
     val lastWipe: StateFlow<WipeReport?> = _lastWipe
 
+    /** One wipe at a time: an emergency wipe that meets a 401 must not start a second, parallel wipe. */
+    private val wipeLock = Mutex()
+    @Volatile private var wipeRunning = false
+
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
         // SEC-01: a session the server revoked (401 on refresh) takes the device's upload state with it.
         scope.launch {
             container.auth.state.collect { state ->
-                if (state is AuthState.SignedOut && state.reason == SignOutReason.SESSION_REVOKED && _lastWipe.value == null) {
-                    _lastWipe.value = DeviceWipe(this@PostHistoryApp, container).afterRevocation()
+                if (state is AuthState.SignedOut && state.reason == SignOutReason.SESSION_REVOKED && _lastWipe.value == null && !wipeRunning) {
+                    wipeLock.withLock { if (_lastWipe.value == null) _lastWipe.value = DeviceWipe(this@PostHistoryApp, container).afterRevocation() }
                 }
             }
         }
     }
 
-    suspend fun emergencyWipe(): WipeReport = DeviceWipe(this, container).emergency().also { _lastWipe.value = it }
+    suspend fun emergencyWipe(): WipeReport = wipeLock.withLock {
+        wipeRunning = true
+        try { DeviceWipe(this, container).emergency().also { _lastWipe.value = it } } finally { wipeRunning = false }
+    }
 
     fun acknowledgeWipe() { _lastWipe.value = null }
 }
