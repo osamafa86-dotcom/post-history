@@ -19,7 +19,7 @@ PY_IMAGE="$("${C[@]}" config --format json | python3 -c 'import json,sys; print(
 "${C[@]}" build -q ai-worker
 "${C[@]}" up -d --wait ai-worker || fail "ai-worker did not start"
 [ "$(docker inspect -f '{{.State.ExitCode}}' "$("${C[@]}" ps -aq ai-models)")" = 0 ] || fail "ai-models did not exit 0"
-sha="$(awk '$1=="ggml-tiny"{print $3}' "$HERE/models.lock")"
+sha="$(awk '$1=="ggml-tiny"{print $4}' "$HERE/models.lock")"
 got="$(docker run --rm -v "$VOL:/m:ro" "$PY_IMAGE" sha256sum /m/ggml-tiny.bin | cut -d' ' -f1)"
 [ "$got" = "$sha" ] || fail "model on disk does not match the pinned sha256"
 echo "weights fetched and pinned: ok"
@@ -31,9 +31,9 @@ docker run --rm --network none --read-only -v "$VOL:/models" -v "$HERE:/ai:ro" "
 grep -q '^present  ggml-tiny' "$WORK/offline" || fail "offline check did not find the pinned model"
 # A file that does not match its pin is refused and nothing unverified is kept: a local server (no network) serves
 # zeros of the pinned size under the pinned sha256.
-size="$(awk '$1=="ggml-tiny"{print $2}' "$HERE/models.lock")"
+size="$(awk '$1=="ggml-tiny"{print $3}' "$HERE/models.lock")"
 mkdir -p "$WORK/srv" "$WORK/dest" && truncate -s "$size" "$WORK/srv/fake.bin" && chmod -R a+rwX "$WORK"
-printf 'ggml-tiny %s %s http://127.0.0.1:8000/fake.bin\n' "$size" "$sha" > "$WORK/bad.lock"
+printf 'ggml-tiny ggml-tiny.bin %s %s http://127.0.0.1:8000/fake.bin\n' "$size" "$sha" > "$WORK/bad.lock"
 if docker run --rm --network none -v "$WORK:/w" -v "$HERE/fetch_models.py:/ai/fetch_models.py:ro" "$PY_IMAGE" sh -c \
      'python3 -m http.server -d /w/srv -b 127.0.0.1 8000 >/dev/null 2>&1 & sleep 1;
       python3 /ai/fetch_models.py --lock /w/bad.lock --dest /w/dest --models ggml-tiny' > "$WORK/bad" 2>&1; then

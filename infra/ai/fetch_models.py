@@ -18,14 +18,17 @@ CHUNK = 1 << 20
 
 
 def read_lock(path):
+    """{model: [(file, size, sha256, url), ...]}: نموذج من ملف واحد (ggml) أو عدة ملفات (faster-whisper)."""
     models = {}
     with open(path) as fh:
         for line in fh:
             line = line.split("#", 1)[0].strip()
             if not line:
                 continue
-            name, size, sha, url = line.split()
-            models[name] = (int(size), sha.lower(), url)
+            model, rel, size, sha, url = line.split()
+            if rel.startswith("/") or ".." in rel.split("/"):
+                raise ValueError(f"unsafe path in lock: {rel}")
+            models.setdefault(model, []).append((rel, int(size), sha.lower(), url))
     return models
 
 
@@ -75,31 +78,32 @@ def main():
 
     failed = []
     for name in wanted:
-        size, sha, url = lock[name]
-        path = os.path.join(a.dest, name + ".bin")
-        if verified(path, size, sha):
-            print(f"present  {name} ({size} bytes, sha256 ok)", flush=True)
-            continue
-        if a.offline:
-            print(f"MISSING  {name}: absent or not matching the pin", flush=True)
-            failed.append(name)
-            continue
-        part = path + ".part"
-        try:
-            print(f"fetching {name} ({size} bytes)", flush=True)
-            download(url, part, size, sha)
-            os.replace(part, path)
-            os.chmod(path, 0o444)
-            print(f"verified {name}", flush=True)
-        except Exception as err:  # الشبكة أو عدم المطابقة: لا يبقى ملف جزئي ولا يُستعمل نموذج غير مطابق
-            if os.path.exists(part):
-                os.remove(part)
-            print(f"FAILED   {name}: {err}", flush=True)
-            failed.append(name)
+        for rel, size, sha, url in lock[name]:
+            path = os.path.join(a.dest, rel)
+            if verified(path, size, sha):
+                print(f"present  {name} {rel} ({size} bytes, sha256 ok)", flush=True)
+                continue
+            if a.offline:
+                print(f"MISSING  {name} {rel}: absent or not matching the pin", flush=True)
+                failed.append(name)
+                continue
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            part = path + ".part"
+            try:
+                print(f"fetching {name} {rel} ({size} bytes)", flush=True)
+                download(url, part, size, sha)
+                os.replace(part, path)
+                os.chmod(path, 0o444)
+                print(f"verified {name} {rel}", flush=True)
+            except Exception as err:  # الشبكة أو عدم المطابقة: لا يبقى ملف جزئي ولا يُستعمل نموذج غير مطابق
+                if os.path.exists(part):
+                    os.remove(part)
+                print(f"FAILED   {name}: {err}", flush=True)
+                failed.append(name)
 
     ok = [m for m in wanted if m not in failed]
     with open(os.path.join(a.dest, "MANIFEST.part"), "w") as fh:
-        fh.writelines(f"{m} {lock[m][1]}\n" for m in ok)
+        fh.writelines(f"{m} {rel} {sha}\n" for m in ok for rel, _, sha, _ in lock[m])
     os.replace(os.path.join(a.dest, "MANIFEST.part"), os.path.join(a.dest, "MANIFEST"))
     if failed:
         sys.exit(1)
