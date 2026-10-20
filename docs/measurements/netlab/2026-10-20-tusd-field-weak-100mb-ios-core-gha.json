@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "tool": "netlab",
+  "role": "ios",
+  "test_name": "field-network-upload",
+  "decision_ref": 3,
+  "started_at": "2026-10-20T00:32:26Z",
+  "ended_at": "2026-10-20T01:12:27Z",
+  "result": "fail",
+  "device": {
+    "platform": "server",
+    "model": "apps/ios UploadCore (PostHistoryKit upload-netlab, Swift 6.1 on Linux)",
+    "os_version": "Linux 6.17.0-1022-azure"
+  },
+  "network": {
+    "profile": "field-weak",
+    "uplink_kbps": 500,
+    "loss_pct": 30,
+    "disconnect_every_s": 120,
+    "longest_connected_window_s": 129.0
+  },
+  "upload_path": "tusd",
+  "file": {
+    "size_bytes": 104857600,
+    "codec": "synthetic-random"
+  },
+  "metrics": {
+    "upload_complete": false,
+    "checksum_match": false,
+    "bytes_uploaded": 9982600,
+    "elapsed_s": 2401.2,
+    "goodput_kbps": 33.3,
+    "resumes": 37,
+    "connection_failures": 38,
+    "longest_connected_window_s": 129.0,
+    "client_chunk_bytes": 1048576,
+    "client_timeout_s": 60,
+    "parts_ok": 0,
+    "parts_failed": 38,
+    "loss_mode": "netem",
+    "events": "120.1s:blackout-start;140.2s:blackout-end;240.0s:blackout-start;260.1s:blackout-end;360.1s:blackout-start;380.1s:blackout-end;480.1s:blackout-start;500.1s:blackout-end;600.1s:blackout-start;620.1s:blackout-end;720.1s:blackout-start;740.1s:blackout-end;840.1s:blackout-start;860.1s:blackout-end;960.0s:blackout-start;980.1s:blackout-end;1080.1s:blackout-start;1100.1s:blackout-end;1200.0s:blackout-start;1220.1s:blackout-end;1320.1s:blackout-start;1340.1s:blackout-end;1440.0s:blackout-start;1460.1s:blackout-end;1560.1s:blackout-start;1580.1s:blackout-end;1680.0s:blackout-start;1700.1s:blackout-end;1800.0s:blackout-start;1820.1s:blackout-end;1920.0s:blackout-start;1940.1s:blackout-end;2040.1s:blackout-start;2060.1s:blackout-end;2160.1s:blackout-start;2180.1s:blackout-end;2280.1s:blackout-start;2300.1s:blackout-end;2400.0s:blackout-start",
+    "bytes_lost_on_resume": 0,
+    "goodput_connected_kbps": 39.6,
+    "mathis_limit_kbps": 86.0,
+    "efficiency_vs_mathis": 0.46,
+    "stage_a_ok": false
+  },
+  "notes": "toxiproxy 2.12.0 -> nginx tusd-proxy -> tusd v2.10.1 -> MinIO (local compose). Client: apps/ios UploadCore (PostHistoryKit upload-netlab, Swift 6.1 on Linux), time box 2400s, event scale 1.0. loss 30% + delay 300ms via tc netem in toxiproxy's netns. netlab never records pass: field-network-upload stage (b) is 1 GB on a real device and network (stage (a): efficiency >= 70% of Mathis, zero bytes lost on resume, netem). Connected window = client-observed time from first successful request to next failure."
+}

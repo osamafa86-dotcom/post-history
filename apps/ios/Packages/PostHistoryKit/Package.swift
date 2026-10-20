@@ -12,6 +12,7 @@ let package = Package(
         .library(name: "FormEngine", targets: ["FormEngine"]),
         .library(name: "DeviceSecurity", targets: ["DeviceSecurity"]),
         .executable(name: "form-conformance", targets: ["form-conformance"]),
+        .executable(name: "upload-netlab", targets: ["upload-netlab"]),
     ],
     dependencies: [
         // SHA-256 على Linux (الاختبارات وCI)؛ على منصات Apple يُستخدم CryptoKit.
@@ -30,6 +31,8 @@ let package = Package(
         .target(name: "FormEngine", dependencies: ["PostHistoryAPI"]),
         .testTarget(name: "FormEngineTests", dependencies: ["FormEngine"]),
         .executableTarget(name: "form-conformance", dependencies: ["FormEngine"]),
+        // عميل قياس netlab: يشغّل نواة الرفع نفسها على Linux ضد tusd عبر toxiproxy ويطبع ملخص الجلسة لـ tools/netlab/netlab.py --client-cmd.
+        .executableTarget(name: "upload-netlab", dependencies: ["UploadCore", "PostHistoryAPI"]),
         // أمان الجهاز (SEC-01، جانب الجهاز): المسح الطارئ بخطوات مرتبة وتقرير بما مُسح وما تعذّر، دون تسجيل مسارات.
         .target(name: "DeviceSecurity"),
         .testTarget(name: "DeviceSecurityTests", dependencies: ["DeviceSecurity"]),

@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "tool": "netlab",
+  "role": "ios",
+  "test_name": "field-network-upload",
+  "decision_ref": 3,
+  "started_at": "2026-10-20T00:32:23Z",
+  "ended_at": "2026-10-20T00:33:10Z",
+  "result": "partial",
+  "device": {
+    "platform": "server",
+    "model": "apps/ios UploadCore (PostHistoryKit upload-netlab, Swift 6.1 on Linux)",
+    "os_version": "Linux 6.17.0-1022-azure"
+  },
+  "network": {
+    "profile": "office",
+    "uplink_kbps": 20000,
+    "loss_pct": 0,
+    "longest_connected_window_s": 45.6
+  },
+  "upload_path": "tusd",
+  "file": {
+    "size_bytes": 104857600,
+    "codec": "synthetic-random"
+  },
+  "metrics": {
+    "upload_complete": true,
+    "checksum_match": true,
+    "bytes_uploaded": 104857600,
+    "elapsed_s": 46.5,
+    "goodput_kbps": 18022.7,
+    "resumes": 0,
+    "connection_failures": 0,
+    "longest_connected_window_s": 45.6,
+    "client_chunk_bytes": 4194304,
+    "client_timeout_s": 60,
+    "parts_ok": 25,
+    "parts_failed": 0,
+    "loss_mode": "none",
+    "part_time_s_p50": 1.82,
+    "part_time_s_p90": 1.91,
+    "part_time_s_max": 1.94,
+    "part_times_s": "1.7,1.8,1.8,1.9,1.7,1.8,1.8,1.9,1.7,1.8,1.9,1.9,1.7,1.8,1.9,1.9,1.7,1.8,1.9,1.9,1.7,1.8,1.8,1.9,1.7",
+    "events": "none",
+    "bytes_lost_on_resume": 0,
+    "goodput_connected_kbps": 18022.7
+  },
+  "notes": "toxiproxy 2.12.0 -> nginx tusd-proxy -> tusd v2.10.1 -> MinIO (local compose). Client: apps/ios UploadCore (PostHistoryKit upload-netlab, Swift 6.1 on Linux), time box 600s, event scale 1.0. netlab never records pass: field-network-upload stage (b) is 1 GB on a real device and network (stage (a): efficiency >= 70% of Mathis, zero bytes lost on resume, netem). Connected window = client-observed time from first successful request to next failure."
+}

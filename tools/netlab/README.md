@@ -23,6 +23,8 @@ python3 tools/netlab/netlab.py run --scenario office --size-mb 500 \
   --out docs/measurements/netlab/$(date +%F)-tusd-office-500mb.json
 ```
 
+**عميل خارجي (`--client-cmd`):** يُقاس عميل رفع آخر بالتعريفات نفسها: أمر صدفة بعناصر `{endpoint}` `{host}` `{file}` `{size}` `{chunk}` `{timeout}` `{max_seconds}` يطبع في آخر سطر من stdout ملخص الجلسة JSON (`url_path`، `offset`، `complete`، `parts` كمصفوفة `[seconds, bytes, ok]`، `windows`، `resumes`، `failures`، `bytes_lost`؛ انظر `run_external`)، وتبقى المقاييس والكفاءة والبصمة من هنا. `--client-label` يصف العميل في `device.model`، و`--role` من أجرى القياس. العميل الأول: نواة الرفع في iOS على Linux (`apps/ios/Packages/PostHistoryKit`، الهدف `upload-netlab`، عبر `.github/scripts/netlab-swift-client.sh`؛ سير العمل `netlab-ios`: سيناريو واحد قصير على الطلبات والقياس الكامل بـ `workflow_dispatch`). الأمر يُقسَّم بـ `shlex` ويُشغَّل بلا صدفة؛ إن لم يُنهِ العميل بعد `--max-seconds` + 120 ث يُقتل وتُكتب النتيجة `partial` بحدث `client-timeout` بلا حكم على المرحلة (أ).
+
 الخيارات: `--chunk-mb` (حجم طلب PATCH؛ الافتراضي `client_chunk_mb` في السيناريو)، `--timeout-s` (مهلة خمول المقبس، 60)، `--event-scale` (لتجربة سريعة فقط؛ القياس المرجعي بـ 1)، `--max-seconds` (حد زمني؛ إن انتهى قبل الاكتمال فالنتيجة `partial`)، `--file` (ملف اصطناعي موجود). الملف الاصطناعي يُولَّد عشوائيًا في `--workdir` ولا يُرفع إلى المستودع.
 
 ## ما يُقاس (`metrics`)

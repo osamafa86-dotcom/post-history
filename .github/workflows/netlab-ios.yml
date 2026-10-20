@@ -1,0 +1,87 @@
+name: netlab-ios
+
+# Stage (a) of field-network-upload for the iOS upload core: apps/ios UploadCore runs on Linux inside a swift
+# container and is driven through tools/netlab/netlab.py --client-cmd, so every metric (parts, windows, bytes lost
+# on resume, efficiency vs the Mathis limit, MinIO checksum) comes from netlab itself.
+# - pull_request (iOS core, the netlab runner or this harness changed): one short scenario (office, 100 MB, 600 s)
+#   proves the client still runs and prints a valid summary. Budget: one runner, a few minutes.
+# - workflow_dispatch: the real measurement, one scenario or all three. field-weak at the Mathis limit
+#   (~86 kbit/s at 300 ms / 30% loss) needs hours for 100 MB; size_mb and max_seconds bound it.
+# netlab never records pass: the result is partial, or fail when netlab's stage (a) rule (stage_a_ok) says so.
+# The result JSON is printed and uploaded as an artifact to commit to docs/measurements/netlab/.
+on:
+  pull_request:
+    paths:
+      - "apps/ios/Packages/PostHistoryKit/Sources/UploadCore/**"
+      - "apps/ios/Packages/PostHistoryKit/Sources/upload-netlab/**"
+      - "tools/netlab/netlab.py"
+      - ".github/scripts/netlab-swift-client.sh"
+      - ".github/workflows/netlab-ios.yml"
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: office | field-switch | field-weak | all
+        default: field-weak
+      size_mb:
+        description: field-network-upload stage (a) is 100 MB; stage (b) (1 GB) is on a real device
+        default: "100"
+      max_seconds:
+        description: time box per scenario (GitHub job limit is 6h)
+        default: "19800"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ios-core:
+    runs-on: ubuntu-latest
+    # Long measurements only when dispatched by hand; the PR smoke is capped to protect the Actions budget.
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 350 || 20 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: ${{ github.event_name == 'pull_request' && fromJSON('["office"]') || (inputs.scenario == 'all' && fromJSON('["office","field-switch","field-weak"]') || fromJSON(format('["{0}"]', inputs.scenario))) }}
+    env:
+      NO_PROXY: 127.0.0.1,localhost
+      SIZE_MB: ${{ github.event_name == 'pull_request' && '100' || inputs.size_mb }}
+      MAX_SECONDS: ${{ github.event_name == 'pull_request' && '600' || inputs.max_seconds }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Containers cannot load kernel modules: sch_netem must be loaded on the runner itself.
+      - name: Load sch_netem
+        run: |
+          sudo modprobe sch_netem || {
+            sudo apt-get update -q
+            sudo apt-get install -y -q "linux-modules-extra-$(uname -r)"
+            sudo modprobe sch_netem
+          }
+          lsmod | grep sch_netem
+      - name: Build the Swift upload client (apps/ios UploadCore, Linux)
+        run: .github/scripts/netlab-swift-client.sh build
+      - name: Start compose with the netlab overlay
+        run: |
+          cp infra/compose/.env.example infra/compose/.env
+          sed -i "s/^TUSD_HOOK_SECRET=.*/TUSD_HOOK_SECRET=$(openssl rand -hex 32)/" infra/compose/.env
+          docker compose -f infra/compose/docker-compose.yml -f tools/netlab/compose.netlab.yml up -d --wait
+      - name: Measure with the iOS upload core (time-boxed)
+        run: |
+          .github/scripts/netlab-swift-client.sh measure "${{ matrix.scenario }}" "$SIZE_MB" "$MAX_SECONDS" \
+            "$RUNNER_TEMP/out/$(date -u +%F)-tusd-${{ matrix.scenario }}-${SIZE_MB}mb-ios-core-gha.json"
+      # The result file is also printed: it is committed to docs/measurements/netlab/ as written here
+      # (no secrets or revealing data: synthetic file, local compose).
+      - name: Print the result file
+        if: always()
+        run: for f in "$RUNNER_TEMP"/out/*.json; do [ -f "$f" ] && { echo "== $(basename "$f")"; cat "$f"; }; done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: netlab-ios-core-${{ matrix.scenario }}
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: ignore
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/compose/docker-compose.yml -f tools/netlab/compose.netlab.yml down -v
