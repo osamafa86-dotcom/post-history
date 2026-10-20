@@ -29,7 +29,8 @@ CREATE TABLE notification_rules (
   event_type              text NOT NULL,
   priorities              text[],                         -- NULL = كل الأولويات
   material_types          text[],                         -- NULL = كل الأنواع
-  office_id               uuid REFERENCES offices (id),   -- NULL = كل المكاتب
+  scope_kind              text NOT NULL DEFAULT 'all',    -- كنطاق الأدوار: مكتب أو محافظة المادة
+  scope_id                text NOT NULL DEFAULT '',
   recipient_roles         text[] NOT NULL DEFAULT '{}',   -- الأدوار المقيّدة بنطاق تُحصر في نطاق المادة
   recipient_permissions   text[] NOT NULL DEFAULT '{}',
   channels                text[] NOT NULL,
@@ -38,9 +39,11 @@ CREATE TABLE notification_rules (
   quiet_hours_end         time,
   quiet_hours_tz          text,
   digest_interval_minutes integer,                        -- NULL = فوري
+  assignment              boolean NOT NULL DEFAULT false, -- مهمة: «أُسند» ثم «أقرّ الاستلام»، وعليها يجري التصعيد
   enabled                 boolean NOT NULL DEFAULT true,
   row_version             integer NOT NULL DEFAULT 1,
   created_by              uuid REFERENCES users (id),
+  updated_by              uuid REFERENCES users (id),
   created_at              timestamptz NOT NULL DEFAULT now(),
   updated_at              timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT notification_rules_name_len CHECK (char_length(name) BETWEEN 1 AND 120),
@@ -51,6 +54,8 @@ CREATE TABLE notification_rules (
     'material.reserved', 'material.released', 'material.contributors_set', 'material.published',
     'upload.started', 'upload.proxy_received', 'upload.original_received', 'upload.verified',
     'upload.deduplicated', 'upload.failed', 'ai.draft_ready')),
+  CONSTRAINT notification_rules_scope_kind_check CHECK (scope_kind IN ('all', 'office', 'governorate')),
+  CONSTRAINT notification_rules_scope_id_check CHECK ((scope_kind = 'all') = (scope_id = '')),
   CONSTRAINT notification_rules_priorities_check CHECK (
     priorities IS NULL OR (cardinality(priorities) >= 1 AND priorities <@ ARRAY['urgent', 'important', 'normal'])),
   CONSTRAINT notification_rules_material_types_check CHECK (
@@ -68,7 +73,7 @@ CREATE TABLE notification_rules (
   CONSTRAINT notification_rules_digest_range CHECK (digest_interval_minutes IS NULL OR digest_interval_minutes BETWEEN 15 AND 1440),
   CONSTRAINT notification_rules_row_version_pos CHECK (row_version >= 1)
 );
-CREATE INDEX notification_rules_event_idx ON notification_rules (event_type) WHERE enabled;
+CREATE INDEX notification_rules_event_idx ON notification_rules (event_type, enabled);
 CREATE TRIGGER notification_rules_set_updated_at BEFORE UPDATE ON notification_rules
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 

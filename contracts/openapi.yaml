@@ -2592,7 +2592,12 @@ components:
           uniqueItems: true
           description: "`null` = كل الأنواع"
           items: { $ref: "#/components/schemas/MaterialType" }
-        office_id: { type: [string, "null"], format: uuid, description: "`null` = كل المكاتب" }
+        scope_kind:
+          type: string
+          enum: [all, office, governorate]
+          default: all
+          description: كنطاق الأدوار؛ القاعدة تنطبق على مواد هذا المكتب أو هذه المحافظة وحدها
+        scope_id: { type: string, maxLength: 200, default: "", description: معرّف المكتب أو اسم المحافظة؛ فارغ مع `all` }
         recipient_roles:
           type: array
           uniqueItems: true
@@ -2623,6 +2628,12 @@ components:
           minimum: 15
           maximum: 1440
           description: "`null` = فوري؛ غير ذلك ملخص دوري بدل الإشعارات المتفرقة (لا ينطبق على `urgent`)"
+        assignment:
+          type: boolean
+          default: false
+          description: >-
+            الإشعار مهمة: «أُسند» ثم «أقرّ الاستلام» (`assignment_state`)، وعليه تجري سلسلة التصعيد. التصعيد بلا مهمة
+            `422 validation_failed`.
         escalation:
           type: array
           maxItems: 5
@@ -2639,6 +2650,7 @@ components:
             id: { type: string, format: uuid }
             row_version: { type: integer, minimum: 1, description: قيمة `ETag` }
             created_by: { type: [string, "null"], format: uuid }
+            updated_by: { type: [string, "null"], format: uuid }
             created_at: { type: string, format: date-time }
             updated_at: { type: string, format: date-time }
 

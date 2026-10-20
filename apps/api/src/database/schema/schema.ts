@@ -1,10 +1,61 @@
 import { bytea } from "../bytea"
-import { pgTable, uuid, text, timestamp, index, foreignKey, unique, check, integer, jsonb, bigint, uniqueIndex, type AnyPgColumn, boolean, time, primaryKey, numeric, smallint, pgSequence } from "drizzle-orm/pg-core"
+import { pgTable, index, foreignKey, check, uuid, text, integer, time, boolean, timestamp, unique, jsonb, bigint, uniqueIndex, type AnyPgColumn, primaryKey, numeric, smallint, pgSequence } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 
 export const schemaMigrationsIdSeq = pgSequence("schema_migrations_id_seq", {  startWith: "1", increment: "1", minValue: "1", maxValue: "2147483647", cache: "1", cycle: false })
 export const receiptNumberSeq = pgSequence("receipt_number_seq", {  startWith: "1", increment: "1", minValue: "1", maxValue: "999999", cache: "1", cycle: false })
+
+export const notificationRules = pgTable("notification_rules", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	name: text().notNull(),
+	eventType: text("event_type").notNull(),
+	priorities: text().array(),
+	materialTypes: text("material_types").array(),
+	scopeKind: text("scope_kind").default('all').notNull(),
+	scopeId: text("scope_id").default('').notNull(),
+	recipientRoles: text("recipient_roles").array().default([""]).notNull(),
+	recipientPermissions: text("recipient_permissions").array().default([""]).notNull(),
+	channels: text().array().notNull(),
+	delaySeconds: integer("delay_seconds").default(0).notNull(),
+	quietHoursStart: time("quiet_hours_start"),
+	quietHoursEnd: time("quiet_hours_end"),
+	quietHoursTz: text("quiet_hours_tz"),
+	digestIntervalMinutes: integer("digest_interval_minutes"),
+	assignment: boolean().default(false).notNull(),
+	enabled: boolean().default(true).notNull(),
+	rowVersion: integer("row_version").default(1).notNull(),
+	createdBy: uuid("created_by"),
+	updatedBy: uuid("updated_by"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("notification_rules_event_idx").using("btree", table.eventType.asc().nullsLast().op("text_ops"), table.enabled.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [users.id],
+			name: "notification_rules_created_by_fkey"
+		}),
+	foreignKey({
+			columns: [table.updatedBy],
+			foreignColumns: [users.id],
+			name: "notification_rules_updated_by_fkey"
+		}),
+	check("notification_rules_channels_check", sql`(cardinality(channels) >= 1) AND (channels <@ ARRAY['in_app'::text, 'websocket'::text, 'apns'::text, 'fcm'::text, 'web_push'::text, 'email'::text, 'telegram'::text, 'whatsapp'::text, 'sms'::text])`),
+	check("notification_rules_delay_range", sql`(delay_seconds >= 0) AND (delay_seconds <= 86400)`),
+	check("notification_rules_digest_range", sql`(digest_interval_minutes IS NULL) OR ((digest_interval_minutes >= 15) AND (digest_interval_minutes <= 1440))`),
+	check("notification_rules_event_type_check", sql`event_type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'ai.draft_ready'::text])`),
+	check("notification_rules_has_recipient", sql`(cardinality(recipient_roles) + cardinality(recipient_permissions)) >= 1`),
+	check("notification_rules_material_types_check", sql`(material_types IS NULL) OR ((cardinality(material_types) >= 1) AND (material_types <@ allowed_material_types()))`),
+	check("notification_rules_name_len", sql`(char_length(name) >= 1) AND (char_length(name) <= 120)`),
+	check("notification_rules_permissions_check", sql`recipient_permissions <@ ARRAY['sensitive_location:read'::text, 'protected_source:read'::text]`),
+	check("notification_rules_priorities_check", sql`(priorities IS NULL) OR ((cardinality(priorities) >= 1) AND (priorities <@ ARRAY['urgent'::text, 'important'::text, 'normal'::text]))`),
+	check("notification_rules_quiet_hours_consistent", sql`((quiet_hours_start IS NULL) = (quiet_hours_end IS NULL)) AND ((quiet_hours_start IS NULL) = (quiet_hours_tz IS NULL))`),
+	check("notification_rules_roles_check", sql`recipient_roles <@ ARRAY['system_admin'::text, 'editor_in_chief'::text, 'supervisor'::text, 'producer'::text, 'finance'::text, 'reporter'::text, 'rights_officer'::text]`),
+	check("notification_rules_row_version_pos", sql`row_version >= 1`),
+	check("notification_rules_scope_id_check", sql`(scope_kind = 'all'::text) = (scope_id = ''::text)`),
+	check("notification_rules_scope_kind_check", sql`scope_kind = ANY (ARRAY['all'::text, 'office'::text, 'governorate'::text])`),
+]);
 
 export const offices = pgTable("offices", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
@@ -166,6 +217,33 @@ export const auditLog = pgTable("audit_log", {
 	check("audit_log_prev_hash_len", sql`(prev_hash IS NULL) OR (octet_length(prev_hash) = 32)`),
 ]);
 
+export const users = pgTable("users", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	email: text().notNull(),
+	passwordHash: text("password_hash").notNull(),
+	totpSecretEnc: bytea("totp_secret_enc"),
+	totpEnabled: boolean("totp_enabled").default(false).notNull(),
+	status: text().default('active').notNull(),
+	officeId: uuid("office_id"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastLoginAt: timestamp("last_login_at", { withTimezone: true, mode: 'string' }),
+	credentialResetRequired: boolean("credential_reset_required").default(false).notNull(),
+	totpPendingSecretEnc: bytea("totp_pending_secret_enc"),
+	legalNameEnc: bytea("legal_name_enc"),
+}, (table) => [
+	uniqueIndex("users_email_lower_key").using("btree", sql`lower(email)`),
+	index("users_office_idx").using("btree", table.officeId.asc().nullsLast().op("uuid_ops")).where(sql`(office_id IS NOT NULL)`),
+	foreignKey({
+			columns: [table.officeId],
+			foreignColumns: [offices.id],
+			name: "users_office_id_fkey"
+		}),
+	check("users_status_check", sql`status = ANY (ARRAY['active'::text, 'suspended'::text, 'recovery'::text])`),
+	check("users_totp_consistent", sql`(NOT totp_enabled) OR (totp_secret_enc IS NOT NULL)`),
+	check("users_totp_pending_only_during_reset", sql`(totp_pending_secret_enc IS NULL) OR credential_reset_required`),
+]);
+
 export const uploadSessions = pgTable("upload_sessions", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	materialId: uuid("material_id").notNull(),
@@ -235,124 +313,6 @@ export const uploadSessions = pgTable("upload_sessions", {
 	check("upload_sessions_state_check", sql`state = ANY (ARRAY['created'::text, 'in_progress'::text, 'completed'::text, 'verified'::text, 'failed'::text, 'deduplicated'::text])`),
 	check("upload_sessions_token_expiry_within_session", sql`(upload_token_expires_at IS NULL) OR (upload_token_expires_at <= expires_at)`),
 	check("upload_sessions_upload_path_check", sql`upload_path = ANY (ARRAY['tusd'::text, 'direct'::text, 'ietf'::text])`),
-]);
-
-export const recoveryRequests = pgTable("recovery_requests", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	userId: uuid("user_id").notNull(),
-	state: text().default('pending_approval').notNull(),
-	approvedBy: uuid("approved_by"),
-	verificationNote: text("verification_note"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	decidedAt: timestamp("decided_at", { withTimezone: true, mode: 'string' }),
-	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
-	resetTokenHash: bytea("reset_token_hash"),
-	resetTokenExpiresAt: timestamp("reset_token_expires_at", { withTimezone: true, mode: 'string' }),
-	completedAt: timestamp("completed_at", { withTimezone: true, mode: 'string' }),
-}, (table) => [
-	index("recovery_requests_pending_idx").using("btree", table.userId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(state = 'pending_approval'::text)`),
-	uniqueIndex("recovery_requests_reset_token_key").using("btree", table.resetTokenHash.asc().nullsLast().op("bytea_ops")).where(sql`(reset_token_hash IS NOT NULL)`),
-	foreignKey({
-			columns: [table.approvedBy],
-			foreignColumns: [users.id],
-			name: "recovery_requests_approved_by_fkey"
-		}),
-	foreignKey({
-			columns: [table.userId],
-			foreignColumns: [users.id],
-			name: "recovery_requests_user_id_fkey"
-		}).onDelete("cascade"),
-	check("recovery_requests_approved_by_note", sql`(state <> 'approved'::text) OR ((approved_by IS NOT NULL) AND (verification_note IS NOT NULL))`),
-	check("recovery_requests_completed_needs_token", sql`(completed_at IS NULL) OR (reset_token_hash IS NOT NULL)`),
-	check("recovery_requests_decision_consistent", sql`((state = 'pending_approval'::text) AND (decided_at IS NULL)) OR ((state <> 'pending_approval'::text) AND (decided_at IS NOT NULL))`),
-	check("recovery_requests_reset_only_when_approved", sql`(reset_token_hash IS NULL) OR (state = 'approved'::text)`),
-	check("recovery_requests_reset_token_consistent", sql`(reset_token_hash IS NULL) = (reset_token_expires_at IS NULL)`),
-	check("recovery_requests_reset_token_hash_len", sql`(reset_token_hash IS NULL) OR (octet_length(reset_token_hash) = 32)`),
-	check("recovery_requests_reset_token_max_24h", sql`(reset_token_expires_at IS NULL) OR (reset_token_expires_at <= (decided_at + '24:00:00'::interval))`),
-	check("recovery_requests_state_check", sql`state = ANY (ARRAY['pending_approval'::text, 'approved'::text, 'rejected'::text, 'expired'::text])`),
-]);
-
-export const deviceAttestationKeys = pgTable("device_attestation_keys", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	userId: uuid("user_id").notNull(),
-	platform: text().default('ios').notNull(),
-	keyIdHash: bytea("key_id_hash").notNull(),
-	publicKey: bytea("public_key").notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	signCount: bigint("sign_count", { mode: "number" }).default(0).notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	lastUsedAt: timestamp("last_used_at", { withTimezone: true, mode: 'string' }),
-	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
-}, (table) => [
-	index("device_attestation_keys_user_active_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops")).where(sql`(revoked_at IS NULL)`),
-	foreignKey({
-			columns: [table.userId],
-			foreignColumns: [users.id],
-			name: "device_attestation_keys_user_id_fkey"
-		}).onDelete("cascade"),
-	unique("device_attestation_keys_key_id_hash_key").on(table.keyIdHash),
-	check("device_attestation_keys_key_id_hash_len", sql`octet_length(key_id_hash) = 32`),
-	check("device_attestation_keys_platform_check", sql`platform = 'ios'::text`),
-	check("device_attestation_keys_sign_count_nonneg", sql`sign_count >= 0`),
-]);
-
-export const outboxEvents = pgTable("outbox_events", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "outbox_events_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	type: text().notNull(),
-	aggregateType: text("aggregate_type").notNull(),
-	aggregateId: uuid("aggregate_id").notNull(),
-	occurredAt: timestamp("occurred_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	idempotencyKey: text("idempotency_key").notNull(),
-	actorId: uuid("actor_id"),
-	payload: jsonb().default({}).notNull(),
-	publishedAt: timestamp("published_at", { withTimezone: true, mode: 'string' }),
-	attempts: integer().default(0).notNull(),
-	nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	lastError: text("last_error"),
-}, (table) => [
-	index("outbox_events_aggregate_idx").using("btree", table.aggregateType.asc().nullsLast().op("int8_ops"), table.aggregateId.asc().nullsLast().op("uuid_ops"), table.id.asc().nullsLast().op("int8_ops")),
-	index("outbox_events_pending_idx").using("btree", table.nextAttemptAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("timestamptz_ops")).where(sql`(published_at IS NULL)`),
-	index("outbox_events_type_idx").using("btree", table.type.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("text_ops")),
-	foreignKey({
-			columns: [table.actorId],
-			foreignColumns: [users.id],
-			name: "outbox_events_actor_id_fkey"
-		}),
-	unique("outbox_events_idempotency_key_key").on(table.idempotencyKey),
-	check("outbox_events_aggregate_type_check", sql`aggregate_type = ANY (ARRAY['material'::text, 'upload'::text, 'notification'::text, 'form'::text, 'user'::text])`),
-	check("outbox_events_attempts_nonneg", sql`attempts >= 0`),
-	check("outbox_events_idempotency_key_len", sql`(char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 200)`),
-	check("outbox_events_payload_is_object", sql`jsonb_typeof(payload) = 'object'::text`),
-	check("outbox_events_payload_whitelisted", sql`CHECK (outbox_payload_is_whitelisted(type, payload`),
-	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text])`),
-]);
-
-export const users = pgTable("users", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	email: text().notNull(),
-	passwordHash: text("password_hash").notNull(),
-	totpSecretEnc: bytea("totp_secret_enc"),
-	totpEnabled: boolean("totp_enabled").default(false).notNull(),
-	status: text().default('active').notNull(),
-	officeId: uuid("office_id"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	lastLoginAt: timestamp("last_login_at", { withTimezone: true, mode: 'string' }),
-	credentialResetRequired: boolean("credential_reset_required").default(false).notNull(),
-	totpPendingSecretEnc: bytea("totp_pending_secret_enc"),
-	legalNameEnc: bytea("legal_name_enc"),
-}, (table) => [
-	uniqueIndex("users_email_lower_key").using("btree", sql`lower(email)`),
-	index("users_office_idx").using("btree", table.officeId.asc().nullsLast().op("uuid_ops")).where(sql`(office_id IS NOT NULL)`),
-	foreignKey({
-			columns: [table.officeId],
-			foreignColumns: [offices.id],
-			name: "users_office_id_fkey"
-		}),
-	check("users_status_check", sql`status = ANY (ARRAY['active'::text, 'suspended'::text, 'recovery'::text])`),
-	check("users_totp_consistent", sql`(NOT totp_enabled) OR (totp_secret_enc IS NOT NULL)`),
-	check("users_totp_pending_only_during_reset", sql`(totp_pending_secret_enc IS NULL) OR credential_reset_required`),
 ]);
 
 export const materialFiles = pgTable("material_files", {
@@ -451,15 +411,15 @@ export const materials = pgTable("materials", {
 	acknowledgedBy: uuid("acknowledged_by"),
 	acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
-	index("materials_board_idx").using("btree", table.officeId.asc().nullsLast().op("uuid_ops"), table.editorialState.asc().nullsLast().op("timestamptz_ops"), table.priority.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
-	index("materials_cursor_idx").using("btree", table.createdAt.desc().nullsFirst().op("uuid_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")),
-	index("materials_governorate_shot_idx").using("btree", table.governorate.asc().nullsLast().op("timestamptz_ops"), table.shotAt.desc().nullsFirst().op("text_ops")),
-	index("materials_reporter_idx").using("btree", table.reporterId.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
-	index("materials_reserved_idx").using("btree", table.reservedBy.asc().nullsLast().op("uuid_ops"), table.reservedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(reserved_by IS NOT NULL)`),
-	index("materials_rights_idx").using("btree", table.rightsState.asc().nullsLast().op("timestamptz_ops"), table.editorialState.asc().nullsLast().op("timestamptz_ops"), table.updatedAt.desc().nullsFirst().op("timestamptz_ops")),
-	index("materials_shot_cursor_idx").using("btree", table.shotAt.desc().nullsFirst().op("timestamptz_ops"), table.id.desc().nullsFirst().op("uuid_ops")),
-	index("materials_technical_inflight_idx").using("btree", table.technicalState.asc().nullsLast().op("timestamptz_ops"), table.updatedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(technical_state = ANY (ARRAY['pending'::text, 'proxy_received'::text, 'original_received'::text]))`),
-	index("materials_updated_cursor_idx").using("btree", table.updatedAt.desc().nullsFirst().op("timestamptz_ops"), table.id.desc().nullsFirst().op("uuid_ops")),
+	index("materials_board_idx").using("btree", table.officeId.asc().nullsLast().op("uuid_ops"), table.editorialState.asc().nullsLast().op("uuid_ops"), table.priority.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("text_ops")),
+	index("materials_cursor_idx").using("btree", table.createdAt.desc().nullsFirst().op("timestamptz_ops"), table.id.desc().nullsFirst().op("uuid_ops")),
+	index("materials_governorate_shot_idx").using("btree", table.governorate.asc().nullsLast().op("text_ops"), table.shotAt.desc().nullsFirst().op("text_ops")),
+	index("materials_reporter_idx").using("btree", table.reporterId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("uuid_ops")),
+	index("materials_reserved_idx").using("btree", table.reservedBy.asc().nullsLast().op("uuid_ops"), table.reservedAt.asc().nullsLast().op("uuid_ops")).where(sql`(reserved_by IS NOT NULL)`),
+	index("materials_rights_idx").using("btree", table.rightsState.asc().nullsLast().op("text_ops"), table.editorialState.asc().nullsLast().op("timestamptz_ops"), table.updatedAt.desc().nullsFirst().op("text_ops")),
+	index("materials_shot_cursor_idx").using("btree", table.shotAt.desc().nullsFirst().op("uuid_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")),
+	index("materials_technical_inflight_idx").using("btree", table.technicalState.asc().nullsLast().op("text_ops"), table.updatedAt.asc().nullsLast().op("text_ops")).where(sql`(technical_state = ANY (ARRAY['pending'::text, 'proxy_received'::text, 'original_received'::text]))`),
+	index("materials_updated_cursor_idx").using("btree", table.updatedAt.desc().nullsFirst().op("uuid_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")),
 	foreignKey({
 			columns: [table.acknowledgedBy],
 			foreignColumns: [users.id],
@@ -503,50 +463,95 @@ export const materials = pgTable("materials", {
 	check("materials_version_positive", sql`version >= 1`),
 ]);
 
-export const notificationRules = pgTable("notification_rules", {
+export const recoveryRequests = pgTable("recovery_requests", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
-	name: text().notNull(),
-	eventType: text("event_type").notNull(),
-	priorities: text().array(),
-	materialTypes: text("material_types").array(),
-	officeId: uuid("office_id"),
-	recipientRoles: text("recipient_roles").array().default([""]).notNull(),
-	recipientPermissions: text("recipient_permissions").array().default([""]).notNull(),
-	channels: text().array().notNull(),
-	delaySeconds: integer("delay_seconds").default(0).notNull(),
-	quietHoursStart: time("quiet_hours_start"),
-	quietHoursEnd: time("quiet_hours_end"),
-	quietHoursTz: text("quiet_hours_tz"),
-	digestIntervalMinutes: integer("digest_interval_minutes"),
-	enabled: boolean().default(true).notNull(),
-	rowVersion: integer("row_version").default(1).notNull(),
-	createdBy: uuid("created_by"),
+	userId: uuid("user_id").notNull(),
+	state: text().default('pending_approval').notNull(),
+	approvedBy: uuid("approved_by"),
+	verificationNote: text("verification_note"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	decidedAt: timestamp("decided_at", { withTimezone: true, mode: 'string' }),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+	resetTokenHash: bytea("reset_token_hash"),
+	resetTokenExpiresAt: timestamp("reset_token_expires_at", { withTimezone: true, mode: 'string' }),
+	completedAt: timestamp("completed_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
-	index("notification_rules_event_idx").using("btree", table.eventType.asc().nullsLast().op("text_ops")).where(sql`enabled`),
+	index("recovery_requests_pending_idx").using("btree", table.userId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(state = 'pending_approval'::text)`),
+	uniqueIndex("recovery_requests_reset_token_key").using("btree", table.resetTokenHash.asc().nullsLast().op("bytea_ops")).where(sql`(reset_token_hash IS NOT NULL)`),
 	foreignKey({
-			columns: [table.createdBy],
+			columns: [table.approvedBy],
 			foreignColumns: [users.id],
-			name: "notification_rules_created_by_fkey"
+			name: "recovery_requests_approved_by_fkey"
 		}),
 	foreignKey({
-			columns: [table.officeId],
-			foreignColumns: [offices.id],
-			name: "notification_rules_office_id_fkey"
+			columns: [table.userId],
+			foreignColumns: [users.id],
+			name: "recovery_requests_user_id_fkey"
+		}).onDelete("cascade"),
+	check("recovery_requests_approved_by_note", sql`(state <> 'approved'::text) OR ((approved_by IS NOT NULL) AND (verification_note IS NOT NULL))`),
+	check("recovery_requests_completed_needs_token", sql`(completed_at IS NULL) OR (reset_token_hash IS NOT NULL)`),
+	check("recovery_requests_decision_consistent", sql`((state = 'pending_approval'::text) AND (decided_at IS NULL)) OR ((state <> 'pending_approval'::text) AND (decided_at IS NOT NULL))`),
+	check("recovery_requests_reset_only_when_approved", sql`(reset_token_hash IS NULL) OR (state = 'approved'::text)`),
+	check("recovery_requests_reset_token_consistent", sql`(reset_token_hash IS NULL) = (reset_token_expires_at IS NULL)`),
+	check("recovery_requests_reset_token_hash_len", sql`(reset_token_hash IS NULL) OR (octet_length(reset_token_hash) = 32)`),
+	check("recovery_requests_reset_token_max_24h", sql`(reset_token_expires_at IS NULL) OR (reset_token_expires_at <= (decided_at + '24:00:00'::interval))`),
+	check("recovery_requests_state_check", sql`state = ANY (ARRAY['pending_approval'::text, 'approved'::text, 'rejected'::text, 'expired'::text])`),
+]);
+
+export const deviceAttestationKeys = pgTable("device_attestation_keys", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	userId: uuid("user_id").notNull(),
+	platform: text().default('ios').notNull(),
+	keyIdHash: bytea("key_id_hash").notNull(),
+	publicKey: bytea("public_key").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	signCount: bigint("sign_count", { mode: "number" }).default(0).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastUsedAt: timestamp("last_used_at", { withTimezone: true, mode: 'string' }),
+	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("device_attestation_keys_user_active_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops")).where(sql`(revoked_at IS NULL)`),
+	foreignKey({
+			columns: [table.userId],
+			foreignColumns: [users.id],
+			name: "device_attestation_keys_user_id_fkey"
+		}).onDelete("cascade"),
+	unique("device_attestation_keys_key_id_hash_key").on(table.keyIdHash),
+	check("device_attestation_keys_key_id_hash_len", sql`octet_length(key_id_hash) = 32`),
+	check("device_attestation_keys_platform_check", sql`platform = 'ios'::text`),
+	check("device_attestation_keys_sign_count_nonneg", sql`sign_count >= 0`),
+]);
+
+export const outboxEvents = pgTable("outbox_events", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "outbox_events_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	type: text().notNull(),
+	aggregateType: text("aggregate_type").notNull(),
+	aggregateId: uuid("aggregate_id").notNull(),
+	occurredAt: timestamp("occurred_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	idempotencyKey: text("idempotency_key").notNull(),
+	actorId: uuid("actor_id"),
+	payload: jsonb().default({}).notNull(),
+	publishedAt: timestamp("published_at", { withTimezone: true, mode: 'string' }),
+	attempts: integer().default(0).notNull(),
+	nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastError: text("last_error"),
+}, (table) => [
+	index("outbox_events_aggregate_idx").using("btree", table.aggregateType.asc().nullsLast().op("int8_ops"), table.aggregateId.asc().nullsLast().op("uuid_ops"), table.id.asc().nullsLast().op("int8_ops")),
+	index("outbox_events_pending_idx").using("btree", table.nextAttemptAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("timestamptz_ops")).where(sql`(published_at IS NULL)`),
+	index("outbox_events_type_idx").using("btree", table.type.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.actorId],
+			foreignColumns: [users.id],
+			name: "outbox_events_actor_id_fkey"
 		}),
-	check("notification_rules_channels_check", sql`(cardinality(channels) >= 1) AND (channels <@ ARRAY['in_app'::text, 'websocket'::text, 'apns'::text, 'fcm'::text, 'web_push'::text, 'email'::text, 'telegram'::text, 'whatsapp'::text, 'sms'::text])`),
-	check("notification_rules_delay_range", sql`(delay_seconds >= 0) AND (delay_seconds <= 86400)`),
-	check("notification_rules_digest_range", sql`(digest_interval_minutes IS NULL) OR ((digest_interval_minutes >= 15) AND (digest_interval_minutes <= 1440))`),
-	check("notification_rules_event_type_check", sql`event_type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'ai.draft_ready'::text])`),
-	check("notification_rules_has_recipient", sql`(cardinality(recipient_roles) + cardinality(recipient_permissions)) >= 1`),
-	check("notification_rules_material_types_check", sql`(material_types IS NULL) OR ((cardinality(material_types) >= 1) AND (material_types <@ allowed_material_types()))`),
-	check("notification_rules_name_len", sql`(char_length(name) >= 1) AND (char_length(name) <= 120)`),
-	check("notification_rules_permissions_check", sql`recipient_permissions <@ ARRAY['sensitive_location:read'::text, 'protected_source:read'::text]`),
-	check("notification_rules_priorities_check", sql`(priorities IS NULL) OR ((cardinality(priorities) >= 1) AND (priorities <@ ARRAY['urgent'::text, 'important'::text, 'normal'::text]))`),
-	check("notification_rules_quiet_hours_consistent", sql`((quiet_hours_start IS NULL) = (quiet_hours_end IS NULL)) AND ((quiet_hours_start IS NULL) = (quiet_hours_tz IS NULL))`),
-	check("notification_rules_roles_check", sql`recipient_roles <@ ARRAY['system_admin'::text, 'editor_in_chief'::text, 'supervisor'::text, 'producer'::text, 'finance'::text, 'reporter'::text, 'rights_officer'::text]`),
-	check("notification_rules_row_version_pos", sql`row_version >= 1`),
+	unique("outbox_events_idempotency_key_key").on(table.idempotencyKey),
+	check("outbox_events_aggregate_type_check", sql`aggregate_type = ANY (ARRAY['material'::text, 'upload'::text, 'notification'::text, 'form'::text, 'user'::text])`),
+	check("outbox_events_attempts_nonneg", sql`attempts >= 0`),
+	check("outbox_events_idempotency_key_len", sql`(char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 200)`),
+	check("outbox_events_payload_is_object", sql`jsonb_typeof(payload) = 'object'::text`),
+	check("outbox_events_payload_whitelisted", sql`CHECK (outbox_payload_is_whitelisted(type, payload`),
+	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text])`),
 ]);
 
 export const notifications = pgTable("notifications", {

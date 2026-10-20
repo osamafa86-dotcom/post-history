@@ -33,9 +33,16 @@ public struct NotificationRule: Sendable, Codable, Hashable {
         case aiPeriodDraftReady = "ai.draft_ready"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
+    public enum ScopeKind: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
+        case all = "all"
+        case office = "office"
+        case governorate = "governorate"
+        case unknownDefaultOpenApi = "unknown_default_open_api"
+    }
     public static let nameRule = StringRule(minLength: 1, maxLength: 120, pattern: nil)
     public static let prioritiesRule = ArrayRule(minItems: 1, maxItems: nil, uniqueItems: true)
     public static let materialTypesRule = ArrayRule(minItems: 1, maxItems: nil, uniqueItems: true)
+    public static let scopeIdRule = StringRule(minLength: nil, maxLength: 200, pattern: nil)
     public static let recipientRolesRule = ArrayRule(minItems: nil, maxItems: nil, uniqueItems: true)
     public static let recipientPermissionsRule = ArrayRule(minItems: nil, maxItems: nil, uniqueItems: true)
     public static let channelsRule = ArrayRule(minItems: 1, maxItems: nil, uniqueItems: true)
@@ -51,8 +58,10 @@ public struct NotificationRule: Sendable, Codable, Hashable {
     public var priorities: Set<Priority>?
     /** `null` = كل الأنواع */
     public var materialTypes: Set<MaterialType>?
-    /** `null` = كل المكاتب */
-    public var officeId: UUID?
+    /** كنطاق الأدوار؛ القاعدة تنطبق على مواد هذا المكتب أو هذه المحافظة وحدها */
+    public var scopeKind: ScopeKind? = .all
+    /** معرّف المكتب أو اسم المحافظة؛ فارغ مع `all` */
+    public var scopeId: String? = ""
     public var recipientRoles: Set<Role>?
     public var recipientPermissions: Set<Permission>?
     public var channels: Set<NotificationChannel>
@@ -60,32 +69,38 @@ public struct NotificationRule: Sendable, Codable, Hashable {
     public var quietHours: NotificationRuleInputQuietHours?
     /** `null` = فوري؛ غير ذلك ملخص دوري بدل الإشعارات المتفرقة (لا ينطبق على `urgent`) */
     public var digestIntervalMinutes: Int?
+    /** الإشعار مهمة: «أُسند» ثم «أقرّ الاستلام» (`assignment_state`)، وعليه تجري سلسلة التصعيد. التصعيد بلا مهمة `422 validation_failed`. */
+    public var assignment: Bool? = false
     public var escalation: [NotificationEscalationStep]?
     public var enabled: Bool? = true
     public var id: UUID
     /** قيمة `ETag` */
     public var rowVersion: Int
     public var createdBy: UUID?
+    public var updatedBy: UUID?
     public var createdAt: Date
     public var updatedAt: Date
 
-    public init(name: String, eventType: EventType, priorities: Set<Priority>? = nil, materialTypes: Set<MaterialType>? = nil, officeId: UUID? = nil, recipientRoles: Set<Role>? = nil, recipientPermissions: Set<Permission>? = nil, channels: Set<NotificationChannel>, delaySeconds: Int? = 0, quietHours: NotificationRuleInputQuietHours? = nil, digestIntervalMinutes: Int? = nil, escalation: [NotificationEscalationStep]? = nil, enabled: Bool? = true, id: UUID, rowVersion: Int, createdBy: UUID? = nil, createdAt: Date, updatedAt: Date) {
+    public init(name: String, eventType: EventType, priorities: Set<Priority>? = nil, materialTypes: Set<MaterialType>? = nil, scopeKind: ScopeKind? = .all, scopeId: String? = "", recipientRoles: Set<Role>? = nil, recipientPermissions: Set<Permission>? = nil, channels: Set<NotificationChannel>, delaySeconds: Int? = 0, quietHours: NotificationRuleInputQuietHours? = nil, digestIntervalMinutes: Int? = nil, assignment: Bool? = false, escalation: [NotificationEscalationStep]? = nil, enabled: Bool? = true, id: UUID, rowVersion: Int, createdBy: UUID? = nil, updatedBy: UUID? = nil, createdAt: Date, updatedAt: Date) {
         self.name = name
         self.eventType = eventType
         self.priorities = priorities
         self.materialTypes = materialTypes
-        self.officeId = officeId
+        self.scopeKind = scopeKind
+        self.scopeId = scopeId
         self.recipientRoles = recipientRoles
         self.recipientPermissions = recipientPermissions
         self.channels = channels
         self.delaySeconds = delaySeconds
         self.quietHours = quietHours
         self.digestIntervalMinutes = digestIntervalMinutes
+        self.assignment = assignment
         self.escalation = escalation
         self.enabled = enabled
         self.id = id
         self.rowVersion = rowVersion
         self.createdBy = createdBy
+        self.updatedBy = updatedBy
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -95,18 +110,21 @@ public struct NotificationRule: Sendable, Codable, Hashable {
         case eventType = "event_type"
         case priorities
         case materialTypes = "material_types"
-        case officeId = "office_id"
+        case scopeKind = "scope_kind"
+        case scopeId = "scope_id"
         case recipientRoles = "recipient_roles"
         case recipientPermissions = "recipient_permissions"
         case channels
         case delaySeconds = "delay_seconds"
         case quietHours = "quiet_hours"
         case digestIntervalMinutes = "digest_interval_minutes"
+        case assignment
         case escalation
         case enabled
         case id
         case rowVersion = "row_version"
         case createdBy = "created_by"
+        case updatedBy = "updated_by"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -119,18 +137,21 @@ public struct NotificationRule: Sendable, Codable, Hashable {
         try container.encode(eventType, forKey: .eventType)
         try container.encodeIfPresent(priorities, forKey: .priorities)
         try container.encodeIfPresent(materialTypes, forKey: .materialTypes)
-        try container.encodeIfPresent(officeId, forKey: .officeId)
+        try container.encodeIfPresent(scopeKind, forKey: .scopeKind)
+        try container.encodeIfPresent(scopeId, forKey: .scopeId)
         try container.encodeIfPresent(recipientRoles, forKey: .recipientRoles)
         try container.encodeIfPresent(recipientPermissions, forKey: .recipientPermissions)
         try container.encode(channels, forKey: .channels)
         try container.encodeIfPresent(delaySeconds, forKey: .delaySeconds)
         try container.encodeIfPresent(quietHours, forKey: .quietHours)
         try container.encodeIfPresent(digestIntervalMinutes, forKey: .digestIntervalMinutes)
+        try container.encodeIfPresent(assignment, forKey: .assignment)
         try container.encodeIfPresent(escalation, forKey: .escalation)
         try container.encodeIfPresent(enabled, forKey: .enabled)
         try container.encode(id, forKey: .id)
         try container.encode(rowVersion, forKey: .rowVersion)
         try container.encodeIfPresent(createdBy, forKey: .createdBy)
+        try container.encodeIfPresent(updatedBy, forKey: .updatedBy)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
@@ -142,6 +163,7 @@ extension NotificationRule: Identifiable {}
 extension NotificationRule: UnknownCaseCheckable {
     public var containsUnknownDefaultOpenApiCase: Bool {
         if eventType == .unknownDefaultOpenApi { return true }
+        if scopeKind == .unknownDefaultOpenApi { return true }
         return false
     }
 }

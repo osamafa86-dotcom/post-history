@@ -392,9 +392,14 @@ WHERE id = '00000000-0000-4000-8000-000000000101';
 SELECT pg_temp.expect_error($q$
   UPDATE materials SET acknowledged_at = NULL WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
 -- قواعد التنبيه
-INSERT INTO notification_rules (id, name, event_type, priorities, recipient_roles, channels, quiet_hours_start, quiet_hours_end, quiet_hours_tz, created_by)
+INSERT INTO notification_rules (id, name, event_type, priorities, scope_kind, scope_id, recipient_roles, channels, assignment,
+                                quiet_hours_start, quiet_hours_end, quiet_hours_tz, created_by)
 VALUES ('00000000-0000-4000-8000-000000000b01', 'urgent to supervisors', 'material.urgent_received', ARRAY['urgent'],
-        ARRAY['supervisor'], ARRAY['apns', 'fcm', 'telegram'], '23:00', '06:00', 'Asia/Gaza', '00000000-0000-4000-8000-000000000012');
+        'office', '00000000-0000-4000-8000-000000000001', ARRAY['supervisor'], ARRAY['apns', 'fcm', 'telegram'], true,
+        '23:00', '06:00', 'Asia/Gaza', '00000000-0000-4000-8000-000000000012');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO notification_rules (name, event_type, scope_kind, recipient_roles, channels)
+  VALUES ('office without id', 'material.created', 'office', ARRAY['supervisor'], ARRAY['in_app']) $q$, '23514');
 INSERT INTO notification_rule_escalations (rule_id, level, after_seconds, recipient_roles, channels)
 VALUES ('00000000-0000-4000-8000-000000000b01', 1, 300, ARRAY['editor_in_chief'], ARRAY['apns', 'sms']);
 SELECT pg_temp.expect_error($q$
