@@ -4,7 +4,9 @@
 //                   the event is consumed, the session verifies (server SHA-256 = the client's), the proxy appears in the
 //                   media bucket under derived/<material_id>/, the original is untouched, nothing revealing leaks, the
 //                   proxy keeps start_pts and lands within 40 ms of the original at 10 random cut points; a 2-minute 1080p
-//                   clip gives the time from upload complete to proxy available.
+//                   clip gives the time from upload complete to proxy available. The two thumbnails (poster.jpg and
+//                   contact-sheet.jpg under derived/<material_id>/<file_id>/) must exist, be real JPEGs, be registered, and
+//                   carry none of the planted tags.
 //   invalid-file    (media worker part) playlists/concat lists dressed as video and a truncated clip end `failed`, with no
 //                   derivative and no call out of the container.
 // Environment (compose published ports; see .github/workflows/acceptance.yml):
@@ -28,7 +30,7 @@ import { s3FromEnv } from "../lib/s3.mjs";
 import { resumableUpload } from "../lib/tus.mjs";
 import { scan } from "../lib/pii.mjs";
 import { seed } from "../live/seed.mjs";
-import { LEAK_VALUES, cutBack, durationSeconds, hostilePayloads, sha256File, synthClip, tagDump, videoTimes } from "../lib/media-clips.mjs";
+import { LEAK_VALUES, cutBack, durationSeconds, hostilePayloads, imageSize, sha256File, synthClip, tagDump, videoTimes } from "../lib/media-clips.mjs";
 
 const TOLERANCE_MS = 40;
 
@@ -114,6 +116,22 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     const startGapUs = fileV && proxyV ? Math.abs(Number(fileV.start_pts_us) - Number(proxyV.start_pts_us)) : Infinity;
     check("phone clip: the proxy keeps the original start_pts", startGapUs <= 16_000, `${startGapUs} us`);
 
+    // thumbnails (#84): the poster and the contact sheet next to the original's id, real images, nothing revealing in them
+    const thumbKeys = ["poster.jpg", "contact-sheet.jpg"].map((n) => `derived/${subV.mat.id}/${fileV?.id}/${n}`);
+    const thumbs = [];
+    for (const key of thumbKeys) {
+      const local = join(work, key.split("/").pop());
+      const got = await waitFor(async () => { try { await s3.download(bucketMedia, key, local); return true; } catch { return null; } }, { timeoutMs: 60_000, everyMs: 1000 });
+      thumbs.push(got.value ? local : null);
+    }
+    check("phone clip: poster.jpg and contact-sheet.jpg exist under derived/<material_id>/<file_id>/", thumbs.every(Boolean), thumbKeys.map((k, i) => `${k.split("/").pop()}=${Boolean(thumbs[i])}`).join(" "));
+    const bytes = thumbs.map((t) => (t ? readFileSync(t) : null));
+    check("phone clip: both thumbnails are JPEG images with readable dimensions", thumbs.every((t, i) => t && bytes[i][0] === 0xff && bytes[i][1] === 0xd8 && bytes[i].length > 1024 && imageSize(t)), thumbs.map((t, i) => (t ? `${bytes[i].length}B ${JSON.stringify(imageSize(t))}` : "missing")).join(" "));
+    const thumbRow = (await q(`SELECT id FROM material_files WHERE derived_from_id = $1 AND kind = 'thumbnail'`, [fileV?.id ?? "00000000-0000-0000-0000-000000000000"]))[0];
+    check("phone clip: the poster is registered as a thumbnail of the original", Boolean(thumbRow));
+    const thumbLeaks = thumbs.reduce((n, t, i) => n + (t ? scan([bytes[i].toString("latin1"), tagDump(t)], { keys: false, canaries: LEAK_VALUES }).length : 0), 0);
+    check("phone clip: the planted tags are in neither thumbnail (bytes or tags)", thumbLeaks === 0, `${thumbLeaks} hit(s)`);
+
     const afterV = await s3.stat(bucketUp, `${prefix}${subV.session.id}`);
     check("phone clip: the original object is unchanged (ETag and last-modified)", Boolean(statV) && statV.etag === afterV?.etag && statV.lastModified === afterV?.lastModified);
     check("phone clip: the stored original still hashes to the client's SHA-256", (await s3.sha256(bucketUp, `${prefix}${subV.session.id}`)) === subV.sha);
@@ -170,7 +188,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
 
     // ---- results
     const device = { platform: "server", model: env.MEDIA_E2E_ENV_LABEL ?? (tusUrl ? "compose: api + tusd + minio + redis + media-worker" : "local processes: api + simulated tusd hooks + S3 emulator + redis + media worker") };
-    const tail = ["لم يُقَس: HDR بألوان صحيحة في النسخة الخفيفة، ولا ملف هاتف حقيقي (المقاطع اصطناعية من FFmpeg)", "المصغّرة لا يولّدها عامل الوسائط بعد فلا تُقاس"].join("؛ ");
+    const tail = ["لم يُقَس: HDR بألوان صحيحة في النسخة الخفيفة، ولا ملف هاتف حقيقي (المقاطع اصطناعية من FFmpeg)", "المصغّرتان فُحصتا وجودًا وصيغةً وغياب الوسوم والتسجيل، لا جودة الصورة ولا اختيار الإطار"].join("؛ ");
     const doc = newResult("proxy-accuracy", { device, upload_path: tusUrl ? "tusd" : "n/a", file: { size_bytes: subL.size, duration_s: Number(longSeconds.toFixed(3)), codec: "h264", vfr: false, hdr: false } });
     doc.started_at = started;
     const proxyFails = fails.filter((f) => !/^(hls|concat|truncated|no request|the worker's log carries)/.test(f));
@@ -180,7 +198,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       phone_upload_s: Number(subV.uploadS.toFixed(2)), phone_upload_to_verified_s: Number((doneV?.seenAfterS ?? -1).toFixed(2)),
       long_clip_proxy_ready_s: proxyReadyS === null ? -1 : Number(proxyReadyS.toFixed(2)), long_clip_duration_s: Number(longSeconds.toFixed(1)),
       leak_hits_worker_logs: leaks.worker_logs ?? -1, leak_hits_database: leaks.database_technical, leak_hits_api: leaks.api_responses, leak_hits_proxy_tags: leaks.proxy_tags,
-      original_unchanged: Boolean(statV) && statV.etag === afterV?.etag, failures: proxyFails.length,
+      original_unchanged: Boolean(statV) && statV.etag === afterV?.etag, thumbnails_present: thumbs.filter(Boolean).length, thumbnail_leak_hits: thumbLeaks, failures: proxyFails.length,
     }, `${proxyFails.length ? `فشل: ${proxyFails.join("؛ ")}. ` : ""}${tail}. زمن «اكتمال الرفع ← توفر النسخة الخفيفة» للمقطع الطويل رقم معلوماتي: الخطة لا تحدد له معيارًا`);
     const doc2 = newResult("invalid-file", { device, upload_path: tusUrl ? "tusd" : "n/a" });
     doc2.started_at = started;
