@@ -1,6 +1,6 @@
 # تقرير القبول الموحّد
 
-مولَّد آليًا من `docs/measurements/` بـ `tools/acceptance/report.mjs` (2026-10-19). لا يُعدَّل يدويًا. «pass» لا يُكتب إلا حين يكون الدليل كاملًا؛ ما دونه `partial` مع السبب في ملف النتيجة.
+مولَّد آليًا من `docs/measurements/` بـ `tools/acceptance/report.mjs` (2026-10-20). لا يُعدَّل يدويًا. «pass» لا يُكتب إلا حين يكون الدليل كاملًا؛ ما دونه `partial` مع السبب في ملف النتيجة.
 
 ## صفوف جدول اختبارات القبول
 
@@ -31,6 +31,13 @@
 | task-killers | field | — لا نتيجة | رفع 1 غيغابايت على جهازي Xiaomi وSamsung بعد قفل الشاشة 30 دقيقة يكتمل دون تدخل بعد شاشة ا… |
 | timestamp-alignment | field | — لا نتيجة | محاذاة صوتية بين النسخة الخفيفة والأصل بإزاحة لا تتجاوز 40 مللي ثانية على عشرة ملفات هاتف … |
 
+## اختبارات الأمن خارج جدول الخطة (SEC-01..SEC-07)
+
+| الاختبار | القرار | النمط | الحالة | المعيار |
+| --- | --- | --- | --- | --- |
+| session-revocation | SEC-01 | automated | ◐ partial | رمز مبطَل (جلسة أو كل الجلسات) يُرفض على الخادم وعلى مسار الرفع خلال ثوانٍ، والرفع الجاري … |
+| emergency-wipe | SEC-01 | field | — لا نتيجة | على جهاز فعلي بعد المسح الطارئ: لا شيء من المخازن الموثّقة يبقى، ويتم المسح بلا اتصال خلال… |
+
 ## كل النتائج (الأحدث لكل أداة/اختبار/ملف شبكة)
 
 | الاختبار | الأداة | الشبكة | الحالة | الأرقام | التاريخ | التشغيلات | الملف |
@@ -43,6 +50,7 @@
 | pii-leak | acceptance | — | ◐ partial | live_requests=236، live_findings=0، static_findings=0 | 2026-10-19 | 4 | `docs/measurements/acceptance/2026-10-19-pii-leak-live-3.json` |
 | proxy-accuracy | acceptance | — | ◐ partial | cut_points=10، cut_matched_by_frame_index=true، cut_worst_gap_ms=0، cut_tolerance_ms=40 | 2026-10-19 | 1 | `docs/measurements/acceptance/2026-10-19-proxy-accuracy-media-e2e.json` |
 | receipt-notification | acceptance | — | ◐ partial | creation_to_task_within_60s_pct=100، verification_to_receipt_s_p95=0.35، escalation_to_editor_s=3.48، escalation_to_admin_s=6.23 | 2026-10-19 | 3 | `docs/measurements/acceptance/2026-10-19-receipt-notification-chain-and-escalation-2.json` |
+| session-revocation | acceptance | — | ◐ partial | criterion_proposed_s=5، single_access_refused_s=0، single_refresh_refused_s=0.01، single_listed_after=false | 2026-10-20 | 1 | `docs/measurements/acceptance/2026-10-20-session-revocation-api-and-tusd.json` |
 | tenant-isolation | acceptance | — | ◐ partial | cases_executed=229، cases_failed=0، cases_unimplemented=0 | 2026-10-19 | 4 | `docs/measurements/acceptance/2026-10-19-tenant-isolation-live-3.json` |
 | upload-resume | acceptance | loopback | ◐ partial | size_bytes=67108864، interruptions=3، resent_pct=0، sha256_match=true | 2026-10-19 | 3 | `docs/measurements/acceptance/2026-10-19-upload-resume-64mb-3.json` |
 | field-network-upload | netlab | field-switch | ◐ partial | upload_complete=true، checksum_match=true | 2026-10-19 | 1 | `docs/measurements/netlab/2026-10-19-tusd-field-switch-500mb.json` |
