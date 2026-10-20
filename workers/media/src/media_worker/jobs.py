@@ -23,8 +23,9 @@ from pathlib import Path
 from typing import Protocol
 
 from .api import ApiConflict, ApiRejected, InternalApi, Session
-from .hashing import digest_file, digest_stream
+from .hashing import Digest, digest_file, digest_stream
 from .probe import InvalidMediaError, Probe, probe
+from .export import build_package
 from .proxy import make_proxy
 from .hls import make_hls
 from .phash import video_phash
@@ -64,6 +65,10 @@ def waveform_key(material_id: str, file_id: str) -> str:
     return f"{DERIVED_PREFIX}{material_id}/{file_id}/waveform.json"
 
 
+def export_key(material_id: str, file_id: str) -> str:
+    return f"{DERIVED_PREFIX}{material_id}/{file_id}/export.zip"
+
+
 def hls_prefix(material_id: str, file_id: str) -> str:
     # تحت مساحة ملف المصدر: الخادم يقبل المشتق في derived/<material_id>/<file_id>/ وحدها (ADR 0006)
     return f"{DERIVED_PREFIX}{material_id}/{file_id}/hls/"
@@ -85,8 +90,9 @@ def _wants_proxy(session: Session) -> bool:
 
 class Jobs:
     def __init__(self, api: InternalApi, storage: Storage, buckets: Buckets, scratch: Path | None = None,
-                 enable_hls: bool = False, enable_phash: bool = False):
-        # العلمان مطفآن إلى أن يقبل العقد نوع hls (#58) وحقل البصمة الإدراكية
+                 enable_hls: bool = False, enable_phash: bool = False, enable_export: bool = False):
+        # الأعلام مطفأة إلى أن يقبل العقد نوع hls (#58) وحقل البصمة الإدراكية ونوع export
+        self.enable_export = enable_export
         self.enable_hls = enable_hls
         self.enable_phash = enable_phash
         self.api = api
@@ -157,11 +163,14 @@ class Jobs:
                     outcome += self._waveform(session, file_id, local, info)
                 if info.video_codec:
                     outcome += self._thumbnails(session, file_id, local, info)
+            proxy_path = None
             if info.video_codec and _wants_proxy(session):
                 proxy_path, proxy_info = self._proxy(session, file_id, local, info)
                 outcome += "+proxy"
                 if self.enable_hls:
                     outcome += self._hls(session, file_id, proxy_path, proxy_info)
+            if self.enable_export and info.video_codec:
+                outcome += self._export(session, file_id, local, info, digest, proxy_path)
             return outcome
 
     def _register(self, file_id: str, body: dict) -> bool:
@@ -204,6 +213,25 @@ class Jobs:
         ok = self._register(file_id, {"kind": "hls", "storage_key": prefix + files[0].name, "sha256": d.sha256,
                                       "size_bytes": d.size_bytes, "technical": proxy_info.to_dict()})
         return "+hls" if ok else "+hls-unregistered"
+
+    def _export(self, session: Session, file_id: str, local: Path, info: Probe, digest: Digest,
+                proxy: Path | None) -> str:
+        """غير مانعة. النسخة الخفيفة تدخل الحزمة إن صنعها العامل؛ نسخة الهاتف ليست في مجلد المهمة (قيد معروف)."""
+        try:
+            out = local.with_name("export.zip")
+            build_package(out, original=local, info=info, material_id=session.material_id, file_id=file_id,
+                          sha256=digest.sha256, size_bytes=digest.size_bytes, proxy=proxy)
+            d = digest_file(out)
+            key = export_key(session.material_id, file_id)
+            self.storage.put_file(self.buckets.derived, key, out, d.sha256, "application/zip")
+        except Exception as err:  # noqa: BLE001
+            log.warning("export skipped file=%s error=%s", file_id, type(err).__name__)
+            return "+export-failed"
+        ok = self._register(file_id, {"kind": "export", "storage_key": key, "sha256": d.sha256,
+                                      "size_bytes": d.size_bytes,
+                                      "technical": {"duration_ms": info.duration_ms, "start_pts_us": info.start_pts_us,
+                                                    "container": "zip"}})
+        return "+export" if ok else "+export-unregistered"
 
     def _thumbnails(self, session: Session, file_id: str, local: Path, info: Probe) -> str:
         """غير مانعة: أي فشل هنا يُسجَّل ويُترك، والمصغّرات يمكن توليدها لاحقًا من الأصل."""
