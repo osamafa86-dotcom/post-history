@@ -40,6 +40,9 @@ def keygen(a):
     key = os.path.join(a.dir, "signing.pem")
     openssl("ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", key)
     spki = openssl("ec", "-in", key, "-pubout", "-outform", "DER")
+    pkcs8 = openssl("pkcs8", "-topk8", "-nocrypt", "-in", key, "-outform", "DER")
+    with open(os.path.join(a.dir, "signing.pkcs8.b64"), "w") as fh:
+        fh.write(base64.b64encode(pkcs8).decode())
     with open(os.path.join(a.dir, "public.b64"), "w") as fh:
         fh.write(base64.b64encode(spki).decode())
     # الشهادة وحدها في مجلد يُركَّب في البوابة؛ مفتاح التوقيع يبقى خارجه (البوابة لا ترى إلا المفتاح العام).
@@ -58,6 +61,8 @@ def keygen(a):
 def mint(a):
     now = int(time.time()) + a.iat_offset
     header = {"alg": a.alg, "typ": "JWT"}
+    if a.kid:
+        header["kid"] = a.kid
     claims = {"aud": a.aud, "sid": a.sid, "iat": now, "exp": now + a.ttl, "jti": b64url(os.urandom(12))}
     signing_input = f"{b64url(json.dumps(header).encode())}.{b64url(json.dumps(claims).encode())}"
     if a.alg == "none":
@@ -77,6 +82,7 @@ def main():
     m = sub.add_parser("mint")
     m.add_argument("dir")
     m.add_argument("--sid", required=True)
+    m.add_argument("--kid", default="k1", help="معرّف المفتاح في الترويسة؛ فارغ = بلا kid")
     m.add_argument("--aud", default="ingest")
     m.add_argument("--ttl", type=int, default=600)
     m.add_argument("--iat-offset", type=int, default=0)

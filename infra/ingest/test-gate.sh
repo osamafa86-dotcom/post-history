@@ -7,13 +7,15 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CDIR="$HERE/../compose"
 KEYS="$(mktemp -d)"
+NEXT="$(mktemp -d)"
 OTHER="$(mktemp -d)"
-trap 'rm -rf "$KEYS" "$OTHER"' EXIT
-python3 "$HERE/test_token.py" keygen "$KEYS"
-python3 "$HERE/test_token.py" keygen "$OTHER"   # a second key the gate does not trust
+trap 'rm -rf "$KEYS" "$NEXT" "$OTHER"' EXIT
+python3 "$HERE/test_token.py" keygen "$KEYS"    # k1: the current key
+python3 "$HERE/test_token.py" keygen "$NEXT"    # k2: the next key, trusted during a rotation
+python3 "$HERE/test_token.py" keygen "$OTHER"   # a key the gate does not trust
 
-export INGEST_TOKEN_PUBLIC_KEY INGEST_TLS_DIR="$KEYS/tls" INGEST_PORT="${INGEST_PORT:-8443}"
-INGEST_TOKEN_PUBLIC_KEY="$(cat "$KEYS/public.b64")"
+export INGEST_TOKEN_PUBLIC_KEYS INGEST_TLS_DIR="$KEYS/tls" INGEST_PORT="${INGEST_PORT:-8443}"
+INGEST_TOKEN_PUBLIC_KEYS="k1:$(cat "$KEYS/public.b64"),k2:$(cat "$NEXT/public.b64")"
 COMPOSE=(docker compose -f "$CDIR/docker-compose.yml" -f "$HERE/compose.ingest.yml"
          ${E2E_EXTRA_COMPOSE:+-f "$E2E_EXTRA_COMPOSE"} --profile api)
 # shellcheck disable=SC1091
@@ -54,8 +56,12 @@ GOOD="$(mint)"
 
 expect "401 gate" "no token"                         POST /files/ ""
 expect "401 gate" "garbage token"                    POST /files/ "a.b.c"
-expect "401 gate" "signed by an untrusted key"       POST /files/ "$(python3 "$HERE/test_token.py" mint "$OTHER" --sid "$SID")"
+expect "401 gate" "untrusted key signing as k1"      POST /files/ "$(python3 "$HERE/test_token.py" mint "$OTHER" --sid "$SID")"
 expect "401 gate" "alg none"                         POST /files/ "$(mint --alg none)"
+expect "401 gate" "no kid"                           POST /files/ "$(mint --kid '')"
+expect "401 gate" "unknown kid"                      POST /files/ "$(mint --kid k9)"
+expect "401 gate" "k1's signature presented as k2"   POST /files/ "$(mint --kid k2)"
+expect "403 tus"  "rotation: the next key (k2) is accepted" POST /files/ "$(python3 "$HERE/test_token.py" mint "$NEXT" --sid "$SID" --kid k2)"
 expect "401 gate" "expired"                          POST /files/ "$(mint --iat-offset -1200)"
 expect "401 gate" "lifetime over 15 minutes"         POST /files/ "$(mint --ttl 3600)"
 expect "401 gate" "issued in the future"             POST /files/ "$(mint --iat-offset 600)"
