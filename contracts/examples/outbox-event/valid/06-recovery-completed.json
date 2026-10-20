@@ -1,0 +1,13 @@
+{
+  "id": "1402",
+  "type": "auth.recovery_completed",
+  "aggregate_type": "user",
+  "aggregate_id": "1e2d3c4b-5a69-4788-9796-a5b4c3d2e1f0",
+  "occurred_at": "2026-10-20T09:00:00Z",
+  "idempotency_key": "auth.recovery_completed:0f0e0d0c-0b0a-4908-8706-050403020100",
+  "actor_id": "1e2d3c4b-5a69-4788-9796-a5b4c3d2e1f0",
+  "payload": {
+    "recovery_request_id": "0f0e0d0c-0b0a-4908-8706-050403020100",
+    "office_id": "0f1e2d3c-4b5a-4697-8877-665544332211"
+  }
+}

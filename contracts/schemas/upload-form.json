@@ -177,7 +177,7 @@
           }
         },
         "max_size_bytes": {
-          "description": "attachment: الحد الأقصى لحجم المرفق الواحد",
+          "description": "attachment: الحد الأقصى لحجم المرفق الواحد بالبايت (MiB = 1,048,576)",
           "type": "integer",
           "minimum": 1
         },

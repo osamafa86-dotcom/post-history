@@ -27,7 +27,7 @@ public struct MaterialCreate: Sendable, Codable, Hashable {
     public var gps: GpsPoint?
     /** إصدار النموذج الذي رُسمت به الحقول الديناميكية */
     public var formVersion: Int
-    /** قيم الحقول الديناميكية مفتاحها `key` الحقل؛ يتحقق الخادم بمخطط النموذج ذي الإصدار. في v0 لا يحتوي أي نموذج حقلًا حساسًا أو حقل موقع (بوابة `POST /forms`)، فلا بيانات كاشفة هنا حتى SEC-04. */
+    /** قيم الحقول الديناميكية مفتاحها `key` الحقل؛ يتحقق الخادم بمخطط النموذج ذي الإصدار. في v0 لا يحتوي أي نموذج حقلًا حساسًا أو حقل موقع (بوابة `POST /forms`)، فلا بيانات كاشفة هنا حتى SEC-04. قيمة حقل `attachment` بالشكل `schemas/attachment-value.json`. */
     public var dynamicFields: [String: JSONValue]
     /** إن أُرسلت وجب أن يكون المجموع 100؛ إن غابت فالمراسل مساهم وحيد بـ 100 */
     public var contributors: [Contributor]?

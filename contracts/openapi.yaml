@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: post-history API
-  version: 0.1.0
+  version: 0.1.1
   summary: واجهة منصة المكتبة المرئية — الإصدار v0 لمرحلة التأسيس
   license:
     name: Proprietary
@@ -45,7 +45,16 @@ info:
     - **خطّافات tusd داخلية (ADR SEC-06):** تصل إلى `/internal/tusd-hooks/{hook_token}` خارج `/v1`،
       معزولة شبكيًا وبرمز من البيئة؛ العام لا يرى هذه النقطة.
 
-    ## الأخطاء
+    - **v0.1 (بعد تجميد الدورة الأولى، ADR 0012):** إضافات لا تكسر عملاء v0 فقط. الحقل الجديد في استجابة
+      اختياري للعميل، والترويسة الجديدة في طلب اختيارية؛ ما يكسر يذهب إلى `/v2`. قيم `Error.code` قائمة مفتوحة:
+      على العميل معاملة الرمز المجهول كخطأ عام بحسب حالة HTTP.
+    - **التزامن المتفائل:** `GET` للمادة يعيد `ETag: "<row_version>"`، وتعديلاتها (`PATCH`، الانتقال، المساهمون،
+      الحجز) تقبل `If-Match` اختياريًا؛ عدم المطابقة `412 precondition_failed` دون أي أثر. نشر النموذج يقبل
+      `If-Match: "<الإصدار الحالي>"` بالمعنى نفسه إضافة إلى شرط `version = الحالي + 1`.
+    - **نطاق ingest (SEC-07، ADR 0011):** حين `UploadSession.ingest_token_required` يرسل العميل ترويسة
+      `Ingest-Token: <JWT>` على كل طلب tus مع `Authorization: Bearer <upload token>`. ردود البوابة بلا جسم: `401` (مفقود
+      أو تالف أو منتهٍ: رمز جديد ثم HEAD)، `403` (رمز لجلسة أخرى)، `429` (حد المعدل).
+    - **الأحجام** بالبايت في الحقول، وحيث يُذكر «ميغابايت» فالمقصود MiB = 1,048,576 بايت.
 
     ## الأخطاء
 
@@ -246,8 +255,12 @@ paths:
       summary: اعتماد المشرف لطلب استعادة حساب في نطاقه
       description: >-
         يعتمد المشرف الطلب بعد التحقق خارج النظام من هوية المراسل. الاعتماد يبطل كل جلسات الحساب ورموز
-        رفعه المفتوحة، ويصدر رابط إعادة تهيئة كلمة المرور والمصادقة الثنائية بصلاحية قصيرة، ويُسجَّل في
-        سجل التدقيق.
+        رفعه المفتوحة، ويعيد رمز إعادة التعيين **مرة واحدة** في هذه الاستجابة للمشرف المعتمِد، الذي يسلّمه للمراسل خارج
+        النظام. الرمز حساس: لا يدخل سجلًا ولا Outbox ولا إشعارًا، ويُخزَّن ببصمته فقط، وصلاحيته ≤ 24 ساعة، ومربوط بالحساب
+        المستعاد. لا `Idempotency-Key` هنا (مسارات `/auth/*`) كي لا يُحفظ الرمز في جدول المفاتيح؛ إعادة اعتماد طلب معتمد ترد `409 recovery_state_conflict` ولا تعيد الرمز. الحساب في حالة
+        «إعادة تعيين إلزامية» حتى `/auth/recovery/complete` و`/auth/totp/confirm`، والاعتماد يُسجَّل في التدقيق.
+        حساب مدير نظام لا يُعتمد من هنا أبدًا: `403 admin_quorum_required` (إجراء الشخصين من سطر الأوامر، ADR 0005
+        ودليل التشغيل). حساب مساوٍ لدور المقرِّر أو أعلى: `403 forbidden_scope`.
       operationId: approveRecovery
       x-roles: [supervisor, system_admin]
       requestBody:
@@ -264,14 +277,108 @@ paths:
                   description: كيف تحقق المشرف من الهوية (يُسجَّل في التدقيق)
       responses:
         "200":
-          description: الطلب بعد الاعتماد
+          description: الطلب بعد الاعتماد، ومعه رمز إعادة التعيين في الاستجابة الأولى فقط
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/RecoveryRequest" }
+              schema: { $ref: "#/components/schemas/RecoveryApproval" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+
+  /auth/recovery/complete:
+    post:
+      tags: [auth]
+      summary: إكمال الاستعادة — كلمة مرور جديدة وبدء تسجيل مصادقة ثنائية جديدة
+      description: >-
+        يستهلك رمز إعادة التعيين (مرة واحدة) ويضع كلمة المرور الجديدة ويولّد سر TOTP جديدًا، ويبطل السر القديم فورًا
+        (فلا دخول عاديًا بعدها حتى `/auth/totp/confirm`). الجلسة الناتجة مقيّدة: المسموح فقط `/auth/totp/confirm`
+        و`/auth/logout` و`/auth/me` و`/auth/refresh`، وكل مسار آخر يرد `403 credential_reset_required`. تحديث الجلسة
+        المقيّدة مسموح حتى `reset_token_expires_at` للطلب ثم يُرفض `401`؛ ما بعد هذه المهلة دون تأكيد يستلزم استعادة
+        جديدة من أولها. الرمز المستهلك أو المنتهي `401`. حد المعدل بمفتاح بصمة الرمز (لا بالعنوان وحده). الإكمال يُسجَّل في
+        التدقيق (`recovery_request_id`، `approved_by`) ويُطلق حدث `auth.recovery_completed` الذي يُشعر القناة المسجّلة للحساب.
+      operationId: completeRecovery
+      x-roles: []
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reset_token, new_password]
+              properties:
+                reset_token: { type: string, minLength: 32, maxLength: 256, writeOnly: true }
+                new_password: { type: string, minLength: 12, maxLength: 256, writeOnly: true }
+      responses:
+        "200":
+          description: جلسة مقيّدة وبيانات تسجيل TOTP الجديدة (تُعرض مرة واحدة)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecoveryCompletion" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/totp/confirm:
+    post:
+      tags: [auth]
+      summary: تأكيد تسجيل المصادقة الثنائية الجديدة ورفع قيد الجلسة
+      operationId: confirmTotp
+      x-roles: [authenticated]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [totp_code]
+              properties:
+                totp_code: { type: string, pattern: "^[0-9]{6}$", writeOnly: true }
+      responses:
+        "200":
+          description: جلسة كاملة جديدة (تبطل المقيّدة)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /users/{id}/status:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: معرّف المستخدم
+        schema: { type: string, format: uuid }
+    put:
+      tags: [auth]
+      summary: تعليق حساب أو إعادة تفعيله (مدير النظام)
+      description: >-
+        التعليق يبطل كل جلسات الحساب ورموز رفعه فورًا؛ إعادة التفعيل لا تعيد الجلسات. لا يعلّق المدير حسابه، وحساب مدير
+        نظام آخر لا يُعلَّق من هنا: `403 admin_quorum_required`. ذاتي التكرار. يُسجَّل في التدقيق بـ `reason_code`
+        (`suspended` أو `reactivated`) وحده؛ لا نص حر (SEC-03).
+      operationId: setUserStatus
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [active, suspended] }
+      responses:
+        "204": { description: طُبِّق (أو كان مطبَّقًا) }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
   /users/{id}/permissions/{permission}:
     parameters:
@@ -377,6 +484,7 @@ paths:
               schema: { $ref: "#/components/schemas/MaterialPage" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       tags: [materials]
       summary: إنشاء سجل مادة قبل بدء الرفع (يطلق إشعار «مادة واردة»)
@@ -417,10 +525,13 @@ paths:
       responses:
         "200":
           description: المادة
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Material" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
     patch:
       tags: [materials]
@@ -432,6 +543,7 @@ paths:
       x-roles: [reporter, supervisor, editor_in_chief, system_admin]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
       requestBody:
         required: true
         content:
@@ -440,6 +552,8 @@ paths:
       responses:
         "200":
           description: المادة بعد التعديل
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Material" }
@@ -447,6 +561,7 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
   /materials/{id}/transitions:
@@ -470,6 +585,7 @@ paths:
                     type: array
                     items: { $ref: "#/components/schemas/TransitionRecord" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
     post:
       tags: [materials]
@@ -501,6 +617,7 @@ paths:
       x-roles: [reporter, supervisor, producer, editor_in_chief, rights_officer, system_admin]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
       requestBody:
         required: true
         content:
@@ -509,6 +626,8 @@ paths:
       responses:
         "200":
           description: المادة بعد الانتقال
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Material" }
@@ -516,7 +635,40 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /materials/{id}/files/{file_id}/download-url:
+    parameters:
+      - $ref: "#/components/parameters/MaterialId"
+      - name: file_id
+        in: path
+        required: true
+        description: ملف مشتق من ملفات المادة
+        schema: { type: string, format: uuid }
+    get:
+      tags: [materials]
+      summary: رابط قراءة موقّع قصير العمر لمشتق من المادة (v0.1)
+      description: >-
+        للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail`) في حالة `verified`. الأصل والملاحظة الصوتية لا يُعطيان
+        رابطًا هنا (`404`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين
+        ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا
+        معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`).
+      operationId: getMaterialFileDownloadUrl
+      x-roles: [reporter, supervisor, producer, editor_in_chief, rights_officer, system_admin]
+      responses:
+        "200":
+          description: الرابط
+          headers:
+            Cache-Control:
+              description: "`no-store`"
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileDownloadUrl" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /materials/{id}/contributors:
     parameters:
@@ -531,6 +683,7 @@ paths:
       x-roles: [rights_officer, system_admin]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
       requestBody:
         required: true
         content:
@@ -539,12 +692,15 @@ paths:
       responses:
         "200":
           description: المادة بعد التوثيق
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Material" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
   /materials/{id}/reservation:
@@ -561,6 +717,7 @@ paths:
       x-roles: [producer, editor_in_chief]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
       responses:
         "200":
           description: الحجز
@@ -571,6 +728,7 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
     delete:
       tags: [materials]
       summary: تحرير الحجز (صاحبه أو المشرف)
@@ -629,6 +787,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/UploadSession" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /uploads/{id}/complete:
@@ -658,9 +817,97 @@ paths:
       responses:
         "202": { description: قُبل؛ المعالجة غير متزامنة }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /device-attestations/challenge:
+    post:
+      tags: [uploads]
+      summary: تحدٍّ لشهادة الجهاز (App Attest أو Play Integrity) — SEC-07
+      description: تحدٍّ عشوائي 32 بايتًا، يُستهلك مرة واحدة، عمره 300 ث، مربوط بالمستخدم.
+      operationId: createAttestationChallenge
+      x-roles: [reporter]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: التحدي
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttestationChallenge" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /device-attestations:
+    post:
+      tags: [uploads]
+      summary: تسجيل مفتاح App Attest للتثبيت (iOS فقط، مرة لكل تثبيت) — SEC-07
+      description: >-
+        يتحقق الخادم من سلسلة Apple المثبّتة والتحدي و`rpIdHash`، ويحفظ المفتاح العام وعدّاده. `key_id` معرّف تثبيت
+        (بيانات كاشفة): يُخزَّن ببصمته ولا يُسجَّل ولا يُعاد. المفتاح المسجَّل لمستخدم آخر `409`.
+      operationId: registerAttestationKey
+      x-roles: [reporter]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AttestationKeyRegistration" }
+      responses:
+        "201":
+          description: مُسجَّل
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [key_ref]
+                properties:
+                  key_ref: { type: string, format: uuid, description: مرجع داخلي للمفتاح؛ ليس key_id }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { $ref: "#/components/responses/Gone" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /uploads/{id}/ingest-token:
+    parameters:
+      - $ref: "#/components/parameters/UploadId"
+    post:
+      tags: [uploads]
+      summary: رمز بوابة ingest لجلسة رفع بعد التحقق من شهادة الجهاز — SEC-07
+      description: >-
+        `clientData = challenge ‖ upload_session_id` (وهو `requestHash` على أندرويد). يعيد JWT ES256 بعمر ≤ 15 دقيقة
+        مربوطًا بالجلسة (`aud: "ingest"`، `sid`، `iat`، `exp`، `jti`، `plat`)، تتحقق منه البوابة بالمفتاح العام وحده.
+        فشل الشهادة `403 attestation_failed`، العدّاد غير المتزايد `409 assertion_replay`، التحدي المنتهي أو المستهلك
+        `410 challenge_expired`، وتعذّر Google `503 attestation_unavailable` (يبقى العميل على النطاق الرئيسي إن عرضه
+        الخادم). جلسة غيره أو غير موجودة `404`.
+      operationId: createIngestToken
+      x-roles: [reporter]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IngestTokenRequest" }
+      responses:
+        "200":
+          description: الرمز
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IngestToken" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { $ref: "#/components/responses/Gone" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
   /internal/tusd-hooks/{hook_token}:
     servers:
@@ -704,6 +951,133 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
+  /health:
+    servers:
+      - url: http://api.internal:3000
+        description: فحص تشغيلي خارج /v1؛ لا يكشف إصدارات ولا تفاصيل أخطاء
+    get:
+      tags: [events]
+      summary: صحة الخادم وحالة حد المعدل (داخلي)
+      x-internal: true
+      operationId: getHealth
+      x-roles: []
+      security: []
+      responses:
+        "200":
+          description: يعمل (قد يكون حد المعدل في الوضع المتدهور)
+          headers:
+            X-Rate-Limiter: { $ref: "#/components/headers/RateLimiterDegraded" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+        "404":
+          description: الطلب من خارج الشبكة الداخلية حين يُقصر المسار عليها عند النشر
+        "503":
+          description: قاعدة البيانات لا تجيب
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+  /internal/media/sessions/{upload_session_id}:
+    servers:
+      - url: http://api.internal:3000
+        description: شبكة media الداخلية فقط (ADR 0006)
+    parameters:
+      - $ref: "#/components/parameters/MediaSessionId"
+    get:
+      tags: [uploads]
+      summary: جلسة رفع كما يحتاجها عامل الوسائط (داخلي، ADR 0006)
+      x-internal: true
+      description: >-
+        لا يعيد بصمة العميل؛ المقارنة في الخادم. فشل المصادقة أو العنوان `404` كبقية `/internal/*`؛ والجلسة غير
+        الموجودة برمز صحيح `410 media_resource_gone`.
+      operationId: mediaGetSession
+      x-roles: []
+      security: [{ mediaWorkerToken: [] }]
+      responses:
+        "200":
+          description: الجلسة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaSession" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "410": { $ref: "#/components/responses/MediaResourceGone" }
+
+  /internal/media/sessions/{upload_session_id}/verification:
+    servers:
+      - url: http://api.internal:3000
+        description: شبكة media الداخلية فقط (ADR 0006)
+    parameters:
+      - $ref: "#/components/parameters/MediaSessionId"
+    post:
+      tags: [uploads]
+      summary: نتيجة تحقق العامل من الملف (داخلي، ADR 0006)
+      x-internal: true
+      description: >-
+        الخادم يقفل الجلسة ويتحقق من الحجم مقابل الجلسة والتخزين ويقارن `client_sha256` بنفسه (`checksum_mismatch`
+        قراره لا قرار العامل) ثم يسجّل التحقق والإيصال وحدث Outbox في معاملة واحدة. متساوٍ الأثر: جلسة قُضي فيها
+        تعيد `200` بالنتيجة المسجلة إن وافقت و`409` إن خالفت.
+      operationId: mediaPostVerification
+      x-roles: []
+      security: [{ mediaWorkerToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MediaVerification" }
+      responses:
+        "200":
+          description: النتيجة المسجلة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaVerificationResult" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "410": { $ref: "#/components/responses/MediaResourceGone" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /internal/media/files/{file_id}/derivatives:
+    servers:
+      - url: http://api.internal:3000
+        description: شبكة media الداخلية فقط (ADR 0006)
+    parameters:
+      - name: file_id
+        in: path
+        required: true
+        description: الملف المصدر
+        schema: { type: string, format: uuid }
+    post:
+      tags: [uploads]
+      summary: تسجيل مشتق أنتجه العامل (داخلي، ADR 0006)
+      x-internal: true
+      description: >-
+        ينشئ ملفًا جديدًا `kind=proxy` و`proxy_mode=normal` و`derived_from_id=file_id` و`state=verified`. متساوٍ الأثر
+        على (`derived_from_id`، `kind`): الطلب نفسه يعيد الملف نفسه، ومشتق مختلف للمصدر والنوع نفسيهما `409`.
+        `storage_key` يجب أن يبدأ بالبادئة المشتقة للمصدر (`derived/<material_id>/<file_id>/`) وإلا `422`. الملف
+        المصدر غير الموجود برمز صحيح `410 media_resource_gone`.
+      operationId: mediaPostDerivative
+      x-roles: []
+      security: [{ mediaWorkerToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MediaDerivative" }
+      responses:
+        "200":
+          description: الملف المشتق
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [file_id]
+                properties:
+                  file_id: { type: string, format: uuid }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "410": { $ref: "#/components/responses/MediaResourceGone" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
   /forms:
     get:
       tags: [forms]
@@ -739,6 +1113,7 @@ paths:
       x-roles: [system_admin]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
       requestBody:
         required: true
         content:
@@ -753,6 +1128,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
   /forms/current:
@@ -923,6 +1299,12 @@ paths:
 
 components:
   securitySchemes:
+    mediaWorkerToken:
+      type: http
+      scheme: bearer
+      description: >-
+        `MEDIA_WORKER_TOKEN` (≥ 32 حرفًا) لعامل الوسائط على `/internal/media/*` فقط؛ منفصل عن سر خطّاف tusd، مقارنة
+        ثابتة الزمن، لا يُسجَّل (ADR 0006، SEC-05)
     bearerAuth:
       type: http
       scheme: bearer
@@ -938,6 +1320,20 @@ components:
         انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول
         المفاتيح أبدًا.
       schema: { type: string, minLength: 8, maxLength: 128 }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: >-
+        قيمة `ETag` الأخيرة التي رآها العميل (`"<row_version>"` للمادة، `"<version>"` للنموذج الحالي). إن لم تطابق
+        الحالة الراهنة يُرفض الطلب بـ `412 precondition_failed` دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0.
+      schema: { type: string, pattern: '^"[0-9]{1,19}"$', maxLength: 22 }
+    MediaSessionId:
+      name: upload_session_id
+      in: path
+      required: true
+      description: معرّف جلسة الرفع
+      schema: { type: string, format: uuid }
     MaterialId:
       name: id
       in: path
@@ -967,6 +1363,17 @@ components:
       description: حجم الصفحة
       schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
 
+  headers:
+    ETag:
+      description: '`"<row_version>"` للمادة؛ يُرسل في `If-Match` مع التعديل التالي'
+      schema: { type: string, pattern: '^"[0-9]{1,19}"$' }
+    RateLimiterDegraded:
+      description: >-
+        تظهر بقيمة `degraded` فقط حين يعمل حد المعدل في ذاكرة العملية بدل Redis (حدود أضعف عبر النسخ)؛ غيابها يعني
+        الوضع الطبيعي. على `/health` الداخلي فقط: لا تُرسل على أي مسار عام لأنها تخبر المهاجم أن توزيع المحاولات عبر
+        النسخ يتجاوز الحد.
+      schema: { type: string, enum: [degraded] }
+
   responses:
     BadRequest:
       description: طلب غير صالح (معاملات استعلام أو مؤشر غير مفهوم)
@@ -979,7 +1386,11 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Forbidden:
-      description: إجراء لا يملكه الدور على مورد داخل نطاقه (مثل مراسل يحاول اعتماد انتقال)؛ ما خارج النطاق يعود 404 لا 403
+      description: >-
+        `forbidden_role`: دور المستدعي ليس في `x-roles` للعملية (لا يكشف وجود مورد). `forbidden_scope`: إجراء لا يملكه
+        الدور على مورد داخل نطاقه. `admin_quorum_required`: الإجراء يمس حساب مدير نظام ويحتاج إجراء الشخصين.
+        `credential_reset_required`: جلسة ما بعد الاستعادة قبل إعادة تعيين كلمة المرور والمصادقة الثنائية. ما خارج
+        النطاق يعود 404 لا 403.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -990,6 +1401,33 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     Conflict:
       description: تعارض حالة (انتقال غير مسموح، حجز قائم، إصدار نموذج متجاوز، طلب قيد التنفيذ بالمفتاح نفسه)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Gone:
+      description: '`challenge_expired`: التحدي منتهٍ أو مستهلَك؛ اطلب تحديًا جديدًا'
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    MediaResourceGone:
+      description: >-
+        `media_resource_gone`: الرمز صحيح لكن الجلسة أو الملف المصدر غير موجود؛ حدث متقادم لا خطأ تهيئة. العامل لا
+        يعيد المحاولة وينقل الحدث إلى `media:dead`. أما `404` على `/internal/media/*` فيبقى للرمز غير المطابق أو
+        العنوان (إخفاء النقطة)، فيعامله العامل خطأ تهيئة.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ServiceUnavailable:
+      description: '`attestation_unavailable`: مزوّد الشهادة (Google) غير متاح؛ أعد المحاولة لاحقًا'
+      headers:
+        Retry-After:
+          description: ثوانٍ قبل إعادة المحاولة
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    PreconditionFailed:
+      description: '`If-Match` لا يطابق الحالة الراهنة (`precondition_failed`)؛ أعد القراءة ثم أعد المحاولة'
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -1015,7 +1453,8 @@ components:
       properties:
         code:
           type: string
-          description: رمز ثابت يتفرّع عليه العميل؛ الرسالة للبشر فقط
+          description: رمز ثابت يتفرّع عليه العميل؛ الرسالة للبشر فقط. قائمة مفتوحة؛ الرمز المجهول = خطأ عام
+          x-extensible-enum: true
           enum:
             - bad_request
             - unauthorized
@@ -1035,6 +1474,16 @@ components:
             - form_version_conflict
             - sensitive_fields_not_supported_v0
             - recovery_state_conflict
+            - precondition_failed
+            - forbidden_role
+            - admin_quorum_required
+            - credential_reset_required
+            - attestation_failed
+            - challenge_expired
+            - assertion_replay
+            - attestation_key_conflict
+            - attestation_unavailable
+            - media_resource_gone
             - internal_error
         message: { type: string }
         request_id: { type: string, description: لتتبع الطلب في السجلات }
@@ -1084,6 +1533,9 @@ components:
         email: { type: string, format: email }
         office_id: { type: [string, "null"], format: uuid, description: مكتب المستخدم }
         totp_enabled: { type: boolean }
+        credential_reset_required:
+          type: boolean
+          description: الجلسة مقيّدة بعد استعادة الحساب حتى `/auth/totp/confirm`؛ غيابه = false (أُضيف في v0.1)
         roles:
           type: array
           items: { $ref: "#/components/schemas/Role" }
@@ -1120,6 +1572,21 @@ components:
         kind: { type: string, enum: [office, governorate] }
         id: { type: string, description: معرّف المكتب أو اسم المحافظة }
 
+    RecoveryCompletion:
+      type: object
+      required: [session, totp_enrollment]
+      properties:
+        session: { $ref: "#/components/schemas/Session" }
+        totp_enrollment:
+          type: object
+          required: [secret_base32, otpauth_uri]
+          description: >-
+            يُعرض مرة واحدة ولا يُسجَّل؛ لا يتضمن اسم المستخدم الحقيقي في `otpauth_uri` بل معرّفًا داخليًا. العميل لا يحفظ
+            `secret_base32` بعد العرض ولا يضعه في الحافظة ولا يسمح بلقطة شاشة لشاشته.
+          properties:
+            secret_base32: { type: string, pattern: "^[A-Z2-7]{16,64}$" }
+            otpauth_uri: { type: string, format: uri }
+
     RecoveryAccepted:
       type: object
       description: استجابة ثابتة لا تدل على صحة الرمز
@@ -1138,6 +1605,22 @@ components:
         last_seen_at: { type: [string, "null"], format: date-time }
         expires_at: { type: string, format: date-time }
         current: { type: boolean, description: هل هي الجلسة التي أرسلت الطلب }
+
+    RecoveryApproval:
+      allOf:
+        - $ref: "#/components/schemas/RecoveryRequest"
+        - type: object
+          properties:
+            reset_token:
+              type: string
+              minLength: 32
+              maxLength: 256
+              description: >-
+                يُعاد مرة واحدة للمشرف المعتمِد ليسلّمه للمراسل خارج النظام؛ لا يُسجَّل ولا يُخزَّن إلا ببصمته (ولا في جدول مفاتيح
+                منع التكرار)؛ لا يُعاد عند التكرار. العميل يعرضه مرة ولا يحفظه ولا يضعه في الحافظة ولا يسمح بلقطة شاشة له.
+                حامله يستطيع إكمال الاستعادة بنفسه، فالمخاطرة مقبولة بضوابط ADR 0012: إشعار القناة المسجّلة للحساب عند الاعتماد
+                وعند الإكمال، وتدقيق الإكمال بمعرّف الطلب والمعتمِد، وحد معدل على الإكمال بمفتاح الرمز. حسابات مديري النظام لا تصل هنا (`admin_quorum_required`): رمزها يصدره سطر الأوامر ثنائي الأشخاص.
+            reset_token_expires_at: { type: string, format: date-time, description: ≤ 24 ساعة من الاعتماد }
 
     RecoveryRequest:
       type: object
@@ -1254,6 +1737,7 @@ components:
           description: >-
             قيم الحقول الديناميكية مفتاحها `key` الحقل؛ يتحقق الخادم بمخطط النموذج ذي الإصدار. في v0 لا
             يحتوي أي نموذج حقلًا حساسًا أو حقل موقع (بوابة `POST /forms`)، فلا بيانات كاشفة هنا حتى SEC-04.
+            قيمة حقل `attachment` بالشكل `schemas/attachment-value.json`.
           additionalProperties: true
         contributors:
           type: array
@@ -1314,6 +1798,12 @@ components:
               items: { type: string }
             created_at: { type: string, format: date-time }
             updated_at: { type: string, format: date-time }
+            row_version:
+              type: integer
+              minimum: 1
+              description: >-
+                يرتفع مع كل كتابة على المادة (بخلاف `version` الذي يرتفع مع التعديل بعد الاعتماد)؛ قيمة `ETag`. أُضيف في
+                v0.1 فقد يغيب عند خادم v0.
       example:
         id: 7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b
         version: 1
@@ -1397,9 +1887,22 @@ components:
         created_at: { type: string, format: date-time }
         verified_at: { type: [string, "null"], format: date-time }
 
+    FileDownloadUrl:
+      type: object
+      required: [url, expires_at]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: رابط قراءة موقّع لملف واحد؛ لا يُسجَّل ولا يُرسل في إشعار أو حدث
+        expires_at:
+          type: string
+          format: date-time
+          description: ≤ 10 دقائق من الإصدار
+
     UploadSessionCreate:
       type: object
-      required: [material_id, kind, size_bytes, filename]
+      required: [material_id, kind, size_bytes, filename, client_sha256]
       properties:
         material_id: { type: string, format: uuid }
         kind: { type: string, enum: [original, proxy, voice_note] }
@@ -1413,15 +1916,19 @@ components:
         client_sha256:
           type: [string, "null"]
           pattern: "^[0-9a-f]{64}$"
-          description: بصمة اختيارية يحسبها التطبيق في المقدمة حين تسمح البطارية؛ تُقارن بالبصمة على الخادم
+          description: >-
+            بصمة SHA-256 للملف كاملًا يحسبها العميل قبل الإنشاء؛ إلزامية منذ v0.1 (ADR 0012): الخادم يقارنها ببصمته بعد
+            التجميع فيخرج عامل الوسائط من قاعدة الثقة، والقرار `checksum_mismatch` للخادم وحده. المفتاح إلزامي، والقيمة
+            `null` تُرفض بـ `422 validation_failed`. النوع يبقى قابلًا لـ null في v0.1 فقط كي لا تنكسر شيفرة Swift وKotlin
+            المولّدة التي تمرر قيمة اختيارية؛ يصير `string` غير قابل لـ null في v0.2.
         client_fingerprint:
           type: [object, "null"]
           description: بصمة رخيصة لترشيح المكررات فقط (لا تمنح أي حق)
           required: [size_bytes, head_sha256, tail_sha256]
           properties:
             size_bytes: { type: integer, minimum: 1 }
-            head_sha256: { type: string, pattern: "^[0-9a-f]{64}$", description: أول ميغابايت }
-            tail_sha256: { type: string, pattern: "^[0-9a-f]{64}$", description: آخر ميغابايت }
+            head_sha256: { type: string, pattern: "^[0-9a-f]{64}$", description: "SHA-256 لأول 1 MiB (1,048,576 بايت)؛ الملف الأصغر = الملف كله" }
+            tail_sha256: { type: string, pattern: "^[0-9a-f]{64}$", description: "SHA-256 لآخر 1 MiB؛ الملف الأصغر = الملف كله" }
             shot_at: { type: [string, "null"], format: date-time }
 
     UploadSession:
@@ -1447,8 +1954,14 @@ components:
         part_size_bytes:
           type: integer
           minimum: 1048576
-          description: حجم الجزء الثابت لهذه الجلسة بين الخادم والتخزين؛ يُثبَّت عند البدء ولا يتغير
+          description: حجم الجزء الثابت بالبايت لهذه الجلسة بين الخادم والتخزين (1 MiB حدًا أدنى)؛ يُثبَّت عند البدء ولا يتغير
         bytes_received: { type: integer, minimum: 0 }
+        ingest_token_required:
+          type: boolean
+          description: >-
+            حين يكون true فـ `tus_endpoint` على نطاق `ingest.` (ADR 0011، SEC-07): يطلب العميل رمزًا من
+            `POST /uploads/{id}/ingest-token` ويرسله في ترويسة `Ingest-Token` على كل طلب tus مع `Authorization` كما هي.
+            الخادم وحده يقرر النطاق؛ لا تبديل آلي في العميل. غيابه = false (أُضيف في v0.1).
         ietf_resumable:
           type: boolean
           default: false
@@ -1458,7 +1971,7 @@ components:
           enum: [sha256, crc32c]
           default: sha256
           description: خوارزمية checksum للجزء الواحد التي يقبلها خادم الرفع
-        expires_at: { type: string, format: date-time, description: انتهاء الرمز والجلسة إن لم تكتمل }
+        expires_at: { type: string, format: date-time, description: انتهاء الجلسة إن لم تكتمل؛ انتهاء رمز الرفع في `UploadSessionCreated.upload_token_expires_at` وقد يسبقه }
         file_id:
           type: [string, "null"]
           format: uuid
@@ -1504,6 +2017,60 @@ components:
               type: string
               description: "رمز قصير العمر يرسله العميل في `Authorization: Bearer` إلى خادم الرفع؛ يُحفظ مُجزَّأً على الخادم"
             upload_token_expires_at: { type: string, format: date-time }
+
+    AttestationChallenge:
+      type: object
+      required: [challenge_id, challenge, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        challenge: { type: string, pattern: "^[A-Za-z0-9_-]{43}$", description: 32 بايتًا base64url بلا حشو }
+        expires_at: { type: string, format: date-time }
+
+    AttestationKeyRegistration:
+      type: object
+      additionalProperties: false
+      required: [platform, key_id, attestation, challenge_id]
+      properties:
+        platform: { type: string, const: ios }
+        key_id: { type: string, minLength: 1, maxLength: 128, writeOnly: true, description: معرّف مفتاح App Attest (base64)؛ يُخزَّن ببصمته }
+        attestation: { type: string, minLength: 1, maxLength: 16384, writeOnly: true, description: كائن CBOR بترميز base64 }
+        challenge_id: { type: string, format: uuid }
+
+    IngestTokenRequest:
+      oneOf:
+        - $ref: "#/components/schemas/IngestTokenRequestIos"
+        - $ref: "#/components/schemas/IngestTokenRequestAndroid"
+      discriminator:
+        propertyName: platform
+        mapping:
+          ios: "#/components/schemas/IngestTokenRequestIos"
+          android: "#/components/schemas/IngestTokenRequestAndroid"
+
+    IngestTokenRequestIos:
+      type: object
+      additionalProperties: false
+      required: [platform, key_id, assertion, challenge_id]
+      properties:
+        platform: { type: string, const: ios }
+        key_id: { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        assertion: { type: string, minLength: 1, maxLength: 8192, writeOnly: true, description: تأكيد App Attest (CBOR base64) }
+        challenge_id: { type: string, format: uuid }
+
+    IngestTokenRequestAndroid:
+      type: object
+      additionalProperties: false
+      required: [platform, integrity_token, challenge_id]
+      properties:
+        platform: { type: string, const: android }
+        integrity_token: { type: string, minLength: 1, maxLength: 16384, writeOnly: true, description: رمز Play Integrity }
+        challenge_id: { type: string, format: uuid }
+
+    IngestToken:
+      type: object
+      required: [token, expires_at]
+      properties:
+        token: { type: string, description: "JWT ES256 يُرسل في ترويسة `Ingest-Token` على كل طلب tus إلى نطاق ingest" }
+        expires_at: { type: string, format: date-time, description: "≤ 15 دقيقة؛ عند 401 من البوابة يطلب العميل رمزًا جديدًا ثم HEAD" }
 
     UploadComplete:
       type: object
@@ -1628,6 +2195,113 @@ components:
     UploadForm:
       $ref: "./schemas/upload-form.json"
 
+    Health:
+      x-internal: true
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok, unavailable] }
+        rate_limiter:
+          type: string
+          enum: [redis, degraded]
+          description: "`degraded` حين يعمل حد المعدل في ذاكرة العملية بعد تعذر Redis (يُسجَّل `rate_limiter.degraded` في التدقيق)"
+
+    MediaTechnical:
+      x-internal: true
+      type: object
+      description: >-
+        قائمة بيضاء مغلقة من ffprobe؛ العامل لا ينقل وسوم الملف أبدًا (فيها الإحداثيات وطراز الجهاز) والخادم يرفض أي مفتاح
+        آخر. الأربعة الأولى أعمدة في `material_files` والباقي في `material_files.technical`. المفاتيح الإلزامية بحسب
+        السياق: `duration_ms` و`start_pts_us` للتحقق وللمشتقات الزمنية، و`width` و`height` للمصغّرة.
+      additionalProperties: false
+      properties:
+        duration_ms: { type: integer, minimum: 0 }
+        start_pts_us: { type: integer, minimum: -4503599627370496, maximum: 4503599627370496 }
+        width: { type: [integer, "null"], minimum: 1, maximum: 100000 }
+        height: { type: [integer, "null"], minimum: 1, maximum: 100000 }
+        container: { type: [string, "null"], maxLength: 64 }
+        video_codec: { type: [string, "null"], maxLength: 64 }
+        audio_codec: { type: [string, "null"], maxLength: 64 }
+        frame_rate: { type: [number, "null"], minimum: 0, maximum: 10000 }
+        avg_frame_rate: { type: [number, "null"], minimum: 0, maximum: 10000 }
+        vfr: { type: boolean }
+        frame_count: { type: [integer, "null"], minimum: 0 }
+        max_frame_gap_ms: { type: [number, "null"], minimum: 0 }
+        has_gaps: { type: boolean }
+        rotation: { type: integer, minimum: 0, maximum: 359 }
+        hdr: { type: boolean }
+        bit_depth: { type: [integer, "null"], minimum: 1, maximum: 64 }
+        audio_sample_rate: { type: [integer, "null"], minimum: 1, maximum: 1000000 }
+        audio_channels: { type: [integer, "null"], minimum: 1, maximum: 64 }
+
+    MediaSession:
+      x-internal: true
+      type: object
+      required: [material_id, kind, state, size_bytes, storage_key, proxy_mode, material_has_proxy]
+      properties:
+        material_id: { type: string, format: uuid }
+        kind: { type: string, enum: [original, proxy, voice_note] }
+        state: { type: string, enum: [created, in_progress, completed, verified, failed, deduplicated] }
+        size_bytes: { type: integer, minimum: 1 }
+        storage_key: { type: [string, "null"] }
+        proxy_mode: { type: [string, "null"], enum: [urgent, normal, null] }
+        material_has_proxy: { type: boolean }
+
+    MediaVerification:
+      x-internal: true
+      type: object
+      additionalProperties: false
+      required: [result]
+      properties:
+        result: { type: string, enum: [verified, invalid_file, storage_error] }
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$", description: ما حسبه العامل؛ يُقارن بـ `client_sha256` في الخادم }
+        size_bytes: { type: integer, minimum: 0 }
+        head_sha256: { type: string, pattern: "^[0-9a-f]{64}$", description: "أول 1 MiB؛ الملف الأصغر = الملف كله" }
+        tail_sha256: { type: string, pattern: "^[0-9a-f]{64}$", description: "آخر 1 MiB؛ الملف الأصغر = الملف كله" }
+        technical: { $ref: "#/components/schemas/MediaTechnical" }
+      description: النجاح يحمل البصمة والحجم والبصمة الرخيصة والبيانات الفنية؛ الفشل لا يحمل `sha256` ولا `technical`
+      if: { properties: { result: { const: verified } } }
+      then:
+        required: [sha256, size_bytes, head_sha256, tail_sha256, technical]
+        properties: { technical: { required: [duration_ms, start_pts_us] } }
+      else: { not: { anyOf: [{ required: [sha256] }, { required: [technical] }] } }
+
+    MediaVerificationResult:
+      x-internal: true
+      type: object
+      required: [state, file_id, receipt_number, failure_reason]
+      properties:
+        state: { type: string, enum: [verified, failed] }
+        file_id: { type: [string, "null"], format: uuid }
+        receipt_number: { $ref: "#/components/schemas/ReceiptNumber" }
+        failure_reason: { type: [string, "null"], enum: [checksum_mismatch, invalid_file, expired, aborted, storage_error, null] }
+
+    MediaDerivative:
+      x-internal: true
+      type: object
+      additionalProperties: false
+      required: [kind, storage_key, sha256, size_bytes, technical]
+      description: >-
+        `proxy` و`hls` و`audio` مشتقات زمنية: `technical` يحمل `duration_ms` و`start_pts_us`. `thumbnail` صورة (الملصق
+        أو ورقة اللقطات): `duration_ms` اختياري، و`width` و`height` إلزاميان غير فارغين، و`mime_type` إلزامي. `proxy_mode`
+        يكتبه الخادم `normal` للنسخة الخفيفة وحدها و`NULL` لغيرها.
+      properties:
+        kind: { type: string, enum: [proxy, thumbnail, hls, audio] }
+        storage_key: { type: string, minLength: 1, maxLength: 1024, pattern: "^[A-Za-z0-9/_.-]+$" }
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        size_bytes: { type: integer, minimum: 1 }
+        mime_type: { type: string, enum: [image/jpeg, image/webp, video/mp4, application/vnd.apple.mpegurl, audio/mp4] }
+        technical: { $ref: "#/components/schemas/MediaTechnical" }
+      if: { properties: { kind: { const: thumbnail } } }
+      then:
+        required: [mime_type]
+        properties:
+          mime_type: { enum: [image/jpeg, image/webp] }
+          technical:
+            required: [width, height]
+            properties: { width: { type: integer }, height: { type: integer } }
+      else: { properties: { technical: { required: [duration_ms, start_pts_us] } } }
+
     FormVersionSummary:
       type: object
       required: [version, published_at, field_count]
@@ -1660,6 +2334,10 @@ components:
           enum: [assigned, acknowledged, null]
           description: للمهام فقط؛ «أُسند» ثم «أقرّ الاستلام» حين يضغط المستلم
         escalation_level: { type: integer, minimum: 0, description: 0 = لم يُصعَّد }
+        recovery_request_id:
+          type: [string, "null"]
+          format: uuid
+          description: لإشعارات `auth.recovery_*` فقط؛ يفتح منه المشرف طلب الاعتماد (أُضيف في v0.1)
         created_at: { type: string, format: date-time }
         read_at: { type: [string, "null"], format: date-time }
         acknowledged_at: { type: [string, "null"], format: date-time }

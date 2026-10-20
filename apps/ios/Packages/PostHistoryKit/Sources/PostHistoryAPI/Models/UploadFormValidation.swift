@@ -35,7 +35,7 @@ public struct UploadFormValidation: Sendable, Codable, Hashable {
     public var maxItems: Int?
     /** attachment: أنواع MIME المقبولة */
     public var accept: [String]?
-    /** attachment: الحد الأقصى لحجم المرفق الواحد */
+    /** attachment: الحد الأقصى لحجم المرفق الواحد بالبايت (MiB = 1,048,576) */
     public var maxSizeBytes: Int?
     /** datetime: أقدم تاريخ مقبول */
     public var notBefore: Date?

@@ -69,6 +69,7 @@ open class MaterialsAPI {
      - Bearer Token:
        - type: http
        - name: bearerAuth
+     - responseHeaders: [ETag(String)]
      - parameter id: (path) معرّف المادة 
      - parameter apiConfiguration: The configuration for the http request.
      - returns: RequestBuilder<Material> 
@@ -90,6 +91,55 @@ open class MaterialsAPI {
         let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
 
         let localVariableRequestBuilder: RequestBuilder<Material>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     رابط قراءة موقّع قصير العمر لمشتق من المادة (v0.1)
+     
+     - parameter id: (path) معرّف المادة 
+     - parameter fileId: (path) ملف مشتق من ملفات المادة 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: FileDownloadUrl
+     */
+    open class func getMaterialFileDownloadUrl(id: UUID, fileId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> FileDownloadUrl {
+        return try await getMaterialFileDownloadUrlWithRequestBuilder(id: id, fileId: fileId, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     رابط قراءة موقّع قصير العمر لمشتق من المادة (v0.1)
+     - GET /materials/{id}/files/{file_id}/download-url
+     - للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail`) في حالة `verified`. الأصل والملاحظة الصوتية لا يُعطيان رابطًا هنا (`404`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`).
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - responseHeaders: [Cache-Control(String)]
+     - parameter id: (path) معرّف المادة 
+     - parameter fileId: (path) ملف مشتق من ملفات المادة 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<FileDownloadUrl> 
+     */
+    open class func getMaterialFileDownloadUrlWithRequestBuilder(id: UUID, fileId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<FileDownloadUrl> {
+        var localVariablePath = "/materials/{id}/files/{file_id}/download-url"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let fileIdPreEscape = "\(APIHelper.mapValueToPathItem(fileId))"
+        let fileIdPostEscape = fileIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{file_id}", with: fileIdPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<FileDownloadUrl>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
@@ -256,11 +306,12 @@ open class MaterialsAPI {
      
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
      - parameter id: (path) معرّف المادة 
+     - parameter ifMatch: (header) قيمة &#x60;ETag&#x60; الأخيرة التي رآها العميل (&#x60;\&quot;&lt;row_version&gt;\&quot;&#x60; للمادة، &#x60;\&quot;&lt;version&gt;\&quot;&#x60; للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ &#x60;412 precondition_failed&#x60; دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. (optional)
      - parameter apiConfiguration: The configuration for the http request.
      - returns: Reservation
      */
-    open class func reserveMaterial(idempotencyKey: String, id: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> Reservation {
-        return try await reserveMaterialWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, apiConfiguration: apiConfiguration).execute().body
+    open class func reserveMaterial(idempotencyKey: String, id: UUID, ifMatch: String? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> Reservation {
+        return try await reserveMaterialWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, ifMatch: ifMatch, apiConfiguration: apiConfiguration).execute().body
     }
 
     /**
@@ -272,10 +323,11 @@ open class MaterialsAPI {
        - name: bearerAuth
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
      - parameter id: (path) معرّف المادة 
+     - parameter ifMatch: (header) قيمة &#x60;ETag&#x60; الأخيرة التي رآها العميل (&#x60;\&quot;&lt;row_version&gt;\&quot;&#x60; للمادة، &#x60;\&quot;&lt;version&gt;\&quot;&#x60; للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ &#x60;412 precondition_failed&#x60; دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. (optional)
      - parameter apiConfiguration: The configuration for the http request.
      - returns: RequestBuilder<Reservation> 
      */
-    open class func reserveMaterialWithRequestBuilder(idempotencyKey: String, id: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Reservation> {
+    open class func reserveMaterialWithRequestBuilder(idempotencyKey: String, id: UUID, ifMatch: String? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Reservation> {
         var localVariablePath = "/materials/{id}/reservation"
         let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
         let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
@@ -287,6 +339,7 @@ open class MaterialsAPI {
 
         let localVariableNillableHeaders: [String: (any Sendable)?] = [
             "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+            "If-Match": ifMatch?.asParameter(codableHelper: apiConfiguration.codableHelper),
         ]
 
         let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
@@ -302,11 +355,12 @@ open class MaterialsAPI {
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
      - parameter id: (path) معرّف المادة 
      - parameter contributorsSet: (body)  
+     - parameter ifMatch: (header) قيمة &#x60;ETag&#x60; الأخيرة التي رآها العميل (&#x60;\&quot;&lt;row_version&gt;\&quot;&#x60; للمادة، &#x60;\&quot;&lt;version&gt;\&quot;&#x60; للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ &#x60;412 precondition_failed&#x60; دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. (optional)
      - parameter apiConfiguration: The configuration for the http request.
      - returns: Material
      */
-    open class func setContributors(idempotencyKey: String, id: UUID, contributorsSet: ContributorsSet, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> Material {
-        return try await setContributorsWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, contributorsSet: contributorsSet, apiConfiguration: apiConfiguration).execute().body
+    open class func setContributors(idempotencyKey: String, id: UUID, contributorsSet: ContributorsSet, ifMatch: String? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> Material {
+        return try await setContributorsWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, contributorsSet: contributorsSet, ifMatch: ifMatch, apiConfiguration: apiConfiguration).execute().body
     }
 
     /**
@@ -316,13 +370,15 @@ open class MaterialsAPI {
      - Bearer Token:
        - type: http
        - name: bearerAuth
+     - responseHeaders: [ETag(String)]
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
      - parameter id: (path) معرّف المادة 
      - parameter contributorsSet: (body)  
+     - parameter ifMatch: (header) قيمة &#x60;ETag&#x60; الأخيرة التي رآها العميل (&#x60;\&quot;&lt;row_version&gt;\&quot;&#x60; للمادة، &#x60;\&quot;&lt;version&gt;\&quot;&#x60; للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ &#x60;412 precondition_failed&#x60; دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. (optional)
      - parameter apiConfiguration: The configuration for the http request.
      - returns: RequestBuilder<Material> 
      */
-    open class func setContributorsWithRequestBuilder(idempotencyKey: String, id: UUID, contributorsSet: ContributorsSet, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Material> {
+    open class func setContributorsWithRequestBuilder(idempotencyKey: String, id: UUID, contributorsSet: ContributorsSet, ifMatch: String? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Material> {
         var localVariablePath = "/materials/{id}/contributors"
         let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
         let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
@@ -335,6 +391,7 @@ open class MaterialsAPI {
         let localVariableNillableHeaders: [String: (any Sendable)?] = [
             "Content-Type": "application/json",
             "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+            "If-Match": ifMatch?.asParameter(codableHelper: apiConfiguration.codableHelper),
         ]
 
         let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
@@ -350,11 +407,12 @@ open class MaterialsAPI {
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
      - parameter id: (path) معرّف المادة 
      - parameter transition: (body)  
+     - parameter ifMatch: (header) قيمة &#x60;ETag&#x60; الأخيرة التي رآها العميل (&#x60;\&quot;&lt;row_version&gt;\&quot;&#x60; للمادة، &#x60;\&quot;&lt;version&gt;\&quot;&#x60; للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ &#x60;412 precondition_failed&#x60; دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. (optional)
      - parameter apiConfiguration: The configuration for the http request.
      - returns: Material
      */
-    open class func transitionMaterial(idempotencyKey: String, id: UUID, transition: Transition, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> Material {
-        return try await transitionMaterialWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, transition: transition, apiConfiguration: apiConfiguration).execute().body
+    open class func transitionMaterial(idempotencyKey: String, id: UUID, transition: Transition, ifMatch: String? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> Material {
+        return try await transitionMaterialWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, transition: transition, ifMatch: ifMatch, apiConfiguration: apiConfiguration).execute().body
     }
 
     /**
@@ -364,13 +422,15 @@ open class MaterialsAPI {
      - Bearer Token:
        - type: http
        - name: bearerAuth
+     - responseHeaders: [ETag(String)]
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
      - parameter id: (path) معرّف المادة 
      - parameter transition: (body)  
+     - parameter ifMatch: (header) قيمة &#x60;ETag&#x60; الأخيرة التي رآها العميل (&#x60;\&quot;&lt;row_version&gt;\&quot;&#x60; للمادة، &#x60;\&quot;&lt;version&gt;\&quot;&#x60; للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ &#x60;412 precondition_failed&#x60; دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. (optional)
      - parameter apiConfiguration: The configuration for the http request.
      - returns: RequestBuilder<Material> 
      */
-    open class func transitionMaterialWithRequestBuilder(idempotencyKey: String, id: UUID, transition: Transition, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Material> {
+    open class func transitionMaterialWithRequestBuilder(idempotencyKey: String, id: UUID, transition: Transition, ifMatch: String? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Material> {
         var localVariablePath = "/materials/{id}/transitions"
         let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
         let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
@@ -383,6 +443,7 @@ open class MaterialsAPI {
         let localVariableNillableHeaders: [String: (any Sendable)?] = [
             "Content-Type": "application/json",
             "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+            "If-Match": ifMatch?.asParameter(codableHelper: apiConfiguration.codableHelper),
         ]
 
         let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
@@ -398,11 +459,12 @@ open class MaterialsAPI {
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
      - parameter id: (path) معرّف المادة 
      - parameter materialUpdate: (body)  
+     - parameter ifMatch: (header) قيمة &#x60;ETag&#x60; الأخيرة التي رآها العميل (&#x60;\&quot;&lt;row_version&gt;\&quot;&#x60; للمادة، &#x60;\&quot;&lt;version&gt;\&quot;&#x60; للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ &#x60;412 precondition_failed&#x60; دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. (optional)
      - parameter apiConfiguration: The configuration for the http request.
      - returns: Material
      */
-    open class func updateMaterial(idempotencyKey: String, id: UUID, materialUpdate: MaterialUpdate, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> Material {
-        return try await updateMaterialWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, materialUpdate: materialUpdate, apiConfiguration: apiConfiguration).execute().body
+    open class func updateMaterial(idempotencyKey: String, id: UUID, materialUpdate: MaterialUpdate, ifMatch: String? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> Material {
+        return try await updateMaterialWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, materialUpdate: materialUpdate, ifMatch: ifMatch, apiConfiguration: apiConfiguration).execute().body
     }
 
     /**
@@ -412,13 +474,15 @@ open class MaterialsAPI {
      - Bearer Token:
        - type: http
        - name: bearerAuth
+     - responseHeaders: [ETag(String)]
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
      - parameter id: (path) معرّف المادة 
      - parameter materialUpdate: (body)  
+     - parameter ifMatch: (header) قيمة &#x60;ETag&#x60; الأخيرة التي رآها العميل (&#x60;\&quot;&lt;row_version&gt;\&quot;&#x60; للمادة، &#x60;\&quot;&lt;version&gt;\&quot;&#x60; للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ &#x60;412 precondition_failed&#x60; دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. (optional)
      - parameter apiConfiguration: The configuration for the http request.
      - returns: RequestBuilder<Material> 
      */
-    open class func updateMaterialWithRequestBuilder(idempotencyKey: String, id: UUID, materialUpdate: MaterialUpdate, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Material> {
+    open class func updateMaterialWithRequestBuilder(idempotencyKey: String, id: UUID, materialUpdate: MaterialUpdate, ifMatch: String? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Material> {
         var localVariablePath = "/materials/{id}"
         let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
         let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
@@ -431,6 +495,7 @@ open class MaterialsAPI {
         let localVariableNillableHeaders: [String: (any Sendable)?] = [
             "Content-Type": "application/json",
             "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+            "If-Match": ifMatch?.asParameter(codableHelper: apiConfiguration.codableHelper),
         ]
 
         let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)

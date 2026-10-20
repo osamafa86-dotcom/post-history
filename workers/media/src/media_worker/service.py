@@ -76,6 +76,8 @@ class Config:
     max_deliveries: int = 5
     auth_backoff_max_s: float = 300.0
     auth_isolate_after_s: float = 1800.0
+    enable_hls: bool = False
+    enable_phash: bool = False
 
     @classmethod
     def from_env(cls) -> Config:
@@ -91,6 +93,8 @@ class Config:
             max_deliveries=int(e.get("MEDIA_MAX_DELIVERIES", 5)),
             auth_backoff_max_s=float(e.get("MEDIA_AUTH_BACKOFF_MAX_S", 300)),
             auth_isolate_after_s=float(e.get("MEDIA_AUTH_ISOLATE_AFTER_S", 1800)),
+            enable_hls=e.get("MEDIA_ENABLE_HLS", "false").lower() == "true",
+            enable_phash=e.get("MEDIA_ENABLE_PHASH", "false").lower() == "true",
         )
 
 
@@ -231,7 +235,7 @@ def main() -> None:
         log.warning("removed %d stale job directories from scratch", removed)
     storage = S3Storage(cfg.s3_endpoint, cfg.s3_region, cfg.s3_access_key, cfg.s3_secret_key, cfg.bucket_derived)
     jobs = Jobs(InternalApi(cfg.api_url, cfg.token), storage, Buckets(cfg.bucket_uploads, cfg.bucket_derived),
-                cfg.scratch)
+                cfg.scratch, enable_hls=cfg.enable_hls, enable_phash=cfg.enable_phash)
     svc = Service(redis.Redis.from_url(cfg.redis_url, decode_responses=True), jobs, cfg.consumer, cfg.block_ms,
                   cfg.claim_idle_ms, cfg.max_deliveries, cfg.auth_backoff_max_s,
                   auth_isolate_after_s=cfg.auth_isolate_after_s)

@@ -15,15 +15,18 @@ public struct Me: Sendable, Codable, Hashable {
     /** مكتب المستخدم */
     public var officeId: UUID?
     public var totpEnabled: Bool
+    /** الجلسة مقيّدة بعد استعادة الحساب حتى `/auth/totp/confirm`؛ غيابه = false (أُضيف في v0.1) */
+    public var credentialResetRequired: Bool?
     public var roles: [Role]
     /** الصلاحيات المستقلة الممنوحة حاليًا؛ فارغة لمعظم المستخدمين */
     public var permissions: Set<Permission>
 
-    public init(userId: UUID, email: String, officeId: UUID? = nil, totpEnabled: Bool, roles: [Role], permissions: Set<Permission>) {
+    public init(userId: UUID, email: String, officeId: UUID? = nil, totpEnabled: Bool, credentialResetRequired: Bool? = nil, roles: [Role], permissions: Set<Permission>) {
         self.userId = userId
         self.email = email
         self.officeId = officeId
         self.totpEnabled = totpEnabled
+        self.credentialResetRequired = credentialResetRequired
         self.roles = roles
         self.permissions = permissions
     }
@@ -33,6 +36,7 @@ public struct Me: Sendable, Codable, Hashable {
         case email
         case officeId = "office_id"
         case totpEnabled = "totp_enabled"
+        case credentialResetRequired = "credential_reset_required"
         case roles
         case permissions
     }
@@ -45,6 +49,7 @@ public struct Me: Sendable, Codable, Hashable {
         try container.encode(email, forKey: .email)
         try container.encodeIfPresent(officeId, forKey: .officeId)
         try container.encode(totpEnabled, forKey: .totpEnabled)
+        try container.encodeIfPresent(credentialResetRequired, forKey: .credentialResetRequired)
         try container.encode(roles, forKey: .roles)
         try container.encode(permissions, forKey: .permissions)
     }
