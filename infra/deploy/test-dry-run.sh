@@ -103,7 +103,8 @@ age -d -i "$W/owner.key" "$E/trial.env.age" | cmp -s - "$U" || fail "the owner k
 token="$(age -d -i "$W/owner.key" "$E/break-glass.age")"
 [ "$(printf '%s' "$token" | sha256sum | cut -c1-64)" = "$(sed -n 's/^BREAK_GLASS_TOKEN_SHA256=//p' "$U")" ] || fail "break-glass digest"
 age -d -i "$E/host.agekey" "$E/break-glass.age" >/dev/null 2>&1 && fail "the host key opens the break-glass token"
-pub="$(sed -n 's/^INGEST_TOKEN_PUBLIC_KEY=//p' "$U")"
+pub="$(sed -n 's/^INGEST_TOKEN_PUBLIC_KEYS=k1://p' "$U")"
+[ "$(sed -n 's/^INGEST_TOKEN_KEY_ID=//p' "$U")" = k1 ] || fail "signing kid is not the gate's kid"
 printf '%s' "$pub" | base64 -d | openssl pkey -pubin -inform DER -noout 2>/dev/null || fail "ingest public key is not SPKI"
 echo "secrets complete, unprinted, owner-recoverable: ok"
 

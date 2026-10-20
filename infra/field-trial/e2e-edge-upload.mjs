@@ -27,7 +27,7 @@ const call = (name, ip, method, path, headers, body) => new Promise((resolve, re
 
 const mint = (sid) => { // رمز اختبار بالمفتاح المولَّد للتجربة المحلية؛ في الإنتاج يصدره الخادم بعد شهادة الجهاز
   const now = Math.floor(Date.now() / 1000);
-  const input = `${b64u(JSON.stringify({ alg: "ES256", typ: "JWT" }))}.${b64u(JSON.stringify({ aud: "ingest", sid, iat: now, exp: now + 600, jti: b64u(crypto.randomBytes(12)) }))}`;
+  const input = `${b64u(JSON.stringify({ alg: "ES256", typ: "JWT", kid: env.INGEST_KID || "k1" }))}.${b64u(JSON.stringify({ aud: "ingest", sid, iat: now, exp: now + 600, jti: b64u(crypto.randomBytes(12)) }))}`;
   const sig = crypto.sign("sha256", Buffer.from(input), { key: fs.readFileSync(env.INGEST_SIGNING_KEY), dsaEncoding: "ieee-p1363" });
   return `${input}.${b64u(sig)}`;
 };

@@ -237,6 +237,8 @@ jobs:
           DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB" \
           API_URL="http://127.0.0.1:$API_PORT/v1" TUS_URL="http://127.0.0.1:$TUSD_PORT/files/" \
             node infra/compose/e2e-duplicate-create.mjs
+      - name: Server and ingest gate together, attestation in test mode, two-key rotation (ADR 0011, SEC-07)
+        run: infra/ingest/e2e-attested.sh
       - name: Media worker hardened, on the media network only, reaches /internal/media (ADR 0006)
         run: infra/compose/smoke-media.sh
       - name: Tear down

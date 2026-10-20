@@ -160,7 +160,7 @@ else
     echo "S3_MEDIA_ACCESS_KEY=media-worker"
     echo "S3_MEDIA_SECRET_KEY=$(hex 32)"
     echo "UPLOAD_VERIFIER=external"
-    echo "INGEST_TOKEN_PUBLIC_KEY=$(printf '%s\n' "$ingest_priv" | openssl pkey -pubout -outform DER | base64 -w0)"
+    echo "INGEST_TOKEN_PUBLIC_KEYS=k1:$(printf '%s\n' "$ingest_priv" | openssl pkey -pubout -outform DER | base64 -w0)"
     echo "INGEST_TOKEN_SIGNING_KEY=$(printf '%s\n' "$ingest_priv" | openssl pkcs8 -topk8 -nocrypt -outform DER | base64 -w0)"
     echo "INGEST_TOKEN_KEY_ID=k1"
     echo "INGEST_PORT=8443"

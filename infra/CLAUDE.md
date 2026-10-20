@@ -35,7 +35,7 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 - `.part` المؤقت يحفظ ما دون الحد الأدنى؛ القرص المؤقت لخادم الرفع = الرفعات المتزامنة × حجم الجزء، ويُقاس في اختبار الحمل.
 - خطّافات tusd (`pre-create`، `post-finish`) إلى `TUSD_HOOK_URL/TUSD_HOOK_SECRET` (ADR `SEC-06`). `infra/tusd/entrypoint.sh` يحجب الرمز من سجل tusd، والوكيل يحجب أجسام `500` لأن tusd يضع فيها عنوان الخطّاف.
 - علم المسودة التجريبي (`EnableExperimentalProtocol`) خلف متغير بيئة لتجربة iOS فقط.
-- نطاق الرفع: خلف وكيل Cloudflare افتراضيًا (الأجزاء 1–10 ميغابايت تحت حد جسم الطلب). خيار `ingest.` غير المُوكَّل نموذج أولي في `infra/ingest/` (ADR 0011): بوابة nginx+njs تتحقق في `auth_request` من رمز ES256 قصير (≤ 15 دقيقة) يصدره الخادم بعد شهادة الجهاز، ومربوط بجلسة الرفع. البوابة تحمل المفتاح العام وحده. الاختبار `infra/ingest/test-gate.sh`، ومحاكاة الحجب `tools/netlab/blocking.py`.
+- نطاق الرفع: خلف وكيل Cloudflare افتراضيًا (الأجزاء 1–10 ميغابايت تحت حد جسم الطلب). خيار `ingest.` غير المُوكَّل نموذج أولي في `infra/ingest/` (ADR 0011): بوابة nginx+njs تتحقق في `auth_request` من رمز ES256 قصير (≤ 15 دقيقة) يصدره الخادم بعد شهادة الجهاز، ومربوط بجلسة الرفع. البوابة تحمل المفاتيح العامة وحدها بمعرّفاتها (`INGEST_TOKEN_PUBLIC_KEYS="kid:spki,..."`؛ مفتاحان أثناء التدوير). الاختبار `infra/ingest/test-gate.sh`، ومع الخادم (ATTESTATION_MODE=test) `infra/ingest/e2e-attested.sh`، ومحاكاة الحجب `tools/netlab/blocking.py`.
 
 ## الاستقلال عن المزوّد
 
@@ -43,7 +43,7 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 
 ## CI
 
-- `contracts`: redocly lint + ajv compile. `secrets`: gitleaks. `compose`: config + pull + `infra/compose/smoke.sh` + `infra/compose/e2e-hooks.sh` (مسار الخطّاف مع الخادم) + `infra/compose/smoke-media.sh` (تحصين العامل وعزله) + `infra/ingest/test-gate.sh` (بوابة ingest). `api`: يشغّل MinIO المثبّت لاختبار محوّل S3، و`npm audit --audit-level=high` (وكذلك `acceptance`).
+- `contracts`: redocly lint + ajv compile. `secrets`: gitleaks. `compose`: config + pull + `infra/compose/smoke.sh` + `infra/compose/e2e-hooks.sh` (مسار الخطّاف مع الخادم) + `infra/compose/smoke-media.sh` (تحصين العامل وعزله) + `infra/ingest/test-gate.sh` (بوابة ingest) + `infra/ingest/e2e-attested.sh` (الخادم والبوابة معًا). `api`: يشغّل MinIO المثبّت لاختبار محوّل S3، و`npm audit --audit-level=high` (وكذلك `acceptance`).
 - `field-trial` (`.github/workflows/field-trial.yml`): `infra/field-trial/smoke-trial.sh` على كل PR يمس `infra/**` أو `apps/api/src/db/**`.
 - `netlab` (`.github/workflows/netlab.yml`): فحص قصير لـ field-weak بوضع netem ومحاكاة الحجب (`blocking.py`) على كل PR يمس netlab أو compose أو ingest، وقياس كامل يدويًا.
 - Dependabot (`.github/dependabot.yml`): طلب أسبوعي لـ minor+patch لكل مجلد، والإصدارات الرئيسية مُتجاهلة حتى ما بعد التجربة الميدانية. لذلك يحرس `npm audit` الثغرات العالية، وتُراجَع تنبيهات Dependabot أسبوعيًا ويُبلَّغ المنسّق بما يستدعي ترقية رئيسية.
