@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "tool": "netlab",
+  "role": "android",
+  "test_name": "field-network-upload",
+  "decision_ref": 3,
+  "started_at": "2026-10-20T03:11:47Z",
+  "ended_at": "2026-10-20T04:57:07Z",
+  "result": "partial",
+  "device": {
+    "platform": "server",
+    "model": "apps/android UploadEngine + TusTransport (core on the JVM via netlab-runner, tus-java-client 0.5.1)",
+    "os_version": "Linux 6.17.0-1022-azure"
+  },
+  "network": {
+    "profile": "field-weak",
+    "uplink_kbps": 500,
+    "loss_pct": 30,
+    "disconnect_every_s": 120,
+    "longest_connected_window_s": 709.3
+  },
+  "upload_path": "tusd",
+  "file": {
+    "size_bytes": 20971520,
+    "codec": "synthetic-random"
+  },
+  "metrics": {
+    "upload_complete": true,
+    "checksum_match": true,
+    "bytes_uploaded": 20971520,
+    "elapsed_s": 6320.9,
+    "goodput_kbps": 26.5,
+    "resumes": 30,
+    "connection_failures": 30,
+    "longest_connected_window_s": 709.3,
+    "client_chunk_bytes": 262144,
+    "client_timeout_s": 90,
+    "parts_ok": 58,
+    "parts_failed": 30,
+    "loss_mode": "netem",
+    "part_time_s_p50": 55.99,
+    "part_time_s_p90": 87.79,
+    "part_time_s_max": 93.94,
+    "part_times_s": "53.1,47.3,60.2,77.7,52.2,58.2,43.9,56.9,80.6,54.6,88.9,50.0,41.8,72.4,55.2,48.4,93.9,53.7,90.2,45.5,79.7,44.4,77.8,54.9,83.7,57.6,85.1,36.4,87.1,57.2,51.4,45.3,83.7,45.7,61.5,87.8,48.2,82.0,82.3,55.3,83.8,50.9,74.7,48.9,41.9,90.0,37.3,40.1,26.8,52.5,79.7,56.6,75.3,52.2,36.0,89.4,89.5,43.9",
+    "events": "120.1s:blackout-start;140.1s:blackout-end;240.1s:blackout-start;260.1s:blackout-end;360.1s:blackout-start;380.1s:blackout-end;480.1s:blackout-start;500.1s:blackout-end;600.1s:blackout-start;620.1s:blackout-end;720.1s:blackout-start;740.1s:blackout-end;840.1s:blackout-start;860.1s:blackout-end;960.1s:blackout-start;980.1s:blackout-end;1080.1s:blackout-start;1100.1s:blackout-end;1200.1s:blackout-start;1220.1s:blackout-end;1320.1s:blackout-start;1340.1s:blackout-end;1440.1s:blackout-start;1460.1s:blackout-end;1560.1s:blackout-start;1580.1s:blackout-end;1680.1s:blackout-start;1700.1s:blackout-end;1800.1s:blackout-start;1820.1s:blackout-end;1920.1s:blackout-start;1940.1s:blackout-end;2040.1s:blackout-start;2060.1s:blackout-end;2160.1s:blackout-start;2180.1s:blackout-end;2280.1s:blackout-start;2300.1s:blackout-end;2400.1s:blackout-start;2420.1s:blackout-end;2520.1s:blackout-start;2540.1s:blackout-end;2640.1s:blackout-start;2660.1s:blackout-end;2760.1s:blackout-start;2780.1s:blackout-end;2880.1s:blackout-start;2900.1s:blackout-end;3000.1s:blackout-start;3020.1s:blackout-end;3120.1s:blackout-start;3140.1s:blackout-end;3240.1s:blackout-start;3260.1s:blackout-end;3360.1s:blackout-start;3380.1s:blackout-end;3480.1s:blackout-start;3500.1s:blackout-end;3600.1s:blackout-start;3620.1s:blackout-end;3720.1s:blackout-start;3740.1s:blackout-end;3840.1s:blackout-start;3860.1s:blackout-end;3960.1s:blackout-start;3980.1s:blackout-end;4080.1s:blackout-start;4100.1s:blackout-end;4200.1s:blackout-start;4220.1s:blackout-end;4320.1s:blackout-start;4340.1s:blackout-end;4440.1s:blackout-start;4460.1s:blackout-end;4560.1s:blackout-start;4580.1s:blackout-end;4680.1s:blackout-start;4700.1s:blackout-end;4800.1s:blackout-start;4820.1s:blackout-end;4920.1s:blackout-start;4940.1s:blackout-end;5040.1s:blackout-start;5060.1s:blackout-end;5160.1s:blackout-start;5180.1s:blackout-end;5280.1s:blackout-start;5300.1s:blackout-end;5400.1s:blackout-start;5420.1s:blackout-end;5520.1s:blackout-start;5540.1s:blackout-end;5640.1s:blackout-start;5660.1s:blackout-end;5760.1s:blackout-start;5780.1s:blackout-end;5880.1s:blackout-start;5900.1s:blackout-end;6000.1s:blackout-start;6020.1s:blackout-end;6120.1s:blackout-start;6140.1s:blackout-end;6240.1s:blackout-start;6260.1s:blackout-end",
+    "bytes_lost_on_resume": 0,
+    "goodput_connected_kbps": 31.8,
+    "mathis_limit_kbps": 86.0,
+    "efficiency_vs_mathis": 0.37,
+    "reference_goodput_connected_kbps": 39.5,
+    "reference_source": "same run (1200s python client, 5156845 bytes)",
+    "reference_age_days": 0.0,
+    "efficiency_vs_reference": 0.805,
+    "stage_a_ok": true
+  },
+  "notes": "toxiproxy 2.12.0 -> nginx tusd-proxy -> tusd v2.10.1 -> MinIO (local compose). Client: apps/android UploadEngine + TusTransport (core on the JVM via netlab-runner, tus-java-client 0.5.1), time box 7200s, event scale 1.0. loss 30% + delay 300ms via tc netem in toxiproxy's netns. netlab never records pass: field-network-upload stage (b) is 1 GB on a real device and network (stage (a), ADR 0007 as amended 2026-10-20: connected-time goodput >= 70% of the python reference client under the same conditions, zero bytes lost on resume, checksum match if complete, netem; efficiency_vs_mathis is informational). Connected window = client-observed time from first successful request to next failure."
+}
