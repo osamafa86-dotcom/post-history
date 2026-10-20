@@ -1,16 +1,15 @@
 name: netlab-android
 
 # Stage (a) of field-network-upload for the Android upload core: the app's UploadEngine (apps/android/core) runs
-# on the JVM (apps/android/netlab-runner) against the same toxiproxy/netem stack as tools/netlab, driven by
-# apps/android/netlab/measure.py, which reuses netlab.py as a module and reads the runner's session summary in
-# netlab's own terms (parts, windows, resumes, bytes lost on resume; efficiency vs the Mathis limit and the MinIO
-# checksum are netlab's).
+# on the JVM (apps/android/netlab-runner) and is measured by tools/netlab/netlab.py --client-cmd through
+# apps/android/netlab/measure.sh, so every metric, the python reference client run first under the same
+# conditions (--reference-seconds), the MinIO checksum and the stage (a) verdict come from netlab (ADR 0007).
 # - pull_request (Android core, the runner, the measurement script, netlab.py or this file changed): one short
-#   scenario (office, 100 MB, 240 s) proves the runner still works and writes a valid result. One runner, minutes.
-# - workflow_dispatch: the real measurement, one scenario or all three. field-weak at the Mathis limit
-#   (~86 kbit/s at 300 ms / 30% loss) needs hours for 100 MB; size_mb and max_seconds bound it.
-# The result is never pass: partial, or fail when netlab's stage (a) rule says so. The result JSON is printed,
-# validated against contracts/schemas/measurement.json and uploaded as an artifact to commit to
+#   scenario (office, 100 MB, 240 s, no reference) proves the runner still works and writes a valid result.
+# - workflow_dispatch: the real measurement, one scenario or all three, each with its own size (field-weak at
+#   ~40 kbit/s needs about 70 min for 20 MB; field-switch needs >= 300 MB to cross a scheduled disconnect).
+# The result is never pass: partial when netlab's stage (a) rule holds, fail when it does not. The result JSON
+# is printed, validated against contracts/schemas/measurement.json and uploaded as an artifact to commit to
 # docs/measurements/netlab/ (no secrets or revealing data: synthetic file, local compose).
 on:
   pull_request:
@@ -24,13 +23,22 @@ on:
     inputs:
       scenario:
         description: office | field-switch | field-weak | all
-        default: field-weak
-      size_mb:
-        description: field-network-upload stage (a) is 100 MB; stage (b) (1 GB) is on a real device
+        default: all
+      office_mb:
+        description: file size for office (stage (a) is 100 MB)
         default: "100"
+      field_switch_mb:
+        description: file size for field-switch (>= 300 MB crosses the 180 s disconnect period)
+        default: "300"
+      field_weak_mb:
+        description: file size for field-weak (~40 kbit/s; 20 MB is about 70 min)
+        default: "20"
       max_seconds:
-        description: time box per scenario (GitHub job limit is 6h)
-        default: "19800"
+        description: time box per scenario for the measured client (GitHub job limit is 6h)
+        default: "7200"
+      reference_seconds:
+        description: python reference client first, same conditions, up to this long (0 = no reference, no verdict)
+        default: "1200"
 
 permissions:
   contents: read
@@ -50,8 +58,9 @@ jobs:
         scenario: ${{ github.event_name == 'pull_request' && fromJSON('["office"]') || (inputs.scenario == 'all' && fromJSON('["office","field-switch","field-weak"]') || fromJSON(format('["{0}"]', inputs.scenario))) }}
     env:
       NO_PROXY: 127.0.0.1,localhost
-      SIZE_MB: ${{ github.event_name == 'pull_request' && '100' || inputs.size_mb }}
+      SIZE_MB: ${{ github.event_name == 'pull_request' && '100' || (matrix.scenario == 'office' && inputs.office_mb || (matrix.scenario == 'field-switch' && inputs.field_switch_mb || inputs.field_weak_mb)) }}
       MAX_SECONDS: ${{ github.event_name == 'pull_request' && '240' || inputs.max_seconds }}
+      REFERENCE_SECONDS: ${{ github.event_name == 'pull_request' && '0' || inputs.reference_seconds }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Containers cannot load kernel modules: sch_netem must be loaded on the runner itself.
@@ -71,18 +80,17 @@ jobs:
         with:
           cache-read-only: true
       - name: Build the runner (generates the API client from contracts/openapi.yaml)
-        working-directory: apps/android
-        run: ./gradlew --no-daemon -q :netlab-runner:installDist
+        run: apps/android/netlab/measure.sh build
       - name: Start compose with the netlab overlay
         run: |
           cp infra/compose/.env.example infra/compose/.env
           sed -i "s/^TUSD_HOOK_SECRET=.*/TUSD_HOOK_SECRET=$(openssl rand -hex 32)/" infra/compose/.env
           docker compose -f infra/compose/docker-compose.yml -f tools/netlab/compose.netlab.yml up -d --wait
-      - name: Measure with the Android upload core (time-boxed)
+      - name: Measure with the Android upload core (reference client first, then time-boxed)
         run: |
           mkdir -p "$RUNNER_TEMP/out"
-          python3 apps/android/netlab/measure.py --scenario "${{ matrix.scenario }}" --size-mb "$SIZE_MB" --max-seconds "$MAX_SECONDS" \
-            --workdir "$RUNNER_TEMP" --out "$RUNNER_TEMP/out/$(date -u +%F)-android-upload-core-${{ matrix.scenario }}-${SIZE_MB}mb.json" || true
+          apps/android/netlab/measure.sh measure "${{ matrix.scenario }}" "$SIZE_MB" "$MAX_SECONDS" "$REFERENCE_SECONDS" \
+            "$RUNNER_TEMP/out/$(date -u +%F)-tusd-${{ matrix.scenario }}-${SIZE_MB}mb-android-core-gha.json"
       - name: Print and validate the result file (contracts/schemas/measurement.json)
         if: always()
         run: |
