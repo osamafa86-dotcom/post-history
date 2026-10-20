@@ -56,9 +56,10 @@ open class TusTransport(
     }
 
     /**
-     * Resumes from whatever `HEAD` reports and sends until the end, [shouldStop] or a failure. [onConfirmed]
-     * fires with each offset the server acknowledged (request boundaries), [onSent] with bytes written so
-     * far for display only. Returns the last confirmed offset.
+     * Resumes from whatever `HEAD` reports ([onHead]) and sends until the end, [shouldStop] or a failure.
+     * [requestPayloadBytes] is asked before every PATCH with the offset it opens at, so the engine can size
+     * requests to the link; [onConfirmed] fires with each offset the server acknowledged (request boundaries),
+     * [onSent] with bytes written so far for display only. Returns the last confirmed offset.
      */
     @Throws(IOException::class, ProtocolException::class)
     open fun upload(
@@ -66,9 +67,10 @@ open class TusTransport(
         token: String,
         sizeBytes: Long,
         openStream: () -> java.io.InputStream,
-        requestPayloadBytes: Int,
+        requestPayloadBytes: (offset: Long) -> Int,
         chunkBytes: Int = DEFAULT_CHUNK_BYTES,
         shouldStop: () -> Boolean = { false },
+        onHead: (Long) -> Unit = {},
         onConfirmed: (Long) -> Unit = {},
         onSent: (Long) -> Unit = {},
     ): Long {
@@ -76,21 +78,28 @@ open class TusTransport(
         val upload = TusUpload().apply { size = sizeBytes; inputStream = stream }
         val uploader = try { client(token).beginOrResumeUploadFromURL(upload, URL(uploadUrl)) } catch (e: Throwable) { runCatching { stream.close() }; if (e is Exception) observer.onFailure("head", e); throw e }
         uploader.setChunkSize(chunkBytes)
-        uploader.setRequestPayloadSize(requestPayloadBytes)
         var confirmed = uploader.offset
         var requestStart = confirmed
         observer.onHead(confirmed)
+        onHead(confirmed)
+        var payload = requestPayloadBytes(requestStart)
+        uploader.setRequestPayloadSize(payload)
         try {
             while (!shouldStop()) {
                 val n = uploader.uploadChunk()
                 if (n < 0) break
                 onSent(uploader.offset)
-                if (uploader.offset - requestStart >= requestPayloadBytes) {
+                if (uploader.offset - requestStart >= payload) {
                     // tus-java-client closed and checked this request inside uploadChunk(): acknowledged.
                     confirmed = uploader.offset
                     observer.onRequestDone(requestStart, confirmed)
                     requestStart = confirmed
                     onConfirmed(confirmed)
+                    if (confirmed < sizeBytes) {
+                        // No connection is open between requests: the next size may differ.
+                        payload = requestPayloadBytes(requestStart)
+                        uploader.setRequestPayloadSize(payload)
+                    }
                 }
             }
             // Ends the open request (if any) and verifies the server's final offset; a stop mid-request
