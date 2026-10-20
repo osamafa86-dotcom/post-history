@@ -68,7 +68,7 @@ open class AuthAPI {
     /**
      إكمال الاستعادة — كلمة مرور جديدة وبدء تسجيل مصادقة ثنائية جديدة
      - POST /auth/recovery/complete
-     - يستهلك رمز إعادة التعيين (مرة واحدة) ويضع كلمة المرور الجديدة ويولّد سر TOTP جديدًا، ويبطل السر القديم فورًا (فلا دخول عاديًا بعدها حتى `/auth/totp/confirm`). الجلسة الناتجة مقيّدة: المسموح فقط `/auth/totp/confirm` و`/auth/logout` و`/auth/me` و`/auth/refresh`، وكل مسار آخر يرد `403 credential_reset_required`. تحديث الجلسة المقيّدة مسموح حتى `reset_token_expires_at` للطلب ثم يُرفض `401`؛ ما بعد هذه المهلة دون تأكيد يستلزم استعادة جديدة من أولها. الرمز المستهلك أو المنتهي `401`.
+     - يستهلك رمز إعادة التعيين (مرة واحدة) ويضع كلمة المرور الجديدة ويولّد سر TOTP جديدًا، ويبطل السر القديم فورًا (فلا دخول عاديًا بعدها حتى `/auth/totp/confirm`). الجلسة الناتجة مقيّدة: المسموح فقط `/auth/totp/confirm` و`/auth/logout` و`/auth/me` و`/auth/refresh`، وكل مسار آخر يرد `403 credential_reset_required`. تحديث الجلسة المقيّدة مسموح حتى `reset_token_expires_at` للطلب ثم يُرفض `401`؛ ما بعد هذه المهلة دون تأكيد يستلزم استعادة جديدة من أولها. الرمز المستهلك أو المنتهي `401`. حد المعدل بمفتاح بصمة الرمز (لا بالعنوان وحده). الإكمال يُسجَّل في التدقيق (`recovery_request_id`، `approved_by`) ويُطلق حدث `auth.recovery_completed` الذي يُشعر القناة المسجّلة للحساب.
      - parameter completeRecoveryRequest: (body)  
      - parameter apiConfiguration: The configuration for the http request.
      - returns: RequestBuilder<RecoveryCompletion> 

@@ -48,7 +48,8 @@
         "notification.escalated",
         "auth.recovery_requested",
         "auth.recovery_approved",
-        "user.status_changed"
+        "user.status_changed",
+        "auth.recovery_completed"
       ]
     },
     "aggregate_type": {
@@ -492,7 +493,8 @@
           "type": {
             "enum": [
               "auth.recovery_requested",
-              "auth.recovery_approved"
+              "auth.recovery_approved",
+              "auth.recovery_completed"
             ]
           }
         }

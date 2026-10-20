@@ -16,9 +16,11 @@ DECLARE
   lost boolean := false;
 BEGIN
   IF TG_TABLE_NAME = 'user_roles' THEN
+    -- من صف OLD وحده: الفحص مؤجل إلى نهاية المعاملة، فالاعتماد على حالة المستخدم الآن يسمح بتعليقه ثم حذف دوره في
+    -- معاملة واحدة، وحذف المستخدم يحذف دوره بـ CASCADE قبل التقييم (مراجعة الأمن على #58). حذف دور مدير معلَّق حين
+    -- يكون عدد الفاعلين أقل من اثنين يُرفض أيضًا؛ ثمن مقبول لدفاع لا ثغرة فيه.
     lost := OLD.role = 'system_admin'
-            AND (TG_OP = 'DELETE' OR NEW.role <> 'system_admin' OR NEW.user_id <> OLD.user_id)
-            AND EXISTS (SELECT 1 FROM users WHERE id = OLD.user_id AND status = 'active');
+            AND (TG_OP = 'DELETE' OR NEW.role <> 'system_admin' OR NEW.user_id <> OLD.user_id);
   ELSE
     lost := OLD.status = 'active'
             AND (TG_OP = 'DELETE' OR NEW.status <> 'active')
