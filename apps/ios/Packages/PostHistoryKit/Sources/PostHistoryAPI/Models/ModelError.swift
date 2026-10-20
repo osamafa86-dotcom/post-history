@@ -32,6 +32,11 @@ public struct ModelError: Sendable, Codable, Hashable {
         case forbiddenRole = "forbidden_role"
         case adminQuorumRequired = "admin_quorum_required"
         case credentialResetRequired = "credential_reset_required"
+        case attestationFailed = "attestation_failed"
+        case challengeExpired = "challenge_expired"
+        case assertionReplay = "assertion_replay"
+        case attestationKeyConflict = "attestation_key_conflict"
+        case attestationUnavailable = "attestation_unavailable"
         case internalError = "internal_error"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
