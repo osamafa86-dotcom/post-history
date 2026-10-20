@@ -137,3 +137,37 @@ test("admin-quorum: a command that never started is not a refusal", async () => 
   const r = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: broken, QUORUM_CLI_TWO: "true", QUORUM_CLI_GUARD: "echo 'failed: Error' >&2; exit 1" }), { fetchImpl: fakeApi() }));
   assert.equal(r.code, 1);
 });
+
+import { checkTranscript, checkWebvtt, run as transcriptDraft } from "../scripts/transcript-draft.mjs";
+
+const RLM_ = "‏";
+const goodTranscript = () => ({
+  format_version: 1, status: "draft", language: "ar", route: "local", duration_s: 45.02, start_pts_us: 0, source: { file_id: "f", from: "proxy-480p.mp4" }, engine: { name: "faster-whisper" },
+  segments: [{ start: 0.5, end: 4, text: "نص", words: [{ start: 0.5, end: 1, text: "نص" }] }, { start: 5, end: 9, text: "آخر", words: [{ start: 5, end: 6, text: "آخر" }] }],
+});
+const goodVtt = () => `WEBVTT - draft, ar\n\n1\n00:00:00.500 --> 00:00:04.000\n${RLM_}سطر أول\n\n2\n00:00:05.000 --> 00:00:09.000\n${RLM_}سطر ثان\n${RLM_}وثالث\n`;
+
+test("transcript-draft: the draft JSON must be a local draft inside the clip, ordered, with nothing revealing", () => {
+  assert.deepEqual(checkTranscript(goodTranscript(), { durationS: 45 }), []);
+  const mut = (f) => { const d = goodTranscript(); f(d); return checkTranscript(d, { durationS: 45 }).join(" | "); };
+  assert.match(mut((d) => { d.status = "final"; }), /must be draft/);
+  assert.match(mut((d) => { d.route = "cloud"; }), /must be local/);
+  assert.match(mut((d) => { d.duration_s = 80; }), /duration_s/);
+  assert.match(mut((d) => { d.segments[1].end = 99; }), /outside the clip/);
+  assert.match(mut((d) => { d.segments[1].start = 0.1; }), /before the previous/);
+  assert.match(mut((d) => { d.segments[0].gps = "31.123456, 34.123456"; }), /revealing/);
+});
+
+test("transcript-draft: the WebVTT must be valid, ordered, non-overlapping, every line RLM-marked", () => {
+  assert.deepEqual(checkWebvtt(goodVtt()), []);
+  assert.match(checkWebvtt("hello").join(), /WEBVTT/);
+  assert.match(checkWebvtt(goodVtt().replace(`${RLM_}سطر ثان`, "سطر ثان")).join(), /RLM/);
+  assert.match(checkWebvtt(goodVtt().replace("00:00:05.000", "00:00:03.000")).join(), /overlaps/);
+  assert.match(checkWebvtt(goodVtt().replace("00:00:04.000", "00:00:00.100")).join(), /ends before/);
+  assert.match(checkWebvtt(goodVtt().replace("سطر أول", "a --> b")).join(), /-->/);
+});
+
+test("transcript-draft: pending without AI_ENABLE_TRANSCRIPT, environment error without the URLs", async () => {
+  assert.equal((await quiet(() => transcriptDraft(["--dry-run"], {}))).code, EXIT_PENDING);
+  assert.equal((await quiet(() => transcriptDraft(["--dry-run"], { AI_ENABLE_TRANSCRIPT: "1" }))).code, 2);
+});

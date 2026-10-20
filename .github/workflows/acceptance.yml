@@ -18,6 +18,9 @@ env:
   # Core-gate acceptance (reservation-conflict, optimistic-concurrency, admin-quorum, notification-delivery, download-url) against the
   # server work of #69 and #75, now on main. "0" turns the five back into PENDING (they print it and write nothing).
   CORE_ACCEPTANCE: "1"
+  # Local transcription worker (workers/ai, ADR 0020): transcript-draft runs in media e2e with the ai profile. Flip to "1" once infra swaps the
+  # ai-worker image in compose for workers/ai and the server side (#107, #108) is on main; until then the step is skipped.
+  AI_ENABLE_TRANSCRIPT: "0"
 
 jobs:
   acceptance:
@@ -181,13 +184,19 @@ jobs:
                  -e "s/^MEDIA_WORKER_TOKEN=.*/MEDIA_WORKER_TOKEN=$(openssl rand -hex 32)/" \
                  -e "s/^UPLOAD_VERIFIER=.*/UPLOAD_VERIFIER=external/" \
                  -e "s|^S3_PUBLIC_ENDPOINT=.*|S3_PUBLIC_ENDPOINT=http://127.0.0.1:9000|" \
+                 -e "s/^AI_WORKER_TOKEN=.*/AI_WORKER_TOKEN=$(openssl rand -hex 32)/" \
+                 -e "s/^S3_AI_ACCESS_KEY=.*/S3_AI_ACCESS_KEY=ai-worker-ci/" \
+                 -e "s/^S3_AI_SECRET_KEY=.*/S3_AI_SECRET_KEY=$(openssl rand -hex 16)/" \
                  -e "s/^S3_MEDIA_ACCESS_KEY=.*/S3_MEDIA_ACCESS_KEY=media-worker-ci/" \
                  -e "s/^S3_MEDIA_SECRET_KEY=.*/S3_MEDIA_SECRET_KEY=$(openssl rand -hex 16)/" \
                  -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" \
                  -e "s/^REDIS_PASSWORD=.*/REDIS_PASSWORD=$(openssl rand -hex 16)/" \
                  -e "s/^S3_SECRET_KEY=.*/S3_SECRET_KEY=$(openssl rand -hex 16)/" infra/compose/.env
       - name: Start the stack (API from source, tusd, MinIO, Redis, Postgres, media worker)
-        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media up -d --wait --build
+        run: |
+          profiles="--profile api --profile media"
+          [ "$AI_ENABLE_TRANSCRIPT" = 1 ] && profiles="$profiles --profile ai"
+          docker compose -f infra/compose/docker-compose.yml $profiles up -d --wait --build
       - name: Media pipeline end to end (results are printed and kept as an artifact; nothing is written to docs/measurements)
         run: |
           set -a; . infra/compose/.env; set +a
@@ -209,6 +218,17 @@ jobs:
           export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
           export DL_TOKENS="$(node -e "import('./live/seed.mjs').then(async (m) => { const s = await m.seed({ databaseUrl: process.env.DATABASE_URL, apiUrl: process.env.DL_API_URL }); console.log(JSON.stringify({ reporter: s.allTokens.reporter, reporter_b: s.allTokens.reporter_b })); })")"
           ACCEPTANCE_RESULTS_DIR="$RUNNER_TEMP/out" node scripts/download-url.mjs
+      - name: transcript-draft (the local transcription worker end to end; skipped until AI_ENABLE_TRANSCRIPT is "1")
+        if: env.AI_ENABLE_TRANSCRIPT == '1'
+        working-directory: tools/acceptance
+        run: |
+          sudo apt-get install -y -qq espeak-ng
+          set -a; . ../../infra/compose/.env; set +a
+          export TD_API_URL="http://127.0.0.1:$API_PORT/v1" TD_TUS_URL="http://127.0.0.1:$TUSD_PORT/files/"
+          export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
+          export TD_TOKENS="$(node -e "import('./live/seed.mjs').then(async (m) => { const s = await m.seed({ databaseUrl: process.env.DATABASE_URL, apiUrl: process.env.TD_API_URL }); console.log(JSON.stringify({ reporter: s.allTokens.reporter })); })")"
+          export TD_EGRESS_CMD="docker compose -f ../../infra/compose/docker-compose.yml --profile api --profile media --profile ai exec -T ai-worker python3 -c \"import socket; socket.create_connection(('1.1.1.1', 443), 3)\""
+          ACCEPTANCE_RESULTS_DIR="$RUNNER_TEMP/out" node scripts/transcript-draft.mjs
       - name: Remote session revocation (SEC-01; time to the first refusal on the API and on the upload path)
         run: |
           set -a; . infra/compose/.env; set +a
