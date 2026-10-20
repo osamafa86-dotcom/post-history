@@ -143,6 +143,8 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       for (const [key, type] of [["received", "upload.original_received"], ["verified", "upload.verified"], ["failed", "upload.failed"]]) {
         m[`inflight_event_${key}`] = (await eventsOfType(api, admin, type)).some((e) => e.aggregate_id === inflight.id);
       }
+      // the stronger finding: not only are the bytes accepted, the upload finishes and a receipt is issued to a revoked user
+      if (m.inflight_final_state === "verified" && m.inflight_receipt_issued) findings.push({ source: "upload completion after revocation", path: "post-finish → verification → receipt", kind: "inflight-completes" });
     }
     const verdict = (f) => (waivers.isWaived(f) ? "waived" : "open");
     for (const f of findings) {

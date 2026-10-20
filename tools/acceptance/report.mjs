@@ -5,7 +5,7 @@
 //   node report.mjs --out=REPORT.md       also write a file
 //   node report.mjs --summary             append to $GITHUB_STEP_SUMMARY (CI)
 import { appendFileSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 import { CATALOG, EXTRA } from "./lib/catalog.mjs";
 import { ROOT, parseArgs } from "./lib/measurement.mjs";
 
@@ -92,6 +92,14 @@ export function buildReport(entries, now = new Date()) {
     "| --- | --- | --- | --- | --- |",
     ...extra,
     "",
+    "## ثغرات معروفة مستثناة بإذن مكتوب (`tools/acceptance/waivers/`)",
+    "",
+    "تُبقي النتيجة `partial` وتصير فشلًا حين يُصلح السبب (الإعفاء يسقط).",
+    "",
+    "| الاختبار | الثغرة | رُفعت إلى |",
+    "| --- | --- | --- |",
+    ...waiverRows(),
+    "",
     "## كل النتائج (الأحدث لكل أداة/اختبار/ملف شبكة)",
     "",
     "| الاختبار | الأداة | الشبكة | الحالة | الأرقام | التاريخ | التشغيلات | الملف |",
@@ -100,6 +108,10 @@ export function buildReport(entries, now = new Date()) {
     "",
   ].join("\n");
 }
+
+const WAIVERS_DIR = join(ROOT, "tools/acceptance/waivers");
+const waiverRows = () => readdirSync(WAIVERS_DIR).filter((f) => f.endsWith(".json")).sort().flatMap((f) =>
+  JSON.parse(readFileSync(join(WAIVERS_DIR, f), "utf8")).map((w) => `| ${basename(f, ".json")} | ${w.kind}: ${w.source} | ${w.raised_to} |`));
 
 export function loadEntries(dir = join(ROOT, "docs/measurements")) {
   return [...files(dir)].map((f) => ({ doc: JSON.parse(readFileSync(f, "utf8")), file: relative(ROOT, f) }));

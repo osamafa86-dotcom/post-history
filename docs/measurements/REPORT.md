@@ -38,6 +38,20 @@
 | session-revocation | SEC-01 | automated | ◐ partial | رمز مبطَل (جلسة أو كل الجلسات) يُرفض على الخادم وعلى مسار الرفع خلال ثوانٍ، والرفع الجاري … |
 | emergency-wipe | SEC-01 | field | — لا نتيجة | على جهاز فعلي بعد المسح الطارئ: لا شيء من المخازن الموثّقة يبقى، ويتم المسح بلا اتصال خلال… |
 
+## ثغرات معروفة مستثناة بإذن مكتوب (`tools/acceptance/waivers/`)
+
+تُبقي النتيجة `partial` وتصير فشلًا حين يُصلح السبب (الإعفاء يسقط).
+
+| الاختبار | الثغرة | رُفعت إلى |
+| --- | --- | --- |
+| session-revocation | inflight-continues: tusd PATCH after revocation | coordinator (QA PR sec01-acceptance) |
+| session-revocation | inflight-completes: upload completion after revocation | coordinator, ticket for agent 2 (server) |
+| tenant-isolation | missing-response: GET /materials | contracts agent via orchestrator (QA PR acceptance-skeleton) |
+| tenant-isolation | missing-response: GET /materials/{id} | contracts agent via orchestrator (QA PR acceptance-skeleton) |
+| tenant-isolation | missing-response: GET /materials/{id}/transitions | contracts agent via orchestrator (QA PR acceptance-skeleton) |
+| tenant-isolation | missing-response: GET /uploads/{id} | contracts agent via orchestrator (QA PR acceptance-skeleton) |
+| tenant-isolation | missing-response: POST /uploads/{id}/complete | contracts agent via orchestrator (QA PR acceptance-skeleton) |
+
 ## كل النتائج (الأحدث لكل أداة/اختبار/ملف شبكة)
 
 | الاختبار | الأداة | الشبكة | الحالة | الأرقام | التاريخ | التشغيلات | الملف |
