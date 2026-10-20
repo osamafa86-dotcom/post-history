@@ -3,6 +3,7 @@ import type { Tx } from '../database/database.module';
 import { materials, notifications, offices, userRoles, users } from '../database/schema/schema';
 import { highestRank, type RoleName } from '../identity/principal';
 import type { OutboxRow } from '../outbox/outbox.dispatcher';
+import { enqueuePush } from '../push/push-delivery.worker';
 import { materialRef, notificationTitle, type Locale } from './messages';
 
 type Audience = 'supervisors' | 'producers' | 'reporter' | 'escalated_to';
@@ -11,21 +12,27 @@ export interface FanOutOptions {
   locale: Locale;
   /** مهلة الإقرار قبل التصعيد بالثواني لكل أولوية؛ العادية لا تُصعَّد. */
   escalationSeconds: { urgent: number; important: number };
+  /** PUSH_DELIVERY_ENABLED: يُوضع تسليم الدفع للإشعارات التي تطلبه قاعدتها */
+  push?: boolean;
 }
 
-/** من يُشعَر بكل نوع حدث، وهل هي مهمة («أُسند» ثم «أقرّ الاستلام»). ما ليس هنا لا يولّد إشعارًا. */
-const RULES: Record<string, { audience: Audience; assignment: boolean; skipUrgent?: boolean }> = {
+/**
+ * من يُشعَر بكل نوع حدث، وهل هي مهمة («أُسند» ثم «أقرّ الاستلام»)، وهل يُدفع إلى الهاتف (جدول «الاستلام والتنبيهات» في
+ * الخطة؛ قبول الإنتاج داخل المنصة واللوحة وحدهما). ما ليس هنا لا يولّد إشعارًا. القواعد التي تضبطها الإدارة تحل محل
+ * هذا الجدول حين يدخل جدولها (v0.2).
+ */
+const RULES: Record<string, { audience: Audience; assignment: boolean; push: boolean; skipUrgent?: boolean }> = {
   // المادة العاجلة تصل بحدثين؛ إشعار واحد من urgent_received
-  'material.created': { audience: 'supervisors', assignment: true, skipUrgent: true },
-  'material.urgent_received': { audience: 'supervisors', assignment: true },
-  'material.acknowledged': { audience: 'reporter', assignment: false },
-  'material.change_requested': { audience: 'reporter', assignment: false },
-  'material.accepted_for_production': { audience: 'producers', assignment: true },
-  'material.published': { audience: 'reporter', assignment: false },
+  'material.created': { audience: 'supervisors', assignment: true, push: true, skipUrgent: true },
+  'material.urgent_received': { audience: 'supervisors', assignment: true, push: true },
+  'material.acknowledged': { audience: 'reporter', assignment: false, push: true },
+  'material.change_requested': { audience: 'reporter', assignment: false, push: true },
+  'material.accepted_for_production': { audience: 'producers', assignment: true, push: false },
+  'material.published': { audience: 'reporter', assignment: false, push: true },
   // إشعار الاستلام: يصل حين يتحقق الأصل ويصدر رقم الإيصال
-  'upload.verified': { audience: 'reporter', assignment: false },
+  'upload.verified': { audience: 'reporter', assignment: false, push: true },
   // التصعيد يصل المستخدم المسمّى في الحدث؛ لا يُصعَّد هو نفسه (السلسلة تتقدم على الإشعار الأصلي)
-  'notification.escalated': { audience: 'escalated_to', assignment: true },
+  'notification.escalated': { audience: 'escalated_to', assignment: true, push: true },
 };
 
 /**
@@ -77,6 +84,7 @@ export async function fanOut(tx: Tx, event: OutboxRow, opts: FanOutOptions): Pro
     )
     .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
     .returning({ id: notifications.id });
+  if (opts.push && rule.push) await enqueuePush(tx, rows.map((r) => r.id));
   return rows.length;
 }
 
@@ -140,6 +148,7 @@ async function recoveryRequested(tx: Tx, event: OutboxRow, payload: Record<strin
     .values(rows.map((r) => ({ ...r, eventId: event.id, type: event.type, materialId: null, priority: 'important' })))
     .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
     .returning({ id: notifications.id });
+  if (opts.push) await enqueuePush(tx, inserted.map((r) => r.id));
   return inserted.length;
 }
 
@@ -168,5 +177,6 @@ async function recoveryCompleted(tx: Tx, event: OutboxRow, opts: FanOutOptions):
     })
     .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
     .returning({ id: notifications.id });
+  if (opts.push) await enqueuePush(tx, inserted.map((r) => r.id));
   return inserted.length;
 }

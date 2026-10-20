@@ -36,6 +36,7 @@ export class InboxOutboxPublisher implements OutboxPublisher {
     const created = await fanOut(tx, event, {
       locale: this.config.NOTIFICATION_LOCALE,
       escalationSeconds: { urgent: this.config.ESCALATION_URGENT_SECONDS, important: this.config.ESCALATION_IMPORTANT_SECONDS },
+      push: this.config.PUSH_DELIVERY_ENABLED,
     });
     const queued = this.config.UPLOAD_VERIFIER === 'external' && isMediaEvent(event);
     if (queued) await appendMediaEvent(this.redis, event, this.config.MEDIA_STREAM_MAXLEN);
