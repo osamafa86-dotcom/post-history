@@ -139,3 +139,66 @@ jobs:
             -s3-part-size=8388608 -s3-min-part-size=8388608 -disable-download
           for i in $(seq 1 30); do curl -fsS -X OPTIONS http://127.0.0.1:8081/files/ -H 'Tus-Resumable: 1.0.0' -o /dev/null && break; sleep 1; done
           node run.mjs upload-resume --dry-run
+
+  media-e2e:
+    name: "media e2e (full compose stack: upload, worker, proxy, hostile files)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Install the acceptance tools and FFmpeg (the synthetic clips are made on the runner)
+        run: |
+          (cd tools/acceptance && npm ci --no-audit --no-fund)
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: Compose environment with random secrets and the external verifier
+        run: |
+          cp infra/compose/.env.example infra/compose/.env
+          sed -i -e "s/^TUSD_HOOK_SECRET=.*/TUSD_HOOK_SECRET=$(openssl rand -hex 32)/" \
+                 -e "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" \
+                 -e "s|^FIELD_ENCRYPTION_KEY=.*|FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)|" \
+                 -e "s/^MEDIA_WORKER_TOKEN=.*/MEDIA_WORKER_TOKEN=$(openssl rand -hex 32)/" \
+                 -e "s/^UPLOAD_VERIFIER=.*/UPLOAD_VERIFIER=external/" \
+                 -e "s/^S3_MEDIA_ACCESS_KEY=.*/S3_MEDIA_ACCESS_KEY=media-worker-ci/" \
+                 -e "s/^S3_MEDIA_SECRET_KEY=.*/S3_MEDIA_SECRET_KEY=$(openssl rand -hex 16)/" \
+                 -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" \
+                 -e "s/^REDIS_PASSWORD=.*/REDIS_PASSWORD=$(openssl rand -hex 16)/" \
+                 -e "s/^S3_SECRET_KEY=.*/S3_SECRET_KEY=$(openssl rand -hex 16)/" infra/compose/.env
+      - name: Start the stack (API from source, tusd, MinIO, Redis, Postgres, media worker)
+        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media up -d --wait --build
+      - name: Media pipeline end to end (results are printed and kept as an artifact; nothing is written to docs/measurements)
+        run: |
+          set -a; . infra/compose/.env; set +a
+          mkdir -p "$RUNNER_TEMP/out"
+          export MEDIA_E2E_API_URL="http://127.0.0.1:$API_PORT/v1" MEDIA_E2E_TUS_URL="http://127.0.0.1:$TUSD_PORT/files/"
+          export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
+          export S3_ENDPOINT="http://127.0.0.1:$S3_PORT" S3_REGION=us-east-1
+          export MEDIA_E2E_LOGS_CMD="docker compose -f infra/compose/docker-compose.yml --profile api --profile media logs --no-color media-worker"
+          export MEDIA_E2E_ENV_LABEL="compose on a GitHub-hosted runner: api + tusd + minio + redis + media-worker"
+          node tools/acceptance/scripts/media-e2e.mjs --out-dir="$RUNNER_TEMP/out"
+      - name: Remote session revocation (SEC-01; time to the first refusal on the API and on the upload path)
+        run: |
+          set -a; . infra/compose/.env; set +a
+          export REVOKE_API_URL="http://127.0.0.1:$API_PORT/v1" REVOKE_TUS_URL="http://127.0.0.1:$TUSD_PORT/files/"
+          export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
+          export REVOKE_ENV_LABEL="compose on a GitHub-hosted runner: api + tusd + minio + redis + postgres"
+          node tools/acceptance/scripts/session-revocation.mjs --out-dir="$RUNNER_TEMP/out"
+      - name: Print the result files (committed to docs/measurements/acceptance/ as written here)
+        if: always()
+        run: for f in "$RUNNER_TEMP"/out/*.json; do [ -f "$f" ] && { echo "== $(basename "$f")"; cat "$f"; }; done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: media-e2e-results
+          path: ${{ runner.temp }}/out
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media logs --no-color --tail 200 api media-worker tusd
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media down -v

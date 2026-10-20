@@ -4,13 +4,13 @@
 //   node run.mjs pii-leak tenant-isolation [--dry-run]     run named tests (results go to docs/measurements/acceptance/)
 //   node run.mjs all --dry-run                               every test; pending ones are reported, not failed
 // Exit: 0 all ran ok (or pending), 1 a criterion failed, 2 an environment was unreachable and nothing was measured.
-import { CATALOG, byName } from "./lib/catalog.mjs";
+import { CATALOG, EXTRA, byName } from "./lib/catalog.mjs";
 import { EXIT_PENDING } from "./lib/pending.mjs";
 import { parseArgs } from "./lib/measurement.mjs";
 
 const args = parseArgs(process.argv.slice(2));
 if (args.list) {
-  for (const t of CATALOG) console.log(`${t.name.padEnd(24)} ${t.mode.padEnd(10)} ${t.criterion}`);
+  for (const t of [...CATALOG, ...EXTRA]) console.log(`${t.name.padEnd(24)} ${t.mode.padEnd(10)} ${t.criterion}`);
   process.exit(0);
 }
 const wanted = args._.includes("all") || !args._.length ? CATALOG.map((t) => t.name) : args._;

@@ -1,5 +1,6 @@
 // Shared helpers for the live (server-backed) acceptance scripts.
 import { createHash, randomUUID } from "node:crypto";
+import { freshFetch } from "./http.mjs";
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -10,7 +11,7 @@ export function percentile(sorted, p) {
 }
 
 /** Tiny JSON client over fetch with bearer auth and an Idempotency-Key on writes. */
-export function client(baseUrl, fetchImpl = fetch) {
+export function client(baseUrl, fetchImpl = freshFetch) {
   const call = async (token, method, path, { body, key, headers = {} } = {}) => {
     const h = { accept: "application/json", ...headers };
     if (token) h.authorization = `Bearer ${token}`;
