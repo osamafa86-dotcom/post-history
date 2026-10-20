@@ -132,6 +132,13 @@ if [ -n "$BACKUP_RECIPIENT_CERT" ]; then
     || bad "a private key sits next to the recipient certificate: the backup key must stay offline"
 fi
 
+# root ينفّذ هذه السكربتات (عند الإقلاع ومن المؤقّت)، فلا يكتبها غيره.
+for f in infra/deploy/unseal.sh infra/deploy/update.sh infra/field-trial/trial.sh infra/observability/healthcheck.sh; do
+  [ -e "$ROOT/$f" ] || continue
+  if [ "$(stat -c %u "$ROOT/$f")" = 0 ] && [ -z "$(find "$ROOT/$f" -perm /022)" ]; then ok "$f owned by root, not writable by others"
+  else bad "$f must be owned by root and not group/other writable (root runs it)"; fi
+done
+
 # --- بعد التشغيل
 if [ "$RUNNING" = 1 ]; then
   api_port="$(sed -n 's/^API_PORT=//p' "$ROOT/infra/compose/.env.example" | tail -1)"

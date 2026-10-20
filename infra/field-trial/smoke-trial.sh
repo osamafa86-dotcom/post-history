@@ -125,10 +125,70 @@ echo "backup role read-only, backups authenticated: ok"
 COMPOSE="$T" BACKUP_DIR="$WORK/backups" DRILL_ENV=local \
   "$ROOT/infra/backup/restore-drill.sh" --key "$WORK/recipient.key" --out "${DRILL_OUT:-$WORK/drill.json}" || fail "restore drill"
 
+# Monitoring (infra/observability): every check passes, a stopped worker is a FAIL with one alert line, recovery is
+# logged, the /health endpoint follows the result, the status board renders in Arabic.
+H="$ROOT/infra/observability"
+hc() { TRIAL_SH="$T" DISK_ALERT_PCT="${1:-99}" HEALTH_STATE_DIR="$WORK/hs" ALERT_LOG="$WORK/alerts.log" ALERT_CONF=/dev/null \
+         "$H/healthcheck.sh" --json "$WORK/health/health.json" --alert; }
+hc > "$WORK/hc1" || { cat "$WORK/hc1"; fail "healthcheck on a healthy stack"; }
+python3 "$H/health-endpoint.py" --file "$WORK/health/health.json" --port 19180 & hp=$!
+for _ in $(seq 1 20); do curl -s -o /dev/null http://127.0.0.1:19180/health && break; sleep 0.5; done
+[ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:19180/health)" = 200 ] || fail "/health endpoint not 200 when healthy"
+"$T" stop media-worker >/dev/null 2>&1
+if hc > "$WORK/hc2"; then fail "healthcheck passed with the media worker stopped"; fi
+grep -q '^FAIL  container:media-worker' "$WORK/hc2" || fail "stopped worker not reported"
+[ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:19180/health)" = 503 ] || fail "/health endpoint not 503 on a failure"
+if hc > /dev/null; then :; fi   # the same failure again: no second alert line
+[ "$(grep -c 'FAIL container:media-worker' "$WORK/alerts.log")" = 1 ] || fail "alert not written exactly once"
+if hc 1 > "$WORK/hc3"; then fail "disk threshold 1% did not fail"; fi
+grep -q '^FAIL  disk:/' "$WORK/hc3" || fail "disk usage not reported"
+"$T" start media-worker >/dev/null 2>&1
+for _ in $(seq 1 30); do hc > "$WORK/hc4" && break; sleep 2; done
+grep -q 'health: .* 0 failed' "$WORK/hc4" || { cat "$WORK/hc4"; fail "no recovery after restarting the worker"; }
+grep -q 'RECOVERED' "$WORK/alerts.log" || fail "recovery not logged"
+kill "$hp" 2>/dev/null || true
+status="$(TRIAL_SH="$T" "$H/status.sh")" || { echo "$status"; fail "status board reports a failure"; }
+for want in "حالة بيئة التجربة" "■ الرفوعات" "■ طابور الوسائط" "■ النسخ الاحتياطي" "آخر نسخة ناجحة"; do
+  grep -qF "$want" <<<"$status" || fail "status board lacks: $want"
+done
+echo "monitoring and status board: ok"
+
+# Revealing data never reaches a log: a canary in headers, query strings, tus metadata and a login body, then every
+# container's log is searched for it.
+CANARY="canary$(hex 6)"
+b64() { printf '%s' "$1" | base64 -w0; }
+c -o /dev/null "https://main.localhost/v1/materials?lat=$CANARY&device_id=$CANARY" -H "X-Device-Id: $CANARY" \
+  -H "Authorization: Bearer $CANARY" || true
+c -o /dev/null -X POST https://main.localhost/files/ -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 10' \
+  -H "Upload-Metadata: filename $(b64 "$CANARY.mp4"),location $(b64 "$CANARY"),device_id $(b64 "$CANARY")" || true
+c -o /dev/null -X POST https://ingest.localhost/files/ -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 10' \
+  -H "Authorization: Bearer $CANARY" -H "Upload-Metadata: location $(b64 "$CANARY")" || true
+c -o /dev/null -X POST https://main.localhost/v1/auth/login -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$CANARY@example.com\",\"password\":\"$CANARY-password\"}" || true
+sleep 2
+all_logs="$("$T" logs --no-color 2>&1)"
+if grep -qF "$CANARY" <<<"$all_logs"; then
+  grep -F "$CANARY" <<<"$all_logs" | cut -c1-200 >&2; fail "the canary reached a log"
+fi
+grep -qF '"uri":"/v1/materials-"' <<<"$all_logs" || fail "the canary request was not logged at the edge (test has no teeth)"
+echo "no planted value in any log: ok"
+
+# Optional (TRIAL_ACCEPTANCE=1): the field-trial acceptance pack against this stack through the edge, as on the host.
+if [ "${TRIAL_ACCEPTANCE:-0}" = 1 ]; then
+  (cd "$ROOT/tools/acceptance" && [ -d node_modules ] || npm ci --no-audit --no-fund >/dev/null)
+  export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
+  FT_ACCOUNTS="$(API_URL="http://127.0.0.1:$API_PORT/v1" node "$ROOT/tools/acceptance/field-trial/rehearsal-accounts.mjs")"
+  FT_ACCOUNTS="$FT_ACCOUNTS" FT_TUS_URL="https://main.localhost/files/" NODE_EXTRA_CA_CERTS="$WORK/ca.crt" \
+    node "$ROOT/tools/acceptance/run.mjs" --target https://main.localhost --confirm --out-dir="${ACCEPTANCE_OUT:-$WORK/pack}" \
+    || fail "acceptance pack through the edge"
+  echo "acceptance pack through the edge: ok"
+fi
+
 # Captured first: with pipefail, `logs | grep -q` can turn a match into a SIGPIPE failure and hide it.
 edge_log="$("$T" logs caddy caddy-ingest ingest-gate tusd-proxy)"
 if grep -qF "$TUSD_HOOK_SECRET" <<<"$edge_log"; then fail "hook secret in an edge log"; fi
-if grep -qE '"(remote_ip|client_ip)"' <<<"$edge_log"; then fail "client address in the edge log"; fi
+if grep -qE '"(remote_ip|client_ip)"' <<<"$edge_log"; then
+  grep -E '"(remote_ip|client_ip)"' <<<"$edge_log" | head -3 | cut -c1-300 >&2; fail "client address in the edge log"; fi
 if grep -qiE 'ingest-token|authorization' <<<"$edge_log"; then fail "request headers in the edge log"; fi
 # Upload ids are bearer capabilities (SEC-06): logged as /files/-, never /files/<id>.
 if grep -qE '/files/[A-Za-z0-9]' <<<"$edge_log"; then fail "an upload id in an edge log"; fi

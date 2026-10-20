@@ -4,7 +4,7 @@
 #
 #   1. قفل (تحديث واحد في وقت واحد)، وحفظ الإيداع الحالي للتراجع.
 #   2. نسخة احتياطية مشفّرة الآن (backup once): الترحيلات لا تُعكس آليًا، فهذه نقطة الاستعادة إن لزم.
-#   3. جلب الإيداع الهدف بمستخدم الخدمة، وفحص البصمات، وسحب الصور وبناء صورة النسخ.
+#   3. جلب الإيداع الهدف (root؛ الشجرة ملكه)، وفحص البصمات، وسحب الصور وبناء صورة النسخ.
 #   4. إعادة تشغيل متدرجة، خدمة بعد خدمة (compose يعيد إنشاء ما تغيّر فقط)، وفحص صحة بعد كل مرحلة:
 #      الخادم يطبّق الترحيلات عند بدئه، و/health على 127.0.0.1 يجب أن يعود 200، والرفع يصل إلى tusd.
 #   5. عند أي فشل: العودة إلى الإيداع السابق وتشغيله وفحص صحته، والخروج بخطأ.
@@ -15,7 +15,6 @@ set -Eeuo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP="$(cd "$HERE/../.." && pwd)"
-SERVICE_USER=posthistory
 REF=origin/main DRY=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -31,7 +30,7 @@ TUSD_PORT="$(sed -n 's/^TUSD_PORT=//p' "$APP/infra/compose/.env.example" | tail 
 STAGES=("postgres redis minio" "tusd tusd-proxy ingest-gate" "api" "media-worker" "caddy caddy-ingest" "backup")
 
 run() { if [ "$DRY" = 1 ]; then printf '+ %s\n' "$*"; else "$@"; fi; }
-as_user() { run runuser -u "$SERVICE_USER" -- git -C "$APP" "$@"; }
+as_user() { run git -C "$APP" "$@"; }   # root: الشجرة ملكه وحده (bootstrap.sh)
 log() { echo "== $*"; }
 wait_ok() { # الوصف، الأمر؛ حتى 300 ث
   [ "$DRY" = 1 ] && { echo "+ wait until: $1"; return 0; }
