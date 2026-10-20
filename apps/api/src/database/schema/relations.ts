@@ -21,7 +21,6 @@ export const usersRelations = relations(users, ({one, many}) => ({
 	pushDevices: many(pushDevices),
 	uploadForms: many(uploadForms),
 	materialTransitions: many(materialTransitions),
-	outboxEvents: many(outboxEvents),
 	userPermissions_grantedBy: many(userPermissions, {
 		relationName: "userPermissions_grantedBy_users_id"
 	}),
@@ -50,6 +49,7 @@ export const usersRelations = relations(users, ({one, many}) => ({
 	}),
 	notifications: many(notifications),
 	deviceAttestationKeys: many(deviceAttestationKeys),
+	outboxEvents: many(outboxEvents),
 	recoveryCodes: many(recoveryCodes),
 	materialContributors: many(materialContributors),
 	userRoles_grantedBy: many(userRoles, {
@@ -111,14 +111,6 @@ export const materialsRelations = relations(materials, ({one, many}) => ({
 	uploadSessions: many(uploadSessions),
 	notifications: many(notifications),
 	materialContributors: many(materialContributors),
-}));
-
-export const outboxEventsRelations = relations(outboxEvents, ({one, many}) => ({
-	user: one(users, {
-		fields: [outboxEvents.actorId],
-		references: [users.id]
-	}),
-	notifications: many(notifications),
 }));
 
 export const userPermissionsRelations = relations(userPermissions, ({one}) => ({
@@ -226,6 +218,14 @@ export const notificationsRelations = relations(notifications, ({one, many}) => 
 		references: [users.id]
 	}),
 	notificationDeliveries: many(notificationDeliveries),
+}));
+
+export const outboxEventsRelations = relations(outboxEvents, ({one, many}) => ({
+	notifications: many(notifications),
+	user: one(users, {
+		fields: [outboxEvents.actorId],
+		references: [users.id]
+	}),
 }));
 
 export const deviceAttestationKeysRelations = relations(deviceAttestationKeys, ({one}) => ({

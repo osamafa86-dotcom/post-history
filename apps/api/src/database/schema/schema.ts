@@ -110,38 +110,6 @@ export const materialTransitions = pgTable("material_transitions", {
 	check("material_transitions_track_check", sql`track = ANY (ARRAY['technical'::text, 'editorial'::text, 'rights'::text])`),
 ]);
 
-export const outboxEvents = pgTable("outbox_events", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "outbox_events_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	type: text().notNull(),
-	aggregateType: text("aggregate_type").notNull(),
-	aggregateId: uuid("aggregate_id").notNull(),
-	occurredAt: timestamp("occurred_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	idempotencyKey: text("idempotency_key").notNull(),
-	actorId: uuid("actor_id"),
-	payload: jsonb().default({}).notNull(),
-	publishedAt: timestamp("published_at", { withTimezone: true, mode: 'string' }),
-	attempts: integer().default(0).notNull(),
-	nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	lastError: text("last_error"),
-}, (table) => [
-	index("outbox_events_aggregate_idx").using("btree", table.aggregateType.asc().nullsLast().op("int8_ops"), table.aggregateId.asc().nullsLast().op("uuid_ops"), table.id.asc().nullsLast().op("int8_ops")),
-	index("outbox_events_pending_idx").using("btree", table.nextAttemptAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("timestamptz_ops")).where(sql`(published_at IS NULL)`),
-	index("outbox_events_type_idx").using("btree", table.type.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
-	foreignKey({
-			columns: [table.actorId],
-			foreignColumns: [users.id],
-			name: "outbox_events_actor_id_fkey"
-		}),
-	unique("outbox_events_idempotency_key_key").on(table.idempotencyKey),
-	check("outbox_events_aggregate_type_check", sql`aggregate_type = ANY (ARRAY['material'::text, 'upload'::text, 'notification'::text, 'form'::text, 'user'::text])`),
-	check("outbox_events_attempts_nonneg", sql`attempts >= 0`),
-	check("outbox_events_idempotency_key_len", sql`(char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 200)`),
-	check("outbox_events_payload_is_object", sql`jsonb_typeof(payload) = 'object'::text`),
-	check("outbox_events_payload_whitelisted", sql`CHECK (outbox_payload_is_whitelisted(type, payload`),
-	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text])`),
-]);
-
 export const userPermissions = pgTable("user_permissions", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "user_permissions_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -537,6 +505,38 @@ export const deviceAttestationKeys = pgTable("device_attestation_keys", {
 	check("device_attestation_keys_key_id_hash_len", sql`octet_length(key_id_hash) = 32`),
 	check("device_attestation_keys_platform_check", sql`platform = 'ios'::text`),
 	check("device_attestation_keys_sign_count_nonneg", sql`sign_count >= 0`),
+]);
+
+export const outboxEvents = pgTable("outbox_events", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "outbox_events_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	type: text().notNull(),
+	aggregateType: text("aggregate_type").notNull(),
+	aggregateId: uuid("aggregate_id").notNull(),
+	occurredAt: timestamp("occurred_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	idempotencyKey: text("idempotency_key").notNull(),
+	actorId: uuid("actor_id"),
+	payload: jsonb().default({}).notNull(),
+	publishedAt: timestamp("published_at", { withTimezone: true, mode: 'string' }),
+	attempts: integer().default(0).notNull(),
+	nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastError: text("last_error"),
+}, (table) => [
+	index("outbox_events_aggregate_idx").using("btree", table.aggregateType.asc().nullsLast().op("int8_ops"), table.aggregateId.asc().nullsLast().op("uuid_ops"), table.id.asc().nullsLast().op("int8_ops")),
+	index("outbox_events_pending_idx").using("btree", table.nextAttemptAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("timestamptz_ops")).where(sql`(published_at IS NULL)`),
+	index("outbox_events_type_idx").using("btree", table.type.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
+	foreignKey({
+			columns: [table.actorId],
+			foreignColumns: [users.id],
+			name: "outbox_events_actor_id_fkey"
+		}),
+	unique("outbox_events_idempotency_key_key").on(table.idempotencyKey),
+	check("outbox_events_aggregate_type_check", sql`aggregate_type = ANY (ARRAY['material'::text, 'upload'::text, 'notification'::text, 'form'::text, 'user'::text])`),
+	check("outbox_events_attempts_nonneg", sql`attempts >= 0`),
+	check("outbox_events_idempotency_key_len", sql`(char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 200)`),
+	check("outbox_events_payload_is_object", sql`jsonb_typeof(payload) = 'object'::text`),
+	check("outbox_events_payload_whitelisted", sql`CHECK (outbox_payload_is_whitelisted(type, payload`),
+	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text])`),
 ]);
 
 export const recoveryCodes = pgTable("recovery_codes", {

@@ -335,6 +335,15 @@ SET CONSTRAINTS ALL IMMEDIATE;
 SELECT pg_temp.expect_error($q$
   UPDATE recovery_requests SET reset_token_expires_at = decided_at + interval '25 hours' WHERE id = '00000000-0000-4000-8000-000000000901' $q$, '23514');
 
+-- ---------- user.status_changed (whitelisted payload) ----------
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('user.status_changed', 'user', '00000000-0000-4000-8000-000000000011', 'user.status_changed:smoke:1',
+        '{"user_id": "00000000-0000-4000-8000-000000000011", "status": "suspended", "reason_code": "suspended"}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('user.status_changed', 'user', '00000000-0000-4000-8000-000000000011', 'user.status_changed:smoke:2',
+          '{"user_id": "00000000-0000-4000-8000-000000000011", "status": "suspended", "reason": "free text"}') $q$, '23514');
+
 -- ---------- indexing policy (ADR 0002) ----------
 SELECT pg_temp.assert(
   NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexdef ILIKE '%USING gin%'),
