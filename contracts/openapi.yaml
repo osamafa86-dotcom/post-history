@@ -638,6 +638,38 @@ paths:
         "412": { $ref: "#/components/responses/PreconditionFailed" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
+  /materials/{id}/files/{file_id}/download-url:
+    parameters:
+      - $ref: "#/components/parameters/MaterialId"
+      - name: file_id
+        in: path
+        required: true
+        description: ملف مشتق من ملفات المادة
+        schema: { type: string, format: uuid }
+    get:
+      tags: [materials]
+      summary: رابط قراءة موقّع قصير العمر لمشتق من المادة (v0.1)
+      description: >-
+        للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail`) في حالة `verified`. الأصل والملاحظة الصوتية لا يُعطيان
+        رابطًا هنا (`404`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين
+        ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا
+        معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`).
+      operationId: getMaterialFileDownloadUrl
+      x-roles: [reporter, supervisor, producer, editor_in_chief, rights_officer, system_admin]
+      responses:
+        "200":
+          description: الرابط
+          headers:
+            Cache-Control:
+              description: "`no-store`"
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileDownloadUrl" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /materials/{id}/contributors:
     parameters:
       - $ref: "#/components/parameters/MaterialId"
@@ -1854,6 +1886,19 @@ components:
         receipt_number: { $ref: "#/components/schemas/ReceiptNumber" }
         created_at: { type: string, format: date-time }
         verified_at: { type: [string, "null"], format: date-time }
+
+    FileDownloadUrl:
+      type: object
+      required: [url, expires_at]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: رابط قراءة موقّع لملف واحد؛ لا يُسجَّل ولا يُرسل في إشعار أو حدث
+        expires_at:
+          type: string
+          format: date-time
+          description: ≤ 10 دقائق من الإصدار
 
     UploadSessionCreate:
       type: object
