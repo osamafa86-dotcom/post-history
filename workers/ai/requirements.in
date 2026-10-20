@@ -1,0 +1,6 @@
+# Runtime inputs; requirements.txt is compiled from this with hashes (pip-compile --generate-hashes) for Python 3.12.
+faster-whisper==1.2.1
+ctranslate2==4.8.3
+# faster-whisper 1.2.1 passes metadata_errors= to av.open, which av 19 removed.
+av==15.1.0
+redis==6.4.0
