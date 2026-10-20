@@ -36,6 +36,7 @@ export const EXTRA = [
   { name: "optimistic-concurrency", mode: "automated", source: "core gate", criterion: "تعديلان متزامنان بـ If-Match واحد: واحد 200 والآخر 412 دون أثر ودون فقد تحديث" },
   { name: "admin-quorum", mode: "automated", source: "core gate", criterion: "تعليق مدير نظام من الواجهة مرفوض، ومن سطر الأوامر ثنائي الأشخاص مقبول، والحارس يمنع النزول عن مديرين" },
   { name: "download-url", mode: "automated", source: "core gate", criterion: "رابط قراءة موقّع للمشتقات المتحقق منها فقط، ينتهي خلال ≤ 10 دقائق ولا يكشف شيئًا، والأصل 404" },
+  { name: "transcript-draft", mode: "automated", source: "ticket 10", criterion: "أصل متحقق منه ← مسودتا التفريغ (transcript وcaptions) تُسجَّلان مشتقين بطوابع على خط زمن الأصل، النص مسودة لا تغيّر المادة، وWebVTT صالح بـRTL، وزمن التفريغ مقيس مقابل مدة المقطع، وبلا اتصال خارجي من العامل حتى للمادة الموسومة بالحساسية" },
   { name: "emergency-wipe", mode: "field", source: "SEC-01", criterion: "على جهاز فعلي بعد المسح الطارئ: لا شيء من المخازن الموثّقة يبقى، ويتم المسح بلا اتصال خلال ثوانٍ، ويعمل الدخول من جديد" },
 ];
 
