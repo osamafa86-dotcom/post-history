@@ -195,8 +195,11 @@ jobs:
       - name: Start the stack (API from source, tusd, MinIO, Redis, Postgres, media worker)
         run: |
           profiles="--profile api --profile media"
-          # The worker reads "true" (workers/ai Config); the workflow switch is "1".
-          if [ "$AI_ENABLE_TRANSCRIPT" = 1 ]; then profiles="$profiles --profile ai"; export AI_ENABLE_TRANSCRIPT=true; fi
+          # The worker reads "true" from .env (workers/ai Config); the workflow switch is "1".
+          if [ "$AI_ENABLE_TRANSCRIPT" = 1 ]; then
+            profiles="$profiles --profile ai"; sed -i "s/^AI_ENABLE_TRANSCRIPT=.*/AI_ENABLE_TRANSCRIPT=true/" infra/compose/.env
+          fi
+          unset AI_ENABLE_TRANSCRIPT  # compose prefers the shell to .env: let .env decide
           docker compose -f infra/compose/docker-compose.yml $profiles up -d --wait --build
       - name: Media pipeline end to end (results are printed and kept as an artifact; nothing is written to docs/measurements)
         run: |
@@ -228,6 +231,7 @@ jobs:
           export TD_API_URL="http://127.0.0.1:$API_PORT/v1" TD_TUS_URL="http://127.0.0.1:$TUSD_PORT/files/"
           export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
           export TD_TOKENS="$(node -e "import('./live/seed.mjs').then(async (m) => { const s = await m.seed({ databaseUrl: process.env.DATABASE_URL, apiUrl: process.env.TD_API_URL }); console.log(JSON.stringify({ reporter: s.allTokens.reporter })); })")"
+          export AI_ENABLE_TRANSCRIPT=1  # .env holds the worker's "true"; the script's switch is "1"
           export TD_EGRESS_CMD="docker compose -f ../../infra/compose/docker-compose.yml --profile api --profile media --profile ai exec -T ai-worker python3 -c \"import socket; socket.create_connection(('1.1.1.1', 443), 3)\""
           ACCEPTANCE_RESULTS_DIR="$RUNNER_TEMP/out" node scripts/transcript-draft.mjs
       - name: Remote session revocation (SEC-01; time to the first refusal on the API and on the upload path)
@@ -261,7 +265,7 @@ jobs:
           retention-days: 14
       - name: Stack logs on failure
         if: failure()
-        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media logs --no-color --tail 200 api media-worker tusd
+        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media --profile ai logs --no-color --tail 200 api media-worker tusd ai-worker
       - name: Tear down
         if: always()
-        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media down -v
+        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media --profile ai down -v
