@@ -144,8 +144,10 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       for (const [key, type] of [["received", "upload.original_received"], ["verified", "upload.verified"], ["failed", "upload.failed"]]) {
         m[`inflight_event_${key}`] = (await eventsOfType(api, admin, type)).some((e) => e.aggregate_id === inflight.id);
       }
-      // the stronger finding: not only are the bytes accepted, the upload finishes and a receipt is issued to a revoked user
-      if (m.inflight_final_state === "verified" && m.inflight_receipt_issued) findings.push({ source: "upload completion after revocation", path: "post-finish → verification → receipt", kind: "inflight-completes" });
+      // the stronger finding (fixed server side by #70): the upload must not complete for a revoked user: no receipt, no received or verified event
+      const completed = m.inflight_final_state === "verified" || m.inflight_receipt_issued || m.inflight_event_received || m.inflight_event_verified;
+      if (completed) findings.push({ source: "upload completion after revocation", path: "post-finish → verification → receipt", kind: "inflight-completes" });
+      else check("the in-flight upload of a revoked user does not complete (no receipt, no received or verified event)", m.inflight_final_state === "failed" && m.inflight_failure_reason === "aborted", `state ${m.inflight_final_state}, reason ${m.inflight_failure_reason}`);
     }
     const verdict = (f) => (waivers.isWaived(f) ? "waived" : "open");
     for (const f of findings) {
@@ -164,7 +166,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   const notes = [
     fails.length ? `فشل: ${fails.join("؛ ")}` : null,
     `«خلال ثوانٍ» حُوِّل إلى رقم مقترح: ≤ ${maxS} ث من رد استدعاء الإبطال إلى أول رفض (القيم المقيسة في المقاييس، -1 = لم يُرفض ضمن 15 ث)`,
-    m.inflight_final_state ? `الرفع الجاري بعد الإبطال: الحالة النهائية ${m.inflight_final_state}، السبب ${m.inflight_failure_reason}، إيصال ${m.inflight_receipt_issued ? "صدر" : "لم يصدر"}، أحداث: استلام ${m.inflight_event_received}، تحقق ${m.inflight_event_verified}، فشل ${m.inflight_event_failed}؛ الخادم لا يفحص الإبطال عند post-finish (tusd-hooks.service.ts) فاكتمال الرفع غير مضمون الرفض بسبب الإبطال، وما سُجّل هو ما حدث في هذا التشغيل` : null,
+    m.inflight_final_state ? `الرفع الجاري بعد الإبطال: الحالة النهائية ${m.inflight_final_state}، السبب ${m.inflight_failure_reason}، إيصال ${m.inflight_receipt_issued ? "صدر" : "لم يصدر"}، أحداث: استلام ${m.inflight_event_received}، تحقق ${m.inflight_event_verified}، فشل ${m.inflight_event_failed}` : null,
     waivedCount ? `${waivedCount} ثغرة معروفة مستثناة بإذن مكتوب في waivers/session-revocation.json: الرفع الجاري يبقى مقبولًا عند tusd بعد الإبطال لأن tusd لا يسأل الخادم عن PATCH لاحق؛ يوقفه رمز بوابة ingest القصير (ADR 0011) أو خطّاف post-receive، ولم يُبنيا في هذه الحزمة` : null,
     ...notMeasured,
     "لم يُقَس: إبطال من جهاز المشرف عبر الإدارة (واجهة)، وزمن العميل (الهاتف) إلى المسح، ونسخة واحدة من الخادم بلا تأخير توزيع بين نسخ",

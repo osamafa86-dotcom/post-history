@@ -3,14 +3,7 @@
     "source": "tusd PATCH after revocation",
     "path": "next part of an upload already created",
     "kind": "inflight-continues",
-    "reason": "tusd serves PATCH of an existing upload without asking the server; only the creation passes the pre-create hook. After every session of the user is revoked, an upload in flight keeps being accepted and completes. Stopping it needs the ingest gate's short token on every request (ADR 0011) or a post-receive hook that answers StopUpload for a revoked user; neither is in the stack the acceptance run uses.",
+    "reason": "tusd serves PATCH of an existing upload without asking the server; only the creation passes the pre-create hook. After every session of the user is revoked, an upload in flight keeps being accepted at tusd (since #70 the server aborts it and issues no receipt, so only the bytes arrive). Stopping it needs the ingest gate's short token on every request (ADR 0011) or a post-receive hook that answers StopUpload for a revoked user; neither is in the stack the acceptance run uses.",
     "raised_to": "coordinator (QA PR sec01-acceptance)"
-  },
-  {
-    "source": "upload completion after revocation",
-    "path": "post-finish → verification → receipt",
-    "kind": "inflight-completes",
-    "reason": "After every session of the user is revoked, an upload already in flight completes: post-finish and the verifier do not look at revocation, the upload reaches verified, a receipt number is issued and upload.original_received and upload.verified are written (measured in CI, 2026-10-20, docs/measurements/acceptance/2026-10-20-session-revocation-api-and-tusd-2.json). Temporary, by the coordinator's decision: the server fix (refuse completion for a revoked session or user, no receipt, no media event) is a ticket for agent 2; when it merges this waiver goes stale and the check must be turned into a failure.",
-    "raised_to": "coordinator, ticket for agent 2 (server)"
   }
 ]
