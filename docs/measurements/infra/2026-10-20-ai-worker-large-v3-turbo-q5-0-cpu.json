@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "infra",
+  "started_at": "2026-10-20T17:36:51Z",
+  "ended_at": "2026-10-20T17:40:00Z",
+  "result": "info",
+  "device": {
+    "platform": "server",
+    "model": "Intel(R) Xeon(R) Processor @ 2.80GHz, ai-worker cpus=2 mem_limit=4294967296 (docker compose)"
+  },
+  "metrics": {
+    "model": "ggml-large-v3-turbo-q5_0",
+    "model_sha256": "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+    "model_bytes": 574041195,
+    "runtime_image_bytes": 123054396,
+    "disk_total_bytes": 697095591,
+    "whisper_cpp_commit": "d1be6fde11ac6e0407606b4e42fe72d34add8037",
+    "backend": "cpu",
+    "threads": 2,
+    "audio_seconds": 59.87,
+    "wall_seconds": 154.07,
+    "real_time_factor": 2.573,
+    "peak_memory_bytes": 837183078,
+    "output_words": 6,
+    "exit_code": 0
+  },
+  "notes": "ADR 0019. whisper-cli in the hardened ai-worker service (read-only root, no capabilities, internal network, compose limits), on about a minute of synthetic Arabic speech from espeak-ng (no real material). Peak memory is the highest container usage sampled by docker stats every 0.5 s. Accuracy is not measured here (synthetic voice); that belongs to tools/asr-bench. Output words are few because espeak-ng Arabic is hard to recognise: decoding may end earlier than on real speech, so wall time and real-time factor are a lower bound for this model on 2 vCPUs."
+}

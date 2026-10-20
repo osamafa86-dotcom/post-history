@@ -243,7 +243,65 @@ services:
       media:
         ipv4_address: 172.30.251.2
 
+  # أوزان المسار المحلي للذكاء الاصطناعي (ADR 0019): تُنزَّل مرة بالبصمة (infra/ai/models.lock) ثم تخرج الحاوية. هي
+  # وحدها على شبكة لها خروج، ولا تلمس مادة. ملف لا يطابق البصمة لا يُكتب، فلا يبدأ العامل.
+  ai-models:
+    profiles: [ai]
+    image: python:3.12-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+    command: ["python3", "/ai/fetch_models.py", "--lock", "/ai/models.lock", "--dest", "/models"]
+    environment:
+      AI_MODELS: ${AI_MODELS:-ggml-large-v3-turbo-q5_0}
+    volumes:
+      - ../ai/fetch_models.py:/ai/fetch_models.py:ro
+      - ../ai/models.lock:/ai/models.lock:ro
+      - ai-models:/models
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
+    networks: [default]
+
+  # عامل الذكاء الاصطناعي المحلي (ADR 0019): تحصين عامل الوسائط نفسه، والأوزان للقراءة فقط، وشبكة media الداخلية وحدها
+  # (لا خروج: المواد الحساسة لا تصل إلى مزوّد خارجي). المعالج افتراضيًا، والرسومي بـ infra/ai/compose.gpu.yml.
+  # الصورة الآن بيئة تشغيل دنيا (infra/ai/runtime: whisper.cpp) تنتظر المستهلك؛ صورة workers/ai تحل محلها بتغيير build.
+  ai-worker:
+    profiles: [ai]
+    build:
+      context: ../ai/runtime
+      target: runtime
+    entrypoint: ["sleep", "infinity"]
+    depends_on:
+      ai-models:
+        condition: service_completed_successfully
+    environment:
+      AI_MODELS_DIR: /models
+      AI_MODEL: ${AI_MODEL:-ggml-large-v3-turbo-q5_0}
+      AI_SCRATCH_DIR: /scratch
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    user: "10002:10002"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${AI_WORKER_MEM_LIMIT:-4g}
+    memswap_limit: ${AI_WORKER_MEM_LIMIT:-4g}
+    cpus: ${AI_WORKER_CPUS:-2}
+    pids_limit: 256
+    restart: unless-stopped
+    volumes:
+      - ai-models:/models:ro
+      - ai-scratch:/scratch
+    healthcheck:
+      test: ["CMD", "test", "-s", "/models/MANIFEST"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      media:
+        ipv4_address: 172.30.251.3
+
 volumes:
+  ai-models:
+  ai-scratch:
   postgres-data:
   redis-data:
   minio-data:

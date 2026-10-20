@@ -1,0 +1,42 @@
+name: ai-runtime
+
+# Local AI worker runtime (ADR 0019): whisper.cpp from a pinned commit, weights fetched once by sha256 into a volume,
+# the worker hardened like the media worker on the internal network only. Smoke on ggml-tiny with a synthetic tone.
+on:
+  pull_request:
+    paths:
+      - "infra/ai/**"
+      - "infra/compose/docker-compose.yml"
+      - ".github/workflows/ai-runtime.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ai-runtime:
+    name: ai runtime (pinned weights, hardened worker, no egress)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Prepare compose env
+        run: |
+          cp infra/compose/.env.example infra/compose/.env
+          sed -i -e "s/^TUSD_HOOK_SECRET=.*/TUSD_HOOK_SECRET=$(openssl rand -hex 32)/" \
+                 -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" \
+                 -e "s/^REDIS_PASSWORD=.*/REDIS_PASSWORD=$(openssl rand -hex 16)/" \
+                 -e "s/^S3_SECRET_KEY=.*/S3_SECRET_KEY=$(openssl rand -hex 16)/" \
+                 -e "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" \
+                 -e "s|^FIELD_ENCRYPTION_KEY=.*|FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)|" infra/compose/.env
+          docker compose -f infra/compose/docker-compose.yml --profile ai config -q
+          docker compose -f infra/compose/docker-compose.yml -f infra/ai/compose.gpu.yml --profile ai config -q
+      - name: Smoke (fetch by pin, refuse a mismatch, offline re-check, hardening, no egress, whisper-cli runs)
+        run: infra/ai/smoke-ai.sh
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/compose/docker-compose.yml --profile ai down -v --remove-orphans
