@@ -28,6 +28,8 @@
 			request>client_ip delete
 			request>remote_port delete
 			resp_headers delete
+			# معرّف الرفع في /files/<id> قدرة حاملة (SEC-06): يُحذف من السجل.
+			request>uri regexp ^/files/[^?]+ /files/-
 		}
 	}
 }

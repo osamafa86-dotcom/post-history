@@ -14,14 +14,10 @@
 
 {$MAIN_DOMAIN} {
 	bind {$MAIN_IP}
-	# الخادم: الواجهة العامة فقط. /internal/* (الخطّافات ونقاط العامل) لا يُوجَّه من هنا أبدًا.
+	# الخادم: الواجهة العامة فقط. /internal/* (الخطّافات ونقاط العامل) لا يُوجَّه من هنا أبدًا، ولا /health
+	# (حالة حد المعدل في ترويساته؛ يُفحص من المضيف على 127.0.0.1).
 	# X-Forwarded-For عنوان العميل وحده، فيثق الخادم بعنوان بوابة Docker وحدها (TRUSTED_PROXY_CIDRS).
 	handle /v1/* {
-		reverse_proxy 127.0.0.1:{$API_PORT} {
-			header_up X-Forwarded-For {client_ip}
-		}
-	}
-	handle /health {
 		reverse_proxy 127.0.0.1:{$API_PORT} {
 			header_up X-Forwarded-For {client_ip}
 		}
@@ -49,6 +45,8 @@
 			request>client_ip delete
 			request>remote_port delete
 			resp_headers delete
+			# معرّف الرفع في /files/<id> قدرة حاملة (SEC-06): يُحذف من السجل.
+			request>uri regexp ^/files/[^?]+ /files/-
 		}
 	}
 }

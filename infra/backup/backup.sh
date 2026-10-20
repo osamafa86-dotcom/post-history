@@ -1,15 +1,16 @@
 #!/bin/sh
-# نسخ احتياطي يومي لـ Postgres وحاويتي MinIO (ADR 0013). كل ملف يُشفَّر بالمفتاح العام للمستلم (CMS، AES-256)
+# نسخ احتياطي يومي لـ Postgres وحاويتي MinIO (ADR 0013). كل ملف يُشفَّر بالمفتاح العام للمستلم (CMS، AES-256-GCM)
 # قبل أن يلمس القرص: المفتاح الخاص غير متصل لدى المالك، فالخادم لا يقرأ نسخه، ولا تسرّب نسخة مسروقة شيئًا.
 #   backup.sh once   نسخة واحدة الآن (للتمرين والتشغيل اليدوي)
 #   backup.sh loop   نسخة كل يوم عند BACKUP_HOUR_UTC (الافتراضي في الحاوية)
 #
-# البيئة: PGHOST PGUSER PGPASSWORD PGDATABASE؛ S3_ENDPOINT وS3_BACKUP_ACCESS_KEY/S3_BACKUP_SECRET_KEY (مستخدم قراءة
+# البيئة: PGHOST PGUSER PGPASSWORD PGDATABASE (دور backup_reader للقراءة فقط، لا مالك القاعدة)؛ S3_ENDPOINT وS3_BACKUP_ACCESS_KEY/S3_BACKUP_SECRET_KEY (مستخدم قراءة
 # فقط، infra/minio/init.sh)؛ S3_BUCKET_UPLOADS S3_BUCKET_MEDIA؛ BACKUP_RECIPIENT_CERT (شهادة المستلم العامة)؛
 # BACKUP_DIR (/backups)؛ BACKUP_KEEP_DAYS (14، لتفريغات Postgres المحلية فقط؛ الكائنات لا تُحذف من النسخ)؛
 # واختياريًا BACKUP_REMOTE_URL/BACKUP_REMOTE_ACCESS_KEY/BACKUP_REMOTE_SECRET_KEY/BACKUP_REMOTE_BUCKET لنسخة لدى
 # مزوّد ثانٍ بقفل كائنات. لا تُطبع قيمة سرية: مفاتيح mc تُصدَّر في البيئة ولا تمر في سطر الأوامر.
-set -eu
+# pipefail: فشل pg_dump أو mc cat لا يصير ملفًا مشفّرًا فارغًا يُسجَّل نجاحًا.
+set -eu -o pipefail
 
 DIR="${BACKUP_DIR:-/backups}"
 CERT="${BACKUP_RECIPIENT_CERT:-/run/backup/recipient.crt}"
@@ -17,7 +18,8 @@ KEEP="${BACKUP_KEEP_DAYS:-14}"
 log() { echo "{\"time\":\"$(date -u +%FT%TZ)\",\"msg\":\"$*\"}"; }
 
 encrypt() { # stdin -> $1 (ذري: .part ثم mv)
-  openssl cms -encrypt -binary -stream -outform DER -aes-256-cbc -out "$1.part" "$CERT" && mv "$1.part" "$1"
+  # GCM (AuthEnvelopedData): تعديل بايت واحد في النسخة يُفشل فك التشفير، وCBC يمرّره بلا إنذار.
+  openssl cms -encrypt -binary -stream -outform DER -aes-256-gcm -out "$1.part" "$CERT" && mv "$1.part" "$1"
 }
 
 hosts() {

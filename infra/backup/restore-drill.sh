@@ -24,6 +24,8 @@ done
 read -r -a COMPOSE <<<"${COMPOSE:-docker compose -f $HERE/../compose/docker-compose.yml}"
 BACKUP_DIR="${BACKUP_DIR:?host directory with the backups}"
 SAMPLE="${SAMPLE:-20}"
+# صورة Postgres المؤقتة بالبصمة نفسها في compose (ADR 0004).
+PG_IMAGE="postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea"
 NAME="drill-$$"
 # المفتاح الخاص والتفريغ المفكوك على tmpfs، فلا يبقى نص القاعدة الصريح في كتل حرة على قرص المضيف.
 WORK="$(mktemp -d -p "${DRILL_TMP:-/dev/shm}")"
@@ -47,7 +49,7 @@ t0=$(date +%s.%N)
 t1=$(date +%s.%N)
 
 pw="$(openssl rand -hex 16)"
-docker run -d --name "$NAME" -e POSTGRES_PASSWORD="$pw" -e POSTGRES_DB=drill -v "$WORK:/work:ro" postgres:16-alpine >/dev/null
+docker run -d --name "$NAME" -e POSTGRES_PASSWORD="$pw" -e POSTGRES_DB=drill -v "$WORK:/work:ro" "$PG_IMAGE" >/dev/null
 for _ in $(seq 1 60); do docker exec "$NAME" pg_isready -U postgres -d drill >/dev/null 2>&1 && break; sleep 1; done
 sleep 2
 # A failed restore is a drill result, not a crash: the errors are counted and the comparison still runs.

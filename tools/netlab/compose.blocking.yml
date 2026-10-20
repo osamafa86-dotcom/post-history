@@ -5,7 +5,7 @@
 # ingest.example. العميل على الشبكتين، وقواعد الحجب (iptables) في حاوية العميل نفسها: على مسار العميل كالرقيب.
 services:
   edge-main:
-    image: nginx:1.28.3-alpine
+    image: nginx:1.28.3-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
     depends_on:
       tusd-proxy:
         condition: service_healthy

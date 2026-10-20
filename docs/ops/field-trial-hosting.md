@@ -15,6 +15,8 @@
 | حاوية لدى مزوّد ثانٍ | S3 متوافق، بقفل كائنات (Object Lock)، ومفتاح وصول مقيّد بها | النسخة خارج المزوّد الأول (مبدأ الاستقلال). اختيارية في التجربة، إلزامية قبل الإطلاق |
 | زوج مفاتيح النسخ | المالك يولّده على جهاز غير متصل، ويعطي **الشهادة وحدها** للخادم | الخادم يشفّر النسخ ولا يستطيع فكها (ADR 0013) |
 | بريد لإشعارات ACME | عنوان بريد للشبكة | انتهاء الشهادات وتنبيهات Let's Encrypt |
+| مراقبة التوفر | قرار المالك: فحص من المضيف نفسه (`curl http://127.0.0.1:<API_PORT>/health`) أو فحص Cloudflare على مسار `/v1/*` | `/health` لا يُنشر على الحافة (ترويساته تكشف حالة حد المعدل)، فلا يُراقَب من الخارج بذلك المسار |
+| نطاقات Cloudflare (`CLOUDFLARE_CIDRS`) | قرار المالك: من يحدّثها ومتى (https://www.cloudflare.com/ips/) | نطاق ناقص يجعل عملاء ذلك النطاق سلة حد معدل واحدة؛ نطاق زائد يقبل `CF-Connecting-IP` من غير Cloudflare |
 
 **نظام التشغيل والحزم:** Ubuntu 24.04 LTS، وDocker Engine ≥ 24 مع إضافة compose ≥ 2.24، وsops وage وpython3 وcurl وopenssl وgit.
 
@@ -55,6 +57,7 @@
    chmod 400 /run/post-history/trial.env
    ```
    `/run` على tmpfs. بعد إعادة الإقلاع يُعاد الفك قبل التشغيل.
+   الأسرار تشمل `BACKUP_PG_PASSWORD`: كلمة مرور دور `backup_reader` في Postgres (قراءة فقط)، تنشئه خدمة `backup-db-role` عند التشغيل. حاوية النسخ لا تحمل كلمة مرور مالك القاعدة.
 7. **الفحص قبل التشغيل:** `sudo infra/field-trial/preflight.sh`. يجب ألا يبقى FAIL.
 8. **التشغيل:** `sudo infra/field-trial/trial.sh up -d --wait`.
 9. **الفحص بعد التشغيل:** `sudo infra/field-trial/preflight.sh --running --json docs/measurements/ops/$(date +%F)-field-trial-preflight.json`.

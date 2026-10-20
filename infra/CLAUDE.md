@@ -11,7 +11,7 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 - Postgres 16، Redis 7 (بكلمة مرور تمر من البيئة إلى ملف إعداد، لا في سطر الأوامر)، MinIO (بديل S3 محليًا)، tusd. `.env.example` يوثّق المتغيرات بلا قيم؛ `.env` لا يُرفع.
 - الأسرار في الإنتاج (SEC-05): SOPS بمفاتيح age في مستودع تشغيل خاص، تُفك على الخادم إلى tmpfs وتُقرأ بـ `env_file:`؛ لا قيمة في ملف compose ولا في سطر الأوامر. التدوير والاستعادة الطارئة في `docs/ops/runbook.md`، وتمرين التدوير `infra/secrets/rotate_hook_secret.py`.
 - `tusd-proxy` يعيد حل اسم `tusd` عبر DNS الخاص بـ Docker (`resolver 127.0.0.11`): الاسم الثابت في `proxy_pass` يُحل مرة عند البدء، فيعيد 502 إن تغيّر عنوان tusd بعد إعادة إنشائه.
-- كل المنافذ مربوطة بـ `127.0.0.1` محليًا. الصور مثبّتة بوسم إصدار؛ MinIO وmc بناء مجتمعي (`pgsty/*`) بالوسم والبصمة (ADR 0004).
+- كل المنافذ مربوطة بـ `127.0.0.1` محليًا. كل صورة في compose والتجربة وصورة النسخ بالوسم والبصمة (ADR 0004)، و`infra/compose/check-pinned.sh` في CI يحرس ذلك. سجلات الوكلاء تكتب `/files/-` مكان معرّف الرفع.
 - tusd بلا منفذ منشور، خلف `tusd-proxy` (nginx، `infra/proxy/tusd.conf`) على شبكة `uploads` الداخلية؛ الخطّاف على شبكة `hooks` الداخلية.
 - شبكة `media` الداخلية (ADR 0006): عامل الوسائط بعنوان ثابت `172.30.251.2`، والخادم وMinIO وRedis بعناوين ديناميكية من `.8/29`. Docker يأخذ البوابة من داخل `ip_range`، فلا يُضيَّق النطاق تحت حاجة الحاويات. مستخدم MinIO للعامل (`infra/minio/init.sh`) يقرأ بادئة الرفع ويكتب `derived/` في حاوية الوسائط فقط، ويُتحقق منه في CI (`infra/minio/check-media-policy.sh`).
 - عامل الوسائط `media-worker` (profile `media`، صورة `workers/media`): جذر للقراءة فقط و`cap_drop: [ALL]` و`no-new-privileges` ومستخدم غير جذر، وحدود `MEDIA_WORKER_MEM_LIMIT`/`MEDIA_WORKER_CPUS`/`pids_limit`، وشبكة `media` وحدها. الخادم يحتاج معه `UPLOAD_VERIFIER=external` و`MEDIA_WORKER_TOKEN`. `/scratch` حجم لا tmpfs لأن الأصل قد يبلغ غيغابايتات. التحقق: `infra/compose/smoke-media.sh`.
@@ -22,7 +22,7 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 
 - `trial.sh` يجمع compose الأساسي و`docker-compose.trial.yml` والـ profiles (`api` `media` `ingest` `edge` `backup`) وملفي البيئة: `.env.example` ثم الأسرار من tmpfs (`/run/post-history/trial.env`).
 - نسخة Caddy لكل نطاق (`Caddyfile.main` على MAIN_IP، و`Caddyfile.ingest` على INGEST_IP)، على شبكة المضيف. نسختان لا واحدة: مخزن الشهادات واحد للعملية، فنسخة واحدة تقدّم شهادة أي اسم على أي عنوان (رسب في الاختبار).
-- النسخ: `infra/backup/backup.sh` يشفّر بشهادة المستلم (CMS) ومستخدم MinIO للقراءة فقط. التمرين `infra/backup/restore-drill.sh`، والاستعادة الفاشلة نتيجة `fail` لا انهيار، والناجحة `partial` لا `pass` (المرآة وفاصل النسخ غير مقيسة).
+- النسخ: `infra/backup/backup.sh` يشفّر بشهادة المستلم (CMS، AES-256-GCM)، بمستخدم MinIO للقراءة فقط ودور Postgres `backup_reader` للقراءة فقط. التمرين `infra/backup/restore-drill.sh`، والاستعادة الفاشلة نتيجة `fail` لا انهيار، والناجحة `partial` لا `pass` (المرآة وفاصل النسخ غير مقيسة).
 - عنوان العميل: شبكة `default` ثابتة (`172.30.240.0/24`)، والخادم والبوابة يثقان ببوابتها `172.30.240.1` وحدها، وCaddy الرئيسي يقبل `CF-Connecting-IP` من `CLOUDFLARE_CIDRS` وحدها. الدخان يثبت أن عنوانين لا يتشاركان سلة حد الدخول.
 - الفحص: `smoke-trial.sh` (CI، على 127.0.0.1 و127.0.0.2 بشهادات محلية)، و`preflight.sh` على المضيف. ما يوفّره المالك في `docs/ops/field-trial-hosting.md`.
 
