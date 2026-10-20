@@ -102,11 +102,12 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
                'result', 'reason_code', 'role', 'scope_kind', 'scope_id', 'approved_by', 'rule_id']::text[]
 $$;
 
+-- 7) transcript (application/json) وcaptions (text/vtt) من عامل التفريغ، مشتقان زمنيان كالنسخة الخفيفة.
 -- 6) حزمة التصدير عند الطلب لا عند الاستيعاب (#99): نوع مشتق export، وطلب لكل أصل، وحدث export.requested.
 --    الحزمة لا تحمل بيانات كاشفة أبدًا مهما كانت صلاحيات الطالب (CLAUDE.md §5: «لا بيانات كاشفة في أي تصدير»).
 ALTER TABLE material_files DROP CONSTRAINT material_files_kind_check;
 ALTER TABLE material_files ADD CONSTRAINT material_files_kind_check
-  CHECK (kind IN ('original', 'proxy', 'hls', 'audio', 'thumbnail', 'voice_note', 'export'));
+  CHECK (kind IN ('original', 'proxy', 'hls', 'audio', 'thumbnail', 'voice_note', 'export', 'transcript', 'captions'));
 
 CREATE TABLE material_exports (
   source_file_id uuid PRIMARY KEY REFERENCES material_files (id) ON DELETE CASCADE,

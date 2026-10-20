@@ -661,7 +661,7 @@ paths:
       tags: [materials]
       summary: رابط قراءة موقّع قصير العمر لمشتق من المادة (v0.1)
       description: >-
-        للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail`) في حالة `verified`. الأصل والملاحظة الصوتية وحزمة التصدير
+        للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail` و`transcript` و`captions`) في حالة `verified`. الأصل والملاحظة الصوتية وحزمة التصدير
         لا تُعطى رابطًا هنا (`404`؛ الحزمة من `/materials/{id}/export/download-url`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين
         ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا
         معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`).
@@ -2133,7 +2133,7 @@ components:
         kind:
           type: string
           description: الأصل لا يُمس؛ كل معالجة تنتج ملفًا جديدًا
-          enum: [original, proxy, hls, audio, thumbnail, voice_note]
+          enum: [original, proxy, hls, audio, thumbnail, voice_note, transcript, captions]
         state: { type: string, enum: [uploading, received, verified, failed] }
         proxy_mode: { type: [string, "null"], enum: [urgent, normal, null], description: وضع النسخة الخفيفة }
         size_bytes: { type: [integer, "null"], minimum: 0 }
@@ -2559,15 +2559,17 @@ components:
         أو ورقة اللقطات): `duration_ms` اختياري، و`width` و`height` إلزاميان غير فارغين، و`mime_type` إلزامي. `proxy_mode`
         يكتبه الخادم `normal` للنسخة الخفيفة وحدها و`NULL` لغيرها. `export` حزمة التصدير (#99، v0.2): `application/zip`،
         و`technical` هو `technical` الأصل؛ تُبنى عند الطلب (`export.requested`) لا عند الاستيعاب، ولا تحمل بيانات كاشفة.
+        `transcript` (`application/json`، نص بتوقيت الكلمات والمتحدثين) و`captions` (`text/vtt`) من عامل التفريغ (v0.2):
+        زمنيان على خط زمن الأصل، فيحملان `duration_ms` و`start_pts_us` الأصل.
       properties:
-        kind: { type: string, enum: [proxy, thumbnail, hls, audio, export] }
+        kind: { type: string, enum: [proxy, thumbnail, hls, audio, export, transcript, captions] }
         storage_key: { type: string, minLength: 1, maxLength: 1024, pattern: "^[A-Za-z0-9/_.-]+$" }
         sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
         size_bytes: { type: integer, minimum: 1 }
         mime_type:
           type: string
           description: "`application/json` لموجة الصوت (`audio`، #93)"
-          enum: [image/jpeg, image/webp, video/mp4, application/vnd.apple.mpegurl, audio/mp4, application/json, application/zip]
+          enum: [image/jpeg, image/webp, video/mp4, application/vnd.apple.mpegurl, audio/mp4, application/json, application/zip, text/vtt]
         technical: { $ref: "#/components/schemas/MediaTechnical" }
       allOf:
         - if: { properties: { kind: { const: thumbnail } } }
@@ -2581,6 +2583,10 @@ components:
           else: { properties: { technical: { required: [duration_ms, start_pts_us] } } }
         - if: { properties: { kind: { const: export } } }
           then: { required: [mime_type], properties: { mime_type: { const: application/zip } } }
+        - if: { properties: { kind: { const: transcript } } }
+          then: { required: [mime_type], properties: { mime_type: { const: application/json } } }
+        - if: { properties: { kind: { const: captions } } }
+          then: { required: [mime_type], properties: { mime_type: { const: text/vtt } } }
 
     MaterialExport:
       type: object
