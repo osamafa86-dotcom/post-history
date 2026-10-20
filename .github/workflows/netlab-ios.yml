@@ -5,8 +5,11 @@ name: netlab-ios
 # on resume, efficiency vs the Mathis limit, MinIO checksum) comes from netlab itself.
 # - pull_request (iOS core, the netlab runner or this harness changed): one short scenario (office, 100 MB, 600 s)
 #   proves the client still runs and prints a valid summary. Budget: one runner, a few minutes.
-# - workflow_dispatch: the real measurement, one scenario or all three. field-weak at the Mathis limit
-#   (~86 kbit/s at 300 ms / 30% loss) needs hours for 100 MB; size_mb and max_seconds bound it.
+# - workflow_dispatch: the real measurement, one scenario or all three. With scenario=all the sizes are per
+#   scenario (office 100 MB, field-switch 300 MB so that network switches actually happen, field-weak 20 MB because
+#   ~40 kbit/s under 30% loss means hours for 100 MB); size_mb applies to a single scenario, max_seconds to each.
+#   reference_seconds > 0 runs netlab's Python reference client first in the same job (same scenario, part size and
+#   runner): stage (a) per ADR 0007 as amended is efficiency_vs_reference >= 0.70 with zero bytes lost on resume.
 # netlab never records pass: the result is partial, or fail when netlab's stage (a) rule (stage_a_ok) says so.
 # The result JSON is printed and uploaded as an artifact to commit to docs/measurements/netlab/.
 on:
@@ -28,6 +31,9 @@ on:
       max_seconds:
         description: time box per scenario (GitHub job limit is 6h)
         default: "19800"
+      reference_seconds:
+        description: run the Python reference client first for up to this many seconds (0 = no stage (a) verdict)
+        default: "1800"
 
 permissions:
   contents: read
@@ -44,11 +50,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: ${{ github.event_name == 'pull_request' && fromJSON('["office"]') || (inputs.scenario == 'all' && fromJSON('["office","field-switch","field-weak"]') || fromJSON(format('["{0}"]', inputs.scenario))) }}
+        include: ${{ github.event_name == 'pull_request' && fromJSON('[{"scenario":"office","size_mb":"100"}]') || (inputs.scenario == 'all' && fromJSON('[{"scenario":"office","size_mb":"100"},{"scenario":"field-switch","size_mb":"300"},{"scenario":"field-weak","size_mb":"20"}]') || fromJSON(format('[{{"scenario":"{0}","size_mb":"{1}"}}]', inputs.scenario, inputs.size_mb))) }}
     env:
       NO_PROXY: 127.0.0.1,localhost
-      SIZE_MB: ${{ github.event_name == 'pull_request' && '100' || inputs.size_mb }}
+      SIZE_MB: ${{ matrix.size_mb }}
       MAX_SECONDS: ${{ github.event_name == 'pull_request' && '600' || inputs.max_seconds }}
+      REFERENCE_SECONDS: ${{ github.event_name == 'pull_request' && '0' || inputs.reference_seconds }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Containers cannot load kernel modules: sch_netem must be loaded on the runner itself.
@@ -70,7 +77,7 @@ jobs:
       - name: Measure with the iOS upload core (time-boxed)
         run: |
           .github/scripts/netlab-swift-client.sh measure "${{ matrix.scenario }}" "$SIZE_MB" "$MAX_SECONDS" \
-            "$RUNNER_TEMP/out/$(date -u +%F)-tusd-${{ matrix.scenario }}-${SIZE_MB}mb-ios-core-gha.json"
+            "$RUNNER_TEMP/out/$(date -u +%F)-tusd-${{ matrix.scenario }}-${SIZE_MB}mb-ios-core-gha.json" "$REFERENCE_SECONDS"
       # The result file is also printed: it is committed to docs/measurements/netlab/ as written here
       # (no secrets or revealing data: synthetic file, local compose).
       - name: Print the result file
