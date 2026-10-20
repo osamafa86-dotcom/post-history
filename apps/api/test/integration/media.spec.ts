@@ -104,7 +104,13 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
         proxy_mode: null,
         material_has_proxy: false,
       });
-      await getSession('00000000-0000-4000-8000-000000000000').expect(404);
+      // v0.1: الرمز صحيح والجلسة غير موجودة = 410 media_resource_gone (حدث متقادم)، والرمز الخاطئ يبقى 404
+      const gone = '00000000-0000-4000-8000-000000000000';
+      expect((await getSession(gone).expect(410)).body.code).toBe('media_resource_gone');
+      expect((await getSession('not-a-uuid').expect(410)).body.code).toBe('media_resource_gone');
+      expect((await verify(gone, report()).expect(410)).body.code).toBe('media_resource_gone');
+      await getSession(gone, 'x'.repeat(43)).expect(404);
+      await auth(http().post(`/internal/media/sessions/${gone}/verification`), 'x'.repeat(43)).send(report()).expect(404);
     });
   });
 
@@ -227,7 +233,10 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
       await derive(o.fileId, body).expect(422);
       const p = await derive(o.fileId, proxy(o.materialId, o.fileId)).expect(200);
       await derive(p.body.file_id, proxy(o.materialId, p.body.file_id)).expect(409);
-      await derive('00000000-0000-4000-8000-000000000000', proxy(o.materialId, o.fileId)).expect(404);
+      expect((await derive('00000000-0000-4000-8000-000000000000', proxy(o.materialId, o.fileId)).expect(410)).body.code).toBe('media_resource_gone');
+      await auth(http().post('/internal/media/files/00000000-0000-4000-8000-000000000000/derivatives'), 'x'.repeat(43))
+        .send(proxy(o.materialId, o.fileId))
+        .expect(404);
     });
   });
 

@@ -45,6 +45,9 @@ function splitTechnical(t: MediaTechnical): {
 }
 
 const conflict = (msg: string) => new ApiError(409, 'upload_state_conflict', msg);
+// الرمز صحيح (فحصه قبل هذه الطبقة، وفشله 404 لإخفاء النقطة) لكن الجلسة أو الملف المصدر غير موجود: حدث متقادم ينقله
+// العامل إلى media:dead بدل إعادة المحاولة (عقد v0.1)
+const gone = () => new ApiError(410, 'media_resource_gone', 'The upload session or source file does not exist.');
 
 /**
  * جانب الخادم من واجهة عامل الوسائط (ADR 0006). الخادم يبقى الكاتب الوحيد: العامل يبلّغ ما حسبه، والخادم يتحقق
@@ -60,9 +63,9 @@ export class MediaService {
   ) {}
 
   async session(id: string): Promise<MediaSessionView> {
-    if (!UUID.test(id)) throw ApiError.notFound();
+    if (!UUID.test(id)) throw gone();
     const [s] = await this.db.select().from(uploadSessions).where(eq(uploadSessions.id, id));
-    if (!s) throw ApiError.notFound();
+    if (!s) throw gone();
     // بصمة العميل لا تُعاد: المقارنة في الخادم وحده
     return {
       material_id: s.materialId,
@@ -76,10 +79,10 @@ export class MediaService {
   }
 
   async verify(id: string, body: MediaVerificationBody): Promise<MediaVerificationResult> {
-    if (!UUID.test(id)) throw ApiError.notFound();
+    if (!UUID.test(id)) throw gone();
     return this.db.transaction(async (tx) => {
       const [s] = await tx.select().from(uploadSessions).where(eq(uploadSessions.id, id)).for('update');
-      if (!s) throw ApiError.notFound();
+      if (!s) throw gone();
       if (s.state !== 'completed') return this.replay(tx, s, body);
 
       const outcome = await this.decide(s, body);
@@ -102,10 +105,10 @@ export class MediaService {
   }
 
   async derive(fileId: string, body: MediaDerivativeBody): Promise<{ file_id: string }> {
-    if (!UUID.test(fileId)) throw ApiError.notFound();
+    if (!UUID.test(fileId)) throw gone();
     return this.db.transaction(async (tx) => {
       const [source] = await tx.select().from(materialFiles).where(eq(materialFiles.id, fileId)).for('share');
-      if (!source) throw ApiError.notFound();
+      if (!source) throw gone();
       if (source.kind !== 'original' || source.state !== 'verified') throw conflict('Derivatives are made from a verified original only.');
       // المشتق في مساحته وحدها: حاوية المشتقات (لا حاوية الرفع، فلا يُسجَّل كائن رفع مشتقًا)، تحت مسار مصدره
       if (!body.storage_key.startsWith(`derived/${source.materialId}/${source.id}/`) || body.storage_key.includes('..')) {
