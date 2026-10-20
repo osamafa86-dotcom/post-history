@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "tool": "netlab",
+  "role": "ios",
+  "test_name": "field-network-upload",
+  "decision_ref": 3,
+  "started_at": "2026-10-20T02:51:14Z",
+  "ended_at": "2026-10-20T02:51:59Z",
+  "result": "partial",
+  "device": {
+    "platform": "server",
+    "model": "apps/ios UploadCore (PostHistoryKit upload-netlab, Swift 6.1 on Linux)",
+    "os_version": "Linux 7.0.0-1017-azure"
+  },
+  "network": {
+    "profile": "office",
+    "uplink_kbps": 20000,
+    "loss_pct": 0,
+    "longest_connected_window_s": 44.1
+  },
+  "upload_path": "tusd",
+  "file": {
+    "size_bytes": 104857600,
+    "codec": "synthetic-random"
+  },
+  "metrics": {
+    "upload_complete": true,
+    "checksum_match": true,
+    "bytes_uploaded": 104857600,
+    "elapsed_s": 44.5,
+    "goodput_kbps": 18852.2,
+    "resumes": 0,
+    "connection_failures": 0,
+    "longest_connected_window_s": 44.1,
+    "client_chunk_bytes": 4194304,
+    "client_timeout_s": 60,
+    "parts_ok": 25,
+    "parts_failed": 0,
+    "loss_mode": "none",
+    "part_time_s_p50": 1.75,
+    "part_time_s_p90": 1.8,
+    "part_time_s_max": 1.86,
+    "part_times_s": "1.7,1.7,1.9,1.8,1.7,1.7,1.8,1.8,1.7,1.7,1.8,1.8,1.7,1.7,1.8,1.8,1.7,1.7,1.8,1.8,1.7,1.7,1.8,1.8,1.7",
+    "events": "none",
+    "bytes_lost_on_resume": 0,
+    "goodput_connected_kbps": 18852.2,
+    "reference_goodput_connected_kbps": 19247.6,
+    "reference_source": "same run (1800s python client, 104857600 bytes)",
+    "reference_age_days": 0.0,
+    "efficiency_vs_reference": 0.979
+  },
+  "notes": "toxiproxy 2.12.0 -> nginx tusd-proxy -> tusd v2.10.1 -> MinIO (local compose). Client: apps/ios UploadCore (PostHistoryKit upload-netlab, Swift 6.1 on Linux), time box 19800s, event scale 1.0. netlab never records pass: field-network-upload stage (b) is 1 GB on a real device and network (stage (a), ADR 0007 as amended 2026-10-20: connected-time goodput >= 70% of the python reference client under the same conditions, zero bytes lost on resume, checksum match if complete, netem; efficiency_vs_mathis is informational). Connected window = client-observed time from first successful request to next failure."
+}
