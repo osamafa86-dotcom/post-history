@@ -1,5 +1,6 @@
 // Shared helpers for the live (server-backed) acceptance scripts.
 import { createHash, randomUUID } from "node:crypto";
+import { freshFetch } from "./http.mjs";
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -10,7 +11,7 @@ export function percentile(sorted, p) {
 }
 
 /** Tiny JSON client over fetch with bearer auth and an Idempotency-Key on writes. */
-export function client(baseUrl, fetchImpl = fetch) {
+export function client(baseUrl, fetchImpl = freshFetch) {
   const call = async (token, method, path, { body, key, headers = {} } = {}) => {
     const h = { accept: "application/json", ...headers };
     if (token) h.authorization = `Bearer ${token}`;
@@ -18,11 +19,7 @@ export function client(baseUrl, fetchImpl = fetch) {
       h["content-type"] = "application/json";
       if (key !== null) h["idempotency-key"] = key ?? randomUUID();
     }
-    const send = () => fetchImpl(baseUrl.replace(/\/$/, "") + path, { method, headers: h, body: method === "GET" ? undefined : JSON.stringify(body ?? {}) });
-    // a pooled keep-alive socket the server closed while the script was busy (clip generation) fails the first request with
-    // "other side closed"; repeating is safe for reads and for writes that carry an Idempotency-Key (the same key is reused)
-    const staleSocket = (e) => e?.cause?.code === "UND_ERR_SOCKET" || e?.cause?.code === "ECONNRESET";
-    const res = await send().catch((e) => (staleSocket(e) && (method === "GET" || h["idempotency-key"]) ? send() : Promise.reject(e)));
+    const res = await fetchImpl(baseUrl.replace(/\/$/, "") + path, { method, headers: h, body: method === "GET" ? undefined : JSON.stringify(body ?? {}) });
     const text = await res.text();
     let json = null;
     try { json = JSON.parse(text); } catch { /* keep text */ }

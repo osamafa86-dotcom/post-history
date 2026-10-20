@@ -15,6 +15,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { freshFetch } from "../lib/http.mjs";
 import { synthClip } from "../lib/media-clips.mjs";
 import { newResult, finish, writeResult, parseArgs, banner } from "../lib/measurement.mjs";
 import { client, createUploadSession, eventsOfType, materialBody, sleep } from "../lib/live.mjs";
@@ -69,7 +70,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
 
   // ---- the upload A has in flight, and an upload token not used yet
   let inflight = null, unused = null, location = null;
-  const tusCreate = (session, size) => fetch(tusUrl, { method: "POST", headers: { ...TUS, "Upload-Length": String(size), "Upload-Metadata": `upload_session_id ${b64(session.id)},filename ${b64("r.bin")}`, Authorization: `Bearer ${session.token}` } });
+  const tusCreate = (session, size) => freshFetch(tusUrl, { method: "POST", headers: { ...TUS, "Upload-Length": String(size), "Upload-Metadata": `upload_session_id ${b64(session.id)},filename ${b64("r.bin")}`, Authorization: `Bearer ${session.token}` } });
   // a VALID clip (random pixels at a fixed bitrate, about 6 MB) split in three: a constant-byte file would end `invalid_file` on its
   // content and say nothing about what the server does with a revoked user's finished upload
   let file = Buffer.alloc(0);
@@ -87,7 +88,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     const made = await tusCreate(inflight, file.length);
     check("the in-flight upload is created through tusd-proxy", made.status === 201, `HTTP ${made.status}`);
     location = new URL(made.headers.get("location") ?? "", tusUrl).toString();
-    const first = await fetch(location, { method: "PATCH", headers: { ...TUS, "Content-Type": "application/offset+octet-stream", "Upload-Offset": "0" }, body: file.subarray(0, PART) });
+    const first = await freshFetch(location, { method: "PATCH", headers: { ...TUS, "Content-Type": "application/offset+octet-stream", "Upload-Offset": "0" }, body: file.subarray(0, PART) });
     check("the first part is accepted", first.status === 204, `HTTP ${first.status}`);
   } else notMeasured.push("مسار الرفع (tusd) لم يُقَس: REVOKE_TUS_URL غير مضبوط");
 
@@ -120,14 +121,14 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     within("an unused upload token at tusd", refusedAt);
 
     // the upload already in flight: its next part
-    const second = await fetch(location, { method: "PATCH", headers: { ...TUS, "Content-Type": "application/offset+octet-stream", "Upload-Offset": String(PART) }, body: file.subarray(PART, PART * 2) });
+    const second = await freshFetch(location, { method: "PATCH", headers: { ...TUS, "Content-Type": "application/offset+octet-stream", "Upload-Offset": String(PART) }, body: file.subarray(PART, PART * 2) });
     m.inflight_next_part_status = second.status;
     const stopped = second.status >= 400;
     m.inflight_stopped_at_next_part = stopped;
     if (!stopped) {
       findings.push({ source: "tusd PATCH after revocation", path: "next part of an upload already created", kind: "inflight-continues" });
       // finish it to say what the server does with a transfer of a revoked user
-      const third = await fetch(location, { method: "PATCH", headers: { ...TUS, "Content-Type": "application/offset+octet-stream", "Upload-Offset": String(PART * 2) }, body: file.subarray(PART * 2) });
+      const third = await freshFetch(location, { method: "PATCH", headers: { ...TUS, "Content-Type": "application/offset+octet-stream", "Upload-Offset": String(PART * 2) }, body: file.subarray(PART * 2) });
       m.inflight_third_part_status = third.status;
       const C = await login();
       const done = await waitFor(async () => {

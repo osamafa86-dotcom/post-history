@@ -1,6 +1,7 @@
 // Plays tusd for the live runs: the internal hook requests tusd would send, and the S3 object it would have written.
 import { randomUUID } from "node:crypto";
 import { sleep } from "./live.mjs";
+import { freshFetch } from "./http.mjs";
 
 export function hookClient({ baseUrl, token }) {
   const latencies = [];
@@ -13,7 +14,7 @@ export function hookClient({ baseUrl, token }) {
       },
     };
     const t0 = Date.now();
-    const res = await fetch(`${baseUrl}/internal/tusd-hooks/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(10_000) });
+    const res = await freshFetch(`${baseUrl}/internal/tusd-hooks/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(10_000) });
     latencies.push(Date.now() - t0);
     const text = await res.text();
     let json = null; try { json = JSON.parse(text); } catch { /* */ }
