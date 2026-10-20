@@ -31,6 +31,10 @@ export async function seed({ databaseUrl, apiUrl }) {
   }
   users.reporter_b = await user("reporter-b", "reporter", { officeId: officeB });
   users.supervisor_b = await user("supervisor-b", "supervisor", { scopeKind: "office", scopeId: officeB });
+  // core-gate fixtures: a second producer (reservation contention), a second admin (quorum) and a throwaway reporter the suspension checks may revoke
+  users.producer_b = await user("producer-b", "producer");
+  users.system_admin_b = await user("system-admin-b", "system_admin");
+  users.victim_reporter = await user("victim", "reporter", { officeId: officeA });
 
   const login = async (u) => {
     const res = await freshFetch(`${apiUrl}/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: u.email, password }) });
@@ -97,7 +101,7 @@ export async function seed({ databaseUrl, apiUrl }) {
   await q(`UPDATE upload_sessions SET state = 'completed' WHERE id = $1`, [hookSessions.finished.id]);
 
   await pool.end();
-  const { reporter_b: _b, supervisor_b: _sb, ...roleTokens } = tokens;
+  const { reporter_b: _b, supervisor_b: _sb, producer_b: _pb, system_admin_b: _ab, victim_reporter: _vr, ...roleTokens } = tokens;
   return {
     tokens: roleTokens, allTokens: tokens, users, password,
     fixtures: {

@@ -38,13 +38,20 @@ try {
     ...(s3 ? { S3_ENDPOINT: s3.endpoint, S3_ACCESS_KEY: s3.accessKey, S3_SECRET_KEY: s3.secretKey, S3_REGION: s3.region ?? "us-east-1" } : {}),
     LOAD_API_URL: stack.apiUrl, LOAD_TOKENS: tokens, PERF_API_URL: stack.apiUrl, PERF_TOKENS: tokens,
     RECEIPT_API_URL: stack.apiUrl, RECEIPT_TOKENS: tokens, RECEIPT_RUNS: process.env.RECEIPT_RUNS ?? "20",
+    // core-gate scripts (run only with CORE_ACCEPTANCE=1: they measure server work that lands with #69 and #75)
+    RESERVE_API_URL: stack.apiUrl, RESERVE_TOKENS: JSON.stringify({ ...s.tokens, producer_b: s.allTokens.producer_b }),
+    OCC_API_URL: stack.apiUrl, OCC_TOKENS: tokens,
+    QUORUM_API_URL: stack.apiUrl, QUORUM_TOKENS: JSON.stringify({ ...s.tokens, victim: s.allTokens.victim_reporter }), QUORUM_TOKEN_B: s.allTokens.system_admin_b,
+    QUORUM_USERS: JSON.stringify({ system_admin_id: s.users.system_admin.id, system_admin_b_id: s.users.system_admin_b.id, victim_id: s.users.victim_reporter.id }),
+    NOTIF_API_URL: stack.apiUrl, NOTIF_TOKENS: JSON.stringify({ ...s.tokens, supervisor_b: s.allTokens.supervisor_b }), NOTIF_ESCALATION_S: String(stack.escalationSeconds),
   };
   Object.assign(process.env, common);
   const note = `الخادم من main@${sha} على Postgres 16 بقاعدة مؤقتة${process.env.LIVE_REDIS_URL ? " وRedis" : ""}${s3 ? " وتخزين S3" : ""}؛ بلا Cloudflare ولا tusd (الخطّاف مُحاكى)`;
   const passthrough = args["dry-run"] ? ["--dry-run"] : [];
   setLogSource(() => stack.logs());
     // pii-leak reads the server logs of everything before it; dynamic-fields last: it publishes the shared form, which becomes the current form (with required fields) for every later material
-  const names = ["tenant-isolation", "duplicate-payment", "invalid-file", "receipt-notification", "concurrent-load", "performance", "pii-leak", "dynamic-fields"];
+  const core = process.env.CORE_ACCEPTANCE === "1" ? ["reservation-conflict", "optimistic-concurrency", "admin-quorum", "notification-delivery"] : [];
+  const names = ["tenant-isolation", "duplicate-payment", "invalid-file", "receipt-notification", "concurrent-load", "performance", ...core, "pii-leak", "dynamic-fields"];
   const summary = [];
   const only = typeof args.only === "string" ? args.only.split(",") : null;
   for (const name of names.filter((n) => !only || only.includes(n))) {
