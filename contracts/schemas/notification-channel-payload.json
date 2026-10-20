@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://post-history/contracts/schemas/notification-channel-payload.json",
+  "title": "NotificationChannelPayload",
+  "description": "الحمولة التي تغادر الخادم إلى قناة إشعار خارجية أو إشعار هاتف/متصفح (v0.2، ADR 0018). قائمة بيضاء مغلقة لكل مجموعة قنوات: رقم المادة وحالتها فقط، بلا أسماء ولا عناوين مواد ولا مواقع ولا حقول ديناميكية ولا معرّفات أجهزة (الخطة: «القنوات»؛ SEC-03). داخل المنصة (in_app، websocket) يقرأ العميل Notification من الواجهة بصلاحياته، فلا يغطيه هذا المخطط.",
+  "type": "object",
+  "required": ["channel", "notification_id", "type", "priority", "title"],
+  "properties": {
+    "channel": {
+      "type": "string",
+      "enum": ["apns", "fcm", "web_push", "email", "telegram", "whatsapp", "sms"]
+    },
+    "notification_id": { "type": "string", "format": "uuid" },
+    "type": {
+      "description": "نوع حدث Outbox (schemas/outbox-event.json)",
+      "type": "string",
+      "pattern": "^[a-z_]+\\.[a-z_]+$"
+    },
+    "priority": { "type": "string", "enum": ["urgent", "important", "normal"] },
+    "material_id": { "type": ["string", "null"], "format": "uuid" },
+    "title": {
+      "description": "من قالب الخادم: رقم المادة وحالتها فقط (Notification.title)",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "escalation_level": { "type": "integer", "minimum": 0, "maximum": 5 }
+  },
+  "propertyNames": {
+    "not": {
+      "enum": ["gps", "lat", "lng", "latitude", "longitude", "location", "device_id", "push_token", "source_name",
+               "reporter_legal_name", "email", "phone", "dynamic_fields", "governorate", "city"]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "channel": { "enum": ["email", "telegram", "whatsapp", "sms"] } } },
+      "then": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": true, "notification_id": true, "type": true, "priority": true, "material_id": true, "title": true
+        }
+      }
+    },
+    {
+      "if": { "properties": { "channel": { "enum": ["apns", "fcm", "web_push"] } } },
+      "then": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": true, "notification_id": true, "type": true, "priority": true, "material_id": true, "title": true,
+          "escalation_level": true
+        }
+      }
+    }
+  ]
+}
