@@ -26,7 +26,7 @@ concurrency:
 jobs:
   android:
     name: android (generate client, unit tests, lint, form conformance)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     timeout-minutes: 40
     defaults:
       run:
