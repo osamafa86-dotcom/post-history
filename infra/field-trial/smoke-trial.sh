@@ -189,7 +189,8 @@ edge_log="$("$T" logs caddy caddy-ingest ingest-gate tusd-proxy)"
 if grep -qF "$TUSD_HOOK_SECRET" <<<"$edge_log"; then fail "hook secret in an edge log"; fi
 if grep -qE '"(remote_ip|client_ip)"' <<<"$edge_log"; then
   grep -E '"(remote_ip|client_ip)"' <<<"$edge_log" | head -3 | cut -c1-300 >&2; fail "client address in the edge log"; fi
-if grep -qiE 'ingest-token|authorization' <<<"$edge_log"; then fail "request headers in the edge log"; fi
+# أسماء الترويسات مفاتيحَ JSON (أو قيمة Bearer)، لا المسار: /v1/uploads/{id}/ingest-token مسار API مشروع (SEC-07)
+if grep -qiE '"(ingest-token|authorization)"[[:space:]]*:|bearer [A-Za-z0-9._-]{8}' <<<"$edge_log"; then fail "request headers in the edge log"; fi
 # Upload ids are bearer capabilities (SEC-06): logged as /files/-, never /files/<id>.
 if grep -qE '/files/[A-Za-z0-9]' <<<"$edge_log"; then fail "an upload id in an edge log"; fi
 grep -qF '/files/-' <<<"$edge_log" || fail "no redacted upload path in the edge log (nothing logged?)"
