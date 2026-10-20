@@ -12,6 +12,7 @@
       --out docs/measurements/netlab/$(date -u +%F)-android-upload-core-field-weak-100mb.json
 
 --tus-url http://host:port/files/ يتجاوز netlab كله (لتجربة محلية بلا docker؛ لا يُسجَّل كقياس).
+--timeout-s مهلة قراءة الطلب في العميل (الافتراضي 90 ث كما في التطبيق).
 """
 import argparse
 import importlib.util
@@ -33,9 +34,9 @@ def load_netlab():
     return mod
 
 
-def run_client(runner, path, tus_url, part_bytes, max_seconds, log):
+def run_client(runner, path, tus_url, part_bytes, max_seconds, timeout_s, log):
     """يشغّل netlab-runner ويجمع أحداثه؛ يعيد (الأحداث، كود الخروج)."""
-    cmd = [runner, "--file", path, "--tus", tus_url, "--part-bytes", str(part_bytes), "--max-seconds", str(max_seconds)]
+    cmd = [runner, "--file", path, "--tus", tus_url, "--part-bytes", str(part_bytes), "--max-seconds", str(max_seconds), "--timeout", str(timeout_s)]
     events = []
     with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as p:
         for line in p.stdout:
@@ -52,63 +53,24 @@ def run_client(runner, path, tus_url, part_bytes, max_seconds, log):
     return events, p.returncode
 
 
-def summarize(events, size):
-    """المقاييس نفسها التي يحسبها netlab.py من أحداث العميل بدل حالته الداخلية.
-
-    «المؤكَّد» هو ما يملكه الخادم: إقرار PATCH أو إزاحة `HEAD` (tusd يحتفظ بما وصله من طلب قُطع)، فالبايتات
-    المرفوعة تُحسب من الاثنين، والمفقود هو تراجع `HEAD` دون آخر إزاحة أكّدها الخادم، والاستئناف كل `HEAD` بعد فشل.
-    """
-    parts, failures, resumes = [], 0, 0
-    confirmed, bytes_lost = 0, 0
-    windows, connected_since = [], None
-    last_t = 0.0
-    hash_s = None
-    start_t = 0.0
-    failed_since_head = False
-    for ev in events:
-        t = ev["t"]
-        last_t = t
-        kind = ev["ev"]
-        if kind == "hashed":
-            hash_s = t
-            start_t = t  # النقل يبدأ بعد البصمة؛ زمن البصمة يُسجَّل على حدة
-        elif kind in ("created", "head", "part"):
-            if connected_since is None:
-                connected_since = t
-            if kind == "head":
-                off = ev["offset"]
-                if failed_since_head:
-                    resumes += 1
-                    failed_since_head = False
-                bytes_lost += max(0, confirmed - off)
-                confirmed = max(confirmed, off)
-            elif kind == "part":
-                parts.append((t, ev["from"], ev["to"]))
-                confirmed = max(confirmed, ev["to"])
-        elif kind == "fail":
-            failures += 1
-            failed_since_head = True
-            if connected_since is not None:
-                windows.append(t - connected_since)
-                connected_since = None
-    if connected_since is not None:
-        windows.append(last_t - connected_since)
-    # زمن الجزء = الفاصل بين إقرارين متتاليين (أو من بداية النقل/آخر HEAD إلى أول إقرار)
-    part_times = []
-    prev = None
-    for ev in events:
-        if ev["ev"] in ("hashed", "head", "fail"):
-            prev = ev["t"]
-        elif ev["ev"] == "part":
-            if prev is not None:
-                part_times.append(ev["t"] - prev)
-            prev = ev["t"]
+def summarize(events):
+    """المقاييس من سطر الملخص الذي يطبعه netlab-runner بتعريفات tools/netlab/netlab.py نفسها (عقد العميل الخارجي
+    `--client-cmd` في #65): `parts` = [زمن طلب PATCH، بايتاته، نجح؟] (الطلب المقطوع جزء فاشل)، `windows` = نوافذ
+    الاتصال من أول طلب ناجح إلى الفشل التالي، `resumes` = كل `HEAD` بعد فشل، `failures`، `bytes_lost` = تراجع `HEAD`
+    دون ما أكّده الخادم، `offset` = ما يملكه الخادم (إقرارات PATCH وإزاحات `HEAD`؛ tusd يحتفظ ببايتات طلب قُطع).
+    لا حساب موازٍ هنا؛ حين يحمل netlab.py العقد يُستبدل هذا الملف باستدعاء `netlab.py run --client-cmd`."""
+    summary = next((e for e in events if e["ev"] == "summary"), None)
     end = next((e for e in events if e["ev"] == "end"), None)
-    final_offset = max(confirmed, end["confirmed"]) if end else confirmed
+    hashed = next((e for e in events if e["ev"] == "hashed"), None)
+    if summary is None:
+        summary = {"offset": 0, "parts": [], "windows": [], "resumes": 0, "failures": 0, "bytes_lost": 0, "complete": False, "url_path": None}
+    parts = [(float(p[0]), int(p[1]), bool(p[2])) for p in summary["parts"]]
     return {
-        "parts": parts, "parts_ok": len(parts), "parts_failed": failures, "resumes": resumes, "connection_failures": failures,
-        "bytes_lost_on_resume": bytes_lost, "confirmed": final_offset, "windows": windows, "part_times": part_times,
-        "hash_s": hash_s, "transfer_start_s": start_t, "end": end,
+        "parts": parts, "parts_ok": sum(1 for p in parts if p[2]), "parts_failed": sum(1 for p in parts if not p[2]),
+        "resumes": int(summary["resumes"]), "connection_failures": int(summary["failures"]),
+        "bytes_lost_on_resume": int(summary["bytes_lost"]), "confirmed": int(summary["offset"]), "windows": [float(w) for w in summary["windows"]],
+        "part_times": [p[0] for p in parts if p[2]], "complete": bool(summary["complete"]),
+        "hash_s": hashed["t"] if hashed else None, "transfer_start_s": hashed["t"] if hashed else 0.0, "end": end,
     }
 
 
@@ -120,6 +82,7 @@ def main():
     ap.add_argument("--workdir", default=os.environ.get("RUNNER_TEMP") or os.environ.get("TMPDIR", "/tmp"))
     ap.add_argument("--part-mb", type=int, help="حجم طلب PATCH؛ الافتراضي client_chunk_mb في السيناريو")
     ap.add_argument("--max-seconds", type=int, default=3600)
+    ap.add_argument("--timeout-s", type=int, default=90, help="مهلة قراءة طلب PATCH في العميل")
     ap.add_argument("--event-scale", type=float, default=1.0)
     ap.add_argument("--runner", default=os.path.join(HERE, "..", "netlab-runner", "build", "install", "netlab-runner", "bin", "netlab-runner"))
     ap.add_argument("--tus-url", help="تجاوز netlab: نقطة tus مباشرة (تجربة محلية فقط)")
@@ -149,8 +112,8 @@ def main():
     started_at, t0 = nl.utc(), nl.now()
     if driver:
         driver.start()
-    client_events, rc = run_client(a.runner, path, tus_url, part_bytes, a.max_seconds,
-                                   log=lambda ev: print(json.dumps(ev), flush=True) if ev["ev"] != "part" or ev["to"] // (10 << 20) != ev["from"] // (10 << 20) else None)
+    client_events, rc = run_client(a.runner, path, tus_url, part_bytes, a.max_seconds, a.timeout_s,
+                                   log=lambda ev: print(json.dumps(ev), flush=True) if ev["ev"] not in ("part", "req", "summary") or (ev["ev"] == "part" and ev["to"] // (10 << 20) != ev["from"] // (10 << 20)) else None)
     elapsed_total = nl.now() - t0
     if driver:
         driver.stop.set()
@@ -159,10 +122,10 @@ def main():
         nl.toxi("DELETE", f"/proxies/{name}")
         nl.set_loss(0)
 
-    s = summarize(client_events, size)
+    s = summarize(client_events)
     end = s["end"] or {}
     offset = s["confirmed"]
-    complete = end.get("state") == "VERIFIED" and offset == size
+    complete = s["complete"] and end.get("state") == "VERIFIED" and offset == size
     url = end.get("url")
     if direct:
         match = None
@@ -183,7 +146,7 @@ def main():
         "connection_failures": s["connection_failures"],
         "longest_connected_window_s": round(max(s["windows"]), 1) if s["windows"] else 0,
         "client_chunk_bytes": part_bytes,
-        "client_timeout_s": 90,
+        "client_timeout_s": a.timeout_s,
         "request_target_s": 20,
         "parts_ok": s["parts_ok"],
         "parts_failed": s["parts_failed"],
@@ -196,8 +159,8 @@ def main():
         pt = s["part_times"]
         m.update({"part_time_s_p50": round(statistics.median(pt), 2), "part_time_s_p90": round(nl.pct(pt, 90), 2),
                   "part_time_s_max": round(max(pt), 2), "part_times_s": ",".join(f"{x:.1f}" for x in pt)})
-    if s["parts"]:
-        sizes = [to - frm for _, frm, to in s["parts"]]
+    sizes = [b for _, b, ok in s["parts"] if ok]
+    if sizes:
         m.update({"request_bytes_min": min(sizes), "request_bytes_median": int(statistics.median(sizes)), "request_bytes_max": max(sizes)})
     m["events"] = ";".join(f"{t}s:{e}" for t, e in events_log) or "none"
 
@@ -259,8 +222,9 @@ def main():
                      "iptables-statistic": f"loss {sc['loss_pct']}% via iptables statistic, no delay (TCP impact understated). ",
                      "none": ""}[loss_mode]
                   + "elapsed_s counts the transfer only; hash_s is the on-device SHA-256 before the first byte. "
-                  + "bytes_uploaded is what the server holds (acknowledged requests and HEAD offsets, tusd keeps the bytes of a cut request); "
-                  + "resumes counts each HEAD after a failure. "
+                  + "Metrics in tools/netlab/netlab.py terms, computed once by the runner's summary line (the --client-cmd contract): "
+                  + "part_time_s is the duration of a PATCH request, a cut request is a failed part, bytes_uploaded is what the server holds "
+                  + "(acknowledged requests and HEAD offsets; tusd keeps the bytes of a cut request), resumes counts each HEAD after a failure. "
                   + "Never pass: field-network-upload stage (b) is 1 GB on a real device and network "
                   f"(stage (a): efficiency >= {nl.STAGE_A_MIN_EFFICIENCY:.0%} of Mathis, zero bytes lost on resume, netem, checksum match)."),
     }

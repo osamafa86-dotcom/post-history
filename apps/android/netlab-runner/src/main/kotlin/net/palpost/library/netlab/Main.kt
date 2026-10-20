@@ -19,12 +19,19 @@ import java.util.UUID
 
 /**
  * Runs one UploadTask through the real UploadEngine + TusTransport against a tus endpoint (the netlab
- * toxiproxy port) and prints one JSON object per line on stdout for apps/android/netlab/measure.py:
- *   {"t":<seconds since start>,"ev":"hashed"|"created"|"head"|"part"|"fail"|"confirmed"|"end",...}
+ * toxiproxy port) and prints one JSON object per line on stdout:
+ *   {"t":<seconds since start>,"ev":"start"|"hashed"|"created"|"head"|"req"|"part"|"fail"|"end",...}
+ * and, as the last line, the session summary in the terms of tools/netlab/netlab.py (its external-client
+ * contract, `--client-cmd`): url_path, offset, complete, parts [[seconds, bytes, ok]] with the duration of
+ * each PATCH request (a cut request counts as a failed part), windows (connected stretches from the first
+ * successful request to the next failure), resumes (HEAD after a failure), failures, bytes_lost (a HEAD
+ * below what the server had confirmed). netlab computes efficiency, checksum and the verdict from it;
+ * apps/android/netlab/measure.py reads the same line until netlab.py carries the contract.
  * `POST /uploads` and `GET /uploads/{id}` are answered by an embedded stub (netlab has no API server):
  * the session carries the given tus endpoint, part size and a token the netlab hook stub accepts.
  *
- * Arguments: --file <path> --tus <url ending in /files/> [--part-bytes N] [--max-seconds S] [--token T]
+ * Arguments: --file <path> --tus <url ending in /files/> [--part-bytes N] [--max-seconds S] [--timeout S]
+ *            [--token T]
  */
 fun main(args: Array<String>) {
     val a = args.toList().chunked(2).associate { it[0] to it.getOrElse(1) { "" } }
@@ -32,6 +39,7 @@ fun main(args: Array<String>) {
     val tusEndpoint = a.getValue("--tus")
     val partBytes = a["--part-bytes"]?.toLong() ?: (1L shl 20)
     val maxSeconds = a["--max-seconds"]?.toLong() ?: 7200
+    val readTimeoutMs = (a["--timeout"]?.toLong() ?: 90L) * 1000
     val token = a["--token"] ?: "netlab-upload-token"
     val sessionId = UUID.randomUUID().toString()
 
@@ -53,22 +61,25 @@ fun main(args: Array<String>) {
     stub.start()
 
     val t0 = System.nanoTime()
-    fun t() = "%.3f".format((System.nanoTime() - t0) / 1e9)
+    fun now() = (System.nanoTime() - t0) / 1e9
+    fun t() = "%.3f".format(now())
     val out = System.out
     fun emit(ev: String, fields: String = "") = synchronized(out) { out.println("""{"t":${t()},"ev":"$ev"$fields}"""); out.flush() }
 
+    val summary = Summary()
     val observer = object : TusTransport.Observer {
-        override fun onCreated(uploadUrl: String) = emit("created", ""","url":"$uploadUrl"""")
-        override fun onHead(offset: Long) = emit("head", ""","offset":$offset""")
-        override fun onRequestDone(fromOffset: Long, toOffset: Long) = emit("part", ""","from":$fromOffset,"to":$toOffset""")
-        override fun onFailure(stage: String, error: Throwable) = emit("fail", ""","stage":"$stage","kind":"${error::class.java.simpleName}"""")
+        override fun onCreated(uploadUrl: String) { summary.created(uploadUrl, now()); emit("created", ""","url":"$uploadUrl"""") }
+        override fun onHead(offset: Long) { summary.head(offset, now()); emit("head", ""","offset":$offset""") }
+        override fun onRequestStart(offset: Long, payloadBytes: Int) { summary.requestStart(offset, now()); emit("req", ""","offset":$offset,"bytes":$payloadBytes""") }
+        override fun onRequestDone(fromOffset: Long, toOffset: Long) { summary.requestDone(fromOffset, toOffset, now()); emit("part", ""","from":$fromOffset,"to":$toOffset""") }
+        override fun onFailure(stage: String, error: Throwable) { summary.failure(now()); emit("fail", ""","stage":"$stage","kind":"${error::class.java.simpleName}"""") }
     }
     val store = InMemoryUploadStore()
     val engine = UploadEngine(
         store = store,
         files = FileSource { FileInputStream(File(it)) },
         uploadsApi = UploadsApi("http://127.0.0.1:${stub.address.port}/v1"),
-        transport = TusTransport(observer = observer),
+        transport = TusTransport(readTimeoutMs = readTimeoutMs.toInt(), observer = observer),
     )
     val task = UploadTask(
         id = "netlab", materialId = UUID.randomUUID().toString(), kind = "original", fileUri = file.absolutePath,
@@ -88,6 +99,49 @@ fun main(args: Array<String>) {
     }
     val final = runBlocking { store.get("netlab") }!!
     emit("end", ""","outcome":"${outcome::class.java.simpleName}","state":"${final.state}","confirmed":${final.bytesConfirmed},"url":${final.tusUploadUrl?.let { "\"$it\"" } ?: "null"},"sha256":${final.sha256?.let { "\"$it\"" } ?: "null"},"failure":${final.failure?.let { "\"$it\"" } ?: "null"}""")
+    val complete = outcome is RunOutcome.Finished && final.state.name == "VERIFIED"
+    emit("summary", summary.json(now(), complete, final.sha256))
     stub.stop(0)
-    System.exit(if (outcome is RunOutcome.Finished && final.state.name == "VERIFIED") 0 else 2)
+    System.exit(if (complete) 0 else 2)
+}
+
+/** The session in netlab's terms (see the file comment); every number comes from the transport's events. */
+class Summary {
+    private val parts = ArrayList<Triple<Double, Long, Boolean>>()
+    private val windows = ArrayList<Double>()
+    private var connectedSince: Double? = null
+    private var requestStartedAt: Double? = null
+    private var requestStartOffset = 0L
+    private var failedSinceHead = false
+    private var confirmed = 0L
+    var resumes = 0; var failures = 0; var bytesLost = 0L; var urlPath: String? = null
+
+    private fun ok(t: Double) { if (connectedSince == null) connectedSince = t }
+
+    fun created(url: String, t: Double) { urlPath = runCatching { java.net.URI(url).rawPath }.getOrNull() ?: url; ok(t) }
+    fun head(offset: Long, t: Double) {
+        if (failedSinceHead) { resumes++; failedSinceHead = false }
+        bytesLost += maxOf(0L, confirmed - offset)
+        confirmed = maxOf(confirmed, offset)
+        ok(t)
+    }
+    fun requestStart(offset: Long, t: Double) { requestStartedAt = t; requestStartOffset = offset }
+    fun requestDone(from: Long, to: Long, t: Double) {
+        parts.add(Triple(t - (requestStartedAt ?: t), to - from, true))
+        requestStartedAt = null
+        confirmed = maxOf(confirmed, to)
+        ok(t)
+    }
+    fun failure(t: Double) {
+        failures++
+        failedSinceHead = true
+        requestStartedAt?.let { parts.add(Triple(t - it, 0L, false)); requestStartedAt = null }
+        connectedSince?.let { windows.add(t - it); connectedSince = null }
+    }
+    fun json(t: Double, complete: Boolean, sha256: String?): String {
+        connectedSince?.let { windows.add(t - it) }
+        val p = parts.joinToString(",") { (s, b, k) -> "[%.3f,%d,%s]".format(s, b, k) }
+        val w = windows.joinToString(",") { "%.3f".format(it) }
+        return ""","url_path":${urlPath?.let { "\"$it\"" } ?: "null"},"offset":$confirmed,"complete":$complete,"parts":[$p],"windows":[$w],"resumes":$resumes,"failures":$failures,"bytes_lost":$bytesLost,"device_sha256":${sha256?.let { "\"$it\"" } ?: "null"}"""
+    }
 }

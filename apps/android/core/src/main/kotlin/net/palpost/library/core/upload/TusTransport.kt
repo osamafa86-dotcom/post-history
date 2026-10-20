@@ -19,11 +19,21 @@ open class TusTransport(
     /** Protocol-level events for measurement tools (netlab); no-op in the app. */
     private val observer: Observer = Observer.NONE,
 ) {
-    /** What the transport does on the wire, with monotonic timing left to the observer. */
+    /**
+     * What the transport does on the wire, with monotonic timing left to the observer. The app passes none:
+     * nothing here may end up in a log, a notification or a screen (SEC-01: no records on the device).
+     */
     interface Observer {
+        /**
+         * The upload was created at [uploadUrl]. The URL is a bearer capability on its own (tusd checks the
+         * token at creation only, SEC-06): an observer in the app must neither log nor display it; a
+         * measurement tool on a throwaway stack may.
+         */
         fun onCreated(uploadUrl: String) {}
         /** `HEAD` answered: the offset the server holds before sending resumes. */
         fun onHead(offset: Long) {}
+        /** A PATCH request is about to open at [offset] for [payloadBytes] bytes (fewer when the file ends). */
+        fun onRequestStart(offset: Long, payloadBytes: Int) {}
         /** One PATCH request acknowledged, carrying bytes `[fromOffset, toOffset)`. */
         fun onRequestDone(fromOffset: Long, toOffset: Long) {}
         /** The transport is about to throw; the engine decides whether it is transient. */
@@ -84,6 +94,7 @@ open class TusTransport(
         onHead(confirmed)
         var payload = requestPayloadBytes(requestStart)
         uploader.setRequestPayloadSize(payload)
+        if (confirmed < sizeBytes) observer.onRequestStart(requestStart, payload)
         try {
             while (!shouldStop()) {
                 val n = uploader.uploadChunk()
@@ -99,6 +110,7 @@ open class TusTransport(
                         // No connection is open between requests: the next size may differ.
                         payload = requestPayloadBytes(requestStart)
                         uploader.setRequestPayloadSize(payload)
+                        observer.onRequestStart(requestStart, payload)
                     }
                 }
             }

@@ -13,10 +13,6 @@ on:
       - "infra/tusd/**"
       - "infra/ingest/**"
       - ".github/workflows/netlab.yml"
-      # The Android upload core measured through the same stack (job android-upload-core below).
-      - "apps/android/core/**"
-      - "apps/android/netlab/**"
-      - "apps/android/netlab-runner/**"
   workflow_dispatch:
     inputs:
       scenario:
@@ -105,66 +101,6 @@ jobs:
         if: always()
         with:
           name: netlab-result
-          path: ${{ runner.temp }}/out/
-          if-no-files-found: ignore
-      - name: Tear down
-        if: always()
-        run: docker compose -f infra/compose/docker-compose.yml -f tools/netlab/compose.netlab.yml down -v
-
-  # field-network-upload stage (a) for the Android upload core: the app's UploadEngine (apps/android/core) on
-  # the JVM against the same toxiproxy/netem stack, three scenarios in sequence inside the 60-minute box.
-  # Results are artifacts to commit to docs/measurements/netlab/ (partial at best; stage (b) is a real device).
-  android-upload-core:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      NO_PROXY: 127.0.0.1,localhost
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Load sch_netem
-        run: |
-          sudo modprobe sch_netem || {
-            sudo apt-get update -q
-            sudo apt-get install -y -q "linux-modules-extra-$(uname -r)"
-            sudo modprobe sch_netem
-          }
-          lsmod | grep sch_netem
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
-        with:
-          cache-read-only: true
-      - name: Build the runner (generates the API client from contracts/openapi.yaml)
-        working-directory: apps/android
-        run: ./gradlew --no-daemon -q :netlab-runner:installDist
-      - name: Start compose with the netlab overlay
-        run: |
-          cp infra/compose/.env.example infra/compose/.env
-          sed -i "s/^TUSD_HOOK_SECRET=.*/TUSD_HOOK_SECRET=$(openssl rand -hex 32)/" infra/compose/.env
-          docker compose -f infra/compose/docker-compose.yml -f tools/netlab/compose.netlab.yml up -d --wait
-      # Budgets add up to ~50 min with setup: office 4 min, field-switch 10 min, field-weak 35 min (100 MB at
-      # 0.5 Mbit/s with blackouts needs ~32 min; a time box hit is recorded as partial with its bytes).
-      - name: Measure (office, field-switch, field-weak; 100 MB each)
-        run: |
-          mkdir -p "$RUNNER_TEMP/out"
-          d=$(date -u +%F)
-          for pair in office:240 field-switch:600 field-weak:2100; do
-            sc=${pair%%:*}; box=${pair##*:}
-            python3 apps/android/netlab/measure.py --scenario "$sc" --size-mb 100 --max-seconds "$box" \
-              --workdir "$RUNNER_TEMP" --out "$RUNNER_TEMP/out/$d-android-upload-core-$sc-100mb.json" || true
-          done
-      - name: Validate the result files against contracts/schemas/measurement.json
-        run: |
-          npm --prefix tools/acceptance ci --no-audit --no-fund
-          for f in "$RUNNER_TEMP"/out/*.json; do echo "== $(basename "$f")"; cat "$f"; done
-          node tools/acceptance/validate-results.mjs "$RUNNER_TEMP/out"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: android-upload-core-netlab
           path: ${{ runner.temp }}/out/
           if-no-files-found: ignore
       - name: Tear down
