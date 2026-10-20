@@ -67,10 +67,11 @@ guard !options.file.isEmpty, let _ = URL(string: options.endpoint) else {
 }
 
 let config = URLSessionConfiguration.ephemeral
-config.timeoutIntervalForRequest = options.timeoutSeconds      // مهلة خمول المقبس كما في netlab.py --timeout-s
+// على Linux timeoutIntervalForRequest مهلة للطلب كله؛ مهلة الخمول (netlab --timeout-s) يطبّقها مراقب التقدم في النقل.
+config.timeoutIntervalForRequest = options.maxSeconds + 60
 config.timeoutIntervalForResource = options.maxSeconds + 60
 config.httpMaximumConnectionsPerHost = 1
-let recorder = RecordingTransport(inner: URLSessionTusTransport(configuration: config))
+let recorder = RecordingTransport(inner: URLSessionTusTransport(configuration: config, idleTimeout: options.timeoutSeconds))
 
 var policy = ChunkSizePolicy()
 policy.foregroundBytes = options.chunkBytes

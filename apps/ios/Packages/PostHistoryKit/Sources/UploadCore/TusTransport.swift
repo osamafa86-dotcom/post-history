@@ -108,12 +108,39 @@ public final class URLSessionTusTransport: NSObject, TusTransport, URLSessionDat
     private var session: URLSession!
     private weak var delegate: TusTransportDelegate?
     private var responses: [Int: HTTPURLResponse] = [:]
+    /// آخر تقدم في إرسال الجسم لكل مهمة PATCH (مراقب الخمول).
+    private var lastProgress: [Int: Date] = [:]
+    private let idleTimeout: TimeInterval?
+    private var watchdog: Task<Void, Never>?
     /// يُستدعى بعد معالجة كل أحداث الجلسة الخلفية (من `handleEventsForBackgroundURLSession`).
     public var backgroundCompletionHandler: (@Sendable () -> Void)?
 
-    public init(configuration: URLSessionConfiguration) {
+    /// `idleTimeout`: مهلة خمول صريحة لمهام PATCH تُقاس على تقدم إرسال الجسم (`didSendBodyData`)؛ تجاوزها يلغي المهمة
+    /// فيستأنف المحرّك من موضع الخادم. لازمة على Linux حيث `timeoutIntervalForRequest` مهلة للطلب كله لا للخمول
+    /// (قياس netlab: كل PATCH من 1 MiB عند 86 kbit/s يُقطع عند 60 ث)؛ على منصات Apple المهلة النظامية خمولٌ أصلًا.
+    public init(configuration: URLSessionConfiguration, idleTimeout: TimeInterval? = nil) {
+        self.idleTimeout = idleTimeout
         super.init()
         session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+        if let idleTimeout {
+            watchdog = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    await self?.cancelIdleTasks(olderThan: idleTimeout)
+                }
+            }
+        }
+    }
+
+    deinit { watchdog?.cancel() }
+
+    private func cancelIdleTasks(olderThan timeout: TimeInterval) async {
+        let stale: Set<Int> = lock.withLock {
+            let cutoff = Date().addingTimeInterval(-timeout)
+            return Set(lastProgress.filter { $0.value < cutoff }.map(\.key))
+        }
+        guard !stale.isEmpty else { return }
+        for task in await allTasks() where stale.contains(task.taskIdentifier) { task.cancel() }
     }
 
     public func setDelegate(_ delegate: TusTransportDelegate?) async { lock.withLock { self.delegate = delegate } }
@@ -154,6 +181,7 @@ public final class URLSessionTusTransport: NSObject, TusTransport, URLSessionDat
         r.setValue("application/offset+octet-stream", forHTTPHeaderField: "Content-Type")
         let task = session.uploadTask(with: r, fromFile: req.chunkFile)
         task.taskDescription = req.key.description
+        if idleTimeout != nil { lock.withLock { lastProgress[task.taskIdentifier] = Date() } }
         task.resume()
     }
 
@@ -176,9 +204,17 @@ public final class URLSessionTusTransport: NSObject, TusTransport, URLSessionDat
         completionHandler(.allow)
     }
 
+    public func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        if idleTimeout != nil { lock.withLock { lastProgress[task.taskIdentifier] = Date() } }
+        if Self.debugProgress { FileHandle.standardError.write(Data("tus progress task=\(task.taskIdentifier) sent=\(totalBytesSent)/\(totalBytesExpectedToSend)\n".utf8)) }
+    }
+
+    /// تشخيص تقدم الإرسال على stderr (`TUS_TRANSPORT_DEBUG=1`)؛ لا معرّفات ولا مسارات.
+    static let debugProgress = ProcessInfo.processInfo.environment["TUS_TRANSPORT_DEBUG"] == "1"
+
     public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let key = task.taskDescription.flatMap(TusTaskKey.init) else { return }
-        let http = lock.withLock { responses.removeValue(forKey: task.taskIdentifier) } ?? (task.response as? HTTPURLResponse)
+        let http = lock.withLock { lastProgress[task.taskIdentifier] = nil; return responses.removeValue(forKey: task.taskIdentifier) } ?? (task.response as? HTTPURLResponse)
         let outcome: TusPatchOutcome
         if let error {
             outcome = .failed((error as? URLError)?.code == .cancelled ? .cancelled : .transport(String((error as NSError).code)))
