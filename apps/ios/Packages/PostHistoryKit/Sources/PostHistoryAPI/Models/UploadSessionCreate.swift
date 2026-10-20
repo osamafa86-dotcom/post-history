@@ -31,7 +31,7 @@ public struct UploadSessionCreate: Sendable, Codable, Hashable {
     public var mimeType: String?
     /** لـ proxy فقط */
     public var proxyMode: ProxyMode?
-    /** بصمة SHA-256 للملف كاملًا يحسبها العميل قبل الإنشاء. على كل عميل إرسالها (ADR 0012): الخادم يقارنها ببصمته بعد التجميع فيخرج عامل الوسائط من قاعدة الثقة، والقرار `checksum_mismatch` للخادم وحده. تبقى اختيارية في المخطط حتى تُحدَّث اختبارات الخادم والقبول التي تنشئ جلسات بدونها، ثم تصير إلزامية بتغيير عقد منسّق. */
+    /** بصمة SHA-256 للملف كاملًا يحسبها العميل قبل الإنشاء؛ على كل عميل إرسالها (ADR 0012): الخادم يقارنها ببصمته بعد التجميع فيخرج عامل الوسائط من قاعدة الثقة، والقرار `checksum_mismatch` للخادم وحده. الخادم يفرضها اليوم بـ `UPLOAD_REQUIRE_CLIENT_SHA256`؛ تصير مفتاحًا إلزاميًا في المخطط مع تحديث اختبارات الخادم المرتبطة بهذا العلم، ويبقى نوعها قابلًا لـ null حتى v0.2 كي لا تنكسر شيفرة Swift وKotlin المولّدة. */
     public var clientSha256: String?
     public var clientFingerprint: UploadSessionCreateClientFingerprint?
 

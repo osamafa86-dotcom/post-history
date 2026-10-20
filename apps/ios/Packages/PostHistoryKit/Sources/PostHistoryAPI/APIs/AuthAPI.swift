@@ -12,28 +12,30 @@ open class AuthAPI {
     /**
      اعتماد المشرف لطلب استعادة حساب في نطاقه
      
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
      - parameter id: (path) معرّف طلب الاستعادة 
      - parameter approveRecoveryRequest: (body)  
      - parameter apiConfiguration: The configuration for the http request.
-     - returns: RecoveryRequest
+     - returns: RecoveryApproval
      */
-    open class func approveRecovery(id: UUID, approveRecoveryRequest: ApproveRecoveryRequest, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> RecoveryRequest {
-        return try await approveRecoveryWithRequestBuilder(id: id, approveRecoveryRequest: approveRecoveryRequest, apiConfiguration: apiConfiguration).execute().body
+    open class func approveRecovery(idempotencyKey: String, id: UUID, approveRecoveryRequest: ApproveRecoveryRequest, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> RecoveryApproval {
+        return try await approveRecoveryWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, approveRecoveryRequest: approveRecoveryRequest, apiConfiguration: apiConfiguration).execute().body
     }
 
     /**
      اعتماد المشرف لطلب استعادة حساب في نطاقه
      - POST /auth/recovery/{id}/approve
-     - يعتمد المشرف الطلب بعد التحقق خارج النظام من هوية المراسل. الاعتماد يبطل كل جلسات الحساب ورموز رفعه المفتوحة، ويصدر رمز إعادة تعيين قصير العمر يصل المستخدم خارج هذه الاستجابة، ويضع الحساب في حالة «إعادة تعيين إلزامية» حتى `/auth/recovery/complete` و`/auth/totp/confirm`، ويُسجَّل في سجل التدقيق. حساب مدير نظام لا يُعتمد من هنا أبدًا: `403 admin_quorum_required` (إجراء الشخصين من سطر الأوامر، ADR 0005 ودليل التشغيل). حساب مساوٍ لدور المقرِّر أو أعلى: `403 forbidden_scope`.
+     - يعتمد المشرف الطلب بعد التحقق خارج النظام من هوية المراسل. الاعتماد يبطل كل جلسات الحساب ورموز رفعه المفتوحة، ويعيد رمز إعادة التعيين **مرة واحدة** في هذه الاستجابة للمشرف المعتمِد، الذي يسلّمه للمراسل خارج النظام. الرمز حساس: لا يدخل سجلًا ولا Outbox ولا إشعارًا، ويُخزَّن ببصمته فقط، وصلاحيته ≤ 24 ساعة، ومربوط بالحساب المستعاد. التكرار بمفتاح منع التكرار نفسه لا يعيد الرمز (حالة الطلب `approved` دون `reset_token`). الحساب في حالة «إعادة تعيين إلزامية» حتى `/auth/recovery/complete` و`/auth/totp/confirm`، والاعتماد يُسجَّل في التدقيق. حساب مدير نظام لا يُعتمد من هنا أبدًا: `403 admin_quorum_required` (إجراء الشخصين من سطر الأوامر، ADR 0005 ودليل التشغيل). حساب مساوٍ لدور المقرِّر أو أعلى: `403 forbidden_scope`.
      - Bearer Token:
        - type: http
        - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
      - parameter id: (path) معرّف طلب الاستعادة 
      - parameter approveRecoveryRequest: (body)  
      - parameter apiConfiguration: The configuration for the http request.
-     - returns: RequestBuilder<RecoveryRequest> 
+     - returns: RequestBuilder<RecoveryApproval> 
      */
-    open class func approveRecoveryWithRequestBuilder(id: UUID, approveRecoveryRequest: ApproveRecoveryRequest, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<RecoveryRequest> {
+    open class func approveRecoveryWithRequestBuilder(idempotencyKey: String, id: UUID, approveRecoveryRequest: ApproveRecoveryRequest, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<RecoveryApproval> {
         var localVariablePath = "/auth/recovery/{id}/approve"
         let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
         let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
@@ -45,11 +47,12 @@ open class AuthAPI {
 
         let localVariableNillableHeaders: [String: (any Sendable)?] = [
             "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
         ]
 
         let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
 
-        let localVariableRequestBuilder: RequestBuilder<RecoveryRequest>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+        let localVariableRequestBuilder: RequestBuilder<RecoveryApproval>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
@@ -480,7 +483,7 @@ open class AuthAPI {
     /**
      تعليق حساب أو إعادة تفعيله (مدير النظام)
      - PUT /users/{id}/status
-     - التعليق يبطل كل جلسات الحساب ورموز رفعه فورًا؛ إعادة التفعيل لا تعيد الجلسات. لا يعلّق المدير حسابه، وحساب مدير نظام آخر لا يُعلَّق من هنا: `403 admin_quorum_required`. ذاتي التكرار، ويُسجَّل في التدقيق.
+     - التعليق يبطل كل جلسات الحساب ورموز رفعه فورًا؛ إعادة التفعيل لا تعيد الجلسات. لا يعلّق المدير حسابه، وحساب مدير نظام آخر لا يُعلَّق من هنا: `403 admin_quorum_required`. ذاتي التكرار. يُسجَّل في التدقيق بـ `reason_code` (`suspended` أو `reactivated`) وحده؛ لا نص حر (SEC-03).
      - Bearer Token:
        - type: http
        - name: bearerAuth

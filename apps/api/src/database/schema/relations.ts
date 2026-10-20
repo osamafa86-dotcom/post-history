@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { idempotencyKeys, materialContributors, materialFiles, materialTransitions, materials, notificationDeliveries, notifications, offices, outboxEvents, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
+import { deviceAttestationKeys, idempotencyKeys, materialContributors, materialFiles, materialTransitions, materials, notificationDeliveries, notifications, offices, outboxEvents, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
 
 export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => ({
 	refreshToken: one(refreshTokens, {
@@ -49,6 +49,7 @@ export const usersRelations = relations(users, ({one, many}) => ({
 		relationName: "recoveryRequests_userId_users_id"
 	}),
 	notifications: many(notifications),
+	deviceAttestationKeys: many(deviceAttestationKeys),
 	recoveryCodes: many(recoveryCodes),
 	materialContributors: many(materialContributors),
 	userRoles_grantedBy: many(userRoles, {
@@ -225,6 +226,13 @@ export const notificationsRelations = relations(notifications, ({one, many}) => 
 		references: [users.id]
 	}),
 	notificationDeliveries: many(notificationDeliveries),
+}));
+
+export const deviceAttestationKeysRelations = relations(deviceAttestationKeys, ({one}) => ({
+	user: one(users, {
+		fields: [deviceAttestationKeys.userId],
+		references: [users.id]
+	}),
 }));
 
 export const recoveryCodesRelations = relations(recoveryCodes, ({one}) => ({

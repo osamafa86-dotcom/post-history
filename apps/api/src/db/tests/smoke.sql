@@ -298,6 +298,43 @@ UPDATE recovery_requests SET state = 'approved', decided_at = now(), approved_by
 WHERE id = '00000000-0000-4000-8000-000000000901';
 UPDATE notifications SET recovery_request_id = '00000000-0000-4000-8000-000000000901';
 
+-- ---------- device attestation keys (SEC-07) ----------
+INSERT INTO device_attestation_keys (id, user_id, key_id_hash, public_key)
+VALUES ('00000000-0000-4000-8000-000000000a01', '00000000-0000-4000-8000-000000000011', sha256('key-1'::bytea), '\x04');
+UPDATE device_attestation_keys SET sign_count = 1, last_used_at = now() WHERE id = '00000000-0000-4000-8000-000000000a01';
+SELECT pg_temp.expect_error($q$
+  UPDATE device_attestation_keys SET last_used_at = now() + interval '1 second' WHERE id = '00000000-0000-4000-8000-000000000a01' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE device_attestation_keys SET sign_count = 0 WHERE id = '00000000-0000-4000-8000-000000000a01' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO device_attestation_keys (user_id, key_id_hash, public_key)
+  VALUES ('00000000-0000-4000-8000-000000000012', sha256('key-1'::bytea), '\x04') $q$, '23505');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO device_attestation_keys (user_id, key_id_hash, public_key) VALUES ('00000000-0000-4000-8000-000000000012', '\x01', '\x04') $q$, '23514');
+
+-- ---------- admin quorum guard ----------
+INSERT INTO users (id, email, password_hash) VALUES
+  ('00000000-0000-4000-8000-000000000021', 'admin1@example.invalid', 'argon2id$test'),
+  ('00000000-0000-4000-8000-000000000022', 'admin2@example.invalid', 'argon2id$test'),
+  ('00000000-0000-4000-8000-000000000023', 'admin3@example.invalid', 'argon2id$test');
+INSERT INTO user_roles (user_id, role) VALUES
+  ('00000000-0000-4000-8000-000000000021', 'system_admin'),
+  ('00000000-0000-4000-8000-000000000022', 'system_admin'),
+  ('00000000-0000-4000-8000-000000000023', 'system_admin');
+SET CONSTRAINTS ALL IMMEDIATE;
+UPDATE users SET status = 'suspended' WHERE id = '00000000-0000-4000-8000-000000000023';   -- 3 → 2: allowed
+SET CONSTRAINTS ALL DEFERRED;
+SELECT pg_temp.expect_error($q$ UPDATE users SET status = 'suspended' WHERE id = '00000000-0000-4000-8000-000000000022' $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
+SELECT pg_temp.expect_error($q$ DELETE FROM user_roles WHERE user_id = '00000000-0000-4000-8000-000000000021' AND role = 'system_admin' $q$, '23514');
+-- تبديل مدير بآخر داخل معاملة واحدة مسموح (الفحص مؤجل)
+SET CONSTRAINTS ALL DEFERRED;
+UPDATE users SET status = 'active' WHERE id = '00000000-0000-4000-8000-000000000023';
+DELETE FROM user_roles WHERE user_id = '00000000-0000-4000-8000-000000000022' AND role = 'system_admin';
+SET CONSTRAINTS ALL IMMEDIATE;
+SELECT pg_temp.expect_error($q$
+  UPDATE recovery_requests SET reset_token_expires_at = decided_at + interval '25 hours' WHERE id = '00000000-0000-4000-8000-000000000901' $q$, '23514');
+
 -- ---------- indexing policy (ADR 0002) ----------
 SELECT pg_temp.assert(
   NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexdef ILIKE '%USING gin%'),

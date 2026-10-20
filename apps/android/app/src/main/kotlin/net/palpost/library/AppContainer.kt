@@ -36,8 +36,11 @@ class AppContainer(context: Context) {
     val materialsApi: MaterialsApi by lazy { MaterialsApi(baseUrl, auth.authenticatedClient) }
     val uploadsApi: UploadsApi by lazy { UploadsApi(baseUrl, auth.authenticatedClient) }
 
-    val database: UploadDatabase by lazy { UploadDatabase.open(app) }
-    val uploadStore: RoomUploadStore by lazy { RoomUploadStore(database.uploads(), sealer) }
+    // Re-openable: a wipe closes and deletes the database; the next sign-in gets a fresh one without restarting.
+    @Volatile private var db: UploadDatabase? = null
+    val database: UploadDatabase
+        get() = synchronized(this) { db?.takeIf { it.isOpen } ?: UploadDatabase.open(app).also { db = it } }
+    val uploadStore: RoomUploadStore get() = RoomUploadStore(database.uploads(), sealer)
     val fileSource: FileSource by lazy { ContentResolverFileSource(app) }
     val settings: AppSettings by lazy { AppSettings(app) }
 }

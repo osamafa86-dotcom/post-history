@@ -27,21 +27,25 @@
 | التزامن المتفائل | `Material.row_version` و`ETag` على قراءة المادة وكتاباتها؛ `If-Match` اختياري على `PATCH` والانتقال والمساهمين والحجز ونشر النموذج؛ `412 precondition_failed` | الترويسة اختيارية؛ العميل الذي لا يرسلها يعمل كما كان |
 | حد المعدل المتدهور | `GET /health` (داخلي) بحقل `rate_limiter` وترويسة `X-Rate-Limiter: degraded`؛ لا على `/auth/login` العام لأنها مرشد للمهاجم (مراجعة الأمن) | مسار داخلي جديد |
 | استعادة المدير | `403 admin_quorum_required` لحساب مدير نظام (إجراء الشخصين من سطر الأوامر)؛ `PUT /users/{id}/status` للتعليق وإعادة التفعيل؛ `POST /auth/recovery/complete` و`POST /auth/totp/confirm` وجلسة مقيّدة بـ `403 credential_reset_required`؛ `Me.credential_reset_required`؛ `Notification.recovery_request_id` | مسارات وحقول جديدة؛ الحساب المستعاد لم يكن له مسار إكمال أصلًا |
+| إكمال الاستعادة (أسئلة الخادم) | اعتماد استعادة غير المدير يعيد `reset_token` مرة واحدة للمشرف (`RecoveryApproval`؛ ≤ 24 ساعة بقيد في القاعدة، بصمة فقط، لا سجل ولا Outbox)، والمدير عبر سطر الأوامر ثنائي الأشخاص؛ `PUT /users/{id}/status` بلا نص حر (`reason_code` وحده في التدقيق)؛ ترحيل يمنع أن يقل مديرو النظام الفاعلون عن اثنين | حقلان اختياريان في الاستجابة؛ المسار جديد |
 | رمز الرفع | العمود `upload_sessions.upload_token_expires_at` مستقلًا عن انتهاء الجلسة، ويُعرض في `UploadSessionCreated` كما كان (لا في قراءة الجلسة: إضافته إلى `UploadSession` تعيد ترتيب مُهيِّئ Swift المولَّد فتكسر شيفرة العميل)؛ `403 forbidden_role` لدور ليس في `x-roles` | عمود جديد ورمز خطأ جديد |
-| `client_sha256` | «على كل عميل إرسالها» في الوصف؛ الإلزام في المخطط مؤجل؛ `reported_sha256` عند الاكتمال كما هو | **انظر أدناه** |
+| `client_sha256` | إلزامي في الوصف والخادم يفرضه بـ `UPLOAD_REQUIRE_CLIENT_SHA256`؛ المفتاح يصير إلزاميًا في المخطط مع تحديث اختبارَي الخادم لهذا العلم؛ النوع قابل لـ null حتى v0.2 | **انظر أدناه** |
+| شهادة الجهاز ونطاق ingest (SEC-07) | `POST /device-attestations/challenge` و`POST /device-attestations` و`POST /uploads/{id}/ingest-token`، و`UploadSession.ingest_token_required`، وترويسة `Ingest-Token`، ورموز `attestation_failed`/`challenge_expired`/`assertion_replay`/`attestation_key_conflict`/`attestation_unavailable` و`410`/`503`؛ جدول `device_attestation_keys` (بصمة `key_id` فقط، عدّاد متزايد بقيد) | مسارات وحقل اختياري جديدة؛ الإلزام في v0.2 |
 | `/internal/media/*` | المسارات الثلاث ومخططاتها (`MediaSession`، `MediaVerification`، `MediaVerificationResult`، `MediaDerivative`، `MediaTechnical`) ونظام `mediaWorkerToken` كما في ADR 0006 | داخلية `x-internal`؛ لا يُولَّد لها عميل |
 | الأحجام والمرفق | «ميغابايت» = MiB = 1,048,576 بايت في كل وصف؛ قيمة `attachment` في `$defs/attachmentValue` (`upload_session_id`، `mime_type`، `size_bytes`) والخادم يرفض قيمة غير فارغة حتى يُفعَّل رفع المرفقات | وصف وتعريف جديد |
 
 `Error.code` صار قائمة مفتوحة (`x-extensible-enum`): العميل يعامل الرمز المجهول كخطأ عام بحسب حالة HTTP. على مولّدي
 Swift وKotlin توليده نصًا أو enum بحالة `unknown` (وكيلا iOS وأندرويد).
 
-### `client_sha256`: الإلزام مؤجل إلى تغيير منسّق
+### `client_sha256`: يصير مفتاحًا إلزاميًا بنوع قابل لـ null حتى v0.2
 
-جعل حقل طلب إلزاميًا كسر تقني، ويمكن قبوله قبل الإطلاق لأن تطبيق iOS يرسله بالفعل (#51) وأندرويد لم يبنِ الرفع بعد.
-لكن الخادم يتحقق من الأجسام بالعقد نفسه، واختبارات تكامل الخادم (`apps/api/test/integration/uploads.spec.ts`، تسعة مواضع)
-وسكربتات القبول (`receipt-notification`، `concurrent-load`، والافتراضي في `lib/live.mjs`) تنشئ جلسات بدونه، وكلها خارج
-ملكية هذا الوكيل. الإلزام هنا يحوّل CI هذا الطلب وكل طلب بعده إلى الأحمر. لذلك: الوصف يُلزم كل عميل بإرساله الآن، والمخطط
-يبقى اختياريًا، ويُرفع إلى `required` بطلب عقد صغير يُدمج مع تحديث الخادم والقبول في الدورة نفسها (قرار المنسّق).
+بعد #59 و#61 يرسله الخادم في اختباراته وكل سكربت قبول. بقي اختباران في `uploads.spec.ts` يثبتان سلوك العلم الانتقالي `UPLOAD_REQUIRE_CLIENT_SHA256` (المطفأ يقبل الغياب، ومسار الخطأ `/client_sha256`)؛ إلزام المفتاح في المخطط يُدمج في هذا الطلب حين يحدّثهما وكيل الخادم. أما النوع فيبقى `[string, null]`:
+عميلا iOS وأندرويد يمرران قيمة اختيارية (`String?`)، ونوع غير قابل لـ null يغيّر المولَّد ويكسر بناء التطبيقين. الخادم يرفض
+`null` بـ `422`، والنوع غير القابل لـ null أول بنود `docs/plan/عقد-v0.2-قائمة.md`.
+
+### الكسر المؤجل
+
+ما يكسر عملاء v0 من هذه الدورة ومن SEC-07 (#67) مسجَّل في `docs/plan/عقد-v0.2-قائمة.md`.
 
 ## الدليل
 

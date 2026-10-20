@@ -4,6 +4,8 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import net.palpost.library.AppContainer
 import net.palpost.library.core.auth.SignOutReason
@@ -34,13 +36,14 @@ class DeviceWipe(private val context: Context, private val container: AppContain
     val targets: List<String> get() = steps(SignOutReason.WIPED).map { it.name }
 
     /**
-     * Emergency: first a best-effort request to end every session on the server (at most three seconds,
-     * ignored if offline or refused), then the local erase, which never waits for or depends on that answer.
+     * Emergency: the local erase starts at once; in parallel, a best-effort request asks the server to end every
+     * session (at most three seconds, ignored if offline or refused). The token for that request is read before
+     * the first local step, so neither waits for the other.
      */
-    suspend fun emergency(): WipeReport {
-        val serverRevoked = container.auth.revokeAllSessionsBestEffort(timeoutMs = 3_000)
+    suspend fun emergency(): WipeReport = coroutineScope {
+        val server = async { container.auth.revokeAllSessionsBestEffort(timeoutMs = 3_000) }
         val local = run(SignOutReason.WIPED)
-        return if (serverRevoked) local.copy(wiped = listOf("server_sessions") + local.wiped) else local
+        if (server.await()) local.copy(wiped = listOf("server_sessions") + local.wiped) else local
     }
 
     /** After a 401 on refresh the tokens are already gone; everything else goes now. */

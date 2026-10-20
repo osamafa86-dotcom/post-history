@@ -41,7 +41,9 @@ ALTER TABLE recovery_requests
   ADD CONSTRAINT recovery_requests_reset_token_hash_len CHECK (reset_token_hash IS NULL OR octet_length(reset_token_hash) = 32),
   ADD CONSTRAINT recovery_requests_reset_token_consistent CHECK ((reset_token_hash IS NULL) = (reset_token_expires_at IS NULL)),
   ADD CONSTRAINT recovery_requests_reset_only_when_approved CHECK (reset_token_hash IS NULL OR state = 'approved'),
-  ADD CONSTRAINT recovery_requests_completed_needs_token CHECK (completed_at IS NULL OR reset_token_hash IS NOT NULL);
+  ADD CONSTRAINT recovery_requests_completed_needs_token CHECK (completed_at IS NULL OR reset_token_hash IS NOT NULL),
+  ADD CONSTRAINT recovery_requests_reset_token_max_24h
+    CHECK (reset_token_expires_at IS NULL OR reset_token_expires_at <= decided_at + interval '24 hours');
 CREATE UNIQUE INDEX recovery_requests_reset_token_key ON recovery_requests (reset_token_hash) WHERE reset_token_hash IS NOT NULL;
 
 ALTER TABLE notifications ADD COLUMN recovery_request_id uuid REFERENCES recovery_requests (id) ON DELETE SET NULL;
@@ -50,6 +52,7 @@ ALTER TABLE notifications ADD COLUMN recovery_request_id uuid REFERENCES recover
 ALTER TABLE notifications DROP COLUMN recovery_request_id;
 DROP INDEX recovery_requests_reset_token_key;
 ALTER TABLE recovery_requests
+  DROP CONSTRAINT recovery_requests_reset_token_max_24h,
   DROP CONSTRAINT recovery_requests_completed_needs_token,
   DROP CONSTRAINT recovery_requests_reset_only_when_approved,
   DROP CONSTRAINT recovery_requests_reset_token_consistent,

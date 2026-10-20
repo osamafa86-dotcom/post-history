@@ -460,6 +460,7 @@ export const recoveryRequests = pgTable("recovery_requests", {
 	check("recovery_requests_reset_only_when_approved", sql`(reset_token_hash IS NULL) OR (state = 'approved'::text)`),
 	check("recovery_requests_reset_token_consistent", sql`(reset_token_hash IS NULL) = (reset_token_expires_at IS NULL)`),
 	check("recovery_requests_reset_token_hash_len", sql`(reset_token_hash IS NULL) OR (octet_length(reset_token_hash) = 32)`),
+	check("recovery_requests_reset_token_max_24h", sql`(reset_token_expires_at IS NULL) OR (reset_token_expires_at <= (decided_at + '24:00:00'::interval))`),
 	check("recovery_requests_state_check", sql`state = ANY (ARRAY['pending_approval'::text, 'approved'::text, 'rejected'::text, 'expired'::text])`),
 ]);
 
@@ -512,6 +513,30 @@ export const notifications = pgTable("notifications", {
 	check("notifications_priority_check", sql`priority = ANY (ARRAY['urgent'::text, 'important'::text, 'normal'::text])`),
 	check("notifications_read_consistent", sql`(state = ANY (ARRAY['read'::text, 'acknowledged'::text])) = (read_at IS NOT NULL)`),
 	check("notifications_state_check", sql`state = ANY (ARRAY['sent'::text, 'delivered'::text, 'read'::text, 'acknowledged'::text])`),
+]);
+
+export const deviceAttestationKeys = pgTable("device_attestation_keys", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	userId: uuid("user_id").notNull(),
+	platform: text().default('ios').notNull(),
+	keyIdHash: bytea("key_id_hash").notNull(),
+	publicKey: bytea("public_key").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	signCount: bigint("sign_count", { mode: "number" }).default(0).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastUsedAt: timestamp("last_used_at", { withTimezone: true, mode: 'string' }),
+	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("device_attestation_keys_user_active_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops")).where(sql`(revoked_at IS NULL)`),
+	foreignKey({
+			columns: [table.userId],
+			foreignColumns: [users.id],
+			name: "device_attestation_keys_user_id_fkey"
+		}).onDelete("cascade"),
+	unique("device_attestation_keys_key_id_hash_key").on(table.keyIdHash),
+	check("device_attestation_keys_key_id_hash_len", sql`octet_length(key_id_hash) = 32`),
+	check("device_attestation_keys_platform_check", sql`platform = 'ios'::text`),
+	check("device_attestation_keys_sign_count_nonneg", sql`sign_count >= 0`),
 ]);
 
 export const recoveryCodes = pgTable("recovery_codes", {
