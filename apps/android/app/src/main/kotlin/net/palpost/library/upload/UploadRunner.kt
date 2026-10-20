@@ -24,11 +24,12 @@ class UploadRunner(private val context: Context, private val container: AppConta
         val engine = UploadEngine(store = container.uploadStore, files = container.fileSource, uploadsApi = container.uploadsApi)
         var remaining = false
         val pending = container.uploadStore.pending()
+        // A revoked or wiped session stops the transfer at the next chunk, not at the next task (SEC-01).
+        val stop = { shouldStop() || container.auth.state.value !is AuthState.SignedIn }
         pending.forEachIndexed { index, task ->
-            if (shouldStop()) { remaining = true; return@forEachIndexed }
-            if (container.auth.state.value !is AuthState.SignedIn) { remaining = true; return@forEachIndexed }
+            if (stop()) { remaining = true; return@forEachIndexed }
             progress.update(index, pending.size, (task.progress * 100).toInt())
-            val outcome = engine.run(task.id, shouldStop) { t: UploadTask, sent: Long ->
+            val outcome = engine.run(task.id, stop) { t: UploadTask, sent: Long ->
                 progress.update(index, pending.size, if (t.sizeBytes > 0) ((sent * 100) / t.sizeBytes).toInt() else null)
             }
             val after = container.uploadStore.get(task.id)

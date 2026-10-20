@@ -28,6 +28,11 @@ object UploadScheduler {
         }
     }
 
+    /** Stops the scheduled transfer host (wipe, revocation). The foreground service is stopped by its caller. */
+    fun cancel(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) context.getSystemService(JobScheduler::class.java).cancel(JOB_ID)
+    }
+
     /** On app open and after boot (Android 10–13): resume whatever is pending. */
     suspend fun resumePending(context: Context): Boolean {
         val container = (context.applicationContext as PostHistoryApp).container

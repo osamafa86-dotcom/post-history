@@ -80,16 +80,17 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       const mk = async (tag) => { const r = await http.call(tokens.reporter, "POST", "/materials", { body: materialBody(fv, `invalid-${tag}-${randomUUID().slice(0, 8)}`) }); if (r.status !== 201) throw new Error(`create material failed: ${r.status} ${r.text.slice(0, 200)}`); return r.body; };
       const good = Buffer.alloc(300_000, 7), sha = (b) => createHash("sha256").update(b).digest("hex");
       const cases = [
-        ["good", { size: good.length, bytes: good }, null],
-        ["checksum_mismatch", { size: good.length, bytes: good, clientSha256: sha(Buffer.from("something else")) }, "checksum_mismatch"],
-        ["storage_error", { size: good.length, bytes: null }, "storage_error"],
-        ["invalid_file", { size: good.length + 10, bytes: good }, "invalid_file"],
-        ["good again", { size: good.length, bytes: good }, null],
+        // `declared` is the file the phone says it is sending (its size and SHA-256 go to POST /uploads); `bytes` is what arrives
+        ["good", { size: good.length, declared: good, bytes: good }, null],
+        ["checksum_mismatch", { size: good.length, declared: good, bytes: good, clientSha256: sha(Buffer.from("something else")) }, "checksum_mismatch"],
+        ["storage_error", { size: good.length, declared: good, bytes: null }, "storage_error"],
+        ["invalid_file", { size: good.length + 10, declared: good, bytes: good }, "invalid_file"],
+        ["good again", { size: good.length, declared: good, bytes: good }, null],
       ];
       const made = [];
       for (const [label, c, expected] of cases) {
         const mat = await mk(label.replace(/\W/g, ""));
-        const session = await createUploadSession(http, tokens.reporter, { materialId: mat.id, size: c.size, clientSha256: c.clientSha256 });
+        const session = await createUploadSession(http, tokens.reporter, { materialId: mat.id, size: c.size, clientSha256: c.clientSha256 ?? sha(c.declared) });
         await simulateUpload({ hooks: hc, s3, bucket, prefix, session, bytes: c.bytes });
         made.push({ label, mat, session, expected });
       }

@@ -19,12 +19,15 @@ struct HomeView: View {
                     Button("settings.logout") { Task { await app.logout(allSessions: false) } }
                     Button("settings.logoutAll", role: .destructive) { confirmLogoutAll = true }
                 }
+                Section { EmergencyWipeButton() } header: { Text("wipe.section") } footer: { Text("wipe.help") }
             }
             .navigationTitle("home.title")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { showNewMaterial = true } label: { Label("material.new", systemImage: "plus") }
                 }
+                // إيماءة سريعة: المسح الطارئ من شريط الأدوات أيضًا (بالتأكيد نفسه).
+                ToolbarItem(placement: .topBarLeading) { EmergencyWipeButton().labelStyle(.iconOnly) }
             }
             .sheet(isPresented: $showNewMaterial) { NewMaterialView() }
             .confirmationDialog("settings.logoutAll.confirm", isPresented: $confirmLogoutAll, titleVisibility: .visible) {

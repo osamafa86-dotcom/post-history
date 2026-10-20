@@ -143,11 +143,19 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
       expect((await verify(missing.id, report()).expect(200)).body.failure_reason).toBe('storage_error');
     });
 
-    it('records the failures the worker reports', async () => {
+    it.each(['invalid_file', 'storage_error'] as const)('a final %s from the worker fails the session (it does not stay completed)', async (reason) => {
       const s = await completed();
-      expect((await verify(s.id, { result: 'invalid_file' }).expect(200)).body).toMatchObject({ state: 'failed', failure_reason: 'invalid_file' });
-      expect((await verify(s.id, { result: 'invalid_file' }).expect(200)).body.failure_reason).toBe('invalid_file');
-      expect((await verify(s.id, { result: 'storage_error' }).expect(409)).body.code).toBe('upload_state_conflict');
+      expect((await verify(s.id, { result: reason }).expect(200)).body).toEqual({ state: 'failed', file_id: null, receipt_number: null, failure_reason: reason });
+      // الجلسة لم تعد completed فلا يعيدها الطابور ولا المُتحقق داخل الخادم، والأصل يفشل في المسار الفني
+      expect((await getSession(s.id).expect(200)).body.state).toBe('failed');
+      const { rows: m } = await h.pool.query(`SELECT technical_state FROM materials WHERE id = $1`, [s.materialId]);
+      expect(m[0].technical_state).toBe('failed');
+      const { rows: ev } = await h.pool.query(`SELECT type, payload FROM outbox_events WHERE aggregate_id = $1 ORDER BY id`, [s.id]);
+      expect(ev).toEqual([{ type: 'upload.failed', payload: { material_id: s.materialId, upload_session_id: s.id, kind: 'original', failure_reason: reason } }]);
+      // التكرار يعيد النتيجة نفسها، والنتيجة المخالفة 409
+      expect((await verify(s.id, { result: reason }).expect(200)).body.failure_reason).toBe(reason);
+      const other = reason === 'invalid_file' ? 'storage_error' : 'invalid_file';
+      expect((await verify(s.id, { result: other }).expect(409)).body.code).toBe('upload_state_conflict');
     });
 
     it('rejects bodies outside the closed schema (422) before touching the session, and sessions not completed (409)', async () => {

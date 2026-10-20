@@ -289,3 +289,27 @@ final class UploadEngineTests: XCTestCase {
 private extension UploadSession.State {
     static var in_progress_placeholder: UploadSession.State? { .inProgress }
 }
+
+final class UploadWipeTests: XCTestCase {
+    func testWipeAllCancelsTransfersAndRemovesStateChunksAndTokens() async throws {
+        let h = UploadEngineTests.Harness(name: "wipe", script: [.hang])
+        let rec = try await h.enqueue()
+        _ = await h.engine.waitUntil(rec.id) { $0.inFlightOffset == 0 }
+        XCTAssertFalse(h.chunkFiles.isEmpty)
+        XCTAssertNotNil(try h.sharedSecrets.token(for: rec.id))
+        XCTAssertEqual(h.transport.activeKeys.count, 1)
+
+        let wiped = await h.engine.wipeAll()
+        XCTAssertEqual(wiped, 1)
+        XCTAssertTrue(h.chunkFiles.isEmpty, "chunk files removed")
+        XCTAssertNil(try h.sharedSecrets.token(for: rec.id), "upload token removed")
+        XCTAssertEqual(try h.sharedStore.loadAll().count, 0, "state removed")
+        XCTAssertTrue(h.transport.activeKeys.isEmpty, "background transfer cancelled")
+        let records = await h.engine.allRecords()
+        XCTAssertTrue(records.isEmpty)
+        // a late event from the cancelled task is ignored
+        await h.transport.finishHanging(accepting: h.bytes[0..<4])
+        let after = await h.engine.allRecords()
+        XCTAssertTrue(after.isEmpty)
+    }
+}

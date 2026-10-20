@@ -10,6 +10,7 @@ final class FakeGateway: AuthGateway, @unchecked Sendable {
     let lock = NSLock()
     var loginCalls = 0, refreshCalls = 0, logoutCalls: [(Bool, String)] = []
     var refreshDelay: UInt64 = 0
+    var logoutDelay: UInt64 = 0
     var rejectRefresh = false
     var rejectLoginStatus: Int?
     var rejectLoginCode: ModelError.Code?
@@ -34,7 +35,10 @@ final class FakeGateway: AuthGateway, @unchecked Sendable {
         if rejectRefresh { throw errorResponse(401, code: .unauthorized) }
         return session(n + 1)
     }
-    func logout(allSessions: Bool, accessToken: String) async throws { lock.withLock { logoutCalls.append((allSessions, accessToken)) } }
+    func logout(allSessions: Bool, accessToken: String) async throws {
+        lock.withLock { logoutCalls.append((allSessions, accessToken)) }
+        if logoutDelay > 0 { try await Task.sleep(nanoseconds: logoutDelay) }
+    }
 }
 
 final class AuthSessionTests: XCTestCase {
@@ -126,5 +130,61 @@ final class AuthSessionTests: XCTestCase {
         let body = try! JSONEncoder().encode(ModelError(code: .idempotencyKeyReused, message: "m", requestId: "r"))
         XCTAssertEqual(APIErrorMapper.map(ErrorResponse.error(422, body, nil, URLError(.badServerResponse))), .validation)
         XCTAssertEqual(APIErrorMapper.map(ErrorResponse.error(409, body, nil, URLError(.badServerResponse))), .server(code: "idempotency_key_reused", status: 409))
+    }
+}
+
+final class AuthRevocationTests: XCTestCase {
+    private func stored(expiresIn: TimeInterval) -> StoredSession {
+        StoredSession(accessToken: "access-1", refreshToken: "refresh-1", expiresAt: Date().addingTimeInterval(expiresIn), userId: UUID(), roles: [])
+    }
+
+    func testRevokedSessionEmitsEventAndClearsStore() async throws {
+        let store = InMemoryTokenStore(stored(expiresIn: 0)); let gw = FakeGateway(); gw.rejectRefresh = true
+        let auth = AuthSession(store: store, gateway: gw)
+        let stream = await auth.events()
+        let collector = Task { for await e in stream { return e }; return AuthEvent.signedOut }
+        let detectedAt = Date()
+        do { _ = try await auth.validAccessToken(); XCTFail() } catch { XCTAssertEqual(error as? AuthError, .sessionExpired) }
+        let event = await collector.value
+        guard case .sessionRevoked(let at) = event else { return XCTFail("expected sessionRevoked, got \(event)") }
+        XCTAssertLessThan(abs(at.timeIntervalSince(detectedAt)), 2, "client reacts within the same request")
+        XCTAssertNil(try store.load())
+        XCTAssertEqual(gw.refreshCalls, 1)
+    }
+
+    func testBestEffortRevokeReturnsWithinTimeoutWhenServerHangs() async throws {
+        let gw = FakeGateway(); gw.logoutDelay = 10_000_000_000
+        let auth = AuthSession(store: InMemoryTokenStore(stored(expiresIn: 600)), gateway: gw)
+        let started = Date()
+        let sent = await auth.revokeEverywhereBestEffort(timeout: 0.2)
+        XCTAssertFalse(sent)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2, "the wipe never waits for the network")
+        XCTAssertEqual(gw.logoutCalls.first?.0, true, "all sessions, so upload tokens are revoked too")
+        let signedIn = await auth.isSignedIn
+        XCTAssertTrue(signedIn, "best-effort revoke does not clear local state; forgetLocally does")
+    }
+
+    func testBestEffortRevokeReportsSuccessWhenServerAnswers() async throws {
+        let gw = FakeGateway()
+        let auth = AuthSession(store: InMemoryTokenStore(stored(expiresIn: 600)), gateway: gw)
+        let sent = await auth.revokeEverywhereBestEffort(timeout: 3)
+        XCTAssertTrue(sent)
+        let signedOutAuth = AuthSession(store: InMemoryTokenStore(), gateway: gw)
+        let none = await signedOutAuth.revokeEverywhereBestEffort(timeout: 3)
+        XCTAssertFalse(none, "nothing to revoke without a session")
+    }
+
+    func testForgetLocallyClearsWithoutNetworkAndEmitsSignedOut() async throws {
+        let store = InMemoryTokenStore(stored(expiresIn: 600)); let gw = FakeGateway()
+        let auth = AuthSession(store: store, gateway: gw)
+        let stream = await auth.events()
+        let collector = Task { for await e in stream { return e }; return AuthEvent.sessionRevoked(at: Date()) }
+        await auth.forgetLocally()
+        let event = await collector.value
+        XCTAssertEqual(event, .signedOut)
+        XCTAssertNil(try store.load())
+        XCTAssertEqual(gw.logoutCalls.count, 0, "no network call during an emergency wipe")
+        let signedIn = await auth.isSignedIn
+        XCTAssertFalse(signedIn)
     }
 }

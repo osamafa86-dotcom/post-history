@@ -42,7 +42,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
 
     const one = async (tag) => {
       const mat = (await http.call(tokens.reporter, "POST", "/materials", { body: materialBody(fv, `load-${tag}-${randomUUID().slice(0, 8)}`) })).body;
-      const session = await createUploadSession(http, tokens.reporter, { materialId: mat.id, size });
+      const session = await createUploadSession(http, tokens.reporter, { materialId: mat.id, size, clientSha256: expected });
       return { mat, session };
     };
     const tus = env.LOAD_MODE === "tus";

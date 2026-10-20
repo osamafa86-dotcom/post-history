@@ -7,10 +7,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.platform.LocalContext
 import net.palpost.library.AppContainer
+import net.palpost.library.PostHistoryApp
 import net.palpost.library.core.auth.AuthState
 import net.palpost.library.core.auth.SignOutReason
 import net.palpost.library.ui.material.NewMaterialScreen
+import net.palpost.library.ui.security.WipeDoneScreen
 import net.palpost.library.ui.setup.TaskKillerSetupScreen
 import net.palpost.library.ui.uploads.UploadsScreen
 
@@ -19,8 +22,15 @@ private enum class Screen { Home, FormPreview, NewMaterial, Uploads, Setup, Setu
 @Composable
 fun AppRoot(container: AppContainer) {
     val authState by container.auth.state.collectAsStateWithLifecycle()
+    val app = LocalContext.current.applicationContext as PostHistoryApp
+    val lastWipe by app.lastWipe.collectAsStateWithLifecycle()
     when (val state = authState) {
-        is AuthState.SignedOut -> LoginScreen(container, sessionRevoked = state.reason == SignOutReason.SESSION_REVOKED)
+        is AuthState.SignedOut -> when {
+            // SEC-01: after a revocation or an emergency wipe the reporter sees what was erased before any login form.
+            state.reason == SignOutReason.SESSION_REVOKED -> WipeDoneScreen(lastWipe, revoked = true, onContinue = { app.acknowledgeWipe(); container.auth.forgetSession(SignOutReason.USER) })
+            state.reason == SignOutReason.WIPED -> WipeDoneScreen(lastWipe, revoked = false, onContinue = { app.acknowledgeWipe(); container.auth.forgetSession(SignOutReason.USER) })
+            else -> LoginScreen(container, sessionRevoked = false)
+        }
         is AuthState.SignedIn -> {
             var screen by rememberSaveable { mutableStateOf(Screen.Home) }
             BackHandler(enabled = screen != Screen.Home) { screen = Screen.Home }

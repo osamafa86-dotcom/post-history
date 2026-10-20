@@ -202,4 +202,30 @@
     <string name="vendor_oppo">OPPO / Realme / OnePlus</string>
     <string name="vendor_vivo">vivo / iQOO</string>
     <string name="vendor_other">هذا الجهاز</string>
+
+    <!-- SEC-01: المسح الطارئ والإبطال عن بُعد -->
+    <string name="home_emergency_wipe">مسح طارئ لهذا الجهاز</string>
+    <string name="wipe_title">مسح كل شيء من هذا الهاتف؟</string>
+    <string name="wipe_body">إن توفر اتصال يُطلب من الخادم إنهاء كل جلساتك (ثلاث ثوانٍ على الأكثر، ولا ينتظره المسح). ثم يُمحى الآن ودون اتصال: جلستك ورموزها، قائمة الرفع وتقدمها، أذونات الملفات، الإعدادات، والملفات المؤقتة. ما سبق وصوله إلى الخادم يبقى هناك. ملفاتك الأصلية في المعرض لا يمسّها هذا المسح.</string>
+    <string name="wipe_understand">أفهم أن هذا لا يمكن التراجع عنه</string>
+    <string name="wipe_confirm">امسح الآن</string>
+    <string name="wipe_in_progress">جارٍ المسح…</string>
+    <string name="wipe_cancel">إلغاء</string>
+    <string name="wipe_done_title">تم المسح</string>
+    <string name="wipe_done_body">لم يبقَ على هذا الجهاز من التطبيق إلا ما يلي ذكره بأنه لم يُمحَ. يمكنك تسجيل الدخول من جديد متى شئت.</string>
+    <string name="revoked_title">أُبطلت جلستك</string>
+    <string name="revoked_body">رفض الخادم هذه الجلسة (أُنهيت من جهاز آخر أو من الإدارة). توقف كل رفع جارٍ ومُحيت الرموز وحالة الرفع من هذا الجهاز. سجّل الدخول من جديد إن كان هذا الجهاز بيدك.</string>
+    <string name="wipe_report_wiped">ما مُحي</string>
+    <string name="wipe_report_failed">ما تعذّر محوه</string>
+    <string name="wipe_report_failed_help">أعد المحاولة من الإعدادات → التطبيقات → مسح البيانات، أو أزل التطبيق.</string>
+    <string name="wipe_originals_note">الملفات الأصلية في المعرض ملكك؛ تُحذف من المعرض أو من زر «احذف النسخة المحلية» بعد الإيصال، لا من هنا.</string>
+    <string name="wipe_continue">متابعة</string>
+    <string name="wipe_target_server_sessions">إنهاء كل جلساتك على الخادم (وصل الطلب في الوقت)</string>
+    <string name="wipe_target_transfers">عمليات الرفع الجارية وإشعاراتها</string>
+    <string name="wipe_target_session">الجلسة ورموزها ومفتاح التشفير</string>
+    <string name="wipe_target_upload_queue">قائمة الرفع وتقدمها وقاعدة بياناتها</string>
+    <string name="wipe_target_file_grants">أذونات الوصول إلى الملفات المختارة</string>
+    <string name="wipe_target_preferences">الإعدادات</string>
+    <string name="wipe_target_caches">الملفات المؤقتة وملفات التطبيق</string>
+    <string name="wipe_target_other">عنصر آخر</string>
 </resources>
