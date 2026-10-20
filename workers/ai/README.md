@@ -5,7 +5,10 @@
 ## التدفق
 
 1. **الحدث:** `media:events` بمجموعة `ai`، وحدث `upload.verified` لأصل (`kind=original`). غيره يُتجاهل.
-2. **المصدر:** `derived/<material_id>/<file_id>/proxy-480p.mp4` من حاوية المشتقات، ينتظرها العامل حتى `AI_PROXY_WAIT_S` ثم يؤجل.
+2. **المصدر:** `derived/<material_id>/<file_id>/proxy-480p.mp4` من حاوية المشتقات.
+   - إن غابت يُؤجَّل الحدث في `ai:retry` بتراجع أسّي (30 ث حتى 10 دقائق) دون أن يحجب غيره.
+   - بعد `AI_SOURCE_WAIT_S` يُسجَّل تعذّره في `ai:dead` بسبب `no_source`.
+   - الرجوع إلى نسخة الهاتف حين لا تُصنع نسخة الخادم ينتظر قرار المنسّق (ADR 0020، «يُراجع»).
 3. **الناتج:** في المسار نفسه:
    - `transcript.json`: مسودة بالمقاطع والكلمات وطوابعها، و`route: local`، وبصمة الأوزان.
    - `transcript.vtt`: WebVTT عربي، كل سطر يبدأ بـ RLM، وكل عبارة تبدأ من أول كلمة فيها.
@@ -25,7 +28,7 @@
 | `S3_ENDPOINT`، `S3_ACCESS_KEY`، `S3_SECRET_KEY`، `S3_BUCKET_MEDIA` | — | حاوية المشتقات وحدها |
 | `AI_MODELS_DIR`، `AI_MODEL` | `/models`، `faster-whisper-large-v3-turbo` | الأوزان من حجم `ai-models` |
 | `AI_CPU_THREADS` | `0` (تلقائي) | خيوط CTranslate2 |
-| `AI_PROXY_WAIT_S`، `AI_CLAIM_IDLE_MS`، `AI_MAX_DELIVERIES` | 300، 30 دقيقة، 5 | الانتظار وإعادة المحاولة؛ العامل يعالج حدثًا واحدًا في كل مرة، فالانتظار قصير |
+| `AI_SOURCE_WAIT_S`، `AI_CLAIM_IDLE_MS`، `AI_MAX_DELIVERIES` | 3600، 30 دقيقة، 5 | مهلة انتظار المصدر (بلا حجب)، وإعادة المحاولة |
 
 ## التشغيل والاختبار
 

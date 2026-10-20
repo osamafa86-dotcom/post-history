@@ -3,9 +3,12 @@
 كل مجموعة ترى كل الأحداث وتؤكد ما يخصها، فلا يحجب أحد العاملين الآخر. المأخوذ من عامل الوسائط
 (`workers/media/src/media_worker/service.py`):
 
-- `XREADGROUP` للجديد و`XAUTOCLAIM` لما علق بعد `AI_CLAIM_IDLE_MS`. المهمة الواحدة قد تطول (مقطع 30 دقيقة نحو
+- `XREADGROUP` للجديد، و`XAUTOCLAIM` لما علق بعد `AI_CLAIM_IDLE_MS`، والمؤجل في `ai:retry` حين يحين موعده أولًا. المهمة الواحدة قد تطول (مقطع 30 دقيقة نحو
   17 دقيقة على معالجين)، فالمهلة 30 دقيقة كي لا يأخذ مستهلك ثانٍ مهمة جارية؛ مع أكثر من نسخة تُضبط فوق أطول مهمة.
-- النجاح أو التجاهل ← `XACK`. العطل المؤقت، ومنه نسخة خفيفة لم تُرفع بعد ← بلا تأكيد فيُعاد لاحقًا.
+- النجاح أو التجاهل ← `XACK`. العطل المؤقت (تخزين، شبكة، 5xx) ← بلا تأكيد فيُعاد لاحقًا.
+- لا مصدر بعد (`SourceNotReady`) ← يُؤكد الحدث ويُوضع في `ai:retry` (مجموعة مرتبة بموعد الإعادة) بتراجع أسّي من
+  `RETRY_FIRST_S` حتى `RETRY_MAX_S`، فلا يحجب المستهلك الوحيد. بعد `AI_SOURCE_WAIT_S` من أول تسليم ← `ai:dead`
+  بسبب `no_source`: التعذّر مسجّل ولا يُعاد تلقائيًا.
 - تجاوز `AI_MAX_DELIVERIES` محاولة أو خطأ نهائي ← `ai:dead` مع السبب ثم `XACK`.
 - رفض المصادقة (401/403/404) ← تراجع أسّي دون إقرار، ثم العزل بسبب `config_error` بعد `AI_AUTH_ISOLATE_AFTER_S`.
 - 410 ← `ai:dead` بسبب `gone`.
@@ -29,7 +32,7 @@ from pathlib import Path
 import redis
 
 from .api import ApiAuthError, ApiGone, InternalApi
-from .jobs import Jobs
+from .jobs import Jobs, SourceNotReady
 from .storage import S3Storage
 from .transcribe import NoAudioError
 
@@ -37,7 +40,12 @@ log = logging.getLogger("ai_worker.service")
 
 STREAM = "media:events"
 DEAD = "ai:dead"
+RETRY = "ai:retry"
 GROUP = "ai"
+RETRY_FIRST_S = 30.0
+RETRY_MAX_S = 600.0
+# إعادة المؤجل لا تأتي من الدفق: لا XACK ولا عدّ تسليم لها
+RETRY_ENTRY = "retry"
 PERMANENT = (ValueError, KeyError, PermissionError)
 AUTH_BACKOFF_FIRST_S = 1.0
 
@@ -82,7 +90,7 @@ class Config:
     consumer: str
     enabled: bool = False
     cpu_threads: int = 0
-    proxy_wait_s: float = 300.0
+    source_wait_s: float = 3600.0
     block_ms: int = 5000
     claim_idle_ms: int = 30 * 60 * 1000
     max_deliveries: int = 5
@@ -101,7 +109,7 @@ class Config:
             consumer=e.get("AI_CONSUMER", socket.gethostname()),
             enabled=e.get("AI_ENABLE_TRANSCRIPT", "false").lower() == "true",
             cpu_threads=int(e.get("AI_CPU_THREADS", 0)),
-            proxy_wait_s=float(e.get("AI_PROXY_WAIT_S", 300)),
+            source_wait_s=float(e.get("AI_SOURCE_WAIT_S", 3600)),
             claim_idle_ms=int(e.get("AI_CLAIM_IDLE_MS", 30 * 60 * 1000)),
             max_deliveries=int(e.get("AI_MAX_DELIVERIES", 5)),
             auth_backoff_max_s=float(e.get("AI_AUTH_BACKOFF_MAX_S", 300)),
@@ -112,7 +120,8 @@ class Config:
 class Service:
     def __init__(self, r: redis.Redis, jobs: Jobs, consumer: str, block_ms: int = 5000,
                  claim_idle_ms: int = 30 * 60 * 1000, max_deliveries: int = 5, auth_backoff_max_s: float = 300.0,
-                 sleep=time.sleep, auth_isolate_after_s: float = 1800.0):
+                 sleep=time.sleep, auth_isolate_after_s: float = 1800.0, source_wait_s: float = 3600.0,
+                 clock=time.time):
         self.r = r
         self.jobs = jobs
         self.consumer = consumer
@@ -122,6 +131,8 @@ class Service:
         self.auth_backoff_max_s = auth_backoff_max_s
         self.auth_isolate_after_s = auth_isolate_after_s
         self.sleep = sleep
+        self.source_wait_s = source_wait_s
+        self.clock = clock
         self.stopped = False
 
     def ensure_group(self) -> None:
@@ -136,11 +147,30 @@ class Service:
         pending = self.r.xpending_range(STREAM, GROUP, min=entry_id, max=entry_id, count=1)
         return int(pending[0]["times_delivered"]) if pending else 1
 
+    def _ack(self, entry_id: str) -> None:
+        if entry_id != RETRY_ENTRY:
+            self.r.xack(STREAM, GROUP, entry_id)
+
     def _dead_letter(self, entry_id: str, fields: dict, reason: str) -> str:
-        self.r.xadd(DEAD, {"entry_id": entry_id, **fields, "reason": reason}, maxlen=10000, approximate=True)
-        self.r.xack(STREAM, GROUP, entry_id)
+        self.r.xadd(DEAD, {"entry_id": entry_id, **{k: str(v) for k, v in fields.items()}, "reason": reason},
+                    maxlen=10000, approximate=True)
+        self._ack(entry_id)
         log.error("event dead-lettered entry=%s reason=%s", entry_id, reason)
         return f"dead:{reason}"
+
+    def _defer(self, entry_id: str, fields: dict) -> str:
+        """يؤجل الحدث بلا حجب: يُؤكد من الدفق ويُحفظ في ai:retry بموعده، أو يُسجَّل تعذّره بعد المهلة."""
+        now = self.clock()
+        attempt = int(fields.get("ai_attempt", 0))
+        first = float(fields.get("ai_first_seen", now))
+        if now - first >= self.source_wait_s:
+            return self._dead_letter(entry_id, fields, "no_source")
+        delay = min(RETRY_FIRST_S * 2 ** attempt, RETRY_MAX_S)
+        member = {"event_id": fields.get("event_id", ""), "event": fields.get("event", "{}"),
+                  "ai_attempt": attempt + 1, "ai_first_seen": first}
+        self.r.zadd(RETRY, {json.dumps(member, sort_keys=True): now + delay})
+        self._ack(entry_id)
+        return f"retry:{attempt + 1}"
 
     def _wait(self, seconds: float) -> None:
         left = seconds
@@ -156,7 +186,7 @@ class Service:
             event = None
         if not isinstance(event, dict):
             return self._dead_letter(entry_id, fields, "malformed_event")
-        if self._deliveries(entry_id) > self.max_deliveries:
+        if entry_id != RETRY_ENTRY and self._deliveries(entry_id) > self.max_deliveries:
             return self._dead_letter(entry_id, fields, "max_deliveries")
         delay, waited = AUTH_BACKOFF_FIRST_S, 0.0
         while True:
@@ -178,17 +208,28 @@ class Service:
             except NoAudioError:
                 outcome = "skip:no-audio"
                 break
+            except SourceNotReady:
+                return self._defer(entry_id, fields)
             except PERMANENT as err:
                 return self._dead_letter(entry_id, fields, type(err).__name__)
             except Exception as err:  # عطل مؤقت (تخزين، شبكة، 5xx، نسخة لم تُرفع): يبقى معلّقًا ويُستعاد لاحقًا
                 log.warning("event deferred entry=%s error=%s", entry_id, type(err).__name__)
                 return f"deferred:{type(err).__name__}"
-        self.r.xack(STREAM, GROUP, entry_id)
+        self._ack(entry_id)
         if outcome != "ignored":
             log.info("event done entry=%s type=%s outcome=%s", entry_id, event.get("type"), outcome)
         return outcome
 
+    def _due_retry(self) -> dict | None:
+        due = self.r.zrangebyscore(RETRY, "-inf", self.clock(), start=0, num=1)
+        # ZREM يحسم السباق بين نسختين من العامل: من حذف العضو يعالجه
+        if due and self.r.zrem(RETRY, due[0]) == 1:
+            return json.loads(due[0])
+        return None
+
     def next_entries(self) -> list[tuple[str, dict]]:
+        if (retry := self._due_retry()) is not None:
+            return [(RETRY_ENTRY, retry)]
         claimed = self.r.xautoclaim(STREAM, GROUP, self.consumer, min_idle_time=self.claim_idle_ms,
                                     start_id="0-0", count=1)
         if claimed[1]:
@@ -216,10 +257,10 @@ def build(cfg: Config) -> Service:
         engine = FasterWhisperEngine(cfg.models_dir / cfg.model, cpu_threads=cfg.cpu_threads)
     storage = S3Storage(cfg.s3_endpoint, cfg.s3_region, cfg.s3_access_key, cfg.s3_secret_key, cfg.bucket_derived)
     jobs = Jobs(InternalApi(cfg.api_url, cfg.token), storage, engine, cfg.bucket_derived, cfg.scratch,
-                enabled=cfg.enabled, weights=read_manifest(cfg.models_dir, cfg.model), proxy_wait_s=cfg.proxy_wait_s)
+                enabled=cfg.enabled, weights=read_manifest(cfg.models_dir, cfg.model))
     return Service(redis.Redis.from_url(cfg.redis_url, decode_responses=True), jobs, cfg.consumer, cfg.block_ms,
                    cfg.claim_idle_ms, cfg.max_deliveries, cfg.auth_backoff_max_s,
-                   auth_isolate_after_s=cfg.auth_isolate_after_s)
+                   auth_isolate_after_s=cfg.auth_isolate_after_s, source_wait_s=cfg.source_wait_s)
 
 
 def main() -> None:

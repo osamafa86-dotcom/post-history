@@ -3,7 +3,7 @@ import json
 import pytest
 from fakes import BUCKET, FILE, MATERIAL, FakeApi, FakeEngine, FakeStorage, verified_event
 
-from ai_worker.jobs import Jobs, ProxyNotReady, captions_key, proxy_key, transcript_key
+from ai_worker.jobs import Jobs, SourceNotReady, captions_key, proxy_key, transcript_key
 from ai_worker.storage import S3Storage
 
 
@@ -11,10 +11,9 @@ def make(tmp_path, *, enabled=True, api=None, engine=None, with_proxy=True, **kw
     storage = FakeStorage()
     if with_proxy:
         storage.objects[(BUCKET, proxy_key(MATERIAL, FILE))] = b"\x00" * 2048
-    slept = []
     jobs = Jobs(api or FakeApi(), storage, engine or FakeEngine(), BUCKET, tmp_path, enabled=enabled,
-                weights={"model": "m", "weights_sha256": "ab" * 32}, sleep=slept.append, **kw)
-    return jobs, storage, slept
+                weights={"model": "m", "weights_sha256": "ab" * 32}, **kw)
+    return jobs, storage, None
 
 
 @pytest.mark.parametrize("event", [
@@ -59,21 +58,20 @@ def test_redelivery_reuses_uploaded_files_without_a_second_transcription(tmp_pat
     assert jobs.engine.calls == 1 and storage.puts == puts and api.calls == 4
 
 
-def test_waits_for_the_proxy_then_defers(tmp_path):
-    jobs, storage, slept = make(tmp_path, with_proxy=False, proxy_wait_s=30, poll_s=10)
-    with pytest.raises(ProxyNotReady):
+def test_missing_proxy_is_reported_at_once_without_blocking(tmp_path):
+    # a phone-sent proxy means the media worker never writes proxy-480p.mp4 (#110 review): no wait in the job,
+    # the service parks the event in ai:retry instead
+    jobs, storage, _ = make(tmp_path, with_proxy=False)
+    with pytest.raises(SourceNotReady):
         jobs.handle(verified_event())
-    assert slept == [10, 10, 10] and jobs.engine.calls == 0 and storage.puts == []
+    assert jobs.engine.calls == 0 and storage.puts == [] and storage.heads == 2  # transcript.json, then the proxy
 
 
-def test_proxy_arriving_while_waiting_is_used(tmp_path):
-    jobs, storage, slept = make(tmp_path, with_proxy=False, proxy_wait_s=60, poll_s=10)
-
-    def upload_on_second_poll(s):
-        slept.append(s)
-        if len(slept) == 2:
-            storage.objects[(BUCKET, proxy_key(MATERIAL, FILE))] = b"\x00"
-    jobs.sleep = upload_on_second_poll
+def test_proxy_uploaded_after_a_first_attempt_is_used(tmp_path):
+    jobs, storage, _ = make(tmp_path, with_proxy=False)
+    with pytest.raises(SourceNotReady):
+        jobs.handle(verified_event())
+    storage.objects[(BUCKET, proxy_key(MATERIAL, FILE))] = b"\x00"
     assert jobs.handle(verified_event()).startswith("transcribed")
 
 

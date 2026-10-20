@@ -50,6 +50,33 @@ def test_ai_group_acks_its_events_and_leaves_the_media_group_alone(r):
     assert groups["media"]["pending"] == 0 and groups["media"]["last-delivered-id"] == "0-0"  # untouched
 
 
+def test_parked_event_comes_back_when_due_and_is_processed(r):
+    from ai_worker.jobs import SourceNotReady
+    from ai_worker.service import RETRY
+
+    r.delete(RETRY)
+    clock = [1000.0]
+
+    class Flaky:
+        calls = 0
+
+        def handle(self, event):
+            Flaky.calls += 1
+            if Flaky.calls == 1:
+                raise SourceNotReady("no proxy yet")
+            return "transcribed"
+
+    svc = Service(r, Flaky(), "ai-1", block_ms=100, clock=lambda: clock[0])
+    svc.ensure_group()
+    r.xadd(STREAM, {"event_id": "1", "event": json.dumps(verified_event())})
+    assert svc.run_once() == 1 and r.zcard(RETRY) == 1
+    assert {g["name"]: g for g in r.xinfo_groups(STREAM)}[GROUP]["pending"] == 0
+    assert svc.run_once() == 0  # not due yet: nothing blocks, nothing is processed
+    clock[0] += 31
+    assert svc.run_once() == 1 and Flaky.calls == 2 and r.zcard(RETRY) == 0
+    r.delete(RETRY)
+
+
 def test_a_new_ai_group_starts_at_the_end_of_the_stream(r):
     r.xadd(STREAM, {"event_id": "0", "event": json.dumps(verified_event())})
     jobs = Jobs()

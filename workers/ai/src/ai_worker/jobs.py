@@ -3,8 +3,9 @@
 1. حدث لأصل (`kind=original`) متحقق منه، وفيه `material_id` و`file_id`؛ غيره يُتجاهل. والعلم `AI_ENABLE_TRANSCRIPT`
    مطفأ ← يُتجاهل أيضًا، إلى أن يقبل الخادم رمز العامل وينشر الحدث (النوعان في عقد v0.2).
 2. المصدر النسخة الخفيفة التي صنعها عامل الوسائط من الأصل نفسه: `derived/<material_id>/<file_id>/proxy-480p.mp4`.
-   قد يصل الحدث قبلها، فينتظرها العامل حتى `proxy_wait_s` ثم يؤجل الحدث (يُعاد لاحقًا). أصل بلا نسخة خفيفة
-   (ملاحظة صوتية، صوت فقط) لا يُفرَّغ في هذه المرحلة.
+   قد يصل الحدث قبلها، أو لا تُصنع أصلًا (مادة أرسل هاتفها نسخته). غيابها `SourceNotReady` بلا انتظار هنا: الخدمة
+   تؤجل الحدث في `ai:retry` دون أن تحجب غيره، ثم تسجّل التعذّر في `ai:dead` بعد `AI_SOURCE_WAIT_S`. أصل بلا نسخة
+   خفيفة (ملاحظة صوتية، صوت فقط) لا يُفرَّغ في هذه المرحلة.
 3. إن وُجد ملفا التفريغ من تسليم سابق فلا تفريغ ثانٍ: يُقرآن ويُسجَّلان كما هما، فيتساوى أثر التكرار ولا يتعارض
    ناتج نموذج غير حتمي مع ما سُجّل.
 4. وإلا ينزّل النسخة إلى مجلد المهمة، ويفرّغها، ويكتب `transcript.json` و`transcript.vtt`، ويرفعهما ثم يسجّلهما.
@@ -19,7 +20,7 @@ import logging
 import shutil
 import tempfile
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -36,8 +37,8 @@ JSON_MIME = "application/json"
 VTT_MIME = "text/vtt"
 
 
-class ProxyNotReady(RuntimeError):
-    """النسخة الخفيفة لم تُرفع بعد: عطل مؤقت، يُعاد الحدث لاحقًا."""
+class SourceNotReady(RuntimeError):
+    """لا مصدر للتفريغ بعد (النسخة الخفيفة لم تُرفع): يُؤجَّل الحدث ولا يُعاد فورًا."""
 
 
 class Storage(Protocol):
@@ -95,9 +96,6 @@ class Jobs:
     scratch: Path
     enabled: bool = False
     weights: dict = field(default_factory=dict)
-    proxy_wait_s: float = 300.0
-    poll_s: float = 10.0
-    sleep: Callable[[float], None] = time.sleep
     # آخر مهمة أُنجزت: أزمنة للقياس (bench/transcribe_bench.py)، لا تُسجَّل
     last_timing: dict = field(default_factory=dict)
 
@@ -119,7 +117,8 @@ class Jobs:
                 _download(self.storage, self.bucket, vkey, vtt_path)
                 duration_ms, start_pts_us = self._timing_from_json(json_path)
                 return "reused" + self._register_all(file_id, jkey, json_path, vkey, vtt_path, duration_ms, start_pts_us)
-            self._wait_for_proxy(proxy_key(material_id, file_id))
+            if not self._exists(proxy_key(material_id, file_id)):
+                raise SourceNotReady("no proxy to transcribe yet")
             src = job / "proxy-480p.mp4"
             _download(self.storage, self.bucket, proxy_key(material_id, file_id), src)
             assert self.engine is not None
@@ -148,14 +147,6 @@ class Jobs:
             return True
         except ObjectMissing:
             return False
-
-    def _wait_for_proxy(self, key: str) -> None:
-        waited = 0.0
-        while not self._exists(key):
-            if waited >= self.proxy_wait_s:
-                raise ProxyNotReady("proxy not uploaded yet")
-            self.sleep(self.poll_s)
-            waited += self.poll_s
 
     @staticmethod
     def _timing_from_json(path: Path) -> tuple[int, int]:

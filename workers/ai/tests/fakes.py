@@ -108,3 +108,15 @@ class FakeRedis:
 
     def xclaim(self, *a, **k):
         self.claims += 1
+
+    # ai:retry
+    zset: dict = {}
+
+    def zadd(self, key, mapping):
+        self.zset = {**self.zset, **mapping}
+
+    def zrangebyscore(self, key, lo, hi, start=0, num=None):
+        return [m for m, s in sorted(self.zset.items(), key=lambda kv: kv[1]) if s <= hi][start:start + (num or 10**9)]
+
+    def zrem(self, key, member):
+        return 1 if self.zset.pop(member, None) is not None else 0
