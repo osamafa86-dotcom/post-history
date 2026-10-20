@@ -44,7 +44,10 @@ class UploadEngine(
 ) {
     data class Config(
         val maxRequestPayloadBytes: Int = 16 * 1024 * 1024,
-        val minRequestPayloadBytes: Int = 1024 * 1024,
+        /** Floor for a PATCH on a slow link; the ceiling is the session's part size. */
+        val minRequestPayloadBytes: Int = 128 * 1024,
+        /** A PATCH is sized so that it ends within this on the link as observed ([RequestSizer]). */
+        val requestTargetMs: Long = 20_000,
         val chunkBytes: Int = TusTransport.DEFAULT_CHUNK_BYTES,
         val backoffMs: List<Long> = listOf(2_000, 5_000, 15_000, 30_000, 60_000),
         /** How long one run keeps polling for the receipt before handing back [RunOutcome.Pending]. */
@@ -58,6 +61,7 @@ class UploadEngine(
 
     suspend fun run(taskId: String, shouldStop: () -> Boolean = { false }, listener: ProgressListener? = null): RunOutcome {
         var transientFailures = 0
+        var sizer: RequestSizer? = null
         while (true) {
             val task = store.get(taskId) ?: return RunOutcome.Finished
             if (task.state.terminal) return RunOutcome.Finished
@@ -67,7 +71,8 @@ class UploadEngine(
                     UploadState.QUEUED, UploadState.HASHING -> hash(task, shouldStop)
                     UploadState.CREATING_SESSION -> createSession(task)
                     UploadState.UPLOADING -> {
-                        val outcome = transfer(task, shouldStop, listener)
+                        val s = sizer ?: sizerFor(task).also { sizer = it }
+                        val outcome = transfer(task, s, shouldStop, listener)
                         if (outcome != null) return outcome
                     }
                     UploadState.AWAITING_RECEIPT -> awaitReceipt(task, shouldStop)?.let { return it }
@@ -75,6 +80,10 @@ class UploadEngine(
                 }
                 transientFailures = 0
             } catch (e: Transient) {
+                // Bytes the server took during the failed step (acknowledged requests, or the offset HEAD found
+                // after a cut) are progress: the link is alive, so the wait starts over from the shortest.
+                val confirmedNow = store.get(taskId)?.bytesConfirmed ?: task.bytesConfirmed
+                if (confirmedNow > task.bytesConfirmed) transientFailures = 0
                 transientFailures++
                 if (transientFailures > config.transientLimit) return RunOutcome.Pending(config.backoffMs.last())
                 val wait = config.backoffMs[minOf(transientFailures - 1, config.backoffMs.lastIndex)]
@@ -85,6 +94,12 @@ class UploadEngine(
     }
 
     private suspend fun persist(task: UploadTask) = store.save(task.copy(updatedAtEpochMs = clock()))
+
+    /** One sizer per run: the first request is the session's part size, later ones follow the link. */
+    private fun sizerFor(task: UploadTask): RequestSizer {
+        val ceiling = (task.partSizeBytes ?: config.maxRequestPayloadBytes.toLong()).coerceIn(config.minRequestPayloadBytes.toLong(), config.maxRequestPayloadBytes.toLong()).toInt()
+        return RequestSizer(minBytes = minOf(config.minRequestPayloadBytes, ceiling), maxBytes = ceiling, targetMs = config.requestTargetMs, clock = clock)
+    }
 
     private suspend fun fail(task: UploadTask, failure: UploadFailure, code: String? = null) =
         persist(task.copy(state = UploadState.FAILED, failure = failure, failureCode = code))
@@ -140,7 +155,7 @@ class UploadEngine(
     }
 
     /** Returns an outcome when the run must end here; null when the loop should continue with the next state. */
-    private suspend fun transfer(task: UploadTask, shouldStop: () -> Boolean, listener: ProgressListener?): RunOutcome? {
+    private suspend fun transfer(task: UploadTask, sizer: RequestSizer, shouldStop: () -> Boolean, listener: ProgressListener?): RunOutcome? {
         val token = task.uploadToken ?: run { fail(task, UploadFailure.UNKNOWN); return null }
         val expiresAt = task.tokenExpiresAtEpochMs ?: Long.MAX_VALUE
         if (clock() >= expiresAt) { fail(task, UploadFailure.SESSION_EXPIRED); return null }
@@ -162,7 +177,6 @@ class UploadEngine(
             persist(current)
         }
 
-        val payload = (current.partSizeBytes ?: config.maxRequestPayloadBytes.toLong()).coerceIn(config.minRequestPayloadBytes.toLong(), config.maxRequestPayloadBytes.toLong()).toInt()
         val latest = current
         val confirmed = try {
             transport.upload(
@@ -170,18 +184,23 @@ class UploadEngine(
                 token = token,
                 sizeBytes = latest.sizeBytes,
                 openStream = { files.open(latest.fileUri) },
-                requestPayloadBytes = payload,
+                requestPayloadBytes = { offset -> sizer.begin(offset) },
                 chunkBytes = config.chunkBytes,
                 shouldStop = shouldStop,
-                onConfirmed = { offset -> if (offset != latest.bytesConfirmed) blockingPersist(latest.copy(bytesConfirmed = offset, attempts = 0)) },
+                // What HEAD reports is what the server holds, including the tail of a request that was cut:
+                // confirmed progress, never a step back (a lower offset is resumed from, not displayed).
+                onHead = { offset -> sizer.serverOffset(offset); if (offset > latest.bytesConfirmed) blockingPersist(latest.copy(bytesConfirmed = offset, attempts = 0)) },
+                onConfirmed = { offset -> sizer.acknowledged(offset); if (offset != latest.bytesConfirmed) blockingPersist(latest.copy(bytesConfirmed = offset, attempts = 0)) },
                 onSent = { sent -> listener?.onProgress(latest, sent) },
             )
         } catch (e: ProtocolException) {
+            sizer.failed()
             return classify(current, e)
         } catch (e: FileNotFoundException) {
             fail(current, UploadFailure.FILE_UNAVAILABLE); return null
         } catch (e: IOException) {
-            persist(current.copy(attempts = current.attempts + 1))
+            sizer.failed()
+            persist((store.get(current.id) ?: current).copy(attempts = current.attempts + 1))
             throw Transient(e)
         }
         val fresh = store.get(current.id) ?: return RunOutcome.Finished

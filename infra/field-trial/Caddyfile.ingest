@@ -1,0 +1,33 @@
+# الوكيل الأمامي لنطاق ingest في بيئة التجربة (ADR 0011، 0013): TLS بشهادة ACME تلقائية على INGEST_IP وحده،
+# في نسخة Caddy مستقلة عن الرئيسي (مخزن شهادات منفصل). لا يوجَّه إلا /files/ إلى بوابة الرمز.
+{
+	email {$ACME_EMAIL}
+	admin off
+	{$CADDY_GLOBAL_EXTRA}
+}
+
+{$INGEST_DOMAIN} {
+	bind {$INGEST_IP}
+	handle /files/* {
+		reverse_proxy 127.0.0.1:{$INGEST_PORT} {
+			flush_interval -1
+			transport http {
+				read_timeout 300s
+				write_timeout 300s
+			}
+		}
+	}
+	handle {
+		respond 404
+	}
+	log {
+		output stdout
+		format filter {
+			request>headers delete
+			request>remote_ip delete
+			request>client_ip delete
+			request>remote_port delete
+			resp_headers delete
+		}
+	}
+}

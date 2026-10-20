@@ -22,4 +22,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "post-history-android"
 
-include(":api", ":core", ":app")
+include(":api", ":core", ":app", ":netlab-runner")

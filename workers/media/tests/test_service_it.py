@@ -47,8 +47,12 @@ def _s3(method: str, path: str, body: bytes = b"") -> None:
 class FakeServer:
     """يطبّق شكل نقاط ADR 0006 بحالة في الذاكرة؛ يرفض أي طلب بلا الرمز الصحيح."""
 
-    def __init__(self, session: dict, fail_with: int | None = None):
+    def __init__(self, session: dict, fail_with: int | None = None, refuse_first: int = 0,
+                 reject_verified: bool = False):
+        # refuse_first: أول N طلبات تُرد بـ 404 كأن الرمز دُوِّر ولم يصل العامل بعد
+        # reject_verified: بلاغ «verified» يُرد بـ 422 (رفض نهائي)، وبلاغ الفشل يُقبل
         self.session, self.fail_with = session, fail_with
+        self.refuse_first, self.reject_verified = refuse_first, reject_verified
         self.calls: list[tuple[str, str, dict | None]] = []
         outer = self
 
@@ -70,12 +74,17 @@ class FakeServer:
                 n = int(self.headers.get("Content-Length") or 0)
                 body = json.loads(self.rfile.read(n)) if n else None
                 outer.calls.append((method, self.path, body))
+                if outer.refuse_first > 0:
+                    outer.refuse_first -= 1
+                    return self._reply(404)
                 if outer.fail_with:
                     return self._reply(outer.fail_with)
                 s = outer.session
                 if method == "GET":
                     return self._reply(200, s)
                 if self.path.endswith("/verification"):
+                    if outer.reject_verified and body["result"] == "verified":
+                        return self._reply(422)
                     if s["state"] == "completed":
                         s["state"] = "verified" if body["result"] == "verified" else "failed"
                         s["file_id"] = str(uuid.uuid4())
@@ -166,6 +175,56 @@ def test_transient_failures_end_in_dead_letter(env, tmp_path: Path):
             svc.run_once()
         assert r.xlen(DEAD) == 1
         assert r.xpending(STREAM, GROUP)["pending"] == 0
-        assert len(server.calls) == 2  # محاولتان ثم نقل دون استدعاء ثالث
+        # محاولتان، ثم بلاغ فشل للخادم (رُد بـ 503 أيضًا) ثم نقل دون محاولة ثالثة
+        assert [m for m, _, _ in server.calls] == ["GET", "GET", "POST"]
+        assert server.calls[-1][2] == {"result": "storage_error"}
+        [(_, dead)] = r.xrange(DEAD)
+        assert dead["reason"] == "max_deliveries" and dead["reported"] == "report-failed:ApiError"
+    finally:
+        server.close()
+
+
+def _clip_session(storage_key: str, data: bytes) -> dict:
+    return {"material_id": str(uuid.uuid4()), "kind": "original", "state": "completed", "size_bytes": len(data),
+            "storage_key": storage_key, "proxy_mode": None, "material_has_proxy": False}
+
+
+def test_permanent_failure_is_reported_and_dead_lettered(env, tmp_path: Path):
+    r, storage, buckets = env
+    clip = synth(tmp_path / "src.mp4", seconds=2).read_bytes()
+    _s3("PUT", f"/{buckets.uploads}/tus/perm", clip)
+    server = FakeServer(_clip_session("tus/perm", clip), reject_verified=True)
+    try:
+        svc = Service(r, Jobs(InternalApi(server.url, TOKEN), storage, buckets, tmp_path), "it", block_ms=200)
+        svc.ensure_group()
+        _publish(r, "upload.original_received", str(uuid.uuid4()), server.session["material_id"])
+        assert svc.run_once() == 1
+        # الجلسة لم تبقَ completed بلا أثر: أُبلغ الخادم بالفشل فنقلها إلى failed
+        posts = [b for m, p, b in server.calls if m == "POST"]
+        assert posts[0]["result"] == "verified" and posts[1] == {"result": "storage_error"}
+        assert server.session["state"] == "failed"
+        [(_, dead)] = r.xrange(DEAD)
+        assert dead["reason"] == "ApiRejected" and dead["reported"] == "reported:failed"
+        assert r.xpending(STREAM, GROUP)["pending"] == 0
+    finally:
+        server.close()
+
+
+def test_refused_token_backs_off_and_keeps_the_event(env, tmp_path: Path):
+    r, storage, buckets = env
+    clip = synth(tmp_path / "src.mp4", seconds=2).read_bytes()
+    _s3("PUT", f"/{buckets.uploads}/tus/rot", clip)
+    server = FakeServer(_clip_session("tus/rot", clip), refuse_first=3)
+    waits: list[float] = []
+    try:
+        svc = Service(r, Jobs(InternalApi(server.url, TOKEN), storage, buckets, tmp_path), "it", block_ms=200,
+                      auth_backoff_max_s=2.0, sleep=waits.append)
+        svc.ensure_group()
+        _publish(r, "upload.original_received", str(uuid.uuid4()), server.session["material_id"])
+        assert svc.run_once() == 1
+        # تراجع أسّي بسقف 2 ث (الانتظار يُقسَّم إلى أجزاء ≤ 1 ث)، ثم نجح الحدث نفسه دون إقرار مبكر ولا موت
+        assert sum(waits) == pytest.approx(1 + 2 + 2)
+        assert server.session["state"] == "verified"
+        assert r.xlen(DEAD) == 0 and r.xpending(STREAM, GROUP)["pending"] == 0
     finally:
         server.close()
