@@ -59,7 +59,7 @@
 
 ## الدليل (القياس)
 
-`docs/measurements/infra/2026-10-20-ai-worker-large-v3-turbo-q5_0-cpu.json`، وهو النموذج المقترح إلى أن يحسم وكيل الذكاء الاصطناعي:
+`docs/measurements/infra/2026-10-20-ai-worker-large-v3-turbo-q5-0-cpu.json`، وهو النموذج المقترح إلى أن يحسم وكيل الذكاء الاصطناعي:
 
 | المقياس | القيمة |
 | --- | --- |
