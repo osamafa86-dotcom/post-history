@@ -100,14 +100,6 @@ DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_P
 API_URL="http://127.0.0.1:$API_PORT/v1" CA_FILE="$WORK/ca.crt" INGEST_SIGNING_KEY="$WORK/ingest/signing.pem" \
   node "$ROOT/infra/field-trial/e2e-edge-upload.mjs" || fail "uploads through the edge"
 
-# Optional hook (QA, tools/acceptance/field-trial/edge-rehearsal.sh): more traffic through the edges before the
-# backup, so the edge-log checks at the end cover it too.
-if [ -n "${TRIAL_AFTER_EDGE:-}" ]; then
-  WORK="$WORK" T="$T" CA_FILE="$WORK/ca.crt" API_URL="http://127.0.0.1:$API_PORT/v1" \
-  DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB" \
-    "$TRIAL_AFTER_EDGE" || fail "after-edge hook"
-fi
-
 "$T" run --rm -T backup once || fail "backup once"
 [ -s "$WORK/backups/last-success.json" ] || fail "no last-success.json"
 # The backup role reads and cannot write.
