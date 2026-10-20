@@ -7,7 +7,7 @@ import { ApiError } from '../common/errors';
 import { DB, type Database } from '../database/database.module';
 import { uploadSessions } from '../database/schema/schema';
 import type { components } from '../generated/api';
-import { markReceived, markUploadFailed } from './upload-completion';
+import { abortRevokedUpload, markReceived, markUploadFailed, uploadAccessRevoked } from './upload-completion';
 
 export type TusdHookRequest = components['schemas']['TusdHookRequest'];
 export type TusdHookResponse = components['schemas']['TusdHookResponse'];
@@ -114,6 +114,11 @@ export class TusdHooksService {
       // tusd يعيد المحاولة: ما سُجّل اكتماله أو فشله سابقًا يعيد 200 نفسها دون أثر جديد
       if (!['created', 'in_progress'].includes(session.state)) return ACCEPT;
 
+      // رفع جارٍ لصاحب أُبطل وصوله أثناءه لا يكتمل (لا إيصال ولا حدث وسائط)
+      if (await uploadAccessRevoked(tx, session)) {
+        await abortRevokedUpload(tx, session);
+        return ACCEPT;
+      }
       const expectedKey = session.storageKey ?? this.expectedStorageKey(session.id);
       const keyMatches = storage?.Key === expectedKey;
       const bucketMatches = storage?.Bucket === undefined || storage.Bucket === this.config.S3_BUCKET_UPLOADS;

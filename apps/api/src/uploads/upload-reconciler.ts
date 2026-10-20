@@ -6,7 +6,7 @@ import { LOGGER } from '../common/logger';
 import { DB, type Database } from '../database/database.module';
 import { uploadSessions } from '../database/schema/schema';
 import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
-import { markReceived, markUploadFailed } from './upload-completion';
+import { abortRevokedUpload, markReceived, markUploadFailed, uploadAccessRevoked } from './upload-completion';
 
 export interface ReconcileResult {
   received: number;
@@ -74,7 +74,10 @@ export class UploadReconciler implements OnApplicationBootstrap, OnApplicationSh
           this.logger.warn({ upload_session_id: session.id, err_name: (err as Error)?.name }, 'upload reconciliation deferred');
           break;
         }
-        if (head) {
+        if (head && (await uploadAccessRevoked(tx, session))) {
+          await abortRevokedUpload(tx, session);
+          result.expired++;
+        } else if (head) {
           await markReceived(tx, session, key);
           result.received++;
         } else if (new Date(session.expiresAt) <= new Date()) {
