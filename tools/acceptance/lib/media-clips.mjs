@@ -21,15 +21,17 @@ const run = (bin, args, opts = {}) => execFileSync(bin, args, { stdio: ["ignore"
  * One synthetic clip: test pattern + 440 Hz tone. `vfr` drops one frame in seven, `gap` removes a stretch of
  * frames, `startOffset` shifts the first timestamp (what phones record), `tags` plants the revealing container tags.
  */
-export function synthClip(path, { seconds = 10, size = "1280x720", rate = 30, vfr = false, gap = null, startOffset = 0, tags = true } = {}) {
+export function synthClip(path, { seconds = 10, size = "1280x720", rate = 30, vfr = false, gap = null, startOffset = 0, tags = true, noise = false } = {}) {
+  // `noise` swaps the test pattern for random pixels at a fixed high bitrate: a valid clip of a predictable, large size
+  const source = noise ? `nullsrc=size=${size}:rate=${rate}:duration=${seconds},geq=random(1)*255:128:128` : `testsrc2=size=${size}:rate=${rate}:duration=${seconds}`;
   const args = ["-hide_banner", "-nostdin", "-loglevel", "error", "-y",
-    "-f", "lavfi", "-i", `testsrc2=size=${size}:rate=${rate}:duration=${seconds}`,
+    "-f", "lavfi", "-i", source,
     "-f", "lavfi", "-i", `sine=frequency=440:sample_rate=48000:duration=${seconds}`];
   const conds = [];
   if (vfr) conds.push("not(eq(mod(n,7),3))");
   if (gap) conds.push(`not(between(t,${gap[0]},${gap[1]}))`);
   if (conds.length) args.push("-vf", `select='${conds.join("*")}'`, "-fps_mode", "vfr");
-  args.push("-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac");
+  args.push("-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", ...(noise ? ["-b:v", "8M", "-minrate", "8M", "-maxrate", "8M", "-bufsize", "4M"] : []), "-c:a", "aac");
   if (startOffset) args.push("-output_ts_offset", String(startOffset));
   if (tags) {
     args.push("-movflags", "use_metadata_tags");

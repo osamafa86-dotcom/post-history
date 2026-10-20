@@ -88,6 +88,49 @@ export const RULES = {
     },
   },
 
+  "emergency-wipe": {
+    slug: (c) => `${c.device.platform}-${c.device.vendor}`,
+    // the stores each app documents (iOS: ADR 0009 section 3 / #56; Android: DeviceWipe.kt / #57); a card lists exactly its platform's
+    STORES: {
+      ios: ["server_sessions", "session", "upload_tokens", "upload_state", "chunks", "imported_originals", "caches", "temporary", "url_cache", "defaults", "background_transfers"],
+      android: ["server_sessions", "transfers", "session", "upload_queue", "file_grants", "preferences", "caches_and_files"],
+    },
+    WIPE_MAX_S: 5,
+    validate(card) {
+      const missing = base(card, "emergency-wipe");
+      if (!["ios", "android"].includes(card.device?.platform)) missing.push("device.platform (ios|android)");
+      for (const k of ["vendor", "model", "os_version"]) if (!card.device?.[k]) missing.push(`device.${k}`);
+      if (!card.app_version) missing.push("app_version");
+      if (!num(card.setup?.upload_progress_pct_at_wipe)) missing.push("setup.upload_progress_pct_at_wipe");
+      for (const k of ["seconds", "server_sessions_listed_empty", "old_access_token_refused"]) if (!present(card.online_wipe?.[k])) missing.push(`online_wipe.${k}`);
+      if (!present(card.offline_wipe?.seconds)) missing.push("offline_wipe.seconds");
+      for (const k of ["works_without_restart", "new_material_works"]) if (!present(card.relogin?.[k])) missing.push(`relogin.${k}`);
+      const want = this.STORES[card.device?.platform] ?? [];
+      for (const st of want) {
+        const e = card.stores?.[st];
+        if (!e || !present(e.empty)) missing.push(`stores.${st}.empty`);
+        else if (!e.checked_with) missing.push(`stores.${st}.checked_with (the command or screen used)`);
+      }
+      for (const st of Object.keys(card.stores ?? {})) if (!want.includes(st)) missing.push(`stores.${st} is not a store of ${card.device?.platform}`);
+      return missing;
+    },
+    judge(card) {
+      const reasons = [], want = this.STORES[card.device.platform];
+      for (const st of want) if (card.stores[st].empty !== true) reasons.push(`${st}: not empty after the wipe`);
+      if (card.online_wipe.seconds > this.WIPE_MAX_S) reasons.push(`online wipe took ${card.online_wipe.seconds} s (limit ${this.WIPE_MAX_S})`);
+      if (card.offline_wipe.seconds > this.WIPE_MAX_S) reasons.push(`offline wipe took ${card.offline_wipe.seconds} s (limit ${this.WIPE_MAX_S})`);
+      if (card.online_wipe.server_sessions_listed_empty !== true) reasons.push("the server still lists a session of the wiped device");
+      if (card.online_wipe.old_access_token_refused !== true) reasons.push("the old access token is still accepted");
+      if (card.relogin.works_without_restart !== true || card.relogin.new_material_works !== true) reasons.push("sign-in after the wipe does not work without restarting the app");
+      return {
+        reasons,
+        metrics: { platform: card.device.platform, vendor: card.device.vendor, app_version: card.app_version, upload_progress_pct_at_wipe: card.setup.upload_progress_pct_at_wipe, online_wipe_s: card.online_wipe.seconds, offline_wipe_s: card.offline_wipe.seconds, wipe_limit_s: this.WIPE_MAX_S, stores_checked: want.length, stores_empty: want.filter((st) => card.stores[st].empty === true).length, old_token_refused: card.online_wipe.old_access_token_refused === true },
+        platform: card.device.platform, file: {}, network: { profile: "field" }, upload_path: "tusd",
+        okNote: "نجح هذا الجهاز؛ المعيار يحتاج جهاز iOS وأندرويد فعليين، فهذه النتيجة جزئية للمعيار",
+      };
+    },
+  },
+
   "timestamp-alignment": {
     slug: () => "ten-files",
     validate(card) {
