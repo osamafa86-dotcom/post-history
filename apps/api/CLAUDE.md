@@ -17,6 +17,7 @@
 5. الإشعار يبقى في صندوق الوارد حتى لو فشلت قناة الهاتف؛ التمييز بين «أُسند» و«أقرّ الاستلام».
 6. لا إحداثيات دقيقة ولا أسماء مصادر محمية في أي استجابة لغير الأدوار المخوّلة، ولا في أي حمولة إشعار.
 7. الأسرار من البيئة فقط؛ `.env.example` يوثّق المتغيرات بلا قيم.
+8. كل دالة SQL تُستدعى من قيد أو محفّز تستدعي غيرها باسم مؤهَّل بـ `public.`، وتُعرَّف بـ `SET search_path = public, pg_temp` (لا تعتمد على مسار بحث الجلسة أو الاستعادة). كل ترحيل يضيف دالة كهذه يرافقه اختبار استعادة (`pg_restore`/إدراج) بمسار بحث فارغ.
 
 ## التشغيل
 
@@ -32,8 +33,8 @@ npm run contract:coverage    # بعد build: عمليات العقد غير ال
 npm run db:pull              # بعد كل ترحيل مدمج: يعيد استبطان src/database/schema (CI يفشل إن اختلف)
 ```
 
-المتغيرات في `.env.example`. الهيكل: `identity/` (الجلسات، SEC-02؛ `principal.ts` الأدوار والنطاقات و`@Roles`)، `forms/` (الإصدارات والتحقق المشترك من الحقول الديناميكية)، `materials/` (النطاق في الاستعلام، جدول الانتقالات، الحجب)، `notifications/` (التوزيع من Outbox إلى صندوق الوارد، القوالب في `messages.ts`، read/ack)، `events/` (`GET /events`)، `verification/` (SHA-256 على الخادم بتوازٍ `VERIFY_CONCURRENCY` في مجمّع خيوط `hash-pool.ts`، و`recordVerification` لعامل الوسائط)، `media/` (نقاط عامل الوسائط `/internal/media/*`، ADR 0006؛ مخططاتها مؤقتة في `media-schemas.ts` حتى تدخل العقد)، `outbox/media-stream.ts` (طابور `media:events`)، `push-devices/`، `permissions/`، `identity/account.service.ts` (الجلسات والاستعادة بقاعدة تسلسل الأدوار)، `uploads/uploads.service.ts`، `notifications/escalation.worker.ts`، `idempotency/`، `outbox/` (`writeOutboxEvent(tx, …)`
-يقبل معاملة فقط + المُرسل)، `uploads/` (خطّافات tusd، SEC-06؛ `upload-reconciler.ts` تسوية ما ضاع post-finish له)، `cli/` (أوامر التشغيل: `approve-admin-recovery` مخرج الطوارئ، `reencrypt-fields` بعد تدوير مفتاح الحقول)، `common/contract.ts` (التحقق من الأجسام بمخططات العقد نفسها)، `common/crypto.ts` (`FieldKeyring`: الحقول المشفرة بإصدار مفتاح).
+المتغيرات في `.env.example`. الهيكل: `identity/` (الجلسات، SEC-02؛ `principal.ts` الأدوار والنطاقات و`@Roles`)، `forms/` (الإصدارات والتحقق المشترك من الحقول الديناميكية)، `materials/` (النطاق في الاستعلام، جدول الانتقالات، الحجب)، `notifications/` (التوزيع من Outbox إلى صندوق الوارد، القوالب في `messages.ts`، read/ack)، `events/` (`GET /events`)، `verification/` (SHA-256 على الخادم بتوازٍ `VERIFY_CONCURRENCY` في مجمّع خيوط `hash-pool.ts`، و`recordVerification` لعامل الوسائط)، `media/` (نقاط عامل الوسائط `/internal/media/*`، ADR 0006؛ تُتحقق بمخططات العقد)، `outbox/media-stream.ts` (طابور `media:events`)، `push-devices/`، `permissions/`، `identity/account.service.ts` (الجلسات والاستعادة بقاعدة تسلسل الأدوار، وحالة الحساب `PUT /users/{id}/status`)، `identity/auth.service.ts` (الدخول وإكمال الاستعادة وتأكيد TOTP؛ الجلسة المقيّدة بعلامة `@AllowDuringCredentialReset` في `auth.guard.ts`)، `identity/reset-token-delivery.ts` (تسليم رمز إعادة التعيين، قابل للحقن)، `common/preconditions.ts` (`If-Match`/`ETag`)، `attestation/` (SEC-07: تحديات، App Attest وPlay Integrity، رمز ingest ES256؛ جذر Apple مثبّت في `app-attest.ts`)، `uploads/uploads.service.ts`، `notifications/escalation.worker.ts`، `idempotency/`، `outbox/` (`writeOutboxEvent(tx, …)`
+يقبل معاملة فقط + المُرسل)، `uploads/` (خطّافات tusd، SEC-06؛ `upload-reconciler.ts` تسوية ما ضاع post-finish له)، `cli/` (أوامر التشغيل: `approve-admin-recovery` مخرج الطوارئ، `set-admin-status` تعليق مدير وإعادة تفعيله بتأكيد شخصين، `reencrypt-fields` بعد تدوير مفتاح الحقول)، `common/contract.ts` (التحقق من الأجسام بمخططات العقد نفسها)، `common/crypto.ts` (`FieldKeyring`: الحقول المشفرة بإصدار مفتاح).
 القرارات في ADR 0005.
 
 ## الاختبار

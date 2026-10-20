@@ -16,6 +16,10 @@ export const NOTIFICATION_TITLES: Record<string, Record<Locale, string>> = {
     ar: 'طُلبت استعادة حسابك؛ إن لم تطلبها فأبلغ مشرفك',
     en: 'Recovery of your account was requested; tell your supervisor if it was not you',
   },
+  'auth.recovery_completed': {
+    ar: 'أُكملت استعادة حسابك بكلمة مرور ومصادقة جديدتين؛ إن لم تكن أنت فأبلغ مشرفك فورًا',
+    en: 'Your account recovery was completed with a new password and two-factor setup; tell your supervisor now if it was not you',
+  },
   'upload.verified': {
     ar: 'تم الاستلام بنجاح — المادة #{ref}، الإيصال {receipt}',
     en: 'Received successfully — material #{ref}, receipt {receipt}',

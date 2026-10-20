@@ -68,6 +68,9 @@ const schema = z.object({
 
   // طلب استعادة الحساب ينتظر اعتماد المشرف هذه المدة ثم ينتهي
   RECOVERY_REQUEST_TTL_SECONDS: z.coerce.number().int().min(300).default(24 * 3600),
+  // رمز إعادة التعيين الصادر عند الاعتماد (v0.1): صالح هذه المدة لإكمال الاستعادة، ومهلة تحديث الجلسة المقيّدة بعدها؛
+  // القاعدة تفرض ألا تتجاوز 24 ساعة من الاعتماد
+  RECOVERY_RESET_TOKEN_TTL_SECONDS: z.coerce.number().int().min(300).max(24 * 3600).default(12 * 3600),
   // مخرج الطوارئ (أمر CLI لاعتماد استعادة مدير النظام): بصمة SHA-256 (hex) لرمز التشغيل المحفوظ في الخزنة؛ الرمز نفسه لا
   // يوضع في البيئة. غير مضبوط = طريق الخزنة معطّل ويبقى طريق مديرَين
   BREAK_GLASS_TOKEN_SHA256: z
@@ -93,12 +96,15 @@ const schema = z.object({
   TUSD_PART_SIZE_BYTES: z.coerce.number().int().min(5 * 1024 * 1024).default(16 * 1024 * 1024),
   // عمر الجلسة ورمز الرفع معًا (عمود expires_at واحد في المخطط)
   UPLOAD_SESSION_TTL_SECONDS: z.coerce.number().int().min(60).default(24 * 3600),
+  // عمر رمز الرفع مستقلًا عن الجلسة (عقد v0.1): يلزم لبدء الرفع فقط (pre-create) لا لاستئنافه، ولا يتجاوز عمر الجلسة.
+  // إعادة POST /uploads بالمفتاح نفسه تصدر رمزًا جديدًا بالعمر نفسه ما دامت الجلسة created
+  UPLOAD_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).default(3600),
   // مسار الرفع (بند القرارات 3، يُحسم بعد النموذج الأولي): tusd، أو direct حيث يعلن العميل الاكتمال بنفسه
   UPLOAD_PATH: z.enum(['tusd', 'direct']).default('tusd'),
-  // true: إنشاء جلسة رفع بلا client_sha256 يُرفض (422)؛ يُفعَّل مع عقد v0.1 الذي يجعله مطلوبًا
+  // true (افتراضيًا مع عقد v0.1، ADR 0012: «على كل عميل إرسالها»): إنشاء جلسة رفع بلا client_sha256 يُرفض (422)
   UPLOAD_REQUIRE_CLIENT_SHA256: z
     .enum(['true', 'false'])
-    .default('false')
+    .default('true')
     .transform((v) => v === 'true'),
   // مكنسة تسوية جلسات in_progress التي ضاع post-finish لها: تُفحص في التخزين بعد هذه المدة بلا تغيير
   UPLOAD_RECONCILE_ENABLED: z
@@ -113,6 +119,8 @@ const schema = z.object({
   S3_BUCKET_MEDIA: z.string().min(1).default('media'),
   // التخزين الذي يقرأ منه التحقق داخل الخادم (MinIO محليًا، R2 في الإنتاج)
   S3_ENDPOINT: z.string().optional(),
+  // نقطة التخزين كما يصلها العميل لروابط التنزيل الموقّعة (المضيف جزء من التوقيع)؛ غير مضبوطة = S3_ENDPOINT
+  S3_PUBLIC_ENDPOINT: z.string().url().optional(),
   S3_REGION: z.string().default('auto'),
   S3_ACCESS_KEY: z.string().optional(),
   S3_SECRET_KEY: z.string().optional(),
@@ -151,6 +159,42 @@ const schema = z.object({
   ESCALATION_IMPORTANT_SECONDS: z.coerce.number().int().min(1).default(3600),
   ESCALATION_POLL_INTERVAL_MS: z.coerce.number().int().min(100).default(15000),
 
+  // SEC-07 (ADR 0011): شهادة الجهاز ونطاق ingest. off = المسارات الثلاثة 404 ولا جلسة تطلب ingest؛ test = تحقق App
+  // Attest الحقيقي بجذر اختبار من APP_ATTEST_TEST_ROOT_PEM وحكم Play Integrity غير موقّع (للاختبار والتطوير فقط)؛
+  // production = جذر Apple المثبّت في الكود وواجهة Google.
+  ATTESTATION_MODE: z.enum(['off', 'test', 'production']).default('off'),
+  // App Attest: معرّف التطبيق <TeamID>.<BundleID>، وrpIdHash = SHA-256 له
+  APP_ATTEST_APP_ID: z.string().regex(/^[A-Z0-9]{10}\.[A-Za-z0-9.-]+$/, 'must be <TeamID>.<BundleID>').optional(),
+  // مفاتيح البيئة التطويرية (aaguid appattestdevelop)؛ ممنوعة في الإنتاج
+  APP_ATTEST_ALLOW_DEVELOPMENT: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  // ATTESTATION_MODE=test: جذر الاختبار (PEM بترميز base64) بدل جذر Apple
+  APP_ATTEST_TEST_ROOT_PEM: z.string().optional(),
+  // Play Integrity: اسم الحزمة، وبصمات شهادة التوقيع (base64url بلا حشو كما يعيدها Google) مفصولة بفواصل
+  PLAY_INTEGRITY_PACKAGE_NAME: z.string().regex(/^[a-zA-Z][\w]*(\.[a-zA-Z][\w]*)+$/).optional(),
+  PLAY_INTEGRITY_CERT_SHA256: z
+    .string()
+    .transform((v) => v.split(',').map((s) => s.trim()).filter(Boolean))
+    .prefault(''),
+  // حساب خدمة Google (JSON بترميز base64) لواجهة decodeIntegrityToken؛ سر من SOPS، لا يُسجَّل
+  PLAY_INTEGRITY_SERVICE_ACCOUNT: z.string().optional(),
+  // حد طلبات التحدي ورموز ingest لكل مستخدم في نافذة LOGIN_RATE_LIMIT_WINDOW_SECONDS
+  ATTESTATION_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(60),
+  // مفتاح توقيع رموز ingest: ES256 خاص (PKCS#8 DER بترميز base64) من SOPS؛ البوابة تحمل العام وحده. التدوير: يُضاف العام
+  // الجديد إلى البوابة أولًا، ثم يتبدّل هذا المفتاح ومعرّفه (kid)، ثم يُزال العام القديم بعد عمر الرمز.
+  INGEST_TOKEN_SIGNING_KEY: z.string().optional(),
+  INGEST_TOKEN_KEY_ID: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/).optional(),
+  // عمر رمز ingest؛ البوابة ترفض ما فوق 900 ث
+  INGEST_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(900).default(600),
+  // نقطة tus على نطاق ingest؛ مضبوطة مع INGEST_REQUIRED=true تُعلن لكل جلسة رفع جديدة بدل TUS_PUBLIC_ENDPOINT
+  INGEST_TUS_ENDPOINT: z.string().url().optional(),
+  INGEST_REQUIRED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+
   OUTBOX_DISPATCHER_ENABLED: z
     .enum(['true', 'false'])
     .default('true')
@@ -178,7 +222,29 @@ const validated = schema.superRefine((c, ctx) => {
   if (c.UPLOAD_VERIFIER === 'in_process' && c.VERIFY_CONCURRENCY >= c.DATABASE_POOL_MAX) {
     ctx.addIssue({ code: 'custom', path: ['VERIFY_CONCURRENCY'], message: 'must be lower than DATABASE_POOL_MAX' });
   }
+  if (c.ATTESTATION_MODE !== 'off' && !c.APP_ATTEST_APP_ID && !c.PLAY_INTEGRITY_PACKAGE_NAME) {
+    ctx.addIssue({ code: 'custom', path: ['APP_ATTEST_APP_ID'], message: 'APP_ATTEST_APP_ID or PLAY_INTEGRITY_PACKAGE_NAME is required with ATTESTATION_MODE' });
+  }
+  if (c.PLAY_INTEGRITY_PACKAGE_NAME && c.PLAY_INTEGRITY_CERT_SHA256.length === 0) {
+    ctx.addIssue({ code: 'custom', path: ['PLAY_INTEGRITY_CERT_SHA256'], message: 'required with PLAY_INTEGRITY_PACKAGE_NAME' });
+  }
+  if (c.ATTESTATION_MODE === 'test' && c.APP_ATTEST_APP_ID && !c.APP_ATTEST_TEST_ROOT_PEM) {
+    ctx.addIssue({ code: 'custom', path: ['APP_ATTEST_TEST_ROOT_PEM'], message: 'required with ATTESTATION_MODE=test' });
+  }
+  if (c.ATTESTATION_MODE !== 'off' && (!c.INGEST_TOKEN_SIGNING_KEY || !c.INGEST_TOKEN_KEY_ID)) {
+    ctx.addIssue({ code: 'custom', path: ['INGEST_TOKEN_SIGNING_KEY'], message: 'INGEST_TOKEN_SIGNING_KEY and INGEST_TOKEN_KEY_ID are required with ATTESTATION_MODE' });
+  }
+  if (c.INGEST_REQUIRED && (c.ATTESTATION_MODE === 'off' || !c.INGEST_TUS_ENDPOINT)) {
+    ctx.addIssue({ code: 'custom', path: ['INGEST_REQUIRED'], message: 'needs ATTESTATION_MODE and INGEST_TUS_ENDPOINT' });
+  }
   if (c.NODE_ENV !== 'production') return;
+  if (c.ATTESTATION_MODE === 'test') ctx.addIssue({ code: 'custom', path: ['ATTESTATION_MODE'], message: 'test is not allowed in production' });
+  if (c.APP_ATTEST_ALLOW_DEVELOPMENT) {
+    ctx.addIssue({ code: 'custom', path: ['APP_ATTEST_ALLOW_DEVELOPMENT'], message: 'not allowed in production' });
+  }
+  if (c.ATTESTATION_MODE === 'production' && c.PLAY_INTEGRITY_PACKAGE_NAME && !c.PLAY_INTEGRITY_SERVICE_ACCOUNT) {
+    ctx.addIssue({ code: 'custom', path: ['PLAY_INTEGRITY_SERVICE_ACCOUNT'], message: 'required in production with PLAY_INTEGRITY_PACKAGE_NAME' });
+  }
   if (!c.REDIS_URL) ctx.addIssue({ code: 'custom', path: ['REDIS_URL'], message: 'required in production' });
   if (c.UPLOAD_VERIFIER === 'external' && !c.MEDIA_WORKER_TOKEN) {
     ctx.addIssue({ code: 'custom', path: ['MEDIA_WORKER_TOKEN'], message: 'required in production when UPLOAD_VERIFIER=external' });

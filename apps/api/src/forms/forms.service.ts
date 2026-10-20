@@ -3,6 +3,7 @@ import { desc, eq, sql } from 'drizzle-orm';
 import { schemaValidator } from '../common/contract';
 import { sha256 } from '../common/crypto';
 import { ApiError } from '../common/errors';
+import { assertIfMatch } from '../common/preconditions';
 import { DB, type Database, type Executor } from '../database/database.module';
 import { uploadForms } from '../database/schema/schema';
 import type { components } from '../generated/api';
@@ -33,7 +34,7 @@ export class FormsService {
     }));
   }
 
-  async publish(body: unknown, actorId: string): Promise<UploadForm> {
+  async publish(body: unknown, actorId: string, ifMatch?: string): Promise<UploadForm> {
     // بوابة v0 أولًا برمزها الخاص، قبل مخطط العقد الذي يرفض الحقلين أيضًا برمز عام
     const fields = (body as { fields?: unknown })?.fields;
     if (Array.isArray(fields) && fields.some((f) => f?.sensitive === true || f?.type === 'location')) {
@@ -55,6 +56,8 @@ export class FormsService {
         .from(uploadForms)
         .orderBy(desc(uploadForms.version))
         .limit(1);
+      // If-Match يسمّي الإصدار الحالي الذي رآه الناشر (0 قبل أول نموذج)؛ تقادمه 412 قبل شرط الإصدار + 1
+      assertIfMatch(ifMatch, current?.version ?? 0);
       const expected = (current?.version ?? 0) + 1;
       if (form.version !== expected) {
         throw new ApiError(409, 'form_version_conflict', 'Form version must be the current version + 1.', {

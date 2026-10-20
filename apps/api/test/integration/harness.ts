@@ -83,7 +83,7 @@ export async function ensureForm(h: Harness): Promise<void> {
 export async function seedUploadSession(
   h: Harness,
   reporterId: string,
-  opts: { kind?: string; size?: number; state?: string; expiresInSeconds?: number; updatedSecondsAgo?: number } = {},
+  opts: { kind?: string; size?: number; state?: string; expiresInSeconds?: number; tokenExpiresInSeconds?: number; updatedSecondsAgo?: number } = {},
 ): Promise<{ id: string; materialId: string; uploadToken: string }> {
   await ensureForm(h);
   const { rows: m } = await h.pool.query<{ id: string }>(
@@ -96,8 +96,9 @@ export async function seedUploadSession(
   const { rows } = await h.pool.query<{ id: string }>(
     // updated_at يُضبط عند الإدراج فقط (محفّز التحديث يعيده إلى now())
     `INSERT INTO upload_sessions (material_id, created_by, kind, state, size_bytes, filename, part_size_bytes,
-       upload_token_hash, expires_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, 'clip.mp4', 16777216, $6, now() + make_interval(secs => $7), now() - make_interval(secs => $8))
+       upload_token_hash, expires_at, upload_token_expires_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, 'clip.mp4', 16777216, $6, now() + make_interval(secs => $7),
+             now() + make_interval(secs => LEAST($9, $7)), now() - make_interval(secs => $8))
      RETURNING id`,
     [
       m[0]!.id,
@@ -108,6 +109,7 @@ export async function seedUploadSession(
       sha256(uploadToken),
       opts.expiresInSeconds ?? 3600,
       opts.updatedSecondsAgo ?? 0,
+      opts.tokenExpiresInSeconds ?? opts.expiresInSeconds ?? 3600,
     ],
   );
   return { id: rows[0]!.id, materialId: m[0]!.id, uploadToken };

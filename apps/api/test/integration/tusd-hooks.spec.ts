@@ -132,6 +132,12 @@ describe('tusd hooks (/internal/tusd-hooks/{hook_token}, SEC-06)', () => {
     expect((await session(s.id)).state).toBe('created');
   });
 
+  it('pre-create rejects an expired upload token even while the session is still open (v0.1 column)', async () => {
+    const s = await seedUploadSession(h, reporterId, { expiresInSeconds: 3600, tokenExpiresInSeconds: -1 });
+    expect((await hook(preCreate(s.id, { token: s.uploadToken })).expect(200)).body.RejectUpload).toBe(true);
+    expect((await session(s.id)).state).toBe('created');
+  });
+
   it('pre-create rejects expired, finished, revoked or unknown sessions', async () => {
     const expired = await seedUploadSession(h, reporterId, { expiresInSeconds: -1 });
     const finished = await seedUploadSession(h, reporterId, { state: 'completed' });

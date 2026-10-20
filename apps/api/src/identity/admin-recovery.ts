@@ -15,7 +15,7 @@ export type AdminRecoveryInput =
 
 export class AdminRecoveryError extends Error {
   constructor(
-    readonly code: 'not_found' | 'not_pending' | 'not_admin_target' | 'invalid_approvers' | 'vault_disabled' | 'verification_failed',
+    readonly code: 'not_found' | 'not_pending' | 'not_admin_target' | 'invalid_approvers' | 'vault_disabled' | 'verification_failed' | 'quorum',
     message: string,
   ) {
     super(message);
@@ -32,9 +32,9 @@ export class AdminRecoveryError extends Error {
  */
 export async function approveAdminRecovery(
   db: Database,
-  deps: { keyring: FieldKeyring; breakGlassTokenSha256?: string },
+  deps: { keyring: FieldKeyring; breakGlassTokenSha256?: string; resetTokenTtlSeconds: number },
   input: AdminRecoveryInput,
-): Promise<{ requestId: string; targetUserId: string; approvedBy: string }> {
+): Promise<{ requestId: string; targetUserId: string; approvedBy: string; resetToken: string; resetTokenExpiresAt: string }> {
   const reasonCode = input.mode === 'two_admins' ? 'cli_two_admins' : 'cli_vault';
   const outcome = await db.transaction(async (tx) => {
     const [r] = await tx
@@ -60,31 +60,10 @@ export async function approveAdminRecovery(
     }
 
     const people = input.mode === 'two_admins' ? input.approvers : [input.confirmer];
-    const allowed = input.mode === 'two_admins' ? ['system_admin'] : ['system_admin', 'editor_in_chief'];
-    const ids = people.map((a) => a.userId);
-    if (new Set(ids).size !== ids.length || ids.includes(r.userId)) {
-      throw new AdminRecoveryError('invalid_approvers', 'approvers must be distinct people other than the account owner');
-    }
-    let verified = true;
-    for (const person of people) {
-      const [u] = await tx
-        .select({ status: users.status, totpEnabled: users.totpEnabled, secret: users.totpSecretEnc })
-        .from(users)
-        .where(eq(users.id, person.userId));
-      const roles = u ? await rolesOf(tx, person.userId) : [];
-      if (!u || u.status !== 'active' || !roles.some((role) => allowed.includes(role))) {
-        throw new AdminRecoveryError('invalid_approvers', `approver ${person.userId} is not an active ${allowed.join(' or ')}`);
-      }
-      // كل الرموز تُفحص قبل الحكم، فلا يُعرف أيها خاطئ
-      if (!u.totpEnabled || !u.secret || !verifyTotp(deps.keyring.decrypt(u.secret), person.totp)) verified = false;
-    }
-    if (input.mode === 'vault') {
-      if (!deps.breakGlassTokenSha256) throw new AdminRecoveryError('vault_disabled', 'BREAK_GLASS_TOKEN_SHA256 is not configured');
-      if (!constantTimeEqual(sha256(input.vaultToken).toString('hex'), deps.breakGlassTokenSha256.toLowerCase())) verified = false;
-    }
+    const verified = await confirmTwoPeople(tx, deps, input, r.userId);
     if (!verified) return { rejected: true as const, targetUserId: r.userId };
 
-    await recordRecoveryApproval(tx, r, people[0]!.userId, input.note, reasonCode);
+    const { approved, resetToken } = await recordRecoveryApproval(tx, r, people[0]!.userId, input.note, deps.resetTokenTtlSeconds, reasonCode);
     if (input.mode === 'two_admins') {
       await audit(tx, people[1]!.userId, 'auth.recovery_confirmed', r.userId, {
         recovery_request_id: r.id,
@@ -92,7 +71,13 @@ export async function approveAdminRecovery(
         reason_code: reasonCode,
       });
     }
-    return { rejected: false as const, targetUserId: r.userId, approvedBy: people[0]!.userId };
+    return {
+      rejected: false as const,
+      targetUserId: r.userId,
+      approvedBy: people[0]!.userId,
+      resetToken,
+      resetTokenExpiresAt: approved.resetTokenExpiresAt!,
+    };
   });
 
   if (outcome.rejected) {
@@ -106,10 +91,52 @@ export async function approveAdminRecovery(
     );
     throw new AdminRecoveryError('verification_failed', 'verification failed');
   }
-  return { requestId: input.requestId, targetUserId: outcome.targetUserId, approvedBy: outcome.approvedBy };
+  return {
+    requestId: input.requestId,
+    targetUserId: outcome.targetUserId,
+    approvedBy: outcome.approvedBy,
+    resetToken: outcome.resetToken,
+    resetTokenExpiresAt: new Date(outcome.resetTokenExpiresAt).toISOString(),
+  };
 }
 
 async function rolesOf(tx: Tx, userId: string): Promise<string[]> {
   return (await tx.select({ role: userRoles.role }).from(userRoles).where(eq(userRoles.userId, userId))).map((r) => r.role);
 }
 
+
+/**
+ * تأكيد الشخصين (للاستعادة ولحالة حساب المدير): مديرا نظام آخران فاعلان برمزي TOTP، أو رمز الخزنة وشخص ثانٍ فاعل
+ * (مدير نظام أو رئيس تحرير). الأشخاص مختلفون وغير صاحب الحساب، وإلا invalid_approvers. يعيد false إن خاب رمز ما (كل
+ * الرموز تُفحص قبل الحكم فلا يُعرف أيها خاطئ).
+ */
+export async function confirmTwoPeople(
+  tx: Tx,
+  deps: { keyring: FieldKeyring; breakGlassTokenSha256?: string },
+  input: { mode: 'two_admins'; approvers: [Approver, Approver] } | { mode: 'vault'; vaultToken: string; confirmer: Approver },
+  ownerId: string,
+): Promise<boolean> {
+  const people = input.mode === 'two_admins' ? input.approvers : [input.confirmer];
+  const allowed = input.mode === 'two_admins' ? ['system_admin'] : ['system_admin', 'editor_in_chief'];
+  const ids = people.map((a) => a.userId);
+  if (new Set(ids).size !== ids.length || ids.includes(ownerId)) {
+    throw new AdminRecoveryError('invalid_approvers', 'approvers must be distinct people other than the account owner');
+  }
+  let verified = true;
+  for (const person of people) {
+    const [u] = await tx
+      .select({ status: users.status, totpEnabled: users.totpEnabled, secret: users.totpSecretEnc })
+      .from(users)
+      .where(eq(users.id, person.userId));
+    const roles = u ? await rolesOf(tx, person.userId) : [];
+    if (!u || u.status !== 'active' || !roles.some((role) => allowed.includes(role))) {
+      throw new AdminRecoveryError('invalid_approvers', `approver ${person.userId} is not an active ${allowed.join(' or ')}`);
+    }
+    if (!u.totpEnabled || !u.secret || !verifyTotp(deps.keyring.decrypt(u.secret), person.totp)) verified = false;
+  }
+  if (input.mode === 'vault') {
+    if (!deps.breakGlassTokenSha256) throw new AdminRecoveryError('vault_disabled', 'BREAK_GLASS_TOKEN_SHA256 is not configured');
+    if (!constantTimeEqual(sha256(input.vaultToken).toString('hex'), deps.breakGlassTokenSha256.toLowerCase())) verified = false;
+  }
+  return verified;
+}

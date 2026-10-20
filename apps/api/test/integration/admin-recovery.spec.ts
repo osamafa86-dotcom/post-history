@@ -17,7 +17,11 @@ describe('break-glass admin recovery (CLI, two-person confirmation)', () => {
   });
   afterAll(() => h.close());
 
-  const deps = (withVault = true) => ({ keyring: fieldKeyring(h.config), breakGlassTokenSha256: withVault ? vaultHash : undefined });
+  const deps = (withVault = true) => ({
+    keyring: fieldKeyring(h.config),
+    breakGlassTokenSha256: withVault ? vaultHash : undefined,
+    resetTokenTtlSeconds: h.config.RECOVERY_RESET_TOKEN_TTL_SECONDS,
+  });
   const person = async (role: string) => seedUser(h, { totp: true, roles: [{ role }] });
   const code = (u: { totpSecret?: Buffer }) => totp(u.totpSecret!, Date.now());
   const pending = async (userId: string) =>
@@ -49,12 +53,24 @@ describe('break-glass admin recovery (CLI, two-person confirmation)', () => {
         { userId: b.id, totp: code(b) },
       ],
     });
-    expect(done).toEqual({ requestId: id, targetUserId: target.id, approvedBy: a.id });
+    expect(done).toEqual({
+      requestId: id,
+      targetUserId: target.id,
+      approvedBy: a.id,
+      resetToken: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+      resetTokenExpiresAt: expect.any(String),
+    });
+    // الرمز للطباعة مرة واحدة: بصمته وحدها في القاعدة، والحساب في «إعادة تعيين إلزامية»
+    const { rows: rr } = await h.pool.query(`SELECT reset_token_hash FROM recovery_requests WHERE id = $1`, [id]);
+    expect(rr[0].reset_token_hash.equals(createHash('sha256').update(done.resetToken).digest())).toBe(true);
+    const { rows: ur } = await h.pool.query(`SELECT credential_reset_required FROM users WHERE id = $1`, [target.id]);
+    expect(ur[0].credential_reset_required).toBe(true);
     expect(await state(id)).toEqual({ state: 'approved', approved_by: a.id });
     const { rows } = await h.pool.query(`SELECT count(*)::int AS n FROM refresh_tokens WHERE user_id = $1 AND revoked_at IS NULL`, [target.id]);
     expect(rows[0].n).toBe(0);
     expect(await audits(target.id)).toEqual([
       { actor_id: a.id, action: 'auth.recovery_approved', details: { recovery_request_id: id, target_user_id: target.id, reason_code: 'cli_two_admins' } },
+      { actor_id: a.id, action: 'auth.reset_token_issued', details: { recovery_request_id: id, target_user_id: target.id, reason_code: 'reset_token_issued' } },
       { actor_id: b.id, action: 'auth.recovery_confirmed', details: { recovery_request_id: id, target_user_id: target.id, reason_code: 'cli_two_admins' } },
     ]);
     const { rows: ev } = await h.pool.query(`SELECT type, actor_id FROM outbox_events WHERE idempotency_key = $1`, [`auth.recovery_approved:${id}`]);
@@ -108,6 +124,7 @@ describe('break-glass admin recovery (CLI, two-person confirmation)', () => {
     expect((await audits(target.id)).map((r) => [r.action, r.details.reason_code])).toEqual([
       ['auth.recovery_cli_rejected', 'cli_vault'],
       ['auth.recovery_approved', 'cli_vault'],
+      ['auth.reset_token_issued', 'reset_token_issued'],
     ]);
   });
 

@@ -1,7 +1,7 @@
 // Seeds a throwaway database for the live acceptance runs: offices, one user per role (plus a second
 // reporter and supervisor in another office), a published form, materials carrying canary values, and
 // the fixtures the scope cases need. Everything is synthetic and random per run.
-import { randomBytes, randomUUID, createHash } from "node:crypto";
+import { randomBytes, randomUUID, createHash, createCipheriv } from "node:crypto";
 import { freshFetch } from "../lib/http.mjs";
 import pg from "pg";
 import { hash } from "@node-rs/argon2";
@@ -9,7 +9,17 @@ import { hash } from "@node-rs/argon2";
 const ROLES = ["system_admin", "editor_in_chief", "supervisor", "producer", "finance", "reporter", "rights_officer"];
 const sha256 = (s) => createHash("sha256").update(s).digest();
 
-export async function seed({ databaseUrl, apiUrl }) {
+/** The server's field format (common/crypto.ts): version || iv || tag || AES-256-GCM ciphertext, the version byte as AAD. */
+function encryptField(keyB64, plaintext, version = 1) {
+  const v = Buffer.of(version), iv = randomBytes(12);
+  const c = createCipheriv("aes-256-gcm", Buffer.from(keyB64, "base64"), iv);
+  c.setAAD(v);
+  const ct = Buffer.concat([c.update(plaintext), c.final()]);
+  return Buffer.concat([v, iv, c.getAuthTag(), ct]);
+}
+
+// fieldKey (the throwaway server's FIELD_ENCRYPTION_KEY) lets the seed enrol TOTP for the admins who approve the two-person CLI
+export async function seed({ databaseUrl, apiUrl, fieldKey = null }) {
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 2 });
   const q = (text, params) => pool.query(text, params);
   const password = randomBytes(12).toString("base64url");
@@ -31,6 +41,11 @@ export async function seed({ databaseUrl, apiUrl }) {
   }
   users.reporter_b = await user("reporter-b", "reporter", { officeId: officeB });
   users.supervisor_b = await user("supervisor-b", "supervisor", { scopeKind: "office", scopeId: officeB });
+  // core-gate fixtures: a second producer (reservation contention), a second admin (quorum) and a throwaway reporter the suspension checks may revoke
+  users.producer_b = await user("producer-b", "producer");
+  users.system_admin_b = await user("system-admin-b", "system_admin");
+  users.victim_reporter = await user("victim", "reporter", { officeId: officeA });
+  users.system_admin_c = await user("system-admin-c", "system_admin");
 
   const login = async (u) => {
     const res = await freshFetch(`${apiUrl}/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: u.email, password }) });
@@ -88,13 +103,27 @@ export async function seed({ databaseUrl, apiUrl }) {
     expired: await apiSession(tokens.reporter, mA.id),
     finished: await apiSession(tokens.reporter, mA.id),
   };
-  await q(`UPDATE upload_sessions SET expires_at = now() - interval '1 minute' WHERE id = $1`, [hookSessions.expired.id]);
+  // v0.1: the upload token cannot outlive its session (check upload_sessions_token_expiry_within_session), so both move
+  await q(
+    `UPDATE upload_sessions SET expires_at = now() - interval '1 minute',
+       upload_token_expires_at = least(upload_token_expires_at, now() - interval '1 minute') WHERE id = $1`,
+    [hookSessions.expired.id],
+  );
   await q(`UPDATE upload_sessions SET state = 'completed' WHERE id = $1`, [hookSessions.finished.id]);
 
+  // TOTP is enabled last: the logins above ran without it, and these sessions stay valid
+  const totp = {};
+  if (fieldKey) {
+    for (const k of ["system_admin", "system_admin_c", "editor_in_chief"]) {
+      const secret = randomBytes(20);
+      await q(`UPDATE users SET totp_secret_enc = $1, totp_enabled = true WHERE id = $2`, [encryptField(fieldKey, secret), users[k].id]);
+      totp[k] = secret.toString("hex");
+    }
+  }
   await pool.end();
-  const { reporter_b: _b, supervisor_b: _sb, ...roleTokens } = tokens;
+  const { reporter_b: _b, supervisor_b: _sb, producer_b: _pb, system_admin_b: _ab, system_admin_c: _ac, victim_reporter: _vr, ...roleTokens } = tokens;
   return {
-    tokens: roleTokens, allTokens: tokens, users, password,
+    tokens: roleTokens, allTokens: tokens, users, password, totp,
     fixtures: {
       other_reporter_material_id: mB.id, out_of_scope_material_id: mB.id,
       other_reporter_upload_id: session, other_reporter_notification_id: notificationB,

@@ -1,0 +1,13 @@
+# المعالج الرسومي للعامل المحلي (ADR 0019)، اختياري: compose -f infra/compose/docker-compose.yml -f infra/ai/compose.gpu.yml
+# يحتاج NVIDIA Container Toolkit على المضيف. غير مختبر في CI (لا معالج رسومي على المشغّل).
+services:
+  ai-worker:
+    build:
+      target: runtime-cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { validateQuery } from '../common/contract';
 import { ApiError } from '../common/errors';
@@ -19,8 +19,8 @@ export class FormsController {
 
   @Post()
   @Roles('system_admin')
-  publish(@Body() body: unknown, @Req() req: Request): Promise<UploadForm> {
-    return this.forms.publish(body, req.auth!.userId);
+  publish(@Body() body: unknown, @Req() req: Request, @Headers('if-match') ifMatch?: string): Promise<UploadForm> {
+    return this.forms.publish(body, req.auth!.userId, ifMatch);
   }
 
   @Get('current')
