@@ -88,6 +88,27 @@ class UploadEngineTest {
         assertEquals(UploadState.VERIFIED, store.get("t1")!!.state)
     }
 
+    @Test fun `a link that cuts every request still moves because the server's partial bytes count and the wait stays short`() = runBlocking {
+        // field-weak in netlab: no PATCH ends normally for a long stretch, yet HEAD shows the server keeping the
+        // first half of each one. The engine must credit that as progress (persisted, backoff from the shortest)
+        // instead of climbing to 60 s waits while the link is alive.
+        queue()
+        fake.cutAtPatch.addAll(1..6)
+        fake.sessionState = "verified"; fake.receipt = "R-202610-000004"
+        val confirmedSeen = ArrayList<Long>()
+        val watching = object : UploadStore by store {
+            override suspend fun save(task: UploadTask) { confirmedSeen.add(task.bytesConfirmed); store.save(task) }
+        }
+        val e = UploadEngine(watching, files, UploadsApi(server.url("/v1").toString().trimEnd('/')), TusTransport(), { now }, { ms -> sleeps.add(ms); now += ms }, testConfig)
+        assertEquals(RunOutcome.Finished, e.run("t1"))
+        assertEquals(fileSha, serverBytesSha())
+        assertEquals(UploadState.VERIFIED, store.get("t1")!!.state)
+        assertEquals("six cuts, each followed by a HEAD that found progress", List(6) { 2_000L }, sleeps.filter { it in testConfig.backoffMs })
+        // Progress was persisted from HEAD before any request was acknowledged: 32 KiB after the first cut.
+        assertEquals(32 * 1024L, confirmedSeen.first { it > 0 })
+        assertEquals(0, fake.uploads.values.single().size() - fileSize.toInt())
+    }
+
     @Test fun `a 5xx from the upload server is retried with backoff`() = runBlocking {
         queue()
         fake.serverErrorAtPatch.addAll(listOf(1, 2))
@@ -103,8 +124,8 @@ class UploadEngineTest {
         val stop = AtomicBoolean(false)
         val firstConfirmed = AtomicBoolean(false)
         val e1 = UploadEngine(store, files, UploadsApi(server.url("/v1").toString().trimEnd('/')), object : TusTransport() {
-            override fun upload(uploadUrl: String, token: String, sizeBytes: Long, openStream: () -> java.io.InputStream, requestPayloadBytes: Int, chunkBytes: Int, shouldStop: () -> Boolean, onConfirmed: (Long) -> Unit, onSent: (Long) -> Unit): Long =
-                super.upload(uploadUrl, token, sizeBytes, openStream, requestPayloadBytes, chunkBytes, shouldStop, { off -> onConfirmed(off); if (!firstConfirmed.getAndSet(true)) stop.set(true) }, onSent)
+            override fun upload(uploadUrl: String, token: String, sizeBytes: Long, openStream: () -> java.io.InputStream, requestPayloadBytes: (Long) -> Int, chunkBytes: Int, shouldStop: () -> Boolean, onHead: (Long) -> Unit, onConfirmed: (Long) -> Unit, onSent: (Long) -> Unit): Long =
+                super.upload(uploadUrl, token, sizeBytes, openStream, requestPayloadBytes, chunkBytes, shouldStop, onHead, { off -> onConfirmed(off); if (!firstConfirmed.getAndSet(true)) stop.set(true) }, onSent)
         }, { now }, { ms -> now += ms }, testConfig)
         assertEquals(RunOutcome.Stopped, e1.run("t1", shouldStop = { stop.get() }))
         val afterKill = store.get("t1")!!
