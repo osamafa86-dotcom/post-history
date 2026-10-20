@@ -119,6 +119,8 @@ const schema = z.object({
   S3_BUCKET_MEDIA: z.string().min(1).default('media'),
   // التخزين الذي يقرأ منه التحقق داخل الخادم (MinIO محليًا، R2 في الإنتاج)
   S3_ENDPOINT: z.string().optional(),
+  // نقطة التخزين كما يصلها العميل لروابط التنزيل الموقّعة (المضيف جزء من التوقيع)؛ غير مضبوطة = S3_ENDPOINT
+  S3_PUBLIC_ENDPOINT: z.string().url().optional(),
   S3_REGION: z.string().default('auto'),
   S3_ACCESS_KEY: z.string().optional(),
   S3_SECRET_KEY: z.string().optional(),
