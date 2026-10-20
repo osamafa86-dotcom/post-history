@@ -2637,7 +2637,7 @@ components:
           type: array
           minItems: 1
           uniqueItems: true
-          items: { $ref: "#/components/schemas/Role" }
+          items: { $ref: "#/components/schemas/RoleName" }
         channels:
           type: array
           minItems: 1
@@ -2700,7 +2700,7 @@ components:
           type: array
           uniqueItems: true
           default: []
-          items: { $ref: "#/components/schemas/Role" }
+          items: { $ref: "#/components/schemas/RoleName" }
         recipient_permissions:
           type: array
           uniqueItems: true
