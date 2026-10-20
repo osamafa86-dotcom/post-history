@@ -2,7 +2,7 @@ name: post-history
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -18,7 +18,7 @@ services:
       retries: 20
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     # The password goes through the environment into a config file, not argv: an argv value shows in
     # `docker inspect` Cmd and the rendered compose file (SEC-05). $$ = literal $ for the container shell.
     environment:
@@ -78,7 +78,7 @@ services:
       - ../minio/init.sh:/init.sh:ro
 
   tusd:
-    image: tusproject/tusd:v2.10.1
+    image: tusproject/tusd:v2.10.1@sha256:7b1c552a8b42f4b36cb01f2a3bd49f82ab078b2eefd191459e716141dd50376c
     depends_on:
       minio-init:
         condition: service_completed_successfully
@@ -127,7 +127,7 @@ services:
         ipv4_address: 172.30.250.2
 
   tusd-proxy:
-    image: nginx:1.28.3-alpine
+    image: nginx:1.28.3-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
     depends_on:
       tusd:
         condition: service_healthy

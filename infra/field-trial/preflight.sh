@@ -59,11 +59,11 @@ if [ -f "$ENV_FILE" ]; then
   val() { sed -n "s/^$1=//p" "$ENV_FILE" | tail -1; }
   for k in MAIN_DOMAIN INGEST_DOMAIN MAIN_IP INGEST_IP ACME_EMAIL POSTGRES_PASSWORD REDIS_PASSWORD S3_SECRET_KEY \
            TUSD_HOOK_SECRET JWT_SECRET FIELD_ENCRYPTION_KEY MEDIA_WORKER_TOKEN S3_MEDIA_ACCESS_KEY S3_MEDIA_SECRET_KEY \
-           INGEST_TOKEN_PUBLIC_KEY S3_BACKUP_ACCESS_KEY S3_BACKUP_SECRET_KEY BACKUP_DIR BACKUP_RECIPIENT_CERT \
+           INGEST_TOKEN_PUBLIC_KEY BACKUP_PG_PASSWORD S3_BACKUP_ACCESS_KEY S3_BACKUP_SECRET_KEY BACKUP_DIR BACKUP_RECIPIENT_CERT \
            CLOUDFLARE_CIDRS; do
     [ -n "$(val "$k")" ] && ok "secret set: $k" || bad "secret set: $k"
   done
-  for k in POSTGRES_PASSWORD REDIS_PASSWORD S3_SECRET_KEY TUSD_HOOK_SECRET JWT_SECRET MEDIA_WORKER_TOKEN S3_BACKUP_SECRET_KEY; do
+  for k in POSTGRES_PASSWORD REDIS_PASSWORD S3_SECRET_KEY TUSD_HOOK_SECRET JWT_SECRET MEDIA_WORKER_TOKEN S3_BACKUP_SECRET_KEY BACKUP_PG_PASSWORD; do
     v="$(val "$k")"
     [ "${#v}" -ge 32 ] && ok "secret length >= 32: $k" || bad "secret length >= 32: $k"
     case "$v" in *change-me*|*example*) bad "placeholder value: $k" ;; esac
@@ -134,7 +134,9 @@ fi
 
 # --- بعد التشغيل
 if [ "$RUNNING" = 1 ]; then
-  check "https://$MAIN_DOMAIN/health is 200" "[ \"\$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' https://$MAIN_DOMAIN/health)\" = 200 ]"
+  api_port="$(sed -n 's/^API_PORT=//p' "$ROOT/infra/compose/.env.example" | tail -1)"
+  check "API /health is 200 on the host (127.0.0.1)" "[ \"\$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' http://127.0.0.1:$api_port/health)\" = 200 ]"
+  check "/health is not published at the edge (404)" "[ \"\$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' https://$MAIN_DOMAIN/health)\" = 404 ]"
   check "https://$INGEST_DOMAIN/files/ rejects a missing token (401)" \
     "[ \"\$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' -X POST -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 1' https://$INGEST_DOMAIN/files/)\" = 401 ]"
   check "/internal is not reachable from outside" "[ \"\$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' https://$MAIN_DOMAIN/internal/x)\" = 404 ]"

@@ -34,6 +34,7 @@ INGEST_IP=127.0.0.2
 ACME_EMAIL=ci@example.invalid
 CADDY_GLOBAL_EXTRA=local_certs
 CLOUDFLARE_CIDRS=127.0.0.0/8
+BACKUP_PG_PASSWORD=$(hex 32)
 POSTGRES_PASSWORD=$(hex 16)
 REDIS_PASSWORD=$(hex 16)
 S3_SECRET_KEY=$(hex 16)
@@ -62,15 +63,16 @@ set -a; . "$ROOT/infra/compose/.env.example"; . "$TRIAL_ENV_FILE"; set +a
 c() { curl -sS --max-time 20 --cacert "$WORK/ca.crt" --resolve "main.localhost:443:127.0.0.1" \
            --resolve "ingest.localhost:443:127.0.0.2" "$@"; }
 code() { c -o /dev/null -w '%{http_code}' "$@" || echo 000; }
-for _ in $(seq 1 30); do [ "$(code https://main.localhost/health)" = 200 ] && break; sleep 2; done
-
-[ "$(code https://main.localhost/health)" = 200 ] || fail "main /health through the edge"
-hdr="$(c -o /dev/null -D - -X OPTIONS https://main.localhost/files/ -H 'Tus-Resumable: 1.0.0')"
-grep -qi '^tus-resumable:' <<<"$hdr" || fail "main /files/ does not reach tusd"
+tus() { c -o /dev/null -D - -X OPTIONS https://main.localhost/files/ -H 'Tus-Resumable: 1.0.0' 2>/dev/null || true; }
+for _ in $(seq 1 30); do grep -qi '^tus-resumable:' <<<"$(tus)" && break; sleep 2; done
+grep -qi '^tus-resumable:' <<<"$(tus)" || fail "main /files/ does not reach tusd"
+# /health is checked on the host, not published at the edge (its headers tell the rate limiter's state).
+[ "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$API_PORT/health")" = 200 ] || fail "API /health on the host"
+[ "$(code https://main.localhost/health)" = 404 ] || fail "/health is published at the edge"
 # The edge routes /internal nowhere, whatever the token: a random one keeps the real secret out of the access log.
 [ "$(code -X POST "https://main.localhost/internal/tusd-hooks/$(hex 32)")" = 404 ] || fail "/internal reachable through the edge"
 [ "$(code https://main.localhost/)" = 404 ] || fail "main / should be 404"
-[ "$(curl -sS -o /dev/null -w '%{http_code}' --resolve main.localhost:80:127.0.0.1 http://main.localhost/health)" = 308 ] \
+[ "$(curl -sS -o /dev/null -w '%{http_code}' --resolve main.localhost:80:127.0.0.1 http://main.localhost/v1/x)" = 308 ] \
   || fail "http is not redirected to https"
 [ "$(code -X POST https://ingest.localhost/files/ -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 1')" = 401 ] \
   || fail "ingest without a token should be 401 at the gate"
@@ -100,12 +102,35 @@ API_URL="http://127.0.0.1:$API_PORT/v1" CA_FILE="$WORK/ca.crt" INGEST_SIGNING_KE
 
 "$T" run --rm -T backup once || fail "backup once"
 [ -s "$WORK/backups/last-success.json" ] || fail "no last-success.json"
+# The backup role reads and cannot write.
+ro() { "$T" exec -T -e PGPASSWORD="$BACKUP_PG_PASSWORD" postgres psql -h 127.0.0.1 -U backup_reader -d "$POSTGRES_DB" -XAtq -c "$1"; }
+[ "$(ro 'select count(*) >= 0 from public.users')" = t ] || fail "backup_reader cannot read"
+if ro 'update public.users set email = email' >/dev/null 2>&1; then fail "backup_reader can update"; fi
+if ro 'create table public.backup_probe (i int)' >/dev/null 2>&1; then fail "backup_reader can create tables"; fi
+# Authenticated encryption: one changed byte in a backup file makes decryption fail.
+obj="$(find "$WORK/backups/objects" -name '*.cms' -type f | head -1)"
+python3 - "$obj" "$WORK/tampered.cms" <<'PY'
+import sys
+b = bytearray(open(sys.argv[1], "rb").read()); b[len(b) // 2] ^= 1
+open(sys.argv[2], "wb").write(b)
+PY
+dec() { "$T" run --rm --no-deps -T --user "$(id -u):$(id -g)" -v "$WORK:/work" -v "$(dirname "$1"):/in:ro" --entrypoint sh backup \
+          -c "openssl cms -decrypt -binary -inform DER -inkey /work/recipient.key -in /in/$(basename "$1") -out /dev/null" </dev/null; }
+cms="$("$T" run --rm --no-deps -T -v "$(dirname "$obj"):/in:ro" --entrypoint sh backup -c \
+  "openssl cms -cmsout -print -inform DER -in /in/$(basename "$obj")" </dev/null)"   # captured: pipefail + grep -q
+grep -q authEnvelopedData <<<"$cms" || fail "backups are not AuthEnvelopedData (AES-GCM)"
+dec "$obj" >/dev/null 2>&1 || fail "an untouched backup file does not decrypt"
+if dec "$WORK/tampered.cms" >/dev/null 2>&1; then fail "a tampered backup file decrypts"; fi
+echo "backup role read-only, backups authenticated: ok"
 COMPOSE="$T" BACKUP_DIR="$WORK/backups" DRILL_ENV=local \
   "$ROOT/infra/backup/restore-drill.sh" --key "$WORK/recipient.key" --out "${DRILL_OUT:-$WORK/drill.json}" || fail "restore drill"
 
 # Captured first: with pipefail, `logs | grep -q` can turn a match into a SIGPIPE failure and hide it.
-edge_log="$("$T" logs caddy caddy-ingest ingest-gate)"
+edge_log="$("$T" logs caddy caddy-ingest ingest-gate tusd-proxy)"
 if grep -qF "$TUSD_HOOK_SECRET" <<<"$edge_log"; then fail "hook secret in an edge log"; fi
 if grep -qE '"(remote_ip|client_ip)"' <<<"$edge_log"; then fail "client address in the edge log"; fi
 if grep -qiE 'ingest-token|authorization' <<<"$edge_log"; then fail "request headers in the edge log"; fi
+# Upload ids are bearer capabilities (SEC-06): logged as /files/-, never /files/<id>.
+if grep -qE '/files/[A-Za-z0-9]' <<<"$edge_log"; then fail "an upload id in an edge log"; fi
+grep -qF '/files/-' <<<"$edge_log" || fail "no redacted upload path in the edge log (nothing logged?)"
 echo "field trial smoke: ok"
