@@ -16,10 +16,10 @@ public struct NotificationEscalationStep: Sendable, Codable, Hashable {
     public var level: Int
     /** من الإشعار الأول إن لم يُقرّ الاستلام */
     public var afterSeconds: Int
-    public var recipientRoles: Set<Role>
+    public var recipientRoles: Set<RoleName>
     public var channels: Set<NotificationChannel>
 
-    public init(level: Int, afterSeconds: Int, recipientRoles: Set<Role>, channels: Set<NotificationChannel>) {
+    public init(level: Int, afterSeconds: Int, recipientRoles: Set<RoleName>, channels: Set<NotificationChannel>) {
         self.level = level
         self.afterSeconds = afterSeconds
         self.recipientRoles = recipientRoles
