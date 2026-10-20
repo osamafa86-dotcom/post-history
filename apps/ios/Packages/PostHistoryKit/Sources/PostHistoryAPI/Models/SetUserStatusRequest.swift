@@ -16,6 +16,7 @@ public struct SetUserStatusRequest: Sendable, Codable, Hashable {
     }
     public static let reasonRule = StringRule(minLength: 1, maxLength: 500, pattern: nil)
     public var status: Status
+    /** يُحفظ في سجل التدقيق؛ طريقة التحقق ورقم الإجراء فقط، لا أسماء ولا أرقام هواتف (كـ `--note` في دليل التشغيل) */
     public var reason: String
 
     public init(status: Status, reason: String) {

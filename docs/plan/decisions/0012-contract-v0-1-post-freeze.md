@@ -25,7 +25,7 @@
 | البند | ما أُضيف | لماذا لا يكسر |
 | --- | --- | --- |
 | التزامن المتفائل | `Material.row_version` و`ETag` على قراءة المادة وكتاباتها؛ `If-Match` اختياري على `PATCH` والانتقال والمساهمين والحجز ونشر النموذج؛ `412 precondition_failed` | الترويسة اختيارية؛ العميل الذي لا يرسلها يعمل كما كان |
-| حد المعدل المتدهور | ترويسة `X-Rate-Limiter: degraded` على الدخول، و`GET /health` (داخلي) بحقل `rate_limiter` | ترويسة وحقل جديدان فقط |
+| حد المعدل المتدهور | `GET /health` (داخلي) بحقل `rate_limiter` وترويسة `X-Rate-Limiter: degraded`؛ لا على `/auth/login` العام لأنها مرشد للمهاجم (مراجعة الأمن) | مسار داخلي جديد |
 | استعادة المدير | `403 admin_quorum_required` لحساب مدير نظام (إجراء الشخصين من سطر الأوامر)؛ `PUT /users/{id}/status` للتعليق وإعادة التفعيل؛ `POST /auth/recovery/complete` و`POST /auth/totp/confirm` وجلسة مقيّدة بـ `403 credential_reset_required`؛ `Me.credential_reset_required`؛ `Notification.recovery_request_id` | مسارات وحقول جديدة؛ الحساب المستعاد لم يكن له مسار إكمال أصلًا |
 | رمز الرفع | العمود `upload_sessions.upload_token_expires_at` مستقلًا عن انتهاء الجلسة، ويُعرض في `UploadSessionCreated` كما كان (لا في قراءة الجلسة: إضافته إلى `UploadSession` تعيد ترتيب مُهيِّئ Swift المولَّد فتكسر شيفرة العميل)؛ `403 forbidden_role` لدور ليس في `x-roles` | عمود جديد ورمز خطأ جديد |
 | `client_sha256` | «على كل عميل إرسالها» في الوصف؛ الإلزام في المخطط مؤجل؛ `reported_sha256` عند الاكتمال كما هو | **انظر أدناه** |

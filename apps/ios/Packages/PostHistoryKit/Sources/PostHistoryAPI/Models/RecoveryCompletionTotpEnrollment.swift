@@ -7,7 +7,7 @@
 
 import Foundation
 
-/** يُعرض مرة واحدة ولا يُسجَّل؛ لا يتضمن اسم المستخدم الحقيقي في &#x60;otpauth_uri&#x60; بل معرّفًا داخليًا */
+/** يُعرض مرة واحدة ولا يُسجَّل؛ لا يتضمن اسم المستخدم الحقيقي في &#x60;otpauth_uri&#x60; بل معرّفًا داخليًا. العميل لا يحفظ &#x60;secret_base32&#x60; بعد العرض ولا يضعه في الحافظة ولا يسمح بلقطة شاشة لشاشته. */
 public struct RecoveryCompletionTotpEnrollment: Sendable, Codable, Hashable {
 
     public static let secretBase32Rule = StringRule(minLength: nil, maxLength: nil, pattern: "^[A-Z2-7]{16,64}$")

@@ -97,8 +97,6 @@ paths:
       responses:
         "200":
           description: جلسة
-          headers:
-            X-Rate-Limiter: { $ref: "#/components/headers/RateLimiterDegraded" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Session" }
@@ -288,9 +286,11 @@ paths:
       tags: [auth]
       summary: إكمال الاستعادة — كلمة مرور جديدة وبدء تسجيل مصادقة ثنائية جديدة
       description: >-
-        يستهلك رمز إعادة التعيين (مرة واحدة) ويضع كلمة المرور الجديدة ويولّد سر TOTP جديدًا يبطل القديم. الجلسة الناتجة
-        مقيّدة: كل مسار غير `/auth/totp/confirm` و`/auth/logout` و`/auth/me` يرد `403 credential_reset_required`
-        حتى تأكيد الرمز. الرمز المستهلك أو المنتهي `401`.
+        يستهلك رمز إعادة التعيين (مرة واحدة) ويضع كلمة المرور الجديدة ويولّد سر TOTP جديدًا، ويبطل السر القديم فورًا
+        (فلا دخول عاديًا بعدها حتى `/auth/totp/confirm`). الجلسة الناتجة مقيّدة: المسموح فقط `/auth/totp/confirm`
+        و`/auth/logout` و`/auth/me` و`/auth/refresh`، وكل مسار آخر يرد `403 credential_reset_required`. تحديث الجلسة
+        المقيّدة مسموح حتى `reset_token_expires_at` للطلب ثم يُرفض `401`؛ ما بعد هذه المهلة دون تأكيد يستلزم استعادة
+        جديدة من أولها. الرمز المستهلك أو المنتهي `401`.
       operationId: completeRecovery
       x-roles: []
       security: []
@@ -365,7 +365,11 @@ paths:
               required: [status, reason]
               properties:
                 status: { type: string, enum: [active, suspended] }
-                reason: { type: string, minLength: 1, maxLength: 500 }
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 500
+                  description: يُحفظ في سجل التدقيق؛ طريقة التحقق ورقم الإجراء فقط، لا أسماء ولا أرقام هواتف (كـ `--note` في دليل التشغيل)
       responses:
         "204": { description: طُبِّق (أو كان مطبَّقًا) }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -924,7 +928,7 @@ paths:
       description: >-
         ينشئ ملفًا جديدًا `kind=proxy` و`proxy_mode=normal` و`derived_from_id=file_id` و`state=verified`. متساوٍ الأثر
         على (`derived_from_id`، `kind`): الطلب نفسه يعيد الملف نفسه، ومشتق مختلف للمصدر والنوع نفسيهما `409`.
-        `storage_key` يجب أن يبدأ بالبادئة المشتقة للمادة (`derived/<material_id>/`) وإلا `422`.
+        `storage_key` يجب أن يبدأ بالبادئة المشتقة للمصدر (`derived/<material_id>/<file_id>/`) وإلا `422`.
       operationId: mediaPostDerivative
       x-roles: []
       security: [{ mediaWorkerToken: [] }]
@@ -1239,7 +1243,8 @@ components:
     RateLimiterDegraded:
       description: >-
         تظهر بقيمة `degraded` فقط حين يعمل حد المعدل في ذاكرة العملية بدل Redis (حدود أضعف عبر النسخ)؛ غيابها يعني
-        الوضع الطبيعي. معلوماتية للمراقبة والعملاء، ولا تغيّر دلالة الاستجابة.
+        الوضع الطبيعي. على `/health` الداخلي فقط: لا تُرسل على أي مسار عام لأنها تخبر المهاجم أن توزيع المحاولات عبر
+        النسخ يتجاوز الحد.
       schema: { type: string, enum: [degraded] }
 
   responses:
@@ -1420,7 +1425,9 @@ components:
         totp_enrollment:
           type: object
           required: [secret_base32, otpauth_uri]
-          description: يُعرض مرة واحدة ولا يُسجَّل؛ لا يتضمن اسم المستخدم الحقيقي في `otpauth_uri` بل معرّفًا داخليًا
+          description: >-
+            يُعرض مرة واحدة ولا يُسجَّل؛ لا يتضمن اسم المستخدم الحقيقي في `otpauth_uri` بل معرّفًا داخليًا. العميل لا يحفظ
+            `secret_base32` بعد العرض ولا يضعه في الحافظة ولا يسمح بلقطة شاشة لشاشته.
           properties:
             secret_base32: { type: string, pattern: "^[A-Z2-7]{16,64}$" }
             otpauth_uri: { type: string, format: uri }

@@ -68,7 +68,7 @@ open class AuthAPI {
     /**
      إكمال الاستعادة — كلمة مرور جديدة وبدء تسجيل مصادقة ثنائية جديدة
      - POST /auth/recovery/complete
-     - يستهلك رمز إعادة التعيين (مرة واحدة) ويضع كلمة المرور الجديدة ويولّد سر TOTP جديدًا يبطل القديم. الجلسة الناتجة مقيّدة: كل مسار غير `/auth/totp/confirm` و`/auth/logout` و`/auth/me` يرد `403 credential_reset_required` حتى تأكيد الرمز. الرمز المستهلك أو المنتهي `401`.
+     - يستهلك رمز إعادة التعيين (مرة واحدة) ويضع كلمة المرور الجديدة ويولّد سر TOTP جديدًا، ويبطل السر القديم فورًا (فلا دخول عاديًا بعدها حتى `/auth/totp/confirm`). الجلسة الناتجة مقيّدة: المسموح فقط `/auth/totp/confirm` و`/auth/logout` و`/auth/me` و`/auth/refresh`، وكل مسار آخر يرد `403 credential_reset_required`. تحديث الجلسة المقيّدة مسموح حتى `reset_token_expires_at` للطلب ثم يُرفض `401`؛ ما بعد هذه المهلة دون تأكيد يستلزم استعادة جديدة من أولها. الرمز المستهلك أو المنتهي `401`.
      - parameter completeRecoveryRequest: (body)  
      - parameter apiConfiguration: The configuration for the http request.
      - returns: RequestBuilder<RecoveryCompletion> 
@@ -273,7 +273,6 @@ open class AuthAPI {
      دخول بكلمة المرور ثم رمز TOTP
      - POST /auth/login
      - المصادقة الثنائية إلزامية لكل الطاقم بعد التفعيل؛ غياب `totp_code` لحساب مفعَّل يعيد `401 totp_required` (لا يُعاد إلا بعد التحقق من كلمة المرور وضمن حد المعدل). البريد غير الموجود وكلمة المرور الخاطئة يعيدان `401 unauthorized` نفسه بالرسالة نفسها. الجلسة تحمل رمز وصول قصير العمر ورمز تحديث.
-     - responseHeaders: [X-Rate-Limiter(String)]
      - parameter loginRequest: (body)  
      - parameter apiConfiguration: The configuration for the http request.
      - returns: RequestBuilder<Session> 
