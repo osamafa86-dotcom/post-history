@@ -103,12 +103,12 @@ test("admin-quorum: the API half is partial alone, pass with the command line, a
   const base = { QUORUM_API_URL: "http://x/v1", QUORUM_TOKENS: JSON.stringify(TOKENS), QUORUM_USERS: JSON.stringify({ system_admin_id: "system_admin", system_admin_b_id: "system_admin_b", victim_id: "victim" }) };
   const alone = await quiet(() => quorum(["--dry-run"], setEnv(base), { fetchImpl: fakeApi() }));
   assert.equal(alone.code, 0); assert.equal(alone.doc.result, "partial"); assert.equal(alone.doc.metrics.cli_checked, false);
-  const withCli = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: "exit 3", QUORUM_CLI_GUARD: "echo 'failed: Error' >&2; exit 1", QUORUM_CLI_TWO: "test -n \"$TARGET_ID\"" }), { fetchImpl: fakeApi() }));
+  const withCli = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: "exit 3", QUORUM_CLI_GUARD: "echo 'refused (quorum)' >&2; exit 1", QUORUM_CLI_TWO: "test -n \"$TARGET_ID\"" }), { fetchImpl: fakeApi() }));
   assert.equal(withCli.code, 0);
-  assert.equal(withCli.doc.result, "partial", "the guard refuses but does not say quorum: the waived finding caps the result");
-  assert.equal(withCli.doc.metrics.guard_reported_as_quorum, false);
-  const fixed = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: "exit 3", QUORUM_CLI_GUARD: "echo 'refused (quorum)' >&2; exit 1", QUORUM_CLI_TWO: "true" }), { fetchImpl: fakeApi() }));
-  assert.equal(fixed.code, 1, "once the CLI says refused (quorum) the waiver is stale and must be deleted");
+  assert.equal(withCli.doc.result, "pass");
+  assert.equal(withCli.doc.metrics.guard_reported_as_quorum, true);
+  const vague = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: "exit 3", QUORUM_CLI_GUARD: "echo 'failed: Error' >&2; exit 1", QUORUM_CLI_TWO: "true" }), { fetchImpl: fakeApi() }));
+  assert.equal(vague.code, 1, "a guard that refuses without saying quorum is a failure (no waiver is open)");
   const lax = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: "true", QUORUM_CLI_GUARD: "echo 'failed: Error' >&2; exit 1", QUORUM_CLI_TWO: "true" }), { fetchImpl: fakeApi() }));
   assert.equal(lax.code, 1, "a single approver accepted by the command line is a failure");
   const wrongReason = await quiet(() => quorum(["--dry-run"], setEnv({ ...base, QUORUM_CLI_ONE: "exit 3", QUORUM_CLI_GUARD: "exit 0", QUORUM_CLI_TWO: "true" }), { fetchImpl: fakeApi() }));

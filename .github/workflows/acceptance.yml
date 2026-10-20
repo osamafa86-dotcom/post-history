@@ -180,6 +180,7 @@ jobs:
                  -e "s|^FIELD_ENCRYPTION_KEY=.*|FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)|" \
                  -e "s/^MEDIA_WORKER_TOKEN=.*/MEDIA_WORKER_TOKEN=$(openssl rand -hex 32)/" \
                  -e "s/^UPLOAD_VERIFIER=.*/UPLOAD_VERIFIER=external/" \
+                 -e "s|^S3_PUBLIC_ENDPOINT=.*|S3_PUBLIC_ENDPOINT=http://127.0.0.1:9000|" \
                  -e "s/^S3_MEDIA_ACCESS_KEY=.*/S3_MEDIA_ACCESS_KEY=media-worker-ci/" \
                  -e "s/^S3_MEDIA_SECRET_KEY=.*/S3_MEDIA_SECRET_KEY=$(openssl rand -hex 16)/" \
                  -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" \
@@ -197,12 +198,14 @@ jobs:
           export MEDIA_E2E_LOGS_CMD="docker compose -f infra/compose/docker-compose.yml --profile api --profile media logs --no-color media-worker"
           export MEDIA_E2E_ENV_LABEL="compose on a GitHub-hosted runner: api + tusd + minio + redis + media-worker"
           node tools/acceptance/scripts/media-e2e.mjs --out-dir="$RUNNER_TEMP/out"
+      # The link lives 10 minutes by contract: waiting for it to expire (DL_WAIT_EXPIRY=1) is left out of the PR run, so the result is
+      # `partial` for that reason alone; run the script by hand with DL_WAIT_EXPIRY=1 for the full check.
       - name: download-url (core gate; signed link for verified derivatives, original is 404)
         if: env.CORE_ACCEPTANCE == '1'
         working-directory: tools/acceptance
         run: |
           set -a; . ../../infra/compose/.env; set +a
-          export DL_API_URL="http://127.0.0.1:$API_PORT/v1" DL_TUS_URL="http://127.0.0.1:$TUSD_PORT/files/" DL_WAIT_EXPIRY=1
+          export DL_API_URL="http://127.0.0.1:$API_PORT/v1" DL_TUS_URL="http://127.0.0.1:$TUSD_PORT/files/"
           export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
           export DL_TOKENS="$(node -e "import('./live/seed.mjs').then(async (m) => { const s = await m.seed({ databaseUrl: process.env.DATABASE_URL, apiUrl: process.env.DL_API_URL }); console.log(JSON.stringify({ reporter: s.allTokens.reporter, reporter_b: s.allTokens.reporter_b })); })")"
           ACCEPTANCE_RESULTS_DIR="$RUNNER_TEMP/out" node scripts/download-url.mjs
