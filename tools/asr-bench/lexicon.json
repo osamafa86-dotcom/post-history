@@ -1,0 +1,5 @@
+{
+  "note": "Bench-only list of Palestinian places used to score name and place errors. Not the approved dictionary of workers/ai.",
+  "places": ["غزة", "رام الله", "نابلس", "الخليل", "بيت لحم", "أريحا", "جنين", "طولكرم", "القدس", "خان يونس", "قلقيلية", "سلفيت", "رفح", "دير البلح", "بيت حانون"],
+  "people": ["محمد", "فاطمة", "أحمد"]
+}
