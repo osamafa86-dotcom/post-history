@@ -424,3 +424,61 @@ test("the live client never reuses a connection: every request arrives on a sock
     assert.equal(sockets.size, 4, "four requests, four connections");
   } finally { server.close(); server.closeAllConnections(); }
 });
+
+const upload1gb = () => ({
+  card_version: 1, test_name: "field-upload-1gb", performed_on: "2026-11-07", performed_by_role: "field_supervisor",
+  device: { platform: "ios", vendor: "apple", model: "iPhone 13", os_version: "18.1" }, app_version: "0.2.0",
+  network: { type: "cellular", generation: "4g", signal: "fair" },
+  upload: { path: "tusd", file_size_bytes: 1073741824, file_sha256: "c".repeat(64) },
+  transfer: { total_minutes: 74, interruptions_observed: 3, auto_resumes: 3, bytes_lost: 0, bytes_resent_on_resume: 33554432, interventions: 0, completed: true, server_sha256_match: true, receipt_id: "r-1" },
+  observations: "",
+});
+
+test("field-upload-1gb card: clean card is a valid partial; loss, intervention, hash or size shortfall fail; blanks are refused", () => {
+  const ok = cardToResult(upload1gb());
+  assert.equal(ok.doc.result, "partial");
+  assert.ok(validateMeasurement(ok.doc).ok);
+  assert.deepEqual(checkResult("2026-11-07-field-upload-1gb-ios-apple.json", ok.doc), []);
+  for (const [mut, re] of [
+    [(c) => { c.transfer.bytes_lost = 4096; }, /4096 byte\(s\) lost/],
+    [(c) => { c.transfer.interventions = 1; }, /1 human intervention/],
+    [(c) => { c.transfer.server_sha256_match = false; }, /SHA-256 differs/],
+    [(c) => { c.transfer.completed = false; c.transfer.server_sha256_match = null; c.transfer.receipt_id = ""; }, /did not complete/],
+    [(c) => { c.upload.file_size_bytes = 500_000_000; }, /under 1 GiB/],
+    [(c) => { c.transfer.auto_resumes = 1; }, /only 1 automatic/],
+  ]) { const c = upload1gb(); mut(c); const r = cardToResult(c); assert.equal(r.doc.result, "fail"); assert.match(r.doc.notes, re); }
+  const blank = upload1gb(); blank.transfer.bytes_lost = null;
+  assert.ok(cardToResult(blank).missing.some((m) => m.includes("transfer.bytes_lost")));
+  const noReceipt = upload1gb(); noReceipt.transfer.receipt_id = "";
+  assert.ok(cardToResult(noReceipt).missing.some((m) => m.includes("receipt_id")));
+});
+
+import { decide as dynDecide, run as runDynamic } from "../scripts/dynamic-fields.mjs";
+import { mkdtempSync, writeFileSync as wf, readFileSync as rf } from "node:fs";
+import { tmpdir } from "node:os";
+import { join as pj } from "node:path";
+import { runReference as dynReference } from "../form-conformance/run.mjs";
+
+test("dynamic-fields gate: pass needs the live server part and all three clients; any wrong case is a fail", async () => {
+  assert.equal(dynDecide({ failed: false, serverRan: true, platforms: ["web", "ios", "android"] }).result, "pass");
+  assert.equal(dynDecide({ failed: false, serverRan: true, platforms: ["web"] }).result, "partial");
+  assert.deepEqual(dynDecide({ failed: false, serverRan: true, platforms: ["web"] }).missing, ["ios", "android"]);
+  assert.equal(dynDecide({ failed: false, serverRan: false, platforms: ["web", "ios", "android"] }).result, "partial");
+  assert.equal(dynDecide({ failed: true, serverRan: true, platforms: ["web", "ios", "android"] }).result, "fail");
+
+  // the web file reaches the gate through DYN_PLATFORM_FILES, as the CI job hands it over
+  const { results } = dynReference();
+  const dir = mkdtempSync(pj(tmpdir(), "dyn-"));
+  const good = pj(dir, "web.json"); wf(good, JSON.stringify({ platform: "web", results }));
+  const quiet = console.log; console.log = () => {};
+  try {
+    const a = await runDynamic(["--dry-run"], { DYN_PLATFORM_FILES: good });
+    assert.equal(a.doc.result, "partial");
+    assert.equal(a.doc.metrics.platforms_judged, "web");
+    assert.match(a.doc.notes, /ios، android/);
+    const wrong = { ...results, [Object.keys(results)[0]]: { valid: !Object.values(results)[0].valid, errors: [] } };
+    const bad = pj(dir, "bad.json"); wf(bad, JSON.stringify({ platform: "web", results: wrong }));
+    const b = await runDynamic(["--dry-run"], { DYN_PLATFORM_FILES: bad });
+    assert.equal(b.doc.result, "fail");
+  } finally { console.log = quiet; }
+});

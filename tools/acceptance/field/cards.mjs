@@ -131,6 +131,46 @@ export const RULES = {
     },
   },
 
+  // Plan stage (b): 1 GB on a real field network, one card per device. Judged mechanically like the other cards; one device is
+  // never the whole criterion (iPhone, Xiaomi and Samsung all have to pass), so a clean card is partial.
+  "field-upload-1gb": {
+    slug: (c) => `${c.device.platform}-${c.device.vendor}`,
+    SIZE_MIN: 1073741824,
+    validate(card) {
+      const missing = base(card, "field-upload-1gb");
+      if (!["ios", "android"].includes(card.device?.platform)) missing.push("device.platform (ios|android)");
+      for (const k of ["vendor", "model", "os_version"]) if (!card.device?.[k]) missing.push(`device.${k}`);
+      if (!card.app_version) missing.push("app_version");
+      if (!["cellular", "wifi", "other"].includes(card.network?.type)) missing.push("network.type (cellular|wifi|other)");
+      if (!["2g", "3g", "4g", "5g", "unknown"].includes(card.network?.generation)) missing.push("network.generation (2g|3g|4g|5g|unknown)");
+      if (!["weak", "fair", "good"].includes(card.network?.signal)) missing.push("network.signal (weak|fair|good)");
+      if (!/^[0-9a-f]{64}$/.test(card.upload?.file_sha256 ?? "")) missing.push("upload.file_sha256");
+      if (!num(card.upload?.file_size_bytes)) missing.push("upload.file_size_bytes");
+      for (const k of ["total_minutes", "interruptions_observed", "auto_resumes", "bytes_lost", "bytes_resent_on_resume", "interventions"]) if (!num(card.transfer?.[k])) missing.push(`transfer.${k}`);
+      if (!present(card.transfer?.completed)) missing.push("transfer.completed");
+      if (card.transfer?.completed === true) {
+        if (!present(card.transfer?.server_sha256_match)) missing.push("transfer.server_sha256_match (required once the upload completed)");
+        if (!card.transfer?.receipt_id) missing.push("transfer.receipt_id (required once the upload completed)");
+      }
+      return missing;
+    },
+    judge(card) {
+      const t = card.transfer, reasons = [];
+      if (card.upload.file_size_bytes < this.SIZE_MIN) reasons.push(`file is ${card.upload.file_size_bytes} bytes, under 1 GiB`);
+      if (!t.completed) reasons.push("upload did not complete");
+      else if (t.server_sha256_match !== true) reasons.push("server SHA-256 differs");
+      if (t.bytes_lost > 0) reasons.push(`${t.bytes_lost} byte(s) lost`);
+      if (t.interventions > 0) reasons.push(`${t.interventions} human intervention(s) after the start`);
+      if (t.completed && t.auto_resumes < t.interruptions_observed) reasons.push(`${t.interruptions_observed} interruption(s) but only ${t.auto_resumes} automatic resume(s)`);
+      return {
+        reasons,
+        metrics: { platform: card.device.platform, vendor: card.device.vendor, app_version: card.app_version, network_type: card.network.type, network_generation: card.network.generation, signal: card.network.signal, total_minutes: t.total_minutes, interruptions_observed: t.interruptions_observed, auto_resumes: t.auto_resumes, bytes_lost: t.bytes_lost, bytes_resent_on_resume: t.bytes_resent_on_resume, interventions: t.interventions, completed: t.completed, sha256_match: t.server_sha256_match ?? "n/a" },
+        platform: card.device.platform, file: { size_bytes: card.upload.file_size_bytes }, network: { profile: `field-${card.network.type}` }, upload_path: card.upload.path ?? "tusd",
+        okNote: "نجح هذا الجهاز على شبكة ميدانية؛ المعيار يعبر حين تنجح بطاقات iPhone وXiaomi وSamsung معًا، فهذه النتيجة جزئية للمعيار",
+      };
+    },
+  },
+
   "timestamp-alignment": {
     slug: () => "ten-files",
     validate(card) {

@@ -20,6 +20,7 @@ const HEADLINE = {
   "invalid-file": ["hook_calls", "failed_reasons_checked", "failures"],
   "dynamic-fields": ["server_cases_matching", "conformance_cases", "platforms_judged"],
   "duplicate-payment": ["write_operations_checked", "write_operations_unimplemented", "failures"],
+  "field-upload-1gb": ["platform", "network_generation", "total_minutes", "bytes_lost", "interventions", "completed"],
   "task-killers": ["vendor", "locked_minutes", "interventions_before_complete", "completed"],
 };
 const ICON = { pass: "✅ pass", partial: "◐ partial", fail: "❌ fail", info: "ℹ info", none: "— لا نتيجة" };
