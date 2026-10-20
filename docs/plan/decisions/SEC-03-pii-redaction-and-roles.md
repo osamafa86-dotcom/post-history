@@ -48,4 +48,4 @@
 
 ## إضافة v0.1
 
-`user.status_changed` (تعليق الحساب وإعادة تفعيله): الحمولة `user_id` و`status` و`reason_code` (`suspended`/`reactivated`) و`actor_id` و`occurred_at` فقط؛ لا نص حر ولا بريد ولا اسم. في `outbox-event.json` وفي `outbox_payload_allowed_keys` (ترحيل 0013).
+`user.status_changed` (تعليق الحساب وإعادة تفعيله): الحمولة `user_id` و`status` و`reason_code` (`suspended`/`reactivated`) و`actor_id` و`occurred_at` فقط؛ لا نص حر ولا بريد ولا اسم. في `outbox-event.json` وفي `outbox_payload_allowed_keys` (ترحيل 0014).
