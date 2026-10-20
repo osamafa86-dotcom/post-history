@@ -22,7 +22,7 @@ env:
 jobs:
   acceptance:
     name: acceptance (unit tests, results gate, conformance, upload-resume vs tusd)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -71,7 +71,7 @@ jobs:
 
   live:
     name: "live acceptance (API + Postgres - pii-leak, tenant-isolation, idempotency, tusd hook, receipt-notification)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     timeout-minutes: 30
     if: github.event_name == 'pull_request'
     services:
@@ -160,7 +160,7 @@ jobs:
 
   media-e2e:
     name: "media e2e (full compose stack: upload, worker, proxy, hostile files)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     timeout-minutes: 20
     if: github.event_name == 'pull_request'
     steps:
