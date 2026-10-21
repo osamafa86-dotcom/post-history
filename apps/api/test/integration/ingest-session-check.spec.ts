@@ -93,6 +93,29 @@ describe('ingest gateway: web ingest tokens and the session check', () => {
     await status(revoked.id).expect(403);
   });
 
+  it('logging out of all sessions refuses device tokens too (no ses)', async () => {
+    const leaving = await loginAs(h, [{ role: 'reporter' }]);
+    const mine = await seedUploadSession(h, leaving.id);
+    await status(mine.id).expect(204);
+    await http().post('/v1/auth/logout').set('Authorization', `Bearer ${leaving.token}`).send({ all_sessions: true }).expect(204);
+    await status(mine.id).expect(403);
+  });
+
+  it('with INGEST_GATE_TOKEN set, the check requires the matching bearer', async () => {
+    const gate = 'g'.repeat(40);
+    const gated = await createHarness({ env: { ...env, INGEST_GATE_TOKEN: gate } });
+    try {
+      const s = await seedUploadSession(gated, reporter.id);
+      await status(s.id, undefined, gated).expect(403);
+      await status(s.id, undefined, gated).set('Authorization', `Bearer ${'h'.repeat(40)}`).expect(403);
+      await status(s.id, undefined, gated).set('Authorization', gate).expect(403);
+      const ok = await status(s.id, undefined, gated).set('Authorization', `Bearer ${gate}`).expect(204);
+      expect(ok.text).toBe('');
+    } finally {
+      await gated.close();
+    }
+  });
+
   it('the session check is internal only', async () => {
     const outside = await createHarness({ env: { ...env, INTERNAL_ALLOWED_CIDRS: '192.0.2.1/32' } });
     try {

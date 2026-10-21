@@ -1,7 +1,8 @@
-import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Query, Req, Res } from '@nestjs/common';
 import type { BlockList } from 'node:net';
 import type { Request, Response } from 'express';
 import { APP_CONFIG, type AppConfig, addressAllowed, blockListOf } from '../config/config';
+import { constantTimeEqual } from '../common/crypto';
 import { ApiError } from '../common/errors';
 import { validateBody } from '../common/contract';
 import type { components } from '../generated/api';
@@ -14,12 +15,14 @@ import { DeviceAttestationService } from './device-attestation.service';
 @Controller()
 export class DeviceAttestationController {
   private readonly bff: BlockList;
+  private readonly gateToken: string | undefined;
 
   constructor(
     private readonly attestation: DeviceAttestationService,
     @Inject(APP_CONFIG) config: AppConfig,
   ) {
     this.bff = blockListOf(config.BFF_SOURCE_ADDRESSES);
+    this.gateToken = config.INGEST_GATE_TOKEN;
   }
 
   @Post('device-attestations/challenge')
@@ -55,12 +58,19 @@ export class DeviceAttestationController {
 
   /**
    * فحص بوابة ingest قبل PATCH (داخلي: /internal/* لعناوين INTERNAL_ALLOWED_CIDRS وحدها). 204 = اقبل، 403 بلا جسم =
-   * ارفض. sid جلسة الرفع وses جلسة الدخول من مطالبات الرمز.
+   * ارفض. sid جلسة الرفع وses جلسة الدخول من مطالبات الرمز. INGEST_GATE_TOKEN إن ضُبط يُشترط بترويسة Bearer.
    */
   @Public()
   @Get('internal/ingest/session-status')
-  async sessionStatus(@Query('sid') sid: unknown, @Query('ses') ses: unknown, @Res() res: Response): Promise<void> {
+  async sessionStatus(
+    @Headers('authorization') auth: string | undefined,
+    @Query('sid') sid: unknown,
+    @Query('ses') ses: unknown,
+    @Res() res: Response,
+  ): Promise<void> {
+    const presented = /^Bearer (\S+)$/.exec(auth ?? '')?.[1] ?? '';
     const ok =
+      (this.gateToken === undefined || constantTimeEqual(presented, this.gateToken)) &&
       typeof sid === 'string' &&
       (ses === undefined || typeof ses === 'string') &&
       (await this.attestation.sessionAccepts(sid, ses as string | undefined));
