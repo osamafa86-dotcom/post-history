@@ -22,7 +22,7 @@ export function upstream(config: WebConfig, token?: string, transport: typeof fe
     // X-Client-Address: يقبلها الخادم من عنوان الـBFF الثابت وحده (BFF_SOURCE_ADDRESSES)
     headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(client ? { "X-Client-Address": client } : {}) },
     fetch: (request: Request) => {
-      if (!["GET", "HEAD"].includes(request.method)) request.headers.set("Idempotency-Key", randomUUID());
+      if (!["GET", "HEAD"].includes(request.method) && !request.headers.has("Idempotency-Key")) request.headers.set("Idempotency-Key", randomUUID());
       return transport(new Request(request, { signal: AbortSignal.timeout(8000) }));
     },
   });
@@ -65,6 +65,6 @@ export async function withSession<T>(id: string, store: SessionStore, config: We
 
 export function requireOk<T>(result: { data?: T; response: Response }): T {
   if (result.response.status === 401) throw new WebError(401, "session_revoked");
-  if (!result.response.ok) throw new WebError([400, 403, 404, 422, 429].includes(result.response.status) ? result.response.status : 503, "request_failed");
+  if (!result.response.ok) throw new WebError([400, 403, 404, 409, 412, 422, 429].includes(result.response.status) ? result.response.status : 503, result.response.status === 412 ? "precondition_failed" : "request_failed");
   return result.data as T;
 }

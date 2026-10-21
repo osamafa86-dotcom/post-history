@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import type { Me } from "@/lib/types";
 import { messages, type Locale } from "@/lib/i18n";
 import { authPost, browserApi, dataOrThrow, leaveSession } from "@/lib/browser-api";
+import { hasRole } from "@/lib/review";
 
 const UserContext = createContext<Me | null>(null);
 export function useUser() { const me = useContext(UserContext); if (!me) throw new Error("Session required"); return me; }
@@ -55,6 +56,8 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
     <div className="workspace-shell"><aside className="sidebar"><p className="eyebrow">{m.workspace}</p><nav aria-label={m.workspace}>
       <Link prefetch={false} className={pathname.endsWith("/inbox") ? "active" : ""} href={`/${locale}/inbox`}>{m.inbox}</Link>
       <Link prefetch={false} className={pathname.endsWith("/form-preview") ? "active" : ""} href={`/${locale}/form-preview`}>{m.formPreview}</Link>
+      <Link prefetch={false} className={pathname.endsWith("/notifications") ? "active" : ""} href={`/${locale}/notifications`}>{m.notice.title}</Link>
+      {hasRole(me, "system_admin") && <Link prefetch={false} className={pathname.endsWith("/admin") ? "active" : ""} href={`/${locale}/admin`}>{m.admin.title}</Link>}
     </nav><p className="scope-note">{m.readOnly}</p><button className="quiet danger-link" onClick={() => setConfirmAll(true)}>{m.logoutAll}</button></aside>
     <main id="main-content" className="main-content">{error && <p className="notice error" role="alert">{m.error}</p>}{children}</main></div>
     {confirmAll && <dialog className="modal" ref={node => { if (node && !node.open) node.showModal(); }} onCancel={() => setConfirmAll(false)} aria-labelledby="logout-title"><h2 id="logout-title">{m.logoutAll}</h2><p>{m.logoutAllWarning}</p><div className="actions"><button autoFocus className="secondary" disabled={busy} onClick={() => setConfirmAll(false)}>{m.cancel}</button><button className="danger" disabled={busy} onClick={() => void logout(true)}>{m.confirm}</button></div></dialog>}

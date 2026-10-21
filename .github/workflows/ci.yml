@@ -58,20 +58,11 @@ jobs:
     env:
       NEXT_TELEMETRY_DISABLED: "1"
       WEB_TEST_REDIS_URL: redis://127.0.0.1:6379/1
-      WEB_CONTRACT_ROOT: ${{ github.workspace }}/.web-contract/contracts
     defaults:
       run:
         working-directory: apps/web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # اعتماد مؤقت على #58 بطلب المنسق في #81؛ يُزال بعد دمج العقد وإعادة التوليد من main.
-      - name: Read the reviewed derivative URL contract
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: fc9e627514ade2e9857f3da8358de074f462e768
-          path: .web-contract
-          sparse-checkout: contracts
-          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
