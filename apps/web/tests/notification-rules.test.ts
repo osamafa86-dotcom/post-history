@@ -8,7 +8,7 @@ import { emptyRule, ruleInput, type RuleInput } from "../src/lib/notification-po
 import { MemoryStore } from "./memory-store";
 import { me, tokens } from "./fixtures";
 
-const config: WebConfig = { origin: "https://web.example.test", api: "https://api.example.test/v1", key: randomBytes(32), redisUrl: "redis://127.0.0.1:6379/1", secure: true, cookieName: "__Host-ph-session", lifetimeSeconds: 28800, mediaOrigins: [], trustForwardedFor: false };
+const config: WebConfig = { origin: "https://web.example.test", api: "https://api.example.test/v1", key: randomBytes(32), redisUrl: "redis://127.0.0.1:6379/1", secure: true, cookieName: "__Host-ph-session", lifetimeSeconds: 28800, mediaOrigins: [], tusOrigins: [], trustForwardedFor: false };
 const admin: Me = { ...me, roles: [{ name: "system_admin", scopes: [] }] }, chief: Me = { ...me, roles: [{ name: "editor_in_chief", scopes: [] }] }, supervisor: Me = { ...me, roles: [{ name: "supervisor", scopes: [] }] };
 const id = "80000000-0000-4000-8000-000000000001";
 const rule: RuleInput = { ...emptyRule(), name: "عاجل", assignment: true, escalation: [{ level: 1, after_seconds: 600, recipient_roles: ["editor_in_chief"], channels: ["in_app", "email"] }] };

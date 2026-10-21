@@ -270,4 +270,24 @@
     <string name="notifications_loading">Loading…</string>
     <string name="notifications_more">More</string>
     <string name="role_other">Other role</string>
+    <string name="home_review">Review inbox (supervisor)</string>
+    <string name="review_title">Review inbox</string>
+    <string name="review_empty">No materials in this state within your scope.</string>
+    <string name="review_acknowledge">Acknowledge</string>
+    <string name="review_start">Start review</string>
+    <string name="review_request_changes">Ask the reporter for changes</string>
+    <string name="review_accept">Accept</string>
+    <string name="review_reject">Reject</string>
+    <string name="review_reason">Reason</string>
+    <string name="review_reason_hint">A reason is required; it is kept in the material\'s history and the reporter sees it.</string>
+    <string name="review_confirm">Confirm</string>
+    <string name="review_cancel">Cancel</string>
+    <string name="review_done">Decision recorded.</string>
+    <string name="review_stale">The material changed since you opened it, so nothing was recorded. Check its current state.</string>
+    <string name="review_forbidden">You cannot make this decision on this material.</string>
+    <string name="review_retry">Could not reach the server. Try again; the decision will not be recorded twice.</string>
+    <string name="review_failed">The decision was refused and not recorded.</string>
+    <string name="review_history">Transition history</string>
+    <string name="review_history_empty">No transitions yet.</string>
+    <string name="review_history_line">%1$s: %2$s → %3$s</string>
 </resources>

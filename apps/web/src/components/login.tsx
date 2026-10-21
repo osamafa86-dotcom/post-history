@@ -1,10 +1,13 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { authPost } from "@/lib/browser-api";
+import { clearUploads } from "@/lib/upload-store";
 import { messages, type Locale } from "@/lib/i18n";
 
 export function Login({ locale, reason }: { locale: Locale; reason?: string }) {
   const m = messages[locale]; const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  // صفحة الدخول تعني لا جلسة: لا يبقى من رفعات مستخدم سابق على هذا الحاسوب شيء (S10).
+  useEffect(() => { clearUploads(); }, []);
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = event.currentTarget, fields = new FormData(form);
     setBusy(true); setError("");
