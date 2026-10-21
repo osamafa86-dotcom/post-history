@@ -184,13 +184,13 @@ const server = createServer(async (req, res) => {
       return commit(null);
     }
     if (path === "/v1/materials" && req.method === "POST") {
-      if (!has("reporter")) return send({}, 403);
+      if (!has("reporter", "supervisor", "producer", "editor_in_chief")) return send({}, 403);
       const stamp = new Date().toISOString(), base = material(materials.length + 1);
       const created: Material = { ...base, id: randomUUID(), ...(body as Partial<Material>), reporter_id: user.user_id, technical_state: "pending", editorial_state: "inbox", rights_state: "unknown", files: [], row_version: 1, reserved_by: null, reserved_at: null, created_at: stamp, updated_at: stamp };
       materials.unshift(created); return commit(created, 201);
     }
     if (path === "/v1/uploads" && req.method === "POST") {
-      if (!has("reporter")) return send({}, 403);
+      if (!has("reporter", "supervisor", "producer", "editor_in_chief")) return send({}, 403);
       if (!materials.some(m => m.id === body.material_id)) return send({}, 404);
       const id = randomUUID(), now = Date.now();
       const session = { id, material_id: String(body.material_id), kind: "original", state: "created", size_bytes: Number(body.size_bytes), tus_endpoint: process.env.FIXTURE_TUS_ENDPOINT ?? `${fixtureOrigin}/files/`,

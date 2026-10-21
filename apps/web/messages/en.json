@@ -393,7 +393,7 @@
     "nav": "Desktop upload",
     "title": "Upload camera files",
     "lead": "Choose large files from your computer or a camera card, then fill in the material details. Uploads resume from the last received part after a dropped connection.",
-    "reporterOnly": "Uploading is available to reporter accounts only under the current contract.",
+    "reporterOnly": "Desktop upload is for reporters, supervisors, producers and the editor in chief.",
     "files": "Files",
     "choose": "Choose files",
     "filesHelp": "MOV, MXF, MP4, ProRes and camera stills. Each file's SHA-256 is computed in the browser before upload.",

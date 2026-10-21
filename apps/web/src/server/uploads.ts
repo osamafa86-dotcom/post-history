@@ -4,7 +4,7 @@ import type { Me } from "@/lib/types";
 import { hasRole } from "@/lib/review";
 import { safeMaterial } from "@/lib/privacy";
 import { materialTypes, states, uuid, dateTime } from "@/lib/query";
-import { allowedTusEndpoint, sha256Hex } from "@/lib/upload-policy";
+import { allowedTusEndpoint, sha256Hex, uploadRoles } from "@/lib/upload-policy";
 import { requireOk, type Api } from "./auth";
 import type { WebConfig } from "./config";
 import { WebError } from "./errors";
@@ -15,7 +15,7 @@ type UploadSession = components["schemas"]["UploadSession"];
 const privateHeaders = { "Cache-Control": "private, no-store, max-age=0", "Pragma": "no-cache", "Vary": "Cookie" };
 const json = (value: unknown, status = 200) => NextResponse.json(value, { status, headers: privateHeaders });
 
-// مسارات الكتابة للرفع من الحاسوب (#88)؛ العقد يحصرها في دور المراسل.
+// مسارات الكتابة للرفع من الحاسوب (#88)، لأدوار الرفع في العقد.
 export const uploadRoutes = [
   { path: "materials", method: "POST" },
   { path: "uploads", method: "POST" },
@@ -81,7 +81,7 @@ export function safeUploadSession(session: UploadSession) {
 
 export async function uploadAction(request: Request, path: string, api: Api, me: Me, body: Record<string, unknown>, config: WebConfig) {
   if (new URL(request.url).search) throw new WebError(400, "request_failed");
-  if (!hasRole(me, "reporter")) throw new WebError(403, "request_failed");
+  if (!hasRole(me, ...uploadRoles)) throw new WebError(403, "request_failed");
   const idempotencyKey = request.headers.get("Idempotency-Key");
   if (!idempotencyKey || !uuid.test(idempotencyKey)) throw new WebError(400, "request_failed");
   const header = { "Idempotency-Key": idempotencyKey };

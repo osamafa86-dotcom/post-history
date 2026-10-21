@@ -23,6 +23,8 @@ async function describe(page: Page) {
 }
 
 test.beforeEach(async ({ request }) => { await request.post(`${api}/__test/reset`); });
+// المواد التي أُنشئت هنا لا تبقى للملفات التالية (الوارد يتوقع 200 مادة اصطناعية).
+test.afterAll(async ({ request }) => { await request.post(`${api}/__test/reset`); });
 
 test("uploads a camera file in parts with a refreshed ingest token and a dropped connection, then shows the receipt", async ({ page, request }) => {
   const outgoing: string[] = []; page.on("request", r => outgoing.push(r.url()));
@@ -97,13 +99,41 @@ test("stops the upload when the login session is revoked and clears resumable st
   }))).toBe(0);
 });
 
-test("non-reporters do not see desktop upload and the BFF refuses them", async ({ page, request }) => {
+test("production staff upload from the desktop; other roles do not see it and the BFF refuses them", async ({ page }) => {
   await page.goto("/ar/login");
   await page.getByLabel(ar.email).fill("reviewer@example.test"); await page.getByLabel(ar.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(ar.totp, { exact: true }).fill("123456");
+  await page.getByRole("button", { name: ar.signIn, exact: true }).click();
+  await expect(page.getByTestId("material-row")).toHaveCount(50);
+  await page.getByRole("link", { name: ar.upload.nav }).click();
+  await page.getByLabel(ar.upload.choose).setInputFiles(camera(1048576 + 7, "C0002.MP4").file);
+  await describe(page);
+  await expect(page.getByTestId("upload-row")).toHaveAttribute("data-phase", "done", { timeout: 20000 });
+  await page.getByRole("button", { name: ar.logout }).click(); await expect(page).toHaveURL(/\/ar\/login/);
+  await page.getByLabel(ar.email).fill("admin@example.test"); await page.getByLabel(ar.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(ar.totp, { exact: true }).fill("123456");
   await page.getByRole("button", { name: ar.signIn, exact: true }).click();
   await expect(page.getByTestId("material-row")).toHaveCount(50);
   await expect(page.getByRole("link", { name: ar.upload.nav })).toHaveCount(0);
   await page.goto("/ar/upload"); await expect(page.getByText(ar.upload.reporterOnly)).toBeVisible();
   const refused = await page.request.post("/api/bff/uploads", { headers: { Origin: "http://127.0.0.1:3100", "X-Requested-With": "post-history-web", "Idempotency-Key": crypto.randomUUID() }, data: {} });
-  expect(refused.status()).toBe(403); void request;
+  expect(refused.status()).toBe(403);
+});
+
+test("signing out and opening the sign-in page clear unfinished-upload records on a shared computer", async ({ page, request }, info) => {
+  await login(page);
+  const path = info.outputPath("A003C001.MOV"); writeFileSync(path, randomBytes(3 * 1048576));
+  await request.post(`${api}/__test/tus?fail_patches=1000`);
+  await page.getByLabel(ar.upload.choose).setInputFiles(path);
+  await describe(page);
+  await expect.poll(async () => (await uploads(page))[0]?.offset ?? 0).toBeGreaterThan(0);
+  const count = () => page.evaluate(() => new Promise<number>(resolve => {
+    const open = indexedDB.open("post-history-uploads", 1);
+    open.onupgradeneeded = () => { open.result.createObjectStore("pending", { keyPath: "key" }); };
+    open.onsuccess = () => { const all = open.result.transaction("pending").objectStore("pending").count(); all.onsuccess = () => { resolve(all.result); open.result.close(); }; };
+  }));
+  expect(await count()).toBe(1);
+  // سجل يبقى من تبويب أُغلق دون خروج: صفحة الدخول تمحوه.
+  await page.goto("/ar/inbox"); expect(await count()).toBe(1);
+  await page.context().clearCookies(); await page.goto("/ar/login"); await expect(page.getByLabel(ar.email)).toBeVisible();
+  await expect.poll(count).toBe(0);
+  await request.post(`${api}/__test/tus`);
 });

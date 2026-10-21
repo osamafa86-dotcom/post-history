@@ -43,8 +43,10 @@ describe("desktop upload BFF", () => {
       expect(rejected.result.status).toBe(422); expect(rejected.calls).toHaveLength(0);
     }
   });
-  it("is limited to reporters, as the contract roles", async () => {
-    const { result, calls } = await call("uploads", { user: producer, body: uploadBody });
+  it("is open to the contract upload roles and closed to others", async () => {
+    const allowed = await call("uploads", { user: producer, body: uploadBody, upstream: () => Response.json(created, { status: 201 }) });
+    expect(allowed.result.status).toBe(201);
+    const { result, calls } = await call("uploads", { user: { ...me, roles: [{ name: "system_admin", scopes: [] }] }, body: uploadBody });
     expect(result.status).toBe(403); expect(calls).toHaveLength(0);
   });
   it("forwards the same idempotency key and returns only the allowed tus fields", async () => {

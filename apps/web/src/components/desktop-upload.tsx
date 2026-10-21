@@ -6,7 +6,7 @@ import { formatDate, messages, type Locale } from "@/lib/i18n";
 import type { Form, Material, MaterialType, Values } from "@/lib/types";
 import { materialTypes, states } from "@/lib/query";
 import { hasRole } from "@/lib/review";
-import { acceptedFile, cameraExtensions, fileKey } from "@/lib/upload-policy";
+import { acceptedFile, cameraExtensions, fileKey, uploadRoles } from "@/lib/upload-policy";
 import { BffError, createMaterial, startUpload, type UploadControl, type UploadUpdate } from "@/lib/desktop-upload";
 import { clearUploads, forgetUpload, findUpload, pendingUploads, recordKey, type PendingUpload } from "@/lib/upload-store";
 import { useUser } from "./session-boundary";
@@ -19,7 +19,7 @@ const fill = (text: string, name: string) => text.replace("{name}", name);
 const percent = (value: number, total: number) => total ? Math.floor((value / total) * 100) : 0;
 
 export function DesktopUpload({ locale }: { locale: Locale }) {
-  const m = messages[locale], u = m.upload, me = useUser(), reporter = hasRole(me, "reporter");
+  const m = messages[locale], u = m.upload, me = useUser(), reporter = hasRole(me, ...uploadRoles);
   const [files, setFiles] = useState<File[]>([]), [rejected, setRejected] = useState<string[]>([]), [rows, setRows] = useState<Row[]>([]), [pending, setPending] = useState<PendingUpload[]>([]);
   const [base, setBase] = useState<Base>(initial), [schema, setSchema] = useState<Form | null>(null), [formError, setFormError] = useState(false), [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState(false), [failure, setFailure] = useState<"invalid" | "create" | "files" | null>(null);
