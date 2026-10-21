@@ -86,7 +86,7 @@ fun roleLabel(name: RoleName): String = stringResource(
 )
 
 @Composable
-fun HomeScreen(container: AppContainer, onOpenForm: () -> Unit, onNewMaterial: () -> Unit, onUploads: () -> Unit, onSetup: () -> Unit) {
+fun HomeScreen(container: AppContainer, onOpenForm: () -> Unit, onNewMaterial: () -> Unit, onUploads: () -> Unit, onMaterials: () -> Unit, onSetup: () -> Unit) {
     val app = LocalContext.current.applicationContext as Application
     val vm: HomeViewModel = viewModel(factory = viewModelFactory { initializer { HomeViewModel(app, container) } })
     val s by vm.state.collectAsStateWithLifecycle()
@@ -107,6 +107,7 @@ fun HomeScreen(container: AppContainer, onOpenForm: () -> Unit, onNewMaterial: (
             }
             Button(onClick = onNewMaterial, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_new_material)) }
             OutlinedButton(onClick = onUploads, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_uploads)) }
+            OutlinedButton(onClick = onMaterials, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_materials)) }
             OutlinedButton(onClick = onSetup, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_setup)) }
             TextButton(onClick = onOpenForm, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_open_form)) }
             OutlinedButton(onClick = { vm.logout(allSessions = false) }, enabled = !s.signingOut, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_logout)) }
