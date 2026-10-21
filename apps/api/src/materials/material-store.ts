@@ -61,7 +61,8 @@ export function roleCovers(p: Principal, role: RoleName, m: MaterialRow): boolea
  * التفريغ والترجمة حساسان افتراضيًا (R11، threat-model §9.1): لا يراهما في قائمة الملفات ولا يصدر رابطهما إلا من يملك
  * تعديل المادة، وغيره لا يُلمَّح له بوجودهما.
  */
-export const EDITOR_ONLY_KINDS: readonly string[] = ['transcript', 'captions'];
+// shot_list يحمل مقتطفات من التفريغ (الوكيل 5)، فحكمه حكمهما
+export const EDITOR_ONLY_KINDS: readonly string[] = ['transcript', 'captions', 'shot_list'];
 
 export function canEditMaterial(p: Principal, m: MaterialRow): boolean {
   return (
