@@ -62,6 +62,7 @@ final class AppModel: ObservableObject {
                 await uploads.refresh()
                 await push.forgetLocally()
                 await notifications.clear()
+                await NotificationTraceWiper.wipe(SystemNotificationCenterTraces())
                 phase = .revoked(at: at)
             }
         }
@@ -80,6 +81,8 @@ final class AppModel: ObservableObject {
             WipeStep(name: "uploads") { await engine.wipeAll() },
             // معرّف التثبيت يُنسى محليًا (بلا اتصال)؛ إلغاء الجهاز على الخادم يتبع إبطال الجلسات أعلاه.
             WipeStep(name: "installation_id") { await push.forgetLocally(); return 1 },
+            // ما على شاشة القفل ومركز الإشعارات والشارة.
+            WipeStep(name: "delivered_notifications") { await NotificationTraceWiper.wipe(SystemNotificationCenterTraces()) },
             WipeStep(name: "session") { await auth.forgetLocally(); return 1 },
             WipeStep(name: "upload_tokens") { try KeychainUploadSecretStore().removeAll(); return 1 },
             LocalDataWiper.directoryStep(name: "upload_state", url: services.stateDirectory),
@@ -119,6 +122,7 @@ final class AppModel: ObservableObject {
         await push.willSignOut()
         try? await auth.logout(allSessions: allSessions)
         await notifications.clear()
+        await NotificationTraceWiper.wipe(SystemNotificationCenterTraces())
         phase = .signedOut
     }
 }

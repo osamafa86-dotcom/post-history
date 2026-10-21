@@ -106,3 +106,20 @@ final class NotificationsCoreTests: XCTestCase {
         XCTAssertNil(PushRoute(userInfo: ["notification_id": "nope"])?.materialId)
     }
 }
+
+final class FakeTraces: NotificationCenterTraces, @unchecked Sendable {
+    let lock = NSLock()
+    var calls: [String] = []
+    func removeAllDelivered() async { lock.withLock { calls.append("delivered") } }
+    func removeAllPending() async { lock.withLock { calls.append("pending") } }
+    func setBadgeCount(_ count: Int) async { lock.withLock { calls.append("badge=\(count)") } }
+}
+
+final class NotificationTraceWiperTests: XCTestCase {
+    func testWipeRemovesDeliveredAndPendingAndResetsTheBadge() async {
+        let center = FakeTraces()
+        let steps = await NotificationTraceWiper.wipe(center)
+        XCTAssertEqual(steps, 3)
+        XCTAssertEqual(Set(center.calls), ["delivered", "pending", "badge=0"])
+    }
+}
