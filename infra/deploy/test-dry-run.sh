@@ -120,7 +120,7 @@ grep -q "not regenerated" "$W/out2" || fail "second run did not say it kept the 
 echo "idempotent: ok"
 
 # --- update plan: a release tag by default, its commit checked against the release's declaration; latest main only on --main
-git config --global --add safe.directory /repo
+git config --global --add safe.directory /repo && git config --global --add safe.directory /repo/.git
 git config --global user.email ci@example.invalid && git config --global user.name ci
 A=/tmp/app && git clone -q --no-local /repo "$A" && git -C "$A" tag -d $(git -C "$A" tag -l) >/dev/null 2>&1 || true
 U="$A/infra/deploy/update.sh"
