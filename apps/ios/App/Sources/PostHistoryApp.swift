@@ -11,6 +11,7 @@ struct PostHistoryApp: App {
                 .environmentObject(app)
                 .environmentObject(app.uploads)
                 .environmentObject(app.materials)
+                .environmentObject(app.notifications)
                 .environmentObject(app.settings)
         }
     }
