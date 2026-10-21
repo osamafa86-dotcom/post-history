@@ -5,6 +5,7 @@
 # بلا رمز (401)، وPostgres وRedis وMinIO، ومستهلك media:events لم يتوقف وفي الطابور عمل، والقرص < DISK_ALERT_PCT،
 # وآخر نسخة احتياطية ناجحة خلال 26 ساعة بلا فشل بعدها، ونافذة مفتاح qa- لم يمر انتهاؤها (ADR 0022).
 # --json: النتيجة لنقطة /health الداخلية (health-endpoint.py)، بأسماء الفحوص وحالتها فقط.
+# --prom: النتيجة نفسها لـ Prometheus (مجمّع textfile في node-exporter، ADR 0027): post_history_check_ok لكل فحص.
 # --alert: عند تغيّر مجموعة الفاشل يُكتب سطر في ALERT_LOG، ويُرسل بريد إن ضُبط ALERT_EMAIL_TO ووُجد sendmail محلي.
 # لا قيمة سرية ولا بيانات مادة في أي مخرج: أسماء الفحوص وأسباب عامة فقط. الخروج 0 إن سلم كل شيء، وإلا 1.
 set -uo pipefail
@@ -18,12 +19,13 @@ MEDIA_STALL_S="${MEDIA_STALL_S:-900}"
 STATE_DIR="${HEALTH_STATE_DIR:-/var/lib/post-history}"
 ALERT_LOG="${ALERT_LOG:-/var/log/post-history/alerts.log}"
 ALERT_CONF="${ALERT_CONF:-/etc/post-history/alert.conf}"
-JSON="" ALERT=0
+JSON="" PROM="" ALERT=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --json) JSON="$2"; shift 2 ;;
+    --prom) PROM="$2"; shift 2 ;;
     --alert) ALERT=1; shift ;;
-    *) echo "usage: $0 [--json FILE] [--alert]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--json FILE] [--prom FILE] [--alert]" >&2; exit 2 ;;
   esac
 done
 envval() { sed -n "s/^$1=//p" "$2" 2>/dev/null | tail -1; }
@@ -106,6 +108,18 @@ if [ -n "$JSON" ]; then
     for i in "${!names[@]}"; do printf '%s"%s":"%s"' "$([ "$i" -gt 0 ] && echo ,)" "${names[$i]}" "${states[$i]}"; done
     printf '}}\n'; } > "$JSON.part"
   chmod 0644 "$JSON.part" && mv -f "$JSON.part" "$JSON"
+fi
+
+if [ -n "$PROM" ]; then
+  mkdir -p "$(dirname "$PROM")"
+  { echo "# HELP post_history_check_ok 1 when the check passed, 0 when it failed (infra/observability/healthcheck.sh)."
+    echo "# TYPE post_history_check_ok gauge"
+    for i in "${!names[@]}"; do printf 'post_history_check_ok{check="%s"} %s\n' "${names[$i]}" "$([ "${states[$i]}" = ok ] && echo 1 || echo 0)"; done
+    echo "# TYPE post_history_checks_failed gauge"
+    echo "post_history_checks_failed ${#failed[@]}"
+    echo "# TYPE post_history_checks_last_run_timestamp_seconds gauge"
+    echo "post_history_checks_last_run_timestamp_seconds $(date +%s)"; } > "$PROM.part"
+  chmod 0644 "$PROM.part" && mv -f "$PROM.part" "$PROM"
 fi
 
 if [ "$ALERT" = 1 ]; then

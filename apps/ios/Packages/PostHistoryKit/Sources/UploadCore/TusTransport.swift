@@ -21,8 +21,10 @@ public struct TusCreateRequest: Sendable, Equatable {
     public var token: String
     public var length: Int64
     public var metadata: [String: String]
-    public init(endpoint: URL, token: String, length: Int64, metadata: [String: String]) {
-        self.endpoint = endpoint; self.token = token; self.length = length; self.metadata = metadata
+    /// رمز بوابة ingest (SEC-07) حين تطلبه الجلسة؛ يُرسل في ترويسة `Ingest-Token`.
+    public var ingestToken: String?
+    public init(endpoint: URL, token: String, length: Int64, metadata: [String: String], ingestToken: String? = nil) {
+        self.endpoint = endpoint; self.token = token; self.length = length; self.metadata = metadata; self.ingestToken = ingestToken
     }
 
     /// `Upload-Metadata`: أزواج `key base64(value)` مفصولة بفاصلة، بترتيب المفاتيح كي تكون ثابتة.
@@ -37,8 +39,9 @@ public struct TusPatchRequest: Sendable, Equatable {
     public var token: String
     public var chunk: PreparedChunk
     public var chunkFile: URL
-    public init(key: TusTaskKey, uploadURL: URL, token: String, chunk: PreparedChunk, chunkFile: URL) {
-        self.key = key; self.uploadURL = uploadURL; self.token = token; self.chunk = chunk; self.chunkFile = chunkFile
+    public var ingestToken: String?
+    public init(key: TusTaskKey, uploadURL: URL, token: String, chunk: PreparedChunk, chunkFile: URL, ingestToken: String? = nil) {
+        self.key = key; self.uploadURL = uploadURL; self.token = token; self.chunk = chunk; self.chunkFile = chunkFile; self.ingestToken = ingestToken
     }
 }
 
@@ -49,7 +52,9 @@ public enum TusError: Error, Equatable, Sendable {
     case transport(String)
     /// `423`: الخادم يحتفظ بقفل على الرفع (مهمة قديمة ما زالت تكتب)؛ يُعاد لاحقًا.
     case locked
-    /// `401`/`403`: الرمز انتهى أو أُبطل.
+    /// `401`: الطلب بلا مصادقة صالحة. خلف بوابة ingest: رمز البوابة مفقود أو تالف أو منتهٍ، فيُطلب رمز جديد ثم HEAD.
+    case authenticationRequired
+    /// `403`: الرمز لا يخوّل هذا الرفع (أو أُبطل)، أو إنشاء ثانٍ لجلسة محجوزة.
     case unauthorized
     /// `404`/`410`: الرفع لم يعد موجودًا.
     case gone
@@ -62,7 +67,7 @@ public enum TusError: Error, Equatable, Sendable {
     public var isRetryable: Bool {
         switch self {
         case .offsetMismatch, .transport, .locked, .checksumMismatch, .cancelled: return true
-        case .unauthorized, .gone, .http: return false
+        case .authenticationRequired, .unauthorized, .gone, .http: return false
         }
     }
 
@@ -70,7 +75,8 @@ public enum TusError: Error, Equatable, Sendable {
         switch status {
         case 409: return .offsetMismatch
         case 423: return .locked
-        case 401, 403: return .unauthorized
+        case 401: return .authenticationRequired
+        case 403: return .unauthorized
         case 404, 410: return .gone
         case 460: return .checksumMismatch
         default: return .http(status)
@@ -92,7 +98,7 @@ public protocol TusTransportDelegate: AnyObject, Sendable {
 public protocol TusTransport: Sendable {
     func setDelegate(_ delegate: TusTransportDelegate?) async
     func createUpload(_ request: TusCreateRequest) async throws -> URL
-    func currentOffset(uploadURL: URL, token: String) async throws -> Int64
+    func currentOffset(uploadURL: URL, token: String, ingestToken: String?) async throws -> Int64
     func schedulePatch(_ request: TusPatchRequest) async throws
     /// مفاتيح مهام PATCH التي ما زالت في النظام (بعد إعادة التشغيل): لا يُعاد إرسالها بل يُنتظر حدثها.
     func activePatchKeys() async -> Set<TusTaskKey>
@@ -145,16 +151,17 @@ public final class URLSessionTusTransport: NSObject, TusTransport, URLSessionDat
 
     public func setDelegate(_ delegate: TusTransportDelegate?) async { lock.withLock { self.delegate = delegate } }
 
-    private func request(_ method: String, _ url: URL, token: String) -> URLRequest {
+    private func request(_ method: String, _ url: URL, token: String, ingestToken: String?) -> URLRequest {
         var r = URLRequest(url: url)
         r.httpMethod = method
         r.setValue(Self.tusVersion, forHTTPHeaderField: "Tus-Resumable")
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let ingestToken { r.setValue(ingestToken, forHTTPHeaderField: "Ingest-Token") }
         return r
     }
 
     public func createUpload(_ req: TusCreateRequest) async throws -> URL {
-        var r = request("POST", req.endpoint, token: req.token)
+        var r = request("POST", req.endpoint, token: req.token, ingestToken: req.ingestToken)
         r.setValue(String(req.length), forHTTPHeaderField: "Upload-Length")
         r.setValue(req.metadataHeader, forHTTPHeaderField: "Upload-Metadata")
         r.setValue("0", forHTTPHeaderField: "Content-Length")
@@ -166,8 +173,8 @@ public final class URLSessionTusTransport: NSObject, TusTransport, URLSessionDat
         return url
     }
 
-    public func currentOffset(uploadURL: URL, token: String) async throws -> Int64 {
-        let r = request("HEAD", uploadURL, token: token)
+    public func currentOffset(uploadURL: URL, token: String, ingestToken: String?) async throws -> Int64 {
+        let r = request("HEAD", uploadURL, token: token, ingestToken: ingestToken)
         let (_, response) = try await data(for: r)
         guard response.statusCode == 200, let offset = response.value(forHTTPHeaderField: "Upload-Offset").flatMap(Int64.init) else {
             throw TusError.fromStatus(response.statusCode)
@@ -176,7 +183,7 @@ public final class URLSessionTusTransport: NSObject, TusTransport, URLSessionDat
     }
 
     public func schedulePatch(_ req: TusPatchRequest) async throws {
-        var r = request("PATCH", req.uploadURL, token: req.token)
+        var r = request("PATCH", req.uploadURL, token: req.token, ingestToken: req.ingestToken)
         r.setValue(String(req.chunk.offset), forHTTPHeaderField: "Upload-Offset")
         r.setValue("application/offset+octet-stream", forHTTPHeaderField: "Content-Type")
         let task = session.uploadTask(with: r, fromFile: req.chunkFile)

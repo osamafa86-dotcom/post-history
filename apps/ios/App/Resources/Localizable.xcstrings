@@ -1345,6 +1345,23 @@
         }
       }
     },
+    "upload.failure.deviceNotAttested": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر إثبات الجهاز للخادم، فلا يمكن الرفع من هذا الجهاز الآن."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device could not be verified with the server, so it cannot upload right now."
+          }
+        }
+      }
+    },
     "upload.failure.expired": {
       "extractionState": "manual",
       "localizations": {
