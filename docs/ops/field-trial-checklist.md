@@ -12,6 +12,7 @@
 | 0.2 | `FT_ACCOUNTS='{…}' node tools/acceptance/run.mjs --target https://<المضيف> --confirm --out-dir=<مجلد>` (على المضيف لا تُعطى الحزمة مدير نظام و`--allow-publish-form` يُرفض؛ `dynamic-fields` تقرأ فقط، ونشر النماذج يُختبر في CI على compose). (تكتب بيانات اصطناعية على المضيف وتبطل جلسات حساب المراسل التجريبي؛ لذلك `--confirm`). | مجلد النتائج و`REPORT.md` |
 | 0.3 | يقرأ `REPORT.md`: لا `fail`، وما هو `not run` يُفسَّر قبل الخروج. ما تقيسه الحزمة عن بُعد مذكور في رأس التقرير؛ دقة القص وسلامة الأصل في التخزين وسجل عامل الوسائط لا تدخل (على compose فقط). | حالة كل خطوة |
 | 0.4 | يجهّز الملف الاصطناعي `synthetic-1gib.bin` ويسجّل بصمته: `node tools/acceptance/field/make-sample.mjs 1024 synthetic-1gib.bin`. | SHA-256 |
+| 0.5 | على المضيف نفسه، بصلاحية تشغيل compose (لا عن بُعد): `AVAIL_API_URL=https://<النطاق>/v1 AVAIL_TOKEN=<رمز مراسل> AVAIL_COMPOSE="infra/field-trial/trial.sh" AVAIL_TARGET_S=<هدف الإدارة> AVAIL_TRIAL_HOST=1 node tools/acceptance/scripts/availability.mjs`. يُسقط الخادم والقاعدة ويعيد إنشاء الخادم تحت قراءة متواصلة. نفّذه خارج ساعات الاستعمال: انقطاع حقيقي لدقائق. | `docs/measurements/api/`: زمن الانقطاع لكل سيناريو ورقم الهدف |
 
 ## 1. على كل جهاز (iPhone، Xiaomi، Samsung) بهذا الترتيب
 
