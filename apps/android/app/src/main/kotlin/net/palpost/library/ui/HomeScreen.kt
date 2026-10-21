@@ -1,5 +1,7 @@
 package net.palpost.library.ui
 
+import net.palpost.library.security.SignOut
+import net.palpost.library.push.Push
 import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -61,7 +63,13 @@ class HomeViewModel(private val app: Application, private val container: AppCont
     fun logout(allSessions: Boolean) {
         if (_state.value.signingOut) return
         _state.update { it.copy(signingOut = true) }
-        viewModelScope.launch { container.auth.logout(allSessions) }
+        viewModelScope.launch {
+            SignOut(
+                cancelShownNotifications = { androidx.core.app.NotificationManagerCompat.from(app).cancelAll() },
+                unregisterPush = { Push.unregister(container) },
+                endSession = { all -> container.auth.logout(all) },
+            ).run(allSessions)
+        }
     }
 
     /** SEC-01 emergency wipe: everything on the device, now; the server is not told (no network needed). */
@@ -72,21 +80,26 @@ class HomeViewModel(private val app: Application, private val container: AppCont
     }
 }
 
+/**
+ * Keyed by the contract value, not the generated enum, so roles a newer contract adds (the buyer roles of v0.3,
+ * which this staff app never receives) fall to a generic label instead of breaking the build.
+ */
 @Composable
 fun roleLabel(name: RoleName): String = stringResource(
-    when (name) {
-        RoleName.system_admin -> R.string.role_system_admin
-        RoleName.editor_in_chief -> R.string.role_editor_in_chief
-        RoleName.supervisor -> R.string.role_supervisor
-        RoleName.producer -> R.string.role_producer
-        RoleName.finance -> R.string.role_finance
-        RoleName.reporter -> R.string.role_reporter
-        RoleName.rights_officer -> R.string.role_rights_officer
+    when (name.value) {
+        "system_admin" -> R.string.role_system_admin
+        "editor_in_chief" -> R.string.role_editor_in_chief
+        "supervisor" -> R.string.role_supervisor
+        "producer" -> R.string.role_producer
+        "finance" -> R.string.role_finance
+        "reporter" -> R.string.role_reporter
+        "rights_officer" -> R.string.role_rights_officer
+        else -> R.string.role_other
     },
 )
 
 @Composable
-fun HomeScreen(container: AppContainer, onOpenForm: () -> Unit, onNewMaterial: () -> Unit, onUploads: () -> Unit, onSetup: () -> Unit) {
+fun HomeScreen(container: AppContainer, onOpenForm: () -> Unit, onNewMaterial: () -> Unit, onUploads: () -> Unit, onNotifications: () -> Unit, onSetup: () -> Unit) {
     val app = LocalContext.current.applicationContext as Application
     val vm: HomeViewModel = viewModel(factory = viewModelFactory { initializer { HomeViewModel(app, container) } })
     val s by vm.state.collectAsStateWithLifecycle()
@@ -107,6 +120,7 @@ fun HomeScreen(container: AppContainer, onOpenForm: () -> Unit, onNewMaterial: (
             }
             Button(onClick = onNewMaterial, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_new_material)) }
             OutlinedButton(onClick = onUploads, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_uploads)) }
+            OutlinedButton(onClick = onNotifications, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_notifications)) }
             OutlinedButton(onClick = onSetup, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_setup)) }
             TextButton(onClick = onOpenForm, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_open_form)) }
             OutlinedButton(onClick = { vm.logout(allSessions = false) }, enabled = !s.signingOut, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_logout)) }

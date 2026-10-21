@@ -37,7 +37,8 @@ describe('contract v0.2 on the server', () => {
   let producer: Actor;
   let reporter: Actor;
   beforeAll(async () => {
-    h = await createHarness({ env: { MEDIA_WORKER_TOKEN: workerToken }, overrides: [[OBJECT_STORAGE, storage]] });
+    // العدّادات تُقارن بالصفوف فور الكتابة: بلا لقطة هنا، واللقطة لها اختبارها
+    h = await createHarness({ env: { MEDIA_WORKER_TOKEN: workerToken, DASHBOARD_SNAPSHOT_MS: '0' }, overrides: [[OBJECT_STORAGE, storage]] });
     await ensureForm(h);
     const newOffice = async () => (await h.pool.query<{ id: string }>(`INSERT INTO offices (name_ar, name_en) VALUES ('م', 'o') RETURNING id`)).rows[0]!.id;
     office = await newOffice();
@@ -283,26 +284,56 @@ describe('contract v0.2 on the server', () => {
     });
   });
 
-  describe('transcript and captions', () => {
-    it('are readable through the derivative signed link by those who may edit the material only', async () => {
+  describe('transcript and captions (R11, threat-model §9.1)', () => {
+    it('only those who may edit the material see them in files and get their link; others get the missing-file 404; issuing is a sensitive read', async () => {
       const m = await material();
       const source = await original(m);
-      const key = `derived/${m}/${source}/captions.vtt`;
-      storage.sizes.set(key, 40);
-      const fileId = (
-        await http()
-          .post(`/internal/media/files/${source}/derivatives`)
-          .set('Authorization', `Bearer ${workerToken}`)
-          .send({ kind: 'captions', storage_key: key, sha256: hex(randomBytes(32)), size_bytes: 40, mime_type: 'text/vtt', technical: { duration_ms: 1000, start_pts_us: 0 } })
-          .expect(200)
-      ).body.file_id as string;
-      expect((await as(chief).get(`/materials/${m}/files/${fileId}/download-url`).expect(200)).body.url).toContain(key);
-      await as(reporter).get(`/materials/${m}/files/${fileId}/download-url`).expect(200);
-      await as(supervisor).get(`/materials/${m}/files/${fileId}/download-url`).expect(200);
-      // مسؤول الحقوق يرى المادة ولا يعدّلها: 404 كأن الملف غير موجود
+      const ids: Record<string, string> = {};
+      for (const [kind, mime] of [['transcript', 'application/json'], ['captions', 'text/vtt']] as const) {
+        const key = `derived/${m}/${source}/${kind}`;
+        storage.sizes.set(key, 40);
+        ids[kind] = (
+          await http()
+            .post(`/internal/media/files/${source}/derivatives`)
+            .set('Authorization', `Bearer ${workerToken}`)
+            .send({ kind, storage_key: key, sha256: hex(randomBytes(32)), size_bytes: 40, mime_type: mime, technical: { duration_ms: 1000, start_pts_us: 0 } })
+            .expect(200)
+        ).body.file_id as string;
+      }
+      // المنتج يرى المادة بعد قبولها للإنتاج
+      for (const to of ['acknowledged', 'reviewing', 'accepted']) {
+        await as(supervisor).post(`/materials/${m}/transitions`, { track: 'editorial', to, reason: 'r11' }).expect(200);
+      }
       const rights = await loginAs(h, [{ role: 'rights_officer' }]);
-      await as(rights).get(`/materials/${m}`).expect(200);
-      await as(rights).get(`/materials/${m}/files/${fileId}/download-url`).expect(404);
+      const editors = { reporter, supervisor, chief, admin };
+      const readers = { producer, rights };
+      const kinds = (body: { files: Array<{ kind: string }> }) => body.files.map((f) => f.kind);
+      const missing = (await as(chief).get(`/materials/${m}/files/${randomUUID()}/download-url`).expect(404)).body;
+      const shape = ({ request_id: _r, ...rest }: Record<string, unknown>) => rest;
+
+      for (const [name, a] of Object.entries(editors)) {
+        expect([name, kinds((await as(a).get(`/materials/${m}`).expect(200)).body)]).toEqual([name, expect.arrayContaining(['transcript', 'captions'])]);
+        for (const kind of ['transcript', 'captions']) {
+          await as(a).get(`/materials/${m}/files/${ids[kind]}/download-url`).expect(200);
+          const { rows } = await h.pool.query(
+            `SELECT details FROM audit_log WHERE actor_id = $1 AND action = 'material.sensitive_read' AND target_id = $2 AND details->>'file_id' = $3`,
+            [a.id, m, ids[kind]],
+          );
+          expect(rows).toEqual([{ details: { material_id: m, file_id: ids[kind], field_keys: [kind] } }]);
+        }
+      }
+      for (const [name, a] of Object.entries(readers)) {
+        const listed = kinds((await as(a).get(`/materials/${m}`).expect(200)).body);
+        expect([name, listed.filter((k) => k === 'transcript' || k === 'captions')]).toEqual([name, []]);
+        const page = (await as(a).get('/materials?limit=100').expect(200)).body.items.find((x: { id: string }) => x.id === m);
+        if (page) expect(kinds(page).some((k) => k === 'transcript' || k === 'captions')).toBe(false);
+        for (const kind of ['transcript', 'captions']) {
+          const res = await as(a).get(`/materials/${m}/files/${ids[kind]}/download-url`).expect(404);
+          expect(shape(res.body)).toEqual(shape(missing));
+        }
+        const { rows } = await h.pool.query(`SELECT 1 FROM audit_log WHERE actor_id = $1 AND target_id = $2 AND action = 'material.sensitive_read'`, [a.id, m]);
+        expect(rows).toEqual([]);
+      }
     });
   });
 
@@ -351,6 +382,51 @@ describe('contract v0.2 on the server', () => {
       expect(others.urgent_open).toBe(0);
       expect(JSON.stringify(mine.body)).not.toContain('عنوان');
       await as(reporter).get('/dashboard/newsroom').expect(403);
+    });
+
+    it('each state count and the open urgent count equal the scoped rows exactly', async () => {
+      await material({ priority: 'urgent' });
+      const done = await material();
+      for (const to of ['acknowledged', 'reviewing', 'accepted']) {
+        await as(supervisor).post(`/materials/${done}/transitions`, { track: 'editorial', to, reason: 'dashboard' }).expect(200);
+      }
+      const body = (await as(supervisor).get('/dashboard/newsroom').expect(200)).body;
+      const tally = async (column: string) =>
+        (
+          await h.pool.query<{ state: string; count: number }>(
+            `SELECT ${column} AS state, count(*)::int AS count FROM materials WHERE office_id = $1 GROUP BY 1 ORDER BY 1`,
+            [office],
+          )
+        ).rows;
+      expect(body.editorial).toEqual(await tally('editorial_state'));
+      expect(body.technical).toEqual(await tally('technical_state'));
+      expect(body.rights).toEqual(await tally('rights_state'));
+      const { rows } = await h.pool.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM materials WHERE office_id = $1 AND priority = 'urgent' AND editorial_state NOT IN ('published', 'rejected')`,
+        [office],
+      );
+      expect(body.urgent_open).toBe(rows[0]!.n);
+    });
+
+    it('a snapshot is reused for the same user and scope for at most DASHBOARD_SNAPSHOT_MS, never across users', async () => {
+      const snap = await createHarness({ env: { DASHBOARD_SNAPSHOT_MS: '1500' } });
+      try {
+        const get = (a: Actor) => request(snap.app.getHttpServer()).get('/v1/dashboard/newsroom').set('Authorization', `Bearer ${a.token}`).expect(200);
+        const one = (await get(supervisor)).body;
+        await material({ priority: 'urgent' });
+        const again = (await get(supervisor)).body;
+        expect(again.generated_at).toBe(one.generated_at);
+        expect(again.urgent_open).toBe(one.urgent_open);
+        // مشرف المكتب الآخر لقطته له: لا يرى عدّادات غيره
+        const others = (await get(otherSupervisor)).body;
+        expect(others.urgent_open).toBe(0);
+        await new Promise((r) => setTimeout(r, 1600));
+        const fresh = (await get(supervisor)).body;
+        expect(fresh.generated_at).not.toBe(one.generated_at);
+        expect(fresh.urgent_open).toBe(one.urgent_open + 1);
+      } finally {
+        await snap.close();
+      }
     });
   });
 });
