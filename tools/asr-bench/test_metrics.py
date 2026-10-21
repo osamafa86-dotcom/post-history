@@ -80,7 +80,9 @@ def test_measurements_have_required_fields_and_no_pass_claim():
         doc = json.loads(f.read_text(encoding="utf-8"))
         assert doc["tool"] == "asr-bench"
         assert doc["result"] == "info", f"{f.name}: asr-bench reports info only (ADR 0017)"
-        assert doc["metrics"]["network"].startswith("none")
+        # model runs are offline; editing-time cards (edit_baseline.py) are people's timings, not a model run
+        if not doc["test_name"].startswith("edit-"):
+            assert doc["metrics"]["network"].startswith("none")
 
 
 def test_lock_pins_every_file():

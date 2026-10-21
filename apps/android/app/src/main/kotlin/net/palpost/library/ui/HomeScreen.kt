@@ -1,5 +1,7 @@
 package net.palpost.library.ui
 
+import net.palpost.library.security.SignOut
+import net.palpost.library.push.Push
 import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -61,7 +63,13 @@ class HomeViewModel(private val app: Application, private val container: AppCont
     fun logout(allSessions: Boolean) {
         if (_state.value.signingOut) return
         _state.update { it.copy(signingOut = true) }
-        viewModelScope.launch { container.auth.logout(allSessions) }
+        viewModelScope.launch {
+            SignOut(
+                cancelShownNotifications = { androidx.core.app.NotificationManagerCompat.from(app).cancelAll() },
+                unregisterPush = { Push.unregister(container) },
+                endSession = { all -> container.auth.logout(all) },
+            ).run(allSessions)
+        }
     }
 
     /** SEC-01 emergency wipe: everything on the device, now; the server is not told (no network needed). */
@@ -91,7 +99,7 @@ fun roleLabel(name: RoleName): String = stringResource(
 )
 
 @Composable
-fun HomeScreen(container: AppContainer, onOpenForm: () -> Unit, onNewMaterial: () -> Unit, onUploads: () -> Unit, onSetup: () -> Unit) {
+fun HomeScreen(container: AppContainer, onOpenForm: () -> Unit, onNewMaterial: () -> Unit, onUploads: () -> Unit, onMaterials: () -> Unit, onNotifications: () -> Unit, onSetup: () -> Unit) {
     val app = LocalContext.current.applicationContext as Application
     val vm: HomeViewModel = viewModel(factory = viewModelFactory { initializer { HomeViewModel(app, container) } })
     val s by vm.state.collectAsStateWithLifecycle()
@@ -112,6 +120,8 @@ fun HomeScreen(container: AppContainer, onOpenForm: () -> Unit, onNewMaterial: (
             }
             Button(onClick = onNewMaterial, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_new_material)) }
             OutlinedButton(onClick = onUploads, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_uploads)) }
+            OutlinedButton(onClick = onMaterials, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_materials)) }
+            OutlinedButton(onClick = onNotifications, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_notifications)) }
             OutlinedButton(onClick = onSetup, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_setup)) }
             TextButton(onClick = onOpenForm, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_open_form)) }
             OutlinedButton(onClick = { vm.logout(allSessions = false) }, enabled = !s.signingOut, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_logout)) }
