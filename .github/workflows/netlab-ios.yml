@@ -40,13 +40,13 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   ios-core:
     runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     # Long measurements only when dispatched by hand; the PR smoke is capped to protect the Actions budget.
-    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 350 || 20 }}
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 350 || 25 }}
     strategy:
       fail-fast: false
       matrix:
