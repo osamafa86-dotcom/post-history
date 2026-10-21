@@ -84,6 +84,13 @@ grep -qi '^tus-resumable:' <<<"$(tus)" || fail "main /files/ does not reach tusd
 [ "$(code -X POST https://main.localhost/files/ -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 1')" = 401 ] \
   || fail "main /files/ without a token should be 401 at the gate (both domains behind it)"
 [ "$(code https://ingest.localhost/v1/health)" = 404 ] || fail "ingest serves more than /files/"
+# From the gate's own address (172.30.250.3, inside INTERNAL_ALLOWED_CIDRS) only /internal/ingest/ answers: the media
+# worker's and tusd's internal paths are 403 there (INTERNAL_SOURCE_PATHS). The session check itself is proven by the uploads below.
+from_gate() { "$T" exec -T ingest-gate wget -q -S -O /dev/null "http://api-hooks:3000$1" 2>&1 | awk '/HTTP\//{print $2; exit}'; }
+[ "$(from_gate "/internal/media/sessions/$(python3 -c 'import uuid; print(uuid.uuid4())')")" = 403 ] \
+  || fail "the gate's address reaches /internal/media/ (INTERNAL_SOURCE_PATHS not applied)"
+[ "$(from_gate "/internal/tusd-hooks/$(hex 32)")" = 403 ] || fail "the gate's address reaches the tusd hook path"
+echo "the gate's address reaches /internal/ingest/ alone: ok"
 # Address isolation: each name answers on its own address only (active probing does not link A and B).
 if curl -sS --max-time 10 -o /dev/null --cacert "$WORK/ca.crt" --resolve ingest.localhost:443:127.0.0.1 https://ingest.localhost/files/ 2>/dev/null; then
   fail "the ingest name answers on the main address"; fi

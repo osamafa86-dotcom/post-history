@@ -159,6 +159,8 @@ if [ "$RUNNING" = 1 ]; then
     "[ \"\$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' -X POST -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 1' https://$MAIN_DOMAIN/files/)\" = 401 ]"
   check "the ingest gate runs with the session check (no INGEST_SESSION_CHECK in its environment)" \
     "e=\"\$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \"\$(\"$ROOT/infra/field-trial/trial.sh\" ps -q ingest-gate)\")\" && [ -n \"\$e\" ] && ! grep -q '^INGEST_SESSION_CHECK=' <<<\"\$e\""
+  check "the API limits the ingest gate's address to /internal/ingest/ (INTERNAL_SOURCE_PATHS)" \
+    "e=\"\$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \"\$(\"$ROOT/infra/field-trial/trial.sh\" ps -q api)\")\" && grep -qx 'INTERNAL_SOURCE_PATHS=172.30.250.3/32=/internal/ingest/' <<<\"\$e\""
   check "/internal is not reachable from outside" "[ \"\$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' https://$MAIN_DOMAIN/internal/x)\" = 404 ]"
   check "ingest name does not answer on MAIN_IP" "! curl -sS --max-time 10 -o /dev/null --resolve $INGEST_DOMAIN:443:$MAIN_IP https://$INGEST_DOMAIN/files/"
   last="$BACKUP_DIR/last-success.json"

@@ -29,6 +29,8 @@ services:
       INGEST_TOKEN_KEY_ID: "${INGEST_TOKEN_KEY_ID:?kid of the ingest token signing key}"
       PLAY_INTEGRITY_SERVICE_ACCOUNT: "${PLAY_INTEGRITY_SERVICE_ACCOUNT:-}"
       INGEST_GATE_TOKEN: "${INGEST_GATE_TOKEN:?}"
+      # Fixed in the trial (not from the secrets): the gate's address reaches /internal/ingest/ and nothing else there.
+      INTERNAL_SOURCE_PATHS: "172.30.250.3/32=/internal/ingest/"
   media-worker:
     restart: unless-stopped
 
