@@ -118,6 +118,30 @@ for _ in $(seq 1 10); do [ "$(login 198.51.100.1)" = 401 ] || fail "login throug
 [ "$(login 198.51.100.2)" = 401 ] || fail "another client address shares the rate-limit bucket (client address lost at the edge)"
 echo "client address through the edge: ok"
 
+# The gate's rate limit counts per client on both domains (20 r/s, burst 40, then 429 before any token check): a burst from
+# one client is cut while another client is still served, and a client cannot pick its bucket with X-Forwarded-For (each
+# request of a burst forging a different address still lands in its own bucket). ingest: the peer address (curl
+# --interface); main: CF-Connecting-IP from the trusted Cloudflare ranges, as for login above.
+gate_burst() { # gate_burst <count> <curl args...> -> number of 429s; {} in an argument is the request's index
+  local n="$1"; shift
+  seq "$n" | xargs -P 30 -I{} curl -sS --max-time 20 -o /dev/null -w '%{http_code}\n' --cacert "$WORK/ca.crt" \
+    --resolve "main.localhost:443:127.0.0.1" --resolve "ingest.localhost:443:127.0.0.2" \
+    -X POST -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 1' "$@" 2>/dev/null | grep -c '^429$' || true
+}
+one() { curl -sS --max-time 20 -o /dev/null -w '%{http_code}' --cacert "$WORK/ca.crt" --resolve "main.localhost:443:127.0.0.1" \
+          --resolve "ingest.localhost:443:127.0.0.2" -X POST -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 1' "$@" || echo 000; }
+[ "$(gate_burst 120 --interface 127.0.0.5 https://ingest.localhost/files/)" -gt 0 ] || fail "ingest: a burst from one client is not limited at the gate"
+[ "$(one --interface 127.0.0.6 https://ingest.localhost/files/)" = 401 ] || fail "ingest: another client shares the limited client's bucket"
+sleep 3
+[ "$(gate_burst 120 --interface 127.0.0.7 -H 'X-Forwarded-For: 10.66.0.{}' https://ingest.localhost/files/)" -gt 0 ] \
+  || fail "ingest: a forged X-Forwarded-For moves the client to another rate-limit bucket"
+[ "$(gate_burst 120 -H 'CF-Connecting-IP: 198.51.100.21' https://main.localhost/files/)" -gt 0 ] || fail "main /files/: a burst from one client is not limited at the gate"
+[ "$(one -H 'CF-Connecting-IP: 198.51.100.22' https://main.localhost/files/)" = 401 ] || fail "main /files/: another client shares the limited client's bucket"
+sleep 3
+[ "$(gate_burst 120 -H 'CF-Connecting-IP: 198.51.100.23' -H 'X-Forwarded-For: 10.67.0.{}' https://main.localhost/files/)" -gt 0 ] \
+  || fail "main /files/: a forged X-Forwarded-For moves the client to another rate-limit bucket"
+echo "gate rate limit per client on both domains, not chosen by X-Forwarded-For: ok"
+
 (cd "$ROOT/tools/acceptance" && [ -d node_modules ] || npm ci --no-audit --no-fund >/dev/null)
 DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB" \
 API_URL="http://127.0.0.1:$API_PORT/v1" CA_FILE="$WORK/ca.crt" INGEST_SIGNING_KEY="$WORK/ingest/signing.pem" \

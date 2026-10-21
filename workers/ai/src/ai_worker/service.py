@@ -91,6 +91,7 @@ class Config:
     model: str
     consumer: str
     enabled: bool = False
+    shots_enabled: bool = False
     cpu_threads: int = 0
     source_wait_s: float = 3600.0
     block_ms: int = 5000
@@ -110,6 +111,7 @@ class Config:
             model=e.get("AI_MODEL", "faster-whisper-large-v3-turbo"),
             consumer=e.get("AI_CONSUMER", socket.gethostname()),
             enabled=e.get("AI_ENABLE_TRANSCRIPT", "false").lower() == "true",
+            shots_enabled=e.get("AI_ENABLE_SHOTS", "false").lower() == "true",
             cpu_threads=int(e.get("AI_CPU_THREADS", 0)),
             source_wait_s=float(e.get("AI_SOURCE_WAIT_S", 3600)),
             claim_idle_ms=int(e.get("AI_CLAIM_IDLE_MS", 30 * 60 * 1000)),
@@ -263,7 +265,7 @@ def build(cfg: Config) -> Service:
         engine = FasterWhisperEngine(cfg.models_dir / cfg.model, cpu_threads=cfg.cpu_threads)
     storage = S3Storage(cfg.s3_endpoint, cfg.s3_region, cfg.s3_access_key, cfg.s3_secret_key, cfg.bucket_derived)
     jobs = Jobs(InternalApi(cfg.api_url, cfg.token), storage, engine, cfg.bucket_derived, cfg.scratch,
-                enabled=cfg.enabled, weights=read_manifest(cfg.models_dir, cfg.model))
+                enabled=cfg.enabled, weights=read_manifest(cfg.models_dir, cfg.model), shots_enabled=cfg.shots_enabled)
     return Service(redis.Redis.from_url(cfg.redis_url, decode_responses=True), jobs, cfg.consumer, cfg.block_ms,
                    cfg.claim_idle_ms, cfg.max_deliveries, cfg.auth_backoff_max_s,
                    auth_isolate_after_s=cfg.auth_isolate_after_s, source_wait_s=cfg.source_wait_s)

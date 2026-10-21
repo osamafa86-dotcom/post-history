@@ -99,7 +99,7 @@ fun roleLabel(name: RoleName): String = stringResource(
 )
 
 @Composable
-fun HomeScreen(container: AppContainer, onOpenForm: () -> Unit, onNewMaterial: () -> Unit, onUploads: () -> Unit, onMaterials: () -> Unit, onNotifications: () -> Unit, onSetup: () -> Unit) {
+fun HomeScreen(container: AppContainer, onOpenForm: () -> Unit, onNewMaterial: () -> Unit, onUploads: () -> Unit, onMaterials: () -> Unit, onNotifications: () -> Unit, onReview: () -> Unit, onSetup: () -> Unit) {
     val app = LocalContext.current.applicationContext as Application
     val vm: HomeViewModel = viewModel(factory = viewModelFactory { initializer { HomeViewModel(app, container) } })
     val s by vm.state.collectAsStateWithLifecycle()
@@ -121,6 +121,10 @@ fun HomeScreen(container: AppContainer, onOpenForm: () -> Unit, onNewMaterial: (
             Button(onClick = onNewMaterial, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_new_material)) }
             OutlinedButton(onClick = onUploads, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_uploads)) }
             OutlinedButton(onClick = onMaterials, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_materials)) }
+            // The review inbox is offered to supervisors; the server still decides what each may see and do.
+            if (s.me?.roles?.any { it.name.value == "supervisor" } == true) {
+                Button(onClick = onReview, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_review)) }
+            }
             OutlinedButton(onClick = onNotifications, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_notifications)) }
             OutlinedButton(onClick = onSetup, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_setup)) }
             TextButton(onClick = onOpenForm, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_open_form)) }
