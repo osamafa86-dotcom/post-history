@@ -2,13 +2,14 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, count, desc, eq, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { DB, type Database } from '../database/database.module';
-import { materialFiles, materials, notifications, offices } from '../database/schema/schema';
+import { materialFiles, materials, notifications, offices, uploadSessions } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import type { Principal } from '../identity/principal';
 import { iso, scopeCondition } from '../materials/material-store';
 
 type NewsroomDashboard = components['schemas']['NewsroomDashboard'];
 type Counts = NewsroomDashboard['editorial'];
+type Inflight = NonNullable<NewsroomDashboard['uploads_in_progress']>[number];
 
 /**
  * لوحة غرفة الأخبار (عقد v0.2): لقطة مجمّعة ضمن نطاق المستدعي (الشرط نفسه في طبقة الاستعلام). معرّفات وأرقام
@@ -90,7 +91,32 @@ export class DashboardService {
           sql`(${notifications.escalationLevel} > 0 OR ${notifications.escalateAt} <= now())`,
         ),
       );
-    const [{ rows }, reserved, receipts, [overdue]] = await Promise.all([tallies, reservedQuery, receiptsQuery, overdueQuery]);
+    // «الوارد الآن» (ADR 0024): الجلسات الجارية غير المنتهية لمواد ضمن النطاق، العاجل أولًا ثم الأحدث تقدّمًا.
+    // معرّفات وأرقام فقط: لا اسم ملف ولا مراسل ولا جهاز
+    const inflightQuery = this.db
+      .select({
+        upload_session_id: uploadSessions.id,
+        material_id: uploadSessions.materialId,
+        kind: uploadSessions.kind,
+        priority: materials.priority,
+        state: uploadSessions.state,
+        size_bytes: uploadSessions.sizeBytes,
+        bytes_received: uploadSessions.bytesReceived,
+        updated_at: uploadSessions.updatedAt,
+      })
+      .from(uploadSessions)
+      .innerJoin(materials, eq(materials.id, uploadSessions.materialId))
+      .leftJoin(offices, eq(offices.id, materials.officeId))
+      .where(and(scope, sql`${uploadSessions.state} IN ('created', 'in_progress')`, sql`${uploadSessions.expiresAt} > now()`))
+      .orderBy(sql`(${materials.priority} = 'urgent') DESC`, desc(uploadSessions.updatedAt))
+      .limit(50);
+    const [{ rows }, reserved, receipts, [overdue], inflight] = await Promise.all([
+      tallies,
+      reservedQuery,
+      receiptsQuery,
+      overdueQuery,
+      inflightQuery,
+    ]);
 
     // GROUPING: البت 4 = الحالة التحريرية مجمّعة، 2 = الفنية، 1 = الحقوق؛ 7 = المجموع
     const by = (mask: number, pick: (r: (typeof rows)[number]) => string | null): Counts =>
@@ -120,6 +146,16 @@ export class DashboardService {
         priority: r.priority as NewsroomDashboard['recent_receipts'][number]['priority'],
       })),
       overdue_acknowledgements: overdue?.n ?? 0,
+      uploads_in_progress: inflight.map((u) => ({
+        upload_session_id: u.upload_session_id,
+        material_id: u.material_id,
+        kind: u.kind as Inflight['kind'],
+        priority: u.priority as Inflight['priority'],
+        state: u.state as Inflight['state'],
+        size_bytes: Number(u.size_bytes),
+        bytes_received: Number(u.bytes_received),
+        updated_at: iso(u.updated_at)!,
+      })),
     };
   }
 }
