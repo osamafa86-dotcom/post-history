@@ -49,7 +49,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
         const prev = await http.get(tokens.reporter, `/forms/${cur0.body.version - 1}`);
         server.checks.previous_version_readable = prev.status === 200 && prev.body?.version === cur0.body.version - 1;
       }
-      for (const [k, v] of Object.entries(server.checks)) if (!v) console.log(`FAIL server check ${k}`);
+      for (const [k, v] of Object.entries(server.checks)) if (!v) console.log(`FAIL server check ${k} (forms/current answered ${cur0.status})`);
     }
     const old = server.readOnly ? 0 : (await http.get(tokens.reporter, "/forms/current")).body.version;
     const oldMaterial = server.readOnly ? null : (await http.call(tokens.reporter, "POST", "/materials", { body: materialBody(old, `dyn-old-${randomUUID().slice(0, 8)}`) })).body;

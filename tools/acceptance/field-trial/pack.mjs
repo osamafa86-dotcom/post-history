@@ -19,7 +19,8 @@ import { client } from "../lib/live.mjs";
 import { totp, totpStep, TOTP_STEP_MS } from "../lib/totp.mjs";
 import { EXIT_PENDING } from "../lib/pending.mjs";
 
-const STEPS = ["tenant-isolation", "pii-leak", "upload-resume", "media-remote", "session-revocation", "dynamic-fields"];
+// session-revocation last: it revokes every session of the reporter account, so any step after it would hold a dead token
+const STEPS = ["tenant-isolation", "pii-leak", "upload-resume", "media-remote", "dynamic-fields", "session-revocation"];
 
 // dynamic-fields always runs, read-only on a trial host (it reads the current and previous form versions); publishing a form needs the
 // administrator and is allowed on a local compose only (--allow-publish-form), where CI and rehearsals run it.
