@@ -6,6 +6,7 @@ import type { Me } from "../src/lib/types";
 import type { WebConfig } from "../src/server/config";
 import { MemoryStore } from "./memory-store";
 import { form, material, me, tokens } from "./fixtures";
+import { identityReasons, permissions } from "../src/lib/admin-policy";
 const config: WebConfig = { origin: "https://web.example.test", api: "https://api.example.test/v1", key: randomBytes(32), redisUrl: "redis://127.0.0.1:6379/1", secure: true, cookieName: "__Host-ph-session", lifetimeSeconds: 28800, mediaOrigins: [], trustForwardedFor: false };
 const key = randomUUID(), item = material(), target = "10000000-0000-4000-8000-000000000002";
 const admin: Me = { ...me, roles: [{ name: "system_admin", scopes: [] }] };
@@ -40,7 +41,7 @@ describe("authenticated review writes", () => {
       const { result, calls } = await action(`materials/${item.id}/transitions`, { body, headers }); expect(result.status).toBe(status); expect(calls).toHaveLength(0);
     }
   });
-  it.each(["sensitive_location:read", "protected_source:read"])("grants or revokes only the requested permission %s", async permission => {
+  it.each(["sensitive_location:read", "protected_source:read", "reporter_identity:read"])("grants or revokes only the requested permission %s", async permission => {
     for (const method of ["PUT", "DELETE"]) {
       const { result, calls } = await action(`users/${target}/permissions/${permission}`, { method, user: admin, body: method === "PUT" ? { reason: "approved" } : {} });
       expect(result.status).toBe(204); expect(calls).toHaveLength(1); expect(decodeURI(calls[0].url).replace("%3A", ":")).toBe(`${config.api}/users/${target}/permissions/${permission}`); expect(calls[0].headers.get("Idempotency-Key")).toBe(key);
@@ -79,5 +80,83 @@ describe("authenticated review writes", () => {
     const { result } = await action("notifications?cursor=next&unread_only=true&limit=20", { method: "GET", upstream: r => { expect(r.url).toContain("cursor=next"); return Response.json({ items: [{ id: target, type: "canary", title: "canary", material_id: item.id, priority: "normal", state: "sent", created_at: item.created_at }], next_cursor: "after", unread_count: 3 }); } });
     const data = await result.json(); expect(data.next_cursor).toBe("after"); expect(data.items).toHaveLength(1); expect(JSON.stringify(data)).not.toContain("canary");
     for (const query of ["limit=101", "limit=1&limit=2", "unread_only=yes", "gps=canary"]) expect((await action(`notifications?${query}`, { method: "GET" })).result.status).toBe(400);
+  });
+});
+
+const setting = { access: "separate", updated_at: "2026-10-21T10:00:00Z", updated_by: null };
+describe("reporter identity setting and permission audit history", () => {
+  it.each(identityReasons)("sends the coded reason %s and preserves the key without forwarding extra response fields", async reason_code => {
+    const body = { access: "protected_source", reason_code };
+    const { result, calls } = await action("admin/settings/reporter-identity", { method: "PUT", user: admin, body, upstream: async r => {
+      expect(await r.json()).toEqual(body); return Response.json({ ...setting, access: "protected_source", updated_by: me.user_id, legal_name: "never-display-canary" });
+    } });
+    expect(result.status).toBe(200); expect(calls).toHaveLength(1); expect(calls[0].headers.get("Idempotency-Key")).toBe(key);
+    expect(await result.json()).toEqual({ ...setting, access: "protected_source", updated_by: me.user_id });
+    expect(result.headers.get("Cache-Control")).toContain("no-store");
+  });
+  it("requires a coded reason and closed keys before any setting write", async () => {
+    for (const body of [{ access: "separate" }, { access: "all", reason_code: "policy_change" }, { access: "separate", reason_code: "free text canary" }, { access: "separate", reason_code: "policy_change", reason: "canary" }]) {
+      const { result, calls } = await action("admin/settings/reporter-identity", { method: "PUT", user: admin, body });
+      expect(result.status).toBe(422); expect(calls).toHaveLength(0);
+    }
+    const { result, calls } = await action("admin/settings/reporter-identity", { method: "PUT", user: admin, body: { access: "separate", reason_code: "policy_change" }, headers: { "Idempotency-Key": "" } });
+    expect(result.status).toBe(400); expect(calls).toHaveLength(0);
+  });
+  it("enforces origin checks and does not accept alternate methods for the setting", async () => {
+    expect((await action("admin/settings/reporter-identity", { method: "PUT", user: admin, headers: { Origin: "https://other.example.test" } })).result.status).toBe(403);
+    for (const method of ["POST", "DELETE"]) expect((await action("admin/settings/reporter-identity", { method, user: admin })).result.status).toBe(405);
+  });
+  it("rechecks administrator roles for both reads and writes even with all reading permissions", async () => {
+    for (const [path, method] of [["admin/settings/reporter-identity", "GET"], ["admin/settings/reporter-identity", "PUT"], [`users/${target}/permissions/history`, "GET"], [`users/${target}/permissions/reporter_identity:read`, "PUT"]]) {
+      const { result, calls } = await action(path, { method, user: { ...me, roles: [], permissions }, body: { access: "separate", reason_code: "policy_change" } });
+      expect(result.status).toBe(403); expect(calls).toHaveLength(0);
+    }
+  });
+  it("reads only the setting metadata and fails closed on an unknown setting value", async () => {
+    const { result } = await action("admin/settings/reporter-identity", { method: "GET", user: admin, upstream: () => Response.json({ ...setting, reporter_legal_name: "never-display-canary" }) });
+    expect(await result.json()).toEqual(setting);
+    const invalid = await action("admin/settings/reporter-identity", { method: "GET", user: admin, upstream: () => Response.json({ ...setting, access: "never-display-canary" }) });
+    expect(invalid.result.status).toBe(503); expect(await invalid.result.text()).not.toContain("canary");
+    expect((await action("admin/settings/reporter-identity?extra=x", { method: "GET", user: admin })).result.status).toBe(400);
+  });
+  it("returns a paginated safe audit projection with global setting events and no free-text reasons", async () => {
+    const occurred_at = setting.updated_at;
+    const { result, calls } = await action(`users/${target}/permissions/history?limit=20&cursor=next`, { method: "GET", user: admin, upstream: r => {
+      expect(r.url).toContain("limit=20"); expect(r.url).toContain("cursor=next");
+      return Response.json({ items: [
+        { id: "4", kind: "setting_changed", actor_id: me.user_id, occurred_at, setting: "reporter_legal_name_access", value: "protected_source", reason_code: "policy_change", legal_name: "never-display-canary" },
+        { id: "3", kind: "permission_granted", actor_id: me.user_id, occurred_at, permission: "reporter_identity:read", reason: "never-display-canary", reason_code: "never-display-canary" },
+        { id: "2", kind: "permission_revoked", actor_id: "never-display-canary", occurred_at, permission: "protected_source:read", reason_code: null },
+        { id: "1", kind: "setting_changed", actor_id: null, occurred_at, setting: "reporter_legal_name_access", value: "separate", reason_code: "never-display-canary" },
+        { id: "0", kind: "unknown", actor_id: null, occurred_at, reason_code: null },
+      ], next_cursor: "after", gps: "never-display-canary" });
+    } });
+    expect(result.status).toBe(200); expect(calls).toHaveLength(1); const data = await result.json();
+    expect(data.next_cursor).toBe("after"); expect(data.items).toHaveLength(4); expect(data.items[0].reason_code).toBe("policy_change"); expect(data.items[1].reason_code).toBeNull(); expect(data.items[2].actor_id).toBeNull(); expect(data.items[3].reason_code).toBeNull();
+    expect(JSON.stringify(data)).not.toContain("never-display-canary"); expect(result.headers.get("Cache-Control")).toContain("no-store");
+  });
+  it("rejects invalid audit pagination and arbitrary query keys before upstream access", async () => {
+    for (const query of ["limit=0", "limit=101", "limit=abc", "limit=1&limit=2", "cursor=a&cursor=b", "gps=canary", `cursor=${"x".repeat(2049)}`]) {
+      const { result, calls } = await action(`users/${target}/permissions/history?${query}`, { method: "GET", user: admin });
+      expect(result.status).toBe(400); expect(calls).toHaveLength(0);
+    }
+  });
+  it("returns safe unavailable history and write errors without fabricating records or retrying", async () => {
+    const read = await action(`users/${target}/permissions/history`, { method: "GET", user: admin, upstream: () => Response.json({ message: "never-display-canary" }, { status: 404 }) });
+    expect(read.result.status).toBe(404); expect(await read.result.text()).not.toContain("canary");
+    const write = await action("admin/settings/reporter-identity", { method: "PUT", user: admin, body: { access: "separate", reason_code: "policy_change" }, upstream: () => Response.json({ message: "never-display-canary" }, { status: 503 }) });
+    expect(write.result.status).toBe(503); expect(write.calls).toHaveLength(1); expect(await write.result.text()).not.toContain("canary");
+  });
+  it("enforces contract reason boundaries including supplementary Unicode", async () => {
+    for (const [path, body, expected, upstream] of [
+      [`users/${target}/permissions/reporter_identity:read`, { reason: "a".repeat(500) }, 204, () => new Response(null, { status: 204 })],
+      [`users/${target}/permissions/reporter_identity:read`, { reason: "a".repeat(501) }, 422, () => new Response(null, { status: 204 })],
+      [`materials/${item.id}/transitions`, { track: "editorial", to: "acknowledged", reason: "a".repeat(2000) }, 200, () => Response.json(item)],
+      [`materials/${item.id}/transitions`, { track: "editorial", to: "acknowledged", reason: "a".repeat(2001) }, 422, () => Response.json(item)],
+      [`users/${target}/permissions/reporter_identity:read`, { reason: "😀".repeat(500) }, 204, () => new Response(null, { status: 204 })],
+    ] as const) {
+      const { result, calls } = await action(path, { method: path.startsWith("materials") ? "POST" : "PUT", user: admin, body, upstream });
+      expect(result.status).toBe(expected); expect(calls).toHaveLength(expected === 422 ? 0 : 1);
+    }
   });
 });

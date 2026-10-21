@@ -203,7 +203,7 @@
   },
   "admin": {
     "title": "Account administration",
-    "lead": "Manage the two independent reading permissions and account access.",
+    "lead": "Manage independent reading permissions, account access and reporter identity policy.",
     "denied": "System administrator access is required.",
     "target": "Target user ID",
     "targetHelp": "Enter the exact user ID supplied by your administrator.",
@@ -217,7 +217,6 @@
     "grantWarning": "Grant this permission to the selected account?",
     "revokeWarning": "Revoke this permission from the selected account?",
     "history": "Permission history",
-    "historyUnavailable": "Permission history and current grants cannot be read yet. Check the audit record with your administrator.",
     "status": "Account access",
     "suspend": "Suspend account",
     "activate": "Reactivate account",
@@ -225,7 +224,40 @@
     "activateWarning": "Reactivate the selected account? Previous sessions will remain revoked.",
     "self": "You cannot suspend your own account.",
     "statusHelp": "The audit reason is the selected action: suspension or reactivation.",
-    "reasonHelp": "Do not include protected source names, precise locations or device identifiers."
+    "reasonHelp": "Do not include protected source names, precise locations or device identifiers.",
+    "identity": "Read reporter identities",
+    "identityTitle": "Reporter identity access",
+    "identityHelp": "Choose which permission is required to read a reporter’s legal name. This setting applies to the whole organization.",
+    "identityAccess": "Required permission",
+    "currentAccess": "Current policy",
+    "defaultSetting": "Initial default",
+    "codedReason": "Reason for the policy change",
+    "saveSetting": "Review policy change",
+    "confirmSetting": "Confirm identity policy change",
+    "sourceAccessWarning": "Anyone who already holds permission to read protected sources will be able to read reporters’ legal names.",
+    "separateAccessHelp": "Only accounts explicitly granted reporter identity access will be able to read reporters’ legal names.",
+    "settingAudit": "This change is recorded in the audit history and administrators are notified.",
+    "loadHistory": "Load permission history",
+    "historyHelp": "Newest events first, including organization-wide identity policy changes. This history is not a list of current grants.",
+    "selectHistoryUser": "Enter a user ID, then load their history.",
+    "historyMissing": "The user or permission history is unavailable.",
+    "emptyHistory": "No permission changes recorded.",
+    "globalSetting": "Applies to all users",
+    "accessOptions": {
+      "separate": "Separate reporter identity permission",
+      "protected_source": "Protected source permission"
+    },
+    "reasonOptions": {
+      "policy_change": "Policy change",
+      "operational_need": "Operational need",
+      "incident_response": "Incident response",
+      "audit_finding": "Audit finding"
+    },
+    "historyKinds": {
+      "permission_granted": "Permission granted",
+      "permission_revoked": "Permission revoked",
+      "setting_changed": "Identity policy changed"
+    }
   },
   "notice": {
     "title": "Notifications",
