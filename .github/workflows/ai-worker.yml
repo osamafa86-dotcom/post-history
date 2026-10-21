@@ -1,9 +1,6 @@
 name: ai-worker
 
 on:
-  push:
-    branches: [main]
-    paths: ['workers/ai/**', 'docs/measurements/asr-bench/*transcribe-worker*', '.github/workflows/ai-worker.yml']
   pull_request:
     paths: ['workers/ai/**', 'docs/measurements/asr-bench/*transcribe-worker*', '.github/workflows/ai-worker.yml']
 
@@ -12,7 +9,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   ai-worker:

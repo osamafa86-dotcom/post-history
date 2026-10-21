@@ -1,9 +1,6 @@
 name: acceptance
 
 on:
-  push:
-    branches: [main]
-    paths-ignore: ['docs/security/**', 'docs/ops/**']
   pull_request:
     paths-ignore: ['docs/security/**', 'docs/ops/**']
 
@@ -12,7 +9,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 env:
   # Core-gate acceptance (reservation-conflict, optimistic-concurrency, admin-quorum, notification-delivery, download-url) against the
@@ -26,6 +23,24 @@ env:
   RULES_ACCEPTANCE: "1"
 
 jobs:
+  changes:
+    name: changes (which parts of the repository this change touches)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      live: ${{ steps.f.outputs.live }}
+      media_e2e: ${{ steps.f.outputs.media_e2e }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      # a pull_request run is a merge commit: HEAD^1..HEAD is the PR's own change (.github/scripts/changed-paths.sh); a push answers true for everything
+      - id: f
+        run: |
+          .github/scripts/changed-paths.sh \
+          live='^(apps/api/|apps/web/|contracts/|tools/acceptance/|\.github/(workflows/acceptance\.yml|scripts/))' \
+          media_e2e='^(workers/media/|workers/ai/|apps/api/|tools/acceptance/|infra/compose/|infra/ai/|infra/minio/|\.github/(workflows/acceptance\.yml|scripts/))'
+
   acceptance:
     name: acceptance (unit tests, results gate, conformance, upload-resume vs tusd)
     runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
@@ -78,8 +93,9 @@ jobs:
   live:
     name: "live acceptance (API + Postgres - pii-leak, tenant-isolation, idempotency, tusd hook, receipt-notification)"
     runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
-    timeout-minutes: 30
-    if: github.event_name == 'pull_request'
+    timeout-minutes: 25
+    needs: changes
+    if: needs.changes.outputs.live == 'true'
     services:
       postgres:
         image: postgres:16-alpine
@@ -168,7 +184,8 @@ jobs:
     name: "media e2e (full compose stack: upload, worker, proxy, hostile files)"
     runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     timeout-minutes: 40  # the ai profile fetches the production weights (1.6 GB) and transcribes six clips
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: needs.changes.outputs.media_e2e == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

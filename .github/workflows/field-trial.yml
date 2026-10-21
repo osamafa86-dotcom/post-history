@@ -9,6 +9,8 @@ on:
     paths:
       - "infra/**"
       - "apps/api/src/db/**"
+      - "tools/acceptance/field/**"
+      - "tools/acceptance/field-trial/**"
       - ".github/workflows/field-trial.yml"
   workflow_dispatch:
 
@@ -23,7 +25,7 @@ jobs:
   field-trial:
     name: field trial (edges, uploads, backup, restore drill)
     runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
-    timeout-minutes: 30
+    timeout-minutes: 25
     env:
       NO_PROXY: 127.0.0.1,localhost,.localhost
     steps:

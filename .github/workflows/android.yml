@@ -1,13 +1,6 @@
 name: android
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/android/**"
-      - "contracts/**"
-      - "tools/acceptance/form-conformance/**"
-      - ".github/workflows/android.yml"
   pull_request:
     paths:
       - "apps/android/**"
@@ -21,13 +14,13 @@ permissions:
 # Same spend rules as ci.yml: a newer push to the same PR cancels the older run, and no job can hang.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   android:
     name: android (generate client, unit tests, lint, form conformance)
     runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
-    timeout-minutes: 40
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: apps/android
