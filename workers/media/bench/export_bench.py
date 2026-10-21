@@ -1,7 +1,7 @@
 """قياس حزمة التصدير (التذكرة 6): زمن إنتاجها وحجمها لمقطع 4K اصطناعي مدته دقيقتان.
 
-يقيس مسار المهمة نفسه بعد التنزيل: البيانات الفنية، النسخة الخفيفة 480p، ثم `build_package` وبصمة الأرشيف كاملًا
-(ما يُرسل مع تسجيل المشتق). لا ملف حقيقي ولا اتصال خارجي. المخرج بمخطط contracts/schemas/measurement.json.
+يقيس مسار المهمة نفسه بعد التنزيل: البيانات الفنية، النسخة الخفيفة 480p، ثم `build_package` (نسخة منزوعة البيانات
+الوصفية بنسخ التيارات والأرشيف) وبصمة الأرشيف كاملًا (ما يُرسل مع تسجيل المشتق). لا ملف حقيقي ولا اتصال خارجي. المخرج بمخطط contracts/schemas/measurement.json.
 
     python bench/export_bench.py --out /results/<date>-export-4k.json [--seconds 120 --mbps 50]
 """
@@ -27,6 +27,12 @@ from media_worker.export import build_package  # noqa: E402
 from media_worker.hashing import digest_file  # noqa: E402
 from media_worker.probe import probe  # noqa: E402
 from media_worker.proxy import make_proxy  # noqa: E402
+
+
+def packets(path: Path) -> bytes:
+    return hashlib.sha256(ffmpeg.run([ffmpeg.FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-i", str(path),
+                                      "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy", "-f", "framemd5", "-"],
+                                     timeout_s=600)).digest()
 
 
 def now() -> str:
@@ -60,7 +66,9 @@ def main() -> None:
         t4 = time.perf_counter()
         ended = now()
         with zipfile.ZipFile(out) as zf:
-            original_ok = hashlib.sha256(zf.read(zf.namelist()[0])).hexdigest() == digest.sha256
+            name = zf.namelist()[0]
+            zf.extract(name, d / "check")
+        clip_is_copy = packets(d / "check" / name) == packets(src)
         size = out.stat().st_size
         result = {
             "schema_version": 1, "tool": "other", "role": "media", "test_name": "media-export-package-4k",
@@ -73,9 +81,10 @@ def main() -> None:
                 "package_total_s": round(t4 - t0, 2), "probe_and_hash_s": round(t1 - t0, 2),
                 "proxy_480p_s": round(t2 - t1, 2), "build_package_s": round(t3 - t2, 2),
                 "archive_sha256_s": round(t4 - t3, 2), "package_size_bytes": size,
-                "package_overhead_bytes": size - digest.size_bytes, "original_in_package_matches": original_ok,
+                "package_overhead_bytes": size - digest.size_bytes, "clip_packets_match_original": clip_is_copy,
                 "resolution": f"{info.width}x{info.height}", "source_generate_s": round(generate_s, 1),
-                "scratch_bytes_needed": digest.size_bytes + size + (d / "proxy-480p.mp4").stat().st_size,
+                # ذروة القرص: الأصل والنسخة المنزوعة (قبل حذفها) والأرشيف والنسخة الخفيفة
+                "scratch_bytes_needed": 2 * digest.size_bytes + size + (d / "proxy-480p.mp4").stat().st_size,
                 "ffmpeg_version": ffmpeg.version(),
             },
         }
