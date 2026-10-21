@@ -417,7 +417,7 @@ export const notificationRules = pgTable("notification_rules", {
 	check("notification_rules_has_recipient", sql`(cardinality(recipient_roles) + cardinality(recipient_permissions)) >= 1`),
 	check("notification_rules_material_types_check", sql`(material_types IS NULL) OR ((cardinality(material_types) >= 1) AND (material_types <@ allowed_material_types()))`),
 	check("notification_rules_name_len", sql`(char_length(name) >= 1) AND (char_length(name) <= 120)`),
-	check("notification_rules_permissions_check", sql`recipient_permissions <@ ARRAY['sensitive_location:read'::text, 'protected_source:read'::text]`),
+	check("notification_rules_permissions_check", sql`recipient_permissions <@ ARRAY['sensitive_location:read'::text, 'protected_source:read'::text, 'reporter_identity:read'::text]`),
 	check("notification_rules_priorities_check", sql`(priorities IS NULL) OR ((cardinality(priorities) >= 1) AND (priorities <@ ARRAY['urgent'::text, 'important'::text, 'normal'::text]))`),
 	check("notification_rules_quiet_hours_consistent", sql`((quiet_hours_start IS NULL) = (quiet_hours_end IS NULL)) AND ((quiet_hours_start IS NULL) = (quiet_hours_tz IS NULL))`),
 	check("notification_rules_roles_check", sql`recipient_roles <@ ARRAY['system_admin'::text, 'editor_in_chief'::text, 'supervisor'::text, 'producer'::text, 'finance'::text, 'reporter'::text, 'rights_officer'::text]`),
