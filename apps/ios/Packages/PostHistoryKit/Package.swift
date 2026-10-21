@@ -11,6 +11,7 @@ let package = Package(
         .library(name: "UploadCore", targets: ["UploadCore"]),
         .library(name: "FormEngine", targets: ["FormEngine"]),
         .library(name: "DeviceSecurity", targets: ["DeviceSecurity"]),
+        .library(name: "NotificationsCore", targets: ["NotificationsCore"]),
         .executable(name: "form-conformance", targets: ["form-conformance"]),
         .executable(name: "upload-netlab", targets: ["upload-netlab"]),
     ],
@@ -36,5 +37,8 @@ let package = Package(
         // أمان الجهاز (SEC-01، جانب الجهاز): المسح الطارئ بخطوات مرتبة وتقرير بما مُسح وما تعذّر، دون تسجيل مسارات.
         .target(name: "DeviceSecurity"),
         .testTarget(name: "DeviceSecurityTests", dependencies: ["DeviceSecurity"]),
+        // الإشعارات: تسجيل رمز APNs بمعرّف تثبيت مولَّد، وصندوق الإشعارات مع القراءة والإقرار، وتوجيه حمولة الدفع.
+        .target(name: "NotificationsCore", dependencies: ["PostHistoryAPI"]),
+        .testTarget(name: "NotificationsCoreTests", dependencies: ["NotificationsCore"]),
     ]
 )
