@@ -1,9 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DB, type Database, type Executor } from '../database/database.module';
-import { systemSettings } from '../database/schema/schema';
+import { auditLog, systemSettings } from '../database/schema/schema';
 import type { components } from '../generated/api';
-import { audit } from '../identity/recovery-approval';
 import type { Permission } from '../identity/principal';
 import { writeOutboxEvent } from '../outbox/outbox';
 
@@ -51,7 +50,15 @@ export class ReporterIdentitySettings {
         .set({ value: input.access, updatedBy: actorId })
         .where(eq(systemSettings.key, KEY))
         .returning();
-      await audit(tx, actorId, 'setting.changed', actorId, { setting: KEY, value: input.access, reason_code: input.reason_code });
+      // الهدف هو الإعداد نفسه (فهرس الهدف يغطي سجل تغييراته)، كما في ADR 0021
+      await tx.insert(auditLog).values({
+        actorId,
+        action: 'setting.changed',
+        targetType: 'setting',
+        targetId: KEY,
+        details: { setting: KEY, value: input.access, reason_code: input.reason_code },
+        hash: Buffer.alloc(32), // يحسبه محفّز سلسلة التجزئة
+      });
       const occurredAt = new Date(row!.updatedAt).toISOString();
       await writeOutboxEvent(tx, {
         type: 'setting.changed',

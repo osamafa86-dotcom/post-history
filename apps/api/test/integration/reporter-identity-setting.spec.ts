@@ -71,7 +71,7 @@ describe('reporter identity setting (ADR 0021)', () => {
   const changes = async () =>
     (
       await h.pool.query<{ details: Record<string, string> }>(
-        `SELECT details FROM audit_log WHERE action = 'setting.changed' AND actor_id = ANY($1) ORDER BY id`,
+        `SELECT details FROM audit_log WHERE action = 'setting.changed' AND target_type = 'setting' AND target_id = 'reporter_legal_name_access' AND actor_id = ANY($1) ORDER BY id`,
         [[admin.id, otherAdmin.id]],
       )
     ).rows.map((r) => r.details);
