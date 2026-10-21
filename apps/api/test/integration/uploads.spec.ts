@@ -96,9 +96,35 @@ describe('upload sessions (/v1/uploads)', () => {
   it("refuses other people's materials (404), other roles (403), and proxy_mode on an original (422)", async () => {
     const materialId = await material();
     await write(other, '/v1/uploads', { material_id: materialId, kind: 'original', ...file(1), filename: 'a' }).expect(404);
-    await write(supervisor, '/v1/uploads', { material_id: materialId, kind: 'original', ...file(1), filename: 'a' }).expect(403);
+    // الطاقم ينشئ جلسات لموادّه هو (#88)؛ مادة المراسل ليست له، ومن لا يرفع أصلًا 403
+    await write(supervisor, '/v1/uploads', { material_id: materialId, kind: 'original', ...file(1), filename: 'a' }).expect(404);
+    const rights = await loginAs(h, [{ role: 'rights_officer' }]);
+    await write(rights, '/v1/uploads', { material_id: materialId, kind: 'original', ...file(1), filename: 'a' }).expect(403);
     await write(reporter, '/v1/uploads', { material_id: materialId, kind: 'original', proxy_mode: 'normal', ...file(1), filename: 'a' }).expect(422);
     await write(reporter, '/v1/uploads', { material_id: randomUUID(), kind: 'original', ...file(1), filename: 'a' }).expect(404);
+  });
+
+  it('staff upload camera files from the web (#88): they own what they create, originals only, and see it whatever their role scope', async () => {
+    const producer = await loginAs(h, [{ role: 'producer' }], { officeId: office });
+    const chief = await loginAs(h, [{ role: 'editor_in_chief' }]);
+    for (const staff of [supervisor, producer, chief]) {
+      const id = await material(staff);
+      const m = (await http().get(`/v1/materials/${id}`).set('Authorization', `Bearer ${staff.token}`).expect(200)).body;
+      expect(m.reporter_id).toBe(staff.id);
+      const s = (await write(staff, '/v1/uploads', { material_id: id, kind: 'original', ...file(10), filename: 'card.mxf' }).expect(201)).body;
+      await http().get(`/v1/uploads/${s.id}`).set('Authorization', `Bearer ${staff.token}`).expect(200);
+      // النسخة الخفيفة يولّدها عامل الوسائط، لا الطاقم
+      await write(staff, '/v1/uploads', { material_id: id, kind: 'proxy', proxy_mode: 'normal', ...file(10), filename: 'p.mp4' }).expect(422);
+      // مادة الطاقم ليست لغيره: مراسل آخر لا يرفع لها
+      await write(reporter, '/v1/uploads', { material_id: id, kind: 'original', ...file(10), filename: 'x' }).expect(404);
+    }
+    // منتج آخر لا يرى مادة منتج في الوارد (نطاق المنتج: ما قُبل للإنتاج)
+    const otherProducer = await loginAs(h, [{ role: 'producer' }]);
+    const mine = await material(producer);
+    await http().get(`/v1/materials/${mine}`).set('Authorization', `Bearer ${otherProducer.token}`).expect(404);
+    // من لا يرفع لا ينشئ مادة
+    const rights = await loginAs(h, [{ role: 'rights_officer' }]);
+    await write(rights, '/v1/materials', { title: 'x' }).expect(403);
   });
 
   it('GET returns the session without the token to the owner and to a supervisor in scope, 404 to others', async () => {
