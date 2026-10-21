@@ -22,7 +22,6 @@ public struct LicenseTemplateInput: Sendable, Codable, Hashable {
         case produced = "produced"
         case audio = "audio"
         case stills = "stills"
-        case transcript = "transcript"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
     public enum Prohibitions: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
@@ -46,6 +45,7 @@ public struct LicenseTemplateInput: Sendable, Codable, Hashable {
     public var termDays: Int?
     /** مدة الحصرية؛ لـ `exclusive_temporary` وحده (24–168 ساعة)، و`null` لغيره */
     public var exclusivityHours: Int?
+    /** ما يُسلَّم للمشتري. التفريغ والترجمة لا يُرخَّصان ولا يُصدَّران (threat-model §9.1، R11) حتى ADR للحجب الآلي للأسماء؛ `transcript` يُرفض `422`. */
     public var deliverables: Set<Deliverables>
     public var attribution: LocalizedText
     /** المحظورات؛ `ai_training` محظور دائمًا إلا بإذن مستقل خارج القالب */

@@ -44,7 +44,7 @@ CREATE TABLE license_template_versions (
   CONSTRAINT license_template_versions_usage_media_check CHECK (
     cardinality(usage_media) >= 1 AND usage_media <@ ARRAY['tv', 'web', 'social', 'documentary', 'advertising']),
   CONSTRAINT license_template_versions_deliverables_check CHECK (
-    cardinality(deliverables) >= 1 AND deliverables <@ ARRAY['original', 'produced', 'audio', 'stills', 'transcript']),
+    cardinality(deliverables) >= 1 AND deliverables <@ ARRAY['original', 'produced', 'audio', 'stills']),  -- لا تفريغ (R11)
   CONSTRAINT license_template_versions_prohibitions_check CHECK (
     prohibitions <@ ARRAY['resale', 'advertising', 'ai_training', 're_editing']),
   CONSTRAINT license_template_versions_territory_check CHECK (

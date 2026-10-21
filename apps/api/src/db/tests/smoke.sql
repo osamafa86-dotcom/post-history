@@ -528,6 +528,13 @@ VALUES ('00000000-0000-4000-8000-000000000601', 2, 'editorial_single', 'تحري
         'countries', '{PS,JO}', '{original}', 'فلسطين بوست', 'Palestine Post', 25000, 'USD', true,
         '00000000-0000-4000-8000-000000000014');
 
+-- لا تفريغ في التسليم (R11)
+SELECT pg_temp.expect_error($q$
+  INSERT INTO license_template_versions (template_id, version, type, name_ar, name_en, terms_ar, terms_en, usage_media,
+    territory_kind, deliverables, attribution_ar, attribution_en, base_price_minor, currency, enabled, created_by)
+  VALUES ('00000000-0000-4000-8000-000000000601', 3, 'editorial_single', 'x', 'x', 'x', 'x', '{tv}', 'worldwide',
+          '{original,transcript}', 'x', 'x', 1, 'USD', true, '00000000-0000-4000-8000-000000000014') $q$, '23514');
+
 -- «معروض» يلزمه sellable من الجهتين
 SELECT pg_temp.expect_error($q$
   INSERT INTO catalog_listings (material_id, material_version, state, title_ar, title_en, description_ar, description_en,
