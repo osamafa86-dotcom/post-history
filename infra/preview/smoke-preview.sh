@@ -194,7 +194,7 @@ json.dump({"schema_version": 1, "tool": "other", "role": "infra", "started_at": 
            "result": "pass" if used < total <= ceiling else "fail",
            "device": {"platform": "server", "model": os.environ.get("MEASURE_HOST", "local docker compose")},
            "metrics": {"memory_limits_mb": total, "memory_used_mb": used, "memory_ceiling_mb": ceiling},
-           "notes": "infra/preview/smoke-preview.sh (ADR 0023): preview compose on images built from infra/preview/*.Dockerfile, idle after a demo login and a few page loads. Not the shared server itself."},
+           "notes": "infra/preview/smoke-preview.sh (ADR 0023): preview compose on images built from infra/preview/*.Dockerfile, with tusd, its proxy and the ingest gate, idle after a demo login, a few page loads and a 6 MiB desktop upload cut and resumed through the edge. Not the shared server itself."},
           open(out, "w"), indent=2)
 PY
 fi

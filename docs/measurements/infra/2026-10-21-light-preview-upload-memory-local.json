@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "infra",
+  "started_at": "2026-10-21T23:19:48Z",
+  "ended_at": "2026-10-21T23:19:48Z",
+  "result": "pass",
+  "device": {
+    "platform": "server",
+    "model": "local docker compose"
+  },
+  "metrics": {
+    "memory_limits_mb": 928,
+    "memory_used_mb": 246,
+    "memory_ceiling_mb": 960
+  },
+  "notes": "infra/preview/smoke-preview.sh (ADR 0023): preview compose with tusd, its proxy and the ingest gate, on images built from infra/preview/*.Dockerfile, idle after a demo login, a few page loads and a 6 MiB desktop upload cut and resumed through the edge. Not the shared server itself."
+}
