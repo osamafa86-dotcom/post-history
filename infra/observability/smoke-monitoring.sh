@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# دخان المراقبة ذاتية الاستضافة (ADR 0024)، في CI وعلى أي مضيف فيه Docker:
+# دخان المراقبة ذاتية الاستضافة (ADR 0027)، في CI وعلى أي مضيف فيه Docker:
 #   infra/observability/smoke-monitoring.sh [--json FILE]
 # يثبت:
 #   - سجل حاوية يصل إلى Loki باسمها (الوسم tag)، وما فيه من عنوان ورمز ومعرّف رفع وإحداثيات وجهاز منقّى قبل التخزين؛
@@ -114,7 +114,7 @@ json.dump({"schema_version": 1, "tool": "other", "role": "infra", "started_at": 
            "result": "pass" if used < total else "fail",
            "device": {"platform": "server", "model": os.environ.get("MEASURE_HOST", "local docker compose")},
            "metrics": {"memory_limits_mb": total, "memory_used_mb": used},
-           "notes": "infra/observability/smoke-monitoring.sh (ADR 0024): Prometheus, Grafana, Loki, OpenTelemetry collector and node-exporter after a canary log, an OTLP span and metric, and dashboard reads. Idle stack with almost no data: the trial host's use grows with retention and is measured there."},
+           "notes": "infra/observability/smoke-monitoring.sh (ADR 0027): Prometheus, Grafana, Loki, OpenTelemetry collector and node-exporter after a canary log, an OTLP span and metric, and dashboard reads. Idle stack with almost no data: the trial host's use grows with retention and is measured there."},
           open(out, "w"), indent=2)
 PY
 fi

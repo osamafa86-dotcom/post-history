@@ -13,5 +13,5 @@
     "memory_limits_mb": 1072,
     "memory_used_mb": 219
   },
-  "notes": "infra/observability/smoke-monitoring.sh (ADR 0024): Prometheus, Grafana, Loki, OpenTelemetry collector and node-exporter after a canary log, an OTLP span and metric, and dashboard reads. Idle stack with almost no data: the trial host's use grows with retention and is measured there."
+  "notes": "infra/observability/smoke-monitoring.sh (ADR 0027): Prometheus, Grafana, Loki, OpenTelemetry collector and node-exporter after a canary log, an OTLP span and metric, and dashboard reads. Idle stack with almost no data: the trial host's use grows with retention and is measured there."
 }

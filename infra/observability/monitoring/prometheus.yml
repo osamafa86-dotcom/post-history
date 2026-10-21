@@ -1,4 +1,4 @@
-# Prometheus للمضيف (ADR 0024): المضيف والفحوص الصحية وأدوات المراقبة نفسها، ومقاييس التطبيقات عبر مجمّع OpenTelemetry.
+# Prometheus للمضيف (ADR 0027): المضيف والفحوص الصحية وأدوات المراقبة نفسها، ومقاييس التطبيقات عبر مجمّع OpenTelemetry.
 global:
   scrape_interval: 30s
   evaluation_interval: 30s

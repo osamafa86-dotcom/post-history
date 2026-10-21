@@ -1,4 +1,4 @@
-# المراقبة ذاتية الاستضافة على المضيف (ADR 0024): Prometheus وGrafana وLoki ومجمّع OpenTelemetry وnode-exporter، مشروع
+# المراقبة ذاتية الاستضافة على المضيف (ADR 0027): Prometheus وGrafana وLoki ومجمّع OpenTelemetry وnode-exporter، مشروع
 # compose مستقل عن البيئة (لا يسقط معها ولا تسقط معه):
 #   docker compose -f infra/observability/compose.monitoring.yml --env-file <ملف فيه GRAFANA_ADMIN_PASSWORD> up -d --wait
 # لا منفذ عام: Grafana وحده على 127.0.0.1:${GRAFANA_PORT:-3300} للوصول بنفق SSH، والباقي على الشبكة الداخلية monitoring.

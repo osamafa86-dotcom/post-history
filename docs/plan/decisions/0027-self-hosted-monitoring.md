@@ -1,4 +1,4 @@
-# 0024 — المراقبة ذاتية الاستضافة على المضيف: Prometheus وGrafana وLoki ومجمّع OpenTelemetry
+# 0027 — المراقبة ذاتية الاستضافة على المضيف: Prometheus وGrafana وLoki ومجمّع OpenTelemetry
 
 - الحالة: مقترح (مقيس في `infra/observability/smoke-monitoring.sh` محليًا وفي CI)
 - التاريخ: 2026-10-21

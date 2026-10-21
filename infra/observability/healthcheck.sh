@@ -5,7 +5,7 @@
 # بلا رمز (401)، وPostgres وRedis وMinIO، ومستهلك media:events لم يتوقف وفي الطابور عمل، والقرص < DISK_ALERT_PCT،
 # وآخر نسخة احتياطية ناجحة خلال 26 ساعة بلا فشل بعدها، ونافذة مفتاح qa- لم يمر انتهاؤها (ADR 0022).
 # --json: النتيجة لنقطة /health الداخلية (health-endpoint.py)، بأسماء الفحوص وحالتها فقط.
-# --prom: النتيجة نفسها لـ Prometheus (مجمّع textfile في node-exporter، ADR 0024): post_history_check_ok لكل فحص.
+# --prom: النتيجة نفسها لـ Prometheus (مجمّع textfile في node-exporter، ADR 0027): post_history_check_ok لكل فحص.
 # --alert: عند تغيّر مجموعة الفاشل يُكتب سطر في ALERT_LOG، ويُرسل بريد إن ضُبط ALERT_EMAIL_TO ووُجد sendmail محلي.
 # لا قيمة سرية ولا بيانات مادة في أي مخرج: أسماء الفحوص وأسباب عامة فقط. الخروج 0 إن سلم كل شيء، وإلا 1.
 set -uo pipefail
