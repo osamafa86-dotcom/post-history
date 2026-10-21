@@ -305,8 +305,22 @@ if [ "${TRIAL_AVAILABILITY:-1}" = 1 ]; then
   token_of() { python3 -c 'import json,sys; a=json.loads(sys.argv[1])[sys.argv[2]]; print(json.dumps({"email":a["email"],"password":a["password"]}))' "$accounts" "$1" \
     | curl -fsS -X POST "http://127.0.0.1:$API_PORT/v1/auth/login" -H 'Content-Type: application/json' -d @- \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])'; }
+  # A crash, not an operator's stop: `docker kill` marks the container stopped by hand, so its restart policy never
+  # brings it back. The drill's "kill -s KILL <service>" goes to the container's process from the host instead, as an
+  # OOM kill or a crash would; every other compose command passes through.
+  cat > "$WORK/crash-compose.sh" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "\${1:-}" = kill ] && [ "\${2:-}" = -s ] && [ "\${3:-}" = KILL ]; then
+  pid="\$(docker inspect -f '{{.State.Pid}}' "\$("$T" ps -q "\$4")")"
+  if [ "\$(id -u)" = 0 ]; then kill -KILL "\$pid"; else sudo -n kill -KILL "\$pid"; fi
+  exit 0
+fi
+exec "$T" "\$@"
+SH
+  chmod +x "$WORK/crash-compose.sh"
   AVAIL_API_URL="http://127.0.0.1:$API_PORT/v1" AVAIL_TOKEN="$(token_of reporter)" AVAIL_SUPERVISOR_TOKEN="$(token_of supervisor)" \
-  AVAIL_COMPOSE="$T" AVAIL_TIMEOUT_MS="${AVAIL_TIMEOUT_MS:-300000}" \
+  AVAIL_COMPOSE="$WORK/crash-compose.sh" AVAIL_TIMEOUT_MS="${AVAIL_TIMEOUT_MS:-300000}" \
     node "$ROOT/tools/acceptance/scripts/availability.mjs" --dry-run || fail "availability drill: a scenario did not recover"
   echo "availability drill (api kill, database kill, api recreate under load): ok"
 fi
