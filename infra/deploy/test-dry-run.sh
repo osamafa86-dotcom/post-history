@@ -50,12 +50,14 @@ for want in "apt-get install -y -q --no-install-recommends" "docker-ce=5:29.9.1-
             "+ useradd --system" "+ ufw default deny incoming" "+ ufw allow proto tcp to 192.0.2.10 port 80,443" \
             "+ ufw allow proto tcp to 198.51.100.20 port 80,443" "+ chown 70:70 /srv/post-history/backups" \
             "infra/compose/check-pinned.sh" "infra/field-trial/preflight.sh" "trial.sh up -d --wait" \
-            "+ systemctl enable post-history-trial.service" "preflight.sh --running --json"; do
+            "+ systemctl enable post-history-trial.service post-history-observability.service" "preflight.sh --running --json" \
+            "observability/stack.sh monitoring up -d --wait" "observability/stack.sh errors up -d --wait"; do
   grep -qF -- "$want" "$W/out" || fail "planned command missing: $want"
 done
 order "== step 6/11: secrets" "unsealed:"
 order "unsealed:" "infra/field-trial/preflight.sh"
 order "+ /repo/infra/field-trial/preflight.sh" "trial.sh up -d --wait"
+order "trial.sh up -d --wait" "stack.sh monitoring up -d --wait"
 grep -q "^+ ufw allow proto tcp to .* port 22\|ufw allow 22" "$W/out" && fail "ssh opened by port instead of the OpenSSH profile"
 echo "step order and planned commands: ok"
 
@@ -72,13 +74,17 @@ for f in "$E/trial.env.age" "$E/break-glass.age"; do
 done
 [ -z "$(find "$R" -name 'trial.env' -not -path "$R/run/*")" ] || fail "plaintext secrets outside /run"
 grep -q '"max-size": "50m"' "$R/etc/docker/daemon.json" || fail "container log rotation missing"
+grep -qF '"tag": "{{.Name}}"' "$R/etc/docker/daemon.json" || fail "container logs not tagged with the container name (ADR 0027)"
+[ "$(mode "$R/var/lib/post-history/textfile")" = 755 ] || fail "health textfile dir"
 grep -q '^ExecStartPre=/repo/infra/deploy/unseal.sh$' "$R/etc/systemd/system/post-history-trial.service" || fail "unit does not unseal"
 SD="$R/etc/systemd/system"
-grep -q '^ExecStart=/repo/infra/observability/healthcheck.sh --json /run/post-history-health/health.json --alert$' \
+grep -q '^ExecStart=/repo/infra/observability/healthcheck.sh --json /run/post-history-health/health.json --prom /var/lib/post-history/textfile/health.prom --alert$' \
   "$SD/post-history-health.service" || fail "health unit"
 grep -q '^OnUnitActiveSec=1min$' "$SD/post-history-health.timer" || fail "health timer not every minute"
 grep -q '^User=posthistory$' "$SD/post-history-health-endpoint.service" || fail "/health endpoint not run as the service user"
 grep -q -- '--port 9180' "$SD/post-history-health-endpoint.service" || fail "/health endpoint port"
+grep -q '^ExecStart=/repo/infra/observability/stack.sh errors up -d --wait$' "$SD/post-history-observability.service" \
+  && grep -q '^After=post-history-trial.service$' "$SD/post-history-observability.service" || fail "observability unit"
 grep -q 'rotate 8' "$R/etc/logrotate.d/post-history" || fail "alert log rotation"
 grep -q '^ALERT_EMAIL_TO=$' "$E/alert.conf" || fail "alert.conf template"
 grep -qF "+ chown -R root:root /repo" "$W/out" || fail "repository tree not given to root"
@@ -93,7 +99,8 @@ for k in $(sed -n 's/^\([A-Z0-9_]*\)=.*/\1/p' /repo/infra/field-trial/trial.env.
   grep -q "^$k=." "$U" || fail "unsealed secrets lack $k"
 done
 for k in POSTGRES_PASSWORD REDIS_PASSWORD S3_SECRET_KEY TUSD_HOOK_SECRET JWT_SECRET MEDIA_WORKER_TOKEN \
-         S3_MEDIA_SECRET_KEY INGEST_GATE_TOKEN S3_BACKUP_SECRET_KEY BACKUP_PG_PASSWORD; do
+         S3_MEDIA_SECRET_KEY INGEST_GATE_TOKEN S3_BACKUP_SECRET_KEY BACKUP_PG_PASSWORD GRAFANA_ADMIN_PASSWORD \
+         GLITCHTIP_DB_PASSWORD GLITCHTIP_SECRET_KEY; do
   v="$(sed -n "s/^$k=//p" "$U")"; [ "${#v}" -ge 32 ] || fail "$k shorter than 32"
 done
 while IFS='=' read -r k v; do
@@ -151,6 +158,7 @@ grep -q "runuser" "$F" && fail "update runs git as another user than root"
 order "up -d --no-deps --wait tusd tusd-proxy ingest-gate" "up -d --no-deps --wait api"
 grep -A1 -F "up -d --no-deps --wait api" "$F" | tail -1 | grep -qF "wait until: API /health 200" || fail "no health check right after the API restart"
 order "up -d --no-deps --wait api" "up -d --no-deps --wait media-worker"
-order "up -d --no-deps --wait caddy caddy-ingest" "preflight.sh --running"
+order "up -d --no-deps --wait caddy caddy-ingest" "stack.sh monitoring up -d --wait"
+order "stack.sh errors up -d --wait" "preflight.sh --running"
 echo "update plan: ok"
 echo "deploy dry run: ok"
