@@ -49,4 +49,45 @@ describe('independent permissions (/v1/users/{id}/permissions/{permission})', ()
     await call(admin.token, 'delete', `/v1/users/${target.id}/permissions/everything`).expect(404);
     await call(admin.token, 'put', `/v1/users/${target.id}/permissions/sensitive_location:read`, {}).expect(422);
   });
+
+  it('history: grants, revocations and the legal-name setting changes, newest first, ids and codes only, with a cursor', async () => {
+    const admin = await loginAs(h, [{ role: 'system_admin' }]);
+    const user = await loginAs(h, [{ role: 'editor_in_chief' }]);
+    const other = await loginAs(h, [{ role: 'editor_in_chief' }]);
+    const history = (token: string, id: string, qs = '') =>
+      request(h.app.getHttpServer()).get(`/v1/users/${id}/permissions/history${qs}`).set('Authorization', `Bearer ${token}`);
+    await call(admin.token, 'put', `/v1/users/${user.id}/permissions/reporter_identity:read`, { reason: 'free text never returned' }).expect(204);
+    await call(admin.token, 'put', `/v1/users/${other.id}/permissions/protected_source:read`, { reason: 'other user' }).expect(204);
+    // تغيير الإعداد كما يكتبه الخادم (ADR 0021)؛ يظهر في سجل كل مستخدم
+    await h.pool.query(
+      `INSERT INTO audit_log (actor_id, action, target_type, target_id, details, hash)
+       VALUES ($1, 'setting.changed', 'setting', 'reporter_legal_name_access', $2, '\\x00')`,
+      [admin.id, { setting: 'reporter_legal_name_access', value: 'protected_source', reason_code: 'policy_change' }],
+    );
+    await call(admin.token, 'delete', `/v1/users/${user.id}/permissions/reporter_identity:read`).expect(204);
+
+    const res = await history(admin.token, user.id, '?limit=100').expect(200);
+    const mine = res.body.items.filter((e: { kind: string; actor_id: string }) => e.kind !== 'setting_changed' || e.actor_id === admin.id);
+    expect(mine.slice(0, 3).map((e: { kind: string }) => e.kind)).toEqual(['permission_revoked', 'setting_changed', 'permission_granted']);
+    expect(mine[0]).toMatchObject({ permission: 'reporter_identity:read', setting: null, value: null, actor_id: admin.id, reason_code: null });
+    expect(mine[1]).toMatchObject({ permission: null, setting: 'reporter_legal_name_access', value: 'protected_source', reason_code: 'policy_change' });
+    // منح مستخدم آخر لا يظهر، ولا السبب الحر
+    expect(res.body.items.some((e: { permission: string | null }) => e.permission === 'protected_source:read')).toBe(false);
+    expect(JSON.stringify(res.body)).not.toContain('free text');
+
+    // المؤشر: صفحة بعنصر واحد ثم التالية حتى النهاية، بلا تكرار
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page: request.Response = await history(admin.token, user.id, `?limit=1${cursor ? `&cursor=${cursor}` : ''}`).expect(200);
+      seen.push(...page.body.items.map((e: { id: string }) => e.id));
+      cursor = page.body.next_cursor;
+    } while (cursor && seen.length < 500);
+    expect(seen).toEqual(res.body.items.map((e: { id: string }) => e.id));
+    expect(new Set(seen).size).toBe(seen.length);
+
+    await history(admin.token, user.id, '?cursor=abc').expect(400);
+    await history(admin.token, randomUUID()).expect(404);
+    await history(user.token, user.id).expect(403);
+  });
 });
