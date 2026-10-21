@@ -1,4 +1,4 @@
-"""python -m media_worker serve (الخدمة) | requeue-dead REASON | {probe,digest,proxy} FILE [OUT] (للتجربة والقياس)"""
+"""python -m media_worker serve (الخدمة) | requeue-dead REASON | reregister MID:FID… | {probe,digest,proxy} FILE [OUT] (للتجربة والقياس)"""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("serve")
     sub.add_parser("requeue-dead").add_argument("reason")
+    sub.add_parser("reregister").add_argument("pairs", nargs="+", help="material_id:file_id")
     for name in ("probe", "digest"):
         sub.add_parser(name).add_argument("file", type=Path)
     p = sub.add_parser("proxy")
@@ -28,6 +29,11 @@ def main() -> None:
         from .service import requeue_main
 
         requeue_main(args.reason)
+        return
+    if args.cmd == "reregister":
+        from .reregister import main as reregister
+
+        reregister(args.pairs)
         return
     if args.cmd == "serve":
         from .service import main as serve

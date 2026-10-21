@@ -5,7 +5,8 @@
 # العدّ عند النسخ (المستعاد >= المعدود)، وعينة كائنات تُفك وتُطابق بصمتها مع الكائن الحي. النتيجة بمخطط
 # contracts/schemas/measurement.json.
 # البيئة: COMPOSE (أمر compose بملفاته، الافتراضي compose المحلي)، BACKUP_DIR على المضيف، SAMPLE (20)،
-# DRILL_ENV (local أو اسم المضيف؛ يدخل في النتيجة)، DRILL_TMP (مجلد العمل، الافتراضي /dev/shm)، وملف البيئة نفسه لـ
+# DRILL_ENV (local أو اسم المضيف؛ يدخل في النتيجة)، DRILL_SOURCE (local أو second-provider: BACKUP_DIR نسخة سُحبت من
+# الحاوية المقفلة لدى المزوّد الثاني)، DRILL_TMP (مجلد العمل، الافتراضي /dev/shm)، وملف البيئة نفسه لـ
 # compose (S3_* و POSTGRES_*).
 # النتيجة partial أو fail ولا تكون pass أبدًا: معيار recovery في الخطة يشترط الاستعادة من النسخة المعزولة لدى المزوّد
 # الثاني، وفقدًا ≤ 15 دقيقة، واستعادة ≤ 4 ساعات، والتمرين يقرأ BACKUP_DIR على المضيف ولا يقيس فاصل النسخ.
@@ -115,9 +116,10 @@ cat > "$OUT" <<EOF
     "tables_fewer_rows": $mismatched,
     "objects_sampled": $objects,
     "objects_mismatched": $obj_mismatch,
-    "drill_passed": $( [ "$result" = pass ] && echo true || echo false )
+    "drill_passed": $( [ "$result" = pass ] && echo true || echo false ),
+    "restored_from_second_provider": $( [ "${DRILL_SOURCE:-local}" = second-provider ] && echo true || echo false )
   },
-  "notes": "ADR 0013 restore drill: latest encrypted pg_dump decrypted with the offline recipient key, restored into a throwaway postgres:16-alpine, row counts compared with the counts taken at backup time (restored >= counted), and a sample of encrypted objects decrypted and compared by SHA-256 with the live objects. Restored >= counted: rows added between the count and the dump are allowed, so extra or duplicated rows are not checked. Never pass: restoring from the isolated copy at the second provider, the backup interval (loss <= 15 min) and a full-size restore time are not measured here. Environment: ${DRILL_ENV:-local}."
+  "notes": "ADR 0013 restore drill: latest encrypted pg_dump decrypted with the offline recipient key, restored into a throwaway postgres:16-alpine, row counts compared with the counts taken at backup time (restored >= counted), and a sample of encrypted objects decrypted and compared by SHA-256 with the live objects. Restored >= counted: rows added between the count and the dump are allowed, so extra or duplicated rows are not checked. Source: ${DRILL_SOURCE:-local} (second-provider = a copy pulled back from the object-locked bucket). Never pass: the backup interval (loss <= 15 min) and a full-size restore time are not measured here. Environment: ${DRILL_ENV:-local}."
 }
 EOF
 echo "restore drill: $result, recorded as $( [ "$result" = pass ] && echo partial || echo fail) (restore_errors=$restore_errors tables=$tables missing=$missing fewer_rows=$mismatched objects=$objects mismatched=$obj_mismatch)"
