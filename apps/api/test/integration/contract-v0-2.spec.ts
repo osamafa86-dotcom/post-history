@@ -283,26 +283,56 @@ describe('contract v0.2 on the server', () => {
     });
   });
 
-  describe('transcript and captions', () => {
-    it('are readable through the derivative signed link by those who may edit the material only', async () => {
+  describe('transcript and captions (R11, threat-model §9.1)', () => {
+    it('only those who may edit the material see them in files and get their link; others get the missing-file 404; issuing is a sensitive read', async () => {
       const m = await material();
       const source = await original(m);
-      const key = `derived/${m}/${source}/captions.vtt`;
-      storage.sizes.set(key, 40);
-      const fileId = (
-        await http()
-          .post(`/internal/media/files/${source}/derivatives`)
-          .set('Authorization', `Bearer ${workerToken}`)
-          .send({ kind: 'captions', storage_key: key, sha256: hex(randomBytes(32)), size_bytes: 40, mime_type: 'text/vtt', technical: { duration_ms: 1000, start_pts_us: 0 } })
-          .expect(200)
-      ).body.file_id as string;
-      expect((await as(chief).get(`/materials/${m}/files/${fileId}/download-url`).expect(200)).body.url).toContain(key);
-      await as(reporter).get(`/materials/${m}/files/${fileId}/download-url`).expect(200);
-      await as(supervisor).get(`/materials/${m}/files/${fileId}/download-url`).expect(200);
-      // مسؤول الحقوق يرى المادة ولا يعدّلها: 404 كأن الملف غير موجود
+      const ids: Record<string, string> = {};
+      for (const [kind, mime] of [['transcript', 'application/json'], ['captions', 'text/vtt']] as const) {
+        const key = `derived/${m}/${source}/${kind}`;
+        storage.sizes.set(key, 40);
+        ids[kind] = (
+          await http()
+            .post(`/internal/media/files/${source}/derivatives`)
+            .set('Authorization', `Bearer ${workerToken}`)
+            .send({ kind, storage_key: key, sha256: hex(randomBytes(32)), size_bytes: 40, mime_type: mime, technical: { duration_ms: 1000, start_pts_us: 0 } })
+            .expect(200)
+        ).body.file_id as string;
+      }
+      // المنتج يرى المادة بعد قبولها للإنتاج
+      for (const to of ['acknowledged', 'reviewing', 'accepted']) {
+        await as(supervisor).post(`/materials/${m}/transitions`, { track: 'editorial', to, reason: 'r11' }).expect(200);
+      }
       const rights = await loginAs(h, [{ role: 'rights_officer' }]);
-      await as(rights).get(`/materials/${m}`).expect(200);
-      await as(rights).get(`/materials/${m}/files/${fileId}/download-url`).expect(404);
+      const editors = { reporter, supervisor, chief, admin };
+      const readers = { producer, rights };
+      const kinds = (body: { files: Array<{ kind: string }> }) => body.files.map((f) => f.kind);
+      const missing = (await as(chief).get(`/materials/${m}/files/${randomUUID()}/download-url`).expect(404)).body;
+      const shape = ({ request_id: _r, ...rest }: Record<string, unknown>) => rest;
+
+      for (const [name, a] of Object.entries(editors)) {
+        expect([name, kinds((await as(a).get(`/materials/${m}`).expect(200)).body)]).toEqual([name, expect.arrayContaining(['transcript', 'captions'])]);
+        for (const kind of ['transcript', 'captions']) {
+          await as(a).get(`/materials/${m}/files/${ids[kind]}/download-url`).expect(200);
+          const { rows } = await h.pool.query(
+            `SELECT details FROM audit_log WHERE actor_id = $1 AND action = 'material.sensitive_read' AND target_id = $2 AND details->>'file_id' = $3`,
+            [a.id, m, ids[kind]],
+          );
+          expect(rows).toEqual([{ details: { material_id: m, file_id: ids[kind], field_keys: [kind] } }]);
+        }
+      }
+      for (const [name, a] of Object.entries(readers)) {
+        const listed = kinds((await as(a).get(`/materials/${m}`).expect(200)).body);
+        expect([name, listed.filter((k) => k === 'transcript' || k === 'captions')]).toEqual([name, []]);
+        const page = (await as(a).get('/materials?limit=100').expect(200)).body.items.find((x: { id: string }) => x.id === m);
+        if (page) expect(kinds(page).some((k) => k === 'transcript' || k === 'captions')).toBe(false);
+        for (const kind of ['transcript', 'captions']) {
+          const res = await as(a).get(`/materials/${m}/files/${ids[kind]}/download-url`).expect(404);
+          expect(shape(res.body)).toEqual(shape(missing));
+        }
+        const { rows } = await h.pool.query(`SELECT 1 FROM audit_log WHERE actor_id = $1 AND target_id = $2 AND action = 'material.sensitive_read'`, [a.id, m]);
+        expect(rows).toEqual([]);
+      }
     });
   });
 
