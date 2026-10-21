@@ -2,7 +2,7 @@
 # دخان بيئة التجربة كاملة (ADR 0013) على المضيف المحلي أو مشغّل CI: النطاقان على 127.0.0.1 و127.0.0.2 بشهادات
 # سلطة Caddy المحلية (local_certs)، وأسرار عشوائية في ملف مؤقت بصلاحية 0400. يتحقق من:
 #   1) الوكيل: الصحة والرفع على الرئيسي، 404 لـ /internal وغيره، التحويل من http، وعزل العنوانين (لا اسم على عنوان الآخر)،
-#   2) بوابة ingest خلف الوكيل: 401 بلا رمز، ورفع كامل برمز صالح، ورفع كامل عبر الرئيسي (e2e-edge-upload.mjs)،
+#   2) بوابة ingest أمام النطاقين: 401 بلا رمز على كليهما، ورفع كامل برمز صالح عبر كل منهما (e2e-edge-upload.mjs)،
 #   3) نسخة احتياطية مشفّرة ثم تمرين استعادة ناجح (infra/backup/restore-drill.sh)،
 #   4) لا رمز ولا عنوان عميل في سجل الوكيل.
 # يحتاج tools/acceptance (npm ci). KEEP=1 يبقي البيئة قائمة. TRIAL_EXTRA_COMPOSE للاختبار المحلي فقط.
@@ -81,6 +81,8 @@ grep -qi '^tus-resumable:' <<<"$(tus)" || fail "main /files/ does not reach tusd
   || fail "http is not redirected to https"
 [ "$(code -X POST https://ingest.localhost/files/ -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 1')" = 401 ] \
   || fail "ingest without a token should be 401 at the gate"
+[ "$(code -X POST https://main.localhost/files/ -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 1')" = 401 ] \
+  || fail "main /files/ without a token should be 401 at the gate (both domains behind it)"
 [ "$(code https://ingest.localhost/v1/health)" = 404 ] || fail "ingest serves more than /files/"
 # Address isolation: each name answers on its own address only (active probing does not link A and B).
 if curl -sS --max-time 10 -o /dev/null --cacert "$WORK/ca.crt" --resolve ingest.localhost:443:127.0.0.1 https://ingest.localhost/files/ 2>/dev/null; then
@@ -183,7 +185,9 @@ if [ "${TRIAL_ACCEPTANCE:-0}" = 1 ]; then
   (cd "$ROOT/tools/acceptance" && [ -d node_modules ] || npm ci --no-audit --no-fund >/dev/null)
   export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
   FT_ACCOUNTS="$(API_URL="http://127.0.0.1:$API_PORT/v1" node "$ROOT/tools/acceptance/field-trial/rehearsal-accounts.mjs")"
-  FT_ACCOUNTS="$FT_ACCOUNTS" FT_TUS_URL="https://main.localhost/files/" NODE_EXTRA_CA_CERTS="$WORK/ca.crt" \
+  # Uploads carry an ingest token (the gate is in front of both domains); the smoke's signing key mints them here.
+  FT_ACCOUNTS="$FT_ACCOUNTS" FT_TUS_URL="https://ingest.localhost/files/" FT_INGEST_SIGNING_KEY="$WORK/ingest/signing.pem" \
+  FT_RESOLVE="ingest.localhost=127.0.0.2,main.localhost=127.0.0.1" NODE_EXTRA_CA_CERTS="$WORK/ca.crt" \
     node "$ROOT/tools/acceptance/run.mjs" --target https://main.localhost --confirm --out-dir="${ACCEPTANCE_OUT:-$WORK/pack}" \
     || fail "acceptance pack through the edge"
   echo "acceptance pack through the edge: ok"

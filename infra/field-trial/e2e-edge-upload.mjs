@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// رفع tus كامل عبر الوكيل الأمامي لبيئة التجربة (ADR 0013): النطاق الرئيسي (Caddy على MAIN_IP ← tusd-proxy)،
+// رفع tus كامل عبر الوكيل الأمامي لبيئة التجربة (ADR 0013): النطاق الرئيسي (Caddy على MAIN_IP ← بوابة الرمز ← tusd-proxy)،
 // ونطاق ingest (Caddy على INGEST_IP ← بوابة الرمز ← tusd-proxy، ADR 0011). لكل منهما: إنشاء 201 بـ Location
 // على https والاسم نفسه، ثم PATCH للملف كله 204، ثم HEAD بالإزاحة الكاملة. الجلسات من seed (tools/acceptance).
 //   DATABASE_URL API_URL MAIN_DOMAIN MAIN_IP INGEST_DOMAIN INGEST_IP CA_FILE INGEST_SIGNING_KEY node e2e-edge-upload.mjs
@@ -40,7 +40,7 @@ let ingestPath = null;
 const s = await seed({ databaseUrl: env.DATABASE_URL, apiUrl: env.API_URL });
 const [viaMain, viaIngest] = s.uploads.hookSessions.ok;
 for (const [label, name, ip, session, extra] of [
-  ["main", env.MAIN_DOMAIN, env.MAIN_IP, viaMain, {}],
+  ["main", env.MAIN_DOMAIN, env.MAIN_IP, viaMain, { "Ingest-Token": mint(viaMain.id) }],
   ["ingest", env.INGEST_DOMAIN, env.INGEST_IP, viaIngest, { "Ingest-Token": mint(viaIngest.id) }],
 ]) {
   const tus = { "Tus-Resumable": "1.0.0", Authorization: `Bearer ${session.token}`, ...extra };

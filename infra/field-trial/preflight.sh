@@ -75,6 +75,8 @@ if [ -f "$ENV_FILE" ]; then
                || bad "device attestation configured: APP_ATTEST_APP_ID or PLAY_INTEGRITY_PACKAGE_NAME (no device can get an ingest token)" ;;
     *) bad "INGEST_REQUIRED is off: needs a written decision (ADR 0011) before the trial" ;;
   esac
+  grep -q '^INGEST_SESSION_CHECK=' "$ENV_FILE" && bad "INGEST_SESSION_CHECK must not be set on the host (the gate always checks the session)" \
+    || ok "session check not overridable from the secrets"
   tp="$(val TRUSTED_PROXY_CIDRS)"
   case "${tp:-172.30.240.1/32}" in
     172.30.240.1/32) ok "TRUSTED_PROXY_CIDRS is the default network gateway alone" ;;
@@ -153,6 +155,10 @@ if [ "$RUNNING" = 1 ]; then
   check "/health is not published at the edge (404)" "[ \"\$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' https://$MAIN_DOMAIN/health)\" = 404 ]"
   check "https://$INGEST_DOMAIN/files/ rejects a missing token (401)" \
     "[ \"\$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' -X POST -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 1' https://$INGEST_DOMAIN/files/)\" = 401 ]"
+  check "https://$MAIN_DOMAIN/files/ rejects a missing token (401)" \
+    "[ \"\$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' -X POST -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 1' https://$MAIN_DOMAIN/files/)\" = 401 ]"
+  check "the ingest gate runs with the session check (no INGEST_SESSION_CHECK in its environment)" \
+    "e=\"\$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \"\$(\"$ROOT/infra/field-trial/trial.sh\" ps -q ingest-gate)\")\" && [ -n \"\$e\" ] && ! grep -q '^INGEST_SESSION_CHECK=' <<<\"\$e\""
   check "/internal is not reachable from outside" "[ \"\$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' https://$MAIN_DOMAIN/internal/x)\" = 404 ]"
   check "ingest name does not answer on MAIN_IP" "! curl -sS --max-time 10 -o /dev/null --resolve $INGEST_DOMAIN:443:$MAIN_IP https://$INGEST_DOMAIN/files/"
   last="$BACKUP_DIR/last-success.json"
