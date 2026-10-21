@@ -51,6 +51,12 @@ describe('addressAllowed', () => {
   it('rejects malformed CIDR configuration by name', () => {
     expect(() => loadConfig({ INTERNAL_ALLOWED_CIDRS: '10.0.0.0/33' } as NodeJS.ProcessEnv)).toThrow(/INTERNAL_ALLOWED_CIDRS/);
   });
+  it.each(['10.0.0.1/32', '10.0.0.1/32=/internal/', '10.0.0.1/33=/internal/ingest/', '10.0.0.1/32=/internal/ingest', '10.0.0.1/32=/v1/x/', '10.0.0.1/32=/internal/../x/', 'a=b=c'])(
+    'rejects the internal source path entry %s by name',
+    (entry) => {
+      expect(() => loadConfig({ INTERNAL_SOURCE_PATHS: entry } as NodeJS.ProcessEnv)).toThrow(/INTERNAL_SOURCE_PATHS/);
+    },
+  );
 });
 
 describe('contract validation', () => {

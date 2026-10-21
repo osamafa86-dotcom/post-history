@@ -13,6 +13,14 @@ export function parseCidr(cidr: string): { address: string; prefix: number; fami
   return { address: address!, prefix, family: version === 4 ? 'ipv4' : 'ipv6' };
 }
 
+/** مصدر داخلي مقيّد: عناوينه لا تصل من /internal/* إلا إلى بادئات مساراته. */
+export interface InternalSource {
+  cidr: string;
+  prefixes: string[];
+}
+
+const INTERNAL_PREFIX = /^\/internal\/[a-z0-9-]+(\/[a-z0-9-]+)*\/$/;
+
 export function blockListOf(cidrs: string[]): BlockList {
   const list = new BlockList();
   for (const c of cidrs) {
@@ -40,6 +48,26 @@ const schema = z.object({
   INTERNAL_ALLOWED_CIDRS: cidrList.prefault('127.0.0.1/32,::1/128'),
   // عنوان الـBFF (apps/web) الثابت، عنوان واحد لكل مدخل (/32 أو /128): منه وحده تُقبل ترويسة X-Client-Address
   // لحدود معدل الدخول والاستعادة؛ فارغ = لا تُقبل من أحد
+  // مصادر /internal/* المقيّدة بمسارات صريحة: `CIDR=/internal/a/|/internal/b/` مفصولة بـ `;`. العنوان المطابق لمدخل
+  // هنا يصل إلى بادئاته وحدها (ولو كان أيضًا في INTERNAL_ALLOWED_CIDRS)، وما سواها منه 403. بوابة ingest تُدرج هنا
+  // بـ /internal/ingest/ فقط. فارغ = لا تقييد إضافي
+  INTERNAL_SOURCE_PATHS: z
+    .string()
+    .transform((v) =>
+      v
+        .split(';')
+        .map((e) => e.trim())
+        .filter(Boolean)
+        .map((e): InternalSource | null => {
+          const [cidr, paths, ...rest] = e.split('=').map((x) => x.trim());
+          const prefixes = (paths ?? '').split('|').map((x) => x.trim()).filter(Boolean);
+          if (rest.length || !cidr || parseCidr(cidr) === null || !prefixes.length || !prefixes.every((x) => INTERNAL_PREFIX.test(x))) return null;
+          return { cidr, prefixes };
+        }),
+    )
+    .refine((list) => list.every((x) => x !== null), 'must be `CIDR=/internal/<path>/[|/internal/<path>/]` entries separated by `;`')
+    .transform((list) => list as InternalSource[])
+    .prefault(''),
   BFF_SOURCE_ADDRESSES: cidrList
     .refine((list) => list.every((c) => /\/(32|128)$/.test(c)), 'each entry must be a single address (/32 or /128)')
     .prefault(''),
