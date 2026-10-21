@@ -98,9 +98,9 @@ def test_clean_scratch_and_manifest(tmp_path: Path):
 
 
 def test_first_retry_is_short_because_the_proxy_follows_within_seconds():
-    assert RETRY_FIRST_S <= 5
-    delays = [min(RETRY_FIRST_S * 2 ** a, RETRY_MAX_S) for a in range(10)]
-    assert delays[:3] == [5, 10, 20] and delays[-1] == RETRY_MAX_S
+    assert RETRY_FIRST_S == 2
+    delays = [min(RETRY_FIRST_S * 2 ** a, RETRY_MAX_S) for a in range(12)]
+    assert delays[:3] == [2, 4, 8] and delays[-1] == RETRY_MAX_S
 
 
 def test_deferral_log_names_the_status_but_not_the_key(caplog):
