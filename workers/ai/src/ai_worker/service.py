@@ -31,9 +31,9 @@ from pathlib import Path
 
 import redis
 
-from .api import ApiAuthError, ApiGone, InternalApi
+from .api import ApiAuthError, ApiError, ApiGone, InternalApi
 from .jobs import Jobs, SourceNotReady
-from .storage import S3Storage
+from .storage import S3Storage, StorageError
 from .transcribe import NoAudioError
 
 log = logging.getLogger("ai_worker.service")
@@ -42,7 +42,9 @@ STREAM = "media:events"
 DEAD = "ai:dead"
 RETRY = "ai:retry"
 GROUP = "ai"
-RETRY_FIRST_S = 30.0
+# upload.verified يسبق رفع proxy-480p.mp4 بثوانٍ (دقيقتان 1080p في نحو 13 ث، ADR 0006)، فالتراجع الأول قصير:
+# 5، 10، 20… ث حتى RETRY_MAX_S. بـ 30 ث بلغ p95 (التحقق ← التسجيل ÷ المدة) 2.79 في قبول #113 والحد 1.
+RETRY_FIRST_S = 5.0
 RETRY_MAX_S = 600.0
 # إعادة المؤجل لا تأتي من الدفق: لا XACK ولا عدّ تسليم لها
 RETRY_ENTRY = "retry"
@@ -213,7 +215,9 @@ class Service:
             except PERMANENT as err:
                 return self._dead_letter(entry_id, fields, type(err).__name__)
             except Exception as err:  # عطل مؤقت (تخزين، شبكة، 5xx، نسخة لم تُرفع): يبقى معلّقًا ويُستعاد لاحقًا
-                log.warning("event deferred entry=%s error=%s", entry_id, type(err).__name__)
+                # رسائل ApiError وStorageError من كودنا: الطريقة والحاوية أو المسار بمعرّفات ورمز الحالة، بلا مفتاح ولا جسم رد
+                detail = f" detail={err}" if isinstance(err, (ApiError, StorageError)) else ""
+                log.warning("event deferred entry=%s error=%s%s", entry_id, type(err).__name__, detail)
                 return f"deferred:{type(err).__name__}"
         self._ack(entry_id)
         if outcome != "ignored":

@@ -95,3 +95,18 @@ def test_clean_scratch_and_manifest(tmp_path: Path):
     (tmp_path / "MANIFEST").write_text("m m/config.json 11\nm m/model.bin 22\nother other/model.bin 33\n")
     assert read_manifest(tmp_path, "m") == {"model": "m", "weights_sha256": "22"}
     assert read_manifest(tmp_path / "none", "m") == {"model": "m"}
+
+
+def test_first_retry_is_short_because_the_proxy_follows_within_seconds():
+    assert RETRY_FIRST_S <= 5
+    delays = [min(RETRY_FIRST_S * 2 ** a, RETRY_MAX_S) for a in range(10)]
+    assert delays[:3] == [5, 10, 20] and delays[-1] == RETRY_MAX_S
+
+
+def test_deferral_log_names_the_status_but_not_the_key(caplog):
+    from ai_worker.storage import StorageError
+
+    with caplog.at_level("WARNING"):
+        out, r = run(StorageError("HEAD media: HTTP 403"))
+    assert out == "deferred:StorageError" and r.acked == []
+    assert "HTTP 403" in caplog.text and "derived/" not in caplog.text
