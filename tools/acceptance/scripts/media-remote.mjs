@@ -14,6 +14,7 @@ import { byName } from "../lib/catalog.mjs";
 import { client, createUploadSession, materialBody } from "../lib/live.mjs";
 import { waitFor } from "../lib/hooks.mjs";
 import { resumableUpload } from "../lib/tus.mjs";
+import { tusAuth } from "../lib/ingest.mjs";
 import { scan } from "../lib/pii.mjs";
 import { LEAK_VALUES, hostilePayloads, sha256File, synthClip } from "../lib/media-clips.mjs";
 
@@ -36,7 +37,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       const mat = (await api.call(token, "POST", "/materials", { body: materialBody(fv, `media-remote-${label}-${Date.now()}`) })).body;
       const sha = await sha256File(path), size = readFileSync(path).length;
       const session = await createUploadSession(api, token, { materialId: mat.id, size, clientSha256: sha, filename: label });
-      const up = await resumableUpload({ endpoint: tusUrl, file: path, size, chunkSize: 8 * 1024 * 1024, interruptAt: [], metadata: { upload_session_id: session.id }, headers: { Authorization: `Bearer ${session.token}` } });
+      const up = await resumableUpload({ endpoint: tusUrl, file: path, size, chunkSize: 8 * 1024 * 1024, interruptAt: [], metadata: { upload_session_id: session.id }, headers: () => tusAuth(session) });
       if (up.violations.length) throw new Error(`tus violations: ${up.violations.join("; ")}`);
       return { mat, session, sha };
     };

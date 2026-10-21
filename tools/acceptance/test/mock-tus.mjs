@@ -2,10 +2,12 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 
-export function startMockTus({ serveGet = true, corrupt = false, forgetOnDrop = false } = {}) {
+export function startMockTus({ serveGet = true, corrupt = false, forgetOnDrop = false, requireIngest = null } = {}) {
+  const seen = { ingestTokens: [] };
   const uploads = new Map();
   const server = http.createServer((req, res) => {
     const id = req.url.split("/").filter(Boolean).pop();
+    if (requireIngest) { const t = req.headers["ingest-token"]; if (t) seen.ingestTokens.push(t); if (!t || !requireIngest(t, req)) { res.writeHead(401); return res.end(); } }
     const send = (status, headers = {}, body) => { res.writeHead(status, { "Tus-Resumable": "1.0.0", ...headers }); res.end(body); };
     if (req.method === "POST") {
       const nid = randomUUID();
@@ -36,5 +38,5 @@ export function startMockTus({ serveGet = true, corrupt = false, forgetOnDrop = 
     }
     send(405);
   });
-  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ url: `http://127.0.0.1:${server.address().port}/files/`, close: () => server.close(), uploads })));
+  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ url: `http://127.0.0.1:${server.address().port}/files/`, close: () => { server.close(); server.closeAllConnections?.(); }, uploads, seen })));
 }

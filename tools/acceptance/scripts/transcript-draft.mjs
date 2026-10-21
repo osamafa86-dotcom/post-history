@@ -23,6 +23,7 @@ import { byName } from "../lib/catalog.mjs";
 import { client, createUploadSession, materialBody, percentile } from "../lib/live.mjs";
 import { waitFor } from "../lib/hooks.mjs";
 import { resumableUpload } from "../lib/tus.mjs";
+import { tusAuth } from "../lib/ingest.mjs";
 import { espeakArabic, sha256File, synthSpeechClip } from "../lib/media-clips.mjs";
 import { scan, CHANNEL_KEYS } from "../lib/pii.mjs";
 import { checker } from "../lib/core-gate.mjs";
@@ -110,7 +111,7 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
       const clip = synthSpeechClip(join(work, `${label}.mov`), { speech, seconds: clipS });
       const size = readFileSync(clip).length;
       const session = await createUploadSession(http, token, { materialId: mat.id, size, clientSha256: await sha256File(clip), filename: `${label}.mov` });
-      const up = await resumableUpload({ endpoint: env.TD_TUS_URL, file: clip, size, chunkSize: 8 * 1024 * 1024, interruptAt: [], metadata: { upload_session_id: session.id }, headers: { Authorization: `Bearer ${session.token}` } });
+      const up = await resumableUpload({ endpoint: env.TD_TUS_URL, file: clip, size, chunkSize: 8 * 1024 * 1024, interruptAt: [], metadata: { upload_session_id: session.id }, headers: () => tusAuth(session) });
       if (up.violations.length) throw new Error(`tus violations: ${up.violations.join("; ")}`);
       const verified = await waitFor(async () => (await http.get(token, `/uploads/${session.id}`)).body?.state === "verified", { timeoutMs, everyMs: 500 });
       check(`${label}: the server verifies the original`, verified.value === true);
