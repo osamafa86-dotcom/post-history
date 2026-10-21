@@ -3,7 +3,7 @@ import { readConfig, type WebConfig } from "./config";
 import { clientAddress, requireOk, upstream, withSession, assertSession } from "./auth";
 import { WebError } from "./errors";
 import { sessionStore, validSessionId, type SessionStore } from "./sessions";
-import { safeForm, safeMaterial, safeMe, safeNotification, safeTransition } from "@/lib/privacy";
+import { safeDashboard, safeForm, safeMaterial, safeMe, safeNotification, safeTransition } from "@/lib/privacy";
 import { materialQuery, materialTypes, uuid } from "@/lib/query";
 import type { components } from "@/generated/schema";
 import type { MaterialType } from "@/lib/types";
@@ -128,6 +128,10 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         if (!uuid.test(path.slice(19))) throw new WebError(404, "request_failed");
         const rule = requireOk(await api.GET("/notification-rules/{rule_id}", { params: { path: { rule_id: path.slice(19) } } }));
         const response = json(safeRule(rule)); response.headers.set("ETag", `"${rule.row_version}"`); return response;
+      }
+      if (path === "dashboard/newsroom") {
+        if (!hasRole(me, "supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin") || request.nextUrl.search) throw new WebError(403, "request_failed");
+        return json(safeDashboard(requireOk(await api.GET("/dashboard/newsroom"))));
       }
       if (path === "notifications") {
         const search = request.nextUrl.searchParams;

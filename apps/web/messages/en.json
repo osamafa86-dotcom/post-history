@@ -389,6 +389,21 @@
     "total": "Total",
     "currencies": "Currencies are not combined; each total is paid separately."
   },
+  "board": {
+    "title": "Newsroom board",
+    "lead": "Materials by editorial state, open urgent items and overdue acknowledgements. The snapshot refreshes every five seconds.",
+    "denied": "This board is for supervisors, production and management.",
+    "urgentOpen": "Open urgent",
+    "overdue": "Overdue acknowledgements",
+    "reserved": "Reserved now",
+    "reservedBadge": "Reserved",
+    "receipts": "Recent receipts",
+    "noReceipts": "No receipts yet.",
+    "more": "More in the inbox",
+    "minutes": "min",
+    "hours": "h",
+    "days": "d"
+  },
   "upload": {
     "nav": "Desktop upload",
     "title": "Upload camera files",

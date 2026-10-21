@@ -28,7 +28,7 @@ final class TusdLiveTests: XCTestCase {
         let id = UUID()
 
         let uploadURL = try await transport.createUpload(TusCreateRequest(endpoint: base, token: "t", length: 10_000, metadata: ["upload_session_id": id.uuidString, "filename": "clip.mov"]))
-        let initial = try await transport.currentOffset(uploadURL: uploadURL, token: "t")
+        let initial = try await transport.currentOffset(uploadURL: uploadURL, token: "t", ingestToken: nil)
         XCTAssertEqual(initial, 0)
 
         let c1 = try slicer.prepare(uploadId: id, source: source, offset: 0, length: 4096)
@@ -40,7 +40,7 @@ final class TusdLiveTests: XCTestCase {
         try await transport.schedulePatch(TusPatchRequest(key: TusTaskKey(uploadId: id, offset: 1), uploadURL: uploadURL, token: "t", chunk: c1, chunkFile: slicer.url(of: c1)))
         outcomes = await collector.wait(count: 2)
         XCTAssertEqual(outcomes.last?.1, .failed(.offsetMismatch))
-        let offset = try await transport.currentOffset(uploadURL: uploadURL, token: "t")
+        let offset = try await transport.currentOffset(uploadURL: uploadURL, token: "t", ingestToken: nil)
         XCTAssertEqual(offset, 4096)
 
 
@@ -48,7 +48,7 @@ final class TusdLiveTests: XCTestCase {
         try await transport.schedulePatch(TusPatchRequest(key: TusTaskKey(uploadId: id, offset: offset), uploadURL: uploadURL, token: "t", chunk: c2, chunkFile: slicer.url(of: c2)))
         outcomes = await collector.wait(count: 3)
         XCTAssertEqual(outcomes.last?.1, .completed(newOffset: 10_000))
-        let final = try await transport.currentOffset(uploadURL: uploadURL, token: "t")
+        let final = try await transport.currentOffset(uploadURL: uploadURL, token: "t", ingestToken: nil)
         XCTAssertEqual(final, 10_000)
         let active = await transport.activePatchKeys()
         XCTAssertTrue(active.isEmpty)
