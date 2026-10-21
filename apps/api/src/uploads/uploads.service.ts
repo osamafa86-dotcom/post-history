@@ -259,9 +259,21 @@ export class UploadsService implements ReplayRehydrator {
 function decodeCursor(cursor: string): { at: string; id: string } {
   try {
     const [at, id] = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as [unknown, unknown];
-    if (typeof at === 'string' && !Number.isNaN(Date.parse(at)) && typeof id === 'string' && UUID.test(id)) return { at, id };
+    if (typeof at === 'string' && validTimestamp(at) && typeof id === 'string' && UUID.test(id)) return { at, id };
   } catch {
     // يقع إلى 400 أدناه
   }
   throw new ApiError(400, 'bad_request', 'Invalid cursor.', { params: ['cursor'] });
+}
+
+/**
+ * الطابع كما تعيده القاعدة (`2026-10-21 23:00:00.123456+00`) أو ISO، بحقول ضمن مداها؛ فما يمر هنا يقبله `::timestamptz`
+ * ولا يصير 500. Date.parse وحده يقبل صيغًا يرفضها Postgres.
+ */
+function validTimestamp(at: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(\.\d{1,6})?(Z|[+-]\d{2}(?::?\d{2})?)$/.exec(at);
+  if (!m) return false;
+  const [y, mo, d, h, mi, sec] = m.slice(1, 7).map(Number) as [number, number, number, number, number, number];
+  const day = new Date(Date.UTC(y, mo - 1, d));
+  return day.getUTCFullYear() === y && day.getUTCMonth() === mo - 1 && day.getUTCDate() === d && h < 24 && mi < 60 && sec < 60;
 }
