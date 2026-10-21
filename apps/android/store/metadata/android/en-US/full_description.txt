@@ -1,0 +1,9 @@
+An internal app for the visual library's reporters and crew, not for the public; sign-in uses an account issued by the office.
+
+- New material: the required fields and the office form, with the original file from the phone's gallery, uncompressed.
+- Uploads resume from the last byte received after a network loss, the app being closed or the phone restarting.
+- The file's fingerprint is computed on the phone and checked by the server, then a receipt number arrives.
+- Deleting the local copy after the receipt is the reporter's decision.
+- Emergency wipe of the app's data, and automatic wipe when the session is revoked remotely.
+
+Uploading needs the app installed from Google Play and Google Play services.
