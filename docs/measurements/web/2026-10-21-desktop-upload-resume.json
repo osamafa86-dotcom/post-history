@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "tool": "web",
+  "role": "web-agent",
+  "test_name": "desktop-upload-resume",
+  "started_at": "2026-10-21T20:01:22.126Z",
+  "ended_at": "2026-10-21T20:01:49.247Z",
+  "result": "partial",
+  "upload_path": "tusd",
+  "device": {
+    "platform": "browser",
+    "model": "Chromium 141.0.7390.37 (Playwright headless), 4 vCPU, 16 GiB",
+    "os_version": "Linux 6.18.44-fc-v140"
+  },
+  "network": {
+    "profile": "loopback-127.0.0.1"
+  },
+  "file": {
+    "size_bytes": 1073741824
+  },
+  "metrics": {
+    "bytes_lost": 0,
+    "sha256_match": true,
+    "final_offset_bytes": 1073741824,
+    "part_size_bytes": 16777216,
+    "offset_at_cut_bytes": 459358208,
+    "server_down_s": 5,
+    "browser_hash_s": 11.3,
+    "browser_hash_mb_per_s": 90.4,
+    "upload_s_including_outage": 13,
+    "tusd_version": "v2.10.1",
+    "ingest_gate": false,
+    "safari_measured": false
+  },
+  "notes": "ملف عشوائي اصطناعي 1 GiB من القرص عبر setInputFiles، وtusd v2.10.1 محلي على loopback بلا بوابة ingest وبلا خطّافات (API اصطناعي). القطع: SIGKILL لـ tusd عند 40% وإعادته بعد 5 ث على المخزن نفسه؛ استأنف العميل بـ HEAD من إزاحة الخادم. bytes_lost = الحجم ناقص ما جُمّع، والمطابقة ببصمة SHA-256 الكاملة. partial: Chromium وحده (Safari غير متاح في بيئة Linux)، وعلى loopback لا شبكة حقيقية ولا بوابة؛ يُعاد على جهاز فعلي وعبر البوابة قبل pass."
+}

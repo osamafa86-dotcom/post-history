@@ -1,5 +1,6 @@
 import { createApiClient } from "@/generated/client";
 import type { Locale } from "./i18n";
+import { clearUploads } from "./upload-store";
 
 let departing = false;
 
@@ -32,6 +33,8 @@ export function leaveSession(locale: Locale, reason: "revoked" | "signed-out", b
   if (departing) return;
   departing = true;
   window.dispatchEvent(new Event("clear-private-state"));
+  // سجل استئناف الرفع يُمحى مع الخروج وإن لم تكن صفحة الرفع مفتوحة (حاسوب مشترك، نموذج التهديد S10).
+  clearUploads();
   if (broadcast && "BroadcastChannel" in window) { const channel = new BroadcastChannel("web-session"); channel.postMessage("signed-out"); channel.close(); }
   window.location.replace(`/${locale}/login?reason=${reason}`);
 }

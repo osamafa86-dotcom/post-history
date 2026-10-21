@@ -481,6 +481,18 @@ VALUES ('00000000-0000-4000-8000-000000000012', 'setting.changed', 'setting', 'r
 INSERT INTO notification_rules (name, event_type, recipient_permissions, channels)
 VALUES ('identity holders', 'material.created', ARRAY['reporter_identity:read'], ARRAY['in_app']);
 
+-- «الوارد الآن» (ADR 0024): تقدّم الرفع بأرقام ومعرّفات فقط، ولا قاعدة تنبيه عليه
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('upload.progress', 'upload', '00000000-0000-4000-8000-000000000012', 'upload.progress:smoke:1',
+        '{"material_id": "00000000-0000-4000-8000-000000000012", "upload_session_id": "00000000-0000-4000-8000-000000000012", "kind": "original", "priority": "urgent", "bytes_received": 104857600, "size_bytes": 1048576000}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('upload.progress', 'upload', '00000000-0000-4000-8000-000000000012', 'upload.progress:smoke:2',
+          '{"material_id": "00000000-0000-4000-8000-000000000012", "bytes_received": 1, "size_bytes": 2, "filename": "clip.mov"}') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO notification_rules (name, event_type, recipient_roles, channels)
+  VALUES ('progress noise', 'upload.progress', ARRAY['supervisor'], ARRAY['in_app']) $q$, '23514');
+
 -- ---------- v0.3: قوالب التراخيص والإدراج (ADR 0025) ----------
 INSERT INTO license_templates (id, type, created_by) VALUES
   ('00000000-0000-4000-8000-000000000601', 'editorial_single', '00000000-0000-4000-8000-000000000014'),

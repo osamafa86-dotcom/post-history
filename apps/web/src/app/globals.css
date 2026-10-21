@@ -185,3 +185,31 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .cart-summary li { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; }
 .cart-summary li span:first-child { display: grid; gap: 3px; }
 .cart-summary dl div { display: flex; justify-content: space-between; font-weight: 700; }
+.board-stats { margin-bottom: 8px; }
+.alert-number { color: var(--red) !important; }
+.board-updated { font-size: 11px; margin-bottom: 16px; }
+.board { display: grid; grid-template-columns: repeat(6, minmax(190px, 1fr)); gap: 12px; overflow-x: auto; margin-bottom: 22px; }
+.board-column { background: #eef1eb; border-radius: 8px; padding: 12px; display: grid; gap: 8px; align-content: start; min-height: 160px; }
+.board-column h2 { font-size: 13px; margin: 0 0 4px; display: flex; justify-content: space-between; }
+.board-card { background: white; border: 1px solid var(--line); border-radius: 6px; padding: 10px; display: grid; gap: 6px; font-size: 12px; }
+.board-card.urgent { border-inline-start: 3px solid var(--red); }
+.board-card a { font-weight: 700; }
+.board-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.board-more { font-size: 11px; color: var(--green); }
+.receipt-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.receipt-list li { display: flex; gap: 12px; align-items: center; font-size: 12px; }
+.upload-files, .upload-rows { display: grid; gap: 14px; margin-bottom: 18px; }
+.upload-selection, .upload-pending ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: 12px; }
+.upload-pending h3 { font-size: 14px; margin: 6px 0; }
+.upload-pending li { display: flex; gap: 10px; align-items: center; }
+.upload-base { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 8px; }
+.upload-base fieldset { border: 1px solid var(--line); border-radius: 6px; display: grid; gap: 8px; padding: 10px 12px; }
+.upload-base legend { font-size: 13px; font-weight: 600; }
+.upload-base .check { display: flex; gap: 8px; align-items: center; font-weight: 400; }
+.upload-base .check input { width: auto; }
+.upload-row { display: grid; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.upload-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.upload-row-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.upload-row progress { width: 100%; height: 8px; accent-color: var(--green); }
+.upload-row .actions a { color: var(--green); font-weight: 700; }
+@media (max-width: 760px) { .upload-base { grid-template-columns: 1fr; } }

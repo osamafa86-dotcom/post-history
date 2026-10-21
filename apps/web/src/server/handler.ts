@@ -3,13 +3,14 @@ import { readConfig, type WebConfig } from "./config";
 import { clientAddress, requireOk, upstream, withSession, assertSession } from "./auth";
 import { WebError } from "./errors";
 import { sessionStore, validSessionId, type SessionStore } from "./sessions";
-import { safeForm, safeMaterial, safeMe, safeNotification, safeTransition } from "@/lib/privacy";
+import { safeDashboard, safeForm, safeMaterial, safeMe, safeNotification, safeTransition } from "@/lib/privacy";
 import { materialQuery, materialTypes, uuid } from "@/lib/query";
 import type { components } from "@/generated/schema";
 import type { MaterialType } from "@/lib/types";
 import { streamDerivative } from "./media";
 import { actionPath, reviewAction } from "./review-actions";
 import { hasRole, materialTag } from "@/lib/review";
+import { readUpload, uploadAction, uploadBodyLimit, uploadPath } from "./uploads";
 import { safeIdentitySetting, safePermissionHistory } from "@/lib/admin-privacy";
 import { pageLimits } from "@/lib/admin-policy";
 import { safeRule } from "@/lib/notification-policy";
@@ -27,8 +28,8 @@ function setSession(response: NextResponse, config: WebConfig, value: string) {
   response.cookies.set(config.cookieName, value, { httpOnly: true, secure: config.secure, sameSite: "strict", path: "/", maxAge: value ? config.lifetimeSeconds : 0 });
 }
 
-async function bodyOf(request: Request): Promise<Record<string, unknown>> {
-  if (Number(request.headers.get("content-length") ?? 0) > 8192) throw new WebError(413, "request_failed");
+async function bodyOf(request: Request, limit = 8192): Promise<Record<string, unknown>> {
+  if (Number(request.headers.get("content-length") ?? 0) > limit) throw new WebError(413, "request_failed");
   const reader = request.body?.getReader();
   if (!reader) throw new WebError(400, "request_failed");
   const chunks: Uint8Array[] = []; let size = 0;
@@ -36,7 +37,7 @@ async function bodyOf(request: Request): Promise<Record<string, unknown>> {
     const { value, done } = await reader.read();
     if (done) break;
     size += value.length;
-    if (size > 8192) { await reader.cancel(); throw new WebError(413, "request_failed"); }
+    if (size > limit) { await reader.cancel(); throw new WebError(413, "request_failed"); }
     chunks.push(value);
   }
   try {
@@ -56,7 +57,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
     const isWrite = ["POST", "PUT", "DELETE"].includes(request.method);
     if (isWrite) assertSameOrigin(request, config);
     if (request.method !== "GET" && !isWrite) throw new WebError(405, "request_failed");
-    if (isWrite && !(isPost && ["auth/login", "auth/logout"].includes(path)) && !actionPath(path, request.method)) throw new WebError(405, "request_failed");
+    if (isWrite && !(isPost && ["auth/login", "auth/logout"].includes(path)) && !actionPath(path, request.method) && !uploadPath(path, request.method)) throw new WebError(405, "request_failed");
 
     if (path === "auth/login" && isPost) {
       const input = await bodyOf(request);
@@ -81,6 +82,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         const response = json({ ok: true }); setSession(response, config!, ""); return response;
       }
       const me = requireOk(await api.GET("/auth/me"));
+      if (isWrite && uploadPath(path, request.method)) return uploadAction(request, path, api, me, await bodyOf(request, uploadBodyLimit(path)), config!);
       if (isWrite) return reviewAction(request, path, api, me, await bodyOf(request));
       if (path === "auth/me") return json(safeMe(me));
       if (path === "admin/settings/reporter-identity") {
@@ -118,12 +120,18 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         const data = requireOk(await api.GET("/materials/{id}/transitions", { params: { path: { id: history[1] } } }));
         return json({ items: data.items.map(safeTransition) });
       }
+      const upload = /^uploads\/([^/]+)$/.exec(path);
+      if (upload && uuid.test(upload[1]) && !request.nextUrl.search) return readUpload(api, upload[1]);
       if (path === "notification-rules" || /^notification-rules\/[^/]+$/.test(path)) {
         if (!hasRole(me, "system_admin", "editor_in_chief") || request.nextUrl.search) throw new WebError(403, "request_failed");
         if (path === "notification-rules") return json({ items: requireOk(await api.GET("/notification-rules")).items.map(safeRule) });
         if (!uuid.test(path.slice(19))) throw new WebError(404, "request_failed");
         const rule = requireOk(await api.GET("/notification-rules/{rule_id}", { params: { path: { rule_id: path.slice(19) } } }));
         const response = json(safeRule(rule)); response.headers.set("ETag", `"${rule.row_version}"`); return response;
+      }
+      if (path === "dashboard/newsroom") {
+        if (!hasRole(me, "supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin") || request.nextUrl.search) throw new WebError(403, "request_failed");
+        return json(safeDashboard(requireOk(await api.GET("/dashboard/newsroom"))));
       }
       if (path === "notifications") {
         const search = request.nextUrl.searchParams;

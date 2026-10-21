@@ -13,6 +13,9 @@
    - `transcript.json`: مسودة بالمقاطع والكلمات وطوابعها، و`route: local`، وبصمة الأوزان.
    - `transcript.vtt`: WebVTT عربي، كل سطر يبدأ بـ RLM، وكل عبارة تبدأ من أول كلمة فيها.
 4. **التسجيل:** `POST /internal/media/files/{file_id}/derivatives` بنوعي `transcript` و`captions`.
+5. **اللقطات (`AI_ENABLE_SHOTS`):**
+   - `shots.json` في المسار نفسه، بحدود اللقطات على خط زمن الأصل وأرقام مقاطع التفريغ في كل لقطة، بلا نص.
+   - غير مانع، ولا يُسجَّل في الخادم بعد (ملحق ADR 0020).
 
 **الضوابط:**
 - الناتج مسودة، والمادة لا تُعدَّل ولا يُنشر شيء.
@@ -27,6 +30,7 @@
 | `REDIS_URL`، `AI_API_URL`، `AI_WORKER_TOKEN` | — | الطابور والخادم (الرمز ≥ 32 حرفًا، لا يُسجَّل) |
 | `S3_ENDPOINT`، `S3_ACCESS_KEY`، `S3_SECRET_KEY`، `S3_BUCKET_MEDIA` | — | حاوية المشتقات وحدها |
 | `AI_MODELS_DIR`، `AI_MODEL` | `/models`، `faster-whisper-large-v3-turbo` | الأوزان من حجم `ai-models` |
+| `AI_ENABLE_SHOTS` | `false` | كشف اللقطات وكتابة `shots.json` |
 | `AI_CPU_THREADS` | `0` (تلقائي) | خيوط CTranslate2 |
 | `AI_SOURCE_WAIT_S`، `AI_CLAIM_IDLE_MS`، `AI_MAX_DELIVERIES` | 3600، 30 دقيقة، 5 | مهلة انتظار المصدر (بلا حجب)، وإعادة المحاولة |
 
@@ -42,8 +46,9 @@ docker run --rm --network none -v <tiny>:/models/tiny:ro -e AI_IT_MODEL_DIR=/mod
 **القياس:** `bench/transcribe_bench.py` (مقطع دقيقتين في الحاوية المحصّنة). النتائج في `docs/measurements/asr-bench/*-transcribe-worker-*.json`:
 - على معالجين: RTF 0.58 وذروة 1.99 GB.
 - على أربعة: RTF 0.46.
+- كشف اللقطات (`bench/shots_bench.py`، دقيقتان 480p): 5.8 ث (RTF 0.05)، وذروة 38 MB.
 
 ## ما ينتظر غيري (ADR 0020)
 
 - **الخادم:** `upload.verified` في `media:events`، و`AI_WORKER_TOKEN`، و`172.30.251.3` في `INTERNAL_ALLOWED_CIDRS`.
-- **البنية:** مستخدم MinIO للعامل، وخدمة `ai-worker` في compose على هذه الصورة.
+- **البنية:** مستخدم MinIO للعامل، وخدمة `ai-worker` في compose على هذه الصورة. ولـ `AI_ENABLE_SHOTS`: كتابة `derived/*/*/shots.json` وقراءته.
