@@ -366,7 +366,8 @@
       "all": "All materials",
       "office": "Office",
       "governorate": "Governorate"
-    }
+    },
+    "otherRole": "Other role"
   },
   "store": {
     "credit": "Credit",

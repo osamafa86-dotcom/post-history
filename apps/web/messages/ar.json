@@ -366,7 +366,8 @@
       "all": "كل المواد",
       "office": "مكتب",
       "governorate": "محافظة"
-    }
+    },
+    "otherRole": "دور آخر"
   },
   "store": {
     "credit": "النسب",
