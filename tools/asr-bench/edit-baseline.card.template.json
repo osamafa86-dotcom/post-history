@@ -1,0 +1,12 @@
+{
+  "test_name": "edit-baseline",
+  "phase": "baseline",
+  "performed_on": "2026-11-01",
+  "producer": "P1",
+  "items": [
+    {"material": "M01", "task": "transcript", "media_s": 95, "started": "09:10", "ended": "09:32", "paused_min": 0, "draft_used": false},
+    {"material": "M01", "task": "title_summary", "media_s": 95, "started": "09:32", "ended": "09:40", "paused_min": 0, "draft_used": false},
+    {"material": "M02", "task": "shot_list", "media_s": 180, "started": "10:05", "ended": "10:31", "paused_min": 4, "draft_used": false}
+  ],
+  "observations": ""
+}
