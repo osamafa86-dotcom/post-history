@@ -1025,6 +1025,62 @@ paths:
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
+  /uploads/{id}/web-ingest-token:
+    parameters:
+      - $ref: "#/components/parameters/UploadId"
+    post:
+      tags: [uploads]
+      summary: رمز بوابة ingest لرفع الويب، يطلبه الـBFF وحده — SEC-07
+      description: >-
+        للمتصفح، ولا شهادة جهاز له: الـBFF يطلب الرمز باسم المستخدم المسجّل، ويُقبل من عناوين `BFF_SOURCE_ADDRESSES` وحدها
+        (غيرها `404`). الرمز JWT ES256 بعمر ≤ 10 دقائق، بمطالبات رمز الجهاز نفسها مع `plat: "web"` و`ses`، أي معرّف جلسة
+        الدخول. تفحصه البوابة بـ `/internal/ingest/session-status`، فإبطال جلسة الدخول يوقف الرفع. جلسة غيره أو غير
+        موجودة `404`، وجلسة لا تقبل رفعًا `409`. بلا جسم.
+      operationId: createWebIngestToken
+      x-roles: [reporter]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: الرمز
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IngestToken" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /internal/ingest/session-status:
+    servers:
+      - url: http://api.internal:3000
+        description: شبكة داخلية فقط، كخطّاف tusd؛ تستدعيه بوابة ingest
+    get:
+      tags: [uploads]
+      summary: هل جلسة الرفع (وجلسة الدخول للويب) ما تزال تقبل الرفع؟ (داخلي، SEC-07)
+      description: >-
+        تسأل البوابة قبل تمرير طلبات tus. `204` = الجلسة حية ويقبل صاحبها الرفع. `403` بلا جسم لكل ما عدا ذلك: منتهية أو
+        مكتملة أو فاشلة، أو رمز رفعها مبطل، أو صاحبها معلّق، أو جلسة الدخول مبطلة، أو غير موجودة. لا تمييز بينها حتى لا
+        يُستدل على وجود جلسة. خارج `INTERNAL_ALLOWED_CIDRS` `404` كبقية `/internal/*`.
+      operationId: ingestSessionStatus
+      x-internal: true
+      x-roles: []
+      security: []
+      parameters:
+        - name: sid
+          in: query
+          required: true
+          description: جلسة الرفع (مطالبة `sid` في الرمز)
+          schema: { type: string, format: uuid }
+        - name: ses
+          in: query
+          required: false
+          description: جلسة الدخول (مطالبة `ses`)، لرموز الويب وحدها
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: الجلسة حية ويقبل صاحبها الرفع }
+        "403": { description: لا تقبل رفعًا (بلا جسم ولا تمييز للسبب) }
+        "404": { description: الطلب من خارج الشبكة الداخلية }
+
   /internal/tusd-hooks/{hook_token}:
     servers:
       - url: http://api.internal:3000
@@ -2334,8 +2390,15 @@ components:
       type: object
       required: [token, expires_at]
       properties:
-        token: { type: string, description: "JWT ES256 يُرسل في ترويسة `Ingest-Token` على كل طلب tus إلى نطاق ingest" }
-        expires_at: { type: string, format: date-time, description: "≤ 15 دقيقة؛ عند 401 من البوابة يطلب العميل رمزًا جديدًا ثم HEAD" }
+        token:
+          type: string
+          description: >-
+            JWT ES256 يُرسل في ترويسة `Ingest-Token` على كل طلب tus إلى نطاق ingest. المطالبات: `aud: "ingest"` و`sid` و`iat`
+            و`exp` و`jti` و`plat` (`ios` أو `android` أو `web`)، ومعها `ses` (جلسة الدخول) لرموز الويب وحدها.
+        expires_at:
+          type: string
+          format: date-time
+          description: "≤ 15 دقيقة للجهاز و≤ 10 دقائق للويب؛ عند 401 من البوابة يُطلب رمز جديد ثم HEAD"
 
     UploadComplete:
       type: object
