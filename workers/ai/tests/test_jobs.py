@@ -89,3 +89,14 @@ def test_storage_client_writes_only_transcript_files(tmp_path):
                         ("media", f"derived/{MATERIAL}/{FILE}/../x/transcript.json"), ("media", "tus/abc")]:
         with pytest.raises(PermissionError):
             s3.put_file(bucket, key, f, "0" * 64, "application/json")
+
+
+def test_transcript_text_never_reaches_the_log_or_the_server(tmp_path, caplog):
+    # R11 (§9.1 البند 4): النص في transcript.json وtranscript.vtt وحدهما، لا في سجل ولا حمولة
+    words = ("وصل", "الوفد", "غزة")
+    with caplog.at_level("DEBUG"):
+        jobs, _, _ = make(tmp_path, api=FakeApi(reject_kinds=("captions",)))
+        jobs.handle(verified_event())
+        jobs.handle(verified_event())  # redelivery: the reuse path logs too
+    sent = json.dumps(list(jobs.api.derivatives.values()), ensure_ascii=False)
+    assert caplog.records and not [w for w in words if w in caplog.text or w in sent]

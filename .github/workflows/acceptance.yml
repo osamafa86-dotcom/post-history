@@ -235,6 +235,9 @@ jobs:
           export MEDIA_E2E_LOGS_CMD="docker compose -f infra/compose/docker-compose.yml --profile api --profile media logs --no-color media-worker"
           export MEDIA_E2E_ENV_LABEL="compose on a GitHub-hosted runner: api + tusd + minio + redis + media-worker"
           node tools/acceptance/scripts/media-e2e.mjs --out-dir="$RUNNER_TEMP/out"
+      # The export package built by the worker's own code (workers/media/src, the runner's FFmpeg) from synthetic phone and HDR clips.
+      - name: "cut-export (editing package: streams, rotation, HDR tags, cut points, sequences, no revealing tags; always partial)"
+        run: node tools/acceptance/scripts/cut-export.mjs --dry-run
       # The link lives 10 minutes by contract: waiting for it to expire (DL_WAIT_EXPIRY=1) is left out of the PR run, so the result is
       # `partial` for that reason alone; run the script by hand with DL_WAIT_EXPIRY=1 for the full check.
       - name: download-url (core gate; signed link for verified derivatives, original is 404)
@@ -255,7 +258,7 @@ jobs:
           set -a; . ../../infra/compose/.env; set +a
           export TD_API_URL="http://127.0.0.1:$API_PORT/v1" TD_TUS_URL="http://127.0.0.1:$TUSD_PORT/files/"
           export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
-          export TD_TOKENS="$(node -e "import('./live/seed.mjs').then(async (m) => { const s = await m.seed({ databaseUrl: process.env.DATABASE_URL, apiUrl: process.env.TD_API_URL }); console.log(JSON.stringify({ reporter: s.allTokens.reporter })); })")"
+          export TD_TOKENS="$(node -e "import('./live/seed.mjs').then(async (m) => { const s = await m.seed({ databaseUrl: process.env.DATABASE_URL, apiUrl: process.env.TD_API_URL }); console.log(JSON.stringify({ reporter: s.allTokens.reporter, rights_officer: s.allTokens.rights_officer })); })")"
           export AI_ENABLE_TRANSCRIPT=1  # .env holds the worker's "true"; the script's switch is "1"
           export TD_EGRESS_CMD="docker compose -f ../../infra/compose/docker-compose.yml --profile api --profile media --profile ai exec -T ai-worker python3 -c \"import socket; socket.create_connection(('1.1.1.1', 443), 3)\""
           ACCEPTANCE_RESULTS_DIR="$RUNNER_TEMP/out" node scripts/transcript-draft.mjs

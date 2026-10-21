@@ -1,0 +1,8 @@
+{
+  "name": "render-bench-browser-compat",
+  "private": true,
+  "type": "module",
+  "description": "Plays the media worker's proxy and HLS output in Chrome, Firefox and WebKit",
+  "scripts": { "play": "node play.mjs" },
+  "dependencies": { "playwright-core": "1.56.1" }
+}
