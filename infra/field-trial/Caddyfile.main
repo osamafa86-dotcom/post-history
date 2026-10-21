@@ -36,9 +36,12 @@
 	}
 	# الرفع عبر بوابة ingest كالنطاق الآخر (ADR 0011): لا يمر طلب tus بلا رمز رفع قصير صالح لجلسته، ولا لجلسة
 	# أُبطلت (فحص حالة الجلسة). البوابة تعيد Location على https والاسم نفسه.
+	# X-Forwarded-For replaced by the client address alone (as for /v1/): the gate trusts it from the Docker gateway and
+	# counts its rate limit per client; an appended chain would end in this proxy's own address.
 	handle /files/* {
 		reverse_proxy 127.0.0.1:{$INGEST_PORT} {
 			flush_interval -1
+			header_up X-Forwarded-For {client_ip}
 			header_down Location ^http:// https://
 			transport http {
 				read_timeout 300s
