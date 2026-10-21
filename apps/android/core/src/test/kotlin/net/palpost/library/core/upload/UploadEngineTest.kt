@@ -124,8 +124,8 @@ class UploadEngineTest {
         val stop = AtomicBoolean(false)
         val firstConfirmed = AtomicBoolean(false)
         val e1 = UploadEngine(store, files, UploadsApi(server.url("/v1").toString().trimEnd('/')), object : TusTransport() {
-            override fun upload(uploadUrl: String, token: String, sizeBytes: Long, openStream: () -> java.io.InputStream, requestPayloadBytes: (Long) -> Int, chunkBytes: Int, shouldStop: () -> Boolean, onHead: (Long) -> Unit, onConfirmed: (Long) -> Unit, onSent: (Long) -> Unit): Long =
-                super.upload(uploadUrl, token, sizeBytes, openStream, requestPayloadBytes, chunkBytes, shouldStop, onHead, { off -> onConfirmed(off); if (!firstConfirmed.getAndSet(true)) stop.set(true) }, onSent)
+            override fun upload(uploadUrl: String, token: String, sizeBytes: Long, openStream: () -> java.io.InputStream, requestPayloadBytes: (Long) -> Int, chunkBytes: Int, shouldStop: () -> Boolean, onHead: (Long) -> Unit, onConfirmed: (Long) -> Unit, onSent: (Long) -> Unit, headers: () -> Map<String, String>): Long =
+                super.upload(uploadUrl, token, sizeBytes, openStream, requestPayloadBytes, chunkBytes, shouldStop, onHead, { off -> onConfirmed(off); if (!firstConfirmed.getAndSet(true)) stop.set(true) }, onSent, headers)
         }, { now }, { ms -> now += ms }, testConfig)
         assertEquals(RunOutcome.Stopped, e1.run("t1", shouldStop = { stop.get() }))
         val afterKill = store.get("t1")!!

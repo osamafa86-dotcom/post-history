@@ -10,6 +10,51 @@ import Foundation
 open class UploadsAPI {
 
     /**
+     إلغاء جلسة رفع جارية
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف جلسة الرفع 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: Void
+     */
+    open class func abortUploadSession(idempotencyKey: String, id: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) {
+        return try await abortUploadSessionWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     إلغاء جلسة رفع جارية
+     - DELETE /uploads/{id}
+     - يلغيها صاحبها وحده: تنتقل إلى `failed` بسبب `aborted`، ويُبطَل رمز الرفع ورموز ingest، ويُكتب حدث `upload.failed` في المعاملة نفسها، ويُحذف ما وصل منها من التخزين المؤقت. الأصل المكتمل لا يُلغى بهذا (`409 upload_state_conflict` لـ `verified` و`deduplicated`). ذاتي التكرار: جلسة ملغاة تعيد `204`.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف جلسة الرفع 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<Void> 
+     */
+    open class func abortUploadSessionWithRequestBuilder(idempotencyKey: String, id: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Void> {
+        var localVariablePath = "/uploads/{id}"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<Void>.Type = apiConfiguration.requestBuilderFactory.getNonDecodableBuilder()
+
+        return localVariableRequestBuilder.init(method: "DELETE", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      إعلان العميل اكتمال رفعه (مسار الرفع المباشر إلى التخزين فقط)
      
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
@@ -160,7 +205,7 @@ open class UploadsAPI {
     /**
      إنشاء جلسة رفع لملف يخص مادة (أصل أو نسخة خفيفة أو ملاحظة صوتية)
      - POST /uploads
-     - تعيد نقطة tus ورمزًا قصير العمر وحجم الجزء الثابت لهذه الجلسة. يرسل العميل `tus_metadata` كما هي في ترويسة `Upload-Metadata` عند إنشاء رفع tus. النسخة الخفيفة لها الأولوية على الأصل في قائمة انتظار العميل. `client_fingerprint` يرشّح المكررات فقط ولا يمنح أي حق؛ الربط الفعلي بملف موجود لا يتم إلا بتطابق `sha256` الكاملة على الخادم.
+     - تعيد نقطة tus ورمزًا قصير العمر وحجم الجزء الثابت لهذه الجلسة. يرسل العميل `tus_metadata` كما هي في ترويسة `Upload-Metadata` عند إنشاء رفع tus. النسخة الخفيفة لها الأولوية على الأصل في قائمة انتظار العميل. `client_fingerprint` يرشّح المكررات فقط ولا يمنح أي حق؛ الربط الفعلي بملف موجود لا يتم إلا بتطابق `sha256` الكاملة على الخادم. الجلسة لمنشئ المادة وحده (غيره `404`)؛ ويرفع الطاقم من الويب الأصل وحده (`kind: original`)، والنسخة الخفيفة يولّدها عامل الوسائط.
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -271,6 +316,71 @@ open class UploadsAPI {
         let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
 
         let localVariableRequestBuilder: RequestBuilder<UploadSession>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     * enum for parameter state
+     */
+    public enum State_listMyUploadSessions: String, Sendable, CaseIterable {
+        case created = "created"
+        case inProgress = "in_progress"
+        case completed = "completed"
+        case verified = "verified"
+        case failed = "failed"
+        case deduplicated = "deduplicated"
+    }
+
+    /**
+     جلسات رفع المستخدم نفسه (للاستئناف بعد إغلاق التبويب أو التطبيق)
+     
+     - parameter state: (query) تصفية بالحالة؛ يتكرر. الغياب &#x3D; غير النهائية (optional)
+     - parameter materialId: (query) جلسات مادة واحدة (optional)
+     - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
+     - parameter limit: (query) حجم الصفحة (optional, default to 50)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: UploadSessionPage
+     */
+    open class func listMyUploadSessions(state: [State_listMyUploadSessions]? = nil, materialId: UUID? = nil, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> UploadSessionPage {
+        return try await listMyUploadSessionsWithRequestBuilder(state: state, materialId: materialId, cursor: cursor, limit: limit, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     جلسات رفع المستخدم نفسه (للاستئناف بعد إغلاق التبويب أو التطبيق)
+     - GET /uploads
+     - جلسات المستدعي وحده، الأحدث أولًا، بالمؤشر. الافتراضي الجلسات غير النهائية (`created` و`in_progress` و`completed`)، فيستأنف العميل منها بعد إغلاق التبويب أو التطبيق (مع إعادة اختيار الملف إن لزم). لا يعيد رمز الرفع أبدًا؛ يطلب العميل جلسة جديدة إن انتهى الرمز.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter state: (query) تصفية بالحالة؛ يتكرر. الغياب &#x3D; غير النهائية (optional)
+     - parameter materialId: (query) جلسات مادة واحدة (optional)
+     - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
+     - parameter limit: (query) حجم الصفحة (optional, default to 50)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<UploadSessionPage> 
+     */
+    open class func listMyUploadSessionsWithRequestBuilder(state: [State_listMyUploadSessions]? = nil, materialId: UUID? = nil, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<UploadSessionPage> {
+        let localVariablePath = "/uploads"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        var localVariableUrlComponents = URLComponents(string: localVariableURLString)
+        let localVariableQueryParameters: [String: (wrappedValue: (any Sendable)?, isExplode: Bool)] = [
+            "state": (wrappedValue: state?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "material_id": (wrappedValue: materialId?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "cursor": (wrappedValue: cursor?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "limit": (wrappedValue: limit?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+        ]
+        localVariableUrlComponents?.queryItems = APIHelper.mapValuesToQueryItems(localVariableQueryParameters)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<UploadSessionPage>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }

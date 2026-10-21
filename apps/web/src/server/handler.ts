@@ -3,7 +3,7 @@ import { readConfig, type WebConfig } from "./config";
 import { clientAddress, requireOk, upstream, withSession, assertSession } from "./auth";
 import { WebError } from "./errors";
 import { sessionStore, validSessionId, type SessionStore } from "./sessions";
-import { safeForm, safeMaterial, safeMe, safeNotification, safeTransition } from "@/lib/privacy";
+import { safeDashboard, safeForm, safeMaterial, safeMe, safeNotification, safeTransition } from "@/lib/privacy";
 import { materialQuery, materialTypes, uuid } from "@/lib/query";
 import type { components } from "@/generated/schema";
 import type { MaterialType } from "@/lib/types";
@@ -12,6 +12,7 @@ import { actionPath, reviewAction } from "./review-actions";
 import { hasRole, materialTag } from "@/lib/review";
 import { safeIdentitySetting, safePermissionHistory } from "@/lib/admin-privacy";
 import { pageLimits } from "@/lib/admin-policy";
+import { safeRule } from "@/lib/notification-policy";
 
 const privateHeaders = { "Cache-Control": "private, no-store, max-age=0", "Pragma": "no-cache", "Vary": "Cookie" };
 const json = (value: unknown, status = 200) => NextResponse.json(value, { status, headers: privateHeaders });
@@ -116,6 +117,17 @@ export async function handle(request: NextRequest, path: string, deps?: { config
       if (history && uuid.test(history[1])) {
         const data = requireOk(await api.GET("/materials/{id}/transitions", { params: { path: { id: history[1] } } }));
         return json({ items: data.items.map(safeTransition) });
+      }
+      if (path === "notification-rules" || /^notification-rules\/[^/]+$/.test(path)) {
+        if (!hasRole(me, "system_admin", "editor_in_chief") || request.nextUrl.search) throw new WebError(403, "request_failed");
+        if (path === "notification-rules") return json({ items: requireOk(await api.GET("/notification-rules")).items.map(safeRule) });
+        if (!uuid.test(path.slice(19))) throw new WebError(404, "request_failed");
+        const rule = requireOk(await api.GET("/notification-rules/{rule_id}", { params: { path: { rule_id: path.slice(19) } } }));
+        const response = json(safeRule(rule)); response.headers.set("ETag", `"${rule.row_version}"`); return response;
+      }
+      if (path === "dashboard/newsroom") {
+        if (!hasRole(me, "supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin") || request.nextUrl.search) throw new WebError(403, "request_failed");
+        return json(safeDashboard(requireOk(await api.GET("/dashboard/newsroom"))));
       }
       if (path === "notifications") {
         const search = request.nextUrl.searchParams;

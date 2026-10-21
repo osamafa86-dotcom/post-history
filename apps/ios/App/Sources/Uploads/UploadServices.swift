@@ -1,5 +1,6 @@
 import Foundation
 import os
+import DeviceAttestation
 import PostHistoryAPI
 import UploadCore
 
@@ -47,7 +48,19 @@ final class UploadServices: @unchecked Sendable {
         env.documentsDirectory = documentsDirectory
         env.isBackground = { true } // جزء كبير افتراضيًا: الرفع يستمر بعد خروج التطبيق إلى الخلفية
         return UploadEngine(store: try FileUploadStateStore(directory: stateDirectory), secrets: KeychainUploadSecretStore(), api: GeneratedUploadAPI(configuration: api),
-                            transport: transport, slicer: ChunkSlicer(chunksDirectory: chunksDirectory), environment: env)
+                            transport: transport, ingestTokens: Self.makeIngestTokens(api: api),
+                            slicer: ChunkSlicer(chunksDirectory: chunksDirectory), environment: env)
+    }
+
+    /// رمز بوابة ingest (SEC-07) عبر App Attest. على المحاكي والأجهزة بلا App Attest يرفض المصدر فيفشل الرفع خلف البوابة
+    /// بـ «الجهاز لا يستطيع إثبات نفسه»؛ الجلسات التي لا يضعها الخادم خلف البوابة لا تطلبه أصلًا.
+    static func makeIngestTokens(api: PostHistoryAPIAPIConfiguration) -> any IngestTokenProvider {
+        #if os(iOS)
+        let backend: any AppAttestBackend = DeviceCheckAppAttestBackend()
+        #else
+        let backend: any AppAttestBackend = UnsupportedAppAttestBackend()
+        #endif
+        return AppAttestIngestTokenProvider(backend: backend, api: GeneratedAttestationAPI(configuration: api), keys: KeychainAttestationKeyStore())
     }
 
     /// ينسخ الملف المختار إلى مجلد الرفع ويعيد مساره النسبي (الأصل كما هو؛ لا تحويل).
