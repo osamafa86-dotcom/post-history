@@ -33,6 +33,9 @@ function fakeStack() {
   const fetchImpl = async (url, opts = {}) => {
     const path = new URL(url).pathname.replace(/^\/v1/, "") + new URL(url).search;
     if (path === "/forms/current") return res(200, { version: 1 });
+    if (path === "/auth/me") return res(200, { email: "Acceptance@Example.invalid" });
+    if (opts.method === "DELETE" && path === "/materials/m-1") { state.deleted = true; return res(204, {}); }
+    if (state.deleted && path.startsWith("/materials/m-1")) return res(404, {});
     if (opts.method === "POST" && path === "/materials") { state.writes++; return res(201, { id: "m-1" }); }
     if (state.down) return res(503, { error: "down" });
     if (path.startsWith("/materials/m-1")) return res(200, { id: "m-1" });
@@ -60,10 +63,12 @@ test("availability: three scenarios under load, partial without a declared targe
 
 test("availability: pass needs a declared target, the trial host and recovery within it; a miss against the target stays partial, a stack that never recovers fails", async () => {
   const a = fakeStack();
-  const within = await quiet(() => run(["--dry-run"], { ...quick, AVAIL_TARGET_S: "5", AVAIL_TRIAL_HOST: "1" }, { fetchImpl: a.fetchImpl, exec: a.exec }));
+  const trial = { ...quick, AVAIL_TARGET_S: "5", AVAIL_TRIAL_HOST: "1", AVAIL_ACCEPTANCE_EMAIL: "acceptance@example.invalid" };
+  const within = await quiet(() => run(["--dry-run", "--maintenance-window"], trial, { fetchImpl: a.fetchImpl, exec: a.exec }));
   assert.equal(within.doc.result, "pass");
+  assert.equal(within.doc.metrics.canary_deleted, true);
   const b = fakeStack();
-  const missed = await quiet(() => run(["--dry-run"], { ...quick, AVAIL_TARGET_S: "0.01", AVAIL_TRIAL_HOST: "1" }, { fetchImpl: b.fetchImpl, exec: b.exec }));
+  const missed = await quiet(() => run(["--dry-run", "--maintenance-window"], { ...quick, AVAIL_TARGET_S: "0.01", AVAIL_TRIAL_HOST: "1", AVAIL_ACCEPTANCE_EMAIL: "acceptance@example.invalid" }, { fetchImpl: b.fetchImpl, exec: b.exec }));
   assert.equal(missed.doc.result, "partial");
   const c = fakeStack();
   const dead = await quiet(() => run(["--dry-run"], { ...quick, AVAIL_TIMEOUT_MS: "600" }, { fetchImpl: c.fetchImpl, exec: async () => { c.state.down = true; } }));
@@ -74,4 +79,21 @@ test("availability: pass needs a declared target, the trial host and recovery wi
 test("availability: without the environment it measures nothing", async () => {
   const { code, doc } = await quiet(() => run([], {}, {}));
   assert.deepEqual([code, doc], [2, null]);
+});
+
+test("availability on the trial host: refuses without --maintenance-window and for any account but the acceptance account; a canary that cannot be deleted blocks pass", async () => {
+  const trial = { ...quick, AVAIL_TARGET_S: "5", AVAIL_TRIAL_HOST: "1", AVAIL_ACCEPTANCE_EMAIL: "acceptance@example.invalid" };
+  const a = fakeStack();
+  const noWindow = await quiet(() => run(["--dry-run"], trial, { fetchImpl: a.fetchImpl, exec: a.exec }));
+  assert.deepEqual([noWindow.code, noWindow.doc], [2, null]);
+  assert.equal(a.state.writes, 0, "nothing written when refused");
+  const other = fakeStack();
+  const wrong = await quiet(() => run(["--dry-run", "--maintenance-window"], { ...trial, AVAIL_ACCEPTANCE_EMAIL: "someone@else.invalid" }, { fetchImpl: other.fetchImpl, exec: other.exec }));
+  assert.deepEqual([wrong.code, wrong.doc], [2, null]);
+  assert.equal(other.state.writes, 0);
+  const keep = fakeStack();
+  const noDelete = (url, opts = {}) => (opts.method === "DELETE" ? Promise.resolve({ status: 405, text: async () => "{}", headers: new Headers() }) : keep.fetchImpl(url, opts));
+  const stays = await quiet(() => run(["--dry-run", "--maintenance-window"], trial, { fetchImpl: noDelete, exec: keep.exec }));
+  assert.equal(stays.doc.metrics.canary_deleted, false);
+  assert.equal(stays.doc.result, "partial", "a canary left behind is never pass");
 });
