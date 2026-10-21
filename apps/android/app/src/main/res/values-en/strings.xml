@@ -154,6 +154,7 @@
     <string name="upload_failure_file_unavailable">The file is no longer available on the device.</string>
     <string name="upload_failure_storage">Storage problem on the server.</string>
     <string name="upload_failure_aborted">The upload was aborted.</string>
+    <string name="upload_failure_device_not_trusted">Google Play could not verify this app or device, and uploads need it. Install the app from Google Play, update Google Play services, then retry.</string>
     <string name="upload_failure_unknown">The upload stopped for an unknown reason.</string>
 
     <string name="setup_title">Background upload setup</string>

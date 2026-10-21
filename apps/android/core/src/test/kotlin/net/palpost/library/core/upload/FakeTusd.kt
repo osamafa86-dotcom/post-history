@@ -41,6 +41,19 @@ class FakeTusd(private val baseUrl: () -> String, private val now: () -> Long) :
     val sessionCreateIdempotencyKeys = ArrayList<String>()
     val authorizations = ArrayList<String?>()
 
+    /** Ingest gate in front of /files/ (SEC-07): every tus request needs `Ingest-Token` equal to a live issued token. */
+    var gate = false
+    /** Tokens the gate accepts; tests revoke them to simulate expiry mid-upload. */
+    val liveGateTokens = HashSet<String>()
+    val gateTokensIssued = AtomicInteger()
+    val challengesIssued = ArrayList<Pair<String, String>>() // challenge_id to challenge (base64url)
+    /** What the fake Play Integrity verdict must be for a challenge: the attester echoes the request hash. */
+    var integrityTokenFor: (requestHash: String) -> String = { "integrity:$it" }
+    var gateRejections = 0
+    var ingestTokenStatus = 200
+    /** Revoke the live token after this many accepted PATCHes (0 = never). */
+    var expireGateTokenAfterPatches = 0
+
     /** Answer `Expect: 100-continue` at once, as tusd (Go's net/http) does; the JVM client otherwise waits 5 s per request. */
     override fun peek(): MockResponse = MockResponse().setSocketPolicy(SocketPolicy.CONTINUE_ALWAYS)
 
@@ -55,6 +68,30 @@ class FakeTusd(private val baseUrl: () -> String, private val now: () -> Long) :
                 json(201, sessionJson(withToken = true))
             }
             path == "/v1/uploads/$sessionId" && method == "GET" -> json(200, sessionJson(withToken = false))
+            path == "/v1/device-attestations/challenge" && method == "POST" -> {
+                val id = java.util.UUID.randomUUID().toString()
+                val bytes = ByteArray(32).also { java.util.Random(challengesIssued.size.toLong()).nextBytes(it) }
+                val ch = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+                challengesIssued.add(id to ch)
+                json(200, """{"challenge_id":"$id","challenge":"$ch","expires_at":"${iso(now() + 300_000)}"}""")
+            }
+            path == "/v1/uploads/$sessionId/ingest-token" && method == "POST" -> {
+                if (ingestTokenStatus != 200) return json(ingestTokenStatus, """{"code":"attestation_failed","message":"x","request_id":"r"}""")
+                val body = request.body.readUtf8()
+                val challengeId = Regex("\"challenge_id\"\\s*:\\s*\"([^\"]+)\"").find(body)!!.groupValues[1]
+                val integrity = Regex("\"integrity_token\"\\s*:\\s*\"([^\"]+)\"").find(body)!!.groupValues[1]
+                check(body.contains("\"platform\":\"android\"")) { body }
+                val ch = challengesIssued.first { it.first == challengeId }.second
+                val expected = integrityTokenFor(IngestTokens.requestHash(ch, sessionId))
+                if (integrity != expected) return json(403, """{"code":"attestation_failed","message":"x","request_id":"r"}""")
+                val token = "gate-${gateTokensIssued.incrementAndGet()}"
+                liveGateTokens.add(token)
+                json(200, """{"token":"$token","expires_at":"${iso(now() + 900_000)}"}""")
+            }
+            gate && path.startsWith("/files/") && request.getHeader("Ingest-Token") !in liveGateTokens -> {
+                gateRejections++
+                MockResponse().setResponseCode(401)
+            }
             path == "/files/" && method == "POST" -> {
                 authorizations.add(request.getHeader("Authorization"))
                 if (request.getHeader("Authorization") != "Bearer $token") return json(401, "{}")
@@ -85,6 +122,7 @@ class FakeTusd(private val baseUrl: () -> String, private val now: () -> Long) :
                             return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
                         }
                         store.write(body)
+                        if (gate && expireGateTokenAfterPatches > 0 && n % expireGateTokenAfterPatches == 0) liveGateTokens.remove(request.getHeader("Ingest-Token"))
                         MockResponse().setResponseCode(204).setHeader("Upload-Offset", store.size().toString()).setHeader("Tus-Resumable", "1.0.0")
                     }
                     else -> MockResponse().setResponseCode(405)
@@ -102,7 +140,7 @@ class FakeTusd(private val baseUrl: () -> String, private val now: () -> Long) :
         return """{"id":"$sessionId","material_id":"7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b","kind":"original","state":"$sessionState",
             "size_bytes":${declaredSizes.values.firstOrNull() ?: 0},"tus_endpoint":"${baseUrl()}/files/","tus_metadata":{"upload_session_id":"$sessionId"},
             "part_size_bytes":$partSize,"bytes_received":$received,"expires_at":"${iso(now() + tokenTtlMs)}","created_at":"${iso(now())}",
-            "receipt_number":${receipt?.let { "\"$it\"" } ?: "null"},"failure_reason":${failureReason?.let { "\"$it\"" } ?: "null"}$tokenPart}"""
+            "receipt_number":${receipt?.let { "\"$it\"" } ?: "null"},"failure_reason":${failureReason?.let { "\"$it\"" } ?: "null"},"ingest_token_required":$gate$tokenPart}"""
     }
 
     private fun json(code: Int, body: String) = MockResponse().setResponseCode(code).setHeader("Content-Type", "application/json").setBody(body)

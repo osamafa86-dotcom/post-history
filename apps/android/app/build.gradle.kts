@@ -21,6 +21,10 @@ android {
     // Base URL of the API (`/v1`). Debug builds point at the local compose stack unless -PapiBaseUrl=… says
     // otherwise; a release build must be given an https URL explicitly (checked in preReleaseBuild below).
     val apiBaseUrl = project.findProperty("apiBaseUrl")?.toString()
+    // Google Cloud project linked to the app in Play Console (App integrity); Play Integrity standard requests
+    // need it. Not a secret. 0 = no attester: sessions behind the ingest gate then fail as DEVICE_NOT_TRUSTED.
+    val playCloudProjectNumber = project.findProperty("playCloudProjectNumber")?.toString()?.toLongOrNull() ?: 0L
+    defaultConfig.buildConfigField("long", "PLAY_CLOUD_PROJECT_NUMBER", "${playCloudProjectNumber}L")
     buildTypes {
         debug {
             buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl ?: "http://10.0.2.2:3000/v1"}\"")
@@ -79,6 +83,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.play.integrity)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)

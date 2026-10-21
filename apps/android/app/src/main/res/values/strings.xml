@@ -167,6 +167,7 @@
     <string name="upload_failure_file_unavailable">لم يعد الملف متاحًا على الجهاز.</string>
     <string name="upload_failure_storage">خلل في التخزين على الخادم.</string>
     <string name="upload_failure_aborted">أُلغي الرفع.</string>
+    <string name="upload_failure_device_not_trusted">لم تتمكن خدمات Google Play من التحقق من هذا التطبيق أو الجهاز، والرفع لا يمر بدونها. ثبّت التطبيق من Google Play وحدّث خدمات Google Play ثم أعد المحاولة.</string>
     <string name="upload_failure_unknown">توقف الرفع لسبب غير معروف.</string>
 
     <!-- تهيئة قاتلات المهام -->
