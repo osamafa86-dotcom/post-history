@@ -285,4 +285,24 @@
     <string name="notifications_loading">جارٍ التحميل…</string>
     <string name="notifications_more">المزيد</string>
     <string name="role_other">دور آخر</string>
+    <string name="home_review">مراجعة الوارد (المشرف)</string>
+    <string name="review_title">مراجعة الوارد</string>
+    <string name="review_empty">لا مواد في هذه الحالة ضمن نطاقك.</string>
+    <string name="review_acknowledge">استلام</string>
+    <string name="review_start">بدء المراجعة</string>
+    <string name="review_request_changes">طلب تعديل من المراسل</string>
+    <string name="review_accept">قبول</string>
+    <string name="review_reject">رفض</string>
+    <string name="review_reason">السبب</string>
+    <string name="review_reason_hint">السبب إلزامي ويُحفظ في سجل المادة ويراه المراسل.</string>
+    <string name="review_confirm">تأكيد</string>
+    <string name="review_cancel">إلغاء</string>
+    <string name="review_done">سُجّل القرار.</string>
+    <string name="review_stale">تغيّرت المادة منذ فتحتها، فلم يُسجَّل شيء. راجع حالتها الحالية.</string>
+    <string name="review_forbidden">لا تملك هذا القرار على هذه المادة.</string>
+    <string name="review_retry">تعذّر الاتصال. أعد المحاولة؛ لن يُسجَّل القرار مرتين.</string>
+    <string name="review_failed">رُفض القرار ولم يُسجَّل.</string>
+    <string name="review_history">سجل الانتقالات</string>
+    <string name="review_history_empty">لا انتقالات بعد.</string>
+    <string name="review_history_line">%1$s: %2$s ← %3$s</string>
 </resources>
