@@ -1,6 +1,7 @@
 import AuthCore
 import DeviceSecurity
 import Foundation
+import MaterialsCore
 import PostHistoryAPI
 import SwiftUI
 import UploadCore
@@ -17,6 +18,7 @@ final class AppModel: ObservableObject {
     let api: PostHistoryAPIAPIConfiguration
     let settings = AppSettings()
     let uploads: UploadQueueModel
+    let materials: MyMaterialsModel
     private var authWatcher: Task<Void, Never>?
 
     init(store: any TokenStore = KeychainTokenStore(), baseURL: String = AppConfiguration.apiBaseURL) {
@@ -34,6 +36,7 @@ final class AppModel: ObservableObject {
         self.api = api
         // نواة الرفع فوق الجلسة الخلفية المشتركة؛ تُستأنف السجلات غير المكتملة عند كل إطلاق.
         self.uploads = UploadQueueModel(engine: try! UploadServices.shared.makeEngine(api: api), settings: settings)
+        self.materials = MyMaterialsModel(feed: MaterialsFeed(api: GeneratedMaterialsListAPI(configuration: api)))
         Task { await self.restore() }
     }
 
@@ -52,6 +55,7 @@ final class AppModel: ObservableObject {
                 guard case .sessionRevoked(let at) = event else { continue }
                 _ = await uploads.engine.wipeAll()
                 await uploads.refresh()
+                await materials.clear()
                 phase = .revoked(at: at)
             }
         }
@@ -82,6 +86,7 @@ final class AppModel: ObservableObject {
         let report = await EmergencyWipe(steps: steps).run()
         settings.reload()
         await uploads.refresh()
+        await materials.clear()
         phase = .wiped(report)
     }
 
@@ -96,6 +101,7 @@ final class AppModel: ObservableObject {
     func logout(allSessions: Bool) async {
         // الرموز تُمسح محليًا قبل الاتصال؛ فشل الشبكة لا يبقي الجلسة على الجهاز.
         try? await auth.logout(allSessions: allSessions)
+        await materials.clear()
         phase = .signedOut
     }
 }

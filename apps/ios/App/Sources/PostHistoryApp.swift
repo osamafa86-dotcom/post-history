@@ -10,6 +10,7 @@ struct PostHistoryApp: App {
             RootView()
                 .environmentObject(app)
                 .environmentObject(app.uploads)
+                .environmentObject(app.materials)
                 .environmentObject(app.settings)
         }
     }
