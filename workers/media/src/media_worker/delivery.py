@@ -63,8 +63,9 @@ def build_delivery(out: Path, *, original: Path, info: Probe, license_id: str, s
             if item not in deliverables:
                 continue
             if item == "original":
-                name = f"original.{EXTENSIONS.get(info.container, 'mov')}"
-                strip_metadata(original, work / name, timeout)
+                ext = "mov" if info.video_codec == "hevc" else EXTENSIONS.get(info.container, "mov")
+                name = f"original.{ext}"
+                strip_metadata(original, work / name, timeout, video_codec=info.video_codec)
                 files.append((name, work / name, True))
                 status[item] = [name]
             elif item == "audio" and info.audio_codec:

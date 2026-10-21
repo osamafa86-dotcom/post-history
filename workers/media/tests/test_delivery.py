@@ -16,8 +16,12 @@ LIC = "11000000-0000-4000-8000-000000000001"
 
 
 def _packets(path: Path) -> bytes:
-    return run([FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-i", str(path), "-map", "0:v:0",
-                "-map", "0:a:0", "-c", "copy", "-f", "framemd5", "-"], timeout_s=60)
+    """إطارات مفكوكة (حذف SEI يغيّر الحزم لا الصورة) وحزم الصوت كما هي."""
+    out = b""
+    for args in (["-map", "0:v:0"], ["-map", "0:a:0", "-c", "copy"]):
+        out += run([FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-i", str(path), *args,
+                    "-f", "framemd5", "-"], timeout_s=60)
+    return b"".join(line for line in out.splitlines(True) if not line.startswith(b"#"))
 
 
 @pytest.fixture(scope="module")
@@ -37,7 +41,7 @@ def test_all_original_based_deliverables_without_revealing_data(src: Path, tmp_p
         assert names[:2] == ["original.mov", "audio.wav"] and len([n for n in names if n.startswith("stills/")]) == 5
         for name in names:
             data = zf.read(name)
-            for value in LEAKY_TAGS.values():
+            for value in [*LEAKY_TAGS.values(), "x264 - core"]:  # والنص الحر في SEI داخل التيار
                 assert value.encode() not in data, (name, value)
             assert b"Exif" not in data and b"LIST" not in data[:64]
         zf.extract("original.mov", tmp_path)
