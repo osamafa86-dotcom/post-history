@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { formatDuration, formatMoney, lowest, totals } from "../src/lib/store-format";
-import { CatalogCard } from "../src/components/store/catalog-card";
+import { CatalogCard, shotDay } from "../src/components/store/catalog-card";
 import { LicensePicker, type Offer } from "../src/components/store/license-picker";
 import { CartSummary } from "../src/components/store/cart-summary";
 import { WatermarkedPreview } from "../src/components/store/watermarked-preview";
@@ -28,9 +28,14 @@ describe("store formatting", () => {
 
 describe("store components", () => {
   it("renders a catalog card with public fields and the shoot day only", () => {
-    const html = renderToStaticMarkup(<CatalogCard locale="en" item={{ href: "/en/store/x", title: { ar: "عنوان", en: "Title" }, governorate: "Gaza", shotOn: "2026-10-19", durationMs: 65000, width: 3840, height: 2160, credit: "Palestine Post", from: offers[0].price }} />);
+    const html = renderToStaticMarkup(<CatalogCard locale="en" item={{ href: "/en/store/x", title: { ar: "عنوان", en: "Title" }, governorate: "Gaza", shotOn: "2026-10-19", durationMs: 65000, width: 3840, height: 2160, displayName: "Palestine Post", from: offers[0].price }} />);
     expect(html).toContain("Title"); expect(html).toContain("3840×2160"); expect(html).toContain("$150.00"); expect(html).toContain("1:05"); expect(html).toContain("Oct 19, 2026");
-    expect(renderToStaticMarkup(<CatalogCard locale="ar" item={{ href: "/ar/store/x", title: { ar: "عنوان", en: "Title" }, governorate: "غزة", shotOn: null, durationMs: null, width: null, height: null, credit: "الشبكة", from: null }} />)).toContain(ar.store.unavailable);
+    expect(renderToStaticMarkup(<CatalogCard locale="ar" item={{ href: "/ar/store/x", title: { ar: "عنوان", en: "Title" }, governorate: "غزة", shotOn: null, durationMs: null, width: null, height: null, displayName: "الشبكة", from: null }} />)).toContain(ar.store.unavailable);
+  });
+  it("shows the shoot day without a time even when given one, and only the display name", () => {
+    expect(shotDay("2026-10-19T14:37:00Z")).toBe("2026-10-19"); expect(shotDay(null)).toBeNull(); expect(shotDay("bad")).toBeNull();
+    const html = renderToStaticMarkup(<CatalogCard locale="en" item={{ href: "/en/store/x", title: { ar: "ع", en: "T" }, governorate: "Gaza", shotOn: "2026-10-19T14:37:00Z", durationMs: null, width: null, height: null, displayName: "Palestine Post", from: null }} />);
+    expect(html).toContain("Oct 19, 2026"); expect(html).not.toMatch(/14:37|2:37/); expect(html).toContain("Palestine Post");
   });
   it("disables exclusivity when it is taken and marks commercial licenses for approval", () => {
     const html = renderToStaticMarkup(<LicensePicker locale="en" offers={offers} exclusiveAvailable={false} value="a" onChange={noop} />);
