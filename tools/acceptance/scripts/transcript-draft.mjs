@@ -1,7 +1,10 @@
 // transcript-draft (ticket 10): the local transcription worker end to end. A synthetic Arabic clip is uploaded; after the server verifies
 // the original, the worker must register `transcript` (JSON) and `captions` (WebVTT) as derivatives of it.
 //   TD_API_URL  TD_TUS_URL  TD_TOKENS {reporter}  TD_RUNS (5)  TD_CLIP_S (45)  TD_TIMEOUT_S (600)  TD_LIMIT_RATIO (1.0)
-//   TD_SPEECH_FILE   a recording of Arabic speech to use instead of espeak-ng (public or synthetic audio only; never a reporter file)
+//   TD_SPEECH_FILE   a recording of Arabic speech to use instead of espeak-ng (public or synthetic audio only; never a reporter file). `pass` needs the pinned
+//                    public clip (fixtures/td-speech.json: FLEURS, CC-BY-4.0; `node lib/speech-pin.mjs <dir>` fetches it and checks its sha256)
+//   TD_TARGET_HOST   set to the trial host's name when this runs there; only then is the p95 ratio judged against the limit. On a shared runner the ratio is
+//                    recorded as information (ratio_judged: false) and the result stays partial
 //   TD_EGRESS_CMD    a shell command that tries to leave the worker container (e.g. `docker compose … exec -T ai-worker python3 -c "import socket; socket.create_connection(('1.1.1.1', 443), 3)"`); it must FAIL
 //   AI_ENABLE_TRANSCRIPT=1  turns the script on (the worker and the server side are behind the same switch); without it the script is pending and writes nothing
 // Per clip: the files listing gets both derivatives; the material's three states and title are exactly as they were at verification (the transcript is a draft,
@@ -9,7 +12,7 @@
 // every line starts with RLM, cues ordered and not overlapping; the bytes served by the signed links hash to the registered sha256. One extra clip is uploaded as a
 // sensitivity-flagged material and goes through the same path, with `route: local`. Timing: from the server's verification to both derivatives registered, over the clip's
 // duration, p95 across clips, against TD_LIMIT_RATIO. Not measured here: the accuracy of the words (that is tools/asr-bench), field recordings, GPU.
-// `pass` needs: all runs, the sensitive clip, the bytes compared, and TD_EGRESS_CMD given and refused; otherwise partial.
+// `pass` needs: all runs, the sensitive clip, the bytes compared, TD_EGRESS_CMD given and refused, the pinned real-speech clip, and TD_TARGET_HOST; otherwise partial.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -25,6 +28,7 @@ import { scan, CHANNEL_KEYS } from "../lib/pii.mjs";
 import { checker } from "../lib/core-gate.mjs";
 import { EXIT_PENDING } from "../lib/pending.mjs";
 import { freshFetch } from "../lib/http.mjs";
+import { isPinnedSpeech } from "../lib/speech-pin.mjs";
 
 const RLM = "‏";
 const TIMING = /^(\d{2}):(\d{2}):(\d{2})\.(\d{3}) --> (\d{2}):(\d{2}):(\d{2})\.(\d{3})$/;
@@ -98,6 +102,8 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
       try { speech = espeakArabic(join(work, "speech.wav"), TEXT); }
       catch { console.error("ENVIRONMENT: no TD_SPEECH_FILE and espeak-ng is not installed; nothing measured"); return { code: 2, doc: null }; }
     }
+    const pinnedSpeech = await isPinnedSpeech(speech);
+    if (env.TD_SPEECH_FILE && !pinnedSpeech) console.log("note TD_SPEECH_FILE is not the pinned clip (fixtures/td-speech.json): the result cannot be pass");
     const fv = (await http.get(token, "/forms/current")).body.version;
     const one = async (label, { sensitive = false } = {}) => {
       const mat = (await http.call(token, "POST", "/materials", { body: materialBody(fv, `transcript-draft-${label}-${Date.now()}`, sensitive ? { sensitivity: { minors: true, injured: false, graphic: false } } : {}) })).body;
@@ -158,12 +164,14 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
 
     ratios.sort((a, b) => a - b);
     const p95 = percentile(ratios, 95);
-    check(`transcription time over clip duration, p95 ${p95?.toFixed(2) ?? "n/a"} (limit ${limit})`, p95 !== null && p95 <= limit);
-    const full = !fails.length && ratios.length >= 5 && sensitiveDone && comparable === runs + 1 && egressRefused;
+    const judged = Boolean(env.TD_TARGET_HOST);
+    if (judged) check(`transcription time over clip duration, p95 ${p95?.toFixed(2) ?? "n/a"} (limit ${limit}, on ${env.TD_TARGET_HOST})`, p95 !== null && p95 <= limit);
+    else console.log(`info transcription time over clip duration, p95 ${p95?.toFixed(2) ?? "n/a"}: not judged against ${limit} (TD_TARGET_HOST not given; a shared runner is not the trial host)`);
+    const full = !fails.length && ratios.length >= 5 && sensitiveDone && comparable === runs + 1 && egressRefused && pinnedSpeech && judged;
     finish(doc, fails.length ? "fail" : full ? "pass" : "partial", {
-      clips: runs, clip_s: clipS, ratio_p95: p95 === null ? "n/a" : Number(p95.toFixed(3)), ratio_limit: limit, sensitive_clip_done: sensitiveDone,
+      clips: runs, clip_s: clipS, ratio_p95: p95 === null ? "n/a" : Number(p95.toFixed(3)), ratio_limit: limit, ratio_judged: judged, speech_pinned: pinnedSpeech, sensitive_clip_done: sensitiveDone,
       contents_compared: comparable, words_recognised: words, egress_checked: Boolean(env.TD_EGRESS_CMD), egress_refused: egressRefused,
-    }, `${runs} مقطع اصطناعي بكلام عربي (${env.TD_SPEECH_FILE ? "ملف مُعطى" : "espeak-ng"}) ومقطع لمادة موسومة بالحساسية؛ لا دقة كلمات هنا (ذلك tools/asr-bench) ولا تسجيلات ميدانية${full ? "" : "؛ لم يكتمل ما يلزم لـ pass (المحتوى المقارن أو التحقق من غياب الخروج أو عدد المقاطع)"}`);
+    }, `${runs} مقطع اصطناعي بكلام عربي (${pinnedSpeech ? "كلام حقيقي عام: FLEURS مثبّت ببصمته" : env.TD_SPEECH_FILE ? "ملف مُعطى غير المثبّت" : "espeak-ng"}) ومقطع لمادة موسومة بالحساسية؛ لا دقة كلمات هنا (ذلك tools/asr-bench) ولا تسجيلات ميدانية${full ? "" : "؛ لم يكتمل ما يلزم لـ pass (المحتوى المقارن أو التحقق من غياب الخروج أو عدد المقاطع أو الكلام المثبّت أو مضيف التجربة الذي يُحكم عليه الحد)"}`);
     if (args["dry-run"]) writeResult(doc, { dryRun: true }); else console.log("wrote", writeResult(doc, { slug: "api" }));
     return { code: fails.length ? 1 : 0, doc };
   } finally { rmSync(work, { recursive: true, force: true }); }
