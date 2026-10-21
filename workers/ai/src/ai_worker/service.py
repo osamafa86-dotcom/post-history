@@ -172,6 +172,8 @@ class Service:
                   "ai_attempt": attempt + 1, "ai_first_seen": first}
         self.r.zadd(RETRY, {json.dumps(member, sort_keys=True): now + delay})
         self._ack(entry_id)
+        # للقياس: كم انتظر الحدث مصدره (transcript-draft في #113 يحسب منه زمن الانتظار مقابل التفريغ)
+        log.info("event parked entry=%s attempt=%d delay_s=%.0f waited_s=%.1f", entry_id, attempt + 1, delay, now - first)
         return f"retry:{attempt + 1}"
 
     def _wait(self, seconds: float) -> None:

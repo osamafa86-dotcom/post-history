@@ -36,8 +36,10 @@ def test_transient_failure_stays_pending():
     assert out == "deferred:ConnectionError" and r.acked == []
 
 
-def test_missing_source_is_parked_with_backoff_not_blocking():
-    out, r = run(SourceNotReady("x"))
+def test_missing_source_is_parked_with_backoff_not_blocking(caplog):
+    with caplog.at_level("INFO"):
+        out, r = run(SourceNotReady("x"))
+    assert "event parked entry=1-0 attempt=1 delay_s=2 waited_s=0.0" in caplog.text
     assert out == "retry:1" and r.acked == ["1-0"]  # off the stream: the next material is read at once
     [(member, due)] = r.zset.items()
     m = json.loads(member)
