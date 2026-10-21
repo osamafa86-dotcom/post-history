@@ -2,7 +2,7 @@
   "schema_version": 1,
   "tool": "other",
   "role": "وكيل الخادم",
-  "test_name": "performance",
+  "test_name": "api-latency-production-scale",
   "decision_ref": 18,
   "started_at": "2026-10-21T00:34:48.758Z",
   "ended_at": "2026-10-21T00:37:04.460Z",

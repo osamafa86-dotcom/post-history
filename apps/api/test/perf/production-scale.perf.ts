@@ -61,7 +61,8 @@ describe('performance at production scale', () => {
       schema_version: 1,
       tool: 'other',
       role: 'وكيل الخادم',
-      test_name: 'performance',
+      // ما قيس فعلًا: زمن الواجهة بحجم الإنتاج؛ لا يدّعي اختبار القبول «performance» كله (البحث النصي ومعاينة 1080p)
+      test_name: 'api-latency-production-scale',
       decision_ref: 18,
       started_at: started.toISOString(),
       ended_at: new Date().toISOString(),
