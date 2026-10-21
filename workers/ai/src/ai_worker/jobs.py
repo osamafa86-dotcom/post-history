@@ -171,7 +171,7 @@ class Jobs:
             path.write_text(shots_mod.to_json(found, segments, source={"file_id": file_id, "from": "proxy-480p.mp4"},
                                               stats=stats), encoding="utf-8")
             self.storage.put_file(self.bucket, shots_key(material_id, file_id), path, _sha256(path), JSON_MIME)
-            # قائمة اللقطات (ADR 0024): تُكتب ولا تُسجَّل حتى يقبل العقد نوع shot_list
+            # قائمة اللقطات (ADR 0026): تُكتب ولا تُسجَّل حتى يقبل العقد نوع shot_list
             lpath = src.with_name("shot_list.json")
             lpath.write_text(shot_list_mod.to_json(found, segments, source={"file_id": file_id, "from": "proxy-480p.mp4"}),
                              encoding="utf-8")
