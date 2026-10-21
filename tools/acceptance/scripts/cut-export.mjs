@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { ROOT, newResult, finish, writeResult, parseArgs, banner } from "../lib/measurement.mjs";
 import { byName } from "../lib/catalog.mjs";
 import { checker } from "../lib/core-gate.mjs";
-import { LEAK_VALUES, rotateClip, sha256File, synthClip, synthHdrClip, videoTimes, cutBack } from "../lib/media-clips.mjs";
+import { LEAK_VALUES, SEI_VALUE, plantSei, rotateClip, sha256File, synthClip, synthHdrClip, videoTimes, cutBack } from "../lib/media-clips.mjs";
 import { checkSums, leaks, parseEdl, parseFcpxml, readZip, streamFacts, tcFrames } from "../lib/export-package.mjs";
 
 const TOL_MS = 40;
@@ -43,7 +43,7 @@ function build(original, out, env) {
 const have = (bin) => spawnSync(bin, ["-version"], { stdio: "ignore" }).status === 0;
 
 /** The checks for one original and its package. Returns the numbers that go into the result. */
-export function judgeCase(label, { originalPath, packagePath, check, planted = LEAK_VALUES, clipTimes = (p) => videoTimes(p), extract }) {
+export function judgeCase(label, { originalPath, packagePath, check, planted = [...LEAK_VALUES, SEI_VALUE], clipTimes = (p) => videoTimes(p), extract }) {
   const entries = readZip(packagePath);
   const clipName = [...entries.keys()].find((n) => /^clip\.[a-z0-9]+$/.test(n));
   check(`${label}: the package holds clip.<ext>, metadata.json, the two sequences and SHA256SUMS, nothing else`,
@@ -100,7 +100,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     if (given) cases.push({ label: "given", original: env.CUT_ORIGINAL, pkg: env.CUT_PACKAGE });
     else {
       const phone = synthClip(join(dir, "phone-plain.mp4"), { seconds: 20, size: "1920x1080", vfr: true, startOffset: 3.5, tags: true });
-      cases.push({ label: "phone: VFR, first timestamp 3.5 s, rotated 90, planted tags", original: rotateClip(phone, join(dir, "phone.mov"), 90) });
+      cases.push({ label: "phone: VFR, first timestamp 3.5 s, rotated 90, planted tags and an SEI message", original: plantSei(rotateClip(phone, join(dir, "phone-rot.mov"), 90), join(dir, "phone.mov")) });
       const hdr = synthHdrClip(join(dir, "hdr.mov"), { seconds: 8 });
       cases.push({ label: "HDR: HEVC 10-bit BT.2020 HLG, planted tags", original: hdr });
     }

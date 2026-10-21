@@ -65,6 +65,17 @@ export function synthHdrClip(path, { seconds = 6, size = "1280x720", rate = 30, 
   return path;
 }
 
+/** A string planted inside the H.264 bitstream itself (an SEI user_data_unregistered message), which stream copy keeps. */
+export const SEI_VALUE = "AcceptanceSeiDevice-9f3a";
+const SEI_UUID = "0123456789abcdef0123456789abcdef";
+
+/** Remuxes `src` (H.264) into `dst` with `SEI_VALUE` inserted into every access unit's SEI, streams otherwise copied. */
+export function plantSei(src, dst) {
+  run(FFMPEG, ["-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-copyts", "-i", src, "-c", "copy",
+    "-bsf:v", `h264_metadata=sei_user_data=${SEI_UUID}+${SEI_VALUE}`, "-movflags", "use_metadata_tags", dst]);
+  return dst;
+}
+
 /** Spoken Arabic from espeak-ng (a synthetic voice: no recording of anyone). Throws when espeak-ng is not installed. */
 export function espeakArabic(wavPath, text) {
   run("espeak-ng", ["-v", "ar", "-s", "150", "-w", wavPath, text]);
