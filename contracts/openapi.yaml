@@ -1079,6 +1079,14 @@ paths:
           required: false
           description: جلسة الدخول (مطالبة `ses`)، لرموز الويب وحدها
           schema: { type: string, format: uuid }
+        - name: key_class
+          in: query
+          required: false
+          description: >-
+            فئة مفتاح التوقيع الذي تحقّقت به البوابة من الرمز: `production` (الافتراضي حين يغيب) أو `qa` لمفتاح اختبار معرّفه
+            (`kid`) ببادئة `qa-`. مع `qa` يرد الخادم `204` فقط إن كانت جلسة الرفع مملوكة لحساب القبول المسمّى في إعداده،
+            وإلا `403` كبقية الحالات.
+          schema: { type: string, enum: [production, qa], default: production }
       responses:
         "204": { description: الجلسة حية ويقبل صاحبها الرفع }
         "403": { description: لا تقبل رفعًا (بلا جسم ولا تمييز للسبب) }
