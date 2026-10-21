@@ -1,0 +1,48 @@
+# Stand-in for the second provider in the trial smoke (ADR 0013, #149 item e): a MinIO bucket with object lock and a
+# default COMPLIANCE retention, and a write-only key for the backup (put, list, read retention; no get, no delete).
+# On the host the owner creates the same at the provider; only BACKUP_REMOTE_* go in the secrets.
+services:
+  backup-remote:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
+    profiles: [backup]
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: "${BACKUP_REMOTE_ROOT_USER:?}"
+      MINIO_ROOT_PASSWORD: "${BACKUP_REMOTE_ROOT_PASSWORD:?}"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  backup-remote-init:
+    image: pgsty/mc:RELEASE.2026-10-18T00-00-00Z@sha256:6ecdaec70bc5e8cf9d0e9a70c190f3beb1c83f11617ff4333f1fcd71ab1daf18
+    profiles: [backup]
+    depends_on:
+      backup-remote:
+        condition: service_healthy
+    environment:
+      MC_HOST_r: "http://${BACKUP_REMOTE_ROOT_USER}:${BACKUP_REMOTE_ROOT_PASSWORD}@backup-remote:9000"
+      BUCKET: "${BACKUP_REMOTE_BUCKET:?}"
+      WRITER: "${BACKUP_REMOTE_ACCESS_KEY:?}"
+      WRITER_SECRET: "${BACKUP_REMOTE_SECRET_KEY:?}"
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -e
+        mc mb --ignore-existing --with-lock "r/$$BUCKET"
+        mc retention set --default COMPLIANCE 1d "r/$$BUCKET"
+        cat > /tmp/p.json <<JSON
+        {"Version": "2012-10-17", "Statement": [
+          {"Effect": "Allow", "Action": ["s3:ListBucket"], "Resource": ["arn:aws:s3:::$$BUCKET"]},
+          {"Effect": "Allow", "Action": ["s3:PutObject", "s3:GetObjectRetention"], "Resource": ["arn:aws:s3:::$$BUCKET/*"]}]}
+        JSON
+        mc admin user add r "$$WRITER" "$$WRITER_SECRET" >/dev/null
+        mc admin policy create r backup-writer /tmp/p.json >/dev/null 2>&1 || mc admin policy update r backup-writer /tmp/p.json >/dev/null
+        mc admin policy attach r backup-writer --user "$$WRITER" >/dev/null 2>&1 || true
+    restart: "no"
+
+  backup:
+    depends_on:
+      backup-remote-init:
+        condition: service_completed_successfully

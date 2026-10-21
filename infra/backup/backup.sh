@@ -8,7 +8,8 @@
 # فقط، infra/minio/init.sh)؛ S3_BUCKET_UPLOADS S3_BUCKET_MEDIA؛ BACKUP_RECIPIENT_CERT (شهادة المستلم العامة)؛
 # BACKUP_DIR (/backups)؛ BACKUP_KEEP_DAYS (14، لتفريغات Postgres المحلية فقط؛ الكائنات لا تُحذف من النسخ)؛
 # واختياريًا BACKUP_REMOTE_URL/BACKUP_REMOTE_ACCESS_KEY/BACKUP_REMOTE_SECRET_KEY/BACKUP_REMOTE_BUCKET لنسخة لدى
-# مزوّد ثانٍ بقفل كائنات. لا تُطبع قيمة سرية: مفاتيح mc تُصدَّر في البيئة ولا تمر في سطر الأوامر.
+# مزوّد ثانٍ بقفل كائنات: حاوية بقفل كائنات واحتفاظ افتراضي بوضع compliance، ومفتاح كتابة فقط (PutObject وListBucket
+# وGetObjectRetention، بلا قراءة ولا حذف). نسخة بلا احتفاظ compliance تُفشل النسخ. لا تُطبع قيمة سرية: مفاتيح mc تُصدَّر في البيئة ولا تمر في سطر الأوامر.
 # pipefail: فشل pg_dump أو mc cat لا يصير ملفًا مشفّرًا فارغًا يُسجَّل نجاحًا.
 set -eu -o pipefail
 
@@ -68,8 +69,12 @@ once() {
   if [ -n "${BACKUP_REMOTE_URL:-}" ]; then
     mc mirror --quiet "$DIR/pg" "remote/$BACKUP_REMOTE_BUCKET/pg" >/dev/null
     mc mirror --quiet "$DIR/objects" "remote/$BACKUP_REMOTE_BUCKET/objects" >/dev/null
+    # The isolated copy only counts when it cannot be deleted: the bucket's default retention (object lock,
+    # compliance) must apply to what was just written. A bucket without it fails the backup.
+    mc retention info "remote/$BACKUP_REMOTE_BUCKET/pg/$ts.dump.cms" 2>/dev/null | grep -q COMPLIANCE \
+      || { log "second provider copy is not under compliance retention (object lock)"; return 1; }
     remote=true
-    log "mirrored to the second provider"
+    log "mirrored to the second provider, under compliance retention"
   fi
 
   cat > "$DIR/last-success.json.part" <<EOF
