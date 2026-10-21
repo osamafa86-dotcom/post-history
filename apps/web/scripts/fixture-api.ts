@@ -164,6 +164,15 @@ const server = createServer(async (req, res) => {
     const rule = rules.get(url.pathname.slice("/v1/notification-rules/".length)); if (!rule) return send({}, 404);
     res.setHeader("ETag", `"${rule.row_version}"`); return send(rule);
   }
+  if (url.pathname === "/v1/dashboard/newsroom") {
+    if (!user.roles.some(role => ["supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin"].includes(role.name))) return send({}, 403);
+    const count = (key: "editorial_state" | "technical_state" | "rights_state") => Object.entries(materials.reduce<Record<string, number>>((all, m) => ({ ...all, [m[key]]: (all[m[key]] ?? 0) + 1 }), {})).map(([state, count]) => ({ state, count }));
+    return send({ generated_at: new Date().toISOString(), editorial: [...count("editorial_state"), { state: "never-display-canary", count: 1 }], technical: count("technical_state"), rights: count("rights_state"),
+      urgent_open: materials.filter(m => m.priority === "urgent" && !["published", "rejected"].includes(m.editorial_state)).length,
+      reserved: materials.filter(m => m.reserved_by).map(m => ({ material_id: m.id, reserved_by: m.reserved_by, reserved_at: m.reserved_at, priority: m.priority, editorial_state: m.editorial_state, title: "never-display-canary" })),
+      recent_receipts: materials.slice(0, 3).map(m => ({ material_id: m.id, receipt_number: `R-261021-${m.id.slice(-6)}`, verified_at: m.created_at, priority: m.priority })),
+      overdue_acknowledgements: 2 });
+  }
   if (url.pathname === "/v1/notifications") { const items = url.searchParams.get("unread_only") === "true" ? notifications.filter(n => !n.read_at) : notifications; return send({ items, next_cursor: null, unread_count: notifications.filter(n => !n.read_at).length }); }
   const trail = /^\/v1\/materials\/([^/]+)\/transitions$/.exec(url.pathname);
   if (trail) return send({ items: history.get(trail[1]) ?? [] });

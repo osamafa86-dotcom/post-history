@@ -20,6 +20,9 @@ struct HomeView: View {
                     UploadQueueView()
                 }
                 Section {
+                    NavigationLink { MyMaterialsView() } label: { Label("materials.open", systemImage: "tray.full") }
+                }
+                Section {
                     Toggle("settings.deleteLocalAfterReceipt", isOn: $settings.deleteLocalAfterReceipt)
                 } header: { Text("settings.localCopies") } footer: { Text("settings.deleteLocalAfterReceipt.help") }
                 Section("settings.session") {

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "infra",
+  "started_at": "2026-10-21T20:04:31Z",
+  "ended_at": "2026-10-21T20:04:31Z",
+  "result": "pass",
+  "device": {
+    "platform": "server",
+    "model": "local docker compose (sandbox, 4 CPUs)"
+  },
+  "metrics": {
+    "memory_limits_mb": 552,
+    "memory_used_mb": 189
+  },
+  "notes": "infra/observability/smoke-errors.sh (ADR 0029): GlitchTip all-in-one with its Postgres and Redis after init and one Sentry-format event. Idle, almost no data; Sentry self-hosted needs 16 GB alone."
+}

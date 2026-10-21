@@ -895,6 +895,39 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
 
   /uploads:
+    get:
+      tags: [uploads]
+      summary: جلسات رفع المستخدم نفسه (للاستئناف بعد إغلاق التبويب أو التطبيق)
+      description: >-
+        جلسات المستدعي وحده، الأحدث أولًا، بالمؤشر. الافتراضي الجلسات غير النهائية (`created` و`in_progress` و`completed`)،
+        فيستأنف العميل منها بعد إغلاق التبويب أو التطبيق (مع إعادة اختيار الملف إن لزم). لا يعيد رمز الرفع أبدًا؛ يطلب
+        العميل جلسة جديدة إن انتهى الرمز.
+      operationId: listMyUploadSessions
+      x-roles: [reporter, supervisor, producer, editor_in_chief]
+      parameters:
+        - name: state
+          in: query
+          description: تصفية بالحالة؛ يتكرر. الغياب = غير النهائية
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { type: string, enum: [created, in_progress, completed, verified, failed, deduplicated] }
+        - name: material_id
+          in: query
+          description: جلسات مادة واحدة
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: صفحة جلسات
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadSessionPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       tags: [uploads]
       summary: إنشاء جلسة رفع لملف يخص مادة (أصل أو نسخة خفيفة أو ملاحظة صوتية)
@@ -942,6 +975,23 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [uploads]
+      summary: إلغاء جلسة رفع جارية
+      description: >-
+        يلغيها صاحبها وحده: تنتقل إلى `failed` بسبب `aborted`، ويُبطَل رمز الرفع ورموز ingest، ويُكتب حدث `upload.failed`
+        في المعاملة نفسها، ويُحذف ما وصل منها من التخزين المؤقت. الأصل المكتمل لا يُلغى بهذا (`409 upload_state_conflict`
+        لـ `verified` و`deduplicated`). ذاتي التكرار: جلسة ملغاة تعيد `204`.
+      operationId: abortUploadSession
+      x-roles: [reporter, supervisor, producer, editor_in_chief]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "204": { description: أُلغيت (أو كانت ملغاة) }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /uploads/{id}/complete:
     parameters:
@@ -2417,6 +2467,15 @@ components:
         receipt_number: null
         created_at: "2026-10-19T09:40:03Z"
         updated_at: "2026-10-19T10:02:44Z"
+
+    UploadSessionPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/UploadSession" }
+        next_cursor: { type: [string, "null"] }
 
     UploadSessionCreated:
       description: استجابة الإنشاء فقط؛ رمز الرفع لا يُعاد في أي قراءة لاحقة

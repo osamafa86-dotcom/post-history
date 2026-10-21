@@ -52,10 +52,10 @@ final class RecordingTransport: TusTransport, TusTransportDelegate, @unchecked S
         } catch { fail(); throw error }
     }
 
-    func currentOffset(uploadURL: URL, token: String) async throws -> Int64 {
+    func currentOffset(uploadURL: URL, token: String, ingestToken: String?) async throws -> Int64 {
         let t = Date()
         do {
-            let offset = try await inner.currentOffset(uploadURL: uploadURL, token: token)
+            let offset = try await inner.currentOffset(uploadURL: uploadURL, token: token, ingestToken: ingestToken)
             lock.withLock {
                 resumes += 1
                 headOffsets.append(offset)

@@ -26,6 +26,10 @@ plugins {
  *  2. `const` is dropped (the generator emits a one-value enum of the wrong kind for `const: true`).
  *  3. A `type` listing more than one non-null JSON type is dropped, so the property becomes `Any` rather
  *     than the first listed type.
+ *  4. A component schema that is a `oneOf` of local object `$ref`s (with or without a `discriminator`) becomes
+ *     one object with the union of their properties, of which only those every member requires stay required.
+ *     The generator otherwise emits an interface that no member implements (`IngestTokenRequest`), so no
+ *     request can be built. The client fills the members of one variant; Moshi omits the null rest.
  */
 abstract class PrepareContractView : DefaultTask() {
     @get:InputFile abstract val openapi: RegularFileProperty
@@ -39,7 +43,7 @@ abstract class PrepareContractView : DefaultTask() {
         File(out, "schemas").mkdirs()
         val yaml = Yaml(LoaderOptions().apply { codePointLimit = 16 * 1024 * 1024 })
         val spec = openapi.get().asFile.reader(Charsets.UTF_8).use { yaml.load<Any?>(it) }
-        File(out, "openapi.json").writeText(emit(relax(spec)), Charsets.UTF_8)
+        File(out, "openapi.json").writeText(emit(flattenOneOf(relax(spec))), Charsets.UTF_8)
         schemas.get().asFile.listFiles { f -> f.extension == "json" }!!.sortedBy { it.name }.forEach { src ->
             val doc = src.reader(Charsets.UTF_8).use { yaml.load<Any?>(it) }
             File(out, "schemas/${src.name}").writeText(emit(relax(doc)), Charsets.UTF_8)
@@ -47,6 +51,30 @@ abstract class PrepareContractView : DefaultTask() {
     }
 
     private fun emit(node: Any?): String = JsonOutput.prettyPrint(JsonOutput.toJson(node))
+
+    @Suppress("UNCHECKED_CAST")
+    private fun flattenOneOf(spec: Any?): Any? {
+        val schemas = ((spec as? Map<String, Any?>)?.get("components") as? Map<String, Any?>)?.get("schemas") as? MutableMap<String, Any?>
+            ?: return spec
+        val prefix = "#/components/schemas/"
+        for ((name, value) in schemas.entries.toList()) {
+            val schema = value as? Map<String, Any?> ?: continue
+            val members = (schema["oneOf"] as? List<*>)?.map { (it as? Map<*, *>)?.get("\$ref") as? String } ?: continue
+            if (members.any { it == null || !it.startsWith(prefix) }) continue
+            val shapes = members.map { schemas[it!!.removePrefix(prefix)] as? Map<String, Any?> }
+            if (shapes.any { it == null || it["type"] != "object" }) continue
+            val properties = LinkedHashMap<String, Any?>()
+            shapes.forEach { properties.putAll((it!!["properties"] as? Map<String, Any?>).orEmpty()) }
+            val required = shapes.map { ((it!!["required"] as? List<*>).orEmpty()).toSet() }.reduce { a, b -> a intersect b }
+            val flat = LinkedHashMap(schema)
+            flat.remove("oneOf"); flat.remove("discriminator")
+            flat["type"] = "object"
+            flat["properties"] = properties
+            flat["required"] = properties.keys.filter { it in required }
+            schemas[name] = flat
+        }
+        return spec
+    }
 
     @Suppress("UNCHECKED_CAST")
     private fun relax(node: Any?): Any? = when (node) {
