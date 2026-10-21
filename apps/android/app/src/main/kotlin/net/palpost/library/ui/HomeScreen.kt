@@ -1,5 +1,6 @@
 package net.palpost.library.ui
 
+import net.palpost.library.security.SignOut
 import net.palpost.library.push.Push
 import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
@@ -62,7 +63,13 @@ class HomeViewModel(private val app: Application, private val container: AppCont
     fun logout(allSessions: Boolean) {
         if (_state.value.signingOut) return
         _state.update { it.copy(signingOut = true) }
-        viewModelScope.launch { Push.unregister(container); container.auth.logout(allSessions) }
+        viewModelScope.launch {
+            SignOut(
+                cancelShownNotifications = { androidx.core.app.NotificationManagerCompat.from(app).cancelAll() },
+                unregisterPush = { Push.unregister(container) },
+                endSession = { all -> container.auth.logout(all) },
+            ).run(allSessions)
+        }
     }
 
     /** SEC-01 emergency wipe: everything on the device, now; the server is not told (no network needed). */
