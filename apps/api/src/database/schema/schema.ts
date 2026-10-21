@@ -784,6 +784,7 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
 	check("notification_deliveries_channel_check", sql`channel = ANY (ARRAY['in_app'::text, 'websocket'::text, 'apns'::text, 'fcm'::text, 'web_push'::text, 'email'::text, 'telegram'::text, 'whatsapp'::text, 'sms'::text])`),
 	check("notification_deliveries_status_check", sql`status = ANY (ARRAY['pending'::text, 'sent'::text, 'delivered'::text, 'read'::text, 'failed'::text])`),
 ]);
+
 export const licenseTemplates = pgTable("license_templates", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	type: text().notNull(),
