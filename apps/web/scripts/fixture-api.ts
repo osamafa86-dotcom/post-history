@@ -3,19 +3,39 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { form, material, me, tokens } from "../tests/fixtures";
 import assets from "../tests/media-fixture.json";
-const materials = Array.from({ length: 200 }, (_, i) => material(i + 1));
+import type { Me, Material, Notification, TransitionRecord } from "../src/lib/types";
+const materials: Material[] = [], notifications: Notification[] = [], history = new Map<string, TransitionRecord[]>();
+const writes: { path: string; method: string; key: string; body: Record<string, unknown> }[] = [];
+const applied = new Map<string, { fingerprint: string; value: unknown; status: number }>();
+let dropNextWrite = false;
+function reset() {
+  materials.splice(0, materials.length, ...Array.from({ length: 200 }, (_, i) => ({ ...material(i + 1), row_version: 17, reserved_by: null, reserved_at: null, contributors: [{ user_id: me.user_id, role: "reporter" as const, share_percent: 100 }] })));
+  materials[1].editorial_state = "accepted"; materials[2].technical_state = "failed";
+  notifications.splice(0, notifications.length, ...Array.from({ length: 3 }, (_, i) => ({ id: `60000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`, type: "never-display-canary", title: "never-display-canary", material_id: materials[i].id, priority: "normal" as const, state: "sent" as const, created_at: "2026-10-20T12:00:00Z" })));
+  history.clear(); writes.length = 0; applied.clear(); dropNextWrite = false;
+}
+reset();
 const signed = new Map<string, { kind: "proxy" | "thumbnail"; expires: number }>();
 let expireNextProxy = false;
-const access = new Set<string>(), refresh = new Set<string>();
-function session() {
-  const value = { ...tokens(), access_token: randomUUID(), refresh_token: randomUUID() };
-  access.add(value.access_token); refresh.add(value.refresh_token); return value;
+const access = new Map<string, Me>(), refresh = new Map<string, Me>();
+function profile(email: string): Me {
+  const names: Record<string, Me["roles"]> = { reviewer: ["supervisor", "rights_officer", "producer"].map(name => ({ name: name as Me["roles"][number]["name"], scopes: [] })), admin: [{ name: "system_admin", scopes: [] }], reporter: [{ name: "reporter", scopes: [] }] };
+  return { ...me, roles: names[email.split("@")[0]] ?? [], permissions: email.startsWith("permissions@") ? ["sensitive_location:read", "protected_source:read"] : [] };
+}
+function session(user: Me) {
+  const value = { ...tokens(), access_token: randomUUID(), refresh_token: randomUUID(), roles: user.roles };
+  access.set(value.access_token, user); refresh.set(value.refresh_token, user); return value;
 }
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   res.setHeader("Content-Type", "application/json"); res.setHeader("Cache-Control", "no-store");
   const send = (value: unknown, status = 200) => { res.statusCode = status; res.end(status === 204 ? "" : JSON.stringify(value)); };
   if (url.pathname === "/health") return send({ ok: true });
+  if (url.pathname === "/__test/reset" && req.method === "POST") { reset(); return send({ ok: true }); }
+  if (url.pathname === "/__test/state") return send({ writes, applied: applied.size });
+  if (url.pathname === "/__test/bump" && req.method === "POST") { materials[0].row_version!++; return send({ ok: true }); }
+  if (url.pathname === "/__test/drop-write" && req.method === "POST") { dropNextWrite = true; return send({ ok: true }); }
+  if (url.pathname === "/__test/revoke-role" && req.method === "POST") { for (const user of access.values()) user.roles = []; return send({ ok: true }); }
   if (url.pathname === "/__test/revoke" && req.method === "POST") { access.clear(); refresh.clear(); return send({ ok: true }); }
   if (url.pathname === "/__test/expire-media" && req.method === "POST") { expireNextProxy = true; return send({ ok: true }); }
   if (url.pathname === "/derived/fixture") {
@@ -35,7 +55,7 @@ const server = createServer(async (req, res) => {
     res.setHeader("Content-Length", end - start + 1); return res.end(bytes.subarray(start, end + 1));
   }
   let body: Record<string, unknown> = {};
-  if (req.method === "POST") {
+  if (["POST", "PUT", "DELETE"].includes(req.method ?? "")) {
     let raw = ""; for await (const chunk of req) { raw += chunk; if (raw.length > 8192) return send({}, 413); }
     try { body = JSON.parse(raw || "{}"); } catch { return send({}, 400); }
     if (!req.headers["idempotency-key"]) return send({ code: "missing_idempotency_key" }, 400);
@@ -43,17 +63,55 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/v1/auth/login" && req.method === "POST") {
     if (body.password !== "synthetic-password") return send({ code: "unauthorized" }, 401);
     if (body.totp_code !== "123456") return send({ code: "totp_required" }, 401);
-    return send(session());
+    return send(session(profile(String(body.email))));
   }
   if (url.pathname === "/v1/auth/refresh" && req.method === "POST") {
-    if (!refresh.delete(String(body.refresh_token))) return send({ code: "unauthorized" }, 401);
-    return send(session());
+    const user = refresh.get(String(body.refresh_token));
+    if (!user || !refresh.delete(String(body.refresh_token))) return send({ code: "unauthorized" }, 401);
+    return send(session(user));
   }
   const token = req.headers.authorization?.replace(/^Bearer /, "") ?? "";
   if (!access.has(token)) return send({ code: "unauthorized" }, 401);
   if (url.pathname === "/v1/auth/logout" && req.method === "POST") { if (body.all_sessions) { access.clear(); refresh.clear(); } else access.delete(token); return send(null, 204); }
-  if (url.pathname === "/v1/auth/me") return send(me);
-  if (url.pathname === "/v1/notifications") return send({ items: [], next_cursor: null, unread_count: 3 });
+  const user = access.get(token)!;
+  if (url.pathname === "/v1/auth/me") return send(user);
+  const isWrite = ["POST", "PUT", "DELETE"].includes(req.method ?? "");
+  if (isWrite) {
+    const path = decodeURIComponent(url.pathname), key = String(req.headers["idempotency-key"]), fingerprint = JSON.stringify([path, req.method, body]);
+    writes.push({ path, method: req.method!, key, body });
+    const cached = applied.get(key);
+    if (cached) return cached.fingerprint === fingerprint ? send(cached.value, cached.status) : send({}, 409);
+    const has = (...roles: string[]) => user.roles.some(role => roles.includes(role.name));
+    const commit = (value: unknown, status = 204) => { applied.set(key, { fingerprint, value: structuredClone(value), status }); if (dropNextWrite) { dropNextWrite = false; return send({ message: "never-display-canary" }, 503); } return send(value, status); };
+    const match = /^\/v1\/materials\/([^/]+)\/(transitions|reservation|contributors)$/.exec(path);
+    if (match) {
+      const item = materials.find(m => m.id === match[1]); if (!item) return send({}, 404);
+      if (req.method !== "DELETE" && req.headers["if-match"] !== `"${item.row_version}"`) return send({}, 412);
+      const stamp = new Date().toISOString();
+      if (match[2] === "transitions") {
+        const track = body.track as "technical" | "editorial" | "rights", column = `${track}_state` as const;
+        if (track === "editorial" && !has("supervisor", "producer") || track === "rights" && !has("rights_officer") || track === "technical" && !has("reporter")) return send({}, 403);
+        const from = item[column]; Object.assign(item, { [column]: body.to }); item.row_version!++;
+        history.set(item.id, [...(history.get(item.id) ?? []), { id: randomUUID(), track, from, to: String(body.to), reason: String(body.reason), actor_id: user.user_id, occurred_at: stamp }]);
+        return commit(item, 200);
+      }
+      if (match[2] === "contributors" && req.method === "PUT") { if (!has("rights_officer", "system_admin")) return send({}, 403); item.contributors = body.contributors as Material["contributors"]; item.row_version!++; return commit(item, 200); }
+      if (match[2] === "reservation") {
+        if (req.method === "DELETE") { if (!has("producer", "supervisor", "editor_in_chief", "system_admin")) return send({}, 403); item.reserved_by = null; item.reserved_at = null; item.row_version!++; return commit(null); }
+        if (!has("producer", "editor_in_chief")) return send({}, 403);
+        if (!["accepted", "in_production"].includes(item.editorial_state) || item.reserved_by && item.reserved_by !== user.user_id) return send({}, 409);
+        item.reserved_by = user.user_id; item.reserved_at = stamp; item.editorial_state = "in_production"; item.row_version!++;
+        return commit({ material_id: item.id, reserved_by: user.user_id, reserved_at: stamp, releases_at: new Date(Date.now() + 1800000).toISOString() }, 200);
+      }
+    }
+    if (/^\/v1\/users\/[^/]+\/(status|permissions\/[^/]+)$/.test(path)) { if (!has("system_admin")) return send({}, 403); return commit(null); }
+    const notice = /^\/v1\/notifications\/([^/]+)\/(read|ack)$/.exec(path);
+    if (notice) { const item = notifications.find(n => n.id === notice[1]); if (!item) return send({}, 404); item.read_at = new Date().toISOString(); item.state = notice[2] === "ack" ? "acknowledged" : "read"; if (notice[2] === "ack") item.acknowledged_at = item.read_at; return commit(null); }
+    return send({}, 405);
+  }
+  if (url.pathname === "/v1/notifications") { const items = url.searchParams.get("unread_only") === "true" ? notifications.filter(n => !n.read_at) : notifications; return send({ items, next_cursor: null, unread_count: notifications.filter(n => !n.read_at).length }); }
+  const trail = /^\/v1\/materials\/([^/]+)\/transitions$/.exec(url.pathname);
+  if (trail) return send({ items: history.get(trail[1]) ?? [] });
   if (url.pathname === "/v1/forms/current" || url.pathname === `/v1/forms/${form.version}`) return send(form);
   const derivative = /^\/v1\/materials\/([^/]+)\/files\/([^/]+)\/download-url$/.exec(url.pathname);
   if (derivative) {
@@ -76,7 +134,7 @@ const server = createServer(async (req, res) => {
     return send({ items: filtered.slice(start, start + limit).map(m => ({ ...m, gps: { lat: 12.345678, lng: 23.456789 }, protected_source: "never-display-canary", device_id: "never-display-canary" })), next_cursor: start + limit < filtered.length ? String(start + limit) : null });
   }
   const found = materials.find(m => `/v1/materials/${m.id}` === url.pathname);
-  if (found) return send(found);
+  if (found) { res.setHeader("ETag", `"${found.row_version}"`); return send(found); }
   return send({ code: "not_found" }, 404);
 });
 server.listen(Number(process.env.WEB_FIXTURE_PORT ?? 3201), "127.0.0.1", () => console.log("Synthetic API ready"));

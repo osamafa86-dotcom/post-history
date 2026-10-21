@@ -91,3 +91,37 @@ for (const [what, tok, want] of [
 const after = await call(env.INGEST_DOMAIN, env.INGEST_IP, "HEAD", ingestPath, tusOf(mint(viaIngest.id)));
 if (after.status !== 200 || Number(after.headers["upload-offset"]) !== viaIngest.size) fail(`offset changed after refused PATCHes: ${after.status} ${after.headers["upload-offset"]}`);
 console.log("PATCH with a revoked, foreign, expired or other-session token is refused at the gate: ok");
+
+// SEC-01 عند البوابة: رمز ingest صالح توقيعًا وعمرًا يُرفض خلال ثوانٍ من إبطال جلسة صاحبه، لا بعد انتهائه (10 دقائق).
+// رفع جارٍ عبر ingest، ثم إبطال كل جلسات المراسل، ثم PATCH برمز جديد صالح كل ربع ثانية حتى ترفضه البوابة.
+const REVOKE_MAX_S = Number(env.REVOKE_MAX_S || 5);
+const live = s.uploads.hookSessions.ok[3];
+const lt = { "Tus-Resumable": "1.0.0", Authorization: `Bearer ${live.token}` };
+const lc = await call(env.INGEST_DOMAIN, env.INGEST_IP, "POST", "/files/", { ...lt, "Ingest-Token": mint(live.id), "Upload-Length": String(live.size),
+  "Upload-Metadata": `upload_session_id ${Buffer.from(live.id).toString("base64")},filename ${Buffer.from("clip.mp4").toString("base64")}` });
+if (lc.status !== 201) fail(`revocation: create ${lc.status}`);
+const livePath = new URL(lc.headers.location).pathname;
+const half = Math.floor(live.size / 2);
+let offset = 0;
+const patchLive = async (n) => {
+  const r = await call(env.INGEST_DOMAIN, env.INGEST_IP, "PATCH", livePath, { ...lt, "Ingest-Token": mint(live.id), "Upload-Offset": String(offset),
+    "Content-Type": "application/offset+octet-stream", "Content-Length": String(n) }, Buffer.alloc(n, 0x5a));
+  if (r.status === 204) offset = Number(r.headers["upload-offset"]);
+  return r;
+};
+if ((await patchLive(half)).status !== 204) fail("revocation: first half before the revoke");
+const t0 = Date.now();
+const lo = await fetch(`${env.API_URL}/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${s.allTokens.reporter}`,
+  "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ all_sessions: true }) });
+if (lo.status !== 204) fail(`revocation: logout all sessions ${lo.status}`);
+let refused = null;
+while (Date.now() - t0 < (REVOKE_MAX_S + 5) * 1000) {
+  const r = await patchLive(1);
+  // البوابة ترد بلا Tus-Resumable، وtusd يضعها دائمًا: الرفض من البوابة لا من tusd.
+  if (r.status !== 204) { refused = { status: r.status, gate: !r.headers["tus-resumable"], s: (Date.now() - t0) / 1000 }; break; }
+  await new Promise((res) => setTimeout(res, 250));
+}
+if (!refused) fail(`revocation: a valid ingest token still passes ${REVOKE_MAX_S + 5} s after the session was revoked`);
+if (refused.status !== 403 || !refused.gate) fail(`revocation: refused with ${refused.status} ${refused.gate ? "at the gate" : "by tusd"} (want 403 at the gate)`);
+if (refused.s > REVOKE_MAX_S) fail(`revocation: refused after ${refused.s.toFixed(2)} s (limit ${REVOKE_MAX_S} s, SEC-01)`);
+console.log(`a revoked session's valid ingest token is refused at the gate after ${refused.s.toFixed(2)} s (limit ${REVOKE_MAX_S} s): ok`);

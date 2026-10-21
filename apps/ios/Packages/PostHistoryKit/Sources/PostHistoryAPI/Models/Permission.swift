@@ -7,10 +7,11 @@
 
 import Foundation
 
-/** صلاحية مستقلة تُمنح لمستخدم بعينه لا لدور (قرار المالك 2026-10-19، ADR SEC-03) */
+/** صلاحية مستقلة تُمنح لمستخدم بعينه لا لدور (قرار المالك 2026-10-19، ADR SEC-03). &#x60;reporter_identity:read&#x60; للاسم الحقيقي للمراسل حين يكون الإعداد &#x60;separate&#x60; (ADR 0021). */
 public enum Permission: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
     case sensitiveLocationRead = "sensitive_location:read"
     case protectedSourceRead = "protected_source:read"
+    case reporterIdentityRead = "reporter_identity:read"
     case unknownDefaultOpenApi = "unknown_default_open_api"
 }
 

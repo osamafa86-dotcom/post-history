@@ -50,7 +50,8 @@
         "auth.recovery_approved",
         "user.status_changed",
         "auth.recovery_completed",
-        "export.requested"
+        "export.requested",
+        "setting.changed"
       ]
     },
     "aggregate_type": {
@@ -604,6 +605,63 @@
               },
               "requested_by": {
                 "$ref": "#/$defs/uuid"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "setting.changed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "user"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "setting",
+              "value",
+              "actor_id",
+              "reason_code"
+            ],
+            "properties": {
+              "setting": {
+                "type": "string",
+                "enum": [
+                  "reporter_legal_name_access"
+                ]
+              },
+              "value": {
+                "type": "string",
+                "enum": [
+                  "separate",
+                  "protected_source"
+                ]
+              },
+              "actor_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "reason_code": {
+                "type": "string",
+                "enum": [
+                  "policy_change",
+                  "operational_need",
+                  "incident_response",
+                  "audit_finding"
+                ]
+              },
+              "occurred_at": {
+                "type": "string",
+                "format": "date-time"
               }
             }
           }

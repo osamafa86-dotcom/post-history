@@ -48,6 +48,7 @@ UPLOAD_VERIFIER=external
 INGEST_TOKEN_PUBLIC_KEYS=k1:$(cat "$WORK/ingest/public.b64")
 INGEST_TOKEN_SIGNING_KEY=$(openssl pkcs8 -topk8 -nocrypt -outform DER -in "$WORK/ingest/signing.pem" | base64 -w0)
 INGEST_TOKEN_KEY_ID=k1
+INGEST_GATE_TOKEN=$(hex 32)
 # ATTESTATION_MODE=production (التجربة) يشترط معرّف تطبيق؛ معرّف اختبار هنا، والرموز يوقّعها الدخان مباشرة.
 APP_ATTEST_APP_ID=ABCDE12345.org.example.trialci
 INGEST_PORT=8443

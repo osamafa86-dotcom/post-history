@@ -21,6 +21,8 @@ export ATTESTATION_MODE=test PLAY_INTEGRITY_PACKAGE_NAME=org.posthistory.reporte
 export PLAY_INTEGRITY_CERT_SHA256="$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=')"
 export INGEST_TOKEN_SIGNING_KEY="$(cat "$WORK/new/signing.pkcs8.b64")" INGEST_TOKEN_KEY_ID=ci-new
 export INGEST_REQUIRED=true INGEST_TUS_ENDPOINT="https://ingest.localhost:${INGEST_PORT}/files/"
+# The gate asks the API for each session's state (SEC-01) with this secret, from 172.30.250.3 on hooks.
+export INGEST_SESSION_CHECK=on INGEST_GATE_TOKEN="$(openssl rand -hex 32)"
 COMPOSE=(docker compose -f "$CDIR/docker-compose.yml" -f "$HERE/compose.ingest.yml"
          ${E2E_EXTRA_COMPOSE:+-f "$E2E_EXTRA_COMPOSE"} --profile api)
 
@@ -36,5 +38,6 @@ PLAY_PACKAGE="$PLAY_INTEGRITY_PACKAGE_NAME" PLAY_CERT="$PLAY_INTEGRITY_CERT_SHA2
 # Captured first: with pipefail, `logs | grep -q` can turn a match into a SIGPIPE failure and hide it.
 logs="$("${COMPOSE[@]}" logs api ingest-gate tusd-proxy tusd)"
 if grep -qF "$INGEST_TOKEN_SIGNING_KEY" <<<"$logs"; then fail "signing key in a log"; fi
+if grep -qF "$INGEST_GATE_TOKEN" <<<"$logs"; then fail "the gate secret in a log"; fi
 if grep -qE 'eyJ[A-Za-z0-9_-]{20,}\.eyJ' <<<"$logs"; then fail "a JWT in a log"; fi
 echo "attested upload e2e: ok"
