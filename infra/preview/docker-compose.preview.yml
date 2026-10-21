@@ -154,6 +154,8 @@ services:
       BFF_SOURCE_ADDRESSES: ${PREVIEW_EDGE_IP:-10.211.47.10}/32
       INTERNAL_ALLOWED_CIDRS: ${PREVIEW_TUSD_IP:-10.211.47.12}/32,${PREVIEW_GATE_IP:-10.211.47.13}/32
       INTERNAL_SOURCE_PATHS: ${PREVIEW_GATE_IP:-10.211.47.13}/32=/internal/ingest/
+      # One file at most 2 GiB (ADR 0023): POST /uploads answers 422 above it (#238), and tusd -max-size matches.
+      UPLOAD_MAX_BYTES: "2147483648"
       UPLOAD_RECONCILE_ENABLED: "false"
       AI_WORKER_TOKEN: ""
       MEDIA_WORKER_TOKEN: ""
