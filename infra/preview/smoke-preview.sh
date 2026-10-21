@@ -15,6 +15,7 @@ cleanup() {
   [ "${KEEP:-0}" = 1 ] && return
   "${C[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
   [ "$created_env" = 1 ] && rm -rf "$HERE/.env" "$HERE/tls"
+  docker rm -f ph-preview-decoy >/dev/null 2>&1 || true
   [ "$created_net" = 1 ] && docker network rm deploy_default >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -40,6 +41,12 @@ print(sum(lim.values()) // 2**20, ",".join(k for k, v in lim.items() if not v) o
 [ "$total" -le "$LIMIT_MB" ] || fail "memory limits add up to $total MB (> $LIMIT_MB)"
 echo "memory limits: $total MB in all, no swap, every service limited: ok"
 
+# The shared server's network carries other sites' containers: one answering to the short names "api" and "web-app"
+# (418, and it logs every hit) must never receive the edge's traffic.
+docker run -d --name ph-preview-decoy --network deploy_default --network-alias api --network-alias web-app \
+  --entrypoint node post-history-preview-api:latest -e \
+  "for (const p of [3000, 3100]) require('http').createServer((q, r) => { console.log('hit', p, q.method, q.url); r.statusCode = 418; r.end('decoy'); }).listen(p)" >/dev/null
+
 "${C[@]}" up -d --wait >/dev/null 2>&1 || fail "preview compose did not come up"
 
 # No host port anywhere, and only "web" on the shared server's network.
@@ -47,7 +54,7 @@ for id in $("${C[@]}" ps -aq); do
   [ "$(docker inspect -f '{{json .HostConfig.PortBindings}}' "$id")" = "{}" ] || fail "$(docker inspect -f '{{.Name}}' "$id") publishes a host port"
 done
 on_shared="$(docker network inspect deploy_default -f '{{range .Containers}}{{.Name}} {{end}}')"
-[ "$on_shared" = "post-history-preview-web-1 " ] || fail "on deploy_default: '$on_shared' (want the web edge alone)"
+[ "$on_shared" = "ph-preview-decoy post-history-preview-web-1 " ] || [ "$on_shared" = "post-history-preview-web-1 ph-preview-decoy " ] || fail "on deploy_default: '$on_shared' (want the web edge alone)"
 echo "no host port, the web edge alone on deploy_default: ok"
 
 # A probe on deploy_default, as the server's Caddy: the API image's node, no other image.
@@ -96,7 +103,7 @@ if (items.length < 3) die(`materials through the web: ${list.status}, ${items.le
 say(`demo login through the web sees ${items.length} synthetic materials: ok`);
 const bad = await req("POST", "/api/bff/auth/login", json, JSON.stringify({ email: process.env.EMAIL, password: "wrong-password-123" }));
 if (bad.status !== 401) die(`a wrong password: ${bad.status}`);
-for (const url of ["http://api:3000/health", "https://lib-web:8443/health", "http://lib-web:8443/health"]) {
+for (const url of ["http://ph-preview-api:3000/health", "https://lib-web:8443/health", "http://lib-web:8443/health"]) {
   const r = await fetch(url, { signal: AbortSignal.timeout(3000) }).then((x) => x.status, () => "unreachable");
   if (r !== "unreachable") die(`${url} answers from the shared network (${r})`);
 }
@@ -104,6 +111,8 @@ say("the API is not reachable from the shared network: ok");
 JS
 )" || { echo "$out"; fail "through the web edge"; }
 echo "$out"
+[ -z "$(docker logs ph-preview-decoy 2>&1)" ] || { docker logs ph-preview-decoy 2>&1 | head -5; fail "the edge sent traffic to another container named api or web-app on deploy_default"; }
+echo "the edge reaches its own upstreams, not same-named containers on deploy_default: ok"
 
 # Actual use after the requests above, under the same limit.
 sleep 5

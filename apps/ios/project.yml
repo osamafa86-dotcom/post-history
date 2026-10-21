@@ -14,12 +14,14 @@ settings:
   base:
     SWIFT_VERSION: "5.10"
     SWIFT_STRICT_CONCURRENCY: complete
-    # عنوان الخادم (مسار /v1) يُثبَّت عند البناء؛ القيمة الافتراضية من العقد وتُستبدل بنطاق الشبكة عند النشر.
-    PH_API_BASE_URL: https://api.example.invalid/v1
 targets:
   PostHistory:
     type: application
     platform: iOS
+    # عنوان الخادم PH_API_BASE_URL من App/Config/API.xcconfig (ويُستبدل لبناء التجربة بـ API.local.xcconfig).
+    configFiles:
+      Debug: App/Config/API.xcconfig
+      Release: App/Config/API.xcconfig
     sources:
       - path: App/Sources
       - path: App/Resources
@@ -49,6 +51,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.palpost.posthistory
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: false
 schemes:
