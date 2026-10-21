@@ -4,7 +4,7 @@
 
 ## الهيكل والأوامر
 
-- `Packages/PostHistoryKit/` حزمة SwiftPM (تُبنى وتُختبر على Linux وmacOS): `PostHistoryAPI` مولَّد من العقد (لا يُعدَّل يدويًا)، `AuthCore` (الهوية وKeychain)، `UploadCore` (نواة الرفع، ADR 0009، `docs/plan/upload-core.md`)، `FormEngine` (التحقق المشترك؛ `swift run form-conformance` يكتب ios.json لـ `form-conformance/run.mjs --compare`)، `DeviceSecurity` (المسح الطارئ، SEC-01؛ ADR 0009 القسم الثالث)، والهدف التنفيذي `upload-netlab` (قياس النواة ضد `tools/netlab` على Linux عبر `netlab.py --client-cmd`؛ النتائج في `docs/measurements/netlab/*-ios-core-*.json`؛ سير العمل `netlab-ios`).
+- `Packages/PostHistoryKit/` حزمة SwiftPM (تُبنى وتُختبر على Linux وmacOS): `PostHistoryAPI` مولَّد من العقد (لا يُعدَّل يدويًا)، `AuthCore` (الهوية وKeychain)، `UploadCore` (نواة الرفع، ADR 0009، `docs/plan/upload-core.md`)، `FormEngine` (التحقق المشترك؛ `swift run form-conformance` يكتب ios.json لـ `form-conformance/run.mjs --compare`)، `DeviceSecurity` (المسح الطارئ، SEC-01؛ ADR 0009 القسم الثالث)، `NotificationsCore` (تسجيل APNs بمعرّف تثبيت مولَّد وصندوق الإشعارات)، والهدف التنفيذي `upload-netlab` (قياس النواة ضد `tools/netlab` على Linux عبر `netlab.py --client-cmd`؛ النتائج في `docs/measurements/netlab/*-ios-core-*.json`؛ سير العمل `netlab-ios`).
 - `docs/field-test-ios.md` سكربت الاختبار الميداني على جهاز فعلي (يجريه المشرف الميداني).
 - `App/` تطبيق SwiftUI رقيق؛ مشروع Xcode يُولَّد: `cd apps/ios && xcodegen generate` (ADR 0009).
 - `scripts/generate-api.sh` بعد كل تغيير في `contracts/openapi.yaml`؛ CI يفشل إن اختلف الناتج.
