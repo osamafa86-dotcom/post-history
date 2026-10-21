@@ -26,6 +26,7 @@ public struct OutboxEvent: Sendable, Codable, Hashable {
         case materialPeriodContributorsSet = "material.contributors_set"
         case materialPeriodPublished = "material.published"
         case uploadPeriodStarted = "upload.started"
+        case uploadPeriodProgress = "upload.progress"
         case uploadPeriodProxyReceived = "upload.proxy_received"
         case uploadPeriodOriginalReceived = "upload.original_received"
         case uploadPeriodVerified = "upload.verified"
