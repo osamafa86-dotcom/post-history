@@ -1,0 +1,11 @@
+{
+  "note": "كلام عربي عام لاختبار transcript-draft: جملة واحدة مقروءة من FLEURS ar_eg (قسم الاختبار)، من عينة tools/asr-bench نفسها. ليست تسجيل مراسل.",
+  "license": "CC-BY-4.0",
+  "dataset": "google/fleurs",
+  "revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+  "archive": "data/ar_eg/audio/test.tar.gz",
+  "archive_sha256": "787dc348725c0924ff58c8e379d4ef41a7e488dc2ab2990a0eba4a063856edb1",
+  "member": "test/8063018510254830531.wav",
+  "member_sha256": "716562422145f66adfe3b478da9c5d12ad53a244faad985926fca95fd4529a5b",
+  "duration_s": 18.6
+}

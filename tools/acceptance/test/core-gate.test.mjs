@@ -171,3 +171,20 @@ test("transcript-draft: pending without AI_ENABLE_TRANSCRIPT, environment error 
   assert.equal((await quiet(() => transcriptDraft(["--dry-run"], {}))).code, EXIT_PENDING);
   assert.equal((await quiet(() => transcriptDraft(["--dry-run"], { AI_ENABLE_TRANSCRIPT: "1" }))).code, 2);
 });
+
+import { PIN, isPinnedSpeech, fetchSpeech } from "../lib/speech-pin.mjs";
+import { mkdtempSync as mkd, writeFileSync as wf } from "node:fs";
+import { tmpdir as td } from "node:os";
+import { join as j } from "node:path";
+
+test("transcript-draft: only the pinned public clip counts; a different file or archive is refused", async () => {
+  assert.match(PIN.member_sha256, /^[0-9a-f]{64}$/);
+  assert.match(PIN.archive_sha256, /^[0-9a-f]{64}$/);
+  const d = mkd(j(td(), "speech-pin-"));
+  const other = j(d, "other.wav");
+  wf(other, "not the clip");
+  assert.equal(await isPinnedSpeech(other), false);
+  assert.equal(await isPinnedSpeech(j(d, "missing.wav")), false);
+  const fake = async () => ({ ok: true, arrayBuffer: async () => new TextEncoder().encode("tampered archive").buffer });
+  await assert.rejects(fetchSpeech(j(d, "cache"), { fetchImpl: fake }), /does not match the pinned sha256/);
+});

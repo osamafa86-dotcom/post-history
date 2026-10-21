@@ -233,7 +233,8 @@ jobs:
         if: env.AI_ENABLE_TRANSCRIPT == '1'
         working-directory: tools/acceptance
         run: |
-          sudo apt-get install -y -qq espeak-ng
+          # real public Arabic speech, sha256-pinned (the 243 MB archive is downloaded and verified per run; no cache action is pinned in this repo yet); the p95 ratio is information here (shared runner), judged only with TD_TARGET_HOST on the trial host
+          export TD_SPEECH_FILE="$(node lib/speech-pin.mjs "$HOME/.cache/td-speech")"
           set -a; . ../../infra/compose/.env; set +a
           export TD_API_URL="http://127.0.0.1:$API_PORT/v1" TD_TUS_URL="http://127.0.0.1:$TUSD_PORT/files/"
           export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
