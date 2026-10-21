@@ -183,10 +183,13 @@ sudo infra/field-trial/qa-window.sh close
 ## الخطوة 8 — التحديث والتراجع
 
 ```bash
-sudo infra/deploy/update.sh                 # آخر main
-sudo infra/deploy/update.sh --ref <tag>     # إصدار محدد، أو العودة إلى إصدار سابق
+sudo infra/deploy/update.sh                 # آخر وسم إصدار (v*) ينشئه المنسّق بعد المراجعتين
+sudo infra/deploy/update.sh --tag <tag>     # إصدار محدد، أو العودة إلى إصدار سابق
+sudo infra/deploy/update.sh --main          # آخر main، صراحة فقط
+sudo infra/deploy/update.sh --dry-run       # الخطة بلا تغيير
 ```
 
+0. قبل أي تغيير: الإيداع الذي يشير إليه الوسم يطابق السطر `commit: <sha>` في ملاحظات الإصدار، وإن وُجد `/etc/post-history/allowed_signers` فالوسم موقّع بمفتاح فيه. وإلا يرفض التحديث.
 1. نسخة مشفّرة أولًا.
 2. ثم سحب الكود والصور.
 3. ثم إعادة تشغيل متدرجة بفحص صحة بعد كل مرحلة.
