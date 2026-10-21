@@ -14,6 +14,7 @@ public struct NewsroomDashboard: Sendable, Codable, Hashable {
     public static let recentReceiptsRule = ArrayRule(minItems: nil, maxItems: 20, uniqueItems: false)
     public static let overdueAcknowledgementsRule = NumericRule<Int>(minimum: 0, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     public static let uploadsInProgressRule = ArrayRule(minItems: nil, maxItems: 50, uniqueItems: false)
+    /** وقت بناء اللقطة؛ لا يتأخر عن الطلب أكثر من 5 ثوانٍ */
     public var generatedAt: Date
     /** عدّاد لكل حالة تحريرية ضمن النطاق (الحالات الصفرية تُحذف) */
     public var editorial: [StateCount]

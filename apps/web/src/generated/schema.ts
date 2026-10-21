@@ -963,7 +963,7 @@ export interface paths {
         };
         /**
          * لوحة غرفة الأخبار المجمّعة (v0.2)
-         * @description عدّادات الحالات الثلاث ضمن نطاق المستدعي، والمحجوز، وآخر الإيصالات، والمتأخر عن الإقرار. معرّفات وأرقام وحالات فقط: لا عناوين ولا أسماء ولا مواقع ولا حقول ديناميكية. اللقطة لحظية؛ التحديث الحي من `/events` وWebSocket.
+         * @description عدّادات الحالات الثلاث ضمن نطاق المستدعي، والمحجوز، وآخر الإيصالات، والمتأخر عن الإقرار. معرّفات وأرقام وحالات فقط: لا عناوين ولا أسماء ولا مواقع ولا حقول ديناميكية. اللقطة محدّثة كل ≤ 5 ثوانٍ لكل نطاق (`generated_at` وقت بنائها، #187)، والتحديث الحي بين اللقطات من `/events` وWebSocket.
          */
         get: operations["getNewsroomDashboard"];
         put?: never;
@@ -1989,7 +1989,10 @@ export interface components {
             count: number;
         };
         NewsroomDashboard: {
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description وقت بناء اللقطة؛ لا يتأخر عن الطلب أكثر من 5 ثوانٍ
+             */
             generated_at: string;
             /** @description عدّاد لكل حالة تحريرية ضمن النطاق (الحالات الصفرية تُحذف) */
             editorial: components["schemas"]["StateCount"][];
