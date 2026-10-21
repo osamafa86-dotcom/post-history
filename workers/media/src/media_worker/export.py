@@ -25,7 +25,8 @@ from xml.sax.saxutils import quoteattr
 
 from .ffmpeg import FFMPEG, INPUT_GUARD, run
 from .hashing import digest_file
-from .probe import Probe
+from .isobmff import strip_hvcc_sei
+from .probe import Probe, probe
 
 EXTENSIONS = {"mov": "mov", "matroska": "mkv", "mpegts": "ts"}
 ZIP_TIME = (1980, 1, 1, 0, 0, 0)
@@ -104,17 +105,33 @@ def edl(info: Probe, media_name: str, title: str) -> str:
             f"* FROM CLIP NAME: {media_name}\n")
 
 
-def strip_metadata(src: Path, dst: Path, timeout_s: float = 1800) -> None:
-    """نسخ التيارات بلا ترميز إلى ملف جديد بلا أي بيانات وصفية. `-copyts` يحفظ `start_pts`، و`bitexact` يجعل
-    الناتج حتميًا ولا يكتب توقيت الإنشاء ولا اسم المُرمِّز."""
+# رسائل البيانات داخل تيار الفيديو نفسه (لا في الحاوية) تحمل نصًا حرًّا قد يكون معرّف جهاز أو اسم برنامج: SEI في
+# H.264 (6) وHEVC (39 و40، ومنها user_data_unregistered)، وOBU البيانات في AV1 (5). تُحذف وحدات NAL كلها في نسخ
+# التيارات. HDR يبقى: دالة النقل والألوان في VUI لمجموعة المعاملات، وبيانات العرض الثابتة في صندوقي mdcv/clli
+# للحاوية إن حملها الأصل.
+IN_BAND_METADATA = {"h264": "filter_units=remove_types=6", "hevc": "filter_units=remove_types=39|40",
+                    "av1": "filter_units=remove_types=5"}
+
+
+def strip_metadata(src: Path, dst: Path, timeout_s: float = 1800, video_codec: str | None = None) -> None:
+    """نسخ التيارات بلا ترميز إلى ملف جديد بلا أي بيانات وصفية، في الحاوية ولا داخل تيار الفيديو. `-copyts` يحفظ
+    `start_pts`، و`bitexact` يجعل الناتج حتميًا ولا يكتب توقيت الإنشاء ولا اسم المُرمِّز. مرمّز لا نعرف كيف تُنزع
+    بياناته المضمّنة يُرفض بدل أن يُنسخ كما هو."""
     if Path(src).resolve() == Path(dst).resolve():
         raise ValueError("export output must be a new file, never the original")
+    codec = video_codec or probe(src).video_codec
+    if codec not in IN_BAND_METADATA:
+        raise ValueError(f"no in-band metadata filter for video codec {codec!r}")
+    if codec == "hevc" and Path(dst).suffix != ".mov":
+        raise ValueError("HEVC is exported to .mov so its hvcC can be cleaned")
     run([FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
          *INPUT_GUARD, "-copyts", "-i", str(src),
-         "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy",
+         "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy", "-bsf:v", IN_BAND_METADATA[codec],
          "-map_metadata", "-1", "-map_metadata:s", "-1", "-map_chapters", "-1",
          "-fflags", "+bitexact", "-flags:v", "+bitexact", "-flags:a", "+bitexact",
          str(dst)], timeout_s=timeout_s, cwd=Path(dst).parent)
+    if codec == "hevc":
+        strip_hvcc_sei(Path(dst))
 
 
 def sidecar(material_id: str, file_id: str, media_name: str, sha256: str, size_bytes: int, info: Probe) -> dict:
@@ -147,9 +164,10 @@ def build_package(out: Path, *, original: Path, info: Probe, material_id: str, f
         raise ValueError("export needs a video original")
     if digest_file(original).sha256 != sha256:
         raise ValueError("original changed since verification")
-    media_name = f"clip.{EXTENSIONS.get(info.container, 'mov')}"
+    # HEVC في mov دائمًا: ترويس hvcC فيه يُنقّى من SEI، وCodecPrivate في mkv لا يُعاد بناؤه
+    media_name = "clip.mov" if info.video_codec == "hevc" else f"clip.{EXTENSIONS.get(info.container, 'mov')}"
     clip = out.with_name(media_name)
-    strip_metadata(original, clip)
+    strip_metadata(original, clip, video_codec=info.video_codec)
     title = file_id
     sums: dict[str, str] = {}
     partial = out.with_name(out.name + ".partial")
