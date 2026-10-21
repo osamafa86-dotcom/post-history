@@ -34,7 +34,7 @@ from .watermark import make_watermarked_preview
 from .proxy import make_proxy
 from .hls import make_hls
 from .phash import video_phash
-from .thumbnails import contact_sheet, poster
+from .thumbnails import contact_sheet, poster, timeline_sprite
 from .waveform import write_waveform
 from .storage import DERIVED_PREFIX, ObjectMissing
 
@@ -81,6 +81,10 @@ def store_preview_key(material_id: str, file_id: str) -> str:
 
 def export_key(material_id: str, file_id: str) -> str:
     return f"{DERIVED_PREFIX}{material_id}/{file_id}/export.zip"
+
+
+def timeline_prefix(material_id: str, file_id: str) -> str:
+    return f"{DERIVED_PREFIX}{material_id}/{file_id}/timeline/"
 
 
 def hls_prefix(material_id: str, file_id: str) -> str:
@@ -193,7 +197,9 @@ class Jobs:
                 proxy_path, proxy_info = self._proxy(session, file_id, local, info)
                 outcome += "+proxy"
                 if self.enable_hls:
+                    # صور شريط الزمن للمشغّل مع HLS، خلف العلم نفسه
                     outcome += self._hls(session, file_id, proxy_path, proxy_info)
+                    outcome += self._timeline(session, file_id, proxy_path, proxy_info)
             if self.enable_export and info.video_codec:
                 outcome += self._export(session, file_id, local, info, digest, proxy_path)
             return outcome
@@ -257,6 +263,18 @@ class Jobs:
                                       "technical": {"duration_ms": info.duration_ms, "start_pts_us": info.start_pts_us,
                                                     "container": "zip"}})
         return "+export" if ok else "+export-unregistered"
+
+    def _timeline(self, session: Session, file_id: str, proxy_path: Path, proxy_info: Probe) -> str:
+        """صور شريط الزمن للمشغّل من النسخة الخفيفة. غير مانعة ولا تُسجَّل: اسمان ثابتان بجوار HLS."""
+        try:
+            prefix = timeline_prefix(session.material_id, file_id)
+            for f in timeline_sprite(proxy_path, proxy_path.with_name("timeline"), proxy_info):
+                ctype = "text/vtt" if f.suffix == ".vtt" else "image/jpeg"
+                self.storage.put_file(self.buckets.derived, prefix + f.name, f, digest_file(f).sha256, ctype)
+        except Exception as err:  # noqa: BLE001
+            log.warning("timeline skipped file=%s error=%s", file_id, type(err).__name__)
+            return "+timeline-failed"
+        return "+timeline"
 
     def _thumbnails(self, session: Session, file_id: str, local: Path, info: Probe) -> str:
         """غير مانعة: أي فشل هنا يُسجَّل ويُترك، والمصغّرات يمكن توليدها لاحقًا من الأصل."""

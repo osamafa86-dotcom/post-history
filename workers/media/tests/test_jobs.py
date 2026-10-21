@@ -7,7 +7,7 @@ import pytest
 from conftest import LEAKY_TAGS, synth
 from fakes import FakeApi, FakeStorage
 from media_worker.api import Session
-from media_worker.jobs import Buckets, Jobs, contact_sheet_key, poster_key, proxy_key, speech_key, waveform_key
+from media_worker.jobs import Buckets, Jobs, contact_sheet_key, poster_key, proxy_key, speech_key, timeline_prefix, waveform_key
 from media_worker.probe import probe
 
 SID = "5e000000-0000-4000-8000-000000000001"
@@ -139,11 +139,14 @@ def test_audio_original_has_no_proxy(tmp_path: Path):
 def test_hls_and_phash_behind_flags(tagged_clip: bytes):
     api, storage, jobs = _setup(tagged_clip)
     jobs.enable_hls = jobs.enable_phash = True
-    assert jobs.handle(_event()).endswith("+proxy+hls")
+    assert jobs.handle(_event()).endswith("+proxy+hls+timeline")
     assert len(api.verifications[0]["perceptual_hash"]) >= 1
     keys = [k for _, k in storage.puts if "/hls/" in k]
     assert keys[0].endswith(f"{FakeApi.FILE_ID}/hls/index.m3u8") and any(k.endswith(".m4s") for k in keys)
     assert api.derivatives[-1][1]["kind"] == "hls"
+    vtt = storage.objects[("media", timeline_prefix(MID, FakeApi.FILE_ID) + "thumbnails.vtt")].decode()
+    sprite = storage.objects[("media", timeline_prefix(MID, FakeApi.FILE_ID) + "sprite.jpg")]
+    assert vtt.startswith("WEBVTT") and "sprite.jpg#xywh=0,0,160,90" in vtt and sprite[:3] == b"\xff\xd8\xff"
 
 
 def test_size_mismatch_is_invalid_without_hash(tagged_clip: bytes):

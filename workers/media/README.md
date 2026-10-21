@@ -25,6 +25,7 @@
 | `contact-sheet.jpg` | صفيحة اتصال: 10 إطارات متساوية التباعد، 5×2، عرض الخانة 320 | لا يُسجَّل؛ اسمه ثابت بجوار الملصق |
 | `waveform.json` | موجة الصوت: ذروات مطبّعة 0–1 بنحو 100 نقطة/دقيقة، بلا بيانات وصفية | `kind=audio` حين يقبله الخادم |
 | `hls/index.m3u8` (+ `init.mp4`، `seg_*.m4s`) | HLS fMP4 بمقاطع ~4 ث من النسخة الخفيفة بلا ترميز ثانٍ؛ خلف `MEDIA_ENABLE_HLS` | `kind=hls` (عقد #58) |
+| `timeline/sprite.jpg` + `timeline/thumbnails.vtt` | صور شريط الزمن للمشغّل من النسخة الخفيفة: خانات 160 بكسل، 10 أعمدة، 100 خانة على الأكثر، وإشارات `#xywh`؛ مع HLS خلف `MEDIA_ENABLE_HLS` | لا يُسجَّل؛ اسمان ثابتان بجوار HLS |
 | `export.zip` | حزمة المونتاج: `clip.<ext>` (نسخ تيارات الأصل بلا ترميز إلى ملف جديد بلا أي وسوم ولا مسارات بيانات أو ترجمة؛ الأصل المخزَّن لا يدخل الحزمة)، `proxy.mp4`، `metadata.json` (قائمة بيضاء بلا بيانات كاشفة)، `sequence.fcpxml` (1.9) و`sequence.edl` (CMX3600) بلقطة واحدة، `SHA256SUMS`؛ خلف `MEDIA_ENABLE_EXPORT` | `kind=export` حين يقبله العقد |
 | `audio-16k.m4a` | للملاحظة الصوتية: AAC أحادية 16 kHz بلا وسوم، `-copyts` يحفظ خط زمن الأصل | `kind=audio` |
 | `preview-watermarked.mp4` | معاينة المتجر: 360p بمعدل بت محدود وشبكة أشرطة قطرية معتمة محروقة في الصورة، موضعها مزاح لكل مادة بـ HMAC من `MEDIA_WATERMARK_KEY`، بلا وسوم، `-copyts`؛ من الأصل المتحقق عند `catalog.listing_changed` بحالة `listed`؛ خلف `MEDIA_ENABLE_STORE_PREVIEW` | `kind=watermarked_preview` (v0.3) |
