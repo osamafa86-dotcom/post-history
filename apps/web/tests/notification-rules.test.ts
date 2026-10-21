@@ -57,3 +57,11 @@ describe("notification rules BFF", () => {
     expect(invalid.result.status).toBe(422); expect(invalid.calls).toHaveLength(0);
   });
 });
+
+describe("role labels", () => {
+  it("falls back to a generic label for a role the screen does not know", async () => {
+    const { roleLabel } = await import("../src/lib/notification-policy");
+    expect(roleLabel({ supervisor: "Supervisor" }, "supervisor", "Other role")).toBe("Supervisor");
+    expect(roleLabel({ supervisor: "Supervisor" }, "buyer_admin", "Other role")).toBe("Other role");
+  });
+});
