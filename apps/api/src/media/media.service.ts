@@ -58,6 +58,8 @@ const gone = () => new ApiError(410, 'media_resource_gone', 'The upload session 
  * من الحجم في التخزين ويقرر مطابقة بصمة العميل بنفسه ثم يطبّق النتيجة بـ recordVerification نفسها التي يستعملها
  * المُتحقق داخل الخادم. كل نقطة متساوية الأثر لأن التسليم من الطابور «مرة على الأقل».
  */
+const VOICE_NOTE_DERIVATIVES: ReadonlySet<string> = new Set(['audio', 'transcript', 'captions']);
+
 @Injectable()
 export class MediaService {
   constructor(
@@ -115,7 +117,11 @@ export class MediaService {
     return this.db.transaction(async (tx) => {
       const [source] = await tx.select().from(materialFiles).where(eq(materialFiles.id, fileId)).for('share');
       if (!source) throw gone();
-      if (source.kind !== 'original' || source.state !== 'verified') throw conflict('Derivatives are made from a verified original only.');
+      // الملاحظة الصوتية المتحقق منها مصدر لمشتقاتها الصوتية والنصية وحدها (تصميم الوكيل 5)؛ بقية المشتقات من الأصل
+      const fromVoiceNote = source.kind === 'voice_note' && VOICE_NOTE_DERIVATIVES.has(body.kind);
+      if ((source.kind !== 'original' && !fromVoiceNote) || source.state !== 'verified') {
+        throw conflict('Derivatives are made from a verified original, or audio, transcript and captions from a verified voice note.');
+      }
       // المشتق في مساحته وحدها: حاوية المشتقات (لا حاوية الرفع، فلا يُسجَّل كائن رفع مشتقًا)، تحت مسار مصدره
       if (!body.storage_key.startsWith(`derived/${source.materialId}/${source.id}/`) || body.storage_key.includes('..')) {
         throw ApiError.validation({ fields: ['/storage_key'] });

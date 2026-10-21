@@ -228,4 +228,16 @@
     <string name="wipe_target_preferences">الإعدادات</string>
     <string name="wipe_target_caches">الملفات المؤقتة وملفات التطبيق</string>
     <string name="wipe_target_other">عنصر آخر</string>
+    <string name="home_notifications">الإشعارات</string>
+    <string name="notifications_title">الإشعارات</string>
+    <string name="notifications_empty">لا إشعارات.</string>
+    <string name="notifications_ack">تأكيد الاستلام</string>
+    <string name="notifications_acknowledged">أُكِّد الاستلام</string>
+    <string name="notif_channel_newsroom">إشعارات غرفة الأخبار</string>
+    <string name="notif_newsroom_title">إشعار جديد من غرفة الأخبار</string>
+    <string name="notif_newsroom_urgent">إشعار عاجل من غرفة الأخبار</string>
+    <string name="notifications_refresh">تحديث</string>
+    <string name="notifications_loading">جارٍ التحميل…</string>
+    <string name="notifications_more">المزيد</string>
+    <string name="role_other">دور آخر</string>
 </resources>
