@@ -935,4 +935,3 @@ export const buyerOrganizations = pgTable("buyer_organizations", {
 	check("buyer_organizations_text_len", sql`((char_length(legal_name) >= 1) AND (char_length(legal_name) <= 200)) AND ((char_length(display_name_ar) >= 1) AND (char_length(display_name_ar) <= 4000)) AND ((char_length(display_name_en) >= 1) AND (char_length(display_name_en) <= 4000)) AND ((char_length(billing_email) >= 3) AND (char_length(billing_email) <= 254))`),
 	check("buyer_organizations_verified_check", sql`((status = 'pending_verification'::text) OR (verified_at IS NOT NULL)) AND ((verified_at IS NULL) = (verified_by IS NULL))`),
 ]);
-

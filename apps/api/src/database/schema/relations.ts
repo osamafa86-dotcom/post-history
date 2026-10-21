@@ -411,4 +411,3 @@ export const licenseTemplateVersionsRelations = relations(licenseTemplateVersion
 export const buyerOrganizationsRelations = relations(buyerOrganizations, ({many}) => ({
 	users: many(users),
 }));
-
