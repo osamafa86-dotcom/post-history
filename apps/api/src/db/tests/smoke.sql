@@ -477,6 +477,10 @@ INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
 VALUES ('00000000-0000-4000-8000-000000000012', 'setting.changed', 'setting', 'reporter_legal_name_access',
         '{"setting": "reporter_legal_name_access", "value": "protected_source", "reason_code": "operational_need"}');
 
+-- قاعدة تنبيه بالصلاحية الجديدة (ADR 0021)
+INSERT INTO notification_rules (name, event_type, recipient_permissions, channels)
+VALUES ('identity holders', 'material.created', ARRAY['reporter_identity:read'], ARRAY['in_app']);
+
 -- ---------- indexing policy (ADR 0002) ----------
 SELECT pg_temp.assert(
   NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexdef ILIKE '%USING gin%'),
