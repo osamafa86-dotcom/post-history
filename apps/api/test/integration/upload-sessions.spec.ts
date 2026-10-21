@@ -92,9 +92,29 @@ describe('upload sessions: list mine and cancel (GET /uploads, DELETE /uploads/{
       expect(ids(single)).toEqual(inflight);
     });
 
-    it('rejects an invalid cursor or state with 400', async () => {
+    it('rejects an invalid cursor or state with 400, including a well-formed cursor whose time is out of range', async () => {
       expect((await list(reporter, '?cursor=not-a-cursor').expect(400)).body.code).toBe('bad_request');
       await list(reporter, '?state=bogus').expect(400);
+      const cursor = (at: string) => Buffer.from(JSON.stringify([at, randomUUID()])).toString('base64url');
+      for (const at of ['2026-13-40 25:61:61+00', '2026-02-30T00:00:00Z', 'Oct 21 2026', '2026-10-21']) {
+        expect([at, (await list(reporter, `?cursor=${cursor(at)}`)).status]).toEqual([at, 400]);
+      }
+      await list(reporter, `?cursor=${cursor('2026-10-21 23:00:00.123456+00')}`).expect(200);
+    });
+
+    it('sessions created in the same microsecond page by id without gaps or repeats', async () => {
+      const tied = await loginAs(h, [{ role: 'reporter' }]);
+      const sessions: string[] = [];
+      for (let i = 0; i < 4; i++) sessions.push((await seedUploadSession(h, tied.id, { state: 'in_progress' })).id);
+      await h.pool.query(`UPDATE upload_sessions SET created_at = '2026-10-21 12:00:00.123456+00' WHERE id = ANY($1::uuid[])`, [sessions]);
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const page: { items: Array<{ id: string }>; next_cursor: string | null } = (await list(tied, `?limit=1${cursor ? `&cursor=${cursor}` : ''}`).expect(200)).body;
+        seen.push(...ids(page));
+        cursor = page.next_cursor;
+      } while (cursor);
+      expect(seen).toEqual([...sessions].sort().reverse());
     });
   });
 
@@ -141,12 +161,37 @@ describe('upload sessions: list mine and cancel (GET /uploads, DELETE /uploads/{
       expect(rows).toEqual([]);
     });
 
-    it('cancelling a completed original before verification returns the material technical track to failed', async () => {
+    it('cancelling a completed original before verification returns the material technical track to failed, with no file row left', async () => {
       const s = await seedUploadSession(h, reporter.id, { state: 'completed' });
       await h.pool.query(`UPDATE materials SET technical_state = 'original_received' WHERE id = $1`, [s.materialId]);
       await cancel(reporter, s.id).expect(204);
       const { rows } = await h.pool.query(`SELECT technical_state FROM materials WHERE id = $1`, [s.materialId]);
       expect(rows[0].technical_state).toBe('failed');
+      // صف الملف يُنشأ عند التحقق لا عند الاستلام، والمتحقق منه لا يُلغى: لا صف يشير إلى كائن محذوف
+      const files = await h.pool.query(`SELECT 1 FROM material_files WHERE material_id = $1`, [s.materialId]);
+      expect(files.rows).toEqual([]);
+    });
+
+    it('cancel racing a late post-finish: one wins under the row lock, never a received upload left on a cancelled session', async () => {
+      for (let round = 0; round < 8; round++) {
+        const s = await seedUploadSession(h, reporter.id, { state: 'in_progress' });
+        const finish = http()
+          .post(`/internal/tusd-hooks/${h.config.TUSD_HOOK_SECRET}`)
+          .send({
+            Type: 'post-finish',
+            Event: {
+              Upload: { ID: s.id, Size: 1000, Offset: 1000, MetaData: { upload_session_id: s.id }, Storage: { Type: 's3store', Bucket: h.config.S3_BUCKET_UPLOADS, Key: `${h.config.TUSD_OBJECT_PREFIX}${s.id}` } },
+              HTTPRequest: { Header: {} },
+            },
+          });
+        const [c, f] = await Promise.all([cancel(reporter, s.id), finish]);
+        expect([c.status, f.status]).toEqual([204, 200]);
+        // الترتيبان: الإلغاء أولًا فالخطّاف بلا أثر، أو الاستلام أولًا فالإلغاء يُفشل المكتمل. في الحالتين النهاية failed/aborted
+        expect(await row(s.id)).toMatchObject({ state: 'failed', failure_reason: 'aborted' });
+        const { rows } = await h.pool.query(`SELECT type FROM outbox_events WHERE aggregate_id = $1 ORDER BY id`, [s.id]);
+        const types = rows.map((r) => r.type);
+        expect(types[types.length - 1]).toBe('upload.failed');
+      }
     });
 
     it('a verified upload is 409; someone else’s session and a malformed id are 404; a storage failure does not fail the cancel', async () => {
