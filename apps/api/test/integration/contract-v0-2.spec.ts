@@ -169,7 +169,31 @@ describe('contract v0.2 on the server', () => {
       } finally {
         await as(admin).del(`/notification-rules/${id}`).expect(204);
       }
-    });
+    }, 30_000);
+  });
+
+  describe('rules and the default fan-out', () => {
+    it('a rule that does not match the material leaves its default notifications in place', async () => {
+      const id = (
+        await as(admin)
+          .post('/notification-rules', {
+            name: 'مكتب آخر',
+            event_type: 'material.created',
+            scope_kind: 'office',
+            scope_id: otherOffice,
+            recipient_roles: ['supervisor'],
+            channels: ['in_app'],
+          })
+          .expect(201)
+      ).body.id as string;
+      try {
+        const m = await material();
+        await drainOutbox(h);
+        expect(await inbox(supervisor.id, m)).toEqual([expect.objectContaining({ type: 'material.created', rule_id: null, assignment_state: 'assigned' })]);
+      } finally {
+        await as(admin).del(`/notification-rules/${id}`).expect(204);
+      }
+    }, 30_000);
   });
 
   describe('«اطّلعت» on the material', () => {
@@ -286,16 +310,18 @@ describe('contract v0.2 on the server', () => {
       const sha = randomBytes(32);
       const head = randomBytes(32);
       const tail = randomBytes(32);
+      const frame = () => randomBytes(8).readBigInt64BE();
+      const [a, b, c] = [frame(), frame(), frame()];
       const subject = await material();
-      await original(subject, { sha, size: 9000, head, tail, phash: '{1,2,3}' });
+      await original(subject, { sha, size: 9000, head, tail, phash: `{${a},${b},${c}}` });
       const same = await material();
       await original(same, { sha });
       const cheap = await material();
       await original(cheap, { size: 9000, head, tail });
       const looksAlike = await material();
-      await original(looksAlike, { phash: '{3,2,1}' }); // متوسط هامنغ (1+0+1)/3
+      await original(looksAlike, { phash: `{${a ^ 1n},${b},${c ^ 1n}}` }); // متوسط هامنغ (1+0+1)/3
       const unrelated = await material();
-      await original(unrelated, { phash: '{-1,-1,-1}' });
+      await original(unrelated, { phash: `{${~a},${~b},${~c}}` }); // كل البتات مختلفة
 
       const res = await as(chief).get(`/materials/${subject}/duplicates`).expect(200);
       const mine = res.body.items.filter((c: { material_id: string }) => [same, cheap, looksAlike, unrelated].includes(c.material_id));

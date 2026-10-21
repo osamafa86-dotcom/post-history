@@ -5,7 +5,7 @@ import { highestRank, type RoleName } from '../identity/principal';
 import type { OutboxRow } from '../outbox/outbox.dispatcher';
 import { enqueuePush } from '../push/push-delivery.worker';
 import { materialRef, notificationTitle, type Locale } from './messages';
-import { applyRules, enabledRules } from './rule-fanout';
+import { applyRules, enabledRules, ruleMatches } from './rule-fanout';
 
 type Audience = 'supervisors' | 'producers' | 'reporter' | 'escalated_to';
 
@@ -63,7 +63,9 @@ export async function fanOut(tx: Tx, event: OutboxRow, opts: FanOutOptions): Pro
     .leftJoin(offices, eq(offices.id, materials.officeId))
     .where(eq(materials.id, materialId));
   if (!m) return 0;
-  if (custom.length > 0) return applyRules(tx, event, m, custom, { locale: opts.locale, push: opts.push, receipt });
+  // القواعد تحل محل الافتراضي للمادة التي تنطبق عليها وحدها، وما لا تنطبق عليه قاعدة يبقى على الافتراضي
+  const matching = custom.filter((r) => ruleMatches(r, m));
+  if (matching.length > 0) return applyRules(tx, event, m, matching, { locale: opts.locale, push: opts.push, receipt });
   if (!rule) return 0;
   if (event.type === 'upload.verified' && (payload.kind !== 'original' || !receipt)) return 0;
   if (rule.skipUrgent && m.priority === 'urgent') return 0;

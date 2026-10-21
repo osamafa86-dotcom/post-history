@@ -26,7 +26,8 @@ export async function enabledRules(tx: Tx, eventType: string): Promise<Rule[]> {
 }
 
 /**
- * قواعد الإدارة (v0.2) تحل محل الجدول الافتراضي لنوع الحدث حين توجد لها قاعدة مفعّلة. لكل قاعدة تنطبق على المادة
+ * قواعد الإدارة (v0.2) تحل محل الجدول الافتراضي للمادة حين تنطبق عليها قاعدة مفعّلة لنوع الحدث؛ مادة لا تنطبق عليها
+ * أي قاعدة (نطاق آخر، أولوية أو نوع آخر) تبقى على الجدول الافتراضي فلا يُسكت إشعارها. لكل قاعدة تنطبق على المادة
  * (الأولوية، والنوع، والنطاق): إشعار في صندوق الوارد لكل مستلم (دور ضمن نطاق المادة أو صلاحية فاعلة)، وإن كانت مهمة
  * فموعد أول تصعيد من سلسلتها، والدفع إلى الهاتف على قنوات apns/fcm في القاعدة بعد تأخيرها وساعات هدوئها (لغير
  * العاجل). القاعدة الأولى تكسب عند تعدد القواعد لمستلم واحد ((user_id, event_id) فريد). الملخص الدوري لم يُنفَّذ بعد:
@@ -79,7 +80,7 @@ export async function applyRules(
   return created;
 }
 
-function ruleMatches(r: Rule, m: FanOutMaterial): boolean {
+export function ruleMatches(r: Rule, m: FanOutMaterial): boolean {
   if (r.priorities && !r.priorities.includes(m.priority)) return false;
   if (r.materialTypes && !r.materialTypes.some((t) => m.materialTypes.includes(t))) return false;
   if (r.scopeKind === 'office') return r.scopeId === m.officeId;
