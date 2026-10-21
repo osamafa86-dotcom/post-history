@@ -523,7 +523,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * جلسات رفع المستخدم نفسه (للاستئناف بعد إغلاق التبويب أو التطبيق)
+         * @description جلسات المستدعي وحده، الأحدث أولًا، بالمؤشر. الافتراضي الجلسات غير النهائية (`created` و`in_progress` و`completed`)، فيستأنف العميل منها بعد إغلاق التبويب أو التطبيق (مع إعادة اختيار الملف إن لزم). لا يعيد رمز الرفع أبدًا؛ يطلب العميل جلسة جديدة إن انتهى الرمز.
+         */
+        get: operations["listMyUploadSessions"];
         put?: never;
         /**
          * إنشاء جلسة رفع لملف يخص مادة (أصل أو نسخة خفيفة أو ملاحظة صوتية)
@@ -550,7 +554,11 @@ export interface paths {
         get: operations["getUploadSession"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * إلغاء جلسة رفع جارية
+         * @description يلغيها صاحبها وحده: تنتقل إلى `failed` بسبب `aborted`، ويُبطَل رمز الرفع ورموز ingest، ويُكتب حدث `upload.failed` في المعاملة نفسها، ويُحذف ما وصل منها من التخزين المؤقت. الأصل المكتمل لا يُلغى بهذا (`409 upload_state_conflict` لـ `verified` و`deduplicated`). ذاتي التكرار: جلسة ملغاة تعيد `204`.
+         */
+        delete: operations["abortUploadSession"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1568,6 +1576,10 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at?: string | null;
+        };
+        UploadSessionPage: {
+            items: components["schemas"]["UploadSession"][];
+            next_cursor: string | null;
         };
         /** @description استجابة الإنشاء فقط؛ رمز الرفع لا يُعاد في أي قراءة لاحقة */
         UploadSessionCreated: components["schemas"]["UploadSession"] & {
@@ -3350,6 +3362,38 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    listMyUploadSessions: {
+        parameters: {
+            query?: {
+                /** @description تصفية بالحالة؛ يتكرر. الغياب = غير النهائية */
+                state?: ("created" | "in_progress" | "completed" | "verified" | "failed" | "deduplicated")[];
+                /** @description جلسات مادة واحدة */
+                material_id?: string;
+                /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description حجم الصفحة */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description صفحة جلسات */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadSessionPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     createUploadSession: {
         parameters: {
             query?: never;
@@ -3406,6 +3450,34 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    abortUploadSession: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description معرّف جلسة الرفع */
+                id: components["parameters"]["UploadId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description أُلغيت (أو كانت ملغاة) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     completeUpload: {
