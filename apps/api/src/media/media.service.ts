@@ -1,9 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, ne, sql, type SQL } from 'drizzle-orm';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { ApiError } from '../common/errors';
 import { DB, type Database, type Tx } from '../database/database.module';
-import { materialFiles, uploadSessions } from '../database/schema/schema';
+import { materialExports, materialFiles, uploadSessions } from '../database/schema/schema';
 import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
 import { recordVerification, type UploadSessionRow, type VerificationOutcome } from '../verification/verification';
 import type { components } from '../generated/api';
@@ -101,6 +101,8 @@ export class MediaService {
             technical: json,
             headSha256: Buffer.from(body.head_sha256!, 'hex'),
             tailSha256: Buffer.from(body.tail_sha256!, 'hex'),
+            // البصمة الإدراكية (v0.2) للأصل وحده: كل عنصر 64 بت hex يُخزَّن bigint بإشارته
+            ...(body.perceptual_hash && s.kind === 'original' ? { perceptualHash: perceptualArray(body.perceptual_hash) } : {}),
           })
           .where(eq(materialFiles.id, after!.fileId!));
       }
@@ -142,7 +144,16 @@ export class MediaService {
         })
         .onConflictDoNothing({ target: [materialFiles.derivedFromId, materialFiles.kind], where: sql`derived_from_id IS NOT NULL` })
         .returning({ id: materialFiles.id });
-      if (created) return { file_id: created.id };
+      if (created) {
+        // حزمة التصدير (v0.2) تجعل طلبها جاهزًا
+        if (body.kind === 'export') {
+          await tx
+            .update(materialExports)
+            .set({ state: 'ready', fileId: created.id, failureReason: null })
+            .where(eq(materialExports.sourceFileId, source.id));
+        }
+        return { file_id: created.id };
+      }
       // تكرار: الطلب نفسه يعيد الملف نفسه؛ مشتق مختلف للمصدر والنوع نفسيهما تعارض
       const [existing] = await tx
         .select()
@@ -203,4 +214,10 @@ export class MediaService {
       .limit(1);
     return Boolean(p);
   }
+}
+
+/** hex 64 بت → مصفوفة bigint في Postgres (القيمة بإشارتها، فالبت الأعلى يُحفظ). */
+function perceptualArray(hashes: string[]): SQL {
+  const values = hashes.map((h) => BigInt.asIntN(64, BigInt(`0x${h}`)).toString());
+  return sql`${`{${values.join(',')}}`}::bigint[]`;
 }

@@ -9,7 +9,7 @@ import { ApiError } from './errors';
 const CONTRACTS_DIR = resolve(__dirname, '../../../../contracts');
 // بهذا المعرّف تُحل الإحالات النسبية في العقد (./schemas/x.json) إلى معرّفات ملفات المخططات نفسها ($id)
 const CONTRACT_ID = 'https://post-history/contracts/openapi.yaml';
-const SCHEMA_FILES = ['upload-form.json', 'outbox-event.json'];
+const SCHEMA_FILES = ['upload-form.json', 'outbox-event.json', 'notification-channel-payload.json'];
 
 let doc: Record<string, any> | undefined;
 let ajv: Ajv2020 | undefined;
@@ -44,6 +44,17 @@ export function requestBodyValidator(path: string, method: string): ValidateFunc
 /** مدقق لمكوّن مسمّى في العقد، مثل schemaValidator('UploadForm'). */
 export function schemaValidator(name: string): ValidateFunction {
   return compile(`#/components/schemas/${escape(name)}`);
+}
+
+/** مدقق لملف مخطط مستقل في contracts/schemas بمعرّفه ($id)، مثل schemaFileValidator('notification-channel-payload.json'). */
+export function schemaFileValidator(file: string): ValidateFunction {
+  const id = `https://post-history/contracts/schemas/${file}`;
+  let fn = cache.get(id);
+  if (!fn) {
+    fn = instance().getSchema(id)!;
+    cache.set(id, fn);
+  }
+  return fn;
 }
 
 function compile(pointer: string): ValidateFunction {
