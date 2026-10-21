@@ -40,6 +40,15 @@ targets:
         product: MaterialsCore
       - package: PostHistoryKit
         product: NotificationsCore
+      - package: PostHistoryKit
+        product: DeviceAttestation
+    # App Attest (SEC-07) وAPNs: بيئة الإنتاج لبناءات TestFlight والمتجر؛ القدرتان تُفعَّلان على المعرّف في بوابة المطوّرين،
+    # وعلى الخادم APNS_ENVIRONMENT=production كي تصل رموز أجهزة TestFlight.
+    entitlements:
+      path: App/PostHistory.entitlements
+      properties:
+        com.apple.developer.devicecheck.appattest-environment: production
+        aps-environment: production
     info:
       path: App/Info.plist
       properties:

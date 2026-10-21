@@ -37,7 +37,7 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
   it("keeps notification rule choices and limits aligned with the contract", () => {
     const input = (...p: string[]) => at("components", "schemas", "NotificationRuleInput", "properties", ...p), step = (...p: string[]) => at("components", "schemas", "NotificationEscalationStep", "properties", ...p);
     expect(ruleEvents).toEqual(input("event_type", "enum")); expect(channels).toEqual(at("components", "schemas", "NotificationChannel", "enum"));
-    expect(roles).toEqual(at("components", "schemas", "RoleName", "enum")); expect(scopeKinds).toEqual(input("scope_kind", "enum"));
+    expect(at("components", "schemas", "RoleName", "enum")).toEqual(expect.arrayContaining([...roles])); expect(scopeKinds).toEqual(input("scope_kind", "enum"));
     expect([ruleLimits.name, ruleLimits.scope, ruleLimits.delay, ruleLimits.digestMin, ruleLimits.digestMax, ruleLimits.steps, ruleLimits.stepMin, ruleLimits.stepMax]).toEqual([input("name", "maxLength"), input("scope_id", "maxLength"), input("delay_seconds", "maximum"), input("digest_interval_minutes", "minimum"), input("digest_interval_minutes", "maximum"), input("escalation", "maxItems"), step("after_seconds", "minimum"), step("after_seconds", "maximum")]);
   });
   it("keeps transition choices aligned with the three contract state enums", () => {

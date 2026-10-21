@@ -153,4 +153,14 @@ grep -A1 -F "up -d --no-deps --wait api" "$F" | tail -1 | grep -qF "wait until: 
 order "up -d --no-deps --wait api" "up -d --no-deps --wait media-worker"
 order "up -d --no-deps --wait caddy caddy-ingest" "preflight.sh --running"
 echo "update plan: ok"
+# --- the owner's guide (docs/ops/deploy-guide.md) follows these scripts: every script it names exists, and it names every
+# bootstrap step, every bootstrap flag and every key bootstrap reads from host.env.
+G=/repo/docs/ops/deploy-guide.md
+for f in $(grep -oE 'infra/[A-Za-z0-9/_.-]+\.sh' "$G" | sort -u); do [ -f "/repo/$f" ] || fail "the guide names $f, which does not exist"; done
+for s in $(sed -n 's/^STEPS=(\(.*\))$/\1/p' "$B"); do grep -qF "\`$s\`" "$G" || fail "the guide does not name bootstrap step $s"; done
+for f in --host-config --backup-cert --owner-age-recipient; do grep -qF -- "$f" "$G" || fail "the guide does not use $f"; done
+for k in MAIN_DOMAIN INGEST_DOMAIN MAIN_IP INGEST_IP ACME_EMAIL CLOUDFLARE_CIDRS APP_ATTEST_APP_ID PLAY_INTEGRITY_PACKAGE_NAME PLAY_INTEGRITY_CERT_SHA256; do
+  grep -qE "(^|[ #:])$k=" "$G" || fail "the guide's host.env lacks $k"
+done
+echo "owner's deploy guide matches the scripts: ok"
 echo "deploy dry run: ok"

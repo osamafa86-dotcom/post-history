@@ -83,6 +83,12 @@ export function checkWebvtt(text) {
   return bad;
 }
 
+/** What a reader who may not edit sees of a material: `readable` only when the read answered 200 and lists at least one file that is not a transcript or captions (so a hidden transcript is a real absence). */
+export function readerListing(res) {
+  const kinds = res?.status === 200 && Array.isArray(res.body?.files) ? res.body.files.map((x) => x.kind) : [];
+  return { status: res?.status ?? 0, kinds, readable: res?.status === 200 && kinds.some((k) => k !== "transcript" && k !== "captions") };
+}
+
 export async function run(argv = process.argv.slice(2), env = process.env, deps = {}) {
   const args = parseArgs(argv);
   banner(byName("transcript-draft"));
@@ -131,8 +137,10 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
       const same = ["title", "technical_state", "editorial_state", "rights_state", "priority"].every((k) => JSON.stringify(before[k]) === JSON.stringify(after[k]));
       check(`${label}: the draft changes nothing of the material (title, the three states, priority)`, same);
       if (outsider) {
-        const seen = ((await http.get(outsider, `/materials/${mat.id}`)).body?.files ?? []).map((x) => x.kind);
-        check(`${label}: a reader who may not edit sees neither transcript nor captions in the files listing`, !seen.includes("transcript") && !seen.includes("captions"));
+        const readerView = readerListing(await http.get(outsider, `/materials/${mat.id}`));
+        // control: the reader can read the material and some other file is listed, so the absence checked below is not "this role sees nothing at all"
+        check(`${label}: the reader who may not edit can read the material itself (control for the checks below)`, readerView.readable, `status ${readerView.status}, files ${readerView.kinds.join(",") || "none"}`);
+        check(`${label}: a reader who may not edit sees neither transcript nor captions in the files listing`, readerView.readable && !readerView.kinds.includes("transcript") && !readerView.kinds.includes("captions"));
         const shape = (b) => JSON.stringify({ ...(b ?? {}), request_id: undefined });
         const missing = await http.call(outsider, "GET", `/materials/${mat.id}/files/${randomUUID()}/download-url`);
         for (const f of [files.value.t, files.value.c]) {
