@@ -11,6 +11,9 @@ services:
     environment:
       # Two keys during a rotation (ADR 0011); the server puts kid in every token.
       INGEST_TOKEN_PUBLIC_KEYS: "${INGEST_TOKEN_PUBLIC_KEYS:?kid:SPKI base64 pairs of the ingest token verification keys}"
+      # Session state from the API (SEC-01). "off" only for test-gate.sh, which runs the gate with no sessions.
+      INGEST_SESSION_CHECK: "${INGEST_SESSION_CHECK:-on}"
+      INGEST_GATE_TOKEN: "${INGEST_GATE_TOKEN:-}"
     volumes:
       - ../ingest/nginx.conf:/etc/nginx/nginx.conf:ro
       - ../ingest/ingest_token.js:/etc/nginx/njs/ingest_token.js:ro
@@ -32,3 +35,5 @@ services:
     networks:
       default: {}
       uploads: {}
+      hooks:
+        ipv4_address: 172.30.250.3
