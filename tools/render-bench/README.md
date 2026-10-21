@@ -32,6 +32,47 @@ docker run --rm -v "$PWD":/repo -w /repo -e PYTHONPATH=/repo/workers/media/src -
   media-worker:base tools/render-bench/av_sync.py --out docs/measurements/render-bench/<date>-proxy-av-sync.json
 ```
 
+## القص والتصدير (`cut_export.py`)
+
+اختبار القبول «القص والتصدير» على `media_worker.render`. مصادر بعلامات ومضة/نغمة (`av_sync.make_source`)، وثلاثة مقاطع بنقاط قص عشوائية ثابتة البذرة.
+
+- **المرجع:** من طوابع إطارات المصدر الفعلية.
+- **المعيار:** خطأ القص إطار واحد على الأكثر، والتزامن 40 ms، وHDR يخرج SDR، والعمودي بأبعاد العرض.
+- **الاختبار:** `test_cut_export.py` حالة قصيرة، ويتحقق من أن المرجع يرى قصًا منزاحًا.
+
+```bash
+docker run --rm -v "$PWD":/repo -w /repo -e PYTHONPATH=/repo/workers/media/src:/repo/tools/render-bench --entrypoint python \
+  media-worker:base tools/render-bench/cut_export.py --out docs/measurements/render-bench/<date>-cut-export.json
+```
+
+## تصدير القالب العاجل (`urgent_template/` و`urgent_bench.py`)
+
+اختبار القبول «تصدير القالب العاجل»: تركيب طبقات الهوية على مقطع دقيقتين 1080p في زمن أقل من مدة المقطع.
+
+- **الطبقات:** `urgent_template/` مشروع Remotion (شريط الاسم وشارة «عاجل») بخلفية شفافة، والنص العربي بخط Noto Naskh Arabic من الحزمة لا من النظام.
+- **المسار المعتمد:** طبقات ProRes 4444 يركّبها FFmpeg فوق الفيديو بين مقدمة وخاتمة جاهزتين، في ترميز واحد.
+- **الاحتياطي:** libass بالنصوص والتوقيتات والخط نفسها.
+- **الناتج:** زمن كل مسار، وإطار من كل منهما للمقارنة (`--frames`).
+
+```bash
+cd tools/render-bench/urgent_template && npm ci
+npx remotion render src/index.ts LowerThird /tmp/ut/lower.mov --codec=prores --prores-profile=4444 --pixel-format=yuva444p10le --image-format=png
+npx remotion render src/index.ts Breaking /tmp/ut/breaking.mov --codec=prores --prores-profile=4444 --pixel-format=yuva444p10le --image-format=png
+mkdir -p /tmp/ut/fonts && cp node_modules/@fontsource/noto-naskh-arabic/files/noto-naskh-arabic-arabic-{400,700}-normal.woff /tmp/ut/fonts/
+docker run --rm -v "$PWD/..:/bench:ro" -v /tmp/ut:/ut -w /bench --entrypoint python media-worker:base urgent_bench.py \
+  --overlays /ut --font-dir /ut/fonts --remotion-render-s <زمن الرسم> --out /ut/urgent.json
+```
+
+ترخيص Remotion مجاني حتى 3 موظفين (الخطة)، ثم ترخيص شركة.
+## مطابقة الطوابع الزمنية (`timestamp_alignment.py`)
+
+الشق الآلي من اختبار القبول «مطابقة الطوابع الزمنية» على `media_worker.align.measure_offset`: عشرة أصول 60 ث بمعدل متغير وفجوات، ونسخ هاتف بطوابع مصفَّرة تبدأ بعد الأصل بمقدار معروف. المعيار: خطأ ≤ 40 ms في الملفات كلها وكلها موثوقة. الأداة نفسها للملفات الحقيقية في السكربت الميداني:
+
+```bash
+python -m media_worker align <نسخة_الهاتف> <الأصل>   # {"offset_ms", "confidence", "margin", "reliable", "needs_correction"}
+```
+
+
 ## مواد مشغّل الويب (`web_fixtures/`)
 
 لاختبار المشغّل في `apps/web` (#89) بلا أي ملف حقيقي. `make_web_fixtures.py` يولّد بكود العامل نفسه حالتين: 1080p بمعدل متغير وبداية 2 ث، وHEVC 10 بت HLG محوّلًا إلى SDR. لكل حالة:
@@ -45,4 +86,21 @@ docker run --rm -v "$PWD":/repo -w /repo -e PYTHONPATH=/repo/workers/media/src -
 
 ```bash
 docker run --rm -v "$PWD/tools/render-bench/web_fixtures:/wf:ro" -v /tmp/wf:/out media-worker:test python /wf/make_web_fixtures.py /out
+```
+
+## توافق المتصفحات (`browser_compat/`)
+
+هل يُفك ترميز مخرج H.264 من العامل (النسخة الخفيفة ومقاطع HLS) ويُشغَّل في المتصفحات المستهدفة؟
+
+- **المواد:** `make_fixtures.py` يولّد خمسة مصادر اصطناعية: 1080p بمعدل متغير وبداية 2 ث، وHEVC 10 بت HLG، وH.264 10 بت 4:2:2، ومقطع عمودي بمصفوفة دوران، و4K. يمرّرها في `make_proxy` و`make_hls` من العامل نفسه.
+- **الفحص البنيوي:** ملف H.264 من Baseline أو Main أو High، والمستوى ≤ 4.0، وثمانية بتات، وAAC-LC، و`moov` قبل `mdat`، و`CODECS` محسوب من `avcC`.
+- **التشغيل:** `play.mjs` (Playwright) في Chrome الرسمي وFirefox وWebKit.
+  - النسخة الخفيفة تدريجيًا، ويُشترط فك 30 إطارًا وأبعاد العرض المتوقعة.
+  - مقاطع HLS عبر MSE بنص `CODECS` المحسوب، ويبدأ التشغيل من أول ما خُزّن كما يفعل المشغّل.
+- **النتيجة:** `partial` حين ينجح الكل، لأن Safari الحقيقي على macOS وiOS لم يُشغَّل. WebKit على Linux (GStreamer) أقرب بديل مقيس.
+
+```bash
+docker run --rm -v "$PWD/tools/render-bench/browser_compat:/bc:ro" -v /tmp/bc:/out media-worker:test python /bc/make_fixtures.py /out
+cd tools/render-bench/browser_compat && npm ci && npx playwright-core install --with-deps firefox webkit
+node play.mjs /tmp/bc docs/measurements/render-bench/<date>-browser-h264.json   # Chrome الرسمي مثبت على الجهاز
 ```

@@ -23,19 +23,21 @@ function FieldInput({ field, value, change, locale, invalid }: { field: Field; v
   }
 }
 
-export function DynamicForm({ schema, type, permissions, locale, initialValues, readOnly = false }: { schema: Form; type: MaterialType; permissions: Permission[]; locale: Locale; initialValues?: Values; readOnly?: boolean }) {
+export function DynamicForm({ schema, type, permissions, locale, initialValues, readOnly = false, onSubmit, submitLabel, disabled = false, children }: { schema: Form; type: MaterialType; permissions: Permission[]; locale: Locale; initialValues?: Values; readOnly?: boolean; onSubmit?: (values: Values) => void; submitLabel?: string; disabled?: boolean; children?: React.ReactNode }) {
   const m = messages[locale];
   const [values, setValues] = useState<Values>(() => initialValues ?? Object.fromEntries(schema.fields.filter(f => f.default !== undefined).map(f => [f.key, f.default])));
   const [submitted, setSubmitted] = useState(false);
   const fields = visibleFields(schema, type, values, permissions), result = validate(schema, type, values, permissions);
   if (readOnly) return <dl className="dynamic-values">{fields.filter(f => values[f.key] !== undefined && values[f.key] !== null).map(field => <div key={field.key}><dt>{field.label[locale]}</dt><dd><ReadValue value={values[field.key]} field={field} locale={locale} /></dd></div>)}</dl>;
-  return <form className="dynamic-form" noValidate onSubmit={e => { e.preventDefault(); setSubmitted(true); }}>
+  // الحقول الظاهرة وحدها تُرسل؛ قيم الحقول المخفية بالشرط لا تُحفظ. رفع المرفقات لم يُبنَ بعد، فلا تُرسل قيمته المجردة.
+  return <form className="dynamic-form" noValidate onSubmit={e => { e.preventDefault(); setSubmitted(true); if (onSubmit && result.valid) onSubmit(Object.fromEntries(fields.filter(f => f.type !== "attachment" && values[f.key] !== undefined && values[f.key] !== null && values[f.key] !== "").map(f => [f.key, values[f.key]]))); }}>
+    {children}
     {fields.map(field => {
       const code = submitted ? result.errors.find(error => error.field === field.key)?.code : undefined;
       const hint = field.help?.[locale] ?? (field.type === "datetime" ? m.datetimeHelp : field.type === "attachment" ? m.attachmentHelp : field.type === "staff_member" ? m.staffHelp : "");
       return <div className="dynamic-field" key={field.key}><label htmlFor={`field-${field.key}`}>{field.label[locale]}{field.required && <small className="required-label">{m.required}</small>}</label><FieldInput field={field} value={values[field.key]} change={value => setValues(current => ({ ...current, [field.key]: value }))} locale={locale} invalid={Boolean(code)} /><small className="muted" id={`field-${field.key}-help`}>{hint}</small><span className="field-error" id={`field-${field.key}-error`}>{code && m.validation[code]}</span></div>;
     })}
-    <button>{m.validate}</button>{submitted && <p className={`notice ${result.valid ? "" : "error"}`} role="status">{result.valid ? m.formValid : m.formInvalid}</p>}
+    <button disabled={disabled}>{submitLabel ?? m.validate}</button>{submitted && (!onSubmit || !result.valid) && <p className={`notice ${result.valid ? "" : "error"}`} role="status">{result.valid ? m.formValid : m.formInvalid}</p>}
   </form>;
 }
 function ReadValue({ value, field, locale }: { value: unknown; field: Field; locale: Locale }) {

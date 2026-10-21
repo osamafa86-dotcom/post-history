@@ -13,10 +13,16 @@ export function readConfig() {
     if ((url.protocol !== "https:" && !(insecure && local(url) && url.protocol === "http:")) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("Invalid media origin");
     return url.origin;
   });
+  // أصول نقاط tus التي يُسمح للمتصفح بالرفع إليها ومعه رمز الرفع (#88)؛ الفراغ يعطّل الرفع من الحاسوب.
+  const tusOrigins = (process.env.WEB_TUS_ORIGINS ?? "").split(",").filter(Boolean).map(value => {
+    const url = new URL(value.trim());
+    if ((url.protocol !== "https:" && !(insecure && local(url) && url.protocol === "http:")) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("Invalid upload origin");
+    return url.origin;
+  });
   const key = Buffer.from(process.env.WEB_SESSION_KEY ?? "", "base64");
   if (key.length !== 32) throw new Error("WEB_SESSION_KEY must contain 32 bytes");
   return {
-    origin: origin.origin, api: api.toString().replace(/\/$/, ""), key, mediaOrigins,
+    origin: origin.origin, api: api.toString().replace(/\/$/, ""), key, mediaOrigins, tusOrigins,
     redisUrl: process.env.WEB_REDIS_URL ?? "redis://127.0.0.1:6379/1",
     secure: !insecure, cookieName: insecure ? "ph-session" : "__Host-ph-session",
     lifetimeSeconds: 8 * 60 * 60,

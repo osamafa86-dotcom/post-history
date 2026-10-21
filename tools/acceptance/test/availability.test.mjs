@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { analyze, run } from "../scripts/availability.mjs";
+import { analyze, crashCommand, run } from "../scripts/availability.mjs";
+import { spawn, spawnSync } from "node:child_process";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { validateMeasurement } from "../lib/measurement.mjs";
 
 const quiet = async (fn) => { const l = console.log; console.log = () => {}; try { return await fn(); } finally { console.log = l; } };
@@ -94,4 +98,34 @@ test("availability on the trial host: refuses without --maintenance-window and f
   const noSupervisor = await quiet(() => run(["--dry-run", "--maintenance-window"], trial, { fetchImpl: keep.fetchImpl, exec: keep.exec }));
   assert.equal(noSupervisor.doc.metrics.canary_withdrawn, false);
   assert.equal(noSupervisor.doc.result, "partial", "a canary left in the inbox is never pass");
+});
+
+test("crashCommand: the default is a host kill -9 of the container's PID (a crash), compose kill only on request, sudo on request", () => {
+  const env = { AVAIL_COMPOSE: "infra/field-trial/trial.sh" };
+  const cmd = crashCommand(env, "api");
+  assert.match(cmd, /ps -q api/);
+  assert.match(cmd, /docker inspect -f '\{\{\.State\.Pid\}\}'/);
+  assert.match(cmd, /kill -9 "\$pid"/);
+  assert.doesNotMatch(cmd, /kill -s KILL/, "docker compose kill counts as a manual stop: the restart policy would not bring it back");
+  assert.match(crashCommand({ ...env, AVAIL_KILL_PREFIX: "sudo" }, "api"), /sudo kill -9/);
+  assert.equal(crashCommand({ ...env, AVAIL_CRASH_MODE: "compose" }, "api"), "infra/field-trial/trial.sh kill -s KILL api");
+});
+
+test("crashCommand: run in a shell with a fake compose and docker, it kills exactly the PID docker reports, and fails when there is no container", { skip: process.platform === "win32" }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "avail-kill-"));
+  const victim = spawn("sleep", ["60"], { stdio: "ignore" });
+  try {
+    const compose = join(dir, "compose.sh"), docker = join(dir, "docker.sh");
+    writeFileSync(compose, '#!/bin/sh\n[ "$1" = ps ] && [ "$2" = -q ] && [ "$3" = api ] && echo cid-api\n');
+    writeFileSync(docker, `#!/bin/sh\n[ "$1" = inspect ] && echo ${victim.pid}\n`);
+    chmodSync(compose, 0o755); chmodSync(docker, 0o755);
+    const env = { AVAIL_COMPOSE: compose, AVAIL_DOCKER: docker };
+    const none = spawnSync("sh", ["-c", crashCommand(env, "no-such-service")]);
+    assert.notEqual(none.status, 0, "no container: the command fails instead of killing something");
+    assert.equal(process.kill(victim.pid, 0), true, "the victim is still alive");
+    const exited = new Promise((r) => victim.on("exit", (code, sig) => r(sig)));
+    const done = spawnSync("sh", ["-c", crashCommand(env, "api")]);
+    assert.equal(done.status, 0);
+    assert.equal(await exited, "SIGKILL");
+  } finally { try { victim.kill("SIGKILL"); } catch { /* gone */ } rmSync(dir, { recursive: true, force: true }); }
 });

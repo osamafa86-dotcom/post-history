@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "media",
+  "test_name": "urgent-template-export",
+  "started_at": "2026-10-21T21:03:53.695Z",
+  "ended_at": "2026-10-21T21:06:00.677Z",
+  "result": "partial",
+  "device": {
+    "platform": "server",
+    "model": "4 vCPU, no GPU"
+  },
+  "upload_path": "n/a",
+  "file": {
+    "duration_s": 120.0,
+    "codec": "h264",
+    "vfr": false,
+    "hdr": false
+  },
+  "metrics": {
+    "clip_duration_s": 126.02,
+    "remotion_overlay_render_s": 31.3,
+    "remotion_composite_export_s": 54.35,
+    "libass_export_s": 52.14,
+    "remotion_total_s": 85.65,
+    "remotion_composite_ratio": 0.431,
+    "libass_ratio": 0.414,
+    "encoder": "libx264 veryfast crf20 (CPU)",
+    "ffmpeg_version": "8.0.1"
+  },
+  "notes": "تصدير القالب العاجل على مقطع دقيقتين 1080p30 (H.264 نحو 17 Mbps) بين مقدمة وخاتمة جاهزتين (3 ث لكل)، في ترميز واحد libx264 veryfast CRF 20 على 4 vCPU بلا معالج رسومي. المسار المعتمد: طبقتا Remotion 4.0.537 بقناة شفافية (ProRes 4444، شريط الاسم 6 ث وشارة «عاجل» 4 ث، خط Noto Naskh Arabic من الحزمة) رُسمتا في 31.3 ث، وركّبها FFmpeg في 54.35 ث (0.431 من مدة المقطع)، والمجموع 85.65 ث أقل من المدة. الاحتياطي libass بالنصوص والتوقيتات والخط نفسها: 52.14 ث؛ الشكل العربي صحيح لكن صناديق الخلفية بحواف متعرجة عند الحروف النازلة ولا حركة دخول، فـ Remotion أجود بفرق زمن صغير. partial: المعيار على خادم التصدير المعتمد (NVENC) ولم يُقس هناك؛ زمن رسم Remotion يشمل تشغيل المتصفح، وطبقات أطول تزيده."
+}

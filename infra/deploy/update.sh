@@ -116,6 +116,10 @@ done
 trap - ERR
 
 log "5/6 updated: $prev -> $(git -C "$APP" rev-parse HEAD)"
+# المراقبة وتتبّع الأخطاء بعد التحديث وخارج التراجع: عطلهما لا يعيد الخدمة إلى الإصدار السابق (ADR 0027، 0029).
+for stack in monitoring errors; do
+  run "$APP/infra/observability/stack.sh" "$stack" up -d --wait || echo "!! $stack stack did not start (the service is unaffected)" >&2
+done
 log "6/6 preflight after start"
 run "$APP/infra/field-trial/preflight.sh" --running
 echo "update: done"
