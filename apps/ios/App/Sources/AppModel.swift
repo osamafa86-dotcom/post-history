@@ -1,4 +1,5 @@
 import AuthCore
+import DeviceAttestation
 import DeviceSecurity
 import Foundation
 import PostHistoryAPI
@@ -24,6 +25,8 @@ final class AppModel: ObservableObject {
         if !UserDefaults.standard.bool(forKey: "hasLaunchedBefore") {
             try? store.clear()
             try? KeychainUploadSecretStore().removeAll()
+            // معرّف مفتاح App Attest من تثبيت سابق (Keychain يبقى بعد الحذف) لم يعد صالحًا؛ يُسجَّل مفتاح جديد عند أول رفع.
+            try? KeychainAttestationKeyStore().removeKeyId()
             UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
         }
         // مسارات /auth/* بلا معترض كي لا يدخل التحديث في حلقة.
@@ -69,6 +72,8 @@ final class AppModel: ObservableObject {
             WipeStep(name: "uploads") { await engine.wipeAll() },
             WipeStep(name: "session") { await auth.forgetLocally(); return 1 },
             WipeStep(name: "upload_tokens") { try KeychainUploadSecretStore().removeAll(); return 1 },
+            // معرّف مفتاح App Attest معرّف تثبيت: يُحذف فيُسجَّل مفتاح جديد بعد الدخول التالي.
+            WipeStep(name: "attestation_key") { try KeychainAttestationKeyStore().removeKeyId(); return 1 },
             LocalDataWiper.directoryStep(name: "upload_state", url: services.stateDirectory),
             LocalDataWiper.directoryStep(name: "chunks", url: services.chunksDirectory),
             LocalDataWiper.directoryStep(name: "imported_originals", url: services.uploadsDirectory),
