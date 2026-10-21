@@ -68,6 +68,13 @@ if [ -f "$ENV_FILE" ]; then
     [ "${#v}" -ge 32 ] && ok "secret length >= 32: $k" || bad "secret length >= 32: $k"
     case "$v" in *change-me*|*example*) bad "placeholder value: $k" ;; esac
   done
+  # ingest مطلوب ما لم يُطفأ بقرار مكتوب، ومعه معرّف تطبيق واحد على الأقل وإلا لا يحصل جهاز على رمز.
+  case "$(val INGEST_REQUIRED)" in
+    ""|true) ok "INGEST_REQUIRED on (uploads only through the ingest gate)"
+             [ -n "$(val APP_ATTEST_APP_ID)$(val PLAY_INTEGRITY_PACKAGE_NAME)" ] && ok "device attestation configured (App Attest or Play Integrity)" \
+               || bad "device attestation configured: APP_ATTEST_APP_ID or PLAY_INTEGRITY_PACKAGE_NAME (no device can get an ingest token)" ;;
+    *) bad "INGEST_REQUIRED is off: needs a written decision (ADR 0011) before the trial" ;;
+  esac
   tp="$(val TRUSTED_PROXY_CIDRS)"
   case "${tp:-172.30.240.1/32}" in
     172.30.240.1/32) ok "TRUSTED_PROXY_CIDRS is the default network gateway alone" ;;

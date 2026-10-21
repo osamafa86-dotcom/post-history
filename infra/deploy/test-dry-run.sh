@@ -105,6 +105,7 @@ token="$(age -d -i "$W/owner.key" "$E/break-glass.age")"
 age -d -i "$E/host.agekey" "$E/break-glass.age" >/dev/null 2>&1 && fail "the host key opens the break-glass token"
 pub="$(sed -n 's/^INGEST_TOKEN_PUBLIC_KEYS=k1://p' "$U")"
 [ "$(sed -n 's/^INGEST_TOKEN_KEY_ID=//p' "$U")" = k1 ] || fail "signing kid is not the gate's kid"
+[ "$(sed -n 's/^INGEST_REQUIRED=//p' "$U")" = true ] || fail "ingest is not required by default"
 printf '%s' "$pub" | base64 -d | openssl pkey -pubin -inform DER -noout 2>/dev/null || fail "ingest public key is not SPKI"
 echo "secrets complete, unprinted, owner-recoverable: ok"
 

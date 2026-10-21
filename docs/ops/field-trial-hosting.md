@@ -48,6 +48,7 @@
      --backup-cert /root/backup-recipient.crt --owner-age-recipient age1...
    ```
    - `host.env` بلا أسرار: `MAIN_DOMAIN` `INGEST_DOMAIN` `MAIN_IP` `INGEST_IP` `ACME_EMAIL` `CLOUDFLARE_CIDRS`.
+   - ومعها معرّف تطبيق واحد على الأقل لشهادة الجهاز: `APP_ATTEST_APP_ID` (`<TeamID>.<BundleID>`)، أو `PLAY_INTEGRITY_PACKAGE_NAME` مع `PLAY_INTEGRITY_CERT_SHA256`. الرفع لا يمر إلا عبر بوابة ingest (`INGEST_REQUIRED=true` افتراضيًا، ADR 0011)، فبلا معرّف لا يحصل جهاز على رمز، وpreflight يرسب. حساب خدمة Play Integrity سر يُضاف إلى الأسرار المختومة. إطفاء `INGEST_REQUIRED` بقرار مكتوب فقط.
    - مفتاح age العام للمالك من `age-keygen` على جهازه. المفتاح الخاص لا يصل إلى الخادم.
    - يثبّت Docker بإصدار مثبّت، وينشئ مستخدم الخدمة، ويضبط الجدار، ويولّد الأسرار ويختمها فورًا لمفتاح المضيف ولمفتاح المالك. ثم يفكها إلى tmpfs، ويسحب الصور، ويشغّل preflight والبيئة والنسخ اليومي، ويثبّت وحدة systemd.
 2. **حفظ الأسرار المختومة:** `/etc/post-history/trial.env.age` و`break-glass.age` تُنسخ إلى مستودع التشغيل. الأول يفكه المالك بمفتاحه إن ضاع المضيف. الثاني رمز الاستعادة الطارئة، للمالك وحده. لا نص صريح على القرص.
