@@ -213,4 +213,5 @@
     <string name="wipe_target_preferences">Settings</string>
     <string name="wipe_target_caches">Temporary and app files</string>
     <string name="wipe_target_other">Other item</string>
+    <string name="role_other">Other role</string>
 </resources>

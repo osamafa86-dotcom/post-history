@@ -71,12 +71,14 @@ async function tus(req: import("node:http").IncomingMessage, res: import("node:h
   if (file.offset === file.length) { upload.session.state = "completed"; finishUpload(upload, file.hash.copy().digest("hex")); }
   return end(204, { "Upload-Offset": file.offset });
 }
+// قواعد التنبيه (#203 بند 7): مراجعة صف لكل قاعدة كما في العقد.
+const rules = new Map<string, Record<string, unknown> & { id: string; row_version: number }>();
 reset();
 const signed = new Map<string, { kind: "proxy" | "thumbnail"; expires: number }>();
 let expireNextProxy = false;
 const access = new Map<string, Me>(), refresh = new Map<string, Me>();
 function profile(email: string): Me {
-  const names: Record<string, Me["roles"]> = { reviewer: ["supervisor", "rights_officer", "producer"].map(name => ({ name: name as Me["roles"][number]["name"], scopes: [] })), admin: [{ name: "system_admin", scopes: [] }], reporter: [{ name: "reporter", scopes: [] }] };
+  const names: Record<string, Me["roles"]> = { chief: [{ name: "editor_in_chief", scopes: [] }], reviewer: ["supervisor", "rights_officer", "producer"].map(name => ({ name: name as Me["roles"][number]["name"], scopes: [] })), admin: [{ name: "system_admin", scopes: [] }], reporter: [{ name: "reporter", scopes: [] }] };
   return { ...me, roles: names[email.split("@")[0]] ?? [], permissions: email.startsWith("permissions@") ? ["sensitive_location:read", "protected_source:read", "reporter_identity:read"] : [] };
 }
 function session(user: Me) {
@@ -91,9 +93,10 @@ const server = createServer(async (req, res) => {
   if (url.pathname.startsWith("/files/")) { res.removeHeader("Content-Type"); return tus(req, res, url); }
   if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
   if (url.pathname === "/__test/uploads") return send([...uploads.values()].map(u => ({ state: u.session.state, receipt: u.session.receipt_number, ingest_tokens: [...ingestTokens.values()].filter(t => t.sid === u.session.id).length, ...(u.tus ? (({ length, offset, patches, resent, cuts }) => ({ length, offset, patches, resent, cuts }))(tusFiles.get(u.tus) ?? { length: 0, offset: 0, patches: 0, resent: 0, cuts: 0 }) : {}) })));
-  if (url.pathname === "/__test/reset" && req.method === "POST") { reset(); resetUploads(); return send({ ok: true }); }
+  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); reset(); resetUploads(); return send({ ok: true }); }
   if (url.pathname === "/__test/state") return send({ writes, applied: applied.size, identitySetting, auditCount: permissionAudit.length });
   if (url.pathname === "/__test/history-unavailable" && req.method === "POST") { historyUnavailable = true; return send({ ok: true }); }
+  if (url.pathname === "/__test/bump-rule" && req.method === "POST") { for (const rule of rules.values()) rule.row_version++; return send({ ok: true }); }
   if (url.pathname === "/__test/bump" && req.method === "POST") { materials[0].row_version!++; return send({ ok: true }); }
   if (url.pathname === "/__test/drop-write" && req.method === "POST") { dropNextWrite = true; return send({ ok: true }); }
   if (url.pathname === "/__test/revoke-role" && req.method === "POST") { for (const user of access.values()) user.roles = []; return send({ ok: true }); }
@@ -204,6 +207,20 @@ const server = createServer(async (req, res) => {
       const token = randomUUID(), expires = Date.now() + 600000; ingestTokens.set(token, { sid: upload.session.id, expires });
       return commit({ token, expires_at: new Date(expires).toISOString() }, 200);
     }
+    if (path === "/v1/notification-rules" && req.method === "POST") {
+      if (!has("system_admin")) return send({}, 403);
+      const stamp = new Date().toISOString(), rule = { ...body, id: randomUUID(), row_version: 1, created_by: user.user_id, updated_by: user.user_id, created_at: stamp, updated_at: stamp };
+      rules.set(rule.id, rule); res.setHeader("ETag", '"1"'); return commit(rule, 201);
+    }
+    const rulePath = /^\/v1\/notification-rules\/([^/]+)$/.exec(path);
+    if (rulePath) {
+      if (!has("system_admin")) return send({}, 403);
+      const rule = rules.get(rulePath[1]); if (!rule) return send({}, 404);
+      if (req.headers["if-match"] !== `"${rule.row_version}"`) return send({}, 412);
+      if (req.method === "DELETE") { rules.delete(rule.id); return commit(null); }
+      const next = { ...rule, ...body, row_version: rule.row_version + 1, updated_at: new Date().toISOString() }; rules.set(rule.id, next);
+      res.setHeader("ETag", `"${next.row_version}"`); return commit(next, 200);
+    }
     if (/^\/v1\/users\/[^/]+\/status$/.test(path)) { if (!has("system_admin")) return send({}, 403); return commit(null); }
     const notice = /^\/v1\/notifications\/([^/]+)\/(read|ack)$/.exec(path);
     if (notice) { const item = notifications.find(n => n.id === notice[1]); if (!item) return send({}, 404); item.read_at = new Date().toISOString(); item.state = notice[2] === "ack" ? "acknowledged" : "read"; if (notice[2] === "ack") item.acknowledged_at = item.read_at; return commit(null); }
@@ -223,6 +240,12 @@ const server = createServer(async (req, res) => {
   }
   const uploadRead = /^\/v1\/uploads\/([^/]+)$/.exec(url.pathname);
   if (uploadRead) { const upload = uploads.get(uploadRead[1]); return upload ? send(upload.session) : send({}, 404); }
+  if (url.pathname === "/v1/notification-rules" || url.pathname.startsWith("/v1/notification-rules/")) {
+    if (!user.roles.some(role => ["system_admin", "editor_in_chief"].includes(role.name))) return send({}, 403);
+    if (url.pathname === "/v1/notification-rules") return send({ items: [...rules.values()].map(rule => ({ ...rule, secret_note: "never-display-canary" })) });
+    const rule = rules.get(url.pathname.slice("/v1/notification-rules/".length)); if (!rule) return send({}, 404);
+    res.setHeader("ETag", `"${rule.row_version}"`); return send(rule);
+  }
   if (url.pathname === "/v1/notifications") { const items = url.searchParams.get("unread_only") === "true" ? notifications.filter(n => !n.read_at) : notifications; return send({ items, next_cursor: null, unread_count: notifications.filter(n => !n.read_at).length }); }
   const trail = /^\/v1\/materials\/([^/]+)\/transitions$/.exec(url.pathname);
   if (trail) return send({ items: history.get(trail[1]) ?? [] });

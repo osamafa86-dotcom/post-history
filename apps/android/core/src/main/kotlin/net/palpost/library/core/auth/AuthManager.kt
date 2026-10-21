@@ -38,18 +38,23 @@ import kotlin.coroutines.cancellation.CancellationException
 class AuthManager(
     private val baseUrl: String,
     private val store: TokenStore,
-    private val httpClient: OkHttpClient = OkHttpClient(),
+    httpClient: OkHttpClient = OkHttpClient(),
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
-    private val publicAuthApi = AuthApi(baseUrl, httpClient)
+    /** The caller's client without any disk cache: login, refresh and API responses carry tokens and metadata. */
+    private val httpClient: OkHttpClient = httpClient.newBuilder().cache(null).build()
+    private val publicAuthApi = AuthApi(baseUrl, this.httpClient)
     private val apiHost: HttpUrl = baseUrl.toHttpUrl()
     private val refreshLock = Any()
     private val _state = MutableStateFlow<AuthState>(store.read()?.let { AuthState.SignedIn(it.userId) } ?: AuthState.SignedOut(null))
     val state: StateFlow<AuthState> = _state
 
-    /** HTTP client carrying the session; every API built for signed-in calls uses it. */
+    /**
+     * HTTP client carrying the session; every API built for signed-in calls uses it. Never a disk cache, even if
+     * the given client has one: API responses (tokens, material metadata) must not outlive the call on the phone.
+     */
     val authenticatedClient: OkHttpClient by lazy {
-        httpClient.newBuilder().addInterceptor(bearerInterceptor()).authenticator(authenticator()).build()
+        this.httpClient.newBuilder().addInterceptor(bearerInterceptor()).authenticator(authenticator()).build()
     }
     private val sessionApi by lazy { AuthApi(baseUrl, authenticatedClient) }
 

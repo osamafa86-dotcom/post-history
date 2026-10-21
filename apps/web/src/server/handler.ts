@@ -13,6 +13,7 @@ import { hasRole, materialTag } from "@/lib/review";
 import { readUpload, uploadAction, uploadBodyLimit, uploadPath } from "./uploads";
 import { safeIdentitySetting, safePermissionHistory } from "@/lib/admin-privacy";
 import { pageLimits } from "@/lib/admin-policy";
+import { safeRule } from "@/lib/notification-policy";
 
 const privateHeaders = { "Cache-Control": "private, no-store, max-age=0", "Pragma": "no-cache", "Vary": "Cookie" };
 const json = (value: unknown, status = 200) => NextResponse.json(value, { status, headers: privateHeaders });
@@ -121,6 +122,13 @@ export async function handle(request: NextRequest, path: string, deps?: { config
       }
       const upload = /^uploads\/([^/]+)$/.exec(path);
       if (upload && uuid.test(upload[1]) && !request.nextUrl.search) return readUpload(api, upload[1]);
+      if (path === "notification-rules" || /^notification-rules\/[^/]+$/.test(path)) {
+        if (!hasRole(me, "system_admin", "editor_in_chief") || request.nextUrl.search) throw new WebError(403, "request_failed");
+        if (path === "notification-rules") return json({ items: requireOk(await api.GET("/notification-rules")).items.map(safeRule) });
+        if (!uuid.test(path.slice(19))) throw new WebError(404, "request_failed");
+        const rule = requireOk(await api.GET("/notification-rules/{rule_id}", { params: { path: { rule_id: path.slice(19) } } }));
+        const response = json(safeRule(rule)); response.headers.set("ETag", `"${rule.row_version}"`); return response;
+      }
       if (path === "notifications") {
         const search = request.nextUrl.searchParams;
         if ([...search.keys()].some(key => !["limit", "cursor", "unread_only"].includes(key) || search.getAll(key).length > 1)) throw new WebError(400, "request_failed");
