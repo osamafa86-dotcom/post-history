@@ -4,7 +4,7 @@ import { auditLog, materialContributors, materialFiles, materials, materialTrans
 import type { FieldKeyring } from '../common/crypto';
 import type { UploadForm } from '../forms/dynamic-fields';
 import type { components } from '../generated/api';
-import type { Principal, RoleName } from '../identity/principal';
+import type { Permission, Principal, RoleName } from '../identity/principal';
 import { writeOutboxEvent, type OutboxEventType } from '../outbox/outbox';
 import { redactDynamicFields } from './redaction';
 import { PRODUCTION_VISIBLE_STATES, STATE_COLUMN, type Track } from './transitions';
@@ -106,22 +106,23 @@ export function technicalTargetOnReceive(kind: string, current: string): string 
 
 /**
  * يبني استجابات Material لعدة صفوف دفعة واحدة، مع الحجب وتسجيل كل قراءة غير محجوبة لحقل حساس. الاسم الحقيقي للمراسل
- * (v0.2) لحامل protected_source:read وحده ويغيب مفتاحه لغيره؛ يُفك بالحلقة ويُسجَّل مع بقية الحقول المكشوفة.
+ * (v0.2) لحامل الصلاحية التي يحددها الإعداد الإداري (`legalName.permission`، ADR 0021) ويغيب مفتاحه لغيره؛ يُفك بالحلقة
+ * ويُسجَّل مع بقية الحقول المكشوفة.
  */
 export async function toMaterialDtos(
   executor: Executor,
   p: Principal,
   rows: MaterialRow[],
   idleSeconds: number,
-  keyring?: FieldKeyring,
+  legalName?: { keyring: FieldKeyring; permission: Permission },
 ): Promise<MaterialDto[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
   const legalNames = new Map<string, string | null>();
-  if (keyring && p.permissions.has('protected_source:read')) {
+  if (legalName && p.permissions.has(legalName.permission)) {
     const reporters = [...new Set(rows.map((r) => r.reporterId))];
     for (const u of await executor.select({ id: users.id, enc: users.legalNameEnc }).from(users).where(inArray(users.id, reporters))) {
-      legalNames.set(u.id, u.enc ? keyring.decrypt(u.enc).toString('utf8') : null);
+      legalNames.set(u.id, u.enc ? legalName.keyring.decrypt(u.enc).toString('utf8') : null);
     }
   }
   const files = await executor.select().from(materialFiles).where(inArray(materialFiles.materialId, ids)).orderBy(asc(materialFiles.createdAt));

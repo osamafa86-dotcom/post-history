@@ -20,6 +20,10 @@ export const NOTIFICATION_TITLES: Record<string, Record<Locale, string>> = {
     ar: 'أُكملت استعادة حسابك بكلمة مرور ومصادقة جديدتين؛ إن لم تكن أنت فأبلغ مشرفك فورًا',
     en: 'Your account recovery was completed with a new password and two-factor setup; tell your supervisor now if it was not you',
   },
+  'setting.changed': {
+    ar: 'تغيّر إعداد من يرى الاسم الحقيقي للمراسلين؛ راجع سجل التدقيق',
+    en: 'The setting for who sees reporters\' legal names changed; check the audit log',
+  },
   // عنوان عام لأحداث تضبط لها الإدارة قاعدة ولا قالب خاص لها (v0.2)
   'material.generic': { ar: 'تحديث على المادة #{ref}', en: 'Update on material #{ref}' },
   'upload.verified': {

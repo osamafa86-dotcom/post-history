@@ -24,6 +24,7 @@ import { AttestationModule } from './attestation/attestation.module';
 import { MediaModule } from './media/media.module';
 import { PushModule } from './push/push.module';
 import { PermissionsModule } from './permissions/permissions.module';
+import { SettingsModule } from './settings/settings.module';
 
 @Module({})
 export class AppModule {
@@ -31,7 +32,7 @@ export class AppModule {
     return {
       module: AppModule,
       global: true,
-      imports: [DatabaseModule, RedisModule, IdentityModule, OutboxModule, UploadsModule, FormsModule, MaterialsModule, NotificationsModule, EventsModule, PushDevicesModule, VerificationModule, PermissionsModule, MediaModule, AttestationModule, PushModule, DashboardModule],
+      imports: [DatabaseModule, RedisModule, IdentityModule, OutboxModule, UploadsModule, FormsModule, MaterialsModule, NotificationsModule, EventsModule, PushDevicesModule, VerificationModule, PermissionsModule, MediaModule, AttestationModule, PushModule, DashboardModule, SettingsModule],
       controllers: [HealthController],
       providers: [
         { provide: APP_CONFIG, useValue: config },

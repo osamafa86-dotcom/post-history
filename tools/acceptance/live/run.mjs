@@ -62,13 +62,16 @@ try {
     ...(coreOn ? quorumCli(stack, s) : {}),
     NOTIF_API_URL: stack.apiUrl, NOTIF_TOKENS: JSON.stringify({ ...s.tokens, supervisor_b: s.allTokens.supervisor_b }), NOTIF_ESCALATION_S: String(stack.escalationSeconds),
     NOTIF_RULES: process.env.RULES_ACCEPTANCE ?? "0",
+    RID_API_URL: stack.apiUrl, RID_MATERIAL_ID: s.uploads.materialA, RID_LEGAL_NAME: s.legalName ?? "",
+    RID_TOKENS: JSON.stringify({ system_admin: s.tokens.system_admin, identity_holder: s.tokens.editor_in_chief, source_holder: s.allTokens.system_admin_b, reporter: s.tokens.reporter }),
+    RID_USERS: JSON.stringify({ identity_holder: s.users.editor_in_chief.id, source_holder: s.users.system_admin_b.id }),
   };
   Object.assign(process.env, common);
   const note = `الخادم من main@${sha} على Postgres 16 بقاعدة مؤقتة${process.env.LIVE_REDIS_URL ? " وRedis" : ""}${s3 ? " وتخزين S3" : ""}؛ بلا Cloudflare ولا tusd (الخطّاف مُحاكى)`;
   const passthrough = args["dry-run"] ? ["--dry-run"] : [];
   setLogSource(() => stack.logs());
     // pii-leak reads the server logs of everything before it; dynamic-fields last: it publishes the shared form, which becomes the current form (with required fields) for every later material
-  const core = process.env.CORE_ACCEPTANCE === "1" ? ["reservation-conflict", "optimistic-concurrency", "admin-quorum", "notification-delivery"] : [];
+  const core = process.env.CORE_ACCEPTANCE === "1" ? ["reporter-identity-access", "reservation-conflict", "optimistic-concurrency", "admin-quorum", "notification-delivery"] : [];
   const names = ["tenant-isolation", "duplicate-payment", "invalid-file", "receipt-notification", "concurrent-load", "performance", ...core, "pii-leak", "dynamic-fields"];
   const summary = [];
   const only = typeof args.only === "string" ? args.only.split(",") : null;

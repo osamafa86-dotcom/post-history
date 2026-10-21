@@ -236,11 +236,12 @@ describe('contract v0.2 on the server', () => {
   });
 
   describe('reporter_legal_name', () => {
-    it('only a protected_source:read holder gets it, and every read is audited; others do not see the key', async () => {
+    // الإعداد الافتراضي separate (ADR 0021)؛ التبديل بين الوضعين في reporter-identity-setting.spec.ts
+    it('only a reporter_identity:read holder gets it, and every read is audited; others do not see the key', async () => {
       const m = await material();
       await h.pool.query(`UPDATE users SET legal_name_enc = $2 WHERE id = $1`, [reporter.id, fieldKeyring(h.config).encrypt(Buffer.from('الاسم الحقيقي'))]);
       const holder = await loginAs(h, [{ role: 'editor_in_chief' }]);
-      await h.pool.query(`INSERT INTO user_permissions (user_id, permission, granted_by, reason) VALUES ($1, 'protected_source:read', $2, 'test')`, [holder.id, admin.id]);
+      await h.pool.query(`INSERT INTO user_permissions (user_id, permission, granted_by, reason) VALUES ($1, 'reporter_identity:read', $2, 'test')`, [holder.id, admin.id]);
       const login = await http().post('/v1/auth/login').send({ email: holder.email, password: holder.password }).expect(200);
       const withName = await http().get(`/v1/materials/${m}`).set('Authorization', `Bearer ${login.body.access_token}`).expect(200);
       expect(withName.body.reporter_legal_name).toBe('الاسم الحقيقي');
