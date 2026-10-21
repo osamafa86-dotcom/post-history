@@ -384,6 +384,39 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
+  /users/{id}/permissions/history:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: معرّف المستخدم
+        schema: { type: string, format: uuid }
+    get:
+      tags: [auth]
+      summary: سجل منح الصلاحيات المستقلة وسحبها لمستخدم (مدير النظام)
+      description: |-
+        من سجل التدقيق، الأحدث أولًا، بالمؤشر:
+        - منح هذا المستخدم صلاحياته المستقلة وسحبها.
+        - تغييرات الإعداد `reporter_legal_name_access` (ADR 0021)، لأنها تغيّر الصلاحية الفعّالة للاسم الحقيقي لكل المستخدمين.
+
+        معرّفات وأكواد فقط. سبب المنح الحر في `user_permissions.reason` لا يعود هنا. `reason_code` يعود حيث سُجّل
+        مرمّزًا، وهو `null` لغيره.
+      operationId: listPermissionHistory
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: صفحة من السجل
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PermissionHistoryPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /users/{id}/permissions/{permission}:
     parameters:
       - name: id
@@ -2697,6 +2730,36 @@ components:
           then: { required: [mime_type], properties: { mime_type: { const: application/json } } }
         - if: { properties: { kind: { const: captions } } }
           then: { required: [mime_type], properties: { mime_type: { const: text/vtt } } }
+
+    PermissionHistoryEntry:
+      type: object
+      required: [id, kind, actor_id, occurred_at, reason_code]
+      properties:
+        id: { type: string, pattern: "^[0-9]{1,19}$", description: رقم صف التدقيق }
+        kind: { type: string, enum: [permission_granted, permission_revoked, setting_changed] }
+        permission:
+          oneOf:
+            - $ref: "#/components/schemas/Permission"
+            - type: "null"
+          description: لـ `permission_*`؛ `null` لـ `setting_changed`
+        setting: { type: [string, "null"], enum: [reporter_legal_name_access, null] }
+        value:
+          oneOf:
+            - $ref: "#/components/schemas/ReporterIdentityAccess"
+            - type: "null"
+          description: القيمة الجديدة لـ `setting_changed`
+        actor_id: { type: [string, "null"], format: uuid, description: المنفّذ }
+        occurred_at: { type: string, format: date-time }
+        reason_code: { type: [string, "null"], description: السبب المرمّز حيث سُجّل؛ لا نص حر }
+
+    PermissionHistoryPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/PermissionHistoryEntry" }
+        next_cursor: { type: [string, "null"] }
 
     ReporterIdentityAccess:
       type: string

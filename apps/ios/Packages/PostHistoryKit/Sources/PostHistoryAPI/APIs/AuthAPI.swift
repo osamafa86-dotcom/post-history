@@ -221,6 +221,58 @@ open class AuthAPI {
     }
 
     /**
+     سجل منح الصلاحيات المستقلة وسحبها لمستخدم (مدير النظام)
+     
+     - parameter id: (path) معرّف المستخدم 
+     - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
+     - parameter limit: (query) حجم الصفحة (optional, default to 50)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: PermissionHistoryPage
+     */
+    open class func listPermissionHistory(id: UUID, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> PermissionHistoryPage {
+        return try await listPermissionHistoryWithRequestBuilder(id: id, cursor: cursor, limit: limit, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     سجل منح الصلاحيات المستقلة وسحبها لمستخدم (مدير النظام)
+     - GET /users/{id}/permissions/history
+     - من سجل التدقيق، الأحدث أولًا، بالمؤشر: - منح هذا المستخدم صلاحياته المستقلة وسحبها. - تغييرات الإعداد `reporter_legal_name_access` (ADR 0021)، لأنها تغيّر الصلاحية الفعّالة للاسم الحقيقي لكل المستخدمين.  معرّفات وأكواد فقط. سبب المنح الحر في `user_permissions.reason` لا يعود هنا. `reason_code` يعود حيث سُجّل مرمّزًا، وهو `null` لغيره.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter id: (path) معرّف المستخدم 
+     - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
+     - parameter limit: (query) حجم الصفحة (optional, default to 50)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<PermissionHistoryPage> 
+     */
+    open class func listPermissionHistoryWithRequestBuilder(id: UUID, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<PermissionHistoryPage> {
+        var localVariablePath = "/users/{id}/permissions/history"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        var localVariableUrlComponents = URLComponents(string: localVariableURLString)
+        let localVariableQueryParameters: [String: (wrappedValue: (any Sendable)?, isExplode: Bool)] = [
+            "cursor": (wrappedValue: cursor?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "limit": (wrappedValue: limit?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+        ]
+        localVariableUrlComponents?.queryItems = APIHelper.mapValuesToQueryItems(localVariableQueryParameters)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<PermissionHistoryPage>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      جلسات المستخدم الحالي على كل أجهزته
      
      - parameter apiConfiguration: The configuration for the http request.
