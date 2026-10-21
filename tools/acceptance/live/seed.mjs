@@ -113,6 +113,9 @@ export async function seed({ databaseUrl, apiUrl, fieldKey = null }) {
 
   // TOTP is enabled last: the logins above ran without it, and these sessions stay valid
   const totp = {};
+  // ADR 0021: canary legal name for reporter A, readable only through the permission the admin setting names
+  const legalName = fieldKey ? `acceptance-legal-${randomBytes(6).toString("hex")}` : null;
+  if (fieldKey) await q(`UPDATE users SET legal_name_enc = $1 WHERE id = $2`, [encryptField(fieldKey, Buffer.from(legalName)), users.reporter.id]);
   if (fieldKey) {
     for (const k of ["system_admin", "system_admin_c", "editor_in_chief"]) {
       const secret = randomBytes(20);
@@ -123,7 +126,7 @@ export async function seed({ databaseUrl, apiUrl, fieldKey = null }) {
   await pool.end();
   const { reporter_b: _b, supervisor_b: _sb, producer_b: _pb, system_admin_b: _ab, system_admin_c: _ac, victim_reporter: _vr, ...roleTokens } = tokens;
   return {
-    tokens: roleTokens, allTokens: tokens, users, password, totp,
+    tokens: roleTokens, allTokens: tokens, users, password, totp, legalName,
     fixtures: {
       other_reporter_material_id: mB.id, out_of_scope_material_id: mB.id,
       other_reporter_upload_id: session, other_reporter_notification_id: notificationB,

@@ -15,6 +15,7 @@ import { FormsService } from '../forms/forms.service';
 import type { components } from '../generated/api';
 import { hasRole, type Principal } from '../identity/principal';
 import { writeOutboxEvent } from '../outbox/outbox';
+import { legalNamePermission, ReporterIdentitySettings } from '../settings/reporter-identity.service';
 import {
   applyTransition,
   findScoped,
@@ -63,6 +64,7 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(LOGGER) private readonly logger: Logger,
     private readonly forms: FormsService,
+    private readonly identitySetting: ReporterIdentitySettings,
   ) {
     this.fieldKeys = fieldKeyring(config);
   }
@@ -394,7 +396,8 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
   }
 
   private async dtos(p: Principal, rows: MaterialRow[]): Promise<MaterialDto[]> {
-    return toMaterialDtos(this.db, p, rows, this.config.RESERVATION_IDLE_SECONDS, this.fieldKeys);
+    const permission = legalNamePermission(await this.identitySetting.access(this.db));
+    return toMaterialDtos(this.db, p, rows, this.config.RESERVATION_IDLE_SECONDS, { keyring: this.fieldKeys, permission });
   }
 
   /** ينفّذ كتابة في معاملة ثم يعيد المادة كما يراها المستدعي؛ يحوّل أخطاء القيود إلى أكواد العقد. */

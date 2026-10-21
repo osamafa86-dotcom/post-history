@@ -44,6 +44,7 @@ export async function fanOut(tx: Tx, event: OutboxRow, opts: FanOutOptions): Pro
   const payload = event.payload as Record<string, unknown>;
   if (event.type === 'auth.recovery_requested') return recoveryRequested(tx, event, payload, opts);
   if (event.type === 'auth.recovery_completed') return recoveryCompleted(tx, event, opts);
+  if (event.type === 'setting.changed') return settingChanged(tx, event, opts);
   const materialId = typeof payload.material_id === 'string' ? payload.material_id : undefined;
   const receipt = typeof payload.receipt_number === 'string' ? payload.receipt_number : undefined;
   const custom = materialId && RULEABLE.test(event.type) ? await enabledRules(tx, event.type) : [];
@@ -198,6 +199,20 @@ async function recoveryRequested(tx: Tx, event: OutboxRow, payload: Record<strin
   const inserted = await tx
     .insert(notifications)
     .values(rows.map((r) => ({ ...r, eventId: event.id, type: event.type, materialId: null, priority: 'important' })))
+    .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
+    .returning({ id: notifications.id });
+  if (opts.push) await enqueuePush(tx, inserted.map((r) => r.id));
+  return inserted.length;
+}
+
+/** تغيير إعداد مؤسسي (ADR 0021): يُبلَّغ كل مديري النظام الفاعلين، ومنهم من غيّره. العنوان بلا قيمة ولا اسم. */
+async function settingChanged(tx: Tx, event: OutboxRow, opts: FanOutOptions): Promise<number> {
+  const admins = await systemAdmins(tx);
+  if (admins.length === 0) return 0;
+  const title = notificationTitle('setting.changed', opts.locale, { ref: '' });
+  const inserted = await tx
+    .insert(notifications)
+    .values(admins.map((userId) => ({ userId, eventId: event.id, type: event.type, materialId: null, title, priority: 'important', assignmentState: null })))
     .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
     .returning({ id: notifications.id });
   if (opts.push) await enqueuePush(tx, inserted.map((r) => r.id));
