@@ -91,6 +91,8 @@ export async function runPack(args, env = process.env, deps = {}) {
     try { seed = await (deps.remoteSeed ?? remoteSeed)({ apiUrl: target.apiUrl, accounts, adminNeeded, fetchImpl: deps.fetchImpl }); } catch (e) { console.error(`ENVIRONMENT: ${e.message}`); worst = 2; }
     if (seed) {
       Object.assign(process.env, envFor(target, seed, accounts, args));
+      // a stack we control (CI rehearsal, a local compose) hands the gate's test signing key and the name-to-address map; a trial host never does
+      for (const [from, to] of [["FT_INGEST_SIGNING_KEY", "INGEST_SIGNING_KEY"], ["FT_INGEST_KID", "INGEST_KID"], ["FT_RESOLVE", "ACCEPTANCE_RESOLVE"]]) if (env[from]) process.env[to] = env[from];
       for (const name of names) {
         try {
           const { code, doc } = await (deps.runScript ?? (async (n) => (await import(`../scripts/${n}.mjs`)).run([])))(name);

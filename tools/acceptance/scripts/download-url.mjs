@@ -15,6 +15,7 @@ import { byName } from "../lib/catalog.mjs";
 import { client, createUploadSession, materialBody, sleep } from "../lib/live.mjs";
 import { waitFor } from "../lib/hooks.mjs";
 import { resumableUpload } from "../lib/tus.mjs";
+import { tusAuth } from "../lib/ingest.mjs";
 import { LEAK_VALUES, sha256File, synthClip } from "../lib/media-clips.mjs";
 import { checker, gateOff } from "../lib/core-gate.mjs";
 import { freshFetch } from "../lib/http.mjs";
@@ -54,7 +55,7 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
       const path = synthClip(join(work, `${stem}-${label}.mov`), { seconds: 12, vfr: true, startOffset: 3 });
       const size = readFileSync(path).length, sha = await sha256File(path);
       const session = await createUploadSession(http, tokens.reporter, { materialId: mat.id, size, clientSha256: sha, filename: `${stem}-${label}.mov` });
-      const up = await resumableUpload({ endpoint: env.DL_TUS_URL, file: path, size, chunkSize: 8 * 1024 * 1024, interruptAt: [], metadata: { upload_session_id: session.id }, headers: { Authorization: `Bearer ${session.token}` } });
+      const up = await resumableUpload({ endpoint: env.DL_TUS_URL, file: path, size, chunkSize: 8 * 1024 * 1024, interruptAt: [], metadata: { upload_session_id: session.id }, headers: () => tusAuth(session) });
       if (up.violations.length) throw new Error(`tus violations: ${up.violations.join("; ")}`);
       await waitFor(async () => (await http.get(tokens.reporter, `/uploads/${session.id}`)).body?.state === "verified", { timeoutMs, everyMs: 500 });
       const files = async () => (await http.get(tokens.reporter, `/materials/${mat.id}`)).body?.files ?? [];

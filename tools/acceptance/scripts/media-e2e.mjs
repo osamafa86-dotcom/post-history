@@ -28,6 +28,7 @@ import { client, createUploadSession, eventsOfType, materialBody, sleep } from "
 import { hookClient, simulateUpload, waitFor } from "../lib/hooks.mjs";
 import { s3FromEnv } from "../lib/s3.mjs";
 import { resumableUpload } from "../lib/tus.mjs";
+import { tusAuth } from "../lib/ingest.mjs";
 import { scan } from "../lib/pii.mjs";
 import { seed } from "../live/seed.mjs";
 import { LEAK_VALUES, cutBack, durationSeconds, hostilePayloads, imageSize, sha256File, synthClip, tagDump, videoTimes } from "../lib/media-clips.mjs";
@@ -70,7 +71,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       const session = await createUploadSession(api, reporter, { materialId: mat.id, size, clientSha256: sha, filename: label });
       const t0 = Date.now();
       if (tusUrl) {
-        const up = await resumableUpload({ endpoint: tusUrl, file: path, size, chunkSize: 8 * 1024 * 1024, interruptAt: [], metadata: { upload_session_id: session.id }, headers: { Authorization: `Bearer ${session.token}` } });
+        const up = await resumableUpload({ endpoint: tusUrl, file: path, size, chunkSize: 8 * 1024 * 1024, interruptAt: [], metadata: { upload_session_id: session.id }, headers: () => tusAuth(session) });
         if (up.violations.length) throw new Error(`tus violations: ${up.violations.join("; ")}`);
       } else {
         await simulateUpload({ hooks, s3, bucket: bucketUp, prefix, session, bytes: readFileSync(path) });

@@ -13,6 +13,7 @@ import { byName } from "../lib/catalog.mjs";
 import { makeSyntheticFile, resumableUpload, serverSha256 } from "../lib/tus.mjs";
 import { s3FromEnv, tusObjectKey } from "../lib/s3.mjs";
 import { client, createUploadSession, materialBody, sleep } from "../lib/live.mjs";
+import { tusAuth } from "../lib/ingest.mjs";
 import { synthClip, sha256File } from "../lib/media-clips.mjs";
 import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -56,7 +57,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     let up;
     try {
       up = await resumableUpload({ endpoint, file: synth.path, size, chunkSize, interruptAt,
-        ...(session ? { metadata: { upload_session_id: session.id }, headers: { Authorization: `Bearer ${session.token}` } } : {}) });
+        ...(session ? { metadata: { upload_session_id: session.id }, headers: () => tusAuth(session) } : {}) });
     } catch (e) {
       console.error(`ENVIRONMENT: could not drive tusd at ${endpoint}: ${e.message}`);
       return { code: 2, doc: null }; // no server = nothing measured, no result file
