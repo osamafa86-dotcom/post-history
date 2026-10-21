@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readConfig, type WebConfig } from "./config";
-import { requireOk, upstream, withSession, assertSession } from "./auth";
+import { clientAddress, requireOk, upstream, withSession, assertSession } from "./auth";
 import { WebError } from "./errors";
 import { sessionStore, validSessionId, type SessionStore } from "./sessions";
 import { safeForm, safeMaterial, safeMe } from "@/lib/privacy";
@@ -55,7 +55,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
       const input = await bodyOf(request);
       if (typeof input.email !== "string" || input.email.length > 254 || !input.email.includes("@") || typeof input.password !== "string" || input.password.length < 8 || input.password.length > 1024 || (input.totp_code !== undefined && (typeof input.totp_code !== "string" || !/^\d{6}$/.test(input.totp_code)))) throw new WebError(422, "request_failed");
       const body: components["schemas"]["LoginRequest"] = { email: input.email, password: input.password, ...(input.totp_code ? { totp_code: input.totp_code as string } : {}) };
-      const result = await upstream(config, undefined, transport).POST("/auth/login", { body });
+      const result = await upstream(config, undefined, transport, clientAddress(request, config)).POST("/auth/login", { body });
       if (result.response.status === 401) throw new WebError(401, result.error?.code === "totp_required" ? "totp_required" : "login_failed");
       requireOk(result); assertSession(result.data);
       const newId = await store.create(result.data);
@@ -101,7 +101,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
       }
       if (/^forms\/[1-9]\d{0,8}$/.test(path)) return json(safeForm(requireOk(await api.GET("/forms/{version}", { params: { path: { version: Number(path.slice(6)) } } })), me.permissions));
       throw new WebError(404, "request_failed");
-    }, transport);
+    }, transport, clientAddress(request, config));
     return response;
   } catch (error) {
     const known = error instanceof WebError ? error : new WebError(503, "temporarily_unavailable");

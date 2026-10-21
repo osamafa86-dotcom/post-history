@@ -8,7 +8,7 @@ import { tokens, me } from "./fixtures";
 describe.skipIf(!process.env.WEB_TEST_REDIS_URL)("real Redis coordination", () => {
   it("persists encrypted tokens and rotates exactly once across two store instances", async () => {
     const url = process.env.WEB_TEST_REDIS_URL!, redis = new Redis(url);
-    const config = { origin: "https://web.example.test", api: "https://api.example.test/v1", key: randomBytes(32), redisUrl: url, secure: true, cookieName: "__Host-ph-session", lifetimeSeconds: 3600, mediaOrigins: [] };
+    const config = { origin: "https://web.example.test", api: "https://api.example.test/v1", key: randomBytes(32), redisUrl: url, secure: true, cookieName: "__Host-ph-session", lifetimeSeconds: 3600, mediaOrigins: [], trustForwardedFor: false };
     const one = new RedisSessionStore(redis, config), two = new RedisSessionStore(redis, config);
     let id = "", refreshes = 0;
     try {

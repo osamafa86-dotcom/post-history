@@ -38,6 +38,11 @@ const schema = z.object({
   TRUSTED_PROXY_CIDRS: cidrList.prefault(''),
   // من يصل إلى /internal/* (خطّافات tusd) بعنوان المقبس نفسه لا بـ X-Forwarded-For؛ الافتراضي الحلقة المحلية فقط
   INTERNAL_ALLOWED_CIDRS: cidrList.prefault('127.0.0.1/32,::1/128'),
+  // عنوان الـBFF (apps/web) الثابت، عنوان واحد لكل مدخل (/32 أو /128): منه وحده تُقبل ترويسة X-Client-Address
+  // لحدود معدل الدخول والاستعادة؛ فارغ = لا تُقبل من أحد
+  BFF_SOURCE_ADDRESSES: cidrList
+    .refine((list) => list.every((c) => /\/(32|128)$/.test(c)), 'each entry must be a single address (/32 or /128)')
+    .prefault(''),
 
   DATABASE_URL: z.string().min(1),
   // Redis مشترك بين نسخ الخادم (حد المعدل الآن، الطوابير لاحقًا). مطلوب في الإنتاج؛ غيابه خارجه = حدود في الذاكرة
