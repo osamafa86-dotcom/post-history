@@ -1,6 +1,9 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Put, Req } from '@nestjs/common';
+import type { BlockList } from 'node:net';
 import type { Request } from 'express';
+import { clientAddress } from '../common/client-address';
 import { validateBody } from '../common/contract';
+import { APP_CONFIG, type AppConfig, blockListOf } from '../config/config';
 import type { components } from '../generated/api';
 import { AllowDuringCredentialReset, Public } from './auth.guard';
 import { AccountService } from './account.service';
@@ -14,17 +17,22 @@ type Me = components['schemas']['Me'];
 // استجابة اعتماد الاستعادة (إعادة الاعتماد 409 ولا تعيده).
 @Controller('auth')
 export class AuthController {
+  private readonly bff: BlockList;
+
   constructor(
     private readonly auth: AuthService,
     private readonly account: AccountService,
-  ) {}
+    @Inject(APP_CONFIG) config: AppConfig,
+  ) {
+    this.bff = blockListOf(config.BFF_SOURCE_ADDRESSES);
+  }
 
   @Public()
   @Post('login')
   @HttpCode(200)
   login(@Body() body: unknown, @Req() req: Request): Promise<Session> {
     const input = validateBody<components['schemas']['LoginRequest']>('/auth/login', 'post', body);
-    return this.auth.login(input, req.ip ?? 'unknown');
+    return this.auth.login(input, clientAddress(req, this.bff));
   }
 
   @Public()
@@ -67,7 +75,7 @@ export class AuthController {
   @HttpCode(202)
   async startRecovery(@Body() body: unknown, @Req() req: Request): Promise<components['schemas']['RecoveryAccepted']> {
     const input = validateBody<{ email: string; backup_code: string }>('/auth/recovery', 'post', body);
-    await this.account.startRecovery(input.email, input.backup_code, req.ip ?? 'unknown');
+    await this.account.startRecovery(input.email, input.backup_code, clientAddress(req, this.bff));
     return { accepted: true };
   }
 
@@ -84,7 +92,7 @@ export class AuthController {
   @HttpCode(200)
   completeRecovery(@Body() body: unknown, @Req() req: Request): Promise<components['schemas']['RecoveryCompletion']> {
     const input = validateBody<{ reset_token: string; new_password: string }>('/auth/recovery/complete', 'post', body);
-    return this.auth.completeRecovery(input.reset_token, input.new_password, req.ip ?? 'unknown');
+    return this.auth.completeRecovery(input.reset_token, input.new_password, clientAddress(req, this.bff));
   }
 
   @Post('totp/confirm')
