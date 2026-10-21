@@ -51,7 +51,7 @@ export class DeviceAttestationController {
   /** رمز ingest لرفع الويب: من الـBFF وحده (عنوان المقبس في BFF_SOURCE_ADDRESSES)، وغيره 404 كأنه غير موجود. */
   @Post('uploads/:id/web-ingest-token')
   @HttpCode(200)
-  @Roles('reporter')
+  @Roles('reporter', 'supervisor', 'producer', 'editor_in_chief')
   @RehydrateOnReplay(DeviceAttestationService)
   webIngestToken(@Param('id') id: string, @Req() req: Request): Promise<components['schemas']['IngestToken']> {
     if (!addressAllowed(this.bff, req.socket.remoteAddress)) throw ApiError.notFound();

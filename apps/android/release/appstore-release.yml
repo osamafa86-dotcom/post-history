@@ -1,0 +1,30 @@
+# Draft of apps/<app>.yml for osamafa86-dotcom/appstore-release (its owner places it; this repository holds no
+# store secrets). Placeholders in <…> are the owner's: see issue #157. Android only: no iOS keys are needed here.
+name: "المكتبة المرئية"
+source:
+  repo: osamafa86-dotcom/post-history
+  ref: main
+  private: false
+
+android:
+  package: net.palpost.library
+  workdir: apps/android
+  java: "21"
+  gradle: ""                       # the project's wrapper (Gradle 8.14.3, checksum pinned)
+  python: ""
+  prepare: ""
+  test: "./gradlew --no-daemon :core:test"
+  task: ":app:bundleRelease"
+  aab: app/build/outputs/bundle/release/*.aab
+  version_code_base: 1000
+  key_alias: upload
+  env:
+    version_code: APP_VERSION_CODE
+    keystore: APP_KEYSTORE
+    password: APP_KEYSTORE_PASSWORD
+    alias: APP_KEY_ALIAS
+  # Not secrets, but environment for the build (app/build.gradle.kts reads them):
+  #   API_BASE_URL=<https://api.<trial domain>/v1>   (the release build refuses anything but https)
+  #   ORG_GRADLE_PROJECT_playCloudProjectNumber=<Cloud project number linked in Play Console → App integrity>
+  metadata: apps/android/store/metadata/android
+  contact: {website: "<https://…>", email: "<…>", phone: ""}
