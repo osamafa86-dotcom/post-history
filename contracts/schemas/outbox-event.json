@@ -52,7 +52,8 @@
         "user.status_changed",
         "auth.recovery_completed",
         "export.requested",
-        "setting.changed"
+        "setting.changed",
+        "catalog.listing_changed"
       ]
     },
     "aggregate_type": {
@@ -62,7 +63,8 @@
         "upload",
         "notification",
         "form",
-        "user"
+        "user",
+        "listing"
       ]
     },
     "aggregate_id": {
@@ -718,6 +720,67 @@
               "occurred_at": {
                 "type": "string",
                 "format": "date-time"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "catalog.listing_changed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "listing"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "إدراج تغيّر في الكتالوج (v0.3، ADR 0025): معرّفات وحالة فقط، بلا عناوين ولا أسعار. source_file_id الأصل المتحقق لإصدار الإدراج، ليبني عامل الوسائط watermarked_preview.",
+            "required": [
+              "listing_id",
+              "material_id",
+              "material_version",
+              "state"
+            ],
+            "properties": {
+              "listing_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "material_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "material_version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "listed",
+                  "suspended"
+                ]
+              },
+              "suspended_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "manual",
+                  "rights_changed",
+                  null
+                ]
+              },
+              "source_file_id": {
+                "$ref": "#/$defs/nullableUuid"
               }
             }
           }

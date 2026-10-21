@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: post-history API
-  version: 0.2.0
+  version: 0.3.0
   summary: واجهة منصة المكتبة المرئية — الإصدار v0 لمرحلة التأسيس
   license:
     name: Proprietary
@@ -82,6 +82,8 @@ tags:
     description: إعدادات مؤسسية يضبطها مدير النظام.
   - name: dashboard
     description: قراءات مجمّعة للوحة غرفة الأخبار، بلا بيانات كاشفة (v0.2).
+  - name: commerce
+    description: المرحلة التجارية بمزوّد دفع تجريبي (v0.3، ADR 0025) — قوالب التراخيص، والإدراج، والكتالوج.
 
 paths:
   /auth/login:
@@ -1304,6 +1306,35 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
+  /internal/media/files/{file_id}:
+    servers:
+      - url: http://api.internal:3000
+        description: شبكة media الداخلية فقط (ADR 0006)
+    parameters:
+      - name: file_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [uploads]
+      summary: ملف مصدر كما يحتاجه العامل لمشتق عند الطلب (داخلي، v0.3)
+      x-internal: true
+      description: >-
+        لبناء `watermarked_preview` من `catalog.listing_changed` وحزمة `export` من `export.requested`: مفتاح تخزين المصدر
+        وبصمته. فشل المصادقة أو العنوان `404` كبقية `/internal/*`؛ والملف غير الموجود برمز صحيح `410 media_resource_gone`.
+        لا اسم ملف ولا بيانات كاشفة.
+      operationId: mediaGetFile
+      x-roles: []
+      security: [{ mediaWorkerToken: [] }]
+      responses:
+        "200":
+          description: الملف
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaSourceFile" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "410": { $ref: "#/components/responses/MediaResourceGone" }
+
   /internal/media/files/{file_id}/derivatives:
     servers:
       - url: http://api.internal:3000
@@ -1716,6 +1747,311 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /license-templates:
+    get:
+      tags: [commerce]
+      summary: قوالب التراخيص (v0.3، ADR 0025)
+      description: الإصدار الحالي لكل قالب. القوالب المعطّلة تظهر بـ `include_disabled=true`.
+      operationId: listLicenseTemplates
+      x-roles: [system_admin, rights_officer, editor_in_chief, finance]
+      parameters:
+        - name: include_disabled
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: القوالب
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/LicenseTemplate" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [commerce]
+      summary: إنشاء قالب ترخيص
+      description: >-
+        أبعاد الترخيص من لوحة الإدارة: النوع، والاستخدام، والإقليم، والمدة، والحصرية، والتسليم، والنسب، والمحظورات، والسعر
+        الأساسي. الشروط والاسم والنسب بالعربية والإنجليزية إلزاميًا. `subscription` مؤجل ولا يُقبل. يُسجَّل في التدقيق بـ
+        `license_template_id`.
+      operationId: createLicenseTemplate
+      x-roles: [system_admin, rights_officer]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LicenseTemplateInput" }
+      responses:
+        "201":
+          description: القالب بإصداره الأول
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LicenseTemplate" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /license-templates/{template_id}:
+    parameters:
+      - name: template_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [commerce]
+      summary: قراءة قالب ترخيص، بإصدار محدد أو الحالي
+      operationId: getLicenseTemplate
+      x-roles: [system_admin, rights_officer, editor_in_chief, finance]
+      parameters:
+        - name: version
+          in: query
+          description: إصدار سابق (لقراءة ما جُمّد في بيعة)؛ الافتراضي الحالي
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: القالب
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LicenseTemplate" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [commerce]
+      summary: إصدار جديد من قالب ترخيص
+      description: >-
+        لا يُعدَّل إصدار قائم: الاستبدال يكتب إصدارًا جديدًا ويبقى السابق كما هو، لأن كل بيعة تجمّد الإصدار الذي وافق عليه
+        المشتري. العروض في الكتالوج تتبع الإصدار الحالي. النوع لا يتغير بعد الإنشاء (`422 validation_failed`).
+      operationId: replaceLicenseTemplate
+      x-roles: [system_admin, rights_officer]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LicenseTemplateInput" }
+      responses:
+        "200":
+          description: الإصدار الجديد
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LicenseTemplate" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /materials/{id}/listing:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [commerce]
+      summary: إدراج المادة في الكتالوج (للطاقم)
+      operationId: getMaterialListing
+      x-roles: [system_admin, rights_officer, editor_in_chief, finance]
+      responses:
+        "200":
+          description: الإدراج
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogListing" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [commerce]
+      summary: إدراج مادة في الكتالوج
+      description: >-
+        إدراج واحد لكل مادة، يثبّت إصدارها الحالي (`material_version`). الحالة `listed` تلزمها `rights_state = sellable`، وإلا
+        `409 rights_not_sellable`. الحالات الثلاث للمادة لا تتغير بالإدراج. `commercial_allowed` ومعه عرض بترخيص `commercial`
+        لمدير النظام وحده (`403 forbidden_role`). يُكتب `catalog.listing_changed` في المعاملة نفسها.
+      operationId: createMaterialListing
+      x-roles: [system_admin, rights_officer]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CatalogListingInput" }
+      responses:
+        "201":
+          description: الإدراج
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogListing" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+    put:
+      tags: [commerce]
+      summary: استبدال الإدراج (العناوين والعروض والحالة)
+      description: >-
+        يعيد تثبيت `material_version` على إصدار المادة الحالي. القيود نفسها في الإنشاء. حين تخرج حقوق المادة من `sellable`
+        يعلّق الخادم الإدراج في معاملة الانتقال نفسها (`state = suspended`، `suspended_reason = rights_changed`)، ولا يعود
+        `listed` إلا بطلب صريح.
+      operationId: replaceMaterialListing
+      x-roles: [system_admin, rights_officer]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CatalogListingInput" }
+      responses:
+        "200":
+          description: الإدراج بعد الاستبدال
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogListing" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /catalog:
+    get:
+      tags: [commerce]
+      summary: البحث في الكتالوج (ما يراه المشتري)
+      description: >-
+        الإدراجات `listed` وحدها. يعيد عرض المشتري (`CatalogItem`): عناوين ووصف ولقطات بلغتين، والمدة والدقة، ويوم التصوير
+        والمحافظة، واسم الظهور بحسب وضعه، والعروض بأسعارها. لا إحداثيات ولا مدينة ولا معرّف مراسل ولا جهاز ولا حقول
+        ديناميكية ولا مصادر. أدوار المشترين تُضاف مع حسابات المؤسسات في الطلب التالي من الدورة. البحث النصي بالعربية
+        والإنجليزية.
+      operationId: searchCatalog
+      x-roles: [system_admin, rights_officer, editor_in_chief, finance]
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: material_type
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 8
+            items: { $ref: "#/components/schemas/MaterialType" }
+        - name: governorate
+          in: query
+          schema: { type: string, minLength: 1, maxLength: 64 }
+        - name: shot_from
+          in: query
+          schema: { type: string, format: date }
+        - name: shot_to
+          in: query
+          schema: { type: string, format: date }
+        - name: min_duration_ms
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: max_duration_ms
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: min_height
+          in: query
+          description: أدنى ارتفاع للأصل بالبكسل (مثل 1080)
+          schema: { type: integer, minimum: 1 }
+        - name: license_type
+          in: query
+          schema: { $ref: "#/components/schemas/LicenseType" }
+        - name: exclusive_available
+          in: query
+          schema: { type: boolean }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: صفحة من الكتالوج، الأحدث إدراجًا أولًا
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /catalog/{listing_id}:
+    parameters:
+      - name: listing_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [commerce]
+      summary: صفحة مادة في الكتالوج
+      description: الإدراج غير `listed` يُعامل كغير موجود (404).
+      operationId: getCatalogItem
+      x-roles: [system_admin, rights_officer, editor_in_chief, finance]
+      responses:
+        "200":
+          description: عرض المشتري
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /catalog/{listing_id}/preview-url:
+    parameters:
+      - name: listing_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [commerce]
+      summary: رابط موقّع لمعاينة المشتري بعلامة مائية
+      description: >-
+        مشتق `watermarked_preview` وحده (نسخة منخفضة بعلامة مائية مرئية، يبنيه عامل الوسائط عند الإدراج)، صالح ≤ 10 دقائق.
+        لا يعطي الأصل ولا النسخة الخفيفة. `409 preview_not_ready` قبل جاهزيته.
+      operationId: getCatalogPreviewUrl
+      x-roles: [system_admin, rights_officer, editor_in_chief, finance]
+      responses:
+        "200":
+          description: الرابط
+          headers:
+            Cache-Control:
+              description: "`no-store`"
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileDownloadUrl" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /events:
     get:
       tags: [events]
@@ -1930,6 +2266,9 @@ components:
             - attestation_unavailable
             - media_resource_gone
             - export_not_ready
+            - rights_not_sellable
+            - listing_exists
+            - preview_not_ready
             - internal_error
         message: { type: string }
         request_id: { type: string, description: لتتبع الطلب في السجلات }
@@ -2773,9 +3112,10 @@ components:
         يكتبه الخادم `normal` للنسخة الخفيفة وحدها و`NULL` لغيرها. `export` حزمة التصدير (#99، v0.2): `application/zip`،
         و`technical` هو `technical` الأصل؛ تُبنى عند الطلب (`export.requested`) لا عند الاستيعاب، ولا تحمل بيانات كاشفة.
         `transcript` (`application/json`، نص بتوقيت الكلمات والمتحدثين) و`captions` (`text/vtt`) من عامل التفريغ (v0.2):
-        زمنيان على خط زمن الأصل، فيحملان `duration_ms` و`start_pts_us` الأصل.
+        زمنيان على خط زمن الأصل، فيحملان `duration_ms` و`start_pts_us` الأصل. `watermarked_preview` (v0.3، ADR 0025) معاينة
+        المشتري: نسخة منخفضة بعلامة مائية مرئية، زمنية كـ `proxy`، لا تظهر في `Material.files` ولا يعطيها غير رابط الكتالوج.
       properties:
-        kind: { type: string, enum: [proxy, thumbnail, hls, audio, export, transcript, captions] }
+        kind: { type: string, enum: [proxy, thumbnail, hls, audio, export, transcript, captions, watermarked_preview] }
         storage_key: { type: string, minLength: 1, maxLength: 1024, pattern: "^[A-Za-z0-9/_.-]+$" }
         sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
         size_bytes: { type: integer, minimum: 1 }
@@ -2800,6 +3140,20 @@ components:
           then: { required: [mime_type], properties: { mime_type: { const: application/json } } }
         - if: { properties: { kind: { const: captions } } }
           then: { required: [mime_type], properties: { mime_type: { const: text/vtt } } }
+
+    MediaSourceFile:
+      x-internal: true
+      type: object
+      additionalProperties: false
+      required: [file_id, material_id, kind, state, storage_key, size_bytes, sha256]
+      properties:
+        file_id: { type: string, format: uuid }
+        material_id: { type: string, format: uuid }
+        kind: { type: string, enum: [original, proxy, hls, audio, thumbnail, voice_note, export, transcript, captions, watermarked_preview] }
+        state: { type: string, enum: [uploading, received, verified, failed] }
+        storage_key: { type: string, minLength: 1, maxLength: 1024 }
+        size_bytes: { type: [integer, "null"], minimum: 0 }
+        sha256: { type: [string, "null"], pattern: "^[0-9a-f]{64}$" }
 
     PermissionHistoryEntry:
       type: object
@@ -3171,6 +3525,222 @@ components:
         platform: { type: string, enum: [ios, android, web] }
         token: { type: string, minLength: 1, writeOnly: true, description: رمز APNs أو FCM أو Web Push }
         app_version: { type: [string, "null"], maxLength: 32 }
+
+    Currency:
+      type: string
+      description: عملة السعر والقيد (ADR 0025). المبالغ دائمًا بأصغر وحدة (`amount_minor`) ولا تُجمع عملتان.
+      enum: [USD, ILS]
+
+    Money:
+      type: object
+      additionalProperties: false
+      required: [amount_minor, currency]
+      properties:
+        amount_minor: { type: integer, minimum: 0, maximum: 100000000000, description: بأصغر وحدة (سنت أو أغورة) }
+        currency: { $ref: "#/components/schemas/Currency" }
+
+    LocalizedText:
+      type: object
+      additionalProperties: false
+      description: نص تجاري بالعربية والإنجليزية معًا؛ لا إصدار بلغة واحدة
+      required: [ar, en]
+      properties:
+        ar: { type: string, minLength: 1, maxLength: 4000 }
+        en: { type: string, minLength: 1, maxLength: 4000 }
+
+    LicenseType:
+      type: string
+      description: >-
+        `editorial_single` تحريري لاستخدام واحد؛ `editorial_term` تحريري مفتوح لمدة؛ `exclusive_temporary` حصري مؤقت؛
+        `commercial` تجاري بموافقة الإدارة. الاشتراك المؤسسي مؤجل حتى معادلة توزيع مكتوبة.
+      enum: [editorial_single, editorial_term, exclusive_temporary, commercial]
+
+    LicenseTemplateInput:
+      type: object
+      additionalProperties: false
+      required: [type, name, terms, usage_media, territory, deliverables, attribution, prohibitions, base_price, enabled]
+      properties:
+        type: { $ref: "#/components/schemas/LicenseType" }
+        name: { $ref: "#/components/schemas/LocalizedText" }
+        terms: { $ref: "#/components/schemas/LocalizedText" }
+        usage_media:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, enum: [tv, web, social, documentary, advertising] }
+        territory:
+          type: object
+          additionalProperties: false
+          required: [kind]
+          properties:
+            kind: { type: string, enum: [worldwide, countries] }
+            countries:
+              type: array
+              minItems: 1
+              maxItems: 250
+              uniqueItems: true
+              description: رموز ISO 3166-1 alpha-2؛ إلزامية مع `countries` وممنوعة مع `worldwide`
+              items: { type: string, pattern: "^[A-Z]{2}$" }
+        term_days:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 3650
+          description: مدة الترخيص من التسليم؛ إلزامية لـ `editorial_term` و`exclusive_temporary`، و`null` = بلا انتهاء
+        exclusivity_hours:
+          type: [integer, "null"]
+          minimum: 24
+          maximum: 168
+          description: مدة الحصرية؛ لـ `exclusive_temporary` وحده (24–168 ساعة)، و`null` لغيره
+        deliverables:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          description: >-
+            ما يُسلَّم للمشتري. التفريغ والترجمة لا يُرخَّصان ولا يُصدَّران (threat-model §9.1، R11) حتى ADR للحجب الآلي
+            للأسماء؛ `transcript` يُرفض `422`.
+          items: { type: string, enum: [original, produced, audio, stills] }
+        attribution:
+          $ref: "#/components/schemas/LocalizedText"
+        prohibitions:
+          type: array
+          uniqueItems: true
+          description: المحظورات؛ `ai_training` محظور دائمًا إلا بإذن مستقل خارج القالب
+          items: { type: string, enum: [resale, advertising, ai_training, re_editing] }
+        base_price: { $ref: "#/components/schemas/Money" }
+        enabled: { type: boolean }
+
+    LicenseTemplate:
+      allOf:
+        - $ref: "#/components/schemas/LicenseTemplateInput"
+        - type: object
+          required: [id, version, created_at, created_by]
+          properties:
+            id: { type: string, format: uuid }
+            version: { type: integer, minimum: 1, description: لا يُعدَّل إصدار قائم؛ الاستبدال يكتب إصدارًا جديدًا }
+            created_at: { type: string, format: date-time }
+            created_by: { type: string, format: uuid }
+
+    ListingState:
+      type: string
+      description: مستقلة عن الحالات الثلاث للمادة؛ `listed` يلزمها `rights_state = sellable`
+      enum: [draft, listed, suspended]
+
+    ListingOfferInput:
+      type: object
+      additionalProperties: false
+      required: [license_template_id]
+      properties:
+        license_template_id: { type: string, format: uuid }
+        price_override:
+          oneOf:
+            - $ref: "#/components/schemas/Money"
+            - type: "null"
+          description: سعر خاص بهذه المادة؛ `null` = السعر الأساسي للقالب
+
+    CatalogListingInput:
+      type: object
+      additionalProperties: false
+      required: [title, description, offers, state]
+      properties:
+        title: { $ref: "#/components/schemas/LocalizedText" }
+        description: { $ref: "#/components/schemas/LocalizedText" }
+        shot_list:
+          type: array
+          maxItems: 200
+          default: []
+          items:
+            type: object
+            additionalProperties: false
+            required: [start_ms, label]
+            properties:
+              start_ms: { type: integer, minimum: 0 }
+              label: { $ref: "#/components/schemas/LocalizedText" }
+        offers:
+          type: array
+          minItems: 1
+          maxItems: 10
+          description: قالب واحد مرة واحدة على الأكثر؛ القالب المعطّل `422 validation_failed`
+          items: { $ref: "#/components/schemas/ListingOfferInput" }
+        commercial_allowed:
+          type: boolean
+          default: false
+          description: يسمح عقد المادة بالترخيص التجاري؛ يضبطه مدير النظام وحده، وبدونه لا يُقبل عرض `commercial`
+        state: { $ref: "#/components/schemas/ListingState" }
+
+    CatalogListing:
+      allOf:
+        - $ref: "#/components/schemas/CatalogListingInput"
+        - type: object
+          required: [id, material_id, material_version, suspended_reason, listed_at, created_at, updated_at, updated_by]
+          properties:
+            id: { type: string, format: uuid }
+            material_id: { type: string, format: uuid }
+            material_version: { type: integer, minimum: 1, description: الإصدار المعروض للبيع؛ البيعة تجمّده }
+            suspended_reason: { type: [string, "null"], enum: [manual, rights_changed, null] }
+            listed_at: { type: [string, "null"], format: date-time, description: أول انتقال إلى `listed` }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+            updated_by: { type: string, format: uuid }
+
+    CatalogOffer:
+      type: object
+      required: [license_template_id, license_version, type, name, price]
+      properties:
+        license_template_id: { type: string, format: uuid }
+        license_version: { type: integer, minimum: 1 }
+        type: { $ref: "#/components/schemas/LicenseType" }
+        name: { $ref: "#/components/schemas/LocalizedText" }
+        price: { $ref: "#/components/schemas/Money" }
+
+    CatalogItem:
+      type: object
+      description: >-
+        ما يراه المشتري، بقائمة بيضاء مغلقة: لا إحداثيات ولا مدينة ولا معرّف مراسل ولا جهاز ولا حقول ديناميكية ولا مصادر،
+        ويوم التصوير بلا ساعة.
+      additionalProperties: false
+      required: [listing_id, material_version, title, description, shot_list, material_types, governorate, shot_on, duration_ms, width, height, credit, offers, exclusive_available, listed_at]
+      properties:
+        listing_id: { type: string, format: uuid }
+        material_version: { type: integer, minimum: 1 }
+        title: { $ref: "#/components/schemas/LocalizedText" }
+        description: { $ref: "#/components/schemas/LocalizedText" }
+        shot_list:
+          type: array
+          items:
+            type: object
+            required: [start_ms, label]
+            properties:
+              start_ms: { type: integer, minimum: 0 }
+              label: { $ref: "#/components/schemas/LocalizedText" }
+        material_types:
+          type: array
+          items: { $ref: "#/components/schemas/MaterialType" }
+        governorate: { type: string }
+        shot_on: { type: [string, "null"], format: date }
+        duration_ms: { type: [integer, "null"], minimum: 0 }
+        width: { type: [integer, "null"], minimum: 1 }
+        height: { type: [integer, "null"], minimum: 1 }
+        credit:
+          type: string
+          description: >-
+            نسب المادة: اسم الشبكة، أو الاسم المعتمد للنشر إن اختار المراسل `real_name`. الاسم المستعار لا يدخل الكتالوج
+            (`pseudonym` يُنسب للشبكة)، ولا `reporter_id`.
+        offers:
+          type: array
+          items: { $ref: "#/components/schemas/CatalogOffer" }
+        exclusive_available:
+          type: boolean
+          description: لا عرض حصري لمادة بيعت بترخيص غير حصري أو عليها حصرية نشطة أو محجوزة
+        listed_at: { type: string, format: date-time }
+
+    CatalogPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CatalogItem" }
+        next_cursor: { type: [string, "null"] }
 
     OutboxEvent:
       $ref: "./schemas/outbox-event.json"
