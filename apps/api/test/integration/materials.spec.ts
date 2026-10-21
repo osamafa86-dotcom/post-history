@@ -75,6 +75,20 @@ describe('materials (/v1/materials)', () => {
     (await h.pool.query(`SELECT type, payload FROM outbox_events WHERE aggregate_id = $1 ORDER BY id`, [id])).rows;
   const setEditorial = (id: string, state: string) => h.pool.query(`UPDATE materials SET editorial_state = $2 WHERE id = $1`, [id, state]);
 
+  it('no response under /v1 may be cached: lists, details, writes, errors and login all say no-store', async () => {
+    const m = await create();
+    const responses = [
+      await as(reporterA).get('/v1/materials'),
+      await as(reporterA).get(`/v1/materials/${m.id}`),
+      await as(reporterA).write('patch', `/v1/materials/${m.id}`, { title: 'Press conference moved' }),
+      await as(reporterB).get(`/v1/materials/${m.id}`),
+      await http().get('/v1/materials'),
+      await http().post('/v1/auth/login').send({ email: 'nobody@example.org', password: 'wrong-password' }),
+    ];
+    expect(responses.map((r) => r.status)).toEqual([200, 200, 200, 404, 401, 401]);
+    for (const r of responses) expect(r.headers['cache-control']).toBe('no-store');
+  });
+
   describe('create', () => {
     it('creates with initial states, default contributor, events, and never returns gps', async () => {
       const m = await create(reporterA, { priority: 'urgent', gps: { lat: 31.5, lng: 34.46 } });
