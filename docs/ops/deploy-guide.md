@@ -121,7 +121,7 @@ sudo shred -u /root/backup-recipient.key
 
 ## الخطوة 6 — الحسابات الأولى
 
-بأمر `cli:create-user` في الخادم (ADR 0024، #199). يُشغَّل داخل حاوية `api` ببيئتها، والطرفية تفاعلية لأن رموز TOTP ورمز الخزنة تُقرأ منها:
+بأمر `cli:create-user` في الخادم (ADR 0030، #199). يُشغَّل داخل حاوية `api` ببيئتها، والطرفية تفاعلية لأن رموز TOTP ورمز الخزنة تُقرأ منها:
 
 ```bash
 C="sudo infra/field-trial/trial.sh exec api npm run cli:create-user --"
