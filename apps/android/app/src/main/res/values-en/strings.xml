@@ -257,5 +257,16 @@
     <string name="file_state_received">Received</string>
     <string name="file_state_verified">Verified</string>
     <string name="file_state_failed">Failed</string>
+    <string name="home_notifications">Notifications</string>
+    <string name="notifications_title">Notifications</string>
+    <string name="notifications_empty">No notifications.</string>
+    <string name="notifications_ack">Acknowledge</string>
+    <string name="notifications_acknowledged">Acknowledged</string>
+    <string name="notif_channel_newsroom">Newsroom notifications</string>
+    <string name="notif_newsroom_title">New notification from the newsroom</string>
+    <string name="notif_newsroom_urgent">Urgent notification from the newsroom</string>
+    <string name="notifications_refresh">Refresh</string>
+    <string name="notifications_loading">Loading…</string>
+    <string name="notifications_more">More</string>
     <string name="role_other">Other role</string>
 </resources>
