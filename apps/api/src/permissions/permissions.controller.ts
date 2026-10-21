@@ -38,7 +38,7 @@ export class PermissionsController {
         ORDER BY id DESC LIMIT ${limit + 1})
       UNION ALL
       (SELECT id, action, actor_id, occurred_at, details FROM audit_log
-        WHERE action = 'setting.changed' AND details->>'setting' = 'reporter_legal_name_access' ${before}
+        WHERE target_type = 'setting' AND target_id = 'reporter_legal_name_access' AND action = 'setting.changed' ${before}
         ORDER BY id DESC LIMIT ${limit + 1})
       ORDER BY id DESC LIMIT ${limit + 1}`);
     const page = rows.slice(0, limit);

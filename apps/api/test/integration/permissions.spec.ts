@@ -61,7 +61,7 @@ describe('independent permissions (/v1/users/{id}/permissions/{permission})', ()
     // تغيير الإعداد كما يكتبه الخادم (ADR 0021)؛ يظهر في سجل كل مستخدم
     await h.pool.query(
       `INSERT INTO audit_log (actor_id, action, target_type, target_id, details, hash)
-       VALUES ($1::uuid, 'setting.changed', 'user', $1::text, $2, '\\x00')`,
+       VALUES ($1, 'setting.changed', 'setting', 'reporter_legal_name_access', $2, '\\x00')`,
       [admin.id, { setting: 'reporter_legal_name_access', value: 'protected_source', reason_code: 'policy_change' }],
     );
     await call(admin.token, 'delete', `/v1/users/${user.id}/permissions/reporter_identity:read`).expect(204);
