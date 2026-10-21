@@ -53,7 +53,7 @@ public struct Material: Sendable, Codable, Hashable {
     public var acknowledgedBy: UUID?
     /** متى؛ أُضيف في v0.2 فقد يغيب */
     public var acknowledgedAt: Date?
-    /** الاسم الحقيقي للمراسل (v0.2). يعود لحامل `protected_source:read` وحده، ويغيب المفتاح لغيره؛ كل قراءة تُسجَّل في التدقيق (`material.sensitive_read`، `field_keys: [reporter_legal_name]`). لا يدخل إشعارًا ولا حدثًا ولا تصديرًا. `null` = غير مسجّل. */
+    /** الاسم الحقيقي للمراسل (v0.2). الصلاحية التي تكشفه يحددها الإعداد الإداري `reporter_legal_name_access` (`/admin/settings/reporter-identity`، ADR 0021): `reporter_identity:read` حين يكون `separate` (الافتراضي)، و`protected_source:read` حين يكون `protected_source`. يغيب المفتاح عمّن لا يحمل الصلاحية الفعّالة. كل قراءة تُسجَّل في التدقيق (`material.sensitive_read`، `field_keys: [reporter_legal_name]`). لا يدخل إشعارًا ولا حدثًا ولا تصديرًا. `null` = غير مسجّل. */
     public var reporterLegalName: String?
     public var files: [MaterialFile]
     /** مفاتيح `dynamic_fields` التي حُذفت من هذه الاستجابة بقاعدة الحجب (حقول `sensitive` أو `location`) لأن المستدعي لا يحمل الصلاحية المقابلة؛ فارغة لحاملها. */

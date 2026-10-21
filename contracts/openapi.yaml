@@ -78,6 +78,8 @@ tags:
     description: صندوق الوارد والإشعارات وتسجيل أجهزة الهاتف؛ التمييز بين «أُسند» و«أقرّ الاستلام».
   - name: events
     description: قراءة أحداث Outbox للوحة الإدارة والمراقبة.
+  - name: admin
+    description: إعدادات مؤسسية يضبطها مدير النظام.
   - name: dashboard
     description: قراءات مجمّعة للوحة غرفة الأخبار، بلا بيانات كاشفة (v0.2).
 
@@ -442,7 +444,7 @@ paths:
         والإنتاج المواد المقبولة للإنتاج. الترتيب الافتراضي الأحدث أولًا.
       operationId: listMaterials
       x-roles: [reporter, supervisor, producer, editor_in_chief, rights_officer, system_admin]
-      x-permissions: [sensitive_location:read, protected_source:read]
+      x-permissions: [sensitive_location:read, protected_source:read, reporter_identity:read]
       parameters:
         - name: editorial_state
           in: query
@@ -532,7 +534,7 @@ paths:
       summary: قراءة مادة
       operationId: getMaterial
       x-roles: [reporter, supervisor, producer, editor_in_chief, rights_officer, system_admin]
-      x-permissions: [sensitive_location:read, protected_source:read]
+      x-permissions: [sensitive_location:read, protected_source:read, reporter_identity:read]
       responses:
         "200":
           description: المادة
@@ -1483,6 +1485,46 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /admin/settings/reporter-identity:
+    get:
+      tags: [admin]
+      summary: من يرى الاسم الحقيقي للمراسل (ADR 0021)
+      operationId: getReporterIdentitySetting
+      x-roles: [system_admin]
+      responses:
+        "200":
+          description: الإعداد
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReporterIdentitySetting" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    put:
+      tags: [admin]
+      summary: تغيير الصلاحية التي تكشف الاسم الحقيقي للمراسل
+      description: >-
+        `separate` (الافتراضي): يلزم `reporter_identity:read`. `protected_source`: يكفي `protected_source:read`. يُسجَّل كل
+        تغيير في التدقيق (`setting`، `value`، `reason_code`) ويُكتب حدث `setting.changed` في المعاملة نفسها، فيُبلَّغ مديرو
+        النظام كلهم. القيمة نفسها مرة ثانية لا تكتب حدثًا ولا تدقيقًا.
+      operationId: updateReporterIdentitySetting
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReporterIdentitySettingUpdate" }
+      responses:
+        "200":
+          description: الإعداد بعد التغيير
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReporterIdentitySetting" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
   /push-devices:
     put:
       tags: [notifications]
@@ -1800,8 +1842,10 @@ components:
 
     Permission:
       type: string
-      description: صلاحية مستقلة تُمنح لمستخدم بعينه لا لدور (قرار المالك 2026-10-19، ADR SEC-03)
-      enum: [sensitive_location:read, protected_source:read]
+      description: >-
+        صلاحية مستقلة تُمنح لمستخدم بعينه لا لدور (قرار المالك 2026-10-19، ADR SEC-03). `reporter_identity:read` للاسم
+        الحقيقي للمراسل حين يكون الإعداد `separate` (ADR 0021).
+      enum: [sensitive_location:read, protected_source:read, reporter_identity:read]
 
     Role:
       type: object
@@ -2049,7 +2093,9 @@ components:
               type: [string, "null"]
               maxLength: 200
               description: >-
-                الاسم الحقيقي للمراسل (v0.2). يعود لحامل `protected_source:read` وحده، ويغيب المفتاح لغيره؛ كل قراءة تُسجَّل
+                الاسم الحقيقي للمراسل (v0.2). الصلاحية التي تكشفه يحددها الإعداد الإداري `reporter_legal_name_access`
+                (`/admin/settings/reporter-identity`، ADR 0021): `reporter_identity:read` حين يكون `separate` (الافتراضي)،
+                و`protected_source:read` حين يكون `protected_source`. يغيب المفتاح عمّن لا يحمل الصلاحية الفعّالة. كل قراءة تُسجَّل
                 في التدقيق (`material.sensitive_read`، `field_keys: [reporter_legal_name]`). لا يدخل إشعارًا ولا حدثًا ولا
                 تصديرًا. `null` = غير مسجّل.
             files:
@@ -2587,6 +2633,30 @@ components:
           then: { required: [mime_type], properties: { mime_type: { const: application/json } } }
         - if: { properties: { kind: { const: captions } } }
           then: { required: [mime_type], properties: { mime_type: { const: text/vtt } } }
+
+    ReporterIdentityAccess:
+      type: string
+      enum: [separate, protected_source]
+      description: "`separate` = يلزم `reporter_identity:read`؛ `protected_source` = يكفي `protected_source:read`"
+
+    ReporterIdentitySetting:
+      type: object
+      required: [access, updated_at, updated_by]
+      properties:
+        access: { $ref: "#/components/schemas/ReporterIdentityAccess" }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: [string, "null"], format: uuid, description: "`null` = القيمة الافتراضية لم تُغيَّر" }
+
+    ReporterIdentitySettingUpdate:
+      type: object
+      additionalProperties: false
+      required: [access, reason_code]
+      properties:
+        access: { $ref: "#/components/schemas/ReporterIdentityAccess" }
+        reason_code:
+          type: string
+          description: سبب مرمّز للتدقيق؛ لا نص حر
+          enum: [policy_change, operational_need, incident_response, audit_finding]
 
     MaterialExport:
       type: object

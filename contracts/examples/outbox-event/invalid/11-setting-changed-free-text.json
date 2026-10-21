@@ -1,0 +1,15 @@
+{
+  "id": "3102",
+  "type": "setting.changed",
+  "aggregate_type": "user",
+  "aggregate_id": "2f3e4d5c-6b7a-4899-8a7b-6c5d4e3f2a1b",
+  "occurred_at": "2026-10-21T10:00:00Z",
+  "idempotency_key": "setting.changed:reporter_legal_name_access:2026-10-21T10:00:01Z",
+  "payload": {
+    "setting": "reporter_legal_name_access",
+    "value": "protected_source",
+    "actor_id": "2f3e4d5c-6b7a-4899-8a7b-6c5d4e3f2a1b",
+    "reason_code": "operational_need",
+    "note": "free text"
+  }
+}
