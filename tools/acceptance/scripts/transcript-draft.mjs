@@ -1,6 +1,6 @@
 // transcript-draft (ticket 10): the local transcription worker end to end. A synthetic Arabic clip is uploaded; after the server verifies
 // the original, the worker must register `transcript` (JSON) and `captions` (WebVTT) as derivatives of it.
-//   TD_API_URL  TD_TUS_URL  TD_TOKENS {reporter}  TD_RUNS (5)  TD_CLIP_S (45)  TD_TIMEOUT_S (600)  TD_LIMIT_RATIO (1.0)
+//   TD_API_URL  TD_TUS_URL  TD_TOKENS {reporter, rights_officer}  TD_RUNS (5)  TD_CLIP_S (45)  TD_TIMEOUT_S (600)  TD_LIMIT_RATIO (1.0)
 //   TD_SPEECH_FILE   a recording of Arabic speech to use instead of espeak-ng (public or synthetic audio only; never a reporter file). `pass` needs the pinned
 //                    public clip (fixtures/td-speech.json: FLEURS, CC-BY-4.0; `node lib/speech-pin.mjs <dir>` fetches it and checks its sha256)
 //   TD_TARGET_HOST   set to the trial host's name when this runs there; only then is the p95 ratio judged against the limit. On a shared runner the ratio is
@@ -12,9 +12,11 @@
 // every line starts with RLM, cues ordered and not overlapping; the bytes served by the signed links hash to the registered sha256. One extra clip is uploaded as a
 // sensitivity-flagged material and goes through the same path, with `route: local`. Timing: from the server's verification to both derivatives registered, over the clip's
 // duration, p95 across clips, against TD_LIMIT_RATIO. Not measured here: the accuracy of the words (that is tools/asr-bench), field recordings, GPU.
-// `pass` needs: all runs, the sensitive clip, the bytes compared, TD_EGRESS_CMD given and refused, the pinned real-speech clip, and TD_TARGET_HOST; otherwise partial.
+// R11 (threat-model §9.1): a role that reads the material but may not edit it (rights_officer in TD_TOKENS) sees neither derivative in the
+// files listing, and their links answer the same 404 as a file that does not exist.
+// `pass` needs: all runs, the sensitive clip, the R11 negative check, the bytes compared, TD_EGRESS_CMD given and refused, the pinned real-speech clip, and TD_TARGET_HOST; otherwise partial.
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -89,14 +91,16 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
     return { code: EXIT_PENDING, doc: null };
   }
   if (!env.TD_API_URL || !env.TD_TUS_URL) { console.error("ENVIRONMENT: TD_API_URL and TD_TUS_URL are required; nothing measured"); return { code: 2, doc: null }; }
-  const token = JSON.parse(env.TD_TOKENS ?? "{}").reporter;
+  const tokens = JSON.parse(env.TD_TOKENS ?? "{}");
+  const token = tokens.reporter;
+  const outsider = tokens.rights_officer;
   const http = client(env.TD_API_URL, deps.fetchImpl ?? freshFetch);
   const doc = newResult("transcript-draft", { device: { platform: "server" }, upload_path: "n/a" });
   const { fails, check } = checker();
   const runs = Number(env.TD_RUNS ?? 5), clipS = Number(env.TD_CLIP_S ?? 45), timeoutMs = Number(env.TD_TIMEOUT_S ?? 600) * 1000, limit = Number(env.TD_LIMIT_RATIO ?? 1);
   const work = mkdtempSync(join(tmpdir(), "transcript-draft-"));
   const ratios = [];
-  let fetched = 0, sensitiveDone = false, words = 0, comparable = 0;
+  let fetched = 0, sensitiveDone = false, words = 0, comparable = 0, outsiderChecked = 0;
   try {
     let speech = env.TD_SPEECH_FILE;
     if (!speech) {
@@ -126,6 +130,17 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
       const after = await view();
       const same = ["title", "technical_state", "editorial_state", "rights_state", "priority"].every((k) => JSON.stringify(before[k]) === JSON.stringify(after[k]));
       check(`${label}: the draft changes nothing of the material (title, the three states, priority)`, same);
+      if (outsider) {
+        const seen = ((await http.get(outsider, `/materials/${mat.id}`)).body?.files ?? []).map((x) => x.kind);
+        check(`${label}: a reader who may not edit sees neither transcript nor captions in the files listing`, !seen.includes("transcript") && !seen.includes("captions"));
+        const shape = (b) => JSON.stringify({ ...(b ?? {}), request_id: undefined });
+        const missing = await http.call(outsider, "GET", `/materials/${mat.id}/files/${randomUUID()}/download-url`);
+        for (const f of [files.value.t, files.value.c]) {
+          const r = await http.call(outsider, "GET", `/materials/${mat.id}/files/${f.id}/download-url`);
+          check(`${label}: the ${f.kind} link for a reader who may not edit is the missing-file 404`, r.status === 404 && missing.status === 404 && shape(r.body) === shape(missing.body), String(r.status));
+        }
+        outsiderChecked++;
+      }
       const read = async (f) => {
         const g = await http.call(token, "GET", `/materials/${mat.id}/files/${f.id}/download-url`);
         if (g.status !== 200) { check(`${label}: a download link for ${f.kind}`, false, String(g.status)); return null; }
@@ -168,11 +183,11 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
     const judged = Boolean(env.TD_TARGET_HOST);
     if (judged) check(`transcription time over clip duration, p95 ${p95?.toFixed(2) ?? "n/a"} (limit ${limit}, on ${env.TD_TARGET_HOST})`, p95 !== null && p95 <= limit);
     else console.log(`info transcription time over clip duration, p95 ${p95?.toFixed(2) ?? "n/a"}: not judged against ${limit} (TD_TARGET_HOST not given; a shared runner is not the trial host)`);
-    const full = !fails.length && ratios.length >= 5 && sensitiveDone && comparable === runs + 1 && egressRefused && pinnedSpeech && judged;
+    const full = !fails.length && ratios.length >= 5 && sensitiveDone && outsiderChecked === runs + 1 && comparable === runs + 1 && egressRefused && pinnedSpeech && judged;
     finish(doc, fails.length ? "fail" : full ? "pass" : "partial", {
       clips: runs, clip_s: clipS, ratio_p95: p95 === null ? "n/a" : Number(p95.toFixed(3)), ratio_limit: limit, ratio_judged: judged, speech_pinned: pinnedSpeech, sensitive_clip_done: sensitiveDone,
-      contents_compared: comparable, words_recognised: words, egress_checked: Boolean(env.TD_EGRESS_CMD), egress_refused: egressRefused,
-    }, `${runs} مقطع اصطناعي بكلام عربي (${pinnedSpeech ? "كلام حقيقي عام: FLEURS مثبّت ببصمته" : env.TD_SPEECH_FILE ? "ملف مُعطى غير المثبّت" : "espeak-ng"}) ومقطع لمادة موسومة بالحساسية؛ لا دقة كلمات هنا (ذلك tools/asr-bench) ولا تسجيلات ميدانية${full ? "" : "؛ لم يكتمل ما يلزم لـ pass (المحتوى المقارن أو التحقق من غياب الخروج أو عدد المقاطع أو الكلام المثبّت أو مضيف التجربة الذي يُحكم عليه الحد)"}`);
+      contents_compared: comparable, r11_negative_checked: outsiderChecked, words_recognised: words, egress_checked: Boolean(env.TD_EGRESS_CMD), egress_refused: egressRefused,
+    }, `${runs} مقطع اصطناعي بكلام عربي (${pinnedSpeech ? "كلام حقيقي عام: FLEURS مثبّت ببصمته" : env.TD_SPEECH_FILE ? "ملف مُعطى غير المثبّت" : "espeak-ng"}) ومقطع لمادة موسومة بالحساسية؛ لا دقة كلمات هنا (ذلك tools/asr-bench) ولا تسجيلات ميدانية${full ? "" : "؛ لم يكتمل ما يلزم لـ pass (المحتوى المقارن أو فحص R11 السلبي أو التحقق من غياب الخروج أو عدد المقاطع أو الكلام المثبّت أو مضيف التجربة الذي يُحكم عليه الحد)"}`);
     if (args["dry-run"]) writeResult(doc, { dryRun: true }); else console.log("wrote", writeResult(doc, { slug: "api" }));
     return { code: fails.length ? 1 : 0, doc };
   } finally { rmSync(work, { recursive: true, force: true }); }

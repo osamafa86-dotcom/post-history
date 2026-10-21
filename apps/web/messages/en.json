@@ -368,6 +368,27 @@
       "governorate": "Governorate"
     }
   },
+  "store": {
+    "credit": "Credit",
+    "from": "From",
+    "unavailable": "Not currently for sale",
+    "preview": "Material preview",
+    "previewUnavailable": "Preview is not available right now.",
+    "chooseLicense": "Choose a license",
+    "licenseTypes": {
+      "editorial_single": "Editorial, single use",
+      "editorial_term": "Editorial, open term",
+      "exclusive_temporary": "Temporary exclusive",
+      "commercial": "Commercial"
+    },
+    "exclusiveTaken": "Exclusivity is not available for this material.",
+    "needsApproval": "Requires management approval before payment.",
+    "cart": "Cart",
+    "cartEmpty": "Your cart is empty.",
+    "remove": "Remove",
+    "total": "Total",
+    "currencies": "Currencies are not combined; each total is paid separately."
+  },
   "board": {
     "title": "Newsroom board",
     "lead": "Materials by editorial state, open urgent items and overdue acknowledgements. The snapshot refreshes every five seconds.",
