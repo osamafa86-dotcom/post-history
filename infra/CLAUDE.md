@@ -32,6 +32,27 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 - نافذة مفتاح الاختبار qa- (ADR 0022) لحزمة القبول عبر الحافة: `infra/field-trial/qa-window.sh open --email <حساب القبول>` يولّد مفتاحًا جديدًا لكل نافذة (≤ 72 ساعة، الخاص في tmpfs ولا يدخل المستودع)، ويكتب `INGEST_QA_PUBLIC_KEY` و`INGEST_QA_KEY_EXPIRES` و`ACCEPTANCE_UPLOADER_USER_ID` في ملف الأسرار المفكوك، و`close` يزيلها. البوابة تقبل معرّف `qa-` من الخانة وحدها حتى انتهائها، وتشتق `key_class` من الخانة التي تحققت بها وترسله مع كل فحص، والخادم يقبل بـ qa جلسات حساب القبول وحده. الخانة في ملف التجربة وحده؛ `preflight.sh` يرسب إن كانت مضبوطة بلا `--qa-window`، و`healthcheck.sh` ينبّه بعد انتهائها.
 - الفحص: `smoke-trial.sh` (CI، على 127.0.0.1 و127.0.0.2 بشهادات محلية، ومعه حزمة القبول عبر الحافة)، و`preflight.sh` على المضيف. ما يوفّره المالك في `docs/ops/field-trial-hosting.md`.
 
+## المعاينة الخفيفة (`infra/preview/`، ADR 0023)
+
+- معاينة على خادم مشترك ذاكرته شبه ممتلئة. معاينة فقط، لا تُنقل إلى التجربة.
+- **الصورتان تُبنيان في CI وحده** (`api.Dockerfile`، `web.Dockerfile`؛ إنتاج، ومستخدم node، وبلا أسرار).
+  - على main ويدويًا، ترفعهما `preview-images.yml` tar مضغوطًا مع `SHA256SUMS` إلى الإصدار التمهيدي `preview-latest`.
+  - الخادم ينزّلهما بـ `fetch-images.sh`، يتحقق من البصمة ثم `docker load`. لا بناء على الخادم.
+- **`docker-compose.preview.yml`:** Postgres وRedis وMinIO والخادم والويب فقط.
+  - لكل خدمة `mem_limit` و`memswap_limit` مساوٍ له، والمجموع 832 MB تحت سقف 900 MB.
+  - لا منفذ على المضيف.
+  - `web` (nginx) وحده على الشبكة الخارجية `deploy_default` باسم `lib-web:8080`. يضع `X-Robots-Tag: noindex` وشريط «معاينة»، ويُنهي TLS داخليًا للخادم على عنوانه الداخلي وحده، لأن الـBFF يشترط https.
+  - الرفع والشهادة والتفريغ معطّلة صراحة.
+- **`.env` يولّده `gen-env.sh` مرة على الخادم،** بأسرار عشوائية وبالنطاق؛ لا نطاق ولا عنوان في المستودع.
+- **`seed-preview.sh`** ينشئ مشرفًا ورئيس تحرير ومراسلًا تجريبيين وثلاث مواد اصطناعية.
+  - كلمات السر في `.env` لا في المخرج.
+  - بلا مدير نظام.
+- **الدخان:** `smoke-preview.sh` في CI يثبت بالصور المبنية:
+  - `/health`؛
+  - الدخول عبر الويب؛
+  - عزل الخادم عن الشبكة المشتركة؛
+  - مجموع الحدود والاستهلاك الفعلي.
+
 ## tusd (`infra/tusd/`)
 
 - R2 يشترط تساوي كل الأجزاء عدا الأخير وحدًا أدنى 5 MiB: `-s3-min-part-size` = `-s3-part-size`.
@@ -48,6 +69,7 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 
 - `contracts`: redocly lint + ajv compile. `secrets`: gitleaks. `compose`: config + pull + `infra/compose/smoke.sh` + `infra/compose/e2e-hooks.sh` (مسار الخطّاف مع الخادم) + `infra/compose/smoke-media.sh` (تحصين العامل وعزله) + `infra/ingest/test-gate.sh` (بوابة ingest) + `infra/ingest/e2e-attested.sh` (الخادم والبوابة معًا). `api`: يشغّل MinIO المثبّت لاختبار محوّل S3، و`npm audit --audit-level=high` (وكذلك `acceptance`).
 - `field-trial` (`.github/workflows/field-trial.yml`): `infra/field-trial/smoke-trial.sh` على كل PR يمس `infra/**` أو `apps/api/src/db/**`.
+- `preview-images` (`.github/workflows/preview-images.yml`): صورتا المعاينة و`smoke-preview.sh` على كل PR يمس التطبيقين أو العقد أو `infra/preview`، والنشر إلى `preview-latest` على main.
 - `netlab` (`.github/workflows/netlab.yml`): فحص قصير لـ field-weak بوضع netem ومحاكاة الحجب (`blocking.py`) على كل PR يمس netlab أو compose أو ingest، وقياس كامل يدويًا.
 - Dependabot (`.github/dependabot.yml`): طلب أسبوعي لـ minor+patch لكل مجلد، والإصدارات الرئيسية مُتجاهلة حتى ما بعد التجربة الميدانية. لذلك يحرس `npm audit` الثغرات العالية، وتُراجَع تنبيهات Dependabot أسبوعيًا ويُبلَّغ المنسّق بما يستدعي ترقية رئيسية.
 - كل حزمة تضيف وظيفتها الخاصة حين يوجد كود.

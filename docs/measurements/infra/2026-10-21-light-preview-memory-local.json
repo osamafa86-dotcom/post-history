@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "infra",
+  "decision_ref": "ADR 0023",
+  "started_at": "2026-10-21T17:10:46Z",
+  "ended_at": "2026-10-21T17:10:46Z",
+  "result": "pass",
+  "device": {
+    "platform": "server",
+    "model": "local docker compose (sandbox, 4 CPUs)"
+  },
+  "metrics": {
+    "memory_limits_mb": 832,
+    "memory_used_mb": 187,
+    "memory_ceiling_mb": 900
+  },
+  "notes": "infra/preview/smoke-preview.sh (ADR 0023): preview compose on images built from infra/preview/*.Dockerfile, idle after a demo login and a few page loads. Not the shared server itself."
+}

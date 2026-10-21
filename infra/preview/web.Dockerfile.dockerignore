@@ -1,0 +1,8 @@
+**/node_modules
+**/dist
+**/.next
+.git
+**/.artifacts
+**/test-results
+**/.env
+**/*.pem

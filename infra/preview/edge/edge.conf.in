@@ -1,0 +1,41 @@
+# @EDGE_IP@ = عنوان هذه الحاوية على الشبكة الداخلية (PREVIEW_EDGE_IP)، يكتبه أمر البدء.
+
+# الويب عبر Caddy الخادم المشترك: لا فهرسة، وشريط «معاينة» في كل صفحة HTML.
+server {
+    listen 8080;
+    location = /robots.txt {
+        add_header X-Robots-Tag "noindex, nofollow" always;
+        default_type text/plain;
+        return 200 "User-agent: *\nDisallow: /\n";
+    }
+    location / {
+        set $web_app http://web-app:3100;
+        proxy_pass $web_app;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        # sub_filter يعمل على جسم غير مضغوط.
+        proxy_set_header Accept-Encoding "";
+        proxy_read_timeout 120s;
+        add_header X-Robots-Tag "noindex, nofollow" always;
+        sub_filter_once on;
+        sub_filter '</body>' '<div role="status" lang="ar" dir="rtl" style="position:fixed;inset-block-end:0;inset-inline:0;z-index:2147483647;padding:4px 8px;background:#7a1f1f;color:#fff;font:600 13px/1.4 system-ui,sans-serif;text-align:center">معاينة: بيانات وحسابات تجريبية فقط · <span lang="en" dir="ltr">Preview: test data and accounts only</span></div></body>';
+    }
+}
+
+# الخادم للـBFF وحده: TLS داخلي (الـBFF يشترط https إلى الخادم)، على عنوان الشبكة الداخلية لا على deploy_default.
+server {
+    listen @EDGE_IP@:8443 ssl;
+    server_name api.lib.internal;
+    ssl_certificate /tls/api.crt;
+    ssl_certificate_key /tls/api.key;
+    ssl_protocols TLSv1.3;
+    location / {
+        set $api http://api:3000;
+        proxy_pass $api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_read_timeout 60s;
+    }
+}
