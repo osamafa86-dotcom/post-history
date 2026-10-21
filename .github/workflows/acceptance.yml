@@ -236,7 +236,7 @@ jobs:
           export MEDIA_E2E_ENV_LABEL="compose on a GitHub-hosted runner: api + tusd + minio + redis + media-worker"
           node tools/acceptance/scripts/media-e2e.mjs --out-dir="$RUNNER_TEMP/out"
       # The export package built by the worker's own code (workers/media/src, the runner's FFmpeg) from synthetic phone and HDR clips.
-      - name: cut-export (editing package: streams, rotation, HDR tags, cut points, sequences, no revealing tags; always partial)
+      - name: "cut-export (editing package: streams, rotation, HDR tags, cut points, sequences, no revealing tags; always partial)"
         run: node tools/acceptance/scripts/cut-export.mjs --dry-run
       # The link lives 10 minutes by contract: waiting for it to expire (DL_WAIT_EXPIRY=1) is left out of the PR run, so the result is
       # `partial` for that reason alone; run the script by hand with DL_WAIT_EXPIRY=1 for the full check.
