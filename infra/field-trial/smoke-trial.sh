@@ -179,7 +179,9 @@ QW open --email "$qa_email" --hours 1 > "$WORK/qa-open" || { cat "$WORK/qa-open"
 qa_kid="$(sed -n 's/.*FT_INGEST_KID=\(qa-[A-Za-z0-9-]*\).*/\1/p' "$WORK/qa-open")"
 [ -n "$qa_kid" ] && [ "$(stat -c %a "$WORK/qa/qa-signing.pem")" = 600 ] || fail "qa window: no qa- kid or the key file is not 0600"
 if QW open --email "$qa_email" --hours 1 >/dev/null 2>&1; then fail "qa window: a second open replaced the key"; fi
-qcheck() { QA_STATE="$qa_state" QA_KID="$qa_kid" QA_SIGNING_KEY="$WORK/qa/qa-signing.pem" CA_FILE="$WORK/ca.crt" \
+# The tester's copy (as copied off the host): it must stop working at the expiry and after close, not only disappear.
+cp "$WORK/qa/qa-signing.pem" "$WORK/qa-copy.pem"
+qcheck() { QA_STATE="$qa_state" QA_KID="$qa_kid" QA_SIGNING_KEY="$WORK/qa-copy.pem" CA_FILE="$WORK/ca.crt" \
              INGEST_SIGNING_KEY="$WORK/ingest/signing.pem" node "$ROOT/infra/field-trial/e2e-qa-key.mjs" check "$1"; }
 qcheck open || fail "qa window open"
 sed -i "s/^INGEST_QA_KEY_EXPIRES=.*/INGEST_QA_KEY_EXPIRES=$(date -u -d '-1 minute' +%FT%TZ)/" "$TRIAL_ENV_FILE"
