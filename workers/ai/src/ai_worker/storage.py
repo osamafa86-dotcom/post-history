@@ -19,8 +19,8 @@ from pathlib import Path
 
 CHUNK = 8 * 1024 * 1024
 DERIVED_PREFIX = "derived/"
-# ما يكتبه هذا العامل وحده: derived/<material_id>/<file_id>/transcript.{json,vtt}
-WRITABLE_KEY = re.compile(r"^derived/[0-9a-f-]{36}/[0-9a-f-]{36}/transcript\.(json|vtt)$")
+# ما يكتبه هذا العامل وحده: derived/<material_id>/<file_id>/{transcript.json,transcript.vtt,shots.json}
+WRITABLE_KEY = re.compile(r"^derived/[0-9a-f-]{36}/[0-9a-f-]{36}/(transcript\.(json|vtt)|shots\.json)$")
 # اتصال مباشر: متغيرات HTTP(S)_PROXY في البيئة لا تمرّر الأصل ولا التوقيع عبر وسيط
 DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -111,7 +111,7 @@ class S3Storage:
 
     def put_file(self, bucket: str, key: str, path: Path, sha256_hex: str, content_type: str) -> None:
         if bucket != self.writable_bucket or not WRITABLE_KEY.match(key):
-            raise PermissionError("the AI worker writes its transcript files only")
+            raise PermissionError("the AI worker writes its own draft files only")
         size = path.stat().st_size
         with open(path, "rb") as fh:
             # التخزين يتحقق من x-amz-content-sha256 فيرفض جسمًا تلف في الطريق

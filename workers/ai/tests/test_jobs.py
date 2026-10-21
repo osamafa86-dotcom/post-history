@@ -89,3 +89,54 @@ def test_storage_client_writes_only_transcript_files(tmp_path):
                         ("media", f"derived/{MATERIAL}/{FILE}/../x/transcript.json"), ("media", "tus/abc")]:
         with pytest.raises(PermissionError):
             s3.put_file(bucket, key, f, "0" * 64, "application/json")
+
+
+def _fake_detect(calls):
+    from ai_worker.shots import Shot
+
+    def detect(path, origin_s=None):
+        calls.append(origin_s)
+        return [Shot(0.0, 1.0), Shot(1.0, 12.5)], {"frames": 300}
+    return detect
+
+
+def test_shots_written_next_to_the_transcript_without_text(tmp_path):
+    from ai_worker.jobs import shots_key
+
+    calls = []
+    jobs, storage, _ = make(tmp_path, engine=FakeEngine(start_pts_us=40000), shots_enabled=True,
+                            detect=_fake_detect(calls))
+    assert jobs.handle(verified_event()) == "transcribed+transcript+captions+shots"
+    assert calls == [0.04]  # shots on the original timeline, from the video start
+    doc = json.loads(storage.objects[(BUCKET, shots_key(MATERIAL, FILE))])
+    assert doc["status"] == "draft" and [s["speech_segments"] for s in doc["shots"]] == [[], [0]]
+    assert "غزة" not in json.dumps(doc, ensure_ascii=False)  # the text stays in transcript.json alone
+
+
+def test_shot_detection_failure_does_not_fail_the_transcript(tmp_path):
+    def broken(path, origin_s=None):
+        raise RuntimeError("decoder")
+    jobs, storage, _ = make(tmp_path, shots_enabled=True, detect=broken)
+    assert jobs.handle(verified_event()) == "transcribed+transcript+captions+shots-failed"
+    assert len(storage.puts) == 2
+
+
+def test_redelivery_adds_missing_shots_without_transcribing_again(tmp_path):
+    from ai_worker.jobs import shots_key
+
+    jobs, storage, _ = make(tmp_path)
+    jobs.handle(verified_event())
+    calls = []
+    jobs.shots_enabled, jobs.detect = True, _fake_detect(calls)
+    assert jobs.handle(verified_event()) == "reused+transcript+captions+shots"
+    assert jobs.engine.calls == 1 and (BUCKET, shots_key(MATERIAL, FILE)) in storage.objects
+    assert jobs.handle(verified_event()) == "reused+transcript+captions"  # already there: nothing to add
+
+
+def test_storage_client_accepts_shots_json_only_in_its_own_folder(tmp_path):
+    s3 = S3Storage("http://minio:9000", "auto", "k", "s", "media")
+    f = tmp_path / "x"
+    f.write_bytes(b"x")
+    for key in [f"derived/{MATERIAL}/{FILE}/shots.jsonx", f"derived/{MATERIAL}/shots.json", f"derived/{MATERIAL}/{FILE}/poster.jpg"]:
+        with pytest.raises(PermissionError):
+            s3.put_file("media", key, f, "0" * 64, "application/json")
