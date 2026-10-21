@@ -201,6 +201,9 @@ jobs:
           # The worker reads "true" from .env (workers/ai Config); the workflow switch is "1".
           if [ "$AI_ENABLE_TRANSCRIPT" = 1 ]; then
             profiles="$profiles --profile ai"; sed -i "s/^AI_ENABLE_TRANSCRIPT=.*/AI_ENABLE_TRANSCRIPT=true/" infra/compose/.env
+            # Four CPUs for the worker (the runner's four; the media worker is done before each transcription starts):
+            # on two, large-v3-turbo ran at 1.8-2.2x real time here (#116).
+            sed -i "s/^AI_WORKER_CPUS=.*/AI_WORKER_CPUS=4/" infra/compose/.env
           fi
           unset AI_ENABLE_TRANSCRIPT  # compose prefers the shell to .env: let .env decide
           docker compose -f infra/compose/docker-compose.yml $profiles up -d --wait --build
