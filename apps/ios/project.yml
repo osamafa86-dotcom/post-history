@@ -37,6 +37,8 @@ targets:
       - package: PostHistoryKit
         product: DeviceSecurity
       - package: PostHistoryKit
+        product: NotificationsCore
+      - package: PostHistoryKit
         product: DeviceAttestation
     # App Attest (SEC-07): بيئة الإنتاج لبناءات TestFlight والمتجر؛ القدرة تُفعَّل على المعرّف في بوابة المطوّرين.
     entitlements:

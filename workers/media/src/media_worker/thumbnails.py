@@ -6,10 +6,14 @@
 - بلا وسوم (`-map_metadata -1`)؛ مرمّز MJPEG في ffmpeg لا يكتب EXIF، فلا إحداثيات ولا طراز جهاز.
 - HDR يمر بخريطة الألوان نفسها التي تمر بها النسخة الخفيفة.
 - المدخل بالتحصين نفسه (`INPUT_GUARD`)، والمخرج باسم مؤقت ثم نقل ذري.
+- صور شريط الزمن للمشغّل: لوحة `sprite.jpg` (خانات 160 بكسل، 10 أعمدة، 100 خانة على الأكثر) و`thumbnails.vtt` يشير
+  إلى كل خانة بـ `#xywh`، من النسخة الخفيفة لا من الأصل (فك 480p أرخص، والألوان SDR أصلًا). أزمنة الإشارات على خط
+  زمن القائمة من الصفر كما يعرضه المشغّل.
 """
 
 from __future__ import annotations
 
+import math
 import os
 import re
 from dataclasses import dataclass
@@ -24,6 +28,10 @@ SHEET_FRAMES = 10
 SHEET_COLUMNS = 5
 SHEET_TILE_WIDTH = 320
 # متوسط الإضاءة (8 بت، مدى محدود 16–235) تحته يُعد الإطار أسود
+SPRITE_TILE_WIDTH = 160
+SPRITE_COLUMNS = 10
+SPRITE_MAX_TILES = 100
+SPRITE_MIN_INTERVAL_S = 2
 BLACK_YAVG = 32.0
 _YAVG = re.compile(r"lavfi\.signalstats\.YAVG=(\d+(?:\.\d+)?)")
 
@@ -102,3 +110,36 @@ def contact_sheet(src: Path, dst: Path, source: Probe) -> Thumbnail:
     if _jpeg(src, dst, vf, None, timeout_s=max(60.0, duration * 2)) is None:
         raise ValueError("contact sheet could not be produced")
     return Thumbnail(dst, tile_w * SHEET_COLUMNS, tile_h * rows, None)
+
+
+def _vtt_time(t: float) -> str:
+    ms = round(t * 1000)
+    return f"{ms // 3_600_000:02d}:{ms // 60_000 % 60:02d}:{ms // 1000 % 60:02d}.{ms % 1000:03d}"
+
+
+def timeline_sprite(proxy: Path, out_dir: Path, source: Probe) -> list[Path]:
+    """يعيد `[thumbnails.vtt, sprite.jpg]` في `out_dir`."""
+    if source.video_codec is None:
+        raise ValueError("no video stream")
+    duration = max(source.duration_ms / 1000, 0.001)
+    interval = max(SPRITE_MIN_INTERVAL_S, math.ceil(duration / SPRITE_MAX_TILES))
+    count = max(1, math.ceil(duration / interval))
+    rows = math.ceil(count / SPRITE_COLUMNS)
+    tw, th = _dims(source, 10_000)
+    tile_w = SPRITE_TILE_WIDTH
+    tile_h = round(tile_w * th / tw / 2) * 2
+    out_dir.mkdir(parents=True, exist_ok=True)
+    sprite = out_dir / "sprite.jpg"
+    # إطار كل `interval` ثانية من أول إطار، أيًّا كانت بداية الطوابع (-copyts)
+    vf = (f"select='isnan(prev_selected_t)+gte(t-prev_selected_t\\,{interval})',"
+          f"scale={tile_w}:{tile_h},setsar=1,tile={SPRITE_COLUMNS}x{rows}")
+    if _jpeg(proxy, sprite, vf, None, timeout_s=max(60.0, duration)) is None:
+        raise ValueError("timeline sprite could not be produced")
+    lines = ["WEBVTT", ""]
+    for i in range(count):
+        x, y = (i % SPRITE_COLUMNS) * tile_w, (i // SPRITE_COLUMNS) * tile_h
+        lines += [f"{_vtt_time(i * interval)} --> {_vtt_time(min((i + 1) * interval, duration))}",
+                  f"sprite.jpg#xywh={x},{y},{tile_w},{tile_h}", ""]
+    vtt = out_dir / "thumbnails.vtt"
+    vtt.write_text("\n".join(lines), encoding="utf-8")
+    return [vtt, sprite]
