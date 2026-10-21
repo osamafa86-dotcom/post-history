@@ -260,6 +260,34 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
       }
     });
 
+    it('a verified voice note is a source for audio, transcript and captions only; an unverified one is not', async () => {
+      const o = await verifiedOriginal();
+      const note = async (state: string) =>
+        (
+          await h.pool.query<{ id: string }>(
+            `INSERT INTO material_files (material_id, kind, state, size_bytes, sha256, storage_key, verified_at)
+             VALUES ($1, 'voice_note', $2, 800, $3, $4, CASE WHEN $2 = 'verified' THEN now() END) RETURNING id`,
+            [o.materialId, state, randomBytes(32), `tus/${randomBytes(8).toString('hex')}`],
+          )
+        ).rows[0]!.id;
+      const v = await note('verified');
+      const body = (kind: string, mime: string) => {
+        const key = `derived/${o.materialId}/${v}/${kind}`;
+        storage.sizes.set(key, 40);
+        return { kind, storage_key: key, sha256: hex(randomBytes(32)), size_bytes: 40, mime_type: mime, technical: { duration_ms: 1000, start_pts_us: 0 } };
+      };
+      for (const [kind, mime] of [['audio', 'audio/mp4'], ['transcript', 'application/json'], ['captions', 'text/vtt']] as const) {
+        const res = await derive(v, body(kind, mime)).expect(200);
+        const { rows } = await h.pool.query(`SELECT kind, derived_from_id FROM material_files WHERE id = $1`, [res.body.file_id]);
+        expect(rows[0]).toEqual({ kind, derived_from_id: v });
+      }
+      expect((await derive(v, proxy(o.materialId, v)).expect(409)).body.code).toBe('upload_state_conflict');
+      const pending = await note('received');
+      const key = `derived/${o.materialId}/${pending}/transcript`;
+      storage.sizes.set(key, 40);
+      await derive(pending, { kind: 'transcript', storage_key: key, sha256: hex(randomBytes(32)), size_bytes: 40, mime_type: 'application/json', technical: { duration_ms: 1000, start_pts_us: 0 } }).expect(409);
+    });
+
     it('refuses keys outside the derived prefix of the source, a missing object, a non-original source, and unknown files', async () => {
       const o = await verifiedOriginal();
       const other = await verifiedOriginal();

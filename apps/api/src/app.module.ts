@@ -55,6 +55,11 @@ export function configureApp(app: INestApplication, config: AppConfig, logger: L
   // X-Forwarded-For يُقبل من الوكلاء الموثوقين وحدهم (نطاقات Cloudflare)؛ وإلا req.ip = عنوان المقبس
   express.set('trust proxy', config.TRUSTED_PROXY_CIDRS.length > 0 ? config.TRUSTED_PROXY_CIDRS : false);
   app.use(requestLogging(logger));
+  // كل استجابة من /v1 لا تُخزَّن في ذاكرة مؤقتة (متصفح أو وكيل أو حافة): فيها بيانات مصادَق عليها أو رموز
+  app.use('/v1', (_req: unknown, res: { setHeader(name: string, value: string): void }, next: () => void) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
   app.use('/internal', internalOnly(blockListOf(config.INTERNAL_ALLOWED_CIDRS), config.INTERNAL_SOURCE_PATHS));
   app.setGlobalPrefix('v1', {
     exclude: [

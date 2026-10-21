@@ -296,7 +296,7 @@ export interface paths {
         put?: never;
         /**
          * إنشاء سجل مادة قبل بدء الرفع (يطلق إشعار «مادة واردة»)
-         * @description تُنشأ المادة بحالاتها الابتدائية `pending`/`inbox`/`unknown` وبحدث `material.created` (و`material.urgent_received` إن كانت الأولوية عاجلة) في Outbox داخل المعاملة نفسها. يتحقق الخادم من `dynamic_fields` بمخطط النموذج ذي الإصدار `form_version`. إن أُرسل `contributors` وجب أن يكون مجموع الحصص 100 بالضبط وإلا `422 shares_not_100`.
+         * @description تُنشأ المادة بحالاتها الابتدائية `pending`/`inbox`/`unknown` وبحدث `material.created` (و`material.urgent_received` إن كانت الأولوية عاجلة) في Outbox داخل المعاملة نفسها. يتحقق الخادم من `dynamic_fields` بمخطط النموذج ذي الإصدار `form_version`. إن أُرسل `contributors` وجب أن يكون مجموع الحصص 100 بالضبط وإلا `422 shares_not_100`. ينشئها المراسل من التطبيق، أو الطاقم والإنتاج من الويب لملفات الكاميرات (#88). `reporter_id` هو المنشئ في الحالتين، والمادة تقع في نطاقه وفي نطاق مكتبه.
          */
         post: operations["createMaterial"];
         delete?: never;
@@ -527,7 +527,7 @@ export interface paths {
         put?: never;
         /**
          * إنشاء جلسة رفع لملف يخص مادة (أصل أو نسخة خفيفة أو ملاحظة صوتية)
-         * @description تعيد نقطة tus ورمزًا قصير العمر وحجم الجزء الثابت لهذه الجلسة. يرسل العميل `tus_metadata` كما هي في ترويسة `Upload-Metadata` عند إنشاء رفع tus. النسخة الخفيفة لها الأولوية على الأصل في قائمة انتظار العميل. `client_fingerprint` يرشّح المكررات فقط ولا يمنح أي حق؛ الربط الفعلي بملف موجود لا يتم إلا بتطابق `sha256` الكاملة على الخادم.
+         * @description تعيد نقطة tus ورمزًا قصير العمر وحجم الجزء الثابت لهذه الجلسة. يرسل العميل `tus_metadata` كما هي في ترويسة `Upload-Metadata` عند إنشاء رفع tus. النسخة الخفيفة لها الأولوية على الأصل في قائمة انتظار العميل. `client_fingerprint` يرشّح المكررات فقط ولا يمنح أي حق؛ الربط الفعلي بملف موجود لا يتم إلا بتطابق `sha256` الكاملة على الخادم. الجلسة لمنشئ المادة وحده (غيره `404`)؛ ويرفع الطاقم من الويب الأصل وحده (`kind: original`)، والنسخة الخفيفة يولّدها عامل الوسائط.
          */
         post: operations["createUploadSession"];
         delete?: never;
@@ -963,7 +963,7 @@ export interface paths {
         };
         /**
          * لوحة غرفة الأخبار المجمّعة (v0.2)
-         * @description عدّادات الحالات الثلاث ضمن نطاق المستدعي، والمحجوز، وآخر الإيصالات، والمتأخر عن الإقرار. معرّفات وأرقام وحالات فقط: لا عناوين ولا أسماء ولا مواقع ولا حقول ديناميكية. اللقطة لحظية؛ التحديث الحي من `/events` وWebSocket.
+         * @description عدّادات الحالات الثلاث ضمن نطاق المستدعي، والمحجوز، وآخر الإيصالات، والمتأخر عن الإقرار. معرّفات وأرقام وحالات فقط: لا عناوين ولا أسماء ولا مواقع ولا حقول ديناميكية. اللقطة محدّثة كل ≤ 5 ثوانٍ لكل نطاق (`generated_at` وقت بنائها، #187)، والتحديث الحي بين اللقطات من `/events` وWebSocket.
          */
         get: operations["getNewsroomDashboard"];
         put?: never;
@@ -1990,7 +1990,10 @@ export interface components {
             count: number;
         };
         NewsroomDashboard: {
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description وقت بناء اللقطة؛ لا يتأخر عن الطلب أكثر من 5 ثوانٍ
+             */
             generated_at: string;
             /** @description عدّاد لكل حالة تحريرية ضمن النطاق (الحالات الصفرية تُحذف) */
             editorial: components["schemas"]["StateCount"][];

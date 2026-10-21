@@ -7,7 +7,7 @@ import { ApiError } from '../common/errors';
 import { DB, type Database } from '../database/database.module';
 import { materialFiles, uploadSessions } from '../database/schema/schema';
 import type { components } from '../generated/api';
-import type { Principal } from '../identity/principal';
+import { hasRole, type Principal } from '../identity/principal';
 import type { ReplayRehydrator } from '../idempotency/replay';
 import { findScoped, iso } from '../materials/material-store';
 import { writeOutboxEvent } from '../outbox/outbox';
@@ -29,11 +29,13 @@ export class UploadsService implements ReplayRehydrator {
 
   async create(p: Principal, body: UploadSessionCreate): Promise<UploadSessionCreated> {
     if (body.proxy_mode && body.kind !== 'proxy') throw ApiError.validation({ fields: ['/proxy_mode'] });
+    // الطاقم يرفع الأصل وحده من الويب؛ النسخة الخفيفة والملاحظة الصوتية من تطبيق المراسل
+    if (!hasRole(p, 'reporter') && body.kind !== 'original') throw ApiError.validation({ fields: ['/kind'] });
     // يصير client_sha256 مطلوبًا في عقد v0.1؛ إلى أن يُدمج يفرضه هذا المتغير بالرد نفسه الذي سيعطيه التحقق بالعقد (422)
     if (this.config.UPLOAD_REQUIRE_CLIENT_SHA256 && !body.client_sha256) throw ApiError.validation({ fields: ['/client_sha256'] });
     return this.db.transaction(async (tx) => {
       const material = await findScoped(tx, p, body.material_id, { forUpdate: true });
-      // المراسل يرفع لمواده فقط؛ مادة غيره غير موجودة بالنسبة إليه
+      // المنشئ يرفع لمواده فقط (المراسل أو الطاقم)؛ مادة غيره غير موجودة بالنسبة إليه
       if (!material || material.reporterId !== p.userId) throw ApiError.notFound();
       if (body.kind === 'original' && material.technicalState === 'verified') {
         throw new ApiError(409, 'upload_state_conflict', 'The original of this material is already verified.');

@@ -24,7 +24,7 @@ open class MaterialsAPI {
     /**
      إنشاء سجل مادة قبل بدء الرفع (يطلق إشعار «مادة واردة»)
      - POST /materials
-     - تُنشأ المادة بحالاتها الابتدائية `pending`/`inbox`/`unknown` وبحدث `material.created` (و`material.urgent_received` إن كانت الأولوية عاجلة) في Outbox داخل المعاملة نفسها. يتحقق الخادم من `dynamic_fields` بمخطط النموذج ذي الإصدار `form_version`. إن أُرسل `contributors` وجب أن يكون مجموع الحصص 100 بالضبط وإلا `422 shares_not_100`.
+     - تُنشأ المادة بحالاتها الابتدائية `pending`/`inbox`/`unknown` وبحدث `material.created` (و`material.urgent_received` إن كانت الأولوية عاجلة) في Outbox داخل المعاملة نفسها. يتحقق الخادم من `dynamic_fields` بمخطط النموذج ذي الإصدار `form_version`. إن أُرسل `contributors` وجب أن يكون مجموع الحصص 100 بالضبط وإلا `422 shares_not_100`. ينشئها المراسل من التطبيق، أو الطاقم والإنتاج من الويب لملفات الكاميرات (#88). `reporter_id` هو المنشئ في الحالتين، والمادة تقع في نطاقه وفي نطاق مكتبه.
      - Bearer Token:
        - type: http
        - name: bearerAuth

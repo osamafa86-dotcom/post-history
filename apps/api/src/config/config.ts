@@ -178,6 +178,8 @@ const schema = z.object({
     .string()
     .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, 'must be a user id (uuid)')
     .optional(),
+  // لقطة لوحة غرفة الأخبار لكل مستخدم ونطاقه (قرار المنسّق على #187): تُعاد ≤ هذه المدة ثم تُحسب من جديد؛ 0 = بلا لقطة
+  DASHBOARD_SNAPSHOT_MS: z.coerce.number().int().min(0).max(5000).default(5000),
   // رمز عامل التفريغ المحلي: يُقبل على POST /internal/media/files/{id}/derivatives لنوعي transcript وcaptions وحدهما
   // (ولا شيء غيره)، منفصل عن MEDIA_WORKER_TOKEN؛ غير مضبوط = العامل لا يصل
   AI_WORKER_TOKEN: z

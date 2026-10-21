@@ -17,7 +17,8 @@ export type MaterialDto = components['schemas']['Material'];
  * الإنتاج المواد المقبولة فما بعدها، ورئيس التحرير ومدير النظام ومسؤول الحقوق كل المواد. اتحاد أدوار المستخدم.
  */
 export function scopeCondition(p: Principal): SQL {
-  const parts: SQL[] = [];
+  // المنشئ يرى ما أنشأه أيًّا كان دوره (رفع الطاقم من الويب، #88)، وفوقه نطاق دوره
+  const parts: SQL[] = [sql`${materials.reporterId} = ${p.userId}`];
   for (const r of p.roles) {
     switch (r.role) {
       case 'editor_in_chief':
@@ -25,7 +26,6 @@ export function scopeCondition(p: Principal): SQL {
       case 'rights_officer':
         return sql`true`;
       case 'reporter':
-        parts.push(sql`${materials.reporterId} = ${p.userId}`);
         break;
       case 'producer':
         parts.push(sql`${materials.editorialState} IN (${sql.join(PRODUCTION_VISIBLE_STATES.map((s) => sql`${s}`), sql`, `)})`);
@@ -57,6 +57,13 @@ export function roleCovers(p: Principal, role: RoleName, m: MaterialRow): boolea
 }
 
 /** من يملك تعديل المادة: مراسلها، ومشرف يغطيها، ورئيس التحرير ومدير النظام (PATCH /materials/{id}). */
+/**
+ * التفريغ والترجمة حساسان افتراضيًا (R11، threat-model §9.1): لا يراهما في قائمة الملفات ولا يصدر رابطهما إلا من يملك
+ * تعديل المادة، وغيره لا يُلمَّح له بوجودهما.
+ */
+// shot_list يحمل مقتطفات من التفريغ (الوكيل 5)، فحكمه حكمهما
+export const EDITOR_ONLY_KINDS: readonly string[] = ['transcript', 'captions', 'shot_list'];
+
 export function canEditMaterial(p: Principal, m: MaterialRow): boolean {
   return (
     (p.roles.some((r) => r.role === 'reporter') && m.reporterId === p.userId) ||
@@ -151,6 +158,7 @@ export async function toMaterialDtos(
         hash: Buffer.alloc(32), // يحسبه محفّز سلسلة التجزئة
       });
     }
+    const editor = canEditMaterial(p, m);
     const reservationLive = m.reservedAt !== null && Date.parse(m.reservedAt) + idleSeconds * 1000 > Date.now();
     dtos.push({
       id: m.id,
@@ -182,7 +190,7 @@ export async function toMaterialDtos(
       ...(legalNames.has(m.reporterId) ? { reporter_legal_name: legalName ?? null } : {}),
       files: files
         // حزمة التصدير ليست MaterialFile في العقد؛ حالتها من /materials/{id}/export
-        .filter((f) => f.materialId === m.id && f.kind !== 'export')
+        .filter((f) => f.materialId === m.id && f.kind !== 'export' && (editor || !EDITOR_ONLY_KINDS.includes(f.kind)))
         .map((f) => ({
           id: f.id,
           kind: f.kind as 'original',
