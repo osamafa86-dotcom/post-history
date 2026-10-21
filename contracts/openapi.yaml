@@ -3012,6 +3012,25 @@ components:
           type: integer
           minimum: 0
           description: إشعارات مهام حان تصعيدها ولم يُقرّ استلامها (ضمن النطاق)
+        uploads_in_progress:
+          type: array
+          maxItems: 50
+          description: >-
+            «الوارد الآن» (ADR 0024): جلسات الرفع الجارية (`created` و`in_progress` غير المنتهية صلاحيتها) لمواد ضمن نطاق
+            المستدعي، العاجل أولًا ثم الأحدث تقدّمًا. النسبة `bytes_received / size_bytes`، ويحدّثها حدث `upload.progress`.
+            معرّفات وأرقام فقط: لا اسم ملف ولا مراسل ولا جهاز. اختياري حتى ينفّذه الخادم.
+          items:
+            type: object
+            required: [upload_session_id, material_id, kind, priority, state, size_bytes, bytes_received, updated_at]
+            properties:
+              upload_session_id: { type: string, format: uuid }
+              material_id: { type: string, format: uuid }
+              kind: { type: string, enum: [original, proxy, voice_note] }
+              priority: { $ref: "#/components/schemas/Priority" }
+              state: { type: string, enum: [created, in_progress] }
+              size_bytes: { type: integer, minimum: 1 }
+              bytes_received: { type: integer, minimum: 0 }
+              updated_at: { type: string, format: date-time, description: آخر تقدّم سجّله الخادم }
 
     FormVersionSummary:
       type: object
