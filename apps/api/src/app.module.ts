@@ -54,7 +54,7 @@ export function configureApp(app: INestApplication, config: AppConfig, logger: L
   // X-Forwarded-For يُقبل من الوكلاء الموثوقين وحدهم (نطاقات Cloudflare)؛ وإلا req.ip = عنوان المقبس
   express.set('trust proxy', config.TRUSTED_PROXY_CIDRS.length > 0 ? config.TRUSTED_PROXY_CIDRS : false);
   app.use(requestLogging(logger));
-  app.use('/internal', internalOnly(blockListOf(config.INTERNAL_ALLOWED_CIDRS)));
+  app.use('/internal', internalOnly(blockListOf(config.INTERNAL_ALLOWED_CIDRS), config.INTERNAL_SOURCE_PATHS));
   app.setGlobalPrefix('v1', {
     exclude: [
       { path: 'health', method: RequestMethod.GET },
