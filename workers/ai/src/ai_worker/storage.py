@@ -19,8 +19,8 @@ from pathlib import Path
 
 CHUNK = 8 * 1024 * 1024
 DERIVED_PREFIX = "derived/"
-# ما يكتبه هذا العامل وحده: derived/<material_id>/<file_id>/{transcript.json,transcript.vtt,shots.json}
-WRITABLE_KEY = re.compile(r"^derived/[0-9a-f-]{36}/[0-9a-f-]{36}/(transcript\.(json|vtt)|shots\.json)$")
+# ما يكتبه هذا العامل وحده: derived/<material_id>/<file_id>/{transcript.json,transcript.vtt,shots.json,shot_list.json}
+WRITABLE_KEY = re.compile(r"^derived/[0-9a-f-]{36}/[0-9a-f-]{36}/(transcript\.(json|vtt)|shots\.json|shot_list\.json)$")
 # اتصال مباشر: متغيرات HTTP(S)_PROXY في البيئة لا تمرّر الأصل ولا التوقيع عبر وسيط
 DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
