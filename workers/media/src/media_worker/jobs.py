@@ -9,6 +9,7 @@
 5. لكل أصل مرئي تحقق، حتى حين أرسل الهاتف نسخته الخفيفة: نسخة الخادم 480p من الملف المنزَّل نفسه، تُرفع إلى حاوية
    المشتقات تحت `derived/<material_id>/<file_id>/` ويُبلَّغ بها (`POST …/derivatives`). العمّال اللاحقون (التفريغ)
    يقرؤونها هي لا نسخة الهاتف.
+6. للملاحظة الصوتية المتحققة: `audio-16k.m4a` (AAC أحادية 16 kHz بلا وسوم) مشتقًا `kind=audio`، خطوة مانعة كالخطوة 5.
 
 إعادة التسليم بعد تحقق سابق: الجلسة `verified`، فيُعاد البلاغ نفسه، والخادم يعيد النتيجة المسجلة ومعها `file_id`.
 إن كانت نسخة الخادم مرفوعة يُعاد تسجيلها كما هي (الخادم يقبل التكرار المطابق) ولا تُرمَّز من جديد فلا تتغير بصمتها،
@@ -27,6 +28,7 @@ from typing import Protocol
 from .api import ApiConflict, ApiRejected, InternalApi, Session
 from .hashing import Digest, digest_file, digest_stream
 from .probe import InvalidMediaError, Probe, probe
+from .audio import make_speech_audio
 from .export import build_package
 from .proxy import make_proxy
 from .hls import make_hls
@@ -66,6 +68,10 @@ def contact_sheet_key(material_id: str, file_id: str) -> str:
 
 def waveform_key(material_id: str, file_id: str) -> str:
     return f"{DERIVED_PREFIX}{material_id}/{file_id}/waveform.json"
+
+
+def speech_key(material_id: str, file_id: str) -> str:
+    return f"{DERIVED_PREFIX}{material_id}/{file_id}/audio-16k.m4a"
 
 
 def export_key(material_id: str, file_id: str) -> str:
@@ -120,7 +126,7 @@ class Jobs:
 
     def process(self, session_id: str) -> str:
         session = self.api.get_session(session_id)
-        resume = session.state == "verified" and session.kind == "original"
+        resume = session.state == "verified" and session.kind in ("original", "voice_note")
         if session.state != "completed" and not resume:
             return f"skip:{session.state}"
         with tempfile.TemporaryDirectory(dir=self.scratch, prefix="job-") as tmp:
@@ -154,6 +160,8 @@ class Jobs:
             result = self.api.report_verification(session_id, body)
             if result.get("state") != "verified":
                 return result.get("failure_reason") or "failed"
+            if session.kind == "voice_note" and info.audio_codec:
+                return "verified" + self._speech(session, result["file_id"], local, info, resume)
             if session.kind != "original":
                 return "verified"
             file_id, outcome = result["file_id"], "verified"
@@ -163,8 +171,9 @@ class Jobs:
                 if info.video_codec:
                     outcome += self._thumbnails(session, file_id, local, info)
             proxy_path = None
-            if info.video_codec and resume and self._proxy_exists(session, file_id):
-                self._register_existing_proxy(session, file_id, local)
+            key = proxy_key(session.material_id, file_id)
+            if info.video_codec and resume and self._exists(key):
+                self._register_existing(file_id, "proxy", key, local.with_name("proxy-480p.mp4"))
                 return outcome + "+proxy-existing"
             if info.video_codec:
                 proxy_path, proxy_info = self._proxy(session, file_id, local, info)
@@ -259,22 +268,36 @@ class Jobs:
             return "+thumbnails-unregistered"
         return "+thumbnails"
 
-    def _proxy_exists(self, session: Session, file_id: str) -> bool:
+    def _exists(self, key: str) -> bool:
         try:
-            self.storage.head(self.buckets.derived, proxy_key(session.material_id, file_id))
+            self.storage.head(self.buckets.derived, key)
             return True
         except ObjectMissing:
             return False
 
-    def _register_existing_proxy(self, session: Session, file_id: str, local: Path) -> None:
-        """رُفعت في تسليم سابق ولم يُقَرّ الحدث (تعطل بعد الرفع أو قبل الإقرار): تُنزَّل وتُسجَّل كما هي."""
-        out = local.with_name("proxy-480p.mp4")
-        key = proxy_key(session.material_id, file_id)
+    def _register_existing(self, file_id: str, kind: str, key: str, out: Path) -> None:
+        """رُفع في تسليم سابق ولم يُقَرّ الحدث (تعطل بعد الرفع أو قبل الإقرار): يُنزَّل ويُسجَّل كما هو."""
         d = _download(self.storage, self.buckets.derived, key, out)
         self.api.add_derivative(file_id, {
-            "kind": "proxy", "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
+            "kind": kind, "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
             "technical": probe(out).to_dict(),
         })
+
+    def _speech(self, session: Session, file_id: str, local: Path, info: Probe, resume: bool) -> str:
+        """مانعة كالنسخة الخفيفة: فشلها يعيد الحدث، والاستئناف يعيد تسجيل المرفوعة كما هي."""
+        out = local.with_name("audio-16k.m4a")
+        key = speech_key(session.material_id, file_id)
+        if resume and self._exists(key):
+            self._register_existing(file_id, "audio", key, out)
+            return "+audio-existing"
+        made = make_speech_audio(local, out, info)
+        d = digest_file(out)
+        self.storage.put_file(self.buckets.derived, key, out, d.sha256, "audio/mp4")
+        self.api.add_derivative(file_id, {
+            "kind": "audio", "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
+            "technical": made.to_dict(),
+        })
+        return "+audio"
 
     def _proxy(self, session: Session, file_id: str, local: Path, info: Probe) -> tuple[Path, Probe]:
         out = local.with_name("proxy-480p.mp4")
