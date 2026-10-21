@@ -9,6 +9,19 @@ server {
         default_type text/plain;
         return 200 "User-agent: *\nDisallow: /\n";
     }
+    # الرفع من الحاسوب (#202): tus على أصل المعاينة نفسه، فلا CORS. البوابة تتحقق من رمز ingest وحالة الجلسة قبل tusd.
+    location /files/ {
+        client_max_body_size 100m;
+        set $ingest http://ph-preview-ingest:8080;
+        proxy_pass $ingest;
+        proxy_http_version 1.1;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_set_header Host $host;
+        add_header X-Robots-Tag "noindex, nofollow" always;
+    }
     location / {
         set $web_app http://ph-preview-web-app:3100;
         proxy_pass $web_app;
@@ -21,7 +34,7 @@ server {
         proxy_read_timeout 120s;
         add_header X-Robots-Tag "noindex, nofollow" always;
         sub_filter_once on;
-        sub_filter '</body>' '<div role="status" lang="ar" dir="rtl" style="position:fixed;inset-block-end:0;inset-inline:0;z-index:2147483647;padding:4px 8px;background:#7a1f1f;color:#fff;font:600 13px/1.4 system-ui,sans-serif;text-align:center">معاينة: بيانات وحسابات تجريبية فقط · <span lang="en" dir="ltr">Preview: test data and accounts only</span></div></body>';
+        sub_filter '</body>' '<div role="status" lang="ar" dir="rtl" style="position:fixed;inset-block-end:0;inset-inline:0;z-index:2147483647;padding:4px 8px;background:#7a1f1f;color:#fff;font:600 13px/1.4 system-ui,sans-serif;text-align:center">معاينة: بيانات وحسابات تجريبية فقط، والمواد المرفوعة تبقى «بانتظار المعالجة» · <span lang="en" dir="ltr">Preview: test data and accounts only; uploads stay awaiting processing</span></div></body>';
     }
 }
 

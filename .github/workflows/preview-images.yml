@@ -2,7 +2,7 @@ name: preview-images
 
 # Light preview on a shared server (ADR 0023): the API and web images are built here, never on the server. Every run
 # brings the preview compose up on the freshly built images (health, a demo login through the web, no host port, the
-# memory limits and actual use under 900 MB). On main (and by hand) the images then go as gzipped tars, with their
+# memory limits and actual use under 960 MB). On main (and by hand) the images then go as gzipped tars, with their
 # sha256, onto the fixed prerelease "preview-latest": the repository is public, so the server downloads them with no
 # token and runs `docker load`. No registry: personal packages are private by default.
 on:
@@ -52,7 +52,7 @@ jobs:
             if docker image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$img" | grep -iE '(secret|password|token|key)='; then
               echo "$img: secret-looking variable baked in"; exit 1; fi
           done
-      - name: Preview compose on these images (health, demo login through the web, memory under 900 MB)
+      - name: Preview compose on these images (health, demo login and a desktop upload through the web, memory under 960 MB)
         run: MEASURE_HOST="GitHub-hosted runner (ubuntu-24.04)" infra/preview/smoke-preview.sh --json "$RUNNER_TEMP/preview-memory.json"
       - name: Memory measurement
         if: always()
