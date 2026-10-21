@@ -11,6 +11,7 @@ services:
         condition: service_healthy
     environment:
       INGEST_TOKEN_PUBLIC_KEYS: "${INGEST_TOKEN_PUBLIC_KEYS:?}"
+      INGEST_SESSION_CHECK: "off"
     volumes:
       - ../../tools/netlab/blocking/edge-main.conf:/etc/nginx/nginx.conf:ro
       - ../ingest/ingest_token.js:/etc/nginx/njs/ingest_token.js:ro
