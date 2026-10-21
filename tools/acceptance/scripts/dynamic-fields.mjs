@@ -39,8 +39,21 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     const tokens = JSON.parse(env.DYN_TOKENS ?? "{}");
     const http = client(env.DYN_API_URL);
     const norm = (errs) => JSON.stringify([...(errs ?? [])].sort((a, b) => a.field.localeCompare(b.field) || a.code.localeCompare(b.code)));
-    const old = (await http.get(tokens.reporter, "/forms/current")).body.version;
-    const oldMaterial = (await http.call(tokens.reporter, "POST", "/materials", { body: materialBody(old, `dyn-old-${randomUUID().slice(0, 8)}`) })).body;
+    if (!tokens.system_admin) {
+      // read-only (a trial host: no administrator): the current form and the previous version are readable; nothing is published and no case is posted,
+      // because the shared cases are judged against the form this suite defines, not whichever form the host has
+      server.readOnly = true;
+      const cur0 = await http.get(tokens.reporter, "/forms/current");
+      server.checks.current_readable = cur0.status === 200 && Number.isInteger(cur0.body?.version);
+      if (cur0.body?.version > 1) {
+        const prev = await http.get(tokens.reporter, `/forms/${cur0.body.version - 1}`);
+        server.checks.previous_version_readable = prev.status === 200 && prev.body?.version === cur0.body.version - 1;
+      }
+      for (const [k, v] of Object.entries(server.checks)) if (!v) console.log(`FAIL server check ${k}`);
+    }
+    const old = server.readOnly ? 0 : (await http.get(tokens.reporter, "/forms/current")).body.version;
+    const oldMaterial = server.readOnly ? null : (await http.call(tokens.reporter, "POST", "/materials", { body: materialBody(old, `dyn-old-${randomUUID().slice(0, 8)}`) })).body;
+    if (!server.readOnly) {
     const published = await http.call(tokens.system_admin, "POST", "/forms", { body: { ...forms.main, version: old + 1 } });
     server.checks.publish = published.status === 201 && published.body.version === old + 1;
     const cur = (await http.get(tokens.reporter, "/forms/current")).body;
@@ -69,6 +82,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     const done = await http.call(tokens.reporter, "PATCH", `/materials/${oldMaterial.id}`, { body: { form_version: old + 1, dynamic_fields: good.values } });
     server.checks.old_draft_completed_with_new_version = done.status === 200 && done.body.form_version === old + 1;
     for (const [k, v] of Object.entries(server.checks)) if (!v) console.log(`FAIL server check ${k}`);
+    }
   }
   const serverFailed = server.ran && (server.matching !== server.cases || Object.values(server.checks).some((v) => !v));
 
@@ -76,17 +90,18 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   console.log(`reference ${suite.cases.length - refWrong.length}/${suite.cases.length}; platforms: ${verdicts.map((v) => `${v.platform} ${suite.cases.length - v.wrong.length}/${suite.cases.length}`).join(", ") || "none supplied"}`);
 
   const failed = serverFailed || formProblems.length + refWrong.length + verdicts.reduce((n, v) => n + v.wrong.length, 0) > 0;
-  const { result, threeClients, missing } = decide({ failed, serverRan: server.ran, platforms: names });
+  const { result, threeClients, missing } = decide({ failed, serverRan: server.ran && !server.readOnly, platforms: names });
   const threeIdentical = !failed && threeClients;
   finish(doc, result, {
     conformance_cases: suite.cases.length,
     reference_cases_matching: suite.cases.length - refWrong.length,
     platforms_judged: names.join(",") || "none",
     all_three_clients_identical: !failed && threeClients,
-    server_checked_live: server.ran,
+    server_checked_live: server.ran && !server.readOnly,
+    server_read_only: Boolean(server.readOnly),
     server_cases_matching: server.ran ? server.matching : "n/a",
     ...Object.fromEntries(Object.entries(server.checks).map(([k, v]) => [`server_${k}`, v])),
-  }, [server.ran ? "الخادم الحي: النشر والبوابة v0 والتاريخ المقروء وإكمال المسودة القديمة وكل حالات المطابقة المشتركة عبر POST /materials" : "الجزء الخادمي الحي لم يُشغَّل (DYN_API_URL)",
+  }, [server.readOnly ? "الخادم الحي للقراءة وحدها (بلا مدير نظام): النموذج الحالي والسابق مقروءان؛ لا نشر ولا حالات مطابقة، فلا يُدّعى الجزء الخادمي كاملًا" : server.ran ? "الخادم الحي: النشر والبوابة v0 والتاريخ المقروء وإكمال المسودة القديمة وكل حالات المطابقة المشتركة عبر POST /materials" : "الجزء الخادمي الحي لم يُشغَّل (DYN_API_URL)",
       threeIdentical ? null : `لم تُقدَّم نتائج الواجهات الثلاث متطابقة بعد (الناقص: ${missing.join("، ")})، فلا يُدّعى المعيار كاملًا`].filter(Boolean).join("؛ "));
   if (args["dry-run"]) writeResult(doc, { dryRun: true });
   else console.log("wrote", writeResult(doc, { slug: names.length ? names.join("-") : "reference" }));

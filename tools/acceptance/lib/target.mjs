@@ -2,13 +2,16 @@
 // Nothing here touches a database or object storage; what needs them stays in the compose-only scripts.
 //   FT_ACCOUNTS  JSON {"reporter":{"email":"…","password":"…"},"reporter_b":…,"supervisor_b":…, …other roles}; an account with TOTP also carries "totp_secret" (hex)
 //                reporter_b and supervisor_b belong to ANOTHER office than reporter (the isolation cases need two offices).
-//                "system_admin" is read only for a run that needs it (--allow-publish-form), and then only with TOTP enrolled: see loginAccount.
+//                "system_admin" is read only for a run that needs it (--allow-publish-form, local compose only), and then only with TOTP enrolled: see loginAccount.
 import { randomBytes, createHash } from "node:crypto";
 import { client, createUploadSession, sleep } from "./live.mjs";
 import { totp, totpStep } from "./totp.mjs";
 
 export const REQUIRED = ["reporter", "reporter_b", "supervisor_b"];
 export const ROLES = ["system_admin", "editor_in_chief", "supervisor", "producer", "finance", "reporter", "rights_officer"];
+
+/** True for a host on this machine (the only kind a run may publish a form to or use the administrator on). */
+export const isLoopback = (url) => ["localhost", "127.0.0.1", "[::1]"].includes(new URL(url).hostname);
 
 /** { url, apiUrl, tusUrl } from `--target https://host`; plain http is allowed for loopback only. */
 export function parseTarget(value, env = process.env) {

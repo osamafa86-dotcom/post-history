@@ -27,8 +27,7 @@ test("accounts come from FT_ACCOUNTS; the required roles are named when missing,
 });
 
 test("the pack runs nothing without --confirm or without the accounts, and skips dynamic-fields unless allowed", async () => {
-  assert.ok(!plan({}).includes("dynamic-fields"));
-  assert.ok(plan({ "allow-publish-form": true }).includes("dynamic-fields"));
+  assert.ok(plan({}).includes("dynamic-fields"), "dynamic-fields always runs (read-only on a trial host)");
   assert.equal(await quiet(() => runPack({ target: "https://h.test" }, {})), 2, "no --confirm");
   assert.equal(await quiet(() => runPack({ target: "https://h.test", confirm: true }, {})), 2, "no accounts");
   assert.equal(await quiet(() => runPack({ target: "http://h.test", confirm: true }, {})), 2, "plain http");
@@ -59,6 +58,7 @@ async function stubApi({ admin = "totp" } = {}) {
       }
       if (req.url === "/v1/auth/logout") return send(204, {});
       if (req.url === "/v1/forms/current") return send(200, { version: 3 });
+      if (req.url === "/v1/forms/2") return send(200, { version: 2 });
       if (req.url === "/v1/materials") return send(201, { id: `m-${JSON.parse(body).governorate}` });
       if (req.url.endsWith("/transitions")) return send(200, {});
       if (req.url === "/v1/notifications") return send(200, { items: [{ id: "n-1" }] });
@@ -128,11 +128,16 @@ const packAccounts = () => ({
   system_admin: { email: "system_admin@x.test", password: "pw", totp_secret: ADMIN_SECRET },
 });
 
-test("a run that needs the administrator refuses to start without the suspend command", async () => {
+test("publishing a form (the administrator) is refused for any host but the local machine", async () => {
+  const env = { FT_ACCOUNTS: JSON.stringify(packAccounts()), FT_SUSPEND_ADMIN_CMD: "true" };
+  assert.equal(await quiet(() => runPack({ target: "https://trial.example.test", confirm: true, "allow-publish-form": true }, env)), 2);
+});
+
+test("a local run that needs the administrator refuses to start without the suspend command or the account", async () => {
   const env = { FT_ACCOUNTS: JSON.stringify(packAccounts()) };
-  assert.equal(await quiet(() => runPack({ target: "https://h.test", confirm: true, "allow-publish-form": true }, env)), 2);
+  assert.equal(await quiet(() => runPack({ target: "http://127.0.0.1:1", confirm: true, "allow-publish-form": true }, env)), 2);
   const noAdmin = packAccounts(); delete noAdmin.system_admin;
-  assert.equal(await quiet(() => runPack({ target: "https://h.test", confirm: true, "allow-publish-form": true }, { FT_ACCOUNTS: JSON.stringify(noAdmin), FT_SUSPEND_ADMIN_CMD: "true" })), 2);
+  assert.equal(await quiet(() => runPack({ target: "http://127.0.0.1:1", confirm: true, "allow-publish-form": true }, { FT_ACCOUNTS: JSON.stringify(noAdmin), FT_SUSPEND_ADMIN_CMD: "true" })), 2);
 });
 
 test("the administrator is suspended and checked at the end, also when a step throws; one still reachable is exit 1", async () => {
@@ -161,6 +166,22 @@ test("a run without --allow-publish-form never logs the administrator in nor nee
     const ran = [];
     const code = await quiet(() => runPack({ target: s.url.replace("/v1", ""), confirm: true, "out-dir": mkdtempSync(pjoin(tmpdir(), "pack-")) }, env, { runScript: async (n) => { ran.push(n); return { code: 0, doc: { result: "pass" } }; }, spawn: () => { throw new Error("must not run"); } }));
     assert.equal(code, 0);
-    assert.ok(!ran.includes("dynamic-fields"));
+    assert.ok(ran.includes("dynamic-fields"), "read-only dynamic-fields still runs");
+  } finally { s.close(); }
+});
+
+test("dynamic-fields without an administrator only reads the form and never claims the live part", async () => {
+  const { run: dyn } = await import("../scripts/dynamic-fields.mjs");
+  const s = await stubApi();
+  try {
+    const dir = mkdtempSync(pjoin(tmpdir(), "dyn-"));
+    process.env.ACCEPTANCE_RESULTS_DIR = dir;
+    const { code, doc } = await quiet(() => dyn(["--dry-run"], { DYN_API_URL: s.url, DYN_TOKENS: JSON.stringify({ reporter: "tok-reporter" }) }));
+    assert.equal(code, 0);
+    assert.equal(doc.metrics.server_read_only, true);
+    assert.equal(doc.metrics.server_checked_live, false);
+    assert.equal(doc.metrics.server_current_readable, true);
+    assert.notEqual(doc.result, "pass");
+    assert.ok(!s.calls.some((c) => c.startsWith("POST /v1/forms") || c === "POST /v1/materials"), "nothing was published or posted");
   } finally { s.close(); }
 });

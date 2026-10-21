@@ -4,7 +4,7 @@
 // Safety: the pack WRITES to the host (materials with synthetic canary data, uploads of synthetic clips, and it revokes every
 // session of the `reporter` test account). It therefore refuses to run without --confirm, runs nothing against a host whose accounts
 // are not given, and never reads or prints a password. dynamic-fields publishes a new form version that becomes the current form for
-// everyone: it runs only with --allow-publish-form. No real reporter file is used: clips are generated here by FFmpeg.
+// everyone only with --allow-publish-form, which is refused for any host but the local machine; on a trial host it only reads. No real reporter file is used: clips are generated here by FFmpeg.
 // Least privilege: every script gets the lowest role it needs. The system_admin account is read only for a run that needs it (--allow-publish-form
 // publishes a form, which only an administrator may), and then: TOTP must be enrolled on it (a password-only login is refused and logged out),
 // FT_SUSPEND_ADMIN_CMD must be given before anything starts (the command that suspends the administrator on the host, e.g. the two-person
@@ -14,15 +14,17 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { accountsFromEnv, parseTarget, remoteSeed } from "../lib/target.mjs";
+import { accountsFromEnv, isLoopback, parseTarget, remoteSeed } from "../lib/target.mjs";
 import { client } from "../lib/live.mjs";
 import { totp, totpStep, TOTP_STEP_MS } from "../lib/totp.mjs";
 import { EXIT_PENDING } from "../lib/pending.mjs";
 
 const STEPS = ["tenant-isolation", "pii-leak", "upload-resume", "media-remote", "session-revocation", "dynamic-fields"];
 
-export function plan(args) {
-  return STEPS.filter((n) => n !== "dynamic-fields" || args["allow-publish-form"]);
+// dynamic-fields always runs, read-only on a trial host (it reads the current and previous form versions); publishing a form needs the
+// administrator and is allowed on a local compose only (--allow-publish-form), where CI and rehearsals run it.
+export function plan(_args) {
+  return STEPS;
 }
 
 /** Env each script reads, derived from the target and the seed; no secret is written anywhere but the process env. */
@@ -69,7 +71,8 @@ export async function runPack(args, env = process.env, deps = {}) {
   try { target = parseTarget(args.target, env); } catch (e) { console.error(`ENVIRONMENT: ${e.message}`); return 2; }
   const { accounts, missing } = accountsFromEnv(env);
   const names = plan(args);
-  console.log(`field-trial pack → ${target.url}\n  api ${target.apiUrl}\n  tus ${target.tusUrl}\n  steps: ${names.join(", ")}${args["allow-publish-form"] ? "" : "  (dynamic-fields skipped: it publishes a form; add --allow-publish-form)"}`);
+  console.log(`field-trial pack → ${target.url}\n  api ${target.apiUrl}\n  tus ${target.tusUrl}\n  steps: ${names.join(", ")}${args["allow-publish-form"] ? "" : "  (dynamic-fields read-only: it does not publish a form)"}`);
+  if (args["allow-publish-form"] && !isLoopback(target.url)) { console.error("NOT RUN: --allow-publish-form needs the system_admin account and is allowed on a local compose only; a trial host is never given one (dynamic-fields reads there)"); return 2; }
   if (!args.confirm) { console.error("NOT RUN: this writes synthetic data to the host and revokes the reporter test account's sessions; pass --confirm"); return 2; }
   if (!accounts || missing.length) { console.error(`ENVIRONMENT: FT_ACCOUNTS must hold ${missing.join(", ")}; nothing was run`); return 2; }
   const adminNeeded = Boolean(args["allow-publish-form"]);
