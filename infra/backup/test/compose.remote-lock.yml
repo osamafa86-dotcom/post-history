@@ -1,5 +1,5 @@
 # Stand-in for the second provider in the trial smoke (ADR 0013, #149 item e): a MinIO bucket with object lock and a
-# default COMPLIANCE retention, and a write-only key for the backup (put, list, read retention; no get, no delete).
+# default COMPLIANCE retention, and a write-only key for the backup (put, list, read the lock configuration and retention; no get, no delete).
 # On the host the owner creates the same at the provider; only BACKUP_REMOTE_* go in the secrets.
 services:
   backup-remote:
@@ -34,7 +34,7 @@ services:
         mc retention set --default COMPLIANCE 1d "r/$$BUCKET"
         cat > /tmp/p.json <<JSON
         {"Version": "2012-10-17", "Statement": [
-          {"Effect": "Allow", "Action": ["s3:ListBucket"], "Resource": ["arn:aws:s3:::$$BUCKET"]},
+          {"Effect": "Allow", "Action": ["s3:ListBucket", "s3:GetBucketObjectLockConfiguration"], "Resource": ["arn:aws:s3:::$$BUCKET"]},
           {"Effect": "Allow", "Action": ["s3:PutObject", "s3:GetObjectRetention"], "Resource": ["arn:aws:s3:::$$BUCKET/*"]}]}
         JSON
         mc admin user add r "$$WRITER" "$$WRITER_SECRET" >/dev/null

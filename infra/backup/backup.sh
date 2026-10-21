@@ -9,7 +9,7 @@
 # BACKUP_DIR (/backups)؛ BACKUP_KEEP_DAYS (14، لتفريغات Postgres المحلية فقط؛ الكائنات لا تُحذف من النسخ)؛
 # واختياريًا BACKUP_REMOTE_URL/BACKUP_REMOTE_ACCESS_KEY/BACKUP_REMOTE_SECRET_KEY/BACKUP_REMOTE_BUCKET لنسخة لدى
 # مزوّد ثانٍ بقفل كائنات: حاوية بقفل كائنات واحتفاظ افتراضي بوضع compliance، ومفتاح كتابة فقط (PutObject وListBucket
-# وGetObjectRetention، بلا قراءة ولا حذف). نسخة بلا احتفاظ compliance تُفشل النسخ. لا تُطبع قيمة سرية: مفاتيح mc تُصدَّر في البيئة ولا تمر في سطر الأوامر.
+# وGetBucketObjectLockConfiguration وGetObjectRetention، بلا قراءة ولا حذف). نسخة بلا احتفاظ compliance تُفشل النسخ. لا تُطبع قيمة سرية: مفاتيح mc تُصدَّر في البيئة ولا تمر في سطر الأوامر.
 # pipefail: فشل pg_dump أو mc cat لا يصير ملفًا مشفّرًا فارغًا يُسجَّل نجاحًا.
 set -eu -o pipefail
 
