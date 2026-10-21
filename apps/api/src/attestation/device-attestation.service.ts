@@ -5,12 +5,13 @@ import type { Request } from 'express';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { ApiError } from '../common/errors';
 import { DB, type Database, type Executor } from '../database/database.module';
-import { auditLog, deviceAttestationKeys, uploadSessions } from '../database/schema/schema';
+import { auditLog, deviceAttestationKeys, uploadSessions, users } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import type { ReplayRehydrator } from '../idempotency/replay';
 import { RateLimitsService } from '../identity/rate-limits.service';
 import type { RateLimiter } from '../identity/rate-limiter';
 import type { Principal } from '../identity/principal';
+import { SessionService } from '../identity/session.service';
 import { APPLE_APP_ATTEST_ROOT_PEM, type AppAttestPolicy, AttestationRejected, verifyAssertion, verifyAttestation } from './app-attest';
 import { ChallengeStore } from './challenge-store';
 import { IngestTokenSigner } from './ingest-token';
@@ -25,6 +26,7 @@ export const PLAY_INTEGRITY_DECODER = Symbol('PLAY_INTEGRITY_DECODER');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BASE64 = /^[A-Za-z0-9+/_-]+={0,2}$/;
+const WEB_TOKEN_MAX_SECONDS = 600;
 const sha256 = (b: Buffer) => createHash('sha256').update(b).digest();
 
 const failed = () => new ApiError(403, 'attestation_failed', 'Device attestation failed.');
@@ -59,6 +61,7 @@ export class DeviceAttestationService implements ReplayRehydrator {
     @Inject(PLAY_INTEGRITY_DECODER) private readonly play: PlayIntegrityDecoder | null,
     private readonly challenges: ChallengeStore,
     limits: RateLimitsService,
+    private readonly sessions: SessionService,
   ) {
     const enabled = config.ATTESTATION_MODE !== 'off';
     this.appAttest =
@@ -156,6 +159,48 @@ export class DeviceAttestationService implements ReplayRehydrator {
   }
 
   /**
+   * رمز ingest لرفع الويب (بلا شهادة جهاز): يطلبه الـBFF وحده (يتحقق المتحكم من عنوانه) لجلسة رفع حية يملكها
+   * المستدعي، بعمر ≤ 10 دقائق، مربوطًا بجلسة الرفع وبجلسة الدخول (ses) فيسقط بإبطال أيهما عند فحص البوابة.
+   */
+  async webIngestToken(p: Principal, authSessionId: string, sessionId: string): Promise<IngestToken> {
+    if (!this.signer) throw ApiError.notFound();
+    const session = await this.liveSession(p, sessionId);
+    await this.limit(p.userId);
+    const minted = this.mint(session, 'web', authSessionId);
+    await this.audit(this.db, p.userId, 'ingest_token.issued', 'upload_session', session.id, {
+      upload_session_id: session.id,
+      target_user_id: p.userId,
+      reason_code: 'web',
+    });
+    return minted;
+  }
+
+  /**
+   * فحص البوابة قبل كل PATCH (GET /internal/ingest/session-status): الجلسة تقبل رفعًا الآن وصاحبها فاعل، وجلسة الدخول
+   * (لرمز الويب) لم تُبطل. أي شيء آخر رفض، فيسقط الرفع خلال ثوانٍ من الإبطال لا عند انتهاء الرمز.
+   */
+  async sessionAccepts(sid: string, ses: string | undefined): Promise<boolean> {
+    if (!UUID.test(sid) || (ses !== undefined && !UUID.test(ses))) return false;
+    const [s] = await this.db.select().from(uploadSessions).where(eq(uploadSessions.id, sid));
+    const now = new Date();
+    if (
+      !s ||
+      !['created', 'in_progress'].includes(s.state) ||
+      s.uploadPath !== 'tusd' ||
+      !s.uploadTokenHash ||
+      new Date(s.expiresAt) <= now ||
+      (s.uploadTokenExpiresAt !== null && new Date(s.uploadTokenExpiresAt) <= now)
+    ) {
+      return false;
+    }
+    const [owner] = await this.db.select({ status: users.status }).from(users).where(eq(users.id, s.createdBy));
+    if (owner?.status !== 'active') return false;
+    if (ses === undefined) return true;
+    const head = await this.sessions.chainHead(this.db, ses);
+    return Boolean(head && head.user_id === s.createdBy && head.revoked_at === null && new Date(head.expires_at) > now);
+  }
+
+  /**
    * إعادة الطلب بالمفتاح نفسه: الرد المحفوظ بلا الرمز (withoutTokens)، والتحدي استُهلك فلا يُعاد التحقق. يُصدر رمز جديد
    * للجلسة نفسها بانتهاء الأول نفسه لا أبعد، ما دامت الجلسة حية والمهلة لم تنقضِ؛ وإلا 409.
    */
@@ -163,6 +208,13 @@ export class DeviceAttestationService implements ReplayRehydrator {
     const { expires_at } = stored as { expires_at?: string };
     const sessionId = String(req.params.id ?? '');
     const session = await this.liveSession(req.principal!, sessionId);
+    // رمز الويب يُعاد بجلسة الدخول نفسها؛ رمز الجهاز بمنصته
+    if (req.path.endsWith('/web-ingest-token')) {
+      if (!expires_at || new Date(expires_at) <= new Date()) {
+        throw new ApiError(409, 'upload_state_conflict', 'The ingest token from this request has expired; request a new one.');
+      }
+      return this.mint({ ...session, expiresAt: new Date(Math.min(new Date(expires_at).getTime(), new Date(session.expiresAt).getTime())).toISOString() }, 'web', req.auth!.sessionId);
+    }
     const plat = (req.body as { platform?: 'ios' | 'android' })?.platform ?? 'ios';
     if (!expires_at || new Date(expires_at) <= new Date()) {
       throw new ApiError(409, 'upload_state_conflict', 'The ingest token from this request has expired; request a new one.');
@@ -199,9 +251,11 @@ export class DeviceAttestationService implements ReplayRehydrator {
     });
   }
 
-  private mint(session: { id: string; expiresAt: string }, plat: 'ios' | 'android'): IngestToken {
-    const expiresAt = new Date(Math.min(Date.now() + this.config.INGEST_TOKEN_TTL_SECONDS * 1000, new Date(session.expiresAt).getTime()));
-    const minted = this.signer!.mint({ sid: session.id, plat, expiresAt });
+  private mint(session: { id: string; expiresAt: string }, plat: 'ios' | 'android' | 'web', ses?: string): IngestToken {
+    // رمز الويب ≤ 10 دقائق (لا شهادة جهاز خلفه)
+    const ttl = plat === 'web' ? Math.min(this.config.INGEST_TOKEN_TTL_SECONDS, WEB_TOKEN_MAX_SECONDS) : this.config.INGEST_TOKEN_TTL_SECONDS;
+    const expiresAt = new Date(Math.min(Date.now() + ttl * 1000, new Date(session.expiresAt).getTime()));
+    const minted = this.signer!.mint({ sid: session.id, plat, ses, expiresAt });
     return { token: minted.token, expires_at: minted.expiresAt.toISOString() };
   }
 

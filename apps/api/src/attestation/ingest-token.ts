@@ -2,13 +2,15 @@ import { createPrivateKey, createPublicKey, type KeyObject, randomUUID, sign } f
 
 export interface IngestClaims {
   sid: string;
-  plat: 'ios' | 'android';
+  plat: 'ios' | 'android' | 'web';
+  /** جلسة الدخول للرموز الصادرة للويب: البوابة تمررها إلى فحص الجلسة فيُرفض الرفع بإبطالها */
+  ses?: string;
   expiresAt: Date;
 }
 
 /**
  * رمز بوابة ingest (ADR 0011، infra/ingest/ingest_token.js): JWT ES256 بترويسة {alg, typ, kid} والمطالبات
- * aud=ingest، sid، iat، exp (≤ 900 ث بعد iat)، jti، plat. البوابة تتحقق بالمفتاح العام وحده ولا تتبع jti.
+ * aud=ingest، sid، iat، exp (≤ 900 ث بعد iat)، jti، plat (ios|android|web)، وses لرمز الويب. البوابة تتحقق بالمفتاح العام وحده ولا تتبع jti.
  * kid يسمّي المفتاح للتدوير: البوابة تحمل العامّين القديم والجديد فترة، والخادم يوقّع بالجديد وحده.
  */
 export class IngestTokenSigner {
@@ -41,6 +43,7 @@ export class IngestTokenSigner {
       exp,
       jti: randomUUID(),
       plat: claims.plat,
+      ...(claims.ses ? { ses: claims.ses } : {}),
     })}`;
     // JWS ES256: التوقيع r ‖ s بطول ثابت (IEEE P1363)، لا DER
     const signature = sign('sha256', Buffer.from(signingInput), { key: this.key, dsaEncoding: 'ieee-p1363' });
