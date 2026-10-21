@@ -37,7 +37,8 @@ describe('contract v0.2 on the server', () => {
   let producer: Actor;
   let reporter: Actor;
   beforeAll(async () => {
-    h = await createHarness({ env: { MEDIA_WORKER_TOKEN: workerToken }, overrides: [[OBJECT_STORAGE, storage]] });
+    // العدّادات تُقارن بالصفوف فور الكتابة: بلا لقطة هنا، واللقطة لها اختبارها
+    h = await createHarness({ env: { MEDIA_WORKER_TOKEN: workerToken, DASHBOARD_SNAPSHOT_MS: '0' }, overrides: [[OBJECT_STORAGE, storage]] });
     await ensureForm(h);
     const newOffice = async () => (await h.pool.query<{ id: string }>(`INSERT INTO offices (name_ar, name_en) VALUES ('م', 'o') RETURNING id`)).rows[0]!.id;
     office = await newOffice();
@@ -375,6 +376,27 @@ describe('contract v0.2 on the server', () => {
         [office],
       );
       expect(body.urgent_open).toBe(rows[0]!.n);
+    });
+
+    it('a snapshot is reused for the same user and scope for at most DASHBOARD_SNAPSHOT_MS, never across users', async () => {
+      const snap = await createHarness({ env: { DASHBOARD_SNAPSHOT_MS: '1500' } });
+      try {
+        const get = (a: Actor) => request(snap.app.getHttpServer()).get('/v1/dashboard/newsroom').set('Authorization', `Bearer ${a.token}`).expect(200);
+        const one = (await get(supervisor)).body;
+        await material({ priority: 'urgent' });
+        const again = (await get(supervisor)).body;
+        expect(again.generated_at).toBe(one.generated_at);
+        expect(again.urgent_open).toBe(one.urgent_open);
+        // مشرف المكتب الآخر لقطته له: لا يرى عدّادات غيره
+        const others = (await get(otherSupervisor)).body;
+        expect(others.urgent_open).toBe(0);
+        await new Promise((r) => setTimeout(r, 1600));
+        const fresh = (await get(supervisor)).body;
+        expect(fresh.generated_at).not.toBe(one.generated_at);
+        expect(fresh.urgent_open).toBe(one.urgent_open + 1);
+      } finally {
+        await snap.close();
+      }
     });
   });
 });

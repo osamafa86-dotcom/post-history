@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, count, desc, eq, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
+import { APP_CONFIG, type AppConfig } from '../config/config';
 import { DB, type Database } from '../database/database.module';
 import { materialFiles, materials, notifications, offices } from '../database/schema/schema';
 import type { components } from '../generated/api';
@@ -11,13 +12,34 @@ type Counts = NewsroomDashboard['editorial'];
 
 /**
  * لوحة غرفة الأخبار (عقد v0.2): لقطة مجمّعة ضمن نطاق المستدعي (الشرط نفسه في طبقة الاستعلام). معرّفات وأرقام
- * وحالات فقط: لا عنوان ولا اسم ولا موقع ولا حقل ديناميكي.
+ * وحالات فقط: لا عنوان ولا اسم ولا موقع ولا حقل ديناميكي. اللقطة تُعاد لصاحبها ونطاقه نفسيهما ≤ DASHBOARD_SNAPSHOT_MS
+ * (`generated_at` وقت حسابها)، وطلبات متزامنة لمفتاح واحد تنتظر حسابًا واحدًا؛ التحديث الحي من /events.
  */
 @Injectable()
 export class DashboardService {
-  constructor(@Inject(DB) private readonly db: Database) {}
+  private readonly snapshots = new Map<string, { at: number; value: Promise<NewsroomDashboard> }>();
 
-  async newsroom(p: Principal): Promise<NewsroomDashboard> {
+  constructor(
+    @Inject(DB) private readonly db: Database,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+  ) {}
+
+  newsroom(p: Principal): Promise<NewsroomDashboard> {
+    const ttl = this.config.DASHBOARD_SNAPSHOT_MS;
+    if (ttl === 0) return this.compute(p);
+    // المفتاح: المستخدم وأدواره بنطاقاتها، فهما كل ما يحدد النطاق (ومنه ما أنشأه المستخدم نفسه)
+    const key = `${p.userId}|${p.roles.map((r) => `${r.role}:${r.scopeKind}:${r.scopeId}`).sort().join(',')}`;
+    const now = Date.now();
+    const hit = this.snapshots.get(key);
+    if (hit && now - hit.at < ttl) return hit.value;
+    if (this.snapshots.size > 1000) for (const [k, v] of this.snapshots) if (now - v.at >= ttl) this.snapshots.delete(k);
+    const value = this.compute(p);
+    this.snapshots.set(key, { at: now, value });
+    value.catch(() => this.snapshots.delete(key));
+    return value;
+  }
+
+  private async compute(p: Principal): Promise<NewsroomDashboard> {
     const scope = scopeCondition(p);
     // الحالات الثلاث والعاجل المفتوح في مسح واحد للمواد ضمن النطاق (GROUPING SETS)، وبقية القراءات بالتوازي معه
     const tallies = this.db.execute<{ editorial: string | null; technical: string | null; rights: string | null; g: number; n: number; urgent: number }>(sql`
