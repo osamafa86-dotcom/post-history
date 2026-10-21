@@ -196,7 +196,7 @@ open class MaterialsAPI {
     /**
      رابط قراءة موقّع قصير العمر لمشتق من المادة (v0.1)
      - GET /materials/{id}/files/{file_id}/download-url
-     - للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail` و`transcript` و`captions`) في حالة `verified`. الأصل والملاحظة الصوتية وحزمة التصدير لا تُعطى رابطًا هنا (`404`؛ الحزمة من `/materials/{id}/export/download-url`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`).
+     - للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail` و`transcript` و`captions` و`shot_list`) في حالة `verified`. الأصل والملاحظة الصوتية وحزمة التصدير لا تُعطى رابطًا هنا (`404`؛ الحزمة من `/materials/{id}/export/download-url`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`). **المشتقات النصية حساسة افتراضيًا (`transcript` و`captions` و`shot_list`، threat-model §9.1):** رابطها لأدوار تعديل المادة وحدها، أي `x-roles` على `PATCH /materials/{id}` ضمن النطاق (`reporter` مالك المادة، و`supervisor` و`editor_in_chief` و`system_admin`). غيرهم يُرد `404` بالشكل نفسه للملف المفقود، لا `403`. وكل إصدار رابط لها يُسجَّل في التدقيق قراءةً حساسة `material.sensitive_read` (`material_id` و`file_id` و`field_keys: [<النوع>]`).
      - Bearer Token:
        - type: http
        - name: bearerAuth

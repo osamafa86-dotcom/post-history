@@ -388,7 +388,7 @@ export interface paths {
         };
         /**
          * رابط قراءة موقّع قصير العمر لمشتق من المادة (v0.1)
-         * @description للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail` و`transcript` و`captions`) في حالة `verified`. الأصل والملاحظة الصوتية وحزمة التصدير لا تُعطى رابطًا هنا (`404`؛ الحزمة من `/materials/{id}/export/download-url`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`).
+         * @description للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail` و`transcript` و`captions` و`shot_list`) في حالة `verified`. الأصل والملاحظة الصوتية وحزمة التصدير لا تُعطى رابطًا هنا (`404`؛ الحزمة من `/materials/{id}/export/download-url`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`). **المشتقات النصية حساسة افتراضيًا (`transcript` و`captions` و`shot_list`، threat-model §9.1):** رابطها لأدوار تعديل المادة وحدها، أي `x-roles` على `PATCH /materials/{id}` ضمن النطاق (`reporter` مالك المادة، و`supervisor` و`editor_in_chief` و`system_admin`). غيرهم يُرد `404` بالشكل نفسه للملف المفقود، لا `403`. وكل إصدار رابط لها يُسجَّل في التدقيق قراءةً حساسة `material.sensitive_read` (`material_id` و`file_id` و`field_keys: [<النوع>]`).
          */
         get: operations["getMaterialFileDownloadUrl"];
         put?: never;
@@ -1395,6 +1395,7 @@ export interface components {
             acknowledged_at?: string | null;
             /** @description الاسم الحقيقي للمراسل (v0.2). الصلاحية التي تكشفه يحددها الإعداد الإداري `reporter_legal_name_access` (`/admin/settings/reporter-identity`، ADR 0021): `reporter_identity:read` حين يكون `separate` (الافتراضي)، و`protected_source:read` حين يكون `protected_source`. يغيب المفتاح عمّن لا يحمل الصلاحية الفعّالة. كل قراءة تُسجَّل في التدقيق (`material.sensitive_read`، `field_keys: [reporter_legal_name]`). لا يدخل إشعارًا ولا حدثًا ولا تصديرًا. `null` = غير مسجّل. */
             reporter_legal_name?: string | null;
+            /** @description المشتقات النصية (`transcript` و`captions` و`shot_list`) تظهر لأدوار تعديل المادة وحدها، وتُحذف من القائمة لغيرهم فلا يُلمَّح إلى وجودها (threat-model §9.1). */
             files: components["schemas"]["MaterialFile"][];
             /** @description مفاتيح `dynamic_fields` التي حُذفت من هذه الاستجابة بقاعدة الحجب (حقول `sensitive` أو `location`) لأن المستدعي لا يحمل الصلاحية المقابلة؛ فارغة لحاملها. */
             redacted_field_keys?: string[];
@@ -1418,7 +1419,7 @@ export interface components {
              * @description الأصل لا يُمس؛ كل معالجة تنتج ملفًا جديدًا
              * @enum {string}
              */
-            kind: "original" | "proxy" | "hls" | "audio" | "thumbnail" | "voice_note" | "transcript" | "captions";
+            kind: "original" | "proxy" | "hls" | "audio" | "thumbnail" | "voice_note" | "transcript" | "captions" | "shot_list";
             /** @enum {string} */
             state: "uploading" | "received" | "verified" | "failed";
             /**
@@ -1803,10 +1804,10 @@ export interface components {
             /** @enum {string|null} */
             failure_reason: "checksum_mismatch" | "invalid_file" | "expired" | "aborted" | "storage_error" | null;
         };
-        /** @description `proxy` و`hls` و`audio` مشتقات زمنية: `technical` يحمل `duration_ms` و`start_pts_us`. `thumbnail` صورة (الملصق أو ورقة اللقطات): `duration_ms` اختياري، و`width` و`height` إلزاميان غير فارغين، و`mime_type` إلزامي. `proxy_mode` يكتبه الخادم `normal` للنسخة الخفيفة وحدها و`NULL` لغيرها. `export` حزمة التصدير (#99، v0.2): `application/zip`، و`technical` هو `technical` الأصل؛ تُبنى عند الطلب (`export.requested`) لا عند الاستيعاب، ولا تحمل بيانات كاشفة. `transcript` (`application/json`، نص بتوقيت الكلمات والمتحدثين) و`captions` (`text/vtt`) من عامل التفريغ (v0.2): زمنيان على خط زمن الأصل، فيحملان `duration_ms` و`start_pts_us` الأصل. */
+        /** @description `proxy` و`hls` و`audio` مشتقات زمنية: `technical` يحمل `duration_ms` و`start_pts_us`. `thumbnail` صورة (الملصق أو ورقة اللقطات): `duration_ms` اختياري، و`width` و`height` إلزاميان غير فارغين، و`mime_type` إلزامي. `proxy_mode` يكتبه الخادم `normal` للنسخة الخفيفة وحدها و`NULL` لغيرها. `export` حزمة التصدير (#99، v0.2): `application/zip`، و`technical` هو `technical` الأصل؛ تُبنى عند الطلب (`export.requested`) لا عند الاستيعاب، ولا تحمل بيانات كاشفة. `transcript` (`application/json`، نص بتوقيت الكلمات والمتحدثين) و`captions` (`text/vtt`) من عامل التفريغ (v0.2): زمنيان على خط زمن الأصل، فيحملان `duration_ms` و`start_pts_us` الأصل. `shot_list` (`application/json`، قائمة اللقطات من عامل الذكاء الاصطناعي) زمني مثلهما وحساس مثلهما (threat-model §9.1): يقرؤه من يعدّل المادة وحده، ولا يدخل تصديرًا ولا إشعارًا ولا حدثًا ولا فهرس بحث، و`ai.draft_ready` لا تتغير حمولته. */
         MediaDerivative: {
             /** @enum {string} */
-            kind: "proxy" | "thumbnail" | "hls" | "audio" | "export" | "transcript" | "captions";
+            kind: "proxy" | "thumbnail" | "hls" | "audio" | "export" | "transcript" | "captions" | "shot_list";
             storage_key: string;
             sha256: string;
             size_bytes: number;
@@ -1816,7 +1817,7 @@ export interface components {
              */
             mime_type?: "image/jpeg" | "image/webp" | "video/mp4" | "application/vnd.apple.mpegurl" | "audio/mp4" | "application/json" | "application/zip" | "text/vtt";
             technical: components["schemas"]["MediaTechnical"];
-        } & (unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown);
         PermissionHistoryEntry: {
             /** @description رقم صف التدقيق */
             id: string;
