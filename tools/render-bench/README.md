@@ -31,3 +31,23 @@ docker build --target base -t media-worker:base workers/media
 docker run --rm -v "$PWD":/repo -w /repo -e PYTHONPATH=/repo/workers/media/src --entrypoint python \
   media-worker:base tools/render-bench/av_sync.py --out docs/measurements/render-bench/<date>-proxy-av-sync.json
 ```
+
+## تصدير القالب العاجل (`urgent_template/` و`urgent_bench.py`)
+
+اختبار القبول «تصدير القالب العاجل»: تركيب طبقات الهوية على مقطع دقيقتين 1080p في زمن أقل من مدة المقطع.
+
+- **الطبقات:** `urgent_template/` مشروع Remotion (شريط الاسم وشارة «عاجل») بخلفية شفافة، والنص العربي بخط Noto Naskh Arabic من الحزمة لا من النظام.
+- **المسار المعتمد:** طبقات ProRes 4444 يركّبها FFmpeg فوق الفيديو بين مقدمة وخاتمة جاهزتين، في ترميز واحد.
+- **الاحتياطي:** libass بالنصوص والتوقيتات والخط نفسها.
+- **الناتج:** زمن كل مسار، وإطار من كل منهما للمقارنة (`--frames`).
+
+```bash
+cd tools/render-bench/urgent_template && npm ci
+npx remotion render src/index.ts LowerThird /tmp/ut/lower.mov --codec=prores --prores-profile=4444 --pixel-format=yuva444p10le --image-format=png
+npx remotion render src/index.ts Breaking /tmp/ut/breaking.mov --codec=prores --prores-profile=4444 --pixel-format=yuva444p10le --image-format=png
+mkdir -p /tmp/ut/fonts && cp node_modules/@fontsource/noto-naskh-arabic/files/noto-naskh-arabic-arabic-{400,700}-normal.woff /tmp/ut/fonts/
+docker run --rm -v "$PWD/..:/bench:ro" -v /tmp/ut:/ut -w /bench --entrypoint python media-worker:base urgent_bench.py \
+  --overlays /ut --font-dir /ut/fonts --remotion-render-s <زمن الرسم> --out /ut/urgent.json
+```
+
+ترخيص Remotion مجاني حتى 3 موظفين (الخطة)، ثم ترخيص شركة.
