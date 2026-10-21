@@ -6,3 +6,4 @@
 DerivedData/
 xcuserdata/
 scripts/node_modules/
+App/Config/API.local.xcconfig
