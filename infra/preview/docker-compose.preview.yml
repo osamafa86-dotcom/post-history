@@ -71,6 +71,9 @@ services:
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?}
       MINIO_BROWSER: "off"
       GOMEMLIMIT: 96MiB
+      # Incomplete multipart uploads (an abandoned upload's parts) older than 24 h are deleted, checked every hour.
+      MINIO_API_STALE_UPLOADS_EXPIRY: 24h
+      MINIO_API_STALE_UPLOADS_CLEANUP_INTERVAL: 1h
     volumes:
       - minio-data:/data
     healthcheck:
@@ -88,7 +91,9 @@ services:
     depends_on:
       minio:
         condition: service_healthy
-    entrypoint: ["sh", "-c", "mc --config-dir /tmp/mc alias set local http://minio:9000 \"$$S3_ACCESS_KEY\" \"$$S3_SECRET_KEY\" >/dev/null && mc --config-dir /tmp/mc mb --ignore-existing \"local/$$S3_BUCKET_UPLOADS\" \"local/$$S3_BUCKET_MEDIA\""]
+    # Storage ceiling on the shared server, 10 GiB in all (ADR 0023): hard quotas on the two buckets, and tusd's temporary
+    # parts (at most the gate's 10 connections x 5 MiB) in the 64 MiB left over.
+    entrypoint: ["sh", "-c", "mc --config-dir /tmp/mc alias set local http://minio:9000 \"$$S3_ACCESS_KEY\" \"$$S3_SECRET_KEY\" >/dev/null && mc --config-dir /tmp/mc mb --ignore-existing \"local/$$S3_BUCKET_UPLOADS\" \"local/$$S3_BUCKET_MEDIA\" && mc --config-dir /tmp/mc quota set \"local/$$S3_BUCKET_UPLOADS\" --size 10112MiB >/dev/null && mc --config-dir /tmp/mc quota set \"local/$$S3_BUCKET_MEDIA\" --size 64MiB >/dev/null"]
     environment:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
@@ -238,6 +243,7 @@ services:
       -hooks-http-backoff=2s
       -show-greeting=false
       -disable-download
+      -max-size=2147483648
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/metrics"]
       interval: 10s

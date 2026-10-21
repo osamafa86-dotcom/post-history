@@ -155,11 +155,33 @@ for (let i = 0; i < 30 && !["completed", "verified"].includes(state); i++) {
 }
 if (!["completed", "verified"].includes(state)) die(`upload session after the last byte: ${state}`);
 say(`upload session ${state} after tus finished (tusd post-finish hook to the API): ok`);
+// One file is at most 2 GiB here: tusd refuses a larger Upload-Length (413) before any hook or byte.
+const small = await bff("uploads", { material_id: items[1].id, kind: "original", size_bytes: 1024, filename: "too-big.mp4",
+  client_sha256: createHash("sha256").update(randomBytes(8)).digest("hex") });
+if (small.status !== 201) die(`second upload session through the BFF: ${small.status}`);
+const s2 = JSON.parse(small.body);
+const it2 = JSON.parse((await bff(`uploads/${s2.id}/web-ingest-token`, {})).body).token;
+const big = await req("POST", "/files/", { "tus-resumable": "1.0.0", authorization: `Bearer ${s2.upload_token}`, "ingest-token": it2,
+  "upload-length": String(2 * 1024 ** 3 + 1), "upload-metadata": Object.entries(s2.tus_metadata).map(([k, v]) => `${k} ${b64(v)}`).join(",") });
+if (big.status !== 413) die(`tus create of 2 GiB + 1 byte: ${big.status} (want 413 from tusd -max-size)`);
+say("a file over 2 GiB is refused by tusd (413): ok");
 JS
 )" || { echo "$out"; fail "through the web edge"; }
 echo "$out"
 [ -z "$(docker logs ph-preview-decoy 2>&1)" ] || { docker logs ph-preview-decoy 2>&1 | head -5; fail "the edge sent traffic to another container named api or web-app on deploy_default"; }
 echo "the edge reaches its own upstreams, not same-named containers on deploy_default: ok"
+
+# Storage ceiling: hard quotas adding up to 10 GiB less tusd's 64 MiB, and abandoned multipart uploads deleted after 24 h.
+# The admin call needs more memory than minio-init's 32 MB: the same mc image as a throwaway container on the internal network.
+mc_image="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["minio-init"]["image"])' <<<"$cfg")"
+storage="$(docker run --rm --network post-history-preview_internal --env-file "$HERE/.env" --entrypoint sh "$mc_image" -c 'mc --config-dir /tmp/mc alias set local http://minio:9000 "$S3_ACCESS_KEY" "$S3_SECRET_KEY" >/dev/null && mc --config-dir /tmp/mc quota info --json "local/$S3_BUCKET_UPLOADS" && mc --config-dir /tmp/mc quota info --json "local/$S3_BUCKET_MEDIA" && mc --config-dir /tmp/mc admin config get local api' 2>&1)" \
+  || { echo "$storage" | tail -5; fail "could not read the storage quotas"; }
+quota_total="$(python3 -c '
+import json, sys
+print(sum(json.loads(l).get("quota", 0) for l in sys.stdin if l.startswith("{")))' <<<"$storage")"
+[ "$quota_total" = $((10112 * 1048576 + 64 * 1048576)) ] || fail "bucket quotas add up to $quota_total bytes (want 10 GiB less 64 MiB for tusd)"
+grep -qx '# MINIO_API_STALE_UPLOADS_EXPIRY=24h' <<<"$storage" || fail "abandoned multipart uploads are not set to expire after 24 h"
+echo "storage ceiling: hard quotas $((quota_total / 1048576)) MiB + 64 MiB for tusd parts, stale uploads deleted after 24 h: ok"
 
 # Actual use after the requests above, under the same limit.
 sleep 5
