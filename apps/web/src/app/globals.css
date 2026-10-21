@@ -185,3 +185,16 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .cart-summary li { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; }
 .cart-summary li span:first-child { display: grid; gap: 3px; }
 .cart-summary dl div { display: flex; justify-content: space-between; font-weight: 700; }
+.board-stats { margin-bottom: 8px; }
+.alert-number { color: var(--red) !important; }
+.board-updated { font-size: 11px; margin-bottom: 16px; }
+.board { display: grid; grid-template-columns: repeat(6, minmax(190px, 1fr)); gap: 12px; overflow-x: auto; margin-bottom: 22px; }
+.board-column { background: #eef1eb; border-radius: 8px; padding: 12px; display: grid; gap: 8px; align-content: start; min-height: 160px; }
+.board-column h2 { font-size: 13px; margin: 0 0 4px; display: flex; justify-content: space-between; }
+.board-card { background: white; border: 1px solid var(--line); border-radius: 6px; padding: 10px; display: grid; gap: 6px; font-size: 12px; }
+.board-card.urgent { border-inline-start: 3px solid var(--red); }
+.board-card a { font-weight: 700; }
+.board-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.board-more { font-size: 11px; color: var(--green); }
+.receipt-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.receipt-list li { display: flex; gap: 12px; align-items: center; font-size: 12px; }

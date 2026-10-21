@@ -266,6 +266,8 @@ jobs:
         run: infra/ingest/e2e-attested.sh
       - name: Media worker hardened, on the media network only, reaches /internal/media (ADR 0006)
         run: infra/compose/smoke-media.sh
+      - name: Self-hosted monitoring (logs redacted into Loki, OTLP to Prometheus, Grafana on 127.0.0.1, ADR 0027)
+        run: MEASURE_HOST="GitHub-hosted runner (ubuntu-24.04)" infra/observability/smoke-monitoring.sh
       - name: Self-hosted error tracking, Sentry-compatible (GlitchTip on 127.0.0.1, registration closed, ADR 0029)
         run: MEASURE_HOST="GitHub-hosted runner (ubuntu-24.04)" infra/observability/smoke-errors.sh
       - name: Tear down

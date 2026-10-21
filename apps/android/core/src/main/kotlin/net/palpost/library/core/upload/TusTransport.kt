@@ -44,8 +44,8 @@ open class TusTransport(
 
     /** `POST` to the creation endpoint; returns the upload URL. */
     @Throws(IOException::class, ProtocolException::class)
-    open fun create(endpoint: String, token: String, sizeBytes: Long, metadata: Map<String, String>): String {
-        val client = client(token).apply { uploadCreationURL = URL(endpoint) }
+    open fun create(endpoint: String, token: String, sizeBytes: Long, metadata: Map<String, String>, headers: () -> Map<String, String> = NO_HEADERS): String {
+        val client = client(token, headers).apply { uploadCreationURL = URL(endpoint) }
         val upload = TusUpload().apply { size = sizeBytes; this.metadata = metadata; inputStream = java.io.ByteArrayInputStream(ByteArray(0)) }
         val uploader = try { client.createUpload(upload) } catch (e: Exception) { observer.onFailure("create", e); throw e }
         val url = uploader.uploadURL.toString()
@@ -56,9 +56,9 @@ open class TusTransport(
 
     /** `HEAD` the upload; the offset the server has. */
     @Throws(IOException::class, ProtocolException::class)
-    open fun offset(uploadUrl: String, token: String): Long {
+    open fun offset(uploadUrl: String, token: String, headers: () -> Map<String, String> = NO_HEADERS): Long {
         val upload = TusUpload().apply { size = 0; inputStream = java.io.ByteArrayInputStream(ByteArray(0)) }
-        val uploader = try { client(token).beginOrResumeUploadFromURL(upload, URL(uploadUrl)) } catch (e: Exception) { observer.onFailure("head", e); throw e }
+        val uploader = try { client(token, headers).beginOrResumeUploadFromURL(upload, URL(uploadUrl)) } catch (e: Exception) { observer.onFailure("head", e); throw e }
         val offset = uploader.offset
         uploader.finish(true)
         observer.onHead(offset)
@@ -83,10 +83,11 @@ open class TusTransport(
         onHead: (Long) -> Unit = {},
         onConfirmed: (Long) -> Unit = {},
         onSent: (Long) -> Unit = {},
+        headers: () -> Map<String, String> = NO_HEADERS,
     ): Long {
         val stream = openStream()
         val upload = TusUpload().apply { size = sizeBytes; inputStream = stream }
-        val uploader = try { client(token).beginOrResumeUploadFromURL(upload, URL(uploadUrl)) } catch (e: Throwable) { runCatching { stream.close() }; if (e is Exception) observer.onFailure("head", e); throw e }
+        val uploader = try { client(token, headers).beginOrResumeUploadFromURL(upload, URL(uploadUrl)) } catch (e: Throwable) { runCatching { stream.close() }; if (e is Exception) observer.onFailure("head", e); throw e }
         uploader.setChunkSize(chunkBytes)
         var confirmed = uploader.offset
         var requestStart = confirmed
@@ -128,10 +129,12 @@ open class TusTransport(
         }
     }
 
-    private fun client(token: String): TusClient = object : TusClient() {
+    /** [headers] is asked on every connection, so a gate token renewed mid-upload reaches the next request. */
+    private fun client(token: String, headers: () -> Map<String, String>): TusClient = object : TusClient() {
         override fun prepareConnection(connection: HttpURLConnection) {
             super.prepareConnection(connection)
             connection.readTimeout = readTimeoutMs
+            headers().forEach { (k, v) -> connection.setRequestProperty(k, v) }
         }
     }.apply {
         connectTimeout = connectTimeoutMs
@@ -140,6 +143,7 @@ open class TusTransport(
 
     companion object {
         const val DEFAULT_CHUNK_BYTES = 256 * 1024
+        val NO_HEADERS: () -> Map<String, String> = { emptyMap() }
 
         /** HTTP status behind a tus failure, or null when the connection died before any response. */
         fun status(e: ProtocolException): Int? = runCatching { e.causingConnection?.responseCode }.getOrNull()?.takeIf { it > 0 }

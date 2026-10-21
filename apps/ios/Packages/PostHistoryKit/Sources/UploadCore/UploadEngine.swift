@@ -27,6 +27,7 @@ public actor UploadEngine: TusTransportDelegate {
     private let secrets: any UploadSecretStore
     private let api: any UploadAPI
     private let transport: any TusTransport
+    private let ingest: (any IngestTokenProvider)?
     private let slicer: ChunkSlicer
     private let policy: ChunkSizePolicy
     private let timing: Timing
@@ -38,13 +39,19 @@ public actor UploadEngine: TusTransportDelegate {
     private var resyncing: Set<UUID> = []
     private var subscribers: [UUID: AsyncStream<UploadEvent>.Continuation] = [:]
     private var retryTasks: [UUID: Task<Void, Never>] = [:]
+    /// تجديدات رمز ingest المتتالية بعد `401` من البوابة لكل سجل؛ تُصفَّر مع أول جزء ناجح.
+    private var ingestRefreshes: [UUID: Int] = [:]
+    /// حد التجديدات المتتالية: رمز جديد ما زال يُرفض = مشكلة لا يحلها التجديد.
+    static let maxIngestRefreshes = 3
 
     public init(store: any UploadStateStore, secrets: any UploadSecretStore, api: any UploadAPI, transport: any TusTransport,
+                ingestTokens: (any IngestTokenProvider)? = nil,
                 slicer: ChunkSlicer, policy: ChunkSizePolicy = ChunkSizePolicy(), timing: Timing = Timing(), environment: Environment = Environment()) {
         self.store = store
         self.secrets = secrets
         self.api = api
         self.transport = transport
+        self.ingest = ingestTokens
         self.slicer = slicer
         self.policy = policy
         self.timing = timing
@@ -105,6 +112,7 @@ public actor UploadEngine: TusTransportDelegate {
         rec.prepared = []
         slicer.discardAll(uploadId: id)
         try? secrets.removeToken(for: id)
+        await forgetIngest(rec)
         setPhase(&rec, .cancelled)
     }
 
@@ -116,6 +124,7 @@ public actor UploadEngine: TusTransportDelegate {
             retryTasks[id]?.cancel()
             retryTasks[id] = nil
             await transport.cancel(uploadId: id)
+            if let rec = records[id] { await forgetIngest(rec) }
             slicer.discardAll(uploadId: id)
             try? secrets.removeToken(for: id)
             try? store.remove(id: id)
@@ -123,6 +132,7 @@ public actor UploadEngine: TusTransportDelegate {
         records.removeAll()
         busy.removeAll()
         resyncing.removeAll()
+        ingestRefreshes.removeAll()
         return ids.count
     }
 
@@ -148,14 +158,20 @@ public actor UploadEngine: TusTransportDelegate {
         case .completed(let newOffset):
             rec.attempt = 0
             rec.lastErrorCode = nil
+            ingestRefreshes[rec.id] = nil
             applyServerOffset(&rec, newOffset)
             save(rec)
             emit(.progress(id: rec.id, confirmedOffset: rec.confirmedOffset, sizeBytes: rec.sizeBytes))
             await step(rec.id)
         case .failed(let error):
             rec.lastErrorCode = String(describing: error)
+            if error == .authenticationRequired, consumeIngestRefresh(rec) {
+                save(rec)
+                await resync(rec.id, refreshIngest: true)
+                return
+            }
             guard error.isRetryable else {
-                let reason: UploadFailure = error == .unauthorized ? .expired : error == .gone ? .aborted : .rejected
+                let reason: UploadFailure = Self.isAuthFailure(error) ? .expired : error == .gone ? .aborted : .rejected
                 rec.prepared.forEach(slicer.discard)
                 rec.prepared = []
                 setPhase(&rec, .failed(reason))
@@ -188,20 +204,26 @@ public actor UploadEngine: TusTransportDelegate {
                     var metadata = created.tusMetadata.additionalProperties
                     metadata["upload_session_id"] = created.tusMetadata.uploadSessionId.uuidString.lowercased()
                     rec.remote = RemoteSession(uploadSessionId: created.id, tusEndpoint: endpoint, tusMetadata: metadata, partSizeBytes: Int64(created.partSizeBytes),
-                                               checksumAlgorithm: (created.checksumAlgorithm ?? .sha256).rawValue, expiresAt: created.expiresAt, uploadTokenExpiresAt: created.uploadTokenExpiresAt)
+                                               checksumAlgorithm: (created.checksumAlgorithm ?? .sha256).rawValue, expiresAt: created.expiresAt, uploadTokenExpiresAt: created.uploadTokenExpiresAt,
+                                               ingestTokenRequired: created.ingestTokenRequired)
                     rec.chunkSizeBytes = policy.chunkSize(background: env.isBackground(), measuredUplinkBytesPerSecond: env.uplinkBytesPerSecond())
                     setPhase(&rec, .creatingUpload)
                 case .creatingUpload:
                     guard let remote = rec.remote else { setPhase(&rec, .creatingSession); continue }
                     let uploadToken = try token(rec.id)
+                    let ingestToken = try await ingestToken(rec, forceRefresh: false)
                     do {
-                        rec.tusUploadURL = try await transport.createUpload(TusCreateRequest(endpoint: remote.tusEndpoint, token: uploadToken, length: rec.sizeBytes, metadata: remote.tusMetadata))
+                        rec.tusUploadURL = try await transport.createUpload(TusCreateRequest(endpoint: remote.tusEndpoint, token: uploadToken, length: rec.sizeBytes, metadata: remote.tusMetadata, ingestToken: ingestToken))
                         rec.confirmedOffset = 0
+                    } catch TusError.authenticationRequired where consumeIngestRefresh(rec) {
+                        // رمز البوابة رُفض قبل وصول الطلب إلى tusd: لا إنشاء حدث؛ رمز جديد ثم إعادة الخطوة نفسها.
+                        _ = try await self.ingestToken(rec, forceRefresh: true)
+                        continue
                     } catch TusError.unauthorized {
                         // ضاع رد الإنشاء (انقطاع أو قتل التطبيق بعد الإرسال): الخادم حجز الجلسة في pre-create ويرفض إنشاءً ثانيًا بالرمز نفسه.
                         // الرابط حتمي (نقطة tus + معرّف الجلسة، لأن ChangeFileInfo.ID = معرّف الجلسة)، فيُسأل عنه HEAD ويُستأنف منه.
                         let deterministic = Self.deterministicUploadURL(endpoint: remote.tusEndpoint, sessionId: remote.uploadSessionId)
-                        rec.confirmedOffset = try await transport.currentOffset(uploadURL: deterministic, token: uploadToken)
+                        rec.confirmedOffset = try await transport.currentOffset(uploadURL: deterministic, token: uploadToken, ingestToken: ingestToken)
                         rec.tusUploadURL = deterministic
                     }
                     setPhase(&rec, .transferring)
@@ -210,7 +232,8 @@ public actor UploadEngine: TusTransportDelegate {
                     if rec.inFlightOffset != nil || resyncing.contains(id) { return } // بانتظار حدث النقل أو موضع الخادم
                     try prepareWindow(&rec)
                     guard let chunk = rec.prepared.first, let uploadURL = rec.tusUploadURL else { throw UploadError.sourceTruncated }
-                    let request = TusPatchRequest(key: TusTaskKey(uploadId: rec.id, offset: chunk.offset), uploadURL: uploadURL, token: try token(rec.id), chunk: chunk, chunkFile: slicer.url(of: chunk))
+                    let ingestToken = try await ingestToken(rec, forceRefresh: false)
+                    let request = TusPatchRequest(key: TusTaskKey(uploadId: rec.id, offset: chunk.offset), uploadURL: uploadURL, token: try token(rec.id), chunk: chunk, chunkFile: slicer.url(of: chunk), ingestToken: ingestToken)
                     rec.inFlightOffset = chunk.offset
                     save(rec)
                     try await transport.schedulePatch(request)
@@ -227,9 +250,11 @@ public actor UploadEngine: TusTransportDelegate {
                     switch session.state {
                     case .verified:
                         try? secrets.removeToken(for: rec.id)
+                        await forgetIngest(rec)
                         setPhase(&rec, .verified(receiptNumber: session.receiptNumber ?? ""))
                     case .deduplicated:
                         try? secrets.removeToken(for: rec.id)
+                        await forgetIngest(rec)
                         setPhase(&rec, .deduplicated(duplicateOfFileId: session.duplicateOfFileId))
                     case .failed:
                         setPhase(&rec, .failed(Self.failure(session.failureReason)))
@@ -253,12 +278,19 @@ public actor UploadEngine: TusTransportDelegate {
         switch error {
         case UploadError.sourceTruncated, is CocoaError:
             setPhase(&rec, .failed(.sourceMissing))
+        case IngestTokenError.unsupported, IngestTokenError.attestationRejected:
+            setPhase(&rec, .failed(.deviceNotAttested))
+        case TusError.authenticationRequired where consumeIngestRefresh(rec):
+            // HEAD رُفض عند البوابة: رمز جديد ثم HEAD من جديد بعد مهلة قصيرة.
+            save(rec)
+            await forgetIngest(rec)
+            scheduleRetry(id)
         case UploadAPIError.unauthorized:
             setPhase(&rec, .failed(.expired))
         case let e as UploadAPIError where !e.isRetryable:
             setPhase(&rec, .failed(.rejected))
         case let e as TusError where !e.isRetryable:
-            setPhase(&rec, .failed(e == .unauthorized ? .expired : e == .gone ? .aborted : .rejected))
+            setPhase(&rec, .failed(Self.isAuthFailure(e) ? .expired : e == .gone ? .aborted : .rejected))
         case UploadError.invalidEndpoint, UploadStoreError.missingToken:
             setPhase(&rec, .failed(.rejected))
         default:
@@ -281,11 +313,14 @@ public actor UploadEngine: TusTransportDelegate {
     }
 
     /// يسأل الخادم عن موضعه (HEAD) ويُعيد مواءمة الأجزاء المُجهَّزة، ثم يستأنف.
-    private func resync(_ id: UUID) async {
+    private func resync(_ id: UUID, refreshIngest: Bool = false) async {
         guard let rec = records[id], rec.phase == .transferring, rec.inFlightOffset == nil, let url = rec.tusUploadURL, !resyncing.contains(id) else { return }
         resyncing.insert(id)
         let head: Result<Int64, any Error>
-        do { head = .success(try await transport.currentOffset(uploadURL: url, token: try token(id))) } catch { head = .failure(error) }
+        do {
+            let ingestToken = try await ingestToken(rec, forceRefresh: refreshIngest)
+            head = .success(try await transport.currentOffset(uploadURL: url, token: try token(id), ingestToken: ingestToken))
+        } catch { head = .failure(error) }
         resyncing.remove(id)
         guard var rec = records[id], rec.phase == .transferring else { return }
         switch head {
@@ -327,6 +362,29 @@ public actor UploadEngine: TusTransportDelegate {
         guard (attrs[.size] as? NSNumber)?.int64Value == rec.sizeBytes else { throw UploadError.sourceTruncated }
         return url
     }
+
+    /// رمز البوابة حين تطلبه الجلسة، وإلا `nil`. جلسة تطلبه بلا مصدر = جهاز لا يستطيع الرفع خلف البوابة.
+    private func ingestToken(_ rec: UploadRecord, forceRefresh: Bool) async throws -> String? {
+        guard let remote = rec.remote, remote.ingestTokenRequired == true else { return nil }
+        guard let ingest else { throw IngestTokenError.unsupported }
+        return try await ingest.ingestToken(uploadSessionId: remote.uploadSessionId, forceRefresh: forceRefresh)
+    }
+
+    private func forgetIngest(_ rec: UploadRecord) async {
+        guard let remote = rec.remote, remote.ingestTokenRequired == true else { return }
+        await ingest?.forget(uploadSessionId: remote.uploadSessionId)
+    }
+
+    /// يستهلك تجديدًا واحدًا لرمز البوابة بعد `401` إن كانت الجلسة خلف البوابة ولم يُستنفد الحد.
+    private func consumeIngestRefresh(_ rec: UploadRecord) -> Bool {
+        guard rec.remote?.ingestTokenRequired == true, ingest != nil else { return false }
+        let used = ingestRefreshes[rec.id, default: 0]
+        guard used < Self.maxIngestRefreshes else { return false }
+        ingestRefreshes[rec.id] = used + 1
+        return true
+    }
+
+    static func isAuthFailure(_ e: TusError) -> Bool { e == .unauthorized || e == .authenticationRequired }
 
     private func token(_ id: UUID) throws -> String {
         guard let t = try secrets.token(for: id) else { throw UploadStoreError.missingToken }
