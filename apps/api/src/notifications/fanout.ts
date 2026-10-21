@@ -41,6 +41,8 @@ const RULES: Record<string, { audience: Audience; assignment: boolean; push: boo
  * فإعادة إرسال الحدث لا تكرر الإشعار. يعيد عدد الإشعارات الجديدة.
  */
 export async function fanOut(tx: Tx, event: OutboxRow, opts: FanOutOptions): Promise<number> {
+  // تقدّم الرفع للوحة وحدها (ADR 0024): لا إشعار ولا قاعدة تنبيه
+  if (event.type === 'upload.progress') return 0;
   const payload = event.payload as Record<string, unknown>;
   if (event.type === 'auth.recovery_requested') return recoveryRequested(tx, event, payload, opts);
   if (event.type === 'auth.recovery_completed') return recoveryCompleted(tx, event, opts);
