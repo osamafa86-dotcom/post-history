@@ -130,7 +130,7 @@ if [ -n "$JSON" ]; then
 import json, os, sys, datetime
 out, total, used, ceiling = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
 now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-json.dump({"schema_version": 1, "tool": "other", "role": "infra", "decision_ref": "ADR 0023", "started_at": now, "ended_at": now,
+json.dump({"schema_version": 1, "tool": "other", "role": "infra", "started_at": now, "ended_at": now,
            "result": "pass" if used < total <= ceiling else "fail",
            "device": {"platform": "server", "model": os.environ.get("MEASURE_HOST", "local docker compose")},
            "metrics": {"memory_limits_mb": total, "memory_used_mb": used, "memory_ceiling_mb": ceiling},
