@@ -27,7 +27,7 @@
 | `hls/index.m3u8` (+ `init.mp4`، `seg_*.m4s`) | HLS fMP4 بمقاطع ~4 ث من النسخة الخفيفة بلا ترميز ثانٍ؛ خلف `MEDIA_ENABLE_HLS` | `kind=hls` (عقد #58) |
 | `export.zip` | حزمة المونتاج: `clip.<ext>` (نسخ تيارات الأصل بلا ترميز إلى ملف جديد بلا أي وسوم ولا مسارات بيانات أو ترجمة؛ الأصل المخزَّن لا يدخل الحزمة)، `proxy.mp4`، `metadata.json` (قائمة بيضاء بلا بيانات كاشفة)، `sequence.fcpxml` (1.9) و`sequence.edl` (CMX3600) بلقطة واحدة، `SHA256SUMS`؛ خلف `MEDIA_ENABLE_EXPORT` | `kind=export` حين يقبله العقد |
 | `audio-16k.m4a` | للملاحظة الصوتية: AAC أحادية 16 kHz بلا وسوم، `-copyts` يحفظ خط زمن الأصل | `kind=audio` |
-| `preview-watermarked.mp4` | معاينة المتجر: 360p بمعدل بت محدود وأشرطة قطرية محروقة في الصورة، بلا وسوم، `-copyts`؛ من الأصل المتحقق عند `catalog.listing_changed` بحالة `listed`؛ خلف `MEDIA_ENABLE_STORE_PREVIEW` | `kind=watermarked_preview` (v0.3) |
+| `preview-watermarked.mp4` | معاينة المتجر: 360p بمعدل بت محدود وشبكة أشرطة قطرية معتمة محروقة في الصورة، موضعها مزاح لكل مادة بـ HMAC من `MEDIA_WATERMARK_KEY`، بلا وسوم، `-copyts`؛ من الأصل المتحقق عند `catalog.listing_changed` بحالة `listed`؛ خلف `MEDIA_ENABLE_STORE_PREVIEW` | `kind=watermarked_preview` (v0.3) |
 
 المصغّرات بلا وسوم ولا EXIF. هي ونسخة الخادم `proxy-480p.mp4` تُصنع لكل أصل مرئي، حتى حين تصل النسخة الخفيفة من الهاتف؛ العمّال اللاحقون يقرؤون نسخة الخادم.
 

@@ -11,6 +11,9 @@ from media_worker.api import FileRef, Session
 from media_worker.ffmpeg import FFMPEG, run
 from media_worker.jobs import Buckets, Jobs, store_preview_key
 from media_worker.probe import probe
+from media_worker.watermark import offsets
+
+KEY = b"test-only-watermark-key-0123456789"
 
 MID = "4a000000-0000-4000-8000-000000000002"
 BUCKETS = Buckets(uploads="uploads", derived="media")
@@ -23,7 +26,7 @@ def _setup(data: bytes, sha: str | None = None):
                           state="verified", size_bytes=len(data), storage_key="orig/1", material_has_proxy=True))
     api.original = FileRef(file_id=FakeApi.FILE_ID, material_id=MID, storage_key="orig/1", size_bytes=len(data),
                            sha256=sha or hashlib.sha256(data).hexdigest())
-    return api, storage, Jobs(api, storage, BUCKETS, enable_store_preview=True)
+    return api, storage, Jobs(api, storage, BUCKETS, enable_store_preview=True, watermark_key=KEY)
 
 
 def _listed(state="listed"):
@@ -61,6 +64,11 @@ def test_listing_builds_a_low_res_watermarked_tagless_preview(clip: Path, tmp_pa
     # العلامة محروقة في الصورة: الإطار يختلف بوضوح عن تصغير الأصل نفسه بلا علامة
     a, b = _gray_frame(out, 2.5, "640:360"), _gray_frame(clip, 2.5, "640:360")
     assert sum(abs(x - y) for x, y in zip(a, b)) / len(a) > 15
+    # الشبكة معتمة: البكسل نفسه ثابت اللون في إطارين مختلفي المحتوى، على ربع الإطار على الأقل، فما تحته لا يُستعاد
+    c = _gray_frame(out, 0.5, "640:360")
+    # 235 بمدى التلفاز يصير 255 في الرمادي كامل المدى
+    opaque = sum(1 for x, y in zip(a, c) if x >= 245 and y >= 245)
+    assert opaque / len(a) > 0.25
     assert storage.objects[("uploads", "orig/1")] == data
 
 
@@ -88,3 +96,19 @@ def test_behind_flag(clip: Path):
     api, storage, jobs = _setup(clip.read_bytes())
     jobs.enable_store_preview = False
     assert jobs.handle(_listed()) == "ignored" and storage.puts == []
+
+
+def test_grid_offset_is_secret_and_per_material():
+    m2 = "4a000000-0000-4000-8000-000000000003"
+    assert offsets(KEY, MID) == offsets(KEY, MID)
+    assert len({offsets(KEY, MID), offsets(KEY, m2), offsets(b"another-key-0123456789", MID)}) == 3
+    with pytest.raises(ValueError):
+        offsets(b"short", MID)
+
+
+def test_missing_key_refuses_to_build(clip: Path):
+    api, storage, jobs = _setup(clip.read_bytes())
+    jobs.watermark_key = b""
+    with pytest.raises(ValueError):
+        jobs.handle(_listed())
+    assert storage.puts == []

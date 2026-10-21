@@ -101,10 +101,11 @@ def _download(storage: Storage, bucket: str, key: str, dst: Path):
 class Jobs:
     def __init__(self, api: InternalApi, storage: Storage, buckets: Buckets, scratch: Path | None = None,
                  enable_hls: bool = False, enable_phash: bool = False, enable_export: bool = False,
-                 enable_store_preview: bool = False):
+                 enable_store_preview: bool = False, watermark_key: bytes = b""):
         # الأعلام مطفأة إلى أن يقبل العقد نوع hls (#58) وحقل البصمة الإدراكية ونوع export؛ ومعاينة المتجر حتى نقطة
         # مصدر الأصل في #178
         self.enable_store_preview = enable_store_preview
+        self.watermark_key = watermark_key
         self.enable_export = enable_export
         self.enable_hls = enable_hls
         self.enable_phash = enable_phash
@@ -310,7 +311,7 @@ class Jobs:
             if digest.sha256 != ref.sha256:
                 raise ValueError("original does not match its recorded hash")
             info = probe(local)
-            made = make_watermarked_preview(local, out, info)
+            made = make_watermarked_preview(local, out, info, self.watermark_key, material_id)
             d = digest_file(out)
             self.storage.put_file(self.buckets.derived, key, out, d.sha256, "video/mp4")
             self.api.add_derivative(ref.file_id, {
