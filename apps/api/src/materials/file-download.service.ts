@@ -7,10 +7,12 @@ import { auditLog, materialFiles } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import type { Principal } from '../identity/principal';
 import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
-import { findScoped } from './material-store';
+import { canEditMaterial, findScoped } from './material-store';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DERIVATIVE_KINDS = ['proxy', 'hls', 'audio', 'thumbnail', 'transcript', 'captions'];
+// التفريغ والترجمة مسودتان تحريريتان: رابطهما لمن يملك تعديل المادة وحده (قرار المنسّق)، وغيره 404 بلا تفريق
+const EDITOR_ONLY_KINDS = ['transcript', 'captions'];
 const TTL_SECONDS = 600;
 
 /**
@@ -26,9 +28,10 @@ export class FileDownloadService {
   ) {}
 
   async downloadUrl(p: Principal, materialId: string, fileId: string): Promise<components['schemas']['FileDownloadUrl']> {
-    if (!UUID.test(fileId) || !(await findScoped(this.db, p, materialId)) || !this.storage.presignGet) throw ApiError.notFound();
+    const material = UUID.test(fileId) ? await findScoped(this.db, p, materialId) : undefined;
+    if (!material || !this.storage.presignGet) throw ApiError.notFound();
     const [file] = await this.db
-      .select({ id: materialFiles.id, storageKey: materialFiles.storageKey, derivedFromId: materialFiles.derivedFromId })
+      .select({ id: materialFiles.id, kind: materialFiles.kind, storageKey: materialFiles.storageKey, derivedFromId: materialFiles.derivedFromId })
       .from(materialFiles)
       .where(
         and(
@@ -38,7 +41,7 @@ export class FileDownloadService {
           inArray(materialFiles.kind, DERIVATIVE_KINDS),
         ),
       );
-    if (!file?.storageKey) throw ApiError.notFound();
+    if (!file?.storageKey || (EDITOR_ONLY_KINDS.includes(file.kind) && !canEditMaterial(p, material))) throw ApiError.notFound();
     // مشتقات العامل في حاوية الوسائط، والوكيل المرفوع من العميل في حاوية الرفع
     const bucket = file.derivedFromId ? this.config.S3_BUCKET_MEDIA : this.config.S3_BUCKET_UPLOADS;
     const now = new Date();

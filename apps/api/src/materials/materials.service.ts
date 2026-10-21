@@ -18,6 +18,7 @@ import { writeOutboxEvent } from '../outbox/outbox';
 import {
   applyTransition,
   findScoped,
+  canEditMaterial,
   iso,
   materialPayload,
   materialSelection,
@@ -182,11 +183,7 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
       const m = await findScoped(tx, p, id, { forUpdate: true });
       if (!m) throw ApiError.notFound();
       assertIfMatch(ifMatch, m.rowVersion);
-      const mayEdit =
-        (hasRole(p, 'reporter') && m.reporterId === p.userId) ||
-        roleCovers(p, 'supervisor', m) ||
-        hasRole(p, 'editor_in_chief', 'system_admin');
-      if (!mayEdit) throw new ApiError(403, 'forbidden_scope', 'This role may not edit this material.');
+      if (!canEditMaterial(p, m)) throw new ApiError(403, 'forbidden_scope', 'This role may not edit this material.');
 
       const materialTypes = body.material_types ?? (m.materialTypes as string[]);
       const formVersion = body.form_version ?? m.formVersion;

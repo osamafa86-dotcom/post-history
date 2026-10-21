@@ -259,7 +259,7 @@ describe('contract v0.2 on the server', () => {
   });
 
   describe('transcript and captions', () => {
-    it('are readable through the derivative signed link', async () => {
+    it('are readable through the derivative signed link by those who may edit the material only', async () => {
       const m = await material();
       const source = await original(m);
       const key = `derived/${m}/${source}/captions.vtt`;
@@ -272,6 +272,12 @@ describe('contract v0.2 on the server', () => {
           .expect(200)
       ).body.file_id as string;
       expect((await as(chief).get(`/materials/${m}/files/${fileId}/download-url`).expect(200)).body.url).toContain(key);
+      await as(reporter).get(`/materials/${m}/files/${fileId}/download-url`).expect(200);
+      await as(supervisor).get(`/materials/${m}/files/${fileId}/download-url`).expect(200);
+      // مسؤول الحقوق يرى المادة ولا يعدّلها: 404 كأن الملف غير موجود
+      const rights = await loginAs(h, [{ role: 'rights_officer' }]);
+      await as(rights).get(`/materials/${m}`).expect(200);
+      await as(rights).get(`/materials/${m}/files/${fileId}/download-url`).expect(404);
     });
   });
 

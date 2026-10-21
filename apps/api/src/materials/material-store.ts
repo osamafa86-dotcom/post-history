@@ -56,6 +56,15 @@ export function roleCovers(p: Principal, role: RoleName, m: MaterialRow): boolea
   );
 }
 
+/** من يملك تعديل المادة: مراسلها، ومشرف يغطيها، ورئيس التحرير ومدير النظام (PATCH /materials/{id}). */
+export function canEditMaterial(p: Principal, m: MaterialRow): boolean {
+  return (
+    (p.roles.some((r) => r.role === 'reporter') && m.reporterId === p.userId) ||
+    roleCovers(p, 'supervisor', m) ||
+    p.roles.some((r) => r.role === 'editor_in_chief' || r.role === 'system_admin')
+  );
+}
+
 const selection = { ...getTableColumns(materials), officeGovernorate: offices.governorate };
 
 /** يقرأ مادة ضمن نطاق المستخدم؛ خارج النطاق = undefined (404). forUpdate يقفل الصف حتى نهاية المعاملة. */
