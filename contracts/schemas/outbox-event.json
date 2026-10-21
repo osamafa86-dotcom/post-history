@@ -686,7 +686,7 @@
           "payload": {
             "type": "object",
             "additionalProperties": false,
-            "description": "إدراج تغيّر في الكتالوج (v0.3، ADR 0025): معرّفات وحالة فقط، بلا عناوين ولا أسعار.",
+            "description": "إدراج تغيّر في الكتالوج (v0.3، ADR 0025): معرّفات وحالة فقط، بلا عناوين ولا أسعار. source_file_id الأصل المتحقق لإصدار الإدراج، ليبني عامل الوسائط watermarked_preview.",
             "required": [
               "listing_id",
               "material_id",
@@ -722,6 +722,9 @@
                   "rights_changed",
                   null
                 ]
+              },
+              "source_file_id": {
+                "$ref": "#/$defs/nullableUuid"
               }
             }
           }

@@ -1254,6 +1254,35 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
+  /internal/media/files/{file_id}:
+    servers:
+      - url: http://api.internal:3000
+        description: شبكة media الداخلية فقط (ADR 0006)
+    parameters:
+      - name: file_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [uploads]
+      summary: ملف مصدر كما يحتاجه العامل لمشتق عند الطلب (داخلي، v0.3)
+      x-internal: true
+      description: >-
+        لبناء `watermarked_preview` من `catalog.listing_changed` وحزمة `export` من `export.requested`: مفتاح تخزين المصدر
+        وبصمته. فشل المصادقة أو العنوان `404` كبقية `/internal/*`؛ والملف غير الموجود برمز صحيح `410 media_resource_gone`.
+        لا اسم ملف ولا بيانات كاشفة.
+      operationId: mediaGetFile
+      x-roles: []
+      security: [{ mediaWorkerToken: [] }]
+      responses:
+        "200":
+          description: الملف
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaSourceFile" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "410": { $ref: "#/components/responses/MediaResourceGone" }
+
   /internal/media/files/{file_id}/derivatives:
     servers:
       - url: http://api.internal:3000
@@ -3242,6 +3271,20 @@ components:
           then: { required: [mime_type], properties: { mime_type: { const: application/json } } }
         - if: { properties: { kind: { const: captions } } }
           then: { required: [mime_type], properties: { mime_type: { const: text/vtt } } }
+
+    MediaSourceFile:
+      x-internal: true
+      type: object
+      additionalProperties: false
+      required: [file_id, material_id, kind, state, storage_key, size_bytes, sha256]
+      properties:
+        file_id: { type: string, format: uuid }
+        material_id: { type: string, format: uuid }
+        kind: { type: string, enum: [original, proxy, hls, audio, thumbnail, voice_note, export, transcript, captions, watermarked_preview] }
+        state: { type: string, enum: [uploading, received, verified, failed] }
+        storage_key: { type: string, minLength: 1, maxLength: 1024 }
+        size_bytes: { type: [integer, "null"], minimum: 0 }
+        sha256: { type: [string, "null"], pattern: "^[0-9a-f]{64}$" }
 
     PermissionHistoryEntry:
       type: object

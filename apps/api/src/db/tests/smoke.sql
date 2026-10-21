@@ -562,7 +562,7 @@ SELECT pg_temp.expect_error($q$
   UPDATE catalog_listings SET commercial_allowed = false WHERE id = '00000000-0000-4000-8000-000000000611' $q$, '23514');
 INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
 VALUES ('catalog.listing_changed', 'listing', '00000000-0000-4000-8000-000000000611', 'catalog.listing_changed:smoke:1',
-        '{"listing_id": "00000000-0000-4000-8000-000000000611", "material_id": "00000000-0000-4000-8000-000000000101", "material_version": 1, "state": "suspended", "suspended_reason": "rights_changed"}');
+        '{"listing_id": "00000000-0000-4000-8000-000000000611", "material_id": "00000000-0000-4000-8000-000000000101", "material_version": 1, "source_file_id": "00000000-0000-4000-8000-000000000301", "state": "suspended", "suspended_reason": "rights_changed"}');
 SELECT pg_temp.expect_error($q$
   INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
   VALUES ('catalog.listing_changed', 'listing', '00000000-0000-4000-8000-000000000611', 'catalog.listing_changed:smoke:2',
