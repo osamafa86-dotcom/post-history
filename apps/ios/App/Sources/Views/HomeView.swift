@@ -3,12 +3,19 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var notifications: NotificationsModel
     @State private var confirmLogoutAll = false
     @State private var showNewMaterial = false
 
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    NavigationLink { NotificationsView() } label: {
+                        Label("notifications.title", systemImage: "bell")
+                            .badge(notifications.unreadCount)
+                    }
+                }
                 Section("home.uploads") {
                     UploadQueueView()
                 }
@@ -30,6 +37,7 @@ struct HomeView: View {
                 ToolbarItem(placement: .topBarLeading) { EmergencyWipeButton().labelStyle(.iconOnly) }
             }
             .sheet(isPresented: $showNewMaterial) { NewMaterialView() }
+            .sheet(isPresented: $notifications.presented) { NavigationStack { NotificationsView() } }
             .confirmationDialog("settings.logoutAll.confirm", isPresented: $confirmLogoutAll, titleVisibility: .visible) {
                 Button("settings.logoutAll", role: .destructive) { Task { await app.logout(allSessions: true) } }
             }
