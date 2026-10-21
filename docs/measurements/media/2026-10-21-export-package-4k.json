@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "media",
+  "test_name": "media-export-package-4k",
+  "started_at": "2026-10-21T09:06:36.489Z",
+  "ended_at": "2026-10-21T09:07:11.300Z",
+  "result": "info",
+  "device": {
+    "platform": "server",
+    "model": "4 vCPU"
+  },
+  "upload_path": "n/a",
+  "file": {
+    "size_bytes": 757309446,
+    "duration_s": 120.0,
+    "bitrate_kbps": 50487,
+    "codec": "h264",
+    "vfr": false,
+    "hdr": false
+  },
+  "metrics": {
+    "package_total_s": 34.81,
+    "probe_and_hash_s": 1.66,
+    "proxy_480p_s": 25.39,
+    "build_package_s": 7.03,
+    "archive_sha256_s": 0.73,
+    "package_size_bytes": 762490938,
+    "package_overhead_bytes": 5181492,
+    "clip_packets_match_original": true,
+    "resolution": "3840x2160",
+    "source_generate_s": 68.1,
+    "scratch_bytes_needed": 2282289625,
+    "ffmpeg_version": "8.0.1"
+  },
+  "notes": "مقطع 4K اصطناعي (3840x2160، 30 إطارًا/ث، دقيقتان، H.264 بنحو 50 Mbps). يحل محل قياس 2026-10-20: الحزمة تحمل الآن clip منزوع البيانات الوصفية بنسخ التيارات بدل الأصل. الخطوات: البيانات الفنية وSHA-256 (1.66 ث)، النسخة الخفيفة 480p (25.39 ث، خطوة الاستيعاب نفسها)، بناء الحزمة (7.03 ث: إعادة التحقق من بصمة الأصل، نسخ التيارات بلا ترميز إلى ملف جديد، الأرشيف)، بصمة الأرشيف (0.73 ث). كل حزمة فيديو وصوت في clip مطابقة للأصل (framemd5)، فالجودة كاملة. ذروة القرص نحو ضعف الأصل مع الأرشيف. الرفع غير محسوب. النتيجة info: لا معيار قبول لهذا البند. الأمر: python bench/export_bench.py داخل صورة workers/media."
+}

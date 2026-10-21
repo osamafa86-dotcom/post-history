@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # يتحقق من صلاحيات مستخدم عامل الوسائط في MinIO (ADR 0006): قراءة بادئة الرفع وكتابة derived/ فقط؛ ومستخدم عامل
-# التفريغ (ADR 0019) إن ضُبط: قراءة derived/*/*/proxy-480p.mp4 وكتابة derived/*/*/transcript.{json,vtt} فقط.
+# التفريغ (ADR 0019) إن ضُبط: قراءة derived/*/*/proxy-480p.mp4، وقراءة derived/*/*/transcript.{json,vtt} وكتابتهما، فقط.
 # يحتاج compose قائمًا و S3_MEDIA_ACCESS_KEY/S3_MEDIA_SECRET_KEY (وS3_AI_* اختياريًا) مضبوطين في infra/compose/.env.
 set -euo pipefail
 
@@ -48,6 +48,7 @@ if [ -n "${S3_AI_ACCESS_KEY:-}" ] && [ -n "${S3_AI_SECRET_KEY:-}" ]; then
   expect deny  "ai: read another derivative"    ai cat "t/$S3_BUCKET_MEDIA/derived/m/policy-check/thumb.jpg"
   expect deny  "ai: read an original"           ai cat "t/$S3_BUCKET_UPLOADS/${TUSD_OBJECT_PREFIX}policy-check"
   expect ALLOW "ai: write a transcript"         ai_put "t/$S3_BUCKET_MEDIA/derived/m/policy-check/transcript.json"
+  expect ALLOW "ai: read its transcript"        ai cat "t/$S3_BUCKET_MEDIA/derived/m/policy-check/transcript.json"
   expect ALLOW "ai: write transcript.vtt"       ai_put "t/$S3_BUCKET_MEDIA/derived/m/policy-check/transcript.vtt"
   expect deny  "ai: write captions.vtt"        ai_put "t/$S3_BUCKET_MEDIA/derived/m/policy-check/captions.vtt"
   expect deny  "ai: other transcript type"     ai_put "t/$S3_BUCKET_MEDIA/derived/m/policy-check/transcript.html"

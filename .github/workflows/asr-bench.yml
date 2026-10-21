@@ -1,9 +1,6 @@
 name: asr-bench
 
 on:
-  push:
-    branches: [main]
-    paths: ['tools/asr-bench/**', 'docs/measurements/asr-bench/**', 'contracts/schemas/measurement.json', '.github/workflows/asr-bench.yml']
   pull_request:
     paths: ['tools/asr-bench/**', 'docs/measurements/asr-bench/**', 'contracts/schemas/measurement.json', '.github/workflows/asr-bench.yml']
 
@@ -12,7 +9,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   metrics:

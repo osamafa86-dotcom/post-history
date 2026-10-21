@@ -1,11 +1,13 @@
 """حزمة التصدير إلى برامج المونتاج (DaVinci Resolve وPremiere وFinal Cut).
 
 أرشيف ZIP فيه:
-- `original.<ext>`: بايتات الأصل كما نُزِّلت، مخزّنة بلا ضغط ولا ترميز؛ بصمتها هي بصمة التحقق نفسها.
-- `proxy.mp4`: النسخة الخفيفة إن وُجدت عند العامل.
-- `metadata.json`: ملف جانبي بقائمة بيضاء مغلقة (معرّفات وبصمة وبيانات `Probe.to_dict()` الفنية). لا إحداثيات ولا
-  طراز جهاز ولا اسم مصدر: العامل لا يملكها أصلًا، و`Probe` لا ينقل الوسوم.
-- `sequence.fcpxml` و`sequence.edl`: تسلسل بلقطة واحدة تغطي المقطع كله، يُربط بـ `original.<ext>` بمسار نسبي.
+- `clip.<ext>`: ملف جديد من الأصل بنسخ التيارات بلا إعادة ترميز (الجودة الكاملة نفسها)، منزوع البيانات الوصفية:
+  وسوم الحاوية والتيارات والفصول، ولا يُنقل إلا أول مسار فيديو وأول مسار صوت، فتسقط مسارات البيانات والترجمة التي
+  قد تحمل موقعًا أو طراز الجهاز. الأصل المخزَّن لا يُمس ولا يدخل الحزمة.
+- `proxy.mp4`: النسخة الخفيفة إن وُجدت عند العامل (منزوعة الوسوم أصلًا).
+- `metadata.json`: ملف جانبي بقائمة بيضاء مغلقة (معرّفات وبصمة الأصل المخزَّن وبيانات `Probe.to_dict()` الفنية).
+  لا إحداثيات ولا طراز جهاز ولا اسم مصدر: العامل لا يملكها أصلًا، و`Probe` لا ينقل الوسوم.
+- `sequence.fcpxml` و`sequence.edl`: تسلسل بلقطة واحدة تغطي المقطع كله، يُربط بـ `clip.<ext>` بمسار نسبي.
 - `SHA256SUMS`: بصمة كل ملف بصيغة `sha256sum -c`.
 
 الأرشيف حتمي (توقيت ثابت وترتيب ثابت)، فإعادة التسليم تنتج البصمة نفسها.
@@ -21,6 +23,8 @@ from fractions import Fraction
 from pathlib import Path
 from xml.sax.saxutils import quoteattr
 
+from .ffmpeg import FFMPEG, INPUT_GUARD, run
+from .hashing import digest_file
 from .probe import Probe
 
 EXTENSIONS = {"mov": "mov", "matroska": "mkv", "mpegts": "ts"}
@@ -100,9 +104,23 @@ def edl(info: Probe, media_name: str, title: str) -> str:
             f"* FROM CLIP NAME: {media_name}\n")
 
 
+def strip_metadata(src: Path, dst: Path, timeout_s: float = 1800) -> None:
+    """نسخ التيارات بلا ترميز إلى ملف جديد بلا أي بيانات وصفية. `-copyts` يحفظ `start_pts`، و`bitexact` يجعل
+    الناتج حتميًا ولا يكتب توقيت الإنشاء ولا اسم المُرمِّز."""
+    if Path(src).resolve() == Path(dst).resolve():
+        raise ValueError("export output must be a new file, never the original")
+    run([FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
+         *INPUT_GUARD, "-copyts", "-i", str(src),
+         "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy",
+         "-map_metadata", "-1", "-map_metadata:s", "-1", "-map_chapters", "-1",
+         "-fflags", "+bitexact", "-flags:v", "+bitexact", "-flags:a", "+bitexact",
+         str(dst)], timeout_s=timeout_s, cwd=Path(dst).parent)
+
+
 def sidecar(material_id: str, file_id: str, media_name: str, sha256: str, size_bytes: int, info: Probe) -> dict:
+    # بصمة الأصل المخزَّن وحجمه للربط به في المكتبة؛ بصمة `clip` نفسها في SHA256SUMS
     return {"schema": SIDECAR_SCHEMA, "material_id": material_id, "file_id": file_id,
-            "original": {"name": media_name, "sha256": sha256, "size_bytes": size_bytes},
+            "media": media_name, "original": {"sha256": sha256, "size_bytes": size_bytes},
             "technical": info.to_dict()}
 
 
@@ -124,17 +142,19 @@ def _add(zf: zipfile.ZipFile, name: str, src: Path | bytes, sums: dict[str, str]
 
 def build_package(out: Path, *, original: Path, info: Probe, material_id: str, file_id: str,
                   sha256: str, size_bytes: int, proxy: Path | None) -> dict[str, str]:
-    """يكتب الأرشيف ذريًا ويعيد بصمة كل ملف فيه. الأصل يُقرأ فقط."""
+    """يكتب الأرشيف ذريًا ويعيد بصمة كل ملف فيه. الأصل يُقرأ فقط ولا يدخل الأرشيف."""
     if not info.video_codec or not info.width or not info.height:
         raise ValueError("export needs a video original")
-    media_name = f"original.{EXTENSIONS.get(info.container, 'mov')}"
+    if digest_file(original).sha256 != sha256:
+        raise ValueError("original changed since verification")
+    media_name = f"clip.{EXTENSIONS.get(info.container, 'mov')}"
+    clip = out.with_name(media_name)
+    strip_metadata(original, clip)
     title = file_id
     sums: dict[str, str] = {}
     partial = out.with_name(out.name + ".partial")
     with zipfile.ZipFile(partial, "w") as zf:
-        _add(zf, media_name, original, sums, stored=True)
-        if sums[media_name] != sha256:
-            raise ValueError("original changed since verification")
+        _add(zf, media_name, clip, sums, stored=True)
         if proxy is not None:
             _add(zf, "proxy.mp4", proxy, sums, stored=True)
         meta = sidecar(material_id, file_id, media_name, sha256, size_bytes, info)
@@ -145,5 +165,6 @@ def build_package(out: Path, *, original: Path, info: Probe, material_id: str, f
         manifest = "".join(f"{h}  {n}\n" for n, h in sums.items()).encode()
         _add(zf, "SHA256SUMS", manifest, {}, stored=False)
     os.replace(partial, out)
+    clip.unlink()
     return sums
 
