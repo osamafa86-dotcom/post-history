@@ -3580,6 +3580,8 @@ export interface operations {
                 sid: string;
                 /** @description جلسة الدخول (مطالبة `ses`)، لرموز الويب وحدها */
                 ses?: string;
+                /** @description فئة مفتاح التوقيع الذي تحقّقت به البوابة من الرمز: `production` (الافتراضي حين يغيب) أو `qa` لمفتاح اختبار معرّفه (`kid`) ببادئة `qa-`. مع `qa` يرد الخادم `204` فقط إن كانت جلسة الرفع مملوكة لحساب القبول المسمّى في إعداده، وإلا `403` كبقية الحالات. */
+                key_class?: "production" | "qa";
             };
             header?: never;
             path?: never;
