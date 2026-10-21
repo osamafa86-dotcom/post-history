@@ -21,7 +21,7 @@ class UploadRunner(private val context: Context, private val container: AppConta
     suspend fun runAll(shouldStop: () -> Boolean, progress: Progress): Boolean = withContext(Dispatchers.IO) {
         // The full SHA-256 is always computed: it is one read of the file, far cheaper than its upload, and it is
         // what ties the server's receipt to the bytes on this phone (security review of #52).
-        val engine = UploadEngine(store = container.uploadStore, files = container.fileSource, uploadsApi = container.uploadsApi)
+        val engine = UploadEngine(store = container.uploadStore, files = container.fileSource, uploadsApi = container.uploadsApi, ingestTokens = container.ingestTokens)
         var remaining = false
         val pending = container.uploadStore.pending()
         // A revoked or wiped session stops the transfer at the next chunk, not at the next task (SEC-01).

@@ -1,0 +1,3 @@
+apiVersion: 1
+providers:
+  - {name: post-history, folder: post-history, type: file, disableDeletion: true, allowUiUpdates: false, options: {path: /var/lib/grafana/dashboards}}
