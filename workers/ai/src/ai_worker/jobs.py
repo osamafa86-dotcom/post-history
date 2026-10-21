@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Protocol
 
 from .api import ApiConflict, ApiRejected
+from . import shot_list as shot_list_mod
 from . import shots as shots_mod
 from .captions import Segment, build_cues, to_json, to_webvtt
 from .storage import DERIVED_PREFIX, ObjectMissing
@@ -78,6 +79,10 @@ def shots_key(material_id: str, file_id: str) -> str:
     return _prefix(material_id, file_id) + "shots.json"
 
 
+def shot_list_key(material_id: str, file_id: str) -> str:
+    return _prefix(material_id, file_id) + "shot_list.json"
+
+
 def _sha256(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as fh:
@@ -126,7 +131,7 @@ class Jobs:
                 _download(self.storage, self.bucket, vkey, vtt_path)
                 duration_ms, start_pts_us = self._timing_from_json(json_path)
                 out = "reused" + self._register_all(file_id, jkey, json_path, vkey, vtt_path, duration_ms, start_pts_us)
-                if self.shots_enabled and not self._exists(shots_key(material_id, file_id)) \
+                if self.shots_enabled and not self._exists(shot_list_key(material_id, file_id)) \
                         and self._exists(proxy_key(material_id, file_id)):
                     src = job / "proxy-480p.mp4"
                     _download(self.storage, self.bucket, proxy_key(material_id, file_id), src)
@@ -166,6 +171,11 @@ class Jobs:
             path.write_text(shots_mod.to_json(found, segments, source={"file_id": file_id, "from": "proxy-480p.mp4"},
                                               stats=stats), encoding="utf-8")
             self.storage.put_file(self.bucket, shots_key(material_id, file_id), path, _sha256(path), JSON_MIME)
+            # قائمة اللقطات (ADR 0026): تُكتب ولا تُسجَّل حتى يقبل العقد نوع shot_list
+            lpath = src.with_name("shot_list.json")
+            lpath.write_text(shot_list_mod.to_json(found, segments, source={"file_id": file_id, "from": "proxy-480p.mp4"}),
+                             encoding="utf-8")
+            self.storage.put_file(self.bucket, shot_list_key(material_id, file_id), lpath, _sha256(lpath), JSON_MIME)
         except Exception as err:  # noqa: BLE001 (خطوة غير مانعة)
             log.warning("shot detection skipped file=%s error=%s", file_id, type(err).__name__)
             return "+shots-failed"

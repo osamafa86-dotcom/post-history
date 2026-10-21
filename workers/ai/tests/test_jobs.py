@@ -113,12 +113,27 @@ def test_shots_written_next_to_the_transcript_without_text(tmp_path):
     assert "غزة" not in json.dumps(doc, ensure_ascii=False)  # the text stays in transcript.json alone
 
 
+def test_shot_list_carries_timing_and_the_overlapping_excerpt(tmp_path):
+    from ai_worker.jobs import shot_list_key
+
+    jobs, storage, _ = make(tmp_path, engine=FakeEngine(start_pts_us=40000), shots_enabled=True,
+                            detect=_fake_detect([]))
+    jobs.handle(verified_event())
+    doc = json.loads(storage.objects[(BUCKET, shot_list_key(MATERIAL, FILE))])
+    assert doc["status"] == "draft" and doc["route"] == "local"
+    first, second = doc["shots"]
+    assert (first["start_us"], first["end_us"], first["duration_ms"]) == (0, 1000000, 1000)
+    assert first["excerpt"] is None and "غزة" in second["excerpt"]
+    assert second["shot_type"] is None and second["excerpt_en"] is None  # not claimed before measured
+    assert {k for _, k in jobs.api.derivatives} == {"transcript", "captions"}  # shot_list not registered before the contract
+
+
 def test_shot_detection_failure_does_not_fail_the_transcript(tmp_path):
     def broken(path, origin_s=None):
         raise RuntimeError("decoder")
     jobs, storage, _ = make(tmp_path, shots_enabled=True, detect=broken)
     assert jobs.handle(verified_event()) == "transcribed+transcript+captions+shots-failed"
-    assert len(storage.puts) == 2
+    assert len(storage.puts) == 2  # neither shots.json nor shot_list.json
 
 
 def test_redelivery_adds_missing_shots_without_transcribing_again(tmp_path):
@@ -137,6 +152,6 @@ def test_storage_client_accepts_shots_json_only_in_its_own_folder(tmp_path):
     s3 = S3Storage("http://minio:9000", "auto", "k", "s", "media")
     f = tmp_path / "x"
     f.write_bytes(b"x")
-    for key in [f"derived/{MATERIAL}/{FILE}/shots.jsonx", f"derived/{MATERIAL}/shots.json", f"derived/{MATERIAL}/{FILE}/poster.jpg"]:
+    for key in [f"derived/{MATERIAL}/{FILE}/shots.jsonx", f"derived/{MATERIAL}/shot_list.json", f"derived/{MATERIAL}/shots.json", f"derived/{MATERIAL}/{FILE}/poster.jpg"]:
         with pytest.raises(PermissionError):
             s3.put_file("media", key, f, "0" * 64, "application/json")
