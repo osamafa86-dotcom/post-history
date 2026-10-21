@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs';
 import request from 'supertest';
 import { createHarness, drainOutbox, type Harness, loginAs, seedUploadSession, seedUser } from './harness';
 
@@ -120,4 +121,77 @@ describe('inbox now: upload progress (post-receive, uploads_in_progress)', () =>
     const others = await dashboard(otherSupervisor.token);
     expect(others.uploads_in_progress).toEqual([]);
   });
+  it('a large part that jumps across several tenths writes one row, keyed by the last tenth crossed', async () => {
+    const s = await seedUploadSession(h, reporterId, { state: 'in_progress' });
+    await receive(s.id, 50);
+    await receive(s.id, 350);
+    const rows = await progress(s.id);
+    expect(rows.map((r) => r.idempotency_key)).toEqual([`upload.progress:${s.id}:3`]);
+    expect(rows[0]!.payload).toMatchObject({ bytes_received: 350, size_bytes: 1000 });
+  });
+
+  // ADR 0024: مع #225 يصل post-receive كل ثانية لكل رفع، ويأخذ قفل صف الجلسة. القياس: زمن الخطّاف تحت رفوع متزامنة،
+  // كل رفع يرسل خطّافاته متتابعة كما يفعل tusd، والرفوع بالتوازي. INBOX_NOW_MEASURE_FILE يكتب النتيجة بمخطط القياس.
+  it('post-receive under concurrent uploads: every hook succeeds, one row per tenth per session, latency recorded', async () => {
+    const uploads = Number(process.env.INBOX_NOW_CONCURRENT_UPLOADS ?? 40);
+    const hooksPerUpload = 20;
+    const sessions = await Promise.all(Array.from({ length: uploads }, () => seedUploadSession(h, reporterId, { state: 'in_progress' })));
+    const started = new Date();
+    const samples: number[] = [];
+    await Promise.all(
+      sessions.map(async (s) => {
+        for (let i = 1; i <= hooksPerUpload; i++) {
+          const t0 = performance.now();
+          await receive(s.id, Math.round((1000 * i) / hooksPerUpload));
+          samples.push(performance.now() - t0);
+        }
+      }),
+    );
+    const ended = new Date();
+    const { rows } = await h.pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM outbox_events WHERE type = 'upload.progress' AND aggregate_id = ANY($1::uuid[]) GROUP BY aggregate_id`,
+      [sessions.map((s) => s.id)],
+    );
+    expect(rows).toHaveLength(uploads);
+    expect(rows.every((r) => r.n === 9)).toBe(true);
+
+    samples.sort((a, b) => a - b);
+    const pct = (p: number) => Math.round(samples[Math.min(samples.length - 1, Math.ceil((p / 100) * samples.length) - 1)]!);
+    const metrics = {
+      concurrent_uploads: uploads,
+      hooks_per_upload: hooksPerUpload,
+      hooks_total: samples.length,
+      progress_rows_per_upload: 9,
+      hook_ms_p50: pct(50),
+      hook_ms_p95: pct(95),
+      hook_ms_p99: pct(99),
+      hook_ms_max: Math.round(samples[samples.length - 1]!),
+    };
+    // حد حماية واسع لبيئة CI المشتركة، لا هدف أداء: الهدف يُقرأ من ملف القياس
+    expect(metrics.hook_ms_p95).toBeLessThan(2000);
+    const out = process.env.INBOX_NOW_MEASURE_FILE;
+    if (out) {
+      writeFileSync(
+        out,
+        `${JSON.stringify(
+          {
+            schema_version: 1,
+            tool: 'other',
+            role: 'وكيل الخادم',
+            test_name: 'inbox-now-post-receive-concurrency',
+            started_at: started.toISOString(),
+            ended_at: ended.toISOString(),
+            result: 'info',
+            device: { platform: 'server' },
+            upload_path: 'n/a',
+            metrics,
+            notes:
+              'خطّاف post-receive عبر HTTP إلى الخادم وPostgres على المضيف نفسه (حاوية تطوير سحابية مشتركة). كل رفع يرسل خطّافاته متتابعة كما يفعل tusd، والرفوع بالتوازي. الزمن من إرسال الطلب إلى الرد، ويشمل قفل صف الجلسة وكتابة حدث العُشر.',
+          },
+          null,
+          2,
+        )}\n`,
+      );
+    }
+  }, 120_000);
 });
