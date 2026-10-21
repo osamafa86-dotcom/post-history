@@ -7,7 +7,7 @@ import pytest
 from conftest import LEAKY_TAGS, synth
 from fakes import FakeApi, FakeStorage
 from media_worker.api import Session
-from media_worker.jobs import Buckets, Jobs, contact_sheet_key, poster_key, proxy_key, waveform_key
+from media_worker.jobs import Buckets, Jobs, contact_sheet_key, poster_key, proxy_key, speech_key, timeline_prefix, waveform_key
 from media_worker.probe import probe
 
 SID = "5e000000-0000-4000-8000-000000000001"
@@ -139,11 +139,14 @@ def test_audio_original_has_no_proxy(tmp_path: Path):
 def test_hls_and_phash_behind_flags(tagged_clip: bytes):
     api, storage, jobs = _setup(tagged_clip)
     jobs.enable_hls = jobs.enable_phash = True
-    assert jobs.handle(_event()).endswith("+proxy+hls")
+    assert jobs.handle(_event()).endswith("+proxy+hls+timeline")
     assert len(api.verifications[0]["perceptual_hash"]) >= 1
     keys = [k for _, k in storage.puts if "/hls/" in k]
     assert keys[0].endswith(f"{FakeApi.FILE_ID}/hls/index.m3u8") and any(k.endswith(".m4s") for k in keys)
     assert api.derivatives[-1][1]["kind"] == "hls"
+    vtt = storage.objects[("media", timeline_prefix(MID, FakeApi.FILE_ID) + "thumbnails.vtt")].decode()
+    sprite = storage.objects[("media", timeline_prefix(MID, FakeApi.FILE_ID) + "sprite.jpg")]
+    assert vtt.startswith("WEBVTT") and "sprite.jpg#xywh=0,0,160,90" in vtt and sprite[:3] == b"\xff\xd8\xff"
 
 
 def test_size_mismatch_is_invalid_without_hash(tagged_clip: bytes):
@@ -174,3 +177,25 @@ def test_unrelated_events_ignored(event: dict):
     api, _, jobs = _setup(b"x")
     assert jobs.handle(event) == "ignored"
     assert api.verifications == []
+
+
+def test_voice_note_gets_a_tagless_mono_16k_copy(tmp_path: Path):
+    data = synth(tmp_path / "v.m4a", video=False, leaky_tags=True).read_bytes()
+    api, storage, jobs = _setup(data, kind="voice_note")
+    assert jobs.handle(_event(kind="voice_note")) == "verified+audio"
+    key = speech_key(MID, FakeApi.FILE_ID)
+    assert storage.puts == [("media", key)]
+    (fid, body), = api.derivatives
+    blob = storage.objects[("media", key)]
+    assert body["kind"] == "audio" and body["storage_key"] == key
+    assert body["sha256"] == hashlib.sha256(blob).hexdigest()
+    out = tmp_path / "a.m4a"
+    out.write_bytes(blob)
+    got = probe(out)
+    assert (got.audio_codec, got.audio_channels, got.audio_sample_rate, got.video_codec) == ("aac", 1, 16000, None)
+    for value in LEAKY_TAGS.values():
+        assert value.encode() not in blob
+    assert storage.objects[("uploads", "tus/1")] == data
+    # إعادة التسليم: لا ترميز ولا رفع جديد، والتسجيل نفسه
+    assert jobs.handle(_event(kind="voice_note")) == "verified+audio-existing"
+    assert len(storage.puts) == 1 and api.derivatives[-1][1]["sha256"] == body["sha256"]

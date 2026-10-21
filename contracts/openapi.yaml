@@ -1598,7 +1598,8 @@ paths:
       summary: لوحة غرفة الأخبار المجمّعة (v0.2)
       description: >-
         عدّادات الحالات الثلاث ضمن نطاق المستدعي، والمحجوز، وآخر الإيصالات، والمتأخر عن الإقرار. معرّفات وأرقام وحالات
-        فقط: لا عناوين ولا أسماء ولا مواقع ولا حقول ديناميكية. اللقطة لحظية؛ التحديث الحي من `/events` وWebSocket.
+        فقط: لا عناوين ولا أسماء ولا مواقع ولا حقول ديناميكية. اللقطة محدّثة كل ≤ 5 ثوانٍ لكل نطاق (`generated_at` وقت
+        بنائها، #187)، والتحديث الحي بين اللقطات من `/events` وWebSocket.
       operationId: getNewsroomDashboard
       x-roles: [supervisor, producer, editor_in_chief, rights_officer, system_admin]
       responses:
@@ -3322,7 +3323,7 @@ components:
       type: object
       required: [generated_at, editorial, technical, rights, urgent_open, reserved, recent_receipts, overdue_acknowledgements]
       properties:
-        generated_at: { type: string, format: date-time }
+        generated_at: { type: string, format: date-time, description: وقت بناء اللقطة؛ لا يتأخر عن الطلب أكثر من 5 ثوانٍ }
         editorial:
           type: array
           description: عدّاد لكل حالة تحريرية ضمن النطاق (الحالات الصفرية تُحذف)
