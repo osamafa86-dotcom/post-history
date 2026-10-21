@@ -99,16 +99,57 @@ def test_clean_scratch_and_manifest(tmp_path: Path):
     assert read_manifest(tmp_path / "none", "m") == {"model": "m"}
 
 
-def test_first_retry_is_short_because_the_proxy_follows_within_seconds():
-    assert RETRY_FIRST_S == 2
-    delays = [min(RETRY_FIRST_S * 2 ** a, RETRY_MAX_S) for a in range(12)]
-    assert delays[:3] == [2, 4, 8] and delays[-1] == RETRY_MAX_S
+def test_parking_goes_through_defer_with_2_4_8_second_delays():
+    """Each delay is read back from ai:retry after Service._defer ran, not recomputed here."""
+    fields = {"event_id": "1", "event": json.dumps(verified_event())}
+    dues, entry, now = [], "1-0", 1000.0
+    for _ in range(4):
+        out, r = run(SourceNotReady("x"), fields=fields, now=now, entry=entry)
+        [(member, due)] = r.zset.items()
+        dues.append(due - now)
+        fields, entry, now = json.loads(member), RETRY_ENTRY, due
+    assert dues == [2, 4, 8, 16]
+    # the cap holds however many attempts went before
+    out, r = run(SourceNotReady("x"), fields={**fields, "ai_attempt": 30}, now=now, entry=RETRY_ENTRY)
+    assert list(r.zset.values()) == [now + RETRY_MAX_S]
 
 
-def test_deferral_log_names_the_status_but_not_the_key(caplog):
-    from ai_worker.storage import StorageError
+def test_deferral_log_from_the_real_storage_client_names_the_status_not_the_key(caplog):
+    """A real 403 from S3Storage.head (a local server stands in for MinIO): the message and the log carry the
+    method, the bucket and the status, never the derived key with its material and file ids."""
+    import http.server
+    import threading
 
+    from fakes import FILE, MATERIAL
+
+    from ai_worker.jobs import transcript_key
+    from ai_worker.storage import S3Storage, StorageError
+
+    class Forbidden(http.server.BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            self.send_response(403)
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Forbidden)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        s3 = S3Storage(f"http://127.0.0.1:{srv.server_port}", "auto", "k", "s", "media")
+        key = transcript_key(MATERIAL, FILE)
+        try:
+            s3.head("media", key)
+        except StorageError as e:
+            err = e
+        else:
+            raise AssertionError("expected StorageError")
+    finally:
+        srv.shutdown()
+    assert str(err) == "HEAD media: HTTP 403"
     with caplog.at_level("WARNING"):
-        out, r = run(StorageError("HEAD media: HTTP 403"))
+        out, r = run(err)
     assert out == "deferred:StorageError" and r.acked == []
-    assert "HTTP 403" in caplog.text and "derived/" not in caplog.text
+    assert "HTTP 403" in caplog.text
+    for secret in (key, MATERIAL, FILE, "derived/"):
+        assert secret not in caplog.text
