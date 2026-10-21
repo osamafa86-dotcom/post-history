@@ -30,9 +30,9 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   const args = parseArgs(argv);
   const test = { name: "session-revocation", criterion: "SEC-01: رمز مبطَل يُرفض خلال ثوانٍ (على الخادم وعلى مسار الرفع)، والرفع الجاري يتوقف عند الجزء التالي" };
   banner(test);
-  const remote = Boolean(env.REVOKE_REPORTER_EMAIL);   // a remote host: the reporter's login and an admin token instead of the seeded database
-  if (!env.REVOKE_API_URL || (!env.DATABASE_URL && !(remote && env.REVOKE_REPORTER_PASSWORD && env.REVOKE_ADMIN_TOKEN))) {
-    console.error("ENVIRONMENT: REVOKE_API_URL and DATABASE_URL (or REVOKE_REPORTER_EMAIL/PASSWORD and REVOKE_ADMIN_TOKEN) are required; nothing measured");
+  const remote = Boolean(env.REVOKE_REPORTER_EMAIL);   // a remote host: the reporter's login (and, optionally, an admin token) instead of the seeded database
+  if (!env.REVOKE_API_URL || (!env.DATABASE_URL && !(remote && env.REVOKE_REPORTER_PASSWORD))) {
+    console.error("ENVIRONMENT: REVOKE_API_URL and DATABASE_URL (or REVOKE_REPORTER_EMAIL/PASSWORD) are required; nothing measured");
     return { code: 2, doc: null };
   }
   const maxS = Number(env.REVOKE_MAX_S ?? 5), tusUrl = env.REVOKE_TUS_URL;
@@ -43,7 +43,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   const m = {};
 
   const s = remote
-    ? { users: { reporter: { email: env.REVOKE_REPORTER_EMAIL } }, password: env.REVOKE_REPORTER_PASSWORD, tokens: { system_admin: env.REVOKE_ADMIN_TOKEN } }
+    ? { users: { reporter: { email: env.REVOKE_REPORTER_EMAIL } }, password: env.REVOKE_REPORTER_PASSWORD, tokens: env.REVOKE_ADMIN_TOKEN ? { system_admin: env.REVOKE_ADMIN_TOKEN } : {} }
     : await seed({ databaseUrl: env.DATABASE_URL, apiUrl: env.REVOKE_API_URL });
   const api = client(env.REVOKE_API_URL);
   const reporter = s.users.reporter;
@@ -144,9 +144,11 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       m.inflight_receipt_issued = Boolean(last.receipt_number);
       m.inflight_failure_reason = last.failure_reason ?? "none";
       const admin = s.tokens.system_admin;
-      for (const [key, type] of [["received", "upload.original_received"], ["verified", "upload.verified"], ["failed", "upload.failed"]]) {
-        m[`inflight_event_${key}`] = (await eventsOfType(api, admin, type)).some((e) => e.aggregate_id === inflight.id);
-      }
+      if (admin) {
+        for (const [key, type] of [["received", "upload.original_received"], ["verified", "upload.verified"], ["failed", "upload.failed"]]) {
+          m[`inflight_event_${key}`] = (await eventsOfType(api, admin, type)).some((e) => e.aggregate_id === inflight.id);
+        }
+      } else notMeasured.push("أحداث الرفع الجاري لم تُقرأ: GET /events لمدير النظام وحده، والحزمة البعيدة لا تستعمله إلا بإذن صريح (أدنى دور)");
       // the stronger finding (fixed server side by #70): the upload must not complete for a revoked user: no receipt, no received or verified event
       const completed = m.inflight_final_state === "verified" || m.inflight_receipt_issued || m.inflight_event_received || m.inflight_event_verified;
       if (completed) findings.push({ source: "upload completion after revocation", path: "post-finish → verification → receipt", kind: "inflight-completes" });
@@ -169,7 +171,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   const notes = [
     fails.length ? `فشل: ${fails.join("؛ ")}` : null,
     `«خلال ثوانٍ» حُوِّل إلى رقم مقترح: ≤ ${maxS} ث من رد استدعاء الإبطال إلى أول رفض (القيم المقيسة في المقاييس، -1 = لم يُرفض ضمن 15 ث)`,
-    m.inflight_final_state ? `الرفع الجاري بعد الإبطال: الحالة النهائية ${m.inflight_final_state}، السبب ${m.inflight_failure_reason}، إيصال ${m.inflight_receipt_issued ? "صدر" : "لم يصدر"}، أحداث: استلام ${m.inflight_event_received}، تحقق ${m.inflight_event_verified}، فشل ${m.inflight_event_failed}` : null,
+    m.inflight_final_state ? `الرفع الجاري بعد الإبطال: الحالة النهائية ${m.inflight_final_state}، السبب ${m.inflight_failure_reason}، إيصال ${m.inflight_receipt_issued ? "صدر" : "لم يصدر"}، أحداث: استلام ${m.inflight_event_received ?? "غير مقروءة"}، تحقق ${m.inflight_event_verified ?? "غير مقروءة"}، فشل ${m.inflight_event_failed ?? "غير مقروءة"}` : null,
     waivedCount ? `${waivedCount} ثغرة معروفة مستثناة بإذن مكتوب في waivers/session-revocation.json: الرفع الجاري يبقى مقبولًا عند tusd بعد الإبطال لأن tusd لا يسأل الخادم عن PATCH لاحق؛ يوقفه رمز بوابة ingest القصير (ADR 0011) أو خطّاف post-receive، ولم يُبنيا في هذه الحزمة` : null,
     ...notMeasured,
     "لم يُقَس: إبطال من جهاز المشرف عبر الإدارة (واجهة)، وزمن العميل (الهاتف) إلى المسح، ونسخة واحدة من الخادم بلا تأخير توزيع بين نسخ",
