@@ -221,4 +221,13 @@ class AuthManagerTest {
         assertNull(store.read())
         assertEquals(AuthState.SignedOut(SignOutReason.USER), manager.state.value)
     }
+
+    @Test fun `the session client never caches API responses on disk, even when handed a client that does`() {
+        val dir = java.nio.file.Files.createTempDirectory("okcache").toFile().apply { deleteOnExit() }
+        val cached = okhttp3.OkHttpClient.Builder().cache(okhttp3.Cache(dir, 1024 * 1024)).build()
+        val m = AuthManager(server.url("/v1").toString().trimEnd('/'), store, httpClient = cached, clock = { now })
+        org.junit.Assert.assertNull(m.authenticatedClient.cache)
+        org.junit.Assert.assertNull(manager.authenticatedClient.cache)
+        org.junit.Assert.assertNull(java.net.ResponseCache.getDefault())
+    }
 }

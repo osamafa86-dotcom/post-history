@@ -1,9 +1,12 @@
 package net.palpost.library
 
+import net.palpost.library.core.upload.IngestTokens
+import net.palpost.library.upload.PlayIntegrityAttester
 import android.content.Context
 import net.palpost.library.api.apis.AuthApi
 import net.palpost.library.api.apis.FormsApi
 import net.palpost.library.api.apis.MaterialsApi
+import net.palpost.library.api.apis.NotificationsApi
 import net.palpost.library.api.apis.UploadsApi
 import net.palpost.library.auth.KeystoreSealer
 import net.palpost.library.auth.KeystoreTokenStore
@@ -23,8 +26,10 @@ class AppContainer(context: Context) {
     val sealer = KeystoreSealer("net.palpost.library.session")
     val tokenStore: TokenStore = KeystoreTokenStore(app, sealer)
 
-    // No logging interceptor anywhere: request and response bodies carry tokens and material metadata.
+    // No logging interceptor and no disk cache anywhere: request and response bodies carry tokens and material
+    // metadata. (tus-java-client uses HttpURLConnection, which caches nothing: no ResponseCache is installed.)
     private val httpClient = OkHttpClient.Builder()
+        .cache(null)
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
@@ -34,6 +39,7 @@ class AppContainer(context: Context) {
     val authApi: AuthApi by lazy { AuthApi(baseUrl, auth.authenticatedClient) }
     val formsApi: FormsApi by lazy { FormsApi(baseUrl, auth.authenticatedClient) }
     val materialsApi: MaterialsApi by lazy { MaterialsApi(baseUrl, auth.authenticatedClient) }
+    val notificationsApi: NotificationsApi by lazy { NotificationsApi(baseUrl, auth.authenticatedClient) }
     val uploadsApi: UploadsApi by lazy { UploadsApi(baseUrl, auth.authenticatedClient) }
 
     // Re-openable: a wipe closes and deletes the database; the next sign-in gets a fresh one without restarting.
@@ -42,5 +48,9 @@ class AppContainer(context: Context) {
         get() = synchronized(this) { db?.takeIf { it.isOpen } ?: UploadDatabase.open(app).also { db = it } }
     val uploadStore: RoomUploadStore get() = RoomUploadStore(database.uploads(), sealer)
     val fileSource: FileSource by lazy { ContentResolverFileSource(app) }
+    /** Gate tokens for uploads behind the ingest gate (SEC-07); one cache per process. */
+    val ingestTokens: IngestTokens by lazy {
+        IngestTokens(uploadsApi, BuildConfig.PLAY_CLOUD_PROJECT_NUMBER.takeIf { it > 0 }?.let { PlayIntegrityAttester(app, it) })
+    }
     val settings: AppSettings by lazy { AppSettings(app) }
 }

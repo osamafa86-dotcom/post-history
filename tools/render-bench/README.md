@@ -44,3 +44,35 @@ docker run --rm -v "$PWD":/repo -w /repo -e PYTHONPATH=/repo/workers/media/src -
 docker run --rm -v "$PWD":/repo -w /repo -e PYTHONPATH=/repo/workers/media/src:/repo/tools/render-bench --entrypoint python \
   media-worker:base tools/render-bench/cut_export.py --out docs/measurements/render-bench/<date>-cut-export.json
 ```
+
+## مواد مشغّل الويب (`web_fixtures/`)
+
+لاختبار المشغّل في `apps/web` (#89) بلا أي ملف حقيقي. `make_web_fixtures.py` يولّد بكود العامل نفسه حالتين: 1080p بمعدل متغير وبداية 2 ث، وHEVC 10 بت HLG محوّلًا إلى SDR. لكل حالة:
+
+- `hls/index.m3u8` بمقاطع fMP4، و`proxy.mp4`.
+- `timeline/sprite.jpg` و`timeline/thumbnails.vtt` بإشارات `#xywh`، كما يكتبها العامل خلف `MEDIA_ENABLE_HLS`.
+- `captions.ar.vtt`: ترجمة عربية فيها أرقام وكلمة لاتينية وسطران في إشارة واحدة.
+- `manifest.json`: الأبعاد والمدة و`start_pts_us` وعدد الإشارات المتوقع.
+
+يُشغَّل في وظيفة `media`، والمساران الملفان يقرؤهما Chrome مسارَي `<track>` صالحين (3 إشارات و7).
+
+```bash
+docker run --rm -v "$PWD/tools/render-bench/web_fixtures:/wf:ro" -v /tmp/wf:/out media-worker:test python /wf/make_web_fixtures.py /out
+```
+
+## توافق المتصفحات (`browser_compat/`)
+
+هل يُفك ترميز مخرج H.264 من العامل (النسخة الخفيفة ومقاطع HLS) ويُشغَّل في المتصفحات المستهدفة؟
+
+- **المواد:** `make_fixtures.py` يولّد خمسة مصادر اصطناعية: 1080p بمعدل متغير وبداية 2 ث، وHEVC 10 بت HLG، وH.264 10 بت 4:2:2، ومقطع عمودي بمصفوفة دوران، و4K. يمرّرها في `make_proxy` و`make_hls` من العامل نفسه.
+- **الفحص البنيوي:** ملف H.264 من Baseline أو Main أو High، والمستوى ≤ 4.0، وثمانية بتات، وAAC-LC، و`moov` قبل `mdat`، و`CODECS` محسوب من `avcC`.
+- **التشغيل:** `play.mjs` (Playwright) في Chrome الرسمي وFirefox وWebKit.
+  - النسخة الخفيفة تدريجيًا، ويُشترط فك 30 إطارًا وأبعاد العرض المتوقعة.
+  - مقاطع HLS عبر MSE بنص `CODECS` المحسوب، ويبدأ التشغيل من أول ما خُزّن كما يفعل المشغّل.
+- **النتيجة:** `partial` حين ينجح الكل، لأن Safari الحقيقي على macOS وiOS لم يُشغَّل. WebKit على Linux (GStreamer) أقرب بديل مقيس.
+
+```bash
+docker run --rm -v "$PWD/tools/render-bench/browser_compat:/bc:ro" -v /tmp/bc:/out media-worker:test python /bc/make_fixtures.py /out
+cd tools/render-bench/browser_compat && npm ci && npx playwright-core install --with-deps firefox webkit
+node play.mjs /tmp/bc docs/measurements/render-bench/<date>-browser-h264.json   # Chrome الرسمي مثبت على الجهاز
+```

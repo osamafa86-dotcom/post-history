@@ -266,6 +266,10 @@ jobs:
         run: infra/ingest/e2e-attested.sh
       - name: Media worker hardened, on the media network only, reaches /internal/media (ADR 0006)
         run: infra/compose/smoke-media.sh
+      - name: Self-hosted monitoring (logs redacted into Loki, OTLP to Prometheus, Grafana on 127.0.0.1, ADR 0027)
+        run: MEASURE_HOST="GitHub-hosted runner (ubuntu-24.04)" infra/observability/smoke-monitoring.sh
+      - name: Self-hosted error tracking, Sentry-compatible (GlitchTip on 127.0.0.1, registration closed, ADR 0029)
+        run: MEASURE_HOST="GitHub-hosted runner (ubuntu-24.04)" infra/observability/smoke-errors.sh
       - name: Tear down
         if: always()
         run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media down -v --remove-orphans
@@ -294,6 +298,11 @@ jobs:
           docker run --rm --network media-it -e MEDIA_IT_REQUIRED=1 -e MEDIA_IT_REDIS_URL=redis://media-it-redis:6379 \
             -e MEDIA_IT_S3_ENDPOINT=http://media-it-minio:9000 -e MEDIA_IT_S3_ACCESS_KEY=ci-access \
             -e MEDIA_IT_S3_SECRET_KEY=ci-only-secret media-worker:test python -m pytest -q -rs
+      - name: Web player fixtures from the worker code (HLS, timeline sprite, Arabic WebVTT) for #89
+        run: |
+          mkdir -p /tmp/wf && chmod 777 /tmp/wf
+          docker run --rm -v "$PWD/tools/render-bench/web_fixtures:/wf:ro" -v /tmp/wf:/out media-worker:test \
+            python /wf/make_web_fixtures.py /out
       - name: Runtime image builds
         run: docker build --target runtime -t media-worker:runtime workers/media
       - name: Proxy A/V sync on synthetic marker clips (tools/render-bench)
@@ -303,6 +312,16 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
+      # Proxy and HLS from the worker play in Chrome, Firefox and WebKit (Safari engine); real Safari is not measured here.
+      - name: Browser playback of the worker's H.264 output (tools/render-bench/browser_compat)
+        run: |
+          mkdir -p /tmp/bc && chmod 777 /tmp/bc
+          docker run --rm -v "$PWD/tools/render-bench/browser_compat:/bc:ro" -v /tmp/bc:/out media-worker:test \
+            python /bc/make_fixtures.py /out
+          cd tools/render-bench/browser_compat
+          npm ci --no-audit --no-fund
+          npx playwright-core install --with-deps firefox webkit
+          node play.mjs /tmp/bc
       - name: Media and render-bench measurements match measurement.json
         run: |
           npx -y -p ajv-cli@5.0.0 -p ajv-formats@2.1.1 ajv validate --spec=draft2020 -c ajv-formats -s contracts/schemas/measurement.json -d "docs/measurements/media/*.json"

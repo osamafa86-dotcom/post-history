@@ -40,6 +40,8 @@ public enum UploadFailure: String, Codable, Equatable, Sendable {
     case sourceMissing = "source_missing"
     /// رفض نهائي من الخادم (4xx غير قابل للإعادة).
     case rejected = "rejected"
+    /// الجلسة خلف بوابة ingest والجهاز لا يستطيع إثبات نفسه (لا App Attest، أو رفض الخادم الشهادة مرارًا).
+    case deviceNotAttested = "device_not_attested"
 }
 
 /// جزء مُجهَّز على القرص بانتظار إرساله: موضعه وطوله. لا بصمة لكل جزء (قرار ADR 0009: tusd لا يدعم امتداد checksum؛ السلامة ببصمة الملف كاملًا).
@@ -67,8 +69,10 @@ public struct RemoteSession: Codable, Equatable, Sendable {
     public var checksumAlgorithm: String
     public var expiresAt: Date
     public var uploadTokenExpiresAt: Date
+    /// الخادم وضع الجلسة خلف بوابة ingest (SEC-07): كل طلب tus يحمل `Ingest-Token`. اختياري كي تُقرأ سجلات أقدم.
+    public var ingestTokenRequired: Bool?
 
-    public init(uploadSessionId: UUID, tusEndpoint: URL, tusMetadata: [String: String], partSizeBytes: Int64, checksumAlgorithm: String, expiresAt: Date, uploadTokenExpiresAt: Date) {
+    public init(uploadSessionId: UUID, tusEndpoint: URL, tusMetadata: [String: String], partSizeBytes: Int64, checksumAlgorithm: String, expiresAt: Date, uploadTokenExpiresAt: Date, ingestTokenRequired: Bool? = nil) {
         self.uploadSessionId = uploadSessionId
         self.tusEndpoint = tusEndpoint
         self.tusMetadata = tusMetadata
@@ -76,6 +80,7 @@ public struct RemoteSession: Codable, Equatable, Sendable {
         self.checksumAlgorithm = checksumAlgorithm
         self.expiresAt = expiresAt
         self.uploadTokenExpiresAt = uploadTokenExpiresAt
+        self.ingestTokenRequired = ingestTokenRequired
     }
 }
 
