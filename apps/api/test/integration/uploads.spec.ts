@@ -173,6 +173,23 @@ describe('upload sessions (/v1/uploads)', () => {
         await strict.close();
       }
     });
+
+    it('UPLOAD_MAX_BYTES rejects a larger file with 422 on /size_bytes and accepts one at the limit; unset means no limit', async () => {
+      const capped = await createHarness({ env: { UPLOAD_MAX_BYTES: '1024' } });
+      try {
+        const owner = await loginAs(capped, [{ role: 'reporter' }], { officeId: office });
+        const post = (url: string, body: object) =>
+          request(capped.app.getHttpServer()).post(url).set('Authorization', `Bearer ${owner.token}`).set('Idempotency-Key', randomUUID()).send(body);
+        const materialId = (await post('/v1/materials', materialBody).expect(201)).body.id;
+        const res = await post('/v1/uploads', { material_id: materialId, kind: 'original', ...file(1025), filename: 'f' }).expect(422);
+        expect(res.body.code).toBe('validation_failed');
+        expect(JSON.stringify(res.body)).toContain('/size_bytes');
+        await post('/v1/uploads', { material_id: materialId, kind: 'original', ...file(1024), filename: 'f' }).expect(201);
+      } finally {
+        await capped.close();
+      }
+      expect(h.config.UPLOAD_MAX_BYTES).toBeUndefined();
+    });
   });
 
   describe('direct upload path', () => {
