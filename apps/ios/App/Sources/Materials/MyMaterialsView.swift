@@ -5,7 +5,7 @@ import SwiftUI
 /// «موادي»: ما أرسله المراسل وحالاته الثلاث المستقلة (الملف، التحرير، الحقوق) ورقم الإيصال. بلا إحداثيات.
 @MainActor
 final class MyMaterialsModel: ObservableObject {
-    @Published private(set) var items: [Material] = []
+    @Published private(set) var items: [PostHistoryAPI.Material] = []
     @Published private(set) var reachedEnd = false
     @Published private(set) var failed = false
     @Published private(set) var loading = false
@@ -61,7 +61,7 @@ struct MyMaterialsView: View {
 }
 
 struct MaterialRow: View {
-    let material: Material
+    let material: PostHistoryAPI.Material
     var body: some View {
         let status = MaterialStatus(material)
         VStack(alignment: .leading, spacing: 6) {
