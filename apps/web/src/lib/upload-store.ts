@@ -1,14 +1,21 @@
 // رفعات الحاسوب غير المكتملة في IndexedDB، لاستئنافها بعد إغلاق التبويب بإعادة اختيار الملف (#88).
-// لا رمز هنا: رمز الرفع يبقى في ذاكرة الصفحة، ويُعاد بطلب POST /uploads بمفتاح عدم التكرار نفسه ما دامت الجلسة created.
+// نموذج التهديد S10: معرّفات الجلسة وحدها، لا رمز ولا بيانات وصفية كاشفة. المفتاح بصمة (الحجم ووقت التعديل والاسم)،
+// واسم الملف ونوعه لا يُحفظان بل يؤخذان من الملف عند إعادة اختياره.
+// رمز الرفع يبقى في ذاكرة الصفحة، ويُعاد بطلب POST /uploads بمفتاح عدم التكرار نفسه ما دامت الجلسة created.
 // عنوان tus قدرة حاملة (SEC-06)، لكنه لا يقبل بايتًا دون رمز ingest لا يصدر إلا لجلسة دخول حية للمستخدم نفسه.
 // يُمسح كل شيء عند الخروج أو الإبطال (clear-private-state).
 export type PendingUpload = {
   key: string; material_id: string; idempotency_key: string;
-  create: { material_id: string; kind: "original"; size_bytes: number; filename: string; mime_type: string | null; client_sha256: string; client_fingerprint?: { size_bytes: number; head_sha256: string; tail_sha256: string } };
+  create: { material_id: string; kind: "original"; size_bytes: number; client_sha256: string; client_fingerprint?: { size_bytes: number; head_sha256: string; tail_sha256: string } };
   session_id?: string; upload_url?: string; endpoint?: string; expires_at?: string; updated_at: number;
-  tus?: { metadata: Record<string, string>; part_size: number; ingest: boolean };
+  tus?: { part_size: number; ingest: boolean };
 };
 const database = "post-history-uploads", store = "pending";
+
+/** مفتاح السجل: SHA-256 لهوية الملف، فلا يظهر اسمه في التخزين. */
+export async function recordKey(identity: string) {
+  return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(identity))), b => b.toString(16).padStart(2, "0")).join("");
+}
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

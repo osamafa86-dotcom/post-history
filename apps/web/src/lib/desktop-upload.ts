@@ -3,7 +3,7 @@ import Tus from "@uppy/tus";
 import type { components } from "@/generated/schema";
 import { fileFingerprint, hashFile } from "./file-hash";
 import { fileKey, ingestRefreshMarginMs, withinEndpoint } from "./upload-policy";
-import { findUpload, forgetUpload, rememberUpload, type PendingUpload } from "./upload-store";
+import { findUpload, forgetUpload, recordKey, rememberUpload, type PendingUpload } from "./upload-store";
 
 type Created = components["schemas"]["UploadSessionCreated"];
 // ما يعيده الـBFF من جلسة الرفع (server/uploads.ts)، مشتق من العقد لا مكتوب يدويًا.
@@ -44,19 +44,21 @@ const noStorage = { findAllUploads: async () => [], findUploadsByFingerprint: as
 export type UploadControl = { pause(): void; resume(): void; stop(): void; cancel(): void; done: Promise<UploadUpdate> };
 
 export function startUpload(file: File, materialId: string, report: (update: UploadUpdate) => void): UploadControl {
-  const controller = new AbortController(), key = fileKey(file);
+  const controller = new AbortController(), keyed = recordKey(fileKey(file));
+  let key = "";
   let update: UploadUpdate = { phase: "hashing", hashed: 0, sent: 0, total: file.size, resumed: false };
   const emit = (patch: Partial<UploadUpdate>) => { update = { ...update, ...patch }; if (!controller.signal.aborted || patch.phase === "failed") report(update); return update; };
   let uppy: Uppy | undefined, fileId: string | undefined;
 
   async function prepare(): Promise<PendingUpload> {
+    key = await keyed;
     const known = await findUpload(key);
     if (known && known.material_id === materialId) { emit({ hashed: file.size, resumed: true }); return known; }
     // البصمة الكاملة قبل إنشاء الجلسة: العقد يلزم client_sha256 عند POST /uploads.
     const sha = await hashFile(file, hashed => emit({ hashed }), controller.signal);
     const pending: PendingUpload = {
       key, material_id: materialId, idempotency_key: crypto.randomUUID(), updated_at: Date.now(),
-      create: { material_id: materialId, kind: "original", size_bytes: file.size, filename: file.name, mime_type: file.type || null, client_sha256: sha, client_fingerprint: await fileFingerprint(file) },
+      create: { material_id: materialId, kind: "original", size_bytes: file.size, client_sha256: sha, client_fingerprint: await fileFingerprint(file) },
     };
     await rememberUpload(pending); return pending;
   }
@@ -66,7 +68,7 @@ export function startUpload(file: File, materialId: string, report: (update: Upl
     try { pending = await prepare(); }
     catch { return emit({ phase: "failed", failure: controller.signal.aborted ? "aborted" : "hash" }); }
     emit({ phase: "creating" });
-    let session: CreatedView | SessionView, uploadToken: string | undefined;
+    let session: CreatedView | SessionView, uploadToken: string | undefined, metadata: Record<string, string> = {};
     try {
       if (pending.session_id && pending.upload_url) {
         session = await bff<SessionView>("GET", `uploads/${pending.session_id}`);
@@ -74,9 +76,11 @@ export function startUpload(file: File, materialId: string, report: (update: Upl
         if (session.state === "failed") { await forgetUpload(key); return emit({ phase: "failed", session, failure: failureOf(session) }); }
       } else {
         // المفتاح نفسه بعد إغلاق التبويب يعيد الجلسة نفسها برمز رفع جديد ما دامت created (rehydrate في الخادم).
-        const created = await bff<CreatedView>("POST", "uploads", pending.create, pending.idempotency_key);
+        const created = await bff<CreatedView>("POST", "uploads", { ...pending.create, filename: file.name, mime_type: file.type || null }, pending.idempotency_key);
         session = created; uploadToken = created.upload_token;
-        pending = { ...pending, session_id: created.id, endpoint: created.tus_endpoint, expires_at: created.expires_at, tus: { metadata: created.tus_metadata as Record<string, string>, part_size: created.part_size_bytes, ingest: created.ingest_token_required === true } };
+        pending = { ...pending, session_id: created.id, endpoint: created.tus_endpoint, expires_at: created.expires_at, tus: { part_size: created.part_size_bytes, ingest: created.ingest_token_required === true } };
+        // البيانات الوصفية لـ tus (وفيها اسم الملف) في الذاكرة وحدها: لا تلزم إلا لإنشاء رفع tus، والاستئناف بعنوانه لا يحتاجها.
+        metadata = created.tus_metadata as Record<string, string>;
         await rememberUpload(pending);
       }
     } catch (error) {
@@ -86,10 +90,10 @@ export function startUpload(file: File, materialId: string, report: (update: Upl
     const tus = pending.tus;
     if (!tus || !pending.endpoint || !pending.session_id) { await forgetUpload(key); return emit({ phase: "failed", failure: "rejected" }); }
     emit({ phase: "uploading", session: session as SessionView, sent: (session as SessionView).bytes_received });
-    return transfer(pending, tus, uploadToken);
+    return transfer(pending, tus, uploadToken, metadata);
   }
 
-  async function transfer(pending: PendingUpload, tus: NonNullable<PendingUpload["tus"]>, uploadToken: string | undefined): Promise<UploadUpdate> {
+  async function transfer(pending: PendingUpload, tus: NonNullable<PendingUpload["tus"]>, uploadToken: string | undefined, metadata: Record<string, string>): Promise<UploadUpdate> {
     const endpoint = pending.endpoint!, sessionId = pending.session_id!;
     let ingest: { token: string; expires: number } | undefined, stopped: UploadFailure | undefined;
     const ingestToken = async () => {
@@ -109,7 +113,7 @@ export function startUpload(file: File, materialId: string, report: (update: Upl
     uppy = new Uppy({ autoProceed: false, allowMultipleUploadBatches: false });
     uppy.use(Tus, {
       endpoint, chunkSize: tus.part_size, storeFingerprintForResuming: false, removeFingerprintOnSuccess: false, urlStorage: noStorage,
-      retryDelays: [0, 1000, 3000, 5000, 10000, 20000, 30000, 60000], limit: 1, allowedMetaFields: Object.keys(tus.metadata),
+      retryDelays: [0, 1000, 3000, 5000, 10000, 20000, 30000, 60000], limit: 1, allowedMetaFields: Object.keys(metadata),
       headers: uploadToken ? { Authorization: `Bearer ${uploadToken}` } : {},
       async onBeforeRequest(request) {
         const url = request.getURL();
@@ -125,7 +129,7 @@ export function startUpload(file: File, materialId: string, report: (update: Upl
         return next(error);
       },
     });
-    fileId = uppy.addFile({ name: file.name, type: file.type || undefined, data: file, meta: { ...tus.metadata } });
+    fileId = uppy.addFile({ name: file.name, type: file.type || undefined, data: file, meta: { ...metadata } });
     if (pending.upload_url) uppy.setFileState(fileId, { tus: { uploadUrl: pending.upload_url } });
     let saved = pending.upload_url;
     uppy.on("upload-progress", (_file, progress) => {
@@ -168,7 +172,7 @@ export function startUpload(file: File, materialId: string, report: (update: Upl
     resume() { if (uppy && fileId && update.phase === "paused") { uppy.pauseResume(fileId); emit({ phase: "uploading" }); } },
     // stop: يوقف النقل ويبقي سجل الاستئناف وبيانات الخادم. cancel: قرار المستخدم، فيُنهى رفع tus ويُنسى السجل.
     stop() { controller.abort(); uppy?.pauseAll(); },
-    cancel() { controller.abort(); uppy?.cancelAll(); void forgetUpload(key); },
+    cancel() { controller.abort(); uppy?.cancelAll(); void keyed.then(forgetUpload); },
     done: run(),
   };
 }

@@ -2,17 +2,17 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
-import { messages, type Locale } from "@/lib/i18n";
+import { formatDate, messages, type Locale } from "@/lib/i18n";
 import type { Form, Material, MaterialType, Values } from "@/lib/types";
 import { materialTypes, states } from "@/lib/query";
 import { hasRole } from "@/lib/review";
 import { acceptedFile, cameraExtensions, fileKey } from "@/lib/upload-policy";
 import { BffError, createMaterial, startUpload, type UploadControl, type UploadUpdate } from "@/lib/desktop-upload";
-import { clearUploads, forgetUpload, findUpload, pendingUploads, type PendingUpload } from "@/lib/upload-store";
+import { clearUploads, forgetUpload, findUpload, pendingUploads, recordKey, type PendingUpload } from "@/lib/upload-store";
 import { useUser } from "./session-boundary";
 import { DynamicForm } from "./dynamic-form";
 
-type Row = { key: string; name: string; materialId: string; update: UploadUpdate; control?: UploadControl };
+type Row = { key: string; record: string; name: string; materialId: string; update: UploadUpdate; control?: UploadControl };
 type Base = { title: string; type: MaterialType; governorate: string; city: string; shot_at: string; priority: Material["priority"]; minors: boolean; injured: boolean; graphic: boolean; mode: Material["display_name"]["mode"]; pseudonym: string };
 const initial: Base = { title: "", type: "raw_footage", governorate: "", city: "", shot_at: "", priority: "normal", minors: false, injured: false, graphic: false, mode: "network", pseudonym: "" };
 const fill = (text: string, name: string) => text.replace("{name}", name);
@@ -49,11 +49,11 @@ export function DesktopUpload({ locale }: { locale: Locale }) {
     return () => controller.abort();
   }, [base.type, attempt, reporter]);
 
-  function launch(file: File, materialId: string) {
-    const key = fileKey(file);
+  async function launch(file: File, materialId: string) {
+    const key = fileKey(file), record = await recordKey(key);
     if (controls.current.has(key)) return;
     const report = (update: UploadUpdate) => setRows(current => current.map(row => row.key === key ? { ...row, update } : row));
-    setRows(current => [...current.filter(row => row.key !== key), { key, name: file.name, materialId, update: { phase: "hashing", hashed: 0, sent: 0, total: file.size, resumed: false } }]);
+    setRows(current => [...current.filter(row => row.key !== key), { key, record, name: file.name, materialId, update: { phase: "hashing", hashed: 0, sent: 0, total: file.size, resumed: false } }]);
     const control = startUpload(file, materialId, report);
     controls.current.set(key, control);
     setRows(current => current.map(row => row.key === key ? { ...row, control } : row));
@@ -65,8 +65,8 @@ export function DesktopUpload({ locale }: { locale: Locale }) {
     setRejected(chosen.filter(file => !acceptedFile(file.name)).map(file => file.name)); setFailure(null);
     for (const file of chosen.filter(file => acceptedFile(file.name))) {
       // ملف سبق رفع جزء منه: يُستأنف مباشرة لمادته، بلا نموذج جديد.
-      const known = await findUpload(fileKey(file));
-      if (known) launch(file, known.material_id); else fresh.push(file);
+      const known = await findUpload(await recordKey(fileKey(file)));
+      if (known) void launch(file, known.material_id); else fresh.push(file);
     }
     setFiles(fresh);
   }
@@ -83,7 +83,7 @@ export function DesktopUpload({ locale }: { locale: Locale }) {
         display_name: base.mode === "pseudonym" ? { mode: "pseudonym", pseudonym: base.pseudonym.trim() } : { mode: base.mode },
         form_version: schema!.version, dynamic_fields: dynamic,
       }, createKey.current);
-      for (const file of files) launch(file, material.id);
+      for (const file of files) void launch(file, material.id);
       createKey.current = crypto.randomUUID(); setFiles([]); setBase(initial);
     } catch (error) { setFailure(error instanceof BffError && error.status === 422 ? "invalid" : "create"); }
     finally { setBusy(false); }
@@ -97,7 +97,7 @@ export function DesktopUpload({ locale }: { locale: Locale }) {
       <small className="muted" id="upload-files-help">{u.filesHelp}</small>
       {rejected.map(name => <p key={name} className="notice error" role="alert">{fill(u.unsupported, name)}</p>)}
       {files.length > 0 && <ul className="upload-selection">{files.map(file => <li key={fileKey(file)} dir="auto">{file.name} <small className="muted" dir="ltr">{bytes(file.size, locale)}</small></li>)}</ul>}
-      {pending.filter(item => !rows.some(row => row.key === item.key)).length > 0 && <div className="upload-pending"><h3>{u.pending}</h3><p className="muted">{u.pendingHelp}</p><ul>{pending.filter(item => !rows.some(row => row.key === item.key)).map(item => <li key={item.key} data-testid="pending-upload"><span dir="auto">{item.create.filename}</span> <small className="muted" dir="ltr">{bytes(item.create.size_bytes, locale)}</small><button className="quiet" onClick={() => void forgetUpload(item.key).then(pendingUploads).then(setPending)}>{u.forget}</button></li>)}</ul></div>}
+      {pending.filter(item => !rows.some(row => row.record === item.key)).length > 0 && <div className="upload-pending"><h3>{u.pending}</h3><p className="muted">{u.pendingHelp}</p><ul>{pending.filter(item => !rows.some(row => row.record === item.key)).map(item => <li key={item.key} data-testid="pending-upload"><span dir="ltr">{bytes(item.create.size_bytes, locale)}</span> <small className="muted">{formatDate(new Date(item.updated_at).toISOString(), locale)}</small><button className="quiet" onClick={() => void forgetUpload(item.key).then(pendingUploads).then(setPending)}>{u.forget}</button></li>)}</ul></div>}
     </section>
     {rows.length > 0 && <section className="card upload-rows" aria-live="polite">{rows.map(row => <UploadRow key={row.key} row={row} locale={locale} />)}</section>}
     {files.length > 0 && <section className="card form-card"><h2>{u.material}</h2>

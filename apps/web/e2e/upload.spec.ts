@@ -57,6 +57,9 @@ test("resumes from the server offset after the tab is closed and the same file i
   await describe(page);
   await expect.poll(async () => (await uploads(page))[0]?.offset ?? 0).toBeGreaterThanOrEqual(1048576);
   const before = (await uploads(page))[0].offset!;
+  // S10: سجل الاستئناف بلا رمز وبلا اسم الملف.
+  const stored = await page.evaluate(() => new Promise<string>(resolve => { const open = indexedDB.open("post-history-uploads", 1); open.onsuccess = () => { const all = open.result.transaction("pending").objectStore("pending").getAll(); all.onsuccess = () => { resolve(JSON.stringify(all.result)); open.result.close(); }; }; }));
+  expect(stored).toContain("client_sha256"); expect(stored).not.toContain("A002C001"); expect(stored).not.toMatch(/token/i);
   page.removeAllListeners("dialog"); page.on("dialog", dialog => void dialog.accept());
   await page.close({ runBeforeUnload: true });
   await request.post(`${api}/__test/tus`);
