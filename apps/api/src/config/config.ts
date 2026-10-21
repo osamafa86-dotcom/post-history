@@ -139,6 +139,12 @@ const schema = z.object({
     .string()
     .regex(/^[A-Za-z0-9_-]{32,256}$/, 'must be 32-256 characters of [A-Za-z0-9_-]')
     .optional(),
+  // رمز بوابة ingest على GET /internal/ingest/session-status (ترويسة Bearer) دفاعًا ثانيًا فوق INTERNAL_ALLOWED_CIDRS؛
+  // مضبوط = الفحص بلا رمز مطابق 403
+  INGEST_GATE_TOKEN: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{32,256}$/, 'must be 32-256 characters of [A-Za-z0-9_-]')
+    .optional(),
   // رمز عامل التفريغ المحلي: يُقبل على POST /internal/media/files/{id}/derivatives لنوعي transcript وcaptions وحدهما
   // (ولا شيء غيره)، منفصل عن MEDIA_WORKER_TOKEN؛ غير مضبوط = العامل لا يصل
   AI_WORKER_TOKEN: z
