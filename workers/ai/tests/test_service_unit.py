@@ -36,8 +36,10 @@ def test_transient_failure_stays_pending():
     assert out == "deferred:ConnectionError" and r.acked == []
 
 
-def test_missing_source_is_parked_with_backoff_not_blocking():
-    out, r = run(SourceNotReady("x"))
+def test_missing_source_is_parked_with_backoff_not_blocking(caplog):
+    with caplog.at_level("INFO"):
+        out, r = run(SourceNotReady("x"))
+    assert "event parked entry=1-0 attempt=1 delay_s=2 waited_s=0.0" in caplog.text
     assert out == "retry:1" and r.acked == ["1-0"]  # off the stream: the next material is read at once
     [(member, due)] = r.zset.items()
     m = json.loads(member)
@@ -95,3 +97,59 @@ def test_clean_scratch_and_manifest(tmp_path: Path):
     (tmp_path / "MANIFEST").write_text("m m/config.json 11\nm m/model.bin 22\nother other/model.bin 33\n")
     assert read_manifest(tmp_path, "m") == {"model": "m", "weights_sha256": "22"}
     assert read_manifest(tmp_path / "none", "m") == {"model": "m"}
+
+
+def test_parking_goes_through_defer_with_2_4_8_second_delays():
+    """Each delay is read back from ai:retry after Service._defer ran, not recomputed here."""
+    fields = {"event_id": "1", "event": json.dumps(verified_event())}
+    dues, entry, now = [], "1-0", 1000.0
+    for _ in range(4):
+        out, r = run(SourceNotReady("x"), fields=fields, now=now, entry=entry)
+        [(member, due)] = r.zset.items()
+        dues.append(due - now)
+        fields, entry, now = json.loads(member), RETRY_ENTRY, due
+    assert dues == [2, 4, 8, 16]
+    # the cap holds however many attempts went before
+    out, r = run(SourceNotReady("x"), fields={**fields, "ai_attempt": 30}, now=now, entry=RETRY_ENTRY)
+    assert list(r.zset.values()) == [now + RETRY_MAX_S]
+
+
+def test_deferral_log_from_the_real_storage_client_names_the_status_not_the_key(caplog):
+    """A real 403 from S3Storage.head (a local server stands in for MinIO): the message and the log carry the
+    method, the bucket and the status, never the derived key with its material and file ids."""
+    import http.server
+    import threading
+
+    from fakes import FILE, MATERIAL
+
+    from ai_worker.jobs import transcript_key
+    from ai_worker.storage import S3Storage, StorageError
+
+    class Forbidden(http.server.BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            self.send_response(403)
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Forbidden)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        s3 = S3Storage(f"http://127.0.0.1:{srv.server_port}", "auto", "k", "s", "media")
+        key = transcript_key(MATERIAL, FILE)
+        try:
+            s3.head("media", key)
+        except StorageError as e:
+            err = e
+        else:
+            raise AssertionError("expected StorageError")
+    finally:
+        srv.shutdown()
+    assert str(err) == "HEAD media: HTTP 403"
+    with caplog.at_level("WARNING"):
+        out, r = run(err)
+    assert out == "deferred:StorageError" and r.acked == []
+    assert "HTTP 403" in caplog.text
+    for secret in (key, MATERIAL, FILE, "derived/"):
+        assert secret not in caplog.text
