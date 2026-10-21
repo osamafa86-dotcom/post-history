@@ -4,7 +4,8 @@
 #   1) الوكيل: الصحة والرفع على الرئيسي، 404 لـ /internal وغيره، التحويل من http، وعزل العنوانين (لا اسم على عنوان الآخر)،
 #   2) بوابة ingest أمام النطاقين: 401 بلا رمز على كليهما، ورفع كامل برمز صالح عبر كل منهما (e2e-edge-upload.mjs)،
 #   3) نسخة احتياطية مشفّرة ثم تمرين استعادة ناجح (infra/backup/restore-drill.sh)،
-#   4) لا رمز ولا عنوان عميل في سجل الوكيل.
+#   4) لا رمز ولا عنوان عميل في سجل الوكيل،
+#   5) نافذة مفتاح qa- (ADR 0022): لحساب القبول وحده، وتُرفض بعد انتهائها، والإغلاق لا يترك أثرًا.
 # يحتاج tools/acceptance (npm ci). KEEP=1 يبقي البيئة قائمة. TRIAL_EXTRA_COMPOSE للاختبار المحلي فقط.
 set -euo pipefail
 
@@ -166,6 +167,34 @@ for want in "حالة بيئة التجربة" "■ الرفوعات" "■ طا�
   grep -qF "$want" <<<"$status" || fail "status board lacks: $want"
 done
 echo "monitoring and status board: ok"
+
+# The qa key window (ADR 0022), as an operator runs it: qa-window.sh opens a fresh qa- key for the acceptance account
+# (looked up by email), the gate refuses that key for another reporter's session (key_class=qa), refuses it once
+# expired (and the health check alerts), and close leaves neither the key nor the account behind.
+qa_state="$(DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB" \
+  API_URL="http://127.0.0.1:$API_PORT/v1" node "$ROOT/infra/field-trial/e2e-qa-key.mjs" seed)" || fail "qa window: seed"
+qa_email="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["acceptance_email"])' <<<"$qa_state")"
+QW() { TRIAL_SH="$T" QA_WINDOW_DIR="$WORK/qa" "$ROOT/infra/field-trial/qa-window.sh" "$@"; }
+QW open --email "$qa_email" --hours 1 > "$WORK/qa-open" || { cat "$WORK/qa-open"; fail "qa-window.sh open"; }
+qa_kid="$(sed -n 's/.*FT_INGEST_KID=\(qa-[A-Za-z0-9-]*\).*/\1/p' "$WORK/qa-open")"
+[ -n "$qa_kid" ] && [ "$(stat -c %a "$WORK/qa/qa-signing.pem")" = 600 ] || fail "qa window: no qa- kid or the key file is not 0600"
+if QW open --email "$qa_email" --hours 1 >/dev/null 2>&1; then fail "qa window: a second open replaced the key"; fi
+# The tester's copy (as copied off the host): it must stop working at the expiry and after close, not only disappear.
+cp "$WORK/qa/qa-signing.pem" "$WORK/qa-copy.pem"
+qcheck() { QA_STATE="$qa_state" QA_KID="$qa_kid" QA_SIGNING_KEY="$WORK/qa-copy.pem" CA_FILE="$WORK/ca.crt" \
+             INGEST_SIGNING_KEY="$WORK/ingest/signing.pem" node "$ROOT/infra/field-trial/e2e-qa-key.mjs" check "$1"; }
+qcheck open || fail "qa window open"
+sed -i "s/^INGEST_QA_KEY_EXPIRES=.*/INGEST_QA_KEY_EXPIRES=$(date -u -d '-1 minute' +%FT%TZ)/" "$TRIAL_ENV_FILE"
+"$T" up -d --wait --no-deps --force-recreate ingest-gate >/dev/null 2>&1 || fail "qa window: gate restart"
+qcheck expired || fail "qa window expired"
+if hc > "$WORK/hc5"; then fail "healthcheck passed with an expired qa window"; fi
+grep -q '^FAIL  qa-key:window' "$WORK/hc5" || fail "expired qa window not reported by the health check"
+QW close > /dev/null || fail "qa-window.sh close"
+qcheck closed || fail "qa window closed"
+if grep -qE '^(INGEST_QA_|ACCEPTANCE_UPLOADER_USER_ID)' "$TRIAL_ENV_FILE" || [ -e "$WORK/qa/qa-signing.pem" ]; then
+  fail "qa window: close left the slot, the account or the key behind"; fi
+[ "$(stat -c %a "$TRIAL_ENV_FILE")" = 400 ] || fail "qa window: the secrets file mode changed"
+echo "qa key window (fresh key, acceptance account only, expiry, close): ok"
 
 # Revealing data never reaches a log: a canary in headers, query strings, tus metadata and a login body, then every
 # container's log is searched for it.
