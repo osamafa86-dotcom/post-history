@@ -74,18 +74,23 @@ async function claimsOf(token) {
     const c = JSON.parse(part(parts[1]).toString());
     const now = Date.now() / 1000;
     if (c.aud !== 'ingest' || typeof c.sid !== 'string' || !UUID.test(c.sid)) return null;
+    // رمز الجهاز (ios|android) أو رمز الويب (web، مع ses: جلسة الدخول التي أصدرته). غيابه = رمز جهاز قديم.
+    if (c.plat !== undefined && c.plat !== 'ios' && c.plat !== 'android' && c.plat !== 'web') return null;
+    if (c.ses !== undefined && (typeof c.ses !== 'string' || !UUID.test(c.ses))) return null;
+    if (c.plat === 'web' && c.ses === undefined) return null;
     if (typeof c.iat !== 'number' || typeof c.exp !== 'number') return null;
     if (c.iat > now + SKEW_S || c.exp < now - SKEW_S || c.exp - c.iat > MAX_LIFETIME_S) return null;
     return c;
 }
 
-// حالة جلسة الرفع عند الخادم (SEC-01): الرمز صالح توقيعًا وعمرًا، لكن الإبطال (جلسة دخول مُبطلة، حساب موقوف، جلسة رفع
+// حالة جلسة الرفع (وجلسة الدخول ses لرمز الويب) عند الخادم (SEC-01): الرمز صالح توقيعًا وعمرًا، لكن الإبطال (جلسة دخول مُبطلة، حساب موقوف، جلسة رفع
 // منتهية) يجب أن يسري خلال ثوانٍ لا بعد انتهاء الرمز. طلب فرعي داخلي إلى /internal على الخادم، والجواب مخبأ ثانيتين
 // لكل جلسة (nginx.conf). 204 مسموح، و403/404 مرفوض، وغير ذلك (الخادم لا يجيب) يرفض البوابة كلها: الإغلاق عند العطل.
 // INGEST_SESSION_CHECK=off لاختبار البوابة وحدها بلا خادم (infra/ingest/test-gate.sh)؛ بيئة التجربة لا تمرره.
-async function sessionAllowed(r, sid) {
+async function sessionAllowed(r, c) {
     if (process.env.INGEST_SESSION_CHECK === 'off') return true;
-    const reply = await r.subrequest('/_session_state/' + sid, { method: 'GET' });
+    const args = 'sid=' + c.sid + (c.ses ? '&ses=' + c.ses : '');
+    const reply = await r.subrequest('/_session_state', { method: 'GET', args: args });
     if (reply.status === 204) return true;
     if (reply.status === 403 || reply.status === 404) return false;
     throw new Error('session state unavailable');
@@ -121,7 +126,7 @@ async function gate(r) {
     }
     let allowed = false;
     try {
-        allowed = await sessionAllowed(r, claims.sid);
+        allowed = await sessionAllowed(r, claims);
     } catch (e) {
         r.return(500);  // auth_request: كل ما ليس 2xx/401/403 خطأ (500 للعميل)، فلا يمر شيء والخادم لا يجيب
         return;
