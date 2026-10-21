@@ -12,6 +12,7 @@ let package = Package(
         .library(name: "FormEngine", targets: ["FormEngine"]),
         .library(name: "DeviceSecurity", targets: ["DeviceSecurity"]),
         .library(name: "MaterialsCore", targets: ["MaterialsCore"]),
+        .library(name: "DeviceAttestation", targets: ["DeviceAttestation"]),
         .library(name: "NotificationsCore", targets: ["NotificationsCore"]),
         .executable(name: "form-conformance", targets: ["form-conformance"]),
         .executable(name: "upload-netlab", targets: ["upload-netlab"]),
@@ -41,6 +42,9 @@ let package = Package(
         // «موادي»: قائمة مواد المراسل بصفحات وحالاتها الثلاث المستقلة كما في العقد؛ الواجهة في App/.
         .target(name: "MaterialsCore", dependencies: ["PostHistoryAPI"]),
         .testTarget(name: "MaterialsCoreTests", dependencies: ["MaterialsCore"]),
+        // شهادة الجهاز (SEC-07): App Attest ورمز بوابة ingest لكل جلسة رفع؛ التدفق يُختبر على Linux بمحاكاة DCAppAttestService.
+        .target(name: "DeviceAttestation", dependencies: ["UploadCore", "PostHistoryAPI", .product(name: "Crypto", package: "swift-crypto")]),
+        .testTarget(name: "DeviceAttestationTests", dependencies: ["DeviceAttestation"]),
         // الإشعارات: تسجيل رمز APNs بمعرّف تثبيت مولَّد، وصندوق الإشعارات مع القراءة والإقرار، وتوجيه حمولة الدفع.
         .target(name: "NotificationsCore", dependencies: ["PostHistoryAPI"]),
         .testTarget(name: "NotificationsCoreTests", dependencies: ["NotificationsCore"]),
