@@ -8,7 +8,7 @@ import { emptyRule, ruleInput, type RuleInput } from "../src/lib/notification-po
 import { MemoryStore } from "./memory-store";
 import { me, tokens } from "./fixtures";
 
-const config: WebConfig = { origin: "https://web.example.test", api: "https://api.example.test/v1", key: randomBytes(32), redisUrl: "redis://127.0.0.1:6379/1", secure: true, cookieName: "__Host-ph-session", lifetimeSeconds: 28800, mediaOrigins: [], trustForwardedFor: false };
+const config: WebConfig = { origin: "https://web.example.test", api: "https://api.example.test/v1", key: randomBytes(32), redisUrl: "redis://127.0.0.1:6379/1", secure: true, cookieName: "__Host-ph-session", lifetimeSeconds: 28800, mediaOrigins: [], tusOrigins: [], trustForwardedFor: false };
 const admin: Me = { ...me, roles: [{ name: "system_admin", scopes: [] }] }, chief: Me = { ...me, roles: [{ name: "editor_in_chief", scopes: [] }] }, supervisor: Me = { ...me, roles: [{ name: "supervisor", scopes: [] }] };
 const id = "80000000-0000-4000-8000-000000000001";
 const rule: RuleInput = { ...emptyRule(), name: "عاجل", assignment: true, escalation: [{ level: 1, after_seconds: 600, recipient_roles: ["editor_in_chief"], channels: ["in_app", "email"] }] };
@@ -55,5 +55,13 @@ describe("notification rules BFF", () => {
     expect(removed.result.status).toBe(204);
     const invalid = await call("notification-rules", { body: { ...rule, channels: [] } });
     expect(invalid.result.status).toBe(422); expect(invalid.calls).toHaveLength(0);
+  });
+});
+
+describe("role labels", () => {
+  it("falls back to a generic label for a role the screen does not know", async () => {
+    const { roleLabel } = await import("../src/lib/notification-policy");
+    expect(roleLabel({ supervisor: "Supervisor" }, "supervisor", "Other role")).toBe("Supervisor");
+    expect(roleLabel({ supervisor: "Supervisor" }, "buyer_admin", "Other role")).toBe("Other role");
   });
 });

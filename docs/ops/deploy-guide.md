@@ -85,7 +85,7 @@ sudo infra/deploy/bootstrap.sh --host-config /root/host.env \
 
 1. `os`، ثم `packages` (Docker بإصدار مثبّت)، ثم `user`، ثم `firewall`، ثم `dirs`.
 2. `secrets`: تُولَّد مرة وتُختم لمفتاح المضيف ومفتاح المالك، ولا تُطبع.
-3. `images`، ثم `preflight`، ثم `start`، ثم `systemd`، ثم `verify`.
+3. `images`، ثم `preflight`، ثم `start` (التجربة، ثم المراقبة وتتبّع الأخطاء)، ثم `systemd`، ثم `verify`.
 
 ingest مطلوب (`INGEST_REQUIRED=true`) وشهادة الجهاز بوضع الإنتاج.
 
@@ -199,8 +199,27 @@ sudo infra/deploy/update.sh --dry-run       # الخطة بلا تغيير
 
 **التحقق:** `update.sh` ينتهي بـ `preflight.sh --running` بلا FAIL. خطته مثبتة في `test-dry-run.sh` (update plan).
 
+## المراقبة وتتبّع الأخطاء (ADR 0027، 0029)
+
+يشغّلهما `bootstrap.sh` ويعيدهما `update.sh`، مشروعين مستقلين على 127.0.0.1 وحده. الوصول بنفق SSH من جهاز المشرف:
+
+```bash
+ssh -L 3300:127.0.0.1:3300 -L 3301:127.0.0.1:3301 <المضيف>
+```
+
+- **Grafana** على `http://127.0.0.1:3300`: المستخدم `admin`، وكلمته `GRAFANA_ADMIN_PASSWORD` في الأسرار المفكوكة (`sudo grep ^GRAFANA_ADMIN_PASSWORD= /run/post-history/trial.env`). فيه السجلات المنقّاة والمقاييس والفحوص الصحية.
+- **GlitchTip** على `http://127.0.0.1:3301`. يُهيَّأ مرة بعد الخطوة 3، والتسجيل مفتوح ما دام لا مستخدم، فلا يُؤخَّر:
+  ```bash
+  read -rs GLITCHTIP_ADMIN_PASSWORD && export GLITCHTIP_ADMIN_PASSWORD
+  sudo -E infra/observability/errors-init.sh <بريد المشرف> --env-file /run/post-history/trial.env
+  ```
+  يطبع DSN لمشروعي `api` و`web`، وتُضاف إلى الأسرار المختومة حين تدعمها التطبيقات.
+- الأوامر: `sudo infra/observability/stack.sh monitoring ps` و`sudo infra/observability/stack.sh errors logs --tail 50`.
+
+**التحقق:** في Grafana لوحة المضيف ومصدرا Prometheus وLoki، وGlitchTip يرفض تسجيلًا جديدًا بعد التهيئة.
+
 ## بعد إعادة الإقلاع
 
-وحدة `post-history-trial` تفك الأسرار إلى tmpfs وتشغّل البيئة. نافذة القبول المفتوحة تُغلق بإعادة الإقلاع، لأن الملف المختوم لا يحملها.
+وحدة `post-history-trial` تفك الأسرار إلى tmpfs وتشغّل البيئة، ثم وحدة `post-history-observability` تشغّل المراقبة وتتبّع الأخطاء. نافذة القبول المفتوحة تُغلق بإعادة الإقلاع، لأن الملف المختوم لا يحملها.
 
 **التحقق:** `systemctl status post-history-trial`، ثم `curl -s http://127.0.0.1:9180/health` يعيد 200.

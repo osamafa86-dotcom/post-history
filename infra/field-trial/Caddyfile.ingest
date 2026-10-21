@@ -21,8 +21,11 @@
 {$INGEST_DOMAIN} {
 	bind {$INGEST_IP}
 	handle /files/* {
+		# No proxy in front of this name: the peer is the client. X-Forwarded-For is replaced by it, never passed through,
+		# so a client cannot pick the gate's rate-limit bucket.
 		reverse_proxy 127.0.0.1:{$INGEST_PORT} {
 			flush_interval -1
+			header_up X-Forwarded-For {remote_host}
 			transport http {
 				read_timeout 300s
 				write_timeout 300s

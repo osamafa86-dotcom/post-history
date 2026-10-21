@@ -366,7 +366,8 @@
       "all": "All materials",
       "office": "Office",
       "governorate": "Governorate"
-    }
+    },
+    "otherRole": "Other role"
   },
   "store": {
     "credit": "Credit",
@@ -403,5 +404,70 @@
     "minutes": "min",
     "hours": "h",
     "days": "d"
+  },
+  "upload": {
+    "nav": "Desktop upload",
+    "title": "Upload camera files",
+    "lead": "Choose large files from your computer or a camera card, then fill in the material details. Uploads resume from the last received part after a dropped connection.",
+    "reporterOnly": "Desktop upload is for reporters, supervisors, producers and the editor in chief.",
+    "files": "Files",
+    "choose": "Choose files",
+    "filesHelp": "MOV, MXF, MP4, ProRes and camera stills. Each file's SHA-256 is computed in the browser before upload.",
+    "unsupported": "Unsupported type: {name}",
+    "noFiles": "Choose at least one file.",
+    "pending": "Unfinished uploads",
+    "pendingHelp": "Choose the same file from your computer again to resume where it stopped.",
+    "forget": "Remove",
+    "material": "Material details",
+    "titleLabel": "Material title",
+    "types": "Material type",
+    "city": "City",
+    "shotAt": "Shot at",
+    "priority": "Priority",
+    "sensitivity": "Sensitivity",
+    "minors": "Minors appear",
+    "injured": "Injured people appear",
+    "graphic": "Graphic scenes",
+    "displayName": "Display name",
+    "displayModes": {
+      "network": "Network name",
+      "pseudonym": "Pseudonym",
+      "real_name": "Real name"
+    },
+    "pseudonym": "Pseudonym",
+    "invalid": "Check the required fields: a 5–80 character title, governorate, city and type.",
+    "start": "Create material and start upload",
+    "creating": "Creating material…",
+    "createFailed": "Could not create the material. Try again with the same attempt.",
+    "phase": {
+      "hashing": "Computing checksum",
+      "creating": "Preparing upload session",
+      "uploading": "Uploading",
+      "paused": "Paused",
+      "processing": "Upload finished, awaiting verification and receipt",
+      "done": "Received",
+      "failed": "Upload failed"
+    },
+    "failure": {
+      "session_revoked": "Your session was revoked; the upload stopped.",
+      "not_accepted": "The upload session no longer accepts data.",
+      "rejected": "The server rejected the upload.",
+      "network": "The connection dropped after several attempts.",
+      "hash": "Could not read the file to compute its checksum.",
+      "checksum_mismatch": "The checksum does not match what arrived; upload again.",
+      "invalid_file": "The file is not valid.",
+      "expired": "The upload session expired.",
+      "storage_error": "Storage error.",
+      "aborted": "Upload cancelled."
+    },
+    "resumed": "Resumed",
+    "pause": "Pause",
+    "resume": "Resume",
+    "cancel": "Cancel",
+    "retry": "Retry",
+    "open": "Open material",
+    "receipt": "Receipt number",
+    "progress": "Progress of {name}",
+    "leaveWarning": "An upload is in progress. Leaving stops it; you can resume by choosing the file again."
   }
 }

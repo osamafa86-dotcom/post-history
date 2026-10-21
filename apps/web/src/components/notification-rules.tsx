@@ -7,7 +7,7 @@ import { materialTypes, states } from "@/lib/query";
 import { permissions } from "@/lib/admin-policy";
 import { permissionLabel } from "@/lib/admin-labels";
 import { useMutation } from "@/lib/use-mutation";
-import { channels, emptyRule, inputOf, roles, ruleEvents, ruleInput, scopeKinds, type Rule, type RuleInput } from "@/lib/notification-policy";
+import { channels, emptyRule, inputOf, roleLabel, roles, ruleEvents, ruleInput, scopeKinds, type Rule, type RuleInput } from "@/lib/notification-policy";
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
 
@@ -81,7 +81,7 @@ function RuleForm({ locale, rule, set, busy, onSave, onCancel, invalid, status }
     <Checks legend={t.types} name="types" values={materialTypes} selected={rule.material_types ?? []} label={type => m.types[type]} change={next => set("material_types", next.length ? next : null)} />
     <div className="rule-row"><label>{t.scope}<select value={rule.scope_kind} onChange={e => { set("scope_kind", e.target.value as RuleInput["scope_kind"]); if (e.target.value === "all") set("scope_id", ""); }}>{scopeKinds.map(kind => <option key={kind} value={kind}>{t.scopes[kind]}</option>)}</select></label>
       {rule.scope_kind !== "all" && <label>{t.scopeId}<input value={rule.scope_id ?? ""} maxLength={200} onChange={e => set("scope_id", e.target.value)} /></label>}</div>
-    <Checks legend={t.roles} name="roles" values={roles} selected={rule.recipient_roles ?? []} label={role => t.roleNames[role]} change={next => set("recipient_roles", next)} />
+    <Checks legend={t.roles} name="roles" values={roles} selected={rule.recipient_roles ?? []} label={role => roleLabel(t.roleNames, role, t.otherRole)} change={next => set("recipient_roles", next)} />
     <Checks legend={t.permissions} name="permissions" values={permissions} selected={rule.recipient_permissions ?? []} label={p => permissionLabel(p, locale)} change={next => set("recipient_permissions", next)} />
     <Checks legend={t.channels} name="channels" values={channels} selected={rule.channels} label={c => t.channelNames[c]} change={next => set("channels", next)} />
     <div className="rule-row"><label>{t.delay}<input type="number" min={0} max={86400} value={rule.delay_seconds ?? 0} onChange={e => set("delay_seconds", Number(e.target.value) || 0)} /></label>
@@ -94,7 +94,7 @@ function RuleForm({ locale, rule, set, busy, onSave, onCancel, invalid, status }
     <fieldset className="check-group"><legend>{t.escalation}</legend><small className="muted">{t.escalationHelp}</small>
       {steps.map((step, index) => <div key={index} className="escalation-step" data-testid="escalation-step"><strong>{t.level} {step.level}</strong>
         <label>{t.after}<input type="number" min={1} max={1440} value={Math.round(step.after_seconds / 60)} onChange={e => set("escalation", steps.map((s, i) => i === index ? { ...s, after_seconds: Math.round(Number(e.target.value) * 60) } : s))} /></label>
-        <Checks legend={t.roles} name={`step-${index}-roles`} values={roles} selected={step.recipient_roles} label={role => t.roleNames[role]} change={next => set("escalation", steps.map((s, i) => i === index ? { ...s, recipient_roles: next } : s))} />
+        <Checks legend={t.roles} name={`step-${index}-roles`} values={roles} selected={step.recipient_roles} label={role => roleLabel(t.roleNames, role, t.otherRole)} change={next => set("escalation", steps.map((s, i) => i === index ? { ...s, recipient_roles: next } : s))} />
         <Checks legend={t.channels} name={`step-${index}-channels`} values={channels} selected={step.channels} label={c => t.channelNames[c]} change={next => set("escalation", steps.map((s, i) => i === index ? { ...s, channels: next } : s))} />
         <button type="button" className="quiet" onClick={() => set("escalation", steps.filter((_, i) => i !== index).map((s, i) => ({ ...s, level: i + 1 })))}>{t.removeStep}</button></div>)}
       {steps.length < 5 && <button type="button" className="secondary" disabled={!rule.assignment} onClick={() => set("escalation", [...steps, { level: steps.length + 1, after_seconds: ((steps.at(-1)?.after_seconds ?? 0) + 600), recipient_roles: ["supervisor"], channels: ["in_app"] }])}>{t.addStep}</button>}</fieldset>
