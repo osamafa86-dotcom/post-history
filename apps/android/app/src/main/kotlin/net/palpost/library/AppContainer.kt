@@ -24,8 +24,10 @@ class AppContainer(context: Context) {
     val sealer = KeystoreSealer("net.palpost.library.session")
     val tokenStore: TokenStore = KeystoreTokenStore(app, sealer)
 
-    // No logging interceptor anywhere: request and response bodies carry tokens and material metadata.
+    // No logging interceptor and no disk cache anywhere: request and response bodies carry tokens and material
+    // metadata. (tus-java-client uses HttpURLConnection, which caches nothing: no ResponseCache is installed.)
     private val httpClient = OkHttpClient.Builder()
+        .cache(null)
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)

@@ -239,4 +239,5 @@
     <string name="notifications_refresh">تحديث</string>
     <string name="notifications_loading">جارٍ التحميل…</string>
     <string name="notifications_more">المزيد</string>
+    <string name="role_other">دور آخر</string>
 </resources>

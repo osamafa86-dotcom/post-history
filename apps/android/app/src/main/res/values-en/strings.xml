@@ -224,4 +224,5 @@
     <string name="notifications_refresh">Refresh</string>
     <string name="notifications_loading">Loading…</string>
     <string name="notifications_more">More</string>
+    <string name="role_other">Other role</string>
 </resources>

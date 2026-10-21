@@ -80,16 +80,21 @@ class HomeViewModel(private val app: Application, private val container: AppCont
     }
 }
 
+/**
+ * Keyed by the contract value, not the generated enum, so roles a newer contract adds (the buyer roles of v0.3,
+ * which this staff app never receives) fall to a generic label instead of breaking the build.
+ */
 @Composable
 fun roleLabel(name: RoleName): String = stringResource(
-    when (name) {
-        RoleName.system_admin -> R.string.role_system_admin
-        RoleName.editor_in_chief -> R.string.role_editor_in_chief
-        RoleName.supervisor -> R.string.role_supervisor
-        RoleName.producer -> R.string.role_producer
-        RoleName.finance -> R.string.role_finance
-        RoleName.reporter -> R.string.role_reporter
-        RoleName.rights_officer -> R.string.role_rights_officer
+    when (name.value) {
+        "system_admin" -> R.string.role_system_admin
+        "editor_in_chief" -> R.string.role_editor_in_chief
+        "supervisor" -> R.string.role_supervisor
+        "producer" -> R.string.role_producer
+        "finance" -> R.string.role_finance
+        "reporter" -> R.string.role_reporter
+        "rights_officer" -> R.string.role_rights_officer
+        else -> R.string.role_other
     },
 )
 
