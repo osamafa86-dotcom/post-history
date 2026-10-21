@@ -128,6 +128,9 @@ describe('ingest gateway: web ingest tokens and the session check', () => {
       // الفئة الإنتاجية لا تتأثر، والقيمة المجهولة رفض
       await check(other.id, 'production').expect(204);
       await check(other.id, 'staging').expect(403);
+      // فارغة أو مكررة (مصفوفة في Express): رفض
+      await check(own.id, '').expect(403);
+      await http(qa).get(`/internal/ingest/session-status?sid=${own.id}&key_class=qa&key_class=qa`).expect(403);
     } finally {
       await qa.close();
     }
