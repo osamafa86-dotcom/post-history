@@ -46,6 +46,16 @@ class Session:
     material_has_proxy: bool
 
 
+@dataclass(frozen=True)
+class FileRef:
+    """ملف مخزَّن يبني منه العامل مشتقًا لاحقًا (معاينة المتجر). النقطة مقترحة في #178 ولم تُعتمد بعد."""
+    file_id: str
+    material_id: str
+    storage_key: str
+    size_bytes: int
+    sha256: str
+
+
 class InternalApi:
     def __init__(self, base_url: str, token: str, timeout_s: float = 30):
         if len(token) < 32:
@@ -93,3 +103,8 @@ class InternalApi:
 
     def add_derivative(self, file_id: str, body: dict) -> dict:
         return self._call("POST", f"/internal/media/files/{file_id}/derivatives", body)
+
+    def get_material_original(self, material_id: str) -> FileRef:
+        d = self._call("GET", f"/internal/media/materials/{material_id}/original")
+        return FileRef(file_id=d["file_id"], material_id=material_id, storage_key=d["storage_key"],
+                       size_bytes=int(d["size_bytes"]), sha256=d["sha256"])

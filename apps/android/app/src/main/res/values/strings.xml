@@ -272,4 +272,5 @@
     <string name="file_state_received">وصل</string>
     <string name="file_state_verified">متحقق منه</string>
     <string name="file_state_failed">فشل</string>
+    <string name="role_other">دور آخر</string>
 </resources>
