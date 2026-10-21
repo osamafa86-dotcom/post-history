@@ -1,0 +1,17 @@
+# Prometheus للمضيف (ADR 0024): المضيف والفحوص الصحية وأدوات المراقبة نفسها، ومقاييس التطبيقات عبر مجمّع OpenTelemetry.
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+scrape_configs:
+  - job_name: prometheus
+    static_configs: [{targets: ["127.0.0.1:9090"]}]
+  # المضيف، ومعه post_history_check_ok من healthcheck.sh (مجمّع textfile).
+  - job_name: node
+    static_configs: [{targets: ["node-exporter:9100"]}]
+  # مقاييس التطبيقات المستلمة بـ OTLP، ومقاييس الطلبات المشتقة من التتبّع (spanmetrics).
+  - job_name: otel-apps
+    static_configs: [{targets: ["otel-collector:8889"]}]
+  - job_name: otel-collector
+    static_configs: [{targets: ["otel-collector:8888"]}]
+  - job_name: loki
+    static_configs: [{targets: ["loki:3100"]}]

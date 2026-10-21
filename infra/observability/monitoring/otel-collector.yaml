@@ -1,0 +1,78 @@
+# مجمّع OpenTelemetry (ADR 0024): الوكيل الوحيد على المضيف.
+#  - السجلات: ملفات json-file لحاويات Docker (الوسم tag باسم الحاوية من daemon.json) إلى Loki، بعد تنقية ثانية تحذف
+#    العناوين والرموز ومعرّفات الرفع والإحداثيات حتى لو أفلتت من التنقية عند المصدر.
+#  - OTLP من التطبيقات: المقاييس إلى Prometheus، والتتبّع إلى مقاييس طلبات (spanmetrics) بلا مخزن تتبّع.
+receivers:
+  otlp:
+    protocols:
+      grpc: {endpoint: 0.0.0.0:4317}
+      http: {endpoint: 0.0.0.0:4318}
+  filelog:
+    include: [/var/lib/docker/containers/*/*-json.log]
+    start_at: end
+    include_file_path: false
+    operators:
+      - type: json_parser
+        timestamp:
+          parse_from: attributes.time
+          layout_type: gotime
+          layout: "2006-01-02T15:04:05.999999999Z07:00"
+      - type: move
+        from: attributes.log
+        to: body
+      - type: move
+        if: 'attributes.attrs != nil and attributes.attrs.tag != nil'
+        from: attributes.attrs.tag
+        to: resource["service.name"]
+      - type: retain
+        fields: [attributes.stream]
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 160
+    spike_limit_mib: 32
+  batch: {}
+  # Second line of defence (CLAUDE.md §5): the sources already drop these, a miss is still not stored.
+  transform/redact:
+    log_statements:
+      - context: log
+        statements:
+          - replace_pattern(body, "eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]*", "[jwt]")
+          - replace_pattern(body, "(?i)bearer\\s+[A-Za-z0-9._~+/=-]+", "Bearer [redacted]")
+          - replace_pattern(body, "/files/[A-Za-z0-9+._-]+", "/files/-")
+          - replace_pattern(body, "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b", "[ip]")
+          - replace_pattern(body, "(?i)\"(lat|lng|lon|latitude|longitude|gps)\"\\s*:\\s*[^,}]+", "\"$$1\":\"[redacted]\"")
+          - replace_pattern(body, "(?i)(device_id|installation_id|imei)([\"=:\\s]+)[A-Za-z0-9-]+", "$$1$$2[redacted]")
+connectors:
+  spanmetrics:
+    histogram:
+      explicit:
+        buckets: [10ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s]
+    dimensions: [{name: http.request.method}, {name: http.response.status_code}, {name: http.route}]
+exporters:
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion: {enabled: true}
+service:
+  telemetry:
+    logs: {level: warn}
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus: {host: 0.0.0.0, port: 8888}
+  pipelines:
+    logs:
+      receivers: [filelog, otlp]
+      processors: [memory_limiter, transform/redact, batch]
+      exporters: [otlphttp/loki]
+    metrics:
+      receivers: [otlp, spanmetrics]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [spanmetrics]
