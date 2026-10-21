@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 files=(infra/compose/docker-compose.yml infra/ingest/compose.ingest.yml infra/field-trial/docker-compose.trial.yml
-       infra/preview/docker-compose.preview.yml infra/observability/compose.monitoring.yml)
+       infra/preview/docker-compose.preview.yml infra/observability/compose.monitoring.yml infra/observability/compose.errors.yml)
 bad="$( { grep -HnE '^\s*image:' "${files[@]}" | grep -vE '@sha256:[0-9a-f]{64}\s*$' | grep -vE 'image: post-history-preview-(api|web):latest$' || true
           grep -HnE '^FROM ' infra/backup/Dockerfile infra/deploy/test/Dockerfile infra/preview/*.Dockerfile | grep -vE '@sha256:[0-9a-f]{64}( AS [a-z-]+)?\s*$' || true
           grep -HnE '^PG_IMAGE=' infra/backup/restore-drill.sh | grep -vE '@sha256:[0-9a-f]{64}"$' || true; } )"
