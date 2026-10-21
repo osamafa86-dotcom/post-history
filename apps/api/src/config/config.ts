@@ -134,6 +134,8 @@ const schema = z.object({
   UPLOAD_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).default(3600),
   // مسار الرفع (بند القرارات 3، يُحسم بعد النموذج الأولي): tusd، أو direct حيث يعلن العميل الاكتمال بنفسه
   UPLOAD_PATH: z.enum(['tusd', 'direct']).default('tusd'),
+  // حد حجم الملف الواحد في POST /uploads (بايت)؛ غيابه = بلا حد. المعاينة تضبطه مع -max-size في tusd (#235)
+  UPLOAD_MAX_BYTES: z.coerce.number().int().min(1).optional(),
   // true (افتراضيًا مع عقد v0.1، ADR 0012: «على كل عميل إرسالها»): إنشاء جلسة رفع بلا client_sha256 يُرفض (422)
   UPLOAD_REQUIRE_CLIENT_SHA256: z
     .enum(['true', 'false'])
