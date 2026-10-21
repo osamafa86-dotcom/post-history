@@ -36,6 +36,8 @@ targets:
         product: FormEngine
       - package: PostHistoryKit
         product: DeviceSecurity
+      - package: PostHistoryKit
+        product: NotificationsCore
     info:
       path: App/Info.plist
       properties:

@@ -18,6 +18,8 @@ const SCALE = Number(process.env.PERF_SCALE ?? 1);
 const C = Number(process.env.PERF_CONCURRENCY ?? 10);
 const R = Number(process.env.PERF_REQUESTS ?? 200);
 const READ_P95_LIMIT_MS = 2000;
+// هدف زمن الطلب الواحد (قرار المنسّق 2026-10-21): يُسجَّل ما يتجاوزه بالاسم، والحد الملزم يبقى 2 ث (البند 18)
+const P95_TARGET_MS = Number(process.env.PERF_P95_TARGET_MS ?? 300);
 const REPO = resolve(__dirname, '../../../..');
 
 jest.setTimeout(60 * 60 * 1000);
@@ -28,6 +30,7 @@ describe('performance at production scale', () => {
   let h: Harness;
   let base: string;
   let formVersion: number;
+  const overTarget: string[] = [];
   const started = new Date();
   const metrics: Record<string, number | string | boolean> = {};
   const failures: string[] = [];
@@ -69,11 +72,13 @@ describe('performance at production scale', () => {
       result: failures.length ? 'fail' : 'pass',
       device: { platform: 'server' },
       upload_path: 'n/a',
-      metrics: { scale: SCALE, concurrency: C, requests_per_scenario: R, read_p95_limit_ms: READ_P95_LIMIT_MS, failures: failures.length, ...metrics },
+      metrics: { scale: SCALE, concurrency: C, requests_per_scenario: R, read_p95_limit_ms: READ_P95_LIMIT_MS, p95_target_ms: P95_TARGET_MS, over_target: overTarget.length, failures: failures.length, ...metrics },
       notes:
         `خادم الواجهة وPostgres على المضيف نفسه (${process.env.PERF_ENV_LABEL ?? 'محليًا'})، بذرة اصطناعية بحجم سنة من الخطة مضروبة في ${SCALE} ` +
         'بلا بيانات كاشفة. القراءة عبر HTTP بتوازٍ ثابت. البحث بالحقل الديناميكي يُقاس استعلامًا في القاعدة لأن العقد لا يعرّف نقطته بعد. ' +
-        'تسليم الإشعار: من طلب الإنشاء إلى صف الإشعار عبر دفعة مُرسل واحدة (بلا مهلة الاستطلاع OUTBOX_POLL_INTERVAL_MS).' +
+        'تسليم الإشعار: من طلب الإنشاء إلى صف الإشعار عبر دفعة مُرسل واحدة (بلا مهلة الاستطلاع OUTBOX_POLL_INTERVAL_MS). ' +
+        'التصفح بالمؤشر: كل صفحة عيّنة مستقلة. ' +
+        (overTarget.length ? `فوق هدف ${P95_TARGET_MS} ms: ${overTarget.join('، ')}.` : `كل السيناريوهات ضمن هدف ${P95_TARGET_MS} ms.`) +
         (failures.length ? ` إخفاقات: ${failures.join('؛ ')}` : ''),
     };
     const ajv = new Ajv2020({ strict: false });
@@ -107,8 +112,11 @@ describe('performance at production scale', () => {
       body: body ? JSON.stringify(body) : undefined,
     });
 
-  /** R طلبًا بتوازٍ C، ويسجّل p50/p95/p99 بالمللي ثانية، والفشل إن تجاوز p95 الحد أو رد غير المتوقع. */
-  const measure = async (name: string, op: () => Promise<number>, expected: number, limitMs = READ_P95_LIMIT_MS) => {
+  /**
+   * R عملية بتوازٍ C، ويسجّل p50/p95/p99 بالمللي ثانية، والفشل إن تجاوز p95 الحد أو رد غير المتوقع. العملية التي تعيد
+   * أزمنة طلباتها (تصفح بالمؤشر) يُحسب كل طلب HTTP فيها عيّنة مستقلة: الحد زمن طلب واحد لا زمن السلسلة.
+   */
+  const measure = async (name: string, op: () => Promise<number | { status: number; times: number[] }>, expected: number, limitMs = READ_P95_LIMIT_MS) => {
     const times: number[] = [];
     let errors = 0;
     let next = 0;
@@ -116,9 +124,10 @@ describe('performance at production scale', () => {
       while (next < R) {
         next++;
         const t0 = performance.now();
-        const status = await op();
-        times.push(performance.now() - t0);
-        if (status !== expected) errors++;
+        const out = await op();
+        if (typeof out === 'number') times.push(performance.now() - t0);
+        else times.push(...out.times);
+        if ((typeof out === 'number' ? out : out.status) !== expected) errors++;
       }
     };
     await Promise.all(Array.from({ length: C }, worker));
@@ -129,6 +138,7 @@ describe('performance at production scale', () => {
     metrics[`${name}_ms_p99`] = pct(99);
     if (errors) failures.push(`${name}: ${errors} unexpected responses`);
     if (pct(95) > limitMs) failures.push(`${name} p95 ${pct(95)} ms > ${limitMs}`);
+    if (pct(95) > P95_TARGET_MS) overTarget.push(`${name} ${pct(95)}`);
   };
 
   const officeOfFirstSupervisor = async () =>
@@ -138,16 +148,20 @@ describe('performance at production scale', () => {
     const office = await officeOfFirstSupervisor();
     const supervisor = await loginAs(h, [{ role: 'supervisor', scopeKind: 'office', scopeId: office }]);
     const chief = await loginAs(h, [{ role: 'editor_in_chief' }]);
-    // ثلاث صفحات متتالية بالمؤشر في كل طلب مقاس: الوارد كما يفتحه المشرف ورئيس التحرير
+    // ثلاث صفحات متتالية بالمؤشر في كل عملية: الوارد كما يفتحه المشرف ورئيس التحرير، وكل صفحة عيّنة
     const pages = (a: Actor, query: string) => async () => {
       let cursor: string | null = null;
+      const times: number[] = [];
       for (let i = 0; i < 3; i++) {
+        const t0 = performance.now();
         const res = await call(a, 'GET', `/materials?${query}&limit=50${cursor ? `&cursor=${cursor}` : ''}`);
-        if (res.status !== 200) return res.status;
-        cursor = ((await res.json()) as { next_cursor: string | null }).next_cursor;
+        const body = res.status === 200 ? ((await res.json()) as { next_cursor: string | null }) : null;
+        times.push(performance.now() - t0);
+        if (!body) return { status: res.status, times };
+        cursor = body.next_cursor;
         if (!cursor) break;
       }
-      return 200;
+      return { status: 200, times };
     };
     await measure('inbox_supervisor_created_desc', pages(supervisor, 'editorial_state=inbox&sort=created_desc'), 200);
     await measure('inbox_supervisor_urgent', pages(supervisor, 'priority=urgent&sort=created_desc'), 200);
