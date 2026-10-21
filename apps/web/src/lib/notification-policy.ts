@@ -8,7 +8,11 @@ export type Rule = components["schemas"]["NotificationRule"];
 type Step = components["schemas"]["NotificationEscalationStep"];
 export const ruleEvents: RuleInput["event_type"][] = ["material.created", "material.urgent_received", "material.updated", "material.version_created", "material.technical_transition", "material.editorial_transition", "material.rights_transition", "material.acknowledged", "material.change_requested", "material.accepted_for_production", "material.reserved", "material.released", "material.contributors_set", "material.published", "upload.started", "upload.proxy_received", "upload.original_received", "upload.verified", "upload.deduplicated", "upload.failed", "ai.draft_ready"];
 export const channels: RuleInput["channels"] = ["in_app", "websocket", "apns", "fcm", "web_push", "email", "telegram", "whatsapp", "sms"];
-export const roles: components["schemas"]["RoleName"][] = ["system_admin", "editor_in_chief", "supervisor", "producer", "finance", "reporter", "rights_officer"];
+// أدوار الطاقم وحدها مستلمون؛ أدوار المشترين في عقد v0.3 لا تُعرض ولا تُقبل هنا.
+export const roles = ["system_admin", "editor_in_chief", "supervisor", "producer", "finance", "reporter", "rights_officer"] as const satisfies readonly components["schemas"]["RoleName"][];
+export type StaffRole = typeof roles[number];
+/** تسمية الدور من الموارد، وتسمية عامة لدور لا تعرفه الواجهة (مثل أدوار عقد أحدث). */
+export const roleLabel = (names: Partial<Record<string, string>>, role: string, fallback: string) => names[role] ?? fallback;
 export const scopeKinds: NonNullable<RuleInput["scope_kind"]>[] = ["all", "office", "governorate"];
 export const ruleLimits = { name: 120, scope: 200, delay: 86400, digestMin: 15, digestMax: 1440, steps: 5, stepMin: 60, stepMax: 86400 } as const;
 

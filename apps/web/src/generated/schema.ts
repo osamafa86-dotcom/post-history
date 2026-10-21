@@ -2207,6 +2207,25 @@ export interface components {
             }[];
             /** @description إشعارات مهام حان تصعيدها ولم يُقرّ استلامها (ضمن النطاق) */
             overdue_acknowledgements: number;
+            /** @description «الوارد الآن» (ADR 0024): جلسات الرفع الجارية (`created` و`in_progress` غير المنتهية صلاحيتها) لمواد ضمن نطاق المستدعي، العاجل أولًا ثم الأحدث تقدّمًا. النسبة `bytes_received / size_bytes`، ويحدّثها حدث `upload.progress`. معرّفات وأرقام فقط: لا اسم ملف ولا مراسل ولا جهاز. اختياري حتى ينفّذه الخادم. */
+            uploads_in_progress?: {
+                /** Format: uuid */
+                upload_session_id: string;
+                /** Format: uuid */
+                material_id: string;
+                /** @enum {string} */
+                kind: "original" | "proxy" | "voice_note";
+                priority: components["schemas"]["Priority"];
+                /** @enum {string} */
+                state: "created" | "in_progress";
+                size_bytes: number;
+                bytes_received: number;
+                /**
+                 * Format: date-time
+                 * @description آخر تقدّم سجّله الخادم
+                 */
+                updated_at: string;
+            }[];
         };
         FormVersionSummary: {
             version: number;
@@ -2630,7 +2649,7 @@ export interface components {
             /** @description تسلسلي متزايد (رقم الصف في جدول Outbox) بصيغة نصية؛ يُستخدم مؤشرًا في `after` */
             id: string;
             /** @enum {string} */
-            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed";
+            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed";
             /** @enum {string} */
             aggregate_type: "material" | "upload" | "notification" | "form" | "user" | "listing";
             /** Format: uuid */
@@ -2669,7 +2688,7 @@ export interface components {
                 /** @enum {string} */
                 priority: "urgent" | "important" | "normal";
             };
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
     };
     responses: {
         /** @description طلب غير صالح (معاملات استعلام أو مؤشر غير مفهوم) */

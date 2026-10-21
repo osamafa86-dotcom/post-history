@@ -7,7 +7,7 @@ import type { WebConfig } from "../src/server/config";
 import { MemoryStore } from "./memory-store";
 import { form, material, me, tokens } from "./fixtures";
 import { identityReasons, permissions } from "../src/lib/admin-policy";
-const config: WebConfig = { origin: "https://web.example.test", api: "https://api.example.test/v1", key: randomBytes(32), redisUrl: "redis://127.0.0.1:6379/1", secure: true, cookieName: "__Host-ph-session", lifetimeSeconds: 28800, mediaOrigins: [], trustForwardedFor: false };
+const config: WebConfig = { origin: "https://web.example.test", api: "https://api.example.test/v1", key: randomBytes(32), redisUrl: "redis://127.0.0.1:6379/1", secure: true, cookieName: "__Host-ph-session", lifetimeSeconds: 28800, mediaOrigins: [], tusOrigins: [], trustForwardedFor: false };
 const key = randomUUID(), item = material(), target = "10000000-0000-4000-8000-000000000002";
 const admin: Me = { ...me, roles: [{ name: "system_admin", scopes: [] }] };
 const supervisor: Me = { ...me, roles: [{ name: "supervisor", scopes: [] }] };

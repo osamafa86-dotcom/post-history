@@ -156,12 +156,12 @@ private fun MaterialDetail(m: Material, modifier: Modifier) {
 }
 
 @Composable
-private fun StateLine(@StringRes label: Int, @StringRes value: Int) =
+internal fun StateLine(@StringRes label: Int, @StringRes value: Int) =
     Text(stringResource(label) + ": " + stringResource(value), style = MaterialTheme.typography.bodyMedium)
 
-private fun relative(epochMs: Long): String = DateUtils.getRelativeTimeSpanString(epochMs, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
+internal fun relative(epochMs: Long): String = DateUtils.getRelativeTimeSpanString(epochMs, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
 
-@StringRes private fun technical(s: TechnicalState) = when (s) {
+@StringRes internal fun technical(s: TechnicalState) = when (s) {
     TechnicalState.pending -> R.string.technical_pending
     TechnicalState.proxy_received -> R.string.technical_proxy_received
     TechnicalState.original_received -> R.string.technical_original_received
@@ -169,7 +169,7 @@ private fun relative(epochMs: Long): String = DateUtils.getRelativeTimeSpanStrin
     TechnicalState.failed -> R.string.technical_failed
 }
 
-@StringRes private fun editorial(s: EditorialState) = when (s) {
+@StringRes internal fun editorial(s: EditorialState) = when (s) {
     EditorialState.inbox -> R.string.editorial_inbox
     EditorialState.acknowledged -> R.string.editorial_acknowledged
     EditorialState.reviewing -> R.string.editorial_reviewing
@@ -181,7 +181,7 @@ private fun relative(epochMs: Long): String = DateUtils.getRelativeTimeSpanStrin
     EditorialState.rejected -> R.string.editorial_rejected
 }
 
-@StringRes private fun rights(s: RightsState) = when (s) {
+@StringRes internal fun rights(s: RightsState) = when (s) {
     RightsState.unknown -> R.string.rights_unknown
     RightsState.documented -> R.string.rights_documented
     RightsState.sellable -> R.string.rights_sellable
@@ -189,7 +189,7 @@ private fun relative(epochMs: Long): String = DateUtils.getRelativeTimeSpanStrin
     RightsState.withdrawn -> R.string.rights_withdrawn
 }
 
-@StringRes private fun fileKind(k: MaterialFile.Kind) = when (k) {
+@StringRes internal fun fileKind(k: MaterialFile.Kind) = when (k) {
     MaterialFile.Kind.original -> R.string.file_kind_original
     MaterialFile.Kind.proxy -> R.string.file_kind_proxy
     MaterialFile.Kind.hls -> R.string.file_kind_hls
@@ -200,7 +200,7 @@ private fun relative(epochMs: Long): String = DateUtils.getRelativeTimeSpanStrin
     MaterialFile.Kind.captions -> R.string.file_kind_captions
 }
 
-@StringRes private fun fileState(s: MaterialFile.State) = when (s) {
+@StringRes internal fun fileState(s: MaterialFile.State) = when (s) {
     MaterialFile.State.uploading -> R.string.file_state_uploading
     MaterialFile.State.received -> R.string.file_state_received
     MaterialFile.State.verified -> R.string.file_state_verified
