@@ -599,6 +599,11 @@ SELECT pg_temp.assert(
   (SELECT count(*) = 1 FROM pg_indexes WHERE indexname = 'outbox_events_pending_idx' AND indexdef ILIKE '%WHERE (published_at IS NULL)%'),
   'outbox dispatcher partial index exists');
 
+SELECT pg_temp.assert(
+  (SELECT count(*) = 1 FROM pg_indexes WHERE indexname = 'upload_sessions_storage_pending_idx'
+     AND indexdef ILIKE '%WHERE ((state = ''failed''::text) AND (storage_removed_at IS NULL))%'),
+  'partial index for failed uploads whose temporary data is not yet removed exists');
+
 \o
 \echo smoke OK
 ROLLBACK;
