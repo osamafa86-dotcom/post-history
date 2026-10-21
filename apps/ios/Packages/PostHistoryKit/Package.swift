@@ -11,6 +11,7 @@ let package = Package(
         .library(name: "UploadCore", targets: ["UploadCore"]),
         .library(name: "FormEngine", targets: ["FormEngine"]),
         .library(name: "DeviceSecurity", targets: ["DeviceSecurity"]),
+        .library(name: "MaterialsCore", targets: ["MaterialsCore"]),
         .library(name: "DeviceAttestation", targets: ["DeviceAttestation"]),
         .library(name: "NotificationsCore", targets: ["NotificationsCore"]),
         .executable(name: "form-conformance", targets: ["form-conformance"]),
@@ -38,6 +39,9 @@ let package = Package(
         // أمان الجهاز (SEC-01، جانب الجهاز): المسح الطارئ بخطوات مرتبة وتقرير بما مُسح وما تعذّر، دون تسجيل مسارات.
         .target(name: "DeviceSecurity"),
         .testTarget(name: "DeviceSecurityTests", dependencies: ["DeviceSecurity"]),
+        // «موادي»: قائمة مواد المراسل بصفحات وحالاتها الثلاث المستقلة كما في العقد؛ الواجهة في App/.
+        .target(name: "MaterialsCore", dependencies: ["PostHistoryAPI"]),
+        .testTarget(name: "MaterialsCoreTests", dependencies: ["MaterialsCore"]),
         // شهادة الجهاز (SEC-07): App Attest ورمز بوابة ingest لكل جلسة رفع؛ التدفق يُختبر على Linux بمحاكاة DCAppAttestService.
         .target(name: "DeviceAttestation", dependencies: ["UploadCore", "PostHistoryAPI", .product(name: "Crypto", package: "swift-crypto")]),
         .testTarget(name: "DeviceAttestationTests", dependencies: ["DeviceAttestation"]),

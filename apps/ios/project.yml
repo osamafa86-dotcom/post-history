@@ -37,6 +37,8 @@ targets:
       - package: PostHistoryKit
         product: DeviceSecurity
       - package: PostHistoryKit
+        product: MaterialsCore
+      - package: PostHistoryKit
         product: NotificationsCore
       - package: PostHistoryKit
         product: DeviceAttestation
