@@ -265,7 +265,7 @@ jobs:
           retention-days: 14
       - name: Stack logs on failure
         if: failure()
-        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media --profile ai logs --no-color --tail 200 api media-worker tusd ai-worker
+        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media --profile ai logs --no-color --timestamps --tail 3000 api media-worker tusd ai-worker
       - name: Tear down
         if: always()
         run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media --profile ai down -v
