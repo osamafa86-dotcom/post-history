@@ -1,15 +1,27 @@
 import { NextResponse } from "next/server";
 import type { components } from "@/generated/schema";
-import type { Me, Permission, Transition } from "@/lib/types";
+import type { Me, Permission, Transition, ReporterIdentitySettingUpdate } from "@/lib/types";
 import { hasRole, validContributors } from "@/lib/review";
 import { states, uuid } from "@/lib/query";
 import { safeMaterial } from "@/lib/privacy";
 import { requireOk, type Api } from "./auth";
 import { WebError } from "./errors";
+import { identityAccesses, identityReasons, permissions, reasonLimits } from "@/lib/admin-policy";
+import { safeIdentitySetting } from "@/lib/admin-privacy";
 
 const privateHeaders = { "Cache-Control": "private, no-store, max-age=0", "Pragma": "no-cache", "Vary": "Cookie" };
-const permissions: Permission[] = ["sensitive_location:read", "protected_source:read"];
-export const actionPath = (path: string) => /^materials\/[^/]+\/(transitions|contributors|reservation)$/.test(path) || /^users\/[^/]+\/(status|permissions\/[^/]+)$/.test(path) || /^notifications\/[^/]+\/(read|ack)$/.test(path);
+export const actionRoutes = [
+  { path: "/materials/{id}/transitions", methods: ["post"] },
+  { path: "/materials/{id}/contributors", methods: ["put"] },
+  { path: "/materials/{id}/reservation", methods: ["post", "delete"] },
+  { path: "/users/{id}/status", methods: ["put"] },
+  { path: "/users/{id}/permissions/{permission}", methods: ["put", "delete"] },
+  { path: "/notifications/{id}/read", methods: ["post"] },
+  { path: "/notifications/{id}/ack", methods: ["post"] },
+  { path: "/admin/settings/reporter-identity", methods: ["put"] },
+] as const;
+const routePatterns = actionRoutes.map(route => ({ ...route, pattern: new RegExp(`^${route.path.slice(1).replaceAll(/\{[^}]+\}/g, "[^/]+")}$`) }));
+export const actionPath = (path: string, method: string) => routePatterns.some(route => route.pattern.test(path) && (route.methods as readonly string[]).includes(method.toLowerCase()));
 function requireRole(me: Me, ...roles: components["schemas"]["RoleName"][]) { if (!hasRole(me, ...roles)) throw new WebError(403, "request_failed"); }
 function keys(body: Record<string, unknown>, allowed: string[]) { if (Object.keys(body).some(key => !allowed.includes(key))) throw new WebError(422, "request_failed"); }
 function text(value: unknown, max: number): value is string { return typeof value === "string" && value.trim().length > 0 && Array.from(value).length <= max; }
@@ -31,7 +43,7 @@ export async function reviewAction(request: Request, path: string, api: Api, me:
     if (kind === "transitions" && request.method === "POST") {
       requireRole(me, "reporter", "supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin");
       keys(body, ["track", "to", "reason", "note_timecode_ms"]);
-      if (!["technical", "editorial", "rights"].includes(String(body.track)) || !text(body.reason, 2000) || typeof body.to !== "string" || (body.note_timecode_ms !== undefined && body.note_timecode_ms !== null && (!Number.isSafeInteger(body.note_timecode_ms) || Number(body.note_timecode_ms) < 0))) throw new WebError(422, "request_failed");
+      if (!["technical", "editorial", "rights"].includes(String(body.track)) || !text(body.reason, reasonLimits.transition) || typeof body.to !== "string" || (body.note_timecode_ms !== undefined && body.note_timecode_ms !== null && (!Number.isSafeInteger(body.note_timecode_ms) || Number(body.note_timecode_ms) < 0))) throw new WebError(422, "request_failed");
       const track = body.track as Transition["track"], targets = states[`${track}_state`];
       if (!(targets as readonly string[]).includes(body.to)) throw new WebError(422, "request_failed");
       if (track === "technical" && (body.to !== "pending" || !hasRole(me, "reporter"))) throw new WebError(403, "request_failed");
@@ -61,7 +73,7 @@ export async function reviewAction(request: Request, path: string, api: Api, me:
   if (permissionPath && uuid.test(permissionPath[1]) && permissions.includes(permissionPath[2] as Permission)) {
     requireRole(me, "system_admin"); const params = { path: { id: permissionPath[1], permission: permissionPath[2] as Permission }, header };
     if (request.method === "PUT") {
-      keys(body, ["reason"]); if (!text(body.reason, 500)) throw new WebError(422, "request_failed");
+      keys(body, ["reason"]); if (!text(body.reason, reasonLimits.permission)) throw new WebError(422, "request_failed");
       requireOk(await api.PUT("/users/{id}/permissions/{permission}", { params, body: { reason: body.reason } })); return done();
     }
     if (request.method === "DELETE") { keys(body, []); requireOk(await api.DELETE("/users/{id}/permissions/{permission}", { params })); return done(); }
@@ -72,6 +84,13 @@ export async function reviewAction(request: Request, path: string, api: Api, me:
     if (body.status !== "active" && body.status !== "suspended") throw new WebError(422, "request_failed");
     if (body.status === "suspended" && userPath[1] === me.user_id) throw new WebError(403, "request_failed");
     requireOk(await api.PUT("/users/{id}/status", { params: { path: { id: userPath[1] }, header }, body: { status: body.status } })); return done();
+  }
+  if (path === "admin/settings/reporter-identity" && request.method === "PUT") {
+    requireRole(me, "system_admin"); keys(body, ["access", "reason_code"]);
+    if (!identityAccesses.includes(body.access as ReporterIdentitySettingUpdate["access"]) || !identityReasons.includes(body.reason_code as ReporterIdentitySettingUpdate["reason_code"])) throw new WebError(422, "request_failed");
+    const payload: ReporterIdentitySettingUpdate = { access: body.access as ReporterIdentitySettingUpdate["access"], reason_code: body.reason_code as ReporterIdentitySettingUpdate["reason_code"] };
+    const data = requireOk(await api.PUT("/admin/settings/reporter-identity", { params: { header }, body: payload }));
+    return NextResponse.json(safeIdentitySetting(data), { headers: privateHeaders });
   }
   const notificationPath = /^notifications\/([^/]+)\/(read|ack)$/.exec(path);
   if (notificationPath && uuid.test(notificationPath[1]) && request.method === "POST") {

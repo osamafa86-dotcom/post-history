@@ -8,6 +8,7 @@ import { useMutation } from "@/lib/use-mutation";
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
 import { StateBadge } from "./states";
+import { reasonLimits } from "@/lib/admin-policy";
 
 type Props = { locale: Locale; material: Material; tag: string | null; editing: () => void; reload: () => void };
 export function ReviewActions(props: Props) {
@@ -28,7 +29,7 @@ export function ReviewActions(props: Props) {
       }}>
         <fieldset disabled={blocked}><div className="field-grid"><label>{t.track}<select aria-label={t.track} value={track} onChange={e => { setTrack(e.target.value as Transition["track"]); setTo(""); }}>{available.map(key => <option key={key} value={key}>{m[key]}</option>)}</select></label>
           <label>{t.target}<select aria-label={t.target} required value={to} onChange={e => setTo(e.target.value)}><option value="">{m.choose}</option>{options.map(value => <option key={value} value={value}>{(m.states[stateColumn[track]] as Record<string, string>)[value]}</option>)}</select></label></div>
-          <label>{t.reason}<textarea aria-label={t.reason} required maxLength={2000} value={reason} onChange={e => setReason(e.target.value)} /></label><p className="muted">{t.reasonHelp}</p>
+          <label>{t.reason}<textarea aria-label={t.reason} required maxLength={reasonLimits.transition} value={reason} onChange={e => setReason(e.target.value)} /></label><p className="muted">{t.reasonHelp}</p>
           <label>{t.timecode}<input type="number" min="0" step="1" value={timecode} onChange={e => setTimecode(e.target.value)} /></label>
           <button disabled={!reason.trim() || !to}>{mutation.busy ? t.saving : t.apply}</button></fieldset>
       </form> : <p className="notice">{t.noTransitions}</p>}

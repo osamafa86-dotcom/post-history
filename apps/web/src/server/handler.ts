@@ -9,7 +9,9 @@ import type { components } from "@/generated/schema";
 import type { MaterialType } from "@/lib/types";
 import { streamDerivative } from "./media";
 import { actionPath, reviewAction } from "./review-actions";
-import { materialTag } from "@/lib/review";
+import { hasRole, materialTag } from "@/lib/review";
+import { safeIdentitySetting, safePermissionHistory } from "@/lib/admin-privacy";
+import { pageLimits } from "@/lib/admin-policy";
 
 const privateHeaders = { "Cache-Control": "private, no-store, max-age=0", "Pragma": "no-cache", "Vary": "Cookie" };
 const json = (value: unknown, status = 200) => NextResponse.json(value, { status, headers: privateHeaders });
@@ -53,7 +55,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
     const isWrite = ["POST", "PUT", "DELETE"].includes(request.method);
     if (isWrite) assertSameOrigin(request, config);
     if (request.method !== "GET" && !isWrite) throw new WebError(405, "request_failed");
-    if (isWrite && !(isPost && ["auth/login", "auth/logout"].includes(path)) && !actionPath(path)) throw new WebError(405, "request_failed");
+    if (isWrite && !(isPost && ["auth/login", "auth/logout"].includes(path)) && !actionPath(path, request.method)) throw new WebError(405, "request_failed");
 
     if (path === "auth/login" && isPost) {
       const input = await bodyOf(request);
@@ -80,6 +82,19 @@ export async function handle(request: NextRequest, path: string, deps?: { config
       const me = requireOk(await api.GET("/auth/me"));
       if (isWrite) return reviewAction(request, path, api, me, await bodyOf(request));
       if (path === "auth/me") return json(safeMe(me));
+      if (path === "admin/settings/reporter-identity") {
+        if (!hasRole(me, "system_admin")) throw new WebError(403, "request_failed");
+        if (request.nextUrl.search) throw new WebError(400, "request_failed");
+        return json(safeIdentitySetting(requireOk(await api.GET("/admin/settings/reporter-identity"))));
+      }
+      const permissionHistory = /^users\/([^/]+)\/permissions\/history$/.exec(path);
+      if (permissionHistory && uuid.test(permissionHistory[1])) {
+        if (!hasRole(me, "system_admin")) throw new WebError(403, "request_failed");
+        const search = request.nextUrl.searchParams, limit = search.get("limit") ?? String(pageLimits.default), cursor = search.get("cursor");
+        if ([...search.keys()].some(key => !["limit", "cursor"].includes(key) || search.getAll(key).length > 1) || !/^\d+$/.test(limit) || +limit < pageLimits.min || +limit > pageLimits.max || (cursor?.length ?? 0) > 2048) throw new WebError(400, "request_failed");
+        const page = requireOk(await api.GET("/users/{id}/permissions/history", { params: { path: { id: permissionHistory[1] }, query: { limit: +limit, ...(cursor ? { cursor } : {}) } } }));
+        return json({ items: page.items.map(safePermissionHistory).filter(item => item !== null), next_cursor: page.next_cursor });
+      }
       const media = /^materials\/([^/]+)\/files\/([^/]+)\/content$/.exec(path);
       if (media && uuid.test(media[1]) && uuid.test(media[2]) && !request.nextUrl.search) return streamDerivative(request, api, config!, media[1], media[2], transport);
       if (path === "materials") {

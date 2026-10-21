@@ -46,12 +46,13 @@ test("contributors require exact totals and reservation can be released", async 
 });
 test("administrator grants independent permissions and suspends with enum-only payload", async ({ page, request }) => {
   await login(page, "admin", "en"); await page.getByRole("link", { name: en.admin.title, exact: true }).click(); await page.getByLabel(en.admin.target, { exact: true }).fill(target);
-  for (const label of [en.admin.location, en.admin.source]) {
+  for (const label of [en.admin.location, en.admin.source, en.admin.identity]) {
     await page.getByLabel(en.admin.reason, { exact: true }).fill("approved synthetic request"); await page.getByRole("article", { name: label }).getByRole("button", { name: en.admin.grant, exact: true }).click(); await page.getByRole("dialog").getByRole("button", { name: en.admin.confirm, exact: true }).click(); await expect(page.getByRole("dialog")).toHaveCount(0);
   }
   await page.getByRole("article", { name: en.admin.location }).getByRole("button", { name: en.admin.revoke, exact: true }).click(); await page.getByRole("dialog").getByRole("button", { name: en.admin.confirm, exact: true }).click(); await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("article", { name: en.admin.identity, exact: true }).getByRole("button", { name: en.admin.revoke, exact: true }).click(); await page.getByRole("dialog").getByRole("button", { name: en.admin.confirm, exact: true }).click(); await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: en.admin.suspend, exact: true }).click(); await expect(page.getByRole("dialog")).toContainText(en.admin.suspendWarning); await page.getByRole("dialog").getByRole("button", { name: en.admin.confirm, exact: true }).click(); await expect(page.getByRole("dialog")).toHaveCount(0);
-  const data = await (await request.get("http://127.0.0.1:3201/__test/state")).json(); expect(data.writes.map((r: { path: string }) => r.path.split("/").at(-1))).toEqual(["sensitive_location:read", "protected_source:read", "sensitive_location:read", "status"]); expect(data.writes[3].body).toEqual({ status: "suspended" });
+  const data = await (await request.get("http://127.0.0.1:3201/__test/state")).json(); expect(data.writes.map((r: { path: string }) => r.path.split("/").at(-1))).toEqual(["sensitive_location:read", "protected_source:read", "reporter_identity:read", "sensitive_location:read", "reporter_identity:read", "status"]); expect(data.writes[5].body).toEqual({ status: "suspended" });
   await page.screenshot({ path: ".artifacts/admin-en.png", fullPage: true });
 });
 test("fresh BFF roles block an administrator whose role was revoked while the page was open", async ({ page, request }) => {
@@ -70,4 +71,71 @@ test("notification read and acknowledgment update counts without exposing raw te
 });
 test("reporter can retry the technical track on their own failed material", async ({ page }) => {
   await login(page, "reporter"); await detail(page, "20000000-0000-4000-8000-000000000003"); await page.getByRole("combobox", { name: ar.review.target, exact: true }).selectOption("pending"); await page.getByLabel(ar.review.reason, { exact: true }).fill("retry receipt"); await page.getByRole("button", { name: ar.review.apply, exact: true }).click(); await expect(page.locator(".state-grid [data-track='technical_state']")).toHaveText(ar.states.technical_state.pending); await expect(page.locator(".state-grid [data-track='editorial_state']")).toHaveText(ar.states.editorial_state.inbox);
+});
+
+test("identity policy requires a coded reason and confirmation, cancels safely, and retries one write", async ({ page, request }) => {
+  await login(page, "admin"); await page.getByRole("link", { name: ar.admin.title, exact: true }).click();
+  const card = page.getByRole("region", { name: ar.admin.identityTitle, exact: true });
+  await expect(card.getByRole("combobox", { name: ar.admin.identityAccess, exact: true })).toHaveValue("separate");
+  await card.getByRole("combobox", { name: ar.admin.identityAccess, exact: true }).selectOption("protected_source");
+  await expect(card.getByRole("button", { name: ar.admin.saveSetting, exact: true })).toBeDisabled();
+  await card.getByRole("combobox", { name: ar.admin.codedReason, exact: true }).selectOption("operational_need");
+  await card.getByRole("button", { name: ar.admin.saveSetting, exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText(ar.admin.sourceAccessWarning);
+  await page.getByRole("dialog").getByRole("button", { name: ar.cancel, exact: true }).click();
+  expect((await (await request.get("http://127.0.0.1:3201/__test/state")).json()).writes).toHaveLength(0);
+  await request.post("http://127.0.0.1:3201/__test/drop-write"); await card.getByRole("button", { name: ar.admin.saveSetting, exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: ar.admin.confirm, exact: true }).evaluate((button: HTMLButtonElement) => { button.click(); button.click(); });
+  await expect(page.getByRole("dialog")).toContainText(ar.review.failed);
+  await page.getByRole("dialog").getByRole("button", { name: ar.admin.confirm, exact: true }).click(); await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(card.getByRole("status")).toHaveText(ar.review.saved);
+  const state = await (await request.get("http://127.0.0.1:3201/__test/state")).json();
+  expect(state.writes).toHaveLength(2); expect(state.applied).toBe(1); expect(state.auditCount).toBe(22);
+  expect(state.writes[0].key).toBe(state.writes[1].key); expect(state.writes[0].body).toEqual({ access: "protected_source", reason_code: "operational_need" });
+  expect(await (await page.request.get("/api/bff/admin/settings/reporter-identity")).text()).not.toContain("never-display-canary");
+  await card.screenshot({ path: ".artifacts/identity-ar.png" });
+  await page.getByLabel(ar.admin.target, { exact: true }).fill(target); await page.getByRole("button", { name: ar.admin.loadHistory, exact: true }).click();
+  await expect(page.getByTestId("permission-history").locator("li").first()).toContainText(ar.admin.historyKinds.setting_changed);
+  await expect(page.getByTestId("permission-history").locator("li").first()).toContainText(ar.admin.globalSetting);
+  await expect(page.getByTestId("permission-history")).not.toContainText("never-display-canary");
+});
+
+test("administrator can restore separate identity access with an explicit new reason", async ({ page }) => {
+  await login(page, "admin", "en"); await page.getByRole("link", { name: en.admin.title, exact: true }).click();
+  const card = page.getByRole("region", { name: en.admin.identityTitle, exact: true });
+  for (const access of ["protected_source", "separate"]) {
+    await expect(card.getByRole("combobox", { name: en.admin.identityAccess, exact: true })).toBeVisible();
+    await card.getByRole("combobox", { name: en.admin.identityAccess, exact: true }).selectOption(access);
+    await expect(card.getByRole("button", { name: en.admin.saveSetting, exact: true })).toBeDisabled();
+    await card.getByRole("combobox", { name: en.admin.codedReason, exact: true }).selectOption("audit_finding");
+    await card.getByRole("button", { name: en.admin.saveSetting, exact: true }).click();
+    await expect(page.getByRole("dialog")).toContainText(access === "separate" ? en.admin.separateAccessHelp : en.admin.sourceAccessWarning);
+    await page.getByRole("dialog").getByRole("button", { name: en.admin.confirm, exact: true }).click(); await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(card.getByRole("combobox", { name: en.admin.identityAccess, exact: true })).toHaveValue(access);
+    await expect(card.getByRole("combobox", { name: en.admin.codedReason, exact: true })).toHaveValue("");
+  }
+});
+
+test("permission history pages, isolates the selected account, clears failed reads and refreshes", async ({ page, request }) => {
+  await login(page, "admin", "en"); await page.getByRole("link", { name: en.admin.title, exact: true }).click();
+  const card = page.getByRole("region", { name: en.admin.history, exact: true });
+  await page.getByLabel(en.admin.target, { exact: true }).fill(target); await card.getByRole("button", { name: en.admin.loadHistory, exact: true }).click();
+  await expect(card.locator("li")).toHaveCount(20); await card.getByRole("button", { name: en.next, exact: true }).click(); await expect(card.locator("li")).toHaveCount(1);
+  await expect(card.getByRole("button", { name: en.next, exact: true })).toBeDisabled(); await card.screenshot({ path: ".artifacts/permission-history-en.png" });
+  await card.getByRole("button", { name: en.previous, exact: true }).click(); await expect(card.locator("li")).toHaveCount(20);
+  await page.getByLabel(en.admin.target, { exact: true }).fill("10000000-0000-4000-8000-000000000003"); await expect(card.locator("li")).toHaveCount(0);
+  await card.getByRole("button", { name: en.admin.loadHistory, exact: true }).click(); await expect(card.getByText(en.admin.emptyHistory, { exact: true })).toBeVisible();
+  await page.getByLabel(en.admin.target, { exact: true }).fill(target); await card.getByRole("button", { name: en.admin.loadHistory, exact: true }).click(); await expect(card.locator("li")).toHaveCount(20);
+  await request.post("http://127.0.0.1:3201/__test/history-unavailable"); await card.getByRole("button", { name: en.refresh, exact: true }).click();
+  await expect(card.getByRole("alert")).toHaveText(en.admin.historyMissing); await expect(card.locator("li")).toHaveCount(0);
+  await request.post("http://127.0.0.1:3201/__test/reset"); await card.getByRole("button", { name: en.refresh, exact: true }).click(); await expect(card.locator("li")).toHaveCount(20);
+  await request.post("http://127.0.0.1:3201/__test/revoke-role"); await card.getByRole("button", { name: en.refresh, exact: true }).click(); await expect(card.getByRole("alert")).toHaveText(en.admin.denied); await expect(card.locator("li")).toHaveCount(0);
+});
+
+test("revoking the administrator role blocks a pending identity policy confirmation", async ({ page, request }) => {
+  await login(page, "admin"); await page.getByRole("link", { name: ar.admin.title, exact: true }).click();
+  await page.getByRole("combobox", { name: ar.admin.identityAccess, exact: true }).selectOption("protected_source"); await page.getByRole("combobox", { name: ar.admin.codedReason, exact: true }).selectOption("policy_change");
+  await page.getByRole("button", { name: ar.admin.saveSetting, exact: true }).click(); await request.post("http://127.0.0.1:3201/__test/revoke-role");
+  await page.getByRole("dialog").getByRole("button", { name: ar.admin.confirm, exact: true }).click(); await expect(page.getByRole("dialog")).toContainText(ar.review.forbidden);
+  expect((await (await request.get("http://127.0.0.1:3201/__test/state")).json()).writes).toHaveLength(0);
 });

@@ -3,16 +3,20 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { form, material, me, tokens } from "../tests/fixtures";
 import assets from "../tests/media-fixture.json";
-import type { Me, Material, Notification, TransitionRecord } from "../src/lib/types";
+import type { Me, Material, Notification, TransitionRecord, PermissionHistoryEntry, ReporterIdentitySetting, ReporterIdentitySettingUpdate, Permission } from "../src/lib/types";
 const materials: Material[] = [], notifications: Notification[] = [], history = new Map<string, TransitionRecord[]>();
 const writes: { path: string; method: string; key: string; body: Record<string, unknown> }[] = [];
 const applied = new Map<string, { fingerprint: string; value: unknown; status: number }>();
 let dropNextWrite = false;
+let identitySetting: ReporterIdentitySetting, historyUnavailable = false, auditSequence = 21;
+const permissionAudit: { target: string | null; entry: PermissionHistoryEntry }[] = [];
 function reset() {
   materials.splice(0, materials.length, ...Array.from({ length: 200 }, (_, i) => ({ ...material(i + 1), row_version: 17, reserved_by: null, reserved_at: null, contributors: [{ user_id: me.user_id, role: "reporter" as const, share_percent: 100 }] })));
   materials[1].editorial_state = "accepted"; materials[2].technical_state = "failed";
   notifications.splice(0, notifications.length, ...Array.from({ length: 3 }, (_, i) => ({ id: `60000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`, type: "never-display-canary", title: "never-display-canary", material_id: materials[i].id, priority: "normal" as const, state: "sent" as const, created_at: "2026-10-20T12:00:00Z" })));
   history.clear(); writes.length = 0; applied.clear(); dropNextWrite = false;
+  identitySetting = { access: "separate", updated_at: "2026-10-21T10:00:00Z", updated_by: null }; historyUnavailable = false; auditSequence = 21;
+  permissionAudit.splice(0, permissionAudit.length, ...Array.from({ length: 21 }, (_, i) => ({ target: "10000000-0000-4000-8000-000000000002", entry: { id: String(21 - i), kind: i % 2 ? "permission_revoked" as const : "permission_granted" as const, permission: "reporter_identity:read" as const, actor_id: me.user_id, occurred_at: new Date(Date.parse(identitySetting.updated_at) - i * 1000).toISOString(), reason_code: null } })));
 }
 reset();
 const signed = new Map<string, { kind: "proxy" | "thumbnail"; expires: number }>();
@@ -20,7 +24,7 @@ let expireNextProxy = false;
 const access = new Map<string, Me>(), refresh = new Map<string, Me>();
 function profile(email: string): Me {
   const names: Record<string, Me["roles"]> = { reviewer: ["supervisor", "rights_officer", "producer"].map(name => ({ name: name as Me["roles"][number]["name"], scopes: [] })), admin: [{ name: "system_admin", scopes: [] }], reporter: [{ name: "reporter", scopes: [] }] };
-  return { ...me, roles: names[email.split("@")[0]] ?? [], permissions: email.startsWith("permissions@") ? ["sensitive_location:read", "protected_source:read"] : [] };
+  return { ...me, roles: names[email.split("@")[0]] ?? [], permissions: email.startsWith("permissions@") ? ["sensitive_location:read", "protected_source:read", "reporter_identity:read"] : [] };
 }
 function session(user: Me) {
   const value = { ...tokens(), access_token: randomUUID(), refresh_token: randomUUID(), roles: user.roles };
@@ -32,7 +36,8 @@ const server = createServer(async (req, res) => {
   const send = (value: unknown, status = 200) => { res.statusCode = status; res.end(status === 204 ? "" : JSON.stringify(value)); };
   if (url.pathname === "/health") return send({ ok: true });
   if (url.pathname === "/__test/reset" && req.method === "POST") { reset(); return send({ ok: true }); }
-  if (url.pathname === "/__test/state") return send({ writes, applied: applied.size });
+  if (url.pathname === "/__test/state") return send({ writes, applied: applied.size, identitySetting, auditCount: permissionAudit.length });
+  if (url.pathname === "/__test/history-unavailable" && req.method === "POST") { historyUnavailable = true; return send({ ok: true }); }
   if (url.pathname === "/__test/bump" && req.method === "POST") { materials[0].row_version!++; return send({ ok: true }); }
   if (url.pathname === "/__test/drop-write" && req.method === "POST") { dropNextWrite = true; return send({ ok: true }); }
   if (url.pathname === "/__test/revoke-role" && req.method === "POST") { for (const user of access.values()) user.roles = []; return send({ ok: true }); }
@@ -104,10 +109,37 @@ const server = createServer(async (req, res) => {
         return commit({ material_id: item.id, reserved_by: user.user_id, reserved_at: stamp, releases_at: new Date(Date.now() + 1800000).toISOString() }, 200);
       }
     }
-    if (/^\/v1\/users\/[^/]+\/(status|permissions\/[^/]+)$/.test(path)) { if (!has("system_admin")) return send({}, 403); return commit(null); }
+    if (path === "/v1/admin/settings/reporter-identity" && req.method === "PUT") {
+      if (!has("system_admin")) return send({}, 403);
+      const input = body as ReporterIdentitySettingUpdate;
+      if (input.access !== identitySetting.access) {
+        identitySetting = { access: input.access, updated_by: user.user_id, updated_at: new Date().toISOString() };
+        permissionAudit.unshift({ target: null, entry: { id: String(++auditSequence), kind: "setting_changed", setting: "reporter_legal_name_access", value: input.access, actor_id: user.user_id, occurred_at: identitySetting.updated_at, reason_code: input.reason_code } });
+      }
+      return commit(identitySetting, 200);
+    }
+    const permissionPath = /^\/v1\/users\/([^/]+)\/permissions\/([^/]+)$/.exec(path);
+    if (permissionPath) {
+      if (!has("system_admin")) return send({}, 403);
+      permissionAudit.unshift({ target: permissionPath[1], entry: { id: String(++auditSequence), kind: req.method === "PUT" ? "permission_granted" : "permission_revoked", permission: permissionPath[2] as Permission, actor_id: user.user_id, occurred_at: new Date().toISOString(), reason_code: null } });
+      return commit(null);
+    }
+    if (/^\/v1\/users\/[^/]+\/status$/.test(path)) { if (!has("system_admin")) return send({}, 403); return commit(null); }
     const notice = /^\/v1\/notifications\/([^/]+)\/(read|ack)$/.exec(path);
     if (notice) { const item = notifications.find(n => n.id === notice[1]); if (!item) return send({}, 404); item.read_at = new Date().toISOString(); item.state = notice[2] === "ack" ? "acknowledged" : "read"; if (notice[2] === "ack") item.acknowledged_at = item.read_at; return commit(null); }
     return send({}, 405);
+  }
+  if (url.pathname === "/v1/admin/settings/reporter-identity") {
+    if (!user.roles.some(role => role.name === "system_admin")) return send({}, 403);
+    return send({ ...identitySetting, reporter_legal_name: "never-display-canary" });
+  }
+  const permissionTrail = /^\/v1\/users\/([^/]+)\/permissions\/history$/.exec(url.pathname);
+  if (permissionTrail) {
+    if (!user.roles.some(role => role.name === "system_admin")) return send({}, 403);
+    if (historyUnavailable) return send({ message: "never-display-canary" }, 404);
+    const items = permissionAudit.filter(row => row.target === null || row.target === permissionTrail[1]);
+    const start = Number(url.searchParams.get("cursor") ?? 0), limit = Number(url.searchParams.get("limit") ?? 50);
+    return send({ items: items.slice(start, start + limit).map(row => ({ ...row.entry, reason: "never-display-canary", legal_name: "never-display-canary" })), next_cursor: start + limit < items.length ? String(start + limit) : null });
   }
   if (url.pathname === "/v1/notifications") { const items = url.searchParams.get("unread_only") === "true" ? notifications.filter(n => !n.read_at) : notifications; return send({ items, next_cursor: null, unread_count: notifications.filter(n => !n.read_at).length }); }
   const trail = /^\/v1\/materials\/([^/]+)\/transitions$/.exec(url.pathname);
