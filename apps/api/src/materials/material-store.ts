@@ -17,7 +17,8 @@ export type MaterialDto = components['schemas']['Material'];
  * الإنتاج المواد المقبولة فما بعدها، ورئيس التحرير ومدير النظام ومسؤول الحقوق كل المواد. اتحاد أدوار المستخدم.
  */
 export function scopeCondition(p: Principal): SQL {
-  const parts: SQL[] = [];
+  // المنشئ يرى ما أنشأه أيًّا كان دوره (رفع الطاقم من الويب، #88)، وفوقه نطاق دوره
+  const parts: SQL[] = [sql`${materials.reporterId} = ${p.userId}`];
   for (const r of p.roles) {
     switch (r.role) {
       case 'editor_in_chief':
@@ -25,7 +26,6 @@ export function scopeCondition(p: Principal): SQL {
       case 'rights_officer':
         return sql`true`;
       case 'reporter':
-        parts.push(sql`${materials.reporterId} = ${p.userId}`);
         break;
       case 'producer':
         parts.push(sql`${materials.editorialState} IN (${sql.join(PRODUCTION_VISIBLE_STATES.map((s) => sql`${s}`), sql`, `)})`);
