@@ -45,7 +45,8 @@ def video_filter(source: Probe, short_side: int) -> str:
             "format=gbrpf32le", "zscale=p=bt709", "tonemap=tonemap=hable:desat=0",
             "zscale=t=bt709:m=bt709:r=tv",
         ]
-    chain.append("format=yuv420p")
+    # بكسل مربع: التقريب إلى عرض زوجي يترك SAR غير مربع (1280:1281)، فيعرض WebKit 853 بدل 854
+    chain += ["setsar=1", "format=yuv420p"]
     return ",".join(chain)
 
 
