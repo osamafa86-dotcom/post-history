@@ -224,6 +224,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{id}/permissions/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المستخدم */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * سجل منح الصلاحيات المستقلة وسحبها لمستخدم (مدير النظام)
+         * @description من سجل التدقيق، الأحدث أولًا، بالمؤشر:
+         *     - منح هذا المستخدم صلاحياته المستقلة وسحبها.
+         *     - تغييرات الإعداد `reporter_legal_name_access` (ADR 0021)، لأنها تغيّر الصلاحية الفعّالة للاسم الحقيقي لكل المستخدمين.
+         *
+         *     معرّفات وأكواد فقط. سبب المنح الحر في `user_permissions.reason` لا يعود هنا. `reason_code` يعود حيث سُجّل
+         *     مرمّزًا، وهو `null` لغيره.
+         */
+        get: operations["listPermissionHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/{id}/permissions/{permission}": {
         parameters: {
             query?: never;
@@ -1789,6 +1817,31 @@ export interface components {
             mime_type?: "image/jpeg" | "image/webp" | "video/mp4" | "application/vnd.apple.mpegurl" | "audio/mp4" | "application/json" | "application/zip" | "text/vtt";
             technical: components["schemas"]["MediaTechnical"];
         } & (unknown & unknown & unknown & unknown);
+        PermissionHistoryEntry: {
+            /** @description رقم صف التدقيق */
+            id: string;
+            /** @enum {string} */
+            kind: "permission_granted" | "permission_revoked" | "setting_changed";
+            /** @description لـ `permission_*`؛ `null` لـ `setting_changed` */
+            permission?: components["schemas"]["Permission"] | null;
+            /** @enum {string|null} */
+            setting?: "reporter_legal_name_access" | null;
+            /** @description القيمة الجديدة لـ `setting_changed` */
+            value?: components["schemas"]["ReporterIdentityAccess"] | null;
+            /**
+             * Format: uuid
+             * @description المنفّذ
+             */
+            actor_id: string | null;
+            /** Format: date-time */
+            occurred_at: string;
+            /** @description السبب المرمّز حيث سُجّل؛ لا نص حر */
+            reason_code: string | null;
+        };
+        PermissionHistoryPage: {
+            items: components["schemas"]["PermissionHistoryEntry"][];
+            next_cursor: string | null;
+        };
         /**
          * @description `separate` = يلزم `reporter_identity:read`؛ `protected_source` = يكفي `protected_source:read`
          * @enum {string}
@@ -2734,6 +2787,38 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    listPermissionHistory: {
+        parameters: {
+            query?: {
+                /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description حجم الصفحة */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                /** @description معرّف المستخدم */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description صفحة من السجل */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionHistoryPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     grantPermission: {
