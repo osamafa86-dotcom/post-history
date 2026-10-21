@@ -146,6 +146,9 @@ else
   printf '%s\n' "$break_glass" | age -r "$OWNER_RECIPIENT" -o "$ETC/break-glass.age"
   {
     for k in MAIN_DOMAIN INGEST_DOMAIN MAIN_IP INGEST_IP ACME_EMAIL CLOUDFLARE_CIDRS; do echo "$k=$(conf "$k")"; done
+    # معرّفات التطبيقين لشهادة الجهاز (ليست أسرارًا؛ اختيارية هنا، وpreflight يرسب بلا واحد منها لأن ingest مطلوب).
+    # حساب خدمة Play Integrity سر: يضيفه المالك إلى الأسرار المختومة لا إلى host.env.
+    for k in APP_ATTEST_APP_ID PLAY_INTEGRITY_PACKAGE_NAME PLAY_INTEGRITY_CERT_SHA256; do echo "$k=$(conf "$k")"; done
     echo "TRUSTED_PROXY_CIDRS=172.30.240.1/32"
     echo "CADDY_GLOBAL_EXTRA="
     echo "POSTGRES_PASSWORD=$(hex 32)"
@@ -164,6 +167,7 @@ else
     echo "INGEST_TOKEN_SIGNING_KEY=$(printf '%s\n' "$ingest_priv" | openssl pkcs8 -topk8 -nocrypt -outform DER | base64 -w0)"
     echo "INGEST_TOKEN_KEY_ID=k1"
     echo "INGEST_PORT=8443"
+    echo "INGEST_REQUIRED=true"   # لا يُطفأ إلا بقرار مكتوب (ADR 0011)
     echo "BACKUP_PG_PASSWORD=$(hex 32)"
     echo "S3_BACKUP_ACCESS_KEY=backup-reader"
     echo "S3_BACKUP_SECRET_KEY=$(hex 32)"

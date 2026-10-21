@@ -19,6 +19,15 @@ services:
       # Trusting that one address (not 172.16.0.0/12) lets req.ip come from Caddy's X-Forwarded-For while no other
       # container can forge it; without it every client shares one rate-limit bucket.
       TRUSTED_PROXY_CIDRS: "${TRUSTED_PROXY_CIDRS:-172.30.240.1/32}"
+      # ingest مطلوب افتراضيًا (ADR 0011، SEC-07): كل جلسة tus جديدة تُعلن نطاق ingest، والبوابة لا تمرر إلا رمزًا قصيرًا
+      # يصدره الخادم بعد شهادة الجهاز. لا يُطفأ إلا بقرار مكتوب (INGEST_REQUIRED=false في الأسرار مع رقم القرار).
+      # ATTESTATION_MODE=production: جذر Apple وواجهة Google؛ معرّفات التطبيقين من المالك (preflight يفحصها).
+      INGEST_REQUIRED: "${INGEST_REQUIRED:-true}"
+      ATTESTATION_MODE: "${ATTESTATION_MODE:-production}"
+      INGEST_TUS_ENDPOINT: "https://${INGEST_DOMAIN:?}/files/"
+      INGEST_TOKEN_SIGNING_KEY: "${INGEST_TOKEN_SIGNING_KEY:?ES256 PKCS#8 base64 of the ingest token signing key}"
+      INGEST_TOKEN_KEY_ID: "${INGEST_TOKEN_KEY_ID:?kid of the ingest token signing key}"
+      PLAY_INTEGRITY_SERVICE_ACCOUNT: "${PLAY_INTEGRITY_SERVICE_ACCOUNT:-}"
   media-worker:
     restart: unless-stopped
 
