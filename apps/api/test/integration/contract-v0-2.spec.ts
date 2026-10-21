@@ -352,5 +352,29 @@ describe('contract v0.2 on the server', () => {
       expect(JSON.stringify(mine.body)).not.toContain('عنوان');
       await as(reporter).get('/dashboard/newsroom').expect(403);
     });
+
+    it('each state count and the open urgent count equal the scoped rows exactly', async () => {
+      await material({ priority: 'urgent' });
+      const done = await material();
+      for (const to of ['acknowledged', 'reviewing', 'accepted']) {
+        await as(supervisor).post(`/materials/${done}/transitions`, { track: 'editorial', to, reason: 'dashboard' }).expect(200);
+      }
+      const body = (await as(supervisor).get('/dashboard/newsroom').expect(200)).body;
+      const tally = async (column: string) =>
+        (
+          await h.pool.query<{ state: string; count: number }>(
+            `SELECT ${column} AS state, count(*)::int AS count FROM materials WHERE office_id = $1 GROUP BY 1 ORDER BY 1`,
+            [office],
+          )
+        ).rows;
+      expect(body.editorial).toEqual(await tally('editorial_state'));
+      expect(body.technical).toEqual(await tally('technical_state'));
+      expect(body.rights).toEqual(await tally('rights_state'));
+      const { rows } = await h.pool.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM materials WHERE office_id = $1 AND priority = 'urgent' AND editorial_state NOT IN ('published', 'rejected')`,
+        [office],
+      );
+      expect(body.urgent_open).toBe(rows[0]!.n);
+    });
   });
 });

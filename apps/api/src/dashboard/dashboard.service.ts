@@ -19,23 +19,16 @@ export class DashboardService {
 
   async newsroom(p: Principal): Promise<NewsroomDashboard> {
     const scope = scopeCondition(p);
-    const counts = async (column: typeof materials.editorialState | typeof materials.technicalState | typeof materials.rightsState): Promise<Counts> =>
-      (
-        await this.db
-          .select({ state: sql<string>`${column}`, count: count() })
-          .from(materials)
-          .leftJoin(offices, eq(offices.id, materials.officeId))
-          .where(scope)
-          .groupBy(column)
-          .orderBy(asc(column))
-      ).map((r) => ({ state: r.state, count: r.count }));
-
-    const [urgent] = await this.db
-      .select({ n: count() })
-      .from(materials)
-      .leftJoin(offices, eq(offices.id, materials.officeId))
-      .where(and(scope, eq(materials.priority, 'urgent'), notInArray(materials.editorialState, ['published', 'rejected'])));
-    const reserved = await this.db
+    // الحالات الثلاث والعاجل المفتوح في مسح واحد للمواد ضمن النطاق (GROUPING SETS)، وبقية القراءات بالتوازي معه
+    const tallies = this.db.execute<{ editorial: string | null; technical: string | null; rights: string | null; g: number; n: number; urgent: number }>(sql`
+      SELECT ${materials.editorialState} AS editorial, ${materials.technicalState} AS technical, ${materials.rightsState} AS rights,
+             GROUPING(${materials.editorialState}, ${materials.technicalState}, ${materials.rightsState})::int AS g,
+             count(*)::int AS n,
+             (count(*) FILTER (WHERE ${materials.priority} = 'urgent' AND ${materials.editorialState} NOT IN ('published', 'rejected')))::int AS urgent
+        FROM ${materials} LEFT JOIN ${offices} ON ${offices.id} = ${materials.officeId}
+       WHERE ${scope}
+       GROUP BY GROUPING SETS ((${materials.editorialState}), (${materials.technicalState}), (${materials.rightsState}), ())`);
+    const reservedQuery = this.db
       .select({
         material_id: materials.id,
         reserved_by: materials.reservedBy,
@@ -48,7 +41,7 @@ export class DashboardService {
       .where(and(scope, isNotNull(materials.reservedBy)))
       .orderBy(asc(materials.reservedAt))
       .limit(50);
-    const receipts = await this.db
+    const receiptsQuery = this.db
       .select({
         material_id: materialFiles.materialId,
         receipt_number: materialFiles.receiptNumber,
@@ -62,7 +55,7 @@ export class DashboardService {
       .orderBy(desc(materialFiles.verifiedAt))
       .limit(20);
     // مهام حان تصعيدها (أو صُعِّدت) ولم يُقرّ استلامها، لمواد ضمن النطاق
-    const [overdue] = await this.db
+    const overdueQuery = this.db
       .select({ n: count() })
       .from(notifications)
       .innerJoin(materials, eq(materials.id, notifications.materialId))
@@ -75,13 +68,22 @@ export class DashboardService {
           sql`(${notifications.escalationLevel} > 0 OR ${notifications.escalateAt} <= now())`,
         ),
       );
+    const [{ rows }, reserved, receipts, [overdue]] = await Promise.all([tallies, reservedQuery, receiptsQuery, overdueQuery]);
+
+    // GROUPING: البت 4 = الحالة التحريرية مجمّعة، 2 = الفنية، 1 = الحقوق؛ 7 = المجموع
+    const by = (mask: number, pick: (r: (typeof rows)[number]) => string | null): Counts =>
+      rows
+        .filter((r) => Number(r.g) === mask)
+        .map((r) => ({ state: pick(r)!, count: Number(r.n) }))
+        .sort((x, y) => (x.state < y.state ? -1 : x.state > y.state ? 1 : 0));
+    const total = rows.find((r) => Number(r.g) === 7);
 
     return {
       generated_at: new Date().toISOString(),
-      editorial: await counts(materials.editorialState),
-      technical: await counts(materials.technicalState),
-      rights: await counts(materials.rightsState),
-      urgent_open: urgent?.n ?? 0,
+      editorial: by(3, (r) => r.editorial),
+      technical: by(5, (r) => r.technical),
+      rights: by(6, (r) => r.rights),
+      urgent_open: Number(total?.urgent ?? 0),
       reserved: reserved.map((r) => ({
         material_id: r.material_id,
         reserved_by: r.reserved_by!,
