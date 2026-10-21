@@ -6,7 +6,7 @@ import type { WebConfig } from "../src/server/config";
 import { MemoryStore } from "./memory-store";
 import { material, me, tokens } from "./fixtures";
 
-const config: WebConfig = { origin: "https://web.example.test", api: "https://api.example.test/v1", key: randomBytes(32), redisUrl: "", secure: true, cookieName: "__Host-ph-session", lifetimeSeconds: 28800, mediaOrigins: ["https://media.example.test"], trustForwardedFor: false };
+const config: WebConfig = { origin: "https://web.example.test", api: "https://api.example.test/v1", key: randomBytes(32), redisUrl: "", secure: true, cookieName: "__Host-ph-session", lifetimeSeconds: 28800, tusOrigins: [], mediaOrigins: ["https://media.example.test"], trustForwardedFor: false };
 const fixture = material(), file = fixture.files[0];
 const path = `materials/${fixture.id}/files/${file.id}/content`;
 async function setup(options: { kind?: typeof file.kind; state?: typeof file.state; url?: string; expiry?: number; revoked?: boolean; mime?: string; slowCancel?: boolean } = {}) {
