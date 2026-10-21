@@ -8,22 +8,16 @@
 // API part: PUT /users/{admin}/status -> 403 admin_quorum_required with the admin still working; self-suspension 403; a non-admin cannot suspend;
 // an ordinary user is suspended (204, repeat 204, their token stops working) and reactivated. `pass` needs the command-line part; without it partial.
 import { spawnSync } from "node:child_process";
-import { createHmac } from "node:crypto";
 import { newResult, finish, writeResult, parseArgs, banner } from "../lib/measurement.mjs";
 import { byName } from "../lib/catalog.mjs";
 import { client } from "../lib/live.mjs";
 import { loadWaivers } from "../lib/waivers.mjs";
 import { checker, gateOff } from "../lib/core-gate.mjs";
 import { freshFetch } from "../lib/http.mjs";
+import { totp } from "../lib/totp.mjs";
 
 /** RFC 6238 (SHA-1, 6 digits, 30 s): the code the approver's authenticator would show now. */
-export function totp(secretHex, nowMs = Date.now()) {
-  const counter = Buffer.alloc(8);
-  counter.writeBigUInt64BE(BigInt(Math.floor(nowMs / 30_000)));
-  const mac = createHmac("sha1", Buffer.from(secretHex, "hex")).update(counter).digest();
-  const o = mac[mac.length - 1] & 0x0f;
-  return String((mac.readUInt32BE(o) & 0x7fffffff) % 1_000_000).padStart(6, "0");
-}
+export { totp };
 
 export async function run(argv = process.argv.slice(2), env = process.env, deps = {}) {
   const args = parseArgs(argv);
