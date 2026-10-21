@@ -115,7 +115,7 @@ describe('upload sessions: list mine and cancel (GET /uploads, DELETE /uploads/{
       expect(failed).toMatchObject({ id: s.id, state: 'failed', failure_reason: 'aborted' });
     });
 
-    it('a cancelled session accepts no upload token and its late post-finish has no effect', async () => {
+    it('a cancelled session accepts no upload token, and its late post-receive and post-finish have no effect', async () => {
       const s = await seedUploadSession(h, reporter.id, { state: 'created' });
       await cancel(reporter, s.id).expect(204);
       const hook = (Type: string) =>
@@ -130,6 +130,11 @@ describe('upload sessions: list mine and cancel (GET /uploads, DELETE /uploads/{
           })
           .expect(200);
       expect((await hook('pre-create')).body.RejectUpload).toBe(true);
+      // تقدّم يصل بعد الإلغاء (ADR 0024): لا مستلم ولا حدث upload.progress
+      await hook('post-receive');
+      expect((await row(s.id)).bytes_received).toBe('0');
+      const progress = await h.pool.query(`SELECT 1 FROM outbox_events WHERE aggregate_id = $1 AND type = 'upload.progress'`, [s.id]);
+      expect(progress.rows).toEqual([]);
       await hook('post-finish');
       expect(await row(s.id)).toMatchObject({ state: 'failed', failure_reason: 'aborted' });
       const { rows } = await h.pool.query(`SELECT type FROM outbox_events WHERE aggregate_id = $1 AND type LIKE 'upload.%received'`, [s.id]);
