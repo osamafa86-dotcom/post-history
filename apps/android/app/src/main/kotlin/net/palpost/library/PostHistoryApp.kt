@@ -1,5 +1,6 @@
 package net.palpost.library
 
+import net.palpost.library.push.Push
 import android.app.Application
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,9 +32,11 @@ class PostHistoryApp : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        Push.init(this)
         // SEC-01: a session the server revoked (401 on refresh) takes the device's upload state with it.
         scope.launch {
             container.auth.state.collect { state ->
+                if (state is AuthState.SignedIn) Push.register(container)
                 if (state is AuthState.SignedOut && state.reason == SignOutReason.SESSION_REVOKED && _lastWipe.value == null && !wipeRunning) {
                     wipeLock.withLock { if (_lastWipe.value == null) _lastWipe.value = DeviceWipe(this@PostHistoryApp, container).afterRevocation() }
                 }

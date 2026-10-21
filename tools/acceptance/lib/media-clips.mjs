@@ -42,6 +42,29 @@ export function synthClip(path, { seconds = 10, size = "1280x720", rate = 30, vf
   return path;
 }
 
+/** Remuxes `src` into `dst` with a display-rotation side data of `degrees` (what a phone held upright writes), streams copied. */
+export function rotateClip(src, dst, degrees) {
+  run(FFMPEG, ["-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-display_rotation", String(degrees), "-copyts", "-i", src, "-c", "copy", "-movflags", "use_metadata_tags", dst]);
+  return dst;
+}
+
+/**
+ * An HDR clip as phones record it: HEVC 10-bit, BT.2020, HLG (`arib-std-b67`) or PQ (`smpte2084`), with the same planted
+ * revealing tags as `synthClip`. Needs an FFmpeg with libx265.
+ */
+export function synthHdrClip(path, { seconds = 6, size = "1280x720", rate = 30, transfer = "arib-std-b67" } = {}) {
+  const args = ["-hide_banner", "-nostdin", "-loglevel", "error", "-y",
+    "-f", "lavfi", "-i", `testsrc2=size=${size}:rate=${rate}:duration=${seconds}`,
+    "-f", "lavfi", "-i", `sine=frequency=440:sample_rate=48000:duration=${seconds}`,
+    "-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le", "-tag:v", "hvc1",
+    "-x265-params", `log-level=error:colorprim=bt2020:transfer=${transfer}:colormatrix=bt2020nc`,
+    "-color_primaries", "bt2020", "-color_trc", transfer, "-colorspace", "bt2020nc", "-c:a", "aac", "-movflags", "use_metadata_tags"];
+  for (const [k, v] of Object.entries(LEAK)) args.push("-metadata", `${k}=${v}`);
+  args.push(path);
+  run(FFMPEG, args);
+  return path;
+}
+
 /** Spoken Arabic from espeak-ng (a synthetic voice: no recording of anyone). Throws when espeak-ng is not installed. */
 export function espeakArabic(wavPath, text) {
   run("espeak-ng", ["-v", "ar", "-s", "150", "-w", wavPath, text]);
