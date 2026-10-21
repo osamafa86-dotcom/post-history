@@ -29,10 +29,10 @@ final class AppModel: ObservableObject {
             UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
         }
         // مسارات /auth/* بلا معترض كي لا يدخل التحديث في حلقة.
-        let plain = PostHistoryAPIAPIConfiguration(basePath: baseURL)
+        let plain = PostHistoryAPIAPIConfiguration.noCache(basePath: baseURL)
         let auth = AuthSession(store: store, gateway: APIAuthGateway(configuration: plain))
         self.auth = auth
-        let api = PostHistoryAPIAPIConfiguration(basePath: baseURL, interceptor: AuthInterceptor(auth: auth))
+        let api = PostHistoryAPIAPIConfiguration.noCache(basePath: baseURL, interceptor: AuthInterceptor(auth: auth))
         self.api = api
         // نواة الرفع فوق الجلسة الخلفية المشتركة؛ تُستأنف السجلات غير المكتملة عند كل إطلاق.
         self.uploads = UploadQueueModel(engine: try! UploadServices.shared.makeEngine(api: api), settings: settings)
