@@ -13,20 +13,34 @@ android {
         applicationId = "net.palpost.library"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
+        // appstore-release (play-* branches) sets APP_VERSION_CODE = version_code_base + its run number.
+        versionCode = providers.environmentVariable("APP_VERSION_CODE").orNull?.toIntOrNull() ?: 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    // Base URL of the API (`/v1`). Debug builds point at the local compose stack unless -PapiBaseUrl=… says
-    // otherwise; a release build must be given an https URL explicitly (checked in preReleaseBuild below).
-    val apiBaseUrl = project.findProperty("apiBaseUrl")?.toString()
+    // Upload key from the environment the release workflow provides (appstore-release, apps/<app>.yml android.env);
+    // none locally, where a release build is left unsigned. The key never enters this repository.
+    val keystorePath = providers.environmentVariable("APP_KEYSTORE").orNull
+    signingConfigs {
+        if (keystorePath != null) create("upload") {
+            storeFile = file(keystorePath)
+            storePassword = providers.environmentVariable("APP_KEYSTORE_PASSWORD").orNull
+            keyAlias = providers.environmentVariable("APP_KEY_ALIAS").orNull ?: "upload"
+            keyPassword = providers.environmentVariable("APP_KEYSTORE_PASSWORD").orNull
+        }
+    }
+
+    // Base URL of the API (`/v1`): -PapiBaseUrl=… or the API_BASE_URL environment variable (the release workflow).
+    // Debug builds point at the local compose stack otherwise; a release build must have an https URL (preReleaseBuild).
+    val apiBaseUrl = providers.gradleProperty("apiBaseUrl").orElse(providers.environmentVariable("API_BASE_URL")).orNull
     buildTypes {
         debug {
             buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl ?: "http://10.0.2.2:3000/v1"}\"")
         }
         release {
             buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl ?: ""}\"")
+            signingConfigs.findByName("upload")?.let { signingConfig = it }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -62,9 +76,9 @@ android {
 }
 
 tasks.matching { it.name == "preReleaseBuild" }.configureEach {
-    val url = providers.gradleProperty("apiBaseUrl").orElse("")
+    val url = providers.gradleProperty("apiBaseUrl").orElse(providers.environmentVariable("API_BASE_URL")).orElse("")
     doFirst {
-        check(url.get().startsWith("https://")) { "Release builds need -PapiBaseUrl=https://<api host>/v1 (got '${url.get()}')." }
+        check(url.get().startsWith("https://")) { "Release builds need -PapiBaseUrl=https://<api host>/v1 or API_BASE_URL (got '${url.get()}')." }
     }
 }
 
