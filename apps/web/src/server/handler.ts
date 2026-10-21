@@ -10,6 +10,7 @@ import type { MaterialType } from "@/lib/types";
 import { streamDerivative } from "./media";
 import { actionPath, reviewAction } from "./review-actions";
 import { hasRole, materialTag } from "@/lib/review";
+import { readUpload, uploadAction, uploadBodyLimit, uploadPath } from "./uploads";
 import { safeIdentitySetting, safePermissionHistory } from "@/lib/admin-privacy";
 import { pageLimits } from "@/lib/admin-policy";
 
@@ -26,8 +27,8 @@ function setSession(response: NextResponse, config: WebConfig, value: string) {
   response.cookies.set(config.cookieName, value, { httpOnly: true, secure: config.secure, sameSite: "strict", path: "/", maxAge: value ? config.lifetimeSeconds : 0 });
 }
 
-async function bodyOf(request: Request): Promise<Record<string, unknown>> {
-  if (Number(request.headers.get("content-length") ?? 0) > 8192) throw new WebError(413, "request_failed");
+async function bodyOf(request: Request, limit = 8192): Promise<Record<string, unknown>> {
+  if (Number(request.headers.get("content-length") ?? 0) > limit) throw new WebError(413, "request_failed");
   const reader = request.body?.getReader();
   if (!reader) throw new WebError(400, "request_failed");
   const chunks: Uint8Array[] = []; let size = 0;
@@ -35,7 +36,7 @@ async function bodyOf(request: Request): Promise<Record<string, unknown>> {
     const { value, done } = await reader.read();
     if (done) break;
     size += value.length;
-    if (size > 8192) { await reader.cancel(); throw new WebError(413, "request_failed"); }
+    if (size > limit) { await reader.cancel(); throw new WebError(413, "request_failed"); }
     chunks.push(value);
   }
   try {
@@ -55,7 +56,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
     const isWrite = ["POST", "PUT", "DELETE"].includes(request.method);
     if (isWrite) assertSameOrigin(request, config);
     if (request.method !== "GET" && !isWrite) throw new WebError(405, "request_failed");
-    if (isWrite && !(isPost && ["auth/login", "auth/logout"].includes(path)) && !actionPath(path, request.method)) throw new WebError(405, "request_failed");
+    if (isWrite && !(isPost && ["auth/login", "auth/logout"].includes(path)) && !actionPath(path, request.method) && !uploadPath(path, request.method)) throw new WebError(405, "request_failed");
 
     if (path === "auth/login" && isPost) {
       const input = await bodyOf(request);
@@ -80,6 +81,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         const response = json({ ok: true }); setSession(response, config!, ""); return response;
       }
       const me = requireOk(await api.GET("/auth/me"));
+      if (isWrite && uploadPath(path, request.method)) return uploadAction(request, path, api, me, await bodyOf(request, uploadBodyLimit(path)), config!);
       if (isWrite) return reviewAction(request, path, api, me, await bodyOf(request));
       if (path === "auth/me") return json(safeMe(me));
       if (path === "admin/settings/reporter-identity") {
@@ -117,6 +119,8 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         const data = requireOk(await api.GET("/materials/{id}/transitions", { params: { path: { id: history[1] } } }));
         return json({ items: data.items.map(safeTransition) });
       }
+      const upload = /^uploads\/([^/]+)$/.exec(path);
+      if (upload && uuid.test(upload[1]) && !request.nextUrl.search) return readUpload(api, upload[1]);
       if (path === "notifications") {
         const search = request.nextUrl.searchParams;
         if ([...search.keys()].some(key => !["limit", "cursor", "unread_only"].includes(key) || search.getAll(key).length > 1)) throw new WebError(400, "request_failed");

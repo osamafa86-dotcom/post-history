@@ -55,6 +55,7 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
       <div className="header-actions"><a href={pathname.replace(`/${locale}`, locale === "ar" ? "/en" : "/ar")} lang={locale === "ar" ? "en" : "ar"}>{m.language}</a><button className="quiet" disabled={busy} onClick={() => void logout(false)}>{m.logout}</button></div></header>
     <div className="workspace-shell"><aside className="sidebar"><p className="eyebrow">{m.workspace}</p><nav aria-label={m.workspace}>
       <Link prefetch={false} className={pathname.endsWith("/inbox") ? "active" : ""} href={`/${locale}/inbox`}>{m.inbox}</Link>
+      {hasRole(me, "reporter") && <Link prefetch={false} className={pathname.endsWith("/upload") ? "active" : ""} href={`/${locale}/upload`}>{m.upload.nav}</Link>}
       <Link prefetch={false} className={pathname.endsWith("/form-preview") ? "active" : ""} href={`/${locale}/form-preview`}>{m.formPreview}</Link>
       <Link prefetch={false} className={pathname.endsWith("/notifications") ? "active" : ""} href={`/${locale}/notifications`}>{m.notice.title}</Link>
       {hasRole(me, "system_admin") && <Link prefetch={false} className={pathname.endsWith("/admin") ? "active" : ""} href={`/${locale}/admin`}>{m.admin.title}</Link>}
