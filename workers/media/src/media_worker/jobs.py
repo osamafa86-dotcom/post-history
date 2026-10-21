@@ -30,6 +30,7 @@ from .hashing import Digest, digest_file, digest_stream
 from .probe import InvalidMediaError, Probe, probe
 from .audio import make_speech_audio
 from .export import build_package
+from .watermark import make_watermarked_preview
 from .proxy import make_proxy
 from .hls import make_hls
 from .phash import video_phash
@@ -74,6 +75,10 @@ def speech_key(material_id: str, file_id: str) -> str:
     return f"{DERIVED_PREFIX}{material_id}/{file_id}/audio-16k.m4a"
 
 
+def store_preview_key(material_id: str, file_id: str) -> str:
+    return f"{DERIVED_PREFIX}{material_id}/{file_id}/preview-watermarked.mp4"
+
+
 def export_key(material_id: str, file_id: str) -> str:
     return f"{DERIVED_PREFIX}{material_id}/{file_id}/export.zip"
 
@@ -95,8 +100,11 @@ def _download(storage: Storage, bucket: str, key: str, dst: Path):
 
 class Jobs:
     def __init__(self, api: InternalApi, storage: Storage, buckets: Buckets, scratch: Path | None = None,
-                 enable_hls: bool = False, enable_phash: bool = False, enable_export: bool = False):
-        # الأعلام مطفأة إلى أن يقبل العقد نوع hls (#58) وحقل البصمة الإدراكية ونوع export
+                 enable_hls: bool = False, enable_phash: bool = False, enable_export: bool = False,
+                 enable_store_preview: bool = False):
+        # الأعلام مطفأة إلى أن يقبل العقد نوع hls (#58) وحقل البصمة الإدراكية ونوع export؛ ومعاينة المتجر حتى نقطة
+        # مصدر الأصل في #178
+        self.enable_store_preview = enable_store_preview
         self.enable_export = enable_export
         self.enable_hls = enable_hls
         self.enable_phash = enable_phash
@@ -119,6 +127,11 @@ class Jobs:
 
     def handle(self, event: dict) -> str:
         """يعيد وصفًا قصيرًا لما حدث (للسجل والاختبارات)."""
+        payload = event.get("payload") or {}
+        if event.get("type") == "catalog.listing_changed" and self.enable_store_preview:
+            if payload.get("state") != "listed" or not payload.get("material_id"):
+                return "ignored"
+            return self.store_preview(payload["material_id"])
         session_id = (event.get("payload") or {}).get("upload_session_id")
         if event.get("type") not in VERIFY_EVENTS or not session_id:
             return "ignored"
@@ -282,6 +295,29 @@ class Jobs:
             "kind": kind, "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
             "technical": probe(out).to_dict(),
         })
+
+    def store_preview(self, material_id: str) -> str:
+        """معاينة المتجر من الأصل المتحقق عند الإدراج. مكررة الأثر: إعادة الإدراج أو التسليم تعيد تسجيل المرفوعة."""
+        ref = self.api.get_material_original(material_id)
+        key = store_preview_key(material_id, ref.file_id)
+        with tempfile.TemporaryDirectory(dir=self.scratch, prefix="job-") as tmp:
+            out = Path(tmp) / "preview-watermarked.mp4"
+            if self._exists(key):
+                self._register_existing(ref.file_id, "watermarked_preview", key, out)
+                return "store-preview-existing"
+            local = Path(tmp) / "source"
+            digest = _download(self.storage, self.buckets.uploads, ref.storage_key, local)
+            if digest.sha256 != ref.sha256:
+                raise ValueError("original does not match its recorded hash")
+            info = probe(local)
+            made = make_watermarked_preview(local, out, info)
+            d = digest_file(out)
+            self.storage.put_file(self.buckets.derived, key, out, d.sha256, "video/mp4")
+            self.api.add_derivative(ref.file_id, {
+                "kind": "watermarked_preview", "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
+                "technical": made.to_dict(),
+            })
+        return "store-preview"
 
     def _speech(self, session: Session, file_id: str, local: Path, info: Probe, resume: bool) -> str:
         """مانعة كالنسخة الخفيفة: فشلها يعيد الحدث، والاستئناف يعيد تسجيل المرفوعة كما هي."""

@@ -79,6 +79,7 @@ class Config:
     enable_hls: bool = False
     enable_phash: bool = False
     enable_export: bool = False
+    enable_store_preview: bool = False
 
     @classmethod
     def from_env(cls) -> Config:
@@ -97,6 +98,7 @@ class Config:
             enable_hls=e.get("MEDIA_ENABLE_HLS", "false").lower() == "true",
             enable_phash=e.get("MEDIA_ENABLE_PHASH", "false").lower() == "true",
             enable_export=e.get("MEDIA_ENABLE_EXPORT", "false").lower() == "true",
+            enable_store_preview=e.get("MEDIA_ENABLE_STORE_PREVIEW", "false").lower() == "true",
         )
 
 
@@ -238,7 +240,8 @@ def main() -> None:
     storage = S3Storage(cfg.s3_endpoint, cfg.s3_region, cfg.s3_access_key, cfg.s3_secret_key, cfg.bucket_derived)
     jobs = Jobs(InternalApi(cfg.api_url, cfg.token), storage, Buckets(cfg.bucket_uploads, cfg.bucket_derived),
                 cfg.scratch, enable_hls=cfg.enable_hls, enable_phash=cfg.enable_phash,
-                enable_export=cfg.enable_export)
+                enable_export=cfg.enable_export,
+                enable_store_preview=cfg.enable_store_preview)
     svc = Service(redis.Redis.from_url(cfg.redis_url, decode_responses=True), jobs, cfg.consumer, cfg.block_ms,
                   cfg.claim_idle_ms, cfg.max_deliveries, cfg.auth_backoff_max_s,
                   auth_isolate_after_s=cfg.auth_isolate_after_s)
