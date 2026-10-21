@@ -129,10 +129,16 @@ describe('account: sessions and recovery', () => {
       const inbox = async (a: Actor) =>
         (await http().get('/v1/notifications?limit=100').set('Authorization', `Bearer ${a.token}`).expect(200)).body.items as Array<Record<string, string>>;
       expect((await inbox(sup)).some((n) => n.type === 'auth.recovery_requested' && n.title?.includes(req.id))).toBe(true);
+      // v0.1: معرّف الطلب حقل مستقل للمعتمِد، لا للمالك
+      const task = (await inbox(sup)).find((n) => n.recovery_request_id === req.id)!;
+      expect(task).toMatchObject({ type: 'auth.recovery_requested', assignment_state: 'assigned' });
+      const validNotification = schemaValidator('Notification');
+      expect(validNotification(task) ? [] : validNotification.errors).toEqual([]);
       expect((await inbox(outside)).some((n) => n.title?.includes(req.id))).toBe(false);
       const own = (await inbox(reporter)).filter((n) => n.type === 'auth.recovery_requested');
       expect(own).toHaveLength(1);
       expect(own[0]!.title).not.toContain(req.id);
+      expect(own[0]!.recovery_request_id).toBeNull();
     });
 
     it('approval by a supervisor in scope revokes all sessions, is audited, and cannot happen twice', async () => {
@@ -149,11 +155,25 @@ describe('account: sessions and recovery', () => {
       await approve(outside).expect(404);
       await approve(sup, {}).expect(422);
       const res = await approve(sup).expect(200);
-      expect(res.body).toMatchObject({ id: req.id, state: 'approved', approved_by: sup.id });
-      const valid = schemaValidator('RecoveryRequest');
+      expect(res.body).toMatchObject({ id: req.id, state: 'approved', approved_by: sup.id, reset_token: expect.any(String) });
+      const valid = schemaValidator('RecoveryApproval');
       expect(valid(res.body) ? [] : valid.errors).toEqual([]);
+      // الرمز ببصمته وحدها، ≤ 24 ساعة، ولا يعود عند التكرار بالمفتاح نفسه
+      const { rows: stored } = await h.pool.query(
+        `SELECT reset_token_hash, reset_token_expires_at <= decided_at + interval '24 hours' AS bounded FROM recovery_requests WHERE id = $1`,
+        [req.id],
+      );
+      expect(stored[0].reset_token_hash.equals(createHash('sha256').update(res.body.reset_token).digest())).toBe(true);
+      expect(stored[0].bounded).toBe(true);
       await http().get('/v1/auth/me').set('Authorization', `Bearer ${reporter.token}`).expect(401);
-      expect((await approve(sup).expect(409)).body.code).toBe('recovery_state_conflict');
+      // إعادة الاعتماد 409 بلا الرمز، ولا شيء في جدول مفاتيح منع التكرار (/auth/* خارجه)
+      const again = await approve(sup).expect(409);
+      expect(again.body.code).toBe('recovery_state_conflict');
+      expect(JSON.stringify(again.body)).not.toContain(res.body.reset_token);
+      const { rows: keys } = await h.pool.query(`SELECT count(*)::int AS n FROM idempotency_keys WHERE response_body::text LIKE $1`, [
+        `%${res.body.reset_token}%`,
+      ]);
+      expect(keys[0].n).toBe(0);
       const { rows } = await h.pool.query(`SELECT action FROM audit_log WHERE target_id = $1 AND action LIKE 'auth.recovery%' ORDER BY id`, [reporter.id]);
       expect(rows.map((r) => r.action)).toEqual(['auth.recovery_requested', 'auth.recovery_approved']);
       const { rows: notes } = await h.pool.query(`SELECT details FROM audit_log WHERE target_id = $1`, [reporter.id]);
@@ -170,12 +190,13 @@ describe('account: sessions and recovery', () => {
       await http()
         .post(`/v1/auth/recovery/${req.id}/approve`)
         .set('Authorization', `Bearer ${admin.token}`)
+        .set('Idempotency-Key', randomUUID())
         .send({ verification_note: 'x' })
         .expect(409);
       expect(await requests(reporter.id)).toEqual([{ id: req.id, state: 'expired' }]);
     });
 
-    it('scope is not enough: a supervisor or editor-in-chief recovery goes to system admins, and an admin cannot approve their own', async () => {
+    it('scope is not enough: a supervisor or editor-in-chief recovery goes to system admins; an admin account is never approved here', async () => {
       const sup = await loginAs(h, [{ role: 'supervisor', scopeKind: 'all', scopeId: '' }]);
       const peer = await loginAs(h, [{ role: 'supervisor', scopeKind: 'office', scopeId: officeA }], { officeId: officeA });
       const editor = await loginAs(h, [{ role: 'editor_in_chief' }], { officeId: officeA });
@@ -191,7 +212,11 @@ describe('account: sessions and recovery', () => {
       const [adminReq] = await requests(admin.id);
       const [peerReq] = await requests(peer.id);
       const approve = (a: Actor, id: string) =>
-        http().post(`/v1/auth/recovery/${id}/approve`).set('Authorization', `Bearer ${a.token}`).send({ verification_note: 'verified in person' });
+        http()
+          .post(`/v1/auth/recovery/${id}/approve`)
+          .set('Authorization', `Bearer ${a.token}`)
+          .set('Idempotency-Key', randomUUID())
+          .send({ verification_note: 'verified in person' });
 
       await drainOutbox(h);
       const tasks = async (a: Actor) =>
@@ -209,11 +234,11 @@ describe('account: sessions and recovery', () => {
       await approve(sup, adminReq.id).expect(403);
       await approve(sup, peerReq.id).expect(403);
       await approve(otherAdmin, peerReq.id).expect(200);
-      await approve(admin, adminReq.id).expect(403);
+      // v0.1: حساب مدير النظام لا يُعتمد من الواجهة لأحد، ولا لنفسه (إجراء الشخصين من سطر الأوامر)
+      expect((await approve(admin, adminReq.id).expect(403)).body.code).toBe('admin_quorum_required');
+      expect((await approve(otherAdmin, adminReq.id).expect(403)).body.code).toBe('admin_quorum_required');
       expect(await requests(admin.id)).toEqual([{ id: adminReq.id, state: 'pending_approval' }]);
-      await approve(otherAdmin, adminReq.id).expect(200);
-      await approve(admin, editorReq.id).expect(401); // جلسات المدير أُبطلت للتو باعتماد استعادته
-      await approve(otherAdmin, editorReq.id).expect(200);
+      await approve(admin, editorReq.id).expect(200);
     });
 
     it('rate-limits recovery attempts per email and address', async () => {

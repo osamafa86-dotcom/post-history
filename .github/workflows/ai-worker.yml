@@ -1,0 +1,56 @@
+name: ai-worker
+
+on:
+  pull_request:
+    paths: ['workers/ai/**', 'docs/measurements/asr-bench/*transcribe-worker*', '.github/workflows/ai-worker.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ai-worker:
+    name: ai worker (unit, engine on pinned tiny weights, hardened and offline)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build test and runtime images (Python 3.12 and dependencies pinned by hash)
+        run: |
+          docker build --target test -t ai-worker:test workers/ai
+          docker build --target runtime -t ai-worker:runtime workers/ai
+      # Test weights only: faster-whisper tiny at a fixed revision, refused unless every file matches its sha256.
+      - name: Fetch pinned tiny weights for the engine test
+        run: |
+          d="$RUNNER_TEMP/tiny"; mkdir -p "$d"
+          rev=d90ca5fe260221311c53c58e660288d3deb8d356
+          for f in config.json model.bin tokenizer.json vocabulary.txt; do
+            curl -fsSL --retry 3 -o "$d/$f" "https://huggingface.co/Systran/faster-whisper-tiny/resolve/$rev/$f"
+          done
+          (cd "$d" && sha256sum -c "$GITHUB_WORKSPACE/workers/ai/tests/models.sha256")
+      # The same hardening as compose: an internal network with Redis only (no route out), read-only root,
+      # no capabilities, uid 10002.
+      - name: Unit, engine and Redis tests in the hardened test image, without a route out
+        run: |
+          docker network create --internal ai-it
+          docker run -d --name ai-it-redis --network ai-it redis:7-alpine
+          docker run --rm --network ai-it --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
+            -v "$RUNNER_TEMP/tiny:/models/tiny:ro" -e AI_IT_MODEL_DIR=/models/tiny -e AI_IT_REDIS_URL=redis://ai-it-redis:6379/0 \
+            -e AI_IT_REQUIRED=1 ai-worker:test
+      - name: Runtime image runs as uid 10002 with telemetry off and the hub offline
+        run: |
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --entrypoint python ai-worker:runtime -c '
+          import os
+          assert os.getuid() == 10002, os.getuid()
+          assert os.environ["ORT_DISABLE_TELEMETRY"] == "1" and os.environ["HF_HUB_OFFLINE"] == "1"
+          import ai_worker.service, ai_worker.transcribe
+          print("runtime ok")'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Transcription measurements match measurement.json
+        run: npx -y -p ajv-cli@5.0.0 -p ajv-formats@2.1.1 ajv validate --spec=draft2020 -c ajv-formats -s contracts/schemas/measurement.json -d "docs/measurements/asr-bench/*transcribe-worker*.json"

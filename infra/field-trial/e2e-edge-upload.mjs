@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// رفع tus كامل عبر الوكيل الأمامي لبيئة التجربة (ADR 0013): النطاق الرئيسي (Caddy على MAIN_IP ← tusd-proxy)،
+// رفع tus كامل عبر الوكيل الأمامي لبيئة التجربة (ADR 0013): النطاق الرئيسي (Caddy على MAIN_IP ← بوابة الرمز ← tusd-proxy)،
 // ونطاق ingest (Caddy على INGEST_IP ← بوابة الرمز ← tusd-proxy، ADR 0011). لكل منهما: إنشاء 201 بـ Location
 // على https والاسم نفسه، ثم PATCH للملف كله 204، ثم HEAD بالإزاحة الكاملة. الجلسات من seed (tools/acceptance).
 //   DATABASE_URL API_URL MAIN_DOMAIN MAIN_IP INGEST_DOMAIN INGEST_IP CA_FILE INGEST_SIGNING_KEY node e2e-edge-upload.mjs
@@ -25,19 +25,22 @@ const call = (name, ip, method, path, headers, body) => new Promise((resolve, re
   r.end(body);
 });
 
-const mint = (sid) => { // رمز اختبار بالمفتاح المولَّد للتجربة المحلية؛ في الإنتاج يصدره الخادم بعد شهادة الجهاز
-  const now = Math.floor(Date.now() / 1000);
-  const input = `${b64u(JSON.stringify({ alg: "ES256", typ: "JWT" }))}.${b64u(JSON.stringify({ aud: "ingest", sid, iat: now, exp: now + 600, jti: b64u(crypto.randomBytes(12)) }))}`;
-  const sig = crypto.sign("sha256", Buffer.from(input), { key: fs.readFileSync(env.INGEST_SIGNING_KEY), dsaEncoding: "ieee-p1363" });
+const signingKey = fs.readFileSync(env.INGEST_SIGNING_KEY);
+// رمز اختبار بالمفتاح المولَّد للتجربة المحلية؛ في الإنتاج يصدره الخادم بعد شهادة الجهاز. opts للرموز المرفوضة عمدًا.
+const mint = (sid, { kid = env.INGEST_KID || "k1", key = signingKey, iatOffset = 0 } = {}) => {
+  const now = Math.floor(Date.now() / 1000) + iatOffset;
+  const input = `${b64u(JSON.stringify({ alg: "ES256", typ: "JWT", kid }))}.${b64u(JSON.stringify({ aud: "ingest", sid, iat: now, exp: now + 600, jti: b64u(crypto.randomBytes(12)) }))}`;
+  const sig = crypto.sign("sha256", Buffer.from(input), { key, dsaEncoding: "ieee-p1363" });
   return `${input}.${b64u(sig)}`;
 };
 
 const fail = (msg) => { console.error(`!! ${msg}`); process.exit(1); };
 
+let ingestPath = null;
 const s = await seed({ databaseUrl: env.DATABASE_URL, apiUrl: env.API_URL });
 const [viaMain, viaIngest] = s.uploads.hookSessions.ok;
 for (const [label, name, ip, session, extra] of [
-  ["main", env.MAIN_DOMAIN, env.MAIN_IP, viaMain, {}],
+  ["main", env.MAIN_DOMAIN, env.MAIN_IP, viaMain, { "Ingest-Token": mint(viaMain.id) }],
   ["ingest", env.INGEST_DOMAIN, env.INGEST_IP, viaIngest, { "Ingest-Token": mint(viaIngest.id) }],
 ]) {
   const tus = { "Tus-Resumable": "1.0.0", Authorization: `Bearer ${session.token}`, ...extra };
@@ -53,5 +56,72 @@ for (const [label, name, ip, session, extra] of [
   const h = await call(name, ip, "HEAD", loc.pathname, tus);
   if (h.status !== 200 || Number(h.headers["upload-offset"]) !== session.size) fail(`${label}: head ${h.status}`);
   console.log(`${label}: upload complete through the edge (${session.size} bytes, Location ${loc.protocol}//${loc.hostname})`);
+  if (label === "ingest") ingestPath = loc.pathname;
 }
 console.log("edge uploads: ok");
+
+// ingest مطلوب افتراضيًا في التجربة: الخادم يعلن نطاق ingest لجلسة tus جديدة.
+const apiGet = async (path, token) => {
+  const r = await fetch(`${env.API_URL}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  return { status: r.status, body: r.status === 200 ? await r.json() : null };
+};
+const adv = await apiGet(`/uploads/${viaIngest.id}`, s.allTokens.reporter);
+if (adv.status !== 200) fail(`GET /uploads/{id}: ${adv.status}`);
+if (adv.body.ingest_token_required !== true || adv.body.tus_endpoint !== `https://${env.INGEST_DOMAIN}/files/`) {
+  fail(`ingest not required by default (ingest_token_required=${adv.body.ingest_token_required}, tus_endpoint host ${new URL(adv.body.tus_endpoint).hostname})`);
+}
+console.log("the API requires ingest for new tus sessions: ok");
+
+// PATCH على الرفع نفسه برموز مرفوضة يتوقف عند البوابة ولا يصل إلى tusd: رمز موقّع بمفتاح أُبطل (kid أُزيل من
+// INGEST_TOKEN_PUBLIC_KEYS)، ورمز بمفتاح غريب تحت kid المعتمد، ورمز منتهٍ، ورمز صالح لجلسة أخرى. الإزاحة لا تتغير.
+const { privateKey: otherKey } = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
+const other = s.uploads.hookSessions.ok[2];
+const tusOf = (tok) => ({ "Tus-Resumable": "1.0.0", Authorization: `Bearer ${viaIngest.token}`, "Ingest-Token": tok });
+const patchWith = (tok) => call(env.INGEST_DOMAIN, env.INGEST_IP, "PATCH", ingestPath, { ...tusOf(tok), "Upload-Offset": String(viaIngest.size),
+  "Content-Type": "application/offset+octet-stream", "Content-Length": "1" }, Buffer.from("x"));
+for (const [what, tok, want] of [
+  ["a key that was revoked (kid no longer in the gate's keys)", mint(viaIngest.id, { kid: "k0-revoked", key: otherKey }), 401],
+  ["a foreign key under the trusted kid", mint(viaIngest.id, { key: otherKey }), 401],
+  ["an expired token", mint(viaIngest.id, { iatOffset: -1300 }), 401],
+  ["a valid token for another session", mint(other.id), 403],
+]) {
+  const r = await patchWith(tok);
+  if (r.status !== want) fail(`PATCH with ${what}: ${r.status} (want ${want} from the gate)`);
+}
+const after = await call(env.INGEST_DOMAIN, env.INGEST_IP, "HEAD", ingestPath, tusOf(mint(viaIngest.id)));
+if (after.status !== 200 || Number(after.headers["upload-offset"]) !== viaIngest.size) fail(`offset changed after refused PATCHes: ${after.status} ${after.headers["upload-offset"]}`);
+console.log("PATCH with a revoked, foreign, expired or other-session token is refused at the gate: ok");
+
+// SEC-01 عند البوابة: رمز ingest صالح توقيعًا وعمرًا يُرفض خلال ثوانٍ من إبطال جلسة صاحبه، لا بعد انتهائه (10 دقائق).
+// رفع جارٍ عبر ingest، ثم إبطال كل جلسات المراسل، ثم PATCH برمز جديد صالح كل ربع ثانية حتى ترفضه البوابة.
+const REVOKE_MAX_S = Number(env.REVOKE_MAX_S || 5);
+const live = s.uploads.hookSessions.ok[3];
+const lt = { "Tus-Resumable": "1.0.0", Authorization: `Bearer ${live.token}` };
+const lc = await call(env.INGEST_DOMAIN, env.INGEST_IP, "POST", "/files/", { ...lt, "Ingest-Token": mint(live.id), "Upload-Length": String(live.size),
+  "Upload-Metadata": `upload_session_id ${Buffer.from(live.id).toString("base64")},filename ${Buffer.from("clip.mp4").toString("base64")}` });
+if (lc.status !== 201) fail(`revocation: create ${lc.status}`);
+const livePath = new URL(lc.headers.location).pathname;
+const half = Math.floor(live.size / 2);
+let offset = 0;
+const patchLive = async (n) => {
+  const r = await call(env.INGEST_DOMAIN, env.INGEST_IP, "PATCH", livePath, { ...lt, "Ingest-Token": mint(live.id), "Upload-Offset": String(offset),
+    "Content-Type": "application/offset+octet-stream", "Content-Length": String(n) }, Buffer.alloc(n, 0x5a));
+  if (r.status === 204) offset = Number(r.headers["upload-offset"]);
+  return r;
+};
+if ((await patchLive(half)).status !== 204) fail("revocation: first half before the revoke");
+const t0 = Date.now();
+const lo = await fetch(`${env.API_URL}/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${s.allTokens.reporter}`,
+  "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ all_sessions: true }) });
+if (lo.status !== 204) fail(`revocation: logout all sessions ${lo.status}`);
+let refused = null;
+while (Date.now() - t0 < (REVOKE_MAX_S + 5) * 1000) {
+  const r = await patchLive(1);
+  // البوابة ترد بلا Tus-Resumable، وtusd يضعها دائمًا: الرفض من البوابة لا من tusd.
+  if (r.status !== 204) { refused = { status: r.status, gate: !r.headers["tus-resumable"], s: (Date.now() - t0) / 1000 }; break; }
+  await new Promise((res) => setTimeout(res, 250));
+}
+if (!refused) fail(`revocation: a valid ingest token still passes ${REVOKE_MAX_S + 5} s after the session was revoked`);
+if (refused.status !== 403 || !refused.gate) fail(`revocation: refused with ${refused.status} ${refused.gate ? "at the gate" : "by tusd"} (want 403 at the gate)`);
+if (refused.s > REVOKE_MAX_S) fail(`revocation: refused after ${refused.s.toFixed(2)} s (limit ${REVOKE_MAX_S} s, SEC-01)`);
+console.log(`a revoked session's valid ingest token is refused at the gate after ${refused.s.toFixed(2)} s (limit ${REVOKE_MAX_S} s): ok`);

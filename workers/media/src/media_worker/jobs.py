@@ -6,11 +6,13 @@
 3. إبلاغ الخادم (`POST …/verification`). الخادم يقرر الحجم ومطابقة بصمة العميل ويكتب النتيجة.
 4. لأصل مرئي تحقق: المصغّرات (إطار ملصق وصفيحة اتصال) في `derived/<material_id>/<file_id>/`. خطوة غير مانعة:
    فشلها يُسجَّل ولا يعيد الحدث ولا يمنع النسخة الخفيفة.
-5. لأصل مرئي تحقق ولا نسخة خفيفة له من الهاتف: نسخة 480p من الملف المنزَّل نفسه، تُرفع إلى حاوية المشتقات تحت
-   `derived/<material_id>/<file_id>/` ويُبلَّغ بها (`POST …/derivatives`).
+5. لكل أصل مرئي تحقق، حتى حين أرسل الهاتف نسخته الخفيفة: نسخة الخادم 480p من الملف المنزَّل نفسه، تُرفع إلى حاوية
+   المشتقات تحت `derived/<material_id>/<file_id>/` ويُبلَّغ بها (`POST …/derivatives`). العمّال اللاحقون (التفريغ)
+   يقرؤونها هي لا نسخة الهاتف.
 
-إعادة التسليم بعد تحقق سابق (فشلت الخطوة 4): الجلسة `verified` والأصل بلا نسخة، فيُعاد البلاغ نفسه، والخادم يعيد
-النتيجة المسجلة ومعها `file_id`، ثم تُكمَل الخطوة 4. الأصل يُقرأ فقط، ومجلد المهمة يُحذف في كل الأحوال.
+إعادة التسليم بعد تحقق سابق: الجلسة `verified`، فيُعاد البلاغ نفسه، والخادم يعيد النتيجة المسجلة ومعها `file_id`.
+إن كانت نسخة الخادم مرفوعة يُعاد تسجيلها كما هي (الخادم يقبل التكرار المطابق) ولا تُرمَّز من جديد فلا تتغير بصمتها،
+وإلا تُكمَل الخطوة 5. الأصل يُقرأ فقط، ومجلد المهمة يُحذف في كل الأحوال.
 """
 
 from __future__ import annotations
@@ -23,8 +25,9 @@ from pathlib import Path
 from typing import Protocol
 
 from .api import ApiConflict, ApiRejected, InternalApi, Session
-from .hashing import digest_file, digest_stream
+from .hashing import Digest, digest_file, digest_stream
 from .probe import InvalidMediaError, Probe, probe
+from .export import build_package
 from .proxy import make_proxy
 from .hls import make_hls
 from .phash import video_phash
@@ -40,6 +43,7 @@ VERIFY_EVENTS = {"upload.original_received", "upload.proxy_received"}
 class Storage(Protocol):
     def read(self, bucket: str, key: str) -> Iterable[bytes]: ...
     def put_file(self, bucket: str, key: str, path: Path, sha256_hex: str, content_type: str) -> None: ...
+    def head(self, bucket: str, key: str) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -64,6 +68,10 @@ def waveform_key(material_id: str, file_id: str) -> str:
     return f"{DERIVED_PREFIX}{material_id}/{file_id}/waveform.json"
 
 
+def export_key(material_id: str, file_id: str) -> str:
+    return f"{DERIVED_PREFIX}{material_id}/{file_id}/export.zip"
+
+
 def hls_prefix(material_id: str, file_id: str) -> str:
     # تحت مساحة ملف المصدر: الخادم يقبل المشتق في derived/<material_id>/<file_id>/ وحدها (ADR 0006)
     return f"{DERIVED_PREFIX}{material_id}/{file_id}/hls/"
@@ -79,14 +87,11 @@ def _download(storage: Storage, bucket: str, key: str, dst: Path):
         return digest_stream(tee())
 
 
-def _wants_proxy(session: Session) -> bool:
-    return session.kind == "original" and not session.material_has_proxy
-
-
 class Jobs:
     def __init__(self, api: InternalApi, storage: Storage, buckets: Buckets, scratch: Path | None = None,
-                 enable_hls: bool = False, enable_phash: bool = False):
-        # العلمان مطفآن إلى أن يقبل العقد نوع hls (#58) وحقل البصمة الإدراكية
+                 enable_hls: bool = False, enable_phash: bool = False, enable_export: bool = False):
+        # الأعلام مطفأة إلى أن يقبل العقد نوع hls (#58) وحقل البصمة الإدراكية ونوع export
+        self.enable_export = enable_export
         self.enable_hls = enable_hls
         self.enable_phash = enable_phash
         self.api = api
@@ -115,7 +120,7 @@ class Jobs:
 
     def process(self, session_id: str) -> str:
         session = self.api.get_session(session_id)
-        resume = session.state == "verified" and _wants_proxy(session)
+        resume = session.state == "verified" and session.kind == "original"
         if session.state != "completed" and not resume:
             return f"skip:{session.state}"
         with tempfile.TemporaryDirectory(dir=self.scratch, prefix="job-") as tmp:
@@ -157,11 +162,17 @@ class Jobs:
                     outcome += self._waveform(session, file_id, local, info)
                 if info.video_codec:
                     outcome += self._thumbnails(session, file_id, local, info)
-            if info.video_codec and _wants_proxy(session):
+            proxy_path = None
+            if info.video_codec and resume and self._proxy_exists(session, file_id):
+                self._register_existing_proxy(session, file_id, local)
+                return outcome + "+proxy-existing"
+            if info.video_codec:
                 proxy_path, proxy_info = self._proxy(session, file_id, local, info)
                 outcome += "+proxy"
                 if self.enable_hls:
                     outcome += self._hls(session, file_id, proxy_path, proxy_info)
+            if self.enable_export and info.video_codec:
+                outcome += self._export(session, file_id, local, info, digest, proxy_path)
             return outcome
 
     def _register(self, file_id: str, body: dict) -> bool:
@@ -205,6 +216,25 @@ class Jobs:
                                       "size_bytes": d.size_bytes, "technical": proxy_info.to_dict()})
         return "+hls" if ok else "+hls-unregistered"
 
+    def _export(self, session: Session, file_id: str, local: Path, info: Probe, digest: Digest,
+                proxy: Path | None) -> str:
+        """غير مانعة. النسخة الخفيفة تدخل الحزمة إن صنعها العامل؛ نسخة الهاتف ليست في مجلد المهمة (قيد معروف)."""
+        try:
+            out = local.with_name("export.zip")
+            build_package(out, original=local, info=info, material_id=session.material_id, file_id=file_id,
+                          sha256=digest.sha256, size_bytes=digest.size_bytes, proxy=proxy)
+            d = digest_file(out)
+            key = export_key(session.material_id, file_id)
+            self.storage.put_file(self.buckets.derived, key, out, d.sha256, "application/zip")
+        except Exception as err:  # noqa: BLE001
+            log.warning("export skipped file=%s error=%s", file_id, type(err).__name__)
+            return "+export-failed"
+        ok = self._register(file_id, {"kind": "export", "storage_key": key, "sha256": d.sha256,
+                                      "size_bytes": d.size_bytes,
+                                      "technical": {"duration_ms": info.duration_ms, "start_pts_us": info.start_pts_us,
+                                                    "container": "zip"}})
+        return "+export" if ok else "+export-unregistered"
+
     def _thumbnails(self, session: Session, file_id: str, local: Path, info: Probe) -> str:
         """غير مانعة: أي فشل هنا يُسجَّل ويُترك، والمصغّرات يمكن توليدها لاحقًا من الأصل."""
         try:
@@ -228,6 +258,23 @@ class Jobs:
         }):
             return "+thumbnails-unregistered"
         return "+thumbnails"
+
+    def _proxy_exists(self, session: Session, file_id: str) -> bool:
+        try:
+            self.storage.head(self.buckets.derived, proxy_key(session.material_id, file_id))
+            return True
+        except ObjectMissing:
+            return False
+
+    def _register_existing_proxy(self, session: Session, file_id: str, local: Path) -> None:
+        """رُفعت في تسليم سابق ولم يُقَرّ الحدث (تعطل بعد الرفع أو قبل الإقرار): تُنزَّل وتُسجَّل كما هي."""
+        out = local.with_name("proxy-480p.mp4")
+        key = proxy_key(session.material_id, file_id)
+        d = _download(self.storage, self.buckets.derived, key, out)
+        self.api.add_derivative(file_id, {
+            "kind": "proxy", "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
+            "technical": probe(out).to_dict(),
+        })
 
     def _proxy(self, session: Session, file_id: str, local: Path, info: Probe) -> tuple[Path, Probe]:
         out = local.with_name("proxy-480p.mp4")

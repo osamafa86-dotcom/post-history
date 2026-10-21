@@ -374,6 +374,113 @@ VALUES ('material.created', 'material', '00000000-0000-4000-8000-000000000101', 
         '{"material_id": "00000000-0000-4000-8000-000000000101", "priority": "normal"}');
 SET LOCAL search_path TO DEFAULT;
 
+-- ---------- v0.2 (ADR 0018) ----------
+-- البصمة الإدراكية: للأصل وحده، 1–32 عنصرًا بلا NULL
+UPDATE material_files SET perceptual_hash = ARRAY[1, -2, 3]::bigint[] WHERE id = '00000000-0000-4000-8000-000000000301';
+SELECT pg_temp.expect_error($q$
+  UPDATE material_files SET perceptual_hash = ARRAY[1]::bigint[] WHERE id = '00000000-0000-4000-8000-000000000302' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE material_files SET perceptual_hash = '{}'::bigint[] WHERE id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE material_files SET perceptual_hash = ARRAY[1, NULL]::bigint[] WHERE id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE material_files SET perceptual_hash = (SELECT array_agg(g)::bigint[] FROM generate_series(1, 33) g)
+  WHERE id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
+-- «اطّلعت»: المستخدم والوقت معًا أو لا شيء
+UPDATE materials SET acknowledged_by = '00000000-0000-4000-8000-000000000012', acknowledged_at = now()
+WHERE id = '00000000-0000-4000-8000-000000000101';
+SELECT pg_temp.expect_error($q$
+  UPDATE materials SET acknowledged_at = NULL WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+-- قواعد التنبيه
+INSERT INTO notification_rules (id, name, event_type, priorities, scope_kind, scope_id, recipient_roles, channels, assignment,
+                                quiet_hours_start, quiet_hours_end, quiet_hours_tz, created_by)
+VALUES ('00000000-0000-4000-8000-000000000b01', 'urgent to supervisors', 'material.urgent_received', ARRAY['urgent'],
+        'office', '00000000-0000-4000-8000-000000000001', ARRAY['supervisor'], ARRAY['apns', 'fcm', 'telegram'], true,
+        '23:00', '06:00', 'Asia/Gaza', '00000000-0000-4000-8000-000000000012');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO notification_rules (name, event_type, scope_kind, recipient_roles, channels)
+  VALUES ('office without id', 'material.created', 'office', ARRAY['supervisor'], ARRAY['in_app']) $q$, '23514');
+INSERT INTO notification_rule_escalations (rule_id, level, after_seconds, recipient_roles, channels)
+VALUES ('00000000-0000-4000-8000-000000000b01', 1, 300, ARRAY['editor_in_chief'], ARRAY['apns', 'sms']);
+SELECT pg_temp.expect_error($q$
+  INSERT INTO notification_rules (name, event_type, channels) VALUES ('no recipient', 'material.created', ARRAY['in_app']) $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO notification_rules (name, event_type, recipient_roles, channels)
+  VALUES ('bad channel', 'material.created', ARRAY['supervisor'], ARRAY['pigeon']) $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO notification_rules (name, event_type, recipient_roles, channels)
+  VALUES ('auth event', 'auth.recovery_requested', ARRAY['supervisor'], ARRAY['in_app']) $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO notification_rules (name, event_type, recipient_roles, channels, quiet_hours_start)
+  VALUES ('half quiet', 'material.created', ARRAY['supervisor'], ARRAY['in_app'], '23:00') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO notification_rules (name, event_type, recipient_permissions, channels)
+  VALUES ('bad permission', 'material.created', ARRAY['everything:read'], ARRAY['in_app']) $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO notification_rule_escalations (rule_id, level, after_seconds, recipient_roles, channels)
+  VALUES ('00000000-0000-4000-8000-000000000b01', 6, 300, ARRAY['editor_in_chief'], ARRAY['apns']) $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO notification_rule_escalations (rule_id, level, after_seconds, recipient_roles, channels)
+  VALUES ('00000000-0000-4000-8000-000000000b01', 2, 10, ARRAY['editor_in_chief'], ARRAY['apns']) $q$, '23514');
+UPDATE notifications SET rule_id = '00000000-0000-4000-8000-000000000b01';
+DELETE FROM notification_rules WHERE id = '00000000-0000-4000-8000-000000000b01';
+SELECT pg_temp.assert((SELECT count(*) = 0 FROM notification_rule_escalations), 'escalations go with their rule');
+SELECT pg_temp.assert(NOT EXISTS (SELECT 1 FROM notifications WHERE rule_id IS NOT NULL) AND EXISTS (SELECT 1 FROM notifications), 'notifications keep their row when the rule is deleted');
+-- حزمة التصدير: طلب لكل أصل، والجاهز يشير إلى مشتق export، والفشل بسبب من القائمة
+INSERT INTO material_exports (source_file_id, material_id, requested_by)
+VALUES ('00000000-0000-4000-8000-000000000301', '00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000012');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_exports (source_file_id, material_id, requested_by)
+  VALUES ('00000000-0000-4000-8000-000000000301', '00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000012') $q$, '23505');
+SELECT pg_temp.expect_error($q$
+  UPDATE material_exports SET state = 'ready' WHERE source_file_id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE material_exports SET state = 'failed', failure_reason = 'because' WHERE source_file_id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
+INSERT INTO material_files (id, material_id, kind, state, derived_from_id, mime_type, sha256, verified_at)
+VALUES ('00000000-0000-4000-8000-000000000303', '00000000-0000-4000-8000-000000000101', 'export', 'verified',
+        '00000000-0000-4000-8000-000000000301', 'application/zip', sha256('zip'::bytea), now());
+UPDATE material_exports SET state = 'ready', file_id = '00000000-0000-4000-8000-000000000303'
+WHERE source_file_id = '00000000-0000-4000-8000-000000000301';
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('export.requested', 'material', '00000000-0000-4000-8000-000000000101', 'export.requested:smoke:1',
+        '{"material_id": "00000000-0000-4000-8000-000000000101", "source_file_id": "00000000-0000-4000-8000-000000000301",
+          "requested_by": "00000000-0000-4000-8000-000000000012"}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('export.requested', 'material', '00000000-0000-4000-8000-000000000101', 'export.requested:smoke:2',
+          '{"material_id": "00000000-0000-4000-8000-000000000101", "permissions": ["sensitive_location:read"]}') $q$, '23514');
+INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+VALUES ('00000000-0000-4000-8000-000000000012', 'notification_rule.deleted', 'notification_rule', '00000000-0000-4000-8000-000000000b01',
+        '{"rule_id": "00000000-0000-4000-8000-000000000b01"}');
+
+-- ---------- reporter identity setting (ADR 0021) ----------
+SELECT pg_temp.assert((SELECT value = 'separate' FROM system_settings WHERE key = 'reporter_legal_name_access'),
+  'reporter identity access defaults to separate');
+SELECT pg_temp.expect_error($q$
+  UPDATE system_settings SET value = 'everyone' WHERE key = 'reporter_legal_name_access' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO system_settings (key, value) VALUES ('anything_else', 'x') $q$, '23514');
+UPDATE system_settings SET value = 'protected_source', updated_by = '00000000-0000-4000-8000-000000000012'
+WHERE key = 'reporter_legal_name_access';
+INSERT INTO user_permissions (user_id, permission, granted_by, reason)
+VALUES ('00000000-0000-4000-8000-000000000011', 'reporter_identity:read', '00000000-0000-4000-8000-000000000012', 'smoke');
+SELECT pg_temp.assert((SELECT count(*) = 1 FROM audit_log WHERE action = 'permission.granted' AND details ->> 'permission' = 'reporter_identity:read'),
+  'granting reporter_identity:read is audited');
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('setting.changed', 'user', '00000000-0000-4000-8000-000000000012', 'setting.changed:smoke:1',
+        '{"setting": "reporter_legal_name_access", "value": "protected_source", "actor_id": "00000000-0000-4000-8000-000000000012", "reason_code": "operational_need"}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('setting.changed', 'user', '00000000-0000-4000-8000-000000000012', 'setting.changed:smoke:2',
+          '{"setting": "reporter_legal_name_access", "value": "protected_source", "note": "free text"}') $q$, '23514');
+INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+VALUES ('00000000-0000-4000-8000-000000000012', 'setting.changed', 'setting', 'reporter_legal_name_access',
+        '{"setting": "reporter_legal_name_access", "value": "protected_source", "reason_code": "operational_need"}');
+
+-- قاعدة تنبيه بالصلاحية الجديدة (ADR 0021)
+INSERT INTO notification_rules (name, event_type, recipient_permissions, channels)
+VALUES ('identity holders', 'material.created', ARRAY['reporter_identity:read'], ARRAY['in_app']);
+
 -- ---------- indexing policy (ADR 0002) ----------
 SELECT pg_temp.assert(
   NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexdef ILIKE '%USING gin%'),

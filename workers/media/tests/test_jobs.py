@@ -70,11 +70,16 @@ def test_original_is_verified_then_proxied_from_the_same_download(tagged_clip: b
     assert storage.objects[("uploads", "tus/1")] == tagged_clip
 
 
-def test_redelivery_after_full_success_is_skipped(tagged_clip: bytes):
+def test_redelivery_after_full_success_reregisters_the_stored_proxy(tagged_clip: bytes):
     api, storage, jobs = _setup(tagged_clip)
     jobs.handle(_event())
-    assert jobs.handle(_event()) == "skip:verified"
-    assert len(api.verifications) == 1 and len(storage.puts) == 4
+    first = api.derivatives[-1][1]
+    assert jobs.handle(_event()) == "verified+proxy-existing"
+    # لا ترميز ولا رفع جديد: التسجيل المكرر مطابق فيقبله الخادم
+    assert len(storage.puts) == 4 and len(api.verifications) == 2
+    again = api.derivatives[-1][1]
+    assert again["kind"] == "proxy" and again["sha256"] == first["sha256"] and again["storage_key"] == first["storage_key"]
+    assert again["technical"]["height"] == 360
 
 
 def test_redelivery_after_proxy_failure_resumes_with_replayed_verification(tagged_clip: bytes, monkeypatch):
@@ -101,12 +106,11 @@ def test_proxy_upload_is_not_reverified(tagged_clip: bytes):
     assert jobs.handle(_event("upload.proxy_received", kind="proxy")) == "skip:verified"
 
 
-def test_no_worker_proxy_when_phone_sent_one(tagged_clip: bytes):
+def test_server_proxy_is_built_even_when_phone_sent_one(tagged_clip: bytes):
     api, storage, jobs = _setup(tagged_clip, has_proxy=True)
-    assert jobs.handle(_event()) == "verified+waveform+thumbnails"
-    assert [k for _, k in storage.puts] == [waveform_key(MID, FakeApi.FILE_ID), poster_key(MID, FakeApi.FILE_ID),
-                                            contact_sheet_key(MID, FakeApi.FILE_ID)]
-    assert [d["kind"] for _, d in api.derivatives] == ["audio", "thumbnail"]
+    assert jobs.handle(_event()) == "verified+waveform+thumbnails+proxy"
+    assert [k for _, k in storage.puts][-1] == proxy_key(MID, FakeApi.FILE_ID)
+    assert [d["kind"] for _, d in api.derivatives] == ["audio", "thumbnail", "proxy"]
 
 
 def test_unregistered_thumbnails_do_not_block_the_proxy(tagged_clip: bytes):

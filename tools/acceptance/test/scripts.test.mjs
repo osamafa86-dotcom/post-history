@@ -482,3 +482,61 @@ test("dynamic-fields gate: pass needs the live server part and all three clients
     assert.equal(b.doc.result, "fail");
   } finally { console.log = quiet; }
 });
+
+import { generateKeyPairSync, createVerify } from "node:crypto";
+import { writeFileSync as writeKey, mkdtempSync as mkKeyDir } from "node:fs";
+import { tmpdir as keyTmp } from "node:os";
+import { join as keyJoin } from "node:path";
+import { mintIngestToken, tusAuth, resolveLookup } from "../lib/ingest.mjs";
+import { resumableUpload as tusUp, makeSyntheticFile as synthFile, tusFetch } from "../lib/tus.mjs";
+import { startMockTus as mockTus } from "./mock-tus.mjs";
+
+function ingestEnv() {
+  const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const path = keyJoin(mkKeyDir(keyJoin(keyTmp(), "ingest-")), "signing.pem");
+  writeKey(path, privateKey.export({ type: "pkcs8", format: "pem" }));
+  return { env: { INGEST_SIGNING_KEY: path, INGEST_KID: "k1" }, publicKey };
+}
+const verifies = (token, publicKey) => {
+  const [h, p, sig] = token.split(".");
+  return createVerify("sha256").update(`${h}.${p}`).verify({ key: publicKey, dsaEncoding: "ieee-p1363" }, Buffer.from(sig, "base64url"));
+};
+
+test("ingest token: signed ES256 for the session, ten minutes, absent without a key", () => {
+  const { env, publicKey } = ingestEnv();
+  const t = mintIngestToken("sess-1", env, 1_000_000_000_000);
+  const claims = JSON.parse(Buffer.from(t.split(".")[1], "base64url"));
+  assert.deepEqual([claims.aud, claims.sid, claims.exp - claims.iat], ["ingest", "sess-1", 600]);
+  assert.ok(verifies(t, publicKey));
+  assert.equal(JSON.parse(Buffer.from(t.split(".")[0], "base64url")).kid, "k1");
+  assert.equal(mintIngestToken("sess-1", {}), null);
+  assert.deepEqual(Object.keys(tusAuth({ id: "s", token: "u" }, {})), ["Authorization"], "no key = the upload token alone, as before");
+  assert.deepEqual(Object.keys(tusAuth({ id: "s", token: "u" }, env)).sort(), ["Authorization", "Ingest-Token"]);
+});
+
+test("an upload through a gate that wants the token sends a fresh one on every request; without it the gate refuses", async () => {
+  const { env, publicKey } = ingestEnv();
+  const gate = await mockTus({ requireIngest: (t) => verifies(t, publicKey) });
+  const f = await synthFile(300_000);
+  try {
+    const session = { id: "sess-9", token: "upload-token" };
+    const up = await tusUp({ endpoint: gate.url, file: f.path, size: 300_000, chunkSize: 100_000, interruptAt: [], metadata: { upload_session_id: session.id }, headers: () => tusAuth(session, env) });
+    assert.deepEqual(up.violations, []);
+    assert.ok(gate.seen.ingestTokens.length >= 5, "create, head and every part carry a token");
+    await assert.rejects(() => tusUp({ endpoint: gate.url, file: f.path, size: 300_000, chunkSize: 100_000, interruptAt: [], headers: { Authorization: "Bearer x" } }), /HTTP 401/);
+  } finally { gate.close(); f.cleanup(); }
+});
+
+test("ACCEPTANCE_RESOLVE reaches a name at a given address, and tusFetch speaks to it", async () => {
+  const srv = await mockTus();
+  try {
+    const port = new URL(srv.url).port;
+    const lookup = resolveLookup({ ACCEPTANCE_RESOLVE: "gate.test=127.0.0.1" });
+    assert.ok(lookup);
+    assert.equal(resolveLookup({}), undefined);
+    process.env.ACCEPTANCE_RESOLVE = "gate.test=127.0.0.1";
+    const r = await tusFetch(`http://gate.test:${port}/files/`, { method: "POST", headers: { "Tus-Resumable": "1.0.0", "Upload-Length": "5" } });
+    assert.equal(r.status, 201);
+    assert.ok(r.headers.get("location"));
+  } finally { delete process.env.ACCEPTANCE_RESOLVE; srv.close(); }
+});

@@ -15,6 +15,7 @@ public struct Material: Sendable, Codable, Hashable {
     public static let cityRule = StringRule(minLength: 1, maxLength: 64, pattern: nil)
     public static let formVersionRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     public static let versionRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
+    public static let reporterLegalNameRule = StringRule(minLength: nil, maxLength: 200, pattern: nil)
     public static let rowVersionRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     /** الحدود تعدّلها الإدارة؛ هذه حدود v0 */
     public var title: String
@@ -48,6 +49,12 @@ public struct Material: Sendable, Codable, Hashable {
     /** المنتج الذي حجز المادة */
     public var reservedBy: UUID?
     public var reservedAt: Date?
+    /** من ضغط «اطّلعت» (انتقال `inbox → acknowledged`)؛ يراه المراسل. أُضيف في v0.2 فقد يغيب */
+    public var acknowledgedBy: UUID?
+    /** متى؛ أُضيف في v0.2 فقد يغيب */
+    public var acknowledgedAt: Date?
+    /** الاسم الحقيقي للمراسل (v0.2). الصلاحية التي تكشفه يحددها الإعداد الإداري `reporter_legal_name_access` (`/admin/settings/reporter-identity`، ADR 0021): `reporter_identity:read` حين يكون `separate` (الافتراضي)، و`protected_source:read` حين يكون `protected_source`. يغيب المفتاح عمّن لا يحمل الصلاحية الفعّالة. كل قراءة تُسجَّل في التدقيق (`material.sensitive_read`، `field_keys: [reporter_legal_name]`). لا يدخل إشعارًا ولا حدثًا ولا تصديرًا. `null` = غير مسجّل. */
+    public var reporterLegalName: String?
     public var files: [MaterialFile]
     /** مفاتيح `dynamic_fields` التي حُذفت من هذه الاستجابة بقاعدة الحجب (حقول `sensitive` أو `location`) لأن المستدعي لا يحمل الصلاحية المقابلة؛ فارغة لحاملها. */
     public var redactedFieldKeys: [String]?
@@ -56,7 +63,7 @@ public struct Material: Sendable, Codable, Hashable {
     /** يرتفع مع كل كتابة على المادة (بخلاف `version` الذي يرتفع مع التعديل بعد الاعتماد)؛ قيمة `ETag`. أُضيف في v0.1 فقد يغيب عند خادم v0. */
     public var rowVersion: Int?
 
-    public init(title: String, materialTypes: Set<MaterialType>, governorate: String, city: String, shotAt: Date? = nil, priority: Priority, sensitivity: Sensitivity, displayName: DisplayName, gps: GpsPoint? = nil, formVersion: Int, dynamicFields: [String: JSONValue], contributors: [Contributor]? = nil, voiceNoteUploadId: UUID? = nil, id: UUID, version: Int, reporterId: UUID, officeId: UUID?, technicalState: TechnicalState, editorialState: EditorialState, rightsState: RightsState, reservedBy: UUID? = nil, reservedAt: Date? = nil, files: [MaterialFile], redactedFieldKeys: [String]? = nil, createdAt: Date, updatedAt: Date, rowVersion: Int? = nil) {
+    public init(title: String, materialTypes: Set<MaterialType>, governorate: String, city: String, shotAt: Date? = nil, priority: Priority, sensitivity: Sensitivity, displayName: DisplayName, gps: GpsPoint? = nil, formVersion: Int, dynamicFields: [String: JSONValue], contributors: [Contributor]? = nil, voiceNoteUploadId: UUID? = nil, id: UUID, version: Int, reporterId: UUID, officeId: UUID?, technicalState: TechnicalState, editorialState: EditorialState, rightsState: RightsState, reservedBy: UUID? = nil, reservedAt: Date? = nil, acknowledgedBy: UUID? = nil, acknowledgedAt: Date? = nil, reporterLegalName: String? = nil, files: [MaterialFile], redactedFieldKeys: [String]? = nil, createdAt: Date, updatedAt: Date, rowVersion: Int? = nil) {
         self.title = title
         self.materialTypes = materialTypes
         self.governorate = governorate
@@ -79,6 +86,9 @@ public struct Material: Sendable, Codable, Hashable {
         self.rightsState = rightsState
         self.reservedBy = reservedBy
         self.reservedAt = reservedAt
+        self.acknowledgedBy = acknowledgedBy
+        self.acknowledgedAt = acknowledgedAt
+        self.reporterLegalName = reporterLegalName
         self.files = files
         self.redactedFieldKeys = redactedFieldKeys
         self.createdAt = createdAt
@@ -109,6 +119,9 @@ public struct Material: Sendable, Codable, Hashable {
         case rightsState = "rights_state"
         case reservedBy = "reserved_by"
         case reservedAt = "reserved_at"
+        case acknowledgedBy = "acknowledged_by"
+        case acknowledgedAt = "acknowledged_at"
+        case reporterLegalName = "reporter_legal_name"
         case files
         case redactedFieldKeys = "redacted_field_keys"
         case createdAt = "created_at"
@@ -142,6 +155,9 @@ public struct Material: Sendable, Codable, Hashable {
         try container.encode(rightsState, forKey: .rightsState)
         try container.encodeIfPresent(reservedBy, forKey: .reservedBy)
         try container.encodeIfPresent(reservedAt, forKey: .reservedAt)
+        try container.encodeIfPresent(acknowledgedBy, forKey: .acknowledgedBy)
+        try container.encodeIfPresent(acknowledgedAt, forKey: .acknowledgedAt)
+        try container.encodeIfPresent(reporterLegalName, forKey: .reporterLegalName)
         try container.encode(files, forKey: .files)
         try container.encodeIfPresent(redactedFieldKeys, forKey: .redactedFieldKeys)
         try container.encode(createdAt, forKey: .createdAt)

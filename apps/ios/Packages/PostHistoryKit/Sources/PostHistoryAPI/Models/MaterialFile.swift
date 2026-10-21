@@ -16,6 +16,8 @@ public struct MaterialFile: Sendable, Codable, Hashable {
         case audio = "audio"
         case thumbnail = "thumbnail"
         case voiceNote = "voice_note"
+        case transcript = "transcript"
+        case captions = "captions"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
     public enum State: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {

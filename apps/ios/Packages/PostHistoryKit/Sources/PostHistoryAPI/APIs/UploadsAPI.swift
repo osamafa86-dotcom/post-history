@@ -189,6 +189,51 @@ open class UploadsAPI {
     }
 
     /**
+     رمز بوابة ingest لرفع الويب، يطلبه الـBFF وحده — SEC-07
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف جلسة الرفع 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: IngestToken
+     */
+    open class func createWebIngestToken(idempotencyKey: String, id: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> IngestToken {
+        return try await createWebIngestTokenWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     رمز بوابة ingest لرفع الويب، يطلبه الـBFF وحده — SEC-07
+     - POST /uploads/{id}/web-ingest-token
+     - للمتصفح، ولا شهادة جهاز له: الـBFF يطلب الرمز باسم المستخدم المسجّل، ويُقبل من عناوين `BFF_SOURCE_ADDRESSES` وحدها (غيرها `404`). الرمز JWT ES256 بعمر ≤ 10 دقائق، بمطالبات رمز الجهاز نفسها مع `plat: \"web\"` و`ses`، أي معرّف جلسة الدخول. تفحصه البوابة بـ `/internal/ingest/session-status`، فإبطال جلسة الدخول يوقف الرفع. جلسة غيره أو غير موجودة `404`، وجلسة لا تقبل رفعًا `409`. بلا جسم.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف جلسة الرفع 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<IngestToken> 
+     */
+    open class func createWebIngestTokenWithRequestBuilder(idempotencyKey: String, id: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<IngestToken> {
+        var localVariablePath = "/uploads/{id}/web-ingest-token"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<IngestToken>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      حالة جلسة الرفع
      
      - parameter id: (path) معرّف جلسة الرفع 

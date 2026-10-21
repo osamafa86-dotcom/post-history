@@ -12,13 +12,39 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
+  changes:
+    name: changes (which parts of the repository this change touches)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      web: ${{ steps.f.outputs.web }}
+      db: ${{ steps.f.outputs.db }}
+      api: ${{ steps.f.outputs.api }}
+      compose: ${{ steps.f.outputs.compose }}
+      media: ${{ steps.f.outputs.media }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      # a pull_request run is a merge commit: HEAD^1..HEAD is the PR's own change (.github/scripts/changed-paths.sh); a push answers true for everything
+      - id: f
+        run: |
+          .github/scripts/changed-paths.sh \
+          web='^(apps/web/|contracts/|tools/acceptance/form-conformance/|\.github/(workflows/ci\.yml|scripts/))' \
+          db='^(apps/api/src/db/|tools/acceptance/|contracts/|\.github/(workflows/ci\.yml|scripts/))' \
+          api='^(apps/api/|contracts/|infra/compose/docker-compose\.yml|\.github/(workflows/ci\.yml|scripts/))' \
+          compose='^(infra/|apps/api/|workers/media/|tools/acceptance/|\.github/(workflows/ci\.yml|scripts/))' \
+          media='^(workers/media/|tools/render-bench/|infra/compose/|\.github/(workflows/ci\.yml|scripts/))'
+
   web:
     name: web (lint, types, contracts, forms, BFF and browser)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     timeout-minutes: 15
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.web == 'true'
     services:
       redis:
         image: redis:7-alpine
@@ -32,20 +58,11 @@ jobs:
     env:
       NEXT_TELEMETRY_DISABLED: "1"
       WEB_TEST_REDIS_URL: redis://127.0.0.1:6379/1
-      WEB_CONTRACT_ROOT: ${{ github.workspace }}/.web-contract/contracts
     defaults:
       run:
         working-directory: apps/web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # اعتماد مؤقت على #58 بطلب المنسق في #81؛ يُزال بعد دمج العقد وإعادة التوليد من main.
-      - name: Read the reviewed derivative URL contract
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: fc9e627514ade2e9857f3da8358de074f462e768
-          path: .web-contract
-          sparse-checkout: contracts
-          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
@@ -72,7 +89,7 @@ jobs:
 
   contracts:
     name: contracts (openapi + json schemas)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -84,8 +101,10 @@ jobs:
 
   db:
     name: db (migrations up/down + smoke test)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     timeout-minutes: 20
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.db == 'true'
     services:
       postgres:
         image: postgres:16-alpine
@@ -124,8 +143,10 @@ jobs:
 
   api:
     name: api (typecheck, unit, integration on Postgres and Redis)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
+    timeout-minutes: 25
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.api == 'true'
     services:
       postgres:
         image: postgres:16-alpine
@@ -194,8 +215,10 @@ jobs:
 
   compose:
     name: compose (config, pull, smoke)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     timeout-minutes: 20
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.compose == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Images pinned by digest (ADR 0004)
@@ -210,6 +233,8 @@ jobs:
                  -e "s|^FIELD_ENCRYPTION_KEY=.*|FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)|" \
                  -e "s/^S3_MEDIA_ACCESS_KEY=.*/S3_MEDIA_ACCESS_KEY=media-worker-ci/" \
                  -e "s/^S3_MEDIA_SECRET_KEY=.*/S3_MEDIA_SECRET_KEY=$(openssl rand -hex 16)/" \
+                 -e "s/^S3_AI_ACCESS_KEY=.*/S3_AI_ACCESS_KEY=ai-worker-ci/" \
+                 -e "s/^S3_AI_SECRET_KEY=.*/S3_AI_SECRET_KEY=$(openssl rand -hex 16)/" \
                  -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" \
                  -e "s/^REDIS_PASSWORD=.*/REDIS_PASSWORD=$(openssl rand -hex 16)/" \
                  -e "s/^S3_SECRET_KEY=.*/S3_SECRET_KEY=$(openssl rand -hex 16)/" infra/compose/.env
@@ -221,7 +246,7 @@ jobs:
         run: docker compose -f infra/compose/docker-compose.yml --profile api pull -q
       - name: Smoke test (tusd only via proxy, hook token kept out of logs and responses)
         run: infra/compose/smoke.sh
-      - name: Media worker storage user is least-privilege (ADR 0006)
+      - name: Media and AI worker storage users are least-privilege (ADR 0006, ADR 0019)
         run: infra/minio/check-media-policy.sh
       - name: Hook path end to end with the API (SEC-06)
         run: infra/compose/e2e-hooks.sh
@@ -237,6 +262,8 @@ jobs:
           DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB" \
           API_URL="http://127.0.0.1:$API_PORT/v1" TUS_URL="http://127.0.0.1:$TUSD_PORT/files/" \
             node infra/compose/e2e-duplicate-create.mjs
+      - name: Server and ingest gate together, attestation in test mode, two-key rotation (ADR 0011, SEC-07)
+        run: infra/ingest/e2e-attested.sh
       - name: Media worker hardened, on the media network only, reaches /internal/media (ADR 0006)
         run: infra/compose/smoke-media.sh
       - name: Tear down
@@ -245,7 +272,10 @@ jobs:
 
   media:
     name: media (probe, sha256, proxy on synthetic files with FFmpeg 8)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
+    timeout-minutes: 25
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.media == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Tests run in the worker image itself, so CI uses the same pinned FFmpeg as production.

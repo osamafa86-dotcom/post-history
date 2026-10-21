@@ -72,6 +72,8 @@ services:
       TUSD_OBJECT_PREFIX: ${TUSD_OBJECT_PREFIX}
       S3_MEDIA_ACCESS_KEY: ${S3_MEDIA_ACCESS_KEY:-}
       S3_MEDIA_SECRET_KEY: ${S3_MEDIA_SECRET_KEY:-}
+      S3_AI_ACCESS_KEY: ${S3_AI_ACCESS_KEY:-}
+      S3_AI_SECRET_KEY: ${S3_AI_SECRET_KEY:-}
       S3_BACKUP_ACCESS_KEY: ${S3_BACKUP_ACCESS_KEY:-}
       S3_BACKUP_SECRET_KEY: ${S3_BACKUP_SECRET_KEY:-}
     volumes:
@@ -171,6 +173,20 @@ services:
       # فارغ = in_process. مع profile media يُضبط UPLOAD_VERIFIER=external وMEDIA_WORKER_TOKEN في .env.
       UPLOAD_VERIFIER: ${UPLOAD_VERIFIER:-}
       MEDIA_WORKER_TOKEN: ${MEDIA_WORKER_TOKEN:-}
+      # رمز عامل التفريغ (ADR 0019) لنقطة المشتقات: transcript/captions فقط. فارغ = النقطة ترفضه.
+      AI_WORKER_TOKEN: ${AI_WORKER_TOKEN:-}
+      # شهادة الجهاز ورمز ingest (ADR 0011، SEC-07). فارغ = ATTESTATION_MODE=off والمسارات 404.
+      ATTESTATION_MODE: ${ATTESTATION_MODE:-}
+      APP_ATTEST_APP_ID: ${APP_ATTEST_APP_ID:-}
+      APP_ATTEST_TEST_ROOT_PEM: ${APP_ATTEST_TEST_ROOT_PEM:-}
+      PLAY_INTEGRITY_PACKAGE_NAME: ${PLAY_INTEGRITY_PACKAGE_NAME:-}
+      PLAY_INTEGRITY_CERT_SHA256: ${PLAY_INTEGRITY_CERT_SHA256:-}
+      INGEST_TOKEN_SIGNING_KEY: ${INGEST_TOKEN_SIGNING_KEY:-}
+      INGEST_TOKEN_KEY_ID: ${INGEST_TOKEN_KEY_ID:-}
+      INGEST_REQUIRED: ${INGEST_REQUIRED:-}
+      INGEST_TUS_ENDPOINT: ${INGEST_TUS_ENDPOINT:-}
+      # سر بوابة ingest لـ /internal/ingest (حالة جلسة الرفع، SEC-01). فارغ = النقطة ترفض.
+      INGEST_GATE_TOKEN: ${INGEST_GATE_TOKEN:-}
       JWT_SECRET: ${JWT_SECRET}
       FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY}
       # Rotation and break-glass (docs/ops/runbook.md); empty = unset for the API.
@@ -181,11 +197,15 @@ services:
       TUSD_HOOK_SECRET_PREVIOUS_UNTIL: ${TUSD_HOOK_SECRET_PREVIOUS_UNTIL:-}
       BREAK_GLASS_TOKEN_SHA256: ${BREAK_GLASS_TOKEN_SHA256:-}
       INTERNAL_ALLOWED_CIDRS: ${INTERNAL_ALLOWED_CIDRS}
+      # Addresses limited to some /internal prefixes even inside INTERNAL_ALLOWED_CIDRS: the ingest gate reaches the session check alone.
+      INTERNAL_SOURCE_PATHS: ${INTERNAL_SOURCE_PATHS:-172.30.250.3/32=/internal/ingest/}
       TUSD_HOOK_SECRET: ${TUSD_HOOK_SECRET}
       TUSD_OBJECT_PREFIX: ${TUSD_OBJECT_PREFIX}
       TUSD_POST_CREATE_HOOK: ${TUSD_POST_CREATE_HOOK:-true}
       S3_BUCKET_UPLOADS: ${S3_BUCKET_UPLOADS}
       S3_ENDPOINT: ${S3_ENDPOINT}
+      # العنوان الذي توقَّع له روابط التنزيل ويصل إليه العملاء (فارغ = S3_ENDPOINT، لا يُحل خارج compose)
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-}
       S3_REGION: ${S3_REGION}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
@@ -197,7 +217,13 @@ services:
       start_period: 300s  # npm ci + migrate + build on first start
     ports:
       - "127.0.0.1:${API_PORT}:3000"
-    networks: [default, hooks, media]
+    # api-hooks: the API's name on hooks alone, so a caller reaches it from its hooks address (the ingest gate's
+    # 172.30.250.3 in INTERNAL_ALLOWED_CIDRS); plain "api" may resolve to the default network and be refused.
+    networks:
+      default: {}
+      hooks:
+        aliases: [api-hooks]
+      media: {}
 
   media-worker:
     # عامل الوسائط (ADR 0006): يستهلك media:events ويستدعي /internal/media/* على الخادم. لا منفذ منشور.
@@ -243,7 +269,80 @@ services:
       media:
         ipv4_address: 172.30.251.2
 
+  # أوزان المسار المحلي للذكاء الاصطناعي (ADR 0019): تُنزَّل مرة بالبصمة (infra/ai/models.lock) ثم تخرج الحاوية. هي
+  # وحدها على شبكة لها خروج، ولا تلمس مادة. ملف لا يطابق البصمة لا يُكتب، فلا يبدأ العامل.
+  ai-models:
+    profiles: [ai]
+    image: python:3.12-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+    command: ["python3", "/ai/fetch_models.py", "--lock", "/ai/models.lock", "--dest", "/models"]
+    environment:
+      AI_MODELS: ${AI_MODELS:-faster-whisper-large-v3-turbo}
+    volumes:
+      - ../ai/fetch_models.py:/ai/fetch_models.py:ro
+      - ../ai/models.lock:/ai/models.lock:ro
+      - ai-models:/models
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
+    networks: [default]
+
+  # عامل التفريغ المحلي (ADR 0019، 0020؛ صورة workers/ai): يستهلك media:events بمجموعة ai ويسجّل مسودتي التفريغ عبر
+  # /internal على الخادم. تحصين عامل الوسائط نفسه، والأوزان للقراءة فقط، وشبكة media الداخلية وحدها (لا خروج: المواد
+  # الموسومة بالحساسية لا تصل إلى مزوّد خارجي). التفريغ خلف AI_ENABLE_TRANSCRIPT (true، وغيرها = مطفأ).
+  ai-worker:
+    profiles: [ai]
+    build:
+      context: ../../workers/ai
+      target: runtime
+    depends_on:
+      ai-models:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      AI_ENABLE_TRANSCRIPT: ${AI_ENABLE_TRANSCRIPT:-false}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      AI_API_URL: http://api:3000
+      AI_MODELS_DIR: /models
+      AI_MODEL: ${AI_MODEL:-faster-whisper-large-v3-turbo}
+      AI_SCRATCH_DIR: /scratch
+      # رمز العامل لنقطة المشتقات (≥ 32 حرفًا)، والخادم يقبل منه transcript/captions وحدهما.
+      AI_WORKER_TOKEN: ${AI_WORKER_TOKEN:-}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_REGION: ${S3_REGION}
+      # مستخدم MinIO الخاص بالعامل (infra/minio/init.sh): قراءة derived/*/*/proxy-480p.mp4 وقراءة derived/*/*/transcript.{json,vtt} وكتابتهما فقط
+      S3_ACCESS_KEY: ${S3_AI_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_AI_SECRET_KEY:-}
+      S3_BUCKET_MEDIA: ${S3_BUCKET_MEDIA}
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    user: "10002:10002"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${AI_WORKER_MEM_LIMIT:-4g}
+    memswap_limit: ${AI_WORKER_MEM_LIMIT:-4g}
+    cpus: ${AI_WORKER_CPUS:-2}
+    pids_limit: 256
+    restart: unless-stopped
+    volumes:
+      - ai-models:/models:ro
+      - ai-scratch:/scratch
+    healthcheck:
+      test: ["CMD", "test", "-s", "/models/MANIFEST"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    # العنوان الثابت في INTERNAL_ALLOWED_CIDRS كعامل الوسائط.
+    networks:
+      media:
+        ipv4_address: 172.30.251.3
+
 volumes:
+  ai-models:
+  ai-scratch:
   postgres-data:
   redis-data:
   minio-data:
@@ -268,5 +367,5 @@ networks:
     ipam:
       config:
         - subnet: 172.30.250.0/29  # fixed: INTERNAL_ALLOWED_CIDRS=172.30.250.2/32 depends on it
-          # Dynamic addresses (API, others) come from .4-.7 only, so nothing can take tusd's .2 first.
+          # Dynamic addresses (API, others) come from .4-.7 only, so nothing can take tusd's .2 or the ingest gate's .3 first.
           ip_range: 172.30.250.4/30

@@ -1,6 +1,6 @@
 // Starts the built API (apps/api/dist) against a migrated Postgres with throwaway secrets generated per run.
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { ROOT } from "../lib/measurement.mjs";
 
@@ -11,6 +11,9 @@ export async function startApi({ databaseUrl, port = 13000, apiDir = join(ROOT, 
     FIELD_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
     TUSD_HOOK_SECRET: randomBytes(24).toString("hex"),
   };
+  // the vault token of the two-person admin CLI (break-glass); the server keeps only its SHA-256
+  const vaultToken = randomBytes(24).toString("hex");
+  secrets.BREAK_GLASS_TOKEN_SHA256 = createHash("sha256").update(vaultToken).digest("hex");
   const env = {
     ...process.env,
     ...secrets,
@@ -55,7 +58,7 @@ export async function startApi({ databaseUrl, port = 13000, apiDir = join(ROOT, 
     if (i === 59) { child.kill(); throw new Error(`api did not become healthy:\n${log.slice(-2000)}`); }
   }
   return {
-    baseUrl, apiUrl: `${baseUrl}/v1`, hookToken: secrets.TUSD_HOOK_SECRET, objectPrefix: "tus/", bucket: "uploads", escalationSeconds: 3,
+    baseUrl, apiUrl: `${baseUrl}/v1`, hookToken: secrets.TUSD_HOOK_SECRET, fieldKey: secrets.FIELD_ENCRYPTION_KEY, vaultToken, apiDir, cliEnv: env, objectPrefix: "tus/", bucket: "uploads", escalationSeconds: 3,
     logs: () => log,
     stop: () => new Promise((r) => { child.once("exit", r); child.kill("SIGTERM"); setTimeout(() => child.kill("SIGKILL"), 5000); }),
   };

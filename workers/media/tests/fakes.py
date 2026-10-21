@@ -23,6 +23,12 @@ class FakeStorage:
         for i in range(0, len(data), chunk_size):
             yield data[i:i + chunk_size]
 
+    def head(self, bucket: str, key: str) -> int:
+        try:
+            return len(self.objects[(bucket, key)])
+        except KeyError:
+            raise ObjectMissing("missing") from None
+
     def put_file(self, bucket: str, key: str, path: Path, sha256_hex: str, content_type: str) -> None:
         data = path.read_bytes()
         assert hashlib.sha256(data).hexdigest() == sha256_hex

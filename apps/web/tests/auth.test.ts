@@ -8,7 +8,7 @@ import type { WebConfig } from "../src/server/config";
 import { MemoryStore } from "./memory-store";
 import { material, me, tokens } from "./fixtures";
 
-const config: WebConfig = { origin: "https://web.example.test", api: "https://api.example.test/v1", key: randomBytes(32), redisUrl: "redis://127.0.0.1:6379/1", secure: true, cookieName: "__Host-ph-session", lifetimeSeconds: 28800, mediaOrigins: [] };
+const config: WebConfig = { origin: "https://web.example.test", api: "https://api.example.test/v1", key: randomBytes(32), redisUrl: "redis://127.0.0.1:6379/1", secure: true, cookieName: "__Host-ph-session", lifetimeSeconds: 28800, mediaOrigins: [], trustForwardedFor: false };
 const response = (body: unknown, status = 200) => Response.json(body, { status });
 function request(path: string, id?: string, body?: unknown, origin = config.origin) {
   return new NextRequest(`${config.origin}/api/bff/${path}`, { method: body === undefined ? "GET" : "POST", headers: { Cookie: id ? `${config.cookieName}=${id}` : "", Origin: origin, "Content-Type": "application/json", "X-Requested-With": "post-history-web" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -16,6 +16,30 @@ function request(path: string, id?: string, body?: unknown, origin = config.orig
 function transport(fn: (request: Request) => Response | Promise<Response>): typeof fetch { return (async input => fn(input as Request)) as typeof fetch; }
 
 describe("BFF session boundary", () => {
+  it("forwards the client address to login and refresh only when the edge is trusted", async () => {
+    const trusted = { ...config, trustForwardedFor: true };
+    const seen: Array<[string, string | null]> = [];
+    const fetch = transport(r => { seen.push([r.url.split("/v1")[1]!, r.headers.get("X-Client-Address")]); return response(r.url.endsWith("/auth/me") ? me : tokens()); });
+    const login = (cfg: WebConfig, forwarded?: string) => {
+      const req = request("auth/login", undefined, { email: me.email, password: "synthetic-password" });
+      if (forwarded) req.headers.set("X-Forwarded-For", forwarded);
+      return handle(req, "auth/login", { config: cfg, store: new MemoryStore(), fetch });
+    };
+    await login(trusted, "198.51.100.7, 203.0.113.9");
+    await login(trusted, "not-an-address");
+    await login(config, "203.0.113.9");
+    const store = new MemoryStore(), id = await store.create({ ...tokens(), expires_at: new Date(0).toISOString() });
+    const refreshing = request("auth/me", id); refreshing.headers.set("X-Forwarded-For", "203.0.113.10");
+    await handle(refreshing, "auth/me", { config: trusted, store, fetch });
+    expect(seen).toEqual([
+      ["/auth/login", "203.0.113.9"],
+      ["/auth/login", null],
+      ["/auth/login", null],
+      ["/auth/refresh", "203.0.113.10"],
+      // ما عدا الدخول والتجديد لا يحمل العنوان
+      ["/auth/me", null],
+    ]);
+  });
   it("returns only an opaque HttpOnly host cookie on login, and a write idempotency key", async () => {
     const store = new MemoryStore(); const issued = tokens();
     const result = await handle(request("auth/login", undefined, { email: me.email, password: "synthetic-password" }), "auth/login", { config, store, fetch: transport(r => {

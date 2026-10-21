@@ -43,10 +43,11 @@ const technical = {
 describe('media worker interface (/internal/media/*, ADR 0006)', () => {
   const storage = new FakeStorage();
   const token = randomBytes(32).toString('base64url');
+  const aiToken = randomBytes(32).toString('base64url');
   let h: Harness;
   let reporterId: string;
   beforeAll(async () => {
-    h = await createHarness({ env: { MEDIA_WORKER_TOKEN: token }, overrides: [[OBJECT_STORAGE, storage]] });
+    h = await createHarness({ env: { MEDIA_WORKER_TOKEN: token, AI_WORKER_TOKEN: aiToken }, overrides: [[OBJECT_STORAGE, storage]] });
     reporterId = (await seedUser(h)).id;
   });
   afterAll(() => h.close());
@@ -104,7 +105,13 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
         proxy_mode: null,
         material_has_proxy: false,
       });
-      await getSession('00000000-0000-4000-8000-000000000000').expect(404);
+      // v0.1: الرمز صحيح والجلسة غير موجودة = 410 media_resource_gone (حدث متقادم)، والرمز الخاطئ يبقى 404
+      const gone = '00000000-0000-4000-8000-000000000000';
+      expect((await getSession(gone).expect(410)).body.code).toBe('media_resource_gone');
+      expect((await getSession('not-a-uuid').expect(410)).body.code).toBe('media_resource_gone');
+      expect((await verify(gone, report()).expect(410)).body.code).toBe('media_resource_gone');
+      await getSession(gone, 'x'.repeat(43)).expect(404);
+      await auth(http().post(`/internal/media/sessions/${gone}/verification`), 'x'.repeat(43)).send(report()).expect(404);
     });
   });
 
@@ -175,6 +182,31 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
     });
   });
 
+  describe('AI_WORKER_TOKEN (local transcription worker)', () => {
+    it('is refused (404) everywhere except derivatives of kind transcript or captions', async () => {
+      const s = await completed();
+      await getSession(s.id, aiToken).expect(404);
+      await auth(http().post(`/internal/media/sessions/${s.id}/verification`), aiToken).send(report()).expect(404);
+      const fileId = (await verify(s.id, report()).expect(200)).body.file_id as string;
+      const derived = (kind: string, t: string) =>
+        auth(http().post(`/internal/media/files/${fileId}/derivatives`), t).send({
+          kind,
+          storage_key: `derived/${s.materialId}/${fileId}/${kind}.vtt`,
+          sha256: hex(randomBytes(32)),
+          size_bytes: 10,
+          technical: { duration_ms: 1000, start_pts_us: 0 },
+        });
+      for (const kind of ['proxy', 'thumbnail', 'hls', 'audio']) await derived(kind, aiToken).expect(404);
+      // للنوعين المسموحين يتجاوز الرمز المصادقة ويلقى ما يلقاه رمز عامل الوسائط نفسه (التحقق بمخطط العقد بعدها)
+      for (const kind of ['transcript', 'captions']) {
+        const viaAi = await derived(kind, aiToken);
+        expect(viaAi.status).not.toBe(404);
+        expect(viaAi.status).toBe((await derived(kind, token)).status);
+        await derived(kind, 'x'.repeat(43)).expect(404);
+      }
+    });
+  });
+
   describe('POST /internal/media/files/{file_id}/derivatives', () => {
     const verifiedOriginal = async () => {
       const s = await completed();
@@ -202,6 +234,19 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
       expect((await getSession(another.id).expect(200)).body.material_has_proxy).toBe(true);
     });
 
+    it('registers a thumbnail beside the proxy: dimensions without duration, its mime type, no proxy_mode; one without dimensions is 422', async () => {
+      const o = await verifiedOriginal();
+      const key = `derived/${o.materialId}/${o.fileId}/poster.jpg`;
+      storage.sizes.set(key, 120);
+      const thumb = { kind: 'thumbnail', storage_key: key, sha256: hex(randomBytes(32)), size_bytes: 120, mime_type: 'image/jpeg', technical: { width: 640, height: 360 } };
+      await derive(o.fileId, proxy(o.materialId, o.fileId)).expect(200);
+      const res = await derive(o.fileId, thumb).expect(200);
+      const { rows } = await h.pool.query(`SELECT kind, mime_type, proxy_mode, width, height, duration_ms FROM material_files WHERE id = $1`, [res.body.file_id]);
+      expect(rows[0]).toEqual({ kind: 'thumbnail', mime_type: 'image/jpeg', proxy_mode: null, width: 640, height: 360, duration_ms: null });
+      await derive(o.fileId, { ...thumb, technical: {} }).expect(422);
+      await derive(o.fileId, { ...thumb, mime_type: undefined }).expect(422);
+    });
+
     it('looks the derivative up in the media bucket (S3_BUCKET_MEDIA), not the uploads bucket', async () => {
       expect(h.config.S3_BUCKET_MEDIA).toBe('media');
       expect(h.config.S3_BUCKET_MEDIA).not.toBe(h.config.S3_BUCKET_UPLOADS);
@@ -227,7 +272,10 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
       await derive(o.fileId, body).expect(422);
       const p = await derive(o.fileId, proxy(o.materialId, o.fileId)).expect(200);
       await derive(p.body.file_id, proxy(o.materialId, p.body.file_id)).expect(409);
-      await derive('00000000-0000-4000-8000-000000000000', proxy(o.materialId, o.fileId)).expect(404);
+      expect((await derive('00000000-0000-4000-8000-000000000000', proxy(o.materialId, o.fileId)).expect(410)).body.code).toBe('media_resource_gone');
+      await auth(http().post('/internal/media/files/00000000-0000-4000-8000-000000000000/derivatives'), 'x'.repeat(43))
+        .send(proxy(o.materialId, o.fileId))
+        .expect(404);
     });
   });
 

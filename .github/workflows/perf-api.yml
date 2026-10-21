@@ -1,0 +1,74 @@
+name: perf (api at production scale)
+
+# اختبار أداء الخادم على بيانات بحجم سنة من الخطة (البند 18، ADR 0002). يدوي فقط: لا يعمل على كل PR.
+on:
+  workflow_dispatch:
+    inputs:
+      scale:
+        description: "Fraction of one planned year (1 = 93,600 materials)"
+        default: "1"
+      requests:
+        description: "Requests per scenario"
+        default: "200"
+
+permissions:
+  contents: read
+
+jobs:
+  perf:
+    name: perf (api at production scale)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: posthistory_perf
+          POSTGRES_USER: posthistory
+          POSTGRES_PASSWORD: ci-only
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U posthistory -d posthistory_perf"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - "6379:6379"
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://posthistory:ci-only@localhost:5432/posthistory_perf
+      PERF_DATABASE_URL: postgres://posthistory:ci-only@localhost:5432/posthistory_perf
+      REDIS_URL: redis://localhost:6379
+      PERF_SCALE: ${{ inputs.scale }}
+      PERF_REQUESTS: ${{ inputs.requests }}
+      PERF_ENV_LABEL: "GitHub-hosted ubuntu-24.04 runner, Postgres 16 service"
+      PERF_OUT: ${{ github.workspace }}/perf-result.json
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+      - run: npm ci
+      - name: Migrate the empty perf database
+        run: src/db/migrate.sh up
+      - name: Seed one planned year and measure p95
+        run: npm run perf:production-scale
+      - name: Keep the measurement (schema contracts/schemas/measurement.json)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: perf-production-scale
+          path: perf-result.json
+          if-no-files-found: ignore

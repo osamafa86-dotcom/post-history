@@ -6,6 +6,7 @@ import { APP_CONFIG, type AppConfig, fieldKeyring } from '../config/config';
 import type { FieldKeyring } from '../common/crypto';
 import { pgError } from '../common/db-errors';
 import { ApiError } from '../common/errors';
+import { assertIfMatch } from '../common/preconditions';
 import { LOGGER } from '../common/logger';
 import { DB, type Database, type Tx } from '../database/database.module';
 import { materialContributors, materials, materialTransitions, offices } from '../database/schema/schema';
@@ -14,9 +15,11 @@ import { FormsService } from '../forms/forms.service';
 import type { components } from '../generated/api';
 import { hasRole, type Principal } from '../identity/principal';
 import { writeOutboxEvent } from '../outbox/outbox';
+import { legalNamePermission, ReporterIdentitySettings } from '../settings/reporter-identity.service';
 import {
   applyTransition,
   findScoped,
+  canEditMaterial,
   iso,
   materialPayload,
   materialSelection,
@@ -44,9 +47,12 @@ export interface ListQuery {
   reporter_id?: string;
   shot_after?: string;
   shot_before?: string;
+  sort?: Sort;
   cursor?: string;
   limit?: number;
 }
+
+type Sort = 'created_desc' | 'created_asc' | 'shot_desc' | 'updated_desc';
 
 @Injectable()
 export class MaterialsService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -58,6 +64,7 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(LOGGER) private readonly logger: Logger,
     private readonly forms: FormsService,
+    private readonly identitySetting: ReporterIdentitySettings,
   ) {
     this.fieldKeys = fieldKeyring(config);
   }
@@ -94,22 +101,20 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
     if (q.reporter_id) where.push(eq(materials.reporterId, q.reporter_id));
     if (q.shot_after) where.push(sql`${materials.shotAt} >= ${q.shot_after}::timestamptz`);
     if (q.shot_before) where.push(sql`${materials.shotAt} < ${q.shot_before}::timestamptz`);
-    if (q.cursor) {
-      const c = decodeCursor(q.cursor);
-      where.push(sql`(${materials.createdAt}, ${materials.id}) < (${c.at}::timestamptz, ${c.id}::uuid)`);
-    }
+    const sort = q.sort ?? 'created_desc';
+    if (q.cursor) where.push(afterCursor(sort, decodeCursor(q.cursor, sort)));
     const rows = (await this.db
       .select(materialSelection)
       .from(materials)
       .leftJoin(offices, eq(offices.id, materials.officeId))
       .where(and(...where))
-      .orderBy(desc(materials.createdAt), desc(materials.id))
+      .orderBy(...SORT_ORDER[sort])
       .limit(limit + 1)) as MaterialRow[];
     const page = rows.slice(0, limit);
     const last = page[page.length - 1];
     return {
       items: await this.dtos(p, page),
-      next_cursor: rows.length > limit && last ? encodeCursor(last.createdAt, last.id) : null,
+      next_cursor: rows.length > limit && last ? encodeCursor(sort, sortValue(sort, last), last.id) : null,
     };
   }
 
@@ -175,15 +180,12 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
     });
   }
 
-  async update(p: Principal, id: string, body: MaterialUpdate): Promise<MaterialDto> {
+  async update(p: Principal, id: string, body: MaterialUpdate, ifMatch?: string): Promise<MaterialDto> {
     return this.write(p, async (tx) => {
       const m = await findScoped(tx, p, id, { forUpdate: true });
       if (!m) throw ApiError.notFound();
-      const mayEdit =
-        (hasRole(p, 'reporter') && m.reporterId === p.userId) ||
-        roleCovers(p, 'supervisor', m) ||
-        hasRole(p, 'editor_in_chief', 'system_admin');
-      if (!mayEdit) throw new ApiError(403, 'forbidden_scope', 'This role may not edit this material.');
+      assertIfMatch(ifMatch, m.rowVersion);
+      if (!canEditMaterial(p, m)) throw new ApiError(403, 'forbidden_scope', 'This role may not edit this material.');
 
       const materialTypes = body.material_types ?? (m.materialTypes as string[]);
       const formVersion = body.form_version ?? m.formVersion;
@@ -239,10 +241,11 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
 
   // ---------- الانتقالات ----------
 
-  async transition(p: Principal, id: string, body: Transition): Promise<MaterialDto> {
+  async transition(p: Principal, id: string, body: Transition, ifMatch?: string): Promise<MaterialDto> {
     return this.write(p, async (tx) => {
       const m = await findScoped(tx, p, id, { forUpdate: true });
       if (!m) throw ApiError.notFound();
+      assertIfMatch(ifMatch, m.rowVersion);
       const from = m[STATE_COLUMN[body.track]];
       const owners = transitionOwners(body.track, from, body.to);
       if (!owners) {
@@ -278,11 +281,12 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
 
   // ---------- المساهمون ----------
 
-  async setContributors(p: Principal, id: string, contributors: Contributor[]): Promise<MaterialDto> {
+  async setContributors(p: Principal, id: string, contributors: Contributor[], ifMatch?: string): Promise<MaterialDto> {
     assertContributors(contributors);
     return this.write(p, async (tx) => {
       const m = await findScoped(tx, p, id, { forUpdate: true });
       if (!m) throw ApiError.notFound();
+      assertIfMatch(ifMatch, m.rowVersion);
       await this.replaceContributors(tx, m.id, contributors);
       await writeOutboxEvent(tx, {
         type: 'material.contributors_set',
@@ -298,10 +302,11 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
 
   // ---------- الحجز ----------
 
-  async reserve(p: Principal, id: string): Promise<Reservation> {
+  async reserve(p: Principal, id: string, ifMatch?: string): Promise<Reservation> {
     return this.db.transaction(async (tx) => {
       const m = await findScoped(tx, p, id, { forUpdate: true });
       if (!m) throw ApiError.notFound();
+      assertIfMatch(ifMatch, m.rowVersion);
       if (m.editorialState !== 'accepted' && m.editorialState !== 'in_production') {
         throw new ApiError(409, 'invalid_transition', 'Only accepted materials can be reserved for production.', {
           track: 'editorial',
@@ -391,7 +396,8 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
   }
 
   private async dtos(p: Principal, rows: MaterialRow[]): Promise<MaterialDto[]> {
-    return toMaterialDtos(this.db, p, rows, this.config.RESERVATION_IDLE_SECONDS);
+    const permission = legalNamePermission(await this.identitySetting.access(this.db));
+    return toMaterialDtos(this.db, p, rows, this.config.RESERVATION_IDLE_SECONDS, { keyring: this.fieldKeys, permission });
   }
 
   /** ينفّذ كتابة في معاملة ثم يعيد المادة كما يراها المستدعي؛ يحوّل أخطاء القيود إلى أكواد العقد. */
@@ -437,15 +443,43 @@ function displayNameColumns(d: components['schemas']['DisplayName']) {
   return { displayNameMode: d.mode, displayNamePseudonym: d.mode === 'pseudonym' ? d.pseudonym! : null };
 }
 
-function encodeCursor(createdAt: string, id: string): string {
-  return Buffer.from(JSON.stringify([createdAt, id])).toString('base64url');
+/**
+ * الترتيب (v0.2): لكل قيمة فهرس مؤشر (ADR 0002). shot_desc يضع غير المؤرَّخ أولًا كترتيب الفهرس (DESC = NULLS FIRST).
+ */
+const SORT_ORDER: Record<Sort, SQL[]> = {
+  created_desc: [desc(materials.createdAt), desc(materials.id)],
+  created_asc: [asc(materials.createdAt), asc(materials.id)],
+  shot_desc: [sql`${materials.shotAt} DESC NULLS FIRST`, desc(materials.id)],
+  updated_desc: [desc(materials.updatedAt), desc(materials.id)],
+};
+
+function sortValue(sort: Sort, m: MaterialRow): string | null {
+  return sort === 'shot_desc' ? m.shotAt : sort === 'updated_desc' ? m.updatedAt : m.createdAt;
 }
 
-function decodeCursor(cursor: string): { at: string; id: string } {
+function afterCursor(sort: Sort, c: { at: string | null; id: string }): SQL {
+  if (sort === 'created_asc') return sql`(${materials.createdAt}, ${materials.id}) > (${c.at}::timestamptz, ${c.id}::uuid)`;
+  if (sort === 'updated_desc') return sql`(${materials.updatedAt}, ${materials.id}) < (${c.at}::timestamptz, ${c.id}::uuid)`;
+  if (sort === 'shot_desc') {
+    return c.at === null
+      ? sql`(${materials.shotAt} IS NOT NULL OR ${materials.id} < ${c.id}::uuid)`
+      : sql`(${materials.shotAt} IS NOT NULL AND (${materials.shotAt}, ${materials.id}) < (${c.at}::timestamptz, ${c.id}::uuid))`;
+  }
+  return sql`(${materials.createdAt}, ${materials.id}) < (${c.at}::timestamptz, ${c.id}::uuid)`;
+}
+
+function encodeCursor(sort: Sort, at: string | null, id: string): string {
+  // مؤشر v0 بعنصرين يبقى صالحًا للترتيب الافتراضي
+  return Buffer.from(JSON.stringify(sort === 'created_desc' ? [at, id] : [at, id, sort])).toString('base64url');
+}
+
+/** المؤشر يخص الترتيب الذي صدر به؛ تغيير sort مع مؤشر قديم 400. */
+function decodeCursor(cursor: string, sort: Sort): { at: string | null; id: string } {
   try {
-    const [at, id] = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as [unknown, unknown];
-    if (typeof at === 'string' && !Number.isNaN(Date.parse(at)) && typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id)) {
-      return { at, id };
+    const [at, id, issuedFor = 'created_desc'] = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as [unknown, unknown, unknown];
+    const validAt = (typeof at === 'string' && !Number.isNaN(Date.parse(at))) || (at === null && sort === 'shot_desc');
+    if (validAt && typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id) && issuedFor === sort) {
+      return { at: at as string | null, id };
     }
   } catch {
     // يقع إلى 400 أدناه

@@ -37,11 +37,13 @@ public struct Notification: Sendable, Codable, Hashable {
     public var escalationLevel: Int?
     /** لإشعارات `auth.recovery_*` فقط؛ يفتح منه المشرف طلب الاعتماد (أُضيف في v0.1) */
     public var recoveryRequestId: UUID?
+    /** قاعدة التنبيه التي ولّدته؛ `null` للقواعد الافتراضية أو قاعدة حُذفت (أُضيف في v0.2) */
+    public var ruleId: UUID?
     public var createdAt: Date
     public var readAt: Date?
     public var acknowledgedAt: Date?
 
-    public init(id: UUID, type: String, materialId: UUID? = nil, title: String? = nil, priority: Priority, state: State, assignmentState: AssignmentState? = nil, escalationLevel: Int? = nil, recoveryRequestId: UUID? = nil, createdAt: Date, readAt: Date? = nil, acknowledgedAt: Date? = nil) {
+    public init(id: UUID, type: String, materialId: UUID? = nil, title: String? = nil, priority: Priority, state: State, assignmentState: AssignmentState? = nil, escalationLevel: Int? = nil, recoveryRequestId: UUID? = nil, ruleId: UUID? = nil, createdAt: Date, readAt: Date? = nil, acknowledgedAt: Date? = nil) {
         self.id = id
         self.type = type
         self.materialId = materialId
@@ -51,6 +53,7 @@ public struct Notification: Sendable, Codable, Hashable {
         self.assignmentState = assignmentState
         self.escalationLevel = escalationLevel
         self.recoveryRequestId = recoveryRequestId
+        self.ruleId = ruleId
         self.createdAt = createdAt
         self.readAt = readAt
         self.acknowledgedAt = acknowledgedAt
@@ -66,6 +69,7 @@ public struct Notification: Sendable, Codable, Hashable {
         case assignmentState = "assignment_state"
         case escalationLevel = "escalation_level"
         case recoveryRequestId = "recovery_request_id"
+        case ruleId = "rule_id"
         case createdAt = "created_at"
         case readAt = "read_at"
         case acknowledgedAt = "acknowledged_at"
@@ -84,6 +88,7 @@ public struct Notification: Sendable, Codable, Hashable {
         try container.encodeIfPresent(assignmentState, forKey: .assignmentState)
         try container.encodeIfPresent(escalationLevel, forKey: .escalationLevel)
         try container.encodeIfPresent(recoveryRequestId, forKey: .recoveryRequestId)
+        try container.encodeIfPresent(ruleId, forKey: .ruleId)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encodeIfPresent(readAt, forKey: .readAt)
         try container.encodeIfPresent(acknowledgedAt, forKey: .acknowledgedAt)

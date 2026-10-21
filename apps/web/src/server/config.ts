@@ -20,5 +20,7 @@ export function readConfig() {
     redisUrl: process.env.WEB_REDIS_URL ?? "redis://127.0.0.1:6379/1",
     secure: !insecure, cookieName: insecure ? "ph-session" : "__Host-ph-session",
     lifetimeSeconds: 8 * 60 * 60,
+    // الحافة أمام الويب (Caddy) تستبدل X-Forwarded-For بعنوان العميل وحده؛ true فقط حين يكون ذلك صحيحًا في النشر
+    trustForwardedFor: process.env.WEB_TRUST_FORWARDED_FOR === "true",
   };
 }

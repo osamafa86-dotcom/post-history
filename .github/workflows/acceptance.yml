@@ -1,9 +1,6 @@
 name: acceptance
 
 on:
-  push:
-    branches: [main]
-    paths-ignore: ['docs/security/**', 'docs/ops/**']
   pull_request:
     paths-ignore: ['docs/security/**', 'docs/ops/**']
 
@@ -12,12 +9,41 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
+
+env:
+  # Core-gate acceptance (reservation-conflict, optimistic-concurrency, admin-quorum, notification-delivery, download-url) against the
+  # server work of #69 and #75, now on main. "0" turns the five back into PENDING (they print it and write nothing).
+  CORE_ACCEPTANCE: "1"
+  # Local transcription worker (workers/ai, ADR 0020): transcript-draft runs in media e2e with the ai profile, the worker on the production
+  # model (faster-whisper large-v3-turbo) with AI_ENABLE_TRANSCRIPT=true. "0" leaves the ai profile out and skips the step.
+  AI_ENABLE_TRANSCRIPT: "1"
+  # Admin notification rules and real escalation (contract v0.2, #98): notification-delivery creates rules, waits one escalation step (60 s, the
+  # contract minimum) and deletes them. On since #98 is on main.
+  RULES_ACCEPTANCE: "1"
 
 jobs:
+  changes:
+    name: changes (which parts of the repository this change touches)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      live: ${{ steps.f.outputs.live }}
+      media_e2e: ${{ steps.f.outputs.media_e2e }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      # a pull_request run is a merge commit: HEAD^1..HEAD is the PR's own change (.github/scripts/changed-paths.sh); a push answers true for everything
+      - id: f
+        run: |
+          .github/scripts/changed-paths.sh \
+          live='^(apps/api/|apps/web/|contracts/|tools/acceptance/|\.github/(workflows/acceptance\.yml|scripts/))' \
+          media_e2e='^(workers/media/|workers/ai/|apps/api/|tools/acceptance/|infra/compose/|infra/ai/|infra/minio/|\.github/(workflows/acceptance\.yml|scripts/))'
+
   acceptance:
     name: acceptance (unit tests, results gate, conformance, upload-resume vs tusd)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,9 +92,10 @@ jobs:
 
   live:
     name: "live acceptance (API + Postgres - pii-leak, tenant-isolation, idempotency, tusd hook, receipt-notification)"
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
+    timeout-minutes: 25
+    needs: changes
+    if: needs.changes.outputs.live == 'true'
     services:
       postgres:
         image: postgres:16-alpine
@@ -128,7 +155,9 @@ jobs:
         working-directory: tools/acceptance
         env:
           DYN_PLATFORM_FILES: ${{ github.workspace }}/apps/web/.artifacts/web.json
-        run: node live/run.mjs --dry-run 2>&1 | tee "$RUNNER_TEMP/live.log"
+        run: |
+          set -o pipefail
+          node live/run.mjs --dry-run 2>&1 | tee "$RUNNER_TEMP/live.log"
       - name: dynamic-fields gate judged the web client and the live server together (ios and android join when their files are handed over)
         run: |
           grep -E "^reference 57/57; platforms: web 57/57$" "$RUNNER_TEMP/live.log"
@@ -153,9 +182,10 @@ jobs:
 
   media-e2e:
     name: "media e2e (full compose stack: upload, worker, proxy, hostile files)"
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
+    timeout-minutes: 40  # the ai profile fetches the production weights (1.6 GB) and transcribes six clips
+    needs: changes
+    if: needs.changes.outputs.media_e2e == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -173,13 +203,28 @@ jobs:
                  -e "s|^FIELD_ENCRYPTION_KEY=.*|FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)|" \
                  -e "s/^MEDIA_WORKER_TOKEN=.*/MEDIA_WORKER_TOKEN=$(openssl rand -hex 32)/" \
                  -e "s/^UPLOAD_VERIFIER=.*/UPLOAD_VERIFIER=external/" \
+                 -e "s|^S3_PUBLIC_ENDPOINT=.*|S3_PUBLIC_ENDPOINT=http://127.0.0.1:9000|" \
+                 -e "s/^AI_WORKER_TOKEN=.*/AI_WORKER_TOKEN=$(openssl rand -hex 32)/" \
+                 -e "s/^S3_AI_ACCESS_KEY=.*/S3_AI_ACCESS_KEY=ai-worker-ci/" \
+                 -e "s/^S3_AI_SECRET_KEY=.*/S3_AI_SECRET_KEY=$(openssl rand -hex 16)/" \
                  -e "s/^S3_MEDIA_ACCESS_KEY=.*/S3_MEDIA_ACCESS_KEY=media-worker-ci/" \
                  -e "s/^S3_MEDIA_SECRET_KEY=.*/S3_MEDIA_SECRET_KEY=$(openssl rand -hex 16)/" \
                  -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" \
                  -e "s/^REDIS_PASSWORD=.*/REDIS_PASSWORD=$(openssl rand -hex 16)/" \
                  -e "s/^S3_SECRET_KEY=.*/S3_SECRET_KEY=$(openssl rand -hex 16)/" infra/compose/.env
       - name: Start the stack (API from source, tusd, MinIO, Redis, Postgres, media worker)
-        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media up -d --wait --build
+        run: |
+          profiles="--profile api --profile media"
+          # The worker reads "true" from .env (workers/ai Config); the workflow switch is "1".
+          if [ "$AI_ENABLE_TRANSCRIPT" = 1 ]; then
+            profiles="$profiles --profile ai"; sed -i "s/^AI_ENABLE_TRANSCRIPT=.*/AI_ENABLE_TRANSCRIPT=true/" infra/compose/.env
+            # Every CPU the runner has for the worker (the media worker is done before each transcription starts). Docker
+            # refuses more than the host has; this repository's hosted runner has two, on which large-v3-turbo ran at
+            # 1.8-2.2x real time (#116).
+            sed -i "s/^AI_WORKER_CPUS=.*/AI_WORKER_CPUS=$(nproc)/" infra/compose/.env
+          fi
+          unset AI_ENABLE_TRANSCRIPT  # compose prefers the shell to .env: let .env decide
+          docker compose -f infra/compose/docker-compose.yml $profiles up -d --wait --build
       - name: Media pipeline end to end (results are printed and kept as an artifact; nothing is written to docs/measurements)
         run: |
           set -a; . infra/compose/.env; set +a
@@ -190,6 +235,30 @@ jobs:
           export MEDIA_E2E_LOGS_CMD="docker compose -f infra/compose/docker-compose.yml --profile api --profile media logs --no-color media-worker"
           export MEDIA_E2E_ENV_LABEL="compose on a GitHub-hosted runner: api + tusd + minio + redis + media-worker"
           node tools/acceptance/scripts/media-e2e.mjs --out-dir="$RUNNER_TEMP/out"
+      # The link lives 10 minutes by contract: waiting for it to expire (DL_WAIT_EXPIRY=1) is left out of the PR run, so the result is
+      # `partial` for that reason alone; run the script by hand with DL_WAIT_EXPIRY=1 for the full check.
+      - name: download-url (core gate; signed link for verified derivatives, original is 404)
+        if: env.CORE_ACCEPTANCE == '1'
+        working-directory: tools/acceptance
+        run: |
+          set -a; . ../../infra/compose/.env; set +a
+          export DL_API_URL="http://127.0.0.1:$API_PORT/v1" DL_TUS_URL="http://127.0.0.1:$TUSD_PORT/files/"
+          export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
+          export DL_TOKENS="$(node -e "import('./live/seed.mjs').then(async (m) => { const s = await m.seed({ databaseUrl: process.env.DATABASE_URL, apiUrl: process.env.DL_API_URL }); console.log(JSON.stringify({ reporter: s.allTokens.reporter, reporter_b: s.allTokens.reporter_b })); })")"
+          ACCEPTANCE_RESULTS_DIR="$RUNNER_TEMP/out" node scripts/download-url.mjs
+      - name: transcript-draft (the local transcription worker end to end; skipped until AI_ENABLE_TRANSCRIPT is "1")
+        if: env.AI_ENABLE_TRANSCRIPT == '1'
+        working-directory: tools/acceptance
+        run: |
+          # real public Arabic speech, sha256-pinned (the 243 MB archive is downloaded and verified per run; no cache action is pinned in this repo yet); the p95 ratio is information here (shared runner), judged only with TD_TARGET_HOST on the trial host
+          export TD_SPEECH_FILE="$(node lib/speech-pin.mjs "$HOME/.cache/td-speech")"
+          set -a; . ../../infra/compose/.env; set +a
+          export TD_API_URL="http://127.0.0.1:$API_PORT/v1" TD_TUS_URL="http://127.0.0.1:$TUSD_PORT/files/"
+          export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
+          export TD_TOKENS="$(node -e "import('./live/seed.mjs').then(async (m) => { const s = await m.seed({ databaseUrl: process.env.DATABASE_URL, apiUrl: process.env.TD_API_URL }); console.log(JSON.stringify({ reporter: s.allTokens.reporter })); })")"
+          export AI_ENABLE_TRANSCRIPT=1  # .env holds the worker's "true"; the script's switch is "1"
+          export TD_EGRESS_CMD="docker compose -f ../../infra/compose/docker-compose.yml --profile api --profile media --profile ai exec -T ai-worker python3 -c \"import socket; socket.create_connection(('1.1.1.1', 443), 3)\""
+          ACCEPTANCE_RESULTS_DIR="$RUNNER_TEMP/out" node scripts/transcript-draft.mjs
       - name: Remote session revocation (SEC-01; time to the first refusal on the API and on the upload path)
         run: |
           set -a; . infra/compose/.env; set +a
@@ -221,7 +290,7 @@ jobs:
           retention-days: 14
       - name: Stack logs on failure
         if: failure()
-        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media logs --no-color --tail 200 api media-worker tusd
+        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media --profile ai logs --no-color --timestamps --tail 3000 api media-worker tusd ai-worker
       - name: Tear down
         if: always()
-        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media down -v
+        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media --profile ai down -v

@@ -224,6 +224,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{id}/permissions/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المستخدم */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * سجل منح الصلاحيات المستقلة وسحبها لمستخدم (مدير النظام)
+         * @description من سجل التدقيق، الأحدث أولًا، بالمؤشر:
+         *     - منح هذا المستخدم صلاحياته المستقلة وسحبها.
+         *     - تغييرات الإعداد `reporter_legal_name_access` (ADR 0021)، لأنها تغيّر الصلاحية الفعّالة للاسم الحقيقي لكل المستخدمين.
+         *
+         *     معرّفات وأكواد فقط. سبب المنح الحر في `user_permissions.reason` لا يعود هنا. `reason_code` يعود حيث سُجّل
+         *     مرمّزًا، وهو `null` لغيره.
+         */
+        get: operations["listPermissionHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/{id}/permissions/{permission}": {
         parameters: {
             query?: never;
@@ -360,9 +388,79 @@ export interface paths {
         };
         /**
          * رابط قراءة موقّع قصير العمر لمشتق من المادة (v0.1)
-         * @description للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail`) في حالة `verified`. الأصل والملاحظة الصوتية لا يُعطيان رابطًا هنا (`404`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`).
+         * @description للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail` و`transcript` و`captions`) في حالة `verified`. الأصل والملاحظة الصوتية وحزمة التصدير لا تُعطى رابطًا هنا (`404`؛ الحزمة من `/materials/{id}/export/download-url`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`).
          */
         get: operations["getMaterialFileDownloadUrl"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/materials/{id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المادة */
+                id: components["parameters"]["MaterialId"];
+            };
+            cookie?: never;
+        };
+        /** حالة حزمة التصدير لبرامج المونتاج (v0.2) */
+        get: operations["getMaterialExport"];
+        put?: never;
+        /**
+         * طلب حزمة التصدير (الأصل، النسخة الخفيفة، الجانبيات، FCPXML/EDL، SHA256SUMS)
+         * @description تُبنى عند الطلب لا عند الاستيعاب (#99): يُكتب الطلب وحدث `export.requested` (المادة، والأصل، والطالب) في معاملة واحدة، ويبنيها عامل الوسائط ويسجّلها مشتقًا `export`. طلب لكل أصل: إن كانت جاهزة أو قيد البناء أُعيدت حالتها (`200`) دون حدث جديد، وإن فشلت أُعيد طلبها (`202`). **لا بيانات كاشفة في الحزمة أبدًا** مهما كانت صلاحيات الطالب (CLAUDE.md §5): لا إحداثيات ولا معرّف جهاز ولا مصدر محمي ولا اسم حقيقي، فلا يحمل الحدث صلاحيات. بأدوار من يحق له تنزيل الأصل، وضمن نطاقه.
+         */
+        post: operations["requestMaterialExport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/materials/{id}/export/download-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المادة */
+                id: components["parameters"]["MaterialId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * رابط تنزيل موقّع لحزمة التصدير
+         * @description كرابط المشتقات (`FileDownloadUrl`، ≤ 10 دقائق، `no-store`، بالمعرّفات وحدها) لكن بأدوار تنزيل الأصل لأن الحزمة تضم الأصل. قبل الجاهزية `409 export_not_ready`. يُسجَّل كل إصدار رابط في التدقيق (`material_id`، `file_id`).
+         */
+        get: operations["getMaterialExportDownloadUrl"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/materials/{id}/duplicates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المادة */
+                id: components["parameters"]["MaterialId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * مواد قد تكون مكررة لهذه المادة (v0.2)
+         * @description مرشّحون من نطاق المستدعي وحده، بثلاث درجات: `sha256` (الأصل نفسه بايتًا ببايت)، `cheap_hash` (الحجم وأول وآخر MiB)، و`perceptual` (متوسط مسافة هامنغ لبصمات الإطارات ≤ 10، ADR 0018). ترشيح لا حكم: لا يغيّر حالة ولا حقًا. لا يعيد عنوانًا ولا اسمًا ولا موقعًا؛ معرّفات وحالات فقط. مادة خارج النطاق لا تظهر ولا يُلمَّح إليها.
+         */
+        get: operations["listMaterialDuplicates"];
         put?: never;
         post?: never;
         delete?: never;
@@ -544,6 +642,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/uploads/{id}/web-ingest-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف جلسة الرفع */
+                id: components["parameters"]["UploadId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * رمز بوابة ingest لرفع الويب، يطلبه الـBFF وحده — SEC-07
+         * @description للمتصفح، ولا شهادة جهاز له: الـBFF يطلب الرمز باسم المستخدم المسجّل، ويُقبل من عناوين `BFF_SOURCE_ADDRESSES` وحدها (غيرها `404`). الرمز JWT ES256 بعمر ≤ 10 دقائق، بمطالبات رمز الجهاز نفسها مع `plat: "web"` و`ses`، أي معرّف جلسة الدخول. تفحصه البوابة بـ `/internal/ingest/session-status`، فإبطال جلسة الدخول يوقف الرفع. جلسة غيره أو غير موجودة `404`، وجلسة لا تقبل رفعًا `409`. بلا جسم.
+         */
+        post: operations["createWebIngestToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/ingest/session-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * هل جلسة الرفع (وجلسة الدخول للويب) ما تزال تقبل الرفع؟ (داخلي، SEC-07)
+         * @description تسأل البوابة قبل تمرير طلبات tus. `204` = الجلسة حية ويقبل صاحبها الرفع. `403` بلا جسم لكل ما عدا ذلك: منتهية أو مكتملة أو فاشلة، أو رمز رفعها مبطل، أو صاحبها معلّق، أو جلسة الدخول مبطلة، أو غير موجودة. لا تمييز بينها حتى لا يُستدل على وجود جلسة. خارج `INTERNAL_ALLOWED_CIDRS` `404` كبقية `/internal/*`.
+         */
+        get: operations["ingestSessionStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/internal/tusd-hooks/{hook_token}": {
         parameters: {
             query?: never;
@@ -644,7 +785,7 @@ export interface paths {
         put?: never;
         /**
          * تسجيل مشتق أنتجه العامل (داخلي، ADR 0006)
-         * @description ينشئ ملفًا جديدًا `kind=proxy` و`proxy_mode=normal` و`derived_from_id=file_id` و`state=verified`. متساوٍ الأثر على (`derived_from_id`، `kind`): الطلب نفسه يعيد الملف نفسه، ومشتق مختلف للمصدر والنوع نفسيهما `409`. `storage_key` يجب أن يبدأ بالبادئة المشتقة للمصدر (`derived/<material_id>/<file_id>/`) وإلا `422`. الملف المصدر غير الموجود برمز صحيح `410 media_resource_gone`.
+         * @description ينشئ ملفًا جديدًا بنوع `kind` و`derived_from_id=file_id` و`state=verified` (و`proxy_mode=normal` للنسخة الخفيفة وحدها؛ و`export` يجعل طلب التصدير `ready`). متساوٍ الأثر على (`derived_from_id`، `kind`): الطلب نفسه يعيد الملف نفسه، ومشتق مختلف للمصدر والنوع نفسيهما `409`. `storage_key` يجب أن يبدأ بالبادئة المشتقة للمصدر (`derived/<material_id>/<file_id>/`) وإلا `422`. الملف المصدر غير الموجود برمز صحيح `410 media_resource_gone`.
          */
         post: operations["mediaPostDerivative"];
         delete?: never;
@@ -771,6 +912,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/notification-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** قواعد التنبيه (الإدارة، v0.2) */
+        get: operations["listNotificationRules"];
+        put?: never;
+        /**
+         * إنشاء قاعدة تنبيه
+         * @description من يُبلَّغ عن حدث (بالدور، ويُحصر الدور المقيّد بنطاق المادة، أو بالصلاحية)، بأي قنوات، بعد أي تأخير، مع ساعات هدوء لغير العاجل وملخص دوري وسلسلة تصعيد. القنوات الخارجية تحمل الحمولة المبيّضة وحدها (`schemas/notification-channel-payload.json`). يُسجَّل في التدقيق بـ `rule_id` وحده.
+         */
+        post: operations["createNotificationRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notification-rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        /** قراءة قاعدة تنبيه */
+        get: operations["getNotificationRule"];
+        /** استبدال قاعدة تنبيه كاملة (مع سلسلة تصعيدها) */
+        put: operations["replaceNotificationRule"];
+        post?: never;
+        /** حذف قاعدة تنبيه (الإشعارات التي ولّدتها تبقى، و`rule_id` فيها يصير فارغًا) */
+        delete: operations["deleteNotificationRule"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboard/newsroom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * لوحة غرفة الأخبار المجمّعة (v0.2)
+         * @description عدّادات الحالات الثلاث ضمن نطاق المستدعي، والمحجوز، وآخر الإيصالات، والمتأخر عن الإقرار. معرّفات وأرقام وحالات فقط: لا عناوين ولا أسماء ولا مواقع ولا حقول ديناميكية. اللقطة لحظية؛ التحديث الحي من `/events` وWebSocket.
+         */
+        get: operations["getNewsroomDashboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/settings/reporter-identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** من يرى الاسم الحقيقي للمراسل (ADR 0021) */
+        get: operations["getReporterIdentitySetting"];
+        /**
+         * تغيير الصلاحية التي تكشف الاسم الحقيقي للمراسل
+         * @description `separate` (الافتراضي): يلزم `reporter_identity:read`. `protected_source`: يكفي `protected_source:read`. يُسجَّل كل تغيير في التدقيق (`setting`، `value`، `reason_code`) ويُكتب حدث `setting.changed` في المعاملة نفسها، فيُبلَّغ مديرو النظام كلهم. القيمة نفسها مرة ثانية لا تكتب حدثًا ولا تدقيقًا.
+         */
+        put: operations["updateReporterIdentitySetting"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/push-devices": {
         parameters: {
             query?: never;
@@ -849,7 +1073,7 @@ export interface components {
              * @description رمز ثابت يتفرّع عليه العميل؛ الرسالة للبشر فقط. قائمة مفتوحة؛ الرمز المجهول = خطأ عام
              * @enum {string}
              */
-            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "internal_error";
+            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "internal_error";
             message: string;
             /** @description لتتبع الطلب في السجلات */
             request_id: string;
@@ -897,10 +1121,10 @@ export interface components {
             permissions: components["schemas"]["Permission"][];
         };
         /**
-         * @description صلاحية مستقلة تُمنح لمستخدم بعينه لا لدور (قرار المالك 2026-10-19، ADR SEC-03)
+         * @description صلاحية مستقلة تُمنح لمستخدم بعينه لا لدور (قرار المالك 2026-10-19، ADR SEC-03). `reporter_identity:read` للاسم الحقيقي للمراسل حين يكون الإعداد `separate` (ADR 0021).
          * @enum {string}
          */
-        Permission: "sensitive_location:read" | "protected_source:read";
+        Permission: "sensitive_location:read" | "protected_source:read" | "reporter_identity:read";
         Role: {
             name: components["schemas"]["RoleName"];
             /** @description المكاتب أو المحافظات التي يراها الدور؛ فارغ = كل شيء (لمدير النظام ورئيس التحرير) */
@@ -1159,6 +1383,18 @@ export interface components {
             reserved_by?: string | null;
             /** Format: date-time */
             reserved_at?: string | null;
+            /**
+             * Format: uuid
+             * @description من ضغط «اطّلعت» (انتقال `inbox → acknowledged`)؛ يراه المراسل. أُضيف في v0.2 فقد يغيب
+             */
+            acknowledged_by?: string | null;
+            /**
+             * Format: date-time
+             * @description متى؛ أُضيف في v0.2 فقد يغيب
+             */
+            acknowledged_at?: string | null;
+            /** @description الاسم الحقيقي للمراسل (v0.2). الصلاحية التي تكشفه يحددها الإعداد الإداري `reporter_legal_name_access` (`/admin/settings/reporter-identity`، ADR 0021): `reporter_identity:read` حين يكون `separate` (الافتراضي)، و`protected_source:read` حين يكون `protected_source`. يغيب المفتاح عمّن لا يحمل الصلاحية الفعّالة. كل قراءة تُسجَّل في التدقيق (`material.sensitive_read`، `field_keys: [reporter_legal_name]`). لا يدخل إشعارًا ولا حدثًا ولا تصديرًا. `null` = غير مسجّل. */
+            reporter_legal_name?: string | null;
             files: components["schemas"]["MaterialFile"][];
             /** @description مفاتيح `dynamic_fields` التي حُذفت من هذه الاستجابة بقاعدة الحجب (حقول `sensitive` أو `location`) لأن المستدعي لا يحمل الصلاحية المقابلة؛ فارغة لحاملها. */
             redacted_field_keys?: string[];
@@ -1182,7 +1418,7 @@ export interface components {
              * @description الأصل لا يُمس؛ كل معالجة تنتج ملفًا جديدًا
              * @enum {string}
              */
-            kind: "original" | "proxy" | "hls" | "audio" | "thumbnail" | "voice_note";
+            kind: "original" | "proxy" | "hls" | "audio" | "thumbnail" | "voice_note" | "transcript" | "captions";
             /** @enum {string} */
             state: "uploading" | "received" | "verified" | "failed";
             /**
@@ -1383,11 +1619,11 @@ export interface components {
             challenge_id: string;
         };
         IngestToken: {
-            /** @description JWT ES256 يُرسل في ترويسة `Ingest-Token` على كل طلب tus إلى نطاق ingest */
+            /** @description JWT ES256 يُرسل في ترويسة `Ingest-Token` على كل طلب tus إلى نطاق ingest. المطالبات: `aud: "ingest"` و`sid` و`iat` و`exp` و`jti` و`plat` (`ios` أو `android` أو `web`)، ومعها `ses` (جلسة الدخول) لرموز الويب وحدها. */
             token: string;
             /**
              * Format: date-time
-             * @description ≤ 15 دقيقة؛ عند 401 من البوابة يطلب العميل رمزًا جديدًا ثم HEAD
+             * @description ≤ 15 دقيقة للجهاز و≤ 10 دقائق للويب؛ عند 401 من البوابة يُطلب رمز جديد ثم HEAD
              */
             expires_at: string;
         };
@@ -1509,10 +1745,10 @@ export interface components {
              */
             rate_limiter?: "redis" | "degraded";
         };
-        /** @description قائمة بيضاء مغلقة من ffprobe؛ العامل لا ينقل وسوم الملف أبدًا (فيها الإحداثيات وطراز الجهاز) والخادم يرفض أي مفتاح آخر. الأربعة الأولى أعمدة في `material_files` والباقي في `material_files.technical`. */
+        /** @description قائمة بيضاء مغلقة من ffprobe؛ العامل لا ينقل وسوم الملف أبدًا (فيها الإحداثيات وطراز الجهاز) والخادم يرفض أي مفتاح آخر. الأربعة الأولى أعمدة في `material_files` والباقي في `material_files.technical`. المفاتيح الإلزامية بحسب السياق: `duration_ms` و`start_pts_us` للتحقق وللمشتقات الزمنية، و`width` و`height` للمصغّرة. */
         MediaTechnical: {
-            duration_ms: number;
-            start_pts_us: number;
+            duration_ms?: number;
+            start_pts_us?: number;
             width?: number | null;
             height?: number | null;
             container?: string | null;
@@ -1543,7 +1779,7 @@ export interface components {
             proxy_mode: "urgent" | "normal" | null;
             material_has_proxy: boolean;
         };
-        /** @description النجاح يحمل البصمة والحجم والبصمة الرخيصة والبيانات الفنية؛ الفشل لا يحمل `sha256` ولا `technical` */
+        /** @description النجاح يحمل البصمة والحجم والبصمة الرخيصة والبيانات الفنية؛ الفشل لا يحمل `sha256` ولا `technical` ولا `perceptual_hash` */
         MediaVerification: {
             /** @enum {string} */
             result: "verified" | "invalid_file" | "storage_error";
@@ -1555,6 +1791,8 @@ export interface components {
             /** @description آخر 1 MiB؛ الملف الأصغر = الملف كله */
             tail_sha256?: string;
             technical?: components["schemas"]["MediaTechnical"];
+            /** @description البصمة الإدراكية للفيديو (v0.2، #93): pHash (DCT 32×32) لإطار كل ثانيتين، حتى 32 إطارًا، كل عنصر 64 بت بـ 16 حرف hex. اختيارية وللأصل الفيديو وحده؛ ترشيح للمكررات لا يمنح حقًا ولا يغيّر حالة. */
+            perceptual_hash?: string[];
         };
         MediaVerificationResult: {
             /** @enum {string} */
@@ -1565,13 +1803,222 @@ export interface components {
             /** @enum {string|null} */
             failure_reason: "checksum_mismatch" | "invalid_file" | "expired" | "aborted" | "storage_error" | null;
         };
+        /** @description `proxy` و`hls` و`audio` مشتقات زمنية: `technical` يحمل `duration_ms` و`start_pts_us`. `thumbnail` صورة (الملصق أو ورقة اللقطات): `duration_ms` اختياري، و`width` و`height` إلزاميان غير فارغين، و`mime_type` إلزامي. `proxy_mode` يكتبه الخادم `normal` للنسخة الخفيفة وحدها و`NULL` لغيرها. `export` حزمة التصدير (#99، v0.2): `application/zip`، و`technical` هو `technical` الأصل؛ تُبنى عند الطلب (`export.requested`) لا عند الاستيعاب، ولا تحمل بيانات كاشفة. `transcript` (`application/json`، نص بتوقيت الكلمات والمتحدثين) و`captions` (`text/vtt`) من عامل التفريغ (v0.2): زمنيان على خط زمن الأصل، فيحملان `duration_ms` و`start_pts_us` الأصل. */
         MediaDerivative: {
-            /** @constant */
-            kind: "proxy";
+            /** @enum {string} */
+            kind: "proxy" | "thumbnail" | "hls" | "audio" | "export" | "transcript" | "captions";
             storage_key: string;
             sha256: string;
             size_bytes: number;
+            /**
+             * @description `application/json` لموجة الصوت (`audio`، #93)
+             * @enum {string}
+             */
+            mime_type?: "image/jpeg" | "image/webp" | "video/mp4" | "application/vnd.apple.mpegurl" | "audio/mp4" | "application/json" | "application/zip" | "text/vtt";
             technical: components["schemas"]["MediaTechnical"];
+        } & (unknown & unknown & unknown & unknown);
+        PermissionHistoryEntry: {
+            /** @description رقم صف التدقيق */
+            id: string;
+            /** @enum {string} */
+            kind: "permission_granted" | "permission_revoked" | "setting_changed";
+            /** @description لـ `permission_*`؛ `null` لـ `setting_changed` */
+            permission?: components["schemas"]["Permission"] | null;
+            /** @enum {string|null} */
+            setting?: "reporter_legal_name_access" | null;
+            /** @description القيمة الجديدة لـ `setting_changed` */
+            value?: components["schemas"]["ReporterIdentityAccess"] | null;
+            /**
+             * Format: uuid
+             * @description المنفّذ
+             */
+            actor_id: string | null;
+            /** Format: date-time */
+            occurred_at: string;
+            /** @description السبب المرمّز حيث سُجّل؛ لا نص حر */
+            reason_code: string | null;
+        };
+        PermissionHistoryPage: {
+            items: components["schemas"]["PermissionHistoryEntry"][];
+            next_cursor: string | null;
+        };
+        /**
+         * @description `separate` = يلزم `reporter_identity:read`؛ `protected_source` = يكفي `protected_source:read`
+         * @enum {string}
+         */
+        ReporterIdentityAccess: "separate" | "protected_source";
+        ReporterIdentitySetting: {
+            access: components["schemas"]["ReporterIdentityAccess"];
+            /** Format: date-time */
+            updated_at: string;
+            /**
+             * Format: uuid
+             * @description `null` = القيمة الافتراضية لم تُغيَّر
+             */
+            updated_by: string | null;
+        };
+        ReporterIdentitySettingUpdate: {
+            access: components["schemas"]["ReporterIdentityAccess"];
+            /**
+             * @description سبب مرمّز للتدقيق؛ لا نص حر
+             * @enum {string}
+             */
+            reason_code: "policy_change" | "operational_need" | "incident_response" | "audit_finding";
+        };
+        MaterialExport: {
+            /**
+             * @description `none` = لم يُطلب بعد
+             * @enum {string}
+             */
+            state: "none" | "requested" | "ready" | "failed";
+            /**
+             * Format: uuid
+             * @description الأصل؛ `null` مع `none` إن لم يُتحقق الأصل بعد
+             */
+            source_file_id: string | null;
+            /**
+             * Format: uuid
+             * @description الحزمة حين تجهز
+             */
+            file_id: string | null;
+            /** Format: uuid */
+            requested_by?: string | null;
+            /** Format: date-time */
+            requested_at: string | null;
+            /** @enum {string|null} */
+            failure_reason?: "source_unavailable" | "build_failed" | null;
+        };
+        DuplicateCandidate: {
+            /** Format: uuid */
+            material_id: string;
+            /**
+             * Format: uuid
+             * @description الأصل المطابق في المادة المرشّحة
+             */
+            file_id: string;
+            /**
+             * @description أقوى درجة تطابق
+             * @enum {string}
+             */
+            match: "sha256" | "cheap_hash" | "perceptual";
+            /** @description متوسط مسافة هامنغ لـ `perceptual`؛ `null` لغيرها */
+            distance?: number | null;
+            editorial_state: components["schemas"]["EditorialState"];
+            priority: components["schemas"]["Priority"];
+            /** Format: date-time */
+            created_at: string;
+        };
+        /**
+         * @description القنوات الخارجية (`email`، `telegram`، `whatsapp`، `sms`) تحمل الحمولة المبيّضة وحدها
+         * @enum {string}
+         */
+        NotificationChannel: "in_app" | "websocket" | "apns" | "fcm" | "web_push" | "email" | "telegram" | "whatsapp" | "sms";
+        NotificationEscalationStep: {
+            level: number;
+            /** @description من الإشعار الأول إن لم يُقرّ الاستلام */
+            after_seconds: number;
+            recipient_roles: components["schemas"]["RoleName"][];
+            channels: components["schemas"]["NotificationChannel"][];
+        };
+        /** @description قاعدة تنبيه تضبطها الإدارة (الخطة: «قواعد تضبطها الإدارة»). يلزم مستلم واحد على الأقل (دور أو صلاحية). مستويات التصعيد متتالية من 1 بلا فجوات و`after_seconds` متزايد، وإلا `422 validation_failed`. */
+        NotificationRuleInput: {
+            /** @description اسم إداري؛ لا يظهر في أي إشعار */
+            name: string;
+            /**
+             * @description أحداث المواد والرفع ومسودة الذكاء الاصطناعي وحدها (schemas/outbox-event.json)
+             * @enum {string}
+             */
+            event_type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "ai.draft_ready";
+            /** @description `null` = كل الأولويات */
+            priorities?: components["schemas"]["Priority"][] | null;
+            /** @description `null` = كل الأنواع */
+            material_types?: components["schemas"]["MaterialType"][] | null;
+            /**
+             * @description كنطاق الأدوار؛ القاعدة تنطبق على مواد هذا المكتب أو هذه المحافظة وحدها
+             * @default all
+             * @enum {string}
+             */
+            scope_kind: "all" | "office" | "governorate";
+            /**
+             * @description معرّف المكتب أو اسم المحافظة؛ فارغ مع `all`
+             * @default
+             */
+            scope_id: string;
+            /** @default [] */
+            recipient_roles: components["schemas"]["RoleName"][];
+            /** @default [] */
+            recipient_permissions: components["schemas"]["Permission"][];
+            channels: components["schemas"]["NotificationChannel"][];
+            /** @default 0 */
+            delay_seconds: number;
+            /** @description لا تنطبق على `urgent`؛ ما يقع فيها يُؤجَّل إلى نهايتها أو يدخل الملخص */
+            quiet_hours?: {
+                start: string;
+                end: string;
+                /** @description IANA، مثل Asia/Gaza */
+                timezone: string;
+            } | null;
+            /** @description `null` = فوري؛ غير ذلك ملخص دوري بدل الإشعارات المتفرقة (لا ينطبق على `urgent`) */
+            digest_interval_minutes?: number | null;
+            /**
+             * @description الإشعار مهمة: «أُسند» ثم «أقرّ الاستلام» (`assignment_state`)، وعليه تجري سلسلة التصعيد. التصعيد بلا مهمة `422 validation_failed`.
+             * @default false
+             */
+            assignment: boolean;
+            /** @default [] */
+            escalation: components["schemas"]["NotificationEscalationStep"][];
+            /** @default true */
+            enabled: boolean;
+        };
+        NotificationRule: components["schemas"]["NotificationRuleInput"] & {
+            /** Format: uuid */
+            id: string;
+            /** @description قيمة `ETag` */
+            row_version: number;
+            /** Format: uuid */
+            created_by?: string | null;
+            /** Format: uuid */
+            updated_by?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        StateCount: {
+            state: string;
+            count: number;
+        };
+        NewsroomDashboard: {
+            /** Format: date-time */
+            generated_at: string;
+            /** @description عدّاد لكل حالة تحريرية ضمن النطاق (الحالات الصفرية تُحذف) */
+            editorial: components["schemas"]["StateCount"][];
+            technical: components["schemas"]["StateCount"][];
+            rights: components["schemas"]["StateCount"][];
+            /** @description مواد عاجلة لم تبلغ `published` ولا `rejected` */
+            urgent_open: number;
+            /** @description المحجوز الآن، الأقدم حجزًا أولًا */
+            reserved: {
+                /** Format: uuid */
+                material_id: string;
+                /** Format: uuid */
+                reserved_by: string;
+                /** Format: date-time */
+                reserved_at: string;
+                priority: components["schemas"]["Priority"];
+                editorial_state: components["schemas"]["EditorialState"];
+            }[];
+            /** @description آخر الإيصالات الصادرة، الأحدث أولًا */
+            recent_receipts: {
+                /** Format: uuid */
+                material_id: string;
+                receipt_number: string;
+                /** Format: date-time */
+                verified_at: string;
+                priority: components["schemas"]["Priority"];
+            }[];
+            /** @description إشعارات مهام حان تصعيدها ولم يُقرّ استلامها (ضمن النطاق) */
+            overdue_acknowledgements: number;
         };
         FormVersionSummary: {
             version: number;
@@ -1624,6 +2071,11 @@ export interface components {
              * @description لإشعارات `auth.recovery_*` فقط؛ يفتح منه المشرف طلب الاعتماد (أُضيف في v0.1)
              */
             recovery_request_id?: string | null;
+            /**
+             * Format: uuid
+             * @description قاعدة التنبيه التي ولّدته؛ `null` للقواعد الافتراضية أو قاعدة حُذفت (أُضيف في v0.2)
+             */
+            rule_id?: string | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -1850,7 +2302,7 @@ export interface components {
             /** @description تسلسلي متزايد (رقم الصف في جدول Outbox) بصيغة نصية؛ يُستخدم مؤشرًا في `after` */
             id: string;
             /** @enum {string} */
-            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed";
+            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed";
             /** @enum {string} */
             aggregate_type: "material" | "upload" | "notification" | "form" | "user";
             /** Format: uuid */
@@ -1889,7 +2341,7 @@ export interface components {
                 /** @enum {string} */
                 priority: "urgent" | "important" | "normal";
             };
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
     };
     responses: {
         /** @description طلب غير صالح (معاملات استعلام أو مؤشر غير مفهوم) */
@@ -2337,6 +2789,38 @@ export interface operations {
             422: components["responses"]["UnprocessableEntity"];
         };
     };
+    listPermissionHistory: {
+        parameters: {
+            query?: {
+                /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description حجم الصفحة */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                /** @description معرّف المستخدم */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description صفحة من السجل */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionHistoryPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     grantPermission: {
         parameters: {
             query?: never;
@@ -2422,6 +2906,8 @@ export interface operations {
                 shot_after?: string;
                 /** @description تاريخ التصوير إلى (غير شامل) */
                 shot_before?: string;
+                /** @description الترتيب (v0.2): الأحدث إنشاءً (الافتراضي)، الأقدم إنشاءً، الأحدث تصويرًا، الأحدث تعديلًا. لكل قيمة فهرس مؤشر (ADR 0002)؛ المؤشر يخص الترتيب الذي صدر به، وتغيير `sort` مع مؤشر قديم `400`. */
+                sort?: "created_desc" | "created_asc" | "shot_desc" | "updated_desc";
                 /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
                 cursor?: components["parameters"]["Cursor"];
                 /** @description حجم الصفحة */
@@ -2634,6 +3120,131 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FileDownloadUrl"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getMaterialExport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المادة */
+                id: components["parameters"]["MaterialId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الحالة */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterialExport"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    requestMaterialExport: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description معرّف المادة */
+                id: components["parameters"]["MaterialId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description طلب قائم (جاهز أو قيد البناء) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterialExport"];
+                };
+            };
+            /** @description سُجّل الطلب */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterialExport"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getMaterialExportDownloadUrl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المادة */
+                id: components["parameters"]["MaterialId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الرابط */
+            200: {
+                headers: {
+                    /** @description `no-store` */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileDownloadUrl"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listMaterialDuplicates: {
+        parameters: {
+            query?: {
+                /** @description الحد الأقصى للمرشّحين */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description معرّف المادة */
+                id: components["parameters"]["MaterialId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description المرشّحون مرتبين بالأقوى أولًا */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["DuplicateCandidate"][];
+                    };
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -2930,6 +3541,75 @@ export interface operations {
             410: components["responses"]["Gone"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createWebIngestToken: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description معرّف جلسة الرفع */
+                id: components["parameters"]["UploadId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الرمز */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestToken"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    ingestSessionStatus: {
+        parameters: {
+            query: {
+                /** @description جلسة الرفع (مطالبة `sid` في الرمز) */
+                sid: string;
+                /** @description جلسة الدخول (مطالبة `ses`)، لرموز الويب وحدها */
+                ses?: string;
+                /** @description فئة مفتاح التوقيع الذي تحقّقت به البوابة من الرمز: `production` (الافتراضي حين يغيب) أو `qa` لمفتاح اختبار معرّفه (`kid`) ببادئة `qa-`. مع `qa` يرد الخادم `204` فقط إن كانت جلسة الرفع مملوكة لحساب القبول المسمّى في إعداده، وإلا `403` كبقية الحالات. */
+                key_class?: "production" | "qa";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الجلسة حية ويقبل صاحبها الرفع */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description لا تقبل رفعًا (بلا جسم ولا تمييز للسبب) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description الطلب من خارج الشبكة الداخلية */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     tusdHook: {
@@ -3277,6 +3957,231 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listNotificationRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description كل القواعد، المفعّلة وغير المفعّلة */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["NotificationRule"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createNotificationRule: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationRuleInput"];
+            };
+        };
+        responses: {
+            /** @description القاعدة */
+            201: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationRule"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    getNotificationRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description القاعدة */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationRule"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    replaceNotificationRule: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description قيمة `ETag` الأخيرة التي رآها العميل (`"<row_version>"` للمادة، `"<version>"` للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ `412 precondition_failed` دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationRuleInput"];
+            };
+        };
+        responses: {
+            /** @description القاعدة بعد الاستبدال */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationRule"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    deleteNotificationRule: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description قيمة `ETag` الأخيرة التي رآها العميل (`"<row_version>"` للمادة، `"<version>"` للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ `412 precondition_failed` دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description حُذفت */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+        };
+    };
+    getNewsroomDashboard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description اللقطة */
+            200: {
+                headers: {
+                    /** @description `no-store` */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsroomDashboard"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getReporterIdentitySetting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الإعداد */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReporterIdentitySetting"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    updateReporterIdentitySetting: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReporterIdentitySettingUpdate"];
+            };
+        };
+        responses: {
+            /** @description الإعداد بعد التغيير */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReporterIdentitySetting"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     registerPushDevice: {

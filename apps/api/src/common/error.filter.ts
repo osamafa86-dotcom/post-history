@@ -10,6 +10,7 @@ const CODE_BY_STATUS: Record<number, ErrorCode> = {
   403: 'forbidden_scope',
   404: 'not_found',
   409: 'upload_state_conflict',
+  412: 'precondition_failed',
   413: 'bad_request',
   415: 'bad_request',
   422: 'validation_failed',
@@ -41,6 +42,9 @@ export class ErrorFilter implements ExceptionFilter {
 
     if (exception instanceof StoredResponse) {
       res.setHeader('Idempotent-Replayed', 'true');
+      // الاستجابة المعادة تُخزَّن بلا ترويسات: ETag المادة من row_version في الجسم كما في EtagInterceptor
+      const version = (exception.body as { row_version?: unknown } | null)?.row_version;
+      if (typeof version === 'number') res.setHeader('ETag', `"${version}"`);
       if (exception.body === null || exception.body === undefined) res.status(exception.status).end();
       else res.status(exception.status).json(exception.body);
       return;

@@ -1,13 +1,6 @@
 name: android
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/android/**"
-      - "contracts/**"
-      - "tools/acceptance/form-conformance/**"
-      - ".github/workflows/android.yml"
   pull_request:
     paths:
       - "apps/android/**"
@@ -21,13 +14,13 @@ permissions:
 # Same spend rules as ci.yml: a newer push to the same PR cancels the older run, and no job can hang.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   android:
     name: android (generate client, unit tests, lint, form conformance)
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: apps/android
@@ -43,8 +36,10 @@ jobs:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - name: Generate the API client from contracts/openapi.yaml and compile every module
         run: ./gradlew --no-daemon :api:build :core:build :app:assembleDebug
+      # :core:test always reruns: it writes build/form-conformance/android.json for the step below, and a build-cache
+      # hit (FROM-CACHE) restores the test results without that file.
       - name: Unit tests (JVM modules and the app)
-        run: ./gradlew --no-daemon :core:test :app:testDebugUnitTest
+        run: ./gradlew --no-daemon :core:test --rerun :app:testDebugUnitTest
       - name: Lint (missing translations are errors)
         run: ./gradlew --no-daemon :app:lintDebug
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

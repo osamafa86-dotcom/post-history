@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "media",
+  "test_name": "media-export-package-4k",
+  "started_at": "2026-10-20T17:23:42.842Z",
+  "ended_at": "2026-10-20T17:24:11.560Z",
+  "result": "info",
+  "device": {
+    "platform": "server",
+    "model": "4 vCPU"
+  },
+  "upload_path": "n/a",
+  "file": {
+    "size_bytes": 757319304,
+    "duration_s": 120.0,
+    "bitrate_kbps": 50488,
+    "codec": "h264",
+    "vfr": false,
+    "hdr": false
+  },
+  "metrics": {
+    "package_total_s": 28.72,
+    "probe_and_hash_s": 1.77,
+    "proxy_480p_s": 23.03,
+    "build_package_s": 3.21,
+    "archive_sha256_s": 0.71,
+    "package_size_bytes": 762501507,
+    "package_overhead_bytes": 5182203,
+    "original_in_package_matches": true,
+    "resolution": "3840x2160",
+    "source_generate_s": 65.2,
+    "scratch_bytes_needed": 1525001273,
+    "ffmpeg_version": "8.0.1"
+  },
+  "notes": "مقطع 4K اصطناعي (3840x2160، 30 إطارًا/ث، دقيقتان، H.264 بنحو 50 Mbps). الحزمة بعد التنزيل: البيانات الفنية وSHA-256 (1.77 ث)، النسخة الخفيفة 480p (23.03 ث، وهي خطوة الاستيعاب نفسها فلا تتكرر حين تُنتج الحزمة معها)، بناء الأرشيف (3.21 ث: نسخ الأصل بلا ضغط وكتابة الجانبي والتسلسلين وSHA256SUMS)، وبصمة الأرشيف (0.71 ث). الحجم يساوي الأصل والنسخة الخفيفة تقريبًا (زيادة 5182203 بايت)، والقرص المطلوب في /scratch نحو ضعف الأصل. الرفع إلى التخزين غير محسوب. النتيجة info: لا معيار قبول لهذا البند. الأمر: python bench/export_bench.py داخل صورة workers/media."
+}

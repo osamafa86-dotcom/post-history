@@ -1,23 +1,65 @@
-import { Body, Controller, Delete, HttpCode, Inject, Param, Put, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Put, Query, Req } from '@nestjs/common';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Request } from 'express';
-import { validateBody } from '../common/contract';
+import { validateBody, validateQuery } from '../common/contract';
 import { ApiError } from '../common/errors';
 import { DB, type Database } from '../database/database.module';
 import { userPermissions, users } from '../database/schema/schema';
+import type { components } from '../generated/api';
 import { type Permission, Roles } from '../identity/principal';
 
-const PERMISSIONS: readonly Permission[] = ['sensitive_location:read', 'protected_source:read'];
+const PERMISSIONS: readonly Permission[] = ['sensitive_location:read', 'protected_source:read', 'reporter_identity:read'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * الصلاحيتان المستقلتان (ADR SEC-03): تُمنحان لمستخدم بعينه لا لدور، ولا تُمنحان تلقائيًا حتى لمدير النظام.
+ * الصلاحيات المستقلة (ADR SEC-03، و`reporter_identity:read` في ADR 0021): تُمنح لمستخدم بعينه لا لدور، ولا تُمنح تلقائيًا
+ * حتى لمدير النظام.
  * المنح والسحب ذاتيا التكرار؛ محفّز القاعدة يكتب كلًّا منهما في audit_log، والسبب في سجل الصلاحيات لا في التدقيق.
  * السحب يسري عند الطلب التالي لأن الصلاحيات تُقرأ مع كل طلب.
  */
 @Controller('users/:id/permissions')
 export class PermissionsController {
   constructor(@Inject(DB) private readonly db: Database) {}
+
+  /**
+   * سجل المنح والسحب لهذا المستخدم، وتغييرات `reporter_legal_name_access` (ADR 0021) لأنها تغيّر الصلاحية الفعّالة
+   * للجميع، من audit_log الأحدث أولًا. المؤشر رقم آخر صف. معرّفات وأكواد فقط: سبب المنح الحر لا يُقرأ.
+   */
+  @Get('history')
+  @Roles('system_admin')
+  async history(@Param('id') userId: string, @Query() query: Record<string, unknown>): Promise<components['schemas']['PermissionHistoryPage']> {
+    const q = validateQuery<{ cursor?: string; limit?: number }>('/users/{id}/permissions/history', 'get', query);
+    if (q.cursor !== undefined && !/^[0-9]{1,19}$/.test(q.cursor)) throw new ApiError(400, 'bad_request', 'Invalid cursor.', { params: ['cursor'] });
+    await this.assertUser(userId);
+    const limit = q.limit ?? 50;
+    const before = q.cursor ? sql`AND id < ${q.cursor}::bigint` : sql``;
+    const { rows } = await this.db.execute<{ id: string; action: string; actor_id: string | null; occurred_at: string; details: Record<string, string> }>(sql`
+      (SELECT id, action, actor_id, occurred_at, details FROM audit_log
+        WHERE target_type = 'user' AND target_id = ${userId} AND action IN ('permission.granted', 'permission.revoked') ${before}
+        ORDER BY id DESC LIMIT ${limit + 1})
+      UNION ALL
+      (SELECT id, action, actor_id, occurred_at, details FROM audit_log
+        WHERE target_type = 'setting' AND target_id = 'reporter_legal_name_access' AND action = 'setting.changed' ${before}
+        ORDER BY id DESC LIMIT ${limit + 1})
+      ORDER BY id DESC LIMIT ${limit + 1}`);
+    const page = rows.slice(0, limit);
+    return {
+      items: page.map((r) => {
+        const setting = r.action === 'setting.changed';
+        return {
+          id: String(r.id),
+          kind: setting ? 'setting_changed' : r.action === 'permission.granted' ? 'permission_granted' : 'permission_revoked',
+          permission: setting ? null : (r.details.permission as Permission),
+          setting: setting ? 'reporter_legal_name_access' : null,
+          value: setting ? (r.details.value as components['schemas']['ReporterIdentityAccess']) : null,
+          actor_id: r.actor_id,
+          occurred_at: new Date(r.occurred_at).toISOString(),
+          reason_code: setting ? (r.details.reason_code ?? null) : null,
+        };
+      }),
+      next_cursor: rows.length > limit ? String(page[page.length - 1]!.id) : null,
+    };
+  }
 
   @Put(':permission')
   @HttpCode(204)

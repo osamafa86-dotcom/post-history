@@ -42,6 +42,21 @@ export function synthClip(path, { seconds = 10, size = "1280x720", rate = 30, vf
   return path;
 }
 
+/** Spoken Arabic from espeak-ng (a synthetic voice: no recording of anyone). Throws when espeak-ng is not installed. */
+export function espeakArabic(wavPath, text) {
+  run("espeak-ng", ["-v", "ar", "-s", "150", "-w", wavPath, text]);
+  return wavPath;
+}
+
+/** A phone-style clip: test pattern video + the given speech looped to `seconds`, AAC audio. No revealing tags. */
+export function synthSpeechClip(path, { speech, seconds = 45, size = "1280x720", rate = 30 }) {
+  run(FFMPEG, ["-hide_banner", "-nostdin", "-loglevel", "error", "-y",
+    "-f", "lavfi", "-i", `testsrc2=size=${size}:rate=${rate}:duration=${seconds}`,
+    "-stream_loop", "-1", "-i", speech, "-t", String(seconds),
+    "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", path]);
+  return path;
+}
+
 /** Presentation times (seconds, ascending) of every video packet. */
 export function videoTimes(path) {
   const out = run(FFPROBE, ["-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0", path]).toString();

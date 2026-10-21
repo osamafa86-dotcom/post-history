@@ -1,0 +1,331 @@
+{
+  "note": "Weights and public corpora, pinned by repository revision and per-file sha256. fetch.py refuses any file whose sha256 differs.",
+  "models": {
+    "fw-tiny": {
+      "engine": "faster-whisper",
+      "repo": "Systran/faster-whisper-tiny",
+      "compute_type": "int8",
+      "files": [
+        "config.json",
+        "model.bin",
+        "tokenizer.json",
+        "vocabulary.txt"
+      ]
+    },
+    "fw-base": {
+      "engine": "faster-whisper",
+      "repo": "Systran/faster-whisper-base",
+      "compute_type": "int8",
+      "files": [
+        "config.json",
+        "model.bin",
+        "tokenizer.json",
+        "vocabulary.txt"
+      ]
+    },
+    "fw-small": {
+      "engine": "faster-whisper",
+      "repo": "Systran/faster-whisper-small",
+      "compute_type": "int8",
+      "files": [
+        "config.json",
+        "model.bin",
+        "tokenizer.json",
+        "vocabulary.txt"
+      ]
+    },
+    "fw-medium": {
+      "engine": "faster-whisper",
+      "repo": "Systran/faster-whisper-medium",
+      "compute_type": "int8",
+      "files": [
+        "config.json",
+        "model.bin",
+        "tokenizer.json",
+        "vocabulary.txt"
+      ]
+    },
+    "fw-large-v3": {
+      "engine": "faster-whisper",
+      "repo": "Systran/faster-whisper-large-v3",
+      "compute_type": "int8",
+      "files": [
+        "config.json",
+        "model.bin",
+        "preprocessor_config.json",
+        "tokenizer.json",
+        "vocabulary.json"
+      ]
+    },
+    "fw-large-v3-turbo": {
+      "engine": "faster-whisper",
+      "repo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+      "compute_type": "int8",
+      "files": [
+        "config.json",
+        "model.bin",
+        "preprocessor_config.json",
+        "tokenizer.json",
+        "vocabulary.json"
+      ]
+    },
+    "fw-large-v3-turbo-vad": {
+      "engine": "faster-whisper",
+      "repo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+      "compute_type": "int8",
+      "files": [
+        "config.json",
+        "model.bin",
+        "preprocessor_config.json",
+        "tokenizer.json",
+        "vocabulary.json"
+      ],
+      "vad": true
+    },
+    "wcpp-large-v3-turbo-q5-0": {
+      "engine": "whisper.cpp",
+      "repo": "ggerganov/whisper.cpp",
+      "files": [
+        "ggml-large-v3-turbo-q5_0.bin"
+      ]
+    },
+    "wcpp-small-q5-1": {
+      "engine": "whisper.cpp",
+      "repo": "ggerganov/whisper.cpp",
+      "files": [
+        "ggml-small-q5_1.bin"
+      ]
+    },
+    "voxtral-rt-ar": {
+      "engine": "voxtral-realtime",
+      "repo": "mistralai/Voxtral-Mini-4B-Realtime-Arabic",
+      "files": [
+        "config.json",
+        "generation_config.json",
+        "model.safetensors",
+        "params.json",
+        "processor_config.json",
+        "tekken.json"
+      ]
+    }
+  },
+  "corpora": {
+    "fleurs-ar_eg": {
+      "repo": "google/fleurs",
+      "repo_type": "dataset",
+      "license": "CC-BY-4.0",
+      "files": [
+        "data/ar_eg/test.tsv",
+        "data/ar_eg/audio/test.tar.gz"
+      ]
+    },
+    "lahgtna-levantine": {
+      "repo": "mohammedaly22/lahgtna-levantine-tts",
+      "repo_type": "dataset",
+      "license": "CC-BY-4.0",
+      "files": [
+        "data/train-00000-of-00024.parquet"
+      ]
+    }
+  },
+  "pins": {
+    "dataset:google/fleurs": {
+      "revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+      "files": [
+        {
+          "file": "data/ar_eg/test.tsv",
+          "sha256": "af9b9aa3f99c39f90e7f8417f10f2f45a7f783441c6a27abfc2c1bededed4af1"
+        },
+        {
+          "file": "data/ar_eg/audio/test.tar.gz",
+          "sha256": "787dc348725c0924ff58c8e379d4ef41a7e488dc2ab2990a0eba4a063856edb1"
+        }
+      ]
+    },
+    "dataset:mohammedaly22/lahgtna-levantine-tts": {
+      "revision": "292ea120bdf4df514be545fb22b2c79757d9ffd1",
+      "files": [
+        {
+          "file": "data/train-00000-of-00024.parquet",
+          "sha256": "2ef20d8a19151248b9b82edd320ca565c71c6202ff2b1ec0958d426ea5b541a2"
+        }
+      ]
+    },
+    "model:Systran/faster-whisper-tiny": {
+      "revision": "d90ca5fe260221311c53c58e660288d3deb8d356",
+      "files": [
+        {
+          "file": "config.json",
+          "sha256": "a73a28cdfe1c43ccc7202fa333d1f89c202477271407ae9a7f19afa52039cac8"
+        },
+        {
+          "file": "model.bin",
+          "sha256": "dcb76c6586fc06cbdac6dd21f14cfd129cc4cdd9dce19bf4ffa62e59cbe6e6d1"
+        },
+        {
+          "file": "tokenizer.json",
+          "sha256": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab"
+        },
+        {
+          "file": "vocabulary.txt",
+          "sha256": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"
+        }
+      ]
+    },
+    "model:Systran/faster-whisper-small": {
+      "revision": "536b0662742c02347bc0e980a01041f333bce120",
+      "files": [
+        {
+          "file": "config.json",
+          "sha256": "b55496ac7940a7ae47d2c01eab40edfd8701feec1229d9cce3b40014383fb828"
+        },
+        {
+          "file": "model.bin",
+          "sha256": "3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671"
+        },
+        {
+          "file": "tokenizer.json",
+          "sha256": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab"
+        },
+        {
+          "file": "vocabulary.txt",
+          "sha256": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"
+        }
+      ]
+    },
+    "model:ggerganov/whisper.cpp": {
+      "revision": "5359861c739e955e79d9a303bcbc70fb988958b1",
+      "files": [
+        {
+          "file": "ggml-small-q5_1.bin",
+          "sha256": "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb"
+        },
+        {
+          "file": "ggml-large-v3-turbo-q5_0.bin",
+          "sha256": "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"
+        }
+      ]
+    },
+    "model:Systran/faster-whisper-base": {
+      "revision": "ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66",
+      "files": [
+        {
+          "file": "config.json",
+          "sha256": "56a6d8110d311f19c8f0471e562832c7527f146b567275bfca59fcf7c184da9a"
+        },
+        {
+          "file": "model.bin",
+          "sha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9"
+        },
+        {
+          "file": "tokenizer.json",
+          "sha256": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab"
+        },
+        {
+          "file": "vocabulary.txt",
+          "sha256": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"
+        }
+      ]
+    },
+    "model:Systran/faster-whisper-medium": {
+      "revision": "08e178d48790749d25932bbc082711ddcfdfbc4f",
+      "files": [
+        {
+          "file": "config.json",
+          "sha256": "3622a2ddc41ec0e0fd4e68c13c6830f03b90c38d89aaad184de02c8c642cf807"
+        },
+        {
+          "file": "model.bin",
+          "sha256": "9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae"
+        },
+        {
+          "file": "tokenizer.json",
+          "sha256": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab"
+        },
+        {
+          "file": "vocabulary.txt",
+          "sha256": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"
+        }
+      ]
+    },
+    "model:Systran/faster-whisper-large-v3": {
+      "revision": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+      "files": [
+        {
+          "file": "config.json",
+          "sha256": "a9306624f5ec14270a014b647e5c316b6e03a662c369758d1b90697a7b0655b9"
+        },
+        {
+          "file": "model.bin",
+          "sha256": "69f74147e3334731bc3a76048724833325d2ec74642fb52620eda87352e3d4f1"
+        },
+        {
+          "file": "preprocessor_config.json",
+          "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711"
+        },
+        {
+          "file": "tokenizer.json",
+          "sha256": "6d8cbd7cd0d8d5815e478dac67b85a26bbe77c1f5e0c6d76d1ce2abc0e5f21ca"
+        },
+        {
+          "file": "vocabulary.json",
+          "sha256": "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1"
+        }
+      ]
+    },
+    "model:mobiuslabsgmbh/faster-whisper-large-v3-turbo": {
+      "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+      "files": [
+        {
+          "file": "config.json",
+          "sha256": "b0253ea6c0d3bea6b1e19e91a02acfd3b53f4467362efcb5a3e6b16c9b3a9b7e"
+        },
+        {
+          "file": "model.bin",
+          "sha256": "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da"
+        },
+        {
+          "file": "preprocessor_config.json",
+          "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711"
+        },
+        {
+          "file": "tokenizer.json",
+          "sha256": "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd"
+        },
+        {
+          "file": "vocabulary.json",
+          "sha256": "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1"
+        }
+      ]
+    },
+    "model:mistralai/Voxtral-Mini-4B-Realtime-Arabic": {
+      "revision": "7c60cf2acb1ceb823efe937ddbc88e5e7b6e7dc2",
+      "files": [
+        {
+          "file": "config.json",
+          "sha256": "560dcfc0ab20712191f13d76a55fd700f5643b9b1b85e6cb6842b821bd11771c"
+        },
+        {
+          "file": "generation_config.json",
+          "sha256": "03782b9b3059ed02f09300048f493198537821dddd020e0eacd9789711776e67"
+        },
+        {
+          "file": "model.safetensors",
+          "sha256": "76ff69fcdfe78b5d0bcfc877f95035535191f073fead3cc47553dc3c68fc5b19"
+        },
+        {
+          "file": "params.json",
+          "sha256": "2ace010ebf7f0b62c60747d91c6d140e3c7238632d3e9c63d60a2bd2065ea301"
+        },
+        {
+          "file": "processor_config.json",
+          "sha256": "5fbc4247e0b3b72c1b501b872c4fd6432b1f0fcc1939dcdf1fa5142c6d2ce070"
+        },
+        {
+          "file": "tekken.json",
+          "sha256": "2a88a9b8fdbb6d1c65de7a0539a7f8f00ffb8d9e9d630b1c19c852dac48375bc"
+        }
+      ]
+    }
+  }
+}

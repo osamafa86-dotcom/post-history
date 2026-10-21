@@ -9,9 +9,9 @@ import Foundation
 
 public struct IngestToken: Sendable, Codable, Hashable {
 
-    /** JWT ES256 يُرسل في ترويسة `Ingest-Token` على كل طلب tus إلى نطاق ingest */
+    /** JWT ES256 يُرسل في ترويسة `Ingest-Token` على كل طلب tus إلى نطاق ingest. المطالبات: `aud: \"ingest\"` و`sid` و`iat` و`exp` و`jti` و`plat` (`ios` أو `android` أو `web`)، ومعها `ses` (جلسة الدخول) لرموز الويب وحدها. */
     public var token: String
-    /** ≤ 15 دقيقة؛ عند 401 من البوابة يطلب العميل رمزًا جديدًا ثم HEAD */
+    /** ≤ 15 دقيقة للجهاز و≤ 10 دقائق للويب؛ عند 401 من البوابة يُطلب رمز جديد ثم HEAD */
     public var expiresAt: Date
 
     public init(token: String, expiresAt: Date) {

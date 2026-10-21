@@ -96,6 +96,92 @@ open class MaterialsAPI {
     }
 
     /**
+     حالة حزمة التصدير لبرامج المونتاج (v0.2)
+     
+     - parameter id: (path) معرّف المادة 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: MaterialExport
+     */
+    open class func getMaterialExport(id: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> MaterialExport {
+        return try await getMaterialExportWithRequestBuilder(id: id, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     حالة حزمة التصدير لبرامج المونتاج (v0.2)
+     - GET /materials/{id}/export
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter id: (path) معرّف المادة 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<MaterialExport> 
+     */
+    open class func getMaterialExportWithRequestBuilder(id: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<MaterialExport> {
+        var localVariablePath = "/materials/{id}/export"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<MaterialExport>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     رابط تنزيل موقّع لحزمة التصدير
+     
+     - parameter id: (path) معرّف المادة 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: FileDownloadUrl
+     */
+    open class func getMaterialExportDownloadUrl(id: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> FileDownloadUrl {
+        return try await getMaterialExportDownloadUrlWithRequestBuilder(id: id, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     رابط تنزيل موقّع لحزمة التصدير
+     - GET /materials/{id}/export/download-url
+     - كرابط المشتقات (`FileDownloadUrl`، ≤ 10 دقائق، `no-store`، بالمعرّفات وحدها) لكن بأدوار تنزيل الأصل لأن الحزمة تضم الأصل. قبل الجاهزية `409 export_not_ready`. يُسجَّل كل إصدار رابط في التدقيق (`material_id`، `file_id`).
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - responseHeaders: [Cache-Control(String)]
+     - parameter id: (path) معرّف المادة 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<FileDownloadUrl> 
+     */
+    open class func getMaterialExportDownloadUrlWithRequestBuilder(id: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<FileDownloadUrl> {
+        var localVariablePath = "/materials/{id}/export/download-url"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<FileDownloadUrl>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      رابط قراءة موقّع قصير العمر لمشتق من المادة (v0.1)
      
      - parameter id: (path) معرّف المادة 
@@ -110,7 +196,7 @@ open class MaterialsAPI {
     /**
      رابط قراءة موقّع قصير العمر لمشتق من المادة (v0.1)
      - GET /materials/{id}/files/{file_id}/download-url
-     - للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail`) في حالة `verified`. الأصل والملاحظة الصوتية لا يُعطيان رابطًا هنا (`404`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`).
+     - للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail` و`transcript` و`captions`) في حالة `verified`. الأصل والملاحظة الصوتية وحزمة التصدير لا تُعطى رابطًا هنا (`404`؛ الحزمة من `/materials/{id}/export/download-url`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`).
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -145,6 +231,65 @@ open class MaterialsAPI {
     }
 
     /**
+     مواد قد تكون مكررة لهذه المادة (v0.2)
+     
+     - parameter id: (path) معرّف المادة 
+     - parameter limit: (query) الحد الأقصى للمرشّحين (optional, default to 20)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: ListMaterialDuplicates200Response
+     */
+    open class func listMaterialDuplicates(id: UUID, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> ListMaterialDuplicates200Response {
+        return try await listMaterialDuplicatesWithRequestBuilder(id: id, limit: limit, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     مواد قد تكون مكررة لهذه المادة (v0.2)
+     - GET /materials/{id}/duplicates
+     - مرشّحون من نطاق المستدعي وحده، بثلاث درجات: `sha256` (الأصل نفسه بايتًا ببايت)، `cheap_hash` (الحجم وأول وآخر MiB)، و`perceptual` (متوسط مسافة هامنغ لبصمات الإطارات ≤ 10، ADR 0018). ترشيح لا حكم: لا يغيّر حالة ولا حقًا. لا يعيد عنوانًا ولا اسمًا ولا موقعًا؛ معرّفات وحالات فقط. مادة خارج النطاق لا تظهر ولا يُلمَّح إليها.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter id: (path) معرّف المادة 
+     - parameter limit: (query) الحد الأقصى للمرشّحين (optional, default to 20)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<ListMaterialDuplicates200Response> 
+     */
+    open class func listMaterialDuplicatesWithRequestBuilder(id: UUID, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<ListMaterialDuplicates200Response> {
+        var localVariablePath = "/materials/{id}/duplicates"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        var localVariableUrlComponents = URLComponents(string: localVariableURLString)
+        let localVariableQueryParameters: [String: (wrappedValue: (any Sendable)?, isExplode: Bool)] = [
+            "limit": (wrappedValue: limit?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+        ]
+        localVariableUrlComponents?.queryItems = APIHelper.mapValuesToQueryItems(localVariableQueryParameters)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<ListMaterialDuplicates200Response>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     * enum for parameter sort
+     */
+    public enum Sort_listMaterials: String, Sendable, CaseIterable {
+        case createdDesc = "created_desc"
+        case createdAsc = "created_asc"
+        case shotDesc = "shot_desc"
+        case updatedDesc = "updated_desc"
+    }
+
+    /**
      قائمة المواد ضمن نطاق المستخدم
      
      - parameter editorialState: (query) تصفية بالحالة التحريرية (optional)
@@ -155,13 +300,14 @@ open class MaterialsAPI {
      - parameter reporterId: (query) المراسل (ضمن نطاق المستخدم) (optional)
      - parameter shotAfter: (query) تاريخ التصوير من (شامل) (optional)
      - parameter shotBefore: (query) تاريخ التصوير إلى (غير شامل) (optional)
+     - parameter sort: (query) الترتيب (v0.2): الأحدث إنشاءً (الافتراضي)، الأقدم إنشاءً، الأحدث تصويرًا، الأحدث تعديلًا. لكل قيمة فهرس مؤشر (ADR 0002)؛ المؤشر يخص الترتيب الذي صدر به، وتغيير &#x60;sort&#x60; مع مؤشر قديم &#x60;400&#x60;. (optional, default to .createdDesc)
      - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
      - parameter limit: (query) حجم الصفحة (optional, default to 50)
      - parameter apiConfiguration: The configuration for the http request.
      - returns: MaterialPage
      */
-    open class func listMaterials(editorialState: EditorialState? = nil, technicalState: TechnicalState? = nil, rightsState: RightsState? = nil, priority: Priority? = nil, governorate: String? = nil, reporterId: UUID? = nil, shotAfter: Date? = nil, shotBefore: Date? = nil, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> MaterialPage {
-        return try await listMaterialsWithRequestBuilder(editorialState: editorialState, technicalState: technicalState, rightsState: rightsState, priority: priority, governorate: governorate, reporterId: reporterId, shotAfter: shotAfter, shotBefore: shotBefore, cursor: cursor, limit: limit, apiConfiguration: apiConfiguration).execute().body
+    open class func listMaterials(editorialState: EditorialState? = nil, technicalState: TechnicalState? = nil, rightsState: RightsState? = nil, priority: Priority? = nil, governorate: String? = nil, reporterId: UUID? = nil, shotAfter: Date? = nil, shotBefore: Date? = nil, sort: Sort_listMaterials? = nil, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> MaterialPage {
+        return try await listMaterialsWithRequestBuilder(editorialState: editorialState, technicalState: technicalState, rightsState: rightsState, priority: priority, governorate: governorate, reporterId: reporterId, shotAfter: shotAfter, shotBefore: shotBefore, sort: sort, cursor: cursor, limit: limit, apiConfiguration: apiConfiguration).execute().body
     }
 
     /**
@@ -179,12 +325,13 @@ open class MaterialsAPI {
      - parameter reporterId: (query) المراسل (ضمن نطاق المستخدم) (optional)
      - parameter shotAfter: (query) تاريخ التصوير من (شامل) (optional)
      - parameter shotBefore: (query) تاريخ التصوير إلى (غير شامل) (optional)
+     - parameter sort: (query) الترتيب (v0.2): الأحدث إنشاءً (الافتراضي)، الأقدم إنشاءً، الأحدث تصويرًا، الأحدث تعديلًا. لكل قيمة فهرس مؤشر (ADR 0002)؛ المؤشر يخص الترتيب الذي صدر به، وتغيير &#x60;sort&#x60; مع مؤشر قديم &#x60;400&#x60;. (optional, default to .createdDesc)
      - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
      - parameter limit: (query) حجم الصفحة (optional, default to 50)
      - parameter apiConfiguration: The configuration for the http request.
      - returns: RequestBuilder<MaterialPage> 
      */
-    open class func listMaterialsWithRequestBuilder(editorialState: EditorialState? = nil, technicalState: TechnicalState? = nil, rightsState: RightsState? = nil, priority: Priority? = nil, governorate: String? = nil, reporterId: UUID? = nil, shotAfter: Date? = nil, shotBefore: Date? = nil, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<MaterialPage> {
+    open class func listMaterialsWithRequestBuilder(editorialState: EditorialState? = nil, technicalState: TechnicalState? = nil, rightsState: RightsState? = nil, priority: Priority? = nil, governorate: String? = nil, reporterId: UUID? = nil, shotAfter: Date? = nil, shotBefore: Date? = nil, sort: Sort_listMaterials? = nil, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<MaterialPage> {
         let localVariablePath = "/materials"
         let localVariableURLString = apiConfiguration.basePath + localVariablePath
         let localVariableParameters: [String: any Sendable]? = nil
@@ -199,6 +346,7 @@ open class MaterialsAPI {
             "reporter_id": (wrappedValue: reporterId?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
             "shot_after": (wrappedValue: shotAfter?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
             "shot_before": (wrappedValue: shotBefore?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "sort": (wrappedValue: sort?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
             "cursor": (wrappedValue: cursor?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
             "limit": (wrappedValue: limit?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
         ]
@@ -299,6 +447,51 @@ open class MaterialsAPI {
         let localVariableRequestBuilder: RequestBuilder<Void>.Type = apiConfiguration.requestBuilderFactory.getNonDecodableBuilder()
 
         return localVariableRequestBuilder.init(method: "DELETE", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     طلب حزمة التصدير (الأصل، النسخة الخفيفة، الجانبيات، FCPXML/EDL، SHA256SUMS)
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف المادة 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: MaterialExport
+     */
+    open class func requestMaterialExport(idempotencyKey: String, id: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> MaterialExport {
+        return try await requestMaterialExportWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     طلب حزمة التصدير (الأصل، النسخة الخفيفة، الجانبيات، FCPXML/EDL، SHA256SUMS)
+     - POST /materials/{id}/export
+     - تُبنى عند الطلب لا عند الاستيعاب (#99): يُكتب الطلب وحدث `export.requested` (المادة، والأصل، والطالب) في معاملة واحدة، ويبنيها عامل الوسائط ويسجّلها مشتقًا `export`. طلب لكل أصل: إن كانت جاهزة أو قيد البناء أُعيدت حالتها (`200`) دون حدث جديد، وإن فشلت أُعيد طلبها (`202`). **لا بيانات كاشفة في الحزمة أبدًا** مهما كانت صلاحيات الطالب (CLAUDE.md §5): لا إحداثيات ولا معرّف جهاز ولا مصدر محمي ولا اسم حقيقي، فلا يحمل الحدث صلاحيات. بأدوار من يحق له تنزيل الأصل، وضمن نطاقه.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف المادة 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<MaterialExport> 
+     */
+    open class func requestMaterialExportWithRequestBuilder(idempotencyKey: String, id: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<MaterialExport> {
+        var localVariablePath = "/materials/{id}/export"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<MaterialExport>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
 
     /**

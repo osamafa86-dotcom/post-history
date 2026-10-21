@@ -1,5 +1,5 @@
 # النموذج الأولي لنطاق ingest. غير المُوكَّل (ADR 0011)، طبقة فوق compose الأساسي:
-#   INGEST_TOKEN_PUBLIC_KEY=<SPKI base64> INGEST_TLS_DIR=<dir with tls.crt/tls.key only> \
+#   INGEST_TOKEN_PUBLIC_KEYS=<kid>:<SPKI base64>[,<kid>:<SPKI base64>] INGEST_TLS_DIR=<dir with tls.crt/tls.key only> \
 #     docker compose -f infra/compose/docker-compose.yml -f infra/ingest/compose.ingest.yml up -d --wait
 # مفاتيح الاختبار والشهادة تولّدها infra/ingest/test-gate.sh؛ في الإنتاج المفتاح العام من SOPS والشهادة من ACME.
 services:
@@ -9,7 +9,11 @@ services:
       tusd-proxy:
         condition: service_healthy
     environment:
-      INGEST_TOKEN_PUBLIC_KEY: "${INGEST_TOKEN_PUBLIC_KEY:?SPKI base64 of the ingest token verification key}"
+      # Two keys during a rotation (ADR 0011); the server puts kid in every token.
+      INGEST_TOKEN_PUBLIC_KEYS: "${INGEST_TOKEN_PUBLIC_KEYS:?kid:SPKI base64 pairs of the ingest token verification keys}"
+      # Session state from the API (SEC-01). "off" only for test-gate.sh, which runs the gate with no sessions.
+      INGEST_SESSION_CHECK: "${INGEST_SESSION_CHECK:-on}"
+      INGEST_GATE_TOKEN: "${INGEST_GATE_TOKEN:-}"
     volumes:
       - ../ingest/nginx.conf:/etc/nginx/nginx.conf:ro
       - ../ingest/ingest_token.js:/etc/nginx/njs/ingest_token.js:ro
@@ -31,3 +35,5 @@ services:
     networks:
       default: {}
       uploads: {}
+      hooks:
+        ipv4_address: 172.30.250.3

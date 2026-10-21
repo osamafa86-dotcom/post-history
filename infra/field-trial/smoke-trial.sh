@@ -2,9 +2,10 @@
 # دخان بيئة التجربة كاملة (ADR 0013) على المضيف المحلي أو مشغّل CI: النطاقان على 127.0.0.1 و127.0.0.2 بشهادات
 # سلطة Caddy المحلية (local_certs)، وأسرار عشوائية في ملف مؤقت بصلاحية 0400. يتحقق من:
 #   1) الوكيل: الصحة والرفع على الرئيسي، 404 لـ /internal وغيره، التحويل من http، وعزل العنوانين (لا اسم على عنوان الآخر)،
-#   2) بوابة ingest خلف الوكيل: 401 بلا رمز، ورفع كامل برمز صالح، ورفع كامل عبر الرئيسي (e2e-edge-upload.mjs)،
+#   2) بوابة ingest أمام النطاقين: 401 بلا رمز على كليهما، ورفع كامل برمز صالح عبر كل منهما (e2e-edge-upload.mjs)،
 #   3) نسخة احتياطية مشفّرة ثم تمرين استعادة ناجح (infra/backup/restore-drill.sh)،
-#   4) لا رمز ولا عنوان عميل في سجل الوكيل.
+#   4) لا رمز ولا عنوان عميل في سجل الوكيل،
+#   5) نافذة مفتاح qa- (ADR 0022): لحساب القبول وحده، وتُرفض بعد انتهائها، والإغلاق لا يترك أثرًا.
 # يحتاج tools/acceptance (npm ci). KEEP=1 يبقي البيئة قائمة. TRIAL_EXTRA_COMPOSE للاختبار المحلي فقط.
 set -euo pipefail
 
@@ -45,7 +46,12 @@ MEDIA_WORKER_TOKEN=$(hex 32)
 S3_MEDIA_ACCESS_KEY=media-worker-ci
 S3_MEDIA_SECRET_KEY=$(hex 16)
 UPLOAD_VERIFIER=external
-INGEST_TOKEN_PUBLIC_KEY=$(cat "$WORK/ingest/public.b64")
+INGEST_TOKEN_PUBLIC_KEYS=k1:$(cat "$WORK/ingest/public.b64")
+INGEST_TOKEN_SIGNING_KEY=$(openssl pkcs8 -topk8 -nocrypt -outform DER -in "$WORK/ingest/signing.pem" | base64 -w0)
+INGEST_TOKEN_KEY_ID=k1
+INGEST_GATE_TOKEN=$(hex 32)
+# ATTESTATION_MODE=production (التجربة) يشترط معرّف تطبيق؛ معرّف اختبار هنا، والرموز يوقّعها الدخان مباشرة.
+APP_ATTEST_APP_ID=ABCDE12345.org.example.trialci
 INGEST_PORT=8443
 S3_BACKUP_ACCESS_KEY=backup-ci
 S3_BACKUP_SECRET_KEY=$(hex 16)
@@ -76,7 +82,16 @@ grep -qi '^tus-resumable:' <<<"$(tus)" || fail "main /files/ does not reach tusd
   || fail "http is not redirected to https"
 [ "$(code -X POST https://ingest.localhost/files/ -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 1')" = 401 ] \
   || fail "ingest without a token should be 401 at the gate"
+[ "$(code -X POST https://main.localhost/files/ -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 1')" = 401 ] \
+  || fail "main /files/ without a token should be 401 at the gate (both domains behind it)"
 [ "$(code https://ingest.localhost/v1/health)" = 404 ] || fail "ingest serves more than /files/"
+# From the gate's own address (172.30.250.3, inside INTERNAL_ALLOWED_CIDRS) only /internal/ingest/ answers: the media
+# worker's and tusd's internal paths are 403 there (INTERNAL_SOURCE_PATHS). The session check itself is proven by the uploads below.
+from_gate() { "$T" exec -T ingest-gate wget -q -S -O /dev/null "http://api-hooks:3000$1" 2>&1 | awk '/HTTP\//{print $2; exit}'; }
+[ "$(from_gate "/internal/media/sessions/$(python3 -c 'import uuid; print(uuid.uuid4())')")" = 403 ] \
+  || fail "the gate's address reaches /internal/media/ (INTERNAL_SOURCE_PATHS not applied)"
+[ "$(from_gate "/internal/tusd-hooks/$(hex 32)")" = 403 ] || fail "the gate's address reaches the tusd hook path"
+echo "the gate's address reaches /internal/ingest/ alone: ok"
 # Address isolation: each name answers on its own address only (active probing does not link A and B).
 if curl -sS --max-time 10 -o /dev/null --cacert "$WORK/ca.crt" --resolve ingest.localhost:443:127.0.0.1 https://ingest.localhost/files/ 2>/dev/null; then
   fail "the ingest name answers on the main address"; fi
@@ -153,6 +168,34 @@ for want in "حالة بيئة التجربة" "■ الرفوعات" "■ طا�
 done
 echo "monitoring and status board: ok"
 
+# The qa key window (ADR 0022), as an operator runs it: qa-window.sh opens a fresh qa- key for the acceptance account
+# (looked up by email), the gate refuses that key for another reporter's session (key_class=qa), refuses it once
+# expired (and the health check alerts), and close leaves neither the key nor the account behind.
+qa_state="$(DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB" \
+  API_URL="http://127.0.0.1:$API_PORT/v1" node "$ROOT/infra/field-trial/e2e-qa-key.mjs" seed)" || fail "qa window: seed"
+qa_email="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["acceptance_email"])' <<<"$qa_state")"
+QW() { TRIAL_SH="$T" QA_WINDOW_DIR="$WORK/qa" "$ROOT/infra/field-trial/qa-window.sh" "$@"; }
+QW open --email "$qa_email" --hours 1 > "$WORK/qa-open" || { cat "$WORK/qa-open"; fail "qa-window.sh open"; }
+qa_kid="$(sed -n 's/.*FT_INGEST_KID=\(qa-[A-Za-z0-9-]*\).*/\1/p' "$WORK/qa-open")"
+[ -n "$qa_kid" ] && [ "$(stat -c %a "$WORK/qa/qa-signing.pem")" = 600 ] || fail "qa window: no qa- kid or the key file is not 0600"
+if QW open --email "$qa_email" --hours 1 >/dev/null 2>&1; then fail "qa window: a second open replaced the key"; fi
+# The tester's copy (as copied off the host): it must stop working at the expiry and after close, not only disappear.
+cp "$WORK/qa/qa-signing.pem" "$WORK/qa-copy.pem"
+qcheck() { QA_STATE="$qa_state" QA_KID="$qa_kid" QA_SIGNING_KEY="$WORK/qa-copy.pem" CA_FILE="$WORK/ca.crt" \
+             INGEST_SIGNING_KEY="$WORK/ingest/signing.pem" node "$ROOT/infra/field-trial/e2e-qa-key.mjs" check "$1"; }
+qcheck open || fail "qa window open"
+sed -i "s/^INGEST_QA_KEY_EXPIRES=.*/INGEST_QA_KEY_EXPIRES=$(date -u -d '-1 minute' +%FT%TZ)/" "$TRIAL_ENV_FILE"
+"$T" up -d --wait --no-deps --force-recreate ingest-gate >/dev/null 2>&1 || fail "qa window: gate restart"
+qcheck expired || fail "qa window expired"
+if hc > "$WORK/hc5"; then fail "healthcheck passed with an expired qa window"; fi
+grep -q '^FAIL  qa-key:window' "$WORK/hc5" || fail "expired qa window not reported by the health check"
+QW close > /dev/null || fail "qa-window.sh close"
+qcheck closed || fail "qa window closed"
+if grep -qE '^(INGEST_QA_|ACCEPTANCE_UPLOADER_USER_ID)' "$TRIAL_ENV_FILE" || [ -e "$WORK/qa/qa-signing.pem" ]; then
+  fail "qa window: close left the slot, the account or the key behind"; fi
+[ "$(stat -c %a "$TRIAL_ENV_FILE")" = 400 ] || fail "qa window: the secrets file mode changed"
+echo "qa key window (fresh key, acceptance account only, expiry, close): ok"
+
 # Revealing data never reaches a log: a canary in headers, query strings, tus metadata and a login body, then every
 # container's log is searched for it.
 CANARY="canary$(hex 6)"
@@ -178,7 +221,9 @@ if [ "${TRIAL_ACCEPTANCE:-0}" = 1 ]; then
   (cd "$ROOT/tools/acceptance" && [ -d node_modules ] || npm ci --no-audit --no-fund >/dev/null)
   export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
   FT_ACCOUNTS="$(API_URL="http://127.0.0.1:$API_PORT/v1" node "$ROOT/tools/acceptance/field-trial/rehearsal-accounts.mjs")"
-  FT_ACCOUNTS="$FT_ACCOUNTS" FT_TUS_URL="https://main.localhost/files/" NODE_EXTRA_CA_CERTS="$WORK/ca.crt" \
+  # Uploads carry an ingest token (the gate is in front of both domains); the smoke's signing key mints them here.
+  FT_ACCOUNTS="$FT_ACCOUNTS" FT_TUS_URL="https://ingest.localhost/files/" FT_INGEST_SIGNING_KEY="$WORK/ingest/signing.pem" \
+  FT_RESOLVE="ingest.localhost=127.0.0.2,main.localhost=127.0.0.1" NODE_EXTRA_CA_CERTS="$WORK/ca.crt" \
     node "$ROOT/tools/acceptance/run.mjs" --target https://main.localhost --confirm --out-dir="${ACCEPTANCE_OUT:-$WORK/pack}" \
     || fail "acceptance pack through the edge"
   echo "acceptance pack through the edge: ok"
@@ -189,7 +234,8 @@ edge_log="$("$T" logs caddy caddy-ingest ingest-gate tusd-proxy)"
 if grep -qF "$TUSD_HOOK_SECRET" <<<"$edge_log"; then fail "hook secret in an edge log"; fi
 if grep -qE '"(remote_ip|client_ip)"' <<<"$edge_log"; then
   grep -E '"(remote_ip|client_ip)"' <<<"$edge_log" | head -3 | cut -c1-300 >&2; fail "client address in the edge log"; fi
-if grep -qiE 'ingest-token|authorization' <<<"$edge_log"; then fail "request headers in the edge log"; fi
+# أسماء الترويسات مفاتيحَ JSON (أو قيمة Bearer)، لا المسار: /v1/uploads/{id}/ingest-token مسار API مشروع (SEC-07)
+if grep -qiE '"(ingest-token|authorization)"[[:space:]]*:|bearer [A-Za-z0-9._-]{8}' <<<"$edge_log"; then fail "request headers in the edge log"; fi
 # Upload ids are bearer capabilities (SEC-06): logged as /files/-, never /files/<id>.
 if grep -qE '/files/[A-Za-z0-9]' <<<"$edge_log"; then fail "an upload id in an edge log"; fi
 grep -qF '/files/-' <<<"$edge_log" || fail "no redacted upload path in the edge log (nothing logged?)"

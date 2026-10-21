@@ -1,0 +1,32 @@
+name: asr-bench
+
+on:
+  pull_request:
+    paths: ['tools/asr-bench/**', 'docs/measurements/asr-bench/**', 'contracts/schemas/measurement.json', '.github/workflows/asr-bench.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  metrics:
+    name: asr-bench (metrics, lock pins, measurements match measurement.json)
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (same as #106 for the other workflows)
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # No weights and no audio in CI: the metric code is tested on text, the measurements on the schema.
+      - name: Metric, normalization and lock tests (stdlib + pytest only)
+        working-directory: tools/asr-bench
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install -q pytest==8.4.2
+          "$RUNNER_TEMP/venv/bin/python" -m pytest -q -p no:cacheprovider test_metrics.py
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: asr-bench measurements match measurement.json
+        run: npx -y -p ajv-cli@5.0.0 -p ajv-formats@2.1.1 ajv validate --spec=draft2020 -c ajv-formats -s contracts/schemas/measurement.json -d "docs/measurements/asr-bench/*.json"

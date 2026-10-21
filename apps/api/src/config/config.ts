@@ -13,6 +13,14 @@ export function parseCidr(cidr: string): { address: string; prefix: number; fami
   return { address: address!, prefix, family: version === 4 ? 'ipv4' : 'ipv6' };
 }
 
+/** مصدر داخلي مقيّد: عناوينه لا تصل من /internal/* إلا إلى بادئات مساراته. */
+export interface InternalSource {
+  cidr: string;
+  prefixes: string[];
+}
+
+const INTERNAL_PREFIX = /^\/internal\/[a-z0-9-]+(\/[a-z0-9-]+)*\/$/;
+
 export function blockListOf(cidrs: string[]): BlockList {
   const list = new BlockList();
   for (const c of cidrs) {
@@ -38,6 +46,31 @@ const schema = z.object({
   TRUSTED_PROXY_CIDRS: cidrList.prefault(''),
   // من يصل إلى /internal/* (خطّافات tusd) بعنوان المقبس نفسه لا بـ X-Forwarded-For؛ الافتراضي الحلقة المحلية فقط
   INTERNAL_ALLOWED_CIDRS: cidrList.prefault('127.0.0.1/32,::1/128'),
+  // عنوان الـBFF (apps/web) الثابت، عنوان واحد لكل مدخل (/32 أو /128): منه وحده تُقبل ترويسة X-Client-Address
+  // لحدود معدل الدخول والاستعادة؛ فارغ = لا تُقبل من أحد
+  // مصادر /internal/* المقيّدة بمسارات صريحة: `CIDR=/internal/a/|/internal/b/` مفصولة بـ `;`. العنوان المطابق لمدخل
+  // هنا يصل إلى بادئاته وحدها (ولو كان أيضًا في INTERNAL_ALLOWED_CIDRS)، وما سواها منه 403. بوابة ingest تُدرج هنا
+  // بـ /internal/ingest/ فقط. فارغ = لا تقييد إضافي
+  INTERNAL_SOURCE_PATHS: z
+    .string()
+    .transform((v) =>
+      v
+        .split(';')
+        .map((e) => e.trim())
+        .filter(Boolean)
+        .map((e): InternalSource | null => {
+          const [cidr, paths, ...rest] = e.split('=').map((x) => x.trim());
+          const prefixes = (paths ?? '').split('|').map((x) => x.trim()).filter(Boolean);
+          if (rest.length || !cidr || parseCidr(cidr) === null || !prefixes.length || !prefixes.every((x) => INTERNAL_PREFIX.test(x))) return null;
+          return { cidr, prefixes };
+        }),
+    )
+    .refine((list) => list.every((x) => x !== null), 'must be `CIDR=/internal/<path>/[|/internal/<path>/]` entries separated by `;`')
+    .transform((list) => list as InternalSource[])
+    .prefault(''),
+  BFF_SOURCE_ADDRESSES: cidrList
+    .refine((list) => list.every((c) => /\/(32|128)$/.test(c)), 'each entry must be a single address (/32 or /128)')
+    .prefault(''),
 
   DATABASE_URL: z.string().min(1),
   // Redis مشترك بين نسخ الخادم (حد المعدل الآن، الطوابير لاحقًا). مطلوب في الإنتاج؛ غيابه خارجه = حدود في الذاكرة
@@ -68,6 +101,9 @@ const schema = z.object({
 
   // طلب استعادة الحساب ينتظر اعتماد المشرف هذه المدة ثم ينتهي
   RECOVERY_REQUEST_TTL_SECONDS: z.coerce.number().int().min(300).default(24 * 3600),
+  // رمز إعادة التعيين الصادر عند الاعتماد (v0.1): صالح هذه المدة لإكمال الاستعادة، ومهلة تحديث الجلسة المقيّدة بعدها؛
+  // القاعدة تفرض ألا تتجاوز 24 ساعة من الاعتماد
+  RECOVERY_RESET_TOKEN_TTL_SECONDS: z.coerce.number().int().min(300).max(24 * 3600).default(12 * 3600),
   // مخرج الطوارئ (أمر CLI لاعتماد استعادة مدير النظام): بصمة SHA-256 (hex) لرمز التشغيل المحفوظ في الخزنة؛ الرمز نفسه لا
   // يوضع في البيئة. غير مضبوط = طريق الخزنة معطّل ويبقى طريق مديرَين
   BREAK_GLASS_TOKEN_SHA256: z
@@ -93,12 +129,15 @@ const schema = z.object({
   TUSD_PART_SIZE_BYTES: z.coerce.number().int().min(5 * 1024 * 1024).default(16 * 1024 * 1024),
   // عمر الجلسة ورمز الرفع معًا (عمود expires_at واحد في المخطط)
   UPLOAD_SESSION_TTL_SECONDS: z.coerce.number().int().min(60).default(24 * 3600),
+  // عمر رمز الرفع مستقلًا عن الجلسة (عقد v0.1): يلزم لبدء الرفع فقط (pre-create) لا لاستئنافه، ولا يتجاوز عمر الجلسة.
+  // إعادة POST /uploads بالمفتاح نفسه تصدر رمزًا جديدًا بالعمر نفسه ما دامت الجلسة created
+  UPLOAD_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).default(3600),
   // مسار الرفع (بند القرارات 3، يُحسم بعد النموذج الأولي): tusd، أو direct حيث يعلن العميل الاكتمال بنفسه
   UPLOAD_PATH: z.enum(['tusd', 'direct']).default('tusd'),
-  // true: إنشاء جلسة رفع بلا client_sha256 يُرفض (422)؛ يُفعَّل مع عقد v0.1 الذي يجعله مطلوبًا
+  // true (افتراضيًا مع عقد v0.1، ADR 0012: «على كل عميل إرسالها»): إنشاء جلسة رفع بلا client_sha256 يُرفض (422)
   UPLOAD_REQUIRE_CLIENT_SHA256: z
     .enum(['true', 'false'])
-    .default('false')
+    .default('true')
     .transform((v) => v === 'true'),
   // مكنسة تسوية جلسات in_progress التي ضاع post-finish لها: تُفحص في التخزين بعد هذه المدة بلا تغيير
   UPLOAD_RECONCILE_ENABLED: z
@@ -113,6 +152,8 @@ const schema = z.object({
   S3_BUCKET_MEDIA: z.string().min(1).default('media'),
   // التخزين الذي يقرأ منه التحقق داخل الخادم (MinIO محليًا، R2 في الإنتاج)
   S3_ENDPOINT: z.string().optional(),
+  // نقطة التخزين كما يصلها العميل لروابط التنزيل الموقّعة (المضيف جزء من التوقيع)؛ غير مضبوطة = S3_ENDPOINT
+  S3_PUBLIC_ENDPOINT: z.string().url().optional(),
   S3_REGION: z.string().default('auto'),
   S3_ACCESS_KEY: z.string().optional(),
   S3_SECRET_KEY: z.string().optional(),
@@ -123,6 +164,23 @@ const schema = z.object({
   MEDIA_STREAM_MAXLEN: z.coerce.number().int().min(1000).default(100_000),
   // رمز عامل الوسائط لنقاط /internal/media/* (ترويسة Bearer)، منفصل عن TUSD_HOOK_SECRET؛ غير مضبوط = النقاط 404
   MEDIA_WORKER_TOKEN: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{32,256}$/, 'must be 32-256 characters of [A-Za-z0-9_-]')
+    .optional(),
+  // رمز بوابة ingest على GET /internal/ingest/session-status (ترويسة Bearer) دفاعًا ثانيًا فوق INTERNAL_ALLOWED_CIDRS؛
+  // مضبوط = الفحص بلا رمز مطابق 403
+  INGEST_GATE_TOKEN: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{32,256}$/, 'must be 32-256 characters of [A-Za-z0-9_-]')
+    .optional(),
+  // حساب القبول الوحيد الذي تُقبل جلساته برمز موقَّع بمفتاح فئة qa (key_class=qa على فحص البوابة)؛ فارغ = رفض دائم
+  ACCEPTANCE_UPLOADER_USER_ID: z
+    .string()
+    .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, 'must be a user id (uuid)')
+    .optional(),
+  // رمز عامل التفريغ المحلي: يُقبل على POST /internal/media/files/{id}/derivatives لنوعي transcript وcaptions وحدهما
+  // (ولا شيء غيره)، منفصل عن MEDIA_WORKER_TOKEN؛ غير مضبوط = العامل لا يصل
+  AI_WORKER_TOKEN: z
     .string()
     .regex(/^[A-Za-z0-9_-]{32,256}$/, 'must be 32-256 characters of [A-Za-z0-9_-]')
     .optional(),
@@ -151,6 +209,59 @@ const schema = z.object({
   ESCALATION_IMPORTANT_SECONDS: z.coerce.number().int().min(1).default(3600),
   ESCALATION_POLL_INTERVAL_MS: z.coerce.number().int().min(100).default(15000),
 
+  // SEC-07 (ADR 0011): شهادة الجهاز ونطاق ingest. off = المسارات الثلاثة 404 ولا جلسة تطلب ingest؛ test = تحقق App
+  // Attest الحقيقي بجذر اختبار من APP_ATTEST_TEST_ROOT_PEM وحكم Play Integrity غير موقّع (للاختبار والتطوير فقط)؛
+  // production = جذر Apple المثبّت في الكود وواجهة Google.
+  ATTESTATION_MODE: z.enum(['off', 'test', 'production']).default('off'),
+  // App Attest: معرّف التطبيق <TeamID>.<BundleID>، وrpIdHash = SHA-256 له
+  APP_ATTEST_APP_ID: z.string().regex(/^[A-Z0-9]{10}\.[A-Za-z0-9.-]+$/, 'must be <TeamID>.<BundleID>').optional(),
+  // مفاتيح البيئة التطويرية (aaguid appattestdevelop)؛ ممنوعة في الإنتاج
+  APP_ATTEST_ALLOW_DEVELOPMENT: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  // ATTESTATION_MODE=test: جذر الاختبار (PEM بترميز base64) بدل جذر Apple
+  APP_ATTEST_TEST_ROOT_PEM: z.string().optional(),
+  // Play Integrity: اسم الحزمة، وبصمات شهادة التوقيع (base64url بلا حشو كما يعيدها Google) مفصولة بفواصل
+  PLAY_INTEGRITY_PACKAGE_NAME: z.string().regex(/^[a-zA-Z][\w]*(\.[a-zA-Z][\w]*)+$/).optional(),
+  PLAY_INTEGRITY_CERT_SHA256: z
+    .string()
+    .transform((v) => v.split(',').map((s) => s.trim()).filter(Boolean))
+    .prefault(''),
+  // حساب خدمة Google (JSON بترميز base64) لواجهة decodeIntegrityToken؛ سر من SOPS، لا يُسجَّل
+  PLAY_INTEGRITY_SERVICE_ACCOUNT: z.string().optional(),
+  // حد طلبات التحدي ورموز ingest لكل مستخدم في نافذة LOGIN_RATE_LIMIT_WINDOW_SECONDS
+  ATTESTATION_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(60),
+  // مفتاح توقيع رموز ingest: ES256 خاص (PKCS#8 DER بترميز base64) من SOPS؛ البوابة تحمل العام وحده. التدوير: يُضاف العام
+  // الجديد إلى البوابة أولًا، ثم يتبدّل هذا المفتاح ومعرّفه (kid)، ثم يُزال العام القديم بعد عمر الرمز.
+  INGEST_TOKEN_SIGNING_KEY: z.string().optional(),
+  INGEST_TOKEN_KEY_ID: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/).optional(),
+  // عمر رمز ingest؛ البوابة ترفض ما فوق 900 ث
+  INGEST_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(900).default(600),
+  // نقطة tus على نطاق ingest؛ مضبوطة مع INGEST_REQUIRED=true تُعلن لكل جلسة رفع جديدة بدل TUS_PUBLIC_ENDPOINT
+  INGEST_TUS_ENDPOINT: z.string().url().optional(),
+  INGEST_REQUIRED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+
+  // تسليم الإشعارات بالدفع إلى الأجهزة المسجّلة (/push-devices). معطّل افتراضيًا؛ الإشعار يبقى في صندوق الوارد دائمًا
+  PUSH_DELIVERY_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  PUSH_POLL_INTERVAL_MS: z.coerce.number().int().min(100).default(2000),
+  PUSH_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(6),
+  // APNs: مفتاح المزوّد .p8 (PEM بترميز base64، سر من SOPS) ومعرّفاه، والموضوع (Bundle ID)، والبيئة
+  APNS_TEAM_ID: z.string().regex(/^[A-Z0-9]{10}$/).optional(),
+  APNS_KEY_ID: z.string().regex(/^[A-Z0-9]{10}$/).optional(),
+  APNS_PRIVATE_KEY: z.string().optional(),
+  APNS_TOPIC: z.string().optional(),
+  APNS_ENVIRONMENT: z.enum(['production', 'sandbox']).default('production'),
+  // FCM HTTP v1: معرّف المشروع وحساب الخدمة (JSON بترميز base64، سر من SOPS)
+  FCM_PROJECT_ID: z.string().optional(),
+  FCM_SERVICE_ACCOUNT: z.string().optional(),
+
   OUTBOX_DISPATCHER_ENABLED: z
     .enum(['true', 'false'])
     .default('true')
@@ -178,7 +289,29 @@ const validated = schema.superRefine((c, ctx) => {
   if (c.UPLOAD_VERIFIER === 'in_process' && c.VERIFY_CONCURRENCY >= c.DATABASE_POOL_MAX) {
     ctx.addIssue({ code: 'custom', path: ['VERIFY_CONCURRENCY'], message: 'must be lower than DATABASE_POOL_MAX' });
   }
+  if (c.ATTESTATION_MODE !== 'off' && !c.APP_ATTEST_APP_ID && !c.PLAY_INTEGRITY_PACKAGE_NAME) {
+    ctx.addIssue({ code: 'custom', path: ['APP_ATTEST_APP_ID'], message: 'APP_ATTEST_APP_ID or PLAY_INTEGRITY_PACKAGE_NAME is required with ATTESTATION_MODE' });
+  }
+  if (c.PLAY_INTEGRITY_PACKAGE_NAME && c.PLAY_INTEGRITY_CERT_SHA256.length === 0) {
+    ctx.addIssue({ code: 'custom', path: ['PLAY_INTEGRITY_CERT_SHA256'], message: 'required with PLAY_INTEGRITY_PACKAGE_NAME' });
+  }
+  if (c.ATTESTATION_MODE === 'test' && c.APP_ATTEST_APP_ID && !c.APP_ATTEST_TEST_ROOT_PEM) {
+    ctx.addIssue({ code: 'custom', path: ['APP_ATTEST_TEST_ROOT_PEM'], message: 'required with ATTESTATION_MODE=test' });
+  }
+  if (c.ATTESTATION_MODE !== 'off' && (!c.INGEST_TOKEN_SIGNING_KEY || !c.INGEST_TOKEN_KEY_ID)) {
+    ctx.addIssue({ code: 'custom', path: ['INGEST_TOKEN_SIGNING_KEY'], message: 'INGEST_TOKEN_SIGNING_KEY and INGEST_TOKEN_KEY_ID are required with ATTESTATION_MODE' });
+  }
+  if (c.INGEST_REQUIRED && (c.ATTESTATION_MODE === 'off' || !c.INGEST_TUS_ENDPOINT)) {
+    ctx.addIssue({ code: 'custom', path: ['INGEST_REQUIRED'], message: 'needs ATTESTATION_MODE and INGEST_TUS_ENDPOINT' });
+  }
   if (c.NODE_ENV !== 'production') return;
+  if (c.ATTESTATION_MODE === 'test') ctx.addIssue({ code: 'custom', path: ['ATTESTATION_MODE'], message: 'test is not allowed in production' });
+  if (c.APP_ATTEST_ALLOW_DEVELOPMENT) {
+    ctx.addIssue({ code: 'custom', path: ['APP_ATTEST_ALLOW_DEVELOPMENT'], message: 'not allowed in production' });
+  }
+  if (c.ATTESTATION_MODE === 'production' && c.PLAY_INTEGRITY_PACKAGE_NAME && !c.PLAY_INTEGRITY_SERVICE_ACCOUNT) {
+    ctx.addIssue({ code: 'custom', path: ['PLAY_INTEGRITY_SERVICE_ACCOUNT'], message: 'required in production with PLAY_INTEGRITY_PACKAGE_NAME' });
+  }
   if (!c.REDIS_URL) ctx.addIssue({ code: 'custom', path: ['REDIS_URL'], message: 'required in production' });
   if (c.UPLOAD_VERIFIER === 'external' && !c.MEDIA_WORKER_TOKEN) {
     ctx.addIssue({ code: 'custom', path: ['MEDIA_WORKER_TOKEN'], message: 'required in production when UPLOAD_VERIFIER=external' });
