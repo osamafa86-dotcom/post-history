@@ -1,0 +1,5 @@
+// عنوان الخادم (مسار /v1) يُثبَّت عند البناء. القيمة هنا من العقد وتصلح للمحاكي وCI فقط.
+// بناء التجربة: سير TestFlight في appstore-release يكتب API.local.xcconfig (غير ملتزَم به) بعنوان نطاق التجربة.
+// «//» تبدأ تعليقًا في xcconfig، فيُكتب العنوان https:/$()/… كما توصي Apple.
+PH_API_BASE_URL = https:/$()/api.example.invalid/v1
+#include? "API.local.xcconfig"

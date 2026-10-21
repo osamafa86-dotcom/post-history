@@ -41,9 +41,13 @@ def _leaky_original(d: Path, ext: str = "mov") -> Path:
 
 
 def _packets(path: Path) -> bytes:
-    """بصمة كل حزمة فيديو وصوت كما هي (بلا فك ترميز)."""
-    return run([FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-i", str(path),
-                "-map", "0:v:0", "-map", "0:a:0", "-c", "copy", "-f", "framemd5", "-"], timeout_s=60)
+    """بصمة كل إطار مفكوك وكل حزمة صوت: تطابقها يثبت أن الصورة لم يُعَد ترميزها (حذف وحدات SEI يغيّر الحزم لا
+    الإطارات) وأن الصوت نُسخ كما هو."""
+    video = run([FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-i", str(path),
+                 "-map", "0:v:0", "-f", "framemd5", "-"], timeout_s=60)
+    audio = run([FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-i", str(path),
+                 "-map", "0:a:0", "-c", "copy", "-f", "framemd5", "-"], timeout_s=60)
+    return b"".join(l for l in (video + audio).splitlines(True) if not l.startswith(b"#"))
 
 
 @pytest.fixture(scope="module")
@@ -177,3 +181,16 @@ def test_export_job_behind_flag(tmp_path: Path):
         assert zf.namelist()[0] == "clip.mov" and "proxy.mp4" in zf.namelist()
         assert zf.read("clip.mov") != data
     assert storage.objects[("uploads", "tus/1")] == data
+
+
+@pytest.mark.parametrize("hevc", [False, True], ids=["h264", "hevc-hlg"])
+def test_in_band_sei_is_removed_and_hdr_survives(tmp_path: Path, hevc: bool):
+    # x264 وx265 يكتبان رسالة SEI user_data_unregistered بنص اسم البرنامج وخياراته: نص حر داخل التيار نفسه
+    from test_hdr import hdr_clip
+    src = hdr_clip(tmp_path / "h.mov", "arib-std-b67", seconds=2) if hevc else synth(tmp_path / "s.mov", seconds=2)
+    marker = b"x265 (build" if hevc else b"x264 - core"
+    assert marker in src.read_bytes()
+    out = tmp_path / "clip.mov"
+    strip_metadata(src, out)
+    assert marker not in out.read_bytes()
+    assert _packets(out) == _packets(src) and probe(out).hdr is hevc

@@ -24,3 +24,4 @@ export type ReporterIdentitySetting = components["schemas"]["ReporterIdentitySet
 export type ReporterIdentitySettingUpdate = components["schemas"]["ReporterIdentitySettingUpdate"];
 export type PermissionHistoryEntry = components["schemas"]["PermissionHistoryEntry"];
 export type PermissionHistoryPage = components["schemas"]["PermissionHistoryPage"];
+export type NewsroomDashboard = components["schemas"]["NewsroomDashboard"];

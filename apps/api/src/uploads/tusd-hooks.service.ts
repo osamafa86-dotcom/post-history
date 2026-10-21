@@ -5,8 +5,9 @@ import { APP_CONFIG, type AppConfig } from '../config/config';
 import { sha256 } from '../common/crypto';
 import { ApiError } from '../common/errors';
 import { DB, type Database } from '../database/database.module';
-import { uploadSessions } from '../database/schema/schema';
+import { materials, uploadSessions } from '../database/schema/schema';
 import type { components } from '../generated/api';
+import { writeOutboxEvent } from '../outbox/outbox';
 import { abortRevokedUpload, markReceived, markUploadFailed, uploadAccessRevoked } from './upload-completion';
 
 export type TusdHookRequest = components['schemas']['TusdHookRequest'];
@@ -38,6 +39,8 @@ export class TusdHooksService {
         return this.preCreate(hook);
       case 'post-create':
         return this.config.TUSD_POST_CREATE_HOOK ? this.postCreate(hook) : ACCEPT;
+      case 'post-receive':
+        return this.postReceive(hook);
       case 'post-finish':
         return this.postFinish(hook);
       default:
@@ -103,6 +106,52 @@ export class TusdHooksService {
     return ACCEPT;
   }
 
+  /**
+   * تقدّم الرفع («الوارد الآن»، ADR 0024): يُحفظ المستلم مع كل خطّاف، ويُكتب `upload.progress` في المعاملة نفسها حين
+   * يعبر عُشرًا جديدًا من الحجم فقط (10%…90%)، بمفتاح تكرار لكل عُشر. الاكتمال يعلنه post-finish. المستلم لا ينقص،
+   * وما بعد in_progress أو مفتاح تخزين لا يطابق الجلسة بلا أثر.
+   */
+  private async postReceive(hook: TusdHookRequest): Promise<TusdHookResponse> {
+    const sessionId = hook.Event.Upload.MetaData.upload_session_id;
+    const offset = hook.Event.Upload.Offset;
+    const storageKey = hook.Event.Upload.Storage?.Key;
+    if (typeof offset !== 'number') return ACCEPT;
+
+    return this.db.transaction(async (tx) => {
+      const [session] = await tx
+        .select()
+        .from(uploadSessions)
+        .where(eq(uploadSessions.id, sessionId))
+        .for('update');
+      if (!session || !['created', 'in_progress'].includes(session.state)) return ACCEPT;
+      if (storageKey !== undefined && storageKey !== (session.storageKey ?? this.expectedStorageKey(session.id))) return ACCEPT;
+      const size = Number(session.sizeBytes);
+      const before = Number(session.bytesReceived);
+      const received = Math.min(offset, size);
+      if (received <= before) return ACCEPT;
+      await tx.update(uploadSessions).set({ bytesReceived: received }).where(eq(uploadSessions.id, session.id));
+
+      const tenth = progressTenth(received, size);
+      if (tenth <= progressTenth(before, size)) return ACCEPT;
+      const [m] = await tx.select({ priority: materials.priority }).from(materials).where(eq(materials.id, session.materialId));
+      await writeOutboxEvent(tx, {
+        type: 'upload.progress',
+        aggregateType: 'upload',
+        aggregateId: session.id,
+        idempotencyKey: `upload.progress:${session.id}:${tenth}`,
+        payload: {
+          material_id: session.materialId,
+          upload_session_id: session.id,
+          kind: session.kind,
+          ...(m ? { priority: m.priority } : {}),
+          bytes_received: received,
+          size_bytes: size,
+        },
+      });
+      return ACCEPT;
+    });
+  }
+
   private async postFinish(hook: TusdHookRequest): Promise<TusdHookResponse> {
     const sessionId = hook.Event.Upload.MetaData.upload_session_id;
     const storage = hook.Event.Upload.Storage;
@@ -131,6 +180,12 @@ export class TusdHooksService {
       return ACCEPT;
     });
   }
+}
+
+/** العُشر المكتمل من الحجم، من 0 إلى 9: العاشر هو الاكتمال ويعلنه post-finish لا حدث التقدّم. */
+export function progressTenth(received: number, size: number): number {
+  if (size <= 0) return 0;
+  return Math.min(9, Math.floor((received * 10) / size));
 }
 
 function bearerToken(headers: Record<string, string[]> | undefined): string | undefined {

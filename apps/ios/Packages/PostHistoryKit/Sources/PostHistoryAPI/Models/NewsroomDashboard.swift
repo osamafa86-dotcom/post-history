@@ -13,6 +13,8 @@ public struct NewsroomDashboard: Sendable, Codable, Hashable {
     public static let reservedRule = ArrayRule(minItems: nil, maxItems: 50, uniqueItems: false)
     public static let recentReceiptsRule = ArrayRule(minItems: nil, maxItems: 20, uniqueItems: false)
     public static let overdueAcknowledgementsRule = NumericRule<Int>(minimum: 0, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
+    public static let uploadsInProgressRule = ArrayRule(minItems: nil, maxItems: 50, uniqueItems: false)
+    /** وقت بناء اللقطة؛ لا يتأخر عن الطلب أكثر من 5 ثوانٍ */
     public var generatedAt: Date
     /** عدّاد لكل حالة تحريرية ضمن النطاق (الحالات الصفرية تُحذف) */
     public var editorial: [StateCount]
@@ -26,8 +28,10 @@ public struct NewsroomDashboard: Sendable, Codable, Hashable {
     public var recentReceipts: [NewsroomDashboardRecentReceiptsInner]
     /** إشعارات مهام حان تصعيدها ولم يُقرّ استلامها (ضمن النطاق) */
     public var overdueAcknowledgements: Int
+    /** «الوارد الآن» (ADR 0024): جلسات الرفع الجارية (`created` و`in_progress` غير المنتهية صلاحيتها) لمواد ضمن نطاق المستدعي، العاجل أولًا ثم الأحدث تقدّمًا. النسبة `bytes_received / size_bytes`، ويحدّثها حدث `upload.progress`. معرّفات وأرقام فقط: لا اسم ملف ولا مراسل ولا جهاز. اختياري حتى ينفّذه الخادم. */
+    public var uploadsInProgress: [NewsroomDashboardUploadsInProgressInner]?
 
-    public init(generatedAt: Date, editorial: [StateCount], technical: [StateCount], rights: [StateCount], urgentOpen: Int, reserved: [NewsroomDashboardReservedInner], recentReceipts: [NewsroomDashboardRecentReceiptsInner], overdueAcknowledgements: Int) {
+    public init(generatedAt: Date, editorial: [StateCount], technical: [StateCount], rights: [StateCount], urgentOpen: Int, reserved: [NewsroomDashboardReservedInner], recentReceipts: [NewsroomDashboardRecentReceiptsInner], overdueAcknowledgements: Int, uploadsInProgress: [NewsroomDashboardUploadsInProgressInner]? = nil) {
         self.generatedAt = generatedAt
         self.editorial = editorial
         self.technical = technical
@@ -36,6 +40,7 @@ public struct NewsroomDashboard: Sendable, Codable, Hashable {
         self.reserved = reserved
         self.recentReceipts = recentReceipts
         self.overdueAcknowledgements = overdueAcknowledgements
+        self.uploadsInProgress = uploadsInProgress
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -47,6 +52,7 @@ public struct NewsroomDashboard: Sendable, Codable, Hashable {
         case reserved
         case recentReceipts = "recent_receipts"
         case overdueAcknowledgements = "overdue_acknowledgements"
+        case uploadsInProgress = "uploads_in_progress"
     }
 
     // Encodable protocol methods
@@ -61,6 +67,7 @@ public struct NewsroomDashboard: Sendable, Codable, Hashable {
         try container.encode(reserved, forKey: .reserved)
         try container.encode(recentReceipts, forKey: .recentReceipts)
         try container.encode(overdueAcknowledgements, forKey: .overdueAcknowledgements)
+        try container.encodeIfPresent(uploadsInProgress, forKey: .uploadsInProgress)
     }
 }
 

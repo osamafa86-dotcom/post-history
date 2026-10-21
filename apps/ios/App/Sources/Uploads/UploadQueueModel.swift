@@ -87,6 +87,7 @@ extension UploadFailure {
         case .storageError: return "upload.failure.storageError"
         case .sourceMissing: return "upload.failure.sourceMissing"
         case .rejected: return "upload.failure.rejected"
+        case .deviceNotAttested: return "upload.failure.deviceNotAttested"
         }
     }
 }

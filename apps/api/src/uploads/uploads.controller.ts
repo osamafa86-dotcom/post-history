@@ -22,21 +22,21 @@ export class UploadsController {
    *   بعد فشل الإنشاء تنتظر انقضاء الحجز.
    */
   @Post()
-  @Roles('reporter')
+  @Roles('reporter', 'supervisor', 'producer', 'editor_in_chief')
   @RehydrateOnReplay(UploadsService)
   create(@Body() body: unknown, @Req() req: Request): Promise<components['schemas']['UploadSessionCreated']> {
     return this.uploads.create(req.principal!, validateBody('/uploads', 'post', body));
   }
 
   @Get(':id')
-  @Roles('reporter', 'supervisor', 'editor_in_chief', 'system_admin')
+  @Roles('reporter', 'supervisor', 'producer', 'editor_in_chief', 'system_admin')
   get(@Param('id') id: string, @Req() req: Request): Promise<components['schemas']['UploadSession']> {
     return this.uploads.get(req.principal!, id);
   }
 
   @Post(':id/complete')
   @HttpCode(202)
-  @Roles('reporter')
+  @Roles('reporter', 'supervisor', 'producer', 'editor_in_chief')
   async complete(@Param('id') id: string, @Body() body: unknown, @Req() req: Request): Promise<void> {
     const input = validateBody<components['schemas']['UploadComplete']>('/uploads/{id}/complete', 'post', body ?? {});
     await this.uploads.complete(req.principal!, id, input.reported_sha256);

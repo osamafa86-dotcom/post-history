@@ -164,6 +164,7 @@ export const uploadSessions = pgTable("upload_sessions", {
 	index("upload_sessions_expiry_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(state = ANY (ARRAY['created'::text, 'in_progress'::text]))`),
 	index("upload_sessions_inflight_idx").using("btree", table.state.asc().nullsLast().op("timestamptz_ops"), table.updatedAt.asc().nullsLast().op("text_ops")).where(sql`(state = ANY (ARRAY['created'::text, 'in_progress'::text]))`),
 	index("upload_sessions_material_idx").using("btree", table.materialId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("uuid_ops")),
+	index("upload_sessions_owner_idx").using("btree", table.createdBy.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops"), table.id.desc().nullsFirst().op("uuid_ops")),
 	uniqueIndex("upload_sessions_tus_upload_id_key").using("btree", table.tusUploadId.asc().nullsLast().op("text_ops")).where(sql`(tus_upload_id IS NOT NULL)`),
 	foreignKey({
 			columns: [table.createdBy],
@@ -654,12 +655,12 @@ export const outboxEvents = pgTable("outbox_events", {
 			name: "outbox_events_actor_id_fkey"
 		}),
 	unique("outbox_events_idempotency_key_key").on(table.idempotencyKey),
-	check("outbox_events_aggregate_type_check", sql`aggregate_type = ANY (ARRAY['material'::text, 'upload'::text, 'notification'::text, 'form'::text, 'user'::text])`),
+	check("outbox_events_aggregate_type_check", sql`aggregate_type = ANY (ARRAY['material'::text, 'upload'::text, 'notification'::text, 'form'::text, 'user'::text, 'listing'::text])`),
 	check("outbox_events_attempts_nonneg", sql`attempts >= 0`),
 	check("outbox_events_idempotency_key_len", sql`(char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 200)`),
 	check("outbox_events_payload_is_object", sql`jsonb_typeof(payload) = 'object'::text`),
 	check("outbox_events_payload_whitelisted", sql`CHECK (outbox_payload_is_whitelisted(type, payload`),
-	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text])`),
+	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text])`),
 ]);
 
 export const recoveryCodes = pgTable("recovery_codes", {
@@ -783,4 +784,124 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
 	check("notification_deliveries_attempts_nonneg", sql`attempts >= 0`),
 	check("notification_deliveries_channel_check", sql`channel = ANY (ARRAY['in_app'::text, 'websocket'::text, 'apns'::text, 'fcm'::text, 'web_push'::text, 'email'::text, 'telegram'::text, 'whatsapp'::text, 'sms'::text])`),
 	check("notification_deliveries_status_check", sql`status = ANY (ARRAY['pending'::text, 'sent'::text, 'delivered'::text, 'read'::text, 'failed'::text])`),
+]);
+
+export const licenseTemplates = pgTable("license_templates", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	type: text().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by").notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [users.id],
+			name: "license_templates_created_by_fkey"
+		}),
+	check("license_templates_type_check", sql`type = ANY (ARRAY['editorial_single'::text, 'editorial_term'::text, 'exclusive_temporary'::text, 'commercial'::text])`),
+]);
+
+export const catalogListings = pgTable("catalog_listings", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	materialId: uuid("material_id").notNull(),
+	materialVersion: integer("material_version").notNull(),
+	state: text().notNull(),
+	suspendedReason: text("suspended_reason"),
+	titleAr: text("title_ar").notNull(),
+	titleEn: text("title_en").notNull(),
+	descriptionAr: text("description_ar").notNull(),
+	descriptionEn: text("description_en").notNull(),
+	shotList: jsonb("shot_list").default([]).notNull(),
+	commercialAllowed: boolean("commercial_allowed").default(false).notNull(),
+	listedAt: timestamp("listed_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedBy: uuid("updated_by").notNull(),
+}, (table) => [
+	index("catalog_listings_listed_idx").using("btree", table.listedAt.desc().nullsFirst().op("timestamptz_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")).where(sql`(state = 'listed'::text)`),
+	foreignKey({
+			columns: [table.materialId],
+			foreignColumns: [materials.id],
+			name: "catalog_listings_material_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.updatedBy],
+			foreignColumns: [users.id],
+			name: "catalog_listings_updated_by_fkey"
+		}),
+	unique("catalog_listings_material_id_key").on(table.materialId),
+	check("catalog_listings_listed_at_check", sql`(state <> 'listed'::text) OR (listed_at IS NOT NULL)`),
+	check("catalog_listings_shot_list_check", sql`(jsonb_typeof(shot_list) = 'array'::text) AND (jsonb_array_length(shot_list) <= 200)`),
+	check("catalog_listings_state_check", sql`state = ANY (ARRAY['draft'::text, 'listed'::text, 'suspended'::text])`),
+	check("catalog_listings_suspended_reason_check", sql`((state = 'suspended'::text) = (suspended_reason IS NOT NULL)) AND ((suspended_reason IS NULL) OR (suspended_reason = ANY (ARRAY['manual'::text, 'rights_changed'::text])))`),
+	check("catalog_listings_text_len", sql`((char_length(title_ar) >= 1) AND (char_length(title_ar) <= 4000)) AND ((char_length(title_en) >= 1) AND (char_length(title_en) <= 4000)) AND ((char_length(description_ar) >= 1) AND (char_length(description_ar) <= 4000)) AND ((char_length(description_en) >= 1) AND (char_length(description_en) <= 4000))`),
+	check("catalog_listings_version_positive", sql`material_version >= 1`),
+]);
+
+export const listingOffers = pgTable("listing_offers", {
+	listingId: uuid("listing_id").notNull(),
+	licenseTemplateId: uuid("license_template_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	priceOverrideMinor: bigint("price_override_minor", { mode: "number" }),
+	priceOverrideCurrency: text("price_override_currency"),
+}, (table) => [
+	index("listing_offers_template_idx").using("btree", table.licenseTemplateId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.licenseTemplateId],
+			foreignColumns: [licenseTemplates.id],
+			name: "listing_offers_license_template_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.listingId],
+			foreignColumns: [catalogListings.id],
+			name: "listing_offers_listing_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.listingId, table.licenseTemplateId], name: "listing_offers_pkey"}),
+	check("listing_offers_price_override_check", sql`((price_override_minor IS NULL) = (price_override_currency IS NULL)) AND ((price_override_minor IS NULL) OR ((price_override_minor >= 0) AND (price_override_minor <= '100000000000'::bigint))) AND ((price_override_currency IS NULL) OR (price_override_currency = ANY (ARRAY['USD'::text, 'ILS'::text])))`),
+]);
+
+export const licenseTemplateVersions = pgTable("license_template_versions", {
+	templateId: uuid("template_id").notNull(),
+	version: integer().notNull(),
+	type: text().notNull(),
+	nameAr: text("name_ar").notNull(),
+	nameEn: text("name_en").notNull(),
+	termsAr: text("terms_ar").notNull(),
+	termsEn: text("terms_en").notNull(),
+	usageMedia: text("usage_media").array().notNull(),
+	territoryKind: text("territory_kind").notNull(),
+	territoryCountries: text("territory_countries").array(),
+	termDays: integer("term_days"),
+	exclusivityHours: integer("exclusivity_hours"),
+	deliverables: text().array().notNull(),
+	attributionAr: text("attribution_ar").notNull(),
+	attributionEn: text("attribution_en").notNull(),
+	prohibitions: text().array().default([""]).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	basePriceMinor: bigint("base_price_minor", { mode: "number" }).notNull(),
+	currency: text().notNull(),
+	enabled: boolean().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by").notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [users.id],
+			name: "license_template_versions_created_by_fkey"
+		}),
+	foreignKey({
+			columns: [table.templateId],
+			foreignColumns: [licenseTemplates.id],
+			name: "license_template_versions_template_id_fkey"
+		}),
+	primaryKey({ columns: [table.templateId, table.version], name: "license_template_versions_pkey"}),
+	check("license_template_versions_currency_check", sql`currency = ANY (ARRAY['USD'::text, 'ILS'::text])`),
+	check("license_template_versions_deliverables_check", sql`(cardinality(deliverables) >= 1) AND (deliverables <@ ARRAY['original'::text, 'produced'::text, 'audio'::text, 'stills'::text])`),
+	check("license_template_versions_exclusivity_check", sql`((type = 'exclusive_temporary'::text) = (exclusivity_hours IS NOT NULL)) AND ((exclusivity_hours IS NULL) OR ((exclusivity_hours >= 24) AND (exclusivity_hours <= 168)))`),
+	check("license_template_versions_price_check", sql`(base_price_minor >= 0) AND (base_price_minor <= '100000000000'::bigint)`),
+	check("license_template_versions_prohibitions_check", sql`prohibitions <@ ARRAY['resale'::text, 'advertising'::text, 'ai_training'::text, 're_editing'::text]`),
+	check("license_template_versions_term_check", sql`((term_days IS NULL) OR ((term_days >= 1) AND (term_days <= 3650))) AND ((type <> ALL (ARRAY['editorial_term'::text, 'exclusive_temporary'::text])) OR (term_days IS NOT NULL))`),
+	check("license_template_versions_territory_check", sql`((territory_kind = 'worldwide'::text) AND (territory_countries IS NULL)) OR ((territory_kind = 'countries'::text) AND ((cardinality(territory_countries) >= 1) AND (cardinality(territory_countries) <= 250)))`),
+	check("license_template_versions_text_len", sql`((char_length(name_ar) >= 1) AND (char_length(name_ar) <= 4000)) AND ((char_length(name_en) >= 1) AND (char_length(name_en) <= 4000)) AND ((char_length(terms_ar) >= 1) AND (char_length(terms_ar) <= 4000)) AND ((char_length(terms_en) >= 1) AND (char_length(terms_en) <= 4000)) AND ((char_length(attribution_ar) >= 1) AND (char_length(attribution_ar) <= 4000)) AND ((char_length(attribution_en) >= 1) AND (char_length(attribution_en) <= 4000))`),
+	check("license_template_versions_usage_media_check", sql`(cardinality(usage_media) >= 1) AND (usage_media <@ ARRAY['tv'::text, 'web'::text, 'social'::text, 'documentary'::text, 'advertising'::text])`),
+	check("license_template_versions_version_positive", sql`version >= 1`),
 ]);
