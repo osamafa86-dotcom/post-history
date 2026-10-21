@@ -1,11 +1,11 @@
-# معاينة خفيفة على خادم مشترك (ADR 0023): Postgres وRedis وMinIO والخادم والويب فقط، بصور مبنية في CI
-# (preview-images.yml، لا بناء هنا). بلا tusd ولا بوابة ولا عامل وسائط ولا تفريغ. على الخادم، من هذا المجلد:
-#   ./gen-env.sh            # مرة: .env بأسرار عشوائية وشهادة داخلية في tls/، لا يطبع شيئًا سريًا
+# معاينة خفيفة على خادم مشترك (ADR 0023): Postgres وRedis وMinIO والخادم والويب، وtusd وبوابة ingest للرفع من الحاسوب،
+# بصور مبنية في CI (preview-images.yml، لا بناء هنا). بلا عامل وسائط ولا تفريغ. على الخادم، من هذا المجلد:
+#   ./gen-env.sh            # مرة: .env بأسرار عشوائية وشهادة داخلية في tls/، لا يطبع شيئًا سريًا (--add-upload لـ .env قائم)
 #   docker load < ...       # الصورتان من الإصدار preview-latest (تُتحقق ببصمة sha256 أولًا)
 #   docker compose -f docker-compose.preview.yml up -d --wait
 #   ./seed-preview.sh       # مرة: حسابات تجريبية ومواد اصطناعية؛ كلمات السر في .env لا في المخرج
 # لا منفذ على المضيف: الوكيل الأمامي للخادم (Caddy) يصل إلى "web" وحده عبر الشبكة الخارجية deploy_default باسم lib-web.
-# الحدود: mem_limit لكل خدمة وmemswap_limit مساوٍ له (بلا swap)، والمجموع 880 MB تحت سقف 900 MB.
+# الحدود: mem_limit لكل خدمة وmemswap_limit مساوٍ له (بلا swap)، والمجموع 928 MB تحت سقف 960 MB (ADR 0023).
 name: post-history-preview
 
 x-limits: &hardened
@@ -135,11 +135,20 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_BUCKET_UPLOADS: ${S3_BUCKET_UPLOADS}
       S3_BUCKET_MEDIA: ${S3_BUCKET_MEDIA}
-      # معاينة فقط، لا تُنقل إلى التجربة: الرفع والشهادة والتفريغ والإشعارات الخارجية معطّلة صراحة.
-      # لا tusd هنا، فجلسة الرفع إن أُنشئت لا تقبل بايتًا؛ ولا شهادة جهاز ولا رمز ingest؛ ولا رمز لعامل التفريغ.
-      ATTESTATION_MODE: "off"
-      INGEST_REQUIRED: "false"
-      TUS_PUBLIC_ENDPOINT: https://preview.invalid/files/
+      # معاينة فقط، لا تُنقل إلى التجربة. الرفع من الحاسوب وحده: tusd خلف بوابة ingest، ورمز الويب يصدره الخادم للـBFF
+      # وحده (عنوان الحافة التي يمر بها إلى الخادم). شهادة الجهاز مغلقة: وضع الإنتاج بمعرّف تطبيق لا يحمله أي جهاز،
+      # فلا يحصل تطبيق على رمز ingest. لا عامل وسائط ولا تفريغ، والإشعارات الخارجية معطّلة.
+      ATTESTATION_MODE: production
+      APP_ATTEST_APP_ID: PREVIEW000.invalid.preview.no-device
+      INGEST_REQUIRED: "true"
+      TUS_PUBLIC_ENDPOINT: https://${PREVIEW_DOMAIN}/files/
+      INGEST_TUS_ENDPOINT: https://${PREVIEW_DOMAIN}/files/
+      INGEST_TOKEN_SIGNING_KEY: ${INGEST_TOKEN_SIGNING_KEY:?gen-env.sh --add-upload}
+      INGEST_TOKEN_KEY_ID: ${INGEST_TOKEN_KEY_ID:?}
+      INGEST_GATE_TOKEN: ${INGEST_GATE_TOKEN:?}
+      BFF_SOURCE_ADDRESSES: ${PREVIEW_EDGE_IP:-10.211.47.10}/32
+      INTERNAL_ALLOWED_CIDRS: ${PREVIEW_TUSD_IP:-10.211.47.12}/32,${PREVIEW_GATE_IP:-10.211.47.13}/32
+      INTERNAL_SOURCE_PATHS: ${PREVIEW_GATE_IP:-10.211.47.13}/32=/internal/ingest/
       UPLOAD_RECONCILE_ENABLED: "false"
       AI_WORKER_TOKEN: ""
       MEDIA_WORKER_TOKEN: ""
@@ -154,9 +163,10 @@ services:
     memswap_limit: 224m
     cpus: 0.75
     # Unique upstream name for the edge: it also sits on deploy_default, where a short name may resolve elsewhere.
+    # api-hooks: the name the ingest gate asks for session state (infra/ingest/nginx.conf); the gate is on this network only.
     networks:
       internal:
-        aliases: [ph-preview-api]
+        aliases: [ph-preview-api, api-hooks]
 
   web-app:
     <<: *hardened
@@ -175,6 +185,8 @@ services:
       NODE_EXTRA_CA_CERTS: /tls/ca.crt
       WEB_SESSION_KEY: ${WEB_SESSION_KEY:?}
       WEB_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+      # The browser uploads to /files/ on the preview's own origin (the web edge, then the ingest gate and tusd).
+      WEB_TUS_ORIGINS: https://${PREVIEW_DOMAIN}
     volumes:
       - ./tls/ca.crt:/tls/ca.crt:ro
     healthcheck:
@@ -191,6 +203,106 @@ services:
       internal:
         aliases: [ph-preview-web-app]
 
+  # الرفع: tusd خلف وكيله (حجب أجسام 500، infra/proxy/tusd.conf) وخلف بوابة ingest (رمز ES256 قصير وحالة الجلسة عند
+  # الخادم، infra/ingest). الثلاثة على الشبكة الداخلية وحدها، والحافة تمرر /files/ إلى البوابة. المجموع 96 MB.
+  tusd:
+    <<: *hardened
+    image: tusproject/tusd:v2.10.1@sha256:7b1c552a8b42f4b36cb01f2a3bd49f82ab078b2eefd191459e716141dd50376c
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    # The entrypoint appends /${TUSD_HOOK_SECRET} to TUSD_HOOK_URL and redacts it from tusd's log (ADR SEC-06).
+    entrypoint: ["sh", "/usr/local/bin/tusd-entrypoint.sh"]
+    read_only: true
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+      AWS_REGION: us-east-1
+      TUSD_HOOK_URL: http://ph-preview-api:3000/internal/tusd-hooks
+      TUSD_HOOK_SECRET: ${TUSD_HOOK_SECRET:?}
+      GOMEMLIMIT: 40MiB
+    # Parts below the S3 minimum wait in /tmp: a volume, not tmpfs, so they do not count against the memory limit.
+    volumes:
+      - ../tusd/entrypoint.sh:/usr/local/bin/tusd-entrypoint.sh:ro
+      - tusd-tmp:/tmp
+    command: >
+      -port=8080
+      -base-path=/files/
+      -s3-endpoint=http://minio:9000
+      -s3-bucket=${S3_BUCKET_UPLOADS}
+      -s3-part-size=5242880
+      -s3-min-part-size=5242880
+      -hooks-http-forward-headers=Authorization
+      -hooks-enabled-events=pre-create,post-create,post-finish
+      -hooks-http-retry=5
+      -hooks-http-backoff=2s
+      -show-greeting=false
+      -disable-download
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/metrics"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    mem_limit: 56m
+    memswap_limit: 56m
+    cpus: 0.5
+    networks:
+      internal:
+        ipv4_address: ${PREVIEW_TUSD_IP:-10.211.47.12}
+
+  tusd-proxy:
+    <<: *hardened
+    image: nginx:1.28.3-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+    depends_on:
+      tusd:
+        condition: service_healthy
+    user: "101:101"
+    read_only: true
+    tmpfs: ["/tmp:size=4m"]
+    entrypoint: ["nginx", "-c", "/etc/nginx/preview-proxy.conf", "-g", "daemon off;"]
+    volumes:
+      - ./edge/proxy-main.conf:/etc/nginx/preview-proxy.conf:ro
+      - ../proxy/tusd.conf:/etc/nginx/tusd.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -S -q -O /dev/null http://127.0.0.1:8080/files/ 2>&1 | grep -q 'HTTP/1.1 405'"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    mem_limit: 16m
+    memswap_limit: 16m
+    cpus: 0.25
+    networks: [internal]
+
+  ingest-gate:
+    <<: *hardened
+    image: nginx:1.28.3-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+    depends_on:
+      tusd-proxy:
+        condition: service_healthy
+    environment:
+      INGEST_TOKEN_PUBLIC_KEYS: ${INGEST_TOKEN_PUBLIC_KEYS:?gen-env.sh --add-upload}
+      INGEST_GATE_TOKEN: ${INGEST_GATE_TOKEN:?}
+    user: "101:101"
+    read_only: true
+    tmpfs: ["/tmp:size=8m"]
+    volumes:
+      - ../ingest/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../ingest/ingest_token.js:/etc/nginx/njs/ingest_token.js:ro
+      - ./edge/ingest-listen.conf:/etc/nginx/ingest-listen.conf:ro
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8080"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    mem_limit: 24m
+    memswap_limit: 24m
+    cpus: 0.25
+    # Unique name for the edge (it also sits on deploy_default); a fixed address the API limits to /internal/ingest/.
+    networks:
+      internal:
+        ipv4_address: ${PREVIEW_GATE_IP:-10.211.47.13}
+        aliases: [ph-preview-ingest]
+
   # The only service on the shared server's network: X-Robots-Tag noindex, the "preview" banner, and the internal TLS
   # listener the BFF needs for the API (bound to its address on the internal network alone).
   web:
@@ -198,6 +310,8 @@ services:
     image: nginx:1.28.3-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
     depends_on:
       web-app:
+        condition: service_started
+      ingest-gate:
         condition: service_started
     user: "101:101"
     read_only: true
@@ -238,3 +352,4 @@ volumes:
   postgres-data:
   redis-data:
   minio-data:
+  tusd-tmp:

@@ -2,13 +2,14 @@
 # دخان المعاينة الخفيفة (ADR 0023) على صورتي CI المحمّلتين (post-history-preview-{api,web}:latest)، بلا بناء:
 #   infra/preview/smoke-preview.sh [--json FILE]
 # يثبت: compose يقوم بالصورتين وحدهما وبلا منفذ على المضيف، و"web" وحده على deploy_default (باسم lib-web) والخادم لا يُصل
-# منها، و/health 200، والدخول عبر الويب بحساب تجريبي يرى مواده الاصطناعية، وX-Robots-Tag وشريط «معاينة»، ومجموع حدود
-# الذاكرة ≤ 900 MB بلا swap واستهلاكها الفعلي (docker stats) تحته، ولا كلمة سر في السجلات.
+# منها، و/health 200، والدخول عبر الويب بحساب تجريبي يرى مواده الاصطناعية، وX-Robots-Tag وشريط «معاينة»، والرفع من
+# الحاسوب كما يفعله المتصفح (جلسة رفع ورمز ingest عبر الـBFF، ثم tus عبر الحافة والبوابة، وقطع واستئناف من إزاحة tusd،
+# والجلسة completed)، ومجموع حدود الذاكرة ≤ 960 MB بلا swap واستهلاكها الفعلي (docker stats) تحته، ولا سر في السجلات.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JSON=""
 [ "${1:-}" = --json ] && JSON="$2"
-LIMIT_MB=900
+LIMIT_MB=960
 C=(docker compose -f "$HERE/docker-compose.preview.yml")
 created_env=0 created_net=0
 cleanup() {
@@ -108,6 +109,52 @@ for (const url of ["http://ph-preview-api:3000/health", "https://lib-web:8443/he
   if (r !== "unreachable") die(`${url} answers from the shared network (${r})`);
 }
 say("the API is not reachable from the shared network: ok");
+
+// Desktop upload as the browser does it (#202): a session and a web ingest token through the BFF, then tus to /files/ on
+// the preview's own origin, through the edge, the ingest gate and tusd. The first PATCH is cut mid-body and resumed
+// from the offset tusd reports; the session ends completed (no media worker here: the material stays awaiting processing).
+const { createHash, randomBytes, randomUUID } = await import("node:crypto");
+const bff = (path, body) => req("POST", `/api/bff/${path}`, { ...json, cookie, "idempotency-key": randomUUID() }, JSON.stringify(body));
+const bytes = randomBytes(6 * 1024 * 1024 + 4321);
+const created = await bff("uploads", { material_id: items[0].id, kind: "original", size_bytes: bytes.length, filename: "preview-smoke.mp4",
+  mime_type: "video/mp4", client_sha256: createHash("sha256").update(bytes).digest("hex") });
+if (created.status !== 201) die(`upload session through the BFF: ${created.status} ${created.body}`);
+const s = JSON.parse(created.body);
+if (s.tus_endpoint !== `${origin}/files/` || s.ingest_token_required !== true) die(`tus endpoint ${s.tus_endpoint}, ingest required ${s.ingest_token_required}`);
+const it = await bff(`uploads/${s.id}/web-ingest-token`, {});
+if (it.status !== 200) die(`web ingest token through the BFF: ${it.status}`);
+const ingest = JSON.parse(it.body).token;
+const b64 = (v) => Buffer.from(v).toString("base64");
+const tusH = { "tus-resumable": "1.0.0", authorization: `Bearer ${s.upload_token}`, "ingest-token": ingest };
+const meta = Object.entries(s.tus_metadata).map(([k, v]) => `${k} ${b64(v)}`).join(",");
+const noToken = await req("POST", "/files/", { "tus-resumable": "1.0.0", "upload-length": String(bytes.length), "upload-metadata": meta });
+if (noToken.status !== 401) die(`tus create with no ingest token: ${noToken.status} (want 401 at the gate)`);
+const tc = await req("POST", "/files/", { ...tusH, "upload-length": String(bytes.length), "upload-metadata": meta });
+const loc = tc.headers.location ?? "";
+if (tc.status !== 201 || !loc.startsWith(`${origin}/files/`)) die(`tus create through the edge: ${tc.status} location ${loc ? "elsewhere" : "missing"}`);
+const path = new URL(loc).pathname;
+// Cut: the headers announce the whole file, half a part is written, then the socket is destroyed.
+await new Promise((resolve) => {
+  const q = http.request({ host: "lib-web", port: 8080, path, method: "PATCH", headers: { host, ...tusH, "upload-offset": "0",
+    "content-type": "application/offset+octet-stream", "content-length": bytes.length } });
+  q.on("error", () => resolve()); q.on("response", () => resolve());
+  q.write(bytes.subarray(0, 3 * 1024 * 1024), () => setTimeout(() => { q.destroy(); resolve(); }, 1500));
+});
+await new Promise((r) => setTimeout(r, 2000));
+const head = await req("HEAD", path, tusH);
+const offset = Number(head.headers["upload-offset"]);
+if (head.status !== 200 || !(offset >= 0 && offset < bytes.length)) die(`tus HEAD after the cut: ${head.status} offset ${head.headers["upload-offset"]}`);
+const rest = await req("PATCH", path, { ...tusH, "upload-offset": String(offset), "content-type": "application/offset+octet-stream" }, bytes.subarray(offset));
+if (rest.status !== 204 || Number(rest.headers["upload-offset"]) !== bytes.length) die(`tus resume from ${offset}: ${rest.status} offset ${rest.headers["upload-offset"]}`);
+say(`desktop upload through the edge and the ingest gate, cut at 3 MiB and resumed from offset ${offset}: ok`);
+let state = "";
+for (let i = 0; i < 30 && !["completed", "verified"].includes(state); i++) {
+  await new Promise((r) => setTimeout(r, 1000));
+  const g = await req("GET", `/api/bff/uploads/${s.id}`, { cookie });
+  state = g.status === 200 ? JSON.parse(g.body).state : `http ${g.status}`;
+}
+if (!["completed", "verified"].includes(state)) die(`upload session after the last byte: ${state}`);
+say(`upload session ${state} after tus finished (tusd post-finish hook to the API): ok`);
 JS
 )" || { echo "$out"; fail "through the web edge"; }
 echo "$out"
@@ -128,7 +175,11 @@ docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' $("${C[@]}" ps -q)
 echo "memory in use: $used_mb MB of $total MB limits (ceiling $LIMIT_MB MB): ok"
 
 logs="$("${C[@]}" logs --no-color 2>&1)"
-for k in POSTGRES_PASSWORD REDIS_PASSWORD S3_SECRET_KEY JWT_SECRET PREVIEW_REPORTER_PASSWORD; do
+# Upload ids are bearer capabilities (SEC-06): the edge, the gate and the proxy log /files/-, never /files/<id>.
+edge_logs="$("${C[@]}" logs --no-color web ingest-gate tusd-proxy 2>&1)"
+if grep -qE '/files/[A-Za-z0-9]' <<<"$edge_logs"; then grep -E '/files/[A-Za-z0-9]' <<<"$edge_logs" | head -3 | cut -c1-200 >&2; fail "an upload id in an edge log"; fi
+grep -qF '/files/-' <<<"$edge_logs" || fail "no redacted upload path in the edge logs (nothing logged?)"
+for k in POSTGRES_PASSWORD REDIS_PASSWORD S3_SECRET_KEY JWT_SECRET PREVIEW_REPORTER_PASSWORD TUSD_HOOK_SECRET INGEST_GATE_TOKEN; do
   if grep -qF "$(val "$k")" <<<"$logs"; then fail "$k appears in a container log"; fi
 done
 echo "no secret in the logs: ok"
