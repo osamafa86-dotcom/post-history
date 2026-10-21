@@ -153,7 +153,10 @@ services:
     mem_limit: 224m
     memswap_limit: 224m
     cpus: 0.75
-    networks: [internal]
+    # Unique upstream name for the edge: it also sits on deploy_default, where a short name may resolve elsewhere.
+    networks:
+      internal:
+        aliases: [ph-preview-api]
 
   web-app:
     <<: *hardened
@@ -183,7 +186,10 @@ services:
     mem_limit: 256m
     memswap_limit: 256m
     cpus: 0.75
-    networks: [internal]
+    # Unique upstream name for the edge: it also sits on deploy_default, where a short name may resolve elsewhere.
+    networks:
+      internal:
+        aliases: [ph-preview-web-app]
 
   # The only service on the shared server's network: X-Robots-Tag noindex, the "preview" banner, and the internal TLS
   # listener the BFF needs for the API (bound to its address on the internal network alone).
