@@ -1,16 +1,12 @@
-import { randomBytes } from 'node:crypto';
 import { hash } from '@node-rs/argon2';
 import { and, count, eq, sql } from 'drizzle-orm';
-import { base32Encode, constantTimeEqual, type FieldKeyring, randomToken, sha256, verifyTotp } from '../common/crypto';
+import { constantTimeEqual, type FieldKeyring, randomToken, sha256, verifyTotp } from '../common/crypto';
 import { pgError } from '../common/db-errors';
 import type { Database, Tx } from '../database/database.module';
-import { auditLog, offices, userRoles, users } from '../database/schema/schema';
+import { auditLog, offices, recoveryRequests, userRoles, users } from '../database/schema/schema';
 import { AdminRecoveryError, type Approver, confirmTwoPeople } from './admin-recovery';
 import type { RoleName } from './principal';
 import { audit } from './recovery-approval';
-
-// الدوران اللذان يؤكدان إجراء الشخصين يُسجَّل لهما TOTP عند الإنشاء، فلا مسار تسجيل لهما خارج الاستعادة
-const TOTP_AT_CREATION: readonly RoleName[] = ['system_admin', 'editor_in_chief'];
 
 export const ROLE_NAMES: readonly RoleName[] = ['system_admin', 'editor_in_chief', 'supervisor', 'producer', 'finance', 'reporter', 'rights_officer'];
 
@@ -31,8 +27,10 @@ export type CreateUserInput = NewUser &
   );
 
 /**
- * إنشاء حساب على مضيف حقيقي من سطر الأوامر (ADR 0030): لا مسار في الواجهة لإنشاء الحسابات. كلمة سر عشوائية تُعاد مرة
- * لتُطبع على الطرفية وحدها، ومخزنها argon2، ولمدير النظام ورئيس التحرير سرّ TOTP يُعاد معها مرة (otpauth). أي دور غير مدير النظام بمدير نظام فاعل واحد برمز TOTP (`one_admin`)؛ ومدير
+ * إنشاء حساب على مضيف حقيقي من سطر الأوامر (ADR 0030): لا مسار في الواجهة لإنشاء الحسابات. الحساب يبدأ بـ
+ * credential_reset_required فلا دخول عاديًا، ومعه طلب استعادة معتمد برمز تعيين لمرة واحدة ينتهي خلال 24 ساعة (القيد
+ * recovery_requests_reset_token_max_24h). الرمز يُعاد مرة ليُطبع على الطرفية وحدها، ومخزنه بصمته. صاحب الحساب يعيّن
+ * كلمته ويسجّل TOTP بنفسه عبر /auth/recovery/complete ثم /auth/totp/confirm، كما في الاستعادة. أي دور غير مدير النظام بمدير نظام فاعل واحد برمز TOTP (`one_admin`)؛ ومدير
  * النظام بإجراء الشخصين (`two_admins` أو `vault`)، أو بالخزنة وحدها (`bootstrap`) ما دام المديرون الفاعلون أقل من اثنين.
  * التدقيق `user.created` بالمعرّفات والدور والنطاق وطريق الاعتماد، بلا البريد.
  */
@@ -40,11 +38,11 @@ export async function createUser(
   db: Database,
   deps: { keyring: FieldKeyring; breakGlassTokenSha256?: string },
   input: CreateUserInput,
-): Promise<{ userId: string; password: string; actorId: string | null; otpauthUri: string | null }> {
+): Promise<{ userId: string; setupToken: string; actorId: string | null }> {
   validate(input);
-  const password = randomToken(18);
-  const passwordHash = await hash(password);
-  const totpSecret = TOTP_AT_CREATION.includes(input.role) ? randomBytes(20) : null;
+  // كلمة سر لا تُعرض لأحد: الحساب لا يُدخل إليه إلا بعد تعيين صاحبه كلمته برمز التعيين
+  const passwordHash = await hash(randomToken(32));
+  const setupToken = randomToken(32);
   const reasonCode = `cli_${input.mode}`;
   try {
     const outcome = await db.transaction(async (tx) => {
@@ -63,11 +61,21 @@ export async function createUser(
           passwordHash,
           status: 'active',
           officeId: input.officeId ?? null,
-          totpEnabled: totpSecret !== null,
-          totpSecretEnc: totpSecret ? deps.keyring.encrypt(totpSecret) : null,
+          credentialResetRequired: true,
         })
         .returning({ id: users.id });
       await tx.insert(userRoles).values({ userId: u!.id, role: input.role, scopeKind: input.scopeKind, scopeId: input.scopeId, grantedBy: actor });
+      // التعيين الأول بمسار الاستعادة نفسه: طلب معتمد من المعتمِد (أو الحساب نفسه في الإقلاع، لا أحد غيره) برمز 24 ساعة
+      await tx.insert(recoveryRequests).values({
+        userId: u!.id,
+        state: 'approved',
+        approvedBy: actor ?? u!.id,
+        verificationNote: `cli:create-user ${reasonCode}`,
+        decidedAt: sql`now()`,
+        expiresAt: sql`now() + interval '24 hours'`,
+        resetTokenHash: sha256(setupToken),
+        resetTokenExpiresAt: sql`now() + interval '24 hours'`,
+      });
       await audit(tx, actor, 'user.created', u!.id, {
         target_user_id: u!.id,
         role: input.role,
@@ -88,11 +96,7 @@ export async function createUser(
       await db.insert(auditLog).values({ actorId: null, action: 'user.create_cli_rejected', targetType: 'user', targetId: null, details: { reason_code: reasonCode }, hash: Buffer.alloc(32) });
       throw new AdminRecoveryError('verification_failed', 'verification failed');
     }
-    // المعرّف لا البريد في otpauth (وصف العقد لتسجيل TOTP)
-    const otpauthUri = totpSecret
-      ? `otpauth://totp/${encodeURIComponent(`PostHistory:${outcome.userId}`)}?secret=${base32Encode(totpSecret)}&issuer=PostHistory&algorithm=SHA1&digits=6&period=30`
-      : null;
-    return { userId: outcome.userId, password, actorId: outcome.actor, otpauthUri };
+    return { userId: outcome.userId, setupToken, actorId: outcome.actor };
   } catch (err) {
     if (pgError(err).constraint === 'users_email_lower_key') throw new AdminRecoveryError('email_taken', 'an account with this email exists');
     throw err;

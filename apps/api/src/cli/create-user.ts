@@ -7,7 +7,8 @@
  *        --mode vault --approver <adminOrChiefId>              مدير نظام (رمز الخزنة + شخص ثانٍ)
  *        --mode bootstrap                                      مدير نظام ما دام المديرون الفاعلون أقل من اثنين (رمز الخزنة)
  *
- * رموز TOTP ورمز الخزنة تُقرأ من الطرفية وحدها ولا تُطبع. كلمة السر الأولى تُطبع مرة على الطرفية (stdout) ولا تدخل سجلًا.
+ * رموز TOTP ورمز الخزنة تُقرأ من الطرفية وحدها ولا تُطبع. رمز التعيين لمرة واحدة (24 ساعة) يُطبع مرة على stdout ولا يدخل
+ * سجلًا؛ به يعيّن صاحب الحساب كلمته ويسجّل TOTP عبر /auth/recovery/complete ثم /auth/totp/confirm.
  */
 import { parseArgs } from 'node:util';
 import { drizzle } from 'drizzle-orm/node-postgres';
@@ -98,9 +99,10 @@ export async function main(argv: string[]): Promise<number> {
   try {
     const db = drizzle(pool, { schema });
     const done = await createUser(db, { keyring: fieldKeyring(config), breakGlassTokenSha256: config.BREAK_GLASS_TOKEN_SHA256 }, input);
-    // تُطبع مرة هنا ولا تُخزَّن إلا مجزّأة؛ يسلّمها المشغّل للمستخدم بقناة آمنة
+    // يُطبع مرة هنا ولا يُخزَّن إلا ببصمته؛ يسلّمه المشغّل لصاحب الحساب بقناة آمنة
     process.stdout.write(
-      `created ${done.userId} (${args.role})\none-time password: ${done.password}\n${done.otpauthUri ? `totp enrollment (scan once): ${done.otpauthUri}\n` : ''}`,
+      `created ${done.userId} (${args.role})\none-time setup code (expires in 24 hours): ${done.setupToken}\n` +
+        'the owner sets a password with it at /v1/auth/recovery/complete, then confirms two-factor at /v1/auth/totp/confirm\n',
     );
     return 0;
   } catch (err) {

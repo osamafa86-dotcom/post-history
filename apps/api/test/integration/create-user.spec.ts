@@ -32,23 +32,46 @@ describe('account creation on a real host (cli:create-user, ADR 0030)', () => {
   };
   const login = (e: string, password: string) => request(h.app.getHttpServer()).post('/v1/auth/login').send({ email: e, password });
 
-  it('one admin creates a reporter: one-time password logs in, role and office stored, audited without the email', async () => {
+  it('one admin creates a reporter in mandatory reset: no login until the owner sets a password with the 24-hour setup code and confirms TOTP; audited without the email', async () => {
     const admin = await person('system_admin');
     const e = email();
     const done = await createUser(db, deps(), { email: e, role: 'reporter', scopeKind: 'all', scopeId: '', officeId: office, mode: 'one_admin', approver: { userId: admin.id, totp: code(admin) } });
-    expect(done.password.length).toBeGreaterThanOrEqual(24);
-    expect(done.otpauthUri).toBeNull();
-    expect((await login(e, done.password).expect(200)).body.access_token).toBeTruthy();
+    expect(done.setupToken.length).toBeGreaterThanOrEqual(40);
+    const { rows: [u] } = await h.pool.query(`SELECT office_id, credential_reset_required, totp_enabled FROM users WHERE id = $1`, [done.userId]);
+    expect(u).toEqual({ office_id: office, credential_reset_required: true, totp_enabled: false });
+    const { rows: [r] } = await h.pool.query(
+      `SELECT state, approved_by, extract(epoch FROM reset_token_expires_at - decided_at)::int AS ttl, reset_token_hash = $2 AS hashed FROM recovery_requests WHERE user_id = $1`,
+      [done.userId, createHash('sha256').update(done.setupToken).digest()],
+    );
+    expect(r).toMatchObject({ state: 'approved', approved_by: admin.id, hashed: true });
+    expect(r.ttl).toBe(24 * 3600);
+
+    // لا دخول عادي قبل التعيين، ولا بالرمز نفسه كلمةَ سر
+    await login(e, done.setupToken).expect(401);
+    const newPassword = `new-${randomBytes(12).toString('hex')}`;
+    const completed = await request(h.app.getHttpServer()).post('/v1/auth/recovery/complete').send({ reset_token: done.setupToken, new_password: newPassword }).expect(200);
+    await login(e, newPassword).expect(401); // TOTP لم يُؤكَّد بعد
+    const secret = base32Decode(completed.body.totp_enrollment.secret_base32);
+    await request(h.app.getHttpServer()).post('/v1/auth/totp/confirm').set('Authorization', `Bearer ${completed.body.session.access_token}`).send({ totp_code: totp(secret, Date.now()) }).expect(200);
+    await login(e, newPassword).expect(401); // الرمز الثاني مطلوب الآن
+    await request(h.app.getHttpServer()).post('/v1/auth/login').send({ email: e, password: newPassword, totp_code: totp(secret, Date.now()) }).expect(200);
+    // الرمز لمرة واحدة
+    await request(h.app.getHttpServer()).post('/v1/auth/recovery/complete').send({ reset_token: done.setupToken, new_password: newPassword }).expect(401);
+
     const { rows: roles } = await h.pool.query(`SELECT role, scope_kind, granted_by FROM user_roles WHERE user_id = $1`, [done.userId]);
     expect(roles).toEqual([{ role: 'reporter', scope_kind: 'all', granted_by: admin.id }]);
-    expect((await h.pool.query(`SELECT office_id, password_hash FROM users WHERE id = $1`, [done.userId])).rows[0]).toMatchObject({ office_id: office });
-    const { rows: audit } = await h.pool.query(`SELECT actor_id, action, details FROM audit_log WHERE target_id = $1`, [done.userId]);
+    const { rows: audit } = await h.pool.query(`SELECT actor_id, action, details FROM audit_log WHERE target_id = $1 AND action = 'user.created'`, [done.userId]);
     expect(audit).toEqual([
       { actor_id: admin.id, action: 'user.created', details: { target_user_id: done.userId, role: 'reporter', scope_kind: 'all', scope_id: '', reason_code: 'cli_one_admin' } },
     ]);
     expect(JSON.stringify(audit)).not.toContain(e);
-    // كلمة السر لا تُخزَّن صريحة
-    expect(JSON.stringify((await h.pool.query(`SELECT * FROM users WHERE id = $1`, [done.userId])).rows)).not.toContain(done.password);
+  });
+
+  it('the setup code expires: after 24 hours it no longer sets a password', async () => {
+    const admin = await person('system_admin');
+    const done = await createUser(db, deps(), { email: email(), role: 'producer', scopeKind: 'all', scopeId: '', mode: 'one_admin', approver: { userId: admin.id, totp: code(admin) } });
+    await h.pool.query(`UPDATE recovery_requests SET reset_token_expires_at = decided_at, expires_at = decided_at WHERE user_id = $1`, [done.userId]);
+    await request(h.app.getHttpServer()).post('/v1/auth/recovery/complete').send({ reset_token: done.setupToken, new_password: 'a-long-enough-password' }).expect(401);
   });
 
   it('a supervisor with office scope; the same email twice is refused', async () => {
@@ -71,13 +94,9 @@ describe('account creation on a real host (cli:create-user, ADR 0030)', () => {
     expect((await h.pool.query(`SELECT 1 FROM users WHERE lower(email) = lower($1)`, [e])).rows).toEqual([]);
 
     const done = await createUser(db, deps(), { ...base, mode: 'two_admins', approvers: [{ userId: a.id, totp: code(a) }, { userId: b.id, totp: code(b) }] });
-    // مدير النظام يُسجَّل له TOTP عند الإنشاء: الدخول يطلب الرمز، ويقبل الرمز من سرّ otpauth، ولا بريد في الرابط
-    expect(done.otpauthUri).toMatch(/^otpauth:\/\/totp\/PostHistory%3A[0-9a-f-]{36}\?secret=[A-Z2-7]+&issuer=PostHistory/);
-    expect(done.otpauthUri).not.toContain('example.org');
-    expect((await login(e, done.password).expect(401)).body.code).toBe('totp_required');
-    const secret = base32Decode(/secret=([A-Z2-7]+)/.exec(done.otpauthUri!)![1]!);
-    await request(h.app.getHttpServer()).post('/v1/auth/login').send({ email: e, password: done.password, totp_code: totp(secret, Date.now()) }).expect(200);
-    const { rows } = await h.pool.query(`SELECT actor_id, action FROM audit_log WHERE target_id = $1 ORDER BY id`, [done.userId]);
+    expect((await h.pool.query(`SELECT credential_reset_required FROM users WHERE id = $1`, [done.userId])).rows[0].credential_reset_required).toBe(true);
+    expect((await h.pool.query(`SELECT approved_by FROM recovery_requests WHERE user_id = $1`, [done.userId])).rows[0].approved_by).toBe(a.id);
+    const { rows } = await h.pool.query(`SELECT actor_id, action FROM audit_log WHERE target_id = $1 AND action LIKE 'user.created%' ORDER BY id`, [done.userId]);
     expect(rows).toEqual([
       { actor_id: a.id, action: 'user.created' },
       { actor_id: b.id, action: 'user.created_confirmed' },
