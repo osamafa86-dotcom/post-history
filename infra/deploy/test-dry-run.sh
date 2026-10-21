@@ -24,6 +24,7 @@ MAIN_IP=192.0.2.10
 INGEST_IP=198.51.100.20
 ACME_EMAIL=ops@example.org
 CLOUDFLARE_CIDRS=173.245.48.0/20 103.21.244.0/22
+APP_ATTEST_APP_ID=ABCDE12345.org.example.field
 HOST
 boot() { bash "$B" --host-config "$1" --backup-cert "$2" --owner-age-recipient "$OWNER" --dry-run --root "$R"; }
 
@@ -87,7 +88,8 @@ echo "permissions and sealing: ok"
 
 # Every key of trial.env.example is set (optional ones aside); secrets are long; none is printed.
 for k in $(sed -n 's/^\([A-Z0-9_]*\)=.*/\1/p' /repo/infra/field-trial/trial.env.example); do
-  case "$k" in CADDY_GLOBAL_EXTRA|BACKUP_REMOTE_*) continue ;; esac
+  # Play Integrity: optional per platform (the owner gives App Attest, Play Integrity or both; preflight wants one).
+  case "$k" in CADDY_GLOBAL_EXTRA|BACKUP_REMOTE_*|PLAY_INTEGRITY_*) continue ;; esac
   grep -q "^$k=." "$U" || fail "unsealed secrets lack $k"
 done
 for k in POSTGRES_PASSWORD REDIS_PASSWORD S3_SECRET_KEY TUSD_HOOK_SECRET JWT_SECRET MEDIA_WORKER_TOKEN \
@@ -106,6 +108,7 @@ age -d -i "$E/host.agekey" "$E/break-glass.age" >/dev/null 2>&1 && fail "the hos
 pub="$(sed -n 's/^INGEST_TOKEN_PUBLIC_KEYS=k1://p' "$U")"
 [ "$(sed -n 's/^INGEST_TOKEN_KEY_ID=//p' "$U")" = k1 ] || fail "signing kid is not the gate's kid"
 [ "$(sed -n 's/^INGEST_REQUIRED=//p' "$U")" = true ] || fail "ingest is not required by default"
+[ "$(sed -n 's/^APP_ATTEST_APP_ID=//p' "$U")" = ABCDE12345.org.example.field ] || fail "the App Attest app id from host.env is not carried"
 printf '%s' "$pub" | base64 -d | openssl pkey -pubin -inform DER -noout 2>/dev/null || fail "ingest public key is not SPKI"
 echo "secrets complete, unprinted, owner-recoverable: ok"
 
