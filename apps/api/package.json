@@ -17,6 +17,7 @@
     "db:check-schema": "scripts/check-drizzle-schema.sh",
     "test": "npm run generate:api-types && jest --selectProjects unit",
     "test:integration": "npm run generate:api-types && jest --selectProjects integration --runInBand",
+    "perf:production-scale": "npm run generate:api-types && jest --selectProjects perf --runInBand",
     "test:coverage": "npm run generate:api-types && jest --runInBand --coverage",
     "contract:coverage": "node scripts/contract-coverage.js"
   },
