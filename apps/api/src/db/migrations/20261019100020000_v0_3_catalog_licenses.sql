@@ -217,7 +217,7 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     WHEN event_type = 'auth.recovery_completed' THEN ARRAY['recovery_request_id', 'office_id']
     WHEN event_type = 'export.requested'        THEN ARRAY['material_id', 'source_file_id', 'requested_by']
     WHEN event_type = 'setting.changed'         THEN ARRAY['setting', 'value', 'actor_id', 'reason_code', 'occurred_at']
-    WHEN event_type = 'catalog.listing_changed' THEN ARRAY['listing_id', 'material_id', 'material_version', 'state', 'suspended_reason']
+    WHEN event_type = 'catalog.listing_changed' THEN ARRAY['listing_id', 'material_id', 'material_version', 'source_file_id', 'state', 'suspended_reason']
     ELSE ARRAY[]::text[]
   END
 $$;

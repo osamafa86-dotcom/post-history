@@ -771,6 +771,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/internal/media/files/{file_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * ملف مصدر كما يحتاجه العامل لمشتق عند الطلب (داخلي، v0.3)
+         * @description لبناء `watermarked_preview` من `catalog.listing_changed` وحزمة `export` من `export.requested`: مفتاح تخزين المصدر وبصمته. فشل المصادقة أو العنوان `404` كبقية `/internal/*`؛ والملف غير الموجود برمز صحيح `410 media_resource_gone`. لا اسم ملف ولا بيانات كاشفة.
+         */
+        get: operations["mediaGetFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/internal/media/files/{file_id}/derivatives": {
         parameters: {
             query?: never;
@@ -1955,6 +1977,19 @@ export interface components {
             mime_type?: "image/jpeg" | "image/webp" | "video/mp4" | "application/vnd.apple.mpegurl" | "audio/mp4" | "application/json" | "application/zip" | "text/vtt";
             technical: components["schemas"]["MediaTechnical"];
         } & (unknown & unknown & unknown & unknown);
+        MediaSourceFile: {
+            /** Format: uuid */
+            file_id: string;
+            /** Format: uuid */
+            material_id: string;
+            /** @enum {string} */
+            kind: "original" | "proxy" | "hls" | "audio" | "thumbnail" | "voice_note" | "export" | "transcript" | "captions" | "watermarked_preview";
+            /** @enum {string} */
+            state: "uploading" | "received" | "verified" | "failed";
+            storage_key: string;
+            size_bytes: number | null;
+            sha256: string | null;
+        };
         PermissionHistoryEntry: {
             /** @description رقم صف التدقيق */
             id: string;
@@ -4010,6 +4045,30 @@ export interface operations {
             409: components["responses"]["Conflict"];
             410: components["responses"]["MediaResourceGone"];
             422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    mediaGetFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الملف */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaSourceFile"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["MediaResourceGone"];
         };
     };
     mediaPostDerivative: {
