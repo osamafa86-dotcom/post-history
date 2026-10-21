@@ -453,6 +453,30 @@ INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
 VALUES ('00000000-0000-4000-8000-000000000012', 'notification_rule.deleted', 'notification_rule', '00000000-0000-4000-8000-000000000b01',
         '{"rule_id": "00000000-0000-4000-8000-000000000b01"}');
 
+-- ---------- reporter identity setting (ADR 0021) ----------
+SELECT pg_temp.assert((SELECT value = 'separate' FROM system_settings WHERE key = 'reporter_legal_name_access'),
+  'reporter identity access defaults to separate');
+SELECT pg_temp.expect_error($q$
+  UPDATE system_settings SET value = 'everyone' WHERE key = 'reporter_legal_name_access' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO system_settings (key, value) VALUES ('anything_else', 'x') $q$, '23514');
+UPDATE system_settings SET value = 'protected_source', updated_by = '00000000-0000-4000-8000-000000000012'
+WHERE key = 'reporter_legal_name_access';
+INSERT INTO user_permissions (user_id, permission, granted_by, reason)
+VALUES ('00000000-0000-4000-8000-000000000011', 'reporter_identity:read', '00000000-0000-4000-8000-000000000012', 'smoke');
+SELECT pg_temp.assert((SELECT count(*) = 1 FROM audit_log WHERE action = 'permission.granted' AND details ->> 'permission' = 'reporter_identity:read'),
+  'granting reporter_identity:read is audited');
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('setting.changed', 'user', '00000000-0000-4000-8000-000000000012', 'setting.changed:smoke:1',
+        '{"setting": "reporter_legal_name_access", "value": "protected_source", "actor_id": "00000000-0000-4000-8000-000000000012", "reason_code": "operational_need"}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('setting.changed', 'user', '00000000-0000-4000-8000-000000000012', 'setting.changed:smoke:2',
+          '{"setting": "reporter_legal_name_access", "value": "protected_source", "note": "free text"}') $q$, '23514');
+INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
+VALUES ('00000000-0000-4000-8000-000000000012', 'setting.changed', 'setting', 'reporter_legal_name_access',
+        '{"setting": "reporter_legal_name_access", "value": "protected_source", "reason_code": "operational_need"}');
+
 -- ---------- indexing policy (ADR 0002) ----------
 SELECT pg_temp.assert(
   NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexdef ILIKE '%USING gin%'),

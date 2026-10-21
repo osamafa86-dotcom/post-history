@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { deviceAttestationKeys, idempotencyKeys, materialContributors, materialExports, materialFiles, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, outboxEvents, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
+import { deviceAttestationKeys, idempotencyKeys, materialContributors, materialExports, materialFiles, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, outboxEvents, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
 
 export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => ({
 	refreshToken: one(refreshTokens, {
@@ -21,15 +21,6 @@ export const usersRelations = relations(users, ({one, many}) => ({
 	pushDevices: many(pushDevices),
 	uploadForms: many(uploadForms),
 	materialTransitions: many(materialTransitions),
-	userPermissions_grantedBy: many(userPermissions, {
-		relationName: "userPermissions_grantedBy_users_id"
-	}),
-	userPermissions_revokedBy: many(userPermissions, {
-		relationName: "userPermissions_revokedBy_users_id"
-	}),
-	userPermissions_userId: many(userPermissions, {
-		relationName: "userPermissions_userId_users_id"
-	}),
 	uploadSessions: many(uploadSessions),
 	recoveryRequests_approvedBy: many(recoveryRequests, {
 		relationName: "recoveryRequests_approvedBy_users_id"
@@ -51,14 +42,24 @@ export const usersRelations = relations(users, ({one, many}) => ({
 	materials_reservedBy: many(materials, {
 		relationName: "materials_reservedBy_users_id"
 	}),
-	notifications: many(notifications),
 	notificationRules_createdBy: many(notificationRules, {
 		relationName: "notificationRules_createdBy_users_id"
 	}),
 	notificationRules_updatedBy: many(notificationRules, {
 		relationName: "notificationRules_updatedBy_users_id"
 	}),
+	notifications: many(notifications),
 	materialExports: many(materialExports),
+	userPermissions_grantedBy: many(userPermissions, {
+		relationName: "userPermissions_grantedBy_users_id"
+	}),
+	userPermissions_revokedBy: many(userPermissions, {
+		relationName: "userPermissions_revokedBy_users_id"
+	}),
+	userPermissions_userId: many(userPermissions, {
+		relationName: "userPermissions_userId_users_id"
+	}),
+	systemSettings: many(systemSettings),
 	outboxEvents: many(outboxEvents),
 	recoveryCodes: many(recoveryCodes),
 	materialContributors: many(materialContributors),
@@ -127,24 +128,6 @@ export const materialsRelations = relations(materials, ({one, many}) => ({
 	materialFiles: many(materialFiles),
 	materialExports: many(materialExports),
 	materialContributors: many(materialContributors),
-}));
-
-export const userPermissionsRelations = relations(userPermissions, ({one}) => ({
-	user_grantedBy: one(users, {
-		fields: [userPermissions.grantedBy],
-		references: [users.id],
-		relationName: "userPermissions_grantedBy_users_id"
-	}),
-	user_revokedBy: one(users, {
-		fields: [userPermissions.revokedBy],
-		references: [users.id],
-		relationName: "userPermissions_revokedBy_users_id"
-	}),
-	user_userId: one(users, {
-		fields: [userPermissions.userId],
-		references: [users.id],
-		relationName: "userPermissions_userId_users_id"
-	}),
 }));
 
 export const uploadSessionsRelations = relations(uploadSessions, ({one, many}) => ({
@@ -229,6 +212,21 @@ export const officesRelations = relations(offices, ({many}) => ({
 	materials: many(materials),
 }));
 
+export const notificationRulesRelations = relations(notificationRules, ({one, many}) => ({
+	user_createdBy: one(users, {
+		fields: [notificationRules.createdBy],
+		references: [users.id],
+		relationName: "notificationRules_createdBy_users_id"
+	}),
+	user_updatedBy: one(users, {
+		fields: [notificationRules.updatedBy],
+		references: [users.id],
+		relationName: "notificationRules_updatedBy_users_id"
+	}),
+	notifications: many(notifications),
+	notificationRuleEscalations: many(notificationRuleEscalations),
+}));
+
 export const notificationsRelations = relations(notifications, ({one, many}) => ({
 	outboxEvent: one(outboxEvents, {
 		fields: [notifications.eventId],
@@ -261,21 +259,6 @@ export const outboxEventsRelations = relations(outboxEvents, ({one, many}) => ({
 	}),
 }));
 
-export const notificationRulesRelations = relations(notificationRules, ({one, many}) => ({
-	notifications: many(notifications),
-	user_createdBy: one(users, {
-		fields: [notificationRules.createdBy],
-		references: [users.id],
-		relationName: "notificationRules_createdBy_users_id"
-	}),
-	user_updatedBy: one(users, {
-		fields: [notificationRules.updatedBy],
-		references: [users.id],
-		relationName: "notificationRules_updatedBy_users_id"
-	}),
-	notificationRuleEscalations: many(notificationRuleEscalations),
-}));
-
 export const materialExportsRelations = relations(materialExports, ({one}) => ({
 	materialFile_fileId: one(materialFiles, {
 		fields: [materialExports.fileId],
@@ -294,6 +277,31 @@ export const materialExportsRelations = relations(materialExports, ({one}) => ({
 		fields: [materialExports.sourceFileId],
 		references: [materialFiles.id],
 		relationName: "materialExports_sourceFileId_materialFiles_id"
+	}),
+}));
+
+export const userPermissionsRelations = relations(userPermissions, ({one}) => ({
+	user_grantedBy: one(users, {
+		fields: [userPermissions.grantedBy],
+		references: [users.id],
+		relationName: "userPermissions_grantedBy_users_id"
+	}),
+	user_revokedBy: one(users, {
+		fields: [userPermissions.revokedBy],
+		references: [users.id],
+		relationName: "userPermissions_revokedBy_users_id"
+	}),
+	user_userId: one(users, {
+		fields: [userPermissions.userId],
+		references: [users.id],
+		relationName: "userPermissions_userId_users_id"
+	}),
+}));
+
+export const systemSettingsRelations = relations(systemSettings, ({one}) => ({
+	user: one(users, {
+		fields: [systemSettings.updatedBy],
+		references: [users.id]
 	}),
 }));
 
