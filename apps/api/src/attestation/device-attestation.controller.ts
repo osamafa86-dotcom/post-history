@@ -16,6 +16,7 @@ import { DeviceAttestationService } from './device-attestation.service';
 export class DeviceAttestationController {
   private readonly bff: BlockList;
   private readonly gateToken: string | undefined;
+  private readonly acceptanceUploader: string | undefined;
 
   constructor(
     private readonly attestation: DeviceAttestationService,
@@ -23,6 +24,7 @@ export class DeviceAttestationController {
   ) {
     this.bff = blockListOf(config.BFF_SOURCE_ADDRESSES);
     this.gateToken = config.INGEST_GATE_TOKEN;
+    this.acceptanceUploader = config.ACCEPTANCE_UPLOADER_USER_ID;
   }
 
   @Post('device-attestations/challenge')
@@ -59,6 +61,7 @@ export class DeviceAttestationController {
   /**
    * فحص بوابة ingest قبل PATCH (داخلي: /internal/* لعناوين INTERNAL_ALLOWED_CIDRS وحدها). 204 = اقبل، 403 بلا جسم =
    * ارفض. sid جلسة الرفع وses جلسة الدخول من مطالبات الرمز. INGEST_GATE_TOKEN إن ضُبط يُشترط بترويسة Bearer.
+   * key_class=qa: 204 لجلسات ACCEPTANCE_UPLOADER_USER_ID وحدها، وفارغه = 403 دائمًا.
    */
   @Public()
   @Get('internal/ingest/session-status')
@@ -66,14 +69,18 @@ export class DeviceAttestationController {
     @Headers('authorization') auth: string | undefined,
     @Query('sid') sid: unknown,
     @Query('ses') ses: unknown,
+    @Query('key_class') keyClass: unknown,
     @Res() res: Response,
   ): Promise<void> {
     const presented = /^Bearer (\S+)$/.exec(auth ?? '')?.[1] ?? '';
+    // رمز موقَّع بمفتاح qa لا يُقبل إلا لجلسات حساب القبول المسمّى؛ بلا حساب مضبوط يُرفض دائمًا
+    const qa = keyClass === 'qa';
     const ok =
       (this.gateToken === undefined || constantTimeEqual(presented, this.gateToken)) &&
+      (keyClass === undefined || keyClass === 'production' || (qa && this.acceptanceUploader !== undefined)) &&
       typeof sid === 'string' &&
       (ses === undefined || typeof ses === 'string') &&
-      (await this.attestation.sessionAccepts(sid, ses as string | undefined));
+      (await this.attestation.sessionAccepts(sid, ses as string | undefined, qa ? this.acceptanceUploader : undefined));
     res.status(ok ? 204 : 403).end();
   }
 }

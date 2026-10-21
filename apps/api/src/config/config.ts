@@ -173,6 +173,11 @@ const schema = z.object({
     .string()
     .regex(/^[A-Za-z0-9_-]{32,256}$/, 'must be 32-256 characters of [A-Za-z0-9_-]')
     .optional(),
+  // حساب القبول الوحيد الذي تُقبل جلساته برمز موقَّع بمفتاح فئة qa (key_class=qa على فحص البوابة)؛ فارغ = رفض دائم
+  ACCEPTANCE_UPLOADER_USER_ID: z
+    .string()
+    .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, 'must be a user id (uuid)')
+    .optional(),
   // رمز عامل التفريغ المحلي: يُقبل على POST /internal/media/files/{id}/derivatives لنوعي transcript وcaptions وحدهما
   // (ولا شيء غيره)، منفصل عن MEDIA_WORKER_TOKEN؛ غير مضبوط = العامل لا يصل
   AI_WORKER_TOKEN: z

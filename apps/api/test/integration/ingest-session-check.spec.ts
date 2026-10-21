@@ -116,6 +116,27 @@ describe('ingest gateway: web ingest tokens and the session check', () => {
     }
   });
 
+  it('key_class=qa passes only for the configured acceptance account, and is always refused without one', async () => {
+    const acceptance = await loginAs(h, [{ role: 'reporter' }]);
+    const qa = await createHarness({ env: { ...env, ACCEPTANCE_UPLOADER_USER_ID: acceptance.id } });
+    try {
+      const own = await seedUploadSession(qa, acceptance.id);
+      const other = await seedUploadSession(qa, reporter.id);
+      const check = (sid: string, keyClass: string) => http(qa).get(`/internal/ingest/session-status?sid=${sid}&key_class=${keyClass}`);
+      await check(own.id, 'qa').expect(204);
+      await check(other.id, 'qa').expect(403);
+      // الفئة الإنتاجية لا تتأثر، والقيمة المجهولة رفض
+      await check(other.id, 'production').expect(204);
+      await check(other.id, 'staging').expect(403);
+    } finally {
+      await qa.close();
+    }
+    // بلا حساب قبول مضبوط: qa رفض حتى لجلسة حية
+    const live = await seedUploadSession(h, acceptance.id);
+    await http().get(`/internal/ingest/session-status?sid=${live.id}&key_class=qa`).expect(403);
+    await http().get(`/internal/ingest/session-status?sid=${live.id}`).expect(204);
+  });
+
   it('the session check is internal only', async () => {
     const outside = await createHarness({ env: { ...env, INTERNAL_ALLOWED_CIDRS: '192.0.2.1/32' } });
     try {

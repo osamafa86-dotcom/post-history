@@ -179,7 +179,7 @@ export class DeviceAttestationService implements ReplayRehydrator {
    * فحص البوابة قبل كل PATCH (GET /internal/ingest/session-status): الجلسة تقبل رفعًا الآن وصاحبها فاعل، وجلسة الدخول
    * (لرمز الويب) لم تُبطل. أي شيء آخر رفض، فيسقط الرفع خلال ثوانٍ من الإبطال لا عند انتهاء الرمز.
    */
-  async sessionAccepts(sid: string, ses: string | undefined): Promise<boolean> {
+  async sessionAccepts(sid: string, ses: string | undefined, owner?: string): Promise<boolean> {
     if (!UUID.test(sid) || (ses !== undefined && !UUID.test(ses))) return false;
     const [s] = await this.db.select().from(uploadSessions).where(eq(uploadSessions.id, sid));
     const now = new Date();
@@ -193,8 +193,9 @@ export class DeviceAttestationService implements ReplayRehydrator {
     ) {
       return false;
     }
-    const [owner] = await this.db.select({ status: users.status }).from(users).where(eq(users.id, s.createdBy));
-    if (owner?.status !== 'active') return false;
+    if (owner !== undefined && s.createdBy.toLowerCase() !== owner.toLowerCase()) return false;
+    const [creator] = await this.db.select({ status: users.status }).from(users).where(eq(users.id, s.createdBy));
+    if (creator?.status !== 'active') return false;
     if (ses === undefined) return true;
     const head = await this.sessions.chainHead(this.db, ses);
     return Boolean(head && head.user_id === s.createdBy && head.revoked_at === null && new Date(head.expires_at) > now);
