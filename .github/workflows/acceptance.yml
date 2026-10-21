@@ -15,9 +15,9 @@ env:
   # Core-gate acceptance (reservation-conflict, optimistic-concurrency, admin-quorum, notification-delivery, download-url) against the
   # server work of #69 and #75, now on main. "0" turns the five back into PENDING (they print it and write nothing).
   CORE_ACCEPTANCE: "1"
-  # Local transcription worker (workers/ai, ADR 0020): transcript-draft runs in media e2e with the ai profile. Flip to "1" once infra swaps the
-  # ai-worker image in compose for workers/ai and the server side (#107, #108) is on main; until then the step is skipped.
-  AI_ENABLE_TRANSCRIPT: "0"
+  # Local transcription worker (workers/ai, ADR 0020): transcript-draft runs in media e2e with the ai profile, the worker on the production
+  # model (faster-whisper large-v3-turbo) with AI_ENABLE_TRANSCRIPT=true. "0" leaves the ai profile out and skips the step.
+  AI_ENABLE_TRANSCRIPT: "1"
   # Admin notification rules and real escalation (contract v0.2, #98): notification-delivery creates rules, waits one escalation step (60 s, the
   # contract minimum) and deletes them. On since #98 is on main.
   RULES_ACCEPTANCE: "1"
@@ -39,7 +39,7 @@ jobs:
         run: |
           .github/scripts/changed-paths.sh \
           live='^(apps/api/|apps/web/|contracts/|tools/acceptance/|\.github/(workflows/acceptance\.yml|scripts/))' \
-          media_e2e='^(workers/media/|workers/ai/|apps/api/|tools/acceptance/|infra/compose/|\.github/(workflows/acceptance\.yml|scripts/))'
+          media_e2e='^(workers/media/|workers/ai/|apps/api/|tools/acceptance/|infra/compose/|infra/ai/|infra/minio/|\.github/(workflows/acceptance\.yml|scripts/))'
 
   acceptance:
     name: acceptance (unit tests, results gate, conformance, upload-resume vs tusd)
@@ -183,7 +183,7 @@ jobs:
   media-e2e:
     name: "media e2e (full compose stack: upload, worker, proxy, hostile files)"
     runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
-    timeout-minutes: 25
+    timeout-minutes: 40  # the ai profile fetches the production weights (1.6 GB) and transcribes six clips
     needs: changes
     if: needs.changes.outputs.media_e2e == 'true'
     steps:
@@ -215,7 +215,15 @@ jobs:
       - name: Start the stack (API from source, tusd, MinIO, Redis, Postgres, media worker)
         run: |
           profiles="--profile api --profile media"
-          [ "$AI_ENABLE_TRANSCRIPT" = 1 ] && profiles="$profiles --profile ai"
+          # The worker reads "true" from .env (workers/ai Config); the workflow switch is "1".
+          if [ "$AI_ENABLE_TRANSCRIPT" = 1 ]; then
+            profiles="$profiles --profile ai"; sed -i "s/^AI_ENABLE_TRANSCRIPT=.*/AI_ENABLE_TRANSCRIPT=true/" infra/compose/.env
+            # Every CPU the runner has for the worker (the media worker is done before each transcription starts). Docker
+            # refuses more than the host has; this repository's hosted runner has two, on which large-v3-turbo ran at
+            # 1.8-2.2x real time (#116).
+            sed -i "s/^AI_WORKER_CPUS=.*/AI_WORKER_CPUS=$(nproc)/" infra/compose/.env
+          fi
+          unset AI_ENABLE_TRANSCRIPT  # compose prefers the shell to .env: let .env decide
           docker compose -f infra/compose/docker-compose.yml $profiles up -d --wait --build
       - name: Media pipeline end to end (results are printed and kept as an artifact; nothing is written to docs/measurements)
         run: |
@@ -248,6 +256,7 @@ jobs:
           export TD_API_URL="http://127.0.0.1:$API_PORT/v1" TD_TUS_URL="http://127.0.0.1:$TUSD_PORT/files/"
           export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
           export TD_TOKENS="$(node -e "import('./live/seed.mjs').then(async (m) => { const s = await m.seed({ databaseUrl: process.env.DATABASE_URL, apiUrl: process.env.TD_API_URL }); console.log(JSON.stringify({ reporter: s.allTokens.reporter })); })")"
+          export AI_ENABLE_TRANSCRIPT=1  # .env holds the worker's "true"; the script's switch is "1"
           export TD_EGRESS_CMD="docker compose -f ../../infra/compose/docker-compose.yml --profile api --profile media --profile ai exec -T ai-worker python3 -c \"import socket; socket.create_connection(('1.1.1.1', 443), 3)\""
           ACCEPTANCE_RESULTS_DIR="$RUNNER_TEMP/out" node scripts/transcript-draft.mjs
       - name: Remote session revocation (SEC-01; time to the first refusal on the API and on the upload path)
@@ -281,7 +290,7 @@ jobs:
           retention-days: 14
       - name: Stack logs on failure
         if: failure()
-        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media logs --no-color --tail 200 api media-worker tusd
+        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media --profile ai logs --no-color --timestamps --tail 3000 api media-worker tusd ai-worker
       - name: Tear down
         if: always()
-        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media down -v
+        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media --profile ai down -v
