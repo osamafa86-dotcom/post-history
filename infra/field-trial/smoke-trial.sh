@@ -295,4 +295,19 @@ if grep -qiE '"(ingest-token|authorization)"[[:space:]]*:|bearer [A-Za-z0-9._-]{
 # Upload ids are bearer capabilities (SEC-06): logged as /files/-, never /files/<id>.
 if grep -qE '/files/[A-Za-z0-9]' <<<"$edge_log"; then fail "an upload id in an edge log"; fi
 grep -qF '/files/-' <<<"$edge_log" || fail "no redacted upload path in the edge log (nothing logged?)"
+
+# The availability drill (tools/acceptance availability, ADR 0028), last because it kills the API and Postgres: under read
+# load the API is killed, then Postgres, then the API recreated, and each recovery is timed. A CI runner is not the trial
+# host and no target is declared here, so the result is partial; it fails if anything does not recover. TRIAL_AVAILABILITY=0 skips.
+if [ "${TRIAL_AVAILABILITY:-1}" = 1 ]; then
+  accounts="$(DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB" \
+    API_URL="http://127.0.0.1:$API_PORT/v1" node "$ROOT/tools/acceptance/field-trial/rehearsal-accounts.mjs")"
+  token_of() { python3 -c 'import json,sys; a=json.loads(sys.argv[1])[sys.argv[2]]; print(json.dumps({"email":a["email"],"password":a["password"]}))' "$accounts" "$1" \
+    | curl -fsS -X POST "http://127.0.0.1:$API_PORT/v1/auth/login" -H 'Content-Type: application/json' -d @- \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])'; }
+  AVAIL_API_URL="http://127.0.0.1:$API_PORT/v1" AVAIL_TOKEN="$(token_of reporter)" AVAIL_SUPERVISOR_TOKEN="$(token_of supervisor)" \
+  AVAIL_COMPOSE="$T" AVAIL_TIMEOUT_MS="${AVAIL_TIMEOUT_MS:-300000}" \
+    node "$ROOT/tools/acceptance/scripts/availability.mjs" --dry-run || fail "availability drill: a scenario did not recover"
+  echo "availability drill (api kill, database kill, api recreate under load): ok"
+fi
 echo "field trial smoke: ok"
