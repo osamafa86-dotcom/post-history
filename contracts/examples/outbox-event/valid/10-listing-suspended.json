@@ -1,0 +1,13 @@
+{
+  "id": "1090",
+  "type": "catalog.listing_changed",
+  "aggregate_type": "listing",
+  "aggregate_id": "3a2b1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d",
+  "occurred_at": "2026-10-21T12:00:00Z",
+  "idempotency_key": "catalog.listing_changed:3a2b1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d:4",
+  "actor_id": null,
+  "payload": { "listing_id": "3a2b1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d", "material_id": "7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b", "material_version": 2, "state": "suspended", "suspended_reason": "rights_changed" },
+  "published_at": null,
+  "attempts": 0,
+  "delivery": []
+}

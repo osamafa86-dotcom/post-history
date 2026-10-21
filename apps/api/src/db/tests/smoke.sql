@@ -481,6 +481,93 @@ VALUES ('00000000-0000-4000-8000-000000000012', 'setting.changed', 'setting', 'r
 INSERT INTO notification_rules (name, event_type, recipient_permissions, channels)
 VALUES ('identity holders', 'material.created', ARRAY['reporter_identity:read'], ARRAY['in_app']);
 
+-- ---------- v0.3: قوالب التراخيص والإدراج (ADR 0025) ----------
+INSERT INTO license_templates (id, type, created_by) VALUES
+  ('00000000-0000-4000-8000-000000000601', 'editorial_single', '00000000-0000-4000-8000-000000000014'),
+  ('00000000-0000-4000-8000-000000000602', 'exclusive_temporary', '00000000-0000-4000-8000-000000000014'),
+  ('00000000-0000-4000-8000-000000000603', 'commercial', '00000000-0000-4000-8000-000000000014');
+INSERT INTO license_template_versions (template_id, version, type, name_ar, name_en, terms_ar, terms_en, usage_media,
+  territory_kind, deliverables, attribution_ar, attribution_en, prohibitions, base_price_minor, currency, enabled, created_by)
+VALUES ('00000000-0000-4000-8000-000000000601', 1, 'editorial_single', 'تحريري', 'Editorial', 'شروط', 'Terms', '{tv,web}',
+        'worldwide', '{original}', 'فلسطين بوست', 'Palestine Post', '{resale,ai_training}', 20000, 'USD', true,
+        '00000000-0000-4000-8000-000000000014');
+INSERT INTO license_template_versions (template_id, version, type, name_ar, name_en, terms_ar, terms_en, usage_media,
+  territory_kind, deliverables, attribution_ar, attribution_en, base_price_minor, currency, enabled, created_by,
+  term_days, exclusivity_hours)
+VALUES ('00000000-0000-4000-8000-000000000602', 1, 'exclusive_temporary', 'حصري', 'Exclusive', 'شروط', 'Terms', '{tv}',
+        'worldwide', '{original}', 'فلسطين بوست', 'Palestine Post', 150000, 'USD', true,
+        '00000000-0000-4000-8000-000000000014', 30, 72);
+SELECT pg_temp.expect_error($q$
+  UPDATE license_template_versions SET base_price_minor = 1 WHERE template_id = '00000000-0000-4000-8000-000000000601' $q$, '23001');
+SELECT pg_temp.expect_error($q$
+  DELETE FROM license_template_versions WHERE template_id = '00000000-0000-4000-8000-000000000601' $q$, '23001');
+-- النوع ثابت، والإصدار بلا فجوة، والحصرية لـ exclusive_temporary وحده، والعملة من القائمة
+SELECT pg_temp.expect_error($q$
+  INSERT INTO license_template_versions (template_id, version, type, name_ar, name_en, terms_ar, terms_en, usage_media,
+    territory_kind, deliverables, attribution_ar, attribution_en, base_price_minor, currency, enabled, created_by)
+  VALUES ('00000000-0000-4000-8000-000000000601', 2, 'commercial', 'x', 'x', 'x', 'x', '{tv}', 'worldwide', '{original}',
+          'x', 'x', 1, 'USD', true, '00000000-0000-4000-8000-000000000014') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO license_template_versions (template_id, version, type, name_ar, name_en, terms_ar, terms_en, usage_media,
+    territory_kind, deliverables, attribution_ar, attribution_en, base_price_minor, currency, enabled, created_by)
+  VALUES ('00000000-0000-4000-8000-000000000601', 3, 'editorial_single', 'x', 'x', 'x', 'x', '{tv}', 'worldwide', '{original}',
+          'x', 'x', 1, 'USD', true, '00000000-0000-4000-8000-000000000014') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO license_template_versions (template_id, version, type, name_ar, name_en, terms_ar, terms_en, usage_media,
+    territory_kind, deliverables, attribution_ar, attribution_en, base_price_minor, currency, enabled, created_by, exclusivity_hours)
+  VALUES ('00000000-0000-4000-8000-000000000601', 2, 'editorial_single', 'x', 'x', 'x', 'x', '{tv}', 'worldwide', '{original}',
+          'x', 'x', 1, 'USD', true, '00000000-0000-4000-8000-000000000014', 24) $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO license_template_versions (template_id, version, type, name_ar, name_en, terms_ar, terms_en, usage_media,
+    territory_kind, deliverables, attribution_ar, attribution_en, base_price_minor, currency, enabled, created_by)
+  VALUES ('00000000-0000-4000-8000-000000000601', 2, 'editorial_single', 'x', 'x', 'x', 'x', '{tv}', 'worldwide', '{original}',
+          'x', 'x', 1, 'EUR', true, '00000000-0000-4000-8000-000000000014') $q$, '23514');
+INSERT INTO license_template_versions (template_id, version, type, name_ar, name_en, terms_ar, terms_en, usage_media,
+  territory_kind, territory_countries, deliverables, attribution_ar, attribution_en, base_price_minor, currency, enabled, created_by)
+VALUES ('00000000-0000-4000-8000-000000000601', 2, 'editorial_single', 'تحريري', 'Editorial', 'شروط', 'Terms', '{web}',
+        'countries', '{PS,JO}', '{original}', 'فلسطين بوست', 'Palestine Post', 25000, 'USD', true,
+        '00000000-0000-4000-8000-000000000014');
+
+-- «معروض» يلزمه sellable من الجهتين
+SELECT pg_temp.expect_error($q$
+  INSERT INTO catalog_listings (material_id, material_version, state, title_ar, title_en, description_ar, description_en,
+    listed_at, updated_by)
+  VALUES ('00000000-0000-4000-8000-000000000101', 1, 'listed', 'ع', 'T', 'و', 'D', now(),
+          '00000000-0000-4000-8000-000000000014') $q$, '23514');
+INSERT INTO catalog_listings (id, material_id, material_version, state, title_ar, title_en, description_ar, description_en, updated_by)
+VALUES ('00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000101', 1, 'draft', 'ع', 'T', 'و', 'D',
+        '00000000-0000-4000-8000-000000000014');
+INSERT INTO listing_offers (listing_id, license_template_id)
+VALUES ('00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000601');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO listing_offers (listing_id, license_template_id)
+  VALUES ('00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000603') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO listing_offers (listing_id, license_template_id, price_override_minor)
+  VALUES ('00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000602', 100) $q$, '23514');
+UPDATE materials SET rights_state = 'sellable' WHERE id = '00000000-0000-4000-8000-000000000101';
+UPDATE catalog_listings SET state = 'listed', listed_at = now() WHERE id = '00000000-0000-4000-8000-000000000611';
+SELECT pg_temp.expect_error($q$
+  UPDATE materials SET rights_state = 'blocked' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE catalog_listings SET state = 'suspended' WHERE id = '00000000-0000-4000-8000-000000000611' $q$, '23514');
+UPDATE catalog_listings SET state = 'suspended', suspended_reason = 'rights_changed'
+ WHERE id = '00000000-0000-4000-8000-000000000611';
+UPDATE materials SET rights_state = 'blocked' WHERE id = '00000000-0000-4000-8000-000000000101';
+-- الإذن التجاري: يُضاف العرض بعده، ولا يُسحب الإذن والعرض قائم
+UPDATE catalog_listings SET commercial_allowed = true WHERE id = '00000000-0000-4000-8000-000000000611';
+INSERT INTO listing_offers (listing_id, license_template_id)
+VALUES ('00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000603');
+SELECT pg_temp.expect_error($q$
+  UPDATE catalog_listings SET commercial_allowed = false WHERE id = '00000000-0000-4000-8000-000000000611' $q$, '23514');
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('catalog.listing_changed', 'listing', '00000000-0000-4000-8000-000000000611', 'catalog.listing_changed:smoke:1',
+        '{"listing_id": "00000000-0000-4000-8000-000000000611", "material_id": "00000000-0000-4000-8000-000000000101", "material_version": 1, "state": "suspended", "suspended_reason": "rights_changed"}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('catalog.listing_changed', 'listing', '00000000-0000-4000-8000-000000000611', 'catalog.listing_changed:smoke:2',
+          '{"listing_id": "00000000-0000-4000-8000-000000000611", "title": "x"}') $q$, '23514');
+
 -- ---------- indexing policy (ADR 0002) ----------
 SELECT pg_temp.assert(
   NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexdef ILIKE '%USING gin%'),
