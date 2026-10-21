@@ -21,6 +21,9 @@ env:
   # Local transcription worker (workers/ai, ADR 0020): transcript-draft runs in media e2e with the ai profile, the worker on the production
   # model (faster-whisper large-v3-turbo) with AI_ENABLE_TRANSCRIPT=true. "0" leaves the ai profile out and skips the step.
   AI_ENABLE_TRANSCRIPT: "1"
+  # Admin notification rules and real escalation (contract v0.2, #98): notification-delivery creates rules, waits one escalation step (60 s, the
+  # contract minimum) and deletes them. On since #98 is on main.
+  RULES_ACCEPTANCE: "1"
 
 jobs:
   acceptance:

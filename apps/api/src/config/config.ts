@@ -201,6 +201,23 @@ const schema = z.object({
     .default('false')
     .transform((v) => v === 'true'),
 
+  // تسليم الإشعارات بالدفع إلى الأجهزة المسجّلة (/push-devices). معطّل افتراضيًا؛ الإشعار يبقى في صندوق الوارد دائمًا
+  PUSH_DELIVERY_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  PUSH_POLL_INTERVAL_MS: z.coerce.number().int().min(100).default(2000),
+  PUSH_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(6),
+  // APNs: مفتاح المزوّد .p8 (PEM بترميز base64، سر من SOPS) ومعرّفاه، والموضوع (Bundle ID)، والبيئة
+  APNS_TEAM_ID: z.string().regex(/^[A-Z0-9]{10}$/).optional(),
+  APNS_KEY_ID: z.string().regex(/^[A-Z0-9]{10}$/).optional(),
+  APNS_PRIVATE_KEY: z.string().optional(),
+  APNS_TOPIC: z.string().optional(),
+  APNS_ENVIRONMENT: z.enum(['production', 'sandbox']).default('production'),
+  // FCM HTTP v1: معرّف المشروع وحساب الخدمة (JSON بترميز base64، سر من SOPS)
+  FCM_PROJECT_ID: z.string().optional(),
+  FCM_SERVICE_ACCOUNT: z.string().optional(),
+
   OUTBOX_DISPATCHER_ENABLED: z
     .enum(['true', 'false'])
     .default('true')

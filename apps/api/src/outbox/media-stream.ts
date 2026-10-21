@@ -11,6 +11,8 @@ const MEDIA_EVENT_TYPES: ReadonlySet<OutboxEventType> = new Set([
   'upload.original_received',
   'upload.proxy_received',
   'upload.verified',
+  // export.requested (v0.2): عامل الوسائط يبني حزمة التصدير عند الطلب ويسجّلها مشتقًا export
+  'export.requested',
 ]);
 
 export class MediaQueueUnavailableError extends Error {

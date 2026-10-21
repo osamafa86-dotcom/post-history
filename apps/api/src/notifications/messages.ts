@@ -20,6 +20,8 @@ export const NOTIFICATION_TITLES: Record<string, Record<Locale, string>> = {
     ar: 'أُكملت استعادة حسابك بكلمة مرور ومصادقة جديدتين؛ إن لم تكن أنت فأبلغ مشرفك فورًا',
     en: 'Your account recovery was completed with a new password and two-factor setup; tell your supervisor now if it was not you',
   },
+  // عنوان عام لأحداث تضبط لها الإدارة قاعدة ولا قالب خاص لها (v0.2)
+  'material.generic': { ar: 'تحديث على المادة #{ref}', en: 'Update on material #{ref}' },
   'upload.verified': {
     ar: 'تم الاستلام بنجاح — المادة #{ref}، الإيصال {receipt}',
     en: 'Received successfully — material #{ref}, receipt {receipt}',
@@ -30,7 +32,8 @@ export const NOTIFICATION_TITLES: Record<string, Record<Locale, string>> = {
 export const materialRef = (materialId: string) => materialId.slice(0, 8);
 
 export function notificationTitle(type: string, locale: Locale, vars: { ref: string; receipt?: string }): string {
-  const template = NOTIFICATION_TITLES[type]?.[locale];
+  const generic = /^(material|upload|ai)\./.test(type) ? NOTIFICATION_TITLES['material.generic'] : undefined;
+  const template = (NOTIFICATION_TITLES[type] ?? generic)?.[locale];
   if (!template) throw new Error(`no notification title for ${type}`);
   return template.replace('{ref}', vars.ref).replace('{receipt}', vars.receipt ?? '');
 }

@@ -61,6 +61,7 @@ try {
     }),
     ...(coreOn ? quorumCli(stack, s) : {}),
     NOTIF_API_URL: stack.apiUrl, NOTIF_TOKENS: JSON.stringify({ ...s.tokens, supervisor_b: s.allTokens.supervisor_b }), NOTIF_ESCALATION_S: String(stack.escalationSeconds),
+    NOTIF_RULES: process.env.RULES_ACCEPTANCE ?? "0",
   };
   Object.assign(process.env, common);
   const note = `الخادم من main@${sha} على Postgres 16 بقاعدة مؤقتة${process.env.LIVE_REDIS_URL ? " وRedis" : ""}${s3 ? " وتخزين S3" : ""}؛ بلا Cloudflare ولا tusd (الخطّاف مُحاكى)`;

@@ -2,6 +2,8 @@
 // and "اطّلعت" (ack) stops the escalation.
 //   NOTIF_API_URL  NOTIF_TOKENS {reporter, supervisor, supervisor_b, editor_in_chief, system_admin}  NOTIF_RUNS (20)  NOTIF_LIMIT_S (10, the plan's delivery target)
 //   NOTIF_ESCALATION_S  the server's short urgent escalation timeout; without it the escalation half is not measured
+//   NOTIF_RULES=1  also measure the admin rules of contract v0.2 (POST /notification-rules, needs {system_admin, producer, editor_in_chief}); NOTIF_RULE_ESCALATION_S (60, the contract's minimum)
+//     is the first escalation step of the rule under test. Rules are created for the run and deleted after it.
 // Per run: a material carrying a canary GPS and a canary title is created (alternating urgent/normal). The office supervisor gets exactly one notification within the limit;
 // the other office's supervisor and the reporter get none for it; every notification carries only the contract's keys and neither canary; the Outbox payloads of the events
 // stay inside the closed whitelist of contracts/schemas/outbox-event.json. Then the supervisor's ack answers 204, the material becomes acknowledged, the reporter is told.
@@ -105,10 +107,54 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
     escalationMeasured = true;
   } else console.log("note NOTIF_ESCALATION_S not given: the escalation half is not measured");
 
-  const full = runs >= 20 && escalationMeasured && Boolean(tokens.system_admin) && tokens.supervisor_b;
+  // admin rules (v0.2): the rule decides who is told and who is escalated to, instead of the default table.
+  let rulesMeasured = false, silenced = null;
+  if (env.NOTIF_RULES === "1" && tokens.system_admin && tokens.producer && tokens.editor_in_chief) {
+    const stepS = Number(env.NOTIF_RULE_ESCALATION_S ?? 60);
+    const made = [];
+    const rule = async (body) => {
+      const r = await http.call(tokens.system_admin, "POST", "/notification-rules", { body });
+      if (r.status !== 201) throw new Error(`POST /notification-rules answered ${r.status}: ${String(r.text).slice(0, 160)}`);
+      made.push(r.body.id);
+      return r.body;
+    };
+    const create = async (tag, priority) => (await http.call(tokens.reporter, "POST", "/materials", { body: materialBody(fv, `rule-${tag}-${Math.random().toString(36).slice(2, 8)}`, { priority }) })).body.id;
+    const gets = async (role, materialId, type) => (await inbox(role)).some((x) => x.material_id === materialId && (!type || x.type === type));
+    try {
+      await rule({ name: "qa normal received to producers", event_type: "material.created", priorities: ["normal"], recipient_roles: ["producer"], channels: ["apns"], assignment: false });
+      await rule({ name: "qa urgent to supervisors, escalated to the editor in chief", event_type: "material.urgent_received", priorities: ["urgent"], recipient_roles: ["supervisor"], channels: ["apns"], assignment: true,
+        escalation: [{ level: 1, after_seconds: stepS, recipient_roles: ["editor_in_chief"], channels: ["apns"] }] });
+      const normal = await create("normal", "normal");
+      const toProducer = await waitFor(async () => gets("producer", normal, "material.created"), { timeoutMs: (limitS + 20) * 1000, everyMs: 150 });
+      check("rule: a normal material reaches the producers the rule names", Boolean(toProducer.value));
+      await sleep(1500);
+      check("rule: the default recipient (the office supervisor) is replaced by the rule's, not added", !(await gets("supervisor", normal)));
+      const open = await create("open", "urgent"), acked = await create("acked", "urgent");
+      const task = await waitFor(async () => (await inbox("supervisor")).find((x) => x.material_id === acked), { timeoutMs: (limitS + 20) * 1000, everyMs: 150 });
+      check("rule: an urgent material is a task for the supervisor (assigned)", task.value?.assignment_state === "assigned", String(task.value?.assignment_state));
+      if (task.value) await http.call(tokens.supervisor, "POST", `/notifications/${task.value.id}/ack`);
+      await sleep((stepS + 6) * 1000);
+      const up = await inbox("editor_in_chief");
+      const level = up.find((x) => x.material_id === open && x.type === "notification.escalated");
+      check(`rule: unacknowledged after ${stepS} s, the rule's step 1 reaches the editor in chief (level 1)`, Boolean(level) && level.escalation_level === 1, JSON.stringify(level?.escalation_level));
+      check("rule: an acknowledged task is not escalated", !up.some((x) => x.material_id === acked && x.type === "notification.escalated"));
+      // what a rule that matches nothing does to the default: the reporter is normally told when a supervisor acknowledges; a rule for that event restricted to important
+      await rule({ name: "qa acknowledged, important only", event_type: "material.acknowledged", priorities: ["important"], recipient_roles: ["reporter"], channels: ["apns"], assignment: false });
+      const quiet = await create("seen", "normal");
+      await http.call(tokens.supervisor, "POST", `/materials/${quiet}/transitions`, { body: { track: "editorial", to: "acknowledged", reason: "qa" } });
+      await sleep(3000);
+      silenced = !(await gets("reporter", quiet, "material.acknowledged"));
+      console.log(silenced ? "FINDING a rule that matches no material silences the default recipient (the reporter was not told): fallback to the defaults is missing" : "ok   a rule that matches no material leaves the default recipient in place");
+      rulesMeasured = true;
+    } finally {
+      for (const id of made) await http.call(tokens.system_admin, "DELETE", `/notification-rules/${id}`).catch(() => {});
+    }
+  } else console.log("note NOTIF_RULES not given (or tokens missing): the admin rules are not measured");
+
+  const full = runs >= 20 && escalationMeasured && rulesMeasured && silenced === false && Boolean(tokens.system_admin) && tokens.supervisor_b;
   finish(doc, fails.length ? "fail" : full ? "pass" : "partial", {
     runs, delivered: lat.length, limit_s: limitS, delivery_s_p50: p50 ?? "n/a", delivery_s_p95: p95 ?? "n/a", duplicates: n.duplicates, stray_recipients: n.strayRecipient,
-    payload_key_violations: n.badKeys, leak_hits: n.leaks, acked: n.acked, reporter_told: n.reporterTold, outbox_events_checked: eventsChecked, escalation_measured: escalationMeasured,
+    payload_key_violations: n.badKeys, leak_hits: n.leaks, acked: n.acked, reporter_told: n.reporterTold, outbox_events_checked: eventsChecked, escalation_measured: escalationMeasured, rules_measured: rulesMeasured, unmatched_rule_silences_default: silenced === null ? "n/a" : silenced,
   }, `${runs} مادة؛ زمن الوصول بالاستطلاع كل 150 مللي ثانية${full ? "" : "؛ أقل من 20 جولة أو بلا التصعيد أو الأحداث أو مشرف المكتب الآخر فلا pass"}`);
   if (args["dry-run"]) writeResult(doc, { dryRun: true }); else console.log("wrote", writeResult(doc, { slug: "api" }));
   return { code: fails.length ? 1 : 0, doc };
