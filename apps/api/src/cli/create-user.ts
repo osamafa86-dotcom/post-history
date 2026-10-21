@@ -1,5 +1,5 @@
 /**
- * إنشاء حساب على مضيف حقيقي (identity/create-user.ts، ADR 0024).
+ * إنشاء حساب على مضيف حقيقي (identity/create-user.ts، ADR 0030).
  *
  *   node dist/cli/create-user.js --email <e> --role <role> [--scope-kind all|office|governorate --scope-id <id>] [--office <officeId>]
  *        --mode one-admin --approver <adminId>                 أي دور غير مدير النظام

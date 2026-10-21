@@ -8,7 +8,7 @@ import { type CreateUserInput, createUser } from '../../src/identity/create-user
 import { parseCreateUserCliArgs } from '../../src/cli/create-user';
 import { createHarness, type Harness, seedUser } from './harness';
 
-describe('account creation on a real host (cli:create-user, ADR 0024)', () => {
+describe('account creation on a real host (cli:create-user, ADR 0030)', () => {
   let h: Harness;
   let db: Database;
   let office: string;
