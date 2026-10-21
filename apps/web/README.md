@@ -88,6 +88,9 @@ node scripts/validate-measurements.mjs
 - نطاق متسق، وساعات هدوء صالحة.
 
 قوائم الأحداث والقنوات والأدوار والحدود يطابقها `contract-drift` مع العقد. الاختبارات في `tests/notification-rules.test.ts` و`e2e/notification-rules.spec.ts`.
+## مكوّنات المتجر (#203 بند 27)
+
+مكوّنات عرض في `src/components/store/`، لا صفحة بعد: بطاقة الكتالوج، والمعاينة بطبقة هوية المشاهد بلا تنزيل، واختيار الترخيص، والسلة. الأشكال في `src/lib/store-format.ts` بنيوية مطابقة لـ `Money` و`LocalizedText` و`CatalogItem` في عقد v0.3 (#178). تُستبدل بالأنواع المولَّدة عند دمجه، ولا تُستدعى نقطة قبل ذلك. المجاميع لكل عملة على حدة، ولا تُجمع USD وILS (ADR 0025). الحصري يُعطَّل حين `exclusive_available=false`، والتجاري يُعلَّم بموافقة الإدارة. الاختبار في `tests/store-components.test.tsx`.
 ## الرفع من الحاسوب (#88)
 
 صفحة `/ar/upload` للمراسل (العقد يحصر `POST /materials` و`POST /uploads` في دوره): اختيار ملفات الكاميرا الكبيرة، ثم بيانات المادة الثابتة والنموذج الديناميكي، ثم لكل ملف بصمة SHA-256 في Worker، ثم `POST /uploads`، ثم tus مباشرة إلى `tus_endpoint` بأجزاء `part_size_bytes`، مع رمز ingest من `POST /uploads/{id}/web-ingest-token` عبر الـBFF. بعد آخر بايت تتابع الصفحة `GET /uploads/{id}` حتى الإيصال، وصفحة المادة تعرض الحالات الثلاث ورقم الإيصال. القرار وحدوده في إضافة ADR 0014.
