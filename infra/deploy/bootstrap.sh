@@ -167,6 +167,7 @@ else
     echo "INGEST_TOKEN_SIGNING_KEY=$(printf '%s\n' "$ingest_priv" | openssl pkcs8 -topk8 -nocrypt -outform DER | base64 -w0)"
     echo "INGEST_TOKEN_KEY_ID=k1"
     echo "INGEST_PORT=8443"
+    echo "INGEST_GATE_TOKEN=$(hex 32)"
     echo "INGEST_REQUIRED=true"   # لا يُطفأ إلا بقرار مكتوب (ADR 0011)
     echo "BACKUP_PG_PASSWORD=$(hex 32)"
     echo "S3_BACKUP_ACCESS_KEY=backup-reader"

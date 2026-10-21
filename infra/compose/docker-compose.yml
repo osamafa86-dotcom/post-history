@@ -185,6 +185,8 @@ services:
       INGEST_TOKEN_KEY_ID: ${INGEST_TOKEN_KEY_ID:-}
       INGEST_REQUIRED: ${INGEST_REQUIRED:-}
       INGEST_TUS_ENDPOINT: ${INGEST_TUS_ENDPOINT:-}
+      # سر بوابة ingest لـ /internal/ingest (حالة جلسة الرفع، SEC-01). فارغ = النقطة ترفض.
+      INGEST_GATE_TOKEN: ${INGEST_GATE_TOKEN:-}
       JWT_SECRET: ${JWT_SECRET}
       FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY}
       # Rotation and break-glass (docs/ops/runbook.md); empty = unset for the API.
@@ -352,5 +354,5 @@ networks:
     ipam:
       config:
         - subnet: 172.30.250.0/29  # fixed: INTERNAL_ALLOWED_CIDRS=172.30.250.2/32 depends on it
-          # Dynamic addresses (API, others) come from .4-.7 only, so nothing can take tusd's .2 first.
+          # Dynamic addresses (API, others) come from .4-.7 only, so nothing can take tusd's .2 or the ingest gate's .3 first.
           ip_range: 172.30.250.4/30

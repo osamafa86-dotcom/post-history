@@ -15,6 +15,9 @@ python3 "$HERE/test_token.py" keygen "$NEXT"    # k2: the next key, trusted duri
 python3 "$HERE/test_token.py" keygen "$OTHER"   # a key the gate does not trust
 
 export INGEST_TOKEN_PUBLIC_KEYS INGEST_TLS_DIR="$KEYS/tls" INGEST_PORT="${INGEST_PORT:-8443}"
+# The token checks alone: these sessions do not exist on the server. The session-state check (SEC-01) is exercised
+# with real sessions in e2e-attested.sh and the field-trial smoke.
+export INGEST_SESSION_CHECK=off
 INGEST_TOKEN_PUBLIC_KEYS="k1:$(cat "$KEYS/public.b64"),k2:$(cat "$NEXT/public.b64")"
 COMPOSE=(docker compose -f "$CDIR/docker-compose.yml" -f "$HERE/compose.ingest.yml"
          ${E2E_EXTRA_COMPOSE:+-f "$E2E_EXTRA_COMPOSE"} --profile api)
