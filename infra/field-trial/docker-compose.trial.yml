@@ -83,7 +83,7 @@ services:
       CADDY_GLOBAL_EXTRA: "${CADDY_GLOBAL_EXTRA:-}"
       CLOUDFLARE_CIDRS: "${CLOUDFLARE_CIDRS:?Cloudflare edge ranges, space separated}"
       API_PORT: "${API_PORT}"
-      TUSD_PORT: "${TUSD_PORT}"
+      INGEST_PORT: "${INGEST_PORT:-8443}"
     volumes:
       - ../field-trial/Caddyfile.main:/etc/caddy/Caddyfile:ro
       - caddy-main-data:/data

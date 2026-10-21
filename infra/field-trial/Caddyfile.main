@@ -34,9 +34,10 @@
 			header_up X-Forwarded-For {client_ip}
 		}
 	}
-	# الرفع: tusd-proxy كما في compose. tusd يبني Location بـ http، والعميل هنا على https.
+	# الرفع عبر بوابة ingest كالنطاق الآخر (ADR 0011): لا يمر طلب tus بلا رمز رفع قصير صالح لجلسته، ولا لجلسة
+	# أُبطلت (فحص حالة الجلسة). البوابة تعيد Location على https والاسم نفسه.
 	handle /files/* {
-		reverse_proxy 127.0.0.1:{$TUSD_PORT} {
+		reverse_proxy 127.0.0.1:{$INGEST_PORT} {
 			flush_interval -1
 			header_down Location ^http:// https://
 			transport http {
