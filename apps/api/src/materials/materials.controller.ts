@@ -3,6 +3,8 @@ import type { Request } from 'express';
 import { validateBody, validateQuery } from '../common/contract';
 import type { components } from '../generated/api';
 import { Roles } from '../identity/principal';
+import { DuplicatesService } from './duplicates.service';
+import { ExportService } from './export.service';
 import { FileDownloadService } from './file-download.service';
 import { type ListQuery, MaterialsService } from './materials.service';
 
@@ -16,7 +18,37 @@ export class MaterialsController {
   constructor(
     private readonly materials: MaterialsService,
     private readonly downloads: FileDownloadService,
+    private readonly exports: ExportService,
+    private readonly duplicates: DuplicatesService,
   ) {}
+
+  // حزمة التصدير بأدوار تنزيل الأصل (العقد v0.2)
+  @Get(':id/export')
+  @Roles('producer', 'editor_in_chief', 'rights_officer', 'system_admin')
+  exportStatus(@Param('id') id: string, @Req() req: Request): Promise<components['schemas']['MaterialExport']> {
+    return this.exports.status(req.principal!, id);
+  }
+
+  @Post(':id/export')
+  @HttpCode(202)
+  @Roles('producer', 'editor_in_chief', 'rights_officer', 'system_admin')
+  requestExport(@Param('id') id: string, @Req() req: Request): Promise<components['schemas']['MaterialExport']> {
+    return this.exports.request(req.principal!, id);
+  }
+
+  @Get(':id/export/download-url')
+  @Roles('producer', 'editor_in_chief', 'rights_officer', 'system_admin')
+  @Header('Cache-Control', 'no-store')
+  exportDownloadUrl(@Param('id') id: string, @Req() req: Request): Promise<components['schemas']['FileDownloadUrl']> {
+    return this.exports.downloadUrl(req.principal!, id);
+  }
+
+  @Get(':id/duplicates')
+  @Roles('supervisor', 'producer', 'editor_in_chief', 'rights_officer', 'system_admin')
+  listDuplicates(@Param('id') id: string, @Query() query: Record<string, unknown>, @Req() req: Request): Promise<{ items: components['schemas']['DuplicateCandidate'][] }> {
+    const q = validateQuery<{ limit?: number }>('/materials/{id}/duplicates', 'get', query);
+    return this.duplicates.list(req.principal!, id, q.limit);
+  }
 
   @Get(':id/files/:fileId/download-url')
   @Roles(...READERS)

@@ -66,6 +66,10 @@ export class IdempotencyInterceptor implements NestInterceptor {
             return body;
           }),
           catchError((err: unknown) => {
+            // المعالج يرمي StoredResponse ليرد بحالة نجاح غير حالته الافتراضية (200 لطلب تصدير قائم بدل 202): تُحفظ كما هي
+            if (err instanceof StoredResponse) {
+              return from(this.complete(userId, key, err.status, err.body).catch(() => undefined)).pipe(mergeMap(() => throwError(() => err)));
+            }
             const { status, body } = toErrorResponse(err, req.id ?? '');
             const settle =
               status < 500 && (err instanceof ApiError || err instanceof HttpException)
