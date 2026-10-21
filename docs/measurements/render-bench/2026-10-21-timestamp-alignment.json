@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "media",
+  "test_name": "timestamp-alignment",
+  "started_at": "2026-10-21T20:54:58.803Z",
+  "ended_at": "2026-10-21T20:55:59.897Z",
+  "result": "partial",
+  "device": {
+    "platform": "server",
+    "model": "4 vCPU"
+  },
+  "upload_path": "n/a",
+  "file": {
+    "duration_s": 60.0,
+    "codec": "h264",
+    "vfr": true,
+    "hdr": false
+  },
+  "metrics": {
+    "files": 10,
+    "offset_error_ms_max": 0.8,
+    "offset_error_ms_mean": 0.4,
+    "confidence_min": 0.98,
+    "reliable_files": 10,
+    "measure_s_max": 0.76,
+    "threshold_ms": 40.0,
+    "seed": 20261021,
+    "ffmpeg_version": "8.0.1"
+  },
+  "notes": "مطابقة الطوابع الزمنية (الشق الآلي): عشرة أصول اصطناعية 60 ث بمعدل متغير وفجوة 2 ث في الصورة وبداية عشوائية، وصوت كالكلام؛ ونسخة هاتف 240p تبدأ بعد الأصل بمقدار عشوائي وطوابعها مصفَّرة. media_worker.align: غلاف الطاقة اللوغاريتمي لكل 10 ms على خط زمن كل ملف، وارتباط بيرسون على كل إزاحة في ±10 ث. أكبر خطأ 0.8 ms ومتوسطه 0.4 ms، والملفات العشرة موثوقة (ارتباط ≥ 0.5 وفارق عن ثاني قمة ≥ 0.05)، وأطول قياس 0.76 ث. وجدت المحاولة الأولى (غلاف البدايات مجمّعًا إلى 100 ms) قممًا خاطئة في أربعة ملفات، فاستُبدل بالبحث الكامل. partial: ملفات الهواتف الحقيقية يقيسها السكربت الميداني tools/acceptance/field/timestamp-alignment.md بالأداة نفسها (python -m media_worker align)."
+}
