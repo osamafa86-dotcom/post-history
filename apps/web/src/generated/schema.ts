@@ -946,6 +946,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/settings/reporter-identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** من يرى الاسم الحقيقي للمراسل (ADR 0021) */
+        get: operations["getReporterIdentitySetting"];
+        /**
+         * تغيير الصلاحية التي تكشف الاسم الحقيقي للمراسل
+         * @description `separate` (الافتراضي): يلزم `reporter_identity:read`. `protected_source`: يكفي `protected_source:read`. يُسجَّل كل تغيير في التدقيق (`setting`، `value`، `reason_code`) ويُكتب حدث `setting.changed` في المعاملة نفسها، فيُبلَّغ مديرو النظام كلهم. القيمة نفسها مرة ثانية لا تكتب حدثًا ولا تدقيقًا.
+         */
+        put: operations["updateReporterIdentitySetting"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/push-devices": {
         parameters: {
             query?: never;
@@ -1072,10 +1093,10 @@ export interface components {
             permissions: components["schemas"]["Permission"][];
         };
         /**
-         * @description صلاحية مستقلة تُمنح لمستخدم بعينه لا لدور (قرار المالك 2026-10-19، ADR SEC-03)
+         * @description صلاحية مستقلة تُمنح لمستخدم بعينه لا لدور (قرار المالك 2026-10-19، ADR SEC-03). `reporter_identity:read` للاسم الحقيقي للمراسل حين يكون الإعداد `separate` (ADR 0021).
          * @enum {string}
          */
-        Permission: "sensitive_location:read" | "protected_source:read";
+        Permission: "sensitive_location:read" | "protected_source:read" | "reporter_identity:read";
         Role: {
             name: components["schemas"]["RoleName"];
             /** @description المكاتب أو المحافظات التي يراها الدور؛ فارغ = كل شيء (لمدير النظام ورئيس التحرير) */
@@ -1344,7 +1365,7 @@ export interface components {
              * @description متى؛ أُضيف في v0.2 فقد يغيب
              */
             acknowledged_at?: string | null;
-            /** @description الاسم الحقيقي للمراسل (v0.2). يعود لحامل `protected_source:read` وحده، ويغيب المفتاح لغيره؛ كل قراءة تُسجَّل في التدقيق (`material.sensitive_read`، `field_keys: [reporter_legal_name]`). لا يدخل إشعارًا ولا حدثًا ولا تصديرًا. `null` = غير مسجّل. */
+            /** @description الاسم الحقيقي للمراسل (v0.2). الصلاحية التي تكشفه يحددها الإعداد الإداري `reporter_legal_name_access` (`/admin/settings/reporter-identity`، ADR 0021): `reporter_identity:read` حين يكون `separate` (الافتراضي)، و`protected_source:read` حين يكون `protected_source`. يغيب المفتاح عمّن لا يحمل الصلاحية الفعّالة. كل قراءة تُسجَّل في التدقيق (`material.sensitive_read`، `field_keys: [reporter_legal_name]`). لا يدخل إشعارًا ولا حدثًا ولا تصديرًا. `null` = غير مسجّل. */
             reporter_legal_name?: string | null;
             files: components["schemas"]["MaterialFile"][];
             /** @description مفاتيح `dynamic_fields` التي حُذفت من هذه الاستجابة بقاعدة الحجب (حقول `sensitive` أو `location`) لأن المستدعي لا يحمل الصلاحية المقابلة؛ فارغة لحاملها. */
@@ -1768,6 +1789,29 @@ export interface components {
             mime_type?: "image/jpeg" | "image/webp" | "video/mp4" | "application/vnd.apple.mpegurl" | "audio/mp4" | "application/json" | "application/zip" | "text/vtt";
             technical: components["schemas"]["MediaTechnical"];
         } & (unknown & unknown & unknown & unknown);
+        /**
+         * @description `separate` = يلزم `reporter_identity:read`؛ `protected_source` = يكفي `protected_source:read`
+         * @enum {string}
+         */
+        ReporterIdentityAccess: "separate" | "protected_source";
+        ReporterIdentitySetting: {
+            access: components["schemas"]["ReporterIdentityAccess"];
+            /** Format: date-time */
+            updated_at: string;
+            /**
+             * Format: uuid
+             * @description `null` = القيمة الافتراضية لم تُغيَّر
+             */
+            updated_by: string | null;
+        };
+        ReporterIdentitySettingUpdate: {
+            access: components["schemas"]["ReporterIdentityAccess"];
+            /**
+             * @description سبب مرمّز للتدقيق؛ لا نص حر
+             * @enum {string}
+             */
+            reason_code: "policy_change" | "operational_need" | "incident_response" | "audit_finding";
+        };
         MaterialExport: {
             /**
              * @description `none` = لم يُطلب بعد
@@ -2205,7 +2249,7 @@ export interface components {
             /** @description تسلسلي متزايد (رقم الصف في جدول Outbox) بصيغة نصية؛ يُستخدم مؤشرًا في `after` */
             id: string;
             /** @enum {string} */
-            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested";
+            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed";
             /** @enum {string} */
             aggregate_type: "material" | "upload" | "notification" | "form" | "user";
             /** Format: uuid */
@@ -2244,7 +2288,7 @@ export interface components {
                 /** @enum {string} */
                 priority: "urgent" | "important" | "normal";
             };
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
     };
     responses: {
         /** @description طلب غير صالح (معاملات استعلام أو مؤشر غير مفهوم) */
@@ -3451,6 +3495,8 @@ export interface operations {
                 sid: string;
                 /** @description جلسة الدخول (مطالبة `ses`)، لرموز الويب وحدها */
                 ses?: string;
+                /** @description فئة مفتاح التوقيع الذي تحقّقت به البوابة من الرمز: `production` (الافتراضي حين يغيب) أو `qa` لمفتاح اختبار معرّفه (`kid`) ببادئة `qa-`. مع `qa` يرد الخادم `204` فقط إن كانت جلسة الرفع مملوكة لحساب القبول المسمّى في إعداده، وإلا `403` كبقية الحالات. */
+                key_class?: "production" | "qa";
             };
             header?: never;
             path?: never;
@@ -3999,6 +4045,58 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    getReporterIdentitySetting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الإعداد */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReporterIdentitySetting"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    updateReporterIdentitySetting: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReporterIdentitySettingUpdate"];
+            };
+        };
+        responses: {
+            /** @description الإعداد بعد التغيير */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReporterIdentitySetting"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     registerPushDevice: {
