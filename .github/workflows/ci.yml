@@ -308,7 +308,7 @@ jobs:
       - name: Proxy A/V sync on synthetic marker clips (tools/render-bench)
         run: |
           docker run --rm -v "$PWD/tools/render-bench:/bench:ro" -w /bench -e PYTHONPATH=/app/src:/bench \
-            media-worker:test python -m pytest -q -p no:cacheprovider test_av_sync.py
+            media-worker:test python -m pytest -q -p no:cacheprovider test_av_sync.py test_cut_export.py
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
