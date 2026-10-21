@@ -11,8 +11,9 @@
 //   AVAIL_TRIAL_HOST=1         the operator states this runs on the trial host, not on a CI runner; without it the result is partial
 //   AVAIL_LOAD=4  AVAIL_BASELINE_MS=4000  AVAIL_SETTLE_MS=6000  AVAIL_TIMEOUT_MS=120000
 // On the trial host (AVAIL_TRIAL_HOST=1) it refuses to start without --maintenance-window (the outage is real), and it runs only as the
-// acceptance account: AVAIL_ACCEPTANCE_EMAIL must be the token's own account. The canary material is labelled `availability-canary-`, deleted
-// after the measurement, and the deletion is proven by a 404; with no delete endpoint (the contract has none yet) it stays and the result cannot be `pass`.
+// acceptance account: AVAIL_ACCEPTANCE_EMAIL must be the token's own account. Materials are never deleted (by design), so the canary is titled
+// "[كناري] …" and withdrawn afterwards: the acceptance supervisor (AVAIL_SUPERVISOR_TOKEN) moves it to the final editorial state `rejected`
+// with the coded reason `availability_canary`, and the script reads it back to prove it. Without that token the canary stays and the result cannot be `pass`.
 // `pass` needs a declared target, the trial host and every scenario recovered within it with the marker intact. Single instance:
 // there is no second API to take the traffic, so a deploy here is an outage window, which the number states.
 import { execFile } from "node:child_process";
@@ -75,7 +76,7 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
   }
 
   const fv = (await http.get(env.AVAIL_TOKEN, "/forms/current")).body?.version;
-  const marker = await http.call(env.AVAIL_TOKEN, "POST", "/materials", { body: materialBody(fv, `availability-canary-${Date.now().toString(36)}`) });
+  const marker = await http.call(env.AVAIL_TOKEN, "POST", "/materials", { body: materialBody(fv, `[كناري] availability-${Date.now().toString(36)}`) });
   if (marker.status !== 201 || !marker.body?.id) { console.error(`ENVIRONMENT: the marker material was not created (${marker.status}); nothing measured`); return { code: 2, doc: null }; }
 
   async function scenario(name, action) {
@@ -110,17 +111,21 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
   const markerIntact = still.status === 200 && still.body?.id === marker.body.id;
   console.log(`${markerIntact ? "ok  " : "FAIL"} the marker material written before the database was killed is still readable (${still.status})`);
   results.deploy = await scenario("deploy", () => exec(`${env.AVAIL_COMPOSE} up -d --no-deps --force-recreate ${api}`));
-  // The canary goes: deleted and proven gone. A contract without a delete endpoint (404/405) leaves it, and that is reported, not hidden.
-  const del = await http.call(env.AVAIL_TOKEN, "DELETE", `/materials/${marker.body.id}`);
-  const gone = del.status < 300 && (await http.get(env.AVAIL_TOKEN, `/materials/${marker.body.id}`)).status === 404;
-  console.log(`${gone ? "ok  " : "NOTE"} the canary material was ${gone ? "deleted and is gone" : `NOT deleted (DELETE answered ${del.status}; the contract has no delete endpoint)`}`);
+  // The canary is withdrawn, not deleted (the contract has no delete): rejected with a coded reason, and read back to prove it.
+  let withdrawn = false;
+  if (env.AVAIL_SUPERVISOR_TOKEN) {
+    const tr = await http.call(env.AVAIL_SUPERVISOR_TOKEN, "POST", `/materials/${marker.body.id}/transitions`, { body: { track: "editorial", to: "rejected", reason: "availability_canary" } });
+    const after = tr.status === 200 ? (await http.get(env.AVAIL_SUPERVISOR_TOKEN, `/materials/${marker.body.id}`)).body : null;
+    withdrawn = after?.editorial_state === "rejected" && String(after?.title ?? "").startsWith("[كناري]");
+    console.log(`${withdrawn ? "ok  " : "FAIL"} the canary material was withdrawn (editorial rejected, title starts with [كناري]) (${tr.status})`);
+  } else console.log("NOTE the canary material stays inbox: no AVAIL_SUPERVISOR_TOKEN to withdraw it");
 
   const all = Object.values(results);
   const recovered = all.every((r) => r.recovered && r.baseline_failures === 0);
   const worst = Math.max(...all.map((r) => r.downtime_s ?? Infinity));
   const withinTarget = target !== null && worst <= target;
-  const result = !recovered || !markerIntact ? "fail" : target !== null && trialHost && withinTarget && gone ? "pass" : "partial";
-  const metrics = { marker_intact: markerIntact, canary_deleted: gone, load_workers: load, worst_downtime_s: Number.isFinite(worst) ? Number(worst.toFixed(3)) : -1, target_s: target ?? -1, trial_host: trialHost };
+  const result = !recovered || !markerIntact || (env.AVAIL_SUPERVISOR_TOKEN && !withdrawn) ? "fail" : target !== null && trialHost && withinTarget && withdrawn ? "pass" : "partial";
+  const metrics = { marker_intact: markerIntact, canary_withdrawn: withdrawn, load_workers: load, worst_downtime_s: Number.isFinite(worst) ? Number(worst.toFixed(3)) : -1, target_s: target ?? -1, trial_host: trialHost };
   for (const [k, r] of Object.entries(results)) {
     const key = k.replace("-", "_");
     metrics[`${key}_downtime_s`] = r.downtime_s === null ? -1 : Number(r.downtime_s.toFixed(3));
@@ -128,7 +133,7 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
     metrics[`${key}_requests`] = r.requests;
   }
   finish(doc, result, metrics,
-    `إسقاط الخادم (SIGKILL) وقاعدة البيانات (SIGKILL) وإعادة إنشاء حاوية الخادم (ما يفعله النشر لنسخة واحدة) تحت قراءة متواصلة (${load} عامل كل ${gapMs} مللي ثانية) عبر العنوان الذي يصله العملاء؛ الأرقام زمن انقطاع القراءة حتى استقرارها (-1 = لم تتعافَ). نسخة خادم واحدة: لا نسخة ثانية تتلقى الحركة أثناء النشر، فالنشر انقطاع بالرقم المذكور. ${target === null ? "لا هدف تعافٍ معلن من الإدارة (قرار 8) فلا حكم pass." : `الهدف المعلن ${target} ث.`} ${gone ? "" : "مادة الكناري باقية (لا نقطة حذف في العقد): لا pass حتى تُحذف. "}${trialHost ? "" : "لم يُصرَّح أنه مضيف التجربة (AVAIL_TRIAL_HOST=1): قياس بيئة اختبار لا يثبت الهدف."}`);
+    `إسقاط الخادم (SIGKILL) وقاعدة البيانات (SIGKILL) وإعادة إنشاء حاوية الخادم (ما يفعله النشر لنسخة واحدة) تحت قراءة متواصلة (${load} عامل كل ${gapMs} مللي ثانية) عبر العنوان الذي يصله العملاء؛ الأرقام زمن انقطاع القراءة حتى استقرارها (-1 = لم تتعافَ). نسخة خادم واحدة: لا نسخة ثانية تتلقى الحركة أثناء النشر، فالنشر انقطاع بالرقم المذكور. ${target === null ? "لا هدف تعافٍ معلن من الإدارة (قرار 8) فلا حكم pass." : `الهدف المعلن ${target} ث.`} ${withdrawn ? "" : "مادة الكناري لم تُسحب (انتقال تحريري إلى rejected يتطلب AVAIL_SUPERVISOR_TOKEN): لا pass. "}${trialHost ? "" : "لم يُصرَّح أنه مضيف التجربة (AVAIL_TRIAL_HOST=1): قياس بيئة اختبار لا يثبت الهدف."}`);
   if (args["dry-run"]) writeResult(doc, { dryRun: true }); else console.log("wrote", writeResult(doc, { slug: "api" }));
   return { code: result === "fail" ? 1 : 0, doc };
 }
