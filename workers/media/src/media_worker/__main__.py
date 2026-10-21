@@ -1,4 +1,5 @@
-"""python -m media_worker serve (الخدمة) | requeue-dead REASON | {probe,digest,proxy} FILE [OUT] (للتجربة والقياس)"""
+"""python -m media_worker serve (الخدمة) | requeue-dead REASON | {probe,digest,proxy} FILE [OUT] | align PROXY ORIGINAL
+(للتجربة والقياس؛ `align` أداة الوسائط في سكربت القبول الميداني timestamp-alignment)"""
 
 from __future__ import annotations
 
@@ -22,6 +23,9 @@ def main() -> None:
     p = sub.add_parser("proxy")
     p.add_argument("file", type=Path)
     p.add_argument("out", type=Path)
+    a = sub.add_parser("align")
+    a.add_argument("proxy", type=Path)
+    a.add_argument("original", type=Path)
     args = parser.parse_args()
 
     if args.cmd == "requeue-dead":
@@ -38,6 +42,10 @@ def main() -> None:
         out = probe(args.file).to_dict()
     elif args.cmd == "digest":
         out = asdict(digest_file(args.file))
+    elif args.cmd == "align":
+        from .align import measure_offset
+
+        out = measure_offset(args.proxy, args.original)
     else:
         out = make_proxy(args.file, args.out).to_dict()
     print(json.dumps(out, indent=2))
