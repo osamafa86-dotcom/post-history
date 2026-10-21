@@ -1,0 +1,234 @@
+# معاينة خفيفة على خادم مشترك (ADR 0023): Postgres وRedis وMinIO والخادم والويب فقط، بصور مبنية في CI
+# (preview-images.yml، لا بناء هنا). بلا tusd ولا بوابة ولا عامل وسائط ولا تفريغ. على الخادم، من هذا المجلد:
+#   ./gen-env.sh            # مرة: .env بأسرار عشوائية وشهادة داخلية في tls/، لا يطبع شيئًا سريًا
+#   docker load < ...       # الصورتان من الإصدار preview-latest (تُتحقق ببصمة sha256 أولًا)
+#   docker compose -f docker-compose.preview.yml up -d --wait
+#   ./seed-preview.sh       # مرة: حسابات تجريبية ومواد اصطناعية؛ كلمات السر في .env لا في المخرج
+# لا منفذ على المضيف: الوكيل الأمامي للخادم (Caddy) يصل إلى "web" وحده عبر الشبكة الخارجية deploy_default باسم lib-web.
+# الحدود: mem_limit لكل خدمة وmemswap_limit مساوٍ له (بلا swap)، والمجموع 880 MB تحت سقف 900 MB.
+name: post-history-preview
+
+x-limits: &hardened
+  restart: unless-stopped
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+
+services:
+  postgres:
+    <<: *hardened
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    # The entrypoint drops to the postgres user itself, so it needs these back (cap_drop ALL above).
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    command: ["postgres", "-c", "shared_buffers=16MB", "-c", "max_connections=30", "-c", "work_mem=2MB",
+              "-c", "maintenance_work_mem=16MB", "-c", "effective_cache_size=48MB", "-c", "max_wal_size=96MB",
+              "-c", "wal_buffers=1MB"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set in .env (gen-env.sh)}
+      POSTGRES_USER: ${POSTGRES_USER:?}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.5
+    networks: [internal]
+
+  redis:
+    <<: *hardened
+    image: redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    # Runs as redis directly (the shell command skips the image's own drop from root), so /data stays its own.
+    user: redis
+    # كلمة المرور من البيئة إلى ملف إعداد لا إلى سطر الأوامر (SEC-05)؛ سقف ذاكرة داخلي تحت حد الحاوية.
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?}"
+    command:
+      - sh
+      - -c
+      - umask 077 && printf 'requirepass "%s"\nappendonly yes\nmaxmemory 20mb\nmaxmemory-policy volatile-lru\n' "$$REDIS_PASSWORD" > /tmp/redis.conf && exec redis-server /tmp/redis.conf
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    mem_limit: 40m
+    memswap_limit: 40m
+    cpus: 0.25
+    networks: [internal]
+
+  minio:
+    <<: *hardened
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?}
+      MINIO_BROWSER: "off"
+      GOMEMLIMIT: 96MiB
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.5
+    networks: [internal]
+
+  minio-init:
+    image: pgsty/mc:RELEASE.2026-10-18T00-00-00Z@sha256:6ecdaec70bc5e8cf9d0e9a70c190f3beb1c83f11617ff4333f1fcd71ab1daf18
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["sh", "-c", "mc --config-dir /tmp/mc alias set local http://minio:9000 \"$$S3_ACCESS_KEY\" \"$$S3_SECRET_KEY\" >/dev/null && mc --config-dir /tmp/mc mb --ignore-existing \"local/$$S3_BUCKET_UPLOADS\" \"local/$$S3_BUCKET_MEDIA\""]
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET_UPLOADS: ${S3_BUCKET_UPLOADS:?}
+      S3_BUCKET_MEDIA: ${S3_BUCKET_MEDIA:?}
+    restart: "no"
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: ["/tmp:size=4m"]
+    mem_limit: 32m
+    memswap_limit: 32m
+    cpus: 0.25
+    networks: [internal]
+
+  api:
+    <<: *hardened
+    image: post-history-preview-api:latest
+    pull_policy: never
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    read_only: true
+    tmpfs: ["/tmp:size=16m"]
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=144
+      HOST: 0.0.0.0
+      PORT: "3000"
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_POOL_MAX: "6"
+      VERIFY_CONCURRENCY: "1"
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      JWT_SECRET: ${JWT_SECRET:?}
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?}
+      TUSD_HOOK_SECRET: ${TUSD_HOOK_SECRET:?}
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET_UPLOADS: ${S3_BUCKET_UPLOADS}
+      S3_BUCKET_MEDIA: ${S3_BUCKET_MEDIA}
+      # معاينة فقط، لا تُنقل إلى التجربة: الرفع والشهادة والتفريغ والإشعارات الخارجية معطّلة صراحة.
+      # لا tusd هنا، فجلسة الرفع إن أُنشئت لا تقبل بايتًا؛ ولا شهادة جهاز ولا رمز ingest؛ ولا رمز لعامل التفريغ.
+      ATTESTATION_MODE: "off"
+      INGEST_REQUIRED: "false"
+      TUS_PUBLIC_ENDPOINT: https://preview.invalid/files/
+      UPLOAD_RECONCILE_ENABLED: "false"
+      AI_WORKER_TOKEN: ""
+      MEDIA_WORKER_TOKEN: ""
+      PUSH_DELIVERY_ENABLED: "false"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+      start_period: 60s
+    mem_limit: 224m
+    memswap_limit: 224m
+    cpus: 0.75
+    networks: [internal]
+
+  web-app:
+    <<: *hardened
+    image: post-history-preview-web:latest
+    pull_policy: never
+    depends_on:
+      api:
+        condition: service_healthy
+    read_only: true
+    tmpfs: ["/tmp:size=16m", "/app/.next/cache:size=16m,uid=1000,gid=1000"]
+    environment:
+      NODE_OPTIONS: --max-old-space-size=160
+      WEB_ORIGIN: https://${PREVIEW_DOMAIN:?the preview domain, in .env only (never in the repository)}
+      # The BFF requires https to the API: "web" terminates an internal TLS listener for it (certificate from gen-env.sh).
+      API_BASE_URL: https://api.lib.internal:8443/v1
+      NODE_EXTRA_CA_CERTS: /tls/ca.crt
+      WEB_SESSION_KEY: ${WEB_SESSION_KEY:?}
+      WEB_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+    volumes:
+      - ./tls/ca.crt:/tls/ca.crt:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3100/').then(r => process.exit(r.status < 500 ? 0 : 1), () => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.75
+    networks: [internal]
+
+  # The only service on the shared server's network: X-Robots-Tag noindex, the "preview" banner, and the internal TLS
+  # listener the BFF needs for the API (bound to its address on the internal network alone).
+  web:
+    <<: *hardened
+    image: nginx:1.28.3-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+    depends_on:
+      web-app:
+        condition: service_started
+    user: "101:101"
+    read_only: true
+    tmpfs: ["/tmp:size=8m"]
+    environment:
+      PREVIEW_EDGE_IP: ${PREVIEW_EDGE_IP:-10.211.47.10}
+    entrypoint: ["sh", "-c", "sed \"s/@EDGE_IP@/$$PREVIEW_EDGE_IP/\" /etc/nginx/edge.conf.in > /tmp/edge.conf && exec nginx -c /etc/nginx/nginx.conf -g 'daemon off;'"]
+    volumes:
+      - ./edge/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./edge/edge.conf.in:/etc/nginx/edge.conf.in:ro
+      - ./tls/api.crt:/tls/api.crt:ro
+      - ./tls/api.key:/tls/api.key:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/robots.txt"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    mem_limit: 24m
+    memswap_limit: 24m
+    cpus: 0.25
+    networks:
+      internal:
+        ipv4_address: ${PREVIEW_EDGE_IP:-10.211.47.10}
+        aliases: [api.lib.internal]
+      deploy_default:
+        aliases: [lib-web]
+
+networks:
+  internal:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${PREVIEW_SUBNET:-10.211.47.0/24}
+  deploy_default:
+    external: true
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

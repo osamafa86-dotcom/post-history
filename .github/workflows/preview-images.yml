@@ -1,0 +1,72 @@
+name: preview-images
+
+# Light preview on a shared server (ADR 0023): the API and web images are built here, never on the server. Every run
+# brings the preview compose up on the freshly built images (health, a demo login through the web, no host port, the
+# memory limits and actual use under 900 MB). On main (and by hand) the images then go as gzipped tars, with their
+# sha256, onto the fixed prerelease "preview-latest": the repository is public, so the server downloads them with no
+# token and runs `docker load`. No registry: personal packages are private by default.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - "apps/web/**"
+      - "contracts/**"
+      - "infra/preview/**"
+      - ".github/workflows/preview-images.yml"
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "apps/web/**"
+      - "contracts/**"
+      - "infra/preview/**"
+      - ".github/workflows/preview-images.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  images:
+    name: preview images (build, smoke under 900 MB, publish on main)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write  # the preview-latest release assets, on main and by hand only
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build the API and web images
+        run: |
+          docker build -q -f infra/preview/api.Dockerfile -t post-history-preview-api:latest .
+          docker build -q -f infra/preview/web.Dockerfile -t post-history-preview-web:latest .
+          docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep post-history-preview
+      - name: Images run as a non-root user and carry no secret-looking environment
+        run: |
+          for i in api web; do
+            img=post-history-preview-$i:latest
+            [ "$(docker image inspect -f '{{.Config.User}}' "$img")" = node ] || { echo "$img: not the node user"; exit 1; }
+            if docker image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$img" | grep -iE '(secret|password|token|key)='; then
+              echo "$img: secret-looking variable baked in"; exit 1; fi
+          done
+      - name: Preview compose on these images (health, demo login through the web, memory under 900 MB)
+        run: MEASURE_HOST="GitHub-hosted runner (ubuntu-24.04)" infra/preview/smoke-preview.sh --json "$RUNNER_TEMP/preview-memory.json"
+      - name: Memory measurement
+        if: always()
+        run: cat "$RUNNER_TEMP/preview-memory.json" 2>/dev/null || true
+      - name: Publish to the preview-latest prerelease
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          out="$RUNNER_TEMP/preview" && mkdir -p "$out"
+          for i in api web; do docker save "post-history-preview-$i:latest" | gzip -6 > "$out/post-history-preview-$i.tar.gz"; done
+          printf 'commit %s\nbuilt %s\n' "$GITHUB_SHA" "$(date -u +%FT%TZ)" > "$out/preview-manifest.txt"
+          (cd "$out" && sha256sum post-history-preview-api.tar.gz post-history-preview-web.tar.gz preview-manifest.txt > SHA256SUMS)
+          gh release view preview-latest >/dev/null 2>&1 || gh release create preview-latest --prerelease --target "$GITHUB_SHA" \
+            --title "preview-latest" --notes "Light preview images (ADR 0023), rebuilt on every change to main; the commit is in preview-manifest.txt. Not for the field trial."
+          gh release upload preview-latest "$out"/*.tar.gz "$out/preview-manifest.txt" "$out/SHA256SUMS" --clobber
+          cat "$out/SHA256SUMS"
