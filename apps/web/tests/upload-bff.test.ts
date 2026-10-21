@@ -109,3 +109,21 @@ describe("upload policy", () => {
     expect(hex).toBe(createHash("sha256").update(bytes).digest("hex")); expect(seen.at(-1)).toBe(bytes.length); expect(seen).toHaveLength(6);
   });
 });
+
+describe("upload center BFF", () => {
+  it("lists only the caller's sessions with safe fields and validated filters", async () => {
+    const { result, calls } = await call("uploads?state=in_progress&state=created&limit=20", { method: "GET", upstream: () => Response.json({ items: [{ ...created, tus_metadata: { filename: "secret.mov", upload_session_id: sessionId } }], next_cursor: null }) });
+    const data = await result.json();
+    expect(result.status).toBe(200); expect(JSON.stringify(data)).not.toMatch(/secret\.mov|upload-secret|tus_endpoint/);
+    expect(new URL(calls[0].url).searchParams.getAll("state")).toEqual(["in_progress", "created"]);
+    for (const query of ["state=bogus", "limit=0", "material_id=x", "other=1"]) expect((await call(`uploads?${query}`, { method: "GET" })).result.status).toBe(400);
+    expect((await call("uploads", { method: "GET", user: { ...me, roles: [{ name: "rights_officer", scopes: [] }] } })).result.status).toBe(403);
+  });
+  it("aborts a session with the caller's idempotency key", async () => {
+    const key = randomUUID();
+    const { result, calls } = await call(`uploads/${sessionId}`, { method: "DELETE", headers: { "Idempotency-Key": key }, upstream: () => new Response(null, { status: 204 }) });
+    expect(result.status).toBe(204); expect(calls[0].method).toBe("DELETE"); expect(calls[0].headers.get("Idempotency-Key")).toBe(key);
+    const done = await call(`uploads/${sessionId}`, { method: "DELETE", upstream: () => Response.json({ code: "upload_state_conflict" }, { status: 409 }) });
+    expect(done.result.status).toBe(409);
+  });
+});
