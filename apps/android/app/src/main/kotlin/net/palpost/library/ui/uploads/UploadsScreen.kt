@@ -171,6 +171,7 @@ private fun failureLabel(t: UploadTaskEntity): String = stringResource(
         UploadFailure.FILE_UNAVAILABLE -> R.string.upload_failure_file_unavailable
         UploadFailure.STORAGE_ERROR -> R.string.upload_failure_storage
         UploadFailure.ABORTED -> R.string.upload_failure_aborted
+        UploadFailure.DEVICE_NOT_TRUSTED -> R.string.upload_failure_device_not_trusted
         UploadFailure.UNKNOWN, null -> R.string.upload_failure_unknown
     },
 )
