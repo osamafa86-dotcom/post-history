@@ -895,7 +895,7 @@ export const licenseTemplateVersions = pgTable("license_template_versions", {
 		}),
 	primaryKey({ columns: [table.templateId, table.version], name: "license_template_versions_pkey"}),
 	check("license_template_versions_currency_check", sql`currency = ANY (ARRAY['USD'::text, 'ILS'::text])`),
-	check("license_template_versions_deliverables_check", sql`(cardinality(deliverables) >= 1) AND (deliverables <@ ARRAY['original'::text, 'produced'::text, 'audio'::text, 'stills'::text, 'transcript'::text])`),
+	check("license_template_versions_deliverables_check", sql`(cardinality(deliverables) >= 1) AND (deliverables <@ ARRAY['original'::text, 'produced'::text, 'audio'::text, 'stills'::text])`),
 	check("license_template_versions_exclusivity_check", sql`((type = 'exclusive_temporary'::text) = (exclusivity_hours IS NOT NULL)) AND ((exclusivity_hours IS NULL) OR ((exclusivity_hours >= 24) AND (exclusivity_hours <= 168)))`),
 	check("license_template_versions_price_check", sql`(base_price_minor >= 0) AND (base_price_minor <= '100000000000'::bigint)`),
 	check("license_template_versions_prohibitions_check", sql`prohibitions <@ ARRAY['resale'::text, 'advertising'::text, 'ai_training'::text, 're_editing'::text]`),

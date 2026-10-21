@@ -3576,7 +3576,10 @@ components:
           type: array
           minItems: 1
           uniqueItems: true
-          items: { type: string, enum: [original, produced, audio, stills, transcript] }
+          description: >-
+            ما يُسلَّم للمشتري. التفريغ والترجمة لا يُرخَّصان ولا يُصدَّران (threat-model §9.1، R11) حتى ADR للحجب الآلي
+            للأسماء؛ `transcript` يُرفض `422`.
+          items: { type: string, enum: [original, produced, audio, stills] }
         attribution:
           $ref: "#/components/schemas/LocalizedText"
         prohibitions:

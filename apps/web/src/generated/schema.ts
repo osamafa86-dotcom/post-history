@@ -2323,7 +2323,8 @@ export interface components {
             term_days?: number | null;
             /** @description مدة الحصرية؛ لـ `exclusive_temporary` وحده (24–168 ساعة)، و`null` لغيره */
             exclusivity_hours?: number | null;
-            deliverables: ("original" | "produced" | "audio" | "stills" | "transcript")[];
+            /** @description ما يُسلَّم للمشتري. التفريغ والترجمة لا يُرخَّصان ولا يُصدَّران (threat-model §9.1، R11) حتى ADR للحجب الآلي للأسماء؛ `transcript` يُرفض `422`. */
+            deliverables: ("original" | "produced" | "audio" | "stills")[];
             attribution: components["schemas"]["LocalizedText"];
             /** @description المحظورات؛ `ai_training` محظور دائمًا إلا بإذن مستقل خارج القالب */
             prohibitions: ("resale" | "advertising" | "ai_training" | "re_editing")[];
