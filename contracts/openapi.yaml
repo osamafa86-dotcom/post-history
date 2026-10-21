@@ -538,9 +538,10 @@ paths:
         تُنشأ المادة بحالاتها الابتدائية `pending`/`inbox`/`unknown` وبحدث `material.created`
         (و`material.urgent_received` إن كانت الأولوية عاجلة) في Outbox داخل المعاملة نفسها.
         يتحقق الخادم من `dynamic_fields` بمخطط النموذج ذي الإصدار `form_version`. إن أُرسل `contributors`
-        وجب أن يكون مجموع الحصص 100 بالضبط وإلا `422 shares_not_100`.
+        وجب أن يكون مجموع الحصص 100 بالضبط وإلا `422 shares_not_100`. ينشئها المراسل من التطبيق، أو الطاقم والإنتاج
+        من الويب لملفات الكاميرات (#88). `reporter_id` هو المنشئ في الحالتين، والمادة تقع في نطاقه وفي نطاق مكتبه.
       operationId: createMaterial
-      x-roles: [reporter]
+      x-roles: [reporter, supervisor, producer, editor_in_chief]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -894,6 +895,39 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
 
   /uploads:
+    get:
+      tags: [uploads]
+      summary: جلسات رفع المستخدم نفسه (للاستئناف بعد إغلاق التبويب أو التطبيق)
+      description: >-
+        جلسات المستدعي وحده، الأحدث أولًا، بالمؤشر. الافتراضي الجلسات غير النهائية (`created` و`in_progress` و`completed`)،
+        فيستأنف العميل منها بعد إغلاق التبويب أو التطبيق (مع إعادة اختيار الملف إن لزم). لا يعيد رمز الرفع أبدًا؛ يطلب
+        العميل جلسة جديدة إن انتهى الرمز.
+      operationId: listMyUploadSessions
+      x-roles: [reporter, supervisor, producer, editor_in_chief]
+      parameters:
+        - name: state
+          in: query
+          description: تصفية بالحالة؛ يتكرر. الغياب = غير النهائية
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { type: string, enum: [created, in_progress, completed, verified, failed, deduplicated] }
+        - name: material_id
+          in: query
+          description: جلسات مادة واحدة
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: صفحة جلسات
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadSessionPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       tags: [uploads]
       summary: إنشاء جلسة رفع لملف يخص مادة (أصل أو نسخة خفيفة أو ملاحظة صوتية)
@@ -901,9 +935,10 @@ paths:
         تعيد نقطة tus ورمزًا قصير العمر وحجم الجزء الثابت لهذه الجلسة. يرسل العميل
         `tus_metadata` كما هي في ترويسة `Upload-Metadata` عند إنشاء رفع tus. النسخة الخفيفة لها الأولوية
         على الأصل في قائمة انتظار العميل. `client_fingerprint` يرشّح المكررات فقط ولا يمنح أي حق؛ الربط
-        الفعلي بملف موجود لا يتم إلا بتطابق `sha256` الكاملة على الخادم.
+        الفعلي بملف موجود لا يتم إلا بتطابق `sha256` الكاملة على الخادم. الجلسة لمنشئ المادة وحده (غيره `404`)؛ ويرفع
+        الطاقم من الويب الأصل وحده (`kind: original`)، والنسخة الخفيفة يولّدها عامل الوسائط.
       operationId: createUploadSession
-      x-roles: [reporter]
+      x-roles: [reporter, supervisor, producer, editor_in_chief]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -930,7 +965,7 @@ paths:
       tags: [uploads]
       summary: حالة جلسة الرفع
       operationId: getUploadSession
-      x-roles: [reporter, supervisor, editor_in_chief, system_admin]
+      x-roles: [reporter, supervisor, producer, editor_in_chief, system_admin]
       responses:
         "200":
           description: الجلسة
@@ -940,6 +975,23 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [uploads]
+      summary: إلغاء جلسة رفع جارية
+      description: >-
+        يلغيها صاحبها وحده: تنتقل إلى `failed` بسبب `aborted`، ويُبطَل رمز الرفع ورموز ingest، ويُكتب حدث `upload.failed`
+        في المعاملة نفسها، ويُحذف ما وصل منها من التخزين المؤقت. الأصل المكتمل لا يُلغى بهذا (`409 upload_state_conflict`
+        لـ `verified` و`deduplicated`). ذاتي التكرار: جلسة ملغاة تعيد `204`.
+      operationId: abortUploadSession
+      x-roles: [reporter, supervisor, producer, editor_in_chief]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "204": { description: أُلغيت (أو كانت ملغاة) }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /uploads/{id}/complete:
     parameters:
@@ -957,7 +1009,7 @@ paths:
         الاستدعاء المكرر لجلسة مكتملة يعيد `202` نفسها. عند تحقق الأصل يصدر رقم إيصال ويصل المراسلَ
         إشعار «تم الاستلام بنجاح».
       operationId: completeUpload
-      x-roles: [reporter]
+      x-roles: [reporter, supervisor, producer, editor_in_chief]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -1072,7 +1124,7 @@ paths:
         الدخول. تفحصه البوابة بـ `/internal/ingest/session-status`، فإبطال جلسة الدخول يوقف الرفع. جلسة غيره أو غير
         موجودة `404`، وجلسة لا تقبل رفعًا `409`. بلا جسم.
       operationId: createWebIngestToken
-      x-roles: [reporter]
+      x-roles: [reporter, supervisor, producer, editor_in_chief]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       responses:
@@ -1567,7 +1619,8 @@ paths:
       summary: لوحة غرفة الأخبار المجمّعة (v0.2)
       description: >-
         عدّادات الحالات الثلاث ضمن نطاق المستدعي، والمحجوز، وآخر الإيصالات، والمتأخر عن الإقرار. معرّفات وأرقام وحالات
-        فقط: لا عناوين ولا أسماء ولا مواقع ولا حقول ديناميكية. اللقطة لحظية؛ التحديث الحي من `/events` وWebSocket.
+        فقط: لا عناوين ولا أسماء ولا مواقع ولا حقول ديناميكية. اللقطة محدّثة كل ≤ 5 ثوانٍ لكل نطاق (`generated_at` وقت
+        بنائها، #187)، والتحديث الحي بين اللقطات من `/events` وWebSocket.
       operationId: getNewsroomDashboard
       x-roles: [supervisor, producer, editor_in_chief, rights_officer, system_admin]
       responses:
@@ -2415,6 +2468,15 @@ components:
         created_at: "2026-10-19T09:40:03Z"
         updated_at: "2026-10-19T10:02:44Z"
 
+    UploadSessionPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/UploadSession" }
+        next_cursor: { type: [string, "null"] }
+
     UploadSessionCreated:
       description: استجابة الإنشاء فقط؛ رمز الرفع لا يُعاد في أي قراءة لاحقة
       allOf:
@@ -2968,7 +3030,7 @@ components:
       type: object
       required: [generated_at, editorial, technical, rights, urgent_open, reserved, recent_receipts, overdue_acknowledgements]
       properties:
-        generated_at: { type: string, format: date-time }
+        generated_at: { type: string, format: date-time, description: وقت بناء اللقطة؛ لا يتأخر عن الطلب أكثر من 5 ثوانٍ }
         editorial:
           type: array
           description: عدّاد لكل حالة تحريرية ضمن النطاق (الحالات الصفرية تُحذف)

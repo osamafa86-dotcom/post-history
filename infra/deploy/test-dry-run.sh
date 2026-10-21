@@ -119,16 +119,48 @@ boot "$W/host.env" "$W/backup.crt" >"$W/out2" 2>&1 || fail "second dry run faile
 grep -q "not regenerated" "$W/out2" || fail "second run did not say it kept the secrets"
 echo "idempotent: ok"
 
-# --- update plan
-git config --global --add safe.directory /repo
-bash /repo/infra/deploy/update.sh --dry-run >"$W/up" 2>&1 || { cat "$W/up"; fail "update dry run failed"; }
+# --- update plan: a release tag by default, its commit checked against the release's declaration; latest main only on --main
+git config --global --add safe.directory /repo && git config --global --add safe.directory /repo/.git
+git config --global user.email ci@example.invalid && git config --global user.name ci
+A=/tmp/app && git clone -q --no-local /repo "$A" && git -C "$A" tag -d $(git -C "$A" tag -l) >/dev/null 2>&1 || true
+U="$A/infra/deploy/update.sh"
+bash "$U" --dry-run >"$W/up0" 2>&1 && fail "update ran with no release tag and no --main"
+grep -q "no release tag" "$W/up0" || { cat "$W/up0"; fail "no reason given for the missing release tag"; }
+bash "$U" --dry-run --tag v9.9.9 >"$W/up0" 2>&1 && fail "update accepted a tag that does not exist"
+bash "$U" --dry-run --tag v0.0.1 --main >"$W/up0" 2>&1 && fail "update accepted --tag with --main"
+git -C "$A" tag v0.0.1 HEAD && git -C "$A" commit -q --allow-empty -m "release candidate" && git -C "$A" tag v0.0.2 HEAD
+head="$(git -C "$A" rev-parse HEAD)"
+# A local releases endpoint (no network here): v0.0.2 declares its commit, v0.0.1 declares another one.
+mkdir -p "$W/rel/releases/tags"
+printf '{"body": "notes\\ncommit: %s\\n"}' "$head" > "$W/rel/releases/tags/v0.0.2"
+printf '{"body": "commit: %s\\n"}' "$head" > "$W/rel/releases/tags/v0.0.1"
+(cd "$W/rel" && python3 -m http.server 18080 --bind 127.0.0.1 >/dev/null 2>&1 &) ; sleep 1
+RELEASE_API=http://127.0.0.1:18080 bash "$U" --dry-run >"$W/up" 2>&1 || { cat "$W/up"; fail "update dry run on the latest release failed"; }
+grep -q "verified: release v0.0.2 declares $head" "$W/up" || fail "the latest release tag was not verified against its declaration"
+grep -q "checkout -q --detach $head" "$W/up" || fail "update does not check out the verified commit"
+RELEASE_API=http://127.0.0.1:18080 bash "$U" --dry-run --tag v0.0.1 >"$W/up1" 2>&1 && fail "update accepted a tag whose release declares another commit"
+grep -q "its release declares $head: not updating" "$W/up1" || { cat "$W/up1"; fail "no reason given for the mismatch"; }
+grep -q "checkout" "$W/up1" && fail "a mismatched tag reached checkout"
+bash "$U" --dry-run --main >"$W/upm" 2>&1 || { cat "$W/upm"; fail "update --main dry run failed"; }
+grep -q "target: latest main (explicit --main" "$W/upm" && grep -q "checkout -q --detach origin/main" "$W/upm" || fail "--main does not target origin/main"
+echo "update target: release tag verified, main only on --main: ok"
 F="$W/up"
-order "+ /repo/infra/field-trial/trial.sh run --rm -T backup once" "fetch -q origin"
-order "fetch -q origin" "trial.sh up -d --no-deps --wait postgres redis minio"
+order "/infra/field-trial/trial.sh run --rm -T backup once" "fetch -q --tags origin"
+order "fetch -q --tags origin" "trial.sh up -d --no-deps --wait postgres redis minio"
 grep -q "runuser" "$F" && fail "update runs git as another user than root"
 order "up -d --no-deps --wait tusd tusd-proxy ingest-gate" "up -d --no-deps --wait api"
 grep -A1 -F "up -d --no-deps --wait api" "$F" | tail -1 | grep -qF "wait until: API /health 200" || fail "no health check right after the API restart"
 order "up -d --no-deps --wait api" "up -d --no-deps --wait media-worker"
 order "up -d --no-deps --wait caddy caddy-ingest" "preflight.sh --running"
 echo "update plan: ok"
+# --- the owner's guide (docs/ops/deploy-guide.md) follows these scripts: every script it names exists, and it names every
+# bootstrap step, every bootstrap flag and every key bootstrap reads from host.env.
+G=/repo/docs/ops/deploy-guide.md
+for f in $(grep -oE 'infra/[A-Za-z0-9/_.-]+\.sh' "$G" | sort -u); do [ -f "/repo/$f" ] || fail "the guide names $f, which does not exist"; done
+for s in $(sed -n 's/^STEPS=(\(.*\))$/\1/p' "$B"); do grep -qF "\`$s\`" "$G" || fail "the guide does not name bootstrap step $s"; done
+for f in --host-config --backup-cert --owner-age-recipient; do grep -qF -- "$f" "$G" || fail "the guide does not use $f"; done
+for k in MAIN_DOMAIN INGEST_DOMAIN MAIN_IP INGEST_IP ACME_EMAIL CLOUDFLARE_CIDRS APP_ATTEST_APP_ID PLAY_INTEGRITY_PACKAGE_NAME PLAY_INTEGRITY_CERT_SHA256; do
+  grep -qE "(^|[ #:])$k=" "$G" || fail "the guide's host.env lacks $k"
+done
+echo "owner's deploy guide matches the scripts: ok"
 echo "deploy dry run: ok"

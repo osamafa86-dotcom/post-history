@@ -41,7 +41,12 @@ class UploadEngine(
     private val config: Config = Config(),
     /** Battery permitting: the full SHA-256 costs one read of the file before any byte is sent. */
     private val allowFullHash: () -> Boolean = { true },
+    /** Gate tokens for sessions whose endpoint is behind the ingest gate (SEC-07); null where there is no attester. */
+    private val ingestTokens: IngestTokens? = null,
 ) {
+    /** Consecutive 401s from the gate per session; one fresh token is tried before the session counts as lost. */
+    private val gateRejections = HashMap<String, Int>()
+
     data class Config(
         val maxRequestPayloadBytes: Int = 16 * 1024 * 1024,
         /**
@@ -157,6 +162,7 @@ class UploadEngine(
                 tokenExpiresAtEpochMs = session.uploadTokenExpiresAt.toInstant().toEpochMilli(),
                 sessionExpiresAtEpochMs = session.expiresAt.toInstant().toEpochMilli(),
                 partSizeBytes = session.partSizeBytes,
+                ingestTokenRequired = session.ingestTokenRequired == true,
                 attempts = 0,
             ),
         )
@@ -169,15 +175,18 @@ class UploadEngine(
         if (clock() >= expiresAt) { fail(task, UploadFailure.SESSION_EXPIRED); return null }
 
         var current = task
+        val headers = gateHeaders(current)
         if (current.tusUploadUrl == null) {
             val url = try {
-                transport.create(current.tusEndpoint!!, token, current.sizeBytes, mapOf("upload_session_id" to current.sessionId!!, "filename" to current.filename))
+                transport.create(current.tusEndpoint!!, token, current.sizeBytes, mapOf("upload_session_id" to current.sessionId!!, "filename" to current.filename), headers)
             } catch (e: ProtocolException) {
                 // The server allows one tus creation per session (pre-create reserves it, SEC-06). A 403 here
                 // after a lost 201 means the upload already exists under its deterministic id (= session id):
                 // adopt it instead of failing, since the reporter's bytes may already be there.
-                if (TusTransport.status(e) == 403) recoverExistingUpload(current, token) ?: return classify(current, e)
+                if (TusTransport.status(e) == 403) recoverExistingUpload(current, token, headers) ?: return classify(current, e)
                 else return classify(current, e)
+            } catch (e: IngestTokenException) {
+                return gateTokenFailed(current, e)
             } catch (e: IOException) {
                 throw Transient(e)
             }
@@ -198,9 +207,13 @@ class UploadEngine(
                 // What HEAD reports is what the server holds, including the tail of a request that was cut:
                 // confirmed progress, never a step back (a lower offset is resumed from, not displayed).
                 onHead = { offset -> sizer.serverOffset(offset); if (offset > latest.bytesConfirmed) blockingPersist(latest.copy(bytesConfirmed = offset, attempts = 0)) },
-                onConfirmed = { offset -> sizer.acknowledged(offset); if (offset != latest.bytesConfirmed) blockingPersist(latest.copy(bytesConfirmed = offset, attempts = 0)) },
+                onConfirmed = { offset -> gateRejections.remove(latest.sessionId); sizer.acknowledged(offset); if (offset != latest.bytesConfirmed) blockingPersist(latest.copy(bytesConfirmed = offset, attempts = 0)) },
                 onSent = { sent -> listener?.onProgress(latest, sent) },
+                headers = headers,
             )
+        } catch (e: IngestTokenException) {
+            sizer.failed()
+            return gateTokenFailed(current, e)
         } catch (e: ProtocolException) {
             sizer.failed()
             return classify(current, e)
@@ -220,10 +233,10 @@ class UploadEngine(
     }
 
     /** `HEAD <tus_endpoint><session_id>`: the URL the server gave this session (ChangeFileInfo.ID). Null when it is not there. */
-    private fun recoverExistingUpload(task: UploadTask, token: String): String? {
+    private fun recoverExistingUpload(task: UploadTask, token: String, headers: () -> Map<String, String>): String? {
         val url = task.tusEndpoint!!.trimEnd('/') + "/" + task.sessionId!!
         return try {
-            transport.offset(url, token); url
+            transport.offset(url, token, headers); url
         } catch (e: ProtocolException) {
             if (TusTransport.status(e) == null) throw Transient(e) else null
         } catch (e: IOException) {
@@ -234,8 +247,33 @@ class UploadEngine(
     /** A persisted write from a non-suspending callback: the store is synchronous underneath on both platforms. */
     private fun blockingPersist(task: UploadTask) = kotlinx.coroutines.runBlocking { persist(task) }
 
+    /** `Ingest-Token` on every tus request of a gated session, from the cache or fetched when it is about to lapse. */
+    private fun gateHeaders(task: UploadTask): () -> Map<String, String> {
+        if (!task.ingestTokenRequired) return TusTransport.NO_HEADERS
+        val sessionId = task.sessionId!!
+        return {
+            val tokens = ingestTokens ?: throw IngestTokenException(UploadFailure.DEVICE_NOT_TRUSTED)
+            mapOf(INGEST_TOKEN_HEADER to tokens.currentBlocking(sessionId))
+        }
+    }
+
+    private suspend fun gateTokenFailed(task: UploadTask, e: IngestTokenException): RunOutcome? {
+        val failure = e.failure ?: throw Transient(e)
+        fail(task, failure); return null
+    }
+
     private suspend fun classify(task: UploadTask, e: ProtocolException): RunOutcome? {
-        return when (val status = TusTransport.status(e)) {
+        val status = TusTransport.status(e)
+        if (status == 401 && task.ingestTokenRequired) {
+            // The gate answers 401 for a missing, damaged or lapsed token: a fresh one, then HEAD. A second 401 in a
+            // row with a fresh token is the upload token itself (pre-create hook), which only a new session cures.
+            val sessionId = task.sessionId!!
+            val seen = (gateRejections[sessionId] ?: 0) + 1
+            gateRejections[sessionId] = seen
+            if (seen <= 1) { ingestTokens?.invalidate(sessionId); throw Transient(e) }
+            gateRejections.remove(sessionId)
+        }
+        return when (status) {
             null -> throw Transient(e)
             401, 403 -> { fail(task, UploadFailure.SESSION_EXPIRED, status.toString()); null }
             404, 410 -> { fail(task, UploadFailure.SESSION_EXPIRED, status.toString()); null }
@@ -284,4 +322,8 @@ class UploadEngine(
     }
 
     private class Transient(cause: Throwable) : Exception(cause)
+
+    companion object {
+        const val INGEST_TOKEN_HEADER = "Ingest-Token"
+    }
 }

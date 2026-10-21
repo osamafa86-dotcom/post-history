@@ -32,6 +32,11 @@ enum class UploadFailure {
     FILE_UNAVAILABLE,
     STORAGE_ERROR,
     ABORTED,
+    /**
+     * The upload gate needs a device attestation this install cannot give (Play Integrity refused the app or
+     * device, or the app was not installed from Play): uploads go through the Play build only (SEC-07).
+     */
+    DEVICE_NOT_TRUSTED,
     UNKNOWN,
 }
 
@@ -59,6 +64,8 @@ data class UploadTask(
     val tokenExpiresAtEpochMs: Long? = null,
     val sessionExpiresAtEpochMs: Long? = null,
     val partSizeBytes: Long? = null,
+    /** The session's tus endpoint is behind the ingest gate: every tus request carries `Ingest-Token` (SEC-07). */
+    val ingestTokenRequired: Boolean = false,
     val bytesConfirmed: Long = 0,
     val receiptNumber: String? = null,
     val failure: UploadFailure? = null,
