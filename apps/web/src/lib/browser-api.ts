@@ -7,7 +7,16 @@ export class RequestError extends Error {
   constructor(readonly status: number) { super("Request failed"); }
 }
 export function browserApi() {
-  return createApiClient({ baseUrl: `${window.location.origin}/api/bff`, credentials: "same-origin", cache: "no-store", redirect: "error" });
+  return createApiClient({ baseUrl: `${window.location.origin}/api/bff`, credentials: "same-origin", cache: "no-store", redirect: "error",
+    fetch: (request: Request) => {
+      if (!["GET", "HEAD"].includes(request.method)) {
+        request.headers.set("X-Requested-With", "post-history-web");
+        request.headers.set("Content-Type", "application/json");
+        if (!request.body) request = new Request(request, { body: "{}" });
+      }
+      return fetch(request);
+    },
+  });
 }
 export function dataOrThrow<T>(result: { data?: T; response: Response }): T {
   if (result.response.status === 401 && !departing) window.dispatchEvent(new Event("session-revoked"));
