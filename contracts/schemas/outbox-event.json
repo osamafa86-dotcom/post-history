@@ -38,6 +38,7 @@
         "material.contributors_set",
         "material.published",
         "upload.started",
+        "upload.progress",
         "upload.proxy_received",
         "upload.original_received",
         "upload.verified",
@@ -373,6 +374,61 @@
               },
               "duplicate_of_file_id": {
                 "$ref": "#/$defs/nullableUuid"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "upload.progress"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "upload"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "تقدّم رفع جارٍ للوحة «الوارد الآن» (ADR 0024): يُكتب عند كل عُشر من الحجم لا عند كل جزء، ويُبث داخل المنصة وحدها ولا يطلق قاعدة تنبيه.",
+            "required": [
+              "material_id",
+              "upload_session_id",
+              "kind",
+              "bytes_received",
+              "size_bytes"
+            ],
+            "properties": {
+              "material_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "upload_session_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "original",
+                  "proxy",
+                  "voice_note"
+                ]
+              },
+              "priority": {
+                "$ref": "#/$defs/priority"
+              },
+              "bytes_received": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 1
               }
             }
           }

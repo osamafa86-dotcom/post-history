@@ -32,6 +32,15 @@ docker run --rm -v "$PWD":/repo -w /repo -e PYTHONPATH=/repo/workers/media/src -
   media-worker:base tools/render-bench/av_sync.py --out docs/measurements/render-bench/<date>-proxy-av-sync.json
 ```
 
+## مطابقة الطوابع الزمنية (`timestamp_alignment.py`)
+
+الشق الآلي من اختبار القبول «مطابقة الطوابع الزمنية» على `media_worker.align.measure_offset`: عشرة أصول 60 ث بمعدل متغير وفجوات، ونسخ هاتف بطوابع مصفَّرة تبدأ بعد الأصل بمقدار معروف. المعيار: خطأ ≤ 40 ms في الملفات كلها وكلها موثوقة. الأداة نفسها للملفات الحقيقية في السكربت الميداني:
+
+```bash
+python -m media_worker align <نسخة_الهاتف> <الأصل>   # {"offset_ms", "confidence", "margin", "reliable", "needs_correction"}
+```
+
+
 ## مواد مشغّل الويب (`web_fixtures/`)
 
 لاختبار المشغّل في `apps/web` (#89) بلا أي ملف حقيقي. `make_web_fixtures.py` يولّد بكود العامل نفسه حالتين: 1080p بمعدل متغير وبداية 2 ث، وHEVC 10 بت HLG محوّلًا إلى SDR. لكل حالة:
