@@ -367,5 +367,26 @@
       "office": "مكتب",
       "governorate": "محافظة"
     }
+  },
+  "store": {
+    "credit": "النسب",
+    "from": "من",
+    "unavailable": "غير معروضة للبيع حاليًا",
+    "preview": "معاينة المادة",
+    "previewUnavailable": "المعاينة غير متاحة حاليًا.",
+    "chooseLicense": "اختر الترخيص",
+    "licenseTypes": {
+      "editorial_single": "تحريري لاستخدام واحد",
+      "editorial_term": "تحريري مفتوح لمدة",
+      "exclusive_temporary": "حصري مؤقت",
+      "commercial": "تجاري"
+    },
+    "exclusiveTaken": "الحصرية غير متاحة لهذه المادة.",
+    "needsApproval": "يحتاج موافقة الإدارة قبل الدفع.",
+    "cart": "السلة",
+    "cartEmpty": "السلة فارغة.",
+    "remove": "إزالة",
+    "total": "المجموع",
+    "currencies": "العملتان لا تُجمعان؛ يُدفع كل مجموع على حدة."
   }
 }

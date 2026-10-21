@@ -143,8 +143,8 @@ describe('materials (/v1/materials)', () => {
       expect(ok.contributors).toHaveLength(2);
     });
 
-    it('only reporters create; roles outside x-roles get 403 before any lookup', async () => {
-      expect((await as(producer).write('post', '/v1/materials', createBody()).expect(403)).body.code).toBe('forbidden_role');
+    it('reporters and staff create (#88); roles outside x-roles get 403 before any lookup', async () => {
+      expect((await as(finance).write('post', '/v1/materials', createBody()).expect(403)).body.code).toBe('forbidden_role');
       await as(finance).get('/v1/materials').expect(403);
       await as(finance).get(`/v1/materials/${randomUUID()}`).expect(403);
     });
