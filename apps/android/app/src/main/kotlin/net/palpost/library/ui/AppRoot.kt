@@ -17,9 +17,10 @@ import net.palpost.library.ui.material.NewMaterialScreen
 import net.palpost.library.ui.security.WipeDoneScreen
 import net.palpost.library.ui.setup.TaskKillerSetupScreen
 import net.palpost.library.ui.notifications.NotificationsScreen
+import net.palpost.library.ui.review.ReviewScreen
 import net.palpost.library.ui.uploads.UploadsScreen
 
-private enum class Screen { Home, FormPreview, NewMaterial, Uploads, Materials, Notifications, Setup, SetupThenNewMaterial }
+private enum class Screen { Home, FormPreview, NewMaterial, Uploads, Materials, Notifications, Review, Setup, SetupThenNewMaterial }
 
 @Composable
 fun AppRoot(container: AppContainer, openRequest: String? = null, onOpenHandled: () -> Unit = {}) {
@@ -47,6 +48,7 @@ fun AppRoot(container: AppContainer, openRequest: String? = null, onOpenHandled:
                     onUploads = { screen = Screen.Uploads },
                     onMaterials = { screen = Screen.Materials },
                     onNotifications = { screen = Screen.Notifications },
+                    onReview = { screen = Screen.Review },
                     onSetup = { screen = Screen.Setup },
                 )
                 Screen.FormPreview -> FormPreviewScreen(container, onBack = { screen = Screen.Home })
@@ -54,6 +56,7 @@ fun AppRoot(container: AppContainer, openRequest: String? = null, onOpenHandled:
                 Screen.Uploads -> UploadsScreen(container, onBack = { screen = Screen.Home })
                 Screen.Materials -> MyMaterialsScreen(container, onBack = { screen = Screen.Home })
                 Screen.Notifications -> NotificationsScreen(container, onBack = { screen = Screen.Home })
+                Screen.Review -> ReviewScreen(container, onBack = { screen = Screen.Home })
                 Screen.Setup -> TaskKillerSetupScreen(container, onDone = { screen = Screen.Home }, onBack = { screen = Screen.Home })
                 Screen.SetupThenNewMaterial -> TaskKillerSetupScreen(container, onDone = { screen = Screen.NewMaterial }, onBack = { screen = Screen.Home })
             }

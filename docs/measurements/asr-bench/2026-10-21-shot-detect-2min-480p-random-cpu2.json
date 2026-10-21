@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "tool": "asr-bench",
+  "role": "ai",
+  "test_name": "shot-detect-2min-480p-cpu",
+  "started_at": "2026-10-21T19:35:18.617Z",
+  "ended_at": "2026-10-21T19:35:24.162Z",
+  "result": "info",
+  "device": {
+    "platform": "server",
+    "model": "Intel(R) Xeon(R) Processor @ 2.10GHz, --cpus 2, CPU only",
+    "os_version": "Linux-6.18.44-fc-v140-x86_64-with-glibc2.41"
+  },
+  "upload_path": "n/a",
+  "file": {
+    "duration_s": 120.0,
+    "codec": "mpeg4 854x480 30 fps (synthetic, like proxy-480p)"
+  },
+  "provider": "local: PySceneDetect ContentDetector on PyAV frames",
+  "cost_usd": 0,
+  "metrics": {
+    "video_s": 120.0,
+    "frames": 3600,
+    "detect_s": 5.55,
+    "rtf_cpu": 0.046,
+    "peak_memory_mb": 38.0,
+    "cuts_expected": 23,
+    "cuts_matched": 20,
+    "cuts_missed": 3,
+    "cuts_spurious": 0,
+    "cut_error_ms_max": 0.0,
+    "contrast": "random",
+    "network": "none (docker --network none)"
+  },
+  "notes": "Synthetic 2-minute clip, a cut every 5 s, moving texture inside each shot; contrast=real keeps neighbouring shots 60+ apart in brightness, contrast=random does not. Boundary accuracy and speed only; no visual description and no text. Real footage (fades, pans, flashes) not measured."
+}
