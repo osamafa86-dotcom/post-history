@@ -3,7 +3,7 @@
 #   infra/observability/healthcheck.sh [--json FILE] [--alert]
 # لكل خدمة: الحاوية تعمل وفحص compose الصحي سليم. ثم فحوص وظيفية: الخادم /health، وtusd عبر tusd-proxy، والبوابة ترفض
 # بلا رمز (401)، وPostgres وRedis وMinIO، ومستهلك media:events لم يتوقف وفي الطابور عمل، والقرص < DISK_ALERT_PCT،
-# وآخر نسخة احتياطية ناجحة خلال 26 ساعة بلا فشل بعدها.
+# وآخر نسخة احتياطية ناجحة خلال 26 ساعة بلا فشل بعدها، ونافذة مفتاح qa- لم يمر انتهاؤها (ADR 0022).
 # --json: النتيجة لنقطة /health الداخلية (health-endpoint.py)، بأسماء الفحوص وحالتها فقط.
 # --alert: عند تغيّر مجموعة الفاشل يُكتب سطر في ALERT_LOG، ويُرسل بريد إن ضُبط ALERT_EMAIL_TO ووُجد sendmail محلي.
 # لا قيمة سرية ولا بيانات مادة في أي مخرج: أسماء الفحوص وأسباب عامة فقط. الخروج 0 إن سلم كل شيء، وإلا 1.
@@ -91,6 +91,13 @@ if [ ! -f "$last" ]; then bad "backup:recent" "no successful backup yet"
 elif [ $(( $(date +%s) - $(stat -c %Y "$last") )) -ge $((26 * 3600)) ]; then bad "backup:recent" "last success older than 26h"
 elif [ -f "$BACKUP_DIR/last-failure.json" ] && [ "$BACKUP_DIR/last-failure.json" -nt "$last" ]; then bad "backup:recent" "failed after the last success"
 else ok "backup:recent"; fi
+
+# --- نافذة مفتاح الاختبار qa- (ADR 0022): البوابة ترفض المفتاح بعد انتهائه، لكن خانة باقية بعده نافذة نُسي إغلاقها.
+qk="$(envval INGEST_QA_PUBLIC_KEY "$ENV_FILE")" qe="$(envval INGEST_QA_KEY_EXPIRES "$ENV_FILE")"
+if [ -z "$qk$qe" ]; then ok "qa-key:window"
+elif [ -z "$qk" ] || [ "$(date -u -d "$qe" +%s 2>/dev/null || echo 0)" -le "$(date +%s)" ]; then
+  bad "qa-key:window" "qa key slot past its expiry or incomplete: run infra/field-trial/qa-window.sh close"
+else ok "qa-key:window"; fi
 
 now="$(date -u +%FT%TZ)"
 if [ -n "$JSON" ]; then

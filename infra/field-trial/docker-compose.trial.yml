@@ -31,6 +31,9 @@ services:
       INGEST_GATE_TOKEN: "${INGEST_GATE_TOKEN:?}"
       # Fixed in the trial (not from the secrets): the gate's address reaches /internal/ingest/ and nothing else there.
       INTERNAL_SOURCE_PATHS: "172.30.250.3/32=/internal/ingest/"
+      # Acceptance window only (ADR 0022, infra/field-trial/qa-window.sh): the one account a qa-key token may upload for.
+      # Empty outside a window, so every key_class=qa check is refused; preflight fails while it is set without --qa-window.
+      ACCEPTANCE_UPLOADER_USER_ID: "${ACCEPTANCE_UPLOADER_USER_ID:-}"
   media-worker:
     restart: unless-stopped
 
@@ -48,6 +51,10 @@ services:
       # SEC-01: كل رمز يُفحص أيضًا مقابل حالة جلسته عند الخادم (/internal/ingest، مخبأ ثانيتين)، فالإبطال يسري خلال
       # ثوانٍ. السر يعرّف البوابة للخادم فوق عنوانها الثابت على hooks. لا INGEST_SESSION_CHECK هنا: الفحص دائم.
       INGEST_GATE_TOKEN: "${INGEST_GATE_TOKEN:?shared secret of the ingest gate for /internal/ingest (>= 32 chars)}"
+      # خانة مفتاح الاختبار (ADR 0022): هنا وحدها لا في compose الأساسي ولا النموذج الأولي، وفارغة خارج نافذة
+      # qa-window.sh. البوابة ترفض معرّف qa- بعد INGEST_QA_KEY_EXPIRES وترسل key_class=qa مع كل فحص له.
+      INGEST_QA_PUBLIC_KEY: "${INGEST_QA_PUBLIC_KEY:-}"
+      INGEST_QA_KEY_EXPIRES: "${INGEST_QA_KEY_EXPIRES:-}"
     volumes:
       - ../ingest/nginx.conf:/etc/nginx/nginx.conf:ro
       - ../ingest/ingest_token.js:/etc/nginx/njs/ingest_token.js:ro

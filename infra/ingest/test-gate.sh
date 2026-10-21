@@ -9,18 +9,39 @@ CDIR="$HERE/../compose"
 KEYS="$(mktemp -d)"
 NEXT="$(mktemp -d)"
 OTHER="$(mktemp -d)"
-trap 'rm -rf "$KEYS" "$NEXT" "$OTHER"' EXIT
+QAK="$(mktemp -d)"
+trap 'rm -rf "$KEYS" "$NEXT" "$OTHER" "$QAK"' EXIT
 python3 "$HERE/test_token.py" keygen "$KEYS"    # k1: the current key
 python3 "$HERE/test_token.py" keygen "$NEXT"    # k2: the next key, trusted during a rotation
 python3 "$HERE/test_token.py" keygen "$OTHER"   # a key the gate does not trust
+python3 "$HERE/test_token.py" keygen "$QAK"     # the qa slot's key (ADR 0022)
 
 export INGEST_TOKEN_PUBLIC_KEYS INGEST_TLS_DIR="$KEYS/tls" INGEST_PORT="${INGEST_PORT:-8443}"
 # The token checks alone: these sessions do not exist on the server. The session-state check (SEC-01) is exercised
 # with real sessions in e2e-attested.sh and the field-trial smoke.
 export INGEST_SESSION_CHECK=off
-INGEST_TOKEN_PUBLIC_KEYS="k1:$(cat "$KEYS/public.b64"),k2:$(cat "$NEXT/public.b64")"
+# A qa- kid in the production list is ignored by the gate: qa keys are honoured from the qa slot alone.
+INGEST_TOKEN_PUBLIC_KEYS="k1:$(cat "$KEYS/public.b64"),k2:$(cat "$NEXT/public.b64"),qa-in-prod:$(cat "$OTHER/public.b64")"
 COMPOSE=(docker compose -f "$CDIR/docker-compose.yml" -f "$HERE/compose.ingest.yml"
          ${E2E_EXTRA_COMPOSE:+-f "$E2E_EXTRA_COMPOSE"} --profile api)
+
+# The qa slot and the acceptance account live in the field-trial compose alone (ADR 0022): set in the environment,
+# the base compose and this prototype still carry neither.
+cfg="$(INGEST_QA_PUBLIC_KEY="qa-x:AAAA" INGEST_QA_KEY_EXPIRES=2099-01-01T00:00:00Z \
+       ACCEPTANCE_UPLOADER_USER_ID=00000000-0000-0000-0000-000000000000 "${COMPOSE[@]}" config)"
+grep -q 'INGEST_TOKEN_PUBLIC_KEYS' <<<"$cfg" || { echo "!! compose config without the gate (check has no teeth)" >&2; exit 1; }
+if grep -qE 'INGEST_QA_|ACCEPTANCE_UPLOADER_USER_ID' <<<"$cfg"; then echo "!! the qa slot reaches the base or prototype compose" >&2; exit 1; fi
+# The qa slot for this test only, through an extra file (the gate's environment, as the trial compose gives it).
+QA_KID="qa-test-$(openssl rand -hex 3)"
+cat > "$QAK/compose.qa.yml" <<YML
+services:
+  ingest-gate:
+    environment:
+      INGEST_QA_PUBLIC_KEY: "$QA_KID:$(cat "$QAK/public.b64")"
+      INGEST_QA_KEY_EXPIRES: "\${QA_EXPIRES}"
+YML
+export QA_EXPIRES="$(date -u -d '+1 hour' +%FT%TZ)"
+COMPOSE+=(-f "$QAK/compose.qa.yml")
 # shellcheck disable=SC1091
 set -a; . "$CDIR/.env"; set +a
 
@@ -82,6 +103,17 @@ expect "403 gate" "valid token, other session (patch)"   PATCH "/files/$OTHER_SI
 expect "403 tus"  "valid token -> tusd -> hook rejects the bogus upload token" POST /files/ "$GOOD"
 expect "404 tus"  "valid token, HEAD own session -> tusd (no such upload)"     HEAD "/files/$SID" "$GOOD"
 expect "404 gate" "anything outside /files/"         GET /metrics "$GOOD"
+
+# The qa slot (ADR 0022): its kid and key together until the expiry, nothing else.
+qa() { python3 "$HERE/test_token.py" mint "$QAK" --sid "$SID" --kid "$QA_KID" "$@"; }
+expect "403 tus"  "qa slot: qa key under its qa- kid is accepted" POST /files/ "$(qa)"
+expect "401 gate" "qa slot: qa key under a production kid"       POST /files/ "$(python3 "$HERE/test_token.py" mint "$QAK" --sid "$SID" --kid k1)"
+expect "401 gate" "qa slot: production key under the qa kid"     POST /files/ "$(mint --kid "$QA_KID")"
+expect "401 gate" "qa slot: another qa- kid"                     POST /files/ "$(qa --kid qa-other)"
+expect "401 gate" "a qa- kid in the production list is ignored"  POST /files/ "$(python3 "$HERE/test_token.py" mint "$OTHER" --sid "$SID" --kid qa-in-prod)"
+QA_EXPIRES="$(date -u -d '-1 minute' +%FT%TZ)" "${COMPOSE[@]}" up -d --wait --no-deps --force-recreate ingest-gate >/dev/null
+expect "401 gate" "qa slot: refused after its expiry"            POST /files/ "$(qa)"
+expect "403 tus"  "production key unaffected by the qa expiry"   POST /files/ "$(mint)"
 
 # Captured first: with pipefail, `logs | grep -q` can turn a match into a SIGPIPE failure and hide it.
 gate_log="$("${COMPOSE[@]}" logs ingest-gate)"

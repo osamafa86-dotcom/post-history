@@ -3,6 +3,7 @@
 #   sudo infra/field-trial/preflight.sh                 # قبل التشغيل: المضيف والشبكة والأسرار والنسخ
 #   sudo infra/field-trial/preflight.sh --running       # وبعد التشغيل: الوكيلان والصحة وآخر نسخة
 #   ... --json docs/measurements/ops/$(date +%F)-field-trial-preflight.json
+#   sudo infra/field-trial/preflight.sh --qa-window     # أثناء نافذة مفتاح الاختبار qa- (ADR 0022، qa-window.sh) وحدها
 # لا يطبع قيمة سرية أبدًا: يفحص وجود المفاتيح وأطوالها فقط. ولا يكتب النطاقين وعنوانيهما في stdout ولا في الـ JSON:
 # تُستبدل بأسمائها الرمزية (MAIN_DOMAIN، INGEST_IP…) لأن النتيجة تُرفع إلى المستودع (ADR 0011). الحدود الدنيا من docs/ops/field-trial-hosting.md،
 # وتُغيَّر بالبيئة (MIN_CPUS MIN_RAM_GB MIN_DATA_FREE_GB MIN_BACKUP_FREE_GB).
@@ -10,16 +11,18 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="${TRIAL_ENV_FILE:-/run/post-history/trial.env}"
-RUNNING=0 JSON=""
+RUNNING=0 JSON="" QA_WINDOW=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --running) RUNNING=1; shift ;;
+    --qa-window) QA_WINDOW=1; shift ;;
     --json) JSON="$2"; shift 2 ;;
-    *) echo "usage: $0 [--running] [--json FILE]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--running] [--qa-window] [--json FILE]" >&2; exit 2 ;;
   esac
 done
 MIN_CPUS="${MIN_CPUS:-4}" MIN_RAM_GB="${MIN_RAM_GB:-16}"
 MIN_DATA_FREE_GB="${MIN_DATA_FREE_GB:-500}" MIN_BACKUP_FREE_GB="${MIN_BACKUP_FREE_GB:-500}"
+QA_WINDOW_MAX_HOURS="${QA_WINDOW_MAX_HOURS:-72}"
 
 pass=0 fail=0 warn=0 results=()
 mask() {
@@ -77,6 +80,27 @@ if [ -f "$ENV_FILE" ]; then
   esac
   grep -q '^INGEST_SESSION_CHECK=' "$ENV_FILE" && bad "INGEST_SESSION_CHECK must not be set on the host (the gate always checks the session)" \
     || ok "session check not overridable from the secrets"
+  # خانة مفتاح الاختبار (ADR 0022): لا معرّف qa- في مفاتيح الإنتاج أبدًا، والخانة وحساب القبول فارغان في الإنتاج. مع
+  # --qa-window: الثلاثة معًا، ومعرّف qa-، وانتهاء لم يمر ولا يتجاوز QA_WINDOW_MAX_HOURS من الآن.
+  grep -qE '(^|,)[[:space:]]*qa-' <<<"$(val INGEST_TOKEN_PUBLIC_KEYS)" \
+    && bad "INGEST_TOKEN_PUBLIC_KEYS holds a qa- key (the gate ignores it there; qa keys go in the qa slot alone)" \
+    || ok "no qa- key among the production verification keys"
+  case "$(val INGEST_TOKEN_KEY_ID)" in qa-*) bad "INGEST_TOKEN_KEY_ID is a qa- kid: the API must sign with a production key" ;;
+                                       *) ok "the API signs with a production kid" ;; esac
+  qk="$(val INGEST_QA_PUBLIC_KEY)" qe="$(val INGEST_QA_KEY_EXPIRES)" qu="$(val ACCEPTANCE_UPLOADER_USER_ID)"
+  if [ -z "$qk$qe$qu" ]; then
+    [ "$QA_WINDOW" = 0 ] && ok "no qa key slot and no acceptance account (production)" || bad "--qa-window given but no qa window is open"
+  elif [ "$QA_WINDOW" = 0 ]; then
+    bad "qa key slot or ACCEPTANCE_UPLOADER_USER_ID set: production must not carry them (qa-window.sh close; --qa-window during a window)"
+  else
+    [ -n "$qk" ] && [ -n "$qe" ] && [ -n "$qu" ] && ok "qa window: key, expiry and acceptance account all set" \
+      || bad "qa window: INGEST_QA_PUBLIC_KEY, INGEST_QA_KEY_EXPIRES and ACCEPTANCE_UPLOADER_USER_ID go together"
+    [[ "$qk" == qa-*:* ]] && ok "qa window: the slot's kid starts with qa-" || bad "qa window: the slot's kid must start with qa-"
+    qexp="$(date -u -d "$qe" +%s 2>/dev/null || echo 0)" now="$(date +%s)"
+    [ "$qexp" -gt "$now" ] && ok "qa window: key not expired ($qe)" || bad "qa window: key expired or unreadable ($qe): run qa-window.sh close"
+    [ "$qexp" -le $((now + QA_WINDOW_MAX_HOURS * 3600)) ] && ok "qa window: expiry within $QA_WINDOW_MAX_HOURS hours" \
+      || bad "qa window: expiry more than $QA_WINDOW_MAX_HOURS hours away"
+  fi
   tp="$(val TRUSTED_PROXY_CIDRS)"
   case "${tp:-172.30.240.1/32}" in
     172.30.240.1/32) ok "TRUSTED_PROXY_CIDRS is the default network gateway alone" ;;
@@ -161,6 +185,12 @@ if [ "$RUNNING" = 1 ]; then
     "e=\"\$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \"\$(\"$ROOT/infra/field-trial/trial.sh\" ps -q ingest-gate)\")\" && [ -n \"\$e\" ] && ! grep -q '^INGEST_SESSION_CHECK=' <<<\"\$e\""
   check "the API limits the ingest gate's address to /internal/ingest/ (INTERNAL_SOURCE_PATHS)" \
     "e=\"\$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \"\$(\"$ROOT/infra/field-trial/trial.sh\" ps -q api)\")\" && grep -qx 'INTERNAL_SOURCE_PATHS=172.30.250.3/32=/internal/ingest/' <<<\"\$e\""
+  # الحاويتان تحملان الخانة وحساب القبول بقدر ما يحمله ملف الأسرار: لا بقايا نافذة مغلقة في حاوية لم يُعد إنشاؤها.
+  if [ -n "${qk:-}${qu:-}" ]; then qa_want=1; else qa_want=0; fi
+  env_of() { docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$("$ROOT/infra/field-trial/trial.sh" ps -q "$1")" 2>/dev/null; }
+  has() { grep -q "^$2=." <<<"$(env_of "$1")" && echo 1 || echo 0; }
+  check "the gate and the API carry the qa slot only while a window is open" \
+    "[ -n \"\$(env_of ingest-gate)\" ] && [ \"\$(has ingest-gate INGEST_QA_PUBLIC_KEY)\$(has api ACCEPTANCE_UPLOADER_USER_ID)\" = $qa_want$qa_want ]"
   check "/internal is not reachable from outside" "[ \"\$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' https://$MAIN_DOMAIN/internal/x)\" = 404 ]"
   check "ingest name does not answer on MAIN_IP" "! curl -sS --max-time 10 -o /dev/null --resolve $INGEST_DOMAIN:443:$MAIN_IP https://$INGEST_DOMAIN/files/"
   last="$BACKUP_DIR/last-success.json"
