@@ -573,5 +573,35 @@
     "aiHelp": "AI training is always prohibited unless separately permitted outside the template.",
     "commercialHelp": "Offering this template on a material needs the system admin's approval in the listing.",
     "invalid": "Complete the fields: name, terms and attribution in both languages, at least one medium and one deliverable, term and exclusivity for the type, and valid country codes."
+  },
+  "listing": {
+    "title": "Catalog listing",
+    "none": "This material is not in the catalog.",
+    "create": "List in catalog",
+    "edit": "Edit listing",
+    "save": "Save listing",
+    "cancel": "Cancel",
+    "state": "Listing state",
+    "states": {
+      "draft": "Draft",
+      "listed": "For sale",
+      "suspended": "Suspended"
+    },
+    "reasons": {
+      "manual": "manually",
+      "rights_changed": "rights changed"
+    },
+    "listingTitle": "Title for buyers",
+    "description": "Description for buyers",
+    "materialVersion": "Listed version",
+    "listedAt": "First listed",
+    "offers": "Offers",
+    "offersHelp": "From enabled license templates, ten at most. Leave the price empty to use the template's.",
+    "noTemplates": "No enabled templates; create them on the license templates page.",
+    "priceOverride": "Price for this material",
+    "commercialAllowed": "The material's contract allows commercial licensing",
+    "commercialAdmin": "Set by the system admin only.",
+    "notSellable": "Listing for sale requires the material's rights to be sellable.",
+    "invalid": "Complete the title and description in both languages and choose at least one offer."
   }
 }
