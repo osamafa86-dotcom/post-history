@@ -199,7 +199,8 @@
       "reporter": "Reporter",
       "editor": "Editor",
       "fixer": "Fixer"
-    }
+    },
+    "note": "Note"
   },
   "admin": {
     "title": "Account administration",
@@ -496,5 +497,21 @@
     "abort": "Cancel upload",
     "abortFailed": "Could not cancel the upload. Try again.",
     "otherDevice": "Started on another device or its record here was cleared; it cannot resume from this browser."
+  },
+  "mine": {
+    "nav": "My materials",
+    "title": "My materials",
+    "lead": "What you sent, its three states, and your supervisor's notes.",
+    "counts": "My materials per editorial state",
+    "firstPage": "Only your latest 100 materials are shown; use the inbox to find older ones.",
+    "action": "Needs your action",
+    "noAction": "Nothing is waiting on you.",
+    "uploadFailed": "Upload failed; upload the file again from the material page.",
+    "changesRequested": "Your supervisor asked for changes; reply from the material page.",
+    "all": "All my materials",
+    "empty": "You have not sent any materials yet.",
+    "note": "Supervisor note",
+    "openForNote": "Open the material to read the note.",
+    "at": "at"
   }
 }
