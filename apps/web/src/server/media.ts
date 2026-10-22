@@ -4,13 +4,19 @@ import { requireOk, type Api } from "./auth";
 import type { WebConfig } from "./config";
 import { WebError } from "./errors";
 
+type Link = components["schemas"]["FileDownloadUrl"];
+/** الرابط الموقّع مقبول من أصول تخزين المشروع وحدها وبعمر ≤ 10 دقائق. */
+export function checkLink(link: Link, config: WebConfig) {
+  const url = new URL(link.url), remaining = Date.parse(link.expires_at) - Date.now();
+  if (!config.mediaOrigins.includes(url.origin) || url.username || url.password || url.hash || !Number.isFinite(remaining) || remaining <= 0 || remaining > 600000) throw new WebError(503, "temporarily_unavailable");
+  return link;
+}
+
 export async function getDerivativeUrl(api: Api, config: WebConfig, materialId: string, fileId: string) {
   const material = requireOk(await api.GET("/materials/{id}", { params: { path: { id: materialId } } }));
   const file = material.files.find(file => file.id === fileId && file.state === "verified" && (file.kind === "proxy" || file.kind === "thumbnail"));
   if (!file) throw new WebError(404, "request_failed");
-  const link: components["schemas"]["FileDownloadUrl"] = requireOk(await api.GET("/materials/{id}/files/{file_id}/download-url", { params: { path: { id: materialId, file_id: fileId } } }));
-  const url = new URL(link.url), remaining = Date.parse(link.expires_at) - Date.now();
-  if (!config.mediaOrigins.includes(url.origin) || url.username || url.password || url.hash || !Number.isFinite(remaining) || remaining <= 0 || remaining > 600000) throw new WebError(503, "temporarily_unavailable");
+  const link = checkLink(requireOk(await api.GET("/materials/{id}/files/{file_id}/download-url", { params: { path: { id: materialId, file_id: fileId } } })), config);
   return { file, link };
 }
 
@@ -18,6 +24,13 @@ export async function streamDerivative(request: Request, api: Api, config: WebCo
   const range = request.headers.get("range");
   if (range && !/^bytes=(?:\d{1,16}-\d{0,16}|-\d{1,16})$/.test(range)) throw new WebError(416, "request_failed");
   const { file, link } = await getDerivativeUrl(api, config, materialId, fileId);
+  return streamSigned(request, link, file.kind === "proxy" ? ["video/mp4"] : ["image/jpeg", "image/png", "image/webp"], transport);
+}
+
+/** يبث رابطًا موقّعًا عبر الأصل نفسه دون أن يصل الرابط إلى المتصفح؛ MIME من قائمة صريحة. */
+export async function streamSigned(request: Request, link: Link, mimes: string[], transport: typeof fetch = fetch) {
+  const range = request.headers.get("range");
+  if (range && !/^bytes=(?:\d{1,16}-\d{0,16}|-\d{1,16})$/.test(range)) throw new WebError(416, "request_failed");
   const controller = new AbortController();
   // مهلة الوصول إلى الترويسات لا تبقي قفل الجلسة طويلًا؛ نقل الجسم ينتهي خارجه.
   const headerTimer = setTimeout(() => controller.abort(), 8000);
@@ -27,7 +40,7 @@ export async function streamDerivative(request: Request, api: Api, config: WebCo
     const response = await transport(new Request(link.url, { cache: "no-store", redirect: "error", credentials: "omit", referrerPolicy: "no-referrer", signal: AbortSignal.any([request.signal, controller.signal]), headers: range ? { Range: range } : {} }));
     clearTimeout(headerTimer);
     const mime = response.headers.get("content-type")?.split(";")[0].trim();
-    const allowed = file.kind === "proxy" ? mime === "video/mp4" : ["image/jpeg", "image/png", "image/webp"].includes(mime ?? "");
+    const allowed = mimes.includes(mime ?? "");
     if (![200, 206].includes(response.status) || !allowed || !response.body) {
       // قد ينتظر cancel اكتمال فرع آخر من استجابة fetch المنسوخة في Next؛ لا يحجز الجلسة.
       controller.abort(); void response.body?.cancel().catch(() => {});

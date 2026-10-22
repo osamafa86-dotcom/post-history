@@ -199,7 +199,8 @@
       "reporter": "Reporter",
       "editor": "Editor",
       "fixer": "Fixer"
-    }
+    },
+    "note": "Note"
   },
   "admin": {
     "title": "Account administration",
@@ -388,7 +389,23 @@
     "cartEmpty": "Your cart is empty.",
     "remove": "Remove",
     "total": "Total",
-    "currencies": "Currencies are not combined; each total is paid separately."
+    "currencies": "Currencies are not combined; each total is paid separately.",
+    "eyebrow": "Store (sandbox)",
+    "title": "Catalog",
+    "lead": "Materials for sale with a watermarked preview. Payment runs on a sandbox provider only.",
+    "denied": "The catalog is open now to administration, rights, the editor in chief and finance; buyer accounts arrive with organizations.",
+    "search": "Search",
+    "licenseType": "License type",
+    "exclusiveOnly": "Exclusivity available",
+    "empty": "No materials match the search.",
+    "back": "Back to the catalog",
+    "notFound": "This material is not for sale.",
+    "details": "Material details",
+    "shotOn": "Shoot day",
+    "duration": "Duration",
+    "resolution": "Resolution",
+    "shotList": "Shot list",
+    "checkoutLater": "Cart and hosted checkout arrive with the orders contract."
   },
   "board": {
     "title": "Newsroom board",
@@ -403,7 +420,15 @@
     "more": "More in the inbox",
     "minutes": "min",
     "hours": "h",
-    "days": "d"
+    "days": "d",
+    "inboxNow": "Arriving now",
+    "noUploads": "No uploads in progress.",
+    "uploadsUnavailable": "Upload progress is not available from the server yet.",
+    "kinds": {
+      "original": "Original",
+      "proxy": "Proxy",
+      "voice_note": "Voice note"
+    }
   },
   "upload": {
     "nav": "Desktop upload",
@@ -468,6 +493,85 @@
     "open": "Open material",
     "receipt": "Receipt number",
     "progress": "Progress of {name}",
-    "leaveWarning": "An upload is in progress. Leaving stops it; you can resume by choosing the file again."
+    "leaveWarning": "An upload is in progress. Leaving stops it; you can resume by choosing the file again.",
+    "abort": "Cancel upload",
+    "abortFailed": "Could not cancel the upload. Try again.",
+    "otherDevice": "Started on another device or its record here was cleared; it cannot resume from this browser."
+  },
+  "mine": {
+    "nav": "My materials",
+    "title": "My materials",
+    "lead": "What you sent, its three states, and your supervisor's notes.",
+    "counts": "My materials per editorial state",
+    "firstPage": "Only your latest 100 materials are shown; use the inbox to find older ones.",
+    "action": "Needs your action",
+    "noAction": "Nothing is waiting on you.",
+    "uploadFailed": "Upload failed; upload the file again from the material page.",
+    "changesRequested": "Your supervisor asked for changes; reply from the material page.",
+    "all": "All my materials",
+    "empty": "You have not sent any materials yet.",
+    "note": "Supervisor note",
+    "openForNote": "Open the material to read the note.",
+    "at": "at"
+  },
+  "templates": {
+    "nav": "License templates",
+    "title": "License templates",
+    "lead": "Each license's terms and base price. Saving writes a new version; every sale keeps the version its buyer accepted.",
+    "denied": "This page is for the system admin, rights officer, editor in chief and finance.",
+    "readOnly": "Read only; editing is for the system admin and rights officer.",
+    "empty": "No templates yet.",
+    "new": "New template",
+    "edit": "New version",
+    "save": "Save template",
+    "cancel": "Cancel",
+    "showDisabled": "Show disabled",
+    "newVersion": "Saving writes a new version; the current one stays as is for past sales. The type cannot change.",
+    "name": "Name",
+    "type": "Type",
+    "price": "Base price",
+    "currency": "Currency",
+    "version": "Version",
+    "enabledLabel": "Status",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "arabic": "Arabic",
+    "english": "English",
+    "terms": "Terms",
+    "attribution": "Attribution",
+    "usage": "Usage media",
+    "usageNames": {
+      "tv": "TV",
+      "web": "Web",
+      "social": "Social media",
+      "documentary": "Documentary",
+      "advertising": "Advertising"
+    },
+    "territory": "Territory",
+    "worldwide": "Worldwide",
+    "countries": "Specific countries",
+    "countryCodes": "Country codes",
+    "countryHelp": "Two-letter codes such as PS, JO, QA, separated by commas.",
+    "term": "Term in days",
+    "termHelp": "Empty = no expiry.",
+    "termRequired": "Required for this type.",
+    "exclusivity": "Exclusivity in hours (24–168)",
+    "deliverables": "Deliverables",
+    "deliverableNames": {
+      "original": "Original",
+      "produced": "Produced cut",
+      "audio": "Audio",
+      "stills": "Stills"
+    },
+    "prohibitions": "Prohibitions",
+    "prohibitionNames": {
+      "resale": "Resale",
+      "advertising": "Advertising",
+      "ai_training": "AI training",
+      "re_editing": "Re-editing"
+    },
+    "aiHelp": "AI training is always prohibited unless separately permitted outside the template.",
+    "commercialHelp": "Offering this template on a material needs the system admin's approval in the listing.",
+    "invalid": "Complete the fields: name, terms and attribution in both languages, at least one medium and one deliverable, term and exclusivity for the type, and valid country codes."
   }
 }

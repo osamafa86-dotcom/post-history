@@ -19,7 +19,7 @@ public struct CatalogListing: Sendable, Codable, Hashable {
     public static let materialVersionRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     public var title: LocalizedText
     public var description: LocalizedText
-    public var shotList: [CatalogListingInputShotListInner]?
+    public var shotList: [CatalogListingFieldsShotListInner]?
     /** قالب واحد مرة واحدة على الأكثر؛ القالب المعطّل `422 validation_failed` */
     public var offers: [ListingOfferInput]
     /** يسمح عقد المادة بالترخيص التجاري؛ يضبطه مدير النظام وحده، وبدونه لا يُقبل عرض `commercial` */
@@ -36,7 +36,7 @@ public struct CatalogListing: Sendable, Codable, Hashable {
     public var updatedAt: Date
     public var updatedBy: UUID
 
-    public init(title: LocalizedText, description: LocalizedText, shotList: [CatalogListingInputShotListInner]? = nil, offers: [ListingOfferInput], commercialAllowed: Bool? = false, state: ListingState, id: UUID, materialId: UUID, materialVersion: Int, suspendedReason: SuspendedReason?, listedAt: Date?, createdAt: Date, updatedAt: Date, updatedBy: UUID) {
+    public init(title: LocalizedText, description: LocalizedText, shotList: [CatalogListingFieldsShotListInner]? = nil, offers: [ListingOfferInput], commercialAllowed: Bool? = false, state: ListingState, id: UUID, materialId: UUID, materialVersion: Int, suspendedReason: SuspendedReason?, listedAt: Date?, createdAt: Date, updatedAt: Date, updatedBy: UUID) {
         self.title = title
         self.description = description
         self.shotList = shotList

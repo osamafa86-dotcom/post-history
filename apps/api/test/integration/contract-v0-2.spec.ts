@@ -284,12 +284,12 @@ describe('contract v0.2 on the server', () => {
     });
   });
 
-  describe('transcript and captions (R11, threat-model §9.1)', () => {
+  describe('transcript, captions and shot_list (R11, threat-model §9.1)', () => {
     it('only those who may edit the material see them in files and get their link; others get the missing-file 404; issuing is a sensitive read', async () => {
       const m = await material();
       const source = await original(m);
       const ids: Record<string, string> = {};
-      for (const [kind, mime] of [['transcript', 'application/json'], ['captions', 'text/vtt']] as const) {
+      for (const [kind, mime] of [['transcript', 'application/json'], ['captions', 'text/vtt'], ['shot_list', 'application/json']] as const) {
         const key = `derived/${m}/${source}/${kind}`;
         storage.sizes.set(key, 40);
         ids[kind] = (
@@ -312,8 +312,8 @@ describe('contract v0.2 on the server', () => {
       const shape = ({ request_id: _r, ...rest }: Record<string, unknown>) => rest;
 
       for (const [name, a] of Object.entries(editors)) {
-        expect([name, kinds((await as(a).get(`/materials/${m}`).expect(200)).body)]).toEqual([name, expect.arrayContaining(['transcript', 'captions'])]);
-        for (const kind of ['transcript', 'captions']) {
+        expect([name, kinds((await as(a).get(`/materials/${m}`).expect(200)).body)]).toEqual([name, expect.arrayContaining(['transcript', 'captions', 'shot_list'])]);
+        for (const kind of ['transcript', 'captions', 'shot_list']) {
           await as(a).get(`/materials/${m}/files/${ids[kind]}/download-url`).expect(200);
           const { rows } = await h.pool.query(
             `SELECT details FROM audit_log WHERE actor_id = $1 AND action = 'material.sensitive_read' AND target_id = $2 AND details->>'file_id' = $3`,
@@ -324,10 +324,10 @@ describe('contract v0.2 on the server', () => {
       }
       for (const [name, a] of Object.entries(readers)) {
         const listed = kinds((await as(a).get(`/materials/${m}`).expect(200)).body);
-        expect([name, listed.filter((k) => k === 'transcript' || k === 'captions')]).toEqual([name, []]);
+        expect([name, listed.filter((k) => ['transcript', 'captions', 'shot_list'].includes(k))]).toEqual([name, []]);
         const page = (await as(a).get('/materials?limit=100').expect(200)).body.items.find((x: { id: string }) => x.id === m);
-        if (page) expect(kinds(page).some((k) => k === 'transcript' || k === 'captions')).toBe(false);
-        for (const kind of ['transcript', 'captions']) {
+        if (page) expect(kinds(page).some((k) => ['transcript', 'captions', 'shot_list'].includes(k))).toBe(false);
+        for (const kind of ['transcript', 'captions', 'shot_list']) {
           const res = await as(a).get(`/materials/${m}/files/${ids[kind]}/download-url`).expect(404);
           expect(shape(res.body)).toEqual(shape(missing));
         }

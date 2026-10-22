@@ -7,20 +7,21 @@
 
 import Foundation
 
+/** جسم الطلب؛ لا خصائص غير المعرَّفة */
 public struct CatalogListingInput: Sendable, Codable, Hashable {
 
     public static let shotListRule = ArrayRule(minItems: nil, maxItems: 200, uniqueItems: false)
     public static let offersRule = ArrayRule(minItems: 1, maxItems: 10, uniqueItems: false)
     public var title: LocalizedText
     public var description: LocalizedText
-    public var shotList: [CatalogListingInputShotListInner]?
+    public var shotList: [CatalogListingFieldsShotListInner]?
     /** قالب واحد مرة واحدة على الأكثر؛ القالب المعطّل `422 validation_failed` */
     public var offers: [ListingOfferInput]
     /** يسمح عقد المادة بالترخيص التجاري؛ يضبطه مدير النظام وحده، وبدونه لا يُقبل عرض `commercial` */
     public var commercialAllowed: Bool? = false
     public var state: ListingState
 
-    public init(title: LocalizedText, description: LocalizedText, shotList: [CatalogListingInputShotListInner]? = nil, offers: [ListingOfferInput], commercialAllowed: Bool? = false, state: ListingState) {
+    public init(title: LocalizedText, description: LocalizedText, shotList: [CatalogListingFieldsShotListInner]? = nil, offers: [ListingOfferInput], commercialAllowed: Bool? = false, state: ListingState) {
         self.title = title
         self.description = description
         self.shotList = shotList

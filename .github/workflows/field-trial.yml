@@ -48,6 +48,9 @@ jobs:
         run: |
           echo "127.0.0.1 main.localhost" | sudo tee -a /etc/hosts
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      # The trial runs the API from the image built for its commit (ADR 0050), as on the host; here it is built from the PR.
+      - name: API image for this commit
+        run: docker build -q -f infra/preview/api.Dockerfile -t "post-history-api:$(git rev-parse HEAD)" .
       - name: Trial stack smoke, monitoring, log canary, backup, restore drill, acceptance pack through the edge
         run: |
           (cd tools/acceptance && npm ci --no-audit --no-fund)
