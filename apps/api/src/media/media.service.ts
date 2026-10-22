@@ -47,7 +47,7 @@ function splitTechnical(t: MediaTechnical): {
 }
 
 // mime_type إلزامي للمصغّرة في العقد؛ للمشتقات الزمنية افتراضه بحسب النوع
-const DEFAULT_MIME: Record<string, string> = { proxy: 'video/mp4', hls: 'application/vnd.apple.mpegurl', audio: 'audio/mp4', thumbnail: 'image/jpeg' };
+const DEFAULT_MIME: Record<string, string> = { proxy: 'video/mp4', hls: 'application/vnd.apple.mpegurl', audio: 'audio/mp4', thumbnail: 'image/jpeg', watermarked_preview: 'video/mp4' };
 
 const conflict = (msg: string) => new ApiError(409, 'upload_state_conflict', msg);
 // الرمز صحيح (فحصه قبل هذه الطبقة، وفشله 404 لإخفاء النقطة) لكن الجلسة أو الملف المصدر غير موجود: حدث متقادم ينقله
@@ -144,6 +144,22 @@ export class MediaService {
       }
       return this.result(tx, s.id);
     });
+  }
+
+  /** ملف مصدر لمشتق عند الطلب (v0.3): معاينة الكتالوج وحزمة التصدير. مفتاح التخزين وبصمته وحدهما، بلا اسم ملف. */
+  async file(fileId: string): Promise<components['schemas']['MediaSourceFile']> {
+    if (!UUID.test(fileId)) throw gone();
+    const [f] = await this.db.select().from(materialFiles).where(eq(materialFiles.id, fileId));
+    if (!f?.storageKey) throw gone();
+    return {
+      file_id: f.id,
+      material_id: f.materialId,
+      kind: f.kind as components['schemas']['MediaSourceFile']['kind'],
+      state: f.state as components['schemas']['MediaSourceFile']['state'],
+      storage_key: f.storageKey,
+      size_bytes: f.sizeBytes === null ? null : Number(f.sizeBytes),
+      sha256: f.sha256 ? f.sha256.toString('hex') : null,
+    };
   }
 
   async derive(fileId: string, body: MediaDerivativeBody): Promise<{ file_id: string }> {
