@@ -1,10 +1,10 @@
-import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Put } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { validateBody } from '../common/contract';
 import { constantTimeEqual } from '../common/crypto';
 import { ApiError } from '../common/errors';
 import { Public } from '../identity/auth.guard';
-import { type MediaDerivativeBody, MediaService, type MediaSessionView, type MediaVerificationBody, type MediaVerificationResult } from './media.service';
+import { type MediaAlignmentBody, type MediaDerivativeBody, MediaService, type MediaSessionView, type MediaVerificationBody, type MediaVerificationResult } from './media.service';
 
 /**
  * نقاط عامل الوسائط (ADR 0006، x-internal في العقد v0.1): خارج /v1 وخارج حارس الجلسات، ومقصورة على INTERNAL_ALLOWED_CIDRS.
@@ -43,6 +43,14 @@ export class MediaController {
     const kind = (body as { kind?: unknown } | null)?.kind;
     this.authorize(auth, AI_DERIVATIVE_KINDS.has(kind) ? this.config.AI_WORKER_TOKEN : undefined);
     return this.media.derive(fileId, validateBody<MediaDerivativeBody>('/internal/media/files/{file_id}/derivatives', 'post', body));
+  }
+
+  @Public()
+  @Put('files/:file_id/alignment')
+  @HttpCode(204)
+  async alignment(@Headers('authorization') auth: string | undefined, @Param('file_id') fileId: string, @Body() body: unknown): Promise<void> {
+    this.authorize(auth);
+    await this.media.putAlignment(fileId, validateBody<MediaAlignmentBody>('/internal/media/files/{file_id}/alignment', 'put', body));
   }
 
   private authorize(header: string | undefined, alternate?: string): void {
