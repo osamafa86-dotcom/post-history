@@ -12,6 +12,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK="$(mktemp -d)"
 export TRIAL_PROJECT="${TRIAL_PROJECT:-post-history-trial-ci}" TRIAL_ENV_FILE="$WORK/trial.env"
+# The second provider (object lock, write-only key): a stand-in MinIO in the same project (infra/backup/test).
+export TRIAL_EXTRA_COMPOSE="${TRIAL_EXTRA_COMPOSE:+$TRIAL_EXTRA_COMPOSE:}$ROOT/infra/backup/test/compose.remote-lock.yml"
 T="$ROOT/infra/field-trial/trial.sh"
 cleanup() {
   [ "${KEEP:-0}" = 1 ] || "$T" down -v --remove-orphans >/dev/null 2>&1 || true
@@ -57,6 +59,12 @@ S3_BACKUP_ACCESS_KEY=backup-ci
 S3_BACKUP_SECRET_KEY=$(hex 16)
 BACKUP_DIR=$WORK/backups
 BACKUP_RECIPIENT_CERT=$WORK/recipient.crt
+BACKUP_REMOTE_URL=http://backup-remote:9000
+BACKUP_REMOTE_BUCKET=offsite
+BACKUP_REMOTE_ACCESS_KEY=offsite-writer
+BACKUP_REMOTE_SECRET_KEY=$(hex 16)
+BACKUP_REMOTE_ROOT_USER=offsite-admin
+BACKUP_REMOTE_ROOT_PASSWORD=$(hex 16)
 ENV
 chmod 400 "$TRIAL_ENV_FILE"
 set -a; . "$ROOT/infra/compose/.env.example"; . "$TRIAL_ENV_FILE"; set +a
@@ -110,6 +118,30 @@ for _ in $(seq 1 10); do [ "$(login 198.51.100.1)" = 401 ] || fail "login throug
 [ "$(login 198.51.100.2)" = 401 ] || fail "another client address shares the rate-limit bucket (client address lost at the edge)"
 echo "client address through the edge: ok"
 
+# The gate's rate limit counts per client on both domains (20 r/s, burst 40, then 429 before any token check): a burst from
+# one client is cut while another client is still served, and a client cannot pick its bucket with X-Forwarded-For (each
+# request of a burst forging a different address still lands in its own bucket). ingest: the peer address (curl
+# --interface); main: CF-Connecting-IP from the trusted Cloudflare ranges, as for login above.
+gate_burst() { # gate_burst <count> <curl args...> -> number of 429s; {} in an argument is the request's index
+  local n="$1"; shift
+  seq "$n" | xargs -P 30 -I{} curl -sS --max-time 20 -o /dev/null -w '%{http_code}\n' --cacert "$WORK/ca.crt" \
+    --resolve "main.localhost:443:127.0.0.1" --resolve "ingest.localhost:443:127.0.0.2" \
+    -X POST -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 1' "$@" 2>/dev/null | grep -c '^429$' || true
+}
+one() { curl -sS --max-time 20 -o /dev/null -w '%{http_code}' --cacert "$WORK/ca.crt" --resolve "main.localhost:443:127.0.0.1" \
+          --resolve "ingest.localhost:443:127.0.0.2" -X POST -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 1' "$@" || echo 000; }
+[ "$(gate_burst 120 --interface 127.0.0.5 https://ingest.localhost/files/)" -gt 0 ] || fail "ingest: a burst from one client is not limited at the gate"
+[ "$(one --interface 127.0.0.6 https://ingest.localhost/files/)" = 401 ] || fail "ingest: another client shares the limited client's bucket"
+sleep 3
+[ "$(gate_burst 120 --interface 127.0.0.7 -H 'X-Forwarded-For: 10.66.0.{}' https://ingest.localhost/files/)" -gt 0 ] \
+  || fail "ingest: a forged X-Forwarded-For moves the client to another rate-limit bucket"
+[ "$(gate_burst 120 -H 'CF-Connecting-IP: 198.51.100.21' https://main.localhost/files/)" -gt 0 ] || fail "main /files/: a burst from one client is not limited at the gate"
+[ "$(one -H 'CF-Connecting-IP: 198.51.100.22' https://main.localhost/files/)" = 401 ] || fail "main /files/: another client shares the limited client's bucket"
+sleep 3
+[ "$(gate_burst 120 -H 'CF-Connecting-IP: 198.51.100.23' -H 'X-Forwarded-For: 10.67.0.{}' https://main.localhost/files/)" -gt 0 ] \
+  || fail "main /files/: a forged X-Forwarded-For moves the client to another rate-limit bucket"
+echo "gate rate limit per client on both domains, not chosen by X-Forwarded-For: ok"
+
 (cd "$ROOT/tools/acceptance" && [ -d node_modules ] || npm ci --no-audit --no-fund >/dev/null)
 DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB" \
 API_URL="http://127.0.0.1:$API_PORT/v1" CA_FILE="$WORK/ca.crt" INGEST_SIGNING_KEY="$WORK/ingest/signing.pem" \
@@ -139,6 +171,30 @@ if dec "$WORK/tampered.cms" >/dev/null 2>&1; then fail "a tampered backup file d
 echo "backup role read-only, backups authenticated: ok"
 COMPOSE="$T" BACKUP_DIR="$WORK/backups" DRILL_ENV=local \
   "$ROOT/infra/backup/restore-drill.sh" --key "$WORK/recipient.key" --out "${DRILL_OUT:-$WORK/drill.json}" || fail "restore drill"
+
+# The second provider: the copy is there under compliance retention, the backup's key can write but neither read nor
+# delete, the provider's own administrator cannot purge a locked version either, and a restore drill from a copy pulled
+# back from it passes (#149 item e).
+grep -q '"remote":true' "$WORK/backups/last-success.json" || fail "the backup did not reach the second provider"
+rmc() { "$T" exec -T -e "MC_HOST_$1=http://$2:$3@127.0.0.1:9000" backup-remote mc "${@:4}"; }
+W_() { rmc w "$BACKUP_REMOTE_ACCESS_KEY" "$BACKUP_REMOTE_SECRET_KEY" "$@"; }
+A_() { rmc a "$BACKUP_REMOTE_ROOT_USER" "$BACKUP_REMOTE_ROOT_PASSWORD" "$@"; }
+rdump="$(A_ ls --recursive a/offsite/pg/ | awk '/\.dump\.cms$/ {print $NF}' | tail -1)"
+[ -n "$rdump" ] || fail "no dump at the second provider"
+A_ retention info "a/offsite/pg/$rdump" | grep -q COMPLIANCE || fail "the remote dump is not under compliance retention"
+if W_ rm "w/offsite/pg/$rdump" >/dev/null 2>&1; then fail "the backup key can delete at the second provider"; fi
+if W_ cat "w/offsite/pg/$rdump" >/dev/null 2>&1; then fail "the backup key can read at the second provider"; fi
+A_ rm --recursive --versions --force a/offsite/pg/ >/dev/null 2>&1 || true
+A_ cat "a/offsite/pg/$rdump" | cmp -s - "$WORK/backups/pg/$rdump" || fail "a locked version was purged by the provider's administrator"
+mkdir -p "$WORK/offsite" && chmod 777 "$WORK/offsite"
+docker run --rm --network "${TRIAL_PROJECT}_default" -u "$(id -u):$(id -g)" -v "$WORK/offsite:/out" \
+  -e "MC_HOST_a=http://$BACKUP_REMOTE_ROOT_USER:$BACKUP_REMOTE_ROOT_PASSWORD@backup-remote:9000" -e MC_CONFIG_DIR=/tmp/.mc \
+  pgsty/mc:RELEASE.2026-10-18T00-00-00Z@sha256:6ecdaec70bc5e8cf9d0e9a70c190f3beb1c83f11617ff4333f1fcd71ab1daf18 \
+  mirror --quiet a/offsite /out >/dev/null || fail "pulling the copy back from the second provider"
+COMPOSE="$T" BACKUP_DIR="$WORK/offsite" DRILL_ENV=local DRILL_SOURCE=second-provider \
+  "$ROOT/infra/backup/restore-drill.sh" --key "$WORK/recipient.key" --out "${DRILL_REMOTE_OUT:-$WORK/drill-remote.json}" \
+  || fail "restore drill from the second provider's copy"
+echo "second provider: locked, write-only key, undeletable, restore drill from its copy: ok"
 
 # Monitoring (infra/observability): every check passes, a stopped worker is a FAIL with one alert line, recovery is
 # logged, the /health endpoint follows the result, the status board renders in Arabic.
@@ -239,4 +295,22 @@ if grep -qiE '"(ingest-token|authorization)"[[:space:]]*:|bearer [A-Za-z0-9._-]{
 # Upload ids are bearer capabilities (SEC-06): logged as /files/-, never /files/<id>.
 if grep -qE '/files/[A-Za-z0-9]' <<<"$edge_log"; then fail "an upload id in an edge log"; fi
 grep -qF '/files/-' <<<"$edge_log" || fail "no redacted upload path in the edge log (nothing logged?)"
+
+# The availability drill (tools/acceptance availability, ADR 0028), last because it kills the API and Postgres: under read
+# load the API is killed, then Postgres, then the API recreated, and each recovery is timed. A CI runner is not the trial
+# host and no target is declared here, so the result is partial; it fails if anything does not recover. TRIAL_AVAILABILITY=0 skips.
+if [ "${TRIAL_AVAILABILITY:-1}" = 1 ]; then
+  accounts="$(DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB" \
+    API_URL="http://127.0.0.1:$API_PORT/v1" node "$ROOT/tools/acceptance/field-trial/rehearsal-accounts.mjs")"
+  token_of() { python3 -c 'import json,sys; a=json.loads(sys.argv[1])[sys.argv[2]]; print(json.dumps({"email":a["email"],"password":a["password"]}))' "$accounts" "$1" \
+    | curl -fsS -X POST "http://127.0.0.1:$API_PORT/v1/auth/login" -H 'Content-Type: application/json' -d @- \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])'; }
+  # A crash, not an operator's stop: the drill SIGKILLs the container's process from the host (#233), so the restart policy
+  # applies; that needs root here, or passwordless sudo on the CI runner.
+  [ "$(id -u)" = 0 ] && kill_prefix="" || kill_prefix="sudo -n"
+  AVAIL_API_URL="http://127.0.0.1:$API_PORT/v1" AVAIL_TOKEN="$(token_of reporter)" AVAIL_SUPERVISOR_TOKEN="$(token_of supervisor)" \
+  AVAIL_COMPOSE="$T" AVAIL_KILL_PREFIX="$kill_prefix" AVAIL_TIMEOUT_MS="${AVAIL_TIMEOUT_MS:-300000}" \
+    node "$ROOT/tools/acceptance/scripts/availability.mjs" --dry-run || fail "availability drill: a scenario did not recover"
+  echo "availability drill (api kill, database kill, api recreate under load): ok"
+fi
 echo "field trial smoke: ok"

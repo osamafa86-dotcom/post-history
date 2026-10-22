@@ -8,7 +8,7 @@ import type { WebConfig } from "../src/server/config";
 import { MemoryStore } from "./memory-store";
 import { material, me, tokens } from "./fixtures";
 
-const config: WebConfig = { origin: "https://web.example.test", api: "https://api.example.test/v1", key: randomBytes(32), redisUrl: "redis://127.0.0.1:6379/1", secure: true, cookieName: "__Host-ph-session", lifetimeSeconds: 28800, mediaOrigins: [], trustForwardedFor: false };
+const config: WebConfig = { origin: "https://web.example.test", api: "https://api.example.test/v1", key: randomBytes(32), redisUrl: "redis://127.0.0.1:6379/1", secure: true, cookieName: "__Host-ph-session", lifetimeSeconds: 28800, mediaOrigins: [], tusOrigins: [], trustForwardedFor: false };
 const response = (body: unknown, status = 200) => Response.json(body, { status });
 function request(path: string, id?: string, body?: unknown, origin = config.origin) {
   return new NextRequest(`${config.origin}/api/bff/${path}`, { method: body === undefined ? "GET" : "POST", headers: { Cookie: id ? `${config.cookieName}=${id}` : "", Origin: origin, "Content-Type": "application/json", "X-Requested-With": "post-history-web" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -89,10 +89,13 @@ describe("BFF session boundary", () => {
     const result = await handle(request("auth/logout", id, { all_sessions: true }), "auth/logout", { config, store, fetch: transport(async r => { expect(await r.json()).toEqual({ all_sessions: true }); return new Response(null, { status: 204 }); }) });
     expect(result.status).toBe(200); expect(await store.read(id)).toBeNull(); expect(result.headers.get("set-cookie")).toContain("Max-Age=0");
   });
-  it("does not provide generic API proxy or material mutations", async () => {
+  it("does not provide generic API proxy or material edits", async () => {
+    // إنشاء المادة للمراسل مسار صريح في server/uploads.ts (#88)؛ ما عداه من كتابات المواد والنماذج غير موجود.
     const store = new MemoryStore(), id = await store.create(tokens());
-    const result = await handle(request("materials", id, { title: "blocked" }), "materials", { config, store, fetch: transport(() => { throw new Error("must not call API"); }) });
-    expect(result.status).toBe(405);
+    for (const path of ["forms", `materials/${material().id}`, "uploads/x/complete"]) {
+      const result = await handle(request(path, id, { title: "blocked" }), path, { config, store, fetch: transport(() => { throw new Error("must not call API"); }) });
+      expect(result.status).toBe(405);
+    }
   });
   it("uses the current permissions, drops GPS and unknown fields before browser delivery", async () => {
     const store = new MemoryStore(), id = await store.create(tokens());

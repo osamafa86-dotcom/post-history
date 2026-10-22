@@ -138,7 +138,7 @@ test("admin-quorum: a command that never started is not a refusal", async () => 
   assert.equal(r.code, 1);
 });
 
-import { checkTranscript, checkWebvtt, run as transcriptDraft } from "../scripts/transcript-draft.mjs";
+import { checkTranscript, checkWebvtt, readerListing, run as transcriptDraft } from "../scripts/transcript-draft.mjs";
 
 const RLM_ = "‏";
 const goodTranscript = () => ({
@@ -187,4 +187,13 @@ test("transcript-draft: only the pinned public clip counts; a different file or 
   assert.equal(await isPinnedSpeech(j(d, "missing.wav")), false);
   const fake = async () => ({ ok: true, arrayBuffer: async () => new TextEncoder().encode("tampered archive").buffer });
   await assert.rejects(fetchSpeech(j(d, "cache"), { fetchImpl: fake }), /does not match the pinned sha256/);
+});
+
+test("transcript-draft R11 control: a reader that cannot see the material at all is not 'a reader who sees no transcript'", () => {
+  assert.deepEqual(readerListing({ status: 404, body: { code: "not_found" } }), { status: 404, kinds: [], readable: false });
+  assert.equal(readerListing({ status: 200, body: { files: [] } }).readable, false, "nothing listed: not a usable control");
+  assert.equal(readerListing({ status: 200, body: { files: [{ kind: "transcript" }] } }).readable, false);
+  assert.equal(readerListing({ status: 200, body: {} }).readable, false);
+  const ok = readerListing({ status: 200, body: { files: [{ kind: "original" }, { kind: "proxy" }] } });
+  assert.deepEqual(ok, { status: 200, kinds: ["original", "proxy"], readable: true });
 });

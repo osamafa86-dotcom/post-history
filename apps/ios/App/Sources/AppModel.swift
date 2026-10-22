@@ -1,6 +1,9 @@
 import AuthCore
+import DeviceAttestation
 import DeviceSecurity
 import Foundation
+import MaterialsCore
+import NotificationsCore
 import PostHistoryAPI
 import SwiftUI
 import UploadCore
@@ -17,6 +20,9 @@ final class AppModel: ObservableObject {
     let api: PostHistoryAPIAPIConfiguration
     let settings = AppSettings()
     let uploads: UploadQueueModel
+    let materials: MyMaterialsModel
+    let notifications: NotificationsModel
+    let push: PushRegistrar
     private var authWatcher: Task<Void, Never>?
 
     init(store: any TokenStore = KeychainTokenStore(), baseURL: String = AppConfiguration.apiBaseURL) {
@@ -24,22 +30,30 @@ final class AppModel: ObservableObject {
         if !UserDefaults.standard.bool(forKey: "hasLaunchedBefore") {
             try? store.clear()
             try? KeychainUploadSecretStore().removeAll()
+            // معرّف مفتاح App Attest من تثبيت سابق (Keychain يبقى بعد الحذف) لم يعد صالحًا؛ يُسجَّل مفتاح جديد عند أول رفع.
+            try? KeychainAttestationKeyStore().removeKeyId()
             UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
         }
         // مسارات /auth/* بلا معترض كي لا يدخل التحديث في حلقة.
-        let plain = PostHistoryAPIAPIConfiguration(basePath: baseURL)
+        let plain = PostHistoryAPIAPIConfiguration.noCache(basePath: baseURL)
         let auth = AuthSession(store: store, gateway: APIAuthGateway(configuration: plain))
         self.auth = auth
-        let api = PostHistoryAPIAPIConfiguration(basePath: baseURL, interceptor: AuthInterceptor(auth: auth))
+        let api = PostHistoryAPIAPIConfiguration.noCache(basePath: baseURL, interceptor: AuthInterceptor(auth: auth))
         self.api = api
         // نواة الرفع فوق الجلسة الخلفية المشتركة؛ تُستأنف السجلات غير المكتملة عند كل إطلاق.
         self.uploads = UploadQueueModel(engine: try! UploadServices.shared.makeEngine(api: api), settings: settings)
+        self.materials = MyMaterialsModel(feed: MaterialsFeed(api: GeneratedMaterialsListAPI(configuration: api)))
+        self.notifications = NotificationsModel(feed: NotificationsFeed(api: GeneratedNotificationsListAPI(configuration: api)))
+        let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        self.push = PushRegistrar(api: GeneratedPushDevicesAPI(configuration: api), ids: KeychainInstallationIdStore(), appVersion: appVersion)
+        PushBridge.shared.registrar = push
+        PushBridge.shared.onOpen = { [weak self] route in Task { await self?.notifications.openFromPush(route) } }
         Task { await self.restore() }
     }
 
     func restore() async {
         phase = await auth.session.map(Phase.signedIn) ?? .signedOut
-        if case .signedIn = phase { uploads.start() }
+        if case .signedIn = phase { uploads.start(); await startPush() }
         watchAuth()
     }
 
@@ -52,6 +66,10 @@ final class AppModel: ObservableObject {
                 guard case .sessionRevoked(let at) = event else { continue }
                 _ = await uploads.engine.wipeAll()
                 await uploads.refresh()
+                await materials.clear()
+                await push.forgetLocally()
+                await notifications.clear()
+                await NotificationTraceWiper.wipe(SystemNotificationCenterTraces())
                 phase = .revoked(at: at)
             }
         }
@@ -63,12 +81,19 @@ final class AppModel: ObservableObject {
         let services = UploadServices.shared
         let engine = uploads.engine
         let auth = self.auth
+        let push = self.push
         let steps: [WipeStep] = [
             // قرار المنسّق: إبطال كل الجلسات على الخادم بأفضل جهد (≤3 ث) قبل المحو؛ لا ينتظره المحو ولا يفشل بسببه.
             WipeStep(name: "revoke_remote") { await auth.revokeEverywhereBestEffort(timeout: 3) ? 1 : 0 },
             WipeStep(name: "uploads") { await engine.wipeAll() },
+            // معرّف التثبيت يُنسى محليًا (بلا اتصال)؛ إلغاء الجهاز على الخادم يتبع إبطال الجلسات أعلاه.
+            WipeStep(name: "installation_id") { await push.forgetLocally(); return 1 },
+            // ما على شاشة القفل ومركز الإشعارات والشارة.
+            WipeStep(name: "delivered_notifications") { await NotificationTraceWiper.wipe(SystemNotificationCenterTraces()) },
             WipeStep(name: "session") { await auth.forgetLocally(); return 1 },
             WipeStep(name: "upload_tokens") { try KeychainUploadSecretStore().removeAll(); return 1 },
+            // معرّف مفتاح App Attest معرّف تثبيت: يُحذف فيُسجَّل مفتاح جديد بعد الدخول التالي.
+            WipeStep(name: "attestation_key") { try KeychainAttestationKeyStore().removeKeyId(); return 1 },
             LocalDataWiper.directoryStep(name: "upload_state", url: services.stateDirectory),
             LocalDataWiper.directoryStep(name: "chunks", url: services.chunksDirectory),
             LocalDataWiper.directoryStep(name: "imported_originals", url: services.uploadsDirectory),
@@ -82,20 +107,33 @@ final class AppModel: ObservableObject {
         let report = await EmergencyWipe(steps: steps).run()
         settings.reload()
         await uploads.refresh()
+        await materials.clear()
+        await notifications.clear()
         phase = .wiped(report)
     }
 
     func acknowledgeAndSignIn() { phase = .signedOut }
 
+    /// بعد الدخول: الإذن ثم APNs، والتسجيل لدى الخادم حين يصل الرمز.
+    private func startPush() async {
+        await push.didSignIn()
+        await PushBridge.shared.requestAuthorizationAndRegister()
+    }
+
     func login(email: String, password: String, totpCode: String) async throws {
         let session = try await auth.login(email: email, password: password, totpCode: totpCode.isEmpty ? nil : totpCode)
         phase = .signedIn(session)
         uploads.start()
+        await startPush()
     }
 
     func logout(allSessions: Bool) async {
         // الرموز تُمسح محليًا قبل الاتصال؛ فشل الشبكة لا يبقي الجلسة على الجهاز.
+        await push.willSignOut()
         try? await auth.logout(allSessions: allSessions)
+        await materials.clear()
+        await notifications.clear()
+        await NotificationTraceWiper.wipe(SystemNotificationCenterTraces())
         phase = .signedOut
     }
 }

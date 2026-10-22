@@ -15,7 +15,10 @@ from .ffmpeg import FFMPEG, INPUT_GUARD, run
 INTERVAL_S = 2
 MAX_FRAMES = 32
 SIZE = 32
-MATCH_DISTANCE = 10.0
+# معايرة على 10 مصادر اصطناعية (docs/measurements/render-bench/2026-10-21-phash-calibration.json): أقرب زوج مختلف 27.2،
+# فـ 20 يترك هامشًا 25% بلا قبول خاطئ، ويقبل إعادة الترميز والتصغير والإضاءة ومعدل الإطارات في المحتوى المنقوش.
+# لا يصمد لشعار مضاف ولا للمحتوى الأملس أو الضجيجي، ولا للقص والإزاحة؛ يرشّح فقط ولا يمنع.
+MATCH_DISTANCE = 20.0
 _COS = [[math.cos((2 * x + 1) * u * math.pi / (2 * SIZE)) for x in range(SIZE)] for u in range(8)]
 
 

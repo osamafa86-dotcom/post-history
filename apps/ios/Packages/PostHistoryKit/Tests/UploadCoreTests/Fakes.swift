@@ -20,6 +20,11 @@ final class FakeTransport: TusTransport, @unchecked Sendable {
     var activeKeys: Set<TusTaskKey> = []
     var pendingKeys: [TusTaskKey] = []
     var headError: TusError?
+    /// بوابة ingest محاكاة: إن ضُبط، كل طلب برمز غير هذا يُرفض بـ 401 قبل أن يصل إلى tusd.
+    var validIngestToken: String?
+    var ingestTokensSeen: [String?] = []
+    /// «انتهاء» الرمز: بعد هذا العدد من الأجزاء المقبولة يصير الرمز الصالح هو القيمة الثانية.
+    var rotateIngestTokenAfterPatches: (count: Int, to: String)?
     weak var delegate: TusTransportDelegate?
     var uploadURL = URL(string: "https://ingest.example.invalid/files/abc123")!
 
@@ -29,6 +34,8 @@ final class FakeTransport: TusTransport, @unchecked Sendable {
 
     func createUpload(_ request: TusCreateRequest) async throws -> URL {
         try lock.withLock {
+            ingestTokensSeen.append(request.ingestToken)
+            if let valid = validIngestToken, request.ingestToken != valid { throw TusError.authenticationRequired }
             creates.append(request)
             if created { throw TusError.unauthorized }
             created = true
@@ -39,9 +46,11 @@ final class FakeTransport: TusTransport, @unchecked Sendable {
         }
     }
 
-    func currentOffset(uploadURL: URL, token: String) async throws -> Int64 {
+    func currentOffset(uploadURL: URL, token: String, ingestToken: String?) async throws -> Int64 {
         try lock.withLock {
             headCalls += 1
+            ingestTokensSeen.append(ingestToken)
+            if let valid = validIngestToken, ingestToken != valid { throw TusError.authenticationRequired }
             if let e = headError { throw e }
             guard created, uploadURL == self.uploadURL else { throw TusError.gone }
             return serverOffset
@@ -51,12 +60,15 @@ final class FakeTransport: TusTransport, @unchecked Sendable {
     func schedulePatch(_ request: TusPatchRequest) async throws {
         let data = try Data(contentsOf: request.chunkFile)
         let (target, outcome): (TusTransportDelegate?, TusPatchOutcome?) = lock.withLock {
+            ingestTokensSeen.append(request.ingestToken)
+            if let valid = validIngestToken, request.ingestToken != valid { return (self.delegate, .failed(.authenticationRequired)) }
             patches.append((request.chunk.offset, request.chunk.length))
             let b: Behavior = script.isEmpty ? .ok : script.removeFirst()
             if request.chunk.offset != serverOffset { return (self.delegate, .failed(.offsetMismatch)) }
             switch b {
             case .ok:
                 serverBytes.append(data); serverOffset += Int64(data.count)
+                if let r = rotateIngestTokenAfterPatches, patches.count == r.count { validIngestToken = r.to }
                 return (self.delegate, .completed(newOffset: serverOffset))
             case .partial(let n):
                 serverBytes.append(data.prefix(Int(n))); serverOffset += n
@@ -96,6 +108,7 @@ final class FakeUploadAPI: UploadAPI, @unchecked Sendable {
     /// حالات الجلسة التي يعيدها الخادم عند كل استطلاع بالترتيب؛ الأخيرة تتكرر.
     var states: [UploadSession.State] = [.completed, .verified]
     var failureReason: UploadSession.FailureReason?
+    var ingestTokenRequired: Bool?
     var polls = 0
     let sessionId = UUID()
     let token = "upload-token-secret"
@@ -108,7 +121,8 @@ final class FakeUploadAPI: UploadAPI, @unchecked Sendable {
         }
         return UploadSessionCreated(id: sessionId, materialId: body.materialId, kind: .original, state: .created, sizeBytes: body.sizeBytes,
                                     tusEndpoint: "https://ingest.example.invalid/files/", tusMetadata: UploadSessionTusMetadata(uploadSessionId: sessionId),
-                                    partSizeBytes: 16_777_216, bytesReceived: 0, expiresAt: Date().addingTimeInterval(3600), createdAt: Date(),
+                                    partSizeBytes: 16_777_216, bytesReceived: 0, ingestTokenRequired: lock.withLock { ingestTokenRequired },
+                                    expiresAt: Date().addingTimeInterval(3600), createdAt: Date(),
                                     uploadToken: token, uploadTokenExpiresAt: Date().addingTimeInterval(3600))
     }
 
@@ -164,4 +178,29 @@ extension UploadEngine {
         }
         return record(id)
     }
+}
+
+/// مصدر رموز ingest محاكى: يصدر رموزًا مرقّمة، ويسجّل الطلبات القسرية والنسيان.
+final class FakeIngestTokens: IngestTokenProvider, @unchecked Sendable {
+    let lock = NSLock()
+    var issued = 0
+    var forced = 0
+    var forgotten: [UUID] = []
+    var error: IngestTokenError?
+    var cached: [UUID: String] = [:]
+
+    func ingestToken(uploadSessionId: UUID, forceRefresh: Bool) async throws -> String {
+        try lock.withLock {
+            if let error { throw error }
+            if forceRefresh { forced += 1; cached[uploadSessionId] = nil }
+            if let t = cached[uploadSessionId] { return t }
+            issued += 1
+            let t = "ingest-\(issued)"
+            cached[uploadSessionId] = t
+            return t
+        }
+    }
+
+    func forget(uploadSessionId: UUID) async { lock.withLock { forgotten.append(uploadSessionId); cached[uploadSessionId] = nil } }
+    var current: String? { lock.withLock { cached.values.first } }
 }

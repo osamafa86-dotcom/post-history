@@ -12,10 +12,11 @@ import opentimelineio as otio
 import pytest
 
 from conftest import LEAKY_TAGS, STREAM_TAGS, synth
-from fakes import FakeApi
+from fakes import FakeApi, FakeStorage
+from media_worker.api import FileRef, Session
 from media_worker.export import build_package, frame_rate, strip_metadata
 from media_worker.ffmpeg import FFMPEG, run
-from media_worker.jobs import export_key
+from media_worker.jobs import Buckets, Jobs, export_key, proxy_key
 from media_worker.probe import probe
 from test_jobs import MID, _event, _setup
 
@@ -41,9 +42,13 @@ def _leaky_original(d: Path, ext: str = "mov") -> Path:
 
 
 def _packets(path: Path) -> bytes:
-    """بصمة كل حزمة فيديو وصوت كما هي (بلا فك ترميز)."""
-    return run([FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-i", str(path),
-                "-map", "0:v:0", "-map", "0:a:0", "-c", "copy", "-f", "framemd5", "-"], timeout_s=60)
+    """بصمة كل إطار مفكوك وكل حزمة صوت: تطابقها يثبت أن الصورة لم يُعَد ترميزها (حذف وحدات SEI يغيّر الحزم لا
+    الإطارات) وأن الصوت نُسخ كما هو."""
+    video = run([FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-i", str(path),
+                 "-map", "0:v:0", "-f", "framemd5", "-"], timeout_s=60)
+    audio = run([FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-i", str(path),
+                 "-map", "0:a:0", "-c", "copy", "-f", "framemd5", "-"], timeout_s=60)
+    return b"".join(l for l in (video + audio).splitlines(True) if not l.startswith(b"#"))
 
 
 @pytest.fixture(scope="module")
@@ -159,21 +164,72 @@ def test_ntsc_rate_is_rational():
     assert frame_rate(Probe(frame_rate=25.0, **base)) == 25
 
 
-def test_export_job_behind_flag(tmp_path: Path):
+def _export_setup(data: bytes, *, proxy: bytes | None = None, state: str = "verified"):
+    storage = FakeStorage()
+    storage.objects[("uploads", "orig/1")] = data
+    if proxy is not None:
+        storage.objects[("media", proxy_key(MID, FakeApi.FILE_ID))] = proxy
+    api = FakeApi(Session(id="5e000000-0000-4000-8000-000000000003", material_id=MID, kind="original",
+                          state="verified", size_bytes=len(data), storage_key="orig/1", material_has_proxy=True))
+    api.original = FileRef(file_id=FakeApi.FILE_ID, material_id=MID, storage_key="orig/1", size_bytes=len(data),
+                           sha256=hashlib.sha256(data).hexdigest(), kind="original", state=state)
+    return api, storage, Jobs(api, storage, Buckets(uploads="uploads", derived="media"), enable_export=True)
+
+
+def _requested():
+    return {"type": "export.requested", "aggregate_type": "material",
+            "payload": {"material_id": MID, "source_file_id": FakeApi.FILE_ID,
+                        "requested_by": "0b000000-0000-4000-8000-000000000001"}}
+
+
+def test_export_is_built_on_request_not_at_ingest(tmp_path: Path):
     data = synth(tmp_path / "a.mov", seconds=2).read_bytes()
     api, storage, jobs = _setup(data)
-    assert "export" not in jobs.handle(_event())
-    api, storage, jobs = _setup(data)
     jobs.enable_export = True
-    assert jobs.handle(_event()).endswith("+proxy+export")
+    assert "export" not in jobs.handle(_event())
+    proxy = synth(tmp_path / "p.mp4", seconds=2, size="320x240").read_bytes()
+    api, storage, jobs = _export_setup(data, proxy=proxy)
+    assert jobs.handle(_requested()) == "export"
     key = export_key(MID, FakeApi.FILE_ID)
-    _, body = api.derivatives[-1]
-    assert body["kind"] == "export" and body["storage_key"] == key
+    (fid, body), = api.derivatives
+    assert fid == FakeApi.FILE_ID and body["kind"] == "export" and body["storage_key"] == key
+    assert body["mime_type"] == "application/zip" and body["technical"]["video_codec"] == "h264"
     blob = storage.objects[("media", key)]
     assert body["sha256"] == hashlib.sha256(blob).hexdigest()
     zpath = tmp_path / "e.zip"
     zpath.write_bytes(blob)
     with zipfile.ZipFile(zpath) as zf:
-        assert zf.namelist()[0] == "clip.mov" and "proxy.mp4" in zf.namelist()
+        assert zf.namelist()[0] == "clip.mov" and zf.read("proxy.mp4") == proxy
         assert zf.read("clip.mov") != data
-    assert storage.objects[("uploads", "tus/1")] == data
+    assert storage.objects[("uploads", "orig/1")] == data
+
+
+def test_export_redelivery_reregisters_the_stored_package(tmp_path: Path):
+    api, storage, jobs = _export_setup(synth(tmp_path / "a.mov", seconds=2).read_bytes())
+    assert jobs.handle(_requested()) == "export"
+    assert jobs.handle(_requested()) == "export-existing"
+    assert len(storage.puts) == 1 and api.derivatives[0][1] == api.derivatives[1][1]
+
+
+def test_export_behind_flag_and_only_from_a_verified_original(tmp_path: Path):
+    data = synth(tmp_path / "a.mov", seconds=2).read_bytes()
+    api, storage, jobs = _export_setup(data)
+    jobs.enable_export = False
+    assert jobs.handle(_requested()) == "ignored"
+    api, storage, jobs = _export_setup(data, state="received")
+    with pytest.raises(ValueError):
+        jobs.handle(_requested())
+    assert storage.puts == []
+
+
+@pytest.mark.parametrize("hevc", [False, True], ids=["h264", "hevc-hlg"])
+def test_in_band_sei_is_removed_and_hdr_survives(tmp_path: Path, hevc: bool):
+    # x264 وx265 يكتبان رسالة SEI user_data_unregistered بنص اسم البرنامج وخياراته: نص حر داخل التيار نفسه
+    from test_hdr import hdr_clip
+    src = hdr_clip(tmp_path / "h.mov", "arib-std-b67", seconds=2) if hevc else synth(tmp_path / "s.mov", seconds=2)
+    marker = b"x265 (build" if hevc else b"x264 - core"
+    assert marker in src.read_bytes()
+    out = tmp_path / "clip.mov"
+    strip_metadata(src, out)
+    assert marker not in out.read_bytes()
+    assert _packets(out) == _packets(src) and probe(out).hdr is hevc

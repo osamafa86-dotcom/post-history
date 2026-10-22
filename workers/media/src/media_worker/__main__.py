@@ -1,4 +1,5 @@
-"""python -m media_worker serve (الخدمة) | requeue-dead REASON | {probe,digest,proxy} FILE [OUT] (للتجربة والقياس)"""
+"""python -m media_worker serve (الخدمة) | requeue-dead REASON | reregister MID:FID… | {probe,digest,proxy} FILE [OUT] | align PROXY ORIGINAL
+(للتجربة والقياس؛ `align` أداة الوسائط في سكربت القبول الميداني timestamp-alignment)"""
 
 from __future__ import annotations
 
@@ -17,17 +18,26 @@ def main() -> None:
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("serve")
     sub.add_parser("requeue-dead").add_argument("reason")
+    sub.add_parser("reregister").add_argument("pairs", nargs="+", help="material_id:file_id")
     for name in ("probe", "digest"):
         sub.add_parser(name).add_argument("file", type=Path)
     p = sub.add_parser("proxy")
     p.add_argument("file", type=Path)
     p.add_argument("out", type=Path)
+    a = sub.add_parser("align")
+    a.add_argument("proxy", type=Path)
+    a.add_argument("original", type=Path)
     args = parser.parse_args()
 
     if args.cmd == "requeue-dead":
         from .service import requeue_main
 
         requeue_main(args.reason)
+        return
+    if args.cmd == "reregister":
+        from .reregister import main as reregister
+
+        reregister(args.pairs)
         return
     if args.cmd == "serve":
         from .service import main as serve
@@ -38,6 +48,10 @@ def main() -> None:
         out = probe(args.file).to_dict()
     elif args.cmd == "digest":
         out = asdict(digest_file(args.file))
+    elif args.cmd == "align":
+        from .align import measure_offset
+
+        out = measure_offset(args.proxy, args.original)
     else:
         out = make_proxy(args.file, args.out).to_dict()
     print(json.dumps(out, indent=2))

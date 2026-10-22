@@ -70,13 +70,7 @@ export async function uploadAccessRevoked(tx: Tx, session: SessionRow): Promise<
  */
 export async function abortRevokedUpload(tx: Tx, session: SessionRow): Promise<void> {
   await markUploadFailed(tx, session, 'aborted');
-  // أصل اكتمل وتقدّم به المسار الفني ثم أُلغي قبل التحقق: المادة تعود failed كفشل التحقق (والمراسل يعيدها pending)
-  if (session.state === 'completed' && session.kind === 'original') {
-    const material = await lockMaterial(tx, session.materialId);
-    if (material && transitionOwners('technical', material.technicalState, 'failed')) {
-      await applyTransition(tx, material, { track: 'technical', to: 'failed', reason: 'original aborted: access revoked', actorId: null });
-    }
-  }
+  await failCompletedOriginal(tx, session, 'original aborted: access revoked');
   await tx.insert(auditLog).values({
     actorId: null,
     action: 'upload.aborted_access_revoked',
@@ -85,4 +79,13 @@ export async function abortRevokedUpload(tx: Tx, session: SessionRow): Promise<v
     details: { upload_session_id: session.id, material_id: session.materialId, target_user_id: session.createdBy, reason_code: 'access_revoked' },
     hash: Buffer.alloc(32),
   });
+}
+
+/** أصل اكتمل وتقدّم به المسار الفني ثم أُلغي قبل التحقق: المادة تعود failed كفشل التحقق (والمراسل يعيدها pending). */
+export async function failCompletedOriginal(tx: Tx, session: SessionRow, reason: string): Promise<void> {
+  if (session.state !== 'completed' || session.kind !== 'original') return;
+  const material = await lockMaterial(tx, session.materialId);
+  if (material && transitionOwners('technical', material.technicalState, 'failed')) {
+    await applyTransition(tx, material, { track: 'technical', to: 'failed', reason, actorId: null });
+  }
 }

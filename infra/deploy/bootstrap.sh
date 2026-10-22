@@ -93,10 +93,10 @@ run env DEBIAN_FRONTEND=noninteractive apt-get install -y -q --allow-downgrades 
   "docker-ce=$DOCKER_VERSION" "docker-ce-cli=$DOCKER_VERSION" "containerd.io=$CONTAINERD_VERSION" \
   "docker-compose-plugin=$COMPOSE_VERSION"
 run apt-mark hold docker-ce docker-ce-cli containerd.io docker-compose-plugin
-# سجلات الحاويات تُدوَّر، فلا تملأ القرص في أسبوعين.
+# سجلات الحاويات تُدوَّر، فلا تملأ القرص في أسبوعين. والوسم tag باسم الحاوية يقرؤه مجمّع السجلات (ADR 0027).
 install -d -m 0755 "$PREFIX/etc/docker"
 [ -f "$PREFIX/etc/docker/daemon.json" ] || printf '%s\n' \
-  '{"log-driver": "json-file", "log-opts": {"max-size": "50m", "max-file": "5"}, "live-restore": true}' \
+  '{"log-driver": "json-file", "log-opts": {"max-size": "50m", "max-file": "5", "tag": "{{.Name}}"}, "live-restore": true}' \
   > "$PREFIX/etc/docker/daemon.json"
 run systemctl enable --now docker
 run systemctl restart docker
@@ -128,6 +128,8 @@ if [ "$DRY" = 0 ]; then
   [ "$(stat -f -c %T "$RUN")" = tmpfs ] || die "$RUN is not on tmpfs"
 fi
 install -m 0444 "$BACKUP_CERT" "$ETC/backup-recipient.crt"
+# الفحوص الصحية مقاييسَ لـ node-exporter (healthcheck.sh --prom، ADR 0027).
+install -d -m 0755 "$PREFIX/var/lib/post-history/textfile"
 
 say secrets
 umask 077
@@ -176,6 +178,10 @@ else
     echo "BACKUP_RECIPIENT_CERT=/etc/post-history/backup-recipient.crt"
     echo "BACKUP_HOUR_UTC=2"
     echo "BACKUP_KEEP_DAYS=14"
+    # المراقبة وتتبّع الأخطاء (ADR 0027، 0029): مشروعان مستقلان يقرآن هذا الملف نفسه (infra/observability/stack.sh).
+    echo "GRAFANA_ADMIN_PASSWORD=$(hex 24)"
+    echo "GLITCHTIP_DB_PASSWORD=$(hex 32)"
+    echo "GLITCHTIP_SECRET_KEY=$(hex 32)"
   } | age -r "$HOST_RECIPIENT" -r "$OWNER_RECIPIENT" -o "$ETC/trial.env.age.part"
   mv "$ETC/trial.env.age.part" "$ETC/trial.env.age"
   unset ingest_priv break_glass
@@ -185,6 +191,11 @@ UNSEAL_ETC="$ETC" UNSEAL_RUN="$RUN" "$HERE/unseal.sh"
 
 say images
 run "$APP/infra/compose/check-pinned.sh"
+# The API image for the checked-out commit (ADR 0050): a release tag's own image, checked, or built here when none.
+head_sha="$(git -C "$APP" rev-parse HEAD)"
+head_tag="$(git -C "$APP" tag --points-at HEAD -l "${RELEASE_TAG_PATTERN:-v*}" --sort=-v:refname | head -1)"
+if [ -n "$head_tag" ]; then run "$APP/infra/deploy/api-image.sh" "$head_sha" --tag "$head_tag"
+else run "$APP/infra/deploy/api-image.sh" "$head_sha" --build; fi
 run "$APP/infra/field-trial/trial.sh" pull --quiet
 run "$APP/infra/field-trial/trial.sh" build backup
 
@@ -193,6 +204,8 @@ run "$APP/infra/field-trial/preflight.sh"
 
 say start
 run "$APP/infra/field-trial/trial.sh" up -d --wait
+run "$APP/infra/observability/stack.sh" monitoring up -d --wait
+run "$APP/infra/observability/stack.sh" errors up -d --wait
 
 say systemd
 unit="$PREFIX/etc/systemd/system/post-history-trial.service"
@@ -227,7 +240,7 @@ Type=oneshot
 RuntimeDirectory=post-history-health
 RuntimeDirectoryMode=0755
 RuntimeDirectoryPreserve=yes
-ExecStart=$APP/infra/observability/healthcheck.sh --json /run/post-history-health/health.json --alert
+ExecStart=$APP/infra/observability/healthcheck.sh --json /run/post-history-health/health.json --prom /var/lib/post-history/textfile/health.prom --alert
 SuccessExitStatus=1
 UNIT
 cat > "$units/post-history-health.timer" <<UNIT
@@ -258,7 +271,25 @@ PrivateTmp=yes
 [Install]
 WantedBy=multi-user.target
 UNIT
-chmod 0644 "$units"/post-history-health*
+cat > "$units/post-history-observability.service" <<UNIT
+[Unit]
+Description=post-history self-hosted monitoring and error tracking (ADR 0027, 0029)
+After=post-history-trial.service
+Wants=post-history-trial.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=$APP/infra/observability/stack.sh monitoring up -d --wait
+ExecStart=$APP/infra/observability/stack.sh errors up -d --wait
+ExecStop=$APP/infra/observability/stack.sh errors stop
+ExecStop=$APP/infra/observability/stack.sh monitoring stop
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+chmod 0644 "$units"/post-history-health* "$units/post-history-observability.service"
 install -d -m 0755 "$PREFIX/etc/logrotate.d"
 printf '%s\n' '/var/log/post-history/*.log {' '  weekly' '  rotate 8' '  compress' '  missingok' '  notifempty' '}' \
   > "$PREFIX/etc/logrotate.d/post-history"
@@ -266,7 +297,7 @@ printf '%s\n' '/var/log/post-history/*.log {' '  weekly' '  rotate 8' '  compres
 [ -f "$ETC/alert.conf" ] || printf '%s\n' '# ALERT_EMAIL_TO=ops@example.org' 'ALERT_EMAIL_TO=' > "$ETC/alert.conf"
 install -d -m 0750 "$PREFIX/var/log/post-history"
 run systemctl daemon-reload
-run systemctl enable post-history-trial.service
+run systemctl enable post-history-trial.service post-history-observability.service
 run systemctl enable --now post-history-health.timer post-history-health-endpoint.service
 
 say verify

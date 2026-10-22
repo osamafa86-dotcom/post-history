@@ -7,17 +7,16 @@ import { auditLog, materialFiles } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import type { Principal } from '../identity/principal';
 import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
-import { canEditMaterial, findScoped } from './material-store';
+import { canEditMaterial, EDITOR_ONLY_KINDS, findScoped } from './material-store';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DERIVATIVE_KINDS = ['proxy', 'hls', 'audio', 'thumbnail', 'transcript', 'captions'];
-// التفريغ والترجمة مسودتان تحريريتان: رابطهما لمن يملك تعديل المادة وحده (قرار المنسّق)، وغيره 404 بلا تفريق
-const EDITOR_ONLY_KINDS = ['transcript', 'captions'];
 const TTL_SECONDS = 600;
 
 /**
  * رابط قراءة موقّع لمشتق verified من مادة يراها المستدعي (عقد v0.1). الأصل والملاحظة الصوتية وكل ما لا يُرى 404 بلا
- * تفريق. مفتاح التخزين بالمعرّفات وحدها فلا يحمل الرابط اسم ملف ولا مراسل. الرابط لا يُسجَّل ولا يدخل التدقيق.
+ * تفريق، والتفريغ والترجمة لمن يملك تعديل المادة وحده (R11). مفتاح التخزين بالمعرّفات وحدها فلا يحمل الرابط اسم ملف ولا
+ * مراسل. الرابط نفسه لا يُسجَّل ولا يدخل التدقيق؛ إصداره يُدقَّق، وللنوعين النصيين قراءةً حساسة بنوعهما.
  */
 @Injectable()
 export class FileDownloadService {
@@ -46,12 +45,13 @@ export class FileDownloadService {
     const bucket = file.derivedFromId ? this.config.S3_BUCKET_MEDIA : this.config.S3_BUCKET_UPLOADS;
     const now = new Date();
     const url = this.storage.presignGet(bucket, file.storageKey, TTL_SECONDS, now);
+    const sensitive = EDITOR_ONLY_KINDS.includes(file.kind);
     await this.db.insert(auditLog).values({
       actorId: p.userId,
-      action: 'material_file.download_url_issued',
-      targetType: 'material_file',
-      targetId: file.id,
-      details: { material_id: materialId, file_id: file.id },
+      action: sensitive ? 'material.sensitive_read' : 'material_file.download_url_issued',
+      targetType: sensitive ? 'material' : 'material_file',
+      targetId: sensitive ? materialId : file.id,
+      details: sensitive ? { material_id: materialId, file_id: file.id, field_keys: [file.kind] } : { material_id: materialId, file_id: file.id },
       hash: Buffer.alloc(32),
     });
     return { url, expires_at: new Date(now.getTime() + TTL_SECONDS * 1000).toISOString() };

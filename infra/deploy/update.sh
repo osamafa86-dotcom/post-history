@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # تحديث مضيف التجربة بلا فقد (ADR 0013). بصلاحية root، بعد bootstrap.sh وunseal (الأسرار في /run/post-history):
-#   sudo infra/deploy/update.sh [--ref origin/main] [--dry-run]
+#   sudo infra/deploy/update.sh [--tag TAG | --main] [--dry-run]
+#
+# الهدف افتراضيًا آخر وسم إصدار (RELEASE_TAG_PATTERN، افتراضيًا v*) ينشئه المنسّق بعد المراجعتين، و--tag لوسم بعينه
+# (أو للعودة إلى سابق). قبل أي تغيير: الإيداع الذي يشير إليه الوسم يطابق السطر "commit: <sha>" في ملاحظات الإصدار على
+# GitHub، وإن وُجد /etc/post-history/allowed_signers فالوسم موقّع بمفتاح فيه (git verify-tag). آخر main بـ --main صراحة فقط.
 #
 #   1. قفل (تحديث واحد في وقت واحد)، وحفظ الإيداع الحالي للتراجع.
 #   2. نسخة احتياطية مشفّرة الآن (backup once): الترحيلات لا تُعكس آليًا، فهذه نقطة الاستعادة إن لزم.
@@ -15,12 +19,13 @@ set -Eeuo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP="$(cd "$HERE/../.." && pwd)"
-REF=origin/main DRY=0
+TAG="" MAIN=0 DRY=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --ref) REF="$2"; shift 2 ;;
+    --tag) TAG="$2"; shift 2 ;;
+    --main) MAIN=1; shift ;;
     --dry-run) DRY=1; shift ;;
-    *) echo "usage: $0 [--ref REF] [--dry-run]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--tag TAG | --main] [--dry-run]" >&2; exit 2 ;;
   esac
 done
 T="$APP/infra/field-trial/trial.sh"
@@ -68,11 +73,41 @@ rollback() {
   exit 1
 }
 
-log "3/6 fetch $REF, check pins, pull images"
-as_user fetch -q origin
+REPO="${RELEASE_REPO:-osamafa86-dotcom/post-history}" SIGNERS="${ALLOWED_SIGNERS:-/etc/post-history/allowed_signers}"
+log "3/6 fetch, verify the target, check pins, pull images"
+as_user fetch -q --tags origin
+if [ "$MAIN" = 1 ]; then
+  [ -z "$TAG" ] || { echo "--tag and --main together" >&2; exit 2; }
+  REF=origin/main
+  echo "target: latest main (explicit --main, no release check)"
+else
+  [ -n "$TAG" ] || TAG="$(git -C "$APP" tag -l "${RELEASE_TAG_PATTERN:-v*}" --sort=-v:refname | head -1)"
+  [ -n "$TAG" ] || { echo "!! no release tag (${RELEASE_TAG_PATTERN:-v*}): pass --tag, or --main for the latest main" >&2; exit 1; }
+  sha="$(git -C "$APP" rev-parse -q --verify "refs/tags/$TAG^{commit}")" || { echo "!! no tag $TAG" >&2; exit 1; }
+  # The release declares its commit; a tag moved after review (or a forged one) no longer matches.
+  # RELEASE_API: the releases endpoint (default GitHub's); the dry run checks against it only when it is given.
+  if [ "$DRY" = 1 ] && [ -z "${RELEASE_API:-}" ]; then echo "+ verify: release $TAG declares commit $sha"; else
+    declared="$(curl -fsS --max-time 20 "${RELEASE_API:-https://api.github.com/repos/$REPO}/releases/tags/$TAG" \
+      | python3 -c 'import json, re, sys; m = re.search(r"(?m)^commit:\s*([0-9a-f]{40})\s*$", json.load(sys.stdin).get("body") or ""); print(m.group(1) if m else "")')" \
+      || { echo "!! release $TAG not readable" >&2; exit 1; }
+    [ -n "$declared" ] && [ "$declared" = "$sha" ] || { echo "!! tag $TAG is $sha, its release declares ${declared:-nothing}: not updating" >&2; exit 1; }
+    echo "verified: release $TAG declares $sha"
+  fi
+  if [ -f "$SIGNERS" ]; then
+    run git -C "$APP" -c gpg.format=ssh -c gpg.ssh.allowedSignersFile="$SIGNERS" verify-tag "$TAG"
+  fi
+  REF="$sha"
+  echo "target: $TAG ($sha)"
+fi
 as_user checkout -q --detach "$REF"
 trap rollback ERR
 run "$APP/infra/compose/check-pinned.sh"
+# The API image for this commit (ADR 0050): the release's own, checked; latest main has none, so it is built here.
+# After the checkout HEAD is the target; the dry run checks nothing out, so it names the target itself when it can.
+if [ "$DRY" = 1 ]; then head_sha="$(git -C "$APP" rev-parse -q --verify "$REF^{commit}" || git -C "$APP" rev-parse HEAD)"
+else head_sha="$(git -C "$APP" rev-parse HEAD)"; fi
+if [ "$MAIN" = 1 ]; then run "$APP/infra/deploy/api-image.sh" "$head_sha" --build
+else run "$APP/infra/deploy/api-image.sh" "$head_sha" --tag "$TAG"; fi
 run "$T" pull --quiet
 run "$T" build backup
 
@@ -87,6 +122,10 @@ done
 trap - ERR
 
 log "5/6 updated: $prev -> $(git -C "$APP" rev-parse HEAD)"
+# المراقبة وتتبّع الأخطاء بعد التحديث وخارج التراجع: عطلهما لا يعيد الخدمة إلى الإصدار السابق (ADR 0027، 0029).
+for stack in monitoring errors; do
+  run "$APP/infra/observability/stack.sh" "$stack" up -d --wait || echo "!! $stack stack did not start (the service is unaffected)" >&2
+done
 log "6/6 preflight after start"
 run "$APP/infra/field-trial/preflight.sh" --running
 echo "update: done"

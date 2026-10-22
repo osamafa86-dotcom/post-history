@@ -1,5 +1,6 @@
 package net.palpost.library.security
 
+import net.palpost.library.push.Push
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
@@ -42,7 +43,9 @@ class DeviceWipe(private val context: Context, private val container: AppContain
      */
     suspend fun emergency(): WipeReport = coroutineScope {
         val server = async { container.auth.revokeAllSessionsBestEffort(timeoutMs = 3_000) }
+        val push = async { Push.unregister(container, timeoutMs = 3_000) } // best effort, like the revocation
         val local = run(SignOutReason.WIPED)
+        push.await()
         if (server.await()) local.copy(wiped = listOf("server_sessions") + local.wiped) else local
     }
 

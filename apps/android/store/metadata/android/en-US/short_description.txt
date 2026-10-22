@@ -1,0 +1,1 @@
+Send field footage to the visual library, resuming after network loss.

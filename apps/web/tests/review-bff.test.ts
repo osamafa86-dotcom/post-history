@@ -7,7 +7,7 @@ import type { WebConfig } from "../src/server/config";
 import { MemoryStore } from "./memory-store";
 import { form, material, me, tokens } from "./fixtures";
 import { identityReasons, permissions } from "../src/lib/admin-policy";
-const config: WebConfig = { origin: "https://web.example.test", api: "https://api.example.test/v1", key: randomBytes(32), redisUrl: "redis://127.0.0.1:6379/1", secure: true, cookieName: "__Host-ph-session", lifetimeSeconds: 28800, mediaOrigins: [], trustForwardedFor: false };
+const config: WebConfig = { origin: "https://web.example.test", api: "https://api.example.test/v1", key: randomBytes(32), redisUrl: "redis://127.0.0.1:6379/1", secure: true, cookieName: "__Host-ph-session", lifetimeSeconds: 28800, mediaOrigins: [], tusOrigins: [], trustForwardedFor: false };
 const key = randomUUID(), item = material(), target = "10000000-0000-4000-8000-000000000002";
 const admin: Me = { ...me, roles: [{ name: "system_admin", scopes: [] }] };
 const supervisor: Me = { ...me, roles: [{ name: "supervisor", scopes: [] }] };
@@ -158,5 +158,24 @@ describe("reporter identity setting and permission audit history", () => {
       const { result, calls } = await action(path, { method: path.startsWith("materials") ? "POST" : "PUT", user: admin, body, upstream });
       expect(result.status).toBe(expected); expect(calls).toHaveLength(expected === 422 ? 0 : 1);
     }
+  });
+});
+
+describe("supervisor notes for the reporter", () => {
+  const reporter: Me = { ...me, roles: [{ name: "reporter", scopes: [] }] };
+  const history = { items: [
+    { id: "t1", track: "editorial", from: "reviewing", to: "needs_changes", reason: "أعد التصوير\u0007 من زاوية أخرى", note_timecode_ms: 42000, actor_id: target, occurred_at: "2026-10-21T10:00:00Z" },
+    { id: "t2", track: "editorial", from: "inbox", to: "acknowledged", reason: "internal canary", actor_id: target, occurred_at: "2026-10-21T09:00:00Z" },
+  ] };
+  const upstream = (owner: string) => (r: Request) => r.url.endsWith("/transitions") ? Response.json(history) : Response.json({ ...item, reporter_id: owner });
+  it("gives the owner the change request and its timecode, and nothing else", async () => {
+    const { result } = await action(`materials/${item.id}/transitions`, { method: "GET", user: reporter, upstream: upstream(me.user_id) });
+    const { items } = await result.json();
+    expect(items[0]).toMatchObject({ reason: "أعد التصوير من زاوية أخرى", note_timecode_ms: 42000 });
+    expect(items[1].reason).toBe(""); expect(JSON.stringify(items)).not.toContain("canary");
+  });
+  it.each([["another reporter's material", reporter, target], ["a supervisor", supervisor, me.user_id]] as const)("hides every reason from %s", async (_, user, owner) => {
+    const { result } = await action(`materials/${item.id}/transitions`, { method: "GET", user, upstream: upstream(owner) });
+    expect((await result.json()).items.map((i: { reason: string }) => i.reason)).toEqual(["", ""]);
   });
 });

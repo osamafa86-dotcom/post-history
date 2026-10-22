@@ -45,6 +45,10 @@ services:
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+      # Parts of an abandoned multipart upload are deleted after 24 h, checked every hour; the API deletes a cancelled or
+      # expired session's tus objects itself (#237).
+      MINIO_API_STALE_UPLOADS_EXPIRY: 24h
+      MINIO_API_STALE_UPLOADS_CLEANUP_INTERVAL: 1h
     ports:
       - "127.0.0.1:${S3_PORT}:9000"
       - "127.0.0.1:${S3_CONSOLE_PORT}:9001"
@@ -100,6 +104,8 @@ services:
     # -disable-download: anyone holding an upload URL could otherwise GET the original (ADR SEC-06).
     # Authorization is forwarded for pre-create (upload token); the API must never log it.
     # TUSD_EXTRA_FLAGS is empty locally; set "-behind-proxy" only behind a real proxy.
+    # post-receive: upload progress for the newsroom inbox ("الوارد الآن", #224); tusd sends it every
+    # -progress-hooks-interval per active upload and the API writes an event only at each tenth.
     command: >
       -port=8080
       -base-path=/files/
@@ -110,7 +116,8 @@ services:
       -s3-min-part-size=${TUSD_PART_SIZE_BYTES}
       -s3-disable-content-hashes=${TUSD_DISABLE_CONTENT_HASHES}
       -hooks-http-forward-headers=Authorization
-      -hooks-enabled-events=pre-create,post-create,post-finish
+      -hooks-enabled-events=pre-create,post-create,post-receive,post-finish
+      -progress-hooks-interval=1s
       -hooks-http-retry=5
       -hooks-http-backoff=2s
       -show-greeting=false

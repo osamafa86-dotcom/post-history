@@ -1,0 +1,13 @@
+{
+  "id": "1082",
+  "type": "upload.progress",
+  "aggregate_type": "upload",
+  "aggregate_id": "5d6c7b8a-9f0e-4d1c-8b2a-3c4d5e6f7a8b",
+  "occurred_at": "2026-10-21T11:02:44Z",
+  "idempotency_key": "upload.progress:5d6c7b8a-9f0e-4d1c-8b2a-3c4d5e6f7a8b:3",
+  "actor_id": null,
+  "payload": { "material_id": "7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b", "upload_session_id": "5d6c7b8a-9f0e-4d1c-8b2a-3c4d5e6f7a8b", "kind": "original", "bytes_received": 335544320, "size_bytes": 1073741824, "filename": "clip.mov" },
+  "published_at": null,
+  "attempts": 0,
+  "delivery": []
+}
