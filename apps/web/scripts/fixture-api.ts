@@ -263,7 +263,8 @@ const server = createServer(async (req, res) => {
       urgent_open: materials.filter(m => m.priority === "urgent" && !["published", "rejected"].includes(m.editorial_state)).length,
       reserved: materials.filter(m => m.reserved_by).map(m => ({ material_id: m.id, reserved_by: m.reserved_by, reserved_at: m.reserved_at, priority: m.priority, editorial_state: m.editorial_state, title: "never-display-canary" })),
       recent_receipts: materials.slice(0, 3).map(m => ({ material_id: m.id, receipt_number: `R-261021-${m.id.slice(-6)}`, verified_at: m.created_at, priority: m.priority })),
-      overdue_acknowledgements: 2 });
+      overdue_acknowledgements: 2,
+      uploads_in_progress: [{ upload_session_id: "90000000-0000-4000-8000-000000000001", material_id: materials[4].id, kind: "original", priority: "urgent", state: "in_progress", size_bytes: 4000, bytes_received: 1000, updated_at: new Date().toISOString(), filename: "never-display-canary", reporter_id: "never-display-canary" }] });
   }
   if (url.pathname === "/v1/catalog" || url.pathname.startsWith("/v1/catalog/")) {
     if (!user.roles.some(role => ["system_admin", "rights_officer", "editor_in_chief", "finance"].includes(role.name))) return send({}, 403);
