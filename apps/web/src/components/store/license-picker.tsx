@@ -1,8 +1,7 @@
 "use client";
 import { messages, type Locale } from "@/lib/i18n";
-import { formatMoney, localized, type Localized, type Price } from "@/lib/store-format";
+import { formatMoney, localized, type LicenseType, type Localized, type Price } from "@/lib/store-format";
 
-export type LicenseType = "editorial_single" | "editorial_term" | "exclusive_temporary" | "commercial";
 export type Offer = { id: string; type: LicenseType; name: Localized; price: Price };
 // اختيار الترخيص: الحصري يُعطَّل حين لا يتاح (exclusive_available=false)، والتجاري يحتاج موافقة الإدارة.
 export function LicensePicker({ locale, offers, exclusiveAvailable, value, onChange }: { locale: Locale; offers: Offer[]; exclusiveAvailable: boolean; value: string | null; onChange: (id: string) => void }) {
