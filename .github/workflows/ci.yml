@@ -225,6 +225,8 @@ jobs:
         run: infra/compose/check-pinned.sh
       - name: Trial host bootstrap and update, dry run in Ubuntu 24.04 without network (ADR 0013)
         run: infra/deploy/test-dry-run.sh
+      - name: Trial API image from a release, checked by sha256 and commit (ADR 0050)
+        run: infra/deploy/test-api-image.sh
       - name: Validate docker compose file
         run: |
           cp infra/compose/.env.example infra/compose/.env

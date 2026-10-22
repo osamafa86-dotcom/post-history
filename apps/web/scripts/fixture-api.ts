@@ -73,7 +73,15 @@ async function tus(req: import("node:http").IncomingMessage, res: import("node:h
 }
 // قواعد التنبيه (#203 بند 7): مراجعة صف لكل قاعدة كما في العقد.
 const rules = new Map<string, Record<string, unknown> & { id: string; row_version: number }>();
-reset();
+// قوالب التراخيص: كل إصدار محفوظ، والحالي آخرها.
+const templates = new Map<string, (Record<string, unknown> & { id: string; version: number; enabled: boolean })[]>();
+function seedTemplates() {
+  templates.clear();
+  const base = { usage_media: ["tv", "web"], territory: { kind: "worldwide" }, term_days: null, exclusivity_hours: null, deliverables: ["original"], attribution: { ar: "فلسطين بوست", en: "Palestine Post" }, prohibitions: ["resale", "ai_training"], created_at: "2026-10-21T10:00:00Z", created_by: me.user_id };
+  templates.set("81000000-0000-4000-8000-000000000001", [{ ...base, id: "81000000-0000-4000-8000-000000000001", version: 1, type: "editorial_single", name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" }, terms: { ar: "شروط الاستخدام الواحد", en: "Single use terms" }, base_price: { amount_minor: 15000, currency: "USD" }, enabled: true, internal_note: "never-display-canary" }]);
+  templates.set("81000000-0000-4000-8000-000000000002", [{ ...base, id: "81000000-0000-4000-8000-000000000002", version: 3, type: "editorial_term", term_days: 365, name: { ar: "تحريري سنوي قديم", en: "Old annual editorial" }, terms: { ar: "شروط", en: "Terms" }, base_price: { amount_minor: 40000, currency: "ILS" }, enabled: false }]);
+}
+reset(); seedTemplates();
 const signed = new Map<string, { kind: "proxy" | "thumbnail"; expires: number }>();
 let expireNextProxy = false;
 const access = new Map<string, Me>(), refresh = new Map<string, Me>();
@@ -93,8 +101,16 @@ const server = createServer(async (req, res) => {
   if (url.pathname.startsWith("/files/")) { res.removeHeader("Content-Type"); return tus(req, res, url); }
   if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
   if (url.pathname === "/__test/uploads") return send([...uploads.values()].map(u => ({ state: u.session.state, receipt: u.session.receipt_number, ingest_tokens: [...ingestTokens.values()].filter(t => t.sid === u.session.id).length, ...(u.tus ? (({ length, offset, patches, resent, cuts }) => ({ length, offset, patches, resent, cuts }))(tusFiles.get(u.tus) ?? { length: 0, offset: 0, patches: 0, resent: 0, cuts: 0 }) : {}) })));
-  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); reset(); resetUploads(); return send({ ok: true }); }
+  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); seedTemplates(); reset(); resetUploads(); return send({ ok: true }); }
   if (url.pathname === "/__test/state") return send({ writes, applied: applied.size, identitySetting, auditCount: permissionAudit.length });
+  if (url.pathname === "/__test/request-changes" && req.method === "POST") {
+    // مادة بطلب تعديل وأخرى مرفوضة وثالثة فشل رفعها، وسبب داخلي لا يصل المراسل.
+    const supervisor = "10000000-0000-4000-8000-000000000002", stamp = "2026-10-21T10:00:00Z";
+    Object.assign(materials[0], { editorial_state: "needs_changes" }); Object.assign(materials[1], { editorial_state: "rejected" }); Object.assign(materials[2], { technical_state: "failed" });
+    history.set(materials[0].id, [{ id: randomUUID(), track: "editorial", from: "inbox", to: "acknowledged", reason: "never-display-canary", note_timecode_ms: null, actor_id: supervisor, occurred_at: "2026-10-21T09:00:00Z" }, { id: randomUUID(), track: "editorial", from: "reviewing", to: "needs_changes", reason: "أعد اللقطة الافتتاحية بإضاءة أفضل", note_timecode_ms: 42000, actor_id: supervisor, occurred_at: stamp }]);
+    history.set(materials[1].id, [{ id: randomUUID(), track: "editorial", from: "reviewing", to: "rejected", reason: "مكررة مع مادة سابقة", note_timecode_ms: null, actor_id: supervisor, occurred_at: stamp }]);
+    return send({ ok: true });
+  }
   if (url.pathname === "/__test/history-unavailable" && req.method === "POST") { historyUnavailable = true; return send({ ok: true }); }
   if (url.pathname === "/__test/bump-rule" && req.method === "POST") { for (const rule of rules.values()) rule.row_version++; return send({ ok: true }); }
   if (url.pathname === "/__test/bump" && req.method === "POST") { materials[0].row_version!++; return send({ ok: true }); }
@@ -156,7 +172,7 @@ const server = createServer(async (req, res) => {
         const track = body.track as "technical" | "editorial" | "rights", column = `${track}_state` as const;
         if (track === "editorial" && !has("supervisor", "producer") || track === "rights" && !has("rights_officer") || track === "technical" && !has("reporter")) return send({}, 403);
         const from = item[column]; Object.assign(item, { [column]: body.to }); item.row_version!++;
-        history.set(item.id, [...(history.get(item.id) ?? []), { id: randomUUID(), track, from, to: String(body.to), reason: String(body.reason), actor_id: user.user_id, occurred_at: stamp }]);
+        history.set(item.id, [...(history.get(item.id) ?? []), { id: randomUUID(), track, from, to: String(body.to), reason: String(body.reason), note_timecode_ms: typeof body.note_timecode_ms === "number" ? body.note_timecode_ms : null, actor_id: user.user_id, occurred_at: stamp }]);
         return commit(item, 200);
       }
       if (match[2] === "contributors" && req.method === "PUT") { if (!has("rights_officer", "system_admin")) return send({}, 403); item.contributors = body.contributors as Material["contributors"]; item.row_version!++; return commit(item, 200); }
@@ -218,6 +234,17 @@ const server = createServer(async (req, res) => {
       const stamp = new Date().toISOString(), rule = { ...body, id: randomUUID(), row_version: 1, created_by: user.user_id, updated_by: user.user_id, created_at: stamp, updated_at: stamp };
       rules.set(rule.id, rule); res.setHeader("ETag", '"1"'); return commit(rule, 201);
     }
+    const templatePath = /^\/v1\/license-templates(?:\/([^/]+))?$/.exec(path);
+    if (templatePath) {
+      if (!has("system_admin", "rights_officer")) return send({}, 403);
+      if (!templatePath[1]) { const id = randomUUID(), created = { ...body, id, version: 1, created_at: new Date().toISOString(), created_by: user.user_id } as unknown as Record<string, unknown> & { id: string; version: number; enabled: boolean }; templates.set(id, [created]); res.setHeader("ETag", '"1"'); return commit(created, 201); }
+      const versions = templates.get(templatePath[1]); if (!versions) return send({}, 404);
+      const current = versions.at(-1)!;
+      if (req.headers["if-match"] !== `"${current.version}"`) return send({}, 412);
+      if (body.type !== current.type) return send({ code: "validation_failed" }, 422);
+      const next = { ...body, id: current.id, version: current.version + 1, created_at: new Date().toISOString(), created_by: user.user_id } as unknown as typeof current; versions.push(next);
+      res.setHeader("ETag", `"${next.version}"`); return commit(next, 200);
+    }
     const rulePath = /^\/v1\/notification-rules\/([^/]+)$/.exec(path);
     if (rulePath) {
       if (!has("system_admin")) return send({}, 403);
@@ -250,6 +277,13 @@ const server = createServer(async (req, res) => {
   }
   const uploadRead = /^\/v1\/uploads\/([^/]+)$/.exec(url.pathname);
   if (uploadRead) { const upload = uploads.get(uploadRead[1]); return upload ? send(upload.session) : send({}, 404); }
+  if (url.pathname === "/v1/license-templates" || url.pathname.startsWith("/v1/license-templates/")) {
+    if (!user.roles.some(role => ["system_admin", "rights_officer", "editor_in_chief", "finance"].includes(role.name))) return send({}, 403);
+    if (url.pathname === "/v1/license-templates") return send({ items: [...templates.values()].map(v => v.at(-1)!).filter(t => t.enabled || url.searchParams.get("include_disabled") === "true") });
+    const versions = templates.get(url.pathname.slice("/v1/license-templates/".length)); if (!versions) return send({}, 404);
+    const wanted = url.searchParams.get("version"), found = wanted ? versions.find(v => v.version === Number(wanted)) : versions.at(-1);
+    if (!found) return send({}, 404); res.setHeader("ETag", `"${found.version}"`); return send(found);
+  }
   if (url.pathname === "/v1/notification-rules" || url.pathname.startsWith("/v1/notification-rules/")) {
     if (!user.roles.some(role => ["system_admin", "editor_in_chief"].includes(role.name))) return send({}, 403);
     if (url.pathname === "/v1/notification-rules") return send({ items: [...rules.values()].map(rule => ({ ...rule, secret_note: "never-display-canary" })) });
