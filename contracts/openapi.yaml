@@ -1984,10 +1984,10 @@ paths:
       description: >-
         الإدراجات `listed` وحدها. يعيد عرض المشتري (`CatalogItem`): عناوين ووصف ولقطات بلغتين، والمدة والدقة، ويوم التصوير
         والمحافظة، واسم الظهور بحسب وضعه، والعروض بأسعارها. لا إحداثيات ولا مدينة ولا معرّف مراسل ولا جهاز ولا حقول
-        ديناميكية ولا مصادر. أدوار المشترين تُضاف مع حسابات المؤسسات في الطلب التالي من الدورة. البحث النصي بالعربية
-        والإنجليزية.
+        ديناميكية ولا مصادر. المشترون (`buyer_admin`، `buyer_member`) من مؤسسة `active`؛ غيرها `403 forbidden_scope`.
+        البحث النصي بالعربية والإنجليزية.
       operationId: searchCatalog
-      x-roles: [system_admin, rights_officer, editor_in_chief, finance]
+      x-roles: [system_admin, rights_officer, editor_in_chief, finance, buyer_admin, buyer_member]
       parameters:
         - name: q
           in: query
@@ -2048,7 +2048,7 @@ paths:
       summary: صفحة مادة في الكتالوج
       description: الإدراج غير `listed` يُعامل كغير موجود (404).
       operationId: getCatalogItem
-      x-roles: [system_admin, rights_officer, editor_in_chief, finance]
+      x-roles: [system_admin, rights_officer, editor_in_chief, finance, buyer_admin, buyer_member]
       responses:
         "200":
           description: عرض المشتري
@@ -2072,7 +2072,7 @@ paths:
         مشتق `watermarked_preview` وحده (نسخة منخفضة بعلامة مائية مرئية، يبنيه عامل الوسائط عند الإدراج)، صالح ≤ 10 دقائق.
         لا يعطي الأصل ولا النسخة الخفيفة. `409 preview_not_ready` قبل جاهزيته.
       operationId: getCatalogPreviewUrl
-      x-roles: [system_admin, rights_officer, editor_in_chief, finance]
+      x-roles: [system_admin, rights_officer, editor_in_chief, finance, buyer_admin, buyer_member]
       responses:
         "200":
           description: الرابط
@@ -2087,6 +2087,188 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+
+  /buyer-organizations:
+    get:
+      tags: [commerce]
+      summary: مؤسسات المشترين (الإدارة، v0.3)
+      operationId: listBuyerOrganizations
+      x-roles: [system_admin, finance]
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/BuyerOrganizationStatus" }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: صفحة من المؤسسات، الأحدث أولًا
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BuyerOrganizationPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [commerce]
+      summary: إنشاء مؤسسة مشترية
+      description: >-
+        تُنشأ بحالة `pending_verification` ومعها مديرها الأول (`buyer_admin`)، الذي يُدعى برمز تعيين كلمة المرور نفسه في
+        الاستعادة. لا تشتري المؤسسة قبل `active` (ADR 0025، الجزء 3). يُسجَّل في التدقيق بـ `organization_id`.
+      operationId: createBuyerOrganization
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BuyerOrganizationCreate" }
+      responses:
+        "201":
+          description: المؤسسة
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BuyerOrganization" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /buyer-organizations/{org_id}:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      tags: [commerce]
+      summary: قراءة مؤسسة مشترية
+      description: أعضاء المؤسسة يقرؤون مؤسستهم وحدها؛ أي مؤسسة أخرى `404` بشكل المفقود (عزل المستأجرين).
+      operationId: getBuyerOrganization
+      x-roles: [system_admin, finance, buyer_admin, buyer_member]
+      responses:
+        "200":
+          description: المؤسسة
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BuyerOrganization" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [commerce]
+      summary: تعديل ملف المؤسسة
+      description: >-
+        `buyer_admin` يعدّل ملف مؤسسته (الأسماء وبريد الفوترة والبلد). الحالة لمدير النظام وحده؛ تغييرها من غيره
+        `403 forbidden_role`. التعليق يوقف الشراء والتنزيل الجديد، ولا يمس تراخيص سابقة.
+      operationId: replaceBuyerOrganization
+      x-roles: [system_admin, buyer_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BuyerOrganizationInput" }
+      responses:
+        "200":
+          description: المؤسسة بعد التعديل
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BuyerOrganization" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /buyer-organizations/{org_id}/members:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      tags: [commerce]
+      summary: أعضاء المؤسسة وأدوارهم
+      operationId: listBuyerMembers
+      x-roles: [system_admin, buyer_admin]
+      responses:
+        "200":
+          description: الأعضاء
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/BuyerMember" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [commerce]
+      summary: دعوة عضو إلى المؤسسة
+      description: >-
+        يُنشأ حساب مشترٍ مرتبط بالمؤسسة وحدها، يعيّن كلمة مروره برمز دعوة يُسلَّم كرمز الاستعادة، ويُفعِّل TOTP عند أول دخول.
+        البريد المستخدم لحساب آخر `409 conflict`، بلا تفريق بين طاقم ومشترٍ. حد المقاعد `seats` يُفرض هنا
+        (`409 seats_exhausted`).
+      operationId: inviteBuyerMember
+      x-roles: [system_admin, buyer_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BuyerMemberInvite" }
+      responses:
+        "201":
+          description: العضو
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BuyerMember" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /buyer-organizations/{org_id}/members/{user_id}:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - name: user_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [commerce]
+      summary: تغيير دور العضو أو تعليقه
+      description: لا تبقى مؤسسة `active` بلا `buyer_admin` نشط واحد على الأقل (`409 last_buyer_admin`).
+      operationId: updateBuyerMember
+      x-roles: [system_admin, buyer_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BuyerMemberUpdate" }
+      responses:
+        "200":
+          description: العضو
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BuyerMember" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
   /events:
     get:
@@ -2150,6 +2332,12 @@ components:
       in: path
       required: true
       description: معرّف جلسة الرفع
+      schema: { type: string, format: uuid }
+    OrganizationId:
+      name: org_id
+      in: path
+      required: true
+      description: معرّف المؤسسة المشترية
       schema: { type: string, format: uuid }
     MaterialId:
       name: id
@@ -2305,6 +2493,8 @@ components:
             - rights_not_sellable
             - listing_exists
             - preview_not_ready
+            - seats_exhausted
+            - last_buyer_admin
             - internal_error
         message: { type: string }
         request_id: { type: string, description: لتتبع الطلب في السجلات }
@@ -2353,6 +2543,7 @@ components:
         user_id: { type: string, format: uuid }
         email: { type: string, format: email }
         office_id: { type: [string, "null"], format: uuid, description: مكتب المستخدم }
+        organization_id: { type: [string, "null"], format: uuid, description: مؤسسة المشتري (v0.3)؛ غيابه أو `null` لحساب طاقم }
         totp_enabled: { type: boolean }
         credential_reset_required:
           type: boolean
@@ -2385,15 +2576,17 @@ components:
 
     RoleName:
       type: string
-      description: أدوار الطاقم في مرحلة التأسيس؛ أدوار المشترين والمؤسسات في المرحلة التجارية
-      enum: [system_admin, editor_in_chief, supervisor, producer, finance, reporter, rights_officer]
+      description: >-
+        أدوار الطاقم، وأدوار المشترين (`buyer_admin` و`buyer_member`، v0.3، ADR 0025) التي نطاقها مؤسستهم وحدها
+        (`Scope.kind = organization`). لا يجمع حساب واحد دور طاقم ودور مشترٍ.
+      enum: [system_admin, editor_in_chief, supervisor, producer, finance, reporter, rights_officer, buyer_admin, buyer_member]
 
     Scope:
       type: object
       required: [kind, id]
       properties:
-        kind: { type: string, enum: [office, governorate] }
-        id: { type: string, description: معرّف المكتب أو اسم المحافظة }
+        kind: { type: string, enum: [office, governorate, organization] }
+        id: { type: string, description: معرّف المكتب أو اسم المحافظة أو معرّف المؤسسة المشترية }
 
     RecoveryCompletion:
       type: object
@@ -3830,6 +4023,91 @@ components:
           type: array
           items: { $ref: "#/components/schemas/CatalogItem" }
         next_cursor: { type: [string, "null"] }
+
+    BuyerOrganizationStatus:
+      type: string
+      description: "`pending_verification` لا تشتري؛ `active` تشتري؛ `suspended` يوقف الشراء والتنزيل الجديد"
+      enum: [pending_verification, active, suspended]
+
+    BuyerOrganizationFields:
+      type: object
+      required: [legal_name, display_name, country, billing_email]
+      properties:
+        legal_name: { type: string, minLength: 1, maxLength: 200, description: الاسم القانوني على الفاتورة }
+        display_name: { $ref: "#/components/schemas/LocalizedText" }
+        country: { type: string, pattern: "^[A-Z]{2}$", description: بلد التسجيل (ISO 3166-1 alpha-2)، يحدد الفوترة والمزوّد }
+        billing_email: { type: string, format: email, maxLength: 254 }
+        seats: { type: integer, minimum: 1, maximum: 1000, default: 5, description: الحد الأعلى للأعضاء النشطين؛ يضبطه مدير النظام }
+        status:
+          $ref: "#/components/schemas/BuyerOrganizationStatus"
+
+    BuyerOrganizationInput:
+      description: جسم الطلب؛ لا خصائص غير المعرَّفة
+      allOf:
+        - $ref: "#/components/schemas/BuyerOrganizationFields"
+      unevaluatedProperties: false
+
+    BuyerOrganizationCreate:
+      allOf:
+        - $ref: "#/components/schemas/BuyerOrganizationFields"
+        - type: object
+          required: [first_admin_email]
+          properties:
+            first_admin_email: { type: string, format: email, maxLength: 254 }
+      unevaluatedProperties: false
+
+    BuyerOrganization:
+      allOf:
+        - $ref: "#/components/schemas/BuyerOrganizationFields"
+        - type: object
+          required: [id, status, seats, active_members, verified_at, created_at, updated_at]
+          properties:
+            id: { type: string, format: uuid }
+            active_members: { type: integer, minimum: 0 }
+            verified_at: { type: [string, "null"], format: date-time, description: أول انتقال إلى `active` }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+      unevaluatedProperties: false
+
+    BuyerOrganizationPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/BuyerOrganization" }
+        next_cursor: { type: [string, "null"] }
+
+    BuyerRole:
+      type: string
+      enum: [buyer_admin, buyer_member]
+
+    BuyerMemberInvite:
+      type: object
+      additionalProperties: false
+      required: [email, role]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        role: { $ref: "#/components/schemas/BuyerRole" }
+
+    BuyerMemberUpdate:
+      type: object
+      additionalProperties: false
+      required: [role, status]
+      properties:
+        role: { $ref: "#/components/schemas/BuyerRole" }
+        status: { type: string, enum: [active, suspended] }
+
+    BuyerMember:
+      type: object
+      required: [user_id, email, role, status, totp_enabled, created_at]
+      properties:
+        user_id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role: { $ref: "#/components/schemas/BuyerRole" }
+        status: { type: string, enum: [invited, active, suspended] }
+        totp_enabled: { type: boolean }
+        created_at: { type: string, format: date-time }
 
     OutboxEvent:
       $ref: "./schemas/outbox-event.json"

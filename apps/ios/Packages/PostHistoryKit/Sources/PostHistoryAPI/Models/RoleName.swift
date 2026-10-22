@@ -7,7 +7,7 @@
 
 import Foundation
 
-/** أدوار الطاقم في مرحلة التأسيس؛ أدوار المشترين والمؤسسات في المرحلة التجارية */
+/** أدوار الطاقم، وأدوار المشترين (&#x60;buyer_admin&#x60; و&#x60;buyer_member&#x60;، v0.3، ADR 0025) التي نطاقها مؤسستهم وحدها (&#x60;Scope.kind &#x3D; organization&#x60;). لا يجمع حساب واحد دور طاقم ودور مشترٍ. */
 public enum RoleName: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
     case systemAdmin = "system_admin"
     case editorInChief = "editor_in_chief"
@@ -16,6 +16,8 @@ public enum RoleName: String, Sendable, Codable, CaseIterable, CaseIterableDefau
     case finance = "finance"
     case reporter = "reporter"
     case rightsOfficer = "rights_officer"
+    case buyerAdmin = "buyer_admin"
+    case buyerMember = "buyer_member"
     case unknownDefaultOpenApi = "unknown_default_open_api"
 }
 

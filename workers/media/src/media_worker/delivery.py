@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 
 from .export import EXTENSIONS, _add, strip_metadata
@@ -46,8 +47,10 @@ def _still(src: Path, dst: Path, info: Probe, at_s: float) -> None:
 
 
 def build_delivery(out: Path, *, original: Path, info: Probe, license_id: str, sha256: str,
-                   deliverables: list[str], extras: dict[str, Path] | None = None) -> dict:
-    """يكتب الأرشيف ذريًا ويعيد البيان. `extras` لملف `produced` إن وُجد، تُضمَّن كما هي."""
+                   deliverables: list[str], extras: dict[str, Path] | None = None,
+                   sign: Callable[[Path, list[str]], Path] | None = None) -> dict:
+    """يكتب الأرشيف ذريًا ويعيد البيان. `extras` لملف `produced` إن وُجد، تُضمَّن كما هي (يوقَّع عند بنائه).
+    `sign(ملف، إجراءات) -> ملف موقَّع جديد` يوقّع C2PA ما يبنيه التسليم من الأصل (ADR 0060)، قبل حساب البصمات."""
     unknown = set(deliverables) - set(DELIVERABLES)
     if unknown or not deliverables:
         raise ValueError(f"unknown deliverables: {sorted(unknown)}")
@@ -67,11 +70,12 @@ def build_delivery(out: Path, *, original: Path, info: Probe, license_id: str, s
                 ext = "mov" if info.video_codec == "hevc" else EXTENSIONS.get(info.container, "mov")
                 name = f"original.{ext}"
                 strip_metadata(original, work / name, timeout, video_codec=info.video_codec)
-                files.append((name, work / name, True))
+                files.append((name, sign(work / name, []) if sign else work / name, True))
                 status[item] = [name]
             elif item == "audio" and info.audio_codec:
                 _wav(original, work / "audio.wav", timeout)
-                files.append(("audio.wav", work / "audio.wav", False))
+                wav = work / "audio.wav"
+                files.append(("audio.wav", sign(wav, ["c2pa.transcoded"]) if sign else wav, False))
                 status[item] = ["audio.wav"]
             elif item == "stills" and info.video_codec:
                 names = []
@@ -79,7 +83,8 @@ def build_delivery(out: Path, *, original: Path, info: Probe, license_id: str, s
                     name = f"stills/still_{i:02d}.jpg"
                     path = work / f"still_{i:02d}.jpg"
                     _still(original, path, info, info.duration_ms / 1000 * p)
-                    files.append((name, path, True))
+                    actions = ["c2pa.transcoded"] + (["c2pa.color_adjustments"] if info.hdr else [])
+                    files.append((name, sign(path, actions) if sign else path, True))
                     names.append(name)
                 status[item] = names
             elif item == "produced" and item in extras:
