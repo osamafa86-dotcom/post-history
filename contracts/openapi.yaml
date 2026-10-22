@@ -3117,7 +3117,7 @@ components:
       required: [original_file_id, offset_ms, confidence, margin, reliable]
       properties:
         original_file_id: { type: string, format: uuid }
-        offset_ms: { type: integer, minimum: -3600000, maximum: 3600000, description: موجبة = النسخة الخفيفة متأخرة عن الأصل }
+        offset_ms: { type: integer, minimum: -3600000, maximum: 3600000, description: "ما يُضاف إلى زمن النسخة الخفيفة ليقع على زمن الأصل (`t_original = t_proxy + offset_ms`)؛ سالبة حين تتأخر النسخة الخفيفة" }
         confidence: { type: number, minimum: 0, maximum: 1 }
         margin: { type: number, minimum: 0, maximum: 1, description: الفارق بين أفضل قمة ارتباط والتي تليها }
         reliable: { type: boolean }

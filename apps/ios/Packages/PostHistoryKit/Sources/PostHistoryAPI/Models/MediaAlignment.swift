@@ -14,7 +14,7 @@ public struct MediaAlignment: Sendable, Codable, Hashable {
     public static let confidenceRule = NumericRule<Double>(minimum: 0, exclusiveMinimum: false, maximum: 1, exclusiveMaximum: false, multipleOf: nil)
     public static let marginRule = NumericRule<Double>(minimum: 0, exclusiveMinimum: false, maximum: 1, exclusiveMaximum: false, multipleOf: nil)
     public var originalFileId: UUID
-    /** موجبة = النسخة الخفيفة متأخرة عن الأصل */
+    /** ما يُضاف إلى زمن النسخة الخفيفة ليقع على زمن الأصل (`t_original = t_proxy + offset_ms`)؛ سالبة حين تتأخر النسخة الخفيفة */
     public var offsetMs: Int
     public var confidence: Double
     /** الفارق بين أفضل قمة ارتباط والتي تليها */

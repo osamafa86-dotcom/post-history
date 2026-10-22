@@ -1990,7 +1990,7 @@ export interface components {
         MediaAlignment: {
             /** Format: uuid */
             original_file_id: string;
-            /** @description موجبة = النسخة الخفيفة متأخرة عن الأصل */
+            /** @description ما يُضاف إلى زمن النسخة الخفيفة ليقع على زمن الأصل (`t_original = t_proxy + offset_ms`)؛ سالبة حين تتأخر النسخة الخفيفة */
             offset_ms: number;
             confidence: number;
             /** @description الفارق بين أفضل قمة ارتباط والتي تليها */
