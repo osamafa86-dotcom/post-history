@@ -5,7 +5,8 @@
   وسوم الحاوية والتيارات والفصول، ولا يُنقل إلا أول مسار فيديو وأول مسار صوت، فتسقط مسارات البيانات والترجمة التي
   قد تحمل موقعًا أو طراز الجهاز. الأصل المخزَّن لا يُمس ولا يدخل الحزمة.
 - `proxy.mp4`: النسخة الخفيفة إن وُجدت عند العامل (منزوعة الوسوم أصلًا).
-- `metadata.json`: ملف جانبي بقائمة بيضاء مغلقة (معرّفات وبصمة الأصل المخزَّن وبيانات `Probe.to_dict()` الفنية).
+- `metadata.json`: ملف جانبي بقائمة بيضاء مغلقة (المعرّفات وبيانات `Probe.to_dict()` الفنية). بلا بصمة الأصل الخام ولا
+  حجمه (ADR 0060): من يملك الأصل يطابقهما فيعرف مصدر النسخة؛ الربط بالمكتبة بالمعرّفات.
   لا إحداثيات ولا طراز جهاز ولا اسم مصدر: العامل لا يملكها أصلًا، و`Probe` لا ينقل الوسوم.
 - `sequence.fcpxml` و`sequence.edl`: تسلسل بلقطة واحدة تغطي المقطع كله، يُربط بـ `clip.<ext>` بمسار نسبي.
 - `SHA256SUMS`: بصمة كل ملف بصيغة `sha256sum -c`.
@@ -134,11 +135,10 @@ def strip_metadata(src: Path, dst: Path, timeout_s: float = 1800, video_codec: s
         strip_hvcc_sei(Path(dst))
 
 
-def sidecar(material_id: str, file_id: str, media_name: str, sha256: str, size_bytes: int, info: Probe) -> dict:
-    # بصمة الأصل المخزَّن وحجمه للربط به في المكتبة؛ بصمة `clip` نفسها في SHA256SUMS
+def sidecar(material_id: str, file_id: str, media_name: str, info: Probe) -> dict:
+    # بصمة `clip` نفسها في SHA256SUMS؛ بصمة الأصل لا تغادر المنصة
     return {"schema": SIDECAR_SCHEMA, "material_id": material_id, "file_id": file_id,
-            "media": media_name, "original": {"sha256": sha256, "size_bytes": size_bytes},
-            "technical": info.to_dict()}
+            "media": media_name, "technical": info.to_dict()}
 
 
 def _add(zf: zipfile.ZipFile, name: str, src: Path | bytes, sums: dict[str, str], stored: bool) -> None:
@@ -159,7 +159,8 @@ def _add(zf: zipfile.ZipFile, name: str, src: Path | bytes, sums: dict[str, str]
 
 def build_package(out: Path, *, original: Path, info: Probe, material_id: str, file_id: str,
                   sha256: str, size_bytes: int, proxy: Path | None) -> dict[str, str]:
-    """يكتب الأرشيف ذريًا ويعيد بصمة كل ملف فيه. الأصل يُقرأ فقط ولا يدخل الأرشيف."""
+    """يكتب الأرشيف ذريًا ويعيد بصمة كل ملف فيه. الأصل يُقرأ فقط ولا يدخل الأرشيف. `sha256` للتحقق من أن الأصل لم
+    يتغير، و`size_bytes` مقبول للتوافق؛ لا يُكتب أيهما في الحزمة."""
     if not info.video_codec or not info.width or not info.height:
         raise ValueError("export needs a video original")
     if digest_file(original).sha256 != sha256:
@@ -175,7 +176,7 @@ def build_package(out: Path, *, original: Path, info: Probe, material_id: str, f
         _add(zf, media_name, clip, sums, stored=True)
         if proxy is not None:
             _add(zf, "proxy.mp4", proxy, sums, stored=True)
-        meta = sidecar(material_id, file_id, media_name, sha256, size_bytes, info)
+        meta = sidecar(material_id, file_id, media_name, info)
         _add(zf, "metadata.json", json.dumps(meta, ensure_ascii=False, indent=2, sort_keys=True).encode(),
              sums, stored=False)
         _add(zf, "sequence.fcpxml", fcpxml(info, media_name, title).encode(), sums, stored=False)

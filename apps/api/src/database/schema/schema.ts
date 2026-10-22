@@ -1,5 +1,5 @@
 import { bytea } from "../bytea"
-import { pgTable, uuid, text, timestamp, index, foreignKey, unique, check, integer, jsonb, bigint, uniqueIndex, boolean, time, type AnyPgColumn, primaryKey, numeric, smallint, pgSequence } from "drizzle-orm/pg-core"
+import { pgTable, uuid, text, timestamp, index, foreignKey, unique, check, integer, jsonb, bigint, uniqueIndex, boolean, time, type AnyPgColumn, real, primaryKey, numeric, smallint, pgSequence } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 
@@ -515,6 +515,12 @@ export const materialFiles = pgTable("material_files", {
 	tailSha256: bytea("tail_sha256"),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	perceptualHash: bigint("perceptual_hash", { mode: "number" }).array(),
+	alignmentOriginalFileId: uuid("alignment_original_file_id"),
+	alignmentOffsetMs: integer("alignment_offset_ms"),
+	alignmentConfidence: real("alignment_confidence"),
+	alignmentMargin: real("alignment_margin"),
+	alignmentReliable: boolean("alignment_reliable"),
+	alignedAt: timestamp("aligned_at", { withTimezone: true, mode: 'string' }),
 	licenseId: uuid("license_id"),
 }, (table) => [
 	uniqueIndex("material_files_delivery_license_key").using("btree", table.derivedFromId.asc().nullsLast().op("uuid_ops"), table.licenseId.asc().nullsLast().op("uuid_ops")).where(sql`(kind = 'delivery'::text)`),
@@ -525,6 +531,11 @@ export const materialFiles = pgTable("material_files", {
 	index("material_files_sha256_idx").using("btree", table.sha256.asc().nullsLast().op("bytea_ops")).where(sql`(sha256 IS NOT NULL)`),
 	index("material_files_size_head_idx").using("btree", table.sizeBytes.asc().nullsLast().op("bytea_ops"), table.headSha256.asc().nullsLast().op("int8_ops")).where(sql`(head_sha256 IS NOT NULL)`),
 	foreignKey({
+			columns: [table.alignmentOriginalFileId],
+			foreignColumns: [table.id],
+			name: "material_files_alignment_original_file_id_fkey"
+		}),
+	foreignKey({
 			columns: [table.derivedFromId],
 			foreignColumns: [table.id],
 			name: "material_files_derived_from_id_fkey"
@@ -534,6 +545,7 @@ export const materialFiles = pgTable("material_files", {
 			foreignColumns: [materials.id],
 			name: "material_files_material_id_fkey"
 		}).onDelete("cascade"),
+	check("material_files_alignment_check", sql`((alignment_original_file_id IS NULL) AND (alignment_offset_ms IS NULL) AND (alignment_confidence IS NULL) AND (alignment_margin IS NULL) AND (alignment_reliable IS NULL) AND (aligned_at IS NULL)) OR ((kind = 'proxy'::text) AND (alignment_original_file_id IS NOT NULL) AND (alignment_reliable IS NOT NULL) AND (aligned_at IS NOT NULL) AND ((alignment_offset_ms >= '-3600000'::integer) AND (alignment_offset_ms <= 3600000)) AND ((alignment_confidence >= (0)::double precision) AND (alignment_confidence <= (1)::double precision)) AND ((alignment_margin >= (0)::double precision) AND (alignment_margin <= (1)::double precision)))`),
 	check("material_files_delivery_license_check", sql`(kind = 'delivery'::text) = (license_id IS NOT NULL)`),
 	check("material_files_dims_positive", sql`((width IS NULL) OR (width > 0)) AND ((height IS NULL) OR (height > 0))`),
 	check("material_files_head_sha256_len", sql`(head_sha256 IS NULL) OR (octet_length(head_sha256) = 32)`),
