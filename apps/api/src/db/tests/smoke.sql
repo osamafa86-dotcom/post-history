@@ -681,6 +681,12 @@ SELECT pg_temp.expect_error($q$
 SELECT pg_temp.expect_error($q$
   INSERT INTO material_files (material_id, kind, state, derived_from_id, license_id)
   VALUES ('00000000-0000-4000-8000-000000000101', 'export', 'received', '00000000-0000-4000-8000-000000000301', '00000000-0000-4000-8000-000000000801') $q$, '23514');
+-- التصدير النهائي مشتق produced (ترحيل 028): نوع مقبول، ومرة واحدة لكل مصدر كبقية المشتقات
+INSERT INTO material_files (material_id, kind, state, derived_from_id)
+VALUES ('00000000-0000-4000-8000-000000000101', 'produced', 'received', '00000000-0000-4000-8000-000000000301');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_files (material_id, kind, state, derived_from_id)
+  VALUES ('00000000-0000-4000-8000-000000000101', 'produced', 'received', '00000000-0000-4000-8000-000000000301') $q$, '23505');
 INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
 VALUES ('license.delivery_requested', 'license', '00000000-0000-4000-8000-000000000801', 'license.delivery_requested:smoke:1',
         '{"license_id": "00000000-0000-4000-8000-000000000801", "material_id": "00000000-0000-4000-8000-000000000101", "source_file_id": "00000000-0000-4000-8000-000000000301", "deliverables": ["original", "audio"], "produced_file_id": null}');

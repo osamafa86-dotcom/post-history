@@ -557,7 +557,7 @@ export const materialFiles = pgTable("material_files", {
 	check("material_files_delivery_license_check", sql`(kind = 'delivery'::text) = (license_id IS NOT NULL)`),
 	check("material_files_dims_positive", sql`((width IS NULL) OR (width > 0)) AND ((height IS NULL) OR (height > 0))`),
 	check("material_files_head_sha256_len", sql`(head_sha256 IS NULL) OR (octet_length(head_sha256) = 32)`),
-	check("material_files_kind_check", sql`kind = ANY (ARRAY['original'::text, 'proxy'::text, 'hls'::text, 'audio'::text, 'thumbnail'::text, 'voice_note'::text, 'export'::text, 'transcript'::text, 'captions'::text, 'watermarked_preview'::text, 'shot_list'::text, 'delivery'::text])`),
+	check("material_files_kind_check", sql`kind = ANY (ARRAY['original'::text, 'proxy'::text, 'hls'::text, 'audio'::text, 'thumbnail'::text, 'voice_note'::text, 'export'::text, 'transcript'::text, 'captions'::text, 'watermarked_preview'::text, 'shot_list'::text, 'delivery'::text, 'produced'::text])`),
 	check("material_files_perceptual_hash_size", sql`(perceptual_hash IS NULL) OR (((cardinality(perceptual_hash) >= 1) AND (cardinality(perceptual_hash) <= 32)) AND (array_position(perceptual_hash, NULL::bigint) IS NULL))`),
 	check("material_files_perceptual_hash_video_only", sql`(perceptual_hash IS NULL) OR (kind = 'original'::text)`),
 	check("material_files_proxy_mode_check", sql`(proxy_mode IS NULL) OR (proxy_mode = ANY (ARRAY['urgent'::text, 'normal'::text]))`),
