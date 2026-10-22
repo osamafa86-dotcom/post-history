@@ -183,7 +183,7 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
   });
 
   describe('AI_WORKER_TOKEN (local transcription worker)', () => {
-    it('is refused (404) everywhere except derivatives of kind transcript or captions', async () => {
+    it('is refused (404) everywhere except derivatives of kind transcript, captions or shot_list', async () => {
       const s = await completed();
       await getSession(s.id, aiToken).expect(404);
       await auth(http().post(`/internal/media/sessions/${s.id}/verification`), aiToken).send(report()).expect(404);
@@ -197,8 +197,8 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
           technical: { duration_ms: 1000, start_pts_us: 0 },
         });
       for (const kind of ['proxy', 'thumbnail', 'hls', 'audio']) await derived(kind, aiToken).expect(404);
-      // للنوعين المسموحين يتجاوز الرمز المصادقة ويلقى ما يلقاه رمز عامل الوسائط نفسه (التحقق بمخطط العقد بعدها)
-      for (const kind of ['transcript', 'captions']) {
+      // للأنواع المسموحة يتجاوز الرمز المصادقة ويلقى ما يلقاه رمز عامل الوسائط نفسه (التحقق بمخطط العقد بعدها)
+      for (const kind of ['transcript', 'captions', 'shot_list']) {
         const viaAi = await derived(kind, aiToken);
         expect(viaAi.status).not.toBe(404);
         expect(viaAi.status).toBe((await derived(kind, token)).status);

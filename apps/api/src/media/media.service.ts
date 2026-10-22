@@ -148,7 +148,8 @@ export class MediaService {
           ...columns,
           technical: json,
         })
-        .onConflictDoNothing({ target: [materialFiles.derivedFromId, materialFiles.kind], where: sql`derived_from_id IS NOT NULL` })
+        // الشرط يستلزم شرط الفهرس الجزئي القائم والذي يستثني delivery (ترحيل 026)، فيستدلّه Postgres في الحالين
+        .onConflictDoNothing({ target: [materialFiles.derivedFromId, materialFiles.kind], where: sql`derived_from_id IS NOT NULL AND kind <> 'delivery'` })
         .returning({ id: materialFiles.id });
       if (created) {
         // حزمة التصدير (v0.2) تجعل طلبها جاهزًا
