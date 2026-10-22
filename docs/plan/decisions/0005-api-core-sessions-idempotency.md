@@ -371,3 +371,14 @@
   - الحصرية لـ `exclusive_temporary` وحده.
   - النوع ثابت.
 - التدقيق `license_template.created` و`license_template.version_created` بـ `license_template_id` و`license_version` وحدهما.
+
+## المحاذاة الصوتية بين النسخة الخفيفة والأصل (v0.3، #249)
+
+- `GET /internal/media/sessions/{id}` يضم `proxy_file_id` و`original_file_id`: أحدث نسخة خفيفة وأحدث أصل متحققين للمادة.
+  بهما يقيس العامل المحاذاة حين يتحقق ثانيهما.
+- `PUT /internal/media/files/{file_id}/alignment` يستبدل القياس على النسخة الخفيفة تحت قفل صفها، ويرد `204`. الطلب نفسه
+  يعيد الأثر نفسه.
+  - الملف غير `proxy` أو غير متحقق: `422` على `/file_id`.
+  - `original_file_id` ليس أصلًا متحققًا للمادة نفسها: `422` على `/original_file_id`.
+  - الملف غير الموجود برمز صحيح: `410`.
+- `Material.files` يعرض `alignment` على النسخة الخفيفة وحدها، و`null` قبل القياس. أرقام فقط.
