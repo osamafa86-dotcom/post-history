@@ -5,7 +5,7 @@ import type { FieldKeyring } from '../common/crypto';
 import type { UploadForm } from '../forms/dynamic-fields';
 import type { components } from '../generated/api';
 import type { Permission, Principal, RoleName } from '../identity/principal';
-import { suspendListingForRights } from '../commerce/listing-store';
+import { suspendListing } from '../commerce/listing-store';
 import { writeOutboxEvent, type OutboxEventType } from '../outbox/outbox';
 import { redactDynamicFields } from './redaction';
 import { PRODUCTION_VISIBLE_STATES, STATE_COLUMN, type Track } from './transitions';
@@ -245,7 +245,7 @@ export async function applyTransition(
   const column = STATE_COLUMN[t.track];
   const from = m[column];
   // إدراج معروض يُعلَّق قبل أن تخرج حقوق مادته من sellable، في المعاملة نفسها (محفّز القاعدة يرفض العكس)
-  if (t.track === 'rights' && from === 'sellable' && t.to !== 'sellable') await suspendListingForRights(tx, m.id, t.actorId);
+  if (t.track === 'rights' && from === 'sellable' && t.to !== 'sellable') await suspendListing(tx, m.id, 'rights_changed', t.actorId);
   // «اطّلعت» (v0.2): من نقل المادة من inbox إلى acknowledged ومتى، فيراه المراسل
   const seen = t.track === 'editorial' && t.to === 'acknowledged' && t.actorId ? { acknowledgedBy: t.actorId, acknowledgedAt: sql`now()` } : {};
   const [updated] = await tx

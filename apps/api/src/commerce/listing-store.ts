@@ -39,15 +39,23 @@ export async function writeListingEvent(tx: Tx, listing: ListingRow, actorId: st
   });
 }
 
+/** ما يعلّق الإدراج المعروض آليًا: خروج الحقوق من `sellable`، أو وسم المادة بالحساسية (threat-model-commercial). */
+export type AutoSuspendReason = 'rights_changed' | 'sensitive_flagged';
+
 /**
- * الحقوق تخرج من `sellable` والإدراج معروض: يُعلَّق أولًا (`rights_changed`) في معاملة الانتقال نفسها، لأن محفّز القاعدة
- * يرفض الانتقال ما دام معروضًا. لا يعود `listed` إلا بطلب صريح.
+ * يُعلَّق الإدراج المعروض في معاملة التغيير نفسها وقبله، لأن محفّزات القاعدة ترفض التغيير ما دام معروضًا. لا يعود
+ * `listed` إلا بطلب صريح يستوفي شروطه.
  */
-export async function suspendListingForRights(tx: Tx, materialId: string, actorId: string | null): Promise<void> {
+export async function suspendListing(tx: Tx, materialId: string, reason: AutoSuspendReason, actorId: string | null): Promise<void> {
   const [suspended] = await tx
     .update(catalogListings)
-    .set({ state: 'suspended', suspendedReason: 'rights_changed', updatedBy: sql`COALESCE(${actorId}::uuid, ${catalogListings.updatedBy})` as never })
+    .set({ state: 'suspended', suspendedReason: reason, updatedBy: sql`COALESCE(${actorId}::uuid, ${catalogListings.updatedBy})` as never })
     .where(and(eq(catalogListings.materialId, materialId), eq(catalogListings.state, 'listed')))
     .returning();
   if (suspended) await writeListingEvent(tx, suspended, actorId);
+}
+
+/** المواد الموسومة بالحساسية (قاصرون، مصابون، مشاهد صادمة) خارج الكتالوج (threat-model-commercial، ملاحظة الأمن على #253). */
+export function isSensitive(m: { sensitivityMinors: boolean; sensitivityInjured: boolean; sensitivityGraphic: boolean }): boolean {
+  return m.sensitivityMinors || m.sensitivityInjured || m.sensitivityGraphic;
 }
