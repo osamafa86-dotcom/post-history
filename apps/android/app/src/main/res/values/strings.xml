@@ -305,4 +305,6 @@
     <string name="review_history">سجل الانتقالات</string>
     <string name="review_history_empty">لا انتقالات بعد.</string>
     <string name="review_history_line">%1$s: %2$s ← %3$s</string>
+    <string name="file_kind_shot_list">قائمة اللقطات</string>
+    <string name="file_kind_other">ملف آخر</string>
 </resources>

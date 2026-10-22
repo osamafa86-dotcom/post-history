@@ -225,6 +225,8 @@ jobs:
         run: infra/compose/check-pinned.sh
       - name: Trial host bootstrap and update, dry run in Ubuntu 24.04 without network (ADR 0013)
         run: infra/deploy/test-dry-run.sh
+      - name: Trial API image from a release, checked by sha256 and commit (ADR 0050)
+        run: infra/deploy/test-api-image.sh
       - name: Validate docker compose file
         run: |
           cp infra/compose/.env.example infra/compose/.env
@@ -298,6 +300,13 @@ jobs:
           docker run --rm --network media-it -e MEDIA_IT_REQUIRED=1 -e MEDIA_IT_REDIS_URL=redis://media-it-redis:6379 \
             -e MEDIA_IT_S3_ENDPOINT=http://media-it-minio:9000 -e MEDIA_IT_S3_ACCESS_KEY=ci-access \
             -e MEDIA_IT_S3_SECRET_KEY=ci-only-secret media-worker:test python -m pytest -q -rs
+      # Service target: a 1-minute phone clip has its preview within 2 minutes (event -> proxy registered).
+      - name: Preview within 2 minutes for a 1-minute 1080p clip (end to end on Redis and MinIO)
+        run: |
+          docker run --rm --network media-it -e MEDIA_IT_REDIS_URL=redis://media-it-redis:6379 \
+            -e MEDIA_IT_S3_ENDPOINT=http://media-it-minio:9000 -e MEDIA_IT_S3_ACCESS_KEY=ci-access \
+            -e MEDIA_IT_S3_SECRET_KEY=ci-only-secret media-worker:test \
+            python bench/preview_slo.py --profiles 1080p-h264 --runs 2 --max-s 120
       - name: Web player fixtures from the worker code (HLS, timeline sprite, Arabic WebVTT) for #89
         run: |
           mkdir -p /tmp/wf && chmod 777 /tmp/wf
@@ -308,7 +317,7 @@ jobs:
       - name: Proxy A/V sync on synthetic marker clips (tools/render-bench)
         run: |
           docker run --rm -v "$PWD/tools/render-bench:/bench:ro" -w /bench -e PYTHONPATH=/app/src:/bench \
-            media-worker:test python -m pytest -q -p no:cacheprovider test_av_sync.py
+            media-worker:test python -m pytest -q -p no:cacheprovider test_av_sync.py test_cut_export.py
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"

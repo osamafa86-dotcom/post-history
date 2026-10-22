@@ -11,6 +11,9 @@ describe("newsroom board", () => {
       recent_receipts: [{ material_id: id, receipt_number: "R-261021-000001", verified_at: "2026-10-21T10:00:00Z", priority: "normal", reporter: "canary" }], extra: "canary" } as unknown as NewsroomDashboard;
     const safe = safeDashboard(raw);
     expect(JSON.stringify(safe)).not.toContain("canary"); expect(safe.editorial).toEqual([{ state: "inbox", count: 4 }]); expect(safe.reserved).toHaveLength(1);
+    expect(safe).not.toHaveProperty("uploads_in_progress");
+    const progress = safeDashboard({ ...raw, uploads_in_progress: [{ upload_session_id: id, material_id: id, kind: "original", priority: "urgent", state: "in_progress", size_bytes: 100, bytes_received: 150, updated_at: "2026-10-21T10:00:00Z", filename: "canary" }, { upload_session_id: "bad", material_id: id, kind: "proxy", priority: "normal", state: "created", size_bytes: 1, bytes_received: 0, updated_at: "x" }] } as unknown as NewsroomDashboard);
+    expect(progress.uploads_in_progress).toHaveLength(1); expect(progress.uploads_in_progress![0].bytes_received).toBe(100); expect(JSON.stringify(progress)).not.toContain("canary");
   });
   it("orders the plan's columns and formats elapsed time", () => {
     expect(boardColumns).toEqual(["inbox", "reviewing", "accepted", "in_production", "final_review", "published"]);

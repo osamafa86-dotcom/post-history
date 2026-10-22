@@ -1,12 +1,16 @@
 // availability: drop the API server, the database and a deploy while requests keep arriving; the recovery time is measured
 // against the declared target. Runs against a stack you can drive with docker compose (the field-trial compose on the trial host or
 // in CI), through the same address clients use. Under steady read load (AVAIL_LOAD workers, 50 ms apart) for each scenario:
-//   api-kill   SIGKILL the API container (the restart policy brings it back)
-//   db-kill    SIGKILL Postgres (the API must reconnect by itself; a marker material written before must still be readable)
+//   api-kill   SIGKILL the API container's main process (the restart policy brings it back)
+//   db-kill    SIGKILL Postgres's main process (the API must reconnect by itself; a marker material written before must still be readable)
 //   deploy     recreate the API container with the same image (what a deploy does to one instance: the outage window)
 // Per scenario: requests, failures, first failure after the action, time until reads stay good (downtime), recovered or not.
 //   AVAIL_API_URL=https://main.localhost/v1   AVAIL_TOKEN=<reporter access token>
 //   AVAIL_COMPOSE="infra/field-trial/trial.sh"   the compose command prefix; services are api and postgres (AVAIL_API_SERVICE, AVAIL_DB_SERVICE)
+//   The kill is a crash, not a stop: `docker compose kill` counts as a manual stop for Docker, so the restart policy does not bring the container back.
+//   By default the script resolves the container's PID (`docker inspect -f '{{.State.Pid}}'`) and runs `kill -9` on it from the host, which needs
+//   root: AVAIL_KILL_PREFIX="sudo" when the account is not root. AVAIL_CRASH_MODE=compose falls back to `$AVAIL_COMPOSE kill -s KILL` (only for a stack whose
+//   wrapper handles the restart itself).
 //   AVAIL_TARGET_S=<seconds>   the recovery target management declared (decision 8: 99.5% or 99.9%); without it the result is partial
 //   AVAIL_TRIAL_HOST=1         the operator states this runs on the trial host, not on a CI runner; without it the result is partial
 //   AVAIL_LOAD=4  AVAIL_BASELINE_MS=4000  AVAIL_SETTLE_MS=6000  AVAIL_TIMEOUT_MS=120000
@@ -24,6 +28,14 @@ import { client, materialBody, sleep } from "../lib/live.mjs";
 import { freshFetch } from "../lib/http.mjs";
 
 const sh = promisify(execFile);
+
+/** The shell command that crashes `service`: SIGKILL to its main process from the host (a crash the restart policy answers), or compose's own kill. */
+export function crashCommand(env, service) {
+  if (env.AVAIL_CRASH_MODE === "compose") return `${env.AVAIL_COMPOSE} kill -s KILL ${service}`;
+  const prefix = env.AVAIL_KILL_PREFIX ? `${env.AVAIL_KILL_PREFIX} ` : "";
+  const docker = env.AVAIL_DOCKER ?? "docker";
+  return `c=$(${env.AVAIL_COMPOSE} ps -q ${service}) && [ -n "$c" ] && pid=$(${docker} inspect -f '{{.State.Pid}}' "$c") && [ "\${pid:-0}" -gt 0 ] && ${prefix}kill -9 "$pid"`;
+}
 
 /**
  * Samples are {t, ok} (ms since the load started). `tAction` is when the action began. Downtime runs from the first failure at or after the
@@ -105,8 +117,8 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
   }
 
   const results = {};
-  results["api-kill"] = await scenario("api-kill", () => exec(`${env.AVAIL_COMPOSE} kill -s KILL ${api}`));
-  results["db-kill"] = await scenario("db-kill", () => exec(`${env.AVAIL_COMPOSE} kill -s KILL ${db}`));
+  results["api-kill"] = await scenario("api-kill", () => exec(crashCommand(env, api)));
+  results["db-kill"] = await scenario("db-kill", () => exec(crashCommand(env, db)));
   const still = await http.get(env.AVAIL_TOKEN, `/materials/${marker.body.id}`);
   const markerIntact = still.status === 200 && still.body?.id === marker.body.id;
   console.log(`${markerIntact ? "ok  " : "FAIL"} the marker material written before the database was killed is still readable (${still.status})`);

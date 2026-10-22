@@ -1,10 +1,10 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
-import { validateBody } from '../common/contract';
+import { validateBody, validateQuery } from '../common/contract';
 import type { components } from '../generated/api';
 import { RehydrateOnReplay } from '../idempotency/replay';
 import { Roles } from '../identity/principal';
-import { UploadsService } from './uploads.service';
+import { type UploadSessionQuery, UploadsService } from './uploads.service';
 
 @Controller('uploads')
 export class UploadsController {
@@ -28,10 +28,25 @@ export class UploadsController {
     return this.uploads.create(req.principal!, validateBody('/uploads', 'post', body));
   }
 
+  @Get()
+  @Roles('reporter', 'supervisor', 'producer', 'editor_in_chief')
+  list(@Query() query: Record<string, unknown>, @Req() req: Request): Promise<components['schemas']['UploadSessionPage']> {
+    // `state` يتكرر في العقد (explode)؛ القيمة الواحدة تصل نصًّا من Express فتُلفّ مصفوفة قبل التحقق
+    const q = typeof query.state === 'string' ? { ...query, state: [query.state] } : query;
+    return this.uploads.list(req.principal!, validateQuery<UploadSessionQuery>('/uploads', 'get', q));
+  }
+
   @Get(':id')
   @Roles('reporter', 'supervisor', 'producer', 'editor_in_chief', 'system_admin')
   get(@Param('id') id: string, @Req() req: Request): Promise<components['schemas']['UploadSession']> {
     return this.uploads.get(req.principal!, id);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  @Roles('reporter', 'supervisor', 'producer', 'editor_in_chief')
+  async abort(@Param('id') id: string, @Req() req: Request): Promise<void> {
+    await this.uploads.abort(req.principal!, id);
   }
 
   @Post(':id/complete')
