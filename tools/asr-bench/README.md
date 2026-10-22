@@ -40,9 +40,19 @@ cd tools/asr-bench
 
 `ASR_BENCH_CACHE` يحدد مكان الأوزان والصوت (الافتراضي `~/.cache/asr-bench`، خارج المستودع). `--limit N` تشغيل تجريبي لا يُكتب في `docs/`.
 
+## مسودات العنوان والملخص (`llm_bench.py`)
+
+نموذج لغوي محلي بملف GGUF عبر llama.cpp (`pip install llama-cpp-python==0.3.16` بناءً من المصدر)، على XL-Sum العربية العامة، تحت `unshare -rn` بلا شبكة:
+
+```bash
+unshare -rn python llm_bench.py run --model qwen2.5-3b-instruct-q4_k_m.gguf --data arabic_test.jsonl --n 20 --threads 4 --label qwen2-5-3b-q4km-cpu4 --out result.json
+```
+
+النتائج والقرار في ملحق ADR 0026.
+
 ## CI
 
-`.github/workflows/asr-bench.yml`: اختبارات `test_metrics.py` (مكتبة بايثون القياسية وpytest فقط، بلا أوزان ولا صوت)، والتحقق من أن كل ملف قياس يطابق `measurement.json` ونتيجته `info`.
+`.github/workflows/asr-bench.yml`: اختبارات `test_metrics.py` و`test_edit_baseline.py` و`test_llm_bench.py` (مكتبة بايثون القياسية وpytest فقط، بلا أوزان ولا صوت)، والتحقق من أن كل ملف قياس يطابق `measurement.json` ونتيجته `info`.
 
 ## المرحلة التالية (تحتاج موافقة المنسّق المكتوبة في PR)
 

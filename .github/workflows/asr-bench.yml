@@ -24,7 +24,7 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install -q pytest==8.4.2
-          "$RUNNER_TEMP/venv/bin/python" -m pytest -q -p no:cacheprovider test_metrics.py test_edit_baseline.py
+          "$RUNNER_TEMP/venv/bin/python" -m pytest -q -p no:cacheprovider test_metrics.py test_edit_baseline.py test_llm_bench.py
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
