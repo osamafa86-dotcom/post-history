@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "وكيل الخادم",
+  "test_name": "inbox-now-post-receive-concurrency",
+  "started_at": "2026-10-21T23:00:53.432Z",
+  "ended_at": "2026-10-21T23:00:56.578Z",
+  "result": "info",
+  "device": {
+    "platform": "server"
+  },
+  "upload_path": "n/a",
+  "metrics": {
+    "concurrent_uploads": 40,
+    "hooks_per_upload": 20,
+    "hooks_total": 800,
+    "progress_rows_per_upload": 9,
+    "hook_ms_p50": 154,
+    "hook_ms_p95": 196,
+    "hook_ms_p99": 210,
+    "hook_ms_max": 269
+  },
+  "notes": "خطّاف post-receive عبر HTTP إلى الخادم وPostgres على المضيف نفسه (حاوية تطوير سحابية مشتركة). كل رفع يرسل خطّافاته متتابعة كما يفعل tusd، والرفوع بالتوازي. الزمن من إرسال الطلب إلى الرد، ويشمل قفل صف الجلسة وكتابة حدث العُشر."
+}

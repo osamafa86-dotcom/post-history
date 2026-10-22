@@ -96,9 +96,35 @@ describe('upload sessions (/v1/uploads)', () => {
   it("refuses other people's materials (404), other roles (403), and proxy_mode on an original (422)", async () => {
     const materialId = await material();
     await write(other, '/v1/uploads', { material_id: materialId, kind: 'original', ...file(1), filename: 'a' }).expect(404);
-    await write(supervisor, '/v1/uploads', { material_id: materialId, kind: 'original', ...file(1), filename: 'a' }).expect(403);
+    // الطاقم ينشئ جلسات لموادّه هو (#88)؛ مادة المراسل ليست له، ومن لا يرفع أصلًا 403
+    await write(supervisor, '/v1/uploads', { material_id: materialId, kind: 'original', ...file(1), filename: 'a' }).expect(404);
+    const rights = await loginAs(h, [{ role: 'rights_officer' }]);
+    await write(rights, '/v1/uploads', { material_id: materialId, kind: 'original', ...file(1), filename: 'a' }).expect(403);
     await write(reporter, '/v1/uploads', { material_id: materialId, kind: 'original', proxy_mode: 'normal', ...file(1), filename: 'a' }).expect(422);
     await write(reporter, '/v1/uploads', { material_id: randomUUID(), kind: 'original', ...file(1), filename: 'a' }).expect(404);
+  });
+
+  it('staff upload camera files from the web (#88): they own what they create, originals only, and see it whatever their role scope', async () => {
+    const producer = await loginAs(h, [{ role: 'producer' }], { officeId: office });
+    const chief = await loginAs(h, [{ role: 'editor_in_chief' }]);
+    for (const staff of [supervisor, producer, chief]) {
+      const id = await material(staff);
+      const m = (await http().get(`/v1/materials/${id}`).set('Authorization', `Bearer ${staff.token}`).expect(200)).body;
+      expect(m.reporter_id).toBe(staff.id);
+      const s = (await write(staff, '/v1/uploads', { material_id: id, kind: 'original', ...file(10), filename: 'card.mxf' }).expect(201)).body;
+      await http().get(`/v1/uploads/${s.id}`).set('Authorization', `Bearer ${staff.token}`).expect(200);
+      // النسخة الخفيفة يولّدها عامل الوسائط، لا الطاقم
+      await write(staff, '/v1/uploads', { material_id: id, kind: 'proxy', proxy_mode: 'normal', ...file(10), filename: 'p.mp4' }).expect(422);
+      // مادة الطاقم ليست لغيره: مراسل آخر لا يرفع لها
+      await write(reporter, '/v1/uploads', { material_id: id, kind: 'original', ...file(10), filename: 'x' }).expect(404);
+    }
+    // منتج آخر لا يرى مادة منتج في الوارد (نطاق المنتج: ما قُبل للإنتاج)
+    const otherProducer = await loginAs(h, [{ role: 'producer' }]);
+    const mine = await material(producer);
+    await http().get(`/v1/materials/${mine}`).set('Authorization', `Bearer ${otherProducer.token}`).expect(404);
+    // من لا يرفع لا ينشئ مادة
+    const rights = await loginAs(h, [{ role: 'rights_officer' }]);
+    await write(rights, '/v1/materials', { title: 'x' }).expect(403);
   });
 
   it('GET returns the session without the token to the owner and to a supervisor in scope, 404 to others', async () => {
@@ -146,6 +172,23 @@ describe('upload sessions (/v1/uploads)', () => {
       } finally {
         await strict.close();
       }
+    });
+
+    it('UPLOAD_MAX_BYTES rejects a larger file with 422 on /size_bytes and accepts one at the limit; unset means no limit', async () => {
+      const capped = await createHarness({ env: { UPLOAD_MAX_BYTES: '1024' } });
+      try {
+        const owner = await loginAs(capped, [{ role: 'reporter' }], { officeId: office });
+        const post = (url: string, body: object) =>
+          request(capped.app.getHttpServer()).post(url).set('Authorization', `Bearer ${owner.token}`).set('Idempotency-Key', randomUUID()).send(body);
+        const materialId = (await post('/v1/materials', materialBody).expect(201)).body.id;
+        const res = await post('/v1/uploads', { material_id: materialId, kind: 'original', ...file(1025), filename: 'f' }).expect(422);
+        expect(res.body.code).toBe('validation_failed');
+        expect(JSON.stringify(res.body)).toContain('/size_bytes');
+        await post('/v1/uploads', { material_id: materialId, kind: 'original', ...file(1024), filename: 'f' }).expect(201);
+      } finally {
+        await capped.close();
+      }
+      expect(h.config.UPLOAD_MAX_BYTES).toBeUndefined();
     });
   });
 

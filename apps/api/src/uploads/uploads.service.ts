@@ -1,20 +1,31 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { eq, type SQL, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, type SQL, sql } from 'drizzle-orm';
 import type { Request } from 'express';
+import type { Logger } from 'pino';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { randomToken, sha256 } from '../common/crypto';
 import { ApiError } from '../common/errors';
+import { LOGGER } from '../common/logger';
 import { DB, type Database } from '../database/database.module';
 import { materialFiles, uploadSessions } from '../database/schema/schema';
 import type { components } from '../generated/api';
-import type { Principal } from '../identity/principal';
+import { hasRole, type Principal } from '../identity/principal';
 import type { ReplayRehydrator } from '../idempotency/replay';
 import { findScoped, iso } from '../materials/material-store';
 import { writeOutboxEvent } from '../outbox/outbox';
+import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
+import { failCompletedOriginal, markUploadFailed } from './upload-completion';
 
 type UploadSession = components['schemas']['UploadSession'];
 type UploadSessionCreate = components['schemas']['UploadSessionCreate'];
 type UploadSessionCreated = components['schemas']['UploadSessionCreated'];
+type UploadSessionPage = components['schemas']['UploadSessionPage'];
+export interface UploadSessionQuery {
+  state?: Array<UploadSession['state']>;
+  material_id?: string;
+  cursor?: string;
+  limit?: number;
+}
 type SessionRow = typeof uploadSessions.$inferSelect;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -25,15 +36,22 @@ export class UploadsService implements ReplayRehydrator {
   constructor(
     @Inject(DB) private readonly db: Database,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
+    @Inject(LOGGER) private readonly logger: Logger,
   ) {}
 
   async create(p: Principal, body: UploadSessionCreate): Promise<UploadSessionCreated> {
     if (body.proxy_mode && body.kind !== 'proxy') throw ApiError.validation({ fields: ['/proxy_mode'] });
+    // الطاقم يرفع الأصل وحده من الويب؛ النسخة الخفيفة والملاحظة الصوتية من تطبيق المراسل
+    if (!hasRole(p, 'reporter') && body.kind !== 'original') throw ApiError.validation({ fields: ['/kind'] });
     // يصير client_sha256 مطلوبًا في عقد v0.1؛ إلى أن يُدمج يفرضه هذا المتغير بالرد نفسه الذي سيعطيه التحقق بالعقد (422)
     if (this.config.UPLOAD_REQUIRE_CLIENT_SHA256 && !body.client_sha256) throw ApiError.validation({ fields: ['/client_sha256'] });
+    if (this.config.UPLOAD_MAX_BYTES !== undefined && body.size_bytes > this.config.UPLOAD_MAX_BYTES) {
+      throw ApiError.validation({ fields: ['/size_bytes'] });
+    }
     return this.db.transaction(async (tx) => {
       const material = await findScoped(tx, p, body.material_id, { forUpdate: true });
-      // المراسل يرفع لمواده فقط؛ مادة غيره غير موجودة بالنسبة إليه
+      // المنشئ يرفع لمواده فقط (المراسل أو الطاقم)؛ مادة غيره غير موجودة بالنسبة إليه
       if (!material || material.reporterId !== p.userId) throw ApiError.notFound();
       if (body.kind === 'original' && material.technicalState === 'verified') {
         throw new ApiError(409, 'upload_state_conflict', 'The original of this material is already verified.');
@@ -68,6 +86,73 @@ export class UploadsService implements ReplayRehydrator {
       });
       return { ...this.toDto(session!, null), upload_token: token, upload_token_expires_at: iso(session!.uploadTokenExpiresAt)! };
     });
+  }
+
+  /**
+   * جلسات المستدعي وحده، الأحدث أولًا بالمؤشر (created_at، id)، للاستئناف بعد إغلاق التبويب أو التطبيق. الافتراضي غير
+   * النهائية. لا رمز رفع في أي قراءة.
+   */
+  async list(p: Principal, q: UploadSessionQuery): Promise<UploadSessionPage> {
+    const limit = q.limit ?? 50;
+    const states = q.state?.length ? q.state : ['created', 'in_progress', 'completed'];
+    const where: SQL[] = [eq(uploadSessions.createdBy, p.userId), inArray(uploadSessions.state, states)];
+    if (q.material_id) where.push(eq(uploadSessions.materialId, q.material_id));
+    if (q.cursor) {
+      const c = decodeCursor(q.cursor);
+      where.push(sql`(${uploadSessions.createdAt}, ${uploadSessions.id}) < (${c.at}::timestamptz, ${c.id}::uuid)`);
+    }
+    const rows = await this.db
+      .select()
+      .from(uploadSessions)
+      .where(and(...where))
+      .orderBy(desc(uploadSessions.createdAt), desc(uploadSessions.id))
+      .limit(limit + 1);
+    const page = rows.slice(0, limit);
+    const fileIds = page.map((s) => s.fileId).filter((f): f is string => Boolean(f));
+    const receipts = new Map(
+      fileIds.length === 0
+        ? []
+        : (
+            await this.db
+              .select({ id: materialFiles.id, r: materialFiles.receiptNumber })
+              .from(materialFiles)
+              .where(inArray(materialFiles.id, fileIds))
+          ).map((f) => [f.id, f.r]),
+    );
+    const last = page[page.length - 1];
+    return {
+      items: page.map((s) => this.toDto(s, (s.fileId && receipts.get(s.fileId)) ?? null)),
+      // القيمة الخام من القاعدة بدقتها الكاملة (ميكروثانية)، فلا تتخطى الصفحة التالية جلسات في الملّي‌ثانية نفسها
+      next_cursor: rows.length > limit && last ? Buffer.from(JSON.stringify([last.createdAt, last.id])).toString('base64url') : null,
+    };
+  }
+
+  /**
+   * يلغيها صاحبها وحده: `failed` بسبب `aborted`، ويُبطَل رمز الرفع (ورموز ingest، لأن البوابة تسأل عن حالة الجلسة)،
+   * و`upload.failed` في المعاملة نفسها. الأصل المكتمل قبل التحقق يعيد المسار الفني إلى failed. ما وصل يُحذف من التخزين
+   * المؤقت بعد الحفظ، وفشل الحذف لا يُفشل الإلغاء (يُسجَّل، وما بقي لقاعدة دورة حياة الحاوية). المكتمل تحققه 409.
+   * جلسة منتهية بفشل سابق (ومنها الملغاة) تعيد 204 بلا أثر.
+   */
+  async abort(p: Principal, id: string): Promise<void> {
+    if (!UUID.test(id)) throw ApiError.notFound();
+    const key = await this.db.transaction(async (tx) => {
+      const [session] = await tx.select().from(uploadSessions).where(eq(uploadSessions.id, id)).for('update');
+      if (!session || session.createdBy !== p.userId) throw ApiError.notFound();
+      if (session.state === 'failed') return null;
+      if (session.state === 'verified' || session.state === 'deduplicated') {
+        throw new ApiError(409, 'upload_state_conflict', 'A verified upload cannot be cancelled.');
+      }
+      await tx.update(uploadSessions).set({ uploadTokenHash: null, uploadTokenExpiresAt: null }).where(eq(uploadSessions.id, session.id));
+      await markUploadFailed(tx, session, 'aborted');
+      await failCompletedOriginal(tx, session, 'original upload cancelled by its owner');
+      return session.storageKey ?? `${this.config.TUSD_OBJECT_PREFIX}${session.id}`;
+    });
+    if (!key || !this.storage.removeUpload) return;
+    try {
+      await this.storage.removeUpload(this.config.S3_BUCKET_UPLOADS, key);
+    } catch (err) {
+      this.logger.warn({ upload_session_id: id, error: (err as Error).name }, 'cancelled upload not removed from temporary storage');
+    }
   }
 
   async get(p: Principal, id: string): Promise<UploadSession> {
@@ -172,4 +257,26 @@ export class UploadsService implements ReplayRehydrator {
       updated_at: iso(s.updatedAt),
     };
   }
+}
+
+function decodeCursor(cursor: string): { at: string; id: string } {
+  try {
+    const [at, id] = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as [unknown, unknown];
+    if (typeof at === 'string' && validTimestamp(at) && typeof id === 'string' && UUID.test(id)) return { at, id };
+  } catch {
+    // يقع إلى 400 أدناه
+  }
+  throw new ApiError(400, 'bad_request', 'Invalid cursor.', { params: ['cursor'] });
+}
+
+/**
+ * الطابع كما تعيده القاعدة (`2026-10-21 23:00:00.123456+00`) أو ISO، بحقول ضمن مداها؛ فما يمر هنا يقبله `::timestamptz`
+ * ولا يصير 500. Date.parse وحده يقبل صيغًا يرفضها Postgres.
+ */
+function validTimestamp(at: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(\.\d{1,6})?(Z|[+-]\d{2}(?::?\d{2})?)$/.exec(at);
+  if (!m) return false;
+  const [y, mo, d, h, mi, sec] = m.slice(1, 7).map(Number) as [number, number, number, number, number, number];
+  const day = new Date(Date.UTC(y, mo - 1, d));
+  return day.getUTCFullYear() === y && day.getUTCMonth() === mo - 1 && day.getUTCDate() === d && h < 24 && mi < 60 && sec < 60;
 }

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "media",
+  "test_name": "phash-calibration",
+  "started_at": "2026-10-21T21:26:03.576Z",
+  "ended_at": "2026-10-21T21:29:06.589Z",
+  "result": "partial",
+  "device": {
+    "platform": "server",
+    "model": "4 vCPU"
+  },
+  "upload_path": "n/a",
+  "file": {
+    "duration_s": 24.0,
+    "codec": "h264",
+    "vfr": false,
+    "hdr": false
+  },
+  "metrics": {
+    "sources": 10,
+    "duplicate_pairs": 50,
+    "different_pairs": 45,
+    "duplicate_distance_max": 32.67,
+    "different_distance_min": 27.17,
+    "different_distance_min_pair": "testsrc2/testsrc",
+    "duplicate_worst": "zoneplate/brightness",
+    "recommended_match_distance": 20.0,
+    "current_match_distance": 20.0,
+    "false_reject_at_current": 9,
+    "false_accept_at_current": 0,
+    "false_reject_at_recommended": 9,
+    "false_accept_at_recommended": 0,
+    "false_reject_at_recommended_logo_box": 6,
+    "crop_10pct_distance_min": 7.83,
+    "shift_3s_distance_min": 19.33,
+    "ffmpeg_version": "8.0.1",
+    "previous_match_distance": 10.0,
+    "false_reject_at_previous": 15
+  },
+  "notes": "معايرة MATCH_DISTANCE على عشرة مصادر اصطناعية (نسخة رئيسة لكل مصدر، والتحويلات منها): مكررات بإعادة ترميز CRF 38 وتصغير إلى 360p وتغيير إضاءة ومربع كشعار ومعدل 25. أقرب زوج مختلف 27.17 (testsrc2/testsrc)، وأبعد مكرر 32.67: المجموعتان متداخلتان. عند الحد السابق 10 (تشغيل سابق بالأداة نفسها؛ المصادر العشوائية تختلف بين التشغيلين): رفض خاطئ 15/50 بلا قبول خاطئ. عند 20.0 (هامش 25% تحت أقرب زوج مختلف): رفض خاطئ 9/50، منها 6 بمربع الشعار، والباقي محتوى أملس أو ضجيجي، بلا قبول خاطئ. القص 10% (أدنى 7.83) والإزاحة 3 ث (أدنى 19.33) خارج نطاق البصمة كما هو معلن. partial: مقاطع اصطناعية لا عينة مواد حقيقية؛ البصمة ترشّح ولا تمنع، وضعفها أمام الشعار المضاف يستدعي بصمة أقوى (تجاهل الأركان أو سمات محلية) إن احتاجتها غرفة الأخبار."
+}

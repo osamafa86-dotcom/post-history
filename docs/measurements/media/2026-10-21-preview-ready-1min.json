@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "media",
+  "test_name": "media-preview-ready-1min",
+  "started_at": "2026-10-21T19:39:45.573Z",
+  "ended_at": "2026-10-21T19:47:31.416Z",
+  "result": "pass",
+  "device": {
+    "platform": "server",
+    "model": "4 vCPU"
+  },
+  "upload_path": "n/a",
+  "file": {
+    "size_bytes": 381235257,
+    "duration_s": 60.0,
+    "codec": "h264+hevc",
+    "vfr": false,
+    "hdr": true
+  },
+  "metrics": {
+    "1080p-h264_p50_s": 10.22,
+    "1080p-h264_p95_s": 10.98,
+    "1080p-h264_max_s": 10.98,
+    "1080p-h264_verified_p50_s": 0.58,
+    "1080p-h264_size_bytes": 130270714,
+    "4k-h264_p50_s": 23.0,
+    "4k-h264_p95_s": 23.09,
+    "4k-h264_max_s": 23.09,
+    "4k-h264_verified_p50_s": 1.29,
+    "4k-h264_size_bytes": 381235257,
+    "1080p-hlg_p50_s": 28.61,
+    "1080p-hlg_p95_s": 28.74,
+    "1080p-hlg_max_s": 28.74,
+    "1080p-hlg_verified_p50_s": 0.31,
+    "1080p-hlg_size_bytes": 91767986,
+    "runs_per_profile": 5,
+    "limit_s": 120.0,
+    "ffmpeg_version": "8.0.1"
+  },
+  "notes": "هدف الخدمة «جاهزية نسخة المعاينة لمقطع مدته دقيقة خلال دقيقتين»: من نشر upload.original_received في Redis Stream إلى وصول تسجيل kind=proxy، على خط العامل الحقيقي (Redis وMinIO محليان، والخادم الداخلي بديل HTTP بشكل ADR 0006)، ويشمل التنزيل والبصمة وffprobe والتحقق وموجة الصوت والمصغّرات وترميز proxy-480p ورفعه. مقاطع اصطناعية دقيقة واحدة، 5 تشغيلات لكل ملف تعريف: H.264 1080p بنحو 17 Mbps (p95 10.98 ث)، H.264 4K بنحو 50 Mbps (p95 23.09 ث)، HEVC 10 بت HLG مع خريطة الألوان إلى SDR (p95 28.74 ث). عامل واحد على 4 vCPU بلا طابور منافس؛ الطابور تحت الحمل وشبكة R2 الحقيقية لم يُقاسا. وظيفة media في CI تعيد ملف 1080p وتفشل فوق 120 ث. الأمر: python bench/preview_slo.py داخل صورة workers/media مع MEDIA_IT_*."
+}

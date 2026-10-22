@@ -15,7 +15,18 @@ export type AdminRecoveryInput =
 
 export class AdminRecoveryError extends Error {
   constructor(
-    readonly code: 'not_found' | 'not_pending' | 'not_admin_target' | 'invalid_approvers' | 'vault_disabled' | 'verification_failed' | 'quorum',
+    readonly code:
+      | 'not_found'
+      | 'not_pending'
+      | 'not_admin_target'
+      | 'invalid_approvers'
+      | 'vault_disabled'
+      | 'verification_failed'
+      | 'quorum'
+      | 'invalid_input'
+      | 'invalid_office'
+      | 'email_taken'
+      | 'bootstrap_closed',
     message: string,
   ) {
     super(message);
