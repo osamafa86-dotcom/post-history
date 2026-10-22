@@ -832,7 +832,7 @@ export const catalogListings = pgTable("catalog_listings", {
 	check("catalog_listings_listed_at_check", sql`(state <> 'listed'::text) OR (listed_at IS NOT NULL)`),
 	check("catalog_listings_shot_list_check", sql`(jsonb_typeof(shot_list) = 'array'::text) AND (jsonb_array_length(shot_list) <= 200)`),
 	check("catalog_listings_state_check", sql`state = ANY (ARRAY['draft'::text, 'listed'::text, 'suspended'::text])`),
-	check("catalog_listings_suspended_reason_check", sql`((state = 'suspended'::text) = (suspended_reason IS NOT NULL)) AND ((suspended_reason IS NULL) OR (suspended_reason = ANY (ARRAY['manual'::text, 'rights_changed'::text])))`),
+	check("catalog_listings_suspended_reason_check", sql`((state = 'suspended'::text) = (suspended_reason IS NOT NULL)) AND ((suspended_reason IS NULL) OR (suspended_reason = ANY (ARRAY['manual'::text, 'rights_changed'::text, 'sensitive_flagged'::text])))`),
 	check("catalog_listings_text_len", sql`((char_length(title_ar) >= 1) AND (char_length(title_ar) <= 4000)) AND ((char_length(title_en) >= 1) AND (char_length(title_en) <= 4000)) AND ((char_length(description_ar) >= 1) AND (char_length(description_ar) <= 4000)) AND ((char_length(description_en) >= 1) AND (char_length(description_en) <= 4000))`),
 	check("catalog_listings_version_positive", sql`material_version >= 1`),
 ]);
