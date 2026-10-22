@@ -515,8 +515,8 @@ export const materialFiles = pgTable("material_files", {
 	licenseId: uuid("license_id"),
 }, (table) => [
 	uniqueIndex("material_files_delivery_license_key").using("btree", table.derivedFromId.asc().nullsLast().op("uuid_ops"), table.licenseId.asc().nullsLast().op("uuid_ops")).where(sql`(kind = 'delivery'::text)`),
-	uniqueIndex("material_files_derived_kind_key").using("btree", table.derivedFromId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("text_ops")).where(sql`((derived_from_id IS NOT NULL) AND (kind <> 'delivery'::text))`),
-	index("material_files_material_kind_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("uuid_ops")),
+	uniqueIndex("material_files_derived_kind_key").using("btree", table.derivedFromId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops")).where(sql`((derived_from_id IS NOT NULL) AND (kind <> 'delivery'::text))`),
+	index("material_files_material_kind_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("text_ops")),
 	uniqueIndex("material_files_receipt_number_key").using("btree", table.receiptNumber.asc().nullsLast().op("text_ops")).where(sql`(receipt_number IS NOT NULL)`),
 	index("material_files_sha256_idx").using("btree", table.sha256.asc().nullsLast().op("bytea_ops")).where(sql`(sha256 IS NOT NULL)`),
 	index("material_files_size_head_idx").using("btree", table.sizeBytes.asc().nullsLast().op("bytea_ops"), table.headSha256.asc().nullsLast().op("bytea_ops")).where(sql`(head_sha256 IS NOT NULL)`),

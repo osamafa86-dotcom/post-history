@@ -600,6 +600,14 @@ SELECT pg_temp.assert(
   'outbox dispatcher partial index exists');
 
 -- حزمة تسليم المشتري (ADR 0025 الجزء 9): لكل ترخيص حزمته، وlicense_id للتسليم وحده
+-- تسجيل المشتق المتساوي الأثر يستدل الفهرس الجزئي بشرطه الكامل؛ الشرط القديم وحده لا يطابقه بعد هذا الترحيل
+INSERT INTO material_files (material_id, kind, state, derived_from_id)
+VALUES ('00000000-0000-4000-8000-000000000101', 'proxy', 'received', '00000000-0000-4000-8000-000000000301')
+ON CONFLICT (derived_from_id, kind) WHERE derived_from_id IS NOT NULL AND kind <> 'delivery' DO NOTHING;
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_files (material_id, kind, state, derived_from_id)
+  VALUES ('00000000-0000-4000-8000-000000000101', 'proxy', 'received', '00000000-0000-4000-8000-000000000301')
+  ON CONFLICT (derived_from_id, kind) WHERE derived_from_id IS NOT NULL DO NOTHING $q$, '42P10');
 INSERT INTO material_files (material_id, kind, state, derived_from_id, license_id)
 VALUES ('00000000-0000-4000-8000-000000000101', 'delivery', 'received', '00000000-0000-4000-8000-000000000301', '00000000-0000-4000-8000-000000000801');
 INSERT INTO material_files (material_id, kind, state, derived_from_id, license_id)
