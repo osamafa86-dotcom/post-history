@@ -53,7 +53,8 @@
         "auth.recovery_completed",
         "export.requested",
         "setting.changed",
-        "catalog.listing_changed"
+        "catalog.listing_changed",
+        "license.delivery_requested"
       ]
     },
     "aggregate_type": {
@@ -64,7 +65,8 @@
         "notification",
         "form",
         "user",
-        "listing"
+        "listing",
+        "license"
       ]
     },
     "aggregate_id": {
@@ -780,6 +782,61 @@
                 ]
               },
               "source_file_id": {
+                "$ref": "#/$defs/nullableUuid"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "license.delivery_requested"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "license"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "طلب بناء حزمة تسليم ترخيص (v0.3، ADR 0025 الجزء 9): معرّفات ومواصفات التسليم فقط، بلا اسم مشترٍ ولا سعر. التفريغ لا يدخل التسليم (R11).",
+            "required": [
+              "license_id",
+              "material_id",
+              "source_file_id",
+              "deliverables"
+            ],
+            "properties": {
+              "license_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "material_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "source_file_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "deliverables": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "original",
+                    "produced",
+                    "audio",
+                    "stills"
+                  ]
+                }
+              },
+              "produced_file_id": {
                 "$ref": "#/$defs/nullableUuid"
               }
             }
