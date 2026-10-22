@@ -2327,7 +2327,7 @@ export interface components {
          * @enum {string}
          */
         LicenseType: "editorial_single" | "editorial_term" | "exclusive_temporary" | "commercial";
-        LicenseTemplateInput: {
+        LicenseTemplateFields: {
             type: components["schemas"]["LicenseType"];
             name: components["schemas"]["LocalizedText"];
             terms: components["schemas"]["LocalizedText"];
@@ -2350,7 +2350,9 @@ export interface components {
             base_price: components["schemas"]["Money"];
             enabled: boolean;
         };
-        LicenseTemplate: components["schemas"]["LicenseTemplateInput"] & {
+        /** @description جسم الطلب؛ لا خصائص غير المعرَّفة */
+        LicenseTemplateInput: components["schemas"]["LicenseTemplateFields"];
+        LicenseTemplate: components["schemas"]["LicenseTemplateFields"] & {
             /** Format: uuid */
             id: string;
             /** @description لا يُعدَّل إصدار قائم؛ الاستبدال يكتب إصدارًا جديدًا */
@@ -2371,7 +2373,7 @@ export interface components {
             /** @description سعر خاص بهذه المادة؛ `null` = السعر الأساسي للقالب */
             price_override?: components["schemas"]["Money"] | null;
         };
-        CatalogListingInput: {
+        CatalogListingFields: {
             title: components["schemas"]["LocalizedText"];
             description: components["schemas"]["LocalizedText"];
             /** @default [] */
@@ -2388,7 +2390,9 @@ export interface components {
             commercial_allowed: boolean;
             state: components["schemas"]["ListingState"];
         };
-        CatalogListing: components["schemas"]["CatalogListingInput"] & {
+        /** @description جسم الطلب؛ لا خصائص غير المعرَّفة */
+        CatalogListingInput: components["schemas"]["CatalogListingFields"];
+        CatalogListing: components["schemas"]["CatalogListingFields"] & {
             /** Format: uuid */
             id: string;
             /** Format: uuid */
