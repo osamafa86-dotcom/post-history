@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { catalogListings, deviceAttestationKeys, idempotencyKeys, licenseTemplateVersions, licenseTemplates, listingOffers, materialContributors, materialExports, materialFiles, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, outboxEvents, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
+import { catalogListings, deviceAttestationKeys, idempotencyKeys, journalEntries, ledgerAccounts, licenseTemplateVersions, licenseTemplates, listingOffers, materialContributors, materialExports, materialFiles, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, outboxEvents, postings, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
 
 export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => ({
 	refreshToken: one(refreshTokens, {
@@ -17,11 +17,10 @@ export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => 
 }));
 
 export const usersRelations = relations(users, ({one, many}) => ({
-	refreshTokens: many(refreshTokens),
-	pushDevices: many(pushDevices),
-	uploadForms: many(uploadForms),
 	materialTransitions: many(materialTransitions),
-	uploadSessions: many(uploadSessions),
+	refreshTokens: many(refreshTokens),
+	uploadForms: many(uploadForms),
+	pushDevices: many(pushDevices),
 	recoveryRequests_approvedBy: many(recoveryRequests, {
 		relationName: "recoveryRequests_approvedBy_users_id"
 	}),
@@ -62,7 +61,10 @@ export const usersRelations = relations(users, ({one, many}) => ({
 	}),
 	licenseTemplates: many(licenseTemplates),
 	catalogListings: many(catalogListings),
+	uploadSessions: many(uploadSessions),
 	outboxEvents: many(outboxEvents),
+	ledgerAccounts: many(ledgerAccounts),
+	journalEntries: many(journalEntries),
 	recoveryCodes: many(recoveryCodes),
 	materialContributors: many(materialContributors),
 	userRoles_grantedBy: many(userRoles, {
@@ -409,5 +411,40 @@ export const licenseTemplateVersionsRelations = relations(licenseTemplateVersion
 	licenseTemplate: one(licenseTemplates, {
 		fields: [licenseTemplateVersions.templateId],
 		references: [licenseTemplates.id]
+	}),
+}));
+
+export const ledgerAccountsRelations = relations(ledgerAccounts, ({one, many}) => ({
+	user: one(users, {
+		fields: [ledgerAccounts.ownerId],
+		references: [users.id]
+	}),
+	postings: many(postings),
+}));
+
+export const journalEntriesRelations = relations(journalEntries, ({one, many}) => ({
+	user: one(users, {
+		fields: [journalEntries.actorId],
+		references: [users.id]
+	}),
+	journalEntry: one(journalEntries, {
+		fields: [journalEntries.reversesEntryId],
+		references: [journalEntries.id],
+		relationName: "journalEntries_reversesEntryId_journalEntries_id"
+	}),
+	journalEntries: many(journalEntries, {
+		relationName: "journalEntries_reversesEntryId_journalEntries_id"
+	}),
+	postings: many(postings),
+}));
+
+export const postingsRelations = relations(postings, ({one}) => ({
+	ledgerAccount: one(ledgerAccounts, {
+		fields: [postings.accountId],
+		references: [ledgerAccounts.id]
+	}),
+	journalEntry: one(journalEntries, {
+		fields: [postings.entryId],
+		references: [journalEntries.id]
 	}),
 }));
