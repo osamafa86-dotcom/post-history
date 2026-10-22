@@ -145,6 +145,48 @@ describe('material listing (/v1/materials/{id}/listing)', () => {
     expect(revoked.body).toMatchObject({ commercial_allowed: false, offers: [{ license_template_id: editorial, price_override: null }] });
   });
 
+  it('a material tagged sensitive (minors, injured, graphic) cannot be listed, each tag on its own (422 on /state), even with sellable rights; a draft is allowed', async () => {
+    for (const tag of ['minors', 'injured', 'graphic']) {
+      const id = await material();
+      await rightsTo(id, 'documented', 'sellable');
+      await h.pool.query(`UPDATE materials SET sensitivity_${tag} = true WHERE id = $1`, [id]);
+      const refused = await write(rights, 'post', `/materials/${id}/listing`, listing({ state: 'listed' })).expect(422);
+      expect([tag, refused.body.code, JSON.stringify(refused.body).includes('/state')]).toEqual([tag, 'validation_failed', true]);
+      const draft = await write(rights, 'post', `/materials/${id}/listing`, listing()).expect(201);
+      expect((await write(rights, 'put', `/materials/${id}/listing`, listing({ state: 'listed' }), draft.headers.etag).expect(422)).body.code).toBe('validation_failed');
+    }
+  });
+
+  it('tagging a listed material as sensitive suspends its listing (sensitive_flagged) in the same request, and it cannot be listed again while tagged', async () => {
+    for (const tag of ['minors', 'injured', 'graphic']) {
+      const id = await material();
+      await rightsTo(id, 'documented', 'sellable');
+      const created = await write(rights, 'post', `/materials/${id}/listing`, listing({ state: 'listed' })).expect(201);
+      const sensitivity = { minors: tag === 'minors', injured: tag === 'injured', graphic: tag === 'graphic' };
+      await http().patch(`/v1/materials/${id}`).set('Authorization', `Bearer ${admin.token}`).set('Idempotency-Key', randomUUID()).send({ sensitivity }).expect(200);
+      expect([tag, (await get(rights, `/materials/${id}/listing`).expect(200)).body]).toEqual([tag, expect.objectContaining({ state: 'suspended', suspended_reason: 'sensitive_flagged' })]);
+      expect((await events(created.body.id)).map((e) => [e.state, e.suspended_reason])).toEqual([
+        ['listed', null],
+        ['suspended', 'sensitive_flagged'],
+      ]);
+      await write(rights, 'put', `/materials/${id}/listing`, listing({ state: 'listed' })).expect(422);
+    }
+  });
+
+  it('two replaces with the same If-Match: one wins, the other is 412; prices outside the money range are 422', async () => {
+    const id = await material();
+    const created = await write(rights, 'post', `/materials/${id}/listing`, listing()).expect(201);
+    const [a, b] = await Promise.all([
+      write(rights, 'put', `/materials/${id}/listing`, listing({ title: { ar: 'أ', en: 'A' } }), created.headers.etag),
+      write(rights, 'put', `/materials/${id}/listing`, listing({ title: { ar: 'ب', en: 'B' } }), created.headers.etag),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 412]);
+    for (const amount of [-1, 100000000001, 1.5]) {
+      await write(rights, 'put', `/materials/${id}/listing`, listing({ offers: [{ license_template_id: editorial, price_override: { amount_minor: amount, currency: 'USD' } }] })).expect(422);
+    }
+    await write(rights, 'put', `/materials/${id}/listing`, listing({ offers: [{ license_template_id: editorial, price_override: { amount_minor: 0, currency: 'ILS' } }] })).expect(200);
+  });
+
   it('offers: a template at most once, existing and enabled (422 on /offers); roles as in the contract; unknown material 404', async () => {
     const id = await material();
     for (const offers of [

@@ -7,7 +7,7 @@ import type { components } from '../generated/api';
 import { hasRole, type Principal } from '../identity/principal';
 import { iso, lockMaterial } from '../materials/material-store';
 import { materials } from '../database/schema/schema';
-import { writeListingEvent } from './listing-store';
+import { isSensitive, writeListingEvent } from './listing-store';
 
 export type CatalogListing = components['schemas']['CatalogListing'];
 export type CatalogListingInput = components['schemas']['CatalogListingInput'];
@@ -48,7 +48,7 @@ export class ListingsService {
       if (existing) throw new ApiError(409, 'listing_exists', 'This material is already listed; replace its listing instead.');
       const commercial = await checkOffers(tx, input);
       if (!hasRole(p, 'system_admin') && (input.commercial_allowed || commercial.size > 0)) throw forbiddenCommercial();
-      if (input.state === 'listed' && material.rightsState !== 'sellable') throw notSellable();
+      if (input.state === 'listed') assertListable(material);
       const [row] = await tx
         .insert(catalogListings)
         .values({
@@ -83,7 +83,7 @@ export class ListingsService {
         const same = before.size === commercial.size && [...before].every((t) => commercial.has(t));
         if ((input.commercial_allowed ?? false) !== current.commercialAllowed || !same) throw forbiddenCommercial();
       }
-      if (input.state === 'listed' && material.rightsState !== 'sellable') throw notSellable();
+      if (input.state === 'listed') assertListable(material);
       // حذف العروض قبل سحب الإذن، وإعادة الكتابة بعد منحه، فلا يرى محفّز العرض التجاري حالة وسطى
       await tx.delete(listingOffers).where(eq(listingOffers.listingId, current.id));
       const [row] = await tx
@@ -202,6 +202,15 @@ async function audited(tx: Tx, actorId: string, action: string, row: ListingRow)
     details: { listing_id: row.id, material_id: row.materialId },
     hash: Buffer.alloc(32),
   });
+}
+
+/**
+ * شروط العرض: حقوق قابلة للبيع (409 rights_not_sellable)، ومادة غير موسومة بالحساسية (422 على /state؛
+ * threat-model-commercial: القاصرون والمصابون والمشاهد الصادمة خارج الكتالوج). ومحفّزات القاعدة تعيد الشرطين.
+ */
+function assertListable(m: { rightsState: string; sensitivityMinors: boolean; sensitivityInjured: boolean; sensitivityGraphic: boolean }): void {
+  if (m.rightsState !== 'sellable') throw notSellable();
+  if (isSensitive(m)) throw ApiError.validation({ fields: ['/state'] });
 }
 
 const notSellable = () => new ApiError(409, 'rights_not_sellable', 'A listed material must have sellable rights.');
