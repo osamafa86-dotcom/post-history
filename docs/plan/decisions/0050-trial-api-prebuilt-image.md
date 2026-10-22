@@ -22,7 +22,7 @@
 ## القرار
 
 - **الصورة:** `post-history-api:<commit>` من `infra/preview/api.Dockerfile` نفسه:
-  - إنتاج، ومستخدم node، والترحيل بـ node-pg-migrate مثبّت فيها قبل البدء.
+  - إنتاج، ومستخدم node، والترحيل قبل البدء بـ node-pg-migrate من `node_modules` (اعتمادية مقفلة في `apps/api/package-lock.json`)، لا `npx` ولا جلب من سجل npm وقت الإقلاع.
   - صورة واحدة للمعاينة والتجربة. سكربت بذر المعاينة فيها خامل لا يُشغَّل إلا صراحة.
 - **CI (`api-image.yml`):** عند نشر إصدار، يبني الصورة من التزام الوسم ويرفق بالإصدار:
   - `post-history-api.tar.gz`؛
