@@ -42,6 +42,8 @@ public struct ModelError: Sendable, Codable, Hashable {
         case rightsNotSellable = "rights_not_sellable"
         case listingExists = "listing_exists"
         case previewNotReady = "preview_not_ready"
+        case seatsExhausted = "seats_exhausted"
+        case lastBuyerAdmin = "last_buyer_admin"
         case internalError = "internal_error"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }

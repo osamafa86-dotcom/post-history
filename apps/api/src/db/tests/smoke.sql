@@ -607,6 +607,34 @@ SELECT pg_temp.expect_error($q$
   VALUES ('catalog.listing_changed', 'listing', '00000000-0000-4000-8000-000000000611', 'catalog.listing_changed:smoke:2',
           '{"listing_id": "00000000-0000-4000-8000-000000000611", "title": "x"}') $q$, '23514');
 
+-- ---------- v0.3: مؤسسات المشترين (ADR 0025، الجزء 3) ----------
+INSERT INTO buyer_organizations (id, legal_name, display_name_ar, display_name_en, country, billing_email)
+VALUES ('00000000-0000-4000-8000-000000000701', 'Example Media Ltd', 'وكالة مثال', 'Example Media', 'GB', 'billing@example.invalid');
+SELECT pg_temp.expect_error($q$
+  UPDATE buyer_organizations SET status = 'active' WHERE id = '00000000-0000-4000-8000-000000000701' $q$, '23514');
+UPDATE buyer_organizations SET status = 'active', verified_at = now(), verified_by = '00000000-0000-4000-8000-000000000014'
+ WHERE id = '00000000-0000-4000-8000-000000000701';
+INSERT INTO users (id, email, password_hash, organization_id)
+VALUES ('00000000-0000-4000-8000-000000000711', 'buyer@example.invalid', 'argon2id$test', '00000000-0000-4000-8000-000000000701');
+INSERT INTO user_roles (user_id, role, scope_kind, scope_id)
+VALUES ('00000000-0000-4000-8000-000000000711', 'buyer_admin', 'organization', '00000000-0000-4000-8000-000000000701');
+-- لا دور طاقم لحساب مشترٍ، ولا دور مشترٍ لطاقم أو بنطاق مؤسسة أخرى، ولا دور مشترٍ بلا نطاق مؤسسة
+SELECT pg_temp.expect_error($q$
+  INSERT INTO user_roles (user_id, role) VALUES ('00000000-0000-4000-8000-000000000711', 'producer') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO user_roles (user_id, role, scope_kind, scope_id)
+  VALUES ('00000000-0000-4000-8000-000000000013', 'buyer_member', 'organization', '00000000-0000-4000-8000-000000000701') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO user_roles (user_id, role, scope_kind, scope_id)
+  VALUES ('00000000-0000-4000-8000-000000000711', 'buyer_member', 'organization', '00000000-0000-4000-8000-000000000799') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO user_roles (user_id, role) VALUES ('00000000-0000-4000-8000-000000000711', 'buyer_member') $q$, '23514');
+-- المؤسسة لا تتغير بعد الأدوار، ولا مكتب لمشترٍ
+SELECT pg_temp.expect_error($q$
+  UPDATE users SET organization_id = NULL WHERE id = '00000000-0000-4000-8000-000000000711' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE users SET office_id = '00000000-0000-4000-8000-000000000001' WHERE id = '00000000-0000-4000-8000-000000000711' $q$, '23514');
+
 -- ---------- indexing policy (ADR 0002) ----------
 SELECT pg_temp.assert(
   NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexdef ILIKE '%USING gin%'),
@@ -653,6 +681,12 @@ SELECT pg_temp.expect_error($q$
 SELECT pg_temp.expect_error($q$
   INSERT INTO material_files (material_id, kind, state, derived_from_id, license_id)
   VALUES ('00000000-0000-4000-8000-000000000101', 'export', 'received', '00000000-0000-4000-8000-000000000301', '00000000-0000-4000-8000-000000000801') $q$, '23514');
+-- التصدير النهائي مشتق produced (ترحيل 028): نوع مقبول، ومرة واحدة لكل مصدر كبقية المشتقات
+INSERT INTO material_files (material_id, kind, state, derived_from_id)
+VALUES ('00000000-0000-4000-8000-000000000101', 'produced', 'received', '00000000-0000-4000-8000-000000000301');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_files (material_id, kind, state, derived_from_id)
+  VALUES ('00000000-0000-4000-8000-000000000101', 'produced', 'received', '00000000-0000-4000-8000-000000000301') $q$, '23505');
 INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
 VALUES ('license.delivery_requested', 'license', '00000000-0000-4000-8000-000000000801', 'license.delivery_requested:smoke:1',
         '{"license_id": "00000000-0000-4000-8000-000000000801", "material_id": "00000000-0000-4000-8000-000000000101", "source_file_id": "00000000-0000-4000-8000-000000000301", "deliverables": ["original", "audio"], "produced_file_id": null}');

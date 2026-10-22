@@ -14,6 +14,8 @@ public struct Me: Sendable, Codable, Hashable {
     public var email: String
     /** مكتب المستخدم */
     public var officeId: UUID?
+    /** مؤسسة المشتري (v0.3)؛ غيابه أو `null` لحساب طاقم */
+    public var organizationId: UUID?
     public var totpEnabled: Bool
     /** الجلسة مقيّدة بعد استعادة الحساب حتى `/auth/totp/confirm`؛ غيابه = false (أُضيف في v0.1) */
     public var credentialResetRequired: Bool?
@@ -21,10 +23,11 @@ public struct Me: Sendable, Codable, Hashable {
     /** الصلاحيات المستقلة الممنوحة حاليًا؛ فارغة لمعظم المستخدمين */
     public var permissions: Set<Permission>
 
-    public init(userId: UUID, email: String, officeId: UUID? = nil, totpEnabled: Bool, credentialResetRequired: Bool? = nil, roles: [Role], permissions: Set<Permission>) {
+    public init(userId: UUID, email: String, officeId: UUID? = nil, organizationId: UUID? = nil, totpEnabled: Bool, credentialResetRequired: Bool? = nil, roles: [Role], permissions: Set<Permission>) {
         self.userId = userId
         self.email = email
         self.officeId = officeId
+        self.organizationId = organizationId
         self.totpEnabled = totpEnabled
         self.credentialResetRequired = credentialResetRequired
         self.roles = roles
@@ -35,6 +38,7 @@ public struct Me: Sendable, Codable, Hashable {
         case userId = "user_id"
         case email
         case officeId = "office_id"
+        case organizationId = "organization_id"
         case totpEnabled = "totp_enabled"
         case credentialResetRequired = "credential_reset_required"
         case roles
@@ -48,6 +52,7 @@ public struct Me: Sendable, Codable, Hashable {
         try container.encode(userId, forKey: .userId)
         try container.encode(email, forKey: .email)
         try container.encodeIfPresent(officeId, forKey: .officeId)
+        try container.encodeIfPresent(organizationId, forKey: .organizationId)
         try container.encode(totpEnabled, forKey: .totpEnabled)
         try container.encodeIfPresent(credentialResetRequired, forKey: .credentialResetRequired)
         try container.encode(roles, forKey: .roles)
