@@ -92,8 +92,10 @@ def manifest_definition(*, title: str, source: str, actions: list[str], publishe
 
 
 def _settings(work: Path, signer: Signer) -> Path:
+    # بلا صورة مصغّرة في البيان (c2patool يضيفها للصور تلقائيًا): خارج القائمة البيضاء
     s: dict = {"version": 1, "verify": {"ocsp_fetch": False, "remote_manifest_fetch": False,
-                                        "verify_trust": signer.trust_anchors is not None}}
+                                        "verify_trust": signer.trust_anchors is not None},
+               "builder": {"thumbnail": {"enabled": False}}}
     if signer.trust_anchors is not None:
         s["trust"] = {"trust_anchors": signer.trust_anchors.read_text()}
     path = work / "c2pa-settings.json"

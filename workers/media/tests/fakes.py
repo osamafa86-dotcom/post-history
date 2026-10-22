@@ -47,6 +47,7 @@ class FakeApi:
         self.verifications: list[dict] = []
         self.derivatives: list[tuple[str, dict]] = []
         self.sha256: str | None = None
+        self.files: dict[str, FileRef] = {}  # ملفات أخرى للمادة يعيدها get_file
 
     def get_session(self, session_id: str) -> Session:
         assert session_id == self.session.id
@@ -77,5 +78,7 @@ class FakeApi:
         return {"file_id": "d0000000-0000-4000-8000-000000000001"}
 
     def get_file(self, file_id: str) -> FileRef:
+        if file_id in self.files:
+            return self.files[file_id]
         assert file_id == self.original.file_id
         return self.original
