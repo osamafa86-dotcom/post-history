@@ -634,6 +634,10 @@ SELECT pg_temp.expect_error($q$
   INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
   VALUES ('license.delivery_requested', 'license', '00000000-0000-4000-8000-000000000801', 'license.delivery_requested:smoke:2',
           '{"license_id": "00000000-0000-4000-8000-000000000801", "buyer_name": "x"}') $q$, '23514');
+SELECT pg_temp.assert(
+  (SELECT count(*) = 1 FROM pg_indexes WHERE indexname = 'upload_sessions_storage_pending_idx'
+     AND indexdef ILIKE '%WHERE ((state = ''failed''::text) AND (storage_removed_at IS NULL))%'),
+  'partial index for failed uploads whose temporary data is not yet removed exists');
 
 \o
 \echo smoke OK
