@@ -199,6 +199,12 @@ const server = createServer(async (req, res) => {
       const token = randomUUID(); uploads.set(id, { session, sha: String(body.client_sha256), token });
       return commit({ ...session, upload_token: token, upload_token_expires_at: new Date(now + 3600000).toISOString() }, 201);
     }
+    const abortPath = /^\/v1\/uploads\/([^/]+)$/.exec(path);
+    if (abortPath && req.method === "DELETE") {
+      const upload = uploads.get(abortPath[1]); if (!upload) return send({}, 404);
+      if (["verified", "deduplicated"].includes(upload.session.state)) return send({ code: "upload_state_conflict" }, 409);
+      Object.assign(upload.session, { state: "failed", failure_reason: "aborted" }); return commit(null);
+    }
     const ingestPath = /^\/v1\/uploads\/([^/]+)\/web-ingest-token$/.exec(path);
     if (ingestPath) {
       const upload = uploads.get(ingestPath[1]);
@@ -238,6 +244,10 @@ const server = createServer(async (req, res) => {
     const start = Number(url.searchParams.get("cursor") ?? 0), limit = Number(url.searchParams.get("limit") ?? 50);
     return send({ items: items.slice(start, start + limit).map(row => ({ ...row.entry, reason: "never-display-canary", legal_name: "never-display-canary" })), next_cursor: start + limit < items.length ? String(start + limit) : null });
   }
+  if (url.pathname === "/v1/uploads") {
+    const states = url.searchParams.getAll("state"), wanted = states.length ? states : ["created", "in_progress", "completed"];
+    return send({ items: [...uploads.values()].map(u => u.session).filter(s => wanted.includes(s.state)).map(s => ({ ...s, upload_token: "never-display-canary" })).reverse(), next_cursor: null });
+  }
   const uploadRead = /^\/v1\/uploads\/([^/]+)$/.exec(url.pathname);
   if (uploadRead) { const upload = uploads.get(uploadRead[1]); return upload ? send(upload.session) : send({}, 404); }
   if (url.pathname === "/v1/notification-rules" || url.pathname.startsWith("/v1/notification-rules/")) {
@@ -253,7 +263,23 @@ const server = createServer(async (req, res) => {
       urgent_open: materials.filter(m => m.priority === "urgent" && !["published", "rejected"].includes(m.editorial_state)).length,
       reserved: materials.filter(m => m.reserved_by).map(m => ({ material_id: m.id, reserved_by: m.reserved_by, reserved_at: m.reserved_at, priority: m.priority, editorial_state: m.editorial_state, title: "never-display-canary" })),
       recent_receipts: materials.slice(0, 3).map(m => ({ material_id: m.id, receipt_number: `R-261021-${m.id.slice(-6)}`, verified_at: m.created_at, priority: m.priority })),
-      overdue_acknowledgements: 2 });
+      overdue_acknowledgements: 2,
+      uploads_in_progress: [{ upload_session_id: "90000000-0000-4000-8000-000000000001", material_id: materials[4].id, kind: "original", priority: "urgent", state: "in_progress", size_bytes: 4000, bytes_received: 1000, updated_at: new Date().toISOString(), filename: "never-display-canary", reporter_id: "never-display-canary" }] });
+  }
+  if (url.pathname === "/v1/catalog" || url.pathname.startsWith("/v1/catalog/")) {
+    if (!user.roles.some(role => ["system_admin", "rights_officer", "editor_in_chief", "finance"].includes(role.name))) return send({}, 403);
+    // كتالوج اصطناعي: مادتان، بحقول خارج القائمة البيضاء للتأكد أنها لا تصل إلى المتصفح.
+    const text = (ar: string, en: string) => ({ ar, en });
+    const offer = (id: string, type: string, amount: number) => ({ license_template_id: `70000000-0000-4000-8000-00000000000${id}`, license_version: 1, type, name: text(type === "exclusive_temporary" ? "حصري 48 ساعة" : "تحريري لاستخدام واحد", type === "exclusive_temporary" ? "Exclusive 48 h" : "Editorial single use"), price: { amount_minor: amount, currency: "USD" } });
+    const catalog = [1, 2].map(i => ({ listing_id: `71000000-0000-4000-8000-00000000000${i}`, material_version: 1, title: text(`لقطات اصطناعية ${i}`, `Synthetic footage ${i}`), description: text("وصف اصطناعي", "Synthetic description"),
+      shot_list: [{ start_ms: 0, label: text("لقطة عامة", "Wide shot") }, { start_ms: 65000, label: text("لقطة قريبة", "Close-up") }], material_types: ["raw_footage"], governorate: "غزة", shot_on: "2026-10-19T13:45:00Z", duration_ms: 125000, width: 3840, height: 2160,
+      credit: "فلسطين بوست", offers: [offer("1", "editorial_single", 15000), offer("2", "exclusive_temporary", 90000)], exclusive_available: i === 1, listed_at: "2026-10-21T10:00:00Z", reporter_id: "never-display-canary", city: "never-display-canary", gps: { lat: 31.5, lng: 34.4 } }));
+    if (url.pathname === "/v1/catalog") { const q = url.searchParams.get("q"); return send({ items: catalog.filter(item => !q || item.title.ar.includes(q) || item.title.en.toLowerCase().includes(q.toLowerCase())), next_cursor: null }); }
+    const preview = /^\/v1\/catalog\/([^/]+)\/preview-url$/.exec(url.pathname), id = preview?.[1] ?? url.pathname.slice("/v1/catalog/".length), item = catalog.find(c => c.listing_id === id);
+    if (!item) return send({ code: "not_found" }, 404);
+    if (!preview) return send(item);
+    const signature = randomUUID(), expires = Date.now() + 300000; signed.set(signature, { kind: "proxy", expires });
+    return send({ url: `${fixtureOrigin}/derived/fixture?signature=${signature}`, expires_at: new Date(expires).toISOString() });
   }
   if (url.pathname === "/v1/notifications") { const items = url.searchParams.get("unread_only") === "true" ? notifications.filter(n => !n.read_at) : notifications; return send({ items, next_cursor: null, unread_count: notifications.filter(n => !n.read_at).length }); }
   const trail = /^\/v1\/materials\/([^/]+)\/transitions$/.exec(url.pathname);

@@ -298,6 +298,13 @@ jobs:
           docker run --rm --network media-it -e MEDIA_IT_REQUIRED=1 -e MEDIA_IT_REDIS_URL=redis://media-it-redis:6379 \
             -e MEDIA_IT_S3_ENDPOINT=http://media-it-minio:9000 -e MEDIA_IT_S3_ACCESS_KEY=ci-access \
             -e MEDIA_IT_S3_SECRET_KEY=ci-only-secret media-worker:test python -m pytest -q -rs
+      # Service target: a 1-minute phone clip has its preview within 2 minutes (event -> proxy registered).
+      - name: Preview within 2 minutes for a 1-minute 1080p clip (end to end on Redis and MinIO)
+        run: |
+          docker run --rm --network media-it -e MEDIA_IT_REDIS_URL=redis://media-it-redis:6379 \
+            -e MEDIA_IT_S3_ENDPOINT=http://media-it-minio:9000 -e MEDIA_IT_S3_ACCESS_KEY=ci-access \
+            -e MEDIA_IT_S3_SECRET_KEY=ci-only-secret media-worker:test \
+            python bench/preview_slo.py --profiles 1080p-h264 --runs 2 --max-s 120
       - name: Web player fixtures from the worker code (HLS, timeline sprite, Arabic WebVTT) for #89
         run: |
           mkdir -p /tmp/wf && chmod 777 /tmp/wf

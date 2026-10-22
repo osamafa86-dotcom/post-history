@@ -1,4 +1,12 @@
-import { GetObjectCommand, HeadBucketCommand, HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  AbortMultipartUploadCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  HeadObjectCommand,
+  ListMultipartUploadsCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { createHash, createHmac } from 'node:crypto';
 import type { Readable } from 'node:stream';
 
@@ -8,6 +16,8 @@ export interface ObjectStorage {
   read(bucket: string, key: string): Promise<Readable>;
   /** رابط قراءة موقّع (SigV4 في الاستعلام) لكائن واحد؛ غير متاح = لا روابط تنزيل. */
   presignGet?(bucket: string, key: string, expiresSeconds: number, now?: Date): string;
+  /** يحذف رفعًا ملغى من التخزين المؤقت: أجزاء tusd غير المجمّعة وكائنه وملفاته الجانبية (`.info` و`.part`). */
+  removeUpload?(bucket: string, key: string): Promise<void>;
 }
 export const OBJECT_STORAGE = Symbol('OBJECT_STORAGE');
 
@@ -62,6 +72,15 @@ export class S3ObjectStorage implements ObjectStorage {
   async read(bucket: string, key: string): Promise<Readable> {
     const res = await this.client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
     return res.Body as Readable;
+  }
+
+  async removeUpload(bucket: string, key: string): Promise<void> {
+    // tusd (s3store) يرفع الجزء متعدد الأجزاء بمفتاح الكائن نفسه؛ معرّف الجزء لا يُحفظ قبل الاكتمال فيُبحث عنه بالبادئة
+    const pending = await this.client.send(new ListMultipartUploadsCommand({ Bucket: bucket, Prefix: key }));
+    for (const u of pending.Uploads ?? []) {
+      if (u.Key === key && u.UploadId) await this.client.send(new AbortMultipartUploadCommand({ Bucket: bucket, Key: key, UploadId: u.UploadId }));
+    }
+    for (const k of [key, `${key}.info`, `${key}.part`]) await this.client.send(new DeleteObjectCommand({ Bucket: bucket, Key: k }));
   }
 
   /** عنوان المسار على النقطة العامة (S3_PUBLIC_ENDPOINT، وإلا S3_ENDPOINT): التوقيع يشمل المضيف فيُوقَّع بما يطلبه العميل. */

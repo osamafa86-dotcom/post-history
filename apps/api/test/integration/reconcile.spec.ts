@@ -14,6 +14,12 @@ class FakeStorage implements ObjectStorage {
   async read(): Promise<never> {
     throw new Error('not used');
   }
+  removed: string[] = [];
+  removeFails = false;
+  async removeUpload(_bucket: string, key: string) {
+    if (this.removeFails) throw new Error('storage down');
+    this.removed.push(key);
+  }
 }
 
 describe('upload reconciliation (in_progress sessions whose post-finish was lost)', () => {
@@ -29,6 +35,7 @@ describe('upload reconciliation (in_progress sessions whose post-finish was lost
   afterAll(() => h.close());
   beforeEach(() => {
     storage.failing = false;
+    storage.removeFails = false;
   });
 
   const stale = (opts: { expiresInSeconds?: number } = {}) =>
@@ -54,6 +61,7 @@ describe('upload reconciliation (in_progress sessions whose post-finish was lost
     await drain();
     expect(await session(s.id)).toMatchObject({ state: 'completed', storage_key: `tus/${s.id}` });
     expect(await events(s.id)).toEqual(['upload.original_received']);
+    expect(storage.removed).not.toContain(`tus/${s.id}`);
     const { rows } = await h.pool.query(`SELECT technical_state FROM materials WHERE id = $1`, [s.materialId]);
     expect(rows[0].technical_state).toBe('original_received');
     // post-finish المتأخر بعدها بلا أثر جديد
@@ -80,6 +88,16 @@ describe('upload reconciliation (in_progress sessions whose post-finish was lost
     expect(row.state).toBe('in_progress');
     expect(Date.now() - new Date(row.updated_at).getTime()).toBeLessThan(60_000);
     expect(await events(ongoing.id)).toEqual([]);
+    // الجلسة المنتهية تُحذف بقاياها من التخزين المؤقت، والجارية لا تُمس
+    expect(storage.removed).toContain(`tus/${expired.id}`);
+    expect(storage.removed).not.toContain(`tus/${ongoing.id}`);
+  });
+
+  it('a failed removal of the expired upload is logged only: the session still fails as expired', async () => {
+    storage.removeFails = true;
+    const expired = await stale({ expiresInSeconds: -10 });
+    await drain();
+    expect(await session(expired.id)).toMatchObject({ state: 'failed', failure_reason: 'expired' });
   });
 
   it('leaves fresh in_progress sessions alone', async () => {
