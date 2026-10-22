@@ -572,6 +572,20 @@ SELECT pg_temp.expect_error($q$
   UPDATE catalog_listings SET state = 'suspended' WHERE id = '00000000-0000-4000-8000-000000000611' $q$, '23514');
 UPDATE catalog_listings SET state = 'suspended', suspended_reason = 'rights_changed'
  WHERE id = '00000000-0000-4000-8000-000000000611';
+-- المادة الموسومة بالحساسية لا تُعرض، من الجهتين؛ الخادم يعلّق بـ sensitive_flagged أولًا
+UPDATE materials SET sensitivity_minors = true WHERE id = '00000000-0000-4000-8000-000000000101';
+SELECT pg_temp.expect_error($q$
+  UPDATE catalog_listings SET state = 'listed', suspended_reason = NULL WHERE id = '00000000-0000-4000-8000-000000000611' $q$, '23514');
+UPDATE materials SET sensitivity_minors = false WHERE id = '00000000-0000-4000-8000-000000000101';
+UPDATE catalog_listings SET state = 'listed', suspended_reason = NULL WHERE id = '00000000-0000-4000-8000-000000000611';
+SELECT pg_temp.expect_error($q$
+  UPDATE materials SET sensitivity_graphic = true WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE materials SET sensitivity_injured = true WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+UPDATE catalog_listings SET state = 'suspended', suspended_reason = 'sensitive_flagged' WHERE id = '00000000-0000-4000-8000-000000000611';
+UPDATE materials SET sensitivity_graphic = true WHERE id = '00000000-0000-4000-8000-000000000101';
+UPDATE materials SET sensitivity_graphic = false WHERE id = '00000000-0000-4000-8000-000000000101';
+UPDATE catalog_listings SET suspended_reason = 'rights_changed' WHERE id = '00000000-0000-4000-8000-000000000611';
 UPDATE materials SET rights_state = 'blocked' WHERE id = '00000000-0000-4000-8000-000000000101';
 -- الإذن التجاري: يُضاف العرض بعده، ولا يُسحب الإذن والعرض قائم
 UPDATE catalog_listings SET commercial_allowed = true WHERE id = '00000000-0000-4000-8000-000000000611';
