@@ -7,6 +7,7 @@
 
 import Foundation
 
+/** جسم الطلب؛ لا خصائص غير المعرَّفة */
 public struct BuyerOrganizationInput: Sendable, Codable, Hashable {
 
     public static let legalNameRule = StringRule(minLength: 1, maxLength: 200, pattern: nil)

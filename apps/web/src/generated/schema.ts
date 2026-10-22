@@ -2553,7 +2553,7 @@ export interface components {
          * @enum {string}
          */
         BuyerOrganizationStatus: "pending_verification" | "active" | "suspended";
-        BuyerOrganizationInput: {
+        BuyerOrganizationFields: {
             /** @description الاسم القانوني على الفاتورة */
             legal_name: string;
             display_name: components["schemas"]["LocalizedText"];
@@ -2568,11 +2568,13 @@ export interface components {
             seats: number;
             status?: components["schemas"]["BuyerOrganizationStatus"];
         };
-        BuyerOrganizationCreate: components["schemas"]["BuyerOrganizationInput"] & {
+        /** @description جسم الطلب؛ لا خصائص غير المعرَّفة */
+        BuyerOrganizationInput: components["schemas"]["BuyerOrganizationFields"];
+        BuyerOrganizationCreate: components["schemas"]["BuyerOrganizationFields"] & {
             /** Format: email */
             first_admin_email: string;
         };
-        BuyerOrganization: components["schemas"]["BuyerOrganizationInput"] & {
+        BuyerOrganization: components["schemas"]["BuyerOrganizationFields"] & {
             /** Format: uuid */
             id: string;
             active_members: number;

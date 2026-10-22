@@ -3940,9 +3940,8 @@ components:
       description: "`pending_verification` لا تشتري؛ `active` تشتري؛ `suspended` يوقف الشراء والتنزيل الجديد"
       enum: [pending_verification, active, suspended]
 
-    BuyerOrganizationInput:
+    BuyerOrganizationFields:
       type: object
-      additionalProperties: false
       required: [legal_name, display_name, country, billing_email]
       properties:
         legal_name: { type: string, minLength: 1, maxLength: 200, description: الاسم القانوني على الفاتورة }
@@ -3953,17 +3952,24 @@ components:
         status:
           $ref: "#/components/schemas/BuyerOrganizationStatus"
 
+    BuyerOrganizationInput:
+      description: جسم الطلب؛ لا خصائص غير المعرَّفة
+      allOf:
+        - $ref: "#/components/schemas/BuyerOrganizationFields"
+      unevaluatedProperties: false
+
     BuyerOrganizationCreate:
       allOf:
-        - $ref: "#/components/schemas/BuyerOrganizationInput"
+        - $ref: "#/components/schemas/BuyerOrganizationFields"
         - type: object
           required: [first_admin_email]
           properties:
             first_admin_email: { type: string, format: email, maxLength: 254 }
+      unevaluatedProperties: false
 
     BuyerOrganization:
       allOf:
-        - $ref: "#/components/schemas/BuyerOrganizationInput"
+        - $ref: "#/components/schemas/BuyerOrganizationFields"
         - type: object
           required: [id, status, seats, active_members, verified_at, created_at, updated_at]
           properties:
@@ -3972,6 +3978,7 @@ components:
             verified_at: { type: [string, "null"], format: date-time, description: أول انتقال إلى `active` }
             created_at: { type: string, format: date-time }
             updated_at: { type: string, format: date-time }
+      unevaluatedProperties: false
 
     BuyerOrganizationPage:
       type: object
