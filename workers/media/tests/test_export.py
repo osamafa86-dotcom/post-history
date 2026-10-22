@@ -117,13 +117,16 @@ def test_archive_is_deterministic(package, tmp_path: Path):
     assert again.read_bytes() == out.read_bytes()
 
 
-def test_sidecar_names_only_the_original_hash(package):
+def test_sidecar_carries_no_original_digest(package):
     out, src, _, sha, _, _ = package
     with zipfile.ZipFile(out) as zf:
         meta = json.loads(zf.read("metadata.json"))
-    assert set(meta) == {"schema", "material_id", "file_id", "media", "original", "technical"}
+        # بصمة الأصل الخام لا تغادر المنصة (ADR 0060)، في أي ملف من الحزمة
+        for name in zf.namelist():
+            data = zf.read(name)
+            assert sha.encode() not in data and bytes.fromhex(sha) not in data, name
+    assert set(meta) == {"schema", "material_id", "file_id", "media", "technical"}
     assert meta["media"] == "clip.mov"
-    assert meta["original"] == {"sha256": sha, "size_bytes": src.stat().st_size}
     for key in ("location", "gps", "make", "model", "source"):
         assert key not in json.dumps(meta).lower()
 

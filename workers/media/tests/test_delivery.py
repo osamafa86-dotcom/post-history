@@ -35,7 +35,7 @@ def test_all_original_based_deliverables_without_revealing_data(src: Path, tmp_p
     out = tmp_path / "delivery.zip"
     m = build_delivery(out, original=src, info=probe(src), license_id=LIC, sha256=sha,
                        deliverables=["original", "audio", "stills", "produced"])
-    assert m["deliverables"]["produced"] == "not_available" and m["original"] == {"sha256": sha}
+    assert m["deliverables"]["produced"] == "not_available" and set(m) == {"schema", "license_id", "deliverables"}
     with zipfile.ZipFile(out) as zf:
         names = zf.namelist()
         assert names[:2] == ["original.mov", "audio.wav"] and len([n for n in names if n.startswith("stills/")]) == 5
@@ -43,6 +43,8 @@ def test_all_original_based_deliverables_without_revealing_data(src: Path, tmp_p
             data = zf.read(name)
             for value in [*LEAKY_TAGS.values(), "x264 - core"]:  # والنص الحر في SEI داخل التيار
                 assert value.encode() not in data, (name, value)
+            # ولا بصمة الأصل الخام في أي ملف، manifest.json منها (ADR 0060)
+            assert sha.encode() not in data and bytes.fromhex(sha) not in data, name
             assert b"Exif" not in data and b"LIST" not in data[:64]
         zf.extract("original.mov", tmp_path)
         zf.extract("audio.wav", tmp_path)
