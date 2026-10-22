@@ -403,7 +403,15 @@
     "more": "More in the inbox",
     "minutes": "min",
     "hours": "h",
-    "days": "d"
+    "days": "d",
+    "inboxNow": "Arriving now",
+    "noUploads": "No uploads in progress.",
+    "uploadsUnavailable": "Upload progress is not available from the server yet.",
+    "kinds": {
+      "original": "Original",
+      "proxy": "Proxy",
+      "voice_note": "Voice note"
+    }
   },
   "upload": {
     "nav": "Desktop upload",

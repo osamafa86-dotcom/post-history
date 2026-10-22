@@ -213,3 +213,7 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .upload-row progress { width: 100%; height: 8px; accent-color: var(--green); }
 .upload-row .actions a { color: var(--green); font-weight: 700; }
 @media (max-width: 760px) { .upload-base { grid-template-columns: 1fr; } }
+.inbox-now { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.inbox-now li { display: grid; grid-template-columns: minmax(110px, auto) auto 1fr auto auto; gap: 12px; align-items: center; font-size: 12px; }
+.inbox-now li.urgent { border-inline-start: 3px solid var(--red); padding-inline-start: 8px; }
+.inbox-now progress { width: 100%; height: 8px; accent-color: var(--green); }
