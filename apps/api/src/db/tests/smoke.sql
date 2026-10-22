@@ -599,6 +599,19 @@ SELECT pg_temp.assert(
   (SELECT count(*) = 1 FROM pg_indexes WHERE indexname = 'outbox_events_pending_idx' AND indexdef ILIKE '%WHERE (published_at IS NULL)%'),
   'outbox dispatcher partial index exists');
 
+-- المحاذاة الصوتية على النسخة الخفيفة وحدها، كاملة أو غائبة
+UPDATE material_files SET alignment_original_file_id = '00000000-0000-4000-8000-000000000301', alignment_offset_ms = 120,
+  alignment_confidence = 0.9, alignment_margin = 0.4, alignment_reliable = true, aligned_at = now()
+ WHERE id = '00000000-0000-4000-8000-000000000302';
+SELECT pg_temp.expect_error($q$
+  UPDATE material_files SET alignment_original_file_id = '00000000-0000-4000-8000-000000000301', alignment_offset_ms = 0,
+    alignment_confidence = 0.5, alignment_margin = 0.5, alignment_reliable = false, aligned_at = now()
+   WHERE id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE material_files SET alignment_confidence = 1.5 WHERE id = '00000000-0000-4000-8000-000000000302' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE material_files SET aligned_at = NULL WHERE id = '00000000-0000-4000-8000-000000000302' $q$, '23514');
+
 \o
 \echo smoke OK
 ROLLBACK;
