@@ -34,7 +34,7 @@ def _setup(data: bytes, produced: bytes | None = None, enable: bool = True):
         key = f"derived/{MID}/{FakeApi.FILE_ID}/final.mp4"
         storage.objects[("media", key)] = produced
         api.files[PRODUCED] = FileRef(file_id=PRODUCED, material_id=MID, storage_key=key, size_bytes=len(produced),
-                                      sha256=hashlib.sha256(produced).hexdigest(), kind="export")
+                                      sha256=hashlib.sha256(produced).hexdigest(), kind="produced")
     return api, storage, Jobs(api, storage, Buckets(uploads="uploads", derived="media"), enable_delivery=enable)
 
 
@@ -82,6 +82,17 @@ def test_produced_comes_from_the_materials_own_derivative(clip: Path, tmp_path: 
     with pytest.raises(ValueError):
         jobs.handle(_requested(deliverables=["produced"], produced=PRODUCED))
     assert storage.puts == []
+
+
+# كل نوع غير التصدير النهائي: التحريري (R11) والداخلي والأصل نفسه
+@pytest.mark.parametrize("kind", ["transcript", "captions", "shot_list", "export", "proxy", "hls", "audio",
+                                  "thumbnail", "watermarked_preview", "delivery", "voice_note", "original"])
+def test_produced_refuses_every_other_kind(clip: Path, kind: str):
+    api, storage, jobs = _setup(clip.read_bytes(), produced=b"not-a-final-cut")
+    api.files[PRODUCED] = replace(api.files[PRODUCED], kind=kind)
+    with pytest.raises(ValueError, match="cannot be delivered"):
+        jobs.handle(_requested(deliverables=["original", "produced"], produced=PRODUCED))
+    assert storage.puts == [] and api.derivatives == []
 
 
 def test_behind_flag(clip: Path):

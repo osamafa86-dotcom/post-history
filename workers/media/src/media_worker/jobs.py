@@ -43,6 +43,9 @@ from .storage import DERIVED_PREFIX, ObjectMissing
 log = logging.getLogger("media_worker.jobs")
 
 VERIFY_EVENTS = {"upload.original_received", "upload.proxy_received"}
+# النسخة المنتَجة في حزمة التسليم: التصدير النهائي وحده. لا تفريغ ولا ترجمة ولا قائمة لقطات ولا أي مشتق تحريري (R11)،
+# ولا نسخة داخلية. العقد لم يعرّف نوع `produced` بعد، فيُرفض كل ما سواه حتى يُعرَّف
+PRODUCED_KINDS = frozenset({"produced"})
 
 
 class Storage(Protocol):
@@ -386,6 +389,8 @@ class Jobs:
     def _produced(self, material_id: str, produced_file_id: str, tmp: Path) -> Path:
         """النسخة المنتَجة مشتق مخزَّن للمادة نفسها؛ تُطابق بصمتها قبل أن تدخل الحزمة."""
         ref = self.api.get_file(produced_file_id)
+        if ref.kind not in PRODUCED_KINDS:
+            raise ValueError(f"file kind {ref.kind!r} cannot be delivered as produced")
         if ref.material_id != material_id or ref.state != "verified" or not ref.sha256 \
                 or not ref.storage_key.startswith(f"{DERIVED_PREFIX}{material_id}/"):
             raise ValueError("produced file must be a verified derivative of the same material")
