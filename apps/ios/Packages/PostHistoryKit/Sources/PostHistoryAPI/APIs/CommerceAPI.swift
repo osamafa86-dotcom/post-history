@@ -394,7 +394,7 @@ open class CommerceAPI {
     /**
      استبدال الإدراج (العناوين والعروض والحالة)
      - PUT /materials/{id}/listing
-     - يعيد تثبيت `material_version` على إصدار المادة الحالي. القيود نفسها في الإنشاء. حين تخرج حقوق المادة من `sellable` يعلّق الخادم الإدراج في معاملة الانتقال نفسها (`state = suspended`، `suspended_reason = rights_changed`)، ولا يعود `listed` إلا بطلب صريح.
+     - يعيد تثبيت `material_version` على إصدار المادة الحالي. القيود نفسها في الإنشاء. حين تخرج حقوق المادة من `sellable` يعلّق الخادم الإدراج في معاملة الانتقال نفسها (`state = suspended`، `suspended_reason = rights_changed`)، ولا يعود `listed` إلا بطلب صريح. وحين تُوسم المادة بالحساسية (قاصرون أو مصابون أو مشاهد صادمة) يعلّقه بـ `sensitive_flagged` في معاملة الوسم نفسها، ويُرفض `listed` لمادة موسومة بـ `422`.
      - Bearer Token:
        - type: http
        - name: bearerAuth
