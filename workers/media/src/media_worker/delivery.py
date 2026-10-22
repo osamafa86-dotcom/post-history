@@ -1,11 +1,12 @@
 """حزمة تسليم المشتري (المرحلة التجارية، ADR 0025): النسخ المرخّصة بصيغها كما يحددها قالب الترخيص في
-`deliverables` (`original` و`produced` و`audio` و`stills` و`transcript`)، بلا بيانات كاشفة كحزمة التصدير (#126).
+`deliverables` (`original` و`produced` و`audio` و`stills`)، بلا بيانات كاشفة كحزمة التصدير (#126).
 
 - `original`: نسخ تيارات الأصل بلا ترميز إلى ملف جديد بلا وسوم ولا مسارات بيانات أو ترجمة (`strip_metadata`).
 - `audio`: WAV PCM 16 بت 48 kHz من أول مسار صوت، بلا وسوم ولا مقطع LIST.
 - `stills`: خمس صور JPEG بالدقة الكاملة عند 10% و30% و50% و70% و90% من المدة، SDR، بلا EXIF ولا وسوم.
-- `produced` (من التصدير النهائي) و`transcript` (من عامل التفريغ) ليسا من الأصل: يُذكران في `manifest.json` بحالة
-  `not_available` حين لا يُمرَّر ملفهما، ولا يُختلقان.
+- `produced` (من التصدير النهائي) ليس من الأصل: يُذكر في `manifest.json` بحالة `not_available` حين لا يُمرَّر
+  ملفه، ولا يُختلق.
+- التفريغ لا يدخل التسليم (قرار المنسّق R11 على #178، حتى ADR للحجب الآلي): بند غير معروف يُرفض.
 - `manifest.json` بمعرّف الترخيص وبصمة الأصل وحالة كل بند، و`SHA256SUMS` لكل ملف؛ الأرشيف حتمي.
 
 الأصل يُقرأ فقط وتُعاد مطابقة بصمته قبل البناء. المدخل مقيد بـ `INPUT_GUARD`.
@@ -24,7 +25,7 @@ from .hashing import digest_file
 from .probe import Probe
 from .proxy import video_filter
 
-DELIVERABLES = ("original", "produced", "audio", "stills", "transcript")
+DELIVERABLES = ("original", "produced", "audio", "stills")
 STILL_POINTS = (0.1, 0.3, 0.5, 0.7, 0.9)
 MANIFEST_SCHEMA = "post-history/delivery@1"
 
@@ -46,7 +47,7 @@ def _still(src: Path, dst: Path, info: Probe, at_s: float) -> None:
 
 def build_delivery(out: Path, *, original: Path, info: Probe, license_id: str, sha256: str,
                    deliverables: list[str], extras: dict[str, Path] | None = None) -> dict:
-    """يكتب الأرشيف ذريًا ويعيد البيان. `extras` لملفات `produced` و`transcript` إن وُجدت، تُضمَّن كما هي."""
+    """يكتب الأرشيف ذريًا ويعيد البيان. `extras` لملف `produced` إن وُجد، تُضمَّن كما هي."""
     unknown = set(deliverables) - set(DELIVERABLES)
     if unknown or not deliverables:
         raise ValueError(f"unknown deliverables: {sorted(unknown)}")
@@ -81,9 +82,9 @@ def build_delivery(out: Path, *, original: Path, info: Probe, license_id: str, s
                     files.append((name, path, True))
                     names.append(name)
                 status[item] = names
-            elif item in ("produced", "transcript") and item in extras:
+            elif item == "produced" and item in extras:
                 name = f"{item}{extras[item].suffix}"
-                files.append((name, extras[item], item == "produced"))
+                files.append((name, extras[item], True))
                 status[item] = [name]
             else:
                 status[item] = "not_available"
