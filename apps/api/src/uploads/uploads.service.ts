@@ -46,6 +46,9 @@ export class UploadsService implements ReplayRehydrator {
     if (!hasRole(p, 'reporter') && body.kind !== 'original') throw ApiError.validation({ fields: ['/kind'] });
     // يصير client_sha256 مطلوبًا في عقد v0.1؛ إلى أن يُدمج يفرضه هذا المتغير بالرد نفسه الذي سيعطيه التحقق بالعقد (422)
     if (this.config.UPLOAD_REQUIRE_CLIENT_SHA256 && !body.client_sha256) throw ApiError.validation({ fields: ['/client_sha256'] });
+    if (this.config.UPLOAD_MAX_BYTES !== undefined && body.size_bytes > this.config.UPLOAD_MAX_BYTES) {
+      throw ApiError.validation({ fields: ['/size_bytes'] });
+    }
     return this.db.transaction(async (tx) => {
       const material = await findScoped(tx, p, body.material_id, { forUpdate: true });
       // المنشئ يرفع لمواده فقط (المراسل أو الطاقم)؛ مادة غيره غير موجودة بالنسبة إليه

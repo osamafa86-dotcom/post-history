@@ -189,15 +189,21 @@ internal fun relative(epochMs: Long): String = DateUtils.getRelativeTimeSpanStri
     RightsState.withdrawn -> R.string.rights_withdrawn
 }
 
-@StringRes internal fun fileKind(k: MaterialFile.Kind) = when (k) {
-    MaterialFile.Kind.original -> R.string.file_kind_original
-    MaterialFile.Kind.proxy -> R.string.file_kind_proxy
-    MaterialFile.Kind.hls -> R.string.file_kind_hls
-    MaterialFile.Kind.audio -> R.string.file_kind_audio
-    MaterialFile.Kind.thumbnail -> R.string.file_kind_thumbnail
-    MaterialFile.Kind.voice_note -> R.string.file_kind_voice_note
-    MaterialFile.Kind.transcript -> R.string.file_kind_transcript
-    MaterialFile.Kind.captions -> R.string.file_kind_captions
+/**
+ * Keyed by the contract value, not the generated enum, so kinds a newer contract adds (`shot_list`, a sensitive
+ * derivative only editing roles and the owning reporter see) still compile and get a generic label.
+ */
+@StringRes internal fun fileKind(k: MaterialFile.Kind) = when (k.value) {
+    "original" -> R.string.file_kind_original
+    "proxy" -> R.string.file_kind_proxy
+    "hls" -> R.string.file_kind_hls
+    "audio" -> R.string.file_kind_audio
+    "thumbnail" -> R.string.file_kind_thumbnail
+    "voice_note" -> R.string.file_kind_voice_note
+    "transcript" -> R.string.file_kind_transcript
+    "captions" -> R.string.file_kind_captions
+    "shot_list" -> R.string.file_kind_shot_list
+    else -> R.string.file_kind_other
 }
 
 @StringRes internal fun fileState(s: MaterialFile.State) = when (s) {

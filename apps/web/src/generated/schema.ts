@@ -779,6 +779,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/internal/media/files/{file_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * ملف مصدر كما يحتاجه العامل لمشتق عند الطلب (داخلي، v0.3)
+         * @description لبناء `watermarked_preview` من `catalog.listing_changed` وحزمة `export` من `export.requested`: مفتاح تخزين المصدر وبصمته. فشل المصادقة أو العنوان `404` كبقية `/internal/*`؛ والملف غير الموجود برمز صحيح `410 media_resource_gone`. لا اسم ملف ولا بيانات كاشفة.
+         */
+        get: operations["mediaGetFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/internal/media/files/{file_id}/derivatives": {
         parameters: {
             query?: never;
@@ -1043,6 +1065,144 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/license-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * قوالب التراخيص (v0.3، ADR 0025)
+         * @description الإصدار الحالي لكل قالب. القوالب المعطّلة تظهر بـ `include_disabled=true`.
+         */
+        get: operations["listLicenseTemplates"];
+        put?: never;
+        /**
+         * إنشاء قالب ترخيص
+         * @description أبعاد الترخيص من لوحة الإدارة: النوع، والاستخدام، والإقليم، والمدة، والحصرية، والتسليم، والنسب، والمحظورات، والسعر الأساسي. الشروط والاسم والنسب بالعربية والإنجليزية إلزاميًا. `subscription` مؤجل ولا يُقبل. يُسجَّل في التدقيق بـ `license_template_id`.
+         */
+        post: operations["createLicenseTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/license-templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        /** قراءة قالب ترخيص، بإصدار محدد أو الحالي */
+        get: operations["getLicenseTemplate"];
+        /**
+         * إصدار جديد من قالب ترخيص
+         * @description لا يُعدَّل إصدار قائم: الاستبدال يكتب إصدارًا جديدًا ويبقى السابق كما هو، لأن كل بيعة تجمّد الإصدار الذي وافق عليه المشتري. العروض في الكتالوج تتبع الإصدار الحالي. النوع لا يتغير بعد الإنشاء (`422 validation_failed`).
+         */
+        put: operations["replaceLicenseTemplate"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/materials/{id}/listing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** إدراج المادة في الكتالوج (للطاقم) */
+        get: operations["getMaterialListing"];
+        /**
+         * استبدال الإدراج (العناوين والعروض والحالة)
+         * @description يعيد تثبيت `material_version` على إصدار المادة الحالي. القيود نفسها في الإنشاء. حين تخرج حقوق المادة من `sellable` يعلّق الخادم الإدراج في معاملة الانتقال نفسها (`state = suspended`، `suspended_reason = rights_changed`)، ولا يعود `listed` إلا بطلب صريح.
+         */
+        put: operations["replaceMaterialListing"];
+        /**
+         * إدراج مادة في الكتالوج
+         * @description إدراج واحد لكل مادة، يثبّت إصدارها الحالي (`material_version`). الحالة `listed` تلزمها `rights_state = sellable`، وإلا `409 rights_not_sellable`. الحالات الثلاث للمادة لا تتغير بالإدراج. `commercial_allowed` ومعه عرض بترخيص `commercial` لمدير النظام وحده (`403 forbidden_role`). يُكتب `catalog.listing_changed` في المعاملة نفسها.
+         */
+        post: operations["createMaterialListing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * البحث في الكتالوج (ما يراه المشتري)
+         * @description الإدراجات `listed` وحدها. يعيد عرض المشتري (`CatalogItem`): عناوين ووصف ولقطات بلغتين، والمدة والدقة، ويوم التصوير والمحافظة، واسم الظهور بحسب وضعه، والعروض بأسعارها. لا إحداثيات ولا مدينة ولا معرّف مراسل ولا جهاز ولا حقول ديناميكية ولا مصادر. أدوار المشترين تُضاف مع حسابات المؤسسات في الطلب التالي من الدورة. البحث النصي بالعربية والإنجليزية.
+         */
+        get: operations["searchCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/{listing_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * صفحة مادة في الكتالوج
+         * @description الإدراج غير `listed` يُعامل كغير موجود (404).
+         */
+        get: operations["getCatalogItem"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/{listing_id}/preview-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * رابط موقّع لمعاينة المشتري بعلامة مائية
+         * @description مشتق `watermarked_preview` وحده (نسخة منخفضة بعلامة مائية مرئية، يبنيه عامل الوسائط عند الإدراج)، صالح ≤ 10 دقائق. لا يعطي الأصل ولا النسخة الخفيفة. `409 preview_not_ready` قبل جاهزيته.
+         */
+        get: operations["getCatalogPreviewUrl"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events": {
         parameters: {
             query?: never;
@@ -1081,7 +1241,7 @@ export interface components {
              * @description رمز ثابت يتفرّع عليه العميل؛ الرسالة للبشر فقط. قائمة مفتوحة؛ الرمز المجهول = خطأ عام
              * @enum {string}
              */
-            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "internal_error";
+            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "internal_error";
             message: string;
             /** @description لتتبع الطلب في السجلات */
             request_id: string;
@@ -1815,10 +1975,10 @@ export interface components {
             /** @enum {string|null} */
             failure_reason: "checksum_mismatch" | "invalid_file" | "expired" | "aborted" | "storage_error" | null;
         };
-        /** @description `proxy` و`hls` و`audio` مشتقات زمنية: `technical` يحمل `duration_ms` و`start_pts_us`. `thumbnail` صورة (الملصق أو ورقة اللقطات): `duration_ms` اختياري، و`width` و`height` إلزاميان غير فارغين، و`mime_type` إلزامي. `proxy_mode` يكتبه الخادم `normal` للنسخة الخفيفة وحدها و`NULL` لغيرها. `export` حزمة التصدير (#99، v0.2): `application/zip`، و`technical` هو `technical` الأصل؛ تُبنى عند الطلب (`export.requested`) لا عند الاستيعاب، ولا تحمل بيانات كاشفة. `transcript` (`application/json`، نص بتوقيت الكلمات والمتحدثين) و`captions` (`text/vtt`) من عامل التفريغ (v0.2): زمنيان على خط زمن الأصل، فيحملان `duration_ms` و`start_pts_us` الأصل. */
+        /** @description `proxy` و`hls` و`audio` مشتقات زمنية: `technical` يحمل `duration_ms` و`start_pts_us`. `thumbnail` صورة (الملصق أو ورقة اللقطات): `duration_ms` اختياري، و`width` و`height` إلزاميان غير فارغين، و`mime_type` إلزامي. `proxy_mode` يكتبه الخادم `normal` للنسخة الخفيفة وحدها و`NULL` لغيرها. `export` حزمة التصدير (#99، v0.2): `application/zip`، و`technical` هو `technical` الأصل؛ تُبنى عند الطلب (`export.requested`) لا عند الاستيعاب، ولا تحمل بيانات كاشفة. `transcript` (`application/json`، نص بتوقيت الكلمات والمتحدثين) و`captions` (`text/vtt`) من عامل التفريغ (v0.2): زمنيان على خط زمن الأصل، فيحملان `duration_ms` و`start_pts_us` الأصل. `watermarked_preview` (v0.3، ADR 0025) معاينة المشتري: نسخة منخفضة بعلامة مائية مرئية، زمنية كـ `proxy`، لا تظهر في `Material.files` ولا يعطيها غير رابط الكتالوج. */
         MediaDerivative: {
             /** @enum {string} */
-            kind: "proxy" | "thumbnail" | "hls" | "audio" | "export" | "transcript" | "captions";
+            kind: "proxy" | "thumbnail" | "hls" | "audio" | "export" | "transcript" | "captions" | "watermarked_preview";
             storage_key: string;
             sha256: string;
             size_bytes: number;
@@ -1829,6 +1989,19 @@ export interface components {
             mime_type?: "image/jpeg" | "image/webp" | "video/mp4" | "application/vnd.apple.mpegurl" | "audio/mp4" | "application/json" | "application/zip" | "text/vtt";
             technical: components["schemas"]["MediaTechnical"];
         } & (unknown & unknown & unknown & unknown);
+        MediaSourceFile: {
+            /** Format: uuid */
+            file_id: string;
+            /** Format: uuid */
+            material_id: string;
+            /** @enum {string} */
+            kind: "original" | "proxy" | "hls" | "audio" | "thumbnail" | "voice_note" | "export" | "transcript" | "captions" | "watermarked_preview";
+            /** @enum {string} */
+            state: "uploading" | "received" | "verified" | "failed";
+            storage_key: string;
+            size_bytes: number | null;
+            sha256: string | null;
+        };
         PermissionHistoryEntry: {
             /** @description رقم صف التدقيق */
             id: string;
@@ -2134,6 +2307,146 @@ export interface components {
             token: string;
             app_version?: string | null;
         };
+        /**
+         * @description عملة السعر والقيد (ADR 0025). المبالغ دائمًا بأصغر وحدة (`amount_minor`) ولا تُجمع عملتان.
+         * @enum {string}
+         */
+        Currency: "USD" | "ILS";
+        Money: {
+            /** @description بأصغر وحدة (سنت أو أغورة) */
+            amount_minor: number;
+            currency: components["schemas"]["Currency"];
+        };
+        /** @description نص تجاري بالعربية والإنجليزية معًا؛ لا إصدار بلغة واحدة */
+        LocalizedText: {
+            ar: string;
+            en: string;
+        };
+        /**
+         * @description `editorial_single` تحريري لاستخدام واحد؛ `editorial_term` تحريري مفتوح لمدة؛ `exclusive_temporary` حصري مؤقت؛ `commercial` تجاري بموافقة الإدارة. الاشتراك المؤسسي مؤجل حتى معادلة توزيع مكتوبة.
+         * @enum {string}
+         */
+        LicenseType: "editorial_single" | "editorial_term" | "exclusive_temporary" | "commercial";
+        LicenseTemplateInput: {
+            type: components["schemas"]["LicenseType"];
+            name: components["schemas"]["LocalizedText"];
+            terms: components["schemas"]["LocalizedText"];
+            usage_media: ("tv" | "web" | "social" | "documentary" | "advertising")[];
+            territory: {
+                /** @enum {string} */
+                kind: "worldwide" | "countries";
+                /** @description رموز ISO 3166-1 alpha-2؛ إلزامية مع `countries` وممنوعة مع `worldwide` */
+                countries?: string[];
+            };
+            /** @description مدة الترخيص من التسليم؛ إلزامية لـ `editorial_term` و`exclusive_temporary`، و`null` = بلا انتهاء */
+            term_days?: number | null;
+            /** @description مدة الحصرية؛ لـ `exclusive_temporary` وحده (24–168 ساعة)، و`null` لغيره */
+            exclusivity_hours?: number | null;
+            /** @description ما يُسلَّم للمشتري. التفريغ والترجمة لا يُرخَّصان ولا يُصدَّران (threat-model §9.1، R11) حتى ADR للحجب الآلي للأسماء؛ `transcript` يُرفض `422`. */
+            deliverables: ("original" | "produced" | "audio" | "stills")[];
+            attribution: components["schemas"]["LocalizedText"];
+            /** @description المحظورات؛ `ai_training` محظور دائمًا إلا بإذن مستقل خارج القالب */
+            prohibitions: ("resale" | "advertising" | "ai_training" | "re_editing")[];
+            base_price: components["schemas"]["Money"];
+            enabled: boolean;
+        };
+        LicenseTemplate: components["schemas"]["LicenseTemplateInput"] & {
+            /** Format: uuid */
+            id: string;
+            /** @description لا يُعدَّل إصدار قائم؛ الاستبدال يكتب إصدارًا جديدًا */
+            version: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            created_by: string;
+        };
+        /**
+         * @description مستقلة عن الحالات الثلاث للمادة؛ `listed` يلزمها `rights_state = sellable`
+         * @enum {string}
+         */
+        ListingState: "draft" | "listed" | "suspended";
+        ListingOfferInput: {
+            /** Format: uuid */
+            license_template_id: string;
+            /** @description سعر خاص بهذه المادة؛ `null` = السعر الأساسي للقالب */
+            price_override?: components["schemas"]["Money"] | null;
+        };
+        CatalogListingInput: {
+            title: components["schemas"]["LocalizedText"];
+            description: components["schemas"]["LocalizedText"];
+            /** @default [] */
+            shot_list: {
+                start_ms: number;
+                label: components["schemas"]["LocalizedText"];
+            }[];
+            /** @description قالب واحد مرة واحدة على الأكثر؛ القالب المعطّل `422 validation_failed` */
+            offers: components["schemas"]["ListingOfferInput"][];
+            /**
+             * @description يسمح عقد المادة بالترخيص التجاري؛ يضبطه مدير النظام وحده، وبدونه لا يُقبل عرض `commercial`
+             * @default false
+             */
+            commercial_allowed: boolean;
+            state: components["schemas"]["ListingState"];
+        };
+        CatalogListing: components["schemas"]["CatalogListingInput"] & {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            material_id: string;
+            /** @description الإصدار المعروض للبيع؛ البيعة تجمّده */
+            material_version: number;
+            /** @enum {string|null} */
+            suspended_reason: "manual" | "rights_changed" | null;
+            /**
+             * Format: date-time
+             * @description أول انتقال إلى `listed`
+             */
+            listed_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: uuid */
+            updated_by: string;
+        };
+        CatalogOffer: {
+            /** Format: uuid */
+            license_template_id: string;
+            license_version: number;
+            type: components["schemas"]["LicenseType"];
+            name: components["schemas"]["LocalizedText"];
+            price: components["schemas"]["Money"];
+        };
+        /** @description ما يراه المشتري، بقائمة بيضاء مغلقة: لا إحداثيات ولا مدينة ولا معرّف مراسل ولا جهاز ولا حقول ديناميكية ولا مصادر، ويوم التصوير بلا ساعة. */
+        CatalogItem: {
+            /** Format: uuid */
+            listing_id: string;
+            material_version: number;
+            title: components["schemas"]["LocalizedText"];
+            description: components["schemas"]["LocalizedText"];
+            shot_list: {
+                start_ms: number;
+                label: components["schemas"]["LocalizedText"];
+            }[];
+            material_types: components["schemas"]["MaterialType"][];
+            governorate: string;
+            /** Format: date */
+            shot_on: string | null;
+            duration_ms: number | null;
+            width: number | null;
+            height: number | null;
+            /** @description نسب المادة: اسم الشبكة، أو الاسم المعتمد للنشر إن اختار المراسل `real_name`. الاسم المستعار لا يدخل الكتالوج (`pseudonym` يُنسب للشبكة)، ولا `reporter_id`. */
+            credit: string;
+            offers: components["schemas"]["CatalogOffer"][];
+            /** @description لا عرض حصري لمادة بيعت بترخيص غير حصري أو عليها حصرية نشطة أو محجوزة */
+            exclusive_available: boolean;
+            /** Format: date-time */
+            listed_at: string;
+        };
+        CatalogPage: {
+            items: components["schemas"]["CatalogItem"][];
+            next_cursor: string | null;
+        };
         OutboxEvent: components["schemas"]["outbox-event"];
         EventPage: {
             items: components["schemas"]["outbox-event"][];
@@ -2336,9 +2649,9 @@ export interface components {
             /** @description تسلسلي متزايد (رقم الصف في جدول Outbox) بصيغة نصية؛ يُستخدم مؤشرًا في `after` */
             id: string;
             /** @enum {string} */
-            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed";
+            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed";
             /** @enum {string} */
-            aggregate_type: "material" | "upload" | "notification" | "form" | "user";
+            aggregate_type: "material" | "upload" | "notification" | "form" | "user" | "listing";
             /** Format: uuid */
             aggregate_id: string;
             /** Format: date-time */
@@ -2375,7 +2688,7 @@ export interface components {
                 /** @enum {string} */
                 priority: "urgent" | "important" | "normal";
             };
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
     };
     responses: {
         /** @description طلب غير صالح (معاملات استعلام أو مؤشر غير مفهوم) */
@@ -3829,6 +4142,30 @@ export interface operations {
             422: components["responses"]["UnprocessableEntity"];
         };
     };
+    mediaGetFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الملف */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaSourceFile"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["MediaResourceGone"];
+        };
+    };
     mediaPostDerivative: {
         parameters: {
             query?: never;
@@ -4329,6 +4666,321 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listLicenseTemplates: {
+        parameters: {
+            query?: {
+                include_disabled?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description القوالب */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["LicenseTemplate"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createLicenseTemplate: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LicenseTemplateInput"];
+            };
+        };
+        responses: {
+            /** @description القالب بإصداره الأول */
+            201: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LicenseTemplate"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    getLicenseTemplate: {
+        parameters: {
+            query?: {
+                /** @description إصدار سابق (لقراءة ما جُمّد في بيعة)؛ الافتراضي الحالي */
+                version?: number;
+            };
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description القالب */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LicenseTemplate"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    replaceLicenseTemplate: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description قيمة `ETag` الأخيرة التي رآها العميل (`"<row_version>"` للمادة، `"<version>"` للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ `412 precondition_failed` دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LicenseTemplateInput"];
+            };
+        };
+        responses: {
+            /** @description الإصدار الجديد */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LicenseTemplate"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    getMaterialListing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الإدراج */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogListing"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    replaceMaterialListing: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description قيمة `ETag` الأخيرة التي رآها العميل (`"<row_version>"` للمادة، `"<version>"` للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ `412 precondition_failed` دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CatalogListingInput"];
+            };
+        };
+        responses: {
+            /** @description الإدراج بعد الاستبدال */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogListing"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    createMaterialListing: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CatalogListingInput"];
+            };
+        };
+        responses: {
+            /** @description الإدراج */
+            201: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogListing"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    searchCatalog: {
+        parameters: {
+            query?: {
+                q?: string;
+                material_type?: components["schemas"]["MaterialType"][];
+                governorate?: string;
+                shot_from?: string;
+                shot_to?: string;
+                min_duration_ms?: number;
+                max_duration_ms?: number;
+                /** @description أدنى ارتفاع للأصل بالبكسل (مثل 1080) */
+                min_height?: number;
+                license_type?: components["schemas"]["LicenseType"];
+                exclusive_available?: boolean;
+                /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description حجم الصفحة */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description صفحة من الكتالوج، الأحدث إدراجًا أولًا */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getCatalogItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description عرض المشتري */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogItem"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getCatalogPreviewUrl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الرابط */
+            200: {
+                headers: {
+                    /** @description `no-store` */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileDownloadUrl"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     listEvents: {

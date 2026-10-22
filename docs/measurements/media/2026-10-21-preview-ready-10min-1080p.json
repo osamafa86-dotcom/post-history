@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "media",
+  "test_name": "media-preview-ready-10min-1080p",
+  "started_at": "2026-10-21T21:07:07.209Z",
+  "ended_at": "2026-10-21T21:12:00.163Z",
+  "result": "info",
+  "device": {
+    "platform": "server",
+    "model": "4 vCPU"
+  },
+  "upload_path": "n/a",
+  "file": {
+    "size_bytes": 1290345310,
+    "duration_s": 600.0,
+    "codec": "h264+hevc",
+    "vfr": false,
+    "hdr": false
+  },
+  "metrics": {
+    "1080p-h264_p50_s": 96.63,
+    "1080p-h264_p95_s": 97.96,
+    "1080p-h264_max_s": 97.96,
+    "1080p-h264_verified_p50_s": 7.13,
+    "1080p-h264_size_bytes": 1290345310,
+    "runs_per_profile": 2,
+    "limit_s": 1200.0,
+    "ffmpeg_version": "8.0.1"
+  },
+  "notes": "بند «الأداء» (معاينة مقطع 10 دقائق 1080p ضمن الهدف المقيس في التأسيس): مقطع H.264 1080p بنحو 17 Mbps مدته 10 دقائق (1.29 GB) من نشر الحدث إلى تسجيل proxy-480p على خط العامل الحقيقي (Redis وMinIO محليان)، تشغيلان: p50 96.6 ث، والتحقق (التنزيل والبصمة وffprobe) 7.1 ث. عامل واحد على 4 vCPU بلا طابور منافس. الهدف المعلن في الخطة لمقطع دقيقة (دقيقتان)؛ لمقطع 10 دقائق لا هدف رقمي بعد، فالنتيجة info. الأمر: bench/preview_slo.py --seconds 600."
+}
