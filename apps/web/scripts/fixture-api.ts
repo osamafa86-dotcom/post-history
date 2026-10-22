@@ -74,6 +74,7 @@ async function tus(req: import("node:http").IncomingMessage, res: import("node:h
 // قواعد التنبيه (#203 بند 7): مراجعة صف لكل قاعدة كما في العقد.
 const rules = new Map<string, Record<string, unknown> & { id: string; row_version: number }>();
 // قوالب التراخيص: كل إصدار محفوظ، والحالي آخرها.
+const listings = new Map<string, Record<string, unknown> & { row: number; state: string }>();
 const templates = new Map<string, (Record<string, unknown> & { id: string; version: number; enabled: boolean })[]>();
 function seedTemplates() {
   templates.clear();
@@ -101,7 +102,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname.startsWith("/files/")) { res.removeHeader("Content-Type"); return tus(req, res, url); }
   if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
   if (url.pathname === "/__test/uploads") return send([...uploads.values()].map(u => ({ state: u.session.state, receipt: u.session.receipt_number, ingest_tokens: [...ingestTokens.values()].filter(t => t.sid === u.session.id).length, ...(u.tus ? (({ length, offset, patches, resent, cuts }) => ({ length, offset, patches, resent, cuts }))(tusFiles.get(u.tus) ?? { length: 0, offset: 0, patches: 0, resent: 0, cuts: 0 }) : {}) })));
-  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); seedTemplates(); reset(); resetUploads(); return send({ ok: true }); }
+  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); seedTemplates(); reset(); resetUploads(); return send({ ok: true }); }
   if (url.pathname === "/__test/state") return send({ writes, applied: applied.size, identitySetting, auditCount: permissionAudit.length });
   if (url.pathname === "/__test/request-changes" && req.method === "POST") {
     // مادة بطلب تعديل وأخرى مرفوضة وثالثة فشل رفعها، وسبب داخلي لا يصل المراسل.
@@ -234,6 +235,18 @@ const server = createServer(async (req, res) => {
       const stamp = new Date().toISOString(), rule = { ...body, id: randomUUID(), row_version: 1, created_by: user.user_id, updated_by: user.user_id, created_at: stamp, updated_at: stamp };
       rules.set(rule.id, rule); res.setHeader("ETag", '"1"'); return commit(rule, 201);
     }
+    const listingPath = /^\/v1\/materials\/([^/]+)\/listing$/.exec(path);
+    if (listingPath) {
+      if (!has("system_admin", "rights_officer")) return send({}, 403);
+      const item = materials.find(m => m.id === listingPath[1]); if (!item) return send({}, 404);
+      const current = listings.get(item.id), stamp = new Date().toISOString();
+      if (req.method === "POST" ? !!current : !current) return send({ code: "conflict" }, current ? 409 : 404);
+      if (current && req.headers["if-match"] !== `"${current.row}"`) return send({}, 412);
+      if (body.state === "listed" && item.rights_state !== "sellable") return send({ code: "rights_not_sellable" }, 409);
+      if (body.commercial_allowed && !has("system_admin")) return send({ code: "forbidden_role" }, 403);
+      const next = { ...body, id: current?.id ?? randomUUID(), material_id: item.id, material_version: item.version, suspended_reason: body.state === "suspended" ? "manual" : null, listed_at: current?.listed_at ?? (body.state === "listed" ? stamp : null), created_at: current?.created_at ?? stamp, updated_at: stamp, updated_by: user.user_id, row: (current?.row ?? 0) + 1, state: String(body.state) };
+      listings.set(item.id, next); res.setHeader("ETag", `"${next.row}"`); return commit(Object.fromEntries(Object.entries(next).filter(([key]) => key !== "row")), current ? 200 : 201);
+    }
     const templatePath = /^\/v1\/license-templates(?:\/([^/]+))?$/.exec(path);
     if (templatePath) {
       if (!has("system_admin", "rights_officer")) return send({}, 403);
@@ -277,6 +290,12 @@ const server = createServer(async (req, res) => {
   }
   const uploadRead = /^\/v1\/uploads\/([^/]+)$/.exec(url.pathname);
   if (uploadRead) { const upload = uploads.get(uploadRead[1]); return upload ? send(upload.session) : send({}, 404); }
+  const listingRead = /^\/v1\/materials\/([^/]+)\/listing$/.exec(url.pathname);
+  if (listingRead) {
+    if (!user.roles.some(role => ["system_admin", "rights_officer", "editor_in_chief", "finance"].includes(role.name))) return send({}, 403);
+    const found = listings.get(listingRead[1]); if (!found) return send({ code: "not_found" }, 404);
+    res.setHeader("ETag", `"${found.row}"`); return send({ ...Object.fromEntries(Object.entries(found).filter(([key]) => key !== "row")), internal_note: "never-display-canary" });
+  }
   if (url.pathname === "/v1/license-templates" || url.pathname.startsWith("/v1/license-templates/")) {
     if (!user.roles.some(role => ["system_admin", "rights_officer", "editor_in_chief", "finance"].includes(role.name))) return send({}, 403);
     if (url.pathname === "/v1/license-templates") return send({ items: [...templates.values()].map(v => v.at(-1)!).filter(t => t.enabled || url.searchParams.get("include_disabled") === "true") });
