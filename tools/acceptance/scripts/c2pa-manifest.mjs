@@ -154,8 +154,7 @@ export function byteLeaks(bytes, { planted, sha256 }) {
 export async function run(env = process.env, argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   const doc = newResult("c2pa-manifest", { role: "quality", upload_path: "n/a", file: { codec: "synthetic H.264 phone clip (tags, GPS, SEI) and HEVC 10-bit HLG clip (tags)" } });
-  const meta = byName("c2pa-manifest");
-  banner(meta?.name ?? "c2pa-manifest");
+  banner(byName("c2pa-manifest"));
   const { check, fails } = checker();
   const missing = [];
   if (!have(env.FFMPEG_BIN ?? "ffmpeg")) missing.push("ffmpeg");
