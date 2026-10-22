@@ -5,6 +5,7 @@ import { actionPath, actionRoutes } from "../src/server/review-actions";
 import { identityAccesses, identityReasons, pageLimits, permissions, reasonLimits } from "../src/lib/admin-policy";
 import { states } from "../src/lib/query";
 import { uploadRoles } from "../src/lib/upload-policy";
+import { catalogRoles, licenseTypes } from "../src/server/catalog";
 import { channels, roles, ruleEvents, ruleLimits, scopeKinds } from "../src/lib/notification-policy";
 
 const { load } = createRequire(import.meta.url)("js-yaml") as { load: (text: string) => unknown };
@@ -43,6 +44,10 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
   });
   it("opens desktop upload to exactly the roles the contract allows", () => {
     for (const [path, method] of [["/materials", "post"], ["/uploads", "post"], ["/uploads/{id}/web-ingest-token", "post"]]) expect([...uploadRoles]).toEqual(at("paths", path, method, "x-roles"));
+  });
+  it("keeps catalog roles and license types aligned with v0.3", () => {
+    for (const path of ["/catalog", "/catalog/{listing_id}", "/catalog/{listing_id}/preview-url"]) expect([...catalogRoles]).toEqual(at("paths", path, "get", "x-roles"));
+    expect([...licenseTypes]).toEqual(at("components", "schemas", "LicenseType", "enum"));
   });
   it("keeps transition choices aligned with the three contract state enums", () => {
     for (const [key, schema] of [["technical_state", "TechnicalState"], ["editorial_state", "EditorialState"], ["rights_state", "RightsState"]] as const) expect(states[key]).toEqual(at("components", "schemas", schema, "enum"));
