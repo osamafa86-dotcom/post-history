@@ -1,8 +1,12 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
+import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import { schemaValidator } from '../../src/common/contract';
+import { DB, type Database } from '../../src/database/database.module';
+import { uploadSessions } from '../../src/database/schema/schema';
 import { OBJECT_STORAGE, type ObjectStorage } from '../../src/verification/object-storage';
+import { recordVerification } from '../../src/verification/verification';
 import { createHarness, type Harness, loginAs, seedUploadSession, seedUser } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
@@ -163,6 +167,29 @@ describe('catalog (/v1/catalog) and the media source file (/internal/media/files
     const files = (await get(admin, `/materials/${a.materialId}`).expect(200)).body.files.map((f: { kind: string }) => f.kind);
     expect(files).not.toContain('watermarked_preview');
     await get(rights, `/catalog/${randomUUID()}/preview-url`).expect(404);
+
+    // أصل أحدث يُتحقق منه بعد الإدراج: حدث بمصدره الجديد، والمعاينة القديمة لا تُعطى حتى تُبنى من الجديد
+    const next = await seedUploadSession(h, reporterId, { state: 'completed' });
+    await h.pool.query(`UPDATE upload_sessions SET material_id = $2, storage_key = $3 WHERE id = $1`, [next.id, a.materialId, `tus/${next.id}`]);
+    const db = h.app.get<Database>(DB);
+    await db.transaction(async (tx) => {
+      const [session] = await tx.select().from(uploadSessions).where(eq(uploadSessions.id, next.id));
+      await recordVerification(tx, session!, { result: 'verified', sha256: randomBytes(32), sizeBytes: 1000 });
+    });
+    const { rows: verifiedRows } = await h.pool.query<{ id: string }>(`SELECT file_id AS id FROM upload_sessions WHERE id = $1`, [next.id]);
+    const newOriginal = verifiedRows[0]!.id;
+    const { rows: events } = await h.pool.query(
+      `SELECT payload FROM outbox_events WHERE type = 'catalog.listing_changed' AND aggregate_id = $1 ORDER BY id DESC LIMIT 1`,
+      [a.listingId],
+    );
+    expect(events[0].payload).toMatchObject({ listing_id: a.listingId, state: 'listed', source_file_id: newOriginal });
+    expect((await get(finance, `/catalog/${a.listingId}/preview-url`).expect(409)).body.code).toBe('preview_not_ready');
+    await h.pool.query(
+      `INSERT INTO material_files (material_id, kind, state, size_bytes, sha256, storage_key, mime_type, derived_from_id, verified_at)
+       VALUES ($1, 'watermarked_preview', 'verified', 900, $2, $3, 'video/mp4', $4, now())`,
+      [a.materialId, randomBytes(32), `derived/${a.materialId}/${newOriginal}/preview.mp4`, newOriginal],
+    );
+    expect((await get(finance, `/catalog/${a.listingId}/preview-url`).expect(200)).body.url).toContain(`/${newOriginal}/preview.mp4`);
   });
 
   it('catalog reads are for admin, rights, editor in chief and finance', async () => {
