@@ -8,6 +8,10 @@ describe('media:events selection', () => {
     for (const type of ['upload.original_received', 'upload.proxy_received', 'upload.verified']) expect(isMediaEvent(row(type))).toBe(true);
   });
 
+  it('queues on-request work: export packages and the buyer watermarked preview on listing', () => {
+    for (const type of ['export.requested', 'catalog.listing_changed']) expect(isMediaEvent(row(type))).toBe(true);
+  });
+
   it('keeps every other event off the stream', () => {
     for (const type of ['upload.failed', 'upload.started', 'material.created', 'auth.recovery_approved']) expect(isMediaEvent(row(type))).toBe(false);
   });

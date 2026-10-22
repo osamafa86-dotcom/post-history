@@ -52,6 +52,8 @@ export class UploadReconciler implements OnApplicationBootstrap, OnApplicationSh
   /** دفعة واحدة؛ تقف عند أول عطل تخزين فلا يُستدعى التخزين المعطّل في حلقة. */
   async reconcileBatch(limit = this.config.UPLOAD_RECONCILE_BATCH): Promise<ReconcileResult> {
     const result: ReconcileResult = { received: 0, expired: 0, pending: 0 };
+    // ما فشل هنا يُحذف من التخزين المؤقت بعد الحفظ، كإلغاء صاحب الجلسة (ADR 0005)
+    const removable: Array<{ id: string; key: string }> = [];
     await this.db.transaction(async (tx) => {
       const stale = await tx
         .select()
@@ -76,12 +78,14 @@ export class UploadReconciler implements OnApplicationBootstrap, OnApplicationSh
         }
         if (head && (await uploadAccessRevoked(tx, session))) {
           await abortRevokedUpload(tx, session);
+          removable.push({ id: session.id, key });
           result.expired++;
         } else if (head) {
           await markReceived(tx, session, key);
           result.received++;
         } else if (new Date(session.expiresAt) <= new Date()) {
           await markUploadFailed(tx, session, 'expired');
+          removable.push({ id: session.id, key });
           result.expired++;
         } else {
           // رفع جارٍ (أو متوقف ينتظر الاستئناف): يُعاد فحصه بعد مهلة أخرى
@@ -91,7 +95,20 @@ export class UploadReconciler implements OnApplicationBootstrap, OnApplicationSh
       }
     });
     if (result.received || result.expired) this.logger.info(result, 'uploads reconciled');
+    await this.removeTemporary(removable);
     return result;
+  }
+
+  /** أجزاء tusd والكائن وملفاته الجانبية لجلسات فشلت؛ فشل الحذف يُسجَّل بمعرّف الجلسة وحده ولا يعيد التسوية. */
+  private async removeTemporary(sessions: Array<{ id: string; key: string }>): Promise<void> {
+    if (!this.storage.removeUpload) return;
+    for (const s of sessions) {
+      try {
+        await this.storage.removeUpload(this.config.S3_BUCKET_UPLOADS, s.key);
+      } catch (err) {
+        this.logger.warn({ upload_session_id: s.id, err_name: (err as Error)?.name }, 'failed upload not removed from temporary storage');
+      }
+    }
   }
 
   private schedule(): void {

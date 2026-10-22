@@ -10,7 +10,7 @@ import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-stora
 import { canEditMaterial, EDITOR_ONLY_KINDS, findScoped } from './material-store';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const DERIVATIVE_KINDS = ['proxy', 'hls', 'audio', 'thumbnail', 'transcript', 'captions'];
+const DERIVATIVE_KINDS = ['proxy', 'hls', 'audio', 'thumbnail', 'transcript', 'captions', 'shot_list'];
 const TTL_SECONDS = 600;
 
 /**
