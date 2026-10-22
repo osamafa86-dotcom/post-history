@@ -651,6 +651,95 @@ SELECT pg_temp.assert(
      AND indexdef ILIKE '%WHERE ((state = ''failed''::text) AND (storage_removed_at IS NULL))%'),
   'partial index for failed uploads whose temporary data is not yet removed exists');
 
+-- ---------- دفتر الأستاذ (ADR 0031): قيد مزدوج لا يُعدَّل ----------
+SET CONSTRAINTS ALL DEFERRED;
+INSERT INTO ledger_accounts (id, kind, currency) VALUES
+  ('00000000-0000-4000-8000-000000000901', 'provider_clearing', 'USD'), ('00000000-0000-4000-8000-000000000902', 'platform_revenue', 'USD'), ('00000000-0000-4000-8000-000000000906', 'provider_clearing', 'ILS');
+INSERT INTO ledger_accounts (id, kind, owner_id, payable_state, currency) VALUES
+  ('00000000-0000-4000-8000-000000000904', 'contributor_payable', '00000000-0000-4000-8000-000000000011', 'pending', 'USD'),
+  ('00000000-0000-4000-8000-000000000905', 'contributor_payable', '00000000-0000-4000-8000-000000000011', 'available', 'USD');
+-- حساب واحد لكل (نوع، مالك، حالة، عملة)، والمالك والحالة للمستحق وحده، وهوية الحساب ثابتة
+SELECT pg_temp.expect_error($q$ INSERT INTO ledger_accounts (kind, currency) VALUES ('provider_clearing', 'USD') $q$, '23505');
+SELECT pg_temp.expect_error($q$ INSERT INTO ledger_accounts (kind, currency) VALUES ('contributor_payable', 'USD') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO ledger_accounts (kind, owner_id, payable_state, currency) VALUES ('taxes', '00000000-0000-4000-8000-000000000011', 'pending', 'USD') $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE ledger_accounts SET currency = 'ILS' WHERE id = '00000000-0000-4000-8000-000000000901' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE ledger_accounts SET payable_state = 'paid' WHERE id = '00000000-0000-4000-8000-000000000904' $q$, '23514');
+-- بيعة متوازنة تُقبل عند الإيداع، وتفاصيلها أرقام ومعرّفات
+INSERT INTO journal_entries (id, kind, reference_type, reference_id, idempotency_key, details, actor_id) VALUES
+  ('00000000-0000-4000-8000-000000000911', 'sale', 'order', '00000000-0000-4000-8000-000000000921', 'sale:smoke:1',
+   '{"rule_id": "00000000-0000-4000-8000-000000000931", "platform_bps": 3000, "currency": "USD", "shares": [{"user_id": "00000000-0000-4000-8000-000000000011", "bps": 10000}]}',
+   '00000000-0000-4000-8000-000000000014');
+INSERT INTO postings (entry_id, account_id, amount_minor, currency) VALUES
+  ('00000000-0000-4000-8000-000000000911', '00000000-0000-4000-8000-000000000901', 1000, 'USD'), ('00000000-0000-4000-8000-000000000911', '00000000-0000-4000-8000-000000000902', -300, 'USD'), ('00000000-0000-4000-8000-000000000911', '00000000-0000-4000-8000-000000000904', -700, 'USD');
+SET CONSTRAINTS ALL IMMEDIATE;
+SET CONSTRAINTS ALL DEFERRED;
+-- غير المتوازن، والقيد بلا سطور، والسطر بعملة غير عملة حسابه: كلها تُرفض
+SELECT pg_temp.expect_error($q$
+  WITH e AS (INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key)
+             VALUES ('sale', 'order', '00000000-0000-4000-8000-000000000922', 'sale:smoke:unbalanced') RETURNING id)
+  INSERT INTO postings (entry_id, account_id, amount_minor, currency)
+  SELECT id, '00000000-0000-4000-8000-000000000901'::uuid, 100, 'USD' FROM e UNION ALL SELECT id, '00000000-0000-4000-8000-000000000902'::uuid, -90, 'USD' FROM e $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key)
+  VALUES ('sale', 'order', '00000000-0000-4000-8000-000000000923', 'sale:smoke:empty') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO postings (entry_id, account_id, amount_minor, currency) VALUES ('00000000-0000-4000-8000-000000000911', '00000000-0000-4000-8000-000000000901', 5, 'ILS') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO postings (entry_id, account_id, amount_minor, currency) VALUES ('00000000-0000-4000-8000-000000000911', '00000000-0000-4000-8000-000000000901', 0, 'USD') $q$, '23514');
+-- نص حر في التفاصيل يُرفض، والعكس للاسترداد والتصحيح وحدهما، والتكرار بمفتاح القيد يُرفض
+SELECT pg_temp.expect_error($q$
+  INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key, details)
+  VALUES ('sale', 'order', '00000000-0000-4000-8000-000000000924', 'sale:smoke:text', '{"note": "buyer Jane Doe"}') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key)
+  VALUES ('refund', 'refund', '00000000-0000-4000-8000-000000000925', 'refund:smoke:orphan') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key, reverses_entry_id)
+  VALUES ('sale', 'order', '00000000-0000-4000-8000-000000000926', 'sale:smoke:reverses', '00000000-0000-4000-8000-000000000911') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key)
+  VALUES ('sale', 'order', '00000000-0000-4000-8000-000000000921', 'sale:smoke:1') $q$, '23505');
+-- التصحيح يعكس القيد كاملًا مرة واحدة
+WITH e AS (INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key, reverses_entry_id)
+           VALUES ('correction', 'order', '00000000-0000-4000-8000-000000000921', 'correction:smoke:1', '00000000-0000-4000-8000-000000000911') RETURNING id)
+INSERT INTO postings (entry_id, account_id, amount_minor, currency)
+SELECT id, '00000000-0000-4000-8000-000000000901'::uuid, -1000, 'USD' FROM e UNION ALL SELECT id, '00000000-0000-4000-8000-000000000902'::uuid, 300, 'USD' FROM e
+UNION ALL SELECT id, '00000000-0000-4000-8000-000000000904'::uuid, 700, 'USD' FROM e;
+SET CONSTRAINTS ALL IMMEDIATE;
+SET CONSTRAINTS ALL DEFERRED;
+SELECT pg_temp.expect_error($q$
+  INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key, reverses_entry_id)
+  VALUES ('correction', 'order', '00000000-0000-4000-8000-000000000921', 'correction:smoke:2', '00000000-0000-4000-8000-000000000911') $q$, '23505');
+-- لا تحديث ولا حذف ولا تفريغ: الصلاحية مسحوبة من دور التطبيق، والمحفّز يرفض حتى بعد إعادتها
+SELECT pg_temp.expect_error($q$ UPDATE postings SET amount_minor = 1 WHERE entry_id = '00000000-0000-4000-8000-000000000911' $q$, '42501');
+SELECT pg_temp.expect_error($q$ DELETE FROM journal_entries WHERE id = '00000000-0000-4000-8000-000000000911' $q$, '42501');
+SELECT pg_temp.expect_error($q$ TRUNCATE postings $q$, '42501');
+GRANT UPDATE, DELETE, TRUNCATE ON journal_entries, postings TO CURRENT_USER;
+SELECT pg_temp.expect_error($q$ UPDATE postings SET amount_minor = 1 WHERE entry_id = '00000000-0000-4000-8000-000000000911' $q$, '42501');
+SELECT pg_temp.expect_error($q$ DELETE FROM journal_entries WHERE id = '00000000-0000-4000-8000-000000000911' $q$, '42501');
+SELECT pg_temp.expect_error($q$ TRUNCATE journal_entries CASCADE $q$, '42501');
+REVOKE UPDATE, DELETE, TRUNCATE ON journal_entries, postings FROM CURRENT_USER;
+-- المحفّزات تعمل بمسار بحث فارغ (الاستعادة)
+SET LOCAL search_path = '';
+WITH e AS (INSERT INTO public.journal_entries (kind, reference_type, reference_id, idempotency_key)
+           VALUES ('release', 'order', '00000000-0000-4000-8000-000000000921', 'release:smoke:1') RETURNING id)
+INSERT INTO public.postings (entry_id, account_id, amount_minor, currency)
+SELECT id, '00000000-0000-4000-8000-000000000904'::uuid, 700, 'USD' FROM e UNION ALL SELECT id, '00000000-0000-4000-8000-000000000905'::uuid, -700, 'USD' FROM e;
+SET CONSTRAINTS ALL IMMEDIATE;
+SET CONSTRAINTS ALL DEFERRED;
+SET LOCAL search_path TO DEFAULT;
+-- اختبار مقلوب: بلا محفّزي التوازن يمر القيد غير المتوازن، فالاختبار أعلاه يقيس المحفّز لا غيره
+ALTER TABLE postings DISABLE TRIGGER postings_balanced;
+ALTER TABLE journal_entries DISABLE TRIGGER journal_entries_balanced;
+WITH e AS (INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key)
+           VALUES ('sale', 'order', '00000000-0000-4000-8000-000000000927', 'sale:smoke:mutant') RETURNING id)
+INSERT INTO postings (entry_id, account_id, amount_minor, currency) SELECT id, '00000000-0000-4000-8000-000000000901'::uuid, 100, 'USD' FROM e;
+SET CONSTRAINTS ALL IMMEDIATE;
+SET CONSTRAINTS ALL DEFERRED;
+ALTER TABLE postings ENABLE TRIGGER postings_balanced;
+ALTER TABLE journal_entries ENABLE TRIGGER journal_entries_balanced;
+
 \o
 \echo smoke OK
 ROLLBACK;
