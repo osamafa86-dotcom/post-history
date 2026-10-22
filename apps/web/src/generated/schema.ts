@@ -801,6 +801,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/internal/media/files/{file_id}/alignment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description النسخة الخفيفة */
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * تسجيل المحاذاة الصوتية بين النسخة الخفيفة والأصل (داخلي، v0.3)
+         * @description يستبدل محاذاة النسخة الخفيفة بما قاسه العامل؛ الطلب نفسه يعيد الأثر نفسه. الملف غير `proxy`، أو `original_file_id` ليس أصل المادة نفسها، `422`. الملف غير الموجود برمز صحيح `410 media_resource_gone`.
+         */
+        put: operations["mediaPutAlignment"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/internal/media/files/{file_id}/derivatives": {
         parameters: {
             query?: never;
@@ -1595,6 +1618,8 @@ export interface components {
              * @enum {string|null}
              */
             proxy_mode?: "urgent" | "normal" | null;
+            /** @description لـ `proxy` وحده (v0.3)؛ `null` أو غائب قبل القياس أو لغير النسخة الخفيفة */
+            alignment?: components["schemas"]["MediaAlignment"] | null;
             size_bytes?: number | null;
             /** @description تُحسب على الخادم بعد التجميع */
             sha256?: string | null;
@@ -1951,6 +1976,27 @@ export interface components {
             /** @enum {string|null} */
             proxy_mode: "urgent" | "normal" | null;
             material_has_proxy: boolean;
+            /**
+             * Format: uuid
+             * @description النسخة الخفيفة المتحققة للمادة إن وُجدت (v0.3)، ليقيس العامل المحاذاة حين يتحقق الأصل
+             */
+            proxy_file_id?: string | null;
+            /**
+             * Format: uuid
+             * @description الأصل المتحقق للمادة إن وُجد (v0.3)، ليقيس العامل المحاذاة حين تتحقق النسخة الخفيفة
+             */
+            original_file_id?: string | null;
+        };
+        /** @description محاذاة صوتية بين النسخة الخفيفة والأصل (v0.3): إزاحة النسخة الخفيفة عن خط زمن الأصل. يصحّح المحرر نقاط القص بها حين `reliable` و`|offset_ms| > 40`. أرقام فقط. */
+        MediaAlignment: {
+            /** Format: uuid */
+            original_file_id: string;
+            /** @description ما يُضاف إلى زمن النسخة الخفيفة ليقع على زمن الأصل (`t_original = t_proxy + offset_ms`)؛ سالبة حين تتأخر النسخة الخفيفة */
+            offset_ms: number;
+            confidence: number;
+            /** @description الفارق بين أفضل قمة ارتباط والتي تليها */
+            margin: number;
+            reliable: boolean;
         };
         /** @description النجاح يحمل البصمة والحجم والبصمة الرخيصة والبيانات الفنية؛ الفشل لا يحمل `sha256` ولا `technical` ولا `perceptual_hash` */
         MediaVerification: {
@@ -4169,6 +4215,34 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             410: components["responses"]["MediaResourceGone"];
+        };
+    };
+    mediaPutAlignment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description النسخة الخفيفة */
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MediaAlignment"];
+            };
+        };
+        responses: {
+            /** @description سُجّلت */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["MediaResourceGone"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     mediaPostDerivative: {
