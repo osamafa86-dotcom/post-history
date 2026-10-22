@@ -34,8 +34,8 @@ def test_all_original_based_deliverables_without_revealing_data(src: Path, tmp_p
     sha = hashlib.sha256(src.read_bytes()).hexdigest()
     out = tmp_path / "delivery.zip"
     m = build_delivery(out, original=src, info=probe(src), license_id=LIC, sha256=sha,
-                       deliverables=["original", "audio", "stills", "transcript"])
-    assert m["deliverables"]["transcript"] == "not_available" and m["original"] == {"sha256": sha}
+                       deliverables=["original", "audio", "stills", "produced"])
+    assert m["deliverables"]["produced"] == "not_available" and m["original"] == {"sha256": sha}
     with zipfile.ZipFile(out) as zf:
         names = zf.namelist()
         assert names[:2] == ["original.mov", "audio.wav"] and len([n for n in names if n.startswith("stills/")]) == 5
@@ -63,14 +63,14 @@ def test_all_original_based_deliverables_without_revealing_data(src: Path, tmp_p
 
 def test_only_requested_items_and_passed_extras(src: Path, tmp_path: Path):
     sha = hashlib.sha256(src.read_bytes()).hexdigest()
-    tr = tmp_path / "t.json"
-    tr.write_text('{"words": []}')
+    produced = tmp_path / "p.mp4"
+    produced.write_bytes(b"produced")
     out = tmp_path / "d.zip"
     m = build_delivery(out, original=src, info=probe(src), license_id=LIC, sha256=sha,
-                       deliverables=["transcript", "produced"], extras={"transcript": tr})
-    assert m["deliverables"] == {"produced": "not_available", "transcript": ["transcript.json"]}
+                       deliverables=["produced"], extras={"produced": produced})
+    assert m["deliverables"] == {"produced": ["produced.mp4"]}
     with zipfile.ZipFile(out) as zf:
-        assert zf.namelist() == ["transcript.json", "manifest.json", "SHA256SUMS"]
+        assert zf.namelist() == ["produced.mp4", "manifest.json", "SHA256SUMS"]
         assert json.loads(zf.read("manifest.json"))["license_id"] == LIC
 
 
@@ -79,6 +79,9 @@ def test_refuses_unknown_items_and_changed_original(src: Path, tmp_path: Path):
     with pytest.raises(ValueError):
         build_delivery(tmp_path / "x.zip", original=src, info=probe(src), license_id=LIC, sha256=sha,
                        deliverables=["raw_with_gps"])
+    with pytest.raises(ValueError):  # التفريغ خارج التسليم (R11)
+        build_delivery(tmp_path / "x.zip", original=src, info=probe(src), license_id=LIC, sha256=sha,
+                       deliverables=["transcript"])
     with pytest.raises(ValueError):
         build_delivery(tmp_path / "x.zip", original=src, info=probe(src), license_id=LIC, sha256="0" * 64,
                        deliverables=["original"])
