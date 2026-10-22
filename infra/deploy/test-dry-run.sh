@@ -11,6 +11,7 @@ if [ "${1:-}" != --inside ]; then
 fi
 
 fail() { echo "!! $*" >&2; exit 1; }
+git config --global --add safe.directory /repo && git config --global --add safe.directory /repo/.git
 B=/repo/infra/deploy/bootstrap.sh W=/tmp/w R=/tmp/r
 mkdir -p "$W"
 age-keygen -o "$W/owner.key" 2>/dev/null
@@ -51,13 +52,15 @@ for want in "apt-get install -y -q --no-install-recommends" "docker-ce=5:29.9.1-
             "+ ufw allow proto tcp to 198.51.100.20 port 80,443" "+ chown 70:70 /srv/post-history/backups" \
             "infra/compose/check-pinned.sh" "infra/field-trial/preflight.sh" "trial.sh up -d --wait" \
             "+ systemctl enable post-history-trial.service post-history-observability.service" "preflight.sh --running --json" \
-            "observability/stack.sh monitoring up -d --wait" "observability/stack.sh errors up -d --wait"; do
+            "observability/stack.sh monitoring up -d --wait" "observability/stack.sh errors up -d --wait" \
+            "infra/deploy/api-image.sh $(git -C /repo rev-parse HEAD)"; do
   grep -qF -- "$want" "$W/out" || fail "planned command missing: $want"
 done
 order "== step 6/11: secrets" "unsealed:"
 order "unsealed:" "infra/field-trial/preflight.sh"
 order "+ /repo/infra/field-trial/preflight.sh" "trial.sh up -d --wait"
 order "trial.sh up -d --wait" "stack.sh monitoring up -d --wait"
+order "infra/deploy/api-image.sh" "trial.sh up -d --wait"
 grep -q "^+ ufw allow proto tcp to .* port 22\|ufw allow 22" "$W/out" && fail "ssh opened by port instead of the OpenSSH profile"
 echo "step order and planned commands: ok"
 
@@ -127,7 +130,6 @@ grep -q "not regenerated" "$W/out2" || fail "second run did not say it kept the 
 echo "idempotent: ok"
 
 # --- update plan: a release tag by default, its commit checked against the release's declaration; latest main only on --main
-git config --global --add safe.directory /repo && git config --global --add safe.directory /repo/.git
 git config --global user.email ci@example.invalid && git config --global user.name ci
 A=/tmp/app && git clone -q --no-local /repo "$A" && git -C "$A" tag -d $(git -C "$A" tag -l) >/dev/null 2>&1 || true
 U="$A/infra/deploy/update.sh"
@@ -146,11 +148,13 @@ for _ in $(seq 50); do curl -fsS -o /dev/null http://127.0.0.1:18080/releases/ta
 RELEASE_API=http://127.0.0.1:18080 bash "$U" --dry-run >"$W/up" 2>&1 || { cat "$W/up"; fail "update dry run on the latest release failed"; }
 grep -q "verified: release v0.0.2 declares $head" "$W/up" || fail "the latest release tag was not verified against its declaration"
 grep -q "checkout -q --detach $head" "$W/up" || fail "update does not check out the verified commit"
+grep -q "api-image.sh $head --tag v0.0.2" "$W/up" || fail "update does not take the release's own API image"
 RELEASE_API=http://127.0.0.1:18080 bash "$U" --dry-run --tag v0.0.1 >"$W/up1" 2>&1 && fail "update accepted a tag whose release declares another commit"
 grep -q "its release declares $head: not updating" "$W/up1" || { cat "$W/up1"; fail "no reason given for the mismatch"; }
 grep -q "checkout" "$W/up1" && fail "a mismatched tag reached checkout"
 bash "$U" --dry-run --main >"$W/upm" 2>&1 || { cat "$W/upm"; fail "update --main dry run failed"; }
 grep -q "target: latest main (explicit --main" "$W/upm" && grep -q "checkout -q --detach origin/main" "$W/upm" || fail "--main does not target origin/main"
+grep -q "api-image.sh [0-9a-f]\{40\} --build" "$W/upm" || fail "--main does not build the API image for its commit"
 echo "update target: release tag verified, main only on --main: ok"
 F="$W/up"
 order "/infra/field-trial/trial.sh run --rm -T backup once" "fetch -q --tags origin"
