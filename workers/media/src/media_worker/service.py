@@ -29,6 +29,7 @@ from pathlib import Path
 import redis
 
 from .api import ApiAuthError, ApiConflict, ApiGone, ApiRejected, InternalApi
+from .c2pa import Signing, signing_from_env
 from .jobs import Buckets, Jobs
 from .probe import InvalidMediaError
 from .proxy import ProxyTimingError
@@ -81,6 +82,8 @@ class Config:
     enable_export: bool = False
     enable_store_preview: bool = False
     watermark_key: bytes = field(default=b"", repr=False)
+    # توقيع C2PA (ADR 0060) خلف MEDIA_ENABLE_C2PA؛ الإعداد الناقص يرفض الإقلاع
+    c2pa: Signing | None = None
 
     @classmethod
     def from_env(cls) -> Config:
@@ -101,6 +104,7 @@ class Config:
             enable_export=e.get("MEDIA_ENABLE_EXPORT", "false").lower() == "true",
             enable_store_preview=e.get("MEDIA_ENABLE_STORE_PREVIEW", "false").lower() == "true",
             watermark_key=e.get("MEDIA_WATERMARK_KEY", "").encode(),
+            c2pa=signing_from_env(dict(e)),
         )
 
 
@@ -243,7 +247,7 @@ def main() -> None:
     jobs = Jobs(InternalApi(cfg.api_url, cfg.token), storage, Buckets(cfg.bucket_uploads, cfg.bucket_derived),
                 cfg.scratch, enable_hls=cfg.enable_hls, enable_phash=cfg.enable_phash,
                 enable_export=cfg.enable_export,
-                enable_store_preview=cfg.enable_store_preview, watermark_key=cfg.watermark_key)
+                enable_store_preview=cfg.enable_store_preview, watermark_key=cfg.watermark_key, c2pa=cfg.c2pa)
     svc = Service(redis.Redis.from_url(cfg.redis_url, decode_responses=True), jobs, cfg.consumer, cfg.block_ms,
                   cfg.claim_idle_ms, cfg.max_deliveries, cfg.auth_backoff_max_s,
                   auth_isolate_after_s=cfg.auth_isolate_after_s)
