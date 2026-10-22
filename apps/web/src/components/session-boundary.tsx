@@ -58,6 +58,7 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
     <div className="workspace-shell"><aside className="sidebar"><p className="eyebrow">{m.workspace}</p><nav aria-label={m.workspace}>
       <Link prefetch={false} className={pathname.endsWith("/inbox") ? "active" : ""} href={`/${locale}/inbox`}>{m.inbox}</Link>
       {hasRole(me, "supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin") && <Link prefetch={false} className={pathname.endsWith("/board") ? "active" : ""} href={`/${locale}/board`}>{m.board.title}</Link>}
+      {hasRole(me, "reporter") && <Link prefetch={false} className={pathname.endsWith("/my-materials") ? "active" : ""} href={`/${locale}/my-materials`}>{m.mine.nav}</Link>}
       {hasRole(me, ...uploadRoles) && <Link prefetch={false} className={pathname.endsWith("/upload") ? "active" : ""} href={`/${locale}/upload`}>{m.upload.nav}</Link>}
       {hasRole(me, ...catalogRoles) && <Link prefetch={false} className={pathname.includes("/store") ? "active" : ""} href={`/${locale}/store`}>{m.store.title}</Link>}
       <Link prefetch={false} className={pathname.endsWith("/form-preview") ? "active" : ""} href={`/${locale}/form-preview`}>{m.formPreview}</Link>

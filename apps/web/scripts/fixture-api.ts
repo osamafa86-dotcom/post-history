@@ -95,6 +95,14 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/__test/uploads") return send([...uploads.values()].map(u => ({ state: u.session.state, receipt: u.session.receipt_number, ingest_tokens: [...ingestTokens.values()].filter(t => t.sid === u.session.id).length, ...(u.tus ? (({ length, offset, patches, resent, cuts }) => ({ length, offset, patches, resent, cuts }))(tusFiles.get(u.tus) ?? { length: 0, offset: 0, patches: 0, resent: 0, cuts: 0 }) : {}) })));
   if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); reset(); resetUploads(); return send({ ok: true }); }
   if (url.pathname === "/__test/state") return send({ writes, applied: applied.size, identitySetting, auditCount: permissionAudit.length });
+  if (url.pathname === "/__test/request-changes" && req.method === "POST") {
+    // مادة بطلب تعديل وأخرى مرفوضة وثالثة فشل رفعها، وسبب داخلي لا يصل المراسل.
+    const supervisor = "10000000-0000-4000-8000-000000000002", stamp = "2026-10-21T10:00:00Z";
+    Object.assign(materials[0], { editorial_state: "needs_changes" }); Object.assign(materials[1], { editorial_state: "rejected" }); Object.assign(materials[2], { technical_state: "failed" });
+    history.set(materials[0].id, [{ id: randomUUID(), track: "editorial", from: "inbox", to: "acknowledged", reason: "never-display-canary", note_timecode_ms: null, actor_id: supervisor, occurred_at: "2026-10-21T09:00:00Z" }, { id: randomUUID(), track: "editorial", from: "reviewing", to: "needs_changes", reason: "أعد اللقطة الافتتاحية بإضاءة أفضل", note_timecode_ms: 42000, actor_id: supervisor, occurred_at: stamp }]);
+    history.set(materials[1].id, [{ id: randomUUID(), track: "editorial", from: "reviewing", to: "rejected", reason: "مكررة مع مادة سابقة", note_timecode_ms: null, actor_id: supervisor, occurred_at: stamp }]);
+    return send({ ok: true });
+  }
   if (url.pathname === "/__test/history-unavailable" && req.method === "POST") { historyUnavailable = true; return send({ ok: true }); }
   if (url.pathname === "/__test/bump-rule" && req.method === "POST") { for (const rule of rules.values()) rule.row_version++; return send({ ok: true }); }
   if (url.pathname === "/__test/bump" && req.method === "POST") { materials[0].row_version!++; return send({ ok: true }); }
@@ -156,7 +164,7 @@ const server = createServer(async (req, res) => {
         const track = body.track as "technical" | "editorial" | "rights", column = `${track}_state` as const;
         if (track === "editorial" && !has("supervisor", "producer") || track === "rights" && !has("rights_officer") || track === "technical" && !has("reporter")) return send({}, 403);
         const from = item[column]; Object.assign(item, { [column]: body.to }); item.row_version!++;
-        history.set(item.id, [...(history.get(item.id) ?? []), { id: randomUUID(), track, from, to: String(body.to), reason: String(body.reason), actor_id: user.user_id, occurred_at: stamp }]);
+        history.set(item.id, [...(history.get(item.id) ?? []), { id: randomUUID(), track, from, to: String(body.to), reason: String(body.reason), note_timecode_ms: typeof body.note_timecode_ms === "number" ? body.note_timecode_ms : null, actor_id: user.user_id, occurred_at: stamp }]);
         return commit(item, 200);
       }
       if (match[2] === "contributors" && req.method === "PUT") { if (!has("rights_officer", "system_admin")) return send({}, 403); item.contributors = body.contributors as Material["contributors"]; item.row_version!++; return commit(item, 200); }
