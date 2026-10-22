@@ -41,4 +41,9 @@ done
 grep -q 'tusd-hooks/\[REDACTED\]' <<<"$tusd_log" || fail "redaction marker missing from tusd log after 30s"
 if grep -qF "$TUSD_HOOK_SECRET" <<<"$tusd_log"; then fail "hook token in tusd log"; fi
 
+# Abandoned multipart uploads expire after 24 h (MinIO reports the environment override it applies).
+api_cfg="$("${COMPOSE[@]}" exec -T -e MC_HOST_smoke="http://$S3_ACCESS_KEY:$S3_SECRET_KEY@127.0.0.1:9000" minio mc admin config get smoke api 2>&1)" \
+  || fail "could not read MinIO's api config"
+grep -qx '# MINIO_API_STALE_UPLOADS_EXPIRY=24h' <<<"$api_cfg" || fail "abandoned multipart uploads do not expire after 24 h"
+
 echo "compose smoke: ok"
