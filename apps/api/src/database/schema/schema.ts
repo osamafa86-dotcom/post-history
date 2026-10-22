@@ -1,5 +1,5 @@
 import { bytea } from "../bytea"
-import { pgTable, index, foreignKey, unique, check, uuid, text, timestamp, integer, jsonb, bigint, type AnyPgColumn, uniqueIndex, boolean, time, real, primaryKey, numeric, smallint, pgSequence } from "drizzle-orm/pg-core"
+import { pgTable, uuid, text, timestamp, index, foreignKey, unique, check, integer, jsonb, bigint, type AnyPgColumn, uniqueIndex, boolean, time, real, primaryKey, numeric, smallint, pgSequence } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 
