@@ -191,6 +191,11 @@ UNSEAL_ETC="$ETC" UNSEAL_RUN="$RUN" "$HERE/unseal.sh"
 
 say images
 run "$APP/infra/compose/check-pinned.sh"
+# The API image for the checked-out commit (ADR 0050): a release tag's own image, checked, or built here when none.
+head_sha="$(git -C "$APP" rev-parse HEAD)"
+head_tag="$(git -C "$APP" tag --points-at HEAD -l "${RELEASE_TAG_PATTERN:-v*}" --sort=-v:refname | head -1)"
+if [ -n "$head_tag" ]; then run "$APP/infra/deploy/api-image.sh" "$head_sha" --tag "$head_tag"
+else run "$APP/infra/deploy/api-image.sh" "$head_sha" --build; fi
 run "$APP/infra/field-trial/trial.sh" pull --quiet
 run "$APP/infra/field-trial/trial.sh" build backup
 

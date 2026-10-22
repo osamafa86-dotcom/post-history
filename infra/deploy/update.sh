@@ -102,6 +102,12 @@ fi
 as_user checkout -q --detach "$REF"
 trap rollback ERR
 run "$APP/infra/compose/check-pinned.sh"
+# The API image for this commit (ADR 0050): the release's own, checked; latest main has none, so it is built here.
+# After the checkout HEAD is the target; the dry run checks nothing out, so it names the target itself when it can.
+if [ "$DRY" = 1 ]; then head_sha="$(git -C "$APP" rev-parse -q --verify "$REF^{commit}" || git -C "$APP" rev-parse HEAD)"
+else head_sha="$(git -C "$APP" rev-parse HEAD)"; fi
+if [ "$MAIN" = 1 ]; then run "$APP/infra/deploy/api-image.sh" "$head_sha" --build
+else run "$APP/infra/deploy/api-image.sh" "$head_sha" --tag "$TAG"; fi
 run "$T" pull --quiet
 run "$T" build backup
 

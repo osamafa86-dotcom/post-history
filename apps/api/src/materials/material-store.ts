@@ -196,6 +196,7 @@ export async function toMaterialDtos(
           kind: f.kind as 'original',
           state: f.state as 'received',
           proxy_mode: f.proxyMode as 'normal' | null,
+          ...(f.kind === 'proxy' ? { alignment: alignmentOf(f) } : {}),
           size_bytes: f.sizeBytes,
           sha256: f.sha256 ? f.sha256.toString('hex') : null,
           mime_type: f.mimeType,
@@ -285,3 +286,14 @@ export async function applyTransition(
   return { ...updated!, officeGovernorate: m.officeGovernorate };
 }
 
+/** محاذاة النسخة الخفيفة كما في العقد (MediaAlignment، v0.3)، أو null قبل القياس. أرقام فقط. */
+function alignmentOf(f: typeof materialFiles.$inferSelect): components['schemas']['MediaAlignment'] | null {
+  if (f.alignmentOriginalFileId === null || f.alignmentReliable === null) return null;
+  return {
+    original_file_id: f.alignmentOriginalFileId,
+    offset_ms: f.alignmentOffsetMs!,
+    confidence: f.alignmentConfidence!,
+    margin: f.alignmentMargin!,
+    reliable: f.alignmentReliable,
+  };
+}

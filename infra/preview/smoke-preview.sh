@@ -165,6 +165,11 @@ const big = await req("POST", "/files/", { "tus-resumable": "1.0.0", authorizati
   "upload-length": String(2 * 1024 ** 3 + 1), "upload-metadata": Object.entries(s2.tus_metadata).map(([k, v]) => `${k} ${b64(v)}`).join(",") });
 if (big.status !== 413) die(`tus create of 2 GiB + 1 byte: ${big.status} (want 413 from tusd -max-size)`);
 say("a file over 2 GiB is refused by tusd (413): ok");
+// And before that, when the session is created: the API answers 422 above UPLOAD_MAX_BYTES (#238), passed on by the BFF.
+const tooBig = await bff("uploads", { material_id: items[2].id, kind: "original", size_bytes: 2 * 1024 ** 3 + 1, filename: "too-big.mp4",
+  client_sha256: createHash("sha256").update(randomBytes(8)).digest("hex") });
+if (tooBig.status !== 422) die(`upload session of 2 GiB + 1 byte through the BFF: ${tooBig.status} (want 422)`);
+say("an upload session over 2 GiB is refused when created (422): ok");
 JS
 )" || { echo "$out"; fail "through the web edge"; }
 echo "$out"

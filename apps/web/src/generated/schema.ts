@@ -388,7 +388,7 @@ export interface paths {
         };
         /**
          * رابط قراءة موقّع قصير العمر لمشتق من المادة (v0.1)
-         * @description للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail` و`transcript` و`captions`) في حالة `verified`. الأصل والملاحظة الصوتية وحزمة التصدير لا تُعطى رابطًا هنا (`404`؛ الحزمة من `/materials/{id}/export/download-url`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`).
+         * @description للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail` و`transcript` و`captions` و`shot_list`) في حالة `verified`. الأصل والملاحظة الصوتية وحزمة التصدير لا تُعطى رابطًا هنا (`404`؛ الحزمة من `/materials/{id}/export/download-url`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`). **المشتقات النصية حساسة افتراضيًا (`transcript` و`captions` و`shot_list`، threat-model §9.1):** رابطها لأدوار تعديل المادة وحدها، أي `x-roles` على `PATCH /materials/{id}` ضمن النطاق (`reporter` مالك المادة، و`supervisor` و`editor_in_chief` و`system_admin`). غيرهم يُرد `404` بالشكل نفسه للملف المفقود، لا `403`. وكل إصدار رابط لها يُسجَّل في التدقيق قراءةً حساسة `material.sensitive_read` (`material_id` و`file_id` و`field_keys: [<النوع>]`).
          */
         get: operations["getMaterialFileDownloadUrl"];
         put?: never;
@@ -794,6 +794,29 @@ export interface paths {
          */
         get: operations["mediaGetFile"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/media/files/{file_id}/alignment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description النسخة الخفيفة */
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * تسجيل المحاذاة الصوتية بين النسخة الخفيفة والأصل (داخلي، v0.3)
+         * @description يستبدل محاذاة النسخة الخفيفة بما قاسه العامل؛ الطلب نفسه يعيد الأثر نفسه. الملف غير `proxy`، أو `original_file_id` ليس أصل المادة نفسها، `422`. الملف غير الموجود برمز صحيح `410 media_resource_gone`.
+         */
+        put: operations["mediaPutAlignment"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1563,6 +1586,7 @@ export interface components {
             acknowledged_at?: string | null;
             /** @description الاسم الحقيقي للمراسل (v0.2). الصلاحية التي تكشفه يحددها الإعداد الإداري `reporter_legal_name_access` (`/admin/settings/reporter-identity`، ADR 0021): `reporter_identity:read` حين يكون `separate` (الافتراضي)، و`protected_source:read` حين يكون `protected_source`. يغيب المفتاح عمّن لا يحمل الصلاحية الفعّالة. كل قراءة تُسجَّل في التدقيق (`material.sensitive_read`، `field_keys: [reporter_legal_name]`). لا يدخل إشعارًا ولا حدثًا ولا تصديرًا. `null` = غير مسجّل. */
             reporter_legal_name?: string | null;
+            /** @description المشتقات النصية (`transcript` و`captions` و`shot_list`) تظهر لأدوار تعديل المادة وحدها، وتُحذف من القائمة لغيرهم فلا يُلمَّح إلى وجودها (threat-model §9.1). */
             files: components["schemas"]["MaterialFile"][];
             /** @description مفاتيح `dynamic_fields` التي حُذفت من هذه الاستجابة بقاعدة الحجب (حقول `sensitive` أو `location`) لأن المستدعي لا يحمل الصلاحية المقابلة؛ فارغة لحاملها. */
             redacted_field_keys?: string[];
@@ -1586,7 +1610,7 @@ export interface components {
              * @description الأصل لا يُمس؛ كل معالجة تنتج ملفًا جديدًا
              * @enum {string}
              */
-            kind: "original" | "proxy" | "hls" | "audio" | "thumbnail" | "voice_note" | "transcript" | "captions";
+            kind: "original" | "proxy" | "hls" | "audio" | "thumbnail" | "voice_note" | "transcript" | "captions" | "shot_list";
             /** @enum {string} */
             state: "uploading" | "received" | "verified" | "failed";
             /**
@@ -1594,6 +1618,8 @@ export interface components {
              * @enum {string|null}
              */
             proxy_mode?: "urgent" | "normal" | null;
+            /** @description لـ `proxy` وحده (v0.3)؛ `null` أو غائب قبل القياس أو لغير النسخة الخفيفة */
+            alignment?: components["schemas"]["MediaAlignment"] | null;
             size_bytes?: number | null;
             /** @description تُحسب على الخادم بعد التجميع */
             sha256?: string | null;
@@ -1950,6 +1976,27 @@ export interface components {
             /** @enum {string|null} */
             proxy_mode: "urgent" | "normal" | null;
             material_has_proxy: boolean;
+            /**
+             * Format: uuid
+             * @description النسخة الخفيفة المتحققة للمادة إن وُجدت (v0.3)، ليقيس العامل المحاذاة حين يتحقق الأصل
+             */
+            proxy_file_id?: string | null;
+            /**
+             * Format: uuid
+             * @description الأصل المتحقق للمادة إن وُجد (v0.3)، ليقيس العامل المحاذاة حين تتحقق النسخة الخفيفة
+             */
+            original_file_id?: string | null;
+        };
+        /** @description محاذاة صوتية بين النسخة الخفيفة والأصل (v0.3): إزاحة النسخة الخفيفة عن خط زمن الأصل. يصحّح المحرر نقاط القص بها حين `reliable` و`|offset_ms| > 40`. أرقام فقط. */
+        MediaAlignment: {
+            /** Format: uuid */
+            original_file_id: string;
+            /** @description ما يُضاف إلى زمن النسخة الخفيفة ليقع على زمن الأصل (`t_original = t_proxy + offset_ms`)؛ سالبة حين تتأخر النسخة الخفيفة */
+            offset_ms: number;
+            confidence: number;
+            /** @description الفارق بين أفضل قمة ارتباط والتي تليها */
+            margin: number;
+            reliable: boolean;
         };
         /** @description النجاح يحمل البصمة والحجم والبصمة الرخيصة والبيانات الفنية؛ الفشل لا يحمل `sha256` ولا `technical` ولا `perceptual_hash` */
         MediaVerification: {
@@ -1975,10 +2022,15 @@ export interface components {
             /** @enum {string|null} */
             failure_reason: "checksum_mismatch" | "invalid_file" | "expired" | "aborted" | "storage_error" | null;
         };
-        /** @description `proxy` و`hls` و`audio` مشتقات زمنية: `technical` يحمل `duration_ms` و`start_pts_us`. `thumbnail` صورة (الملصق أو ورقة اللقطات): `duration_ms` اختياري، و`width` و`height` إلزاميان غير فارغين، و`mime_type` إلزامي. `proxy_mode` يكتبه الخادم `normal` للنسخة الخفيفة وحدها و`NULL` لغيرها. `export` حزمة التصدير (#99، v0.2): `application/zip`، و`technical` هو `technical` الأصل؛ تُبنى عند الطلب (`export.requested`) لا عند الاستيعاب، ولا تحمل بيانات كاشفة. `transcript` (`application/json`، نص بتوقيت الكلمات والمتحدثين) و`captions` (`text/vtt`) من عامل التفريغ (v0.2): زمنيان على خط زمن الأصل، فيحملان `duration_ms` و`start_pts_us` الأصل. `watermarked_preview` (v0.3، ADR 0025) معاينة المشتري: نسخة منخفضة بعلامة مائية مرئية، زمنية كـ `proxy`، لا تظهر في `Material.files` ولا يعطيها غير رابط الكتالوج. */
+        /** @description `proxy` و`hls` و`audio` مشتقات زمنية: `technical` يحمل `duration_ms` و`start_pts_us`. `thumbnail` صورة (الملصق أو ورقة اللقطات): `duration_ms` اختياري، و`width` و`height` إلزاميان غير فارغين، و`mime_type` إلزامي. `proxy_mode` يكتبه الخادم `normal` للنسخة الخفيفة وحدها و`NULL` لغيرها. `export` حزمة التصدير (#99، v0.2): `application/zip`، و`technical` هو `technical` الأصل؛ تُبنى عند الطلب (`export.requested`) لا عند الاستيعاب، ولا تحمل بيانات كاشفة. `transcript` (`application/json`، نص بتوقيت الكلمات والمتحدثين) و`captions` (`text/vtt`) من عامل التفريغ (v0.2): زمنيان على خط زمن الأصل، فيحملان `duration_ms` و`start_pts_us` الأصل. `watermarked_preview` (v0.3، ADR 0025) معاينة المشتري: نسخة منخفضة بعلامة مائية مرئية، زمنية كـ `proxy`، لا تظهر في `Material.files` ولا يعطيها غير رابط الكتالوج. `shot_list` (`application/json`، قائمة اللقطات من عامل الذكاء الاصطناعي) زمني وحساس كالتفريغ والترجمة (threat-model §9.1): يقرؤه من يعدّل المادة وحده، ولا يدخل تصديرًا ولا إشعارًا ولا حدثًا ولا فهرس بحث، و`ai.draft_ready` لا تتغير حمولته. `delivery` (v0.3، ADR 0025 الجزء 9) حزمة تسليم المشتري لترخيص بعينه: `application/zip`، و`technical` هو `technical` الأصل كـ `export`، و`license_id` إلزامي معه وممنوع لغيره. متساوٍ الأثر على (`derived_from_id`، `license_id`): لكل ترخيص حزمته. لا تظهر في `Material.files`، ويُنزّلها المشتري من الترخيص وحده، ولا تضم التفريغ (R11). */
         MediaDerivative: {
             /** @enum {string} */
-            kind: "proxy" | "thumbnail" | "hls" | "audio" | "export" | "transcript" | "captions" | "watermarked_preview";
+            kind: "proxy" | "thumbnail" | "hls" | "audio" | "export" | "transcript" | "captions" | "watermarked_preview" | "shot_list" | "delivery";
+            /**
+             * Format: uuid
+             * @description لـ `delivery` وحده
+             */
+            license_id?: string;
             storage_key: string;
             sha256: string;
             size_bytes: number;
@@ -1988,14 +2040,14 @@ export interface components {
              */
             mime_type?: "image/jpeg" | "image/webp" | "video/mp4" | "application/vnd.apple.mpegurl" | "audio/mp4" | "application/json" | "application/zip" | "text/vtt";
             technical: components["schemas"]["MediaTechnical"];
-        } & (unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown);
         MediaSourceFile: {
             /** Format: uuid */
             file_id: string;
             /** Format: uuid */
             material_id: string;
             /** @enum {string} */
-            kind: "original" | "proxy" | "hls" | "audio" | "thumbnail" | "voice_note" | "export" | "transcript" | "captions" | "watermarked_preview";
+            kind: "original" | "proxy" | "hls" | "audio" | "thumbnail" | "voice_note" | "export" | "transcript" | "captions" | "watermarked_preview" | "shot_list" | "delivery";
             /** @enum {string} */
             state: "uploading" | "received" | "verified" | "failed";
             storage_key: string;
@@ -2653,9 +2705,9 @@ export interface components {
             /** @description تسلسلي متزايد (رقم الصف في جدول Outbox) بصيغة نصية؛ يُستخدم مؤشرًا في `after` */
             id: string;
             /** @enum {string} */
-            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed";
+            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested";
             /** @enum {string} */
-            aggregate_type: "material" | "upload" | "notification" | "form" | "user" | "listing";
+            aggregate_type: "material" | "upload" | "notification" | "form" | "user" | "listing" | "license";
             /** Format: uuid */
             aggregate_id: string;
             /** Format: date-time */
@@ -2692,7 +2744,7 @@ export interface components {
                 /** @enum {string} */
                 priority: "urgent" | "important" | "normal";
             };
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
     };
     responses: {
         /** @description طلب غير صالح (معاملات استعلام أو مؤشر غير مفهوم) */
@@ -4168,6 +4220,34 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             410: components["responses"]["MediaResourceGone"];
+        };
+    };
+    mediaPutAlignment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description النسخة الخفيفة */
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MediaAlignment"];
+            };
+        };
+        responses: {
+            /** @description سُجّلت */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["MediaResourceGone"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     mediaPostDerivative: {
