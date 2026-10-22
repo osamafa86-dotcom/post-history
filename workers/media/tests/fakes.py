@@ -47,7 +47,8 @@ class FakeApi:
         self.verifications: list[dict] = []
         self.derivatives: list[tuple[str, dict]] = []
         self.sha256: str | None = None
-        self.files: dict[str, FileRef] = {}  # ملفات أخرى للمادة يعيدها get_file
+        self.files: dict[str, FileRef] = {}  # ملفات أخرى للمادة يعيدها get_file (المحاذاة)
+        self.alignments: list[tuple[str, dict]] = []
 
     def get_session(self, session_id: str) -> Session:
         assert session_id == self.session.id
@@ -82,3 +83,9 @@ class FakeApi:
             return self.files[file_id]
         assert file_id == self.original.file_id
         return self.original
+
+    def put_alignment(self, proxy_file_id: str, body: dict) -> dict:
+        assert set(body) == {"original_file_id", "offset_ms", "confidence", "margin", "reliable"}
+        assert isinstance(body["offset_ms"], int) and 0 <= body["confidence"] <= 1 and 0 <= body["margin"] <= 1
+        self.alignments.append((proxy_file_id, body))
+        return {}
