@@ -7,6 +7,7 @@ import { states } from "../src/lib/query";
 import { uploadRoles } from "../src/lib/upload-policy";
 import { catalogRoles, licenseTypes } from "../src/server/catalog";
 import { channels, roles, ruleEvents, ruleLimits, scopeKinds } from "../src/lib/notification-policy";
+import * as license from "../src/lib/license-policy";
 
 const { load } = createRequire(import.meta.url)("js-yaml") as { load: (text: string) => unknown };
 const contract = load(readFileSync(new URL("../../../contracts/openapi.yaml", import.meta.url), "utf8"));
@@ -48,6 +49,15 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
   it("keeps catalog roles and license types aligned with v0.3", () => {
     for (const path of ["/catalog", "/catalog/{listing_id}", "/catalog/{listing_id}/preview-url"]) expect([...catalogRoles]).toEqual(at("paths", path, "get", "x-roles"));
     expect([...licenseTypes]).toEqual(at("components", "schemas", "LicenseType", "enum"));
+  });
+  it("keeps license template roles, choices and limits aligned with v0.3", () => {
+    const field = (...p: string[]) => at("components", "schemas", "LicenseTemplateFields", "properties", ...p);
+    for (const path of ["/license-templates", "/license-templates/{template_id}"]) expect([...license.templateRoles]).toEqual(at("paths", path, "get", "x-roles"));
+    for (const [path, method] of [["/license-templates", "post"], ["/license-templates/{template_id}", "put"]]) expect([...license.templateWriters]).toEqual(at("paths", path, method, "x-roles"));
+    expect([...license.licenseTypes]).toEqual(at("components", "schemas", "LicenseType", "enum")); expect([...license.currencies]).toEqual(at("components", "schemas", "Currency", "enum"));
+    expect([...license.usageMedia]).toEqual(field("usage_media", "items", "enum")); expect([...license.deliverables]).toEqual(field("deliverables", "items", "enum")); expect([...license.prohibitions]).toEqual(field("prohibitions", "items", "enum"));
+    const l = license.templateLimits;
+    expect([l.text, l.countries, l.termMin, l.termMax, l.hoursMin, l.hoursMax, l.amountMax]).toEqual([at("components", "schemas", "LocalizedText", "properties", "ar", "maxLength"), field("territory", "properties", "countries", "maxItems"), field("term_days", "minimum"), field("term_days", "maximum"), field("exclusivity_hours", "minimum"), field("exclusivity_hours", "maximum"), at("components", "schemas", "Money", "properties", "amount_minor", "maximum")]);
   });
   it("keeps transition choices aligned with the three contract state enums", () => {
     for (const [key, schema] of [["technical_state", "TechnicalState"], ["editorial_state", "EditorialState"], ["rights_state", "RightsState"]] as const) expect(states[key]).toEqual(at("components", "schemas", schema, "enum"));
