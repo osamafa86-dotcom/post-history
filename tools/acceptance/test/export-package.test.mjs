@@ -66,6 +66,7 @@ test("cut-export on synthetic phone and HDR clips: every check passes and the re
   assert.equal(doc.result, "partial", "no real editor cut, no import in an editor, no real phone file: never pass");
   assert.equal(doc.metrics.checks_failed, 0);
   assert.equal(doc.metrics.cases, 2);
+  assert.equal(doc.metrics.render_cases, 2, "the final export is judged on both originals too");
   assert.ok(doc.metrics.case1_cut_max_gap_ms <= 40 && doc.metrics.case2_cut_max_gap_ms <= 40);
   assert.equal(validateMeasurement(doc).ok, true);
 });
