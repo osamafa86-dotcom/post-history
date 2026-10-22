@@ -12,10 +12,11 @@ public struct Scope: Sendable, Codable, Hashable {
     public enum Kind: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
         case office = "office"
         case governorate = "governorate"
+        case organization = "organization"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
     public var kind: Kind
-    /** معرّف المكتب أو اسم المحافظة */
+    /** معرّف المكتب أو اسم المحافظة أو معرّف المؤسسة المشترية */
     public var id: String
 
     public init(kind: Kind, id: String) {
