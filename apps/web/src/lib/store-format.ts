@@ -1,8 +1,11 @@
 import type { Locale } from "./i18n";
 
-// عرض المتجر (#203 بند 27). الأشكال بنيوية مطابقة لعقد v0.3 (#178): Money وLocalizedText؛ تُستبدل بالأنواع المولَّدة عند دمجه.
-export type Localized = { ar: string; en: string };
-export type Price = { amount_minor: number; currency: "USD" | "ILS" };
+import type { components } from "@/generated/schema";
+// عرض المتجر (#203 بندا 27–29): أنواع عقد v0.3 المولَّدة.
+export type Localized = components["schemas"]["LocalizedText"];
+export type Price = components["schemas"]["Money"];
+export type CatalogItem = components["schemas"]["CatalogItem"];
+export type LicenseType = components["schemas"]["LicenseType"];
 
 export const localized = (text: Localized, locale: Locale) => text[locale];
 

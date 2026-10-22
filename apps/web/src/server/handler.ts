@@ -11,6 +11,7 @@ import { streamDerivative } from "./media";
 import { actionPath, reviewAction } from "./review-actions";
 import { hasRole, materialTag } from "@/lib/review";
 import { listUploads, readUpload, uploadAction, uploadBodyLimit, uploadPath } from "./uploads";
+import { catalogRead } from "./catalog";
 import { safeIdentitySetting, safePermissionHistory } from "@/lib/admin-privacy";
 import { pageLimits } from "@/lib/admin-policy";
 import { safeRule } from "@/lib/notification-policy";
@@ -120,6 +121,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         const data = requireOk(await api.GET("/materials/{id}/transitions", { params: { path: { id: history[1] } } }));
         return json({ items: data.items.map(safeTransition) });
       }
+      if (path === "catalog" || path.startsWith("catalog/")) return catalogRead(request, path, api, me, config!, transport);
       if (path === "uploads") return listUploads(api, me, request.nextUrl.searchParams);
       const upload = /^uploads\/([^/]+)$/.exec(path);
       if (upload && uuid.test(upload[1]) && !request.nextUrl.search) return readUpload(api, upload[1]);

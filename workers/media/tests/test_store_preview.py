@@ -32,7 +32,8 @@ def _setup(data: bytes, sha: str | None = None):
 def _listed(state="listed"):
     return {"type": "catalog.listing_changed", "aggregate_type": "listing",
             "payload": {"listing_id": "1a000000-0000-4000-8000-000000000001", "material_id": MID,
-                        "material_version": 1, "state": state}}
+                        "material_version": 1, "state": state,
+                        "source_file_id": FakeApi.FILE_ID}}
 
 
 def _gray_frame(path: Path, at: float, size: str) -> bytes:

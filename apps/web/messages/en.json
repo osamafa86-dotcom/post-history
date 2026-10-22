@@ -388,7 +388,23 @@
     "cartEmpty": "Your cart is empty.",
     "remove": "Remove",
     "total": "Total",
-    "currencies": "Currencies are not combined; each total is paid separately."
+    "currencies": "Currencies are not combined; each total is paid separately.",
+    "eyebrow": "Store (sandbox)",
+    "title": "Catalog",
+    "lead": "Materials for sale with a watermarked preview. Payment runs on a sandbox provider only.",
+    "denied": "The catalog is open now to administration, rights, the editor in chief and finance; buyer accounts arrive with organizations.",
+    "search": "Search",
+    "licenseType": "License type",
+    "exclusiveOnly": "Exclusivity available",
+    "empty": "No materials match the search.",
+    "back": "Back to the catalog",
+    "notFound": "This material is not for sale.",
+    "details": "Material details",
+    "shotOn": "Shoot day",
+    "duration": "Duration",
+    "resolution": "Resolution",
+    "shotList": "Shot list",
+    "checkoutLater": "Cart and hosted checkout arrive with the orders contract."
   },
   "board": {
     "title": "Newsroom board",
@@ -403,7 +419,15 @@
     "more": "More in the inbox",
     "minutes": "min",
     "hours": "h",
-    "days": "d"
+    "days": "d",
+    "inboxNow": "Arriving now",
+    "noUploads": "No uploads in progress.",
+    "uploadsUnavailable": "Upload progress is not available from the server yet.",
+    "kinds": {
+      "original": "Original",
+      "proxy": "Proxy",
+      "voice_note": "Voice note"
+    }
   },
   "upload": {
     "nav": "Desktop upload",

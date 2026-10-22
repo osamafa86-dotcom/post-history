@@ -48,12 +48,14 @@ class Session:
 
 @dataclass(frozen=True)
 class FileRef:
-    """ملف مخزَّن يبني منه العامل مشتقًا لاحقًا (معاينة المتجر). النقطة مقترحة في #178 ولم تُعتمد بعد."""
+    """ملف مصدر يبني منه العامل مشتقًا عند الطلب (`MediaSourceFile`، v0.3): معاينة المتجر وحزمة التصدير."""
     file_id: str
     material_id: str
     storage_key: str
-    size_bytes: int
-    sha256: str
+    size_bytes: int | None
+    sha256: str | None
+    kind: str = "original"
+    state: str = "verified"
 
 
 class InternalApi:
@@ -104,7 +106,8 @@ class InternalApi:
     def add_derivative(self, file_id: str, body: dict) -> dict:
         return self._call("POST", f"/internal/media/files/{file_id}/derivatives", body)
 
-    def get_material_original(self, material_id: str) -> FileRef:
-        d = self._call("GET", f"/internal/media/materials/{material_id}/original")
-        return FileRef(file_id=d["file_id"], material_id=material_id, storage_key=d["storage_key"],
-                       size_bytes=int(d["size_bytes"]), sha256=d["sha256"])
+    def get_file(self, file_id: str) -> FileRef:
+        """`GET /internal/media/files/{id}`: مفتاح التخزين والبصمة فقط؛ الملف المحذوف `410` (`ApiGone`)."""
+        d = self._call("GET", f"/internal/media/files/{file_id}")
+        return FileRef(file_id=d["file_id"], material_id=d["material_id"], storage_key=d["storage_key"],
+                       size_bytes=d.get("size_bytes"), sha256=d.get("sha256"), kind=d["kind"], state=d["state"])
