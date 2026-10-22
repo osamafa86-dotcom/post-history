@@ -18,6 +18,7 @@ test("supervisor sees editorial columns, counts, urgent and overdue tiles and re
   await expect(page.getByTestId("urgent-open")).toContainText("40"); await expect(page.getByTestId("overdue")).toContainText("2");
   await expect(page.getByText(ar.board.more)).toHaveCount(1);
   await expect(page.locator(".receipt-list li")).toHaveCount(3);
+  await expect(page.getByTestId("upload-progress")).toHaveCount(1); await expect(page.getByTestId("upload-progress")).toContainText("25%");
   expect(await page.locator("body").textContent()).not.toContain("never-display-canary");
   await page.screenshot({ path: ".artifacts/board-desktop.png", fullPage: true });
 });
