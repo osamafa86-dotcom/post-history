@@ -14,7 +14,7 @@ export interface NewOutboxEvent {
   idempotencyKey: string;
   actorId?: string | null;
   /** مفاتيح القائمة البيضاء لنوع الحدث فقط (قيد outbox_events_payload_whitelisted، ADR SEC-03). */
-  payload: Record<string, string | number | boolean | null>;
+  payload: Record<string, string | number | boolean | null | readonly string[]>;
 }
 
 /**
