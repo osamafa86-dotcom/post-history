@@ -133,12 +133,13 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     if (given) cases.push({ label: "given", original: env.CUT_ORIGINAL, pkg: env.CUT_PACKAGE });
     else {
       const phone = synthClip(join(dir, "phone-plain.mp4"), { seconds: 20, size: "1920x1080", vfr: true, startOffset: 3.5, tags: true });
-      cases.push({ label: "phone: VFR, first timestamp 3.5 s, rotated 90, planted tags and an SEI message", original: plantSei(rotateClip(phone, join(dir, "phone-rot.mov"), 90), join(dir, "phone.mov")) });
+      cases.push({ label: "phone: VFR, first timestamp 3.5 s, rotated 90, planted tags and an SEI message", original: plantSei(rotateClip(phone, join(dir, "phone-rot.mov"), 90), join(dir, "phone.mov")), sei: true });
       const hdr = synthHdrClip(join(dir, "hdr.mov"), { seconds: 8 });
       cases.push({ label: "HDR: HEVC 10-bit BT.2020 HLG, planted tags", original: hdr });
     }
     for (const [i, k] of cases.entries()) {
       const before = await sha256File(k.original);
+      if (k.sei) check(`${k.label}: control: the planted SEI message is in the original before the export`, readFileSync(k.original).includes(Buffer.from(SEI_VALUE)));
       let pkg = k.pkg;
       if (!pkg) { pkg = join(dir, `out-${i}`, "export.zip"); execFileSync("mkdir", ["-p", join(dir, `out-${i}`)]); build(k.original, pkg, env); }
       const m = judgeCase(k.label, { originalPath: k.original, packagePath: pkg, check, extract });
