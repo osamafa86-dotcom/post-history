@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "tool": "asr-bench",
+  "role": "ai",
+  "test_name": "llm-drafts-qwen2-5-1-5b-q4km-cpu4",
+  "started_at": "2026-10-22T00:45:24.827Z",
+  "ended_at": "2026-10-22T00:51:09.336Z",
+  "result": "info",
+  "device": {
+    "platform": "server",
+    "model": "x86_64, 4 threads, CPU only",
+    "os_version": "Linux-6.18.44-fc-v140-x86_64-with-glibc2.39"
+  },
+  "upload_path": "n/a",
+  "file": {
+    "codec": "text: XL-Sum Arabic test, first 20 by id, article cut to 1500 chars"
+  },
+  "provider": "local: llama.cpp, qwen2.5-1.5b-instruct-q4_k_m.gguf sha256 6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+  "cost_usd": 0,
+  "metrics": {
+    "items": 20,
+    "title_rouge_l": 0.0942,
+    "summary_rouge_l": 0.1185,
+    "lead_title_rouge_l": 0.1157,
+    "lead_summary_rouge_l": 0.1271,
+    "arabic_share_min": 0.172,
+    "non_arabic_items": 2,
+    "empty_items": 0,
+    "load_s": 0.79,
+    "per_item_s_p50": 18.28,
+    "per_item_s_max": 19.98,
+    "completion_tokens_per_s": 6.61,
+    "peak_memory_mb": 1919.7,
+    "network": "none (unshare -rn)",
+    "sample_ids": "090628_om_lebanon_clashes,090707_wb_uighurs_questionsandanswers_tc2,090708_om_gaza_inquiry_tc2,090717_am_tata_nano_delivery_tc2,090723_ae_silwan_tc2,090723_anjelina_tc2,090723_om_israel_arrow_tc2,090724_swine_flu_who_tc2,090803_mk_lebanon_jumblatt_tc2,090817_me_gaza_extremists_tc2,090818_ae_settlements_tc2,090906_me_abbas_saudi_tc2,090910_aq_israelsettlment_tc2,090910_wb_nada_hariri_tc2,090918_om_gaza_report_usa_tc2,090920_ah_google_tc2,090926_am_gheit_un_clinton_israel_tc2,090926_aq_philippines_tc2,090930_ra_typhon_cambodia_tc2,091012_mek_yemen_saada_conflict_tc2"
+  },
+  "notes": "Public XL-Sum Arabic test sample (BBC Arabic, CC BY-NC-SA 4.0), first 20 by id, not stored in the repo; ids in sample_ids. Local llama.cpp, temperature 0, seed 7, run under unshare -rn (no network). ROUGE-L is word LCS F1 after the metrics.py normalization; lead_* is the no-model baseline (first sentence as summary, its first 10 words as title). 20 items: a screening number, not a quality claim; editorial usefulness is judged in the field trial with edit_baseline.py."
+}

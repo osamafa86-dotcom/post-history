@@ -1,0 +1,46 @@
+name: api-image
+
+# The field trial's API image (ADR 0050), built here from the release's own commit and attached to that release: the host
+# loads it (infra/deploy/api-image.sh --tag) after checking its sha256 and the commit in api-manifest.txt, so the trial
+# never runs npm ci or a build when the API starts or restarts after a crash. The same Dockerfile as the light preview.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to (re)build the image for"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    name: api image for the release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write  # the release's assets
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+      - name: Build post-history-api:<commit>
+        run: |
+          sha="$(git rev-parse HEAD)"
+          echo "SHA=$sha" >> "$GITHUB_ENV"
+          docker build -q -f infra/preview/api.Dockerfile -t "post-history-api:$sha" .
+          [ "$(docker image inspect -f '{{.Config.User}}' "post-history-api:$sha")" = node ] || { echo "not the node user"; exit 1; }
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          out="$RUNNER_TEMP/api" && mkdir -p "$out"
+          docker save "post-history-api:$SHA" | gzip -6 > "$out/post-history-api.tar.gz"
+          printf 'commit %s\nbuilt %s\n' "$SHA" "$(date -u +%FT%TZ)" > "$out/api-manifest.txt"
+          (cd "$out" && sha256sum post-history-api.tar.gz api-manifest.txt > SHA256SUMS)
+          gh release upload "$TAG" "$out/post-history-api.tar.gz" "$out/api-manifest.txt" "$out/SHA256SUMS" --clobber
+          cat "$out/SHA256SUMS"
