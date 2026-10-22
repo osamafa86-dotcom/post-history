@@ -3181,8 +3181,12 @@ components:
         المشتري: نسخة منخفضة بعلامة مائية مرئية، زمنية كـ `proxy`، لا تظهر في `Material.files` ولا يعطيها غير رابط الكتالوج. `shot_list` (`application/json`، قائمة اللقطات
         من عامل الذكاء الاصطناعي) زمني وحساس كالتفريغ والترجمة (threat-model §9.1): يقرؤه من يعدّل المادة وحده، ولا يدخل تصديرًا
         ولا إشعارًا ولا حدثًا ولا فهرس بحث، و`ai.draft_ready` لا تتغير حمولته.
+        `delivery` (v0.3، ADR 0025 الجزء 9) حزمة تسليم المشتري لترخيص بعينه: `application/zip`، و`technical` هو `technical`
+        الأصل كـ `export`، و`license_id` إلزامي معه وممنوع لغيره. متساوٍ الأثر على (`derived_from_id`، `license_id`): لكل
+        ترخيص حزمته. لا تظهر في `Material.files`، ويُنزّلها المشتري من الترخيص وحده، ولا تضم التفريغ (R11).
       properties:
-        kind: { type: string, enum: [proxy, thumbnail, hls, audio, export, transcript, captions, watermarked_preview, shot_list] }
+        kind: { type: string, enum: [proxy, thumbnail, hls, audio, export, transcript, captions, watermarked_preview, shot_list, delivery] }
+        license_id: { type: string, format: uuid, description: لـ `delivery` وحده }
         storage_key: { type: string, minLength: 1, maxLength: 1024, pattern: "^[A-Za-z0-9/_.-]+$" }
         sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
         size_bytes: { type: integer, minimum: 1 }
@@ -3203,6 +3207,9 @@ components:
           else: { properties: { technical: { required: [duration_ms, start_pts_us] } } }
         - if: { properties: { kind: { const: export } } }
           then: { required: [mime_type], properties: { mime_type: { const: application/zip } } }
+        - if: { properties: { kind: { const: delivery } }, required: [kind] }
+          then: { required: [mime_type, license_id], properties: { mime_type: { const: application/zip } } }
+          else: { not: { required: [license_id] } }
         - if: { properties: { kind: { const: transcript } } }
           then: { required: [mime_type], properties: { mime_type: { const: application/json } } }
         - if: { properties: { kind: { const: captions } } }
@@ -3218,7 +3225,7 @@ components:
       properties:
         file_id: { type: string, format: uuid }
         material_id: { type: string, format: uuid }
-        kind: { type: string, enum: [original, proxy, hls, audio, thumbnail, voice_note, export, transcript, captions, watermarked_preview, shot_list] }
+        kind: { type: string, enum: [original, proxy, hls, audio, thumbnail, voice_note, export, transcript, captions, watermarked_preview, shot_list, delivery] }
         state: { type: string, enum: [uploading, received, verified, failed] }
         storage_key: { type: string, minLength: 1, maxLength: 1024 }
         size_bytes: { type: [integer, "null"], minimum: 0 }
