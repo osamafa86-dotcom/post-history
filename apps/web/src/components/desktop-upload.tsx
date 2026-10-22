@@ -7,7 +7,7 @@ import type { Form, Material, MaterialType, Values } from "@/lib/types";
 import { materialTypes, states } from "@/lib/query";
 import { hasRole } from "@/lib/review";
 import { acceptedFile, cameraExtensions, fileKey, uploadRoles } from "@/lib/upload-policy";
-import { BffError, createMaterial, startUpload, type UploadControl, type UploadUpdate } from "@/lib/desktop-upload";
+import { abortUpload, BffError, createMaterial, myUploads, startUpload, type SessionView, type UploadControl, type UploadUpdate } from "@/lib/desktop-upload";
 import { clearUploads, forgetUpload, findUpload, pendingUploads, recordKey, type PendingUpload } from "@/lib/upload-store";
 import { useUser } from "./session-boundary";
 import { DynamicForm } from "./dynamic-form";
@@ -27,7 +27,21 @@ export function DesktopUpload({ locale }: { locale: Locale }) {
   const createKey = useRef(crypto.randomUUID()), controls = useRef(new Map<string, UploadControl>());
   const active = rows.some(row => ["hashing", "creating", "uploading", "paused"].includes(row.update.phase));
 
-  useEffect(() => { void pendingUploads().then(setPending); }, [rows.length]);
+  // مركز الرفع: الجلسات غير النهائية من الخادم، وما يقابلها محليًا يُستأنف بإعادة اختيار الملف. السجل المحلي لجلسة
+  // لم تعد جارية على الخادم يُمحى.
+  const [sessions, setSessions] = useState<SessionView[] | null>(null), [refresh, setRefresh] = useState(0);
+  useEffect(() => {
+    let live = true;
+    void Promise.all([pendingUploads(), myUploads().catch(() => null)]).then(async ([local, remote]) => {
+      if (remote) {
+        const open = new Set(remote.items.map(s => s.id));
+        await Promise.all(local.filter(item => item.session_id && !open.has(item.session_id)).map(item => forgetUpload(item.key)));
+        local = local.filter(item => !item.session_id || open.has(item.session_id));
+      }
+      if (live) { setPending(local); setSessions(remote?.items ?? null); }
+    });
+    return () => { live = false; };
+  }, [rows.length, refresh]);
   useEffect(() => {
     // الخروج أو الإبطال: يتوقف كل رفع جارٍ ويُمسح ما حُفظ للاستئناف.
     const running = controls.current;
@@ -57,7 +71,7 @@ export function DesktopUpload({ locale }: { locale: Locale }) {
     const control = startUpload(file, materialId, report);
     controls.current.set(key, control);
     setRows(current => current.map(row => row.key === key ? { ...row, control } : row));
-    void control.done.finally(() => { controls.current.delete(key); void pendingUploads().then(setPending); });
+    void control.done.finally(() => { controls.current.delete(key); setRefresh(n => n + 1); });
   }
 
   async function choose(list: FileList | null) {
@@ -97,7 +111,7 @@ export function DesktopUpload({ locale }: { locale: Locale }) {
       <small className="muted" id="upload-files-help">{u.filesHelp}</small>
       {rejected.map(name => <p key={name} className="notice error" role="alert">{fill(u.unsupported, name)}</p>)}
       {files.length > 0 && <ul className="upload-selection">{files.map(file => <li key={fileKey(file)} dir="auto">{file.name} <small className="muted" dir="ltr">{bytes(file.size, locale)}</small></li>)}</ul>}
-      {pending.filter(item => !rows.some(row => row.record === item.key)).length > 0 && <div className="upload-pending"><h3>{u.pending}</h3><p className="muted">{u.pendingHelp}</p><ul>{pending.filter(item => !rows.some(row => row.record === item.key)).map(item => <li key={item.key} data-testid="pending-upload"><span dir="ltr">{bytes(item.create.size_bytes, locale)}</span> <small className="muted">{formatDate(new Date(item.updated_at).toISOString(), locale)}</small><button className="quiet" onClick={() => void forgetUpload(item.key).then(pendingUploads).then(setPending)}>{u.forget}</button></li>)}</ul></div>}
+<UploadCenter locale={locale} sessions={(sessions ?? []).filter(s => !rows.some(row => row.update.session?.id === s.id))} pending={pending.filter(item => !rows.some(row => row.record === item.key))} changed={() => setRefresh(n => n + 1)} />
     </section>
     {rows.length > 0 && <section className="card upload-rows" aria-live="polite">{rows.map(row => <UploadRow key={row.key} row={row} locale={locale} />)}</section>}
     {files.length > 0 && <section className="card form-card"><h2>{u.material}</h2>
@@ -118,6 +132,23 @@ export function DesktopUpload({ locale }: { locale: Locale }) {
       {failure && <p className="notice error" role="alert">{failure === "invalid" ? u.invalid : failure === "files" ? u.noFiles : u.createFailed}</p>}
     </section>}
   </>;
+}
+
+function UploadCenter({ locale, sessions, pending, changed }: { locale: Locale; sessions: SessionView[]; pending: PendingUpload[]; changed: () => void }) {
+  const u = messages[locale].upload, [busy, setBusy] = useState<string | null>(null), [failed, setFailed] = useState(false);
+  // جلسات بلا سجل محلي (جهاز آخر، أو تخزين ممسوح) لا تُستأنف هنا، لكن تُلغى.
+  const local = (id: string) => pending.find(item => item.session_id === id);
+  const orphans = pending.filter(item => !item.session_id || !sessions.some(s => s.id === item.session_id));
+  if (!sessions.length && !orphans.length) return null;
+  async function abort(id: string) {
+    setBusy(id); setFailed(false);
+    try { await abortUpload(id); const record = local(id); if (record) await forgetUpload(record.key); changed(); }
+    catch { setFailed(true); } finally { setBusy(null); }
+  }
+  return <div className="upload-pending"><h3>{u.pending}</h3><p className="muted">{u.pendingHelp}</p>{failed && <p className="notice error" role="alert">{u.abortFailed}</p>}<ul>
+    {sessions.map(s => <li key={s.id} data-testid="pending-upload" data-resumable={local(s.id) ? "true" : "false"}><span dir="ltr">{bytes(s.bytes_received, locale)} / {bytes(s.size_bytes, locale)}</span> <small className="muted">{formatDate(s.created_at, locale)}</small>{!local(s.id) && <small className="muted">{u.otherDevice}</small>}<button className="quiet" disabled={busy === s.id} onClick={() => void abort(s.id)}>{u.abort}</button></li>)}
+    {orphans.map(item => <li key={item.key} data-testid="pending-upload" data-resumable="true"><span dir="ltr">{bytes(item.create.size_bytes, locale)}</span> <small className="muted">{formatDate(new Date(item.updated_at).toISOString(), locale)}</small><button className="quiet" onClick={() => void forgetUpload(item.key).then(changed)}>{u.forget}</button></li>)}
+  </ul></div>;
 }
 
 function Heading({ locale }: { locale: Locale }) {

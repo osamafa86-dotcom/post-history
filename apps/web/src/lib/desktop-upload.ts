@@ -7,7 +7,7 @@ import { findUpload, forgetUpload, recordKey, rememberUpload, type PendingUpload
 
 type Created = components["schemas"]["UploadSessionCreated"];
 // ما يعيده الـBFF من جلسة الرفع (server/uploads.ts)، مشتق من العقد لا مكتوب يدويًا.
-export type SessionView = Pick<Created, "id" | "material_id" | "kind" | "state" | "size_bytes" | "bytes_received" | "failure_reason" | "receipt_number" | "expires_at">;
+export type SessionView = Pick<Created, "id" | "material_id" | "kind" | "state" | "size_bytes" | "bytes_received" | "failure_reason" | "receipt_number" | "expires_at" | "created_at">;
 type CreatedView = SessionView & Pick<Created, "tus_endpoint" | "tus_metadata" | "part_size_bytes" | "ingest_token_required" | "upload_token" | "upload_token_expires_at">;
 type IngestToken = components["schemas"]["IngestToken"];
 
@@ -16,17 +16,21 @@ export type UploadFailure = "session_revoked" | "not_accepted" | "rejected" | "n
 export type UploadUpdate = { phase: UploadPhase; hashed: number; sent: number; total: number; resumed: boolean; session?: SessionView; failure?: UploadFailure };
 
 export class BffError extends Error { constructor(readonly status: number) { super("Request failed"); } }
-async function bff<T>(method: "GET" | "POST", path: string, body?: unknown, key?: string): Promise<T> {
+async function bff<T>(method: "GET" | "POST" | "DELETE", path: string, body?: unknown, key?: string): Promise<T> {
   const response = await fetch(`/api/bff/${path}`, {
     method, credentials: "same-origin", cache: "no-store", redirect: "error",
-    headers: method === "POST" ? { "Content-Type": "application/json", "X-Requested-With": "post-history-web", "Idempotency-Key": key ?? crypto.randomUUID() } : {},
-    body: method === "POST" ? JSON.stringify(body ?? {}) : undefined,
+    headers: method !== "GET" ? { "Content-Type": "application/json", "X-Requested-With": "post-history-web", "Idempotency-Key": key ?? crypto.randomUUID() } : {},
+    body: method !== "GET" ? JSON.stringify(body ?? {}) : undefined,
   });
   if (response.status === 401) window.dispatchEvent(new Event("session-revoked"));
   if (!response.ok) throw new BffError(response.status);
-  return await response.json() as T;
+  return response.status === 204 ? undefined as T : await response.json() as T;
 }
 export const createMaterial = <T>(body: unknown, key: string) => bff<T>("POST", "materials", body, key);
+/** جلسات المستخدم غير النهائية من الخادم (listMyUploadSessions)، لمركز الرفع. */
+export const myUploads = () => bff<{ items: SessionView[]; next_cursor: string | null }>("GET", "uploads?limit=100");
+/** إلغاء الجلسة على الخادم (abortUploadSession): يبطل رموزها ويحذف ما وصل منها. */
+export const abortUpload = (id: string) => bff<void>("DELETE", `uploads/${id}`);
 
 /** قرار إعادة المحاولة أمام البوابة وtus: 401 رمز ingest انتهى فيُجدَّد، 403/404/410 الجلسة لا تقبل، وغيرها لمنطق tus. */
 export function retryDecision(status: number | undefined): "refresh_token" | "stop" | "default" {
@@ -172,7 +176,12 @@ export function startUpload(file: File, materialId: string, report: (update: Upl
     resume() { if (uppy && fileId && update.phase === "paused") { uppy.pauseResume(fileId); emit({ phase: "uploading" }); } },
     // stop: يوقف النقل ويبقي سجل الاستئناف وبيانات الخادم. cancel: قرار المستخدم، فيُنهى رفع tus ويُنسى السجل.
     stop() { controller.abort(); uppy?.pauseAll(); },
-    cancel() { controller.abort(); uppy?.cancelAll(); void keyed.then(forgetUpload); },
+    cancel() {
+      controller.abort(); uppy?.cancelAll();
+      const id = update.session?.id;
+      if (id && !["verified", "deduplicated", "failed"].includes(update.session!.state)) void abortUpload(id).catch(() => undefined);
+      void keyed.then(forgetUpload);
+    },
     done: run(),
   };
 }
