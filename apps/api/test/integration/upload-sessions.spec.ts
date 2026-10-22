@@ -126,6 +126,7 @@ describe('upload sessions: list mine and cancel (GET /uploads, DELETE /uploads/{
       expect(await row(s.id)).toMatchObject({ state: 'failed', failure_reason: 'aborted', upload_token_hash: null, upload_token_expires_at: null });
       expect(await failedEvents(s.id)).toEqual([{ material_id: s.materialId, upload_session_id: s.id, kind: 'original', failure_reason: 'aborted' }]);
       expect(storage.removed).toEqual([`${h.config.S3_BUCKET_UPLOADS}/${h.config.TUSD_OBJECT_PREFIX}${s.id}`]);
+      expect((await row(s.id)).storage_removed_at).not.toBeNull();
 
       await cancel(reporter, s.id).expect(204);
       expect(await failedEvents(s.id)).toHaveLength(1);
@@ -209,6 +210,8 @@ describe('upload sessions: list mine and cancel (GET /uploads, DELETE /uploads/{
         const s = await seedUploadSession(h, reporter.id, { state: 'in_progress' });
         await cancel(reporter, s.id).expect(204);
         expect((await row(s.id)).state).toBe('failed');
+        // الحذف لم يُؤكَّد: تعيد مكنسة التسوية محاولته
+        expect((await row(s.id)).storage_removed_at).toBeNull();
       } finally {
         storage.fail = false;
       }

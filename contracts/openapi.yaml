@@ -1339,6 +1339,37 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "410": { $ref: "#/components/responses/MediaResourceGone" }
 
+  /internal/media/files/{file_id}/alignment:
+    servers:
+      - url: http://api.internal:3000
+        description: شبكة media الداخلية فقط (ADR 0006)
+    parameters:
+      - name: file_id
+        in: path
+        required: true
+        description: النسخة الخفيفة
+        schema: { type: string, format: uuid }
+    put:
+      tags: [uploads]
+      summary: تسجيل المحاذاة الصوتية بين النسخة الخفيفة والأصل (داخلي، v0.3)
+      x-internal: true
+      description: >-
+        يستبدل محاذاة النسخة الخفيفة بما قاسه العامل؛ الطلب نفسه يعيد الأثر نفسه. الملف غير `proxy`، أو `original_file_id` ليس
+        أصل المادة نفسها، `422`. الملف غير الموجود برمز صحيح `410 media_resource_gone`.
+      operationId: mediaPutAlignment
+      x-roles: []
+      security: [{ mediaWorkerToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MediaAlignment" }
+      responses:
+        "204": { description: سُجّلت }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "410": { $ref: "#/components/responses/MediaResourceGone" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
   /internal/media/files/{file_id}/derivatives:
     servers:
       - url: http://api.internal:3000
@@ -2679,6 +2710,11 @@ components:
           enum: [original, proxy, hls, audio, thumbnail, voice_note, transcript, captions, shot_list]
         state: { type: string, enum: [uploading, received, verified, failed] }
         proxy_mode: { type: [string, "null"], enum: [urgent, normal, null], description: وضع النسخة الخفيفة }
+        alignment:
+          description: لـ `proxy` وحده (v0.3)؛ `null` أو غائب قبل القياس أو لغير النسخة الخفيفة
+          oneOf:
+            - $ref: "#/components/schemas/MediaAlignment"
+            - type: "null"
         size_bytes: { type: [integer, "null"], minimum: 0 }
         sha256:
           type: [string, "null"]
@@ -3070,6 +3106,28 @@ components:
         storage_key: { type: [string, "null"] }
         proxy_mode: { type: [string, "null"], enum: [urgent, normal, null] }
         material_has_proxy: { type: boolean }
+        proxy_file_id:
+          type: [string, "null"]
+          format: uuid
+          description: النسخة الخفيفة المتحققة للمادة إن وُجدت (v0.3)، ليقيس العامل المحاذاة حين يتحقق الأصل
+        original_file_id:
+          type: [string, "null"]
+          format: uuid
+          description: الأصل المتحقق للمادة إن وُجد (v0.3)، ليقيس العامل المحاذاة حين تتحقق النسخة الخفيفة
+
+    MediaAlignment:
+      type: object
+      additionalProperties: false
+      description: >-
+        محاذاة صوتية بين النسخة الخفيفة والأصل (v0.3): إزاحة النسخة الخفيفة عن خط زمن الأصل. يصحّح المحرر نقاط القص بها حين
+        `reliable` و`|offset_ms| > 40`. أرقام فقط.
+      required: [original_file_id, offset_ms, confidence, margin, reliable]
+      properties:
+        original_file_id: { type: string, format: uuid }
+        offset_ms: { type: integer, minimum: -3600000, maximum: 3600000, description: "ما يُضاف إلى زمن النسخة الخفيفة ليقع على زمن الأصل (`t_original = t_proxy + offset_ms`)؛ سالبة حين تتأخر النسخة الخفيفة" }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        margin: { type: number, minimum: 0, maximum: 1, description: الفارق بين أفضل قمة ارتباط والتي تليها }
+        reliable: { type: boolean }
 
     MediaVerification:
       x-internal: true
