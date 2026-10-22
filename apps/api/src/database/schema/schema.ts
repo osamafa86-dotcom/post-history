@@ -455,7 +455,8 @@ export const notifications = pgTable("notifications", {
 	ruleId: uuid("rule_id"),
 }, (table) => [
 	index("notifications_escalation_idx").using("btree", table.escalateAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((acknowledged_at IS NULL) AND (escalate_at IS NOT NULL))`),
-	index("notifications_inbox_idx").using("btree", table.userId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("uuid_ops")),
+	index("notifications_inbox_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("notifications_overdue_assignment_idx").using("btree", table.escalateAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((assignment_state = 'assigned'::text) AND (acknowledged_at IS NULL))`),
 	index("notifications_material_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops")).where(sql`(material_id IS NOT NULL)`),
 	index("notifications_unread_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops")).where(sql`(read_at IS NULL)`),
 	foreignKey({
@@ -521,8 +522,9 @@ export const materialFiles = pgTable("material_files", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	perceptualHash: bigint("perceptual_hash", { mode: "number" }).array(),
 }, (table) => [
-	uniqueIndex("material_files_derived_kind_key").using("btree", table.derivedFromId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops")).where(sql`(derived_from_id IS NOT NULL)`),
+	uniqueIndex("material_files_derived_kind_key").using("btree", table.derivedFromId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("text_ops")).where(sql`(derived_from_id IS NOT NULL)`),
 	index("material_files_material_kind_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("uuid_ops")),
+	index("material_files_recent_receipts_idx").using("btree", table.verifiedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`((receipt_number IS NOT NULL) AND (verified_at IS NOT NULL))`),
 	uniqueIndex("material_files_receipt_number_key").using("btree", table.receiptNumber.asc().nullsLast().op("text_ops")).where(sql`(receipt_number IS NOT NULL)`),
 	index("material_files_sha256_idx").using("btree", table.sha256.asc().nullsLast().op("bytea_ops")).where(sql`(sha256 IS NOT NULL)`),
 	index("material_files_size_head_idx").using("btree", table.sizeBytes.asc().nullsLast().op("bytea_ops"), table.headSha256.asc().nullsLast().op("bytea_ops")).where(sql`(head_sha256 IS NOT NULL)`),
