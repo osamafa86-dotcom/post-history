@@ -837,7 +837,8 @@
                 }
               },
               "produced_file_id": {
-                "$ref": "#/$defs/nullableUuid"
+                "$ref": "#/$defs/nullableUuid",
+                "description": "مشتق بنوع produced وحده (التصدير النهائي من render)، ولا غيره من المشتقات التحريرية أو الداخلية (R11)"
               }
             }
           }
