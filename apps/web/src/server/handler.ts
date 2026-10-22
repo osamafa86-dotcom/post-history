@@ -3,7 +3,7 @@ import { readConfig, type WebConfig } from "./config";
 import { clientAddress, requireOk, upstream, withSession, assertSession } from "./auth";
 import { WebError } from "./errors";
 import { sessionStore, validSessionId, type SessionStore } from "./sessions";
-import { safeDashboard, safeForm, safeMaterial, safeMe, safeNotification, safeTransition } from "@/lib/privacy";
+import { safeDashboard, safeForm, safeMaterial, safeMe, safeNotification, safeTransition, reporterNote } from "@/lib/privacy";
 import { materialQuery, materialTypes, uuid } from "@/lib/query";
 import type { components } from "@/generated/schema";
 import type { MaterialType } from "@/lib/types";
@@ -119,7 +119,9 @@ export async function handle(request: NextRequest, path: string, deps?: { config
       const history = /^materials\/([^/]+)\/transitions$/.exec(path);
       if (history && uuid.test(history[1])) {
         const data = requireOk(await api.GET("/materials/{id}/transitions", { params: { path: { id: history[1] } } }));
-        return json({ items: data.items.map(safeTransition) });
+        // ملاحظة المشرف لصاحب المادة وحده؛ وغيره يرى الانتقالات بلا سبب كما كان.
+        const owner = hasRole(me, "reporter") && requireOk(await api.GET("/materials/{id}", { params: { path: { id: history[1] } } })).reporter_id === me.user_id;
+        return json({ items: data.items.map(owner ? reporterNote : safeTransition) });
       }
       if (path === "catalog" || path.startsWith("catalog/")) return catalogRead(request, path, api, me, config!, transport);
       if (path === "uploads") return listUploads(api, me, request.nextUrl.searchParams);

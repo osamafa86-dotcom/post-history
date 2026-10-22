@@ -44,6 +44,16 @@ export function safeTransition(item: TransitionRecord): TransitionRecord {
     actor_id: item.actor_id && uuid.test(item.actor_id) ? item.actor_id : null, occurred_at: item.occurred_at, reason: "" };
 }
 
+/** ما يصل المراسل من ملاحظة المشرف على مادته: سبب طلب التعديل أو الرفض وتوقيته، ولا سبب غيرهما. */
+export const reporterNoteStates = ["needs_changes", "rejected"] as const;
+export function reporterNote(item: TransitionRecord): TransitionRecord {
+  const safe = safeTransition(item);
+  if (safe.track !== "editorial" || !(reporterNoteStates as readonly string[]).includes(safe.to)) return safe;
+  const reason = typeof item.reason === "string" ? Array.from(item.reason.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")).slice(0, 2000).join("") : "";
+  const timecode = Number.isSafeInteger(item.note_timecode_ms) && Number(item.note_timecode_ms) >= 0 ? item.note_timecode_ms : null;
+  return { ...safe, reason, note_timecode_ms: timecode };
+}
+
 /** لقطة غرفة الأخبار بقائمة بيضاء: معرّفات وأرقام وحالات فقط، والحالات من قوائم العقد وحدها. */
 export function safeDashboard(d: NewsroomDashboard): NewsroomDashboard {
   const counts = (items: NewsroomDashboard["editorial"], allowed: readonly string[]) => items.filter(i => allowed.includes(i.state) && Number.isSafeInteger(i.count)).map(({ state, count }) => ({ state, count }));
