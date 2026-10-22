@@ -238,6 +238,21 @@ jobs:
       # The export package built by the worker's own code (workers/media/src, the runner's FFmpeg) from synthetic phone and HDR clips.
       - name: "cut-export (editing package: streams, rotation, HDR tags, cut points, sequences, no revealing tags; always partial)"
         run: node tools/acceptance/scripts/cut-export.mjs --dry-run
+      # ADR 0060: the condition for switching MEDIA_ENABLE_C2PA on. c2patool is the one the worker image carries (built there from crates.io,
+      # pinned), run through `docker run` on the image compose just built; the signing code is workers/media/src, the clips are made on the
+      # runner, and the signed files are judged by the script's own whitelist (not the worker's check_report). The chain is a throw-away
+      # openssl root, so the result is always `partial`.
+      - name: "c2pa-manifest (signed copies read whole with the image's c2patool: closed whitelist, no planted value or original digest; always partial)"
+        run: |
+          img=$(docker compose -f infra/compose/docker-compose.yml --profile api --profile media images -q media-worker)
+          test -n "$img" || { echo "no media-worker image from compose" >&2; exit 1; }
+          mkdir -p "$RUNNER_TEMP/c2pa"
+          cat > "$RUNNER_TEMP/c2patool" <<EOF
+          #!/bin/sh
+          exec docker run --rm --network none -u "\$(id -u):\$(id -g)" -v "$RUNNER_TEMP/c2pa:$RUNNER_TEMP/c2pa" -w "\$PWD" --entrypoint c2patool $img "\$@"
+          EOF
+          chmod +x "$RUNNER_TEMP/c2patool"
+          TMPDIR="$RUNNER_TEMP/c2pa" C2PATOOL_BIN="$RUNNER_TEMP/c2patool" node tools/acceptance/scripts/c2pa-manifest.mjs --dry-run
       # The link lives 10 minutes by contract: waiting for it to expire (DL_WAIT_EXPIRY=1) is left out of the PR run, so the result is
       # `partial` for that reason alone; run the script by hand with DL_WAIT_EXPIRY=1 for the full check.
       - name: download-url (core gate; signed link for verified derivatives, original is 404)
