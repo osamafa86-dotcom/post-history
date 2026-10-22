@@ -6,13 +6,15 @@
 //   - audio/video offset in the clip equals the original's within 40 ms, and the first timestamps are kept (start_pts);
 //   - the EDL and the FCPXML cover exactly the clip (duration within 40 ms, the clip named as in the package);
 //   - no planted tag, GPS position or device model anywhere in the package, and the original is byte-identical afterwards.
+// The final export (media_worker.render, #217) is judged on the same two originals: two segments cut at known times come out as a new H.264 SDR
+// file with the rotation applied, the right duration, nothing planted anywhere in the bytes, empty tags, and the original untouched.
 // It is ALWAYS `partial`: a real editor cut (an in/out chosen by a person) does not exist in the core phase, the package was not
 // imported in Resolve, Premiere or Final Cut, and no real phone file was measured. `pass` needs all three.
 //   node scripts/cut-export.mjs [--dry-run]            (needs ffmpeg with libx265, ffprobe, python3; the worker's own code is imported)
 //   CUT_BUILD_CMD   shell command that builds the package from $CUT_ORIGINAL into $CUT_OUT (default: the repository's media_worker)
 //   CUT_PACKAGE + CUT_ORIGINAL   judge a package you already have instead of building one
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ROOT, newResult, finish, writeResult, parseArgs, banner } from "../lib/measurement.mjs";
@@ -38,6 +40,37 @@ function build(original, out, env) {
     ? spawnSync("sh", ["-c", env.CUT_BUILD_CMD], { env: childEnv, encoding: "utf8" })
     : spawnSync("python3", ["-c", WORKER_BUILD], { env: childEnv, encoding: "utf8" });
   if (r.status !== 0) throw new Error(`building the package failed: ${(r.stderr || r.stdout || "").trim().split("\n").slice(-3).join(" | ")}`);
+}
+
+
+const WORKER_RENDER = `from pathlib import Path; import os
+from media_worker.probe import probe
+from media_worker.render import Segment, render
+o = Path(os.environ["CUT_ORIGINAL"]); info = probe(o); a = info.start_pts_us
+render(o, Path(os.environ["CUT_OUT"]), info, [Segment(a + 1_000_000, a + 4_000_000), Segment(a + 4_500_000, a + 7_500_000)])`;
+const RENDER_SECONDS = 6;
+
+function renderFinal(original, out, env) {
+  const r = spawnSync("python3", ["-c", WORKER_RENDER], { env: { ...env, CUT_ORIGINAL: original, CUT_OUT: out, PYTHONPATH: join(ROOT, "workers/media/src") }, encoding: "utf8" });
+  if (r.status !== 0) throw new Error(`rendering the final export failed: ${(r.stderr || r.stdout || "").trim().split("\n").slice(-3).join(" | ")}`);
+}
+
+/** The final export of one original: a new SDR H.264 file, orientation applied, two 3 s segments, nothing planted, tags empty. */
+export function judgeRender(label, { originalPath, renderedPath, check, planted = [...LEAK_VALUES, SEI_VALUE] }) {
+  const o = streamFacts(originalPath), r = streamFacts(renderedPath);
+  const turned = (o.video?.rotation ?? 0) % 180 === 90;
+  check(`${label}: H.264, 8-bit 4:2:0, with an audio track`, r.video?.codec === "h264" && r.video?.pix_fmt === "yuv420p" && Boolean(r.audio), JSON.stringify([r.video, r.audio]));
+  check(`${label}: SDR (an HDR transfer function is not carried over)`, !["arib-std-b67", "smpte2084"].includes(r.video?.color_transfer));
+  const wantW = turned ? o.video.height : o.video.width, wantH = turned ? o.video.width : o.video.height;
+  check(`${label}: orientation applied (${wantW}x${wantH}, no rotation flag)`, r.video?.rotation === 0 && r.video?.width === wantW && r.video?.height === wantH, `${r.video?.width}x${r.video?.height} rot ${r.video?.rotation}`);
+  const durMs = Math.abs(r.duration - RENDER_SECONDS) * 1000;
+  check(`${label}: duration is the sum of the segments (${RENDER_SECONDS} s, within 100 ms)`, durMs <= 100, `${r.duration} s`);
+  const found = leaks(new Map([["rendered (bytes)", readFileSync(renderedPath)]]), planted);
+  check(`${label}: no planted tag, SEI message, GPS position or device model in the bytes`, found.length === 0, found.join(","));
+  check(`${label}: container and stream tags are empty of the planted values`, !planted.some((p) => r.tags.includes(p)) && !/ISO6709|quicktime/i.test(r.tags), r.tags.slice(0, 120));
+  // not a failure: the encoder writes its own version and options into the stream (no device, no source); recorded so it is a decision, not a surprise
+  if (readFileSync(renderedPath).includes("x264 - core")) console.log(`info ${label}: the stream carries the encoder's own SEI message (x264 version and options)`);
+  return { duration_error_ms: durMs, width: r.video?.width, height: r.video?.height };
 }
 
 const have = (bin) => spawnSync(bin, ["-version"], { stdio: "ignore" }).status === 0;
@@ -112,10 +145,20 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       check(`${k.label}: the original is byte-identical after the export`, (await sha256File(k.original)) === before);
       for (const [key, v] of Object.entries(m)) metrics[`case${i + 1}_${key}`] = Number(Number(v).toFixed(3));
     }
+    if (!given) {
+      for (const [i, k] of cases.entries()) {
+        const before = await sha256File(k.original);
+        const out = join(dir, `final-${i}.mp4`);
+        renderFinal(k.original, out, env);
+        const m = judgeRender(`final export, ${k.label}`, { originalPath: k.original, renderedPath: out, check });
+        check(`final export, ${k.label}: the original is byte-identical after the export`, (await sha256File(k.original)) === before);
+        for (const [key, v] of Object.entries(m)) metrics[`render${i + 1}_${key}`] = Number(Number(v).toFixed(3));
+      }
+    }
   } finally { rmSync(dir, { recursive: true, force: true }); }
   const result = fails.length ? "fail" : "partial";
   const ffmpegVersion = (() => { try { return execFileSync("ffmpeg", ["-version"]).toString().split("\n")[0].split(" ")[2]; } catch { return "unknown"; } })();
-  finish(doc, result, { cases: cases.length, checks_failed: fails.length, tolerance_ms: TOL_MS, ...metrics },
+  finish(doc, result, { cases: cases.length, render_cases: given ? 0 : cases.length, checks_failed: fails.length, tolerance_ms: TOL_MS, ...metrics },
     `حزمة تصدير المونتاج على مقاطع اصطناعية بوسوم كاشفة مزروعة (${cases.length}): الحزمة والبصمات والتيارات والتدوير ووسوم HDR ونقاط القص العشر وإزاحة الصوت والتسلسلان وغياب الوسوم والأصل لم يُمس. لا pass: لا محرر في النواة فلا قص حقيقي بنقاط يختارها إنسان، والاستيراد لم يُجرَّب في Resolve وPremiere وFinal Cut، ولا ملف هاتف حقيقي. FFmpeg المشغِّل هو ما على الجهاز (${ffmpegVersion}) لا المثبّت في صورة العامل.`);
   if (args["dry-run"]) writeResult(doc, { dryRun: true }); else console.log("wrote", writeResult(doc, { slug: "export-package" }));
   return { code: fails.length ? 1 : 0, doc };
