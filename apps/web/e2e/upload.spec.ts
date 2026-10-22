@@ -137,3 +137,25 @@ test("signing out and opening the sign-in page clear unfinished-upload records o
   await expect.poll(count).toBe(0);
   await request.post(`${api}/__test/tus`);
 });
+
+test("the upload center lists unfinished sessions from the server and cancels them there", async ({ page, request }, info) => {
+  await login(page);
+  const path = info.outputPath("A004C001.MOV"); writeFileSync(path, randomBytes(3 * 1048576));
+  await request.post(`${api}/__test/tus?fail_patches=1000`);
+  await page.getByLabel(ar.upload.choose).setInputFiles(path);
+  await describe(page);
+  await expect.poll(async () => (await uploads(page))[0]?.offset ?? 0).toBeGreaterThan(0);
+  page.removeAllListeners("dialog"); page.on("dialog", dialog => void dialog.accept());
+  await page.reload();
+  await expect(page.getByTestId("pending-upload")).toHaveAttribute("data-resumable", "true");
+  // سجل محلي ممسوح (جهاز آخر): الجلسة تظهر من الخادم بلا استئناف، وتُلغى منه.
+  await page.evaluate(() => new Promise(resolve => { const r = indexedDB.deleteDatabase("post-history-uploads"); r.onsuccess = r.onerror = r.onblocked = resolve; }));
+  await page.reload();
+  await expect(page.getByTestId("pending-upload")).toHaveAttribute("data-resumable", "false");
+  await expect(page.getByText(ar.upload.otherDevice)).toBeVisible();
+  expect(await page.locator("body").textContent()).not.toContain("never-display-canary");
+  await page.getByRole("button", { name: ar.upload.abort }).click();
+  await expect(page.getByTestId("pending-upload")).toHaveCount(0);
+  expect((await uploads(page))[0].state).toBe("failed");
+  await request.post(`${api}/__test/tus`);
+});

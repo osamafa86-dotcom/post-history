@@ -20,6 +20,7 @@ export const uploadRoutes = [
   { path: "materials", method: "POST" },
   { path: "uploads", method: "POST" },
   { path: "uploads/{id}/web-ingest-token", method: "POST" },
+  { path: "uploads/{id}", method: "DELETE" },
 ] as const;
 const patterns = uploadRoutes.map(route => ({ ...route, pattern: new RegExp(`^${route.path.replaceAll(/\{[^}]+\}/g, "[^/]+")}$`) }));
 export const uploadPath = (path: string, method: string) => patterns.some(route => route.pattern.test(path) && route.method === method);
@@ -75,7 +76,7 @@ export function safeUploadSession(session: UploadSession) {
   return {
     id: session.id, material_id: session.material_id, kind: session.kind, state: session.state, size_bytes: session.size_bytes,
     bytes_received: session.bytes_received, failure_reason: session.failure_reason ?? null, receipt_number: session.receipt_number ?? null,
-    expires_at: session.expires_at,
+    expires_at: session.expires_at, created_at: session.created_at,
   };
 }
 
@@ -99,6 +100,13 @@ export async function uploadAction(request: Request, path: string, api: Api, me:
       ingest_token_required: data.ingest_token_required === true, upload_token: data.upload_token, upload_token_expires_at: data.upload_token_expires_at,
     }, 201);
   }
+  // إلغاء جلسة يملكها المستدعي (abortUploadSession): الخادم يبطل الرموز ويحذف ما وصل.
+  const abort = /^uploads\/([^/]+)$/.exec(path);
+  if (abort && uuid.test(abort[1]) && request.method === "DELETE") {
+    keys(body, []);
+    requireOk(await api.DELETE("/uploads/{id}", { params: { path: { id: abort[1] }, header } }));
+    return new NextResponse(null, { status: 204, headers: privateHeaders });
+  }
   const ingest = /^uploads\/([^/]+)\/web-ingest-token$/.exec(path);
   if (ingest && uuid.test(ingest[1])) {
     keys(body, []);
@@ -106,6 +114,17 @@ export async function uploadAction(request: Request, path: string, api: Api, me:
     return json({ token: data.token, expires_at: data.expires_at });
   }
   throw new WebError(405, "request_failed");
+}
+
+const sessionStates = ["created", "in_progress", "completed", "verified", "failed", "deduplicated"] as const;
+/** جلسات المستدعي نفسه (listMyUploadSessions)، بالحقول الآمنة وحدها؛ بلا رمز ولا عنوان tus ولا اسم ملف. */
+export async function listUploads(api: Api, me: Me, search: URLSearchParams) {
+  if (!hasRole(me, ...uploadRoles)) throw new WebError(403, "request_failed");
+  if ([...search.keys()].some(key => !["state", "material_id", "limit", "cursor"].includes(key) || (key !== "state" && search.getAll(key).length > 1))) throw new WebError(400, "request_failed");
+  const state = search.getAll("state"), material = search.get("material_id"), limit = search.get("limit") ?? "50", cursor = search.get("cursor");
+  if (state.some(s => !(sessionStates as readonly string[]).includes(s)) || (material && !uuid.test(material)) || !/^\d+$/.test(limit) || +limit < 1 || +limit > 100 || (cursor?.length ?? 0) > 2048) throw new WebError(400, "request_failed");
+  const page = requireOk(await api.GET("/uploads", { params: { query: { ...(state.length ? { state: state as (typeof sessionStates)[number][] } : {}), ...(material ? { material_id: material } : {}), limit: +limit, ...(cursor ? { cursor } : {}) } } }));
+  return json({ items: page.items.map(safeUploadSession), next_cursor: page.next_cursor });
 }
 
 export async function readUpload(api: Api, id: string) {

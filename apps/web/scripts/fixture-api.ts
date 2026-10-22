@@ -199,6 +199,12 @@ const server = createServer(async (req, res) => {
       const token = randomUUID(); uploads.set(id, { session, sha: String(body.client_sha256), token });
       return commit({ ...session, upload_token: token, upload_token_expires_at: new Date(now + 3600000).toISOString() }, 201);
     }
+    const abortPath = /^\/v1\/uploads\/([^/]+)$/.exec(path);
+    if (abortPath && req.method === "DELETE") {
+      const upload = uploads.get(abortPath[1]); if (!upload) return send({}, 404);
+      if (["verified", "deduplicated"].includes(upload.session.state)) return send({ code: "upload_state_conflict" }, 409);
+      Object.assign(upload.session, { state: "failed", failure_reason: "aborted" }); return commit(null);
+    }
     const ingestPath = /^\/v1\/uploads\/([^/]+)\/web-ingest-token$/.exec(path);
     if (ingestPath) {
       const upload = uploads.get(ingestPath[1]);
@@ -237,6 +243,10 @@ const server = createServer(async (req, res) => {
     const items = permissionAudit.filter(row => row.target === null || row.target === permissionTrail[1]);
     const start = Number(url.searchParams.get("cursor") ?? 0), limit = Number(url.searchParams.get("limit") ?? 50);
     return send({ items: items.slice(start, start + limit).map(row => ({ ...row.entry, reason: "never-display-canary", legal_name: "never-display-canary" })), next_cursor: start + limit < items.length ? String(start + limit) : null });
+  }
+  if (url.pathname === "/v1/uploads") {
+    const states = url.searchParams.getAll("state"), wanted = states.length ? states : ["created", "in_progress", "completed"];
+    return send({ items: [...uploads.values()].map(u => u.session).filter(s => wanted.includes(s.state)).map(s => ({ ...s, upload_token: "never-display-canary" })).reverse(), next_cursor: null });
   }
   const uploadRead = /^\/v1\/uploads\/([^/]+)$/.exec(url.pathname);
   if (uploadRead) { const upload = uploads.get(uploadRead[1]); return upload ? send(upload.session) : send({}, 404); }

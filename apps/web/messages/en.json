@@ -468,6 +468,9 @@
     "open": "Open material",
     "receipt": "Receipt number",
     "progress": "Progress of {name}",
-    "leaveWarning": "An upload is in progress. Leaving stops it; you can resume by choosing the file again."
+    "leaveWarning": "An upload is in progress. Leaving stops it; you can resume by choosing the file again.",
+    "abort": "Cancel upload",
+    "abortFailed": "Could not cancel the upload. Try again.",
+    "otherDevice": "Started on another device or its record here was cleared; it cannot resume from this browser."
   }
 }
