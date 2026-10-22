@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "media",
+  "test_name": "timestamp-alignment",
+  "started_at": "2026-10-22T04:30:58.095Z",
+  "ended_at": "2026-10-22T04:33:51.395Z",
+  "result": "partial",
+  "device": {
+    "platform": "server",
+    "model": "4 vCPU"
+  },
+  "upload_path": "n/a",
+  "file": {
+    "duration_s": 600.0,
+    "codec": "h264",
+    "vfr": true,
+    "hdr": false
+  },
+  "metrics": {
+    "files": 3,
+    "offset_error_ms_max": 0.8,
+    "offset_error_ms_mean": 0.5,
+    "confidence_min": 0.98,
+    "reliable_files": 3,
+    "measure_s_max": 6.89,
+    "threshold_ms": 40.0,
+    "seed": 20261021,
+    "ffmpeg_version": "8.0.1"
+  }
+}
