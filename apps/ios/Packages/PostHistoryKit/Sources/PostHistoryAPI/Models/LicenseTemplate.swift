@@ -41,7 +41,7 @@ public struct LicenseTemplate: Sendable, Codable, Hashable {
     public var name: LocalizedText
     public var terms: LocalizedText
     public var usageMedia: Set<UsageMedia>
-    public var territory: LicenseTemplateInputTerritory
+    public var territory: LicenseTemplateFieldsTerritory
     /** مدة الترخيص من التسليم؛ إلزامية لـ `editorial_term` و`exclusive_temporary`، و`null` = بلا انتهاء */
     public var termDays: Int?
     /** مدة الحصرية؛ لـ `exclusive_temporary` وحده (24–168 ساعة)، و`null` لغيره */
@@ -59,7 +59,7 @@ public struct LicenseTemplate: Sendable, Codable, Hashable {
     public var createdAt: Date
     public var createdBy: UUID
 
-    public init(type: LicenseType, name: LocalizedText, terms: LocalizedText, usageMedia: Set<UsageMedia>, territory: LicenseTemplateInputTerritory, termDays: Int? = nil, exclusivityHours: Int? = nil, deliverables: Set<Deliverables>, attribution: LocalizedText, prohibitions: Set<Prohibitions>, basePrice: Money, enabled: Bool, id: UUID, version: Int, createdAt: Date, createdBy: UUID) {
+    public init(type: LicenseType, name: LocalizedText, terms: LocalizedText, usageMedia: Set<UsageMedia>, territory: LicenseTemplateFieldsTerritory, termDays: Int? = nil, exclusivityHours: Int? = nil, deliverables: Set<Deliverables>, attribution: LocalizedText, prohibitions: Set<Prohibitions>, basePrice: Money, enabled: Bool, id: UUID, version: Int, createdAt: Date, createdBy: UUID) {
         self.type = type
         self.name = name
         self.terms = terms
