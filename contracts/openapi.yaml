@@ -3555,9 +3555,8 @@ components:
         `commercial` تجاري بموافقة الإدارة. الاشتراك المؤسسي مؤجل حتى معادلة توزيع مكتوبة.
       enum: [editorial_single, editorial_term, exclusive_temporary, commercial]
 
-    LicenseTemplateInput:
+    LicenseTemplateFields:
       type: object
-      additionalProperties: false
       required: [type, name, terms, usage_media, territory, deliverables, attribution, prohibitions, base_price, enabled]
       properties:
         type: { $ref: "#/components/schemas/LicenseType" }
@@ -3609,9 +3608,15 @@ components:
         base_price: { $ref: "#/components/schemas/Money" }
         enabled: { type: boolean }
 
+    LicenseTemplateInput:
+      description: جسم الطلب؛ لا خصائص غير المعرَّفة
+      allOf:
+        - $ref: "#/components/schemas/LicenseTemplateFields"
+      unevaluatedProperties: false
+
     LicenseTemplate:
       allOf:
-        - $ref: "#/components/schemas/LicenseTemplateInput"
+        - $ref: "#/components/schemas/LicenseTemplateFields"
         - type: object
           required: [id, version, created_at, created_by]
           properties:
@@ -3619,6 +3624,7 @@ components:
             version: { type: integer, minimum: 1, description: لا يُعدَّل إصدار قائم؛ الاستبدال يكتب إصدارًا جديدًا }
             created_at: { type: string, format: date-time }
             created_by: { type: string, format: uuid }
+      unevaluatedProperties: false
 
     ListingState:
       type: string
@@ -3637,9 +3643,8 @@ components:
             - type: "null"
           description: سعر خاص بهذه المادة؛ `null` = السعر الأساسي للقالب
 
-    CatalogListingInput:
+    CatalogListingFields:
       type: object
-      additionalProperties: false
       required: [title, description, offers, state]
       properties:
         title: { $ref: "#/components/schemas/LocalizedText" }
@@ -3667,9 +3672,15 @@ components:
           description: يسمح عقد المادة بالترخيص التجاري؛ يضبطه مدير النظام وحده، وبدونه لا يُقبل عرض `commercial`
         state: { $ref: "#/components/schemas/ListingState" }
 
+    CatalogListingInput:
+      description: جسم الطلب؛ لا خصائص غير المعرَّفة
+      allOf:
+        - $ref: "#/components/schemas/CatalogListingFields"
+      unevaluatedProperties: false
+
     CatalogListing:
       allOf:
-        - $ref: "#/components/schemas/CatalogListingInput"
+        - $ref: "#/components/schemas/CatalogListingFields"
         - type: object
           required: [id, material_id, material_version, suspended_reason, listed_at, created_at, updated_at, updated_by]
           properties:
@@ -3681,6 +3692,7 @@ components:
             created_at: { type: string, format: date-time }
             updated_at: { type: string, format: date-time }
             updated_by: { type: string, format: uuid }
+      unevaluatedProperties: false
 
     CatalogOffer:
       type: object
