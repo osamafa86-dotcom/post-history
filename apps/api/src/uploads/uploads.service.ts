@@ -150,6 +150,8 @@ export class UploadsService implements ReplayRehydrator {
     if (!key || !this.storage.removeUpload) return;
     try {
       await this.storage.removeUpload(this.config.S3_BUCKET_UPLOADS, key);
+      // تأكيد الحذف؛ ما لم يُؤكَّد تعيد مكنسة التسوية محاولته (retryRemovals)
+      await this.db.update(uploadSessions).set({ storageRemovedAt: sql`now()` }).where(eq(uploadSessions.id, id));
     } catch (err) {
       this.logger.warn({ upload_session_id: id, error: (err as Error).name }, 'cancelled upload not removed from temporary storage');
     }

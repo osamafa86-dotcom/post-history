@@ -93,6 +93,40 @@ describe('upload reconciliation (in_progress sessions whose post-finish was lost
     expect(storage.removed).not.toContain(`tus/${ongoing.id}`);
   });
 
+  const removedAt = async (id: string) => (await h.pool.query(`SELECT storage_removed_at FROM upload_sessions WHERE id = $1`, [id])).rows[0].storage_removed_at;
+  // القاعدة مشتركة: جلسات فاشلة قديمة من ملفات أخرى تسبق جلسة الاختبار، فتُعاد الدفعات حتى تُعالج أو تنفد المحاولات
+  const retryUntil = async (id: string) => {
+    for (let i = 0; i < 20 && (await removedAt(id)) === null; i++) if ((await reconciler.retryRemovals(500)) === 0) break;
+  };
+
+  it('a removal that succeeds is confirmed (storage_removed_at); a failed session not yet confirmed is retried until storage answers', async () => {
+    const expired = await stale({ expiresInSeconds: -10 });
+    await drain();
+    expect(await removedAt(expired.id)).not.toBeNull();
+
+    const s = await stale();
+    // جلسة فشلت منذ ما يتجاوز مهلة الركود ولم يُؤكَّد حذفها: محفّز updated_at يُتجاوز في هذه المعاملة وحدها
+    const client = await h.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`SET LOCAL session_replication_role = replica`);
+      await client.query(
+        `UPDATE upload_sessions SET state = 'failed', failure_reason = 'storage_error', updated_at = now() - make_interval(secs => $2) WHERE id = $1`,
+        [s.id, h.config.UPLOAD_RECONCILE_STALE_SECONDS + 60],
+      );
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+    storage.removeFails = true;
+    await reconciler.retryRemovals(500);
+    expect(await removedAt(s.id)).toBeNull();
+    storage.removeFails = false;
+    await retryUntil(s.id);
+    expect(await removedAt(s.id)).not.toBeNull();
+    expect(storage.removed).toContain(`tus/${s.id}`);
+  });
+
   it('a failed removal of the expired upload is logged only: the session still fails as expired', async () => {
     storage.removeFails = true;
     const expired = await stale({ expiresInSeconds: -10 });

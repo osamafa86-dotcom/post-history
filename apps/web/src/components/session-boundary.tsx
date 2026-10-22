@@ -8,6 +8,7 @@ import { authPost, browserApi, dataOrThrow, leaveSession } from "@/lib/browser-a
 import { hasRole } from "@/lib/review";
 import { catalogRoles } from "./store/store-catalog";
 import { uploadRoles } from "@/lib/upload-policy";
+import { templateRoles } from "@/lib/license-policy";
 
 const UserContext = createContext<Me | null>(null);
 export function useUser() { const me = useContext(UserContext); if (!me) throw new Error("Session required"); return me; }
@@ -64,6 +65,7 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
       <Link prefetch={false} className={pathname.endsWith("/form-preview") ? "active" : ""} href={`/${locale}/form-preview`}>{m.formPreview}</Link>
       <Link prefetch={false} className={pathname.endsWith("/notifications") ? "active" : ""} href={`/${locale}/notifications`}>{m.notice.title}</Link>
       {hasRole(me, "system_admin", "editor_in_chief") && <Link prefetch={false} className={pathname.endsWith("/notification-rules") ? "active" : ""} href={`/${locale}/notification-rules`}>{m.rules.title}</Link>}
+      {hasRole(me, ...templateRoles) && <Link prefetch={false} className={pathname.endsWith("/license-templates") ? "active" : ""} href={`/${locale}/license-templates`}>{m.templates.nav}</Link>}
       {hasRole(me, "system_admin") && <Link prefetch={false} className={pathname.endsWith("/admin") ? "active" : ""} href={`/${locale}/admin`}>{m.admin.title}</Link>}
     </nav><p className="scope-note">{m.readOnly}</p><button className="quiet danger-link" onClick={() => setConfirmAll(true)}>{m.logoutAll}</button></aside>
     <main id="main-content" className="main-content">{error && <p className="notice error" role="alert">{m.error}</p>}{children}</main></div>

@@ -165,12 +165,26 @@ export const materialFilesRelations = relations(materialFiles, ({one, many}) => 
 	uploadSessions_fileId: many(uploadSessions, {
 		relationName: "uploadSessions_fileId_materialFiles_id"
 	}),
-	materialFile: one(materialFiles, {
+	materialExports_fileId: many(materialExports, {
+		relationName: "materialExports_fileId_materialFiles_id"
+	}),
+	materialExports_sourceFileId: many(materialExports, {
+		relationName: "materialExports_sourceFileId_materialFiles_id"
+	}),
+	materialFile_alignmentOriginalFileId: one(materialFiles, {
+		fields: [materialFiles.alignmentOriginalFileId],
+		references: [materialFiles.id],
+		relationName: "materialFiles_alignmentOriginalFileId_materialFiles_id"
+	}),
+	materialFiles_alignmentOriginalFileId: many(materialFiles, {
+		relationName: "materialFiles_alignmentOriginalFileId_materialFiles_id"
+	}),
+	materialFile_derivedFromId: one(materialFiles, {
 		fields: [materialFiles.derivedFromId],
 		references: [materialFiles.id],
 		relationName: "materialFiles_derivedFromId_materialFiles_id"
 	}),
-	materialFiles: many(materialFiles, {
+	materialFiles_derivedFromId: many(materialFiles, {
 		relationName: "materialFiles_derivedFromId_materialFiles_id"
 	}),
 	material: one(materials, {
@@ -181,12 +195,6 @@ export const materialFilesRelations = relations(materialFiles, ({one, many}) => 
 		fields: [materialFiles.uploadSessionId],
 		references: [uploadSessions.id],
 		relationName: "materialFiles_uploadSessionId_uploadSessions_id"
-	}),
-	materialExports_fileId: many(materialExports, {
-		relationName: "materialExports_fileId_materialFiles_id"
-	}),
-	materialExports_sourceFileId: many(materialExports, {
-		relationName: "materialExports_sourceFileId_materialFiles_id"
 	}),
 }));
 

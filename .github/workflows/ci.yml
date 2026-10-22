@@ -124,6 +124,11 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+      - name: Install the locked node-pg-migrate (migrate.sh never fetches it at run time)
+        run: npm ci --no-audit --no-fund
+        working-directory: apps/api
       - name: Migrate up, smoke test, down, up
         env:
           DATABASE_URL: postgres://posthistory:ci-only@localhost:5432/posthistory_test
@@ -225,6 +230,8 @@ jobs:
         run: infra/compose/check-pinned.sh
       - name: Trial host bootstrap and update, dry run in Ubuntu 24.04 without network (ADR 0013)
         run: infra/deploy/test-dry-run.sh
+      - name: Trial API image from a release, checked by sha256 and commit (ADR 0050)
+        run: infra/deploy/test-api-image.sh
       - name: Validate docker compose file
         run: |
           cp infra/compose/.env.example infra/compose/.env
