@@ -290,4 +290,6 @@
     <string name="review_history">Transition history</string>
     <string name="review_history_empty">No transitions yet.</string>
     <string name="review_history_line">%1$s: %2$s → %3$s</string>
+    <string name="file_kind_shot_list">Shot list</string>
+    <string name="file_kind_other">Other file</string>
 </resources>

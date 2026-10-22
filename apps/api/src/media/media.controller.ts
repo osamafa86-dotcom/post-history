@@ -10,9 +10,9 @@ import { type MediaDerivativeBody, MediaService, type MediaSessionView, type Med
  * نقاط عامل الوسائط (ADR 0006، x-internal في العقد v0.1): خارج /v1 وخارج حارس الجلسات، ومقصورة على INTERNAL_ALLOWED_CIDRS.
  * المصادقة بترويسة `Authorization: Bearer <MEDIA_WORKER_TOKEN>` (منفصل عن رمز tusd)، مقارنة ثابتة الزمن، والترويسة
  * لا تُسجَّل (السجل يحمل المسار والحالة فقط). أي فشل في المصادقة، أو رمز غير مضبوط، = 404 كبقية /internal/*.
- * `AI_WORKER_TOKEN` (عامل التفريغ) يُقبل على نقطة المشتقات وحدها ولنوعي AI_DERIVATIVE_KINDS وحدهما؛ غيرها = 404.
+ * `AI_WORKER_TOKEN` (عامل التفريغ) يُقبل على نقطة المشتقات وحدها ولأنواع AI_DERIVATIVE_KINDS وحدها؛ غيرها = 404.
  */
-const AI_DERIVATIVE_KINDS: ReadonlySet<unknown> = new Set(['transcript', 'captions']);
+const AI_DERIVATIVE_KINDS: ReadonlySet<unknown> = new Set(['transcript', 'captions', 'shot_list']);
 
 @Controller('internal/media')
 export class MediaController {

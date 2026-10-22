@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "infra",
+  "test_name": "availability",
+  "started_at": "2026-10-22T00:14:00Z",
+  "ended_at": "2026-10-22T00:16:00Z",
+  "result": "partial",
+  "device": {
+    "platform": "server",
+    "model": "local docker compose (before and after); GitHub-hosted runner ubuntu-24.04 (before and after)"
+  },
+  "metrics": {
+    "before_local_api_kill_downtime_s": 9.27,
+    "before_local_db_kill_downtime_s": 9.52,
+    "before_local_deploy_downtime_s": 11.99,
+    "before_ci_api_kill_downtime_s": 17.86,
+    "before_ci_db_kill_downtime_s": 17.83,
+    "before_ci_deploy_downtime_s": 21.32,
+    "after_local_api_kill_downtime_s": 1.44,
+    "after_local_db_kill_downtime_s": 1.63,
+    "after_local_deploy_downtime_s": 1.55,
+    "after_local_api_kill_failed_requests": 108,
+    "after_local_api_kill_requests": 619,
+    "after_local_db_kill_failed_requests": 105,
+    "after_local_db_kill_requests": 627,
+    "after_local_deploy_failed_requests": 120,
+    "after_local_deploy_requests": 631,
+    "all_recovered": true,
+    "marker_intact": true,
+    "after_ci_api_kill_downtime_s": 1.37,
+    "after_ci_db_kill_downtime_s": 1.51,
+    "after_ci_deploy_downtime_s": 1.47
+  },
+  "notes": "ADR 0050: tools/acceptance/scripts/availability.mjs --dry-run inside infra/field-trial/smoke-trial.sh, 4 readers 50 ms apart, the kill a SIGKILL of the container's process from the host (#233). Before: the API ran from source (node:22, npm ci + migrate + build at every start; locally the npm ci was skipped by a local override, so the local before is a lower bound). After: post-history-api:<commit> built from infra/preview/api.Dockerfile, NODE_ENV=production, no npm ci or build at start. The CI 'before' numbers are from PR #234's field-trial job, the CI 'after' from PR #245's. Not the trial host and no declared target, hence partial."
+}

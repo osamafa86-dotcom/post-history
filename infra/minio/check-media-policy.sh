@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # يتحقق من صلاحيات مستخدم عامل الوسائط في MinIO (ADR 0006): قراءة بادئة الرفع وكتابة derived/ فقط؛ ومستخدم عامل
-# التفريغ (ADR 0019) إن ضُبط: قراءة derived/*/*/proxy-480p.mp4 وderived/*/*/audio-16k.m4a، وقراءة derived/*/*/transcript.{json,vtt} وكتابتهما، فقط.
+# التفريغ (ADR 0019) إن ضُبط: قراءة derived/*/*/proxy-480p.mp4 وderived/*/*/audio-16k.m4a، وقراءة مشتقاته وكتابتها فقط:
+# derived/*/*/{transcript.json,transcript.vtt,shots.json,shot_list.json} (اللقطات ADR 0026).
 # يحتاج compose قائمًا و S3_MEDIA_ACCESS_KEY/S3_MEDIA_SECRET_KEY (وS3_AI_* اختياريًا) مضبوطين في infra/compose/.env.
 set -euo pipefail
 
@@ -56,6 +57,12 @@ if [ -n "${S3_AI_ACCESS_KEY:-}" ] && [ -n "${S3_AI_SECRET_KEY:-}" ]; then
   expect ALLOW "ai: read its transcript"        ai cat "t/$S3_BUCKET_MEDIA/derived/m/policy-check/transcript.json"
   expect ALLOW "ai: write transcript.vtt"       ai_put "t/$S3_BUCKET_MEDIA/derived/m/policy-check/transcript.vtt"
   expect deny  "ai: write captions.vtt"        ai_put "t/$S3_BUCKET_MEDIA/derived/m/policy-check/captions.vtt"
+  expect ALLOW "ai: write shots.json"           ai_put "t/$S3_BUCKET_MEDIA/derived/m/policy-check/shots.json"
+  expect ALLOW "ai: read its shots.json"        ai cat "t/$S3_BUCKET_MEDIA/derived/m/policy-check/shots.json"
+  expect ALLOW "ai: write shot_list.json"       ai_put "t/$S3_BUCKET_MEDIA/derived/m/policy-check/shot_list.json"
+  expect ALLOW "ai: read its shot_list.json"    ai cat "t/$S3_BUCKET_MEDIA/derived/m/policy-check/shot_list.json"
+  expect deny  "ai: delete shots.json"          ai rm "t/$S3_BUCKET_MEDIA/derived/m/policy-check/shots.json"
+  expect deny  "ai: shots outside derived/"     ai_put "t/$S3_BUCKET_MEDIA/shots.json"
   expect deny  "ai: other transcript type"     ai_put "t/$S3_BUCKET_MEDIA/derived/m/policy-check/transcript.html"
   expect deny  "ai: overwrite the proxy"        ai_put "t/$S3_BUCKET_MEDIA/derived/m/policy-check/proxy-480p.mp4"
   expect deny  "ai: write outside transcript.*" ai_put "t/$S3_BUCKET_MEDIA/derived/m/policy-check/other.txt"
