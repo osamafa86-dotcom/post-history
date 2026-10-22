@@ -266,6 +266,21 @@ const server = createServer(async (req, res) => {
       overdue_acknowledgements: 2,
       uploads_in_progress: [{ upload_session_id: "90000000-0000-4000-8000-000000000001", material_id: materials[4].id, kind: "original", priority: "urgent", state: "in_progress", size_bytes: 4000, bytes_received: 1000, updated_at: new Date().toISOString(), filename: "never-display-canary", reporter_id: "never-display-canary" }] });
   }
+  if (url.pathname === "/v1/catalog" || url.pathname.startsWith("/v1/catalog/")) {
+    if (!user.roles.some(role => ["system_admin", "rights_officer", "editor_in_chief", "finance"].includes(role.name))) return send({}, 403);
+    // كتالوج اصطناعي: مادتان، بحقول خارج القائمة البيضاء للتأكد أنها لا تصل إلى المتصفح.
+    const text = (ar: string, en: string) => ({ ar, en });
+    const offer = (id: string, type: string, amount: number) => ({ license_template_id: `70000000-0000-4000-8000-00000000000${id}`, license_version: 1, type, name: text(type === "exclusive_temporary" ? "حصري 48 ساعة" : "تحريري لاستخدام واحد", type === "exclusive_temporary" ? "Exclusive 48 h" : "Editorial single use"), price: { amount_minor: amount, currency: "USD" } });
+    const catalog = [1, 2].map(i => ({ listing_id: `71000000-0000-4000-8000-00000000000${i}`, material_version: 1, title: text(`لقطات اصطناعية ${i}`, `Synthetic footage ${i}`), description: text("وصف اصطناعي", "Synthetic description"),
+      shot_list: [{ start_ms: 0, label: text("لقطة عامة", "Wide shot") }, { start_ms: 65000, label: text("لقطة قريبة", "Close-up") }], material_types: ["raw_footage"], governorate: "غزة", shot_on: "2026-10-19T13:45:00Z", duration_ms: 125000, width: 3840, height: 2160,
+      credit: "فلسطين بوست", offers: [offer("1", "editorial_single", 15000), offer("2", "exclusive_temporary", 90000)], exclusive_available: i === 1, listed_at: "2026-10-21T10:00:00Z", reporter_id: "never-display-canary", city: "never-display-canary", gps: { lat: 31.5, lng: 34.4 } }));
+    if (url.pathname === "/v1/catalog") { const q = url.searchParams.get("q"); return send({ items: catalog.filter(item => !q || item.title.ar.includes(q) || item.title.en.toLowerCase().includes(q.toLowerCase())), next_cursor: null }); }
+    const preview = /^\/v1\/catalog\/([^/]+)\/preview-url$/.exec(url.pathname), id = preview?.[1] ?? url.pathname.slice("/v1/catalog/".length), item = catalog.find(c => c.listing_id === id);
+    if (!item) return send({ code: "not_found" }, 404);
+    if (!preview) return send(item);
+    const signature = randomUUID(), expires = Date.now() + 300000; signed.set(signature, { kind: "proxy", expires });
+    return send({ url: `${fixtureOrigin}/derived/fixture?signature=${signature}`, expires_at: new Date(expires).toISOString() });
+  }
   if (url.pathname === "/v1/notifications") { const items = url.searchParams.get("unread_only") === "true" ? notifications.filter(n => !n.read_at) : notifications; return send({ items, next_cursor: null, unread_count: notifications.filter(n => !n.read_at).length }); }
   const trail = /^\/v1\/materials\/([^/]+)\/transitions$/.exec(url.pathname);
   if (trail) return send({ items: history.get(trail[1]) ?? [] });
