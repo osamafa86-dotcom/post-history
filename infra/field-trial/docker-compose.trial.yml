@@ -12,9 +12,22 @@ services:
     restart: unless-stopped
   tusd-proxy:
     restart: unless-stopped
+  # The API from the image built for this very commit (ADR 0050: infra/deploy/api-image.sh, CI's api-image.yml), not from
+  # source: no npm ci and no build when it starts, so it comes back from a crash in seconds and without the network.
+  # trial.sh sets API_IMAGE to post-history-api:<the checked-out commit>; migrations run from the image before it starts.
   api:
     restart: unless-stopped
+    image: ${API_IMAGE:?post-history-api:<commit>, set by trial.sh}
+    pull_policy: never
+    working_dir: /app/apps/api
+    command: !reset null
+    volumes: !reset []
+    read_only: true
+    tmpfs: ["/tmp:size=64m"]
+    healthcheck:
+      start_period: 60s
     environment:
+      NODE_ENV: production
       # Caddy reaches the API through a port on 127.0.0.1, so the API sees the default network's gateway as the peer.
       # Trusting that one address (not 172.16.0.0/12) lets req.ip come from Caddy's X-Forwarded-For while no other
       # container can forge it; without it every client shares one rate-limit bucket.
