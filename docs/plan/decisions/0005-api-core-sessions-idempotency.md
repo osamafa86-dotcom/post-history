@@ -371,3 +371,19 @@
   - الحصرية لـ `exclusive_temporary` وحده.
   - النوع ثابت.
 - التدقيق `license_template.created` و`license_template.version_created` بـ `license_template_id` و`license_version` وحدهما.
+
+## إدراج المادة في الكتالوج (v0.3، ADR 0025)
+
+- **`commerce/listings.*`:**
+  - إدراج واحد لكل مادة (`409 listing_exists`)، يثبّت `materials.version` الحالي عند الإنشاء وكل استبدال.
+  - `ETag` وقت آخر تحديث بالميكروثانية، إذ لا عمود `row_version` في الجدول.
+  - البحث عن المادة بالمعرّف بعد حارس الدور، لأن أدوار الإدراج على مستوى المؤسسة، والمالية لا نطاق تحرير لها.
+- **الحالة:**
+  - `listed` يلزمه `rights_state = sellable` (`409 rights_not_sellable`).
+  - `suspended` بطلب سببه `manual`، إلا إن كان معلّقًا بسبب الحقوق فيبقى سببه.
+  - `listed_at` يُضبط أول انتقال إلى `listed` ولا يتغير بعده.
+- **الإذن التجاري:** `commercial_allowed` وعروض قوالب `commercial` لمدير النظام وحده (`403 forbidden_role`). مسؤول الحقوق
+  يحرر الإدراج دون أن يغيّرهما، والعرض التجاري بلا إذن `422` على `/offers`.
+- **التعليق التلقائي:** `applyTransition` يعلّق الإدراج المعروض (`rights_changed`) قبل أن تخرج حقوق مادته من `sellable`، في
+  المعاملة نفسها، لأن محفّز القاعدة يرفض العكس. ولا يعود `listed` إلا بطلب صريح.
+- **الحدث:** `catalog.listing_changed` مع كل تغيير، بالمعرّفات والحالة، و`source_file_id` (آخر أصل متحقق) ليبني عامل الوسائط المعاينة.
