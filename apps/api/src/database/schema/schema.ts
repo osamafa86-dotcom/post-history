@@ -1,5 +1,5 @@
 import { bytea } from "../bytea"
-import { pgTable, uuid, text, timestamp, index, foreignKey, unique, check, integer, jsonb, bigint, type AnyPgColumn, uniqueIndex, boolean, time, primaryKey, numeric, smallint, pgSequence } from "drizzle-orm/pg-core"
+import { pgTable, uuid, text, timestamp, index, foreignKey, unique, check, integer, jsonb, bigint, uniqueIndex, boolean, time, type AnyPgColumn, primaryKey, numeric, smallint, pgSequence } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 
@@ -160,11 +160,13 @@ export const uploadSessions = pgTable("upload_sessions", {
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	hookReservedUntil: timestamp("hook_reserved_until", { withTimezone: true, mode: 'string' }),
 	uploadTokenExpiresAt: timestamp("upload_token_expires_at", { withTimezone: true, mode: 'string' }),
+	storageRemovedAt: timestamp("storage_removed_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("upload_sessions_expiry_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(state = ANY (ARRAY['created'::text, 'in_progress'::text]))`),
-	index("upload_sessions_inflight_idx").using("btree", table.state.asc().nullsLast().op("timestamptz_ops"), table.updatedAt.asc().nullsLast().op("text_ops")).where(sql`(state = ANY (ARRAY['created'::text, 'in_progress'::text]))`),
+	index("upload_sessions_inflight_idx").using("btree", table.state.asc().nullsLast().op("text_ops"), table.updatedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(state = ANY (ARRAY['created'::text, 'in_progress'::text]))`),
 	index("upload_sessions_material_idx").using("btree", table.materialId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("uuid_ops")),
-	index("upload_sessions_owner_idx").using("btree", table.createdBy.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops"), table.id.desc().nullsFirst().op("uuid_ops")),
+	index("upload_sessions_owner_idx").using("btree", table.createdBy.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("uuid_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")),
+	index("upload_sessions_storage_pending_idx").using("btree", table.updatedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((state = 'failed'::text) AND (storage_removed_at IS NULL))`),
 	uniqueIndex("upload_sessions_tus_upload_id_key").using("btree", table.tusUploadId.asc().nullsLast().op("text_ops")).where(sql`(tus_upload_id IS NOT NULL)`),
 	foreignKey({
 			columns: [table.createdBy],
