@@ -5,6 +5,8 @@
 # TRIAL_EXTRA_COMPOSE: ملفات compose إضافية مفصولة بـ : للاختبار فقط (مثل تخطي البناء على مضيف بلا شبكة في الحاويات).
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# The API image built for the checked-out commit (ADR 0050); infra/deploy/api-image.sh fetches or builds it.
+export API_IMAGE="${API_IMAGE:-post-history-api:$(git -C "$ROOT" rev-parse HEAD)}"
 extra=()
 IFS=: read -r -a files <<<"${TRIAL_EXTRA_COMPOSE:-}"
 for f in "${files[@]}"; do [ -z "$f" ] || extra+=(-f "$f"); done

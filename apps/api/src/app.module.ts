@@ -71,6 +71,7 @@ export function configureApp(app: INestApplication, config: AppConfig, logger: L
       { path: 'internal/media/sessions/:id/verification', method: RequestMethod.POST },
       { path: 'internal/media/files/:file_id', method: RequestMethod.GET },
       { path: 'internal/media/files/:file_id/derivatives', method: RequestMethod.POST },
+      { path: 'internal/media/files/:file_id/alignment', method: RequestMethod.PUT },
     ],
   });
   app.enableShutdownHooks();

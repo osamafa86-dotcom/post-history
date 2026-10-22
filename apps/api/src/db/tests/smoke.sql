@@ -173,6 +173,12 @@ SELECT pg_temp.expect_error($q$
   VALUES ('00000000-0000-4000-8000-000000000101', 'proxy', 'received', '00000000-0000-4000-8000-000000000301', 'normal') $q$, '23505');
 SELECT pg_temp.expect_error($q$
   INSERT INTO material_files (material_id, kind, proxy_mode) VALUES ('00000000-0000-4000-8000-000000000101', 'original', 'urgent') $q$, '23514');
+-- قائمة اللقطات مشتق من الأصل (threat-model §9.1)، ونوع خارج القائمة يُرفض
+INSERT INTO material_files (material_id, kind, state, derived_from_id)
+VALUES ('00000000-0000-4000-8000-000000000101', 'shot_list', 'received', '00000000-0000-4000-8000-000000000301');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_files (material_id, kind, state, derived_from_id)
+  VALUES ('00000000-0000-4000-8000-000000000101', 'storyboard', 'received', '00000000-0000-4000-8000-000000000301') $q$, '23514');
 
 -- ---------- outbox & notifications ----------
 INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, actor_id, payload)
@@ -612,6 +618,52 @@ SELECT pg_temp.assert(
 SELECT pg_temp.assert(
   (SELECT count(*) = 1 FROM pg_indexes WHERE indexname = 'outbox_events_pending_idx' AND indexdef ILIKE '%WHERE (published_at IS NULL)%'),
   'outbox dispatcher partial index exists');
+
+-- المحاذاة الصوتية على النسخة الخفيفة وحدها، كاملة أو غائبة
+UPDATE material_files SET alignment_original_file_id = '00000000-0000-4000-8000-000000000301', alignment_offset_ms = 120,
+  alignment_confidence = 0.9, alignment_margin = 0.4, alignment_reliable = true, aligned_at = now()
+ WHERE id = '00000000-0000-4000-8000-000000000302';
+SELECT pg_temp.expect_error($q$
+  UPDATE material_files SET alignment_original_file_id = '00000000-0000-4000-8000-000000000301', alignment_offset_ms = 0,
+    alignment_confidence = 0.5, alignment_margin = 0.5, alignment_reliable = false, aligned_at = now()
+   WHERE id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE material_files SET alignment_confidence = 1.5 WHERE id = '00000000-0000-4000-8000-000000000302' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE material_files SET aligned_at = NULL WHERE id = '00000000-0000-4000-8000-000000000302' $q$, '23514');
+-- حزمة تسليم المشتري (ADR 0025 الجزء 9): لكل ترخيص حزمته، وlicense_id للتسليم وحده
+-- تسجيل المشتق المتساوي الأثر يستدل الفهرس الجزئي بشرطه الكامل؛ الشرط القديم وحده لا يطابقه بعد هذا الترحيل
+INSERT INTO material_files (material_id, kind, state, derived_from_id)
+VALUES ('00000000-0000-4000-8000-000000000101', 'proxy', 'received', '00000000-0000-4000-8000-000000000301')
+ON CONFLICT (derived_from_id, kind) WHERE derived_from_id IS NOT NULL AND kind <> 'delivery' DO NOTHING;
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_files (material_id, kind, state, derived_from_id)
+  VALUES ('00000000-0000-4000-8000-000000000101', 'proxy', 'received', '00000000-0000-4000-8000-000000000301')
+  ON CONFLICT (derived_from_id, kind) WHERE derived_from_id IS NOT NULL DO NOTHING $q$, '42P10');
+INSERT INTO material_files (material_id, kind, state, derived_from_id, license_id)
+VALUES ('00000000-0000-4000-8000-000000000101', 'delivery', 'received', '00000000-0000-4000-8000-000000000301', '00000000-0000-4000-8000-000000000801');
+INSERT INTO material_files (material_id, kind, state, derived_from_id, license_id)
+VALUES ('00000000-0000-4000-8000-000000000101', 'delivery', 'received', '00000000-0000-4000-8000-000000000301', '00000000-0000-4000-8000-000000000802');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_files (material_id, kind, state, derived_from_id, license_id)
+  VALUES ('00000000-0000-4000-8000-000000000101', 'delivery', 'received', '00000000-0000-4000-8000-000000000301', '00000000-0000-4000-8000-000000000801') $q$, '23505');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_files (material_id, kind, state, derived_from_id)
+  VALUES ('00000000-0000-4000-8000-000000000101', 'delivery', 'received', '00000000-0000-4000-8000-000000000301') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_files (material_id, kind, state, derived_from_id, license_id)
+  VALUES ('00000000-0000-4000-8000-000000000101', 'export', 'received', '00000000-0000-4000-8000-000000000301', '00000000-0000-4000-8000-000000000801') $q$, '23514');
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('license.delivery_requested', 'license', '00000000-0000-4000-8000-000000000801', 'license.delivery_requested:smoke:1',
+        '{"license_id": "00000000-0000-4000-8000-000000000801", "material_id": "00000000-0000-4000-8000-000000000101", "source_file_id": "00000000-0000-4000-8000-000000000301", "deliverables": ["original", "audio"], "produced_file_id": null}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('license.delivery_requested', 'license', '00000000-0000-4000-8000-000000000801', 'license.delivery_requested:smoke:2',
+          '{"license_id": "00000000-0000-4000-8000-000000000801", "buyer_name": "x"}') $q$, '23514');
+SELECT pg_temp.assert(
+  (SELECT count(*) = 1 FROM pg_indexes WHERE indexname = 'upload_sessions_storage_pending_idx'
+     AND indexdef ILIKE '%WHERE ((state = ''failed''::text) AND (storage_removed_at IS NULL))%'),
+  'partial index for failed uploads whose temporary data is not yet removed exists');
 
 \o
 \echo smoke OK

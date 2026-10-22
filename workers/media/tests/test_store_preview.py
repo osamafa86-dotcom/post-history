@@ -113,3 +113,25 @@ def test_missing_key_refuses_to_build(clip: Path):
     with pytest.raises(ValueError):
         jobs.handle(_listed())
     assert storage.puts == []
+
+
+def test_signed_preview_when_c2pa_is_on(clip: Path, tmp_path: Path):
+    # التوقيع بعد العلامة، والملف المسجَّل هو الموقَّع؛ البيان بلا بصمة الأصل ولا أي وسم مزروع (ADR 0060)
+    from media_worker import c2pa
+    from test_c2pa import SECRET, _signer, make_certs
+    certs = make_certs(tmp_path)
+    data = clip.read_bytes()
+    api, storage, jobs = _setup(data)
+    jobs.c2pa = c2pa.Signing(signer=_signer(certs), source_secret=SECRET, publisher="Test Network")
+    assert jobs.handle(_listed()) == "store-preview"
+    (_, body), = api.derivatives
+    blob = storage.objects[("media", body["storage_key"])]
+    assert body["sha256"] == hashlib.sha256(blob).hexdigest() and b"c2pa" in blob
+    sha = hashlib.sha256(data).hexdigest()
+    assert sha.encode() not in blob and bytes.fromhex(sha) not in blob
+    for value in LEAKY_TAGS.values():
+        assert value.encode() not in blob
+    signed = tmp_path / "signed.mp4"
+    signed.write_bytes(blob)
+    report = c2pa.read_report(signed, _signer(certs), tmp_path)
+    c2pa.check_report(report, source=c2pa.source_ref(SECRET, sha), publisher="Test Network", trusted=True)

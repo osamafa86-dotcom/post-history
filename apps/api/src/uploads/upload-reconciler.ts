@@ -1,5 +1,5 @@
 import { Inject, Injectable, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
-import { and, asc, eq, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, lt, sql } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import { APP_CONFIG, type AppConfig, storageConfigured } from '../config/config';
 import { LOGGER } from '../common/logger';
@@ -105,16 +105,55 @@ export class UploadReconciler implements OnApplicationBootstrap, OnApplicationSh
     for (const s of sessions) {
       try {
         await this.storage.removeUpload(this.config.S3_BUCKET_UPLOADS, s.key);
+        await this.markRemoved(s.id);
       } catch (err) {
         this.logger.warn({ upload_session_id: s.id, err_name: (err as Error)?.name }, 'failed upload not removed from temporary storage');
       }
     }
   }
 
+  /**
+   * إعادة محاولة حذف بقايا الجلسات الفاشلة التي لم يُؤكَّد حذفها (فشل الحذف عند الإلغاء أو التسوية، أو جلسات فشلت قبل
+   * الحذف). بعد مهلة الركود فلا تسبق الحذف الفوري عند الإلغاء، وتقف عند أول عطل تخزين. يعيد عدد ما أُكِّد حذفه.
+   */
+  async retryRemovals(limit = this.config.UPLOAD_RECONCILE_BATCH): Promise<number> {
+    if (!this.storage.removeUpload) return 0;
+    const pending = await this.db
+      .select({ id: uploadSessions.id, storageKey: uploadSessions.storageKey })
+      .from(uploadSessions)
+      .where(
+        and(
+          eq(uploadSessions.state, 'failed'),
+          isNull(uploadSessions.storageRemovedAt),
+          lt(uploadSessions.updatedAt, sql`now() - make_interval(secs => ${this.config.UPLOAD_RECONCILE_STALE_SECONDS})` as never),
+        ),
+      )
+      .orderBy(asc(uploadSessions.updatedAt))
+      .limit(limit);
+    let removed = 0;
+    for (const s of pending) {
+      try {
+        await this.storage.removeUpload(this.config.S3_BUCKET_UPLOADS, s.storageKey ?? `${this.config.TUSD_OBJECT_PREFIX}${s.id}`);
+      } catch (err) {
+        this.logger.warn({ upload_session_id: s.id, err_name: (err as Error)?.name }, 'temporary storage removal deferred');
+        break;
+      }
+      await this.markRemoved(s.id);
+      removed++;
+    }
+    if (removed) this.logger.info({ removed }, 'failed uploads removed from temporary storage');
+    return removed;
+  }
+
+  private async markRemoved(id: string): Promise<void> {
+    await this.db.update(uploadSessions).set({ storageRemovedAt: sql`now()` }).where(eq(uploadSessions.id, id));
+  }
+
   private schedule(): void {
     if (this.stopped) return;
     this.timer = setTimeout(() => {
       this.running = this.reconcileBatch()
+        .then(() => this.retryRemovals())
         .catch((err: unknown) => this.logger.error({ err_name: (err as Error)?.name }, 'upload reconciliation failed'))
         .finally(() => this.schedule());
     }, this.config.UPLOAD_RECONCILE_INTERVAL_MS);

@@ -7,7 +7,7 @@
 - `produced` (من التصدير النهائي) ليس من الأصل: يُذكر في `manifest.json` بحالة `not_available` حين لا يُمرَّر
   ملفه، ولا يُختلق.
 - التفريغ لا يدخل التسليم (قرار المنسّق R11 على #178، حتى ADR للحجب الآلي): بند غير معروف يُرفض.
-- `manifest.json` بمعرّف الترخيص وبصمة الأصل وحالة كل بند، و`SHA256SUMS` لكل ملف؛ الأرشيف حتمي.
+- `manifest.json` بمعرّف الترخيص وحالة كل بند (بلا بصمة الأصل)، و`SHA256SUMS` لكل ملف؛ الأرشيف حتمي.
 
 الأصل يُقرأ فقط وتُعاد مطابقة بصمته قبل البناء. المدخل مقيد بـ `INPUT_GUARD`.
 """
@@ -88,8 +88,8 @@ def build_delivery(out: Path, *, original: Path, info: Probe, license_id: str, s
                 status[item] = [name]
             else:
                 status[item] = "not_available"
-        manifest = {"schema": MANIFEST_SCHEMA, "license_id": license_id,
-                    "original": {"sha256": sha256}, "deliverables": status}
+        # بلا بصمة الأصل الخام (ADR 0060): من يملك الأصل يطابقها فيعرف مصدر النسخة المسلَّمة
+        manifest = {"schema": MANIFEST_SCHEMA, "license_id": license_id, "deliverables": status}
         sums: dict[str, str] = {}
         partial = out.with_name(out.name + ".partial")
         with zipfile.ZipFile(partial, "w") as zf:

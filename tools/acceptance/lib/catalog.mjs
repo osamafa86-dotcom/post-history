@@ -32,6 +32,7 @@ export const CATALOG = [
 // Acceptance tests that come from the security decisions (docs/security/threat-model.md, SEC-01..SEC-07), not from a row of
 // the plan's table. They have scripts and results like any other, but are not counted in the 22-row status table.
 export const EXTRA = [
+  { name: "c2pa-manifest", mode: "automated", source: "ADR 0060", criterion: "مقاطع بوسوم وموقع وSEI مزروعة تمر بمساري التصدير ومعاينة المتجر ثم تُوقَّع؛ يُقرأ البيان كاملًا فلا قيمة مزروعة ولا حقل خارج القائمة البيضاء ولا بصمة الأصل، والملف الموقَّع جديد والأصل لم يُمس (شرط تفعيل MEDIA_ENABLE_C2PA)" },
   { name: "session-revocation", mode: "automated", source: "SEC-01", criterion: "رمز مبطَل (جلسة أو كل الجلسات) يُرفض على الخادم وعلى مسار الرفع خلال ثوانٍ، والرفع الجاري يتوقف عند الجزء التالي" },
   { name: "field-upload-1gb", mode: "field", source: "plan stage (b)", criterion: "رفع 1 غيغابايت على شبكة ميدانية فعلية على iPhone وXiaomi وSamsung: يكتمل ببصمة خادم مطابقة وصفر بايت مفقود وبلا تدخل بشري بعد البدء" },
   { name: "notification-delivery", mode: "automated", source: "core gate", criterion: "حدث استلام ← إشعار للمستلمين بحسب القواعد خلال زمن مقيس (≤ 10 ثوانٍ)، حمولة من القائمة البيضاء فقط، و«اطّلعت» يوقف التصعيد" },

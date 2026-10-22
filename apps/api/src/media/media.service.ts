@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, ne, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, ne, sql, type SQL } from 'drizzle-orm';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { ApiError } from '../common/errors';
 import { DB, type Database, type Tx } from '../database/database.module';
@@ -14,6 +14,7 @@ export type MediaSessionView = components['schemas']['MediaSession'];
 export type MediaVerificationResult = components['schemas']['MediaVerificationResult'];
 export type MediaVerificationBody = components['schemas']['MediaVerification'];
 export type MediaDerivativeBody = components['schemas']['MediaDerivative'];
+export type MediaAlignmentBody = components['schemas']['MediaAlignment'];
 type MediaTechnical = components['schemas']['MediaTechnical'];
 
 /** ما يُخزَّن في material_files.technical؛ يطابق material_file_technical_keys() في القاعدة. الباقي (المدة، بداية
@@ -81,7 +82,40 @@ export class MediaService {
       storage_key: s.storageKey,
       proxy_mode: s.proxyMode as MediaSessionView['proxy_mode'],
       material_has_proxy: await this.hasProxy(this.db, s.materialId),
+      proxy_file_id: await this.latestVerified(this.db, s.materialId, 'proxy'),
+      original_file_id: await this.latestVerified(this.db, s.materialId, 'original'),
     };
+  }
+
+  /**
+   * المحاذاة الصوتية (v0.3، #249): يستبدل ما قاسه العامل على النسخة الخفيفة، فالطلب نفسه يعيد الأثر نفسه. النسخة
+   * الخفيفة والأصل كلاهما متحقق ومن المادة نفسها، وإلا 422 بمسار الحقل؛ الملف غير الموجود 410 كبقية نقاط العامل.
+   */
+  async putAlignment(fileId: string, body: MediaAlignmentBody): Promise<void> {
+    if (!UUID.test(fileId)) throw gone();
+    await this.db.transaction(async (tx) => {
+      const [proxy] = await tx.select().from(materialFiles).where(eq(materialFiles.id, fileId)).for('update');
+      if (!proxy) throw gone();
+      if (proxy.kind !== 'proxy' || proxy.state !== 'verified') throw ApiError.validation({ fields: ['/file_id'] });
+      const [original] = await tx
+        .select({ materialId: materialFiles.materialId, kind: materialFiles.kind, state: materialFiles.state })
+        .from(materialFiles)
+        .where(eq(materialFiles.id, body.original_file_id));
+      if (!original || original.kind !== 'original' || original.state !== 'verified' || original.materialId !== proxy.materialId) {
+        throw ApiError.validation({ fields: ['/original_file_id'] });
+      }
+      await tx
+        .update(materialFiles)
+        .set({
+          alignmentOriginalFileId: body.original_file_id,
+          alignmentOffsetMs: body.offset_ms,
+          alignmentConfidence: body.confidence,
+          alignmentMargin: body.margin,
+          alignmentReliable: body.reliable,
+          alignedAt: sql`now()`,
+        })
+        .where(eq(materialFiles.id, fileId));
+    });
   }
 
   async verify(id: string, body: MediaVerificationBody): Promise<MediaVerificationResult> {
@@ -164,7 +198,8 @@ export class MediaService {
           ...columns,
           technical: json,
         })
-        .onConflictDoNothing({ target: [materialFiles.derivedFromId, materialFiles.kind], where: sql`derived_from_id IS NOT NULL` })
+        // الشرط يستلزم شرط الفهرس الجزئي القائم والذي يستثني delivery (ترحيل 026)، فيستدلّه Postgres في الحالين
+        .onConflictDoNothing({ target: [materialFiles.derivedFromId, materialFiles.kind], where: sql`derived_from_id IS NOT NULL AND kind <> 'delivery'` })
         .returning({ id: materialFiles.id });
       if (created) {
         // حزمة التصدير (v0.2) تجعل طلبها جاهزًا
@@ -226,6 +261,16 @@ export class MediaService {
       receipt_number: row!.receipt ?? null,
       failure_reason: row!.failureReason as MediaVerificationResult['failure_reason'],
     };
+  }
+
+  private async latestVerified(db: Database | Tx, materialId: string, kind: 'proxy' | 'original'): Promise<string | null> {
+    const [f] = await db
+      .select({ id: materialFiles.id })
+      .from(materialFiles)
+      .where(and(eq(materialFiles.materialId, materialId), eq(materialFiles.kind, kind), eq(materialFiles.state, 'verified')))
+      .orderBy(desc(materialFiles.verifiedAt), desc(materialFiles.id))
+      .limit(1);
+    return f?.id ?? null;
   }
 
   private async hasProxy(db: Database | Tx, materialId: string): Promise<boolean> {
