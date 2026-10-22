@@ -33,6 +33,7 @@
     "ajv-formats": "3.0.1",
     "drizzle-orm": "0.45.4",
     "ioredis": "6.0.0",
+    "node-pg-migrate": "8.0.4",
     "pg": "8.23.1",
     "pino": "10.4.0",
     "reflect-metadata": "0.2.2",

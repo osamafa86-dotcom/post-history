@@ -45,6 +45,8 @@ public struct MaterialFile: Sendable, Codable, Hashable {
     public var state: State
     /** وضع النسخة الخفيفة */
     public var proxyMode: ProxyMode?
+    /** لـ `proxy` وحده (v0.3)؛ `null` أو غائب قبل القياس أو لغير النسخة الخفيفة */
+    public var alignment: MediaAlignment?
     public var sizeBytes: Int?
     /** تُحسب على الخادم بعد التجميع */
     public var sha256: String?
@@ -59,11 +61,12 @@ public struct MaterialFile: Sendable, Codable, Hashable {
     public var createdAt: Date
     public var verifiedAt: Date?
 
-    public init(id: UUID, kind: Kind, state: State, proxyMode: ProxyMode? = nil, sizeBytes: Int? = nil, sha256: String? = nil, mimeType: String? = nil, durationMs: Int? = nil, startPtsUs: Int? = nil, width: Int? = nil, height: Int? = nil, receiptNumber: String? = nil, createdAt: Date, verifiedAt: Date? = nil) {
+    public init(id: UUID, kind: Kind, state: State, proxyMode: ProxyMode? = nil, alignment: MediaAlignment? = nil, sizeBytes: Int? = nil, sha256: String? = nil, mimeType: String? = nil, durationMs: Int? = nil, startPtsUs: Int? = nil, width: Int? = nil, height: Int? = nil, receiptNumber: String? = nil, createdAt: Date, verifiedAt: Date? = nil) {
         self.id = id
         self.kind = kind
         self.state = state
         self.proxyMode = proxyMode
+        self.alignment = alignment
         self.sizeBytes = sizeBytes
         self.sha256 = sha256
         self.mimeType = mimeType
@@ -81,6 +84,7 @@ public struct MaterialFile: Sendable, Codable, Hashable {
         case kind
         case state
         case proxyMode = "proxy_mode"
+        case alignment
         case sizeBytes = "size_bytes"
         case sha256
         case mimeType = "mime_type"
@@ -101,6 +105,7 @@ public struct MaterialFile: Sendable, Codable, Hashable {
         try container.encode(kind, forKey: .kind)
         try container.encode(state, forKey: .state)
         try container.encodeIfPresent(proxyMode, forKey: .proxyMode)
+        try container.encodeIfPresent(alignment, forKey: .alignment)
         try container.encodeIfPresent(sizeBytes, forKey: .sizeBytes)
         try container.encodeIfPresent(sha256, forKey: .sha256)
         try container.encodeIfPresent(mimeType, forKey: .mimeType)
