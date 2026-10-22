@@ -778,6 +778,7 @@
                 "enum": [
                   "manual",
                   "rights_changed",
+                  "sensitive_flagged",
                   null
                 ]
               },

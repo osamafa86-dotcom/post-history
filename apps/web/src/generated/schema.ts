@@ -1148,7 +1148,7 @@ export interface paths {
         get: operations["getMaterialListing"];
         /**
          * استبدال الإدراج (العناوين والعروض والحالة)
-         * @description يعيد تثبيت `material_version` على إصدار المادة الحالي. القيود نفسها في الإنشاء. حين تخرج حقوق المادة من `sellable` يعلّق الخادم الإدراج في معاملة الانتقال نفسها (`state = suspended`، `suspended_reason = rights_changed`)، ولا يعود `listed` إلا بطلب صريح.
+         * @description يعيد تثبيت `material_version` على إصدار المادة الحالي. القيود نفسها في الإنشاء. حين تخرج حقوق المادة من `sellable` يعلّق الخادم الإدراج في معاملة الانتقال نفسها (`state = suspended`، `suspended_reason = rights_changed`)، ولا يعود `listed` إلا بطلب صريح. وحين تُوسم المادة بالحساسية (قاصرون أو مصابون أو مشاهد صادمة) يعلّقه بـ `sensitive_flagged` في معاملة الوسم نفسها، ويُرفض `listed` لمادة موسومة بـ `422`.
          */
         put: operations["replaceMaterialListing"];
         /**
@@ -2452,7 +2452,7 @@ export interface components {
             /** @description الإصدار المعروض للبيع؛ البيعة تجمّده */
             material_version: number;
             /** @enum {string|null} */
-            suspended_reason: "manual" | "rights_changed" | null;
+            suspended_reason: "manual" | "rights_changed" | "sensitive_flagged" | null;
             /**
              * Format: date-time
              * @description أول انتقال إلى `listed`

@@ -1950,7 +1950,8 @@ paths:
       description: >-
         يعيد تثبيت `material_version` على إصدار المادة الحالي. القيود نفسها في الإنشاء. حين تخرج حقوق المادة من `sellable`
         يعلّق الخادم الإدراج في معاملة الانتقال نفسها (`state = suspended`، `suspended_reason = rights_changed`)، ولا يعود
-        `listed` إلا بطلب صريح.
+        `listed` إلا بطلب صريح. وحين تُوسم المادة بالحساسية (قاصرون أو مصابون أو مشاهد صادمة) يعلّقه بـ
+        `sensitive_flagged` في معاملة الوسم نفسها، ويُرفض `listed` لمادة موسومة بـ `422`.
       operationId: replaceMaterialListing
       x-roles: [system_admin, rights_officer]
       parameters:
@@ -3763,7 +3764,7 @@ components:
             id: { type: string, format: uuid }
             material_id: { type: string, format: uuid }
             material_version: { type: integer, minimum: 1, description: الإصدار المعروض للبيع؛ البيعة تجمّده }
-            suspended_reason: { type: [string, "null"], enum: [manual, rights_changed, null] }
+            suspended_reason: { type: [string, "null"], enum: [manual, rights_changed, sensitive_flagged, null] }
             listed_at: { type: [string, "null"], format: date-time, description: أول انتقال إلى `listed` }
             created_at: { type: string, format: date-time }
             updated_at: { type: string, format: date-time }

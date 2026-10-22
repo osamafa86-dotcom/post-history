@@ -14,6 +14,7 @@ import { storedDynamicFields, validateDynamicFields } from '../forms/dynamic-fie
 import { FormsService } from '../forms/forms.service';
 import type { components } from '../generated/api';
 import { hasRole, type Principal } from '../identity/principal';
+import { isSensitive, suspendListing } from '../commerce/listing-store';
 import { writeOutboxEvent } from '../outbox/outbox';
 import { legalNamePermission, ReporterIdentitySettings } from '../settings/reporter-identity.service';
 import {
@@ -210,6 +211,9 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
           sensitivityInjured: body.sensitivity.injured,
           sensitivityGraphic: body.sensitivity.graphic,
         });
+        // وسم الحساسية يُخرج المادة من الكتالوج: إدراجها المعروض يُعلَّق قبل الحفظ، في المعاملة نفسها
+        const flagged = { sensitivityMinors: body.sensitivity.minors, sensitivityInjured: body.sensitivity.injured, sensitivityGraphic: body.sensitivity.graphic };
+        if (isSensitive(flagged)) await suspendListing(tx, m.id, 'sensitive_flagged', p.userId);
       }
       if (body.display_name) Object.assign(changes, displayNameColumns(body.display_name));
 
