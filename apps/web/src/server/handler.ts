@@ -87,7 +87,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
       const me = requireOk(await api.GET("/auth/me"));
       if (isWrite && uploadPath(path, request.method)) return uploadAction(request, path, api, me, await bodyOf(request, uploadBodyLimit(path)), config!);
       // نصوص القالب ثنائية اللغة حتى 4000 حرف لكل حقل؛ أكبر من حد إجراءات المراجعة.
-      if (isWrite) return reviewAction(request, path, api, me, await bodyOf(request, path.startsWith("license-templates") ? 65536 : path.endsWith("/listing") ? 262144 : 8192));
+      if (isWrite) return reviewAction(request, path, api, me, await bodyOf(request, path.startsWith("license-templates") ? 65536 : /^materials\/[0-9a-f-]{36}\/listing$/i.test(path) ? 262144 : 8192));
       if (path === "auth/me") return json(safeMe(me));
       if (path === "admin/settings/reporter-identity") {
         if (!hasRole(me, "system_admin")) throw new WebError(403, "request_failed");
