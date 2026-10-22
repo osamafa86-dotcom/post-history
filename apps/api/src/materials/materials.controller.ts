@@ -64,7 +64,8 @@ export class MaterialsController {
   }
 
   @Post()
-  @Roles('reporter')
+  // المراسل من التطبيق، والطاقم والإنتاج من الويب لملفات الكاميرات (#88)
+  @Roles('reporter', 'supervisor', 'producer', 'editor_in_chief')
   create(@Body() body: unknown, @Req() req: Request): Promise<Material> {
     return this.materials.create(req.principal!, validateBody('/materials', 'post', body));
   }

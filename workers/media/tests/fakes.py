@@ -6,7 +6,7 @@ import hashlib
 from dataclasses import replace
 from pathlib import Path
 
-from media_worker.api import ApiRejected, Session
+from media_worker.api import ApiRejected, FileRef, Session
 from media_worker.storage import ObjectMissing
 
 
@@ -75,3 +75,7 @@ class FakeApi:
         if body["kind"] == "proxy":
             self.session = replace(self.session, material_has_proxy=True)
         return {"file_id": "d0000000-0000-4000-8000-000000000001"}
+
+    def get_file(self, file_id: str) -> FileRef:
+        assert file_id == self.original.file_id
+        return self.original

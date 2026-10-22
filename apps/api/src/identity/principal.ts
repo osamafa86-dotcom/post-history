@@ -68,7 +68,8 @@ export function supervisesUser(p: Principal, user: { officeId: string | null; go
 }
 
 /** رتبة الدور في تسلسل الطاقم: الأدوار التنفيذية في القاع، ثم المشرف، ثم رئيس التحرير، ثم مدير النظام. */
-const ROLE_RANK: Record<RoleName, number> = {
+// جزئي: الأدوار التي لا رتبة لها في تسلسل الطاقم (المشترون في العقد v0.3) رتبتها 0
+const ROLE_RANK: Partial<Record<RoleName, number>> = {
   reporter: 1,
   producer: 1,
   finance: 1,

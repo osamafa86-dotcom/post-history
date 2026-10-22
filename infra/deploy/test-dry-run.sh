@@ -50,12 +50,14 @@ for want in "apt-get install -y -q --no-install-recommends" "docker-ce=5:29.9.1-
             "+ useradd --system" "+ ufw default deny incoming" "+ ufw allow proto tcp to 192.0.2.10 port 80,443" \
             "+ ufw allow proto tcp to 198.51.100.20 port 80,443" "+ chown 70:70 /srv/post-history/backups" \
             "infra/compose/check-pinned.sh" "infra/field-trial/preflight.sh" "trial.sh up -d --wait" \
-            "+ systemctl enable post-history-trial.service" "preflight.sh --running --json"; do
+            "+ systemctl enable post-history-trial.service post-history-observability.service" "preflight.sh --running --json" \
+            "observability/stack.sh monitoring up -d --wait" "observability/stack.sh errors up -d --wait"; do
   grep -qF -- "$want" "$W/out" || fail "planned command missing: $want"
 done
 order "== step 6/11: secrets" "unsealed:"
 order "unsealed:" "infra/field-trial/preflight.sh"
 order "+ /repo/infra/field-trial/preflight.sh" "trial.sh up -d --wait"
+order "trial.sh up -d --wait" "stack.sh monitoring up -d --wait"
 grep -q "^+ ufw allow proto tcp to .* port 22\|ufw allow 22" "$W/out" && fail "ssh opened by port instead of the OpenSSH profile"
 echo "step order and planned commands: ok"
 
@@ -72,13 +74,17 @@ for f in "$E/trial.env.age" "$E/break-glass.age"; do
 done
 [ -z "$(find "$R" -name 'trial.env' -not -path "$R/run/*")" ] || fail "plaintext secrets outside /run"
 grep -q '"max-size": "50m"' "$R/etc/docker/daemon.json" || fail "container log rotation missing"
+grep -qF '"tag": "{{.Name}}"' "$R/etc/docker/daemon.json" || fail "container logs not tagged with the container name (ADR 0027)"
+[ "$(mode "$R/var/lib/post-history/textfile")" = 755 ] || fail "health textfile dir"
 grep -q '^ExecStartPre=/repo/infra/deploy/unseal.sh$' "$R/etc/systemd/system/post-history-trial.service" || fail "unit does not unseal"
 SD="$R/etc/systemd/system"
-grep -q '^ExecStart=/repo/infra/observability/healthcheck.sh --json /run/post-history-health/health.json --alert$' \
+grep -q '^ExecStart=/repo/infra/observability/healthcheck.sh --json /run/post-history-health/health.json --prom /var/lib/post-history/textfile/health.prom --alert$' \
   "$SD/post-history-health.service" || fail "health unit"
 grep -q '^OnUnitActiveSec=1min$' "$SD/post-history-health.timer" || fail "health timer not every minute"
 grep -q '^User=posthistory$' "$SD/post-history-health-endpoint.service" || fail "/health endpoint not run as the service user"
 grep -q -- '--port 9180' "$SD/post-history-health-endpoint.service" || fail "/health endpoint port"
+grep -q '^ExecStart=/repo/infra/observability/stack.sh errors up -d --wait$' "$SD/post-history-observability.service" \
+  && grep -q '^After=post-history-trial.service$' "$SD/post-history-observability.service" || fail "observability unit"
 grep -q 'rotate 8' "$R/etc/logrotate.d/post-history" || fail "alert log rotation"
 grep -q '^ALERT_EMAIL_TO=$' "$E/alert.conf" || fail "alert.conf template"
 grep -qF "+ chown -R root:root /repo" "$W/out" || fail "repository tree not given to root"
@@ -93,7 +99,8 @@ for k in $(sed -n 's/^\([A-Z0-9_]*\)=.*/\1/p' /repo/infra/field-trial/trial.env.
   grep -q "^$k=." "$U" || fail "unsealed secrets lack $k"
 done
 for k in POSTGRES_PASSWORD REDIS_PASSWORD S3_SECRET_KEY TUSD_HOOK_SECRET JWT_SECRET MEDIA_WORKER_TOKEN \
-         S3_MEDIA_SECRET_KEY INGEST_GATE_TOKEN S3_BACKUP_SECRET_KEY BACKUP_PG_PASSWORD; do
+         S3_MEDIA_SECRET_KEY INGEST_GATE_TOKEN S3_BACKUP_SECRET_KEY BACKUP_PG_PASSWORD GRAFANA_ADMIN_PASSWORD \
+         GLITCHTIP_DB_PASSWORD GLITCHTIP_SECRET_KEY; do
   v="$(sed -n "s/^$k=//p" "$U")"; [ "${#v}" -ge 32 ] || fail "$k shorter than 32"
 done
 while IFS='=' read -r k v; do
@@ -119,16 +126,50 @@ boot "$W/host.env" "$W/backup.crt" >"$W/out2" 2>&1 || fail "second dry run faile
 grep -q "not regenerated" "$W/out2" || fail "second run did not say it kept the secrets"
 echo "idempotent: ok"
 
-# --- update plan
-git config --global --add safe.directory /repo
-bash /repo/infra/deploy/update.sh --dry-run >"$W/up" 2>&1 || { cat "$W/up"; fail "update dry run failed"; }
+# --- update plan: a release tag by default, its commit checked against the release's declaration; latest main only on --main
+git config --global --add safe.directory /repo && git config --global --add safe.directory /repo/.git
+git config --global user.email ci@example.invalid && git config --global user.name ci
+A=/tmp/app && git clone -q --no-local /repo "$A" && git -C "$A" tag -d $(git -C "$A" tag -l) >/dev/null 2>&1 || true
+U="$A/infra/deploy/update.sh"
+bash "$U" --dry-run >"$W/up0" 2>&1 && fail "update ran with no release tag and no --main"
+grep -q "no release tag" "$W/up0" || { cat "$W/up0"; fail "no reason given for the missing release tag"; }
+bash "$U" --dry-run --tag v9.9.9 >"$W/up0" 2>&1 && fail "update accepted a tag that does not exist"
+bash "$U" --dry-run --tag v0.0.1 --main >"$W/up0" 2>&1 && fail "update accepted --tag with --main"
+git -C "$A" tag v0.0.1 HEAD && git -C "$A" commit -q --allow-empty -m "release candidate" && git -C "$A" tag v0.0.2 HEAD
+head="$(git -C "$A" rev-parse HEAD)"
+# A local releases endpoint (no network here): v0.0.2 declares its commit, v0.0.1 declares another one.
+mkdir -p "$W/rel/releases/tags"
+printf '{"body": "notes\\ncommit: %s\\n"}' "$head" > "$W/rel/releases/tags/v0.0.2"
+printf '{"body": "commit: %s\\n"}' "$head" > "$W/rel/releases/tags/v0.0.1"
+(cd "$W/rel" && python3 -m http.server 18080 --bind 127.0.0.1 >/dev/null 2>&1 &)
+for _ in $(seq 50); do curl -fsS -o /dev/null http://127.0.0.1:18080/releases/tags/v0.0.2 && break; sleep 0.2; done
+RELEASE_API=http://127.0.0.1:18080 bash "$U" --dry-run >"$W/up" 2>&1 || { cat "$W/up"; fail "update dry run on the latest release failed"; }
+grep -q "verified: release v0.0.2 declares $head" "$W/up" || fail "the latest release tag was not verified against its declaration"
+grep -q "checkout -q --detach $head" "$W/up" || fail "update does not check out the verified commit"
+RELEASE_API=http://127.0.0.1:18080 bash "$U" --dry-run --tag v0.0.1 >"$W/up1" 2>&1 && fail "update accepted a tag whose release declares another commit"
+grep -q "its release declares $head: not updating" "$W/up1" || { cat "$W/up1"; fail "no reason given for the mismatch"; }
+grep -q "checkout" "$W/up1" && fail "a mismatched tag reached checkout"
+bash "$U" --dry-run --main >"$W/upm" 2>&1 || { cat "$W/upm"; fail "update --main dry run failed"; }
+grep -q "target: latest main (explicit --main" "$W/upm" && grep -q "checkout -q --detach origin/main" "$W/upm" || fail "--main does not target origin/main"
+echo "update target: release tag verified, main only on --main: ok"
 F="$W/up"
-order "+ /repo/infra/field-trial/trial.sh run --rm -T backup once" "fetch -q origin"
-order "fetch -q origin" "trial.sh up -d --no-deps --wait postgres redis minio"
+order "/infra/field-trial/trial.sh run --rm -T backup once" "fetch -q --tags origin"
+order "fetch -q --tags origin" "trial.sh up -d --no-deps --wait postgres redis minio"
 grep -q "runuser" "$F" && fail "update runs git as another user than root"
 order "up -d --no-deps --wait tusd tusd-proxy ingest-gate" "up -d --no-deps --wait api"
 grep -A1 -F "up -d --no-deps --wait api" "$F" | tail -1 | grep -qF "wait until: API /health 200" || fail "no health check right after the API restart"
 order "up -d --no-deps --wait api" "up -d --no-deps --wait media-worker"
-order "up -d --no-deps --wait caddy caddy-ingest" "preflight.sh --running"
+order "up -d --no-deps --wait caddy caddy-ingest" "stack.sh monitoring up -d --wait"
+order "stack.sh errors up -d --wait" "preflight.sh --running"
 echo "update plan: ok"
+# --- the owner's guide (docs/ops/deploy-guide.md) follows these scripts: every script it names exists, and it names every
+# bootstrap step, every bootstrap flag and every key bootstrap reads from host.env.
+G=/repo/docs/ops/deploy-guide.md
+for f in $(grep -oE 'infra/[A-Za-z0-9/_.-]+\.sh' "$G" | sort -u); do [ -f "/repo/$f" ] || fail "the guide names $f, which does not exist"; done
+for s in $(sed -n 's/^STEPS=(\(.*\))$/\1/p' "$B"); do grep -qF "\`$s\`" "$G" || fail "the guide does not name bootstrap step $s"; done
+for f in --host-config --backup-cert --owner-age-recipient; do grep -qF -- "$f" "$G" || fail "the guide does not use $f"; done
+for k in MAIN_DOMAIN INGEST_DOMAIN MAIN_IP INGEST_IP ACME_EMAIL CLOUDFLARE_CIDRS APP_ATTEST_APP_ID PLAY_INTEGRITY_PACKAGE_NAME PLAY_INTEGRITY_CERT_SHA256; do
+  grep -qE "(^|[ #:])$k=" "$G" || fail "the guide's host.env lacks $k"
+done
+echo "owner's deploy guide matches the scripts: ok"
 echo "deploy dry run: ok"

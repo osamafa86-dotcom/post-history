@@ -1,4 +1,4 @@
-import type { Field, Form, Material, Me, Permission, Values, Notification, TransitionRecord } from "./types";
+import type { Field, Form, Material, Me, Permission, Values, Notification, TransitionRecord, NewsroomDashboard } from "./types";
 import { uuid, states } from "./query";
 
 export function mayReadField(field: Field, permissions: Permission[]) {
@@ -42,4 +42,17 @@ export function safeTransition(item: TransitionRecord): TransitionRecord {
   const targets = states[`${item.track}_state`] as readonly string[] | undefined;
   return { id: item.id, track: item.track, from: targets?.includes(item.from) ? item.from : "", to: targets?.includes(item.to) ? item.to : "",
     actor_id: item.actor_id && uuid.test(item.actor_id) ? item.actor_id : null, occurred_at: item.occurred_at, reason: "" };
+}
+
+/** لقطة غرفة الأخبار بقائمة بيضاء: معرّفات وأرقام وحالات فقط، والحالات من قوائم العقد وحدها. */
+export function safeDashboard(d: NewsroomDashboard): NewsroomDashboard {
+  const counts = (items: NewsroomDashboard["editorial"], allowed: readonly string[]) => items.filter(i => allowed.includes(i.state) && Number.isSafeInteger(i.count)).map(({ state, count }) => ({ state, count }));
+  return {
+    generated_at: d.generated_at, urgent_open: d.urgent_open, overdue_acknowledgements: d.overdue_acknowledgements,
+    editorial: counts(d.editorial, states.editorial_state), technical: counts(d.technical, states.technical_state), rights: counts(d.rights, states.rights_state),
+    reserved: d.reserved.filter(r => uuid.test(r.material_id)).map(({ material_id, reserved_by, reserved_at, priority, editorial_state }) => ({ material_id, reserved_by, reserved_at, priority, editorial_state })),
+    recent_receipts: d.recent_receipts.filter(r => uuid.test(r.material_id)).map(({ material_id, receipt_number, verified_at, priority }) => ({ material_id, receipt_number, verified_at, priority })),
+    // «الوارد الآن» (ADR 0024): معرّفات وأرقام وحدها، ولا اسم ملف ولا مراسل ولا جهاز حتى لو أرسلها الخادم.
+    ...(d.uploads_in_progress ? { uploads_in_progress: d.uploads_in_progress.filter(u => uuid.test(u.upload_session_id) && uuid.test(u.material_id) && Number.isSafeInteger(u.size_bytes) && Number.isSafeInteger(u.bytes_received)).map(({ upload_session_id, material_id, kind, priority, state, size_bytes, bytes_received, updated_at }) => ({ upload_session_id, material_id, kind, priority, state, size_bytes, bytes_received: Math.min(bytes_received, size_bytes), updated_at })) } : {}),
+  };
 }

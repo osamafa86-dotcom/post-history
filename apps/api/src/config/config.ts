@@ -134,6 +134,8 @@ const schema = z.object({
   UPLOAD_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).default(3600),
   // مسار الرفع (بند القرارات 3، يُحسم بعد النموذج الأولي): tusd، أو direct حيث يعلن العميل الاكتمال بنفسه
   UPLOAD_PATH: z.enum(['tusd', 'direct']).default('tusd'),
+  // حد حجم الملف الواحد في POST /uploads (بايت)؛ غيابه = بلا حد. المعاينة تضبطه مع -max-size في tusd (#235)
+  UPLOAD_MAX_BYTES: z.coerce.number().int().min(1).optional(),
   // true (افتراضيًا مع عقد v0.1، ADR 0012: «على كل عميل إرسالها»): إنشاء جلسة رفع بلا client_sha256 يُرفض (422)
   UPLOAD_REQUIRE_CLIENT_SHA256: z
     .enum(['true', 'false'])
@@ -178,6 +180,8 @@ const schema = z.object({
     .string()
     .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, 'must be a user id (uuid)')
     .optional(),
+  // لقطة لوحة غرفة الأخبار لكل مستخدم ونطاقه (قرار المنسّق على #187): تُعاد ≤ هذه المدة ثم تُحسب من جديد؛ 0 = بلا لقطة
+  DASHBOARD_SNAPSHOT_MS: z.coerce.number().int().min(0).max(5000).default(5000),
   // رمز عامل التفريغ المحلي: يُقبل على POST /internal/media/files/{id}/derivatives لنوعي transcript وcaptions وحدهما
   // (ولا شيء غيره)، منفصل عن MEDIA_WORKER_TOKEN؛ غير مضبوط = العامل لا يصل
   AI_WORKER_TOKEN: z

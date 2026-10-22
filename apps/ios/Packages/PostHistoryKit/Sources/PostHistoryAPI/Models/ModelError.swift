@@ -39,6 +39,9 @@ public struct ModelError: Sendable, Codable, Hashable {
         case attestationUnavailable = "attestation_unavailable"
         case mediaResourceGone = "media_resource_gone"
         case exportNotReady = "export_not_ready"
+        case rightsNotSellable = "rights_not_sellable"
+        case listingExists = "listing_exists"
+        case previewNotReady = "preview_not_ready"
         case internalError = "internal_error"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }

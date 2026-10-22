@@ -25,15 +25,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .api import ApiConflict, ApiRejected, InternalApi, Session
-from .hashing import Digest, digest_file, digest_stream
+from .api import ApiConflict, ApiRejected, FileRef, InternalApi, Session
+from .hashing import digest_file, digest_stream
 from .probe import InvalidMediaError, Probe, probe
 from .audio import make_speech_audio
 from .export import build_package
+from .watermark import make_watermarked_preview
 from .proxy import make_proxy
 from .hls import make_hls
 from .phash import video_phash
-from .thumbnails import contact_sheet, poster
+from .thumbnails import contact_sheet, poster, timeline_sprite
 from .waveform import write_waveform
 from .storage import DERIVED_PREFIX, ObjectMissing
 
@@ -74,8 +75,16 @@ def speech_key(material_id: str, file_id: str) -> str:
     return f"{DERIVED_PREFIX}{material_id}/{file_id}/audio-16k.m4a"
 
 
+def store_preview_key(material_id: str, file_id: str) -> str:
+    return f"{DERIVED_PREFIX}{material_id}/{file_id}/preview-watermarked.mp4"
+
+
 def export_key(material_id: str, file_id: str) -> str:
     return f"{DERIVED_PREFIX}{material_id}/{file_id}/export.zip"
+
+
+def timeline_prefix(material_id: str, file_id: str) -> str:
+    return f"{DERIVED_PREFIX}{material_id}/{file_id}/timeline/"
 
 
 def hls_prefix(material_id: str, file_id: str) -> str:
@@ -95,8 +104,12 @@ def _download(storage: Storage, bucket: str, key: str, dst: Path):
 
 class Jobs:
     def __init__(self, api: InternalApi, storage: Storage, buckets: Buckets, scratch: Path | None = None,
-                 enable_hls: bool = False, enable_phash: bool = False, enable_export: bool = False):
-        # الأعلام مطفأة إلى أن يقبل العقد نوع hls (#58) وحقل البصمة الإدراكية ونوع export
+                 enable_hls: bool = False, enable_phash: bool = False, enable_export: bool = False,
+                 enable_store_preview: bool = False, watermark_key: bytes = b""):
+        # الأعلام مطفأة: البصمة الإدراكية حتى يقبلها العقد، والتصدير ومعاينة المتجر حتى شرطي الأمن (العلامة المائية
+        # غير القابلة للعكس، ونزع البيانات المضمّنة)
+        self.enable_store_preview = enable_store_preview
+        self.watermark_key = watermark_key
         self.enable_export = enable_export
         self.enable_hls = enable_hls
         self.enable_phash = enable_phash
@@ -119,6 +132,14 @@ class Jobs:
 
     def handle(self, event: dict) -> str:
         """يعيد وصفًا قصيرًا لما حدث (للسجل والاختبارات)."""
+        payload = event.get("payload") or {}
+        if event.get("type") == "catalog.listing_changed" and self.enable_store_preview:
+            # source_file_id الأصل المتحقق لإصدار الإدراج (v0.3)؛ الإدراج بلا أصل مرئي لا معاينة له
+            if payload.get("state") != "listed" or not payload.get("source_file_id"):
+                return "ignored"
+            return self.store_preview(payload["material_id"], payload["source_file_id"])
+        if event.get("type") == "export.requested" and self.enable_export:
+            return self.export(payload["material_id"], payload["source_file_id"])
         session_id = (event.get("payload") or {}).get("upload_session_id")
         if event.get("type") not in VERIFY_EVENTS or not session_id:
             return "ignored"
@@ -179,9 +200,9 @@ class Jobs:
                 proxy_path, proxy_info = self._proxy(session, file_id, local, info)
                 outcome += "+proxy"
                 if self.enable_hls:
+                    # صور شريط الزمن للمشغّل مع HLS، خلف العلم نفسه
                     outcome += self._hls(session, file_id, proxy_path, proxy_info)
-            if self.enable_export and info.video_codec:
-                outcome += self._export(session, file_id, local, info, digest, proxy_path)
+                    outcome += self._timeline(session, file_id, proxy_path, proxy_info)
             return outcome
 
     def _register(self, file_id: str, body: dict) -> bool:
@@ -225,24 +246,17 @@ class Jobs:
                                       "size_bytes": d.size_bytes, "technical": proxy_info.to_dict()})
         return "+hls" if ok else "+hls-unregistered"
 
-    def _export(self, session: Session, file_id: str, local: Path, info: Probe, digest: Digest,
-                proxy: Path | None) -> str:
-        """غير مانعة. النسخة الخفيفة تدخل الحزمة إن صنعها العامل؛ نسخة الهاتف ليست في مجلد المهمة (قيد معروف)."""
+    def _timeline(self, session: Session, file_id: str, proxy_path: Path, proxy_info: Probe) -> str:
+        """صور شريط الزمن للمشغّل من النسخة الخفيفة. غير مانعة ولا تُسجَّل: اسمان ثابتان بجوار HLS."""
         try:
-            out = local.with_name("export.zip")
-            build_package(out, original=local, info=info, material_id=session.material_id, file_id=file_id,
-                          sha256=digest.sha256, size_bytes=digest.size_bytes, proxy=proxy)
-            d = digest_file(out)
-            key = export_key(session.material_id, file_id)
-            self.storage.put_file(self.buckets.derived, key, out, d.sha256, "application/zip")
+            prefix = timeline_prefix(session.material_id, file_id)
+            for f in timeline_sprite(proxy_path, proxy_path.with_name("timeline"), proxy_info):
+                ctype = "text/vtt" if f.suffix == ".vtt" else "image/jpeg"
+                self.storage.put_file(self.buckets.derived, prefix + f.name, f, digest_file(f).sha256, ctype)
         except Exception as err:  # noqa: BLE001
-            log.warning("export skipped file=%s error=%s", file_id, type(err).__name__)
-            return "+export-failed"
-        ok = self._register(file_id, {"kind": "export", "storage_key": key, "sha256": d.sha256,
-                                      "size_bytes": d.size_bytes,
-                                      "technical": {"duration_ms": info.duration_ms, "start_pts_us": info.start_pts_us,
-                                                    "container": "zip"}})
-        return "+export" if ok else "+export-unregistered"
+            log.warning("timeline skipped file=%s error=%s", file_id, type(err).__name__)
+            return "+timeline-failed"
+        return "+timeline"
 
     def _thumbnails(self, session: Session, file_id: str, local: Path, info: Probe) -> str:
         """غير مانعة: أي فشل هنا يُسجَّل ويُترك، والمصغّرات يمكن توليدها لاحقًا من الأصل."""
@@ -282,6 +296,66 @@ class Jobs:
             "kind": kind, "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
             "technical": probe(out).to_dict(),
         })
+
+    def _source(self, material_id: str, file_id: str, dst: Path) -> FileRef:
+        """ينزّل الأصل المتحقق لمشتق عند الطلب ويطابق بصمته المسجلة؛ غير ذلك خطأ نهائي لا يُعاد."""
+        ref = self.api.get_file(file_id)
+        if ref.material_id != material_id or ref.kind != "original" or ref.state != "verified" or not ref.sha256:
+            raise ValueError("source must be the material's verified original")
+        if _download(self.storage, self.buckets.uploads, ref.storage_key, dst).sha256 != ref.sha256:
+            raise ValueError("original does not match its recorded hash")
+        return ref
+
+    def store_preview(self, material_id: str, file_id: str) -> str:
+        """معاينة المتجر من الأصل المتحقق عند الإدراج. مكررة الأثر: إعادة الإدراج أو التسليم تعيد تسجيل المرفوعة."""
+        key = store_preview_key(material_id, file_id)
+        with tempfile.TemporaryDirectory(dir=self.scratch, prefix="job-") as tmp:
+            out = Path(tmp) / "preview-watermarked.mp4"
+            if self._exists(key):
+                self._register_existing(file_id, "watermarked_preview", key, out)
+                return "store-preview-existing"
+            local = Path(tmp) / "source"
+            self._source(material_id, file_id, local)
+            info = probe(local)
+            made = make_watermarked_preview(local, out, info, self.watermark_key, material_id)
+            d = digest_file(out)
+            self.storage.put_file(self.buckets.derived, key, out, d.sha256, "video/mp4")
+            self.api.add_derivative(file_id, {
+                "kind": "watermarked_preview", "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
+                "technical": made.to_dict(),
+            })
+        return "store-preview"
+
+    def export(self, material_id: str, file_id: str) -> str:
+        """حزمة المونتاج عند الطلب (`export.requested`). `technical` المشتق هو `technical` الأصل كما يطلب العقد، فيُنزَّل
+        الأصل دائمًا؛ الحزمة المرفوعة في تسليم سابق تُسجَّل كما هي بلا بناء جديد. النسخة الخفيفة تدخل إن وُجدت."""
+        key = export_key(material_id, file_id)
+        with tempfile.TemporaryDirectory(dir=self.scratch, prefix="job-") as tmp:
+            local = Path(tmp) / "source"
+            ref = self._source(material_id, file_id, local)
+            info = probe(local)
+            if not info.video_codec:
+                raise ValueError("export needs a video original")
+            out = Path(tmp) / "export.zip"
+            if self._exists(key):
+                d = _download(self.storage, self.buckets.derived, key, out)
+                outcome = "export-existing"
+            else:
+                proxy = Path(tmp) / "proxy.mp4"
+                if self._exists(proxy_key(material_id, file_id)):
+                    _download(self.storage, self.buckets.derived, proxy_key(material_id, file_id), proxy)
+                else:
+                    proxy = None
+                build_package(out, original=local, info=info, material_id=material_id, file_id=file_id,
+                              sha256=ref.sha256, size_bytes=local.stat().st_size, proxy=proxy)
+                d = digest_file(out)
+                self.storage.put_file(self.buckets.derived, key, out, d.sha256, "application/zip")
+                outcome = "export"
+            self.api.add_derivative(file_id, {
+                "kind": "export", "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
+                "mime_type": "application/zip", "technical": info.to_dict(),
+            })
+        return outcome
 
     def _speech(self, session: Session, file_id: str, local: Path, info: Probe, resume: bool) -> str:
         """مانعة كالنسخة الخفيفة: فشلها يعيد الحدث، والاستئناف يعيد تسجيل المرفوعة كما هي."""

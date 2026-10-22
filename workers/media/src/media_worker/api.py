@@ -46,6 +46,18 @@ class Session:
     material_has_proxy: bool
 
 
+@dataclass(frozen=True)
+class FileRef:
+    """ملف مصدر يبني منه العامل مشتقًا عند الطلب (`MediaSourceFile`، v0.3): معاينة المتجر وحزمة التصدير."""
+    file_id: str
+    material_id: str
+    storage_key: str
+    size_bytes: int | None
+    sha256: str | None
+    kind: str = "original"
+    state: str = "verified"
+
+
 class InternalApi:
     def __init__(self, base_url: str, token: str, timeout_s: float = 30):
         if len(token) < 32:
@@ -93,3 +105,9 @@ class InternalApi:
 
     def add_derivative(self, file_id: str, body: dict) -> dict:
         return self._call("POST", f"/internal/media/files/{file_id}/derivatives", body)
+
+    def get_file(self, file_id: str) -> FileRef:
+        """`GET /internal/media/files/{id}`: مفتاح التخزين والبصمة فقط؛ الملف المحذوف `410` (`ApiGone`)."""
+        d = self._call("GET", f"/internal/media/files/{file_id}")
+        return FileRef(file_id=d["file_id"], material_id=d["material_id"], storage_key=d["storage_key"],
+                       size_bytes=d.get("size_bytes"), sha256=d.get("sha256"), kind=d["kind"], state=d["state"])

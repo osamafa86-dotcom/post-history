@@ -1,0 +1,98 @@
+# تتبّع الأخطاء ذاتي الاستضافة (ADR 0029): GlitchTip، متوافق مع حزم Sentry (DSN بالصيغة نفسها)، عملية واحدة (خادم
+# وعامل وجدولة) مع Postgres وRedis خاصين به، مشروع compose مستقل:
+#   docker compose -f infra/observability/compose.errors.yml --env-file <ملف فيه GLITCHTIP_SECRET_KEY وGLITCHTIP_DB_PASSWORD> up -d --wait
+# لا منفذ عام: 127.0.0.1:${GLITCHTIP_PORT:-3301} (نفق SSH للمشرفين، والتطبيقات على المضيف ترسل إليه). لا تسجيل ذاتي
+# ولا إنشاء مؤسسات من الواجهة. كل خدمة محدودة الذاكرة بلا swap.
+name: post-history-errors
+
+x-hardened: &hardened
+  restart: unless-stopped
+  security_opt: ["no-new-privileges:true"]
+  networks: [errors]
+
+services:
+  glitchtip-postgres:
+    <<: *hardened
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    command: ["postgres", "-c", "shared_buffers=16MB", "-c", "max_connections=30", "-c", "work_mem=2MB"]
+    environment:
+      POSTGRES_DB: glitchtip
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: ${GLITCHTIP_DB_PASSWORD:?}
+    volumes:
+      - glitchtip-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glitchtip -d glitchtip"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.5
+
+  glitchtip-redis:
+    <<: *hardened
+    image: redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    user: redis
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "24mb", "--maxmemory-policy", "noeviction"]
+    read_only: true
+    cap_drop: [ALL]
+    mem_limit: 40m
+    memswap_limit: 40m
+    cpus: 0.25
+
+  glitchtip-migrate:
+    image: glitchtip/glitchtip:v5.1.1@sha256:805f4fb7b886653b944caff1ae06a95c8724b5b3ddc21917e80e18e6c03019ab
+    entrypoint: ["./bin/run-migrate.sh"]
+    environment: &gt
+      DATABASE_URL: postgres://glitchtip:${GLITCHTIP_DB_PASSWORD}@glitchtip-postgres:5432/glitchtip
+      REDIS_URL: redis://glitchtip-redis:6379/0
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY:?}
+      GLITCHTIP_DOMAIN: http://127.0.0.1:${GLITCHTIP_PORT:-3301}
+      DEFAULT_FROM_EMAIL: glitchtip@localhost
+      ENABLE_USER_REGISTRATION: "false"
+      ENABLE_ORGANIZATION_CREATION: "false"
+      GLITCHTIP_MAX_EVENT_LIFE_DAYS: "30"
+      DATABASE_POOL_MAX_SIZE: "4"
+    depends_on:
+      glitchtip-postgres:
+        condition: service_healthy
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    networks: [errors]
+    mem_limit: 256m
+    memswap_limit: 256m
+    restart: "no"
+
+  glitchtip:
+    <<: *hardened
+    image: glitchtip/glitchtip:v5.1.1@sha256:805f4fb7b886653b944caff1ae06a95c8724b5b3ddc21917e80e18e6c03019ab
+    # All-in-one: web, Celery worker and beat in one process (one instance only, its own docs say).
+    entrypoint: ["python", "app.py"]
+    environment: *gt
+    cap_drop: [ALL]
+    depends_on:
+      glitchtip-migrate:
+        condition: service_completed_successfully
+      glitchtip-redis:
+        condition: service_started
+    networks: [errors, published]
+    ports:
+      - "127.0.0.1:${GLITCHTIP_PORT:-3301}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/_health/', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    mem_limit: 384m
+    memswap_limit: 384m
+    cpus: 1.0
+
+networks:
+  errors:
+    internal: true
+  published: {}
+
+volumes:
+  glitchtip-db:
