@@ -47,7 +47,8 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
     for (const [path, method] of [["/materials", "post"], ["/uploads", "post"], ["/uploads/{id}/web-ingest-token", "post"]]) expect([...uploadRoles]).toEqual(at("paths", path, method, "x-roles"));
   });
   it("keeps catalog roles and license types aligned with v0.3", () => {
-    for (const path of ["/catalog", "/catalog/{listing_id}", "/catalog/{listing_id}/preview-url"]) expect([...catalogRoles]).toEqual(at("paths", path, "get", "x-roles"));
+    // أدوار المشترين (#192) تُضاف إلى x-roles قبل حساب المؤسسة في الويب (#203 بند 31)؛ الواجهة تبقى على أدوار العقد وحدها.
+    for (const path of ["/catalog", "/catalog/{listing_id}", "/catalog/{listing_id}/preview-url"]) expect(at("paths", path, "get", "x-roles")).toEqual(expect.arrayContaining([...catalogRoles]));
     expect([...licenseTypes]).toEqual(at("components", "schemas", "LicenseType", "enum"));
   });
   it("keeps license template roles, choices and limits aligned with v0.3", () => {
