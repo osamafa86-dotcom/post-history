@@ -3,13 +3,14 @@ import { readConfig, type WebConfig } from "./config";
 import { clientAddress, requireOk, upstream, withSession, assertSession } from "./auth";
 import { WebError } from "./errors";
 import { sessionStore, validSessionId, type SessionStore } from "./sessions";
-import { safeDashboard, safeForm, safeMaterial, safeMe, safeNotification, safeTransition } from "@/lib/privacy";
+import { safeDashboard, safeForm, safeMaterial, safeMe, safeNotification, safeTransition, reporterNote } from "@/lib/privacy";
 import { materialQuery, materialTypes, uuid } from "@/lib/query";
 import type { components } from "@/generated/schema";
 import type { MaterialType } from "@/lib/types";
 import { streamDerivative } from "./media";
 import { actionPath, reviewAction } from "./review-actions";
 import { hasRole, materialTag } from "@/lib/review";
+import { safeTemplate, templateRoles } from "@/lib/license-policy";
 import { listUploads, readUpload, uploadAction, uploadBodyLimit, uploadPath } from "./uploads";
 import { catalogRead } from "./catalog";
 import { safeIdentitySetting, safePermissionHistory } from "@/lib/admin-privacy";
@@ -84,7 +85,8 @@ export async function handle(request: NextRequest, path: string, deps?: { config
       }
       const me = requireOk(await api.GET("/auth/me"));
       if (isWrite && uploadPath(path, request.method)) return uploadAction(request, path, api, me, await bodyOf(request, uploadBodyLimit(path)), config!);
-      if (isWrite) return reviewAction(request, path, api, me, await bodyOf(request));
+      // نصوص القالب ثنائية اللغة حتى 4000 حرف لكل حقل؛ أكبر من حد إجراءات المراجعة.
+      if (isWrite) return reviewAction(request, path, api, me, await bodyOf(request, path.startsWith("license-templates") ? 65536 : 8192));
       if (path === "auth/me") return json(safeMe(me));
       if (path === "admin/settings/reporter-identity") {
         if (!hasRole(me, "system_admin")) throw new WebError(403, "request_failed");
@@ -119,7 +121,9 @@ export async function handle(request: NextRequest, path: string, deps?: { config
       const history = /^materials\/([^/]+)\/transitions$/.exec(path);
       if (history && uuid.test(history[1])) {
         const data = requireOk(await api.GET("/materials/{id}/transitions", { params: { path: { id: history[1] } } }));
-        return json({ items: data.items.map(safeTransition) });
+        // ملاحظة المشرف لصاحب المادة وحده؛ وغيره يرى الانتقالات بلا سبب كما كان.
+        const owner = hasRole(me, "reporter") && requireOk(await api.GET("/materials/{id}", { params: { path: { id: history[1] } } })).reporter_id === me.user_id;
+        return json({ items: data.items.map(owner ? reporterNote : safeTransition) });
       }
       if (path === "catalog" || path.startsWith("catalog/")) return catalogRead(request, path, api, me, config!, transport);
       if (path === "uploads") return listUploads(api, me, request.nextUrl.searchParams);
@@ -131,6 +135,19 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         if (!uuid.test(path.slice(19))) throw new WebError(404, "request_failed");
         const rule = requireOk(await api.GET("/notification-rules/{rule_id}", { params: { path: { rule_id: path.slice(19) } } }));
         const response = json(safeRule(rule)); response.headers.set("ETag", `"${rule.row_version}"`); return response;
+      }
+      if (path === "license-templates" || /^license-templates\/[^/]+$/.test(path)) {
+        if (!hasRole(me, ...templateRoles)) throw new WebError(403, "request_failed");
+        const search = request.nextUrl.searchParams, flag = search.get("include_disabled");
+        if (path === "license-templates") {
+          if ([...search.keys()].some(key => key !== "include_disabled" || search.getAll(key).length > 1) || (flag !== null && !["true", "false"].includes(flag))) throw new WebError(400, "request_failed");
+          return json({ items: requireOk(await api.GET("/license-templates", { params: { query: { include_disabled: flag === "true" } } })).items.map(safeTemplate) });
+        }
+        const id = path.slice(18), version = search.get("version");
+        if (!uuid.test(id)) throw new WebError(404, "request_failed");
+        if ([...search.keys()].some(key => key !== "version" || search.getAll(key).length > 1) || (version !== null && !/^[1-9]\d{0,8}$/.test(version))) throw new WebError(400, "request_failed");
+        const template = requireOk(await api.GET("/license-templates/{template_id}", { params: { path: { template_id: id }, query: version ? { version: +version } : {} } }));
+        const response = json(safeTemplate(template)); response.headers.set("ETag", `"${template.version}"`); return response;
       }
       if (path === "dashboard/newsroom") {
         if (!hasRole(me, "supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin") || request.nextUrl.search) throw new WebError(403, "request_failed");

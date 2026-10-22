@@ -9,6 +9,7 @@ import { WebError } from "./errors";
 import { identityAccesses, identityReasons, permissions, reasonLimits } from "@/lib/admin-policy";
 import { safeIdentitySetting } from "@/lib/admin-privacy";
 import { ruleInput, safeRule } from "@/lib/notification-policy";
+import { safeTemplate, templateInput, templateWriters } from "@/lib/license-policy";
 
 const privateHeaders = { "Cache-Control": "private, no-store, max-age=0", "Pragma": "no-cache", "Vary": "Cookie" };
 export const actionRoutes = [
@@ -22,6 +23,8 @@ export const actionRoutes = [
   { path: "/admin/settings/reporter-identity", methods: ["put"] },
   { path: "/notification-rules", methods: ["post"] },
   { path: "/notification-rules/{rule_id}", methods: ["put", "delete"] },
+  { path: "/license-templates", methods: ["post"] },
+  { path: "/license-templates/{template_id}", methods: ["put"] },
 ] as const;
 const routePatterns = actionRoutes.map(route => ({ ...route, pattern: new RegExp(`^${route.path.slice(1).replaceAll(/\{[^}]+\}/g, "[^/]+")}$`) }));
 export const actionPath = (path: string, method: string) => routePatterns.some(route => route.pattern.test(path) && (route.methods as readonly string[]).includes(method.toLowerCase()));
@@ -110,6 +113,14 @@ export async function reviewAction(request: Request, path: string, api: Api, me:
     requireRole(me, "system_admin"); const params = { path: { rule_id: rulePath[1] }, header: versioned() };
     if (request.method === "PUT") { const input = ruleInput(body); if (!input) throw new WebError(422, "request_failed"); return ruleResponse(await api.PUT("/notification-rules/{rule_id}", { params, body: input }), 200); }
     if (request.method === "DELETE") { keys(body, []); requireOk(await api.DELETE("/notification-rules/{rule_id}", { params })); return done(); }
+  }
+  // قوالب التراخيص (v0.3): الكتابة لمدير النظام ومسؤول الحقوق، والاستبدال إصدار جديد بـ If-Match من رقم الإصدار.
+  const templatePath = /^license-templates(?:\/([^/]+))?$/.exec(path);
+  if (templatePath && (templatePath[1] === undefined ? request.method === "POST" : uuid.test(templatePath[1]) && request.method === "PUT")) {
+    requireRole(me, ...templateWriters); const input = templateInput(body); if (!input) throw new WebError(422, "request_failed");
+    const result = templatePath[1] ? await api.PUT("/license-templates/{template_id}", { params: { path: { template_id: templatePath[1] }, header: versioned() }, body: input }) : await api.POST("/license-templates", { params: { header }, body: input });
+    const template = requireOk(result), response = NextResponse.json(safeTemplate(template), { status: templatePath[1] ? 200 : 201, headers: privateHeaders });
+    response.headers.set("ETag", `"${template.version}"`); return response;
   }
   const notificationPath = /^notifications\/([^/]+)\/(read|ack)$/.exec(path);
   if (notificationPath && uuid.test(notificationPath[1]) && request.method === "POST") {

@@ -29,6 +29,7 @@ from .api import ApiConflict, ApiRejected, FileRef, InternalApi, Session
 from .hashing import digest_file, digest_stream
 from .probe import InvalidMediaError, Probe, probe
 from .audio import make_speech_audio
+from .c2pa import WORKER_VERSION, Signing, sign, source_ref
 from .export import build_package
 from .watermark import make_watermarked_preview
 from .proxy import make_proxy
@@ -105,11 +106,13 @@ def _download(storage: Storage, bucket: str, key: str, dst: Path):
 class Jobs:
     def __init__(self, api: InternalApi, storage: Storage, buckets: Buckets, scratch: Path | None = None,
                  enable_hls: bool = False, enable_phash: bool = False, enable_export: bool = False,
-                 enable_store_preview: bool = False, watermark_key: bytes = b""):
+                 enable_store_preview: bool = False, watermark_key: bytes = b"", c2pa: Signing | None = None):
         # الأعلام مطفأة: البصمة الإدراكية حتى يقبلها العقد، والتصدير ومعاينة المتجر حتى شرطي الأمن (العلامة المائية
         # غير القابلة للعكس، ونزع البيانات المضمّنة)
         self.enable_store_preview = enable_store_preview
         self.watermark_key = watermark_key
+        # توقيع C2PA للمخرجات التي تغادر المنصة (ADR 0060)؛ None والعلم مطفأ
+        self.c2pa = c2pa
         self.enable_export = enable_export
         self.enable_hls = enable_hls
         self.enable_phash = enable_phash
@@ -315,9 +318,13 @@ class Jobs:
                 self._register_existing(file_id, "watermarked_preview", key, out)
                 return "store-preview-existing"
             local = Path(tmp) / "source"
-            self._source(material_id, file_id, local)
+            ref = self._source(material_id, file_id, local)
             info = probe(local)
-            made = make_watermarked_preview(local, out, info, self.watermark_key, material_id)
+            built = out.with_name("preview-unsigned.mp4") if self.c2pa else out
+            made = make_watermarked_preview(local, built, info, self.watermark_key, material_id)
+            if self.c2pa:
+                # بعد العلامة: أي إعادة ترميز بعد التوقيع تكسر البيان
+                self._sign(built, out, ref, ["c2pa.transcoded", "c2pa.edited"])
             d = digest_file(out)
             self.storage.put_file(self.buckets.derived, key, out, d.sha256, "video/mp4")
             self.api.add_derivative(file_id, {
@@ -325,6 +332,11 @@ class Jobs:
                 "technical": made.to_dict(),
             })
         return "store-preview"
+
+    def _sign(self, src: Path, dst: Path, ref: FileRef, actions: list[str]) -> None:
+        assert self.c2pa is not None and ref.sha256
+        sign(src, dst, signer=self.c2pa.signer, title=dst.name, actions=actions, publisher=self.c2pa.publisher,
+             source=source_ref(self.c2pa.source_secret, ref.sha256), version=WORKER_VERSION)
 
     def export(self, material_id: str, file_id: str) -> str:
         """حزمة المونتاج عند الطلب (`export.requested`). `technical` المشتق هو `technical` الأصل كما يطلب العقد، فيُنزَّل
