@@ -144,7 +144,7 @@ mkdir -p "$W/rel/releases/tags"
 printf '{"body": "notes\\ncommit: %s\\n"}' "$head" > "$W/rel/releases/tags/v0.0.2"
 printf '{"body": "commit: %s\\n"}' "$head" > "$W/rel/releases/tags/v0.0.1"
 (cd "$W/rel" && python3 -m http.server 18080 --bind 127.0.0.1 >/dev/null 2>&1 &)
-for _ in $(seq 50); do curl -fsS -o /dev/null http://127.0.0.1:18080/releases/tags/v0.0.2 && break; sleep 0.2; done
+for _ in $(seq 50); do curl -fsS -o /dev/null http://127.0.0.1:18080/releases/tags/v0.0.2 2>/dev/null && break; sleep 0.2; done
 RELEASE_API=http://127.0.0.1:18080 bash "$U" --dry-run >"$W/up" 2>&1 || { cat "$W/up"; fail "update dry run on the latest release failed"; }
 grep -q "verified: release v0.0.2 declares $head" "$W/up" || fail "the latest release tag was not verified against its declaration"
 grep -q "checkout -q --detach $head" "$W/up" || fail "update does not check out the verified commit"
