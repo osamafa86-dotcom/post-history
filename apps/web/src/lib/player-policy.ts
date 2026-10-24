@@ -11,5 +11,5 @@ export const playerControls = {
   enableKeyboardPlaybackControls: true, enableKeyboardPlaybackControlsInWindow: false,
   controlPanelElements: ["play_pause", "time_and_duration", "mute", "volume", "captions", "fullscreen"],
   overflowMenuButtons: [], keyboardSeekDistance: 5, keyboardLargeSeekDistance: 10,
-  alwaysShowVolumeBar: true, mediaSession: { enabled: false },
+  alwaysShowVolumeBar: true, customContextMenu: true, contextMenuElements: [], mediaSession: { enabled: false },
 };

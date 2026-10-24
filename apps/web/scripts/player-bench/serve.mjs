@@ -4,6 +4,8 @@ import { readFile, stat, mkdir } from "node:fs/promises";
 import { resolve, extname, join } from "node:path";
 import { createRequire } from "node:module";
 import { gzipSync } from "node:zlib";
+import { localPlayerCss } from "../player-css.mjs";
+import labels from "./labels.json" with { type: "json" };
 
 export async function serve() {
   if (process.env.WEB_PLAYER_BENCH !== "1") throw new Error("Set WEB_PLAYER_BENCH=1");
@@ -26,8 +28,7 @@ export async function serve() {
           });
           // controls.css يتضمن خط Roboto خارجيًا؛ يُحذف تعريف الخط فقط ويحافظ على إشعار الترخيص.
           builder.onLoad({ filter: /shaka-player[\\/]dist[\\/]controls\.css$/ }, async args => {
-            const css = (await readFile(args.path, "utf8")).replace(/@font-face\s*\{[^}]*\}/g, "");
-            if (/url\(\s*["']?https?:|@import/i.test(css)) throw new Error("Remote CSS dependency");
+            const css = localPlayerCss(await readFile(args.path, "utf8"));
             return { contents: css, loader: "css" };
           });
         },
@@ -45,9 +46,9 @@ export async function serve() {
     res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; img-src 'self' blob:; connect-src 'self'; worker-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
     try {
       if (/^\/(videojs|shaka)$/.test(name)) {
-        const player = name.slice(1);
+        const player = name.slice(1), locale = url.searchParams.get("locale") === "en" ? "en" : "ar";
         res.setHeader("Content-Type", "text/html; charset=utf-8");
-        res.end(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${player}</title><link rel="stylesheet" href="/${player}.css"><link rel="stylesheet" href="/bench.css"></head><body><main><h1>${player}</h1><div id="player" class="bench-player"></div></main><script type="module" src="/${player}.js"></script></body></html>`);
+        res.end(`<!doctype html><html lang="${locale}" dir="${locale === "ar" ? "rtl" : "ltr"}"><head><meta charset="utf-8"><title>${player}</title><link rel="stylesheet" href="/${player}.css"><link rel="stylesheet" href="/bench.css"></head><body><main><h1>${player}</h1><div id="player" class="bench-player"></div><input aria-label="${labels[locale].outside}" id="outside"></main><script type="module" src="/${player}.js"></script></body></html>`);
         return;
       }
       if (name === "/bench.css") {

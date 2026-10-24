@@ -17,7 +17,7 @@ describe("player trust boundary", () => {
     const input = await readFile(new URL("../node_modules/shaka-player/dist/controls.css", import.meta.url), "utf8");
     const output = await readFile(new URL("../src/generated/player.css", import.meta.url), "utf8");
     expect(output).toBe(localPlayerCss(input)); expect(output).toContain("Apache");
-    expect(output).not.toMatch(/@font-face|@import|https?:\/\//i);
+    expect(output).not.toMatch(/@font-face|@import|url\(\s*["']?\s*(?:https?:)?\/\//i);
   });
   it("fails closed on unexpected remote CSS", () => {
     for (const css of ["@import 'x.css';", "x{background:url(//cdn.test/x)}", "x{background:url(https://cdn.test/x)}"]) expect(() => localPlayerCss(css)).toThrow();

@@ -27,13 +27,13 @@ export function MaterialPlayer({ source, locale, onUnavailable }: { source: stri
         if (!allowPlayerRequest(request.uris, url)) throw new Error("Invalid preview request");
         request.allowCrossSiteCredentials = false;
       });
-      player.configure({ streaming: { retryParameters: { maxAttempts: 1 } },
-        textDisplayFactory: p => new library.text.UITextDisplayer(p), textDisplayer: { fontFamily: "system-ui" } });
+      player.configure({ streaming: { retryParameters: { maxAttempts: 1 } } });
       await player.attach(media);
       if (disposed) return;
       ui = new library.ui.Overlay(player, container, media);
       ui.configure(playerControls);
-      ui.getControls()?.getLocalization().changeLocale([locale]);
+      player.configure({ textDisplayFactory: (p: shaka.Player) => new library.text.UITextDisplayer(p), textDisplayer: { fontFamily: "system-ui" } });
+      ui.getControls()?.getLocalization()?.changeLocale([locale]);
       await player.load(url, 0, "video/mp4");
     };
     void start().catch(fail);
