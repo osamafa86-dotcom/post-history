@@ -1,0 +1,8 @@
+.material-player{position:relative;width:100%;aspect-ratio:16/9;background:#000;overflow:hidden}
+.material-player video{width:100%;height:100%;object-fit:contain}
+.material-player:fullscreen{width:100%;height:100%;aspect-ratio:auto}
+.material-player .watermark{z-index:2;pointer-events:none}
+.material-player .shaka-current-time{direction:ltr;unicode-bidi:isolate}
+.material-player .shaka-text-container span{unicode-bidi:plaintext}
+.material-player .shaka-text-container:lang(ar) span{direction:rtl}
+.material-player .shaka-controls-button-panel button{min-width:32px}

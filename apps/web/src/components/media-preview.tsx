@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import { MaterialPlayer } from "./material-player";
 import { messages, type Locale } from "@/lib/i18n";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import type { Material, MaterialFile } from "@/lib/types";
@@ -18,8 +19,9 @@ function PreviewAsset({ locale, materialId, file }: { locale: Locale; materialId
   }
   const source = `/api/bff/materials/${materialId}/files/${file.id}/content`;
   if (failed) return <div className="preview-empty" role="status"><p>{m.previewUnavailable}</p><button className="secondary" onClick={() => { setAttempt(0); setFailed(false); }}>{m.retry}</button></div>;
+  if (file.kind === "proxy") return <MaterialPlayer key={attempt} source={source} locale={locale} onUnavailable={() => void unavailable()} />;
   return <div className="video-wrap" key={attempt}>
-    {file.kind === "proxy" ? <video aria-label={m.preview} src={source} controls playsInline preload="metadata" controlsList="nodownload" disablePictureInPicture onError={() => void unavailable()}>{m.videoUnsupported}</video> : <Image unoptimized src={source} width={320} height={180} alt={m.thumbnail} onError={() => void unavailable()} />}
+    <Image unoptimized src={source} width={320} height={180} alt={m.thumbnail} onError={() => void unavailable()} />
     <span className="watermark">{m.watermark}</span>
   </div>;
 }
