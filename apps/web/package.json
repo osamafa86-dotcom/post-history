@@ -16,7 +16,8 @@
     "check:client": "bash scripts/generate-client.sh --check",
     "test:conformance": "node --import tsx scripts/form-conformance.ts && node ../../tools/acceptance/form-conformance/run.mjs --compare=.artifacts/web.json",
     "measure": "node --import tsx scripts/measure-inbox.ts",
-    "measure:upload": "node --import tsx scripts/measure-upload.ts"
+    "measure:upload": "node --import tsx scripts/measure-upload.ts",
+    "measure:forms:live": "node scripts/measure-forms-live.mjs"
   },
   "dependencies": {
     "@noble/hashes": "2.4.0",
