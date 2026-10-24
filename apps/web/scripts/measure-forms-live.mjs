@@ -28,9 +28,9 @@ const metrics = { real_api: false, real_postgres: false, real_bff: false, synthe
 const children = []; let browser, created = false, failure = false;
 const output = resolve(web, ".artifacts/forms-live"); await mkdir(output, { recursive: true });
 const key = () => randomBytes(32).toString("base64");
-const env = { ...process.env, NODE_ENV: "development", DATABASE_URL: dataUrl.href, REDIS_URL: redisUrl.href,
+const env = { PATH: process.env.PATH, HOME: process.env.HOME, LANG: process.env.LANG, TMPDIR: process.env.TMPDIR, NODE_ENV: "development", DATABASE_URL: dataUrl.href, REDIS_URL: redisUrl.href,
   JWT_SECRET: randomBytes(32).toString("hex"), FIELD_ENCRYPTION_KEY: key(), TUSD_HOOK_SECRET: randomBytes(24).toString("hex"),
-  LOG_LEVEL: "silent", OUTBOX_DISPATCHER_ENABLED: "false", RESERVATION_SWEEP_ENABLED: "false", NEXT_TELEMETRY_DISABLED: "1" };
+  S3_BUCKET_UPLOADS: "uploads", PUSH_DELIVERY_ENABLED: "false", LOG_LEVEL: "silent", OUTBOX_DISPATCHER_ENABLED: "false", RESERVATION_SWEEP_ENABLED: "false", NEXT_TELEMETRY_DISABLED: "1" };
 function child(command, args, cwd, extraEnv = {}) {
   const p = spawn(command, args, { cwd, env: { ...env, ...extraEnv }, stdio: "ignore" }); p.on("error", () => { p.setupFailed = true; }); children.push(p); return p;
 }
@@ -55,6 +55,8 @@ async function check(name, operation) {
   catch { metrics[name] = false; failure = true; throw new Error(`Live check failed: ${name}`); }
 }
 try {
+  // مدقق إعداد API نفسه، قبل إنشاء قاعدة أو بدء أي عملية.
+  requireApi("./dist/config/config.js").loadConfig(env);
   await admin.query(`CREATE DATABASE "${database}"`); created = true;
   await command("bash", ["src/db/migrate.sh", "up"], api);
   metrics.real_postgres = true;
