@@ -1,32 +1,47 @@
 # مقارنة مشغّل الويب — #89
 
-منصة قياس محلية خلف `WEB_PLAYER_BENCH=1`، لا مسار إنتاج ولا بيانات مستخدمين. لا تحمل حزمة التطبيق أيًا من المشغّلين نتيجة هذه التجربة: اعتماديات المقارنة معزولة في `.artifacts/player-deps`. الإصدار الفعلي الذي تحقق منه npm: `@videojs/react@10.2.0`، `@videojs/hlsjs-video@10.2.0`، `shaka-player@5.3.2`. حزمة `video.js@10.2.0` موجّه تثبيت؛ لا نستعمل واجهة v8 القديمة.
+منصة محلية خلف WEB_PLAYER_BENCH=1 على عينات اصطناعية فقط، خارج مسارات تطبيق Next.js. تعتمد المقارنة على @videojs/react و@videojs/hlsjs-video 10.2.0 وshaka-player 5.3.2. تثبَّت الحزم المؤقتة في .artifacts/player-deps؛ التطبيق يعتمد Shaka وحده للمعاينة عبر BFF. لا نستعمل إضافات Video.js v8.
 
 ## الإعادة
 
-من جذر المستودع، باستخدام FFmpeg/ffprobe المتوافقين مع العامل:
+من جذر المستودع، مع FFmpeg/ffprobe المتوافقين مع العامل:
 
 ```sh
 PYTHONPATH=workers/media/src python3 tools/render-bench/web_fixtures/make_web_fixtures.py "$PWD/apps/web/.artifacts/player-fixtures"
 cd apps/web
+npm ci
 WEB_PLAYER_BENCH=1 node scripts/player-bench/prepare.mjs
+npx playwright install chromium
+WEB_PLAYER_BENCH=1 npm run measure:player
+```
+
+يجب أن يدعم المتصفح H.264/AAC لعينات HLS؛ Chromium المرفق في بعض البيئات لا يدعمهما. لإعادة القياس المحفوظ استعمل Chrome Headless Shell 156.0.8078.47:
+
+```sh
+npx --yes @puppeteer/browsers install chrome-headless-shell@156.0.8078.47 --path .artifacts/browsers
+WEB_PLAYER_BENCH=1 WEB_PLAYER_EXECUTABLE="$PWD/.artifacts/browsers/chrome-headless-shell/linux-156.0.8078.47/chrome-headless-shell-linux64/chrome-headless-shell" npm run measure:player
+```
+
+النتائج والصور في .artifacts/player-result. يُنتج السكربت measurement.json بمخطط العقود وchecks.json تفصيليًا، ويحفظ نسخة المتصفح وبصمة lock المؤقت ونسخة FFmpeg وأحجام المنصة المضغوطة. يخرج برمز غير صفري عند فشل فحص Shaka أو تسجيله اتصالات خارجية/مخالفات CSP/أخطاء صفحة أو HTTP. فشل مصغرات Video.js المسجّل متوقع، ولا يُخفى من النتيجة. افحص الصور قبل نسخ نتيجة نهائية إلى docs/measurements/web.
+
+للتجربة التفاعلية على جهاز الاختبار:
+
+```sh
 WEB_PLAYER_BENCH=1 node --input-type=module -e 'const {serve}=await import("./scripts/player-bench/serve.mjs"); console.log((await serve()).origin)'
 ```
 
-افتح الأصل المحلي المطبوع ثم `/videojs?fixture=vfr-offset` أو `/shaka?fixture=hdr-hlg`. الحالتان مسموحتان مع المشغّلين. التنفيذ يثبّت الحزم داخل مجلد مؤقت؛ لا يغيّر package.json/lock للتطبيق. سجل package-lock المؤقت مع القياس عند إعادة الاختبار.
+افتح الأصل المحلي المطبوع ثم /shaka?fixture=vfr-offset&locale=ar أو /videojs?fixture=hdr-hlg&locale=en. يرفض الخادم الحالات والمسارات غير المسموحة. يتلقى المشغّلان ملفات HLS وVTT نفسها دون تعديلها، ويستخدمان الموارد العربية والإنجليزية المحلية. تفعيل الترجمة في Video.js جزء من القياس لأن default track وحده لا يُظهرها في هذا المحوّل. لا CDN أو خطوط أو تحليلات خارجية.
 
-المشغّلان يتلقيان ملفات العامل نفسها دون إعادة كتابة VTT أو تغيير مقاطعه. إعداد Video.js يستعمل محوّل HLS.js مع تعطيل العامل Blob للمحافظة على CSP. Shaka يستعمل واجهته المحلية مع حذف تعريف الخط الخارجي من CSS أثناء بناء التجربة. لا خطوط ولا CDN ولا تحليلات خارجية.
+## ما قيس
 
-## ما يجب قياسه قبل اعتماد ADR 0015
+عينتان × مشغّلان × لغتان؛ 80 فحصًا. Shaka: 44/44؛ Video.js: 32/36، والفشل في صور sprite النسبية. يشمل القياس الإطارات الفعلية والترجمة وRTL المختلط والسطرين في Shaka، وتغيّر اقتصاص المصغرات، وSpace والبحث والصوت وTab ومفاتيح خارج المشغّل وملء الشاشة. تُعدّ الطلبات الخارجية وCSP وأخطاء الصفحة وHTTP لكل حالة.
 
-- تشغيل HLS، فك إطارات فعلية، والتنقل في حالتي VFR/HLG على Chrome وSafari فعليين، مع الإصدار والجهاز.
-- ترجمة عربية بثلاث إشارات، نص مختلط مع 10:30 وReuters، وسطرين؛ مراجعة الاتجاه بصريًا وعدم تغطية أدوات التحكم للنص.
-- ظهور صورة شريط الزمن من VTT وصفيحة العامل، بما في ذلك اقتصاص خانات مختلفة.
-- Space للتشغيل والإيقاف، الأسهم للتنقل والصوت، Tab للوصول، وملء الشاشة، دون اختطاف مفاتيح الصفحة.
-- تعداد الاتصالات الخارجية ومخالفات CSP والأخطاء؛ اختبار إنهاء المشغّل عند مغادرة الصفحة وإبطال الجلسة عند ربطه بالـBFF.
+النتيجة المحفوظة: docs/measurements/web/2026-10-24-player-choice.json، وقرار الاختيار ADR 0015. player-preliminary سجل تاريخي، وليس النتيجة الحالية. قياس Chrome Headless Shell على Linux ليس قياس Safari أو جهاز مكتبي تفاعلي؛ يبقى result=partial عند نجاح القياس المحلي بسبب البوابات غير المنفذة. WEB_PLAYER_BROWSER=webkit يصلح لتشخيص WebKit عند توافره، ولا يُسجّل بوصفه Safari فعليًا.
 
-النتائج الأولية في `docs/measurements/web/2026-10-24-player-preliminary.json` **partial**، وليست قبولًا نهائيًا. Chrome Headless Shell ليس تجربة متصفح مكتبي تفاعلية، وWebKit الآلي ليس Safari. التذكرة لم تنجز بعد، ولم يُستبدل مشغّل صفحة المادة.
+## قبول Safari والاعتماد بالخادم
 
-## اعتماد الخادم
+على جهاز Apple فعلي، أعد توليد/نسخ العينات الاصطناعية وشغّل المنصة محليًا، وافحص الروابط الأربعة لكل مشغّل، والترجمة المختلطة والسطرين وتغيّر المصغرات والمفاتيح وملء الشاشة والشبكة. احفظ تقريرًا جديدًا بمخطط measurement.json مع جهاز Apple وmacOS/Safari الفعليين والنتائج غير المقيسة صراحةً؛ لا تعِد تسمية قياس Linux الحالي.
 
-على main `c6df46c`، توقيع download-url لكائن واحد لا يجيز ملفات HLS التابعة. العامل لا يسجّل init/segments أو timeline كملفات مستقلة. نحتاج عقدًا وتفويضًا لقراءة الأعضاء قبل دمج HLS/المصغرات في صفحة مادة حقيقية؛ التفاصيل في تعليق #89 رقم 6376986201. لا اشتقاق لتوقيع جديد ولا كشف لتوقيع التخزين في المتصفح.
+في التطبيق الحقيقي، لا يجيز توقيع download-url للكائن الواحد تحميل أعضاء HLS أو timeline. لذلك يستعمل MaterialPlayer مسار MP4 المصرّح به فقط. تفويض الأعضاء وTTL ومنع traversal مسؤولية عقد الخادم كما في تعليق #89 رقم 6376986201. لا اشتقاق للتوقيع ولا روابط تخزين مكشوفة، ولا تشغيل ملفات حقيقية ضمن منصة المقارنة.
+
+فحوص التطبيق منفصلة: npm test وnpm run test:conformance وnpm run check:client وnpm run check:player وnpm run lint وnpm run typecheck وnpm run build وnpm run test:e2e؛ تتطلب اختبارات الجلسة Redis كما يوضح إعداد Playwright.
