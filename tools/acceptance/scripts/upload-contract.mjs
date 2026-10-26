@@ -1,5 +1,5 @@
-// اختبار القبول 01 (استئناف الرفع): مطابقة إنشاء جلسة الرفع للعقد، ومنع المورد الثاني عند تكرار المفتاح.
-// يعمل ضد API محلي ولا يفتح رفعًا حقيقيًا؛ يتحقق من مخططات الاستجابة ومن client_sha256 والاستئناف المنطقي للجلسة.
+// ثابت عقد الرفع: مطابقة إنشاء الجلسة للعقد، ومنع المورد الثاني عند تكرار المفتاح.
+// لا يفتح نقل ملف ولا يقيس الاستئناف؛ نتيجته على عقد الإنشاء والتكرار وحدهما.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -8,7 +8,7 @@ import addFormats from "ajv-formats";
 import YAML from "yaml";
 import { ROOT, newResult, finish, writeResult, parseArgs, banner } from "../lib/measurement.mjs";
 import { byName } from "../lib/catalog.mjs";
-import { client, materialBody, sha256Hex } from "../lib/live.mjs";
+import { client, createUploadSession, materialBody } from "../lib/live.mjs";
 
 export function responseValidator(api) {
   const ajv = new Ajv2020({ allErrors: true, strict: false });
@@ -48,14 +48,13 @@ export async function checkUploadContract({ http, token, api }) {
   validateBody("/materials", "post", 201, material.body);
 
   const bytes = Buffer.alloc(4096, 7);
-  const base = { material_id: material.body.id, kind: "original", size_bytes: bytes.length, filename: "synthetic.bin" };
-  const missingHash = await http.call(token, "POST", "/uploads", { body: base, key: randomUUID() });
+  const base = { materialId: material.body.id, kind: "original", filename: "synthetic.bin" };
+  const missingHash = await createUploadSession(http, token, { ...base, bytes, omitClientSha256: true, expectedStatus: 422 });
   check("missing client_sha256 rejected", missingHash.status === 422, `status ${missingHash.status}`);
 
   const key = randomUUID();
-  const body = { ...base, client_sha256: sha256Hex(bytes) };
-  const first = await http.call(token, "POST", "/uploads", { body, key });
-  const replay = await http.call(token, "POST", "/uploads", { body, key });
+  const first = await createUploadSession(http, token, { ...base, bytes, key });
+  const replay = await createUploadSession(http, token, { ...base, bytes, key });
   check("upload session created", first.status === 201, `status ${first.status}`);
   check("replay returns first status", replay.status === first.status, `${first.status}/${replay.status}`);
   check("replay returns same resource", first.body?.id && replay.body?.id === first.body.id);
@@ -80,6 +79,8 @@ export async function checkUploadContract({ http, token, api }) {
   return {
     fails,
     metrics: {
+      scope: "upload_session_contract_and_idempotent_replay",
+      file_transfer_measured: false,
       operations_validated: 5,
       missing_hash_status: missingHash.status,
       replay_same_resource: Boolean(first.body?.id && replay.body?.id === first.body.id),
