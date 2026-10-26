@@ -71,7 +71,11 @@ final class AVFoundationProxyTranscoderTests: XCTestCase {
         // فالفارق ≤ 2 مللي ثانية (الخطة تقبل 40). المرجع أزمنة العرض المكتوبة، لا أزمنة عينات المسار الخام.
         let dst = try await frameTimes(output)
         XCTAssertEqual(dst.count, Self.frameTimesMs.count)
-        for (ms, b) in zip(Self.frameTimesMs, dst) { XCTAssertEqual(Double(ms) / 1000, b, accuracy: 0.002) }
+        // أول إطار يبدأ من صفر التركيب (يُقدَّم بأقل من مدة إطار)، وما بعده على زمنه.
+        let first = Double(Self.frameTimesMs[0]) / 1000
+        XCTAssertLessThanOrEqual(dst[0], first + 0.002)
+        XCTAssertLessThan(first - dst[0], 0.040)
+        for (ms, b) in zip(Self.frameTimesMs.dropFirst(), dst.dropFirst()) { XCTAssertEqual(Double(ms) / 1000, b, accuracy: 0.002) }
 
         let metadata = try await asset.load(.metadata)
         let start = metadata.first { ($0.key as? String) == proxyStartPtsMetadataKey }
