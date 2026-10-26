@@ -1,10 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { randomBytes } from "node:crypto";
+import { Transform } from "node:stream";
+import { fileURLToPath } from "node:url";
 import {
-  ffmpegArgs, generateSyntheticVideo, noiseInput, plannedInterruptions, assessUpload, runOne, run,
+  ffmpegArgs, fingerprintFile, generateSyntheticVideo, noiseInput, plannedInterruptions, assessUpload, runOne, run,
 } from "../scripts/upload-bench.mjs";
 import { validateMeasurement, writeResult } from "../lib/measurement.mjs";
 
@@ -128,6 +132,43 @@ test("runOne fails when the encoded content fills under 95% of the requested siz
     assert.equal(doc.result, "fail");
     assert.match(doc.notes, /filled only/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("fingerprintFile pauses the input on backpressure instead of queuing the file in memory", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "upload-bench-test-"));
+  try {
+    const path = join(dir, "blob.bin");
+    const sizeBytes = 8 * 1024 * 1024;
+    writeFileSync(path, randomBytes(sizeBytes));
+    // مخزن كتابة بحد أقصى بايت واحد ومعالجة بطيئة: بلا ضغط راجع تصطف الملف كله في الذاكرة،
+    // ومعه يبقى المصطفَّن دون قطعتين (64 KiB لكل قطعة قراءة).
+    let maxBuffered = 0;
+    const createDeflate = () => new Transform({
+      writableHighWaterMark: 1,
+      transform(chunk, encoding, callback) {
+        maxBuffered = Math.max(maxBuffered, this.writableLength);
+        setTimeout(callback, 1);
+      },
+    });
+    const result = await fingerprintFile(path, { createDeflate });
+    assert.equal(result.bytes, sizeBytes);
+    assert.match(result.sha256, /^[a-f0-9]{64}$/);
+    assert.ok(maxBuffered <= 2 * 64 * 1024, `deflate queue grew to ${maxBuffered} bytes; the input was not paused on backpressure`);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+const scriptPath = fileURLToPath(new URL("../scripts/upload-bench.mjs", import.meta.url));
+
+test("the script runs from the shell: dry-run prints the plan and exits zero", () => {
+  const outcome = spawnSync(process.execPath, [scriptPath, "--dry-run"], { encoding: "utf8" });
+  assert.equal(outcome.status, 0, outcome.stderr);
+  assert.match(outcome.stdout, /قياس الرفع/);
+});
+
+test("the script from the shell without an endpoint measures nothing and exits two", () => {
+  const outcome = spawnSync(process.execPath, [scriptPath], { encoding: "utf8", env: { PATH: process.env.PATH } });
+  assert.equal(outcome.status, 2);
+  assert.match(outcome.stderr, /BENCH_TUS_ENDPOINT/);
 });
 
 test("a run without a network profile measures nothing and exits two", async () => {
