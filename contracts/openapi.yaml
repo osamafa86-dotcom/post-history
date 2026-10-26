@@ -2626,8 +2626,8 @@ paths:
       - name: provider
         in: path
         required: true
-        description: المحوّل المفعَّل؛ غيره `404`. `sandbox` يُرفض في الإنتاج (ADR 0032)
-        schema: { type: string, pattern: "^[a-z_]{1,32}$" }
+        description: المحوّل المفعَّل؛ غيره `404`. `sandbox` يُرفض في الإنتاج (ADR 0032)، و`stripe` بوضع الاختبار وحده
+        schema: { $ref: "#/components/schemas/PaymentProvider" }
     post:
       tags: [commerce]
       summary: إشعار مزوّد الدفع الموقّع (ADR 0032)
@@ -2639,26 +2639,43 @@ paths:
         Outbox. التكرار (عشر مرات أو بترتيب مختلف) يعيد `200` بلا أثر ثانٍ. المرجع المجهول أو الحالة المحسومة `200` بلا أثر،
         والمبلغ الذي لا يطابق الطلب `200` بلا ترخيص ويُكتب للمراجعة. الدفع الواصل لطلب منتهٍ يُقبل إن أعاد الخادم التحقق
         (الحجز قائم والحقوق قابلة للبيع)، وإلا يُلغى الطلب (`exclusivity_lost` أو `rights_changed`) ويُسترد المبلغ. الجسم
-        هنا صيغة المزوّد التجريبي؛ المحوّل الحقيقي يترجم صيغته إلى `PaymentProviderEvent` نفسه.
+        بصيغة المحوّل، وكل محوّل يترجمها إلى `PaymentProviderEvent` قبل التطبيق.
+        **`sandbox`:** الجسم `PaymentProviderEvent` نفسه، بترويستي `X-Signature` و`X-Timestamp`.
+        **`stripe`:** الجسم حدث Stripe (`StripeWebhookEvent`)، والتوقيع ترويسة `Stripe-Signature` (`t=<ثوانٍ>,v1=<hex>`):
+        HMAC-SHA256 على `<t>.<الجسم الخام>` بسر نقطة الإشعار من البيئة، والمهلة ±5 دقائق نفسها. `event_id` هو `id`
+        الحدث، و`provider_ref` معرّف جلسة الدفع. الحدث بـ `livemode: true` يُرفض `400 live_payments_disabled` حتى قرار
+        المالك بالمال الحقيقي. الترجمة:
+        `checkout.session.completed` (بـ `payment_status = paid`) و`checkout.session.async_payment_succeeded` إلى
+        `payment.succeeded`؛ و`checkout.session.async_payment_failed` و`checkout.session.expired` إلى `payment.failed`؛
+        و`refund.updated` بحالة `succeeded` إلى `refund.succeeded`، وبحالة `failed` أو `canceled` يصير الاسترداد `failed`،
+        و`pending` و`requires_action` تبقيه `pending`؛ و`charge.dispute.created` إلى `dispute.opened`. غير ذلك `200` بلا أثر.
       operationId: receivePaymentWebhook
       x-roles: []
       security: []
       parameters:
         - name: X-Signature
           in: header
-          required: true
-          description: "`v1=<hex>`: HMAC-SHA256 على `<X-Timestamp>.<الجسم الخام>`"
+          required: false
+          description: "`sandbox` وحده (وإلزامي له): `v1=<hex>`، HMAC-SHA256 على `<X-Timestamp>.<الجسم الخام>`"
           schema: { type: string, pattern: "^v1=[0-9a-f]{64}$" }
         - name: X-Timestamp
           in: header
-          required: true
-          description: ثوانٍ منذ epoch؛ خارج ±5 دقائق `400 webhook_signature_invalid`
+          required: false
+          description: "`sandbox` وحده (وإلزامي له): ثوانٍ منذ epoch؛ خارج ±5 دقائق `400 webhook_signature_invalid`"
           schema: { type: string, pattern: "^[0-9]{10}$" }
+        - name: Stripe-Signature
+          in: header
+          required: false
+          description: "`stripe` وحده (وإلزامي له): `t=<ثوانٍ>,v1=<hex>[,v1=…]`؛ يكفي أن يطابق توقيع `v1` واحد"
+          schema: { type: string, maxLength: 1024, pattern: "^t=[0-9]{10}(,v[0-9]=[0-9a-f]{64})+$" }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/PaymentProviderEvent" }
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/PaymentProviderEvent"
+                - $ref: "#/components/schemas/StripeWebhookEvent"
       responses:
         "200":
           description: استُلم (طُبّق أو كان مكررًا أو بلا أثر)؛ المزوّد يتوقف عن الإعادة
@@ -2969,6 +2986,7 @@ components:
             - webhook_signature_invalid
             - already_refunded
             - commission_rule_exists
+            - live_payments_disabled
             - internal_error
         message: { type: string }
         request_id: { type: string, description: لتتبع الطلب في السجلات }
@@ -4701,7 +4719,7 @@ components:
           type: string
           format: uri
           description: صفحة الدفع المستضافة لدى المزوّد؛ لا يُسجَّل ولا يُرسل في حدث أو إشعار
-        provider: { type: string, pattern: "^[a-z_]{1,32}$", description: "`sandbox` في هذه الدورة" }
+        provider: { type: string, pattern: "^[a-z_]{1,32}$", description: "قيمة من `PaymentProvider`: `sandbox` أو `stripe`" }
         expires_at: { type: string, format: date-time, description: لا تتجاوز مهلة الطلب }
 
     LicenseTerritory:
@@ -4824,6 +4842,60 @@ components:
         provider_ref: { type: string, minLength: 1, maxLength: 128, description: مرجع جلسة الدفع لدى المزوّد }
         amount: { $ref: "#/components/schemas/Money" }
         occurred_at: { type: string, format: date-time }
+
+    PaymentProvider:
+      type: string
+      description: >-
+        محوّل الدفع (ADR 0032). `sandbox` المزوّد التجريبي الداخلي في غير الإنتاج؛ `stripe` بوضع الاختبار وحده (مفاتيح
+        `sk_test_`، و`livemode: false`) حتى قرار المالك بالمال الحقيقي بعد تجربة الصرف.
+      enum: [sandbox, stripe]
+
+    StripeWebhookEvent:
+      type: object
+      description: >-
+        حدث Stripe كما يرسله، بعد التحقق من `Stripe-Signature`. الحقول المعرَّفة وحدها تُقرأ، وما زاد يُتجاهل ولا يُخزَّن
+        (قد يحمل بريد المشتري واسمه لدى Stripe). يُخزَّن من الحدث ما في `payment_events` وحده.
+      required: [id, object, type, livemode, created, data]
+      properties:
+        id: { type: string, pattern: "^evt_[A-Za-z0-9]{1,250}$" }
+        object: { type: string, const: event }
+        type:
+          type: string
+          description: الأنواع التي يترجمها المحوّل؛ غيرها يُستلم بلا أثر
+          minLength: 1
+          maxLength: 128
+        livemode: { type: boolean, description: "`true` يُرفض `400 live_payments_disabled`" }
+        created: { type: integer, minimum: 0 }
+        data:
+          type: object
+          required: [object]
+          properties:
+            object: { $ref: "#/components/schemas/StripeEventObject" }
+
+    StripeEventObject:
+      type: object
+      description: >-
+        الكائن المعني: جلسة دفع (`checkout.session`)، أو استرداد (`refund`)، أو نزاع (`dispute`). المبلغ بأصغر وحدة
+        والعملة بحروف صغيرة كما في Stripe. `metadata.order_id` يضعه المحوّل عند إنشاء الجلسة ولا يُعتمد عليه وحده: المطابقة
+        بـ `provider_ref`.
+      required: [id, object]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 255 }
+        object: { type: string, enum: [checkout.session, refund, dispute] }
+        amount_total: { type: [integer, "null"], minimum: 0, description: "`checkout.session`" }
+        amount: { type: integer, minimum: 0, description: "`refund` و`dispute`" }
+        currency: { type: string, enum: [usd, ils] }
+        payment_status: { type: string, enum: [paid, unpaid, no_payment_required], description: "`checkout.session`" }
+        status:
+          type: [string, "null"]
+          description: >-
+            لـ `refund`: `pending` أو `requires_action` (يبقى الاسترداد `pending`)، و`succeeded`، و`failed` أو `canceled`
+            (يصير `failed`). ولجلسة الدفع والنزاع حالتهما في Stripe.
+        payment_intent: { type: [string, "null"], maxLength: 255 }
+        metadata:
+          type: object
+          properties:
+            order_id: { type: string, format: uuid }
 
     PaymentWebhookAck:
       type: object
