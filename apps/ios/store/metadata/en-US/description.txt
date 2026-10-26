@@ -1,0 +1,16 @@
+A professional app for the news organisation's reporters and accredited field crews, not a consumer app. Using it requires a professional account issued by the organisation's administration.
+
+Core functions:
+- Send original field material: upload video and photo files at their original quality from the photo library, without compression or re-encoding, together with the fixed fields and the desk form.
+- Light copy first: the app generates a light copy that reaches the newsroom within minutes while the original finishes uploading in the background.
+- Automatic resume: uploads use a resumable protocol and continue from the last confirmed chunk after a connection drop, closing the app or restarting the device.
+- Numbered receipt: the app computes the file's checksum on the phone and the server verifies it to ensure the material arrived complete, then shows a receipt number that can be shared inside the organisation.
+- Three independent states per material: technical, editorial and rights, with a timeline of who did what and when, plus supervisor notes pinned to a timecode.
+- Local copy and emergencies: deleting the local copy after the receipt is the reporter's decision through the system confirmation, with an emergency wipe of app data and an automatic wipe if the session is revoked remotely.
+
+Data transparency and privacy (what is uploaded and who sees it):
+- What is uploaded: video and photo files the reporter chooses manually, the fixed fields and desk form attached to them, and the notification token for newsroom alerts about material status. The app does not request location permission and does not send persistent device identifiers.
+- The original is uploaded as is: without compression or re-encoding to preserve its checksum, so its metadata may carry what the camera recorded. The original is stored on the organisation's servers and is never shown in raw form; this data is stripped from every preview and delivered copy.
+- Who sees the material: authorised editors and reviewers according to role permissions and source-protection rules. Material flagged as sensitive never leaves to any external provider. Data is not used for advertising.
+
+Store screenshots show synthetic data for display only.
