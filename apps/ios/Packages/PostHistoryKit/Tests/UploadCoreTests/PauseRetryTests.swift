@@ -10,6 +10,8 @@ final class PauseRetryTests: XCTestCase {
         let h = Harness(name: "pause", script: [.ok, .hang])
         let rec = try await h.enqueue()
         _ = await h.engine.waitUntil(rec.id) { $0.confirmedOffset == 4 && $0.inFlightOffset == 4 }
+        // الإيقاف بعد أن يبلغ الجزء الثاني النقل فعلًا: `inFlightOffset` يُحفظ قبل الجدولة، فالعدّ قبلها غير حتمي.
+        try await Self.waitUntil { !h.transport.activeKeys.isEmpty }
         await h.engine.pause(rec.id)
         let paused = await h.engine.record(rec.id)
         XCTAssertEqual(paused?.isPaused, true)
@@ -31,6 +33,7 @@ final class PauseRetryTests: XCTestCase {
         let first = Harness(name: "pause-relaunch", script: [.ok, .hang], store: store)
         let rec = try await first.enqueue()
         _ = await first.engine.waitUntil(rec.id) { $0.inFlightOffset == 4 }
+        try await Self.waitUntil { !first.transport.activeKeys.isEmpty }
         await first.engine.pause(rec.id)
 
         let relaunched = Harness(name: "pause-relaunch", store: store, secrets: first.sharedSecrets, dir: first.dir)
@@ -64,5 +67,13 @@ final class PauseRetryTests: XCTestCase {
         try FileManager.default.removeItem(at: h.source)
         let fresh = try await h.engine.retry(rec.id)
         XCTAssertNil(fresh)
+    }
+
+    private static func waitUntil(timeout: TimeInterval = 5, _ condition: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            guard Date() < deadline else { return XCTFail("condition not met within \(timeout)s") }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
     }
 }
