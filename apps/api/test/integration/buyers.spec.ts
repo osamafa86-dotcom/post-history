@@ -2,7 +2,11 @@ import { hash } from '@node-rs/argon2';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { schemaValidator } from '../../src/common/contract';
-import { createHarness, type Harness, loginAs } from './harness';
+import { dismissInviteConflict, openInviteConflicts } from '../../src/commerce/invite-conflicts';
+import { totp } from '../../src/common/crypto';
+import { fieldKeyring } from '../../src/config/config';
+import { DB } from '../../src/database/database.module';
+import { createHarness, type Harness, loginAs, seedUser } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
 
@@ -103,7 +107,7 @@ describe('buyer organizations (/v1/buyer-organizations)', () => {
     expect(active.body).toMatchObject({ status: 'active', verified_at: expect.any(String) });
   });
 
-  it('invites within the seats only (409 seats_exhausted), refuses a taken email (409), and keeps one active admin (409 last_buyer_admin)', async () => {
+  it('invites within the seats only (409 seats_exhausted), and keeps one active admin (409 last_buyer_admin)', async () => {
     const o = await created({ seats: 2 });
     const owner = await buyer(o.id, 'buyer_admin');
     // المدير الأول المدعو والمالك يشغلان المقعدين
@@ -120,7 +124,6 @@ describe('buyer organizations (/v1/buyer-organizations)', () => {
     expect((await write('put', owner.token, `/buyer-organizations/${o.id}/members/${first.user_id}`, { role: 'buyer_member', status: 'active' }).expect(409)).body.code).toBe('seats_exhausted');
 
     const other = await created();
-    await write('post', admin.token, `/buyer-organizations/${other.id}/members`, { email: admin.email, role: 'buyer_member' }).expect(409);
 
     await activate(o.id);
     expect((await write('put', owner.token, `/buyer-organizations/${o.id}/members/${owner.id}`, { role: 'buyer_member', status: 'active' }).expect(409)).body.code).toBe('last_buyer_admin');
@@ -128,5 +131,61 @@ describe('buyer organizations (/v1/buyer-organizations)', () => {
     // عضو مؤسسة أخرى أو معرّف مجهول 404
     await write('put', owner.token, `/buyer-organizations/${o.id}/members/${randomUUID()}`, { role: 'buyer_member', status: 'active' }).expect(404);
     await write('post', owner.token, `/buyer-organizations/${other.id}/members`, { email: `x-${randomUUID()}@example.test`, role: 'buyer_member' }).expect(404);
+  });
+  // متابعة أمن #304: بريد حساب قائم خارج المؤسسة لا يُكشف بالرد؛ التعارض عضو مدعو في طابور مدير النظام
+  it('an invite for an email taken outside the organization answers exactly like a fresh invite, and queues the conflict for a system admin', async () => {
+    const o = await created({ seats: 5 });
+    const owner = await buyer(o.id, 'buyer_admin');
+    const reporter = await seedUser(h, { roles: [{ role: 'reporter' }] });
+    const invite = (email: string) => write('post', owner.token, `/buyer-organizations/${o.id}/members`, { email, role: 'buyer_member' });
+    const fresh = await invite(`fresh-${randomUUID()}@example.test`).expect(201);
+    const taken = await invite(reporter.email.toUpperCase()).expect(201);
+
+    // الرد نفسه بايتًا ببايت بعد إخفاء ما يتغير بطبعه في كل دعوة (المعرّف والبريد والطابع والرمز)
+    const mask = (res: request.Response) => {
+      const body = res.text
+        .replace(/"user_id":"[0-9a-f-]{36}"/, '"user_id":"<id>"')
+        .replace(/"email":"[^"]*"/, '"email":"<email>"')
+        .replace(/"created_at":"[^"]*"/, '"created_at":"<t>"')
+        .replace(/"invite_token":"[A-Za-z0-9_-]+"/, '"invite_token":"<token>"')
+        .replace(/"invite_token_expires_at":"[^"]*"/, '"invite_token_expires_at":"<t>"');
+      const headers = Object.keys(res.headers).filter((k) => !['date', 'etag', 'x-request-id', 'content-length'].includes(k)).sort();
+      return { status: res.status, headers, contentType: res.headers['content-type'], body };
+    };
+    expect(mask(taken)).toEqual(mask(fresh));
+    expect(taken.text.length - taken.body.email.length).toBe(fresh.text.length - fresh.body.email.length);
+    expect(taken.body.invite_token).toEqual(expect.stringMatching(/^[A-Za-z0-9_-]{43}$/));
+
+    // يظهر مدعوًّا في القائمة ويشغل مقعدًا، ويُعدَّل كأي مدعو
+    const listed = (await get(owner.token, `/buyer-organizations/${o.id}/members`).expect(200)).body.items;
+    expect(listed.find((m: { user_id: string }) => m.user_id === taken.body.user_id)).toEqual({ ...taken.body, invite_token: undefined, invite_token_expires_at: undefined, created_at: expect.any(String) });
+    await write('put', owner.token, `/buyer-organizations/${o.id}/members/${taken.body.user_id}`, { role: 'buyer_admin', status: 'suspended' }).expect(200);
+    expect((await get(owner.token, `/buyer-organizations/${o.id}/members`).expect(200)).body.items.find((m: { user_id: string }) => m.user_id === taken.body.user_id)).toMatchObject({ role: 'buyer_admin', status: 'suspended' });
+    await write('put', owner.token, `/buyer-organizations/${o.id}/members/${taken.body.user_id}`, { role: 'buyer_member', status: 'active' }).expect(200);
+
+    // البريد نفسه مرة أخرى في المؤسسة نفسها 409 كأي عضو ظاهر فيها؛ والحساب القائم لا يُمس
+    expect((await invite(reporter.email).expect(409)).body.code).toBe('bad_request');
+    expect((await invite(fresh.body.email).expect(409)).body.code).toBe('bad_request');
+    const { rows: [u] } = await h.pool.query(`SELECT organization_id, status FROM users WHERE id = $1`, [reporter.id]);
+    expect(u).toEqual({ organization_id: null, status: 'active' });
+    await http().post('/v1/auth/recovery/complete').send({ reset_token: taken.body.invite_token, new_password: 'a long enough passphrase 1' }).expect(401);
+
+    // الطابور: مدير النظام يراه بالمعرّفات ويحسمه برمز TOTP صحيح، فيخرج من القائمة والمقاعد
+    const db = h.app.get(DB);
+    const queued = (await openInviteConflicts(db)).find((c) => c.id === taken.body.user_id);
+    expect(queued).toMatchObject({ organizationId: o.id, existingUserId: reporter.id, role: 'buyer_member', state: 'pending' });
+    const sysadmin = await seedUser(h, { totp: true, roles: [{ role: 'system_admin' }] });
+    const deps = { keyring: fieldKeyring(h.config) };
+    await expect(dismissInviteConflict(db, deps, { conflictId: queued!.id, adminId: sysadmin.id, totp: '000000' })).rejects.toMatchObject({ code: 'totp_failed' });
+    await expect(dismissInviteConflict(db, deps, { conflictId: queued!.id, adminId: owner.id, totp: '000000' })).rejects.toMatchObject({ code: 'invalid_admin' });
+    await dismissInviteConflict(db, deps, { conflictId: queued!.id, adminId: sysadmin.id, totp: totp(sysadmin.totpSecret!, Date.now()) });
+    await expect(dismissInviteConflict(db, deps, { conflictId: queued!.id, adminId: sysadmin.id, totp: totp(sysadmin.totpSecret!, Date.now()) })).rejects.toMatchObject({ code: 'already_resolved' });
+    expect((await get(owner.token, `/buyer-organizations/${o.id}/members`).expect(200)).body.items.map((m: { user_id: string }) => m.user_id)).not.toContain(taken.body.user_id);
+    const { rows: audits } = await h.pool.query(`SELECT action, details FROM audit_log WHERE target_id = $1 ORDER BY id`, [reporter.id]);
+    expect(audits.map((a) => [a.action, a.details.conflict_id])).toEqual([
+      ['buyer_member.invite_conflict', queued!.id],
+      ['buyer_member.invite_conflict_resolved', queued!.id],
+    ]);
+    expect(JSON.stringify(audits)).not.toContain(reporter.email.toLowerCase());
   });
 });
