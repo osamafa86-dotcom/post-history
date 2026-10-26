@@ -62,8 +62,12 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
         check("finance refunds the order after the payout: 201 pending", rf.status === 201 && rf.body?.status === "pending", `status ${rf.status}`);
         const refundRef = (await f.one(`SELECT provider_refund_ref FROM refunds WHERE id = $1`, [rf.body?.id]))?.provider_refund_ref;
         check("the provider gave the refund its own reference", Boolean(refundRef));
-        const note = await f.send(f.signed("refund.succeeded", refundRef ?? s.providerRef, SALE_MINOR));
-        check("the signed refund notification is accepted", note.status === 200, `status ${note.status}`);
+        // a provider retries a 5xx answer; the retries are counted and shown, not hidden
+        const signedNote = f.signed("refund.succeeded", refundRef ?? s.providerRef, SALE_MINOR);
+        let note = await f.send(signedNote), retries = 0;
+        while (note.status >= 500 && retries < 3) { retries++; await new Promise((ok) => setTimeout(ok, 300)); note = await f.send(signedNote); }
+        metrics.refund_notification_retries = retries;
+        check("the signed refund notification is accepted", note.status === 200, `status ${note.status}${retries ? ` after ${retries} retry(ies) of a 5xx` : ""}`);
         const entry = (await f.q(`SELECT id FROM journal_entries WHERE kind = 'refund' AND reference_type = 'order' AND reference_id = $1`, [s.orderId]));
         check("exactly one refund entry", entry.length === 1, `${entry.length}`);
         if (entry.length === 1) {

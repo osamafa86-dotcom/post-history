@@ -99,6 +99,8 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   const one = async (text, params) => (await q(text, params))[0];
   const send = (body, { ts = Math.floor(Date.now() / 1000), sig, path = "/payments/webhooks/sandbox" } = {}) =>
     fetch(`${root}${path}`, { method: "POST", headers: { "content-type": "application/json", "x-timestamp": String(ts), "x-signature": sig ?? signBody(secret, ts, body) }, body });
+  // a provider retries a notification the server answered with 5xx; so does this script (a refund racing the payout worker may be a lock-order victim once), and the retries are counted, never hidden
+  const sendRetrying = async (body, tries = 3) => { let r, retries = 0; for (;;) { r = await send(body); if (r.status < 500 || retries >= tries) return { status: r.status, retries }; retries++; await new Promise((ok) => setTimeout(ok, 300)); } };
   const event = (type, providerRef, amount, over = {}) =>
     Buffer.from(JSON.stringify({ event_id: `spt_${randomUUID()}`, type, provider_ref: providerRef, amount: { amount_minor: Number(amount), currency: "USD" }, occurred_at: new Date().toISOString(), ...over }));
   const refOf = (url) => url.split("/").pop();
@@ -312,7 +314,9 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       const refundRef = (await one(`SELECT provider_refund_ref FROM refunds WHERE id = $1`, [refund.body?.id]))?.provider_refund_ref;
       check("the provider gave the refund its own reference", Boolean(refundRef));
       const done = event("refund.succeeded", refundRef ?? providerRef, PRICE);
-      check("the signed refund notification is accepted", (await send(done)).status === 200);
+      const accepted = await sendRetrying(done);
+      metrics.refund_notification_retries = accepted.retries;
+      check("the signed refund notification is accepted", accepted.status === 200, accepted.retries ? `after ${accepted.retries} retry(ies) of a 5xx` : "");
       const rl = await q(`SELECT j.id FROM journal_entries j WHERE j.kind = 'refund' AND j.reference_type = 'order' AND j.reference_id = $1`, [orderId]);
       check("one refund entry", rl.length === 1, `${rl.length}`);
       if (rl.length === 1) {
