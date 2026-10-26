@@ -233,7 +233,8 @@ rmc w "$WALG_ACCESS_KEY" "$WALG_SECRET_KEY" cat "w/wal/pg/wal_005/$walobj" >/dev
 rmc w "$WALG_ACCESS_KEY" "$WALG_SECRET_KEY" rm "w/wal/pg/wal_005/$walobj" >/dev/null 2>&1 && fail "the wal-g key can delete at the second provider"
 GNUPGHOME="$(mktemp -d /tmp/g.XXXXXX)"; export GNUPGHOME; gpg --batch --import "$WORK/walg-public.asc" 2>/dev/null
 A_ cat "a/wal/pg/wal_005/$walobj" > "$WORK/wal.pgp"
-gpg --batch --list-packets "$WORK/wal.pgp" 2>/dev/null | grep -q '^:pubkey enc packet' || fail "the archived WAL is not encrypted to the public key"
+pk="$(gpg --batch --list-packets "$WORK/wal.pgp" 2>/dev/null || true)"   # captured: gpg exits non-zero without the secret key
+grep -q '^:pubkey enc packet' <<<"$pk" || fail "the archived WAL is not encrypted to the public key"
 gpg --batch --decrypt "$WORK/wal.pgp" >/dev/null 2>&1 && fail "the public key alone decrypts the archive"
 gpgconf --kill gpg-agent 2>/dev/null || true; rm -rf "$GNUPGHOME"; unset GNUPGHOME
 for c in $("$T" ps -q); do
