@@ -41,7 +41,7 @@ code() { curl -sS --max-time 10 -o /dev/null -w '%{http_code}' "$@" 2>/dev/null 
 rcli() { "$T" exec -T redis sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli "$@"' sh "$@" 2>/dev/null; }
 
 # --- الحاويات
-for svc in postgres redis minio tusd tusd-proxy ingest-gate api media-worker caddy caddy-ingest backup; do
+for svc in postgres redis minio tusd tusd-proxy ingest-gate api media-worker caddy caddy-ingest backup walg-base; do
   id="$("$T" ps -q "$svc" 2>/dev/null | head -1)"
   if [ -z "$id" ]; then bad "container:$svc" "not running"; continue; fi
   st="$(docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$id" 2>/dev/null)"
@@ -93,6 +93,20 @@ if [ ! -f "$last" ]; then bad "backup:recent" "no successful backup yet"
 elif [ $(( $(date +%s) - $(stat -c %Y "$last") )) -ge $((26 * 3600)) ]; then bad "backup:recent" "last success older than 26h"
 elif [ -f "$BACKUP_DIR/last-failure.json" ] && [ "$BACKUP_DIR/last-failure.json" -nt "$last" ]; then bad "backup:recent" "failed after the last success"
 else ok "backup:recent"; fi
+
+# --- أرشفة WAL (ADR 0051): لا مقطع ينتظر أكثر من 10 دقائق، ولا فشل بعد آخر نجاح. مطفأة = لا فحص (preflight ينبّه).
+if [ "$(envval WALG_ARCHIVE_MODE "$ENV_FILE")" = on ]; then
+  pgu="$(envval POSTGRES_USER "$APP/infra/compose/.env.example")"
+  wal="$("$T" exec -T postgres psql -U "$pgu" -d postgres -XAtq -F' ' -c "select
+      coalesce((select extract(epoch from now() - min(modification))::int from pg_ls_archive_statusdir() where name like '%.ready'), 0),
+      (last_failed_time is not null and last_failed_time >= coalesce(last_archived_time, last_failed_time))::int
+    from pg_stat_archiver" 2>/dev/null)"
+  read -r wal_wait wal_failing <<<"${wal:-x x}"
+  if ! [[ "$wal_wait" =~ ^[0-9]+$ ]]; then bad "wal:archive" "archiver state unreadable"
+  elif [ "$wal_wait" -ge 600 ]; then bad "wal:archive" "a WAL segment has waited ${wal_wait}s to be archived"
+  elif [ "$wal_failing" = 1 ]; then bad "wal:archive" "the last archive attempt failed"
+  else ok "wal:archive"; fi
+fi
 
 # --- نافذة مفتاح الاختبار qa- (ADR 0022): البوابة ترفض المفتاح بعد انتهائه، لكن خانة باقية بعده نافذة نُسي إغلاقها.
 qk="$(envval INGEST_QA_PUBLIC_KEY "$ENV_FILE")" qe="$(envval INGEST_QA_KEY_EXPIRES "$ENV_FILE")"

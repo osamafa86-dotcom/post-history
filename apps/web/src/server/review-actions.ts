@@ -6,6 +6,7 @@ import { states, uuid } from "@/lib/query";
 import { safeMaterial } from "@/lib/privacy";
 import { requireOk, type Api } from "./auth";
 import { WebError } from "./errors";
+import { organizationWrite } from "./organizations";
 import { identityAccesses, identityReasons, permissions, reasonLimits } from "@/lib/admin-policy";
 import { safeIdentitySetting } from "@/lib/admin-privacy";
 import { ruleInput, safeRule } from "@/lib/notification-policy";
@@ -27,6 +28,10 @@ export const actionRoutes = [
   { path: "/license-templates", methods: ["post"] },
   { path: "/license-templates/{template_id}", methods: ["put"] },
   { path: "/materials/{id}/listing", methods: ["post", "put"] },
+  { path: "/buyer-organizations", methods: ["post"] },
+  { path: "/buyer-organizations/{org_id}", methods: ["put"] },
+  { path: "/buyer-organizations/{org_id}/members", methods: ["post"] },
+  { path: "/buyer-organizations/{org_id}/members/{user_id}", methods: ["put"] },
 ] as const;
 const routePatterns = actionRoutes.map(route => ({ ...route, pattern: new RegExp(`^${route.path.slice(1).replaceAll(/\{[^}]+\}/g, "[^/]+")}$`) }));
 export const actionPath = (path: string, method: string) => routePatterns.some(route => route.pattern.test(path) && (route.methods as readonly string[]).includes(method.toLowerCase()));
@@ -135,6 +140,7 @@ export async function reviewAction(request: Request, path: string, api: Api, me:
     if (tag && /^"[0-9]{1,19}"$/.test(tag)) response.headers.set("ETag", tag);
     return response;
   }
+  if (path.startsWith("buyer-organizations")) return organizationWrite(request, path, api, me, body, header, versioned);
   const notificationPath = /^notifications\/([^/]+)\/(read|ack)$/.exec(path);
   if (notificationPath && uuid.test(notificationPath[1]) && request.method === "POST") {
     keys(body, []); const params = { path: { id: notificationPath[1] }, header };
