@@ -679,7 +679,8 @@
     },
     "reasons": {
       "manual": "يدويًا",
-      "rights_changed": "تغيّرت الحقوق"
+      "rights_changed": "تغيّرت الحقوق",
+      "sensitive_flagged": "موسومة بالحساسية"
     },
     "listingTitle": "العنوان للمشتري",
     "description": "الوصف للمشتري",

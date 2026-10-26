@@ -679,7 +679,8 @@
     },
     "reasons": {
       "manual": "manually",
-      "rights_changed": "rights changed"
+      "rights_changed": "rights changed",
+      "sensitive_flagged": "flagged sensitive"
     },
     "listingTitle": "Title for buyers",
     "description": "Description for buyers",
