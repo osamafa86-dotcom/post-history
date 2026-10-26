@@ -5,7 +5,7 @@ import { randomToken, sha256 } from '../common/crypto';
 import { pgError } from '../common/db-errors';
 import { ApiError } from '../common/errors';
 import { DB, type Database, type Executor, type Tx } from '../database/database.module';
-import { buyerOrganizations, recoveryRequests, userRoles, users } from '../database/schema/schema';
+import { buyerInviteConflicts, buyerOrganizations, recoveryRequests, userRoles, users } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import { hasRole, type Principal } from '../identity/principal';
 import { audit } from '../identity/recovery-approval';
@@ -135,6 +135,11 @@ export class BuyersService {
     return { items: rows.map(toMember) };
   }
 
+  /**
+   * دعوة عضو. البريد القائم لحساب خارج المؤسسة لا يُكشف (متابعة أمن #304): الرد بشكل الدعوة الناجحة وحالتها، والتعارض
+   * يُحفظ عضوًا مدعوًّا في `buyer_invite_conflicts` يحسمه مدير النظام، فيظهر في القائمة ويشغل مقعدًا كأي مدعو. البريد
+   * القائم في المؤسسة نفسها (عضوًا أو تعارضًا مفتوحًا) يبقى 409، لأن مدير المؤسسة يراه في قائمتها أصلًا.
+   */
   async invite(p: Principal, orgId: string, input: BuyerMemberInvite): Promise<BuyerMember & InviteToken> {
     this.assertVisible(p, orgId);
     const passwordHash = await hash(randomToken(32));
@@ -143,13 +148,27 @@ export class BuyersService {
       // قفل المؤسسة يسلسل الدعوات، فلا تتجاوز دعوتان متزامنتان حد المقاعد
       const [org] = await tx.select().from(buyerOrganizations).where(eq(buyerOrganizations.id, orgId)).for('update');
       if (!org) throw ApiError.notFound();
-      const [{ n }] = (await tx.select({ n: count() }).from(users).where(and(eq(users.organizationId, orgId), ne(users.status, 'suspended')))) as [{ n: number }];
-      if (n >= org.seats) throw new ApiError(409, 'seats_exhausted', 'The organization has no free seat.');
+      if ((await seatsTaken(tx, orgId)) >= org.seats) throw new ApiError(409, 'seats_exhausted', 'The organization has no free seat.');
+      const taken = await existingAccount(tx, input.email);
+      if (taken) {
+        if (taken.organizationId === orgId || (await openConflict(tx, orgId, input.email))) throw emailTaken();
+        const [c] = await tx
+          .insert(buyerInviteConflicts)
+          .values({ organizationId: orgId, email: input.email, existingUserId: taken.id, role: input.role, invitedBy: p.userId, inviteExpiresAt: sql`now() + interval '24 hours'` })
+          .returning({ id: buyerInviteConflicts.id, expiresAt: buyerInviteConflicts.inviteExpiresAt });
+        await audit(tx, p.userId, 'buyer_member.invite_conflict', taken.id, { organization_id: orgId, target_user_id: taken.id, role: input.role });
+        return { conflict: true as const, userId: c!.id, expiresAt: iso(c!.expiresAt)! };
+      }
       const created = await this.createMember(tx, orgId, p.userId, input.email, input.role, passwordHash, token);
       await audit(tx, p.userId, 'buyer_member.invited', created.userId, { organization_id: orgId, target_user_id: created.userId, role: input.role });
-      return created;
+      return { conflict: false as const, ...created };
     });
-    const invite = await this.handOver(token, member);
+    // التعارض لا يُسلَّم لأحد؛ رمزه عشوائي لا يُحفظ، ويظهر حيث يظهر رمز الدعوة الناجحة وحده
+    const invite = member.conflict
+      ? this.delivery.outOfBand
+        ? {}
+        : { invite_token: randomToken(32), invite_token_expires_at: member.expiresAt }
+      : await this.handOver(token, member);
     const [row] = (await memberRows(this.db, orgId)).filter((m) => m.id === member.userId);
     return { ...toMember(row!), ...invite };
   }
@@ -163,16 +182,21 @@ export class BuyersService {
       const [current] = (await memberRows(tx, orgId)).filter((m) => m.id === userId);
       if (!current) throw ApiError.notFound();
       const reactivating = current.status === 'suspended' && input.status === 'active';
-      if (reactivating) {
-        const [{ n }] = (await tx.select({ n: count() }).from(users).where(and(eq(users.organizationId, orgId), ne(users.status, 'suspended')))) as [{ n: number }];
-        if (n >= org.seats) throw new ApiError(409, 'seats_exhausted', 'The organization has no free seat.');
-      }
-      await tx
-        .update(userRoles)
-        .set({ role: input.role })
-        .where(and(eq(userRoles.userId, userId), inArray(userRoles.role, [...BUYER_ROLES])));
-      if (input.status !== (current.status === 'suspended' ? 'suspended' : 'active')) {
-        await tx.update(users).set({ status: input.status }).where(eq(users.id, userId));
+      if (reactivating && (await seatsTaken(tx, orgId)) >= org.seats) throw new ApiError(409, 'seats_exhausted', 'The organization has no free seat.');
+      if (current.conflict) {
+        // العضو المدعو المتعارض يُعدَّل كأي مدعو: الدور، والتعليق وإعادته (معلّقًا يخرج من المقاعد)
+        await tx
+          .update(buyerInviteConflicts)
+          .set({ role: input.role, state: input.status === 'suspended' ? 'suspended' : 'pending', updatedAt: sql`now()` })
+          .where(eq(buyerInviteConflicts.id, userId));
+      } else {
+        await tx
+          .update(userRoles)
+          .set({ role: input.role })
+          .where(and(eq(userRoles.userId, userId), inArray(userRoles.role, [...BUYER_ROLES])));
+        if (input.status !== (current.status === 'suspended' ? 'suspended' : 'active')) {
+          await tx.update(users).set({ status: input.status }).where(eq(users.id, userId));
+        }
       }
       // لا تبقى مؤسسة فعّالة بلا مدير نشط
       if (org.status === 'active') {
@@ -231,7 +255,7 @@ export class BuyersService {
       });
     } catch (err) {
       // البريد المستعمل لحساب آخر، بلا تفريق بين طاقم ومشترٍ
-      if (pgError(err).constraint === 'users_email_lower_key') throw new ApiError(409, 'bad_request', 'An account with this email exists.', { fields: ['/email'] });
+      if (pgError(err).constraint === 'users_email_lower_key') throw emailTaken();
       throw err;
     }
     await tx.insert(userRoles).values({ userId, role, scopeKind: 'organization', scopeId: orgId, grantedBy: actorId });
@@ -279,8 +303,37 @@ async function activeCounts(executor: Executor, ids: string[]): Promise<Map<stri
   return new Map(rows.map((r) => [r.org!, Number(r.n)]));
 }
 
+const emailTaken = () => new ApiError(409, 'bad_request', 'An account with this email exists.', { fields: ['/email'] });
+
+/** المقاعد المشغولة: كل حساب غير معلّق في المؤسسة، وكل دعوة متعارضة لم تُعلَّق ولم تُحسم. */
+async function seatsTaken(executor: Executor, orgId: string): Promise<number> {
+  const [{ n }] = (await executor.select({ n: count() }).from(users).where(and(eq(users.organizationId, orgId), ne(users.status, 'suspended')))) as [{ n: number }];
+  const [{ c }] = (await executor
+    .select({ c: count() })
+    .from(buyerInviteConflicts)
+    .where(and(eq(buyerInviteConflicts.organizationId, orgId), eq(buyerInviteConflicts.state, 'pending')))) as [{ c: number }];
+  return Number(n) + Number(c);
+}
+
+async function existingAccount(executor: Executor, email: string): Promise<{ id: string; organizationId: string | null } | undefined> {
+  const [u] = await executor
+    .select({ id: users.id, organizationId: users.organizationId })
+    .from(users)
+    .where(sql`lower(${users.email}) = lower(${email})`);
+  return u;
+}
+
+async function openConflict(executor: Executor, orgId: string, email: string): Promise<boolean> {
+  const [c] = await executor
+    .select({ id: buyerInviteConflicts.id })
+    .from(buyerInviteConflicts)
+    .where(and(eq(buyerInviteConflicts.organizationId, orgId), sql`lower(${buyerInviteConflicts.email}) = lower(${email})`, ne(buyerInviteConflicts.state, 'dismissed')));
+  return !!c;
+}
+
 interface MemberRow {
   id: string;
+  conflict: boolean;
   email: string;
   role: string;
   status: 'invited' | 'active' | 'suspended';
@@ -302,10 +355,14 @@ async function memberRows(executor: Executor, orgId: string): Promise<MemberRow[
     })
     .from(users)
     .innerJoin(userRoles, and(eq(userRoles.userId, users.id), inArray(userRoles.role, [...BUYER_ROLES])))
-    .where(eq(users.organizationId, orgId))
-    .orderBy(users.createdAt, users.id);
-  return rows.map((r) => ({
+    .where(eq(users.organizationId, orgId));
+  const conflicts = await executor
+    .select()
+    .from(buyerInviteConflicts)
+    .where(and(eq(buyerInviteConflicts.organizationId, orgId), ne(buyerInviteConflicts.state, 'dismissed')));
+  const members: MemberRow[] = rows.map((r) => ({
     id: r.id,
+    conflict: false,
     email: r.email,
     role: r.role,
     // المدعو لم يعيّن كلمته بعد؛ المعلّق بحالة حسابه
@@ -313,6 +370,12 @@ async function memberRows(executor: Executor, orgId: string): Promise<MemberRow[
     totpEnabled: r.totpEnabled,
     createdAt: r.createdAt,
   }));
+  // الدعوة المتعارضة عضو مدعو لا يكتمل أبدًا (حتى يحسمها مدير النظام)
+  for (const c of conflicts) {
+    members.push({ id: c.id, conflict: true, email: c.email, role: c.role, status: c.state === 'suspended' ? 'suspended' : 'invited', totpEnabled: false, createdAt: c.createdAt });
+  }
+  // الطابعان بصيغة القاعدة نفسها، فالترتيب النصي ترتيب زمني
+  return members.sort((a, b) => (a.createdAt === b.createdAt ? (a.id < b.id ? -1 : 1) : a.createdAt < b.createdAt ? -1 : 1));
 }
 
 function toMember(r: MemberRow): BuyerMember {
