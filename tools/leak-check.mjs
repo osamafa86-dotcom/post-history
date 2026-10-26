@@ -6,10 +6,11 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+// نصوص نفحصها؛ ما عداها (png وغيرها) يُتخطى، ومع ذلك يُشم النصف الثنائي بالبايت الصفري.
 const TEXT_EXT = new Set([".md", ".txt", ".json", ".mjs", ".ts", ".yml", ".yaml", ".sh", ".csv"]);
 const CODE_EXT = new Set([".mjs", ".ts", ".sh", ".json"]);
 
-// لواحق نطاقات عامة شائعة؛ تُستكمل برموز الدول من حرفين (صغيرة حصرًا كي لا تلتقط «ID» وأشباهها).
+// نطاقات عامة شائعة + أي لاحقة من حرفين تُحسب رمز بلد؛ في ملفات الكود لا يُحسب النطاق إلا داخل نص مقتبس أو URL.
 const GENERIC_TLDS = new Set([
   "com", "net", "org", "edu", "gov", "mil", "int", "biz", "info", "pro", "name", "app", "dev", "io", "ai",
   "cloud", "store", "online", "site", "tech", "xyz", "news", "media", "email", "tools", "systems", "agency",
@@ -17,7 +18,8 @@ const GENERIC_TLDS = new Set([
   "world", "today", "company", "guru", "expert", "zone", "center", "city", "support", "chat", "community",
   "foundation", "international", "technology", "software", "studio", "group", "academy", "wiki",
 ]);
-// لواحق ملفات شائعة تُستبعد من كشف النطاقات (مثل reporter.md وTheme.kt).
+
+// لواحق ملفات شائعة تُستبعد من كشف النطاقات (file.md وscript.sh وما شابه ليست مضيفين).
 const FILE_LABELS = new Set([
   "md", "sh", "py", "kt", "kts", "swift", "mjs", "cjs", "js", "jsx", "ts", "tsx", "css", "scss", "vue",
   "json", "yml", "yaml", "toml", "ini", "cfg", "conf", "xml", "html", "txt", "csv", "sql", "tf", "gradle",
@@ -26,13 +28,9 @@ const FILE_LABELS = new Set([
   "jar", "apk", "aab", "ipa", "gz", "tgz", "zip", "map", "snap", "lock", "rb", "go", "rs", "php", "pl",
   "lua", "h", "c", "cpp", "java", "otf", "ttf", "woff", "woff2", "heic", "tiff", "lg", "xl",
 ]);
-const CCTLD = new Set(("ac ad ae af ag ai al am ao aq ar as at au aw ax az ba bb bd be bf bg bh bi bj bm bn bo " +
-  "br bs bt bv bw by bz ca cc cd cf cg ch ci ck cl cm cn co cr cu cv cw cx cy cz de dj dk dm do dz ec ee eg er es " +
-  "et eu fi fj fk fm fo fr ga gd ge gf gg gh gi gl gm gn gp gq gr gs gt gu gw gy hk hm hn hr ht hu id ie il im in " +
-  "io iq ir is it je jm jo jp ke kg kh ki km kn kp kr kw ky kz la lb lc li lk lr ls lt lu lv ly ma mc md me mf mg " +
-  "mh mk ml mm mn mo mp mq mr ms mt mu mv mw mx my mz na nc ne nf ng ni nl no np nr nu nz om pa pe pf pg ph pk pl " +
-  "pm pn pr ps pt pw py qa re ro rs ru rw sa sb sc sd se sg sh si sj sk sl sm sn so sr ss st su sv sx sy sz tc td " +
-  "tf tg th tj tk tl tm tn to tr tt tv tw tz ua ug uk us uy uz va vc ve vg vi vn vu wf ws ye yt za zm zw").split(" "));
+
+// رموز البلدان الفعلية (ccTLD) — حرفان صغيران فقط، فـ«ID» و«vl» ليست نطاقات.
+const CCTLD = new Set("ac ad ae af ag ai al am ao aq ar as at au aw ax az ba bb bd be bf bg bh bi bj bm bn bo br bs bt bv bw by bz ca cc cd cf cg ch ci ck cl cm cn co cr cu cv cw cx cy cz de dj dk dm do dz ec ee eg er es et eu fi fj fk fm fo fr ga gd ge gf gg gh gi gl gm gn gp gq gr gs gt gu gw gy hk hm hn hr ht hu id ie il im in io iq ir is it je jm jo jp ke kg kh ki km kn kp kr kw ky kz la lb lc li lk lr ls lt lu lv ly ma mc md me mf mg mh mk ml mm mn mo mp mq mr ms mt mu mv mw mx my mz na nc ne nf ng ni nl no np nr nu nz om pa pe pf pg ph pk pl pm pn pr ps pt pw py qa re ro rs ru rw sa sb sc sd se sg sh si sj sk sl sm sn so sr ss st su sv sx sy sz tc td tf tg th tj tk tl tm tn to tr tt tv tw tz ua ug uk us uy uz va vc ve vg vi vn vu wf ws ye yt za zm zw".split(" "));
 
 const DOMAIN_RE = /\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,}\b/g;
 const IP_RE = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
@@ -43,33 +41,46 @@ const TOTP_RE = /(?:totp|otpauth|base32)[^\n]{0,40}?\b[A-Z2-7]{16,}\b/gi;
 const HASH_CTX_RE = /(?:sha\d*-?\d*|hash|fingerprint|بصمة|تجزئة)/i;
 const HEX_RE = /\b[0-9a-f]{16,64}\b/g;
 
-// نطاقات IPv4 الخاصة والموثقة: RFC 1918 وloopback وlink-local وTEST-NET-1/2/3.
+// نطاقات خاصة وموثقة لا تُعد تسريبًا (ثوابت معايير RFC لا عناوين بنية).
 const DOC_OR_PRIVATE_V4 = [
-  [0x0A000000, 0xFF000000], [0x7F000000, 0xFF000000], [0xA9FE0000, 0xFFFF0000],
-  [0xAC100000, 0xFFF00000], [0xC0A80000, 0xFFFF0000], [0xC0000200, 0xFFFFFF00],
-  [0xC6336400, 0xFFFFFF00], [0xCB007100, 0xFFFFFF00],
+  [0x0A000000, 0xFF000000], // 10.0.0.0/8
+  [0x7F000000, 0xFF000000], // 127.0.0.0/8
+  [0xA9FE0000, 0xFFFF0000], // 169.254.0.0/16
+  [0xAC100000, 0xFFF00000], // 172.16.0.0/12
+  [0xC0A80000, 0xFFFF0000], // 192.168.0.0/16
+  [0xC0000200, 0xFFFFFF00], // 192.0.2.0/24 TEST-NET-1
+  [0xC6336400, 0xFFFFFF00], // 198.51.100.0/24 TEST-NET-2
+  [0xCB007100, 0xFFFFFF00], // 203.0.113.0/24 TEST-NET-3
 ];
+
 function isPrivateIp(ip) {
   if (ip === "0.0.0.0" || ip === "255.255.255.255") return true;
   const parts = ip.split(".").map(Number);
-  if (parts.length !== 4 || parts.some((p) => p > 255)) return true; // ليس عنوانًا صالحًا؛ لا نبلّغ عنه
+  if (parts.length !== 4 || parts.some((p) => p > 255)) return true; // ليس IPv4 صالحًا فلا نبلغ عنه عنوانًا
   const v = (parts[0] * 256 ** 3) + (parts[1] * 256 ** 2) + (parts[2] * 256) + parts[3];
-  return DOC_OR_PRIVATE_V4.some(([net, mask]) => ((v & mask) >>> 0) === net); // >>> 0 لإسقاط إشارة 32 بت
+  return DOC_OR_PRIVATE_V4.some(([net, mask]) => ((v & mask) >>> 0) === net);
 }
 
 function isDomainToken(token) {
   const label = token.split(".").at(-1);
   const tld = label.toLowerCase();
   if (FILE_LABELS.has(tld)) return false;
-  return GENERIC_TLDS.has(tld) || CCTLD.has(label); // رموز الدول حساسة للحالة: صغيرة حصرًا
+  // اللواحق العامة بلا حساسية لحالة الحروف، ورموز البلدان صغيرة حصرًا فلا يُحسب «ID» الخاص بالحقول نطاقًا.
+  return GENERIC_TLDS.has(tld) || CCTLD.has(label);
 }
+
+/** في ملفات الكود لا يُحسب المضيف إلا داخل اقتباس أو بعد شرطة مائلة (مسار URL)، لتفادي وصول الخصائص مثل r.video. */
 function isStringContext(text, index) {
   const prev = text[index - 1] ?? "";
-  return prev === "'" || prev === '"' || prev === "`" || prev === "/";
+  return prev === "'" || prev === "\"" || prev === "`" || prev === "/";
 }
-function hasHexLetter(s) { return /[a-f]/.test(s); }
 
-// مطابقة glob: ** يعبر أي عدد من المقاطع، و* داخل المقطع الواحد.
+/** يقصر المطابقة على ست عشرية فيها حرف واحد على الأقل لاستبعاد الأعداد العشرية الطويلة. */
+function hasHexLetter(s) {
+  return /[a-f]/.test(s);
+}
+
+/** مطابقة غلوب دنيا: ** أي مقاطع، * داخل المقطع. */
 export function globMatch(pattern, path) {
   const p = pattern.split("/");
   const s = path.split("/");
@@ -84,40 +95,56 @@ export function globMatch(pattern, path) {
 }
 
 function loadAllow(file) {
-  const raw = JSON.parse(readFileSync(file, "utf8"));
+  const data = JSON.parse(readFileSync(file, "utf8"));
   return {
-    domains: raw.domains ?? [],
-    ips: new Set(raw.ips ?? []),
-    emails: new Set(raw.emails ?? []),
-    hashes: new Set((raw.hashes ?? []).map((h) => h.toLowerCase())),
-    secrets: new Set(raw.secrets ?? []),
-    hashPaths: raw.hashPaths ?? [],
+    domains: data.domains ?? [],
+    ips: new Set(data.ips ?? []),
+    emails: new Set(data.emails ?? []),
+    hashes: new Set((data.hashes ?? []).map((h) => h.toLowerCase())),
+    secrets: new Set(data.secrets ?? []),
+    hashPaths: data.hashPaths ?? [],
   };
 }
+
 function domainAllowed(token, allow) {
-  return allow.domains.some((d) => token === d || token.endsWith(`.${d}`));
+  const t = token.toLowerCase();
+  return allow.domains.some((d) => t === d || t.endsWith(`.${d}`));
 }
+
 function emailAllowed(email, allow) {
-  return allow.emails.has(email) || domainAllowed(email.split("@")[1], allow);
+  if (allow.emails.has(email.toLowerCase())) return true;
+  return domainAllowed(email.split("@")[1], allow);
 }
-function hashAllowed(hash, relPath, allow) {
-  return allow.hashes.has(hash.toLowerCase()) || allow.hashPaths.some((g) => globMatch(g, relPath));
+
+function hashAllowed(hex, relPath, allow) {
+  if (allow.hashes.has(hex.toLowerCase())) return true;
+  return allow.hashPaths.some((p) => globMatch(p, relPath));
 }
-function secretAllowed(secret, allow) { return allow.secrets.has(secret); }
+
+function secretAllowed(value, allow) {
+  return allow.secrets.has(value);
+}
 
 function isTextFile(path) {
   const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
   if (TEXT_EXT.has(ext)) return true;
-  const name = path.split(sep).at(-1);
-  if (name.includes(".")) return false; // لاحقة غير نصية (صور ووسائط)
-  const buf = readFileSync(path);
-  return !buf.subarray(0, 8192).includes(0); // بلا لاحقة: نص ما لم توجد بايتات صفرية
+  if (path.includes(".")) return false;
+  const head = readFileSync(path).subarray(0, 8192);
+  return !head.includes(0);
 }
 
-function mask(value) {
-  return value.length <= 8 ? "****" : `${value.slice(0, 6)}…`;
+function walk(dir) {
+  const out = [];
+  if (!existsSync(dir)) return out;
+  for (const item of readdirSync(dir)) {
+    const path = join(dir, item);
+    if (statSync(path).isDirectory()) out.push(...walk(path));
+    else if (isTextFile(path)) out.push(path);
+  }
+  return out;
 }
 
+/** يمسح ملفًا واحدًا ويعيد التطابقات غير المسموحة: { file, line, type, match }. */
 export function scanFile(path, relPath, allow) {
   const text = readFileSync(path, "utf8");
   const isCode = CODE_EXT.has(path.slice(path.lastIndexOf(".")).toLowerCase());
@@ -130,7 +157,7 @@ export function scanFile(path, relPath, allow) {
     const token = m[0];
     if (!isDomainToken(token)) continue;
     if (text[m.index + token.length] === "(") continue; // استدعاء دالة لا نطاق
-    if (isCode && !isStringContext(text, m.index)) continue; // وصول خاصية في كود لا عنوان
+    if (isCode && !isStringContext(text, m.index)) continue;
     if (text[m.index - 1] === "@") continue; // الجزء الأيمن من بريد؛ يعالجه فحص البريد
     if (!domainAllowed(token, allow)) add(m.index, "domain", token);
   }
@@ -154,11 +181,11 @@ export function scanFile(path, relPath, allow) {
     const value = m[0].match(/[A-Z2-7]{16,}/i)[0].toUpperCase();
     if (!secretAllowed(value, allow)) add(m.index, "secret", mask(value));
   }
-  // بصمة: ست عشرية طويلة فيها حرف a-f واحد على الأقل وبجوار كلمة سياق في السطر نفسه.
+  // بصمة: ست عشرية طويلة بجوار كلمة سياق في السطر نفسه.
   lines.forEach((line, i) => {
     if (!HASH_CTX_RE.test(line)) return;
     for (const m of line.matchAll(HEX_RE)) {
-      if (!hasHexLetter(m[0])) continue; // عدد عشري طويل لا بصمة
+      if (!hasHexLetter(m[0])) continue;
       if (!hashAllowed(m[0], relPath, allow)) {
         findings.push({ file: relPath, line: i + 1, type: "hash", match: mask(m[0]) });
       }
@@ -167,34 +194,28 @@ export function scanFile(path, relPath, allow) {
   return findings;
 }
 
-function walk(dir, out = []) {
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) walk(full, out);
-    else if (isTextFile(full)) out.push(full);
-  }
-  return out;
+function mask(value) {
+  return value.length <= 8 ? "****" : `${value.slice(0, 6)}…`;
 }
 
-// roots: قائمة { base, path }؛ المسار النسبي في النتائج يبدأ من base.
 export function scan(roots, allow) {
   const findings = [];
   for (const root of roots) {
-    if (!existsSync(root.path)) continue;
     for (const file of walk(root.path)) {
-      const relPath = relative(root.base, file).split(sep).join("/");
-      findings.push(...scanFile(file, relPath, allow));
+      findings.push(...scanFile(file, relative(root.base, file).split(sep).join("/"), allow));
     }
   }
-  findings.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.type.localeCompare(b.type));
-  return findings;
+  return findings.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.type.localeCompare(b.type));
 }
 
 export function formatFindings(findings) {
   return findings.map((f) => `${f.file}:${f.line}: ${f.type}: ${f.match}`).join("\n");
 }
 
-// تنقيح نص قبل طباعته: مضيفون وعناوين وبريدات إلى <base>، وبصمات إلى <hash>، وأسرار إلى <secret>.
+/**
+ * تنقيح نص للمخرجات: المضيفون والنطاقات والعناوين ← <base>، والبصمات الطويلة ← <hash>، والأسرار ← <secret>.
+ * لا يعتمد قائمة السماح: الغرض إخراج آمن حتى من القيم المسموح عرضها في المستودع.
+ */
 export function sanitize(text) {
   return String(text)
     .replace(SECRET_RE, "<secret>")
@@ -224,15 +245,25 @@ export function run(argv = process.argv.slice(2), env = process.env) {
     : [
       join(root, "docs"),
       join(root, "tools/acceptance"),
-      ...readdirSync(join(root, "apps"), { withFileTypes: true })
-        .filter((d) => d.isDirectory())
-        .map((d) => join(root, "apps", d.name, "store")),
+      ...readdirSync(join(root, "apps")).map((a) => join(root, "apps", a, "store")).filter(existsSync),
     ];
   const roots = rootSpecs.map((p) => ({ base: root, path: p }));
-  const findings = scan(roots, allow);
-  if (argv.includes("--json")) console.log(JSON.stringify(findings, null, 2));
-  else if (findings.length) console.log(formatFindings(findings));
-  else console.log("لا تسريب غير مسموح في النطاقات المفحوصة.");
+
+  let findings;
+  try {
+    findings = scan(roots, allow);
+  } catch (error) {
+    console.error(`تعذر الفحص: ${error.message}`);
+    return { code: 2 };
+  }
+
+  if (argv.includes("--json")) {
+    console.log(JSON.stringify(findings, null, 1));
+  } else if (findings.length) {
+    console.log(formatFindings(findings));
+  } else {
+    console.log("لا تسريب غير مسموح في النطاقات المفحوصة.");
+  }
   return { code: findings.length ? 1 : 0, findings };
 }
 
