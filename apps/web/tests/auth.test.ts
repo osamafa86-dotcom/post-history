@@ -92,7 +92,7 @@ describe("BFF session boundary", () => {
   it("does not provide generic API proxy or material edits", async () => {
     // إنشاء المادة للمراسل مسار صريح في server/uploads.ts (#88)؛ ما عداه من كتابات المواد والنماذج غير موجود.
     const store = new MemoryStore(), id = await store.create(tokens());
-    for (const path of ["forms", `materials/${material().id}`, "uploads/x/complete"]) {
+    for (const path of ["forms/1", `materials/${material().id}`, "uploads/x/complete"]) {
       const result = await handle(request(path, id, { title: "blocked" }), path, { config, store, fetch: transport(() => { throw new Error("must not call API"); }) });
       expect(result.status).toBe(405);
     }
