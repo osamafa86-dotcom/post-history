@@ -4,7 +4,7 @@ import { money } from '../../src/commerce/money';
 import { WebhookSignatureError } from '../../src/commerce/payment-provider';
 import { IgnoredWebhookEvent, LiveModeEvent, StripeTestProvider, stripeSignatureHeader, translateStripeEvent, verifyStripeSignature } from '../../src/commerce/stripe-provider';
 
-const WHSEC = 'whsec_testsecret0123456789';
+const WHSEC = `whsec_${randomBytes(16).toString('hex')}`;
 // مفاتيح وهمية تُبنى عند التشغيل، فلا نص بشكل مفتاح Stripe في المستودع
 const fakeKey = (mode: 'test' | 'live') => ['sk', mode, randomBytes(12).toString('hex')].join('_');
 const KEY = fakeKey('test');
@@ -60,7 +60,7 @@ describe('Stripe test-mode adapter', () => {
     expect(() => verifyStripeSignature(WHSEC, body, good, now)).not.toThrow();
     // سر مدوَّر: توقيعان، أحدهما صحيح
     expect(() => verifyStripeSignature(WHSEC, body, `${good},v1=${'0'.repeat(64)}`, now)).not.toThrow();
-    for (const bad of [undefined, '', 't=1', good.replace(/v1=./, 'v1=0'), stripeSignatureHeader('whsec_otherotherother', body, now)]) {
+    for (const bad of [undefined, '', 't=1', good.replace(/v1=./, 'v1=0'), stripeSignatureHeader(`whsec_${randomBytes(16).toString('hex')}`, body, now)]) {
       expect(() => verifyStripeSignature(WHSEC, body, bad, now)).toThrow(WebhookSignatureError);
     }
     expect(() => verifyStripeSignature(WHSEC, body, good, new Date(now.getTime() + 6 * 60_000))).toThrow(/window/);
@@ -95,6 +95,11 @@ describe('Stripe test-mode adapter', () => {
     expect(() => loadConfig({ ...base, ...stripe, STRIPE_TEST_SECRET_KEY: undefined })).toThrow(/STRIPE_TEST_SECRET_KEY/);
     expect(() => loadConfig({ ...base, ...stripe, STRIPE_WEBHOOK_SECRET: undefined })).toThrow(/STRIPE_WEBHOOK_SECRET/);
     expect(() => loadConfig({ ...base, ...stripe, DEPLOY_STAGE: 'production' })).toThrow(/PAYMENT_PROVIDER/);
+    // في الإنتاج لا يُقبل عنوان غير Stripe نفسه، وفي الاختبار يُقبل خادم المحاكاة
+    expect(loadConfig({ ...base, ...stripe, STRIPE_API_BASE: 'http://localhost:12111' }).STRIPE_API_BASE).toBe('http://localhost:12111');
+    expect(() => loadConfig({ ...base, ...stripe, NODE_ENV: 'production', STRIPE_API_BASE: 'https://stripe.example.test' })).toThrow(/STRIPE_API_BASE/);
+    expect(() => loadConfig({ ...base, ...stripe, NODE_ENV: 'production' })).not.toThrow(/STRIPE_API_BASE/);
+    expect(() => loadConfig({ ...base, ...stripe, NODE_ENV: 'production', STRIPE_API_BASE: 'https://api.stripe.com/' })).not.toThrow(/STRIPE_API_BASE/);
     // رسالة الإعداد بأسماء المتغيرات وحدها، لا القيم
     expect(() => loadConfig({ ...base, ...stripe, STRIPE_TEST_SECRET_KEY: fakeKey('live') })).not.toThrow(/sk_/);
   });

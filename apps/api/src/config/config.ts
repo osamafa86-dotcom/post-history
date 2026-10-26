@@ -354,6 +354,10 @@ const validated = schema.superRefine((c, ctx) => {
     ctx.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'sandbox is never allowed with DEPLOY_STAGE=production' });
   }
   if (c.NODE_ENV !== 'production') return;
+  // عنوان Stripe البديل للاختبار وحده (خادم محاكاة)؛ في الإنتاج لا يذهب المفتاح إلا إلى Stripe نفسه
+  if (new URL(c.STRIPE_API_BASE).origin !== 'https://api.stripe.com') {
+    ctx.addIssue({ code: 'custom', path: ['STRIPE_API_BASE'], message: 'must be https://api.stripe.com with NODE_ENV=production' });
+  }
   if (c.PAYMENT_PROVIDER === 'sandbox' && !(c.DEPLOY_STAGE === 'trial' && c.PAYMENT_SANDBOX_ALLOWED === '1')) {
     ctx.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'sandbox in production needs DEPLOY_STAGE=trial and PAYMENT_SANDBOX_ALLOWED=1' });
   }

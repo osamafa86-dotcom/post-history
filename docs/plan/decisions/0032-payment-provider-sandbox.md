@@ -69,7 +69,7 @@ type ProviderEvent = { eventId: string; type: 'payment.succeeded' | 'payment.fai
     - `charge.dispute.created` ← `dispute.opened`.
   - ما عداها حدث موقّع صحيح يُقبل `200` بلا أثر ولا يُخزَّن.
 - **الاسترداد:** من `payment_intent` الجلسة، بالمبلغ وبمفتاح منع التكرار.
-- **الاختبار:** بردود Stripe مسجّلة وتوقيعات محسوبة بسر اختباري، أو `stripe-mock` بـ `STRIPE_API_BASE`. المفاتيح الحقيقية على
+- **الاختبار:** بردود Stripe مسجّلة وتوقيعات محسوبة بسر اختباري، أو `stripe-mock` بـ `STRIPE_API_BASE` (خارج `NODE_ENV=production` وحده؛ فيه يُرفض الإقلاع بغير `https://api.stripe.com`). المفاتيح الحقيقية على
   التجربة وحدها.
 
 ### ما لا يُبنى الآن
