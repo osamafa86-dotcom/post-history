@@ -108,8 +108,26 @@ if [ -f "$ENV_FILE" ]; then
   esac
   [ "$(val UPLOAD_VERIFIER)" = external ] && ok "UPLOAD_VERIFIER=external (media worker verifies)" || bad "UPLOAD_VERIFIER=external"
   [ -z "$(val CADDY_GLOBAL_EXTRA)" ] && ok "no test-only Caddy option (local_certs)" || bad "CADDY_GLOBAL_EXTRA must be empty on the trial host"
+  # حزمة التسليم ثابتة مطفأة في docker-compose.trial.yml حتى يمر شراء sandbox كاملًا: لا تُفتح من ملف الأسرار.
+  grep -q '^MEDIA_ENABLE_DELIVERY=' "$ENV_FILE" && bad "MEDIA_ENABLE_DELIVERY must not be set in the secrets (delivery stays off in the trial)" \
+    || ok "buyer delivery not switchable from the secrets"
   MAIN_DOMAIN="$(val MAIN_DOMAIN)" INGEST_DOMAIN="$(val INGEST_DOMAIN)" MAIN_IP="$(val MAIN_IP)" INGEST_IP="$(val INGEST_IP)"
   BACKUP_DIR="$(val BACKUP_DIR)" BACKUP_RECIPIENT_CERT="$(val BACKUP_RECIPIENT_CERT)"
+  # أرشفة WAL (ADR 0051): مقبول إطفاؤها في التجربة (فقد حتى 24 ساعة، قرار المنسّق)، وشرط قبل المرحلة التجارية.
+  grep -q 'PRIVATE KEY' "$ENV_FILE" && bad "a private key in the secrets file (restore keys stay offline, ADR 0051)" \
+    || ok "no private key in the secrets file"
+  WALG_ARCHIVE_MODE="$(val WALG_ARCHIVE_MODE)" WALG_PUBLIC_KEY="$(val WALG_PUBLIC_KEY)"
+  if [ "$WALG_ARCHIVE_MODE" = on ]; then
+    for k in WALG_S3_PREFIX WALG_S3_ENDPOINT WALG_ACCESS_KEY WALG_SECRET_KEY WALG_PG_PASSWORD WALG_PUBLIC_KEY; do
+      [ -n "$(val "$k")" ] && ok "wal-g set: $k" || bad "wal-g set: $k (WALG_ARCHIVE_MODE=on)"
+    done
+    if [ -f "$WALG_PUBLIC_KEY" ] && grep -q 'BEGIN PGP PUBLIC KEY BLOCK' "$WALG_PUBLIC_KEY" && ! grep -q 'PRIVATE KEY' "$WALG_PUBLIC_KEY"; then
+      ok "wal-g public key present, public only"; else bad "wal-g public key $WALG_PUBLIC_KEY: a PGP public key, nothing private"; fi
+    [ -z "$(grep -l 'PRIVATE KEY' "$(dirname "${WALG_PUBLIC_KEY:-/nonexistent/x}")"/* 2>/dev/null)" ] \
+      && ok "no private key next to the wal-g public key" || bad "a private key sits next to the wal-g public key: the restore key stays with the owner"
+  else
+    note "WAL archiving off (WALG_ARCHIVE_MODE): up to 24 h of loss; required before the commercial phase (ADR 0051)"
+  fi
 else
   bad "secrets file $ENV_FILE exists (decrypt the SOPS file to tmpfs first)"
   MAIN_DOMAIN="" INGEST_DOMAIN="" MAIN_IP="" INGEST_IP="" BACKUP_DIR="" BACKUP_RECIPIENT_CERT=""
@@ -191,6 +209,16 @@ if [ "$RUNNING" = 1 ]; then
   has() { grep -q "^$2=." <<<"$(env_of "$1")" && echo 1 || echo 0; }
   check "the gate and the API carry the qa slot only while a window is open" \
     "[ -n \"\$(env_of ingest-gate)\" ] && [ \"\$(has ingest-gate INGEST_QA_PUBLIC_KEY)\$(has api ACCEPTANCE_UPLOADER_USER_ID)\" = $qa_want$qa_want ]"
+  check "the media worker runs with delivery off and alignment on" \
+    "e=\"\$(env_of media-worker)\" && grep -qx 'MEDIA_ENABLE_DELIVERY=false' <<<\"\$e\" && grep -qx 'MEDIA_ENABLE_ALIGNMENT=true' <<<\"\$e\""
+  if [ "${WALG_ARCHIVE_MODE:-}" = on ]; then
+    arch() { "$ROOT/infra/field-trial/trial.sh" exec -T postgres psql -U "$(sed -n 's/^POSTGRES_USER=//p' "$ROOT/infra/compose/.env.example" | tail -1)" -d postgres -XAtq -c "$1" 2>/dev/null; }
+    check "postgres archives WAL (archive_mode on)" "[ \"\$(arch 'show archive_mode')\" = on ]"
+    check "no WAL segment waits more than 10 minutes to be archived" \
+      "[ \"\$(arch \"select coalesce(extract(epoch from now() - min(modification))::int, 0) < 600 from pg_ls_archive_statusdir() where name like '%.ready'\")\" = t ]"
+    check "the last archive attempt did not fail" \
+      "[ \"\$(arch 'select last_failed_time is null or last_failed_time < coalesce(last_archived_time, last_failed_time) from pg_stat_archiver')\" = t ]"
+  fi
   check "/internal is not reachable from outside" "[ \"\$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' https://$MAIN_DOMAIN/internal/x)\" = 404 ]"
   check "ingest name does not answer on MAIN_IP" "! curl -sS --max-time 10 -o /dev/null --resolve $INGEST_DOMAIN:443:$MAIN_IP https://$INGEST_DOMAIN/files/"
   last="$BACKUP_DIR/last-success.json"

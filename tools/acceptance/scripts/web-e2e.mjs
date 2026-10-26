@@ -1,63 +1,15 @@
 #!/usr/bin/env node
-// web-e2e: اختبار قبول الويب من الرفع إلى التنبيه.
-// يغطي صفوف الخطة: «الحقول المتغيرة»، «إشعار الاستلام»، وحدود الصلاحيات عبر الوارد الحي.
+// web-e2e: مسار الويب من الرفع إلى التنبيه: مراسل يرفع مقطعًا اصطناعيًا، محرر يراه في الوارد ويغيّر حالته التحريرية،
+// ثم يظهر تنبيه يحمل عنوان المادة. يقيس زمن ظهور التنبيه مرة واحدة؛ لا يكرر ولا يقيس التصعيد، فالنتيجة `partial` دائمًا
+// (صف «إشعار الاستلام» يطلب 95% من الاختبارات خلال 60 ثانية). لا يختبر حدود الصلاحيات ولا الحقول المتغيرة.
 // التشغيل:
-//   ACCEPTANCE_BASE_URL="$BASE_URL" \
-//   ACCEPTANCE_REPORTER_EMAIL="$REPORTER_EMAIL" \
-//   ACCEPTANCE_REPORTER_PASSWORD="$REPORTER_PASSWORD" \
-//   ACCEPTANCE_EDITOR_EMAIL="$EDITOR_EMAIL" \
-//   ACCEPTANCE_EDITOR_PASSWORD="$EDITOR_PASSWORD" \
-//   node tools/acceptance/scripts/web-e2e.mjs
-// لا يكتب هذا الملف أي قيمة اعتماد ولا يضيف ملف وسائط إلى المستودع.
-// يحتاج playwright مثبّتًا في البيئة (ليس من تبعيات الحزمة): npm i -D playwright && npx playwright install chromium
+//   ACCEPTANCE_BASE_URL=… ACCEPTANCE_REPORTER_EMAIL=… ACCEPTANCE_REPORTER_PASSWORD=… \
+//   ACCEPTANCE_EDITOR_EMAIL=… ACCEPTANCE_EDITOR_PASSWORD=… node tools/acceptance/scripts/web-e2e.mjs
+// لا يكتب هذا الملف أي قيمة اعتماد ولا يضيف ملف وسائط إلى المستودع. يحتاج playwright في apps/web أو PLAYWRIGHT_MODULE.
+import { banner } from "../lib/measurement.mjs";
+import { envMissing, url, title, syntheticClip, loadPlaywright, login, envDoc, checkList, finishAndWrite, exitCodeFor, EnvironmentError } from "./web-gap-helpers.mjs";
 
-import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { newResult, finish, writeResult, parseArgs, banner } from "../lib/measurement.mjs";
-import { byName } from "../lib/catalog.mjs";
-
-const TEST_NAME = "web-e2e";
-const TITLE = `اختبار قبول ويب ${Date.now()}`;
-const timeoutMs = Number(process.env.ACCEPTANCE_TIMEOUT_MS ?? 30_000);
-
-function requiredEnv(env = process.env) {
-  return [
-    "ACCEPTANCE_BASE_URL",
-    "ACCEPTANCE_REPORTER_EMAIL",
-    "ACCEPTANCE_REPORTER_PASSWORD",
-    "ACCEPTANCE_EDITOR_EMAIL",
-    "ACCEPTANCE_EDITOR_PASSWORD",
-  ].filter((key) => !env[key]);
-}
-
-function route(base, path) {
-  return new URL(path, `${base.replace(/\/$/, "")}/`).toString();
-}
-
-function makeSyntheticClip(dir) {
-  const output = join(dir, "web-e2e-synthetic.mp4");
-  const result = spawnSync("ffmpeg", [
-    "-hide_banner", "-loglevel", "error",
-    "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=24",
-    "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100",
-    "-t", "10", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-    "-c:a", "aac", "-shortest", output,
-  ], { encoding: "utf8" });
-  if (result.status !== 0) throw new Error(`ffmpeg failed: ${result.stderr || "unknown error"}`);
-  return output;
-}
-
-async function fillLogin(page, email, password) {
-  await page.goto(route(process.env.ACCEPTANCE_BASE_URL, "/ar/login"), { waitUntil: "domcontentloaded" });
-  await page.getByLabel(/البريد الإلكتروني|Email/i).fill(email);
-  await page.getByLabel(/كلمة المرور|Password/i).fill(password);
-  await page.getByRole("button", { name: /دخول|Sign in|Login/i }).click();
-  await page.waitForURL(/\/((ar|en)\/)?inbox(?:\?|$)/, { timeout: timeoutMs });
-}
+const NOTIFICATION_WAIT_S = 90;
 
 async function fillIfPresent(page, label, value) {
   const field = page.getByLabel(label).first();
@@ -73,30 +25,29 @@ async function selectIfPresent(page, label, option) {
   }
 }
 
-async function uploadAsReporter(page, clip) {
-  await page.goto(route(process.env.ACCEPTANCE_BASE_URL, "/ar/upload"), { waitUntil: "domcontentloaded" });
-  const fileInput = page.locator('input[type="file"]').first();
-  await fileInput.setInputFiles(clip);
-  await fillIfPresent(page, /عنوان المادة|Title/i, TITLE);
+async function uploadAsReporter(page, env, clip, name) {
+  await page.goto(url(env, "/ar/upload"), { waitUntil: "domcontentloaded" });
+  await page.locator('input[type="file"]').first().setInputFiles(clip.path);
+  await fillIfPresent(page, /عنوان المادة|Title/i, name);
   await selectIfPresent(page, /نوع المادة|Type/i, "لقطات خام");
   await fillIfPresent(page, /المحافظة|Governorate/i, "اختبار");
   await fillIfPresent(page, /المدينة|City/i, "اختبار");
   await page.getByRole("button", { name: /إنشاء المادة وبدء الرفع|Create material|Start upload/i }).click();
-  await page.getByText(/اكتمل الرفع|Upload complete|completed/i).waitFor({ state: "visible", timeout: timeoutMs });
-  const materialLink = page.getByRole("link", { name: TITLE }).first();
-  await materialLink.waitFor({ state: "visible", timeout: timeoutMs });
-  return materialLink;
+  await page.getByText(/اكتمل الرفع|Upload complete|completed/i).waitFor({ state: "visible", timeout: Number(env.ACCEPTANCE_TIMEOUT_MS ?? 30000) });
+  await page.getByRole("link", { name }).first().waitFor({ state: "visible", timeout: Number(env.ACCEPTANCE_TIMEOUT_MS ?? 30000) });
 }
 
-async function findMaterialInEditor(page) {
-  await page.goto(route(process.env.ACCEPTANCE_BASE_URL, "/ar/inbox"), { waitUntil: "domcontentloaded" });
-  const material = page.getByRole("link", { name: TITLE }).first();
-  await material.waitFor({ state: "visible", timeout: timeoutMs });
+async function findMaterialInEditor(page, env, name) {
+  const timeout = Number(env.ACCEPTANCE_TIMEOUT_MS ?? 30000);
+  await page.goto(url(env, "/ar/inbox"), { waitUntil: "domcontentloaded" });
+  const material = page.getByRole("link", { name }).first();
+  await material.waitFor({ state: "visible", timeout });
   await material.click();
-  await page.getByRole("heading", { name: TITLE }).waitFor({ state: "visible", timeout: timeoutMs });
+  await page.getByRole("heading", { name }).waitFor({ state: "visible", timeout });
 }
 
-async function changeEditorialState(page) {
+/** يغيّر الحالة التحريرية ويرجع الحالة المختارة؛ التحقق بنص خارج قوائم الخيارات فلا يطابق الخيار نفسه. */
+async function changeEditorialState(page, env) {
   const selects = page.locator("select");
   if (await selects.count() < 2) throw new Error("editorial transition controls are missing");
   const state = selects.nth(1);
@@ -107,85 +58,61 @@ async function changeEditorialState(page) {
   const reason = page.locator("textarea").first();
   if (await reason.count()) await reason.fill("اختبار قبول آلي");
   await page.getByRole("button", { name: /تنفيذ التحويل|Apply transition|Change status/i }).click();
-  await page.getByText(new RegExp(wanted.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))).waitFor({ state: "visible", timeout: timeoutMs });
+  const text = new RegExp(wanted.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  await page.getByText(text).and(page.locator(":not(option)")).first().waitFor({ state: "visible", timeout: Number(env.ACCEPTANCE_TIMEOUT_MS ?? 30000) });
+  return wanted.trim();
 }
 
-async function verifyNotification(page) {
-  await page.goto(route(process.env.ACCEPTANCE_BASE_URL, "/ar/notifications"), { waitUntil: "domcontentloaded" });
-  const body = await page.locator("body").innerText();
-  if (!body.includes(TITLE) && !/تحديث على مادة|Material update|notification/i.test(body)) {
-    throw new Error("no notification for the changed material was visible");
+/** يعيد تحميل صفحة التنبيهات حتى يظهر تنبيه يحمل عنوان المادة، ويرجع الزمن بالثواني أو null عند انقضاء المهلة. */
+async function notificationLatency(page, env, name, startedAt) {
+  const deadline = Date.now() + NOTIFICATION_WAIT_S * 1000;
+  while (Date.now() < deadline) {
+    await page.goto(url(env, "/ar/notifications"), { waitUntil: "domcontentloaded" });
+    if (await page.getByRole("main").getByText(name).count()) return Number(((Date.now() - startedAt) / 1000).toFixed(1));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
+  return null;
 }
 
 export async function run(argv = process.argv.slice(2), env = process.env) {
-  const args = parseArgs(argv);
-  const entry = byName("receipt-notification");
-  banner({ name: TEST_NAME, criterion: `${entry?.criterion ?? "إشعار الاستلام"}؛ مسار الويب: رفع → وارد المحرر → تغيير الحالة التحريرية → ظهور التنبيه` });
-  const missing = requiredEnv(env);
-  if (missing.length) {
-    console.error(`ENVIRONMENT: missing ${missing.join(", ")}; nothing measured`);
-    return { code: 2, doc: null };
-  }
-  const work = mkdtempSync(join(tmpdir(), "post-history-web-e2e-"));
-  const started = new Date().toISOString();
-  const doc = newResult(TEST_NAME, {
-    started_at: started,
-    device: { platform: "browser", model: "Playwright" },
-    network: { profile: env.ACCEPTANCE_NETWORK_PROFILE ?? "default" },
-    upload_path: "web",
-    file: { codec: "synthetic H.264", duration_s: 10 },
-  });
-  const checks = [];
-  const check = (name, ok, detail = "") => {
-    checks.push({ name, ok, detail });
-    console.log(`${ok ? "ok" : "FAIL"} ${name}${detail ? ` — ${detail}` : ""}`);
-  };
-  let browser;
+  banner({ name: "web-e2e", criterion: "مسار الويب: رفع → وارد المحرر → تغيير الحالة التحريرية → ظهور تنبيه بعنوان المادة (مرة واحدة، دون قياس 95% ولا التصعيد)" });
+  const missing = envMissing(env, ["ACCEPTANCE_BASE_URL", "ACCEPTANCE_REPORTER_EMAIL", "ACCEPTANCE_REPORTER_PASSWORD", "ACCEPTANCE_EDITOR_EMAIL", "ACCEPTANCE_EDITOR_PASSWORD"]);
+  if (missing.length) { console.error(`ENVIRONMENT: missing ${missing.join(", ")}; nothing measured`); return { code: 2, doc: null }; }
+  const doc = envDoc(env, "receipt-notification", { upload_path: "tusd" });
+  const { checks, check } = checkList();
+  const name = title("اختبار قبول ويب");
+  let clip, browser;
   try {
-    const { chromium } = await import("playwright").catch(() => { throw new Error("playwright is not installed: npm i -D playwright && npx playwright install chromium"); });
-    const clip = makeSyntheticClip(work);
-    const sha256 = createHash("sha256").update(readFileSync(clip)).digest("hex");
+    const { chromium } = await loadPlaywright();
+    clip = syntheticClip("web-e2e", { seconds: 10 });
     browser = await chromium.launch({ headless: env.ACCEPTANCE_HEADLESS !== "0" });
-    const reporter = await browser.newContext();
-    const reporterPage = await reporter.newPage();
-    await fillLogin(reporterPage, env.ACCEPTANCE_REPORTER_EMAIL, env.ACCEPTANCE_REPORTER_PASSWORD);
-    await uploadAsReporter(reporterPage, clip);
-    check("reporter login and synthetic upload", true, `sha256=${sha256}`);
+    const reporter = await browser.newContext(), reporterPage = await reporter.newPage();
+    await login(reporterPage, env, { email: env.ACCEPTANCE_REPORTER_EMAIL, password: env.ACCEPTANCE_REPORTER_PASSWORD });
+    await uploadAsReporter(reporterPage, env, clip, name);
+    check("reporter login and synthetic upload", true);
     await reporter.close();
 
-    const editor = await browser.newContext();
-    const editorPage = await editor.newPage();
-    await fillLogin(editorPage, env.ACCEPTANCE_EDITOR_EMAIL, env.ACCEPTANCE_EDITOR_PASSWORD);
-    await findMaterialInEditor(editorPage);
-    check("material appears in editor inbox", true);
-    await changeEditorialState(editorPage);
-    check("editor changes the editorial state", true);
-    await verifyNotification(editorPage);
-    check("notification appears after the editorial change", true);
+    const editor = await browser.newContext(), editorPage = await editor.newPage();
+    await login(editorPage, env, { email: env.ACCEPTANCE_EDITOR_EMAIL, password: env.ACCEPTANCE_EDITOR_PASSWORD });
+    await findMaterialInEditor(editorPage, env, name);
+    check("material appears in the editor inbox", true);
+    const startedAt = Date.now();
+    const state = await changeEditorialState(editorPage, env);
+    check("editor changes the editorial state", true, state);
+    const latency = await notificationLatency(editorPage, env, name, startedAt);
+    check(`a notification carrying the material title appears within ${NOTIFICATION_WAIT_S} s`, latency !== null, latency === null ? "not seen" : `${latency} s`);
     await editor.close();
 
-    const failed = checks.filter((item) => !item.ok);
-    finish(doc, failed.length ? "fail" : "pass", {
-      checks: checks.length,
-      checks_passed: checks.filter((item) => item.ok).length,
-      checks_failed: failed.length,
-      synthetic_clip: true,
-      clip_sha256: sha256,
-      material_title: TITLE,
-    }, failed.length ? failed.map((item) => `${item.name}: ${item.detail}`).join("؛ ") : "مقطع اصطناعي مولّد بـffmpeg؛ لم تُحفظ وسائط في المستودع؛ الحسابات والقيم تقرأ من متغيرات البيئة فقط");
-    if (args["dry-run"]) writeResult(doc, { dryRun: true });
-    else console.log("wrote", writeResult(doc, { slug: "browser" }));
-    return { code: failed.length ? 1 : 0, doc };
+    const failures = checks.filter((item) => !item.ok);
+    const out = finishAndWrite(doc, argv, "browser", failures.length ? "fail" : "partial", {
+      checks: checks.length, checks_failed: failures.length, notification_latency_s: latency ?? "unverified", runs: 1, escalation_measured: false,
+    }, failures.length ? failures.map((item) => `${item.name}: ${item.detail}`).join("؛ ") : "مسار واحد بمقطع اصطناعي مولّد بـffmpeg؛ زمن ظهور التنبيه بعد تغيير الحالة مقيس مرة واحدة، لا 95% من الاختبارات ولا التصعيد ولا زمن التحقق الفني، فالنتيجة جزئية؛ لم تُحفظ وسائط والحسابات من البيئة فقط");
+    return { code: failures.length || out.error ? 1 : 0, doc };
   } catch (error) {
-    finish(doc, "fail", { checks: checks.length, checks_passed: checks.filter((item) => item.ok).length, checks_failed: 1 }, `فشل المسار: ${error.message}`);
-    if (args["dry-run"]) writeResult(doc, { dryRun: true });
-    else console.log("wrote", writeResult(doc, { slug: "browser-failure" }));
-    return { code: 1, doc };
-  } finally {
-    await browser?.close();
-    rmSync(work, { recursive: true, force: true });
-  }
+    if (error instanceof EnvironmentError) { console.error(`ENVIRONMENT: ${error.message}; nothing measured`); return { code: 2, doc: null }; }
+    finishAndWrite(doc, argv, "browser-failure", "fail", { checks: checks.length, checks_failed: 1 }, `فشل المسار: ${error.message}`);
+    return { code: exitCodeFor(error), doc };
+  } finally { await browser?.close(); clip?.cleanup(); }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) process.exit((await run()).code);
+if (process.argv[1] === new URL(import.meta.url).pathname) process.exit((await run()).code);

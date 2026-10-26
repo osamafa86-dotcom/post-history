@@ -14,7 +14,8 @@ const privateHeaders = { "Cache-Control": "private, no-store, max-age=0", "Pragm
 const json = (value: unknown) => NextResponse.json(value, { headers: privateHeaders });
 
 // أدوار الكتالوج في `x-roles` لعقد v0.3 (#178)؛ أدوار المشترين تُضاف مع حسابات المؤسسات (#192). يطابقها contract-drift.
-export const catalogRoles = ["system_admin", "rights_officer", "editor_in_chief", "finance"] as const;
+// أدوار المشترين (#192) تتصفح الكتالوج كما في x-roles.
+export const catalogRoles = ["system_admin", "rights_officer", "editor_in_chief", "finance", "buyer_admin", "buyer_member"] as const;
 export const licenseTypes = ["editorial_single", "editorial_term", "exclusive_temporary", "commercial"] as const;
 const date = /^\d{4}-\d{2}-\d{2}$/, int = /^\d{1,12}$/;
 

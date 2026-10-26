@@ -58,6 +58,8 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         ITSAppUsesNonExemptEncryption: false
+        # النص المعروض في طلب Face ID؛ ترجمته في App/Resources/InfoPlist.xcstrings.
+        NSFaceIDUsageDescription: يستخدم التطبيق Face ID لقفل موادك ورفعك.
         PHAPIBaseURL: $(PH_API_BASE_URL)
     settings:
       base:

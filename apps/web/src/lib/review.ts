@@ -11,8 +11,8 @@ export function transitionOptions(material: Material, me: Me, track: Transition[
   if (track === "rights") {
     if (material.rights_state === "sellable" && hasRole(me, "rights_officer", "editor_in_chief")) return ["blocked", "withdrawn"];
     if (!hasRole(me, "rights_officer")) return [];
-    // الحالة التجارية sellable مؤجلة وفق نطاق التأسيس.
-    return ({ unknown: ["documented"], documented: ["blocked"], blocked: ["documented"] } as Record<string, string[]>)[material.rights_state] ?? [];
+    // sellable مفتوحة مع المرحلة التجارية (قرار المالك 2026-10-21)، كما في جدول الانتقالات في العقد.
+    return ({ unknown: ["documented"], documented: ["sellable", "blocked"], blocked: ["documented"] } as Record<string, string[]>)[material.rights_state] ?? [];
   }
   if (hasRole(me, "supervisor")) {
     const options = ({ inbox: ["acknowledged", "rejected"], acknowledged: ["reviewing", "rejected"], reviewing: ["needs_changes", "accepted", "rejected"] } as Record<string, string[]>)[material.editorial_state];

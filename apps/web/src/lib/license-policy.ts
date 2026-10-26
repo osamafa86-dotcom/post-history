@@ -17,9 +17,9 @@ export const templateLimits = { text: 4000, countries: 250, termMin: 1, termMax:
 
 const keys = ["type", "name", "terms", "usage_media", "territory", "term_days", "exclusivity_hours", "deliverables", "attribution", "prohibitions", "base_price", "enabled"];
 const subset = <T>(value: unknown, allowed: readonly T[], min = 0): value is T[] => Array.isArray(value) && value.length >= min && new Set(value).size === value.length && value.every(v => (allowed as readonly unknown[]).includes(v));
-const int = (value: unknown, min: number, max: number): value is number => Number.isSafeInteger(value) && (value as number) >= min && (value as number) <= max;
-const plain = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
-const localized = (value: unknown): value is { ar: string; en: string } => plain(value) && Object.keys(value).sort().join() === "ar,en" && [value.ar, value.en].every(text => typeof text === "string" && text.trim().length > 0 && Array.from(text).length <= templateLimits.text);
+export const int = (value: unknown, min: number, max: number): value is number => Number.isSafeInteger(value) && (value as number) >= min && (value as number) <= max;
+export const plain = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+export const localized = (value: unknown): value is { ar: string; en: string } => plain(value) && Object.keys(value).sort().join() === "ar,en" && [value.ar, value.en].every(text => typeof text === "string" && text.trim().length > 0 && Array.from(text).length <= templateLimits.text);
 
 /** قالب كامل صالح بقواعد العقد، أو null. الخادم هو الحكم النهائي؛ هذا يمنع إرسال ما يُرفض حتمًا. */
 export function templateInput(body: Record<string, unknown>): TemplateInput | null {

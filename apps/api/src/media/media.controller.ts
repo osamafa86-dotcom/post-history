@@ -4,6 +4,7 @@ import { validateBody } from '../common/contract';
 import { constantTimeEqual } from '../common/crypto';
 import { ApiError } from '../common/errors';
 import { Public } from '../identity/auth.guard';
+import type { components } from '../generated/api';
 import { type MediaAlignmentBody, type MediaDerivativeBody, MediaService, type MediaSessionView, type MediaVerificationBody, type MediaVerificationResult } from './media.service';
 
 /**
@@ -34,6 +35,13 @@ export class MediaController {
   verify(@Headers('authorization') auth: string | undefined, @Param('id') id: string, @Body() body: unknown): Promise<MediaVerificationResult> {
     this.authorize(auth);
     return this.media.verify(id, validateBody<MediaVerificationBody>('/internal/media/sessions/{upload_session_id}/verification', 'post', body));
+  }
+
+  @Public()
+  @Get('files/:file_id')
+  file(@Headers('authorization') auth: string | undefined, @Param('file_id') fileId: string): Promise<components['schemas']['MediaSourceFile']> {
+    this.authorize(auth);
+    return this.media.file(fileId);
   }
 
   @Public()

@@ -34,6 +34,10 @@ export const CATALOG = [
 export const EXTRA = [
   { name: "delivery-leak", mode: "automated", source: "ADR 0025 / ADR 0060", criterion: "حزمة تسليم المشتري (أصل وصوت وصور، موقَّعة C2PA) على مقاطع بوسوم وموقع وSEI مزروعة: لا قيمة مزروعة ولا موقع ولا بصمة الأصل الخام في أي ملف منها، وبيان كل ملف داخل القائمة البيضاء" },
   { name: "c2pa-manifest", mode: "automated", source: "ADR 0060", criterion: "مقاطع بوسوم وموقع وSEI مزروعة تمر بمساري التصدير ومعاينة المتجر ثم تُوقَّع؛ يُقرأ البيان كاملًا فلا قيمة مزروعة ولا حقل خارج القائمة البيضاء ولا بصمة الأصل، والملف الموقَّع جديد والأصل لم يُمس (شرط تفعيل MEDIA_ENABLE_C2PA)" },
+  { name: "web-upload-resume", mode: "automated", source: "web gap (browser)", criterion: "رفع الويب بعد انقطاع الشبكة يستأنف من إزاحة الخادم دون إعادة من الصفر وبإعادة إرسال محدودة (إزاحات PATCH التي أرسلها المتصفح)" },
+  { name: "web-sensitivity-catalog", mode: "automated", source: "web gap (browser)", criterion: "وسم الحساسية يظهر في تفاصيل المادة بالفرق عن مادة غير موسومة، والمادة الموسومة غائبة عن بحث الكتالوج بوجود ضابط يظهر بالبحث نفسه" },
+  { name: "web-mobile-390", mode: "automated", source: "web gap (browser)", criterion: "صفحات الواجهة الرئيسية عند 390px في اللغتين بلا تمرير أفقي ولا إجراء خارج المنظر ولا نص مقصوص" },
+  { name: "web-a11y", mode: "automated", source: "web gap (browser)", criterion: "Axe (wcag2a وwcag2aa) على الصفحات الرئيسية بعد اكتمال المحتوى بلا مخالفات serious أو critical، وسمة dir صحيحة بالعربية والإنجليزية" },
   { name: "session-revocation", mode: "automated", source: "SEC-01", criterion: "رمز مبطَل (جلسة أو كل الجلسات) يُرفض على الخادم وعلى مسار الرفع خلال ثوانٍ، والرفع الجاري يتوقف عند الجزء التالي" },
   { name: "field-upload-1gb", mode: "field", source: "plan stage (b)", criterion: "رفع 1 غيغابايت على شبكة ميدانية فعلية على iPhone وXiaomi وSamsung: يكتمل ببصمة خادم مطابقة وصفر بايت مفقود وبلا تدخل بشري بعد البدء" },
   { name: "notification-delivery", mode: "automated", source: "core gate", criterion: "حدث استلام ← إشعار للمستلمين بحسب القواعد خلال زمن مقيس (≤ 10 ثوانٍ)، حمولة من القائمة البيضاء فقط، و«اطّلعت» يوقف التصعيد" },
