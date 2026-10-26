@@ -1158,6 +1158,15 @@ SELECT pg_temp.expect_error($q$
 SET CONSTRAINTS ALL DEFERRED;
 SET LOCAL search_path TO DEFAULT;
 
+-- محوّل الدفع قائمة مغلقة (ترحيل 033): stripe مقبول، وغيره يُرفض في الإشعار المستلم والطلب
+INSERT INTO payment_events (provider, event_id, type, provider_ref, amount_minor, currency, occurred_at, outcome)
+VALUES ('stripe', 'evt_1Smoke033', 'payment.succeeded', 'cs_test_smoke033', 25000, 'USD', now(), 'ignored');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO payment_events (provider, event_id, type, provider_ref, amount_minor, currency, occurred_at, outcome)
+  VALUES ('paypal', 'evt_smoke_033', 'payment.succeeded', 'x', 25000, 'USD', now(), 'ignored') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE orders SET provider = 'paypal', provider_ref = 'pp_1' WHERE id = '00000000-0000-4000-8000-000000000c04' $q$, '23514');
+
 \o
 \echo smoke OK
 ROLLBACK;

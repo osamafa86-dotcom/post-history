@@ -55,6 +55,7 @@ public struct ModelError: Sendable, Codable, Hashable {
         case webhookSignatureInvalid = "webhook_signature_invalid"
         case alreadyRefunded = "already_refunded"
         case commissionRuleExists = "commission_rule_exists"
+        case livePaymentsDisabled = "live_payments_disabled"
         case internalError = "internal_error"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
