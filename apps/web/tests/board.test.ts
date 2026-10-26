@@ -1,26 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { boardOrder, rose, rotation, wallClock } from "../src/lib/board";
-import type { Material } from "../src/lib/types";
-import { material } from "./fixtures";
+import { safeDashboard } from "../src/lib/privacy";
+import { elapsed, boardColumns } from "../src/components/newsroom-board";
+import type { NewsroomDashboard } from "../src/lib/types";
 
-const card = (i: number, priority: Material["priority"], at: string): Material => ({ ...material(i), priority, created_at: at });
-
-describe("supervisor board display helpers (#385)", () => {
-  it("orders a column urgent, then important, then oldest first", () => {
-    const items = [card(1, "normal", "2026-10-26T09:00:00Z"), card(2, "urgent", "2026-10-26T10:00:00Z"), card(3, "important", "2026-10-26T08:00:00Z"), card(4, "urgent", "2026-10-26T09:30:00Z")];
-    expect(boardOrder(items).map(m => m.id)).toEqual([items[3].id, items[1].id, items[2].id, items[0].id]);
+const id = "20000000-0000-4000-8000-000000000001";
+describe("newsroom board", () => {
+  it("keeps only contract states, ids and numbers from the snapshot", () => {
+    const raw = { generated_at: "2026-10-21T10:00:00Z", urgent_open: 3, overdue_acknowledgements: 1, editorial: [{ state: "inbox", count: 4 }, { state: "canary", count: 1 }], technical: [{ state: "verified", count: 2 }], rights: [],
+      reserved: [{ material_id: id, reserved_by: id, reserved_at: "2026-10-21T10:00:00Z", priority: "urgent", editorial_state: "in_production", title: "canary" }, { material_id: "bad", reserved_by: id, reserved_at: "x", priority: "normal", editorial_state: "inbox" }],
+      recent_receipts: [{ material_id: id, receipt_number: "R-261021-000001", verified_at: "2026-10-21T10:00:00Z", priority: "normal", reporter: "canary" }], extra: "canary" } as unknown as NewsroomDashboard;
+    const safe = safeDashboard(raw);
+    expect(JSON.stringify(safe)).not.toContain("canary"); expect(safe.editorial).toEqual([{ state: "inbox", count: 4 }]); expect(safe.reserved).toHaveLength(1);
+    expect(safe).not.toHaveProperty("uploads_in_progress");
+    const progress = safeDashboard({ ...raw, uploads_in_progress: [{ upload_session_id: id, material_id: id, kind: "original", priority: "urgent", state: "in_progress", size_bytes: 100, bytes_received: 150, updated_at: "2026-10-21T10:00:00Z", filename: "canary" }, { upload_session_id: "bad", material_id: id, kind: "proxy", priority: "normal", state: "created", size_bytes: 1, bytes_received: 0, updated_at: "x" }] } as unknown as NewsroomDashboard);
+    expect(progress.uploads_in_progress).toHaveLength(1); expect(progress.uploads_in_progress![0].bytes_received).toBe(100); expect(JSON.stringify(progress)).not.toContain("canary");
   });
-  it("rotates eight cards at a time and wraps around", () => {
-    const items = Array.from({ length: 19 }, (_, i) => card(i + 1, "normal", "2026-10-26T09:00:00Z"));
-    expect(rotation(items, 0)).toMatchObject({ page: 0, pages: 3 }); expect(rotation(items, 0).shown).toHaveLength(8);
-    expect(rotation(items, 2).shown).toHaveLength(3); expect(rotation(items, 3).page).toBe(0);
-    expect(rotation([], 5)).toMatchObject({ page: 0, pages: 1, shown: [] });
+  it("orders the plan's columns and formats elapsed time", () => {
+    expect(boardColumns).toEqual(["inbox", "reviewing", "accepted", "in_production", "final_review", "published"]);
+    const now = Date.parse("2026-10-21T12:00:00Z");
+    expect(elapsed("2026-10-21T11:55:00Z", now, "en")).toBe("5 min"); expect(elapsed("2026-10-21T09:00:00Z", now, "en")).toBe("3 h"); expect(elapsed("2026-10-19T12:00:00Z", now, "ar")).toBe("2 ي");
   });
-  it("sounds only when urgent or overdue counts rise, never on the first snapshot", () => {
-    expect(rose(null, { urgent_open: 3, overdue_acknowledgements: 1 })).toBe(false);
-    expect(rose({ urgent_open: 3, overdue_acknowledgements: 1 }, { urgent_open: 3, overdue_acknowledgements: 1 })).toBe(false);
-    expect(rose({ urgent_open: 3, overdue_acknowledgements: 1 }, { urgent_open: 2, overdue_acknowledgements: 2 })).toBe(true);
-    expect(rose({ urgent_open: 3, overdue_acknowledgements: 1 }, { urgent_open: 4, overdue_acknowledgements: 0 })).toBe(true);
-  });
-  it("prints the wall clock as HH:MM:SS", () => { expect(wallClock(new Date(2026, 9, 26, 7, 5, 9).getTime())).toBe("07:05:09"); });
 });
