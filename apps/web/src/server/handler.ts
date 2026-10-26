@@ -10,6 +10,7 @@ import type { MaterialType } from "@/lib/types";
 import { streamDerivative } from "./media";
 import { actionPath, reviewAction } from "./review-actions";
 import { hasRole, materialTag } from "@/lib/review";
+import { organizationRead } from "./organizations";
 import { safeTemplate, templateRoles } from "@/lib/license-policy";
 import { listingReaders, safeListing } from "@/lib/listing-policy";
 import { listUploads, readUpload, uploadAction, uploadBodyLimit, uploadPath } from "./uploads";
@@ -148,6 +149,8 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         const rule = requireOk(await api.GET("/notification-rules/{rule_id}", { params: { path: { rule_id: path.slice(19) } } }));
         const response = json(safeRule(rule)); response.headers.set("ETag", `"${rule.row_version}"`); return response;
       }
+      const organization = /^buyer-organizations(?:\/([^/]+)(\/members)?)?$/.exec(path);
+      if (organization) return organizationRead(request, organization[1], !!organization[2], api, me);
       if (path === "license-templates" || /^license-templates\/[^/]+$/.test(path)) {
         if (!hasRole(me, ...templateRoles)) throw new WebError(403, "request_failed");
         const search = request.nextUrl.searchParams, flag = search.get("include_disabled");
