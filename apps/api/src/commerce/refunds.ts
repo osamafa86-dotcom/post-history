@@ -130,9 +130,25 @@ export class RefundsService {
  * إشعار `refund.succeeded` (في معاملة الإشعار وتحت قفله): يُكتب قيد `refund` يعكس حصص البيعة بنسبة المبلغ المسترد
  * (ADR 0031)، ويصير الاسترداد `succeeded`. وحين تُسترد كل البنود يصير الطلب `refunded`. المبلغ المخالف للمراجعة.
  */
-export async function applyRefundSucceeded(tx: Tx, event: ProviderEvent): Promise<{ orderId: string | null; outcome: 'applied' | 'ignored' | 'review' }> {
-  const [r] = await tx.select().from(refunds).where(eq(refunds.providerRefundRef, event.providerRef)).for('update');
-  if (!r) return { orderId: null, outcome: 'ignored' };
+export async function applyRefundSucceeded(
+  tx: Tx,
+  provider: string,
+  event: ProviderEvent,
+): Promise<{ orderId: string | null; outcome: 'applied' | 'ignored' | 'review' }> {
+  // الإشعار يحمل مرجع الاسترداد، أو مرجع الدفع (كما يفعل مزوّدون كثر): حينها أقدم استرداد معلّق للطلب بالمبلغ نفسه
+  let [r] = await tx.select().from(refunds).where(eq(refunds.providerRefundRef, event.providerRef)).for('update');
+  if (!r) {
+    const [o] = await tx.select({ id: orders.id }).from(orders).where(and(eq(orders.provider, provider), eq(orders.providerRef, event.providerRef)));
+    if (!o) return { orderId: null, outcome: 'ignored' };
+    [r] = await tx
+      .select()
+      .from(refunds)
+      .where(and(eq(refunds.orderId, o.id), eq(refunds.status, 'pending'), sql`${refunds.amountMinor} = ${event.amount.amountMinor.toString()}::bigint`))
+      .orderBy(refunds.createdAt, refunds.id)
+      .limit(1)
+      .for('update');
+    if (!r) return { orderId: o.id, outcome: 'review' };
+  }
   if (r.status !== 'pending') return { orderId: r.orderId, outcome: 'ignored' };
   if (event.amount.currency !== r.currency || event.amount.amountMinor !== BigInt(r.amountMinor)) return { orderId: r.orderId, outcome: 'review' };
   const [sale] = await tx
@@ -203,8 +219,9 @@ async function postRefund(tx: Tx, r: RefundRow, saleId: string): Promise<string>
   if (reserve > 0n) out.push({ account: { kind: 'refund_reserve', currency }, amount: money(reserve, currency) });
   const { entryId } = await postEntry(tx, {
     kind: 'refund',
-    referenceType: 'refund',
-    referenceId: r.id,
+    // مرجع القيد الطلب كقيد البيعة، والاسترداد في تفاصيله
+    referenceType: 'order',
+    referenceId: r.orderId,
     details: { refund_id: r.id },
     idempotencyKey: `refund:${r.id}`,
     reversesEntryId: saleId,

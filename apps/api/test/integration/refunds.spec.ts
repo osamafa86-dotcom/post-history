@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { schemaValidator } from '../../src/common/contract';
 import { movePayable } from '../../src/commerce/ledger';
+import { signWebhook } from '../../src/commerce/payment-provider';
 import { money } from '../../src/commerce/money';
 import { DB, type Database } from '../../src/database/database.module';
 import { createHarness, type Harness, loginAs, seedUploadSession, seedUser } from './harness';
@@ -164,6 +165,18 @@ describe('refunds and commission rules (/v1/orders/{id}/refunds, /v1/commission-
     expect(await count(`SELECT count(*)::int AS n FROM journal_entries WHERE kind = 'refund' AND reverses_entry_id = (SELECT id FROM journal_entries WHERE kind = 'sale' AND reference_id = $1)`, [o.id])).toBe(2);
   });
 
+  it('a refund notice carrying the payment reference settles the oldest pending refund of that amount; the entry references the order', async () => {
+    const { order: o, buyer: b } = await paidOrder(1);
+    const r = await refund(o.id, [o.items[0].id]).expect(201);
+    const { rows } = await h.pool.query<{ ref: string }>(`SELECT provider_ref AS ref FROM orders WHERE id = $1`, [o.id]);
+    const body = Buffer.from(JSON.stringify({ event_id: `t_${randomUUID()}`, type: 'refund.succeeded', provider_ref: rows[0]!.ref, amount: { amount_minor: 10_000, currency: 'USD' }, occurred_at: new Date().toISOString() }));
+    const ts = Math.floor(Date.now() / 1000);
+    await http().post('/payments/webhooks/sandbox').set({ 'content-type': 'application/json', 'x-timestamp': String(ts), 'x-signature': `v1=${signWebhook(SECRET, ts, body)}` }).send(body.toString('utf8')).expect(200);
+    expect((await http().get(`/v1/orders/${o.id}/refunds`).set(as(b.token)).expect(200)).body.items[0]).toMatchObject({ id: r.body.id, status: 'succeeded' });
+    expect(await count(`SELECT count(*)::int AS n FROM journal_entries WHERE kind = 'refund' AND reference_type = 'order' AND reference_id = $1 AND details->>'refund_id' = $2`, [o.id, r.body.id])).toBe(1);
+    expect((await order(b.token, o.id)).status).toBe('refunded');
+  });
+
   it('after the contributor was paid out, the refund takes the share from refund_reserve; the balance never goes below zero', async () => {
     const { order: o } = await paidOrder(1);
     const db = h.app.get<Database>(DB);
@@ -224,6 +237,6 @@ describe('refunds and commission rules (/v1/orders/{id}/refunds, /v1/commission-
          FROM journal_entries e WHERE e.kind = 'sale' AND e.reference_id = $1`,
       [created.id],
     );
-    expect(rows[0]).toEqual({ details: { commission_rules: [material.id], platform_basis_points: [5000] }, platform: '-5000' });
+    expect(rows[0]).toEqual({ details: { platform_basis_points: 5000, commission_rules: [material.id], item_basis_points: [5000] }, platform: '-5000' });
   });
 });

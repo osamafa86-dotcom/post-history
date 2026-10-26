@@ -201,8 +201,8 @@ export class OrdersService {
       let orderId: string | null;
       let outcome: 'applied' | 'ignored' | 'review';
       if (event.type === 'refund.succeeded') {
-        // مرجع الاسترداد لا مرجع الدفع
-        ({ orderId, outcome } = await applyRefundSucceeded(tx, event));
+        // بمرجع الاسترداد، أو بمرجع الدفع حين يحمله إشعار المزوّد
+        ({ orderId, outcome } = await applyRefundSucceeded(tx, providerName, event));
       } else {
         const [o] = await tx.select().from(orders).where(and(eq(orders.provider, providerName), eq(orders.providerRef, event.providerRef))).for('update');
         orderId = o?.id ?? null;
@@ -332,7 +332,12 @@ export class OrdersService {
       referenceType: 'order',
       referenceId: o.id,
       // القاعدة المجمّدة لكل بند بترتيب البنود
-      details: { commission_rules: applied.map((r) => r.ruleId), platform_basis_points: applied.map((r) => r.basisPoints) },
+      // نقاط المنصة رقمًا واحدًا حين تتفق البنود (وإلا null)، والقاعدة ونقاطها لكل بند بترتيب البنود
+      details: {
+        platform_basis_points: applied.every((r) => r.basisPoints === applied[0]!.basisPoints) ? applied[0]!.basisPoints : null,
+        commission_rules: applied.map((r) => r.ruleId),
+        item_basis_points: applied.map((r) => r.basisPoints),
+      },
       idempotencyKey: `sale:${o.id}`,
       actorId: null,
       postings,

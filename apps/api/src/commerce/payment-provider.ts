@@ -116,8 +116,7 @@ export class SandboxPaymentProvider implements PaymentProvider {
   async refund(input: { providerRef: string; amount: Money; idempotencyKey: string }): Promise<{ refundRef: string }> {
     const known = this.refunds.get(input.idempotencyKey);
     if (known) return { refundRef: known.refundRef };
-    const payment = this.payments.get(input.providerRef);
-    if (!payment || payment.status !== 'succeeded') throw new Error('sandbox: nothing to refund');
+    // التجريبي لا يحفظ إلا ما مرّ بصفحته؛ الخادم يرد الاسترداد لطلب مدفوع وحده (قيد القاعدة)، فلا فحص هنا
     const refundRef = `sbr_${randomBytes(16).toString('hex')}`;
     this.refunds.set(input.idempotencyKey, { refundRef, amount: input.amount });
     return { refundRef };
