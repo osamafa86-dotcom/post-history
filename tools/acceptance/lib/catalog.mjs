@@ -54,6 +54,8 @@ export const EXTRA = [
   { name: "outbox-transaction", mode: "automated", source: "invariant: transactional outbox writes", criterion: "كل كتابة مغطاة تترك حدث Outbox واحدًا في المعاملة نفسها، والتكرار لا يضيف حدثًا، وفشل إدراج الحدث يعيد كتابة المادة" },
   { name: "material-state-independence", mode: "automated", source: "invariant: independent material state tracks", criterion: "الحالات الفنية والتحريرية والحقوق مستقلة؛ كل انتقال يغيّر مساره وحده ويترك سجلًا منفصلًا" },
   { name: "sensitive-material-visibility", mode: "automated", source: "invariant: sensitive material excluded from buyer catalog", criterion: "المادة الموسومة بالحساسية تُعلَّق إدراجاتها ولا تظهر في بحث المشتري أو قراءته المباشرة، مع بقاء مادة ضابطة غير موسومة ظاهرة" },
+  { name: "stripe-webhook", mode: "automated", source: "plan row «الدفع المكرر» (الصف 12 من جدول اختبارات القبول)", criterion: "إشعار Stripe التجريبي الموقّع على خادم محلي: التوقيع السيئ 400 بلا أثر في القاعدة، وحدث livemode مرفوض، والإشعار الصحيح ترخيص واحد وقيد متوازن، وإعادته عشر مرات وبمعرّفه بجسم مختلف بلا أثر ثانٍ" },
+  { name: "invite-conflict-totp", mode: "automated", source: "security follow-up #304 / contract #361 (#366)", criterion: "حسم تعارض دعوة مشترٍ برمز TOTP: الصحيح يُقبل مرة واحدة وإعادته 401، والمحاولات الخاطئة فوق الحد 429 بـRetry-After وأثناء الحد حتى الصحيح 429، والتعارض يبقى معلقًا بعد الفشل" },
 ];
 
 export const NAMES = [...CATALOG, ...EXTRA].map((t) => t.name);
