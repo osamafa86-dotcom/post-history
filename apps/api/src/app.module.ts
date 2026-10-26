@@ -72,6 +72,7 @@ export function configureApp(app: INestApplication, config: AppConfig, logger: L
       { path: 'payments/webhooks/:provider', method: RequestMethod.POST },
       { path: 'sandbox/checkout/:ref', method: RequestMethod.GET },
       { path: 'sandbox/checkout/:ref/:outcome', method: RequestMethod.POST },
+      { path: 'sandbox/refunds/:ref/succeeded', method: RequestMethod.POST },
       { path: 'internal/ingest/session-status', method: RequestMethod.GET },
       { path: 'internal/media/sessions/:id/verification', method: RequestMethod.POST },
       { path: 'internal/media/files/:file_id', method: RequestMethod.GET },

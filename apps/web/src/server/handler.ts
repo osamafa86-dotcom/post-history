@@ -12,6 +12,7 @@ import { actionPath, reviewAction } from "./review-actions";
 import { hasRole, materialTag } from "@/lib/review";
 import { organizationRead } from "./organizations";
 import { licenseRead } from "./licenses";
+import { orderRead } from "./orders";
 import { safeTemplate, templateRoles } from "@/lib/license-policy";
 import { listingReaders, safeListing } from "@/lib/listing-policy";
 import { listUploads, readUpload, uploadAction, uploadBodyLimit, uploadPath } from "./uploads";
@@ -152,6 +153,8 @@ export async function handle(request: NextRequest, path: string, deps?: { config
       }
       const license = /^licenses(?:\/([^/]+))?$/.exec(path);
       if (license) return licenseRead(request, license[1], api, me);
+      const order = /^orders(?:\/([^/]+))?$/.exec(path);
+      if (order) return orderRead(request, order[1], api, me);
       const organization = /^buyer-organizations(?:\/([^/]+)(\/members)?)?$/.exec(path);
       if (organization) return organizationRead(request, organization[1], !!organization[2], api, me);
       if (path === "license-templates" || /^license-templates\/[^/]+$/.test(path)) {
