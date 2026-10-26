@@ -405,7 +405,10 @@
     "duration": "Duration",
     "resolution": "Resolution",
     "shotList": "Shot list",
-    "checkoutLater": "Cart and hosted checkout arrive with the orders contract."
+    "checkoutLater": "Cart and hosted checkout arrive with the orders contract.",
+    "addToCart": "Add to cart",
+    "inCart": "In your cart; go to it",
+    "buyersOnly": "Buying is for buyer organization accounts."
   },
   "board": {
     "title": "Newsroom board",
@@ -799,5 +802,43 @@
     "remaining": "{n} downloads left.",
     "downloadHelp": "Every download is counted; the link is short-lived and never saved.",
     "downloadConflict": "Could not download: the limit is reached, the license is not active, or the package is not ready."
+  },
+  "orders": {
+    "title": "My orders",
+    "nav": "Cart and orders",
+    "lead": "Your organization's orders and their status. Licenses are issued once payment is confirmed.",
+    "cartLead": "One line per material, in one currency. The price is fixed when the order is created.",
+    "denied": "This page is for buyers, finance and the system admin.",
+    "empty": "No orders yet.",
+    "created": "Created",
+    "items": "Materials",
+    "total": "Total",
+    "status": "Status",
+    "open": "Open",
+    "order": "Order",
+    "notFound": "Order not found.",
+    "place": "Create order",
+    "pay": "Pay at the sandbox provider",
+    "cancel": "Cancel order",
+    "payBy": "Pay before",
+    "paidAt": "Paid at",
+    "sandbox": "Sandbox payment: no real money. The payment page is the provider's; card details never pass through us.",
+    "awaiting": "You are back from the payment page. Waiting for the provider's confirmation; this can take a moment.",
+    "paidHelp": "The order is paid and the licenses are issued.",
+    "expiredHelp": "The payment window has passed; create a new order.",
+    "conflict": "Could not proceed: the price changed, the material is no longer listed, the exclusivity is held, or the order changed. Review the cart or the order.",
+    "providerBlocked": "The payment link is outside the allowed origins and was not opened.",
+    "statuses": {
+      "pending_payment": "Awaiting payment",
+      "paid": "Paid",
+      "cancelled": "Cancelled",
+      "expired": "Expired",
+      "refunded": "Refunded"
+    },
+    "reasons": {
+      "buyer": "cancelled by the buyer",
+      "exclusivity_lost": "exclusivity lost",
+      "rights_changed": "rights changed"
+    }
   }
 }

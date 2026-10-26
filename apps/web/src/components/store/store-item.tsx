@@ -9,10 +9,12 @@ import { shotDay } from "./catalog-card";
 import { LicensePicker } from "./license-picker";
 import { WatermarkedPreview } from "./watermarked-preview";
 import { catalogRoles } from "./store-catalog";
+import { useCart } from "./cart";
+import { isBuyer } from "@/lib/buyer-policy";
 
-// صفحة المادة في الكتالوج (#203 بندا 28–29): المعاينة بعلامة مائية وهوية المشاهد، والتراخيص بأسعارها. السلة والدفع بعد عقد الطلبات.
+// صفحة المادة في الكتالوج (#203 بنود 28–30): المعاينة بعلامة مائية وهوية المشاهد، والتراخيص بأسعارها، والإضافة إلى السلة للمشتري.
 export function StoreItem({ locale, id }: { locale: Locale; id: string }) {
-  const m = messages[locale], s = m.store, me = useUser(), allowed = hasRole(me, ...catalogRoles);
+  const m = messages[locale], s = m.store, me = useUser(), allowed = hasRole(me, ...catalogRoles), cart = useCart(), buyer = isBuyer(me);
   const [item, setItem] = useState<CatalogItem | null>(null), [status, setStatus] = useState(0), [offer, setOffer] = useState<string | null>(null);
   useEffect(() => {
     if (!allowed) return;
@@ -33,6 +35,6 @@ export function StoreItem({ locale, id }: { locale: Locale; id: string }) {
       <section className="card"><h2>{s.details}</h2><dl className="metadata">{[[m.governorate, item.governorate], [s.shotOn, day ? new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`)) : m.notAvailable], [s.duration, duration ?? m.notAvailable], [s.resolution, item.width && item.height ? `${item.width}×${item.height}` : m.notAvailable], [s.credit, item.credit]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>
     </div>
     {item.shot_list.length > 0 && <section className="card"><h2>{s.shotList}</h2><ol className="shot-list">{item.shot_list.map(shot => <li key={shot.start_ms}><span dir="ltr">{formatDuration(shot.start_ms)}</span> {localized(shot.label, locale)}</li>)}</ol></section>}
-    <section className="card"><LicensePicker locale={locale} offers={item.offers.map(o => ({ id: `${o.license_template_id}:${o.license_version}`, type: o.type, name: o.name, price: o.price }))} exclusiveAvailable={item.exclusive_available} value={offer} onChange={setOffer} /><p className="notice">{s.checkoutLater}</p></section>
+    <section className="card"><LicensePicker locale={locale} offers={item.offers.map(o => ({ id: `${o.license_template_id}:${o.license_version}`, type: o.type, name: o.name, price: o.price }))} exclusiveAvailable={item.exclusive_available} value={offer} onChange={setOffer} />{buyer ? <div className="actions"><button disabled={!offer} onClick={() => { const chosen = item.offers.find(o => `${o.license_template_id}:${o.license_version}` === offer); if (chosen) cart.add({ listing_id: item.listing_id, license_template_id: chosen.license_template_id, title: item.title, license: chosen.name, price: chosen.price }); }}>{s.addToCart}</button>{cart.items.some(i => i.listing_id === item.listing_id) && <Link prefetch={false} href={`/${locale}/store/cart`}>{s.inCart}</Link>}</div> : <p className="notice">{s.buyersOnly}</p>}</section>
   </>;
 }

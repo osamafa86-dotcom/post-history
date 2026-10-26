@@ -9,6 +9,7 @@ import { WebError } from "./errors";
 import type { WebConfig } from "./config";
 import { organizationWrite } from "./organizations";
 import { licenseDownload } from "./licenses";
+import { orderWrite } from "./orders";
 import { identityAccesses, identityReasons, permissions, reasonLimits } from "@/lib/admin-policy";
 import { safeIdentitySetting } from "@/lib/admin-privacy";
 import { ruleInput, safeRule } from "@/lib/notification-policy";
@@ -31,6 +32,9 @@ export const actionRoutes = [
   { path: "/license-templates/{template_id}", methods: ["put"] },
   { path: "/materials/{id}/listing", methods: ["post", "put"] },
   { path: "/licenses/{license_id}/download-url", methods: ["post"] },
+  { path: "/orders", methods: ["post"] },
+  { path: "/orders/{order_id}/checkout", methods: ["post"] },
+  { path: "/orders/{order_id}/cancel", methods: ["post"] },
   { path: "/buyer-organizations", methods: ["post"] },
   { path: "/buyer-organizations/{org_id}", methods: ["put"] },
   { path: "/buyer-organizations/{org_id}/members", methods: ["post"] },
@@ -144,6 +148,7 @@ export async function reviewAction(request: Request, path: string, api: Api, me:
     return response;
   }
   if (path.startsWith("licenses/")) return licenseDownload(path, api, me, body, header, config ?? { mediaOrigins: [] } as unknown as WebConfig);
+  if (path === "orders" || path.startsWith("orders/")) return orderWrite(request, path, api, me, body, header, config ?? { checkoutOrigins: [] } as unknown as WebConfig);
   if (path.startsWith("buyer-organizations")) return organizationWrite(request, path, api, me, body, header, versioned);
   const notificationPath = /^notifications\/([^/]+)\/(read|ack)$/.exec(path);
   if (notificationPath && uuid.test(notificationPath[1]) && request.method === "POST") {
