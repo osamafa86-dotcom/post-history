@@ -8,7 +8,7 @@ import Glibc
 #elseif canImport(Darwin)
 import Darwin
 #endif
-import UploadCore
+@testable import UploadCore
 
 /// مراقب الخمول في `URLSessionTusTransport` (مهلة تُقاس على تقدّم إرسال الجسم، لا على زمن الطلب كله):
 /// جسم يُقرأ ببطء لكن بتقدّم لا يُلغى، وجسم يتوقف الخادم عن قراءته يُلغى بعد المهلة فيستأنف المحرك من HEAD.
