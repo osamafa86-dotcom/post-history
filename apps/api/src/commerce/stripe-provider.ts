@@ -15,6 +15,8 @@ export class StripeTestProvider implements PaymentProvider {
     private readonly webhookSecret: string,
     private readonly apiBase = 'https://api.stripe.com',
     private readonly fetchImpl: typeof fetch = fetch,
+    // كل نداء لـ Stripe بمهلة: المزوّد المعلّق يُرمى خطأً مصنّفًا ولا يعلّق الطلب
+    private readonly timeoutMs = 10_000,
   ) {}
 
   async createCheckout(input: { orderId: string; amount: Money; returnUrl: string; idempotencyKey: string }): Promise<{ checkoutUrl: string; providerRef: string; expiresAt: Date }> {
@@ -64,12 +66,16 @@ export class StripeTestProvider implements PaymentProvider {
   private async call<T>(method: 'GET' | 'POST', path: string, idempotencyKey?: string, form?: Record<string, string>): Promise<T> {
     const res = await this.fetchImpl(`${this.apiBase.replace(/\/$/, '')}${path}`, {
       method,
+      signal: AbortSignal.timeout(this.timeoutMs),
       headers: {
         Authorization: `Bearer ${this.secretKey}`,
         ...(form ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
         ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
       },
       ...(form ? { body: new URLSearchParams(form).toString() } : {}),
+    }).catch((err: unknown) => {
+      const name = (err as Error)?.name;
+      throw new Error(name === 'TimeoutError' || name === 'AbortError' ? 'stripe: timeout' : 'stripe: network error');
     });
     const body = (await res.json().catch(() => ({}))) as T & { error?: { type?: string; code?: string } };
     // نوع الخطأ ورمزه وحدهما؛ لا رسالة Stripe (قد تحمل بيانات) ولا المفتاح

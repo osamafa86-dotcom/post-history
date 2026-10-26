@@ -103,4 +103,13 @@ describe('Stripe test-mode adapter', () => {
     // رسالة الإعداد بأسماء المتغيرات وحدها، لا القيم
     expect(() => loadConfig({ ...base, ...stripe, STRIPE_TEST_SECRET_KEY: fakeKey('live') })).not.toThrow(/sk_/);
   });
+
+  it('a Stripe that never answers fails within the timeout as stripe: timeout', async () => {
+    const hang = ((_url: string, init: RequestInit) =>
+      new Promise((_resolve, reject) => init.signal!.addEventListener('abort', () => reject(init.signal!.reason)))) as unknown as typeof fetch;
+    const p = new StripeTestProvider(KEY, WHSEC, 'https://stripe.test', hang, 50);
+    const started = Date.now();
+    await expect(p.createCheckout({ orderId: 'o1', amount: money(100n, 'USD'), returnUrl: '', idempotencyKey: 'k' })).rejects.toThrow('stripe: timeout');
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
 });

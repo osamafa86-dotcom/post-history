@@ -9,10 +9,16 @@ import { createHarness, type Harness, loginAs, seedUploadSession, seedUser } fro
 type Actor = Awaited<ReturnType<typeof loginAs>>;
 const WHSEC = `whsec_${randomBytes(16).toString('hex')}`;
 const sessions = new Map<string, { amount: number; currency: string }>();
+// Stripe البطيء: إن ضُبط، ينتظر إنشاء الجلسة حتى يُفتح الباب
+let gate: { reached: () => void; open: Promise<void> } | null = null;
 // Stripe المسجّل: الجلسة باسم عشوائي، وقراءتها، والاسترداد
 const fakeStripe = (async (url: string, init: RequestInit) => {
   const path = new URL(url).pathname;
   if (init.method === 'POST' && path === '/v1/checkout/sessions') {
+    if (gate) {
+      gate.reached();
+      await gate.open;
+    }
     const f = new URLSearchParams(init.body as string);
     const id = `cs_test_${randomBytes(8).toString('hex')}`;
     sessions.set(id, { amount: Number(f.get('line_items[0][price_data][unit_amount]')), currency: f.get('line_items[0][price_data][currency]')! });
@@ -159,5 +165,23 @@ describe('Stripe test-mode purchase (/payments/webhooks/stripe)', () => {
     await notify('checkout.session.completed', { id: cs, payment_status: 'paid', amount_total: 1, currency: 'usd' }).expect(200);
     expect((await order(b.token, created.id)).status).toBe('pending_payment');
     expect(await count(`SELECT count(*)::int AS n FROM payment_events WHERE provider_ref = $1 AND outcome = 'review'`, [cs])).toBe(1);
+  });
+
+  it('the order is not locked while Stripe answers: cancelling during a slow checkout goes through, and the checkout then finds it cancelled', async () => {
+    const t = await template();
+    const { listingId } = await listed([t]);
+    const b = await buyer(await organization());
+    const created = (await post(b.token, '/orders', { items: [{ listing_id: listingId, license_template_id: t }] }).expect(201)).body;
+    let release!: () => void;
+    const inside = new Promise<void>((reached) => (gate = { reached, open: new Promise<void>((r) => (release = r)) }));
+    const slow = post(b.token, `/orders/${created.id}/checkout`).then((r) => r);
+    await inside;
+    const started = Date.now();
+    await post(b.token, `/orders/${created.id}/cancel`).expect(200);
+    expect(Date.now() - started).toBeLessThan(2_000);
+    gate = null;
+    release();
+    expect((await slow).body.code).toBe('order_state_conflict');
+    expect((await order(b.token, created.id)).status).toBe('cancelled');
   });
 });
