@@ -22,8 +22,8 @@ for avd in "$SCREENSHOT_PHONE_AVD" "$SCREENSHOT_SEVEN_AVD" "$SCREENSHOT_TEN_AVD"
 done
 # لا ننشر لقطات قديمة إذا أخفق تشغيل جديد، ولا نستبدل لقطات راجعها المالك.
 for locale in ar en-US; do
-  for category in phoneScreenshots sevenInchScreenshots tenInchScreenshots; do
-    target="$root/apps/android/store/metadata/android/$locale/images/$category"
+  for category in phone sevenInch tenInch; do
+    target="$root/apps/android/store/captures/$locale/$category"
     if [[ -d $target ]] && find "$target" -name '*.png' -print -quit | grep -q .; then
       echo 'Capture output already exists; archive it before a new run' >&2; exit 2
     fi
@@ -48,11 +48,11 @@ export ORG_GRADLE_PROJECT_apiBaseUrl="http://localhost:$port/v1"
 app="$root/apps/android/app/build/outputs/apk/debug/app-debug.apk"
 testapk="$root/apps/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
 index=0
-for category in phoneScreenshots sevenInchScreenshots tenInchScreenshots; do
+for category in phone sevenInch tenInch; do
   case "$category" in
-    phoneScreenshots) avd=$SCREENSHOT_PHONE_AVD; size=1080x1920; density=420 ;;
-    sevenInchScreenshots) avd=$SCREENSHOT_SEVEN_AVD; size=1200x1920; density=320 ;;
-    tenInchScreenshots) avd=$SCREENSHOT_TEN_AVD; size=1600x2560; density=300 ;;
+    phone) avd=$SCREENSHOT_PHONE_AVD; size=1080x1920; density=420 ;;
+    sevenInch) avd=$SCREENSHOT_SEVEN_AVD; size=1200x1920; density=320 ;;
+    tenInch) avd=$SCREENSHOT_TEN_AVD; size=1600x2560; density=300 ;;
   esac
   emulator -avd "$avd" -port 5554 -no-window -no-audio -no-snapshot -wipe-data >"$work/emulator.log" 2>&1 &
   pid=$!
@@ -101,10 +101,10 @@ for category in phoneScreenshots sevenInchScreenshots tenInchScreenshots; do
   pid=''
 done
 [[ $index == 6 ]] || exit 1
-# لا نسخ للمتجر إلا بعد اكتمال المصفوفة والتحقق من ملفاتها الثلاثين.
+# لا نسخ لمجلد اللقطات الخام إلا بعد اكتمال المصفوفة والتحقق من ملفاتها الثلاثين.
 for locale in ar en-US; do
-  for category in phoneScreenshots sevenInchScreenshots tenInchScreenshots; do
-    dest="$root/apps/android/store/metadata/android/$locale/images/$category"
+  for category in phone sevenInch tenInch; do
+    dest="$root/apps/android/store/captures/$locale/$category"
     mkdir -p "$dest"
     cp "$work/$locale/$category/"*.png "$dest/"
   done

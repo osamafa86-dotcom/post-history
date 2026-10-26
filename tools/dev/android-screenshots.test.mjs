@@ -11,8 +11,8 @@ function header(width,height) {
   const b=Buffer.alloc(25); b.write('89504e470d0a1a0a',0,'hex'); b.write('IHDR',12); b.writeUInt32BE(width,16); b.writeUInt32BE(height,20); return b;
 }
 function fixture(root) {
-  for(const locale of ['ar','en-US']) for(const [category,w,h]of [['phoneScreenshots',1080,1920],['sevenInchScreenshots',1200,1920],['tenInchScreenshots',1600,2560]]) {
-    const dir=join(root,'apps/android/store/metadata/android',locale,'images',category); mkdirSync(dir,{recursive:true});
+  for(const locale of ['ar','en-US']) for(const [category,w,h]of [['phone',1080,1920],['sevenInch',1200,1920],['tenInch',1600,2560]]) {
+    const dir=join(root,'apps/android/store/captures',locale,category); mkdirSync(dir,{recursive:true});
     // Headers generated at runtime exercise dimensions only, not visual PNG decoding.
     for(const name of names) writeFileSync(join(dir,name+'.png'),header(w,h));
   }
@@ -23,11 +23,11 @@ test('matrix count is derived; measurement stays partial pending visual review',
   const doc=measurement('2026-10-26T00:00:00Z',metrics); assert.equal(doc.result,'partial'); assert.equal(writeResult(doc,{dryRun:true}),null);
 }));
 test('missing capture rejects the matrix',()=>temporary(root=>{
-  fixture(root); unlinkSync(join(root,'apps/android/store/metadata/android/en-US/images/tenInchScreenshots/05-notifications.png'));
+  fixture(root); unlinkSync(join(root,'apps/android/store/captures/en-US/tenInch/05-notifications.png'));
   assert.throws(()=>captureMetrics(root),/incomplete capture set/);
 }));
 test('wrong device dimensions rejected by both validators',()=>temporary(root=>{
-  fixture(root); const dir=join(root,'apps/android/store/metadata/android/ar/images/phoneScreenshots');
+  fixture(root); const dir=join(root,'apps/android/store/captures/ar/phone');
   assert.equal(spawnSync('python3',['tools/dev/check-android-screenshots.py',dir,'1080x1920']).status,0);
   writeFileSync(join(dir,'01-home.png'),header(720,1280)); assert.throws(()=>captureMetrics(root),/invalid capture dimensions/);
   assert.notEqual(spawnSync('python3',['tools/dev/check-android-screenshots.py',dir,'1080x1920']).status,0);

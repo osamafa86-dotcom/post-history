@@ -6,8 +6,8 @@ import {fileURLToPath} from 'node:url';
 export function captureMetrics(root) {
   const names=['01-home','02-materials','03-new-material','04-uploads','05-notifications'].map(n=>n+'.png');
   let count=0;
-  for(const locale of ['ar','en-US'])for(const [category,width,height]of [['phoneScreenshots',1080,1920],['sevenInchScreenshots',1200,1920],['tenInchScreenshots',1600,2560]]) {
-    const dir=join(root,'apps/android/store/metadata/android',locale,'images',category);
+  for(const locale of ['ar','en-US'])for(const [category,width,height]of [['phone',1080,1920],['sevenInch',1200,1920],['tenInch',1600,2560]]) {
+    const dir=join(root,'apps/android/store/captures',locale,category);
     const files=readdirSync(dir).filter(n=>n.endsWith('.png')).sort();
     if(JSON.stringify(files)!==JSON.stringify([...names].sort()))throw new Error('incomplete capture set');
     for(const name of names){const b=readFileSync(join(dir,name));if(b.length<=24||b.subarray(0,8).toString('hex')!=='89504e470d0a1a0a'||b.toString('ascii',12,16)!=='IHDR'||b.readUInt32BE(16)!==width||b.readUInt32BE(20)!==height)throw new Error('invalid capture dimensions');count++;}
