@@ -1,6 +1,5 @@
 import { Body, Controller, Get, Headers, HttpCode, Inject, NotFoundException, Param, Post, Query, type RawBodyRequest, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { APP_CONFIG, type AppConfig } from '../config/config';
 import { validateBody, validateQuery } from '../common/contract';
 import { ApiError } from '../common/errors';
 import { Public } from '../identity/auth.guard';
@@ -61,19 +60,20 @@ export class PaymentWebhooksController {
 }
 
 /**
- * صفحة الدفع المستضافة للمزوّد التجريبي (ADR 0032)، في غير الإنتاج وحده: لا تطلب بطاقة، وأزرارها ترسل الإشعار الموقّع
- * نفسه الذي يرسله المزوّد إلى معالج الإشعار. بلا المزوّد التجريبي كل مساراتها 404.
+ * صفحة الدفع المستضافة للمزوّد التجريبي (ADR 0032): لا تطلب بطاقة، وأزرارها ترسل الإشعار الموقّع نفسه الذي يرسله المزوّد إلى
+ * معالج الإشعار. بلا المزوّد التجريبي كل مساراتها 404. لا شرط هنا على NODE_ENV: وجود المزوّد التجريبي نفسه تحرسه الإعدادات عند
+ * الإقلاع (ممنوع مع DEPLOY_STAGE=production، ولا يُقبل في NODE_ENV=production إلا للتجربة بعلمين)، والتجربة الميدانية تعمل بـ
+ * NODE_ENV=production فشرطه كان يعطّل الدفع التجريبي فيها.
  */
 @Controller('sandbox/checkout')
 export class SandboxCheckoutController {
   constructor(
     private readonly orders: OrdersService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider | null,
-    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   private sandbox(): SandboxPaymentProvider {
-    if (!(this.provider instanceof SandboxPaymentProvider) || this.config.NODE_ENV === 'production') throw new NotFoundException();
+    if (!(this.provider instanceof SandboxPaymentProvider)) throw new NotFoundException();
     return this.provider;
   }
 
