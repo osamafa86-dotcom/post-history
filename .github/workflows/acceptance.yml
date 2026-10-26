@@ -180,7 +180,7 @@ jobs:
   media-e2e:
     name: "media e2e (full compose stack: upload, worker, proxy, hostile files)"
     runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
-    timeout-minutes: 40  # the ai profile fetches the production weights (1.6 GB) and transcribes six clips
+    timeout-minutes: 75  # was 40 and cancelled runs without a failing test (#295, #333); the ai profile fetches the production weights (1.6 GB) and transcribes six clips. Split planned, target under 30
     needs: changes
     if: needs.changes.outputs.media_e2e == 'true'
     permissions:
