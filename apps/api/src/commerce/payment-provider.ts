@@ -94,7 +94,7 @@ function parseEvent(rawBody: Buffer): ProviderEvent {
  */
 export class SandboxPaymentProvider implements PaymentProvider {
   readonly name = 'sandbox';
-  private readonly payments = new Map<string, { status: ProviderPaymentStatus; amount: Money; checkoutKey: string }>();
+  private readonly payments = new Map<string, { status: ProviderPaymentStatus; amount: Money; checkoutKey: string; returnUrl: string }>();
   private readonly refunds = new Map<string, { refundRef: string; amount: Money }>();
 
   constructor(
@@ -105,7 +105,7 @@ export class SandboxPaymentProvider implements PaymentProvider {
   async createCheckout(input: { orderId: string; amount: Money; returnUrl: string; idempotencyKey: string }): Promise<{ checkoutUrl: string; providerRef: string; expiresAt: Date }> {
     const existing = [...this.payments.entries()].find(([, p]) => p.checkoutKey === input.idempotencyKey);
     const providerRef = existing?.[0] ?? `sbx_${randomBytes(16).toString('hex')}`;
-    if (!existing) this.payments.set(providerRef, { status: 'pending', amount: input.amount, checkoutKey: input.idempotencyKey });
+    if (!existing) this.payments.set(providerRef, { status: 'pending', amount: input.amount, checkoutKey: input.idempotencyKey, returnUrl: input.returnUrl });
     return { checkoutUrl: `${this.baseUrl.replace(/\/$/, '')}/sandbox/checkout/${providerRef}`, providerRef, expiresAt: new Date(Date.now() + 30 * 60 * 1000) };
   }
 
@@ -125,6 +125,11 @@ export class SandboxPaymentProvider implements PaymentProvider {
 
   async status(providerRef: string): Promise<ProviderPaymentStatus> {
     return this.payments.get(providerRef)?.status ?? 'failed';
+  }
+
+  /** صفحة العودة للجلسة (من إعداد الخادم وحده)، أو undefined بلا عودة أو للمرجع المجهول. */
+  returnUrlOf(providerRef: string): string | undefined {
+    return this.payments.get(providerRef)?.returnUrl || undefined;
   }
 
   /** مبلغ الجلسة لصفحة الدفع، أو undefined للمرجع المجهول. */

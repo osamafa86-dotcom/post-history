@@ -279,6 +279,19 @@ const schema = z.object({
   SANDBOX_CHECKOUT_BASE_URL: z.string().url().default('http://localhost:3000'),
   // عمولة المنصة من صافي كل بند، بأجزاء من عشرة آلاف، إلى أن تُبنى قواعد العمولة (ADR 0025 الجزء 6)؛ تُجمَّد في قيد البيعة
   PLATFORM_COMMISSION_BASIS_POINTS: z.coerce.number().int().min(0).max(10000).default(3000),
+  // صفحة الويب التي تعود إليها صفحة الدفع التجريبية بعد النتيجة، قالبًا بـ {order_id}. من الإعداد وحده لا من الطلب، فلا
+  // تحويل مفتوح؛ https إلا لـ localhost. بلا قيمة لا عودة.
+  SANDBOX_RETURN_URL: z
+    .string()
+    .url()
+    .refine((v) => {
+      const u = new URL(v);
+      return u.protocol === 'https:' || (u.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(u.hostname));
+    }, 'must be https (or http on localhost)')
+    .optional(),
+  // رابط تنزيل حزمة الترخيص: عمره بالثواني (العقد ≤ 24 ساعة؛ دقائق فعليًا) وعدد المنح لكل ترخيص
+  LICENSE_DOWNLOAD_URL_SECONDS: z.coerce.number().int().min(60).max(86_400).default(600),
+  LICENSE_DOWNLOAD_LIMIT: z.coerce.number().int().min(1).max(100).default(5),
 
   OUTBOX_DISPATCHER_ENABLED: z
     .enum(['true', 'false'])

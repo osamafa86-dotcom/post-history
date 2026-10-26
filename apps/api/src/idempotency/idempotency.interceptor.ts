@@ -135,5 +135,6 @@ export class IdempotencyInterceptor implements NestInterceptor {
 /** لا تُحفظ الرموز في جدول المفاتيح (قاعدة المخطط): كل مفتاح علوي اسمه token أو ينتهي بـ _token يُحذف قبل الحفظ. */
 export function withoutTokens(body: unknown): unknown {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return body;
-  return Object.fromEntries(Object.entries(body).filter(([k]) => k !== 'token' && !k.endsWith('_token')));
+  // الرموز ورابط التنزيل الموقّع لا يُحفظان (POST /licenses/{id}/download-url وحده يرد `url`)
+  return Object.fromEntries(Object.entries(body).filter(([k]) => k !== 'token' && k !== 'url' && !k.endsWith('_token')));
 }
