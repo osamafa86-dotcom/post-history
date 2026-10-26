@@ -874,6 +874,37 @@
       "buyer": "cancelled by the buyer",
       "exclusivity_lost": "exclusivity lost",
       "rights_changed": "rights changed"
+    },
+    "staffNav": "Orders"
+  },
+  "refunds": {
+    "title": "Refunds",
+    "empty": "No refunds for this order.",
+    "created": "Requested",
+    "items": "Items",
+    "amount": "Amount",
+    "reason": "Reason",
+    "status": "Status",
+    "choose": "Items to refund",
+    "total": "Refund amount:",
+    "effect": "Each refunded item's license is revoked at once and its download stops. The amount is the sum of the items' frozen prices; there is no free amount.",
+    "submit": "Request refund",
+    "pendingHelp": "A pending refund waits for the provider's signed confirmation.",
+    "nothingLeft": "Every item is refunded or in a pending refund.",
+    "paidOnly": "Only a paid order can be refunded.",
+    "conflict": "Could not refund: the order changed state or an item was already refunded. Refresh the page.",
+    "statuses": {
+      "pending": "Pending",
+      "succeeded": "Succeeded",
+      "failed": "Failed"
+    },
+    "reasons": {
+      "buyer_request": "Buyer request",
+      "duplicate": "Duplicate purchase",
+      "rights_withdrawn": "Rights withdrawn",
+      "dispute": "Dispute",
+      "exclusivity_lost": "Exclusivity lost",
+      "other": "Other"
     }
   }
 }

@@ -12,6 +12,7 @@ import { useUser } from "../session-boundary";
 import { ActionStatus } from "../action-status";
 import { CartSummary } from "./cart-summary";
 import { useCart } from "./cart";
+import { RefundsPanel } from "./refunds";
 
 /** السلة: الطلب يُنشأ منها مرة واحدة بعملة واحدة، ومعه المجموع الذي رآه المشتري (العقد يرفض غير ذلك). */
 export function CartPage({ locale }: { locale: Locale }) {
@@ -93,5 +94,6 @@ export function OrderPage({ locale, id, returned }: { locale: Locale; id: string
       <dl className="metadata">{[[o.created, formatDate(order.created_at, locale)], [pending ? o.payBy : o.paidAt, formatDate(pending ? order.expires_at : order.paid_at, locale)]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>
     {buyer && pending && <section className="card"><p className="muted">{o.sandbox}</p><ActionStatus status={mutation.status} locale={locale} />{mutation.status === 409 && <p className="notice error">{o.conflict}</p>}{mutation.status === 502 && <p className="notice error">{o.providerBlocked}</p>}
       <div className="actions"><button disabled={mutation.busy || expired} onClick={() => void pay()}>{o.pay}</button><button className="secondary" disabled={mutation.busy} onClick={() => void cancel()}>{o.cancel}</button></div>{expired && <p className="muted">{o.expiredHelp}</p>}</section>}
+    {(order.status === "paid" || order.status === "refunded") && <RefundsPanel locale={locale} order={order} onChange={() => setAttempt(n => n + 1)} />}
   </>;
 }

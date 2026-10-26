@@ -30,3 +30,22 @@ test("finance reads the rules without adding versions; others do not see the pag
   await context.clearCookies(); await login(page, "reviewer"); await expect(page.getByRole("link", { name: c.nav })).toHaveCount(0);
   await page.goto("/ar/commission-rules"); await expect(page.getByText(c.denied)).toBeVisible();
 });
+
+test("finance refunds one item of a paid order, then the rest; the order becomes refunded", async ({ page }) => {
+  const r = ar.refunds; await login(page, "finance");
+  await page.getByRole("link", { name: ar.orders.staffNav, exact: true }).click();
+  await page.getByTestId("order-row").getByRole("link", { name: ar.orders.open }).click();
+  const panel = page.getByRole("region", { name: r.title }); await expect(panel.getByText(r.empty)).toBeVisible();
+  await expect(panel.getByRole("button", { name: r.submit })).toBeDisabled();
+  await panel.getByLabel(/لقطات اصطناعية 2/).check(); await expect(page.getByTestId("refund-amount")).toContainText("250");
+  await panel.getByLabel(r.reason).selectOption("rights_withdrawn"); await panel.getByRole("button", { name: r.submit }).click();
+  await expect(page.getByTestId("refund-row")).toHaveCount(1); await expect(page.getByTestId("refund-row")).toContainText(r.reasons.rights_withdrawn);
+  await expect(panel.getByLabel(/لقطات اصطناعية 2/)).toHaveCount(0);
+  await expect(page.locator("main")).not.toContainText("never-display-canary");
+  await panel.getByLabel(/لقطات اصطناعية 1/).check(); await panel.getByLabel(r.reason).selectOption("duplicate"); await panel.getByRole("button", { name: r.submit }).click();
+  await expect(page.getByTestId("refund-row")).toHaveCount(2);
+  await page.waitForTimeout(1800); await page.reload();
+  await expect(page.getByTestId("order-status")).toHaveText(ar.orders.statuses.refunded); await expect(page.getByTestId("refund-row").first()).toContainText(r.statuses.succeeded);
+  await expect(panel.getByText(r.paidOnly)).toBeVisible();
+  await page.screenshot({ path: ".artifacts/refunds-ar.png", fullPage: true });
+});

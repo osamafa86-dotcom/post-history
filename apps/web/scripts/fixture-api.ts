@@ -107,6 +107,13 @@ function seedCommission() {
 }
 // الطلبات والدفع التجريبي: أسعار عروض الكتالوج الاصطناعي، وصفحة مزوّد مستضافة تؤكد الدفع بعد العودة كما يفعل الإشعار الموقّع.
 const orders = new Map<string, Record<string, unknown> & { id: string; organization_id: string; status: string; created_by: string }>();
+const refunds = new Map<string, Record<string, unknown>[]>();
+// طلب مدفوع لمؤسسة أخرى غير مؤسسة المشتري الاصطناعي، كي تسترد منه المالية دون أن يظهر في طلبات المشتري.
+function seedOrders() {
+  orders.clear(); refunds.clear();
+  const stamp = "2026-10-25T10:00:00Z", line = (n: number, amount: number) => ({ id: `95000000-0000-4000-8000-00000000000${n}`, listing_id: `71000000-0000-4000-8000-00000000000${n}`, material_version: 1, license_template_id: "70000000-0000-4000-8000-000000000001", license_version: 1, license_type: "editorial_single", license_name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" }, title: { ar: `لقطات اصطناعية ${n}`, en: `Synthetic footage ${n}` }, price: { amount_minor: amount, currency: "USD" }, license_id: randomUUID() });
+  orders.set("92000000-0000-4000-8000-000000000009", { id: "92000000-0000-4000-8000-000000000009", organization_id: "90000000-0000-4000-8000-000000000009", created_by: randomUUID(), status: "paid", cancel_reason: null, total: { amount_minor: 40000, currency: "USD" }, items: [line(1, 15000), line(2, 25000)], expires_at: stamp, paid_at: stamp, created_at: stamp, updated_at: stamp });
+}
 const offerPrices: Record<string, { amount: number; type: string; name: { ar: string; en: string } }> = {
   "70000000-0000-4000-8000-000000000001": { amount: 15000, type: "editorial_single", name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" } },
   "70000000-0000-4000-8000-000000000002": { amount: 90000, type: "exclusive_temporary", name: { ar: "حصري 48 ساعة", en: "Exclusive 48 h" } },
@@ -118,7 +125,7 @@ function seedTemplates() {
   templates.set("81000000-0000-4000-8000-000000000001", [{ ...base, id: "81000000-0000-4000-8000-000000000001", version: 1, type: "editorial_single", name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" }, terms: { ar: "شروط الاستخدام الواحد", en: "Single use terms" }, base_price: { amount_minor: 15000, currency: "USD" }, enabled: true, internal_note: "never-display-canary" }]);
   templates.set("81000000-0000-4000-8000-000000000002", [{ ...base, id: "81000000-0000-4000-8000-000000000002", version: 3, type: "editorial_term", term_days: 365, name: { ar: "تحريري سنوي قديم", en: "Old annual editorial" }, terms: { ar: "شروط", en: "Terms" }, base_price: { amount_minor: 40000, currency: "ILS" }, enabled: false }]);
 }
-reset(); seedTemplates(); seedOrganizations(); seedLicenses(); seedCommission();
+reset(); seedTemplates(); seedOrganizations(); seedLicenses(); seedCommission(); seedOrders();
 const signed = new Map<string, { kind: "proxy" | "thumbnail"; expires: number }>();
 let expireNextProxy = false;
 const access = new Map<string, Me>(), refresh = new Map<string, Me>();
@@ -141,8 +148,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname.startsWith("/files/")) { res.removeHeader("Content-Type"); return tus(req, res, url); }
   if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
   if (url.pathname === "/__test/uploads") return send([...uploads.values()].map(u => ({ state: u.session.state, receipt: u.session.receipt_number, ingest_tokens: [...ingestTokens.values()].filter(t => t.sid === u.session.id).length, ...(u.tus ? (({ length, offset, patches, resent, cuts }) => ({ length, offset, patches, resent, cuts }))(tusFiles.get(u.tus) ?? { length: 0, offset: 0, patches: 0, resent: 0, cuts: 0 }) : {}) })));
-  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); seedLicenses(); seedTemplates(); seedOrganizations(); seedCommission(); reset(); resetUploads(); return send({ ok: true }); }
-  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); orders.clear(); seedLicenses(); seedTemplates(); seedOrganizations(); reset(); resetUploads(); return send({ ok: true }); }
+  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); seedOrders(); seedLicenses(); seedTemplates(); seedOrganizations(); seedCommission(); reset(); resetUploads(); return send({ ok: true }); }
   const sandbox = /^\/sandbox\/(checkout|pay)\/([^/]+)$/.exec(url.pathname);
   if (sandbox) {
     const order = orders.get(sandbox[2]); if (!order) return send({}, 404);
@@ -311,6 +317,20 @@ const server = createServer(async (req, res) => {
       found.downloads--;
       return commit({ url: `http://127.0.0.1:${process.env.WEB_FIXTURE_PORT ?? 3201}/delivery/${found.id}?signature=${randomUUID()}`, expires_at: new Date(Date.now() + 3600000).toISOString(), downloads_remaining: found.downloads }, 200);
     }
+    const refundWrite = /^\/v1\/orders\/([^/]+)\/refunds$/.exec(path);
+    if (refundWrite) {
+      if (!has("system_admin", "finance")) return send({}, 403);
+      const order = orders.get(refundWrite[1]) as (Record<string, unknown> & { status: string; items: { id: string; price: { amount_minor: number } }[]; total: { currency: string } }) | undefined; if (!order) return send({}, 404);
+      if (order.status !== "paid") return send({ code: "order_state_conflict" }, 409);
+      const ids = body.order_item_ids as string[], list = refunds.get(refundWrite[1]) ?? [], held = new Set(list.filter(r => r.status !== "failed").flatMap(r => r.order_item_ids as string[]));
+      if (!ids.every(id => order.items.some(i => i.id === id))) return send({ code: "validation_failed" }, 422);
+      if (ids.some(id => held.has(id))) return send({ code: "already_refunded" }, 409);
+      const refund: Record<string, unknown> = { id: randomUUID(), order_id: refundWrite[1], order_item_ids: ids, amount: { amount_minor: order.items.filter(i => ids.includes(i.id)).reduce((sum, i) => sum + i.price.amount_minor, 0), currency: order.total.currency }, reason_code: body.reason_code, status: "pending", created_by: user.user_id, created_at: new Date().toISOString(), completed_at: null, provider_reference: "never-display-canary" };
+      list.unshift(refund); refunds.set(refundWrite[1], list);
+      // كالإشعار الموقّع: النجاح بعد لحظة، والطلب مسترد حين تُسترد كل بنوده.
+      setTimeout(() => { Object.assign(refund, { status: "succeeded", completed_at: new Date().toISOString() }); const done = new Set(list.filter(r => r.status === "succeeded").flatMap(r => r.order_item_ids as string[])); if (order.items.every(i => done.has(i.id))) Object.assign(order, { status: "refunded", updated_at: new Date().toISOString() }); }, 1500);
+      return commit(refund, 201);
+    }
     const orderWrite = /^\/v1\/orders(?:\/([^/]+)\/(checkout|cancel))?$/.exec(path);
     if (orderWrite) {
       if (!has("buyer_admin", "buyer_member") || !user.organization_id) return send({}, 403);
@@ -416,6 +436,12 @@ const server = createServer(async (req, res) => {
     const visible = [...issued.values()].filter(l => !user.organization_id || l.organization_id === user.organization_id).map(l => Object.fromEntries(Object.entries(l).filter(([key]) => key !== "downloads")));
     if (!licenseRead[1]) return send({ items: visible, next_cursor: null });
     const found = visible.find(l => l.id === licenseRead[1]); return found ? send(found) : send({}, 404);
+  }
+  const refundRead = /^\/v1\/orders\/([^/]+)\/refunds$/.exec(url.pathname);
+  if (refundRead) {
+    if (!user.roles.some(role => ["system_admin", "finance", "buyer_admin"].includes(role.name))) return send({}, 403);
+    const order = orders.get(refundRead[1]); if (!order || (user.organization_id && order.organization_id !== user.organization_id)) return send({}, 404);
+    return send({ items: refunds.get(order.id) ?? [] });
   }
   const orderRead = /^\/v1\/orders(?:\/([^/]+))?$/.exec(url.pathname);
   if (orderRead) {

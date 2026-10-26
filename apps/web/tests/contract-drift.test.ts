@@ -13,6 +13,7 @@ import { channels, roles, ruleEvents, ruleLimits, scopeKinds } from "../src/lib/
 import * as license from "../src/lib/license-policy";
 import * as listing from "../src/lib/listing-policy";
 import * as commission from "../src/lib/commission-policy";
+import * as refunds from "../src/lib/refund-policy";
 import { formReaders, formWriters } from "../src/lib/form-admin";
 
 const { load } = createRequire(import.meta.url)("js-yaml") as { load: (text: string) => unknown };
@@ -94,6 +95,12 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
     const f = (...p: string[]) => at("components", "schemas", "CommissionRuleFields", "properties", ...p);
     expect(commission.basisPointsMax).toBe(f("platform_basis_points", "maximum")); expect(f("platform_basis_points", "minimum")).toBe(0);
     expect(at("components", "schemas", "CommissionRuleFields", "required")).toEqual(["scope", "scope_id", "license_type", "platform_basis_points", "effective_from"]);
+  });
+  it("keeps refund roles, reasons, statuses and limits aligned with v0.3", () => {
+    expect([...refunds.refundReaders]).toEqual(at("paths", "/orders/{order_id}/refunds", "get", "x-roles")); expect([...refunds.refundWriters]).toEqual(at("paths", "/orders/{order_id}/refunds", "post", "x-roles"));
+    expect([...refunds.refundReasons]).toEqual(at("components", "schemas", "RefundReason", "enum")); expect([...refunds.refundStatuses]).toEqual(at("components", "schemas", "Refund", "properties", "status", "enum"));
+    expect(refunds.refundLimits.items).toBe(at("components", "schemas", "RefundCreate", "properties", "order_item_ids", "maxItems"));
+    expect(at("components", "schemas", "RefundCreate", "additionalProperties")).toBe(false);
   });
   it("keeps issued license roles and statuses aligned with v0.3", () => {
     for (const path of ["/licenses", "/licenses/{license_id}"]) expect([...issued.licenseReaders]).toEqual(at("paths", path, "get", "x-roles"));

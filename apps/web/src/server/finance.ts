@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import type { Me } from "@/lib/types";
 import { hasRole } from "@/lib/review";
 import { commissionInput, commissionReaders, commissionScopes, commissionWriters, safeCommissionRule } from "@/lib/commission-policy";
+import { refundCreate, refundReaders, refundWriters, safeRefund } from "@/lib/refund-policy";
+import { uuid } from "@/lib/query";
 import { requireOk, type Api } from "./auth";
 import { WebError } from "./errors";
 
@@ -23,4 +25,19 @@ export async function commissionWrite(request: Request, api: Api, me: Me, body: 
   if (!hasRole(me, ...commissionWriters)) throw new WebError(403, "request_failed");
   const input = commissionInput(body); if (!input) throw new WebError(422, "request_failed");
   return json(safeCommissionRule(requireOk(await api.POST("/commission-rules", { params: { header }, body: input }))), 201);
+}
+
+/** استردادات الطلب: المالية ومدير النظام لكل طلب، ومدير مؤسسة المشتري لطلباتها (نطاق الخادم، غيرها 404). */
+export async function refundRead(request: Request, id: string, api: Api, me: Me) {
+  if (!uuid.test(id) || new URL(request.url).search) throw new WebError(404, "request_failed");
+  if (!hasRole(me, ...refundReaders)) throw new WebError(403, "request_failed");
+  return json({ items: requireOk(await api.GET("/orders/{order_id}/refunds", { params: { path: { order_id: id } } })).items.map(safeRefund) });
+}
+
+/** الاسترداد ببنود الطلب وسبب مرمّز؛ المبلغ يحسبه الخادم من الأسعار المجمّدة، والنجاح من الإشعار الموقّع وحده. */
+export async function refundWrite(request: Request, id: string, api: Api, me: Me, body: Record<string, unknown>, header: { "Idempotency-Key": string }) {
+  if (request.method !== "POST" || !uuid.test(id)) throw new WebError(405, "request_failed");
+  if (!hasRole(me, ...refundWriters)) throw new WebError(403, "request_failed");
+  const input = refundCreate(body); if (!input) throw new WebError(422, "request_failed");
+  return json(safeRefund(requireOk(await api.POST("/orders/{order_id}/refunds", { params: { path: { order_id: id }, header }, body: input }))), 201);
 }
