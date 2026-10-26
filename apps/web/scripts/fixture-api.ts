@@ -3,14 +3,16 @@ import { createServer } from "node:http";
 import { createHash, randomUUID } from "node:crypto";
 import { form, material, me, tokens } from "../tests/fixtures";
 import assets from "../tests/media-fixture.json";
-import type { Me, Material, Notification, TransitionRecord, PermissionHistoryEntry, ReporterIdentitySetting, ReporterIdentitySettingUpdate, Permission } from "../src/lib/types";
+import type { Form, Me, Material, Notification, TransitionRecord, PermissionHistoryEntry, ReporterIdentitySetting, ReporterIdentitySettingUpdate, Permission } from "../src/lib/types";
 const materials: Material[] = [], notifications: Notification[] = [], history = new Map<string, TransitionRecord[]>();
 const writes: { path: string; method: string; key: string; body: Record<string, unknown> }[] = [];
 const applied = new Map<string, { fingerprint: string; value: unknown; status: number }>();
+const formVersions = new Map<number, Form>();
 let dropNextWrite = false;
 let identitySetting: ReporterIdentitySetting, historyUnavailable = false, auditSequence = 21;
 const permissionAudit: { target: string | null; entry: PermissionHistoryEntry }[] = [];
 function reset() {
+  formVersions.clear(); formVersions.set(form.version, { ...structuredClone(form), published_at: "2026-10-20T12:00:00Z", published_by: me.user_id });
   materials.splice(0, materials.length, ...Array.from({ length: 200 }, (_, i) => ({ ...material(i + 1), row_version: 17, reserved_by: null, reserved_at: null, contributors: [{ user_id: me.user_id, role: "reporter" as const, share_percent: 100 }] })));
   materials[1].editorial_state = "accepted"; materials[2].technical_state = "failed";
   notifications.splice(0, notifications.length, ...Array.from({ length: 3 }, (_, i) => ({ id: `60000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`, type: "never-display-canary", title: "never-display-canary", material_id: materials[i].id, priority: "normal" as const, state: "sent" as const, created_at: "2026-10-20T12:00:00Z" })));
@@ -163,6 +165,14 @@ const server = createServer(async (req, res) => {
     if (cached) return cached.fingerprint === fingerprint ? send(cached.value, cached.status) : send({}, 409);
     const has = (...roles: string[]) => user.roles.some(role => roles.includes(role.name));
     const commit = (value: unknown, status = 204) => { applied.set(key, { fingerprint, value: structuredClone(value), status }); if (dropNextWrite) { dropNextWrite = false; return send({ message: "never-display-canary" }, 503); } return send(value, status); };
+    if (path === "/v1/forms" && req.method === "POST") {
+      if (!has("system_admin")) return send({}, 403);
+      const current = Math.max(0, ...formVersions.keys());
+      if (req.headers["if-match"] !== `"${current}"`) return send({ message: "never-display-canary" }, 412);
+      if (body.version !== current + 1) return send({}, 409);
+      const snapshot = { ...structuredClone(body), published_at: new Date().toISOString(), published_by: user.user_id } as Form;
+      formVersions.set(snapshot.version, snapshot); return commit(snapshot, 201);
+    }
     const match = /^\/v1\/materials\/([^/]+)\/(transitions|reservation|contributors)$/.exec(path);
     if (match) {
       const item = materials.find(m => m.id === match[1]); if (!item) return send({}, 404);
@@ -318,7 +328,17 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/v1/notifications") { const items = url.searchParams.get("unread_only") === "true" ? notifications.filter(n => !n.read_at) : notifications; return send({ items, next_cursor: null, unread_count: notifications.filter(n => !n.read_at).length }); }
   const trail = /^\/v1\/materials\/([^/]+)\/transitions$/.exec(url.pathname);
   if (trail) return send({ items: history.get(trail[1]) ?? [] });
-  if (url.pathname === "/v1/forms/current" || url.pathname === `/v1/forms/${form.version}`) return send(form);
+  if (url.pathname === "/v1/forms") {
+    if (!user.roles.some(role => ["system_admin", "editor_in_chief"].includes(role.name))) return send({}, 403);
+    const current = Math.max(0, ...formVersions.keys());
+    return send({ items: [...formVersions.values()].sort((a, b) => b.version - a.version).map(f => ({ version: f.version, field_count: f.fields.length, published_at: f.published_at, is_current: f.version === current })) });
+  }
+  if (url.pathname === "/v1/forms/current" || /^\/v1\/forms\/[1-9]\d*$/.test(url.pathname)) {
+    const version = url.pathname.endsWith("/current") ? Math.max(0, ...formVersions.keys()) : Number(url.pathname.split("/").pop());
+    const snapshot = formVersions.get(version); if (!snapshot) return send({}, 404);
+    const type = url.searchParams.get("material_type");
+    return send({ ...snapshot, fields: snapshot.fields.filter(f => !type || !f.material_types?.length || f.material_types.includes(type as never)) });
+  }
   const derivative = /^\/v1\/materials\/([^/]+)\/files\/([^/]+)\/download-url$/.exec(url.pathname);
   if (derivative) {
     const file = materials.find(m => m.id === derivative[1])?.files.find(f => f.id === derivative[2] && f.state === "verified");
