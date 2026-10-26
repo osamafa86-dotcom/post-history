@@ -13,6 +13,7 @@ import { hasRole, materialTag } from "@/lib/review";
 import { organizationRead } from "./organizations";
 import { licenseRead } from "./licenses";
 import { commissionRead, refundRead } from "./finance";
+import { earningsPath, earningsRead } from "./earnings";
 import { orderRead } from "./orders";
 import { safeTemplate, templateRoles } from "@/lib/license-policy";
 import { listingReaders, safeListing } from "@/lib/listing-policy";
@@ -101,6 +102,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         if (request.nextUrl.search) throw new WebError(400, "request_failed");
         return json(safeIdentitySetting(requireOk(await api.GET("/admin/settings/reporter-identity"))));
       }
+      if (earningsPath(path)) return earningsRead(request, path, api, me);
       const permissionHistory = /^users\/([^/]+)\/permissions\/history$/.exec(path);
       if (permissionHistory && uuid.test(permissionHistory[1])) {
         if (!hasRole(me, "system_admin")) throw new WebError(403, "request_failed");

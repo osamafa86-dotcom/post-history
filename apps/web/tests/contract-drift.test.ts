@@ -14,6 +14,7 @@ import * as license from "../src/lib/license-policy";
 import * as listing from "../src/lib/listing-policy";
 import * as commission from "../src/lib/commission-policy";
 import * as refunds from "../src/lib/refund-policy";
+import * as earnings from "../src/lib/earnings-policy";
 import { formReaders, formWriters } from "../src/lib/form-admin";
 
 const { load } = createRequire(import.meta.url)("js-yaml") as { load: (text: string) => unknown };
@@ -101,6 +102,17 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
     expect([...refunds.refundReasons]).toEqual(at("components", "schemas", "RefundReason", "enum")); expect([...refunds.refundStatuses]).toEqual(at("components", "schemas", "Refund", "properties", "status", "enum"));
     expect(refunds.refundLimits.items).toBe(at("components", "schemas", "RefundCreate", "properties", "order_item_ids", "maxItems"));
     expect(at("components", "schemas", "RefundCreate", "additionalProperties")).toBe(false);
+  });
+  it("keeps earnings and payout roles, enums and limits aligned with ADR 0033", () => {
+    const roles = (path: string, method: string) => at("paths", path, method, "x-roles");
+    for (const [path, method] of [["/me/earnings", "get"], ["/me/earnings/entries", "get"], ["/me/payout-requests", "get"], ["/me/payout-requests", "post"], ["/payout-requests/{payout_request_id}/cancel", "post"]]) expect([...earnings.earnerRoles]).toEqual(roles(path, method));
+    for (const [path, method] of [["/users/{id}/earnings", "get"], ["/payout-requests", "get"], ["/payout-requests/{payout_request_id}/approve", "post"], ["/payout-requests/{payout_request_id}/reject", "post"], ["/payout-policies", "get"]]) expect([...earnings.payoutStaff]).toEqual(roles(path, method));
+    expect([...earnings.policyWriters]).toEqual(roles("/payout-policies", "post"));
+    expect(roles("/payout-requests/{payout_request_id}", "get")).toEqual([...earnings.payoutStaff, ...earnings.earnerRoles]);
+    const enumOf = (...p: string[]) => at("components", "schemas", ...p, "enum");
+    expect([...earnings.payableStates]).toEqual(enumOf("PayableState")); expect([...earnings.payoutStates]).toEqual(enumOf("PayoutState")); expect([...earnings.payoutReasons]).toEqual(enumOf("PayoutReason"));
+    expect([...earnings.payoutChannels]).toEqual(enumOf("PayoutChannel")); expect([...earnings.entryKinds]).toEqual(at("components", "schemas", "EarningsEntry", "properties", "kind", "enum"));
+    expect(earnings.earningsLimits.reserveMax).toBe(at("components", "schemas", "PayoutPolicyFields", "properties", "reserve_bps", "maximum"));
   });
   it("keeps issued license roles and statuses aligned with v0.3", () => {
     for (const path of ["/licenses", "/licenses/{license_id}"]) expect([...issued.licenseReaders]).toEqual(at("paths", path, "get", "x-roles"));

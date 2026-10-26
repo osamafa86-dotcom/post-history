@@ -238,3 +238,4 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .form-option { border: 1px solid var(--line, #ccd8d2); padding: .75rem; min-width: 0; }
 .form-admin-preview .dynamic-form { margin-block: 1rem; max-width: 50rem; }
 .form-field-editor .actions { flex-wrap: wrap; }
+.balance-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-bottom: 16px; }
