@@ -84,7 +84,8 @@ export class SandboxCheckoutController {
     if (!amount) throw ApiError.notFound();
     const shown = `${(Number(amount.amountMinor) / 100).toFixed(2)} ${amount.currency}`;
     const buttons = ['succeeded', 'failed', 'delayed', 'duplicate', 'out_of_order']
-      .map((o) => `<form method="post" action="${encodeURIComponent(ref)}/${o}"><button>${o}</button></form>`)
+      // من المتصفح ?return=1: بعد النتيجة يعود المشتري إلى صفحة الويب المعدّة (303)
+      .map((o) => `<form method="post" action="${encodeURIComponent(ref)}/${o}?return=1"><button>${o}</button></form>`)
       .join('');
     res.setHeader('Cache-Control', 'no-store');
     res.type('html').send(`<!doctype html><meta charset="utf-8"><title>Sandbox checkout</title><p>${shown}</p>${buttons}`);
@@ -93,7 +94,12 @@ export class SandboxCheckoutController {
   @Public()
   @Post(':ref/:outcome')
   @HttpCode(202)
-  async complete(@Param('ref') ref: string, @Param('outcome') outcome: string): Promise<void> {
+  async complete(
+    @Param('ref') ref: string,
+    @Param('outcome') outcome: string,
+    @Query('return') back: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
     const sandbox = this.sandbox();
     if (!sandbox.amountOf(ref)) throw ApiError.notFound();
     const send = (n: { body: Buffer; headers: Record<string, string> }) => this.orders.webhook(sandbox.name, n.body, n.headers);
@@ -101,23 +107,30 @@ export class SandboxCheckoutController {
       case 'succeeded':
       case 'failed':
         await send(sandbox.settle(ref, outcome));
-        return;
+        break;
       case 'duplicate': {
         const n = sandbox.settle(ref, 'succeeded');
         for (let i = 0; i < 10; i++) await send(n);
-        return;
+        break;
       }
       case 'out_of_order':
         await send(sandbox.settle(ref, 'succeeded'));
         await send(sandbox.settle(ref, 'failed'));
-        return;
+        break;
       case 'delayed': {
         const n = sandbox.settle(ref, 'succeeded');
         setTimeout(() => void send(n).catch(() => undefined), 2000).unref();
-        return;
+        break;
       }
       default:
         throw ApiError.notFound();
+    }
+    // العودة إلى صفحة الويب من إعداد الخادم وحده (SANDBOX_RETURN_URL)؛ النتيجة تلميح للعرض، والدفع يُقرأ من الطلب
+    const target = back === '1' ? sandbox.returnUrlOf(ref) : undefined;
+    if (target) {
+      const url = new URL(target);
+      url.searchParams.set('outcome', outcome === 'failed' ? 'failed' : 'succeeded');
+      res.status(303).location(url.toString());
     }
   }
 }

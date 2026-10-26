@@ -122,3 +122,20 @@ describe('sandbox checkout page in the trial (NODE_ENV=production behind the two
     await expect(page(provider, 'sbx_unknown')).rejects.toThrow();
   });
 });
+
+describe('sandbox return page and license download settings', () => {
+  const base = { DATABASE_URL: 'postgres://x', JWT_SECRET: 'j'.repeat(40), FIELD_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'), TUSD_HOOK_SECRET: 't'.repeat(40), S3_BUCKET_UPLOADS: 'uploads', NODE_ENV: 'test' };
+
+  it('the return page is https, or http on localhost only; empty means no return', () => {
+    expect(loadConfig({ ...base, SANDBOX_RETURN_URL: 'https://web.example/ar/orders/{order_id}' }).SANDBOX_RETURN_URL).toBe('https://web.example/ar/orders/{order_id}');
+    expect(loadConfig({ ...base, SANDBOX_RETURN_URL: 'http://localhost:3001/orders/{order_id}' }).SANDBOX_RETURN_URL).toBeDefined();
+    expect(() => loadConfig({ ...base, SANDBOX_RETURN_URL: 'http://web.example/orders' })).toThrow(/SANDBOX_RETURN_URL/);
+    expect(() => loadConfig({ ...base, SANDBOX_RETURN_URL: 'javascript:alert(1)' })).toThrow(/SANDBOX_RETURN_URL/);
+    expect(loadConfig({ ...base, SANDBOX_RETURN_URL: '' }).SANDBOX_RETURN_URL).toBeUndefined();
+  });
+
+  it('the download link lives minutes by default and never beyond 24 hours', () => {
+    expect(loadConfig(base)).toMatchObject({ LICENSE_DOWNLOAD_URL_SECONDS: 600, LICENSE_DOWNLOAD_LIMIT: 5 });
+    expect(() => loadConfig({ ...base, LICENSE_DOWNLOAD_URL_SECONDS: '86401' })).toThrow(/LICENSE_DOWNLOAD_URL_SECONDS/);
+  });
+});
