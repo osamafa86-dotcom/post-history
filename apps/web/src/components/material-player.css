@@ -7,3 +7,5 @@
 .material-player .shaka-text-container:lang(ar) span{direction:rtl}
 .material-player .shaka-controls-button-panel button{min-width:32px}
 .material-player .shaka-range-element{border:0;border-radius:0}
+/* لا إعلانات في المعاينات: زر معلومات الإعلان في واجهة Shaka يُبنى فارغًا بلا اسم (مخالفة Axe button-name الحرجة). */
+.material-player .shaka-ad-info,.material-player .shaka-ad-markers{display:none}

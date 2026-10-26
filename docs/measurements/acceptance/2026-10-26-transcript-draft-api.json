@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "transcript-draft",
+  "started_at": "2026-10-26T14:16:57.930Z",
+  "ended_at": "2026-10-26T14:23:34.688Z",
+  "result": "partial",
+  "metrics": {
+    "clips": 4,
+    "clip_s": 30,
+    "ratio_p95": 2.558,
+    "ratio_limit": 1,
+    "ratio_judged": false,
+    "speech_pinned": true,
+    "sensitive_clip_done": true,
+    "contents_compared": 5,
+    "r11_negative_checked": 5,
+    "words_recognised": 290,
+    "egress_checked": false,
+    "egress_refused": false
+  },
+  "device": {
+    "platform": "server",
+    "model": "local single host, 4 shared vCPU, no GPU: api (dev mode) + tusd 2.8 + minio + redis + postgres 16 + media worker + ai worker (large-v3-turbo, int8, CPU); no container isolation"
+  },
+  "upload_path": "n/a",
+  "notes": "4 مقطع اصطناعي بكلام عربي (كلام حقيقي عام: FLEURS مثبّت ببصمته) ومقطع لمادة موسومة بالحساسية؛ لا دقة كلمات هنا (ذلك tools/asr-bench) ولا تسجيلات ميدانية؛ لم يكتمل ما يلزم لـ pass (المحتوى المقارن أو فحص R11 السلبي أو التحقق من غياب الخروج أو عدد المقاطع أو الكلام المثبّت أو مضيف التجربة الذي يُحكم عليه الحد)"
+}

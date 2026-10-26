@@ -23,6 +23,8 @@ for (const locale of ["ar", "en"] as const) test(`${locale}: local controls, key
   });
   await openPlayer(page, locale);
   await expect(page.locator(".shaka-seek-bar")).toHaveCSS("border-top-width", "0px");
+  // زر معلومات الإعلان في Shaka يُبنى فارغًا بلا اسم (Axe button-name الحرجة)؛ لا إعلانات في المعاينات فيبقى مخفيًا.
+  await expect(page.locator(".shaka-ad-info")).toBeHidden();
   const play = page.locator(".shaka-play-button");
   await expect(play).toHaveAttribute("aria-label", locale === "ar" ? "التشغيل" : "Play");
   await play.focus(); await play.press("Space");
