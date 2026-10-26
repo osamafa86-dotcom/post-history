@@ -8,11 +8,15 @@ import { DB, type Database } from '../database/database.module';
 import { buyerInviteConflicts } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import { Roles } from '../identity/principal';
+import type { RateLimiter } from '../identity/rate-limiter';
+import { RateLimitsService } from '../identity/rate-limits.service';
 import { iso } from '../materials/material-store';
 import { validTimestamp } from '../uploads/uploads.service';
 import { type ConflictRow, InviteConflictError, resolveInviteConflict } from './invite-conflicts';
 
 type Conflict = components['schemas']['BuyerInviteConflict'];
+// الرمز مقبول في خطوته والخطوتين المجاورتين (verifyTotp)، فأطول عمر له 90 ث؛ هامش فوقها
+const TOTP_REUSE_MS = 120_000;
 type State = components['schemas']['BuyerInviteConflictState'];
 type Resolve = components['schemas']['BuyerInviteConflictResolve'];
 
@@ -24,7 +28,13 @@ export class InviteConflictsService {
   constructor(
     @Inject(DB) private readonly db: Database,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
-  ) {}
+    private readonly limits: RateLimitsService,
+  ) {
+    this.totpFailures = limits.create('conflict-resolve-totp-user', config.LOGIN_RATE_LIMIT_MAX);
+  }
+
+  // المحاولات الفاشلة لرمز TOTP لكل مدير كحد الدخول (429)، والرمز المقبول لا يُعاد داخل نافذة قبوله (±30 ث حول خطوته)
+  private readonly totpFailures: RateLimiter;
 
   async list(q: { state?: State; cursor?: string; limit?: number }): Promise<components['schemas']['BuyerInviteConflictPage']> {
     const limit = q.limit ?? 50;
@@ -50,11 +60,17 @@ export class InviteConflictsService {
 
   async resolve(adminId: string, conflictId: string, input: Resolve): Promise<Conflict> {
     if (!UUID.test(conflictId)) throw ApiError.notFound();
+    const wait = await this.totpFailures.retryAfter(adminId);
+    if (wait > 0) throw new ApiError(429, 'rate_limited', 'Too many attempts.', undefined, { 'Retry-After': String(wait) });
+    const claimTotp = (code: string) => this.limits.firstUse('conflict-resolve-totp', `${adminId}:${code}`, TOTP_REUSE_MS);
     try {
-      return toDto(await resolveInviteConflict(this.db, { keyring: fieldKeyring(this.config) }, { conflictId, adminId, totp: input.totp_code, to: input.state }));
+      return toDto(await resolveInviteConflict(this.db, { keyring: fieldKeyring(this.config), claimTotp }, { conflictId, adminId, totp: input.totp_code, to: input.state }));
     } catch (err) {
       if (!(err instanceof InviteConflictError)) throw err;
-      if (err.code === 'totp_failed') throw new ApiError(401, 'totp_required', 'A valid TOTP code is required.');
+      if (err.code === 'totp_failed') {
+        await this.totpFailures.record(adminId);
+        throw new ApiError(401, 'totp_required', 'A valid TOTP code is required.');
+      }
       if (err.code === 'not_found') throw ApiError.notFound();
       if (err.code === 'already_resolved') throw new ApiError(409, 'invalid_transition', 'The conflict cannot move to this state.');
       throw new ApiError(403, 'forbidden_role', 'Only an active system administrator resolves invite conflicts.');

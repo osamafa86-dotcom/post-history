@@ -50,7 +50,8 @@ export type ConflictRow = typeof buyerInviteConflicts.$inferSelect;
  */
 export async function resolveInviteConflict(
   db: Database,
-  deps: { keyring: FieldKeyring },
+  // claimTotp: يحجز الرمز لمستعمله قبل الكتابة؛ false إن استُعمل في نافذته فيُرفض كرمز خاطئ
+  deps: { keyring: FieldKeyring; claimTotp?: (code: string) => Promise<boolean> },
   input: { conflictId: string; adminId: string; totp: string; to: 'suspended' | 'dismissed' },
 ): Promise<ConflictRow> {
   return db.transaction(async (tx) => {
@@ -69,6 +70,7 @@ export async function resolveInviteConflict(
     if (!c) throw new InviteConflictError('not_found', 'invite conflict not found');
     const allowed = c.state === 'pending' || (c.state === 'suspended' && input.to === 'dismissed');
     if (!allowed) throw new InviteConflictError('already_resolved', `invite conflict cannot go from ${c.state} to ${input.to}`);
+    if (deps.claimTotp && !(await deps.claimTotp(input.totp))) throw new InviteConflictError('totp_failed', 'the two-factor code was already used');
     const now = new Date().toISOString();
     const [after] = await tx
       .update(buyerInviteConflicts)

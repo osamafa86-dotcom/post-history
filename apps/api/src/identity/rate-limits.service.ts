@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type Redis from 'ioredis';
+import { createHmac } from 'node:crypto';
 import type { Logger } from 'pino';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { LOGGER } from '../common/logger';
@@ -36,6 +37,28 @@ export class RateLimitsService {
           this.health,
         )
       : new MemoryRateLimiter(max, windowMs);
+  }
+
+  private readonly used = new Map<string, number>();
+
+  /**
+   * أول استعمال لمفتاح خلال ttlMs: true مرة واحدة ثم false حتى تنقضي المدة (رمز TOTP لا يُعاد في نافذته). المفتاح
+   * HMAC كمفاتيح الحد، وفي Redis بـ SET NX مشتركًا بين النسخ، وفي ذاكرة النسخة إن تعطل Redis.
+   */
+  async firstUse(name: string, raw: string, ttlMs: number): Promise<boolean> {
+    const key = `once:${name}:${createHmac('sha256', this.keyMaterial).update(raw).digest('hex')}`;
+    if (this.redis) {
+      try {
+        return (await this.redis.set(key, '1', 'PX', ttlMs, 'NX')) === 'OK';
+      } catch (err) {
+        this.health.degraded(err);
+      }
+    }
+    const now = Date.now();
+    for (const [k, until] of this.used) if (until <= now) this.used.delete(k);
+    if ((this.used.get(key) ?? 0) > now) return false;
+    this.used.set(key, now + ttlMs);
+    return true;
   }
 
   /** حال حد المعدل لـ /health (عقد v0.1): redis، أو degraded حين يعمل في ذاكرة العملية (Redis معطل أو غير مضبوط). */
