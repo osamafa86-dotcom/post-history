@@ -266,6 +266,13 @@ const schema = z.object({
   FCM_PROJECT_ID: z.string().optional(),
   FCM_SERVICE_ACCOUNT: z.string().optional(),
 
+  // مزوّد الدفع (ADR 0032): none = لا شراء؛ sandbox = المزوّد التجريبي الداخلي، خارج الإنتاج وحده. لا مال حقيقي.
+  PAYMENT_PROVIDER: z.enum(['none', 'sandbox']).default('none'),
+  // سر توقيع إشعارات المزوّد التجريبي (HMAC-SHA256)، من البيئة وحدها
+  SANDBOX_WEBHOOK_SECRET: z.string().min(32).max(128).optional(),
+  // الأصل العام الذي تُبنى عليه روابط صفحة الدفع التجريبية
+  SANDBOX_CHECKOUT_BASE_URL: z.string().url().default('http://localhost:3000'),
+
   OUTBOX_DISPATCHER_ENABLED: z
     .enum(['true', 'false'])
     .default('true')
@@ -308,7 +315,11 @@ const validated = schema.superRefine((c, ctx) => {
   if (c.INGEST_REQUIRED && (c.ATTESTATION_MODE === 'off' || !c.INGEST_TUS_ENDPOINT)) {
     ctx.addIssue({ code: 'custom', path: ['INGEST_REQUIRED'], message: 'needs ATTESTATION_MODE and INGEST_TUS_ENDPOINT' });
   }
+  if (c.PAYMENT_PROVIDER === 'sandbox' && !c.SANDBOX_WEBHOOK_SECRET) {
+    ctx.addIssue({ code: 'custom', path: ['SANDBOX_WEBHOOK_SECRET'], message: 'required with PAYMENT_PROVIDER=sandbox' });
+  }
   if (c.NODE_ENV !== 'production') return;
+  if (c.PAYMENT_PROVIDER === 'sandbox') ctx.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'sandbox is not allowed in production' });
   if (c.ATTESTATION_MODE === 'test') ctx.addIssue({ code: 'custom', path: ['ATTESTATION_MODE'], message: 'test is not allowed in production' });
   if (c.APP_ATTEST_ALLOW_DEVELOPMENT) {
     ctx.addIssue({ code: 'custom', path: ['APP_ATTEST_ALLOW_DEVELOPMENT'], message: 'not allowed in production' });
