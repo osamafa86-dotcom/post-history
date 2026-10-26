@@ -1453,7 +1453,7 @@ export interface paths {
         put?: never;
         /**
          * إصدار جديد لقاعدة عمولة
-         * @description لا تُعدَّل قاعدة ولا تُحذف: التغيير صف جديد بتاريخ سريان، والبيعات السابقة تحتفظ بما جُمّد فيها. النطاق نفسه بالتاريخ نفسه `409 conflict`. `scope_id` فارغ للافتراضية، ومعرّف للمادة والمراسل، وقيمة من `MaterialType` لنوع المادة (`422`). يُسجَّل في التدقيق.
+         * @description لا تُعدَّل قاعدة ولا تُحذف: التغيير صف جديد بتاريخ سريان، والبيعات السابقة تحتفظ بما جُمّد فيها. النطاق نفسه بالنوع والتاريخ نفسيهما `409 commission_rule_exists`. `scope_id` فارغ للافتراضية، ومعرّف للمادة والمراسل، وقيمة من `MaterialType` لنوع المادة (`422`). يُسجَّل في التدقيق.
          */
         post: operations["createCommissionRule"];
         delete?: never;
@@ -1655,7 +1655,7 @@ export interface components {
              * @description رمز ثابت يتفرّع عليه العميل؛ الرسالة للبشر فقط. قائمة مفتوحة؛ الرمز المجهول = خطأ عام
              * @enum {string}
              */
-            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "seats_exhausted" | "last_buyer_admin" | "listing_unavailable" | "exclusive_unavailable" | "mixed_currency" | "price_changed" | "order_state_conflict" | "license_not_active" | "delivery_not_ready" | "download_limit_reached" | "webhook_signature_invalid" | "already_refunded" | "internal_error";
+            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "seats_exhausted" | "last_buyer_admin" | "listing_unavailable" | "exclusive_unavailable" | "mixed_currency" | "price_changed" | "order_state_conflict" | "license_not_active" | "delivery_not_ready" | "download_limit_reached" | "webhook_signature_invalid" | "already_refunded" | "commission_rule_exists" | "internal_error";
             message: string;
             /** @description لتتبع الطلب في السجلات */
             request_id: string;
