@@ -25,6 +25,9 @@ struct HomeView: View {
                 Section {
                     Toggle("settings.deleteLocalAfterReceipt", isOn: $settings.deleteLocalAfterReceipt)
                 } header: { Text("settings.localCopies") } footer: { Text("settings.deleteLocalAfterReceipt.help") }
+                Section {
+                    Toggle("settings.uploadOverWifiOnly", isOn: $settings.uploadOverWifiOnly)
+                } footer: { Text("settings.uploadOverWifiOnly.help") }
                 Section("settings.session") {
                     Button("settings.logout") { Task { await app.logout(allSessions: false) } }
                     Button("settings.logoutAll", role: .destructive) { confirmLogoutAll = true }

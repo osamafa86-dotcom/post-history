@@ -37,7 +37,32 @@ final class IdleWatchdogTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(stub.bodyBytesSeen, 1 << 20)
     }
 
-    private func makePatch(port: UInt16, chunkBytes: Int, idleTimeout: TimeInterval) throws
+    /// تغيير «Wi‑Fi فقط»: المهمة الجارية تُلغى فيستأنف المحرّك من HEAD بالسياسة الجديدة.
+    func testRestartTransfersCancelsPendingPatches() async throws {
+        let stub = try PacedTusStub(mode: .stallAfter(bytes: 1 << 20))
+        defer { stub.stop() }
+        let (transport, collector, request) = try makePatch(port: stub.port, chunkBytes: 8 << 20, idleTimeout: nil)
+        try await transport.schedulePatch(request)
+        while stub.bodyBytesSeen < 1 << 20 { try await Task.sleep(nanoseconds: 20_000_000) }
+        await transport.restartTransfers()
+        let outcomes = await collector.wait(count: 1, timeout: 10)
+        XCTAssertEqual(outcomes.first?.1, .failed(.cancelled))
+        XCTAssertTrue(TusError.cancelled.isRetryable, "the engine resumes from the server offset")
+    }
+
+    #if canImport(Darwin)
+    func testUnmeteredOnlyForbidsExpensiveAndConstrainedNetworks() {
+        var r = URLRequest(url: URL(string: "https://ingest.example.invalid/files/x")!)
+        URLSessionTusTransport.applyNetworkPolicy(&r, unmeteredOnly: true)
+        XCTAssertFalse(r.allowsExpensiveNetworkAccess)
+        XCTAssertFalse(r.allowsConstrainedNetworkAccess)
+        URLSessionTusTransport.applyNetworkPolicy(&r, unmeteredOnly: false)
+        XCTAssertTrue(r.allowsExpensiveNetworkAccess)
+        XCTAssertTrue(r.allowsConstrainedNetworkAccess)
+    }
+    #endif
+
+    private func makePatch(port: UInt16, chunkBytes: Int, idleTimeout: TimeInterval?) throws
         -> (URLSessionTusTransport, TusdLiveTests.Collector, TusPatchRequest) {
         let dir = Fixtures.tempDir("watchdog")
         let chunkFile = dir.appendingPathComponent("chunk.bin")
