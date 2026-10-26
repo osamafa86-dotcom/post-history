@@ -75,8 +75,9 @@ try {
   setLogSource(() => stack.logs());
     // pii-leak reads the server logs of everything before it; dynamic-fields last: it publishes the shared form, which becomes the current form (with required fields) for every later material
   const core = process.env.CORE_ACCEPTANCE === "1" ? ["reporter-identity-access", "reservation-conflict", "optimistic-concurrency", "admin-quorum", "notification-delivery"] : [];
-  const names = ["tenant-isolation", "duplicate-payment", "upload-contract", "outbox-transaction", "material-state-independence", "invalid-file", "receipt-notification", "concurrent-load", "performance", ...core, "pii-leak", "dynamic-fields"];
+  const names = ["tenant-isolation", "duplicate-payment", "invalid-file", "receipt-notification", "concurrent-load", "performance", ...core, "pii-leak", "dynamic-fields"];
   const summary = [];
+  names.splice(2, 0, "upload-contract", "outbox-transaction", "material-state-independence");
   const only = typeof args.only === "string" ? args.only.split(",") : null;
   for (const name of names.filter((n) => !only || only.includes(n))) {
     const mod = await import(`../scripts/${name}.mjs`);
