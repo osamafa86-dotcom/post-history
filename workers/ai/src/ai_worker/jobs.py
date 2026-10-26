@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Protocol
 
 from .api import ApiConflict, ApiRejected
+from . import quality as quality_mod
 from . import shot_list as shot_list_mod
 from . import shots as shots_mod
 from .captions import Segment, build_cues, to_json, to_webvtt
@@ -110,6 +111,8 @@ class Jobs:
     # غير مانع: فشله لا يُفشل التفريغ ولا يعيد الحدث.
     shots_enabled: bool = False
     detect: Callable[..., tuple[list, dict]] = shots_mod.detect_shots
+    # تقييم الجودة (الاهتزاز والصمت والتكرار) يُضاف إلى shots.json، وفشله لا يمنع اللقطات
+    signals: Callable[[Path], quality_mod.Signals] = quality_mod.read_signals
     # آخر مهمة أُنجزت: أزمنة للقياس (bench/transcribe_bench.py)، لا تُسجَّل
     last_timing: dict = field(default_factory=dict)
 
@@ -167,9 +170,10 @@ class Jobs:
     def _shots(self, material_id: str, file_id: str, src: Path, segments: list[Segment], start_pts_us: int) -> str:
         try:
             found, stats = self.detect(src, origin_s=start_pts_us / 1e6)
+            quality = self._quality(file_id, src, found, start_pts_us)
             path = src.with_name("shots.json")
             path.write_text(shots_mod.to_json(found, segments, source={"file_id": file_id, "from": "proxy-480p.mp4"},
-                                              stats=stats), encoding="utf-8")
+                                              stats=stats, quality=quality), encoding="utf-8")
             self.storage.put_file(self.bucket, shots_key(material_id, file_id), path, _sha256(path), JSON_MIME)
             # قائمة اللقطات (ADR 0026): تُكتب ولا تُسجَّل حتى يقبل العقد نوع shot_list
             lpath = src.with_name("shot_list.json")
@@ -180,6 +184,14 @@ class Jobs:
             log.warning("shot detection skipped file=%s error=%s", file_id, type(err).__name__)
             return "+shots-failed"
         return "+shots"
+
+    def _quality(self, file_id: str, src: Path, found: list, start_pts_us: int):
+        try:
+            sig = self.signals(src)
+            return quality_mod.assess(found, sig, origin_s=start_pts_us / 1e6) if sig.times else None
+        except Exception as err:  # noqa: BLE001 (خطوة غير مانعة)
+            log.warning("quality assessment skipped file=%s error=%s", file_id, type(err).__name__)
+            return None
 
     def _exists(self, key: str) -> bool:
         try:
