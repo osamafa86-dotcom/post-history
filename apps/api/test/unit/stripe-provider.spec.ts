@@ -1,10 +1,13 @@
+import { randomBytes } from 'node:crypto';
 import { loadConfig } from '../../src/config/config';
 import { money } from '../../src/commerce/money';
 import { WebhookSignatureError } from '../../src/commerce/payment-provider';
 import { IgnoredWebhookEvent, LiveModeEvent, StripeTestProvider, stripeSignatureHeader, translateStripeEvent, verifyStripeSignature } from '../../src/commerce/stripe-provider';
 
 const WHSEC = 'whsec_testsecret0123456789';
-const KEY = 'sk_test_0123456789abcdef';
+// مفاتيح وهمية تُبنى عند التشغيل، فلا نص بشكل مفتاح Stripe في المستودع
+const fakeKey = (mode: 'test' | 'live') => ['sk', mode, randomBytes(12).toString('hex')].join('_');
+const KEY = fakeKey('test');
 const now = new Date('2026-10-26T12:00:00Z');
 const evt = (type: string, object: Record<string, unknown>, id = 'evt_test_1') => Buffer.from(JSON.stringify({ id, type, livemode: false, created: Math.floor(now.getTime() / 1000), data: { object } }));
 
@@ -88,11 +91,11 @@ describe('Stripe test-mode adapter', () => {
     const base = { DATABASE_URL: 'postgres://x', JWT_SECRET: 'j'.repeat(40), FIELD_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'), TUSD_HOOK_SECRET: 't'.repeat(40), S3_BUCKET_UPLOADS: 'uploads', NODE_ENV: 'test' };
     const stripe = { PAYMENT_PROVIDER: 'stripe', STRIPE_TEST_SECRET_KEY: KEY, STRIPE_WEBHOOK_SECRET: WHSEC };
     expect(loadConfig({ ...base, ...stripe }).PAYMENT_PROVIDER).toBe('stripe');
-    expect(() => loadConfig({ ...base, ...stripe, STRIPE_TEST_SECRET_KEY: 'sk_live_0123456789abcdef' })).toThrow(/STRIPE_TEST_SECRET_KEY/);
+    expect(() => loadConfig({ ...base, ...stripe, STRIPE_TEST_SECRET_KEY: fakeKey('live') })).toThrow(/STRIPE_TEST_SECRET_KEY/);
     expect(() => loadConfig({ ...base, ...stripe, STRIPE_TEST_SECRET_KEY: undefined })).toThrow(/STRIPE_TEST_SECRET_KEY/);
     expect(() => loadConfig({ ...base, ...stripe, STRIPE_WEBHOOK_SECRET: undefined })).toThrow(/STRIPE_WEBHOOK_SECRET/);
     expect(() => loadConfig({ ...base, ...stripe, DEPLOY_STAGE: 'production' })).toThrow(/PAYMENT_PROVIDER/);
     // رسالة الإعداد بأسماء المتغيرات وحدها، لا القيم
-    expect(() => loadConfig({ ...base, ...stripe, STRIPE_TEST_SECRET_KEY: 'sk_live_0123456789abcdef' })).not.toThrow(/sk_live/);
+    expect(() => loadConfig({ ...base, ...stripe, STRIPE_TEST_SECRET_KEY: fakeKey('live') })).not.toThrow(/sk_/);
   });
 });

@@ -28,7 +28,7 @@ describe('Stripe test-mode purchase (/payments/webhooks/stripe)', () => {
   let rights: Actor;
   let reporter: string;
   beforeAll(async () => {
-    h = await createHarness({ overrides: [[PAYMENT_PROVIDER, new StripeTestProvider('sk_test_0123456789abcdef', WHSEC, 'https://stripe.test', fakeStripe)]] });
+    h = await createHarness({ overrides: [[PAYMENT_PROVIDER, new StripeTestProvider(['sk', 'test', randomBytes(12).toString('hex')].join('_'), WHSEC, 'https://stripe.test', fakeStripe)]] });
     rights = await loginAs(h, [{ role: 'rights_officer' }]);
     reporter = (await seedUser(h)).id;
   });
