@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "reporter-identity-access",
+  "started_at": "2026-10-26T12:37:35.244Z",
+  "ended_at": "2026-10-26T12:37:35.615Z",
+  "result": "pass",
+  "metrics": {
+    "events_on_change": 1
+  },
+  "device": {
+    "platform": "server"
+  },
+  "upload_path": "n/a",
+  "notes": "الوضعان والتبديل الحي على نسخة خادم واحدة؛ لم يُقَس التبديل عبر عمليات خادم متعددة (كاش ≤ 5 ث)"
+}

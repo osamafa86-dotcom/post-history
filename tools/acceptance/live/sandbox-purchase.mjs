@@ -235,7 +235,8 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       saleLines = toLines(await q(`SELECT a.kind, a.owner_id::text AS owner_id, a.payable_state AS state, p.currency, p.amount_minor::text AS amount FROM postings p JOIN ledger_accounts a ON a.id = p.account_id WHERE p.entry_id = $1`, [entries[0].id]));
       const problems = judgeSale(saleLines, { total: PRICE, currency: "USD", bp, reporterId });
       check(`the sale entry balances and splits ${bp / 100}% to the platform by largest remainder`, problems.length === 0, problems.join("; "));
-      check("the commission rule is frozen in the entry", entries[0].details?.platform_basis_points === bp, JSON.stringify(entries[0].details));
+      const frozen = [entries[0].details?.platform_basis_points].flat();
+      check("the commission rule is frozen in the entry", frozen.length > 0 && frozen.every((v) => v === bp), JSON.stringify(entries[0].details));
       const debit = saleLines.filter((l) => l.amount > 0n).reduce((a, l) => a + l.amount, 0n), credit = -saleLines.filter((l) => l.amount < 0n).reduce((a, l) => a + l.amount, 0n);
       metrics.ledger_debit_minor = Number(debit); metrics.ledger_credit_minor = Number(credit);
     }
@@ -286,13 +287,18 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
         defer("the link opening and then stopping after its expiry", "the signature expiry is checked above; fetching it needs object storage and a real package, not available here");
       }
     }
+    // مزوّد التجربة يحتفظ بحالة الدفع في ذاكرته: لا استرداد إلا لدفع أتمّته صفحته (إشعارنا الموقّع وحده لا يغيّر حالته)
+    const settled = await fetch(`${root}/sandbox/checkout/${providerRef}/succeeded`, { method: "POST" });
+    check("the hosted page settles the payment in the provider (a late duplicate for a paid order)", settled.status === 202, `status ${settled.status}`);
     const refund = await http.call(tokens.finance, "POST", `/orders/${orderId}/refunds`, { body: { order_item_ids: [itemId], reason_code: "buyer_request" } });
     if (refund.status === 404) defer("refund", "POST /orders/{id}/refunds is not served yet");
     else {
       check("a refund is requested pending, for the item's frozen price", refund.status === 201 && refund.body?.status === "pending" && refund.body?.amount?.amount_minor === Number(PRICE), `status ${refund.status} ${refund.text?.slice?.(0, 120)}`);
-      const done = event("refund.succeeded", providerRef, PRICE);
+      const refundRef = (await one(`SELECT provider_refund_ref FROM refunds WHERE id = $1`, [refund.body?.id]))?.provider_refund_ref;
+      check("the provider gave the refund its own reference", Boolean(refundRef));
+      const done = event("refund.succeeded", refundRef ?? providerRef, PRICE);
       check("the signed refund notification is accepted", (await send(done)).status === 200);
-      const rl = await q(`SELECT j.id FROM journal_entries j WHERE j.kind = 'refund' AND j.reference_id = $1`, [orderId]);
+      const rl = await q(`SELECT j.id FROM journal_entries j WHERE j.kind = 'refund' AND j.reference_type = 'refund' AND j.reference_id = $1`, [refund.body?.id]);
       check("one refund entry", rl.length === 1, `${rl.length}`);
       if (rl.length === 1) {
         const lines = toLines(await q(`SELECT a.kind, a.owner_id::text AS owner_id, a.payable_state AS state, p.currency, p.amount_minor::text AS amount FROM postings p JOIN ledger_accounts a ON a.id = p.account_id WHERE p.entry_id = $1`, [rl[0].id]));
