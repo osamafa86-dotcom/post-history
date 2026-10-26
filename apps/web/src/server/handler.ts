@@ -11,11 +11,14 @@ import { streamDerivative } from "./media";
 import { actionPath, reviewAction } from "./review-actions";
 import { hasRole, materialTag } from "@/lib/review";
 import { safeTemplate, templateRoles } from "@/lib/license-policy";
+import { listingReaders, safeListing } from "@/lib/listing-policy";
 import { listUploads, readUpload, uploadAction, uploadBodyLimit, uploadPath } from "./uploads";
 import { catalogRead } from "./catalog";
 import { safeIdentitySetting, safePermissionHistory } from "@/lib/admin-privacy";
 import { pageLimits } from "@/lib/admin-policy";
 import { safeRule } from "@/lib/notification-policy";
+import { manageForms } from "./form-admin";
+import { formBodyLimit } from "@/lib/form-admin";
 
 const privateHeaders = { "Cache-Control": "private, no-store, max-age=0", "Pragma": "no-cache", "Vary": "Cookie" };
 const json = (value: unknown, status = 200) => NextResponse.json(value, { status, headers: privateHeaders });
@@ -59,7 +62,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
     const isWrite = ["POST", "PUT", "DELETE"].includes(request.method);
     if (isWrite) assertSameOrigin(request, config);
     if (request.method !== "GET" && !isWrite) throw new WebError(405, "request_failed");
-    if (isWrite && !(isPost && ["auth/login", "auth/logout"].includes(path)) && !actionPath(path, request.method) && !uploadPath(path, request.method)) throw new WebError(405, "request_failed");
+    if (isWrite && !(isPost && ["auth/login", "auth/logout", "forms"].includes(path)) && !actionPath(path, request.method) && !uploadPath(path, request.method)) throw new WebError(405, "request_failed");
 
     if (path === "auth/login" && isPost) {
       const input = await bodyOf(request);
@@ -84,9 +87,10 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         const response = json({ ok: true }); setSession(response, config!, ""); return response;
       }
       const me = requireOk(await api.GET("/auth/me"));
+      if (path === "forms") return manageForms(request, api, me, isPost ? await bodyOf(request, formBodyLimit) : undefined);
       if (isWrite && uploadPath(path, request.method)) return uploadAction(request, path, api, me, await bodyOf(request, uploadBodyLimit(path)), config!);
       // نصوص القالب ثنائية اللغة حتى 4000 حرف لكل حقل؛ أكبر من حد إجراءات المراجعة.
-      if (isWrite) return reviewAction(request, path, api, me, await bodyOf(request, path.startsWith("license-templates") ? 65536 : 8192));
+      if (isWrite) return reviewAction(request, path, api, me, await bodyOf(request, path.startsWith("license-templates") ? 65536 : /^materials\/[0-9a-f-]{36}\/listing$/i.test(path) ? 262144 : 8192));
       if (path === "auth/me") return json(safeMe(me));
       if (path === "admin/settings/reporter-identity") {
         if (!hasRole(me, "system_admin")) throw new WebError(403, "request_failed");
@@ -116,6 +120,14 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         if (schema.response.status !== 404) requireOk(schema);
         const response = json(safeMaterial(material, me.permissions, schema.data));
         const tag = materialTag(result.response, material); if (tag) response.headers.set("ETag", tag);
+        return response;
+      }
+      const listing = /^materials\/([^/]+)\/listing$/.exec(path);
+      if (listing && uuid.test(listing[1])) {
+        if (!hasRole(me, ...listingReaders) || request.nextUrl.search) throw new WebError(403, "request_failed");
+        const result = await api.GET("/materials/{id}/listing", { params: { path: { id: listing[1] } } });
+        const data = requireOk(result), response = json(safeListing(data)), tag = result.response.headers.get("ETag");
+        if (tag && /^"[0-9]{1,19}"$/.test(tag)) response.headers.set("ETag", tag);
         return response;
       }
       const history = /^materials\/([^/]+)\/transitions$/.exec(path);
@@ -162,11 +174,15 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         return json({ unread_count: page.unread_count, next_cursor: page.next_cursor, items: page.items.map(safeNotification) });
       }
       if (path === "forms/current") {
-        const type = request.nextUrl.searchParams.get("material_type");
+        const search = request.nextUrl.searchParams, type = search.get("material_type");
+        if ([...search.keys()].some(key => key !== "material_type" || search.getAll(key).length > 1)) throw new WebError(400, "request_failed");
         if (type && !(materialTypes as readonly string[]).includes(type)) throw new WebError(400, "request_failed");
         return json(safeForm(requireOk(await api.GET("/forms/current", { params: { query: type ? { material_type: type as MaterialType } : {} } })), me.permissions));
       }
-      if (/^forms\/[1-9]\d{0,8}$/.test(path)) return json(safeForm(requireOk(await api.GET("/forms/{version}", { params: { path: { version: Number(path.slice(6)) } } })), me.permissions));
+      if (/^forms\/[1-9]\d{0,8}$/.test(path)) {
+        if (request.nextUrl.search) throw new WebError(400, "request_failed");
+        return json(safeForm(requireOk(await api.GET("/forms/{version}", { params: { path: { version: Number(path.slice(6)) } } })), me.permissions));
+      }
       throw new WebError(404, "request_failed");
     }, transport, clientAddress(request, config));
     return response;

@@ -79,7 +79,7 @@ class FasterWhisperEngine:
     """يُحمَّل مرة عند الإقلاع؛ كل مهمة استدعاء `transcribe` على ملف في مجلدها."""
 
     def __init__(self, model_dir: Path, *, compute_type: str = "int8", cpu_threads: int = 0,
-                 beam_size: int = 5, vad: bool = True):
+                 beam_size: int = 5, vad: bool = True, hotwords: str | None = None):
         disable_telemetry()
         from faster_whisper import WhisperModel
 
@@ -89,8 +89,11 @@ class FasterWhisperEngine:
                                   cpu_threads=cpu_threads, local_files_only=True)
         self.beam_size = beam_size
         self.vad = vad
+        # القاموس المعتمد كلمات مفضّلة (ADR 0066)؛ لا شيء افتراضيًا
+        self.hotwords = hotwords or None
         self.describe = {"name": "faster-whisper", "compute_type": compute_type, "beam_size": beam_size,
-                         "vad": "silero" if vad else "none", "word_timestamps": True}
+                         "vad": "silero" if vad else "none", "word_timestamps": True,
+                         **({"hotwords_chars": len(self.hotwords)} if self.hotwords else {})}
 
     def transcribe(self, path: Path) -> Transcript:
         from faster_whisper.audio import decode_audio
@@ -100,7 +103,7 @@ class FasterWhisperEngine:
         audio = decode_audio(str(path), sampling_rate=SAMPLE_RATE)
         t1 = time.perf_counter()
         segments, _ = self.model.transcribe(audio, language="ar", beam_size=self.beam_size,
-                                            word_timestamps=True, vad_filter=self.vad)
+                                            word_timestamps=True, vad_filter=self.vad, hotwords=self.hotwords)
         off = timing.audio_offset_s
 
         def at(t: float) -> float:
