@@ -1,9 +1,11 @@
-An internal app for the visual library's reporters and crew, not for the public; sign-in uses an account issued by the office.
+A professional field-ingest application built exclusively for accredited newsroom reporters and field crews. This app is not intended for the general public and requires an organization-issued account to sign in.
 
-- New material: the required fields and the office form, with the original file from the phone's gallery, uncompressed.
-- Uploads resume from the last byte received after a network loss, the app being closed or the phone restarting.
-- The file's fingerprint is computed on the phone and checked by the server, then a receipt number arrives.
-- Deleting the local copy after the receipt is the reporter's decision.
-- Emergency wipe of the app's data, and automatic wipe when the session is revoked remotely.
+Key capabilities:
+- Original field footage submission: attach original, uncompressed video, audio and photo files directly from the device picker alongside the newsroom's structured metadata form.
+- Reliable resumable uploads: powered by the tus resumable upload protocol, transfers resume from the exact last confirmed byte after network drops, app restarts or device reboots.
+- End-to-end integrity verification: a local SHA-256 digest is computed on the device and verified by the server before an official ingest receipt number is issued.
+- Local copy control and emergency wipe: reporters decide when to remove local media copies via a system confirmation after receiving a server receipt; includes a manual emergency session wipe and automatic local wipe on remote session revocation.
 
-Uploading needs the app installed from Google Play and Google Play services.
+Data collection and visibility (what is uploaded and who sees it):
+- What is uploaded: only the media files the reporter explicitly selects and the accompanying editorial form fields (headline, summary, reported event date and place as entered in the form, rights notes), plus a Play Integrity attestation token and a push notification token for receipt delivery. The app does not collect background GPS location and does not transmit persistent hardware identifiers.
+- Who sees it: uploaded media and editorial forms go exclusively to the organization's own Visual Library servers. Access is restricted to authorized newsroom editors, reviewers and archive administrators under role-based access control and source-protection policies. No data is shared with advertisers or unauthorized third parties.
