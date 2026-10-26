@@ -955,3 +955,19 @@ export const buyerOrganizations = pgTable("buyer_organizations", {
 	check("buyer_organizations_text_len", sql`((char_length(legal_name) >= 1) AND (char_length(legal_name) <= 200)) AND ((char_length(display_name_ar) >= 1) AND (char_length(display_name_ar) <= 4000)) AND ((char_length(display_name_en) >= 1) AND (char_length(display_name_en) <= 4000)) AND ((char_length(billing_email) >= 3) AND (char_length(billing_email) <= 254))`),
 	check("buyer_organizations_verified_check", sql`((status = 'pending_verification'::text) OR (verified_at IS NOT NULL)) AND ((verified_at IS NULL) = (verified_by IS NULL))`),
 ]);
+
+// مسودة محلية حتى يصل ترحيل وكيل العقود (يُستبدل بـ db:pull)
+export const buyerInviteConflicts = pgTable("buyer_invite_conflicts", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	organizationId: uuid("organization_id").notNull(),
+	email: text().notNull(),
+	existingUserId: uuid("existing_user_id").notNull(),
+	role: text().notNull(),
+	state: text().default('pending').notNull(),
+	invitedBy: uuid("invited_by").notNull(),
+	inviteExpiresAt: timestamp("invite_expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: 'string' }),
+	resolvedBy: uuid("resolved_by"),
+});
