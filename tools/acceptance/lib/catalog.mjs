@@ -44,6 +44,10 @@ export const EXTRA = [
   { name: "transcript-draft", mode: "automated", source: "ticket 10", criterion: "أصل متحقق منه ← مسودتا التفريغ (transcript وcaptions) تُسجَّلان مشتقين بطوابع على خط زمن الأصل، النص مسودة لا تغيّر المادة، وWebVTT صالح بـRTL، وزمن التفريغ مقيس مقابل مدة المقطع، وبلا اتصال خارجي من العامل حتى للمادة الموسومة بالحساسية" },
   { name: "reporter-identity-access", mode: "automated", source: "ADR 0021", criterion: "الاسم الحقيقي للمراسل يظهر لحامل الصلاحية التي يحددها الإعداد الإداري وحده ويغيب مفتاحه لغيره، والتبديل يسري في الطلب التالي بحدث واحد مدقَّق بلا اسم، والقيمة نفسها لا تكتب حدثًا" },
   { name: "emergency-wipe", mode: "field", source: "SEC-01", criterion: "على جهاز فعلي بعد المسح الطارئ: لا شيء من المخازن الموثّقة يبقى، ويتم المسح بلا اتصال خلال ثوانٍ، ويعمل الدخول من جديد" },
+  { name: "upload-contract", mode: "automated", source: "plan row 01 / core API", criterion: "إنشاء جلسة الرفع يطابق مخططات العقد، ويرفض غياب بصمة العميل، وإعادة Idempotency-Key تعيد الجلسة نفسها بلا مورد ثانٍ" },
+  { name: "outbox-transaction", mode: "automated", source: "plan row 07 / core API", criterion: "كل كتابة مغطاة تترك حدث Outbox واحدًا في المعاملة نفسها، والتكرار لا يضيف حدثًا، وفشل إدراج الحدث يعيد كتابة المادة" },
+  { name: "material-state-independence", mode: "automated", source: "plan row 14 / core API", criterion: "الحالات الفنية والتحريرية والحقوق مستقلة؛ كل انتقال يغيّر مساره وحده ويترك سجلًا منفصلًا" },
+  { name: "sensitive-material-visibility", mode: "automated", source: "plan row 10 / core API", criterion: "المادة الموسومة بالحساسية لا يظهر معرّفها في القوائم المتاحة ولا تُقرأ حزمة تصديرها ولا يُقبل طلب تصديرها" },
 ];
 
 export const NAMES = [...CATALOG, ...EXTRA].map((t) => t.name);
