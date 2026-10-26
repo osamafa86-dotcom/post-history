@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { buyerOrganizations, catalogListings, deviceAttestationKeys, idempotencyKeys, licenseTemplateVersions, licenseTemplates, listingOffers, materialContributors, materialExports, materialFiles, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, outboxEvents, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
+import { buyerOrganizations, catalogListings, deviceAttestationKeys, exclusiveHolds, idempotencyKeys, licenseDownloadGrants, licenseTemplateVersions, licenseTemplates, licenses, listingOffers, materialContributors, materialExports, materialFiles, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, orderItems, orders, outboxEvents, paymentEvents, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
 
 export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => ({
 	refreshToken: one(refreshTokens, {
@@ -21,7 +21,6 @@ export const usersRelations = relations(users, ({one, many}) => ({
 	pushDevices: many(pushDevices),
 	uploadForms: many(uploadForms),
 	materialTransitions: many(materialTransitions),
-	uploadSessions: many(uploadSessions),
 	recoveryRequests_approvedBy: many(recoveryRequests, {
 		relationName: "recoveryRequests_approvedBy_users_id"
 	}),
@@ -57,8 +56,6 @@ export const usersRelations = relations(users, ({one, many}) => ({
 		relationName: "notificationRules_updatedBy_users_id"
 	}),
 	licenseTemplates: many(licenseTemplates),
-	catalogListings: many(catalogListings),
-	outboxEvents: many(outboxEvents),
 	office: one(offices, {
 		fields: [users.officeId],
 		references: [offices.id]
@@ -67,6 +64,11 @@ export const usersRelations = relations(users, ({one, many}) => ({
 		fields: [users.organizationId],
 		references: [buyerOrganizations.id]
 	}),
+	uploadSessions: many(uploadSessions),
+	catalogListings: many(catalogListings),
+	orders: many(orders),
+	licenseDownloadGrants: many(licenseDownloadGrants),
+	outboxEvents: many(outboxEvents),
 	recoveryCodes: many(recoveryCodes),
 	materialContributors: many(materialContributors),
 	userRoles_grantedBy: many(userRoles, {
@@ -107,7 +109,6 @@ export const materialTransitionsRelations = relations(materialTransitions, ({one
 
 export const materialsRelations = relations(materials, ({one, many}) => ({
 	materialTransitions: many(materialTransitions),
-	uploadSessions: many(uploadSessions),
 	user_acknowledgedBy: one(users, {
 		fields: [materials.acknowledgedBy],
 		references: [users.id],
@@ -133,8 +134,12 @@ export const materialsRelations = relations(materials, ({one, many}) => ({
 	}),
 	notifications: many(notifications),
 	materialExports: many(materialExports),
+	uploadSessions: many(uploadSessions),
 	catalogListings: many(catalogListings),
 	materialFiles: many(materialFiles),
+	orderItems: many(orderItems),
+	exclusiveHolds: many(exclusiveHolds),
+	licenses: many(licenses),
 	materialContributors: many(materialContributors),
 }));
 
@@ -391,6 +396,7 @@ export const catalogListingsRelations = relations(catalogListings, ({one, many})
 		fields: [catalogListings.updatedBy],
 		references: [users.id]
 	}),
+	orderItems: many(orderItems),
 	listingOffers: many(listingOffers),
 }));
 
@@ -405,7 +411,8 @@ export const listingOffersRelations = relations(listingOffers, ({one}) => ({
 	}),
 }));
 
-export const licenseTemplateVersionsRelations = relations(licenseTemplateVersions, ({one}) => ({
+export const licenseTemplateVersionsRelations = relations(licenseTemplateVersions, ({one, many}) => ({
+	orderItems: many(orderItems),
 	user: one(users, {
 		fields: [licenseTemplateVersions.createdBy],
 		references: [users.id]
@@ -418,4 +425,85 @@ export const licenseTemplateVersionsRelations = relations(licenseTemplateVersion
 
 export const buyerOrganizationsRelations = relations(buyerOrganizations, ({many}) => ({
 	users: many(users),
+	orders: many(orders),
+	licenses: many(licenses),
+}));
+
+export const ordersRelations = relations(orders, ({one, many}) => ({
+	user: one(users, {
+		fields: [orders.createdBy],
+		references: [users.id]
+	}),
+	buyerOrganization: one(buyerOrganizations, {
+		fields: [orders.organizationId],
+		references: [buyerOrganizations.id]
+	}),
+	orderItems: many(orderItems),
+	paymentEvents: many(paymentEvents),
+}));
+
+export const orderItemsRelations = relations(orderItems, ({one, many}) => ({
+	licenseTemplateVersion: one(licenseTemplateVersions, {
+		fields: [orderItems.licenseTemplateId],
+		references: [licenseTemplateVersions.templateId]
+	}),
+	catalogListing: one(catalogListings, {
+		fields: [orderItems.listingId],
+		references: [catalogListings.id]
+	}),
+	material: one(materials, {
+		fields: [orderItems.materialId],
+		references: [materials.id]
+	}),
+	order: one(orders, {
+		fields: [orderItems.orderId],
+		references: [orders.id]
+	}),
+	exclusiveHolds: many(exclusiveHolds),
+	licenses: many(licenses),
+}));
+
+export const exclusiveHoldsRelations = relations(exclusiveHolds, ({one}) => ({
+	material: one(materials, {
+		fields: [exclusiveHolds.materialId],
+		references: [materials.id]
+	}),
+	orderItem: one(orderItems, {
+		fields: [exclusiveHolds.orderItemId],
+		references: [orderItems.id]
+	}),
+}));
+
+export const licensesRelations = relations(licenses, ({one, many}) => ({
+	material: one(materials, {
+		fields: [licenses.materialId],
+		references: [materials.id]
+	}),
+	orderItem: one(orderItems, {
+		fields: [licenses.orderItemId],
+		references: [orderItems.id]
+	}),
+	buyerOrganization: one(buyerOrganizations, {
+		fields: [licenses.organizationId],
+		references: [buyerOrganizations.id]
+	}),
+	licenseDownloadGrants: many(licenseDownloadGrants),
+}));
+
+export const licenseDownloadGrantsRelations = relations(licenseDownloadGrants, ({one}) => ({
+	user: one(users, {
+		fields: [licenseDownloadGrants.issuedTo],
+		references: [users.id]
+	}),
+	license: one(licenses, {
+		fields: [licenseDownloadGrants.licenseId],
+		references: [licenses.id]
+	}),
+}));
+
+export const paymentEventsRelations = relations(paymentEvents, ({one}) => ({
+	order: one(orders, {
+		fields: [paymentEvents.orderId],
+		references: [orders.id]
+	}),
 }));

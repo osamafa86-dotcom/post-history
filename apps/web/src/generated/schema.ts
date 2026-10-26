@@ -1322,6 +1322,203 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * الطلبات (v0.3، ADR 0025 الجزء 4)
+         * @description `buyer_admin` يرى طلبات مؤسسته، و`buyer_member` ما أنشأه منها وحده؛ طلب مؤسسة أخرى لا يظهر (عزل المستأجرين). المالية ومدير النظام يرون الكل ويصفّون بالمؤسسة.
+         */
+        get: operations["listOrders"];
+        put?: never;
+        /**
+         * إنشاء طلب من عروض الكتالوج
+         * @description السلة حالة في العميل، والطلب يُنشأ منها مرة واحدة. كل بند يجمّد إصدار المادة المعروض، والإصدار الحالي لقالب الترخيص بشروطه، والسعر (الخاص أو الأساسي) — قيدًا في القاعدة. الطلب بعملة واحدة (`422 mixed_currency`)، وبند واحد لكل إدراج. الإدراج غير المعروض أو العرض الغائب أو القالب المعطّل `409 listing_unavailable`. `expected_total` إن أُرسل ولم يطابق المجموع `409 price_changed` بلا أثر. البند الحصري (`exclusive_temporary`) يحجز المادة في المعاملة نفسها بقفل صفها: حجز واحد لكل مادة بفهرس فريد جزئي، مدته 15 دقيقة هي مهلة الطلب (`expires_at`)، ولا حصرية لمادة سبق بيعها ولا بيع غير حصري تحت حجز ساري (`409 exclusivity_unavailable`). المؤسسة غير `active` `403 forbidden_scope`. يُكتب `order.status_changed`.
+         */
+        post: operations["createOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orders/{order_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * قراءة طلب
+         * @description النطاق كما في القائمة؛ ما خارجه `404` بشكل المفقود.
+         */
+        get: operations["getOrder"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orders/{order_id}/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * جلسة دفع مستضافة لدى المزوّد
+         * @description يعيد رابط صفحة الدفع المستضافة (ADR 0032): لا تمر بيانات بطاقة بخوادمنا ولا في أي عقد. يُعاد التحقق من الحجز الحصري والحقوق قبل إنشاء الجلسة. الطلب غير `pending_payment` أو المنتهي `409 order_not_payable`، والحجز الذي ضاع `409 exclusivity_unavailable`. التكرار والجلسة صالحة يعيد الجلسة نفسها. العودة من صفحة المزوّد لا تؤكد الدفع: التأكيد من الإشعار الموقّع وحده، والعميل يقرأ الطلب حتى `paid`.
+         */
+        post: operations["createOrderCheckout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orders/{order_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * إلغاء طلب لم يُدفع
+         * @description `pending_payment` وحده، ويحرر حجزه الحصري في المعاملة نفسها (`cancel_reason = buyer`)؛ غيره `409 order_not_payable`. الدفع الواصل بعد الإلغاء لا يصدر ترخيصًا ويُسترد (الجزء 5). يُكتب `order.status_changed`.
+         */
+        post: operations["cancelOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/licenses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * التراخيص الصادرة (ADR 0025 الجزءان 4 و9)
+         * @description المشترون يرون تراخيص مؤسستهم وحدها؛ الطاقم يرى الكل ويصفّي بالمؤسسة.
+         */
+        get: operations["listLicenses"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/licenses/{license_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                license_id: components["parameters"]["LicenseId"];
+            };
+            cookie?: never;
+        };
+        /** قراءة ترخيص بشروطه المجمّدة */
+        get: operations["getLicense"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/licenses/{license_id}/download-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                license_id: components["parameters"]["LicenseId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * رابط تنزيل حزمة التسليم
+         * @description مشتق `delivery` لهذا الترخيص وحده (بمواصفات قالبه، بلا تفريغ؛ R11)، برابط موقّع صالح ≤ 24 ساعة. كل طلب منحة تُحصى بقفل صف الترخيص، والحد في `downloads_remaining` (`409 download_limit_reached`). الترخيص غير `active` `409 license_not_active`، والحزمة قبل جاهزيتها `409 delivery_not_ready`، والمؤسسة المعلّقة `403 forbidden_scope`. الرابط لا يُسجَّل ولا يدخل حدثًا أو إشعارًا.
+         */
+        post: operations["createLicenseDownloadUrl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/license-verifications/{license_number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description الرقم على شهادة الترخيص؛ عشوائي غير متسلسل فلا يُعدَّد */
+                license_number: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * صفحة التحقق العامة من ترخيص
+         * @description بلا مصادقة. تثبت صلاحية الترخيص وأبعاده، ولا تكشف المشتري ولا السعر ولا المراسل ولا معرّف المادة. محدودة المعدل لكل عنوان (`429`). الرقم المجهول `404`.
+         */
+        get: operations["verifyLicense"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webhooks/payments/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description المحوّل المفعَّل؛ غيره `404`. `sandbox` يُرفض في الإنتاج (ADR 0032) */
+                provider: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * إشعار مزوّد الدفع الموقّع (ADR 0032)
+         * @description المصدر الوحيد لتأكيد الدفع. يُتحقق من التوقيع على الجسم الخام قبل تحليله: HMAC-SHA256 على `<Payment-Timestamp>.<body>` بسر المحوّل من البيئة، بمقارنة ثابتة الزمن، ويُرفض ما خرج عن ±5 دقائق (`401`). ثم يُسجَّل `(provider, event_id)` فريدًا، وتُطبَّق النتيجة في معاملة واحدة مع حالة الطلب والترخيص وقيد الدفتر وحدث Outbox. التكرار (عشر مرات أو بترتيب مختلف) يعيد `200` بلا أثر ثانٍ. المرجع المجهول أو الحالة المحسومة `200` بلا أثر، والمبلغ الذي لا يطابق الطلب `200` بلا ترخيص ويُكتب للمراجعة. الدفع الواصل لطلب منتهٍ يُقبل إن أعاد الخادم التحقق (الحجز قائم والحقوق قابلة للبيع)، وإلا يُلغى الطلب (`exclusivity_lost` أو `rights_changed`) ويُسترد المبلغ. الجسم هنا صيغة المزوّد التجريبي؛ المحوّل الحقيقي يترجم صيغته إلى `PaymentProviderEvent` نفسه.
+         */
+        post: operations["receivePaymentWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events": {
         parameters: {
             query?: never;
@@ -1360,7 +1557,7 @@ export interface components {
              * @description رمز ثابت يتفرّع عليه العميل؛ الرسالة للبشر فقط. قائمة مفتوحة؛ الرمز المجهول = خطأ عام
              * @enum {string}
              */
-            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "seats_exhausted" | "last_buyer_admin" | "internal_error";
+            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "seats_exhausted" | "last_buyer_admin" | "listing_unavailable" | "exclusivity_unavailable" | "mixed_currency" | "price_changed" | "order_not_payable" | "license_not_active" | "delivery_not_ready" | "download_limit_reached" | "internal_error";
             message: string;
             /** @description لتتبع الطلب في السجلات */
             request_id: string;
@@ -2672,6 +2869,201 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        /**
+         * @description `pending_payment` ينتظر الدفع حتى `expires_at`؛ `paid` أكده الإشعار الموقّع وصدرت تراخيصه؛ `cancelled` ألغاه المشتري أو أُلغي لضياع الحصرية أو تغيّر الحقوق قبل التأكيد؛ `expired` فات مهلته بلا دفع؛ `refunded` استُرد كاملًا (الجزء 5).
+         * @enum {string}
+         */
+        OrderStatus: "pending_payment" | "paid" | "cancelled" | "expired" | "refunded";
+        OrderItemInput: {
+            /** Format: uuid */
+            listing_id: string;
+            /**
+             * Format: uuid
+             * @description قالب من عروض الإدراج؛ الإصدار الحالي يُجمَّد
+             */
+            license_template_id: string;
+        };
+        OrderCreate: {
+            /** @description بند واحد لكل إدراج */
+            items: components["schemas"]["OrderItemInput"][];
+            /** @description المجموع الذي رآه المشتري؛ إن لم يطابق `409 price_changed` بلا أثر */
+            expected_total?: components["schemas"]["Money"];
+        };
+        /** @description البند مجمّدًا كما وافق عليه المشتري. لا معرّف مادة ولا مراسل (كعرض الكتالوج)؛ العنوان نسخة من الإدراج لحظة الطلب. */
+        OrderItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            listing_id: string;
+            material_version: number;
+            /** Format: uuid */
+            license_template_id: string;
+            license_version: number;
+            license_type: components["schemas"]["LicenseType"];
+            license_name: components["schemas"]["LocalizedText"];
+            title: components["schemas"]["LocalizedText"];
+            price: components["schemas"]["Money"];
+            /**
+             * Format: uuid
+             * @description الترخيص الصادر بعد التأكيد
+             */
+            license_id: string | null;
+        };
+        Order: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organization_id: string;
+            /** Format: uuid */
+            created_by: string;
+            status: components["schemas"]["OrderStatus"];
+            /** @enum {string|null} */
+            cancel_reason: "buyer" | "exclusivity_lost" | "rights_changed" | null;
+            total: components["schemas"]["Money"];
+            items: components["schemas"]["OrderItem"][];
+            /**
+             * Format: date-time
+             * @description مهلة الدفع؛ 15 دقيقة لطلب فيه بند حصري (حجزه)، و≤ 24 ساعة لغيره
+             */
+            expires_at: string;
+            /** Format: date-time */
+            paid_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        OrderPage: {
+            items: components["schemas"]["Order"][];
+            next_cursor: string | null;
+        };
+        CheckoutSession: {
+            /**
+             * Format: uri
+             * @description صفحة الدفع المستضافة لدى المزوّد؛ لا يُسجَّل ولا يُرسل في حدث أو إشعار
+             */
+            checkout_url: string;
+            /** @description `sandbox` في هذه الدورة */
+            provider: string;
+            /**
+             * Format: date-time
+             * @description لا تتجاوز مهلة الطلب
+             */
+            expires_at: string;
+        };
+        /** @description إقليم الترخيص كما في قالبه */
+        LicenseTerritory: {
+            /** @enum {string} */
+            kind: "worldwide" | "countries";
+            /** @description رموز ISO 3166-1 alpha-2؛ إلزامية مع `countries` وممنوعة مع `worldwide` */
+            countries?: string[];
+        };
+        /** @description شروط إصدار القالب الذي وافق عليه المشتري، مجمّدة في الترخيص (لا السعر الأساسي ولا التفعيل) */
+        LicenseTerms: {
+            type: components["schemas"]["LicenseType"];
+            name: components["schemas"]["LocalizedText"];
+            terms: components["schemas"]["LocalizedText"];
+            usage_media: ("tv" | "web" | "social" | "documentary" | "advertising")[];
+            territory: components["schemas"]["LicenseTerritory"];
+            term_days: number | null;
+            exclusivity_hours: number | null;
+            deliverables: ("original" | "produced" | "audio" | "stills")[];
+            attribution: components["schemas"]["LocalizedText"];
+            prohibitions: ("resale" | "advertising" | "ai_training" | "re_editing")[];
+        };
+        /**
+         * @description `active` ساري؛ `expired` انتهت مدته؛ `revoked` أُبطل (استرداد أو سحب حقوق أو إداري) فيتوقف التنزيل
+         * @enum {string}
+         */
+        LicenseStatus: "active" | "expired" | "revoked";
+        /** @description ترخيص صادر برقم فريد. لا يحمل معرّف المادة ولا المراسل (المشتري يرى الإدراج). الشروط والسعر والإصدارات مجمّدة لا تتغير؛ الحالة وحدها تتغير. */
+        License: {
+            /** Format: uuid */
+            id: string;
+            license_number: string;
+            /** Format: uuid */
+            order_id: string;
+            /** Format: uuid */
+            order_item_id: string;
+            /** Format: uuid */
+            organization_id: string;
+            /** Format: uuid */
+            listing_id: string;
+            material_version: number;
+            title: components["schemas"]["LocalizedText"];
+            /** Format: uuid */
+            license_template_id: string;
+            license_version: number;
+            terms: components["schemas"]["LicenseTerms"];
+            price: components["schemas"]["Money"];
+            status: components["schemas"]["LicenseStatus"];
+            /** @enum {string|null} */
+            revoked_reason: "refunded" | "rights_withdrawn" | "manual" | null;
+            /** Format: date-time */
+            valid_from: string;
+            /**
+             * Format: date-time
+             * @description `null` = بلا انتهاء
+             */
+            valid_until: string | null;
+            /**
+             * Format: date-time
+             * @description نهاية الحصرية لـ `exclusive_temporary` وحده
+             */
+            exclusive_until: string | null;
+            /** Format: date-time */
+            issued_at: string;
+            /** @description حزمة التسليم مبنية وجاهزة للتنزيل */
+            delivery_ready: boolean;
+        };
+        LicensePage: {
+            items: components["schemas"]["License"][];
+            next_cursor: string | null;
+        };
+        LicenseDownloadUrl: {
+            /**
+             * Format: uri
+             * @description رابط موقّع لحزمة التسليم وحدها؛ لا يُسجَّل ولا يُرسل في إشعار أو حدث
+             */
+            url: string;
+            /**
+             * Format: date-time
+             * @description ≤ 24 ساعة من الإصدار
+             */
+            expires_at: string;
+            downloads_remaining: number;
+        };
+        /** @description صفحة التحقق العامة، بقائمة بيضاء مغلقة؛ لا مشترٍ ولا سعر ولا مراسل ولا معرّف مادة أو طلب */
+        LicenseVerification: {
+            license_number: string;
+            status: components["schemas"]["LicenseStatus"];
+            license_type: components["schemas"]["LicenseType"];
+            title: components["schemas"]["LocalizedText"];
+            usage_media: ("tv" | "web" | "social" | "documentary" | "advertising")[];
+            territory: components["schemas"]["LicenseTerritory"];
+            /** Format: date-time */
+            valid_from: string;
+            /** Format: date-time */
+            valid_until: string | null;
+            /** Format: date-time */
+            exclusive_until: string | null;
+        };
+        /** @description إشعار المزوّد بعد التحقق من توقيعه (صيغة `sandbox`، ADR 0032). لا بيانات بطاقة ولا اسم مشترٍ؛ يُخزَّن هذا وحده لا الجسم الخام. */
+        PaymentProviderEvent: {
+            /** @description فريد لدى المزوّد؛ مفتاح منع التكرار */
+            event_id: string;
+            /** @enum {string} */
+            type: "payment.succeeded" | "payment.failed" | "refund.succeeded" | "dispute.opened";
+            /** @description مرجع جلسة الدفع لدى المزوّد */
+            provider_ref: string;
+            amount: components["schemas"]["Money"];
+            /** Format: date-time */
+            occurred_at: string;
+        };
+        PaymentWebhookAck: {
+            /** @constant */
+            received: true;
+        };
         OutboxEvent: components["schemas"]["outbox-event"];
         EventPage: {
             items: components["schemas"]["outbox-event"][];
@@ -2874,9 +3266,9 @@ export interface components {
             /** @description تسلسلي متزايد (رقم الصف في جدول Outbox) بصيغة نصية؛ يُستخدم مؤشرًا في `after` */
             id: string;
             /** @enum {string} */
-            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested";
+            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested" | "order.status_changed" | "license.issued";
             /** @enum {string} */
-            aggregate_type: "material" | "upload" | "notification" | "form" | "user" | "listing" | "license";
+            aggregate_type: "material" | "upload" | "notification" | "form" | "user" | "listing" | "license" | "order";
             /** Format: uuid */
             aggregate_id: string;
             /** Format: date-time */
@@ -2913,7 +3305,7 @@ export interface components {
                 /** @enum {string} */
                 priority: "urgent" | "important" | "normal";
             };
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
     };
     responses: {
         /** @description طلب غير صالح (معاملات استعلام أو مؤشر غير مفهوم) */
@@ -3029,6 +3421,8 @@ export interface components {
         MediaSessionId: string;
         /** @description معرّف المؤسسة المشترية */
         OrganizationId: string;
+        OrderId: string;
+        LicenseId: string;
         /** @description معرّف المادة */
         MaterialId: string;
         /** @description معرّف جلسة الرفع */
@@ -5461,6 +5855,302 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    listOrders: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["OrderStatus"];
+                /** @description للطاقم وحده؛ يُتجاهل للمشتري (نطاقه مؤسسته) */
+                organization_id?: string;
+                /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description حجم الصفحة */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description صفحة من الطلبات، الأحدث أولًا */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createOrder: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderCreate"];
+            };
+        };
+        responses: {
+            /** @description الطلب بحالة `pending_payment` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    getOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الطلب */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createOrderCheckout: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                order_id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الجلسة */
+            200: {
+                headers: {
+                    /** @description `no-store` */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckoutSession"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    cancelOrder: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                order_id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الطلب ملغى */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listLicenses: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["LicenseStatus"];
+                /** @description للطاقم وحده؛ يُتجاهل للمشتري */
+                organization_id?: string;
+                /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description حجم الصفحة */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description صفحة من التراخيص، الأحدث صدورًا أولًا */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LicensePage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getLicense: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                license_id: components["parameters"]["LicenseId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الترخيص */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["License"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createLicenseDownloadUrl: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                license_id: components["parameters"]["LicenseId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الرابط */
+            200: {
+                headers: {
+                    /** @description `no-store` */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LicenseDownloadUrl"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    verifyLicense: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description الرقم على شهادة الترخيص؛ عشوائي غير متسلسل فلا يُعدَّد */
+                license_number: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description نتيجة التحقق */
+            200: {
+                headers: {
+                    /** @description `no-store` */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LicenseVerification"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    receivePaymentWebhook: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description `v1=<hex>`: HMAC-SHA256 على `<Payment-Timestamp>.<الجسم الخام>` */
+                "Payment-Signature": string;
+                /** @description ثوانٍ منذ epoch؛ خارج ±5 دقائق `401` */
+                "Payment-Timestamp": string;
+            };
+            path: {
+                /** @description المحوّل المفعَّل؛ غيره `404`. `sandbox` يُرفض في الإنتاج (ADR 0032) */
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentProviderEvent"];
+            };
+        };
+        responses: {
+            /** @description استُلم (طُبّق أو كان مكررًا أو بلا أثر)؛ المزوّد يتوقف عن الإعادة */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentWebhookAck"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
     listEvents: {

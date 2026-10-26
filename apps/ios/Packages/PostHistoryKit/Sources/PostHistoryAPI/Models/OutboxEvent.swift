@@ -43,6 +43,8 @@ public struct OutboxEvent: Sendable, Codable, Hashable {
         case settingPeriodChanged = "setting.changed"
         case catalogPeriodListingChanged = "catalog.listing_changed"
         case licensePeriodDeliveryRequested = "license.delivery_requested"
+        case orderPeriodStatusChanged = "order.status_changed"
+        case licensePeriodIssued = "license.issued"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
     public enum AggregateType: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
@@ -53,6 +55,7 @@ public struct OutboxEvent: Sendable, Codable, Hashable {
         case user = "user"
         case listing = "listing"
         case license = "license"
+        case order = "order"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
     public static let idRule = StringRule(minLength: nil, maxLength: nil, pattern: "^[0-9]{1,19}$")
