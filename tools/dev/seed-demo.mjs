@@ -67,6 +67,24 @@ export async function run(env=process.env) {
     if(!commerce || commerce.result==='fail' || commerce.metrics?.checks_failed || commerce.metrics?.deferred_checks) throw new Error('sandbox verification incomplete');
     const refunded=(await db.query("SELECT count(*)::int AS n FROM orders WHERE organization_id=(SELECT organization_id FROM users WHERE id=$1) AND status='refunded'",[s.users.buyer_admin.id])).rows[0].n;
     if(!refunded) throw new Error('sandbox refund endpoint is required');
+    // بيعة ثانية تبقى مدفوعة للعرض؛ الأولى تعرض الاسترداد والترخيص المبطل.
+    const offer=(await db.query("SELECT o.listing_id,o.license_template_id FROM listing_offers o JOIN catalog_listings l ON l.id=o.listing_id JOIN materials m ON m.id=l.material_id JOIN license_templates t ON t.id=o.license_template_id WHERE m.reporter_id=$1 AND l.state='listed' AND t.type='editorial_single' LIMIT 1",[s.users.reporter.id])).rows[0];
+    if(!offer)throw new Error('synthetic listing unavailable');
+    const paid=await http.call(s.tokens.buyer_admin,'POST','/orders',{body:{items:[offer]}});
+    if(paid.status!==201)throw new Error('demo paid order creation failed');
+    const checkout=await http.call(s.tokens.buyer_admin,'POST',`/orders/${paid.body.id}/checkout`,{body:{}});
+    if(checkout.status!==200||checkout.body.provider!=='sandbox')throw new Error('sandbox provider required');
+    const checkoutUrl=new URL(localOnly(checkout.body.checkout_url,['http:']));
+    const root=localOnly(env.ROOT_URL,['http:']);
+    if(checkoutUrl.origin!==new URL(root).origin)throw new Error('checkout origin mismatch');
+    const settle=await fetch(root+checkoutUrl.pathname+'/succeeded',{method:'POST',headers:{'idempotency-key':randomUUID()},redirect:'error',signal:AbortSignal.timeout(15000)});
+    if(!settle.ok)throw new Error('sandbox settlement failed');
+    let licensed=false;
+    for(let i=0;i<40&&!licensed;i++){
+      licensed=(await db.query("SELECT 1 FROM licenses WHERE order_id=$1 AND status='active'",[paid.body.id])).rowCount>0;
+      if(!licensed)await new Promise(r=>setTimeout(r,250));
+    }
+    if(!licensed||(await http.get(s.tokens.buyer_admin,`/orders/${paid.body.id}`)).body.status!=='paid')throw new Error('paid license not issued');
     // قناة واحدة، مرة واحدة فقط، لا ملف حسابات أو رموز جلسة.
     process.stdout.write(JSON.stringify({synthetic:true,accounts:credentials,materials:40,commerce:commerce.result})+'\n');
   } finally { await db.end(); await rm(dir,{recursive:true,force:true}); }
