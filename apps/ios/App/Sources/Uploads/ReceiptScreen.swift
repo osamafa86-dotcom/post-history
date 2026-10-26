@@ -96,9 +96,10 @@ struct ReceiptScreen: View {
     }
 
     /// صورة PNG للبطاقة بمقاس 1080×1350 للمشاركة داخل المؤسسة عبر ورقة مشاركة النظام.
+    /// ورقة المشاركة تصل أي تطبيق، فالصورة تحمل رقم الإيصال ووقت الاستلام وحدهما: لا بصمة (ولو مختصرة) ولا عنوان ولا رمز.
     @MainActor private func renderShareImage(_ d: ReceiptDetails) -> Image? {
         let renderer = ImageRenderer(content:
-            ReceiptCard(details: d)
+            ReceiptCard(details: d, forSharing: true)
                 .padding(VL.Space.s7)
                 .frame(width: 1080 / 3, height: 1350 / 3)
                 .background(Color.vl.bgCanvas)
@@ -169,6 +170,8 @@ struct ReceiptDetails: Equatable {
 /// بطاقة الإيصال: الرقم بخط أحادي قابل للتحديد، والتفاصيل بلا موقع ولا أسماء، ورمز QR بمعرّف المادة.
 struct ReceiptCard: View {
     let details: ReceiptDetails
+    /// للصورة المشاركة: الرقم ووقت الاستلام فقط؛ البصمة والعنوان والحجم والمشرف ورمز QR تبقى على الشاشة.
+    var forSharing = false
 
     var body: some View {
         VLCard(border: .vl.borderStrong, background: .vl.bgSurfaceRaised) {
@@ -181,11 +184,11 @@ struct ReceiptCard: View {
                     .accessibilityLabel(Text("upload.receipt \(details.receiptNumber)"))
             }
             VStack(alignment: .leading, spacing: VL.Space.s3) {
-                if let title = details.title { row("receipt.row.material") { Text(verbatim: title).vlText(.bodySm) } }
+                if !forSharing, let title = details.title { row("receipt.row.material") { Text(verbatim: title).vlText(.bodySm) } }
                 if let at = details.receivedAt {
                     row("receipt.row.receivedAt") { Text(at.formatted(date: .abbreviated, time: .shortened)).vlText(.bodySm) }
                 }
-                if let size = details.sizeBytes {
+                if !forSharing, let size = details.sizeBytes {
                     row("receipt.row.size") {
                         VStack(alignment: .leading, spacing: VL.Space.s1) {
                             Text(verbatim: ByteCountFormatter.string(fromByteCount: size, countStyle: .file)).vlText(.bodySm)
@@ -196,7 +199,7 @@ struct ReceiptCard: View {
                         }
                     }
                 }
-                row("receipt.row.supervisor") {
+                if !forSharing { row("receipt.row.supervisor") {
                     if let ack = details.acknowledgedAt {
                         Label { Text("receipt.acknowledged \(ack.formatted(date: .omitted, time: .shortened))") } icon: {
                             Image(systemName: "checkmark").foregroundStyle(Color.vl.toneGoodFg)
@@ -204,14 +207,14 @@ struct ReceiptCard: View {
                     } else {
                         Text("receipt.notYetAcknowledged").vlText(.bodySm).foregroundStyle(Color.vl.textSecondary)
                     }
-                }
+                } }
             }
-            HStack(alignment: .center, spacing: VL.Space.s4) {
+            if !forSharing { HStack(alignment: .center, spacing: VL.Space.s4) {
                 QRCode(text: ReceiptFormatting.internalLink(materialId: details.materialId))
                     .frame(width: VL.Space.s12 + VL.Space.s5, height: VL.Space.s12 + VL.Space.s5)
                     .accessibilityLabel(Text("receipt.qr"))
                 Text("receipt.qr.caption").vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
-            }
+            } }
         }
     }
 
