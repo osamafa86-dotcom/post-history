@@ -88,6 +88,12 @@ function seedOrganizations() {
   members.set(buyerOrg, [{ user_id: "91000000-0000-4000-8000-000000000001", email: "buyeradmin@example.test", role: "buyer_admin", status: "active", totp_enabled: true, created_at: base.created_at }, { user_id: "91000000-0000-4000-8000-000000000002", email: "buyer@example.test", role: "buyer_member", status: "active", totp_enabled: true, created_at: base.created_at }]);
   members.set(otherOrg, []);
 }
+// الطلبات والدفع التجريبي: أسعار عروض الكتالوج الاصطناعي، وصفحة مزوّد مستضافة تؤكد الدفع بعد العودة كما يفعل الإشعار الموقّع.
+const orders = new Map<string, Record<string, unknown> & { id: string; organization_id: string; status: string; created_by: string }>();
+const offerPrices: Record<string, { amount: number; type: string; name: { ar: string; en: string } }> = {
+  "70000000-0000-4000-8000-000000000001": { amount: 15000, type: "editorial_single", name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" } },
+  "70000000-0000-4000-8000-000000000002": { amount: 90000, type: "exclusive_temporary", name: { ar: "حصري 48 ساعة", en: "Exclusive 48 h" } },
+};
 const templates = new Map<string, (Record<string, unknown> & { id: string; version: number; enabled: boolean })[]>();
 function seedTemplates() {
   templates.clear();
@@ -113,10 +119,17 @@ const server = createServer(async (req, res) => {
   res.setHeader("Content-Type", "application/json"); res.setHeader("Cache-Control", "no-store");
   const send = (value: unknown, status = 200) => { res.statusCode = status; res.end(status === 204 ? "" : JSON.stringify(value)); };
   if (url.pathname === "/health") return send({ ok: true });
+  const sandbox = /^\/sandbox\/(checkout|pay)\/([^/]+)$/.exec(url.pathname);
+  if (sandbox) {
+    const order = orders.get(sandbox[2]); if (!order) return send({}, 404);
+    if (sandbox[1] === "checkout") { res.setHeader("Content-Type", "text/html; charset=utf-8"); res.end(`<!doctype html><title>Sandbox checkout</title><h1>Sandbox provider</h1><a href="/sandbox/pay/${order.id}">Pay (sandbox)</a>`); return; }
+    setTimeout(() => { if (order.status === "pending_payment") Object.assign(order, { status: "paid", paid_at: new Date().toISOString(), updated_at: new Date().toISOString() }); }, 1500);
+    res.statusCode = 302; res.setHeader("Location", `http://127.0.0.1:3100/ar/store/orders/${order.id}?returned=1`); res.end(); return;
+  }
   if (url.pathname.startsWith("/files/")) { res.removeHeader("Content-Type"); return tus(req, res, url); }
   if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
   if (url.pathname === "/__test/uploads") return send([...uploads.values()].map(u => ({ state: u.session.state, receipt: u.session.receipt_number, ingest_tokens: [...ingestTokens.values()].filter(t => t.sid === u.session.id).length, ...(u.tus ? (({ length, offset, patches, resent, cuts }) => ({ length, offset, patches, resent, cuts }))(tusFiles.get(u.tus) ?? { length: 0, offset: 0, patches: 0, resent: 0, cuts: 0 }) : {}) })));
-  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); seedTemplates(); seedOrganizations(); reset(); resetUploads(); return send({ ok: true }); }
+  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); orders.clear(); seedTemplates(); seedOrganizations(); reset(); resetUploads(); return send({ ok: true }); }
   if (url.pathname === "/__test/state") return send({ writes, applied: applied.size, identitySetting, auditCount: permissionAudit.length });
   if (url.pathname === "/__test/request-changes" && req.method === "POST") {
     // مادة بطلب تعديل وأخرى مرفوضة وثالثة فشل رفعها، وسبب داخلي لا يصل المراسل.
@@ -269,6 +282,22 @@ const server = createServer(async (req, res) => {
       const next = { ...body, id: current?.id ?? randomUUID(), material_id: item.id, material_version: item.version, suspended_reason: body.state === "suspended" ? "manual" : null, listed_at: current?.listed_at ?? (body.state === "listed" ? stamp : null), created_at: current?.created_at ?? stamp, updated_at: stamp, updated_by: user.user_id, row: (current?.row ?? 0) + 1, state: String(body.state) };
       listings.set(item.id, next); res.setHeader("ETag", `"${next.row}"`); return commit(Object.fromEntries(Object.entries(next).filter(([key]) => key !== "row")), current ? 200 : 201);
     }
+    const orderWrite = /^\/v1\/orders(?:\/([^/]+)\/(checkout|cancel))?$/.exec(path);
+    if (orderWrite) {
+      if (!has("buyer_admin", "buyer_member") || !user.organization_id) return send({}, 403);
+      if (!orderWrite[1]) {
+        const items = (body.items as { listing_id: string; license_template_id: string }[]).map(i => { const o = offerPrices[i.license_template_id]; return { id: randomUUID(), listing_id: i.listing_id, material_version: 1, license_template_id: i.license_template_id, license_version: 1, license_type: o.type, license_name: o.name, title: { ar: `لقطات اصطناعية ${i.listing_id.slice(-1)}`, en: `Synthetic footage ${i.listing_id.slice(-1)}` }, price: { amount_minor: o.amount, currency: "USD" }, license_id: null }; });
+        const total = items.reduce((sum, i) => sum + i.price.amount_minor, 0), expected = body.expected_total as { amount_minor: number } | undefined;
+        if (expected && expected.amount_minor !== total) return send({ code: "price_changed" }, 409);
+        const stamp = new Date().toISOString(), exclusive = items.some(i => i.license_type === "exclusive_temporary");
+        const order = { id: randomUUID(), organization_id: user.organization_id, created_by: user.user_id, status: "pending_payment", cancel_reason: null, total: { amount_minor: total, currency: "USD" }, items, expires_at: new Date(Date.now() + (exclusive ? 900000 : 86400000)).toISOString(), paid_at: null, created_at: stamp, updated_at: stamp };
+        orders.set(order.id, order); return commit(order, 201);
+      }
+      const order = orders.get(orderWrite[1]); if (!order || order.organization_id !== user.organization_id) return send({}, 404);
+      if (order.status !== "pending_payment") return send({ code: "order_state_conflict" }, 409);
+      if (orderWrite[2] === "cancel") { Object.assign(order, { status: "cancelled", cancel_reason: "buyer", updated_at: new Date().toISOString() }); return commit(order, 200); }
+      return commit({ checkout_url: `http://127.0.0.1:${process.env.WEB_FIXTURE_PORT ?? 3201}/sandbox/checkout/${order.id}`, provider: "sandbox", expires_at: order.expires_at, session_secret: "never-display-canary" }, 200);
+    }
     const orgWrite = /^\/v1\/buyer-organizations(?:\/([^/]+)(\/members)?(?:\/([^/]+))?)?$/.exec(path);
     if (orgWrite) {
       const [, id, isMembers, userId] = orgWrite, mine = (orgId: string) => !user.organization_id || user.organization_id === orgId;
@@ -346,6 +375,13 @@ const server = createServer(async (req, res) => {
     if (!user.roles.some(role => ["system_admin", "rights_officer", "editor_in_chief", "finance"].includes(role.name))) return send({}, 403);
     const found = listings.get(listingRead[1]); if (!found) return send({ code: "not_found" }, 404);
     res.setHeader("ETag", `"${found.row}"`); return send({ ...Object.fromEntries(Object.entries(found).filter(([key]) => key !== "row")), internal_note: "never-display-canary" });
+  }
+  const orderRead = /^\/v1\/orders(?:\/([^/]+))?$/.exec(url.pathname);
+  if (orderRead) {
+    if (!user.roles.some(role => ["system_admin", "finance", "buyer_admin", "buyer_member"].includes(role.name))) return send({}, 403);
+    const visible = [...orders.values()].filter(o => !user.organization_id || o.organization_id === user.organization_id).reverse();
+    if (!orderRead[1]) return send({ items: visible, next_cursor: null });
+    const found = visible.find(o => o.id === orderRead[1]); return found ? send({ ...found, provider_reference: "never-display-canary" }) : send({}, 404);
   }
   const orgRead = /^\/v1\/buyer-organizations(?:\/([^/]+)(\/members)?)?$/.exec(url.pathname);
   if (orgRead) {

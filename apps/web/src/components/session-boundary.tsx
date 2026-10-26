@@ -62,7 +62,8 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
     <header className="site-header"><Link className="brand" href={`/${locale}/${buyer ? "store" : "inbox"}`} prefetch={false}><span className="brand-mark" aria-hidden="true" /><span>{m.brand}<small>{m.product}</small></span></Link>
       <div className="header-actions"><a href={pathname.replace(`/${locale}`, locale === "ar" ? "/en" : "/ar")} lang={locale === "ar" ? "en" : "ar"}>{m.language}</a><button className="quiet" disabled={busy} onClick={() => void logout(false)}>{m.logout}</button></div></header>
     <div className="workspace-shell"><aside className="sidebar">{!buyer && <p className="eyebrow">{m.workspace}</p>}<nav aria-label={m.workspace}>{buyer ? <>
-      <Link prefetch={false} className={pathname.includes("/store") ? "active" : ""} href={`/${locale}/store`}>{m.store.title}</Link>
+      <Link prefetch={false} className={pathname.includes("/store") && !/\/store\/(cart|orders)/.test(pathname) ? "active" : ""} href={`/${locale}/store`}>{m.store.title}</Link>
+      <Link prefetch={false} className={/\/store\/(cart|orders)/.test(pathname) ? "active" : ""} href={`/${locale}/store/cart`}>{m.orders.nav}</Link>
       <Link prefetch={false} className={pathname.endsWith("/organization") ? "active" : ""} href={`/${locale}/organization`}>{m.buyers.myOrganization}</Link>
     </> : <>
       <Link prefetch={false} className={pathname.endsWith("/inbox") ? "active" : ""} href={`/${locale}/inbox`}>{m.inbox}</Link>
