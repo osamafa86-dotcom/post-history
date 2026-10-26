@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { buyerOrganizations, catalogListings, deviceAttestationKeys, exclusiveHolds, idempotencyKeys, journalEntries, ledgerAccounts, licenseDownloadGrants, licenseTemplateVersions, licenseTemplates, licenses, listingOffers, materialContributors, materialExports, materialFiles, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, orderItems, orders, outboxEvents, paymentEvents, postings, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
+import { buyerInviteConflicts, buyerOrganizations, catalogListings, deviceAttestationKeys, exclusiveHolds, idempotencyKeys, journalEntries, ledgerAccounts, licenseDownloadGrants, licenseTemplateVersions, licenseTemplates, licenses, listingOffers, materialContributors, materialExports, materialFiles, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, orderItems, orders, outboxEvents, paymentEvents, postings, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
 
 export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => ({
 	refreshToken: one(refreshTokens, {
@@ -17,10 +17,6 @@ export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => 
 }));
 
 export const usersRelations = relations(users, ({one, many}) => ({
-	journalEntries: many(journalEntries),
-	orders: many(orders),
-	licenseDownloadGrants: many(licenseDownloadGrants),
-	outboxEvents: many(outboxEvents),
 	refreshTokens: many(refreshTokens),
 	pushDevices: many(pushDevices),
 	uploadForms: many(uploadForms),
@@ -71,6 +67,19 @@ export const usersRelations = relations(users, ({one, many}) => ({
 	uploadSessions: many(uploadSessions),
 	catalogListings: many(catalogListings),
 	ledgerAccounts: many(ledgerAccounts),
+	journalEntries: many(journalEntries),
+	orders: many(orders),
+	licenseDownloadGrants: many(licenseDownloadGrants),
+	outboxEvents: many(outboxEvents),
+	buyerInviteConflicts_existingUserId: many(buyerInviteConflicts, {
+		relationName: "buyerInviteConflicts_existingUserId_users_id"
+	}),
+	buyerInviteConflicts_invitedBy: many(buyerInviteConflicts, {
+		relationName: "buyerInviteConflicts_invitedBy_users_id"
+	}),
+	buyerInviteConflicts_resolvedBy: many(buyerInviteConflicts, {
+		relationName: "buyerInviteConflicts_resolvedBy_users_id"
+	}),
 	recoveryCodes: many(recoveryCodes),
 	materialContributors: many(materialContributors),
 	userRoles_grantedBy: many(userRoles, {
@@ -426,9 +435,10 @@ export const licenseTemplateVersionsRelations = relations(licenseTemplateVersion
 }));
 
 export const buyerOrganizationsRelations = relations(buyerOrganizations, ({many}) => ({
+	users: many(users),
 	orders: many(orders),
 	licenses: many(licenses),
-	users: many(users),
+	buyerInviteConflicts: many(buyerInviteConflicts),
 }));
 
 export const ledgerAccountsRelations = relations(ledgerAccounts, ({one, many}) => ({
@@ -542,5 +552,27 @@ export const paymentEventsRelations = relations(paymentEvents, ({one}) => ({
 	order: one(orders, {
 		fields: [paymentEvents.orderId],
 		references: [orders.id]
+	}),
+}));
+
+export const buyerInviteConflictsRelations = relations(buyerInviteConflicts, ({one}) => ({
+	user_existingUserId: one(users, {
+		fields: [buyerInviteConflicts.existingUserId],
+		references: [users.id],
+		relationName: "buyerInviteConflicts_existingUserId_users_id"
+	}),
+	user_invitedBy: one(users, {
+		fields: [buyerInviteConflicts.invitedBy],
+		references: [users.id],
+		relationName: "buyerInviteConflicts_invitedBy_users_id"
+	}),
+	buyerOrganization: one(buyerOrganizations, {
+		fields: [buyerInviteConflicts.organizationId],
+		references: [buyerOrganizations.id]
+	}),
+	user_resolvedBy: one(users, {
+		fields: [buyerInviteConflicts.resolvedBy],
+		references: [users.id],
+		relationName: "buyerInviteConflicts_resolvedBy_users_id"
 	}),
 }));

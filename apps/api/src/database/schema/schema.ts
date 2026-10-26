@@ -1235,3 +1235,46 @@ export const paymentEvents = pgTable("payment_events", {
 	check("payment_events_provider_ref_check", sql`(char_length(provider_ref) >= 1) AND (char_length(provider_ref) <= 128)`),
 	check("payment_events_type_check", sql`type = ANY (ARRAY['payment.succeeded'::text, 'payment.failed'::text, 'refund.succeeded'::text, 'dispute.opened'::text])`),
 ]);
+
+export const buyerInviteConflicts = pgTable("buyer_invite_conflicts", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	organizationId: uuid("organization_id").notNull(),
+	email: text().notNull(),
+	existingUserId: uuid("existing_user_id").notNull(),
+	role: text().notNull(),
+	state: text().default('pending').notNull(),
+	invitedBy: uuid("invited_by").notNull(),
+	inviteExpiresAt: timestamp("invite_expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: 'string' }),
+	resolvedBy: uuid("resolved_by"),
+}, (table) => [
+	uniqueIndex("buyer_invite_conflicts_open_email").using("btree", sql`organization_id`, sql`lower(email)`).where(sql`(state <> 'dismissed'::text)`),
+	index("buyer_invite_conflicts_pending").using("btree", table.createdAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(state = 'pending'::text)`),
+	foreignKey({
+			columns: [table.existingUserId],
+			foreignColumns: [users.id],
+			name: "buyer_invite_conflicts_existing_user_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.invitedBy],
+			foreignColumns: [users.id],
+			name: "buyer_invite_conflicts_invited_by_fkey"
+		}),
+	foreignKey({
+			columns: [table.organizationId],
+			foreignColumns: [buyerOrganizations.id],
+			name: "buyer_invite_conflicts_organization_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.resolvedBy],
+			foreignColumns: [users.id],
+			name: "buyer_invite_conflicts_resolved_by_fkey"
+		}),
+	check("buyer_invite_conflicts_email_check", sql`(char_length(email) >= 3) AND (char_length(email) <= 254)`),
+	check("buyer_invite_conflicts_expiry_check", sql`invite_expires_at > created_at`),
+	check("buyer_invite_conflicts_resolved_check", sql`((state = 'dismissed'::text) = (resolved_at IS NOT NULL)) AND ((resolved_at IS NULL) = (resolved_by IS NULL))`),
+	check("buyer_invite_conflicts_role_check", sql`role = ANY (ARRAY['buyer_admin'::text, 'buyer_member'::text])`),
+	check("buyer_invite_conflicts_state_check", sql`state = ANY (ARRAY['pending'::text, 'suspended'::text, 'dismissed'::text])`),
+]);
