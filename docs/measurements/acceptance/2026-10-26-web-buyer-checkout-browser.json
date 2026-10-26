@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "web-buyer-checkout",
+  "started_at": "2026-10-26T16:47:28.954Z",
+  "ended_at": "2026-10-26T16:47:42.632Z",
+  "result": "partial",
+  "metrics": {
+    "checks": 14,
+    "checks_failed": 0,
+    "deferred_checks": 0,
+    "checkout_origin_allowed": true,
+    "delivery_ready": true
+  },
+  "device": {
+    "platform": "browser",
+    "model": "Playwright"
+  },
+  "upload_path": "n/a",
+  "network": {
+    "profile": "default"
+  },
+  "notes": "شراء تجريبي كامل عبر الواجهة في متصفح حقيقي: الكتالوج ← ترخيص ← سلة ← طلب بانتظار الدفع ← صفحة المزوّد المستضافة ← طلب مدفوع ← ترخيص جديد بشهادته ← تنزيل معدود؛ والمبلغ نفسه في السلة والطلب وصفحة الدفع. جزئية دائمًا: مزوّد تجريبي ومشترٍ واحد وتشغيل واحد؛ لا أصل صفحة الدفع ولا نص خطأ خام في هذه النتيجة."
+}
