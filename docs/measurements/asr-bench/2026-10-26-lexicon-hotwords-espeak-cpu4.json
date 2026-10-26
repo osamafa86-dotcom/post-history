@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "tool": "asr-bench",
+  "role": "ai",
+  "test_name": "lexicon-hotwords-espeak-cpu",
+  "started_at": "2026-10-26T05:25:26.873Z",
+  "ended_at": "2026-10-26T05:38:25.011Z",
+  "result": "info",
+  "device": {
+    "platform": "server",
+    "model": "Intel(R) Xeon(R) Processor @ 2.10GHz, --cpus 4, CPU only",
+    "os_version": "Linux-6.18.44-fc-v153-x86_64-with-glibc2.41"
+  },
+  "upload_path": "n/a",
+  "file": {
+    "codec": "wav, espeak-ng Arabic voice (synthetic)"
+  },
+  "provider": "local: faster-whisper faster-whisper-large-v3-turbo (int8)",
+  "cost_usd": 0,
+  "metrics": {
+    "items": 60,
+    "name_items": 40,
+    "control_items": 20,
+    "lexicon_terms": 86,
+    "hotwords_terms_sent": 70,
+    "hotwords_chars": 582,
+    "base_term_hit": 4,
+    "base_items_with_fabricated_term": 1,
+    "base_controls_with_term": 1,
+    "base_wer_pct": 82.4,
+    "base_transcribe_s": 363.3,
+    "lexicon_term_hit": 16,
+    "lexicon_items_with_fabricated_term": 7,
+    "lexicon_controls_with_term": 5,
+    "lexicon_wer_pct": 81.8,
+    "lexicon_transcribe_s": 395.5,
+    "peak_memory_mb": 3714.3,
+    "network": "none (docker --network none)"
+  },
+  "notes": "Synthetic espeak-ng Arabic: 40 sentences each naming one dictionary term (random sample, seed 7) and 20 control sentences with no name; each transcribed without and with the dictionary as faster-whisper hotwords. Robotic speech raises WER for both; the comparison is the point. Real field speech and dialect not measured. No correspondent material."
+}
