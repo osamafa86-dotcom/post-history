@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "timestamp-alignment",
+  "started_at": "2026-10-26T13:45:36.098Z",
+  "ended_at": "2026-10-26T13:47:00.914Z",
+  "result": "partial",
+  "metrics": {
+    "offset_error_ms": 0,
+    "truth_offset_ms": 5478,
+    "confidence": 0.984,
+    "threshold_ms": 40,
+    "failures": 0
+  },
+  "device": {
+    "platform": "server",
+    "model": "local single host: api (dev mode) + tusd 2.8 + minio + redis + postgres 16 + media worker (python, no container sandbox)"
+  },
+  "upload_path": "tusd",
+  "file": {
+    "duration_s": 30,
+    "codec": "h264",
+    "vfr": true,
+    "hdr": false
+  },
+  "notes": "محاذاة صوتية من الطرف إلى الطرف في المكدس: نسخة هاتف 240p (تبدأ بعد الأصل بمقدار معلوم وطوابعها مصفَّرة) تُرفع أولًا ثم الأصل (30 ث بمعدل متغير وبداية 3.5 ث وصوت ضجيج بغلاف متغير)؛ يُنتظر أن يسجّل الخادم الإزاحة، ويُقارن بالمبنية عمدًا، ويظهر في Material.files أرقامًا فقط. partial: مقطع واحد اصطناعي، ولا هاتف حقيقي (الشق الميداني tools/acceptance/field/timestamp-alignment.md)، وترتيب الرفع هنا الأصل بعد النسخة فقط (الترتيب المعاكس ومرور الملفين معًا غير مقيسين)"
+}
