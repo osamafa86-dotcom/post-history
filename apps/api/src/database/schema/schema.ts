@@ -1404,7 +1404,7 @@ export const payoutRequests = pgTable("payout_requests", {
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("payout_requests_open_idx").using("btree", table.requestedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(state = ANY (ARRAY['requested'::text, 'approved'::text, 'processing'::text]))`),
-	index("payout_requests_user_idx").using("btree", table.userId.asc().nullsLast().op("timestamptz_ops"), table.requestedAt.desc().nullsFirst().op("uuid_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")),
+	index("payout_requests_user_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops"), table.requestedAt.desc().nullsFirst().op("timestamptz_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")),
 	foreignKey({
 			columns: [table.holdEntryId],
 			foreignColumns: [journalEntries.id],
