@@ -1,0 +1,1 @@
+Send the original as shot, with uploads that resume from the last confirmed chunk, a numbered receipt, and three independent states per material.
