@@ -1,0 +1,24 @@
+{
+  "sourceLanguage" : "ar",
+  "strings" : {
+    "NSFaceIDUsageDescription" : {
+      "comment" : "Face ID prompt for the app lock",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يستخدم التطبيق Face ID لقفل موادك ورفعك."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The app uses Face ID to lock your materials and uploads."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

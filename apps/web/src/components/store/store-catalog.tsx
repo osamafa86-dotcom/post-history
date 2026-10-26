@@ -7,7 +7,8 @@ import { lowest, type CatalogItem } from "@/lib/store-format";
 import { useUser } from "../session-boundary";
 import { CatalogCard } from "./catalog-card";
 
-export const catalogRoles = ["system_admin", "rights_officer", "editor_in_chief", "finance"] as const;
+// أدوار المشترين (#192) تتصفح الكتالوج كما في x-roles.
+export const catalogRoles = ["system_admin", "rights_officer", "editor_in_chief", "finance", "buyer_admin", "buyer_member"] as const;
 const licenseTypes = ["editorial_single", "editorial_term", "exclusive_temporary", "commercial"] as const;
 type Page = { items: CatalogItem[]; next_cursor: string | null };
 

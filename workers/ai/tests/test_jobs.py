@@ -19,10 +19,10 @@ def make(tmp_path, *, enabled=True, api=None, engine=None, with_proxy=True, **kw
 @pytest.mark.parametrize("event", [
     {"type": "upload.original_received", "payload": {"material_id": MATERIAL, "file_id": FILE, "kind": "original"}},
     verified_event(kind="proxy"),
-    verified_event(kind="voice_note"),
+    verified_event(kind="export"),
     verified_event(file_id=None),
 ])
-def test_ignores_everything_but_a_verified_original(tmp_path, event):
+def test_ignores_everything_but_a_verified_original_or_voice_note(tmp_path, event):
     jobs, storage, _ = make(tmp_path)
     assert jobs.handle(event) == "ignored"
     assert storage.puts == [] and jobs.engine.calls == 0
@@ -167,3 +167,16 @@ def test_transcript_text_never_reaches_the_log_or_the_server(tmp_path, caplog):
         jobs.handle(verified_event())  # redelivery: the reuse path logs too
     sent = json.dumps(list(jobs.api.derivatives.values()), ensure_ascii=False)
     assert caplog.records and not [w for w in words if w in caplog.text or w in sent]
+
+
+def test_voice_note_is_transcribed_from_its_16k_audio_without_shots(tmp_path):
+    from ai_worker.jobs import audio_key
+
+    jobs, storage, _ = make(tmp_path, with_proxy=False, shots_enabled=True, detect=_fake_detect(calls := []))
+    with pytest.raises(SourceNotReady):  # the media worker has not written the audio yet
+        jobs.handle(verified_event(kind="voice_note"))
+    storage.objects[(BUCKET, audio_key(MATERIAL, FILE))] = b"\x00" * 2048
+    assert jobs.handle(verified_event(kind="voice_note")) == "transcribed+transcript+captions"
+    doc = json.loads(storage.objects[(BUCKET, transcript_key(MATERIAL, FILE))])
+    assert doc["source"]["from"] == "audio-16k.m4a" and calls == []
+    assert {k for _, k in jobs.api.derivatives} == {"transcript", "captions"}

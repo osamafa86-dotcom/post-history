@@ -6,7 +6,7 @@
   (`select` و`setpts`)، والصوت يُقص لكل مقطع بدقة العينة ثم يوصل. لا يُترك طول المقطع لمدد الإطارات (غير منتظمة في
   المعدل المتغير)، فلا ينزاح القص ولا التزامن مع تعدد المقاطع. المقاطع متصاعدة غير متداخلة.
 - الاتجاه: دوران العرض يُطبَّق قبل المرشحات. HDR يُحوَّل إلى SDR BT.709 بالسلسلة نفسها، وبكسل مربع، و8 بت 4:2:0.
-- بلا وسوم ولا فصول، و`faststart`.
+- بلا وسوم ولا فصول ولا رسالة SEI (ولا ما يكتبه المرمّز نفسه)، و`faststart`.
 - المرمّز: libx264 (CRF 18). NVENC حين تحويه نسخة ffmpeg (`h264_nvenc`)؛ الصورة الحالية الساكنة لا تحويه.
 - المدخل مقيد بـ `INPUT_GUARD`، والأصل يُقرأ فقط، والمخرج باسم مؤقت ثم نقل ذري.
 """
@@ -65,6 +65,9 @@ def render_args(src: Path, dst: Path, source: Probe, segments: list[Segment], en
         "-filter_complex", ";".join(graph), "-map", "[v]", *(["-map", "[a]"] if audio else []),
         "-map_metadata", "-1", "-map_chapters", "-1", "-fps_mode", "vfr",
         *ENCODERS[encoder], "-pix_fmt", "yuv420p", *(SDR_TAGS if source.hdr else []),
+        # رسالة SEI التي يكتبها المرمّز نفسه (اسمه وخياراته) تُحذف، و`bitexact` لا يكتب اسم الجامع ولا توقيتًا
+        "-bsf:v", "filter_units=remove_types=6",
+        "-fflags", "+bitexact", "-flags:v", "+bitexact", "-flags:a", "+bitexact",
         *(["-c:a", "aac", "-b:a", "192k"] if audio else []),
         "-movflags", "+faststart", "-f", "mp4", str(dst),
     ]

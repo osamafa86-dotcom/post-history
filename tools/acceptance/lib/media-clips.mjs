@@ -17,16 +17,19 @@ export const LEAK_VALUES = Object.values(LEAK);
 
 const run = (bin, args, opts = {}) => execFileSync(bin, args, { stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024, ...opts });
 
+/** Noise under a slow, never-repeating loudness envelope (three incommensurate sines): an audio track an alignment can lock onto, which a steady tone is not. */
+const VARIED_AUDIO = (seconds) => `aevalsrc=(random(0)*2-1)*(0.1+0.9*abs(sin(2*PI*0.37*t)*sin(2*PI*1.13*t+1)*sin(2*PI*2.71*t+2))):s=48000:d=${seconds}`;
+
 /**
- * One synthetic clip: test pattern + 440 Hz tone. `vfr` drops one frame in seven, `gap` removes a stretch of
+ * One synthetic clip: test pattern + 440 Hz tone (`varied`: noise under a varying loudness envelope instead). `vfr` drops one frame in seven, `gap` removes a stretch of
  * frames, `startOffset` shifts the first timestamp (what phones record), `tags` plants the revealing container tags.
  */
-export function synthClip(path, { seconds = 10, size = "1280x720", rate = 30, vfr = false, gap = null, startOffset = 0, tags = true, noise = false } = {}) {
+export function synthClip(path, { seconds = 10, size = "1280x720", rate = 30, vfr = false, gap = null, startOffset = 0, tags = true, noise = false, varied = false } = {}) {
   // `noise` swaps the test pattern for random pixels at a fixed high bitrate: a valid clip of a predictable, large size
   const source = noise ? `nullsrc=size=${size}:rate=${rate}:duration=${seconds},geq=random(1)*255:128:128` : `testsrc2=size=${size}:rate=${rate}:duration=${seconds}`;
   const args = ["-hide_banner", "-nostdin", "-loglevel", "error", "-y",
     "-f", "lavfi", "-i", source,
-    "-f", "lavfi", "-i", `sine=frequency=440:sample_rate=48000:duration=${seconds}`];
+    "-f", "lavfi", "-i", varied ? VARIED_AUDIO(seconds) : `sine=frequency=440:sample_rate=48000:duration=${seconds}`];
   const conds = [];
   if (vfr) conds.push("not(eq(mod(n,7),3))");
   if (gap) conds.push(`not(between(t,${gap[0]},${gap[1]}))`);
@@ -40,6 +43,18 @@ export function synthClip(path, { seconds = 10, size = "1280x720", rate = 30, vf
   args.push(path);
   run(FFMPEG, args);
   return path;
+}
+
+/** What a phone uploads as its light copy: 240p, the part of `src` from `skipS` seconds in, timestamps restarted at zero. */
+export function phoneProxy(src, dst, { skipS = 2, seconds = 24 } = {}) {
+  run(FFMPEG, ["-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-ss", String(skipS), "-i", src, "-t", String(seconds),
+    "-vf", "scale=-2:240", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k", "-map_metadata", "-1", dst]);
+  return dst;
+}
+
+/** The container start time of `path` in seconds, as ffprobe reads it. */
+export function formatStart(path) {
+  return Number(run(FFPROBE, ["-v", "error", "-show_entries", "format=start_time", "-of", "csv=p=0", path]).toString().trim());
 }
 
 /** Remuxes `src` into `dst` with a display-rotation side data of `degrees` (what a phone held upright writes), streams copied. */

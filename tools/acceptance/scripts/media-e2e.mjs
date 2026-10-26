@@ -31,7 +31,7 @@ import { resumableUpload } from "../lib/tus.mjs";
 import { tusAuth } from "../lib/ingest.mjs";
 import { scan } from "../lib/pii.mjs";
 import { seed } from "../live/seed.mjs";
-import { LEAK_VALUES, cutBack, durationSeconds, hostilePayloads, imageSize, sha256File, synthClip, tagDump, videoTimes } from "../lib/media-clips.mjs";
+import { LEAK_VALUES, cutBack, durationSeconds, formatStart, hostilePayloads, imageSize, phoneProxy, sha256File, synthClip, tagDump, videoTimes } from "../lib/media-clips.mjs";
 
 const TOLERANCE_MS = 40;
 
@@ -65,10 +65,10 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     const hooks = viaHooks ? hookClient({ baseUrl: env.HOOK_BASE_URL, token: env.HOOK_TOKEN }) : null;
 
     /** Upload a local file as a reporter would: session, then tus (or the simulated hooks locally). Returns what the checks need. */
-    const submit = async (path, label) => {
-      const mat = (await api.call(reporter, "POST", "/materials", { body: materialBody(fv, `media-e2e-${label}-${Date.now()}`) })).body;
+    const submit = async (path, label, opts = {}) => {
+      const mat = opts.mat ?? (await api.call(reporter, "POST", "/materials", { body: materialBody(fv, `media-e2e-${label}-${Date.now()}`) })).body;
       const sha = await sha256File(path), size = statSync(path).size;
-      const session = await createUploadSession(api, reporter, { materialId: mat.id, size, clientSha256: sha, filename: label });
+      const session = await createUploadSession(api, reporter, { materialId: mat.id, size, clientSha256: sha, filename: label, kind: opts.kind ?? "original" });
       const t0 = Date.now();
       if (tusUrl) {
         const up = await resumableUpload({ endpoint: tusUrl, file: path, size, chunkSize: 8 * 1024 * 1024, interruptAt: [], metadata: { upload_session_id: session.id }, headers: () => tusAuth(session) });
@@ -189,12 +189,41 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     const logsAfter = env.MEDIA_E2E_LOGS_CMD ? execSync(env.MEDIA_E2E_LOGS_CMD, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }) : "";
     check("the worker's log carries no path or playlist content from the hostile files", !/\/etc\/hostname|EXTM3U|ffconcat|canary/.test(logsAfter));
 
+
+    // ---- C. audio alignment (MEDIA_ENABLE_ALIGNMENT on the worker, #274/#280): the phone's own light copy first, then the original
+    //          (the order the phones upload in); the server must end up holding the offset, within the row's 40 ms of the truth.
+    let align = null;
+    if (env.MEDIA_E2E_ALIGNMENT === "1") {
+      const SKIP_S = 2;
+      const orig = synthClip(join(work, "align-original.mov"), { seconds: 30, vfr: true, startOffset: 3.5, varied: true, tags: false });
+      const prox = phoneProxy(orig, join(work, "align-phone.mp4"), { skipS: SKIP_S, seconds: 24 });
+      const truthMs = (formatStart(orig) + SKIP_S) * 1000;
+      const mat = (await api.call(reporter, "POST", "/materials", { body: materialBody(fv, `media-e2e-align-${Date.now()}`) })).body;
+      const subP = await submit(prox, "align-phone.mp4", { mat, kind: "proxy" });
+      const doneP = await settle(subP);
+      check("alignment: the phone's light copy verifies", doneP?.state === "verified", `state ${doneP?.state ?? "timeout"}`);
+      const subO = await submit(orig, "align-original.mov", { mat });
+      const doneO = await settle(subO);
+      check("alignment: the original verifies", doneO?.state === "verified", `state ${doneO?.state ?? "timeout"}`);
+      const row = (await waitFor(async () => (await q(`SELECT f.id, f.alignment_original_file_id AS orig, f.alignment_offset_ms AS offset_ms, f.alignment_reliable AS reliable, f.alignment_confidence AS confidence
+          FROM material_files f WHERE f.material_id = $1 AND f.kind = 'proxy' AND f.derived_from_id IS NULL AND f.alignment_reliable IS NOT NULL`, [mat.id]))[0] ?? null, { timeoutMs, everyMs: 500 })).value;
+      const [origRow] = await q(`SELECT id FROM material_files WHERE material_id = $1 AND kind = 'original' AND state = 'verified'`, [mat.id]);
+      check("alignment: the server holds an alignment for the phone's light copy", Boolean(row), "none recorded: the pair may have raced, or the flag is off");
+      check("alignment: it names this material's verified original", Boolean(row) && row.orig === origRow?.id, `${row?.orig} vs ${origRow?.id}`);
+      check("alignment: marked reliable", row?.reliable === true, `reliable ${row?.reliable}, confidence ${row?.confidence}`);
+      const errMs = row ? Math.abs(Number(row.offset_ms) - truthMs) : Infinity;
+      check(`alignment: the offset is within ${TOLERANCE_MS} ms of the one built in`, errMs <= TOLERANCE_MS, `${row?.offset_ms} vs ${truthMs.toFixed(1)} ms`);
+      const shown = (await api.get(reporter, `/materials/${mat.id}`)).body?.files?.find((f) => f.kind === "proxy" && f.alignment);
+      check("alignment: Material.files carries it for the light copy, numbers only", Boolean(shown) && Object.keys(shown.alignment).sort().join() === "confidence,margin,offset_ms,original_file_id,reliable", JSON.stringify(shown?.alignment ?? null));
+      align = { error_ms: errMs, truth_ms: truthMs, confidence: Number(row?.confidence ?? 0) };
+    }
+
     // ---- results
     const device = { platform: "server", model: env.MEDIA_E2E_ENV_LABEL ?? (tusUrl ? "compose: api + tusd + minio + redis + media-worker" : "local processes: api + simulated tusd hooks + S3 emulator + redis + media worker") };
     const tail = ["لم يُقَس: HDR بألوان صحيحة في النسخة الخفيفة، ولا ملف هاتف حقيقي (المقاطع اصطناعية من FFmpeg)", "المصغّرتان فُحصتا وجودًا وصيغةً وغياب الوسوم، لا جودة الصورة ولا اختيار الإطار؛ تسجيل المصغّرة في الخادم يُسجَّل في المقاييس (thumbnail_registered) وليس شرطًا: الخادم لا يقبل نوع thumbnail بعد"].join("؛ ");
     const doc = newResult("proxy-accuracy", { device, upload_path: tusUrl ? "tusd" : "n/a", file: { size_bytes: subL.size, duration_s: Number(longSeconds.toFixed(3)), codec: "h264", vfr: false, hdr: false } });
     doc.started_at = started;
-    const proxyFails = fails.filter((f) => !/^(hls|concat|truncated|no request|the worker's log carries)/.test(f));
+    const proxyFails = fails.filter((f) => !/^(hls|concat|truncated|no request|the worker's log carries|alignment:)/.test(f));
     finish(doc, proxyFails.length ? "fail" : "partial", {
       cut_points: cut.points.length, cut_matched_by_frame_index: Boolean(cut.byIndex), cut_worst_gap_ms: cut.maxMs, cut_tolerance_ms: TOLERANCE_MS,
       frames_original: cut.originalFrames, frames_proxy: cut.proxyFrames, start_pts_gap_us: startGapUs,
@@ -211,11 +240,19 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       callout_hits: calloutHits, failures: rejectFails.length,
     }, `${rejectFails.length ? `فشل: ${rejectFails.join("؛ ")}. ` : ""}عامل الوسائط: قوائم HLS وconcat بامتداد فيديو وملف مقطوع تنتهي failed بسبب invalid_file بلا مشتق ولا اتصال خارج الحاوية؛ لم يُقَس ترميز غير مدعوم ولا رسالة الرفض على الهاتف ولا ملف تالف حقيقي من هاتف؛ مستمع الاتصال الخارجي يثبت أن شيئًا لم يخرج لكنه ليس كاشفًا مجرَّبًا (FFmpeg الافتراضي لا يجلب مقاطع http من قائمة محلية أصلًا)؛ طبقة المنع نفسها (protocol_whitelist) اختبارها في workers/media`);
 
-    if (args["dry-run"]) { writeResult(doc, { dryRun: true }); writeResult(doc2, { dryRun: true }); }
+    const docs = [doc, doc2];
+    if (align) {
+      const alignFails = fails.filter((f) => /^alignment:/.test(f));
+      const doc3 = newResult("timestamp-alignment", { device, upload_path: tusUrl ? "tusd" : "n/a", file: { duration_s: 30, codec: "h264", vfr: true, hdr: false } });
+      doc3.started_at = started;
+      finish(doc3, alignFails.length ? "fail" : "partial", { offset_error_ms: Number(align.error_ms.toFixed(2)), truth_offset_ms: Number(align.truth_ms.toFixed(1)), confidence: align.confidence, threshold_ms: TOLERANCE_MS, failures: alignFails.length },
+        `${alignFails.length ? `فشل: ${alignFails.join("؛ ")}. ` : ""}محاذاة صوتية من الطرف إلى الطرف في المكدس: نسخة هاتف 240p (تبدأ بعد الأصل بمقدار معلوم وطوابعها مصفَّرة) تُرفع أولًا ثم الأصل (30 ث بمعدل متغير وبداية 3.5 ث وصوت ضجيج بغلاف متغير)؛ يُنتظر أن يسجّل الخادم الإزاحة، ويُقارن بالمبنية عمدًا، ويظهر في Material.files أرقامًا فقط. partial: مقطع واحد اصطناعي، ولا هاتف حقيقي (الشق الميداني tools/acceptance/field/timestamp-alignment.md)، وترتيب الرفع هنا الأصل بعد النسخة فقط (الترتيب المعاكس ومرور الملفين معًا غير مقيسين)`);
+      docs.push(doc3);
+    }
+    if (args["dry-run"]) { for (const d of docs) writeResult(d, { dryRun: true }); }
     else {
       const dir = args["out-dir"] && args["out-dir"] !== true ? args["out-dir"] : undefined;
-      console.log("wrote", writeResult(doc, { slug: "media-e2e", ...(dir ? { dir } : {}) }));
-      console.log("wrote", writeResult(doc2, { slug: "media-e2e", ...(dir ? { dir } : {}) }));
+      for (const d of docs) console.log("wrote", writeResult(d, { slug: "media-e2e", ...(dir ? { dir } : {}) }));
     }
     return { code: fails.length ? 1 : 0, doc, extra: doc2 };
   } finally {

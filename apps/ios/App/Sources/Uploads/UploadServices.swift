@@ -29,6 +29,7 @@ final class UploadServices: @unchecked Sendable {
         config.sessionSendsLaunchEvents = true
         config.waitsForConnectivity = true
         transport = URLSessionTusTransport(configuration: config)
+        transport.unmeteredOnly = { UserDefaults.standard.bool(forKey: AppSettings.uploadOverWifiOnlyKey) }
         documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         uploadsDirectory = documentsDirectory.appendingPathComponent("Uploads", isDirectory: true)
         chunksDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("UploadChunks", isDirectory: true)
@@ -83,11 +84,27 @@ final class UploadServices: @unchecked Sendable {
 }
 
 /// إعدادات المراسل. حذف النسخة المحلية بعد الإيصال اختياري (قرار المالك) وافتراضيه الإبقاء مع تذكير بارز.
+/// «عبر Wi‑Fi فقط» اختياري وافتراضيه الرفع على أي شبكة؛ تغييره يعيد جدولة النقل الجاري بالسياسة الجديدة.
 @MainActor
 final class AppSettings: ObservableObject {
+    nonisolated static let uploadOverWifiOnlyKey = "uploadOverWifiOnly"
+
     @Published var deleteLocalAfterReceipt: Bool {
         didSet { UserDefaults.standard.set(deleteLocalAfterReceipt, forKey: "deleteLocalAfterReceipt") }
     }
-    init() { deleteLocalAfterReceipt = UserDefaults.standard.bool(forKey: "deleteLocalAfterReceipt") }
-    func reload() { deleteLocalAfterReceipt = UserDefaults.standard.bool(forKey: "deleteLocalAfterReceipt") }
+    @Published var uploadOverWifiOnly: Bool {
+        didSet {
+            guard uploadOverWifiOnly != oldValue else { return }
+            UserDefaults.standard.set(uploadOverWifiOnly, forKey: Self.uploadOverWifiOnlyKey)
+            Task { await UploadServices.shared.transport.restartTransfers() }
+        }
+    }
+    init() {
+        deleteLocalAfterReceipt = UserDefaults.standard.bool(forKey: "deleteLocalAfterReceipt")
+        uploadOverWifiOnly = UserDefaults.standard.bool(forKey: Self.uploadOverWifiOnlyKey)
+    }
+    func reload() {
+        deleteLocalAfterReceipt = UserDefaults.standard.bool(forKey: "deleteLocalAfterReceipt")
+        uploadOverWifiOnly = UserDefaults.standard.bool(forKey: Self.uploadOverWifiOnlyKey)
+    }
 }

@@ -2959,6 +2959,159 @@
           }
         }
       }
+    },
+    "lock.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "التطبيق مقفل"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app is locked"
+          }
+        }
+      }
+    },
+    "lock.unlock": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "فتح القفل"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unlock"
+          }
+        }
+      }
+    },
+    "lock.reason.unlock": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "افتح قفل تطبيق المراسلين"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unlock the reporter app"
+          }
+        }
+      }
+    },
+    "lock.reason.enable": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "فعّل قفل التطبيق"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn on the app lock"
+          }
+        }
+      }
+    },
+    "settings.appLock": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "قفل التطبيق بـ Face ID أو الرمز"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lock the app with Face ID or passcode"
+          }
+        }
+      }
+    },
+    "settings.appLock.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يُقفل التطبيق كلما خرجت منه، ويستمر الرفع في الخلفية. المسح الطارئ متاح من شاشة القفل."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app locks whenever you leave it, and uploads continue in the background. Emergency wipe stays available on the lock screen."
+          }
+        }
+      }
+    },
+    "settings.appLock.unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا يمكن القفل: فعّل رمز الجهاز أو Face ID في الإعدادات أولًا."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can’t lock: set a device passcode or Face ID in Settings first."
+          }
+        }
+      }
+    },
+    "settings.uploadOverWifiOnly": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الرفع عبر Wi‑Fi فقط"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload over Wi‑Fi only"
+          }
+        }
+      }
+    },
+    "settings.uploadOverWifiOnly.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا يُستخدم الخلوي ولا وضع البيانات المنخفضة. يبقى الرفع في الطابور ويستأنف من آخر ما وصل حين يتوفر Wi‑Fi."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No cellular or Low Data Mode. Uploads stay queued and resume from the last byte received once Wi‑Fi is available."
+          }
+        }
+      }
     }
   }
 }
