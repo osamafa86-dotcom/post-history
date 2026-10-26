@@ -9,15 +9,19 @@ import Foundation
 
 public struct NewsroomDashboardReservedInner: Sendable, Codable, Hashable {
 
+    public static let reservedByNameRule = StringRule(minLength: nil, maxLength: 80, pattern: nil)
     public var materialId: UUID
     public var reservedBy: UUID
+    /** اسم عمل الحاجز (ADR 0035)؛ قد يغيب */
+    public var reservedByName: String?
     public var reservedAt: Date
     public var priority: Priority
     public var editorialState: EditorialState
 
-    public init(materialId: UUID, reservedBy: UUID, reservedAt: Date, priority: Priority, editorialState: EditorialState) {
+    public init(materialId: UUID, reservedBy: UUID, reservedByName: String? = nil, reservedAt: Date, priority: Priority, editorialState: EditorialState) {
         self.materialId = materialId
         self.reservedBy = reservedBy
+        self.reservedByName = reservedByName
         self.reservedAt = reservedAt
         self.priority = priority
         self.editorialState = editorialState
@@ -26,6 +30,7 @@ public struct NewsroomDashboardReservedInner: Sendable, Codable, Hashable {
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case materialId = "material_id"
         case reservedBy = "reserved_by"
+        case reservedByName = "reserved_by_name"
         case reservedAt = "reserved_at"
         case priority
         case editorialState = "editorial_state"
@@ -37,6 +42,7 @@ public struct NewsroomDashboardReservedInner: Sendable, Codable, Hashable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(materialId, forKey: .materialId)
         try container.encode(reservedBy, forKey: .reservedBy)
+        try container.encodeIfPresent(reservedByName, forKey: .reservedByName)
         try container.encode(reservedAt, forKey: .reservedAt)
         try container.encode(priority, forKey: .priority)
         try container.encode(editorialState, forKey: .editorialState)

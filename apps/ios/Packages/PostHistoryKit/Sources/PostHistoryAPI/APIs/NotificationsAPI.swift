@@ -275,6 +275,49 @@ open class NotificationsAPI {
     }
 
     /**
+     وسم كل إشعارات المستدعي غير المقروءة مقروءةً («قراءة الكل»)
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter notificationReadAll: (body)  (optional)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: NotificationReadAllResult
+     */
+    open class func readAllNotifications(idempotencyKey: String, notificationReadAll: NotificationReadAll? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> NotificationReadAllResult {
+        return try await readAllNotificationsWithRequestBuilder(idempotencyKey: idempotencyKey, notificationReadAll: notificationReadAll, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     وسم كل إشعارات المستدعي غير المقروءة مقروءةً («قراءة الكل»)
+     - POST /notifications/read-all
+     - يطال إشعارات المستدعي وحده (ADR 0035)، ما أُنشئ منها حتى `before` (افتراضيًا وقت الطلب)، فما يصل بعد فتح الشاشة يبقى غير مقروء. القراءة لا تقرّ الاستلام: المهام (`assignment_state = assigned`) تبقى بلا إقرار وسلسلة تصعيدها جارية، و«اطّلعت» يبقى `/notifications/{id}/ack` لكل إشعار. ذاتي التكرار بـ `Idempotency-Key`: التكرار يعيد الاستجابة الأولى نفسها.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter notificationReadAll: (body)  (optional)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<NotificationReadAllResult> 
+     */
+    open class func readAllNotificationsWithRequestBuilder(idempotencyKey: String, notificationReadAll: NotificationReadAll? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<NotificationReadAllResult> {
+        let localVariablePath = "/notifications/read-all"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: notificationReadAll, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<NotificationReadAllResult>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      وسم الإشعار مقروءًا (قُرئ)
      
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 

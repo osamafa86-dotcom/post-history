@@ -19,6 +19,8 @@ public struct License: Sendable, Codable, Hashable {
     public static let licenseNumberRule = StringRule(minLength: nil, maxLength: nil, pattern: "^PH-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{10}$")
     public static let materialVersionRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     public static let licenseVersionRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
+    public static let deliveryContentsRule = ArrayRule(minItems: nil, maxItems: 10, uniqueItems: false)
+    public static let deliverySizeBytesRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     public var id: UUID
     public var licenseNumber: String
     public var orderId: UUID
@@ -41,8 +43,12 @@ public struct License: Sendable, Codable, Hashable {
     public var issuedAt: Date
     /** حزمة التسليم مبنية وجاهزة للتنزيل */
     public var deliveryReady: Bool
+    /** صيغ ما في حزمة التسليم (ADR 0035)، سطر لكل تسليم في الشروط، من المواصفات الفنية للنسخ المجرَّدة من البيانات الكاشفة التي في الحزمة. بلا بصمة ولا معرّف ملف ولا مفتاح تخزين ولا بيانات الأصل الوصفية. فارغة قبل `delivery_ready`. قد يغيب */
+    public var deliveryContents: [LicenseDeliveryContent]?
+    /** حجم الحزمة؛ `null` قبل جاهزيتها. قد يغيب */
+    public var deliverySizeBytes: Int?
 
-    public init(id: UUID, licenseNumber: String, orderId: UUID, orderItemId: UUID, organizationId: UUID, listingId: UUID, materialVersion: Int, title: LocalizedText, licenseTemplateId: UUID, licenseVersion: Int, terms: LicenseTerms, price: Money, status: LicenseStatus, revokedReason: RevokedReason?, validFrom: Date, validUntil: Date?, exclusiveUntil: Date?, issuedAt: Date, deliveryReady: Bool) {
+    public init(id: UUID, licenseNumber: String, orderId: UUID, orderItemId: UUID, organizationId: UUID, listingId: UUID, materialVersion: Int, title: LocalizedText, licenseTemplateId: UUID, licenseVersion: Int, terms: LicenseTerms, price: Money, status: LicenseStatus, revokedReason: RevokedReason?, validFrom: Date, validUntil: Date?, exclusiveUntil: Date?, issuedAt: Date, deliveryReady: Bool, deliveryContents: [LicenseDeliveryContent]? = nil, deliverySizeBytes: Int? = nil) {
         self.id = id
         self.licenseNumber = licenseNumber
         self.orderId = orderId
@@ -62,6 +68,8 @@ public struct License: Sendable, Codable, Hashable {
         self.exclusiveUntil = exclusiveUntil
         self.issuedAt = issuedAt
         self.deliveryReady = deliveryReady
+        self.deliveryContents = deliveryContents
+        self.deliverySizeBytes = deliverySizeBytes
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -84,6 +92,8 @@ public struct License: Sendable, Codable, Hashable {
         case exclusiveUntil = "exclusive_until"
         case issuedAt = "issued_at"
         case deliveryReady = "delivery_ready"
+        case deliveryContents = "delivery_contents"
+        case deliverySizeBytes = "delivery_size_bytes"
     }
 
     // Encodable protocol methods
@@ -109,6 +119,8 @@ public struct License: Sendable, Codable, Hashable {
         try container.encode(exclusiveUntil, forKey: .exclusiveUntil)
         try container.encode(issuedAt, forKey: .issuedAt)
         try container.encode(deliveryReady, forKey: .deliveryReady)
+        try container.encodeIfPresent(deliveryContents, forKey: .deliveryContents)
+        try container.encodeIfPresent(deliverySizeBytes, forKey: .deliverySizeBytes)
     }
 }
 

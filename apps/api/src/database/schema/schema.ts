@@ -280,6 +280,7 @@ export const users = pgTable("users", {
 	totpPendingSecretEnc: bytea("totp_pending_secret_enc"),
 	legalNameEnc: bytea("legal_name_enc"),
 	organizationId: uuid("organization_id"),
+	workName: text("work_name"),
 }, (table) => [
 	uniqueIndex("users_email_lower_key").using("btree", sql`lower(email)`),
 	index("users_office_idx").using("btree", table.officeId.asc().nullsLast().op("uuid_ops")).where(sql`(office_id IS NOT NULL)`),
@@ -298,6 +299,8 @@ export const users = pgTable("users", {
 	check("users_status_check", sql`status = ANY (ARRAY['active'::text, 'suspended'::text, 'recovery'::text])`),
 	check("users_totp_consistent", sql`(NOT totp_enabled) OR (totp_secret_enc IS NOT NULL)`),
 	check("users_totp_pending_only_during_reset", sql`(totp_pending_secret_enc IS NULL) OR credential_reset_required`),
+	check("users_work_name_format", sql`(work_name IS NULL) OR (((char_length(work_name) >= 1) AND (char_length(work_name) <= 80)) AND (work_name = btrim(work_name)) AND (work_name !~ '[[:cntrl:]]'::text))`),
+	check("users_work_name_staff_only", sql`(work_name IS NULL) OR (organization_id IS NULL)`),
 ]);
 
 export const materials = pgTable("materials", {
@@ -458,8 +461,9 @@ export const notifications = pgTable("notifications", {
 }, (table) => [
 	index("notifications_escalation_idx").using("btree", table.escalateAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((acknowledged_at IS NULL) AND (escalate_at IS NOT NULL))`),
 	index("notifications_inbox_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
-	index("notifications_overdue_assignment_idx").using("btree", table.escalateAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((assignment_state = 'assigned'::text) AND (acknowledged_at IS NULL))`),
+	index("notifications_material_ack_due_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops"), table.escalateAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((assignment_state = 'assigned'::text) AND (acknowledged_at IS NULL) AND (material_id IS NOT NULL))`),
 	index("notifications_material_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops")).where(sql`(material_id IS NOT NULL)`),
+	index("notifications_overdue_assignment_idx").using("btree", table.escalateAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((assignment_state = 'assigned'::text) AND (acknowledged_at IS NULL))`),
 	index("notifications_unread_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops")).where(sql`(read_at IS NULL)`),
 	foreignKey({
 			columns: [table.eventId],

@@ -9,6 +9,7 @@ import Foundation
 
 public struct Me: Sendable, Codable, Hashable {
 
+    public static let workNameRule = StringRule(minLength: 1, maxLength: 80, pattern: "^[^\\s\\x00-\\x1F\\x7F]([^\\x00-\\x1F\\x7F]*[^\\s\\x00-\\x1F\\x7F])?$")
     public static let permissionsRule = ArrayRule(minItems: nil, maxItems: nil, uniqueItems: true)
     public var userId: UUID
     public var email: String
@@ -16,6 +17,8 @@ public struct Me: Sendable, Codable, Hashable {
     public var officeId: UUID?
     /** مؤسسة المشتري (v0.3)؛ غيابه أو `null` لحساب طاقم */
     public var organizationId: UUID?
+    /** اسم العمل الداخلي (ADR 0035)؛ `null` أو غائب = لم يُعيَّن */
+    public var workName: String?
     public var totpEnabled: Bool
     /** الجلسة مقيّدة بعد استعادة الحساب حتى `/auth/totp/confirm`؛ غيابه = false (أُضيف في v0.1) */
     public var credentialResetRequired: Bool?
@@ -23,11 +26,12 @@ public struct Me: Sendable, Codable, Hashable {
     /** الصلاحيات المستقلة الممنوحة حاليًا؛ فارغة لمعظم المستخدمين */
     public var permissions: Set<Permission>
 
-    public init(userId: UUID, email: String, officeId: UUID? = nil, organizationId: UUID? = nil, totpEnabled: Bool, credentialResetRequired: Bool? = nil, roles: [Role], permissions: Set<Permission>) {
+    public init(userId: UUID, email: String, officeId: UUID? = nil, organizationId: UUID? = nil, workName: String? = nil, totpEnabled: Bool, credentialResetRequired: Bool? = nil, roles: [Role], permissions: Set<Permission>) {
         self.userId = userId
         self.email = email
         self.officeId = officeId
         self.organizationId = organizationId
+        self.workName = workName
         self.totpEnabled = totpEnabled
         self.credentialResetRequired = credentialResetRequired
         self.roles = roles
@@ -39,6 +43,7 @@ public struct Me: Sendable, Codable, Hashable {
         case email
         case officeId = "office_id"
         case organizationId = "organization_id"
+        case workName = "work_name"
         case totpEnabled = "totp_enabled"
         case credentialResetRequired = "credential_reset_required"
         case roles
@@ -53,6 +58,7 @@ public struct Me: Sendable, Codable, Hashable {
         try container.encode(email, forKey: .email)
         try container.encodeIfPresent(officeId, forKey: .officeId)
         try container.encodeIfPresent(organizationId, forKey: .organizationId)
+        try container.encodeIfPresent(workName, forKey: .workName)
         try container.encode(totpEnabled, forKey: .totpEnabled)
         try container.encodeIfPresent(credentialResetRequired, forKey: .credentialResetRequired)
         try container.encode(roles, forKey: .roles)
