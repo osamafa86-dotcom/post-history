@@ -244,7 +244,7 @@ for c in $("$T" ps -q); do
   done
 done
 PITR_IMAGE="$(docker inspect -f "{{.Config.Image}}" "$("$T" ps -q postgres)")" PITR_NETWORK="${TRIAL_PROJECT}_default" PITR_ENV="${BACKUP_MEASURE_ENV:-local docker compose}" \
-WALG_S3_PREFIX="$WALG_S3_PREFIX" AWS_ENDPOINT="$WALG_S3_ENDPOINT" CHECK_DB="$POSTGRES_DB" \
+WALG_S3_PREFIX="$WALG_S3_PREFIX" AWS_ENDPOINT="$WALG_S3_ENDPOINT" CHECK_DB="$POSTGRES_DB" PITR_DB_USER="$POSTGRES_USER" \
 AWS_ACCESS_KEY_ID="$BACKUP_REMOTE_ROOT_USER" AWS_SECRET_ACCESS_KEY="$BACKUP_REMOTE_ROOT_PASSWORD" \
   "$ROOT/infra/backup/pitr-drill.sh" --key "$WORK/walg-private.asc" --target "$target" --out "${PITR_OUT:-$WORK/pitr.json}" \
   --check "select string_agg(tag, '|' order by at) from public.walg_drill" --expect before || fail "point-in-time restore drill"

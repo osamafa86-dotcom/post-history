@@ -6,7 +6,7 @@
 # وزمن تطبيق WAL حتى اللحظة، والمجموع؛ ويتحقق بالاستعلام أن الحالة المستعادة هي حالة تلك اللحظة.
 # البيئة: PITR_IMAGE (صورة infra/postgres)، PITR_NETWORK (شبكة Docker للمزوّد في التمرين المحلي، فارغة على مضيف منفصل)،
 # WALG_S3_PREFIX وAWS_ENDPOINT وAWS_ACCESS_KEY_ID وAWS_SECRET_ACCESS_KEY (مفتاح يقرأ؛ ليس مفتاح الكتابة على المضيف)،
-# AWS_REGION (us-east-1)، PITR_ENV (يدخل في النتيجة)، PITR_TMP (مجلد العمل، الافتراضي /dev/shm).
+# AWS_REGION (us-east-1)، PITR_DB_USER (المستخدم الأعلى في القاعدة المستعادة، الافتراضي postgres)، PITR_ENV (يدخل في النتيجة)، PITR_TMP (مجلد العمل، الافتراضي /dev/shm).
 set -euo pipefail
 KEY="" TARGET="" OUT="" CHECK="" EXPECT=""
 while [ $# -gt 0 ]; do
@@ -41,13 +41,13 @@ touch "$D/recovery.signal"
 } >> "$D/postgresql.auto.conf"
 pg_ctl -D "$D" -l /tmp/pg.log -w -t 600 start -o "-c listen_addresses=" >/dev/null 2>&1 || { tail -20 /tmp/pg.log >&2; exit 8; }
 # Promotion ends recovery; a server that stopped instead (target not reached, missing WAL) fails the drill with its log.
-for _ in $(seq 1 1200); do
+for _ in $(seq 1 600); do
   pg_ctl -D "$D" status >/dev/null 2>&1 || { tail -20 /tmp/pg.log >&2; exit 7; }
-  [ "$(psql -U postgres -d postgres -XAtq -c 'select pg_is_in_recovery()' 2>/dev/null)" = f ] && break; sleep 0.5
+  [ "$(psql -U "$DB_USER" -d postgres -XAtq -c 'select pg_is_in_recovery()' 2>/dev/null)" = f ] && break; sleep 0.5
 done
 t2=$(t)
 got=""
-[ -z "$CHECK" ] || got="$(psql -U postgres -d "${CHECK_DB:-postgres}" -XAtq -f /work/check.sql 2>&1 || true)"
+[ -z "$CHECK" ] || got="$(psql -U "$DB_USER" -d "${CHECK_DB:-postgres}" -XAtq -f /work/check.sql 2>&1 || true)"
 reached=$(grep -c 'recovery stopping before\|recovery stopping after' /tmp/pg.log || true)
 pg_ctl -D "$D" -m fast stop >/dev/null 2>&1 || true
 printf '%s %s %s %s\n' "$t0" "$t1" "$t2" "$reached"
@@ -60,7 +60,7 @@ rc=0
 res="$(docker run --rm "${net[@]}" -u 70:70 -v "$VOL:/var/lib/postgresql/data" -v "$WORK:/work:ro" \
   -e WALG_S3_PREFIX -e AWS_ENDPOINT -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_REGION="${AWS_REGION:-us-east-1}" \
   -e AWS_S3_FORCE_PATH_STYLE=true -e WALG_PGP_KEY_PATH=/work/private.asc -e TARGET="$TARGET" -e CHECK="$CHECK" \
-  -e CHECK_DB="${CHECK_DB:-postgres}" --entrypoint sh "$PITR_IMAGE" /work/run.sh)" || rc=$?
+  -e CHECK_DB="${CHECK_DB:-postgres}" -e DB_USER="${PITR_DB_USER:-postgres}" --entrypoint sh "$PITR_IMAGE" /work/run.sh)" || rc=$?
 read -r t0 t1 t2 reached <<<"$(sed -n 1p <<<"$res")"
 got="$(sed -n '2,$p' <<<"$res")"
 python3 - "$OUT" "$started_at" "$rc" "${t0:-0}" "${t1:-0}" "${t2:-0}" "${reached:-0}" "$got" "$EXPECT" "$CHECK" "${PITR_ENV:-local}" <<'PY'
