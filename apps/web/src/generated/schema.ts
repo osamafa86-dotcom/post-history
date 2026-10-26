@@ -1337,7 +1337,7 @@ export interface paths {
         put?: never;
         /**
          * إنشاء طلب من عروض الكتالوج
-         * @description السلة حالة في العميل، والطلب يُنشأ منها مرة واحدة. كل بند يجمّد إصدار المادة المعروض، والإصدار الحالي لقالب الترخيص بشروطه، والسعر (الخاص أو الأساسي) — قيدًا في القاعدة. الطلب بعملة واحدة (`422 mixed_currency`)، وبند واحد لكل إدراج. الإدراج غير المعروض أو العرض الغائب أو القالب المعطّل `409 listing_unavailable`. `expected_total` إن أُرسل ولم يطابق المجموع `409 price_changed` بلا أثر. البند الحصري (`exclusive_temporary`) يحجز المادة في المعاملة نفسها بقفل صفها: حجز واحد لكل مادة بفهرس فريد جزئي، مدته 15 دقيقة هي مهلة الطلب (`expires_at`)، ولا حصرية لمادة سبق بيعها ولا بيع غير حصري تحت حجز ساري (`409 exclusivity_unavailable`). المؤسسة غير `active` `403 forbidden_scope`. يُكتب `order.status_changed`.
+         * @description السلة حالة في العميل، والطلب يُنشأ منها مرة واحدة. كل بند يجمّد إصدار المادة المعروض، والإصدار الحالي لقالب الترخيص بشروطه، والسعر (الخاص أو الأساسي) — قيدًا في القاعدة. الطلب بعملة واحدة (`422 mixed_currency`)، وبند واحد لكل إدراج. الإدراج غير المعروض أو العرض الغائب أو القالب المعطّل `409 listing_unavailable`. `expected_total` إن أُرسل ولم يطابق المجموع `409 price_changed` بلا أثر. البند الحصري (`exclusive_temporary`) يحجز المادة في المعاملة نفسها بقفل صفها: حجز واحد لكل مادة بفهرس فريد جزئي، مدته 15 دقيقة هي مهلة الطلب (`expires_at`)، ولا حصرية لمادة سبق بيعها ولا بيع غير حصري تحت حجز ساري (`409 exclusive_unavailable`). المؤسسة غير `active` `403 forbidden_scope`. يُكتب `order.status_changed`.
          */
         post: operations["createOrder"];
         delete?: never;
@@ -1381,7 +1381,7 @@ export interface paths {
         put?: never;
         /**
          * جلسة دفع مستضافة لدى المزوّد
-         * @description يعيد رابط صفحة الدفع المستضافة (ADR 0032): لا تمر بيانات بطاقة بخوادمنا ولا في أي عقد. يُعاد التحقق من الحجز الحصري والحقوق قبل إنشاء الجلسة. الطلب غير `pending_payment` أو المنتهي `409 order_not_payable`، والحجز الذي ضاع `409 exclusivity_unavailable`. التكرار والجلسة صالحة يعيد الجلسة نفسها. العودة من صفحة المزوّد لا تؤكد الدفع: التأكيد من الإشعار الموقّع وحده، والعميل يقرأ الطلب حتى `paid`.
+         * @description يعيد رابط صفحة الدفع المستضافة (ADR 0032): لا تمر بيانات بطاقة بخوادمنا ولا في أي عقد. يُعاد التحقق من الحجز الحصري والحقوق قبل إنشاء الجلسة. الطلب غير `pending_payment` أو المنتهي `409 order_state_conflict`، والحجز الذي ضاع `409 exclusive_unavailable`. التكرار والجلسة صالحة يعيد الجلسة نفسها. العودة من صفحة المزوّد لا تؤكد الدفع: التأكيد من الإشعار الموقّع وحده، والعميل يقرأ الطلب حتى `paid`.
          */
         post: operations["createOrderCheckout"];
         delete?: never;
@@ -1403,7 +1403,7 @@ export interface paths {
         put?: never;
         /**
          * إلغاء طلب لم يُدفع
-         * @description `pending_payment` وحده، ويحرر حجزه الحصري في المعاملة نفسها (`cancel_reason = buyer`)؛ غيره `409 order_not_payable`. الدفع الواصل بعد الإلغاء لا يصدر ترخيصًا ويُسترد (الجزء 5). يُكتب `order.status_changed`.
+         * @description `pending_payment` وحده، ويحرر حجزه الحصري في المعاملة نفسها (`cancel_reason = buyer`)؛ غيره `409 order_state_conflict`. الدفع الواصل بعد الإلغاء لا يصدر ترخيصًا ويُسترد (الجزء 5). يُكتب `order.status_changed`.
          */
         post: operations["cancelOrder"];
         delete?: never;
@@ -1496,7 +1496,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/webhooks/payments/{provider}": {
+    "/payments/webhooks/{provider}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1510,9 +1510,57 @@ export interface paths {
         put?: never;
         /**
          * إشعار مزوّد الدفع الموقّع (ADR 0032)
-         * @description المصدر الوحيد لتأكيد الدفع. يُتحقق من التوقيع على الجسم الخام قبل تحليله: HMAC-SHA256 على `<Payment-Timestamp>.<body>` بسر المحوّل من البيئة، بمقارنة ثابتة الزمن، ويُرفض ما خرج عن ±5 دقائق (`401`). ثم يُسجَّل `(provider, event_id)` فريدًا، وتُطبَّق النتيجة في معاملة واحدة مع حالة الطلب والترخيص وقيد الدفتر وحدث Outbox. التكرار (عشر مرات أو بترتيب مختلف) يعيد `200` بلا أثر ثانٍ. المرجع المجهول أو الحالة المحسومة `200` بلا أثر، والمبلغ الذي لا يطابق الطلب `200` بلا ترخيص ويُكتب للمراجعة. الدفع الواصل لطلب منتهٍ يُقبل إن أعاد الخادم التحقق (الحجز قائم والحقوق قابلة للبيع)، وإلا يُلغى الطلب (`exclusivity_lost` أو `rights_changed`) ويُسترد المبلغ. الجسم هنا صيغة المزوّد التجريبي؛ المحوّل الحقيقي يترجم صيغته إلى `PaymentProviderEvent` نفسه.
+         * @description المصدر الوحيد لتأكيد الدفع. يُتحقق من التوقيع على الجسم الخام قبل تحليله: HMAC-SHA256 على `<X-Timestamp>.<body>` بسر المحوّل من البيئة، بمقارنة ثابتة الزمن، ويُرفض التوقيع غير الصالح وما خرج عن ±5 دقائق بـ `400 webhook_signature_invalid`. ثم يُسجَّل `(provider, event_id)` فريدًا، وتُطبَّق النتيجة في معاملة واحدة مع حالة الطلب والترخيص وقيد الدفتر وحدث Outbox. التكرار (عشر مرات أو بترتيب مختلف) يعيد `200` بلا أثر ثانٍ. المرجع المجهول أو الحالة المحسومة `200` بلا أثر، والمبلغ الذي لا يطابق الطلب `200` بلا ترخيص ويُكتب للمراجعة. الدفع الواصل لطلب منتهٍ يُقبل إن أعاد الخادم التحقق (الحجز قائم والحقوق قابلة للبيع)، وإلا يُلغى الطلب (`exclusivity_lost` أو `rights_changed`) ويُسترد المبلغ. الجسم هنا صيغة المزوّد التجريبي؛ المحوّل الحقيقي يترجم صيغته إلى `PaymentProviderEvent` نفسه.
          */
         post: operations["receivePaymentWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sandbox/checkout/{provider_ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description مرجع جلسة الدفع التجريبية */
+                provider_ref: components["parameters"]["SandboxProviderRef"];
+            };
+            cookie?: never;
+        };
+        /**
+         * صفحة الدفع المستضافة للمزوّد التجريبي
+         * @description تعرض المبلغ وأزرار النتيجة، ولا تطلب بطاقة ولا أي بيانات دفع. `checkout_url` في `CheckoutSession` يشير إليها حين `provider = sandbox`. المرجع المجهول أو المنتهي `404`.
+         */
+        get: operations["getSandboxCheckout"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sandbox/checkout/{provider_ref}/{outcome}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description مرجع جلسة الدفع التجريبية */
+                provider_ref: components["parameters"]["SandboxProviderRef"];
+                /** @description `succeeded` و`failed` إشعار واحد؛ `delayed` إشعار بعد مهلة؛ `duplicate` الإشعار نفسه عشر مرات؛ `out_of_order` إشعار فشل بعد نجاح بمعرّفين مختلفين. كلها موقّعة بـ `SANDBOX_WEBHOOK_SECRET` إلى `/payments/webhooks/sandbox`. */
+                outcome: "succeeded" | "failed" | "delayed" | "duplicate" | "out_of_order";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * نتيجة الدفع التجريبي (تُرسل الإشعار الموقّع)
+         * @description تشغّلها اختبارات القبول بلا متصفح. لا تغيّر الطلب مباشرة؛ الأثر من الإشعار وحده.
+         */
+        post: operations["completeSandboxCheckout"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1557,7 +1605,7 @@ export interface components {
              * @description رمز ثابت يتفرّع عليه العميل؛ الرسالة للبشر فقط. قائمة مفتوحة؛ الرمز المجهول = خطأ عام
              * @enum {string}
              */
-            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "seats_exhausted" | "last_buyer_admin" | "listing_unavailable" | "exclusivity_unavailable" | "mixed_currency" | "price_changed" | "order_not_payable" | "license_not_active" | "delivery_not_ready" | "download_limit_reached" | "internal_error";
+            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "seats_exhausted" | "last_buyer_admin" | "listing_unavailable" | "exclusive_unavailable" | "mixed_currency" | "price_changed" | "order_state_conflict" | "license_not_active" | "delivery_not_ready" | "download_limit_reached" | "webhook_signature_invalid" | "internal_error";
             message: string;
             /** @description لتتبع الطلب في السجلات */
             request_id: string;
@@ -3422,6 +3470,8 @@ export interface components {
         /** @description معرّف المؤسسة المشترية */
         OrganizationId: string;
         OrderId: string;
+        /** @description مرجع جلسة الدفع التجريبية */
+        SandboxProviderRef: string;
         LicenseId: string;
         /** @description معرّف المادة */
         MaterialId: string;
@@ -6122,10 +6172,10 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description `v1=<hex>`: HMAC-SHA256 على `<Payment-Timestamp>.<الجسم الخام>` */
-                "Payment-Signature": string;
-                /** @description ثوانٍ منذ epoch؛ خارج ±5 دقائق `401` */
-                "Payment-Timestamp": string;
+                /** @description `v1=<hex>`: HMAC-SHA256 على `<X-Timestamp>.<الجسم الخام>` */
+                "X-Signature": string;
+                /** @description ثوانٍ منذ epoch؛ خارج ±5 دقائق `400 webhook_signature_invalid` */
+                "X-Timestamp": string;
             };
             path: {
                 /** @description المحوّل المفعَّل؛ غيره `404`. `sandbox` يُرفض في الإنتاج (ADR 0032) */
@@ -6149,7 +6199,54 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getSandboxCheckout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description مرجع جلسة الدفع التجريبية */
+                provider_ref: components["parameters"]["SandboxProviderRef"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الصفحة */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    completeSandboxCheckout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description مرجع جلسة الدفع التجريبية */
+                provider_ref: components["parameters"]["SandboxProviderRef"];
+                /** @description `succeeded` و`failed` إشعار واحد؛ `delayed` إشعار بعد مهلة؛ `duplicate` الإشعار نفسه عشر مرات؛ `out_of_order` إشعار فشل بعد نجاح بمعرّفين مختلفين. كلها موقّعة بـ `SANDBOX_WEBHOOK_SECRET` إلى `/payments/webhooks/sandbox`. */
+                outcome: "succeeded" | "failed" | "delayed" | "duplicate" | "out_of_order";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description أُرسل الإشعار أو جُدول */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             404: components["responses"]["NotFound"];
         };
     };

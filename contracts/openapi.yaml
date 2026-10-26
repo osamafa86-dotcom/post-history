@@ -2308,7 +2308,7 @@ paths:
         أُرسل ولم يطابق المجموع `409 price_changed` بلا أثر.
         البند الحصري (`exclusive_temporary`) يحجز المادة في المعاملة نفسها بقفل صفها: حجز واحد لكل مادة بفهرس فريد جزئي،
         مدته 15 دقيقة هي مهلة الطلب (`expires_at`)، ولا حصرية لمادة سبق بيعها ولا بيع غير حصري تحت حجز ساري
-        (`409 exclusivity_unavailable`). المؤسسة غير `active` `403 forbidden_scope`. يُكتب `order.status_changed`.
+        (`409 exclusive_unavailable`). المؤسسة غير `active` `403 forbidden_scope`. يُكتب `order.status_changed`.
       operationId: createOrder
       x-roles: [buyer_admin, buyer_member]
       parameters:
@@ -2356,8 +2356,8 @@ paths:
       summary: جلسة دفع مستضافة لدى المزوّد
       description: >-
         يعيد رابط صفحة الدفع المستضافة (ADR 0032): لا تمر بيانات بطاقة بخوادمنا ولا في أي عقد. يُعاد التحقق من الحجز
-        الحصري والحقوق قبل إنشاء الجلسة. الطلب غير `pending_payment` أو المنتهي `409 order_not_payable`، والحجز الذي ضاع
-        `409 exclusivity_unavailable`. التكرار والجلسة صالحة يعيد الجلسة نفسها. العودة من صفحة المزوّد لا تؤكد الدفع: التأكيد
+        الحصري والحقوق قبل إنشاء الجلسة. الطلب غير `pending_payment` أو المنتهي `409 order_state_conflict`، والحجز الذي ضاع
+        `409 exclusive_unavailable`. التكرار والجلسة صالحة يعيد الجلسة نفسها. العودة من صفحة المزوّد لا تؤكد الدفع: التأكيد
         من الإشعار الموقّع وحده، والعميل يقرأ الطلب حتى `paid`.
       operationId: createOrderCheckout
       x-roles: [buyer_admin, buyer_member]
@@ -2385,7 +2385,7 @@ paths:
       tags: [commerce]
       summary: إلغاء طلب لم يُدفع
       description: >-
-        `pending_payment` وحده، ويحرر حجزه الحصري في المعاملة نفسها (`cancel_reason = buyer`)؛ غيره `409 order_not_payable`.
+        `pending_payment` وحده، ويحرر حجزه الحصري في المعاملة نفسها (`cancel_reason = buyer`)؛ غيره `409 order_state_conflict`.
         الدفع الواصل بعد الإلغاء لا يصدر ترخيصًا ويُسترد (الجزء 5). يُكتب `order.status_changed`.
       operationId: cancelOrder
       x-roles: [buyer_admin, buyer_member]
@@ -2506,7 +2506,7 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
 
-  /webhooks/payments/{provider}:
+  /payments/webhooks/{provider}:
     servers:
       - url: https://api.example.invalid
         description: خارج `/v1`؛ يستدعيه مزوّد الدفع وحده (والمزوّد التجريبي في غير الإنتاج)
@@ -2522,7 +2522,7 @@ paths:
       x-internal: true
       description: >-
         المصدر الوحيد لتأكيد الدفع. يُتحقق من التوقيع على الجسم الخام قبل تحليله: HMAC-SHA256 على
-        `<Payment-Timestamp>.<body>` بسر المحوّل من البيئة، بمقارنة ثابتة الزمن، ويُرفض ما خرج عن ±5 دقائق (`401`). ثم
+        `<X-Timestamp>.<body>` بسر المحوّل من البيئة، بمقارنة ثابتة الزمن، ويُرفض التوقيع غير الصالح وما خرج عن ±5 دقائق بـ `400 webhook_signature_invalid`. ثم
         يُسجَّل `(provider, event_id)` فريدًا، وتُطبَّق النتيجة في معاملة واحدة مع حالة الطلب والترخيص وقيد الدفتر وحدث
         Outbox. التكرار (عشر مرات أو بترتيب مختلف) يعيد `200` بلا أثر ثانٍ. المرجع المجهول أو الحالة المحسومة `200` بلا أثر،
         والمبلغ الذي لا يطابق الطلب `200` بلا ترخيص ويُكتب للمراجعة. الدفع الواصل لطلب منتهٍ يُقبل إن أعاد الخادم التحقق
@@ -2532,15 +2532,15 @@ paths:
       x-roles: []
       security: []
       parameters:
-        - name: Payment-Signature
+        - name: X-Signature
           in: header
           required: true
-          description: "`v1=<hex>`: HMAC-SHA256 على `<Payment-Timestamp>.<الجسم الخام>`"
+          description: "`v1=<hex>`: HMAC-SHA256 على `<X-Timestamp>.<الجسم الخام>`"
           schema: { type: string, pattern: "^v1=[0-9a-f]{64}$" }
-        - name: Payment-Timestamp
+        - name: X-Timestamp
           in: header
           required: true
-          description: ثوانٍ منذ epoch؛ خارج ±5 دقائق `401`
+          description: ثوانٍ منذ epoch؛ خارج ±5 دقائق `400 webhook_signature_invalid`
           schema: { type: string, pattern: "^[0-9]{10}$" }
       requestBody:
         required: true
@@ -2554,7 +2554,55 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/PaymentWebhookAck" }
         "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /sandbox/checkout/{provider_ref}:
+    servers:
+      - url: https://api.example.invalid
+        description: المزوّد التجريبي وحده، في غير الإنتاج (ADR 0032)؛ الإقلاع في الإنتاج به يفشل
+    parameters:
+      - $ref: "#/components/parameters/SandboxProviderRef"
+    get:
+      tags: [commerce]
+      summary: صفحة الدفع المستضافة للمزوّد التجريبي
+      x-internal: true
+      description: >-
+        تعرض المبلغ وأزرار النتيجة، ولا تطلب بطاقة ولا أي بيانات دفع. `checkout_url` في `CheckoutSession` يشير إليها حين
+        `provider = sandbox`. المرجع المجهول أو المنتهي `404`.
+      operationId: getSandboxCheckout
+      x-roles: []
+      security: []
+      responses:
+        "200":
+          description: الصفحة
+          content:
+            text/html:
+              schema: { type: string }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /sandbox/checkout/{provider_ref}/{outcome}:
+    servers:
+      - url: https://api.example.invalid
+        description: المزوّد التجريبي وحده، في غير الإنتاج (ADR 0032)
+    parameters:
+      - $ref: "#/components/parameters/SandboxProviderRef"
+      - name: outcome
+        in: path
+        required: true
+        description: >-
+          `succeeded` و`failed` إشعار واحد؛ `delayed` إشعار بعد مهلة؛ `duplicate` الإشعار نفسه عشر مرات؛ `out_of_order`
+          إشعار فشل بعد نجاح بمعرّفين مختلفين. كلها موقّعة بـ `SANDBOX_WEBHOOK_SECRET` إلى `/payments/webhooks/sandbox`.
+        schema: { type: string, enum: [succeeded, failed, delayed, duplicate, out_of_order] }
+    post:
+      tags: [commerce]
+      summary: نتيجة الدفع التجريبي (تُرسل الإشعار الموقّع)
+      x-internal: true
+      description: تشغّلها اختبارات القبول بلا متصفح. لا تغيّر الطلب مباشرة؛ الأثر من الإشعار وحده.
+      operationId: completeSandboxCheckout
+      x-roles: []
+      security: []
+      responses:
+        "202": { description: أُرسل الإشعار أو جُدول }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /events:
@@ -2631,6 +2679,12 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    SandboxProviderRef:
+      name: provider_ref
+      in: path
+      required: true
+      description: مرجع جلسة الدفع التجريبية
+      schema: { type: string, minLength: 1, maxLength: 128 }
     LicenseId:
       name: license_id
       in: path
@@ -2793,13 +2847,14 @@ components:
             - seats_exhausted
             - last_buyer_admin
             - listing_unavailable
-            - exclusivity_unavailable
+            - exclusive_unavailable
             - mixed_currency
             - price_changed
-            - order_not_payable
+            - order_state_conflict
             - license_not_active
             - delivery_not_ready
             - download_limit_reached
+            - webhook_signature_invalid
             - internal_error
         message: { type: string }
         request_id: { type: string, description: لتتبع الطلب في السجلات }
