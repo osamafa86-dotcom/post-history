@@ -83,7 +83,7 @@ tags:
   - name: dashboard
     description: قراءات مجمّعة للوحة غرفة الأخبار، بلا بيانات كاشفة (v0.2).
   - name: commerce
-    description: المرحلة التجارية بمزوّد دفع تجريبي (v0.3، ADR 0025) — قوالب التراخيص، والإدراج، والكتالوج.
+    description: المرحلة التجارية بمزوّد دفع تجريبي (v0.3، ADR 0025) — قوالب التراخيص، والإدراج، والكتالوج، والطلبات والدفع، والتراخيص الصادرة.
 
 paths:
   /auth/login:
@@ -2270,6 +2270,341 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
+  /orders:
+    get:
+      tags: [commerce]
+      summary: الطلبات (v0.3، ADR 0025 الجزء 4)
+      description: >-
+        `buyer_admin` يرى طلبات مؤسسته، و`buyer_member` ما أنشأه منها وحده؛ طلب مؤسسة أخرى لا يظهر (عزل المستأجرين).
+        المالية ومدير النظام يرون الكل ويصفّون بالمؤسسة.
+      operationId: listOrders
+      x-roles: [system_admin, finance, buyer_admin, buyer_member]
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/OrderStatus" }
+        - name: organization_id
+          in: query
+          description: للطاقم وحده؛ يُتجاهل للمشتري (نطاقه مؤسسته)
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: صفحة من الطلبات، الأحدث أولًا
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [commerce]
+      summary: إنشاء طلب من عروض الكتالوج
+      description: >-
+        السلة حالة في العميل، والطلب يُنشأ منها مرة واحدة. كل بند يجمّد إصدار المادة المعروض، والإصدار الحالي لقالب
+        الترخيص بشروطه، والسعر (الخاص أو الأساسي) — قيدًا في القاعدة. الطلب بعملة واحدة (`422 mixed_currency`)، وبند واحد
+        لكل إدراج. الإدراج غير المعروض أو العرض الغائب أو القالب المعطّل `409 listing_unavailable`. `expected_total` إن
+        أُرسل ولم يطابق المجموع `409 price_changed` بلا أثر.
+        البند الحصري (`exclusive_temporary`) يحجز المادة في المعاملة نفسها بقفل صفها: حجز واحد لكل مادة بفهرس فريد جزئي،
+        مدته 15 دقيقة هي مهلة الطلب (`expires_at`)، ولا حصرية لمادة سبق بيعها ولا بيع غير حصري تحت حجز ساري
+        (`409 exclusive_unavailable`). المؤسسة غير `active` `403 forbidden_scope`. يُكتب `order.status_changed`.
+      operationId: createOrder
+      x-roles: [buyer_admin, buyer_member]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderCreate" }
+      responses:
+        "201":
+          description: الطلب بحالة `pending_payment`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /orders/{order_id}:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    get:
+      tags: [commerce]
+      summary: قراءة طلب
+      description: النطاق كما في القائمة؛ ما خارجه `404` بشكل المفقود.
+      operationId: getOrder
+      x-roles: [system_admin, finance, buyer_admin, buyer_member]
+      responses:
+        "200":
+          description: الطلب
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /orders/{order_id}/checkout:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    post:
+      tags: [commerce]
+      summary: جلسة دفع مستضافة لدى المزوّد
+      description: >-
+        يعيد رابط صفحة الدفع المستضافة (ADR 0032): لا تمر بيانات بطاقة بخوادمنا ولا في أي عقد. يُعاد التحقق من الحجز
+        الحصري والحقوق قبل إنشاء الجلسة. الطلب غير `pending_payment` أو المنتهي `409 order_state_conflict`، والحجز الذي ضاع
+        `409 exclusive_unavailable`. التكرار والجلسة صالحة يعيد الجلسة نفسها. العودة من صفحة المزوّد لا تؤكد الدفع: التأكيد
+        من الإشعار الموقّع وحده، والعميل يقرأ الطلب حتى `paid`.
+      operationId: createOrderCheckout
+      x-roles: [buyer_admin, buyer_member]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: الجلسة
+          headers:
+            Cache-Control:
+              description: "`no-store`"
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckoutSession" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /orders/{order_id}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    post:
+      tags: [commerce]
+      summary: إلغاء طلب لم يُدفع
+      description: >-
+        `pending_payment` وحده، ويحرر حجزه الحصري في المعاملة نفسها (`cancel_reason = buyer`)؛ غيره `409 order_state_conflict`.
+        الدفع الواصل بعد الإلغاء لا يصدر ترخيصًا ويُسترد (الجزء 5). يُكتب `order.status_changed`.
+      operationId: cancelOrder
+      x-roles: [buyer_admin, buyer_member]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: الطلب ملغى
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /licenses:
+    get:
+      tags: [commerce]
+      summary: التراخيص الصادرة (ADR 0025 الجزءان 4 و9)
+      description: المشترون يرون تراخيص مؤسستهم وحدها؛ الطاقم يرى الكل ويصفّي بالمؤسسة.
+      operationId: listLicenses
+      x-roles: [system_admin, finance, rights_officer, buyer_admin, buyer_member]
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/LicenseStatus" }
+        - name: organization_id
+          in: query
+          description: للطاقم وحده؛ يُتجاهل للمشتري
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: صفحة من التراخيص، الأحدث صدورًا أولًا
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LicensePage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /licenses/{license_id}:
+    parameters:
+      - $ref: "#/components/parameters/LicenseId"
+    get:
+      tags: [commerce]
+      summary: قراءة ترخيص بشروطه المجمّدة
+      operationId: getLicense
+      x-roles: [system_admin, finance, rights_officer, buyer_admin, buyer_member]
+      responses:
+        "200":
+          description: الترخيص
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/License" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /licenses/{license_id}/download-url:
+    parameters:
+      - $ref: "#/components/parameters/LicenseId"
+    post:
+      tags: [commerce]
+      summary: رابط تنزيل حزمة التسليم
+      description: >-
+        مشتق `delivery` لهذا الترخيص وحده (بمواصفات قالبه، بلا تفريغ؛ R11)، برابط موقّع صالح ≤ 24 ساعة. كل طلب منحة تُحصى
+        بقفل صف الترخيص، والحد في `downloads_remaining` (`409 download_limit_reached`). الترخيص غير `active` `409
+        license_not_active`، والحزمة قبل جاهزيتها `409 delivery_not_ready`، والمؤسسة المعلّقة `403 forbidden_scope`. الرابط
+        لا يُسجَّل ولا يدخل حدثًا أو إشعارًا.
+      operationId: createLicenseDownloadUrl
+      x-roles: [buyer_admin, buyer_member]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: الرابط
+          headers:
+            Cache-Control:
+              description: "`no-store`"
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LicenseDownloadUrl" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /license-verifications/{license_number}:
+    parameters:
+      - name: license_number
+        in: path
+        required: true
+        description: الرقم على شهادة الترخيص؛ عشوائي غير متسلسل فلا يُعدَّد
+        schema: { type: string, pattern: "^PH-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{10}$" }
+    get:
+      tags: [commerce]
+      summary: صفحة التحقق العامة من ترخيص
+      description: >-
+        بلا مصادقة. تثبت صلاحية الترخيص وأبعاده، ولا تكشف المشتري ولا السعر ولا المراسل ولا معرّف المادة. محدودة المعدل
+        لكل عنوان (`429`). الرقم المجهول `404`.
+      operationId: verifyLicense
+      x-roles: []
+      security: []
+      responses:
+        "200":
+          description: نتيجة التحقق
+          headers:
+            Cache-Control:
+              description: "`no-store`"
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LicenseVerification" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /payments/webhooks/{provider}:
+    servers:
+      - url: https://api.example.invalid
+        description: خارج `/v1`؛ يستدعيه مزوّد الدفع وحده (والمزوّد التجريبي في غير الإنتاج)
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        description: المحوّل المفعَّل؛ غيره `404`. `sandbox` يُرفض في الإنتاج (ADR 0032)
+        schema: { type: string, pattern: "^[a-z_]{1,32}$" }
+    post:
+      tags: [commerce]
+      summary: إشعار مزوّد الدفع الموقّع (ADR 0032)
+      x-internal: true
+      description: >-
+        المصدر الوحيد لتأكيد الدفع. يُتحقق من التوقيع على الجسم الخام قبل تحليله: HMAC-SHA256 على
+        `<X-Timestamp>.<body>` بسر المحوّل من البيئة، بمقارنة ثابتة الزمن، ويُرفض التوقيع غير الصالح وما خرج عن ±5 دقائق بـ `400 webhook_signature_invalid`. ثم
+        يُسجَّل `(provider, event_id)` فريدًا، وتُطبَّق النتيجة في معاملة واحدة مع حالة الطلب والترخيص وقيد الدفتر وحدث
+        Outbox. التكرار (عشر مرات أو بترتيب مختلف) يعيد `200` بلا أثر ثانٍ. المرجع المجهول أو الحالة المحسومة `200` بلا أثر،
+        والمبلغ الذي لا يطابق الطلب `200` بلا ترخيص ويُكتب للمراجعة. الدفع الواصل لطلب منتهٍ يُقبل إن أعاد الخادم التحقق
+        (الحجز قائم والحقوق قابلة للبيع)، وإلا يُلغى الطلب (`exclusivity_lost` أو `rights_changed`) ويُسترد المبلغ. الجسم
+        هنا صيغة المزوّد التجريبي؛ المحوّل الحقيقي يترجم صيغته إلى `PaymentProviderEvent` نفسه.
+      operationId: receivePaymentWebhook
+      x-roles: []
+      security: []
+      parameters:
+        - name: X-Signature
+          in: header
+          required: true
+          description: "`v1=<hex>`: HMAC-SHA256 على `<X-Timestamp>.<الجسم الخام>`"
+          schema: { type: string, pattern: "^v1=[0-9a-f]{64}$" }
+        - name: X-Timestamp
+          in: header
+          required: true
+          description: ثوانٍ منذ epoch؛ خارج ±5 دقائق `400 webhook_signature_invalid`
+          schema: { type: string, pattern: "^[0-9]{10}$" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PaymentProviderEvent" }
+      responses:
+        "200":
+          description: استُلم (طُبّق أو كان مكررًا أو بلا أثر)؛ المزوّد يتوقف عن الإعادة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentWebhookAck" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /sandbox/checkout/{provider_ref}:
+    servers:
+      - url: https://api.example.invalid
+        description: المزوّد التجريبي وحده، في غير الإنتاج (ADR 0032)؛ الإقلاع في الإنتاج به يفشل
+    parameters:
+      - $ref: "#/components/parameters/SandboxProviderRef"
+    get:
+      tags: [commerce]
+      summary: صفحة الدفع المستضافة للمزوّد التجريبي
+      x-internal: true
+      description: >-
+        تعرض المبلغ وأزرار النتيجة، ولا تطلب بطاقة ولا أي بيانات دفع. `checkout_url` في `CheckoutSession` يشير إليها حين
+        `provider = sandbox`. المرجع المجهول أو المنتهي `404`.
+      operationId: getSandboxCheckout
+      x-roles: []
+      security: []
+      responses:
+        "200":
+          description: الصفحة
+          content:
+            text/html:
+              schema: { type: string }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /sandbox/checkout/{provider_ref}/{outcome}:
+    servers:
+      - url: https://api.example.invalid
+        description: المزوّد التجريبي وحده، في غير الإنتاج (ADR 0032)
+    parameters:
+      - $ref: "#/components/parameters/SandboxProviderRef"
+      - name: outcome
+        in: path
+        required: true
+        description: >-
+          `succeeded` و`failed` إشعار واحد؛ `delayed` إشعار بعد مهلة؛ `duplicate` الإشعار نفسه عشر مرات؛ `out_of_order`
+          إشعار فشل بعد نجاح بمعرّفين مختلفين. كلها موقّعة بـ `SANDBOX_WEBHOOK_SECRET` إلى `/payments/webhooks/sandbox`.
+        schema: { type: string, enum: [succeeded, failed, delayed, duplicate, out_of_order] }
+    post:
+      tags: [commerce]
+      summary: نتيجة الدفع التجريبي (تُرسل الإشعار الموقّع)
+      x-internal: true
+      description: تشغّلها اختبارات القبول بلا متصفح. لا تغيّر الطلب مباشرة؛ الأثر من الإشعار وحده.
+      operationId: completeSandboxCheckout
+      x-roles: []
+      security: []
+      responses:
+        "202": { description: أُرسل الإشعار أو جُدول }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /events:
     get:
       tags: [events]
@@ -2338,6 +2673,22 @@ components:
       in: path
       required: true
       description: معرّف المؤسسة المشترية
+      schema: { type: string, format: uuid }
+    OrderId:
+      name: order_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SandboxProviderRef:
+      name: provider_ref
+      in: path
+      required: true
+      description: مرجع جلسة الدفع التجريبية
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    LicenseId:
+      name: license_id
+      in: path
+      required: true
       schema: { type: string, format: uuid }
     MaterialId:
       name: id
@@ -2495,6 +2846,15 @@ components:
             - preview_not_ready
             - seats_exhausted
             - last_buyer_admin
+            - listing_unavailable
+            - exclusive_unavailable
+            - mixed_currency
+            - price_changed
+            - order_state_conflict
+            - license_not_active
+            - delivery_not_ready
+            - download_limit_reached
+            - webhook_signature_invalid
             - internal_error
         message: { type: string }
         request_id: { type: string, description: لتتبع الطلب في السجلات }
@@ -4140,6 +4500,223 @@ components:
         status: { type: string, enum: [invited, active, suspended] }
         totp_enabled: { type: boolean }
         created_at: { type: string, format: date-time }
+
+    OrderStatus:
+      type: string
+      description: >-
+        `pending_payment` ينتظر الدفع حتى `expires_at`؛ `paid` أكده الإشعار الموقّع وصدرت تراخيصه؛ `cancelled` ألغاه المشتري
+        أو أُلغي لضياع الحصرية أو تغيّر الحقوق قبل التأكيد؛ `expired` فات مهلته بلا دفع؛ `refunded` استُرد كاملًا (الجزء 5).
+      enum: [pending_payment, paid, cancelled, expired, refunded]
+
+    OrderItemInput:
+      type: object
+      additionalProperties: false
+      required: [listing_id, license_template_id]
+      properties:
+        listing_id: { type: string, format: uuid }
+        license_template_id: { type: string, format: uuid, description: قالب من عروض الإدراج؛ الإصدار الحالي يُجمَّد }
+
+    OrderCreate:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 20
+          description: بند واحد لكل إدراج
+          items: { $ref: "#/components/schemas/OrderItemInput" }
+        expected_total:
+          $ref: "#/components/schemas/Money"
+          description: المجموع الذي رآه المشتري؛ إن لم يطابق `409 price_changed` بلا أثر
+
+    OrderItem:
+      type: object
+      description: >-
+        البند مجمّدًا كما وافق عليه المشتري. لا معرّف مادة ولا مراسل (كعرض الكتالوج)؛ العنوان نسخة من الإدراج لحظة الطلب.
+      required: [id, listing_id, material_version, license_template_id, license_version, license_type, license_name, title, price, license_id]
+      properties:
+        id: { type: string, format: uuid }
+        listing_id: { type: string, format: uuid }
+        material_version: { type: integer, minimum: 1 }
+        license_template_id: { type: string, format: uuid }
+        license_version: { type: integer, minimum: 1 }
+        license_type: { $ref: "#/components/schemas/LicenseType" }
+        license_name: { $ref: "#/components/schemas/LocalizedText" }
+        title: { $ref: "#/components/schemas/LocalizedText" }
+        price: { $ref: "#/components/schemas/Money" }
+        license_id: { type: [string, "null"], format: uuid, description: الترخيص الصادر بعد التأكيد }
+
+    Order:
+      type: object
+      required: [id, organization_id, created_by, status, cancel_reason, total, items, expires_at, paid_at, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        organization_id: { type: string, format: uuid }
+        created_by: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        cancel_reason: { type: [string, "null"], enum: [buyer, exclusivity_lost, rights_changed, null] }
+        total: { $ref: "#/components/schemas/Money" }
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/OrderItem" }
+        expires_at:
+          type: string
+          format: date-time
+          description: مهلة الدفع؛ 15 دقيقة لطلب فيه بند حصري (حجزه)، و≤ 24 ساعة لغيره
+        paid_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    OrderPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Order" }
+        next_cursor: { type: [string, "null"] }
+
+    CheckoutSession:
+      type: object
+      required: [checkout_url, provider, expires_at]
+      properties:
+        checkout_url:
+          type: string
+          format: uri
+          description: صفحة الدفع المستضافة لدى المزوّد؛ لا يُسجَّل ولا يُرسل في حدث أو إشعار
+        provider: { type: string, pattern: "^[a-z_]{1,32}$", description: "`sandbox` في هذه الدورة" }
+        expires_at: { type: string, format: date-time, description: لا تتجاوز مهلة الطلب }
+
+    LicenseTerritory:
+      type: object
+      description: إقليم الترخيص كما في قالبه
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [worldwide, countries] }
+        countries:
+          type: array
+          minItems: 1
+          maxItems: 250
+          uniqueItems: true
+          description: رموز ISO 3166-1 alpha-2؛ إلزامية مع `countries` وممنوعة مع `worldwide`
+          items: { type: string, pattern: "^[A-Z]{2}$" }
+
+    LicenseTerms:
+      type: object
+      description: شروط إصدار القالب الذي وافق عليه المشتري، مجمّدة في الترخيص (لا السعر الأساسي ولا التفعيل)
+      required: [type, name, terms, usage_media, territory, term_days, exclusivity_hours, deliverables, attribution, prohibitions]
+      properties:
+        type: { $ref: "#/components/schemas/LicenseType" }
+        name: { $ref: "#/components/schemas/LocalizedText" }
+        terms: { $ref: "#/components/schemas/LocalizedText" }
+        usage_media:
+          type: array
+          items: { type: string, enum: [tv, web, social, documentary, advertising] }
+        territory: { $ref: "#/components/schemas/LicenseTerritory" }
+        term_days: { type: [integer, "null"], minimum: 1 }
+        exclusivity_hours: { type: [integer, "null"], minimum: 24 }
+        deliverables:
+          type: array
+          items: { type: string, enum: [original, produced, audio, stills] }
+        attribution: { $ref: "#/components/schemas/LocalizedText" }
+        prohibitions:
+          type: array
+          items: { type: string, enum: [resale, advertising, ai_training, re_editing] }
+
+    LicenseStatus:
+      type: string
+      description: "`active` ساري؛ `expired` انتهت مدته؛ `revoked` أُبطل (استرداد أو سحب حقوق أو إداري) فيتوقف التنزيل"
+      enum: [active, expired, revoked]
+
+    License:
+      type: object
+      description: >-
+        ترخيص صادر برقم فريد. لا يحمل معرّف المادة ولا المراسل (المشتري يرى الإدراج). الشروط والسعر والإصدارات مجمّدة لا
+        تتغير؛ الحالة وحدها تتغير.
+      required: [id, license_number, order_id, order_item_id, organization_id, listing_id, material_version, title, license_template_id, license_version, terms, price, status, revoked_reason, valid_from, valid_until, exclusive_until, issued_at, delivery_ready]
+      properties:
+        id: { type: string, format: uuid }
+        license_number: { type: string, pattern: "^PH-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{10}$" }
+        order_id: { type: string, format: uuid }
+        order_item_id: { type: string, format: uuid }
+        organization_id: { type: string, format: uuid }
+        listing_id: { type: string, format: uuid }
+        material_version: { type: integer, minimum: 1 }
+        title: { $ref: "#/components/schemas/LocalizedText" }
+        license_template_id: { type: string, format: uuid }
+        license_version: { type: integer, minimum: 1 }
+        terms: { $ref: "#/components/schemas/LicenseTerms" }
+        price: { $ref: "#/components/schemas/Money" }
+        status: { $ref: "#/components/schemas/LicenseStatus" }
+        revoked_reason: { type: [string, "null"], enum: [refunded, rights_withdrawn, manual, null] }
+        valid_from: { type: string, format: date-time }
+        valid_until: { type: [string, "null"], format: date-time, description: "`null` = بلا انتهاء" }
+        exclusive_until: { type: [string, "null"], format: date-time, description: نهاية الحصرية لـ `exclusive_temporary` وحده }
+        issued_at: { type: string, format: date-time }
+        delivery_ready: { type: boolean, description: حزمة التسليم مبنية وجاهزة للتنزيل }
+
+    LicensePage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/License" }
+        next_cursor: { type: [string, "null"] }
+
+    LicenseDownloadUrl:
+      type: object
+      required: [url, expires_at, downloads_remaining]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: رابط موقّع لحزمة التسليم وحدها؛ لا يُسجَّل ولا يُرسل في إشعار أو حدث
+        expires_at: { type: string, format: date-time, description: ≤ 24 ساعة من الإصدار }
+        downloads_remaining: { type: integer, minimum: 0 }
+
+    LicenseVerification:
+      type: object
+      description: صفحة التحقق العامة، بقائمة بيضاء مغلقة؛ لا مشترٍ ولا سعر ولا مراسل ولا معرّف مادة أو طلب
+      additionalProperties: false
+      required: [license_number, status, license_type, title, usage_media, territory, valid_from, valid_until, exclusive_until]
+      properties:
+        license_number: { type: string, pattern: "^PH-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{10}$" }
+        status: { $ref: "#/components/schemas/LicenseStatus" }
+        license_type: { $ref: "#/components/schemas/LicenseType" }
+        title: { $ref: "#/components/schemas/LocalizedText" }
+        usage_media:
+          type: array
+          items: { type: string, enum: [tv, web, social, documentary, advertising] }
+        territory: { $ref: "#/components/schemas/LicenseTerritory" }
+        valid_from: { type: string, format: date-time }
+        valid_until: { type: [string, "null"], format: date-time }
+        exclusive_until: { type: [string, "null"], format: date-time }
+
+    PaymentProviderEvent:
+      type: object
+      additionalProperties: false
+      description: >-
+        إشعار المزوّد بعد التحقق من توقيعه (صيغة `sandbox`، ADR 0032). لا بيانات بطاقة ولا اسم مشترٍ؛ يُخزَّن هذا وحده لا
+        الجسم الخام.
+      required: [event_id, type, provider_ref, amount, occurred_at]
+      properties:
+        event_id: { type: string, pattern: "^[A-Za-z0-9_.:-]{1,128}$", description: فريد لدى المزوّد؛ مفتاح منع التكرار }
+        type: { type: string, enum: [payment.succeeded, payment.failed, refund.succeeded, dispute.opened] }
+        provider_ref: { type: string, minLength: 1, maxLength: 128, description: مرجع جلسة الدفع لدى المزوّد }
+        amount: { $ref: "#/components/schemas/Money" }
+        occurred_at: { type: string, format: date-time }
+
+    PaymentWebhookAck:
+      type: object
+      additionalProperties: false
+      required: [received]
+      properties:
+        received: { type: boolean, const: true }
 
     BuyerMemberCreated:
       description: رد الدعوة وحده؛ يحمل رمز الدعوة في الرد الأول، ولا يُعاد عند التكرار

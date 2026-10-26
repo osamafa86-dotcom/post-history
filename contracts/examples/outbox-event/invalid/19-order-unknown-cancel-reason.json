@@ -1,0 +1,13 @@
+{
+  "id": "1301",
+  "type": "order.status_changed",
+  "aggregate_type": "order",
+  "aggregate_id": "3f2e1d0c-9b8a-4c7d-8e6f-5a4b3c2d1e0f",
+  "occurred_at": "2026-10-26T09:00:00Z",
+  "idempotency_key": "order.status_changed:3f2e1d0c-9b8a-4c7d-8e6f-5a4b3c2d1e0f:paid",
+  "actor_id": null,
+  "payload": { "order_id": "3f2e1d0c-9b8a-4c7d-8e6f-5a4b3c2d1e0f", "organization_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", "status": "cancelled", "cancel_reason": "card_declined" },
+  "published_at": null,
+  "attempts": 0,
+  "delivery": []
+}
