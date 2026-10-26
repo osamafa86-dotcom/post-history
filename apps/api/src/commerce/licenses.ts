@@ -2,7 +2,7 @@ import { Controller, Get, Header, HttpCode, Inject, Injectable, Param, Post, Que
 import { and, count, desc, eq, sql } from 'drizzle-orm';
 import type { Request } from 'express';
 import type { BlockList } from 'node:net';
-import { clientAddress } from '../common/client-address';
+import { clientAddress, rateLimitBucket } from '../common/client-address';
 import { validateQuery } from '../common/contract';
 import { ApiError } from '../common/errors';
 import { APP_CONFIG, type AppConfig, blockListOf } from '../config/config';
@@ -213,7 +213,8 @@ export class LicenseVerificationsController {
   @Get(':licenseNumber')
   @Header('Cache-Control', 'no-store')
   async verify(@Param('licenseNumber') licenseNumber: string, @Req() req: Request): Promise<components['schemas']['LicenseVerification']> {
-    const ip = clientAddress(req, this.bff);
+    // IPv6 بشبكته /64 لا بعنوانه، فلا يتجاوز الحد بالدوران على عناوين شبكته
+    const ip = rateLimitBucket(clientAddress(req, this.bff));
     const wait = await this.byIp.retryAfter(ip);
     if (wait > 0) throw new ApiError(429, 'rate_limited', 'Too many attempts.', undefined, { 'Retry-After': String(wait) });
     await this.byIp.record(ip);
