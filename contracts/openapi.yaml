@@ -2602,8 +2602,9 @@ paths:
       tags: [commerce]
       summary: صفحة التحقق العامة من ترخيص
       description: >-
-        بلا مصادقة. تثبت صلاحية الترخيص وأبعاده، ولا تكشف المشتري ولا السعر ولا المراسل ولا معرّف المادة. محدودة المعدل
-        لكل عنوان (`429`). الرقم المجهول `404`.
+        بلا مصادقة. تثبت أن الرقم لترخيص قائم وحالته ونهايته وحدها: لا عنوان مادة ولا نوع ترخيص ولا استخدام ولا إقليم، ولا
+        المشتري ولا السعر ولا المراسل ولا أي معرّف، فرقم متداول لا يكشف ما رُخّص ولا لمن. محدودة المعدل لكل عنوان (`429`).
+        الرقم المجهول `404`.
       operationId: verifyLicense
       x-roles: []
       security: []
@@ -5168,21 +5169,17 @@ components:
 
     LicenseVerification:
       type: object
-      description: صفحة التحقق العامة، بقائمة بيضاء مغلقة؛ لا مشترٍ ولا سعر ولا مراسل ولا معرّف مادة أو طلب
+      description: >-
+        صفحة التحقق العامة بلا مصادقة، بقائمة بيضاء مغلقة من ثلاثة حقول: أن الرقم لترخيص قائم، وحالته، ونهايته. لا يُضاف
+        إليها حقل يكشف المادة أو نطاق الترخيص (العنوان، النوع، الاستخدام، الإقليم، الحصرية، التواريخ الأخرى) ولا المشتري
+        ولا السعر ولا المراسل ولا أي معرّف: من يملك رقمًا متداولًا لا يعرف به ما رُخّص ولا لمن. إضافة حقل هنا تغيير عقد
+        بقرار أمن.
       additionalProperties: false
-      required: [license_number, status, license_type, title, usage_media, territory, valid_from, valid_until, exclusive_until]
+      required: [license_number, status, valid_until]
       properties:
         license_number: { type: string, pattern: "^PH-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{10}$" }
         status: { $ref: "#/components/schemas/LicenseStatus" }
-        license_type: { $ref: "#/components/schemas/LicenseType" }
-        title: { $ref: "#/components/schemas/LocalizedText" }
-        usage_media:
-          type: array
-          items: { type: string, enum: [tv, web, social, documentary, advertising] }
-        territory: { $ref: "#/components/schemas/LicenseTerritory" }
-        valid_from: { type: string, format: date-time }
-        valid_until: { type: [string, "null"], format: date-time }
-        exclusive_until: { type: [string, "null"], format: date-time }
+        valid_until: { type: [string, "null"], format: date-time, description: "`null` = بلا انتهاء" }
 
     PaymentProviderEvent:
       type: object

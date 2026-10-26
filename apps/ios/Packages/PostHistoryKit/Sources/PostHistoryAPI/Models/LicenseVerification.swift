@@ -7,50 +7,25 @@
 
 import Foundation
 
-/** صفحة التحقق العامة، بقائمة بيضاء مغلقة؛ لا مشترٍ ولا سعر ولا مراسل ولا معرّف مادة أو طلب */
+/** صفحة التحقق العامة بلا مصادقة، بقائمة بيضاء مغلقة من ثلاثة حقول: أن الرقم لترخيص قائم، وحالته، ونهايته. لا يُضاف إليها حقل يكشف المادة أو نطاق الترخيص (العنوان، النوع، الاستخدام، الإقليم، الحصرية، التواريخ الأخرى) ولا المشتري ولا السعر ولا المراسل ولا أي معرّف: من يملك رقمًا متداولًا لا يعرف به ما رُخّص ولا لمن. إضافة حقل هنا تغيير عقد بقرار أمن. */
 public struct LicenseVerification: Sendable, Codable, Hashable {
 
-    public enum UsageMedia: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
-        case tv = "tv"
-        case web = "web"
-        case social = "social"
-        case documentary = "documentary"
-        case advertising = "advertising"
-        case unknownDefaultOpenApi = "unknown_default_open_api"
-    }
     public static let licenseNumberRule = StringRule(minLength: nil, maxLength: nil, pattern: "^PH-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{10}$")
     public var licenseNumber: String
     public var status: LicenseStatus
-    public var licenseType: LicenseType
-    public var title: LocalizedText
-    public var usageMedia: [UsageMedia]
-    public var territory: LicenseTerritory
-    public var validFrom: Date
+    /** `null` = بلا انتهاء */
     public var validUntil: Date?
-    public var exclusiveUntil: Date?
 
-    public init(licenseNumber: String, status: LicenseStatus, licenseType: LicenseType, title: LocalizedText, usageMedia: [UsageMedia], territory: LicenseTerritory, validFrom: Date, validUntil: Date?, exclusiveUntil: Date?) {
+    public init(licenseNumber: String, status: LicenseStatus, validUntil: Date?) {
         self.licenseNumber = licenseNumber
         self.status = status
-        self.licenseType = licenseType
-        self.title = title
-        self.usageMedia = usageMedia
-        self.territory = territory
-        self.validFrom = validFrom
         self.validUntil = validUntil
-        self.exclusiveUntil = exclusiveUntil
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case licenseNumber = "license_number"
         case status
-        case licenseType = "license_type"
-        case title
-        case usageMedia = "usage_media"
-        case territory
-        case validFrom = "valid_from"
         case validUntil = "valid_until"
-        case exclusiveUntil = "exclusive_until"
     }
 
     // Encodable protocol methods
@@ -59,13 +34,7 @@ public struct LicenseVerification: Sendable, Codable, Hashable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(licenseNumber, forKey: .licenseNumber)
         try container.encode(status, forKey: .status)
-        try container.encode(licenseType, forKey: .licenseType)
-        try container.encode(title, forKey: .title)
-        try container.encode(usageMedia, forKey: .usageMedia)
-        try container.encode(territory, forKey: .territory)
-        try container.encode(validFrom, forKey: .validFrom)
         try container.encode(validUntil, forKey: .validUntil)
-        try container.encode(exclusiveUntil, forKey: .exclusiveUntil)
     }
 }
 
@@ -73,10 +42,6 @@ public struct LicenseVerification: Sendable, Codable, Hashable {
 extension LicenseVerification: UnknownCaseCheckable {
     public var containsUnknownDefaultOpenApiCase: Bool {
         if status == .unknownDefaultOpenApi { return true }
-        if licenseType == .unknownDefaultOpenApi { return true }
-        
-        if usageMedia.contains(.unknownDefaultOpenApi) { return true }
-        
         return false
     }
 }
