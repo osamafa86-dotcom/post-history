@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "refund-after-payout",
+  "started_at": "2026-10-26T16:57:59.851Z",
+  "ended_at": "2026-10-26T16:58:00.772Z",
+  "result": "partial",
+  "metrics": {
+    "reporter_share_minor": 7001,
+    "reserve_minor": 7001,
+    "checks": 17,
+    "checks_failed": 0,
+    "deferred_checks": 0
+  },
+  "device": {
+    "platform": "server",
+    "model": "live stack: API from main@4297825 (dev mode, sandbox provider), Postgres 16, Redis"
+  },
+  "upload_path": "n/a",
+  "notes": "استرداد بعد الصرف: حصة المراسل من بيعة تجريبية تُحرَّر وتُطلب وتُعتمد وتُصرف بالقناة التجريبية (طلب، موافقة، معالجة، مصروف بأحداثها)، ثم يُسترد الطلب بإشعار موقّع: قيد استرداد واحد متوازن، وما لم يعد ممكنًا استرداده من المراسل جاء من احتياطي الاسترداد بالوحدة، و«المصروف» لا يتغيّر، ولا حساب مستحق مدين. جزئية دائمًا: مزوّد وقناة تجريبيان، ومراسل واحد، وتشغيل واحد."
+}
