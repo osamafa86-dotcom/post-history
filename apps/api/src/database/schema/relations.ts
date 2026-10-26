@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { catalogListings, deviceAttestationKeys, idempotencyKeys, journalEntries, ledgerAccounts, licenseTemplateVersions, licenseTemplates, listingOffers, materialContributors, materialExports, materialFiles, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, outboxEvents, postings, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
+import { buyerOrganizations, catalogListings, deviceAttestationKeys, idempotencyKeys, journalEntries, ledgerAccounts, licenseTemplateVersions, licenseTemplates, listingOffers, materialContributors, materialExports, materialFiles, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, outboxEvents, postings, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
 
 export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => ({
 	refreshToken: one(refreshTokens, {
@@ -17,10 +17,10 @@ export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => 
 }));
 
 export const usersRelations = relations(users, ({one, many}) => ({
-	materialTransitions: many(materialTransitions),
 	refreshTokens: many(refreshTokens),
-	uploadForms: many(uploadForms),
 	pushDevices: many(pushDevices),
+	uploadForms: many(uploadForms),
+	materialTransitions: many(materialTransitions),
 	recoveryRequests_approvedBy: many(recoveryRequests, {
 		relationName: "recoveryRequests_approvedBy_users_id"
 	}),
@@ -28,10 +28,6 @@ export const usersRelations = relations(users, ({one, many}) => ({
 		relationName: "recoveryRequests_userId_users_id"
 	}),
 	deviceAttestationKeys: many(deviceAttestationKeys),
-	office: one(offices, {
-		fields: [users.officeId],
-		references: [offices.id]
-	}),
 	materials_acknowledgedBy: many(materials, {
 		relationName: "materials_acknowledgedBy_users_id"
 	}),
@@ -60,9 +56,17 @@ export const usersRelations = relations(users, ({one, many}) => ({
 		relationName: "notificationRules_updatedBy_users_id"
 	}),
 	licenseTemplates: many(licenseTemplates),
-	catalogListings: many(catalogListings),
+	office: one(offices, {
+		fields: [users.officeId],
+		references: [offices.id]
+	}),
+	buyerOrganization: one(buyerOrganizations, {
+		fields: [users.organizationId],
+		references: [buyerOrganizations.id]
+	}),
 	uploadSessions: many(uploadSessions),
 	outboxEvents: many(outboxEvents),
+	catalogListings: many(catalogListings),
 	ledgerAccounts: many(ledgerAccounts),
 	journalEntries: many(journalEntries),
 	recoveryCodes: many(recoveryCodes),
@@ -412,6 +416,10 @@ export const licenseTemplateVersionsRelations = relations(licenseTemplateVersion
 		fields: [licenseTemplateVersions.templateId],
 		references: [licenseTemplates.id]
 	}),
+}));
+
+export const buyerOrganizationsRelations = relations(buyerOrganizations, ({many}) => ({
+	users: many(users),
 }));
 
 export const ledgerAccountsRelations = relations(ledgerAccounts, ({one, many}) => ({

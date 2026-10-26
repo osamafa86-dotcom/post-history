@@ -253,6 +253,10 @@ jobs:
           EOF
           chmod +x "$RUNNER_TEMP/c2patool"
           TMPDIR="$RUNNER_TEMP/c2pa" C2PATOOL_BIN="$RUNNER_TEMP/c2patool" node tools/acceptance/scripts/c2pa-manifest.mjs --dry-run
+      # The buyer delivery package (original, audio, stills, all C2PA-signed as jobs.py does) judged from outside with the same whitelist and the
+      # same image c2patool (the wrapper above): no planted value, position or raw original digest in any file of the package. Always `partial`.
+      - name: "delivery-leak (buyer delivery package: files signed inside the closed list, nothing revealing anywhere in it; always partial)"
+        run: TMPDIR="$RUNNER_TEMP/c2pa" C2PATOOL_BIN="$RUNNER_TEMP/c2patool" node tools/acceptance/scripts/delivery-leak.mjs --dry-run
       # The link lives 10 minutes by contract: waiting for it to expire (DL_WAIT_EXPIRY=1) is left out of the PR run, so the result is
       # `partial` for that reason alone; run the script by hand with DL_WAIT_EXPIRY=1 for the full check.
       - name: download-url (core gate; signed link for verified derivatives, original is 404)

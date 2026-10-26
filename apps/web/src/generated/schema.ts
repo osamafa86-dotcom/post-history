@@ -1148,7 +1148,7 @@ export interface paths {
         get: operations["getMaterialListing"];
         /**
          * استبدال الإدراج (العناوين والعروض والحالة)
-         * @description يعيد تثبيت `material_version` على إصدار المادة الحالي. القيود نفسها في الإنشاء. حين تخرج حقوق المادة من `sellable` يعلّق الخادم الإدراج في معاملة الانتقال نفسها (`state = suspended`، `suspended_reason = rights_changed`)، ولا يعود `listed` إلا بطلب صريح.
+         * @description يعيد تثبيت `material_version` على إصدار المادة الحالي. القيود نفسها في الإنشاء. حين تخرج حقوق المادة من `sellable` يعلّق الخادم الإدراج في معاملة الانتقال نفسها (`state = suspended`، `suspended_reason = rights_changed`)، ولا يعود `listed` إلا بطلب صريح. وحين تُوسم المادة بالحساسية (قاصرون أو مصابون أو مشاهد صادمة) يعلّقه بـ `sensitive_flagged` في معاملة الوسم نفسها، ويُرفض `listed` لمادة موسومة بـ `422`.
          */
         put: operations["replaceMaterialListing"];
         /**
@@ -1171,7 +1171,7 @@ export interface paths {
         };
         /**
          * البحث في الكتالوج (ما يراه المشتري)
-         * @description الإدراجات `listed` وحدها. يعيد عرض المشتري (`CatalogItem`): عناوين ووصف ولقطات بلغتين، والمدة والدقة، ويوم التصوير والمحافظة، واسم الظهور بحسب وضعه، والعروض بأسعارها. لا إحداثيات ولا مدينة ولا معرّف مراسل ولا جهاز ولا حقول ديناميكية ولا مصادر. أدوار المشترين تُضاف مع حسابات المؤسسات في الطلب التالي من الدورة. البحث النصي بالعربية والإنجليزية.
+         * @description الإدراجات `listed` وحدها. يعيد عرض المشتري (`CatalogItem`): عناوين ووصف ولقطات بلغتين، والمدة والدقة، ويوم التصوير والمحافظة، واسم الظهور بحسب وضعه، والعروض بأسعارها. لا إحداثيات ولا مدينة ولا معرّف مراسل ولا جهاز ولا حقول ديناميكية ولا مصادر. المشترون (`buyer_admin`، `buyer_member`) من مؤسسة `active`؛ غيرها `403 forbidden_scope`. البحث النصي بالعربية والإنجليزية.
          */
         get: operations["searchCatalog"];
         put?: never;
@@ -1226,6 +1226,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/buyer-organizations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** مؤسسات المشترين (الإدارة، v0.3) */
+        get: operations["listBuyerOrganizations"];
+        put?: never;
+        /**
+         * إنشاء مؤسسة مشترية
+         * @description تُنشأ بحالة `pending_verification` ومعها مديرها الأول (`buyer_admin`)، الذي يُدعى برمز تعيين كلمة المرور نفسه في الاستعادة. لا تشتري المؤسسة قبل `active` (ADR 0025، الجزء 3). يُسجَّل في التدقيق بـ `organization_id`.
+         */
+        post: operations["createBuyerOrganization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/buyer-organizations/{org_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المؤسسة المشترية */
+                org_id: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * قراءة مؤسسة مشترية
+         * @description أعضاء المؤسسة يقرؤون مؤسستهم وحدها؛ أي مؤسسة أخرى `404` بشكل المفقود (عزل المستأجرين).
+         */
+        get: operations["getBuyerOrganization"];
+        /**
+         * تعديل ملف المؤسسة
+         * @description `buyer_admin` يعدّل ملف مؤسسته (الأسماء وبريد الفوترة والبلد). الحالة لمدير النظام وحده؛ تغييرها من غيره `403 forbidden_role`. التعليق يوقف الشراء والتنزيل الجديد، ولا يمس تراخيص سابقة.
+         */
+        put: operations["replaceBuyerOrganization"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/buyer-organizations/{org_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المؤسسة المشترية */
+                org_id: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        /** أعضاء المؤسسة وأدوارهم */
+        get: operations["listBuyerMembers"];
+        put?: never;
+        /**
+         * دعوة عضو إلى المؤسسة
+         * @description يُنشأ حساب مشترٍ مرتبط بالمؤسسة وحدها، يعيّن كلمة مروره برمز دعوة يُسلَّم كرمز الاستعادة، ويُفعِّل TOTP عند أول دخول. البريد المستخدم لحساب آخر `409 conflict`، بلا تفريق بين طاقم ومشترٍ. حد المقاعد `seats` يُفرض هنا (`409 seats_exhausted`).
+         */
+        post: operations["inviteBuyerMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/buyer-organizations/{org_id}/members/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المؤسسة المشترية */
+                org_id: components["parameters"]["OrganizationId"];
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * تغيير دور العضو أو تعليقه
+         * @description لا تبقى مؤسسة `active` بلا `buyer_admin` نشط واحد على الأقل (`409 last_buyer_admin`).
+         */
+        put: operations["updateBuyerMember"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events": {
         parameters: {
             query?: never;
@@ -1264,7 +1360,7 @@ export interface components {
              * @description رمز ثابت يتفرّع عليه العميل؛ الرسالة للبشر فقط. قائمة مفتوحة؛ الرمز المجهول = خطأ عام
              * @enum {string}
              */
-            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "internal_error";
+            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "seats_exhausted" | "last_buyer_admin" | "internal_error";
             message: string;
             /** @description لتتبع الطلب في السجلات */
             request_id: string;
@@ -1304,6 +1400,11 @@ export interface components {
              * @description مكتب المستخدم
              */
             office_id?: string | null;
+            /**
+             * Format: uuid
+             * @description مؤسسة المشتري (v0.3)؛ غيابه أو `null` لحساب طاقم
+             */
+            organization_id?: string | null;
             totp_enabled: boolean;
             /** @description الجلسة مقيّدة بعد استعادة الحساب حتى `/auth/totp/confirm`؛ غيابه = false (أُضيف في v0.1) */
             credential_reset_required?: boolean;
@@ -1322,14 +1423,14 @@ export interface components {
             scopes: components["schemas"]["Scope"][];
         };
         /**
-         * @description أدوار الطاقم في مرحلة التأسيس؛ أدوار المشترين والمؤسسات في المرحلة التجارية
+         * @description أدوار الطاقم، وأدوار المشترين (`buyer_admin` و`buyer_member`، v0.3، ADR 0025) التي نطاقها مؤسستهم وحدها (`Scope.kind = organization`). لا يجمع حساب واحد دور طاقم ودور مشترٍ.
          * @enum {string}
          */
-        RoleName: "system_admin" | "editor_in_chief" | "supervisor" | "producer" | "finance" | "reporter" | "rights_officer";
+        RoleName: "system_admin" | "editor_in_chief" | "supervisor" | "producer" | "finance" | "reporter" | "rights_officer" | "buyer_admin" | "buyer_member";
         Scope: {
             /** @enum {string} */
-            kind: "office" | "governorate";
-            /** @description معرّف المكتب أو اسم المحافظة */
+            kind: "office" | "governorate" | "organization";
+            /** @description معرّف المكتب أو اسم المحافظة أو معرّف المؤسسة المشترية */
             id: string;
         };
         RecoveryCompletion: {
@@ -2022,10 +2123,10 @@ export interface components {
             /** @enum {string|null} */
             failure_reason: "checksum_mismatch" | "invalid_file" | "expired" | "aborted" | "storage_error" | null;
         };
-        /** @description `proxy` و`hls` و`audio` مشتقات زمنية: `technical` يحمل `duration_ms` و`start_pts_us`. `thumbnail` صورة (الملصق أو ورقة اللقطات): `duration_ms` اختياري، و`width` و`height` إلزاميان غير فارغين، و`mime_type` إلزامي. `proxy_mode` يكتبه الخادم `normal` للنسخة الخفيفة وحدها و`NULL` لغيرها. `export` حزمة التصدير (#99، v0.2): `application/zip`، و`technical` هو `technical` الأصل؛ تُبنى عند الطلب (`export.requested`) لا عند الاستيعاب، ولا تحمل بيانات كاشفة. `transcript` (`application/json`، نص بتوقيت الكلمات والمتحدثين) و`captions` (`text/vtt`) من عامل التفريغ (v0.2): زمنيان على خط زمن الأصل، فيحملان `duration_ms` و`start_pts_us` الأصل. `watermarked_preview` (v0.3، ADR 0025) معاينة المشتري: نسخة منخفضة بعلامة مائية مرئية، زمنية كـ `proxy`، لا تظهر في `Material.files` ولا يعطيها غير رابط الكتالوج. `shot_list` (`application/json`، قائمة اللقطات من عامل الذكاء الاصطناعي) زمني وحساس كالتفريغ والترجمة (threat-model §9.1): يقرؤه من يعدّل المادة وحده، ولا يدخل تصديرًا ولا إشعارًا ولا حدثًا ولا فهرس بحث، و`ai.draft_ready` لا تتغير حمولته. `delivery` (v0.3، ADR 0025 الجزء 9) حزمة تسليم المشتري لترخيص بعينه: `application/zip`، و`technical` هو `technical` الأصل كـ `export`، و`license_id` إلزامي معه وممنوع لغيره. متساوٍ الأثر على (`derived_from_id`، `license_id`): لكل ترخيص حزمته. لا تظهر في `Material.files`، ويُنزّلها المشتري من الترخيص وحده، ولا تضم التفريغ (R11). */
+        /** @description `proxy` و`hls` و`audio` مشتقات زمنية: `technical` يحمل `duration_ms` و`start_pts_us`. `thumbnail` صورة (الملصق أو ورقة اللقطات): `duration_ms` اختياري، و`width` و`height` إلزاميان غير فارغين، و`mime_type` إلزامي. `proxy_mode` يكتبه الخادم `normal` للنسخة الخفيفة وحدها و`NULL` لغيرها. `export` حزمة التصدير (#99، v0.2): `application/zip`، و`technical` هو `technical` الأصل؛ تُبنى عند الطلب (`export.requested`) لا عند الاستيعاب، ولا تحمل بيانات كاشفة. `transcript` (`application/json`، نص بتوقيت الكلمات والمتحدثين) و`captions` (`text/vtt`) من عامل التفريغ (v0.2): زمنيان على خط زمن الأصل، فيحملان `duration_ms` و`start_pts_us` الأصل. `watermarked_preview` (v0.3، ADR 0025) معاينة المشتري: نسخة منخفضة بعلامة مائية مرئية، زمنية كـ `proxy`، لا تظهر في `Material.files` ولا يعطيها غير رابط الكتالوج. `shot_list` (`application/json`، قائمة اللقطات من عامل الذكاء الاصطناعي) زمني وحساس كالتفريغ والترجمة (threat-model §9.1): يقرؤه من يعدّل المادة وحده، ولا يدخل تصديرًا ولا إشعارًا ولا حدثًا ولا فهرس بحث، و`ai.draft_ready` لا تتغير حمولته. `delivery` (v0.3، ADR 0025 الجزء 9) حزمة تسليم المشتري لترخيص بعينه: `application/zip`، و`technical` هو `technical` الأصل كـ `export`، و`license_id` إلزامي معه وممنوع لغيره. متساوٍ الأثر على (`derived_from_id`، `license_id`): لكل ترخيص حزمته. لا تظهر في `Material.files`، ويُنزّلها المشتري من الترخيص وحده، ولا تضم التفريغ (R11). `produced` (v0.3، ADR 0025 الجزء 9) التصدير النهائي: `video/mp4` زمني كـ `proxy` بـ `technical` الناتج، يكتبه عامل الوسائط وحده من `render` (نقاط قص المصدر). لا نقطة محرر ولا واجهة تحرير، ولا ترجمة ولا تفريغ محروق فيه (R11)، وهو وحده ما يقبله `produced_file_id` في `license.delivery_requested`. */
         MediaDerivative: {
             /** @enum {string} */
-            kind: "proxy" | "thumbnail" | "hls" | "audio" | "export" | "transcript" | "captions" | "watermarked_preview" | "shot_list" | "delivery";
+            kind: "proxy" | "thumbnail" | "hls" | "audio" | "export" | "transcript" | "captions" | "watermarked_preview" | "shot_list" | "delivery" | "produced";
             /**
              * Format: uuid
              * @description لـ `delivery` وحده
@@ -2040,14 +2141,14 @@ export interface components {
              */
             mime_type?: "image/jpeg" | "image/webp" | "video/mp4" | "application/vnd.apple.mpegurl" | "audio/mp4" | "application/json" | "application/zip" | "text/vtt";
             technical: components["schemas"]["MediaTechnical"];
-        } & (unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown);
         MediaSourceFile: {
             /** Format: uuid */
             file_id: string;
             /** Format: uuid */
             material_id: string;
             /** @enum {string} */
-            kind: "original" | "proxy" | "hls" | "audio" | "thumbnail" | "voice_note" | "export" | "transcript" | "captions" | "watermarked_preview" | "shot_list" | "delivery";
+            kind: "original" | "proxy" | "hls" | "audio" | "thumbnail" | "voice_note" | "export" | "transcript" | "captions" | "watermarked_preview" | "shot_list" | "delivery" | "produced";
             /** @enum {string} */
             state: "uploading" | "received" | "verified" | "failed";
             storage_key: string;
@@ -2452,7 +2553,7 @@ export interface components {
             /** @description الإصدار المعروض للبيع؛ البيعة تجمّده */
             material_version: number;
             /** @enum {string|null} */
-            suspended_reason: "manual" | "rights_changed" | null;
+            suspended_reason: "manual" | "rights_changed" | "sensitive_flagged" | null;
             /**
              * Format: date-time
              * @description أول انتقال إلى `listed`
@@ -2502,6 +2603,74 @@ export interface components {
         CatalogPage: {
             items: components["schemas"]["CatalogItem"][];
             next_cursor: string | null;
+        };
+        /**
+         * @description `pending_verification` لا تشتري؛ `active` تشتري؛ `suspended` يوقف الشراء والتنزيل الجديد
+         * @enum {string}
+         */
+        BuyerOrganizationStatus: "pending_verification" | "active" | "suspended";
+        BuyerOrganizationFields: {
+            /** @description الاسم القانوني على الفاتورة */
+            legal_name: string;
+            display_name: components["schemas"]["LocalizedText"];
+            /** @description بلد التسجيل (ISO 3166-1 alpha-2)، يحدد الفوترة والمزوّد */
+            country: string;
+            /** Format: email */
+            billing_email: string;
+            /**
+             * @description الحد الأعلى للأعضاء النشطين؛ يضبطه مدير النظام
+             * @default 5
+             */
+            seats: number;
+            status?: components["schemas"]["BuyerOrganizationStatus"];
+        };
+        /** @description جسم الطلب؛ لا خصائص غير المعرَّفة */
+        BuyerOrganizationInput: components["schemas"]["BuyerOrganizationFields"];
+        BuyerOrganizationCreate: components["schemas"]["BuyerOrganizationFields"] & {
+            /** Format: email */
+            first_admin_email: string;
+        };
+        BuyerOrganization: components["schemas"]["BuyerOrganizationFields"] & {
+            /** Format: uuid */
+            id: string;
+            active_members: number;
+            /**
+             * Format: date-time
+             * @description أول انتقال إلى `active`
+             */
+            verified_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        BuyerOrganizationPage: {
+            items: components["schemas"]["BuyerOrganization"][];
+            next_cursor: string | null;
+        };
+        /** @enum {string} */
+        BuyerRole: "buyer_admin" | "buyer_member";
+        BuyerMemberInvite: {
+            /** Format: email */
+            email: string;
+            role: components["schemas"]["BuyerRole"];
+        };
+        BuyerMemberUpdate: {
+            role: components["schemas"]["BuyerRole"];
+            /** @enum {string} */
+            status: "active" | "suspended";
+        };
+        BuyerMember: {
+            /** Format: uuid */
+            user_id: string;
+            /** Format: email */
+            email: string;
+            role: components["schemas"]["BuyerRole"];
+            /** @enum {string} */
+            status: "invited" | "active" | "suspended";
+            totp_enabled: boolean;
+            /** Format: date-time */
+            created_at: string;
         };
         OutboxEvent: components["schemas"]["outbox-event"];
         EventPage: {
@@ -2858,6 +3027,8 @@ export interface components {
         IfMatch: string;
         /** @description معرّف جلسة الرفع */
         MediaSessionId: string;
+        /** @description معرّف المؤسسة المشترية */
+        OrganizationId: string;
         /** @description معرّف المادة */
         MaterialId: string;
         /** @description معرّف جلسة الرفع */
@@ -5065,6 +5236,231 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listBuyerOrganizations: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["BuyerOrganizationStatus"];
+                /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description حجم الصفحة */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description صفحة من المؤسسات، الأحدث أولًا */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyerOrganizationPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createBuyerOrganization: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuyerOrganizationCreate"];
+            };
+        };
+        responses: {
+            /** @description المؤسسة */
+            201: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyerOrganization"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    getBuyerOrganization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المؤسسة المشترية */
+                org_id: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description المؤسسة */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyerOrganization"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    replaceBuyerOrganization: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description قيمة `ETag` الأخيرة التي رآها العميل (`"<row_version>"` للمادة، `"<version>"` للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ `412 precondition_failed` دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description معرّف المؤسسة المشترية */
+                org_id: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuyerOrganizationInput"];
+            };
+        };
+        responses: {
+            /** @description المؤسسة بعد التعديل */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyerOrganization"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    listBuyerMembers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المؤسسة المشترية */
+                org_id: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الأعضاء */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["BuyerMember"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    inviteBuyerMember: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description معرّف المؤسسة المشترية */
+                org_id: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuyerMemberInvite"];
+            };
+        };
+        responses: {
+            /** @description العضو */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyerMember"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    updateBuyerMember: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description معرّف المؤسسة المشترية */
+                org_id: components["parameters"]["OrganizationId"];
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuyerMemberUpdate"];
+            };
+        };
+        responses: {
+            /** @description العضو */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyerMember"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     listEvents: {
