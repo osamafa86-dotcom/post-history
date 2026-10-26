@@ -60,6 +60,7 @@ const gone = () => new ApiError(410, 'media_resource_gone', 'The upload session 
  * المُتحقق داخل الخادم. كل نقطة متساوية الأثر لأن التسليم من الطابور «مرة على الأقل».
  */
 const VOICE_NOTE_DERIVATIVES: ReadonlySet<string> = new Set(['audio', 'transcript', 'captions']);
+const EDITORIAL_ONLY: ReadonlySet<string> = new Set(['transcript', 'captions', 'shot_list']);
 
 @Injectable()
 export class MediaService {
@@ -144,6 +145,26 @@ export class MediaService {
       }
       return this.result(tx, s.id);
     });
+  }
+
+  /**
+   * ملف مصدر لما يبنيه العامل عند الطلب (v0.3): المحاذاة، وحزمة التصدير، ومعاينة الكتالوج، وحزمة التسليم. مفتاح التخزين
+   * وبصمته وحدهما، بلا اسم ملف ولا بيانات كاشفة. التفريغ والترجمة وقائمة اللقطات لا تُعطى (R11، threat-model §9.1):
+   * لا تدخل شيئًا مما يبنيه العامل، فطلبها 410 كالملف غير الموجود.
+   */
+  async file(fileId: string): Promise<components['schemas']['MediaSourceFile']> {
+    if (!UUID.test(fileId)) throw gone();
+    const [f] = await this.db.select().from(materialFiles).where(eq(materialFiles.id, fileId));
+    if (!f?.storageKey || EDITORIAL_ONLY.has(f.kind)) throw gone();
+    return {
+      file_id: f.id,
+      material_id: f.materialId,
+      kind: f.kind as components['schemas']['MediaSourceFile']['kind'],
+      state: f.state as components['schemas']['MediaSourceFile']['state'],
+      storage_key: f.storageKey,
+      size_bytes: f.sizeBytes === null ? null : Number(f.sizeBytes),
+      sha256: f.sha256 ? f.sha256.toString('hex') : null,
+    };
   }
 
   async derive(fileId: string, body: MediaDerivativeBody): Promise<{ file_id: string }> {
