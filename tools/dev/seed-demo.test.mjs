@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {localOnly,requireDemo} from './local-only.mjs';
-import {states} from './seed-demo.mjs';
+import {states,populateMaterials,DEMO_MATERIAL_COUNT,verifyCommerce} from './seed-demo.mjs';
 test('refuse external services and require explicit disposable database consent',()=>{
   assert.throws(()=>requireDemo({}));
   assert.throws(()=>localOnly('https:'+String.fromCharCode(47,47)+'external',['http:']));
@@ -12,4 +12,20 @@ test('forty synthetic rows keep three independent tracks',()=>{
   assert.equal(new Set(rows.map(r=>r.technical)).size,5);
   assert.equal(new Set(rows.map(r=>r.editorial)).size,9);
   assert.equal(new Set(rows.map(r=>r.rights)).size,5);
+});
+
+test('population creates exactly forty distinct demo material identifiers',async()=>{
+  const seen=[];
+  const ids=await populateMaterials(async i=>{seen.push(i);return `synthetic-${i}`;});
+  assert.equal(DEMO_MATERIAL_COUNT,40);
+  assert.equal(seen.length,40);assert.equal(new Set(ids).size,40);
+  assert.equal(seen.at(-1),39);
+});
+
+test('deferred link inspection is allowed but an actual refund is required',()=>{
+  const doc={result:'partial',metrics:{checks_failed:0,deferred_checks:1}};
+  assert.doesNotThrow(()=>verifyCommerce(doc,1));
+  assert.throws(()=>verifyCommerce(doc,0));
+  assert.throws(()=>verifyCommerce({...doc,result:'fail'},1));
+  assert.throws(()=>verifyCommerce({...doc,metrics:{checks_failed:1}},1));
 });

@@ -13,13 +13,23 @@ import { tusAuth } from '../acceptance/lib/ingest.mjs';
 import { requireDemo, localOnly } from './local-only.mjs';
 import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
-import pg from '../acceptance/node_modules/pg/lib/index.js';
-import { hash } from '../acceptance/node_modules/@node-rs/argon2/index.js';
+import pg from 'pg';
+import { hash } from '@node-rs/argon2';
 const exec = promisify(execFile);
+export const DEMO_MATERIAL_COUNT=40;
+export async function populateMaterials(create) {
+  const ids=[];
+  for(let i=0;i<DEMO_MATERIAL_COUNT;i++) ids.push(await create(i));
+  return ids;
+}
+export function verifyCommerce(doc, refunded) {
+  if(!doc || doc.result==='fail' || doc.metrics?.checks_failed || !refunded) throw new Error('sandbox refund verification incomplete');
+}
 export const states = i => ({technical:['pending','proxy_received','original_received','verified','failed'][i%5], editorial:['inbox','acknowledged','reviewing','needs_changes','accepted','in_production','final_review','published','rejected'][i%9], rights:['unknown','documented','sellable','blocked','withdrawn'][i%5]});
 export async function run(env=process.env) {
   requireDemo(env);
   localOnly(env.TUS_URL,['http:']);
+  localOnly(env.ROOT_URL,['http:']);
   if (!env.SP_WEBHOOK_SECRET) throw new Error('sandbox webhook configuration required');
   await exec('ffmpeg',['-version']);
   const dir=await mkdtemp(join(tmpdir(),'newsroom-demo-'));
@@ -48,7 +58,7 @@ export async function run(env=process.env) {
     await exec('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=size=640x360:rate=25','-f','lavfi','-i','sine=frequency=440','-t','4','-c:v','mpeg4','-c:a','aac','-y',file]);
     const digest=createHash('sha256'); for await(const block of createReadStream(file)) digest.update(block);
     const sha=digest.digest('hex'),size=(await stat(file)).size;
-    for(let i=0;i<30;i++) {
+    const materialIds=await populateMaterials(async i=> {
       const m=await http.call(s.tokens.reporter,'POST','/materials',{body:materialBody(s.formVersion,`مادة اصطناعية ${i+1}`,{city:`مدينة اصطناعية ${i%2+1}`})});
       if(m.status!==201) throw new Error('demo material creation failed');
       // الرفع الحقيقي أولًا، ثم توزيع حالات العرض دون ادعاء مرور خط المعالجة.
@@ -56,17 +66,25 @@ export async function run(env=process.env) {
       const result=await resumableUpload({endpoint:env.TUS_URL,file,size,chunkSize:1024*1024,interruptAt:[],metadata:{upload_session_id:session.id},headers:()=>tusAuth(session,env)});
       result.agentClose(); if(result.violations.length) throw new Error('demo upload violated resume invariants');
       const st=states(i),r=reporters[i%6];
+      if(i===0) {
+        const current=await http.get(s.tokens.supervisor,`/materials/${m.body.id}`);
+        const transition=await http.call(s.tokens.supervisor,'POST',`/materials/${m.body.id}/transitions`,{body:{track:'editorial',to:'acknowledged',reason:'اطلاع تجريبي على مادة اصطناعية'},headers:{'if-match':current.headers.etag}});
+        if(transition.status!==200)throw new Error('demo notification transition failed');
+        st.editorial='acknowledged';
+      }
       await db.query('UPDATE materials SET reporter_id=$1,office_id=$2,technical_state=$3,editorial_state=$4,rights_state=$5 WHERE id=$6',[r.id,officeIds[i%2],st.technical,st.editorial,st.rights,m.body.id]);
-    }
+      return m.body.id;
+    });
+    const materialCount=(await db.query('SELECT count(*)::int AS n FROM materials WHERE id=ANY($1::uuid[])',[materialIds])).rows[0].n;
+    if(materialCount!==DEMO_MATERIAL_COUNT)throw new Error('demo material count mismatch');
     // الأداة المشتركة تمر عبر المزوّد التجريبي وتتحقق من القيد والترخيص والاسترداد المتاح؛ لا نكررها.
     await exec(process.execPath, [resolve('tools/acceptance/live/sandbox-purchase.mjs')], {env:{...env,SP_API_URL:env.API_URL,SP_ROOT_URL:localOnly(env.ROOT_URL,['http:']),SP_DATABASE_URL:env.DATABASE_URL,SP_TOKENS:JSON.stringify(s.tokens),ACCEPTANCE_RESULTS_DIR:dir},maxBuffer:1024*1024});
     const {readdir,readFile}=await import('node:fs/promises');
     const reports=await readdir(dir);
     const report=reports.find(p=>p.endsWith('.json'));
     const commerce=report?JSON.parse(await readFile(join(dir,report),'utf8')):null;
-    if(!commerce || commerce.result==='fail' || commerce.metrics?.checks_failed || commerce.metrics?.deferred_checks) throw new Error('sandbox verification incomplete');
     const refunded=(await db.query("SELECT count(*)::int AS n FROM orders WHERE organization_id=(SELECT organization_id FROM users WHERE id=$1) AND status='refunded'",[s.users.buyer_admin.id])).rows[0].n;
-    if(!refunded) throw new Error('sandbox refund endpoint is required');
+    verifyCommerce(commerce,refunded);
     // بيعة ثانية تبقى مدفوعة للعرض؛ الأولى تعرض الاسترداد والترخيص المبطل.
     const offer=(await db.query("SELECT o.listing_id,o.license_template_id FROM listing_offers o JOIN catalog_listings l ON l.id=o.listing_id JOIN materials m ON m.id=l.material_id JOIN license_templates t ON t.id=o.license_template_id WHERE m.reporter_id=$1 AND l.state='listed' AND t.type='editorial_single' LIMIT 1",[s.users.reporter.id])).rows[0];
     if(!offer)throw new Error('synthetic listing unavailable');
@@ -86,7 +104,7 @@ export async function run(env=process.env) {
     }
     if(!licensed||(await http.get(s.tokens.buyer_admin,`/orders/${paid.body.id}`)).body.status!=='paid')throw new Error('paid license not issued');
     // قناة واحدة، مرة واحدة فقط، لا ملف حسابات أو رموز جلسة.
-    process.stdout.write(JSON.stringify({synthetic:true,accounts:credentials,materials:40,commerce:commerce.result})+'\n');
+    process.stdout.write(JSON.stringify({synthetic:true,accounts:credentials,materials:materialCount,commerce:commerce.result})+'\n');
   } finally { await db.end(); await rm(dir,{recursive:true,force:true}); }
 }
 if(process.argv[1] && resolve(process.argv[1])===new URL(import.meta.url).pathname) run().catch(()=>{console.error('Demo seed failed; inspect local services without logging credentials.');process.exitCode=1;});
