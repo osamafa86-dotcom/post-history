@@ -47,3 +47,33 @@
 ## 2. التناقضات بين العقد والكود
 
 لم تُدرج هنا: المراجعة الأولى أنتجت خمس ملاحظات بمراجع (ملف:سطر) لم يتحقق المنسّق من صحة ثلاثة منها (الملفات المذكورة غير موجودة في المستودع)، فحُذف القسم كله بدل نشر مراجع غير مؤكدة. يُعاد كتابته في PR لاحق بمراجع محقَّقة بأداة فحص انحراف العقد (`tools/contract-drift`، مهمة kimi 3) أو بقراءة مباشرة للملفات الموجودة.
+
+## 3. التناقضات المحققة بين العقد (`contracts/openapi.yaml`) والكود التنفيذي
+
+تم التحقق من جميع المسارات وأرقام الأسطر أدناه مباشرةً مقابل الملفات الفعلية في المستودع وبواسطة أداتي الفحص `tools/contract-drift.mjs:1` (PR #346) و `tools/contract-clients.mjs:1` (PR #393). (ملاحظة المنسّق: ثلاثة مراجع في مسودة الوكيل صُحِّحت بعد التحقق: سطر `download-url` في متحكم المواد، وملفا `dashboard.ts` و`permissions.ts` غير الموجودَين استُبدلا بالملفَين الفعليَّين.)
+
+### أ. مسارات منفذة في متحكمات الخادم (`apps/api/src/`) وغير مدرجة في العقد العام (`CONTROLLER_ONLY`)
+
+هذه المسارات تخدم الخطافات الداخلية وعاملي المعالجة الخلفية (`workers/`) تحت البادئة `/internal/*`، وهي منفذة في متحكمات NestJS ولكنها مستثناة عمداً من عقد العملاء العام `contracts/openapi.yaml:1`:
+
+1. **خطافات خادم الرفع `tusd` الداخلية:**
+   - `apps/api/src/uploads/tusd-hooks.controller.ts:11` (`@Controller('internal/tusd-hooks')`)
+   - `apps/api/src/uploads/tusd-hooks.controller.ts:19` (`POST /internal/tusd-hooks/:hook_token` عبر `@Post(':hook_token')`)
+
+2. **مسارات عامل معالجة الوسائط والمشتقات الداخلية (`internal/media`):**
+   - `apps/api/src/media/media.controller.ts:18` (`@Controller('internal/media')`)
+   - `apps/api/src/media/media.controller.ts:26` (`GET /internal/media/sessions/:id`)
+   - `apps/api/src/media/media.controller.ts:33` (`POST /internal/media/sessions/:id/verification`)
+   - `apps/api/src/media/media.controller.ts:41` (`GET /internal/media/files/:file_id`)
+   - `apps/api/src/media/media.controller.ts:48` (`POST /internal/media/files/:file_id/derivatives`)
+   - `apps/api/src/media/media.controller.ts:57` (`PUT /internal/media/files/:file_id/alignment`)
+
+### ب. مطابقة مسارات العقد العامة مع متحكمات الخادم وتباين استهلاك العملاء (`WEB_ONLY` / `IOS_GENERATED_ONLY`)
+
+1. **تطابق متحكمات المواد والرفع العامة في الخادم مع `contracts/openapi.yaml`:**
+   - جميع مسارات المواد في `apps/api/src/materials/materials.controller.ts:16` (`GET :id/export` في السطر `26`، `GET :id/export/download-url` في السطر `39`، `GET :id/duplicates` في السطر `46`، `GET :id/files/:fileId/download-url` في السطر `53`، `GET /materials` في السطر `60`، `POST /materials` في السطر `66`، `GET :id` في السطر `73`، `PATCH :id` في السطر `79`، `GET :id/transitions` في السطر `85`، `POST :id/transitions` في السطر `91`، `PUT :id/contributors` في السطر `98`، `POST :id/reservation` في السطر `105`، و`DELETE :id/reservation` في السطر `112`) مطبقة ومطابقة للعقد.
+   - جميع مسارات جلسات الرفع في `apps/api/src/uploads/uploads.controller.ts:9` (`POST /uploads` في السطر `24`، `GET /uploads` في السطر `31`، `GET /uploads/:id` في السطر `39`، `DELETE /uploads/:id` في السطر `45`، و`POST /uploads/:id/complete` في السطر `52`) مطبقة ومطابقة للعقد.
+
+2. **عمليات العقد المستهلكة حصرياً في الويب (`WEB_ONLY`) وغير المستدعاة في تطبيقات المراسلين (`apps/ios` و `apps/android`):**
+   - وفق تصنيف `tools/contract-clients.md:25` (`WEB_ONLY` و `IOS_GENERATED_ONLY`)، فإن تطبيقَي الهاتف (`apps/ios` و `apps/android`) يقتصران وظيفياً على مسارات المراسل الميداني (المصادقة، جلب الاستمارة، إنشاء واستئناف وإكمال جلسة الرفع في `apps/ios/Packages/PostHistoryKit/Sources/UploadCore/UploadAPI.swift:8` والأسطر `9-12`، وفي `apps/android/core/src/main/kotlin/net/palpost/library/core/upload/UploadEngine.kt:1` و `apps/android/app/src/main/kotlin/net/palpost/library/ui/material/MyMaterialsScreen.kt:1`).
+   - في المقابل، فإن مسارات الإدارة ولوحة غرفة الأخبار (`apps/web/src/server/handler.ts:1`)، ومراجعة المواد وصلاحياتها (`apps/web/src/server/review-actions.ts:1`)، وحسم تعارضات الدعوات (`apps/web/src/server/invite-conflicts.ts:1`)، والحجز والمدفوعات والتصدير التحريري المعرّفة في `contracts/openapi.yaml:1` تُستهلك من خادم الويب (`apps/web/src/server/*.ts` وفق `tools/contract-clients.md:9`) وتبقى مُولّدة فقط دون استدعاء مباشر في حزمة عميل iOS (`apps/ios/Packages/PostHistoryKit/Sources/PostHistoryAPI/` وفق `tools/contract-clients.md:10`) وعميل أندرويد المولّد عبر `apps/android/api/build.gradle.kts:1` (`tools/contract-clients.md:14`).
