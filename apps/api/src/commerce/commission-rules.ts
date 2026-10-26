@@ -106,7 +106,7 @@ export class CommissionRulesService {
         });
       } catch (err) {
         const e = pgError(err);
-        if (e.constraint === 'commission_rules_key') throw new ApiError(409, 'commission_rule_exists' as 'listing_exists', 'A rule with this scope and effective date exists.');
+        if (e.constraint === 'commission_rules_key') throw new ApiError(409, 'commission_rule_exists', 'A rule with this scope and effective date exists.');
         // نوع مادة خارج القائمة المسموحة يرفضه قيد النطاق
         if (e.constraint === 'commission_rules_scope_id_check') throw ApiError.validation({ fields: ['/scope_id'] });
         throw err;
