@@ -9,6 +9,7 @@ import { hasRole } from "@/lib/review";
 import { catalogRoles } from "./store/store-catalog";
 import { uploadRoles } from "@/lib/upload-policy";
 import { isBuyer, organizationAdmins } from "@/lib/buyer-policy";
+import { commissionReaders } from "@/lib/commission-policy";
 import { templateRoles } from "@/lib/license-policy";
 import { formReaders } from "@/lib/form-admin";
 
@@ -79,6 +80,7 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
       {hasRole(me, ...templateRoles) && <Link prefetch={false} className={pathname.endsWith("/license-templates") ? "active" : ""} href={`/${locale}/license-templates`}>{m.templates.nav}</Link>}
       {hasRole(me, "system_admin", "finance", "rights_officer") && <Link prefetch={false} className={pathname.includes("/store/licenses") ? "active" : ""} href={`/${locale}/store/licenses`}>{m.licenses.nav}</Link>}
       {hasRole(me, ...organizationAdmins) && <Link prefetch={false} className={pathname.endsWith("/buyer-organizations") ? "active" : ""} href={`/${locale}/buyer-organizations`}>{m.buyers.nav}</Link>}
+      {hasRole(me, ...commissionReaders) && <Link prefetch={false} className={pathname.endsWith("/commission-rules") ? "active" : ""} href={`/${locale}/commission-rules`}>{m.commission.nav}</Link>}
       {hasRole(me, "system_admin") && <Link prefetch={false} className={pathname.endsWith("/admin") ? "active" : ""} href={`/${locale}/admin`}>{m.admin.title}</Link>}
     </>}</nav>{!buyer && <p className="scope-note">{m.readOnly}</p>}<button className="quiet danger-link" onClick={() => setConfirmAll(true)}>{m.logoutAll}</button></aside>
     <main id="main-content" className="main-content">{error && <p className="notice error" role="alert">{m.error}</p>}{children}</main></div>

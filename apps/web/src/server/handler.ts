@@ -12,6 +12,7 @@ import { actionPath, reviewAction } from "./review-actions";
 import { hasRole, materialTag } from "@/lib/review";
 import { organizationRead } from "./organizations";
 import { licenseRead } from "./licenses";
+import { commissionRead } from "./finance";
 import { orderRead } from "./orders";
 import { safeTemplate, templateRoles } from "@/lib/license-policy";
 import { listingReaders, safeListing } from "@/lib/listing-policy";
@@ -151,6 +152,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         const rule = requireOk(await api.GET("/notification-rules/{rule_id}", { params: { path: { rule_id: path.slice(19) } } }));
         const response = json(safeRule(rule)); response.headers.set("ETag", `"${rule.row_version}"`); return response;
       }
+      if (path === "commission-rules") return commissionRead(request, api, me);
       const license = /^licenses(?:\/([^/]+))?$/.exec(path);
       if (license) return licenseRead(request, license[1], api, me);
       const order = /^orders(?:\/([^/]+))?$/.exec(path);
