@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { loadConfig, sandboxBootWarning } from '../../src/config/config';
 import { money } from '../../src/commerce/money';
+import { SandboxCheckoutController } from '../../src/commerce/orders.controller';
 import { SandboxPaymentProvider, signWebhook, verifySignedWebhook, WebhookSignatureError } from '../../src/commerce/payment-provider';
 
 const secret = randomBytes(32).toString('hex');
@@ -93,5 +94,31 @@ describe('sandbox payment provider', () => {
       expect(sandboxBootWarning({ PAYMENT_PROVIDER: 'sandbox', NODE_ENV: 'production', DEPLOY_STAGE: 'trial' })).toMatch(/sandbox payment provider is active.*DEPLOY_STAGE=trial/);
       expect(sandboxBootWarning({ PAYMENT_PROVIDER: 'none', NODE_ENV: 'production', DEPLOY_STAGE: 'production' })).toBeNull();
     });
+  });
+});
+
+describe('sandbox checkout page in the trial (NODE_ENV=production behind the two flags)', () => {
+  const page = async (provider: SandboxPaymentProvider | null, ref: string) => {
+    const sent: string[] = [];
+    const res = { setHeader: () => undefined, type: () => ({ send: (html: string) => sent.push(html) }) };
+    new SandboxCheckoutController({} as never, provider as never).page(ref, res as never);
+    return sent[0];
+  };
+
+  it('serves the page and the outcomes: the field-trial host runs with NODE_ENV=production, and the page was a 404 there', async () => {
+    const prod = { DATABASE_URL: 'postgres://x', JWT_SECRET: 'j'.repeat(40), FIELD_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'), TUSD_HOOK_SECRET: 't'.repeat(40), S3_BUCKET_UPLOADS: 'uploads',
+      NODE_ENV: 'production', REDIS_URL: 'redis://x', UPLOAD_VERIFIER: 'external', MEDIA_WORKER_TOKEN: 'm'.repeat(40),
+      PAYMENT_PROVIDER: 'sandbox', SANDBOX_WEBHOOK_SECRET: secret, DEPLOY_STAGE: 'trial', PAYMENT_SANDBOX_ALLOWED: '1' };
+    const config = loadConfig(prod);
+    expect(config.NODE_ENV).toBe('production');
+    const provider = new SandboxPaymentProvider(config.SANDBOX_WEBHOOK_SECRET!, config.SANDBOX_CHECKOUT_BASE_URL);
+    const { providerRef } = await provider.createCheckout({ orderId: 'o1', amount: money(12345, 'USD'), returnUrl: 'http://x', idempotencyKey: 'k1' });
+    expect(await page(provider, providerRef)).toContain('123.45 USD');
+  });
+
+  it('is still a 404 without the sandbox provider, and for an unknown reference', async () => {
+    const provider = new SandboxPaymentProvider(secret, 'http://api.test');
+    await expect(page(null, 'sbx_x')).rejects.toThrow(/Not Found/);
+    await expect(page(provider, 'sbx_unknown')).rejects.toThrow();
   });
 });
