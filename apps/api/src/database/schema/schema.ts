@@ -687,7 +687,7 @@ export const outboxEvents = pgTable("outbox_events", {
 	check("outbox_events_idempotency_key_len", sql`(char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 200)`),
 	check("outbox_events_payload_is_object", sql`jsonb_typeof(payload) = 'object'::text`),
 	check("outbox_events_payload_whitelisted", sql`CHECK (outbox_payload_is_whitelisted(type, payload`),
-	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text])`),
+	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text, 'license.revoked'::text])`),
 ]);
 
 export const recoveryCodes = pgTable("recovery_codes", {
@@ -1234,4 +1234,85 @@ export const paymentEvents = pgTable("payment_events", {
 	check("payment_events_provider_check", sql`provider ~ '^[a-z_]{1,32}$'::text`),
 	check("payment_events_provider_ref_check", sql`(char_length(provider_ref) >= 1) AND (char_length(provider_ref) <= 128)`),
 	check("payment_events_type_check", sql`type = ANY (ARRAY['payment.succeeded'::text, 'payment.failed'::text, 'refund.succeeded'::text, 'dispute.opened'::text])`),
+]);
+
+export const refunds = pgTable("refunds", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	orderId: uuid("order_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
+	currency: text().notNull(),
+	reasonCode: text("reason_code").notNull(),
+	status: text().default('pending').notNull(),
+	providerRefundRef: text("provider_refund_ref"),
+	entryId: uuid("entry_id"),
+	createdBy: uuid("created_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	completedAt: timestamp("completed_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("refunds_order_idx").using("btree", table.orderId.asc().nullsLast().op("uuid_ops")),
+	uniqueIndex("refunds_provider_ref_key").using("btree", table.providerRefundRef.asc().nullsLast().op("text_ops")).where(sql`(provider_refund_ref IS NOT NULL)`),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [users.id],
+			name: "refunds_created_by_fkey"
+		}),
+	foreignKey({
+			columns: [table.entryId],
+			foreignColumns: [journalEntries.id],
+			name: "refunds_entry_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.orderId],
+			foreignColumns: [orders.id],
+			name: "refunds_order_id_fkey"
+		}),
+	check("refunds_amount_check", sql`(amount_minor >= 1) AND (amount_minor <= '2000000000000'::bigint)`),
+	check("refunds_completed_check", sql`(status = 'pending'::text) = (completed_at IS NULL)`),
+	check("refunds_currency_check", sql`currency = ANY (ARRAY['USD'::text, 'ILS'::text])`),
+	check("refunds_entry_check", sql`(status = 'succeeded'::text) = (entry_id IS NOT NULL)`),
+	check("refunds_provider_ref_check", sql`(provider_refund_ref IS NULL) OR ((char_length(provider_refund_ref) >= 1) AND (char_length(provider_refund_ref) <= 128))`),
+	check("refunds_reason_check", sql`reason_code = ANY (ARRAY['buyer_request'::text, 'duplicate'::text, 'rights_withdrawn'::text, 'dispute'::text, 'exclusivity_lost'::text, 'other'::text])`),
+	check("refunds_status_check", sql`status = ANY (ARRAY['pending'::text, 'succeeded'::text, 'failed'::text])`),
+]);
+
+export const commissionRules = pgTable("commission_rules", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	scope: text().notNull(),
+	scopeId: text("scope_id"),
+	licenseType: text("license_type"),
+	platformBasisPoints: integer("platform_basis_points").notNull(),
+	effectiveFrom: timestamp("effective_from", { withTimezone: true, mode: 'string' }).notNull(),
+	createdBy: uuid("created_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	uniqueIndex("commission_rules_key").using("btree", table.scope.asc().nullsLast().op("text_ops"), table.scopeId.asc().nullsLast().op("timestamptz_ops"), table.licenseType.asc().nullsLast().op("timestamptz_ops"), table.effectiveFrom.asc().nullsLast().op("text_ops")),
+	index("commission_rules_lookup_idx").using("btree", table.scope.asc().nullsLast().op("text_ops"), table.scopeId.asc().nullsLast().op("timestamptz_ops"), table.effectiveFrom.desc().nullsFirst().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [users.id],
+			name: "commission_rules_created_by_fkey"
+		}),
+	check("commission_rules_license_type_check", sql`(license_type IS NULL) OR (license_type = ANY (ARRAY['editorial_single'::text, 'editorial_term'::text, 'exclusive_temporary'::text, 'commercial'::text]))`),
+	check("commission_rules_points_check", sql`(platform_basis_points >= 0) AND (platform_basis_points <= 10000)`),
+	check("commission_rules_scope_check", sql`scope = ANY (ARRAY['material'::text, 'reporter'::text, 'material_type'::text, 'default'::text])`),
+	check("commission_rules_scope_id_check", sql`((scope = 'default'::text) AND (scope_id IS NULL)) OR ((scope = ANY (ARRAY['material'::text, 'reporter'::text])) AND (scope_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text)) OR ((scope = 'material_type'::text) AND (scope_id = ANY (allowed_material_types())))`),
+]);
+
+export const refundItems = pgTable("refund_items", {
+	refundId: uuid("refund_id").notNull(),
+	orderItemId: uuid("order_item_id").notNull(),
+}, (table) => [
+	index("refund_items_item_idx").using("btree", table.orderItemId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.orderItemId],
+			foreignColumns: [orderItems.id],
+			name: "refund_items_order_item_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.refundId],
+			foreignColumns: [refunds.id],
+			name: "refund_items_refund_id_fkey"
+		}),
+	primaryKey({ columns: [table.refundId, table.orderItemId], name: "refund_items_pkey"}),
 ]);

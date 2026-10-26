@@ -99,6 +99,49 @@ open class CommerceAPI {
     }
 
     /**
+     إصدار جديد لقاعدة عمولة
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter commissionRuleInput: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: CommissionRule
+     */
+    open class func createCommissionRule(idempotencyKey: String, commissionRuleInput: CommissionRuleInput, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> CommissionRule {
+        return try await createCommissionRuleWithRequestBuilder(idempotencyKey: idempotencyKey, commissionRuleInput: commissionRuleInput, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     إصدار جديد لقاعدة عمولة
+     - POST /commission-rules
+     - لا تُعدَّل قاعدة ولا تُحذف: التغيير صف جديد بتاريخ سريان، والبيعات السابقة تحتفظ بما جُمّد فيها. النطاق نفسه بالتاريخ نفسه `409 conflict`. `scope_id` فارغ للافتراضية، ومعرّف للمادة والمراسل، وقيمة من `MaterialType` لنوع المادة (`422`). يُسجَّل في التدقيق.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter commissionRuleInput: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<CommissionRule> 
+     */
+    open class func createCommissionRuleWithRequestBuilder(idempotencyKey: String, commissionRuleInput: CommissionRuleInput, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<CommissionRule> {
+        let localVariablePath = "/commission-rules"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: commissionRuleInput, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<CommissionRule>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      رابط تنزيل حزمة التسليم
      
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
@@ -322,6 +365,54 @@ open class CommerceAPI {
         let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
 
         let localVariableRequestBuilder: RequestBuilder<CheckoutSession>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     استرداد بنود من طلب مدفوع
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter orderId: (path)  
+     - parameter refundCreate: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: Refund
+     */
+    open class func createOrderRefund(idempotencyKey: String, orderId: UUID, refundCreate: RefundCreate, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> Refund {
+        return try await createOrderRefundWithRequestBuilder(idempotencyKey: idempotencyKey, orderId: orderId, refundCreate: refundCreate, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     استرداد بنود من طلب مدفوع
+     - POST /orders/{order_id}/refunds
+     - للطلب `paid` وحده (`409 order_state_conflict`). المبلغ مجموع أسعار البنود المجمّدة بعملة الطلب، قيدًا في القاعدة، ولا مبلغ حر. البند لا يُسترد مرتين ما لم يفشل استرداده السابق (`409 already_refunded`). في المعاملة نفسها تُبطَل تراخيص البنود (`revoked_reason = refunded`) فيتوقف التنزيل، ويُكتب `license.revoked` لكل ترخيص. ويُطلب الاسترداد من المزوّد بمفتاح منع التكرار نفسه. النجاح من إشعار `refund.succeeded` الموقّع وحده: يُكتب قيد `refund` يعكس حصص البيعة بنسبتها (ADR 0031)، من `refund_reserve` إن صُرف المستحق. حين تُسترد كل البنود يصير الطلب `refunded` ويُكتب `order.status_changed`. يُسجَّل في التدقيق.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter orderId: (path)  
+     - parameter refundCreate: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<Refund> 
+     */
+    open class func createOrderRefundWithRequestBuilder(idempotencyKey: String, orderId: UUID, refundCreate: RefundCreate, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Refund> {
+        var localVariablePath = "/orders/{order_id}/refunds"
+        let orderIdPreEscape = "\(APIHelper.mapValueToPathItem(orderId))"
+        let orderIdPostEscape = orderIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{order_id}", with: orderIdPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: refundCreate, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<Refund>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
@@ -774,6 +865,50 @@ open class CommerceAPI {
     }
 
     /**
+     قواعد العمولة (ADR 0025 الجزء 6)
+     
+     - parameter scope: (query)  (optional)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: ListCommissionRules200Response
+     */
+    open class func listCommissionRules(scope: CommissionScope? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> ListCommissionRules200Response {
+        return try await listCommissionRulesWithRequestBuilder(scope: scope, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     قواعد العمولة (ADR 0025 الجزء 6)
+     - GET /commission-rules
+     - كل الإصدارات، الأحدث سريانًا أولًا. تُطبَّق القاعدة الأكثر تحديدًا: المادة، ثم المراسل (بنوع الترخيص إن حُدد)، ثم نوع المادة، ثم الافتراضية. والسارية منها صاحبة أحدث `effective_from` لا يتجاوز لحظة تأكيد الدفع، وتُجمَّد في قيد البيعة.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter scope: (query)  (optional)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<ListCommissionRules200Response> 
+     */
+    open class func listCommissionRulesWithRequestBuilder(scope: CommissionScope? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<ListCommissionRules200Response> {
+        let localVariablePath = "/commission-rules"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        var localVariableUrlComponents = URLComponents(string: localVariableURLString)
+        let localVariableQueryParameters: [String: (wrappedValue: (any Sendable)?, isExplode: Bool)] = [
+            "scope": (wrappedValue: scope?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+        ]
+        localVariableUrlComponents?.queryItems = APIHelper.mapValuesToQueryItems(localVariableQueryParameters)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<ListCommissionRules200Response>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      قوالب التراخيص (v0.3، ADR 0025)
      
      - parameter includeDisabled: (query)  (optional, default to false)
@@ -866,6 +1001,49 @@ open class CommerceAPI {
         let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
 
         let localVariableRequestBuilder: RequestBuilder<LicensePage>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     استردادات الطلب (ADR 0025 الجزء 5)
+     
+     - parameter orderId: (path)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: ListOrderRefunds200Response
+     */
+    open class func listOrderRefunds(orderId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> ListOrderRefunds200Response {
+        return try await listOrderRefundsWithRequestBuilder(orderId: orderId, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     استردادات الطلب (ADR 0025 الجزء 5)
+     - GET /orders/{order_id}/refunds
+     - المالية ومدير النظام لكل طلب، و`buyer_admin` لطلبات مؤسسته وحدها (غيرها `404`).
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter orderId: (path)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<ListOrderRefunds200Response> 
+     */
+    open class func listOrderRefundsWithRequestBuilder(orderId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<ListOrderRefunds200Response> {
+        var localVariablePath = "/orders/{order_id}/refunds"
+        let orderIdPreEscape = "\(APIHelper.mapValueToPathItem(orderId))"
+        let orderIdPostEscape = orderIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{order_id}", with: orderIdPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<ListOrderRefunds200Response>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }

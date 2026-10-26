@@ -53,6 +53,7 @@ public struct ModelError: Sendable, Codable, Hashable {
         case deliveryNotReady = "delivery_not_ready"
         case downloadLimitReached = "download_limit_reached"
         case webhookSignatureInvalid = "webhook_signature_invalid"
+        case alreadyRefunded = "already_refunded"
         case internalError = "internal_error"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }

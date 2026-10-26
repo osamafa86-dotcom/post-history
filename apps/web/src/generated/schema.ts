@@ -1412,6 +1412,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/orders/{order_id}/refunds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * استردادات الطلب (ADR 0025 الجزء 5)
+         * @description المالية ومدير النظام لكل طلب، و`buyer_admin` لطلبات مؤسسته وحدها (غيرها `404`).
+         */
+        get: operations["listOrderRefunds"];
+        put?: never;
+        /**
+         * استرداد بنود من طلب مدفوع
+         * @description للطلب `paid` وحده (`409 order_state_conflict`). المبلغ مجموع أسعار البنود المجمّدة بعملة الطلب، قيدًا في القاعدة، ولا مبلغ حر. البند لا يُسترد مرتين ما لم يفشل استرداده السابق (`409 already_refunded`). في المعاملة نفسها تُبطَل تراخيص البنود (`revoked_reason = refunded`) فيتوقف التنزيل، ويُكتب `license.revoked` لكل ترخيص. ويُطلب الاسترداد من المزوّد بمفتاح منع التكرار نفسه. النجاح من إشعار `refund.succeeded` الموقّع وحده: يُكتب قيد `refund` يعكس حصص البيعة بنسبتها (ADR 0031)، من `refund_reserve` إن صُرف المستحق. حين تُسترد كل البنود يصير الطلب `refunded` ويُكتب `order.status_changed`. يُسجَّل في التدقيق.
+         */
+        post: operations["createOrderRefund"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/commission-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * قواعد العمولة (ADR 0025 الجزء 6)
+         * @description كل الإصدارات، الأحدث سريانًا أولًا. تُطبَّق القاعدة الأكثر تحديدًا: المادة، ثم المراسل (بنوع الترخيص إن حُدد)، ثم نوع المادة، ثم الافتراضية. والسارية منها صاحبة أحدث `effective_from` لا يتجاوز لحظة تأكيد الدفع، وتُجمَّد في قيد البيعة.
+         */
+        get: operations["listCommissionRules"];
+        put?: never;
+        /**
+         * إصدار جديد لقاعدة عمولة
+         * @description لا تُعدَّل قاعدة ولا تُحذف: التغيير صف جديد بتاريخ سريان، والبيعات السابقة تحتفظ بما جُمّد فيها. النطاق نفسه بالتاريخ نفسه `409 conflict`. `scope_id` فارغ للافتراضية، ومعرّف للمادة والمراسل، وقيمة من `MaterialType` لنوع المادة (`422`). يُسجَّل في التدقيق.
+         */
+        post: operations["createCommissionRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/licenses": {
         parameters: {
             query?: never;
@@ -1605,7 +1655,7 @@ export interface components {
              * @description رمز ثابت يتفرّع عليه العميل؛ الرسالة للبشر فقط. قائمة مفتوحة؛ الرمز المجهول = خطأ عام
              * @enum {string}
              */
-            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "seats_exhausted" | "last_buyer_admin" | "listing_unavailable" | "exclusive_unavailable" | "mixed_currency" | "price_changed" | "order_state_conflict" | "license_not_active" | "delivery_not_ready" | "download_limit_reached" | "webhook_signature_invalid" | "internal_error";
+            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "seats_exhausted" | "last_buyer_admin" | "listing_unavailable" | "exclusive_unavailable" | "mixed_currency" | "price_changed" | "order_state_conflict" | "license_not_active" | "delivery_not_ready" | "download_limit_reached" | "webhook_signature_invalid" | "already_refunded" | "internal_error";
             message: string;
             /** @description لتتبع الطلب في السجلات */
             request_id: string;
@@ -3126,6 +3176,56 @@ export interface components {
         };
         /** @description رد الدعوة وحده؛ يحمل رمز الدعوة في الرد الأول، ولا يُعاد عند التكرار */
         BuyerMemberCreated: components["schemas"]["BuyerMember"] & components["schemas"]["BuyerInviteToken"];
+        RefundCreate: {
+            /** @description بنود من الطلب نفسه؛ المبلغ مجموع أسعارها المجمّدة */
+            order_item_ids: string[];
+            reason_code: components["schemas"]["RefundReason"];
+        };
+        /** @enum {string} */
+        RefundReason: "buyer_request" | "duplicate" | "rights_withdrawn" | "dispute" | "exclusivity_lost" | "other";
+        Refund: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            order_id: string;
+            order_item_ids: string[];
+            amount: components["schemas"]["Money"];
+            reason_code: components["schemas"]["RefundReason"];
+            /**
+             * @description `pending` طُلب من المزوّد؛ `succeeded` أكده الإشعار الموقّع وكُتب قيده؛ `failed` يحرر البنود لاسترداد جديد
+             * @enum {string}
+             */
+            status: "pending" | "succeeded" | "failed";
+            /** Format: uuid */
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            completed_at: string | null;
+        };
+        /** @enum {string} */
+        CommissionScope: "material" | "reporter" | "material_type" | "default";
+        CommissionRuleFields: {
+            scope: components["schemas"]["CommissionScope"];
+            /** @description `null` للافتراضية؛ معرّف uuid للمادة والمراسل؛ قيمة `MaterialType` لنوع المادة */
+            scope_id: string | null;
+            /** @description `null` = كل الأنواع */
+            license_type: components["schemas"]["LicenseType"] | null;
+            /** @description حصة المنصة بنقاط أساس من صافي الإيراد بعد رسوم المزوّد والضريبة؛ الباقي للمساهمين بحصصهم */
+            platform_basis_points: number;
+            /** Format: date-time */
+            effective_from: string;
+        };
+        /** @description جسم الطلب؛ لا خصائص غير المعرَّفة */
+        CommissionRuleInput: components["schemas"]["CommissionRuleFields"];
+        CommissionRule: components["schemas"]["CommissionRuleFields"] & {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+        };
         OutboxEvent: components["schemas"]["outbox-event"];
         EventPage: {
             items: components["schemas"]["outbox-event"][];
@@ -3328,7 +3428,7 @@ export interface components {
             /** @description تسلسلي متزايد (رقم الصف في جدول Outbox) بصيغة نصية؛ يُستخدم مؤشرًا في `after` */
             id: string;
             /** @enum {string} */
-            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested" | "order.status_changed" | "license.issued";
+            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested" | "order.status_changed" | "license.issued" | "license.revoked";
             /** @enum {string} */
             aggregate_type: "material" | "upload" | "notification" | "form" | "user" | "listing" | "license" | "order";
             /** Format: uuid */
@@ -3367,7 +3467,7 @@ export interface components {
                 /** @enum {string} */
                 priority: "urgent" | "important" | "normal";
             };
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
     };
     responses: {
         /** @description طلب غير صالح (معاملات استعلام أو مؤشر غير مفهوم) */
@@ -6066,6 +6166,125 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listOrderRefunds: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الاستردادات، الأحدث أولًا */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Refund"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createOrderRefund: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                order_id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefundCreate"];
+            };
+        };
+        responses: {
+            /** @description الاسترداد بحالة `pending` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refund"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    listCommissionRules: {
+        parameters: {
+            query?: {
+                scope?: components["schemas"]["CommissionScope"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description القواعد */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["CommissionRule"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createCommissionRule: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommissionRuleInput"];
+            };
+        };
+        responses: {
+            /** @description القاعدة */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommissionRule"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     listLicenses: {
