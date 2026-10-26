@@ -128,6 +128,20 @@ export async function reverseEntry(
     .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, postings.accountId))
     .where(eq(postings.entryId, input.entryId))
     .orderBy(postings.id);
+  // العكس يُنقص مستحق كل مساهم بحصته في القيد الأصلي؛ فبعد التحرير أو الصرف قد ينزل به تحت الصفر. تُقفل حسابات المساهمين
+  // بترتيب ثابت (فلا تتشابك معاملتان)، ثم يُرفض العكس الذي لا يغطيه الرصيد. الاسترداد بعد الصرف يمر من refund_reserve عند مستدعيه.
+  const [done] = await tx.select({ id: journalEntries.id }).from(journalEntries).where(eq(journalEntries.idempotencyKey, input.idempotencyKey));
+  if (!done) {
+    const payables = lines.filter((l) => l.kind === 'contributor_payable');
+    const ids = [...new Set(await Promise.all(payables.map((l) => accountId(tx, toRef(l.kind, l.ownerId, l.state, l.currency as Currency)))))].sort();
+    if (ids.length > 0) await tx.execute(sql`SELECT 1 FROM ledger_accounts WHERE id = ANY(${`{${ids.join(',')}}`}::uuid[]) ORDER BY id FOR UPDATE`);
+    for (const l of payables) {
+      const share = -BigInt(l.amount);
+      if (share <= 0n) continue;
+      const left = await payable(tx, l.ownerId!, l.state as PayableState, l.currency as Currency);
+      if (left.amountMinor < share) throw new InsufficientBalanceError('The reversal exceeds the contributor balance in this state.');
+    }
+  }
   return postEntry(tx, {
     kind: input.kind,
     referenceType: input.referenceType ?? original.referenceType,

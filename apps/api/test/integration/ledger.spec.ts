@@ -270,18 +270,58 @@ describe('ledger (double entry, append only)', () => {
     });
   });
 
-  it('a correction reverses every line once; a second correction is refused (23505); refunds may repeat', async () => {
+  it('a correction reverses every line once; a second correction is refused; a refund beyond the balance is refused', async () => {
     const owner = (await seedUser(h)).id;
     const { entryId } = await sale(1_000n, 700n, owner);
     const correction = await db.transaction((tx) => reverseEntry(tx, { entryId, kind: 'correction', idempotencyKey: randomUUID(), actorId: null }));
     expect(correction.created).toBe(true);
     expect((await payable(db, owner, 'pending', 'USD')).amountMinor).toBe(0n);
-    const second = await db.transaction((tx) => reverseEntry(tx, { entryId, kind: 'correction', idempotencyKey: randomUUID(), actorId: null })).catch((e: unknown) => pgError(e).code);
+    // التصحيح الثاني يرفضه الرصيد أولًا هنا؛ وفي قيد بلا مستحق مساهم يرفضه الفهرس الفريد في القاعدة
+    await expect(db.transaction((tx) => reverseEntry(tx, { entryId, kind: 'correction', idempotencyKey: randomUUID(), actorId: null }))).rejects.toBeInstanceOf(
+      InsufficientBalanceError,
+    );
+    const plain = await db.transaction((tx) =>
+      postEntry(tx, {
+        kind: 'sale',
+        referenceType: 'order',
+        referenceId: randomUUID(),
+        idempotencyKey: randomUUID(),
+        actorId: null,
+        postings: [
+          { account: clearing, amount: usd(50) },
+          { account: revenue, amount: usd(-50) },
+        ],
+      }),
+    );
+    await db.transaction((tx) => reverseEntry(tx, { entryId: plain.entryId, kind: 'correction', idempotencyKey: randomUUID(), actorId: null }));
+    const second = await db.transaction((tx) => reverseEntry(tx, { entryId: plain.entryId, kind: 'correction', idempotencyKey: randomUUID(), actorId: null })).catch((e: unknown) => pgError(e).code);
     expect(second).toBe('23505');
 
+    // استرداد ثانٍ لا يغطيه المستحق المعلّق يُرفض، فلا ينزل الرصيد تحت الصفر
     const refunded = (await sale(1_000n, 700n, owner)).entryId;
-    for (let i = 0; i < 2; i++) await db.transaction((tx) => reverseEntry(tx, { entryId: refunded, kind: 'refund', idempotencyKey: randomUUID(), actorId: null }));
-    expect((await payable(db, owner, 'pending', 'USD')).amountMinor).toBe(-700n);
+    await db.transaction((tx) => reverseEntry(tx, { entryId: refunded, kind: 'refund', idempotencyKey: randomUUID(), actorId: null }));
+    await expect(db.transaction((tx) => reverseEntry(tx, { entryId: refunded, kind: 'refund', idempotencyKey: randomUUID(), actorId: null }))).rejects.toBeInstanceOf(
+      InsufficientBalanceError,
+    );
+    expect((await payable(db, owner, 'pending', 'USD')).amountMinor).toBe(0n);
+  });
+
+  it('a reversal after release would push pending below zero: refused under the lock; two racing reversals cannot both pass', async () => {
+    const owner = (await seedUser(h)).id;
+    const { entryId } = await sale(1_000n, 700n, owner);
+    await db.transaction((tx) =>
+      movePayable(tx, { ownerId: owner, from: 'pending', to: 'available', amount: usd(700n), kind: 'release', referenceType: 'release', referenceId: randomUUID(), idempotencyKey: randomUUID(), actorId: null }),
+    );
+    await expect(db.transaction((tx) => reverseEntry(tx, { entryId, kind: 'correction', idempotencyKey: randomUUID(), actorId: null }))).rejects.toBeInstanceOf(
+      InsufficientBalanceError,
+    );
+    expect((await payable(db, owner, 'pending', 'USD')).amountMinor).toBe(0n);
+
+    const racer = (await seedUser(h)).id;
+    const sold = (await sale(1_000n, 700n, racer)).entryId;
+    const raced = await Promise.allSettled([0, 1].map(() => db.transaction((tx) => reverseEntry(tx, { entryId: sold, kind: 'refund', idempotencyKey: randomUUID(), actorId: null }))));
+    expect(raced.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
+    expect((await payable(db, racer, 'pending', 'USD')).amountMinor).toBe(0n);
   });
 
   it('payable moves state by state under a row lock; never below zero, even when two payouts race; a retried payout is a no-op', async () => {
