@@ -906,5 +906,33 @@
       "exclusivity_lost": "Exclusivity lost",
       "other": "Other"
     }
+  },
+  "conflicts": {
+    "nav": "Invite conflicts",
+    "title": "Invite conflict queue",
+    "lead": "Buyer organization invites addressed to an existing account outside the organization. They answered the organization like a successful invite so the account type stays hidden; resolve them here by state alone.",
+    "denied": "This page is for system administrators.",
+    "empty": "No conflicts in this state.",
+    "email": "Email",
+    "organization": "Organization",
+    "role": "Invited role",
+    "state": "State",
+    "created": "Invited at",
+    "expires": "Invite expires",
+    "states": {
+      "pending": "Pending",
+      "suspended": "Suspended",
+      "dismissed": "Dismissed"
+    },
+    "actions": {
+      "suspended": "Suspend",
+      "dismissed": "Dismiss permanently"
+    },
+    "effects": {
+      "suspended": "The placeholder invited member is suspended in the organization and can still be dismissed later.",
+      "dismissed": "The conflict is closed for good and its seat is released. This cannot be undone."
+    },
+    "totpRejected": "The verification code is wrong or expired. Enter the current code.",
+    "conflict": "The conflict's state changed. Refresh the list."
   }
 }

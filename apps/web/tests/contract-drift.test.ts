@@ -14,6 +14,7 @@ import * as license from "../src/lib/license-policy";
 import * as listing from "../src/lib/listing-policy";
 import * as commission from "../src/lib/commission-policy";
 import * as refunds from "../src/lib/refund-policy";
+import * as conflicts from "../src/lib/invite-conflict-policy";
 import { formReaders, formWriters } from "../src/lib/form-admin";
 
 const { load } = createRequire(import.meta.url)("js-yaml") as { load: (text: string) => unknown };
@@ -101,6 +102,12 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
     expect([...refunds.refundReasons]).toEqual(at("components", "schemas", "RefundReason", "enum")); expect([...refunds.refundStatuses]).toEqual(at("components", "schemas", "Refund", "properties", "status", "enum"));
     expect(refunds.refundLimits.items).toBe(at("components", "schemas", "RefundCreate", "properties", "order_item_ids", "maxItems"));
     expect(at("components", "schemas", "RefundCreate", "additionalProperties")).toBe(false);
+  });
+  it("keeps the invite conflict queue aligned with #361", () => {
+    for (const [path, method] of [["/buyer-invite-conflicts", "get"], ["/buyer-invite-conflicts/{conflict_id}/resolve", "post"]]) expect([...conflicts.conflictRoles]).toEqual(at("paths", path, method, "x-roles"));
+    expect([...conflicts.conflictStates]).toEqual(at("components", "schemas", "BuyerInviteConflictState", "enum"));
+    expect([...conflicts.resolveStates]).toEqual(at("components", "schemas", "BuyerInviteConflictResolve", "properties", "state", "enum"));
+    expect(at("components", "schemas", "BuyerInviteConflictResolve", "required")).toEqual(["state", "totp_code"]); expect(at("components", "schemas", "BuyerInviteConflictResolve", "additionalProperties")).toBe(false);
   });
   it("keeps issued license roles and statuses aligned with v0.3", () => {
     for (const path of ["/licenses", "/licenses/{license_id}"]) expect([...issued.licenseReaders]).toEqual(at("paths", path, "get", "x-roles"));
