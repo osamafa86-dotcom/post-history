@@ -50,11 +50,35 @@ data class UploadTaskEntity(
     val title: String,
     /** The reporter already decided about the local copy (deleted it or chose to keep it). */
     val localCopyHandled: Boolean = false,
+    /** The material's priority as the reporter set it (contract value), for the A2 badge; null before v3. */
+    val priority: String? = null,
 )
+
+/**
+ * A1 draft kept on the phone only (`Save draft`): the material's fields and the picked original's URI as JSON,
+ * shown on A2 until sent. Cleared with every table by the emergency wipe (SEC-01).
+ */
+@Entity(tableName = "drafts")
+data class DraftEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val json: String,
+    val updatedAtEpochMs: Long,
+)
+
+@Dao
+interface DraftDao {
+    @Query("SELECT * FROM drafts ORDER BY updatedAtEpochMs DESC") fun observeAll(): Flow<List<DraftEntity>>
+    @Query("SELECT * FROM drafts WHERE id = :id") suspend fun get(id: String): DraftEntity?
+    @Upsert suspend fun upsert(entity: DraftEntity)
+    @Query("DELETE FROM drafts WHERE id = :id") suspend fun delete(id: String)
+}
 
 @Dao
 interface UploadDao {
     @Query("SELECT * FROM upload_tasks WHERE id = :id") suspend fun get(id: String): UploadTaskEntity?
+    @Query("SELECT * FROM upload_tasks WHERE id = :id") fun observe(id: String): Flow<UploadTaskEntity?>
+    @Query("SELECT * FROM upload_tasks WHERE materialId = :materialId AND state IN ('VERIFIED','DEDUPLICATED') ORDER BY updatedAtEpochMs DESC LIMIT 1") suspend fun receiptFor(materialId: String): UploadTaskEntity?
     @Upsert suspend fun upsert(entity: UploadTaskEntity)
     @Query("SELECT * FROM upload_tasks WHERE state NOT IN ('VERIFIED','DEDUPLICATED','FAILED') ORDER BY createdAtEpochMs") suspend fun pending(): List<UploadTaskEntity>
     @Query("SELECT COUNT(*) FROM upload_tasks WHERE state NOT IN ('VERIFIED','DEDUPLICATED','FAILED')") suspend fun pendingCount(): Int
@@ -63,20 +87,31 @@ interface UploadDao {
     @Query("UPDATE upload_tasks SET state = 'QUEUED', failure = NULL, failureCode = NULL, attempts = 0, sessionId = NULL, tusEndpoint = NULL, tusUploadUrl = NULL, sealedUploadToken = NULL, tokenExpiresAtEpochMs = NULL, sessionExpiresAtEpochMs = NULL, ingestTokenRequired = 0, bytesConfirmed = 0, idempotencyKey = :newIdempotencyKey WHERE id = :id AND state = 'FAILED'")
     suspend fun requeueFailed(id: String, newIdempotencyKey: String)
     @Query("DELETE FROM upload_tasks") suspend fun deleteAll()
+    /** Swipe on a queue row (A2): cancels an unfinished task or removes a finished one; the file is untouched. */
+    @Query("DELETE FROM upload_tasks WHERE id = :id") suspend fun delete(id: String)
 }
 
-@Database(entities = [UploadTaskEntity::class], version = 2, exportSchema = false)
+@Database(entities = [UploadTaskEntity::class, DraftEntity::class], version = 3, exportSchema = false)
 abstract class UploadDatabase : RoomDatabase() {
     abstract fun uploads(): UploadDao
+    abstract fun drafts(): DraftDao
 
     companion object {
         fun open(context: Context): UploadDatabase =
-            Room.databaseBuilder(context.applicationContext, UploadDatabase::class.java, "uploads.db").addMigrations(MIGRATION_1_2).build()
+            Room.databaseBuilder(context.applicationContext, UploadDatabase::class.java, "uploads.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
 
         /** v2: sessions behind the ingest gate (SEC-07). Existing rows predate the gate. */
         val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE upload_tasks ADD COLUMN ingestTokenRequired INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /** v3: the material's priority on the queue row, and A1 drafts (#387). */
+        val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE upload_tasks ADD COLUMN priority TEXT")
+                db.execSQL("CREATE TABLE IF NOT EXISTS drafts (id TEXT NOT NULL, title TEXT NOT NULL, json TEXT NOT NULL, updatedAtEpochMs INTEGER NOT NULL, PRIMARY KEY(id))")
             }
         }
     }
@@ -88,12 +123,12 @@ class RoomUploadStore(private val dao: UploadDao, private val sealer: KeystoreSe
 
     override suspend fun save(task: UploadTask) {
         val existing = dao.get(task.id)
-        dao.upsert(toEntity(task, title = existing?.title ?: "", localCopyHandled = existing?.localCopyHandled ?: false))
+        dao.upsert(toEntity(task, title = existing?.title ?: "", localCopyHandled = existing?.localCopyHandled ?: false, priority = existing?.priority))
     }
 
     override suspend fun pending(): List<UploadTask> = dao.pending().map { toTask(it) }
 
-    suspend fun insert(task: UploadTask, title: String) = dao.upsert(toEntity(task, title, localCopyHandled = false))
+    suspend fun insert(task: UploadTask, title: String, priority: String? = null) = dao.upsert(toEntity(task, title, localCopyHandled = false, priority = priority))
 
     fun toTask(e: UploadTaskEntity) = UploadTask(
         id = e.id, materialId = e.materialId, kind = e.kind, fileUri = e.fileUri, filename = e.filename, mimeType = e.mimeType,
@@ -106,7 +141,7 @@ class RoomUploadStore(private val dao: UploadDao, private val sealer: KeystoreSe
         failureCode = e.failureCode, attempts = e.attempts,
     )
 
-    private fun toEntity(t: UploadTask, title: String, localCopyHandled: Boolean) = UploadTaskEntity(
+    private fun toEntity(t: UploadTask, title: String, localCopyHandled: Boolean, priority: String?) = UploadTaskEntity(
         id = t.id, materialId = t.materialId, kind = t.kind, fileUri = t.fileUri, filename = t.filename, mimeType = t.mimeType,
         sizeBytes = t.sizeBytes, idempotencyKey = t.idempotencyKey, createdAtEpochMs = t.createdAtEpochMs, updatedAtEpochMs = t.updatedAtEpochMs,
         state = t.state.name, sha256 = t.sha256, headSha256 = t.headSha256, tailSha256 = t.tailSha256,
@@ -114,6 +149,6 @@ class RoomUploadStore(private val dao: UploadDao, private val sealer: KeystoreSe
         sealedUploadToken = t.uploadToken?.let { sealer.sealString(it) },
         tokenExpiresAtEpochMs = t.tokenExpiresAtEpochMs, sessionExpiresAtEpochMs = t.sessionExpiresAtEpochMs, partSizeBytes = t.partSizeBytes,
         ingestTokenRequired = t.ingestTokenRequired, bytesConfirmed = t.bytesConfirmed, receiptNumber = t.receiptNumber, failure = t.failure?.name, failureCode = t.failureCode, attempts = t.attempts,
-        title = title, localCopyHandled = localCopyHandled,
+        title = title, localCopyHandled = localCopyHandled, priority = priority,
     )
 }

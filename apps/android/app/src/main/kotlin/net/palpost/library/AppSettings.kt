@@ -14,7 +14,19 @@ class AppSettings(context: Context) {
     val installationId: String
         get() = prefs.getString(KEY_INSTALLATION, null) ?: java.util.UUID.randomUUID().toString().also { prefs.edit().putString(KEY_INSTALLATION, it).apply() }
 
+    /** The reporter paused the queue (A2): no transfer starts or continues until they resume. */
+    var uploadsPaused: Boolean
+        get() = prefs.getBoolean(KEY_PAUSED, false)
+        set(value) { prefs.edit().putBoolean(KEY_PAUSED, value).commit() }
+
+    /** Transfers only on an unmetered network (A2 "Wi-Fi only"). */
+    var uploadOverWifiOnly: Boolean
+        get() = prefs.getBoolean(KEY_WIFI_ONLY, false)
+        set(value) { prefs.edit().putBoolean(KEY_WIFI_ONLY, value).commit() }
+
     private companion object {
+        const val KEY_PAUSED = "uploads_paused"
+        const val KEY_WIFI_ONLY = "upload_over_wifi_only"
         const val KEY_TASK_KILLER_SETUP = "task_killer_setup_done"
         const val KEY_INSTALLATION = "installation_id"
     }

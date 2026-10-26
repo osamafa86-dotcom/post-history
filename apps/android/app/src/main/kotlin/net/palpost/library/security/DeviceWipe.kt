@@ -26,12 +26,12 @@ import java.io.File
  * session of the user ended on the server when the request got through in time):
  *  - transfers: scheduled job / foreground service stopped, progress and result notifications cancelled
  *  - session: Keystore-sealed tokens removed from the `session` preferences, the Keystore key destroyed
- *  - upload_queue: every Room table cleared, then the database files deleted (`uploads.db`, `-wal`, `-shm`)
+ *  - upload_queue: every Room table cleared (the queue and the A1 drafts), then the database files deleted (`uploads.db`, `-wal`, `-shm`)
  *  - file_grants: persistable read grants on picked originals released (the originals themselves belong to the
  *    reporter and are deleted only through the explicit per-file choice)
  *  - preferences: every SharedPreferences file (setup flags included)
- *  - caches_and_files: internal cache, code cache, files, no-backup files and external caches (this app writes
- *    no copies, proxies or thumbnails there today; cleared anyway so nothing added later survives a wipe)
+ *  - caches_and_files: internal cache, code cache, files, no-backup files and external caches (the last office
+ *    form saved for offline use, and the receipt image last shared from A3; no copies of originals)
  */
 class DeviceWipe(private val context: Context, private val container: AppContainer) {
     val targets: List<String> get() = steps(SignOutReason.WIPED).map { it.name }
