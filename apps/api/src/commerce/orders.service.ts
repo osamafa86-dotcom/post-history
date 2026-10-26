@@ -192,7 +192,7 @@ export class OrdersService {
       if (err instanceof WebhookSignatureError) throw new ApiError(400, 'webhook_signature_invalid', 'The webhook signature is invalid.');
       // حدث موقّع صحيح لا يخص الدفع عندنا (أنواع Stripe الأخرى): يُقبل بلا أثر ولا يُخزَّن
       if (err instanceof IgnoredWebhookEvent) return { received: true };
-      if (err instanceof LiveModeEvent) throw new ApiError(400, 'live_payments_disabled' as 'webhook_signature_invalid', 'Live payments are disabled.');
+      if (err instanceof LiveModeEvent) throw new ApiError(400, 'live_payments_disabled', 'Live payments are disabled.');
       throw err;
     }
     await this.db.transaction(async (tx) => {
