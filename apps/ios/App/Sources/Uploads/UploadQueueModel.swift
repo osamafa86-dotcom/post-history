@@ -31,6 +31,7 @@ final class UploadQueueModel: ObservableObject {
             let stream = await engine.events()
             await engine.resumeAll()
             await refresh()
+            removeHalfWrittenLightCopies()
             for await event in stream {
                 if case .phaseChanged(let id, let phase) = event {
                     SafeLog.phase(id, phase)
@@ -79,7 +80,7 @@ final class UploadQueueModel: ObservableObject {
     private func prepareLightCopy(relativePath: String, materialId: UUID, preset: ProxyPreset, mode: UploadSessionCreate.ProxyMode) {
         let services = UploadServices.shared
         let source = services.documentsDirectory.appendingPathComponent(relativePath)
-        let name = "\(UUID().uuidString.lowercased())-light.mov"
+        let name = LightCopyFiles.newName()
         let output = services.uploadsDirectory.appendingPathComponent(name)
         let transcoder = transcoder
         let engine = engine
@@ -100,6 +101,14 @@ final class UploadQueueModel: ObservableObject {
             self?.preparingProxy.remove(materialId)
             self?.proxyTasks[materialId] = nil
             await self?.refresh()
+        }
+    }
+
+    /// تحضير قطعه إنهاء التطبيق يترك نسخة نصف مكتوبة لا يشير إليها سجل؛ الأصل يُرفع وحده (ADR 0075) والملف يُحذف.
+    private func removeHalfWrittenLightCopies() {
+        let referenced = Set(records.map { URL(fileURLWithPath: $0.sourcePath).lastPathComponent })
+        for url in LightCopyFiles.orphans(in: UploadServices.shared.uploadsDirectory, referenced: referenced) {
+            try? FileManager.default.removeItem(at: url)
         }
     }
 

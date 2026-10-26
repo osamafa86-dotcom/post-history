@@ -73,6 +73,36 @@ final class ProxyFirstEngineTests: XCTestCase {
         XCTAssertEqual(done?.phase, .verified(receiptNumber: "R-202610-000042"), "uploads without a light copy rather than waiting forever")
     }
 
+    /// نسخة عالقة (الخادم لا ينهيها، أو تنتظر شبكة) لا تؤخر الأصول بلا حد: بعد نافذة الأولوية يُرفع الأصل.
+    func testStuckProxyDoesNotStarveOriginalsBeyondThePriorityWindow() async throws {
+        var timing = Fixtures.fastTiming
+        timing.proxyPriorityWindow = 0.4
+        let h = Harness(name: "proxy-stuck", script: [.hang], timing: timing)
+        await h.engine.resumeAll()
+        let proxy = try await h.engine.enqueue(sourcePath: h.source.path, materialId: UUID(), kind: .proxy, filename: "p.mov", mimeType: "video/quicktime", proxyMode: .urgent)
+        _ = await h.engine.waitUntil(proxy.id) { $0.phase == .transferring }
+        let original = try await h.engine.enqueue(sourcePath: h.source.path, materialId: UUID(), kind: .original, filename: "clip.mov", mimeType: "video/quicktime")
+        await settle()
+        XCTAssertEqual(kinds(h), [.proxy], "still inside the window")
+        _ = await h.engine.waitUntil(original.id) { $0.phase != .creatingSession }
+        XCTAssertEqual(kinds(h), [.proxy, .original], "the window elapsed while the light copy is still stuck")
+        let stillPending = await h.engine.record(proxy.id)
+        XCTAssertFalse(stillPending?.phase.isTerminal ?? true)
+    }
+
+    /// تحضير لا ينتهي ولا يُرفع انتظاره (معطّل AVFoundation مثلًا) يخضع للنافذة نفسها.
+    func testPreparationThatNeverEndsIsBoundedByTheSameWindow() async throws {
+        var timing = Fixtures.fastTiming
+        timing.proxyPriorityWindow = 0.4
+        let h = Harness(name: "proxy-hold-stuck", timing: timing)
+        await h.engine.resumeAll()
+        let original = try await h.engine.enqueue(sourcePath: h.source.path, materialId: UUID(), kind: .original, filename: "clip.mov", mimeType: "video/quicktime", awaitsProxy: true)
+        await settle()
+        XCTAssertTrue(h.api.createBodies.isEmpty)
+        let done = await h.engine.waitUntil(original.id) { $0.phase.isTerminal }
+        XCTAssertEqual(done?.phase, .verified(receiptNumber: "R-202610-000042"))
+    }
+
     func testRecordsSavedBeforeTheFieldStillDecode() throws {
         let rec = UploadRecord(materialId: UUID(), kind: .original, sourcePath: "Uploads/a.mov", filename: "a.mov", mimeType: nil, sizeBytes: 1)
         var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(rec)) as! [String: Any]

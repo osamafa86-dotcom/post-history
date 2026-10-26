@@ -7,6 +7,9 @@ public actor UploadEngine: TusTransportDelegate {
     public struct Timing: Sendable {
         public var retryDelays: [TimeInterval] = [1, 2, 5, 10, 30, 60, 120]
         public var receiptPollInterval: TimeInterval = 3
+        /// أقصى انتظار لأصل خلف النسخ الخفيفة (ADR 0075): نسخة عالقة لا تؤخر الأصول بلا حد. يبدأ من أول توقف للأصل
+        /// في هذا التشغيل للتطبيق.
+        public var proxyPriorityWindow: TimeInterval = 15 * 60
         public var sleep: @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) }
         public init() {}
     }
@@ -43,6 +46,8 @@ public actor UploadEngine: TusTransportDelegate {
     private var ingestRefreshes: [UUID: Int] = [:]
     /// أصول متوقفة عند إنشاء الجلسة لأن نسخة خفيفة في الطابور لها الأولوية (ADR 0075)؛ تُستأنف حين تنتهي النسخ الخفيفة.
     private var parkedForProxy: Set<UUID> = []
+    /// متى بدأ كل أصل ينتظر النسخ الخفيفة؛ بعد `proxyPriorityWindow` يُرفع بلا انتظار.
+    private var yieldingSince: [UUID: Date] = [:]
     /// مواد رُفع انتظار أصلها للنسخة الخفيفة (فشل التحضير، أو الأصل فقط، أو أُنهي التطبيق أثناء التحضير).
     private var releasedProxyHolds: Set<UUID> = []
     /// حد التجديدات المتتالية: رمز جديد ما زال يُرفض = مشكلة لا يحلها التجديد.
@@ -130,8 +135,25 @@ public actor UploadEngine: TusTransportDelegate {
     /// النسخة الخفيفة أولًا في كل الطابور: أصل لم تُنشأ جلسته ينتظر ما دامت نسخة خفيفة غير منتهية، أو نسخته قيد التحضير.
     func mustYieldToProxy(_ rec: UploadRecord) -> Bool {
         guard rec.kind == .original else { return false }
-        if isHeldForProxy(rec) { return true }
-        return records.values.contains { $0.kind == .proxy && !$0.phase.isTerminal }
+        guard isHeldForProxy(rec) || records.values.contains(where: { $0.kind == .proxy && !$0.phase.isTerminal }) else { return false }
+        if let since = yieldingSince[rec.id], env.now().timeIntervalSince(since) >= timing.proxyPriorityWindow { return false }
+        return true
+    }
+
+    private func park(_ rec: UploadRecord) {
+        parkedForProxy.insert(rec.id)
+        guard yieldingSince[rec.id] == nil else { return }
+        yieldingSince[rec.id] = env.now()
+        let id = rec.id, window = timing.proxyPriorityWindow, sleep = timing.sleep
+        Task { [weak self] in
+            try? await sleep(window)
+            await self?.proxyWindowElapsed(id)
+        }
+    }
+
+    private func proxyWindowElapsed(_ id: UUID) async {
+        guard parkedForProxy.remove(id) != nil else { return }
+        await step(id)
     }
 
     /// الأصول التي تنتظر الآن نسخة خفيفة (لتعرض الواجهة السبب بدل «جارٍ البدء»).
@@ -174,6 +196,7 @@ public actor UploadEngine: TusTransportDelegate {
         busy.removeAll()
         resyncing.removeAll()
         parkedForProxy.removeAll()
+        yieldingSince.removeAll()
         releasedProxyHolds.removeAll()
         ingestRefreshes.removeAll()
         return ids.count
@@ -240,7 +263,7 @@ public actor UploadEngine: TusTransportDelegate {
                     rec.sha256Hex = try await Task.detached(priority: .utility) { try hasher(source) }.value
                     setPhase(&rec, .creatingSession)
                 case .creatingSession:
-                    if mustYieldToProxy(rec) { parkedForProxy.insert(rec.id); return }
+                    if mustYieldToProxy(rec) { park(rec); return }
                     let body = UploadSessionCreate(materialId: rec.materialId, kind: rec.kind, sizeBytes: Int(rec.sizeBytes), filename: rec.filename, mimeType: rec.mimeType, proxyMode: rec.proxyMode, clientSha256: rec.sha256Hex)
                     let created = try await api.createSession(idempotencyKey: rec.createIdempotencyKey, body)
                     guard let endpoint = URL(string: created.tusEndpoint) else { throw UploadError.invalidEndpoint }

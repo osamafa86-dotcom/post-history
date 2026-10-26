@@ -8,6 +8,14 @@ final class AVFoundationProxyTranscoderTests: XCTestCase {
     /// أزمنة إطارات غير منتظمة كما في ملفات الهواتف (بالمللي ثانية).
     static let frameTimesMs: [Int64] = (0..<60).map { i in Int64(i) * 33 + (i % 3 == 0 ? 7 : 0) }
 
+    /// وسوم يحملها مقطع الهاتف عادةً: الموقع وطراز الجهاز وصانعه وبرنامجه. يجب ألا يخرج أي منها في النسخة الخفيفة.
+    static let revealingMetadata: [(key: String, value: String)] = [
+        ("com.apple.quicktime.location.ISO6709", "+31.5017+034.4668+012.000/"),
+        ("com.apple.quicktime.model", "iPhone 15 Pro"),
+        ("com.apple.quicktime.make", "Apple"),
+        ("com.apple.quicktime.software", "17.6.1"),
+    ]
+
     private func makeSource(_ url: URL, width: Int = 1280, height: Int = 720) async throws {
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
@@ -17,6 +25,13 @@ final class AVFoundationProxyTranscoderTests: XCTestCase {
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey as String: width, kCVPixelBufferHeightKey as String: height,
         ])
         writer.add(input)
+        writer.metadata = Self.revealingMetadata.map { tag in
+            let item = AVMutableMetadataItem()
+            item.keySpace = .quickTimeMetadata
+            item.key = tag.key as NSString
+            item.value = tag.value as NSString
+            return item
+        }
         XCTAssertTrue(writer.startWriting())
         writer.startSession(atSourceTime: .zero)
         for (i, ms) in Self.frameTimesMs.enumerated() {
@@ -81,6 +96,42 @@ final class AVFoundationProxyTranscoderTests: XCTestCase {
         let start = metadata.first { ($0.key as? String) == proxyStartPtsMetadataKey }
         let value = try await start?.load(.stringValue)
         XCTAssertEqual(value, String(result.sourceStartPtsUs))
+    }
+
+    /// «لا بيانات كاشفة»: ضابط إيجابي (الوسوم في المصدر) ثم سلبي (لا شيء منها في النسخة، ولا في بيانات المسارات).
+    func testLightCopyCarriesNoLocationOrDeviceTags() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("proxy-tags-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = dir.appendingPathComponent("source.mov")
+        let output = dir.appendingPathComponent("proxy.mov")
+        try await makeSource(source)
+
+        let sourceValues = try await allMetadataStrings(AVURLAsset(url: source))
+        for tag in Self.revealingMetadata {
+            XCTAssertTrue(sourceValues.contains(tag.value), "positive control: \(tag.key) is in the source")
+        }
+
+        _ = try await AVFoundationProxyTranscoder().makeProxy(source: source, preset: .urgent, output: output)
+        let proxy = AVURLAsset(url: output)
+        let values = try await allMetadataStrings(proxy)
+        for tag in Self.revealingMetadata {
+            XCTAssertFalse(values.contains(tag.value), "\(tag.key) must not reach the light copy")
+        }
+        let keys = try await proxy.load(.metadata).compactMap { $0.key as? String }
+        XCTAssertEqual(keys, [proxyStartPtsMetadataKey], "the start_pts key is the only container tag")
+    }
+
+    /// كل قيم البيانات الوصفية النصية في الحاوية ومساراتها، بكل الصيغ.
+    private func allMetadataStrings(_ asset: AVURLAsset) async throws -> Set<String> {
+        var items = try await asset.load(.metadata) + asset.load(.commonMetadata)
+        for format in try await asset.load(.availableMetadataFormats) { items += try await asset.loadMetadata(for: format) }
+        for track in try await asset.load(.tracks) {
+            items += try await track.load(.metadata) + track.load(.commonMetadata)
+        }
+        var values = Set<String>()
+        for item in items { if let s = try await item.load(.stringValue) { values.insert(s) } }
+        return values
     }
 
     func testFileWithoutVideoIsRejected() async throws {
