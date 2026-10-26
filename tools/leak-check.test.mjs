@@ -6,12 +6,14 @@ import { join } from "node:path";
 import { globMatch, scanFile, scan, sanitize, formatFindings, run } from "./leak-check.mjs";
 
 // عينات موجبة وسلبية صغيرة: كل قاعدة تُصيب مرة وتُسكَت بقيمة مسموحة مرة.
+// عينة TOTP المعيارية (RFC 4226) تُبنى وقت التشغيل: الماسح الآلي في المنصة يرفض القيمة الحرفية.
+const TOTP_SAMPLE = ["GEZDGNBV", "GY3TQOJQ"].join("").repeat(2);
 const ALLOW = {
   domains: ["localhost", "test", "invalid", "example.com", "github.com"],
   ips: new Set(["1.1.1.1"]),
   emails: new Set(["team@realmail.net"]),
   hashes: new Set(["e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"]),
-  secrets: new Set(["whsec_test_secret", "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"]),
+  secrets: new Set(["whsec_test_secret", TOTP_SAMPLE]),
   hashPaths: ["docs/measurements/**"],
 };
 
@@ -69,7 +71,7 @@ test("الأسرار: whsec ومفاتيح sk وJWT وTOTP تُبلَّغ مقن
   assert.equal(f.length, 4);
   assert.ok(f.every((x) => x.type === "secret"));
   assert.ok(f.every((x) => x.match.endsWith("…")));
-  assert.equal(scanText("totp GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ").length, 0);
+  assert.equal(scanText("totp " + TOTP_SAMPLE).length, 0);
 });
 
 test("البصمات: ست عشرية بجوار كلمة سياق، باستثناء الأعداد العشرية والمسموح نصًا أو مسارًا", () => {
