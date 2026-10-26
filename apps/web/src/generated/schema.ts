@@ -1659,6 +1659,215 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/earnings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * أرصدة أرباحي لكل عملة (ADR 0033)
+         * @description محسوبة من قيود حساباتي في الدفتر لحظة الطلب، ولا رصيد مخزَّن. `requestable` هو المتاح بعد الاحتياطي، وما يُطلب منه لا يقل عن `minimum`.
+         */
+        get: operations["getMyEarnings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/earnings/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * كشف أرباحي (سطور القيود)
+         * @description سطر لكل قيد مس حساباتي، الأحدث أولًا: البيعة والاسترداد والتحرير والصرف والتصحيح. لا مشترٍ ولا مؤسسة ولا سعر بيع ولا قاعدة عمولة؛ المبلغ حصتي وحدها.
+         */
+        get: operations["listMyEarningsEntries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/earnings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** أرصدة أرباح مساهم (للمالية) */
+        get: operations["getUserEarnings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/payout-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** طلبات صرفي */
+        get: operations["listMyPayoutRequests"];
+        put?: never;
+        /**
+         * طلب صرف تجريبي
+         * @description القناة `sandbox` وحدها، فلا مال حقيقي ولا بيانات حساب بنكي. **الرفض:** ما تحت الحد الأدنى للعملة `422 payout_below_minimum`، وما فوق المتاح بعد الاحتياطي `422 insufficient_available`. **الحجز:** في معاملة الإنشاء قيد `payout` ينقل المبلغ من «متاح» إلى «قيد الصرف»، والقاعدة ترفض ما يجعل المتاح مدينًا ولو تزامن طلبان. **الاعتماد:** عدده يُجمَّد من سياسة العملة، فطلب فوق `dual_approval_above` يلزمه معتمدان. يُكتب `payout.status_changed`، ويُسجَّل في التدقيق.
+         */
+        post: operations["createPayoutRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payout-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** طلبات الصرف (للمالية) */
+        get: operations["listPayoutRequests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payout-requests/{payout_request_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payout_request_id: components["parameters"]["PayoutRequestId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * قراءة طلب صرف
+         * @description صاحب الطلب يقرأ طلبه وحده؛ غيره `404`.
+         */
+        get: operations["getPayoutRequest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payout-requests/{payout_request_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payout_request_id: components["parameters"]["PayoutRequestId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * اعتماد طلب صرف
+         * @description للطلب `requested` وحده (`409 payout_state_conflict`). المعتمد غير صاحب الطلب (`409 self_approval_forbidden`) ومرة واحدة (`409 already_approved`)، قيدًا في القاعدة. حين يكتمل العدد المطلوب يصير `approved`، وتكمله القناة التجريبية آليًا (`processing` ثم `paid`). يُسجَّل في التدقيق.
+         */
+        post: operations["approvePayoutRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payout-requests/{payout_request_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payout_request_id: components["parameters"]["PayoutRequestId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * رفض طلب صرف
+         * @description من `requested` أو `approved` قبل التنفيذ (`409 payout_state_conflict`)، بسبب من القائمة لا نص حر. يعيد المبلغ إلى «متاح» بقيد معاكس في المعاملة نفسها. يُسجَّل في التدقيق.
+         */
+        post: operations["rejectPayoutRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payout-requests/{payout_request_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payout_request_id: components["parameters"]["PayoutRequestId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * إلغاء طلب صرفي قبل اعتماده
+         * @description صاحب الطلب وحده، و`requested` وحده (`409 payout_state_conflict`)؛ يعيد المبلغ إلى «متاح» بقيد معاكس.
+         */
+        post: operations["cancelPayoutRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payout-policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * سياسات الصرف بإصداراتها
+         * @description لكل عملة الحد الأدنى، وحد الاعتماد الثنائي، والاحتياطي؛ السارية أحدثها `effective_from` لا يتجاوز الآن.
+         */
+        get: operations["listPayoutPolicies"];
+        put?: never;
+        /**
+         * إصدار جديد لسياسة صرف
+         * @description لا تُعدَّل سياسة ولا تُحذف: التغيير صف جديد بتاريخ سريان، والطلبات السابقة تحتفظ بعدد اعتمادها. العملة والتاريخ نفسيهما `409 payout_policy_exists`. يُسجَّل في التدقيق.
+         */
+        post: operations["createPayoutPolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events": {
         parameters: {
             query?: never;
@@ -1697,7 +1906,7 @@ export interface components {
              * @description رمز ثابت يتفرّع عليه العميل؛ الرسالة للبشر فقط. قائمة مفتوحة؛ الرمز المجهول = خطأ عام
              * @enum {string}
              */
-            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "seats_exhausted" | "last_buyer_admin" | "listing_unavailable" | "exclusive_unavailable" | "mixed_currency" | "price_changed" | "order_state_conflict" | "license_not_active" | "delivery_not_ready" | "download_limit_reached" | "webhook_signature_invalid" | "already_refunded" | "commission_rule_exists" | "live_payments_disabled" | "internal_error";
+            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "seats_exhausted" | "last_buyer_admin" | "listing_unavailable" | "exclusive_unavailable" | "mixed_currency" | "price_changed" | "order_state_conflict" | "license_not_active" | "delivery_not_ready" | "download_limit_reached" | "webhook_signature_invalid" | "already_refunded" | "commission_rule_exists" | "live_payments_disabled" | "payout_below_minimum" | "insufficient_available" | "payout_state_conflict" | "self_approval_forbidden" | "already_approved" | "payout_policy_exists" | "internal_error";
             message: string;
             /** @description لتتبع الطلب في السجلات */
             request_id: string;
@@ -3348,6 +3557,124 @@ export interface components {
             state: "suspended" | "dismissed";
             totp_code: string;
         };
+        /** @description مبلغ بإشارة، موجبه يزيد رصيد صاحبه */
+        SignedMoney: {
+            amount_minor: number;
+            currency: components["schemas"]["Currency"];
+        };
+        /**
+         * @description `pending` في فترة الاسترداد؛ `available` يُطلب صرفه؛ `in_payout` في طلب صرف مفتوح؛ `paid` صُرف
+         * @enum {string}
+         */
+        PayableState: "pending" | "available" | "in_payout" | "paid";
+        EarningsBalance: {
+            currency: components["schemas"]["Currency"];
+            pending: components["schemas"]["Money"];
+            available: components["schemas"]["Money"];
+            in_payout: components["schemas"]["Money"];
+            paid: components["schemas"]["Money"];
+            /** @description الجزء المحتجز من المتاح بنسبة السياسة */
+            reserve: components["schemas"]["Money"];
+            /** @description المتاح بعد الاحتياطي */
+            requestable: components["schemas"]["Money"];
+            /** @description أدنى مبلغ طلب صرف بهذه العملة */
+            minimum: components["schemas"]["Money"];
+        };
+        EarningsSummary: {
+            /** Format: uuid */
+            user_id: string;
+            balances: components["schemas"]["EarningsBalance"][];
+            /** Format: date-time */
+            as_of: string;
+        };
+        /** @description سطر قيد على أحد حساباتي؛ لا مشترٍ ولا مؤسسة ولا سعر بيع ولا قاعدة عمولة */
+        EarningsEntry: {
+            /** @description رقم السطر، مؤشر الصفحات */
+            id: string;
+            /** Format: uuid */
+            entry_id: string;
+            /** @enum {string} */
+            kind: "sale" | "refund" | "release" | "payout" | "correction";
+            state: components["schemas"]["PayableState"];
+            amount: components["schemas"]["SignedMoney"];
+            /** @description `order` أو `refund` أو `payout_request` … */
+            reference_type: string;
+            /** Format: uuid */
+            reference_id: string;
+            /** Format: date-time */
+            occurred_at: string;
+        };
+        EarningsEntryPage: {
+            items: components["schemas"]["EarningsEntry"][];
+            next_cursor: string | null;
+        };
+        /**
+         * @description `sandbox` وحده حتى تجربة الصرف (ADR 0033)؛ القناة الحقيقية بـ ADR لكل قناة
+         * @enum {string}
+         */
+        PayoutChannel: "sandbox";
+        /** @enum {string} */
+        PayoutState: "requested" | "approved" | "processing" | "paid" | "failed" | "rejected" | "cancelled";
+        /** @enum {string} */
+        PayoutReason: "documents_missing" | "suspected_fraud" | "policy" | "channel_failed" | "other";
+        PayoutRequestCreate: {
+            amount: components["schemas"]["Money"];
+            channel: components["schemas"]["PayoutChannel"];
+        };
+        PayoutReject: {
+            reason_code: components["schemas"]["PayoutReason"];
+        };
+        PayoutRequest: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            user_id: string;
+            amount: components["schemas"]["Money"];
+            channel: components["schemas"]["PayoutChannel"];
+            state: components["schemas"]["PayoutState"];
+            /** @description للرفض والفشل وحدهما */
+            reason_code: components["schemas"]["PayoutReason"] | null;
+            /** @enum {integer} */
+            approvals_required: 1 | 2;
+            /** @description المعتمدون؛ معرّفاتهم للمالية والإدارة، وعددهم وحده لصاحب الطلب */
+            approvals: {
+                /** Format: uuid */
+                approver_id?: string;
+                /** Format: date-time */
+                approved_at: string;
+            }[];
+            /** Format: date-time */
+            requested_at: string;
+            /** Format: date-time */
+            decided_at: string | null;
+            /** Format: date-time */
+            completed_at: string | null;
+        };
+        PayoutRequestPage: {
+            items: components["schemas"]["PayoutRequest"][];
+            next_cursor: string | null;
+        };
+        PayoutPolicyFields: {
+            currency: components["schemas"]["Currency"];
+            /** @description أدنى مبلغ طلب، بعملة السياسة */
+            minimum: components["schemas"]["Money"];
+            /** @description ما فوقه يلزمه معتمدان */
+            dual_approval_above: components["schemas"]["Money"];
+            /** @description الاحتياطي من المتاح بنقاط أساس */
+            reserve_bps: number;
+            /** Format: date-time */
+            effective_from: string;
+        };
+        /** @description جسم الطلب؛ لا خصائص غير المعرَّفة. عملتا المبلغين عملة السياسة (`422`) */
+        PayoutPolicyInput: components["schemas"]["PayoutPolicyFields"];
+        PayoutPolicy: components["schemas"]["PayoutPolicyFields"] & {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+        };
         OutboxEvent: components["schemas"]["outbox-event"];
         EventPage: {
             items: components["schemas"]["outbox-event"][];
@@ -3550,9 +3877,9 @@ export interface components {
             /** @description تسلسلي متزايد (رقم الصف في جدول Outbox) بصيغة نصية؛ يُستخدم مؤشرًا في `after` */
             id: string;
             /** @enum {string} */
-            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested" | "order.status_changed" | "license.issued" | "license.revoked";
+            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested" | "order.status_changed" | "license.issued" | "license.revoked" | "payout.status_changed";
             /** @enum {string} */
-            aggregate_type: "material" | "upload" | "notification" | "form" | "user" | "listing" | "license" | "order";
+            aggregate_type: "material" | "upload" | "notification" | "form" | "user" | "listing" | "license" | "order" | "payout";
             /** Format: uuid */
             aggregate_id: string;
             /** Format: date-time */
@@ -3589,7 +3916,7 @@ export interface components {
                 /** @enum {string} */
                 priority: "urgent" | "important" | "normal";
             };
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
     };
     responses: {
         /** @description طلب غير صالح (معاملات استعلام أو مؤشر غير مفهوم) */
@@ -3708,6 +4035,7 @@ export interface components {
         OrderId: string;
         /** @description مرجع جلسة الدفع التجريبية */
         SandboxProviderRef: string;
+        PayoutRequestId: string;
         LicenseId: string;
         /** @description معرّف المادة */
         MaterialId: string;
@@ -6666,6 +6994,342 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    getMyEarnings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الأرصدة */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EarningsSummary"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listMyEarningsEntries: {
+        parameters: {
+            query?: {
+                currency?: components["schemas"]["Currency"];
+                state?: components["schemas"]["PayableState"];
+                /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description حجم الصفحة */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description صفحة من السطور */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EarningsEntryPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getUserEarnings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الأرصدة */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EarningsSummary"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listMyPayoutRequests: {
+        parameters: {
+            query?: {
+                /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description حجم الصفحة */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description صفحة من الطلبات، الأحدث أولًا */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutRequestPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createPayoutRequest: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayoutRequestCreate"];
+            };
+        };
+        responses: {
+            /** @description الطلب بحالة `requested` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutRequest"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    listPayoutRequests: {
+        parameters: {
+            query?: {
+                state?: components["schemas"]["PayoutState"];
+                user_id?: string;
+                /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description حجم الصفحة */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description صفحة من الطلبات، الأقدم انتظارًا أولًا للحالات المفتوحة */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutRequestPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getPayoutRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payout_request_id: components["parameters"]["PayoutRequestId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الطلب */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutRequest"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    approvePayoutRequest: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                payout_request_id: components["parameters"]["PayoutRequestId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الطلب بعد الاعتماد */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutRequest"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    rejectPayoutRequest: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                payout_request_id: components["parameters"]["PayoutRequestId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayoutReject"];
+            };
+        };
+        responses: {
+            /** @description الطلب مرفوضًا */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutRequest"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    cancelPayoutRequest: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                payout_request_id: components["parameters"]["PayoutRequestId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الطلب ملغى */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutRequest"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listPayoutPolicies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description السياسات، الأحدث سريانًا أولًا */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["PayoutPolicy"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createPayoutPolicy: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayoutPolicyInput"];
+            };
+        };
+        responses: {
+            /** @description السياسة */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutPolicy"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["UnprocessableEntity"];
         };

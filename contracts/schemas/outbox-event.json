@@ -57,7 +57,8 @@
         "license.delivery_requested",
         "order.status_changed",
         "license.issued",
-        "license.revoked"
+        "license.revoked",
+        "payout.status_changed"
       ]
     },
     "aggregate_type": {
@@ -70,7 +71,8 @@
         "user",
         "listing",
         "license",
-        "order"
+        "order",
+        "payout"
       ]
     },
     "aggregate_id": {
@@ -1001,6 +1003,66 @@
                   "refunded",
                   "rights_withdrawn",
                   "manual"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "payout.status_changed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "payout"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "تغيّر حالة طلب صرف (v0.3، ADR 0033): المعرّف وصاحب الطلب والحالة وسببها فقط، بلا مبلغ ولا قناة ولا بيانات حساب.",
+            "required": [
+              "payout_request_id",
+              "user_id",
+              "state"
+            ],
+            "properties": {
+              "payout_request_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "user_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "requested",
+                  "approved",
+                  "processing",
+                  "paid",
+                  "failed",
+                  "rejected",
+                  "cancelled"
+                ]
+              },
+              "reason_code": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "documents_missing",
+                  "suspected_fraud",
+                  "policy",
+                  "channel_failed",
+                  "other",
+                  null
                 ]
               }
             }

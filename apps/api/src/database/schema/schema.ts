@@ -1,5 +1,5 @@
 import { bytea } from "../bytea"
-import { pgTable, uuid, text, timestamp, index, foreignKey, unique, check, integer, jsonb, bigint, uniqueIndex, boolean, time, type AnyPgColumn, real, primaryKey, numeric, smallint, pgSequence } from "drizzle-orm/pg-core"
+import { pgTable, uuid, text, timestamp, index, foreignKey, unique, check, integer, jsonb, bigint, uniqueIndex, boolean, time, type AnyPgColumn, real, smallint, primaryKey, numeric, pgSequence } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 
@@ -682,12 +682,12 @@ export const outboxEvents = pgTable("outbox_events", {
 			name: "outbox_events_actor_id_fkey"
 		}),
 	unique("outbox_events_idempotency_key_key").on(table.idempotencyKey),
-	check("outbox_events_aggregate_type_check", sql`aggregate_type = ANY (ARRAY['material'::text, 'upload'::text, 'notification'::text, 'form'::text, 'user'::text, 'listing'::text, 'license'::text, 'order'::text])`),
+	check("outbox_events_aggregate_type_check", sql`aggregate_type = ANY (ARRAY['material'::text, 'upload'::text, 'notification'::text, 'form'::text, 'user'::text, 'listing'::text, 'license'::text, 'order'::text, 'payout'::text])`),
 	check("outbox_events_attempts_nonneg", sql`attempts >= 0`),
 	check("outbox_events_idempotency_key_len", sql`(char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 200)`),
 	check("outbox_events_payload_is_object", sql`jsonb_typeof(payload) = 'object'::text`),
 	check("outbox_events_payload_whitelisted", sql`CHECK (outbox_payload_is_whitelisted(type, payload`),
-	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text, 'license.revoked'::text])`),
+	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text, 'license.revoked'::text, 'payout.status_changed'::text])`),
 ]);
 
 export const recoveryCodes = pgTable("recovery_codes", {
@@ -1358,4 +1358,104 @@ export const refundItems = pgTable("refund_items", {
 			name: "refund_items_refund_id_fkey"
 		}),
 	primaryKey({ columns: [table.refundId, table.orderItemId], name: "refund_items_pkey"}),
+]);
+
+export const payoutPolicies = pgTable("payout_policies", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	currency: text().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	minimumMinor: bigint("minimum_minor", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	dualApprovalAboveMinor: bigint("dual_approval_above_minor", { mode: "number" }).notNull(),
+	reserveBps: integer("reserve_bps").notNull(),
+	effectiveFrom: timestamp("effective_from", { withTimezone: true, mode: 'string' }).notNull(),
+	createdBy: uuid("created_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [users.id],
+			name: "payout_policies_created_by_fkey"
+		}),
+	unique("payout_policies_key").on(table.currency, table.effectiveFrom),
+	check("payout_policies_currency_check", sql`currency = ANY (ARRAY['USD'::text, 'ILS'::text])`),
+	check("payout_policies_dual_check", sql`(dual_approval_above_minor >= 0) AND (dual_approval_above_minor <= '100000000000'::bigint)`),
+	check("payout_policies_minimum_check", sql`(minimum_minor >= 1) AND (minimum_minor <= '100000000000'::bigint)`),
+	check("payout_policies_reserve_check", sql`(reserve_bps >= 0) AND (reserve_bps <= 5000)`),
+]);
+
+export const payoutRequests = pgTable("payout_requests", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	userId: uuid("user_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
+	currency: text().notNull(),
+	channel: text().notNull(),
+	approvalsRequired: smallint("approvals_required").notNull(),
+	state: text().default('requested').notNull(),
+	reasonCode: text("reason_code"),
+	holdEntryId: uuid("hold_entry_id").notNull(),
+	settleEntryId: uuid("settle_entry_id"),
+	releaseEntryId: uuid("release_entry_id"),
+	channelRef: text("channel_ref"),
+	requestedAt: timestamp("requested_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	decidedAt: timestamp("decided_at", { withTimezone: true, mode: 'string' }),
+	completedAt: timestamp("completed_at", { withTimezone: true, mode: 'string' }),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("payout_requests_open_idx").using("btree", table.requestedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(state = ANY (ARRAY['requested'::text, 'approved'::text, 'processing'::text]))`),
+	index("payout_requests_user_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops"), table.requestedAt.desc().nullsFirst().op("timestamptz_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.holdEntryId],
+			foreignColumns: [journalEntries.id],
+			name: "payout_requests_hold_entry_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.releaseEntryId],
+			foreignColumns: [journalEntries.id],
+			name: "payout_requests_release_entry_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.settleEntryId],
+			foreignColumns: [journalEntries.id],
+			name: "payout_requests_settle_entry_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.userId],
+			foreignColumns: [users.id],
+			name: "payout_requests_user_id_fkey"
+		}),
+	unique("payout_requests_hold_entry_id_key").on(table.holdEntryId),
+	unique("payout_requests_settle_entry_id_key").on(table.settleEntryId),
+	unique("payout_requests_release_entry_id_key").on(table.releaseEntryId),
+	check("payout_requests_amount_check", sql`(amount_minor >= 1) AND (amount_minor <= '100000000000'::bigint)`),
+	check("payout_requests_approvals_check", sql`approvals_required = ANY (ARRAY[1, 2])`),
+	check("payout_requests_channel_check", sql`channel = 'sandbox'::text`),
+	check("payout_requests_channel_ref_check", sql`(channel_ref IS NULL) OR ((char_length(channel_ref) >= 1) AND (char_length(channel_ref) <= 128))`),
+	check("payout_requests_completed_check", sql`(state = ANY (ARRAY['paid'::text, 'failed'::text, 'rejected'::text, 'cancelled'::text])) = (completed_at IS NOT NULL)`),
+	check("payout_requests_currency_check", sql`currency = ANY (ARRAY['USD'::text, 'ILS'::text])`),
+	check("payout_requests_decided_check", sql`(state = ANY (ARRAY['requested'::text, 'cancelled'::text])) = (decided_at IS NULL)`),
+	check("payout_requests_entries_distinct", sql`(settle_entry_id IS DISTINCT FROM hold_entry_id) AND (release_entry_id IS DISTINCT FROM hold_entry_id) AND ((settle_entry_id IS NULL) OR (release_entry_id IS NULL))`),
+	check("payout_requests_reason_check", sql`((state = ANY (ARRAY['failed'::text, 'rejected'::text])) = (reason_code IS NOT NULL)) AND ((reason_code IS NULL) OR (reason_code = ANY (ARRAY['documents_missing'::text, 'suspected_fraud'::text, 'policy'::text, 'channel_failed'::text, 'other'::text])))`),
+	check("payout_requests_release_check", sql`(state = ANY (ARRAY['failed'::text, 'rejected'::text, 'cancelled'::text])) = (release_entry_id IS NOT NULL)`),
+	check("payout_requests_settle_check", sql`(state = 'paid'::text) = (settle_entry_id IS NOT NULL)`),
+	check("payout_requests_state_check", sql`state = ANY (ARRAY['requested'::text, 'approved'::text, 'processing'::text, 'paid'::text, 'failed'::text, 'rejected'::text, 'cancelled'::text])`),
+]);
+
+export const payoutApprovals = pgTable("payout_approvals", {
+	payoutRequestId: uuid("payout_request_id").notNull(),
+	approverId: uuid("approver_id").notNull(),
+	approvedAt: timestamp("approved_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.approverId],
+			foreignColumns: [users.id],
+			name: "payout_approvals_approver_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.payoutRequestId],
+			foreignColumns: [payoutRequests.id],
+			name: "payout_approvals_payout_request_id_fkey"
+		}),
+	primaryKey({ columns: [table.payoutRequestId, table.approverId], name: "payout_approvals_pkey"}),
 ]);
