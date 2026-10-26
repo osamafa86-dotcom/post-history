@@ -299,7 +299,7 @@ export const users = pgTable("users", {
 	check("users_status_check", sql`status = ANY (ARRAY['active'::text, 'suspended'::text, 'recovery'::text])`),
 	check("users_totp_consistent", sql`(NOT totp_enabled) OR (totp_secret_enc IS NOT NULL)`),
 	check("users_totp_pending_only_during_reset", sql`(totp_pending_secret_enc IS NULL) OR credential_reset_required`),
-	check("users_work_name_format", sql`(work_name IS NULL) OR (((char_length(work_name) >= 1) AND (char_length(work_name) <= 80)) AND (work_name = btrim(work_name)) AND (work_name !~ '[\x01-\x1f\x7f]'::text))`),
+	check("users_work_name_format", sql`(work_name IS NULL) OR (((char_length(work_name) >= 1) AND (char_length(work_name) <= 80)) AND (work_name = btrim(work_name)) AND (work_name !~ '[\x01-\x1f\x7f\u202a-\u202e\u2066-\u2069]'::text))`),
 	check("users_work_name_staff_only", sql`(work_name IS NULL) OR (organization_id IS NULL)`),
 ]);
 

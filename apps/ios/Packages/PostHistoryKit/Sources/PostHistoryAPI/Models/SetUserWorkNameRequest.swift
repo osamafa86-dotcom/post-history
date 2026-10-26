@@ -9,8 +9,8 @@ import Foundation
 
 public struct SetUserWorkNameRequest: Sendable, Codable, Hashable {
 
-    public static let workNameRule = StringRule(minLength: 1, maxLength: 80, pattern: "^[^\\s\\x00-\\x1F\\x7F]([^\\x00-\\x1F\\x7F]*[^\\s\\x00-\\x1F\\x7F])?$")
-    /** اسم العمل الداخلي لحساب طاقم (ADR 0035): بلا مسافة في طرفيه ولا محارف تحكّم. ليس الاسم الحقيقي ولا يُشتق منه. */
+    public static let workNameRule = StringRule(minLength: 1, maxLength: 80, pattern: "^[^\\s\\x00-\\x1F\\x7F\\u202A-\\u202E\\u2066-\\u2069]([^\\x00-\\x1F\\x7F\\u202A-\\u202E\\u2066-\\u2069]*[^\\s\\x00-\\x1F\\x7F\\u202A-\\u202E\\u2066-\\u2069])?$")
+    /** اسم العمل الداخلي لحساب طاقم (ADR 0035): بلا مسافة في طرفيه ولا محارف تحكّم ولا محارف اتجاه (U+202A–U+202E، U+2066–U+2069). ليس الاسم الحقيقي ولا يُشتق منه. */
     public var workName: String?
 
     public init(workName: String?) {

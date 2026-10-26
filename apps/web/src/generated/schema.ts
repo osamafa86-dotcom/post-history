@@ -3061,7 +3061,7 @@ export interface components {
             /** @description كم إشعارًا صار مقروءًا بهذا الطلب */
             read_count: number;
         };
-        /** @description اسم العمل الداخلي لحساب طاقم (ADR 0035): بلا مسافة في طرفيه ولا محارف تحكّم. ليس الاسم الحقيقي ولا يُشتق منه. */
+        /** @description اسم العمل الداخلي لحساب طاقم (ADR 0035): بلا مسافة في طرفيه ولا محارف تحكّم ولا محارف اتجاه (U+202A–U+202E، U+2066–U+2069). ليس الاسم الحقيقي ولا يُشتق منه. */
         WorkName: string;
         NotificationPage: {
             items: components["schemas"]["Notification"][];

@@ -9,7 +9,7 @@ import Foundation
 
 public struct Me: Sendable, Codable, Hashable {
 
-    public static let workNameRule = StringRule(minLength: 1, maxLength: 80, pattern: "^[^\\s\\x00-\\x1F\\x7F]([^\\x00-\\x1F\\x7F]*[^\\s\\x00-\\x1F\\x7F])?$")
+    public static let workNameRule = StringRule(minLength: 1, maxLength: 80, pattern: "^[^\\s\\x00-\\x1F\\x7F\\u202A-\\u202E\\u2066-\\u2069]([^\\x00-\\x1F\\x7F\\u202A-\\u202E\\u2066-\\u2069]*[^\\s\\x00-\\x1F\\x7F\\u202A-\\u202E\\u2066-\\u2069])?$")
     public static let permissionsRule = ArrayRule(minItems: nil, maxItems: nil, uniqueItems: true)
     public var userId: UUID
     public var email: String

@@ -1299,6 +1299,8 @@ UPDATE users SET work_name = 'منتج الصباح' WHERE id = '00000000-0000-4
 UPDATE users SET work_name = NULL WHERE id = '00000000-0000-4000-8000-000000000014';
 SELECT pg_temp.expect_error($q$ UPDATE users SET work_name = ' منتج' WHERE id = '00000000-0000-4000-8000-000000000014' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE users SET work_name = E'منتج\nالصباح' WHERE id = '00000000-0000-4000-8000-000000000014' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE users SET work_name = E'منتج\u202Eالصباح' WHERE id = '00000000-0000-4000-8000-000000000014' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE users SET work_name = E'\u2067منتج' WHERE id = '00000000-0000-4000-8000-000000000014' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE users SET work_name = '' WHERE id = '00000000-0000-4000-8000-000000000014' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE users SET work_name = repeat('x', 81) WHERE id = '00000000-0000-4000-8000-000000000014' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE users SET work_name = 'مشترٍ' WHERE id = '00000000-0000-4000-8000-000000000711' $q$, '23514');
