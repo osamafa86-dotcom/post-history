@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { buyerInviteConflicts, buyerOrganizations, catalogListings, commissionRules, deviceAttestationKeys, exclusiveHolds, idempotencyKeys, journalEntries, ledgerAccounts, licenseDownloadGrants, licenseTemplateVersions, licenseTemplates, licenses, listingOffers, materialContributors, materialExports, materialFiles, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, orderItems, orders, outboxEvents, paymentEvents, postings, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, refundItems, refunds, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
+import { buyerInviteConflicts, buyerOrganizations, catalogListings, commissionRules, deviceAttestationKeys, exclusiveHolds, idempotencyKeys, journalEntries, ledgerAccounts, licenseDownloadGrants, licenseTemplateVersions, licenseTemplates, licenses, listingOffers, materialContributors, materialExports, materialFiles, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, orderItems, orders, outboxEvents, paymentEvents, payoutApprovals, payoutPolicies, payoutRequests, postings, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, refundItems, refunds, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
 
 export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => ({
 	refreshToken: one(refreshTokens, {
@@ -17,6 +17,31 @@ export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => 
 }));
 
 export const usersRelations = relations(users, ({one, many}) => ({
+	office: one(offices, {
+		fields: [users.officeId],
+		references: [offices.id]
+	}),
+	buyerOrganization: one(buyerOrganizations, {
+		fields: [users.organizationId],
+		references: [buyerOrganizations.id]
+	}),
+	uploadSessions: many(uploadSessions),
+	catalogListings: many(catalogListings),
+	ledgerAccounts: many(ledgerAccounts),
+	journalEntries: many(journalEntries),
+	orders: many(orders),
+	licenseDownloadGrants: many(licenseDownloadGrants),
+	buyerInviteConflicts_existingUserId: many(buyerInviteConflicts, {
+		relationName: "buyerInviteConflicts_existingUserId_users_id"
+	}),
+	buyerInviteConflicts_invitedBy: many(buyerInviteConflicts, {
+		relationName: "buyerInviteConflicts_invitedBy_users_id"
+	}),
+	buyerInviteConflicts_resolvedBy: many(buyerInviteConflicts, {
+		relationName: "buyerInviteConflicts_resolvedBy_users_id"
+	}),
+	refunds: many(refunds),
+	commissionRules: many(commissionRules),
 	refreshTokens: many(refreshTokens),
 	pushDevices: many(pushDevices),
 	uploadForms: many(uploadForms),
@@ -56,33 +81,11 @@ export const usersRelations = relations(users, ({one, many}) => ({
 		relationName: "notificationRules_updatedBy_users_id"
 	}),
 	licenseTemplates: many(licenseTemplates),
-	office: one(offices, {
-		fields: [users.officeId],
-		references: [offices.id]
-	}),
-	buyerOrganization: one(buyerOrganizations, {
-		fields: [users.organizationId],
-		references: [buyerOrganizations.id]
-	}),
-	uploadSessions: many(uploadSessions),
-	catalogListings: many(catalogListings),
-	ledgerAccounts: many(ledgerAccounts),
-	journalEntries: many(journalEntries),
-	orders: many(orders),
-	licenseDownloadGrants: many(licenseDownloadGrants),
-	buyerInviteConflicts_existingUserId: many(buyerInviteConflicts, {
-		relationName: "buyerInviteConflicts_existingUserId_users_id"
-	}),
-	buyerInviteConflicts_invitedBy: many(buyerInviteConflicts, {
-		relationName: "buyerInviteConflicts_invitedBy_users_id"
-	}),
-	buyerInviteConflicts_resolvedBy: many(buyerInviteConflicts, {
-		relationName: "buyerInviteConflicts_resolvedBy_users_id"
-	}),
+	payoutPolicies: many(payoutPolicies),
+	payoutRequests: many(payoutRequests),
 	outboxEvents: many(outboxEvents),
-	refunds: many(refunds),
-	commissionRules: many(commissionRules),
 	recoveryCodes: many(recoveryCodes),
+	payoutApprovals: many(payoutApprovals),
 	materialContributors: many(materialContributors),
 	userRoles_grantedBy: many(userRoles, {
 		relationName: "userRoles_grantedBy_users_id"
@@ -466,6 +469,15 @@ export const journalEntriesRelations = relations(journalEntries, ({one, many}) =
 	}),
 	postings: many(postings),
 	refunds: many(refunds),
+	payoutRequests_holdEntryId: many(payoutRequests, {
+		relationName: "payoutRequests_holdEntryId_journalEntries_id"
+	}),
+	payoutRequests_releaseEntryId: many(payoutRequests, {
+		relationName: "payoutRequests_releaseEntryId_journalEntries_id"
+	}),
+	payoutRequests_settleEntryId: many(payoutRequests, {
+		relationName: "payoutRequests_settleEntryId_journalEntries_id"
+	}),
 }));
 
 export const postingsRelations = relations(postings, ({one}) => ({
@@ -613,5 +625,46 @@ export const refundItemsRelations = relations(refundItems, ({one}) => ({
 	refund: one(refunds, {
 		fields: [refundItems.refundId],
 		references: [refunds.id]
+	}),
+}));
+
+export const payoutPoliciesRelations = relations(payoutPolicies, ({one}) => ({
+	user: one(users, {
+		fields: [payoutPolicies.createdBy],
+		references: [users.id]
+	}),
+}));
+
+export const payoutRequestsRelations = relations(payoutRequests, ({one, many}) => ({
+	journalEntry_holdEntryId: one(journalEntries, {
+		fields: [payoutRequests.holdEntryId],
+		references: [journalEntries.id],
+		relationName: "payoutRequests_holdEntryId_journalEntries_id"
+	}),
+	journalEntry_releaseEntryId: one(journalEntries, {
+		fields: [payoutRequests.releaseEntryId],
+		references: [journalEntries.id],
+		relationName: "payoutRequests_releaseEntryId_journalEntries_id"
+	}),
+	journalEntry_settleEntryId: one(journalEntries, {
+		fields: [payoutRequests.settleEntryId],
+		references: [journalEntries.id],
+		relationName: "payoutRequests_settleEntryId_journalEntries_id"
+	}),
+	user: one(users, {
+		fields: [payoutRequests.userId],
+		references: [users.id]
+	}),
+	payoutApprovals: many(payoutApprovals),
+}));
+
+export const payoutApprovalsRelations = relations(payoutApprovals, ({one}) => ({
+	user: one(users, {
+		fields: [payoutApprovals.approverId],
+		references: [users.id]
+	}),
+	payoutRequest: one(payoutRequests, {
+		fields: [payoutApprovals.payoutRequestId],
+		references: [payoutRequests.id]
 	}),
 }));

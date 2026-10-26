@@ -82,6 +82,8 @@ tags:
     description: إعدادات مؤسسية يضبطها مدير النظام.
   - name: dashboard
     description: قراءات مجمّعة للوحة غرفة الأخبار، بلا بيانات كاشفة (v0.2).
+  - name: earnings
+    description: أرباح المساهمين وطلبات الصرف التجريبية (v0.3، ADR 0033) — الرصيد من الدفتر، ولا قناة صرف حقيقية.
   - name: commerce
     description: المرحلة التجارية بمزوّد دفع تجريبي (v0.3، ADR 0025) — قوالب التراخيص، والإدراج، والكتالوج، والطلبات والدفع، والتراخيص الصادرة.
 
@@ -2717,6 +2719,288 @@ paths:
         "202": { description: أُرسل الإشعار أو جُدول }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /me/earnings:
+    get:
+      tags: [earnings]
+      summary: أرصدة أرباحي لكل عملة (ADR 0033)
+      description: >-
+        محسوبة من قيود حساباتي في الدفتر لحظة الطلب، ولا رصيد مخزَّن. `requestable` هو المتاح بعد الاحتياطي، وما يُطلب
+        منه لا يقل عن `minimum`.
+      operationId: getMyEarnings
+      x-roles: [reporter]
+      responses:
+        "200":
+          description: الأرصدة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EarningsSummary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /me/earnings/entries:
+    get:
+      tags: [earnings]
+      summary: كشف أرباحي (سطور القيود)
+      description: >-
+        سطر لكل قيد مس حساباتي، الأحدث أولًا: البيعة والاسترداد والتحرير والصرف والتصحيح. لا مشترٍ ولا مؤسسة ولا سعر بيع
+        ولا قاعدة عمولة؛ المبلغ حصتي وحدها.
+      operationId: listMyEarningsEntries
+      x-roles: [reporter]
+      parameters:
+        - name: currency
+          in: query
+          schema: { $ref: "#/components/schemas/Currency" }
+        - name: state
+          in: query
+          schema: { $ref: "#/components/schemas/PayableState" }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: صفحة من السطور
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EarningsEntryPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /users/{id}/earnings:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [earnings]
+      summary: أرصدة أرباح مساهم (للمالية)
+      operationId: getUserEarnings
+      x-roles: [system_admin, finance]
+      responses:
+        "200":
+          description: الأرصدة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EarningsSummary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /me/payout-requests:
+    get:
+      tags: [earnings]
+      summary: طلبات صرفي
+      operationId: listMyPayoutRequests
+      x-roles: [reporter]
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: صفحة من الطلبات، الأحدث أولًا
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutRequestPage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [earnings]
+      summary: طلب صرف تجريبي
+      description: >-
+        القناة `sandbox` وحدها، فلا مال حقيقي ولا بيانات حساب بنكي.
+        **الرفض:** ما تحت الحد الأدنى للعملة `422 payout_below_minimum`، وما فوق المتاح بعد الاحتياطي
+        `422 insufficient_available`.
+        **الحجز:** في معاملة الإنشاء قيد `payout` ينقل المبلغ من «متاح» إلى «قيد الصرف»، والقاعدة ترفض ما يجعل المتاح مدينًا
+        ولو تزامن طلبان.
+        **الاعتماد:** عدده يُجمَّد من سياسة العملة، فطلب فوق `dual_approval_above` يلزمه معتمدان.
+        يُكتب `payout.status_changed`، ويُسجَّل في التدقيق.
+      operationId: createPayoutRequest
+      x-roles: [reporter]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PayoutRequestCreate" }
+      responses:
+        "201":
+          description: الطلب بحالة `requested`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /payout-requests:
+    get:
+      tags: [earnings]
+      summary: طلبات الصرف (للمالية)
+      operationId: listPayoutRequests
+      x-roles: [system_admin, finance]
+      parameters:
+        - name: state
+          in: query
+          schema: { $ref: "#/components/schemas/PayoutState" }
+        - name: user_id
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: صفحة من الطلبات، الأقدم انتظارًا أولًا للحالات المفتوحة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutRequestPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /payout-requests/{payout_request_id}:
+    parameters:
+      - $ref: "#/components/parameters/PayoutRequestId"
+    get:
+      tags: [earnings]
+      summary: قراءة طلب صرف
+      description: صاحب الطلب يقرأ طلبه وحده؛ غيره `404`.
+      operationId: getPayoutRequest
+      x-roles: [system_admin, finance, reporter]
+      responses:
+        "200":
+          description: الطلب
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /payout-requests/{payout_request_id}/approve:
+    parameters:
+      - $ref: "#/components/parameters/PayoutRequestId"
+    post:
+      tags: [earnings]
+      summary: اعتماد طلب صرف
+      description: >-
+        للطلب `requested` وحده (`409 payout_state_conflict`). المعتمد غير صاحب الطلب (`409 self_approval_forbidden`)
+        ومرة واحدة (`409 already_approved`)، قيدًا في القاعدة. حين يكتمل العدد المطلوب يصير `approved`، وتكمله القناة
+        التجريبية آليًا (`processing` ثم `paid`). يُسجَّل في التدقيق.
+      operationId: approvePayoutRequest
+      x-roles: [system_admin, finance]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: الطلب بعد الاعتماد
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /payout-requests/{payout_request_id}/reject:
+    parameters:
+      - $ref: "#/components/parameters/PayoutRequestId"
+    post:
+      tags: [earnings]
+      summary: رفض طلب صرف
+      description: >-
+        من `requested` أو `approved` قبل التنفيذ (`409 payout_state_conflict`)، بسبب من القائمة لا نص حر. يعيد المبلغ إلى
+        «متاح» بقيد معاكس في المعاملة نفسها. يُسجَّل في التدقيق.
+      operationId: rejectPayoutRequest
+      x-roles: [system_admin, finance]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PayoutReject" }
+      responses:
+        "200":
+          description: الطلب مرفوضًا
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /payout-requests/{payout_request_id}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/PayoutRequestId"
+    post:
+      tags: [earnings]
+      summary: إلغاء طلب صرفي قبل اعتماده
+      description: صاحب الطلب وحده، و`requested` وحده (`409 payout_state_conflict`)؛ يعيد المبلغ إلى «متاح» بقيد معاكس.
+      operationId: cancelPayoutRequest
+      x-roles: [reporter]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: الطلب ملغى
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /payout-policies:
+    get:
+      tags: [earnings]
+      summary: سياسات الصرف بإصداراتها
+      description: لكل عملة الحد الأدنى، وحد الاعتماد الثنائي، والاحتياطي؛ السارية أحدثها `effective_from` لا يتجاوز الآن.
+      operationId: listPayoutPolicies
+      x-roles: [system_admin, finance]
+      responses:
+        "200":
+          description: السياسات، الأحدث سريانًا أولًا
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/PayoutPolicy" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [earnings]
+      summary: إصدار جديد لسياسة صرف
+      description: >-
+        لا تُعدَّل سياسة ولا تُحذف: التغيير صف جديد بتاريخ سريان، والطلبات السابقة تحتفظ بعدد اعتمادها. العملة والتاريخ
+        نفسيهما `409 payout_policy_exists`. يُسجَّل في التدقيق.
+      operationId: createPayoutPolicy
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PayoutPolicyInput" }
+      responses:
+        "201":
+          description: السياسة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutPolicy" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
   /events:
     get:
       tags: [events]
@@ -2797,6 +3081,11 @@ components:
       required: true
       description: مرجع جلسة الدفع التجريبية
       schema: { type: string, minLength: 1, maxLength: 128 }
+    PayoutRequestId:
+      name: payout_request_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     LicenseId:
       name: license_id
       in: path
@@ -2969,6 +3258,12 @@ components:
             - webhook_signature_invalid
             - already_refunded
             - commission_rule_exists
+            - payout_below_minimum
+            - insufficient_available
+            - payout_state_conflict
+            - self_approval_forbidden
+            - already_approved
+            - payout_policy_exists
             - internal_error
         message: { type: string }
         request_id: { type: string, description: لتتبع الطلب في السجلات }
@@ -4909,6 +5204,158 @@ components:
     CommissionRule:
       allOf:
         - $ref: "#/components/schemas/CommissionRuleFields"
+        - type: object
+          required: [id, created_by, created_at]
+          properties:
+            id: { type: string, format: uuid }
+            created_by: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+      unevaluatedProperties: false
+
+    SignedMoney:
+      type: object
+      additionalProperties: false
+      required: [amount_minor, currency]
+      description: مبلغ بإشارة، موجبه يزيد رصيد صاحبه
+      properties:
+        amount_minor: { type: integer, minimum: -100000000000, maximum: 100000000000 }
+        currency: { $ref: "#/components/schemas/Currency" }
+
+    PayableState:
+      type: string
+      description: "`pending` في فترة الاسترداد؛ `available` يُطلب صرفه؛ `in_payout` في طلب صرف مفتوح؛ `paid` صُرف"
+      enum: [pending, available, in_payout, paid]
+
+    EarningsBalance:
+      type: object
+      required: [currency, pending, available, in_payout, paid, reserve, requestable, minimum]
+      properties:
+        currency: { $ref: "#/components/schemas/Currency" }
+        pending: { $ref: "#/components/schemas/Money" }
+        available: { $ref: "#/components/schemas/Money" }
+        in_payout: { $ref: "#/components/schemas/Money" }
+        paid: { $ref: "#/components/schemas/Money" }
+        reserve: { $ref: "#/components/schemas/Money", description: الجزء المحتجز من المتاح بنسبة السياسة }
+        requestable: { $ref: "#/components/schemas/Money", description: المتاح بعد الاحتياطي }
+        minimum: { $ref: "#/components/schemas/Money", description: أدنى مبلغ طلب صرف بهذه العملة }
+
+    EarningsSummary:
+      type: object
+      required: [user_id, balances, as_of]
+      properties:
+        user_id: { type: string, format: uuid }
+        balances:
+          type: array
+          items: { $ref: "#/components/schemas/EarningsBalance" }
+        as_of: { type: string, format: date-time }
+
+    EarningsEntry:
+      type: object
+      description: سطر قيد على أحد حساباتي؛ لا مشترٍ ولا مؤسسة ولا سعر بيع ولا قاعدة عمولة
+      required: [id, entry_id, kind, state, amount, reference_type, reference_id, occurred_at]
+      properties:
+        id: { type: string, pattern: "^[0-9]{1,19}$", description: رقم السطر، مؤشر الصفحات }
+        entry_id: { type: string, format: uuid }
+        kind: { type: string, enum: [sale, refund, release, payout, correction] }
+        state: { $ref: "#/components/schemas/PayableState" }
+        amount: { $ref: "#/components/schemas/SignedMoney" }
+        reference_type: { type: string, pattern: "^[a-z_]{1,32}$", description: "`order` أو `refund` أو `payout_request` …" }
+        reference_id: { type: string, format: uuid }
+        occurred_at: { type: string, format: date-time }
+
+    EarningsEntryPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/EarningsEntry" }
+        next_cursor: { type: [string, "null"] }
+
+    PayoutChannel:
+      type: string
+      description: "`sandbox` وحده حتى تجربة الصرف (ADR 0033)؛ القناة الحقيقية بـ ADR لكل قناة"
+      enum: [sandbox]
+
+    PayoutState:
+      type: string
+      enum: [requested, approved, processing, paid, failed, rejected, cancelled]
+
+    PayoutReason:
+      type: string
+      enum: [documents_missing, suspected_fraud, policy, channel_failed, other]
+
+    PayoutRequestCreate:
+      type: object
+      additionalProperties: false
+      required: [amount, channel]
+      properties:
+        amount: { $ref: "#/components/schemas/Money" }
+        channel: { $ref: "#/components/schemas/PayoutChannel" }
+
+    PayoutReject:
+      type: object
+      additionalProperties: false
+      required: [reason_code]
+      properties:
+        reason_code: { $ref: "#/components/schemas/PayoutReason" }
+
+    PayoutRequest:
+      type: object
+      required: [id, user_id, amount, channel, state, reason_code, approvals_required, approvals, requested_at, decided_at, completed_at]
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        amount: { $ref: "#/components/schemas/Money" }
+        channel: { $ref: "#/components/schemas/PayoutChannel" }
+        state: { $ref: "#/components/schemas/PayoutState" }
+        reason_code:
+          oneOf:
+            - $ref: "#/components/schemas/PayoutReason"
+            - type: "null"
+          description: للرفض والفشل وحدهما
+        approvals_required: { type: integer, enum: [1, 2] }
+        approvals:
+          type: array
+          description: المعتمدون؛ معرّفاتهم للمالية والإدارة، وعددهم وحده لصاحب الطلب
+          items:
+            type: object
+            required: [approved_at]
+            properties:
+              approver_id: { type: string, format: uuid }
+              approved_at: { type: string, format: date-time }
+        requested_at: { type: string, format: date-time }
+        decided_at: { type: [string, "null"], format: date-time }
+        completed_at: { type: [string, "null"], format: date-time }
+
+    PayoutRequestPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/PayoutRequest" }
+        next_cursor: { type: [string, "null"] }
+
+    PayoutPolicyFields:
+      type: object
+      required: [currency, minimum, dual_approval_above, reserve_bps, effective_from]
+      properties:
+        currency: { $ref: "#/components/schemas/Currency" }
+        minimum: { $ref: "#/components/schemas/Money", description: أدنى مبلغ طلب، بعملة السياسة }
+        dual_approval_above: { $ref: "#/components/schemas/Money", description: ما فوقه يلزمه معتمدان }
+        reserve_bps: { type: integer, minimum: 0, maximum: 5000, description: الاحتياطي من المتاح بنقاط أساس }
+        effective_from: { type: string, format: date-time }
+
+    PayoutPolicyInput:
+      description: جسم الطلب؛ لا خصائص غير المعرَّفة. عملتا المبلغين عملة السياسة (`422`)
+      allOf:
+        - $ref: "#/components/schemas/PayoutPolicyFields"
+      unevaluatedProperties: false
+
+    PayoutPolicy:
+      allOf:
+        - $ref: "#/components/schemas/PayoutPolicyFields"
         - type: object
           required: [id, created_by, created_at]
           properties:

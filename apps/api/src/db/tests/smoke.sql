@@ -1158,6 +1158,144 @@ SELECT pg_temp.expect_error($q$
 SET CONSTRAINTS ALL DEFERRED;
 SET LOCAL search_path TO DEFAULT;
 
+-- ---------- الأرباح وطلبات الصرف (ADR 0033؛ ترحيل 034) ----------
+-- متاح المراسل 011 بالدولار (الحساب 905) دائن بـ 700 من قيد التحرير أعلاه
+INSERT INTO ledger_accounts (id, kind, owner_id, payable_state, currency) VALUES
+  ('00000000-0000-4000-8000-0000000009a1', 'contributor_payable', '00000000-0000-4000-8000-000000000011', 'in_payout', 'USD'),
+  ('00000000-0000-4000-8000-0000000009a2', 'contributor_payable', '00000000-0000-4000-8000-000000000011', 'paid', 'USD');
+-- سياسة الصرف لا تُعدَّل، والاحتياطي ≤ 50%
+INSERT INTO payout_policies (currency, minimum_minor, dual_approval_above_minor, reserve_bps, effective_from, created_by)
+VALUES ('USD', 100, 400, 1000, '2026-10-01', '00000000-0000-4000-8000-000000000014');
+SELECT pg_temp.expect_error($q$ UPDATE payout_policies SET reserve_bps = 0 $q$, '23001');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO payout_policies (currency, minimum_minor, dual_approval_above_minor, reserve_bps, effective_from, created_by)
+  VALUES ('USD', 100, 400, 6000, '2026-11-01', '00000000-0000-4000-8000-000000000014') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO payout_policies (currency, minimum_minor, dual_approval_above_minor, reserve_bps, effective_from, created_by)
+  VALUES ('USD', 200, 400, 1000, '2026-10-01', '00000000-0000-4000-8000-000000000014') $q$, '23505');
+-- الطلب يحجز المبلغ فورًا من المتاح إلى قيد الصرف
+WITH e AS (INSERT INTO journal_entries (id, kind, reference_type, reference_id, idempotency_key)
+           VALUES ('00000000-0000-4000-8000-0000000009b1', 'payout', 'payout_request', '00000000-0000-4000-8000-0000000009c1',
+                   'payout:hold:9c1') RETURNING id)
+INSERT INTO postings (entry_id, account_id, amount_minor, currency)
+SELECT id, '00000000-0000-4000-8000-000000000905'::uuid, 500, 'USD' FROM e
+UNION ALL SELECT id, '00000000-0000-4000-8000-0000000009a1'::uuid, -500, 'USD' FROM e;
+INSERT INTO payout_requests (id, user_id, amount_minor, currency, channel, approvals_required, hold_entry_id)
+VALUES ('00000000-0000-4000-8000-0000000009c1', '00000000-0000-4000-8000-000000000011', 500, 'USD', 'sandbox', 2,
+        '00000000-0000-4000-8000-0000000009b1');
+SET CONSTRAINTS ALL IMMEDIATE;
+SET CONSTRAINTS ALL DEFERRED;
+-- لا صرف فوق المتاح: بقي 200، وطلب 300 يجعل المستحق مدينًا
+SELECT pg_temp.expect_error($q$
+  WITH e AS (INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key)
+             VALUES ('payout', 'payout_request', '00000000-0000-4000-8000-0000000009c9', 'payout:hold:overdraw') RETURNING id)
+  INSERT INTO postings (entry_id, account_id, amount_minor, currency)
+  SELECT id, '00000000-0000-4000-8000-000000000905'::uuid, 300, 'USD' FROM e
+  UNION ALL SELECT id, '00000000-0000-4000-8000-0000000009a1'::uuid, -300, 'USD' FROM e $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
+-- الطلب يبدأ requested بقيد حجزه من نوع payout ومرجعه، ولا قناة غير sandbox
+SELECT pg_temp.expect_error($q$
+  INSERT INTO payout_requests (user_id, amount_minor, currency, channel, approvals_required, hold_entry_id)
+  VALUES ('00000000-0000-4000-8000-000000000011', 500, 'USD', 'sandbox', 1, '00000000-0000-4000-8000-000000000911') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO payout_requests (id, user_id, amount_minor, currency, channel, approvals_required, hold_entry_id)
+  VALUES ('00000000-0000-4000-8000-0000000009c1', '00000000-0000-4000-8000-000000000011', 500, 'USD', 'bank_transfer', 1,
+          '00000000-0000-4000-8000-0000000009b1') $q$, '23514');
+-- الاعتماد لغير صاحب الطلب، ومرة لكل معتمد، وبالعدد المجمّد
+SELECT pg_temp.expect_error($q$
+  INSERT INTO payout_approvals (payout_request_id, approver_id)
+  VALUES ('00000000-0000-4000-8000-0000000009c1', '00000000-0000-4000-8000-000000000011') $q$, '23514');
+INSERT INTO payout_approvals (payout_request_id, approver_id)
+VALUES ('00000000-0000-4000-8000-0000000009c1', '00000000-0000-4000-8000-000000000014');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO payout_approvals (payout_request_id, approver_id)
+  VALUES ('00000000-0000-4000-8000-0000000009c1', '00000000-0000-4000-8000-000000000014') $q$, '23505');
+SELECT pg_temp.expect_error($q$
+  UPDATE payout_requests SET state = 'approved', decided_at = now() WHERE id = '00000000-0000-4000-8000-0000000009c1' $q$, '23514');
+INSERT INTO payout_approvals (payout_request_id, approver_id)
+VALUES ('00000000-0000-4000-8000-0000000009c1', '00000000-0000-4000-8000-000000000013');
+UPDATE payout_requests SET state = 'approved', decided_at = now() WHERE id = '00000000-0000-4000-8000-0000000009c1';
+SELECT pg_temp.expect_error($q$
+  INSERT INTO payout_approvals (payout_request_id, approver_id)
+  VALUES ('00000000-0000-4000-8000-0000000009c1', '00000000-0000-4000-8000-000000000012') $q$, '23514');
+-- الانتقالات صريحة، والمصروف يلزمه قيده، والمكتمل نهائي
+SELECT pg_temp.expect_error($q$
+  UPDATE payout_requests SET state = 'paid', completed_at = now() WHERE id = '00000000-0000-4000-8000-0000000009c1' $q$, '23514');
+UPDATE payout_requests SET state = 'processing', channel_ref = 'sbx_payout_9c1' WHERE id = '00000000-0000-4000-8000-0000000009c1';
+SELECT pg_temp.expect_error($q$
+  UPDATE payout_requests SET state = 'paid', completed_at = now(), settle_entry_id = '00000000-0000-4000-8000-0000000009b1'
+   WHERE id = '00000000-0000-4000-8000-0000000009c1' $q$, '23514');
+WITH e AS (INSERT INTO journal_entries (id, kind, reference_type, reference_id, idempotency_key)
+           VALUES ('00000000-0000-4000-8000-0000000009b2', 'payout', 'payout_request', '00000000-0000-4000-8000-0000000009c1',
+                   'payout:settle:9c1') RETURNING id)
+INSERT INTO postings (entry_id, account_id, amount_minor, currency)
+SELECT id, '00000000-0000-4000-8000-0000000009a1'::uuid, 500, 'USD' FROM e
+UNION ALL SELECT id, '00000000-0000-4000-8000-0000000009a2'::uuid, -500, 'USD' FROM e;
+UPDATE payout_requests SET state = 'paid', completed_at = now(), settle_entry_id = '00000000-0000-4000-8000-0000000009b2'
+ WHERE id = '00000000-0000-4000-8000-0000000009c1';
+SELECT pg_temp.expect_error($q$
+  UPDATE payout_requests SET channel_ref = 'other' WHERE id = '00000000-0000-4000-8000-0000000009c1' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE payout_requests SET amount_minor = 1 WHERE id = '00000000-0000-4000-8000-0000000009c1' $q$, '23514');
+SELECT pg_temp.expect_error($q$ DELETE FROM payout_requests WHERE id = '00000000-0000-4000-8000-0000000009c1' $q$, '23001');
+SET CONSTRAINTS ALL IMMEDIATE;
+SET CONSTRAINTS ALL DEFERRED;
+-- الإلغاء والرفض يعيدان المبلغ بقيد معاكس، والرفض بسبب
+WITH e AS (INSERT INTO journal_entries (id, kind, reference_type, reference_id, idempotency_key)
+           VALUES ('00000000-0000-4000-8000-0000000009b3', 'payout', 'payout_request', '00000000-0000-4000-8000-0000000009c2',
+                   'payout:hold:9c2') RETURNING id)
+INSERT INTO postings (entry_id, account_id, amount_minor, currency)
+SELECT id, '00000000-0000-4000-8000-000000000905'::uuid, 150, 'USD' FROM e
+UNION ALL SELECT id, '00000000-0000-4000-8000-0000000009a1'::uuid, -150, 'USD' FROM e;
+INSERT INTO payout_requests (id, user_id, amount_minor, currency, channel, approvals_required, hold_entry_id)
+VALUES ('00000000-0000-4000-8000-0000000009c2', '00000000-0000-4000-8000-000000000011', 150, 'USD', 'sandbox', 1,
+        '00000000-0000-4000-8000-0000000009b3');
+WITH e AS (INSERT INTO journal_entries (id, kind, reference_type, reference_id, idempotency_key)
+           VALUES ('00000000-0000-4000-8000-0000000009b4', 'payout', 'payout_request', '00000000-0000-4000-8000-0000000009c2',
+                   'payout:release:9c2') RETURNING id)
+INSERT INTO postings (entry_id, account_id, amount_minor, currency)
+SELECT id, '00000000-0000-4000-8000-0000000009a1'::uuid, 150, 'USD' FROM e
+UNION ALL SELECT id, '00000000-0000-4000-8000-000000000905'::uuid, -150, 'USD' FROM e;
+SELECT pg_temp.expect_error($q$
+  UPDATE payout_requests SET state = 'rejected', decided_at = now(), completed_at = now(),
+         release_entry_id = '00000000-0000-4000-8000-0000000009b4' WHERE id = '00000000-0000-4000-8000-0000000009c2' $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
+UPDATE payout_requests SET state = 'rejected', reason_code = 'documents_missing', decided_at = now(), completed_at = now(),
+       release_entry_id = '00000000-0000-4000-8000-0000000009b4' WHERE id = '00000000-0000-4000-8000-0000000009c2';
+SET CONSTRAINTS ALL IMMEDIATE;
+SET CONSTRAINTS ALL DEFERRED;
+SELECT pg_temp.assert(
+  (SELECT -sum(p.amount_minor) = 200 FROM postings p WHERE p.account_id = '00000000-0000-4000-8000-000000000905'),
+  'available balance is 700 - 500 paid = 200 after the rejected request is released');
+-- اختبار مقلوب: بلا المحفّز يمر الصرف فوق المتاح، فالاختبار أعلاه يقيس المحفّز
+SAVEPOINT payable_mutation;
+ALTER TABLE postings DISABLE TRIGGER postings_payable_not_debit;
+WITH e AS (INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key)
+           VALUES ('payout', 'payout_request', '00000000-0000-4000-8000-0000000009c9', 'payout:hold:mutant') RETURNING id)
+INSERT INTO postings (entry_id, account_id, amount_minor, currency)
+SELECT id, '00000000-0000-4000-8000-000000000905'::uuid, 900, 'USD' FROM e
+UNION ALL SELECT id, '00000000-0000-4000-8000-0000000009a1'::uuid, -900, 'USD' FROM e;
+SET CONSTRAINTS ALL IMMEDIATE;
+ROLLBACK TO SAVEPOINT payable_mutation;
+SET CONSTRAINTS ALL DEFERRED;
+-- حدث الصرف بمعرّفاته وحالته وحدها، بلا مبلغ
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('payout.status_changed', 'payout', '00000000-0000-4000-8000-0000000009c1', 'payout.status_changed:smoke:1',
+        '{"payout_request_id": "00000000-0000-4000-8000-0000000009c1", "user_id": "00000000-0000-4000-8000-000000000011", "state": "paid", "reason_code": null}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('payout.status_changed', 'payout', '00000000-0000-4000-8000-0000000009c1', 'payout.status_changed:smoke:2',
+          '{"payout_request_id": "00000000-0000-4000-8000-0000000009c1", "amount_minor": 500}') $q$, '23514');
+-- الدوال تعمل بمسار بحث فارغ (الاستعادة)
+SET LOCAL search_path = '';
+SELECT pg_temp.expect_error($q$
+  INSERT INTO public.payout_approvals (payout_request_id, approver_id)
+  VALUES ('00000000-0000-4000-8000-0000000009c2', '00000000-0000-4000-8000-000000000014') $q$, '23514');
+SELECT pg_temp.assert(public.payout_entry_matches('00000000-0000-4000-8000-0000000009b1', '00000000-0000-4000-8000-0000000009c1'),
+  'payout entry check works with an empty search_path');
+SET CONSTRAINTS ALL DEFERRED;
+SET LOCAL search_path TO DEFAULT;
+
 \o
 \echo smoke OK
 ROLLBACK;
