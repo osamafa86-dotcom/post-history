@@ -1,4 +1,5 @@
 import {test} from 'node:test';
+import {createRequire} from 'node:module';
 import assert from 'node:assert/strict';
 import {localOnly,requireDemo} from './local-only.mjs';
 import {states,populateMaterials,DEMO_MATERIAL_COUNT,verifyCommerce,failureMessage,run,acknowledgeVerified,ACTIVE_ORDER_LICENSE_SQL} from './seed-demo.mjs';
@@ -53,7 +54,7 @@ test('unverified material times out and terminal verification failure never tran
   assert.equal(writes,0);
 });
 test('active license query executes on the migrated local database', {skip:!process.env.DEMO_TEST_DATABASE_URL},async()=>{
-  const {default:pg}=await import('pg');
+  const pg=createRequire(new URL('../acceptance/package.json',import.meta.url))('pg');
   const databaseUrl=process.env.DEMO_TEST_DATABASE_URL;
   assert.equal(process.env.DEMO_LOCAL_ONLY,'1');localOnly(databaseUrl,['postgres:','postgresql:']);
   const db=new pg.Client({connectionString:databaseUrl});

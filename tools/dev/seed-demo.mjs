@@ -13,8 +13,11 @@ import { tusAuth } from '../acceptance/lib/ingest.mjs';
 import { requireDemo, localOnly } from './local-only.mjs';
 import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
-import pg from 'pg';
-import { hash } from '@node-rs/argon2';
+import { createRequire } from 'node:module';
+// نفس حزمة البذرة المشتركة؛ لا نعتمد على تثبيت أو رابط رمزي في tools/dev.
+const requireAcceptance=createRequire(new URL('../acceptance/package.json',import.meta.url));
+const pg=requireAcceptance('pg');
+const {hash}=requireAcceptance('@node-rs/argon2');
 const exec = promisify(execFile);
 export const DEMO_MATERIAL_COUNT=40;
 export async function populateMaterials(create) {

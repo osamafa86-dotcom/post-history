@@ -1,6 +1,15 @@
 # غرفة الأخبار الاصطناعية
 
-المهمة 2 من #352. ثبّت اعتماديات `tools/acceptance` و`tools/dev` بـ `npm ci --prefix tools/acceptance` و`npm ci --prefix tools/dev`، وشغّل compose مع migrations وAPI وtusd والعامل وoutbox. تحتاج ffmpeg في بيئة تشغيل الأداة.
+المهمة 2 من #352. ثبّت اعتماديات البذرة المشتركة بـ `npm ci --prefix tools/acceptance`، وشغّل compose مع migrations وAPI وtusd والعامل وoutbox. تحتاج ffmpeg في بيئة تشغيل الأداة.
+
+يُحلّ `pg` و`@node-rs/argon2` عبر `createRequire` من ملف `tools/acceptance/package.json` ونقاط دخول الحزمتين العامة؛ لا حاجة لتثبيت `tools/dev/node_modules` أو إنشاء رابط رمزي في `tools/node_modules` أو تثبيت اعتماديات الخادم. قبل إعداد الخدمات افحص الاستيراد من جذر المستودع:
+
+```sh
+node --input-type=module -e "await import('./tools/dev/seed-demo.mjs'); console.log('Demo imports ready')"
+node --test tools/dev/seed-demo.test.mjs
+```
+
+هذا فحص استيراد واختبارات وحدة، وليس تشغيل البذرة أو إثبات SQL. رحلة التجارة تعتمد على إصلاح #376 في main قبل اعتماد خرج التشغيل.
 
 مرّر من البيئة `DEMO_LOCAL_ONLY=1` و`DATABASE_URL` و`API_URL` و`ROOT_URL` و`TUS_URL` و`SP_WEBHOOK_SECRET` الخاص بالمزوّد التجريبي المحلي فقط. لا تحفظها في ملف أو PR. ثم:
 
