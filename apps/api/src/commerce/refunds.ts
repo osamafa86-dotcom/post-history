@@ -219,10 +219,10 @@ async function postRefund(tx: Tx, r: RefundRow, saleId: string): Promise<string>
   if (reserve > 0n) out.push({ account: { kind: 'refund_reserve', currency }, amount: money(reserve, currency) });
   const { entryId } = await postEntry(tx, {
     kind: 'refund',
-    // مرجع القيد الطلب كقيد البيعة، والاسترداد في تفاصيله
-    referenceType: 'order',
-    referenceId: r.orderId,
-    details: { refund_id: r.id },
+    // مرجع القيد الاسترداد نفسه (للطلب أكثر من استرداد جزئي)، والطلب في تفاصيله وفي قيد البيعة المعكوس
+    referenceType: 'refund',
+    referenceId: r.id,
+    details: { order_id: r.orderId },
     idempotencyKey: `refund:${r.id}`,
     reversesEntryId: saleId,
     actorId: null,

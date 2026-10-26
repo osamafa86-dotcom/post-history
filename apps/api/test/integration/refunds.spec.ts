@@ -173,7 +173,7 @@ describe('refunds and commission rules (/v1/orders/{id}/refunds, /v1/commission-
     const ts = Math.floor(Date.now() / 1000);
     await http().post('/payments/webhooks/sandbox').set({ 'content-type': 'application/json', 'x-timestamp': String(ts), 'x-signature': `v1=${signWebhook(SECRET, ts, body)}` }).send(body.toString('utf8')).expect(200);
     expect((await http().get(`/v1/orders/${o.id}/refunds`).set(as(b.token)).expect(200)).body.items[0]).toMatchObject({ id: r.body.id, status: 'succeeded' });
-    expect(await count(`SELECT count(*)::int AS n FROM journal_entries WHERE kind = 'refund' AND reference_type = 'order' AND reference_id = $1 AND details->>'refund_id' = $2`, [o.id, r.body.id])).toBe(1);
+    expect(await count(`SELECT count(*)::int AS n FROM journal_entries WHERE kind = 'refund' AND reference_type = 'refund' AND reference_id = $1 AND details->>'order_id' = $2`, [r.body.id, o.id])).toBe(1);
     expect((await order(b.token, o.id)).status).toBe('refunded');
   });
 
