@@ -774,6 +774,56 @@ open class CommerceAPI {
     }
 
     /**
+     طابور تعارض دعوات المشترين (مدير النظام،
+     
+     - parameter state: (query)  (optional)
+     - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
+     - parameter limit: (query) حجم الصفحة (optional, default to 50)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: BuyerInviteConflictPage
+     */
+    open class func listBuyerInviteConflicts(state: BuyerInviteConflictState? = nil, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> BuyerInviteConflictPage {
+        return try await listBuyerInviteConflictsWithRequestBuilder(state: state, cursor: cursor, limit: limit, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     طابور تعارض دعوات المشترين (مدير النظام،
+     - GET /buyer-invite-conflicts
+     - دعوات ببريد حساب قائم خارج المؤسسة، ردّت كالدعوة الناجحة فلم تكشف نوع الحساب. لمدير النظام وحده، وغيره `404` بشكل المفقود فلا يُعرف وجود الطابور.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter state: (query)  (optional)
+     - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
+     - parameter limit: (query) حجم الصفحة (optional, default to 50)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<BuyerInviteConflictPage> 
+     */
+    open class func listBuyerInviteConflictsWithRequestBuilder(state: BuyerInviteConflictState? = nil, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<BuyerInviteConflictPage> {
+        let localVariablePath = "/buyer-invite-conflicts"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        var localVariableUrlComponents = URLComponents(string: localVariableURLString)
+        let localVariableQueryParameters: [String: (wrappedValue: (any Sendable)?, isExplode: Bool)] = [
+            "state": (wrappedValue: state?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "cursor": (wrappedValue: cursor?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "limit": (wrappedValue: limit?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+        ]
+        localVariableUrlComponents?.queryItems = APIHelper.mapValuesToQueryItems(localVariableQueryParameters)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<BuyerInviteConflictPage>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      أعضاء المؤسسة وأدوارهم
      
      - parameter orgId: (path) معرّف المؤسسة المشترية 
@@ -1255,6 +1305,54 @@ open class CommerceAPI {
         let localVariableRequestBuilder: RequestBuilder<CatalogListing>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "PUT", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     حسم تعارض دعوة بالحالة وحدها
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter conflictId: (path)  
+     - parameter buyerInviteConflictResolve: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: BuyerInviteConflict
+     */
+    open class func resolveBuyerInviteConflict(idempotencyKey: String, conflictId: UUID, buyerInviteConflictResolve: BuyerInviteConflictResolve, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> BuyerInviteConflict {
+        return try await resolveBuyerInviteConflictWithRequestBuilder(idempotencyKey: idempotencyKey, conflictId: conflictId, buyerInviteConflictResolve: buyerInviteConflictResolve, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     حسم تعارض دعوة بالحالة وحدها
+     - POST /buyer-invite-conflicts/{conflict_id}/resolve
+     - لمدير النظام وحده، وغيره `404`. يلزمه رمز TOTP حاضر في الجسم (`401 totp_required` لغيابه أو خطئه). **الحسم:** `suspended` يعلّق العضو المدعو البديل، و`dismissed` يغلقه نهائيًا ويحرر مقعده. **الانتقالات:** من `pending` إلى الحالتين، ومن `suspended` إلى `dismissed`. غيرها `409 invalid_transition`. **التوثيق:** لا حقل نص حر، ويُسجَّل في التدقيق بـ `buyer_member.invite_conflict_resolved` و`conflict_id`.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter conflictId: (path)  
+     - parameter buyerInviteConflictResolve: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<BuyerInviteConflict> 
+     */
+    open class func resolveBuyerInviteConflictWithRequestBuilder(idempotencyKey: String, conflictId: UUID, buyerInviteConflictResolve: BuyerInviteConflictResolve, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<BuyerInviteConflict> {
+        var localVariablePath = "/buyer-invite-conflicts/{conflict_id}/resolve"
+        let conflictIdPreEscape = "\(APIHelper.mapValueToPathItem(conflictId))"
+        let conflictIdPostEscape = conflictIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{conflict_id}", with: conflictIdPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: buyerInviteConflictResolve, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<BuyerInviteConflict>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
 
     /**
