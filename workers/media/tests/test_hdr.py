@@ -54,3 +54,35 @@ def test_sdr_keeps_its_untagged_path(tmp_path: Path):
     info = probe(src)
     assert not info.hdr
     assert set(info.to_dict()) <= SERVER_TECHNICAL_KEYS
+
+
+def converted_clip(path: Path, transfer: str | None) -> Path:
+    """محتوى SDR محوَّل فعلًا إلى HLG أو PQ (أبيض 100 شمعة)، أو SDR كما هو حين `transfer` فارغ."""
+    vf = "format=yuv420p"
+    tags: list[str] = []
+    if transfer:
+        vf = ("zscale=tin=bt709:min=bt709:pin=bt709:t=linear:p=bt709:npl=100,format=gbrpf32le,"
+              f"zscale=tin=linear:pin=bt709:min=gbr:p=bt2020:t={transfer}:m=bt2020nc:r=tv:npl=100,format=yuv420p10le")
+        tags = ["-color_primaries", "bt2020", "-color_trc", transfer, "-colorspace", "bt2020nc"]
+    run([FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-f", "lavfi",
+         "-i", "testsrc2=size=640x360:rate=30:duration=1", "-vf", vf, "-c:v", "libx265", "-preset", "ultrafast",
+         "-x265-params", "log-level=error:pools=none", *tags, str(path)], 120)
+    return path
+
+
+def _yavg(path: Path) -> float:
+    out = run([FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-i", str(path),
+               "-vf", "signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-", "-f", "null", "-"], 60).decode()
+    values = [float(line.split("=")[1]) for line in out.splitlines() if "YAVG=" in line]
+    return sum(values) / len(values)
+
+
+@pytest.mark.parametrize("transfer", ["arib-std-b67", "smpte2084"], ids=["hlg", "pq"])
+def test_tonemap_keeps_sdr_level_content_within_ten_percent(tmp_path: Path, transfer: str):
+    # hable كان يعتم هذا المحتوى بنحو 37%؛ المشغّل المختار يبقيه في حدود 10% من مسار SDR
+    sdr = make_proxy(converted_clip(tmp_path / "sdr.mp4", None), tmp_path / "sdr-proxy.mp4")
+    hdr_src = converted_clip(tmp_path / "hdr.mp4", transfer)
+    out = make_proxy(hdr_src, tmp_path / "hdr-proxy.mp4")
+    assert probe(hdr_src).hdr and not out.hdr and not sdr.hdr
+    ref, got = _yavg(tmp_path / "sdr-proxy.mp4"), _yavg(tmp_path / "hdr-proxy.mp4")
+    assert abs(got - ref) <= 0.10 * ref, (got, ref)
