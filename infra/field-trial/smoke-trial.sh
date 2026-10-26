@@ -100,6 +100,11 @@ from_gate() { "$T" exec -T ingest-gate wget -q -S -O /dev/null "http://api-hooks
   || fail "the gate's address reaches /internal/media/ (INTERNAL_SOURCE_PATHS not applied)"
 [ "$(from_gate "/internal/tusd-hooks/$(hex 32)")" = 403 ] || fail "the gate's address reaches the tusd hook path"
 echo "the gate's address reaches /internal/ingest/ alone: ok"
+# Buyer delivery stays off in the trial until a full sandbox purchase passes; audio alignment is on.
+wenv="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$("$T" ps -q media-worker)")"
+grep -qx 'MEDIA_ENABLE_DELIVERY=false' <<<"$wenv" || fail "the media worker runs with delivery not pinned off"
+grep -qx 'MEDIA_ENABLE_ALIGNMENT=true' <<<"$wenv" || fail "the media worker runs without audio alignment"
+echo "media worker: delivery off, alignment on: ok"
 # Address isolation: each name answers on its own address only (active probing does not link A and B).
 if curl -sS --max-time 10 -o /dev/null --cacert "$WORK/ca.crt" --resolve ingest.localhost:443:127.0.0.1 https://ingest.localhost/files/ 2>/dev/null; then
   fail "the ingest name answers on the main address"; fi
@@ -147,8 +152,24 @@ DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_P
 API_URL="http://127.0.0.1:$API_PORT/v1" CA_FILE="$WORK/ca.crt" INGEST_SIGNING_KEY="$WORK/ingest/signing.pem" \
   node "$ROOT/infra/field-trial/e2e-edge-upload.mjs" || fail "uploads through the edge"
 
+# BACKUP_MEASURE_MIB=N: N MiB of incompressible synthetic objects (64 MiB each, like the originals) go into the uploads
+# bucket first, and the backup is timed, full then incremental; the result (with both restore drills) is written to
+# BACKUP_MEASURE_OUT with the measurement schema. Synthetic data only: no real file leaves the host.
+if [ -n "${BACKUP_MEASURE_MIB:-}" ]; then
+  n=$(( (BACKUP_MEASURE_MIB + 63) / 64 ))
+  "$T" exec -T -e "MC_HOST_l=http://$S3_ACCESS_KEY:$S3_SECRET_KEY@127.0.0.1:9000" minio sh -c \
+    "for i in \$(seq 1 $n); do head -c 67108864 /dev/urandom | mc pipe --quiet l/$S3_BUCKET_UPLOADS/measure/\$i.bin >/dev/null || exit 1; done" \
+    || fail "seeding synthetic objects"
+  m_started="$(date -u +%FT%TZ)"
+fi
+tb0=$(date +%s.%N)
 "$T" run --rm -T backup once || fail "backup once"
+tb1=$(date +%s.%N)
 [ -s "$WORK/backups/last-success.json" ] || fail "no last-success.json"
+if [ -n "${BACKUP_MEASURE_MIB:-}" ]; then
+  sleep 1   # a new dump name (seconds resolution)
+  ti0=$(date +%s.%N); "$T" run --rm -T backup once >/dev/null || fail "incremental backup"; ti1=$(date +%s.%N)
+fi
 # The backup role reads and cannot write.
 ro() { "$T" exec -T -e PGPASSWORD="$BACKUP_PG_PASSWORD" postgres psql -h 127.0.0.1 -U backup_reader -d "$POSTGRES_DB" -XAtq -c "$1"; }
 [ "$(ro 'select count(*) >= 0 from public.users')" = t ] || fail "backup_reader cannot read"
@@ -187,14 +208,54 @@ if W_ cat "w/offsite/pg/$rdump" >/dev/null 2>&1; then fail "the backup key can r
 A_ rm --recursive --versions --force a/offsite/pg/ >/dev/null 2>&1 || true
 A_ cat "a/offsite/pg/$rdump" | cmp -s - "$WORK/backups/pg/$rdump" || fail "a locked version was purged by the provider's administrator"
 mkdir -p "$WORK/offsite" && chmod 777 "$WORK/offsite"
+tp0=$(date +%s.%N)
 docker run --rm --network "${TRIAL_PROJECT}_default" -u "$(id -u):$(id -g)" -v "$WORK/offsite:/out" \
   -e "MC_HOST_a=http://$BACKUP_REMOTE_ROOT_USER:$BACKUP_REMOTE_ROOT_PASSWORD@backup-remote:9000" -e MC_CONFIG_DIR=/tmp/.mc \
   pgsty/mc:RELEASE.2026-10-18T00-00-00Z@sha256:6ecdaec70bc5e8cf9d0e9a70c190f3beb1c83f11617ff4333f1fcd71ab1daf18 \
   mirror --quiet a/offsite /out >/dev/null || fail "pulling the copy back from the second provider"
+tp1=$(date +%s.%N)
 COMPOSE="$T" BACKUP_DIR="$WORK/offsite" DRILL_ENV=local DRILL_SOURCE=second-provider \
   "$ROOT/infra/backup/restore-drill.sh" --key "$WORK/recipient.key" --out "${DRILL_REMOTE_OUT:-$WORK/drill-remote.json}" \
   || fail "restore drill from the second provider's copy"
 echo "second provider: locked, write-only key, undeletable, restore drill from its copy: ok"
+if [ -n "${BACKUP_MEASURE_MIB:-}" ]; then
+  du_b() { "$T" run --rm --no-deps -T -v "$1:/d:ro" --entrypoint sh backup -c 'du -sb /d | cut -f1' </dev/null; }
+  python3 - "${BACKUP_MEASURE_OUT:-$WORK/backup-measure.json}" "$m_started" "$BACKUP_MEASURE_MIB" "$n" \
+    "$tb0" "$tb1" "$ti0" "$ti1" "$tp0" "$tp1" "$(du_b "$WORK/backups/objects")" "$WORK/backups/last-success.json" \
+    "${DRILL_OUT:-$WORK/drill.json}" "${DRILL_REMOTE_OUT:-$WORK/drill-remote.json}" "${BACKUP_MEASURE_ENV:-local docker compose}" <<'PY'
+import json, sys, datetime
+out, started, mib, n, tb0, tb1, ti0, ti1, tp0, tp1, obj_bytes, last, drill, drill_remote, env = sys.argv[1:]
+last, d, r = (json.load(open(f)) for f in (last, drill, drill_remote))
+s = lambda a, b: round(float(b) - float(a), 2)
+m = {
+  "seeded_mib": int(mib), "seeded_objects": int(n),
+  "backup_full_s": s(tb0, tb1), "backup_incremental_s": s(ti0, ti1),
+  "backup_full_mib_per_s": round(int(n) * 64 / max(s(tb0, tb1), 0.01), 1),
+  "objects_encrypted_bytes": int(obj_bytes), "pg_dump_bytes_encrypted": last["pg_dump_bytes"],
+  "objects_total": last["objects_total"], "second_provider_copy": bool(last["remote"]),
+  "second_provider_pull_s": s(tp0, tp1),
+  "restore_decrypt_s": d["metrics"]["decrypt_s"], "restore_pg_s": d["metrics"]["pg_restore_s"],
+  "restore_from_second_provider_passed": r["metrics"]["drill_passed"], "restore_local_passed": d["metrics"]["drill_passed"],
+  "backup_interval_h": 24,
+}
+ok = m["restore_local_passed"] and m["restore_from_second_provider_passed"] and m["second_provider_copy"]
+json.dump({
+  "schema_version": 1, "tool": "other", "role": "infra", "test_name": "recovery",
+  "started_at": started, "ended_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+  "result": "partial" if ok else "fail",
+  "device": {"platform": "server", "model": env},
+  "metrics": m,
+  "notes": ("Trial backup at size (infra/field-trial/smoke-trial.sh with BACKUP_MEASURE_MIB): synthetic incompressible objects "
+            "in the uploads bucket, encrypted per object (CMS AES-256-GCM) and mirrored to a stand-in second provider under "
+            "compliance object lock, then restore drills from the local copy and from the copy pulled back from the second "
+            "provider. Partial: synthetic data on this machine, not the trial host; the daily interval means up to 24 h of "
+            "loss against the plan's 15 minutes (continuous WAL archiving is not built); the object restore time is the pull "
+            "back plus decryption of the sample, not a full re-upload into a new MinIO."),
+}, open(out, "w"), ensure_ascii=False, indent=2)
+open(out, "a").write("\n")
+print("backup measurement:", out)
+PY
+fi
 
 # Monitoring (infra/observability): every check passes, a stopped worker is a FAIL with one alert line, recovery is
 # logged, the /health endpoint follows the result, the status board renders in Arabic.

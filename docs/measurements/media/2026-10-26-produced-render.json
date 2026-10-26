@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "media",
+  "test_name": "media-produced-render",
+  "started_at": "2026-10-26T04:25:20.048Z",
+  "ended_at": "2026-10-26T04:29:14.569Z",
+  "result": "partial",
+  "device": {
+    "platform": "server",
+    "model": "4 vCPU"
+  },
+  "upload_path": "n/a",
+  "file": {
+    "duration_s": 60.0,
+    "codec": "h264+hevc",
+    "vfr": false,
+    "hdr": true
+  },
+  "metrics": {
+    "1080p-h264_render_s": 57.61,
+    "1080p-h264_sign_s": 0.74,
+    "1080p-h264_render_x_realtime": 0.96,
+    "1080p-h264_source_bytes": 130271039,
+    "1080p-h264_produced_bytes": 139269778,
+    "1080p-h264_produced_height": 1080,
+    "1080p-h264_produced_hdr": false,
+    "1080p-h264_planted_values_found": 0,
+    "1080p-hlg_render_s": 69.15,
+    "1080p-hlg_sign_s": 0.47,
+    "1080p-hlg_render_x_realtime": 1.152,
+    "1080p-hlg_source_bytes": 91768311,
+    "1080p-hlg_produced_bytes": 82179543,
+    "1080p-hlg_produced_height": 1080,
+    "1080p-hlg_produced_hdr": false,
+    "1080p-hlg_planted_values_found": 0,
+    "planted_values_found_total": 0,
+    "encoder": "libx264 CRF 18",
+    "ffmpeg_version": "8.0.1"
+  }
+}

@@ -108,6 +108,9 @@ if [ -f "$ENV_FILE" ]; then
   esac
   [ "$(val UPLOAD_VERIFIER)" = external ] && ok "UPLOAD_VERIFIER=external (media worker verifies)" || bad "UPLOAD_VERIFIER=external"
   [ -z "$(val CADDY_GLOBAL_EXTRA)" ] && ok "no test-only Caddy option (local_certs)" || bad "CADDY_GLOBAL_EXTRA must be empty on the trial host"
+  # حزمة التسليم ثابتة مطفأة في docker-compose.trial.yml حتى يمر شراء sandbox كاملًا: لا تُفتح من ملف الأسرار.
+  grep -q '^MEDIA_ENABLE_DELIVERY=' "$ENV_FILE" && bad "MEDIA_ENABLE_DELIVERY must not be set in the secrets (delivery stays off in the trial)" \
+    || ok "buyer delivery not switchable from the secrets"
   MAIN_DOMAIN="$(val MAIN_DOMAIN)" INGEST_DOMAIN="$(val INGEST_DOMAIN)" MAIN_IP="$(val MAIN_IP)" INGEST_IP="$(val INGEST_IP)"
   BACKUP_DIR="$(val BACKUP_DIR)" BACKUP_RECIPIENT_CERT="$(val BACKUP_RECIPIENT_CERT)"
 else
@@ -191,6 +194,8 @@ if [ "$RUNNING" = 1 ]; then
   has() { grep -q "^$2=." <<<"$(env_of "$1")" && echo 1 || echo 0; }
   check "the gate and the API carry the qa slot only while a window is open" \
     "[ -n \"\$(env_of ingest-gate)\" ] && [ \"\$(has ingest-gate INGEST_QA_PUBLIC_KEY)\$(has api ACCEPTANCE_UPLOADER_USER_ID)\" = $qa_want$qa_want ]"
+  check "the media worker runs with delivery off and alignment on" \
+    "e=\"\$(env_of media-worker)\" && grep -qx 'MEDIA_ENABLE_DELIVERY=false' <<<\"\$e\" && grep -qx 'MEDIA_ENABLE_ALIGNMENT=true' <<<\"\$e\""
   check "/internal is not reachable from outside" "[ \"\$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' https://$MAIN_DOMAIN/internal/x)\" = 404 ]"
   check "ingest name does not answer on MAIN_IP" "! curl -sS --max-time 10 -o /dev/null --resolve $INGEST_DOMAIN:443:$MAIN_IP https://$INGEST_DOMAIN/files/"
   last="$BACKUP_DIR/last-success.json"

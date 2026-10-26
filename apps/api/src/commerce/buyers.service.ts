@@ -156,7 +156,7 @@ export class BuyersService {
           .insert(buyerInviteConflicts)
           .values({ organizationId: orgId, email: input.email, existingUserId: taken.id, role: input.role, invitedBy: p.userId, inviteExpiresAt: sql`now() + interval '24 hours'` })
           .returning({ id: buyerInviteConflicts.id, expiresAt: buyerInviteConflicts.inviteExpiresAt });
-        await audit(tx, p.userId, 'buyer_member.invite_conflict', taken.id, { organization_id: orgId, target_user_id: taken.id, role: input.role });
+        await audit(tx, p.userId, 'buyer_member.invite_conflict', taken.id, { organization_id: orgId, target_user_id: taken.id, conflict_id: c!.id, role: input.role });
         return { conflict: true as const, userId: c!.id, expiresAt: iso(c!.expiresAt)! };
       }
       const created = await this.createMember(tx, orgId, p.userId, input.email, input.role, passwordHash, token);

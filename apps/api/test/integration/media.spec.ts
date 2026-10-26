@@ -310,6 +310,30 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
     });
   });
 
+  describe('GET /internal/media/files/{file_id}', () => {
+    const getFile = (id: string, t?: string) => auth(http().get(`/internal/media/files/${id}`), t);
+
+    it('returns the storage key and checksum of a source file in the contract shape, never editorial-only files; 410 unknown; 404 without the token', async () => {
+      const s = await completed();
+      const originalId = (await verify(s.id, report()).expect(200)).body.file_id as string;
+      const res = await getFile(originalId).expect(200);
+      const valid = schemaValidator('MediaSourceFile');
+      expect(valid(res.body) ? [] : valid.errors).toEqual([]);
+      expect(res.body).toMatchObject({ file_id: originalId, material_id: s.materialId, kind: 'original', state: 'verified', storage_key: `tus/${s.id}` });
+      expect(JSON.stringify(res.body)).not.toContain('clip.mp4');
+      for (const kind of ['transcript', 'captions', 'shot_list']) {
+        const key = `derived/${s.materialId}/${originalId}/${kind}`;
+        storage.sizes.set(key, 40);
+        const mime = kind === 'captions' ? 'text/vtt' : 'application/json';
+        const id = (await derive(originalId, { kind, storage_key: key, sha256: hex(randomBytes(32)), size_bytes: 40, mime_type: mime, technical: { duration_ms: 1000, start_pts_us: 0 } }).expect(200)).body.file_id as string;
+        expect((await getFile(id).expect(410)).body.code).toBe('media_resource_gone');
+      }
+      expect((await getFile('00000000-0000-4000-8000-000000000000').expect(410)).body.code).toBe('media_resource_gone');
+      await getFile('not-a-uuid').expect(410);
+      await getFile(originalId, 'x'.repeat(43)).expect(404);
+    });
+  });
+
   // المحاذاة الصوتية (v0.3، #249): العامل يقيسها حين يتحقق الثاني من النسخة الخفيفة والأصل، فيجد المقابل في الجلسة
   describe('PUT /internal/media/files/{file_id}/alignment', () => {
     const align = (fileId: string, body: object, t?: string) => auth(http().put(`/internal/media/files/${fileId}/alignment`), t).send(body);

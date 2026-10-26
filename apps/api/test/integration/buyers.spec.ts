@@ -182,7 +182,10 @@ describe('buyer organizations (/v1/buyer-organizations)', () => {
     await expect(dismissInviteConflict(db, deps, { conflictId: queued!.id, adminId: sysadmin.id, totp: totp(sysadmin.totpSecret!, Date.now()) })).rejects.toMatchObject({ code: 'already_resolved' });
     expect((await get(owner.token, `/buyer-organizations/${o.id}/members`).expect(200)).body.items.map((m: { user_id: string }) => m.user_id)).not.toContain(taken.body.user_id);
     const { rows: audits } = await h.pool.query(`SELECT action, details FROM audit_log WHERE target_id = $1 ORDER BY id`, [reporter.id]);
-    expect(audits.map((a) => a.action)).toEqual(['buyer_member.invite_conflict', 'buyer_member.invite_conflict_resolved']);
+    expect(audits.map((a) => [a.action, a.details.conflict_id])).toEqual([
+      ['buyer_member.invite_conflict', queued!.id],
+      ['buyer_member.invite_conflict_resolved', queued!.id],
+    ]);
     expect(JSON.stringify(audits)).not.toContain(reporter.email.toLowerCase());
   });
 });

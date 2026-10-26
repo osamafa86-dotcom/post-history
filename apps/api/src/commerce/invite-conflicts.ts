@@ -69,6 +69,7 @@ export async function dismissInviteConflict(
     await audit(tx, input.adminId, 'buyer_member.invite_conflict_resolved', c.existingUserId, {
       organization_id: c.organizationId,
       target_user_id: c.existingUserId,
+      conflict_id: c.id,
       role: c.role,
     });
   });
