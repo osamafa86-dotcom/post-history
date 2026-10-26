@@ -1,3 +1,4 @@
+import PostHistoryAPI
 import SwiftUI
 import UploadCore
 
@@ -21,7 +22,11 @@ struct UploadRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(record.filename).font(.headline).lineLimit(1)
+            if record.kind == .proxy {
+                Label("upload.kind.proxy", systemImage: "bolt.horizontal.fill").font(.headline)
+            } else {
+                Text(record.filename).font(.headline).lineLimit(1)
+            }
             switch record.phase {
             case .transferring:
                 ProgressView(value: record.fractionTransferred)
@@ -39,7 +44,13 @@ struct UploadRow: View {
             case .failed(let failure):
                 Label { Text(failure.labelKey) } icon: { Image(systemName: "xmark.octagon.fill").foregroundStyle(.red) }.font(.subheadline)
             default:
-                Text(record.phase.labelKey).font(.caption).foregroundStyle(.secondary)
+                if queue.preparingProxy.contains(record.materialId), record.kind == .original {
+                    Label("upload.preparingProxy", systemImage: "wand.and.rays").font(.caption).foregroundStyle(.secondary)
+                } else if queue.waitingForProxy.contains(record.id) {
+                    Label("upload.waitingForProxy", systemImage: "hourglass").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text(record.phase.labelKey).font(.caption).foregroundStyle(.secondary)
+                }
             }
         }
         .swipeActions {

@@ -1,1 +1,1 @@
-First internal test build for the field trial.
+Improved resumable upload reliability over unstable field networks and updated data transparency disclosures for accredited reporters.
