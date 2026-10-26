@@ -15,10 +15,12 @@ object UploadScheduler {
 
     /** Starts or re-arms the transfer host. Returns false when the system refused (nothing is lost: next open retries). */
     fun start(context: Context, remainingBytes: Long): Boolean {
+        val settings = (context.applicationContext as PostHistoryApp).container.settings
+        if (settings.uploadsPaused) return false
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             val info = JobInfo.Builder(JOB_ID, ComponentName(context, UploadJobService::class.java))
                 .setUserInitiated(true)
-                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                .setRequiredNetworkType(if (settings.uploadOverWifiOnly) JobInfo.NETWORK_TYPE_UNMETERED else JobInfo.NETWORK_TYPE_ANY)
                 .setEstimatedNetworkBytes(remainingBytes.coerceAtLeast(1), 0)
                 .build()
             context.getSystemService(JobScheduler::class.java).schedule(info) == JobScheduler.RESULT_SUCCESS

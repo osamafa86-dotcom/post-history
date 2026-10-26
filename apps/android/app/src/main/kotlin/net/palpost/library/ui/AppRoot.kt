@@ -17,10 +17,11 @@ import net.palpost.library.ui.material.NewMaterialScreen
 import net.palpost.library.ui.security.WipeDoneScreen
 import net.palpost.library.ui.setup.TaskKillerSetupScreen
 import net.palpost.library.ui.notifications.NotificationsScreen
+import net.palpost.library.ui.receipt.ReceiptScreen
 import net.palpost.library.ui.review.ReviewScreen
 import net.palpost.library.ui.uploads.UploadsScreen
 
-private enum class Screen { Home, FormPreview, NewMaterial, Uploads, Materials, Notifications, Review, Setup, SetupThenNewMaterial }
+private enum class Screen { Home, FormPreview, NewMaterial, Uploads, Materials, Notifications, Review, Receipt, Setup, SetupThenNewMaterial }
 
 @Composable
 fun AppRoot(container: AppContainer, openRequest: String? = null, onOpenHandled: () -> Unit = {}) {
@@ -36,15 +37,25 @@ fun AppRoot(container: AppContainer, openRequest: String? = null, onOpenHandled:
         }
         is AuthState.SignedIn -> {
             var screen by rememberSaveable { mutableStateOf(Screen.Home) }
+            // Arguments of the reporter flow (#387): the receipt shown on A3, the draft or material A1 opens with.
+            var receiptTaskId by rememberSaveable { mutableStateOf<String?>(null) }
+            var draftId by rememberSaveable { mutableStateOf<String?>(null) }
+            var attachTo by rememberSaveable { mutableStateOf<String?>(null) }
+            var receiptBack by rememberSaveable { mutableStateOf(Screen.Uploads) }
+            fun newMaterial(draft: String? = null, material: String? = null) {
+                draftId = draft; attachTo = material
+                screen = if (container.settings.taskKillerSetupDone) Screen.NewMaterial else Screen.SetupThenNewMaterial
+            }
+            fun receipt(taskId: String, from: Screen) { receiptTaskId = taskId; receiptBack = from; screen = Screen.Receipt }
             androidx.compose.runtime.LaunchedEffect(openRequest) {
                 if (openRequest == MainActivity.OPEN_NOTIFICATIONS) { screen = Screen.Notifications; onOpenHandled() }
             }
-            BackHandler(enabled = screen != Screen.Home) { screen = Screen.Home }
+            BackHandler(enabled = screen != Screen.Home) { screen = if (screen == Screen.Receipt) receiptBack else Screen.Home }
             when (screen) {
                 Screen.Home -> HomeScreen(
                     container,
                     onOpenForm = { screen = Screen.FormPreview },
-                    onNewMaterial = { screen = if (container.settings.taskKillerSetupDone) Screen.NewMaterial else Screen.SetupThenNewMaterial },
+                    onNewMaterial = { newMaterial() },
                     onUploads = { screen = Screen.Uploads },
                     onMaterials = { screen = Screen.Materials },
                     onNotifications = { screen = Screen.Notifications },
@@ -52,9 +63,16 @@ fun AppRoot(container: AppContainer, openRequest: String? = null, onOpenHandled:
                     onSetup = { screen = Screen.Setup },
                 )
                 Screen.FormPreview -> FormPreviewScreen(container, onBack = { screen = Screen.Home })
-                Screen.NewMaterial -> NewMaterialScreen(container, onBack = { screen = Screen.Home }, onQueued = { screen = Screen.Uploads })
-                Screen.Uploads -> UploadsScreen(container, onBack = { screen = Screen.Home })
-                Screen.Materials -> MyMaterialsScreen(container, onBack = { screen = Screen.Home })
+                Screen.NewMaterial -> NewMaterialScreen(container, draftId = draftId, attachToMaterialId = attachTo, onBack = { screen = Screen.Home }, onQueued = { screen = Screen.Uploads })
+                Screen.Uploads -> UploadsScreen(
+                    container, onBack = { screen = Screen.Home }, onReceipt = { receipt(it, Screen.Uploads) },
+                    onNewMaterial = { newMaterial() }, onOpenDraft = { newMaterial(draft = it) },
+                )
+                Screen.Receipt -> receiptTaskId?.let { id -> ReceiptScreen(container, id, onBack = { screen = receiptBack }) }
+                Screen.Materials -> MyMaterialsScreen(
+                    container, onBack = { screen = Screen.Home }, onNewMaterial = { newMaterial() },
+                    onReceipt = { receipt(it, Screen.Materials) }, onReplacement = { newMaterial(material = it) },
+                )
                 Screen.Notifications -> NotificationsScreen(container, onBack = { screen = Screen.Home })
                 Screen.Review -> ReviewScreen(container, onBack = { screen = Screen.Home })
                 Screen.Setup -> TaskKillerSetupScreen(container, onDone = { screen = Screen.Home }, onBack = { screen = Screen.Home })

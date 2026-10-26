@@ -1,4 +1,5 @@
 [versions]
+zxing = "3.5.3"
 agp = "8.13.2"
 kotlin = "2.3.21"
 ksp = "2.3.12"
@@ -32,6 +33,8 @@ androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = 
 androidx-compose-ui = { module = "androidx.compose.ui:ui" }
 androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
+androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 play-integrity = { module = "com.google.android.play:integrity", version.ref = "play-integrity" }
 firebase-messaging = { module = "com.google.firebase:firebase-messaging", version.ref = "firebase-messaging" }
 androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
