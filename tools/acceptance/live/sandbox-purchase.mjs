@@ -275,7 +275,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       check("the licence is revoked and the order refunded", (await one(`SELECT status FROM licenses WHERE id = $1`, [lic[0].id]))?.status === "revoked" && (await http.get(tokens.buyer_admin, `/orders/${orderId}`)).body?.status === "refunded");
     }
   } catch (e) {
-    fails.push(`aborted: ${e.message}`); console.error(e.stack ?? e);
+    fails.push(`aborted: ${String(e.message).replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, "<url>").replace(/Bearer\s+\S+/gi, "Bearer <redacted>").slice(0, 300)}`); console.error(e.stack ?? e);
   } finally { await db.end(); }
 
   const failed = fails.length > 0;
