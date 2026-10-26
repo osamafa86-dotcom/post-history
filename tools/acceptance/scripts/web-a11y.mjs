@@ -6,7 +6,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { banner } from "../lib/measurement.mjs";
-import { envMissing, url, loadPlaywright, login, envDoc, checkList, finishAndWrite, exitCodeFor, EnvironmentError } from "./web-gap-helpers.mjs";
+import { scrub, envMissing, url, loadPlaywright, login, envDoc, checkList, finishAndWrite, exitCodeFor, EnvironmentError } from "./web-gap-helpers.mjs";
 
 export const BLOCKING = new Set(["serious", "critical"]);
 
@@ -70,7 +70,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     // التقرير لا يُكتب فوق ملف متتبَّع: مجلد مؤقت ما لم يُعيَّن A11Y_REPORT_PATH
     const report = env.A11Y_REPORT_PATH ?? join(tmpdir(), "post-history-a11y", "a11y-report.md");
     mkdirSync(dirname(report), { recursive: true });
-    writeFileSync(report, reportText(rows, started));
+    writeFileSync(report, scrub(reportText(rows, started)));
     const failures = checks.filter((x) => !x.ok);
     const out = finishAndWrite(doc, argv, "browser", failures.length ? "fail" : "partial", {
       pages: checks.filter((x) => /Axe/.test(x.name)).length, checks: checks.length, checks_failed: failures.length, axe_violations: rows.length,
@@ -79,8 +79,8 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     }, failures.length ? failures.map((x) => `${x.name}: ${x.detail}`).join("؛ ") : "Axe آلي (wcag2a وwcag2aa) بعد اكتمال المحتوى، وسمة dir؛ لا لوحة مفاتيح ولا قارئ شاشة ولا تخطيط RTL، فالنتيجة جزئية؛ التقرير النصي خارج المستودع ما لم يُعيَّن A11Y_REPORT_PATH");
     return { code: failures.length || out.error ? 1 : 0, doc };
   } catch (error) {
-    if (error instanceof EnvironmentError) { console.error(`ENVIRONMENT: ${error.message}; nothing measured`); return { code: 2, doc: null }; }
-    finishAndWrite(doc, argv, "browser-failure", "fail", { checks: checks.length, checks_failed: 1 }, `فشل المسار: ${error.message}`);
+    if (error instanceof EnvironmentError) { console.error(`ENVIRONMENT: ${scrub(error.message)}; nothing measured`); return { code: 2, doc: null }; }
+    finishAndWrite(doc, argv, "browser-failure", "fail", { checks: checks.length, checks_failed: 1 }, `فشل المسار: ${scrub(error.message)}`);
     return { code: exitCodeFor(error), doc };
   } finally { await browser?.close(); }
 }

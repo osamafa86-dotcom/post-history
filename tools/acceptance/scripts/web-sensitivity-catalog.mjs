@@ -2,7 +2,7 @@
 // يثبت وسم مادة حساسة في نموذج الرفع، ويقارن تفاصيلها بتفاصيل مادة غير موسومة (ضابط)، ثم يتحقق أن دور الكتالوج
 // يرى المادة غير الموسومة في البحث ولا يرى الموسومة. غياب الموسومة عن الواجهة لا يثبت غيابها عن API: ذلك لـ pii-leak وtenant-isolation.
 import { banner } from "../lib/measurement.mjs";
-import { envMissing, url, title, syntheticClip, loadPlaywright, login, envDoc, checkList, finishAndWrite, exitCodeFor, EnvironmentError } from "./web-gap-helpers.mjs";
+import { scrub, envMissing, url, title, syntheticClip, loadPlaywright, login, envDoc, checkList, finishAndWrite, exitCodeFor, EnvironmentError } from "./web-gap-helpers.mjs";
 
 export const MARKER = /حساس|Sensitive|قاصر|Minor|graphic|injur|مصاب/i;
 
@@ -74,8 +74,8 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     }, failures.length ? failures.map((x) => `${x.name}: ${x.detail}`).join("؛ ") : "غياب المادة الموسومة عن بحث الواجهة بوجود ضابط يظهر بالبحث نفسه؛ غيابها عن API والتصدير لم يُقس هنا (pii-leak وtenant-isolation)، فالنتيجة جزئية؛ مقطع اصطناعي ولا لقطات ولا ملفات محفوظة");
     return { code: failures.length || out.error ? 1 : 0, doc };
   } catch (error) {
-    if (error instanceof EnvironmentError) { console.error(`ENVIRONMENT: ${error.message}; nothing measured`); return { code: 2, doc: null }; }
-    finishAndWrite(doc, argv, "browser-failure", "fail", { checks: checks.length, checks_failed: 1 }, `فشل المسار: ${error.message}`);
+    if (error instanceof EnvironmentError) { console.error(`ENVIRONMENT: ${scrub(error.message)}; nothing measured`); return { code: 2, doc: null }; }
+    finishAndWrite(doc, argv, "browser-failure", "fail", { checks: checks.length, checks_failed: 1 }, `فشل المسار: ${scrub(error.message)}`);
     return { code: exitCodeFor(error), doc };
   } finally { await browser?.close(); clip?.cleanup(); }
 }

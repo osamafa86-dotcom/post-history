@@ -5,9 +5,36 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { newResult, finish, writeResult, parseArgs } from "../lib/measurement.mjs";
 
-/** غياب المتصفح أو متغيرات البيئة خلل بيئة لا فشل مقيس: يخرج بالرمز 2 ولا يكتب نتيجة. */
+// Domain suffixes a bare hostname is recognised by. A closed list, not "any dotted word": `page.goto`, `error.message` and `web-e2e.mjs`
+// must survive, and file extensions (`ts`, `md`, `sh`, `zip`, `mov`) are deliberately absent. A hostname with an explicit port is scrubbed whatever its suffix.
+const HOST_SUFFIXES = "com|net|org|io|dev|app|co|uk|de|fr|eu|info|biz|xyz|cloud|ai|me|tv|us|ca|au|in|ps|sa|ae|tr|local|localhost|internal|lan|test|example|invalid|corp|home|arpa|edu|gov";
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Removes what a result file or the terminal must not carry: the base URL, any host or origin, IPv4 addresses and long hex runs (hashes, tokens, ids).
+ * Paths, file names, short words and everything else stay, so the failure is still readable. Pure and idempotent.
+ */
+export function scrub(text, { base = process.env.ACCEPTANCE_BASE_URL } = {}) {
+  if (typeof text !== "string" || !text) return text;
+  let out = text;
+  let origin = null, host = null;
+  try { const u = new URL(base); origin = u.origin; host = u.host; } catch { /* no usable base */ }
+  if (origin) out = out.replace(new RegExp(escapeRegExp(origin), "gi"), "<base>");
+  if (host) out = out.replace(new RegExp(`(?<![\\w.-])${escapeRegExp(host)}(?![\\w-])`, "gi"), "<base>");
+  // scheme://host[:port] or scheme://[ipv6]:port; the path after it stays
+  out = out.replace(/\bhttps?:\/\/(?:\[[0-9a-f:.]+\](?::\d{1,5})?|[^\s/"'`<>()\]\\?#]+)/gi, "<host>");
+  out = out.replace(/(?<![\w.-])(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?(?![\w-])/g, "<ip>");
+  out = out.replace(new RegExp(`(?<![\\w./@-])(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+(?:${HOST_SUFFIXES})(?::\\d{1,5})?(?![\\w-]|\\.\\w)`, "gi"), "<host>");
+  out = out.replace(/(?<![\w./@-])(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}:\d{1,5}(?![\w-])/gi, "<host>");
+  out = out.replace(/(?<![\w-])localhost(?::\d{1,5})?(?![\w-])/gi, "<host>");
+  out = out.replace(/(?<![0-9a-zA-Z])(?=[0-9a-f]*[a-f])[0-9a-f]{16,}(?![0-9a-zA-Z])/gi, "<hash>");
+  return out;
+}
+
+/** غياب المتصفح أو متغيرات البيئة خلل بيئة لا فشل مقيس: يخرج بالرمز 2 ولا يكتب نتيجة. الرسالة تُنقّى عند الإنشاء فلا تحمل مضيفًا. */
 export class EnvironmentError extends Error {
   name = "EnvironmentError";
+  constructor(message, options) { super(scrub(String(message ?? "")), options); }
 }
 
 export async function loadPlaywright() {
@@ -79,19 +106,25 @@ export function result(testName, env, extra = {}) {
  * يرمي من فرع `catch` نفسه.
  */
 export function finishAndWrite(doc, argv, slug, resultValue, metrics, notes) {
-  finish(doc, resultValue, metrics, notes);
+  // every free-text string that reaches the result passes scrub(): the notes (which carry the checks' evidence) and string metrics
+  const cleanMetrics = metrics && Object.fromEntries(Object.entries(metrics).map(([k, v]) => [k, typeof v === "string" ? scrub(v) : v]));
+  finish(doc, resultValue, cleanMetrics, scrub(notes));
   const args = parseArgs(argv);
   try {
     return { file: args["dry-run"] ? writeResult(doc, { dryRun: true }) : writeResult(doc, { slug }), error: null };
   } catch (error) {
-    console.error(`result not written: ${error.message}`);
+    console.error(`result not written: ${scrub(error.message)}`);
     return { file: null, error };
   }
 }
 
 export function checkList() {
   const checks = [];
-  const check = (name, ok, detail = "") => { checks.push({ name, ok, detail }); console.log(`${ok ? "ok" : "FAIL"} ${name}${detail ? ` — ${detail}` : ""}`); };
+  const check = (name, ok, detail = "") => {
+    const clean = scrub(String(detail));
+    checks.push({ name, ok, detail: clean });
+    console.log(`${ok ? "ok" : "FAIL"} ${scrub(name)}${clean ? ` — ${clean}` : ""}`);
+  };
   return { checks, check };
 }
 export function envDoc(env, testName, extra = {}) { return result(testName, env, { network: { profile: env.ACCEPTANCE_NETWORK_PROFILE ?? "default" }, ...extra }); }

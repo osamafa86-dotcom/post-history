@@ -7,7 +7,7 @@
 //   ACCEPTANCE_EDITOR_EMAIL=… ACCEPTANCE_EDITOR_PASSWORD=… node tools/acceptance/scripts/web-e2e.mjs
 // لا يكتب هذا الملف أي قيمة اعتماد ولا يضيف ملف وسائط إلى المستودع. يحتاج playwright في apps/web أو PLAYWRIGHT_MODULE.
 import { banner } from "../lib/measurement.mjs";
-import { envMissing, url, title, syntheticClip, loadPlaywright, login, envDoc, checkList, finishAndWrite, exitCodeFor, EnvironmentError } from "./web-gap-helpers.mjs";
+import { scrub, envMissing, url, title, syntheticClip, loadPlaywright, login, envDoc, checkList, finishAndWrite, exitCodeFor, EnvironmentError } from "./web-gap-helpers.mjs";
 
 const NOTIFICATION_WAIT_S = 90;
 
@@ -109,8 +109,8 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     }, failures.length ? failures.map((item) => `${item.name}: ${item.detail}`).join("؛ ") : "مسار واحد بمقطع اصطناعي مولّد بـffmpeg؛ زمن ظهور التنبيه بعد تغيير الحالة مقيس مرة واحدة، لا 95% من الاختبارات ولا التصعيد ولا زمن التحقق الفني، فالنتيجة جزئية؛ لم تُحفظ وسائط والحسابات من البيئة فقط");
     return { code: failures.length || out.error ? 1 : 0, doc };
   } catch (error) {
-    if (error instanceof EnvironmentError) { console.error(`ENVIRONMENT: ${error.message}; nothing measured`); return { code: 2, doc: null }; }
-    finishAndWrite(doc, argv, "browser-failure", "fail", { checks: checks.length, checks_failed: 1 }, `فشل المسار: ${error.message}`);
+    if (error instanceof EnvironmentError) { console.error(`ENVIRONMENT: ${scrub(error.message)}; nothing measured`); return { code: 2, doc: null }; }
+    finishAndWrite(doc, argv, "browser-failure", "fail", { checks: checks.length, checks_failed: 1 }, `فشل المسار: ${scrub(error.message)}`);
     return { code: exitCodeFor(error), doc };
   } finally { await browser?.close(); clip?.cleanup(); }
 }
