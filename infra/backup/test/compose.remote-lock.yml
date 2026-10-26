@@ -47,7 +47,11 @@ services:
         [ -n "$$WAL_WRITER" ] || exit 0
         mc mb --ignore-existing --with-lock "r/$$WAL_BUCKET"
         mc retention set --default COMPLIANCE 1d "r/$$WAL_BUCKET"
-        sed "s/$$BUCKET/$$WAL_BUCKET/g" /tmp/p.json > /tmp/w.json
+        cat > /tmp/w.json <<JSON
+        {"Version": "2012-10-17", "Statement": [
+          {"Effect": "Allow", "Action": ["s3:ListBucket", "s3:GetBucketObjectLockConfiguration"], "Resource": ["arn:aws:s3:::$$WAL_BUCKET"]},
+          {"Effect": "Allow", "Action": ["s3:PutObject", "s3:GetObjectRetention"], "Resource": ["arn:aws:s3:::$$WAL_BUCKET/*"]}]}
+        JSON
         mc admin user add r "$$WAL_WRITER" "$$WAL_WRITER_SECRET" >/dev/null
         mc admin policy create r wal-writer /tmp/w.json >/dev/null 2>&1 || mc admin policy update r wal-writer /tmp/w.json >/dev/null
         mc admin policy attach r wal-writer --user "$$WAL_WRITER" >/dev/null 2>&1 || true
