@@ -284,6 +284,13 @@ const schema = z.object({
   SANDBOX_CHECKOUT_BASE_URL: z.string().url().default('http://localhost:3000'),
   // عمولة المنصة من صافي كل بند، بأجزاء من عشرة آلاف، إلى أن تُبنى قواعد العمولة (ADR 0025 الجزء 6)؛ تُجمَّد في قيد البيعة
   PLATFORM_COMMISSION_BASIS_POINTS: z.coerce.number().int().min(0).max(10000).default(3000),
+  // الأرباح والصرف التجريبي (ADR 0033): تحرير المستحق بعد فترة الاسترداد، وعامل القناة التجريبية، وسياسة احتياطية حين لا
+  // صف سياسة لعملة (الصفوف من POST /payout-policies تحكم متى وُجدت)
+  PAYOUT_RELEASE_AFTER_DAYS: z.coerce.number().int().min(0).max(365).default(14),
+  PAYOUT_WORKER_INTERVAL_MS: z.coerce.number().int().min(100).default(60_000),
+  PAYOUT_DEFAULT_MINIMUM_MINOR: z.coerce.number().int().min(1).default(5_000),
+  PAYOUT_DEFAULT_DUAL_APPROVAL_ABOVE_MINOR: z.coerce.number().int().min(0).default(100_000),
+  PAYOUT_DEFAULT_RESERVE_BPS: z.coerce.number().int().min(0).max(5000).default(0),
   // صفحة الويب التي تعود إليها صفحة الدفع التجريبية بعد النتيجة، قالبًا بـ {order_id}. من الإعداد وحده لا من الطلب، فلا
   // تحويل مفتوح؛ https إلا لـ localhost. بلا قيمة لا عودة.
   SANDBOX_RETURN_URL: z
