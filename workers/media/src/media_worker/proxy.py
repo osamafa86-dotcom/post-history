@@ -7,8 +7,8 @@
 - إطار مفتاحي كل ثانية للتنقل في المحرر.
 - لا وسوم: `-map_metadata -1` ومثيلاه لكل مسار تسقط الإحداثيات وطراز الجهاز ورقمه من النسخة المعروضة.
 - المدخل مقيد بقائمة الحاويات والبروتوكول `file` وحده (`INPUT_GUARD`).
-- HDR (HLG أو PQ): خريطة ألوان إلى SDR BT.709 بـ zscale + tonemap (hable)، فلا تظهر النسخة باهتة أو محروقة؛
-  والمخرج موسوم bt709 صراحة. القياس في `tools/render-bench` (حالتا HLG وPQ).
+- HDR (HLG أو PQ): خريطة ألوان إلى SDR BT.709 بـ zscale + tonemap (`TONEMAP`)، فلا تظهر النسخة باهتة أو محروقة؛
+  والمخرج موسوم bt709 صراحة. اختيار المشغّل بقياس `bench/tonemap_bench.py` (hable وmobius وreinhard مقابل مرجع SDR).
 """
 
 from __future__ import annotations
@@ -22,13 +22,16 @@ from .probe import Probe, probe
 PROXY_SHORT_SIDE = 480
 # انحراف start_pts المسموح بين الأصل والنسخة: أقل من إطار عند 60 إطارًا/ث
 START_PTS_TOLERANCE_US = 16_000
+# mobius خطي حتى 0.8 من الأبيض ثم يضغط ما فوقه: سطوع محتوى بمستوى SDR في حدود 10% من مرجعه (hable أعتم بنحو 37%)،
+# والإضاءات العالية تُضغط بلا قصّ. القياس docs/measurements/media/2026-10-26-tonemap-choice.json
+TONEMAP = "mobius:param=0.8:desat=0"
 
 
 class ProxyTimingError(RuntimeError):
     """النسخة الناتجة لا تحفظ start_pts الأصل؛ لا تُستخدم لأن نقاط القص عليها ستنزاح."""
 
 
-def video_filter(source: Probe, short_side: int) -> str:
+def video_filter(source: Probe, short_side: int, tonemap: str = TONEMAP) -> str:
     """تصغير بالضلع القصير (بلا تكبير) ثم خريطة ألوان إلى SDR إن كان المصدر HDR، وأخيرًا 8 بت 4:2:0.
     يُستعمل للنسخة الخفيفة وللمصغّرات معًا."""
     short = min(short_side, min(source.width or short_side, source.height or short_side))
@@ -42,7 +45,7 @@ def video_filter(source: Probe, short_side: int) -> str:
         min_ = source.color_space if source.color_space not in (None, "unknown") else "bt2020nc"
         chain += [
             f"zscale=tin={tin}:pin={pin}:min={min_}:t=linear:npl=100",
-            "format=gbrpf32le", "zscale=p=bt709", "tonemap=tonemap=hable:desat=0",
+            "format=gbrpf32le", "zscale=p=bt709", f"tonemap=tonemap={tonemap}",
             "zscale=t=bt709:m=bt709:r=tv",
         ]
     # بكسل مربع: التقريب إلى عرض زوجي يترك SAR غير مربع (1280:1281)، فيعرض WebKit 853 بدل 854
