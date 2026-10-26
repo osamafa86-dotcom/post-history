@@ -38,6 +38,6 @@ export async function orderWrite(request: Request, path: string, api: Api, me: M
   if (action[2] === "cancel") return json(safeOrder(requireOk(await api.POST("/orders/{order_id}/cancel", { params }))));
   const session = requireOk(await api.POST("/orders/{order_id}/checkout", { params }));
   // الرابط يذهب إلى المتصفح ليُوجَّه إليه؛ لا إلى أصل خارج قائمة الإعداد، ولا يُسجَّل.
-  if (!allowedCheckout(session.checkout_url, config.checkoutOrigins ?? [])) throw new WebError(502, "temporarily_unavailable");
+  if (!allowedCheckout(session.checkout_url, config.checkoutOrigins ?? [], session.provider)) throw new WebError(502, "temporarily_unavailable");
   return json({ checkout_url: session.checkout_url, provider: session.provider, expires_at: session.expires_at });
 }
