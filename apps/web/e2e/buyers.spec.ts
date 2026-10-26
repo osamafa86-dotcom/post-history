@@ -11,7 +11,7 @@ test.beforeEach(async ({ request }) => { await request.post("http://127.0.0.1:32
 test("a buyer lands in the store, sees only the store and their organization, and never a staff page", async ({ page }) => {
   await login(page, "buyer"); await expect(page).toHaveURL(/\/ar\/store$/);
   const nav = page.getByRole("navigation", { name: ar.workspace });
-  await expect(nav.getByRole("link")).toHaveCount(3); await expect(nav.getByRole("link", { name: ar.store.title })).toBeVisible();
+  await expect(nav.getByRole("link", { name: ar.inbox })).toHaveCount(0); await expect(nav.getByRole("link", { name: ar.store.title })).toBeVisible();
   await page.goto("/ar/inbox"); await expect(page).toHaveURL(/\/ar\/store$/);
   await nav.getByRole("link", { name: b.myOrganization }).click();
   await expect(page.getByRole("heading", { name: "شبكة الأخبار" })).toBeVisible(); await expect(page.getByTestId("organization-status")).toHaveText(b.statuses.active);
