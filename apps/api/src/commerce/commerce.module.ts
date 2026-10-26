@@ -10,20 +10,23 @@ import { LicenseTemplatesController } from './license-templates.controller';
 import { LicenseTemplatesService } from './license-templates.service';
 import { ListingsController } from './listings.controller';
 import { ListingsService } from './listings.service';
-import { OrdersController, PaymentWebhooksController, SandboxCheckoutController } from './orders.controller';
+import { CommissionRulesController, CommissionRulesService } from './commission-rules';
+import { OrdersController, PaymentWebhooksController, SandboxCheckoutController, SandboxRefundsController } from './orders.controller';
 import { OrdersService } from './orders.service';
 import { PAYMENT_PROVIDER, SandboxPaymentProvider } from './payment-provider';
+import { RefundsController, RefundsService } from './refunds';
 
 /** المرحلة التجارية (v0.3، ADR 0025) بمزوّد دفع تجريبي فقط: قوالب التراخيص، والإدراج، والكتالوج، والمشترون، والطلبات. */
 @Module({
   imports: [VerificationModule, IdentityModule],
   controllers: [
     LicenseTemplatesController, ListingsController, CatalogController, BuyersController,
-    OrdersController, PaymentWebhooksController, SandboxCheckoutController,
+    OrdersController, PaymentWebhooksController, SandboxCheckoutController, SandboxRefundsController,
+    RefundsController, CommissionRulesController,
   ],
   providers: [
     LicenseTemplatesService, ListingsService, CatalogService, BuyersService,
-    OrdersService,
+    OrdersService, RefundsService, CommissionRulesService,
     {
       provide: PAYMENT_PROVIDER,
       inject: [APP_CONFIG],
