@@ -7,6 +7,7 @@ import { BuyersService } from './buyers.service';
 import { CatalogController } from './catalog.controller';
 import { CatalogService } from './catalog.service';
 import { LicenseTemplatesController } from './license-templates.controller';
+import { InviteConflictsController, InviteConflictsService } from './invite-conflicts.controller';
 import { LicensesController, LicensesService } from './licenses';
 import { LicenseTemplatesService } from './license-templates.service';
 import { ListingsController } from './listings.controller';
@@ -18,6 +19,7 @@ import { PAYMENT_PROVIDER, SandboxPaymentProvider } from './payment-provider';
 import { PayoutWorker } from './payout.worker';
 import { MyEarningsController, PayoutPoliciesController, PayoutRequestsController, UserEarningsController } from './payouts.controller';
 import { PayoutsService } from './payouts';
+import { StripeTestProvider } from './stripe-provider';
 import { RefundsController, RefundsService } from './refunds';
 
 /** المرحلة التجارية (v0.3، ADR 0025) بمزوّد دفع تجريبي فقط: قوالب التراخيص، والإدراج، والكتالوج، والمشترون، والطلبات، والأرباح والصرف التجريبي (ADR 0033). */
@@ -26,17 +28,22 @@ import { RefundsController, RefundsService } from './refunds';
   controllers: [
     LicenseTemplatesController, ListingsController, CatalogController, BuyersController,
     OrdersController, PaymentWebhooksController, SandboxCheckoutController, SandboxRefundsController, LicensesController,
-    RefundsController, CommissionRulesController,
+    RefundsController, CommissionRulesController, InviteConflictsController,
     MyEarningsController, UserEarningsController, PayoutRequestsController, PayoutPoliciesController,
   ],
   providers: [
     LicenseTemplatesService, ListingsService, CatalogService, BuyersService,
-    OrdersService, RefundsService, CommissionRulesService, LicensesService, PayoutsService, PayoutWorker,
+    OrdersService, RefundsService, CommissionRulesService, LicensesService, InviteConflictsService, PayoutsService, PayoutWorker,
     {
       provide: PAYMENT_PROVIDER,
       inject: [APP_CONFIG],
       // ADR 0032: المزوّد التجريبي خارج الإنتاج وحده (فحص الإعداد)، وبلا مزوّد لا دفع
-      useFactory: (c: AppConfig) => (c.PAYMENT_PROVIDER === 'sandbox' ? new SandboxPaymentProvider(c.SANDBOX_WEBHOOK_SECRET!, c.SANDBOX_CHECKOUT_BASE_URL) : null),
+      useFactory: (c: AppConfig) =>
+        c.PAYMENT_PROVIDER === 'sandbox'
+          ? new SandboxPaymentProvider(c.SANDBOX_WEBHOOK_SECRET!, c.SANDBOX_CHECKOUT_BASE_URL)
+          : c.PAYMENT_PROVIDER === 'stripe'
+            ? new StripeTestProvider(c.STRIPE_TEST_SECRET_KEY!, c.STRIPE_WEBHOOK_SECRET!, c.STRIPE_API_BASE)
+            : null,
     },
   ],
 })

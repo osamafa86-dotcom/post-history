@@ -269,7 +269,12 @@ const schema = z.object({
   FCM_SERVICE_ACCOUNT: z.string().optional(),
 
   // مزوّد الدفع (ADR 0032): none = لا شراء؛ sandbox = المزوّد التجريبي الداخلي، خارج الإنتاج وحده. لا مال حقيقي.
-  PAYMENT_PROVIDER: z.enum(['none', 'sandbox']).default('none'),
+  PAYMENT_PROVIDER: z.enum(['none', 'sandbox', 'stripe']).default('none'),
+  // Stripe في وضع الاختبار وحده: المفتاح sk_test_ (مفتاح حي يُرفض عند الإقلاع)، وسر الويبهوك whsec_، من البيئة وحدها
+  STRIPE_TEST_SECRET_KEY: z.string().regex(/^sk_test_[A-Za-z0-9]{10,255}$/, 'a Stripe test-mode secret key (sk_test_…)').optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().regex(/^whsec_[A-Za-z0-9]{10,255}$/, 'a Stripe webhook signing secret (whsec_…)').optional(),
+  // أصل واجهة Stripe؛ يُغيَّر لـ stripe-mock محليًا
+  STRIPE_API_BASE: z.string().url().default('https://api.stripe.com'),
   // مرحلة النشر: trial = التجربة الميدانية؛ production = التشغيل الفعلي. المزوّد التجريبي في الإنتاج للتجربة وحدها بعلمين
   DEPLOY_STAGE: z.enum(['local', 'trial', 'production']).optional(),
   PAYMENT_SANDBOX_ALLOWED: z.enum(['0', '1']).default('0'),
@@ -342,6 +347,12 @@ const validated = schema.superRefine((c, ctx) => {
   if (c.INGEST_REQUIRED && (c.ATTESTATION_MODE === 'off' || !c.INGEST_TUS_ENDPOINT)) {
     ctx.addIssue({ code: 'custom', path: ['INGEST_REQUIRED'], message: 'needs ATTESTATION_MODE and INGEST_TUS_ENDPOINT' });
   }
+  if (c.PAYMENT_PROVIDER === 'stripe') {
+    if (!c.STRIPE_TEST_SECRET_KEY) ctx.addIssue({ code: 'custom', path: ['STRIPE_TEST_SECRET_KEY'], message: 'required with PAYMENT_PROVIDER=stripe' });
+    if (!c.STRIPE_WEBHOOK_SECRET) ctx.addIssue({ code: 'custom', path: ['STRIPE_WEBHOOK_SECRET'], message: 'required with PAYMENT_PROVIDER=stripe' });
+    // وضع الاختبار لا يقبض مالًا، فلا مكان له في التشغيل الفعلي
+    if (c.DEPLOY_STAGE === 'production') ctx.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'Stripe test mode is never allowed with DEPLOY_STAGE=production' });
+  }
   if (c.PAYMENT_PROVIDER === 'sandbox' && !c.SANDBOX_WEBHOOK_SECRET) {
     ctx.addIssue({ code: 'custom', path: ['SANDBOX_WEBHOOK_SECRET'], message: 'required with PAYMENT_PROVIDER=sandbox' });
   }
@@ -350,6 +361,10 @@ const validated = schema.superRefine((c, ctx) => {
     ctx.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'sandbox is never allowed with DEPLOY_STAGE=production' });
   }
   if (c.NODE_ENV !== 'production') return;
+  // عنوان Stripe البديل للاختبار وحده (خادم محاكاة)؛ في الإنتاج لا يذهب المفتاح إلا إلى Stripe نفسه
+  if (new URL(c.STRIPE_API_BASE).origin !== 'https://api.stripe.com') {
+    ctx.addIssue({ code: 'custom', path: ['STRIPE_API_BASE'], message: 'must be https://api.stripe.com with NODE_ENV=production' });
+  }
   if (c.PAYMENT_PROVIDER === 'sandbox' && !(c.DEPLOY_STAGE === 'trial' && c.PAYMENT_SANDBOX_ALLOWED === '1')) {
     ctx.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'sandbox in production needs DEPLOY_STAGE=trial and PAYMENT_SANDBOX_ALLOWED=1' });
   }
