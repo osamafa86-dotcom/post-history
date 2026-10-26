@@ -47,7 +47,7 @@ def _event(kind: str):
 def test_original_arriving_second_aligns_the_phone_proxy(pair):
     src, prx, truth = pair
     api, jobs = _setup(src.read_bytes(), "original", prx.read_bytes(), "proxy")
-    assert jobs.handle(_event("original")).endswith("+proxy+align")
+    assert jobs.handle(_event("original")).endswith("+proxy+thumbnails+align")
     (fid, body), = api.alignments
     # t_original = t_proxy + offset_ms
     assert fid == OTHER and body["original_file_id"] == FakeApi.FILE_ID and body["reliable"]
