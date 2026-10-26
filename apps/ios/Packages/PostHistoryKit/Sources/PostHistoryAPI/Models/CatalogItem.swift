@@ -10,6 +10,14 @@ import Foundation
 /** ما يراه المشتري، بقائمة بيضاء مغلقة: لا إحداثيات ولا مدينة ولا معرّف مراسل ولا جهاز ولا حقول ديناميكية ولا مصادر، ويوم التصوير بلا ساعة. */
 public struct CatalogItem: Sendable, Codable, Hashable {
 
+    public enum EditorialApproverRole: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
+        case systemAdmin = "system_admin"
+        case editorInChief = "editor_in_chief"
+        case supervisor = "supervisor"
+        case producer = "producer"
+        case rightsOfficer = "rights_officer"
+        case unknownDefaultOpenApi = "unknown_default_open_api"
+    }
     public static let materialVersionRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     public static let durationMsRule = NumericRule<Int>(minimum: 0, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     public static let widthRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
@@ -30,9 +38,17 @@ public struct CatalogItem: Sendable, Codable, Hashable {
     public var offers: [CatalogOffer]
     /** لا عرض حصري لمادة بيعت بترخيص غير حصري أو عليها حصرية نشطة أو محجوزة */
     public var exclusiveAvailable: Bool
+    /** نهاية الحصرية النشطة على المادة حين تكون هي سبب `exclusive_available = false` (ADR 0035)؛ `null` لغير ذلك (متاحة، أو بيعت بترخيص غير حصري، أو محجوزة في طلب جارٍ). بلا مشترٍ ولا ترخيص. قد يغيب */
+    public var exclusiveUnavailableUntil: Date?
+    /** يوم مطابقة بصمة الأصل (بلا ساعة، كـ `shot_on`؛ ADR 0035). لا بصمة ولا معرّف ملف. قد يغيب */
+    public var verifiedOn: Date?
+    /** يوم آخر انتقال تحريري إلى `published` لهذا الإصدار (بلا ساعة؛ ADR 0035). قد يغيب */
+    public var editorialApprovedOn: Date?
+    /** دور منفّذ آخر انتقال إلى `published` لهذا الإصدار، لا اسمه ولا معرّفه (ADR 0035). قد يغيب */
+    public var editorialApproverRole: EditorialApproverRole?
     public var listedAt: Date
 
-    public init(listingId: UUID, materialVersion: Int, title: LocalizedText, description: LocalizedText, shotList: [CatalogItemShotListInner], materialTypes: [MaterialType], governorate: String, shotOn: Date?, durationMs: Int?, width: Int?, height: Int?, credit: String, offers: [CatalogOffer], exclusiveAvailable: Bool, listedAt: Date) {
+    public init(listingId: UUID, materialVersion: Int, title: LocalizedText, description: LocalizedText, shotList: [CatalogItemShotListInner], materialTypes: [MaterialType], governorate: String, shotOn: Date?, durationMs: Int?, width: Int?, height: Int?, credit: String, offers: [CatalogOffer], exclusiveAvailable: Bool, exclusiveUnavailableUntil: Date? = nil, verifiedOn: Date? = nil, editorialApprovedOn: Date? = nil, editorialApproverRole: EditorialApproverRole? = nil, listedAt: Date) {
         self.listingId = listingId
         self.materialVersion = materialVersion
         self.title = title
@@ -47,6 +63,10 @@ public struct CatalogItem: Sendable, Codable, Hashable {
         self.credit = credit
         self.offers = offers
         self.exclusiveAvailable = exclusiveAvailable
+        self.exclusiveUnavailableUntil = exclusiveUnavailableUntil
+        self.verifiedOn = verifiedOn
+        self.editorialApprovedOn = editorialApprovedOn
+        self.editorialApproverRole = editorialApproverRole
         self.listedAt = listedAt
     }
 
@@ -65,6 +85,10 @@ public struct CatalogItem: Sendable, Codable, Hashable {
         case credit
         case offers
         case exclusiveAvailable = "exclusive_available"
+        case exclusiveUnavailableUntil = "exclusive_unavailable_until"
+        case verifiedOn = "verified_on"
+        case editorialApprovedOn = "editorial_approved_on"
+        case editorialApproverRole = "editorial_approver_role"
         case listedAt = "listed_at"
     }
 
@@ -86,7 +110,18 @@ public struct CatalogItem: Sendable, Codable, Hashable {
         try container.encode(credit, forKey: .credit)
         try container.encode(offers, forKey: .offers)
         try container.encode(exclusiveAvailable, forKey: .exclusiveAvailable)
+        try container.encodeIfPresent(exclusiveUnavailableUntil, forKey: .exclusiveUnavailableUntil)
+        try container.encodeIfPresent(verifiedOn, forKey: .verifiedOn)
+        try container.encodeIfPresent(editorialApprovedOn, forKey: .editorialApprovedOn)
+        try container.encodeIfPresent(editorialApproverRole, forKey: .editorialApproverRole)
         try container.encode(listedAt, forKey: .listedAt)
     }
 }
 
+
+extension CatalogItem: UnknownCaseCheckable {
+    public var containsUnknownDefaultOpenApiCase: Bool {
+        if editorialApproverRole == .unknownDefaultOpenApi { return true }
+        return false
+    }
+}

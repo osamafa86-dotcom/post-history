@@ -15,13 +15,16 @@ public struct CatalogOffer: Sendable, Codable, Hashable {
     public var type: LicenseType
     public var name: LocalizedText
     public var price: Money
+    /** شروط إصدار القالب هذا قبل الشراء (ADR 0035): الاستخدام والإقليم والمدة ونافذة الحصرية والتسليم والمحظورات، وهي ما يُجمَّد في الترخيص إن اشتُري. قد يغيب */
+    public var terms: LicenseTerms?
 
-    public init(licenseTemplateId: UUID, licenseVersion: Int, type: LicenseType, name: LocalizedText, price: Money) {
+    public init(licenseTemplateId: UUID, licenseVersion: Int, type: LicenseType, name: LocalizedText, price: Money, terms: LicenseTerms? = nil) {
         self.licenseTemplateId = licenseTemplateId
         self.licenseVersion = licenseVersion
         self.type = type
         self.name = name
         self.price = price
+        self.terms = terms
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -30,6 +33,7 @@ public struct CatalogOffer: Sendable, Codable, Hashable {
         case type
         case name
         case price
+        case terms
     }
 
     // Encodable protocol methods
@@ -41,6 +45,7 @@ public struct CatalogOffer: Sendable, Codable, Hashable {
         try container.encode(type, forKey: .type)
         try container.encode(name, forKey: .name)
         try container.encode(price, forKey: .price)
+        try container.encodeIfPresent(terms, forKey: .terms)
     }
 }
 

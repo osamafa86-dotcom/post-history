@@ -224,6 +224,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{id}/work-name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المستخدم */
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * تعيين اسم العمل الداخلي لحساب طاقم أو مسحه (مدير النظام)
+         * @description اسم العمل (ADR 0035) اسم داخلي يظهر للطاقم وحده بجانب المعرّف: منفّذ الانتقال (`TransitionRecord.actor_name`) وحاجز المادة (`reserved_by_name`). ليس الاسم الحقيقي (`reporter_legal_name`، ADR 0021) ولا يُشتق منه، ولا يُعيَّن لحساب مراسل أو مشترٍ (`422 validation_failed`)، فلا يكشف مصدرًا ولا مراسلًا. لا يدخل كتالوجًا ولا ترخيصًا ولا إشعارًا ولا حدثًا ولا قناة خارجية. `null` يمسحه. ذاتي التكرار. يُسجَّل في التدقيق بـ `target_user_id` و`reason_code` (`work_name_set` أو `work_name_cleared`) وحدهما، بلا الاسم.
+         */
+        put: operations["setUserWorkName"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/{id}/permissions/history": {
         parameters: {
             query?: never;
@@ -916,6 +939,26 @@ export interface paths {
         get: operations["listNotifications"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * وسم كل إشعارات المستدعي غير المقروءة مقروءةً («قراءة الكل»)
+         * @description يطال إشعارات المستدعي وحده (ADR 0035)، ما أُنشئ منها حتى `before` (افتراضيًا وقت الطلب)، فما يصل بعد فتح الشاشة يبقى غير مقروء. القراءة لا تقرّ الاستلام: المهام (`assignment_state = assigned`) تبقى بلا إقرار وسلسلة تصعيدها جارية، و«اطّلعت» يبقى `/notifications/{id}/ack` لكل إشعار. ذاتي التكرار بـ `Idempotency-Key`: التكرار يعيد الاستجابة الأولى نفسها.
+         */
+        post: operations["readAllNotifications"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1951,6 +1994,8 @@ export interface components {
              * @description مؤسسة المشتري (v0.3)؛ غيابه أو `null` لحساب طاقم
              */
             organization_id?: string | null;
+            /** @description اسم العمل الداخلي (ADR 0035)؛ `null` أو غائب = لم يُعيَّن */
+            work_name?: components["schemas"]["WorkName"] | null;
             totp_enabled: boolean;
             /** @description الجلسة مقيّدة بعد استعادة الحساب حتى `/auth/totp/confirm`؛ غيابه = false (أُضيف في v0.1) */
             credential_reset_required?: boolean;
@@ -2219,8 +2264,15 @@ export interface components {
              * @description المنتج الذي حجز المادة
              */
             reserved_by?: string | null;
+            /** @description اسم عمل الحاجز (ADR 0035)؛ `null` بلا حجز أو بلا اسم معيَّن. أُضيف بعد v0.3 فقد يغيب */
+            reserved_by_name?: string | null;
             /** Format: date-time */
             reserved_at?: string | null;
+            /**
+             * Format: date-time
+             * @description أقرب `escalate_at` لإشعار مهمة غير مُقرّ عن هذه المادة ضمن نطاق المستدعي (ADR 0035): موعد «اطّلعت» قبل التصعيد، والماضي منه متأخر. `null` = لا مهمة معلّقة. يحسبه الخادم ولا يحسبه العميل. أُضيف بعد v0.3 فقد يغيب
+             */
+            acknowledgement_due_at?: string | null;
             /**
              * Format: uuid
              * @description من ضغط «اطّلعت» (انتقال `inbox → acknowledged`)؛ يراه المراسل. أُضيف في v0.2 فقد يغيب
@@ -2564,6 +2616,8 @@ export interface components {
              * @description فارغ للانتقالات التي يكتبها الخادم
              */
             actor_id: string | null;
+            /** @description اسم عمل المنفّذ (ADR 0035)؛ `null` للخادم، أو لمنفّذ بلا اسم معيَّن، أو لمراسل (هوية المراسل يحكمها ADR 0021). أُضيف بعد v0.3 فقد يغيب */
+            actor_name?: string | null;
             /** Format: date-time */
             occurred_at: string;
         };
@@ -2890,6 +2944,8 @@ export interface components {
                 material_id: string;
                 /** Format: uuid */
                 reserved_by: string;
+                /** @description اسم عمل الحاجز (ADR 0035)؛ قد يغيب */
+                reserved_by_name?: string | null;
                 /** Format: date-time */
                 reserved_at: string;
                 priority: components["schemas"]["Priority"];
@@ -2906,6 +2962,11 @@ export interface components {
             }[];
             /** @description إشعارات مهام حان تصعيدها ولم يُقرّ استلامها (ضمن النطاق) */
             overdue_acknowledgements: number;
+            /**
+             * Format: date-time
+             * @description أقدم `escalate_at` بين المهام المتأخرة المعدودة في `overdue_acknowledgements` (ADR 0035)، لـ «أقدمها mm:ss»؛ `null` حين لا متأخر. قد يغيب
+             */
+            oldest_overdue_acknowledgement_at?: string | null;
             /** @description «الوارد الآن» (ADR 0024): جلسات الرفع الجارية (`created` و`in_progress` غير المنتهية صلاحيتها) لمواد ضمن نطاق المستدعي، العاجل أولًا ثم الأحدث تقدّمًا. النسبة `bytes_received / size_bytes`، ويحدّثها حدث `upload.progress`. معرّفات وأرقام فقط: لا اسم ملف ولا مراسل ولا جهاز. اختياري حتى ينفّذه الخادم. */
             uploads_in_progress?: {
                 /** Format: uuid */
@@ -2989,6 +3050,19 @@ export interface components {
             /** Format: date-time */
             acknowledged_at?: string | null;
         };
+        NotificationReadAll: {
+            /**
+             * Format: date-time
+             * @description يُوسم ما أُنشئ حتى هذا الوقت وحده؛ غيابه = وقت الطلب
+             */
+            before?: string;
+        };
+        NotificationReadAllResult: {
+            /** @description كم إشعارًا صار مقروءًا بهذا الطلب */
+            read_count: number;
+        };
+        /** @description اسم العمل الداخلي لحساب طاقم (ADR 0035): بلا مسافة في طرفيه ولا محارف تحكّم ولا محارف اتجاه (U+202A–U+202E، U+2066–U+2069). ليس الاسم الحقيقي ولا يُشتق منه. */
+        WorkName: string;
         NotificationPage: {
             items: components["schemas"]["Notification"][];
             next_cursor: string | null;
@@ -3119,6 +3193,8 @@ export interface components {
             type: components["schemas"]["LicenseType"];
             name: components["schemas"]["LocalizedText"];
             price: components["schemas"]["Money"];
+            /** @description شروط إصدار القالب هذا قبل الشراء (ADR 0035): الاستخدام والإقليم والمدة ونافذة الحصرية والتسليم والمحظورات، وهي ما يُجمَّد في الترخيص إن اشتُري. قد يغيب */
+            terms?: components["schemas"]["LicenseTerms"];
         };
         /** @description ما يراه المشتري، بقائمة بيضاء مغلقة: لا إحداثيات ولا مدينة ولا معرّف مراسل ولا جهاز ولا حقول ديناميكية ولا مصادر، ويوم التصوير بلا ساعة. */
         CatalogItem: {
@@ -3143,6 +3219,26 @@ export interface components {
             offers: components["schemas"]["CatalogOffer"][];
             /** @description لا عرض حصري لمادة بيعت بترخيص غير حصري أو عليها حصرية نشطة أو محجوزة */
             exclusive_available: boolean;
+            /**
+             * Format: date-time
+             * @description نهاية الحصرية النشطة على المادة حين تكون هي سبب `exclusive_available = false` (ADR 0035)؛ `null` لغير ذلك (متاحة، أو بيعت بترخيص غير حصري، أو محجوزة في طلب جارٍ). بلا مشترٍ ولا ترخيص. قد يغيب
+             */
+            exclusive_unavailable_until?: string | null;
+            /**
+             * Format: date
+             * @description يوم مطابقة بصمة الأصل (بلا ساعة، كـ `shot_on`؛ ADR 0035). لا بصمة ولا معرّف ملف. قد يغيب
+             */
+            verified_on?: string | null;
+            /**
+             * Format: date
+             * @description يوم آخر انتقال تحريري إلى `published` لهذا الإصدار (بلا ساعة؛ ADR 0035). قد يغيب
+             */
+            editorial_approved_on?: string | null;
+            /**
+             * @description دور منفّذ آخر انتقال إلى `published` لهذا الإصدار، لا اسمه ولا معرّفه (ADR 0035). قد يغيب
+             * @enum {string|null}
+             */
+            editorial_approver_role?: "system_admin" | "editor_in_chief" | "supervisor" | "producer" | "rights_officer" | null;
             /** Format: date-time */
             listed_at: string;
         };
@@ -3376,6 +3472,24 @@ export interface components {
             issued_at: string;
             /** @description حزمة التسليم مبنية وجاهزة للتنزيل */
             delivery_ready: boolean;
+            /** @description صيغ ما في حزمة التسليم (ADR 0035)، سطر لكل تسليم في الشروط، من المواصفات الفنية للنسخ المجرَّدة من البيانات الكاشفة التي في الحزمة. بلا بصمة ولا معرّف ملف ولا مفتاح تخزين ولا بيانات الأصل الوصفية. فارغة قبل `delivery_ready`. قد يغيب */
+            delivery_contents?: components["schemas"]["LicenseDeliveryContent"][];
+            /** @description حجم الحزمة؛ `null` قبل جاهزيتها. قد يغيب */
+            delivery_size_bytes?: number | null;
+        };
+        LicenseDeliveryContent: {
+            /** @enum {string} */
+            deliverable: "original" | "produced" | "audio" | "stills";
+            /** @enum {string} */
+            mime_type: "video/mp4" | "audio/mp4" | "image/jpeg";
+            duration_ms?: number | null;
+            width?: number | null;
+            height?: number | null;
+            /**
+             * @description عدد الملفات من هذا التسليم (الصور الثابتة)
+             * @default 1
+             */
+            count: number;
         };
         LicensePage: {
             items: components["schemas"]["License"][];
@@ -4363,6 +4477,41 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    setUserWorkName: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description معرّف المستخدم */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    work_name: components["schemas"]["WorkName"] | null;
+                };
+            };
+        };
+        responses: {
+            /** @description طُبِّق (أو كان مطبَّقًا) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
         };
     };
@@ -5589,6 +5738,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    readAllNotifications: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["NotificationReadAll"];
+            };
+        };
+        responses: {
+            /** @description وُسمت؛ العدد قد يكون صفرًا */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationReadAllResult"];
                 };
             };
             400: components["responses"]["BadRequest"];

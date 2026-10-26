@@ -15,6 +15,7 @@ public struct Material: Sendable, Codable, Hashable {
     public static let cityRule = StringRule(minLength: 1, maxLength: 64, pattern: nil)
     public static let formVersionRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     public static let versionRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
+    public static let reservedByNameRule = StringRule(minLength: nil, maxLength: 80, pattern: nil)
     public static let reporterLegalNameRule = StringRule(minLength: nil, maxLength: 200, pattern: nil)
     public static let rowVersionRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     /** الحدود تعدّلها الإدارة؛ هذه حدود v0 */
@@ -48,7 +49,11 @@ public struct Material: Sendable, Codable, Hashable {
     public var rightsState: RightsState
     /** المنتج الذي حجز المادة */
     public var reservedBy: UUID?
+    /** اسم عمل الحاجز (ADR 0035)؛ `null` بلا حجز أو بلا اسم معيَّن. أُضيف بعد v0.3 فقد يغيب */
+    public var reservedByName: String?
     public var reservedAt: Date?
+    /** أقرب `escalate_at` لإشعار مهمة غير مُقرّ عن هذه المادة ضمن نطاق المستدعي (ADR 0035): موعد «اطّلعت» قبل التصعيد، والماضي منه متأخر. `null` = لا مهمة معلّقة. يحسبه الخادم ولا يحسبه العميل. أُضيف بعد v0.3 فقد يغيب */
+    public var acknowledgementDueAt: Date?
     /** من ضغط «اطّلعت» (انتقال `inbox → acknowledged`)؛ يراه المراسل. أُضيف في v0.2 فقد يغيب */
     public var acknowledgedBy: UUID?
     /** متى؛ أُضيف في v0.2 فقد يغيب */
@@ -64,7 +69,7 @@ public struct Material: Sendable, Codable, Hashable {
     /** يرتفع مع كل كتابة على المادة (بخلاف `version` الذي يرتفع مع التعديل بعد الاعتماد)؛ قيمة `ETag`. أُضيف في v0.1 فقد يغيب عند خادم v0. */
     public var rowVersion: Int?
 
-    public init(title: String, materialTypes: Set<MaterialType>, governorate: String, city: String, shotAt: Date? = nil, priority: Priority, sensitivity: Sensitivity, displayName: DisplayName, gps: GpsPoint? = nil, formVersion: Int, dynamicFields: [String: JSONValue], contributors: [Contributor]? = nil, voiceNoteUploadId: UUID? = nil, id: UUID, version: Int, reporterId: UUID, officeId: UUID?, technicalState: TechnicalState, editorialState: EditorialState, rightsState: RightsState, reservedBy: UUID? = nil, reservedAt: Date? = nil, acknowledgedBy: UUID? = nil, acknowledgedAt: Date? = nil, reporterLegalName: String? = nil, files: [MaterialFile], redactedFieldKeys: [String]? = nil, createdAt: Date, updatedAt: Date, rowVersion: Int? = nil) {
+    public init(title: String, materialTypes: Set<MaterialType>, governorate: String, city: String, shotAt: Date? = nil, priority: Priority, sensitivity: Sensitivity, displayName: DisplayName, gps: GpsPoint? = nil, formVersion: Int, dynamicFields: [String: JSONValue], contributors: [Contributor]? = nil, voiceNoteUploadId: UUID? = nil, id: UUID, version: Int, reporterId: UUID, officeId: UUID?, technicalState: TechnicalState, editorialState: EditorialState, rightsState: RightsState, reservedBy: UUID? = nil, reservedByName: String? = nil, reservedAt: Date? = nil, acknowledgementDueAt: Date? = nil, acknowledgedBy: UUID? = nil, acknowledgedAt: Date? = nil, reporterLegalName: String? = nil, files: [MaterialFile], redactedFieldKeys: [String]? = nil, createdAt: Date, updatedAt: Date, rowVersion: Int? = nil) {
         self.title = title
         self.materialTypes = materialTypes
         self.governorate = governorate
@@ -86,7 +91,9 @@ public struct Material: Sendable, Codable, Hashable {
         self.editorialState = editorialState
         self.rightsState = rightsState
         self.reservedBy = reservedBy
+        self.reservedByName = reservedByName
         self.reservedAt = reservedAt
+        self.acknowledgementDueAt = acknowledgementDueAt
         self.acknowledgedBy = acknowledgedBy
         self.acknowledgedAt = acknowledgedAt
         self.reporterLegalName = reporterLegalName
@@ -119,7 +126,9 @@ public struct Material: Sendable, Codable, Hashable {
         case editorialState = "editorial_state"
         case rightsState = "rights_state"
         case reservedBy = "reserved_by"
+        case reservedByName = "reserved_by_name"
         case reservedAt = "reserved_at"
+        case acknowledgementDueAt = "acknowledgement_due_at"
         case acknowledgedBy = "acknowledged_by"
         case acknowledgedAt = "acknowledged_at"
         case reporterLegalName = "reporter_legal_name"
@@ -155,7 +164,9 @@ public struct Material: Sendable, Codable, Hashable {
         try container.encode(editorialState, forKey: .editorialState)
         try container.encode(rightsState, forKey: .rightsState)
         try container.encodeIfPresent(reservedBy, forKey: .reservedBy)
+        try container.encodeIfPresent(reservedByName, forKey: .reservedByName)
         try container.encodeIfPresent(reservedAt, forKey: .reservedAt)
+        try container.encodeIfPresent(acknowledgementDueAt, forKey: .acknowledgementDueAt)
         try container.encodeIfPresent(acknowledgedBy, forKey: .acknowledgedBy)
         try container.encodeIfPresent(acknowledgedAt, forKey: .acknowledgedAt)
         try container.encodeIfPresent(reporterLegalName, forKey: .reporterLegalName)

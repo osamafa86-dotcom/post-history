@@ -565,6 +565,54 @@ open class AuthAPI {
     }
 
     /**
+     تعيين اسم العمل الداخلي لحساب طاقم أو مسحه (مدير النظام)
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف المستخدم 
+     - parameter setUserWorkNameRequest: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: Void
+     */
+    open class func setUserWorkName(idempotencyKey: String, id: UUID, setUserWorkNameRequest: SetUserWorkNameRequest, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) {
+        return try await setUserWorkNameWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, setUserWorkNameRequest: setUserWorkNameRequest, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     تعيين اسم العمل الداخلي لحساب طاقم أو مسحه (مدير النظام)
+     - PUT /users/{id}/work-name
+     - اسم العمل (ADR 0035) اسم داخلي يظهر للطاقم وحده بجانب المعرّف: منفّذ الانتقال (`TransitionRecord.actor_name`) وحاجز المادة (`reserved_by_name`). ليس الاسم الحقيقي (`reporter_legal_name`، ADR 0021) ولا يُشتق منه، ولا يُعيَّن لحساب مراسل أو مشترٍ (`422 validation_failed`)، فلا يكشف مصدرًا ولا مراسلًا. لا يدخل كتالوجًا ولا ترخيصًا ولا إشعارًا ولا حدثًا ولا قناة خارجية. `null` يمسحه. ذاتي التكرار. يُسجَّل في التدقيق بـ `target_user_id` و`reason_code` (`work_name_set` أو `work_name_cleared`) وحدهما، بلا الاسم.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف المستخدم 
+     - parameter setUserWorkNameRequest: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<Void> 
+     */
+    open class func setUserWorkNameWithRequestBuilder(idempotencyKey: String, id: UUID, setUserWorkNameRequest: SetUserWorkNameRequest, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Void> {
+        var localVariablePath = "/users/{id}/work-name"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: setUserWorkNameRequest, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<Void>.Type = apiConfiguration.requestBuilderFactory.getNonDecodableBuilder()
+
+        return localVariableRequestBuilder.init(method: "PUT", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      بدء استعادة الحساب عند فقد الهاتف (رمز احتياطي ثم اعتماد المشرف)
      
      - parameter startRecoveryRequest: (body)  

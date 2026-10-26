@@ -1294,6 +1294,17 @@ SELECT pg_temp.expect_error($q$
   INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
   VALUES ('payout.status_changed', 'payout', '00000000-0000-4000-8000-0000000009c1', 'payout.status_changed:smoke:2',
           '{"payout_request_id": "00000000-0000-4000-8000-0000000009c1", "amount_minor": 500}') $q$, '23514');
+-- اسم العمل (ADR 0035): لحساب طاقم، بلا مسافة في طرفيه ولا محارف تحكّم، ولا لحساب مشترٍ
+UPDATE users SET work_name = 'منتج الصباح' WHERE id = '00000000-0000-4000-8000-000000000014';
+UPDATE users SET work_name = NULL WHERE id = '00000000-0000-4000-8000-000000000014';
+SELECT pg_temp.expect_error($q$ UPDATE users SET work_name = ' منتج' WHERE id = '00000000-0000-4000-8000-000000000014' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE users SET work_name = E'منتج\nالصباح' WHERE id = '00000000-0000-4000-8000-000000000014' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE users SET work_name = E'منتج\u202Eالصباح' WHERE id = '00000000-0000-4000-8000-000000000014' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE users SET work_name = E'\u2067منتج' WHERE id = '00000000-0000-4000-8000-000000000014' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE users SET work_name = '' WHERE id = '00000000-0000-4000-8000-000000000014' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE users SET work_name = repeat('x', 81) WHERE id = '00000000-0000-4000-8000-000000000014' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE users SET work_name = 'مشترٍ' WHERE id = '00000000-0000-4000-8000-000000000711' $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
 -- الدوال تعمل بمسار بحث فارغ (الاستعادة)
 SET LOCAL search_path = '';
 SELECT pg_temp.expect_error($q$

@@ -16,6 +16,7 @@ public struct TransitionRecord: Sendable, Codable, Hashable {
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
     public static let noteTimecodeMsRule = NumericRule<Int>(minimum: 0, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
+    public static let actorNameRule = StringRule(minLength: nil, maxLength: 80, pattern: nil)
     public var id: String
     public var track: Track
     public var from: String
@@ -24,9 +25,11 @@ public struct TransitionRecord: Sendable, Codable, Hashable {
     public var noteTimecodeMs: Int?
     /** فارغ للانتقالات التي يكتبها الخادم */
     public var actorId: UUID?
+    /** اسم عمل المنفّذ (ADR 0035)؛ `null` للخادم، أو لمنفّذ بلا اسم معيَّن، أو لمراسل (هوية المراسل يحكمها ADR 0021). أُضيف بعد v0.3 فقد يغيب */
+    public var actorName: String?
     public var occurredAt: Date
 
-    public init(id: String, track: Track, from: String, to: String, reason: String, noteTimecodeMs: Int? = nil, actorId: UUID?, occurredAt: Date) {
+    public init(id: String, track: Track, from: String, to: String, reason: String, noteTimecodeMs: Int? = nil, actorId: UUID?, actorName: String? = nil, occurredAt: Date) {
         self.id = id
         self.track = track
         self.from = from
@@ -34,6 +37,7 @@ public struct TransitionRecord: Sendable, Codable, Hashable {
         self.reason = reason
         self.noteTimecodeMs = noteTimecodeMs
         self.actorId = actorId
+        self.actorName = actorName
         self.occurredAt = occurredAt
     }
 
@@ -45,6 +49,7 @@ public struct TransitionRecord: Sendable, Codable, Hashable {
         case reason
         case noteTimecodeMs = "note_timecode_ms"
         case actorId = "actor_id"
+        case actorName = "actor_name"
         case occurredAt = "occurred_at"
     }
 
@@ -59,6 +64,7 @@ public struct TransitionRecord: Sendable, Codable, Hashable {
         try container.encode(reason, forKey: .reason)
         try container.encodeIfPresent(noteTimecodeMs, forKey: .noteTimecodeMs)
         try container.encode(actorId, forKey: .actorId)
+        try container.encodeIfPresent(actorName, forKey: .actorName)
         try container.encode(occurredAt, forKey: .occurredAt)
     }
 }
