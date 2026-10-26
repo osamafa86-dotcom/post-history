@@ -1617,6 +1617,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/buyer-invite-conflicts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * طابور تعارض دعوات المشترين (مدير النظام،
+         * @description دعوات ببريد حساب قائم خارج المؤسسة، ردّت كالدعوة الناجحة فلم تكشف نوع الحساب. لمدير النظام وحده، وغيره `403 forbidden_role` كبقية النقاط المقيّدة بالدور (مصفوفة عزل المستأجرين).
+         */
+        get: operations["listBuyerInviteConflicts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/buyer-invite-conflicts/{conflict_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conflict_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * حسم تعارض دعوة بالحالة وحدها
+         * @description لمدير النظام وحده، وغيره `403 forbidden_role`؛ والتعارض المجهول `404`. يلزمه رمز TOTP حاضر في الجسم (`401 totp_required` لغيابه أو خطئه). **الحسم:** `suspended` يعلّق العضو المدعو البديل، و`dismissed` يغلقه نهائيًا ويحرر مقعده. **الانتقالات:** من `pending` إلى الحالتين، ومن `suspended` إلى `dismissed`. غيرها `409 invalid_transition`. **التوثيق:** لا حقل نص حر، ويُسجَّل في التدقيق بـ `buyer_member.invite_conflict_resolved` و`conflict_id`.
+         */
+        post: operations["resolveBuyerInviteConflict"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events": {
         parameters: {
             query?: never;
@@ -3225,6 +3267,43 @@ export interface components {
             created_by: string;
             /** Format: date-time */
             created_at: string;
+        };
+        /** @enum {string} */
+        BuyerInviteConflictState: "pending" | "suspended" | "dismissed";
+        /** @description لمدير النظام وحده؛ لا يظهر في أي استجابة للمشتري، فالمؤسسة ترى العضو المدعو البديل كأي عضو مدعو */
+        BuyerInviteConflict: {
+            /**
+             * Format: uuid
+             * @description هو `user_id` الظاهر للعضو المدعو البديل في المؤسسة
+             */
+            id: string;
+            /** Format: uuid */
+            organization_id: string;
+            /** Format: email */
+            email: string;
+            /** Format: uuid */
+            existing_user_id: string;
+            role: components["schemas"]["BuyerRole"];
+            state: components["schemas"]["BuyerInviteConflictState"];
+            /** Format: uuid */
+            invited_by: string;
+            /** Format: date-time */
+            invite_expires_at: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            resolved_at: string | null;
+            /** Format: uuid */
+            resolved_by: string | null;
+        };
+        BuyerInviteConflictPage: {
+            items: components["schemas"]["BuyerInviteConflict"][];
+            next_cursor: string | null;
+        };
+        BuyerInviteConflictResolve: {
+            /** @enum {string} */
+            state: "suspended" | "dismissed";
+            totp_code: string;
         };
         OutboxEvent: components["schemas"]["outbox-event"];
         EventPage: {
@@ -6481,6 +6560,69 @@ export interface operations {
                 content?: never;
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    listBuyerInviteConflicts: {
+        parameters: {
+            query?: {
+                state?: components["schemas"]["BuyerInviteConflictState"];
+                /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description حجم الصفحة */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description صفحة من التعارضات، الأقدم أولًا */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyerInviteConflictPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    resolveBuyerInviteConflict: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                conflict_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuyerInviteConflictResolve"];
+            };
+        };
+        responses: {
+            /** @description التعارض بعد الحسم */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyerInviteConflict"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     listEvents: {
