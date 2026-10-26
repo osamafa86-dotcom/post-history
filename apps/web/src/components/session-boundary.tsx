@@ -11,6 +11,7 @@ import { uploadRoles } from "@/lib/upload-policy";
 import { isBuyer, organizationAdmins } from "@/lib/buyer-policy";
 import { commissionReaders } from "@/lib/commission-policy";
 import { conflictRoles } from "@/lib/invite-conflict-policy";
+import { earnerRoles, payoutStaff } from "@/lib/earnings-policy";
 import { templateRoles } from "@/lib/license-policy";
 import { formReaders } from "@/lib/form-admin";
 
@@ -72,6 +73,7 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
       <Link prefetch={false} className={pathname.endsWith("/inbox") ? "active" : ""} href={`/${locale}/inbox`}>{m.inbox}</Link>
       {hasRole(me, "supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin") && <Link prefetch={false} className={pathname.endsWith("/board") ? "active" : ""} href={`/${locale}/board`}>{m.board.title}</Link>}
       {hasRole(me, "reporter") && <Link prefetch={false} className={pathname.endsWith("/my-materials") ? "active" : ""} href={`/${locale}/my-materials`}>{m.mine.nav}</Link>}
+      {hasRole(me, ...earnerRoles) && <Link prefetch={false} className={pathname.endsWith("/earnings") ? "active" : ""} href={`/${locale}/earnings`}>{m.earnings.nav}</Link>}
       {hasRole(me, ...uploadRoles) && <Link prefetch={false} className={pathname.endsWith("/upload") ? "active" : ""} href={`/${locale}/upload`}>{m.upload.nav}</Link>}
       {hasRole(me, ...catalogRoles) && <Link prefetch={false} className={pathname.includes("/store") ? "active" : ""} href={`/${locale}/store`}>{m.store.title}</Link>}
       <Link prefetch={false} className={pathname.endsWith("/form-preview") ? "active" : ""} href={`/${locale}/form-preview`}>{m.formPreview}</Link>
@@ -82,6 +84,7 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
       {hasRole(me, "system_admin", "finance", "rights_officer") && <Link prefetch={false} className={pathname.includes("/store/licenses") ? "active" : ""} href={`/${locale}/store/licenses`}>{m.licenses.nav}</Link>}
       {hasRole(me, ...organizationAdmins) && <Link prefetch={false} className={pathname.endsWith("/buyer-organizations") ? "active" : ""} href={`/${locale}/buyer-organizations`}>{m.buyers.nav}</Link>}
       {hasRole(me, "system_admin", "finance") && <Link prefetch={false} className={pathname.includes("/store/orders") ? "active" : ""} href={`/${locale}/store/orders`}>{m.orders.staffNav}</Link>}
+      {hasRole(me, ...payoutStaff) && <Link prefetch={false} className={pathname.endsWith("/payouts") ? "active" : ""} href={`/${locale}/payouts`}>{m.payouts.nav}</Link>}
       {hasRole(me, ...commissionReaders) && <Link prefetch={false} className={pathname.endsWith("/commission-rules") ? "active" : ""} href={`/${locale}/commission-rules`}>{m.commission.nav}</Link>}
       {hasRole(me, ...conflictRoles) && <Link prefetch={false} className={pathname.endsWith("/invite-conflicts") ? "active" : ""} href={`/${locale}/invite-conflicts`}>{m.conflicts.nav}</Link>}
       {hasRole(me, "system_admin") && <Link prefetch={false} className={pathname.endsWith("/admin") ? "active" : ""} href={`/${locale}/admin`}>{m.admin.title}</Link>}
