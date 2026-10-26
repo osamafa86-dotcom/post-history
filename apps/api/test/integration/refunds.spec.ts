@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { schemaValidator } from '../../src/common/contract';
 import { movePayable } from '../../src/commerce/ledger';
+import { PayoutWorker } from '../../src/commerce/payout.worker';
 import { signWebhook } from '../../src/commerce/payment-provider';
 import { money } from '../../src/commerce/money';
 import { DB, type Database } from '../../src/database/database.module';
@@ -20,7 +21,7 @@ describe('refunds and commission rules (/v1/orders/{id}/refunds, /v1/commission-
   let admin: Actor;
   let reporter: string;
   beforeAll(async () => {
-    h = await createHarness({ env: { PAYMENT_PROVIDER: 'sandbox', SANDBOX_WEBHOOK_SECRET: SECRET, SANDBOX_CHECKOUT_BASE_URL: 'http://api.test' } });
+    h = await createHarness({ env: { PAYMENT_PROVIDER: 'sandbox', SANDBOX_WEBHOOK_SECRET: SECRET, SANDBOX_CHECKOUT_BASE_URL: 'http://api.test', PAYOUT_RELEASE_AFTER_DAYS: '0' } });
     rights = await loginAs(h, [{ role: 'rights_officer' }]);
     finance = await loginAs(h, [{ role: 'finance' }]);
     admin = await loginAs(h, [{ role: 'system_admin' }]);
@@ -239,4 +240,23 @@ describe('refunds and commission rules (/v1/orders/{id}/refunds, /v1/commission-
     );
     expect(rows[0]).toEqual({ details: { platform_basis_points: 5000, commission_rules: [material.id], item_basis_points: [5000] }, platform: '-5000' });
   });
+
+  // Issue #389: إشعار الاسترداد وعامل التحرير على مستحق المساهم نفسه في اللحظة نفسها. قبل ترتيب الأقفال كان أحدهما يقفل «المعلّق»
+  // وينتظر «المتاح» والآخر بالعكس، فيكسر Postgres أحدهما (deadlock) ويُرد الإشعار بـ 5xx. لكل جولة مساهم جديد، فترتيب
+  // معرّفي حسابيه عشوائي.
+  it('the refund notice and the release worker on the same contributor at once never deadlock', async () => {
+    const worker = h.app.get(PayoutWorker);
+    for (let round = 0; round < 12; round++) {
+      reporter = (await seedUser(h)).id;
+      const { order: o } = await paidOrder(1);
+      // المتاح موجود قبل الجولة كما بعد أول تحرير، فيُقفل الحسابان كلاهما
+      await worker.releaseDue();
+      const { order: second } = await paidOrder(1);
+      const created = (await refund(second.id, [second.items[0].id]).expect(201)).body;
+      const [notice] = await Promise.all([confirm(created.id), worker.releaseDue(), worker.releaseDue()]);
+      expect(notice.status).toBe(202);
+      expect((await order(finance.token, o.id)).status).toBe('paid');
+      expect(await count(`SELECT count(*)::int AS n FROM refunds WHERE id = $1 AND status = 'succeeded'`, [created.id])).toBe(1);
+    }
+  }, 60_000);
 });
