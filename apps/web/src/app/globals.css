@@ -227,3 +227,11 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; margin-bottom: 18px; }
 .store-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; align-items: end; }
 .shot-list { margin: 0; padding-inline-start: 20px; display: grid; gap: 6px; font-size: 13px; }
+
+.form-editor, .form-admin-preview { margin-block: 1.25rem; }
+.form-editor-controls { border: 0; padding: 0; min-width: 0; }
+.form-field-editor { border: 1px solid var(--line, #ccd8d2); border-radius: .6rem; padding: 1rem; margin-block: 1.25rem; min-width: 0; }
+.form-field-editor > legend { font-weight: 700; padding-inline: .5rem; }
+.form-option { border: 1px solid var(--line, #ccd8d2); padding: .75rem; min-width: 0; }
+.form-admin-preview .dynamic-form { margin-block: 1rem; max-width: 50rem; }
+.form-field-editor .actions { flex-wrap: wrap; }

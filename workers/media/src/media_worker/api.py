@@ -44,6 +44,9 @@ class Session:
     size_bytes: int
     storage_key: str | None
     material_has_proxy: bool
+    # الملف المقابل المتحقق للمادة (v0.3)، لقياس المحاذاة حين يتحقق الآخر
+    proxy_file_id: str | None = None
+    original_file_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -97,11 +100,16 @@ class InternalApi:
             id=session_id, material_id=d["material_id"], kind=d["kind"], state=d["state"],
             size_bytes=int(d["size_bytes"]), storage_key=d.get("storage_key"),
             material_has_proxy=bool(d.get("material_has_proxy")),
+            proxy_file_id=d.get("proxy_file_id"), original_file_id=d.get("original_file_id"),
         )
 
     def report_verification(self, session_id: str, body: dict) -> dict:
         """يعيد `{state, file_id, receipt_number, failure_reason}`؛ تكرار بلاغ موافق يعيد النتيجة المسجلة نفسها."""
         return self._call("POST", f"/internal/media/sessions/{session_id}/verification", body)
+
+    def put_alignment(self, proxy_file_id: str, body: dict) -> dict:
+        """`PUT /internal/media/files/{proxy}/alignment` (`MediaAlignment`)؛ متساوية الأثر."""
+        return self._call("PUT", f"/internal/media/files/{proxy_file_id}/alignment", body)
 
     def add_derivative(self, file_id: str, body: dict) -> dict:
         return self._call("POST", f"/internal/media/files/{file_id}/derivatives", body)

@@ -10,6 +10,50 @@ import Foundation
 open class CommerceAPI {
 
     /**
+     إنشاء مؤسسة مشترية
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter buyerOrganizationCreate: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: BuyerOrganizationCreated
+     */
+    open class func createBuyerOrganization(idempotencyKey: String, buyerOrganizationCreate: BuyerOrganizationCreate, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> BuyerOrganizationCreated {
+        return try await createBuyerOrganizationWithRequestBuilder(idempotencyKey: idempotencyKey, buyerOrganizationCreate: buyerOrganizationCreate, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     إنشاء مؤسسة مشترية
+     - POST /buyer-organizations
+     - تُنشأ بحالة `pending_verification` ومعها مديرها الأول (`buyer_admin`)، الذي يُدعى برمز تعيين كلمة المرور نفسه في الاستعادة. لا تشتري المؤسسة قبل `active` (ADR 0025، الجزء 3). يُسجَّل في التدقيق بـ `organization_id`.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - responseHeaders: [ETag(String)]
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter buyerOrganizationCreate: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<BuyerOrganizationCreated> 
+     */
+    open class func createBuyerOrganizationWithRequestBuilder(idempotencyKey: String, buyerOrganizationCreate: BuyerOrganizationCreate, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<BuyerOrganizationCreated> {
+        let localVariablePath = "/buyer-organizations"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: buyerOrganizationCreate, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<BuyerOrganizationCreated>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      إنشاء قالب ترخيص
      
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
@@ -100,6 +144,50 @@ open class CommerceAPI {
         let localVariableRequestBuilder: RequestBuilder<CatalogListing>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     قراءة مؤسسة مشترية
+     
+     - parameter orgId: (path) معرّف المؤسسة المشترية 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: BuyerOrganization
+     */
+    open class func getBuyerOrganization(orgId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> BuyerOrganization {
+        return try await getBuyerOrganizationWithRequestBuilder(orgId: orgId, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     قراءة مؤسسة مشترية
+     - GET /buyer-organizations/{org_id}
+     - أعضاء المؤسسة يقرؤون مؤسستهم وحدها؛ أي مؤسسة أخرى `404` بشكل المفقود (عزل المستأجرين).
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - responseHeaders: [ETag(String)]
+     - parameter orgId: (path) معرّف المؤسسة المشترية 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<BuyerOrganization> 
+     */
+    open class func getBuyerOrganizationWithRequestBuilder(orgId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<BuyerOrganization> {
+        var localVariablePath = "/buyer-organizations/{org_id}"
+        let orgIdPreEscape = "\(APIHelper.mapValueToPathItem(orgId))"
+        let orgIdPostEscape = orgIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{org_id}", with: orgIdPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<BuyerOrganization>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
 
     /**
@@ -282,6 +370,145 @@ open class CommerceAPI {
     }
 
     /**
+     دعوة عضو إلى المؤسسة
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter orgId: (path) معرّف المؤسسة المشترية 
+     - parameter buyerMemberInvite: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: BuyerMemberCreated
+     */
+    open class func inviteBuyerMember(idempotencyKey: String, orgId: UUID, buyerMemberInvite: BuyerMemberInvite, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> BuyerMemberCreated {
+        return try await inviteBuyerMemberWithRequestBuilder(idempotencyKey: idempotencyKey, orgId: orgId, buyerMemberInvite: buyerMemberInvite, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     دعوة عضو إلى المؤسسة
+     - POST /buyer-organizations/{org_id}/members
+     - يُنشأ حساب مشترٍ مرتبط بالمؤسسة وحدها، يعيّن كلمة مروره برمز دعوة يُسلَّم كرمز الاستعادة، ويُفعِّل TOTP عند أول دخول. البريد المستخدم لحساب آخر `409 conflict`، بلا تفريق بين طاقم ومشترٍ. حد المقاعد `seats` يُفرض هنا (`409 seats_exhausted`).
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter orgId: (path) معرّف المؤسسة المشترية 
+     - parameter buyerMemberInvite: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<BuyerMemberCreated> 
+     */
+    open class func inviteBuyerMemberWithRequestBuilder(idempotencyKey: String, orgId: UUID, buyerMemberInvite: BuyerMemberInvite, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<BuyerMemberCreated> {
+        var localVariablePath = "/buyer-organizations/{org_id}/members"
+        let orgIdPreEscape = "\(APIHelper.mapValueToPathItem(orgId))"
+        let orgIdPostEscape = orgIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{org_id}", with: orgIdPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: buyerMemberInvite, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<BuyerMemberCreated>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     أعضاء المؤسسة وأدوارهم
+     
+     - parameter orgId: (path) معرّف المؤسسة المشترية 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: ListBuyerMembers200Response
+     */
+    open class func listBuyerMembers(orgId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> ListBuyerMembers200Response {
+        return try await listBuyerMembersWithRequestBuilder(orgId: orgId, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     أعضاء المؤسسة وأدوارهم
+     - GET /buyer-organizations/{org_id}/members
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter orgId: (path) معرّف المؤسسة المشترية 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<ListBuyerMembers200Response> 
+     */
+    open class func listBuyerMembersWithRequestBuilder(orgId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<ListBuyerMembers200Response> {
+        var localVariablePath = "/buyer-organizations/{org_id}/members"
+        let orgIdPreEscape = "\(APIHelper.mapValueToPathItem(orgId))"
+        let orgIdPostEscape = orgIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{org_id}", with: orgIdPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<ListBuyerMembers200Response>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     مؤسسات المشترين (الإدارة، v0.3)
+     
+     - parameter status: (query)  (optional)
+     - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
+     - parameter limit: (query) حجم الصفحة (optional, default to 50)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: BuyerOrganizationPage
+     */
+    open class func listBuyerOrganizations(status: BuyerOrganizationStatus? = nil, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> BuyerOrganizationPage {
+        return try await listBuyerOrganizationsWithRequestBuilder(status: status, cursor: cursor, limit: limit, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     مؤسسات المشترين (الإدارة، v0.3)
+     - GET /buyer-organizations
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter status: (query)  (optional)
+     - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
+     - parameter limit: (query) حجم الصفحة (optional, default to 50)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<BuyerOrganizationPage> 
+     */
+    open class func listBuyerOrganizationsWithRequestBuilder(status: BuyerOrganizationStatus? = nil, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<BuyerOrganizationPage> {
+        let localVariablePath = "/buyer-organizations"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        var localVariableUrlComponents = URLComponents(string: localVariableURLString)
+        let localVariableQueryParameters: [String: (wrappedValue: (any Sendable)?, isExplode: Bool)] = [
+            "status": (wrappedValue: status?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "cursor": (wrappedValue: cursor?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "limit": (wrappedValue: limit?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+        ]
+        localVariableUrlComponents?.queryItems = APIHelper.mapValuesToQueryItems(localVariableQueryParameters)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<BuyerOrganizationPage>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      قوالب التراخيص (v0.3، ADR 0025)
      
      - parameter includeDisabled: (query)  (optional, default to false)
@@ -323,6 +550,58 @@ open class CommerceAPI {
         let localVariableRequestBuilder: RequestBuilder<ListLicenseTemplates200Response>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     تعديل ملف المؤسسة
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter orgId: (path) معرّف المؤسسة المشترية 
+     - parameter buyerOrganizationInput: (body)  
+     - parameter ifMatch: (header) قيمة &#x60;ETag&#x60; الأخيرة التي رآها العميل (&#x60;\&quot;&lt;row_version&gt;\&quot;&#x60; للمادة، &#x60;\&quot;&lt;version&gt;\&quot;&#x60; للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ &#x60;412 precondition_failed&#x60; دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. (optional)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: BuyerOrganization
+     */
+    open class func replaceBuyerOrganization(idempotencyKey: String, orgId: UUID, buyerOrganizationInput: BuyerOrganizationInput, ifMatch: String? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> BuyerOrganization {
+        return try await replaceBuyerOrganizationWithRequestBuilder(idempotencyKey: idempotencyKey, orgId: orgId, buyerOrganizationInput: buyerOrganizationInput, ifMatch: ifMatch, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     تعديل ملف المؤسسة
+     - PUT /buyer-organizations/{org_id}
+     - `buyer_admin` يعدّل ملف مؤسسته (الأسماء وبريد الفوترة والبلد). الحالة لمدير النظام وحده؛ تغييرها من غيره `403 forbidden_role`. التعليق يوقف الشراء والتنزيل الجديد، ولا يمس تراخيص سابقة.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - responseHeaders: [ETag(String)]
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter orgId: (path) معرّف المؤسسة المشترية 
+     - parameter buyerOrganizationInput: (body)  
+     - parameter ifMatch: (header) قيمة &#x60;ETag&#x60; الأخيرة التي رآها العميل (&#x60;\&quot;&lt;row_version&gt;\&quot;&#x60; للمادة، &#x60;\&quot;&lt;version&gt;\&quot;&#x60; للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ &#x60;412 precondition_failed&#x60; دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. (optional)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<BuyerOrganization> 
+     */
+    open class func replaceBuyerOrganizationWithRequestBuilder(idempotencyKey: String, orgId: UUID, buyerOrganizationInput: BuyerOrganizationInput, ifMatch: String? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<BuyerOrganization> {
+        var localVariablePath = "/buyer-organizations/{org_id}"
+        let orgIdPreEscape = "\(APIHelper.mapValueToPathItem(orgId))"
+        let orgIdPostEscape = orgIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{org_id}", with: orgIdPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: buyerOrganizationInput, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+            "If-Match": ifMatch?.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<BuyerOrganization>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "PUT", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
 
     /**
@@ -394,7 +673,7 @@ open class CommerceAPI {
     /**
      استبدال الإدراج (العناوين والعروض والحالة)
      - PUT /materials/{id}/listing
-     - يعيد تثبيت `material_version` على إصدار المادة الحالي. القيود نفسها في الإنشاء. حين تخرج حقوق المادة من `sellable` يعلّق الخادم الإدراج في معاملة الانتقال نفسها (`state = suspended`، `suspended_reason = rights_changed`)، ولا يعود `listed` إلا بطلب صريح.
+     - يعيد تثبيت `material_version` على إصدار المادة الحالي. القيود نفسها في الإنشاء. حين تخرج حقوق المادة من `sellable` يعلّق الخادم الإدراج في معاملة الانتقال نفسها (`state = suspended`، `suspended_reason = rights_changed`)، ولا يعود `listed` إلا بطلب صريح. وحين تُوسم المادة بالحساسية (قاصرون أو مصابون أو مشاهد صادمة) يعلّقه بـ `sensitive_flagged` في معاملة الوسم نفسها، ويُرفض `listed` لمادة موسومة بـ `422`.
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -454,7 +733,7 @@ open class CommerceAPI {
     /**
      البحث في الكتالوج (ما يراه المشتري)
      - GET /catalog
-     - الإدراجات `listed` وحدها. يعيد عرض المشتري (`CatalogItem`): عناوين ووصف ولقطات بلغتين، والمدة والدقة، ويوم التصوير والمحافظة، واسم الظهور بحسب وضعه، والعروض بأسعارها. لا إحداثيات ولا مدينة ولا معرّف مراسل ولا جهاز ولا حقول ديناميكية ولا مصادر. أدوار المشترين تُضاف مع حسابات المؤسسات في الطلب التالي من الدورة. البحث النصي بالعربية والإنجليزية.
+     - الإدراجات `listed` وحدها. يعيد عرض المشتري (`CatalogItem`): عناوين ووصف ولقطات بلغتين، والمدة والدقة، ويوم التصوير والمحافظة، واسم الظهور بحسب وضعه، والعروض بأسعارها. لا إحداثيات ولا مدينة ولا معرّف مراسل ولا جهاز ولا حقول ديناميكية ولا مصادر. المشترون (`buyer_admin`، `buyer_member`) من مؤسسة `active`؛ غيرها `403 forbidden_scope`. البحث النصي بالعربية والإنجليزية.
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -504,5 +783,58 @@ open class CommerceAPI {
         let localVariableRequestBuilder: RequestBuilder<CatalogPage>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     تغيير دور العضو أو تعليقه
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter orgId: (path) معرّف المؤسسة المشترية 
+     - parameter userId: (path)  
+     - parameter buyerMemberUpdate: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: BuyerMember
+     */
+    open class func updateBuyerMember(idempotencyKey: String, orgId: UUID, userId: UUID, buyerMemberUpdate: BuyerMemberUpdate, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> BuyerMember {
+        return try await updateBuyerMemberWithRequestBuilder(idempotencyKey: idempotencyKey, orgId: orgId, userId: userId, buyerMemberUpdate: buyerMemberUpdate, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     تغيير دور العضو أو تعليقه
+     - PUT /buyer-organizations/{org_id}/members/{user_id}
+     - لا تبقى مؤسسة `active` بلا `buyer_admin` نشط واحد على الأقل (`409 last_buyer_admin`).
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter orgId: (path) معرّف المؤسسة المشترية 
+     - parameter userId: (path)  
+     - parameter buyerMemberUpdate: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<BuyerMember> 
+     */
+    open class func updateBuyerMemberWithRequestBuilder(idempotencyKey: String, orgId: UUID, userId: UUID, buyerMemberUpdate: BuyerMemberUpdate, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<BuyerMember> {
+        var localVariablePath = "/buyer-organizations/{org_id}/members/{user_id}"
+        let orgIdPreEscape = "\(APIHelper.mapValueToPathItem(orgId))"
+        let orgIdPostEscape = orgIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{org_id}", with: orgIdPostEscape, options: .literal, range: nil)
+        let userIdPreEscape = "\(APIHelper.mapValueToPathItem(userId))"
+        let userIdPostEscape = userIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{user_id}", with: userIdPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: buyerMemberUpdate, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<BuyerMember>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "PUT", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
 }

@@ -150,6 +150,8 @@ export class UploadsService implements ReplayRehydrator {
     if (!key || !this.storage.removeUpload) return;
     try {
       await this.storage.removeUpload(this.config.S3_BUCKET_UPLOADS, key);
+      // تأكيد الحذف؛ ما لم يُؤكَّد تعيد مكنسة التسوية محاولته (retryRemovals)
+      await this.db.update(uploadSessions).set({ storageRemovedAt: sql`now()` }).where(eq(uploadSessions.id, id));
     } catch (err) {
       this.logger.warn({ upload_session_id: id, error: (err as Error).name }, 'cancelled upload not removed from temporary storage');
     }
@@ -273,7 +275,7 @@ function decodeCursor(cursor: string): { at: string; id: string } {
  * الطابع كما تعيده القاعدة (`2026-10-21 23:00:00.123456+00`) أو ISO، بحقول ضمن مداها؛ فما يمر هنا يقبله `::timestamptz`
  * ولا يصير 500. Date.parse وحده يقبل صيغًا يرفضها Postgres.
  */
-function validTimestamp(at: string): boolean {
+export function validTimestamp(at: string): boolean {
   const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(\.\d{1,6})?(Z|[+-]\d{2}(?::?\d{2})?)$/.exec(at);
   if (!m) return false;
   const [y, mo, d, h, mi, sec] = m.slice(1, 7).map(Number) as [number, number, number, number, number, number];

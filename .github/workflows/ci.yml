@@ -124,6 +124,11 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+      - name: Install the locked node-pg-migrate (migrate.sh never fetches it at run time)
+        run: npm ci --no-audit --no-fund
+        working-directory: apps/api
       - name: Migrate up, smoke test, down, up
         env:
           DATABASE_URL: postgres://posthistory:ci-only@localhost:5432/posthistory_test
@@ -190,8 +195,9 @@ jobs:
           cache-dependency-path: apps/api/package-lock.json
       - run: npm ci
       # Majors are held back in Dependabot until after the field trial: gate high-severity advisories here.
+      # Same gate, with documented exceptions only (ADR 0040, tools/audit-allowlist.json)
       - name: Audit runtime dependencies (high and above)
-        run: npm audit --omit=dev --audit-level=high
+        run: node tools/audit-allowlist.cjs
       - name: Start MinIO (same image and digest as infra/compose)
         run: |
           image="$(sed -n 's/^ *image: \(pgsty\/minio:.*\)$/\1/p' ../../infra/compose/docker-compose.yml)"

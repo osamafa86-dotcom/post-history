@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { catalogListings, deviceAttestationKeys, idempotencyKeys, licenseTemplateVersions, licenseTemplates, listingOffers, materialContributors, materialExports, materialFiles, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, outboxEvents, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
+import { buyerOrganizations, catalogListings, deviceAttestationKeys, idempotencyKeys, licenseTemplateVersions, licenseTemplates, listingOffers, materialContributors, materialExports, materialFiles, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, outboxEvents, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
 
 export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => ({
 	refreshToken: one(refreshTokens, {
@@ -29,10 +29,6 @@ export const usersRelations = relations(users, ({one, many}) => ({
 		relationName: "recoveryRequests_userId_users_id"
 	}),
 	deviceAttestationKeys: many(deviceAttestationKeys),
-	office: one(offices, {
-		fields: [users.officeId],
-		references: [offices.id]
-	}),
 	materials_acknowledgedBy: many(materials, {
 		relationName: "materials_acknowledgedBy_users_id"
 	}),
@@ -63,6 +59,14 @@ export const usersRelations = relations(users, ({one, many}) => ({
 	licenseTemplates: many(licenseTemplates),
 	catalogListings: many(catalogListings),
 	outboxEvents: many(outboxEvents),
+	office: one(offices, {
+		fields: [users.officeId],
+		references: [offices.id]
+	}),
+	buyerOrganization: one(buyerOrganizations, {
+		fields: [users.organizationId],
+		references: [buyerOrganizations.id]
+	}),
 	recoveryCodes: many(recoveryCodes),
 	materialContributors: many(materialContributors),
 	userRoles_grantedBy: many(userRoles, {
@@ -165,12 +169,26 @@ export const materialFilesRelations = relations(materialFiles, ({one, many}) => 
 	uploadSessions_fileId: many(uploadSessions, {
 		relationName: "uploadSessions_fileId_materialFiles_id"
 	}),
-	materialFile: one(materialFiles, {
+	materialExports_fileId: many(materialExports, {
+		relationName: "materialExports_fileId_materialFiles_id"
+	}),
+	materialExports_sourceFileId: many(materialExports, {
+		relationName: "materialExports_sourceFileId_materialFiles_id"
+	}),
+	materialFile_alignmentOriginalFileId: one(materialFiles, {
+		fields: [materialFiles.alignmentOriginalFileId],
+		references: [materialFiles.id],
+		relationName: "materialFiles_alignmentOriginalFileId_materialFiles_id"
+	}),
+	materialFiles_alignmentOriginalFileId: many(materialFiles, {
+		relationName: "materialFiles_alignmentOriginalFileId_materialFiles_id"
+	}),
+	materialFile_derivedFromId: one(materialFiles, {
 		fields: [materialFiles.derivedFromId],
 		references: [materialFiles.id],
 		relationName: "materialFiles_derivedFromId_materialFiles_id"
 	}),
-	materialFiles: many(materialFiles, {
+	materialFiles_derivedFromId: many(materialFiles, {
 		relationName: "materialFiles_derivedFromId_materialFiles_id"
 	}),
 	material: one(materials, {
@@ -181,12 +199,6 @@ export const materialFilesRelations = relations(materialFiles, ({one, many}) => 
 		fields: [materialFiles.uploadSessionId],
 		references: [uploadSessions.id],
 		relationName: "materialFiles_uploadSessionId_uploadSessions_id"
-	}),
-	materialExports_fileId: many(materialExports, {
-		relationName: "materialExports_fileId_materialFiles_id"
-	}),
-	materialExports_sourceFileId: many(materialExports, {
-		relationName: "materialExports_sourceFileId_materialFiles_id"
 	}),
 }));
 
@@ -402,4 +414,8 @@ export const licenseTemplateVersionsRelations = relations(licenseTemplateVersion
 		fields: [licenseTemplateVersions.templateId],
 		references: [licenseTemplates.id]
 	}),
+}));
+
+export const buyerOrganizationsRelations = relations(buyerOrganizations, ({many}) => ({
+	users: many(users),
 }));

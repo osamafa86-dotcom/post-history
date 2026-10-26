@@ -28,8 +28,10 @@ from typing import Protocol
 from .api import ApiConflict, ApiRejected, FileRef, InternalApi, Session
 from .hashing import digest_file, digest_stream
 from .probe import InvalidMediaError, Probe, probe
+from .align import measure_offset
 from .audio import make_speech_audio
 from .c2pa import WORKER_VERSION, Signing, sign, source_ref
+from .delivery import build_delivery
 from .export import build_package
 from .watermark import make_watermarked_preview
 from .proxy import make_proxy
@@ -42,6 +44,9 @@ from .storage import DERIVED_PREFIX, ObjectMissing
 log = logging.getLogger("media_worker.jobs")
 
 VERIFY_EVENTS = {"upload.original_received", "upload.proxy_received"}
+# النسخة المنتَجة في حزمة التسليم: التصدير النهائي وحده. لا تفريغ ولا ترجمة ولا قائمة لقطات ولا أي مشتق تحريري (R11)،
+# ولا نسخة داخلية. العقد لم يعرّف نوع `produced` بعد، فيُرفض كل ما سواه حتى يُعرَّف
+PRODUCED_KINDS = frozenset({"produced"})
 
 
 class Storage(Protocol):
@@ -80,6 +85,10 @@ def store_preview_key(material_id: str, file_id: str) -> str:
     return f"{DERIVED_PREFIX}{material_id}/{file_id}/preview-watermarked.mp4"
 
 
+def delivery_key(material_id: str, file_id: str, license_id: str) -> str:
+    return f"{DERIVED_PREFIX}{material_id}/{file_id}/delivery/{license_id}.zip"
+
+
 def export_key(material_id: str, file_id: str) -> str:
     return f"{DERIVED_PREFIX}{material_id}/{file_id}/export.zip"
 
@@ -106,13 +115,19 @@ def _download(storage: Storage, bucket: str, key: str, dst: Path):
 class Jobs:
     def __init__(self, api: InternalApi, storage: Storage, buckets: Buckets, scratch: Path | None = None,
                  enable_hls: bool = False, enable_phash: bool = False, enable_export: bool = False,
-                 enable_store_preview: bool = False, watermark_key: bytes = b"", c2pa: Signing | None = None):
+                 enable_store_preview: bool = False, watermark_key: bytes = b"", c2pa: Signing | None = None,
+                 enable_delivery: bool = False,
+                 enable_alignment: bool = False):
         # الأعلام مطفأة: البصمة الإدراكية حتى يقبلها العقد، والتصدير ومعاينة المتجر حتى شرطي الأمن (العلامة المائية
         # غير القابلة للعكس، ونزع البيانات المضمّنة)
         self.enable_store_preview = enable_store_preview
         self.watermark_key = watermark_key
         # توقيع C2PA للمخرجات التي تغادر المنصة (ADR 0060)؛ None والعلم مطفأ
         self.c2pa = c2pa
+        # حزمة تسليم المشتري عند license.delivery_requested حتى يقبل الخادم نوع delivery (#252)
+        self.enable_delivery = enable_delivery
+        # المحاذاة الصوتية بين نسخة الهاتف والأصل حتى تقبل نقطة الخادم الحقل (#249)
+        self.enable_alignment = enable_alignment
         self.enable_export = enable_export
         self.enable_hls = enable_hls
         self.enable_phash = enable_phash
@@ -141,6 +156,9 @@ class Jobs:
             if payload.get("state") != "listed" or not payload.get("source_file_id"):
                 return "ignored"
             return self.store_preview(payload["material_id"], payload["source_file_id"])
+        if event.get("type") == "license.delivery_requested" and self.enable_delivery:
+            return self.delivery(payload["material_id"], payload["source_file_id"], payload["license_id"],
+                                 list(payload["deliverables"]), payload.get("produced_file_id"))
         if event.get("type") == "export.requested" and self.enable_export:
             return self.export(payload["material_id"], payload["source_file_id"])
         session_id = (event.get("payload") or {}).get("upload_session_id")
@@ -186,6 +204,9 @@ class Jobs:
                 return result.get("failure_reason") or "failed"
             if session.kind == "voice_note" and info.audio_codec:
                 return "verified" + self._speech(session, result["file_id"], local, info, resume)
+            if session.kind == "proxy" and self.enable_alignment and session.original_file_id:
+                return "verified" + self._align(session, local, result["file_id"], session.original_file_id,
+                                                proxy_side=True)
             if session.kind != "original":
                 return "verified"
             file_id, outcome = result["file_id"], "verified"
@@ -206,7 +227,34 @@ class Jobs:
                     # صور شريط الزمن للمشغّل مع HLS، خلف العلم نفسه
                     outcome += self._hls(session, file_id, proxy_path, proxy_info)
                     outcome += self._timeline(session, file_id, proxy_path, proxy_info)
+            if self.enable_alignment and session.proxy_file_id and info.audio_codec:
+                # بعد النسخة الخفيفة: القياس لا يؤخر جاهزية المعاينة
+                outcome += self._align(session, local, session.proxy_file_id, file_id, proxy_side=False)
             return outcome
+
+    def _align(self, session: Session, local: Path, proxy_file_id: str, original_file_id: str,
+               proxy_side: bool) -> str:
+        """يقيس إزاحة نسخة الهاتف عن الأصل وينزّل الملف الآخر من التخزين. غير مانعة: الفشل لا يعيد الحدث."""
+        try:
+            other_id = original_file_id if proxy_side else proxy_file_id
+            ref = self.api.get_file(other_id)
+            want = "original" if proxy_side else "proxy"
+            if ref.material_id != session.material_id or ref.kind != want or ref.state != "verified":
+                raise ValueError("counterpart must be the material's verified file")
+            other = local.with_name("counterpart")
+            if _download(self.storage, self.buckets.uploads, ref.storage_key, other).sha256 != ref.sha256:
+                raise ValueError("counterpart does not match its recorded hash")
+            proxy, original = (local, other) if proxy_side else (other, local)
+            m = measure_offset(proxy, original)
+            self.api.put_alignment(proxy_file_id, {
+                "original_file_id": original_file_id, "offset_ms": int(round(m["offset_ms"])),
+                "confidence": min(1.0, max(0.0, m["confidence"])), "margin": min(1.0, max(0.0, m["margin"])),
+                "reliable": bool(m["reliable"]),
+            })
+        except Exception as err:  # noqa: BLE001
+            log.warning("alignment skipped session=%s error=%s", session.id, type(err).__name__)
+            return "+align-failed"
+        return "+align" if m["reliable"] else "+align-unreliable"
 
     def _register(self, file_id: str, body: dict) -> bool:
         """تسجيل مشتق غير مانع: نوع لا يقبله الخادم بعد (422) أو مسجّل بغيره (409) لا يعيد الحدث."""
@@ -337,6 +385,53 @@ class Jobs:
         assert self.c2pa is not None and ref.sha256
         sign(src, dst, signer=self.c2pa.signer, title=dst.name, actions=actions, publisher=self.c2pa.publisher,
              source=source_ref(self.c2pa.source_secret, ref.sha256), version=WORKER_VERSION)
+
+    def delivery(self, material_id: str, file_id: str, license_id: str, deliverables: list[str],
+                 produced_file_id: str | None) -> str:
+        """حزمة تسليم ترخيص من الأصل المتحقق، وملفاتها موقَّعة C2PA حين يُفعَّل. لكل ترخيص حزمته؛ إعادة التسليم
+        تسجّل المرفوعة كما هي. `technical` المشتق هو `technical` الأصل كما في التصدير."""
+        key = delivery_key(material_id, file_id, license_id)
+        with tempfile.TemporaryDirectory(dir=self.scratch, prefix="job-") as tmp:
+            local = Path(tmp) / "source"
+            ref = self._source(material_id, file_id, local)
+            info = probe(local)
+            out = Path(tmp) / "delivery.zip"
+            if self._exists(key):
+                d = _download(self.storage, self.buckets.derived, key, out)
+                outcome = "delivery-existing"
+            else:
+                extras = {}
+                if "produced" in deliverables and produced_file_id:
+                    extras["produced"] = self._produced(material_id, produced_file_id, Path(tmp))
+
+                def sign(path: Path, actions: list[str]) -> Path:
+                    signed = path.with_name("c2pa-" + path.name)
+                    self._sign(path, signed, ref, actions)
+                    return signed
+
+                build_delivery(out, original=local, info=info, license_id=license_id, sha256=ref.sha256,
+                               deliverables=deliverables, extras=extras, sign=sign if self.c2pa else None)
+                d = digest_file(out)
+                self.storage.put_file(self.buckets.derived, key, out, d.sha256, "application/zip")
+                outcome = "delivery"
+            self.api.add_derivative(file_id, {
+                "kind": "delivery", "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
+                "mime_type": "application/zip", "license_id": license_id, "technical": info.to_dict(),
+            })
+        return outcome
+
+    def _produced(self, material_id: str, produced_file_id: str, tmp: Path) -> Path:
+        """النسخة المنتَجة مشتق مخزَّن للمادة نفسها؛ تُطابق بصمتها قبل أن تدخل الحزمة."""
+        ref = self.api.get_file(produced_file_id)
+        if ref.kind not in PRODUCED_KINDS:
+            raise ValueError(f"file kind {ref.kind!r} cannot be delivered as produced")
+        if ref.material_id != material_id or ref.state != "verified" or not ref.sha256 \
+                or not ref.storage_key.startswith(f"{DERIVED_PREFIX}{material_id}/"):
+            raise ValueError("produced file must be a verified derivative of the same material")
+        dst = tmp / f"produced{Path(ref.storage_key).suffix or '.mp4'}"
+        if _download(self.storage, self.buckets.derived, ref.storage_key, dst).sha256 != ref.sha256:
+            raise ValueError("produced file does not match its recorded hash")
+        return dst
 
     def export(self, material_id: str, file_id: str) -> str:
         """حزمة المونتاج عند الطلب (`export.requested`). `technical` المشتق هو `technical` الأصل كما يطلب العقد، فيُنزَّل

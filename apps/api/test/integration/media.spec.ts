@@ -3,7 +3,8 @@ import Redis from 'ioredis';
 import request from 'supertest';
 import { MEDIA_STREAM } from '../../src/outbox/media-stream';
 import { OBJECT_STORAGE, type ObjectStorage } from '../../src/verification/object-storage';
-import { createHarness, drainOutbox, type Harness, seedUploadSession, seedUser } from './harness';
+import { schemaValidator } from '../../src/common/contract';
+import { createHarness, drainOutbox, type Harness, loginAs, seedUploadSession, seedUser } from './harness';
 
 /** تخزين بديل بحاويتين: كائنات الرفع في uploads والمشتقات في media، كل مفتاح في حاويته. */
 class FakeStorage implements ObjectStorage {
@@ -104,6 +105,8 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
         storage_key: `tus/${s.id}`,
         proxy_mode: null,
         material_has_proxy: false,
+        proxy_file_id: null,
+        original_file_id: null,
       });
       // v0.1: الرمز صحيح والجلسة غير موجودة = 410 media_resource_gone (حدث متقادم)، والرمز الخاطئ يبقى 404
       const gone = '00000000-0000-4000-8000-000000000000';
@@ -304,6 +307,61 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
       await auth(http().post('/internal/media/files/00000000-0000-4000-8000-000000000000/derivatives'), 'x'.repeat(43))
         .send(proxy(o.materialId, o.fileId))
         .expect(404);
+    });
+  });
+
+  // المحاذاة الصوتية (v0.3، #249): العامل يقيسها حين يتحقق الثاني من النسخة الخفيفة والأصل، فيجد المقابل في الجلسة
+  describe('PUT /internal/media/files/{file_id}/alignment', () => {
+    const align = (fileId: string, body: object, t?: string) => auth(http().put(`/internal/media/files/${fileId}/alignment`), t).send(body);
+    const measured = (originalId: string) => ({ original_file_id: originalId, offset_ms: -120, confidence: 0.93, margin: 0.41, reliable: true });
+    const withProxy = async () => {
+      const s = await completed();
+      const originalId = (await verify(s.id, report()).expect(200)).body.file_id as string;
+      const key = `derived/${s.materialId}/${originalId}/proxy-480p.mp4`;
+      storage.sizes.set(key, 900);
+      const proxyId = (
+        await derive(originalId, { kind: 'proxy', storage_key: key, sha256: hex(randomBytes(32)), size_bytes: 900, technical: { ...technical, width: 854, height: 480 } }).expect(200)
+      ).body.file_id as string;
+      return { ...s, originalId, proxyId };
+    };
+
+    it('the session names the verified proxy and original of its material', async () => {
+      const o = await withProxy();
+      const res = await getSession(o.id).expect(200);
+      expect(res.body).toMatchObject({ material_has_proxy: true, proxy_file_id: o.proxyId, original_file_id: o.originalId });
+      const valid = schemaValidator('MediaSession');
+      expect(valid(res.body) ? [] : valid.errors).toEqual([]);
+    });
+
+    it('records the measurement on the proxy idempotently (204), replaces it, and Material.files shows it on the proxy only', async () => {
+      const o = await withProxy();
+      await align(o.proxyId, measured(o.originalId)).expect(204);
+      await align(o.proxyId, measured(o.originalId)).expect(204);
+      await align(o.proxyId, { ...measured(o.originalId), offset_ms: 35, reliable: false }).expect(204);
+      const chief = await loginAs(h, [{ role: 'editor_in_chief' }]);
+      const material = (await http().get(`/v1/materials/${o.materialId}`).set('Authorization', `Bearer ${chief.token}`).expect(200)).body;
+      const files = material.files as Array<{ id: string; kind: string; alignment?: unknown }>;
+      expect(files.find((f) => f.id === o.proxyId)!.alignment).toEqual({ original_file_id: o.originalId, offset_ms: 35, confidence: 0.93, margin: 0.41, reliable: false });
+      expect(files.find((f) => f.id === o.originalId)).not.toHaveProperty('alignment');
+      // المادة المزروعة عنوانها أقصر من حد العقد، فيُتحقق من ملفها بمخططه
+      const valid = schemaValidator('MaterialFile');
+      expect(valid(files.find((f) => f.id === o.proxyId)) ? [] : valid.errors).toEqual([]);
+      const unmeasured = await withProxy();
+      const other = (await http().get(`/v1/materials/${unmeasured.materialId}`).set('Authorization', `Bearer ${chief.token}`).expect(200)).body;
+      expect(other.files.find((f: { id: string }) => f.id === unmeasured.proxyId).alignment).toBeNull();
+    });
+
+    it('refuses with 422 a file that is not a proxy and an original of another material; 410 for an unknown file; 404 without the token', async () => {
+      const o = await withProxy();
+      const other = await withProxy();
+      expect((await align(o.originalId, measured(o.originalId)).expect(422)).body.code).toBe('validation_failed');
+      expect(JSON.stringify((await align(o.proxyId, measured(other.originalId)).expect(422)).body)).toContain('/original_file_id');
+      await align(o.proxyId, measured(o.proxyId)).expect(422);
+      await align(o.proxyId, { ...measured(o.originalId), confidence: 1.5 }).expect(422);
+      expect((await align('00000000-0000-4000-8000-000000000000', measured(o.originalId)).expect(410)).body.code).toBe('media_resource_gone');
+      await align(o.proxyId, measured(o.originalId), 'x'.repeat(43)).expect(404);
+      const { rows } = await h.pool.query(`SELECT alignment_offset_ms FROM material_files WHERE id = $1`, [o.proxyId]);
+      expect(rows[0].alignment_offset_ms).toBeNull();
     });
   });
 

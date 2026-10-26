@@ -9,6 +9,7 @@ import { catalogRoles, licenseTypes } from "../src/server/catalog";
 import { channels, roles, ruleEvents, ruleLimits, scopeKinds } from "../src/lib/notification-policy";
 import * as license from "../src/lib/license-policy";
 import * as listing from "../src/lib/listing-policy";
+import { formReaders, formWriters } from "../src/lib/form-admin";
 
 const { load } = createRequire(import.meta.url)("js-yaml") as { load: (text: string) => unknown };
 const contract = load(readFileSync(new URL("../../../contracts/openapi.yaml", import.meta.url), "utf8"));
@@ -19,6 +20,11 @@ function at(...path: string[]): unknown {
   }, contract);
 }
 describe("BFF policy remains aligned with the checked-in OpenAPI contract", () => {
+  it("matches form administration roles and publication preconditions", () => {
+    expect(formReaders).toEqual(at("paths", "/forms", "get", "x-roles"));
+    expect(formWriters).toEqual(at("paths", "/forms", "post", "x-roles"));
+    expect(at("paths", "/forms", "post", "parameters")).toEqual(expect.arrayContaining([{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/IfMatch" }]));
+  });
   it("matches permission and reporter identity enums, including coded reasons", () => {
     expect(permissions).toEqual(at("components", "schemas", "Permission", "enum"));
     expect(identityAccesses).toEqual(at("components", "schemas", "ReporterIdentityAccess", "enum"));
