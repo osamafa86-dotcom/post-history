@@ -11,6 +11,7 @@ import { identityAccesses, identityReasons, permissions, reasonLimits } from "@/
 import { safeIdentitySetting } from "@/lib/admin-privacy";
 import { ruleInput, safeRule } from "@/lib/notification-policy";
 import { safeTemplate, templateInput, templateWriters } from "@/lib/license-policy";
+import { listingInput, listingWriters, safeListing } from "@/lib/listing-policy";
 
 const privateHeaders = { "Cache-Control": "private, no-store, max-age=0", "Pragma": "no-cache", "Vary": "Cookie" };
 export const actionRoutes = [
@@ -26,6 +27,7 @@ export const actionRoutes = [
   { path: "/notification-rules/{rule_id}", methods: ["put", "delete"] },
   { path: "/license-templates", methods: ["post"] },
   { path: "/license-templates/{template_id}", methods: ["put"] },
+  { path: "/materials/{id}/listing", methods: ["post", "put"] },
   { path: "/buyer-organizations", methods: ["post"] },
   { path: "/buyer-organizations/{org_id}", methods: ["put"] },
   { path: "/buyer-organizations/{org_id}/members", methods: ["post"] },
@@ -62,7 +64,8 @@ export async function reviewAction(request: Request, path: string, api: Api, me:
       const track = body.track as Transition["track"], targets = states[`${track}_state`];
       if (!(targets as readonly string[]).includes(body.to)) throw new WebError(422, "request_failed");
       if (track === "technical" && (body.to !== "pending" || !hasRole(me, "reporter"))) throw new WebError(403, "request_failed");
-      if (track === "rights" && body.to === "sellable") throw new WebError(403, "request_failed");
+      // sellable مع المرحلة التجارية، لمسؤول الحقوق وحده كما في جدول الانتقالات.
+      if (track === "rights" && body.to === "sellable" && !hasRole(me, "rights_officer")) throw new WebError(403, "request_failed");
       const payload: Transition = { track, to: body.to, reason: body.reason, ...(body.note_timecode_ms !== undefined ? { note_timecode_ms: body.note_timecode_ms as number | null } : {}) };
       const data = requireOk(await api.POST("/materials/{id}/transitions", { params: { path: { id }, header: versioned() }, body: payload }));
       return NextResponse.json(safeMaterial(data, me.permissions), { headers: privateHeaders });
@@ -126,6 +129,16 @@ export async function reviewAction(request: Request, path: string, api: Api, me:
     const result = templatePath[1] ? await api.PUT("/license-templates/{template_id}", { params: { path: { template_id: templatePath[1] }, header: versioned() }, body: input }) : await api.POST("/license-templates", { params: { header }, body: input });
     const template = requireOk(result), response = NextResponse.json(safeTemplate(template), { status: templatePath[1] ? 200 : 201, headers: privateHeaders });
     response.headers.set("ETag", `"${template.version}"`); return response;
+  }
+  // إدراج المادة في الكتالوج (v0.3): الكتابة لمدير النظام ومسؤول الحقوق؛ قيد الحقوق والترخيص التجاري يحكم فيه الخادم.
+  const listingPath = /^materials\/([^/]+)\/listing$/.exec(path);
+  if (listingPath && uuid.test(listingPath[1]) && ["POST", "PUT"].includes(request.method)) {
+    requireRole(me, ...listingWriters); const input = listingInput(body); if (!input) throw new WebError(422, "request_failed");
+    const params = { path: { id: listingPath[1] } };
+    const result = request.method === "PUT" ? await api.PUT("/materials/{id}/listing", { params: { ...params, header: versioned() }, body: input }) : await api.POST("/materials/{id}/listing", { params: { ...params, header }, body: input });
+    const response = NextResponse.json(safeListing(requireOk(result)), { status: request.method === "PUT" ? 200 : 201, headers: privateHeaders }), tag = result.response.headers.get("ETag");
+    if (tag && /^"[0-9]{1,19}"$/.test(tag)) response.headers.set("ETag", tag);
+    return response;
   }
   if (path.startsWith("buyer-organizations")) return organizationWrite(request, path, api, me, body, header, versioned);
   const notificationPath = /^notifications\/([^/]+)\/(read|ack)$/.exec(path);
