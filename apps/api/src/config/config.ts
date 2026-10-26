@@ -272,6 +272,8 @@ const schema = z.object({
   SANDBOX_WEBHOOK_SECRET: z.string().min(32).max(128).optional(),
   // الأصل العام الذي تُبنى عليه روابط صفحة الدفع التجريبية
   SANDBOX_CHECKOUT_BASE_URL: z.string().url().default('http://localhost:3000'),
+  // عمولة المنصة من صافي كل بند، بأجزاء من عشرة آلاف، إلى أن تُبنى قواعد العمولة (ADR 0025 الجزء 6)؛ تُجمَّد في قيد البيعة
+  PLATFORM_COMMISSION_BASIS_POINTS: z.coerce.number().int().min(0).max(10000).default(3000),
 
   OUTBOX_DISPATCHER_ENABLED: z
     .enum(['true', 'false'])

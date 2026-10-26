@@ -33,7 +33,7 @@ export class WebhookSignatureError extends Error {
 const SKEW_MS = 5 * 60 * 1000;
 const EVENT_TYPES: ReadonlySet<string> = new Set<ProviderEventType>(['payment.succeeded', 'payment.failed', 'refund.succeeded', 'dispute.opened']);
 
-/** توقيع الإشعار: HMAC-SHA256 على `timestamp.body` بالسر، بترميز hex. */
+/** توقيع الإشعار: HMAC-SHA256 على `timestamp.body` بالسر، بترميز hex؛ الترويسة `X-Signature: v1=<hex>`. */
 export function signWebhook(secret: string, timestamp: number, rawBody: Buffer): string {
   return createHmac('sha256', secret).update(`${timestamp}.`).update(rawBody).digest('hex');
 }
@@ -44,8 +44,8 @@ export function signWebhook(secret: string, timestamp: number, rawBody: Buffer):
  */
 export function verifySignedWebhook(secret: string, rawBody: Buffer, headers: Record<string, string | undefined>, now = new Date()): ProviderEvent {
   const ts = headers['x-timestamp'];
-  const sig = headers['x-signature'];
-  if (!ts || !/^\d{1,12}$/.test(ts) || !sig || !/^[0-9a-f]{64}$/.test(sig)) throw new WebhookSignatureError('missing or malformed signature headers');
+  const sig = /^v1=([0-9a-f]{64})$/.exec(headers['x-signature'] ?? '')?.[1];
+  if (!ts || !/^\d{10}$/.test(ts) || !sig) throw new WebhookSignatureError('missing or malformed signature headers');
   if (Math.abs(now.getTime() - Number(ts) * 1000) > SKEW_MS) throw new WebhookSignatureError('timestamp outside the allowed window');
   const expected = Buffer.from(signWebhook(secret, Number(ts), rawBody), 'hex');
   if (!timingSafeEqual(expected, Buffer.from(sig, 'hex'))) throw new WebhookSignatureError('signature mismatch');
@@ -63,11 +63,12 @@ function parseEvent(rawBody: Buffer): ProviderEvent {
   const occurred = typeof body.occurred_at === 'string' ? new Date(body.occurred_at) : null;
   if (
     typeof body.event_id !== 'string' ||
-    !/^[A-Za-z0-9_.:-]{1,200}$/.test(body.event_id) ||
+    !/^[A-Za-z0-9_.:-]{1,128}$/.test(body.event_id) ||
     typeof body.type !== 'string' ||
     !EVENT_TYPES.has(body.type) ||
     typeof body.provider_ref !== 'string' ||
-    !/^[A-Za-z0-9_.:-]{1,200}$/.test(body.provider_ref) ||
+    body.provider_ref.length < 1 ||
+    body.provider_ref.length > 128 ||
     !amount ||
     typeof amount.amount_minor !== 'number' ||
     !Number.isSafeInteger(amount.amount_minor) ||
@@ -126,11 +127,16 @@ export class SandboxPaymentProvider implements PaymentProvider {
     return this.payments.get(providerRef)?.status ?? 'failed';
   }
 
+  /** مبلغ الجلسة لصفحة الدفع، أو undefined للمرجع المجهول. */
+  amountOf(providerRef: string): Money | undefined {
+    return this.payments.get(providerRef)?.amount;
+  }
+
   /** ما تفعله صفحة الدفع التجريبية عند الضغط على نتيجة: تسجّل الحالة وتبني الإشعار الموقَّع (جسمه وترويستيه). */
   settle(providerRef: string, outcome: 'succeeded' | 'failed', now = new Date()): { body: Buffer; headers: Record<string, string> } {
     const payment = this.payments.get(providerRef);
     if (!payment) throw new Error('sandbox: unknown payment');
-    payment.status = outcome;
+    if (payment.status === 'pending' || outcome === 'succeeded') payment.status = outcome;
     const body = Buffer.from(
       JSON.stringify({
         event_id: `sbe_${randomBytes(12).toString('hex')}`,
@@ -141,6 +147,6 @@ export class SandboxPaymentProvider implements PaymentProvider {
       }),
     );
     const ts = Math.floor(now.getTime() / 1000);
-    return { body, headers: { 'x-timestamp': String(ts), 'x-signature': signWebhook(this.secret, ts, body) } };
+    return { body, headers: { 'x-timestamp': String(ts), 'x-signature': `v1=${signWebhook(this.secret, ts, body)}` } };
   }
 }

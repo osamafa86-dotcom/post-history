@@ -10,7 +10,7 @@ const event = (over: Record<string, unknown> = {}) =>
   Buffer.from(
     JSON.stringify({ event_id: 'evt_1', type: 'payment.succeeded', provider_ref: 'sbx_1', amount: { amount_minor: 15000, currency: 'USD' }, occurred_at: now.toISOString(), ...over }),
   );
-const signed = (body: Buffer, at = ts, key = secret) => ({ 'x-timestamp': String(at), 'x-signature': signWebhook(key, at, body) });
+const signed = (body: Buffer, at = ts, key = secret) => ({ 'x-timestamp': String(at), 'x-signature': `v1=${signWebhook(key, at, body)}` });
 
 // الإشعار الموقَّع (ADR 0032 §2): HMAC على timestamp.body، ونافذة ±5 دقائق، والتحقق قبل التحليل
 describe('signed provider webhook', () => {
@@ -32,6 +32,7 @@ describe('signed provider webhook', () => {
       [event({ amount: { amount_minor: 1, currency: 'USD' } }), signed(body)],
       [body, {}],
       [body, { 'x-timestamp': String(ts), 'x-signature': 'zz' }],
+      [body, { 'x-timestamp': String(ts), 'x-signature': signWebhook(secret, ts, body) }],
       [body, signed(body, ts - 301)],
       [body, signed(body, ts + 301)],
     ];

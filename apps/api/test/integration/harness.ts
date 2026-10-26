@@ -28,7 +28,8 @@ export async function createHarness(
   });
   for (const [token, value] of extra.overrides ?? []) builder = builder.overrideProvider(token as never).useValue(value);
   const moduleRef = await builder.compile();
-  const app = moduleRef.createNestApplication({ logger: false });
+  // rawBody: إشعار مزوّد الدفع يُتحقق من توقيعه على الجسم الخام (ADR 0032)، كما في main.ts
+  const app = moduleRef.createNestApplication({ logger: false, rawBody: true });
   configureApp(app, config, logger);
   await app.init();
   const pool = new Pool({ connectionString: config.DATABASE_URL, max: 4 });
