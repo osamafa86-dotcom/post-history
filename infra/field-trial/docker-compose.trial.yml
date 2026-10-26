@@ -2,8 +2,6 @@
 # infra/field-trial/trial.sh (يجمع الملفات والـ profiles وملفي البيئة). الأسرار من ملف SOPS المفكوك إلى tmpfs
 # (SEC-05)، لا من سطر الأوامر. profiles: api, media (الأساس)، ingest، edge، backup.
 services:
-  postgres:
-    restart: unless-stopped
   redis:
     restart: unless-stopped
   minio:
@@ -50,6 +48,7 @@ services:
   # أرشفة WAL المستمرة إلى المزوّد الثاني (ADR 0051): الصورة نفسها مع WAL-G، والمفتاح العام وحده على المضيف. الأرشفة
   # مطفأة ما لم يُضبط WALG_ARCHIVE_MODE=on (preflight ينبّه)، فلا يتراكم WAL بلا وجهة.
   postgres:
+    restart: unless-stopped
     image: !reset null
     build: ../postgres
     environment: &walg
