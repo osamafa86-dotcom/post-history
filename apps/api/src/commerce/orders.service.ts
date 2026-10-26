@@ -28,6 +28,7 @@ import { requestDelivery } from './delivery';
 import { postEntry, type AccountRef } from './ledger';
 import { allocate, type Currency, money, type Money, percentToBasisPoints } from './money';
 import { PAYMENT_PROVIDER, type PaymentProvider, type ProviderEvent, WebhookSignatureError } from './payment-provider';
+import { IgnoredWebhookEvent, LiveModeEvent } from './stripe-provider';
 import { applyRefundSucceeded } from './refunds';
 
 export type Order = components['schemas']['Order'];
@@ -137,29 +138,38 @@ export class OrdersService {
     if (!UUID.test(id)) throw ApiError.notFound();
     // المهلة تُطبَّق في معاملتها، فلا يلغيها رفض ما يليها
     await this.db.transaction((tx) => stillOpen(tx, id));
+    // التحقق تحت القفل، ثم نداء المزوّد خارج أي معاملة (لا قفل على الطلب أثناء انتظار الشبكة)، ثم الحفظ بتحقق ثانٍ.
+    // المفتاح checkout:<id> يجعل الإعادة بعد فشل الحفظ الجلسةَ نفسها عند المزوّد
+    const o = await this.db.transaction((tx) => this.payable(tx, p, id));
+    const session = await provider.createCheckout({
+      orderId: id,
+      amount: money(o.totalMinor, o.currency as Currency),
+      // صفحة الويب من الإعداد وحده بمعرّف الطلب؛ بلا قالب لا عودة
+      returnUrl: this.config.SANDBOX_RETURN_URL ? this.config.SANDBOX_RETURN_URL.replace('{order_id}', id) : '',
+      idempotencyKey: `checkout:${id}`,
+    });
     return this.db.transaction(async (tx) => {
-      const [o] = await tx.select().from(orders).where(and(eq(orders.id, id), scope(p))).for('update');
-      if (!o) throw ApiError.notFound();
-      if (o.status !== 'pending_payment') {
-        throw new ApiError(409, 'order_state_conflict', 'The order is not awaiting payment.');
-      }
-      const lost = await tx
-        .select({ id: orderItems.id })
-        .from(orderItems)
-        .leftJoin(exclusiveHolds, eq(exclusiveHolds.orderItemId, orderItems.id))
-        .where(and(eq(orderItems.orderId, id), eq(orderItems.licenseType, 'exclusive_temporary'), sql`(${exclusiveHolds.state} IS DISTINCT FROM 'held' OR ${exclusiveHolds.heldUntil} <= now())`));
-      if (lost.length > 0) throw new ApiError(409, 'exclusive_unavailable', 'The exclusive hold is no longer held.');
-      const session = await provider.createCheckout({
-        orderId: id,
-        amount: money(o.totalMinor, o.currency as Currency),
-        // صفحة الويب من الإعداد وحده بمعرّف الطلب؛ بلا قالب لا عودة
-        returnUrl: this.config.SANDBOX_RETURN_URL ? this.config.SANDBOX_RETURN_URL.replace('{order_id}', id) : '',
-        idempotencyKey: `checkout:${id}`,
-      });
+      const now = await this.payable(tx, p, id);
       await tx.update(orders).set({ provider: provider.name, providerRef: session.providerRef }).where(eq(orders.id, id));
-      const expires = new Date(Math.min(session.expiresAt.getTime(), new Date(o.expiresAt).getTime()));
+      const expires = new Date(Math.min(session.expiresAt.getTime(), new Date(now.expiresAt).getTime()));
       return { checkout_url: session.checkoutUrl, provider: provider.name, expires_at: expires.toISOString() };
     });
+  }
+
+  /** الطلب مقفلًا ينتظر الدفع، وحجزه الحصري ما زال قائمًا؛ وإلا 404 أو 409. */
+  private async payable(tx: Tx, p: Principal, id: string): Promise<typeof orders.$inferSelect> {
+    const [o] = await tx.select().from(orders).where(and(eq(orders.id, id), scope(p))).for('update');
+    if (!o) throw ApiError.notFound();
+    if (o.status !== 'pending_payment') {
+      throw new ApiError(409, 'order_state_conflict', 'The order is not awaiting payment.');
+    }
+    const lost = await tx
+      .select({ id: orderItems.id })
+      .from(orderItems)
+      .leftJoin(exclusiveHolds, eq(exclusiveHolds.orderItemId, orderItems.id))
+      .where(and(eq(orderItems.orderId, id), eq(orderItems.licenseType, 'exclusive_temporary'), sql`(${exclusiveHolds.state} IS DISTINCT FROM 'held' OR ${exclusiveHolds.heldUntil} <= now())`));
+    if (lost.length > 0) throw new ApiError(409, 'exclusive_unavailable', 'The exclusive hold is no longer held.');
+    return o;
   }
 
   async cancel(p: Principal, id: string): Promise<Order> {
@@ -189,6 +199,9 @@ export class OrdersService {
       event = this.provider.verifyWebhook(rawBody, headers);
     } catch (err) {
       if (err instanceof WebhookSignatureError) throw new ApiError(400, 'webhook_signature_invalid', 'The webhook signature is invalid.');
+      // حدث موقّع صحيح لا يخص الدفع عندنا (أنواع Stripe الأخرى): يُقبل بلا أثر ولا يُخزَّن
+      if (err instanceof IgnoredWebhookEvent) return { received: true };
+      if (err instanceof LiveModeEvent) throw new ApiError(400, 'live_payments_disabled', 'Live payments are disabled.');
       throw err;
     }
     await this.db.transaction(async (tx) => {

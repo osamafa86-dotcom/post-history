@@ -10,6 +10,7 @@ import type { WebConfig } from "./config";
 import { organizationWrite } from "./organizations";
 import { licenseDownload } from "./licenses";
 import { commissionWrite, refundWrite } from "./finance";
+import { conflictWrite } from "./invite-conflicts";
 import { earningsPath, earningsWrite } from "./earnings";
 import { orderWrite } from "./orders";
 import { identityAccesses, identityReasons, permissions, reasonLimits } from "@/lib/admin-policy";
@@ -35,6 +36,7 @@ export const actionRoutes = [
   { path: "/materials/{id}/listing", methods: ["post", "put"] },
   { path: "/licenses/{license_id}/download-url", methods: ["post"] },
   { path: "/commission-rules", methods: ["post"] },
+  { path: "/buyer-invite-conflicts/{conflict_id}/resolve", methods: ["post"] },
   { path: "/me/payout-requests", methods: ["post"] },
   { path: "/payout-requests/{payout_request_id}/approve", methods: ["post"] },
   { path: "/payout-requests/{payout_request_id}/reject", methods: ["post"] },
@@ -157,6 +159,7 @@ export async function reviewAction(request: Request, path: string, api: Api, me:
     return response;
   }
   if (path.startsWith("licenses/")) return licenseDownload(path, api, me, body, header, config ?? { mediaOrigins: [] } as unknown as WebConfig);
+  if (path.startsWith("buyer-invite-conflicts/")) return conflictWrite(request, path, api, me, body, header);
   if (earningsPath(path)) return earningsWrite(request, path, api, me, body, header);
   if (path === "commission-rules") return commissionWrite(request, api, me, body, header);
   const refundPath = /^orders\/([^/]+)\/refunds$/.exec(path);

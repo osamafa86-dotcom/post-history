@@ -13,6 +13,7 @@ import { hasRole, materialTag } from "@/lib/review";
 import { organizationRead } from "./organizations";
 import { licenseRead } from "./licenses";
 import { commissionRead, refundRead } from "./finance";
+import { conflictRead } from "./invite-conflicts";
 import { earningsPath, earningsRead } from "./earnings";
 import { orderRead } from "./orders";
 import { safeTemplate, templateRoles } from "@/lib/license-policy";
@@ -155,6 +156,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         const response = json(safeRule(rule)); response.headers.set("ETag", `"${rule.row_version}"`); return response;
       }
       if (path === "commission-rules") return commissionRead(request, api, me);
+      if (path === "buyer-invite-conflicts") return conflictRead(request, api, me);
       const license = /^licenses(?:\/([^/]+))?$/.exec(path);
       if (license) return licenseRead(request, license[1], api, me);
       const refunds = /^orders\/([^/]+)\/refunds$/.exec(path);

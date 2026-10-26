@@ -97,6 +97,13 @@ function seedLicenses() {
   issued.set("93000000-0000-4000-8000-000000000001", { ...base, id: "93000000-0000-4000-8000-000000000001", order_item_id: randomUUID(), license_number: "PH-2026-7K3M9Q2XRT", title: { ar: "لقطات اصطناعية 1", en: "Synthetic footage 1" }, status: "active", revoked_reason: null, delivery_ready: true, downloads: 3 });
   issued.set("93000000-0000-4000-8000-000000000002", { ...base, id: "93000000-0000-4000-8000-000000000002", order_item_id: randomUUID(), license_number: "PH-2026-4HJ8NP0WVZ", title: { ar: "لقطات اصطناعية 2", en: "Synthetic footage 2" }, status: "revoked", revoked_reason: "refunded", delivery_ready: true, downloads: 3 });
 }
+const conflicts: (Record<string, unknown> & { id: string; state: string })[] = [];
+function seedConflicts() {
+  conflicts.length = 0;
+  const base = { organization_id: "90000000-0000-4000-8000-000000000001", invited_by: me.user_id, invite_expires_at: "2026-11-02T10:00:00Z", resolved_at: null, resolved_by: null, internal_note: "never-display-canary" };
+  conflicts.push({ ...base, id: "96000000-0000-4000-8000-000000000001", email: "existing.reporter@example.test", existing_user_id: randomUUID(), role: "buyer_member", state: "pending", created_at: "2026-10-26T09:00:00Z" });
+  conflicts.push({ ...base, id: "96000000-0000-4000-8000-000000000002", email: "existing.staff@example.test", existing_user_id: randomUUID(), role: "buyer_admin", state: "suspended", created_at: "2026-10-25T09:00:00Z" });
+}
 // الأرباح والصرف التجريبي: محفظة المراسل الاصطناعي بالدولار، وطلبات مساهم آخر كي تعتمدها المالية دون اعتماد ذاتي.
 const otherContributor = "10000000-0000-4000-8000-000000000009";
 const wallet = { pending: 0, available: 0, in_payout: 0, paid: 0 }, payouts: (Record<string, unknown> & { id: string; user_id: string; state: string; amount: { amount_minor: number; currency: string }; approvals: { approver_id: string; approved_at: string }[]; approvals_required: number })[] = [], ledger: Record<string, unknown>[] = [], policies: Record<string, unknown>[] = [];
@@ -143,7 +150,7 @@ function seedTemplates() {
   templates.set("81000000-0000-4000-8000-000000000001", [{ ...base, id: "81000000-0000-4000-8000-000000000001", version: 1, type: "editorial_single", name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" }, terms: { ar: "شروط الاستخدام الواحد", en: "Single use terms" }, base_price: { amount_minor: 15000, currency: "USD" }, enabled: true, internal_note: "never-display-canary" }]);
   templates.set("81000000-0000-4000-8000-000000000002", [{ ...base, id: "81000000-0000-4000-8000-000000000002", version: 3, type: "editorial_term", term_days: 365, name: { ar: "تحريري سنوي قديم", en: "Old annual editorial" }, terms: { ar: "شروط", en: "Terms" }, base_price: { amount_minor: 40000, currency: "ILS" }, enabled: false }]);
 }
-reset(); seedTemplates(); seedOrganizations(); seedLicenses(); seedCommission(); seedOrders(); seedEarnings();
+reset(); seedTemplates(); seedOrganizations(); seedLicenses(); seedCommission(); seedOrders(); seedConflicts(); seedEarnings();
 const signed = new Map<string, { kind: "proxy" | "thumbnail"; expires: number }>();
 let expireNextProxy = false;
 const access = new Map<string, Me>(), refresh = new Map<string, Me>();
@@ -166,7 +173,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname.startsWith("/files/")) { res.removeHeader("Content-Type"); return tus(req, res, url); }
   if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
   if (url.pathname === "/__test/uploads") return send([...uploads.values()].map(u => ({ state: u.session.state, receipt: u.session.receipt_number, ingest_tokens: [...ingestTokens.values()].filter(t => t.sid === u.session.id).length, ...(u.tus ? (({ length, offset, patches, resent, cuts }) => ({ length, offset, patches, resent, cuts }))(tusFiles.get(u.tus) ?? { length: 0, offset: 0, patches: 0, resent: 0, cuts: 0 }) : {}) })));
-  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); seedOrders(); seedLicenses(); seedTemplates(); seedOrganizations(); seedCommission(); seedEarnings(); reset(); resetUploads(); return send({ ok: true }); }
+  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); seedOrders(); seedLicenses(); seedTemplates(); seedOrganizations(); seedCommission(); seedConflicts(); seedEarnings(); reset(); resetUploads(); return send({ ok: true }); }
   const sandbox = /^\/sandbox\/(checkout|pay)\/([^/]+)$/.exec(url.pathname);
   if (sandbox) {
     const order = orders.get(sandbox[2]); if (!order) return send({}, 404);
@@ -394,6 +401,14 @@ const server = createServer(async (req, res) => {
       if (target.role === "buyer_admin" && (body.role !== "buyer_admin" || body.status === "suspended") && list.filter(m => m.role === "buyer_admin" && m.status === "active").length === 1) return send({ code: "last_buyer_admin" }, 409);
       Object.assign(target, { role: body.role, status: body.status }); return commit(target, 200);
     }
+    const resolve = /^\/v1\/buyer-invite-conflicts\/([^/]+)\/resolve$/.exec(path);
+    if (resolve) {
+      if (!has("system_admin")) return send({ code: "forbidden_role" }, 403);
+      const found = conflicts.find(c => c.id === resolve[1]); if (!found) return send({}, 404);
+      if (body.totp_code !== "123456") return send({ code: "totp_required" }, 401);
+      if (!(found.state === "pending" || found.state === "suspended" && body.state === "dismissed")) return send({ code: "invalid_transition" }, 409);
+      Object.assign(found, { state: body.state, resolved_at: new Date().toISOString(), resolved_by: user.user_id }); return commit(found, 200);
+    }
     if (path === "/v1/me/payout-requests") {
       if (!has("reporter")) return send({}, 403);
       const amount = (body.amount as { amount_minor: number }).amount_minor, requestable = wallet.available - Math.round(wallet.available * 0.1);
@@ -508,6 +523,11 @@ const server = createServer(async (req, res) => {
     if (isMembers) { if (!roles("system_admin", "buyer_admin")) return send({}, 403); return send({ items: members.get(id)!.map(m => ({ ...m, password_hash: "never-display-canary" })) }); }
     if (!roles("system_admin", "finance", "buyer_admin", "buyer_member")) return send({}, 403);
     res.setHeader("ETag", `"${found.row}"`); return send({ ...view(found), internal_note: "never-display-canary" });
+  }
+  if (url.pathname === "/v1/buyer-invite-conflicts") {
+    if (!user.roles.some(role => role.name === "system_admin")) return send({ code: "forbidden_role" }, 403);
+    const state = url.searchParams.get("state");
+    return send({ items: conflicts.filter(c => !state || c.state === state).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))), next_cursor: null });
   }
   if (url.pathname === "/v1/me/earnings" || url.pathname === "/v1/me/earnings/entries" || url.pathname === "/v1/me/payout-requests") {
     if (!user.roles.some(role => role.name === "reporter")) return send({}, 403);
