@@ -443,11 +443,51 @@
     "shotOn": "Shoot day",
     "duration": "Duration",
     "resolution": "Resolution",
-    "shotList": "Shot list",
     "checkoutLater": "Cart and hosted checkout arrive with the orders contract.",
     "addToCart": "Add to cart",
     "inCart": "In your cart; go to it",
-    "buyersOnly": "Buying is for buyer organization accounts."
+    "buyersOnly": "Buying is for buyer organization accounts.",
+    "browse": {
+      "trustLabel": "Why you can trust this footage",
+      "trust": [
+        "Verified original",
+        "Editorial approval",
+        "Documented rights",
+        "A public verification page for every licence"
+      ],
+      "count": "{n} items on this page",
+      "searchHelp": "Search in Arabic or English",
+      "filters": "Filters",
+      "from": "From date",
+      "to": "To date",
+      "durations": {
+        "short": "Under a minute",
+        "medium": "One to five minutes",
+        "long": "Over five minutes"
+      },
+      "removeFilter": "Remove filter: {filter}",
+      "verified": "Verified original",
+      "exclusive": "Exclusive available",
+      "added": "Added to cart.",
+      "previewAsBuyer": "Previewing as a buyer",
+      "about": "About this footage",
+      "authenticity": "Authenticity",
+      "verifiedOriginal": "Verified original",
+      "version": "Version {n}",
+      "editorial": "Editorially approved",
+      "editorialHelp": "Approved by the editors before it was offered for sale",
+      "rights": "Documented rights",
+      "rightsHolder": "Rights holder: {credit}",
+      "verifyNote": "Every licence is proven by a public verification page for its number, not by showing fingerprints or technical identifiers.",
+      "addFor": "Add to cart — {price}",
+      "deliveryTitle": "Delivery specifications",
+      "deliveryText": "Ready formats are delivered with descriptive metadata, stripped of precise location and device data; the raw original is never delivered.",
+      "holdNote": "Held for 15 minutes once payment starts.",
+      "changeLicense": "Change licence",
+      "summary": "Order summary",
+      "filesAfterPayment": "Files open only after the gateway's signed payment confirmation.",
+      "searchButton": "Search"
+    }
   },
   "board": {
     "title": "Newsroom board",
@@ -860,7 +900,18 @@
     "preparing": "The delivery package is being prepared; check back shortly.",
     "remaining": "{n} downloads left.",
     "downloadHelp": "Every download is counted; the link is short-lived and never saved.",
-    "downloadConflict": "Could not download: the limit is reached, the license is not active, or the package is not ready."
+    "downloadConflict": "Could not download: the limit is reached, the license is not active, or the package is not ready.",
+    "verify": {
+      "title": "Licence verification",
+      "notFound": "No licence has this number.",
+      "tooMany": "Too many attempts; try again shortly.",
+      "scope": "This page shows the licence number and its status only.",
+      "link": "Verification page"
+    },
+    "days": "{n} days",
+    "invoices": "Orders and invoices",
+    "revokedHelp": "This licence is revoked ({reason}): new use and downloads stop.",
+    "filesNote": "Delivered files are stripped of precise location and device data; the raw original is never delivered."
   },
   "commission": {
     "nav": "Commission rules",
@@ -917,7 +968,7 @@
     "payBy": "Pay before",
     "paidAt": "Paid at",
     "sandbox": "Test payment: no real money. The payment page is the provider's (the sandbox, or Stripe in test mode); card details never pass through us.",
-    "awaiting": "You are back from the payment page. Waiting for the provider's confirmation; this can take a moment.",
+    "awaiting": "Confirming the payment with the gateway…",
     "paidHelp": "The order is paid and the licenses are issued.",
     "expiredHelp": "The payment window has passed; create a new order.",
     "conflict": "Could not proceed: the price changed, the material is no longer listed, the exclusivity is held, or the order changed. Review the cart or the order.",
@@ -938,7 +989,19 @@
     "redirecting": {
       "sandbox": "Taking you to the sandbox provider's page…",
       "stripe": "Taking you to Stripe in test mode; use a Stripe test card only…"
-    }
+    },
+    "stillWaiting": "We are still waiting for the bank's confirmation; we will email you once it arrives.",
+    "orderNumber": "Order number",
+    "sandboxTitle": "Test mode — no real money",
+    "holdEnds": "Exclusivity hold ends in {time}",
+    "payWithin": "Payment window ends in {time}",
+    "holdExpired": "The hold has ended — try again with a new order.",
+    "holdSoon": "Less than two minutes left in the payment window.",
+    "provider": "Pay with the provider",
+    "secure": "Secure connection",
+    "providerHelp": "The payment page is hosted by the provider; card details never pass through us and we do not imitate its fields.",
+    "backToCart": "Back to cart",
+    "summary": "Order summary"
   },
   "refunds": {
     "title": "Refunds",

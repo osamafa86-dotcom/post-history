@@ -12,8 +12,8 @@ export function LicensePicker({ locale, offers, exclusiveAvailable, value, onCha
       const blocked = offer.type === "exclusive_temporary" && !exclusiveAvailable;
       return <label key={offer.id} className={`license-option ${blocked ? "blocked" : ""}`}>
         <input type="radio" name="license" value={offer.id} checked={value === offer.id} disabled={blocked} onChange={() => onChange(offer.id)} />
-        <span><strong>{localized(offer.name, locale)}</strong><small className="muted">{s.licenseTypes[offer.type]}</small>{blocked && <small className="field-error">{s.exclusiveTaken}</small>}{offer.type === "commercial" && <small className="muted">{s.needsApproval}</small>}</span>
-        <strong dir="ltr">{formatMoney(offer.price, locale)}</strong>
+        <span><strong>{localized(offer.name, locale)}</strong><small className="muted">{s.licenseTypes[offer.type]}</small>{blocked ? <small className="field-error">{s.exclusiveTaken}</small> : offer.type === "exclusive_temporary" && <small className="caption">{s.browse.holdNote}</small>}{offer.type === "commercial" && <small className="muted">{s.needsApproval}</small>}</span>
+        <strong dir="ltr" className="license-price">{formatMoney(offer.price, locale)}</strong>
       </label>;
     })}
   </fieldset>;

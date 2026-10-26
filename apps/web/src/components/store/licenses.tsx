@@ -9,8 +9,8 @@ import { formatMoney, localized } from "@/lib/store-format";
 import { licenseDownloaders, licenseReaders, type IssuedLicense } from "@/lib/issued-licenses";
 import { useUser } from "../session-boundary";
 import { ActionStatus } from "../action-status";
+import { licenseTone } from "./license-verify";
 
-const tone = (status: IssuedLicense["status"]) => status === "active" ? "good" : "bad";
 
 /** تراخيص المؤسسة الصادرة (#203 بند 31). */
 export function LicensesPage({ locale }: { locale: Locale }) {
@@ -23,11 +23,14 @@ export function LicensesPage({ locale }: { locale: Locale }) {
     return () => controller.abort();
   }, [allowed, attempt]);
   if (!allowed) return <section className="center-state"><h1>{t.title}</h1><p role="alert">{t.denied}</p></section>;
-  return <><div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p></div></div>
+  return <><div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p></div><Link prefetch={false} className="button secondary" href={`/${locale}/store/orders`}>{t.invoices}</Link></div>
     {error ? <section className="center-state" role="alert"><p>{m.error}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></section>
-      : !items ? <p className="center-state" role="status">{m.loading}</p> : !items.length ? <p className="empty">{t.empty}</p>
-      : <div className="table-panel"><div className="table-scroll"><table><thead><tr>{[t.number, t.material, t.type, t.validUntil, t.status, ""].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
-        <tbody>{items.map(l => <tr key={l.id} data-testid="license-row"><td dir="ltr">{l.license_number}</td><td>{localized(l.title, locale)}</td><td>{m.store.licenseTypes[l.terms.type]}</td><td>{l.valid_until ? formatDate(l.valid_until, locale) : t.noExpiry}</td><td><span className={`badge ${tone(l.status)}`}>{t.statuses[l.status]}</span></td><td><Link prefetch={false} href={`/${locale}/store/licenses/${l.id}`}>{t.open}</Link></td></tr>)}</tbody></table></div></div>}
+      : !items ? <p className="center-state" role="status">{m.loading}</p> : !items.length ? <section className="empty"><p>{t.empty}</p><Link prefetch={false} href={`/${locale}/store`}>{m.store.back}</Link></section>
+      : <ul className="license-cards">{items.map(l => <li key={l.id} className="card license-card" data-testid="license-row">
+        <p className="license-head"><bdi className="mono license-number" dir="ltr">{l.license_number}</bdi><span className={`badge ${licenseTone(l.status)}`}>{t.statuses[l.status]}</span></p>
+        <h2>{localized(l.title, locale)}</h2>
+        <p className="muted">{[m.store.licenseTypes[l.terms.type], l.terms.term_days ? t.days.replace("{n}", String(l.terms.term_days)) : null, l.terms.territory.kind === "worldwide" ? m.templates.worldwide : (l.terms.territory.countries ?? []).join(", "), l.valid_until ? `${t.validUntil} ${formatDate(l.valid_until, locale)}` : t.noExpiry].filter(Boolean).join(" · ")}</p>
+        <div className="actions"><Link prefetch={false} className="button secondary" href={`/${locale}/store/licenses/${l.id}`}>{t.open}</Link><Link prefetch={false} className="quiet" href={`/${locale}/verify/${l.license_number}`}>{t.verify.link}</Link></div></li>)}</ul>}
   </>;
 }
 
@@ -52,20 +55,21 @@ export function LicenseCertificate({ locale, id }: { locale: Locale; id: string 
   return <>{back}
     <article className="card certificate" data-testid="certificate">
       <p className="eyebrow">{t.certificate}</p><h1>{localized(license.title, locale)}</h1>
-      <p><span className={`badge ${tone(license.status)}`} data-testid="license-status">{t.statuses[license.status]}</span>{license.revoked_reason && <small className="muted"> {t.reasons[license.revoked_reason]}</small>}</p>
+      <p><span className={`badge ${licenseTone(license.status)}`} data-testid="license-status">{t.statuses[license.status]}</span>{license.revoked_reason && <small className="muted"> {t.reasons[license.revoked_reason]}</small>}</p>
       <dl className="metadata">{[
         [t.number, <bdi dir="ltr" key="n">{license.license_number}</bdi>], [t.type, `${m.store.licenseTypes[terms.type]} · ${localized(terms.name, locale)}`],
         [tp.usage, terms.usage_media.map(u => tp.usageNames[u]).join("، ")], [tp.territory, territory], [tp.deliverables, terms.deliverables.map(d => tp.deliverableNames[d]).join("، ")],
         [tp.prohibitions, terms.prohibitions.map(p => tp.prohibitionNames[p]).join("، ") || "—"], [tp.attribution, localized(terms.attribution, locale)],
         [t.validFrom, formatDate(license.valid_from, locale)], [t.validUntil, license.valid_until ? formatDate(license.valid_until, locale) : t.noExpiry],
-        ...(license.exclusive_until ? [[t.exclusiveUntil, formatDate(license.exclusive_until, locale)]] : []), [t.price, <bdi dir="ltr" key="p">{formatMoney(license.price, locale)}</bdi>], [t.issuedAt, formatDate(license.issued_at, locale)],
+        ...(license.exclusive_until ? [[t.exclusiveUntil, formatDate(license.exclusive_until, locale)]] : []), [t.price, <bdi dir="ltr" key="p">{formatMoney(license.price, locale)}</bdi>], [t.issuedAt, formatDate(license.issued_at, locale)], [t.verify.link, <bdi dir="ltr" key="v" className="mono">{`/${locale}/verify/${license.license_number}`}</bdi>],
       ].map(([label, value]) => <div key={String(label)}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
       <section><h2>{tp.terms}</h2><p className="terms-text">{localized(terms.terms, locale)}</p></section>
     </article>
-    <section className="card no-print">{mutation.status !== 200 && <ActionStatus status={mutation.status} locale={locale} />}{mutation.status === 409 && <p className="notice error">{t.downloadConflict}</p>}
+    {license.status === "revoked" && <div className="notice error no-print" role="alert"><p>{t.revokedHelp.replace("{reason}", license.revoked_reason ? t.reasons[license.revoked_reason] : "—")}</p></div>}
+    <section className="card no-print"><p className="overline">{t.filesNote}</p>{mutation.status !== 200 && <ActionStatus status={mutation.status} locale={locale} />}{mutation.status === 409 && <p className="notice error">{t.downloadConflict}</p>}
       {remaining !== null && <p className="muted" data-testid="downloads-remaining">{t.remaining.replace("{n}", String(remaining))}</p>}
       {!license.delivery_ready && license.status === "active" && <p className="notice">{t.preparing}</p>}
-      <div className="actions">{downloader && <button disabled={mutation.busy || license.status !== "active" || !license.delivery_ready} onClick={() => void download()}>{t.download}</button>}<button className="secondary" onClick={() => window.print()}>{t.print}</button></div>
+      <div className="actions">{downloader && <button disabled={mutation.busy || license.status !== "active" || !license.delivery_ready} onClick={() => void download()}>{t.download}</button>}<button className="secondary" onClick={() => window.print()}>{t.print}</button><Link prefetch={false} className="quiet" href={`/${locale}/verify/${license.license_number}`}>{t.verify.link}</Link></div>
       <p className="muted">{t.downloadHelp}</p></section>
   </>;
 }
