@@ -45,6 +45,13 @@ services:
       # Acceptance window only (ADR 0022, infra/field-trial/qa-window.sh): the one account a qa-key token may upload for.
       # Empty outside a window, so every key_class=qa check is refused; preflight fails while it is set without --qa-window.
       ACCEPTANCE_UPLOADER_USER_ID: "${ACCEPTANCE_UPLOADER_USER_ID:-}"
+      # مزوّد الدفع التجريبي (ADR 0032، قرار المنسّق على #301): التجربة تبقى NODE_ENV=production، والخادم يقبل sandbox فيها
+      # بالعلمين الثابتين هنا وحدهما (لا من الأسرار). PAYMENT_PROVIDER من الأسرار (none أو sandbox)، ولا مال حقيقي.
+      DEPLOY_STAGE: trial
+      PAYMENT_SANDBOX_ALLOWED: "1"
+      PAYMENT_PROVIDER: "${PAYMENT_PROVIDER:-none}"
+      SANDBOX_WEBHOOK_SECRET: "${SANDBOX_WEBHOOK_SECRET:-}"
+      SANDBOX_CHECKOUT_BASE_URL: "https://${MAIN_DOMAIN:?}"
   # أرشفة WAL المستمرة إلى المزوّد الثاني (ADR 0051): الصورة نفسها مع WAL-G، والمفتاح العام وحده على المضيف. الأرشفة
   # مطفأة ما لم يُضبط WALG_ARCHIVE_MODE=on (preflight ينبّه)، فلا يتراكم WAL بلا وجهة.
   postgres:

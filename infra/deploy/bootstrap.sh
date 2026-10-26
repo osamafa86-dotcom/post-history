@@ -171,6 +171,8 @@ else
     echo "INGEST_PORT=8443"
     echo "INGEST_GATE_TOKEN=$(hex 32)"
     echo "INGEST_REQUIRED=true"   # لا يُطفأ إلا بقرار مكتوب (ADR 0011)
+    echo "PAYMENT_PROVIDER=sandbox"   # المزوّد التجريبي وحده في التجربة (ADR 0032)، لا مال حقيقي
+    echo "SANDBOX_WEBHOOK_SECRET=$(hex 32)"
     echo "BACKUP_PG_PASSWORD=$(hex 32)"
     echo "S3_BACKUP_ACCESS_KEY=backup-reader"
     echo "S3_BACKUP_SECRET_KEY=$(hex 32)"
