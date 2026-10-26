@@ -955,3 +955,79 @@ export const buyerOrganizations = pgTable("buyer_organizations", {
 	check("buyer_organizations_text_len", sql`((char_length(legal_name) >= 1) AND (char_length(legal_name) <= 200)) AND ((char_length(display_name_ar) >= 1) AND (char_length(display_name_ar) <= 4000)) AND ((char_length(display_name_en) >= 1) AND (char_length(display_name_en) <= 4000)) AND ((char_length(billing_email) >= 3) AND (char_length(billing_email) <= 254))`),
 	check("buyer_organizations_verified_check", sql`((status = 'pending_verification'::text) OR (verified_at IS NOT NULL)) AND ((verified_at IS NULL) = (verified_by IS NULL))`),
 ]);
+
+export const ledgerAccounts = pgTable("ledger_accounts", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	kind: text().notNull(),
+	ownerId: uuid("owner_id"),
+	payableState: text("payable_state"),
+	currency: text().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	uniqueIndex("ledger_accounts_key").using("btree", table.kind.asc().nullsLast().op("text_ops"), table.ownerId.asc().nullsLast().op("uuid_ops"), table.payableState.asc().nullsLast().op("uuid_ops"), table.currency.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.ownerId],
+			foreignColumns: [users.id],
+			name: "ledger_accounts_owner_id_fkey"
+		}),
+	check("ledger_accounts_contributor_check", sql`((kind = 'contributor_payable'::text) = (owner_id IS NOT NULL)) AND ((kind = 'contributor_payable'::text) = (payable_state IS NOT NULL))`),
+	check("ledger_accounts_currency_check", sql`currency = ANY (ARRAY['USD'::text, 'ILS'::text])`),
+	check("ledger_accounts_kind_check", sql`kind = ANY (ARRAY['provider_clearing'::text, 'provider_fees'::text, 'taxes'::text, 'platform_revenue'::text, 'contributor_payable'::text, 'refund_reserve'::text])`),
+	check("ledger_accounts_payable_state_check", sql`(payable_state IS NULL) OR (payable_state = ANY (ARRAY['pending'::text, 'available'::text, 'in_payout'::text, 'paid'::text]))`),
+]);
+
+export const journalEntries = pgTable("journal_entries", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	kind: text().notNull(),
+	referenceType: text("reference_type").notNull(),
+	referenceId: uuid("reference_id").notNull(),
+	details: jsonb().default({}).notNull(),
+	idempotencyKey: text("idempotency_key").notNull(),
+	reversesEntryId: uuid("reverses_entry_id"),
+	occurredAt: timestamp("occurred_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	actorId: uuid("actor_id"),
+}, (table) => [
+	uniqueIndex("journal_entries_correction_key").using("btree", table.reversesEntryId.asc().nullsLast().op("uuid_ops")).where(sql`(kind = 'correction'::text)`),
+	index("journal_entries_reference_idx").using("btree", table.referenceType.asc().nullsLast().op("text_ops"), table.referenceId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.actorId],
+			foreignColumns: [users.id],
+			name: "journal_entries_actor_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.reversesEntryId],
+			foreignColumns: [table.id],
+			name: "journal_entries_reverses_entry_id_fkey"
+		}),
+	unique("journal_entries_idempotency_key_key").on(table.idempotencyKey),
+	check("journal_entries_details_check", sql`(jsonb_typeof(details) = 'object'::text) AND ledger_details_is_plain(details)`),
+	check("journal_entries_idempotency_key_check", sql`(char_length(idempotency_key) >= 1) AND (char_length(idempotency_key) <= 200)`),
+	check("journal_entries_kind_check", sql`kind = ANY (ARRAY['sale'::text, 'refund'::text, 'release'::text, 'payout'::text, 'correction'::text])`),
+	check("journal_entries_reference_type_check", sql`reference_type ~ '^[a-z_]{1,32}$'::text`),
+	check("journal_entries_reverses_check", sql`(kind = ANY (ARRAY['refund'::text, 'correction'::text])) = (reverses_entry_id IS NOT NULL)`),
+]);
+
+export const postings = pgTable("postings", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "postings_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	entryId: uuid("entry_id").notNull(),
+	accountId: uuid("account_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
+	currency: text().notNull(),
+}, (table) => [
+	index("postings_account_idx").using("btree", table.accountId.asc().nullsLast().op("uuid_ops")),
+	index("postings_entry_idx").using("btree", table.entryId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.accountId],
+			foreignColumns: [ledgerAccounts.id],
+			name: "postings_account_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.entryId],
+			foreignColumns: [journalEntries.id],
+			name: "postings_entry_id_fkey"
+		}),
+	check("postings_amount_check", sql`amount_minor <> 0`),
+	check("postings_currency_check", sql`currency = ANY (ARRAY['USD'::text, 'ILS'::text])`),
+]);
