@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // اختبار القبول رقم 4: «التحمل تحت الحمل المتزامن» (concurrent-load، صف الحمل المتزامن في الخطة).
-// ملف 50 MB وخمسون رفعًا هنا نطاق #352؛ لا يثبت معيار الخطة 60 × 2 GB.
+// النطاق الافتراضي 50 × 50 MB؛ الحمل المخفّض يعلن حجمه الفعلي ولا يثبت معيار الخطة.
 import autocannon from 'autocannon';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -36,13 +36,28 @@ export async function apiLoad(url,token,duration,rate=100) {
   return {times,bad,errors:result.errors,timeouts:result.timeouts,requests:result.requests.total,rate:result.requests.average};
 }
 export function saveMeasurement(doc, dir=resolve('docs/measurements/api')) {
-  return writeResult(doc,{dir,slug:'50x50mb-api200rps'});
+  if(doc.result==='pass'&&Object.values(doc.metrics??{}).includes('unverified'))throw new Error('pass cannot contain unverified metrics');
+  return writeResult(doc,{dir,slug:loadScope({count:doc.metrics.upload_target_count,size:doc.file.size_bytes,rate:doc.metrics.api_target_rps})});
 }
-export function memoryMode(env) {
-  const mode=env.LOAD_MEMORY??'docker';
+export function memoryMode(env,dockerAvailable=false) {
+  const mode=env.LOAD_MEMORY??(dockerAvailable?'docker':'skip');
   if(!['docker','skip'].includes(mode))throw new Error('LOAD_MEMORY must be docker or skip');
   return mode;
 }
+export async function resolveMemoryMode(env,probe) {
+  memoryMode(env);
+  if(env.LOAD_MEMORY==='skip')return 'skip';
+  try {await probe();return 'docker';}
+  catch(error) {if(env.LOAD_MEMORY==='docker')throw error;return 'skip';}
+}
+export function loadConfig(env) {
+  const count=Number(env.LOAD_UPLOAD_COUNT??50),sizeMb=Number(env.LOAD_FILE_MB??50),rate=Number(env.LOAD_API_RPS??200);
+  if(!Number.isInteger(count)||count<1||count>50)throw new Error('LOAD_UPLOAD_COUNT must be 1..50');
+  if(!Number.isInteger(sizeMb)||sizeMb<1||sizeMb>100)throw new Error('LOAD_FILE_MB must be 1..100');
+  if(!Number.isInteger(rate)||rate<2||rate>200||rate%2)throw new Error('LOAD_API_RPS must be an even number in 2..200');
+  return {count,size:sizeMb*1_000_000,rate,resumed:Math.ceil(count/4)};
+}
+export function loadScope({count,size,rate}) {return `${count}x${size/1_000_000}mb-api${rate}rps`;}
 export function memoryMetrics(skip,peak,samples,errors) {
   return skip?{docker_memory_peak_bytes:'unverified',docker_memory_samples:'unverified',docker_memory_errors:'unverified'}:{docker_memory_peak_bytes:peak,docker_memory_samples:samples,docker_memory_errors:errors};
 }
@@ -53,47 +68,51 @@ export async function run(env=process.env) {
   if(!tokens.reporter||!tokens.producer||!tokens.buyer_admin) throw new Error('synthetic role tokens required');
   const duration=Number(env.LOAD_DURATION_S??60);
   if(!Number.isInteger(duration)||duration<10||duration>600)throw new Error('duration must be 10..600 seconds');
-  const skipMemory=memoryMode(env)==='skip';
+  const config=loadConfig(env);
   const containers=(env.LOAD_CONTAINERS??'').split(',').filter(Boolean);
-  if(!skipMemory&&(!containers.length||containers.some(c=>!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(c)))) throw new Error('explicit compose container names required');
-  if(!skipMemory) await exec('docker',['stats','--no-stream','--format','{{.MemUsage}}',...containers]);
-  const started=new Date().toISOString(),metrics={upload_count:50,file_size_bytes:50_000_000,api_target_rps:200,duration_s:duration};
+  if(containers.some(c=>!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(c)))throw new Error('invalid compose container names');
+  const skipMemory=await resolveMemoryMode(env,async()=>{
+    if(!containers.length)throw new Error('explicit compose container names required');
+    await exec('docker',['stats','--no-stream','--format','{{.MemUsage}}',...containers]);
+  })==='skip';
+  const started=new Date().toISOString(),metrics={upload_target_count:config.count,upload_prepared:0,upload_completed:0,file_size_bytes:config.size,api_target_rps:config.rate,duration_s:duration};
   let synth=null,stop=false,memoryPeak=0,memorySamples=0,memoryErrors=0,failed=false,phase='preparing_uploads';
   const monitor=(async()=>{if(skipMemory)return;while(!stop){try{const r=await exec('docker',['stats','--no-stream','--format','{{.MemUsage}}',...containers]);let sum=0;for(const line of r.stdout.trim().split('\n'))sum+=memoryBytes(line.split('/')[0]);memoryPeak=Math.max(memoryPeak,sum);memorySamples++;}catch{memoryErrors++;}if(!stop)await new Promise(r=>setTimeout(r,1000));}})();
   try {
     const http=client(api),form=await http.get(tokens.reporter,'/forms/current');
     if(form.status!==200)throw new Error('form read failed');
-    synth=await makeSyntheticFile(50_000_000);
+    synth=await makeSyntheticFile(config.size);
     const prepared=[];
-    for(let i=0;i<50;i++) {
+    for(let i=0;i<config.count;i++) {
       const mat=await http.call(tokens.reporter,'POST','/materials',{body:materialBody(form.body.version,`synthetic load ${i+1}`,{city:'اصطناعية'})});
       if(mat.status!==201)throw new Error('synthetic material creation failed');
-      prepared.push(await createUploadSession(http,tokens.reporter,{materialId:mat.body.id,size:50_000_000,clientSha256:synth.sha256}));
+      prepared.push(await createUploadSession(http,tokens.reporter,{materialId:mat.body.id,size:config.size,clientSha256:synth.sha256}));
+      metrics.upload_prepared=prepared.length;
     }
     phase='uploads';
     const uploaded=await Promise.allSettled(prepared.map(async(session,i)=>{
-      const r=await resumableUpload({endpoint:tus,file:synth.path,size:50_000_000,chunkSize:1024*1024,interruptAt:i%4===0?[12_500_000]:[],metadata:{upload_session_id:session.id},headers:()=>tusAuth(session,env)});
+      const r=await resumableUpload({endpoint:tus,file:synth.path,size:config.size,chunkSize:1024*1024,interruptAt:i%4===0?[Math.floor(config.size/4)]:[],metadata:{upload_session_id:session.id},headers:()=>tusAuth(session,env)});
       r.agentClose(); if(r.violations.length||i%4===0&&r.interruptions!==1)throw new Error('resume invariant failed');return r;
     }));
     const good=uploaded.filter(r=>r.status==='fulfilled').map(r=>r.value);
-    metrics.upload_errors=50-good.length;metrics.upload_resumed=good.filter(r=>r.interruptions===1).length;
+    metrics.upload_completed=good.length;metrics.upload_errors=config.count-good.length;metrics.upload_resumed=good.filter(r=>r.interruptions===1).length;
     for(const[k,v]of Object.entries(summary(good.map(r=>r.durationMs))))if(v!==null)metrics[`upload_ms_${k}`]=v;
-    // سيناريو مستقل عن الرفع؛ مجموع معدلي المسارين 200 طلب/ث.
+    // سيناريو مستقل عن الرفع؛ يتقاسم المساران المعدل المستهدف المعلن.
     phase='api';
-    const results=await Promise.all([apiLoad(api+'/materials?limit=20',tokens.producer,duration),apiLoad(api+'/catalog?limit=20',tokens.buyer_admin,duration)]);
+    const results=await Promise.all([apiLoad(api+'/materials?limit=20',tokens.producer,duration,config.rate/2),apiLoad(api+'/catalog?limit=20',tokens.buyer_admin,duration,config.rate/2)]);
     for(let i=0;i<2;i++) {
       const r=results[i],prefix=i?'catalog':'inbox';
       for(const[k,v]of Object.entries(summary(r.times)))if(v!==null)metrics[`${prefix}_ms_${k}`]=v;
       metrics[`${prefix}_errors`]=r.errors+r.timeouts+r.bad;metrics[`${prefix}_requests`]=r.requests;metrics[`${prefix}_observed_rps`]=r.rate;
-      if(r.errors||r.timeouts||r.bad||r.requests<duration*100*0.95)failed=true;
+      if(r.errors||r.timeouts||r.bad||r.requests<duration*(config.rate/2)*0.95)failed=true;
     }
-    if(metrics.upload_errors||metrics.upload_resumed!==13)failed=true;
+    if(metrics.upload_errors||metrics.upload_resumed!==config.resumed)failed=true;
   } catch {failed=true;metrics.aborted=true;metrics.failed_phase=phase;}
   finally {stop=true;await monitor;synth?.cleanup();}
   Object.assign(metrics,memoryMetrics(skipMemory,memoryPeak,memorySamples,memoryErrors));
   if(!skipMemory&&(!memorySamples||memoryErrors))failed=true;
-  const doc={schema_version:1,tool:'other',role:'codex',test_name:'concurrent-load',started_at:started,ended_at:new Date().toISOString(),result:failed?'fail':'partial',device:{platform:'server',model:skipMemory?'local services, memory unverified: 50 uploads x 50 MB, 200 target requests/s':'local compose: 50 uploads x 50 MB, 200 target requests/s'},upload_path:'tusd',file:{size_bytes:50_000_000},metrics,notes:metrics.aborted?`توقف الاختبار أثناء ${phase}؛ لم يكتمل السيناريو المطلوب. المقاييس الموجودة تخص ما نُفّذ فقط؛ لا تُعد الحمولة المستهدفة نتيجة ناجحة.`:'نطاق #352: 50 رفعًا مع قطع واستئناف 13 منها، ثم 200 طلب/ث مستهدف على مساري الوارد والكتالوج. الذاكرة مجموع استخدام الحاويات المحددة، لا ذاكرة المضيف. لا قياس زمن الإشعار أو القرص المؤقت ولا حجم الخطة 60 × 2 GB؛ لذلك النتيجة جزئية حتى دون أخطاء. لا إثبات بصمة الملف بعد معالجة الخادم في هذا الاختبار.'};
-  if(skipMemory)doc.notes+=' الذاكرة unverified بطلب LOAD_MEMORY=skip؛ لم يُنفّذ docker stats، ولا يوجد قياس لذاكرة الحاويات.';
+  const doc={schema_version:1,tool:'other',role:'codex',test_name:'concurrent-load',started_at:started,ended_at:new Date().toISOString(),result:failed?'fail':'partial',device:{platform:'server',model:`${skipMemory?'local services, memory unverified':'local compose'}: ${loadScope(config)}`},upload_path:'tusd',file:{size_bytes:config.size},metrics,notes:metrics.aborted?`توقف الاختبار أثناء ${phase}؛ لم يكتمل السيناريو المطلوب. المقاييس الموجودة تخص ما نُفّذ فقط؛ لا تُعد الحمولة المستهدفة نتيجة ناجحة.`:`نطاق التشغيل ${loadScope(config)}: اكتمل ${metrics.upload_completed} رفعًا مع قطع واستئناف ${metrics.upload_resumed} منها، ثم ${config.rate} طلب/ث مستهدف على مساري الوارد والكتالوج. الذاكرة مجموع استخدام الحاويات المحددة، لا ذاكرة المضيف. لا قياس زمن الإشعار أو القرص المؤقت ولا حجم الخطة 60 × 2 GB؛ لذلك النتيجة جزئية حتى دون أخطاء. لا إثبات بصمة الملف بعد معالجة الخادم في هذا الاختبار.`};
+  if(skipMemory)doc.notes+=' الذاكرة unverified؛ تم تجاوز القياس بطلب صريح أو لعدم توفر docker stats للحاويات المحددة؛ لم تتوفر قراءة ذاكرة معتمدة، ولا يوجد قياس لذاكرة الحاويات.';
   saveMeasurement(doc);
   return {code:failed?1:0,doc};
 }
