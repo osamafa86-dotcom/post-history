@@ -12,7 +12,8 @@
     "checks_failed": 0
   },
   "device": {
-    "platform": "server"
+    "platform": "server",
+    "model": "local single host: api (dev mode) + tusd 2.8 + minio + redis + postgres 16 + media worker (python, no container sandbox)"
   },
   "upload_path": "n/a",
   "notes": "الانتهاء الفعلي لم يُنتظر (DL_WAIT_EXPIRY=1)؛ فلا pass"
