@@ -27,6 +27,9 @@ struct HomeView: View {
                     Toggle("settings.deleteLocalAfterReceipt", isOn: $settings.deleteLocalAfterReceipt)
                 } header: { Text("settings.localCopies") } footer: { Text("settings.deleteLocalAfterReceipt.help") }
                 Section {
+                    Toggle("settings.uploadOverWifiOnly", isOn: $settings.uploadOverWifiOnly)
+                } footer: { Text("settings.uploadOverWifiOnly.help") }
+                Section {
                     Toggle("settings.appLock", isOn: Binding(get: { lock.state.isEnabled }, set: { on in Task { await lock.setEnabled(on) } }))
                 } footer: { Text(lock.unavailable ? LocalizedStringKey("settings.appLock.unavailable") : LocalizedStringKey("settings.appLock.help")) }
                 Section("settings.session") {
