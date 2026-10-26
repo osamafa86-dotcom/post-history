@@ -1329,8 +1329,8 @@ export const commissionRules = pgTable("commission_rules", {
 	createdBy: uuid("created_by").notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	uniqueIndex("commission_rules_key").using("btree", table.scope.asc().nullsLast().op("text_ops"), table.scopeId.asc().nullsLast().op("timestamptz_ops"), table.licenseType.asc().nullsLast().op("text_ops"), table.effectiveFrom.asc().nullsLast().op("text_ops")),
-	index("commission_rules_lookup_idx").using("btree", table.scope.asc().nullsLast().op("text_ops"), table.scopeId.asc().nullsLast().op("timestamptz_ops"), table.effectiveFrom.desc().nullsFirst().op("text_ops")),
+	uniqueIndex("commission_rules_key").using("btree", table.scope.asc().nullsLast().op("text_ops"), table.scopeId.asc().nullsLast().op("timestamptz_ops"), table.licenseType.asc().nullsLast().op("timestamptz_ops"), table.effectiveFrom.asc().nullsLast().op("text_ops")),
+	index("commission_rules_lookup_idx").using("btree", table.scope.asc().nullsLast().op("text_ops"), table.scopeId.asc().nullsLast().op("timestamptz_ops"), table.effectiveFrom.desc().nullsFirst().op("timestamptz_ops")),
 	foreignKey({
 			columns: [table.createdBy],
 			foreignColumns: [users.id],
