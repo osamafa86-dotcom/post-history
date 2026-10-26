@@ -122,20 +122,22 @@ export class SandboxCheckoutController {
   }
 }
 
-/** تأكيد الاسترداد في المزوّد التجريبي (غير الإنتاج): يرسل إشعار `refund.succeeded` الموقّع نفسه إلى معالج الإشعار. */
+/**
+ * تأكيد الاسترداد في المزوّد التجريبي: يرسل إشعار `refund.succeeded` الموقّع نفسه إلى معالج الإشعار. بلا المزوّد التجريبي
+ * 404، ووجوده نفسه تحرسه الإعدادات عند الإقلاع (كصفحة الدفع، #341).
+ */
 @Controller('sandbox/refunds')
 export class SandboxRefundsController {
   constructor(
     private readonly orders: OrdersService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider | null,
-    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   @Public()
   @Post(':ref/succeeded')
   @HttpCode(202)
   async succeed(@Param('ref') ref: string): Promise<void> {
-    if (!(this.provider instanceof SandboxPaymentProvider) || this.config.NODE_ENV === 'production') throw new NotFoundException();
+    if (!(this.provider instanceof SandboxPaymentProvider)) throw new NotFoundException();
     const n = this.provider.settleRefund(ref);
     if (!n) throw ApiError.notFound();
     await this.orders.webhook(this.provider.name, n.body, n.headers);
