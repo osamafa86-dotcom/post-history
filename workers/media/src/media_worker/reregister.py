@@ -67,6 +67,8 @@ def reregister(jobs: Jobs, material_id: str, file_id: str) -> dict[str, str]:
                 technical = ref.to_dict()
             body = {"kind": kind, "storage_key": key, "sha256": digest.sha256, "size_bytes": digest.size_bytes,
                     "technical": technical}
+            if kind == "thumbnail":
+                body["mime_type"] = "image/jpeg"  # إلزامي للمصغّرة في العقد
             try:
                 jobs.api.add_derivative(file_id, body)
                 out[kind] = "registered"

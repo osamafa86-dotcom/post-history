@@ -71,8 +71,11 @@ class FakeApi:
 
     def add_derivative(self, file_id: str, body: dict) -> dict:
         assert body["storage_key"].startswith(f"derived/{self.session.material_id}/{file_id}/")
-        if body["kind"] == "thumbnail" and self.reject_thumbnails:
-            raise ApiRejected("POST derivatives: HTTP 422")  # كما يرد الخادم قبل أن يقبل نوع thumbnail
+        if body["kind"] == "thumbnail":
+            # قيود العقد (MediaDerivative) التي يرد الخادم بغيرها 422
+            if self.reject_thumbnails or body.get("mime_type") not in ("image/jpeg", "image/webp") \
+                    or not body["technical"].get("width") or not body["technical"].get("height"):
+                raise ApiRejected("POST derivatives: HTTP 422")
         self.derivatives.append((file_id, body))
         if body["kind"] == "proxy":
             self.session = replace(self.session, material_has_proxy=True)
