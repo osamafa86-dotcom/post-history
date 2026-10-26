@@ -789,7 +789,7 @@ open class CommerceAPI {
     /**
      طابور تعارض دعوات المشترين (مدير النظام،
      - GET /buyer-invite-conflicts
-     - دعوات ببريد حساب قائم خارج المؤسسة، ردّت كالدعوة الناجحة فلم تكشف نوع الحساب. لمدير النظام وحده، وغيره `404` بشكل المفقود فلا يُعرف وجود الطابور.
+     - دعوات ببريد حساب قائم خارج المؤسسة، ردّت كالدعوة الناجحة فلم تكشف نوع الحساب. لمدير النظام وحده، وغيره `403 forbidden_role` كبقية النقاط المقيّدة بالدور (مصفوفة عزل المستأجرين).
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -1323,7 +1323,7 @@ open class CommerceAPI {
     /**
      حسم تعارض دعوة بالحالة وحدها
      - POST /buyer-invite-conflicts/{conflict_id}/resolve
-     - لمدير النظام وحده، وغيره `404`. يلزمه رمز TOTP حاضر في الجسم (`401 totp_required` لغيابه أو خطئه). **الحسم:** `suspended` يعلّق العضو المدعو البديل، و`dismissed` يغلقه نهائيًا ويحرر مقعده. **الانتقالات:** من `pending` إلى الحالتين، ومن `suspended` إلى `dismissed`. غيرها `409 invalid_transition`. **التوثيق:** لا حقل نص حر، ويُسجَّل في التدقيق بـ `buyer_member.invite_conflict_resolved` و`conflict_id`.
+     - لمدير النظام وحده، وغيره `403 forbidden_role`؛ والتعارض المجهول `404`. يلزمه رمز TOTP حاضر في الجسم (`401 totp_required` لغيابه أو خطئه). **الحسم:** `suspended` يعلّق العضو المدعو البديل، و`dismissed` يغلقه نهائيًا ويحرر مقعده. **الانتقالات:** من `pending` إلى الحالتين، ومن `suspended` إلى `dismissed`. غيرها `409 invalid_transition`. **التوثيق:** لا حقل نص حر، ويُسجَّل في التدقيق بـ `buyer_member.invite_conflict_resolved` و`conflict_id`.
      - Bearer Token:
        - type: http
        - name: bearerAuth

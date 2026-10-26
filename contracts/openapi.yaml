@@ -2722,8 +2722,8 @@ paths:
       tags: [commerce]
       summary: طابور تعارض دعوات المشترين (مدير النظام، #331)
       description: >-
-        دعوات ببريد حساب قائم خارج المؤسسة، ردّت كالدعوة الناجحة فلم تكشف نوع الحساب. لمدير النظام وحده، وغيره `404`
-        بشكل المفقود فلا يُعرف وجود الطابور.
+        دعوات ببريد حساب قائم خارج المؤسسة، ردّت كالدعوة الناجحة فلم تكشف نوع الحساب. لمدير النظام وحده، وغيره
+        `403 forbidden_role` كبقية النقاط المقيّدة بالدور (مصفوفة عزل المستأجرين).
       operationId: listBuyerInviteConflicts
       x-roles: [system_admin]
       parameters:
@@ -2740,7 +2740,7 @@ paths:
               schema: { $ref: "#/components/schemas/BuyerInviteConflictPage" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /buyer-invite-conflicts/{conflict_id}/resolve:
     parameters:
@@ -2752,7 +2752,7 @@ paths:
       tags: [commerce]
       summary: حسم تعارض دعوة بالحالة وحدها
       description: >-
-        لمدير النظام وحده، وغيره `404`. يلزمه رمز TOTP حاضر في الجسم (`401 totp_required` لغيابه أو خطئه).
+        لمدير النظام وحده، وغيره `403 forbidden_role`؛ والتعارض المجهول `404`. يلزمه رمز TOTP حاضر في الجسم (`401 totp_required` لغيابه أو خطئه).
         **الحسم:** `suspended` يعلّق العضو المدعو البديل، و`dismissed` يغلقه نهائيًا ويحرر مقعده.
         **الانتقالات:** من `pending` إلى الحالتين، ومن `suspended` إلى `dismissed`. غيرها `409 invalid_transition`.
         **التوثيق:** لا حقل نص حر، ويُسجَّل في التدقيق بـ `buyer_member.invite_conflict_resolved` و`conflict_id`.
@@ -2772,6 +2772,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/BuyerInviteConflict" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }

@@ -1626,7 +1626,7 @@ export interface paths {
         };
         /**
          * طابور تعارض دعوات المشترين (مدير النظام،
-         * @description دعوات ببريد حساب قائم خارج المؤسسة، ردّت كالدعوة الناجحة فلم تكشف نوع الحساب. لمدير النظام وحده، وغيره `404` بشكل المفقود فلا يُعرف وجود الطابور.
+         * @description دعوات ببريد حساب قائم خارج المؤسسة، ردّت كالدعوة الناجحة فلم تكشف نوع الحساب. لمدير النظام وحده، وغيره `403 forbidden_role` كبقية النقاط المقيّدة بالدور (مصفوفة عزل المستأجرين).
          */
         get: operations["listBuyerInviteConflicts"];
         put?: never;
@@ -1650,7 +1650,7 @@ export interface paths {
         put?: never;
         /**
          * حسم تعارض دعوة بالحالة وحدها
-         * @description لمدير النظام وحده، وغيره `404`. يلزمه رمز TOTP حاضر في الجسم (`401 totp_required` لغيابه أو خطئه). **الحسم:** `suspended` يعلّق العضو المدعو البديل، و`dismissed` يغلقه نهائيًا ويحرر مقعده. **الانتقالات:** من `pending` إلى الحالتين، ومن `suspended` إلى `dismissed`. غيرها `409 invalid_transition`. **التوثيق:** لا حقل نص حر، ويُسجَّل في التدقيق بـ `buyer_member.invite_conflict_resolved` و`conflict_id`.
+         * @description لمدير النظام وحده، وغيره `403 forbidden_role`؛ والتعارض المجهول `404`. يلزمه رمز TOTP حاضر في الجسم (`401 totp_required` لغيابه أو خطئه). **الحسم:** `suspended` يعلّق العضو المدعو البديل، و`dismissed` يغلقه نهائيًا ويحرر مقعده. **الانتقالات:** من `pending` إلى الحالتين، ومن `suspended` إلى `dismissed`. غيرها `409 invalid_transition`. **التوثيق:** لا حقل نص حر، ويُسجَّل في التدقيق بـ `buyer_member.invite_conflict_resolved` و`conflict_id`.
          */
         post: operations["resolveBuyerInviteConflict"];
         delete?: never;
@@ -6588,7 +6588,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            404: components["responses"]["NotFound"];
+            403: components["responses"]["Forbidden"];
         };
     };
     resolveBuyerInviteConflict: {
@@ -6619,6 +6619,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["UnprocessableEntity"];
