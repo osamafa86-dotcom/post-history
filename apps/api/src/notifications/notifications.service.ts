@@ -45,6 +45,16 @@ export class NotificationsService {
     };
   }
 
+  /** قراءة الكل لا تغيّر الإقرار أو موعد التصعيد؛ يعيد interceptor الاستجابة الأولى عند التكرار. */
+  async readAll(userId: string, before?: string): Promise<components['schemas']['NotificationReadAllResult']> {
+    const rows = await this.db.update(notifications).set({
+      readAt: sql`now()`,
+      state: sql`CASE WHEN ${notifications.state} = 'acknowledged' THEN 'acknowledged' ELSE 'read' END`,
+    }).where(and(eq(notifications.userId, userId), isNull(notifications.readAt),
+      sql`${notifications.createdAt} <= ${before ?? new Date().toISOString()}::timestamptz`)).returning({ id: notifications.id });
+    return { read_count: rows.length };
+  }
+
   /** «قُرئ»: ذاتي التكرار؛ لا يتراجع عن «أقرّ الاستلام». */
   async read(userId: string, id: string): Promise<void> {
     if (!UUID.test(id)) throw ApiError.notFound();

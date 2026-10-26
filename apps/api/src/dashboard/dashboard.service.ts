@@ -1,3 +1,4 @@
+import { staffWorkName, workNameFor } from '../common/design-fields';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, count, desc, eq, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
 import { APP_CONFIG, type AppConfig } from '../config/config';
@@ -55,6 +56,7 @@ export class DashboardService {
       .select({
         material_id: materials.id,
         reserved_by: materials.reservedBy,
+        reserved_by_name: staffWorkName(sql`${materials.reservedBy}`),
         reserved_at: materials.reservedAt,
         priority: materials.priority,
         editorial_state: materials.editorialState,
@@ -79,7 +81,7 @@ export class DashboardService {
       .limit(20);
     // مهام حان تصعيدها (أو صُعِّدت) ولم يُقرّ استلامها، لمواد ضمن النطاق
     const overdueQuery = this.db
-      .select({ n: count() })
+      .select({ n: count(), oldest: sql<string | null>`min(${notifications.escalateAt}) FILTER (WHERE ${notifications.escalateAt} <= now())` })
       .from(notifications)
       .innerJoin(materials, eq(materials.id, notifications.materialId))
       .leftJoin(offices, eq(offices.id, materials.officeId))
@@ -135,6 +137,7 @@ export class DashboardService {
       reserved: reserved.map((r) => ({
         material_id: r.material_id,
         reserved_by: r.reserved_by!,
+        reserved_by_name: workNameFor(p, r.reserved_by_name),
         reserved_at: iso(r.reserved_at)!,
         priority: r.priority as NewsroomDashboard['reserved'][number]['priority'],
         editorial_state: r.editorial_state as NewsroomDashboard['reserved'][number]['editorial_state'],
@@ -146,6 +149,7 @@ export class DashboardService {
         priority: r.priority as NewsroomDashboard['recent_receipts'][number]['priority'],
       })),
       overdue_acknowledgements: overdue?.n ?? 0,
+      oldest_overdue_acknowledgement_at: iso(overdue?.oldest ?? null),
       uploads_in_progress: inflight.map((u) => ({
         upload_session_id: u.upload_session_id,
         material_id: u.material_id,

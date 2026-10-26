@@ -16,7 +16,7 @@ import { RateLimitsService } from '../identity/rate-limits.service';
 import { iso } from '../materials/material-store';
 import { validTimestamp } from '../uploads/uploads.service';
 import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
-import { toDto as templateDto } from './license-templates.service';
+import { licenseTerms } from './license-templates.service';
 import type { Currency } from './money';
 
 type License = components['schemas']['License'];
@@ -119,7 +119,6 @@ async function read(executor: Executor, id: string): Promise<License> {
     .from(materialFiles)
     .where(and(eq(materialFiles.licenseId, l.id), eq(materialFiles.kind, 'delivery'), eq(materialFiles.state, 'verified')))
     .limit(1);
-  const t = templateDto(v);
   return {
     id: l.id,
     license_number: l.licenseNumber,
@@ -131,18 +130,7 @@ async function read(executor: Executor, id: string): Promise<License> {
     title: { ar: item.titleAr, en: item.titleEn },
     license_template_id: item.licenseTemplateId,
     license_version: item.licenseVersion,
-    terms: {
-      type: t.type,
-      name: t.name,
-      terms: t.terms,
-      usage_media: t.usage_media,
-      territory: t.territory,
-      term_days: t.term_days ?? null,
-      exclusivity_hours: t.exclusivity_hours ?? null,
-      deliverables: t.deliverables,
-      attribution: t.attribution,
-      prohibitions: t.prohibitions,
-    },
+    terms: licenseTerms(v),
     price: { amount_minor: item.priceMinor, currency: item.currency as Currency },
     status: l.status as LicenseStatus,
     revoked_reason: l.revokedReason as License['revoked_reason'],

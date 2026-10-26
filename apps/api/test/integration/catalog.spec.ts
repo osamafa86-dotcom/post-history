@@ -97,6 +97,18 @@ describe('catalog (/v1/catalog)', () => {
   };
   const mine = (body: { items: Array<{ listing_id: string }> }) => body.items.map((i) => i.listing_id);
 
+  it('computes verification and publication days and role for the listed version only', async () => {
+    const a = await listed();
+    await h.pool.query(`UPDATE material_files SET verified_at = '2026-10-20T21:30:00Z' WHERE id = $1`, [a.originalId]);
+    await h.pool.query(`INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, actor_id, payload) VALUES ('material.published', 'material', $1, $2, $3, $4)`,
+      [a.materialId, randomUUID(), admin.id, JSON.stringify({ material_id: a.materialId, material_version: 1 })]);
+    const item = (await get(finance, `/catalog/${a.listingId}`).expect(200)).body;
+    expect(item.verified_on).toBe('2026-10-21');
+    expect(item.editorial_approved_on).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(item.editorial_approver_role).toBe('system_admin');
+    expect(item.exclusive_unavailable_until).toBeNull();
+  });
+
   it('shows listed items only, in the closed whitelist: no coordinates, city, hour, reporter, material id, alias or dynamic fields; network credit; current offer prices', async () => {
     const a = await listed({ height: 2160, durationMs: 125000, offers: [{ license_template_id: single, price_override: { amount_minor: 4200, currency: 'ILS' } }, { license_template_id: retired }] });
     const draft = await listed({ state: 'draft' });
@@ -104,15 +116,15 @@ describe('catalog (/v1/catalog)', () => {
     const valid = schemaValidator('CatalogItem');
     expect(valid(item) ? [] : valid.errors).toEqual([]);
     expect(Object.keys(item).sort()).toEqual(
-      ['credit', 'description', 'duration_ms', 'exclusive_available', 'governorate', 'height', 'listed_at', 'listing_id', 'material_types', 'material_version', 'offers', 'shot_list', 'shot_on', 'title', 'width'].sort(),
+      ['verified_on', 'editorial_approved_on', 'editorial_approver_role', 'exclusive_unavailable_until', 'credit', 'description', 'duration_ms', 'exclusive_available', 'governorate', 'height', 'listed_at', 'listing_id', 'material_types', 'material_version', 'offers', 'shot_list', 'shot_on', 'title', 'width'].sort(),
     );
     expect(item).toMatchObject({ governorate: 'gaza', shot_on: '2026-10-21', duration_ms: 125000, height: 2160, width: 3840, credit: 'Test Network', exclusive_available: false });
     const text = JSON.stringify(item);
     // 21:30 بتوقيت UTC يوم 20 هو بعد منتصف الليل في غزة: يوم التصوير محلي، والساعة لا تظهر
     for (const leak of ['secret-city', 'Hidden Alias', reporterId, a.materialId, a.originalId, '21:30']) expect([leak, text.includes(leak)]).toEqual([leak, false]);
     expect(item.offers).toEqual([
-      { license_template_id: single, license_version: 1, type: 'editorial_single', name: { ar: 'ترخيص editorial_single', en: 'License editorial_single' }, price: { amount_minor: 4200, currency: 'ILS' } },
-      { license_template_id: retired, license_version: 1, type: 'editorial_term', name: { ar: 'ترخيص editorial_term', en: 'License editorial_term' }, price: { amount_minor: 7000, currency: 'USD' } },
+      { license_template_id: single, license_version: 1, type: 'editorial_single', name: { ar: 'ترخيص editorial_single', en: 'License editorial_single' }, price: { amount_minor: 4200, currency: 'ILS' }, terms: expect.objectContaining({ type: 'editorial_single', terms: { ar: 'ش', en: 'Terms' } }) },
+      { license_template_id: retired, license_version: 1, type: 'editorial_term', name: { ar: 'ترخيص editorial_term', en: 'License editorial_term' }, price: { amount_minor: 7000, currency: 'USD' }, terms: expect.objectContaining({ type: 'editorial_term', term_days: 90 }) },
     ]);
     // قالب يُعطَّل بعد الإدراج يخرج عرضه من الكتالوج
     const current = (await get(admin, `/license-templates/${retired}`).expect(200)).body;

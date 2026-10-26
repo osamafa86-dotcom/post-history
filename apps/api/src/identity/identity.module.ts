@@ -3,7 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { AccountService } from './account.service';
-import { AuthController, UserStatusController } from './auth.controller';
+import { AuthController, UserStatusController, UserWorkNameController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
 import { JWT_OPTIONS, SessionService } from './session.service';
@@ -21,7 +21,7 @@ import { InlineResetTokenDelivery, RESET_TOKEN_DELIVERY } from './reset-token-de
       }),
     }),
   ],
-  controllers: [AuthController, UserStatusController],
+  controllers: [AuthController, UserStatusController, UserWorkNameController],
   providers: [
     SessionService,
     AuthService,
