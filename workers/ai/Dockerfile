@@ -12,6 +12,7 @@ COPY requirements.txt ./
 RUN pip install --require-hashes --no-deps --only-binary=:all: -r requirements.txt
 COPY pyproject.toml ./
 COPY src ./src
+COPY lexicon ./lexicon
 
 FROM base AS test
 COPY requirements-test.txt ./
