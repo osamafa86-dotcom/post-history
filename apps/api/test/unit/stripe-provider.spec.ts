@@ -1,12 +1,12 @@
 import { loadConfig } from '../../src/config/config';
 import { money } from '../../src/commerce/money';
 import { WebhookSignatureError } from '../../src/commerce/payment-provider';
-import { IgnoredWebhookEvent, StripeTestProvider, stripeSignatureHeader, translateStripeEvent, verifyStripeSignature } from '../../src/commerce/stripe-provider';
+import { IgnoredWebhookEvent, LiveModeEvent, StripeTestProvider, stripeSignatureHeader, translateStripeEvent, verifyStripeSignature } from '../../src/commerce/stripe-provider';
 
 const WHSEC = 'whsec_testsecret0123456789';
 const KEY = 'sk_test_0123456789abcdef';
 const now = new Date('2026-10-26T12:00:00Z');
-const evt = (type: string, object: Record<string, unknown>, id = 'evt_test_1') => Buffer.from(JSON.stringify({ id, type, created: Math.floor(now.getTime() / 1000), data: { object } }));
+const evt = (type: string, object: Record<string, unknown>, id = 'evt_test_1') => Buffer.from(JSON.stringify({ id, type, livemode: false, created: Math.floor(now.getTime() / 1000), data: { object } }));
 
 /** ردود Stripe المسجّلة بشكلها، ونداءات المحوّل محفوظة للفحص */
 function recorded(responses: Record<string, unknown>) {
@@ -75,6 +75,11 @@ describe('Stripe test-mode adapter', () => {
     expect(() => translateStripeEvent(evt('checkout.session.completed', { id: 'cs_1', payment_status: 'unpaid', amount_total: 1, currency: 'usd' }))).toThrow(IgnoredWebhookEvent);
     expect(() => translateStripeEvent(evt('refund.created', { id: 're_1', status: 'pending', amount: 1, currency: 'usd' }))).toThrow(IgnoredWebhookEvent);
     expect(() => translateStripeEvent(evt('customer.created', { id: 'cus_1' }))).toThrow(IgnoredWebhookEvent);
+    // الحدث الحي يُرفض قبل الترجمة، والحدث بلا livemode غير صالح
+    const live = Buffer.from(JSON.stringify({ id: 'evt_live', type: 'checkout.session.completed', livemode: true, created: 1, data: { object: { id: 'cs_1', payment_status: 'paid', amount_total: 1, currency: 'usd' } } }));
+    expect(() => translateStripeEvent(live)).toThrow(LiveModeEvent);
+    const bare = Buffer.from(JSON.stringify({ id: 'evt_x', type: 'customer.created', created: 1, data: { object: {} } }));
+    expect(() => translateStripeEvent(bare)).toThrow(WebhookSignatureError);
     expect(() => translateStripeEvent(evt('checkout.session.completed', { id: 'cs_1', payment_status: 'paid', amount_total: 1, currency: 'eur' }))).toThrow(WebhookSignatureError);
     expect(() => translateStripeEvent(evt('checkout.session.completed', { id: 'cs_1', payment_status: 'paid', amount_total: 1, currency: 'usd' }, 'not-an-event'))).toThrow(WebhookSignatureError);
   });

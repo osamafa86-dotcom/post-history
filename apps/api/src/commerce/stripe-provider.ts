@@ -87,6 +87,11 @@ interface StripeSession {
   payment_intent?: string | { id: string } | null;
 }
 
+/** حدث من وضع Stripe الحي (`livemode: true`): مال حقيقي، فيُرفض `400 live_payments_disabled` بلا أثر (العقد #353). */
+export class LiveModeEvent extends Error {
+  override name = 'LiveModeEvent';
+}
+
 /** الحدث الموقّع الصحيح الذي لا يخص الدفع عندنا: يُقبل بـ 200 بلا أثر ولا يُخزَّن. */
 export class IgnoredWebhookEvent extends Error {
   override name = 'IgnoredWebhookEvent';
@@ -123,7 +128,7 @@ export function stripeSignatureHeader(secret: string, rawBody: Buffer, now = new
  * ما عداها، أو `completed` غير المدفوع بعد، IgnoredWebhookEvent.
  */
 export function translateStripeEvent(rawBody: Buffer): ProviderEvent {
-  let e: { id?: unknown; type?: unknown; created?: unknown; data?: { object?: Record<string, unknown> } };
+  let e: { id?: unknown; type?: unknown; created?: unknown; livemode?: unknown; data?: { object?: Record<string, unknown> } };
   try {
     e = JSON.parse(rawBody.toString('utf8'));
   } catch {
@@ -132,6 +137,11 @@ export function translateStripeEvent(rawBody: Buffer): ProviderEvent {
   const o = e.data?.object ?? {};
   if (typeof e.id !== 'string' || !/^evt_[A-Za-z0-9_]{1,120}$/.test(e.id) || typeof e.type !== 'string' || typeof e.created !== 'number') {
     throw new WebhookSignatureError('event fields are invalid');
+  }
+  // لا مال حقيقي: الحدث الحي يُرفض قبل أي ترجمة، أيًّا كان نوعه
+  if (e.livemode !== false) {
+    if (e.livemode === true) throw new LiveModeEvent('live-mode event');
+    throw new WebhookSignatureError('event livemode is missing');
   }
   const at = new Date(e.created * 1000);
   const amountOf = (minor: unknown, currency: unknown): Money => {

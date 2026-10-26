@@ -27,7 +27,7 @@ import { requestDelivery } from './delivery';
 import { postEntry, type AccountRef } from './ledger';
 import { allocate, type Currency, money, type Money, percentToBasisPoints } from './money';
 import { PAYMENT_PROVIDER, type PaymentProvider, type ProviderEvent, WebhookSignatureError } from './payment-provider';
-import { IgnoredWebhookEvent } from './stripe-provider';
+import { IgnoredWebhookEvent, LiveModeEvent } from './stripe-provider';
 
 export type Order = components['schemas']['Order'];
 export type OrderCreate = components['schemas']['OrderCreate'];
@@ -190,6 +190,7 @@ export class OrdersService {
       if (err instanceof WebhookSignatureError) throw new ApiError(400, 'webhook_signature_invalid', 'The webhook signature is invalid.');
       // حدث موقّع صحيح لا يخص الدفع عندنا (أنواع Stripe الأخرى): يُقبل بلا أثر ولا يُخزَّن
       if (err instanceof IgnoredWebhookEvent) return { received: true };
+      if (err instanceof LiveModeEvent) throw new ApiError(400, 'live_payments_disabled' as 'webhook_signature_invalid', 'Live payments are disabled.');
       throw err;
     }
     await this.db.transaction(async (tx) => {

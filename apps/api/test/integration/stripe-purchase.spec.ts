@@ -113,7 +113,7 @@ describe('Stripe test-mode purchase (/payments/webhooks/stripe)', () => {
   });
 
   const notify = (type: string, object: Record<string, unknown>, id = `evt_${randomBytes(8).toString('hex')}`, secret = WHSEC) => {
-    const body = Buffer.from(JSON.stringify({ id, type, created: Math.floor(Date.now() / 1000), data: { object } }));
+    const body = Buffer.from(JSON.stringify({ id, type, livemode: false, created: Math.floor(Date.now() / 1000), data: { object } }));
     return http().post('/payments/webhooks/stripe').set({ 'content-type': 'application/json', 'stripe-signature': stripeSignatureHeader(secret, body) }).send(body.toString('utf8'));
   };
 
@@ -130,6 +130,10 @@ describe('Stripe test-mode purchase (/payments/webhooks/stripe)', () => {
     // توقيع خاطئ قبل أي أثر، وحدث لا يخص الدفع 200 بلا تخزين
     await notify('checkout.session.completed', { id: cs, payment_status: 'paid', amount_total: 10_000, currency: 'usd' }, undefined, 'whsec_wrongwrongwrong').expect(400);
     await notify('customer.created', { id: 'cus_1' }).expect(200);
+    // حدث حي موقّع: 400 live_payments_disabled بلا أثر
+    const live = Buffer.from(JSON.stringify({ id: `evt_${randomBytes(8).toString('hex')}`, type: 'checkout.session.completed', livemode: true, created: Math.floor(Date.now() / 1000), data: { object: { id: cs, payment_status: 'paid', amount_total: 10_000, currency: 'usd' } } }));
+    const refused = await http().post('/payments/webhooks/stripe').set({ 'content-type': 'application/json', 'stripe-signature': stripeSignatureHeader(WHSEC, live) }).send(live.toString('utf8')).expect(400);
+    expect(refused.body.code).toBe('live_payments_disabled');
     await notify('checkout.session.completed', { id: cs, payment_status: 'unpaid', amount_total: 10_000, currency: 'usd' }).expect(200);
     expect((await order(b.token, created.id)).status).toBe('pending_payment');
     expect(await count(`SELECT count(*)::int AS n FROM payment_events WHERE provider = 'stripe' AND provider_ref = $1`, [cs])).toBe(0);
