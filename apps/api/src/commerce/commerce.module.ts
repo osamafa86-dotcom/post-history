@@ -16,6 +16,7 @@ import { CommissionRulesController, CommissionRulesService } from './commission-
 import { OrdersController, PaymentWebhooksController, SandboxCheckoutController, SandboxRefundsController } from './orders.controller';
 import { OrdersService } from './orders.service';
 import { PAYMENT_PROVIDER, SandboxPaymentProvider } from './payment-provider';
+import { StripeTestProvider } from './stripe-provider';
 import { RefundsController, RefundsService } from './refunds';
 
 /** المرحلة التجارية (v0.3، ADR 0025) بمزوّد دفع تجريبي فقط: قوالب التراخيص، والإدراج، والكتالوج، والمشترون، والطلبات. */
@@ -33,7 +34,12 @@ import { RefundsController, RefundsService } from './refunds';
       provide: PAYMENT_PROVIDER,
       inject: [APP_CONFIG],
       // ADR 0032: المزوّد التجريبي خارج الإنتاج وحده (فحص الإعداد)، وبلا مزوّد لا دفع
-      useFactory: (c: AppConfig) => (c.PAYMENT_PROVIDER === 'sandbox' ? new SandboxPaymentProvider(c.SANDBOX_WEBHOOK_SECRET!, c.SANDBOX_CHECKOUT_BASE_URL) : null),
+      useFactory: (c: AppConfig) =>
+        c.PAYMENT_PROVIDER === 'sandbox'
+          ? new SandboxPaymentProvider(c.SANDBOX_WEBHOOK_SECRET!, c.SANDBOX_CHECKOUT_BASE_URL)
+          : c.PAYMENT_PROVIDER === 'stripe'
+            ? new StripeTestProvider(c.STRIPE_TEST_SECRET_KEY!, c.STRIPE_WEBHOOK_SECRET!, c.STRIPE_API_BASE)
+            : null,
     },
   ],
 })
