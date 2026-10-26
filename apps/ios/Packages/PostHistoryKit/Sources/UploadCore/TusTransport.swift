@@ -118,6 +118,9 @@ public final class URLSessionTusTransport: NSObject, TusTransport, URLSessionDat
     private var lastProgress: [Int: Date] = [:]
     private let idleTimeout: TimeInterval?
     private var watchdog: Task<Void, Never>?
+    /// «عبر Wi‑Fi فقط» (الخطة: قائمة الانتظار دون اتصال): لا شبكة مكلفة (خلوي) ولا وضع البيانات المنخفضة، فتنتظر مهام
+    /// الجلسة الخلفية شبكة غير محدودة. يُقرأ عند بناء كل طلب؛ بعد تغييره يُستدعى `restartTransfers()`.
+    public var unmeteredOnly: @Sendable () -> Bool = { false }
     /// يُستدعى بعد معالجة كل أحداث الجلسة الخلفية (من `handleEventsForBackgroundURLSession`).
     public var backgroundCompletionHandler: (@Sendable () -> Void)?
 
@@ -157,7 +160,21 @@ public final class URLSessionTusTransport: NSObject, TusTransport, URLSessionDat
         r.setValue(Self.tusVersion, forHTTPHeaderField: "Tus-Resumable")
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if let ingestToken { r.setValue(ingestToken, forHTTPHeaderField: "Ingest-Token") }
+        Self.applyNetworkPolicy(&r, unmeteredOnly: unmeteredOnly())
         return r
+    }
+
+    static func applyNetworkPolicy(_ r: inout URLRequest, unmeteredOnly: Bool) {
+        #if canImport(Darwin)
+        r.allowsExpensiveNetworkAccess = !unmeteredOnly
+        r.allowsConstrainedNetworkAccess = !unmeteredOnly
+        #endif
+    }
+
+    /// يلغي مهام PATCH الجارية والمنتظرة فيعيد المحرّك جدولتها من موضع الخادم بسياسة الشبكة الحالية.
+    /// مهمة أُنشئت بـ «Wi‑Fi فقط» تبقى تنتظر Wi‑Fi حتى بعد إطفاء الخيار، ولذلك تُلغى عند كل تغيير.
+    public func restartTransfers() async {
+        for task in await allTasks() where task.taskDescription.flatMap(TusTaskKey.init) != nil { task.cancel() }
     }
 
     public func createUpload(_ req: TusCreateRequest) async throws -> URL {
