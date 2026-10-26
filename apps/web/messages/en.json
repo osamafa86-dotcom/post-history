@@ -840,5 +840,12 @@
       "exclusivity_lost": "exclusivity lost",
       "rights_changed": "rights changed"
     }
+  },
+  "privacy": {
+    "title": "Privacy policy",
+    "temporary": "Temporary text — the approved policy has not been published yet.",
+    "body": "This page is a temporary structure for the privacy policy. Text approved by the coordinator will replace this notice. This text is not a complete privacy policy or consent to data processing.",
+    "languageNavigation": "Privacy policy language",
+    "otherLanguage": "العربية"
   }
 }
