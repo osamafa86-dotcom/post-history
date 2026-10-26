@@ -7,6 +7,7 @@ import { BuyersService } from './buyers.service';
 import { CatalogController } from './catalog.controller';
 import { CatalogService } from './catalog.service';
 import { LicenseTemplatesController } from './license-templates.controller';
+import { InviteConflictsController, InviteConflictsService } from './invite-conflicts.controller';
 import { LicensesController, LicensesService } from './licenses';
 import { LicenseTemplatesService } from './license-templates.service';
 import { ListingsController } from './listings.controller';
@@ -23,11 +24,11 @@ import { RefundsController, RefundsService } from './refunds';
   controllers: [
     LicenseTemplatesController, ListingsController, CatalogController, BuyersController,
     OrdersController, PaymentWebhooksController, SandboxCheckoutController, SandboxRefundsController, LicensesController,
-    RefundsController, CommissionRulesController,
+    RefundsController, CommissionRulesController, InviteConflictsController,
   ],
   providers: [
     LicenseTemplatesService, ListingsService, CatalogService, BuyersService,
-    OrdersService, RefundsService, CommissionRulesService, LicensesService,
+    OrdersService, RefundsService, CommissionRulesService, LicensesService, InviteConflictsService,
     {
       provide: PAYMENT_PROVIDER,
       inject: [APP_CONFIG],
