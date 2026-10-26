@@ -67,7 +67,7 @@ try {
     NOTIF_RULES: process.env.RULES_ACCEPTANCE ?? "0",
     RID_API_URL: stack.apiUrl, RID_MATERIAL_ID: s.uploads.materialA, RID_LEGAL_NAME: s.legalName ?? "",
     RID_TOKENS: JSON.stringify({ system_admin: s.tokens.system_admin, identity_holder: s.tokens.editor_in_chief, source_holder: s.allTokens.system_admin_b, reporter: s.tokens.reporter }),
-    RID_USERS: JSON.stringify({ identity_holder: s.users.editor_in_chief.id, source_holder: s.allTokens.system_admin_b.id }),
+    RID_USERS: JSON.stringify({ identity_holder: s.users.editor_in_chief.id, source_holder: s.users.system_admin_b.id }),
   };
   Object.assign(process.env, common);
   const note = `الخادم من main@${sha} على Postgres 16 بقاعدة مؤقتة${process.env.LIVE_REDIS_URL ? " وRedis" : ""}${s3 ? " وتخزين S3" : ""}؛ بلا Cloudflare ولا tusd (الخطّاف مُحاكى)`;
