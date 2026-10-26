@@ -84,6 +84,21 @@ describe('sandbox purchase (/v1/orders, /payments/webhooks/sandbox)', () => {
   const order = async (t: string, id: string) => (await http().get(`/v1/orders/${id}`).set(as(t)).expect(200)).body;
   const count = async (q: string, args: unknown[]) => (await h.pool.query<{ n: number }>(q, args)).rows[0]!.n;
 
+  it('buyers of an active organization read the catalog; a pending or suspended one is 403 forbidden_scope', async () => {
+    const t = await template();
+    const { listingId } = await listed([t]);
+    for (const role of ['buyer_admin', 'buyer_member'] as const) {
+      const b = await buyer(await organization(), role);
+      for (const path of ['/catalog', `/catalog/${listingId}`]) await http().get(`/v1${path}`).set(as(b.token)).expect(200);
+    }
+    for (const status of ['pending_verification', 'suspended']) {
+      const b = await buyer(await organization(status), 'buyer_member');
+      for (const path of ['/catalog', `/catalog/${listingId}`, `/catalog/${listingId}/preview-url`]) {
+        expect((await http().get(`/v1${path}`).set(as(b.token)).expect(403)).body.code).toBe('forbidden_scope');
+      }
+    }
+  });
+
   it('a paid order issues its license, posts the sale entry and its events once, in the contract shape', async () => {
     const t = await template();
     const { listingId, materialId } = await listed([t]);
