@@ -27,7 +27,7 @@ describe('audit allowlist check', () => {
   const report = (ids: Array<[string, string]>) => ({
     vulnerabilities: Object.fromEntries(ids.map(([id, severity], i) => [`p${i}`, { via: [{ url: `https://github.com/advisories/${id}`, severity, name: `p${i}` }, 'transitive'] }])),
   });
-  const entry = { id: 'GHSA-aaaa', reason: 'r', added: '2026-10-26', remove_when: 'w' };
+  const entry = { id: 'GHSA-aaaa', reason: 'r', added: '2026-10-26', expires: '2026-12-25', removal_condition: 'w' };
 
   it('blocks any high or critical advisory not on the list, allows listed ones, ignores moderate, and reports stale entries', () => {
     const r = check(report([['GHSA-aaaa', 'high'], ['GHSA-bbbb', 'critical'], ['GHSA-cccc', 'moderate']]), [entry, { ...entry, id: 'GHSA-gone' }], '2026-10-26');
@@ -37,10 +37,16 @@ describe('audit allowlist check', () => {
     expect(advisories(report([['GHSA-cccc', 'moderate']]))).toEqual([]);
   });
 
-  it('refuses an entry without a reason, a date or a removal condition', () => {
-    for (const key of ['reason', 'added', 'remove_when']) {
+  it('refuses an entry without a reason, a date, an expiry or a removal condition', () => {
+    for (const key of ['reason', 'added', 'expires', 'removal_condition']) {
       expect(() => check(report([]), [{ ...entry, [key]: '' }])).toThrow(key);
     }
     expect(() => check(report([]), [{ ...entry, added: '2999-01-01' }], '2026-10-26')).toThrow('future');
+  });
+
+  it('an exception lasts 60 days at most and fails the check once expired', () => {
+    expect(() => check(report([]), [{ ...entry, expires: '2026-12-26' }], '2026-10-26')).toThrow('60 days');
+    expect(() => check(report([]), [entry], '2026-12-25')).not.toThrow();
+    expect(() => check(report([]), [entry], '2026-12-26')).toThrow('expired');
   });
 });

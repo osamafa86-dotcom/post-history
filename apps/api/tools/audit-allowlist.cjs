@@ -24,10 +24,15 @@ function advisories(report) {
 function check(report, allowlist, today = new Date().toISOString().slice(0, 10)) {
   const allowed = new Map(allowlist.map((a) => [a.id, a]));
   for (const a of allowlist) {
-    for (const key of ['id', 'reason', 'added', 'remove_when']) {
+    for (const key of ['id', 'reason', 'added', 'expires', 'removal_condition']) {
       if (typeof a[key] !== 'string' || a[key].trim() === '') throw new Error(`allowlist entry ${a.id ?? '?'} lacks ${key}`);
     }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(a.added) || !/^\d{4}-\d{2}-\d{2}$/.test(a.expires)) throw new Error(`allowlist entry ${a.id} has a malformed date`);
     if (a.added > today) throw new Error(`allowlist entry ${a.id} is dated in the future`);
+    // الاستثناء مؤقت: ينتهي خلال 60 يومًا من إضافته على الأكثر، ويُفشل الفحص بعد انتهائه حتى يُراجَع
+    const maxExpiry = new Date(Date.parse(`${a.added}T00:00:00Z`) + 60 * 86_400_000).toISOString().slice(0, 10);
+    if (a.expires > maxExpiry) throw new Error(`allowlist entry ${a.id} expires more than 60 days after it was added`);
+    if (today > a.expires) throw new Error(`allowlist entry ${a.id} expired on ${a.expires}; review it`);
   }
   const found = advisories(report);
   return {
