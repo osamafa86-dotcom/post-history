@@ -470,6 +470,26 @@
       "original": "Original",
       "proxy": "Proxy",
       "voice_note": "Voice note"
+    },
+    "openDisplay": "Wall display",
+    "display": {
+      "title": "Live production board",
+      "scope": "Newsroom · {scope}",
+      "allOffices": "All offices",
+      "myOffice": "Your office",
+      "snapshot": "Last snapshot {time} · refreshes every 5 seconds",
+      "urgentHelp": "Urgent, not yet published or rejected",
+      "overdueHelp": "Escalation due, not acknowledged",
+      "reservedHelp": "Held by the production team",
+      "uploading": "Uploading · {n}",
+      "reservedPill": "Reserved for production",
+      "empty": "Nothing here right now",
+      "privacy": "No source names or precise locations on this screen · display names only",
+      "soundOn": "Sound on",
+      "soundOff": "Click to enable sound",
+      "stale": "Board not updated for {time}",
+      "allClear": "Everything is within its deadline",
+      "exit": "Leave wall display"
     }
   },
   "upload": {
