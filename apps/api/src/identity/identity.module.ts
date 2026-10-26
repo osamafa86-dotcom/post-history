@@ -30,6 +30,6 @@ import { InlineResetTokenDelivery, RESET_TOKEN_DELIVERY } from './reset-token-de
     { provide: RESET_TOKEN_DELIVERY, useClass: InlineResetTokenDelivery },
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
-  exports: [SessionService, RateLimitsService],
+  exports: [SessionService, RateLimitsService, RESET_TOKEN_DELIVERY],
 })
 export class IdentityModule {}
