@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { messages, isLocale } from "@/lib/i18n";
+import "@/generated/tokens.css";
 import "./globals.css";
 export const dynamic = "force-dynamic";
 export async function generateMetadata() {
