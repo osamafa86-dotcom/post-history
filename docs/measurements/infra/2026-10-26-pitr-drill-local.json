@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "infra",
+  "test_name": "recovery",
+  "started_at": "2026-10-26T05:43:27Z",
+  "ended_at": "2026-10-26T05:43:30Z",
+  "result": "partial",
+  "device": {
+    "platform": "server",
+    "model": "local docker compose (cloud container, 4 vCPU): trial stack from smoke-trial.sh, stand-in second provider (MinIO, compliance lock) in the same project"
+  },
+  "metrics": {
+    "exit_code": 0,
+    "base_fetch_s": 1.0,
+    "wal_replay_s": 1.0,
+    "restore_total_s": 2.0,
+    "target_reached": true,
+    "state_matches_target": true,
+    "drill_passed": true,
+    "wal_push_after_switch_s": 0.46,
+    "archive_timeout_s": 300
+  },
+  "notes": "ADR 0051 point-in-time restore: the latest WAL-G base backup fetched from the second provider and decrypted with the offline private key, WAL replayed up to the target time, then the restored state checked by a query. Partial unless run on a separate host against the real second provider (the monthly drill). Timings inside the restore container have one-second resolution (busybox date). wal_push_after_switch_s: from pg_switch_wal to the segment holding the post-target commit being archived; with archive_timeout 300 s the bound on loss is about 5 minutes plus that push time, against the plan's 15. Small synthetic database; the monthly drill on a separate host measures the real size."
+}

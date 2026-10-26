@@ -54,7 +54,9 @@
         "export.requested",
         "setting.changed",
         "catalog.listing_changed",
-        "license.delivery_requested"
+        "license.delivery_requested",
+        "order.status_changed",
+        "license.issued"
       ]
     },
     "aggregate_type": {
@@ -66,7 +68,8 @@
         "form",
         "user",
         "listing",
-        "license"
+        "license",
+        "order"
       ]
     },
     "aggregate_id": {
@@ -840,6 +843,118 @@
               "produced_file_id": {
                 "$ref": "#/$defs/nullableUuid",
                 "description": "مشتق بنوع produced وحده (التصدير النهائي من render)، ولا غيره من المشتقات التحريرية أو الداخلية (R11)"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "order.status_changed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "order"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "تغيّر حالة طلب (v0.3، ADR 0025 الجزء 4): معرّفات وحالة فقط، بلا مبالغ ولا أسماء ولا عناوين.",
+            "required": [
+              "order_id",
+              "organization_id",
+              "status"
+            ],
+            "properties": {
+              "order_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "organization_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending_payment",
+                  "paid",
+                  "cancelled",
+                  "expired",
+                  "refunded"
+                ]
+              },
+              "cancel_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "buyer",
+                  "exclusivity_lost",
+                  "rights_changed",
+                  null
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "license.issued"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "license"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "ترخيص صدر بعد تأكيد الدفع الموقّع (v0.3، ADR 0025 الجزء 4): معرّفات ونوع فقط، بلا سعر ولا اسم مشترٍ. يستهلكه حساب العمولات وطلب حزمة التسليم.",
+            "required": [
+              "license_id",
+              "order_id",
+              "organization_id",
+              "material_id",
+              "material_version",
+              "license_type"
+            ],
+            "properties": {
+              "license_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "order_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "organization_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "material_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "material_version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "license_type": {
+                "type": "string",
+                "enum": [
+                  "editorial_single",
+                  "editorial_term",
+                  "exclusive_temporary",
+                  "commercial"
+                ]
               }
             }
           }

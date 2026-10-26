@@ -4,10 +4,13 @@ import { describe, expect, it } from "vitest";
 import { actionPath, actionRoutes } from "../src/server/review-actions";
 import { identityAccesses, identityReasons, pageLimits, permissions, reasonLimits } from "../src/lib/admin-policy";
 import { states } from "../src/lib/query";
+import * as buyers from "../src/lib/buyer-policy";
 import { uploadRoles } from "../src/lib/upload-policy";
 import { catalogRoles, licenseTypes } from "../src/server/catalog";
 import { channels, roles, ruleEvents, ruleLimits, scopeKinds } from "../src/lib/notification-policy";
 import * as license from "../src/lib/license-policy";
+import * as listing from "../src/lib/listing-policy";
+import { formReaders, formWriters } from "../src/lib/form-admin";
 
 const { load } = createRequire(import.meta.url)("js-yaml") as { load: (text: string) => unknown };
 const contract = load(readFileSync(new URL("../../../contracts/openapi.yaml", import.meta.url), "utf8"));
@@ -18,6 +21,11 @@ function at(...path: string[]): unknown {
   }, contract);
 }
 describe("BFF policy remains aligned with the checked-in OpenAPI contract", () => {
+  it("matches form administration roles and publication preconditions", () => {
+    expect(formReaders).toEqual(at("paths", "/forms", "get", "x-roles"));
+    expect(formWriters).toEqual(at("paths", "/forms", "post", "x-roles"));
+    expect(at("paths", "/forms", "post", "parameters")).toEqual(expect.arrayContaining([{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/IfMatch" }]));
+  });
   it("matches permission and reporter identity enums, including coded reasons", () => {
     expect(permissions).toEqual(at("components", "schemas", "Permission", "enum"));
     expect(identityAccesses).toEqual(at("components", "schemas", "ReporterIdentityAccess", "enum"));
@@ -48,7 +56,7 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
   });
   it("keeps catalog roles and license types aligned with v0.3", () => {
     // أدوار المشترين (#192) تُضاف إلى x-roles قبل حساب المؤسسة في الويب (#203 بند 31)؛ الواجهة تبقى على أدوار العقد وحدها.
-    for (const path of ["/catalog", "/catalog/{listing_id}", "/catalog/{listing_id}/preview-url"]) expect(at("paths", path, "get", "x-roles")).toEqual(expect.arrayContaining([...catalogRoles]));
+    for (const path of ["/catalog", "/catalog/{listing_id}", "/catalog/{listing_id}/preview-url"]) expect([...catalogRoles]).toEqual(at("paths", path, "get", "x-roles"));
     expect([...licenseTypes]).toEqual(at("components", "schemas", "LicenseType", "enum"));
   });
   it("keeps license template roles, choices and limits aligned with v0.3", () => {
@@ -59,6 +67,23 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
     expect([...license.usageMedia]).toEqual(field("usage_media", "items", "enum")); expect([...license.deliverables]).toEqual(field("deliverables", "items", "enum")); expect([...license.prohibitions]).toEqual(field("prohibitions", "items", "enum"));
     const l = license.templateLimits;
     expect([l.text, l.countries, l.termMin, l.termMax, l.hoursMin, l.hoursMax, l.amountMax]).toEqual([at("components", "schemas", "LocalizedText", "properties", "ar", "maxLength"), field("territory", "properties", "countries", "maxItems"), field("term_days", "minimum"), field("term_days", "maximum"), field("exclusivity_hours", "minimum"), field("exclusivity_hours", "maximum"), at("components", "schemas", "Money", "properties", "amount_minor", "maximum")]);
+  });
+  it("keeps catalog listing roles, states and limits aligned with v0.3", () => {
+    const field = (...p: string[]) => at("components", "schemas", "CatalogListingFields", "properties", ...p);
+    expect([...listing.listingReaders]).toEqual(at("paths", "/materials/{id}/listing", "get", "x-roles"));
+    for (const method of ["post", "put"]) expect([...listing.listingWriters]).toEqual(at("paths", "/materials/{id}/listing", method, "x-roles"));
+    expect([...listing.listingStates]).toEqual(at("components", "schemas", "ListingState", "enum"));
+    expect([listing.listingLimits.offers, listing.listingLimits.shots]).toEqual([field("offers", "maxItems"), field("shot_list", "maxItems")]);
+  });
+  it("keeps buyer organization roles, choices and limits aligned with v0.3", () => {
+    const roles = (path: string, method: string) => at("paths", path, method, "x-roles");
+    expect([...buyers.organizationAdmins]).toEqual(roles("/buyer-organizations", "get")); expect(roles("/buyer-organizations", "post")).toEqual(["system_admin"]);
+    expect([...buyers.organizationReaders]).toEqual(roles("/buyer-organizations/{org_id}", "get")); expect([...buyers.organizationEditors]).toEqual(roles("/buyer-organizations/{org_id}", "put"));
+    for (const [path, method] of [["/buyer-organizations/{org_id}/members", "get"], ["/buyer-organizations/{org_id}/members", "post"], ["/buyer-organizations/{org_id}/members/{user_id}", "put"]]) expect([...buyers.memberManagers]).toEqual(roles(path, method));
+    expect([...buyers.buyerRoles]).toEqual(at("components", "schemas", "BuyerRole", "enum")); expect([...buyers.organizationStatuses]).toEqual(at("components", "schemas", "BuyerOrganizationStatus", "enum"));
+    expect([...buyers.memberStatuses]).toEqual(at("components", "schemas", "BuyerMemberUpdate", "properties", "status", "enum"));
+    const f = (...p: string[]) => at("components", "schemas", "BuyerOrganizationFields", "properties", ...p);
+    expect([buyers.organizationLimits.legalName, buyers.organizationLimits.email, buyers.organizationLimits.seatsMin, buyers.organizationLimits.seatsMax]).toEqual([f("legal_name", "maxLength"), f("billing_email", "maxLength"), f("seats", "minimum"), f("seats", "maximum")]);
   });
   it("keeps transition choices aligned with the three contract state enums", () => {
     for (const [key, schema] of [["technical_state", "TechnicalState"], ["editorial_state", "EditorialState"], ["rights_state", "RightsState"]] as const) expect(states[key]).toEqual(at("components", "schemas", schema, "enum"));

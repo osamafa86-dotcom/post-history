@@ -682,12 +682,12 @@ export const outboxEvents = pgTable("outbox_events", {
 			name: "outbox_events_actor_id_fkey"
 		}),
 	unique("outbox_events_idempotency_key_key").on(table.idempotencyKey),
-	check("outbox_events_aggregate_type_check", sql`aggregate_type = ANY (ARRAY['material'::text, 'upload'::text, 'notification'::text, 'form'::text, 'user'::text, 'listing'::text, 'license'::text])`),
+	check("outbox_events_aggregate_type_check", sql`aggregate_type = ANY (ARRAY['material'::text, 'upload'::text, 'notification'::text, 'form'::text, 'user'::text, 'listing'::text, 'license'::text, 'order'::text])`),
 	check("outbox_events_attempts_nonneg", sql`attempts >= 0`),
 	check("outbox_events_idempotency_key_len", sql`(char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 200)`),
 	check("outbox_events_payload_is_object", sql`jsonb_typeof(payload) = 'object'::text`),
 	check("outbox_events_payload_whitelisted", sql`CHECK (outbox_payload_is_whitelisted(type, payload`),
-	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text])`),
+	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text])`),
 ]);
 
 export const recoveryCodes = pgTable("recovery_codes", {
@@ -954,4 +954,284 @@ export const buyerOrganizations = pgTable("buyer_organizations", {
 	check("buyer_organizations_status_check", sql`status = ANY (ARRAY['pending_verification'::text, 'active'::text, 'suspended'::text])`),
 	check("buyer_organizations_text_len", sql`((char_length(legal_name) >= 1) AND (char_length(legal_name) <= 200)) AND ((char_length(display_name_ar) >= 1) AND (char_length(display_name_ar) <= 4000)) AND ((char_length(display_name_en) >= 1) AND (char_length(display_name_en) <= 4000)) AND ((char_length(billing_email) >= 3) AND (char_length(billing_email) <= 254))`),
 	check("buyer_organizations_verified_check", sql`((status = 'pending_verification'::text) OR (verified_at IS NOT NULL)) AND ((verified_at IS NULL) = (verified_by IS NULL))`),
+]);
+
+export const ledgerAccounts = pgTable("ledger_accounts", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	kind: text().notNull(),
+	ownerId: uuid("owner_id"),
+	payableState: text("payable_state"),
+	currency: text().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	uniqueIndex("ledger_accounts_key").using("btree", table.kind.asc().nullsLast().op("text_ops"), table.ownerId.asc().nullsLast().op("uuid_ops"), table.payableState.asc().nullsLast().op("uuid_ops"), table.currency.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.ownerId],
+			foreignColumns: [users.id],
+			name: "ledger_accounts_owner_id_fkey"
+		}),
+	check("ledger_accounts_contributor_check", sql`((kind = 'contributor_payable'::text) = (owner_id IS NOT NULL)) AND ((kind = 'contributor_payable'::text) = (payable_state IS NOT NULL))`),
+	check("ledger_accounts_currency_check", sql`currency = ANY (ARRAY['USD'::text, 'ILS'::text])`),
+	check("ledger_accounts_kind_check", sql`kind = ANY (ARRAY['provider_clearing'::text, 'provider_fees'::text, 'taxes'::text, 'platform_revenue'::text, 'contributor_payable'::text, 'refund_reserve'::text])`),
+	check("ledger_accounts_payable_state_check", sql`(payable_state IS NULL) OR (payable_state = ANY (ARRAY['pending'::text, 'available'::text, 'in_payout'::text, 'paid'::text]))`),
+]);
+
+export const journalEntries = pgTable("journal_entries", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	kind: text().notNull(),
+	referenceType: text("reference_type").notNull(),
+	referenceId: uuid("reference_id").notNull(),
+	details: jsonb().default({}).notNull(),
+	idempotencyKey: text("idempotency_key").notNull(),
+	reversesEntryId: uuid("reverses_entry_id"),
+	occurredAt: timestamp("occurred_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	actorId: uuid("actor_id"),
+}, (table) => [
+	uniqueIndex("journal_entries_correction_key").using("btree", table.reversesEntryId.asc().nullsLast().op("uuid_ops")).where(sql`(kind = 'correction'::text)`),
+	index("journal_entries_reference_idx").using("btree", table.referenceType.asc().nullsLast().op("text_ops"), table.referenceId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.actorId],
+			foreignColumns: [users.id],
+			name: "journal_entries_actor_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.reversesEntryId],
+			foreignColumns: [table.id],
+			name: "journal_entries_reverses_entry_id_fkey"
+		}),
+	unique("journal_entries_idempotency_key_key").on(table.idempotencyKey),
+	check("journal_entries_details_check", sql`(jsonb_typeof(details) = 'object'::text) AND ledger_details_is_plain(details)`),
+	check("journal_entries_idempotency_key_check", sql`(char_length(idempotency_key) >= 1) AND (char_length(idempotency_key) <= 200)`),
+	check("journal_entries_kind_check", sql`kind = ANY (ARRAY['sale'::text, 'refund'::text, 'release'::text, 'payout'::text, 'correction'::text])`),
+	check("journal_entries_reference_type_check", sql`reference_type ~ '^[a-z_]{1,32}$'::text`),
+	check("journal_entries_reverses_check", sql`(kind = ANY (ARRAY['refund'::text, 'correction'::text])) = (reverses_entry_id IS NOT NULL)`),
+]);
+
+export const postings = pgTable("postings", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "postings_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	entryId: uuid("entry_id").notNull(),
+	accountId: uuid("account_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
+	currency: text().notNull(),
+}, (table) => [
+	index("postings_account_idx").using("btree", table.accountId.asc().nullsLast().op("uuid_ops")),
+	index("postings_entry_idx").using("btree", table.entryId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.accountId],
+			foreignColumns: [ledgerAccounts.id],
+			name: "postings_account_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.entryId],
+			foreignColumns: [journalEntries.id],
+			name: "postings_entry_id_fkey"
+		}),
+	check("postings_amount_check", sql`amount_minor <> 0`),
+	check("postings_currency_check", sql`currency = ANY (ARRAY['USD'::text, 'ILS'::text])`),
+]);
+
+export const orders = pgTable("orders", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	organizationId: uuid("organization_id").notNull(),
+	createdBy: uuid("created_by").notNull(),
+	status: text().default('pending_payment').notNull(),
+	cancelReason: text("cancel_reason"),
+	currency: text().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	totalMinor: bigint("total_minor", { mode: "number" }).notNull(),
+	provider: text(),
+	providerRef: text("provider_ref"),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+	paidAt: timestamp("paid_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("orders_organization_idx").using("btree", table.organizationId.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("uuid_ops"), table.id.desc().nullsFirst().op("uuid_ops")),
+	index("orders_pending_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'pending_payment'::text)`),
+	uniqueIndex("orders_provider_ref_key").using("btree", table.provider.asc().nullsLast().op("text_ops"), table.providerRef.asc().nullsLast().op("text_ops")).where(sql`(provider_ref IS NOT NULL)`),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [users.id],
+			name: "orders_created_by_fkey"
+		}),
+	foreignKey({
+			columns: [table.organizationId],
+			foreignColumns: [buyerOrganizations.id],
+			name: "orders_organization_id_fkey"
+		}),
+	check("orders_cancel_reason_check", sql`((status = 'cancelled'::text) = (cancel_reason IS NOT NULL)) AND ((cancel_reason IS NULL) OR (cancel_reason = ANY (ARRAY['buyer'::text, 'exclusivity_lost'::text, 'rights_changed'::text])))`),
+	check("orders_currency_check", sql`currency = ANY (ARRAY['USD'::text, 'ILS'::text])`),
+	check("orders_expiry_check", sql`(expires_at > created_at) AND (expires_at <= (created_at + '24:00:00'::interval))`),
+	check("orders_paid_check", sql`(status = ANY (ARRAY['paid'::text, 'refunded'::text])) = (paid_at IS NOT NULL)`),
+	check("orders_provider_check", sql`((provider IS NULL) = (provider_ref IS NULL)) AND ((provider IS NULL) OR (provider ~ '^[a-z_]{1,32}$'::text)) AND ((provider_ref IS NULL) OR ((char_length(provider_ref) >= 1) AND (char_length(provider_ref) <= 128)))`),
+	check("orders_status_check", sql`status = ANY (ARRAY['pending_payment'::text, 'paid'::text, 'cancelled'::text, 'expired'::text, 'refunded'::text])`),
+	check("orders_total_check", sql`(total_minor >= 0) AND (total_minor <= '2000000000000'::bigint)`),
+]);
+
+export const orderItems = pgTable("order_items", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	orderId: uuid("order_id").notNull(),
+	listingId: uuid("listing_id").notNull(),
+	materialId: uuid("material_id").notNull(),
+	materialVersion: integer("material_version").notNull(),
+	licenseTemplateId: uuid("license_template_id").notNull(),
+	licenseVersion: integer("license_version").notNull(),
+	licenseType: text("license_type").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	priceMinor: bigint("price_minor", { mode: "number" }).notNull(),
+	currency: text().notNull(),
+	titleAr: text("title_ar").notNull(),
+	titleEn: text("title_en").notNull(),
+}, (table) => [
+	index("order_items_material_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops")),
+	index("order_items_order_idx").using("btree", table.orderId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.licenseTemplateId, table.licenseVersion],
+			foreignColumns: [licenseTemplateVersions.templateId, licenseTemplateVersions.version],
+			name: "order_items_license_template_id_license_version_fkey"
+		}),
+	foreignKey({
+			columns: [table.listingId],
+			foreignColumns: [catalogListings.id],
+			name: "order_items_listing_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.materialId],
+			foreignColumns: [materials.id],
+			name: "order_items_material_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.orderId],
+			foreignColumns: [orders.id],
+			name: "order_items_order_id_fkey"
+		}),
+	unique("order_items_listing_key").on(table.orderId, table.listingId),
+	check("order_items_currency_check", sql`currency = ANY (ARRAY['USD'::text, 'ILS'::text])`),
+	check("order_items_license_type_check", sql`license_type = ANY (ARRAY['editorial_single'::text, 'editorial_term'::text, 'exclusive_temporary'::text, 'commercial'::text])`),
+	check("order_items_price_check", sql`(price_minor >= 0) AND (price_minor <= '100000000000'::bigint)`),
+	check("order_items_text_len", sql`((char_length(title_ar) >= 1) AND (char_length(title_ar) <= 4000)) AND ((char_length(title_en) >= 1) AND (char_length(title_en) <= 4000))`),
+	check("order_items_version_positive", sql`material_version >= 1`),
+]);
+
+export const licenses = pgTable("licenses", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	licenseNumber: text("license_number").notNull(),
+	orderItemId: uuid("order_item_id").notNull(),
+	organizationId: uuid("organization_id").notNull(),
+	materialId: uuid("material_id").notNull(),
+	licenseType: text("license_type").notNull(),
+	status: text().default('active').notNull(),
+	revokedReason: text("revoked_reason"),
+	validFrom: timestamp("valid_from", { withTimezone: true, mode: 'string' }).notNull(),
+	validUntil: timestamp("valid_until", { withTimezone: true, mode: 'string' }),
+	exclusiveUntil: timestamp("exclusive_until", { withTimezone: true, mode: 'string' }),
+	issuedAt: timestamp("issued_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("licenses_material_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops")),
+	index("licenses_organization_idx").using("btree", table.organizationId.asc().nullsLast().op("timestamptz_ops"), table.issuedAt.desc().nullsFirst().op("uuid_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.materialId],
+			foreignColumns: [materials.id],
+			name: "licenses_material_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.orderItemId],
+			foreignColumns: [orderItems.id],
+			name: "licenses_order_item_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.organizationId],
+			foreignColumns: [buyerOrganizations.id],
+			name: "licenses_organization_id_fkey"
+		}),
+	unique("licenses_number_key").on(table.licenseNumber),
+	unique("licenses_order_item_id_key").on(table.orderItemId),
+	check("licenses_exclusive_check", sql`((license_type = 'exclusive_temporary'::text) = (exclusive_until IS NOT NULL)) AND ((exclusive_until IS NULL) OR (exclusive_until > valid_from))`),
+	check("licenses_license_type_check", sql`license_type = ANY (ARRAY['editorial_single'::text, 'editorial_term'::text, 'exclusive_temporary'::text, 'commercial'::text])`),
+	check("licenses_number_check", sql`license_number ~ '^PH-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{10}$'::text`),
+	check("licenses_revoked_check", sql`((status = 'revoked'::text) = (revoked_reason IS NOT NULL)) AND ((revoked_reason IS NULL) OR (revoked_reason = ANY (ARRAY['refunded'::text, 'rights_withdrawn'::text, 'manual'::text])))`),
+	check("licenses_status_check", sql`status = ANY (ARRAY['active'::text, 'expired'::text, 'revoked'::text])`),
+	check("licenses_validity_check", sql`(valid_until IS NULL) OR (valid_until > valid_from)`),
+]);
+
+export const exclusiveHolds = pgTable("exclusive_holds", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	materialId: uuid("material_id").notNull(),
+	orderItemId: uuid("order_item_id").notNull(),
+	state: text().default('held').notNull(),
+	heldUntil: timestamp("held_until", { withTimezone: true, mode: 'string' }).notNull(),
+	activeUntil: timestamp("active_until", { withTimezone: true, mode: 'string' }),
+	releasedAt: timestamp("released_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	uniqueIndex("exclusive_holds_material_key").using("btree", table.materialId.asc().nullsLast().op("uuid_ops")).where(sql`(state = ANY (ARRAY['held'::text, 'active'::text]))`),
+	foreignKey({
+			columns: [table.materialId],
+			foreignColumns: [materials.id],
+			name: "exclusive_holds_material_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.orderItemId],
+			foreignColumns: [orderItems.id],
+			name: "exclusive_holds_order_item_id_fkey"
+		}),
+	unique("exclusive_holds_order_item_id_key").on(table.orderItemId),
+	check("exclusive_holds_active_check", sql`(state <> 'active'::text) OR (active_until IS NOT NULL)`),
+	check("exclusive_holds_released_check", sql`(state = 'released'::text) = (released_at IS NOT NULL)`),
+	check("exclusive_holds_state_check", sql`state = ANY (ARRAY['held'::text, 'active'::text, 'released'::text])`),
+	check("exclusive_holds_window_check", sql`(held_until > created_at) AND (held_until <= (created_at + '00:15:00'::interval))`),
+]);
+
+export const licenseDownloadGrants = pgTable("license_download_grants", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	licenseId: uuid("license_id").notNull(),
+	issuedTo: uuid("issued_to").notNull(),
+	issuedAt: timestamp("issued_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+}, (table) => [
+	index("license_download_grants_license_idx").using("btree", table.licenseId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.issuedTo],
+			foreignColumns: [users.id],
+			name: "license_download_grants_issued_to_fkey"
+		}),
+	foreignKey({
+			columns: [table.licenseId],
+			foreignColumns: [licenses.id],
+			name: "license_download_grants_license_id_fkey"
+		}),
+	check("license_download_grants_window_check", sql`(expires_at > issued_at) AND (expires_at <= (issued_at + '24:00:00'::interval))`),
+]);
+
+export const paymentEvents = pgTable("payment_events", {
+	provider: text().notNull(),
+	eventId: text("event_id").notNull(),
+	type: text().notNull(),
+	providerRef: text("provider_ref").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
+	currency: text().notNull(),
+	occurredAt: timestamp("occurred_at", { withTimezone: true, mode: 'string' }).notNull(),
+	receivedAt: timestamp("received_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	orderId: uuid("order_id"),
+	outcome: text().notNull(),
+}, (table) => [
+	index("payment_events_order_idx").using("btree", table.orderId.asc().nullsLast().op("uuid_ops")).where(sql`(order_id IS NOT NULL)`),
+	index("payment_events_review_idx").using("btree", table.receivedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(outcome = 'review'::text)`),
+	foreignKey({
+			columns: [table.orderId],
+			foreignColumns: [orders.id],
+			name: "payment_events_order_id_fkey"
+		}),
+	primaryKey({ columns: [table.provider, table.eventId], name: "payment_events_pkey"}),
+	check("payment_events_amount_check", sql`(amount_minor >= 0) AND (amount_minor <= '2000000000000'::bigint)`),
+	check("payment_events_currency_check", sql`currency = ANY (ARRAY['USD'::text, 'ILS'::text])`),
+	check("payment_events_event_id_check", sql`event_id ~ '^[A-Za-z0-9_.:-]{1,128}$'::text`),
+	check("payment_events_outcome_check", sql`outcome = ANY (ARRAY['applied'::text, 'ignored'::text, 'review'::text])`),
+	check("payment_events_provider_check", sql`provider ~ '^[a-z_]{1,32}$'::text`),
+	check("payment_events_provider_ref_check", sql`(char_length(provider_ref) >= 1) AND (char_length(provider_ref) <= 128)`),
+	check("payment_events_type_check", sql`type = ANY (ARRAY['payment.succeeded'::text, 'payment.failed'::text, 'refund.succeeded'::text, 'dispute.opened'::text])`),
 ]);

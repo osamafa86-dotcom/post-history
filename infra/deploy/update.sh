@@ -67,7 +67,7 @@ run "$T" run --rm -T backup once
 rollback() {
   echo "!! update failed: rolling back to $prev" >&2
   as_user checkout -q --detach "$prev"
-  run "$T" build backup
+  run "$T" build backup postgres walg-base
   run "$T" up -d --wait
   if healthy; then echo "rolled back to $prev and healthy" >&2; else echo "!! rollback unhealthy: see docs/ops/runbook.md" >&2; fi
   exit 1
@@ -109,7 +109,7 @@ else head_sha="$(git -C "$APP" rev-parse HEAD)"; fi
 if [ "$MAIN" = 1 ]; then run "$APP/infra/deploy/api-image.sh" "$head_sha" --build
 else run "$APP/infra/deploy/api-image.sh" "$head_sha" --tag "$TAG"; fi
 run "$T" pull --quiet
-run "$T" build backup
+run "$T" build backup postgres walg-base
 
 log "4/6 staged restart with health checks"
 for stage in "${STAGES[@]}"; do
