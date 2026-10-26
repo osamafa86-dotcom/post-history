@@ -16,14 +16,14 @@ final class UploadEngineTests: XCTestCase {
 
         init(name: String, size: Int = 10, script: [FakeTransport.Behavior] = [], policy: ChunkSizePolicy = Fixtures.smallChunks,
              store: InMemoryUploadStateStore? = nil, secrets: InMemoryUploadSecretStore? = nil, dir: URL? = nil, environment: UploadEngine.Environment = .init(),
-             ingest: (any IngestTokenProvider)? = nil) {
+             ingest: (any IngestTokenProvider)? = nil, timing: UploadEngine.Timing = Fixtures.fastTiming) {
             self.dir = dir ?? Fixtures.tempDir(name)
             (source, bytes) = dir == nil ? Fixtures.sourceFile(in: self.dir, bytes: size) : (self.dir.appendingPathComponent("clip.mov"), try! Data(contentsOf: self.dir.appendingPathComponent("clip.mov")))
             transport = FakeTransport(script: script)
             let s = store ?? InMemoryUploadStateStore()
             let k = secrets ?? InMemoryUploadSecretStore()
             engine = UploadEngine(store: s, secrets: k, api: api, transport: transport, ingestTokens: ingest, slicer: ChunkSlicer(chunksDirectory: self.dir.appendingPathComponent("chunks")),
-                                  policy: policy, timing: Fixtures.fastTiming, environment: environment)
+                                  policy: policy, timing: timing, environment: environment)
             _store = s; _secrets = k
         }
         private let _store: InMemoryUploadStateStore

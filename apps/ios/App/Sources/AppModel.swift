@@ -65,6 +65,7 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             for await event in await auth.events() {
                 guard case .sessionRevoked(let at) = event else { continue }
+                uploads.cancelLightCopies()
                 _ = await uploads.engine.wipeAll()
                 await uploads.refresh()
                 await materials.clear()
@@ -79,6 +80,7 @@ final class AppModel: ObservableObject {
     /// المسح الطارئ (SEC-01): محلي فقط وبلا اتصال؛ يوقف النقل ويمحو الرموز والحالة والأجزاء والأصول المستوردة والمصغّرات وذاكرة الصور،
     /// ثم يعيد التطبيق إلى شاشة البداية. لا يُسجَّل شيء.
     func emergencyWipe() async {
+        uploads.cancelLightCopies()
         let services = UploadServices.shared
         let engine = uploads.engine
         let auth = self.auth
