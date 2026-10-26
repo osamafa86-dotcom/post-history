@@ -10,7 +10,7 @@ import type { components } from '../generated/api';
 import { hasRole, type Principal, Roles } from '../identity/principal';
 import { iso } from '../materials/material-store';
 import { writeOutboxEvent } from '../outbox/outbox';
-import { type AccountRef, accountId, payable, type PayableState, postEntry } from './ledger';
+import { type AccountRef, lockPayables, payable, type PayableState, postEntry } from './ledger';
 import { allocate, type Currency, money } from './money';
 import { PAYMENT_PROVIDER, type PaymentProvider, type ProviderEvent } from './payment-provider';
 
@@ -194,12 +194,11 @@ async function postRefund(tx: Tx, r: RefundRow, saleId: string): Promise<string>
   const out: Array<{ account: AccountRef; amount: ReturnType<typeof money> }> = [{ account: { kind: 'provider_clearing', currency }, amount: money(-BigInt(r.amountMinor), currency) }];
   let reserve = 0n;
   const owners = [...new Set(lines.filter((l) => l.kind === 'contributor_payable').map((l) => l.ownerId!))].sort();
-  // أقفال حسابات المساهمين بترتيب ثابت قبل قراءة الأرصدة، كما في reverseEntry
-  const ids: string[] = [];
-  for (const owner of owners) {
-    for (const state of ['pending', 'available'] as PayableState[]) ids.push(await accountId(tx, { kind: 'contributor_payable', ownerId: owner, state, currency }));
-  }
-  if (ids.length > 0) await tx.execute(sql`SELECT 1 FROM ledger_accounts WHERE id = ANY(${`{${[...ids].sort().join(',')}}`}::uuid[]) ORDER BY id FOR UPDATE`);
+  // أقفال حسابات المساهمين بالترتيب الواحد قبل قراءة الأرصدة (lockPayables)
+  await lockPayables(
+    tx,
+    owners.flatMap((owner) => (['pending', 'available'] as PayableState[]).map((state) => ({ kind: 'contributor_payable' as const, ownerId: owner, state, currency }))),
+  );
   for (const [i, l] of lines.entries()) {
     let share = shares.get(String(i))!.amountMinor;
     if (share === 0n) continue;

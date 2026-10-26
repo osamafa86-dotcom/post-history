@@ -61,6 +61,25 @@ export async function accountId(tx: Tx, ref: AccountRef): Promise<string> {
   return row!.id;
 }
 
+// فضاء الأقفال الاستشارية لمستحقات المساهمين (ADR 0031)
+const PAYABLE_LOCK_SPACE = 31;
+
+/**
+ * أقفال مستحقات المساهمين بترتيب واحد في كل مسار يمس الدفتر (البيعة والاسترداد والتحرير والصرف، Issue #389): قفل استشاري
+ * لكل مساهم بترتيب معرّفه قبل أي إنشاء أو قفل صف، ثم إنشاء الحسابات الناقصة، ثم FOR UPDATE على الحسابات بترتيب id. فلا تقفل
+ * معاملة حسابًا وتنتظر آخر يقفله غيرها بالعكس (ولا قفل «KEY SHARE» من سطر قيد على حساب لم تقفله قبل). يتكرر في المعاملة نفسها بلا أثر.
+ */
+export async function lockPayables(tx: Tx, refs: ReadonlyArray<AccountRef>): Promise<void> {
+  const payables = refs.filter((r): r is Extract<AccountRef, { kind: 'contributor_payable' }> => r.kind === 'contributor_payable');
+  if (payables.length === 0) return;
+  for (const owner of [...new Set(payables.map((r) => r.ownerId))].sort()) {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${PAYABLE_LOCK_SPACE}, hashtext(${owner}))`);
+  }
+  const ids = new Set<string>();
+  for (const r of payables) ids.add(await accountId(tx, r));
+  await tx.execute(sql`SELECT 1 FROM ledger_accounts WHERE id = ANY(${`{${[...ids].sort().join(',')}}`}::uuid[]) ORDER BY id FOR UPDATE`);
+}
+
 /**
  * يكتب القيد وسطوره في معاملة المستدعي (البيعة مع حالة الترخيص وحدث Outbox). المفتاح نفسه يعيد القيد القائم دون سطور
  * جديدة، بشرط أن يكون القيد نفسه نوعًا ومرجعًا. غير المتوازن يُرفض هنا قبل القاعدة.
@@ -74,6 +93,7 @@ export async function postEntry(tx: Tx, entry: NewEntry): Promise<{ entryId: str
     totals.set(p.amount.currency, (totals.get(p.amount.currency) ?? 0n) + p.amount.amountMinor);
   }
   if ([...totals.values()].some((t) => t !== 0n)) throw new LedgerUnbalancedError('a journal entry must balance in each currency');
+  await lockPayables(tx, entry.postings.map((p) => p.account));
 
   const [inserted] = await tx
     .insert(journalEntries)
@@ -133,8 +153,7 @@ export async function reverseEntry(
   const [done] = await tx.select({ id: journalEntries.id }).from(journalEntries).where(eq(journalEntries.idempotencyKey, input.idempotencyKey));
   if (!done) {
     const payables = lines.filter((l) => l.kind === 'contributor_payable');
-    const ids = [...new Set(await Promise.all(payables.map((l) => accountId(tx, toRef(l.kind, l.ownerId, l.state, l.currency as Currency)))))].sort();
-    if (ids.length > 0) await tx.execute(sql`SELECT 1 FROM ledger_accounts WHERE id = ANY(${`{${ids.join(',')}}`}::uuid[]) ORDER BY id FOR UPDATE`);
+    await lockPayables(tx, payables.map((l) => toRef(l.kind, l.ownerId, l.state, l.currency as Currency)));
     for (const l of payables) {
       const share = -BigInt(l.amount);
       if (share <= 0n) continue;
@@ -194,8 +213,7 @@ export async function movePayable(
   if (input.amount.amountMinor <= 0n) throw new LedgerUnbalancedError('a payable move must be positive');
   if (input.from === input.to) throw new LedgerUnbalancedError('a payable move needs two states');
   const fromRef: AccountRef = { kind: 'contributor_payable', ownerId: input.ownerId, state: input.from, currency: input.amount.currency };
-  const fromId = await accountId(tx, fromRef);
-  await tx.execute(sql`SELECT 1 FROM ledger_accounts WHERE id = ${fromId} FOR UPDATE`);
+  await lockPayables(tx, [fromRef, { ...fromRef, state: input.to }]);
   const [done] = await tx.select({ id: journalEntries.id }).from(journalEntries).where(eq(journalEntries.idempotencyKey, input.idempotencyKey));
   if (!done) {
     const available = await payable(tx, input.ownerId, input.from, input.amount.currency);

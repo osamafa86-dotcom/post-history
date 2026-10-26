@@ -10,7 +10,7 @@ import type { components } from '../generated/api';
 import { hasRole, type Principal } from '../identity/principal';
 import { iso } from '../materials/material-store';
 import { writeOutboxEvent } from '../outbox/outbox';
-import { accountId, InsufficientBalanceError, movePayable, type PayableState, payable } from './ledger';
+import { InsufficientBalanceError, lockPayables, movePayable, type PayableState, payable } from './ledger';
 import { type Currency, CURRENCIES, money, toContract } from './money';
 
 type EarningsSummary = components['schemas']['EarningsSummary'];
@@ -150,8 +150,10 @@ export class PayoutsService {
     return this.db.transaction(async (tx) => {
       const policy = await activePolicy(tx, this.config, currency);
       if (amount < policy.minimum) throw new ApiError(422, 'payout_below_minimum', 'The amount is below the payout minimum.', { minimum: toContract(money(policy.minimum, currency)) });
-      const fromId = await accountId(tx, { kind: 'contributor_payable', ownerId: userId, state: 'available', currency });
-      await tx.execute(sql`SELECT 1 FROM ledger_accounts WHERE id = ${fromId} FOR UPDATE`);
+      await lockPayables(tx, [
+        { kind: 'contributor_payable', ownerId: userId, state: 'available', currency },
+        { kind: 'contributor_payable', ownerId: userId, state: 'in_payout', currency },
+      ]);
       const available = (await payable(tx, userId, 'available', currency)).amountMinor;
       const reserve = reserveOf(available, policy.reserveBps);
       if (amount > available - reserve) throw new ApiError(422, 'insufficient_available', 'The amount exceeds the requestable balance.');

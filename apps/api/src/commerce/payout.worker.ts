@@ -6,7 +6,7 @@ import { LOGGER } from '../common/logger';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { DB, type Database } from '../database/database.module';
 import { payoutRequests } from '../database/schema/schema';
-import { movePayable, payable } from './ledger';
+import { lockPayables, movePayable, payable } from './ledger';
 import { type Currency, money } from './money';
 import { amountOf, writePayoutEvent } from './payouts';
 
@@ -69,6 +69,8 @@ export class PayoutWorker implements OnApplicationBootstrap, OnApplicationShutdo
     let written = 0;
     for (const d of due.rows) {
       const done = await this.db.transaction(async (tx) => {
+        // القراءة بعد القفل، فلا يسبقها استرداد متزامن ينقص المعلّق
+        await lockPayables(tx, (['pending', 'available'] as const).map((state) => ({ kind: 'contributor_payable' as const, ownerId: d.owner_id, state, currency: d.currency })));
         const pending = (await payable(tx, d.owner_id, 'pending', d.currency)).amountMinor;
         const amount = BigInt(d.net) < pending ? BigInt(d.net) : pending;
         if (amount <= 0n) return false;
