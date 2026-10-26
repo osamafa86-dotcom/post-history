@@ -1,3 +1,4 @@
-import { runPending } from "../lib/pending.mjs";
+import { runDelegated } from "../lib/delegate.mjs";
 
-export const run = () => runPending("payout");
+// «صرف المستحقات»: الطلبات المتزامنة وقيد الصرف والاسترداد بعده بالقناة التجريبية (لا مال حقيقي ولا قناة صرف حقيقية بعد).
+export const run = () => runDelegated("payout", ["payout-concurrent", "refund-after-payout"]);

@@ -286,7 +286,7 @@ test("unified report lists every acceptance row, keeps the latest result per pro
   ], new Date("2026-10-21T00:00:00Z"));
   assert.match(md, /\| pii-leak \| automated \| ❌ fail/, "the latest run decides, and a fail pulls the row down");
   assert.match(md, /\| upload-resume \| automated \| ✅ pass/);
-  assert.match(md, /\| payout \| pending \| — لا نتيجة/, "rows without a result are listed, not hidden");
+  assert.match(md, /\| rights-exclusivity \| pending \| — لا نتيجة/, "rows without a result are listed, not hidden");
   assert.match(md, /pass 1، partial 0، fail 1/);
 });
 
