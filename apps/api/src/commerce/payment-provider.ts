@@ -95,7 +95,7 @@ function parseEvent(rawBody: Buffer): ProviderEvent {
 export class SandboxPaymentProvider implements PaymentProvider {
   readonly name = 'sandbox';
   private readonly payments = new Map<string, { status: ProviderPaymentStatus; amount: Money; checkoutKey: string }>();
-  private readonly refunds = new Map<string, string>();
+  private readonly refunds = new Map<string, { refundRef: string; amount: Money }>();
 
   constructor(
     private readonly secret: string,
@@ -115,11 +115,11 @@ export class SandboxPaymentProvider implements PaymentProvider {
 
   async refund(input: { providerRef: string; amount: Money; idempotencyKey: string }): Promise<{ refundRef: string }> {
     const known = this.refunds.get(input.idempotencyKey);
-    if (known) return { refundRef: known };
+    if (known) return { refundRef: known.refundRef };
     const payment = this.payments.get(input.providerRef);
     if (!payment || payment.status !== 'succeeded') throw new Error('sandbox: nothing to refund');
     const refundRef = `sbr_${randomBytes(16).toString('hex')}`;
-    this.refunds.set(input.idempotencyKey, refundRef);
+    this.refunds.set(input.idempotencyKey, { refundRef, amount: input.amount });
     return { refundRef };
   }
 
@@ -132,17 +132,28 @@ export class SandboxPaymentProvider implements PaymentProvider {
     return this.payments.get(providerRef)?.amount;
   }
 
+  /** تأكيد استرداد تجريبي: الإشعار الموقَّع `refund.succeeded` بمرجع الاسترداد ومبلغه، أو undefined للمرجع المجهول. */
+  settleRefund(refundRef: string, now = new Date()): { body: Buffer; headers: Record<string, string> } | undefined {
+    const refund = [...this.refunds.values()].find((r) => r.refundRef === refundRef);
+    if (!refund) return undefined;
+    return this.signed({ type: 'refund.succeeded', providerRef: refundRef, amount: refund.amount }, now);
+  }
+
   /** ما تفعله صفحة الدفع التجريبية عند الضغط على نتيجة: تسجّل الحالة وتبني الإشعار الموقَّع (جسمه وترويستيه). */
   settle(providerRef: string, outcome: 'succeeded' | 'failed', now = new Date()): { body: Buffer; headers: Record<string, string> } {
     const payment = this.payments.get(providerRef);
     if (!payment) throw new Error('sandbox: unknown payment');
     if (payment.status === 'pending' || outcome === 'succeeded') payment.status = outcome;
+    return this.signed({ type: outcome === 'succeeded' ? 'payment.succeeded' : 'payment.failed', providerRef, amount: payment.amount }, now);
+  }
+
+  private signed(e: { type: ProviderEventType; providerRef: string; amount: Money }, now: Date): { body: Buffer; headers: Record<string, string> } {
     const body = Buffer.from(
       JSON.stringify({
         event_id: `sbe_${randomBytes(12).toString('hex')}`,
-        type: outcome === 'succeeded' ? 'payment.succeeded' : 'payment.failed',
-        provider_ref: providerRef,
-        amount: { amount_minor: Number(payment.amount.amountMinor), currency: payment.amount.currency },
+        type: e.type,
+        provider_ref: e.providerRef,
+        amount: { amount_minor: Number(e.amount.amountMinor), currency: e.amount.currency },
         occurred_at: now.toISOString(),
       }),
     );
