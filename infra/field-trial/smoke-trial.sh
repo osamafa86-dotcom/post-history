@@ -242,7 +242,7 @@ for c in $("$T" ps -q); do
     [ -f "$src" ] && grep -q 'PRIVATE KEY' "$src" && fail "a private key mounted into $(docker inspect -f '{{.Name}}' "$c") ($src)"
   done
 done
-PITR_IMAGE="${TRIAL_PROJECT}-postgres" PITR_NETWORK="${TRIAL_PROJECT}_default" PITR_ENV="${BACKUP_MEASURE_ENV:-local docker compose}" \
+PITR_IMAGE="$(docker inspect -f "{{.Config.Image}}" "$("$T" ps -q postgres)")" PITR_NETWORK="${TRIAL_PROJECT}_default" PITR_ENV="${BACKUP_MEASURE_ENV:-local docker compose}" \
 WALG_S3_PREFIX="$WALG_S3_PREFIX" AWS_ENDPOINT="$WALG_S3_ENDPOINT" CHECK_DB="$POSTGRES_DB" \
 AWS_ACCESS_KEY_ID="$BACKUP_REMOTE_ROOT_USER" AWS_SECRET_ACCESS_KEY="$BACKUP_REMOTE_ROOT_PASSWORD" \
   "$ROOT/infra/backup/pitr-drill.sh" --key "$WORK/walg-private.asc" --target "$target" --out "${PITR_OUT:-$WORK/pitr.json}" \
