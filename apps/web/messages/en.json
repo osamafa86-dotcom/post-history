@@ -200,7 +200,34 @@
       "editor": "Editor",
       "fixer": "Fixer"
     },
-    "note": "Note"
+    "note": "Note",
+    "open": "Change state",
+    "dialogTitle": "Change state",
+    "chooseTarget": "Choose the target state",
+    "pinTime": "Pin the note to the player's current second",
+    "previewTitle": "What the reporter receives",
+    "previewText": "Your material moved to “{state}”.",
+    "confirmTo": "Confirm: {state}",
+    "confirmReject": "Confirm rejection for good",
+    "rejectHelp": "Rejection sends the material to the internal archive; press again within five seconds to confirm.",
+    "reloadChanges": "Load the changes",
+    "transitioned": "Moved to “{state}”.",
+    "releaseMine": "Release reservation — yours",
+    "consequences": {
+      "acknowledged": "The reporter learns their material was seen.",
+      "reviewing": "Editorial review starts.",
+      "needs_changes": "It goes back to the reporter with your reason to fix and resend.",
+      "accepted": "It becomes ready for production and can be reserved.",
+      "rejected": "It leaves the flow for the internal archive.",
+      "final_review": "It moves to the editor in chief for final review.",
+      "published": "It is marked published.",
+      "in_production": "It goes back to production.",
+      "documented": "Rights are documented.",
+      "sellable": "It can be listed in the catalog.",
+      "blocked": "It is blocked from sale.",
+      "withdrawn": "It is withdrawn from the catalog.",
+      "pending": "The technical track runs again."
+    }
   },
   "admin": {
     "title": "Account administration",
@@ -276,7 +303,19 @@
     "escalation": "Escalation level",
     "assignment": "Assignment",
     "assigned": "Assigned",
-    "unassigned": "Unassigned"
+    "unassigned": "Unassigned",
+    "readAll": "Mark all as read",
+    "shortcuts": "j/k to move, Enter to open, a to acknowledge",
+    "sections": {
+      "needsAck": "Needs acknowledgement",
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "older": "Older"
+    },
+    "urgentType": "Urgent alert",
+    "needsAck": "Urgent: needs acknowledgement.",
+    "grouped": "{n} alerts for the same material",
+    "choose": "Choose an alert to preview it."
   },
   "rules": {
     "title": "Notification rules",
@@ -1043,5 +1082,25 @@
     "appendOnly": "Policies are never edited or deleted: saving adds a version with its effective date, and earlier requests keep their approval count.",
     "invalid": "Complete the fields: two non-negative amounts, a reserve between 0 and 50%, and an effective date.",
     "savePolicy": "Add version"
+  },
+  "editor": {
+    "urgentOpen": "Urgent open",
+    "overdue": "Overdue acknowledgement",
+    "reserved": "Reserved for production",
+    "urgentOne": "Urgent material arrived and has not been seen",
+    "urgentMany": "{n} urgent materials have not been seen",
+    "urgentManyHelp": "Show them filtered and start with the oldest.",
+    "since": "for",
+    "ack": "Seen",
+    "ackReason": "Seen from the live inbox",
+    "showUrgent": "Show urgent",
+    "mute": "Mute the sound alert on this device"
+  },
+  "material": {
+    "outOfScope": "This material is outside your account's scope.",
+    "acknowledged": "seen",
+    "noEvent": "No events yet",
+    "allTracks": "Show all tracks",
+    "system": "System"
   }
 }

@@ -16,7 +16,7 @@ test("Arabic RTL inbox, independent states, explicit filters, pagination and det
   const payload = await page.request.get("/api/bff/materials"); expect(await payload.text()).not.toContain("never-display-canary");
   await page.getByRole("button", { name: ar.next, exact: true }).click(); await expect(page.getByTestId("material-row")).toHaveCount(50);
   await expect(page.locator("tbody")).toContainText("100");
-  await page.getByLabel(ar.governorate, { exact: true }).fill("غزة"); await page.getByRole("button", { name: ar.apply }).click();
+  await page.getByText(ar.filters, { exact: true }).click(); await page.getByLabel(ar.governorate, { exact: true }).fill("غزة"); await page.getByRole("button", { name: ar.apply }).click();
   await expect(page.getByTestId("material-row")).toHaveCount(50); await expect(page.locator("tbody")).not.toContainText("القدس");
   await page.locator(".material-link").first().click(); await expect(page.getByRole("heading", { name: ar.details, exact: true })).toBeVisible();
   await expect(page.locator("video")).toBeVisible();

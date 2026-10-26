@@ -7,39 +7,49 @@ async function login(page: Page, role = "reviewer", locale: "ar" | "en" = "ar") 
   await page.goto(`/${locale}/login`); await page.getByLabel(m.email).fill(`${role}@example.test`); await page.getByLabel(m.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(m.totp, { exact: true }).fill("123456"); await page.getByRole("button", { name: m.signIn, exact: true }).click(); await expect(page.getByTestId("material-row")).toHaveCount(50);
 }
 async function detail(page: Page, id = first, locale = "ar") { await page.goto(`/${locale}/materials/${id}`); await expect(page.getByRole("heading", { name: locale === "ar" ? ar.review.title : en.review.title, exact: true })).toBeVisible(); }
+/** يفتح حوار التحويل إن لم يكن مفتوحًا ويختار المسار والهدف والسبب؛ زر التأكيد يُسمّى بالحالة الهدف. */
+async function choose(page: Page, to: string, reason: string, track?: "editorial" | "rights" | "technical") {
+  const dialog = page.getByRole("dialog");
+  if (!await dialog.isVisible()) await page.getByRole("button", { name: ar.review.open, exact: true }).click();
+  if (track && await dialog.getByRole("combobox", { name: ar.review.track, exact: true }).count()) await dialog.getByRole("combobox", { name: ar.review.track, exact: true }).selectOption(track);
+  const column = ({ editorial: "editorial_state", rights: "rights_state", technical: "technical_state" } as const)[track ?? "editorial"];
+  await dialog.getByRole("radio", { name: (ar.states[column] as Record<string, string>)[to] }).check();
+  await dialog.getByLabel(ar.review.reason, { exact: true }).fill(reason);
+}
+const confirm = (page: Page) => page.getByRole("dialog").getByRole("button", { name: new RegExp(`^${ar.review.confirmTo.split("{state}")[0]}`) });
 test.beforeEach(async ({ request }) => { await request.post("http://127.0.0.1:3201/__test/reset"); });
 
 test("review changes one track and displays a safe state history", async ({ page }) => {
   await login(page); await detail(page);
-  await page.getByRole("combobox", { name: ar.review.target, exact: true }).selectOption("acknowledged"); await page.getByLabel(ar.review.reason, { exact: true }).fill("synthetic review reason");
-  await page.getByRole("button", { name: ar.review.apply, exact: true }).click();
+  await choose(page, "acknowledged", "synthetic review reason"); await confirm(page).click();
+  await expect(page.getByRole("status").filter({ hasText: ar.review.transitioned.split("«")[0] })).toBeVisible();
   await expect(page.locator(".state-grid [data-track='editorial_state']")).toHaveText(ar.states.editorial_state.acknowledged);
   await expect(page.locator(".state-grid [data-track='technical_state']")).toHaveText(ar.states.technical_state.verified);
   await expect(page.locator(".state-grid [data-track='rights_state']")).toHaveText(ar.states.rights_state.unknown);
   await expect(page.locator(".history-list li")).toHaveCount(1); await expect(page.locator(".history-list")).not.toContainText("synthetic review reason");
-  await page.getByRole("combobox", { name: ar.review.track, exact: true }).selectOption("rights"); await page.getByRole("combobox", { name: ar.review.target, exact: true }).selectOption("documented"); await page.getByLabel(ar.review.reason, { exact: true }).fill("rights checked"); await page.getByRole("button", { name: ar.review.apply, exact: true }).click();
+  await choose(page, "documented", "rights checked", "rights"); await confirm(page).click();
   await expect(page.locator(".state-grid [data-track='rights_state']")).toHaveText(ar.states.rights_state.documented);
   await page.screenshot({ path: ".artifacts/review-ar.png", fullPage: true });
 });
 test("412 preserves the draft, blocks resubmission and requires explicit reload", async ({ page, request }) => {
-  await login(page); await detail(page); await page.getByRole("combobox", { name: ar.review.target, exact: true }).selectOption("acknowledged"); await page.getByLabel(ar.review.reason, { exact: true }).fill("keep this draft");
-  await request.post("http://127.0.0.1:3201/__test/bump"); await page.getByRole("button", { name: ar.review.apply, exact: true }).click();
-  await expect(page.getByText(ar.review.changed, { exact: true })).toBeVisible(); await expect(page.getByLabel(ar.review.reason, { exact: true })).toHaveValue("keep this draft"); await expect(page.getByRole("button", { name: ar.review.apply, exact: true })).toBeDisabled();
-  await page.getByRole("button", { name: ar.review.reload, exact: true }).click(); await expect(page.getByLabel(ar.review.reason, { exact: true })).toHaveValue("");
-  await page.getByRole("combobox", { name: ar.review.target, exact: true }).selectOption("acknowledged"); await page.getByLabel(ar.review.reason, { exact: true }).fill("reviewed updated revision"); await page.getByRole("button", { name: ar.review.apply, exact: true }).click();
+  await login(page); await detail(page); await choose(page, "acknowledged", "keep this draft");
+  await request.post("http://127.0.0.1:3201/__test/bump"); await confirm(page).click();
+  await expect(page.getByText(ar.review.changed, { exact: true })).toBeVisible(); await expect(page.getByRole("dialog").getByLabel(ar.review.reason, { exact: true })).toHaveValue("keep this draft"); await expect(confirm(page)).toBeDisabled();
+  await page.getByRole("button", { name: ar.review.reloadChanges, exact: true }).click(); await expect(page.getByRole("dialog")).toHaveCount(0);
+  await choose(page, "acknowledged", "reviewed updated revision"); await confirm(page).click();
   await expect(page.locator(".state-grid [data-track='editorial_state']")).toHaveText(ar.states.editorial_state.acknowledged);
 });
 test("unknown write result retries the same key and duplicate clicks apply once", async ({ page, request }) => {
-  await login(page); await detail(page); await page.getByRole("combobox", { name: ar.review.target, exact: true }).selectOption("acknowledged"); await page.getByLabel(ar.review.reason, { exact: true }).fill("idempotent review"); await request.post("http://127.0.0.1:3201/__test/drop-write");
-  await page.getByRole("button", { name: ar.review.apply, exact: true }).evaluate((button: HTMLButtonElement) => { button.click(); button.click(); });
+  await login(page); await detail(page); await choose(page, "acknowledged", "idempotent review"); await request.post("http://127.0.0.1:3201/__test/drop-write");
+  await confirm(page).evaluate((button: HTMLButtonElement) => { button.click(); button.click(); });
   await expect(page.getByText(ar.review.failed, { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: ar.review.apply, exact: true }).click(); await expect(page.locator(".state-grid [data-track='editorial_state']")).toHaveText(ar.states.editorial_state.acknowledged);
+  await confirm(page).click(); await expect(page.locator(".state-grid [data-track='editorial_state']")).toHaveText(ar.states.editorial_state.acknowledged);
   const data = await (await request.get("http://127.0.0.1:3201/__test/state")).json(); expect(data.writes).toHaveLength(2); expect(data.writes[0].key).toBe(data.writes[1].key); expect(data.applied).toBe(1);
 });
 test("contributors require exact totals and reservation can be released", async ({ page }) => {
   await login(page); await detail(page, second);
   await page.getByRole("button", { name: ar.review.reserve, exact: true }).click(); await expect(page.getByText(ar.review.yourReservation, { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: ar.review.release, exact: true }).click(); await expect(page.getByText(ar.review.unreserved, { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: ar.review.releaseMine, exact: true }).click(); await expect(page.getByText(ar.review.unreserved, { exact: true })).toBeVisible();
   await page.getByLabel(ar.review.share, { exact: true }).fill("33.33"); await expect(page.getByRole("button", { name: ar.review.saveContributors, exact: true })).toBeDisabled();
   await page.getByRole("button", { name: ar.review.add, exact: true }).click(); await page.getByLabel(ar.review.userId, { exact: true }).nth(1).fill(target); await page.getByLabel(ar.review.share, { exact: true }).nth(1).fill("66.67"); const saved = page.waitForResponse(r => r.url().endsWith("/contributors") && r.request().method() === "PUT"); await page.getByRole("button", { name: ar.review.saveContributors, exact: true }).click(); expect((await saved).status()).toBe(200);
   await expect(page.getByLabel(ar.review.userId, { exact: true })).toHaveCount(2); await expect(page.getByLabel(ar.review.share, { exact: true }).nth(1)).toHaveValue("66.67");
@@ -70,7 +80,7 @@ test("notification read and acknowledgment update counts without exposing raw te
   await page.getByLabel(ar.notice.unread, { exact: true }).check(); await expect(page.getByTestId("notification")).toHaveCount(2); await page.screenshot({ path: ".artifacts/notifications-ar.png", fullPage: true });
 });
 test("reporter can retry the technical track on their own failed material", async ({ page }) => {
-  await login(page, "reporter"); await detail(page, "20000000-0000-4000-8000-000000000003"); await page.getByRole("combobox", { name: ar.review.target, exact: true }).selectOption("pending"); await page.getByLabel(ar.review.reason, { exact: true }).fill("retry receipt"); await page.getByRole("button", { name: ar.review.apply, exact: true }).click(); await expect(page.locator(".state-grid [data-track='technical_state']")).toHaveText(ar.states.technical_state.pending); await expect(page.locator(".state-grid [data-track='editorial_state']")).toHaveText(ar.states.editorial_state.inbox);
+  await login(page, "reporter"); await detail(page, "20000000-0000-4000-8000-000000000003"); await choose(page, "pending", "retry receipt", "technical"); await confirm(page).click(); await expect(page.locator(".state-grid [data-track='technical_state']")).toHaveText(ar.states.technical_state.pending); await expect(page.locator(".state-grid [data-track='editorial_state']")).toHaveText(ar.states.editorial_state.inbox);
 });
 
 test("identity policy requires a coded reason and confirmation, cancels safely, and retries one write", async ({ page, request }) => {

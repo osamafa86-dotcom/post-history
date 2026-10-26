@@ -64,11 +64,17 @@ export function NewsroomBoard({ locale }: { locale: Locale }) {
         })}
         {count(state) > (cards[state]?.length ?? 0) && <Link prefetch={false} className="board-more" href={`/${locale}/inbox`}>{t.more}</Link>}
       </section>)}</div>
-      <section className="card" data-testid="inbox-now"><h2>{t.inboxNow}</h2>{snapshot.uploads_in_progress?.length ? <ul className="inbox-now">{snapshot.uploads_in_progress.map(u => {
-        const percent = Math.floor((u.bytes_received / u.size_bytes) * 100);
-        return <li key={u.upload_session_id} className={u.priority} data-testid="upload-progress"><Link prefetch={false} href={`/${locale}/materials/${u.material_id}`}>{t.kinds[u.kind]}</Link><small className={`priority ${u.priority}`}>{m.states.priority[u.priority]}</small><progress max={u.size_bytes} value={u.bytes_received} aria-label={`${t.kinds[u.kind]} ${percent}%`} /><small dir="ltr">{percent}%</small><small className="muted">{elapsed(u.updated_at, now, locale)}</small></li>;
-      })}</ul> : <p className="muted">{snapshot.uploads_in_progress ? t.noUploads : t.uploadsUnavailable}</p>}</section>
+      <InboxNow locale={locale} snapshot={snapshot} now={now} />
       <section className="card"><h2>{t.receipts}</h2>{snapshot.recent_receipts.length ? <ul className="receipt-list">{snapshot.recent_receipts.map(r => <li key={r.receipt_number}><Link prefetch={false} href={`/${locale}/materials/${r.material_id}`} dir="ltr">{r.receipt_number}</Link><small className={`priority ${r.priority}`}>{m.states.priority[r.priority]}</small><small className="muted">{formatDate(r.verified_at, locale)}</small></li>)}</ul> : <p className="muted">{t.noReceipts}</p>}</section>
     </>}
   </>;
+}
+
+/** «الوارد الآن»: جلسات الرفع الجارية بنسبتها (ADR 0024)؛ معرّفات وأرقام فقط، يشترك فيه الوارد ولوحة غرفة الأخبار. */
+export function InboxNow({ locale, snapshot, now }: { locale: Locale; snapshot: NewsroomDashboard; now: number }) {
+  const m = messages[locale], t = m.board;
+  return <section className="card" data-testid="inbox-now" aria-labelledby="inbox-now-title"><h2 id="inbox-now-title"><span className="live-dot" aria-hidden="true" /> {t.inboxNow}</h2>{snapshot.uploads_in_progress?.length ? <ul className="inbox-now">{snapshot.uploads_in_progress.map(u => {
+    const percent = Math.floor((u.bytes_received / u.size_bytes) * 100);
+    return <li key={u.upload_session_id} className={u.priority} data-testid="upload-progress"><Link prefetch={false} href={`/${locale}/materials/${u.material_id}`}>{t.kinds[u.kind]}</Link><small className={`priority ${u.priority}`}>{m.states.priority[u.priority]}</small><progress max={u.size_bytes} value={u.bytes_received} aria-label={`${t.kinds[u.kind]} ${percent}%`} /><small className="mono" dir="ltr">{percent}%</small><small className="muted">{elapsed(u.updated_at, now, locale)}</small></li>;
+  })}</ul> : <p className="muted">{snapshot.uploads_in_progress ? t.noUploads : t.uploadsUnavailable}</p>}</section>;
 }
