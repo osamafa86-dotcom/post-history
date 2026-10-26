@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "tool": "asr-bench",
+  "role": "ai",
+  "test_name": "quality-2min-480p-shake4px-cpu",
+  "started_at": "2026-10-26T04:28:34.661Z",
+  "ended_at": "2026-10-26T04:28:41.463Z",
+  "result": "info",
+  "device": {
+    "platform": "server",
+    "model": "Intel(R) Xeon(R) Processor @ 2.10GHz, --cpus 2, CPU only",
+    "os_version": "Linux-6.18.44-fc-v153-x86_64-with-glibc2.41"
+  },
+  "upload_path": "n/a",
+  "file": {
+    "duration_s": 120.0,
+    "codec": "mpeg4 854x480 30 fps + aac 16 kHz mono (synthetic, like proxy-480p)"
+  },
+  "provider": "local: OpenCV phase correlation, dHash, PyAV audio level",
+  "cost_usd": 0,
+  "metrics": {
+    "video_s": 120.0,
+    "frames": 3600,
+    "assess_s": 6.8,
+    "rtf_cpu": 0.057,
+    "peak_memory_mb": 32.2,
+    "shake_amplitude_px_at_854": 4,
+    "shake_threshold_px_at_256": 0.5,
+    "shaky_expected": 6,
+    "shaky_matched": 6,
+    "shaky_false_on_pan": 0,
+    "shaky_false_on_still": 0,
+    "shake_px_still_max": 0.002,
+    "shake_px_pan_max": 0.126,
+    "shake_px_shake_min": 1.465,
+    "duplicates_expected": 4,
+    "duplicates_matched": 4,
+    "duplicates_spurious": 0,
+    "silences_expected": 5,
+    "silences_matched": 5,
+    "silences_spurious": 0,
+    "silence_edge_error_ms_max": 0.0,
+    "network": "none (docker --network none)"
+  },
+  "notes": "Synthetic 2-minute clip, 24 known 5 s shots (11 still, 7 smooth pan at 20 px/s, 6 shaky), random per-frame shake of the given amplitude, 4 shots repeating earlier ones, 5 known silences of 1.5-4 s and one 0.5 s gap that must not count. Shot bounds are given, so this measures the assessment alone. Real footage (walking, zoom, low light, wind noise) not measured."
+}

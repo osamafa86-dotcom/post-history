@@ -5,6 +5,7 @@ import { actionPath, actionRoutes } from "../src/server/review-actions";
 import { identityAccesses, identityReasons, pageLimits, permissions, reasonLimits } from "../src/lib/admin-policy";
 import { states } from "../src/lib/query";
 import * as buyers from "../src/lib/buyer-policy";
+import * as issued from "../src/lib/issued-licenses";
 import * as orders from "../src/lib/order-policy";
 import { uploadRoles } from "../src/lib/upload-policy";
 import { catalogRoles, licenseTypes } from "../src/server/catalog";
@@ -85,6 +86,11 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
     expect([...buyers.memberStatuses]).toEqual(at("components", "schemas", "BuyerMemberUpdate", "properties", "status", "enum"));
     const f = (...p: string[]) => at("components", "schemas", "BuyerOrganizationFields", "properties", ...p);
     expect([buyers.organizationLimits.legalName, buyers.organizationLimits.email, buyers.organizationLimits.seatsMin, buyers.organizationLimits.seatsMax]).toEqual([f("legal_name", "maxLength"), f("billing_email", "maxLength"), f("seats", "minimum"), f("seats", "maximum")]);
+  });
+  it("keeps issued license roles and statuses aligned with v0.3", () => {
+    for (const path of ["/licenses", "/licenses/{license_id}"]) expect([...issued.licenseReaders]).toEqual(at("paths", path, "get", "x-roles"));
+    expect([...issued.licenseDownloaders]).toEqual(at("paths", "/licenses/{license_id}/download-url", "post", "x-roles"));
+    expect([...issued.licenseStatuses]).toEqual(at("components", "schemas", "LicenseStatus", "enum"));
   });
   it("keeps order roles, statuses and limits aligned with v0.3", () => {
     for (const path of ["/orders", "/orders/{order_id}"]) expect([...orders.orderReaders]).toEqual(at("paths", path, "get", "x-roles"));

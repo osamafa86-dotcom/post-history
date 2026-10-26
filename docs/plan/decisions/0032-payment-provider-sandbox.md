@@ -42,7 +42,12 @@ type ProviderEvent = { eventId: string; type: 'payment.succeeded' | 'payment.fai
 
 ### المزوّد التجريبي (`sandbox`)
 
-- **التفعيل:** `PAYMENT_PROVIDER=sandbox`، وحده في غير الإنتاج. الإقلاع في الإنتاج به يفشل باسم المتغير.
+- **التفعيل:** `PAYMENT_PROVIDER=sandbox`، ومعه `SANDBOX_WEBHOOK_SECRET`.
+  - في غير `NODE_ENV=production` يُقبل.
+  - في `NODE_ENV=production` يُرفض الإقلاع باسم المتغير، إلا للتجربة الميدانية بعلمين معًا: `DEPLOY_STAGE=trial`
+    و`PAYMENT_SANDBOX_ALLOWED=1` (تعديل المنسّق 2026-10-26).
+  - مع `DEPLOY_STAGE=production` يُرفض دائمًا، أيًّا كان `NODE_ENV` والعلم.
+  - كل إقلاع به يكتب سطر تحذير في السجل.
 - **صفحة الدفع:** صفحة مستضافة داخلية بسيطة على `/sandbox/checkout/{ref}`، لا تطلب بطاقة. تعرض المبلغ وأزرار
   النتيجة (نجاح، رفض، تأخير، تكرار الإشعار، إشعار خارج الترتيب)، ثم ترسل إشعارًا موقَّعًا بـ `SANDBOX_WEBHOOK_SECRET`
   إلى نقطة الإشعار نفسها التي يستعملها المزوّد الحقيقي.

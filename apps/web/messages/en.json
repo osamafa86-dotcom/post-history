@@ -405,6 +405,7 @@
     "duration": "Duration",
     "resolution": "Resolution",
     "shotList": "Shot list",
+    "checkoutLater": "Cart and hosted checkout arrive with the orders contract.",
     "addToCart": "Add to cart",
     "inCart": "In your cart; go to it",
     "buyersOnly": "Buying is for buyer organization accounts."
@@ -765,6 +766,42 @@
     "tokenOnce": "This code is shown once and is not saved. Hand it to the invitee yourself outside the system; if it is lost, invite them again.",
     "tokenMissing": "The invitation was created, but the code is not shown because the request was repeated. If the invitee did not get it, invite them again.",
     "done": "I have handed it over; hide it"
+  },
+  "licenses": {
+    "nav": "Licenses",
+    "title": "Licenses",
+    "lead": "Licenses issued to your organization with their frozen terms, and licensed downloads.",
+    "denied": "This page is for buyers, finance, the rights officer and the system admin.",
+    "empty": "No licenses yet.",
+    "number": "License number",
+    "material": "Material",
+    "type": "Type",
+    "validFrom": "Valid from",
+    "validUntil": "Valid until",
+    "noExpiry": "No expiry",
+    "exclusiveUntil": "Exclusive until",
+    "status": "Status",
+    "open": "Certificate",
+    "price": "Price",
+    "issuedAt": "Issued",
+    "certificate": "License certificate",
+    "notFound": "License not found.",
+    "statuses": {
+      "active": "Active",
+      "expired": "Expired",
+      "revoked": "Revoked"
+    },
+    "reasons": {
+      "refunded": "refunded",
+      "rights_withdrawn": "rights withdrawn",
+      "manual": "administratively"
+    },
+    "download": "Download delivery package",
+    "print": "Print certificate",
+    "preparing": "The delivery package is being prepared; check back shortly.",
+    "remaining": "{n} downloads left.",
+    "downloadHelp": "Every download is counted; the link is short-lived and never saved.",
+    "downloadConflict": "Could not download: the limit is reached, the license is not active, or the package is not ready."
   },
   "orders": {
     "title": "My orders",

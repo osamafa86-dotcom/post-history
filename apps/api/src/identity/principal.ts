@@ -9,7 +9,7 @@ export type Permission = components['schemas']['Permission'];
 
 export interface RoleGrant {
   role: RoleName;
-  scopeKind: 'all' | 'office' | 'governorate';
+  scopeKind: 'all' | 'office' | 'governorate' | 'organization';
   scopeId: string;
 }
 
@@ -17,6 +17,8 @@ export interface RoleGrant {
 export interface Principal {
   userId: string;
   officeId: string | null;
+  /** مؤسسة المشتري (v0.3)؛ null لحساب طاقم. */
+  organizationId: string | null;
   roles: RoleGrant[];
   permissions: ReadonlySet<Permission>;
 }
@@ -26,7 +28,7 @@ export function hasRole(p: Principal, ...roles: RoleName[]): boolean {
 }
 
 export async function loadPrincipal(db: Executor, userId: string): Promise<Principal> {
-  const [user] = await db.select({ officeId: users.officeId }).from(users).where(eq(users.id, userId));
+  const [user] = await db.select({ officeId: users.officeId, organizationId: users.organizationId }).from(users).where(eq(users.id, userId));
   const roles = await db
     .select({ role: userRoles.role, scopeKind: userRoles.scopeKind, scopeId: userRoles.scopeId })
     .from(userRoles)
@@ -38,6 +40,7 @@ export async function loadPrincipal(db: Executor, userId: string): Promise<Princ
   return {
     userId,
     officeId: user?.officeId ?? null,
+    organizationId: user?.organizationId ?? null,
     roles: roles as RoleGrant[],
     permissions: new Set(perms.map((p) => p.permission as Permission)),
   };
