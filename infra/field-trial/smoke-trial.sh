@@ -225,7 +225,9 @@ ta0=$(date +%s.%N); psql_ 'select pg_switch_wal()' >/dev/null
 for _ in $(seq 1 120); do [ "$(psql_ "select coalesce(last_archived_wal, '') >= '$seg' from pg_stat_archiver")" = t ] && break; sleep 0.5; done
 ta1=$(date +%s.%N)
 [ "$(psql_ "select coalesce(last_archived_wal, '') >= '$seg' from pg_stat_archiver")" = t ] || fail "the WAL segment was not archived"
-[ "$(psql_ "select failed_count from pg_stat_archiver")" = 0 ] || fail "wal-g archiving failed"
+# Early attempts may fail while the stand-in provider's bucket is still being created: none after the last success.
+[ "$(psql_ "select last_failed_time is null or last_failed_time < last_archived_time from pg_stat_archiver")" = t ] \
+  || fail "wal-g archiving failed after its last success"
 walobj="$(A_ ls --recursive a/wal/pg/wal_005/ | awk '/\.lz4$/ {print $NF}' | head -1)"
 [ -n "$walobj" ] || fail "no WAL at the second provider"
 A_ retention info "a/wal/pg/wal_005/$walobj" | grep -q COMPLIANCE || fail "the archived WAL is not under compliance retention"
