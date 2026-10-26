@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { buyerOrganizations, catalogListings, deviceAttestationKeys, idempotencyKeys, journalEntries, ledgerAccounts, licenseTemplateVersions, licenseTemplates, listingOffers, materialContributors, materialExports, materialFiles, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, outboxEvents, postings, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
+import { buyerInviteConflicts, buyerOrganizations, catalogListings, deviceAttestationKeys, idempotencyKeys, journalEntries, ledgerAccounts, licenseTemplateVersions, licenseTemplates, listingOffers, materialContributors, materialExports, materialFiles, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, outboxEvents, postings, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
 
 export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => ({
 	refreshToken: one(refreshTokens, {
@@ -69,6 +69,15 @@ export const usersRelations = relations(users, ({one, many}) => ({
 	catalogListings: many(catalogListings),
 	ledgerAccounts: many(ledgerAccounts),
 	journalEntries: many(journalEntries),
+	buyerInviteConflicts_existingUserId: many(buyerInviteConflicts, {
+		relationName: "buyerInviteConflicts_existingUserId_users_id"
+	}),
+	buyerInviteConflicts_invitedBy: many(buyerInviteConflicts, {
+		relationName: "buyerInviteConflicts_invitedBy_users_id"
+	}),
+	buyerInviteConflicts_resolvedBy: many(buyerInviteConflicts, {
+		relationName: "buyerInviteConflicts_resolvedBy_users_id"
+	}),
 	recoveryCodes: many(recoveryCodes),
 	materialContributors: many(materialContributors),
 	userRoles_grantedBy: many(userRoles, {
@@ -420,6 +429,7 @@ export const licenseTemplateVersionsRelations = relations(licenseTemplateVersion
 
 export const buyerOrganizationsRelations = relations(buyerOrganizations, ({many}) => ({
 	users: many(users),
+	buyerInviteConflicts: many(buyerInviteConflicts),
 }));
 
 export const ledgerAccountsRelations = relations(ledgerAccounts, ({one, many}) => ({
@@ -454,5 +464,27 @@ export const postingsRelations = relations(postings, ({one}) => ({
 	journalEntry: one(journalEntries, {
 		fields: [postings.entryId],
 		references: [journalEntries.id]
+	}),
+}));
+
+export const buyerInviteConflictsRelations = relations(buyerInviteConflicts, ({one}) => ({
+	user_existingUserId: one(users, {
+		fields: [buyerInviteConflicts.existingUserId],
+		references: [users.id],
+		relationName: "buyerInviteConflicts_existingUserId_users_id"
+	}),
+	user_invitedBy: one(users, {
+		fields: [buyerInviteConflicts.invitedBy],
+		references: [users.id],
+		relationName: "buyerInviteConflicts_invitedBy_users_id"
+	}),
+	buyerOrganization: one(buyerOrganizations, {
+		fields: [buyerInviteConflicts.organizationId],
+		references: [buyerOrganizations.id]
+	}),
+	user_resolvedBy: one(users, {
+		fields: [buyerInviteConflicts.resolvedBy],
+		references: [users.id],
+		relationName: "buyerInviteConflicts_resolvedBy_users_id"
 	}),
 }));

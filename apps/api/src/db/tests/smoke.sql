@@ -635,6 +635,26 @@ SELECT pg_temp.expect_error($q$
 SELECT pg_temp.expect_error($q$
   UPDATE users SET office_id = '00000000-0000-4000-8000-000000000001' WHERE id = '00000000-0000-4000-8000-000000000711' $q$, '23514');
 
+-- دعوة بريد قائم خارج المؤسسة: عضو مدعو بديل، ودعوة مفتوحة واحدة لكل بريد بلا تمييز لحالة الأحرف (ترحيل 031)
+INSERT INTO buyer_invite_conflicts (id, organization_id, email, existing_user_id, role, invited_by, invite_expires_at)
+VALUES ('00000000-0000-4000-8000-000000000d01', '00000000-0000-4000-8000-000000000701', 'reporter@example.invalid',
+        '00000000-0000-4000-8000-000000000011', 'buyer_member', '00000000-0000-4000-8000-000000000711', now() + interval '24 hours');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO buyer_invite_conflicts (organization_id, email, existing_user_id, role, invited_by, invite_expires_at)
+  VALUES ('00000000-0000-4000-8000-000000000701', 'Reporter@Example.invalid', '00000000-0000-4000-8000-000000000011',
+          'buyer_member', '00000000-0000-4000-8000-000000000711', now() + interval '24 hours') $q$, '23505');
+SELECT pg_temp.expect_error($q$
+  UPDATE buyer_invite_conflicts SET state = 'dismissed' WHERE id = '00000000-0000-4000-8000-000000000d01' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE buyer_invite_conflicts SET role = 'producer' WHERE id = '00000000-0000-4000-8000-000000000d01' $q$, '23514');
+UPDATE buyer_invite_conflicts SET state = 'dismissed', resolved_at = now(), resolved_by = '00000000-0000-4000-8000-000000000014'
+ WHERE id = '00000000-0000-4000-8000-000000000d01';
+INSERT INTO buyer_invite_conflicts (organization_id, email, existing_user_id, role, invited_by, invite_expires_at)
+VALUES ('00000000-0000-4000-8000-000000000701', 'Reporter@Example.invalid', '00000000-0000-4000-8000-000000000011',
+        'buyer_member', '00000000-0000-4000-8000-000000000711', now() + interval '24 hours');
+SELECT pg_temp.assert(public.audit_details_is_whitelisted('{"conflict_id": "00000000-0000-4000-8000-000000000d01", "organization_id": "00000000-0000-4000-8000-000000000701"}'::jsonb),
+  'audit whitelist accepts conflict_id');
+
 -- ---------- indexing policy (ADR 0002) ----------
 SELECT pg_temp.assert(
   NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexdef ILIKE '%USING gin%'),
