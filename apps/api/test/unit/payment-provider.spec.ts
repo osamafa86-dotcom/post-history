@@ -52,18 +52,21 @@ describe('signed provider webhook', () => {
 });
 
 describe('sandbox payment provider', () => {
-  it('checkout is idempotent per key; settle signs an event the same provider verifies; refund only after success, once per key', async () => {
+  it('checkout is idempotent per key; settle signs an event the same provider verifies; refund once per key (the server refunds paid orders only)', async () => {
     const p = new SandboxPaymentProvider(secret, 'http://api.test/');
     const a = await p.createCheckout({ orderId: 'o1', amount: money(500, 'ILS'), returnUrl: 'http://x', idempotencyKey: 'k1' });
     const b = await p.createCheckout({ orderId: 'o1', amount: money(500, 'ILS'), returnUrl: 'http://x', idempotencyKey: 'k1' });
     expect(b.providerRef).toBe(a.providerRef);
     expect(a.checkoutUrl).toBe(`http://api.test/sandbox/checkout/${a.providerRef}`);
-    await expect(p.refund({ providerRef: a.providerRef, amount: money(500, 'ILS'), idempotencyKey: 'r1' })).rejects.toThrow();
     const { body, headers } = p.settle(a.providerRef, 'succeeded', now);
     expect(p.verifyWebhook(body, headers, now)).toMatchObject({ type: 'payment.succeeded', providerRef: a.providerRef, amount: money(500, 'ILS') });
     expect(await p.status(a.providerRef)).toBe('succeeded');
     const r1 = await p.refund({ providerRef: a.providerRef, amount: money(500, 'ILS'), idempotencyKey: 'r1' });
     expect(await p.refund({ providerRef: a.providerRef, amount: money(500, 'ILS'), idempotencyKey: 'r1' })).toEqual(r1);
+    // تأكيد الاسترداد التجريبي إشعار موقّع بمرجعه ومبلغه
+    const n = p.settleRefund(r1.refundRef, now)!;
+    expect(p.verifyWebhook(n.body, n.headers, now)).toMatchObject({ type: 'refund.succeeded', providerRef: r1.refundRef, amount: money(500, 'ILS') });
+    expect(p.settleRefund('sbr_unknown', now)).toBeUndefined();
   });
 
   describe('configuration (ADR 0032)', () => {

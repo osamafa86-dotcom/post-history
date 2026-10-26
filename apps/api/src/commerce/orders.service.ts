@@ -23,10 +23,12 @@ import { hasRole, type Principal } from '../identity/principal';
 import { iso } from '../materials/material-store';
 import { writeOutboxEvent } from '../outbox/outbox';
 import { validTimestamp } from '../uploads/uploads.service';
+import { applicableRule, type AppliedRule } from './commission-rules';
 import { requestDelivery } from './delivery';
 import { postEntry, type AccountRef } from './ledger';
 import { allocate, type Currency, money, type Money, percentToBasisPoints } from './money';
 import { PAYMENT_PROVIDER, type PaymentProvider, type ProviderEvent, WebhookSignatureError } from './payment-provider';
+import { applyRefundSucceeded } from './refunds';
 
 export type Order = components['schemas']['Order'];
 export type OrderCreate = components['schemas']['OrderCreate'];
@@ -196,8 +198,16 @@ export class OrdersService {
         .from(paymentEvents)
         .where(and(eq(paymentEvents.provider, providerName), eq(paymentEvents.eventId, event.eventId)));
       if (seen) return;
-      const [o] = await tx.select().from(orders).where(and(eq(orders.provider, providerName), eq(orders.providerRef, event.providerRef))).for('update');
-      const outcome = o ? await this.apply(tx, o, event) : 'ignored';
+      let orderId: string | null;
+      let outcome: 'applied' | 'ignored' | 'review';
+      if (event.type === 'refund.succeeded') {
+        // بمرجع الاسترداد، أو بمرجع الدفع حين يحمله إشعار المزوّد
+        ({ orderId, outcome } = await applyRefundSucceeded(tx, providerName, event));
+      } else {
+        const [o] = await tx.select().from(orders).where(and(eq(orders.provider, providerName), eq(orders.providerRef, event.providerRef))).for('update');
+        orderId = o?.id ?? null;
+        outcome = o ? await this.apply(tx, o, event) : 'ignored';
+      }
       await tx.insert(paymentEvents).values({
         provider: providerName,
         eventId: event.eventId,
@@ -206,7 +216,7 @@ export class OrdersService {
         amountMinor: sql`${event.amount.amountMinor.toString()}::bigint` as unknown as number,
         currency: event.amount.currency,
         occurredAt: event.occurredAt.toISOString(),
-        orderId: o?.id ?? null,
+        orderId,
         outcome,
       });
     });
@@ -214,7 +224,7 @@ export class OrdersService {
   }
 
   private async apply(tx: Tx, o: OrderRow, event: ProviderEvent): Promise<'applied' | 'ignored' | 'review'> {
-    if (event.type === 'refund.succeeded' || event.type === 'dispute.opened') return 'review';
+    if (event.type === 'dispute.opened') return 'review';
     if (event.type === 'payment.failed') return o.status === 'pending_payment' ? 'applied' : 'ignored';
     if (o.status !== 'pending_payment' && o.status !== 'expired') return 'ignored';
     if (event.amount.currency !== o.currency || event.amount.amountMinor !== BigInt(o.totalMinor)) return 'review';
@@ -293,13 +303,17 @@ export class OrdersService {
   private async postSale(tx: Tx, o: OrderRow, items: ItemRow[]): Promise<void> {
     const currency = o.currency as Currency;
     if (BigInt(o.totalMinor) === 0n) return;
-    const bp = BigInt(this.config.PLATFORM_COMMISSION_BASIS_POINTS);
     const lines = new Map<string, { account: AccountRef; amount: bigint }>();
     const credit = (key: string, account: AccountRef, amount: bigint) => {
       const cur = lines.get(key);
       lines.set(key, { account, amount: (cur?.amount ?? 0n) - amount });
     };
+    const applied: AppliedRule[] = [];
     for (const item of items) {
+      // قاعدة العمولة السارية لحظة تأكيد الدفع (الجزء 6)، وبلا قاعدة PLATFORM_COMMISSION_BASIS_POINTS
+      const rule = await applicableRule(tx, item, o.paidAt!, this.config.PLATFORM_COMMISSION_BASIS_POINTS);
+      applied.push(rule);
+      const bp = BigInt(rule.basisPoints);
       const price = money(item.priceMinor, currency);
       const split = allocate(price, [
         { key: 'platform', weight: bp },
@@ -317,7 +331,13 @@ export class OrdersService {
       kind: 'sale',
       referenceType: 'order',
       referenceId: o.id,
-      details: { commission_rule: 'default', platform_basis_points: Number(bp) },
+      // القاعدة المجمّدة لكل بند بترتيب البنود
+      // نقاط المنصة رقمًا واحدًا حين تتفق البنود (وإلا null)، والقاعدة ونقاطها لكل بند بترتيب البنود
+      details: {
+        platform_basis_points: applied.every((r) => r.basisPoints === applied[0]!.basisPoints) ? applied[0]!.basisPoints : null,
+        commission_rules: applied.map((r) => r.ruleId),
+        item_basis_points: applied.map((r) => r.basisPoints),
+      },
       idempotencyKey: `sale:${o.id}`,
       actorId: null,
       postings,
