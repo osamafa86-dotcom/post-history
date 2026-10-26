@@ -165,7 +165,7 @@ describe('catalog (/v1/catalog)', () => {
     await get(rights, `/catalog/${randomUUID()}/preview-url`).expect(404);
   });
 
-  it('catalog reads are for admin, rights, editor in chief and finance', async () => {
+  it('catalog reads are for admin, rights, editor in chief, finance and buyers', async () => {
     await get(producer, '/catalog').expect(403);
     await get(producer, `/catalog/${randomUUID()}`).expect(403);
   });
