@@ -3,6 +3,7 @@ import type { Tx } from '../database/database.module';
 import { materialFiles, uploadSessions } from '../database/schema/schema';
 import { applyTransition, lockMaterial } from '../materials/material-store';
 import { transitionOwners } from '../materials/transitions';
+import { refreshListingSource } from '../commerce/listing-store';
 import { writeOutboxEvent } from '../outbox/outbox';
 import { abortRevokedUpload, uploadAccessRevoked } from '../uploads/upload-completion';
 import { hashInline, type HashResult } from './hash-pool';
@@ -101,5 +102,7 @@ export async function recordVerification(tx: Tx, session: UploadSessionRow, outc
   if (session.kind === 'original' && material && transitionOwners('technical', material.technicalState, 'verified')) {
     await applyTransition(tx, material, { track: 'technical', to: 'verified', reason: 'original checksum verified', actorId: null });
   }
+  // أصل جديد لمادة معروضة: الحدث بمصدره الجديد يعيد بناء معاينة المشتري (المعاينة القديمة لا تُعطى بعده)
+  if (session.kind === 'original') await refreshListingSource(tx, session.materialId);
   return 'applied';
 }

@@ -59,3 +59,13 @@ export async function suspendListing(tx: Tx, materialId: string, reason: AutoSus
 export function isSensitive(m: { sensitivityMinors: boolean; sensitivityInjured: boolean; sensitivityGraphic: boolean }): boolean {
   return m.sensitivityMinors || m.sensitivityInjured || m.sensitivityGraphic;
 }
+
+/** أصل متحقق جديد لمادة معروضة: يُلمس الإدراج ويُكتب حدثه بـ `source_file_id` الجديد، في معاملة التحقق نفسها. */
+export async function refreshListingSource(tx: Tx, materialId: string): Promise<void> {
+  const [listing] = await tx
+    .update(catalogListings)
+    .set({ updatedAt: sql`now()` as never })
+    .where(and(eq(catalogListings.materialId, materialId), eq(catalogListings.state, 'listed')))
+    .returning();
+  if (listing) await writeListingEvent(tx, listing, null);
+}
