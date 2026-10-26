@@ -2,7 +2,7 @@
 // واجهة الويب فقط: مقطع اصطناعي 200MB، قطع offline عشر ثوانٍ عند 30–50% من الملف، ثم استئناف من إزاحة الخادم.
 // يحكم على إزاحات PATCH التي يرسلها المتصفح فعلًا. لا يقارن بصمة المخزَّن بالخادم (لا رمز API هنا)، فالنتيجة `partial`.
 import { banner } from "../lib/measurement.mjs";
-import { envMissing, url, title, syntheticClip, loadPlaywright, login, envDoc, checkList, finishAndWrite, exitCodeFor, EnvironmentError } from "./web-gap-helpers.mjs";
+import { scrub, envMissing, url, title, syntheticClip, loadPlaywright, login, envDoc, checkList, finishAndWrite, exitCodeFor, EnvironmentError } from "./web-gap-helpers.mjs";
 
 export const CUT_WINDOW = [0.3, 0.5];
 export const RESEND_BUDGET = 0.1; // أقصى ما يُعاد إرساله بعد الاستئناف، كنسبة من حجم الملف
@@ -74,8 +74,8 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     }, failures.length ? failures.map((x) => `${x.name}: ${x.detail}`).join("؛ ") : "ملف اصطناعي عالي الإنتروبيا مولّد بـffmpeg؛ حُكم على إزاحات PATCH التي أرسلها المتصفح. بصمة المخزَّن لم تُقارن (لا رمز API في هذا السكربت)، فالنتيجة جزئية؛ ولا لقطات ولا ملفات محفوظة");
     return { code: failures.length || out.error ? 1 : 0, doc };
   } catch (error) {
-    if (error instanceof EnvironmentError) { console.error(`ENVIRONMENT: ${error.message}; nothing measured`); return { code: 2, doc: null }; }
-    finishAndWrite(doc, argv, "browser-failure", "fail", { checks: checks.length, checks_failed: 1 }, `فشل المسار: ${error.message}`);
+    if (error instanceof EnvironmentError) { console.error(`ENVIRONMENT: ${scrub(error.message)}; nothing measured`); return { code: 2, doc: null }; }
+    finishAndWrite(doc, argv, "browser-failure", "fail", { checks: checks.length, checks_failed: 1 }, `فشل المسار: ${scrub(error.message)}`);
     return { code: exitCodeFor(error), doc };
   } finally { await browser?.close(); clip?.cleanup(); }
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // تدقيق جوال بلا لقطات: صفحات الواجهة الرئيسية بمنظر 390x844 في اللغتين. قياس DOM لصفحة واحدة لكل مسار، لا مراجعة تصميم.
 import { banner } from "../lib/measurement.mjs";
-import { envMissing, url, loadPlaywright, login, envDoc, checkList, finishAndWrite, exitCodeFor, EnvironmentError } from "./web-gap-helpers.mjs";
+import { scrub, envMissing, url, loadPlaywright, login, envDoc, checkList, finishAndWrite, exitCodeFor, EnvironmentError } from "./web-gap-helpers.mjs";
 
 /** يحكم على قياسات صفحة واحدة؛ يرجع أسماء المخالفات. */
 export function judgeLayout(m) {
@@ -70,8 +70,8 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       failures.length ? failures.map((x) => `${x.name}: ${x.detail}`).join("؛ ") : "قياس DOM لصفحة واحدة لكل مسار ودور عند 390×844؛ لا لقطات محفوظة ولا مراجعة تصميم؛ المواد والوسائط اصطناعية فقط");
     return { code: failures.length || out.error ? 1 : 0, doc };
   } catch (error) {
-    if (error instanceof EnvironmentError) { console.error(`ENVIRONMENT: ${error.message}; nothing measured`); return { code: 2, doc: null }; }
-    finishAndWrite(doc, argv, "browser-failure", "fail", { checks: checks.length, checks_failed: 1, viewport_width: 390 }, `فشل المسار: ${error.message}`);
+    if (error instanceof EnvironmentError) { console.error(`ENVIRONMENT: ${scrub(error.message)}; nothing measured`); return { code: 2, doc: null }; }
+    finishAndWrite(doc, argv, "browser-failure", "fail", { checks: checks.length, checks_failed: 1, viewport_width: 390 }, `فشل المسار: ${scrub(error.message)}`);
     return { code: exitCodeFor(error), doc };
   } finally { await browser?.close(); }
 }
