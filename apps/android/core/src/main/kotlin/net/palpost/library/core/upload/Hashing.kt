@@ -20,7 +20,7 @@ object Hashing {
             if (whole == null && sizeBytes > 2 * EDGE_BYTES) {
                 // Head only, then jump to the tail: no need to read the middle.
                 position = readInto(input, buffer, EDGE_BYTES, position) { b, n -> head.update(b, 0, n) }
-                skipFully(input, tailStart - position)
+                FullSkipInputStream.skipFully(input, tailStart - position)
                 position = tailStart
                 readInto(input, buffer, sizeBytes - tailStart, position) { b, n -> tail.update(b, 0, n) }
             } else {
@@ -51,14 +51,6 @@ object Hashing {
             position += n
         }
         return position
-    }
-
-    private fun skipFully(input: InputStream, count: Long) {
-        var remaining = count
-        while (remaining > 0) {
-            val skipped = input.skip(remaining)
-            if (skipped <= 0) { if (input.read() < 0) return; remaining-- } else remaining -= skipped
-        }
     }
 
     fun hex(bytes: ByteArray): String = bytes.joinToString("") { "%02x".format(it) }

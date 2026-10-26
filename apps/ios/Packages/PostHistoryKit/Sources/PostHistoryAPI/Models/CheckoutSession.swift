@@ -12,7 +12,7 @@ public struct CheckoutSession: Sendable, Codable, Hashable {
     public static let providerRule = StringRule(minLength: nil, maxLength: nil, pattern: "^[a-z_]{1,32}$")
     /** صفحة الدفع المستضافة لدى المزوّد؛ لا يُسجَّل ولا يُرسل في حدث أو إشعار */
     public var checkoutUrl: String
-    /** `sandbox` في هذه الدورة */
+    /** قيمة من `PaymentProvider`: `sandbox` أو `stripe` */
     public var provider: String
     /** لا تتجاوز مهلة الطلب */
     public var expiresAt: Date

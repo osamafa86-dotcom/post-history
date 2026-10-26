@@ -2,6 +2,142 @@
   "sourceLanguage": "ar",
   "version": "1.0",
   "strings": {
+    "material.lightCopy": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "النسخة الخفيفة"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Light copy"
+          }
+        }
+      }
+    },
+    "material.lightCopy.urgent": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "عاجل (360p)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Urgent (360p)"
+          }
+        }
+      }
+    },
+    "material.lightCopy.normal": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "عادي (540p)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Normal (540p)"
+          }
+        }
+      }
+    },
+    "material.lightCopy.originalOnly": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الأصل فقط"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original only"
+          }
+        }
+      }
+    },
+    "material.lightCopy.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تُرفع نسخة خفيفة أولًا فتصل غرفة الأخبار خلال دقائق، ثم يكتمل رفع الأصل. الاقتراح من الشبكة والبطارية والمساحة، ويمكنك تغييره."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A light copy uploads first so the newsroom has it within minutes, then the original finishes. The suggestion follows your network, battery and storage; you can change it."
+          }
+        }
+      }
+    },
+    "upload.kind.proxy": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "نسخة خفيفة"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Light copy"
+          }
+        }
+      }
+    },
+    "upload.preparingProxy": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تحضير النسخة الخفيفة…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing the light copy…"
+          }
+        }
+      }
+    },
+    "upload.waitingForProxy": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ينتظر اكتمال النسخة الخفيفة"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for the light copy to finish"
+          }
+        }
+      }
+    },
     "materials.title": {
       "extractionState": "manual",
       "localizations": {
