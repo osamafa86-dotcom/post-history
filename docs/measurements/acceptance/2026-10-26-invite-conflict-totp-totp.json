@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "invite-conflict-totp",
+  "started_at": "2026-10-26T17:32:42.125Z",
+  "ended_at": "2026-10-26T17:32:42.768Z",
+  "result": "partial",
+  "metrics": {
+    "variant": "totp-guard-local",
+    "retry_after_s": 900,
+    "wrong_attempts_before_429": 10,
+    "failures": 0
+  },
+  "device": {
+    "platform": "server",
+    "model": "server"
+  },
+  "upload_path": "n/a",
+  "notes": "بيئة محلية بمستخدمين اصطناعيين وتشغيل واحد؛ لا يُنتَظر انتهاء نافذة الحد (15 دقيقة افتراضيًا) فيُقاس القطع لا التعافي"
+}

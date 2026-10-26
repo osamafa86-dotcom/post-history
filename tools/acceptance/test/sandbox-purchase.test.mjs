@@ -36,7 +36,10 @@ test("a refund entry must mirror the sale on the same accounts", () => {
   const mirror = s.map((l) => ({ ...l, amount: -l.amount }));
   assert.deepEqual(judgeRefundMirror(s, mirror), []);
   assert.ok(judgeRefundMirror(s, mirror.map((l, i) => (i === 1 ? { ...l, amount: l.amount + 1n } : l))).length > 0);
-  assert.ok(judgeRefundMirror(s, mirror.map((l) => (l.kind === "contributor_payable" ? { ...l, state: "available" } : l))).some((p) => /did not/.test(p)));
+  // the payable moved pending -> available before the refund (release worker): the same account and owner, so still a mirror
+  assert.deepEqual(judgeRefundMirror(s, mirror.map((l) => (l.kind === "contributor_payable" ? { ...l, state: "available" } : l))), []);
+  // but another owner's payable is an account the sale did not touch
+  assert.ok(judgeRefundMirror(s, mirror.map((l) => (l.kind === "contributor_payable" ? { ...l, owner_id: "22222222-2222-4222-8222-222222222222" } : l))).some((p) => /did not/.test(p)));
   assert.ok(judgeRefundMirror(s, mirror.slice(1)).length > 0);
 });
 

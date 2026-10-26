@@ -37,7 +37,7 @@ try {
     await s3FromEnv({ S3_ENDPOINT: s3.endpoint, S3_ACCESS_KEY: s3.accessKey, S3_SECRET_KEY: s3.secretKey, S3_REGION: s3.region }).ensureBucket("uploads");
   }
   stack = await startApi({ databaseUrl, port: livePort, redisUrl: process.env.LIVE_REDIS_URL, s3,
-    extraEnv: { PAYMENT_PROVIDER: "sandbox", SANDBOX_WEBHOOK_SECRET: sandboxSecret, SANDBOX_CHECKOUT_BASE_URL: `http://127.0.0.1:${livePort}` } });
+    extraEnv: { PAYMENT_PROVIDER: "sandbox", PAYOUT_RELEASE_AFTER_DAYS: "0", PAYOUT_WORKER_INTERVAL_MS: "300", PAYOUT_DEFAULT_MINIMUM_MINOR: "1000", SANDBOX_WEBHOOK_SECRET: sandboxSecret, SANDBOX_CHECKOUT_BASE_URL: `http://127.0.0.1:${livePort}` } });
   const coreOn = process.env.CORE_ACCEPTANCE === "1";
   const s = await seed({ databaseUrl, apiUrl: stack.apiUrl, fieldKey: coreOn ? stack.fieldKey : null });
   let sha = "unknown";
@@ -83,12 +83,12 @@ try {
   setLogSource(() => stack.logs());
     // pii-leak reads the server logs of everything before it; dynamic-fields last: it publishes the shared form, which becomes the current form (with required fields) for every later material
   const core = process.env.CORE_ACCEPTANCE === "1" ? ["reporter-identity-access", "reservation-conflict", "optimistic-concurrency", "admin-quorum", "notification-delivery"] : [];
-  const names = ["tenant-isolation", "duplicate-payment", "invalid-file", "receipt-notification", "concurrent-load", "performance", ...core, "sandbox-purchase", "pii-leak", "dynamic-fields"];
+  const names = ["tenant-isolation", "duplicate-payment", "invalid-file", "receipt-notification", "concurrent-load", "performance", ...core, "sandbox-purchase", "payout-concurrent", "refund-after-payout", "pii-leak", "dynamic-fields"];
   const summary = [];
   names.splice(2, 0, "upload-contract", "outbox-transaction", "material-state-independence");
   const only = typeof args.only === "string" ? args.only.split(",") : null;
   for (const name of names.filter((n) => !only || only.includes(n))) {
-    const mod = await import(name === "sandbox-purchase" ? "./sandbox-purchase.mjs" : `../scripts/${name}.mjs`);
+    const mod = await import(["sandbox-purchase", "payout-concurrent", "refund-after-payout"].includes(name) ? `./${name}.mjs` : `../scripts/${name}.mjs`);
     try {
       const { code, doc } = await mod.run(passthrough);
       summary.push([name, code ? "FAIL" : doc?.result ?? "ok"]);

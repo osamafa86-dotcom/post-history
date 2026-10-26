@@ -55,19 +55,23 @@ export function judgeSale(lines, { total, currency, bp, reporterId }) {
   return bad;
 }
 
-/** A refund entry mirrors the sale: every line of the sale negated, on the same accounts (the reserve takes over when the payable was already paid out: not asserted here). */
+/**
+ * A refund entry mirrors the sale: the sale's lines negated on the same accounts. The contributor's payable may have moved from pending to available
+ * (the release worker, ADR 0034) before the refund, so it is compared by account and owner, summed over its states; the reserve that takes over after a payout is not asserted here.
+ */
 export function judgeRefundMirror(sale, refund) {
-  const key = (l) => `${l.kind}|${l.owner_id ?? ""}|${l.state ?? ""}|${l.currency}`;
-  const want = new Map(sale.map((l) => [key(l), -l.amount]));
+  const key = (l) => `${l.kind}|${l.owner_id ?? ""}|${l.currency}`;
+  const total = (lines) => lines.reduce((m, l) => m.set(key(l), (m.get(key(l)) ?? 0n) + l.amount), new Map());
+  const want = total(sale), got = total(refund);
   const bad = [];
   const sum = refund.reduce((a, l) => a + l.amount, 0n);
   if (sum !== 0n) bad.push(`refund entry unbalanced: ${sum}`);
-  for (const l of refund) {
-    const w = want.get(key(l));
-    if (w === undefined) bad.push(`refund touches an account the sale did not: ${key(l)}`);
-    else if (l.amount !== w) bad.push(`refund line ${key(l)} is ${l.amount}, want ${w}`);
+  for (const [k, amount] of got) {
+    const w = want.get(k);
+    if (w === undefined) bad.push(`refund touches an account the sale did not: ${k}`);
+    else if (amount !== -w) bad.push(`refund line ${k} is ${amount}, want ${-w}`);
   }
-  if (refund.length !== sale.length) bad.push(`refund has ${refund.length} lines, the sale ${sale.length}`);
+  for (const k of want.keys()) if (!got.has(k)) bad.push(`refund leaves an account of the sale untouched: ${k}`);
   return bad;
 }
 
@@ -95,6 +99,8 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   const one = async (text, params) => (await q(text, params))[0];
   const send = (body, { ts = Math.floor(Date.now() / 1000), sig, path = "/payments/webhooks/sandbox" } = {}) =>
     fetch(`${root}${path}`, { method: "POST", headers: { "content-type": "application/json", "x-timestamp": String(ts), "x-signature": sig ?? signBody(secret, ts, body) }, body });
+  // a provider retries a notification the server answered with 5xx; so does this script (a refund racing the payout worker may be a lock-order victim once), and the retries are counted, never hidden
+  const sendRetrying = async (body, tries = 3) => { let r, retries = 0; for (;;) { r = await send(body); if (r.status < 500 || retries >= tries) return { status: r.status, retries }; retries++; await new Promise((ok) => setTimeout(ok, 300)); } };
   const event = (type, providerRef, amount, over = {}) =>
     Buffer.from(JSON.stringify({ event_id: `spt_${randomUUID()}`, type, provider_ref: providerRef, amount: { amount_minor: Number(amount), currency: "USD" }, occurred_at: new Date().toISOString(), ...over }));
   const refOf = (url) => url.split("/").pop();
@@ -308,7 +314,9 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       const refundRef = (await one(`SELECT provider_refund_ref FROM refunds WHERE id = $1`, [refund.body?.id]))?.provider_refund_ref;
       check("the provider gave the refund its own reference", Boolean(refundRef));
       const done = event("refund.succeeded", refundRef ?? providerRef, PRICE);
-      check("the signed refund notification is accepted", (await send(done)).status === 200);
+      const accepted = await sendRetrying(done);
+      metrics.refund_notification_retries = accepted.retries;
+      check("the signed refund notification is accepted", accepted.status === 200, accepted.retries ? `after ${accepted.retries} retry(ies) of a 5xx` : "");
       const rl = await q(`SELECT j.id FROM journal_entries j WHERE j.kind = 'refund' AND j.reference_type = 'order' AND j.reference_id = $1`, [orderId]);
       check("one refund entry", rl.length === 1, `${rl.length}`);
       if (rl.length === 1) {
@@ -320,7 +328,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       check("refunding the same item again is refused, so a refund never exceeds what was paid", again.status === 409, `status ${again.status} ${again.body?.code}`);
       const refunded = Number((await one(`SELECT COALESCE(sum(amount_minor), 0) AS n FROM refunds WHERE order_id = $1 AND status <> 'failed'`, [orderId])).n);
       check("the refunds of the order add up to the price paid, no more", refunded === Number(PRICE), `${refunded} of ${PRICE}`);
-      const net = await q(`SELECT a.kind FROM postings p JOIN ledger_accounts a ON a.id = p.account_id WHERE p.entry_id IN (SELECT id FROM journal_entries WHERE reference_type = 'order' AND reference_id = $1 AND kind IN ('sale', 'refund')) GROUP BY a.id, a.kind HAVING sum(p.amount_minor) <> 0`, [orderId]);
+      const net = await q(`SELECT a.kind FROM postings p JOIN ledger_accounts a ON a.id = p.account_id WHERE p.entry_id IN (SELECT id FROM journal_entries WHERE reference_type = 'order' AND reference_id = $1 AND kind IN ('sale', 'release', 'refund')) GROUP BY a.id, a.kind HAVING sum(p.amount_minor) <> 0`, [orderId]);
       check("sale plus refund leave every account at zero (the reversal is complete)", net.length === 0, net.map((r) => r.kind).join(","));
       check("the finance role reads the refund as succeeded; the buyer admin too; a member does not", (await http.get(tokens.finance, `/orders/${orderId}/refunds`)).body?.items?.[0]?.status === "succeeded" && (await http.get(tokens.buyer_admin, `/orders/${orderId}/refunds`)).status === 200 && (await http.get(tokens.buyer_member, `/orders/${orderId}/refunds`)).status === 403);
       const echo = await send(done);
