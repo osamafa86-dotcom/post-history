@@ -13,7 +13,7 @@ test('resources across JSON, XML, strings and catalog; literals and parse errors
     await put('apps/android/res/values/strings.xml', '<resources><!-- <string name="ignored">س</string> --><string name="a">س</string></resources>');
     await put('apps/android/res/values-en/strings.xml', '<resources><string name="a">A</string></resources>');
     for (const lang of ['ar','en']) await put(`apps/ios/${lang}.lproj/Localizable.strings`, '/* comment */ "a" = "A";');
-    await put('apps/ios/Info.xcstrings', JSON.stringify({sourceLanguage:'en',strings:{title:{localizations:{ar:{stringUnit:{state:'translated',value:'عنوان'}}}}}}));
+    await put('apps/ios/Info.xcstrings', JSON.stringify({sourceLanguage:'en',strings:{technical:{shouldTranslate:false,localizations:{en:{stringUnit:{state:'translated',value:'Technical'}}}},title:{localizations:{ar:{stringUnit:{state:'translated',value:'عنوان'}}}}}}));
     await put('apps/web/src/page.tsx', '// "تعليق"\nconst x = "نص";');
     let r = await check(root);
     assert.deepEqual(r.missing, [{group:'web:messages',key:'extra',missingLanguage:'en'}]);
