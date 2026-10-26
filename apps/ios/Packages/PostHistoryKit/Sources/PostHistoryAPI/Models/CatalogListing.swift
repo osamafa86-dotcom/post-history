@@ -12,6 +12,7 @@ public struct CatalogListing: Sendable, Codable, Hashable {
     public enum SuspendedReason: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
         case manual = "manual"
         case rightsChanged = "rights_changed"
+        case sensitiveFlagged = "sensitive_flagged"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
     public static let shotListRule = ArrayRule(minItems: nil, maxItems: 200, uniqueItems: false)

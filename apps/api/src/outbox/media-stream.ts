@@ -15,6 +15,8 @@ const MEDIA_EVENT_TYPES: ReadonlySet<OutboxEventType> = new Set([
   'export.requested',
   // catalog.listing_changed (v0.3): عامل الوسائط يبني watermarked_preview من source_file_id عند الإدراج
   'catalog.listing_changed',
+  // license.delivery_requested (v0.3): عامل الوسائط يبني حزمة تسليم الترخيص ويسجّلها مشتقًا delivery
+  'license.delivery_requested',
 ]);
 
 export class MediaQueueUnavailableError extends Error {
