@@ -60,9 +60,9 @@ test("البريد: غير المسموح يُبلَّغ، والمسموح بن
 
 test("الأسرار: whsec ومفاتيح sk وJWT وTOTP تُبلَّغ مقنَّعة، وقيم الاختبار المسموحة تُسكَت", () => {
   const f = scanText([
-    'const a = "whsec_9fK2liveSecretValue";',
-    `const b = "${"sk_live_"}AbCdEfGh0123456789abcd";`, // تُبنى رمزيًا كي لا يلتقطها ماسح الأسرار في المنصة
-    'const c = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";',
+    `const a = "${"whsec_"}9fK2liveSecretValue";`, // تُبنى رمزيًا كي لا يلتقطها ماسح الأسرار في المنصة
+    `const b = "${"sk_live_"}AbCdEfGh0123456789abcd";`,
+    `const c = "${["eyJhbGciOiJIUzI1NiJ9", "eyJzdWIiOiIxIn0", "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"].join(".")}";`, // JWT يُجمَع وقت التشغيل فلا يظهر النمط الكامل في المستودع
     "totp seed JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
     'const ok = "whsec_test_secret";',
   ].join("\n"), "tools/acceptance/t.mjs");
