@@ -218,8 +218,6 @@ class Jobs:
             if not resume:
                 if info.audio_codec:
                     outcome += self._waveform(session, file_id, local, info)
-                if info.video_codec:
-                    outcome += self._thumbnails(session, file_id, local, info)
             proxy_path = None
             key = proxy_key(session.material_id, file_id)
             if info.video_codec and resume and self._exists(key):
@@ -228,6 +226,8 @@ class Jobs:
             if info.video_codec:
                 proxy_path, proxy_info = self._proxy(session, file_id, local, info)
                 outcome += "+proxy"
+                # المصغّرات من النسخة الخفيفة لا من الأصل: SDR أصلًا وبلا وسوم، وفكّها أرخص
+                outcome += self._thumbnails(session, file_id, proxy_path, proxy_info)
                 if self.enable_hls:
                     # صور شريط الزمن للمشغّل مع HLS، خلف العلم نفسه
                     outcome += self._hls(session, file_id, proxy_path, proxy_info)
@@ -314,11 +314,11 @@ class Jobs:
             return "+timeline-failed"
         return "+timeline"
 
-    def _thumbnails(self, session: Session, file_id: str, local: Path, info: Probe) -> str:
-        """غير مانعة: أي فشل هنا يُسجَّل ويُترك، والمصغّرات يمكن توليدها لاحقًا من الأصل."""
+    def _thumbnails(self, session: Session, file_id: str, proxy: Path, info: Probe) -> str:
+        """من النسخة الخفيفة بعد بنائها، مصغّرة واحدة مسجّلة لكل أصل. غير مانعة: أي فشل يُسجَّل ويُترك."""
         try:
-            made = [(poster(local, local.with_name("poster.jpg"), info), poster_key(session.material_id, file_id)),
-                    (contact_sheet(local, local.with_name("contact-sheet.jpg"), info),
+            made = [(poster(proxy, proxy.with_name("poster.jpg"), info), poster_key(session.material_id, file_id)),
+                    (contact_sheet(proxy, proxy.with_name("contact-sheet.jpg"), info),
                      contact_sheet_key(session.material_id, file_id))]
             for thumb, key in made:
                 d = digest_file(thumb.path)
@@ -331,6 +331,7 @@ class Jobs:
         # الصفيحة بجوار الملصق باسم ثابت؛ يُسجَّل الملصق وحده لأن (derived_from_id، kind) فريد في الخادم
         if not self._register(file_id, {
             "kind": "thumbnail", "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
+            "mime_type": "image/jpeg",  # إلزامي للمصغّرة في العقد؛ غيابه كان سبب رفض التسجيل (422)
             "technical": {"duration_ms": 0, "start_pts_us": round((poster_thumb.at_s or 0) * 1_000_000),
                           "width": poster_thumb.width, "height": poster_thumb.height,
                           "container": "jpeg", "video_codec": "mjpeg"},
