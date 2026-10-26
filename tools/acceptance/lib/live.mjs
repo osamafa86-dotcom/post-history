@@ -60,13 +60,22 @@ export async function eventsOfType(http, token, type) {
 export const sha256Hex = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 /**
- * A real upload session through POST /uploads, as the owner of the material does. Returns what the hook cases need.
- * `client_sha256` is required by the contract, so the file is always declared: pass its `bytes` (size and SHA-256
- * follow), or its `size` with its `clientSha256`. A deliberately wrong digest is a legitimate argument; none is not.
+ * جلسة رفع حقيقية من POST /uploads كما يفعل تطبيق المراسل. البصمة إلزامية افتراضيًا؛ `omitClientSha256`
+ * محجوز لحالة الرفض الصريحة، و`expectedStatus` يسمح بفحصها دون فتح الباب لطلب ناقص في سكربت آخر.
  */
-export async function createUploadSession(http, token, { materialId, bytes = null, size = bytes?.length, clientSha256 = bytes ? sha256Hex(bytes) : null, kind = "original", filename = "clip.mp4" }) {
-  if (!Number.isInteger(size) || !/^[0-9a-f]{64}$/.test(clientSha256 ?? "")) throw new Error("createUploadSession needs the file: bytes, or size and a 64-hex clientSha256");
-  const r = await http.call(token, "POST", "/uploads", { body: { material_id: materialId, kind, size_bytes: size, filename, client_sha256: clientSha256 } });
-  if (r.status !== 201) throw new Error(`POST /uploads answered ${r.status}: ${String(r.text).slice(0, 200)}`);
-  return { id: r.body.id, token: r.body.upload_token, size };
+export async function createUploadSession(http, token, {
+  materialId, bytes = null, size = bytes?.length,
+  clientSha256 = bytes ? sha256Hex(bytes) : null,
+  kind = "original", filename = "clip.mp4", key = randomUUID(),
+  expectedStatus = 201, omitClientSha256 = false,
+}) {
+  if (!Number.isInteger(size) || (!omitClientSha256 && !/^[0-9a-f]{64}$/.test(clientSha256 ?? ""))) {
+    throw new Error("createUploadSession needs the file: bytes, or size and a 64-hex clientSha256");
+  }
+  if (omitClientSha256 && expectedStatus === 201) throw new Error("omitting client_sha256 requires a negative expectedStatus");
+  const declared = { material_id: materialId, kind, size_bytes: size, filename };
+  if (!omitClientSha256) declared.client_sha256 = clientSha256;
+  const r = await http.call(token, "POST", "/uploads", { body: declared, key });
+  if (expectedStatus === 201 && r.status !== 201) throw new Error(`POST /uploads answered ${r.status}: ${String(r.text).slice(0, 200)}`);
+  return { id: r.body?.id, token: r.body?.upload_token, size, status: r.status, body: r.body, text: r.text };
 }
