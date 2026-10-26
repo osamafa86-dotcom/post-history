@@ -10,6 +10,7 @@ import { catalogRoles } from "./store/store-catalog";
 import { uploadRoles } from "@/lib/upload-policy";
 import { isBuyer, organizationAdmins } from "@/lib/buyer-policy";
 import { templateRoles } from "@/lib/license-policy";
+import { formReaders } from "@/lib/form-admin";
 
 const UserContext = createContext<Me | null>(null);
 export function useUser() { const me = useContext(UserContext); if (!me) throw new Error("Session required"); return me; }
@@ -70,6 +71,7 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
       {hasRole(me, ...uploadRoles) && <Link prefetch={false} className={pathname.endsWith("/upload") ? "active" : ""} href={`/${locale}/upload`}>{m.upload.nav}</Link>}
       {hasRole(me, ...catalogRoles) && <Link prefetch={false} className={pathname.includes("/store") ? "active" : ""} href={`/${locale}/store`}>{m.store.title}</Link>}
       <Link prefetch={false} className={pathname.endsWith("/form-preview") ? "active" : ""} href={`/${locale}/form-preview`}>{m.formPreview}</Link>
+      {hasRole(me, ...formReaders) && <Link prefetch={false} className={pathname.endsWith("/forms") ? "active" : ""} href={`/${locale}/forms`}>{m.formsAdmin.title}</Link>}
       <Link prefetch={false} className={pathname.endsWith("/notifications") ? "active" : ""} href={`/${locale}/notifications`}>{m.notice.title}</Link>
       {hasRole(me, "system_admin", "editor_in_chief") && <Link prefetch={false} className={pathname.endsWith("/notification-rules") ? "active" : ""} href={`/${locale}/notification-rules`}>{m.rules.title}</Link>}
       {hasRole(me, ...templateRoles) && <Link prefetch={false} className={pathname.endsWith("/license-templates") ? "active" : ""} href={`/${locale}/license-templates`}>{m.templates.nav}</Link>}
