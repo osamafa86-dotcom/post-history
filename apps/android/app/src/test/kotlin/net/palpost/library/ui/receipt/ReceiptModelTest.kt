@@ -8,6 +8,15 @@ import java.time.OffsetDateTime
 
 class ReceiptModelTest {
     @Test
+    fun `the shared image carries the receipt number and time only`() {
+        val c = ReceiptModel.shareContent("R-202610-000042", 1_793_000_000_000)!!
+        assertEquals(listOf("receiptNumber", "receivedAtEpochMs"), ReceiptModel.ShareContent::class.java.declaredFields.map { it.name }.filter { !it.startsWith("$") }.sorted())
+        assertEquals("R-202610-000042", c.receiptNumber)
+        assertNull(ReceiptModel.shareContent(null, 1))
+        assertNull(ReceiptModel.shareContent(" ", 1))
+    }
+
+    @Test
     fun `the digest is shortened to its first and last eight characters`() {
         val sha = "0123456789abcdef".repeat(4)
         assertEquals("01234567…89abcdef", ReceiptModel.shortDigest(sha))

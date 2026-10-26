@@ -56,13 +56,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.layer.drawLayer
-import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -150,7 +146,6 @@ fun ReceiptScreen(container: AppContainer, taskId: String, onBack: () -> Unit) {
     ) { padding ->
         if (task == null) return@Scaffold
         val dedup = task.state == UploadState.DEDUPLICATED.name
-        val layer = rememberGraphicsLayer()
         val scope = rememberCoroutineScope()
         var copied by remember { mutableStateOf(false) }
         Column(
@@ -159,17 +154,16 @@ fun ReceiptScreen(container: AppContainer, taskId: String, onBack: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Hero(dedup)
-            // The card is drawn into a layer too, so "Share receipt" sends exactly what is on screen.
-            Box(Modifier.drawWithContent { layer.record { this@drawWithContent.drawContent() }; drawLayer(layer) }) {
-                ReceiptCard(task, ack)
+            ReceiptCard(task, ack)
+            val share = ReceiptModel.shareContent(task.receiptNumber, task.updatedAtEpochMs)
+            if (share != null) {
+                val palette = SharePalette(
+                    background = Vl.colors.bgCanvas.toArgb(), card = Vl.colors.bgSurfaceRaised.toArgb(), border = Vl.colors.borderStrong.toArgb(),
+                    primary = Vl.colors.textPrimary.toArgb(), secondary = Vl.colors.textSecondary.toArgb(), brand = Vl.colors.textBrand.toArgb(),
+                )
+                val labels = ShareLabels(stringResource(R.string.a3_receipt_label), stringResource(R.string.a3_row_received), formatDateTime(share.receivedAtEpochMs), stringResource(R.string.a3_share))
+                SecondaryButton(stringResource(R.string.a3_share), onClick = { scope.launch { shareReceipt(context, share, labels, palette) } }, modifier = Modifier.fillMaxWidth(), leading = Icons.Outlined.Share)
             }
-            val shareBackground = Vl.colors.bgCanvas.toArgb()
-            SecondaryButton(stringResource(R.string.a3_share), onClick = {
-                scope.launch {
-                    val image = runCatching { layer.toImageBitmap() }.getOrNull() ?: return@launch
-                    shareReceipt(context, image, shareBackground)
-                }
-            }, modifier = Modifier.fillMaxWidth(), leading = Icons.Outlined.Share)
             val clipLabel = stringResource(R.string.a3_receipt_label)
             GhostButton(stringResource(if (copied) R.string.a3_copied else R.string.a3_copy_number), onClick = {
                 task.receiptNumber?.let { n ->
@@ -294,26 +288,42 @@ private fun qrBitmap(content: String, sizePx: Int): ImageBitmap {
     return Bitmap.createBitmap(pixels, sizePx, sizePx, Bitmap.Config.ARGB_8888).asImageBitmap()
 }
 
+private data class SharePalette(val background: Int, val card: Int, val border: Int, val primary: Int, val secondary: Int, val brand: Int)
+private data class ShareLabels(val receipt: String, val received: String, val time: String, val chooser: String)
+
 /**
- * Shares the card as a 1080×1350 PNG through the system sheet. The file lives in the cache (`receipts/`, the only
- * path the FileProvider exposes) and is replaced on every share; it holds what the card shows and nothing else.
+ * Shares a 1080×1350 PNG of the receipt through the system sheet. The image is drawn here from [ReceiptModel.ShareContent]
+ * alone (number and time), not captured from the screen, so nothing else on the card can slip into it. The file
+ * lives in the cache (`receipts/`, the only path the FileProvider exposes) and is replaced on every share.
  */
-private suspend fun shareReceipt(context: Context, card: ImageBitmap, backgroundArgb: Int) {
+private suspend fun shareReceipt(context: Context, content: ReceiptModel.ShareContent, labels: ShareLabels, palette: SharePalette) {
     val uri = withContext(Dispatchers.IO) {
-        val out = Bitmap.createBitmap(1080, 1350, Bitmap.Config.ARGB_8888)
+        val w = 1080; val h = 1350
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(out)
-        canvas.drawColor(backgroundArgb)
-        val src = card.asAndroidBitmap()
-        val margin = 64f
-        val scale = minOf((1080 - 2 * margin) / src.width, (1350 - 2 * margin) / src.height)
-        val w = src.width * scale
-        val h = src.height * scale
-        canvas.drawBitmap(src, null, android.graphics.RectF((1080 - w) / 2, (1350 - h) / 2, (1080 + w) / 2, (1350 + h) / 2), android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+        canvas.drawColor(palette.background)
+        val text = runCatching { androidx.core.content.res.ResourcesCompat.getFont(context, if (context.resources.configuration.locales[0]?.language == "en") R.font.inter_500 else R.font.noto_sans_arabic_500) }.getOrNull()
+        val mono = runCatching { androidx.core.content.res.ResourcesCompat.getFont(context, R.font.ibm_plex_mono_500) }.getOrNull()
+        val card = android.graphics.RectF(80f, 380f, w - 80f, 970f)
+        val fill = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = palette.card }
+        val stroke = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = palette.border; style = android.graphics.Paint.Style.STROKE; strokeWidth = 4f }
+        canvas.drawRoundRect(card, 36f, 36f, fill)
+        canvas.drawRoundRect(card, 36f, 36f, stroke)
+        fun line(s: String, size: Float, color: Int, face: android.graphics.Typeface?, y: Float) {
+            val p = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = size; this.color = color; typeface = face }
+            val layout = android.text.StaticLayout.Builder.obtain(s, 0, s.length, p, (card.width() - 120f).toInt())
+                .setAlignment(android.text.Layout.Alignment.ALIGN_CENTER).build()
+            canvas.save(); canvas.translate(card.left + 60f, y); layout.draw(canvas); canvas.restore()
+        }
+        line(labels.receipt, 44f, palette.secondary, text, card.top + 90f)
+        line("\u2066" + content.receiptNumber + "\u2069", 76f, palette.brand, mono, card.top + 210f)
+        line(labels.received, 40f, palette.secondary, text, card.top + 360f)
+        line("\u2066" + labels.time + "\u2069", 48f, palette.primary, mono, card.top + 430f)
         val dir = File(context.cacheDir, "receipts").apply { mkdirs() }
         val file = File(dir, "receipt.png")
         file.outputStream().use { out.compress(Bitmap.CompressFormat.PNG, 100, it) }
         FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file)
     }
     val send = Intent(Intent.ACTION_SEND).setType("image/png").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    context.startActivity(Intent.createChooser(send, context.getString(R.string.a3_share)))
+    context.startActivity(Intent.createChooser(send, labels.chooser))
 }
