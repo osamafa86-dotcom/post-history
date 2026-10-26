@@ -76,6 +76,18 @@ async function tus(req: import("node:http").IncomingMessage, res: import("node:h
 // قواعد التنبيه (#203 بند 7): مراجعة صف لكل قاعدة كما في العقد.
 const rules = new Map<string, Record<string, unknown> & { id: string; row_version: number }>();
 // قوالب التراخيص: كل إصدار محفوظ، والحالي آخرها.
+const listings = new Map<string, Record<string, unknown> & { row: number; state: string }>();
+// مؤسسات المشترين: مؤسسة اصطناعية واحدة بمديرها وعضوها، وأخرى لا يراها أعضاء الأولى.
+const buyerOrg = "90000000-0000-4000-8000-000000000001", otherOrg = "90000000-0000-4000-8000-000000000002";
+const organizations = new Map<string, Record<string, unknown> & { id: string; row: number; seats: number }>(), members = new Map<string, (Record<string, unknown> & { user_id: string; role: string; status: string })[]>();
+function seedOrganizations() {
+  organizations.clear(); members.clear();
+  const base = { country: "QA", billing_email: "billing@example.test", verified_at: "2026-10-22T10:00:00Z", created_at: "2026-10-21T10:00:00Z", updated_at: "2026-10-22T10:00:00Z" };
+  organizations.set(buyerOrg, { ...base, id: buyerOrg, legal_name: "شبكة الأخبار الاصطناعية ذ.م.م", display_name: { ar: "شبكة الأخبار", en: "News Network" }, seats: 3, status: "active", row: 1 });
+  organizations.set(otherOrg, { ...base, id: otherOrg, legal_name: "never-display-canary", display_name: { ar: "مؤسسة أخرى", en: "Other organization" }, seats: 5, status: "pending_verification", verified_at: null, row: 1 });
+  members.set(buyerOrg, [{ user_id: "91000000-0000-4000-8000-000000000001", email: "buyeradmin@example.test", role: "buyer_admin", status: "active", totp_enabled: true, created_at: base.created_at }, { user_id: "91000000-0000-4000-8000-000000000002", email: "buyer@example.test", role: "buyer_member", status: "active", totp_enabled: true, created_at: base.created_at }]);
+  members.set(otherOrg, []);
+}
 const templates = new Map<string, (Record<string, unknown> & { id: string; version: number; enabled: boolean })[]>();
 function seedTemplates() {
   templates.clear();
@@ -83,13 +95,14 @@ function seedTemplates() {
   templates.set("81000000-0000-4000-8000-000000000001", [{ ...base, id: "81000000-0000-4000-8000-000000000001", version: 1, type: "editorial_single", name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" }, terms: { ar: "شروط الاستخدام الواحد", en: "Single use terms" }, base_price: { amount_minor: 15000, currency: "USD" }, enabled: true, internal_note: "never-display-canary" }]);
   templates.set("81000000-0000-4000-8000-000000000002", [{ ...base, id: "81000000-0000-4000-8000-000000000002", version: 3, type: "editorial_term", term_days: 365, name: { ar: "تحريري سنوي قديم", en: "Old annual editorial" }, terms: { ar: "شروط", en: "Terms" }, base_price: { amount_minor: 40000, currency: "ILS" }, enabled: false }]);
 }
-reset(); seedTemplates();
+reset(); seedTemplates(); seedOrganizations();
 const signed = new Map<string, { kind: "proxy" | "thumbnail"; expires: number }>();
 let expireNextProxy = false;
 const access = new Map<string, Me>(), refresh = new Map<string, Me>();
 function profile(email: string): Me {
-  const names: Record<string, Me["roles"]> = { chief: [{ name: "editor_in_chief", scopes: [] }], reviewer: ["supervisor", "rights_officer", "producer"].map(name => ({ name: name as Me["roles"][number]["name"], scopes: [] })), admin: [{ name: "system_admin", scopes: [] }], reporter: [{ name: "reporter", scopes: [] }] };
-  return { ...me, roles: names[email.split("@")[0]] ?? [], permissions: email.startsWith("permissions@") ? ["sensitive_location:read", "protected_source:read", "reporter_identity:read"] : [] };
+  const names: Record<string, Me["roles"]> = { chief: [{ name: "editor_in_chief", scopes: [] }], reviewer: ["supervisor", "rights_officer", "producer"].map(name => ({ name: name as Me["roles"][number]["name"], scopes: [] })), admin: [{ name: "system_admin", scopes: [] }], reporter: [{ name: "reporter", scopes: [] }], buyeradmin: [{ name: "buyer_admin", scopes: [] }], buyer: [{ name: "buyer_member", scopes: [] }], finance: [{ name: "finance", scopes: [] }] };
+  const local = email.split("@")[0], buyer = local === "buyeradmin" || local === "buyer";
+  return { ...me, ...(buyer ? { user_id: local === "buyer" ? "91000000-0000-4000-8000-000000000002" : "91000000-0000-4000-8000-000000000001", organization_id: buyerOrg } : {}), roles: names[local] ?? [], permissions: email.startsWith("permissions@") ? ["sensitive_location:read", "protected_source:read", "reporter_identity:read"] : [] };
 }
 function session(user: Me) {
   const value = { ...tokens(), access_token: randomUUID(), refresh_token: randomUUID(), roles: user.roles };
@@ -103,7 +116,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname.startsWith("/files/")) { res.removeHeader("Content-Type"); return tus(req, res, url); }
   if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
   if (url.pathname === "/__test/uploads") return send([...uploads.values()].map(u => ({ state: u.session.state, receipt: u.session.receipt_number, ingest_tokens: [...ingestTokens.values()].filter(t => t.sid === u.session.id).length, ...(u.tus ? (({ length, offset, patches, resent, cuts }) => ({ length, offset, patches, resent, cuts }))(tusFiles.get(u.tus) ?? { length: 0, offset: 0, patches: 0, resent: 0, cuts: 0 }) : {}) })));
-  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); seedTemplates(); reset(); resetUploads(); return send({ ok: true }); }
+  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); seedTemplates(); seedOrganizations(); reset(); resetUploads(); return send({ ok: true }); }
   if (url.pathname === "/__test/state") return send({ writes, applied: applied.size, identitySetting, auditCount: permissionAudit.length });
   if (url.pathname === "/__test/request-changes" && req.method === "POST") {
     // مادة بطلب تعديل وأخرى مرفوضة وثالثة فشل رفعها، وسبب داخلي لا يصل المراسل.
@@ -244,6 +257,47 @@ const server = createServer(async (req, res) => {
       const stamp = new Date().toISOString(), rule = { ...body, id: randomUUID(), row_version: 1, created_by: user.user_id, updated_by: user.user_id, created_at: stamp, updated_at: stamp };
       rules.set(rule.id, rule); res.setHeader("ETag", '"1"'); return commit(rule, 201);
     }
+    const listingPath = /^\/v1\/materials\/([^/]+)\/listing$/.exec(path);
+    if (listingPath) {
+      if (!has("system_admin", "rights_officer")) return send({}, 403);
+      const item = materials.find(m => m.id === listingPath[1]); if (!item) return send({}, 404);
+      const current = listings.get(item.id), stamp = new Date().toISOString();
+      if (req.method === "POST" ? !!current : !current) return send({ code: "conflict" }, current ? 409 : 404);
+      if (current && req.headers["if-match"] !== `"${current.row}"`) return send({}, 412);
+      if (body.state === "listed" && item.rights_state !== "sellable") return send({ code: "rights_not_sellable" }, 409);
+      if (body.commercial_allowed && !has("system_admin")) return send({ code: "forbidden_role" }, 403);
+      const next = { ...body, id: current?.id ?? randomUUID(), material_id: item.id, material_version: item.version, suspended_reason: body.state === "suspended" ? "manual" : null, listed_at: current?.listed_at ?? (body.state === "listed" ? stamp : null), created_at: current?.created_at ?? stamp, updated_at: stamp, updated_by: user.user_id, row: (current?.row ?? 0) + 1, state: String(body.state) };
+      listings.set(item.id, next); res.setHeader("ETag", `"${next.row}"`); return commit(Object.fromEntries(Object.entries(next).filter(([key]) => key !== "row")), current ? 200 : 201);
+    }
+    const orgWrite = /^\/v1\/buyer-organizations(?:\/([^/]+)(\/members)?(?:\/([^/]+))?)?$/.exec(path);
+    if (orgWrite) {
+      const [, id, isMembers, userId] = orgWrite, mine = (orgId: string) => !user.organization_id || user.organization_id === orgId;
+      if (!id) {
+        if (!has("system_admin")) return send({}, 403);
+        const created = { ...body, id: randomUUID(), status: "pending_verification", active_members: 1, verified_at: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), row: 1 } as unknown as Record<string, unknown> & { id: string; row: number; seats: number };
+        delete created.first_admin_email; organizations.set(created.id, created); members.set(created.id, [{ user_id: randomUUID(), email: String(body.first_admin_email), role: "buyer_admin", status: "invited", totp_enabled: false, created_at: String(created.created_at) }]);
+        res.setHeader("ETag", '"1"'); return commit({ ...Object.fromEntries(Object.entries(created).filter(([key]) => key !== "row")), invite_token: "synthetic-invite-token-organization-0001", invite_token_expires_at: new Date(Date.now() + 86400000).toISOString() }, 201);
+      }
+      const current = organizations.get(id); if (!current || !mine(id)) return send({}, 404);
+      if (!isMembers) {
+        if (!has("system_admin", "buyer_admin")) return send({}, 403);
+        if (req.headers["if-match"] !== `"${current.row}"`) return send({}, 412);
+        if (!has("system_admin") && (body.status !== current.status || body.seats !== current.seats)) return send({ code: "forbidden_role" }, 403);
+        const next = { ...current, ...body, row: current.row + 1, updated_at: new Date().toISOString() }; organizations.set(id, next);
+        res.setHeader("ETag", `"${next.row}"`); return commit(Object.fromEntries(Object.entries(next).filter(([key]) => key !== "row")), 200);
+      }
+      if (!has("system_admin", "buyer_admin")) return send({}, 403);
+      const list = members.get(id)!, active = list.filter(m => m.status !== "suspended").length;
+      if (!userId) {
+        if (list.some(m => m.email === body.email)) return send({ code: "conflict" }, 409);
+        if (active >= current.seats) return send({ code: "seats_exhausted" }, 409);
+        const added = { user_id: randomUUID(), email: String(body.email), role: String(body.role), status: "invited", totp_enabled: false, created_at: new Date().toISOString() }; list.push(added);
+        return commit({ ...added, invite_token: "synthetic-invite-token-member-000000001", invite_token_expires_at: new Date(Date.now() + 86400000).toISOString() }, 201);
+      }
+      const target = list.find(m => m.user_id === userId); if (!target) return send({}, 404);
+      if (target.role === "buyer_admin" && (body.role !== "buyer_admin" || body.status === "suspended") && list.filter(m => m.role === "buyer_admin" && m.status === "active").length === 1) return send({ code: "last_buyer_admin" }, 409);
+      Object.assign(target, { role: body.role, status: body.status }); return commit(target, 200);
+    }
     const templatePath = /^\/v1\/license-templates(?:\/([^/]+))?$/.exec(path);
     if (templatePath) {
       if (!has("system_admin", "rights_officer")) return send({}, 403);
@@ -287,6 +341,22 @@ const server = createServer(async (req, res) => {
   }
   const uploadRead = /^\/v1\/uploads\/([^/]+)$/.exec(url.pathname);
   if (uploadRead) { const upload = uploads.get(uploadRead[1]); return upload ? send(upload.session) : send({}, 404); }
+  const listingRead = /^\/v1\/materials\/([^/]+)\/listing$/.exec(url.pathname);
+  if (listingRead) {
+    if (!user.roles.some(role => ["system_admin", "rights_officer", "editor_in_chief", "finance"].includes(role.name))) return send({}, 403);
+    const found = listings.get(listingRead[1]); if (!found) return send({ code: "not_found" }, 404);
+    res.setHeader("ETag", `"${found.row}"`); return send({ ...Object.fromEntries(Object.entries(found).filter(([key]) => key !== "row")), internal_note: "never-display-canary" });
+  }
+  const orgRead = /^\/v1\/buyer-organizations(?:\/([^/]+)(\/members)?)?$/.exec(url.pathname);
+  if (orgRead) {
+    const [, id, isMembers] = orgRead, roles = (...names: string[]) => user.roles.some(role => names.includes(role.name));
+    const view = (o: Record<string, unknown>) => ({ ...Object.fromEntries(Object.entries(o).filter(([key]) => key !== "row")), active_members: members.get(String(o.id))!.filter(m => m.status === "active").length });
+    if (!id) { if (!roles("system_admin", "finance")) return send({}, 403); const status = url.searchParams.get("status"); return send({ items: [...organizations.values()].filter(o => !status || o.status === status).map(view), next_cursor: null }); }
+    const found = organizations.get(id); if (!found || (user.organization_id && user.organization_id !== id)) return send({}, 404);
+    if (isMembers) { if (!roles("system_admin", "buyer_admin")) return send({}, 403); return send({ items: members.get(id)!.map(m => ({ ...m, password_hash: "never-display-canary" })) }); }
+    if (!roles("system_admin", "finance", "buyer_admin", "buyer_member")) return send({}, 403);
+    res.setHeader("ETag", `"${found.row}"`); return send({ ...view(found), internal_note: "never-display-canary" });
+  }
   if (url.pathname === "/v1/license-templates" || url.pathname.startsWith("/v1/license-templates/")) {
     if (!user.roles.some(role => ["system_admin", "rights_officer", "editor_in_chief", "finance"].includes(role.name))) return send({}, 403);
     if (url.pathname === "/v1/license-templates") return send({ items: [...templates.values()].map(v => v.at(-1)!).filter(t => t.enabled || url.searchParams.get("include_disabled") === "true") });
@@ -311,7 +381,7 @@ const server = createServer(async (req, res) => {
       uploads_in_progress: [{ upload_session_id: "90000000-0000-4000-8000-000000000001", material_id: materials[4].id, kind: "original", priority: "urgent", state: "in_progress", size_bytes: 4000, bytes_received: 1000, updated_at: new Date().toISOString(), filename: "never-display-canary", reporter_id: "never-display-canary" }] });
   }
   if (url.pathname === "/v1/catalog" || url.pathname.startsWith("/v1/catalog/")) {
-    if (!user.roles.some(role => ["system_admin", "rights_officer", "editor_in_chief", "finance"].includes(role.name))) return send({}, 403);
+    if (!user.roles.some(role => ["system_admin", "rights_officer", "editor_in_chief", "finance", "buyer_admin", "buyer_member"].includes(role.name))) return send({}, 403);
     // كتالوج اصطناعي: مادتان، بحقول خارج القائمة البيضاء للتأكد أنها لا تصل إلى المتصفح.
     const text = (ar: string, en: string) => ({ ar, en });
     const offer = (id: string, type: string, amount: number) => ({ license_template_id: `70000000-0000-4000-8000-00000000000${id}`, license_version: 1, type, name: text(type === "exclusive_temporary" ? "حصري 48 ساعة" : "تحريري لاستخدام واحد", type === "exclusive_temporary" ? "Exclusive 48 h" : "Editorial single use"), price: { amount_minor: amount, currency: "USD" } });
