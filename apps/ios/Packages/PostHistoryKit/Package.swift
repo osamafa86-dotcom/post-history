@@ -14,6 +14,7 @@ let package = Package(
         .library(name: "MaterialsCore", targets: ["MaterialsCore"]),
         .library(name: "DeviceAttestation", targets: ["DeviceAttestation"]),
         .library(name: "NotificationsCore", targets: ["NotificationsCore"]),
+        .library(name: "MediaCore", targets: ["MediaCore"]),
         .executable(name: "form-conformance", targets: ["form-conformance"]),
         .executable(name: "upload-netlab", targets: ["upload-netlab"]),
     ],
@@ -48,5 +49,8 @@ let package = Package(
         // الإشعارات: تسجيل رمز APNs بمعرّف تثبيت مولَّد، وصندوق الإشعارات مع القراءة والإقرار، وتوجيه حمولة الدفع.
         .target(name: "NotificationsCore", dependencies: ["PostHistoryAPI"]),
         .testTarget(name: "NotificationsCoreTests", dependencies: ["NotificationsCore"]),
+        // النسخة الخفيفة (ADR 0075): اختيار الوضع وأبعاده على كل المنصات، والترميز بـ AVFoundation على منصات Apple وحدها.
+        .target(name: "MediaCore", dependencies: ["PostHistoryAPI"]),
+        .testTarget(name: "MediaCoreTests", dependencies: ["MediaCore"]),
     ]
 )
