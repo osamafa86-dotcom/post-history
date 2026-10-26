@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "id": "GHSA-q7qp-rjg7-q26m",
+      "package": "multer",
+      "dir": "apps/api",
+      "reason": "multer (via @nestjs/platform-express) denial of service on a pending asynchronous fileFilter after request teardown. The API takes no multipart upload: uploads go to tusd, and no route uses a Nest file interceptor.",
+      "guard": "multer-unused",
+      "adr": "0085",
+      "expires": "2026-12-15",
+      "removeWhen": "a multer release above 2.4.0 that fixes it is installed through @nestjs/platform-express"
+    }
+  ]
+}
