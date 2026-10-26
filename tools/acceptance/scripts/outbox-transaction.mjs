@@ -1,10 +1,10 @@
-// اختبار القبول 07 (إشعار الاستلام): كل كتابة مغطاة تترك حدث Outbox واحدًا، وفشل الحدث يعيد الكتابة كلها.
+// ثابت معاملة Outbox: كل كتابة مغطاة تترك حدثًا واحدًا، وفشل الحدث يعيد الكتابة كلها.
 // يقرأ قاعدة محلية فقط. إثبات الذرّية يحتاج OUTBOX_FAULT_INJECTION=1 وصلاحية إنشاء مشغّل مؤقت في القاعدة المؤقتة.
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { newResult, finish, writeResult, parseArgs, banner } from "../lib/measurement.mjs";
 import { byName } from "../lib/catalog.mjs";
-import { canon, client, materialBody, sha256Hex } from "../lib/live.mjs";
+import { canon, client, createUploadSession, materialBody } from "../lib/live.mjs";
 
 const eventRows = (db, aggregateType, aggregateId) => db.query(
   "SELECT type, idempotency_key FROM outbox_events WHERE aggregate_type = $1 AND aggregate_id = $2 ORDER BY id",
@@ -12,10 +12,34 @@ const eventRows = (db, aggregateType, aggregateId) => db.query(
 );
 const types = (rows) => rows.map((r) => r.type);
 
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1"]);
+const TEMP_DATABASE = /(?:^|_)(?:acceptance|test|tmp|temp)(?:_|$)/i;
+
+/** حارس ما قبل الاتصال: لا حقن إلا في loopback أو خدمة compose معلنة صراحة، وقاعدة اسمها مؤقت. */
+export function assertOutboxFaultTarget(databaseUrl, composeService = "") {
+  const url = new URL(databaseUrl);
+  if (!["postgres:", "postgresql:"].includes(url.protocol)) throw new Error("OUTBOX_DATABASE_URL must be PostgreSQL");
+  const host = url.hostname.replace(/^\[|\]$/g, "");
+  const declaredService = composeService && host === composeService && /^[a-z0-9][a-z0-9_-]*$/i.test(composeService);
+  if (!LOOPBACK.has(host) && !declaredService) {
+    throw new Error("REFUSED: outbox fault injection needs a loopback database or OUTBOX_COMPOSE_SERVICE matching its host");
+  }
+  const database = decodeURIComponent(url.pathname.replace(/^\//, ""));
+  if (!TEMP_DATABASE.test(database)) throw new Error("REFUSED: outbox fault injection needs a temporary/test database name");
+  return { host, database };
+}
+
+/** حارس المحتوى بعد الاتصال وقبل DDL: حسابات الاختبار المصطنعة وحدها. */
+export async function assertSyntheticOutboxDatabase(db) {
+  const result = await db.query("SELECT count(*)::int AS count FROM users WHERE email !~* '@(example\\.test|example\\.invalid)$'");
+  if (result.rows[0].count !== 0) throw new Error("REFUSED: outbox fault injection requires a database containing synthetic test users only");
+}
+
 export async function injectMaterialOutboxFailure({ db, http, token, formVersion }) {
   const me = await http.get(token, "/auth/me");
   if (me.status !== 200 || !/^[0-9a-f-]{36}$/i.test(me.body?.user_id ?? "")) throw new Error("cannot identify the synthetic reporter for fault injection");
   const actorId = me.body.user_id;
+  await assertSyntheticOutboxDatabase(db);
   const suffix = randomUUID().replaceAll("-", "");
   const fn = `acceptance_outbox_fault_${suffix}`;
   const tr = `acceptance_outbox_fault_${suffix}`;
@@ -36,8 +60,11 @@ export async function injectMaterialOutboxFailure({ db, http, token, formVersion
     const response = await http.call(token, "POST", "/materials", { body, key: randomUUID() });
     status = response.status;
   } finally {
-    await db.query(`DROP TRIGGER IF EXISTS ${tr} ON public.outbox_events`);
-    await db.query(`DROP FUNCTION IF EXISTS public.${fn}()`);
+    try {
+      await db.query(`DROP TRIGGER IF EXISTS ${tr} ON public.outbox_events`);
+    } finally {
+      await db.query(`DROP FUNCTION IF EXISTS public.${fn}()`);
+    }
   }
   const materials = await db.query("SELECT count(*)::int AS count FROM materials WHERE title = $1", [title]);
   const after = await db.query("SELECT count(*)::int AS count FROM outbox_events WHERE actor_id = $1 AND type = 'material.created'", [actorId]);
@@ -66,10 +93,9 @@ export async function checkOutbox({ http, db, tokens, faultInjection = false }) 
   check("material.created persisted once", types(materialEvents).filter((t) => t === "material.created").length === 1, types(materialEvents).join(","));
 
   const bytes = Buffer.alloc(1024, 3);
-  const uploadBody = { material_id: materialId, kind: "original", size_bytes: bytes.length, filename: "synthetic.bin", client_sha256: sha256Hex(bytes) };
   const uploadKey = randomUUID();
-  const upload = await http.call(tokens.reporter, "POST", "/uploads", { body: uploadBody, key: uploadKey });
-  const uploadReplay = await http.call(tokens.reporter, "POST", "/uploads", { body: uploadBody, key: uploadKey });
+  const upload = await createUploadSession(http, tokens.reporter, { materialId, bytes, filename: "synthetic.bin", key: uploadKey });
+  const uploadReplay = await createUploadSession(http, tokens.reporter, { materialId, bytes, filename: "synthetic.bin", key: uploadKey });
   check("upload created", upload.status === 201, `status ${upload.status}`);
   check("upload replay returns same session", uploadReplay.status === upload.status && uploadReplay.body?.id === upload.body?.id);
   let uploadEvents = [];
@@ -121,10 +147,12 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   }
   const tokens = JSON.parse(env.OUTBOX_TOKENS);
   if (!tokens.reporter || !tokens.supervisor) throw new Error("OUTBOX_TOKENS needs reporter and supervisor tokens");
+  const faultInjection = env.OUTBOX_FAULT_INJECTION === "1";
+  if (faultInjection) assertOutboxFaultTarget(env.OUTBOX_DATABASE_URL, env.OUTBOX_COMPOSE_SERVICE ?? "");
   const db = new pg.Client({ connectionString: env.OUTBOX_DATABASE_URL });
   await db.connect();
   try {
-    const outcome = await checkOutbox({ http: client(env.OUTBOX_API_URL), db, tokens, faultInjection: env.OUTBOX_FAULT_INJECTION === "1" });
+    const outcome = await checkOutbox({ http: client(env.OUTBOX_API_URL), db, tokens, faultInjection });
     const failed = outcome.fails.length > 0;
     outcome.fails.forEach((f) => console.log(`FAIL ${f}`));
     const doc = newResult("outbox-transaction", { device: { platform: "server" }, upload_path: "n/a" });
