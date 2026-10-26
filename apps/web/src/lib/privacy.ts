@@ -10,7 +10,7 @@ export function redactValues(values: Values, form: Form | undefined, permissions
   return Object.fromEntries(allowed.filter(k => Object.hasOwn(values, k)).map(k => [k, values[k]]));
 }
 export function safeMe(me: Me): Me {
-  return { user_id: me.user_id, email: me.email, roles: me.roles, permissions: me.permissions, totp_enabled: me.totp_enabled };
+  return { user_id: me.user_id, email: me.email, roles: me.roles, permissions: me.permissions, totp_enabled: me.totp_enabled, ...(me.organization_id ? { organization_id: me.organization_id } : {}) };
 }
 export function safeForm<T extends Form>(form: T, permissions: Permission[]): T {
   return { ...form, fields: form.fields.filter(field => mayReadField(field, permissions)) };

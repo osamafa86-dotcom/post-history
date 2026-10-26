@@ -635,6 +635,272 @@ SELECT pg_temp.expect_error($q$
 SELECT pg_temp.expect_error($q$
   UPDATE users SET office_id = '00000000-0000-4000-8000-000000000001' WHERE id = '00000000-0000-4000-8000-000000000711' $q$, '23514');
 
+-- ---------- v0.3: الطلبات والتراخيص والحصرية (ADR 0025، الجزءان 4 و9؛ ترحيل 030) ----------
+UPDATE materials SET rights_state = 'sellable' WHERE id = '00000000-0000-4000-8000-000000000101';
+UPDATE catalog_listings SET state = 'listed', suspended_reason = NULL WHERE id = '00000000-0000-4000-8000-000000000611';
+INSERT INTO listing_offers (listing_id, license_template_id)
+VALUES ('00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000602');
+SET CONSTRAINTS ALL DEFERRED;
+-- البند يجمّد العرض الحي: الإصدار الحالي للقالب بنوعه وسعره، وإصدار المادة المعروض، وعملة الطلب
+INSERT INTO orders (id, organization_id, created_by, currency, total_minor, expires_at)
+VALUES ('00000000-0000-4000-8000-000000000c01', '00000000-0000-4000-8000-000000000701', '00000000-0000-4000-8000-000000000711',
+        'USD', 25000, now() + interval '24 hours');
+INSERT INTO order_items (id, order_id, listing_id, material_id, material_version, license_template_id, license_version,
+                         license_type, price_minor, currency, title_ar, title_en)
+VALUES ('00000000-0000-4000-8000-000000000c11', '00000000-0000-4000-8000-000000000c01', '00000000-0000-4000-8000-000000000611',
+        '00000000-0000-4000-8000-000000000101', 1, '00000000-0000-4000-8000-000000000601', 2, 'editorial_single', 25000, 'USD', 'ع', 'T');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO order_items (order_id, listing_id, material_id, material_version, license_template_id, license_version,
+                           license_type, price_minor, currency, title_ar, title_en)
+  VALUES ('00000000-0000-4000-8000-000000000c01', '00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000101',
+          1, '00000000-0000-4000-8000-000000000601', 1, 'editorial_single', 20000, 'USD', 'ع', 'T') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO order_items (order_id, listing_id, material_id, material_version, license_template_id, license_version,
+                           license_type, price_minor, currency, title_ar, title_en)
+  VALUES ('00000000-0000-4000-8000-000000000c01', '00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000101',
+          1, '00000000-0000-4000-8000-000000000602', 1, 'exclusive_temporary', 1, 'USD', 'ع', 'T') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO order_items (order_id, listing_id, material_id, material_version, license_template_id, license_version,
+                           license_type, price_minor, currency, title_ar, title_en)
+  VALUES ('00000000-0000-4000-8000-000000000c01', '00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000101',
+          1, '00000000-0000-4000-8000-000000000602', 1, 'commercial', 150000, 'USD', 'ع', 'T') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO order_items (order_id, listing_id, material_id, material_version, license_template_id, license_version,
+                           license_type, price_minor, currency, title_ar, title_en)
+  VALUES ('00000000-0000-4000-8000-000000000c01', '00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000101',
+          2, '00000000-0000-4000-8000-000000000602', 1, 'exclusive_temporary', 150000, 'USD', 'ع', 'T') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO order_items (order_id, listing_id, material_id, material_version, license_template_id, license_version,
+                           license_type, price_minor, currency, title_ar, title_en)
+  VALUES ('00000000-0000-4000-8000-000000000c01', '00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000101',
+          1, '00000000-0000-4000-8000-000000000601', 2, 'editorial_single', 25000, 'USD', 'ع', 'T') $q$, '23505');
+-- المجموع مجموع البنود، ولا طلب بلا بند، ولا بند بعملة غير عملة الطلب
+SELECT pg_temp.expect_error($q$
+  INSERT INTO orders (organization_id, created_by, currency, total_minor, expires_at)
+  VALUES ('00000000-0000-4000-8000-000000000701', '00000000-0000-4000-8000-000000000711', 'USD', 0, now() + interval '1 hour') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  WITH o AS (INSERT INTO orders (organization_id, created_by, currency, total_minor, expires_at)
+             VALUES ('00000000-0000-4000-8000-000000000701', '00000000-0000-4000-8000-000000000711', 'USD', 1, now() + interval '1 hour')
+             RETURNING id)
+  INSERT INTO order_items (order_id, listing_id, material_id, material_version, license_template_id, license_version,
+                           license_type, price_minor, currency, title_ar, title_en)
+  SELECT o.id, '00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000101', 1,
+         '00000000-0000-4000-8000-000000000601', 2, 'editorial_single', 25000, 'USD', 'ع', 'T' FROM o $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  WITH o AS (INSERT INTO orders (organization_id, created_by, currency, total_minor, expires_at)
+             VALUES ('00000000-0000-4000-8000-000000000701', '00000000-0000-4000-8000-000000000711', 'ILS', 25000, now() + interval '1 hour')
+             RETURNING id)
+  INSERT INTO order_items (order_id, listing_id, material_id, material_version, license_template_id, license_version,
+                           license_type, price_minor, currency, title_ar, title_en)
+  SELECT o.id, '00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000101', 1,
+         '00000000-0000-4000-8000-000000000601', 2, 'editorial_single', 25000, 'USD', 'ع', 'T' FROM o $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO orders (organization_id, created_by, currency, total_minor, expires_at)
+  VALUES ('00000000-0000-4000-8000-000000000701', '00000000-0000-4000-8000-000000000711', 'USD', 0, now() + interval '25 hours') $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
+-- البند مجمّد، والطلب يحفظ مجموعه وعملته، وانتقالاته صريحة
+SELECT pg_temp.expect_error($q$ UPDATE order_items SET price_minor = 1 WHERE id = '00000000-0000-4000-8000-000000000c11' $q$, '23001');
+SELECT pg_temp.expect_error($q$ DELETE FROM order_items WHERE id = '00000000-0000-4000-8000-000000000c11' $q$, '23001');
+SELECT pg_temp.expect_error($q$ UPDATE orders SET total_minor = 1 WHERE id = '00000000-0000-4000-8000-000000000c01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE orders SET status = 'refunded', paid_at = now() WHERE id = '00000000-0000-4000-8000-000000000c01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE orders SET status = 'paid', paid_at = now() WHERE id = '00000000-0000-4000-8000-000000000c01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE orders SET status = 'cancelled' WHERE id = '00000000-0000-4000-8000-000000000c01' $q$, '23514');
+-- لا ترخيص قبل الدفع
+SELECT pg_temp.expect_error($q$
+  INSERT INTO licenses (license_number, order_item_id, organization_id, material_id, license_type, valid_from)
+  VALUES ('PH-2026-ABCDEFGH23', '00000000-0000-4000-8000-000000000c11', '00000000-0000-4000-8000-000000000701',
+          '00000000-0000-4000-8000-000000000101', 'editorial_single', now()) $q$, '23514');
+UPDATE orders SET provider = 'sandbox', provider_ref = 'sbx_c01', status = 'paid', paid_at = now()
+ WHERE id = '00000000-0000-4000-8000-000000000c01';
+SELECT pg_temp.expect_error($q$ UPDATE orders SET provider_ref = 'sbx_other' WHERE id = '00000000-0000-4000-8000-000000000c01' $q$, '23514');
+-- الرقم عشوائي بصيغته، وترخيص واحد للبند، والشروط مجمّدة والحالة وحدها تتغير
+SELECT pg_temp.expect_error($q$
+  INSERT INTO licenses (license_number, order_item_id, organization_id, material_id, license_type, valid_from)
+  VALUES ('PH-2026-ABCDEFGHIO', '00000000-0000-4000-8000-000000000c11', '00000000-0000-4000-8000-000000000701',
+          '00000000-0000-4000-8000-000000000101', 'editorial_single', now()) $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO licenses (license_number, order_item_id, organization_id, material_id, license_type, valid_from)
+  VALUES ('PH-2026-ABCDEFGH23', '00000000-0000-4000-8000-000000000c11', '00000000-0000-4000-8000-000000000701',
+          '00000000-0000-4000-8000-000000000101', 'commercial', now()) $q$, '23514');
+INSERT INTO licenses (id, license_number, order_item_id, organization_id, material_id, license_type, valid_from)
+VALUES ('00000000-0000-4000-8000-000000000c31', 'PH-2026-ABCDEFGH23', '00000000-0000-4000-8000-000000000c11',
+        '00000000-0000-4000-8000-000000000701', '00000000-0000-4000-8000-000000000101', 'editorial_single', now());
+SELECT pg_temp.expect_error($q$
+  INSERT INTO licenses (license_number, order_item_id, organization_id, material_id, license_type, valid_from)
+  VALUES ('PH-2026-ABCDEFGH24', '00000000-0000-4000-8000-000000000c11', '00000000-0000-4000-8000-000000000701',
+          '00000000-0000-4000-8000-000000000101', 'editorial_single', now()) $q$, '23505');
+SELECT pg_temp.expect_error($q$
+  UPDATE licenses SET valid_until = now() + interval '1 day' WHERE id = '00000000-0000-4000-8000-000000000c31' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE licenses SET status = 'revoked' WHERE id = '00000000-0000-4000-8000-000000000c31' $q$, '23514');
+SELECT pg_temp.expect_error($q$ DELETE FROM licenses WHERE id = '00000000-0000-4000-8000-000000000c31' $q$, '23001');
+
+-- طلب ثانٍ غير حصري مدفوع، يُستعمل لاختباري الحقوق والحجز
+INSERT INTO orders (id, organization_id, created_by, currency, total_minor, expires_at)
+VALUES ('00000000-0000-4000-8000-000000000c02', '00000000-0000-4000-8000-000000000701', '00000000-0000-4000-8000-000000000711',
+        'USD', 25000, now() + interval '1 hour');
+INSERT INTO order_items (id, order_id, listing_id, material_id, material_version, license_template_id, license_version,
+                         license_type, price_minor, currency, title_ar, title_en)
+VALUES ('00000000-0000-4000-8000-000000000c12', '00000000-0000-4000-8000-000000000c02', '00000000-0000-4000-8000-000000000611',
+        '00000000-0000-4000-8000-000000000101', 1, '00000000-0000-4000-8000-000000000601', 2, 'editorial_single', 25000, 'USD', 'ع', 'T');
+UPDATE orders SET provider = 'sandbox', provider_ref = 'sbx_c02', status = 'paid', paid_at = now()
+ WHERE id = '00000000-0000-4000-8000-000000000c02';
+-- الحقوق يُعاد التحقق منها عند التأكيد: لا ترخيص لمادة خرجت حقوقها من sellable بعد الطلب
+UPDATE catalog_listings SET state = 'suspended', suspended_reason = 'rights_changed' WHERE id = '00000000-0000-4000-8000-000000000611';
+UPDATE materials SET rights_state = 'blocked' WHERE id = '00000000-0000-4000-8000-000000000101';
+SELECT pg_temp.expect_error($q$
+  INSERT INTO licenses (license_number, order_item_id, organization_id, material_id, license_type, valid_from)
+  VALUES ('PH-2026-ABCDEFGH25', '00000000-0000-4000-8000-000000000c12', '00000000-0000-4000-8000-000000000701',
+          '00000000-0000-4000-8000-000000000101', 'editorial_single', now()) $q$, '23514');
+-- ولا بند لإدراج غير معروض
+SELECT pg_temp.expect_error($q$
+  INSERT INTO order_items (order_id, listing_id, material_id, material_version, license_template_id, license_version,
+                           license_type, price_minor, currency, title_ar, title_en)
+  VALUES ('00000000-0000-4000-8000-000000000c02', '00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000101',
+          1, '00000000-0000-4000-8000-000000000602', 1, 'exclusive_temporary', 150000, 'USD', 'ع', 'T') $q$, '23514');
+UPDATE materials SET rights_state = 'sellable' WHERE id = '00000000-0000-4000-8000-000000000101';
+UPDATE catalog_listings SET state = 'listed', suspended_reason = NULL WHERE id = '00000000-0000-4000-8000-000000000611';
+SET CONSTRAINTS ALL DEFERRED;
+
+-- الحصرية: لا حجز لمادة سبق بيعها؛ بعد إبطال الترخيص الوحيد (استرداد) تصير متاحة
+INSERT INTO orders (id, organization_id, created_by, currency, total_minor, expires_at)
+VALUES ('00000000-0000-4000-8000-000000000c03', '00000000-0000-4000-8000-000000000701', '00000000-0000-4000-8000-000000000711',
+        'USD', 150000, now() + interval '15 minutes');
+INSERT INTO order_items (id, order_id, listing_id, material_id, material_version, license_template_id, license_version,
+                         license_type, price_minor, currency, title_ar, title_en)
+VALUES ('00000000-0000-4000-8000-000000000c13', '00000000-0000-4000-8000-000000000c03', '00000000-0000-4000-8000-000000000611',
+        '00000000-0000-4000-8000-000000000101', 1, '00000000-0000-4000-8000-000000000602', 1, 'exclusive_temporary', 150000, 'USD', 'ع', 'T');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO exclusive_holds (material_id, order_item_id, held_until)
+  VALUES ('00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000c13', now() + interval '15 minutes') $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
+UPDATE licenses SET status = 'revoked', revoked_reason = 'refunded' WHERE id = '00000000-0000-4000-8000-000000000c31';
+UPDATE orders SET status = 'refunded' WHERE id = '00000000-0000-4000-8000-000000000c01';
+SELECT pg_temp.expect_error($q$
+  INSERT INTO exclusive_holds (material_id, order_item_id, held_until)
+  VALUES ('00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000c13', now() + interval '16 minutes') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO exclusive_holds (material_id, order_item_id, held_until)
+  VALUES ('00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000c12', now() + interval '15 minutes') $q$, '23514');
+INSERT INTO exclusive_holds (id, material_id, order_item_id, held_until)
+VALUES ('00000000-0000-4000-8000-000000000c21', '00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000c13',
+        now() + interval '15 minutes');
+-- حجز واحد قائم أو نشط لكل مادة، ولو تزامن طلبان
+INSERT INTO orders (id, organization_id, created_by, currency, total_minor, expires_at)
+VALUES ('00000000-0000-4000-8000-000000000c04', '00000000-0000-4000-8000-000000000701', '00000000-0000-4000-8000-000000000711',
+        'USD', 150000, now() + interval '15 minutes');
+INSERT INTO order_items (id, order_id, listing_id, material_id, material_version, license_template_id, license_version,
+                         license_type, price_minor, currency, title_ar, title_en)
+VALUES ('00000000-0000-4000-8000-000000000c14', '00000000-0000-4000-8000-000000000c04', '00000000-0000-4000-8000-000000000611',
+        '00000000-0000-4000-8000-000000000101', 1, '00000000-0000-4000-8000-000000000602', 1, 'exclusive_temporary', 150000, 'USD', 'ع', 'T');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO exclusive_holds (material_id, order_item_id, held_until)
+  VALUES ('00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000c14', now() + interval '15 minutes') $q$, '23505');
+SET CONSTRAINTS ALL DEFERRED;
+-- اختبار مقلوب: بإسقاط فهرس الحصرية يمر حجز ثانٍ، فالاختبار أعلاه يقيس الفهرس
+SAVEPOINT exclusive_mutation;
+DROP INDEX exclusive_holds_material_key;
+INSERT INTO exclusive_holds (material_id, order_item_id, held_until)
+VALUES ('00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000c14', now() + interval '15 minutes');
+ROLLBACK TO SAVEPOINT exclusive_mutation;
+SELECT pg_temp.assert((SELECT count(*) = 1 FROM pg_indexes WHERE indexname = 'exclusive_holds_material_key'), 'exclusivity index restored');
+-- ولا بيع غير حصري والمادة تحت حجز ساري: لا بند جديد ولا ترخيص لطلب سبق دفعه
+SELECT pg_temp.expect_error($q$
+  WITH o AS (INSERT INTO orders (organization_id, created_by, currency, total_minor, expires_at)
+             VALUES ('00000000-0000-4000-8000-000000000701', '00000000-0000-4000-8000-000000000711', 'USD', 25000, now() + interval '1 hour')
+             RETURNING id)
+  INSERT INTO order_items (order_id, listing_id, material_id, material_version, license_template_id, license_version,
+                           license_type, price_minor, currency, title_ar, title_en)
+  SELECT o.id, '00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000101', 1,
+         '00000000-0000-4000-8000-000000000601', 2, 'editorial_single', 25000, 'USD', 'ع', 'T' FROM o $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
+SELECT pg_temp.expect_error($q$
+  INSERT INTO licenses (license_number, order_item_id, organization_id, material_id, license_type, valid_from)
+  VALUES ('PH-2026-ABCDEFGH25', '00000000-0000-4000-8000-000000000c12', '00000000-0000-4000-8000-000000000701',
+          '00000000-0000-4000-8000-000000000101', 'editorial_single', now()) $q$, '23514');
+-- الحصري يصدر بحجزه، ثم ينشط الحجز حتى نهاية الحصرية؛ الحجز لا يُحذف ولا يعود ونافذته ثابتة
+UPDATE orders SET provider = 'sandbox', provider_ref = 'sbx_c03', status = 'paid', paid_at = now()
+ WHERE id = '00000000-0000-4000-8000-000000000c03';
+SELECT pg_temp.expect_error($q$
+  INSERT INTO licenses (license_number, order_item_id, organization_id, material_id, license_type, valid_from)
+  VALUES ('PH-2026-ABCDEFGH26', '00000000-0000-4000-8000-000000000c13', '00000000-0000-4000-8000-000000000701',
+          '00000000-0000-4000-8000-000000000101', 'exclusive_temporary', now()) $q$, '23514');
+INSERT INTO licenses (id, license_number, order_item_id, organization_id, material_id, license_type, valid_from, valid_until, exclusive_until)
+VALUES ('00000000-0000-4000-8000-000000000c33', 'PH-2026-ABCDEFGH26', '00000000-0000-4000-8000-000000000c13',
+        '00000000-0000-4000-8000-000000000701', '00000000-0000-4000-8000-000000000101', 'exclusive_temporary', now(),
+        now() + interval '30 days', now() + interval '72 hours');
+UPDATE exclusive_holds SET state = 'active', active_until = now() + interval '72 hours' WHERE id = '00000000-0000-4000-8000-000000000c21';
+SELECT pg_temp.expect_error($q$ UPDATE exclusive_holds SET state = 'held' WHERE id = '00000000-0000-4000-8000-000000000c21' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE exclusive_holds SET held_until = now() + interval '1 minute' WHERE id = '00000000-0000-4000-8000-000000000c21' $q$, '23514');
+SELECT pg_temp.expect_error($q$ DELETE FROM exclusive_holds WHERE id = '00000000-0000-4000-8000-000000000c21' $q$, '23001');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO licenses (license_number, order_item_id, organization_id, material_id, license_type, valid_from)
+  VALUES ('PH-2026-ABCDEFGH25', '00000000-0000-4000-8000-000000000c12', '00000000-0000-4000-8000-000000000701',
+          '00000000-0000-4000-8000-000000000101', 'editorial_single', now()) $q$, '23514');
+
+-- الإشعار المستلم فريد بـ (المزوّد، معرّف الحدث) ولا يُعدَّل
+INSERT INTO payment_events (provider, event_id, type, provider_ref, amount_minor, currency, occurred_at, order_id, outcome)
+VALUES ('sandbox', 'evt_c03_1', 'payment.succeeded', 'sbx_c03', 150000, 'USD', now(), '00000000-0000-4000-8000-000000000c03', 'applied');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO payment_events (provider, event_id, type, provider_ref, amount_minor, currency, occurred_at, outcome)
+  VALUES ('sandbox', 'evt_c03_1', 'payment.succeeded', 'sbx_c03', 150000, 'USD', now(), 'ignored') $q$, '23505');
+SELECT pg_temp.expect_error($q$
+  UPDATE payment_events SET outcome = 'ignored' WHERE event_id = 'evt_c03_1' $q$, '23001');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO payment_events (provider, event_id, type, provider_ref, amount_minor, currency, occurred_at, outcome)
+  VALUES ('sandbox', 'evt c03 2', 'payment.succeeded', 'sbx_c03', 150000, 'USD', now(), 'ignored') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO payment_events (provider, event_id, type, provider_ref, amount_minor, currency, occurred_at, outcome)
+  VALUES ('sandbox', 'evt_c03_3', 'charge.captured', 'sbx_c03', 150000, 'USD', now(), 'ignored') $q$, '23514');
+
+-- الأحداث بمعرّفاتها وحالاتها وحدها، بلا أسعار ولا أسماء
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('order.status_changed', 'order', '00000000-0000-4000-8000-000000000c03', 'order.status_changed:smoke:1',
+        '{"order_id": "00000000-0000-4000-8000-000000000c03", "organization_id": "00000000-0000-4000-8000-000000000701", "status": "paid", "cancel_reason": null}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('order.status_changed', 'order', '00000000-0000-4000-8000-000000000c03', 'order.status_changed:smoke:2',
+          '{"order_id": "00000000-0000-4000-8000-000000000c03", "total_minor": 150000}') $q$, '23514');
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('license.issued', 'license', '00000000-0000-4000-8000-000000000c33', 'license.issued:smoke:1',
+        '{"license_id": "00000000-0000-4000-8000-000000000c33", "order_id": "00000000-0000-4000-8000-000000000c03", "organization_id": "00000000-0000-4000-8000-000000000701", "material_id": "00000000-0000-4000-8000-000000000101", "material_version": 1, "license_type": "exclusive_temporary"}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('license.issued', 'license', '00000000-0000-4000-8000-000000000c33', 'license.issued:smoke:2',
+          '{"license_id": "00000000-0000-4000-8000-000000000c33", "buyer_name": "x"}') $q$, '23514');
+
+-- الدوال تعمل بمسار بحث فارغ (الاستعادة): طلب ببنده وفحص مجموعه المؤجل
+SET LOCAL search_path = '';
+INSERT INTO public.orders (id, organization_id, created_by, currency, total_minor, expires_at)
+VALUES ('00000000-0000-4000-8000-000000000c05', '00000000-0000-4000-8000-000000000701', '00000000-0000-4000-8000-000000000711',
+        'USD', 150000, now() + interval '15 minutes');
+INSERT INTO public.order_items (order_id, listing_id, material_id, material_version, license_template_id, license_version,
+                                license_type, price_minor, currency, title_ar, title_en)
+VALUES ('00000000-0000-4000-8000-000000000c05', '00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000101',
+        1, '00000000-0000-4000-8000-000000000602', 1, 'exclusive_temporary', 150000, 'USD', 'ع', 'T');
+SET CONSTRAINTS ALL IMMEDIATE;
+SET CONSTRAINTS ALL DEFERRED;
+SET LOCAL search_path TO DEFAULT;
+-- دعوة بريد قائم خارج المؤسسة: عضو مدعو بديل، ودعوة مفتوحة واحدة لكل بريد بلا تمييز لحالة الأحرف (ترحيل 031)
+INSERT INTO buyer_invite_conflicts (id, organization_id, email, existing_user_id, role, invited_by, invite_expires_at)
+VALUES ('00000000-0000-4000-8000-000000000d01', '00000000-0000-4000-8000-000000000701', 'reporter@example.invalid',
+        '00000000-0000-4000-8000-000000000011', 'buyer_member', '00000000-0000-4000-8000-000000000711', now() + interval '24 hours');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO buyer_invite_conflicts (organization_id, email, existing_user_id, role, invited_by, invite_expires_at)
+  VALUES ('00000000-0000-4000-8000-000000000701', 'Reporter@Example.invalid', '00000000-0000-4000-8000-000000000011',
+          'buyer_member', '00000000-0000-4000-8000-000000000711', now() + interval '24 hours') $q$, '23505');
+SELECT pg_temp.expect_error($q$
+  UPDATE buyer_invite_conflicts SET state = 'dismissed' WHERE id = '00000000-0000-4000-8000-000000000d01' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE buyer_invite_conflicts SET role = 'producer' WHERE id = '00000000-0000-4000-8000-000000000d01' $q$, '23514');
+UPDATE buyer_invite_conflicts SET state = 'dismissed', resolved_at = now(), resolved_by = '00000000-0000-4000-8000-000000000014'
+ WHERE id = '00000000-0000-4000-8000-000000000d01';
+INSERT INTO buyer_invite_conflicts (organization_id, email, existing_user_id, role, invited_by, invite_expires_at)
+VALUES ('00000000-0000-4000-8000-000000000701', 'Reporter@Example.invalid', '00000000-0000-4000-8000-000000000011',
+        'buyer_member', '00000000-0000-4000-8000-000000000711', now() + interval '24 hours');
+SELECT pg_temp.assert(public.audit_details_is_whitelisted('{"conflict_id": "00000000-0000-4000-8000-000000000d01", "organization_id": "00000000-0000-4000-8000-000000000701"}'::jsonb),
+  'audit whitelist accepts conflict_id');
+
 -- ---------- indexing policy (ADR 0002) ----------
 SELECT pg_temp.assert(
   NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexdef ILIKE '%USING gin%'),
@@ -698,6 +964,95 @@ SELECT pg_temp.assert(
   (SELECT count(*) = 1 FROM pg_indexes WHERE indexname = 'upload_sessions_storage_pending_idx'
      AND indexdef ILIKE '%WHERE ((state = ''failed''::text) AND (storage_removed_at IS NULL))%'),
   'partial index for failed uploads whose temporary data is not yet removed exists');
+
+-- ---------- دفتر الأستاذ (ADR 0031): قيد مزدوج لا يُعدَّل ----------
+SET CONSTRAINTS ALL DEFERRED;
+INSERT INTO ledger_accounts (id, kind, currency) VALUES
+  ('00000000-0000-4000-8000-000000000901', 'provider_clearing', 'USD'), ('00000000-0000-4000-8000-000000000902', 'platform_revenue', 'USD'), ('00000000-0000-4000-8000-000000000906', 'provider_clearing', 'ILS');
+INSERT INTO ledger_accounts (id, kind, owner_id, payable_state, currency) VALUES
+  ('00000000-0000-4000-8000-000000000904', 'contributor_payable', '00000000-0000-4000-8000-000000000011', 'pending', 'USD'),
+  ('00000000-0000-4000-8000-000000000905', 'contributor_payable', '00000000-0000-4000-8000-000000000011', 'available', 'USD');
+-- حساب واحد لكل (نوع، مالك، حالة، عملة)، والمالك والحالة للمستحق وحده، وهوية الحساب ثابتة
+SELECT pg_temp.expect_error($q$ INSERT INTO ledger_accounts (kind, currency) VALUES ('provider_clearing', 'USD') $q$, '23505');
+SELECT pg_temp.expect_error($q$ INSERT INTO ledger_accounts (kind, currency) VALUES ('contributor_payable', 'USD') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO ledger_accounts (kind, owner_id, payable_state, currency) VALUES ('taxes', '00000000-0000-4000-8000-000000000011', 'pending', 'USD') $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE ledger_accounts SET currency = 'ILS' WHERE id = '00000000-0000-4000-8000-000000000901' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE ledger_accounts SET payable_state = 'paid' WHERE id = '00000000-0000-4000-8000-000000000904' $q$, '23514');
+-- بيعة متوازنة تُقبل عند الإيداع، وتفاصيلها أرقام ومعرّفات
+INSERT INTO journal_entries (id, kind, reference_type, reference_id, idempotency_key, details, actor_id) VALUES
+  ('00000000-0000-4000-8000-000000000911', 'sale', 'order', '00000000-0000-4000-8000-000000000921', 'sale:smoke:1',
+   '{"rule_id": "00000000-0000-4000-8000-000000000931", "platform_bps": 3000, "currency": "USD", "shares": [{"user_id": "00000000-0000-4000-8000-000000000011", "bps": 10000}]}',
+   '00000000-0000-4000-8000-000000000014');
+INSERT INTO postings (entry_id, account_id, amount_minor, currency) VALUES
+  ('00000000-0000-4000-8000-000000000911', '00000000-0000-4000-8000-000000000901', 1000, 'USD'), ('00000000-0000-4000-8000-000000000911', '00000000-0000-4000-8000-000000000902', -300, 'USD'), ('00000000-0000-4000-8000-000000000911', '00000000-0000-4000-8000-000000000904', -700, 'USD');
+SET CONSTRAINTS ALL IMMEDIATE;
+SET CONSTRAINTS ALL DEFERRED;
+-- غير المتوازن، والقيد بلا سطور، والسطر بعملة غير عملة حسابه: كلها تُرفض
+SELECT pg_temp.expect_error($q$
+  WITH e AS (INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key)
+             VALUES ('sale', 'order', '00000000-0000-4000-8000-000000000922', 'sale:smoke:unbalanced') RETURNING id)
+  INSERT INTO postings (entry_id, account_id, amount_minor, currency)
+  SELECT id, '00000000-0000-4000-8000-000000000901'::uuid, 100, 'USD' FROM e UNION ALL SELECT id, '00000000-0000-4000-8000-000000000902'::uuid, -90, 'USD' FROM e $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key)
+  VALUES ('sale', 'order', '00000000-0000-4000-8000-000000000923', 'sale:smoke:empty') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO postings (entry_id, account_id, amount_minor, currency) VALUES ('00000000-0000-4000-8000-000000000911', '00000000-0000-4000-8000-000000000901', 5, 'ILS') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO postings (entry_id, account_id, amount_minor, currency) VALUES ('00000000-0000-4000-8000-000000000911', '00000000-0000-4000-8000-000000000901', 0, 'USD') $q$, '23514');
+-- نص حر في التفاصيل يُرفض، والعكس للاسترداد والتصحيح وحدهما، والتكرار بمفتاح القيد يُرفض
+SELECT pg_temp.expect_error($q$
+  INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key, details)
+  VALUES ('sale', 'order', '00000000-0000-4000-8000-000000000924', 'sale:smoke:text', '{"note": "buyer Jane Doe"}') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key)
+  VALUES ('refund', 'refund', '00000000-0000-4000-8000-000000000925', 'refund:smoke:orphan') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key, reverses_entry_id)
+  VALUES ('sale', 'order', '00000000-0000-4000-8000-000000000926', 'sale:smoke:reverses', '00000000-0000-4000-8000-000000000911') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key)
+  VALUES ('sale', 'order', '00000000-0000-4000-8000-000000000921', 'sale:smoke:1') $q$, '23505');
+-- التصحيح يعكس القيد كاملًا مرة واحدة
+WITH e AS (INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key, reverses_entry_id)
+           VALUES ('correction', 'order', '00000000-0000-4000-8000-000000000921', 'correction:smoke:1', '00000000-0000-4000-8000-000000000911') RETURNING id)
+INSERT INTO postings (entry_id, account_id, amount_minor, currency)
+SELECT id, '00000000-0000-4000-8000-000000000901'::uuid, -1000, 'USD' FROM e UNION ALL SELECT id, '00000000-0000-4000-8000-000000000902'::uuid, 300, 'USD' FROM e
+UNION ALL SELECT id, '00000000-0000-4000-8000-000000000904'::uuid, 700, 'USD' FROM e;
+SET CONSTRAINTS ALL IMMEDIATE;
+SET CONSTRAINTS ALL DEFERRED;
+SELECT pg_temp.expect_error($q$
+  INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key, reverses_entry_id)
+  VALUES ('correction', 'order', '00000000-0000-4000-8000-000000000921', 'correction:smoke:2', '00000000-0000-4000-8000-000000000911') $q$, '23505');
+-- لا تحديث ولا حذف ولا تفريغ: الصلاحية مسحوبة من دور التطبيق، والمحفّز يرفض حتى بعد إعادتها
+SELECT pg_temp.expect_error($q$ UPDATE postings SET amount_minor = 1 WHERE entry_id = '00000000-0000-4000-8000-000000000911' $q$, '42501');
+SELECT pg_temp.expect_error($q$ DELETE FROM journal_entries WHERE id = '00000000-0000-4000-8000-000000000911' $q$, '42501');
+SELECT pg_temp.expect_error($q$ TRUNCATE postings $q$, '42501');
+GRANT UPDATE, DELETE, TRUNCATE ON journal_entries, postings TO CURRENT_USER;
+SELECT pg_temp.expect_error($q$ UPDATE postings SET amount_minor = 1 WHERE entry_id = '00000000-0000-4000-8000-000000000911' $q$, '42501');
+SELECT pg_temp.expect_error($q$ DELETE FROM journal_entries WHERE id = '00000000-0000-4000-8000-000000000911' $q$, '42501');
+SELECT pg_temp.expect_error($q$ TRUNCATE journal_entries CASCADE $q$, '42501');
+REVOKE UPDATE, DELETE, TRUNCATE ON journal_entries, postings FROM CURRENT_USER;
+-- المحفّزات تعمل بمسار بحث فارغ (الاستعادة)
+SET LOCAL search_path = '';
+WITH e AS (INSERT INTO public.journal_entries (kind, reference_type, reference_id, idempotency_key)
+           VALUES ('release', 'order', '00000000-0000-4000-8000-000000000921', 'release:smoke:1') RETURNING id)
+INSERT INTO public.postings (entry_id, account_id, amount_minor, currency)
+SELECT id, '00000000-0000-4000-8000-000000000904'::uuid, 700, 'USD' FROM e UNION ALL SELECT id, '00000000-0000-4000-8000-000000000905'::uuid, -700, 'USD' FROM e;
+SET CONSTRAINTS ALL IMMEDIATE;
+SET CONSTRAINTS ALL DEFERRED;
+SET LOCAL search_path TO DEFAULT;
+-- اختبار مقلوب: بلا محفّزي التوازن يمر القيد غير المتوازن، فالاختبار أعلاه يقيس المحفّز لا غيره
+ALTER TABLE postings DISABLE TRIGGER postings_balanced;
+ALTER TABLE journal_entries DISABLE TRIGGER journal_entries_balanced;
+WITH e AS (INSERT INTO journal_entries (kind, reference_type, reference_id, idempotency_key)
+           VALUES ('sale', 'order', '00000000-0000-4000-8000-000000000927', 'sale:smoke:mutant') RETURNING id)
+INSERT INTO postings (entry_id, account_id, amount_minor, currency) SELECT id, '00000000-0000-4000-8000-000000000901'::uuid, 100, 'USD' FROM e;
+SET CONSTRAINTS ALL IMMEDIATE;
+SET CONSTRAINTS ALL DEFERRED;
+ALTER TABLE postings ENABLE TRIGGER postings_balanced;
+ALTER TABLE journal_entries ENABLE TRIGGER journal_entries_balanced;
 
 \o
 \echo smoke OK

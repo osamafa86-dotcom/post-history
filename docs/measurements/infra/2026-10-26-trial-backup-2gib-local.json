@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "infra",
+  "test_name": "recovery",
+  "started_at": "2026-10-26T04:30:20Z",
+  "ended_at": "2026-10-26T04:34:14Z",
+  "result": "partial",
+  "device": {
+    "platform": "server",
+    "model": "local docker compose (cloud container, 4 vCPU), stand-in second provider in the same project"
+  },
+  "metrics": {
+    "seeded_mib": 2048,
+    "seeded_objects": 32,
+    "backup_full_s": 60.03,
+    "backup_incremental_s": 7.81,
+    "backup_full_mib_per_s": 34.1,
+    "objects_encrypted_bytes": 2149612886,
+    "pg_dump_bytes_encrypted": 158837,
+    "objects_total": 38,
+    "second_provider_copy": true,
+    "second_provider_pull_s": 12.07,
+    "restore_decrypt_s": 1.28,
+    "restore_pg_s": 5.61,
+    "restore_from_second_provider_passed": true,
+    "restore_local_passed": true,
+    "backup_interval_h": 24
+  },
+  "notes": "Trial backup at size (infra/field-trial/smoke-trial.sh with BACKUP_MEASURE_MIB): synthetic incompressible objects in the uploads bucket, encrypted per object (CMS AES-256-GCM) and mirrored to a stand-in second provider under compliance object lock, then restore drills from the local copy and from the copy pulled back from the second provider. Partial: synthetic data on this machine, not the trial host; the daily interval means up to 24 h of loss against the plan's 15 minutes (continuous WAL archiving is not built); the object restore time is the pull back plus decryption of the sample, not a full re-upload into a new MinIO."
+}

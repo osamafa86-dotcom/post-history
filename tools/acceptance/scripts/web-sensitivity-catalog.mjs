@@ -1,7 +1,15 @@
 #!/usr/bin/env node
-// يثبت وسم مادة حساسة، ثم يمنع ظهورها في الكتالوج والبحث والتصدير.
+// يثبت وسم مادة حساسة في نموذج الرفع، ويقارن تفاصيلها بتفاصيل مادة غير موسومة (ضابط)، ثم يتحقق أن دور الكتالوج
+// يرى المادة غير الموسومة في البحث ولا يرى الموسومة. غياب الموسومة عن الواجهة لا يثبت غيابها عن API: ذلك لـ pii-leak وtenant-isolation.
 import { banner } from "../lib/measurement.mjs";
-import { envMissing, url, title, syntheticClip, loadPlaywright, login, envDoc, checkList, finishAndWrite } from "./web-gap-helpers.mjs";
+import { envMissing, url, title, syntheticClip, loadPlaywright, login, envDoc, checkList, finishAndWrite, exitCodeFor, EnvironmentError } from "./web-gap-helpers.mjs";
+
+export const MARKER = /حساس|Sensitive|قاصر|Minor|graphic|injur|مصاب/i;
+
+/** وسم الحساسية يظهر في تفاصيل الموسومة ولا يظهر في تفاصيل غير الموسومة نفسها: الفرق هو الدليل لا وجود كلمة عامة في الصفحة. */
+export function markerDiffers(sensitiveText, controlText) {
+  return MARKER.test(sensitiveText) && !MARKER.test(controlText);
+}
 
 async function upload(page, env, clip, name, sensitive) {
   await page.goto(url(env, "/ar/upload"), { waitUntil: "domcontentloaded" });
@@ -20,53 +28,55 @@ async function upload(page, env, clip, name, sensitive) {
   const link = page.getByRole("link", { name }).first();
   await link.waitFor({ state: "visible", timeout: Number(env.ACCEPTANCE_TIMEOUT_MS ?? 30000) });
   await link.click();
-  return name;
+  await page.getByRole("heading", { name }).waitFor({ state: "visible", timeout: Number(env.ACCEPTANCE_TIMEOUT_MS ?? 30000) });
+  return page.getByRole("main").innerText();
 }
 
 export async function run(argv = process.argv.slice(2), env = process.env) {
-  banner({ name: "web-sensitivity-catalog", criterion: "المادة الحساسة موسومة في تفاصيلها ولا تظهر في الكتالوج أو البحث أو التصدير، مع مادة غير موسومة كضابط" });
+  banner({ name: "web-sensitivity-catalog", criterion: "المادة الحساسة موسومة في تفاصيلها (بالفرق عن مادة غير موسومة) ولا تظهر في بحث الكتالوج لدور الكتالوج، مع مادة غير موسومة ضابطًا" });
   const missing = envMissing(env, ["ACCEPTANCE_BASE_URL", "ACCEPTANCE_REPORTER_EMAIL", "ACCEPTANCE_REPORTER_PASSWORD", "ACCEPTANCE_CATALOG_EMAIL", "ACCEPTANCE_CATALOG_PASSWORD"]);
   if (missing.length) { console.error(`ENVIRONMENT: missing ${missing.join(", ")}; nothing measured`); return { code: 2, doc: null }; }
-  const doc = envDoc(env, "web-sensitivity-catalog"); const { checks, check } = checkList();
-  const clip = syntheticClip("web-sensitivity", { seconds: 10 });
-  let browser;
+  const doc = envDoc(env, "web-sensitivity-catalog", { upload_path: "tusd" });
+  const { checks, check } = checkList();
+  let clip, browser;
   try {
-    const { chromium } = await loadPlaywright(); browser = await chromium.launch({ headless: env.ACCEPTANCE_HEADLESS !== "0" });
-    const reporter = await browser.newContext(); const reporterPage = await reporter.newPage();
+    const { chromium } = await loadPlaywright();
+    clip = syntheticClip("web-sensitivity", { seconds: 10 });
+    browser = await chromium.launch({ headless: env.ACCEPTANCE_HEADLESS !== "0" });
+    const sensitiveTitle = title("مادة حساسة"), normalTitle = title("مادة غير موسومة");
+    const reporter = await browser.newContext(), reporterPage = await reporter.newPage();
     await login(reporterPage, env, { email: env.ACCEPTANCE_REPORTER_EMAIL, password: env.ACCEPTANCE_REPORTER_PASSWORD });
-    const sensitiveTitle = title("مادة حساسة"); const normalTitle = title("مادة غير موسومة");
-    await upload(reporterPage, env, clip, sensitiveTitle, true);
-    const sensitiveBody = await reporterPage.locator("body").innerText();
-    check("sensitive material shows its sensitivity mark in details", /حساس|Sensitive|قاصر|Minor|graphic|injur/i.test(sensitiveBody), "details page");
-    await reporterPage.getByRole("button", { name: /تسجيل الخروج|Sign out|Logout/i }).click().catch(() => {});
-    await login(reporterPage, env, { email: env.ACCEPTANCE_REPORTER_EMAIL, password: env.ACCEPTANCE_REPORTER_PASSWORD });
-    await upload(reporterPage, env, clip, normalTitle, false);
-    check("an unmarked control material can be created", true);
+    const sensitiveText = await upload(reporterPage, env, clip, sensitiveTitle, true);
+    const controlText = await upload(reporterPage, env, clip, normalTitle, false);
+    check("sensitive details carry a sensitivity mark that an unmarked material's details lack", markerDiffers(sensitiveText, controlText));
     await reporter.close();
 
-    const catalog = await browser.newContext(); const page = await catalog.newPage();
+    const catalog = await browser.newContext(), page = await catalog.newPage();
     await login(page, env, { email: env.ACCEPTANCE_CATALOG_EMAIL, password: env.ACCEPTANCE_CATALOG_PASSWORD });
     await page.goto(url(env, "/ar/store"), { waitUntil: "domcontentloaded" });
-    const sensitiveSearch = page.getByLabel(/بحث|Search/i).first();
-    if (!(await sensitiveSearch.count())) throw new Error("catalog search control is missing");
-    await sensitiveSearch.fill(sensitiveTitle); await page.getByRole("button", { name: /تطبيق|Apply|بحث|Search/i }).first().click();
-    const sensitiveCards = page.getByTestId("catalog-card");
-    check("sensitive material is absent from catalog search", await sensitiveCards.filter({ hasText: sensitiveTitle }).count() === 0);
-    await sensitiveSearch.fill(normalTitle); await page.getByRole("button", { name: /تطبيق|Apply|بحث|Search/i }).first().click();
-    const controlCount = await sensitiveCards.filter({ hasText: normalTitle }).count();
-    check("unmarked control is visible to catalog role", controlCount > 0);
-    const exportButtons = page.getByRole("button", { name: /تصدير|Export/i });
-    const partial = !(await exportButtons.count());
-    if (partial) console.log("PARTIAL export UI is not available in this environment");
-    else {
-      await sensitiveSearch.fill(sensitiveTitle); await page.getByRole("button", { name: /تطبيق|Apply|بحث|Search/i }).first().click();
-      check("sensitive material has no export action", await exportButtons.count() === 0);
-    }
-    const failures = checks.filter((x) => !x.ok); const result = failures.length ? "fail" : partial ? "partial" : "pass";
-    finishAndWrite(doc, argv, "browser", result, { checks: checks.length, checks_failed: failures.length, sensitive_absent_from_catalog: !failures.some((x) => /catalog/.test(x.name)), control_visible: controlCount > 0, export_checked: !partial }, failures.length ? failures.map((x) => x.name).join("؛ ") : partial ? "واجهة التصدير غير موجودة في هذه البيئة؛ بقية فحوص الحساسية والكتالوج مقاسة" : "مقطع اصطناعي مولّد بـffmpeg؛ لا لقطات ولا ملفات محفوظة");
-    return { code: failures.length ? 1 : 0, doc };
+    const search = page.getByLabel(/بحث|Search/i).first();
+    if (!(await search.count())) throw new Error("catalog search control is missing");
+    const apply = () => page.getByRole("button", { name: /تطبيق|Apply|بحث|Search/i }).first().click();
+    const cards = page.getByTestId("catalog-card");
+    // الضابط أولًا: مادة غير موسومة تظهر بالبحث نفسه، وإلا فغياب الموسومة قد يكون من البحث لا من المنع
+    await search.fill(normalTitle); await apply();
+    const controlCard = cards.filter({ hasText: normalTitle });
+    const controlCount = await controlCard.count();
+    check("unmarked control is visible to the catalog role by the same search", controlCount > 0);
+    const exportUi = controlCount > 0 && (await controlCard.first().getByRole("button", { name: /تصدير|Export/i }).count()) > 0;
+    await search.fill(sensitiveTitle); await apply();
+    const sensitiveCount = await cards.filter({ hasText: sensitiveTitle }).count();
+    check("sensitive material is absent from catalog search", sensitiveCount === 0, `cards=${sensitiveCount}`);
+    const failures = checks.filter((x) => !x.ok);
+    const out = finishAndWrite(doc, argv, "browser", failures.length ? "fail" : "partial", {
+      checks: checks.length, checks_failed: failures.length, control_visible: controlCount > 0, sensitive_cards_in_catalog: sensitiveCount,
+      export_ui_on_control: exportUi, api_level_absence_checked: false,
+    }, failures.length ? failures.map((x) => `${x.name}: ${x.detail}`).join("؛ ") : "غياب المادة الموسومة عن بحث الواجهة بوجود ضابط يظهر بالبحث نفسه؛ غيابها عن API والتصدير لم يُقس هنا (pii-leak وtenant-isolation)، فالنتيجة جزئية؛ مقطع اصطناعي ولا لقطات ولا ملفات محفوظة");
+    return { code: failures.length || out.error ? 1 : 0, doc };
   } catch (error) {
-    finishAndWrite(doc, argv, "browser-failure", "fail", { checks: checks.length, checks_failed: 1 }, `فشل المسار: ${error.message}`); return { code: 1, doc };
-  } finally { await browser?.close(); clip.cleanup(); }
+    if (error instanceof EnvironmentError) { console.error(`ENVIRONMENT: ${error.message}; nothing measured`); return { code: 2, doc: null }; }
+    finishAndWrite(doc, argv, "browser-failure", "fail", { checks: checks.length, checks_failed: 1 }, `فشل المسار: ${error.message}`);
+    return { code: exitCodeFor(error), doc };
+  } finally { await browser?.close(); clip?.cleanup(); }
 }
 if (process.argv[1] === new URL(import.meta.url).pathname) process.exit((await run()).code);

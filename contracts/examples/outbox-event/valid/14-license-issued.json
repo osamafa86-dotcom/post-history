@@ -1,0 +1,13 @@
+{
+  "id": "1401",
+  "type": "license.issued",
+  "aggregate_type": "license",
+  "aggregate_id": "6b5a4c3d-2e1f-4a0b-9c8d-7e6f5a4b3c2d",
+  "occurred_at": "2026-10-26T09:00:00Z",
+  "idempotency_key": "license.issued:6b5a4c3d-2e1f-4a0b-9c8d-7e6f5a4b3c2d",
+  "actor_id": null,
+  "payload": { "license_id": "6b5a4c3d-2e1f-4a0b-9c8d-7e6f5a4b3c2d", "order_id": "3f2e1d0c-9b8a-4c7d-8e6f-5a4b3c2d1e0f", "organization_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", "material_id": "7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b", "material_version": 1, "license_type": "exclusive_temporary" },
+  "published_at": null,
+  "attempts": 0,
+  "delivery": []
+}

@@ -8,6 +8,7 @@ import type { components } from '../generated/api';
 import { iso } from '../materials/material-store';
 import { validTimestamp } from '../uploads/uploads.service';
 import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
+import { sourceFileId } from './listing-store';
 
 type CatalogItem = components['schemas']['CatalogItem'];
 type CatalogOffer = components['schemas']['CatalogOffer'];
@@ -101,7 +102,7 @@ export class CatalogService {
     return (await this.items(rows))[0]!;
   }
 
-  /** معاينة `watermarked_preview` وحدها من الأصل المتحقق لإصدار الإدراج، برابط ≤ 10 دقائق. قبل جاهزيتها 409. */
+  /** معاينة `watermarked_preview` وحدها، المشتقة من الأصل المتحقق الحالي، برابط ≤ 10 دقائق. قبل جاهزيتها 409. */
   async previewUrl(listingId: string): Promise<components['schemas']['FileDownloadUrl']> {
     if (!UUID.test(listingId) || !this.storage.presignGet) throw ApiError.notFound();
     const [listing] = await this.db
@@ -109,12 +110,16 @@ export class CatalogService {
       .from(catalogListings)
       .where(and(eq(catalogListings.id, listingId), eq(catalogListings.state, 'listed')));
     if (!listing) throw ApiError.notFound();
-    const [preview] = await this.db
-      .select({ storageKey: materialFiles.storageKey })
-      .from(materialFiles)
-      .where(and(eq(materialFiles.materialId, listing.materialId), eq(materialFiles.kind, 'watermarked_preview'), eq(materialFiles.state, 'verified')))
-      .orderBy(desc(materialFiles.verifiedAt))
-      .limit(1);
+    // المعاينة المشتقة من الأصل المتحقق الحالي وحدها: أصل أحدث بعد الإدراج يجعلها غير جاهزة حتى تُبنى من جديد
+    const source = await sourceFileId(this.db, listing.materialId);
+    const [preview] = source
+      ? await this.db
+          .select({ storageKey: materialFiles.storageKey })
+          .from(materialFiles)
+          .where(and(eq(materialFiles.derivedFromId, source), eq(materialFiles.kind, 'watermarked_preview'), eq(materialFiles.state, 'verified')))
+          .orderBy(desc(materialFiles.verifiedAt))
+          .limit(1)
+      : [];
     if (!preview?.storageKey) throw new ApiError(409, 'preview_not_ready', 'The watermarked preview is not ready yet.');
     const now = new Date();
     const url = this.storage.presignGet(this.config.S3_BUCKET_MEDIA, preview.storageKey, PREVIEW_TTL_SECONDS, now);

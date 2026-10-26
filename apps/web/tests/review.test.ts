@@ -23,7 +23,7 @@ describe("review action visibility", () => {
   });
   it("does not offer server-owned technical advances or foundation-excluded commercial transitions", () => {
     expect(transitionOptions(material(), roleUser("reporter", "system_admin"), "technical")).toEqual([]);
-    expect(transitionOptions({ ...material(), rights_state: "documented" }, roleUser("rights_officer"), "rights")).toEqual(["blocked"]);
+    expect(transitionOptions({ ...material(), rights_state: "documented" }, roleUser("rights_officer"), "rights")).toEqual(["sellable", "blocked"]);
   });
   it("uses the row revision, never the content version, for conditional writes", () => {
     expect(materialTag(new Response(), { ...material(), version: 5, row_version: 17 })).toBe('"17"');
