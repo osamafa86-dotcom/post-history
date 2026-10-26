@@ -8,7 +8,9 @@
 
 - فحص `npm audit --omit=dev --audit-level=high` في وظيفة `api` يُفشل CI عند أي إرشاد بشدة عالية في الاعتمادات التشغيلية.
 - `npm audit fix` يصلح `body-parser` (عالية) و`fast-uri` (متوسطة) بلا كسر.
-- يبقى `multer` 2.4.0 (GHSA-q7qp-rjg7-q26m، حرمان من الخدمة). يأتي عبر `@nestjs/platform-express`، ولا إصلاح له بعد.
+- يبقى `multer` 2.4.0 (GHSA-q7qp-rjg7-q26m، حرمان من الخدمة) عبر `@nestjs/platform-express` 11.2.7. الإصلاح صدر في
+  `multer` 2.5.0، ولم ينشر `platform-express` إصدارًا يعتمده بعد (البحث في `docs/research/2026-10-multer-advisory.md`، #313).
+- `npm audit fix --force` لا يصلح: ينزل إلى `multer` 1.4.x.
 - الخادم لا يحلل `multipart` في أي مسار: الرفع عبر tusd، ولا `FileInterceptor`.
 
 ## القرار
@@ -17,11 +19,14 @@
   إرشاد high أو critical إلا المعرّفات في `tools/audit-allowlist.json`. يحل محل الأمر الخام في وظيفة `api`.
 - **كل استثناء موثق ومؤقت:** المعرّف، والسبب، وتاريخ الإضافة، و`expires` (≤ 60 يومًا منه)، و`removal_condition`. الإدخال الناقص أو المؤرخ في المستقبل أو المنتهي يُفشل الفحص،
   والإدخال الذي زال إرشاده يُطبع للحذف.
-- **شرط استثناء multer:** لا يستعمله أي مسار. يحرسه `test/unit/no-multer.spec.ts`، الذي يفشل إن ظهر `FileInterceptor` أو
-  أخواته أو `MulterModule` أو استيراد `multer` في `src/`.
-- **الحذف:** فور صدور إصلاح عبر `@nestjs/platform-express`، يُحدَّث ويُحذف الإدخال.
+- **multer مثبّت لا مستثنى (تحديث المنسّق 2026-10-26):** `overrides: { "multer": "2.5.0" }` في `apps/api/package.json`،
+  فيمر الفحص بلا استثناء، وقائمة الاستثناءات فارغة تبقى أداة للمستقبل. `test/unit/no-multer.spec.ts` يفشل إن حُلّ
+  إصدار أقدم من 2.5.0 أو زال الـ override، ويفشل كذلك إن ظهر `FileInterceptor` أو أخواته أو `MulterModule` أو استيراد
+  `multer` في `src/` (لا مسار يحلل multipart).
+- **إزالة الـ override:** فور نشر `@nestjs/platform-express` إصدارًا يعتمد `multer` ≥ 2.5.0، يُحدَّث ويُحذف الـ override واختباره.
 
 ## التبعات
 
 - **أسهل:** CI أخضر دون خفض العتبة، وكل إرشاد عالٍ جديد يُفشله كما كان.
-- **أصعب:** استثناء يحتاج مراجعة دورية. يذكّر الفحص بالإدخال القديم حين يزول إرشاده.
+- **أصعب:** الـ override يتجاوز النطاق الذي يعلنه `platform-express` لـ `multer`، فيُراجَع عند كل ترقية لـ Nest. وأي استثناء
+  مستقبلي يحتاج مراجعة دورية، ويذكّر الفحص بالإدخال حين يزول إرشاده.

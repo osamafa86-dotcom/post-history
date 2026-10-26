@@ -13,8 +13,19 @@ function files(dir: string): string[] {
   });
 }
 
-// شرط استثناء multer (ADR 0040): لا مسار يحلل multipart، فثغرة multer غير قابلة للوصول من الخادم
-describe('multer allowlist condition (ADR 0040)', () => {
+// multer مثبّت بـ overrides على إصدار فيه إصلاح GHSA-q7qp-rjg7-q26m (ADR 0040)، ويبقى بلا مسار يحلل multipart
+describe('multer (ADR 0040)', () => {
+  it('the resolved multer is 2.5.0 or later, through the package.json override', () => {
+    const lock = JSON.parse(readFileSync(join(__dirname, '../../package-lock.json'), 'utf8')) as { packages: Record<string, { version?: string }> };
+    const pkg = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf8')) as { overrides?: Record<string, string> };
+    const versions = Object.entries(lock.packages)
+      .filter(([path]) => path.endsWith('node_modules/multer'))
+      .map(([, p]) => p.version!.split('.').map(Number));
+    expect(versions.length).toBeGreaterThan(0);
+    for (const [major, minor] of versions) expect(major! > 2 || (major === 2 && minor! >= 5)).toBe(true);
+    expect(pkg.overrides?.multer).toBe('2.5.0');
+  });
+
   it('no source file uses FileInterceptor, multer or a multipart parser', () => {
     const hits = files(join(__dirname, '../../src')).filter((f) =>
       /FileInterceptor|FilesInterceptor|AnyFilesInterceptor|FileFieldsInterceptor|UploadedFiles?\(|MulterModule|from ['"]multer['"]/.test(readFileSync(f, 'utf8')),
