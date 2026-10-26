@@ -1,6 +1,8 @@
 import Foundation
+import MediaCore
 import PostHistoryAPI
 import SwiftUI
+import UIKit
 import UploadCore
 
 /// طابور الرفع كما تراه الواجهة؛ يراقب أحداث النواة ويطبّق قرار الحذف المحلي.
@@ -8,8 +10,13 @@ import UploadCore
 final class UploadQueueModel: ObservableObject {
     @Published private(set) var records: [UploadRecord] = []
     @Published private(set) var localCopies: Set<UUID> = []
+    /// أصول تنتظر نسخة خفيفة في الطابور، ومواد تُحضَّر نسختها الآن (ADR 0075).
+    @Published private(set) var waitingForProxy: Set<UUID> = []
+    @Published private(set) var preparingProxy: Set<UUID> = []
     let engine: UploadEngine
     let settings: AppSettings
+    private let transcoder: any ProxyTranscoder = AVFoundationProxyTranscoder()
+    private var proxyTasks: [UUID: Task<Void, Never>] = [:]
     private var watcher: Task<Void, Never>?
 
     init(engine: UploadEngine, settings: AppSettings) {
@@ -36,11 +43,14 @@ final class UploadQueueModel: ObservableObject {
 
     func refresh() async {
         records = await engine.allRecords()
+        waitingForProxy = await engine.waitingForProxy()
         localCopies = Set(records.filter { UploadServices.shared.localCopyExists(relativePath: $0.sourcePath) }.map(\.id))
     }
 
     private func receiptArrived(_ id: UUID) async {
-        guard settings.deleteLocalAfterReceipt, let rec = await engine.record(id) else { return }
+        guard let rec = await engine.record(id) else { return }
+        // النسخة الخفيفة مشتقة يصنعها التطبيق: تُحذف دائمًا بعد إيصالها. الأصل قرار المراسل.
+        guard rec.kind == .proxy || settings.deleteLocalAfterReceipt else { return }
         UploadServices.shared.deleteLocalCopy(relativePath: rec.sourcePath)
     }
 
@@ -56,9 +66,66 @@ final class UploadQueueModel: ObservableObject {
         await refresh()
     }
 
-    func enqueue(relativePath: String, materialId: UUID, filename: String, mimeType: String?) async throws {
-        try await engine.enqueue(sourcePath: relativePath, materialId: materialId, kind: .original, filename: filename, mimeType: mimeType)
+    /// الأصل يدخل الطابور فورًا (يُبصم ولا يضيع إن أُنهي التطبيق)، ونسخته الخفيفة تُحضَّر ثم تُرفع قبله.
+    func enqueue(relativePath: String, materialId: UUID, filename: String, mimeType: String?, lightCopy: ProxyChoice = .originalOnly) async throws {
+        try await engine.enqueue(sourcePath: relativePath, materialId: materialId, kind: .original, filename: filename, mimeType: mimeType,
+                                 awaitsProxy: lightCopy.preset != nil)
+        if let preset = lightCopy.preset, let mode = lightCopy.uploadMode {
+            prepareLightCopy(relativePath: relativePath, materialId: materialId, preset: preset, mode: mode)
+        }
         await refresh()
+    }
+
+    private func prepareLightCopy(relativePath: String, materialId: UUID, preset: ProxyPreset, mode: UploadSessionCreate.ProxyMode) {
+        let services = UploadServices.shared
+        let source = services.documentsDirectory.appendingPathComponent(relativePath)
+        let name = "\(UUID().uuidString.lowercased())-light.mov"
+        let output = services.uploadsDirectory.appendingPathComponent(name)
+        let transcoder = transcoder
+        let engine = engine
+        preparingProxy.insert(materialId)
+        proxyTasks[materialId] = Task { [weak self] in
+            // يستمر التحضير قليلًا بعد الخروج إلى الخلفية؛ إن أُنهي التطبيق يُرفع الأصل وحده عند الإطلاق التالي.
+            let background = BackgroundAssertion(name: "light-copy")
+            defer { background.end() }
+            do {
+                _ = try await transcoder.makeProxy(source: source, preset: preset, output: output)
+                try Task.checkCancellation()
+                try await engine.enqueue(sourcePath: "Uploads/\(name)", materialId: materialId, kind: .proxy, filename: "light-copy.mov",
+                                         mimeType: "video/quicktime", proxyMode: mode)
+            } catch {
+                try? FileManager.default.removeItem(at: output)
+                await engine.releaseProxyHold(materialId: materialId)
+            }
+            self?.preparingProxy.remove(materialId)
+            self?.proxyTasks[materialId] = nil
+            await self?.refresh()
+        }
+    }
+
+    /// المسح الطارئ والخروج والإبطال: لا تُضاف نسخة إلى طابور مُسح.
+    func cancelLightCopies() {
+        proxyTasks.values.forEach { $0.cancel() }
+        proxyTasks.removeAll()
+        preparingProxy.removeAll()
+    }
+}
+
+/// مهلة خلفية من النظام لعمل قصير على الجهاز؛ تُنهى مرة واحدة عند الانتهاء أو عند انقضاء المهلة.
+@MainActor
+final class BackgroundAssertion {
+    private var id: UIBackgroundTaskIdentifier = .invalid
+
+    init(name: String) {
+        id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            MainActor.assumeIsolated { self?.end() }
+        }
+    }
+
+    func end() {
+        guard id != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(id)
+        id = .invalid
     }
 }
 

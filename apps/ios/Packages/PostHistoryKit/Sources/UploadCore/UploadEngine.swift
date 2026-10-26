@@ -41,6 +41,10 @@ public actor UploadEngine: TusTransportDelegate {
     private var retryTasks: [UUID: Task<Void, Never>] = [:]
     /// تجديدات رمز ingest المتتالية بعد `401` من البوابة لكل سجل؛ تُصفَّر مع أول جزء ناجح.
     private var ingestRefreshes: [UUID: Int] = [:]
+    /// أصول متوقفة عند إنشاء الجلسة لأن نسخة خفيفة في الطابور لها الأولوية (ADR 0075)؛ تُستأنف حين تنتهي النسخ الخفيفة.
+    private var parkedForProxy: Set<UUID> = []
+    /// مواد رُفع انتظار أصلها للنسخة الخفيفة (فشل التحضير، أو الأصل فقط، أو أُنهي التطبيق أثناء التحضير).
+    private var releasedProxyHolds: Set<UUID> = []
     /// حد التجديدات المتتالية: رمز جديد ما زال يُرفض = مشكلة لا يحلها التجديد.
     static let maxIngestRefreshes = 3
 
@@ -74,12 +78,15 @@ public actor UploadEngine: TusTransportDelegate {
     public func record(_ id: UUID) -> UploadRecord? { records[id] }
 
     /// يضيف ملفًا إلى الطابور ويبدأ دفعه. `sourcePath` نسبي إلى مجلد المستندات أو مطلق.
+    /// `awaitsProxy`: أصل تُحضَّر نسخته الخفيفة الآن؛ يُبصم لكن لا تُنشأ جلسته حتى `releaseProxyHold` أو وصول النسخة إلى الطابور.
     @discardableResult
-    public func enqueue(sourcePath: String, materialId: UUID, kind: UploadSessionCreate.Kind, filename: String, mimeType: String?, proxyMode: UploadSessionCreate.ProxyMode? = nil) async throws -> UploadRecord {
+    public func enqueue(sourcePath: String, materialId: UUID, kind: UploadSessionCreate.Kind, filename: String, mimeType: String?, proxyMode: UploadSessionCreate.ProxyMode? = nil,
+                        awaitsProxy: Bool = false) async throws -> UploadRecord {
         let url = resolve(sourcePath)
         let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
         let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
-        let record = UploadRecord(materialId: materialId, kind: kind, proxyMode: proxyMode, sourcePath: sourcePath, filename: filename, mimeType: mimeType, sizeBytes: size, now: env.now())
+        var record = UploadRecord(materialId: materialId, kind: kind, proxyMode: proxyMode, sourcePath: sourcePath, filename: filename, mimeType: mimeType, sizeBytes: size, now: env.now())
+        if awaitsProxy, kind == .original { record.awaitsProxy = true }
         records[record.id] = record
         try store.save(record)
         Task { await self.step(record.id) }
@@ -90,6 +97,8 @@ public actor UploadEngine: TusTransportDelegate {
     public func resumeAll() async {
         await transport.setDelegate(self)
         for r in (try? store.loadAll()) ?? [] { records[r.id] = r }
+        // تحضير النسخة الخفيفة لا ينجو من إنهاء التطبيق: أصل ينتظر نسخة لم تصل الطابور يُرفع بلا نسخة خفيفة.
+        for rec in records.values where isHeldForProxy(rec) { releaseHold(rec.materialId) }
         let active = await transport.activePatchKeys()
         for var rec in records.values where !rec.phase.isTerminal {
             let id = rec.id
@@ -102,6 +111,38 @@ public actor UploadEngine: TusTransportDelegate {
                 Task { await self.step(id) }
             }
         }
+    }
+
+    /// تحضير النسخة الخفيفة انتهى أو فشل: أصل المادة لا ينتظرها بعد الآن.
+    public func releaseProxyHold(materialId: UUID) {
+        releaseHold(materialId)
+        wakeParked()
+    }
+
+    /// الانتظار لا يُكتب في السجل (حلقة الدفع تحفظ نسختها منه): يُرفع في الذاكرة، ووصول النسخة إلى الطابور يرفعه أيضًا.
+    private func releaseHold(_ materialId: UUID) { releasedProxyHolds.insert(materialId) }
+
+    private func isHeldForProxy(_ rec: UploadRecord) -> Bool {
+        rec.awaitsProxy == true && !releasedProxyHolds.contains(rec.materialId)
+            && !records.values.contains { $0.kind == .proxy && $0.materialId == rec.materialId }
+    }
+
+    /// النسخة الخفيفة أولًا في كل الطابور: أصل لم تُنشأ جلسته ينتظر ما دامت نسخة خفيفة غير منتهية، أو نسخته قيد التحضير.
+    func mustYieldToProxy(_ rec: UploadRecord) -> Bool {
+        guard rec.kind == .original else { return false }
+        if isHeldForProxy(rec) { return true }
+        return records.values.contains { $0.kind == .proxy && !$0.phase.isTerminal }
+    }
+
+    /// الأصول التي تنتظر الآن نسخة خفيفة (لتعرض الواجهة السبب بدل «جارٍ البدء»).
+    public func waitingForProxy() -> Set<UUID> {
+        Set(records.values.filter { $0.phase == .creatingSession && mustYieldToProxy($0) }.map(\.id))
+    }
+
+    private func wakeParked() {
+        let ids = parkedForProxy
+        parkedForProxy.removeAll()
+        for id in ids { Task { await self.step(id) } }
     }
 
     public func cancel(_ id: UUID) async {
@@ -132,6 +173,8 @@ public actor UploadEngine: TusTransportDelegate {
         records.removeAll()
         busy.removeAll()
         resyncing.removeAll()
+        parkedForProxy.removeAll()
+        releasedProxyHolds.removeAll()
         ingestRefreshes.removeAll()
         return ids.count
     }
@@ -197,6 +240,7 @@ public actor UploadEngine: TusTransportDelegate {
                     rec.sha256Hex = try await Task.detached(priority: .utility) { try hasher(source) }.value
                     setPhase(&rec, .creatingSession)
                 case .creatingSession:
+                    if mustYieldToProxy(rec) { parkedForProxy.insert(rec.id); return }
                     let body = UploadSessionCreate(materialId: rec.materialId, kind: rec.kind, sizeBytes: Int(rec.sizeBytes), filename: rec.filename, mimeType: rec.mimeType, proxyMode: rec.proxyMode, clientSha256: rec.sha256Hex)
                     let created = try await api.createSession(idempotencyKey: rec.createIdempotencyKey, body)
                     guard let endpoint = URL(string: created.tusEndpoint) else { throw UploadError.invalidEndpoint }
@@ -396,6 +440,7 @@ public actor UploadEngine: TusTransportDelegate {
         if phase.isTerminal { rec.inFlightOffset = nil }
         save(rec)
         emit(.phaseChanged(id: rec.id, phase: phase))
+        if rec.kind == .proxy, phase.isTerminal { wakeParked() }
     }
 
     private func save(_ rec: UploadRecord) {
