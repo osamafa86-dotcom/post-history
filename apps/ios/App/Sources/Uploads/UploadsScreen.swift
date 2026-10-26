@@ -166,8 +166,8 @@ struct ActiveUploadCard: View {
             }
             Text(bytesLine).vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
             bar(fraction: record.fractionTransferred, color: Color.vl.bgBrand)
-            ChunkBarsView(bars: chunkBars)
-            Text("chunks.status \(chunkBars.confirmedParts) \(chunkBars.totalParts) \(chunkBars.inFlightPart ?? 0)")
+            ChunkBarsView(bars: chunkBars.bars)
+            Text("chunks.status \(chunkBars.confirmedParts) \(chunkBars.totalParts) \(chunkBars.inFlightPart ?? min(chunkBars.confirmedParts + 1, chunkBars.totalParts))")
                 .vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
         }
         .accessibilityElement(children: .combine)
