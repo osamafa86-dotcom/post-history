@@ -227,4 +227,16 @@ describe('earnings and sandbox payouts', () => {
     expect(await balanceOf(r.token, 'ILS')).toMatchObject({ available: { amount_minor: 50_000 }, reserve: { amount_minor: 10_000 }, requestable: { amount_minor: 40_000 }, minimum: { amount_minor: 2_500 } });
     expect((await post(r.token, '/me/payout-requests', { amount: { amount_minor: 2_000, currency: 'ILS' }, channel: 'sandbox' }).expect(422)).body.code).toBe('payout_below_minimum');
   });
+
+  it('a request left processing by a stop between the two channel steps is paid on the next cycle', async () => {
+    const r = await funded(3_000n);
+    const created = (await post(r.token, '/me/payout-requests', { amount: { amount_minor: 1_000, currency: 'USD' }, channel: 'sandbox' }).expect(201)).body;
+    // الاعتماد والخطوة الأولى دون الثانية، كما لو توقفت العملية بينهما
+    await h.pool.query(`INSERT INTO payout_approvals (payout_request_id, approver_id) VALUES ($1, $2)`, [created.id, finance1.id]);
+    await h.pool.query(`UPDATE payout_requests SET state = 'approved', decided_at = now() WHERE id = $1`, [created.id]);
+    await h.pool.query(`UPDATE payout_requests SET state = 'processing', channel_ref = 'sandbox_stopped' WHERE id = $1`, [created.id]);
+    await worker.tick();
+    expect((await get(r.token, `/payout-requests/${created.id}`).expect(200)).body.state).toBe('paid');
+    expect(await balanceOf(r.token)).toMatchObject({ in_payout: { amount_minor: 0 }, paid: { amount_minor: 1_000 } });
+  });
 });

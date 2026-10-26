@@ -1,5 +1,5 @@
 import { Inject, Injectable, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
-import { asc, eq, sql } from 'drizzle-orm';
+import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import type { Logger } from 'pino';
 import { LOGGER } from '../common/logger';
@@ -90,9 +90,17 @@ export class PayoutWorker implements OnApplicationBootstrap, OnApplicationShutdo
     return written;
   }
 
-  /** القناة التجريبية: كل معتمد يُنفَّذ ثم يُصرف، كلٌّ في معاملته، ويعيد عدد ما صُرف. */
+  /**
+   * القناة التجريبية: كل معتمد يُنفَّذ ثم يُصرف، كلٌّ في معاملته، ويعيد عدد ما صُرف. ويُستأنف ما بقي `processing` إن توقفت
+   * العملية بين الخطوتين (قيد الصرف بمفتاحه مرة واحدة).
+   */
   async settleApproved(): Promise<number> {
-    const approved = await this.db.select({ id: payoutRequests.id }).from(payoutRequests).where(eq(payoutRequests.state, 'approved')).orderBy(asc(payoutRequests.decidedAt)).limit(100);
+    const approved = await this.db
+      .select({ id: payoutRequests.id })
+      .from(payoutRequests)
+      .where(inArray(payoutRequests.state, ['approved', 'processing']))
+      .orderBy(asc(payoutRequests.decidedAt))
+      .limit(100);
     let paid = 0;
     for (const { id } of approved) {
       await this.db.transaction(async (tx) => {

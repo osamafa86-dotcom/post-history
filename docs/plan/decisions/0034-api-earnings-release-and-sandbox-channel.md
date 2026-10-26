@@ -35,6 +35,8 @@
   - عامل دوري (`PAYOUT_WORKER_INTERVAL_MS`)، ويُنبَّه فورًا عند اكتمال الاعتماد.
   - ينقل `approved` إلى `processing` بمرجع `sandbox_…` عشوائي، ثم إلى `paid` بقيد `in_payout ← paid` (`payout:settle:<id>`).
   - كل خطوة في معاملتها بقفل الصف.
+  - الطلب الذي بقي `processing` لتوقف العملية بين الخطوتين يُستأنف في الدورة التالية، فقيد الصرف بمفتاحه لا يتكرر.
+    والقناة الحقيقية تسأل مزوّدها عن حالة `channel_ref` قبل الإعادة، لا تعيد الإرسال.
 - **السياسة الاحتياطية من الإعداد:**
   - `PAYOUT_DEFAULT_MINIMUM_MINOR` (5000)، و`PAYOUT_DEFAULT_DUAL_APPROVAL_ABOVE_MINOR` (100000)، و`PAYOUT_DEFAULT_RESERVE_BPS` (0).
   - الصف الساري من `/payout-policies` يحكم متى وُجد.
