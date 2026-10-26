@@ -268,6 +268,9 @@ const schema = z.object({
 
   // مزوّد الدفع (ADR 0032): none = لا شراء؛ sandbox = المزوّد التجريبي الداخلي، خارج الإنتاج وحده. لا مال حقيقي.
   PAYMENT_PROVIDER: z.enum(['none', 'sandbox']).default('none'),
+  // مرحلة النشر: trial = التجربة الميدانية؛ production = التشغيل الفعلي. المزوّد التجريبي في الإنتاج للتجربة وحدها بعلمين
+  DEPLOY_STAGE: z.enum(['local', 'trial', 'production']).optional(),
+  PAYMENT_SANDBOX_ALLOWED: z.enum(['0', '1']).default('0'),
   // سر توقيع إشعارات المزوّد التجريبي (HMAC-SHA256)، من البيئة وحدها
   SANDBOX_WEBHOOK_SECRET: z.string().min(32).max(128).optional(),
   // الأصل العام الذي تُبنى عليه روابط صفحة الدفع التجريبية
@@ -320,8 +323,14 @@ const validated = schema.superRefine((c, ctx) => {
   if (c.PAYMENT_PROVIDER === 'sandbox' && !c.SANDBOX_WEBHOOK_SECRET) {
     ctx.addIssue({ code: 'custom', path: ['SANDBOX_WEBHOOK_SECRET'], message: 'required with PAYMENT_PROVIDER=sandbox' });
   }
+  // ADR 0032: المزوّد التجريبي ممنوع دائمًا في مرحلة الإنتاج، وفي NODE_ENV=production لا يُقبل إلا للتجربة بعلمين معًا
+  if (c.PAYMENT_PROVIDER === 'sandbox' && c.DEPLOY_STAGE === 'production') {
+    ctx.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'sandbox is never allowed with DEPLOY_STAGE=production' });
+  }
   if (c.NODE_ENV !== 'production') return;
-  if (c.PAYMENT_PROVIDER === 'sandbox') ctx.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'sandbox is not allowed in production' });
+  if (c.PAYMENT_PROVIDER === 'sandbox' && !(c.DEPLOY_STAGE === 'trial' && c.PAYMENT_SANDBOX_ALLOWED === '1')) {
+    ctx.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'sandbox in production needs DEPLOY_STAGE=trial and PAYMENT_SANDBOX_ALLOWED=1' });
+  }
   if (c.ATTESTATION_MODE === 'test') ctx.addIssue({ code: 'custom', path: ['ATTESTATION_MODE'], message: 'test is not allowed in production' });
   if (c.APP_ATTEST_ALLOW_DEVELOPMENT) {
     ctx.addIssue({ code: 'custom', path: ['APP_ATTEST_ALLOW_DEVELOPMENT'], message: 'not allowed in production' });
@@ -371,4 +380,10 @@ export function fieldKeyring(c: AppConfig): FieldKeyring {
       ? { version: c.FIELD_ENCRYPTION_KEY_PREVIOUS_VERSION!, key: Buffer.from(c.FIELD_ENCRYPTION_KEY_PREVIOUS, 'base64') }
       : undefined,
   );
+}
+
+/** سطر تحذير عند كل إقلاع بالمزوّد التجريبي (ADR 0032)، فلا يمر تشغيله في بيئة دون أن يُرى في السجل. */
+export function sandboxBootWarning(c: Pick<AppConfig, 'PAYMENT_PROVIDER' | 'NODE_ENV' | 'DEPLOY_STAGE'>): string | null {
+  if (c.PAYMENT_PROVIDER !== 'sandbox') return null;
+  return `sandbox payment provider is active (NODE_ENV=${c.NODE_ENV}, DEPLOY_STAGE=${c.DEPLOY_STAGE ?? 'unset'}): no real money moves`;
 }

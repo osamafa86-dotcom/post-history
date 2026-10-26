@@ -1,7 +1,7 @@
 import { type DynamicModule, type INestApplication, Module, RequestMethod } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import type { Logger } from 'pino';
-import { APP_CONFIG, type AppConfig, blockListOf } from './config/config';
+import { APP_CONFIG, type AppConfig, blockListOf, sandboxBootWarning } from './config/config';
 import { internalOnly } from './common/internal-only';
 import { EtagInterceptor } from './common/preconditions';
 import { ErrorFilter } from './common/error.filter';
@@ -55,6 +55,8 @@ export function configureApp(app: INestApplication, config: AppConfig, logger: L
   express.set('etag', false);
   // X-Forwarded-For يُقبل من الوكلاء الموثوقين وحدهم (نطاقات Cloudflare)؛ وإلا req.ip = عنوان المقبس
   express.set('trust proxy', config.TRUSTED_PROXY_CIDRS.length > 0 ? config.TRUSTED_PROXY_CIDRS : false);
+  const sandbox = sandboxBootWarning(config);
+  if (sandbox) logger.warn(sandbox);
   app.use(requestLogging(logger));
   // كل استجابة من /v1 لا تُخزَّن في ذاكرة مؤقتة (متصفح أو وكيل أو حافة): فيها بيانات مصادَق عليها أو رموز
   app.use('/v1', (_req: unknown, res: { setHeader(name: string, value: string): void }, next: () => void) => {

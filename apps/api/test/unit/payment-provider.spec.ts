@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { loadConfig } from '../../src/config/config';
+import { loadConfig, sandboxBootWarning } from '../../src/config/config';
 import { money } from '../../src/commerce/money';
 import { SandboxPaymentProvider, signWebhook, verifySignedWebhook, WebhookSignatureError } from '../../src/commerce/payment-provider';
 
@@ -65,12 +65,33 @@ describe('sandbox payment provider', () => {
     expect(await p.refund({ providerRef: a.providerRef, amount: money(500, 'ILS'), idempotencyKey: 'r1' })).toEqual(r1);
   });
 
-  it('configuration: sandbox needs its webhook secret and never boots in production', () => {
+  describe('configuration (ADR 0032)', () => {
     const base = { DATABASE_URL: 'postgres://x', JWT_SECRET: 'j'.repeat(40), FIELD_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'), TUSD_HOOK_SECRET: 't'.repeat(40), S3_BUCKET_UPLOADS: 'uploads' };
-    expect(() => loadConfig({ ...base, NODE_ENV: 'test', PAYMENT_PROVIDER: 'sandbox' })).toThrow(/SANDBOX_WEBHOOK_SECRET/);
-    expect(loadConfig({ ...base, NODE_ENV: 'test', PAYMENT_PROVIDER: 'sandbox', SANDBOX_WEBHOOK_SECRET: secret }).PAYMENT_PROVIDER).toBe('sandbox');
-    expect(() => loadConfig({ ...base, NODE_ENV: 'production', REDIS_URL: 'redis://x', UPLOAD_VERIFIER: 'external', MEDIA_WORKER_TOKEN: 'm'.repeat(40), PAYMENT_PROVIDER: 'sandbox', SANDBOX_WEBHOOK_SECRET: secret })).toThrow(
-      /PAYMENT_PROVIDER/,
-    );
+    const prod = { ...base, NODE_ENV: 'production', REDIS_URL: 'redis://x', UPLOAD_VERIFIER: 'external', MEDIA_WORKER_TOKEN: 'm'.repeat(40) };
+    const sandbox = { PAYMENT_PROVIDER: 'sandbox', SANDBOX_WEBHOOK_SECRET: secret };
+
+    it('sandbox needs its webhook secret, and boots outside production', () => {
+      expect(() => loadConfig({ ...base, NODE_ENV: 'test', PAYMENT_PROVIDER: 'sandbox' })).toThrow(/SANDBOX_WEBHOOK_SECRET/);
+      expect(loadConfig({ ...base, NODE_ENV: 'test', ...sandbox }).PAYMENT_PROVIDER).toBe('sandbox');
+    });
+
+    it('in NODE_ENV=production it boots only with DEPLOY_STAGE=trial and PAYMENT_SANDBOX_ALLOWED=1 together', () => {
+      expect(() => loadConfig({ ...prod, ...sandbox })).toThrow(/PAYMENT_PROVIDER/);
+      expect(() => loadConfig({ ...prod, ...sandbox, DEPLOY_STAGE: 'trial' })).toThrow(/PAYMENT_PROVIDER/);
+      expect(() => loadConfig({ ...prod, ...sandbox, PAYMENT_SANDBOX_ALLOWED: '1' })).toThrow(/PAYMENT_PROVIDER/);
+      expect(() => loadConfig({ ...prod, ...sandbox, DEPLOY_STAGE: 'local', PAYMENT_SANDBOX_ALLOWED: '1' })).toThrow(/PAYMENT_PROVIDER/);
+      expect(loadConfig({ ...prod, ...sandbox, DEPLOY_STAGE: 'trial', PAYMENT_SANDBOX_ALLOWED: '1' }).PAYMENT_PROVIDER).toBe('sandbox');
+    });
+
+    it('DEPLOY_STAGE=production refuses sandbox always, whatever NODE_ENV and the flag', () => {
+      expect(() => loadConfig({ ...prod, ...sandbox, DEPLOY_STAGE: 'production', PAYMENT_SANDBOX_ALLOWED: '1' })).toThrow(/PAYMENT_PROVIDER/);
+      expect(() => loadConfig({ ...base, NODE_ENV: 'development', ...sandbox, DEPLOY_STAGE: 'production', PAYMENT_SANDBOX_ALLOWED: '1' })).toThrow(/PAYMENT_PROVIDER/);
+      expect(loadConfig({ ...prod, DEPLOY_STAGE: 'production' }).PAYMENT_PROVIDER).toBe('none');
+    });
+
+    it('every boot with sandbox writes a warning line; none without it', () => {
+      expect(sandboxBootWarning({ PAYMENT_PROVIDER: 'sandbox', NODE_ENV: 'production', DEPLOY_STAGE: 'trial' })).toMatch(/sandbox payment provider is active.*DEPLOY_STAGE=trial/);
+      expect(sandboxBootWarning({ PAYMENT_PROVIDER: 'none', NODE_ENV: 'production', DEPLOY_STAGE: 'production' })).toBeNull();
+    });
   });
 });
