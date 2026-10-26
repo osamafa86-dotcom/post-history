@@ -803,6 +803,41 @@
     "downloadHelp": "Every download is counted; the link is short-lived and never saved.",
     "downloadConflict": "Could not download: the limit is reached, the license is not active, or the package is not ready."
   },
+  "commission": {
+    "nav": "Commission rules",
+    "title": "Commission rules",
+    "lead": "The platform's share of each sale's net. The most specific rule applies: material, then reporter, then material type, then the default, and it is frozen into the sale's entry.",
+    "denied": "This page is for finance and system administrators.",
+    "readOnly": "View only: adding versions is for system administrators.",
+    "new": "New rule",
+    "newVersion": "New version",
+    "empty": "No rules yet.",
+    "scope": "Scope",
+    "scopes": {
+      "material": "Material",
+      "reporter": "Reporter",
+      "material_type": "Material type",
+      "default": "Default"
+    },
+    "target": "Target",
+    "allMaterials": "All materials",
+    "materialId": "Material ID",
+    "reporterId": "Reporter ID",
+    "licenseType": "License type",
+    "allTypes": "All types",
+    "platformShare": "Platform share",
+    "shareHelp": "Percent of net revenue after provider fees and tax; the rest goes to contributors by their shares.",
+    "effectiveFrom": "Effective from",
+    "effectiveHelp": "In your local time. Earlier sales keep what was frozen in them.",
+    "state": "Status",
+    "current": "Current",
+    "scheduled": "Scheduled",
+    "superseded": "Superseded",
+    "appendOnly": "Rules are never edited or deleted: saving adds a new version with its effective date.",
+    "invalid": "Complete the fields: a valid target for the scope, a share between 0 and {max}%, and an effective date.",
+    "save": "Add version",
+    "cancel": "Cancel"
+  },
   "orders": {
     "title": "My orders",
     "nav": "Cart and orders",
@@ -839,6 +874,37 @@
       "buyer": "cancelled by the buyer",
       "exclusivity_lost": "exclusivity lost",
       "rights_changed": "rights changed"
+    },
+    "staffNav": "Orders"
+  },
+  "refunds": {
+    "title": "Refunds",
+    "empty": "No refunds for this order.",
+    "created": "Requested",
+    "items": "Items",
+    "amount": "Amount",
+    "reason": "Reason",
+    "status": "Status",
+    "choose": "Items to refund",
+    "total": "Refund amount:",
+    "effect": "Each refunded item's license is revoked at once and its download stops. The amount is the sum of the items' frozen prices; there is no free amount.",
+    "submit": "Request refund",
+    "pendingHelp": "A pending refund waits for the provider's signed confirmation.",
+    "nothingLeft": "Every item is refunded or in a pending refund.",
+    "paidOnly": "Only a paid order can be refunded.",
+    "conflict": "Could not refund: the order changed state or an item was already refunded. Refresh the page.",
+    "statuses": {
+      "pending": "Pending",
+      "succeeded": "Succeeded",
+      "failed": "Failed"
+    },
+    "reasons": {
+      "buyer_request": "Buyer request",
+      "duplicate": "Duplicate purchase",
+      "rights_withdrawn": "Rights withdrawn",
+      "dispute": "Dispute",
+      "exclusivity_lost": "Exclusivity lost",
+      "other": "Other"
     }
   }
 }
