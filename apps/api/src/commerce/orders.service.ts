@@ -150,7 +150,8 @@ export class OrdersService {
       const session = await provider.createCheckout({
         orderId: id,
         amount: money(o.totalMinor, o.currency as Currency),
-        returnUrl: this.config.SANDBOX_CHECKOUT_BASE_URL,
+        // صفحة الويب من الإعداد وحده بمعرّف الطلب؛ بلا قالب لا عودة
+        returnUrl: this.config.SANDBOX_RETURN_URL ? this.config.SANDBOX_RETURN_URL.replace('{order_id}', id) : '',
         idempotencyKey: `checkout:${id}`,
       });
       await tx.update(orders).set({ provider: provider.name, providerRef: session.providerRef }).where(eq(orders.id, id));
