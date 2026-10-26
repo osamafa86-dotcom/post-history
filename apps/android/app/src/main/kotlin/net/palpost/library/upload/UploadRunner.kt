@@ -25,7 +25,14 @@ class UploadRunner(private val context: Context, private val container: AppConta
         var remaining = false
         val pending = container.uploadStore.pending()
         // A revoked or wiped session stops the transfer at the next chunk, not at the next task (SEC-01).
-        val stop = { shouldStop() || container.auth.state.value !is AuthState.SignedIn }
+        // A pause, or a metered network under "Wi-Fi only", stops at the next chunk too (A2); bytes already
+        // confirmed by the server stay, and the next run resumes from them.
+        val settings = container.settings
+        val connectivity = context.getSystemService(android.net.ConnectivityManager::class.java)
+        val stop = {
+            shouldStop() || container.auth.state.value !is AuthState.SignedIn || settings.uploadsPaused ||
+                (settings.uploadOverWifiOnly && connectivity?.isActiveNetworkMetered != false)
+        }
         pending.forEachIndexed { index, task ->
             if (stop()) { remaining = true; return@forEachIndexed }
             progress.update(index, pending.size, (task.progress * 100).toInt())
@@ -42,6 +49,7 @@ class UploadRunner(private val context: Context, private val container: AppConta
                 RunOutcome.Stopped, is RunOutcome.Pending -> remaining = true
             }
         }
-        remaining
+        // While paused nothing is left for the system to reschedule: the reporter resumes from A2.
+        remaining && !settings.uploadsPaused
     }
 }
