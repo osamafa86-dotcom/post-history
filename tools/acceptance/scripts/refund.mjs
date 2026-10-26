@@ -1,3 +1,4 @@
-import { runPending } from "../lib/pending.mjs";
+import { runDelegated } from "../lib/delegate.mjs";
 
-export const run = () => runPending("refund");
+// «الاسترداد»: القيد العكسي قبل الصرف (في sandbox-purchase) وبعده (refund-after-payout)، يشغَّلان معًا بـ live/run.mjs.
+export const run = () => runDelegated("refund", ["sandbox-purchase", "refund-after-payout"]);
