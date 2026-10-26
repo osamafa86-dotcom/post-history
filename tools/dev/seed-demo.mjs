@@ -26,20 +26,29 @@ export function verifyCommerce(doc, refunded) {
   if(!doc || doc.result==='fail' || doc.metrics?.checks_failed || !refunded) throw new Error('sandbox refund verification incomplete');
 }
 export const states = i => ({technical:['pending','proxy_received','original_received','verified','failed'][i%5], editorial:['inbox','acknowledged','reviewing','needs_changes','accepted','in_production','final_review','published','rejected'][i%9], rights:['unknown','documented','sellable','blocked','withdrawn'][i%5]});
+export function failureMessage(phase) {
+  const known=['configuration','ffmpeg','database','base_seed','accounts','media','materials','sandbox_purchase','refund_verification','paid_order','credentials'];
+  return `Demo seed failed at ${known.includes(phase)?phase:'unknown'}; partial data may remain. Credentials are not logged.`;
+}
 export async function run(env=process.env) {
+  let phase='configuration',dir,db;
+  try {
   requireDemo(env);
   localOnly(env.TUS_URL,['http:']);
   localOnly(env.ROOT_URL,['http:']);
   if (!env.SP_WEBHOOK_SECRET) throw new Error('sandbox webhook configuration required');
+  phase='ffmpeg';
   await exec('ffmpeg',['-version']);
-  const dir=await mkdtemp(join(tmpdir(),'newsroom-demo-'));
-  const db=new pg.Client({connectionString:env.DATABASE_URL});
+  dir=await mkdtemp(join(tmpdir(),'newsroom-demo-'));
+  phase='database';
+  db=new pg.Client({connectionString:env.DATABASE_URL});
   await db.connect();
-  try {
+    phase='base_seed';
     // نفس المصدر الذي يستعمله rehearsal-accounts؛ لا نكرر منطق الحسابات والأدوار.
     const s=await seed({databaseUrl:env.DATABASE_URL,apiUrl:env.API_URL});
     const officeIds=(await db.query('SELECT DISTINCT office_id FROM users WHERE id = ANY($1::uuid[]) AND office_id IS NOT NULL',[Object.values(s.users).map(u=>u.id)])).rows.map(r=>r.office_id);
     for(let i=0;i<officeIds.length;i++) await db.query('UPDATE offices SET name_ar=$1,name_en=$2 WHERE id=$3',[`مكتب اصطناعي ${i+1}`,`Synthetic office ${i+1}`,officeIds[i]]);
+    phase='accounts';
     const credentials=Object.entries(s.users).map(([role,u])=>({role,email:u.email,password:s.password}));
     const reporters=[s.users.reporter,s.users.reporter_b,s.users.victim_reporter];
     for(let i=0;i<3;i++) {
@@ -54,10 +63,12 @@ export async function run(env=process.env) {
     // إزالة قيَم الاختبار الكاشفة من مواد seed نفسها قبل استعمالها في العروض.
     await db.query("UPDATE materials SET gps_enc=NULL,title='مادة اصطناعية تمهيدية',city='مدينة اصطناعية' WHERE id=ANY($1::uuid[])",[[s.uploads.materialA,s.uploads.materialB]]);
     const http=client(env.API_URL);
+    phase='media';
     const file=join(dir,'synthetic.mp4');
     await exec('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=size=640x360:rate=25','-f','lavfi','-i','sine=frequency=440','-t','4','-c:v','mpeg4','-c:a','aac','-y',file]);
     const digest=createHash('sha256'); for await(const block of createReadStream(file)) digest.update(block);
     const sha=digest.digest('hex'),size=(await stat(file)).size;
+    phase='materials';
     const materialIds=await populateMaterials(async i=> {
       const m=await http.call(s.tokens.reporter,'POST','/materials',{body:materialBody(s.formVersion,`مادة اصطناعية ${i+1}`,{city:`مدينة اصطناعية ${i%2+1}`})});
       if(m.status!==201) throw new Error('demo material creation failed');
@@ -78,14 +89,17 @@ export async function run(env=process.env) {
     const materialCount=(await db.query('SELECT count(*)::int AS n FROM materials WHERE id=ANY($1::uuid[])',[materialIds])).rows[0].n;
     if(materialCount!==DEMO_MATERIAL_COUNT)throw new Error('demo material count mismatch');
     // الأداة المشتركة تمر عبر المزوّد التجريبي وتتحقق من القيد والترخيص والاسترداد المتاح؛ لا نكررها.
+    phase='sandbox_purchase';
     await exec(process.execPath, [resolve('tools/acceptance/live/sandbox-purchase.mjs')], {env:{...env,SP_API_URL:env.API_URL,SP_ROOT_URL:localOnly(env.ROOT_URL,['http:']),SP_DATABASE_URL:env.DATABASE_URL,SP_TOKENS:JSON.stringify(s.tokens),ACCEPTANCE_RESULTS_DIR:dir},maxBuffer:1024*1024});
     const {readdir,readFile}=await import('node:fs/promises');
     const reports=await readdir(dir);
     const report=reports.find(p=>p.endsWith('.json'));
     const commerce=report?JSON.parse(await readFile(join(dir,report),'utf8')):null;
+    phase='refund_verification';
     const refunded=(await db.query("SELECT count(*)::int AS n FROM orders WHERE organization_id=(SELECT organization_id FROM users WHERE id=$1) AND status='refunded'",[s.users.buyer_admin.id])).rows[0].n;
     verifyCommerce(commerce,refunded);
     // بيعة ثانية تبقى مدفوعة للعرض؛ الأولى تعرض الاسترداد والترخيص المبطل.
+    phase='paid_order';
     const offer=(await db.query("SELECT o.listing_id,o.license_template_id FROM listing_offers o JOIN catalog_listings l ON l.id=o.listing_id JOIN materials m ON m.id=l.material_id JOIN license_templates t ON t.id=o.license_template_id WHERE m.reporter_id=$1 AND l.state='listed' AND t.type='editorial_single' LIMIT 1",[s.users.reporter.id])).rows[0];
     if(!offer)throw new Error('synthetic listing unavailable');
     const paid=await http.call(s.tokens.buyer_admin,'POST','/orders',{body:{items:[offer]}});
@@ -104,7 +118,9 @@ export async function run(env=process.env) {
     }
     if(!licensed||(await http.get(s.tokens.buyer_admin,`/orders/${paid.body.id}`)).body.status!=='paid')throw new Error('paid license not issued');
     // قناة واحدة، مرة واحدة فقط، لا ملف حسابات أو رموز جلسة.
+    phase='credentials';
     process.stdout.write(JSON.stringify({synthetic:true,accounts:credentials,materials:materialCount,commerce:commerce.result})+'\n');
-  } finally { await db.end(); await rm(dir,{recursive:true,force:true}); }
+  } catch { throw new Error(failureMessage(phase)); }
+  finally { if(db)await db.end().catch(()=>{}); if(dir)await rm(dir,{recursive:true,force:true}).catch(()=>{}); }
 }
-if(process.argv[1] && resolve(process.argv[1])===new URL(import.meta.url).pathname) run().catch(()=>{console.error('Demo seed failed; inspect local services without logging credentials.');process.exitCode=1;});
+if(process.argv[1] && resolve(process.argv[1])===new URL(import.meta.url).pathname) run().catch(error=>{console.error(error.message);process.exitCode=1;});

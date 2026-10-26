@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {localOnly,requireDemo} from './local-only.mjs';
-import {states,populateMaterials,DEMO_MATERIAL_COUNT,verifyCommerce} from './seed-demo.mjs';
+import {states,populateMaterials,DEMO_MATERIAL_COUNT,verifyCommerce,failureMessage,run} from './seed-demo.mjs';
 test('refuse external services and require explicit disposable database consent',()=>{
   assert.throws(()=>requireDemo({}));
   assert.throws(()=>localOnly('https:'+String.fromCharCode(47,47)+'external',['http:']));
@@ -28,4 +28,10 @@ test('deferred link inspection is allowed but an actual refund is required',()=>
   assert.throws(()=>verifyCommerce(doc,0));
   assert.throws(()=>verifyCommerce({...doc,result:'fail'},1));
   assert.throws(()=>verifyCommerce({...doc,metrics:{checks_failed:1}},1));
+});
+
+test('failure phase is safe and preflight remains nonzero',async()=>{
+  assert.match(failureMessage('sandbox_purchase'),/sandbox_purchase/);
+  assert.equal(failureMessage('secret-token-not-for-output').includes('secret-token'),false);
+  await assert.rejects(()=>run({}),/failed at configuration/);
 });
