@@ -37,7 +37,19 @@ const INGREDIENT_KEYS = new Set(["title", "format", "instance_id", "relationship
 const ASSERTIONS = new Set(["c2pa.actions.v2", "stds.schema-org.CreativeWork", "c2pa.hash.bmff.v3", "c2pa.hash.bmff.v2", "c2pa.hash.data"]);
 const ACTIONS = new Set(["c2pa.opened", "c2pa.transcoded", "c2pa.edited", "c2pa.color_adjustments"]);
 const STEP_KEYS = new Set(["action", "parameters", "softwareAgent"]);
-const GPS = [/[+-]\d{1,2}\.\d{2,}[+-]\d{1,3}\.\d{2,}/, /GPS/i, /\blat(itude)?\b/i, /\blon(gitude)?\b/i, /ISO6709/i];
+const POSITION = /[+-]\d{1,2}\.\d{2,}[+-]\d{1,3}\.\d{2,}/; // ISO 6709 shaped: scanned in the whole text, a digit pattern with dots does not occur in base64
+// Words about a position are looked for in field names and in readable string values only. The report also holds signatures, hashes and
+// certificate fields: base64 or hex blobs a few thousand characters long, in which "GPS" (three letters, either case) turns up by chance
+// in about one manifest in ten, which made media e2e fail at random.
+const GPS_WORDS = [/GPS/i, /\blat(itude)?\b/i, /\blon(gitude)?\b/i, /ISO6709/i];
+const OPAQUE = /^[A-Za-z0-9+/=_-]{16,}$/;
+/** Every key and every string value of a JSON document that is readable text, not an opaque blob. */
+export function readableParts(node, out = []) {
+  if (Array.isArray(node)) node.forEach((x) => readableParts(x, out));
+  else if (node && typeof node === "object") for (const [k, v] of Object.entries(node)) { out.push(k); readableParts(v, out); }
+  else if (typeof node === "string" && !OPAQUE.test(node)) out.push(node);
+  return out;
+}
 
 const WORKER_SIGN = `import json, os
 from pathlib import Path
@@ -133,7 +145,9 @@ export function judgeManifest(report, { source, publisher = PUBLISHER, planted =
   if (!opened) bad.push("the first action is not c2pa.opened");
   const text = JSON.stringify(report), lower = hexOf(text);
   for (const v of planted) if (text.includes(v)) bad.push(`planted value in the manifest: ${v}`);
-  for (const re of GPS) if (re.test(text)) bad.push(`position-like text in the manifest: ${re}`);
+  if (POSITION.test(text)) bad.push(`position-like text in the manifest: ${POSITION}`);
+  const readable = readableParts(report);
+  for (const re of GPS_WORDS) if (readable.some((t) => re.test(t))) bad.push(`position-like text in the manifest: ${re}`);
   if (sha256) for (const f of shaForms(sha256)) if (text.includes(f) || lower.includes(hexOf(f))) bad.push("the original's SHA-256 is in the manifest");
   return bad;
 }
