@@ -1,0 +1,350 @@
+{
+ "format_version": 1,
+ "note": "القاموس المعتمد للتفريغ (ADR 0066): أسماء أماكن ومؤسسات عامة في السياق الفلسطيني. لا أسماء أشخاص، فأسماء المصادر محمية.",
+ "entries": [
+  {
+   "term": "القدس",
+   "kind": "place"
+  },
+  {
+   "term": "رام الله",
+   "kind": "place"
+  },
+  {
+   "term": "البيرة",
+   "kind": "place"
+  },
+  {
+   "term": "نابلس",
+   "kind": "place"
+  },
+  {
+   "term": "الخليل",
+   "kind": "place"
+  },
+  {
+   "term": "بيت لحم",
+   "kind": "place"
+  },
+  {
+   "term": "أريحا",
+   "kind": "place"
+  },
+  {
+   "term": "جنين",
+   "kind": "place"
+  },
+  {
+   "term": "طولكرم",
+   "kind": "place"
+  },
+  {
+   "term": "قلقيلية",
+   "kind": "place"
+  },
+  {
+   "term": "سلفيت",
+   "kind": "place"
+  },
+  {
+   "term": "طوباس",
+   "kind": "place"
+  },
+  {
+   "term": "غزة",
+   "kind": "place"
+  },
+  {
+   "term": "خان يونس",
+   "kind": "place"
+  },
+  {
+   "term": "رفح",
+   "kind": "place"
+  },
+  {
+   "term": "دير البلح",
+   "kind": "place"
+  },
+  {
+   "term": "بيت حانون",
+   "kind": "place"
+  },
+  {
+   "term": "بيت لاهيا",
+   "kind": "place"
+  },
+  {
+   "term": "جباليا",
+   "kind": "place"
+  },
+  {
+   "term": "مخيم جنين",
+   "kind": "place"
+  },
+  {
+   "term": "مخيم بلاطة",
+   "kind": "place"
+  },
+  {
+   "term": "مخيم الدهيشة",
+   "kind": "place"
+  },
+  {
+   "term": "مخيم عسكر",
+   "kind": "place"
+  },
+  {
+   "term": "مخيم نور شمس",
+   "kind": "place"
+  },
+  {
+   "term": "مخيم الشاطئ",
+   "kind": "place"
+  },
+  {
+   "term": "مخيم النصيرات",
+   "kind": "place"
+  },
+  {
+   "term": "مخيم البريج",
+   "kind": "place"
+  },
+  {
+   "term": "مخيم المغازي",
+   "kind": "place"
+  },
+  {
+   "term": "مخيم قلنديا",
+   "kind": "place"
+  },
+  {
+   "term": "مخيم الجلزون",
+   "kind": "place"
+  },
+  {
+   "term": "مخيم عايدة",
+   "kind": "place"
+  },
+  {
+   "term": "مخيم العروب",
+   "kind": "place"
+  },
+  {
+   "term": "مخيم الفوار",
+   "kind": "place"
+  },
+  {
+   "term": "بيت أمر",
+   "kind": "place"
+  },
+  {
+   "term": "يطا",
+   "kind": "place"
+  },
+  {
+   "term": "دورا",
+   "kind": "place"
+  },
+  {
+   "term": "الظاهرية",
+   "kind": "place"
+  },
+  {
+   "term": "حلحول",
+   "kind": "place"
+  },
+  {
+   "term": "بني نعيم",
+   "kind": "place"
+  },
+  {
+   "term": "عقربا",
+   "kind": "place"
+  },
+  {
+   "term": "بيتا",
+   "kind": "place"
+  },
+  {
+   "term": "حوارة",
+   "kind": "place"
+  },
+  {
+   "term": "قصرة",
+   "kind": "place"
+  },
+  {
+   "term": "سنجل",
+   "kind": "place"
+  },
+  {
+   "term": "ترمسعيا",
+   "kind": "place"
+  },
+  {
+   "term": "المغير",
+   "kind": "place"
+  },
+  {
+   "term": "بيرزيت",
+   "kind": "place"
+  },
+  {
+   "term": "سلواد",
+   "kind": "place"
+  },
+  {
+   "term": "كفر مالك",
+   "kind": "place"
+  },
+  {
+   "term": "عزون",
+   "kind": "place"
+  },
+  {
+   "term": "يعبد",
+   "kind": "place"
+  },
+  {
+   "term": "قباطية",
+   "kind": "place"
+  },
+  {
+   "term": "عرابة",
+   "kind": "place"
+  },
+  {
+   "term": "طمون",
+   "kind": "place"
+  },
+  {
+   "term": "العوجا",
+   "kind": "place"
+  },
+  {
+   "term": "الزوايدة",
+   "kind": "place"
+  },
+  {
+   "term": "عبسان",
+   "kind": "place"
+  },
+  {
+   "term": "بني سهيلا",
+   "kind": "place"
+  },
+  {
+   "term": "خزاعة",
+   "kind": "place"
+  },
+  {
+   "term": "الشجاعية",
+   "kind": "place"
+  },
+  {
+   "term": "الرمال",
+   "kind": "place"
+  },
+  {
+   "term": "تل الهوى",
+   "kind": "place"
+  },
+  {
+   "term": "الشيخ جراح",
+   "kind": "place"
+  },
+  {
+   "term": "سلوان",
+   "kind": "place"
+  },
+  {
+   "term": "العيسوية",
+   "kind": "place"
+  },
+  {
+   "term": "شعفاط",
+   "kind": "place"
+  },
+  {
+   "term": "باب العامود",
+   "kind": "place"
+  },
+  {
+   "term": "المسجد الأقصى",
+   "kind": "place"
+  },
+  {
+   "term": "الحرم الإبراهيمي",
+   "kind": "place"
+  },
+  {
+   "term": "معبر رفح",
+   "kind": "place"
+  },
+  {
+   "term": "معبر كرم أبو سالم",
+   "kind": "place"
+  },
+  {
+   "term": "حاجز قلنديا",
+   "kind": "place"
+  },
+  {
+   "term": "حاجز حوارة",
+   "kind": "place"
+  },
+  {
+   "term": "شارع صلاح الدين",
+   "kind": "place"
+  },
+  {
+   "term": "الأونروا",
+   "kind": "org"
+  },
+  {
+   "term": "الهلال الأحمر الفلسطيني",
+   "kind": "org"
+  },
+  {
+   "term": "وزارة الصحة",
+   "kind": "org"
+  },
+  {
+   "term": "الدفاع المدني",
+   "kind": "org"
+  },
+  {
+   "term": "مستشفى الشفاء",
+   "kind": "org"
+  },
+  {
+   "term": "مستشفى ناصر",
+   "kind": "org"
+  },
+  {
+   "term": "المستشفى الأهلي",
+   "kind": "org"
+  },
+  {
+   "term": "مستشفى رفيديا",
+   "kind": "org"
+  },
+  {
+   "term": "مجمع فلسطين الطبي",
+   "kind": "org"
+  },
+  {
+   "term": "جامعة بيرزيت",
+   "kind": "org"
+  },
+  {
+   "term": "جامعة النجاح",
+   "kind": "org"
+  },
+  {
+   "term": "الجامعة الإسلامية",
+   "kind": "org"
+  }
+ ]
+}
