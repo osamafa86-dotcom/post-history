@@ -86,12 +86,14 @@ public actor UploadEngine: TusTransportDelegate {
     /// `awaitsProxy`: أصل تُحضَّر نسخته الخفيفة الآن؛ يُبصم لكن لا تُنشأ جلسته حتى `releaseProxyHold` أو وصول النسخة إلى الطابور.
     @discardableResult
     public func enqueue(sourcePath: String, materialId: UUID, kind: UploadSessionCreate.Kind, filename: String, mimeType: String?, proxyMode: UploadSessionCreate.ProxyMode? = nil,
-                        awaitsProxy: Bool = false) async throws -> UploadRecord {
+                        awaitsProxy: Bool = false, materialTitle: String? = nil, materialPriority: String? = nil) async throws -> UploadRecord {
         let url = resolve(sourcePath)
         let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
         let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
         var record = UploadRecord(materialId: materialId, kind: kind, proxyMode: proxyMode, sourcePath: sourcePath, filename: filename, mimeType: mimeType, sizeBytes: size, now: env.now())
         if awaitsProxy, kind == .original { record.awaitsProxy = true }
+        record.materialTitle = materialTitle
+        record.materialPriority = materialPriority
         records[record.id] = record
         try store.save(record)
         Task { await self.step(record.id) }
@@ -105,7 +107,7 @@ public actor UploadEngine: TusTransportDelegate {
         // تحضير النسخة الخفيفة لا ينجو من إنهاء التطبيق: أصل ينتظر نسخة لم تصل الطابور يُرفع بلا نسخة خفيفة.
         for rec in records.values where isHeldForProxy(rec) { releaseHold(rec.materialId) }
         let active = await transport.activePatchKeys()
-        for var rec in records.values where !rec.phase.isTerminal {
+        for var rec in records.values where !rec.phase.isTerminal && rec.isPaused != true {
             let id = rec.id
             if rec.phase == .transferring, let off = rec.inFlightOffset, active.contains(TusTaskKey(uploadId: rec.id, offset: off)) { continue }
             if rec.phase == .transferring {
@@ -116,6 +118,39 @@ public actor UploadEngine: TusTransportDelegate {
                 Task { await self.step(id) }
             }
         }
+    }
+
+    /// إيقاف مؤقت بطلب المراسل: تُلغى مهمة الجزء الجارية، ولا يُجدوَل جزء حتى `resume`. ما أكّده الخادم لا يضيع.
+    public func pause(_ id: UUID) async {
+        guard var rec = records[id], !rec.phase.isTerminal, rec.isPaused != true else { return }
+        rec.isPaused = true
+        rec.inFlightOffset = nil // نتيجة المهمة الملغاة إن وصلت لاحقًا تُهمَل كحدث قديم
+        save(rec, settingPause: true)
+        retryTasks[id]?.cancel()
+        retryTasks[id] = nil
+        await transport.cancel(uploadId: id)
+        emit(.phaseChanged(id: id, phase: rec.phase))
+    }
+
+    /// الاستئناف من موضع الخادم (HEAD) إن كان النقل قد بدأ، وإلا من المرحلة التي توقف عندها.
+    public func resume(_ id: UUID) async {
+        guard var rec = records[id], rec.isPaused == true else { return }
+        rec.isPaused = nil
+        if rec.phase == .transferring { rec.inFlightOffset = nil }
+        save(rec, settingPause: true)
+        emit(.phaseChanged(id: id, phase: rec.phase))
+        if rec.phase == .transferring { await resync(id) } else { await step(id) }
+    }
+
+    /// إعادة المحاولة بعد فشل نهائي: سجل جديد بجلسة جديدة للملف نفسه (البصمة تُحسب من جديد)، ويُزال السجل الفاشل.
+    /// لا شيء إن كان الملف المحلي قد حُذف.
+    @discardableResult
+    public func retry(_ id: UUID) async throws -> UploadRecord? {
+        guard let rec = records[id], case .failed = rec.phase, FileManager.default.fileExists(atPath: resolve(rec.sourcePath).path) else { return nil }
+        let fresh = try await enqueue(sourcePath: rec.sourcePath, materialId: rec.materialId, kind: rec.kind, filename: rec.filename, mimeType: rec.mimeType,
+                                      proxyMode: rec.proxyMode, materialTitle: rec.materialTitle, materialPriority: rec.materialPriority)
+        try? remove(id)
+        return fresh
     }
 
     /// تحضير النسخة الخفيفة انتهى أو فشل: أصل المادة لا ينتظرها بعد الآن.
@@ -254,7 +289,7 @@ public actor UploadEngine: TusTransportDelegate {
         guard !busy.contains(id) else { return }
         busy.insert(id)
         defer { busy.remove(id) }
-        while var rec = records[id], !rec.phase.isTerminal {
+        while var rec = records[id], !rec.phase.isTerminal, rec.isPaused != true {
             do {
                 switch rec.phase {
                 case .hashing:
@@ -304,6 +339,8 @@ public actor UploadEngine: TusTransportDelegate {
                     rec.inFlightOffset = chunk.offset
                     save(rec)
                     try await transport.schedulePatch(request)
+                    // أُوقف الرفع أثناء الجدولة: الإلغاء سبق تسجيل المهمة، فيُلغى الجزء الآن.
+                    if records[id]?.isPaused == true { await transport.cancel(uploadId: id); return }
                     // قد تصل نتيجة الجزء أثناء الجدولة (والمستدعي من الحدث يجد السجل مشغولًا)؛ تُعاد قراءة الحالة بدل الخروج.
                     continue
                 case .completing:
@@ -381,7 +418,8 @@ public actor UploadEngine: TusTransportDelegate {
 
     /// يسأل الخادم عن موضعه (HEAD) ويُعيد مواءمة الأجزاء المُجهَّزة، ثم يستأنف.
     private func resync(_ id: UUID, refreshIngest: Bool = false) async {
-        guard let rec = records[id], rec.phase == .transferring, rec.inFlightOffset == nil, let url = rec.tusUploadURL, !resyncing.contains(id) else { return }
+        guard let rec = records[id], rec.phase == .transferring, rec.inFlightOffset == nil, let url = rec.tusUploadURL, !resyncing.contains(id),
+              rec.isPaused != true else { return }
         resyncing.insert(id)
         let head: Result<Int64, any Error>
         do {
@@ -466,8 +504,14 @@ public actor UploadEngine: TusTransportDelegate {
         if rec.kind == .proxy, phase.isTerminal { wakeParked() }
     }
 
-    private func save(_ rec: UploadRecord) {
+    /// `pause` و`resume` وحدهما يغيّران علم الإيقاف؛ أي حفظ آخر (نسخة محلية قديمة بعد انتظار) يُبقي العلم المخزَّن،
+    /// والمسجَّل الموقوف لا يحمل جزءًا جاريًا.
+    private func save(_ rec: UploadRecord, settingPause: Bool = false) {
         var r = rec
+        if !settingPause, let stored = records[r.id] {
+            r.isPaused = stored.isPaused
+            if stored.isPaused == true { r.inFlightOffset = nil }
+        }
         r.updatedAt = env.now()
         records[r.id] = r
         try? store.save(r)

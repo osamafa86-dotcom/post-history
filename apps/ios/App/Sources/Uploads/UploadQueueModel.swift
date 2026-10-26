@@ -1,5 +1,7 @@
 import Foundation
+import MaterialsCore
 import MediaCore
+import Network
 import PostHistoryAPI
 import SwiftUI
 import UIKit
@@ -13,15 +15,48 @@ final class UploadQueueModel: ObservableObject {
     /// أصول تنتظر نسخة خفيفة في الطابور، ومواد تُحضَّر نسختها الآن (ADR 0075).
     @Published private(set) var waitingForProxy: Set<UUID> = []
     @Published private(set) var preparingProxy: Set<UUID> = []
+    /// الشبكة كما تراها بطاقة الرفع (المواصفة A2): بلا شبكة، أو بانتظار Wi‑Fi حين يكون «Wi‑Fi فقط» مفعّلًا.
+    enum NetworkState: Equatable { case online, offline, waitingForWifi }
+    @Published private(set) var networkState: NetworkState = .online
+    /// الزمن المتبقي التقديري لكل سجل من سرعة آخر 30 ثانية؛ يغيب بلا عيّنات كافية أو بلا شبكة.
+    @Published private(set) var etaSeconds: [UUID: TimeInterval] = [:]
+    /// مسودات «مادة جديدة» المحفوظة على الجهاز (تظهر أعلى شاشة الرفع).
+    @Published private(set) var drafts: [MaterialDraft] = []
+    /// إيصال وصل للتو: يُعرض شاشة الإيصال تلقائيًا (A3).
+    @Published var presentedReceipt: ReceiptTarget?
     let engine: UploadEngine
     let settings: AppSettings
+    let draftStore: FileDraftStore?
     private let transcoder: any ProxyTranscoder = AVFoundationProxyTranscoder()
     private var proxyTasks: [UUID: Task<Void, Never>] = [:]
     private var watcher: Task<Void, Never>?
+    private var estimators: [UUID: TransferRateEstimator] = [:]
+    private var pathMonitor: NWPathMonitor?
+    private var lastPath: (satisfied: Bool, expensive: Bool, constrained: Bool) = (true, false, false)
 
     init(engine: UploadEngine, settings: AppSettings) {
         self.engine = engine
         self.settings = settings
+        draftStore = try? FileDraftStore(directory: UploadServices.shared.draftsDirectory)
+        drafts = draftStore?.loadAll() ?? []
+    }
+
+    private func startPathMonitor() {
+        pathMonitor?.cancel()
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            let snapshot = (path.status == .satisfied, path.isExpensive, path.isConstrained)
+            Task { @MainActor in self?.lastPath = snapshot; self?.updateNetworkState() }
+        }
+        monitor.start(queue: DispatchQueue(label: "net.palpost.posthistory.uploads.path"))
+        pathMonitor = monitor
+    }
+
+    func updateNetworkState() {
+        if !lastPath.satisfied { networkState = .offline }
+        else if settings.uploadOverWifiOnly, lastPath.expensive || lastPath.constrained { networkState = .waitingForWifi }
+        else { networkState = .online }
+        if networkState != .online { etaSeconds = [:]; for id in estimators.keys { estimators[id]?.reset() } }
     }
 
     func start() {
@@ -32,10 +67,19 @@ final class UploadQueueModel: ObservableObject {
             await engine.resumeAll()
             await refresh()
             removeHalfWrittenLightCopies()
+            startPathMonitor()
             for await event in stream {
-                if case .phaseChanged(let id, let phase) = event {
+                switch event {
+                case .phaseChanged(let id, let phase):
                     SafeLog.phase(id, phase)
                     if case .verified = phase { await receiptArrived(id) }
+                    if case .deduplicated = phase { await receiptArrived(id) }
+                    if phase.isTerminal { estimators[id] = nil; etaSeconds[id] = nil }
+                case .progress(let id, let confirmed, let size):
+                    estimators[id, default: TransferRateEstimator()].record(offset: confirmed, at: Date())
+                    etaSeconds[id] = networkState == .online ? estimators[id]?.secondsRemaining(sizeBytes: size, confirmedOffset: confirmed) : nil
+                case .retryScheduled:
+                    break
                 }
                 await refresh()
             }
@@ -50,6 +94,7 @@ final class UploadQueueModel: ObservableObject {
 
     private func receiptArrived(_ id: UUID) async {
         guard let rec = await engine.record(id) else { return }
+        if rec.kind == .original { presentedReceipt = ReceiptTarget(materialId: rec.materialId, recordId: rec.id) }
         // النسخة الخفيفة مشتقة يصنعها التطبيق: تُحذف دائمًا بعد إيصالها. الأصل قرار المراسل.
         guard rec.kind == .proxy || settings.deleteLocalAfterReceipt else { return }
         UploadServices.shared.deleteLocalCopy(relativePath: rec.sourcePath)
@@ -67,17 +112,40 @@ final class UploadQueueModel: ObservableObject {
         await refresh()
     }
 
+    func pause(_ rec: UploadRecord) async { await engine.pause(rec.id); await refresh() }
+    func resume(_ rec: UploadRecord) async { await engine.resume(rec.id); await refresh() }
+    func retry(_ rec: UploadRecord) async { _ = try? await engine.retry(rec.id); await refresh() }
+
+    // MARK: المسودات
+
+    func saveDraft(_ draft: MaterialDraft) {
+        var d = draft
+        d.updatedAt = Date()
+        try? draftStore?.save(d)
+        drafts = draftStore?.loadAll() ?? []
+    }
+
+    func deleteDraft(_ id: UUID) {
+        draftStore?.delete(id)
+        drafts = draftStore?.loadAll() ?? []
+    }
+
+    /// بعد المسح الطارئ: المجلد مُحي، والقائمة تُفرغ.
+    func reloadDrafts() { drafts = draftStore?.loadAll() ?? [] }
+
     /// الأصل يدخل الطابور فورًا (يُبصم ولا يضيع إن أُنهي التطبيق)، ونسخته الخفيفة تُحضَّر ثم تُرفع قبله.
-    func enqueue(relativePath: String, materialId: UUID, filename: String, mimeType: String?, lightCopy: ProxyChoice = .originalOnly) async throws {
+    func enqueue(relativePath: String, materialId: UUID, filename: String, mimeType: String?, lightCopy: ProxyChoice = .originalOnly,
+                 title: String? = nil, priority: Priority? = nil) async throws {
         try await engine.enqueue(sourcePath: relativePath, materialId: materialId, kind: .original, filename: filename, mimeType: mimeType,
-                                 awaitsProxy: lightCopy.preset != nil)
+                                 awaitsProxy: lightCopy.preset != nil, materialTitle: title, materialPriority: priority?.rawValue)
         if let preset = lightCopy.preset, let mode = lightCopy.uploadMode {
-            prepareLightCopy(relativePath: relativePath, materialId: materialId, preset: preset, mode: mode)
+            prepareLightCopy(relativePath: relativePath, materialId: materialId, preset: preset, mode: mode, title: title, priority: priority)
         }
         await refresh()
     }
 
-    private func prepareLightCopy(relativePath: String, materialId: UUID, preset: ProxyPreset, mode: UploadSessionCreate.ProxyMode) {
+    private func prepareLightCopy(relativePath: String, materialId: UUID, preset: ProxyPreset, mode: UploadSessionCreate.ProxyMode,
+                                  title: String?, priority: Priority?) {
         let services = UploadServices.shared
         let source = services.documentsDirectory.appendingPathComponent(relativePath)
         let name = LightCopyFiles.newName()
@@ -93,7 +161,7 @@ final class UploadQueueModel: ObservableObject {
                 _ = try await transcoder.makeProxy(source: source, preset: preset, output: output)
                 try Task.checkCancellation()
                 try await engine.enqueue(sourcePath: "Uploads/\(name)", materialId: materialId, kind: .proxy, filename: "light-copy.mov",
-                                         mimeType: "video/quicktime", proxyMode: mode)
+                                         mimeType: "video/quicktime", proxyMode: mode, materialTitle: title, materialPriority: priority?.rawValue)
             } catch {
                 try? FileManager.default.removeItem(at: output)
                 await engine.releaseProxyHold(materialId: materialId)
@@ -118,6 +186,13 @@ final class UploadQueueModel: ObservableObject {
         proxyTasks.removeAll()
         preparingProxy.removeAll()
     }
+}
+
+/// شاشة إيصال لمادة، مع سجل الرفع إن وُجد (للعرض دون اتصال).
+struct ReceiptTarget: Identifiable, Equatable {
+    let materialId: UUID
+    let recordId: UUID?
+    var id: UUID { materialId }
 }
 
 /// مهلة خلفية من النظام لعمل قصير على الجهاز؛ تُنهى مرة واحدة عند الانتهاء أو عند انقضاء المهلة.
@@ -154,7 +229,8 @@ extension UploadPhase {
 }
 
 extension UploadFailure {
-    var labelKey: LocalizedStringKey {
+    /// مفتاح النص في `Localizable.xcstrings`.
+    var textKey: String {
         switch self {
         case .checksumMismatch: return "upload.failure.checksumMismatch"
         case .invalidFile: return "upload.failure.invalidFile"
@@ -166,4 +242,6 @@ extension UploadFailure {
         case .deviceNotAttested: return "upload.failure.deviceNotAttested"
         }
     }
+
+    var labelKey: LocalizedStringKey { LocalizedStringKey(textKey) }
 }

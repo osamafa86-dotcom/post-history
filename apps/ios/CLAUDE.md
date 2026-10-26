@@ -8,6 +8,7 @@
 - `docs/field-test-ios.md` سكربت الاختبار الميداني على جهاز فعلي (يجريه المشرف الميداني).
 - `App/` تطبيق SwiftUI رقيق؛ مشروع Xcode يُولَّد: `cd apps/ios && xcodegen generate` (ADR 0009).
 - `scripts/generate-api.sh` بعد كل تغيير في `contracts/openapi.yaml`؛ CI يفشل إن اختلف الناتج.
+- `node scripts/generate-design-tokens.mjs` بعد كل تغيير في `docs/design/tokens.json`: يولّد ألوان `App/Resources/DesignTokens.xcassets` و`App/Sources/Design/DesignTokens.generated.swift` (لا يُعدَّلان يدويًا؛ CI يفشل إن اختلف الناتج). المكونات في `App/Sources/Design/` (`Components.swift`، `Typography.swift`) وتستعمل الرموز الدلالية وحدها؛ الخطوط OFL في `App/Resources/Fonts/` (ADR 0076).
 - الاختبارات: `cd Packages/PostHistoryKit && swift test` (مع `TUSD_URL=http://127.0.0.1:8080/files/` يُشغَّل تكامل tusd الحي). النصوص في `App/Resources/Localizable.xcstrings` (ar/en).
 
 ## التقنية

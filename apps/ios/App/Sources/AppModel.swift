@@ -43,7 +43,8 @@ final class AppModel: ObservableObject {
         self.api = api
         // نواة الرفع فوق الجلسة الخلفية المشتركة؛ تُستأنف السجلات غير المكتملة عند كل إطلاق.
         self.uploads = UploadQueueModel(engine: try! UploadServices.shared.makeEngine(api: api), settings: settings)
-        self.materials = MyMaterialsModel(feed: MaterialsFeed(api: GeneratedMaterialsListAPI(configuration: api)))
+        self.materials = MyMaterialsModel(feed: MaterialsFeed(api: GeneratedMaterialsListAPI(configuration: api)),
+                                          transitions: { try await MaterialsAPI.listTransitions(id: $0, apiConfiguration: api).items })
         self.notifications = NotificationsModel(feed: NotificationsFeed(api: GeneratedNotificationsListAPI(configuration: api)))
         let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         self.push = PushRegistrar(api: GeneratedPushDevicesAPI(configuration: api), ids: KeychainInstallationIdStore(), appVersion: appVersion)
@@ -100,16 +101,18 @@ final class AppModel: ObservableObject {
             LocalDataWiper.directoryStep(name: "upload_state", url: services.stateDirectory),
             LocalDataWiper.directoryStep(name: "chunks", url: services.chunksDirectory),
             LocalDataWiper.directoryStep(name: "imported_originals", url: services.uploadsDirectory),
+            LocalDataWiper.directoryStep(name: "drafts", url: services.draftsDirectory),
             LocalDataWiper.directoryStep(name: "caches", url: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]),
             LocalDataWiper.directoryStep(name: "temporary", url: FileManager.default.temporaryDirectory),
             WipeStep(name: "url_cache") { URLCache.shared.removeAllCachedResponses(); return 1 },
-            LocalDataWiper.keyValueStep(name: "defaults", keys: ["deleteLocalAfterReceipt"], keep: ["hasLaunchedBefore"]) { key in
+            LocalDataWiper.keyValueStep(name: "defaults", keys: ["deleteLocalAfterReceipt", AppSettings.localCopyHandledKey], keep: ["hasLaunchedBefore"]) { key in
                 UserDefaults.standard.removeObject(forKey: key); return true
             },
         ]
         let report = await EmergencyWipe(steps: steps).run()
         settings.reload()
         lock.reset()
+        uploads.reloadDrafts()
         await uploads.refresh()
         await materials.clear()
         await notifications.clear()
