@@ -98,7 +98,7 @@ echo "permissions and sealing: ok"
 # Every key of trial.env.example is set (optional ones aside); secrets are long; none is printed.
 for k in $(sed -n 's/^\([A-Z0-9_]*\)=.*/\1/p' /repo/infra/field-trial/trial.env.example); do
   # Play Integrity: optional per platform (the owner gives App Attest, Play Integrity or both; preflight wants one).
-  case "$k" in CADDY_GLOBAL_EXTRA|BACKUP_REMOTE_*|PLAY_INTEGRITY_*) continue ;; esac
+  case "$k" in CADDY_GLOBAL_EXTRA|BACKUP_REMOTE_*|PLAY_INTEGRITY_*|WALG_*) continue ;; esac
   grep -q "^$k=." "$U" || fail "unsealed secrets lack $k"
 done
 for k in POSTGRES_PASSWORD REDIS_PASSWORD S3_SECRET_KEY TUSD_HOOK_SECRET JWT_SECRET MEDIA_WORKER_TOKEN \

@@ -119,6 +119,24 @@ sudo shred -u /root/backup-recipient.key
 
 **التحقق:** `restore drill: pass` (يُسجَّل `partial`: المرآة وفاصل النسخ غير مقيسة). **لا تجربة قبل تمرين ناجح على المضيف نفسه.**
 
+### أرشفة WAL (ADR 0051، قبل المرحلة التجارية)
+
+مطفأة في التجربة ما لم يُضبط `WALG_ARCHIVE_MODE=on`. preflight ينبّه وهي مطفأة.
+
+1. **على جهاز المالك غير المتصل:** زوج PGP.
+   ```bash
+   gpg --quick-gen-key 'post-history-walg' rsa4096 encrypt never
+   gpg --armor --export post-history-walg > walg-public.asc
+   ```
+   - الخاص يبقى في الخزنة مع مفتاح النسخ.
+   - `walg-public.asc` وحده يُنقل إلى الخادم: `sudo install -m 0644 walg-public.asc /etc/post-history/walg-public.asc`.
+2. **لدى المزوّد الثاني:**
+   - حاوية جديدة بقفل كائنات واحتفاظ افتراضي بوضع compliance.
+   - مفتاح كتابة فقط (PutObject وListBucket، بلا قراءة ولا حذف).
+   - ومفتاح قراءة منفصل يبقى عند المالك للتمرين.
+3. **في الأسرار المختومة:** `WALG_ARCHIVE_MODE=on` و`WALG_S3_PREFIX` و`WALG_S3_ENDPOINT` و`WALG_ACCESS_KEY` و`WALG_SECRET_KEY` و`WALG_PG_PASSWORD` (`openssl rand -hex 32`). ثم `update.sh` وpreflight `--running`.
+4. **أول تمرين استعادة لأي لحظة** على مضيف منفصل، كما في `docs/ops/runbook.md` §4.1.
+
 ## الخطوة 6 — الحسابات الأولى
 
 بأمر `cli:create-user` في الخادم (ADR 0030، #199). يُشغَّل داخل حاوية `api` ببيئتها، والطرفية تفاعلية لأن رموز TOTP ورمز الخزنة تُقرأ منها:

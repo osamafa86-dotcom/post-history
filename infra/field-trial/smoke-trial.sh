@@ -29,6 +29,14 @@ python3 "$ROOT/infra/ingest/test_token.py" keygen "$WORK/ingest" >/dev/null
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 2 -subj /CN=backup-drill \
   -keyout "$WORK/recipient.key" -out "$WORK/recipient.crt" 2>/dev/null
 mkdir -p "$WORK/backups" && chmod 777 "$WORK/backups"   # uid 70 in the backup image writes here
+# WAL-G (ADR 0051): a throwaway PGP pair for the drill. The public half goes to the host side; the private half stays in
+# $WORK and is handed to pitr-drill.sh alone, as the owner would bring it.
+GNUPGHOME="$(mktemp -d /tmp/g.XXXXXX)" && export GNUPGHOME
+gpg --batch --pinentry-mode loopback --passphrase '' --quick-gen-key 'walg-drill <walg-drill@example.invalid>' rsa3072 encrypt never 2>/dev/null
+gpg --armor --export walg-drill@example.invalid > "$WORK/walg-public.asc"
+gpg --armor --batch --pinentry-mode loopback --passphrase '' --export-secret-keys walg-drill@example.invalid > "$WORK/walg-private.asc"
+chmod 644 "$WORK/walg-public.asc"; chmod 600 "$WORK/walg-private.asc"
+gpgconf --kill gpg-agent 2>/dev/null || true; rm -rf "$GNUPGHOME"; unset GNUPGHOME
 cat > "$TRIAL_ENV_FILE" <<ENV
 MAIN_DOMAIN=main.localhost
 INGEST_DOMAIN=ingest.localhost
@@ -56,6 +64,13 @@ INGEST_GATE_TOKEN=$(hex 32)
 APP_ATTEST_APP_ID=ABCDE12345.org.example.trialci
 INGEST_PORT=8443
 S3_BACKUP_ACCESS_KEY=backup-ci
+WALG_ARCHIVE_MODE=on
+WALG_S3_PREFIX=s3://wal/pg
+WALG_S3_ENDPOINT=http://backup-remote:9000
+WALG_ACCESS_KEY=wal-writer-ci
+WALG_SECRET_KEY=$(hex 16)
+WALG_PG_PASSWORD=$(hex 32)
+WALG_PUBLIC_KEY=$WORK/walg-public.asc
 S3_BACKUP_SECRET_KEY=$(hex 16)
 BACKUP_DIR=$WORK/backups
 BACKUP_RECIPIENT_CERT=$WORK/recipient.crt
@@ -195,6 +210,51 @@ COMPOSE="$T" BACKUP_DIR="$WORK/offsite" DRILL_ENV=local DRILL_SOURCE=second-prov
   "$ROOT/infra/backup/restore-drill.sh" --key "$WORK/recipient.key" --out "${DRILL_REMOTE_OUT:-$WORK/drill-remote.json}" \
   || fail "restore drill from the second provider's copy"
 echo "second provider: locked, write-only key, undeletable, restore drill from its copy: ok"
+
+# Continuous WAL archiving (ADR 0051): the base backup is at the second provider; a commit after the target time is
+# archived (its segment pushed, timed); the writer key can neither read nor delete there; the public key on the host
+# decrypts nothing; no private key is in any container; and a point-in-time restore with the offline private key
+# returns the state at the target time exactly.
+for _ in $(seq 1 120); do "$T" logs walg-base 2>/dev/null | grep -q 'wal-g base backup ok' && break; sleep 2; done
+"$T" logs walg-base 2>/dev/null | grep -q 'wal-g base backup ok' || fail "no wal-g base backup"
+psql_() { "$T" exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -XAtq -v ON_ERROR_STOP=1 -c "$1"; }
+psql_ "create table public.walg_drill (tag text, at timestamptz default clock_timestamp()); insert into public.walg_drill (tag) values ('before')" >/dev/null
+sleep 1; target="$(psql_ 'select now()')"; sleep 1
+seg="$(psql_ "insert into public.walg_drill (tag) values ('after'); select pg_walfile_name(pg_current_wal_lsn())" | tail -1)"
+ta0=$(date +%s.%N); psql_ 'select pg_switch_wal()' >/dev/null
+for _ in $(seq 1 120); do [ "$(psql_ "select coalesce(last_archived_wal, '') >= '$seg' from pg_stat_archiver")" = t ] && break; sleep 0.5; done
+ta1=$(date +%s.%N)
+[ "$(psql_ "select coalesce(last_archived_wal, '') >= '$seg' from pg_stat_archiver")" = t ] || fail "the WAL segment was not archived"
+[ "$(psql_ "select failed_count from pg_stat_archiver")" = 0 ] || fail "wal-g archiving failed"
+walobj="$(A_ ls --recursive a/wal/pg/wal_005/ | awk '/\.lz4$/ {print $NF}' | head -1)"
+[ -n "$walobj" ] || fail "no WAL at the second provider"
+A_ retention info "a/wal/pg/wal_005/$walobj" | grep -q COMPLIANCE || fail "the archived WAL is not under compliance retention"
+rmc w "$WALG_ACCESS_KEY" "$WALG_SECRET_KEY" cat "w/wal/pg/wal_005/$walobj" >/dev/null 2>&1 && fail "the wal-g key can read at the second provider"
+rmc w "$WALG_ACCESS_KEY" "$WALG_SECRET_KEY" rm "w/wal/pg/wal_005/$walobj" >/dev/null 2>&1 && fail "the wal-g key can delete at the second provider"
+GNUPGHOME="$(mktemp -d /tmp/g.XXXXXX)"; export GNUPGHOME; gpg --batch --import "$WORK/walg-public.asc" 2>/dev/null
+A_ cat "a/wal/pg/wal_005/$walobj" > "$WORK/wal.pgp"
+gpg --batch --list-packets "$WORK/wal.pgp" 2>/dev/null | grep -q '^:pubkey enc packet' || fail "the archived WAL is not encrypted to the public key"
+gpg --batch --decrypt "$WORK/wal.pgp" >/dev/null 2>&1 && fail "the public key alone decrypts the archive"
+gpgconf --kill gpg-agent 2>/dev/null || true; rm -rf "$GNUPGHOME"; unset GNUPGHOME
+for c in $("$T" ps -q); do
+  docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$c" | grep -q 'PRIVATE KEY' && fail "a private key in the environment of $(docker inspect -f '{{.Name}}' "$c")"
+  for src in $(docker inspect -f '{{range .Mounts}}{{if eq .Type "bind"}}{{println .Source}}{{end}}{{end}}' "$c"); do
+    [ -f "$src" ] && grep -q 'PRIVATE KEY' "$src" && fail "a private key mounted into $(docker inspect -f '{{.Name}}' "$c") ($src)"
+  done
+done
+PITR_IMAGE="${TRIAL_PROJECT}-postgres" PITR_NETWORK="${TRIAL_PROJECT}_default" PITR_ENV="${BACKUP_MEASURE_ENV:-local docker compose}" \
+WALG_S3_PREFIX="$WALG_S3_PREFIX" AWS_ENDPOINT="$WALG_S3_ENDPOINT" CHECK_DB="$POSTGRES_DB" \
+AWS_ACCESS_KEY_ID="$BACKUP_REMOTE_ROOT_USER" AWS_SECRET_ACCESS_KEY="$BACKUP_REMOTE_ROOT_PASSWORD" \
+  "$ROOT/infra/backup/pitr-drill.sh" --key "$WORK/walg-private.asc" --target "$target" --out "${PITR_OUT:-$WORK/pitr.json}" \
+  --check "select string_agg(tag, '|' order by at) from public.walg_drill" --expect before || fail "point-in-time restore drill"
+python3 - "${PITR_OUT:-$WORK/pitr.json}" "$ta0" "$ta1" <<'PY'
+import json, sys
+p, a0, a1 = sys.argv[1:]
+d = json.load(open(p)); d["metrics"]["wal_push_after_switch_s"] = round(float(a1) - float(a0), 2); d["metrics"]["archive_timeout_s"] = 300
+json.dump(d, open(p, "w"), indent=2); open(p, "a").write("\n")
+PY
+psql_ 'drop table public.walg_drill' >/dev/null
+echo "wal-g: archived, locked, write-only key, public key decrypts nothing, no private key in the stack, point-in-time restore: ok"
 
 # Monitoring (infra/observability): every check passes, a stopped worker is a FAIL with one alert line, recovery is
 # logged, the /health endpoint follows the result, the status board renders in Arabic.

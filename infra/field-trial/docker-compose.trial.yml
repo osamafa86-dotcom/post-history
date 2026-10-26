@@ -47,6 +47,32 @@ services:
       # Acceptance window only (ADR 0022, infra/field-trial/qa-window.sh): the one account a qa-key token may upload for.
       # Empty outside a window, so every key_class=qa check is refused; preflight fails while it is set without --qa-window.
       ACCEPTANCE_UPLOADER_USER_ID: "${ACCEPTANCE_UPLOADER_USER_ID:-}"
+  # أرشفة WAL المستمرة إلى المزوّد الثاني (ADR 0051): الصورة نفسها مع WAL-G، والمفتاح العام وحده على المضيف. الأرشفة
+  # مطفأة ما لم يُضبط WALG_ARCHIVE_MODE=on (preflight ينبّه)، فلا يتراكم WAL بلا وجهة.
+  postgres:
+    image: !reset null
+    build: ../postgres
+    environment: &walg
+      WALG_S3_PREFIX: "${WALG_S3_PREFIX:-}"
+      AWS_ENDPOINT: "${WALG_S3_ENDPOINT:-}"
+      AWS_REGION: "${WALG_S3_REGION:-us-east-1}"
+      AWS_S3_FORCE_PATH_STYLE: "true"
+      AWS_ACCESS_KEY_ID: "${WALG_ACCESS_KEY:-}"
+      AWS_SECRET_ACCESS_KEY: "${WALG_SECRET_KEY:-}"
+      WALG_PGP_KEY_PATH: /run/walg/public.asc
+    volumes:
+      - "${WALG_PUBLIC_KEY:-/dev/null}:/run/walg/public.asc:ro"
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - "archive_mode=${WALG_ARCHIVE_MODE:-off}"
+      - -c
+      - archive_command=wal-g wal-push %p
+      - -c
+      - archive_timeout=300
+
   media-worker:
     restart: unless-stopped
 
@@ -152,6 +178,7 @@ services:
       PGPASSWORD: "${POSTGRES_PASSWORD}"
       PGDATABASE: "${POSTGRES_DB}"
       BACKUP_PG_PASSWORD: "${BACKUP_PG_PASSWORD:?password of the read-only backup role}"
+      WALG_PG_PASSWORD: "${WALG_PG_PASSWORD:-}"
     entrypoint: ["sh", "-c"]
     command:
       - |
@@ -161,9 +188,48 @@ services:
         ALTER ROLE backup_reader WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION BYPASSRLS PASSWORD :'pw';
         GRANT pg_read_all_data TO backup_reader;
         SQL
+        # دور النسخة الأساسية لـ WAL-G (ADR 0051): بدء النسخة وإنهاؤها وقراءة الإعدادات، بلا قراءة بيانات ولا تكرار.
+        [ -n "$$WALG_PG_PASSWORD" ] || exit 0
+        psql -v ON_ERROR_STOP=1 -Xq <<'SQL'
+        \getenv pw WALG_PG_PASSWORD
+        SELECT 'CREATE ROLE walg_backup' WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'walg_backup') \gexec
+        ALTER ROLE walg_backup WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD :'pw';
+        GRANT pg_read_all_settings TO walg_backup;
+        GRANT EXECUTE ON FUNCTION pg_backup_start(text, boolean) TO walg_backup;
+        GRANT EXECUTE ON FUNCTION pg_backup_stop(boolean) TO walg_backup;
+        SQL
     restart: "no"
     read_only: true
     tmpfs: ["/tmp:size=1m"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  # نسخة WAL-G الأساسية يوميًا (ADR 0051): تقرأ مجلد البيانات للقراءة فقط وتتصل بدور walg_backup (بدء النسخة وإنهاؤها
+  # وقراءة الإعدادات فقط). الاستعادة لأي لحظة: infra/backup/pitr-drill.sh بالمفتاح الخاص خارج المضيف.
+  walg-base:
+    profiles: [backup]
+    build: ../postgres
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backup-db-role:
+        condition: service_completed_successfully
+    user: "70:70"
+    environment:
+      <<: *walg
+      PGHOST: postgres
+      PGUSER: walg_backup
+      PGPASSWORD: "${WALG_PG_PASSWORD:-}"
+      PGDATABASE: "${POSTGRES_DB}"
+      BACKUP_HOUR_UTC: "${BACKUP_HOUR_UTC:-2}"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data:ro
+      - "${WALG_PUBLIC_KEY:-/dev/null}:/run/walg/public.asc:ro"
+    entrypoint: ["walg-base.sh"]
+    command: ["loop"]
+    read_only: true
+    tmpfs: ["/tmp:size=64m"]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
 
