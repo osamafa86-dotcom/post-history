@@ -13,6 +13,7 @@ struct PostHistoryApp: App {
                 .environmentObject(app.materials)
                 .environmentObject(app.notifications)
                 .environmentObject(app.settings)
+                .environmentObject(app.lock)
         }
     }
 }

@@ -197,7 +197,7 @@ head_tag="$(git -C "$APP" tag --points-at HEAD -l "${RELEASE_TAG_PATTERN:-v*}" -
 if [ -n "$head_tag" ]; then run "$APP/infra/deploy/api-image.sh" "$head_sha" --tag "$head_tag"
 else run "$APP/infra/deploy/api-image.sh" "$head_sha" --build; fi
 run "$APP/infra/field-trial/trial.sh" pull --quiet
-run "$APP/infra/field-trial/trial.sh" build backup
+run "$APP/infra/field-trial/trial.sh" build backup postgres walg-base
 
 say preflight
 run "$APP/infra/field-trial/preflight.sh"

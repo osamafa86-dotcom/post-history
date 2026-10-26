@@ -29,6 +29,14 @@ python3 "$ROOT/infra/ingest/test_token.py" keygen "$WORK/ingest" >/dev/null
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 2 -subj /CN=backup-drill \
   -keyout "$WORK/recipient.key" -out "$WORK/recipient.crt" 2>/dev/null
 mkdir -p "$WORK/backups" && chmod 777 "$WORK/backups"   # uid 70 in the backup image writes here
+# WAL-G (ADR 0051): a throwaway PGP pair for the drill. The public half goes to the host side; the private half stays in
+# $WORK and is handed to pitr-drill.sh alone, as the owner would bring it.
+GNUPGHOME="$(mktemp -d /tmp/g.XXXXXX)" && export GNUPGHOME
+gpg --batch --pinentry-mode loopback --passphrase '' --quick-gen-key 'walg-drill <walg-drill@example.invalid>' rsa3072 encrypt never 2>/dev/null
+gpg --armor --export walg-drill@example.invalid > "$WORK/walg-public.asc"
+gpg --armor --batch --pinentry-mode loopback --passphrase '' --export-secret-keys walg-drill@example.invalid > "$WORK/walg-private.asc"
+chmod 644 "$WORK/walg-public.asc"; chmod 600 "$WORK/walg-private.asc"
+gpgconf --kill gpg-agent 2>/dev/null || true; rm -rf "$GNUPGHOME"; unset GNUPGHOME
 cat > "$TRIAL_ENV_FILE" <<ENV
 MAIN_DOMAIN=main.localhost
 INGEST_DOMAIN=ingest.localhost
@@ -56,6 +64,13 @@ INGEST_GATE_TOKEN=$(hex 32)
 APP_ATTEST_APP_ID=ABCDE12345.org.example.trialci
 INGEST_PORT=8443
 S3_BACKUP_ACCESS_KEY=backup-ci
+WALG_ARCHIVE_MODE=on
+WALG_S3_PREFIX=s3://wal/pg
+WALG_S3_ENDPOINT=http://backup-remote:9000
+WALG_ACCESS_KEY=wal-writer-ci
+WALG_SECRET_KEY=$(hex 16)
+WALG_PG_PASSWORD=$(hex 32)
+WALG_PUBLIC_KEY=$WORK/walg-public.asc
 S3_BACKUP_SECRET_KEY=$(hex 16)
 BACKUP_DIR=$WORK/backups
 BACKUP_RECIPIENT_CERT=$WORK/recipient.crt
@@ -100,6 +115,11 @@ from_gate() { "$T" exec -T ingest-gate wget -q -S -O /dev/null "http://api-hooks
   || fail "the gate's address reaches /internal/media/ (INTERNAL_SOURCE_PATHS not applied)"
 [ "$(from_gate "/internal/tusd-hooks/$(hex 32)")" = 403 ] || fail "the gate's address reaches the tusd hook path"
 echo "the gate's address reaches /internal/ingest/ alone: ok"
+# Buyer delivery stays off in the trial until a full sandbox purchase passes; audio alignment is on.
+wenv="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$("$T" ps -q media-worker)")"
+grep -qx 'MEDIA_ENABLE_DELIVERY=false' <<<"$wenv" || fail "the media worker runs with delivery not pinned off"
+grep -qx 'MEDIA_ENABLE_ALIGNMENT=true' <<<"$wenv" || fail "the media worker runs without audio alignment"
+echo "media worker: delivery off, alignment on: ok"
 # Address isolation: each name answers on its own address only (active probing does not link A and B).
 if curl -sS --max-time 10 -o /dev/null --cacert "$WORK/ca.crt" --resolve ingest.localhost:443:127.0.0.1 https://ingest.localhost/files/ 2>/dev/null; then
   fail "the ingest name answers on the main address"; fi
@@ -147,8 +167,24 @@ DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_P
 API_URL="http://127.0.0.1:$API_PORT/v1" CA_FILE="$WORK/ca.crt" INGEST_SIGNING_KEY="$WORK/ingest/signing.pem" \
   node "$ROOT/infra/field-trial/e2e-edge-upload.mjs" || fail "uploads through the edge"
 
+# BACKUP_MEASURE_MIB=N: N MiB of incompressible synthetic objects (64 MiB each, like the originals) go into the uploads
+# bucket first, and the backup is timed, full then incremental; the result (with both restore drills) is written to
+# BACKUP_MEASURE_OUT with the measurement schema. Synthetic data only: no real file leaves the host.
+if [ -n "${BACKUP_MEASURE_MIB:-}" ]; then
+  n=$(( (BACKUP_MEASURE_MIB + 63) / 64 ))
+  "$T" exec -T -e "MC_HOST_l=http://$S3_ACCESS_KEY:$S3_SECRET_KEY@127.0.0.1:9000" minio sh -c \
+    "for i in \$(seq 1 $n); do head -c 67108864 /dev/urandom | mc pipe --quiet l/$S3_BUCKET_UPLOADS/measure/\$i.bin >/dev/null || exit 1; done" \
+    || fail "seeding synthetic objects"
+  m_started="$(date -u +%FT%TZ)"
+fi
+tb0=$(date +%s.%N)
 "$T" run --rm -T backup once || fail "backup once"
+tb1=$(date +%s.%N)
 [ -s "$WORK/backups/last-success.json" ] || fail "no last-success.json"
+if [ -n "${BACKUP_MEASURE_MIB:-}" ]; then
+  sleep 1   # a new dump name (seconds resolution)
+  ti0=$(date +%s.%N); "$T" run --rm -T backup once >/dev/null || fail "incremental backup"; ti1=$(date +%s.%N)
+fi
 # The backup role reads and cannot write.
 ro() { "$T" exec -T -e PGPASSWORD="$BACKUP_PG_PASSWORD" postgres psql -h 127.0.0.1 -U backup_reader -d "$POSTGRES_DB" -XAtq -c "$1"; }
 [ "$(ro 'select count(*) >= 0 from public.users')" = t ] || fail "backup_reader cannot read"
@@ -187,14 +223,102 @@ if W_ cat "w/offsite/pg/$rdump" >/dev/null 2>&1; then fail "the backup key can r
 A_ rm --recursive --versions --force a/offsite/pg/ >/dev/null 2>&1 || true
 A_ cat "a/offsite/pg/$rdump" | cmp -s - "$WORK/backups/pg/$rdump" || fail "a locked version was purged by the provider's administrator"
 mkdir -p "$WORK/offsite" && chmod 777 "$WORK/offsite"
+tp0=$(date +%s.%N)
 docker run --rm --network "${TRIAL_PROJECT}_default" -u "$(id -u):$(id -g)" -v "$WORK/offsite:/out" \
   -e "MC_HOST_a=http://$BACKUP_REMOTE_ROOT_USER:$BACKUP_REMOTE_ROOT_PASSWORD@backup-remote:9000" -e MC_CONFIG_DIR=/tmp/.mc \
   pgsty/mc:RELEASE.2026-10-18T00-00-00Z@sha256:6ecdaec70bc5e8cf9d0e9a70c190f3beb1c83f11617ff4333f1fcd71ab1daf18 \
   mirror --quiet a/offsite /out >/dev/null || fail "pulling the copy back from the second provider"
+tp1=$(date +%s.%N)
 COMPOSE="$T" BACKUP_DIR="$WORK/offsite" DRILL_ENV=local DRILL_SOURCE=second-provider \
   "$ROOT/infra/backup/restore-drill.sh" --key "$WORK/recipient.key" --out "${DRILL_REMOTE_OUT:-$WORK/drill-remote.json}" \
   || fail "restore drill from the second provider's copy"
 echo "second provider: locked, write-only key, undeletable, restore drill from its copy: ok"
+if [ -n "${BACKUP_MEASURE_MIB:-}" ]; then
+  du_b() { "$T" run --rm --no-deps -T -v "$1:/d:ro" --entrypoint sh backup -c 'du -sb /d | cut -f1' </dev/null; }
+  python3 - "${BACKUP_MEASURE_OUT:-$WORK/backup-measure.json}" "$m_started" "$BACKUP_MEASURE_MIB" "$n" \
+    "$tb0" "$tb1" "$ti0" "$ti1" "$tp0" "$tp1" "$(du_b "$WORK/backups/objects")" "$WORK/backups/last-success.json" \
+    "${DRILL_OUT:-$WORK/drill.json}" "${DRILL_REMOTE_OUT:-$WORK/drill-remote.json}" "${BACKUP_MEASURE_ENV:-local docker compose}" <<'PY'
+import json, sys, datetime
+out, started, mib, n, tb0, tb1, ti0, ti1, tp0, tp1, obj_bytes, last, drill, drill_remote, env = sys.argv[1:]
+last, d, r = (json.load(open(f)) for f in (last, drill, drill_remote))
+s = lambda a, b: round(float(b) - float(a), 2)
+m = {
+  "seeded_mib": int(mib), "seeded_objects": int(n),
+  "backup_full_s": s(tb0, tb1), "backup_incremental_s": s(ti0, ti1),
+  "backup_full_mib_per_s": round(int(n) * 64 / max(s(tb0, tb1), 0.01), 1),
+  "objects_encrypted_bytes": int(obj_bytes), "pg_dump_bytes_encrypted": last["pg_dump_bytes"],
+  "objects_total": last["objects_total"], "second_provider_copy": bool(last["remote"]),
+  "second_provider_pull_s": s(tp0, tp1),
+  "restore_decrypt_s": d["metrics"]["decrypt_s"], "restore_pg_s": d["metrics"]["pg_restore_s"],
+  "restore_from_second_provider_passed": r["metrics"]["drill_passed"], "restore_local_passed": d["metrics"]["drill_passed"],
+  "backup_interval_h": 24,
+}
+ok = m["restore_local_passed"] and m["restore_from_second_provider_passed"] and m["second_provider_copy"]
+json.dump({
+  "schema_version": 1, "tool": "other", "role": "infra", "test_name": "recovery",
+  "started_at": started, "ended_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+  "result": "partial" if ok else "fail",
+  "device": {"platform": "server", "model": env},
+  "metrics": m,
+  "notes": ("Trial backup at size (infra/field-trial/smoke-trial.sh with BACKUP_MEASURE_MIB): synthetic incompressible objects "
+            "in the uploads bucket, encrypted per object (CMS AES-256-GCM) and mirrored to a stand-in second provider under "
+            "compliance object lock, then restore drills from the local copy and from the copy pulled back from the second "
+            "provider. Partial: synthetic data on this machine, not the trial host; the daily interval means up to 24 h of "
+            "loss against the plan's 15 minutes (continuous WAL archiving is not built); the object restore time is the pull "
+            "back plus decryption of the sample, not a full re-upload into a new MinIO."),
+}, open(out, "w"), ensure_ascii=False, indent=2)
+open(out, "a").write("\n")
+print("backup measurement:", out)
+PY
+fi
+
+# Continuous WAL archiving (ADR 0051): the base backup is at the second provider; a commit after the target time is
+# archived (its segment pushed, timed); the writer key can neither read nor delete there; the public key on the host
+# decrypts nothing; no private key is in any container; and a point-in-time restore with the offline private key
+# returns the state at the target time exactly.
+for _ in $(seq 1 120); do "$T" logs walg-base 2>/dev/null | grep -q 'wal-g base backup ok' && break; sleep 2; done
+"$T" logs walg-base 2>/dev/null | grep -q 'wal-g base backup ok' || fail "no wal-g base backup"
+psql_() { "$T" exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -XAtq -v ON_ERROR_STOP=1 -c "$1"; }
+psql_ "create table public.walg_drill (tag text, at timestamptz default clock_timestamp()); insert into public.walg_drill (tag) values ('before')" >/dev/null
+sleep 1; target="$(psql_ 'select now()')"; sleep 1
+seg="$(psql_ "insert into public.walg_drill (tag) values ('after'); select pg_walfile_name(pg_current_wal_lsn())" | tail -1)"
+ta0=$(date +%s.%N); psql_ 'select pg_switch_wal()' >/dev/null
+for _ in $(seq 1 120); do [ "$(psql_ "select coalesce(last_archived_wal, '') >= '$seg' from pg_stat_archiver")" = t ] && break; sleep 0.5; done
+ta1=$(date +%s.%N)
+[ "$(psql_ "select coalesce(last_archived_wal, '') >= '$seg' from pg_stat_archiver")" = t ] || fail "the WAL segment was not archived"
+# Early attempts may fail while the stand-in provider's bucket is still being created: none after the last success.
+[ "$(psql_ "select last_failed_time is null or last_failed_time < last_archived_time from pg_stat_archiver")" = t ] \
+  || fail "wal-g archiving failed after its last success"
+walobj="$(A_ ls --recursive a/wal/pg/wal_005/ | awk '/\.lz4$/ {print $NF}' | head -1)"
+[ -n "$walobj" ] || fail "no WAL at the second provider"
+A_ retention info "a/wal/pg/wal_005/$walobj" | grep -q COMPLIANCE || fail "the archived WAL is not under compliance retention"
+rmc w "$WALG_ACCESS_KEY" "$WALG_SECRET_KEY" cat "w/wal/pg/wal_005/$walobj" >/dev/null 2>&1 && fail "the wal-g key can read at the second provider"
+rmc w "$WALG_ACCESS_KEY" "$WALG_SECRET_KEY" rm "w/wal/pg/wal_005/$walobj" >/dev/null 2>&1 && fail "the wal-g key can delete at the second provider"
+GNUPGHOME="$(mktemp -d /tmp/g.XXXXXX)"; export GNUPGHOME; gpg --batch --import "$WORK/walg-public.asc" 2>/dev/null
+A_ cat "a/wal/pg/wal_005/$walobj" > "$WORK/wal.pgp"
+pk="$(gpg --batch --list-packets "$WORK/wal.pgp" 2>/dev/null || true)"   # captured: gpg exits non-zero without the secret key
+grep -q '^:pubkey enc packet' <<<"$pk" || fail "the archived WAL is not encrypted to the public key"
+gpg --batch --decrypt "$WORK/wal.pgp" >/dev/null 2>&1 && fail "the public key alone decrypts the archive"
+gpgconf --kill gpg-agent 2>/dev/null || true; rm -rf "$GNUPGHOME"; unset GNUPGHOME
+for c in $("$T" ps -q); do
+  docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$c" | grep -q 'PRIVATE KEY' && fail "a private key in the environment of $(docker inspect -f '{{.Name}}' "$c")"
+  for src in $(docker inspect -f '{{range .Mounts}}{{if eq .Type "bind"}}{{println .Source}}{{end}}{{end}}' "$c"); do
+    [ -f "$src" ] && grep -q 'PRIVATE KEY' "$src" && fail "a private key mounted into $(docker inspect -f '{{.Name}}' "$c") ($src)"
+  done
+done
+PITR_IMAGE="$(docker inspect -f "{{.Config.Image}}" "$("$T" ps -q postgres)")" PITR_NETWORK="${TRIAL_PROJECT}_default" PITR_ENV="${BACKUP_MEASURE_ENV:-local docker compose}" \
+WALG_S3_PREFIX="$WALG_S3_PREFIX" AWS_ENDPOINT="$WALG_S3_ENDPOINT" CHECK_DB="$POSTGRES_DB" PITR_DB_USER="$POSTGRES_USER" \
+AWS_ACCESS_KEY_ID="$BACKUP_REMOTE_ROOT_USER" AWS_SECRET_ACCESS_KEY="$BACKUP_REMOTE_ROOT_PASSWORD" \
+  "$ROOT/infra/backup/pitr-drill.sh" --key "$WORK/walg-private.asc" --target "$target" --out "${PITR_OUT:-$WORK/pitr.json}" \
+  --check "select string_agg(tag, '|' order by at) from public.walg_drill" --expect before || fail "point-in-time restore drill"
+python3 - "${PITR_OUT:-$WORK/pitr.json}" "$ta0" "$ta1" <<'PY'
+import json, sys
+p, a0, a1 = sys.argv[1:]
+d = json.load(open(p)); d["metrics"]["wal_push_after_switch_s"] = round(float(a1) - float(a0), 2); d["metrics"]["archive_timeout_s"] = 300
+json.dump(d, open(p, "w"), indent=2); open(p, "a").write("\n")
+PY
+psql_ 'drop table public.walg_drill' >/dev/null
+echo "wal-g: archived, locked, write-only key, public key decrypts nothing, no private key in the stack, point-in-time restore: ok"
 
 # Monitoring (infra/observability): every check passes, a stopped worker is a FAIL with one alert line, recovery is
 # logged, the /health endpoint follows the result, the status board renders in Arabic.

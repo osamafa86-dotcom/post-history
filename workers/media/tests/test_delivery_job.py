@@ -122,3 +122,38 @@ def test_files_are_c2pa_signed_when_signing_is_on(clip: Path, tmp_path: Path):
         for line in zf.read("SHA256SUMS").decode().splitlines():
             h, n = line.split("  ")
             assert hashlib.sha256(zf.read(n)).hexdigest() == h
+
+
+def test_produced_without_a_file_is_rendered_from_the_original_once(tmp_path: Path):
+    from conftest import STREAM_TAGS
+    from media_worker.ffmpeg import FFPROBE, run
+    from media_worker.jobs import produced_key
+    from media_worker.probe import probe
+    # مقطع بوسوم حاوية (موقع وطراز الجهاز) ووسوم تيار، ورسالة SEI من x264 داخل تيار الفيديو
+    clip = synth(tmp_path / "planted.mov", seconds=2, start_offset=1, leaky_tags=True, stream_tags=True)
+    data = clip.read_bytes()
+    assert b"x264 - core" in data and all(v.encode() in data for v in LEAKY_TAGS.values())
+    api, storage, jobs = _setup(data)
+    assert jobs.handle(_requested(deliverables=["original", "produced"])) == "delivery"
+    key = produced_key(MID, FakeApi.FILE_ID)
+    produced = [b for _, b in api.derivatives if b["kind"] == "produced"]
+    assert len(produced) == 1 and produced[0]["storage_key"] == key and produced[0]["mime_type"] == "video/mp4"
+    blob = storage.objects[("media", key)]
+    assert produced[0]["sha256"] == hashlib.sha256(blob).hexdigest()
+    f = tmp_path / "p.mp4"
+    f.write_bytes(blob)
+    got = probe(f)
+    assert got.video_codec == "h264" and abs(got.duration_ms - probe(clip).duration_ms) <= 100
+    # لا وسم ولا موقع ولا معرّف جهاز ولا SEI (ولا ما يكتبه المرمّز) ولا اسم الجامع
+    for value in [*LEAKY_TAGS.values(), *STREAM_TAGS.values(), "x264 - core", "Lavf"]:
+        assert value.encode() not in blob, value
+    tags = run([FFPROBE, "-v", "error", "-show_entries", "format_tags:stream_tags", "-of", "json", str(f)],
+               timeout_s=30).decode()
+    assert "location" not in tags.lower() and "comment" not in tags and "com.apple" not in tags
+    with _zip(storage, delivery_key(MID, FakeApi.FILE_ID, LIC), tmp_path) as zf:
+        assert zf.read("produced.mp4") == blob
+    # ترخيص ثانٍ يعيد استعمال النسخة المنتَجة المرفوعة ولا يبني غيرها
+    puts = len(storage.puts)
+    assert jobs.handle(_requested("1c000000-0000-4000-8000-000000000003", ["produced"])) == "delivery"
+    assert len(storage.puts) == puts + 1  # الحزمة الجديدة وحدها
+    assert storage.objects[("uploads", "orig/1")] == data

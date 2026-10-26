@@ -35,6 +35,7 @@ from .delivery import build_delivery
 from .export import build_package
 from .watermark import make_watermarked_preview
 from .proxy import make_proxy
+from .render import Segment, render
 from .hls import make_hls
 from .phash import video_phash
 from .thumbnails import contact_sheet, poster, timeline_sprite
@@ -87,6 +88,10 @@ def store_preview_key(material_id: str, file_id: str) -> str:
 
 def delivery_key(material_id: str, file_id: str, license_id: str) -> str:
     return f"{DERIVED_PREFIX}{material_id}/{file_id}/delivery/{license_id}.zip"
+
+
+def produced_key(material_id: str, file_id: str) -> str:
+    return f"{DERIVED_PREFIX}{material_id}/{file_id}/produced.mp4"
 
 
 def export_key(material_id: str, file_id: str) -> str:
@@ -401,8 +406,9 @@ class Jobs:
                 outcome = "delivery-existing"
             else:
                 extras = {}
-                if "produced" in deliverables and produced_file_id:
-                    extras["produced"] = self._produced(material_id, produced_file_id, Path(tmp))
+                if "produced" in deliverables:
+                    extras["produced"] = (self._produced(material_id, produced_file_id, Path(tmp)) if produced_file_id
+                                          else self._render_produced(material_id, file_id, ref, local, info, Path(tmp)))
 
                 def sign(path: Path, actions: list[str]) -> Path:
                     signed = path.with_name("c2pa-" + path.name)
@@ -419,6 +425,28 @@ class Jobs:
                 "mime_type": "application/zip", "license_id": license_id, "technical": info.to_dict(),
             })
         return outcome
+
+    def _render_produced(self, material_id: str, file_id: str, ref: FileRef, local: Path, info: Probe,
+                         tmp: Path) -> Path:
+        """النسخة المنتَجة بلا محرر: `render` للأصل كاملًا (H.264 SDR، الاتجاه مطبّق، بلا وسوم ولا ترجمة ولا تفريغ
+        محروق، R11)، موقَّعة C2PA حين يُفعَّل، ومسجَّلة `kind=produced`. واحدة لكل أصل؛ المرفوعة تُسجَّل كما هي."""
+        key = produced_key(material_id, file_id)
+        out = tmp / "produced.mp4"
+        if self._exists(key):
+            d = _download(self.storage, self.buckets.derived, key, out)
+            made = probe(out)
+        else:
+            built = out.with_name("produced-unsigned.mp4") if self.c2pa else out
+            made = render(local, built, info, [Segment(info.start_pts_us, info.start_pts_us + info.duration_ms * 1000)])
+            if self.c2pa:
+                self._sign(built, out, ref, ["c2pa.transcoded"] + (["c2pa.color_adjustments"] if info.hdr else []))
+            d = digest_file(out)
+            self.storage.put_file(self.buckets.derived, key, out, d.sha256, "video/mp4")
+        self.api.add_derivative(file_id, {
+            "kind": "produced", "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
+            "mime_type": "video/mp4", "technical": made.to_dict(),
+        })
+        return out
 
     def _produced(self, material_id: str, produced_file_id: str, tmp: Path) -> Path:
         """النسخة المنتَجة مشتق مخزَّن للمادة نفسها؛ تُطابق بصمتها قبل أن تدخل الحزمة."""
