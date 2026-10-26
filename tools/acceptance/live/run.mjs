@@ -44,6 +44,9 @@ try {
     PII_CANARIES: JSON.stringify(s.canaries.coordinates), PII_CHANNEL_CANARIES: JSON.stringify(s.canaries.titles),
     TENANT_BASE_URL: stack.apiUrl, TENANT_TOKENS: tokens, TENANT_FIXTURES: JSON.stringify(s.fixtures),
     IDEM_BASE_URL: stack.apiUrl, IDEM_TOKENS: tokens,
+    UPLOAD_CONTRACT_API_URL: stack.apiUrl, UPLOAD_CONTRACT_TOKENS: tokens,
+    OUTBOX_API_URL: stack.apiUrl, OUTBOX_TOKENS: tokens, OUTBOX_DATABASE_URL: databaseUrl,
+    STATE_API_URL: stack.apiUrl, STATE_TOKENS: tokens,
     HOOK_BASE_URL: stack.baseUrl, HOOK_TOKEN: stack.hookToken, HOOK_SESSIONS: JSON.stringify(s.uploads.hookSessions),
     INVALID_API_URL: stack.apiUrl, INVALID_TOKENS: tokens, DYN_API_URL: stack.apiUrl, DYN_TOKENS: tokens,
     HOOK_OBJECT_PREFIX: stack.objectPrefix, HOOK_BUCKET: stack.bucket,
@@ -64,7 +67,7 @@ try {
     NOTIF_RULES: process.env.RULES_ACCEPTANCE ?? "0",
     RID_API_URL: stack.apiUrl, RID_MATERIAL_ID: s.uploads.materialA, RID_LEGAL_NAME: s.legalName ?? "",
     RID_TOKENS: JSON.stringify({ system_admin: s.tokens.system_admin, identity_holder: s.tokens.editor_in_chief, source_holder: s.allTokens.system_admin_b, reporter: s.tokens.reporter }),
-    RID_USERS: JSON.stringify({ identity_holder: s.users.editor_in_chief.id, source_holder: s.users.system_admin_b.id }),
+    RID_USERS: JSON.stringify({ identity_holder: s.users.editor_in_chief.id, source_holder: s.allTokens.system_admin_b.id }),
   };
   Object.assign(process.env, common);
   const note = `الخادم من main@${sha} على Postgres 16 بقاعدة مؤقتة${process.env.LIVE_REDIS_URL ? " وRedis" : ""}${s3 ? " وتخزين S3" : ""}؛ بلا Cloudflare ولا tusd (الخطّاف مُحاكى)`;
@@ -72,7 +75,7 @@ try {
   setLogSource(() => stack.logs());
     // pii-leak reads the server logs of everything before it; dynamic-fields last: it publishes the shared form, which becomes the current form (with required fields) for every later material
   const core = process.env.CORE_ACCEPTANCE === "1" ? ["reporter-identity-access", "reservation-conflict", "optimistic-concurrency", "admin-quorum", "notification-delivery"] : [];
-  const names = ["tenant-isolation", "duplicate-payment", "invalid-file", "receipt-notification", "concurrent-load", "performance", ...core, "pii-leak", "dynamic-fields"];
+  const names = ["tenant-isolation", "duplicate-payment", "upload-contract", "outbox-transaction", "material-state-independence", "invalid-file", "receipt-notification", "concurrent-load", "performance", ...core, "pii-leak", "dynamic-fields"];
   const summary = [];
   const only = typeof args.only === "string" ? args.only.split(",") : null;
   for (const name of names.filter((n) => !only || only.includes(n))) {
