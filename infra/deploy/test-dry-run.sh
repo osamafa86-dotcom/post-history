@@ -102,7 +102,7 @@ for k in $(sed -n 's/^\([A-Z0-9_]*\)=.*/\1/p' /repo/infra/field-trial/trial.env.
   grep -q "^$k=." "$U" || fail "unsealed secrets lack $k"
 done
 for k in POSTGRES_PASSWORD REDIS_PASSWORD S3_SECRET_KEY TUSD_HOOK_SECRET JWT_SECRET MEDIA_WORKER_TOKEN \
-         S3_MEDIA_SECRET_KEY INGEST_GATE_TOKEN S3_BACKUP_SECRET_KEY BACKUP_PG_PASSWORD GRAFANA_ADMIN_PASSWORD \
+         S3_MEDIA_SECRET_KEY INGEST_GATE_TOKEN S3_BACKUP_SECRET_KEY BACKUP_PG_PASSWORD SANDBOX_WEBHOOK_SECRET GRAFANA_ADMIN_PASSWORD \
          GLITCHTIP_DB_PASSWORD GLITCHTIP_SECRET_KEY; do
   v="$(sed -n "s/^$k=//p" "$U")"; [ "${#v}" -ge 32 ] || fail "$k shorter than 32"
 done

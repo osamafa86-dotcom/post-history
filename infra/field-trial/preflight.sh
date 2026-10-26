@@ -108,6 +108,17 @@ if [ -f "$ENV_FILE" ]; then
   esac
   [ "$(val UPLOAD_VERIFIER)" = external ] && ok "UPLOAD_VERIFIER=external (media worker verifies)" || bad "UPLOAD_VERIFIER=external"
   [ -z "$(val CADDY_GLOBAL_EXTRA)" ] && ok "no test-only Caddy option (local_certs)" || bad "CADDY_GLOBAL_EXTRA must be empty on the trial host"
+  # مزوّد الدفع (ADR 0032): none أو sandbox وحدهما في التجربة؛ sandbox بسر توقيع ≥ 32، والعلمان ثابتان في compose.
+  case "$(val PAYMENT_PROVIDER)" in
+    ""|none) ok "payment provider: none (no purchase in this trial)" ;;
+    sandbox) ok "payment provider: sandbox (no real money)"
+             v="$(val SANDBOX_WEBHOOK_SECRET)"; [ "${#v}" -ge 32 ] && ok "secret length >= 32: SANDBOX_WEBHOOK_SECRET" \
+               || bad "secret length >= 32: SANDBOX_WEBHOOK_SECRET (PAYMENT_PROVIDER=sandbox)" ;;
+    *) bad "PAYMENT_PROVIDER must be none or sandbox in the trial (a real provider needs its ADR first)" ;;
+  esac
+  for k in DEPLOY_STAGE PAYMENT_SANDBOX_ALLOWED; do
+    grep -q "^$k=" "$ENV_FILE" && bad "$k must not be set in the secrets (fixed in docker-compose.trial.yml)" || ok "$k not switchable from the secrets"
+  done
   # حزمة التسليم ثابتة مطفأة في docker-compose.trial.yml حتى يمر شراء sandbox كاملًا: لا تُفتح من ملف الأسرار.
   grep -q '^MEDIA_ENABLE_DELIVERY=' "$ENV_FILE" && bad "MEDIA_ENABLE_DELIVERY must not be set in the secrets (delivery stays off in the trial)" \
     || ok "buyer delivery not switchable from the secrets"
@@ -209,6 +220,8 @@ if [ "$RUNNING" = 1 ]; then
   has() { grep -q "^$2=." <<<"$(env_of "$1")" && echo 1 || echo 0; }
   check "the gate and the API carry the qa slot only while a window is open" \
     "[ -n \"\$(env_of ingest-gate)\" ] && [ \"\$(has ingest-gate INGEST_QA_PUBLIC_KEY)\$(has api ACCEPTANCE_UPLOADER_USER_ID)\" = $qa_want$qa_want ]"
+  check "the API runs as the trial stage (DEPLOY_STAGE=trial), never production" \
+    "e=\"\$(env_of api)\" && grep -qx 'DEPLOY_STAGE=trial' <<<\"\$e\""
   check "the media worker runs with delivery off and alignment on" \
     "e=\"\$(env_of media-worker)\" && grep -qx 'MEDIA_ENABLE_DELIVERY=false' <<<\"\$e\" && grep -qx 'MEDIA_ENABLE_ALIGNMENT=true' <<<\"\$e\""
   if [ "${WALG_ARCHIVE_MODE:-}" = on ]; then

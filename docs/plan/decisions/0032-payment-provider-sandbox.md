@@ -53,9 +53,28 @@ type ProviderEvent = { eventId: string; type: 'payment.succeeded' | 'payment.fai
   إلى نقطة الإشعار نفسها التي يستعملها المزوّد الحقيقي.
 - **السيناريوهات:** تُشغَّل آليًا من اختبارات القبول («الدفع المكرر» و«الاسترداد» و«الحقوق والحصرية») بلا متصفح.
 
+### محوّل Stripe في وضع الاختبار (أمر المنسّق 2026-10-26)
+
+- **مزوّد ثانٍ** خلف الواجهة نفسها (`commerce/stripe-provider.ts`)، بـ `PAYMENT_PROVIDER=stripe`. لا مال حقيقي.
+- **المفاتيح:** `STRIPE_TEST_SECRET_KEY` وحده بصيغة `sk_test_` (المفتاح الحي يرفضه الإقلاع)، و`STRIPE_WEBHOOK_SECRET` بصيغة
+  `whsec_`. من البيئة وحدها، ولا يُطبعان في خطأ الإعداد ولا في السجل. ولا يُقبل مع `DEPLOY_STAGE=production`.
+- **الدفع:** جلسة Checkout مستضافة بمبلغ الطلب بوحداته الصغرى، واسم البند `Order <id>` وحده: لا عنوان مادة ولا مشترٍ عند
+  المزوّد. العودة إلى `SANDBOX_RETURN_URL` إن ضُبطت. ومفتاح منع التكرار عند Stripe من مفاتيحنا.
+- **الويبهوك** على `/payments/webhooks/stripe`: `Stripe-Signature` قبل التحليل بمقارنة ثابتة الزمن مع أي `v1`، ونافذة
+  ±5 دقائق. والتكرار بمعرّف الحدث `evt_` في `payment_events` كما في التجريبي.
+  - الترجمة إلى أنواعنا:
+    - `checkout.session.completed` المدفوع و`async_payment_succeeded` ← `payment.succeeded`.
+    - `async_payment_failed` و`expired` ← `payment.failed`.
+    - `refund.created/updated` الناجح ← `refund.succeeded`.
+    - `charge.dispute.created` ← `dispute.opened`.
+  - ما عداها حدث موقّع صحيح يُقبل `200` بلا أثر ولا يُخزَّن.
+- **الاسترداد:** من `payment_intent` الجلسة، بالمبلغ وبمفتاح منع التكرار.
+- **الاختبار:** بردود Stripe مسجّلة وتوقيعات محسوبة بسر اختباري، أو `stripe-mock` بـ `STRIPE_API_BASE` (خارج `NODE_ENV=production` وحده؛ فيه يُرفض الإقلاع بغير `https://api.stripe.com`). المفاتيح الحقيقية على
+  التجربة وحدها.
+
 ### ما لا يُبنى الآن
 
-- المزوّد الحقيقي، والتوجيه بين بوابات، والبوابة الاحتياطية: بعد تجربة الصرف.
+- المزوّد الحي (مال حقيقي)، والتوجيه بين بوابات، والبوابة الاحتياطية: بعد تجربة الصرف.
 - الصرف إلى المراسلين: يدوي موثَّق بقيد `payout` (ADR 0031) إلى أن تنجح قناة.
 
 ## التبعات
