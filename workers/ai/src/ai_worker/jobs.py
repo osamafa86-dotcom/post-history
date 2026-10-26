@@ -1,11 +1,12 @@
 """مهمة التفريغ لحدث `upload.verified` (ADR 0020).
 
-1. حدث لأصل (`kind=original`) متحقق منه، وفيه `material_id` و`file_id`؛ غيره يُتجاهل. والعلم `AI_ENABLE_TRANSCRIPT`
+1. حدث لأصل (`kind=original`) أو ملاحظة صوتية (`kind=voice_note`) متحقق منهما، وفيه `material_id` و`file_id`؛ غيره يُتجاهل. والعلم `AI_ENABLE_TRANSCRIPT`
    مطفأ ← يُتجاهل أيضًا، إلى أن يقبل الخادم رمز العامل وينشر الحدث (النوعان في عقد v0.2).
-2. المصدر النسخة الخفيفة التي صنعها عامل الوسائط من الأصل نفسه: `derived/<material_id>/<file_id>/proxy-480p.mp4`.
+2. المصدر ما صنعه عامل الوسائط من الملف نفسه: النسخة الخفيفة للأصل (`derived/<material_id>/<file_id>/proxy-480p.mp4`)،
+   وصوت 16 kHz للملاحظة الصوتية (`audio-16k.m4a`، ولا لقطات لها).
    قد يصل الحدث قبلها، أو لا تُصنع أصلًا (مادة أرسل هاتفها نسخته). غيابها `SourceNotReady` بلا انتظار هنا: الخدمة
    تؤجل الحدث في `ai:retry` دون أن تحجب غيره، ثم تسجّل التعذّر في `ai:dead` بعد `AI_SOURCE_WAIT_S`. أصل بلا نسخة
-   خفيفة (ملاحظة صوتية، صوت فقط) لا يُفرَّغ في هذه المرحلة.
+   خفيفة لا يُفرَّغ.
 3. إن وُجد ملفا التفريغ من تسليم سابق فلا تفريغ ثانٍ: يُقرآن ويُسجَّلان كما هما، فيتساوى أثر التكرار ولا يتعارض
    ناتج نموذج غير حتمي مع ما سُجّل.
 4. وإلا ينزّل النسخة إلى مجلد المهمة، ويفرّغها، ويكتب `transcript.json` و`transcript.vtt`، ويرفعهما ثم يسجّلهما.
@@ -67,6 +68,11 @@ def proxy_key(material_id: str, file_id: str) -> str:
     return _prefix(material_id, file_id) + "proxy-480p.mp4"
 
 
+def audio_key(material_id: str, file_id: str) -> str:
+    """صوت الملاحظة الصوتية 16 kHz من عامل الوسائط: مصدر تفريغها، فلا نسخة خفيفة لها."""
+    return _prefix(material_id, file_id) + "audio-16k.m4a"
+
+
 def transcript_key(material_id: str, file_id: str) -> str:
     return _prefix(material_id, file_id) + "transcript.json"
 
@@ -118,7 +124,8 @@ class Jobs:
             return "ignored"
         p = event.get("payload") or {}
         material_id, file_id = p.get("material_id"), p.get("file_id")
-        if p.get("kind") != "original" or not material_id or not file_id:
+        kind = p.get("kind")
+        if kind not in ("original", "voice_note") or not material_id or not file_id:
             return "ignored"
         if not self.enabled:
             return "ignored:disabled"
@@ -131,23 +138,25 @@ class Jobs:
                 _download(self.storage, self.bucket, vkey, vtt_path)
                 duration_ms, start_pts_us = self._timing_from_json(json_path)
                 out = "reused" + self._register_all(file_id, jkey, json_path, vkey, vtt_path, duration_ms, start_pts_us)
-                if self.shots_enabled and not self._exists(shot_list_key(material_id, file_id)) \
+                if kind == "original" and self.shots_enabled and not self._exists(shot_list_key(material_id, file_id)) \
                         and self._exists(proxy_key(material_id, file_id)):
                     src = job / "proxy-480p.mp4"
                     _download(self.storage, self.bucket, proxy_key(material_id, file_id), src)
                     out += self._shots(material_id, file_id, src, _segments_from_json(json_path), start_pts_us)
                 return out
-            if not self._exists(proxy_key(material_id, file_id)):
-                raise SourceNotReady("no proxy to transcribe yet")
-            src = job / "proxy-480p.mp4"
-            _download(self.storage, self.bucket, proxy_key(material_id, file_id), src)
+            # الأصل المرئي يُفرَّغ من نسخته الخفيفة، والملاحظة الصوتية من صوتها 16 kHz
+            skey = proxy_key(material_id, file_id) if kind == "original" else audio_key(material_id, file_id)
+            if not self._exists(skey):
+                raise SourceNotReady(f"no {'proxy' if kind == 'original' else '16k audio'} to transcribe yet")
+            src = job / skey.rsplit("/", 1)[1]
+            _download(self.storage, self.bucket, skey, src)
             assert self.engine is not None
             t0 = time.perf_counter()
             result = self.engine.transcribe(src)
             self.last_timing = {"decode_s": result.decode_s, "transcribe_s": result.transcribe_s,
                                 "duration_s": result.timing.duration_s, "job_s": time.perf_counter() - t0}
             json_path, vtt_path = job / "transcript.json", job / "transcript.vtt"
-            source = {"file_id": file_id, "from": "proxy-480p.mp4"}
+            source = {"file_id": file_id, "from": src.name}
             json_path.write_text(to_json(result.segments, duration_s=result.timing.duration_s,
                                          start_pts_us=result.timing.start_pts_us, engine={**self.engine.describe, **self.weights}, source=source),
                                  encoding="utf-8")
@@ -158,7 +167,7 @@ class Jobs:
             duration_ms = max(1, round(result.timing.duration_s * 1000))
             out = "transcribed" + self._register_all(file_id, jkey, json_path, vkey, vtt_path, duration_ms,
                                                      result.timing.start_pts_us)
-            if self.shots_enabled:
+            if self.shots_enabled and kind == "original":
                 out += self._shots(material_id, file_id, src, result.segments, result.timing.start_pts_us)
             return out
         finally:

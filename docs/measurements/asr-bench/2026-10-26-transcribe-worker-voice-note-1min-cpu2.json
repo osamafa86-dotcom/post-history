@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "tool": "asr-bench",
+  "role": "ai",
+  "test_name": "transcribe-worker-voice-note-1min-cpu",
+  "started_at": "2026-10-26T05:00:01.475Z",
+  "ended_at": "2026-10-26T05:00:45.605Z",
+  "result": "info",
+  "device": {
+    "platform": "server",
+    "model": "Intel(R) Xeon(R) Processor @ 2.10GHz, --cpus 2, --memory 4g, CPU only",
+    "os_version": "Linux-6.18.44-fc-v153-x86_64-with-glibc2.41"
+  },
+  "upload_path": "n/a",
+  "file": {
+    "duration_s": 60.0,
+    "codec": "aac mono 16 kHz, audio only (like audio-16k.m4a)"
+  },
+  "provider": "local: faster-whisper faster-whisper-large-v3-turbo (int8, vad silero)",
+  "cost_usd": 0,
+  "metrics": {
+    "audio_s": 60.0,
+    "load_s": 9.32,
+    "decode_s": 0.04,
+    "transcribe_s": 34.76,
+    "processing_s": 34.8,
+    "rtf_cpu": 0.58,
+    "peak_memory_mb": 2128.9,
+    "segments": 8,
+    "cues": 13,
+    "cpu_threads": "auto",
+    "network": "none (docker --network none)",
+    "hardening": "read-only root, cap-drop ALL, no-new-privileges, uid 10002"
+  },
+  "notes": "1 minute(s) of public CC-BY-4.0 read speech (FLEURS ar_eg test, the asr-bench msa-read clips joined with 0.4 s pauses) as an audio-only m4a like the media worker's voice-note audio. Engine time only, after model load; peak memory is the container cgroup peak and includes the load. No correspondent material. Warm run (weights in the page cache); a first cold run on this host took 113 s to load and 55 s to transcribe."
+}

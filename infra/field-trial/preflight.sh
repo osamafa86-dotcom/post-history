@@ -108,6 +108,9 @@ if [ -f "$ENV_FILE" ]; then
   esac
   [ "$(val UPLOAD_VERIFIER)" = external ] && ok "UPLOAD_VERIFIER=external (media worker verifies)" || bad "UPLOAD_VERIFIER=external"
   [ -z "$(val CADDY_GLOBAL_EXTRA)" ] && ok "no test-only Caddy option (local_certs)" || bad "CADDY_GLOBAL_EXTRA must be empty on the trial host"
+  # حزمة التسليم ثابتة مطفأة في docker-compose.trial.yml حتى يمر شراء sandbox كاملًا: لا تُفتح من ملف الأسرار.
+  grep -q '^MEDIA_ENABLE_DELIVERY=' "$ENV_FILE" && bad "MEDIA_ENABLE_DELIVERY must not be set in the secrets (delivery stays off in the trial)" \
+    || ok "buyer delivery not switchable from the secrets"
   MAIN_DOMAIN="$(val MAIN_DOMAIN)" INGEST_DOMAIN="$(val INGEST_DOMAIN)" MAIN_IP="$(val MAIN_IP)" INGEST_IP="$(val INGEST_IP)"
   BACKUP_DIR="$(val BACKUP_DIR)" BACKUP_RECIPIENT_CERT="$(val BACKUP_RECIPIENT_CERT)"
   # أرشفة WAL (ADR 0051): مقبول إطفاؤها في التجربة (فقد حتى 24 ساعة، قرار المنسّق)، وشرط قبل المرحلة التجارية.
@@ -206,6 +209,8 @@ if [ "$RUNNING" = 1 ]; then
   has() { grep -q "^$2=." <<<"$(env_of "$1")" && echo 1 || echo 0; }
   check "the gate and the API carry the qa slot only while a window is open" \
     "[ -n \"\$(env_of ingest-gate)\" ] && [ \"\$(has ingest-gate INGEST_QA_PUBLIC_KEY)\$(has api ACCEPTANCE_UPLOADER_USER_ID)\" = $qa_want$qa_want ]"
+  check "the media worker runs with delivery off and alignment on" \
+    "e=\"\$(env_of media-worker)\" && grep -qx 'MEDIA_ENABLE_DELIVERY=false' <<<\"\$e\" && grep -qx 'MEDIA_ENABLE_ALIGNMENT=true' <<<\"\$e\""
   if [ "${WALG_ARCHIVE_MODE:-}" = on ]; then
     arch() { "$ROOT/infra/field-trial/trial.sh" exec -T postgres psql -U "$(sed -n 's/^POSTGRES_USER=//p' "$ROOT/infra/compose/.env.example" | tail -1)" -d postgres -XAtq -c "$1" 2>/dev/null; }
     check "postgres archives WAL (archive_mode on)" "[ \"\$(arch 'show archive_mode')\" = on ]"
