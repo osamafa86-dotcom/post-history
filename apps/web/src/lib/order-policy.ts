@@ -9,6 +9,9 @@ export const orderReaders = ["system_admin", "finance", "buyer_admin", "buyer_me
 export const orderWriters = ["buyer_admin", "buyer_member"] as const satisfies readonly Role[];
 export const orderStatuses = ["pending_payment", "paid", "cancelled", "expired", "refunded"] as const satisfies readonly components["schemas"]["OrderStatus"][];
 export const orderLimits = { items: 20 } as const;
+// المزوّد إعداد خادم يعود في الجلسة (ADR 0032)؛ لا يختاره المشتري. Stripe بوضع الاختبار وحده وعلى أصل صفحته المستضافة.
+export const checkoutProviders = ["sandbox", "stripe"] as const satisfies readonly components["schemas"]["PaymentProvider"][];
+export const stripeCheckoutOrigin = "https://checkout.stripe.com";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const plain = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
@@ -34,8 +37,12 @@ export function safeOrder(o: Order): Order {
     expires_at: o.expires_at, paid_at: o.paid_at ?? null, created_at: o.created_at, updated_at: o.updated_at,
   };
 }
-/** صفحة الدفع المستضافة: لا يُوجَّه المتصفح إلى أصل خارج قائمة الإعداد، ولا إلى رابط بمستخدم أو كلمة مرور. */
-export function allowedCheckout(value: unknown, origins: readonly string[]) {
-  if (typeof value !== "string") return false;
-  try { const url = new URL(value); return origins.includes(url.origin) && !url.username && !url.password && ["https:", "http:"].includes(url.protocol); } catch { return false; }
+/** صفحة الدفع المستضافة: لا يُوجَّه المتصفح إلى أصل خارج قائمة الإعداد، ولا إلى رابط بمستخدم أو كلمة مرور، ولا يُقبل مزوّد خارج العقد. ورابط Stripe على أصل صفحته وحده وبـ https. */
+export function allowedCheckout(value: unknown, origins: readonly string[], provider: unknown = "sandbox") {
+  if (typeof value !== "string" || !(checkoutProviders as readonly unknown[]).includes(provider)) return false;
+  try {
+    const url = new URL(value);
+    if (!origins.includes(url.origin) || url.username || url.password || !["https:", "http:"].includes(url.protocol)) return false;
+    return provider === "stripe" ? url.origin === stripeCheckoutOrigin : url.origin !== stripeCheckoutOrigin;
+  } catch { return false; }
 }

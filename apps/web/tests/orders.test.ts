@@ -31,6 +31,14 @@ describe("order input and checkout origin", () => {
     expect(allowedCheckout("https://sandbox.pay.example.test/s/abc", config.checkoutOrigins!)).toBe(true);
     for (const value of ["https://evil.example.test/s", "https://user:p@sandbox.pay.example.test/s", "javascript:alert(1)", 7]) expect(allowedCheckout(value, config.checkoutOrigins!)).toBe(false);
   });
+  it("adapts to the server's provider: Stripe in test mode only on its hosted origin, nothing outside the contract", () => {
+    const origins = ["https://sandbox.pay.example.test", "https://checkout.stripe.com"];
+    expect(allowedCheckout("https://checkout.stripe.com/c/pay/cs_test_abc", origins, "stripe")).toBe(true);
+    expect(allowedCheckout("https://sandbox.pay.example.test/s/abc", origins, "stripe")).toBe(false);
+    expect(allowedCheckout("https://checkout.stripe.com/c/pay/cs_test_abc", origins, "sandbox")).toBe(false);
+    expect(allowedCheckout("https://checkout.stripe.com/c/pay/cs_test_abc", ["https://sandbox.pay.example.test"], "stripe")).toBe(false);
+    expect(allowedCheckout("https://sandbox.pay.example.test/s/abc", origins, "paypal")).toBe(false);
+  });
 });
 
 describe("orders BFF", () => {
@@ -56,6 +64,11 @@ describe("orders BFF", () => {
     expect(evil.result.status).toBe(502); expect(await evil.result.text()).not.toContain("evil");
     const off = await call(`orders/${orderId}/checkout`, { cfg: { ...config, checkoutOrigins: [] }, upstream: () => Response.json({ checkout_url: "https://sandbox.pay.example.test/s/abc", provider: "sandbox", expires_at: order.expires_at }) });
     expect(off.result.status).toBe(502);
+    const stripeConfig = { ...config, checkoutOrigins: ["https://sandbox.pay.example.test", "https://checkout.stripe.com"] };
+    const stripe = await call(`orders/${orderId}/checkout`, { cfg: stripeConfig, upstream: () => Response.json({ checkout_url: "https://checkout.stripe.com/c/pay/cs_test_abc", provider: "stripe", expires_at: order.expires_at }) });
+    expect(stripe.result.status).toBe(200); expect((await stripe.result.json()).provider).toBe("stripe");
+    const unknown = await call(`orders/${orderId}/checkout`, { cfg: stripeConfig, upstream: () => Response.json({ checkout_url: "https://sandbox.pay.example.test/s/abc", provider: "paypal", expires_at: order.expires_at }) });
+    expect(unknown.result.status).toBe(502);
     const cancelled = await call(`orders/${orderId}/cancel`, { upstream: () => Response.json({ ...order, status: "cancelled", cancel_reason: "buyer" }) });
     expect((await cancelled.result.json()).status).toBe("cancelled");
     expect((await call(`orders/${orderId}/cancel`, { body: { reason: "x" } })).result.status).toBe(422);

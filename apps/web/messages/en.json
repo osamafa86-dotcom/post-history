@@ -853,11 +853,11 @@
     "order": "Order",
     "notFound": "Order not found.",
     "place": "Create order",
-    "pay": "Pay at the sandbox provider",
+    "pay": "Pay at the provider",
     "cancel": "Cancel order",
     "payBy": "Pay before",
     "paidAt": "Paid at",
-    "sandbox": "Sandbox payment: no real money. The payment page is the provider's; card details never pass through us.",
+    "sandbox": "Test payment: no real money. The payment page is the provider's (the sandbox, or Stripe in test mode); card details never pass through us.",
     "awaiting": "You are back from the payment page. Waiting for the provider's confirmation; this can take a moment.",
     "paidHelp": "The order is paid and the licenses are issued.",
     "expiredHelp": "The payment window has passed; create a new order.",
@@ -875,7 +875,11 @@
       "exclusivity_lost": "exclusivity lost",
       "rights_changed": "rights changed"
     },
-    "staffNav": "Orders"
+    "staffNav": "Orders",
+    "redirecting": {
+      "sandbox": "Taking you to the sandbox provider's page…",
+      "stripe": "Taking you to Stripe in test mode; use a Stripe test card only…"
+    }
   },
   "refunds": {
     "title": "Refunds",
