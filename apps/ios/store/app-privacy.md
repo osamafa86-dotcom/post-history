@@ -12,10 +12,10 @@
 
 | فئة App Store Connect | نوع البيانات (Data Type) | الغرض (Purpose) | مرتبطة بهوية المستخدم؟ | مستخدمة للتتبع؟ | التفاصيل والمصدر في التطبيق |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Contact Info** | **Email Address / Name** (المعرف المهني) | App Functionality | نعم | لا | تسجيل دخول المراسل المعتمد وربط المواد والإيصالات بحسابه (`AuthCore`). |
+| **Contact Info** | **Email Address** (البريد المهني) | App Functionality | نعم | لا | تسجيل دخول المراسل المعتمد (`LoginRequest.email` في `AuthCore`) وربط المواد والإيصالات بحسابه. التطبيق لا يطلب الاسم. |
 | **User Content** | **Photos or Videos** | App Functionality | نعم | لا | ملفات الفيديو والصور التي يختارها المراسل يدوياً للرفع (`UploadCore`). يُرفع الأصل كما سُجّل للتحقق من بصمة `SHA-256`؛ وقد يحمل بيانات وصفية (ومنها موقع الكاميرا) تُجرَّد على الخادم في المشتقات قبل أي معاينة أو تداول؛ الأصل محفوظ ولا يُسلَّم. |
 | **User Content** | **Other User Content** (حقول الاستمارة التحريرية) | App Functionality | نعم | لا | ما يدخله المراسل في استمارة الرفع (`FormEngine`). |
-| **Identifiers** | **User ID / Device Push Token** | App Functionality | نعم | لا | رمز الجلسة في `Keychain` ورمز `APNs` لتسليم الإيصالات وتنفيذ الإلغاء عن بُعد (`NotificationsCore` / `DeviceSecurity`). لا يجمع التطبيق `IDFA`. |
+| **Identifiers** | **User ID / Device ID** (رمز الجلسة، رمز APNs، معرّف تثبيت مولَّد) | App Functionality | نعم | لا | رمز الجلسة في `Keychain`؛ ورمز `APNs` مع **معرّف تثبيت مولَّد** (UUID عشوائي، لا معرّف عتاد) يُرسلان إلى `PUT /push-devices` (`NotificationsCore/PushRegistration.swift`) لتنبيه المراسل بتغيّر حالة مادته، ويُحذفان عند الخروج والمسح الطارئ. لا يجمع التطبيق `IDFA`. |
 | **Location** | **Precise Location** (موقع الكاميرا داخل بيانات الأصل الوصفية) | App Functionality | نعم | لا | لا يستورد التطبيق `CoreLocation` ولا يقرأ موقع الجهاز، لكن الأصل المرفوع كما سُجّل قد يحمل موقع الكاميرا في بياناته الوصفية ويُحفظ على الخادم بها (الأصل لا يُمس)؛ يُجرَّد في المشتقات قبل أي معاينة أو تداول. يُعلن مجمَّعًا للوظيفة، بلا تتبع، مطابقةً لـ#349 و#392. |
 | **Diagnostics** | **Other Diagnostic Data** (رمز App Attest) | App Functionality & Fraud Prevention | لا | لا | شهادة `DeviceCheck / App Attest` المؤقتة للتحقق من سلامة التطبيق عند طلب تذكرة الإدخال (`DeviceAttestation`). |
 
