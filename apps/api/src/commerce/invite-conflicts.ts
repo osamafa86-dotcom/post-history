@@ -41,13 +41,19 @@ export async function openInviteConflicts(db: Database): Promise<PendingInviteCo
     .orderBy(asc(buyerInviteConflicts.createdAt), asc(buyerInviteConflicts.id));
 }
 
-/** الحسم: مدير نظام فاعل برمز TOTP صحيح يصرف الدعوة، فتُغلق ويُسجَّل الحسم. لا ملاحظة نصية. */
-export async function dismissInviteConflict(
+export type ConflictRow = typeof buyerInviteConflicts.$inferSelect;
+
+/**
+ * الحسم بالحالة وحدها (العقد #361): مدير نظام فاعل برمز TOTP صحيح. `suspended` يعلّق العضو المدعو البديل، و`dismissed`
+ * يغلقه نهائيًا ويحرر مقعده. من `pending` إلى الحالتين، ومن `suspended` إلى `dismissed`، وغيرها `invalid_transition`.
+ * لا ملاحظة نصية، والتدقيق `buyer_member.invite_conflict_resolved` بـ `conflict_id` بلا البريد.
+ */
+export async function resolveInviteConflict(
   db: Database,
   deps: { keyring: FieldKeyring },
-  input: { conflictId: string; adminId: string; totp: string },
-): Promise<void> {
-  await db.transaction(async (tx) => {
+  input: { conflictId: string; adminId: string; totp: string; to: 'suspended' | 'dismissed' },
+): Promise<ConflictRow> {
+  return db.transaction(async (tx) => {
     const [admin] = await tx
       .select({ status: users.status, totpEnabled: users.totpEnabled, secret: users.totpSecretEnc })
       .from(users)
@@ -61,16 +67,30 @@ export async function dismissInviteConflict(
     }
     const [c] = await tx.select().from(buyerInviteConflicts).where(eq(buyerInviteConflicts.id, input.conflictId)).for('update');
     if (!c) throw new InviteConflictError('not_found', 'invite conflict not found');
-    if (c.state === 'dismissed') throw new InviteConflictError('already_resolved', 'invite conflict is already resolved');
-    await tx
+    const allowed = c.state === 'pending' || (c.state === 'suspended' && input.to === 'dismissed');
+    if (!allowed) throw new InviteConflictError('already_resolved', `invite conflict cannot go from ${c.state} to ${input.to}`);
+    const now = new Date().toISOString();
+    const [after] = await tx
       .update(buyerInviteConflicts)
-      .set({ state: 'dismissed', resolvedAt: new Date().toISOString(), resolvedBy: input.adminId, updatedAt: new Date().toISOString() })
-      .where(eq(buyerInviteConflicts.id, c.id));
+      .set(input.to === 'dismissed' ? { state: 'dismissed', resolvedAt: now, resolvedBy: input.adminId, updatedAt: now } : { state: 'suspended', updatedAt: now })
+      .where(eq(buyerInviteConflicts.id, c.id))
+      .returning();
     await audit(tx, input.adminId, 'buyer_member.invite_conflict_resolved', c.existingUserId, {
       organization_id: c.organizationId,
       target_user_id: c.existingUserId,
       conflict_id: c.id,
       role: c.role,
+      to: input.to,
     });
+    return after!;
   });
+}
+
+/** الحسم من سطر الأوامر: الصرف النهائي. */
+export async function dismissInviteConflict(
+  db: Database,
+  deps: { keyring: FieldKeyring },
+  input: { conflictId: string; adminId: string; totp: string },
+): Promise<void> {
+  await resolveInviteConflict(db, deps, { ...input, to: 'dismissed' });
 }
