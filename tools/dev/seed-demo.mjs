@@ -25,9 +25,27 @@ export async function populateMaterials(create) {
 export function verifyCommerce(doc, refunded) {
   if(!doc || doc.result==='fail' || doc.metrics?.checks_failed || !refunded) throw new Error('sandbox refund verification incomplete');
 }
+// الرخصة مرتبطة ببند الطلب، لا بالطلب مباشرة؛ الاستعلام نفسه يستعمله اختبار القاعدة المرحّلة.
+export const ACTIVE_ORDER_LICENSE_SQL="SELECT 1 FROM licenses l JOIN order_items i ON i.id=l.order_item_id WHERE i.order_id=$1 AND l.status='active'";
+export async function acknowledgeVerified(http, token, materialId, {attempts=120,wait=()=>new Promise(r=>setTimeout(r,250))}={}) {
+  for(let attempt=0;attempt<attempts;attempt++) {
+    const current=await http.get(token,`/materials/${materialId}`);
+    if(current.status!==200)throw new Error('demo material read failed');
+    if(current.body.technical_state==='failed')throw new Error('demo technical verification failed');
+    if(current.body.technical_state==='verified') {
+      if(current.body.editorial_state==='acknowledged')return;
+      const transition=await http.call(token,'POST',`/materials/${materialId}/transitions`,{body:{track:'editorial',to:'acknowledged',reason:'اطلاع تجريبي على مادة اصطناعية'},headers:{'if-match':current.headers.etag}});
+      if(transition.status===200)return;
+      // نقرأ ETag جديدًا إذا غيّر التحقق غير المتزامن الإصدار بين القراءة والكتابة.
+      if(transition.status!==412)throw new Error('demo notification transition failed');
+    }
+    if(attempt+1<attempts)await wait();
+  }
+  throw new Error('demo verification or transition timed out');
+}
 export const states = i => ({technical:['pending','proxy_received','original_received','verified','failed'][i%5], editorial:['inbox','acknowledged','reviewing','needs_changes','accepted','in_production','final_review','published','rejected'][i%9], rights:['unknown','documented','sellable','blocked','withdrawn'][i%5]});
 export function failureMessage(phase) {
-  const known=['configuration','ffmpeg','database','base_seed','accounts','media','materials','sandbox_purchase','refund_verification','paid_order','credentials'];
+  const known=['configuration','ffmpeg','database','base_seed','accounts','media','materials','first_transition','sandbox_purchase','refund_verification','paid_order','credentials'];
   return `Demo seed failed at ${known.includes(phase)?phase:'unknown'}; partial data may remain. Credentials are not logged.`;
 }
 export async function run(env=process.env) {
@@ -78,9 +96,9 @@ export async function run(env=process.env) {
       result.agentClose(); if(result.violations.length) throw new Error('demo upload violated resume invariants');
       const st=states(i),r=reporters[i%6];
       if(i===0) {
-        const current=await http.get(s.tokens.supervisor,`/materials/${m.body.id}`);
-        const transition=await http.call(s.tokens.supervisor,'POST',`/materials/${m.body.id}/transitions`,{body:{track:'editorial',to:'acknowledged',reason:'اطلاع تجريبي على مادة اصطناعية'},headers:{'if-match':current.headers.etag}});
-        if(transition.status!==200)throw new Error('demo notification transition failed');
+        phase='first_transition';
+        await acknowledgeVerified(http,s.tokens.supervisor,m.body.id);
+        phase='materials';
         st.editorial='acknowledged';
       }
       await db.query('UPDATE materials SET reporter_id=$1,office_id=$2,technical_state=$3,editorial_state=$4,rights_state=$5 WHERE id=$6',[r.id,officeIds[i%2],st.technical,st.editorial,st.rights,m.body.id]);
@@ -113,7 +131,7 @@ export async function run(env=process.env) {
     if(!settle.ok)throw new Error('sandbox settlement failed');
     let licensed=false;
     for(let i=0;i<40&&!licensed;i++){
-      licensed=(await db.query("SELECT 1 FROM licenses WHERE order_id=$1 AND status='active'",[paid.body.id])).rowCount>0;
+      licensed=(await db.query(ACTIVE_ORDER_LICENSE_SQL,[paid.body.id])).rowCount>0;
       if(!licensed)await new Promise(r=>setTimeout(r,250));
     }
     if(!licensed||(await http.get(s.tokens.buyer_admin,`/orders/${paid.body.id}`)).body.status!=='paid')throw new Error('paid license not issued');
