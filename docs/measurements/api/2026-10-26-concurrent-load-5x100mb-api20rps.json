@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "codex",
+  "test_name": "concurrent-load",
+  "started_at": "2026-10-26T18:17:32.269Z",
+  "ended_at": "2026-10-26T18:17:56.779Z",
+  "result": "partial",
+  "device": {
+    "platform": "server",
+    "model": "local services, memory unverified: 5x100mb-api20rps"
+  },
+  "upload_path": "tusd",
+  "file": {
+    "size_bytes": 100000000
+  },
+  "metrics": {
+    "upload_target_count": 5,
+    "upload_prepared": 5,
+    "upload_completed": 5,
+    "file_size_bytes": 100000000,
+    "api_target_rps": 20,
+    "duration_s": 10,
+    "upload_errors": 0,
+    "upload_resumed": 2,
+    "upload_ms_p50": 12247,
+    "upload_ms_p95": 13080,
+    "upload_ms_p99": 13080,
+    "inbox_ms_p50": 46.772555,
+    "inbox_ms_p95": 104.136417,
+    "inbox_ms_p99": 107.017406,
+    "inbox_errors": 0,
+    "inbox_requests": 100,
+    "inbox_observed_rps": 10,
+    "catalog_ms_p50": 52.760833,
+    "catalog_ms_p95": 106.578412,
+    "catalog_ms_p99": 107.473902,
+    "catalog_errors": 0,
+    "catalog_requests": 100,
+    "catalog_observed_rps": 10,
+    "docker_memory_peak_bytes": "unverified",
+    "docker_memory_samples": "unverified",
+    "docker_memory_errors": "unverified"
+  },
+  "notes": "نطاق التشغيل 5x100mb-api20rps: اكتمل 5 رفعًا مع قطع واستئناف 2 منها، ثم 20 طلب/ث مستهدف على مساري الوارد والكتالوج. الذاكرة مجموع استخدام الحاويات المحددة، لا ذاكرة المضيف. لا قياس زمن الإشعار أو القرص المؤقت ولا حجم الخطة 60 × 2 GB؛ لذلك النتيجة جزئية حتى دون أخطاء. لا إثبات بصمة الملف بعد معالجة الخادم في هذا الاختبار. الذاكرة unverified؛ تم تجاوز القياس بطلب صريح أو لعدم توفر docker stats للحاويات المحددة؛ لم تتوفر قراءة ذاكرة معتمدة، ولا يوجد قياس لذاكرة الحاويات."
+}
