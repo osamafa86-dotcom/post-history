@@ -2,10 +2,10 @@ A professional app for the news organisation's reporters and accredited field cr
 
 Core functions:
 - Send original field material: upload video and photo files at their original quality from the photo library, without compression or re-encoding, together with the fixed fields and the desk form.
-- Light copy first: the app generates a light copy that reaches the newsroom within minutes while the original finishes uploading in the background.
-- Automatic resume: uploads use a resumable protocol and continue from the last confirmed chunk after a connection drop, closing the app or restarting the device.
+- Light copy first: the app generates a light copy that reaches the newsroom before the original, which finishes uploading in the background.
+- Automatic resume: uploads use a resumable protocol and resume from the last confirmed chunk when the connection returns or the app is opened again.
 - Numbered receipt: the app computes the file's checksum on the phone and the server verifies it to ensure the material arrived complete, then shows a receipt number that can be shared inside the organisation.
-- Three independent states per material: technical, editorial and rights, with a timeline of who did what and when, plus supervisor notes pinned to a timecode.
+- Three independent states per material: technical, editorial and rights, with a timeline of who did what and when, plus supervisor notes.
 - Local copy and emergencies: deleting the local copy after the receipt is the reporter's decision through the system confirmation, with an emergency wipe of app data and an automatic wipe if the session is revoked remotely.
 
 Data transparency and privacy (what is uploaded and who sees it):
