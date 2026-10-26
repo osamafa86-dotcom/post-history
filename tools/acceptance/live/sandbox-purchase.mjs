@@ -290,6 +290,17 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     // مزوّد التجربة يحتفظ بحالة الدفع في ذاكرته: لا استرداد إلا لدفع أتمّته صفحته (إشعارنا الموقّع وحده لا يغيّر حالته)
     const settled = await fetch(`${root}/sandbox/checkout/${providerRef}/succeeded`, { method: "POST" });
     check("the hosted page settles the payment in the provider (a late duplicate for a paid order)", settled.status === 202, `status ${settled.status}`);
+    const rbody = (ids) => ({ body: { order_item_ids: ids, reason_code: "buyer_request" } });
+    const probe = await http.call(tokens.buyer_admin, "POST", `/orders/${orderId}/refunds`, rbody([itemId]));
+    if (probe.status !== 404) {
+      check("a buyer cannot create a refund (403)", probe.status === 403, `status ${probe.status}`);
+      check("a reporter cannot create a refund (403)", (await http.call(tokens.reporter, "POST", `/orders/${orderId}/refunds`, rbody([itemId]))).status === 403);
+      const unpaid = await http.call(tokens.finance, "POST", `/orders/${exA.body?.id}/refunds`, rbody([exA.body?.items?.[0]?.id]));
+      check("an order that was never paid is not refunded (409 order_state_conflict)", unpaid.status === 409 && unpaid.body?.code === "order_state_conflict", `status ${unpaid.status} ${unpaid.body?.code}`);
+      const foreign = await http.call(tokens.finance, "POST", `/orders/${orderId}/refunds`, rbody([exA.body?.items?.[0]?.id]));
+      check("an item of another order is refused (422)", foreign.status === 422, `status ${foreign.status}`);
+      check("no refund row was written by the refused requests", Number((await one(`SELECT count(*) AS n FROM refunds WHERE order_id = $1`, [orderId])).n) === 0);
+    }
     const refund = await http.call(tokens.finance, "POST", `/orders/${orderId}/refunds`, { body: { order_item_ids: [itemId], reason_code: "buyer_request" } });
     if (refund.status === 404) defer("refund", "POST /orders/{id}/refunds is not served yet");
     else {
@@ -298,13 +309,22 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       check("the provider gave the refund its own reference", Boolean(refundRef));
       const done = event("refund.succeeded", refundRef ?? providerRef, PRICE);
       check("the signed refund notification is accepted", (await send(done)).status === 200);
-      const rl = await q(`SELECT j.id FROM journal_entries j WHERE j.kind = 'refund' AND j.reference_type = 'refund' AND j.reference_id = $1`, [refund.body?.id]);
+      const rl = await q(`SELECT j.id FROM journal_entries j WHERE j.kind = 'refund' AND j.reference_type = 'order' AND j.reference_id = $1`, [orderId]);
       check("one refund entry", rl.length === 1, `${rl.length}`);
       if (rl.length === 1) {
         const lines = toLines(await q(`SELECT a.kind, a.owner_id::text AS owner_id, a.payable_state AS state, p.currency, p.amount_minor::text AS amount FROM postings p JOIN ledger_accounts a ON a.id = p.account_id WHERE p.entry_id = $1`, [rl[0].id]));
         const problems = judgeRefundMirror(saleLines, lines);
         check("the refund entry mirrors the sale line by line", problems.length === 0, problems.join("; "));
       }
+      const again = await http.call(tokens.finance, "POST", `/orders/${orderId}/refunds`, rbody([itemId]));
+      check("refunding the same item again is refused, so a refund never exceeds what was paid", again.status === 409, `status ${again.status} ${again.body?.code}`);
+      const refunded = Number((await one(`SELECT COALESCE(sum(amount_minor), 0) AS n FROM refunds WHERE order_id = $1 AND status <> 'failed'`, [orderId])).n);
+      check("the refunds of the order add up to the price paid, no more", refunded === Number(PRICE), `${refunded} of ${PRICE}`);
+      const net = await q(`SELECT a.kind FROM postings p JOIN ledger_accounts a ON a.id = p.account_id WHERE p.entry_id IN (SELECT id FROM journal_entries WHERE reference_type = 'order' AND reference_id = $1 AND kind IN ('sale', 'refund')) GROUP BY a.id, a.kind HAVING sum(p.amount_minor) <> 0`, [orderId]);
+      check("sale plus refund leave every account at zero (the reversal is complete)", net.length === 0, net.map((r) => r.kind).join(","));
+      check("the finance role reads the refund as succeeded; the buyer admin too; a member does not", (await http.get(tokens.finance, `/orders/${orderId}/refunds`)).body?.items?.[0]?.status === "succeeded" && (await http.get(tokens.buyer_admin, `/orders/${orderId}/refunds`)).status === 200 && (await http.get(tokens.buyer_member, `/orders/${orderId}/refunds`)).status === 403);
+      const echo = await send(done);
+      check("the refund notification again changes nothing (still one refund entry)", echo.status === 200 && Number((await one(`SELECT count(*) AS n FROM journal_entries WHERE kind = 'refund' AND reference_type = 'order' AND reference_id = $1`, [orderId])).n) === 1);
       check("the licence is revoked and the order refunded", (await one(`SELECT status FROM licenses WHERE id = $1`, [lic[0].id]))?.status === "revoked" && (await http.get(tokens.buyer_admin, `/orders/${orderId}`)).body?.status === "refunded");
     }
   } catch (e) {
