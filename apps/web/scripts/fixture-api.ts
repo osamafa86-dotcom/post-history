@@ -97,8 +97,23 @@ function seedLicenses() {
   issued.set("93000000-0000-4000-8000-000000000001", { ...base, id: "93000000-0000-4000-8000-000000000001", order_item_id: randomUUID(), license_number: "PH-2026-7K3M9Q2XRT", title: { ar: "لقطات اصطناعية 1", en: "Synthetic footage 1" }, status: "active", revoked_reason: null, delivery_ready: true, downloads: 3 });
   issued.set("93000000-0000-4000-8000-000000000002", { ...base, id: "93000000-0000-4000-8000-000000000002", order_item_id: randomUUID(), license_number: "PH-2026-4HJ8NP0WVZ", title: { ar: "لقطات اصطناعية 2", en: "Synthetic footage 2" }, status: "revoked", revoked_reason: "refunded", delivery_ready: true, downloads: 3 });
 }
+const commissionRules: (Record<string, unknown> & { id: string; scope: string; scope_id: string | null; license_type: string | null; effective_from: string })[] = [];
+function seedCommission() {
+  commissionRules.length = 0;
+  const base = { created_by: me.user_id, created_at: "2026-01-01T10:00:00Z", internal_note: "never-display-canary" };
+  commissionRules.push({ ...base, id: "94000000-0000-4000-8000-000000000001", scope: "default", scope_id: null, license_type: null, platform_basis_points: 3500, effective_from: "2026-01-01T00:00:00Z" });
+  commissionRules.push({ ...base, id: "94000000-0000-4000-8000-000000000002", scope: "default", scope_id: null, license_type: null, platform_basis_points: 3000, effective_from: "2026-06-01T00:00:00Z" });
+  commissionRules.push({ ...base, id: "94000000-0000-4000-8000-000000000003", scope: "material_type", scope_id: "aerial", license_type: "commercial", platform_basis_points: 4000, effective_from: "2026-03-01T00:00:00Z" });
+}
 // الطلبات والدفع التجريبي: أسعار عروض الكتالوج الاصطناعي، وصفحة مزوّد مستضافة تؤكد الدفع بعد العودة كما يفعل الإشعار الموقّع.
 const orders = new Map<string, Record<string, unknown> & { id: string; organization_id: string; status: string; created_by: string }>();
+const refunds = new Map<string, Record<string, unknown>[]>();
+// طلب مدفوع لمؤسسة أخرى غير مؤسسة المشتري الاصطناعي، كي تسترد منه المالية دون أن يظهر في طلبات المشتري.
+function seedOrders() {
+  orders.clear(); refunds.clear();
+  const stamp = "2026-10-25T10:00:00Z", line = (n: number, amount: number) => ({ id: `95000000-0000-4000-8000-00000000000${n}`, listing_id: `71000000-0000-4000-8000-00000000000${n}`, material_version: 1, license_template_id: "70000000-0000-4000-8000-000000000001", license_version: 1, license_type: "editorial_single", license_name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" }, title: { ar: `لقطات اصطناعية ${n}`, en: `Synthetic footage ${n}` }, price: { amount_minor: amount, currency: "USD" }, license_id: randomUUID() });
+  orders.set("92000000-0000-4000-8000-000000000009", { id: "92000000-0000-4000-8000-000000000009", organization_id: "90000000-0000-4000-8000-000000000009", created_by: randomUUID(), status: "paid", cancel_reason: null, total: { amount_minor: 40000, currency: "USD" }, items: [line(1, 15000), line(2, 25000)], expires_at: stamp, paid_at: stamp, created_at: stamp, updated_at: stamp });
+}
 const offerPrices: Record<string, { amount: number; type: string; name: { ar: string; en: string } }> = {
   "70000000-0000-4000-8000-000000000001": { amount: 15000, type: "editorial_single", name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" } },
   "70000000-0000-4000-8000-000000000002": { amount: 90000, type: "exclusive_temporary", name: { ar: "حصري 48 ساعة", en: "Exclusive 48 h" } },
@@ -110,7 +125,7 @@ function seedTemplates() {
   templates.set("81000000-0000-4000-8000-000000000001", [{ ...base, id: "81000000-0000-4000-8000-000000000001", version: 1, type: "editorial_single", name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" }, terms: { ar: "شروط الاستخدام الواحد", en: "Single use terms" }, base_price: { amount_minor: 15000, currency: "USD" }, enabled: true, internal_note: "never-display-canary" }]);
   templates.set("81000000-0000-4000-8000-000000000002", [{ ...base, id: "81000000-0000-4000-8000-000000000002", version: 3, type: "editorial_term", term_days: 365, name: { ar: "تحريري سنوي قديم", en: "Old annual editorial" }, terms: { ar: "شروط", en: "Terms" }, base_price: { amount_minor: 40000, currency: "ILS" }, enabled: false }]);
 }
-reset(); seedTemplates(); seedOrganizations(); seedLicenses();
+reset(); seedTemplates(); seedOrganizations(); seedLicenses(); seedCommission(); seedOrders();
 const signed = new Map<string, { kind: "proxy" | "thumbnail"; expires: number }>();
 let expireNextProxy = false;
 const access = new Map<string, Me>(), refresh = new Map<string, Me>();
@@ -133,7 +148,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname.startsWith("/files/")) { res.removeHeader("Content-Type"); return tus(req, res, url); }
   if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
   if (url.pathname === "/__test/uploads") return send([...uploads.values()].map(u => ({ state: u.session.state, receipt: u.session.receipt_number, ingest_tokens: [...ingestTokens.values()].filter(t => t.sid === u.session.id).length, ...(u.tus ? (({ length, offset, patches, resent, cuts }) => ({ length, offset, patches, resent, cuts }))(tusFiles.get(u.tus) ?? { length: 0, offset: 0, patches: 0, resent: 0, cuts: 0 }) : {}) })));
-  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); orders.clear(); seedLicenses(); seedTemplates(); seedOrganizations(); reset(); resetUploads(); return send({ ok: true }); }
+  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); seedOrders(); seedLicenses(); seedTemplates(); seedOrganizations(); seedCommission(); reset(); resetUploads(); return send({ ok: true }); }
   const sandbox = /^\/sandbox\/(checkout|pay)\/([^/]+)$/.exec(url.pathname);
   if (sandbox) {
     const order = orders.get(sandbox[2]); if (!order) return send({}, 404);
@@ -302,6 +317,20 @@ const server = createServer(async (req, res) => {
       found.downloads--;
       return commit({ url: `http://127.0.0.1:${process.env.WEB_FIXTURE_PORT ?? 3201}/delivery/${found.id}?signature=${randomUUID()}`, expires_at: new Date(Date.now() + 3600000).toISOString(), downloads_remaining: found.downloads }, 200);
     }
+    const refundWrite = /^\/v1\/orders\/([^/]+)\/refunds$/.exec(path);
+    if (refundWrite) {
+      if (!has("system_admin", "finance")) return send({}, 403);
+      const order = orders.get(refundWrite[1]) as (Record<string, unknown> & { status: string; items: { id: string; price: { amount_minor: number } }[]; total: { currency: string } }) | undefined; if (!order) return send({}, 404);
+      if (order.status !== "paid") return send({ code: "order_state_conflict" }, 409);
+      const ids = body.order_item_ids as string[], list = refunds.get(refundWrite[1]) ?? [], held = new Set(list.filter(r => r.status !== "failed").flatMap(r => r.order_item_ids as string[]));
+      if (!ids.every(id => order.items.some(i => i.id === id))) return send({ code: "validation_failed" }, 422);
+      if (ids.some(id => held.has(id))) return send({ code: "already_refunded" }, 409);
+      const refund: Record<string, unknown> = { id: randomUUID(), order_id: refundWrite[1], order_item_ids: ids, amount: { amount_minor: order.items.filter(i => ids.includes(i.id)).reduce((sum, i) => sum + i.price.amount_minor, 0), currency: order.total.currency }, reason_code: body.reason_code, status: "pending", created_by: user.user_id, created_at: new Date().toISOString(), completed_at: null, provider_reference: "never-display-canary" };
+      list.unshift(refund); refunds.set(refundWrite[1], list);
+      // كالإشعار الموقّع: النجاح بعد لحظة، والطلب مسترد حين تُسترد كل بنوده.
+      setTimeout(() => { Object.assign(refund, { status: "succeeded", completed_at: new Date().toISOString() }); const done = new Set(list.filter(r => r.status === "succeeded").flatMap(r => r.order_item_ids as string[])); if (order.items.every(i => done.has(i.id))) Object.assign(order, { status: "refunded", updated_at: new Date().toISOString() }); }, 1500);
+      return commit(refund, 201);
+    }
     const orderWrite = /^\/v1\/orders(?:\/([^/]+)\/(checkout|cancel))?$/.exec(path);
     if (orderWrite) {
       if (!has("buyer_admin", "buyer_member") || !user.organization_id) return send({}, 403);
@@ -346,6 +375,11 @@ const server = createServer(async (req, res) => {
       const target = list.find(m => m.user_id === userId); if (!target) return send({}, 404);
       if (target.role === "buyer_admin" && (body.role !== "buyer_admin" || body.status === "suspended") && list.filter(m => m.role === "buyer_admin" && m.status === "active").length === 1) return send({ code: "last_buyer_admin" }, 409);
       Object.assign(target, { role: body.role, status: body.status }); return commit(target, 200);
+    }
+    if (path === "/v1/commission-rules") {
+      if (!has("system_admin")) return send({}, 403);
+      if (commissionRules.some(r => r.scope === body.scope && r.scope_id === body.scope_id && r.license_type === body.license_type && r.effective_from === body.effective_from)) return send({ code: "commission_rule_exists" }, 409);
+      const created = { ...body, id: randomUUID(), created_by: user.user_id, created_at: new Date().toISOString() } as unknown as (typeof commissionRules)[number]; commissionRules.push(created); return commit(created, 201);
     }
     const templatePath = /^\/v1\/license-templates(?:\/([^/]+))?$/.exec(path);
     if (templatePath) {
@@ -403,6 +437,12 @@ const server = createServer(async (req, res) => {
     if (!licenseRead[1]) return send({ items: visible, next_cursor: null });
     const found = visible.find(l => l.id === licenseRead[1]); return found ? send(found) : send({}, 404);
   }
+  const refundRead = /^\/v1\/orders\/([^/]+)\/refunds$/.exec(url.pathname);
+  if (refundRead) {
+    if (!user.roles.some(role => ["system_admin", "finance", "buyer_admin"].includes(role.name))) return send({}, 403);
+    const order = orders.get(refundRead[1]); if (!order || (user.organization_id && order.organization_id !== user.organization_id)) return send({}, 404);
+    return send({ items: refunds.get(order.id) ?? [] });
+  }
   const orderRead = /^\/v1\/orders(?:\/([^/]+))?$/.exec(url.pathname);
   if (orderRead) {
     if (!user.roles.some(role => ["system_admin", "finance", "buyer_admin", "buyer_member"].includes(role.name))) return send({}, 403);
@@ -419,6 +459,11 @@ const server = createServer(async (req, res) => {
     if (isMembers) { if (!roles("system_admin", "buyer_admin")) return send({}, 403); return send({ items: members.get(id)!.map(m => ({ ...m, password_hash: "never-display-canary" })) }); }
     if (!roles("system_admin", "finance", "buyer_admin", "buyer_member")) return send({}, 403);
     res.setHeader("ETag", `"${found.row}"`); return send({ ...view(found), internal_note: "never-display-canary" });
+  }
+  if (url.pathname === "/v1/commission-rules") {
+    if (!user.roles.some(role => ["system_admin", "finance"].includes(role.name))) return send({}, 403);
+    const scope = url.searchParams.get("scope");
+    return send({ items: commissionRules.filter(r => !scope || r.scope === scope).sort((a, b) => Date.parse(b.effective_from) - Date.parse(a.effective_from)) });
   }
   if (url.pathname === "/v1/license-templates" || url.pathname.startsWith("/v1/license-templates/")) {
     if (!user.roles.some(role => ["system_admin", "rights_officer", "editor_in_chief", "finance"].includes(role.name))) return send({}, 403);

@@ -1052,22 +1052,22 @@ export const orders = pgTable("orders", {
 	index("orders_pending_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'pending_payment'::text)`),
 	uniqueIndex("orders_provider_ref_key").using("btree", table.provider.asc().nullsLast().op("text_ops"), table.providerRef.asc().nullsLast().op("text_ops")).where(sql`(provider_ref IS NOT NULL)`),
 	foreignKey({
-			columns: [table.createdBy],
-			foreignColumns: [users.id],
-			name: "orders_created_by_fkey"
-		}),
-	foreignKey({
 			columns: [table.organizationId],
 			foreignColumns: [buyerOrganizations.id],
 			name: "orders_organization_id_fkey"
 		}),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [users.id],
+			name: "orders_created_by_fkey"
+		}),
+	check("orders_status_check", sql`status = ANY (ARRAY['pending_payment'::text, 'paid'::text, 'cancelled'::text, 'expired'::text, 'refunded'::text])`),
 	check("orders_cancel_reason_check", sql`((status = 'cancelled'::text) = (cancel_reason IS NOT NULL)) AND ((cancel_reason IS NULL) OR (cancel_reason = ANY (ARRAY['buyer'::text, 'exclusivity_lost'::text, 'rights_changed'::text])))`),
 	check("orders_currency_check", sql`currency = ANY (ARRAY['USD'::text, 'ILS'::text])`),
-	check("orders_expiry_check", sql`(expires_at > created_at) AND (expires_at <= (created_at + '24:00:00'::interval))`),
-	check("orders_paid_check", sql`(status = ANY (ARRAY['paid'::text, 'refunded'::text])) = (paid_at IS NOT NULL)`),
-	check("orders_provider_check", sql`((provider IS NULL) = (provider_ref IS NULL)) AND ((provider IS NULL) OR (provider ~ '^[a-z_]{1,32}$'::text)) AND ((provider_ref IS NULL) OR ((char_length(provider_ref) >= 1) AND (char_length(provider_ref) <= 128)))`),
-	check("orders_status_check", sql`status = ANY (ARRAY['pending_payment'::text, 'paid'::text, 'cancelled'::text, 'expired'::text, 'refunded'::text])`),
 	check("orders_total_check", sql`(total_minor >= 0) AND (total_minor <= '2000000000000'::bigint)`),
+	check("orders_paid_check", sql`(status = ANY (ARRAY['paid'::text, 'refunded'::text])) = (paid_at IS NOT NULL)`),
+	check("orders_expiry_check", sql`(expires_at > created_at) AND (expires_at <= (created_at + '24:00:00'::interval))`),
+	check("orders_provider_check", sql`((provider IS NULL) = (provider_ref IS NULL)) AND ((provider IS NULL) OR (provider = ANY (ARRAY['sandbox'::text, 'stripe'::text]))) AND ((provider_ref IS NULL) OR ((char_length(provider_ref) >= 1) AND (char_length(provider_ref) <= 128)))`),
 ]);
 
 export const orderItems = pgTable("order_items", {
@@ -1227,13 +1227,13 @@ export const paymentEvents = pgTable("payment_events", {
 			name: "payment_events_order_id_fkey"
 		}),
 	primaryKey({ columns: [table.provider, table.eventId], name: "payment_events_pkey"}),
+	check("payment_events_outcome_check", sql`outcome = ANY (ARRAY['applied'::text, 'ignored'::text, 'review'::text])`),
+	check("payment_events_event_id_check", sql`event_id ~ '^[A-Za-z0-9_.:-]{1,128}$'::text`),
+	check("payment_events_type_check", sql`type = ANY (ARRAY['payment.succeeded'::text, 'payment.failed'::text, 'refund.succeeded'::text, 'dispute.opened'::text])`),
+	check("payment_events_provider_ref_check", sql`(char_length(provider_ref) >= 1) AND (char_length(provider_ref) <= 128)`),
 	check("payment_events_amount_check", sql`(amount_minor >= 0) AND (amount_minor <= '2000000000000'::bigint)`),
 	check("payment_events_currency_check", sql`currency = ANY (ARRAY['USD'::text, 'ILS'::text])`),
-	check("payment_events_event_id_check", sql`event_id ~ '^[A-Za-z0-9_.:-]{1,128}$'::text`),
-	check("payment_events_outcome_check", sql`outcome = ANY (ARRAY['applied'::text, 'ignored'::text, 'review'::text])`),
-	check("payment_events_provider_check", sql`provider ~ '^[a-z_]{1,32}$'::text`),
-	check("payment_events_provider_ref_check", sql`(char_length(provider_ref) >= 1) AND (char_length(provider_ref) <= 128)`),
-	check("payment_events_type_check", sql`type = ANY (ARRAY['payment.succeeded'::text, 'payment.failed'::text, 'refund.succeeded'::text, 'dispute.opened'::text])`),
+	check("payment_events_provider_check", sql`provider = ANY (ARRAY['sandbox'::text, 'stripe'::text])`),
 ]);
 
 export const buyerInviteConflicts = pgTable("buyer_invite_conflicts", {

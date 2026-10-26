@@ -1551,8 +1551,8 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description المحوّل المفعَّل؛ غيره `404`. `sandbox` يُرفض في الإنتاج (ADR 0032) */
-                provider: string;
+                /** @description المحوّل المفعَّل؛ غيره `404`. `sandbox` يُرفض في الإنتاج (ADR 0032)، و`stripe` بوضع الاختبار وحده */
+                provider: components["schemas"]["PaymentProvider"];
             };
             cookie?: never;
         };
@@ -1560,7 +1560,7 @@ export interface paths {
         put?: never;
         /**
          * إشعار مزوّد الدفع الموقّع (ADR 0032)
-         * @description المصدر الوحيد لتأكيد الدفع. يُتحقق من التوقيع على الجسم الخام قبل تحليله: HMAC-SHA256 على `<X-Timestamp>.<body>` بسر المحوّل من البيئة، بمقارنة ثابتة الزمن، ويُرفض التوقيع غير الصالح وما خرج عن ±5 دقائق بـ `400 webhook_signature_invalid`. ثم يُسجَّل `(provider, event_id)` فريدًا، وتُطبَّق النتيجة في معاملة واحدة مع حالة الطلب والترخيص وقيد الدفتر وحدث Outbox. التكرار (عشر مرات أو بترتيب مختلف) يعيد `200` بلا أثر ثانٍ. المرجع المجهول أو الحالة المحسومة `200` بلا أثر، والمبلغ الذي لا يطابق الطلب `200` بلا ترخيص ويُكتب للمراجعة. الدفع الواصل لطلب منتهٍ يُقبل إن أعاد الخادم التحقق (الحجز قائم والحقوق قابلة للبيع)، وإلا يُلغى الطلب (`exclusivity_lost` أو `rights_changed`) ويُسترد المبلغ. الجسم هنا صيغة المزوّد التجريبي؛ المحوّل الحقيقي يترجم صيغته إلى `PaymentProviderEvent` نفسه.
+         * @description المصدر الوحيد لتأكيد الدفع. يُتحقق من التوقيع على الجسم الخام قبل تحليله: HMAC-SHA256 على `<X-Timestamp>.<body>` بسر المحوّل من البيئة، بمقارنة ثابتة الزمن، ويُرفض التوقيع غير الصالح وما خرج عن ±5 دقائق بـ `400 webhook_signature_invalid`. ثم يُسجَّل `(provider, event_id)` فريدًا، وتُطبَّق النتيجة في معاملة واحدة مع حالة الطلب والترخيص وقيد الدفتر وحدث Outbox. التكرار (عشر مرات أو بترتيب مختلف) يعيد `200` بلا أثر ثانٍ. المرجع المجهول أو الحالة المحسومة `200` بلا أثر، والمبلغ الذي لا يطابق الطلب `200` بلا ترخيص ويُكتب للمراجعة. الدفع الواصل لطلب منتهٍ يُقبل إن أعاد الخادم التحقق (الحجز قائم والحقوق قابلة للبيع)، وإلا يُلغى الطلب (`exclusivity_lost` أو `rights_changed`) ويُسترد المبلغ. الجسم بصيغة المحوّل، وكل محوّل يترجمها إلى `PaymentProviderEvent` قبل التطبيق. **`sandbox`:** الجسم `PaymentProviderEvent` نفسه، بترويستي `X-Signature` و`X-Timestamp`. **`stripe`:** الجسم حدث Stripe (`StripeWebhookEvent`)، والتوقيع ترويسة `Stripe-Signature` (`t=<ثوانٍ>,v1=<hex>`): HMAC-SHA256 على `<t>.<الجسم الخام>` بسر نقطة الإشعار من البيئة، والمهلة ±5 دقائق نفسها. `event_id` هو `id` الحدث، و`provider_ref` معرّف جلسة الدفع. الحدث بـ `livemode: true` يُرفض `400 live_payments_disabled` حتى قرار المالك بالمال الحقيقي. الترجمة: `checkout.session.completed` (بـ `payment_status = paid`) و`checkout.session.async_payment_succeeded` إلى `payment.succeeded`؛ و`checkout.session.async_payment_failed` و`checkout.session.expired` إلى `payment.failed`؛ و`refund.updated` بحالة `succeeded` إلى `refund.succeeded`، وبحالة `failed` أو `canceled` يصير الاسترداد `failed`، و`pending` و`requires_action` تبقيه `pending`؛ و`charge.dispute.created` إلى `dispute.opened`. غير ذلك `200` بلا أثر.
          */
         post: operations["receivePaymentWebhook"];
         delete?: never;
@@ -1617,6 +1617,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/buyer-invite-conflicts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * طابور تعارض دعوات المشترين (مدير النظام،
+         * @description دعوات ببريد حساب قائم خارج المؤسسة، ردّت كالدعوة الناجحة فلم تكشف نوع الحساب. لمدير النظام وحده، وغيره `403 forbidden_role` كبقية النقاط المقيّدة بالدور (مصفوفة عزل المستأجرين).
+         */
+        get: operations["listBuyerInviteConflicts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/buyer-invite-conflicts/{conflict_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conflict_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * حسم تعارض دعوة بالحالة وحدها
+         * @description لمدير النظام وحده، وغيره `403 forbidden_role`؛ والتعارض المجهول `404`. يلزمه رمز TOTP حاضر في الجسم (`401 totp_required` لغيابه أو خطئه). **الحسم:** `suspended` يعلّق العضو المدعو البديل، و`dismissed` يغلقه نهائيًا ويحرر مقعده. **الانتقالات:** من `pending` إلى الحالتين، ومن `suspended` إلى `dismissed`. غيرها `409 invalid_transition`. **التوثيق:** لا حقل نص حر، ويُسجَّل في التدقيق بـ `buyer_member.invite_conflict_resolved` و`conflict_id`.
+         */
+        post: operations["resolveBuyerInviteConflict"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events": {
         parameters: {
             query?: never;
@@ -1655,7 +1697,7 @@ export interface components {
              * @description رمز ثابت يتفرّع عليه العميل؛ الرسالة للبشر فقط. قائمة مفتوحة؛ الرمز المجهول = خطأ عام
              * @enum {string}
              */
-            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "seats_exhausted" | "last_buyer_admin" | "listing_unavailable" | "exclusive_unavailable" | "mixed_currency" | "price_changed" | "order_state_conflict" | "license_not_active" | "delivery_not_ready" | "download_limit_reached" | "webhook_signature_invalid" | "already_refunded" | "commission_rule_exists" | "internal_error";
+            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "seats_exhausted" | "last_buyer_admin" | "listing_unavailable" | "exclusive_unavailable" | "mixed_currency" | "price_changed" | "order_state_conflict" | "license_not_active" | "delivery_not_ready" | "download_limit_reached" | "webhook_signature_invalid" | "already_refunded" | "commission_rule_exists" | "live_payments_disabled" | "internal_error";
             message: string;
             /** @description لتتبع الطلب في السجلات */
             request_id: string;
@@ -3053,7 +3095,7 @@ export interface components {
              * @description صفحة الدفع المستضافة لدى المزوّد؛ لا يُسجَّل ولا يُرسل في حدث أو إشعار
              */
             checkout_url: string;
-            /** @description `sandbox` في هذه الدورة */
+            /** @description قيمة من `PaymentProvider`: `sandbox` أو `stripe` */
             provider: string;
             /**
              * Format: date-time
@@ -3170,6 +3212,49 @@ export interface components {
             /** Format: date-time */
             occurred_at: string;
         };
+        /**
+         * @description محوّل الدفع (ADR 0032). `sandbox` المزوّد التجريبي الداخلي في غير الإنتاج؛ `stripe` بوضع الاختبار وحده (مفاتيح `sk_test_`، و`livemode: false`) حتى قرار المالك بالمال الحقيقي بعد تجربة الصرف.
+         * @enum {string}
+         */
+        PaymentProvider: "sandbox" | "stripe";
+        /** @description حدث Stripe كما يرسله، بعد التحقق من `Stripe-Signature`. الحقول المعرَّفة وحدها تُقرأ، وما زاد يُتجاهل ولا يُخزَّن (قد يحمل بريد المشتري واسمه لدى Stripe). يُخزَّن من الحدث ما في `payment_events` وحده. */
+        StripeWebhookEvent: {
+            id: string;
+            /** @constant */
+            object: "event";
+            /** @description الأنواع التي يترجمها المحوّل؛ غيرها يُستلم بلا أثر */
+            type: string;
+            /** @description `true` يُرفض `400 live_payments_disabled` */
+            livemode: boolean;
+            created: number;
+            data: {
+                object: components["schemas"]["StripeEventObject"];
+            };
+        };
+        /** @description الكائن المعني: جلسة دفع (`checkout.session`)، أو استرداد (`refund`)، أو نزاع (`dispute`). المبلغ بأصغر وحدة والعملة بحروف صغيرة كما في Stripe. `metadata.order_id` يضعه المحوّل عند إنشاء الجلسة ولا يُعتمد عليه وحده: المطابقة بـ `provider_ref`. */
+        StripeEventObject: {
+            id: string;
+            /** @enum {string} */
+            object: "checkout.session" | "refund" | "dispute";
+            /** @description `checkout.session` */
+            amount_total?: number | null;
+            /** @description `refund` و`dispute` */
+            amount?: number;
+            /** @enum {string} */
+            currency?: "usd" | "ils";
+            /**
+             * @description `checkout.session`
+             * @enum {string}
+             */
+            payment_status?: "paid" | "unpaid" | "no_payment_required";
+            /** @description لـ `refund`: `pending` أو `requires_action` (يبقى الاسترداد `pending`)، و`succeeded`، و`failed` أو `canceled` (يصير `failed`). ولجلسة الدفع والنزاع حالتهما في Stripe. */
+            status?: string | null;
+            payment_intent?: string | null;
+            metadata?: {
+                /** Format: uuid */
+                order_id?: string;
+            };
+        };
         PaymentWebhookAck: {
             /** @constant */
             received: true;
@@ -3225,6 +3310,43 @@ export interface components {
             created_by: string;
             /** Format: date-time */
             created_at: string;
+        };
+        /** @enum {string} */
+        BuyerInviteConflictState: "pending" | "suspended" | "dismissed";
+        /** @description لمدير النظام وحده؛ لا يظهر في أي استجابة للمشتري، فالمؤسسة ترى العضو المدعو البديل كأي عضو مدعو */
+        BuyerInviteConflict: {
+            /**
+             * Format: uuid
+             * @description هو `user_id` الظاهر للعضو المدعو البديل في المؤسسة
+             */
+            id: string;
+            /** Format: uuid */
+            organization_id: string;
+            /** Format: email */
+            email: string;
+            /** Format: uuid */
+            existing_user_id: string;
+            role: components["schemas"]["BuyerRole"];
+            state: components["schemas"]["BuyerInviteConflictState"];
+            /** Format: uuid */
+            invited_by: string;
+            /** Format: date-time */
+            invite_expires_at: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            resolved_at: string | null;
+            /** Format: uuid */
+            resolved_by: string | null;
+        };
+        BuyerInviteConflictPage: {
+            items: components["schemas"]["BuyerInviteConflict"][];
+            next_cursor: string | null;
+        };
+        BuyerInviteConflictResolve: {
+            /** @enum {string} */
+            state: "suspended" | "dismissed";
+            totp_code: string;
         };
         OutboxEvent: components["schemas"]["outbox-event"];
         EventPage: {
@@ -6404,21 +6526,23 @@ export interface operations {
     receivePaymentWebhook: {
         parameters: {
             query?: never;
-            header: {
-                /** @description `v1=<hex>`: HMAC-SHA256 على `<X-Timestamp>.<الجسم الخام>` */
-                "X-Signature": string;
-                /** @description ثوانٍ منذ epoch؛ خارج ±5 دقائق `400 webhook_signature_invalid` */
-                "X-Timestamp": string;
+            header?: {
+                /** @description `sandbox` وحده (وإلزامي له): `v1=<hex>`، HMAC-SHA256 على `<X-Timestamp>.<الجسم الخام>` */
+                "X-Signature"?: string;
+                /** @description `sandbox` وحده (وإلزامي له): ثوانٍ منذ epoch؛ خارج ±5 دقائق `400 webhook_signature_invalid` */
+                "X-Timestamp"?: string;
+                /** @description `stripe` وحده (وإلزامي له): `t=<ثوانٍ>,v1=<hex>[,v1=…]`؛ يكفي أن يطابق توقيع `v1` واحد */
+                "Stripe-Signature"?: string;
             };
             path: {
-                /** @description المحوّل المفعَّل؛ غيره `404`. `sandbox` يُرفض في الإنتاج (ADR 0032) */
-                provider: string;
+                /** @description المحوّل المفعَّل؛ غيره `404`. `sandbox` يُرفض في الإنتاج (ADR 0032)، و`stripe` بوضع الاختبار وحده */
+                provider: components["schemas"]["PaymentProvider"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PaymentProviderEvent"];
+                "application/json": components["schemas"]["PaymentProviderEvent"] | components["schemas"]["StripeWebhookEvent"];
             };
         };
         responses: {
@@ -6481,6 +6605,69 @@ export interface operations {
                 content?: never;
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    listBuyerInviteConflicts: {
+        parameters: {
+            query?: {
+                state?: components["schemas"]["BuyerInviteConflictState"];
+                /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description حجم الصفحة */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description صفحة من التعارضات، الأقدم أولًا */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyerInviteConflictPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    resolveBuyerInviteConflict: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                conflict_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuyerInviteConflictResolve"];
+            };
+        };
+        responses: {
+            /** @description التعارض بعد الحسم */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyerInviteConflict"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     listEvents: {

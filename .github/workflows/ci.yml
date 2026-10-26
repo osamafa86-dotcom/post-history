@@ -68,6 +68,19 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
+      - name: Arabic and English resource completeness (warning only)
+        continue-on-error: true
+        working-directory: .
+        run: |
+          status=0
+          node tools/i18n-check.mjs --json > "$RUNNER_TEMP/i18n-check.json" || status=$?
+          {
+            echo '### اكتمال الترجمة (تحذير فقط)'
+            echo '```json'
+            cat "$RUNNER_TEMP/i18n-check.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
       - run: npm ci --no-audit --no-fund
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run lint
