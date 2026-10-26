@@ -56,7 +56,8 @@
         "catalog.listing_changed",
         "license.delivery_requested",
         "order.status_changed",
-        "license.issued"
+        "license.issued",
+        "license.revoked"
       ]
     },
     "aggregate_type": {
@@ -954,6 +955,52 @@
                   "editorial_term",
                   "exclusive_temporary",
                   "commercial"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "license.revoked"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "license"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "ترخيص أُبطل (v0.3، ADR 0025 الجزء 5): معرّفات وسبب فقط، بلا مبلغ ولا اسم مشترٍ. يوقف التنزيل ويستهلكه حساب العمولات.",
+            "required": [
+              "license_id",
+              "organization_id",
+              "material_id",
+              "revoked_reason"
+            ],
+            "properties": {
+              "license_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "organization_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "material_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "revoked_reason": {
+                "type": "string",
+                "enum": [
+                  "refunded",
+                  "rights_withdrawn",
+                  "manual"
                 ]
               }
             }

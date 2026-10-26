@@ -2402,6 +2402,118 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /orders/{order_id}/refunds:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    get:
+      tags: [commerce]
+      summary: استردادات الطلب (ADR 0025 الجزء 5)
+      description: المالية ومدير النظام لكل طلب، و`buyer_admin` لطلبات مؤسسته وحدها (غيرها `404`).
+      operationId: listOrderRefunds
+      x-roles: [system_admin, finance, buyer_admin]
+      responses:
+        "200":
+          description: الاستردادات، الأحدث أولًا
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Refund" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [commerce]
+      summary: استرداد بنود من طلب مدفوع
+      description: >-
+        للطلب `paid` وحده (`409 order_state_conflict`). المبلغ مجموع أسعار البنود المجمّدة بعملة الطلب، قيدًا في القاعدة،
+        ولا مبلغ حر. البند لا يُسترد مرتين ما لم يفشل استرداده السابق (`409 already_refunded`).
+        في المعاملة نفسها تُبطَل تراخيص البنود (`revoked_reason = refunded`) فيتوقف التنزيل، ويُكتب `license.revoked`
+        لكل ترخيص. ويُطلب الاسترداد من المزوّد بمفتاح منع التكرار نفسه.
+        النجاح من إشعار `refund.succeeded` الموقّع وحده: يُكتب قيد `refund` يعكس حصص البيعة بنسبتها (ADR 0031)، من
+        `refund_reserve` إن صُرف المستحق. حين تُسترد كل البنود يصير الطلب `refunded` ويُكتب `order.status_changed`.
+        يُسجَّل في التدقيق.
+      operationId: createOrderRefund
+      x-roles: [system_admin, finance]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RefundCreate" }
+      responses:
+        "201":
+          description: الاسترداد بحالة `pending`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Refund" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /commission-rules:
+    get:
+      tags: [commerce]
+      summary: قواعد العمولة (ADR 0025 الجزء 6)
+      description: >-
+        كل الإصدارات، الأحدث سريانًا أولًا. تُطبَّق القاعدة الأكثر تحديدًا: المادة، ثم المراسل (بنوع الترخيص إن حُدد)، ثم
+        نوع المادة، ثم الافتراضية. والسارية منها صاحبة أحدث `effective_from` لا يتجاوز لحظة تأكيد الدفع، وتُجمَّد في قيد
+        البيعة.
+      operationId: listCommissionRules
+      x-roles: [system_admin, finance]
+      parameters:
+        - name: scope
+          in: query
+          schema: { $ref: "#/components/schemas/CommissionScope" }
+      responses:
+        "200":
+          description: القواعد
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/CommissionRule" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [commerce]
+      summary: إصدار جديد لقاعدة عمولة
+      description: >-
+        لا تُعدَّل قاعدة ولا تُحذف: التغيير صف جديد بتاريخ سريان، والبيعات السابقة تحتفظ بما جُمّد فيها. النطاق نفسه
+        بالتاريخ نفسه `409 conflict`. `scope_id` فارغ للافتراضية، ومعرّف للمادة والمراسل، وقيمة من `MaterialType` لنوع
+        المادة (`422`). يُسجَّل في التدقيق.
+      operationId: createCommissionRule
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CommissionRuleInput" }
+      responses:
+        "201":
+          description: القاعدة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommissionRule" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
   /licenses:
     get:
       tags: [commerce]
@@ -2855,6 +2967,7 @@ components:
             - delivery_not_ready
             - download_limit_reached
             - webhook_signature_invalid
+            - already_refunded
             - internal_error
         message: { type: string }
         request_id: { type: string, description: لتتبع الطلب في السجلات }
@@ -4723,6 +4836,85 @@ components:
       allOf:
         - $ref: "#/components/schemas/BuyerMember"
         - $ref: "#/components/schemas/BuyerInviteToken"
+
+    RefundCreate:
+      type: object
+      additionalProperties: false
+      required: [order_item_ids, reason_code]
+      properties:
+        order_item_ids:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          description: بنود من الطلب نفسه؛ المبلغ مجموع أسعارها المجمّدة
+          items: { type: string, format: uuid }
+        reason_code: { $ref: "#/components/schemas/RefundReason" }
+
+    RefundReason:
+      type: string
+      enum: [buyer_request, duplicate, rights_withdrawn, dispute, exclusivity_lost, other]
+
+    Refund:
+      type: object
+      required: [id, order_id, order_item_ids, amount, reason_code, status, created_by, created_at, completed_at]
+      properties:
+        id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        order_item_ids:
+          type: array
+          items: { type: string, format: uuid }
+        amount: { $ref: "#/components/schemas/Money" }
+        reason_code: { $ref: "#/components/schemas/RefundReason" }
+        status:
+          type: string
+          description: "`pending` طُلب من المزوّد؛ `succeeded` أكده الإشعار الموقّع وكُتب قيده؛ `failed` يحرر البنود لاسترداد جديد"
+          enum: [pending, succeeded, failed]
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: [string, "null"], format: date-time }
+
+    CommissionScope:
+      type: string
+      enum: [material, reporter, material_type, default]
+
+    CommissionRuleFields:
+      type: object
+      required: [scope, scope_id, license_type, platform_basis_points, effective_from]
+      properties:
+        scope: { $ref: "#/components/schemas/CommissionScope" }
+        scope_id:
+          type: [string, "null"]
+          maxLength: 64
+          description: "`null` للافتراضية؛ معرّف uuid للمادة والمراسل؛ قيمة `MaterialType` لنوع المادة"
+        license_type:
+          oneOf:
+            - $ref: "#/components/schemas/LicenseType"
+            - type: "null"
+          description: "`null` = كل الأنواع"
+        platform_basis_points:
+          type: integer
+          minimum: 0
+          maximum: 10000
+          description: حصة المنصة بنقاط أساس من صافي الإيراد بعد رسوم المزوّد والضريبة؛ الباقي للمساهمين بحصصهم
+        effective_from: { type: string, format: date-time }
+
+    CommissionRuleInput:
+      description: جسم الطلب؛ لا خصائص غير المعرَّفة
+      allOf:
+        - $ref: "#/components/schemas/CommissionRuleFields"
+      unevaluatedProperties: false
+
+    CommissionRule:
+      allOf:
+        - $ref: "#/components/schemas/CommissionRuleFields"
+        - type: object
+          required: [id, created_by, created_at]
+          properties:
+            id: { type: string, format: uuid }
+            created_by: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+      unevaluatedProperties: false
 
     OutboxEvent:
       $ref: "./schemas/outbox-event.json"
