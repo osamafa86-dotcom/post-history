@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "payout-concurrent",
+  "started_at": "2026-10-26T16:57:58.853Z",
+  "ended_at": "2026-10-26T16:57:59.774Z",
+  "result": "partial",
+  "metrics": {
+    "available_minor": 7001,
+    "round1_accepted": 3,
+    "round2_accepted": 1,
+    "checks": 9,
+    "checks_failed": 0,
+    "deferred_checks": 0
+  },
+  "device": {
+    "platform": "server",
+    "model": "live stack: API from main@4297825 (dev mode, sandbox provider), Postgres 16, Redis"
+  },
+  "upload_path": "n/a",
+  "notes": "طلبات صرف متزامنة فوق المتاح لا تُقبل إلا بقدر المتاح: خمسة طلبات بـ2000 معًا ثم طلبان بـ4000 معًا على رصيد محرَّر من بيعة تجريبية؛ القبول بالعدد المتوقع بالضبط، والباقي 422 بلا صف، و«قيد الصرف» و«المتاح» يجمعان الرصيد كاملًا، ولا حساب مستحق مدين. جزئية دائمًا: مزوّد وقناة تجريبيان، ومراسل واحد، وتشغيل واحد."
+}
