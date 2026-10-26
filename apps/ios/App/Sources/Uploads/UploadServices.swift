@@ -22,6 +22,8 @@ final class UploadServices: @unchecked Sendable {
     let uploadsDirectory: URL
     let chunksDirectory: URL
     let stateDirectory: URL
+    /// مسودات «مادة جديدة» (المواصفة A1)؛ يمحوها المسح الطارئ.
+    let draftsDirectory: URL
 
     private init() {
         let config = URLSessionConfiguration.background(withIdentifier: Self.backgroundSessionIdentifier)
@@ -34,7 +36,8 @@ final class UploadServices: @unchecked Sendable {
         uploadsDirectory = documentsDirectory.appendingPathComponent("Uploads", isDirectory: true)
         chunksDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("UploadChunks", isDirectory: true)
         stateDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("UploadState", isDirectory: true)
-        for dir in [uploadsDirectory, chunksDirectory, stateDirectory] {
+        draftsDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Drafts", isDirectory: true)
+        for dir in [uploadsDirectory, chunksDirectory, stateDirectory, draftsDirectory] {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: UploadFileProtection.attributes)
             // الملفات المحلية للمراسل وحالة الرفع (تحمل رابط tus) لا تدخل النسخ الاحتياطي (iCloud/iTunes).
             var values = URLResourceValues()
@@ -99,12 +102,24 @@ final class AppSettings: ObservableObject {
             Task { await UploadServices.shared.transport.restartTransfers() }
         }
     }
+    nonisolated static let localCopyHandledKey = "localCopyHandled"
+    /// مواد حسم المراسل نسختها المحلية من شاشة الإيصال («حذف» أو «إبقاؤها»)؛ لا تعود بطاقة السؤال لها.
+    @Published private(set) var localCopyHandled: Set<UUID> = []
+
     init() {
         deleteLocalAfterReceipt = UserDefaults.standard.bool(forKey: "deleteLocalAfterReceipt")
         uploadOverWifiOnly = UserDefaults.standard.bool(forKey: Self.uploadOverWifiOnlyKey)
+        localCopyHandled = Set((UserDefaults.standard.stringArray(forKey: Self.localCopyHandledKey) ?? []).compactMap(UUID.init))
     }
+
     func reload() {
         deleteLocalAfterReceipt = UserDefaults.standard.bool(forKey: "deleteLocalAfterReceipt")
         uploadOverWifiOnly = UserDefaults.standard.bool(forKey: Self.uploadOverWifiOnlyKey)
+        localCopyHandled = Set((UserDefaults.standard.stringArray(forKey: Self.localCopyHandledKey) ?? []).compactMap(UUID.init))
+    }
+
+    func markLocalCopyHandled(_ materialId: UUID) {
+        localCopyHandled.insert(materialId)
+        UserDefaults.standard.set(localCopyHandled.map(\.uuidString), forKey: Self.localCopyHandledKey)
     }
 }

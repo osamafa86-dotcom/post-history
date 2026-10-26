@@ -41,7 +41,7 @@ let package = Package(
         .target(name: "DeviceSecurity"),
         .testTarget(name: "DeviceSecurityTests", dependencies: ["DeviceSecurity"]),
         // «موادي»: قائمة مواد المراسل بصفحات وحالاتها الثلاث المستقلة كما في العقد؛ الواجهة في App/.
-        .target(name: "MaterialsCore", dependencies: ["PostHistoryAPI"]),
+        .target(name: "MaterialsCore", dependencies: ["PostHistoryAPI", "FormEngine"]),
         .testTarget(name: "MaterialsCoreTests", dependencies: ["MaterialsCore"]),
         // شهادة الجهاز (SEC-07): App Attest ورمز بوابة ingest لكل جلسة رفع؛ التدفق يُختبر على Linux بمحاكاة DCAppAttestService.
         .target(name: "DeviceAttestation", dependencies: ["UploadCore", "PostHistoryAPI", .product(name: "Crypto", package: "swift-crypto")]),

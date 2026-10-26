@@ -93,6 +93,11 @@ public struct UploadRecord: Codable, Equatable, Sendable, Identifiable {
     /// أصل ينتظر نسخته الخفيفة قيد التحضير على الجهاز (ADR 0075): لا تُنشأ جلسته حتى تصل النسخة إلى الطابور أو يُرفع الانتظار.
     /// اختياري كي تُقرأ السجلات المحفوظة قبل هذا الحقل.
     public var awaitsProxy: Bool?
+    /// أوقفه المراسل مؤقتًا: لا جزء جديد حتى الاستئناف، والموضع على الخادم محفوظ. اختياري للسجلات الأقدم.
+    public var isPaused: Bool?
+    /// عنوان المادة وأولويتها لبطاقة الرفع دون اتصال؛ على الجهاز فقط ويمحوهما المسح الطارئ مع السجل.
+    public var materialTitle: String?
+    public var materialPriority: String?
     /// الملف الأصلي داخل حاوية التطبيق (مسار نسبي إلى مجلد المستندات) أو مسار مطلق في الاختبارات.
     public var sourcePath: String
     public var filename: String

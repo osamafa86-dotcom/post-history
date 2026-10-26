@@ -9,6 +9,8 @@ final class NotificationsModel: ObservableObject {
     @Published private(set) var reachedEnd = false
     @Published private(set) var failed = false
     @Published var presented = false
+    /// إشعار يخص مادة (مثل «طلب تعديل») فُتح للتو: تفتح «موادي» على المادة موسّعة (المواصفة §4).
+    @Published var openedMaterialId: UUID?
     let feed: NotificationsFeed
 
     init(feed: NotificationsFeed) { self.feed = feed }
@@ -26,6 +28,7 @@ final class NotificationsModel: ObservableObject {
     func open(_ id: UUID) async {
         try? await feed.markRead(id)
         await sync()
+        if let materialId = items.first(where: { $0.id == id })?.materialId { openedMaterialId = materialId }
     }
 
     func acknowledge(_ id: UUID) async {
@@ -38,12 +41,14 @@ final class NotificationsModel: ObservableObject {
         presented = true
         await refresh()
         await open(route.notificationId)
+        if let materialId = route.materialId { openedMaterialId = materialId }
     }
 
     func clear() async {
         await feed.clear()
         await sync()
         presented = false
+        openedMaterialId = nil
     }
 
     private func sync() async {

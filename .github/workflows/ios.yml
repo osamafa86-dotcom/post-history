@@ -2,7 +2,7 @@ name: ios
 
 on:
   pull_request:
-    paths: ["apps/ios/**", "contracts/**", ".github/workflows/ios.yml"]
+    paths: ["apps/ios/**", "contracts/**", "docs/design/tokens.json", ".github/workflows/ios.yml"]
 
 permissions:
   contents: read
@@ -26,6 +26,10 @@ jobs:
         run: |
           apps/ios/scripts/generate-api.sh
           git diff --exit-code --stat -- apps/ios/Packages/PostHistoryKit/Sources/PostHistoryAPI
+      - name: Regenerate design tokens from docs/design/tokens.json and require no diff
+        run: |
+          node apps/ios/scripts/generate-design-tokens.mjs
+          git status --porcelain -- apps/ios/App/Resources/DesignTokens.xcassets apps/ios/App/Sources/Design/DesignTokens.generated.swift | (! grep .)
 
   package-linux:
     name: ios package (swift build + unit tests, Linux)
