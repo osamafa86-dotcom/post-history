@@ -22,6 +22,16 @@ test('resources across JSON, XML, strings and catalog; literals and parse errors
     await put('apps/web/messages/en.json', '{"nested":{"yes":"Yes"},"extra":"Extra"}');
     await put('apps/web/src/page.tsx', '// "تعليق"');
     assert.equal((await check(root)).ok,true);
+    for (const path of ['apps/web/src/ui.tsx','apps/android/src/Screen.kt','apps/ios/App/View.swift']) {
+      await put(path, 'const separator = "،"; const digits = "٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹٫٬";');
+    }
+    await put('apps/ios/App/Tests/Example.swift', 'let title = "اختبار"');
+    await put('apps/ios/App/ScreenTests.swift', 'let title = "اختبار"');
+    assert.equal((await check(root)).ok, true);
+    for (const path of ['apps/web/src/ui.tsx','apps/android/src/Screen.kt','apps/ios/App/View.swift']) await put(path, 'const title = "عنوان حقيقي";');
+    const literals = (await check(root)).literals;
+    assert.equal(literals.length, 3);
+    assert.deepEqual(new Set(literals.map(x=>x.file.split('.').at(-1))), new Set(['tsx','kt','swift']));
     await put('apps/web/messages/en.json','{');
     assert.equal((await check(root)).errors[0].error,'resource_parse_failed');
   } finally { await rm(root,{recursive:true,force:true}); }

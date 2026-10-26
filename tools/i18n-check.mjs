@@ -3,7 +3,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-const arabic = /[\u0600-\u06ff]/;
+const arabic = /(?=\p{Script_Extensions=Arabic})\p{Letter}/u;
 async function files(dir) {
   let entries; try { entries = await readdir(dir, { withFileTypes: true }); } catch (e) { if (e.code === 'ENOENT') return []; throw e; }
   const out = [];
@@ -37,7 +37,7 @@ export async function check(root) {
       const resource = /\/messages\/(ar|en)\.json$/.exec(name);
       const xml = /\/res\/values(-ar|-en)?\/([^/]+\.xml)$/.exec(name);
       const strings = /\/(ar|en)\.lproj\/([^/]+\.strings)$/.exec(name);
-      if (/\/(tests?|e2e)\//.test(name) || /\.(test|spec)\.(tsx|kt|swift)$/.test(name)) continue;
+      if (/\/(tests?|e2e)\//i.test(name) || /\.(test|spec)\.(tsx|kt|swift)$/i.test(name) || /Tests\.swift$/i.test(name)) continue;
       if (!(resource || xml || strings || name.endsWith('.xcstrings') || /\.(tsx|kt|swift)$/.test(name))) continue;
       try {
         const text = await readFile(path, 'utf8');
