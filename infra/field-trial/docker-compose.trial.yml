@@ -49,6 +49,10 @@ services:
       ACCEPTANCE_UPLOADER_USER_ID: "${ACCEPTANCE_UPLOADER_USER_ID:-}"
   media-worker:
     restart: unless-stopped
+    environment:
+      # حزمة تسليم المشتري مطفأة في التجربة حتى يمر شراء sandbox كاملًا (قرار المنسّق)؛ ثابتة هنا لا من ملف الأسرار،
+      # وpreflight يرسب إن ضُبطت في trial.env. المحاذاة الصوتية مفعّلة من compose الأساسي.
+      MEDIA_ENABLE_DELIVERY: "false"
 
   # بوابة ingest (ADR 0011) خلف Caddy: HTTP على 127.0.0.1، وCaddy يُنهي TLS على عنوان ingest. معرَّفة هنا كاملة
   # (لا فوق infra/ingest/compose.ingest.yml الذي يشترط شهادة للنموذج الأولي).
