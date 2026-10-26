@@ -62,7 +62,8 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
     <header className="site-header"><Link className="brand" href={`/${locale}/${buyer ? "store" : "inbox"}`} prefetch={false}><span className="brand-mark" aria-hidden="true" /><span>{m.brand}<small>{m.product}</small></span></Link>
       <div className="header-actions"><a href={pathname.replace(`/${locale}`, locale === "ar" ? "/en" : "/ar")} lang={locale === "ar" ? "en" : "ar"}>{m.language}</a><button className="quiet" disabled={busy} onClick={() => void logout(false)}>{m.logout}</button></div></header>
     <div className="workspace-shell"><aside className="sidebar">{!buyer && <p className="eyebrow">{m.workspace}</p>}<nav aria-label={m.workspace}>{buyer ? <>
-      <Link prefetch={false} className={pathname.includes("/store") ? "active" : ""} href={`/${locale}/store`}>{m.store.title}</Link>
+      <Link prefetch={false} className={pathname.includes("/store") && !pathname.includes("/store/licenses") ? "active" : ""} href={`/${locale}/store`}>{m.store.title}</Link>
+      <Link prefetch={false} className={pathname.includes("/store/licenses") ? "active" : ""} href={`/${locale}/store/licenses`}>{m.licenses.nav}</Link>
       <Link prefetch={false} className={pathname.endsWith("/organization") ? "active" : ""} href={`/${locale}/organization`}>{m.buyers.myOrganization}</Link>
     </> : <>
       <Link prefetch={false} className={pathname.endsWith("/inbox") ? "active" : ""} href={`/${locale}/inbox`}>{m.inbox}</Link>
@@ -75,6 +76,7 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
       <Link prefetch={false} className={pathname.endsWith("/notifications") ? "active" : ""} href={`/${locale}/notifications`}>{m.notice.title}</Link>
       {hasRole(me, "system_admin", "editor_in_chief") && <Link prefetch={false} className={pathname.endsWith("/notification-rules") ? "active" : ""} href={`/${locale}/notification-rules`}>{m.rules.title}</Link>}
       {hasRole(me, ...templateRoles) && <Link prefetch={false} className={pathname.endsWith("/license-templates") ? "active" : ""} href={`/${locale}/license-templates`}>{m.templates.nav}</Link>}
+      {hasRole(me, "system_admin", "finance", "rights_officer") && <Link prefetch={false} className={pathname.includes("/store/licenses") ? "active" : ""} href={`/${locale}/store/licenses`}>{m.licenses.nav}</Link>}
       {hasRole(me, ...organizationAdmins) && <Link prefetch={false} className={pathname.endsWith("/buyer-organizations") ? "active" : ""} href={`/${locale}/buyer-organizations`}>{m.buyers.nav}</Link>}
       {hasRole(me, "system_admin") && <Link prefetch={false} className={pathname.endsWith("/admin") ? "active" : ""} href={`/${locale}/admin`}>{m.admin.title}</Link>}
     </>}</nav>{!buyer && <p className="scope-note">{m.readOnly}</p>}<button className="quiet danger-link" onClick={() => setConfirmAll(true)}>{m.logoutAll}</button></aside>
