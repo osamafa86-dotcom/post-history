@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "stripe-webhook",
+  "started_at": "2026-10-26T17:32:41.278Z",
+  "ended_at": "2026-10-26T17:32:41.926Z",
+  "result": "partial",
+  "metrics": {
+    "variant": "stripe-test-provider-local",
+    "ledger_lines": 3,
+    "notification_replays": 10,
+    "webhook_posts": 16,
+    "payment_events_stored": 2,
+    "licenses": 1,
+    "sale_entries": 1,
+    "failures": 0
+  },
+  "device": {
+    "platform": "server",
+    "model": "local api dev mode + fake stripe api"
+  },
+  "upload_path": "n/a",
+  "notes": "مزوّد Stripe في وضع الاختبار على بيئة محلية (لا مال حقيقي)؛ صفوف الحقوق والملف المتحقق مزروعة بـSQL لغياب عامل الوسائط؛ تشغيل واحد. يقيس الجزء القابل للأتمتة من صف «الدفع المكرر» لا المعيار الميداني كاملًا"
+}
