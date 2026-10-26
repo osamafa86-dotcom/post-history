@@ -1535,7 +1535,7 @@ export interface paths {
         };
         /**
          * صفحة التحقق العامة من ترخيص
-         * @description بلا مصادقة. تثبت صلاحية الترخيص وأبعاده، ولا تكشف المشتري ولا السعر ولا المراسل ولا معرّف المادة. محدودة المعدل لكل عنوان (`429`). الرقم المجهول `404`.
+         * @description بلا مصادقة. تثبت أن الرقم لترخيص قائم وحالته ونهايته وحدها: لا عنوان مادة ولا نوع ترخيص ولا استخدام ولا إقليم، ولا المشتري ولا السعر ولا المراسل ولا أي معرّف، فرقم متداول لا يكشف ما رُخّص ولا لمن. محدودة المعدل لكل عنوان (`429`). الرقم المجهول `404`.
          */
         get: operations["verifyLicense"];
         put?: never;
@@ -3394,20 +3394,15 @@ export interface components {
             expires_at: string;
             downloads_remaining: number;
         };
-        /** @description صفحة التحقق العامة، بقائمة بيضاء مغلقة؛ لا مشترٍ ولا سعر ولا مراسل ولا معرّف مادة أو طلب */
+        /** @description صفحة التحقق العامة بلا مصادقة، بقائمة بيضاء مغلقة من ثلاثة حقول: أن الرقم لترخيص قائم، وحالته، ونهايته. لا يُضاف إليها حقل يكشف المادة أو نطاق الترخيص (العنوان، النوع، الاستخدام، الإقليم، الحصرية، التواريخ الأخرى) ولا المشتري ولا السعر ولا المراسل ولا أي معرّف: من يملك رقمًا متداولًا لا يعرف به ما رُخّص ولا لمن. إضافة حقل هنا تغيير عقد بقرار أمن. */
         LicenseVerification: {
             license_number: string;
             status: components["schemas"]["LicenseStatus"];
-            license_type: components["schemas"]["LicenseType"];
-            title: components["schemas"]["LocalizedText"];
-            usage_media: ("tv" | "web" | "social" | "documentary" | "advertising")[];
-            territory: components["schemas"]["LicenseTerritory"];
-            /** Format: date-time */
-            valid_from: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description `null` = بلا انتهاء
+             */
             valid_until: string | null;
-            /** Format: date-time */
-            exclusive_until: string | null;
         };
         /** @description إشعار المزوّد بعد التحقق من توقيعه (صيغة `sandbox`، ADR 0032). لا بيانات بطاقة ولا اسم مشترٍ؛ يُخزَّن هذا وحده لا الجسم الخام. */
         PaymentProviderEvent: {
