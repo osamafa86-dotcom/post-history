@@ -117,6 +117,7 @@ export class AuthService {
         id: users.id,
         email: users.email,
         officeId: users.officeId,
+        organizationId: users.organizationId,
         totpEnabled: users.totpEnabled,
         credentialResetRequired: users.credentialResetRequired,
       })
@@ -131,6 +132,7 @@ export class AuthService {
       user_id: user.id,
       email: user.email,
       office_id: user.officeId,
+      organization_id: user.organizationId,
       totp_enabled: user.totpEnabled,
       credential_reset_required: user.credentialResetRequired,
       roles: await this.roles(userId),
@@ -276,7 +278,7 @@ export class AuthService {
     for (const r of rows) {
       const role = byName.get(r.role) ?? { name: r.role as Role['name'], scopes: [] };
       byName.set(r.role, role);
-      if (r.scopeKind !== 'all') role.scopes.push({ kind: r.scopeKind as 'office' | 'governorate', id: r.scopeId });
+      if (r.scopeKind !== 'all') role.scopes.push({ kind: r.scopeKind as 'office' | 'governorate' | 'organization', id: r.scopeId });
     }
     // دور بنطاق 'all' يرى كل شيء: قائمة نطاقات فارغة (العقد)
     for (const r of rows) if (r.scopeKind === 'all') byName.get(r.role)!.scopes = [];

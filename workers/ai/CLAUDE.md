@@ -15,7 +15,8 @@
 ## المسار المحلي
 
 - التفريغ: faster-whisper large-v3-turbo بـ int8 مع Silero VAD وطوابع الكلمات، على المعالج افتراضيًا. اختير بالقياس في `tools/asr-bench` (#104) بدل مرشح `whisper` في FFmpeg 8، فهذا المرشح غير مبني في FFmpeg المثبّت (ADR 0019، 0020).
-- كشف اللقطات: `ContentDetector` من PySceneDetect على إطارات PyAV بطوابعها الحقيقية (`shots.py`، ملحق ADR 0020)، خلف `AI_ENABLE_SHOTS`. تقييم الجودة لم يُبنَ بعد.
+- كشف اللقطات: `ContentDetector` من PySceneDetect على إطارات PyAV بطوابعها الحقيقية (`shots.py`، ملحق ADR 0020)، خلف `AI_ENABLE_SHOTS`.
+- تقييم الجودة: الاهتزاز والصمت وتكرار اللقطة في `quality.py`، يُضاف إلى `shots.json` (ADR 0065).
 
 ## الحالة
 

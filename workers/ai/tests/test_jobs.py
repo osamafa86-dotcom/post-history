@@ -169,6 +169,27 @@ def test_transcript_text_never_reaches_the_log_or_the_server(tmp_path, caplog):
     assert caplog.records and not [w for w in words if w in caplog.text or w in sent]
 
 
+def test_quality_flags_ride_in_shots_json_and_their_failure_does_not_block(tmp_path):
+    from ai_worker.jobs import shots_key
+    from ai_worker.quality import Signals
+
+    times = [i / 10 for i in range(125)]
+    sig = Signals(times, [(0.0, 0.0)] * 125, [0] * 125, [(0.5, 2.0)])
+    jobs, storage, _ = make(tmp_path, shots_enabled=True, detect=_fake_detect([]), signals=lambda p: sig)
+    jobs.handle(verified_event())
+    doc = json.loads(storage.objects[(BUCKET, shots_key(MATERIAL, FILE))])
+    assert doc["silences"] == [{"start": 0.5, "end": 2.0}]
+    assert doc["shots"][0]["quality"] == {"shake_px": 0.0, "shaky": False, "silent_ratio": 0.5, "duplicate_of": None}
+    assert doc["shots"][1]["quality"]["duplicate_of"] == 0  # same hash as the first shot
+
+    def broken(path):
+        raise RuntimeError("decoder")
+    (tmp_path / "b").mkdir()
+    jobs2, storage2, _ = make(tmp_path / "b", shots_enabled=True, detect=_fake_detect([]), signals=broken)
+    assert jobs2.handle(verified_event()).endswith("+shots")
+    assert "quality" not in json.dumps(json.loads(storage2.objects[(BUCKET, shots_key(MATERIAL, FILE))]))
+
+
 def test_voice_note_is_transcribed_from_its_16k_audio_without_shots(tmp_path):
     from ai_worker.jobs import audio_key
 

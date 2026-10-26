@@ -44,6 +44,9 @@ final class IdleWatchdogTests: XCTestCase {
         let (transport, collector, request) = try makePatch(port: stub.port, chunkBytes: 8 << 20, idleTimeout: nil)
         try await transport.schedulePatch(request)
         while stub.bodyBytesSeen < 1 << 20 { try await Task.sleep(nanoseconds: 20_000_000) }
+        // الإلغاء على مهمة متوقفة (النافذة ممتلئة) كما في الميدان: إلغاء مهمة curl وهي تقرأ الجسم في تلك اللحظة يُسقط
+        // FoundationNetworking على Linux (`EasyHandle.swift` بـ try! عند خطأ libcurl 43)؛ على منصات Apple لا يمر بهذا المسار.
+        try await Task.sleep(nanoseconds: 1_000_000_000)
         await transport.restartTransfers()
         let outcomes = await collector.wait(count: 1, timeout: 10)
         XCTAssertEqual(outcomes.first?.1, .failed(.cancelled))

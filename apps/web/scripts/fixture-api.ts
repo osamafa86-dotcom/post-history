@@ -88,6 +88,21 @@ function seedOrganizations() {
   members.set(buyerOrg, [{ user_id: "91000000-0000-4000-8000-000000000001", email: "buyeradmin@example.test", role: "buyer_admin", status: "active", totp_enabled: true, created_at: base.created_at }, { user_id: "91000000-0000-4000-8000-000000000002", email: "buyer@example.test", role: "buyer_member", status: "active", totp_enabled: true, created_at: base.created_at }]);
   members.set(otherOrg, []);
 }
+// تراخيص اصطناعية لمؤسسة المشتري: ساري جاهز للتنزيل بثلاث مرات، ومُبطل.
+const issued = new Map<string, Record<string, unknown> & { id: string; organization_id: string; status: string; downloads: number }>();
+function seedLicenses() {
+  issued.clear();
+  const terms = { type: "editorial_single", name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" }, terms: { ar: "استخدام تحريري واحد في نشرة إخبارية.", en: "One editorial use in a news bulletin." }, usage_media: ["tv", "web"], territory: { kind: "worldwide" }, term_days: null, exclusivity_hours: null, deliverables: ["original"], attribution: { ar: "فلسطين بوست", en: "Palestine Post" }, prohibitions: ["resale", "ai_training"] };
+  const base = { order_id: "92000000-0000-4000-8000-000000000001", organization_id: "90000000-0000-4000-8000-000000000001", listing_id: "71000000-0000-4000-8000-000000000001", material_version: 1, license_template_id: "70000000-0000-4000-8000-000000000001", license_version: 1, terms, price: { amount_minor: 15000, currency: "USD" }, valid_from: "2026-10-26T10:00:00Z", valid_until: null, exclusive_until: null, issued_at: "2026-10-26T10:00:00Z", internal_note: "never-display-canary" };
+  issued.set("93000000-0000-4000-8000-000000000001", { ...base, id: "93000000-0000-4000-8000-000000000001", order_item_id: randomUUID(), license_number: "PH-2026-7K3M9Q2XRT", title: { ar: "لقطات اصطناعية 1", en: "Synthetic footage 1" }, status: "active", revoked_reason: null, delivery_ready: true, downloads: 3 });
+  issued.set("93000000-0000-4000-8000-000000000002", { ...base, id: "93000000-0000-4000-8000-000000000002", order_item_id: randomUUID(), license_number: "PH-2026-4HJ8NP0WVZ", title: { ar: "لقطات اصطناعية 2", en: "Synthetic footage 2" }, status: "revoked", revoked_reason: "refunded", delivery_ready: true, downloads: 3 });
+}
+// الطلبات والدفع التجريبي: أسعار عروض الكتالوج الاصطناعي، وصفحة مزوّد مستضافة تؤكد الدفع بعد العودة كما يفعل الإشعار الموقّع.
+const orders = new Map<string, Record<string, unknown> & { id: string; organization_id: string; status: string; created_by: string }>();
+const offerPrices: Record<string, { amount: number; type: string; name: { ar: string; en: string } }> = {
+  "70000000-0000-4000-8000-000000000001": { amount: 15000, type: "editorial_single", name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" } },
+  "70000000-0000-4000-8000-000000000002": { amount: 90000, type: "exclusive_temporary", name: { ar: "حصري 48 ساعة", en: "Exclusive 48 h" } },
+};
 const templates = new Map<string, (Record<string, unknown> & { id: string; version: number; enabled: boolean })[]>();
 function seedTemplates() {
   templates.clear();
@@ -95,7 +110,7 @@ function seedTemplates() {
   templates.set("81000000-0000-4000-8000-000000000001", [{ ...base, id: "81000000-0000-4000-8000-000000000001", version: 1, type: "editorial_single", name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" }, terms: { ar: "شروط الاستخدام الواحد", en: "Single use terms" }, base_price: { amount_minor: 15000, currency: "USD" }, enabled: true, internal_note: "never-display-canary" }]);
   templates.set("81000000-0000-4000-8000-000000000002", [{ ...base, id: "81000000-0000-4000-8000-000000000002", version: 3, type: "editorial_term", term_days: 365, name: { ar: "تحريري سنوي قديم", en: "Old annual editorial" }, terms: { ar: "شروط", en: "Terms" }, base_price: { amount_minor: 40000, currency: "ILS" }, enabled: false }]);
 }
-reset(); seedTemplates(); seedOrganizations();
+reset(); seedTemplates(); seedOrganizations(); seedLicenses();
 const signed = new Map<string, { kind: "proxy" | "thumbnail"; expires: number }>();
 let expireNextProxy = false;
 const access = new Map<string, Me>(), refresh = new Map<string, Me>();
@@ -113,10 +128,19 @@ const server = createServer(async (req, res) => {
   res.setHeader("Content-Type", "application/json"); res.setHeader("Cache-Control", "no-store");
   const send = (value: unknown, status = 200) => { res.statusCode = status; res.end(status === 204 ? "" : JSON.stringify(value)); };
   if (url.pathname === "/health") return send({ ok: true });
+  const delivery = /^\/delivery\/([^/]+)$/.exec(url.pathname);
+  if (delivery) { res.setHeader("Content-Type", "application/zip"); res.setHeader("Content-Disposition", `attachment; filename="delivery-${delivery[1].slice(0, 8)}.zip"`); res.end("synthetic delivery package"); return; }
   if (url.pathname.startsWith("/files/")) { res.removeHeader("Content-Type"); return tus(req, res, url); }
   if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
   if (url.pathname === "/__test/uploads") return send([...uploads.values()].map(u => ({ state: u.session.state, receipt: u.session.receipt_number, ingest_tokens: [...ingestTokens.values()].filter(t => t.sid === u.session.id).length, ...(u.tus ? (({ length, offset, patches, resent, cuts }) => ({ length, offset, patches, resent, cuts }))(tusFiles.get(u.tus) ?? { length: 0, offset: 0, patches: 0, resent: 0, cuts: 0 }) : {}) })));
-  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); seedTemplates(); seedOrganizations(); reset(); resetUploads(); return send({ ok: true }); }
+  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); orders.clear(); seedLicenses(); seedTemplates(); seedOrganizations(); reset(); resetUploads(); return send({ ok: true }); }
+  const sandbox = /^\/sandbox\/(checkout|pay)\/([^/]+)$/.exec(url.pathname);
+  if (sandbox) {
+    const order = orders.get(sandbox[2]); if (!order) return send({}, 404);
+    if (sandbox[1] === "checkout") { res.setHeader("Content-Type", "text/html; charset=utf-8"); res.end(`<!doctype html><title>Sandbox checkout</title><h1>Sandbox provider</h1><a href="/sandbox/pay/${order.id}">Pay (sandbox)</a>`); return; }
+    setTimeout(() => { if (order.status === "pending_payment") Object.assign(order, { status: "paid", paid_at: new Date().toISOString(), updated_at: new Date().toISOString() }); }, 1500);
+    res.statusCode = 302; res.setHeader("Location", `http://127.0.0.1:3100/ar/store/orders/${order.id}?returned=1`); res.end(); return;
+  }
   if (url.pathname === "/__test/state") return send({ writes, applied: applied.size, identitySetting, auditCount: permissionAudit.length });
   if (url.pathname === "/__test/request-changes" && req.method === "POST") {
     // مادة بطلب تعديل وأخرى مرفوضة وثالثة فشل رفعها، وسبب داخلي لا يصل المراسل.
@@ -269,6 +293,31 @@ const server = createServer(async (req, res) => {
       const next = { ...body, id: current?.id ?? randomUUID(), material_id: item.id, material_version: item.version, suspended_reason: body.state === "suspended" ? "manual" : null, listed_at: current?.listed_at ?? (body.state === "listed" ? stamp : null), created_at: current?.created_at ?? stamp, updated_at: stamp, updated_by: user.user_id, row: (current?.row ?? 0) + 1, state: String(body.state) };
       listings.set(item.id, next); res.setHeader("ETag", `"${next.row}"`); return commit(Object.fromEntries(Object.entries(next).filter(([key]) => key !== "row")), current ? 200 : 201);
     }
+    const download = /^\/v1\/licenses\/([^/]+)\/download-url$/.exec(path);
+    if (download) {
+      if (!has("buyer_admin", "buyer_member")) return send({}, 403);
+      const found = issued.get(download[1]); if (!found || found.organization_id !== user.organization_id) return send({}, 404);
+      if (found.status !== "active") return send({ code: "license_not_active" }, 409);
+      if (found.downloads < 1) return send({ code: "download_limit_reached" }, 409);
+      found.downloads--;
+      return commit({ url: `http://127.0.0.1:${process.env.WEB_FIXTURE_PORT ?? 3201}/delivery/${found.id}?signature=${randomUUID()}`, expires_at: new Date(Date.now() + 3600000).toISOString(), downloads_remaining: found.downloads }, 200);
+    }
+    const orderWrite = /^\/v1\/orders(?:\/([^/]+)\/(checkout|cancel))?$/.exec(path);
+    if (orderWrite) {
+      if (!has("buyer_admin", "buyer_member") || !user.organization_id) return send({}, 403);
+      if (!orderWrite[1]) {
+        const items = (body.items as { listing_id: string; license_template_id: string }[]).map(i => { const o = offerPrices[i.license_template_id]; return { id: randomUUID(), listing_id: i.listing_id, material_version: 1, license_template_id: i.license_template_id, license_version: 1, license_type: o.type, license_name: o.name, title: { ar: `لقطات اصطناعية ${i.listing_id.slice(-1)}`, en: `Synthetic footage ${i.listing_id.slice(-1)}` }, price: { amount_minor: o.amount, currency: "USD" }, license_id: null }; });
+        const total = items.reduce((sum, i) => sum + i.price.amount_minor, 0), expected = body.expected_total as { amount_minor: number } | undefined;
+        if (expected && expected.amount_minor !== total) return send({ code: "price_changed" }, 409);
+        const stamp = new Date().toISOString(), exclusive = items.some(i => i.license_type === "exclusive_temporary");
+        const order = { id: randomUUID(), organization_id: user.organization_id, created_by: user.user_id, status: "pending_payment", cancel_reason: null, total: { amount_minor: total, currency: "USD" }, items, expires_at: new Date(Date.now() + (exclusive ? 900000 : 86400000)).toISOString(), paid_at: null, created_at: stamp, updated_at: stamp };
+        orders.set(order.id, order); return commit(order, 201);
+      }
+      const order = orders.get(orderWrite[1]); if (!order || order.organization_id !== user.organization_id) return send({}, 404);
+      if (order.status !== "pending_payment") return send({ code: "order_state_conflict" }, 409);
+      if (orderWrite[2] === "cancel") { Object.assign(order, { status: "cancelled", cancel_reason: "buyer", updated_at: new Date().toISOString() }); return commit(order, 200); }
+      return commit({ checkout_url: `http://127.0.0.1:${process.env.WEB_FIXTURE_PORT ?? 3201}/sandbox/checkout/${order.id}`, provider: "sandbox", expires_at: order.expires_at, session_secret: "never-display-canary" }, 200);
+    }
     const orgWrite = /^\/v1\/buyer-organizations(?:\/([^/]+)(\/members)?(?:\/([^/]+))?)?$/.exec(path);
     if (orgWrite) {
       const [, id, isMembers, userId] = orgWrite, mine = (orgId: string) => !user.organization_id || user.organization_id === orgId;
@@ -346,6 +395,20 @@ const server = createServer(async (req, res) => {
     if (!user.roles.some(role => ["system_admin", "rights_officer", "editor_in_chief", "finance"].includes(role.name))) return send({}, 403);
     const found = listings.get(listingRead[1]); if (!found) return send({ code: "not_found" }, 404);
     res.setHeader("ETag", `"${found.row}"`); return send({ ...Object.fromEntries(Object.entries(found).filter(([key]) => key !== "row")), internal_note: "never-display-canary" });
+  }
+  const licenseRead = /^\/v1\/licenses(?:\/([^/]+))?$/.exec(url.pathname);
+  if (licenseRead) {
+    if (!user.roles.some(role => ["system_admin", "finance", "rights_officer", "buyer_admin", "buyer_member"].includes(role.name))) return send({}, 403);
+    const visible = [...issued.values()].filter(l => !user.organization_id || l.organization_id === user.organization_id).map(l => Object.fromEntries(Object.entries(l).filter(([key]) => key !== "downloads")));
+    if (!licenseRead[1]) return send({ items: visible, next_cursor: null });
+    const found = visible.find(l => l.id === licenseRead[1]); return found ? send(found) : send({}, 404);
+  }
+  const orderRead = /^\/v1\/orders(?:\/([^/]+))?$/.exec(url.pathname);
+  if (orderRead) {
+    if (!user.roles.some(role => ["system_admin", "finance", "buyer_admin", "buyer_member"].includes(role.name))) return send({}, 403);
+    const visible = [...orders.values()].filter(o => !user.organization_id || o.organization_id === user.organization_id).reverse();
+    if (!orderRead[1]) return send({ items: visible, next_cursor: null });
+    const found = visible.find(o => o.id === orderRead[1]); return found ? send({ ...found, provider_reference: "never-display-canary" }) : send({}, 404);
   }
   const orgRead = /^\/v1\/buyer-organizations(?:\/([^/]+)(\/members)?)?$/.exec(url.pathname);
   if (orgRead) {

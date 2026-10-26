@@ -3,8 +3,9 @@ import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { ApiError } from '../common/errors';
 import { DB, type Database } from '../database/database.module';
-import { catalogListings, licenseTemplateVersions, listingOffers, materialFiles } from '../database/schema/schema';
+import { buyerOrganizations, catalogListings, licenseTemplateVersions, listingOffers, materialFiles } from '../database/schema/schema';
 import type { components } from '../generated/api';
+import type { Principal } from '../identity/principal';
 import { iso } from '../materials/material-store';
 import { validTimestamp } from '../uploads/uploads.service';
 import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
@@ -60,6 +61,13 @@ export class CatalogService {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
   ) {}
+
+  /** المشتري يقرأ الكتالوج ما دامت مؤسسته فعّالة (ADR 0025 الجزء 3)؛ المعلّقة وقيد التحقق `403 forbidden_scope`. */
+  async assertReader(p: Principal): Promise<void> {
+    if (!p.organizationId) return;
+    const [org] = await this.db.select({ status: buyerOrganizations.status }).from(buyerOrganizations).where(eq(buyerOrganizations.id, p.organizationId));
+    if (org?.status !== 'active') throw new ApiError(403, 'forbidden_scope', 'The organization cannot browse the catalog until it is active.');
+  }
 
   async search(q: CatalogQuery): Promise<components['schemas']['CatalogPage']> {
     const limit = q.limit ?? 50;

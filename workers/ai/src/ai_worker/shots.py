@@ -71,7 +71,9 @@ def speech_segments(shot: Shot, segments: list[Segment]) -> list[int]:
 
 
 def to_json(shots: list[Shot], segments: list[Segment] | None, *, source: dict, stats: dict,
-            threshold: float = THRESHOLD, min_shot_s: float = MIN_SHOT_S) -> str:
+            threshold: float = THRESHOLD, min_shot_s: float = MIN_SHOT_S,
+            quality: tuple[list[dict], list[tuple[float, float]]] | None = None) -> str:
+    """`quality` من `quality.assess`: أعلام كل لقطة ومدى الصمت. غيابه يعني أن التقييم لم يجرِ أو فشل."""
     doc = {
         "format_version": FORMAT_VERSION,
         "status": "draft",
@@ -81,8 +83,10 @@ def to_json(shots: list[Shot], segments: list[Segment] | None, *, source: dict, 
                      "analysis_width": ANALYSIS_WIDTH, **stats},
         "shots": [
             {"index": i, "start": s.start, "end": s.end, "duration": round(s.end - s.start, 3),
-             **({"speech_segments": speech_segments(s, segments)} if segments is not None else {})}
+             **({"speech_segments": speech_segments(s, segments)} if segments is not None else {}),
+             **({"quality": quality[0][i]} if quality is not None else {})}
             for i, s in enumerate(shots)
         ],
+        **({"silences": [{"start": a, "end": b} for a, b in quality[1]]} if quality is not None else {}),
     }
     return json.dumps(doc, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
