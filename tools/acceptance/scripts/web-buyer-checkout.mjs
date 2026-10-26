@@ -118,14 +118,27 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
       while (Date.now() < deadline) { await button.waitFor(); if (await button.isEnabled()) { ready = true; break; } await page.waitForTimeout(3000); await page.goto(certificate, { waitUntil: "networkidle" }); }
       metrics.delivery_ready = ready;
       if (!ready) { deferred.push(`delivery download: the package was not ready within ${waitDelivery} s (needs the media worker with delivery enabled)`); console.log("DEFERRED delivery download: the package was not ready in time"); return; }
-      const before = remainingIn(await text(page.getByTestId("downloads-remaining")));
-      const started = page.waitForEvent("download");
-      await button.click();
-      const file = await started;
-      check("the counted download starts as a delivery archive", /^delivery-.*\.zip$/.test(file.suggestedFilename()));
+      // the page navigates to the signed link at once, so the count is read from the API answer; the link itself is never kept
+      let caught = null;
+      await page.route(/\/licenses\/[^/]+\/download-url$/, async (route) => {
+        const response = await route.fetch();
+        let body = {};
+        try { body = JSON.parse(await response.text()); } catch { /* not JSON: counted as no link and no count */ }
+        caught = { status: response.status(), left: Number.isInteger(body.downloads_remaining) ? body.downloads_remaining : null, hasLink: typeof body.url === "string" && body.url.length > 0 };
+        await route.fulfill({ response });
+      });
+      const press = async () => {
+        caught = null;
+        await button.click();
+        for (let i = 0; i < 100 && !caught; i++) await page.waitForTimeout(100);
+        return caught ?? { status: 0, left: null, hasLink: false };
+      };
+      const first = await press();
+      check("the download request is accepted with a link and a count", first.status === 200 && first.hasLink && first.left !== null, `status ${first.status}`);
       await page.goto(certificate, { waitUntil: "networkidle" });
-      const afterN = remainingIn(await text(page.getByTestId("downloads-remaining")));
-      check("the remaining downloads went down by exactly one", before !== null && afterN === before - 1, `${before} -> ${afterN}`);
+      await button.waitFor();
+      const second = await press();
+      check("the remaining downloads went down by exactly one", first.left !== null && second.left === first.left - 1, `${first.left} -> ${second.left}`);
     });
   } catch (error) {
     if (error instanceof EnvironmentError) { console.error("ENVIRONMENT: the browser or its module is unavailable; nothing measured"); return { code: 2, doc: null }; }
