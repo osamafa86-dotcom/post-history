@@ -6,6 +6,7 @@ import { identityAccesses, identityReasons, pageLimits, permissions, reasonLimit
 import { states } from "../src/lib/query";
 import * as buyers from "../src/lib/buyer-policy";
 import * as issued from "../src/lib/issued-licenses";
+import * as orders from "../src/lib/order-policy";
 import { uploadRoles } from "../src/lib/upload-policy";
 import { catalogRoles, licenseTypes } from "../src/server/catalog";
 import { channels, roles, ruleEvents, ruleLimits, scopeKinds } from "../src/lib/notification-policy";
@@ -90,6 +91,11 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
     for (const path of ["/licenses", "/licenses/{license_id}"]) expect([...issued.licenseReaders]).toEqual(at("paths", path, "get", "x-roles"));
     expect([...issued.licenseDownloaders]).toEqual(at("paths", "/licenses/{license_id}/download-url", "post", "x-roles"));
     expect([...issued.licenseStatuses]).toEqual(at("components", "schemas", "LicenseStatus", "enum"));
+  });
+  it("keeps order roles, statuses and limits aligned with v0.3", () => {
+    for (const path of ["/orders", "/orders/{order_id}"]) expect([...orders.orderReaders]).toEqual(at("paths", path, "get", "x-roles"));
+    for (const path of ["/orders", "/orders/{order_id}/checkout", "/orders/{order_id}/cancel"]) expect([...orders.orderWriters]).toEqual(at("paths", path, "post", "x-roles"));
+    expect([...orders.orderStatuses]).toEqual(at("components", "schemas", "OrderStatus", "enum")); expect(orders.orderLimits.items).toBe(at("components", "schemas", "OrderCreate", "properties", "items", "maxItems"));
   });
   it("keeps transition choices aligned with the three contract state enums", () => {
     for (const [key, schema] of [["technical_state", "TechnicalState"], ["editorial_state", "EditorialState"], ["rights_state", "RightsState"]] as const) expect(states[key]).toEqual(at("components", "schemas", schema, "enum"));

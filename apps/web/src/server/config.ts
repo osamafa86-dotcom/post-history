@@ -1,4 +1,4 @@
-export type WebConfig = ReturnType<typeof readConfig>;
+export type WebConfig = Omit<ReturnType<typeof readConfig>, "checkoutOrigins"> & { checkoutOrigins?: string[] };
 export function readConfig() {
   const origin = new URL(process.env.WEB_ORIGIN ?? "http://127.0.0.1:3100");
   const api = new URL(process.env.API_BASE_URL ?? "http://127.0.0.1:3000/v1");
@@ -19,10 +19,16 @@ export function readConfig() {
     if ((url.protocol !== "https:" && !(insecure && local(url) && url.protocol === "http:")) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("Invalid upload origin");
     return url.origin;
   });
+  // أصول صفحات الدفع المستضافة لدى المزوّد (التجريبي في هذه الدورة)؛ المتصفح لا يُوجَّه إلى غيرها. الفراغ يعطّل الدفع.
+  const checkoutOrigins = (process.env.WEB_CHECKOUT_ORIGINS ?? "").split(",").filter(Boolean).map(value => {
+    const url = new URL(value.trim());
+    if ((url.protocol !== "https:" && !(insecure && local(url) && url.protocol === "http:")) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("Invalid checkout origin");
+    return url.origin;
+  });
   const key = Buffer.from(process.env.WEB_SESSION_KEY ?? "", "base64");
   if (key.length !== 32) throw new Error("WEB_SESSION_KEY must contain 32 bytes");
   return {
-    origin: origin.origin, api: api.toString().replace(/\/$/, ""), key, mediaOrigins, tusOrigins,
+    origin: origin.origin, api: api.toString().replace(/\/$/, ""), key, mediaOrigins, tusOrigins, checkoutOrigins,
     redisUrl: process.env.WEB_REDIS_URL ?? "redis://127.0.0.1:6379/1",
     secure: !insecure, cookieName: insecure ? "ph-session" : "__Host-ph-session",
     lifetimeSeconds: 8 * 60 * 60,
