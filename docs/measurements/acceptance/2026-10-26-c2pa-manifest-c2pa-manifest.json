@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "quality",
+  "test_name": "c2pa-manifest",
+  "started_at": "2026-10-26T12:45:19.667Z",
+  "ended_at": "2026-10-26T12:45:31.367Z",
+  "result": "partial",
+  "metrics": {
+    "checks_failed": 0,
+    "signed1_bytes": 3776313,
+    "signed2_bytes": 229613,
+    "signed3_bytes": 667384,
+    "signed4_bytes": 175797,
+    "signed_outputs": 4
+  },
+  "upload_path": "n/a",
+  "file": {
+    "codec": "synthetic H.264 phone clip (tags, GPS, SEI) and HEVC 10-bit HLG clip (tags)"
+  },
+  "notes": "توقيع C2PA (ADR 0060) على مقطعين اصطناعيين بوسوم وموقع (وSEI في مقطع الهاتف) عبر مساري التصدير ومعاينة المتجر: البيان يُقرأ كاملًا بقائمة بيضاء مكتوبة هنا لا بـ check_report، ولا قيمة مزروعة ولا بصمة الأصل في البيان ولا في بايتات الملف، والملف الموقَّع جديد، والأصل لم يُمس، ورفض المقيّم لتسريبات محقونة عمدًا. لا pass: سلسلة الاختبار جذر مؤقت من openssl فلا ثقة حقيقية، ووحدة المفاتيح (signer_path) لم تُجرَّب، ولا ملف حقيقي. c2patool 0.28.0."
+}
