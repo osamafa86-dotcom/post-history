@@ -6,9 +6,18 @@ async function login(page: Page, role: string, locale: "ar" | "en" = "ar") {
   const m = locale === "ar" ? ar : en;
   await page.goto(`/${locale}/login`); await page.getByLabel(m.email).fill(`${role}@example.test`); await page.getByLabel(m.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(m.totp, { exact: true }).fill("123456"); await page.getByRole("button", { name: m.signIn, exact: true }).click(); await expect(page.getByTestId("material-row")).toHaveCount(50);
 }
+/** يفتح حوار التحويل إن لم يكن مفتوحًا ويختار المسار والهدف والسبب؛ زر التأكيد يُسمّى بالحالة الهدف. */
+async function choose(page: Page, to: string, reason: string, track?: "editorial" | "rights" | "technical") {
+  const dialog = page.getByRole("dialog");
+  if (!await dialog.isVisible()) await page.getByRole("button", { name: ar.review.open, exact: true }).click();
+  if (track && await dialog.getByRole("combobox", { name: ar.review.track, exact: true }).count()) await dialog.getByRole("combobox", { name: ar.review.track, exact: true }).selectOption(track);
+  const column = ({ editorial: "editorial_state", rights: "rights_state", technical: "technical_state" } as const)[track ?? "editorial"];
+  await dialog.getByRole("radio", { name: (ar.states[column] as Record<string, string>)[to] }).check();
+  await dialog.getByLabel(ar.review.reason, { exact: true }).fill(reason);
+}
+const confirm = (page: Page) => page.getByRole("dialog").getByRole("button", { name: new RegExp(`^${ar.review.confirmTo.split("{state}")[0]}`) });
 async function rights(page: Page, to: string) {
-  await page.getByRole("combobox", { name: ar.review.track, exact: true }).selectOption("rights"); await page.getByRole("combobox", { name: ar.review.target, exact: true }).selectOption(to);
-  await page.getByLabel(ar.review.reason, { exact: true }).fill("rights reviewed"); await page.getByRole("button", { name: ar.review.apply, exact: true }).click();
+  await choose(page, to, "rights reviewed", "rights"); await confirm(page).click();
   await expect(page.locator(".state-grid [data-track='rights_state']")).toHaveText(ar.states.rights_state[to as "sellable"]);
 }
 test.beforeEach(async ({ request }) => { await request.post("http://127.0.0.1:3201/__test/reset"); });
