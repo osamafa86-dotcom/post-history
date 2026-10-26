@@ -60,9 +60,9 @@ open class CommerceAPI {
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
      - parameter buyerOrganizationCreate: (body)  
      - parameter apiConfiguration: The configuration for the http request.
-     - returns: BuyerOrganization
+     - returns: BuyerOrganizationCreated
      */
-    open class func createBuyerOrganization(idempotencyKey: String, buyerOrganizationCreate: BuyerOrganizationCreate, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> BuyerOrganization {
+    open class func createBuyerOrganization(idempotencyKey: String, buyerOrganizationCreate: BuyerOrganizationCreate, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> BuyerOrganizationCreated {
         return try await createBuyerOrganizationWithRequestBuilder(idempotencyKey: idempotencyKey, buyerOrganizationCreate: buyerOrganizationCreate, apiConfiguration: apiConfiguration).execute().body
     }
 
@@ -77,9 +77,9 @@ open class CommerceAPI {
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
      - parameter buyerOrganizationCreate: (body)  
      - parameter apiConfiguration: The configuration for the http request.
-     - returns: RequestBuilder<BuyerOrganization> 
+     - returns: RequestBuilder<BuyerOrganizationCreated> 
      */
-    open class func createBuyerOrganizationWithRequestBuilder(idempotencyKey: String, buyerOrganizationCreate: BuyerOrganizationCreate, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<BuyerOrganization> {
+    open class func createBuyerOrganizationWithRequestBuilder(idempotencyKey: String, buyerOrganizationCreate: BuyerOrganizationCreate, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<BuyerOrganizationCreated> {
         let localVariablePath = "/buyer-organizations"
         let localVariableURLString = apiConfiguration.basePath + localVariablePath
         let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: buyerOrganizationCreate, codableHelper: apiConfiguration.codableHelper)
@@ -93,7 +93,7 @@ open class CommerceAPI {
 
         let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
 
-        let localVariableRequestBuilder: RequestBuilder<BuyerOrganization>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+        let localVariableRequestBuilder: RequestBuilder<BuyerOrganizationCreated>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
@@ -641,9 +641,9 @@ open class CommerceAPI {
      - parameter orgId: (path) معرّف المؤسسة المشترية 
      - parameter buyerMemberInvite: (body)  
      - parameter apiConfiguration: The configuration for the http request.
-     - returns: BuyerMember
+     - returns: BuyerMemberCreated
      */
-    open class func inviteBuyerMember(idempotencyKey: String, orgId: UUID, buyerMemberInvite: BuyerMemberInvite, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> BuyerMember {
+    open class func inviteBuyerMember(idempotencyKey: String, orgId: UUID, buyerMemberInvite: BuyerMemberInvite, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> BuyerMemberCreated {
         return try await inviteBuyerMemberWithRequestBuilder(idempotencyKey: idempotencyKey, orgId: orgId, buyerMemberInvite: buyerMemberInvite, apiConfiguration: apiConfiguration).execute().body
     }
 
@@ -658,9 +658,9 @@ open class CommerceAPI {
      - parameter orgId: (path) معرّف المؤسسة المشترية 
      - parameter buyerMemberInvite: (body)  
      - parameter apiConfiguration: The configuration for the http request.
-     - returns: RequestBuilder<BuyerMember> 
+     - returns: RequestBuilder<BuyerMemberCreated> 
      */
-    open class func inviteBuyerMemberWithRequestBuilder(idempotencyKey: String, orgId: UUID, buyerMemberInvite: BuyerMemberInvite, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<BuyerMember> {
+    open class func inviteBuyerMemberWithRequestBuilder(idempotencyKey: String, orgId: UUID, buyerMemberInvite: BuyerMemberInvite, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<BuyerMemberCreated> {
         var localVariablePath = "/buyer-organizations/{org_id}/members"
         let orgIdPreEscape = "\(APIHelper.mapValueToPathItem(orgId))"
         let orgIdPostEscape = orgIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
@@ -677,7 +677,7 @@ open class CommerceAPI {
 
         let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
 
-        let localVariableRequestBuilder: RequestBuilder<BuyerMember>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+        let localVariableRequestBuilder: RequestBuilder<BuyerMemberCreated>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }

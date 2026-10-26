@@ -2126,12 +2126,12 @@ paths:
             schema: { $ref: "#/components/schemas/BuyerOrganizationCreate" }
       responses:
         "201":
-          description: المؤسسة
+          description: المؤسسة، ومعها رمز دعوة مديرها الأول في الرد الأول وحده
           headers:
             ETag: { $ref: "#/components/headers/ETag" }
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/BuyerOrganization" }
+              schema: { $ref: "#/components/schemas/BuyerOrganizationCreated" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
@@ -2228,10 +2228,10 @@ paths:
             schema: { $ref: "#/components/schemas/BuyerMemberInvite" }
       responses:
         "201":
-          description: العضو
+          description: العضو، ومعه رمز الدعوة في الرد الأول وحده
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/BuyerMember" }
+              schema: { $ref: "#/components/schemas/BuyerMemberCreated" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -4421,18 +4421,45 @@ components:
             first_admin_email: { type: string, format: email, maxLength: 254 }
       unevaluatedProperties: false
 
+    BuyerOrganizationState:
+      type: object
+      required: [id, status, seats, active_members, verified_at, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        active_members: { type: integer, minimum: 0 }
+        verified_at: { type: [string, "null"], format: date-time, description: أول انتقال إلى `active` }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
     BuyerOrganization:
       allOf:
         - $ref: "#/components/schemas/BuyerOrganizationFields"
-        - type: object
-          required: [id, status, seats, active_members, verified_at, created_at, updated_at]
-          properties:
-            id: { type: string, format: uuid }
-            active_members: { type: integer, minimum: 0 }
-            verified_at: { type: [string, "null"], format: date-time, description: أول انتقال إلى `active` }
-            created_at: { type: string, format: date-time }
-            updated_at: { type: string, format: date-time }
+        - $ref: "#/components/schemas/BuyerOrganizationState"
       unevaluatedProperties: false
+
+    BuyerOrganizationCreated:
+      description: رد الإنشاء وحده؛ يحمل رمز دعوة المدير الأول في الرد الأول، ولا يُعاد عند التكرار
+      allOf:
+        - $ref: "#/components/schemas/BuyerOrganizationFields"
+        - $ref: "#/components/schemas/BuyerOrganizationState"
+        - $ref: "#/components/schemas/BuyerInviteToken"
+      unevaluatedProperties: false
+
+    BuyerInviteToken:
+      type: object
+      properties:
+        invite_token:
+          type: string
+          minLength: 32
+          maxLength: 256
+          description: >-
+            رمز تعيين كلمة المرور للمدعو، كرمز الاستعادة (`RecoveryApproval.reset_token`): يُعاد مرة واحدة في رد الإنشاء الأول،
+            ولا يُعاد عند التكرار بمفتاح منع التكرار، ولا يُسجَّل ولا يُخزَّن إلا ببصمته. يسلّمه المنشئ للمدعو خارج النظام. العميل
+            يعرضه مرة ولا يحفظه ولا يضعه في الحافظة.
+        invite_token_expires_at: { type: string, format: date-time, description: ≤ 24 ساعة من الإنشاء }
+      dependentRequired:
+        invite_token: [invite_token_expires_at]
+        invite_token_expires_at: [invite_token]
 
     BuyerOrganizationPage:
       type: object
@@ -4690,6 +4717,12 @@ components:
       required: [received]
       properties:
         received: { type: boolean, const: true }
+
+    BuyerMemberCreated:
+      description: رد الدعوة وحده؛ يحمل رمز الدعوة في الرد الأول، ولا يُعاد عند التكرار
+      allOf:
+        - $ref: "#/components/schemas/BuyerMember"
+        - $ref: "#/components/schemas/BuyerInviteToken"
 
     OutboxEvent:
       $ref: "./schemas/outbox-event.json"
