@@ -253,7 +253,7 @@ const server = createServer(async (req, res) => {
         if (!has("system_admin")) return send({}, 403);
         const created = { ...body, id: randomUUID(), status: "pending_verification", active_members: 1, verified_at: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), row: 1 } as unknown as Record<string, unknown> & { id: string; row: number; seats: number };
         delete created.first_admin_email; organizations.set(created.id, created); members.set(created.id, [{ user_id: randomUUID(), email: String(body.first_admin_email), role: "buyer_admin", status: "invited", totp_enabled: false, created_at: String(created.created_at) }]);
-        res.setHeader("ETag", '"1"'); return commit({ ...Object.fromEntries(Object.entries(created).filter(([key]) => key !== "row")), invite_token: "never-display-canary-token-000000000000" }, 201);
+        res.setHeader("ETag", '"1"'); return commit({ ...Object.fromEntries(Object.entries(created).filter(([key]) => key !== "row")), invite_token: "synthetic-invite-token-organization-0001", invite_token_expires_at: new Date(Date.now() + 86400000).toISOString() }, 201);
       }
       const current = organizations.get(id); if (!current || !mine(id)) return send({}, 404);
       if (!isMembers) {
@@ -269,7 +269,7 @@ const server = createServer(async (req, res) => {
         if (list.some(m => m.email === body.email)) return send({ code: "conflict" }, 409);
         if (active >= current.seats) return send({ code: "seats_exhausted" }, 409);
         const added = { user_id: randomUUID(), email: String(body.email), role: String(body.role), status: "invited", totp_enabled: false, created_at: new Date().toISOString() }; list.push(added);
-        return commit({ ...added, invite_token: "never-display-canary-token-000000000000", invite_token_expires_at: new Date(Date.now() + 86400000).toISOString() }, 201);
+        return commit({ ...added, invite_token: "synthetic-invite-token-member-000000001", invite_token_expires_at: new Date(Date.now() + 86400000).toISOString() }, 201);
       }
       const target = list.find(m => m.user_id === userId); if (!target) return send({}, 404);
       if (target.role === "buyer_admin" && (body.role !== "buyer_admin" || body.status === "suspended") && list.filter(m => m.role === "buyer_admin" && m.status === "active").length === 1) return send({ code: "last_buyer_admin" }, 409);

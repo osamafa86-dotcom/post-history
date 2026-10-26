@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { Me } from "@/lib/types";
 import { hasRole } from "@/lib/review";
 import { uuid } from "@/lib/query";
-import { isBuyer, memberInvite, memberManagers, memberUpdate, organizationAdmins, organizationCreate, organizationEditors, organizationInput, organizationReaders, organizationStatuses, safeMember, safeOrganization } from "@/lib/buyer-policy";
+import { inviteToken, isBuyer, memberInvite, memberManagers, memberUpdate, organizationAdmins, organizationCreate, organizationEditors, organizationInput, organizationReaders, organizationStatuses, safeMember, safeOrganization } from "@/lib/buyer-policy";
 import { requireOk, type Api } from "./auth";
 import { WebError } from "./errors";
 
@@ -47,9 +47,9 @@ export async function organizationWrite(request: Request, path: string, api: Api
   if (!id) {
     if (request.method !== "POST" || !hasRole(me, "system_admin")) throw new WebError(request.method === "POST" ? 403 : 405, "request_failed");
     const input = organizationCreate(body); if (!input) throw new WebError(422, "request_failed");
-    // رمز دعوة المدير الأول لا يمر من هنا قبل عقد #289؛ القائمة البيضاء تسقطه.
-    const result = await api.POST("/buyer-organizations", { params: { header }, body: input });
-    return json(safeOrganization(requireOk(result)), 201, result.response.headers.get("ETag"));
+    // رمز دعوة المدير الأول في الرد الأول وحده (#289)؛ لا يُسجَّل، والرد no-store.
+    const result = await api.POST("/buyer-organizations", { params: { header }, body: input }), data = requireOk(result);
+    return json({ ...safeOrganization(data), ...inviteToken(data) }, 201, result.response.headers.get("ETag"));
   }
   ownOrganization(me, id);
   if (!members) {
@@ -62,7 +62,8 @@ export async function organizationWrite(request: Request, path: string, api: Api
   if (!hasRole(me, ...memberManagers)) throw new WebError(403, "request_failed");
   if (!user && request.method === "POST") {
     const input = memberInvite(body); if (!input) throw new WebError(422, "request_failed");
-    return json(safeMember(requireOk(await api.POST("/buyer-organizations/{org_id}/members", { params: { path: { org_id: id }, header }, body: input }))), 201);
+    const data = requireOk(await api.POST("/buyer-organizations/{org_id}/members", { params: { path: { org_id: id }, header }, body: input }));
+    return json({ ...safeMember(data), ...inviteToken(data) }, 201);
   }
   if (user && uuid.test(user) && request.method === "PUT") {
     const input = memberUpdate(body); if (!input) throw new WebError(422, "request_failed");

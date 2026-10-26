@@ -50,8 +50,15 @@ describe("buyer organization BFF", () => {
   });
   it("creates for the system admin only and drops anything outside the organization fields", async () => {
     const body = { ...profile, first_admin_email: "admin@example.test" };
-    const { result, calls } = await call("buyer-organizations", { body, upstream: async r => { expect(await r.json()).toEqual(body); return Response.json({ ...stored, invite_token: "t".repeat(40) }, { status: 201 }); } });
-    expect(result.status).toBe(201); expect(calls[0].headers.get("Idempotency-Key")).toBeTruthy(); expect(await result.text()).not.toContain("tttt");
+    const token = { invite_token: "t".repeat(40), invite_token_expires_at: "2026-10-27T10:00:00Z" };
+    const { result, calls } = await call("buyer-organizations", { body, upstream: async r => { expect(await r.json()).toEqual(body); return Response.json({ ...stored, ...token, internal: "canary" }, { status: 201 }); } });
+    expect(result.status).toBe(201); expect(calls[0].headers.get("Idempotency-Key")).toBeTruthy(); expect(result.headers.get("Cache-Control")).toContain("no-store");
+    const data = await result.json(); expect(data).toMatchObject(token); expect(JSON.stringify(data)).not.toContain("canary");
+    // تكرار بمفتاح منع التكرار: الخادم لا يعيد الرمز، والـBFF لا يختلقه؛ ورمز بلا موعد انتهاء لا يمر.
+    for (const replay of [stored, { ...stored, invite_token: "t".repeat(40) }, { ...stored, invite_token: "short", invite_token_expires_at: token.invite_token_expires_at }]) {
+      const again = await call("buyer-organizations", { body, upstream: () => Response.json(replay, { status: 201 }) });
+      expect(await again.result.json()).not.toHaveProperty("invite_token");
+    }
     for (const user of [finance, buyerAdmin]) { const denied = await call("buyer-organizations", { user, body }); expect(denied.result.status).toBe(403); expect(denied.calls).toHaveLength(0); }
   });
   it("edits the profile with If-Match and manages members for the organization admin", async () => {
@@ -59,8 +66,10 @@ describe("buyer organization BFF", () => {
     expect(edited.result.status).toBe(200); expect(edited.calls[0].headers.get("If-Match")).toBe('"3"'); expect(edited.result.headers.get("ETag")).toBe('"4"');
     expect((await call(`buyer-organizations/${org}`, { method: "PUT", user: buyerAdmin, body: profile })).result.status).toBe(428);
     expect((await call(`buyer-organizations/${org}`, { method: "PUT", user: buyerMember, body: profile, headers: { "If-Match": '"3"' } })).result.status).toBe(403);
-    const invited = await call(`buyer-organizations/${org}/members`, { user: buyerAdmin, body: { email: "new@example.test", role: "buyer_member" }, upstream: () => Response.json({ ...memberRow, status: "invited", invite_token: "t".repeat(40) }, { status: 201 }) });
-    expect(invited.result.status).toBe(201); expect(await invited.result.text()).not.toContain("tttt");
+    const invited = await call(`buyer-organizations/${org}/members`, { user: buyerAdmin, body: { email: "new@example.test", role: "buyer_member" }, upstream: () => Response.json({ ...memberRow, status: "invited", invite_token: "t".repeat(40), invite_token_expires_at: "2026-10-27T10:00:00Z", password_hash: "canary" }, { status: 201 }) });
+    expect(invited.result.status).toBe(201); const created = await invited.result.json(); expect(created.invite_token).toBe("t".repeat(40)); expect(JSON.stringify(created)).not.toContain("canary");
+    const listed = await call(`buyer-organizations/${org}/members`, { method: "GET", user: buyerAdmin, upstream: () => Response.json({ items: [{ ...memberRow, invite_token: "t".repeat(40) }] }) });
+    expect(await listed.result.text()).not.toContain("tttt");
     const full = await call(`buyer-organizations/${org}/members`, { user: buyerAdmin, body: { email: "new@example.test", role: "buyer_member" }, upstream: () => Response.json({ code: "seats_exhausted", message: "canary" }, { status: 409 }) });
     expect(full.result.status).toBe(409); expect(await full.result.text()).not.toContain("canary");
     const updated = await call(`buyer-organizations/${org}/members/${member}`, { method: "PUT", user: buyerAdmin, body: { role: "buyer_admin", status: "active" }, upstream: () => Response.json({ ...memberRow, role: "buyer_admin" }) });

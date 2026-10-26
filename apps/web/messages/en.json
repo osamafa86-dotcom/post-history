@@ -634,7 +634,13 @@
     "inviteEmail": "Invitee's email",
     "invite": "Invite member",
     "inviteInvalid": "Enter a valid email and choose a role.",
-    "inviteHelp": "The invitee sets a password with the invitation code and turns on two-step verification at first sign-in.",
-    "memberConflict": "Could not change: the email is in use, the seats are full, or this is the organization's last active admin."
+    "inviteHelp": "The invitation code is shown here once; the invitee sets a password with it and turns on two-step verification at first sign-in.",
+    "memberConflict": "Could not change: the email is in use, the seats are full, or this is the organization's last active admin.",
+    "tokenTitle": "Invitation code",
+    "tokenFor": "For:",
+    "tokenExpires": "Expires",
+    "tokenOnce": "This code is shown once and is not saved. Hand it to the invitee yourself outside the system; if it is lost, invite them again.",
+    "tokenMissing": "The invitation was created, but the code is not shown because the request was repeated. If the invitee did not get it, invite them again.",
+    "done": "I have handed it over; hide it"
   }
 }

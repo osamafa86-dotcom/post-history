@@ -28,6 +28,10 @@ test("the organization admin edits the profile and manages members within the se
   const members = page.getByRole("region", { name: b.members }); await expect(members.getByTestId("member-row")).toHaveCount(2);
   await members.getByLabel(b.inviteEmail).fill("desk@example.test"); await members.getByRole("button", { name: b.invite }).click();
   await expect(members.getByTestId("member-row")).toHaveCount(3); await expect(members.getByTestId("member-row").last()).toContainText(b.memberStatuses.invited);
+  await expect(members.getByTestId("invite-token")).toHaveText("synthetic-invite-token-member-000000001"); await expect(members.getByRole("button", { name: /نسخ|copy/i })).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }))).not.toContain("synthetic-invite-token");
+  await members.getByRole("button", { name: b.done }).click(); await expect(members.getByTestId("invite-token")).toHaveCount(0);
+  await page.reload(); await expect(members.getByTestId("member-row")).toHaveCount(3); await expect(page.getByTestId("invite-token")).toHaveCount(0);
   await expect(members.getByRole("button", { name: b.invite })).toBeDisabled(); await expect(members.getByText(b.seatsFull)).toBeVisible();
   await members.getByTestId("member-row").filter({ hasText: "buyeradmin@" }).getByRole("button", { name: b.suspend }).click();
   await expect(members.getByText(b.memberConflict)).toBeVisible();
@@ -46,6 +50,8 @@ test("the system admin creates and activates an organization; finance reads only
   await page.getByLabel(e.country).fill("jo"); await page.getByLabel(e.billingEmail).fill("billing@press.example.test");
   await page.getByRole("button", { name: e.create }).click(); await expect(page.getByRole("alert").filter({ hasText: e.invalid })).toBeVisible();
   await page.getByLabel(e.firstAdmin).fill("admin@press.example.test"); await page.getByRole("button", { name: e.create }).click();
+  await expect(page.getByTestId("invite-token")).toHaveText("synthetic-invite-token-organization-0001"); await expect(page.getByText(e.tokenOnce)).toBeVisible();
+  await page.getByRole("button", { name: e.done }).click();
   const row = page.getByTestId("organization-row").filter({ hasText: "Synthetic Press" }); await expect(row).toContainText(e.statuses.pending_verification);
   await expect(page.locator("main")).not.toContainText("never-display-canary");
   await row.getByRole("button", { name: e.open }).click(); await page.getByRole("button", { name: e.edit }).click();

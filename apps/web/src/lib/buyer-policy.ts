@@ -8,6 +8,7 @@ export type OrganizationCreate = components["schemas"]["BuyerOrganizationCreate"
 export type Member = components["schemas"]["BuyerMember"];
 export type MemberInvite = components["schemas"]["BuyerMemberInvite"];
 export type MemberUpdate = components["schemas"]["BuyerMemberUpdate"];
+export type InviteToken = components["schemas"]["BuyerInviteToken"];
 type Role = components["schemas"]["RoleName"];
 export const organizationAdmins = ["system_admin", "finance"] as const satisfies readonly Role[];
 export const organizationReaders = ["system_admin", "finance", "buyer_admin", "buyer_member"] as const satisfies readonly Role[];
@@ -63,3 +64,8 @@ export function safeMember(m: Member): Member {
 }
 export const inputOf = (o: Organization): OrganizationInput => ({ legal_name: o.legal_name, display_name: o.display_name, country: o.country, billing_email: o.billing_email, seats: o.seats, status: o.status });
 export const emptyOrganization = (): OrganizationCreate => ({ legal_name: "", display_name: { ar: "", en: "" }, country: "", billing_email: "", seats: 5, first_admin_email: "" });
+/** رمز الدعوة كما يعيده الخادم في رد الإنشاء الأول وحده (#289)؛ يمر إلى المتصفح ليُعرض مرة، ولا يُحفظ في أي مكان. */
+export function inviteToken(value: InviteToken): InviteToken {
+  const token = value.invite_token, expires = value.invite_token_expires_at;
+  return typeof token === "string" && token.length >= 32 && token.length <= 256 && typeof expires === "string" && Number.isFinite(Date.parse(expires)) ? { invite_token: token, invite_token_expires_at: expires } : {};
+}

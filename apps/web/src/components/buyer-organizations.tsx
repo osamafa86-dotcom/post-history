@@ -5,7 +5,7 @@ import { formatDate, messages, type Locale } from "@/lib/i18n";
 import { hasRole } from "@/lib/review";
 import { useMutation } from "@/lib/use-mutation";
 import { localized } from "@/lib/store-format";
-import { buyerRoles, emptyOrganization, inputOf, memberInvite, memberManagers, organizationAdmins, organizationCreate, organizationEditors, organizationInput, organizationLimits, organizationStatuses, type Member, type Organization, type OrganizationCreate, type OrganizationInput } from "@/lib/buyer-policy";
+import { buyerRoles, emptyOrganization, inputOf, memberInvite, memberManagers, organizationAdmins, organizationCreate, organizationEditors, organizationInput, organizationLimits, organizationStatuses, type InviteToken, type Member, type Organization, type OrganizationCreate, type OrganizationInput } from "@/lib/buyer-policy";
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
 
@@ -16,6 +16,7 @@ export function BuyerOrganizations({ locale }: { locale: Locale }) {
   const m = messages[locale], t = m.buyers, me = useUser(), admin = hasRole(me, "system_admin"), allowed = hasRole(me, ...organizationAdmins), mutation = useMutation();
   const [items, setItems] = useState<Organization[] | null>(null), [error, setError] = useState(false), [attempt, setAttempt] = useState(0), [status, setStatus] = useState<Status | "">("");
   const [creating, setCreating] = useState<OrganizationCreate | null>(null), [invalid, setInvalid] = useState(false), [selected, setSelected] = useState<string | null>(null);
+  const [issued, setIssued] = useState<{ token: InviteToken; email: string } | null>(null);
   useEffect(() => {
     if (!allowed) return;
     const controller = new AbortController();
@@ -28,10 +29,12 @@ export function BuyerOrganizations({ locale }: { locale: Locale }) {
     const input = organizationCreate(creating as unknown as Record<string, unknown>);
     if (!input) { setInvalid(true); return; }
     setInvalid(false);
-    const ok = await mutation.run(JSON.stringify(input), header => browserApi().POST("/buyer-organizations", { params: { header }, body: input }));
-    if (ok) { setCreating(null); setAttempt(n => n + 1); }
+    let token: InviteToken = {};
+    const ok = await mutation.run(JSON.stringify(input), async header => { const result = await browserApi().POST("/buyer-organizations", { params: { header }, body: input }); token = { invite_token: result.data?.invite_token, invite_token_expires_at: result.data?.invite_token_expires_at }; return result; });
+    if (ok) { setIssued({ token, email: input.first_admin_email }); setCreating(null); setAttempt(n => n + 1); }
   }
   if (selected) return <><button className="quiet back-link" onClick={() => { setSelected(null); setAttempt(n => n + 1); }}>{t.back}</button><OrganizationPanel locale={locale} id={selected} /></>;
+  if (issued) return <OneTimeToken locale={locale} token={issued.token} email={issued.email} onDone={() => setIssued(null)} />;
   return <><div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p>{!admin && <p className="notice">{t.readOnly}</p>}</div>{admin && !creating && <button onClick={() => { mutation.clearStatus(); setInvalid(false); setCreating(emptyOrganization()); }}>{t.new}</button>}</div>
     {creating ? <form className="card form-card rule-form" noValidate onSubmit={e => { e.preventDefault(); void create(); }}>
       <ProfileFields locale={locale} value={creating} set={(key, value) => setCreating(c => c && { ...c, [key]: value })} admin />
@@ -113,6 +116,7 @@ function Members({ locale, id, seats }: { locale: Locale; id: string; seats: num
   const m = messages[locale], t = m.buyers, mutation = useMutation();
   const [items, setItems] = useState<Member[] | null>(null), [error, setError] = useState(false), [attempt, setAttempt] = useState(0);
   const [invite, setInvite] = useState<{ email: string; role: typeof buyerRoles[number] }>({ email: "", role: "buyer_member" }), [invalid, setInvalid] = useState(false);
+  const [issued, setIssued] = useState<{ token: InviteToken; email: string } | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     void browserApi().GET("/buyer-organizations/{org_id}/members", { params: { path: { org_id: id } }, signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setItems(data.items); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
@@ -122,8 +126,9 @@ function Members({ locale, id, seats }: { locale: Locale; id: string; seats: num
     const input = memberInvite(invite);
     if (!input) { setInvalid(true); return; }
     setInvalid(false);
-    const ok = await mutation.run(JSON.stringify(["invite", id, input]), header => browserApi().POST("/buyer-organizations/{org_id}/members", { params: { path: { org_id: id }, header }, body: input }));
-    if (ok) { setInvite({ email: "", role: "buyer_member" }); setAttempt(n => n + 1); }
+    let token: InviteToken = {};
+    const ok = await mutation.run(JSON.stringify(["invite", id, input]), async header => { const result = await browserApi().POST("/buyer-organizations/{org_id}/members", { params: { path: { org_id: id }, header }, body: input }); token = { invite_token: result.data?.invite_token, invite_token_expires_at: result.data?.invite_token_expires_at }; return result; });
+    if (ok) { setIssued({ token, email: input.email }); setInvite({ email: "", role: "buyer_member" }); setAttempt(n => n + 1); }
   }
   async function update(member: Member, role: Member["role"], status: "active" | "suspended") {
     const ok = await mutation.run(JSON.stringify(["update", id, member.user_id, role, status]), header => browserApi().PUT("/buyer-organizations/{org_id}/members/{user_id}", { params: { path: { org_id: id, user_id: member.user_id }, header }, body: { role, status } }));
@@ -132,6 +137,7 @@ function Members({ locale, id, seats }: { locale: Locale; id: string; seats: num
   // المدعو يشغل مقعدًا حتى يُعلَّق؛ العدّ من القائمة نفسها حتى لا يتأخر عن الدعوة.
   const active = items?.filter(member => member.status !== "suspended").length ?? 0;
   return <section className="card" aria-labelledby="members-title"><h2 id="members-title">{t.members}</h2>
+    {issued && <OneTimeToken locale={locale} token={issued.token} email={issued.email} onDone={() => setIssued(null)} />}
     <p className="muted">{t.seatsUsed.replace("{active}", String(active)).replace("{seats}", String(seats))}</p>
     <ActionStatus status={mutation.status} locale={locale} />
     {mutation.status === 409 && <p className="notice error">{t.memberConflict}</p>}
@@ -150,4 +156,16 @@ function Members({ locale, id, seats }: { locale: Locale; id: string; seats: num
     {invalid && <p className="notice error" role="alert">{t.inviteInvalid}</p>}
     <p className="muted">{t.inviteHelp}</p>
   </section>;
+}
+
+/** رمز الدعوة يُعرض مرة واحدة: في الذاكرة وحدها، بلا زر نسخ ولا حفظ، ويزول بالإغلاق أو مغادرة الصفحة. */
+function OneTimeToken({ locale, token, email, onDone }: { locale: Locale; token: InviteToken; email: string; onDone: () => void }) {
+  const t = messages[locale].buyers;
+  if (!token.invite_token) return <section className="notice" role="status"><p>{t.tokenMissing}</p><button className="secondary" onClick={onDone}>{t.done}</button></section>;
+  return <section className="card one-time-token" role="alert" aria-labelledby="token-title"><h2 id="token-title">{t.tokenTitle}</h2>
+    <p>{t.tokenFor} <bdi dir="ltr">{email}</bdi></p>
+    <output className="token-value" dir="ltr" data-testid="invite-token">{token.invite_token}</output>
+    <p className="muted">{t.tokenExpires} {formatDate(token.invite_token_expires_at, locale)}</p>
+    <p className="notice">{t.tokenOnce}</p>
+    <button onClick={onDone}>{t.done}</button></section>;
 }
