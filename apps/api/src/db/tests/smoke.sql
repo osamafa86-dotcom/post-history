@@ -1054,6 +1054,110 @@ SET CONSTRAINTS ALL DEFERRED;
 ALTER TABLE postings ENABLE TRIGGER postings_balanced;
 ALTER TABLE journal_entries ENABLE TRIGGER journal_entries_balanced;
 
+-- ---------- الاسترداد وقواعد العمولة (ADR 0025، الجزءان 5 و6؛ ترحيل 032) ----------
+-- الطلب c02 مدفوع ببند c12 (25000 USD)، وc01 مسترد كاملًا
+SELECT pg_temp.expect_error($q$
+  WITH r AS (INSERT INTO refunds (order_id, amount_minor, currency, reason_code, created_by)
+             VALUES ('00000000-0000-4000-8000-000000000c01', 25000, 'USD', 'buyer_request', '00000000-0000-4000-8000-000000000014') RETURNING id)
+  INSERT INTO refund_items (refund_id, order_item_id) SELECT id, '00000000-0000-4000-8000-000000000c11' FROM r $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  WITH r AS (INSERT INTO refunds (order_id, amount_minor, currency, reason_code, created_by)
+             VALUES ('00000000-0000-4000-8000-000000000c02', 25000, 'ILS', 'buyer_request', '00000000-0000-4000-8000-000000000014') RETURNING id)
+  INSERT INTO refund_items (refund_id, order_item_id) SELECT id, '00000000-0000-4000-8000-000000000c12' FROM r $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  WITH r AS (INSERT INTO refunds (order_id, amount_minor, currency, reason_code, created_by)
+             VALUES ('00000000-0000-4000-8000-000000000c02', 1, 'USD', 'buyer_request', '00000000-0000-4000-8000-000000000014') RETURNING id)
+  INSERT INTO refund_items (refund_id, order_item_id) SELECT id, '00000000-0000-4000-8000-000000000c12' FROM r $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  WITH r AS (INSERT INTO refunds (order_id, amount_minor, currency, reason_code, created_by)
+             VALUES ('00000000-0000-4000-8000-000000000c02', 150000, 'USD', 'buyer_request', '00000000-0000-4000-8000-000000000014') RETURNING id)
+  INSERT INTO refund_items (refund_id, order_item_id) SELECT id, '00000000-0000-4000-8000-000000000c13' FROM r $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO refunds (order_id, amount_minor, currency, reason_code, created_by)
+  VALUES ('00000000-0000-4000-8000-000000000c02', 25000, 'USD', 'chargeback_note', '00000000-0000-4000-8000-000000000014') $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
+INSERT INTO refunds (id, order_id, amount_minor, currency, reason_code, created_by)
+VALUES ('00000000-0000-4000-8000-000000000e01', '00000000-0000-4000-8000-000000000c02', 25000, 'USD', 'buyer_request',
+        '00000000-0000-4000-8000-000000000014');
+INSERT INTO refund_items (refund_id, order_item_id) VALUES ('00000000-0000-4000-8000-000000000e01', '00000000-0000-4000-8000-000000000c12');
+-- البند لا يُسترد مرتين ما دام استرداده غير فاشل
+SELECT pg_temp.expect_error($q$
+  WITH r AS (INSERT INTO refunds (order_id, amount_minor, currency, reason_code, created_by)
+             VALUES ('00000000-0000-4000-8000-000000000c02', 25000, 'USD', 'duplicate', '00000000-0000-4000-8000-000000000014') RETURNING id)
+  INSERT INTO refund_items (refund_id, order_item_id) SELECT id, '00000000-0000-4000-8000-000000000c12' FROM r $q$, '23505');
+SET CONSTRAINTS ALL DEFERRED;
+-- النجاح يلزمه قيد refund لا غيره، والمكتمل نهائي، ولا حذف ولا تعديل لما جُمّد
+SELECT pg_temp.expect_error($q$
+  UPDATE refunds SET status = 'succeeded', completed_at = now() WHERE id = '00000000-0000-4000-8000-000000000e01' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE refunds SET status = 'succeeded', completed_at = now(), entry_id = '00000000-0000-4000-8000-000000000911'
+   WHERE id = '00000000-0000-4000-8000-000000000e01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE refunds SET amount_minor = 1 WHERE id = '00000000-0000-4000-8000-000000000e01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ DELETE FROM refunds WHERE id = '00000000-0000-4000-8000-000000000e01' $q$, '23001');
+SELECT pg_temp.expect_error($q$
+  DELETE FROM refund_items WHERE refund_id = '00000000-0000-4000-8000-000000000e01' $q$, '23001');
+-- الفشل يحرر البند لاسترداد جديد
+UPDATE refunds SET status = 'failed', completed_at = now() WHERE id = '00000000-0000-4000-8000-000000000e01';
+SELECT pg_temp.expect_error($q$ UPDATE refunds SET status = 'pending', completed_at = NULL WHERE id = '00000000-0000-4000-8000-000000000e01' $q$, '23514');
+INSERT INTO refunds (id, order_id, amount_minor, currency, reason_code, created_by, provider_refund_ref)
+VALUES ('00000000-0000-4000-8000-000000000e02', '00000000-0000-4000-8000-000000000c02', 25000, 'USD', 'buyer_request',
+        '00000000-0000-4000-8000-000000000014', 'sbx_refund_e02');
+INSERT INTO refund_items (refund_id, order_item_id) VALUES ('00000000-0000-4000-8000-000000000e02', '00000000-0000-4000-8000-000000000c12');
+WITH e AS (INSERT INTO journal_entries (id, kind, reference_type, reference_id, idempotency_key, reverses_entry_id)
+           VALUES ('00000000-0000-4000-8000-000000000e91', 'refund', 'refund', '00000000-0000-4000-8000-000000000e02', 'refund:smoke:e02',
+                   '00000000-0000-4000-8000-000000000911') RETURNING id)
+INSERT INTO postings (entry_id, account_id, amount_minor, currency)
+SELECT id, '00000000-0000-4000-8000-000000000901'::uuid, -1000, 'USD' FROM e UNION ALL SELECT id, '00000000-0000-4000-8000-000000000902'::uuid, 300, 'USD' FROM e
+UNION ALL SELECT id, '00000000-0000-4000-8000-000000000904'::uuid, 700, 'USD' FROM e;
+UPDATE refunds SET status = 'succeeded', completed_at = now(), entry_id = '00000000-0000-4000-8000-000000000e91'
+ WHERE id = '00000000-0000-4000-8000-000000000e02';
+SELECT pg_temp.expect_error($q$
+  UPDATE refunds SET provider_refund_ref = 'sbx_other' WHERE id = '00000000-0000-4000-8000-000000000e02' $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
+
+-- قواعد العمولة: نطاق بمعرّفه الصحيح، ونقاط أساس 0–10000، ولا تكرار لنطاق وتاريخ سريان، ولا تعديل ولا حذف
+INSERT INTO commission_rules (scope, scope_id, license_type, platform_basis_points, effective_from, created_by) VALUES
+  ('default', NULL, NULL, 3000, '2026-10-01', '00000000-0000-4000-8000-000000000014'),
+  ('material_type', 'press_conference', NULL, 2500, '2026-10-01', '00000000-0000-4000-8000-000000000014'),
+  ('reporter', '00000000-0000-4000-8000-000000000011', 'exclusive_temporary', 2000, '2026-10-01', '00000000-0000-4000-8000-000000000014'),
+  ('material', '00000000-0000-4000-8000-000000000101', NULL, 1500, '2026-10-01', '00000000-0000-4000-8000-000000000014');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO commission_rules (scope, scope_id, platform_basis_points, effective_from, created_by)
+  VALUES ('default', NULL, 3500, '2026-10-01', '00000000-0000-4000-8000-000000000014') $q$, '23505');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO commission_rules (scope, scope_id, platform_basis_points, effective_from, created_by)
+  VALUES ('default', 'x', 3000, '2026-11-01', '00000000-0000-4000-8000-000000000014') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO commission_rules (scope, scope_id, platform_basis_points, effective_from, created_by)
+  VALUES ('material_type', 'podcast', 3000, '2026-11-01', '00000000-0000-4000-8000-000000000014') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO commission_rules (scope, scope_id, platform_basis_points, effective_from, created_by)
+  VALUES ('reporter', 'Jane Doe', 3000, '2026-11-01', '00000000-0000-4000-8000-000000000014') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO commission_rules (scope, scope_id, platform_basis_points, effective_from, created_by)
+  VALUES ('default', NULL, 10001, '2026-11-01', '00000000-0000-4000-8000-000000000014') $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE commission_rules SET platform_basis_points = 1 WHERE scope = 'default' $q$, '23001');
+SELECT pg_temp.expect_error($q$ DELETE FROM commission_rules WHERE scope = 'default' $q$, '23001');
+
+-- إبطال الترخيص حدث بمعرّفاته وسببه وحدها
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('license.revoked', 'license', '00000000-0000-4000-8000-000000000c31', 'license.revoked:smoke:1',
+        '{"license_id": "00000000-0000-4000-8000-000000000c31", "organization_id": "00000000-0000-4000-8000-000000000701", "material_id": "00000000-0000-4000-8000-000000000101", "revoked_reason": "refunded"}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('license.revoked', 'license', '00000000-0000-4000-8000-000000000c31', 'license.revoked:smoke:2',
+          '{"license_id": "00000000-0000-4000-8000-000000000c31", "amount_minor": 25000}') $q$, '23514');
+
+-- الدوال تعمل بمسار بحث فارغ (الاستعادة)
+SET LOCAL search_path = '';
+INSERT INTO public.commission_rules (scope, scope_id, platform_basis_points, effective_from, created_by)
+VALUES ('material_type', 'interview', 2800, '2026-10-01', '00000000-0000-4000-8000-000000000014');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO public.refunds (order_id, amount_minor, currency, reason_code, created_by)
+  VALUES ('00000000-0000-4000-8000-000000000c01', 25000, 'USD', 'buyer_request', '00000000-0000-4000-8000-000000000014') $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
+SET LOCAL search_path TO DEFAULT;
+
 \o
 \echo smoke OK
 ROLLBACK;
