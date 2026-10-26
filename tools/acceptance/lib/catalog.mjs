@@ -38,6 +38,7 @@ export const EXTRA = [
   { name: "web-sensitivity-catalog", mode: "automated", source: "web gap (browser)", criterion: "وسم الحساسية يظهر في تفاصيل المادة بالفرق عن مادة غير موسومة، والمادة الموسومة غائبة عن بحث الكتالوج بوجود ضابط يظهر بالبحث نفسه" },
   { name: "web-mobile-390", mode: "automated", source: "web gap (browser)", criterion: "صفحات الواجهة الرئيسية عند 390px في اللغتين بلا تمرير أفقي ولا إجراء خارج المنظر ولا نص مقصوص" },
   { name: "web-a11y", mode: "automated", source: "web gap (browser)", criterion: "Axe (wcag2a وwcag2aa) على الصفحات الرئيسية بعد اكتمال المحتوى بلا مخالفات serious أو critical، وسمة dir صحيحة بالعربية والإنجليزية" },
+  { name: "ci-step-timings", mode: "automated", source: "CI", criterion: "مدة كل خطوة في وظائف media e2e وai e2e، تُطبع وتُرفع مع نتائج الوظيفة (معلومة لا حكم)، لتُرى الخطوة التي تستهلك الوقت قبل أن يلغيها الحد" },
   { name: "session-revocation", mode: "automated", source: "SEC-01", criterion: "رمز مبطَل (جلسة أو كل الجلسات) يُرفض على الخادم وعلى مسار الرفع خلال ثوانٍ، والرفع الجاري يتوقف عند الجزء التالي" },
   { name: "field-upload-1gb", mode: "field", source: "plan stage (b)", criterion: "رفع 1 غيغابايت على شبكة ميدانية فعلية على iPhone وXiaomi وSamsung: يكتمل ببصمة خادم مطابقة وصفر بايت مفقود وبلا تدخل بشري بعد البدء" },
   { name: "notification-delivery", mode: "automated", source: "core gate", criterion: "حدث استلام ← إشعار للمستلمين بحسب القواعد خلال زمن مقيس (≤ 10 ثوانٍ)، حمولة من القائمة البيضاء فقط، و«اطّلعت» يوقف التصعيد" },

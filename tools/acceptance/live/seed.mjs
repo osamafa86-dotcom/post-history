@@ -46,6 +46,19 @@ export async function seed({ databaseUrl, apiUrl, fieldKey = null }) {
   users.system_admin_b = await user("system-admin-b", "system_admin");
   users.victim_reporter = await user("victim", "reporter", { officeId: officeA });
   users.system_admin_c = await user("system-admin-c", "system_admin");
+  // v0.3 buyers: an active synthetic organization with its admin and member, so the write matrix has a token for the /orders roles
+  const org = (await q(
+    `INSERT INTO buyer_organizations (legal_name, display_name_ar, display_name_en, country, billing_email, status, verified_at, verified_by)
+     VALUES ('Synthetic Buyer', 'مشترٍ', 'Buyer', 'PS', $1, 'active', now(), $2) RETURNING id`,
+    [`billing-${randomUUID()}@example.test`, users.system_admin.id])).rows[0].id;
+  const buyer = async (label, role) => {
+    const email = `${label}-${randomUUID()}@example.test`;
+    const { rows } = await q(`INSERT INTO users (email, password_hash, status, organization_id) VALUES ($1, $2, 'active', $3) RETURNING id`, [email, passwordHash, org]);
+    await q(`INSERT INTO user_roles (user_id, role, scope_kind, scope_id) VALUES ($1, $2, 'organization', $3)`, [rows[0].id, role, org]);
+    return { id: rows[0].id, email };
+  };
+  users.buyer_admin = await buyer("buyer-admin", "buyer_admin");
+  users.buyer_member = await buyer("buyer-member", "buyer_member");
 
   const login = async (u) => {
     const res = await freshFetch(`${apiUrl}/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: u.email, password }) });

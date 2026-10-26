@@ -94,6 +94,7 @@ describe('auth (/v1/auth/*)', () => {
       credential_reset_required: false,
       email: user.email,
       office_id: null,
+      organization_id: null,
       totp_enabled: false,
       roles: [
         { name: 'reporter', scopes: [] },
