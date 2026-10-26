@@ -207,7 +207,7 @@ describe('refunds and commission rules (/v1/orders/{id}/refunds, /v1/commission-
     expect(valid(material) ? [] : valid.errors).toEqual([]);
     // قاعدة المراسل أعم من قاعدة المادة فلا تُطبَّق هنا (ولا قاعدة افتراضية تمس بقية الاختبارات في القاعدة المشتركة)
     await rule({ scope: 'reporter', scope_id: reporter, platform_basis_points: 2000 }).expect(201);
-    await rule({ scope: 'material', scope_id: materialId, platform_basis_points: 5000, effective_from: material.effective_from }).expect(409);
+    expect((await rule({ scope: 'material', scope_id: materialId, platform_basis_points: 5000, effective_from: material.effective_from }).expect(409)).body.code).toBe('commission_rule_exists');
     expect((await rule({ scope: 'material', scope_id: 'video', platform_basis_points: 1 }).expect(422)).body.details).toEqual({ fields: ['/scope_id'] });
     expect((await rule({ scope: 'material_type', scope_id: 'not-a-type', platform_basis_points: 1 }).expect(422)).body.details).toEqual({ fields: ['/scope_id'] });
     await rule({ scope: 'material', scope_id: materialId, platform_basis_points: 1 }, finance.token).expect(403);
