@@ -14,8 +14,9 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { accessSync, createReadStream, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
+import { fileURLToPath } from "node:url";
 import { createGzip } from "node:zlib";
 import { newResult, finish, writeResult, parseArgs } from "../lib/measurement.mjs";
 import { resumableUpload } from "../lib/tus.mjs";
@@ -59,18 +60,27 @@ export async function generateSyntheticVideo(path, sizeBytes, {
   return { sha256, generationMs: performance.now() - started, encodedBytes, deflateRatio };
 }
 
-/** One streaming pass over the generated file: SHA-256 plus a level-1 deflate length as the compressibility signal. */
-export function fingerprintFile(path) {
+/**
+ * One streaming pass over the generated file: SHA-256 plus a level-1 deflate length as the compressibility signal.
+ * Backpressure matters here: a `write` that returns false means the deflate buffer is full, so the file stream
+ * pauses until "drain"; without it the whole file queues in memory and client RSS grows with the file size.
+ */
+export function fingerprintFile(path, { createDeflate = () => createGzip({ level: 1 }) } = {}) {
   return new Promise((resolve, reject) => {
     const hash = createHash("sha256");
-    const gzip = createGzip({ level: 1 });
+    const gzip = createDeflate();
+    const input = createReadStream(path);
     let compressed = 0;
     let total = 0;
     gzip.on("data", (chunk) => { compressed += chunk.length; });
     gzip.on("error", reject);
-    const input = createReadStream(path);
+    gzip.on("drain", () => input.resume());
     input.on("error", reject);
-    input.on("data", (chunk) => { total += chunk.length; hash.update(chunk); gzip.write(chunk); });
+    input.on("data", (chunk) => {
+      total += chunk.length;
+      hash.update(chunk);
+      if (gzip.write(chunk) === false) input.pause();
+    });
     input.on("end", () => gzip.end(() => resolve({
       sha256: hash.digest("hex"), bytes: total, deflateRatio: Number((compressed / total).toFixed(4)),
     })));
@@ -249,4 +259,10 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
     rmSync(workDir, { recursive: true, force: true });
   }
   return { code: worst, doc: docs.at(-1) ?? null };
+}
+
+const invoked = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invoked) {
+  const { code } = await run();
+  process.exitCode = code;
 }
