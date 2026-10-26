@@ -67,11 +67,11 @@ final class AVFoundationProxyTranscoderTests: XCTestCase {
         let size = try await track.load(.naturalSize)
         XCTAssertEqual(size, CGSize(width: 640, height: 360))
 
-        // كل إطار في النسخة على زمن إطار الأصل نفسه (معدل متغير، بلا إعادة أخذ عينات)، ضمن 1 مللي ثانية.
-        let src = try await frameTimes(source)
+        // كل إطار في النسخة على زمن عرض إطار الأصل نفسه (معدل متغير، بلا إعادة أخذ عينات). التركيب يقرّب إلى 1/600 ث،
+        // فالفارق ≤ 2 مللي ثانية (الخطة تقبل 40). المرجع أزمنة العرض المكتوبة، لا أزمنة عينات المسار الخام.
         let dst = try await frameTimes(output)
-        XCTAssertEqual(dst.count, src.count)
-        for (a, b) in zip(src, dst) { XCTAssertEqual(a, b, accuracy: 0.001) }
+        XCTAssertEqual(dst.count, Self.frameTimesMs.count)
+        for (ms, b) in zip(Self.frameTimesMs, dst) { XCTAssertEqual(Double(ms) / 1000, b, accuracy: 0.002) }
 
         let metadata = try await asset.load(.metadata)
         let start = metadata.first { ($0.key as? String) == proxyStartPtsMetadataKey }
