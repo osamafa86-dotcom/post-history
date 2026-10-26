@@ -3,7 +3,7 @@ import { isIP } from 'node:net';
 export function localOnly(value, protocols) {
   const u = new URL(value);
   const h = u.hostname.replace(/^\[|\]$/g, '');
-  const loop = isIP(h) === 4 && Number(h.split('.')[0]) === 127 || isIP(h) === 6 && h === '::1';
+  const loop = isIP(h) === 4 && Number(h.split('.')[0]) === 127;
   if (!protocols.includes(u.protocol) || !(loop || ['localhost', 'api', 'postgres', 'tusd'].includes(h)) || u.search || u.hash) throw new Error('local compose endpoint required');
   return value.replace(/\/$/, '');
 }

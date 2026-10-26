@@ -31,14 +31,14 @@ export async function run(env=process.env) {
     const officeIds=(await db.query('SELECT DISTINCT office_id FROM users WHERE id = ANY($1::uuid[]) AND office_id IS NOT NULL',[Object.values(s.users).map(u=>u.id)])).rows.map(r=>r.office_id);
     for(let i=0;i<officeIds.length;i++) await db.query('UPDATE offices SET name_ar=$1,name_en=$2 WHERE id=$3',[`مكتب اصطناعي ${i+1}`,`Synthetic office ${i+1}`,officeIds[i]]);
     const credentials=Object.entries(s.users).map(([role,u])=>({role,email:u.email,password:s.password}));
-    const reporters=[s.users.reporter,s.users.reporter_b];
-    for(let i=0;i<4;i++) {
+    const reporters=[s.users.reporter,s.users.reporter_b,s.users.victim_reporter];
+    for(let i=0;i<3;i++) {
       const password=randomBytes(18).toString('base64url');
       const email=`demo-${randomUUID()}@${s.users.reporter.email.split('@')[1]}`;
       const role='reporter';
       const u=(await db.query("INSERT INTO users(email,password_hash,status,office_id) VALUES($1,$2,'active',$3) RETURNING id",[email,await hash(password),officeIds[i%officeIds.length]])).rows[0];
       await db.query("INSERT INTO user_roles(user_id,role,scope_kind,scope_id) VALUES($1,$2,'all','')",[u.id,role]);
-      if(i<4) reporters.push({...u,email});
+      if(i<3) reporters.push({...u,email});
       credentials.push({role,email,password});
     }
     // إزالة قيَم الاختبار الكاشفة من مواد seed نفسها قبل استعمالها في العروض.
@@ -48,7 +48,7 @@ export async function run(env=process.env) {
     await exec('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=size=640x360:rate=25','-f','lavfi','-i','sine=frequency=440','-t','4','-c:v','mpeg4','-c:a','aac','-y',file]);
     const digest=createHash('sha256'); for await(const block of createReadStream(file)) digest.update(block);
     const sha=digest.digest('hex'),size=(await stat(file)).size;
-    for(let i=0;i<40;i++) {
+    for(let i=0;i<30;i++) {
       const m=await http.call(s.tokens.reporter,'POST','/materials',{body:materialBody(s.formVersion,`مادة اصطناعية ${i+1}`,{city:`مدينة اصطناعية ${i%2+1}`})});
       if(m.status!==201) throw new Error('demo material creation failed');
       // الرفع الحقيقي أولًا، ثم توزيع حالات العرض دون ادعاء مرور خط المعالجة.
