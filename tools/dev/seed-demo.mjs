@@ -23,7 +23,9 @@ export async function populateMaterials(create) {
   return ids;
 }
 export function verifyCommerce(doc, refunded) {
-  if(!doc || doc.result==='fail' || doc.metrics?.checks_failed || !refunded) throw new Error('sandbox refund verification incomplete');
+  // يميّز اسم الفحص المؤجّل refund عن فحوص الرابط؛ العداد العام ليس حكمًا على الاسترداد.
+  const refundDeferred=/\brefund\s*:/i.test(doc?.notes??'');
+  if(!doc || doc.result==='fail' || doc.metrics?.checks_failed || refundDeferred || !refunded) throw new Error('sandbox refund verification incomplete');
 }
 // الرخصة مرتبطة ببند الطلب، لا بالطلب مباشرة؛ الاستعلام نفسه يستعمله اختبار القاعدة المرحّلة.
 export const ACTIVE_ORDER_LICENSE_SQL="SELECT 1 FROM licenses l JOIN order_items i ON i.id=l.order_item_id WHERE i.order_id=$1 AND l.status='active'";

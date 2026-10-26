@@ -26,6 +26,8 @@ test('deferred link inspection is allowed but an actual refund is required',()=>
   const doc={result:'partial',metrics:{checks_failed:0,deferred_checks:1}};
   assert.doesNotThrow(()=>verifyCommerce(doc,1));
   assert.throws(()=>verifyCommerce(doc,0));
+  assert.throws(()=>verifyCommerce({...doc,notes:'لم يُقَس: refund: POST /orders/{id}/refunds is not served yet'},1));
+  assert.doesNotThrow(()=>verifyCommerce({...doc,notes:'download link: fetching needs object storage; refund verification completed'},1));
   assert.throws(()=>verifyCommerce({...doc,result:'fail'},1));
   assert.throws(()=>verifyCommerce({...doc,metrics:{checks_failed:1}},1));
 });
