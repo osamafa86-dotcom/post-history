@@ -2492,7 +2492,7 @@ paths:
       summary: إصدار جديد لقاعدة عمولة
       description: >-
         لا تُعدَّل قاعدة ولا تُحذف: التغيير صف جديد بتاريخ سريان، والبيعات السابقة تحتفظ بما جُمّد فيها. النطاق نفسه
-        بالتاريخ نفسه `409 conflict`. `scope_id` فارغ للافتراضية، ومعرّف للمادة والمراسل، وقيمة من `MaterialType` لنوع
+        بالنوع والتاريخ نفسيهما `409 commission_rule_exists`. `scope_id` فارغ للافتراضية، ومعرّف للمادة والمراسل، وقيمة من `MaterialType` لنوع
         المادة (`422`). يُسجَّل في التدقيق.
       operationId: createCommissionRule
       x-roles: [system_admin]
@@ -2968,6 +2968,7 @@ components:
             - download_limit_reached
             - webhook_signature_invalid
             - already_refunded
+            - commission_rule_exists
             - internal_error
         message: { type: string }
         request_id: { type: string, description: لتتبع الطلب في السجلات }

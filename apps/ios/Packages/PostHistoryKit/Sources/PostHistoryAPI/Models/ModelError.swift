@@ -54,6 +54,7 @@ public struct ModelError: Sendable, Codable, Hashable {
         case downloadLimitReached = "download_limit_reached"
         case webhookSignatureInvalid = "webhook_signature_invalid"
         case alreadyRefunded = "already_refunded"
+        case commissionRuleExists = "commission_rule_exists"
         case internalError = "internal_error"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
