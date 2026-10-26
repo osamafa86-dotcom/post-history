@@ -4,9 +4,8 @@
 import autocannon from 'autocannon';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {mkdtemp,writeFile,rm,mkdir} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
-import {join,resolve} from 'node:path';
+import {resolve} from 'node:path';
+import {writeResult} from '../acceptance/lib/measurement.mjs';
 import {isIP} from 'node:net';
 import {client,materialBody,createUploadSession} from '../acceptance/lib/live.mjs';
 import {makeSyntheticFile,resumableUpload} from '../acceptance/lib/tus.mjs';
@@ -36,6 +35,9 @@ export async function apiLoad(url,token,duration,rate=100) {
   });
   return {times,bad,errors:result.errors,timeouts:result.timeouts,requests:result.requests.total,rate:result.requests.average};
 }
+export function saveMeasurement(doc, dir=resolve('docs/measurements/api')) {
+  return writeResult(doc,{dir,slug:'50x50mb-api200rps'});
+}
 export async function run(env=process.env) {
   if(env.LOAD_LOCAL_ONLY!=='1') throw new Error('LOAD_LOCAL_ONLY=1 required');
   const api=endpoint(env.LOAD_API_URL),tus=endpoint(env.LOAD_TUS_URL);
@@ -47,7 +49,7 @@ export async function run(env=process.env) {
   if(!containers.length||containers.some(c=>!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(c))) throw new Error('explicit compose container names required');
   await exec('docker',['stats','--no-stream','--format','{{.MemUsage}}',...containers]);
   const started=new Date().toISOString(),metrics={upload_count:50,file_size_bytes:50_000_000,api_target_rps:200,duration_s:duration};
-  let synth=null,stop=false,memoryPeak=0,memorySamples=0,memoryErrors=0,failed=false;
+  let synth=null,stop=false,memoryPeak=0,memorySamples=0,memoryErrors=0,failed=false,phase='preparing_uploads';
   const monitor=(async()=>{while(!stop){try{const r=await exec('docker',['stats','--no-stream','--format','{{.MemUsage}}',...containers]);let sum=0;for(const line of r.stdout.trim().split('\n'))sum+=memoryBytes(line.split('/')[0]);memoryPeak=Math.max(memoryPeak,sum);memorySamples++;}catch{memoryErrors++;}if(!stop)await new Promise(r=>setTimeout(r,1000));}})();
   try {
     const http=client(api),form=await http.get(tokens.reporter,'/forms/current');
@@ -59,6 +61,7 @@ export async function run(env=process.env) {
       if(mat.status!==201)throw new Error('synthetic material creation failed');
       prepared.push(await createUploadSession(http,tokens.reporter,{materialId:mat.body.id,size:50_000_000,clientSha256:synth.sha256}));
     }
+    phase='uploads';
     const uploaded=await Promise.allSettled(prepared.map(async(session,i)=>{
       const r=await resumableUpload({endpoint:tus,file:synth.path,size:50_000_000,chunkSize:1024*1024,interruptAt:i%4===0?[12_500_000]:[],metadata:{upload_session_id:session.id},headers:()=>tusAuth(session,env)});
       r.agentClose(); if(r.violations.length||i%4===0&&r.interruptions!==1)throw new Error('resume invariant failed');return r;
@@ -67,6 +70,7 @@ export async function run(env=process.env) {
     metrics.upload_errors=50-good.length;metrics.upload_resumed=good.filter(r=>r.interruptions===1).length;
     for(const[k,v]of Object.entries(summary(good.map(r=>r.durationMs))))if(v!==null)metrics[`upload_ms_${k}`]=v;
     // سيناريو مستقل عن الرفع؛ مجموع معدلي المسارين 200 طلب/ث.
+    phase='api';
     const results=await Promise.all([apiLoad(api+'/materials?limit=20',tokens.producer,duration),apiLoad(api+'/catalog?limit=20',tokens.buyer_admin,duration)]);
     for(let i=0;i<2;i++) {
       const r=results[i],prefix=i?'catalog':'inbox';
@@ -75,13 +79,12 @@ export async function run(env=process.env) {
       if(r.errors||r.timeouts||r.bad||r.requests<duration*100*0.95)failed=true;
     }
     if(metrics.upload_errors||metrics.upload_resumed!==13)failed=true;
-  } catch {failed=true;metrics.aborted=true;}
+  } catch {failed=true;metrics.aborted=true;metrics.failed_phase=phase;}
   finally {stop=true;await monitor;synth?.cleanup();}
   Object.assign(metrics,{docker_memory_peak_bytes:memoryPeak,docker_memory_samples:memorySamples,docker_memory_errors:memoryErrors});
   if(!memorySamples||memoryErrors)failed=true;
-  const doc={schema_version:1,tool:'other',role:'codex',test_name:'concurrent-load',started_at:started,ended_at:new Date().toISOString(),result:failed?'fail':'partial',device:{platform:'server',model:'local compose'},upload_path:'tusd',file:{size_bytes:50_000_000},metrics,notes:'نطاق #352: 50 رفعًا مع قطع واستئناف 13 منها، ثم 200 طلب/ث مستهدف على مساري الوارد والكتالوج. الذاكرة مجموع استخدام الحاويات المحددة، لا ذاكرة المضيف. لا قياس زمن الإشعار أو القرص المؤقت ولا حجم الخطة 60 × 2 GB؛ لذلك النتيجة جزئية حتى دون أخطاء. لا إثبات بصمة الملف بعد معالجة الخادم في هذا الاختبار.'};
-  const out=resolve('docs/measurements/api');await mkdir(out,{recursive:true});
-  await writeFile(join(out,`${started.replaceAll(':','-')}-load.json`),JSON.stringify(doc,null,2)+'\n');
+  const doc={schema_version:1,tool:'other',role:'codex',test_name:'concurrent-load',started_at:started,ended_at:new Date().toISOString(),result:failed?'fail':'partial',device:{platform:'server',model:'local compose: 50 uploads x 50 MB, 200 target requests/s'},upload_path:'tusd',file:{size_bytes:50_000_000},metrics,notes:metrics.aborted?`توقف الاختبار أثناء ${phase}؛ لم يكتمل السيناريو المطلوب. المقاييس الموجودة تخص ما نُفّذ فقط؛ لا تُعد الحمولة المستهدفة نتيجة ناجحة.`:'نطاق #352: 50 رفعًا مع قطع واستئناف 13 منها، ثم 200 طلب/ث مستهدف على مساري الوارد والكتالوج. الذاكرة مجموع استخدام الحاويات المحددة، لا ذاكرة المضيف. لا قياس زمن الإشعار أو القرص المؤقت ولا حجم الخطة 60 × 2 GB؛ لذلك النتيجة جزئية حتى دون أخطاء. لا إثبات بصمة الملف بعد معالجة الخادم في هذا الاختبار.'};
+  saveMeasurement(doc);
   return {code:failed?1:0,doc};
 }
 if(process.argv[1]&&resolve(process.argv[1])===new URL(import.meta.url).pathname)run().then(r=>{process.exitCode=r.code;}).catch(()=>{console.error('Load configuration or services unavailable; no measurement written.');process.exitCode=2;});
