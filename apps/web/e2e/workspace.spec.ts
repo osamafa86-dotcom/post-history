@@ -33,7 +33,8 @@ test("expired storage grants recover through a fresh authenticated derivative re
   await request.post("http://127.0.0.1:3201/__test/expire-media"); await login(page);
   await page.locator(".material-link").first().click();
   await expect.poll(() => page.locator("video").evaluate((v: HTMLVideoElement) => v.readyState)).toBeGreaterThanOrEqual(1);
-  expect(await page.locator("video").getAttribute("src")).toMatch(/^\/api\/bff\/materials\/[\w-]+\/files\/[\w-]+\/content$/);
+  const source = new URL((await page.locator("video").getAttribute("src"))!);
+  expect(source.origin).toBe("http://127.0.0.1:3100"); expect(source.pathname).toMatch(/^\/api\/bff\/materials\/[\w-]+\/files\/[\w-]+\/content$/); expect(source.search + source.hash).toBe("");
   await expect(page.getByText(ar.previewUnavailable)).toHaveCount(0);
 });
 test("English layout and shared dynamic form screen validate without saving", async ({ page }) => {

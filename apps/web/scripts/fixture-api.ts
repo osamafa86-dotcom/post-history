@@ -3,14 +3,16 @@ import { createServer } from "node:http";
 import { createHash, randomUUID } from "node:crypto";
 import { form, material, me, tokens } from "../tests/fixtures";
 import assets from "../tests/media-fixture.json";
-import type { Me, Material, Notification, TransitionRecord, PermissionHistoryEntry, ReporterIdentitySetting, ReporterIdentitySettingUpdate, Permission } from "../src/lib/types";
+import type { Form, Me, Material, Notification, TransitionRecord, PermissionHistoryEntry, ReporterIdentitySetting, ReporterIdentitySettingUpdate, Permission } from "../src/lib/types";
 const materials: Material[] = [], notifications: Notification[] = [], history = new Map<string, TransitionRecord[]>();
 const writes: { path: string; method: string; key: string; body: Record<string, unknown> }[] = [];
 const applied = new Map<string, { fingerprint: string; value: unknown; status: number }>();
+const formVersions = new Map<number, Form>();
 let dropNextWrite = false;
 let identitySetting: ReporterIdentitySetting, historyUnavailable = false, auditSequence = 21;
 const permissionAudit: { target: string | null; entry: PermissionHistoryEntry }[] = [];
 function reset() {
+  formVersions.clear(); formVersions.set(form.version, { ...structuredClone(form), published_at: "2026-10-20T12:00:00Z", published_by: me.user_id });
   materials.splice(0, materials.length, ...Array.from({ length: 200 }, (_, i) => ({ ...material(i + 1), row_version: 17, reserved_by: null, reserved_at: null, contributors: [{ user_id: me.user_id, role: "reporter" as const, share_percent: 100 }] })));
   materials[1].editorial_state = "accepted"; materials[2].technical_state = "failed";
   notifications.splice(0, notifications.length, ...Array.from({ length: 3 }, (_, i) => ({ id: `60000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`, type: "never-display-canary", title: "never-display-canary", material_id: materials[i].id, priority: "normal" as const, state: "sent" as const, created_at: "2026-10-20T12:00:00Z" })));
@@ -74,6 +76,7 @@ async function tus(req: import("node:http").IncomingMessage, res: import("node:h
 // قواعد التنبيه (#203 بند 7): مراجعة صف لكل قاعدة كما في العقد.
 const rules = new Map<string, Record<string, unknown> & { id: string; row_version: number }>();
 // قوالب التراخيص: كل إصدار محفوظ، والحالي آخرها.
+const listings = new Map<string, Record<string, unknown> & { row: number; state: string }>();
 const templates = new Map<string, (Record<string, unknown> & { id: string; version: number; enabled: boolean })[]>();
 function seedTemplates() {
   templates.clear();
@@ -101,7 +104,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname.startsWith("/files/")) { res.removeHeader("Content-Type"); return tus(req, res, url); }
   if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
   if (url.pathname === "/__test/uploads") return send([...uploads.values()].map(u => ({ state: u.session.state, receipt: u.session.receipt_number, ingest_tokens: [...ingestTokens.values()].filter(t => t.sid === u.session.id).length, ...(u.tus ? (({ length, offset, patches, resent, cuts }) => ({ length, offset, patches, resent, cuts }))(tusFiles.get(u.tus) ?? { length: 0, offset: 0, patches: 0, resent: 0, cuts: 0 }) : {}) })));
-  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); seedTemplates(); reset(); resetUploads(); return send({ ok: true }); }
+  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); seedTemplates(); reset(); resetUploads(); return send({ ok: true }); }
   if (url.pathname === "/__test/state") return send({ writes, applied: applied.size, identitySetting, auditCount: permissionAudit.length });
   if (url.pathname === "/__test/request-changes" && req.method === "POST") {
     // مادة بطلب تعديل وأخرى مرفوضة وثالثة فشل رفعها، وسبب داخلي لا يصل المراسل.
@@ -163,6 +166,14 @@ const server = createServer(async (req, res) => {
     if (cached) return cached.fingerprint === fingerprint ? send(cached.value, cached.status) : send({}, 409);
     const has = (...roles: string[]) => user.roles.some(role => roles.includes(role.name));
     const commit = (value: unknown, status = 204) => { applied.set(key, { fingerprint, value: structuredClone(value), status }); if (dropNextWrite) { dropNextWrite = false; return send({ message: "never-display-canary" }, 503); } return send(value, status); };
+    if (path === "/v1/forms" && req.method === "POST") {
+      if (!has("system_admin")) return send({}, 403);
+      const current = Math.max(0, ...formVersions.keys());
+      if (req.headers["if-match"] !== `"${current}"`) return send({ message: "never-display-canary" }, 412);
+      if (body.version !== current + 1) return send({}, 409);
+      const snapshot = { ...structuredClone(body), published_at: new Date().toISOString(), published_by: user.user_id } as Form;
+      formVersions.set(snapshot.version, snapshot); return commit(snapshot, 201);
+    }
     const match = /^\/v1\/materials\/([^/]+)\/(transitions|reservation|contributors)$/.exec(path);
     if (match) {
       const item = materials.find(m => m.id === match[1]); if (!item) return send({}, 404);
@@ -234,6 +245,18 @@ const server = createServer(async (req, res) => {
       const stamp = new Date().toISOString(), rule = { ...body, id: randomUUID(), row_version: 1, created_by: user.user_id, updated_by: user.user_id, created_at: stamp, updated_at: stamp };
       rules.set(rule.id, rule); res.setHeader("ETag", '"1"'); return commit(rule, 201);
     }
+    const listingPath = /^\/v1\/materials\/([^/]+)\/listing$/.exec(path);
+    if (listingPath) {
+      if (!has("system_admin", "rights_officer")) return send({}, 403);
+      const item = materials.find(m => m.id === listingPath[1]); if (!item) return send({}, 404);
+      const current = listings.get(item.id), stamp = new Date().toISOString();
+      if (req.method === "POST" ? !!current : !current) return send({ code: "conflict" }, current ? 409 : 404);
+      if (current && req.headers["if-match"] !== `"${current.row}"`) return send({}, 412);
+      if (body.state === "listed" && item.rights_state !== "sellable") return send({ code: "rights_not_sellable" }, 409);
+      if (body.commercial_allowed && !has("system_admin")) return send({ code: "forbidden_role" }, 403);
+      const next = { ...body, id: current?.id ?? randomUUID(), material_id: item.id, material_version: item.version, suspended_reason: body.state === "suspended" ? "manual" : null, listed_at: current?.listed_at ?? (body.state === "listed" ? stamp : null), created_at: current?.created_at ?? stamp, updated_at: stamp, updated_by: user.user_id, row: (current?.row ?? 0) + 1, state: String(body.state) };
+      listings.set(item.id, next); res.setHeader("ETag", `"${next.row}"`); return commit(Object.fromEntries(Object.entries(next).filter(([key]) => key !== "row")), current ? 200 : 201);
+    }
     const templatePath = /^\/v1\/license-templates(?:\/([^/]+))?$/.exec(path);
     if (templatePath) {
       if (!has("system_admin", "rights_officer")) return send({}, 403);
@@ -277,6 +300,12 @@ const server = createServer(async (req, res) => {
   }
   const uploadRead = /^\/v1\/uploads\/([^/]+)$/.exec(url.pathname);
   if (uploadRead) { const upload = uploads.get(uploadRead[1]); return upload ? send(upload.session) : send({}, 404); }
+  const listingRead = /^\/v1\/materials\/([^/]+)\/listing$/.exec(url.pathname);
+  if (listingRead) {
+    if (!user.roles.some(role => ["system_admin", "rights_officer", "editor_in_chief", "finance"].includes(role.name))) return send({}, 403);
+    const found = listings.get(listingRead[1]); if (!found) return send({ code: "not_found" }, 404);
+    res.setHeader("ETag", `"${found.row}"`); return send({ ...Object.fromEntries(Object.entries(found).filter(([key]) => key !== "row")), internal_note: "never-display-canary" });
+  }
   if (url.pathname === "/v1/license-templates" || url.pathname.startsWith("/v1/license-templates/")) {
     if (!user.roles.some(role => ["system_admin", "rights_officer", "editor_in_chief", "finance"].includes(role.name))) return send({}, 403);
     if (url.pathname === "/v1/license-templates") return send({ items: [...templates.values()].map(v => v.at(-1)!).filter(t => t.enabled || url.searchParams.get("include_disabled") === "true") });
@@ -318,7 +347,17 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/v1/notifications") { const items = url.searchParams.get("unread_only") === "true" ? notifications.filter(n => !n.read_at) : notifications; return send({ items, next_cursor: null, unread_count: notifications.filter(n => !n.read_at).length }); }
   const trail = /^\/v1\/materials\/([^/]+)\/transitions$/.exec(url.pathname);
   if (trail) return send({ items: history.get(trail[1]) ?? [] });
-  if (url.pathname === "/v1/forms/current" || url.pathname === `/v1/forms/${form.version}`) return send(form);
+  if (url.pathname === "/v1/forms") {
+    if (!user.roles.some(role => ["system_admin", "editor_in_chief"].includes(role.name))) return send({}, 403);
+    const current = Math.max(0, ...formVersions.keys());
+    return send({ items: [...formVersions.values()].sort((a, b) => b.version - a.version).map(f => ({ version: f.version, field_count: f.fields.length, published_at: f.published_at, is_current: f.version === current })) });
+  }
+  if (url.pathname === "/v1/forms/current" || /^\/v1\/forms\/[1-9]\d*$/.test(url.pathname)) {
+    const version = url.pathname.endsWith("/current") ? Math.max(0, ...formVersions.keys()) : Number(url.pathname.split("/").pop());
+    const snapshot = formVersions.get(version); if (!snapshot) return send({}, 404);
+    const type = url.searchParams.get("material_type");
+    return send({ ...snapshot, fields: snapshot.fields.filter(f => !type || !f.material_types?.length || f.material_types.includes(type as never)) });
+  }
   const derivative = /^\/v1\/materials\/([^/]+)\/files\/([^/]+)\/download-url$/.exec(url.pathname);
   if (derivative) {
     const file = materials.find(m => m.id === derivative[1])?.files.find(f => f.id === derivative[2] && f.state === "verified");
