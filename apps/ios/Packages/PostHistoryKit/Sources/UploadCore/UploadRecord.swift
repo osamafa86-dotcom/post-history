@@ -90,6 +90,9 @@ public struct UploadRecord: Codable, Equatable, Sendable, Identifiable {
     public var materialId: UUID
     public var kind: UploadSessionCreate.Kind
     public var proxyMode: UploadSessionCreate.ProxyMode?
+    /// أصل ينتظر نسخته الخفيفة قيد التحضير على الجهاز (ADR 0075): لا تُنشأ جلسته حتى تصل النسخة إلى الطابور أو يُرفع الانتظار.
+    /// اختياري كي تُقرأ السجلات المحفوظة قبل هذا الحقل.
+    public var awaitsProxy: Bool?
     /// الملف الأصلي داخل حاوية التطبيق (مسار نسبي إلى مجلد المستندات) أو مسار مطلق في الاختبارات.
     public var sourcePath: String
     public var filename: String
