@@ -5,6 +5,7 @@ import type { FieldKeyring } from '../common/crypto';
 import type { UploadForm } from '../forms/dynamic-fields';
 import type { components } from '../generated/api';
 import type { Permission, Principal, RoleName } from '../identity/principal';
+import { suspendListing } from '../commerce/listing-store';
 import { writeOutboxEvent, type OutboxEventType } from '../outbox/outbox';
 import { redactDynamicFields } from './redaction';
 import { PRODUCTION_VISIBLE_STATES, STATE_COLUMN, type Track } from './transitions';
@@ -62,6 +63,9 @@ export function roleCovers(p: Principal, role: RoleName, m: MaterialRow): boolea
  * تعديل المادة، وغيره لا يُلمَّح له بوجودهما.
  */
 // shot_list يحمل مقتطفات من التفريغ (الوكيل 5)، فحكمه حكمهما
+// حزمة التصدير برابطها الخاص، ومعاينة المشتري المائية برابط الكتالوج وحده (v0.3)
+const HIDDEN_FROM_FILES: readonly string[] = ['export', 'watermarked_preview'];
+
 export const EDITOR_ONLY_KINDS: readonly string[] = ['transcript', 'captions', 'shot_list'];
 
 export function canEditMaterial(p: Principal, m: MaterialRow): boolean {
@@ -190,7 +194,7 @@ export async function toMaterialDtos(
       ...(legalNames.has(m.reporterId) ? { reporter_legal_name: legalName ?? null } : {}),
       files: files
         // حزمة التصدير ليست MaterialFile في العقد؛ حالتها من /materials/{id}/export
-        .filter((f) => f.materialId === m.id && f.kind !== 'export' && (editor || !EDITOR_ONLY_KINDS.includes(f.kind)))
+        .filter((f) => f.materialId === m.id && !HIDDEN_FROM_FILES.includes(f.kind) && (editor || !EDITOR_ONLY_KINDS.includes(f.kind)))
         .map((f) => ({
           id: f.id,
           kind: f.kind as 'original',
@@ -244,6 +248,8 @@ export async function applyTransition(
 ): Promise<MaterialRow> {
   const column = STATE_COLUMN[t.track];
   const from = m[column];
+  // إدراج معروض يُعلَّق قبل أن تخرج حقوق مادته من sellable، في المعاملة نفسها (محفّز القاعدة يرفض العكس)
+  if (t.track === 'rights' && from === 'sellable' && t.to !== 'sellable') await suspendListing(tx, m.id, 'rights_changed', t.actorId);
   // «اطّلعت» (v0.2): من نقل المادة من inbox إلى acknowledged ومتى، فيراه المراسل
   const seen = t.track === 'editorial' && t.to === 'acknowledged' && t.actorId ? { acknowledgedBy: t.actorId, acknowledgedAt: sql`now()` } : {};
   const [updated] = await tx
