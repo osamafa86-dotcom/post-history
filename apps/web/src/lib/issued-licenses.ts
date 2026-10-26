@@ -24,3 +24,9 @@ export function allowedDownload(value: unknown, origins: readonly string[]) {
   if (typeof value !== "string") return false;
   try { const url = new URL(value); return origins.includes(url.origin) && !url.username && !url.password; } catch { return false; }
 }
+
+/** صيغة رقم الترخيص كما في العقد؛ أي رقم آخر لا يُرسل إلى الخادم. */
+export const licenseNumberPattern = /^PH-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{10}$/;
+export type PublicVerification = { license_number: string; status: IssuedLicense["status"] };
+/** صفحة التحقق العامة (قرار الأمن على #383، #385): رقم الترخيص وحالته فقط، وإن أعاد العقد أبعادًا أخرى. */
+export const safeVerification = (v: components["schemas"]["LicenseVerification"]): PublicVerification => ({ license_number: v.license_number, status: v.status });

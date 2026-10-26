@@ -36,12 +36,12 @@ export function catalogQuery(search: URLSearchParams): Query {
   return { ...query, limit: +limit, ...(cursor ? { cursor } : {}) };
 }
 
-/** عرض المشتري بقائمة بيضاء مغلقة (العقد additionalProperties: false)، ويوم التصوير بلا ساعة. */
+/** عرض المشتري بقائمة بيضاء مغلقة (العقد additionalProperties: false)، ويوم التصوير بلا ساعة. قائمة اللقطات للمحرر وحده ولا تصل المتجر (قرار الأمن، #385). */
 export function safeCatalogItem(item: CatalogItem): CatalogItem {
   const text = (t: CatalogItem["title"]) => ({ ar: t.ar, en: t.en });
   return {
     listing_id: item.listing_id, material_version: item.material_version, title: text(item.title), description: text(item.description),
-    shot_list: item.shot_list.map(s => ({ start_ms: s.start_ms, label: text(s.label) })), material_types: item.material_types, governorate: item.governorate,
+    shot_list: [], material_types: item.material_types, governorate: item.governorate,
     shot_on: item.shot_on && /^\d{4}-\d{2}-\d{2}/.exec(item.shot_on)?.[0] || null, duration_ms: item.duration_ms, width: item.width, height: item.height, credit: item.credit,
     offers: item.offers.map(o => ({ license_template_id: o.license_template_id, license_version: o.license_version, type: o.type, name: text(o.name), price: { amount_minor: o.price.amount_minor, currency: o.price.currency } })),
     exclusive_available: item.exclusive_available, listed_at: item.listed_at,

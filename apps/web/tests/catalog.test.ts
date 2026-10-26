@@ -11,7 +11,7 @@ const item = { listing_id: "71000000-0000-4000-8000-000000000001", material_vers
 describe("catalog BFF policy", () => {
   it("keeps the closed buyer view and cuts the shoot time to its day", () => {
     const safe = safeCatalogItem(item);
-    expect(JSON.stringify(safe)).not.toMatch(/canary|"gps"|"lat"|13:45/); expect(safe.shot_on).toBe("2026-10-19"); expect(safe.offers[0].price).toEqual({ amount_minor: 100, currency: "USD" });
+    expect(JSON.stringify(safe)).not.toMatch(/canary|"gps"|"lat"|13:45/); expect(safe.shot_on).toBe("2026-10-19"); expect(safe.offers[0].price).toEqual({ amount_minor: 100, currency: "USD" }); expect(safe.shot_list).toEqual([]);
   });
   it("accepts only the contract filters", () => {
     expect(catalogQuery(new URLSearchParams("q=غزة&material_type=report&material_type=aerial&min_height=1080&license_type=commercial&exclusive_available=true&shot_from=2026-10-01"))).toEqual({ q: "غزة", material_type: ["report", "aerial"], min_height: 1080, license_type: "commercial", exclusive_available: true, shot_from: "2026-10-01", limit: 24 });

@@ -229,6 +229,13 @@ const server = createServer(async (req, res) => {
     if (!user || !refresh.delete(String(body.refresh_token))) return send({ code: "unauthorized" }, 401);
     return send(session(user));
   }
+  // التحقق العام من ترخيص بلا مصادقة؛ يعيد أبعاد الترخيص كما في العقد وحقلًا زائدًا للتأكد أن الـBFF يقصّها.
+  const verification = /^\/v1\/license-verifications\/([^/]+)$/.exec(url.pathname);
+  if (verification && req.method === "GET") {
+    const found = [...issued.values()].find(l => l.license_number === verification[1]);
+    if (!found) return send({ code: "not_found" }, 404);
+    return send({ license_number: found.license_number, status: found.status, license_type: "editorial_single", title: found.title, usage_media: ["web"], territory: { kind: "worldwide" }, valid_from: "2026-10-21T10:00:00Z", valid_until: null, exclusive_until: null, organization: "never-display-canary" });
+  }
   const token = req.headers.authorization?.replace(/^Bearer /, "") ?? "";
   if (!access.has(token)) return send({ code: "unauthorized" }, 401);
   if (url.pathname === "/v1/auth/logout" && req.method === "POST") { if (body.all_sessions) { access.clear(); refresh.clear(); } else access.delete(token); return send(null, 204); }
