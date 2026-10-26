@@ -304,6 +304,8 @@ const schema = z.object({
   // رابط تنزيل حزمة الترخيص: عمره بالثواني (العقد ≤ 24 ساعة؛ دقائق فعليًا) وعدد المنح لكل ترخيص
   LICENSE_DOWNLOAD_URL_SECONDS: z.coerce.number().int().min(60).max(86_400).default(600),
   LICENSE_DOWNLOAD_LIMIT: z.coerce.number().int().min(1).max(100).default(5),
+  // صفحة التحقق العامة من الترخيص (#406): طلبات كل عنوان في نافذة LOGIN_RATE_LIMIT_WINDOW_SECONDS، ثم 429
+  LICENSE_VERIFY_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(30),
 
   OUTBOX_DISPATCHER_ENABLED: z
     .enum(['true', 'false'])

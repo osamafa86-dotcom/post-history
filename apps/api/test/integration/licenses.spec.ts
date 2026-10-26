@@ -37,6 +37,7 @@ describe('licenses (/v1/licenses) and the sandbox return', () => {
         SANDBOX_RETURN_URL: 'https://web.example/ar/orders/{order_id}',
         LICENSE_DOWNLOAD_LIMIT: '2',
         LICENSE_DOWNLOAD_URL_SECONDS: '600',
+        LICENSE_VERIFY_RATE_LIMIT_MAX: '6',
       },
       overrides: [[OBJECT_STORAGE, new SigningStorage()]],
     });
@@ -217,5 +218,27 @@ describe('licenses (/v1/licenses) and the sandbox return', () => {
     // بلا return=1 (نداء آلي) 202 كما كان، ولا شيء من الطلب يغيّر الوجهة
     await http().post(`/sandbox/checkout/${r}/failed?return=https://evil.example`).expect(202);
     expect((await order(b.token, created.id)).status).toBe('paid');
+  });
+
+  // صفحة التحقق العامة (#406): بلا مصادقة ولا كوكي، وثلاثة حقول وحدها، وحد معدل لكل عنوان
+  it('the public verification answers only the number, the status and the end, with no cookie, and is rate-limited', async () => {
+    const a = await licensed(false);
+    const number = (await http().get(`/v1/licenses/${a.licenseId}`).set(as(finance.token)).expect(200)).body.license_number as string;
+    const res = await http().get(`/v1/license-verifications/${number}`).expect(200);
+    expect(Object.keys(res.body).sort()).toEqual(['license_number', 'status', 'valid_until']);
+    expect(res.body).toMatchObject({ license_number: number, status: 'active' });
+    const valid = schemaValidator('LicenseVerification');
+    expect(valid(res.body) ? [] : valid.errors).toEqual([]);
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.headers['set-cookie']).toBeUndefined();
+    for (const id of [a.licenseId, a.orgId, a.orderId, a.listingId, a.buyer.id]) expect(res.text).not.toContain(id);
+    // المجهول وغير الصالح 404 واحد
+    expect((await http().get('/v1/license-verifications/PH-2026-0000000000').expect(404)).body.code).toBe('not_found');
+    await http().get('/v1/license-verifications/not-a-number').expect(404);
+    // الحد 6 لكل عنوان في النافذة: ثلاثة بعد ما سبق، ثم 429 بـ Retry-After
+    for (let i = 0; i < 3; i++) await http().get(`/v1/license-verifications/${number}`).expect(200);
+    const limited = await http().get(`/v1/license-verifications/${number}`).expect(429);
+    expect(limited.body.code).toBe('rate_limited');
+    expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
   });
 });
