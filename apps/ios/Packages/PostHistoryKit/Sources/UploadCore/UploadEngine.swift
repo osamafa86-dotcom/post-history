@@ -125,7 +125,7 @@ public actor UploadEngine: TusTransportDelegate {
         guard var rec = records[id], !rec.phase.isTerminal, rec.isPaused != true else { return }
         rec.isPaused = true
         rec.inFlightOffset = nil // نتيجة المهمة الملغاة إن وصلت لاحقًا تُهمَل كحدث قديم
-        save(rec)
+        save(rec, settingPause: true)
         retryTasks[id]?.cancel()
         retryTasks[id] = nil
         await transport.cancel(uploadId: id)
@@ -137,7 +137,7 @@ public actor UploadEngine: TusTransportDelegate {
         guard var rec = records[id], rec.isPaused == true else { return }
         rec.isPaused = nil
         if rec.phase == .transferring { rec.inFlightOffset = nil }
-        save(rec)
+        save(rec, settingPause: true)
         emit(.phaseChanged(id: id, phase: rec.phase))
         if rec.phase == .transferring { await resync(id) } else { await step(id) }
     }
@@ -339,6 +339,8 @@ public actor UploadEngine: TusTransportDelegate {
                     rec.inFlightOffset = chunk.offset
                     save(rec)
                     try await transport.schedulePatch(request)
+                    // أُوقف الرفع أثناء الجدولة: الإلغاء سبق تسجيل المهمة، فيُلغى الجزء الآن.
+                    if records[id]?.isPaused == true { await transport.cancel(uploadId: id); return }
                     // قد تصل نتيجة الجزء أثناء الجدولة (والمستدعي من الحدث يجد السجل مشغولًا)؛ تُعاد قراءة الحالة بدل الخروج.
                     continue
                 case .completing:
@@ -502,8 +504,14 @@ public actor UploadEngine: TusTransportDelegate {
         if rec.kind == .proxy, phase.isTerminal { wakeParked() }
     }
 
-    private func save(_ rec: UploadRecord) {
+    /// `pause` و`resume` وحدهما يغيّران علم الإيقاف؛ أي حفظ آخر (نسخة محلية قديمة بعد انتظار) يُبقي العلم المخزَّن،
+    /// والمسجَّل الموقوف لا يحمل جزءًا جاريًا.
+    private func save(_ rec: UploadRecord, settingPause: Bool = false) {
         var r = rec
+        if !settingPause, let stored = records[r.id] {
+            r.isPaused = stored.isPaused
+            if stored.isPaused == true { r.inFlightOffset = nil }
+        }
         r.updatedAt = env.now()
         records[r.id] = r
         try? store.save(r)
