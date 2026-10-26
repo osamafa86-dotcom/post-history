@@ -20,7 +20,8 @@
     "measure:forms:live": "node scripts/measure-forms-live.mjs",
     "generate:player": "node scripts/player-css.mjs",
     "check:player": "node scripts/player-css.mjs --check",
-    "measure:player": "node scripts/player-bench/measure.mjs"
+    "measure:player": "node scripts/player-bench/measure.mjs",
+    "generate:tokens": "node scripts/design-tokens.mjs"
   },
   "dependencies": {
     "@noble/hashes": "2.4.0",
