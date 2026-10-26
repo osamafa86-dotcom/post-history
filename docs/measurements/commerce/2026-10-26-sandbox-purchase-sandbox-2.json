@@ -3,15 +3,15 @@
   "tool": "acceptance",
   "role": "qa",
   "test_name": "sandbox-purchase",
-  "started_at": "2026-10-26T11:32:35.052Z",
-  "ended_at": "2026-10-26T11:32:36.088Z",
+  "started_at": "2026-10-26T11:36:06.871Z",
+  "ended_at": "2026-10-26T11:36:08.006Z",
   "result": "partial",
   "metrics": {
-    "notification_to_paid_ms": 43,
+    "notification_to_paid_ms": 51,
     "ledger_debit_minor": 10001,
     "ledger_credit_minor": 10001,
     "download_url_ttl_s": 600,
-    "checks": 62,
+    "checks": 63,
     "checks_failed": 0,
     "deferred_checks": 2,
     "commission_basis_points": 3000,
@@ -19,7 +19,7 @@
   },
   "device": {
     "platform": "server",
-    "model": "live stack: API from main@d634c4a (dev mode, sandbox provider), Postgres 16, Redis"
+    "model": "live stack: API from main@e60f6ad (dev mode, sandbox provider), Postgres 16, Redis"
   },
   "upload_path": "n/a",
   "notes": "الشراء بالمزوّد التجريبي على خادم حي: مؤسسة وعضو بالواجهة، ومادة معروضة، وطلب بسعر مجمّد (100.01 USD) ومهلته، وحجز حصري 15 دقيقة، وصفحة الدفع المستضافة، وإشعار موقّع (تُرفض النسخة المزوّرة والقديمة وبسر خاطئ، ولا أثر لنسخ مكررة ولا لإشعار بمبلغ خطأ)، وقيد دفتر متوازن بحصة المنصة 30% بالباقي الأكبر والباقي معلّقًا للمراسل، وترخيص واحد، وأحداث Outbox بالمعرّفات وحدها. لم يُقَس لأن الخادم لا يقدّمه بعد: the link opening and then stopping after its expiry: the signature expiry is checked above; fetching it needs object storage and a real package, not available here؛ refund: POST /orders/{id}/refunds is not served yet. جزئية دائمًا: مزوّد تجريبي حالته في الذاكرة، وصفّا حقوق المادة والأصل المتحقق كُتبا بـSQL (لا عامل وسائط هنا)، وتشغيل واحد، وقاعدة العمولة الافتراضية. لا مال حقيقي."
