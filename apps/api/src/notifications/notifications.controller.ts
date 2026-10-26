@@ -1,6 +1,6 @@
-import { Controller, Get, HttpCode, Param, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
-import { validateQuery } from '../common/contract';
+import { validateBody, validateQuery } from '../common/contract';
 import type { components } from '../generated/api';
 import { Roles } from '../identity/principal';
 import { NotificationsService } from './notifications.service';
@@ -14,6 +14,14 @@ export class NotificationsController {
   list(@Query() query: Record<string, unknown>, @Req() req: Request): Promise<components['schemas']['NotificationPage']> {
     const q = validateQuery<{ unread_only?: boolean; cursor?: string; limit?: number }>('/notifications', 'get', query);
     return this.notifications.list(req.auth!.userId, q);
+  }
+
+  @Post('read-all')
+  @HttpCode(200)
+  @Roles('authenticated')
+  readAll(@Body() body: unknown, @Req() req: Request): Promise<components['schemas']['NotificationReadAllResult']> {
+    const input = validateBody<components['schemas']['NotificationReadAll']>('/notifications/read-all', 'post', body ?? {});
+    return this.notifications.readAll(req.auth!.userId, input.before);
   }
 
   @Post(':id/read')

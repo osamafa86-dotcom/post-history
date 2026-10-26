@@ -96,6 +96,7 @@ describe('auth (/v1/auth/*)', () => {
       office_id: null,
       organization_id: null,
       totp_enabled: false,
+      work_name: null,
       roles: [
         { name: 'reporter', scopes: [] },
         { name: 'system_admin', scopes: [] },

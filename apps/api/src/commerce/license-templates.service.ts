@@ -154,3 +154,11 @@ async function audited(tx: Tx, actorId: string, action: string, templateId: stri
     hash: Buffer.alloc(32),
   });
 }
+
+/** قائمة شروط بيضاء مشتركة قبل الشراء وبعده؛ بلا معرّفات داخلية أو أسماء عمل. */
+export function licenseTerms(v: VersionRow): components['schemas']['LicenseTerms'] {
+  const t = toDto(v);
+  return { type: t.type, name: t.name, terms: t.terms, usage_media: t.usage_media, territory: t.territory,
+    term_days: t.term_days ?? null, exclusivity_hours: t.exclusivity_hours ?? null,
+    deliverables: t.deliverables, attribution: t.attribution, prohibitions: t.prohibitions };
+}

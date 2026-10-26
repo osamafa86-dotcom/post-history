@@ -105,6 +105,18 @@ export class AuthController {
   }
 }
 
+@Controller('users/:id/work-name')
+export class UserWorkNameController {
+  constructor(private readonly account: AccountService) {}
+  @Put()
+  @HttpCode(204)
+  @Roles('system_admin')
+  async set(@Param('id') id: string, @Body() body: unknown, @Req() req: Request): Promise<void> {
+    const input = validateBody<{ work_name: string | null }>('/users/{id}/work-name', 'put', body);
+    await this.account.setWorkName(req.principal!, id, input.work_name);
+  }
+}
+
 @Controller('users/:id/status')
 export class UserStatusController {
   constructor(private readonly account: AccountService) {}

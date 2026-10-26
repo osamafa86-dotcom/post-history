@@ -116,6 +116,7 @@ export class AuthService {
       .select({
         id: users.id,
         email: users.email,
+        workName: users.workName,
         officeId: users.officeId,
         organizationId: users.organizationId,
         totpEnabled: users.totpEnabled,
@@ -128,14 +129,16 @@ export class AuthService {
       .select({ permission: userPermissions.permission })
       .from(userPermissions)
       .where(and(eq(userPermissions.userId, userId), isNull(userPermissions.revokedAt)));
+    const roles = await this.roles(userId);
     return {
+      work_name: user.organizationId || roles.some(r => ['reporter', 'buyer_admin', 'buyer_member'].includes(r.name)) ? null : user.workName,
       user_id: user.id,
       email: user.email,
       office_id: user.officeId,
       organization_id: user.organizationId,
       totp_enabled: user.totpEnabled,
       credential_reset_required: user.credentialResetRequired,
-      roles: await this.roles(userId),
+      roles,
       permissions: perms.map((p) => p.permission as Me['permissions'][number]),
     };
   }

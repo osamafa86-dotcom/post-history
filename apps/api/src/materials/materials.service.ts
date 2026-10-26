@@ -1,8 +1,9 @@
 import { Inject, Injectable, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
-import { and, asc, desc, eq, isNotNull, lt, sql, type SQL } from 'drizzle-orm';
+import { getTableColumns, and, asc, desc, eq, isNotNull, lt, sql, type SQL } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import type { Logger } from 'pino';
 import { APP_CONFIG, type AppConfig, fieldKeyring } from '../config/config';
+import { staffWorkName, workNameFor } from '../common/design-fields';
 import type { FieldKeyring } from '../common/crypto';
 import { pgError } from '../common/db-errors';
 import { ApiError } from '../common/errors';
@@ -122,7 +123,7 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
   async transitions(p: Principal, id: string): Promise<TransitionRecord[]> {
     if (!(await findScoped(this.db, p, id))) throw ApiError.notFound();
     const rows = await this.db
-      .select()
+      .select({ ...getTableColumns(materialTransitions), actorName: staffWorkName(sql`${materialTransitions.actorId}`) })
       .from(materialTransitions)
       .where(eq(materialTransitions.materialId, id))
       .orderBy(asc(materialTransitions.id));
@@ -134,6 +135,7 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
       reason: r.reason,
       note_timecode_ms: r.noteTimecodeMs,
       actor_id: r.actorId,
+      actor_name: workNameFor(p, r.actorName),
       occurred_at: iso(r.occurredAt)!,
     }));
   }

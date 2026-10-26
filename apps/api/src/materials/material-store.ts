@@ -1,6 +1,7 @@
 import { and, asc, eq, getTableColumns, inArray, sql, type SQL } from 'drizzle-orm';
 import type { Executor, Tx } from '../database/database.module';
 import { auditLog, materialContributors, materialFiles, materials, materialTransitions, offices, uploadForms, users } from '../database/schema/schema';
+import { acknowledgementDue, staffWorkName, workNameFor } from '../common/design-fields';
 import type { FieldKeyring } from '../common/crypto';
 import type { UploadForm } from '../forms/dynamic-fields';
 import type { components } from '../generated/api';
@@ -10,7 +11,7 @@ import { writeOutboxEvent, type OutboxEventType } from '../outbox/outbox';
 import { redactDynamicFields } from './redaction';
 import { PRODUCTION_VISIBLE_STATES, STATE_COLUMN, type Track } from './transitions';
 
-export type MaterialRow = typeof materials.$inferSelect & { officeGovernorate: string | null };
+export type MaterialRow = typeof materials.$inferSelect & { officeGovernorate: string | null; reservedByName?: string | null; acknowledgementDueAt?: string | null };
 export type MaterialDto = components['schemas']['Material'];
 
 /**
@@ -76,7 +77,7 @@ export function canEditMaterial(p: Principal, m: MaterialRow): boolean {
   );
 }
 
-const selection = { ...getTableColumns(materials), officeGovernorate: offices.governorate };
+const selection = { ...getTableColumns(materials), officeGovernorate: offices.governorate, reservedByName: staffWorkName(sql`${materials.reservedBy}`), acknowledgementDueAt: acknowledgementDue(sql`${materials.id}`) };
 
 /** يقرأ مادة ضمن نطاق المستخدم؛ خارج النطاق = undefined (404). forUpdate يقفل الصف حتى نهاية المعاملة. */
 export async function findScoped(
@@ -188,6 +189,8 @@ export async function toMaterialDtos(
       editorial_state: m.editorialState as MaterialDto['editorial_state'],
       rights_state: m.rightsState as MaterialDto['rights_state'],
       reserved_by: reservationLive ? m.reservedBy : null,
+      reserved_by_name: reservationLive ? workNameFor(p, m.reservedByName) : null,
+      acknowledgement_due_at: iso(m.acknowledgementDueAt ?? null),
       reserved_at: reservationLive ? iso(m.reservedAt) : null,
       acknowledged_by: m.acknowledgedBy,
       acknowledged_at: iso(m.acknowledgedAt),

@@ -38,6 +38,26 @@ export class AccountService {
     this.recoveryByIp = limits.create('recovery-ip', config.LOGIN_RATE_LIMIT_IP_MAX);
   }
 
+  /** اسم داخلي مستقل؛ لا يذهب إلى التدقيق ولا Outbox. قفل المستخدم يسلسل التعيين. */
+  async setWorkName(p: Principal, userId: string, name: string | null): Promise<void> {
+    if (!hasRole(p, 'system_admin')) throw new ApiError(403, 'forbidden_scope', 'Administrator required.');
+    if (!UUID.test(userId)) throw ApiError.notFound();
+    await this.db.transaction(async (tx) => {
+      const [u] = await tx.select({ id: users.id, organizationId: users.organizationId, workName: users.workName })
+        .from(users).where(eq(users.id, userId)).for('update');
+      if (!u) throw ApiError.notFound();
+      const roles = await rolesOf(tx, userId);
+      if (u.organizationId || roles.some(r => ['reporter', 'buyer_admin', 'buyer_member'].includes(r)) || !roles.length) {
+        throw ApiError.validation({ fields: ['/work_name'] });
+      }
+      if (u.workName === name) return;
+      await tx.update(users).set({ workName: name }).where(eq(users.id, userId));
+      await audit(tx, p.userId, 'user.work_name_changed', userId, {
+        target_user_id: userId, reason_code: name === null ? 'work_name_cleared' : 'work_name_set',
+      });
+    });
+  }
+
   // ---------- الجلسات ----------
 
   async listSessions(userId: string, currentSid: string): Promise<UserSession[]> {

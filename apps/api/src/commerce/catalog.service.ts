@@ -9,6 +9,7 @@ import type { Principal } from '../identity/principal';
 import { iso } from '../materials/material-store';
 import { validTimestamp } from '../uploads/uploads.service';
 import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
+import { licenseTerms } from './license-templates.service';
 import { sourceFileId } from './listing-store';
 
 type CatalogItem = components['schemas']['CatalogItem'];
@@ -48,6 +49,11 @@ interface Row extends Record<string, unknown> {
   duration_ms: string | null;
   width: number | null;
   height: number | null;
+  verified_on: string | null;
+  editorial_approved_on: string | null;
+  editorial_approver_role: CatalogItem['editorial_approver_role'];
+  exclusive_unavailable_until: string | null;
+  exclusive_blocked: boolean;
 }
 
 /**
@@ -85,7 +91,7 @@ export class CatalogService {
     if (q.min_height !== undefined) where.push(sql`f.height >= ${q.min_height}`);
     if (q.license_type) where.push(sql`EXISTS (${offerExists(sql`t.type = ${q.license_type}`)})`);
     if (q.exclusive_available !== undefined) {
-      where.push(q.exclusive_available ? sql`EXISTS (${offerExists(sql`t.type = 'exclusive_temporary'`)})` : sql`NOT EXISTS (${offerExists(sql`t.type = 'exclusive_temporary'`)})`);
+      where.push(q.exclusive_available ? sql`(EXISTS (${offerExists(sql`t.type = 'exclusive_temporary'`)}) AND NOT ${exclusiveBlocked()})` : sql`(NOT EXISTS (${offerExists(sql`t.type = 'exclusive_temporary'`)}) OR ${exclusiveBlocked()})`);
     }
     if (q.cursor) {
       const c = decodeCursor(q.cursor);
@@ -153,8 +159,12 @@ export class CatalogService {
         // لا اسم مراسل: لا حقل لاسم نشر معتمد بعد، والاسم القانوني محمي والمستعار لا يدخل الكتالوج، فالنسب للشبكة
         credit: this.config.CATALOG_CREDIT,
         offers: own,
-        // لا مبيعات قبل الجزء 4 من الدورة: الحصري متاح متى عُرض
-        exclusive_available: own.some((o) => o.type === 'exclusive_temporary'),
+        // توافر الحصرية محسوب من الحجوزات والتراخيص، لا من وجود العرض وحده
+        exclusive_available: own.some((o) => o.type === 'exclusive_temporary') && !r.exclusive_blocked,
+        exclusive_unavailable_until: iso(r.exclusive_unavailable_until),
+        verified_on: r.verified_on,
+        editorial_approved_on: r.editorial_approved_on,
+        editorial_approver_role: r.editorial_approver_role,
         listed_at: iso(r.listed_at)!,
       };
     });
@@ -180,7 +190,7 @@ export class CatalogService {
           ? { amount_minor: Number(t.basePriceMinor), currency: t.currency as 'USD' | 'ILS' }
           : { amount_minor: Number(o.priceOverrideMinor), currency: o.priceOverrideCurrency as 'USD' | 'ILS' };
       const list = out.get(o.listingId) ?? [];
-      list.push({ license_template_id: t.templateId, license_version: t.version, type: t.type as CatalogOffer['type'], name: { ar: t.nameAr, en: t.nameEn }, price });
+      list.push({ license_template_id: t.templateId, license_version: t.version, type: t.type as CatalogOffer['type'], name: { ar: t.nameAr, en: t.nameEn }, price, terms: licenseTerms(t) });
       out.set(o.listingId, list);
     }
     for (const list of out.values()) list.sort((a, b) => a.price.amount_minor - b.price.amount_minor || (a.license_template_id < b.license_template_id ? -1 : 1));
@@ -195,13 +205,23 @@ function selectItems(): SQL {
            l.listed_at, l.listed_at::text AS listed_at_raw,
            m.material_types, m.governorate,
            to_char((m.shot_at AT TIME ZONE ${SHOT_ZONE})::date, 'YYYY-MM-DD') AS shot_on,
-           f.duration_ms, f.width, f.height
+           f.duration_ms, f.width, f.height,
+           to_char((f.verified_at AT TIME ZONE ${SHOT_ZONE})::date, 'YYYY-MM-DD') AS verified_on,
+           to_char((publication.occurred_at AT TIME ZONE ${SHOT_ZONE})::date, 'YYYY-MM-DD') AS editorial_approved_on,
+           (SELECT r.role FROM user_roles r WHERE r.user_id = publication.actor_id
+             AND r.role IN ('system_admin','editor_in_chief','supervisor','producer','rights_officer')
+             ORDER BY CASE r.role WHEN 'system_admin' THEN 1 WHEN 'editor_in_chief' THEN 2 WHEN 'supervisor' THEN 3 WHEN 'producer' THEN 4 ELSE 5 END LIMIT 1) AS editorial_approver_role,
+           (SELECT max(h.active_until) FROM exclusive_holds h WHERE h.material_id = m.id AND h.state = 'active' AND h.active_until > now()) AS exclusive_unavailable_until,
+           ${exclusiveBlocked()} AS exclusive_blocked
       FROM catalog_listings l
       JOIN materials m ON m.id = l.material_id
       LEFT JOIN LATERAL (
-        SELECT duration_ms, width, height FROM material_files
+        SELECT duration_ms, width, height, verified_at FROM material_files
          WHERE material_id = m.id AND kind = 'original' AND state = 'verified'
-         ORDER BY verified_at DESC LIMIT 1) f ON true`;
+         ORDER BY verified_at DESC, id DESC LIMIT 1) f ON true
+      LEFT JOIN LATERAL (SELECT occurred_at, actor_id FROM outbox_events e WHERE e.aggregate_type = 'material' AND e.aggregate_id = m.id
+        AND e.type = 'material.published' AND e.payload->>'material_version' = l.material_version::text
+        ORDER BY e.occurred_at DESC, e.id DESC LIMIT 1) publication ON true`;
 }
 
 /** عرض لهذا الإدراج بقالب مفعّل في إصداره الحالي يحقق الشرط. */
@@ -221,4 +241,11 @@ function decodeCursor(cursor: string): { at: string; id: string } {
     // يقع إلى 400 أدناه
   }
   throw new ApiError(400, 'bad_request', 'Invalid cursor.', { params: ['cursor'] });
+}
+
+/** يطابق حارس الحجز في القاعدة: الحجز الجاري أو حصرية نشطة أو ترخيص لم يُبطَل يمنع حصرية جديدة. */
+function exclusiveBlocked(): SQL<boolean> {
+  return sql<boolean>`(EXISTS (SELECT 1 FROM exclusive_holds h WHERE h.material_id = m.id
+    AND ((h.state = 'held' AND h.held_until > now()) OR (h.state = 'active' AND h.active_until > now())))
+    OR EXISTS (SELECT 1 FROM licenses x WHERE x.material_id = m.id AND x.status <> 'revoked'))`;
 }

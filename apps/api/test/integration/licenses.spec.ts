@@ -146,6 +146,35 @@ describe('licenses (/v1/licenses) and the sandbox return', () => {
   };
   const download = (t: string, id: string, key = randomUUID()) => http().post(`/v1/licenses/${id}/download-url`).set(as(t)).set('Idempotency-Key', key).send();
 
+  it('buyer routes never disclose staff work names or fingerprints; buyers reject work-name with 422', async () => {
+    const a = await licensed();
+    const admin = await loginAs(h, [{role:'system_admin'}]);
+    const name = 'اسم عمل اصطناعي خاص';
+    await h.pool.query(`UPDATE users SET work_name = $2 WHERE id = $1`, [admin.id, name]);
+    await http().put(`/v1/users/${a.buyer.id}/work-name`).set(as(admin.token)).set('Idempotency-Key', randomUUID()).send({ work_name: name }).expect(422);
+    const license = (await http().get(`/v1/licenses/${a.licenseId}`).set(as(a.buyer.token)).expect(200)).body;
+    for (const path of ['/catalog', `/catalog/${a.listingId}`, '/orders', `/orders/${a.orderId}`, '/licenses', `/licenses/${a.licenseId}`]) {
+      const response = await http().get(`/v1${path}`).set(as(a.buyer.token)).expect(200);
+      const text = JSON.stringify(response.body);
+      expect(text).not.toContain(name);
+      expect(text).not.toMatch(/"(?:work_name|actor_name|reserved_by_name|sha256|fingerprint|head_sha256|tail_sha256)"/);
+    }
+  });
+
+  it('active exclusivity exposes its end alone and matches availability filters', async () => {
+    const t = await template('exclusive_temporary');
+    const {listingId} = await listed([t]); const b = await buyer(await organization());
+    const pending = (await post(b.token,'/orders',{items:[{listing_id:listingId,license_template_id:t}]}).expect(201)).body;
+    const catalog = async () => (await http().get(`/v1/catalog/${listingId}`).set(as(b.token)).expect(200)).body;
+    expect(await catalog()).toMatchObject({exclusive_available:false,exclusive_unavailable_until:null});
+    await pay((await ref(b.token,pending.id)).ref);
+    const licenseId = (await order(b.token,pending.id)).items[0].license_id;
+    const license = (await http().get(`/v1/licenses/${licenseId}`).set(as(b.token)).expect(200)).body;
+    expect(await catalog()).toMatchObject({exclusive_available:false,exclusive_unavailable_until:license.exclusive_until});
+    const available = (await http().get('/v1/catalog?exclusive_available=true').set(as(b.token)).expect(200)).body.items;
+    expect(available.some((i: {listing_id:string})=>i.listing_id===listingId)).toBe(false);
+  });
+
   it('lists and reads licenses in the contract shape, an organization sees its own only, staff sees all and filters', async () => {
     const a = await licensed();
     const other = await licensed();
@@ -225,6 +254,7 @@ describe('licenses (/v1/licenses) and the sandbox return', () => {
     const a = await licensed(false);
     const number = (await http().get(`/v1/licenses/${a.licenseId}`).set(as(finance.token)).expect(200)).body.license_number as string;
     const res = await http().get(`/v1/license-verifications/${number}`).expect(200);
+    expect(JSON.stringify(res.body)).not.toMatch(/اسم عمل اصطناعي خاص|work_name|sha256|fingerprint/);
     expect(Object.keys(res.body).sort()).toEqual(['license_number', 'status', 'valid_until']);
     expect(res.body).toMatchObject({ license_number: number, status: 'active' });
     const valid = schemaValidator('LicenseVerification');
