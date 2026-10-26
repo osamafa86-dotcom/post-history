@@ -69,7 +69,8 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci --no-audit --no-fund
-      - run: npm audit --omit=dev --audit-level=high
+      # same rule as `npm audit --omit=dev --audit-level=high`, except the documented exceptions (ADR 0085)
+      - run: node ../../tools/acceptance/scripts/audit-gate.mjs apps/web
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
@@ -196,7 +197,7 @@ jobs:
       - run: npm ci
       # Majors are held back in Dependabot until after the field trial: gate high-severity advisories here.
       - name: Audit runtime dependencies (high and above)
-        run: npm audit --omit=dev --audit-level=high
+        run: node ../../tools/acceptance/scripts/audit-gate.mjs apps/api
       - name: Start MinIO (same image and digest as infra/compose)
         run: |
           image="$(sed -n 's/^ *image: \(pgsty\/minio:.*\)$/\1/p' ../../infra/compose/docker-compose.yml)"
