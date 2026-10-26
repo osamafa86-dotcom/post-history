@@ -34,6 +34,13 @@
 			header_up X-Forwarded-For {client_ip}
 		}
 	}
+	# صفحة الدفع التجريبية (ADR 0032) خارج /v1: صفحة المزوّد المستضافة وأزرارها فقط. إشعار الدفع يمر داخل الخادم، فلا
+	# يُوجَّه /payments/webhooks/ من هنا حتى يأتي مزوّد حقيقي. بلا المزوّد التجريبي يعيد الخادم 404.
+	handle /sandbox/checkout/* {
+		reverse_proxy 127.0.0.1:{$API_PORT} {
+			header_up X-Forwarded-For {client_ip}
+		}
+	}
 	# الرفع عبر بوابة ingest كالنطاق الآخر (ADR 0011): لا يمر طلب tus بلا رمز رفع قصير صالح لجلسته، ولا لجلسة
 	# أُبطلت (فحص حالة الجلسة). البوابة تعيد Location على https والاسم نفسه.
 	# X-Forwarded-For replaced by the client address alone (as for /v1/): the gate trusts it from the Docker gateway and

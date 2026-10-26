@@ -60,6 +60,8 @@ INGEST_TOKEN_PUBLIC_KEYS=k1:$(cat "$WORK/ingest/public.b64")
 INGEST_TOKEN_SIGNING_KEY=$(openssl pkcs8 -topk8 -nocrypt -outform DER -in "$WORK/ingest/signing.pem" | base64 -w0)
 INGEST_TOKEN_KEY_ID=k1
 INGEST_GATE_TOKEN=$(hex 32)
+PAYMENT_PROVIDER=sandbox
+SANDBOX_WEBHOOK_SECRET=$(hex 32)
 # ATTESTATION_MODE=production (التجربة) يشترط معرّف تطبيق؛ معرّف اختبار هنا، والرموز يوقّعها الدخان مباشرة.
 APP_ATTEST_APP_ID=ABCDE12345.org.example.trialci
 INGEST_PORT=8443
@@ -101,6 +103,14 @@ grep -qi '^tus-resumable:' <<<"$(tus)" || fail "main /files/ does not reach tusd
 # The edge routes /internal nowhere, whatever the token: a random one keeps the real secret out of the access log.
 [ "$(code -X POST "https://main.localhost/internal/tusd-hooks/$(hex 32)")" = 404 ] || fail "/internal reachable through the edge"
 [ "$(code https://main.localhost/)" = 404 ] || fail "main / should be 404"
+# Sandbox checkout (ADR 0032): the API boots with the sandbox provider under NODE_ENV=production because the trial
+# stage flags are fixed in compose, and the edge sends /sandbox/checkout/ to it (an unknown ref is the API's own 404).
+aenv="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$("$T" ps -q api)")"
+grep -qx 'DEPLOY_STAGE=trial' <<<"$aenv" && grep -qx 'PAYMENT_SANDBOX_ALLOWED=1' <<<"$aenv" && grep -qx 'PAYMENT_PROVIDER=sandbox' <<<"$aenv" \
+  || fail "the API does not run as the trial stage with the sandbox provider"
+sb="$(c -w '\n%{http_code}' https://main.localhost/sandbox/checkout/unknown-ref || true)"
+[ "$(tail -1 <<<"$sb")" = 404 ] && grep -q '{' <<<"$sb" || fail "/sandbox/checkout/ is not routed to the API (got: $(tail -1 <<<"$sb"))"
+echo "sandbox checkout behind the edge, trial stage flags: ok"
 [ "$(curl -sS -o /dev/null -w '%{http_code}' --resolve main.localhost:80:127.0.0.1 http://main.localhost/v1/x)" = 308 ] \
   || fail "http is not redirected to https"
 [ "$(code -X POST https://ingest.localhost/files/ -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 1')" = 401 ] \
