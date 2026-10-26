@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // فحص تقريبي للموارد والنصوص العربية الحرفية؛ لا يحل محل مراجعة الترجمة.
 import { readdir, readFile } from 'node:fs/promises';
-import { resolve, relative, basename } from 'node:path';
+import { resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const arabic = /[\u0600-\u06ff]/;
 async function files(dir) {
@@ -37,6 +37,7 @@ export async function check(root) {
       const resource = /\/messages\/(ar|en)\.json$/.exec(name);
       const xml = /\/res\/values(-ar|-en)?\/([^/]+\.xml)$/.exec(name);
       const strings = /\/(ar|en)\.lproj\/([^/]+\.strings)$/.exec(name);
+      if (/\/(tests?|e2e)\//.test(name) || /\.(test|spec)\.(tsx|kt|swift)$/.test(name)) continue;
       if (!(resource || xml || strings || name.endsWith('.xcstrings') || /\.(tsx|kt|swift)$/.test(name))) continue;
       try {
         const text = await readFile(path, 'utf8');
@@ -59,10 +60,10 @@ export async function check(root) {
           }
         } else {
           // التعليقات تُزال مع إبقاء فواصل الأسطر لتحديد السطر؛ النص نفسه لا يُطبع.
-          const clean = text.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' ')).replace(/^\s*\/\/.*$/gm, '');
+          const clean = text.replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, m => m.startsWith('//') || m.startsWith('/*') ? m.replace(/[^\n]/g, ' ') : m);
           const lines = clean.split('\n');
           for (let i = 0; i < lines.length; i++) {
-            const code = lines[i].replace(/\/\/[^"'`]*$/, '');
+            const code = lines[i];
             if (arabic.test(code) && (/(["'`])[^\n]*[\u0600-\u06ff]/.test(code) || />[^<]*[\u0600-\u06ff]/.test(code))) literals.push({ file: name, line: i + 1 });
           }
         }
