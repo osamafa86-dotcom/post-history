@@ -460,8 +460,8 @@ export const notifications = pgTable("notifications", {
 	ruleId: uuid("rule_id"),
 }, (table) => [
 	index("notifications_escalation_idx").using("btree", table.escalateAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((acknowledged_at IS NULL) AND (escalate_at IS NOT NULL))`),
-	index("notifications_inbox_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
-	index("notifications_material_ack_due_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops"), table.escalateAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((assignment_state = 'assigned'::text) AND (acknowledged_at IS NULL) AND (material_id IS NOT NULL))`),
+	index("notifications_inbox_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("uuid_ops")),
+	index("notifications_material_ack_due_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops"), table.escalateAt.asc().nullsLast().op("uuid_ops")).where(sql`((assignment_state = 'assigned'::text) AND (acknowledged_at IS NULL) AND (material_id IS NOT NULL))`),
 	index("notifications_material_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops")).where(sql`(material_id IS NOT NULL)`),
 	index("notifications_overdue_assignment_idx").using("btree", table.escalateAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((assignment_state = 'assigned'::text) AND (acknowledged_at IS NULL))`),
 	index("notifications_unread_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops")).where(sql`(read_at IS NULL)`),
