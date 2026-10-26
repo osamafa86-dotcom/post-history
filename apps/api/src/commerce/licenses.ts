@@ -1,13 +1,18 @@
 import { Controller, Get, Header, HttpCode, Inject, Injectable, Param, Post, Query, Req } from '@nestjs/common';
 import { and, count, desc, eq, sql } from 'drizzle-orm';
 import type { Request } from 'express';
+import type { BlockList } from 'node:net';
+import { clientAddress, rateLimitBucket } from '../common/client-address';
 import { validateQuery } from '../common/contract';
 import { ApiError } from '../common/errors';
-import { APP_CONFIG, type AppConfig } from '../config/config';
+import { APP_CONFIG, type AppConfig, blockListOf } from '../config/config';
 import { DB, type Database, type Executor } from '../database/database.module';
 import { buyerOrganizations, licenseDownloadGrants, licenseTemplateVersions, licenses, materialFiles, orderItems } from '../database/schema/schema';
 import type { components } from '../generated/api';
+import { Public } from '../identity/auth.guard';
 import { type Principal, Roles } from '../identity/principal';
+import type { RateLimiter } from '../identity/rate-limiter';
+import { RateLimitsService } from '../identity/rate-limits.service';
 import { iso } from '../materials/material-store';
 import { validTimestamp } from '../uploads/uploads.service';
 import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
@@ -181,5 +186,44 @@ export class LicensesController {
   @Header('Cache-Control', 'no-store')
   downloadUrl(@Param('licenseId') id: string, @Req() req: Request): Promise<LicenseDownloadUrl> {
     return this.licensesService.downloadUrl(req.principal!, id);
+  }
+}
+
+const LICENSE_NUMBER = /^PH-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{10}$/;
+
+/**
+ * صفحة التحقق العامة (#406): بلا مصادقة ولا كوكي، وبثلاثة حقول وحدها (الرقم والحالة والنهاية)، فرقم متداول لا يكشف ما
+ * رُخّص ولا لمن. محدودة المعدل لكل عنوان، والرقم المجهول أو غير الصالح 404 واحد لا يميّز بينهما.
+ */
+@Controller('license-verifications')
+export class LicenseVerificationsController {
+  private readonly bff: BlockList;
+  private readonly byIp: RateLimiter;
+
+  constructor(
+    @Inject(DB) private readonly db: Database,
+    @Inject(APP_CONFIG) config: AppConfig,
+    limits: RateLimitsService,
+  ) {
+    this.bff = blockListOf(config.BFF_SOURCE_ADDRESSES);
+    this.byIp = limits.create('license-verify-ip', config.LICENSE_VERIFY_RATE_LIMIT_MAX);
+  }
+
+  @Public()
+  @Get(':licenseNumber')
+  @Header('Cache-Control', 'no-store')
+  async verify(@Param('licenseNumber') licenseNumber: string, @Req() req: Request): Promise<components['schemas']['LicenseVerification']> {
+    // IPv6 بشبكته /64 لا بعنوانه، فلا يتجاوز الحد بالدوران على عناوين شبكته
+    const ip = rateLimitBucket(clientAddress(req, this.bff));
+    const wait = await this.byIp.retryAfter(ip);
+    if (wait > 0) throw new ApiError(429, 'rate_limited', 'Too many attempts.', undefined, { 'Retry-After': String(wait) });
+    await this.byIp.record(ip);
+    if (!LICENSE_NUMBER.test(licenseNumber)) throw ApiError.notFound();
+    const [l] = await this.db
+      .select({ licenseNumber: licenses.licenseNumber, status: licenses.status, validUntil: licenses.validUntil })
+      .from(licenses)
+      .where(eq(licenses.licenseNumber, licenseNumber));
+    if (!l) throw ApiError.notFound();
+    return { license_number: l.licenseNumber, status: l.status as LicenseStatus, valid_until: iso(l.validUntil) };
   }
 }

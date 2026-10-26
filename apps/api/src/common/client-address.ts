@@ -18,3 +18,19 @@ export function clientAddress(req: Request, bff: BlockList): string {
   }
   return req.ip ?? 'unknown';
 }
+
+/**
+ * مفتاح حد المعدل من العنوان: IPv6 يُجمَّع على /64 (العميل الواحد يملك الشبكة كلها فيدور عليها)، وIPv4 والمعيَّن
+ * عليه (::ffff:a.b.c.d) كما هو. ما ليس عنوانًا يُعاد كما هو.
+ */
+export function rateLimitBucket(address: string): string {
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(address);
+  if (mapped) return mapped[1]!;
+  if (isIP(address) !== 6) return address;
+  const bare = address.split('%')[0]!.toLowerCase();
+  const [head, tail = ''] = bare.split('::');
+  const left = head ? head.split(':') : [];
+  const right = bare.includes('::') && tail ? tail.split(':') : [];
+  const groups = bare.includes('::') ? [...left, ...Array(8 - left.length - right.length).fill('0'), ...right] : left;
+  return `${groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, '')).join(':')}::/64`;
+}
