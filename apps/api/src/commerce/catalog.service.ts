@@ -219,7 +219,7 @@ function selectItems(): SQL {
         SELECT duration_ms, width, height, verified_at FROM material_files
          WHERE material_id = m.id AND kind = 'original' AND state = 'verified'
          ORDER BY verified_at DESC, id DESC LIMIT 1) f ON true
-      LEFT JOIN LATERAL (SELECT occurred_at, actor_id FROM outbox_events e WHERE e.aggregate_id = m.id
+      LEFT JOIN LATERAL (SELECT occurred_at, actor_id FROM outbox_events e WHERE e.aggregate_type = 'material' AND e.aggregate_id = m.id
         AND e.type = 'material.published' AND e.payload->>'material_version' = l.material_version::text
         ORDER BY e.occurred_at DESC, e.id DESC LIMIT 1) publication ON true`;
 }
@@ -243,10 +243,9 @@ function decodeCursor(cursor: string): { at: string; id: string } {
   throw new ApiError(400, 'bad_request', 'Invalid cursor.', { params: ['cursor'] });
 }
 
-/** الحجز الجاري أو حصرية نشطة أو بيع غير حصري ساري يمنع عرض الحصرية. */
+/** يطابق حارس الحجز في القاعدة: الحجز الجاري أو حصرية نشطة أو ترخيص لم يُبطَل يمنع حصرية جديدة. */
 function exclusiveBlocked(): SQL<boolean> {
   return sql<boolean>`(EXISTS (SELECT 1 FROM exclusive_holds h WHERE h.material_id = m.id
     AND ((h.state = 'held' AND h.held_until > now()) OR (h.state = 'active' AND h.active_until > now())))
-    OR EXISTS (SELECT 1 FROM licenses x WHERE x.material_id = m.id AND x.license_type <> 'exclusive_temporary'
-      AND x.status = 'active' AND (x.valid_until IS NULL OR x.valid_until > now())))`;
+    OR EXISTS (SELECT 1 FROM licenses x WHERE x.material_id = m.id AND x.status <> 'revoked'))`;
 }

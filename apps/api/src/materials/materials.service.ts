@@ -1,9 +1,9 @@
-import { staffWorkName, workNameFor } from '../common/design-fields';
 import { Inject, Injectable, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
 import { getTableColumns, and, asc, desc, eq, isNotNull, lt, sql, type SQL } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import type { Logger } from 'pino';
 import { APP_CONFIG, type AppConfig, fieldKeyring } from '../config/config';
+import { staffWorkName, workNameFor } from '../common/design-fields';
 import type { FieldKeyring } from '../common/crypto';
 import { pgError } from '../common/db-errors';
 import { ApiError } from '../common/errors';

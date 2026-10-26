@@ -186,7 +186,6 @@ export class AuthService {
           userId: recoveryRequests.userId,
           approvedBy: recoveryRequests.approvedBy,
           email: users.email,
-        workName: users.workName,
           officeId: users.officeId,
         })
         .from(recoveryRequests)

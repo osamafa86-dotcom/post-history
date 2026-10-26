@@ -32,6 +32,9 @@ describe('ADR 0035: أسماء الطاقم وقراءة الكل ومواعيد
     expect((await get(supervisor,'/auth/me').expect(200)).body.work_name).toBe(value);
     const { rows } = await h.pool.query(`SELECT details FROM audit_log WHERE target_id = $1 AND action = 'user.work_name_changed'`,[supervisor.id]);
     expect(rows).toEqual([{details:{target_user_id:supervisor.id,reason_code:'work_name_set'}}]);
+    await name(admin,supervisor.id,'اسم عمل أحدث').expect(204);
+    await name(admin,supervisor.id,value,key).expect(204);
+    expect((await get(supervisor,'/auth/me').expect(200)).body.work_name).toBe('اسم عمل أحدث');
     await name(supervisor,supervisor.id,value).expect(403);
     await name(admin,reporter.id,value).expect(422);
     for (const invalid of [' leading','trailing ','line\nbreak','bad\u202ename','x'.repeat(81)]) await name(admin,supervisor.id,invalid).expect(422);
@@ -56,7 +59,7 @@ describe('ADR 0035: أسماء الطاقم وقراءة الكل ومواعيد
     const id = await material(); await drainOutbox(h);
     const due = '2026-01-01T00:00:00.000Z';
     await h.pool.query(`UPDATE notifications SET created_at='2026-01-01',escalate_at=$2 WHERE material_id=$1 AND user_id=$3`,[id,due,supervisor.id]);
-    await h.pool.query(`INSERT INTO notifications (user_id,event_id,type,material_id,title,priority) SELECT $2,event_id,type,material_id,'إشعار اصطناعي','normal' FROM notifications WHERE material_id=$1 AND user_id=$3 LIMIT 1`,[id,outside.id,supervisor.id]);
+    await h.pool.query(`INSERT INTO notifications (user_id,event_id,type,material_id,title,priority,created_at) SELECT $2,event_id,type,material_id,'إشعار اصطناعي','normal','2026-01-01'::timestamptz FROM notifications WHERE material_id=$1 AND user_id=$3 LIMIT 1`,[id,outside.id,supervisor.id]);
     const key = randomUUID(); const before = '2026-01-02T00:00:00Z';
     const read = () => http().post('/v1/notifications/read-all').auth(supervisor.token,{type:'bearer'}).set('Idempotency-Key',key).send({before});
     const first = (await read().expect(200)).body; expect(first.read_count).toBeGreaterThan(0);
