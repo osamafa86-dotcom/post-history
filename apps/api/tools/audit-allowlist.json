@@ -1,9 +1,1 @@
-[
-  {
-    "id": "GHSA-q7qp-rjg7-q26m",
-    "package": "multer",
-    "reason": "multer arrives through @nestjs/platform-express only; no route parses multipart (uploads go through tusd, no FileInterceptor). Guarded by test/unit/no-multer.spec.ts.",
-    "added": "2026-10-26",
-    "remove_when": "@nestjs/platform-express ships a multer release that fixes the advisory; then npm update and drop this entry (ADR 0040)."
-  }
-]
+[]

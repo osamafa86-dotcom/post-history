@@ -19,6 +19,7 @@ final class AppModel: ObservableObject {
     /// إعداد العميل لكل المسارات المصادَق عليها (يضيف Bearer ويحدّث عند 401).
     let api: PostHistoryAPIAPIConfiguration
     let settings = AppSettings()
+    let lock = AppLockModel()
     let uploads: UploadQueueModel
     let materials: MyMaterialsModel
     let notifications: NotificationsModel
@@ -106,6 +107,7 @@ final class AppModel: ObservableObject {
         ]
         let report = await EmergencyWipe(steps: steps).run()
         settings.reload()
+        lock.reset()
         await uploads.refresh()
         await materials.clear()
         await notifications.clear()

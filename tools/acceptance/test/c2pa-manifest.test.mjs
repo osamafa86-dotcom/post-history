@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { byteLeaks, judgeManifest, shaForms } from "../scripts/c2pa-manifest.mjs";
+import { byteLeaks, judgeManifest, readableParts, shaForms } from "../scripts/c2pa-manifest.mjs";
 
 const SHA = "ab".repeat(32), SOURCE = `post-history:source:${"cd".repeat(32)}`;
 const good = () => ({
@@ -48,4 +48,16 @@ test("byteLeaks finds planted values, digest hex and raw bytes", () => {
   assert.equal(byteLeaks(Buffer.concat([Buffer.from("a"), Buffer.from(SHA, "hex")]), { planted, sha256: SHA }).length, 1);
   assert.equal(byteLeaks(Buffer.from(`a${SHA}`), { planted, sha256: SHA }).length, 1);
   assert.equal(shaForms(SHA).length, 4);
+});
+
+test("position words are judged in field names and readable text, not in base64 or hex blobs (the check failed at random on signatures)", () => {
+  // a signature-sized blob that happens to hold GPS, gps and lat in it must not be a finding
+  const blob = `${"A".repeat(40)}GPS${"b".repeat(40)}/lat/${"Q".repeat(30)}GpS${"z".repeat(30)}==`;
+  const withBlob = mutate((m) => { m.signature_info.sig = blob; m.title = `${"f".repeat(30)}gps${"0".repeat(30)}`; });
+  assert.deepEqual(judge(withBlob).filter((p) => /position-like/.test(p)), []);
+  // the same words as a field name or as readable text are findings
+  assert.ok(judge(mutate((m) => { m.signature_info.GPSLatitude = "x"; })).some((p) => /position-like/.test(p)));
+  assert.ok(judge(mutate((m) => { m.title = "GPS position of the shot"; })).some((p) => /position-like/.test(p)));
+  assert.ok(judge(mutate((m) => { m.title = "longitude 35"; })).some((p) => /position-like/.test(p)));
+  assert.deepEqual(readableParts({ a: ["x y", "A".repeat(40)], k: 1 }), ["a", "x y", "k"]);
 });

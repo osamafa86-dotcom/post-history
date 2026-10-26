@@ -23,7 +23,7 @@
     "contract:coverage": "node scripts/contract-coverage.js"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "3.1152.0",
+    "@aws-sdk/client-s3": "3.1156.0",
     "@nestjs/common": "11.2.7",
     "@nestjs/core": "11.2.7",
     "@nestjs/jwt": "11.0.2",
@@ -54,5 +54,8 @@
     "supertest": "7.3.1",
     "ts-jest": "29.4.15",
     "typescript": "5.9.3"
+  },
+  "overrides": {
+    "multer": "2.5.0"
   }
 }
