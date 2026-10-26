@@ -43,7 +43,7 @@ export const LABELS = {
   addToCart: /^(أضف إلى السلة|Add to cart)$/,
   goToCart: /^(في السلة، انتقل إليها|In your cart; go to it)$/,
   placeOrder: /^(إنشاء الطلب|Create order)$/,
-  paySandbox: /^(الدفع لدى المزوّد التجريبي|Pay at the sandbox provider)$/,
+  paySandbox: /^(الدفع لدى المزوّد( التجريبي)?|Pay at the (sandbox )?provider)$/,
   orderPaid: /^(مدفوع|Paid)$/,
   orderPending: /^(بانتظار الدفع|Awaiting payment)$/,
   licenseActive: /^(ساري|Active)$/,
