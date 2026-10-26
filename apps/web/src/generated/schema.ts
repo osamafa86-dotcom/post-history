@@ -2630,7 +2630,7 @@ export interface components {
             /** Format: email */
             first_admin_email: string;
         };
-        BuyerOrganization: components["schemas"]["BuyerOrganizationFields"] & {
+        BuyerOrganizationState: {
             /** Format: uuid */
             id: string;
             active_members: number;
@@ -2643,6 +2643,18 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        BuyerOrganization: components["schemas"]["BuyerOrganizationFields"] & components["schemas"]["BuyerOrganizationState"];
+        /** @description رد الإنشاء وحده؛ يحمل رمز دعوة المدير الأول في الرد الأول، ولا يُعاد عند التكرار */
+        BuyerOrganizationCreated: components["schemas"]["BuyerOrganizationFields"] & components["schemas"]["BuyerOrganizationState"] & components["schemas"]["BuyerInviteToken"];
+        BuyerInviteToken: {
+            /** @description رمز تعيين كلمة المرور للمدعو، كرمز الاستعادة (`RecoveryApproval.reset_token`): يُعاد مرة واحدة في رد الإنشاء الأول، ولا يُعاد عند التكرار بمفتاح منع التكرار، ولا يُسجَّل ولا يُخزَّن إلا ببصمته. يسلّمه المنشئ للمدعو خارج النظام. العميل يعرضه مرة ولا يحفظه ولا يضعه في الحافظة. */
+            invite_token?: string;
+            /**
+             * Format: date-time
+             * @description ≤ 24 ساعة من الإنشاء
+             */
+            invite_token_expires_at?: string;
         };
         BuyerOrganizationPage: {
             items: components["schemas"]["BuyerOrganization"][];
@@ -2672,6 +2684,8 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        /** @description رد الدعوة وحده؛ يحمل رمز الدعوة في الرد الأول، ولا يُعاد عند التكرار */
+        BuyerMemberCreated: components["schemas"]["BuyerMember"] & components["schemas"]["BuyerInviteToken"];
         OutboxEvent: components["schemas"]["outbox-event"];
         EventPage: {
             items: components["schemas"]["outbox-event"][];
@@ -5283,14 +5297,14 @@ export interface operations {
             };
         };
         responses: {
-            /** @description المؤسسة */
+            /** @description المؤسسة، ومعها رمز دعوة مديرها الأول في الرد الأول وحده */
             201: {
                 headers: {
                     ETag: components["headers"]["ETag"];
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BuyerOrganization"];
+                    "application/json": components["schemas"]["BuyerOrganizationCreated"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -5411,13 +5425,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description العضو */
+            /** @description العضو، ومعه رمز الدعوة في الرد الأول وحده */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BuyerMember"];
+                    "application/json": components["schemas"]["BuyerMemberCreated"];
                 };
             };
             401: components["responses"]["Unauthorized"];
