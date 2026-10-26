@@ -97,6 +97,31 @@ function seedLicenses() {
   issued.set("93000000-0000-4000-8000-000000000001", { ...base, id: "93000000-0000-4000-8000-000000000001", order_item_id: randomUUID(), license_number: "PH-2026-7K3M9Q2XRT", title: { ar: "لقطات اصطناعية 1", en: "Synthetic footage 1" }, status: "active", revoked_reason: null, delivery_ready: true, downloads: 3 });
   issued.set("93000000-0000-4000-8000-000000000002", { ...base, id: "93000000-0000-4000-8000-000000000002", order_item_id: randomUUID(), license_number: "PH-2026-4HJ8NP0WVZ", title: { ar: "لقطات اصطناعية 2", en: "Synthetic footage 2" }, status: "revoked", revoked_reason: "refunded", delivery_ready: true, downloads: 3 });
 }
+const conflicts: (Record<string, unknown> & { id: string; state: string })[] = [];
+function seedConflicts() {
+  conflicts.length = 0;
+  const base = { organization_id: "90000000-0000-4000-8000-000000000001", invited_by: me.user_id, invite_expires_at: "2026-11-02T10:00:00Z", resolved_at: null, resolved_by: null, internal_note: "never-display-canary" };
+  conflicts.push({ ...base, id: "96000000-0000-4000-8000-000000000001", email: "existing.reporter@example.test", existing_user_id: randomUUID(), role: "buyer_member", state: "pending", created_at: "2026-10-26T09:00:00Z" });
+  conflicts.push({ ...base, id: "96000000-0000-4000-8000-000000000002", email: "existing.staff@example.test", existing_user_id: randomUUID(), role: "buyer_admin", state: "suspended", created_at: "2026-10-25T09:00:00Z" });
+}
+// الأرباح والصرف التجريبي: محفظة المراسل الاصطناعي بالدولار، وطلبات مساهم آخر كي تعتمدها المالية دون اعتماد ذاتي.
+const otherContributor = "10000000-0000-4000-8000-000000000009";
+const wallet = { pending: 0, available: 0, in_payout: 0, paid: 0 }, payouts: (Record<string, unknown> & { id: string; user_id: string; state: string; amount: { amount_minor: number; currency: string }; approvals: { approver_id: string; approved_at: string }[]; approvals_required: number })[] = [], ledger: Record<string, unknown>[] = [], policies: Record<string, unknown>[] = [];
+function seedEarnings() {
+  Object.assign(wallet, { pending: 5000, available: 30000, in_payout: 0, paid: 10000 }); payouts.length = 0; ledger.length = 0; policies.length = 0;
+  const line = (n: number, kind: string, state: string, amount: number, at: string) => ({ id: String(n), entry_id: randomUUID(), kind, state, amount: { amount_minor: amount, currency: "USD" }, reference_type: kind === "payout" ? "payout_request" : "order", reference_id: randomUUID(), occurred_at: at, buyer_name: "never-display-canary" });
+  ledger.push(line(3, "sale", "pending", 5000, "2026-10-25T10:00:00Z"), line(2, "sale", "available", 30000, "2026-10-01T10:00:00Z"), line(1, "payout", "paid", -10000, "2026-09-20T10:00:00Z"));
+  const at = "2026-10-24T10:00:00Z", base = { channel: "sandbox", reason_code: null, decided_at: null, completed_at: null, requested_at: at };
+  payouts.push({ ...base, id: "97000000-0000-4000-8000-000000000001", user_id: otherContributor, amount: { amount_minor: 150000, currency: "USD" }, state: "requested", approvals_required: 2, approvals: [] });
+  payouts.push({ ...base, id: "97000000-0000-4000-8000-000000000002", user_id: otherContributor, amount: { amount_minor: 8000, currency: "USD" }, state: "requested", approvals_required: 1, approvals: [], requested_at: "2026-10-23T10:00:00Z" });
+  const policy = (id: string, currency: string, min: number, dual: number, bps: number, from: string) => ({ id, currency, minimum: { amount_minor: min, currency }, dual_approval_above: { amount_minor: dual, currency }, reserve_bps: bps, effective_from: from, created_by: me.user_id, created_at: from });
+  policies.push(policy("98000000-0000-4000-8000-000000000002", "USD", 5000, 100000, 1000, "2026-06-01T00:00:00Z"), policy("98000000-0000-4000-8000-000000000001", "USD", 10000, 100000, 2000, "2026-01-01T00:00:00Z"), policy("98000000-0000-4000-8000-000000000003", "ILS", 20000, 400000, 1000, "2026-06-01T00:00:00Z"));
+}
+function summary(user: string) {
+  const usd = (n: number) => ({ amount_minor: n, currency: "USD" }), reserve = Math.round(wallet.available * 0.1);
+  const balances = user === me.user_id ? [{ currency: "USD", pending: usd(wallet.pending), available: usd(wallet.available), in_payout: usd(wallet.in_payout), paid: usd(wallet.paid), reserve: usd(reserve), requestable: usd(wallet.available - reserve), minimum: usd(5000) }] : [];
+  return { user_id: user, balances, as_of: new Date().toISOString(), internal_note: "never-display-canary" };
+}
 const commissionRules: (Record<string, unknown> & { id: string; scope: string; scope_id: string | null; license_type: string | null; effective_from: string })[] = [];
 function seedCommission() {
   commissionRules.length = 0;
@@ -125,7 +150,7 @@ function seedTemplates() {
   templates.set("81000000-0000-4000-8000-000000000001", [{ ...base, id: "81000000-0000-4000-8000-000000000001", version: 1, type: "editorial_single", name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" }, terms: { ar: "شروط الاستخدام الواحد", en: "Single use terms" }, base_price: { amount_minor: 15000, currency: "USD" }, enabled: true, internal_note: "never-display-canary" }]);
   templates.set("81000000-0000-4000-8000-000000000002", [{ ...base, id: "81000000-0000-4000-8000-000000000002", version: 3, type: "editorial_term", term_days: 365, name: { ar: "تحريري سنوي قديم", en: "Old annual editorial" }, terms: { ar: "شروط", en: "Terms" }, base_price: { amount_minor: 40000, currency: "ILS" }, enabled: false }]);
 }
-reset(); seedTemplates(); seedOrganizations(); seedLicenses(); seedCommission(); seedOrders();
+reset(); seedTemplates(); seedOrganizations(); seedLicenses(); seedCommission(); seedOrders(); seedConflicts(); seedEarnings();
 const signed = new Map<string, { kind: "proxy" | "thumbnail"; expires: number }>();
 let expireNextProxy = false;
 const access = new Map<string, Me>(), refresh = new Map<string, Me>();
@@ -148,7 +173,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname.startsWith("/files/")) { res.removeHeader("Content-Type"); return tus(req, res, url); }
   if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
   if (url.pathname === "/__test/uploads") return send([...uploads.values()].map(u => ({ state: u.session.state, receipt: u.session.receipt_number, ingest_tokens: [...ingestTokens.values()].filter(t => t.sid === u.session.id).length, ...(u.tus ? (({ length, offset, patches, resent, cuts }) => ({ length, offset, patches, resent, cuts }))(tusFiles.get(u.tus) ?? { length: 0, offset: 0, patches: 0, resent: 0, cuts: 0 }) : {}) })));
-  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); seedOrders(); seedLicenses(); seedTemplates(); seedOrganizations(); seedCommission(); reset(); resetUploads(); return send({ ok: true }); }
+  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); seedOrders(); seedLicenses(); seedTemplates(); seedOrganizations(); seedCommission(); seedConflicts(); seedEarnings(); reset(); resetUploads(); return send({ ok: true }); }
   const sandbox = /^\/sandbox\/(checkout|pay)\/([^/]+)$/.exec(url.pathname);
   if (sandbox) {
     const order = orders.get(sandbox[2]); if (!order) return send({}, 404);
@@ -376,6 +401,45 @@ const server = createServer(async (req, res) => {
       if (target.role === "buyer_admin" && (body.role !== "buyer_admin" || body.status === "suspended") && list.filter(m => m.role === "buyer_admin" && m.status === "active").length === 1) return send({ code: "last_buyer_admin" }, 409);
       Object.assign(target, { role: body.role, status: body.status }); return commit(target, 200);
     }
+    const resolve = /^\/v1\/buyer-invite-conflicts\/([^/]+)\/resolve$/.exec(path);
+    if (resolve) {
+      if (!has("system_admin")) return send({ code: "forbidden_role" }, 403);
+      const found = conflicts.find(c => c.id === resolve[1]); if (!found) return send({}, 404);
+      if (body.totp_code !== "123456") return send({ code: "totp_required" }, 401);
+      if (!(found.state === "pending" || found.state === "suspended" && body.state === "dismissed")) return send({ code: "invalid_transition" }, 409);
+      Object.assign(found, { state: body.state, resolved_at: new Date().toISOString(), resolved_by: user.user_id }); return commit(found, 200);
+    }
+    if (path === "/v1/me/payout-requests") {
+      if (!has("reporter")) return send({}, 403);
+      const amount = (body.amount as { amount_minor: number }).amount_minor, requestable = wallet.available - Math.round(wallet.available * 0.1);
+      if (amount < 5000) return send({ code: "payout_below_minimum" }, 422);
+      if (amount > requestable) return send({ code: "insufficient_available" }, 422);
+      wallet.available -= amount; wallet.in_payout += amount;
+      const created = { id: randomUUID(), user_id: user.user_id, amount: { amount_minor: amount, currency: "USD" }, channel: "sandbox", state: "requested", reason_code: null, approvals_required: amount > 100000 ? 2 : 1, approvals: [] as { approver_id: string; approved_at: string }[], requested_at: new Date().toISOString(), decided_at: null, completed_at: null };
+      payouts.unshift(created); return commit(created, 201);
+    }
+    const payoutAction = /^\/v1\/payout-requests\/([^/]+)\/(approve|reject|cancel)$/.exec(path);
+    if (payoutAction) {
+      const found = payouts.find(p => p.id === payoutAction[1]); if (!found) return send({}, 404);
+      const mine = found.user_id === user.user_id, amount = found.amount.amount_minor, back = () => { if (found.user_id === me.user_id) { wallet.available += amount; wallet.in_payout -= amount; } };
+      if (payoutAction[2] === "cancel") { if (!has("reporter") || !mine) return send({}, 404); if (found.state !== "requested") return send({ code: "payout_state_conflict" }, 409); back(); Object.assign(found, { state: "cancelled", decided_at: new Date().toISOString() }); return commit(found, 200); }
+      if (!has("system_admin", "finance")) return send({}, 403);
+      if (payoutAction[2] === "reject") { if (!["requested", "approved"].includes(found.state)) return send({ code: "payout_state_conflict" }, 409); back(); Object.assign(found, { state: "rejected", reason_code: body.reason_code, decided_at: new Date().toISOString() }); return commit(found, 200); }
+      if (found.state !== "requested") return send({ code: "payout_state_conflict" }, 409);
+      if (mine) return send({ code: "self_approval_forbidden" }, 409);
+      if (found.approvals.some(a => a.approver_id === user.user_id)) return send({ code: "already_approved" }, 409);
+      found.approvals.push({ approver_id: user.user_id, approved_at: new Date().toISOString() });
+      if (found.approvals.length >= found.approvals_required) {
+        Object.assign(found, { state: "approved", decided_at: new Date().toISOString() });
+        setTimeout(() => { if (found.state === "approved") { Object.assign(found, { state: "paid", completed_at: new Date().toISOString() }); if (found.user_id === me.user_id) { wallet.in_payout -= amount; wallet.paid += amount; } } }, 1000);
+      }
+      return commit(found, 200);
+    }
+    if (path === "/v1/payout-policies") {
+      if (!has("system_admin")) return send({}, 403);
+      if (policies.some(p => p.currency === body.currency && p.effective_from === body.effective_from)) return send({ code: "payout_policy_exists" }, 409);
+      const created = { ...body, id: randomUUID(), created_by: user.user_id, created_at: new Date().toISOString() }; policies.unshift(created); return commit(created, 201);
+    }
     if (path === "/v1/commission-rules") {
       if (!has("system_admin")) return send({}, 403);
       if (commissionRules.some(r => r.scope === body.scope && r.scope_id === body.scope_id && r.license_type === body.license_type && r.effective_from === body.effective_from)) return send({ code: "commission_rule_exists" }, 409);
@@ -459,6 +523,26 @@ const server = createServer(async (req, res) => {
     if (isMembers) { if (!roles("system_admin", "buyer_admin")) return send({}, 403); return send({ items: members.get(id)!.map(m => ({ ...m, password_hash: "never-display-canary" })) }); }
     if (!roles("system_admin", "finance", "buyer_admin", "buyer_member")) return send({}, 403);
     res.setHeader("ETag", `"${found.row}"`); return send({ ...view(found), internal_note: "never-display-canary" });
+  }
+  if (url.pathname === "/v1/buyer-invite-conflicts") {
+    if (!user.roles.some(role => role.name === "system_admin")) return send({ code: "forbidden_role" }, 403);
+    const state = url.searchParams.get("state");
+    return send({ items: conflicts.filter(c => !state || c.state === state).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))), next_cursor: null });
+  }
+  if (url.pathname === "/v1/me/earnings" || url.pathname === "/v1/me/earnings/entries" || url.pathname === "/v1/me/payout-requests") {
+    if (!user.roles.some(role => role.name === "reporter")) return send({}, 403);
+    if (url.pathname === "/v1/me/earnings") return send(summary(user.user_id));
+    if (url.pathname === "/v1/me/payout-requests") return send({ items: payouts.filter(p => p.user_id === user.user_id).map(p => ({ ...p, approvals: p.approvals.map(a => ({ approved_at: a.approved_at })) })), next_cursor: null });
+    const state = url.searchParams.get("state"), currency = url.searchParams.get("currency");
+    return send({ items: ledger.filter(l => (!state || l.state === state) && (!currency || (l.amount as { currency: string }).currency === currency)), next_cursor: null });
+  }
+  const userEarnings = /^\/v1\/users\/([^/]+)\/earnings$/.exec(url.pathname);
+  if (userEarnings || url.pathname === "/v1/payout-requests" || url.pathname === "/v1/payout-policies") {
+    if (!user.roles.some(role => ["system_admin", "finance"].includes(role.name))) return send({}, 403);
+    if (userEarnings) return send(summary(userEarnings[1]));
+    if (url.pathname === "/v1/payout-policies") return send({ items: [...policies].sort((a, b) => Date.parse(String(b.effective_from)) - Date.parse(String(a.effective_from))) });
+    const state = url.searchParams.get("state");
+    return send({ items: payouts.filter(p => !state || p.state === state).sort((a, b) => String(a.requested_at).localeCompare(String(b.requested_at))).map(p => ({ ...p, provider_reference: "never-display-canary" })), next_cursor: null });
   }
   if (url.pathname === "/v1/commission-rules") {
     if (!user.roles.some(role => ["system_admin", "finance"].includes(role.name))) return send({}, 403);
