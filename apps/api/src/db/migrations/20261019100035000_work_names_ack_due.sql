@@ -7,7 +7,7 @@ ALTER TABLE users ADD CONSTRAINT users_work_name_format CHECK (
   work_name IS NULL OR (
     char_length(work_name) BETWEEN 1 AND 80 AND
     work_name = btrim(work_name) AND
-    work_name !~ '[[:cntrl:]]'));
+    work_name !~ '[\x01-\x1f\x7f]'));
 ALTER TABLE users ADD CONSTRAINT users_work_name_staff_only CHECK (work_name IS NULL OR organization_id IS NULL);
 
 -- موعد الإقرار لكل مادة (Material.acknowledgement_due_at): أقرب escalate_at لمهمة غير مُقرّة عن المادة، لقوائم المواد
