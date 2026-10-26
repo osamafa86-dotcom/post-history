@@ -15,9 +15,6 @@ env:
   # Core-gate acceptance (reservation-conflict, optimistic-concurrency, admin-quorum, notification-delivery, download-url) against the
   # server work of #69 and #75, now on main. "0" turns the five back into PENDING (they print it and write nothing).
   CORE_ACCEPTANCE: "1"
-  # Local transcription worker (workers/ai, ADR 0020): transcript-draft runs in media e2e with the ai profile, the worker on the production
-  # model (faster-whisper large-v3-turbo) with AI_ENABLE_TRANSCRIPT=true. "0" leaves the ai profile out and skips the step.
-  AI_ENABLE_TRANSCRIPT: "1"
   # Admin notification rules and real escalation (contract v0.2, #98): notification-delivery creates rules, waits one escalation step (60 s, the
   # contract minimum) and deletes them. On since #98 is on main.
   RULES_ACCEPTANCE: "1"
@@ -186,6 +183,9 @@ jobs:
     timeout-minutes: 40  # the ai profile fetches the production weights (1.6 GB) and transcribes six clips
     needs: changes
     if: needs.changes.outputs.media_e2e == 'true'
+    permissions:
+      contents: read
+      actions: read  # the step timings read this run's own job steps
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -196,35 +196,9 @@ jobs:
           (cd tools/acceptance && npm ci --no-audit --no-fund)
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
       - name: Compose environment with random secrets and the external verifier
-        run: |
-          cp infra/compose/.env.example infra/compose/.env
-          sed -i -e "s/^TUSD_HOOK_SECRET=.*/TUSD_HOOK_SECRET=$(openssl rand -hex 32)/" \
-                 -e "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" \
-                 -e "s|^FIELD_ENCRYPTION_KEY=.*|FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)|" \
-                 -e "s/^MEDIA_WORKER_TOKEN=.*/MEDIA_WORKER_TOKEN=$(openssl rand -hex 32)/" \
-                 -e "s/^UPLOAD_VERIFIER=.*/UPLOAD_VERIFIER=external/" \
-                 -e "s|^S3_PUBLIC_ENDPOINT=.*|S3_PUBLIC_ENDPOINT=http://127.0.0.1:9000|" \
-                 -e "s/^AI_WORKER_TOKEN=.*/AI_WORKER_TOKEN=$(openssl rand -hex 32)/" \
-                 -e "s/^S3_AI_ACCESS_KEY=.*/S3_AI_ACCESS_KEY=ai-worker-ci/" \
-                 -e "s/^S3_AI_SECRET_KEY=.*/S3_AI_SECRET_KEY=$(openssl rand -hex 16)/" \
-                 -e "s/^S3_MEDIA_ACCESS_KEY=.*/S3_MEDIA_ACCESS_KEY=media-worker-ci/" \
-                 -e "s/^S3_MEDIA_SECRET_KEY=.*/S3_MEDIA_SECRET_KEY=$(openssl rand -hex 16)/" \
-                 -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" \
-                 -e "s/^REDIS_PASSWORD=.*/REDIS_PASSWORD=$(openssl rand -hex 16)/" \
-                 -e "s/^S3_SECRET_KEY=.*/S3_SECRET_KEY=$(openssl rand -hex 16)/" infra/compose/.env
-      - name: Start the stack (API from source, tusd, MinIO, Redis, Postgres, media worker)
-        run: |
-          profiles="--profile api --profile media"
-          # The worker reads "true" from .env (workers/ai Config); the workflow switch is "1".
-          if [ "$AI_ENABLE_TRANSCRIPT" = 1 ]; then
-            profiles="$profiles --profile ai"; sed -i "s/^AI_ENABLE_TRANSCRIPT=.*/AI_ENABLE_TRANSCRIPT=true/" infra/compose/.env
-            # Every CPU the runner has for the worker (the media worker is done before each transcription starts). Docker
-            # refuses more than the host has; this repository's hosted runner has two, on which large-v3-turbo ran at
-            # 1.8-2.2x real time (#116).
-            sed -i "s/^AI_WORKER_CPUS=.*/AI_WORKER_CPUS=$(nproc)/" infra/compose/.env
-          fi
-          unset AI_ENABLE_TRANSCRIPT  # compose prefers the shell to .env: let .env decide
-          docker compose -f infra/compose/docker-compose.yml $profiles up -d --wait --build
+        run: .github/scripts/ci-compose-env.sh
+      - name: Start the stack (API from source, tusd, MinIO, Redis, Postgres, media worker; the ai worker runs in the ai-e2e job)
+        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media up -d --wait --build
       - name: Media pipeline end to end (results are printed and kept as an artifact; nothing is written to docs/measurements)
         run: |
           set -a; . infra/compose/.env; set +a
@@ -270,19 +244,6 @@ jobs:
           export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
           export DL_TOKENS="$(node -e "import('./live/seed.mjs').then(async (m) => { const s = await m.seed({ databaseUrl: process.env.DATABASE_URL, apiUrl: process.env.DL_API_URL }); console.log(JSON.stringify({ reporter: s.allTokens.reporter, reporter_b: s.allTokens.reporter_b })); })")"
           ACCEPTANCE_RESULTS_DIR="$RUNNER_TEMP/out" node scripts/download-url.mjs
-      - name: transcript-draft (the local transcription worker end to end; skipped until AI_ENABLE_TRANSCRIPT is "1")
-        if: env.AI_ENABLE_TRANSCRIPT == '1'
-        working-directory: tools/acceptance
-        run: |
-          # real public Arabic speech, sha256-pinned (the 243 MB archive is downloaded and verified per run; no cache action is pinned in this repo yet); the p95 ratio is information here (shared runner), judged only with TD_TARGET_HOST on the trial host
-          export TD_SPEECH_FILE="$(node lib/speech-pin.mjs "$HOME/.cache/td-speech")"
-          set -a; . ../../infra/compose/.env; set +a
-          export TD_API_URL="http://127.0.0.1:$API_PORT/v1" TD_TUS_URL="http://127.0.0.1:$TUSD_PORT/files/"
-          export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
-          export TD_TOKENS="$(node -e "import('./live/seed.mjs').then(async (m) => { const s = await m.seed({ databaseUrl: process.env.DATABASE_URL, apiUrl: process.env.TD_API_URL }); console.log(JSON.stringify({ reporter: s.allTokens.reporter, rights_officer: s.allTokens.rights_officer })); })")"
-          export AI_ENABLE_TRANSCRIPT=1  # .env holds the worker's "true"; the script's switch is "1"
-          export TD_EGRESS_CMD="docker compose -f ../../infra/compose/docker-compose.yml --profile api --profile media --profile ai exec -T ai-worker python3 -c \"import socket; socket.create_connection(('1.1.1.1', 443), 3)\""
-          ACCEPTANCE_RESULTS_DIR="$RUNNER_TEMP/out" node scripts/transcript-draft.mjs
       - name: Remote session revocation (SEC-01; time to the first refusal on the API and on the upload path)
         run: |
           set -a; . infra/compose/.env; set +a
@@ -297,6 +258,11 @@ jobs:
           FT_ACCOUNTS="$(API_URL="http://127.0.0.1:$API_PORT/v1" node tools/acceptance/field-trial/rehearsal-accounts.mjs)"
           export FT_ACCOUNTS FT_TUS_URL="http://127.0.0.1:$TUSD_PORT/files/"
           node tools/acceptance/run.mjs --target "http://127.0.0.1:$API_PORT" --confirm --out-dir="$RUNNER_TEMP/pack"
+      - name: Step timings of this job (measurement file next to the other results)
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ACCEPTANCE_RESULTS_DIR="$RUNNER_TEMP/out" node tools/acceptance/ci/step-timings.mjs || true
       - name: Print the pack report
         if: always()
         run: '[ -f "$RUNNER_TEMP/pack/REPORT.md" ] && head -60 "$RUNNER_TEMP/pack/REPORT.md" || true'
@@ -310,6 +276,70 @@ jobs:
           path: |
             ${{ runner.temp }}/out
             ${{ runner.temp }}/pack
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media --profile ai logs --no-color --timestamps --tail 3000 api media-worker tusd ai-worker
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media --profile ai down -v
+
+  # The local transcription worker (workers/ai, ADR 0020) end to end, on the production model (faster-whisper large-v3-turbo). It was a step of
+  # media-e2e and took 7 of its 17 minutes plus the weight download in the stack build; on its own job it runs in parallel with the media
+  # checks, and a slow weight fetch no longer cancels them. The p95 ratio is information here (shared runner), judged only with TD_TARGET_HOST.
+  ai-e2e:
+    name: "ai e2e (transcription worker on the production model, end to end)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60  # a healthy run is about 14 minutes; the weights (1.6 GB) and the speech archive (243 MB) download here
+    needs: changes
+    if: needs.changes.outputs.media_e2e == 'true'
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Install the acceptance tools and FFmpeg
+        run: |
+          (cd tools/acceptance && npm ci --no-audit --no-fund)
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: Compose environment with random secrets and the external verifier
+        run: .github/scripts/ci-compose-env.sh
+      - name: Start the stack with the ai profile (API from source, tusd, MinIO, Redis, Postgres, media and ai workers)
+        run: |
+          sed -i "s/^AI_ENABLE_TRANSCRIPT=.*/AI_ENABLE_TRANSCRIPT=true/" infra/compose/.env
+          # Every CPU the runner has for the worker (the media worker is done before each transcription starts). Docker refuses more than
+          # the host has; this repository's hosted runner has two, on which large-v3-turbo ran at 1.8-2.2x real time (#116).
+          sed -i "s/^AI_WORKER_CPUS=.*/AI_WORKER_CPUS=$(nproc)/" infra/compose/.env
+          docker compose -f infra/compose/docker-compose.yml --profile api --profile media --profile ai up -d --wait --build
+      - name: transcript-draft (the local transcription worker end to end)
+        working-directory: tools/acceptance
+        run: |
+          # real public Arabic speech, sha256-pinned (the 243 MB archive is downloaded and verified per run; no cache action is pinned in this repo yet); the p95 ratio is information here (shared runner), judged only with TD_TARGET_HOST on the trial host
+          export TD_SPEECH_FILE="$(node lib/speech-pin.mjs "$HOME/.cache/td-speech")"
+          set -a; . ../../infra/compose/.env; set +a
+          export TD_API_URL="http://127.0.0.1:$API_PORT/v1" TD_TUS_URL="http://127.0.0.1:$TUSD_PORT/files/"
+          export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
+          export TD_TOKENS="$(node -e "import('./live/seed.mjs').then(async (m) => { const s = await m.seed({ databaseUrl: process.env.DATABASE_URL, apiUrl: process.env.TD_API_URL }); console.log(JSON.stringify({ reporter: s.allTokens.reporter, rights_officer: s.allTokens.rights_officer })); })")"
+          export AI_ENABLE_TRANSCRIPT=1  # .env holds the worker's "true"; the script's switch is "1"
+          export TD_EGRESS_CMD="docker compose -f ../../infra/compose/docker-compose.yml --profile api --profile media --profile ai exec -T ai-worker python3 -c \"import socket; socket.create_connection(('1.1.1.1', 443), 3)\""
+          ACCEPTANCE_RESULTS_DIR="$RUNNER_TEMP/out" node scripts/transcript-draft.mjs
+      - name: Step timings of this job (measurement file next to the result)
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ACCEPTANCE_RESULTS_DIR="$RUNNER_TEMP/out" node tools/acceptance/ci/step-timings.mjs || true
+      - name: Print the result files
+        if: always()
+        run: for f in "$RUNNER_TEMP"/out/*.json; do [ -f "$f" ] && { echo "== $(basename "$f")"; cat "$f"; }; done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: ai-e2e-results
+          path: ${{ runner.temp }}/out
           if-no-files-found: ignore
           retention-days: 14
       - name: Stack logs on failure
