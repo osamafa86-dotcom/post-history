@@ -85,7 +85,7 @@ open class TusTransport(
         onSent: (Long) -> Unit = {},
         headers: () -> Map<String, String> = NO_HEADERS,
     ): Long {
-        val stream = openStream()
+        val stream = FullSkipInputStream(openStream())
         val upload = TusUpload().apply { size = sizeBytes; inputStream = stream }
         val uploader = try { client(token, headers).beginOrResumeUploadFromURL(upload, URL(uploadUrl)) } catch (e: Throwable) { runCatching { stream.close() }; if (e is Exception) observer.onFailure("head", e); throw e }
         uploader.setChunkSize(chunkBytes)

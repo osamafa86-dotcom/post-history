@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "admin-quorum",
+  "started_at": "2026-10-26T12:37:41.696Z",
+  "ended_at": "2026-10-26T12:37:43.189Z",
+  "result": "pass",
+  "metrics": {
+    "api_admin_target_refused": true,
+    "api_self_refused": true,
+    "ordinary_user_suspended": true,
+    "cli_checked": true,
+    "guard_reported_as_quorum": true
+  },
+  "device": {
+    "platform": "server"
+  },
+  "upload_path": "n/a",
+  "notes": "الواجهة وسطر الأوامر ثنائي الأشخاص والحارس"
+}

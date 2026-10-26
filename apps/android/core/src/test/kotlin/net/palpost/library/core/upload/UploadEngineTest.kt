@@ -88,6 +88,31 @@ class UploadEngineTest {
         assertEquals(UploadState.VERIFIED, store.get("t1")!!.state)
     }
 
+    @Test fun `a provider whose skip falls short still resumes with the right bytes`() = runBlocking {
+        queue()
+        fake.cutAtPatch.add(2)
+        fake.sessionState = "verified"; fake.receipt = "R-202610-000002"
+        // Some content providers skip fewer bytes than asked (ADR 0061); tus-java-client seeks with one skip().
+        val stingy = FileSource { uri -> object : java.io.FilterInputStream(FileInputStream(File(uri))) { override fun skip(n: Long) = super.skip(minOf(n, 1000L)) } }
+        val e = UploadEngine(store, stingy, UploadsApi(server.url("/v1").toString().trimEnd('/')), TusTransport(), { now }, { ms -> sleeps.add(ms); now += ms }, testConfig)
+        assertEquals(RunOutcome.Finished, e.run("t1"))
+        assertTrue("resumed after the cut", fake.heads.get() >= 2)
+        assertEquals(fileSha, serverBytesSha())
+    }
+
+    @Test fun `skipFully goes the whole way or to the end`() {
+        val bytes = ByteArray(10_000) { it.toByte() }
+        val stingy = object : java.io.FilterInputStream(java.io.ByteArrayInputStream(bytes)) { override fun skip(n: Long) = super.skip(minOf(n, 7L)) }
+        val s = FullSkipInputStream(stingy)
+        assertEquals(4_321L, s.skip(4_321))
+        assertEquals((4_321 and 0xff).toByte().toInt() and 0xff, s.read())
+        assertEquals(10_000L - 4_322, s.skip(1_000_000))
+        assertEquals(-1, s.read())
+        val zero = object : java.io.InputStream() { var p = 0; override fun read() = if (p < 50) p++ else -1; override fun skip(n: Long) = 0L }
+        assertEquals(20L, FullSkipInputStream.skipFully(zero, 20))
+        assertEquals(20, zero.read())
+    }
+
     @Test fun `a link that cuts every request still moves because the server's partial bytes count and the wait stays short`() = runBlocking {
         // field-weak in netlab: no PATCH ends normally for a long stretch, yet HEAD shows the server keeping the
         // first half of each one. The engine must credit that as progress (persisted, backoff from the shortest)

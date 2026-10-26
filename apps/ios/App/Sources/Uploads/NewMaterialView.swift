@@ -1,4 +1,6 @@
+import AVFoundation
 import FormEngine
+import MediaCore
 import PhotosUI
 import PostHistoryAPI
 import SwiftUI
@@ -26,6 +28,11 @@ struct NewMaterialView: View {
     @State private var errors: [FieldError] = []
     @State private var submitError: LocalizedStringKey?
     @State private var busy = false
+    /// النسخة الخفيفة للفيديو (ADR 0075): مقترحة من حالة الجهاز، والمراسل يغيّرها.
+    @State private var isVideo = false
+    @State private var durationSeconds: Double = 0
+    @State private var lightCopy: ProxyChoice = .originalOnly
+    @State private var lightCopyChosenByReporter = false
 
     var body: some View {
         NavigationStack {
@@ -36,6 +43,13 @@ struct NewMaterialView: View {
                     }
                     Button { showFileImporter = true } label: { Label("material.file.fromFiles", systemImage: "folder") }
                     if let picked { Text(picked.filename).font(.caption).foregroundStyle(.secondary) }
+                }
+                if isVideo {
+                    Section {
+                        Picker("material.lightCopy", selection: Binding(get: { lightCopy }, set: { lightCopy = $0; lightCopyChosenByReporter = true })) {
+                            ForEach(ProxyChoice.allCases, id: \.self) { Text(LocalizedStringKey("material.lightCopy." + $0.rawValue)).tag($0) }
+                        }
+                    } footer: { Text("material.lightCopy.hint") }
                 }
                 Section("material.fixed") {
                     TextField("material.title", text: $title)
@@ -74,6 +88,7 @@ struct NewMaterialView: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("material.cancel") { dismiss() } } }
             .task(id: materialType) { await loadForm() }
             .onChange(of: pickerItem) { _, item in Task { await importPicked(item) } }
+            .onChange(of: priority) { _, _ in Task { await suggestLightCopy() } }
             .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.movie, .image, .audio], allowsMultipleSelection: false) { result in
                 guard case .success(let urls) = result, let url = urls.first else { return }
                 let scoped = url.startAccessingSecurityScopedResource()
@@ -105,10 +120,26 @@ struct NewMaterialView: View {
     private func importFile(_ url: URL) {
         do {
             let (path, size) = try UploadServices.shared.importFile(from: url, preferredName: url.lastPathComponent)
-            picked = (path, url.lastPathComponent, size, UTType(filenameExtension: url.pathExtension)?.preferredMIMEType)
+            let type = UTType(filenameExtension: url.pathExtension)
+            picked = (path, url.lastPathComponent, size, type?.preferredMIMEType)
+            isVideo = type?.conforms(to: .movie) ?? false
+            lightCopyChosenByReporter = false
+            Task { await inspectVideo(relativePath: path) }
         } catch {
             submitError = "material.error.import"
         }
+    }
+
+    private func inspectVideo(relativePath: String) async {
+        guard isVideo else { lightCopy = .originalOnly; return }
+        let asset = AVURLAsset(url: UploadServices.shared.documentsDirectory.appendingPathComponent(relativePath))
+        durationSeconds = (try? await asset.load(.duration)).map(CMTimeGetSeconds) ?? 0
+        await suggestLightCopy()
+    }
+
+    private func suggestLightCopy() async {
+        guard isVideo, !lightCopyChosenByReporter else { return }
+        lightCopy = ProxyPolicy.suggest(await DeviceConditions.context(isVideo: true, durationSeconds: durationSeconds, priority: priority))
     }
 
     private func submit() async {
@@ -125,7 +156,8 @@ struct NewMaterialView: View {
                                       displayName: DisplayName(mode: displayMode, pseudonym: displayMode == .pseudonym ? pseudonym : nil),
                                       formVersion: form.version, dynamicFields: dynamic)
             let material = try await MaterialsAPI.createMaterial(idempotencyKey: "material-create-\(UUID().uuidString.lowercased())", materialCreate: body, apiConfiguration: app.api)
-            try await queue.enqueue(relativePath: picked.relativePath, materialId: material.id, filename: picked.filename, mimeType: picked.mime)
+            try await queue.enqueue(relativePath: picked.relativePath, materialId: material.id, filename: picked.filename, mimeType: picked.mime,
+                                    lightCopy: isVideo ? lightCopy : .originalOnly)
             dismiss()
         } catch {
             submitError = "material.error.create"
