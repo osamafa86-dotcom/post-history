@@ -6,9 +6,16 @@ import { fileURLToPath } from "node:url";
 
 const METHODS = new Set(["get", "post", "put", "patch", "delete", "options", "head", "trace"]);
 const DECORATOR = /@(Controller|Get|Post|Put|Patch|Delete)\s*\(\s*(?:'((?:\\'|[^'])*)'|"((?:\\"|[^"])*)")?\s*\)/g;
+const CONTROLLER_ANY = /@Controller\s*\(/g;
+// الصيغة المدعومة من @Controller: بلا وسيط أو بنص حرفي واحد؛ ما عداها يُنبَّه عنه ولا يُحلَّل بصمت.
+const CONTROLLER_LITERAL = /^@Controller\s*\(\s*(?:'(?:\\'|[^'])*'|"(?:\\"|[^"])*")?\s*\)/;
 
 function unquote(value = "") {
   return value.replace(/\\(['"])/g, "$1");
+}
+
+function lineOf(source, index) {
+  return source.slice(0, index).split("\n").length;
 }
 
 /** يوحّد أسماء المعاملات والشرطات الأخيرة؛ /v1 بادئة تشغيل وليست جزءًا من مفاتيح paths في العقد. */
@@ -68,10 +75,25 @@ export function controllerRoutes(source, file = "<memory>") {
       method: decorator.toLowerCase(),
       path: normalizePath(`${prefix}/${path}`),
       file,
-      line: source.slice(0, match.index).split("\n").length,
+      line: lineOf(source, match.index),
     });
   }
   return routes;
+}
+
+/**
+ * حارس الاكتشاف: كل @Controller وسيطه ليس نصًا حرفيًا (الصيغة الكائنية أو متغير) لا تُحلَّل بادئته،
+ * فيُدرج هنا ليظهر في التقرير تحذيرًا بدل أن يغيب عن المقارنة بصمت.
+ */
+export function unparsedControllers(source, file = "<memory>") {
+  const unparsed = [];
+  CONTROLLER_ANY.lastIndex = 0;
+  for (let match; (match = CONTROLLER_ANY.exec(source));) {
+    if (!CONTROLLER_LITERAL.test(source.slice(match.index))) {
+      unparsed.push({ file, line: lineOf(source, match.index) });
+    }
+  }
+  return unparsed;
 }
 
 export function routeKey(route) {
@@ -87,13 +109,20 @@ export function compareRoutes(contract, controllers) {
   return { contractOnly: contractOnly.sort(byKey), controllerOnly: controllerOnly.sort(byKey) };
 }
 
+/**
+ * يفحص كل ملفات .ts لا اللاحقة .controller.ts وحدها، فالمتحكم قد يجاور خدمته في ملف واحد (وحدات commerce/).
+ * يستثني مجلد generated/ (شفرة مولَّدة من العقد) وملفات الاختبار *.spec.ts، ويحتفظ بما فيه @Controller( فعلًا.
+ */
 function controllerFiles(root) {
   const files = [];
   function visit(dir) {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
-      if (entry.isDirectory()) visit(path);
-      else if (entry.isFile() && entry.name.endsWith(".controller.ts")) files.push(path);
+      if (entry.isDirectory()) {
+        if (entry.name !== "generated") visit(path);
+      } else if (entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".spec.ts")) {
+        if (readFileSync(path, "utf8").includes("@Controller(")) files.push(path);
+      }
     }
   }
   visit(root);
@@ -102,18 +131,27 @@ function controllerFiles(root) {
 
 export function inspect({ openapiFile, controllersDir }) {
   const contract = contractRoutes(readFileSync(openapiFile, "utf8"));
-  const controllers = controllerFiles(controllersDir).flatMap((file) =>
-    controllerRoutes(readFileSync(file, "utf8"), relative(process.cwd(), file)));
-  return { contract, controllers, ...compareRoutes(contract, controllers) };
+  const files = controllerFiles(controllersDir);
+  const controllers = [];
+  const unparsed = [];
+  for (const file of files) {
+    const source = readFileSync(file, "utf8");
+    const name = relative(process.cwd(), file);
+    controllers.push(...controllerRoutes(source, name));
+    unparsed.push(...unparsedControllers(source, name));
+  }
+  return { contract, controllers, controllerFileCount: files.length, unparsed, ...compareRoutes(contract, controllers) };
 }
 
 export function formatReport(result) {
+  const { contract, controllers, contractOnly, controllerOnly, controllerFileCount = 0, unparsed = [] } = result;
   const lines = [
-    `العقد: ${result.contract.length} عملية؛ وحدات التحكم: ${result.controllers.length} عملية.`,
-    `موجود في العقد فقط: ${result.contractOnly.length}؛ موجود في وحدات التحكم فقط: ${result.controllerOnly.length}.`,
+    `العقد: ${contract.length} عملية؛ وحدات التحكم: ${controllers.length} عملية في ${controllerFileCount} ملفًا.`,
+    `موجود في العقد فقط: ${contractOnly.length}؛ موجود في وحدات التحكم فقط: ${controllerOnly.length}؛ مزخرفات @Controller غير محلَّلة: ${unparsed.length}.`,
   ];
-  for (const route of result.contractOnly) lines.push(`CONTRACT_ONLY ${routeKey(route)}`);
-  for (const route of result.controllerOnly) lines.push(`CONTROLLER_ONLY ${routeKey(route)} (${route.file}:${route.line})`);
+  for (const route of contractOnly) lines.push(`CONTRACT_ONLY ${routeKey(route)}`);
+  for (const route of controllerOnly) lines.push(`CONTROLLER_ONLY ${routeKey(route)} (${route.file}:${route.line})`);
+  for (const item of unparsed) lines.push(`UNPARSED_CONTROLLER ${item.file}:${item.line}`);
   return lines.join("\n");
 }
 
@@ -126,10 +164,11 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
   const result = inspect({ openapiFile, controllersDir });
   console.log(formatReport(result));
   const drift = result.contractOnly.length + result.controllerOnly.length;
-  if (drift && env.GITHUB_ACTIONS === "true") {
-    console.log(`::warning::Contract drift: ${result.contractOnly.length} contract-only and ${result.controllerOnly.length} controller-only routes`);
+  if ((drift || result.unparsed.length) && env.GITHUB_ACTIONS === "true") {
+    console.log(`::warning::Contract drift: ${result.contractOnly.length} contract-only and ${result.controllerOnly.length} controller-only routes, ${result.unparsed.length} unparsed @Controller decorators`);
   }
-  return { code: drift && argv.includes("--strict") ? 1 : 0, result };
+  const failed = argv.includes("--strict") && (drift > 0 || result.unparsed.length > 0);
+  return { code: failed ? 1 : 0, result };
 }
 
 const invoked = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
