@@ -104,6 +104,10 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
     expect(refunds.refundLimits.items).toBe(at("components", "schemas", "RefundCreate", "properties", "order_item_ids", "maxItems"));
     expect(at("components", "schemas", "RefundCreate", "additionalProperties")).toBe(false);
   });
+  it("knows exactly the contract's payment providers", async () => {
+    const { checkoutProviders } = await import("../src/lib/order-policy");
+    expect([...checkoutProviders]).toEqual(at("components", "schemas", "PaymentProvider", "enum"));
+  });
   it("keeps the invite conflict queue aligned with #361", () => {
     for (const [path, method] of [["/buyer-invite-conflicts", "get"], ["/buyer-invite-conflicts/{conflict_id}/resolve", "post"]]) expect([...conflicts.conflictRoles]).toEqual(at("paths", path, method, "x-roles"));
     expect([...conflicts.conflictStates]).toEqual(at("components", "schemas", "BuyerInviteConflictState", "enum"));

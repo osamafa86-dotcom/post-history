@@ -59,7 +59,7 @@ export function OrdersPage({ locale }: { locale: Locale }) {
 /** الطلب: الدفع عند المزوّد التجريبي المستضاف، والعودة منه لا تؤكد الدفع؛ الصفحة تقرأ الطلب حتى `paid` من الإشعار الموقّع. */
 export function OrderPage({ locale, id, returned }: { locale: Locale; id: string; returned: boolean }) {
   const m = messages[locale], o = m.orders, me = useUser(), mutation = useMutation(), buyer = hasRole(me, ...orderWriters);
-  const [order, setOrder] = useState<Order | null>(null), [checkedAt, setCheckedAt] = useState(0), [status, setStatus] = useState(0), [attempt, setAttempt] = useState(0), polls = useRef(0);
+  const [redirecting, setRedirecting] = useState<"sandbox" | "stripe" | null>(null), [order, setOrder] = useState<Order | null>(null), [checkedAt, setCheckedAt] = useState(0), [status, setStatus] = useState(0), [attempt, setAttempt] = useState(0), polls = useRef(0);
   useEffect(() => {
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
     async function load() {
@@ -74,9 +74,10 @@ export function OrderPage({ locale, id, returned }: { locale: Locale; id: string
     void load(); return () => { controller.abort(); clearTimeout(timer); };
   }, [id, returned, attempt]);
   async function pay() {
-    let url: string | undefined;
-    const ok = await mutation.run(`checkout:${id}`, async header => { const result = await browserApi().POST("/orders/{order_id}/checkout", { params: { path: { order_id: id }, header } }); url = result.data?.checkout_url; return result; });
-    if (ok && url) window.location.assign(url);
+    let session: { checkout_url: string; provider: string } | undefined;
+    const ok = await mutation.run(`checkout:${id}`, async header => { const result = await browserApi().POST("/orders/{order_id}/checkout", { params: { path: { order_id: id }, header } }); session = result.data; return result; });
+    // المزوّد يحدده الخادم؛ الصفحة تسمّيه قبل التوجيه ولا تعرض اختيارًا.
+    if (ok && session) { setRedirecting(session.provider === "stripe" ? "stripe" : "sandbox"); window.location.assign(session.checkout_url); }
   }
   async function cancel() {
     const ok = await mutation.run(`cancel:${id}`, header => browserApi().POST("/orders/{order_id}/cancel", { params: { path: { order_id: id }, header } }));
@@ -92,7 +93,7 @@ export function OrderPage({ locale, id, returned }: { locale: Locale; id: string
     {order.status === "paid" && <p className="notice" role="status">{o.paidHelp}</p>}
     <section className="card cart-summary"><ul>{order.items.map(i => <li key={i.id} data-testid="order-item"><span><strong>{localized(i.title, locale)}</strong><small className="muted">{localized(i.license_name, locale)}</small></span><span dir="ltr">{formatMoney(i.price, locale)}</span></li>)}</ul>
       <dl className="metadata">{[[o.created, formatDate(order.created_at, locale)], [pending ? o.payBy : o.paidAt, formatDate(pending ? order.expires_at : order.paid_at, locale)]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>
-    {buyer && pending && <section className="card"><p className="muted">{o.sandbox}</p><ActionStatus status={mutation.status} locale={locale} />{mutation.status === 409 && <p className="notice error">{o.conflict}</p>}{mutation.status === 502 && <p className="notice error">{o.providerBlocked}</p>}
+    {buyer && pending && <section className="card"><p className="muted">{o.sandbox}</p>{redirecting && <p className="notice" role="status">{o.redirecting[redirecting]}</p>}<ActionStatus status={mutation.status} locale={locale} />{mutation.status === 409 && <p className="notice error">{o.conflict}</p>}{mutation.status === 502 && <p className="notice error">{o.providerBlocked}</p>}
       <div className="actions"><button disabled={mutation.busy || expired} onClick={() => void pay()}>{o.pay}</button><button className="secondary" disabled={mutation.busy} onClick={() => void cancel()}>{o.cancel}</button></div>{expired && <p className="muted">{o.expiredHelp}</p>}</section>}
     {(order.status === "paid" || order.status === "refunded") && <RefundsPanel locale={locale} order={order} onChange={() => setAttempt(n => n + 1)} />}
   </>;
