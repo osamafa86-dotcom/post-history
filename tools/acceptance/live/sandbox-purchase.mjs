@@ -204,8 +204,10 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     const forged = await send(tampered, { sig: signBody(secret, Math.floor(Date.now() / 1000), good) });
     check("a body changed after signing is 400 webhook_signature_invalid", forged.status === 400 && (await forged.json()).code === "webhook_signature_invalid", `status ${forged.status}`);
     const old = Math.floor(Date.now() / 1000) - 600;
-    check("a validly signed but stale notification is refused", (await send(good, { ts: old, sig: signBody(secret, old, good) })).status === 400);
-    check("a wrong secret is refused", (await send(good, { sig: signBody("x".repeat(40), Math.floor(Date.now() / 1000), good) })).status === 400);
+    const oldTs = await send(good, { ts: old, sig: signBody(secret, old, good) });
+    check("a validly signed but stale notification is refused with webhook_signature_invalid", oldTs.status === 400 && (await oldTs.json()).code === "webhook_signature_invalid", `status ${oldTs.status}`);
+    const badSecret = await send(good, { sig: signBody("x".repeat(40), Math.floor(Date.now() / 1000), good) });
+    check("a wrong secret is refused with webhook_signature_invalid", badSecret.status === 400 && (await badSecret.json()).code === "webhook_signature_invalid", `status ${badSecret.status}`);
     check("an unknown provider is 404", (await send(good, { path: "/payments/webhooks/nowhere" })).status === 404);
     check("nothing was applied by the refused copies", (await http.get(tokens.buyer_admin, `/orders/${orderId}`)).body?.status === "pending_payment");
     const wrong = event("payment.succeeded", providerRef, PRICE - 1n);
@@ -248,15 +250,40 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     if (licenses.status === 404) defer("licence list, download link", "GET /licenses is not served yet");
     else {
       const mine = licenses.body?.items?.find?.((l) => l.order_id === orderId);
+      const licId = mine?.id ?? lic[0].id;
       check("the buyer's licence list shows the licence, without material or reporter ids", licenses.status === 200 && Boolean(mine) && !JSON.stringify(mine).includes(mat) && !JSON.stringify(mine).includes(reporterId), `status ${licenses.status}`);
-      const grant = await http.call(tokens.buyer_admin, "POST", `/licenses/${mine?.id ?? lic[0].id}/download-url`, { body: {} });
-      if (grant.status === 404) defer("download link", "POST /licenses/{id}/download-url is not served yet");
-      else if (grant.status === 409) defer("download link", `delivery is not ready (${grant.body?.code})`);
+      check("the licence freezes the price and the contract fields, and the delivery is not ready yet", mine?.price?.amount_minor === Number(PRICE) && mine?.status === "active" && mine?.delivery_ready === false, JSON.stringify({ p: mine?.price, s: mine?.status, d: mine?.delivery_ready }));
+      check("a member of the same organization reads the licence", (await http.get(tokens.buyer_member, `/licenses/${licId}`)).status === 200);
+      const dl = (token, key) => http.call(token, "POST", `/licenses/${licId}/download-url`, { body: {}, ...(key ? { key } : {}) });
+      const early = await dl(tokens.buyer_admin);
+      if (early.status === 404) defer("download link", "POST /licenses/{id}/download-url is not served yet");
       else {
-        check("a download link is granted, signed, for at most 24 hours", grant.status === 200 && Date.parse(grant.body?.expires_at) - Date.now() <= 24 * 3.6e6 + 6e4 && Number.isInteger(grant.body?.downloads_remaining), `status ${grant.status}`);
-        const second = await http.call(tokens.buyer_admin, "POST", `/licenses/${mine?.id ?? lic[0].id}/download-url`, { body: {} });
-        check("each grant is counted", second.status === 200 && second.body?.downloads_remaining === grant.body?.downloads_remaining - 1, `${grant.body?.downloads_remaining} → ${second.body?.downloads_remaining}`);
-        defer("the link opening once and then expiring", "needs object storage and a built delivery package; not fetched here");
+        check("no link before the delivery package is verified (409 delivery_not_ready)", early.status === 409 && early.body?.code === "delivery_not_ready", `status ${early.status} ${early.body?.code}`);
+        check("only a buyer may ask for a link (finance is refused)", (await dl(tokens.finance)).status === 403);
+        // حزمة التسليم يبنيها عامل الوسائط؛ لا عامل في هذا المكدس فتُكتب متحققة بـSQL (يُعلن في الملاحظة)
+        const orig = await one(`SELECT id FROM material_files WHERE material_id = $1 AND kind = 'original' AND state = 'verified' LIMIT 1`, [mat]);
+        await db.query(`INSERT INTO material_files (material_id, kind, state, size_bytes, sha256, storage_key, verified_at, derived_from_id, license_id) VALUES ($1, 'delivery', 'verified', 100, $2, $3, now(), $4, $5)`, [mat, randomBytes(32), `delivery/${licId}/package.zip`, orig?.id, licId]);
+        check("the licence reports the delivery ready once it is verified", (await http.get(tokens.buyer_admin, `/licenses/${licId}`)).body?.delivery_ready === true);
+        const grant = await dl(tokens.buyer_admin);
+        const ttlS = (Date.parse(grant.body?.expires_at) - Date.now()) / 1000;
+        check("a link is granted with no-store caching", grant.status === 200 && /no-store/.test(grant.headers?.["cache-control"] ?? ""), `status ${grant.status} ${grant.headers?.["cache-control"]}`);
+        check("the link lives at most 24 hours and the grants left are counted", ttlS > 0 && ttlS <= 86_400 + 60 && Number.isInteger(grant.body?.downloads_remaining), `ttl ${ttlS.toFixed(0)} s, left ${grant.body?.downloads_remaining}`);
+        const expires = Number(new URL(grant.body?.url ?? "http://x/").searchParams.get("X-Amz-Expires"));
+        check("the signature itself expires within 24 hours", expires > 0 && expires <= 86_400, `X-Amz-Expires=${expires}`);
+        check("the link carries neither the material id nor the reporter id", !String(grant.body?.url).includes(mat) && !String(grant.body?.url).includes(reporterId));
+        metrics.download_url_ttl_s = Math.round(ttlS);
+        const key = randomUUID();
+        const first = await dl(tokens.buyer_admin, key);
+        const replay = await dl(tokens.buyer_admin, key);
+        check("a replay with the same Idempotency-Key returns no link", first.status === 200 && replay.status === 200 && replay.body?.url === undefined, `status ${replay.status}`);
+        check("each grant is counted", first.body?.downloads_remaining === grant.body?.downloads_remaining - 1, `${grant.body?.downloads_remaining} → ${first.body?.downloads_remaining}`);
+        let left = first.body?.downloads_remaining, last = first;
+        for (let i = 0; i < 200 && left > 0; i++) { last = await dl(tokens.buyer_admin); left = last.body?.downloads_remaining ?? 0; }
+        const over = await dl(tokens.buyer_admin);
+        check("past the limit the answer is 409 download_limit_reached", over.status === 409 && over.body?.code === "download_limit_reached", `status ${over.status} ${over.body?.code}`);
+        const stored = Number((await one(`SELECT count(*) AS n FROM idempotency_keys WHERE response_body::text LIKE '%X-Amz-%'`)).n) + Number((await one(`SELECT count(*) AS n FROM license_download_grants g WHERE license_id = $1 AND to_jsonb(g)::text LIKE '%X-Amz-%'`, [licId])).n) + Number((await one(`SELECT count(*) AS n FROM outbox_events WHERE payload::text LIKE '%X-Amz-%'`)).n);
+        check("no signed link is stored (idempotency table, grants, outbox)", stored === 0, `${stored} row(s)`);
+        defer("the link opening and then stopping after its expiry", "the signature expiry is checked above; fetching it needs object storage and a real package, not available here");
       }
     }
     const refund = await http.call(tokens.finance, "POST", `/orders/${orderId}/refunds`, { body: { order_item_ids: [itemId], reason_code: "buyer_request" } });
