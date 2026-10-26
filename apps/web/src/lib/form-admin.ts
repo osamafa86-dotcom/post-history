@@ -13,9 +13,21 @@ export function validForm(value: unknown): value is Form {
   if (!validateSchema(value)) return false;
   const form = value as Form;
   if (!Number.isSafeInteger(form.version) || form.version > 999999999) return false;
-  const keys = form.fields.map(f => f.key);
-  return new Set(keys).size === keys.length && form.fields.every(f =>
-    !f.condition || f.condition.field !== f.key && keys.includes(f.condition.field));
+  const dependencies = new Map(form.fields.map(f => [f.key, f.condition?.field]));
+  if (dependencies.size !== form.fields.length || form.fields.some(f => f.condition && !dependencies.has(f.condition.field))) return false;
+  // تتبّع تكراري حتى لا يستنزف تسلسل طويل مكدس الاستدعاء، مع حفظ المسارات المحسومة.
+  const resolved = new Set<string>();
+  for (const field of form.fields) {
+    const path = new Set<string>();
+    let key: string | undefined = field.key;
+    while (key !== undefined && !resolved.has(key)) {
+      if (path.has(key)) return false;
+      path.add(key);
+      key = dependencies.get(key);
+    }
+    for (const visited of path) resolved.add(visited);
+  }
+  return true;
 }
 
 // لا تُنقل معلومات الناشر إلى طلب جديد. النسخة المنشورة لا تُعدّل بأي مرجع مشترك.

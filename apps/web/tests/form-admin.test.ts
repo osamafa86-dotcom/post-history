@@ -19,6 +19,18 @@ async function call(path: string, options: { method?: string; body?: unknown; us
 }
 
 describe("form publishing validation", () => {
+  it("rejects conditional cycles, including a chain entering a cycle", () => {
+    for (const dependencies of [[1, 0], [1, 2, 0], [1, 2, 1]]) {
+      const fields = dependencies.map((target, i) => ({ ...newField("boolean", `field_${i}`), label: { ar: "مثال", en: "Example" }, condition: { field: `field_${target}`, equals: true } }));
+      expect(validForm({ version: 2, fields })).toBe(false);
+    }
+  });
+  it("accepts acyclic conditions regardless of order and shared dependencies", () => {
+    const root = { ...newField("boolean", "root"), label: { ar: "مثال", en: "Example" } };
+    const fields = [root, ...["left", "right"].map(key => ({ ...root, key, condition: { field: "root", equals: true } })), { ...root, key: "leaf", condition: { field: "left", equals: true } }];
+    expect(validForm({ version: 2, fields })).toBe(true);
+    expect(validForm({ version: 2, fields: [...fields].reverse() })).toBe(true);
+  });
   it("uses all canonical schema examples and exactly its ten field types", () => {
     const root = new URL("../../../contracts/examples/upload-form/", import.meta.url);
     for (const category of ["valid", "invalid"]) for (const name of readdirSync(new URL(`${category}/`, root))) {
@@ -45,6 +57,11 @@ describe("form publishing validation", () => {
   });
 });
 describe("form administration BFF", () => {
+  it("rejects a conditional cycle before publishing upstream", async () => {
+    const fields = ["first", "second"].map((key, i) => ({ ...newField("boolean", key), label: { ar: "مثال", en: "Example" }, condition: { field: i === 0 ? "second" : "first", equals: true } }));
+    const { result, calls } = await call("forms", { method: "POST", body: { version: 2, fields } });
+    expect(result.status).toBe(422); expect(calls).toHaveLength(0);
+  });
   it("lists only for contract roles and projects publication summaries", async () => {
     const summary = { version: 1, field_count: form.fields.length, published_at: "2026-10-20T12:00:00Z", is_current: true };
     for (const user of [admin, chief]) {
