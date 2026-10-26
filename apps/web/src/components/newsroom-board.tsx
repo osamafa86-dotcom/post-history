@@ -44,7 +44,7 @@ export function NewsroomBoard({ locale }: { locale: Locale }) {
   }, [allowed]);
   if (!allowed) return <section className="center-state"><h1>{t.title}</h1><p role="alert">{t.denied}</p></section>;
   const count = (state: Column) => snapshot?.editorial.find(item => item.state === state)?.count ?? 0;
-  return <><div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p></div></div>
+  return <><div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p></div><Link prefetch={false} className="button secondary" href={`/${locale}/board?display=1`}>{t.openDisplay}</Link></div>
     {error && <p className="notice error" role="alert">{m.stale}</p>}
     {!snapshot ? <p className="center-state" role="status">{m.loading}</p> : <>
       <div className="stats board-stats">

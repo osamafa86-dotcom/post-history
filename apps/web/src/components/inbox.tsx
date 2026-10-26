@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
+import { beep } from "@/lib/alert-sound";
 import { formatDate, messages, type Locale } from "@/lib/i18n";
 import type { Material, MaterialPage, MaterialQuery, NewsroomDashboard } from "@/lib/types";
 import { materialQuery, states } from "@/lib/query";
@@ -95,7 +96,7 @@ function UrgentAlert({ locale, items, now, done, showAll }: { locale: Locale; it
     const fresh = items.filter(item => !heard.current.has(item.id));
     fresh.forEach(item => heard.current.add(item.id));
     if (!fresh.length || muted || !navigator.userActivation?.hasBeenActive) return;
-    try { const audio = new AudioContext(), tone = audio.createOscillator(), gain = audio.createGain(); tone.frequency.value = 880; gain.gain.value = 0.08; tone.connect(gain).connect(audio.destination); tone.start(); tone.stop(audio.currentTime + 0.25); tone.onended = () => void audio.close(); } catch { /* لا صوت في هذا المتصفح */ }
+    beep();
   }, [items, muted]);
   if (!items.length) return null;
   const first = items[0], single = items.length === 1, tag = Number.isSafeInteger(first.row_version) ? `"${first.row_version}"` : null;
