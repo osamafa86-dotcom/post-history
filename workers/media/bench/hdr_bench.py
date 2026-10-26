@@ -105,7 +105,7 @@ def main() -> int:
             make_clip(src, source, args.seconds)
             info = probe(src)
             metrics[f"{source}_source_hdr"] = info.hdr
-            metrics[f"{source}_source_transfer"] = info.color_transfer
+            metrics[f"{source}_source_transfer"] = info.color_transfer or "unset"
             for path in ("proxy", "produced") + (("naive",) if info.hdr else ()):
                 out = d / f"{source}-{path}.mp4"
                 t = time.perf_counter()
@@ -132,7 +132,7 @@ def main() -> int:
                 p = f"{source}_{path}"
                 metrics.update({f"{p}_s": round(elapsed, 2), f"{p}_hdr": made.hdr, f"{p}_bit_depth": made.bit_depth,
                                 f"{p}_color_tags": "/".join(str(t) for t in tags),
-                                **{f"{p}_{k.lower()}": v for k, v in s.items()}, f"{p}_collapsed": bad})
+                                **{f"{p}_{k.lower()}": v for k, v in s.items()}, f"{p}_collapsed": ",".join(bad) or "none"})
                 print(p, {k: v for k, v in metrics.items() if k.startswith(p)})
     result = {
         "schema_version": 1, "tool": "other", "role": "media", "test_name": "media-hdr-proxy-produced",
@@ -141,7 +141,8 @@ def main() -> int:
         "result": "pass" if not failures else "fail",
         "device": {"platform": "server", "model": f"{os.cpu_count()} vCPU"}, "upload_path": "n/a",
         "file": {"duration_s": float(args.seconds), "codec": "hevc", "vfr": False, "hdr": True},
-        "metrics": {**metrics, "failures": failures, "luma_level_bounds": list(Y_RANGE),
+        "metrics": {**metrics, "failures": ",".join(failures) or "none", "luma_level_min": Y_RANGE[0],
+                    "luma_level_max": Y_RANGE[1],
                     "min_ratio_to_sdr_reference": MIN_RATIO, "ffmpeg_version": ffmpeg.version()},
     }
     text = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
