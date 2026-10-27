@@ -30,6 +30,8 @@ plugins {
  *     one object with the union of their properties, of which only those every member requires stay required.
  *     The generator otherwise emits an interface that no member implements (`IngestTokenRequest`), so no
  *     request can be built. The client fills the members of one variant; Moshi omits the null rest.
+ *  5. تعداد رقمي يبقى رقمًا: مولّد Kotlin يصدر enum بوسوم Json نصية يرفض Moshi قراءتها من JSON رقمي صحيح.
+ *     نحذف enum الرقمي من منظور العميل وحده، وتبقى قيمه المسموحة شرطًا في عقد الخادم.
  */
 abstract class PrepareContractView : DefaultTask() {
     @get:InputFile abstract val openapi: RegularFileProperty
@@ -87,6 +89,10 @@ abstract class PrepareContractView : DefaultTask() {
             }
             m.remove("const")
             val type = m["type"]
+            val numeric = type == "integer" || type == "number" ||
+                (type is List<*> && type.filter { it != "null" }.singleOrNull() in listOf("integer", "number"))
+            val choices = m["enum"]
+            if (numeric && choices is List<*> && choices.isNotEmpty() && choices.all { it is Number }) m.remove("enum")
             if (type is List<*> && type.count { it != "null" } > 1) m.remove("type")
             m.mapValuesTo(LinkedHashMap()) { relax(it.value) }
         }

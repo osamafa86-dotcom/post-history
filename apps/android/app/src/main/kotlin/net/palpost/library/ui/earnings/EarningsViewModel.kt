@@ -143,9 +143,9 @@ class EarningsViewModel(private val source: EarningsSource, private val saved: S
                 source.request(key, body)
                 clearAttempt()
                 // لا خصم تفاؤلي ولا افتراض تسديد: إعادة قراءة الأرصدة والحالات من الخادم.
-                _state.update { it.copy(summary = null, requested = true) }
+                _state.update { it.copy(requested = true, requestNeedsRefresh = true) }
                 val summary = source.summary()
-                _state.update { it.copy(summary = summary) }
+                _state.update { it.copy(summary = summary, requestNeedsRefresh = false) }
                 payoutsJob?.cancel(); payoutGeneration++
                 _state.update { it.copy(payoutsBusy = false) }
                 loadPayouts(reset = true)

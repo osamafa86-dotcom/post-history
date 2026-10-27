@@ -22,6 +22,14 @@ class EarningsViewModelTest {
     @Before fun mainDispatcher() { Dispatchers.setMain(dispatcher) }
     @After fun resetDispatcher() { Dispatchers.resetMain() }
 
+    @Test fun `generated payout model accepts numeric approval counts from the real contract`() {
+        for (count in listOf(1L, 2L)) {
+            val payout = decode<PayoutRequest>(payoutJson(USER).replace("\"approvals_required\":1", "\"approvals_required\":$count"))
+            assertEquals(count, payout.approvalsRequired)
+            assertEquals("requested", payout.state.value)
+        }
+    }
+
     @Test fun `signed minor amounts keep precision and signs in both languages`() {
         val currency = balance().currency
         assertEquals("+\$12.34", formatEarningsMoney(1234, currency, Locale.US, signed = true))
@@ -85,6 +93,18 @@ class EarningsViewModelTest {
         assertEquals(1000L, source.requests.single().second.amount.amountMinor)
     }
 
+    @Test fun `failed refresh after confirmed request keeps prior balance and blocks a new request`() = runTest {
+        val source = FakeSource(); val vm = EarningsViewModel(source, SavedStateHandle()); vm.refresh(); advanceUntilIdle()
+        val before = vm.state.value.summary
+        source.summaryError = IOException(); vm.request(balance()); advanceUntilIdle()
+        assertTrue(vm.state.value.requested); assertFalse(vm.state.value.pendingAttempt)
+        assertEquals(before, vm.state.value.summary); assertEquals(EarningsFailure.NETWORK, vm.state.value.failure)
+        assertTrue(vm.state.value.requestNeedsRefresh)
+        vm.request(balance()); advanceUntilIdle(); assertEquals(1, source.requests.size)
+        source.summaryError = null; vm.refresh(); advanceUntilIdle()
+        assertFalse(vm.state.value.requestNeedsRefresh); assertEquals(source.summaryValue, vm.state.value.summary)
+    }
+
     @Test fun `entry filters restart the cursor and both lists page without duplicates`() = runTest {
         val source = FakeSource(); val vm = EarningsViewModel(source, SavedStateHandle()); vm.refresh(); advanceUntilIdle()
         vm.loadEntries(); vm.loadEntries(); vm.loadPayouts(); vm.loadPayouts(); advanceUntilIdle()
@@ -124,6 +144,7 @@ class EarningsViewModelTest {
     private class FakeSource : EarningsSource {
         var role = "reporter"
         var summaryCalls = 0
+        var summaryError: Exception? = null
         var requestError: Exception? = null
         var entriesError: Exception? = null
         var gate: CompletableDeferred<Unit>? = null
@@ -132,7 +153,7 @@ class EarningsViewModelTest {
         val payoutQueries = mutableListOf<String?>()
         val summaryValue = decode<EarningsSummary>("""{"user_id":"$USER","balances":[${balanceJson()}],"as_of":"2026-10-27T00:00:00Z"}""")
         override suspend fun me(): Me = decode("""{"user_id":"$USER","email":"synthetic","office_id":null,"organization_id":null,"totp_enabled":false,"credential_reset_required":false,"roles":[{"name":"$role","scopes":[]}],"permissions":[]}""")
-        override suspend fun summary(): EarningsSummary { summaryCalls++; return summaryValue }
+        override suspend fun summary(): EarningsSummary { summaryCalls++; summaryError?.let { throw it }; return summaryValue }
         override suspend fun entries(currency: Currency?, state: PayableState?, cursor: String?): EarningsEntryPage {
             entryQueries += Triple(currency?.value, state?.value, cursor); entriesError?.let { throw it }
             return decode("""{"items":[${entryJson(if (cursor == null) "1" else "2")}],"next_cursor":${if (cursor == null) "\"next\"" else "null"}}""")
