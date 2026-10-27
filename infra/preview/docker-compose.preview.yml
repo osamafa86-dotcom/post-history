@@ -5,6 +5,7 @@
 #   docker compose -f docker-compose.preview.yml up -d --wait
 #   ./seed-preview.sh       # مرة: حسابات تجريبية ومواد اصطناعية؛ كلمات السر في .env لا في المخرج
 # لا منفذ على المضيف: الوكيل الأمامي للخادم (Caddy) يصل إلى "web" وحده عبر الشبكة الخارجية deploy_default باسم lib-web.
+# بناء iOS التجريبي (ADR 0077): الحافة تمرر /v1/ علنًا إلى الخادم عبر شبكة داخلية ثانية (public-api) عنوان الحافة عليها ليس في BFF_SOURCE_ADDRESSES.
 # الحدود: mem_limit لكل خدمة وmemswap_limit مساوٍ له (بلا swap)، والمجموع 928 MB تحت سقف 960 MB (ADR 0023).
 name: post-history-preview
 
@@ -140,11 +141,12 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_BUCKET_UPLOADS: ${S3_BUCKET_UPLOADS}
       S3_BUCKET_MEDIA: ${S3_BUCKET_MEDIA}
-      # معاينة فقط، لا تُنقل إلى التجربة. الرفع من الحاسوب وحده: tusd خلف بوابة ingest، ورمز الويب يصدره الخادم للـBFF
-      # وحده (عنوان الحافة التي يمر بها إلى الخادم). شهادة الجهاز مغلقة: وضع الإنتاج بمعرّف تطبيق لا يحمله أي جهاز،
-      # فلا يحصل تطبيق على رمز ingest. لا عامل وسائط ولا تفريغ، والإشعارات الخارجية معطّلة.
+      # معاينة فقط، لا تُنقل إلى التجربة. الرفع من الحاسوب ومن بناء iOS التجريبي (ADR 0077): tusd خلف بوابة ingest،
+      # ورمز الويب يصدره الخادم للـBFF وحده (عنوان الحافة على الشبكة الداخلية)، ورمز التطبيق بشهادة الجهاز. شهادة الجهاز
+      # لـ iOS مفتوحة بمعرّف التطبيق الحقيقي (بيئة الإنتاج، وهي ما يستعمله TestFlight؛ بيئة التطوير ممنوعة)، وأندرويد مغلق
+      # (لا PLAY_INTEGRITY_PACKAGE_NAME). لا عامل وسائط ولا تفريغ، والإشعارات الخارجية معطّلة.
       ATTESTATION_MODE: production
-      APP_ATTEST_APP_ID: PREVIEW000.invalid.preview.no-device
+      APP_ATTEST_APP_ID: Y4R9ZHWK9Y.net.palpost.posthistory
       INGEST_REQUIRED: "true"
       TUS_PUBLIC_ENDPOINT: https://${PREVIEW_DOMAIN}/files/
       INGEST_TUS_ENDPOINT: https://${PREVIEW_DOMAIN}/files/
@@ -171,9 +173,13 @@ services:
     cpus: 0.75
     # Unique upstream name for the edge: it also sits on deploy_default, where a short name may resolve elsewhere.
     # api-hooks: the name the ingest gate asks for session state (infra/ingest/nginx.conf); the gate is on this network only.
+    # public-api (ADR 0077): the edge's public /v1/ location reaches the API here, from an address the API does not list in
+    # BFF_SOURCE_ADDRESSES, so a public caller gets no web token and no say over the client address. Only the edge shares it.
     networks:
       internal:
         aliases: [ph-preview-api, api-hooks]
+      public-api:
+        aliases: [ph-preview-api-public]
 
   web-app:
     <<: *hardened
@@ -346,6 +352,7 @@ services:
       internal:
         ipv4_address: ${PREVIEW_EDGE_IP:-10.211.47.10}
         aliases: [api.lib.internal]
+      public-api: {}
       deploy_default:
         aliases: [lib-web]
 
@@ -355,6 +362,9 @@ networks:
     ipam:
       config:
         - subnet: ${PREVIEW_SUBNET:-10.211.47.0/24}
+  # The edge and the API alone (ADR 0077): no fixed subnet, nothing trusts an address here, and Docker picks one that is free.
+  public-api:
+    internal: true
   deploy_default:
     external: true
 
