@@ -1,5 +1,6 @@
 package net.palpost.library.ui
 
+import net.palpost.library.ui.earnings.EarningsScreen
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -21,7 +22,7 @@ import net.palpost.library.ui.receipt.ReceiptScreen
 import net.palpost.library.ui.review.ReviewScreen
 import net.palpost.library.ui.uploads.UploadsScreen
 
-private enum class Screen { Home, FormPreview, NewMaterial, Uploads, Materials, Notifications, Review, Receipt, Setup, SetupThenNewMaterial }
+private enum class Screen { Home, FormPreview, NewMaterial, Uploads, Materials, Notifications, Review, Earnings, Receipt, Setup, SetupThenNewMaterial }
 
 @Composable
 fun AppRoot(container: AppContainer, openRequest: String? = null, onOpenHandled: () -> Unit = {}) {
@@ -60,6 +61,7 @@ fun AppRoot(container: AppContainer, openRequest: String? = null, onOpenHandled:
                     onMaterials = { screen = Screen.Materials },
                     onNotifications = { screen = Screen.Notifications },
                     onReview = { screen = Screen.Review },
+                    onEarnings = { screen = Screen.Earnings },
                     onSetup = { screen = Screen.Setup },
                 )
                 Screen.FormPreview -> FormPreviewScreen(container, onBack = { screen = Screen.Home })
@@ -74,6 +76,7 @@ fun AppRoot(container: AppContainer, openRequest: String? = null, onOpenHandled:
                     onReceipt = { receipt(it, Screen.Materials) }, onReplacement = { newMaterial(material = it) },
                 )
                 Screen.Notifications -> NotificationsScreen(container, onBack = { screen = Screen.Home })
+                Screen.Earnings -> EarningsScreen(container, userId = state.userId, onBack = { screen = Screen.Home })
                 Screen.Review -> ReviewScreen(container, onBack = { screen = Screen.Home })
                 Screen.Setup -> TaskKillerSetupScreen(container, onDone = { screen = Screen.Home }, onBack = { screen = Screen.Home })
                 Screen.SetupThenNewMaterial -> TaskKillerSetupScreen(container, onDone = { screen = Screen.NewMaterial }, onBack = { screen = Screen.Home })

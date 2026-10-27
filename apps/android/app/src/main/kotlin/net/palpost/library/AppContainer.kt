@@ -3,6 +3,7 @@ package net.palpost.library
 import net.palpost.library.core.upload.IngestTokens
 import net.palpost.library.upload.PlayIntegrityAttester
 import android.content.Context
+import net.palpost.library.api.apis.EarningsApi
 import net.palpost.library.api.apis.AuthApi
 import net.palpost.library.api.apis.FormsApi
 import net.palpost.library.api.apis.MaterialsApi
@@ -37,6 +38,7 @@ class AppContainer(context: Context) {
 
     val auth = AuthManager(baseUrl, tokenStore, httpClient)
     val authApi: AuthApi by lazy { AuthApi(baseUrl, auth.authenticatedClient) }
+    val earningsApi: EarningsApi by lazy { EarningsApi(baseUrl, auth.authenticatedClient) }
     val formsApi: FormsApi by lazy { FormsApi(baseUrl, auth.authenticatedClient) }
     val materialsApi: MaterialsApi by lazy { MaterialsApi(baseUrl, auth.authenticatedClient) }
     val notificationsApi: NotificationsApi by lazy { NotificationsApi(baseUrl, auth.authenticatedClient) }
