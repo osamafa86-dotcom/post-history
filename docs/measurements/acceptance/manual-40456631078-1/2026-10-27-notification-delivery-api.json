@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "notification-delivery",
+  "started_at": "2026-10-27T05:41:17.789Z",
+  "ended_at": "2026-10-27T05:42:54.417Z",
+  "result": "pass",
+  "metrics": {
+    "runs": 20,
+    "delivered": 20,
+    "limit_s": 10,
+    "delivery_s_p50": 0.178,
+    "delivery_s_p95": 0.334,
+    "duplicates": 0,
+    "stray_recipients": 0,
+    "payload_key_violations": 0,
+    "leak_hits": 0,
+    "acked": 20,
+    "reporter_told": 20,
+    "outbox_events_checked": 50,
+    "escalation_measured": true,
+    "rules_measured": true,
+    "unmatched_rule_silences_default": false
+  },
+  "device": {
+    "platform": "server"
+  },
+  "upload_path": "n/a",
+  "notes": "20 مادة؛ زمن الوصول بالاستطلاع كل 150 مللي ثانية"
+}

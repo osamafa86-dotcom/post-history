@@ -32,7 +32,7 @@
 | نصاب المدراء للتجاوزات الحساسة | `scripts/admin-quorum.mjs` | موجود — **pass** (`docs/measurements/acceptance/manual-40438623850-1/2026-10-27-admin-quorum-api.json`) | `apps/api` | موثق: الواجهة وسطر الأوامر بنصاب شخصين والحارس. |
 | توقيع وتوثيق المصدر (C2PA) | `scripts/c2pa-manifest.mjs` | **غائب** | `workers/ + apps/api` | قياس التحقق من بيان C2PA. |
 | منع تسريب نسخ التسليم | `scripts/delivery-leak.mjs` | موجود — **partial** (`docs/measurements/acceptance/manual-40438623850-1/2026-10-27-delivery-leak-delivery-leak.json`) | `apps/api + workers/` | جزئي: حزمتان اصطناعيتان بلا تسرب؛ جذر توقيع اختباري، ووحدة المفاتيح والثقة الحقيقية غير مقيسَتين. |
-| صلاحية روابط التحميل الموقعة | `scripts/download-url.mjs` | موجود — **partial** (`docs/measurements/acceptance/manual-40438623850-1/2026-10-27-download-url-api.json`) | `apps/api` | جزئي: جُلب الرابط؛ لم يُنتظر الانتهاء الفعلي (expiry_waited=false). |
+| صلاحية روابط التحميل الموقعة | `scripts/download-url.mjs` | موجود — **pass** (`docs/measurements/acceptance/manual-40456631078-1/2026-10-27-download-url-api.json`) | `apps/api` | نتيجة السكربت: جُلب الرابط وانتُظر الانتهاء (expiry_waited=true)، ونجح فحص توقفه؛ رمز HTTP اللاحق غير محفوظ في الوثيقة أو خرج النجاح، والسكربت يقبل تعذر الشبكة أيضًا، فلا يثبت هذا القياس وحده رفضًا محددًا من الخادم. |
 | رفع ملف ميداني 1 غيغابايت | `scripts/field-upload-1gb.mjs` | **غائب** | `apps/ + infra/` | تجربة رفع 1GB عبر netlab وحفظ القياس. |
 | مسار الوسائط المتكامل | `scripts/media-e2e.mjs` | موجود (`REPORT.md`) | `apps/api + workers/` | توثيق زمن المعالجة الكلي. |
 | جلب ومعالجة الوسائط البعيدة | `scripts/media-remote.mjs` | **غائب** | `workers/` | قياس أداء المعالجة عن بُعد. |
@@ -45,6 +45,8 @@
 **الخلاصة:** 35 اختبارًا لها سكربت؛ 31 منها له قياس موثق، و4 بلا قياس؛ وجود وثيقة لا يعني أن نتيجتها pass. إغلاق الغائب يعني تشغيل السكربت على بيئة فعلية وحفظ نتيجته بمخطط `contracts/schemas/measurement.json`.
 
 تحديث #422 بتاريخ 2026-10-27: سُجلت سبع وثائق من [التشغيل اليدوي 40438623850، المحاولة 1](https://github.com/osamafa86-dotcom/post-history/actions/runs/40438623850) على main: خمس نتائج pass ونتيجتا partial كما أنتجتهما artifacts، دون تعديل الأرقام أو الأحكام. قياس delivery-leak داخل CI على حزمة اصطناعية بتوقيع اختباري فقط؛ لا يغيّر تعطيل التسليم أو C2PA في الإنتاج، ولا يُثبت ثقة توقيع إنتاجية. تبقى c2pa-manifest وfield-upload-1gb وmedia-remote وtranscript-draft خارج هذه المهمة.
+
+تحديث #426 (ب) بتاريخ 2026-10-27: حُفظت الوثائق السبع حرفيًا من [التشغيل اليدوي 40456631078، المحاولة 1](https://github.com/osamafa86-dotcom/post-history/actions/runs/40456631078) في `docs/measurements/acceptance/manual-40456631078-1/`: ست نتائج pass وdelivery-leak بنتيجة partial؛ لا استبدال للقياس السابق. يشهد خرج download-url بانتظار الانتهاء ونجاح الفحص، لكن رمز HTTP بعد الانتظار غير مسجل؛ تبقى حدود الفحص المذكورة في صفه قائمة. لا تغيير لنطاق الثقة الاختبارية في delivery-leak ولا تفعيل إنتاجي.
 
 ## 2. التناقضات بين العقد والكود
 
