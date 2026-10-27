@@ -1,26 +1,40 @@
 # مواصفة التسليم — التدفق (ج): لوحة غرفة الأخبار على شاشة كبيرة
 
 **المصدر:** Figma › `Flow C · Supervisor board (1920)` (AR ثم EN). **الرموز:** `docs/design/tokens.json`. **القرارات:** `docs/design/flows/supervisor-board.md`.
-**المالك:** الويب (الوكيل 6) — `apps/web/src/components/newsroom-board.tsx` و`app/[locale]/(workspace)/board/page.tsx`. وضع العرض عبر `?display=1` (أو مسار `/board/display`): بلا رأس ولا شريط جانبي، الوضع الداكن افتراضيًا، `cursor: none` بعد 3 ثوانٍ من السكون.
+**المالك:** الويب (الوكيل 6) — `apps/web/src/components/newsroom-board.tsx` و`app/[locale]/(workspace)/board/page.tsx`. وضع العرض عبر `?display=1` (أو مسار `/board/display`): بلا شريط مساحة العمل، وبدله الشريط العلوي الداكن الخاص بالشاشة الكبيرة (Figma 193:865: الشعار في بداية السطر، بند «لوحة الإنتاج» نشط بخط سفلي، والساعة والتاريخ في النهاية)، الوضع الداكن افتراضيًا، `cursor: none` بعد 3 ثوانٍ من السكون. شريط مساحة العمل في بقية الصفحات من قرار المالك 2026-10-27 (ADR 0078).
 
 ## 1. البنية (1920×1080، حشو 48/32، فجوة عمودية 24)
 
 | القسم | المحتوى | الرموز |
 | --- | --- | --- |
-| الصف العلوي | يمين: `board/meta` «غرفة الأخبار · <النطاق>» بلون `text/brand`، `display/md` «لوحة الإنتاج الحية»، سطر الساعة `board/title` + «آخر لقطة HH:MM:SS · تتحدث كل 5 ثوانٍ» `board/meta`. يسار: 3 عدّادات | `bg/canvas` داكن |
+| الصف العلوي | يمين: `board/meta` «غرفة الأخبار · <النطاق>» بلون `text/brand`، `display/md` «لوحة الإنتاج الحية»، سطر «آخر لقطة HH:MM:SS · تتحدث كل 5 ثوانٍ» `board/meta`. الساعة والتاريخ الكامل في الشريط العلوي (طرف النهاية) لا في هذا الصف. يسار: 3 عدّادات | `bg/canvas` داكن |
 | العدّاد | بطاقة `tone/<tone>/bg` بحد 2px `tone/<tone>/border`، `radius.2xl`، حشو 32/16؛ الرقم `board/number` (96) `tone/<tone>/fg`؛ العنوان `board/title`؛ سطر توضيحي `board/meta` + أيقونة. عاجل مفتوح = `urgent` وينبض (opacity 1→0.85→1 كل 2s) ما دام > 0؛ متأخر عن الإقرار = `attention` مع «أقدمها mm:ss»؛ محجوز للإنتاج = `progress` | من `NewsroomDashboard.urgent_open`, `overdue_acknowledgements`, `reserved.length` |
 | الوارد الآن | شريط `bg/surface` بحد `border/default` `radius.xl`: تسمية + «رفع جارٍ · n» + نقطة `tone/good/fg`؛ لكل رفع (حد أقصى 3، والباقي «+n») بطاقة `bg/sunken` بعرض متساوٍ: العنوان القصير · النوع `board/card`، `Priority Badge`، النسبة والمنقضي `board/meta` (LTR)، شريط 12px (`tone/urgent/bg` للعاجل وإلا `bg/brand`)؛ العاجل بحد بداية 3px | `uploads_in_progress` |
-| الأعمدة الستة | `grid-template-columns: repeat(6, minmax(0,1fr))` فجوة 16؛ العمود `bg/subtle` `radius.xl` حشو 12؛ رأس: الاسم `board/title` + عدّاد في كبسولة `bg/surface` `board/title`؛ البطاقة `bg/surface` `radius.lg` حشو 16/14: الأولوية + المنقضي (`board/meta`، `text/danger` للعاجل)، العنوان `board/card` (سطران، قص بـ…)، ذيل: كبسولة «حجز: <اسم>» `tone/progress` و/أو «متأخرة mm:ss» `tone/attention` + أيقونة ساعة. العاجل بحد بداية 4px `tone/urgent/bg` | `GET /materials?editorial_state=…&limit=8` لكل عمود كل 15 ثانية |
+| الأعمدة الأربعة | `grid-template-columns: repeat(4, minmax(0,1fr))` فجوة 16 (عمودان تحت 1440)؛ من البداية: **واردة / قيد التحقق / جاهزة للنشر / متوقفة** (Figma 193:862). تجميع الحالات في §1.1. العمود شفاف بلا خلفية؛ رأسه رقم كبير `board/number` (96؛ `display/lg` تحت 1920) بخط سفلي 2px ثم الاسم `board/title`؛ البطاقة `bg/surface` بحد 1px: شريط داكن 48px (الإيصال والعمر ولسان الأولوية) ثم العنوان `board/card` (سطران) والمحافظة واسم الظهور وخط المسارات؛ العاجل بلسان «عاجل» لا بحد البداية. ذيل البطاقة: كبسولة «محجوزة للإنتاج» و/أو «متأخرة mm:ss» | `GET /materials?editorial_state=…&technical_state=verified&limit=24` لكل حالة تحريرية، ومعها المواد غير المكتملة فنيًا كلها (`technical_state` = `pending` و`proxy_received` و`original_received` و`failed`) كل 15 ثانية؛ العدّادات من `GET /dashboard/newsroom` ومن المجموعة الأخيرة (§1.1) |
 | الذيل | يسار: «لا أسماء مصادر ولا مواقع دقيقة على هذه الشاشة · اسم الظهور فقط» `board/meta` `text/muted`؛ يمين: حالة الصوت + أيقونة الجرس | |
 
-الترتيب داخل العمود: عاجل → مهم → الأقدم؛ أكثر من 8 → «+n» وتدوير كل 20 ثانية (انتقال تلاشٍ 320ms؛ بلا حركة مع `prefers-reduced-motion`).
+### 1.1 تجميع الحالات في الأعمدة الأربعة (قرار المالك 2026-10-27، ADR 0078)
+
+لا تغيير في العقد: العمود دالة في `editorial_state` و`technical_state` للمادة (`lib/board-columns.ts`)، بأولوية تنازلية:
+
+| الأولوية | الشرط | العمود |
+| --- | --- | --- |
+| 1 | `editorial_state = published` | خارج اللوحة (انتهى الإنتاج) |
+| 2 | `needs_changes` أو `rejected`، أو `technical_state = failed` (ولو كانت `accepted`) | **متوقفة** |
+| 3 | `acknowledged` أو `reviewing`، أو `technical_state` ∈ {`pending`, `proxy_received`, `original_received`} (ولو كانت `inbox` أو `accepted`) | **قيد التحقق** |
+| 4 | `accepted` أو `in_production` أو `final_review`، و`technical_state = verified` | **جاهزة للنشر** |
+| 5 | `inbox` و`technical_state = verified` | **واردة** |
+
+العدّاد دقيق لا تقريبي: اللقطة تعطي عدّاد كل مسار منفردًا، فتُجلب المواد غير المكتملة فنيًا كلها (حتى 500 لكل حالة فنية) وتُصنَّف بحالتيها، والباقي مكتمل فنيًا فعدّه = عدّاد حالته التحريرية في اللقطة مطروحًا منه ما صُنّف منها.
+
+الترتيب داخل العمود: عاجل → مهم → الأقدم؛ أكثر من 8 → «n أخرى» وتدوير كل 20 ثانية (انتقال تلاشٍ 320ms؛ بلا حركة مع `prefers-reduced-motion`).
 
 ## 2. الاستجابة
 
 | العرض | التغيير |
 | --- | --- |
 | 1920+ | كما النماذج (مقياس 1) |
-| 1440–1919 | المقياس نفسه مع تقليص الحشو إلى 32/24؛ الأعمدة 6 بعرض أدنى 200؛ العدّاد `display/lg` بدل `board/number` |
+| 1440–1919 | المقياس نفسه مع تقليص الحشو إلى 32/24؛ الأعمدة الأربعة؛ العدّاد وأرقام الأعمدة `display/lg` بدل `board/number` |
 | 1000–1439 | وضع المكتب العادي الحالي (`/board` بلا display) — هذه المواصفة لا تنطبق |
 | 4K (3840) | `zoom: 2` عبر CSS أو `device-pixel-ratio`؛ لا إعادة تخطيط |
 

@@ -1,19 +1,12 @@
 "use client";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { Me } from "@/lib/types";
 import { messages, type Locale } from "@/lib/i18n";
 import { authPost, browserApi, dataOrThrow, leaveSession } from "@/lib/browser-api";
-import { hasRole } from "@/lib/review";
-import { catalogRoles } from "./store/store-catalog";
-import { uploadRoles } from "@/lib/upload-policy";
-import { isBuyer, organizationAdmins } from "@/lib/buyer-policy";
-import { commissionReaders } from "@/lib/commission-policy";
-import { conflictRoles } from "@/lib/invite-conflict-policy";
-import { earnerRoles, payoutStaff } from "@/lib/earnings-policy";
-import { templateRoles } from "@/lib/license-policy";
-import { formReaders } from "@/lib/form-admin";
+import { isBuyer } from "@/lib/buyer-policy";
+import { TopBar } from "./top-bar";
+import { navItems, userLine } from "./workspace-nav";
 
 const UserContext = createContext<Me | null>(null);
 export function useUser() { const me = useContext(UserContext); if (!me) throw new Error("Session required"); return me; }
@@ -62,34 +55,13 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
   if (!me || (buyer && !buyerPage)) return <main className="center-state" role="status">{error ? <><p>{m.error}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></> : m.loading}</main>;
   return <UserContext.Provider value={me}>
     <a className="skip-link" href="#main-content">{m.skip}</a>
-    <header className="site-header"><Link className="brand" href={`/${locale}/${buyer ? "store" : "inbox"}`} prefetch={false}><span className="brand-mark" aria-hidden="true" /><span>{m.brand}<small>{m.product}</small></span></Link>
-      <div className="header-actions"><a href={pathname.replace(`/${locale}`, locale === "ar" ? "/en" : "/ar")} lang={locale === "ar" ? "en" : "ar"}>{m.language}</a><button className="quiet" disabled={busy} onClick={() => void logout(false)}>{m.logout}</button></div></header>
-    <div className={`workspace-shell ${buyer ? "buyer-shell" : ""}`}><aside className="sidebar">{!buyer && <p className="eyebrow">{m.workspace}</p>}<nav aria-label={m.workspace}>{buyer ? <>
-      <Link prefetch={false} className={pathname.includes("/store") && !/\/store\/(cart|orders|licenses)/.test(pathname) ? "active" : ""} href={`/${locale}/store`}>{m.store.title}</Link>
-      <Link prefetch={false} className={pathname.includes("/store/licenses") ? "active" : ""} href={`/${locale}/store/licenses`}>{m.licenses.nav}</Link>
-      <Link prefetch={false} className={/\/store\/(cart|orders)/.test(pathname) ? "active" : ""} href={`/${locale}/store/cart`}>{m.orders.nav}</Link>
-      <Link prefetch={false} className={pathname.endsWith("/organization") ? "active" : ""} href={`/${locale}/organization`}>{m.buyers.myOrganization}</Link>
-    </> : <>
-      <Link prefetch={false} className={pathname.endsWith("/inbox") ? "active" : ""} href={`/${locale}/inbox`}>{m.inbox}</Link>
-      {hasRole(me, "supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin") && <Link prefetch={false} className={pathname.endsWith("/board") ? "active" : ""} href={`/${locale}/board`}>{m.board.title}</Link>}
-      {hasRole(me, "reporter") && <Link prefetch={false} className={pathname.endsWith("/my-materials") ? "active" : ""} href={`/${locale}/my-materials`}>{m.mine.nav}</Link>}
-      {hasRole(me, ...earnerRoles) && <Link prefetch={false} className={pathname.endsWith("/earnings") ? "active" : ""} href={`/${locale}/earnings`}>{m.earnings.nav}</Link>}
-      {hasRole(me, ...uploadRoles) && <Link prefetch={false} className={pathname.endsWith("/upload") ? "active" : ""} href={`/${locale}/upload`}>{m.upload.nav}</Link>}
-      {hasRole(me, ...catalogRoles) && <Link prefetch={false} className={pathname.includes("/store") ? "active" : ""} href={`/${locale}/store`}>{m.store.title}</Link>}
-      <Link prefetch={false} className={pathname.endsWith("/form-preview") ? "active" : ""} href={`/${locale}/form-preview`}>{m.formPreview}</Link>
-      {hasRole(me, ...formReaders) && <Link prefetch={false} className={pathname.endsWith("/forms") ? "active" : ""} href={`/${locale}/forms`}>{m.formsAdmin.title}</Link>}
-      <Link prefetch={false} className={pathname.endsWith("/notifications") ? "active" : ""} href={`/${locale}/notifications`}>{m.notice.title}</Link>
-      {hasRole(me, "system_admin", "editor_in_chief") && <Link prefetch={false} className={pathname.endsWith("/notification-rules") ? "active" : ""} href={`/${locale}/notification-rules`}>{m.rules.title}</Link>}
-      {hasRole(me, ...templateRoles) && <Link prefetch={false} className={pathname.endsWith("/license-templates") ? "active" : ""} href={`/${locale}/license-templates`}>{m.templates.nav}</Link>}
-      {hasRole(me, "system_admin", "finance", "rights_officer") && <Link prefetch={false} className={pathname.includes("/store/licenses") ? "active" : ""} href={`/${locale}/store/licenses`}>{m.licenses.nav}</Link>}
-      {hasRole(me, ...organizationAdmins) && <Link prefetch={false} className={pathname.endsWith("/buyer-organizations") ? "active" : ""} href={`/${locale}/buyer-organizations`}>{m.buyers.nav}</Link>}
-      {hasRole(me, "system_admin", "finance") && <Link prefetch={false} className={pathname.includes("/store/orders") ? "active" : ""} href={`/${locale}/store/orders`}>{m.orders.staffNav}</Link>}
-      {hasRole(me, ...payoutStaff) && <Link prefetch={false} className={pathname.endsWith("/payouts") ? "active" : ""} href={`/${locale}/payouts`}>{m.payouts.nav}</Link>}
-      {hasRole(me, ...commissionReaders) && <Link prefetch={false} className={pathname.endsWith("/commission-rules") ? "active" : ""} href={`/${locale}/commission-rules`}>{m.commission.nav}</Link>}
-      {hasRole(me, ...conflictRoles) && <Link prefetch={false} className={pathname.endsWith("/invite-conflicts") ? "active" : ""} href={`/${locale}/invite-conflicts`}>{m.conflicts.nav}</Link>}
-      {hasRole(me, "system_admin") && <Link prefetch={false} className={pathname.endsWith("/admin") ? "active" : ""} href={`/${locale}/admin`}>{m.admin.title}</Link>}
-    </>}</nav>{!buyer && <p className="scope-note">{m.readOnly}</p>}<button className="quiet danger-link" onClick={() => setConfirmAll(true)}>{m.logoutAll}</button></aside>
-    <main id="main-content" className="main-content">{error && <p className="notice error" role="alert">{m.error}</p>}{children}</main></div>
+    <TopBar variant="workspace" locale={locale} brandHref={`/${locale}/${buyer ? "store" : "inbox"}`} items={navItems(me, locale, pathname)} navLabel={m.workspace}>
+      <span className="topbar-user" data-testid="topbar-user">{userLine(me, locale)}</span>
+      <a href={pathname.replace(`/${locale}`, locale === "ar" ? "/en" : "/ar")} lang={locale === "ar" ? "en" : "ar"}>{m.language}</a>
+      <button disabled={busy} onClick={() => void logout(false)}>{m.logout}</button>
+      <button onClick={() => setConfirmAll(true)}>{m.logoutAll}</button>
+    </TopBar>
+    <div className="workspace-shell"><main id="main-content" className="main-content">{error && <p className="notice error" role="alert">{m.error}</p>}{children}</main></div>
     {confirmAll && <dialog className="modal" ref={node => { if (node && !node.open) node.showModal(); }} onCancel={() => setConfirmAll(false)} aria-labelledby="logout-title"><h2 id="logout-title">{m.logoutAll}</h2><p>{m.logoutAllWarning}</p><div className="actions"><button autoFocus className="secondary" disabled={busy} onClick={() => setConfirmAll(false)}>{m.cancel}</button><button className="danger" disabled={busy} onClick={() => void logout(true)}>{m.confirm}</button></div></dialog>}
   </UserContext.Provider>;
 }

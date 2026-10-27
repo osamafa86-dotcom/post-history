@@ -519,7 +519,7 @@
   },
   "board": {
     "title": "Newsroom board",
-    "lead": "Materials by editorial state, open urgent items and overdue acknowledgements. The snapshot refreshes every five seconds.",
+    "lead": "Materials in four columns: incoming, under verification, ready to publish and stalled; plus open urgent items and overdue acknowledgements. The snapshot refreshes every five seconds.",
     "denied": "This board is for supervisors, production and management.",
     "urgentOpen": "Open urgent",
     "overdue": "Overdue acknowledgements",
@@ -558,11 +558,25 @@
       "stale": "Board not updated for {time}",
       "allClear": "Everything is within its deadline",
       "exit": "Leave wall display",
-      "more": "{n} more"
+      "more": "{n} more",
+      "nav": "Production board"
     },
     "reservedName": "Reserved: {name}",
     "overdueAge": "Overdue {time}",
-    "oldestOverdue": "Oldest {time}"
+    "oldestOverdue": "Oldest {time}",
+    "columns": {
+      "incoming": "Incoming",
+      "checking": "Under verification",
+      "ready": "Ready to publish",
+      "stalled": "Stalled"
+    },
+    "columnHelp": {
+      "incoming": "Fully received, nobody has looked yet",
+      "checking": "Being acknowledged or reviewed, or still being received",
+      "ready": "Approved and waiting to publish",
+      "stalled": "Needs changes, rejected, or reception failed"
+    },
+    "columnsLabel": "Production board columns"
   },
   "upload": {
     "nav": "Desktop upload",
@@ -1365,5 +1379,19 @@
     "label": "Search this page",
     "placeholder": "Search by receipt, title or governorate",
     "help": "Searches only the items shown on this page."
+  },
+  "topbar": {
+    "account": "My account",
+    "roles": {
+      "system_admin": "System admin",
+      "editor_in_chief": "Editor-in-chief",
+      "supervisor": "Supervisor",
+      "producer": "Producer",
+      "finance": "Finance",
+      "reporter": "Reporter",
+      "rights_officer": "Rights officer",
+      "buyer_admin": "Buyer admin",
+      "buyer_member": "Buyer member"
+    }
   }
 }
