@@ -1074,7 +1074,7 @@
       {
         "heading": "Phone notifications",
         "paragraphs": [
-          "We use push notifications for one purpose: alerting the reporter when the status of their material changes, for example when a supervisor has seen it. The notification text is the material number and its status only, built by the server from a fixed template, so it carries no material title, names or locations.",
+          "We use push notifications only for work and account alerts, never for advertising. These include: a change in the status of a material for its reporter (for example when a supervisor has seen it), receipt and escalation alerts for editorial staff, an alert to the account owner when recovery of their account is requested or completed, and an alert to administrators when a sensitive setting changes. The server builds the notification text from fixed templates that carry the short material number or a request number, so it carries no material title, names or locations.",
           "The notification token is stored encrypted, never enters any payload and is never returned in any response, and the device is unregistered when you sign out.",
           "Any external alert channel the Operator turns on, such as email or text messages, carries the material number and status only."
         ]
@@ -1089,7 +1089,7 @@
       {
         "heading": "Artificial intelligence and external providers",
         "paragraphs": [
-          "Automated processing, such as transcription, shot detection and title suggestions, is used to prepare drafts that a person reviews and decides on.",
+          "Automated processing, such as transcription and shot detection, is used to prepare drafts that a person reviews and decides on.",
           "Material tagged as sensitive is never sent to any external provider; it is processed locally on the Operator's servers or manually, and the platform chooses the route from the sensitivity tag automatically.",
           "Material not tagged as sensitive may pass through an external processing provider for technical processing under the Operator's rules, and the Operator requires any external provider to accept institutional terms that bar it from training on the material. Until the administration approves a written policy on what may be sent externally, automated processing runs locally."
         ]
@@ -1114,7 +1114,7 @@
         "heading": "Retention, deletion and backups",
         "paragraphs": [
           "The original is kept unmodified with its fingerprint. Deleting the local copy from a reporter's phone after the receipt is the reporter's own decision. The app offers an emergency wipe of the session data, queues and local receipts.",
-          "Encrypted backups of the platform's data are kept, including a copy at a second storage provider with object locking that prevents deletion before the lock period ends; deleted data may therefore remain in backups until their period ends.",
+          "Encrypted backups of the platform's data are kept, so deleted data may remain in backups until their retention period ends.",
           "The audit log and the financial ledger entries are append-only and are not edited, and sales records and invoices remain even when a sold item is withdrawn.",
           "Retention periods: the detailed retention and deletion policy has not yet been approved by the Operator's administration, so no periods are stated here. [Retention periods — set by the owner]"
         ]
@@ -1122,7 +1122,7 @@
       {
         "heading": "Security",
         "paragraphs": [
-          "We protect your data with controls that include an encrypted connection, field-level encryption of GPS coordinates and notification tokens, the least privilege possible for each role, signed short-lived links, and an app lock on the phone."
+          "We protect your data with controls that include an encrypted connection, field-level encryption of GPS coordinates and notification tokens, the least privilege possible for each role, and signed short-lived links. The Android app blocks screenshots and the app preview in the recent-apps list, and the iOS app offers an optional app lock."
         ]
       },
       {
