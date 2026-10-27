@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "reservation-conflict",
+  "started_at": "2026-10-27T02:29:24.136Z",
+  "ended_at": "2026-10-27T02:29:26.383Z",
+  "result": "pass",
+  "metrics": {
+    "rounds": 20,
+    "contenders": 3,
+    "rounds_with_exactly_one_winner": 20,
+    "state_mismatches": 0,
+    "replay_mismatches": 0,
+    "events_checked": true
+  },
+  "device": {
+    "platform": "server"
+  },
+  "upload_path": "n/a",
+  "notes": "20 جولة بـ3 متنافسين متزامنين؛ لم يُقَس التنافس بين عمليات خادم متعددة"
+}
