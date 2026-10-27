@@ -3,6 +3,8 @@ package net.palpost.library.ui
 import net.palpost.library.security.SignOut
 import net.palpost.library.push.Push
 import android.app.Application
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -99,12 +101,12 @@ fun roleLabel(name: RoleName): String = stringResource(
 )
 
 @Composable
-fun HomeScreen(container: AppContainer, onOpenForm: () -> Unit, onNewMaterial: () -> Unit, onUploads: () -> Unit, onMaterials: () -> Unit, onNotifications: () -> Unit, onReview: () -> Unit, onSetup: () -> Unit) {
+fun HomeScreen(container: AppContainer, onOpenForm: () -> Unit, onNewMaterial: () -> Unit, onUploads: () -> Unit, onMaterials: () -> Unit, onNotifications: () -> Unit, onReview: () -> Unit, onEarnings: () -> Unit, onSetup: () -> Unit) {
     val app = LocalContext.current.applicationContext as Application
     val vm: HomeViewModel = viewModel(factory = viewModelFactory { initializer { HomeViewModel(app, container) } })
     val s by vm.state.collectAsStateWithLifecycle()
     Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.home_title)) }) }) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             when {
                 s.loading -> Text(stringResource(R.string.home_loading))
                 s.error != null -> {
@@ -126,6 +128,9 @@ fun HomeScreen(container: AppContainer, onOpenForm: () -> Unit, onNewMaterial: (
                 Button(onClick = onReview, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_review)) }
             }
             OutlinedButton(onClick = onNotifications, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_notifications)) }
+            if (s.me?.roles?.any { it.name.value == "reporter" } == true) {
+                OutlinedButton(onClick = onEarnings, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.earnings_title)) }
+            }
             OutlinedButton(onClick = onSetup, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_setup)) }
             TextButton(onClick = onOpenForm, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_open_form)) }
             OutlinedButton(onClick = { vm.logout(allSessions = false) }, enabled = !s.signingOut, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_logout)) }
