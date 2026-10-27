@@ -1,5 +1,5 @@
 # @EDGE_IP@ = عنوان هذه الحاوية على الشبكة الداخلية (PREVIEW_EDGE_IP)، يكتبه أمر البدء.
-# المنبعان باسمين فريدين على الشبكة الداخلية (ph-preview-*): هذه الحاوية على deploy_default أيضًا، والاسم القصير قد يُحل هناك.
+# المنابع بأسماء فريدة على الشبكات الداخلية (ph-preview-*): هذه الحاوية على deploy_default أيضًا، والاسم القصير قد يُحل هناك.
 
 # الويب عبر Caddy الخادم المشترك: لا فهرسة، وشريط «معاينة» في كل صفحة HTML.
 server {
@@ -20,6 +20,23 @@ server {
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
         proxy_set_header Host $host;
+        add_header X-Robots-Tag "noindex, nofollow" always;
+    }
+    # واجهة الخادم العلنية لبناء iOS التجريبي (ADR 0077): /v1/ كما وصل، بلا إعادة كتابة مسار ولا بادئة (الخادم يخدم تحت /v1 مباشرة،
+    # وproxy_pass بمتغير ودون مسار يمرر الطلب الأصلي بكامله). المنبع باسم الشبكة الثانية public-api لا الداخلية: يرى الخادم هذه
+    # الطلبات من عنوان للحافة ليس في BFF_SOURCE_ADDRESSES، فلا رمز ويب ولا عنوان عميل من المتصل، وكل المتصلين علنًا في سلة
+    # حد معدل واحدة. بلا sub_filter (الشريط للصفحات وحدها)، وجسم JSON صغير. /health وما تحت /internal لا يمران من هنا.
+    location /v1/ {
+        client_max_body_size 1m;
+        client_body_timeout 15s;
+        set $api_public http://ph-preview-api-public:3000;
+        proxy_pass $api_public;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 60s;
         add_header X-Robots-Tag "noindex, nofollow" always;
     }
     location / {

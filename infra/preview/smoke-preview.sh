@@ -4,7 +4,9 @@
 # يثبت: compose يقوم بالصورتين وحدهما وبلا منفذ على المضيف، و"web" وحده على deploy_default (باسم lib-web) والخادم لا يُصل
 # منها، و/health 200، والدخول عبر الويب بحساب تجريبي يرى مواده الاصطناعية، وX-Robots-Tag وشريط «معاينة»، والرفع من
 # الحاسوب كما يفعله المتصفح (جلسة رفع ورمز ingest عبر الـBFF، ثم tus عبر الحافة والبوابة، وقطع واستئناف من إزاحة tusd،
-# والجلسة completed)، ومجموع حدود الذاكرة ≤ 960 MB بلا swap واستهلاكها الفعلي (docker stats) تحته، ولا سر في السجلات.
+# والجلسة completed)، و/v1 العلني كما يصله بناء iOS التجريبي (ADR 0077: دخول وتحدٍّ وتسجيل مرفوض بشهادة مزيفة، ونقاط الـBFF
+# وحده لا تصل: رمز الويب 404 وعنوان العميل المنتحل لا يغيّر سلة حد المعدل، وبلا /internal)، والخادم على شبكة العلنية مع الحافة وحدها
+# لا على deploy_default، ومجموع حدود الذاكرة ≤ 960 MB بلا swap واستهلاكها الفعلي (docker stats) تحته، ولا سر في السجلات.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JSON=""
@@ -57,6 +59,21 @@ done
 on_shared="$(docker network inspect deploy_default -f '{{range .Containers}}{{.Name}} {{end}}')"
 [ "$on_shared" = "ph-preview-decoy post-history-preview-web-1 " ] || [ "$on_shared" = "post-history-preview-web-1 ph-preview-decoy " ] || fail "on deploy_default: '$on_shared' (want the web edge alone)"
 echo "no host port, the web edge alone on deploy_default: ok"
+
+# The public /v1/ location (ADR 0077) reaches the API over a second internal network that only the edge and the API share. The
+# API sees the edge there from an address that is not the BFF's (BFF_SOURCE_ADDRESSES), so public callers get no BFF powers; the
+# API is still not on the shared network, and the edge's address on the second network is not the trusted one.
+api_id="$("${C[@]}" ps -q api)" web_id="$("${C[@]}" ps -q web)"
+api_nets="$(docker inspect -f '{{range $k, $_ := .NetworkSettings.Networks}}{{$k}} {{end}}' "$api_id")"
+[ "$api_nets" = "post-history-preview_internal post-history-preview_public-api " ] || fail "the API is on: '$api_nets' (want the two internal networks, never deploy_default)"
+pub_net=post-history-preview_public-api
+[ "$(docker network inspect "$pub_net" -f '{{.Internal}}')" = true ] || fail "$pub_net is not an internal network"
+members="$(docker network inspect "$pub_net" -f '{{range .Containers}}{{.Name}}{{"\n"}}{{end}}' | sed '/^$/d' | sort | tr '\n' ' ')"
+[ "$members" = "post-history-preview-api-1 post-history-preview-web-1 " ] || fail "on $pub_net: '$members' (want the API and the edge alone)"
+edge_pub_ip="$(docker inspect -f '{{(index .NetworkSettings.Networks "'$pub_net'").IPAddress}}' "$web_id")"
+bff_ip="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["api"]["environment"]["BFF_SOURCE_ADDRESSES"].split("/")[0])' <<<"$("${C[@]}" config --format json)")"
+[ -n "$edge_pub_ip" ] && [ -n "$bff_ip" ] && [ "$edge_pub_ip" != "$bff_ip" ] || fail "the edge's address on $pub_net is the BFF's trusted address"
+echo "public /v1 reaches the API over a network of its own, from an address that is not the BFF's: ok"
 
 # A probe on deploy_default, as the server's Caddy: the API image's node, no other image.
 probe() { docker run --rm -i --network deploy_default -e DOMAIN -e EMAIL -e PASSWORD --entrypoint node post-history-preview-api:latest --input-type=module -; }
@@ -170,6 +187,66 @@ const tooBig = await bff("uploads", { material_id: items[2].id, kind: "original"
   client_sha256: createHash("sha256").update(randomBytes(8)).digest("hex") });
 if (tooBig.status !== 422) die(`upload session of 2 GiB + 1 byte through the BFF: ${tooBig.status} (want 422)`);
 say("an upload session over 2 GiB is refused when created (422): ok");
+
+// Public /v1 through the same edge, as the iOS test build reaches it (ADR 0077). The API sees these requests from the edge's
+// address on the second network, which BFF_SOURCE_ADDRESSES does not list: no web ingest token, no client address chosen by
+// the caller, and no device without a real attestation gets an ingest token.
+const pub = (method, path, headers = {}, body) => req(method, `/v1${path}`,
+  { "content-type": "application/json", ...headers }, body === undefined ? undefined : JSON.stringify(body));
+const noAuth = await pub("GET", "/auth/me");
+if (noAuth.status !== 401) die(`public GET /v1/auth/me with no token: ${noAuth.status} (want 401 from the API)`);
+if (!/noindex/.test(noAuth.headers["x-robots-tag"] ?? "")) die("no X-Robots-Tag on a public /v1 answer");
+if (!/no-store/.test(noAuth.headers["cache-control"] ?? "")) die("a public /v1 answer is cacheable");
+if (noAuth.body.includes("Preview: test data") || /html/i.test(String(noAuth.headers["content-type"]))) die("the page banner leaked into a /v1 answer");
+const pubLogin = await pub("POST", "/auth/login", {}, { email: process.env.EMAIL, password: process.env.PASSWORD });
+if (pubLogin.status !== 200) die(`demo login on public /v1: ${pubLogin.status}`);
+const bearer = { authorization: `Bearer ${JSON.parse(pubLogin.body).access_token}` };
+const pubList = await pub("GET", "/materials", bearer);
+const pubItems = pubList.status === 200 ? JSON.parse(pubList.body).items ?? [] : [];
+if (pubItems.length < 3) die(`materials on public /v1: ${pubList.status}, ${pubItems.length} items`);
+say(`public /v1 through the edge: login and ${pubItems.length} synthetic materials, noindex, no-store, no banner: ok`);
+const idem = () => ({ ...bearer, "idempotency-key": randomUUID() });
+const challenge = async () => {
+  const c = await pub("POST", "/device-attestations/challenge", idem());
+  if (c.status !== 200) die(`attestation challenge on public /v1: ${c.status} ${c.body}`);
+  return JSON.parse(c.body).challenge_id;
+};
+// A device with no real attestation: the key registration and both ingest-token requests are refused with the one answer.
+const registered = await pub("POST", "/device-attestations", idem(), { platform: "ios", key_id: "AAAA", attestation: "AAAA", challenge_id: await challenge() });
+if (registered.status !== 403 || JSON.parse(registered.body).code !== "attestation_failed") die(`a forged App Attest registration: ${registered.status} ${registered.body.slice(0, 80)}`);
+const pubSession = await pub("POST", "/uploads", idem(), { material_id: items[2].id, kind: "original", size_bytes: 1024, filename: "public-smoke.mp4",
+  mime_type: "video/mp4", client_sha256: createHash("sha256").update(randomBytes(8)).digest("hex") });
+if (pubSession.status !== 201) die(`upload session on public /v1: ${pubSession.status} ${pubSession.body.slice(0, 80)}`);
+const ps = JSON.parse(pubSession.body);
+const forgedIos = await pub("POST", `/uploads/${ps.id}/ingest-token`, idem(), { platform: "ios", key_id: "AAAA", assertion: "AAAA", challenge_id: await challenge() });
+if (forgedIos.status !== 403 || JSON.parse(forgedIos.body).code !== "attestation_failed") die(`an iOS ingest token with a forged assertion: ${forgedIos.status}`);
+const forgedAndroid = await pub("POST", `/uploads/${ps.id}/ingest-token`, idem(), { platform: "android", integrity_token: "forged", challenge_id: await challenge() });
+if (forgedAndroid.status !== 403 || JSON.parse(forgedAndroid.body).code !== "attestation_failed") die(`an Android ingest token (Play Integrity is closed here): ${forgedAndroid.status}`);
+say("a forged App Attest registration and ingest tokens (iOS, Android) are refused with 403 attestation_failed: ok");
+// BFF-only: the web ingest token (no device attestation behind it) is 404 on the public path, 200 for the same session through the BFF.
+const pubWeb = await pub("POST", `/uploads/${ps.id}/web-ingest-token`, idem());
+if (pubWeb.status !== 404) die(`web ingest token on public /v1: ${pubWeb.status} (want 404: it is for the BFF alone)`);
+const bffWeb = await bff(`uploads/${ps.id}/web-ingest-token`, {});
+if (bffWeb.status !== 200) die(`the same web ingest token through the BFF: ${bffWeb.status} (the public 404 would prove nothing)`);
+say("the web ingest token: 404 on public /v1, 200 through the BFF for the same session: ok");
+// The caller does not choose its client address: ten failed logins for one email under ten different X-Client-Address values
+// still hit that email's limit on the eleventh, because the API ignores the header from any address but the BFF's.
+let throttled = 0;
+for (let i = 1; i <= 11; i++) {
+  const r = await pub("POST", "/auth/login", { "x-client-address": `198.51.100.${i}` }, { email: "nobody@preview-smoke.invalid", password: "wrong-password-123" });
+  if (i <= 10 && r.status !== 401) die(`failed login ${i} on public /v1 with a forged client address: ${r.status} (want 401)`);
+  throttled = r.status;
+}
+if (throttled !== 429) die(`11th failed login with ten forged client addresses: ${throttled} (want 429: the header must be ignored on public /v1)`);
+say("a forged X-Client-Address does not give a public caller a rate-limit bucket of its own: ok");
+// Not exposed here: the server's internal routes, its health check, and bodies beyond what JSON needs.
+for (const [method, path] of [["GET", "/internal/ingest/session-status?sid=x"], ["POST", "/internal/tusd-hooks/x"], ["GET", "/health"], ["POST", "/payments/webhooks/sandbox"]]) {
+  const r = await pub(method, path, bearer);
+  if (r.status !== 404) die(`${method} /v1${path.split("?")[0]} on the public edge: ${r.status} (want 404)`);
+}
+const huge = await req("POST", "/v1/auth/login", { "content-type": "application/json" }, "x".repeat(1024 * 1024 + 1024));
+if (huge.status !== 413) die(`a body over 1 MiB on public /v1: ${huge.status} (want 413 at the edge)`);
+say("/v1/internal, /v1/health and webhooks are 404, a body over 1 MiB is 413 at the edge: ok");
 JS
 )" || { echo "$out"; fail "through the web edge"; }
 echo "$out"

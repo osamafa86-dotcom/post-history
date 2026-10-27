@@ -466,6 +466,7 @@
       "value": "edge.conf.in",
       "reason": "اسم قالب إعداد nginx داخل compose المعاينة، وليس مضيفًا",
       "paths": [
+        "docs/plan/decisions/0077-preview-public-v1-for-ios-testflight.md",
         "infra/preview/docker-compose.preview.yml"
       ]
     },
@@ -574,6 +575,13 @@
         "infra/preview/docker-compose.preview.yml",
         "infra/preview/edge/edge.conf.in",
         "infra/preview/smoke-preview.sh"
+      ]
+    },
+    {
+      "value": "ph-preview-api-public",
+      "reason": "اسم خدمة Docker Compose على شبكة داخلية؛ لا يُحل خارج الشبكة ولا يكشف نطاقًا",
+      "paths": [
+        "infra/preview/edge/edge.conf.in"
       ]
     },
     {
