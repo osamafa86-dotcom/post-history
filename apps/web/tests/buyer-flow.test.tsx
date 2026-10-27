@@ -34,7 +34,7 @@ describe("buyer flow (#385)", () => {
   });
   it("the card carries trust and exclusivity without fingerprints or identifiers", () => {
     const html = renderToStaticMarkup(<CatalogCard locale="en" item={{ href: "/en/store/x", title: { ar: "ع", en: "Footage" }, governorate: "Gaza", shotOn: "2026-10-19T13:45:00Z", durationMs: 65000, width: 1920, height: 1080, displayName: "Palestine Post", from: { amount_minor: 15000, currency: "USD" }, types: ["raw_footage"], licenses: ["editorial_single", "exclusive_temporary"], exclusive: true }} />);
-    expect(html).toContain(en.store.browse.verified); expect(html).toContain(en.store.browse.exclusive); expect(html).toContain(en.store.licenseTypes.exclusive_temporary);
+    expect(html).toContain(en.store.browse.verified); expect(html).toContain(`${en.store.browse.family.editorial}, ${en.store.browse.exclusive}`);
     expect(html).not.toMatch(/13:45|sha256|fingerprint/i);
   });
   it("tones licence statuses: active good, expired neutral, revoked bad", () => {

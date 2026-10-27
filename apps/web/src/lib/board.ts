@@ -27,3 +27,6 @@ export function overdueTime(from: string | null | undefined, now: number): strin
   const seconds = Math.floor((now - at) / 1000);
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
+
+/** التاريخ الكامل لرأس اللوحة («الثلاثاء، 27 تشرين الأول 2026»)، أرقام لاتينية. */
+export const wallDate = (at: number, locale: "ar" | "en") => new Intl.DateTimeFormat(locale === "ar" ? "ar-PS-u-nu-latn" : "en", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date(at));

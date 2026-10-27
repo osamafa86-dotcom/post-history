@@ -436,7 +436,7 @@
     "currencies": "Currencies are not combined; each total is paid separately.",
     "eyebrow": "Store (sandbox)",
     "title": "Catalog",
-    "lead": "Materials for sale with a watermarked preview. Payment runs on a sandbox provider only.",
+    "lead": "Every item here came from a known reporter, has a receipt and a fingerprint, and was not altered after it arrived. The licence is chosen at purchase.",
     "denied": "The catalog is open now to administration, rights, the editor in chief and finance; buyer accounts arrive with organizations.",
     "search": "Search",
     "licenseType": "License type",
@@ -493,11 +493,29 @@
       "filesAfterPayment": "Files open only after the gateway's signed payment confirmation.",
       "searchButton": "Search",
       "verifiedOn": "Verified on {date}",
-      "approvedOn": "Editorially approved on {date}"
+      "approvedOn": "Editorially approved on {date}",
+      "quick": {
+        "label": "Quick filter",
+        "all": "All",
+        "exclusive": "Exclusive available"
+      },
+      "period": {
+        "label": "Shoot period",
+        "all": "Any time",
+        "recent": "Today and yesterday",
+        "week": "Last 7 days",
+        "month": "Last 30 days"
+      },
+      "searchPlaceholder": "Search by place, date or subject",
+      "family": {
+        "editorial": "Editorial"
+      },
+      "startsAt": "Starts at"
     },
     "exclusiveUntil": "Exclusivity reserved until {date}",
     "termDaysLabel": "Licence term (days)",
-    "exclusivityHoursLabel": "Exclusivity duration (hours)"
+    "exclusivityHoursLabel": "Exclusivity duration (hours)",
+    "heading": "Verified footage from the field"
   },
   "board": {
     "title": "Newsroom board",
@@ -539,7 +557,8 @@
       "soundOff": "Click to enable sound",
       "stale": "Board not updated for {time}",
       "allClear": "Everything is within its deadline",
-      "exit": "Leave wall display"
+      "exit": "Leave wall display",
+      "more": "{n} more"
     },
     "reservedName": "Reserved: {name}",
     "overdueAge": "Overdue {time}",
@@ -1291,7 +1310,9 @@
     "ack": "Seen",
     "ackReason": "Seen from the live inbox",
     "showUrgent": "Show urgent",
-    "mute": "Mute the sound alert on this device"
+    "mute": "Mute the sound alert on this device",
+    "escalatesIn": "Escalates in {time}.",
+    "escalationDue": "Escalation is due."
   },
   "material": {
     "outOfScope": "This material is outside your account's scope.",
@@ -1300,5 +1321,49 @@
     "allTracks": "Show all tracks",
     "system": "System",
     "neutralActor": "Internal actor or system"
+  },
+  "trackLine": {
+    "tracks": {
+      "technical_state": "Technical",
+      "editorial_state": "Editorial",
+      "rights_state": "Rights"
+    },
+    "tracksDef": {
+      "technical_state": "Technical",
+      "editorial_state": "Editorial",
+      "rights_state": "Rights"
+    },
+    "states": {
+      "empty": "not started",
+      "progress": "in progress",
+      "done": "complete",
+      "attention": "needs attention",
+      "blocked": "stopped"
+    },
+    "legendStates": {
+      "empty": "Not started",
+      "progress": "In progress",
+      "done": "Complete",
+      "attention": "Needs attention",
+      "blocked": "Stopped"
+    },
+    "legend": "The line under each item, from the start: Technical, Editorial, Rights",
+    "legendLabel": "Track colour legend",
+    "column": "Tracks"
+  },
+  "inboxSummary": "{total} items: {urgent} urgent open, {inbox} incoming, {reviewing} under review, {accepted} accepted, {stopped} stopped technically.",
+  "inboxTabs": {
+    "label": "Quick filter",
+    "all": "All",
+    "urgent": "Urgent",
+    "inbox": "Incoming",
+    "reviewing": "Under review",
+    "accepted": "Accepted",
+    "stopped": "Stopped"
+  },
+  "inboxSearch": {
+    "label": "Search this page",
+    "placeholder": "Search by receipt, title or governorate",
+    "help": "Searches only the items shown on this page."
   }
 }

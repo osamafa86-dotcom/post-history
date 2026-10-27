@@ -9,7 +9,7 @@ test.beforeEach(async ({ request }) => { await request.post("http://127.0.0.1:32
 
 test("the inbox leads with unseen urgent material and the newsroom counters", async ({ page }) => {
   await login(page); const alert = page.getByTestId("urgent-alert");
-  await expect(alert).toBeVisible(); await expect(alert).toContainText(ar.editor.urgentMany.replace("{n}", "10")); await expect(alert.locator(".mono")).toHaveText(/^\d{1,}:\d{2}/);
+  await expect(alert).toBeVisible(); await expect(alert).toContainText(ar.editor.urgentMany.replace("{n}", "10")); await expect(alert.getByTestId("urgent-since")).toHaveText(/\S/); await expect(alert.getByTestId("urgent-since")).not.toContainText(":");
   await expect(page.getByTestId("stat-urgent")).toBeVisible();
   await alert.getByRole("button", { name: ar.editor.showUrgent }).click(); await expect(page.getByTestId("material-row")).toHaveCount(40); await expect(page.getByTestId("material-row").filter({ hasText: ar.states.priority.urgent })).toHaveCount(40);
   await expect(page.locator(".filter-panel")).not.toHaveAttribute("open");
@@ -83,4 +83,28 @@ test("ADR 0035 read-all sends one stable request and cutoff across a lost respon
   const button = page.getByRole("button", { name: ar.notice.readAll, exact: true }); await button.click();
   await expect(page.getByRole("alert")).toBeVisible(); await button.click(); await expect(button).toBeDisabled();
   expect(writes).toHaveLength(2); expect(writes[1]).toEqual(writes[0]); expect(writes[0].key).toBeTruthy(); expect(Object.keys(writes[0].body as object)).toEqual(["before"]);
+});
+
+test("the inbox follows the Figma screen: summary, quick filters with counts, page search and three-track rows, in RTL and LTR (193:590)", async ({ page }) => {
+  await login(page); await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.locator(".inbox-head h1")).toHaveText(ar.inbox); await expect(page.locator(".inbox-summary")).toContainText(/^200 مادة: 40 عاجلة مفتوحة/);
+  const tabs = page.getByRole("navigation", { name: ar.inboxTabs.label }), tab = (label: string) => tabs.getByRole("button", { name: new RegExp(`^${label}`) });
+  await expect(tabs.getByRole("button")).toHaveCount(6); await expect(tab(ar.inboxTabs.all)).toHaveAttribute("aria-pressed", "true"); await expect(tab(ar.inboxTabs.all)).toContainText("200"); await expect(tab(ar.inboxTabs.urgent)).toContainText("40");
+  const first = page.getByTestId("material-row").first(), line = first.getByTestId("track-line");
+  await expect(line).toHaveAttribute("role", "img"); await expect(line).toHaveAttribute("aria-label", "الفنية مكتملة، التحريرية لم تبدأ، الحقوق لم تبدأ"); await expect(line.locator(".track-seg")).toHaveCount(3);
+  const x = async (track: string) => (await line.locator(`[data-track='${track}']`).boundingBox())!.x;
+  expect(await x("technical_state")).toBeGreaterThan(await x("rights_state"));
+  await tab(ar.inboxTabs.urgent).click(); await expect(tab(ar.inboxTabs.urgent)).toHaveAttribute("aria-pressed", "true"); await expect(page.getByTestId("material-row")).toHaveCount(40);
+  await expect(page.getByTestId("material-row").first()).toHaveClass(/urgent/); await expect(page.getByTestId("material-row").first().locator("td.material-cell")).toHaveCSS("border-inline-start-width", "6px");
+  await tab(ar.inboxTabs.stopped).click(); await expect(page.getByTestId("material-row")).toHaveCount(1);
+  await expect(page.getByTestId("material-row").locator("[data-track='technical_state']")).toHaveAttribute("data-state", "blocked"); await expect(page.locator(".track-note")).toHaveText(`فنية: ${ar.states.technical_state.failed}`);
+  await tab(ar.inboxTabs.all).click(); await expect(page.getByTestId("material-row")).toHaveCount(50);
+  await page.getByLabel(ar.inboxSearch.label).fill("rcpt-20261020-000050"); await expect(page.getByTestId("material-row")).toHaveCount(1); await expect(page.getByTestId("material-row")).toContainText("RCPT-20261020-000050");
+  await page.getByLabel(ar.inboxSearch.label).fill("zzz"); await expect(page.getByText(ar.empty)).toBeVisible(); await page.getByLabel(ar.inboxSearch.label).fill("");
+  await expect(page.locator(".filter-panel")).not.toHaveAttribute("open");
+  await page.screenshot({ path: ".artifacts/inbox-figma-ar.png" });
+  await page.goto("/en/inbox"); await expect(page.getByTestId("material-row")).toHaveCount(50); await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
+  const en1 = page.getByTestId("material-row").first().getByTestId("track-line"), ex = async (track: string) => (await en1.locator(`[data-track='${track}']`).boundingBox())!.x;
+  expect(await ex("technical_state")).toBeLessThan(await ex("rights_state")); await expect(en1).toHaveAttribute("aria-label", "Technical complete, Editorial not started, Rights not started");
+  await expect(page.locator(".inbox-summary")).toContainText(/^200 items: 40 urgent open/);
 });

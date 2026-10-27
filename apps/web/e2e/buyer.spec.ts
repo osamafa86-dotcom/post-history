@@ -13,8 +13,18 @@ test("catalog: trust strip, instant filters, removable filter chips and cards wi
   await expect(page.getByTestId("catalog-card")).toHaveCount(2);
   await expect(page.getByTestId("catalog-card").first()).toContainText(b.verified); await expect(page.getByTestId("catalog-card").first()).toContainText(b.exclusive);
   await expect(page.getByTestId("catalog-card").nth(1)).not.toContainText(b.exclusive);
+  // Figma 185:330: عنوان عرض وسطر ثقة، تصفية سريعة وفترة في الشريط، والمرشحات المتقدمة مطوية حتى تُفتح.
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(s.heading); await expect(page.locator(".catalog-lead")).toHaveText(s.lead);
+  await expect(page.locator(".catalog-filters")).not.toHaveAttribute("open"); await expect(page.getByTestId("catalog-card").first().locator(".catalog-price")).toContainText(b.startsAt);
+  await expect(page.getByTestId("catalog-card").first().locator(".families")).toHaveText(`${b.family.editorial}، ${b.exclusive}`); await expect(page.getByTestId("catalog-card").nth(1).locator(".families")).toHaveText(b.family.editorial);
+  await expect(page.getByTestId("catalog-card").first().locator("svg.thumb-play")).toHaveAttribute("aria-hidden", "true"); await expect(page.getByTestId("catalog-card").first().locator(".catalog-thumb")).toHaveCSS("height", "158px");
+  const exclusive = page.waitForRequest(r => r.url().includes("/api/bff/catalog?") && r.url().includes("exclusive_available=true"));
+  await page.getByRole("button", { name: b.quick.exclusive, exact: true }).click(); await exclusive; await expect(page.getByRole("button", { name: b.quick.exclusive, exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: b.quick.all, exact: true }).click(); await expect(page.getByTestId("catalog-card")).toHaveCount(2);
+  const recent = page.waitForRequest(r => r.url().includes("/api/bff/catalog?") && /shot_from=\d{4}-\d{2}-\d{2}/.test(r.url()));
+  await page.getByLabel(b.period.label).selectOption("week"); await recent; await page.getByLabel(b.period.label).selectOption("");
   const filtered = page.waitForRequest(r => r.url().includes("/api/bff/catalog?") && r.url().includes("min_height=1080"));
-  await page.getByLabel(s.resolution).selectOption("1080"); await filtered;
+  await page.locator(".catalog-filters summary").click(); await page.getByLabel(s.resolution).selectOption("1080"); await filtered;
   await page.getByLabel(s.search).fill("zzz"); await page.getByRole("button", { name: b.searchButton, exact: true }).click();
   await expect(page.getByText(s.empty)).toBeVisible();
   await page.getByRole("button", { name: b.removeFilter.replace("{filter}", "«zzz»") }).click();

@@ -33,6 +33,14 @@ describe("design tokens are the web's single source (#385)", () => {
     const used = new Set(styles.match(/var\(--vl-[a-z0-9-]+/g)?.map(v => v.slice(4)));
     expect([...used].filter(v => !defined.has(v))).toEqual([]);
   });
+  it("keeps the track line segments (Figma 166:89) at 3:1 or more against the page and cards in both modes", () => {
+    const hex = (key: string, mode: "light" | "dark") => color(key, mode), mix = (a: string, b: string) => `#${[1, 3, 5].map(i => Math.round(parseInt(a.slice(i, i + 2), 16) * 0.65 + parseInt(b.slice(i, i + 2), 16) * 0.35).toString(16).padStart(2, "0")).join("")}`; // = color-mix 65% / 35% في globals.css
+    for (const mode of ["light", "dark"] as const) {
+      const segments: Record<string, string> = { empty: hex("text/muted", mode), done: hex("bg/brand", mode), blocked: hex("bg/danger", mode), attention: mix(hex("tone/attention/fg", mode), hex("tone/attention/border", mode)) };
+      for (const [name, value] of Object.entries(segments)) for (const bg of ["bg/surface", "bg/canvas"]) expect(contrast(value, color(bg, mode)), `${mode} ${name} on ${bg}`).toBeGreaterThanOrEqual(3);
+      expect(contrast(color("text/on-brand", mode), hex("bg/danger", mode)), `${mode} hatch on blocked`).toBeGreaterThanOrEqual(3);
+    }
+  });
   it("meets WCAG 2.1 AA for text in both modes", () => {
     const pairs: [string, string][] = [["text/primary", "bg/surface"], ["text/primary", "bg/canvas"], ["text/secondary", "bg/surface"], ["text/secondary", "bg/canvas"], ["text/muted", "bg/surface"], ["text/brand", "bg/surface"], ["text/danger", "bg/surface"],
       ["text/on-brand", "bg/brand"], ["text/on-media", "bg/media"], ["tone/urgent/fg", "tone/urgent/bg"], ...["neutral", "progress", "good", "attention", "bad"].map(t => [`tone/${t}/fg`, `tone/${t}/bg`] as [string, string])];

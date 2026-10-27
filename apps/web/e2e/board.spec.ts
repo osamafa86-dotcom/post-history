@@ -43,8 +43,15 @@ test("wall display: no workspace chrome, dark by default, big tiles, six columns
   await expect(page.locator(".wall-tiles")).toHaveAttribute("aria-live", "polite");
   await expect(page.getByTestId("wall-column-inbox").getByTestId("wall-card")).toHaveCount(8);
   await expect(page.getByTestId("wall-column-inbox").getByTestId("wall-card").first()).toHaveClass(/urgent/);
-  await expect(page.getByTestId("wall-column-inbox")).toContainText("+191");
+  await expect(page.getByTestId("wall-column-inbox")).toContainText(ar.board.display.more.replace("{n}", "191"));
   await expect(page.getByTestId("wall-column-published")).toContainText(ar.board.display.empty);
+  // Figma 193:862: دليل المسارات، رقم العمود الكبير بخط سفلي، وبطاقة بشريط داكن (إيصال وعمر) ولسان عاجل وخط مسارات وسطر محافظة.
+  await expect(page.locator(".track-legend li")).toHaveCount(5); await expect(page.locator(".track-legend")).toContainText(ar.trackLine.legend);
+  const head = page.getByTestId("wall-column-inbox").locator("h2"); await expect(head.locator(".wall-count")).toHaveText("199"); await expect(head).toHaveCSS("border-bottom-width", "2px");
+  const card = page.getByTestId("wall-column-inbox").getByTestId("wall-card").first();
+  await expect(card.locator(".wall-slate .wall-receipt")).toHaveText(/^RCPT-/); await expect(card.locator(".wall-priority.urgent")).toHaveText(ar.states.priority.urgent);
+  await expect(card.getByTestId("track-line").locator(".track-seg")).toHaveCount(3); await expect(card.locator(".wall-place")).toHaveText(/\S/);
+  await expect(page.locator(".wall-date")).toContainText(/\d{4}/);
   await expect(page.getByTestId("wall-upload")).toHaveCount(1); await expect(page.getByTestId("wall-upload")).toContainText("25%");
   await expect(page.getByTestId("wall-sound")).toContainText(ar.board.display.soundOff);
   await page.mouse.click(5, 5); await expect(page.getByTestId("wall-sound")).toContainText(ar.board.display.soundOn);
