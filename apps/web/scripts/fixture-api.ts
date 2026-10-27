@@ -191,6 +191,17 @@ const server = createServer(async (req, res) => {
     history.set(materials[1].id, [{ id: randomUUID(), track: "editorial", from: "reviewing", to: "rejected", reason: "مكررة مع مادة سابقة", note_timecode_ms: null, actor_id: supervisor, occurred_at: stamp }]);
     return send({ ok: true });
   }
+  if (url.pathname === "/__test/board-mix" && req.method === "POST") {
+    // مزيج للوحة الأعمدة الأربعة (ADR 0078): فوق المقبولة [1] والفاشلة فنيًا [2] من الإعادة الافتراضية.
+    Object.assign(materials[3], { editorial_state: "acknowledged" }); Object.assign(materials[5], { editorial_state: "reviewing" });
+    Object.assign(materials[6], { technical_state: "pending" });                                              // واردة لكن الاستلام لم يبدأ: قيد التحقق
+    Object.assign(materials[7], { editorial_state: "accepted", technical_state: "original_received" });      // مقبولة والتحقق الفني جارٍ: قيد التحقق لا جاهزة
+    Object.assign(materials[8], { editorial_state: "needs_changes" }); Object.assign(materials[9], { editorial_state: "rejected" });
+    Object.assign(materials[10], { editorial_state: "accepted", technical_state: "failed" });                // مقبولة وفشل فني: متوقفة
+    Object.assign(materials[11], { editorial_state: "in_production" }); Object.assign(materials[12], { editorial_state: "final_review" });
+    Object.assign(materials[13], { editorial_state: "published" });                                          // خارج اللوحة
+    return send({ ok: true });
+  }
   if (url.pathname === "/__test/history-unavailable" && req.method === "POST") { historyUnavailable = true; return send({ ok: true }); }
   if (url.pathname === "/__test/bump-rule" && req.method === "POST") { for (const rule of rules.values()) rule.row_version++; return send({ ok: true }); }
   if (url.pathname === "/__test/bump" && req.method === "POST") { materials[0].row_version!++; return send({ ok: true }); }

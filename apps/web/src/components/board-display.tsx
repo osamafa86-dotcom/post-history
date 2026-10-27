@@ -3,18 +3,20 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { messages, type Locale } from "@/lib/i18n";
-import type { Material, NewsroomDashboard } from "@/lib/types";
+import type { NewsroomDashboard } from "@/lib/types";
 import { hasRole } from "@/lib/review";
 import { clock } from "@/lib/editor";
-import { boardOrder, overdueTime, rose, rotateMs, rotation, wallClock, wallDate } from "@/lib/board";
+import { overdueTime, rose, rotateMs, rotation, wallClock, wallDate } from "@/lib/board";
+import { productionColumns } from "@/lib/board-columns";
+import { arrange, loadBoard, type BoardData } from "@/lib/board-load";
 import { internalNames } from "@/lib/work-name";
 import { beep } from "@/lib/alert-sound";
 import { useUser } from "./session-boundary";
 import { photographer } from "./states";
-import { boardColumns, elapsed } from "./newsroom-board";
+import { elapsed } from "./newsroom-board";
+import { TopBar } from "./top-bar";
 import { TrackLegend, TrackLine } from "./track-line";
 
-type Column = typeof boardColumns[number];
 const fetchLimit = 24, uploadSlots = 3;
 // المنقضي mm:ss في الساعة الأولى، ثم بالساعات والأيام كي يبقى مقروءًا من بعيد.
 const age = (from: string, now: number, locale: Locale) => now - Date.parse(from) < 3600000 ? clock(from, now) : elapsed(from, now, locale);
@@ -23,7 +25,7 @@ const age = (from: string, now: number, locale: Locale) => now - Date.parse(from
 export function BoardDisplay({ locale, light }: { locale: Locale; light: boolean }) {
   const m = messages[locale], t = m.board, d = t.display, me = useUser();
   const allowed = hasRole(me, "supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin");
-  const [snapshot, setSnapshot] = useState<NewsroomDashboard | null>(null), [cards, setCards] = useState<Partial<Record<Column, Material[]>>>({});
+  const [snapshot, setSnapshot] = useState<NewsroomDashboard | null>(null), [loaded, setLoaded] = useState<BoardData | null>(null);
   const [failedSince, setFailedSince] = useState<number | null>(null), [lastOk, setLastOk] = useState(0), [now, setNow] = useState(() => Date.now());
   const [tick, setTick] = useState(0), [still, setStill] = useState(false), [sound, setSound] = useState(false), [idle, setIdle] = useState(false);
   const previous = useRef<NewsroomDashboard | null>(null), soundOn = useRef(false);
@@ -63,8 +65,8 @@ export function BoardDisplay({ locale, light }: { locale: Locale; light: boolean
     }
     async function pollCards() {
       try {
-        const pages = await Promise.all(boardColumns.map(state => browserApi().GET("/materials", { params: { query: { editorial_state: state, limit: fetchLimit } }, signal: controller.signal }).then(dataOrThrow)));
-        if (!disposed) setCards(Object.fromEntries(boardColumns.map((state, i) => [state, boardOrder(pages[i].items)])));
+        const data = await loadBoard(controller.signal, fetchLimit);
+        if (!disposed) setLoaded(data);
       } catch { failed(); }
       finally { if (!disposed) slow = setTimeout(pollCards, 15000); }
     }
@@ -74,8 +76,8 @@ export function BoardDisplay({ locale, light }: { locale: Locale; light: boolean
 
   const exit = <Link prefetch={false} className="skip-link" href={`/${locale}/board`}>{d.exit}</Link>;
   if (!allowed) return <section className="center-state">{exit}<h1>{t.title}</h1><p role="alert">{t.denied}</p></section>;
-  if (!snapshot) return <p className="center-state" role="status">{m.loading}</p>;
-  const count = (state: Column) => snapshot.editorial.find(item => item.state === state)?.count ?? 0;
+  if (!snapshot || !loaded) return <p className="center-state" role="status">{m.loading}</p>;
+  const { counts, cards } = arrange(snapshot, loaded, fetchLimit);
   const uploads = snapshot.uploads_in_progress ?? [], calm = !snapshot.urgent_open && !snapshot.overdue_acknowledgements;
   const tiles = [
     { key: "urgent-open", tone: snapshot.urgent_open ? "urgent" : "neutral", value: snapshot.urgent_open, title: t.urgentOpen, help: d.urgentHelp },
@@ -84,12 +86,15 @@ export function BoardDisplay({ locale, light }: { locale: Locale; light: boolean
   ];
   return <div className={`board-wall ${idle ? "idle" : ""}`} data-testid="board-display">
     {exit}
+    <TopBar variant="wall" locale={locale} brandHref={`/${locale}/board`} navLabel={m.workspace} items={[{ key: "board", href: `/${locale}/board?display=1`, label: d.nav, active: true }]}>
+      <span className="topbar-clock" dir="ltr" data-testid="wall-clock">{wallClock(now)}</span><span className="topbar-date wall-date">{wallDate(now, locale)}</span>
+    </TopBar>
     {failedSince !== null ? <p className="wall-banner bad" role="alert">{d.stale.replace("{time}", clock(new Date(lastOk).toISOString(), now))}</p>
       : calm && <p className="wall-banner good" role="status">{d.allClear}</p>}
     <div className={failedSince !== null ? "wall-body stale" : "wall-body"}>
       <header className="wall-top">
         <div><p className="wall-meta brand">{d.scope.replace("{scope}", me.office_id ? d.myOffice : d.allOffices)}</p><h1>{d.title}</h1>
-          <p className="wall-clock"><span className="mono" dir="ltr">{wallClock(now)}</span> <span className="wall-date">{wallDate(now, locale)}</span></p><p className="wall-meta muted">{d.snapshot.replace("{time}", wallClock(Date.parse(snapshot.generated_at)))}</p></div>
+          <p className="wall-meta muted">{d.snapshot.replace("{time}", wallClock(Date.parse(snapshot.generated_at)))}</p></div>
         <div className="wall-tiles" aria-live="polite">{tiles.map(tile => <article key={tile.key} className={`wall-tile tone-${tile.tone}`} data-testid={`wall-${tile.key}`}>
           <strong className="mono">{tile.value}</strong><span className="wall-title">{tile.title}</span><small className="wall-meta">{tile.help}</small></article>)}</div>
       </header>
@@ -102,10 +107,10 @@ export function BoardDisplay({ locale, light }: { locale: Locale; light: boolean
         })}{uploads.length > uploadSlots && <li className="wall-more">+{uploads.length - uploadSlots}</li>}</ul> : <p className="wall-meta">{t.noUploads}</p>}
       </section>
       <TrackLegend locale={locale} />
-      <div className="wall-columns">{boardColumns.map(state => {
-        const items = cards[state] ?? [], { shown, page, pages } = rotation(items, still ? 0 : tick), extra = count(state) - shown.length;
-        return <section key={state} className="wall-column" aria-labelledby={`wall-${state}`} data-testid={`wall-column-${state}`}>
-          <h2 id={`wall-${state}`} className="wall-title">{m.states.editorial_state[state]} <span className="wall-count mono">{count(state)}</span></h2>
+      <div className="wall-columns">{productionColumns.map(column => {
+        const items = cards[column], { shown, page, pages } = rotation(items, still ? 0 : tick), extra = counts[column] - shown.length;
+        return <section key={column} className="wall-column" aria-labelledby={`wall-${column}`} data-testid={`wall-column-${column}`}>
+          <h2 id={`wall-${column}`} className="wall-title">{t.columns[column]} <span className="wall-count mono">{counts[column]}</span></h2>
           {!shown.length ? <p className="wall-meta muted wall-empty">{d.empty}</p> : <ol key={page} className="wall-cards">{shown.map(item => {
             const receipt = item.files.find(f => f.receipt_number)?.receipt_number, urgent = item.priority === "urgent";
             return <li key={item.id} className={`wall-card ${item.priority}`} data-testid="wall-card">
