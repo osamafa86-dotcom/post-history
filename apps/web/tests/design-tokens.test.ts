@@ -41,6 +41,23 @@ describe("design tokens are the web's single source (#385)", () => {
       expect(contrast(color("text/on-brand", mode), hex("bg/danger", mode)), `${mode} hatch on blocked`).toBeGreaterThanOrEqual(3);
     }
   });
+  it("draws the top bar and the board's card strip from the slate tokens, with an active underline at 3:1 or more in both modes", () => {
+    const rule = (selector: RegExp) => styles.split("\n").filter(line => selector.test(line));
+    const accent = (lines: string[]) => lines.flatMap(line => [...line.matchAll(/--bar-accent: var\(--vl-color-([a-z-]+)\)/g)].map(m => m[1].replace(/^(bg|text|border|icon|track-state|track|tone)-/, "$1/")));
+    const [base] = rule(/^\.topbar \{/), strip = rule(/^\.wall-slate \{/).join("\n");
+    for (const token of ["bg-slate", "text-on-slate", "border-on-slate"]) { expect(base, token).toContain(`var(--vl-color-${token})`); expect(strip, token).toContain(`var(--vl-color-${token})`); }
+    expect(strip).not.toMatch(/var\(--vl-color-(bg-media|text-on-media)\)/);
+    // الخط الفاتح يُعرَّف في القاعدة الأساسية والداكن في قاعدتي الوضع الداكن (تفضيل النظام وتبديل الصفحة).
+    const light = accent([base]), dark = accent(rule(/^(@media \(prefers-color-scheme: dark\) \{ )?:root(:not\(\[data-theme="light"\]\)|\[data-theme="dark"\]) \.topbar \{/));
+    expect(light).toEqual(["bg/brand-subtle"]); expect(dark).toEqual(["bg/brand", "bg/brand"]);
+    for (const [mode, keys] of [["light", light], ["dark", dark]] as const) for (const key of keys) expect(contrast(color(key, mode), color("bg/slate", mode)), `${mode} underline ${key} on bg/slate`).toBeGreaterThanOrEqual(3);
+    // نص الشريط على الشريحة، ونصوص البنود غير النشطة (72٪ تعتيم) تبقى فوق 4.5.
+    const blend = (fg: string, bg: string, alpha: number) => `#${[1, 3, 5].map(i => Math.round(parseInt(fg.slice(i, i + 2), 16) * alpha + parseInt(bg.slice(i, i + 2), 16) * (1 - alpha)).toString(16).padStart(2, "0")).join("")}`;
+    for (const mode of ["light", "dark"] as const) {
+      expect(contrast(color("text/on-slate", mode), color("bg/slate", mode)), `${mode} text/on-slate`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(blend(color("text/on-slate", mode), color("bg/slate", mode), 0.72), color("bg/slate", mode)), `${mode} inactive item`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
   it("takes fonts from the Figma file and hosts every face it names, with its OFL licence beside it (ADR 0079)", () => {
     const family = (key: string) => tokens.font.family[key].$value;
     expect([family("arabic"), family("latin"), family("display"), family("mono")]).toEqual(["Vazirmatn", "Vazirmatn", "Reem Kufi", "IBM Plex Mono"]);

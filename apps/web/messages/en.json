@@ -570,6 +570,8 @@
       "ready": "Ready to publish",
       "stalled": "Stalled"
     },
+    "countCapped": "More than {n} materials are still being received technically in a single state, so no exact count is claimed: counts followed by + are minimums (the real figure may be higher), and what was not fetched is not placed in Incoming or Ready to publish.",
+    "atLeast": "at least",
     "columnHelp": {
       "incoming": "Fully received, nobody has looked yet",
       "checking": "Being acknowledged or reviewed, or still being received",

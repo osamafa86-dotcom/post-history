@@ -34,23 +34,56 @@ export function productionColumn(editorial: Editorial, technical: Technical): Pr
 /** الحالات التحريرية التي تُجلب بطاقاتها مع `technical_state=verified`، مجمّعة بعمودها (من دونها يُجلب الباقي عبر الحالات الفنية). */
 export const verifiedQueries = editorialStates.flatMap(state => { const column = productionColumn(state, "verified"); return column ? [{ state, column }] : []; });
 
+/** عدّاد عمود: `count` حدّ أدنى مضمون و`upper` حدّ أعلى. يتساويان حين لا يضيع شيء من الجلب (عدّ دقيق). */
+export type ColumnCount = { count: number; upper: number };
+export const isExact = ({ count, upper }: ColumnCount) => count === upper;
+/** نص العدّاد: الرقم وحده إن كان دقيقًا، وإلا «n+» (حدّ أدنى) معزولًا باتجاه LTR كي لا ينقلب «+» إلى جهة الرقم الخطأ في النص العربي. */
+export const countText = (value: ColumnCount) => isExact(value) ? String(value.count) : `\u2066${value.count}+\u2069`;
+
+/** ما لم يصل من المواد غير المكتملة فنيًا لأن الجلب بلغ سقفه: عدد الجارية فنيًا وعدد الفاشلة (حدّ أدنى لكل منهما، حالتهما التحريرية مجهولة). */
+export type Unfetched = { processing: number; failed: number };
+export const noneUnfetched: Unfetched = { processing: 0, failed: 0 };
+
+/**
+ * المتبقي خارج الجلب لكل حالة فنية بلغ جلبها السقف: عدّاد الحالة في اللقطة (مسارها وحده) مطروحًا منه ما جُلب منها،
+ * وواحدة على الأقل دائمًا (السقف بلغ ووُجدت صفحة تالية) ولو سبقت اللقطةَ الجلب.
+ */
+export function unfetchedItems(technical: NewsroomDashboard["technical"], open: readonly Pick<Material, "technical_state">[], truncated: readonly Technical[]): Unfetched {
+  const left = { ...noneUnfetched };
+  for (const state of truncated) {
+    const total = technical.find(entry => entry.state === state)?.count ?? 0, fetched = open.filter(item => item.technical_state === state).length;
+    left[state === "failed" ? "failed" : "processing"] += Math.max(1, total - fetched);
+  }
+  return left;
+}
+
 /**
  * عدّاد كل عمود. اللقطة تعطي عدّاد كل مسار وحده، لا التقاطع بينهما، فيُحسب الدقيق هكذا:
  * المواد غير المكتملة فنيًا (جارية أو فاشلة) تُجلب كلها (`open`) ويُصنَّف كل منها بحالتيه، والباقي مكتمل فنيًا
  * فعمودُه من حالته التحريرية وعدّه = عدّاد الحالة في اللقطة مطروحًا منه ما صُنّف من `open`.
+ *
+ * إن بلغ الجلب سقفه (`unfetched`) فلا يُنسب الباقي إلى عمود بالتخمين: هذه المواد ليست مكتملة فنيًا فلا تكون «واردة» ولا «جاهزة»،
+ * لكنها محسوبة في عدّاد حالتها التحريرية في اللقطة فتُنقص ما يبقى منه. وحالتها التحريرية مجهولة، فالعمود يعود بحدّين:
+ * - واردة وجاهزة: الباقي (R) من اللقطة، والمجهولة قد تنقص منه حتى كلها: [R − (جارية + فاشلة)، R].
+ * - قيد التحقق: المجهولة الجارية تضيف حتى كلها، والفاشلة تنقص من R (تذهب إلى متوقفة) حتى كلها: [R − فاشلة، R + جارية].
+ * - متوقفة: المجهولة المحسوبة في R لا تغيّره (تبقى متوقفة جارية كانت أو فاشلة)، وغيرها يضيف حتى كلها: [R، R + جارية + فاشلة].
+ * - المجهولة المنشورة تخرج من اللوحة، وهي ضمن الحدّين الأدنيين كلها.
  */
-export function columnCounts(editorial: NewsroomDashboard["editorial"], open: readonly Pick<Material, "editorial_state" | "technical_state">[]): Record<ProductionColumn, number> {
-  const total: Record<ProductionColumn, number> = { incoming: 0, checking: 0, ready: 0, stalled: 0 }, offTrack = new Map<Editorial, number>();
+export function columnCounts(editorial: NewsroomDashboard["editorial"], open: readonly Pick<Material, "editorial_state" | "technical_state">[], unfetched: Unfetched = noneUnfetched): Record<ProductionColumn, ColumnCount> {
+  const known: Record<ProductionColumn, number> = { incoming: 0, checking: 0, ready: 0, stalled: 0 }, rest = { ...known }, offTrack = new Map<Editorial, number>();
   for (const item of open) {
     const column = productionColumn(item.editorial_state, item.technical_state);
-    if (column) { total[column]++; offTrack.set(item.editorial_state, (offTrack.get(item.editorial_state) ?? 0) + 1); }
+    if (column) { known[column]++; offTrack.set(item.editorial_state, (offTrack.get(item.editorial_state) ?? 0) + 1); }
   }
   for (const { state, count } of editorial) {
     if (!isEditorial(state)) continue;
     const column = productionColumn(state, "verified");
-    if (column) total[column] += Math.max(0, count - (offTrack.get(state) ?? 0));
+    if (column) rest[column] += Math.max(0, count - (offTrack.get(state) ?? 0));
   }
-  return total;
+  const all = unfetched.processing + unfetched.failed;
+  const lose: Record<ProductionColumn, number> = { incoming: all, checking: unfetched.failed, ready: all, stalled: 0 };
+  const gain: Record<ProductionColumn, number> = { incoming: 0, checking: unfetched.processing, ready: 0, stalled: all };
+  return Object.fromEntries(productionColumns.map(column => [column, { count: known[column] + Math.max(0, rest[column] - lose[column]), upper: known[column] + rest[column] + gain[column] }])) as Record<ProductionColumn, ColumnCount>;
 }
 
 /** بطاقات الأعمدة من المجموعتين المجلوبتين (بلا تكرار)، مرتبة: عاجل ثم مهم ثم الأقدم، ومقصوصة إلى `limit`. */

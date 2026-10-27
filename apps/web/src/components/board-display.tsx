@@ -7,8 +7,8 @@ import type { NewsroomDashboard } from "@/lib/types";
 import { hasRole } from "@/lib/review";
 import { clock } from "@/lib/editor";
 import { overdueTime, rose, rotateMs, rotation, wallClock, wallDate } from "@/lib/board";
-import { productionColumns } from "@/lib/board-columns";
-import { arrange, loadBoard, type BoardData } from "@/lib/board-load";
+import { countText, isExact, productionColumns } from "@/lib/board-columns";
+import { arrange, fetchCap, loadBoard, type BoardData } from "@/lib/board-load";
 import { internalNames } from "@/lib/work-name";
 import { beep } from "@/lib/alert-sound";
 import { useUser } from "./session-boundary";
@@ -77,7 +77,7 @@ export function BoardDisplay({ locale, light }: { locale: Locale; light: boolean
   const exit = <Link prefetch={false} className="skip-link" href={`/${locale}/board`}>{d.exit}</Link>;
   if (!allowed) return <section className="center-state">{exit}<h1>{t.title}</h1><p role="alert">{t.denied}</p></section>;
   if (!snapshot || !loaded) return <p className="center-state" role="status">{m.loading}</p>;
-  const { counts, cards } = arrange(snapshot, loaded, fetchLimit);
+  const { counts, cards, capped } = arrange(snapshot, loaded, fetchLimit);
   const uploads = snapshot.uploads_in_progress ?? [], calm = !snapshot.urgent_open && !snapshot.overdue_acknowledgements;
   const tiles = [
     { key: "urgent-open", tone: snapshot.urgent_open ? "urgent" : "neutral", value: snapshot.urgent_open, title: t.urgentOpen, help: d.urgentHelp },
@@ -91,6 +91,7 @@ export function BoardDisplay({ locale, light }: { locale: Locale; light: boolean
     </TopBar>
     {failedSince !== null ? <p className="wall-banner bad" role="alert">{d.stale.replace("{time}", clock(new Date(lastOk).toISOString(), now))}</p>
       : calm && <p className="wall-banner good" role="status">{d.allClear}</p>}
+    {capped && <p className="wall-banner attention" role="status" data-testid="wall-capped">{t.countCapped.replace("{n}", String(fetchCap))}</p>}
     <div className={failedSince !== null ? "wall-body stale" : "wall-body"}>
       <header className="wall-top">
         <div><p className="wall-meta brand">{d.scope.replace("{scope}", me.office_id ? d.myOffice : d.allOffices)}</p><h1>{d.title}</h1>
@@ -104,13 +105,13 @@ export function BoardDisplay({ locale, light }: { locale: Locale; light: boolean
           const percent = Math.floor((u.bytes_received / u.size_bytes) * 100);
           return <li key={u.upload_session_id} className={u.priority} data-testid="wall-upload"><p className="wall-card-title">{t.kinds[u.kind]} <span className={`badge ${u.priority === "urgent" ? "urgent" : ""}`}>{m.states.priority[u.priority]}</span></p>
             <p className="wall-meta" dir="ltr">{percent}% · {age(u.updated_at, now, locale)}</p><div className="wall-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} aria-label={t.kinds[u.kind]}><span style={{ inlineSize: `${percent}%` }} /></div></li>;
-        })}{uploads.length > uploadSlots && <li className="wall-more">+{uploads.length - uploadSlots}</li>}</ul> : <p className="wall-meta">{t.noUploads}</p>}
+        })}{uploads.length > uploadSlots && <li className="wall-more">{d.more.replace("{n}", String(uploads.length - uploadSlots))}</li>}</ul> : <p className="wall-meta">{t.noUploads}</p>}
       </section>
       <TrackLegend locale={locale} />
       <div className="wall-columns">{productionColumns.map(column => {
-        const items = cards[column], { shown, page, pages } = rotation(items, still ? 0 : tick), extra = counts[column] - shown.length;
+        const items = cards[column], { shown, page, pages } = rotation(items, still ? 0 : tick), extra = { count: Math.max(0, counts[column].count - shown.length), upper: Math.max(0, counts[column].upper - shown.length) };
         return <section key={column} className="wall-column" aria-labelledby={`wall-${column}`} data-testid={`wall-column-${column}`}>
-          <h2 id={`wall-${column}`} className="wall-title">{t.columns[column]} <span className="wall-count mono">{counts[column]}</span></h2>
+          <h2 id={`wall-${column}`} className="wall-title">{t.columns[column]} <span className="wall-count mono">{countText(counts[column])}{!isExact(counts[column]) && <span className="visually-hidden"> {t.atLeast}</span>}</span></h2>
           {!shown.length ? <p className="wall-meta muted wall-empty">{d.empty}</p> : <ol key={page} className="wall-cards">{shown.map(item => {
             const receipt = item.files.find(f => f.receipt_number)?.receipt_number, urgent = item.priority === "urgent";
             return <li key={item.id} className={`wall-card ${item.priority}`} data-testid="wall-card">
@@ -124,7 +125,7 @@ export function BoardDisplay({ locale, light }: { locale: Locale; light: boolean
               </div>
             </li>;
           })}</ol>}
-          {extra > 0 && <p className="wall-meta wall-more">{d.more.replace("{n}", String(extra))}{pages > 1 && !still && <> · <span dir="ltr">{page + 1}/{pages}</span></>}</p>}
+          {extra.upper > 0 && <p className="wall-meta wall-more">{d.more.replace("{n}", countText(extra))}{pages > 1 && !still && <> · <span dir="ltr">{page + 1}/{pages}</span></>}</p>}
         </section>;
       })}</div>
       <footer className="wall-foot wall-meta"><p className="muted">{d.privacy}</p><p data-testid="wall-sound"><span aria-hidden="true">{sound ? "🔔" : "🔕"}</span> {sound ? d.soundOn : d.soundOff}</p></footer>
