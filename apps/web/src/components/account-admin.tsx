@@ -11,6 +11,7 @@ import { ActionStatus } from "./action-status";
 import { permissions, reasonLimits } from "@/lib/admin-policy";
 import { permissionLabel as label } from "@/lib/admin-labels";
 import { IdentitySetting } from "./identity-setting";
+import { WorkNameEditor } from "./work-name-editor";
 import { PermissionHistory } from "./permission-history";
 
 // حالة تأكيد واجهة؛ الأنواع المنقولة إلى API مستمدة من العقد.
@@ -37,6 +38,7 @@ export function AccountAdmin({ locale }: { locale: Locale }) {
     <section className="card"><h2>{t.permissions}</h2><label className="reason-field">{t.reason}<textarea aria-label={t.reason} maxLength={reasonLimits.permission} value={reason} disabled={mutation.busy} onChange={e => setReason(e.target.value)} /></label><p className="muted">{t.reasonHelp}</p>
       <div className="permission-grid">{permissions.map(permission => <article key={permission} aria-label={permissionLabel(permission)}><h3>{permissionLabel(permission)}</h3><div className="actions"><button disabled={!valid || !reason.trim() || mutation.busy} onClick={() => confirm({ id, kind: "grant", permission, reason })}>{t.grant}</button><button className="secondary" disabled={!valid || mutation.busy} onClick={() => confirm({ id, kind: "revoke", permission, reason: "" })}>{t.revoke}</button></div></article>)}</div>
     </section>
+    <WorkNameEditor key={`work-name:${id}`} id={id} locale={locale} />
     <PermissionHistory key={id} id={id} revision={revision} locale={locale} />
     <section className="card"><h2>{t.status}</h2><p className="muted">{t.statusHelp}</p>{id === me.user_id && <p className="notice">{t.self}</p>}<div className="actions"><button className="danger" disabled={!valid || id === me.user_id || mutation.busy} onClick={() => confirm({ id, kind: "status", status: "suspended" })}>{t.suspend}</button><button className="secondary" disabled={!valid || mutation.busy} onClick={() => confirm({ id, kind: "status", status: "active" })}>{t.activate}</button></div></section>
     {!intent && <ActionStatus status={mutation.status} locale={locale} />}

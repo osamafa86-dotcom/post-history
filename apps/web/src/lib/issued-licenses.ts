@@ -9,13 +9,19 @@ export const licenseStatuses = ["active", "expired", "revoked"] as const satisfi
 
 const text = (v: { ar: string; en: string }) => ({ ar: v.ar, en: v.en });
 /** الترخيص للمتصفح بقائمة بيضاء؛ الشروط مجمّدة كما وافق عليها المشتري. */
+export function safeLicenseTerms(t: IssuedLicense["terms"]): IssuedLicense["terms"] {
+  return { type: t.type, name: text(t.name), terms: text(t.terms), usage_media: [...t.usage_media], territory: t.territory.kind === "countries" ? { kind: "countries", countries: [...(t.territory.countries ?? [])] } : { kind: "worldwide" }, term_days: t.term_days ?? null, exclusivity_hours: t.exclusivity_hours ?? null, deliverables: [...t.deliverables], attribution: text(t.attribution), prohibitions: [...t.prohibitions] };
+}
+const nonnegative = (v: unknown) => typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : null;
 export function safeLicense(l: IssuedLicense): IssuedLicense {
   const t = l.terms;
   return {
     id: l.id, license_number: l.license_number, order_id: l.order_id, order_item_id: l.order_item_id, organization_id: l.organization_id, listing_id: l.listing_id, material_version: l.material_version,
     title: text(l.title), license_template_id: l.license_template_id, license_version: l.license_version,
-    terms: { type: t.type, name: text(t.name), terms: text(t.terms), usage_media: [...t.usage_media], territory: t.territory.kind === "countries" ? { kind: "countries", countries: [...(t.territory.countries ?? [])] } : { kind: "worldwide" }, term_days: t.term_days ?? null, exclusivity_hours: t.exclusivity_hours ?? null, deliverables: [...t.deliverables], attribution: text(t.attribution), prohibitions: [...t.prohibitions] },
+    terms: safeLicenseTerms(t),
     price: { amount_minor: l.price.amount_minor, currency: l.price.currency }, status: l.status, revoked_reason: l.revoked_reason ?? null,
+    ...(l.delivery_contents ? { delivery_contents: l.delivery_contents.filter(c => ["original", "produced", "audio", "stills"].includes(c.deliverable) && ["video/mp4", "audio/mp4", "image/jpeg"].includes(c.mime_type) && Number.isSafeInteger(c.count) && c.count > 0).map(c => ({ deliverable: c.deliverable, mime_type: c.mime_type, count: c.count, duration_ms: nonnegative(c.duration_ms), width: nonnegative(c.width), height: nonnegative(c.height) })) } : {}),
+    ...(l.delivery_size_bytes !== undefined ? { delivery_size_bytes: nonnegative(l.delivery_size_bytes) } : {}),
     valid_from: l.valid_from, valid_until: l.valid_until ?? null, exclusive_until: l.exclusive_until ?? null, issued_at: l.issued_at, delivery_ready: l.delivery_ready === true,
   };
 }

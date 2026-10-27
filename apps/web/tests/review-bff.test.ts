@@ -179,3 +179,46 @@ describe("supervisor notes for the reporter", () => {
     expect((await result.json()).items.map((i: { reason: string }) => i.reason)).toEqual(["", ""]);
   });
 });
+
+describe("ADR 0035 writes and staff-only names", () => {
+  it("marks all read with one frozen cutoff and the caller idempotency key, without acknowledging", async () => {
+    const before = "2026-10-27T10:00:00.000Z";
+    const { result, calls } = await action("notifications/read-all", { body: { before }, upstream: async r => { expect(await r.json()).toEqual({ before }); return Response.json({ read_count: 7, actor_name: "never-display-canary" }); } });
+    expect(result.status).toBe(200); expect(calls).toHaveLength(1); expect(calls[0].url.endsWith("/notifications/read-all")).toBe(true);
+    expect(calls[0].headers.get("Idempotency-Key")).toBe(key); expect(await result.json()).toEqual({ read_count: 7 });
+    for (const body of [{}, { before: "invalid" }, { before, ack: true }]) expect((await action("notifications/read-all", { body })).result.status).toBe(422);
+    expect((await action("notifications/read-all", { body: { before }, headers: { "Idempotency-Key": "" } })).result.status).toBe(400);
+  });
+  it("allows only the admin to set or clear work name and never returns it", async () => {
+    for (const work_name of ["Synthetic staff", null]) {
+      const { result, calls } = await action(`users/${target}/work-name`, { method: "PUT", user: admin, body: { work_name }, upstream: async r => { expect(await r.json()).toEqual({ work_name }); return new Response(null, { status: 204 }); } });
+      expect(result.status).toBe(204); expect(calls[0].headers.get("Idempotency-Key")).toBe(key); expect(await result.text()).toBe("");
+    }
+    for (const work_name of ["", " spaced ", "control\nname", "a".repeat(81), "name\u202e", 7]) {
+      const { result, calls } = await action(`users/${target}/work-name`, { method: "PUT", user: admin, body: { work_name } }); expect(result.status).toBe(422); expect(calls).toHaveLength(0);
+    }
+    expect((await action(`users/${target}/work-name`, { method: "PUT", body: { work_name: "Synthetic staff" } })).result.status).toBe(403);
+    const rejected = await action(`users/${target}/work-name`, { method: "PUT", user: admin, body: { work_name: "Synthetic staff" }, upstream: () => Response.json({ message: "never-display-canary" }, { status: 422 }) });
+    expect(rejected.result.status).toBe(422); expect(await rejected.result.text()).not.toContain("canary");
+  });
+  it("forwards staff work names and server deadlines but strips names on reporter and buyer paths", async () => {
+    const raw = { ...item, reserved_by: target, reserved_by_name: "Synthetic staff", acknowledgement_due_at: "2026-10-27T10:00:00Z" };
+    for (const role of ["supervisor", "reporter", "buyer_member"] as const) {
+      const user: Me = { ...me, roles: [{ name: role, scopes: [] }] };
+      const materialRead = await action(`materials/${item.id}`, { method: "GET", user, upstream: r => Response.json(r.url.includes("/forms/") ? form : raw) });
+      const materialData = await materialRead.result.json(); expect(materialData.acknowledgement_due_at).toBe(raw.acknowledgement_due_at);
+      expect(materialData.reserved_by_name).toBe(role === "supervisor" ? "Synthetic staff" : undefined);
+      const history = await action(`materials/${item.id}/transitions`, { method: "GET", user, upstream: r => r.url.endsWith("/transitions") ? Response.json({ items: [{ id: target, track: "editorial", from: "inbox", to: "reviewing", reason: "", actor_id: target, actor_name: "Synthetic staff", occurred_at: raw.created_at }] }) : Response.json(raw) });
+      const entry = (await history.result.json()).items[0]; expect(entry.actor_name).toBe(role === "supervisor" ? "Synthetic staff" : undefined);
+    }
+  });
+});
+
+it("forwards dashboard reservation names and the oldest server deadline only to staff", async () => {
+  const due = "2026-10-27T10:00:00Z";
+  const raw = { generated_at: due, urgent_open: 1, overdue_acknowledgements: 1, oldest_overdue_acknowledgement_at: due, editorial: [], technical: [], rights: [], recent_receipts: [], reserved: [{ material_id: item.id, reserved_by: target, reserved_by_name: "Synthetic staff", reserved_at: due, priority: "urgent", editorial_state: "in_production", actor_name: "canary" }] };
+  const { result } = await action("dashboard/newsroom", { method: "GET", user: supervisor, upstream: () => Response.json(raw) });
+  const data = await result.json(); expect(data.reserved[0].reserved_by_name).toBe("Synthetic staff"); expect(data.oldest_overdue_acknowledgement_at).toBe(due); expect(JSON.stringify(data)).not.toContain("canary");
+  const nulls = await action("dashboard/newsroom", { method: "GET", user: supervisor, upstream: () => Response.json({ ...raw, oldest_overdue_acknowledgement_at: null, reserved: [{ ...raw.reserved[0], reserved_by_name: null }] }) });
+  const empty = await nulls.result.json(); expect(empty.reserved[0].reserved_by_name).toBeNull(); expect(empty.oldest_overdue_acknowledgement_at).toBeNull();
+});

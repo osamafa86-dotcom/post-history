@@ -21,3 +21,14 @@ describe("catalog BFF policy", () => {
     expect([...uiRoles]).toEqual([...catalogRoles]); expect(licenseTypes).toHaveLength(4);
   });
 });
+
+it("passes versioned offer terms and day-only proof while excluding nested internal fields", async () => {
+  const terms = { type: "editorial_single", name: text, terms: text, usage_media: ["tv"], territory: { kind: "worldwide", work_name: "canary" }, deliverables: ["original"], attribution: text, prohibitions: [], actor_name: "canary" };
+  const raw = { ...item, actor_name: "canary", work_name: "canary", reserved_by_name: "canary", verified_on: "2026-10-27", editorial_approved_on: "2026-10-26", exclusive_unavailable_until: "2026-10-29T10:00:00Z", offers: [{ ...item.offers[0], terms }] } as unknown as CatalogItem;
+  const safe = safeCatalogItem(raw);
+  expect(safe.verified_on).toBe("2026-10-27"); expect(safe.editorial_approved_on).toBe("2026-10-26"); expect(safe.offers[0].terms?.terms).toEqual(text);
+  expect(JSON.stringify(safe)).not.toMatch(/canary|actor_name|work_name/);
+  const { formatDay } = await import("../src/lib/store-format");
+  expect(formatDay("2026-10-27", "en")).not.toContain(":");
+  for (const value of [null, undefined, "2026-02-30", "2026-10-27T10:00:00Z"]) expect(formatDay(value, "en")).toBeNull();
+});

@@ -17,19 +17,25 @@ export function Notifications({ locale }: { locale: Locale }) {
   const m = messages[locale], t = m.notice, mutation = useMutation(), list = useRef<HTMLUListElement>(null), router = useRouter();
   const [data, setData] = useState<NotificationPage | null>(null), [failed, setFailed] = useState(false), [unread, setUnread] = useState(false), [cursors, setCursors] = useState<(string | undefined)[]>([undefined]), [attempt, setAttempt] = useState(0);
   const [selected, setSelected] = useState<string | null>(null), [checkedAt, setCheckedAt] = useState(0);
-  const cursor = cursors.at(-1);
+  const cursor = cursors.at(-1), bulkBefore = useRef<string | null>(null);
   useEffect(() => {
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
-    async function load() { try { const result = dataOrThrow(await browserApi().GET("/notifications", { params: { query: { limit: 50, cursor, unread_only: unread } }, signal: controller.signal })); if (!controller.signal.aborted) { setData(result); setCheckedAt(Date.now()); setFailed(false); } } catch { if (!controller.signal.aborted) setFailed(true); } finally { if (!controller.signal.aborted) timer = setTimeout(load, 15000); } }
+    async function load() { const startedAt = Date.now(); try { const result = dataOrThrow(await browserApi().GET("/notifications", { params: { query: { limit: 50, cursor, unread_only: unread } }, signal: controller.signal })); if (!controller.signal.aborted) { setData(result); setCheckedAt(startedAt); setFailed(false); } } catch { if (!controller.signal.aborted) setFailed(true); } finally { if (!controller.signal.aborted) timer = setTimeout(load, 15000); } }
     void load(); return () => { controller.abort(); clearTimeout(timer); };
   }, [cursor, unread, attempt]);
   async function change(group: NotificationGroup, action: "read" | "ack") {
-    // الإقرار والقراءة يسريان على المجموعة كلها؛ لا نقطة جماعية في العقد، فطلب لكل إشعار بمفتاحه.
+    // إقرار المجموعة وقراءتها موضعيًا؛ القراءة العامة تستخدم read-all وحده.
     const targets = group.items.filter(n => action === "ack" ? state(n) !== "acknowledged" : state(n) === "unread");
     for (const n of targets) if (!await mutation.run(`${n.id}:${action}`, header => action === "read" ? browserApi().POST("/notifications/{id}/read", { params: { path: { id: n.id }, header } }) : browserApi().POST("/notifications/{id}/ack", { params: { path: { id: n.id }, header } }))) break;
     setAttempt(n => n + 1);
   }
-  async function readAll() { for (const group of sections.flatMap(s => s.groups).filter(g => g.unread)) await change(group, "read"); }
+  async function readAll() {
+    if (!checkedAt) return;
+    const before = bulkBefore.current ?? new Date(checkedAt).toISOString(); bulkBefore.current = before;
+    if (await mutation.run(`read-all:${before}`, header => browserApi().POST("/notifications/read-all", { params: { header }, body: { before } }))) {
+      bulkBefore.current = null; setAttempt(n => n + 1);
+    }
+  }
   const sections = data ? groupNotifications(data.items, checkedAt) : [], groups = sections.flatMap(s => s.groups), current = groups.find(g => g.key === selected) ?? null;
   function keys(event: React.KeyboardEvent) {
     const index = groups.findIndex(g => g.key === selected);
@@ -37,7 +43,7 @@ export function Notifications({ locale }: { locale: Locale }) {
     if (event.key === "a" && current?.needsAck) { void change(current, "ack"); event.preventDefault(); }
   }
   const label = (group: NotificationGroup) => group.head.priority === "urgent" ? t.urgentType : t.generic;
-  return <><div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p></div><div className="actions"><button className="secondary" disabled={mutation.busy || !groups.some(g => g.unread)} onClick={() => void readAll()}>{t.readAll}</button><button className="secondary" onClick={() => setAttempt(n => n + 1)}>{m.refresh}</button></div></div>
+  return <><div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p></div><div className="actions"><button className="secondary" disabled={mutation.busy || !checkedAt || !groups.some(g => g.unread)} onClick={() => void readAll()}>{t.readAll}</button><button className="secondary" onClick={() => setAttempt(n => n + 1)}>{m.refresh}</button></div></div>
     <div className="table-tools"><label className="checkbox-label"><input type="checkbox" checked={unread} onChange={e => { setUnread(e.target.checked); setCursors([undefined]); setData(null); }} />{t.unread}</label><p>{t.unreadCount}: {data?.unread_count ?? m.notAvailable}</p><small className="muted">{t.shortcuts}</small></div>
     {failed && <p className="notice error" role="alert">{data ? m.stale : m.error}</p>}<ActionStatus status={mutation.status} locale={locale} />
     {!data ? <p role="status" className="center-state">{failed ? m.error : m.loading}</p> : !groups.length ? <p className="empty">{t.empty}</p> : <div className="notification-grid">

@@ -60,3 +60,27 @@ test("below 760px the inbox table becomes stacked cards", async ({ page }) => {
   await expect(page.locator(".table-panel thead")).toHaveCSS("position", "absolute"); await expect(page.locator(".table-panel tr").nth(1)).toHaveCSS("display", "block");
   await page.screenshot({ path: ".artifacts/editor-inbox-phone-ar.png" });
 });
+
+for (const locale of ["ar", "en"] as const) test(`ADR 0035 timeline uses work names and neutral null actors (${locale})`, async ({ page }) => {
+  const m = locale === "ar" ? ar : en;
+  await login(page, "reviewer", locale);
+  await page.route("**/api/bff/materials/*/transitions", route => route.fulfill({ json: { items: [
+    { id: "one", track: "editorial", from: "inbox", to: "reviewing", reason: "", actor_id: "10000000-0000-4000-8000-000000000002", actor_name: "Synthetic staff", occurred_at: "2026-10-27T10:00:00Z" },
+    { id: "two", track: "editorial", from: "reviewing", to: "accepted", reason: "", actor_id: "10000000-0000-4000-8000-000000000003", actor_name: null, occurred_at: "2026-10-27T10:01:00Z" },
+  ] } }));
+  await page.goto(`/${locale}/materials/20000000-0000-4000-8000-000000000001`);
+  await expect(page.locator(".history-list")).toContainText("Synthetic staff"); await expect(page.locator(".history-list")).toContainText(m.material.neutralActor);
+  await expect(page.locator(".history-list")).not.toContainText("10000000");
+});
+
+test("ADR 0035 read-all sends one stable request and cutoff across a lost response", async ({ page }) => {
+  await login(page); await page.goto("/ar/notifications");
+  const writes: { key: string | undefined; body: unknown }[] = [];
+  await page.route("**/api/bff/notifications/read-all", async route => {
+    writes.push({ key: route.request().headers()["idempotency-key"], body: route.request().postDataJSON() });
+    if (writes.length === 1) await route.fulfill({ status: 503, json: { code: "temporarily_unavailable" } }); else await route.continue();
+  });
+  const button = page.getByRole("button", { name: ar.notice.readAll, exact: true }); await button.click();
+  await expect(page.getByRole("alert")).toBeVisible(); await button.click(); await expect(button).toBeDisabled();
+  expect(writes).toHaveLength(2); expect(writes[1]).toEqual(writes[0]); expect(writes[0].key).toBeTruthy(); expect(Object.keys(writes[0].body as object)).toEqual(["before"]);
+});

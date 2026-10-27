@@ -3,6 +3,7 @@ import { readConfig, type WebConfig } from "./config";
 import { clientAddress, requireOk, upstream, withSession, assertSession } from "./auth";
 import { WebError } from "./errors";
 import { sessionStore, validSessionId, type SessionStore } from "./sessions";
+import { internalNames } from "@/lib/work-name";
 import { safeDashboard, safeForm, safeMaterial, safeMe, safeNotification, safeTransition, reporterNote } from "@/lib/privacy";
 import { materialQuery, materialTypes, uuid } from "@/lib/query";
 import type { components } from "@/generated/schema";
@@ -121,14 +122,14 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         let query;
         try { query = materialQuery(request.nextUrl.searchParams); } catch { throw new WebError(400, "request_failed"); }
         const page = requireOk(await api.GET("/materials", { params: { query } }));
-        return json({ items: page.items.map(m => safeMaterial(m, me.permissions)), next_cursor: page.next_cursor });
+        return json({ items: page.items.map(m => safeMaterial(m, me.permissions, undefined, internalNames(me))), next_cursor: page.next_cursor });
       }
       if (path.startsWith("materials/") && uuid.test(path.slice(10))) {
         const result = await api.GET("/materials/{id}", { params: { path: { id: path.slice(10) } } });
         const material = requireOk(result);
         const schema = await api.GET("/forms/{version}", { params: { path: { version: material.form_version } } });
         if (schema.response.status !== 404) requireOk(schema);
-        const response = json(safeMaterial(material, me.permissions, schema.data));
+        const response = json(safeMaterial(material, me.permissions, schema.data, internalNames(me)));
         const tag = materialTag(result.response, material); if (tag) response.headers.set("ETag", tag);
         return response;
       }
@@ -145,7 +146,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         const data = requireOk(await api.GET("/materials/{id}/transitions", { params: { path: { id: history[1] } } }));
         // ملاحظة المشرف لصاحب المادة وحده؛ وغيره يرى الانتقالات بلا سبب كما كان.
         const owner = hasRole(me, "reporter") && requireOk(await api.GET("/materials/{id}", { params: { path: { id: history[1] } } })).reporter_id === me.user_id;
-        return json({ items: data.items.map(owner ? reporterNote : safeTransition) });
+        return json({ items: data.items.map(item => owner ? reporterNote(item) : safeTransition(item, internalNames(me))) });
       }
       if (path === "catalog" || path.startsWith("catalog/")) return catalogRead(request, path, api, me, config!, transport);
       if (path === "uploads") return listUploads(api, me, request.nextUrl.searchParams);
@@ -183,7 +184,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
       }
       if (path === "dashboard/newsroom") {
         if (!hasRole(me, "supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin") || request.nextUrl.search) throw new WebError(403, "request_failed");
-        return json(safeDashboard(requireOk(await api.GET("/dashboard/newsroom"))));
+        return json(safeDashboard(requireOk(await api.GET("/dashboard/newsroom")), internalNames(me)));
       }
       if (path === "notifications") {
         const search = request.nextUrl.searchParams;

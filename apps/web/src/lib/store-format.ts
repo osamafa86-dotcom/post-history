@@ -34,3 +34,14 @@ export function formatDuration(ms: number | null) {
   const pad = (n: number) => String(n).padStart(2, "0");
   return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
+
+/** يوم من العقد بلا ساعة أو تحويل منطقة زمنية؛ غياب الحقل لا يُستبدل بتاريخ مُستنتج. */
+export function catalogDay(value: unknown): string | null {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : null;
+}
+export function formatDay(value: unknown, locale: Locale): string | null {
+  const day = catalogDay(value);
+  return day ? new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`)) : null;
+}

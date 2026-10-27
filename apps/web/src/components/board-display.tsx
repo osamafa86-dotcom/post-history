@@ -6,7 +6,8 @@ import { messages, type Locale } from "@/lib/i18n";
 import type { Material, NewsroomDashboard } from "@/lib/types";
 import { hasRole } from "@/lib/review";
 import { clock } from "@/lib/editor";
-import { boardOrder, rose, rotateMs, rotation, wallClock } from "@/lib/board";
+import { boardOrder, overdueTime, rose, rotateMs, rotation, wallClock } from "@/lib/board";
+import { internalNames } from "@/lib/work-name";
 import { beep } from "@/lib/alert-sound";
 import { useUser } from "./session-boundary";
 import { boardColumns, elapsed } from "./newsroom-board";
@@ -76,7 +77,7 @@ export function BoardDisplay({ locale, light }: { locale: Locale; light: boolean
   const uploads = snapshot.uploads_in_progress ?? [], calm = !snapshot.urgent_open && !snapshot.overdue_acknowledgements;
   const tiles = [
     { key: "urgent-open", tone: snapshot.urgent_open ? "urgent" : "neutral", value: snapshot.urgent_open, title: t.urgentOpen, help: d.urgentHelp },
-    { key: "overdue", tone: snapshot.overdue_acknowledgements ? "attention" : "neutral", value: snapshot.overdue_acknowledgements, title: t.overdue, help: d.overdueHelp },
+    { key: "overdue", tone: snapshot.overdue_acknowledgements ? "attention" : "neutral", value: snapshot.overdue_acknowledgements, title: t.overdue, help: overdueTime(snapshot.oldest_overdue_acknowledgement_at, now) ? t.oldestOverdue.replace("{time}", overdueTime(snapshot.oldest_overdue_acknowledgement_at, now)!) : d.overdueHelp },
     { key: "reserved", tone: snapshot.reserved.length ? "progress" : "neutral", value: snapshot.reserved.length, title: t.reserved, help: d.reservedHelp },
   ];
   return <div className={`board-wall ${idle ? "idle" : ""}`} data-testid="board-display">
@@ -105,7 +106,8 @@ export function BoardDisplay({ locale, light }: { locale: Locale; light: boolean
           {!shown.length ? <p className="wall-meta muted wall-empty">{d.empty}</p> : <ol key={page} className="wall-cards">{shown.map(item => <li key={item.id} className={`wall-card ${item.priority}`} data-testid="wall-card">
             <p className="wall-meta"><span className={`badge ${item.priority === "urgent" ? "urgent" : ""}`}>{m.states.priority[item.priority]}</span> <span className={`mono ${item.priority === "urgent" ? "danger-text" : ""}`} >{age(item.created_at, now, locale)}</span></p>
             <p className="wall-card-title">{item.title}</p>
-            {item.reserved_by && <p><span className="badge progress">{d.reservedPill}</span></p>}
+            {overdueTime(item.acknowledgement_due_at, now) && <p className="wall-meta danger-text" data-testid="ack-overdue">{t.overdueAge.replace("{time}", overdueTime(item.acknowledgement_due_at, now)!)}</p>}
+            {item.reserved_by && <p><span className="badge progress">{internalNames(me) && item.reserved_by_name ? t.reservedName.replace("{name}", item.reserved_by_name) : d.reservedPill}</span></p>}
           </li>)}</ol>}
           {extra > 0 && <p className="wall-meta wall-more">+{extra}{pages > 1 && !still && <> · <span dir="ltr">{page + 1}/{pages}</span></>}</p>}
         </section>;
