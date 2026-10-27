@@ -1063,9 +1063,10 @@
       {
         "heading": "The data we collect",
         "paragraphs": [
-          "Account data: email is the only contact information the apps rely on, and they do not ask for your name. For buyer organizations on the web we record the organization's details (legal name, display name, country, billing email and seat count) and the email and role of its members.",
-          "Uploaded material: the video and photo files a reporter chooses manually, together with the fixed fields and the desk form attached to them, including the display name, which may be a pseudonym.",
-          "Notification identifiers: a randomly generated installation UUID that is not derived from device identifiers, together with an APNs token on iOS or an FCM token on Android. They are used only to send notifications. The apps do not collect the advertising identifier or persistent hardware identifiers.",
+          "Account and sign-in data: to sign in, the apps send your email, your password and, when two-factor authentication is enabled on the account, a six-digit code from your authenticator. The server keeps the password only as a one-way hash, never in readable form. Apart from that, email is the only contact information the apps rely on, and they do not ask for your legal name. For buyer organizations on the web we record the organization's details (legal name, display name, country, billing email and seat count) and the email and role of its members.",
+          "Uploaded material: the video and photo files a reporter chooses manually, together with the fixed fields and the desk form attached to them. The fixed fields are the title, the material types, the governorate and the city (both required, typed as text: an approximate place, not coordinates), the priority, three sensitivity questions (minors, injuries, graphic scenes) and the display name. The reporter chooses the display name for each material: their real name, a pseudonym they type themselves, or the network's name. The apps send that choice, and the pseudonym text only if one is chosen; they do not ask for or send the reporter's legal name. Authorized staff see the display name together with the material.",
+          "File and technical data: when an upload starts, the app sends the file's name as it appears on the device, its type and its size, together with a SHA-256 checksum of the whole file that the server compares after assembling it. The Android app also sends checksums of the first and last megabyte, used only to spot duplicates.",
+          "Notification identifiers: a randomly generated installation UUID that is not derived from device identifiers, together with an APNs token on iOS or an FCM token on Android, and the platform and app version. They are used only to send notifications. The apps do not collect the advertising identifier or persistent hardware identifiers.",
           "App integrity token: a short-lived verification token (App Attest on iOS, Play Integrity on Android) that shows an upload request comes from a genuine copy of the app and passes through the operating system's services. We do not use it to track you.",
           "On the web: a single session cookie that page scripts cannot read, valid for eight hours, used to keep you signed in."
         ]
@@ -1075,7 +1076,7 @@
         "paragraphs": [
           "The original file is uploaded exactly as the camera recorded it, without compression or re-encoding, and its metadata is not stripped before upload, so that its digital fingerprint (SHA-256) is preserved and we can verify the material arrived complete. The original may therefore carry the location, time and device model the camera recorded.",
           "The original is stored on the Operator's servers as it arrived, including the camera location if present, and is not modified. It is never shown in raw form and never delivered to any buyer. Stripping happens in the derivatives the server produces (previews, thumbnails and delivered copies): every processing step produces a new file free of location and revealing data, while the original stays preserved with its fingerprint.",
-          "Precise location: it is collected as part of the apps' function — what the original carries in its metadata, and optional GPS coordinates if entered in the material's fields, which are stored encrypted at field level. We do not use it for tracking. The apps do not request the location permission from the operating system and do not read your device's location.",
+          "Precise location: the apps do not request the location permission from the operating system, do not read your device's location, and do not send coordinates of their own, neither in the material's fields nor anywhere else. Precise location can reach the platform only inside the metadata of the original file you choose, if the file carries it (for example what the camera recorded); this holds for both the Android and iOS apps, since neither strips the original. We treat it as collected for the apps' function and do not use it for tracking. The server interface can also store optional coordinates entered in a material's fields, encrypted at field level, but neither app nor the web interface sends them. The governorate and city you type are an approximate place, not precise location.",
           "Precise coordinates and protected source names are visible only to someone the administration has granted a separate permission for each, with no default grant to any role; every grant, revocation and actual read is recorded in an audit log."
         ]
       },
@@ -1083,14 +1084,14 @@
         "heading": "How we use your data",
         "paragraphs": [
           "We use it to receive field material and verify its integrity, to review and produce it editorially, to tell the reporter the status of their material, to license it to buyer organizations, to calculate reporters' earnings, and to protect the platform from forged requests.",
-          "We do not sell data, we do not use it for advertising, we do not track users across other apps or websites, and we do not share it with data brokers or advertising networks."
+          "We do not sell personal data, we do not use it for advertising, we do not track users across other apps or websites, and we do not share it with data brokers or advertising networks. Licensing material to buyer organizations is described in the section “Licensing to buyer organizations”."
         ]
       },
       {
         "heading": "Phone notifications",
         "paragraphs": [
           "We use push notifications only for work and account alerts, never for advertising. These include: a change in the status of a material for its reporter (for example when a supervisor has seen it), the receipt for the reporter, incoming-material and escalation alerts for editorial staff, an alert to the account owner when recovery of their account is requested or completed, and an alert to administrators when a sensitive setting changes. The server builds the notification text from fixed templates that carry the short material number or a request number, so it carries no material title, names or locations.",
-          "The notification token is stored encrypted, never enters any payload and is never returned in any response, and the device is unregistered when you sign out.",
+          "The device is registered for notifications when you sign in. The notification token is stored encrypted, never enters any payload and is never returned in any response, and the device is unregistered when you sign out. On Android, denying the notification permission stops only their display, and the device is still registered; on iOS the notification token is requested only if you allow notifications, so denying means no token is registered.",
           "Any external alert channel the Operator turns on, such as email or text messages, carries the material number and status only."
         ]
       },
@@ -1098,7 +1099,7 @@
         "heading": "Who sees the material",
         "paragraphs": [
           "Material is processed on the Operator's servers and seen by authorized editors and reviewers according to their role permissions, their scope (office or governorate) and source-protection rules; what falls outside a user's scope is not shown to them.",
-          "A reporter's real name is shown only to someone the administration has granted the specific permission for it. Every sensitive operation is recorded in an audit log that cannot be edited: who did it and when."
+          "The apps neither ask for nor send a reporter's legal name. If a legal name is recorded on the account, it is stored encrypted and shown only to someone who holds the permission the administration has set for it: by default a separate permission that nobody holds until it is granted, or, if the administration chooses, the protected-source permission. Every read of it is recorded in the audit log, and it never enters notifications, events or exports. Every sensitive operation is recorded in an audit log that cannot be edited: who did it and when."
         ]
       },
       {
@@ -1112,7 +1113,7 @@
       {
         "heading": "Licensing to buyer organizations",
         "paragraphs": [
-          "Material may be licensed, according to its rights and by the Operator's decision, to buyer media organizations. The buyer receives copies stripped of revealing data, and the raw original is never delivered. Buyers never see GPS coordinates, device identifiers, protected source names or the reporter's identity; they see only the display name the reporter chose, which may be a pseudonym.",
+          "Material may be licensed, according to its rights and by the Operator's decision, to buyer media organizations, and this sharing does take place. The buyer receives copies produced on the server with their metadata stripped, and the raw original is never delivered. The buyer also sees the listing details of the material: its title, description, shot list, material types, governorate, shooting date (without the time of day), duration and dimensions, the licence terms, and a credit line. The governorate is coarse location. Buyers never see precise location: no GPS coordinates, no city, no device identifiers, no protected source names and no reporter identity. The display name the reporter chose, including a pseudonym, is not delivered to buyers: the credit line is a single network name set by the Operator.",
           "Every final copy is checked before delivery (its metadata and any accompanying provenance data) to make sure it reveals no protected identity or location. Download links are signed and short-lived, and previews carry a watermark.",
           "Each sale keeps a record of the licence terms, the price and the version the buyer agreed to, and the public verification page shows only the licence number, its status and its validity."
         ]

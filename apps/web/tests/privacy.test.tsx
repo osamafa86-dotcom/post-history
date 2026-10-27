@@ -131,6 +131,17 @@ describe("public privacy policy page", () => {
     for (const locale of locales) expect(messages[locale].privacy.temporary).not.toMatch(/owner|المالك|\[|\]/);
   });
 
+  it("states what the apps send at sign-in, in material creation and in licensed delivery", () => {
+    const required = {
+      ar: ["كلمة المرور", "تجزئة أحادية الاتجاه", "التحقق بخطوتين", "المحافظة والمدينة", "اسم الظهور", "اسم القانوني", "اسم الملف", "المحافظة موقع تقريبي", "لا يُسلَّم للمشترين", "رفض إذن الإشعارات"],
+      en: ["password", "one-way hash", "two-factor", "governorate and the city", "display name", "legal name", "file's name", "The governorate is coarse location", "is not delivered to buyers", "denying the notification permission"],
+    };
+    for (const locale of locales) for (const phrase of required[locale]) expect(allText(locale), `${locale}: ${phrase}`).toContain(phrase);
+    expect(allText("en")).not.toContain("they do not ask for your name");
+    expect(allText("en")).not.toContain("they see only the display name");
+    expect(allText("ar")).not.toContain("ويظهر لهم اسم الظهور");
+  });
+
   it("states the documented data practices without inventing identifiers", () => {
     for (const locale of locales) {
       const text = allText(locale);
