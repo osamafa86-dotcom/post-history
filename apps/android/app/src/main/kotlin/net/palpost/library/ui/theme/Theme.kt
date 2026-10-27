@@ -9,7 +9,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -26,29 +25,27 @@ import net.palpost.library.ui.theme.tokens.VlTypeRole
 /**
  * The design system (docs/design/design-system.md) on Compose: colours, type and shapes come from the generated
  * tokens (`ui/theme/tokens`, built from docs/design/tokens.json), never from literals. Dark mode follows the system,
- * for the field at night. Fonts are the open-licensed faces the system names, bundled so they work offline.
+ * for the field at night. Fonts are the open-licensed faces the system names (the Figma file's: Vazirmatn for text in
+ * Arabic and English, Reem Kufi for display, ADR 0079), bundled so they work offline.
  */
-private val NotoSansArabic = FontFamily(
-    Font(R.font.noto_sans_arabic_400, FontWeight.Normal),
-    Font(R.font.noto_sans_arabic_500, FontWeight.Medium),
-    Font(R.font.noto_sans_arabic_600, FontWeight.SemiBold),
-    Font(R.font.noto_sans_arabic_700, FontWeight.Bold),
+private val Vazirmatn = FontFamily(
+    Font(R.font.vazirmatn_400, FontWeight.Normal),
+    Font(R.font.vazirmatn_500, FontWeight.Medium),
+    Font(R.font.vazirmatn_600, FontWeight.SemiBold),
+    Font(R.font.vazirmatn_700, FontWeight.Bold),
 )
-private val Inter = FontFamily(
-    Font(R.font.inter_400, FontWeight.Normal),
-    Font(R.font.inter_500, FontWeight.Medium),
-    Font(R.font.inter_600, FontWeight.SemiBold),
-    Font(R.font.inter_700, FontWeight.Bold),
+private val ReemKufi = FontFamily(
+    Font(R.font.reem_kufi_700, FontWeight.Bold),
 )
 private val IbmPlexMono = FontFamily(
     Font(R.font.ibm_plex_mono_400, FontWeight.Normal),
     Font(R.font.ibm_plex_mono_500, FontWeight.Medium),
 )
 
-/** The type roles of the design system as text styles, in the family that fits the current language. */
-class VlTextStyles(private val text: FontFamily) {
+/** The type roles of the design system as text styles, each in its role's family. */
+class VlTextStyles {
     fun of(role: VlTypeRole): TextStyle = TextStyle(
-        fontFamily = if (role.kind == VlFontKind.MONO) IbmPlexMono else text,
+        fontFamily = when (role.kind) { VlFontKind.MONO -> IbmPlexMono; VlFontKind.DISPLAY -> ReemKufi; VlFontKind.TEXT -> Vazirmatn },
         fontSize = role.size, lineHeight = role.lineHeight, fontWeight = role.weight,
         lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
     )
@@ -69,7 +66,7 @@ class VlTextStyles(private val text: FontFamily) {
 }
 
 private val LocalVlColors = staticCompositionLocalOf { VlLightColors }
-private val LocalVlText = staticCompositionLocalOf { VlTextStyles(NotoSansArabic) }
+private val LocalVlText = staticCompositionLocalOf { VlTextStyles() }
 
 /** Access to the design tokens inside [PostHistoryTheme]: `Vl.colors.bgBrand`, `Vl.text.headingH4`. */
 object Vl {
@@ -80,8 +77,7 @@ object Vl {
 @Composable
 fun PostHistoryTheme(content: @Composable () -> Unit) {
     val c = if (isSystemInDarkTheme()) VlDarkColors else VlLightColors
-    val arabic = LocalConfiguration.current.locales[0]?.language != "en"
-    val styles = VlTextStyles(if (arabic) NotoSansArabic else Inter)
+    val styles = VlTextStyles()
     val scheme = (if (c === VlDarkColors) darkColorScheme() else lightColorScheme()).copy(
         primary = c.bgBrand, onPrimary = c.textOnBrand, primaryContainer = c.bgBrandSubtle, onPrimaryContainer = c.textBrand,
         secondary = c.textSecondary, onSecondary = c.bgSurface, secondaryContainer = c.bgSubtle, onSecondaryContainer = c.textPrimary,

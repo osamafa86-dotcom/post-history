@@ -150,13 +150,14 @@ abstract class GenerateDesignTokens : DefaultTask() {
         out.append(group("size", "z")).append("\n")
         out.append(group("border", "b")).append("\n")
         val roles = ((root["font"] as Map<String, Any?>)["role"] as Map<String, Map<String, Any?>>).filterKeys { !it.startsWith("$") }
-        out.append("/** Which family a type role draws from: the text pair (Arabic / Latin) or the mono face. */\n")
-        out.append("enum class VlFontKind { TEXT, MONO }\n\n")
+        out.append("/** Which family a type role draws from: the text face (Arabic and Latin), the display face, or the mono face. */\n")
+        out.append("enum class VlFontKind { TEXT, DISPLAY, MONO }\n\n")
         out.append("data class VlTypeRole(val size: TextUnit, val lineHeight: TextUnit, val weight: FontWeight, val kind: VlFontKind)\n\n")
         out.append("object VlType {\n")
         for ((k, v) in roles) {
             val r = v["\$value"] as Map<String, Any?>
-            val kind = if ((r["fontFamily"] as String).contains("font.family.mono")) "MONO" else "TEXT"
+            val family = r["fontFamily"] as String
+            val kind = if (family.contains("font.family.mono")) "MONO" else if (family.contains("font.family.display")) "DISPLAY" else "TEXT"
             out.append("    val ${ident(k)} = VlTypeRole(${dp(r["fontSize"])}.sp, ${dp(r["lineHeight"])}.sp, FontWeight(${r["fontWeight"]}), VlFontKind.$kind)\n")
         }
         out.append("}\n\n")

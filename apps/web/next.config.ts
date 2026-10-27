@@ -10,7 +10,10 @@ const config: NextConfig = {
       { key: "X-Frame-Options", value: "DENY" },
       { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
       { key: "Cache-Control", value: "private, no-store, max-age=0" },
-    ] }];
+    ] }, {
+      // الخطوط الساكنة لا تتغير بين الإصدارات (public/fonts، ADR 0079)؛ تُخزَّن كي لا تُنزَّل مع كل صفحة.
+      source: "/fonts/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=604800" }],
+    }];
   },
 };
 export default config;

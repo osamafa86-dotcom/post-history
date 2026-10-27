@@ -68,14 +68,11 @@ targets:
         PHAPIBaseURL: $(PH_API_BASE_URL)
         # خطوط نظام التصميم بترخيص OFL 1.1 (App/Resources/Fonts، والتراخيص بجانبها).
         UIAppFonts:
-          - NotoSansArabic_400Regular.ttf
-          - NotoSansArabic_500Medium.ttf
-          - NotoSansArabic_600SemiBold.ttf
-          - NotoSansArabic_700Bold.ttf
-          - Inter_400Regular.ttf
-          - Inter_500Medium.ttf
-          - Inter_600SemiBold.ttf
-          - Inter_700Bold.ttf
+          - Vazirmatn_400Regular.ttf
+          - Vazirmatn_500Medium.ttf
+          - Vazirmatn_600SemiBold.ttf
+          - Vazirmatn_700Bold.ttf
+          - ReemKufi_700Bold.ttf
           - IBMPlexMono_400Regular.ttf
           - IBMPlexMono_500Medium.ttf
     settings:

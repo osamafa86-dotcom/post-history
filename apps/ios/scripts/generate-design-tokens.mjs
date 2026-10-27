@@ -74,7 +74,7 @@ const border = dims("border", "b");
 
 const roles = Object.entries(tokens.font.role).map(([name, t]) => {
   const v = t.$value;
-  const family = v.fontFamily.includes("font.family.mono") ? "mono" : "text";
+  const family = v.fontFamily.includes("font.family.mono") ? "mono" : v.fontFamily.includes("font.family.display") ? "display" : "text";
   return { swift: camel(name), name, family, size: px(v.fontSize), lineHeight: px(v.lineHeight), weight: v.fontWeight };
 });
 const families = Object.fromEntries(Object.entries(tokens.font.family).map(([k, t]) => [k, t.$value]));
@@ -120,8 +120,8 @@ lines.push("    enum FontFamily {");
 for (const [k, v] of Object.entries(families)) lines.push(`        static let ${camel(k)} = "${v}"`);
 lines.push("    }");
 lines.push("}", "");
-lines.push("/// أدوار الخط: العائلة (نص عربي/لاتيني أو أحادي)، والحجم والسطر والوزن بالنقاط.", "struct VLTextRole: Sendable {");
-lines.push("    enum Family: Sendable { case text, mono }", "    let family: Family", "    let size: CGFloat", "    let lineHeight: CGFloat", "    let weight: Int", "");
+lines.push("/// أدوار الخط: العائلة (نص، أو عرض للعناوين الكبيرة، أو أحادي)، والحجم والسطر والوزن بالنقاط.", "struct VLTextRole: Sendable {");
+lines.push("    enum Family: Sendable { case text, display, mono }", "    let family: Family", "    let size: CGFloat", "    let lineHeight: CGFloat", "    let weight: Int", "");
 for (const r of roles) lines.push(`    /// \`font.role.${r.name}\``, `    static let ${r.swift} = VLTextRole(family: .${r.family}, size: ${r.size}, lineHeight: ${r.lineHeight}, weight: ${r.weight})`);
 lines.push("}", "");
 mkdirSync(dirname(swiftOut), { recursive: true });

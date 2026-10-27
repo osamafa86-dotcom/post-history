@@ -1,6 +1,7 @@
 # نظام التصميم — المكتبة المرئية
 
 **ملف Figma:** «Visual Library — Design System» — https://www.figma.com/design/U4OJG4hM6NoPt7SsFM7zkO
+**المرجع للخطوط والألوان:** ملف Figma يعلو `tokens.json` (قرار المالك 2026-10-27، ADR 0079). عند الاختلاف يُحدَّث الـJSON ليطابق Figma، لا العكس.
 **مصدر الرموز للكود:** `docs/design/tokens.json` (صيغة W3C Design Tokens؛ الألوان بوضعين `light`/`dark` داخل `$value`، وكل رمز لوني يحمل اسم متغيّر CSS في `$extensions.vl.css` ونطاقات Figma في `$extensions.vl.figmaScopes`).
 **المالك:** تصميم المنتج (الوكيل 11). التعديل على الرموز يمر عبر هذا الملف والملف الـJSON معًا في PR واحد.
 
@@ -15,34 +16,41 @@
 
 ## 2. الألوان
 
-**المجموعات في Figma:** `Primitives` (51 لونًا خامًا بنطاقات مخفية) ← `Color` (55 رمزًا دلاليًا بوضعي Light/Dark عبر aliases). الكود يستهلك الطبقة الدلالية فقط.
+**المجموعات في Figma:** `Primitives` (51 لونًا خامًا بنطاقات مخفية) ← `Color` (63 رمزًا دلاليًا بوضعي Light/Dark عبر aliases). الكود يستهلك الطبقة الدلالية فقط.
 
 | المجموعة | الاستعمال | أمثلة |
 | --- | --- | --- |
-| `bg/*` | خلفيات: `canvas` (الصفحة)، `surface` (بطاقة/لوحة)، `subtle` (مرشحات ورؤوس جداول)، `brand`، `danger`، `media` (خلفية المشغّل، داكنة في الوضعين) | `--vl-color-bg-surface` |
-| `text/*` | `primary`، `secondary`، `muted` (≥ 4.5:1 على `surface`)، `on-brand`، `brand`، `danger`، `disabled`، `on-media` | `--vl-color-text-primary` |
-| `border/*` | `default` (فواصل)، `strong` (حقول)، `brand`، `danger`، `focus` | `--vl-color-border-focus` |
+| `bg/*` | خلفيات: `canvas` (الصفحة)، `surface` (بطاقة/لوحة)، `subtle` (مرشحات ورؤوس جداول)، `brand`، `danger`، `media` (خلفية المشغّل، داكنة في الوضعين)، `slate` (الشريط الداكن في بطاقة اللوحة والشريط العلوي) | `--vl-color-bg-surface` |
+| `text/*` | `primary`، `secondary`، `muted` (≥ 4.5:1 على `surface`)، `on-brand`، `brand`، `danger`، `disabled`، `on-media`، `on-slate` (على `bg/slate`) | `--vl-color-text-primary` |
+| `border/*` | `default` (فواصل)، `strong` (حقول)، `brand`، `danger`، `focus`، `on-slate` (فاصل على `bg/slate`) | `--vl-color-border-focus` |
 | `icon/*` | `default`، `muted`، `brand`، `on-brand` | |
 | `tone/{neutral,progress,good,attention,bad,urgent}/{bg,fg,border}` | شارات الحالة والتنبيهات والتوست. `urgent` وحدها مصمتة (نص أبيض على أحمر) | `--vl-color-tone-urgent-bg` |
 | `track/{technical,editorial,rights}/{accent,subtle}` | لون المسار في الخط الزمني للمادة وأيقونة الشارة: أزرق للفنية، أخضر للتحريرية، بنفسجي للحقوق | `--vl-color-track-rights-accent` |
+| `track/state/{done,progress,attention,blocked,empty}` | قطع «خط المسارات» الثلاث تحت كل مادة (مكتمل، جارٍ، انتباه، متوقف، لم يبدأ)؛ لا تُعتمد وحدها دلالةً بل مع الشكل (إطار/نصف تعبئة/تعبئة/تخطيط) | `--vl-color-track-state-done` |
 
-**الأخضر** (`green/600` = `#1F6049`) هو لون العلامة وزر الإجراء الأساسي، و**الأحمر** (`red/600` = `#A93428`) محجوز للعاجل والخطر فقط؛ لا يُستعمل للزخرفة. الوضع الداكن يعكس السلّم (الخلفية `neutral/950`، النص `neutral/50`) ويرفع درجة ألوان النبرات لتبقى ≥ 4.5:1.
+**الأخضر** (`green/600` = `#146B45`) هو لون العلامة وزر الإجراء الأساسي، و**الأحمر** (`red/600` = `#B42A1C`) محجوز للعاجل والخطر فقط؛ لا يُستعمل للزخرفة. الوضع الداكن يعكس السلّم (الخلفية `neutral/950` = `#081511`، النص `neutral/50`) ويرفع درجة ألوان النبرات لتبقى ≥ 4.5:1. مصدر القيم كلها متغيّرات Figma (الرموز الخام والدلالية بوضعيها)؛ والخلفية الفاتحة للصفحة `bg/canvas` بيضاء كما في Figma (كانت `neutral/50`)، و`bg/subtle` وَ`bg/sunken` فاتحتان تأخذان `neutral/50`.
 
-تباينات مُتحقَّق منها حسابيًا (فاتح): `text/muted` على `bg/surface` 4.6:1، `text/secondary` على `bg/canvas` 6.5:1، `tone/urgent/fg` على `tone/urgent/bg` 7.1:1، `text/on-brand` على `bg/brand` 7.6:1.
+**ما قرّره Figma ولم يرسمه:** `border/on-slate` في الوضع الفاتح وَ`track/state/progress` في الداكن لم يظهرا في أي إطار (الشاشات الداكنة وحدها تستعمل الشريط الداكن)، فأُخذتا من الوضع المقابل (`neutral/700` وَ`green/300`) إلى أن تؤكدهما المصمّمة.
+
+تباينات مُتحقَّق منها حسابيًا (فاتح): `text/muted` على `bg/surface` 5.4:1 وعلى `bg/subtle` 4.9:1، `text/secondary` على `bg/canvas` 11.6:1، `tone/urgent/fg` على `tone/urgent/bg` 6.4:1، `text/on-brand` على `bg/brand` 6.5:1. (داكن): `text/muted` على `bg/subtle` 4.65:1، `tone/urgent/fg` على `tone/urgent/bg` 4.87:1، `text/on-brand` على `bg/brand` 5.0:1. كل أزواج النص في `design-tokens.test.ts` ≥ 4.5:1 في الوضعين.
+
+**استثناءات من Figma دون 3:1 لغير النص** (تُظهر بالشكل لا باللون وحده، وتنتظر قرار المصمّمة): `track/state/attention` فاتح على الأبيض 2.66:1؛ `border/strong` داكن على `bg/surface` 2.08:1 (كان 2.46:1)؛ `border/on-slate` على `bg/slate` 1.46:1 فاتح و1.61:1 داكن (فاصل زخرفي)؛ وقطع `track/state/{done,progress,blocked}` الفاتحة على `bg/slate` الفاتح 2.6:1 (لا تُعرض هناك؛ اللوحة داكنة).
 
 ## 3. الطباعة
 
-- **العربية:** Noto Sans Arabic (ترخيص SIL OFL؛ IBM Plex Sans Arabic بديل مكافئ إن فُضِّل في الويب — لكنه غير متاح في Figma فاعتُمد Noto). **الإنجليزية:** Inter. **الأرقام والأكواد:** IBM Plex Mono (الإيصالات، البصمات، الأزمنة).
+- **النص بالعربية والإنجليزية:** Vazirmatn (ترخيص SIL OFL) — خط واحد للغتين كما في أنماط `AR/*` وَ`EN/*` في Figma (`font.family.arabic` = `font.family.latin`). **العرض:** Reem Kufi Bold (`font.family.display`) للعناوين الكبيرة وأرقام اللوحة. **الأرقام والأكواد:** IBM Plex Mono (الإيصالات، البصمات، الأزمنة). حلّ Vazirmatn محل Noto Sans Arabic وInter (ADR 0079).
 - أنماط النص في Figma مزدوجة: `AR/<role>` و`EN/<role>` بالقياس نفسه؛ ارتفاع السطر للعربية ≈ 1.6× لحجم النص في المتن.
+- **الأوزان المضمّنة:** Vazirmatn 400 و500 و600 و700، وReem Kufi 700 وحده (الوزن الوحيد لأدوار العرض)، وملفات TTF ساكنة مع نص OFL بجانبها: iOS في `App/Resources/Fonts`، وأندرويد في `res/font` (والتراخيص في `assets/licenses`)، والويب في `public/fonts`.
+- **فرق داخل Figma:** نصوص التسمية في صفحة «الطباعة» تقول `board/title 28/36` وَ`board/card 22/30` وَ`board/meta 18/24` بينما أنماط النص الفعلية (التي تستعملها شاشة اللوحة 193:862) 32/40 وَ32/40 وَ24/32؛ اعتُمدت الأنماط الفعلية.
 
 | الدور | الحجم/السطر | الوزن | الاستعمال |
 | --- | --- | --- | --- |
-| `display/xl` `lg` `md` | 64/80 · 48/60 · 40/52 | Bold | صفحة الدخول، الكتالوج العام |
-| `heading/h1`…`h4` | 32/44 · 24/34 · 20/30 · 18/28 | Bold/SemiBold | عناوين الصفحات والبطاقات |
+| `display/xl` `lg` `md` | 64/76 · 48/58 · 40/48 | Bold (Reem Kufi) | صفحة الدخول، الكتالوج العام |
+| `heading/h1`…`h4` | 32/40 · 24/34 · 20/30 · 18/28 | Bold (Reem Kufi للـh1، Vazirmatn للـh2) / SemiBold | عناوين الصفحات والبطاقات |
 | `body/lg` `md` `sm` | 18/30 · 16/26 · 14/22 | Regular | المتن؛ `sm` حدّ أدنى للجداول |
 | `label/lg` `md` `sm` | 16/24 · 14/20 · 12/16 | Medium | الأزرار والحقول والشارات |
-| `caption/md` `overline/md` | 12/18 · 12/16 | Regular/SemiBold | نص مساعد، رؤوس أعمدة |
-| `board/number` `title` `card` `meta` | 96/104 · 28/36 · 22/30 · 18/24 | Bold/SemiBold/Medium | لوحة غرفة الأخبار على شاشة كبيرة (تُقرأ من 3 أمتار) |
+| `caption/md` `overline/md` | 12/18 · 12/16 | Regular/Medium | نص مساعد، رؤوس أعمدة |
+| `board/number` `title` `card` `meta` | 96/104 · 32/40 · 32/40 · 24/32 | Bold (Reem Kufi) / Bold (Reem Kufi) / SemiBold / Medium | لوحة غرفة الأخبار على شاشة كبيرة (تُقرأ من 3 أمتار) |
 | `mono/md` `lg` | 14/20 · 18/24 | Regular/Medium | إيصال، بصمة، زمن |
 
 ## 4. المسافات والشبكة والأبعاد
@@ -90,9 +98,9 @@
 
 ## 7. كيف يستهلك الكود الرموز
 
-- **الويب (`apps/web`):** يولَّد من `tokens.json` ملف CSS متغيّرات على `:root` (`--vl-*`) وآخر داخل `[data-theme="dark"]` أو `@media (prefers-color-scheme: dark)`، ويُستبدل بها ما في `globals.css` (`--ink`, `--muted`, `--green`…). الخطوط: `Noto Sans Arabic` للعربية و`Inter` للإنجليزية عبر `next/font` بترخيص مفتوح، و`IBM Plex Mono` للإيصالات.
+- **الويب (`apps/web`):** يولَّد من `tokens.json` ملف CSS متغيّرات على `:root` (`--vl-*`) وآخر داخل `[data-theme="dark"]` أو `@media (prefers-color-scheme: dark)`، ويُستبدل بها ما في `globals.css` (`--ink`, `--muted`, `--green`…). الخطوط: `Vazirmatn` للنص و`Reem Kufi` للعرض عبر `@font-face` يولّده السكربت نفسه من `font.family.*` ويقرأ TTF من `public/fonts` (CSP `font-src 'self'`، بلا مزوّد خارجي)، والمتغيّرات `--vl-font-family-{sans,display,latin,mono}`؛ و`IBM Plex Mono` للإيصالات بالبديل من النظام حتى تُستضاف.
 - **iOS (`apps/ios`):** `Color` و`Font` extensions مولَّدة من JSON (أسماء Swift: `Color.vl.bgSurface`)، ووضعان عبر `UITraitCollection`.
-- **أندرويد (`apps/android`):** `lightColorScheme()`/`darkColorScheme()` في `Theme.kt` تُملأ من الرموز، و`Typography` بـ Noto Sans Arabic/Inter من Google Fonts.
+- **أندرويد (`apps/android`):** `lightColorScheme()`/`darkColorScheme()` في `Theme.kt` تُملأ من الرموز، و`Typography` بـ Vazirmatn/Reem Kufi المضمّنين في `res/font` (النوع `VlFontKind.TEXT|DISPLAY|MONO` يولَّد من العائلة في الدور).
 - قاعدة التوليد: الرموز الدلالية فقط تخرج إلى الكود؛ لا تُستعمل قيم `color.primitive.*` مباشرة في أي واجهة.
 
 ## 8. مرجع سهولة الوصول

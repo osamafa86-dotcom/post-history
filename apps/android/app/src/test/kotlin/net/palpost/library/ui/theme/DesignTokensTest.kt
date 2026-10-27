@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.toArgb
 import com.squareup.moshi.Types
 import net.palpost.library.api.infrastructure.Serializer
 import net.palpost.library.ui.theme.tokens.VlDarkColors
+import net.palpost.library.ui.theme.tokens.VlFontKind
 import net.palpost.library.ui.theme.tokens.VlLightColors
 import net.palpost.library.ui.theme.tokens.VlSize
 import net.palpost.library.ui.theme.tokens.VlSpace
@@ -38,11 +39,35 @@ class DesignTokensTest {
     }
 
     @Test
+    fun `colours taken from the Figma file (ADR 0079)`() {
+        assertEquals(semantic("bg/slate", "dark"), VlDarkColors.bgSlate.toArgb())
+        assertEquals(semantic("text/on-slate", "light"), VlLightColors.textOnSlate.toArgb())
+        assertEquals(semantic("border/on-slate", "dark"), VlDarkColors.borderOnSlate.toArgb())
+        assertEquals(semantic("track/state/done", "dark"), VlDarkColors.trackStateDone.toArgb())
+        assertEquals(semantic("track/state/blocked", "light"), VlLightColors.trackStateBlocked.toArgb())
+        assertEquals(0xFF146B45.toInt(), VlLightColors.bgBrand.toArgb())
+        assertEquals(0xFF081511.toInt(), VlDarkColors.bgCanvas.toArgb())
+    }
+
+    @Test
     fun `dimensions and type roles`() {
         assertEquals(16f, VlSpace.s5.value)
         assertEquals(44f, VlSize.touchMin.value)
         assertEquals(16f, VlType.bodyMd.size.value)
         assertEquals(26f, VlType.bodyMd.lineHeight.value)
         assertEquals(500, VlType.monoLg.weight.weight)
+    }
+
+    @Test
+    fun `display roles use Reem Kufi and the rest Vazirmatn (ADR 0079)`() {
+        assertEquals(VlFontKind.DISPLAY, VlType.displayXl.kind)
+        assertEquals(VlFontKind.DISPLAY, VlType.headingH1.kind)
+        assertEquals(VlFontKind.DISPLAY, VlType.boardNumber.kind)
+        assertEquals(VlFontKind.TEXT, VlType.headingH2.kind)
+        assertEquals(VlFontKind.TEXT, VlType.boardCard.kind)
+        assertEquals(VlFontKind.MONO, VlType.monoMd.kind)
+        assertEquals(48f, VlType.displayMd.lineHeight.value)
+        assertEquals(700, VlType.headingH2.weight.weight)
+        assertEquals(24f, VlType.boardMeta.size.value)
     }
 }

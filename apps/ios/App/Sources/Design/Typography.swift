@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// أدوار الخط من الرموز (`VLTextRole`) بخطوط نظام التصميم: Noto Sans Arabic للعربية، Inter للإنجليزية، IBM Plex Mono
-/// للأرقام والإيصالات. الحجم يتبع حجم الخط الديناميكي للنظام نسبةً إلى نمط نص مقارب.
+/// أدوار الخط من الرموز (`VLTextRole`) بخطوط ملف Figma (ADR 0079): Vazirmatn للنص بالعربية والإنجليزية، Reem Kufi للعرض
+/// والأرقام الكبيرة، IBM Plex Mono للأرقام والإيصالات. الحجم يتبع حجم الخط الديناميكي للنظام نسبةً إلى نمط نص مقارب.
 extension VLTextRole {
     func font(arabic: Bool) -> Font {
         .custom(postScriptName(arabic: arabic), size: size, relativeTo: textStyle)
@@ -14,13 +14,15 @@ extension VLTextRole {
         switch family {
         case .mono:
             return weight >= 500 ? "IBMPlexMono-Medium" : "IBMPlexMono-Regular"
+        case .display:
+            // Reem Kufi مضمَّن بوزن Bold وحده، وهو الوزن الوحيد لأدوار العرض في Figma.
+            return "ReemKufi-Bold"
         case .text:
-            let base = arabic ? "NotoSansArabic" : "Inter"
             switch weight {
-            case ..<500: return "\(base)-Regular"
-            case 500: return "\(base)-Medium"
-            case 600: return "\(base)-SemiBold"
-            default: return "\(base)-Bold"
+            case ..<500: return "Vazirmatn-Regular"
+            case 500: return "Vazirmatn-Medium"
+            case 600: return "Vazirmatn-SemiBold"
+            default: return "Vazirmatn-Bold"
             }
         }
     }
