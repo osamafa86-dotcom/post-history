@@ -1074,7 +1074,7 @@
       {
         "heading": "Phone notifications",
         "paragraphs": [
-          "We use push notifications only for work and account alerts, never for advertising. These include: a change in the status of a material for its reporter (for example when a supervisor has seen it), receipt and escalation alerts for editorial staff, an alert to the account owner when recovery of their account is requested or completed, and an alert to administrators when a sensitive setting changes. The server builds the notification text from fixed templates that carry the short material number or a request number, so it carries no material title, names or locations.",
+          "We use push notifications only for work and account alerts, never for advertising. These include: a change in the status of a material for its reporter (for example when a supervisor has seen it), the receipt for the reporter, incoming-material and escalation alerts for editorial staff, an alert to the account owner when recovery of their account is requested or completed, and an alert to administrators when a sensitive setting changes. The server builds the notification text from fixed templates that carry the short material number or a request number, so it carries no material title, names or locations.",
           "The notification token is stored encrypted, never enters any payload and is never returned in any response, and the device is unregistered when you sign out.",
           "Any external alert channel the Operator turns on, such as email or text messages, carries the material number and status only."
         ]
