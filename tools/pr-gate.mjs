@@ -126,7 +126,9 @@ export async function gate(prNumber, { fetcher }) {
 
   // 2) CI: كل check-runs على الرأس مكتملة وناجحة (ما يبدأ بـ .github يُستثنى).
   const runs = (checksPage.check_runs ?? []).filter((r) => !r.name.startsWith(".github"));
-  const bad = runs.filter((r) => r.status !== "completed" || r.conclusion !== "success");
+  // skipped وneutral نجاح: مرشحات المسارات تتخطى وظائف لا تمسها التغييرات (كما في بوابة المنسّق).
+  const PASS = new Set(["success", "skipped", "neutral"]);
+  const bad = runs.filter((r) => r.status !== "completed" || !PASS.has(r.conclusion));
   add("ci", runs.length && bad.length === 0 ? "pass" : bad.length === 0 ? "pending" : "fail",
     runs.length === 0 ? "لا check-runs على الرأس"
       : bad.length === 0 ? `${runs.length} فحصًا مكتملًا ناجحًا على ${pr.head.sha.slice(0, 7)}`
