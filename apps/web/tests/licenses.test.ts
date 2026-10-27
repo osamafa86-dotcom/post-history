@@ -39,3 +39,14 @@ describe("issued licenses BFF", () => {
     expect(allowedDownload("https://u:p@storage.example.test/x", config.mediaOrigins)).toBe(false);
   });
 });
+
+it("keeps only contract delivery specifications, size and frozen terms for the buyer", async () => {
+  const raw = { ...license, work_name: "never-display-canary", delivery_size_bytes: 1048576, delivery_contents: [{ deliverable: "produced", mime_type: "video/mp4", count: 1, duration_ms: 65000, width: 1920, height: 1080, sha256: "never-display-canary", file_id: id, storage_key: "never-display-canary" }], terms: { ...terms, actor_name: "never-display-canary" } };
+  const { result } = await call(`licenses/${id}`, { method: "GET", upstream: () => Response.json(raw) });
+  const safe = await result.json(); expect(safe.delivery_size_bytes).toBe(1048576);
+  expect(safe.delivery_contents).toEqual([{ deliverable: "produced", mime_type: "video/mp4", count: 1, duration_ms: 65000, width: 1920, height: 1080 }]);
+  expect(JSON.stringify(safe)).not.toMatch(/canary|actor_name|work_name|sha256|file_id|storage_key/);
+  const noCount = Object.fromEntries(Object.entries(raw.delivery_contents[0]).filter(([key]) => key !== "count"));
+  const fallback = await call(`licenses/${id}`, { method: "GET", upstream: () => Response.json({ ...raw, delivery_contents: [noCount] }) });
+  expect((await fallback.result.json()).delivery_contents[0].count).toBe(1);
+});

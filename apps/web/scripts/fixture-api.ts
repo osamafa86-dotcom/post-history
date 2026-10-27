@@ -14,6 +14,7 @@ const permissionAudit: { target: string | null; entry: PermissionHistoryEntry }[
 function reset() {
   formVersions.clear(); formVersions.set(form.version, { ...structuredClone(form), published_at: "2026-10-20T12:00:00Z", published_by: me.user_id });
   materials.splice(0, materials.length, ...Array.from({ length: 200 }, (_, i) => ({ ...material(i + 1), row_version: 17, reserved_by: null, reserved_at: null, contributors: [{ user_id: me.user_id, role: "reporter" as const, share_percent: 100 }] })));
+  Object.assign(materials[4], { reserved_by: "10000000-0000-4000-8000-000000000002", reserved_by_name: "Synthetic staff", acknowledgement_due_at: new Date(Date.now() - 123000).toISOString() });
   materials[1].editorial_state = "accepted"; materials[2].technical_state = "failed";
   notifications.splice(0, notifications.length, ...Array.from({ length: 3 }, (_, i) => ({ id: `60000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`, type: "never-display-canary", title: "never-display-canary", material_id: materials[i].id, priority: "normal" as const, state: "sent" as const, created_at: "2026-10-20T12:00:00Z" })));
   history.clear(); writes.length = 0; applied.clear(); dropNextWrite = false;
@@ -93,7 +94,7 @@ const issued = new Map<string, Record<string, unknown> & { id: string; organizat
 function seedLicenses() {
   issued.clear();
   const terms = { type: "editorial_single", name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" }, terms: { ar: "استخدام تحريري واحد في نشرة إخبارية.", en: "One editorial use in a news bulletin." }, usage_media: ["tv", "web"], territory: { kind: "worldwide" }, term_days: null, exclusivity_hours: null, deliverables: ["original"], attribution: { ar: "فلسطين بوست", en: "Palestine Post" }, prohibitions: ["resale", "ai_training"] };
-  const base = { order_id: "92000000-0000-4000-8000-000000000001", organization_id: "90000000-0000-4000-8000-000000000001", listing_id: "71000000-0000-4000-8000-000000000001", material_version: 1, license_template_id: "70000000-0000-4000-8000-000000000001", license_version: 1, terms, price: { amount_minor: 15000, currency: "USD" }, valid_from: "2026-10-26T10:00:00Z", valid_until: null, exclusive_until: null, issued_at: "2026-10-26T10:00:00Z", internal_note: "never-display-canary" };
+  const base = { order_id: "92000000-0000-4000-8000-000000000001", organization_id: "90000000-0000-4000-8000-000000000001", listing_id: "71000000-0000-4000-8000-000000000001", material_version: 1, license_template_id: "70000000-0000-4000-8000-000000000001", license_version: 1, terms, delivery_contents: [{ deliverable: "produced", mime_type: "video/mp4", count: 1, duration_ms: 65000, width: 1920, height: 1080 }], delivery_size_bytes: 1048576, price: { amount_minor: 15000, currency: "USD" }, valid_from: "2026-10-26T10:00:00Z", valid_until: null, exclusive_until: null, issued_at: "2026-10-26T10:00:00Z", internal_note: "never-display-canary" };
   issued.set("93000000-0000-4000-8000-000000000001", { ...base, id: "93000000-0000-4000-8000-000000000001", order_item_id: randomUUID(), license_number: "PH-2026-7K3M9Q2XRT", title: { ar: "لقطات اصطناعية 1", en: "Synthetic footage 1" }, status: "active", revoked_reason: null, delivery_ready: true, downloads: 3 });
   issued.set("93000000-0000-4000-8000-000000000002", { ...base, id: "93000000-0000-4000-8000-000000000002", order_item_id: randomUUID(), license_number: "PH-2026-4HJ8NP0WVZ", title: { ar: "لقطات اصطناعية 2", en: "Synthetic footage 2" }, status: "revoked", revoked_reason: "refunded", delivery_ready: true, downloads: 3 });
 }
@@ -266,7 +267,7 @@ const server = createServer(async (req, res) => {
         const track = body.track as "technical" | "editorial" | "rights", column = `${track}_state` as const;
         if (track === "editorial" && !has("supervisor", "producer") || track === "rights" && !has("rights_officer") || track === "technical" && !has("reporter")) return send({}, 403);
         const from = item[column]; Object.assign(item, { [column]: body.to }); item.row_version!++;
-        history.set(item.id, [...(history.get(item.id) ?? []), { id: randomUUID(), track, from, to: String(body.to), reason: String(body.reason), note_timecode_ms: typeof body.note_timecode_ms === "number" ? body.note_timecode_ms : null, actor_id: user.user_id, occurred_at: stamp }]);
+        history.set(item.id, [...(history.get(item.id) ?? []), { id: randomUUID(), track, from, to: String(body.to), reason: String(body.reason), note_timecode_ms: typeof body.note_timecode_ms === "number" ? body.note_timecode_ms : null, actor_id: user.user_id, actor_name: has("reporter") ? null : "Synthetic staff", occurred_at: stamp }]);
         return commit(item, 200);
       }
       if (match[2] === "contributors" && req.method === "PUT") { if (!has("rights_officer", "system_admin")) return send({}, 403); item.contributors = body.contributors as Material["contributors"]; item.row_version!++; return commit(item, 200); }
@@ -473,6 +474,18 @@ const server = createServer(async (req, res) => {
       res.setHeader("ETag", `"${next.row_version}"`); return commit(next, 200);
     }
     if (/^\/v1\/users\/[^/]+\/status$/.test(path)) { if (!has("system_admin")) return send({}, 403); return commit(null); }
+    const staffName = /^\/v1\/users\/([^/]+)\/work-name$/.exec(path);
+    if (staffName && req.method === "PUT") {
+      if (!has("system_admin")) return send({}, 403);
+      if (staffName[1] === me.user_id || staffName[1].startsWith("91000000")) return send({}, 422);
+      return commit(null);
+    }
+    if (path === "/v1/notifications/read-all" && req.method === "POST") {
+      const stamp = new Date().toISOString();
+      let read_count = 0;
+      for (const item of notifications) if (!item.read_at && Date.parse(item.created_at) <= Date.parse(String(body.before))) { item.read_at = stamp; if (item.state !== "acknowledged") item.state = "read"; read_count++; }
+      return commit({ read_count }, 200);
+    }
     const notice = /^\/v1\/notifications\/([^/]+)\/(read|ack)$/.exec(path);
     if (notice) { const item = notifications.find(n => n.id === notice[1]); if (!item) return send({}, 404); item.read_at = new Date().toISOString(); item.state = notice[2] === "ack" ? "acknowledged" : "read"; if (notice[2] === "ack") item.acknowledged_at = item.read_at; return commit(null); }
     return send({}, 405);
@@ -574,19 +587,19 @@ const server = createServer(async (req, res) => {
     const count = (key: "editorial_state" | "technical_state" | "rights_state") => Object.entries(materials.reduce<Record<string, number>>((all, m) => ({ ...all, [m[key]]: (all[m[key]] ?? 0) + 1 }), {})).map(([state, count]) => ({ state, count }));
     return send({ generated_at: new Date().toISOString(), editorial: [...count("editorial_state"), { state: "never-display-canary", count: 1 }], technical: count("technical_state"), rights: count("rights_state"),
       urgent_open: materials.filter(m => m.priority === "urgent" && !["published", "rejected"].includes(m.editorial_state)).length,
-      reserved: materials.filter(m => m.reserved_by).map(m => ({ material_id: m.id, reserved_by: m.reserved_by, reserved_at: m.reserved_at, priority: m.priority, editorial_state: m.editorial_state, title: "never-display-canary" })),
+      reserved: materials.filter(m => m.reserved_by).map(m => ({ material_id: m.id, reserved_by: m.reserved_by, reserved_by_name: m.reserved_by_name ?? null, reserved_at: m.reserved_at, priority: m.priority, editorial_state: m.editorial_state, title: "never-display-canary" })),
       recent_receipts: materials.slice(0, 3).map(m => ({ material_id: m.id, receipt_number: `R-261021-${m.id.slice(-6)}`, verified_at: m.created_at, priority: m.priority })),
-      overdue_acknowledgements: 2,
+      overdue_acknowledgements: 2, oldest_overdue_acknowledgement_at: materials[4].acknowledgement_due_at,
       uploads_in_progress: [{ upload_session_id: "90000000-0000-4000-8000-000000000001", material_id: materials[4].id, kind: "original", priority: "urgent", state: "in_progress", size_bytes: 4000, bytes_received: 1000, updated_at: new Date().toISOString(), filename: "never-display-canary", reporter_id: "never-display-canary" }] });
   }
   if (url.pathname === "/v1/catalog" || url.pathname.startsWith("/v1/catalog/")) {
     if (!user.roles.some(role => ["system_admin", "rights_officer", "editor_in_chief", "finance", "buyer_admin", "buyer_member"].includes(role.name))) return send({}, 403);
     // كتالوج اصطناعي: مادتان، بحقول خارج القائمة البيضاء للتأكد أنها لا تصل إلى المتصفح.
     const text = (ar: string, en: string) => ({ ar, en });
-    const offer = (id: string, type: string, amount: number) => ({ license_template_id: `70000000-0000-4000-8000-00000000000${id}`, license_version: 1, type, name: text(type === "exclusive_temporary" ? "حصري 48 ساعة" : "تحريري لاستخدام واحد", type === "exclusive_temporary" ? "Exclusive 48 h" : "Editorial single use"), price: { amount_minor: amount, currency: "USD" } });
+    const offer = (id: string, type: string, amount: number) => ({ license_template_id: `70000000-0000-4000-8000-00000000000${id}`, license_version: 1, type, name: text(type === "exclusive_temporary" ? "حصري 48 ساعة" : "تحريري لاستخدام واحد", type === "exclusive_temporary" ? "Exclusive 48 h" : "Editorial single use"), price: { amount_minor: amount, currency: "USD" }, terms: { type, name: text("شروط اصطناعية", "Synthetic terms"), terms: text("استخدام اصطناعي قبل الشراء", "Synthetic use before purchase"), usage_media: ["tv", "web"], territory: { kind: "worldwide" }, term_days: type === "exclusive_temporary" ? 365 : null, exclusivity_hours: type === "exclusive_temporary" ? 48 : null, deliverables: ["original"], attribution: text("شبكة اصطناعية", "Synthetic network"), prohibitions: ["resale"] } });
     const catalog = [1, 2].map(i => ({ listing_id: `71000000-0000-4000-8000-00000000000${i}`, material_version: 1, title: text(`لقطات اصطناعية ${i}`, `Synthetic footage ${i}`), description: text("وصف اصطناعي", "Synthetic description"),
       shot_list: [{ start_ms: 0, label: text("لقطة عامة", "Wide shot") }, { start_ms: 65000, label: text("لقطة قريبة", "Close-up") }], material_types: ["raw_footage"], governorate: "غزة", shot_on: "2026-10-19T13:45:00Z", duration_ms: 125000, width: 3840, height: 2160,
-      credit: "فلسطين بوست", offers: [offer("1", "editorial_single", 15000), offer("2", "exclusive_temporary", 90000)], exclusive_available: i === 1, listed_at: "2026-10-21T10:00:00Z", reporter_id: "never-display-canary", city: "never-display-canary", gps: { lat: 31.5, lng: 34.4 } }));
+      verified_on: i === 1 ? "2026-10-21" : null, editorial_approved_on: i === 1 ? "2026-10-22" : null, exclusive_unavailable_until: i === 2 ? "2026-10-29T10:00:00Z" : null, credit: "فلسطين بوست", offers: [offer("1", "editorial_single", 15000), offer("2", "exclusive_temporary", 90000)], exclusive_available: i === 1, listed_at: "2026-10-21T10:00:00Z", reporter_id: "never-display-canary", city: "never-display-canary", gps: { lat: 31.5, lng: 34.4 } }));
     if (url.pathname === "/v1/catalog") { const q = url.searchParams.get("q"); return send({ items: catalog.filter(item => !q || item.title.ar.includes(q) || item.title.en.toLowerCase().includes(q.toLowerCase())), next_cursor: null }); }
     const preview = /^\/v1\/catalog\/([^/]+)\/preview-url$/.exec(url.pathname), id = preview?.[1] ?? url.pathname.slice("/v1/catalog/".length), item = catalog.find(c => c.listing_id === id);
     if (!item) return send({ code: "not_found" }, 404);

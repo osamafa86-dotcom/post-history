@@ -285,7 +285,12 @@
       "permission_granted": "Permission granted",
       "permission_revoked": "Permission revoked",
       "setting_changed": "Identity policy changed"
-    }
+    },
+    "workName": "Internal work name",
+    "workNameHelp": "Staff only; not a reporter or buyer name and never shown to them.",
+    "workNameSave": "Save work name",
+    "workNameClear": "Clear work name",
+    "workNameRejected": "Work name rejected; check the format and that the account is staff, not a reporter or buyer."
   },
   "notice": {
     "title": "Notifications",
@@ -486,8 +491,13 @@
       "changeLicense": "Change licence",
       "summary": "Order summary",
       "filesAfterPayment": "Files open only after the gateway's signed payment confirmation.",
-      "searchButton": "Search"
-    }
+      "searchButton": "Search",
+      "verifiedOn": "Verified on {date}",
+      "approvedOn": "Editorially approved on {date}"
+    },
+    "exclusiveUntil": "Exclusivity reserved until {date}",
+    "termDaysLabel": "Licence term (days)",
+    "exclusivityHoursLabel": "Exclusivity duration (hours)"
   },
   "board": {
     "title": "Newsroom board",
@@ -530,7 +540,10 @@
       "stale": "Board not updated for {time}",
       "allClear": "Everything is within its deadline",
       "exit": "Leave wall display"
-    }
+    },
+    "reservedName": "Reserved: {name}",
+    "overdueAge": "Overdue {time}",
+    "oldestOverdue": "Oldest {time}"
   },
   "upload": {
     "nav": "Desktop upload",
@@ -911,7 +924,9 @@
     "days": "{n} days",
     "invoices": "Orders and invoices",
     "revokedHelp": "This licence is revoked ({reason}): new use and downloads stop.",
-    "filesNote": "Delivered files are stripped of precise location and device data; the raw original is never delivered."
+    "filesNote": "Delivered files are stripped of precise location and device data; the raw original is never delivered.",
+    "deliveryContents": "Delivery contents",
+    "deliverySize": "Package size: {size} MiB"
   },
   "commission": {
     "nav": "Commission rules",
@@ -1281,6 +1296,7 @@
     "acknowledged": "seen",
     "noEvent": "No events yet",
     "allTracks": "Show all tracks",
-    "system": "System"
+    "system": "System",
+    "neutralActor": "Internal actor or system"
   }
 }

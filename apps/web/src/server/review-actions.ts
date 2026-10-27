@@ -1,3 +1,4 @@
+import { internalNames, workName } from "@/lib/work-name";
 import { NextResponse } from "next/server";
 import type { components } from "@/generated/schema";
 import type { Me, Permission, Transition, ReporterIdentitySettingUpdate } from "@/lib/types";
@@ -24,6 +25,8 @@ export const actionRoutes = [
   { path: "/materials/{id}/transitions", methods: ["post"] },
   { path: "/materials/{id}/contributors", methods: ["put"] },
   { path: "/materials/{id}/reservation", methods: ["post", "delete"] },
+  { path: "/users/{id}/work-name", methods: ["put"] },
+  { path: "/notifications/read-all", methods: ["post"] },
   { path: "/users/{id}/status", methods: ["put"] },
   { path: "/users/{id}/permissions/{permission}", methods: ["put", "delete"] },
   { path: "/notifications/{id}/read", methods: ["post"] },
@@ -86,14 +89,14 @@ export async function reviewAction(request: Request, path: string, api: Api, me:
       if (track === "rights" && body.to === "sellable" && !hasRole(me, "rights_officer")) throw new WebError(403, "request_failed");
       const payload: Transition = { track, to: body.to, reason: body.reason, ...(body.note_timecode_ms !== undefined ? { note_timecode_ms: body.note_timecode_ms as number | null } : {}) };
       const data = requireOk(await api.POST("/materials/{id}/transitions", { params: { path: { id }, header: versioned() }, body: payload }));
-      return NextResponse.json(safeMaterial(data, me.permissions), { headers: privateHeaders });
+      return NextResponse.json(safeMaterial(data, me.permissions, undefined, internalNames(me)), { headers: privateHeaders });
     }
     if (kind === "contributors" && request.method === "PUT") {
       requireRole(me, "rights_officer", "system_admin"); keys(body, ["contributors"]);
       if (!validContributors(body.contributors)) throw new WebError(422, "request_failed");
       const contributors = body.contributors.map(({ user_id, role, share_percent }) => ({ user_id, role, share_percent }));
       const data = requireOk(await api.PUT("/materials/{id}/contributors", { params: { path: { id }, header: versioned() }, body: { contributors } }));
-      return NextResponse.json(safeMaterial(data, me.permissions), { headers: privateHeaders });
+      return NextResponse.json(safeMaterial(data, me.permissions, undefined, internalNames(me)), { headers: privateHeaders });
     }
     if (kind === "reservation" && request.method === "POST") {
       requireRole(me, "producer", "editor_in_chief"); keys(body, []);
@@ -104,6 +107,20 @@ export async function reviewAction(request: Request, path: string, api: Api, me:
       requireRole(me, "producer", "supervisor", "editor_in_chief", "system_admin"); keys(body, []);
       requireOk(await api.DELETE("/materials/{id}/reservation", { params: { path: { id }, header } })); return done();
     }
+  }
+  const workNamePath = /^users\/([^/]+)\/work-name$/.exec(path);
+  if (workNamePath && uuid.test(workNamePath[1]) && request.method === "PUT") {
+    requireRole(me, "system_admin"); keys(body, ["work_name"]);
+    if (body.work_name !== null && workName(body.work_name) === null) throw new WebError(422, "request_failed");
+    requireOk(await api.PUT("/users/{id}/work-name", { params: { path: { id: workNamePath[1] }, header }, body: { work_name: body.work_name as string | null } }));
+    return done();
+  }
+  if (path === "notifications/read-all" && request.method === "POST") {
+    keys(body, ["before"]);
+    if (typeof body.before !== "string" || !/^\d{4}-\d{2}-\d{2}T/.test(body.before) || !Number.isFinite(Date.parse(body.before))) throw new WebError(422, "request_failed");
+    const data = requireOk(await api.POST("/notifications/read-all", { params: { header }, body: { before: body.before } }));
+    if (!Number.isSafeInteger(data.read_count) || data.read_count < 0) throw new WebError(502, "temporarily_unavailable");
+    return NextResponse.json({ read_count: data.read_count }, { headers: privateHeaders });
   }
   const permissionPath = /^users\/([^/]+)\/permissions\/([^/]+)$/.exec(path);
   if (permissionPath && uuid.test(permissionPath[1]) && permissions.includes(permissionPath[2] as Permission)) {

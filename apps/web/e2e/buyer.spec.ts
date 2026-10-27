@@ -58,3 +58,25 @@ test("licences: cards with a verification link; the public page shows number and
   await page.goto("/ar/verify/PH-2026-0000000000"); await expect(page.locator("main").getByRole("alert")).toHaveText(l.verify.notFound);
   await page.goto("/ar/verify/not-a-number"); await expect(page.locator("main").getByRole("alert")).toHaveText(l.verify.notFound);
 });
+
+test("ADR 0035 buyer sees proof days and offer terms, with null proof and dated exclusivity", async ({ page }) => {
+  await login(page, "buyer"); await expect(page).toHaveURL(/\/ar\/store$/); await page.goto("/ar/store/71000000-0000-4000-8000-000000000001");
+  const card = page.getByRole("region", { name: b.authenticity });
+  await expect(card).toContainText(b.verifiedOn.split("{date}")[0]); await expect(card).toContainText(b.approvedOn.split("{date}")[0]); await expect(card).not.toContainText(/\d{1,2}:\d{2}/);
+  const terms = page.locator(".offer-terms").first(); await terms.locator("summary").click(); await expect(terms).toContainText("استخدام اصطناعي قبل الشراء"); await expect(terms).toContainText(ar.templates.worldwide);
+  await page.goto("/ar/store/71000000-0000-4000-8000-000000000002");
+  await expect(page.getByRole("region", { name: b.authenticity })).not.toContainText(b.verifiedOn.split("{date}")[0]);
+  await expect(page.locator(".license-picker")).toContainText(s.exclusiveUntil.split("{date}")[0]);
+  await expect(page.locator("main")).not.toContainText(/work_name|actor_name|sha256|never-display-canary/);
+  await page.route("**/api/bff/catalog/71000000-0000-4000-8000-000000000002", async route => { const response = await route.fetch(), data = await response.json(); data.exclusive_unavailable_until = null; await route.fulfill({ response, json: data }); });
+  await page.reload(); await expect(page.getByText(s.exclusiveTaken, { exact: true })).toBeVisible();
+});
+
+test("ADR 0035 license exposes delivery specifications and size only when supplied", async ({ page }) => {
+  await login(page, "buyer"); await expect(page).toHaveURL(/\/ar\/store$/); await page.goto("/ar/store/licenses/93000000-0000-4000-8000-000000000001");
+  await expect(page.getByTestId("delivery-contents")).toContainText("video/mp4"); await expect(page.getByTestId("delivery-contents")).toContainText("1920×1080"); await expect(page.getByTestId("delivery-size")).toBeVisible();
+  let omitContents = true;
+  await page.route("**/api/bff/licenses/93000000-0000-4000-8000-000000000001", async route => { const response = await route.fetch(), data = await response.json(); data.delivery_contents = omitContents ? undefined : []; data.delivery_size_bytes = null; await route.fulfill({ response, json: data }); });
+  await page.reload(); await expect(page.getByTestId("certificate")).toBeVisible(); await expect(page.getByTestId("delivery-contents")).toHaveCount(0); await expect(page.getByTestId("delivery-size")).toHaveCount(0);
+  omitContents = false; await page.reload(); await expect(page.getByTestId("certificate")).toBeVisible(); await expect(page.getByRole("heading", { name: l.deliveryContents, exact: true })).toHaveCount(0);
+});

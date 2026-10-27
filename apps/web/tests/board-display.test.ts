@@ -24,3 +24,10 @@ describe("supervisor board display helpers (#385)", () => {
   });
   it("prints the wall clock as HH:MM:SS", () => { expect(wallClock(new Date(2026, 9, 26, 7, 5, 9).getTime())).toBe("07:05:09"); });
 });
+
+it("derives overdue age only from the returned deadline, with null and future dates absent", async () => {
+  const { overdueTime } = await import("../src/lib/board");
+  const now = Date.parse("2026-10-27T10:02:03Z");
+  expect(overdueTime("2026-10-27T10:00:00Z", now)).toBe("02:03");
+  for (const value of [null, undefined, "invalid", "2026-10-27T10:03:00Z"]) expect(overdueTime(value, now)).toBeNull();
+});

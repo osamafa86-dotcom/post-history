@@ -39,7 +39,7 @@ test("exclusivity that is taken cannot be chosen, in English too", async ({ page
   await expect(page.getByRole("heading", { name: "Synthetic footage 2" })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
   await expect(page.getByRole("radio", { name: /Exclusive 48 h/ })).toBeDisabled();
-  await expect(page.getByText(en.store.exclusiveTaken)).toBeVisible();
+  await expect(page.getByText(en.store.exclusiveUntil.split("{date}")[0], { exact: false })).toBeVisible();
 });
 
 test("reporters do not see the catalog and the BFF refuses them", async ({ page }) => {

@@ -19,3 +19,11 @@ export const wallClock = (at: number) => new Date(at).toLocaleTimeString("en-GB"
 /** هل زاد عدّاد منذ اللقطة السابقة؟ الصوت مرة عند دخول عاجل جديد أو تجاوز مهلة جديد. */
 export const rose = (previous: { urgent_open: number; overdue_acknowledgements: number } | null, next: { urgent_open: number; overdue_acknowledgements: number }) =>
   !!previous && (next.urgent_open > previous.urgent_open || next.overdue_acknowledgements > previous.overdue_acknowledgements);
+
+/** من الموعد الذي أعاده الخادم وحده، لا من قواعد التنبيه أو وقت إنشاء المادة. */
+export function overdueTime(from: string | null | undefined, now: number): string | null {
+  const at = from ? Date.parse(from) : NaN;
+  if (!Number.isFinite(at) || at >= now) return null;
+  const seconds = Math.floor((now - at) / 1000);
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}

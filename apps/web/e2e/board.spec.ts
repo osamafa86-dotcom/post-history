@@ -64,3 +64,16 @@ test("wall display goes stale and dims when the snapshot fails, and can be light
   await expect(page.locator(".wall-banner.bad")).toContainText(ar.board.display.stale.split("{time}")[0].trim(), { timeout: 12000 });
   await expect(page.locator(".wall-body")).toHaveClass(/stale/);
 });
+
+test("ADR 0035 board and wall use server names and deadlines, tolerating null fields", async ({ page }) => {
+  await login(page, "reviewer@example.test"); await page.goto("/ar/board");
+  await expect(page.getByTestId("column-inbox")).toContainText(ar.board.reservedName.replace("{name}", "Synthetic staff"));
+  await expect(page.getByTestId("ack-overdue")).toHaveCount(1);
+  await expect(page.getByTestId("overdue")).toContainText(ar.board.oldestOverdue.split("{time}")[0]);
+  await page.goto("/ar/board?display=1"); await expect(page.getByTestId("wall-column-inbox")).toContainText("Synthetic staff");
+  await expect(page.getByTestId("wall-overdue")).toContainText(ar.board.oldestOverdue.split("{time}")[0]);
+  await page.route("**/api/bff/materials?*", async route => { const response = await route.fetch(), data = await response.json(); for (const item of data.items) { item.reserved_by_name = null; item.acknowledgement_due_at = null; } await route.fulfill({ response, json: data }); });
+  await page.route("**/api/bff/dashboard/newsroom", async route => { const response = await route.fetch(), data = await response.json(); data.oldest_overdue_acknowledgement_at = null; for (const item of data.reserved) item.reserved_by_name = null; await route.fulfill({ response, json: data }); });
+  await page.reload(); await expect(page.getByTestId("wall-card")).not.toHaveCount(0); await expect(page.getByTestId("board-display")).not.toContainText("Synthetic staff");
+  await expect(page.getByTestId("ack-overdue")).toHaveCount(0); await expect(page.getByTestId("wall-overdue")).not.toContainText(ar.board.oldestOverdue.split("{time}")[0]);
+});

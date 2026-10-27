@@ -1,4 +1,5 @@
 import type { Field, Form, Material, Me, Permission, Values, Notification, TransitionRecord, NewsroomDashboard } from "./types";
+import { workName } from "./work-name";
 import { uuid, states } from "./query";
 
 export function mayReadField(field: Field, permissions: Permission[]) {
@@ -15,11 +16,12 @@ export function safeMe(me: Me): Me {
 export function safeForm<T extends Form>(form: T, permissions: Permission[]): T {
   return { ...form, fields: form.fields.filter(field => mayReadField(field, permissions)) };
 }
-export function safeMaterial(material: Material, permissions: Permission[], form?: Form): Material {
+export function safeMaterial(material: Material, permissions: Permission[], form?: Form, internal = false): Material {
   // قائمة بيضاء تمنع انتقال حقول جديدة غير مراجعة إلى المتصفح؛ GPS writeOnly في العقد الحالي.
   return {
     id: material.id, version: material.version, row_version: material.row_version, reporter_id: material.reporter_id, office_id: material.office_id,
     reserved_by: material.reserved_by, reserved_at: material.reserved_at,
+    ...(internal ? { reserved_by_name: workName(material.reserved_by_name), acknowledgement_due_at: material.acknowledgement_due_at } : {}),
     contributors: material.contributors?.map(({ user_id, role, share_percent }) => ({ user_id, role, share_percent })),
     title: material.title, material_types: material.material_types, governorate: material.governorate, city: material.city,
     shot_at: material.shot_at, priority: material.priority,
@@ -38,10 +40,10 @@ export function safeNotification(item: Notification): Notification {
     priority: item.priority, state: item.state, escalation_level: item.escalation_level, assignment_state: item.assignment_state,
     created_at: item.created_at, read_at: item.read_at, acknowledged_at: item.acknowledged_at };
 }
-export function safeTransition(item: TransitionRecord): TransitionRecord {
+export function safeTransition(item: TransitionRecord, internal = false): TransitionRecord {
   const targets = states[`${item.track}_state`] as readonly string[] | undefined;
   return { id: item.id, track: item.track, from: targets?.includes(item.from) ? item.from : "", to: targets?.includes(item.to) ? item.to : "",
-    actor_id: item.actor_id && uuid.test(item.actor_id) ? item.actor_id : null, occurred_at: item.occurred_at, reason: "" };
+    actor_id: item.actor_id && uuid.test(item.actor_id) ? item.actor_id : null, ...(internal ? { actor_name: workName(item.actor_name) } : {}), occurred_at: item.occurred_at, reason: "" };
 }
 
 /** ما يصل المراسل من ملاحظة المشرف على مادته: سبب طلب التعديل أو الرفض وتوقيته، ولا سبب غيرهما. */
@@ -55,12 +57,13 @@ export function reporterNote(item: TransitionRecord): TransitionRecord {
 }
 
 /** لقطة غرفة الأخبار بقائمة بيضاء: معرّفات وأرقام وحالات فقط، والحالات من قوائم العقد وحدها. */
-export function safeDashboard(d: NewsroomDashboard): NewsroomDashboard {
+export function safeDashboard(d: NewsroomDashboard, internal = false): NewsroomDashboard {
   const counts = (items: NewsroomDashboard["editorial"], allowed: readonly string[]) => items.filter(i => allowed.includes(i.state) && Number.isSafeInteger(i.count)).map(({ state, count }) => ({ state, count }));
   return {
+    oldest_overdue_acknowledgement_at: d.oldest_overdue_acknowledgement_at,
     generated_at: d.generated_at, urgent_open: d.urgent_open, overdue_acknowledgements: d.overdue_acknowledgements,
     editorial: counts(d.editorial, states.editorial_state), technical: counts(d.technical, states.technical_state), rights: counts(d.rights, states.rights_state),
-    reserved: d.reserved.filter(r => uuid.test(r.material_id)).map(({ material_id, reserved_by, reserved_at, priority, editorial_state }) => ({ material_id, reserved_by, reserved_at, priority, editorial_state })),
+    reserved: d.reserved.filter(r => uuid.test(r.material_id)).map(r => ({ material_id: r.material_id, reserved_by: r.reserved_by, reserved_at: r.reserved_at, priority: r.priority, editorial_state: r.editorial_state, ...(internal ? { reserved_by_name: workName(r.reserved_by_name) } : {}) })),
     recent_receipts: d.recent_receipts.filter(r => uuid.test(r.material_id)).map(({ material_id, receipt_number, verified_at, priority }) => ({ material_id, receipt_number, verified_at, priority })),
     // «الوارد الآن» (ADR 0024): معرّفات وأرقام وحدها، ولا اسم ملف ولا مراسل ولا جهاز حتى لو أرسلها الخادم.
     ...(d.uploads_in_progress ? { uploads_in_progress: d.uploads_in_progress.filter(u => uuid.test(u.upload_session_id) && uuid.test(u.material_id) && Number.isSafeInteger(u.size_bytes) && Number.isSafeInteger(u.bytes_received)).map(({ upload_session_id, material_id, kind, priority, state, size_bytes, bytes_received, updated_at }) => ({ upload_session_id, material_id, kind, priority, state, size_bytes, bytes_received: Math.min(bytes_received, size_bytes), updated_at })) } : {}),

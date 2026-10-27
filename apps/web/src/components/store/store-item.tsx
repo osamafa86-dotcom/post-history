@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { messages, type Locale } from "@/lib/i18n";
 import { hasRole } from "@/lib/review";
-import { formatDuration, formatMoney, localized, type CatalogItem } from "@/lib/store-format";
+import { formatDay, formatDuration, formatMoney, localized, type CatalogItem } from "@/lib/store-format";
 import { useUser } from "../session-boundary";
 import { resolution, shotDay } from "./catalog-card";
 import { LicensePicker } from "./license-picker";
@@ -44,9 +44,9 @@ export function StoreItem({ locale, id }: { locale: Locale; id: string }) {
         <section className="card"><h2>{b.about}</h2><p>{localized(item.description, locale)}</p><p className="caption">{s.credit}: {item.credit}</p></section></div>
       <aside className="store-detail-side">
         <section className="card authenticity" aria-labelledby="authenticity-title"><h2 id="authenticity-title"><span aria-hidden="true">🛡</span> {b.authenticity}</h2>
-          <ul>{[[b.verifiedOriginal, b.version.replace("{n}", String(item.material_version))], [b.editorial, b.editorialHelp], [b.rights, b.rightsHolder.replace("{credit}", item.credit)]].map(([title, help]) => <li key={title}><span className="authenticity-icon" aria-hidden="true">✓</span><span><strong>{title}</strong><small className="muted">{help}</small></span></li>)}</ul>
+          <ul>{[[b.verifiedOriginal, [b.version.replace("{n}", String(item.material_version)), formatDay(item.verified_on, locale) && b.verifiedOn.replace("{date}", formatDay(item.verified_on, locale)!)].filter(Boolean).join(" · ")], [b.editorial, formatDay(item.editorial_approved_on, locale) ? b.approvedOn.replace("{date}", formatDay(item.editorial_approved_on, locale)!) : b.editorialHelp], [b.rights, b.rightsHolder.replace("{credit}", item.credit)]].map(([title, help]) => <li key={title}><span className="authenticity-icon" aria-hidden="true">✓</span><span><strong>{title}</strong><small className="muted">{help}</small></span></li>)}</ul>
           <p className="caption">{b.verifyNote}</p></section>
-        <section className="card"><LicensePicker locale={locale} offers={item.offers.map(o => ({ id: `${o.license_template_id}:${o.license_version}`, type: o.type, name: o.name, price: o.price }))} exclusiveAvailable={item.exclusive_available} value={offer} onChange={id => { setOffer(id); setToast(false); }} />
+        <section className="card"><LicensePicker locale={locale} offers={item.offers.map(o => ({ id: `${o.license_template_id}:${o.license_version}`, type: o.type, name: o.name, price: o.price, terms: o.terms }))} exclusiveAvailable={item.exclusive_available} exclusiveUntil={item.exclusive_unavailable_until} value={offer} onChange={id => { setOffer(id); setToast(false); }} />
           {buyer ? <div className="actions"><button disabled={!chosen} onClick={add}>{chosen ? b.addFor.replace("{price}", formatMoney(chosen.price, locale)) : s.addToCart}</button>{cart.items.some(i => i.listing_id === item.listing_id) && <Link prefetch={false} href={`/${locale}/store/cart`}>{s.inCart}</Link>}</div> : <p className="notice">{s.buyersOnly}</p>}
           <details className="delivery-specs"><summary>{b.deliveryTitle}</summary><p className="caption">{b.deliveryText}</p></details></section>
       </aside>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { browserApi, dataOrThrow, RequestError } from "@/lib/browser-api";
 import { formatDate, messages, type Locale } from "@/lib/i18n";
 import type { Form, Material, TransitionRecord } from "@/lib/types";
+import { internalNames } from "@/lib/work-name";
 import { lastEvents, timecode, timeline, type Track } from "@/lib/editor";
 import { stateColumn, tracks } from "@/lib/review";
 import { useUser } from "./session-boundary";
@@ -58,13 +59,13 @@ export function MaterialDetail({ locale, id }: { locale: Locale; id: string }) {
         <section className="card"><h2>{m.dynamicData}</h2>{material.redacted_field_keys?.length ? <p className="notice locked">{m.hiddenFields}</p> : null}{schema && Object.keys(material.dynamic_fields).length ? <DynamicForm key={`${material.id}-${material.updated_at}`} schema={schema} type={material.material_types[0]} permissions={me.permissions} locale={locale} initialValues={material.dynamic_fields} readOnly /> : <p className="muted">{schema ? m.noDynamic : m.formMissing}</p>}</section>
         <ReviewActions key={`${material.id}:${tag}`} locale={locale} material={material} tag={tag} editing={() => { editing.current = true; }} reload={reload} notify={setToast} /><ListingPanel key={`${material.id}:listing:${material.rights_state}`} locale={locale} material={material} />
       </div>
-      <Timeline locale={locale} records={records} failed={historyFailed} filter={filter} clear={() => setFilter(null)} />
+      <Timeline internal={internalNames(me)} locale={locale} records={records} failed={historyFailed} filter={filter} clear={() => setFilter(null)} />
     </div>
   </>;
 }
 
 /** الخط الزمني: الأحداث تنازليًا، كل حدث بلون مساره؛ السبب يظهر لمن يعيده الـBFF وحده (صاحب المادة). */
-function Timeline({ locale, records, failed, filter, clear }: { locale: Locale; records: TransitionRecord[] | null; failed: boolean; filter: Track | null; clear: () => void }) {
+function Timeline({ internal, locale, records, failed, filter, clear }: { internal: boolean; locale: Locale; records: TransitionRecord[] | null; failed: boolean; filter: Track | null; clear: () => void }) {
   const m = messages[locale], names = { technical: m.technical, editorial: m.editorial, rights: m.rights };
   const label = (record: TransitionRecord, value: string) => (m.states[stateColumn[record.track as Track]] as Record<string, string>)[value] ?? value;
   const items = records ? timeline(records, filter) : null;
@@ -74,6 +75,6 @@ function Timeline({ locale, records, failed, filter, clear }: { locale: Locale; 
         <span className="timeline-dot" aria-hidden="true" />
         <p><strong>{names[item.track as Track] ?? item.track}</strong>: {label(item, item.from)} {locale === "ar" ? "←" : "→"} {label(item, item.to)}{item.note_timecode_ms != null && <span className="time-chip" dir="ltr">{timecode(item.note_timecode_ms)}</span>}</p>
         {item.reason && <blockquote className="supervisor-note"><p>{m.review.note}: «{item.reason}»</p></blockquote>}
-        <p className="caption">{formatDate(item.occurred_at, locale)} · {m.review.actor}: <bdi>{item.actor_id ? item.actor_id.slice(0, 8) : m.material.system}</bdi></p></li>)}</ol>}
+        <p className="caption">{formatDate(item.occurred_at, locale)} · {m.review.actor}: <bdi>{internal && item.actor_name ? item.actor_name : m.material.neutralActor}</bdi></p></li>)}</ol>}
   </section>;
 }

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { formatDate, messages, type Locale } from "@/lib/i18n";
 import type { Material, NewsroomDashboard } from "@/lib/types";
+import { overdueTime } from "@/lib/board";
+import { internalNames } from "@/lib/work-name";
 import { hasRole } from "@/lib/review";
 import { useUser } from "./session-boundary";
 
@@ -42,6 +44,7 @@ export function NewsroomBoard({ locale }: { locale: Locale }) {
     void pollSnapshot(); void pollCards();
     return () => { disposed = true; controller.abort(); clearTimeout(fast); clearTimeout(slow); };
   }, [allowed]);
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   if (!allowed) return <section className="center-state"><h1>{t.title}</h1><p role="alert">{t.denied}</p></section>;
   const count = (state: Column) => snapshot?.editorial.find(item => item.state === state)?.count ?? 0;
   return <><div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p></div><Link prefetch={false} className="button secondary" href={`/${locale}/board?display=1`}>{t.openDisplay}</Link></div>
@@ -49,7 +52,7 @@ export function NewsroomBoard({ locale }: { locale: Locale }) {
     {!snapshot ? <p className="center-state" role="status">{m.loading}</p> : <>
       <div className="stats board-stats">
         <article data-testid="urgent-open"><span>{t.urgentOpen}</span><strong>{snapshot.urgent_open}</strong></article>
-        <article data-testid="overdue"><span>{t.overdue}</span><strong className={snapshot.overdue_acknowledgements ? "alert-number" : ""}>{snapshot.overdue_acknowledgements}</strong></article>
+        <article data-testid="overdue"><span>{t.overdue}</span><strong className={snapshot.overdue_acknowledgements ? "alert-number" : ""}>{snapshot.overdue_acknowledgements}</strong>{overdueTime(snapshot.oldest_overdue_acknowledgement_at, now) && <small>{t.oldestOverdue.replace("{time}", overdueTime(snapshot.oldest_overdue_acknowledgement_at, now)!)}</small>}</article>
         <article><span>{t.reserved}</span><strong>{snapshot.reserved.length}</strong></article>
       </div>
       <p className="muted board-updated">{m.updated}: {formatDate(snapshot.generated_at, locale)}</p>
@@ -59,7 +62,8 @@ export function NewsroomBoard({ locale }: { locale: Locale }) {
           const reservation = snapshot.reserved.find(r => r.material_id === material.id);
           return <article key={material.id} className={`board-card ${material.priority}`} data-testid="board-card">
             <Link prefetch={false} href={`/${locale}/materials/${material.id}`}>{material.title}</Link>
-            <div className="board-meta"><small className={`priority ${material.priority}`}>{m.states.priority[material.priority]}</small><small className="muted">{elapsed(material.created_at, now, locale)}</small>{reservation && <small className="badge">{reservation.reserved_by === me.user_id ? m.review.yourReservation : t.reservedBadge}</small>}</div>
+            <div className="board-meta"><small className={`priority ${material.priority}`}>{m.states.priority[material.priority]}</small><small className="muted">{elapsed(material.created_at, now, locale)}</small>{reservation && <small className="badge">{reservation.reserved_by === me.user_id ? m.review.yourReservation : t.reservedBadge}{internalNames(me) && reservation.reserved_by_name && <> · {t.reservedName.replace("{name}", reservation.reserved_by_name)}</>}</small>}</div>
+            {overdueTime(material.acknowledgement_due_at, now) && <p className="attention-text" data-testid="ack-overdue">{t.overdueAge.replace("{time}", overdueTime(material.acknowledgement_due_at, now)!)}</p>}
           </article>;
         })}
         {count(state) > (cards[state]?.length ?? 0) && <Link prefetch={false} className="board-more" href={`/${locale}/inbox`}>{t.more}</Link>}
