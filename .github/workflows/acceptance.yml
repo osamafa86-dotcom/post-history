@@ -238,7 +238,7 @@ jobs:
   media-e2e:
     name: "media e2e (full compose stack: upload, worker, proxy, hostile files)"
     runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
-    timeout-minutes: 75  # was 40 and cancelled runs without a failing test (#295, #333); the ai profile fetches the production weights (1.6 GB) and transcribes six clips. Split planned, target under 30
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 90 || 75 }}  # انتظار الانتهاء يزيد المهلة اليدوية فقط؛ PR كما كان
     needs: changes
     if: needs.changes.outputs.media_e2e == 'true' && (github.event_name == 'pull_request' || (inputs.measure && github.ref == 'refs/heads/main'))
     permissions:
@@ -320,7 +320,7 @@ jobs:
             ACCEPTANCE_RESULTS_DIR="$RUNNER_TEMP/out" node scripts/download-url.mjs
           else
             set -o pipefail
-            ACCEPTANCE_RESULTS_DIR="$GITHUB_WORKSPACE/docs/measurements/acceptance/manual-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" node scripts/download-url.mjs 2>&1 | node --input-type=module -e '
+            DL_WAIT_EXPIRY=1 ACCEPTANCE_RESULTS_DIR="$GITHUB_WORKSPACE/docs/measurements/acceptance/manual-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" node scripts/download-url.mjs 2>&1 | node --input-type=module -e '
               import { scrub } from "./scripts/web-gap-helpers.mjs";
               let log = ""; for await (const chunk of process.stdin) log += chunk;
               process.stdout.write(scrub(log));'
