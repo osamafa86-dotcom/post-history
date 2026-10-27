@@ -1,0 +1,10 @@
+{
+ "pulls/42": {"number": 42, "title": "[kimi] أداة فحص الجاهزية", "body": "المرجع #310", "base": {"ref": "main"}, "draft": false, "mergeable": true, "head": {"ref": "agent/kimi/pr-gate", "sha": "abc1234def"}},
+ "commits/abc1234def/check-runs": {"check_runs": [{"name": "ci", "status": "completed", "conclusion": "success"}]},
+ "issues/42/comments": [{"body": "مراجعة الجودة: لا مانع", "created_at": "2026-10-26T12:00:00Z"}, {"body": "مراجعة الأمن: لا مانع", "created_at": "2026-10-26T12:05:00Z"}, {"body": "مراجعة المالك: لا مانع", "created_at": "2026-10-26T12:10:00Z"}],
+ "pulls/42/commits": [{"sha": "c1c1c1c1", "commit": {"committer": {"date": "2026-10-26T10:00:00Z"}, "message": "tools: add pr-gate readiness checker"}, "parents": [{}]}],
+ "pulls/42/files": [{"filename": "contracts/x.json"}],
+ "contents/README.md": {"text": "# t\n\n## الهيكل\n\n| المسار | المحتوى | المالك |\n| --- | --- | --- |\n| `contracts/` | العقود | وكيل العقود والبيانات |\n| `apps/api/` | الخادم | وكيل الخادم |\n| `tools/` | أدوات | وكلاء الجودة والبنية |\n| `docs/plan/` | الخطة | المنسّق |\n"},
+ "pulls?state=open&per_page=100": [{"number": 43, "head": {"sha": "o43"}}],
+ "pulls/43/files": [{"filename": "apps/api/x.ts"}]
+}
