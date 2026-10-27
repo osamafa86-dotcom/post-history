@@ -11,11 +11,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.createSavedStateHandle
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
-import net.palpost.library.AppContainer
 import net.palpost.library.R
 import net.palpost.library.api.models.Currency
 import net.palpost.library.api.models.PayableState
@@ -29,11 +24,7 @@ import java.time.format.FormatStyle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EarningsScreen(container: AppContainer, userId: String, onBack: () -> Unit) {
-    // المفتاح خاص بالمستدعي: لا تعاد حالة حساب سابق بعد تبديل الحساب في Activity نفسها.
-    val vm: EarningsViewModel = viewModel(key = "earnings:$userId", factory = viewModelFactory {
-        initializer { EarningsViewModel(ApiEarningsSource(container.authApi, container.earningsApi), createSavedStateHandle()) }
-    })
+fun EarningsScreen(vm: EarningsViewModel, onBack: () -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
     val locale = LocalConfiguration.current.locales[0]
     fun money(minor: Long, currency: Currency, signed: Boolean = false) = formatEarningsMoney(minor, currency, locale, signed)
