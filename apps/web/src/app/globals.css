@@ -453,3 +453,126 @@ html.board-display body { background: var(--vl-color-bg-canvas); }
 .buyer-shell .sidebar nav a { padding: var(--vl-space-4) var(--vl-space-5); border-radius: 0; font-size: var(--vl-font-label-lg-size); }
 .buyer-shell .sidebar nav .active { border-inline-start: 0; border-block-end: var(--vl-border-emphasis) solid var(--vl-color-border-brand); background: transparent; }
 @media (max-width: 759px) { .buyer-shell .sidebar { padding: 0 var(--vl-space-5); overflow-x: auto; } }
+
+/* خط المسارات (Figma 166:89) — ألوان القطع من رموز التصميم الدلالية؛ «انتباه» مزيج منها كي لا يُضاف رمز لم يعتمده ملف الرموز بعد. */
+:root {
+  --track-empty: var(--vl-color-text-muted); --track-done: var(--vl-color-bg-brand); --track-blocked: var(--vl-color-bg-danger); --track-hatch: var(--vl-color-text-on-brand);
+  --track-attention: color-mix(in srgb, var(--vl-color-tone-attention-fg) 65%, var(--vl-color-tone-attention-border));
+}
+.track-cell { display: grid; gap: var(--vl-space-2); inline-size: 100%; min-inline-size: 0; }
+.track-line { display: flex; gap: 6px; inline-size: 100%; block-size: 8px; }
+.track-cell.ticket .track-line { block-size: 12px; }
+.track-cell.wall .track-line { block-size: 20px; }
+.track-seg { flex: 1 1 0; min-inline-size: 0; position: relative; overflow: hidden; border-radius: 1px; box-sizing: border-box; }
+.track-seg[data-state="empty"], .track-seg[data-state="progress"] { border: 1.5px solid var(--track-empty); }
+.track-seg[data-state="progress"]::before { content: ""; position: absolute; inset-block: -1.5px; inset-inline-start: -1.5px; inset-inline-end: 50%; background: var(--track-done); }
+.track-seg[data-state="done"] { background: var(--track-done); }
+.track-seg[data-state="attention"] { background: var(--track-attention); }
+.track-seg[data-state="blocked"] { background: var(--track-blocked) repeating-linear-gradient(-45deg, var(--track-hatch) 0 2px, transparent 2px 6px); }
+.track-note { font-size: var(--vl-font-label-sm-size); line-height: var(--vl-font-label-sm-line); font-weight: 500; color: var(--vl-color-text-secondary); }
+.track-legend { display: flex; justify-content: space-between; align-items: center; gap: var(--vl-space-8); flex-wrap: wrap; }
+.track-legend ul { display: flex; gap: var(--vl-space-8); list-style: none; margin: 0; padding: 0; }
+.track-legend li { display: flex; gap: var(--vl-space-4); align-items: center; }
+.track-legend li .track-seg { flex: none; inline-size: 56px; block-size: 16px; }
+.track-legend p { margin: 0; }
+
+/* الوارد الحي (Figma 193:590): رأس بعنوان ملخّص، تصفية سريعة بخط سفلي، وصفوف بشريط عاجل على حافة البداية. */
+.inbox-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: var(--vl-space-5); margin-block-end: var(--vl-space-5); }
+.inbox-head h1 { font-size: var(--vl-font-display-md-size); line-height: var(--vl-font-display-md-line); font-weight: var(--vl-font-display-md-weight); letter-spacing: 0; }
+.inbox-summary { color: var(--vl-color-text-secondary); font-size: var(--vl-font-body-md-size); line-height: var(--vl-font-body-md-line); max-inline-size: 68ch; }
+.live-strip button { margin-inline-start: auto; font-size: var(--vl-font-label-md-size); min-block-size: var(--vl-size-touch-min); }
+.live-strip small { margin-inline-start: 0; }
+.inbox-tools { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--vl-space-5); margin-block-end: var(--vl-space-6); }
+.inbox-search { inline-size: min(360px, 100%); }
+.inbox-search input { min-block-size: var(--vl-size-touch-min); padding-inline: var(--vl-space-4); border-color: var(--vl-color-border-default); border-radius: var(--vl-radius-sm); font-size: var(--vl-font-body-sm-size); }
+.quick-tabs { display: flex; flex-wrap: wrap; gap: var(--vl-space-2) var(--vl-space-7); }
+.quick-tabs .tab, .quick-tabs .tab:hover { background: transparent; border: 0; border-block-end: var(--vl-border-regular) solid transparent; border-radius: 0; color: var(--vl-color-text-secondary); font-size: var(--vl-font-label-md-size); font-weight: 500; min-block-size: var(--vl-size-touch-min); padding: var(--vl-space-2) 0; }
+.quick-tabs .tab.active { color: var(--vl-color-text-primary); border-block-end-color: var(--vl-color-bg-brand); }
+.tab-count { font-family: var(--vl-font-family-mono); }
+.inbox-table { min-width: 720px; table-layout: fixed; }
+.inbox-table th { background: transparent; border-block-end: var(--vl-border-regular) solid var(--vl-color-border-strong); color: var(--vl-color-text-secondary); font-weight: 500; padding: var(--vl-space-4) var(--vl-space-5); }
+.inbox-table th:nth-child(2) { inline-size: 232px; }
+.inbox-table th:nth-child(3) { inline-size: 200px; }
+.inbox-table td { height: 72px; padding: var(--vl-space-4) var(--vl-space-5); vertical-align: middle; }
+.inbox-table td.material-cell { border-inline-start: 6px solid transparent; }
+.inbox-table tr.urgent td.material-cell { border-inline-start-color: var(--vl-color-tone-urgent-bg); }
+.inbox-table .material-link { font-size: var(--vl-font-heading-h4-size); line-height: var(--vl-font-heading-h4-line); font-weight: 600; max-inline-size: none; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.material-meta { display: flex; flex-wrap: wrap; gap: var(--vl-space-5); align-items: center; margin: var(--vl-space-1) 0 0; font-size: var(--vl-font-body-sm-size); line-height: var(--vl-font-body-sm-line); color: var(--vl-color-text-secondary); }
+.material-meta .priority { margin: 0; font-size: var(--vl-font-label-md-size); font-weight: 500; }
+.inbox-table .receipt { font-size: var(--vl-font-mono-md-size); line-height: var(--vl-font-mono-md-line); color: var(--vl-color-text-muted); text-align: start; }
+/* الشريط العاجل (Figma 193:610): مصمت أحمر، الاطّلاع زر بحد أبيض، وسطر تصعيد تحت العنوان. */
+.alert.urgent { border-radius: 0; border: 0; }
+.alert.urgent h2 { font-size: var(--vl-font-heading-h4-size); line-height: var(--vl-font-heading-h4-line); font-weight: 700; }
+.alert.urgent p { margin-block-start: var(--vl-space-1); font-size: var(--vl-font-body-sm-size); }
+.alert.urgent button, .alert.urgent button:hover { background: transparent; color: inherit; border: 1px solid currentColor; border-radius: var(--vl-radius-sm); min-block-size: var(--vl-size-touch-min); }
+.alert.urgent button.secondary:hover { background: color-mix(in srgb, var(--vl-color-tone-urgent-fg) 12%, transparent); }
+@media (max-width: 759px) {
+  .inbox-table { min-width: 0; table-layout: auto; }
+  .inbox-table thead { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
+  .inbox-table, .inbox-table tbody, .inbox-table tr, .inbox-table td { display: block; }
+  .inbox-table tr { border-block-start: var(--vl-border-hairline) solid var(--vl-color-border-default); padding-block: var(--vl-space-3); }
+  .inbox-table td { height: auto; border: 0; padding-block: var(--vl-space-2); }
+  .inbox-table td.material-cell { border-inline-start: 6px solid transparent; }
+  .inbox-table tr.urgent td.material-cell { border-inline-start-color: var(--vl-color-tone-urgent-bg); }
+  .inbox-table .material-link { white-space: normal; }
+}
+
+/* لوحة الإنتاج الكبيرة (Figma 193:862): رأس الأعمدة برقم كبير وخط سفلي، وبطاقة بشريط داكن (إيصال وعمر) ولسان عاجل ثم العنوان والمحافظة وخط المسارات. */
+.wall-clock { display: flex; gap: var(--vl-space-7); align-items: baseline; margin: 0; }
+.wall-clock .mono { font-size: var(--vl-font-display-md-size); line-height: var(--vl-font-display-md-line); font-weight: 700; }
+.wall-date { font-size: var(--vl-font-heading-h2-size); line-height: var(--vl-font-heading-h2-line); font-weight: 500; color: var(--vl-color-text-secondary); }
+.board-wall .track-legend { font-size: var(--vl-font-heading-h2-size); line-height: var(--vl-font-heading-h2-line); font-weight: 500; color: var(--vl-color-text-secondary); }
+.wall-column { background: transparent; padding: 0; gap: var(--vl-space-5); }
+.wall-column h2 { align-items: baseline; padding-block-end: var(--vl-space-3); border-block-end: var(--vl-border-regular) solid var(--vl-color-border-strong); margin: 0; }
+.wall-count { background: none; padding: 0; font-size: var(--vl-font-display-lg-size); line-height: var(--vl-font-display-lg-line); font-weight: 700; }
+.wall-card { padding: 0; gap: 0; overflow: hidden; background: var(--vl-color-bg-surface); border: var(--vl-border-hairline) solid var(--vl-color-border-default); border-radius: var(--vl-radius-sm); }
+.wall-card.urgent { border-inline-start: var(--vl-border-hairline) solid var(--vl-color-border-default); }
+.wall-slate { display: flex; align-items: center; justify-content: space-between; gap: var(--vl-space-4); min-block-size: 48px; padding-inline: var(--vl-space-4); background: var(--vl-color-bg-media); color: var(--vl-color-text-on-media); border-block-end: var(--vl-border-hairline) solid var(--vl-color-border-default); font-size: var(--vl-font-body-sm-size); line-height: var(--vl-font-body-sm-line); }
+.wall-slate .danger-text { color: inherit; } /* الشريط داكن في الوضعين؛ العاجل فيه بلسان الأولوية لا بلون النص (تباين الأحمر على الداكن في الوضع الفاتح < 3:1) */
+.wall-priority { align-self: stretch; display: flex; align-items: center; margin-inline-start: calc(-1 * var(--vl-space-4)); padding-inline: var(--vl-space-4); font-weight: 600; background: var(--vl-color-tone-neutral-bg); color: var(--vl-color-tone-neutral-fg); }
+.wall-priority.urgent { background: var(--vl-color-tone-urgent-bg); color: var(--vl-color-tone-urgent-fg); }
+.wall-receipt { margin-inline-end: auto; }
+.wall-card-body { display: grid; gap: var(--vl-space-4); padding: var(--vl-space-5); }
+.wall-card-body > p { margin: 0; }
+.wall-card-meta { display: flex; flex-wrap: wrap; gap: var(--vl-space-4); align-items: baseline; }
+.wall-place { font-size: var(--vl-font-board-meta-size); line-height: var(--vl-font-board-meta-line); font-weight: 500; }
+
+/* الكتالوج (Figma 185:330): عنوان عرض وسطر ثقة، شريط أدوات (تصفية سريعة، بحث، فترة)، والمرشحات المتقدمة مطوية، وبطاقة بمصغّرة 158px وصف سعر. */
+.catalog-head { display: grid; gap: var(--vl-space-3); margin-block-end: var(--vl-space-6); }
+.catalog-head .eyebrow { margin: 0; }
+.catalog-head h1 { font-size: var(--vl-font-display-md-size); line-height: var(--vl-font-display-md-line); font-weight: var(--vl-font-display-md-weight); letter-spacing: 0; }
+.catalog-lead { font-size: var(--vl-font-body-md-size); line-height: var(--vl-font-body-md-line); color: var(--vl-color-text-secondary); max-inline-size: 72ch; }
+.catalog-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--vl-space-5); margin-block-end: var(--vl-space-3); }
+.catalog-tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--vl-space-4); }
+.catalog-search { display: flex; gap: var(--vl-space-3); align-items: center; inline-size: min(420px, 100%); }
+.catalog-search input { min-block-size: var(--vl-size-touch-min); border-color: var(--vl-color-border-default); border-radius: var(--vl-radius-sm); font-size: var(--vl-font-body-sm-size); }
+.catalog-search button, .period-select select { min-block-size: var(--vl-size-touch-min); font-size: var(--vl-font-label-md-size); }
+.period-select select { inline-size: auto; border-color: var(--vl-color-border-default); border-radius: var(--vl-radius-sm); font-weight: 500; }
+.catalog-count { margin: 0 0 var(--vl-space-4); font-size: var(--vl-font-body-sm-size); }
+.catalog-layout { display: block; }
+.catalog-filters { padding: var(--vl-space-4) var(--vl-space-5); margin-block-end: var(--vl-space-6); }
+.catalog-filters summary { margin: 0; min-block-size: var(--vl-size-touch-min); display: flex; align-items: center; }
+.catalog-filter-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--vl-space-5); padding-block-start: var(--vl-space-4); }
+.catalog-results .catalog-grid { gap: var(--vl-space-7); }
+.catalog-card { border: 0; border-block-end: var(--vl-border-hairline) solid var(--vl-color-border-default); border-radius: 0; }
+.catalog-thumb { aspect-ratio: auto; block-size: 158px; }
+.catalog-thumb .thumb-play { position: absolute; inset: 0; margin: auto; color: color-mix(in srgb, var(--vl-color-text-on-media) 60%, transparent); pointer-events: none; }
+.catalog-thumb small { inset-block-end: var(--vl-space-4); inset-inline-end: var(--vl-space-4); background: none; padding: 0; font-family: var(--vl-font-family-mono); font-size: var(--vl-font-mono-md-size); line-height: var(--vl-font-mono-md-line); }
+.catalog-body { padding: var(--vl-space-4) var(--vl-space-5) var(--vl-space-5); gap: var(--vl-space-3); }
+.catalog-body h3 { font-size: var(--vl-font-heading-h4-size); line-height: var(--vl-font-heading-h4-line); font-weight: 600; -webkit-line-clamp: 1; }
+.catalog-meta { display: flex; flex-wrap: wrap; gap: var(--vl-space-4); margin: 0; font-size: var(--vl-font-body-sm-size); line-height: var(--vl-font-body-sm-line); color: var(--vl-color-text-secondary); }
+.catalog-price { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: var(--vl-space-3); margin: 0; font-weight: 500; }
+.catalog-price .price { font-size: var(--vl-font-label-lg-size); line-height: var(--vl-font-label-lg-line); color: var(--vl-color-text-primary); }
+.catalog-body .catalog-price .price strong { color: inherit; font-weight: inherit; }
+.catalog-price .families { font-size: var(--vl-font-label-md-size); line-height: var(--vl-font-label-md-line); color: var(--vl-color-text-brand); }
+.catalog-tools { flex: 1 1 auto; justify-content: flex-start; }
+.catalog-search { flex: 1 1 280px; inline-size: auto; max-inline-size: 420px; }
+.catalog-credit { display: flex; flex-wrap: wrap; gap: var(--vl-space-2) var(--vl-space-4); margin: 0; }
+.catalog-filters { background: transparent; border: 0; padding: 0; margin-block-end: var(--vl-space-6); }
+.catalog-filters summary { display: inline-flex; padding-inline: var(--vl-space-5); border: var(--vl-border-hairline) solid var(--vl-color-border-default); border-radius: var(--vl-radius-sm); background: var(--vl-color-bg-surface); font-size: var(--vl-font-label-md-size); font-weight: 500; cursor: pointer; }
+.catalog-filters[open] .catalog-filter-grid { margin-block-start: var(--vl-space-3); padding: var(--vl-space-5); background: var(--vl-color-bg-surface); border: var(--vl-border-hairline) solid var(--vl-color-border-default); border-radius: var(--vl-radius-lg); }
+.catalog-filters, .catalog-filters[open] { display: block; }
+.catalog-filters summary { inline-size: fit-content; }
+.catalog-card { grid-template-rows: auto 1fr; }
+.catalog-body { display: flex; flex-direction: column; }
+.catalog-price { margin-block-start: auto; padding-block-start: var(--vl-space-2); }
