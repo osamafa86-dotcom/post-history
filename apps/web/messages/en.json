@@ -1035,8 +1035,105 @@
   },
   "privacy": {
     "title": "Privacy policy",
-    "temporary": "Temporary text — the approved policy has not been published yet.",
-    "body": "This page is a temporary structure for the privacy policy. Text approved by the coordinator will replace this notice. This text is not a complete privacy policy or consent to data processing.",
+    "temporary": "Text awaiting the owner's approval — the operator details marked in square brackets (name, contact email, effective date, jurisdiction and retention periods) must be completed before this policy is treated as approved.",
+    "body": "This policy explains what data the platform collects, why, who can see it, and what never happens to it. It is written from the practices documented for the platform, and where something has not yet been decided we say so explicitly instead of assuming it.",
+    "sections": [
+      {
+        "heading": "Who operates the platform and who this policy covers",
+        "paragraphs": [
+          "This platform is operated by [Operator name — set by the owner] (the “Operator”). This policy covers the iOS and Android apps built for the organization's accredited reporters and field crews, and the web interface used by newsroom staff and by organizations that buy licensed material.",
+          "Accounts are issued by the Operator; the apps do not offer self-registration. This policy takes effect on: [Policy effective date — set by the owner]."
+        ]
+      },
+      {
+        "heading": "The data we collect",
+        "paragraphs": [
+          "Account data: email is the only contact information the apps rely on, and they do not ask for your name. For buyer organizations on the web we record the organization's details (legal name, display name, country, billing email and seat count) and the email and role of its members.",
+          "Uploaded material: the video and photo files a reporter chooses manually, together with the fixed fields and the desk form attached to them, including the display name, which may be a pseudonym.",
+          "Notification identifiers: a randomly generated installation UUID that is not derived from device identifiers, together with an APNs token on iOS or an FCM token on Android. They are used only to send notifications. The apps do not collect the advertising identifier or persistent hardware identifiers.",
+          "App integrity token: a short-lived verification token (App Attest on iOS, Play Integrity on Android) that shows an upload request comes from a genuine copy of the app and passes through the operating system's services. We do not use it to track you.",
+          "On the web: a single session cookie that page scripts cannot read, valid for eight hours, used to keep you signed in."
+        ]
+      },
+      {
+        "heading": "The original file and precise location",
+        "paragraphs": [
+          "The original file is uploaded exactly as the camera recorded it, without compression or re-encoding, and its metadata is not stripped before upload, so that its digital fingerprint (SHA-256) is preserved and we can verify the material arrived complete. The original may therefore carry the location, time and device model the camera recorded.",
+          "The original is stored on the Operator's servers as it arrived, including the camera location if present, and is not modified. It is never shown in raw form and never delivered to any buyer. Stripping happens in the derivatives the server produces (previews, thumbnails and delivered copies): every processing step produces a new file free of location and revealing data, while the original stays preserved with its fingerprint.",
+          "Precise location: it is collected as part of the apps' function — what the original carries in its metadata, and optional GPS coordinates if entered in the material's fields, which are stored encrypted at field level. We do not use it for tracking. The apps do not request the location permission from the operating system and do not read your device's location.",
+          "Precise coordinates and protected source names are visible only to someone the administration has granted a separate permission for each, with no default grant to any role; every grant, revocation and actual read is recorded in an audit log."
+        ]
+      },
+      {
+        "heading": "How we use your data",
+        "paragraphs": [
+          "We use it to receive field material and verify its integrity, to review and produce it editorially, to tell the reporter the status of their material, to license it to buyer organizations, to calculate reporters' earnings, and to protect the platform from forged requests.",
+          "We do not sell data, we do not use it for advertising, we do not track users across other apps or websites, and we do not share it with data brokers or advertising networks."
+        ]
+      },
+      {
+        "heading": "Phone notifications",
+        "paragraphs": [
+          "We use push notifications only for work and account alerts, never for advertising. These include: a change in the status of a material for its reporter (for example when a supervisor has seen it), the receipt for the reporter, incoming-material and escalation alerts for editorial staff, an alert to the account owner when recovery of their account is requested or completed, and an alert to administrators when a sensitive setting changes. The server builds the notification text from fixed templates that carry the short material number or a request number, so it carries no material title, names or locations.",
+          "The notification token is stored encrypted, never enters any payload and is never returned in any response, and the device is unregistered when you sign out.",
+          "Any external alert channel the Operator turns on, such as email or text messages, carries the material number and status only."
+        ]
+      },
+      {
+        "heading": "Who sees the material",
+        "paragraphs": [
+          "Material is processed on the Operator's servers and seen by authorized editors and reviewers according to their role permissions, their scope (office or governorate) and source-protection rules; what falls outside a user's scope is not shown to them.",
+          "A reporter's real name is shown only to someone the administration has granted the specific permission for it. Every sensitive operation is recorded in an audit log that cannot be edited: who did it and when."
+        ]
+      },
+      {
+        "heading": "Artificial intelligence and external providers",
+        "paragraphs": [
+          "Automated processing, such as transcription and shot detection, is used to prepare drafts that a person reviews and decides on.",
+          "Material tagged as sensitive is never sent to any external provider; it is processed locally on the Operator's servers or manually, and the platform chooses the route from the sensitivity tag automatically.",
+          "Material not tagged as sensitive may pass through an external processing provider for technical processing under the Operator's rules, and the Operator requires any external provider to accept institutional terms that bar it from training on the material. Until the administration approves a written policy on what may be sent externally, automated processing runs locally."
+        ]
+      },
+      {
+        "heading": "Licensing to buyer organizations",
+        "paragraphs": [
+          "Material may be licensed, according to its rights and by the Operator's decision, to buyer media organizations. The buyer receives copies stripped of revealing data, and the raw original is never delivered. Buyers never see GPS coordinates, device identifiers, protected source names or the reporter's identity; they see only the display name the reporter chose, which may be a pseudonym.",
+          "Every final copy is checked before delivery (its metadata and any accompanying provenance data) to make sure it reveals no protected identity or location. Download links are signed and short-lived, and previews carry a watermark.",
+          "Each sale keeps a record of the licence terms, the price and the version the buyer agreed to, and the public verification page shows only the licence number, its status and its validity."
+        ]
+      },
+      {
+        "heading": "Payments at this stage",
+        "paragraphs": [
+          "At this stage payments run on a test payment provider in test mode only: no real money moves and no real payout channel is enabled. Choosing the real provider and payout channels is a later decision that has not yet been made.",
+          "The payment page is hosted by the provider; card details never pass through our servers and are not stored in any log, and you should not enter a real card in test mode. We keep the order record (items, amount, status, dates and the buying organization) and the licence record, and the test provider learns only the order number and amount.",
+          "Reporters' payout requests are also test-only: no real money and no bank details."
+        ]
+      },
+      {
+        "heading": "Retention, deletion and backups",
+        "paragraphs": [
+          "The original is kept unmodified with its fingerprint. Deleting the local copy from a reporter's phone after the receipt is the reporter's own decision. The app offers an emergency wipe of the session data, queues and local receipts.",
+          "Encrypted backups of the platform's data are kept, so deleted data may remain in backups until their retention period ends.",
+          "The audit log and the financial ledger entries are append-only and are not edited, and sales records and invoices remain even when a sold item is withdrawn.",
+          "Retention periods: the detailed retention and deletion policy has not yet been approved by the Operator's administration, so no periods are stated here. [Retention periods — set by the owner]"
+        ]
+      },
+      {
+        "heading": "Security",
+        "paragraphs": [
+          "We protect your data with controls that include an encrypted connection, field-level encryption of GPS coordinates and notification tokens, the least privilege possible for each role, and signed short-lived links. The Android app blocks screenshots and the app preview in the recent-apps list, and the iOS app offers an optional app lock."
+        ]
+      },
+      {
+        "heading": "Your rights and how to reach us",
+        "paragraphs": [
+          "You can ask the Operator to let you see, correct or delete your data, or ask about this policy, by email: [Privacy contact email — set by the owner]. We consider each request and tell you what can be deleted and what must be kept for legal, editorial, financial or security reasons, such as sales records, invoices and the audit log.",
+          "You can also delete the local copy on your phone at any time, sign out to unregister your device from notifications, and run the emergency wipe.",
+          "Operator: [Operator name — set by the owner]. Jurisdiction and hosting location: [Jurisdiction and hosting location — set by the owner]. The current version of this policy is published on this page."
+        ]
+      }
+    ],
     "languageNavigation": "Privacy policy language",
     "otherLanguage": "العربية"
   },
