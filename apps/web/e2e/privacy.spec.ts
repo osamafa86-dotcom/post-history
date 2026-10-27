@@ -11,7 +11,10 @@ for (const [locale, m, direction] of [["ar", ar.privacy, "rtl"], ["en", en.priva
   test(`public privacy policy page ${locale}`, async ({ page }) => {
     await page.goto(`/${locale}/privacy`);
     await expect(page.getByRole("heading", { level: 1, name: m.title })).toBeVisible();
+    // خادم الاختبار يعمل بلا PRIVACY_CONTACT_EMAIL: الشريط ظاهر ونصّ «سيُنشر قريبًا» مكان البريد.
     await expect(page.getByRole("note")).toHaveText(m.temporary);
+    await expect(page.locator('main a[href^="mailto:"]')).toHaveCount(0);
+    await expect(page.locator("main")).toContainText(m.emailPending);
     await expect(page.locator("main")).toHaveAttribute("dir", direction);
     await expect(page.locator("html")).toHaveAttribute("lang", locale);
     await expect(page.locator("main h2")).toHaveCount(m.sections.length);
