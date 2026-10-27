@@ -153,10 +153,10 @@ test("revoking the administrator role blocks a pending identity policy confirmat
 test("ADR 0035 admin sets and clears staff work name and sees a safe 422", async ({ page }) => {
   await login(page, "admin"); await page.getByRole("link", { name: ar.admin.title, exact: true }).click();
   await page.getByLabel(ar.admin.target, { exact: true }).fill(target);
-  const input = page.getByLabel(ar.admin.workName, { exact: true }); await input.fill("Synthetic staff");
+  const input = page.getByRole("textbox", { name: ar.admin.workName, exact: true }); await input.fill("Synthetic staff");
   const saved = page.waitForRequest(r => r.url().endsWith(`/users/${target}/work-name`) && r.method() === "PUT");
   await page.getByRole("button", { name: ar.admin.workNameSave }).click(); const request = await saved; expect(request.postDataJSON()).toEqual({ work_name: "Synthetic staff" }); expect(request.headers()["idempotency-key"]).toBeTruthy();
   await expect(input).toHaveValue("");
   const cleared = page.waitForRequest(r => r.url().endsWith(`/users/${target}/work-name`) && r.method() === "PUT"); await page.getByRole("button", { name: ar.admin.workNameClear }).click(); expect((await cleared).postDataJSON()).toEqual({ work_name: null });
-  await page.getByLabel(ar.admin.target, { exact: true }).fill("10000000-0000-4000-8000-000000000001"); await input.fill("Rejected staff"); await page.getByRole("button", { name: ar.admin.workNameSave }).click(); await expect(page.getByRole("alert")).toContainText(ar.admin.workNameRejected);
+  await page.getByLabel(ar.admin.target, { exact: true }).fill("10000000-0000-4000-8000-000000000001"); await input.fill("Rejected staff"); await page.getByRole("button", { name: ar.admin.workNameSave }).click(); await expect(page.getByRole("region", { name: ar.admin.workName, exact: true }).getByRole("alert")).toContainText(ar.admin.workNameRejected);
 });
