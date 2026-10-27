@@ -96,6 +96,8 @@ test("wall display: dark top bar with clock, dark by default, big tiles, four co
   await expect(page.locator(".track-legend li")).toHaveCount(5); await expect(page.locator(".track-legend")).toContainText(ar.trackLine.legend);
   const head = page.getByTestId("wall-column-incoming").locator("h2"); await expect(head.locator(".wall-count")).toHaveText("198"); await expect(head).toHaveCSS("border-bottom-width", "2px");
   const card = page.getByTestId("wall-column-incoming").getByTestId("wall-card").first();
+  const strip = await card.locator(".wall-slate").evaluate(el => { const i = document.createElement("i"); i.style.backgroundColor = "var(--vl-color-bg-slate)"; document.body.append(i); const slate = getComputedStyle(i).backgroundColor; i.remove(); return { strip: getComputedStyle(el).backgroundColor, slate }; });
+  expect(strip.strip).toBe(strip.slate);
   await expect(card.locator(".wall-slate .wall-receipt")).toHaveText(/^RCPT-/); await expect(card.locator(".wall-priority.urgent")).toHaveText(ar.states.priority.urgent);
   await expect(card.getByTestId("track-line").locator(".track-seg")).toHaveCount(3); await expect(card.locator(".wall-place")).toHaveText(/\S/);
   await expect(page.locator(".wall-date")).toContainText(/\d{4}/);
@@ -130,4 +132,21 @@ test("ADR 0035 board and wall use server names and deadlines, tolerating null fi
   await page.route("**/api/bff/dashboard/newsroom", async route => { const response = await route.fetch(), data = await response.json(); data.oldest_overdue_acknowledgement_at = null; for (const item of data.reserved) item.reserved_by_name = null; await route.fulfill({ response, json: data }); });
   await page.reload(); await expect(page.getByTestId("wall-card")).not.toHaveCount(0); await expect(page.getByTestId("board-display")).not.toContainText("Synthetic staff");
   await expect(page.getByTestId("ack-overdue")).toHaveCount(0); await expect(page.getByTestId("wall-overdue")).not.toContainText(ar.board.oldestOverdue.split("{time}")[0]);
+});
+
+test("beyond the fetch cap the counts say 'and more' instead of landing in the wrong columns, and uploads overflow reads like the cards (ADR 0078)", async ({ page, request }) => {
+  await request.post(`${api}/__test/board-cap`);
+  await login(page, "reviewer@example.test"); await page.goto("/ar/board");
+  // 560 مادة قيد الاستلام الفني (pending) والسقف 500: ما لم يُجلب لا يدخل «واردة» ولا «جاهزة»، والعدّاد حدّ أدنى بعلامة +.
+  await expect(page.getByTestId("board-capped")).toContainText("500"); await expect(page.getByTestId("board-capped")).toBeVisible();
+  await expect(page.getByTestId("count-checking")).toContainText("500+");
+  const incoming = (await page.getByTestId("count-incoming").textContent())!;
+  expect(incoming).toMatch(/\d+\+/); expect(Number(incoming.match(/\d+/)![0])).toBeLessThanOrEqual(198);
+  await expect(page.getByTestId("count-stalled")).toBeVisible();
+  await page.getByRole("link", { name: ar.board.openDisplay }).click();
+  await expect(page.getByTestId("wall-capped")).toBeVisible();
+  await expect(page.getByTestId("wall-column-checking").locator(".wall-count")).toContainText("500+");
+  await expect(page.getByTestId("wall-upload")).toHaveCount(3);
+  await expect(page.locator(".wall-now .wall-more")).toHaveText(ar.board.display.more.replace("{n}", "2"));
+  expect(await page.locator("body").textContent()).not.toContain("never-display-canary");
 });

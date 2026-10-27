@@ -5,8 +5,8 @@ import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { formatDate, messages, type Locale } from "@/lib/i18n";
 import type { NewsroomDashboard } from "@/lib/types";
 import { overdueTime } from "@/lib/board";
-import { productionColumns } from "@/lib/board-columns";
-import { arrange, loadBoard, type BoardData } from "@/lib/board-load";
+import { countText, isExact, productionColumns } from "@/lib/board-columns";
+import { arrange, fetchCap, loadBoard, type BoardData } from "@/lib/board-load";
 import { internalNames } from "@/lib/work-name";
 import { hasRole } from "@/lib/review";
 import { useUser } from "./session-boundary";
@@ -46,7 +46,7 @@ export function NewsroomBoard({ locale }: { locale: Locale }) {
   }, [allowed]);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   if (!allowed) return <section className="center-state"><h1>{t.title}</h1><p role="alert">{t.denied}</p></section>;
-  const { counts, cards } = snapshot && loaded ? arrange(snapshot, loaded, cardLimit) : { counts: null, cards: null };
+  const { counts, cards, capped } = snapshot && loaded ? arrange(snapshot, loaded, cardLimit) : { counts: null, cards: null, capped: false };
   return <><div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p></div><Link prefetch={false} className="button secondary" href={`/${locale}/board?display=1`}>{t.openDisplay}</Link></div>
     {error && <p className="notice error" role="alert">{m.stale}</p>}
     {!snapshot || !counts || !cards ? <p className="center-state" role="status">{m.loading}</p> : <>
@@ -56,8 +56,9 @@ export function NewsroomBoard({ locale }: { locale: Locale }) {
         <article><span>{t.reserved}</span><strong>{snapshot.reserved.length}</strong></article>
       </div>
       <p className="muted board-updated">{m.updated}: {formatDate(snapshot.generated_at, locale)}</p>
+      {capped && <p className="notice attention" role="status" data-testid="board-capped">{t.countCapped.replace("{n}", String(fetchCap))}</p>}
       <div className="board" role="list" aria-label={t.columnsLabel}>{productionColumns.map(column => <section key={column} className="board-column" role="listitem" aria-labelledby={`column-${column}`} data-testid={`column-${column}`}>
-        <h2 id={`column-${column}`}>{t.columns[column]} <span className="badge" data-testid={`count-${column}`}>{counts[column]}</span></h2>
+        <h2 id={`column-${column}`}>{t.columns[column]} <span className="badge" data-testid={`count-${column}`}>{countText(counts[column])}{!isExact(counts[column]) && <span className="visually-hidden"> {t.atLeast}</span>}</span></h2>
         <p className="muted column-help">{t.columnHelp[column]}</p>
         {cards[column].map(material => {
           const reservation = snapshot.reserved.find(r => r.material_id === material.id);
@@ -67,7 +68,7 @@ export function NewsroomBoard({ locale }: { locale: Locale }) {
             {overdueTime(material.acknowledgement_due_at, now) && <p className="attention-text" data-testid="ack-overdue">{t.overdueAge.replace("{time}", overdueTime(material.acknowledgement_due_at, now)!)}</p>}
           </article>;
         })}
-        {counts[column] > cards[column].length && <Link prefetch={false} className="board-more" href={`/${locale}/inbox`}>{t.more}</Link>}
+        {counts[column].upper > cards[column].length && <Link prefetch={false} className="board-more" href={`/${locale}/inbox`}>{t.more}</Link>}
       </section>)}</div>
       <InboxNow locale={locale} snapshot={snapshot} now={now} />
       <section className="card"><h2>{t.receipts}</h2>{snapshot.recent_receipts.length ? <ul className="receipt-list">{snapshot.recent_receipts.map(r => <li key={r.receipt_number}><Link prefetch={false} href={`/${locale}/materials/${r.material_id}`} dir="ltr">{r.receipt_number}</Link><small className={`priority ${r.priority}`}>{m.states.priority[r.priority]}</small><small className="muted">{formatDate(r.verified_at, locale)}</small></li>)}</ul> : <p className="muted">{t.noReceipts}</p>}</section>

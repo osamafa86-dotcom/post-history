@@ -36,6 +36,10 @@ for (const locale of ["ar", "en"] as Locale[]) {
     // مظهر داكن: خلفية الشريط أغمق من لون الصفحة الفاتحة، وخط سفلي للنشط ببعد 3px.
     const luminance = await bar.evaluate(el => { const [r, g, b] = getComputedStyle(el).backgroundColor.match(/\d+/g)!.map(Number); return 0.2126 * r + 0.7152 * g + 0.0722 * b; });
     expect(luminance).toBeLessThan(60);
+    // ألوان الشريط هي رموز الشريحة نفسها لا أقرب رمز: الخلفية bg/slate والنص text/on-slate.
+    const used = await bar.evaluate(el => { const probe = (property: "backgroundColor" | "color", token: string) => { const i = document.createElement("i"); i.style[property] = `var(${token})`; document.body.append(i); const value = getComputedStyle(i)[property]; i.remove(); return value; };
+      return { bar: [getComputedStyle(el).backgroundColor, getComputedStyle(el).color], slate: [probe("backgroundColor", "--vl-color-bg-slate"), probe("color", "--vl-color-text-on-slate")] }; });
+    expect(used.bar).toEqual(used.slate);
     const underline = await bar.locator("[aria-current='page']").evaluate(el => { const s = getComputedStyle(el, "::after"); return { height: s.height, bottom: s.insetBlockEnd }; });
     expect(underline).toEqual({ height: "3px", bottom: "0px" });
     await expect(bar.getByTestId("topbar-user")).toHaveText(/\S/);

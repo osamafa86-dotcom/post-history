@@ -8,7 +8,7 @@ const materials: Material[] = [], notifications: Notification[] = [], history = 
 const writes: { path: string; method: string; key: string; body: Record<string, unknown> }[] = [];
 const applied = new Map<string, { fingerprint: string; value: unknown; status: number }>();
 const formVersions = new Map<number, Form>();
-let dropNextWrite = false;
+let dropNextWrite = false, extraUploadsInProgress = 0;
 let identitySetting: ReporterIdentitySetting, historyUnavailable = false, auditSequence = 21;
 const permissionAudit: { target: string | null; entry: PermissionHistoryEntry }[] = [];
 function reset() {
@@ -17,7 +17,7 @@ function reset() {
   Object.assign(materials[4], { reserved_by: "10000000-0000-4000-8000-000000000002", reserved_by_name: "Synthetic staff", acknowledgement_due_at: new Date(Date.now() - 123000).toISOString() });
   materials[1].editorial_state = "accepted"; materials[2].technical_state = "failed";
   notifications.splice(0, notifications.length, ...Array.from({ length: 3 }, (_, i) => ({ id: `60000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`, type: "never-display-canary", title: "never-display-canary", material_id: materials[i].id, priority: "normal" as const, state: "sent" as const, created_at: "2026-10-20T12:00:00Z" })));
-  history.clear(); writes.length = 0; applied.clear(); dropNextWrite = false;
+  history.clear(); writes.length = 0; applied.clear(); dropNextWrite = false; extraUploadsInProgress = 0;
   identitySetting = { access: "separate", updated_at: "2026-10-21T10:00:00Z", updated_by: null }; historyUnavailable = false; auditSequence = 21;
   permissionAudit.splice(0, permissionAudit.length, ...Array.from({ length: 21 }, (_, i) => ({ target: "10000000-0000-4000-8000-000000000002", entry: { id: String(21 - i), kind: i % 2 ? "permission_revoked" as const : "permission_granted" as const, permission: "reporter_identity:read" as const, actor_id: me.user_id, occurred_at: new Date(Date.parse(identitySetting.updated_at) - i * 1000).toISOString(), reason_code: null } })));
 }
@@ -200,6 +200,12 @@ const server = createServer(async (req, res) => {
     Object.assign(materials[10], { editorial_state: "accepted", technical_state: "failed" });                // مقبولة وفشل فني: متوقفة
     Object.assign(materials[11], { editorial_state: "in_production" }); Object.assign(materials[12], { editorial_state: "final_review" });
     Object.assign(materials[13], { editorial_state: "published" });                                          // خارج اللوحة
+    return send({ ok: true });
+  }
+  if (url.pathname === "/__test/board-cap" && req.method === "POST") {
+    // أكثر من 500 مادة في حالة فنية واحدة غير مكتملة (سقف جلب اللوحة): 560 واردة قيد الاستلام، وخمس جلسات رفع جارية (ثلاث خانات ثم «n أخرى»).
+    materials.push(...Array.from({ length: 560 }, (_, i) => ({ ...material(1001 + i), technical_state: "pending" as const, row_version: 17, reserved_by: null, reserved_at: null, contributors: [{ user_id: me.user_id, role: "reporter" as const, share_percent: 100 }] })));
+    extraUploadsInProgress = 4;
     return send({ ok: true });
   }
   if (url.pathname === "/__test/history-unavailable" && req.method === "POST") { historyUnavailable = true; return send({ ok: true }); }
@@ -601,7 +607,7 @@ const server = createServer(async (req, res) => {
       reserved: materials.filter(m => m.reserved_by).map(m => ({ material_id: m.id, reserved_by: m.reserved_by, reserved_by_name: m.reserved_by_name ?? null, reserved_at: m.reserved_at, priority: m.priority, editorial_state: m.editorial_state, title: "never-display-canary" })),
       recent_receipts: materials.slice(0, 3).map(m => ({ material_id: m.id, receipt_number: `R-261021-${m.id.slice(-6)}`, verified_at: m.created_at, priority: m.priority })),
       overdue_acknowledgements: 2, oldest_overdue_acknowledgement_at: materials[4].acknowledgement_due_at,
-      uploads_in_progress: [{ upload_session_id: "90000000-0000-4000-8000-000000000001", material_id: materials[4].id, kind: "original", priority: "urgent", state: "in_progress", size_bytes: 4000, bytes_received: 1000, updated_at: new Date().toISOString(), filename: "never-display-canary", reporter_id: "never-display-canary" }] });
+      uploads_in_progress: Array.from({ length: 1 + extraUploadsInProgress }, (_, i) => ({ upload_session_id: `90000000-0000-4000-8000-00000000000${i + 1}`, material_id: materials[4].id, kind: "original", priority: i ? "normal" : "urgent", state: "in_progress", size_bytes: 4000, bytes_received: 1000, updated_at: new Date().toISOString(), filename: "never-display-canary", reporter_id: "never-display-canary" })) });
   }
   if (url.pathname === "/v1/catalog" || url.pathname.startsWith("/v1/catalog/")) {
     if (!user.roles.some(role => ["system_admin", "rights_officer", "editor_in_chief", "finance", "buyer_admin", "buyer_member"].includes(role.name))) return send({}, 403);

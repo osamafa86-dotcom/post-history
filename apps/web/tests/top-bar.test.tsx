@@ -58,6 +58,9 @@ describe("dark top bar shell (Figma 193:593, 185:333, 193:865; owner decision 20
     expect(rules).toContain(".topbar-nav a[aria-current=\"page\"]::after");
     expect(rules).toMatch(/inset-inline: 0; inset-block-end: 0/);
     expect(rules).not.toMatch(/\b(left|right|margin-left|margin-right|padding-left|padding-right)\s*:/);
-    expect(rules).toMatch(/--bar-bg: var\(--vl-color-bg-inverse\)/); expect(rules).toMatch(/--bar-bg: var\(--vl-color-bg-surface\)/);
+    // الشريحة الداكنة من رموز Figma نفسها (ADR 0079) لا من أقرب رمز: خلفية ونص وفاصل، بلا قواعد داكنة تعيد تعريفها.
+    expect(rules).toMatch(/--bar-bg: var\(--vl-color-bg-slate\)/); expect(rules).toMatch(/--bar-fg: var\(--vl-color-text-on-slate\)/); expect(rules).toMatch(/--bar-line: var\(--vl-color-border-on-slate\)/);
+    expect(rules).not.toMatch(/--bar-bg: var\(--vl-color-bg-(inverse|surface)\)/); expect(rules).not.toMatch(/--bar-fg: var\(--vl-color-text-(inverse|primary)\)/);
+    expect(rules.match(/--bar-(bg|fg|line):/g)).toHaveLength(3);
   });
 });

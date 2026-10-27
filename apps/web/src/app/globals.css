@@ -319,6 +319,7 @@ html.board-display body { background: var(--vl-color-bg-canvas); }
 .wall-banner { margin: 0; padding: var(--vl-space-3) var(--vl-space-10); font-size: var(--vl-font-board-meta-size); line-height: var(--vl-font-board-meta-line); font-weight: 600; }
 .wall-banner.good { background: var(--vl-color-tone-good-bg); color: var(--vl-color-tone-good-fg); }
 .wall-banner.bad { background: var(--vl-color-tone-bad-bg); color: var(--vl-color-tone-bad-fg); }
+.wall-banner.attention { background: var(--vl-color-tone-attention-bg); color: var(--vl-color-tone-attention-fg); }
 .wall-meta { font-size: var(--vl-font-board-meta-size); line-height: var(--vl-font-board-meta-line); font-weight: var(--vl-font-board-meta-weight); margin: 0; }
 .wall-meta.brand { color: var(--vl-color-text-brand); }
 .wall-title { font-size: var(--vl-font-board-title-size); line-height: var(--vl-font-board-title-line); font-weight: var(--vl-font-board-title-weight); margin: 0; }
@@ -514,7 +515,7 @@ html.board-display body { background: var(--vl-color-bg-canvas); }
 @media (max-width: 1919px) { .wall-count { font-size: var(--vl-font-display-lg-size); line-height: var(--vl-font-display-lg-line); } }
 .wall-card { padding: 0; gap: 0; overflow: hidden; background: var(--vl-color-bg-surface); border: var(--vl-border-hairline) solid var(--vl-color-border-default); border-radius: var(--vl-radius-sm); }
 .wall-card.urgent { border-inline-start: var(--vl-border-hairline) solid var(--vl-color-border-default); }
-.wall-slate { display: flex; align-items: center; justify-content: space-between; gap: var(--vl-space-4); min-block-size: 48px; padding-inline: var(--vl-space-4); background: var(--vl-color-bg-media); color: var(--vl-color-text-on-media); border-block-end: var(--vl-border-hairline) solid var(--vl-color-border-default); font-size: var(--vl-font-body-sm-size); line-height: var(--vl-font-body-sm-line); }
+.wall-slate { display: flex; align-items: center; justify-content: space-between; gap: var(--vl-space-4); min-block-size: 48px; padding-inline: var(--vl-space-4); background: var(--vl-color-bg-slate); color: var(--vl-color-text-on-slate); border-block-end: var(--vl-border-hairline) solid var(--vl-color-border-on-slate); font-size: var(--vl-font-body-sm-size); line-height: var(--vl-font-body-sm-line); }
 .wall-slate .danger-text { color: inherit; } /* الشريط داكن في الوضعين؛ العاجل فيه بلسان الأولوية لا بلون النص (تباين الأحمر على الداكن في الوضع الفاتح < 3:1) */
 .wall-priority { align-self: stretch; display: flex; align-items: center; margin-inline-start: calc(-1 * var(--vl-space-4)); padding-inline: var(--vl-space-4); font-weight: 600; background: var(--vl-color-tone-neutral-bg); color: var(--vl-color-tone-neutral-fg); }
 .wall-priority.urgent { background: var(--vl-color-tone-urgent-bg); color: var(--vl-color-tone-urgent-fg); }
@@ -565,11 +566,12 @@ html.board-display body { background: var(--vl-color-bg-canvas); }
 .catalog-price { margin-block-start: auto; padding-block-start: var(--vl-space-2); }
 
 /* الشريط العلوي الداكن (Figma 193:593 وَ185:333 وَ193:865؛ قرار المالك 2026-10-27): الشعار في بداية السطر ثم البنود بخط سفلي للنشط ثم المستخدم في النهاية.
-   ألوانه من رموز المشروع وحدها: داكن في الوضعين (bg/inverse فاتحًا، bg/surface داكنًا) ولا رمز لـ bg/slate في tokens.json بعد؛ البند النشط بخط bg/brand-subtle على الفاتح وbg/brand على الداكن.
+   الخلفية والنص والفاصل من رموز الشريحة الداكنة bg/slate وtext/on-slate وborder/on-slate (ADR 0079)؛ وهي تبدّل قيمها مع الوضع فلا تحتاج قاعدة داكنة.
+   خط النشط bg/brand-subtle فاتحًا (15.16:1 على bg/slate) وbg/brand داكنًا (5.01:1)، أي ≥ 3:1 في الوضعين ويفحصه design-tokens.test.ts؛ وأخضر Figma الفاتح (track/state/done) 2.58:1 فلا يصلح.
    وعلاوةً على اللون يُميَّز النشط بالتعتيم الكامل (البقية 72٪) و aria-current. الجانب يعتمد الاتجاه المنطقي فينعكس تلقائيًا في LTR. */
-.topbar { --bar-bg: var(--vl-color-bg-inverse); --bar-fg: var(--vl-color-text-inverse); --bar-accent: var(--vl-color-bg-brand-subtle); display: flex; align-items: stretch; gap: var(--vl-space-9); min-block-size: calc(var(--vl-space-8) + var(--vl-space-7)); padding-inline: var(--vl-space-8); background: var(--bar-bg); color: var(--bar-fg); font-size: var(--vl-font-label-md-size); line-height: var(--vl-font-label-md-line); font-weight: var(--vl-font-label-md-weight); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .topbar { --bar-bg: var(--vl-color-bg-surface); --bar-fg: var(--vl-color-text-primary); --bar-accent: var(--vl-color-bg-brand); } }
-:root[data-theme="dark"] .topbar { --bar-bg: var(--vl-color-bg-surface); --bar-fg: var(--vl-color-text-primary); --bar-accent: var(--vl-color-bg-brand); }
+.topbar { --bar-bg: var(--vl-color-bg-slate); --bar-fg: var(--vl-color-text-on-slate); --bar-line: var(--vl-color-border-on-slate); --bar-accent: var(--vl-color-bg-brand-subtle); display: flex; align-items: stretch; gap: var(--vl-space-9); min-block-size: calc(var(--vl-space-8) + var(--vl-space-7)); padding-inline: var(--vl-space-8); background: var(--bar-bg); color: var(--bar-fg); border-block-end: var(--vl-border-hairline) solid var(--bar-line); font-size: var(--vl-font-label-md-size); line-height: var(--vl-font-label-md-line); font-weight: var(--vl-font-label-md-weight); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .topbar { --bar-accent: var(--vl-color-bg-brand); } }
+:root[data-theme="dark"] .topbar { --bar-accent: var(--vl-color-bg-brand); }
 .topbar :focus-visible { outline-color: var(--bar-fg); outline-offset: calc(var(--vl-border-emphasis) * -1); }
 .topbar-brand { display: flex; align-items: center; gap: var(--vl-space-4); flex: none; font-size: var(--vl-font-heading-h2-size); line-height: var(--vl-font-heading-h2-line); font-weight: 700; white-space: nowrap; }
 .topbar .brand-mark { border-color: var(--bar-fg); border-bottom-color: var(--bar-accent); width: var(--vl-space-7); height: var(--vl-space-8); border-inline-start-width: var(--vl-space-3); border-top-width: var(--vl-space-3); border-bottom-width: var(--vl-space-3); }
