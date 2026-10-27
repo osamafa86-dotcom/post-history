@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "download-url",
+  "started_at": "2026-10-27T02:35:47.149Z",
+  "ended_at": "2026-10-27T02:35:54.162Z",
+  "result": "partial",
+  "metrics": {
+    "link_fetched": true,
+    "expiry_waited": false,
+    "checks_failed": 0
+  },
+  "device": {
+    "platform": "server"
+  },
+  "upload_path": "n/a",
+  "notes": "الانتهاء الفعلي لم يُنتظر (DL_WAIT_EXPIRY=1)؛ فلا pass"
+}

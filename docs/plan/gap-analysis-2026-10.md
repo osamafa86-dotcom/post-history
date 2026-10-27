@@ -29,20 +29,22 @@
 | الصمود أمام قاتلات المهام | `scripts/task-killers.mjs` | موجود (`REPORT.md`) | `apps/android + apps/ios` | توثيق قياس الاستئناف بعد تدخل نظام التشغيل. |
 | محاذاة الطوابع الزمنية للنصوص | `scripts/timestamp-alignment.mjs` | موجود (`render-bench/2026-10-22-timestamp-alignment-10min.json`) | `workers/` | معايرة طوابع الكلمات مع مسار الصوت الأصلي. |
 | الإلغاء الفوري للجلسة عن بُعد | `scripts/session-revocation.mjs` | موجود (`REPORT.md`) | `apps/api + apps/` | مسح المفاتيح المحلية وإيقاف الرفع النشط فور الإلغاء. |
-| نصاب المدراء للتجاوزات الحساسة | `scripts/admin-quorum.mjs` | **غائب** | `apps/api` | تشغيل السكربت وحفظ القياس. |
+| نصاب المدراء للتجاوزات الحساسة | `scripts/admin-quorum.mjs` | موجود — **pass** (`docs/measurements/acceptance/manual-40438623850-1/2026-10-27-admin-quorum-api.json`) | `apps/api` | موثق: الواجهة وسطر الأوامر بنصاب شخصين والحارس. |
 | توقيع وتوثيق المصدر (C2PA) | `scripts/c2pa-manifest.mjs` | **غائب** | `workers/ + apps/api` | قياس التحقق من بيان C2PA. |
-| منع تسريب نسخ التسليم | `scripts/delivery-leak.mjs` | **غائب** | `apps/api + workers/` | فحص روابط التسليم الموقعة وحفظ القياس. |
-| صلاحية روابط التحميل الموقعة | `scripts/download-url.mjs` | **غائب** | `apps/api` | قياس انتهاء صلاحية الروابط. |
+| منع تسريب نسخ التسليم | `scripts/delivery-leak.mjs` | موجود — **partial** (`docs/measurements/acceptance/manual-40438623850-1/2026-10-27-delivery-leak-delivery-leak.json`) | `apps/api + workers/` | جزئي: حزمتان اصطناعيتان بلا تسرب؛ جذر توقيع اختباري، ووحدة المفاتيح والثقة الحقيقية غير مقيسَتين. |
+| صلاحية روابط التحميل الموقعة | `scripts/download-url.mjs` | موجود — **partial** (`docs/measurements/acceptance/manual-40438623850-1/2026-10-27-download-url-api.json`) | `apps/api` | جزئي: جُلب الرابط؛ لم يُنتظر الانتهاء الفعلي (expiry_waited=false). |
 | رفع ملف ميداني 1 غيغابايت | `scripts/field-upload-1gb.mjs` | **غائب** | `apps/ + infra/` | تجربة رفع 1GB عبر netlab وحفظ القياس. |
 | مسار الوسائط المتكامل | `scripts/media-e2e.mjs` | موجود (`REPORT.md`) | `apps/api + workers/` | توثيق زمن المعالجة الكلي. |
 | جلب ومعالجة الوسائط البعيدة | `scripts/media-remote.mjs` | **غائب** | `workers/` | قياس أداء المعالجة عن بُعد. |
-| موثوقية توصيل الإشعارات | `scripts/notification-delivery.mjs` | **غائب** | `apps/api + workers/` | قياس نسبة وزمن الوصول. |
-| التحكم في التزامن المتفائل | `scripts/optimistic-concurrency.mjs` | **غائب** | `apps/api` | قياس If-Match في الخادم. |
-| ضوابط الوصول لهوية المراسل | `scripts/reporter-identity-access.mjs` | **غائب** | `apps/api` | قياس نطاق protected_source:read. |
-| حسم تعارضات الحجز | `scripts/reservation-conflict.mjs` | **غائب** | `apps/api` | اختبار التنافس المتزامن على الحجز. |
+| موثوقية توصيل الإشعارات | `scripts/notification-delivery.mjs` | موجود — **pass** (`docs/measurements/acceptance/manual-40438623850-1/2026-10-27-notification-delivery-api.json`) | `apps/api + workers/` | موثق على 20 مادة بالاستطلاع كل 150 مللي ثانية؛ ليس قياس دفع إلى جهاز فعلي. |
+| التحكم في التزامن المتفائل | `scripts/optimistic-concurrency.mjs` | موجود — **pass** (`docs/measurements/acceptance/manual-40438623850-1/2026-10-27-optimistic-concurrency-api.json`) | `apps/api` | موثق على 20 جولة؛ السباقات بين عمليات خادم متعددة غير مقيسة. |
+| ضوابط الوصول لهوية المراسل | `scripts/reporter-identity-access.mjs` | موجود — **pass** (`docs/measurements/acceptance/manual-40438623850-1/2026-10-27-reporter-identity-access-api.json`) | `apps/api` | موثق للوضعين والتبديل الحي على نسخة خادم واحدة؛ التبديل عبر عمليات متعددة غير مقيس. |
+| حسم تعارضات الحجز | `scripts/reservation-conflict.mjs` | موجود — **pass** (`docs/measurements/acceptance/manual-40438623850-1/2026-10-27-reservation-conflict-api.json`) | `apps/api` | موثق على 20 جولة بثلاثة متنافسين؛ التنافس بين عمليات خادم متعددة غير مقيس. |
 | توليد مسودة التفريغ النصي | `scripts/transcript-draft.mjs` | **غائب** | `workers/` | قياس زمن ودقة المسودة الأولى. |
 
-**الخلاصة:** 35 اختبارًا لها سكربت؛ 24 منها له قياس موثق، و11 بلا قياس. إغلاق الغائب يعني تشغيل السكربت على بيئة فعلية وحفظ نتيجته بمخطط `contracts/schemas/measurement.json`.
+**الخلاصة:** 35 اختبارًا لها سكربت؛ 31 منها له قياس موثق، و4 بلا قياس؛ وجود وثيقة لا يعني أن نتيجتها pass. إغلاق الغائب يعني تشغيل السكربت على بيئة فعلية وحفظ نتيجته بمخطط `contracts/schemas/measurement.json`.
+
+تحديث #422 بتاريخ 2026-10-27: سُجلت سبع وثائق من [التشغيل اليدوي 40438623850، المحاولة 1](https://github.com/osamafa86-dotcom/post-history/actions/runs/40438623850) على main: خمس نتائج pass ونتيجتا partial كما أنتجتهما artifacts، دون تعديل الأرقام أو الأحكام. قياس delivery-leak داخل CI على حزمة اصطناعية بتوقيع اختباري فقط؛ لا يغيّر تعطيل التسليم أو C2PA في الإنتاج، ولا يُثبت ثقة توقيع إنتاجية. تبقى c2pa-manifest وfield-upload-1gb وmedia-remote وtranscript-draft خارج هذه المهمة.
 
 ## 2. التناقضات بين العقد والكود
 

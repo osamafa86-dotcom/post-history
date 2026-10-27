@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "optimistic-concurrency",
+  "started_at": "2026-10-27T02:29:26.385Z",
+  "ended_at": "2026-10-27T02:29:28.663Z",
+  "result": "pass",
+  "metrics": {
+    "rounds": 20,
+    "oneWinner": 20,
+    "loserClean": 20,
+    "etagMovedOnce": 20,
+    "staleRefused": 20,
+    "transitionRefused": 20,
+    "freshAccepted": 20,
+    "noHeaderOk": 20
+  },
+  "device": {
+    "platform": "server"
+  },
+  "upload_path": "n/a",
+  "notes": "20 جولة بتعديلين متزامنين على ETag واحد؛ لم تُقَس السباقات عبر عمليات خادم متعددة"
+}
