@@ -21,12 +21,12 @@ export function LicensePicker({ locale, offers, exclusiveAvailable, exclusiveUnt
 }
 
 function OfferTerms({ terms, locale }: { terms: components["schemas"]["LicenseTerms"]; locale: Locale }) {
-  const t = messages[locale].templates;
+  const t = messages[locale].templates, s = messages[locale].store;
   return <details className="offer-terms"><summary>{t.terms}</summary><p>{localized(terms.terms, locale)}</p><dl className="metadata">{[
     [t.usage, terms.usage_media.map(u => t.usageNames[u]).join("، ")],
     [t.territory, terms.territory.kind === "worldwide" ? t.worldwide : terms.territory.countries?.join(", ")],
-    [t.term, terms.term_days ?? messages[locale].notAvailable],
-    [t.exclusivity, terms.exclusivity_hours ?? messages[locale].notAvailable],
+    [s.termDaysLabel, terms.term_days ?? messages[locale].notAvailable],
+    [s.exclusivityHoursLabel, terms.exclusivity_hours ?? messages[locale].notAvailable],
     [t.deliverables, terms.deliverables.map(d => t.deliverableNames[d]).join("، ")],
     [t.prohibitions, terms.prohibitions.map(p => t.prohibitionNames[p]).join("، ") || messages[locale].notAvailable],
     [t.attribution, localized(terms.attribution, locale)],

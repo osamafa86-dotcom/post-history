@@ -21,7 +21,7 @@ export function safeMaterial(material: Material, permissions: Permission[], form
   return {
     id: material.id, version: material.version, row_version: material.row_version, reporter_id: material.reporter_id, office_id: material.office_id,
     reserved_by: material.reserved_by, reserved_at: material.reserved_at,
-    ...(internal ? { reserved_by_name: workName(material.reserved_by_name) } : {}), acknowledgement_due_at: material.acknowledgement_due_at,
+    ...(internal ? { reserved_by_name: workName(material.reserved_by_name), acknowledgement_due_at: material.acknowledgement_due_at } : {}),
     contributors: material.contributors?.map(({ user_id, role, share_percent }) => ({ user_id, role, share_percent })),
     title: material.title, material_types: material.material_types, governorate: material.governorate, city: material.city,
     shot_at: material.shot_at, priority: material.priority,

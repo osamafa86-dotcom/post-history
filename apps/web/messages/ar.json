@@ -495,7 +495,9 @@
       "verifiedOn": "تحقّق في {date}",
       "approvedOn": "اعتمد تحريريًا في {date}"
     },
-    "exclusiveUntil": "الحصرية محجوزة حتى {date}"
+    "exclusiveUntil": "الحصرية محجوزة حتى {date}",
+    "termDaysLabel": "مدة الترخيص (أيام)",
+    "exclusivityHoursLabel": "مدة الحصرية (ساعات)"
   },
   "board": {
     "title": "لوحة غرفة الأخبار",
@@ -924,7 +926,7 @@
     "revokedHelp": "هذا الترخيص مُبطل ({reason}): يتوقف الاستخدام الجديد والتنزيل.",
     "filesNote": "الملفات المسلَّمة مجرّدة من الموقع الدقيق وبيانات الجهاز؛ الأصل الخام لا يُسلَّم.",
     "deliveryContents": "محتويات التسليم",
-    "deliverySize": "حجم الحزمة: {size} ميغابايت"
+    "deliverySize": "حجم الحزمة: {size} ميبيبايت"
   },
   "commission": {
     "nav": "قواعد العمولة",

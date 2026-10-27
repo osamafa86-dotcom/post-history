@@ -46,4 +46,7 @@ it("keeps only contract delivery specifications, size and frozen terms for the b
   const safe = await result.json(); expect(safe.delivery_size_bytes).toBe(1048576);
   expect(safe.delivery_contents).toEqual([{ deliverable: "produced", mime_type: "video/mp4", count: 1, duration_ms: 65000, width: 1920, height: 1080 }]);
   expect(JSON.stringify(safe)).not.toMatch(/canary|actor_name|work_name|sha256|file_id|storage_key/);
+  const noCount = Object.fromEntries(Object.entries(raw.delivery_contents[0]).filter(([key]) => key !== "count"));
+  const fallback = await call(`licenses/${id}`, { method: "GET", upstream: () => Response.json({ ...raw, delivery_contents: [noCount] }) });
+  expect((await fallback.result.json()).delivery_contents[0].count).toBe(1);
 });

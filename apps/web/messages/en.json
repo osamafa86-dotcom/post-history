@@ -495,7 +495,9 @@
       "verifiedOn": "Verified on {date}",
       "approvedOn": "Editorially approved on {date}"
     },
-    "exclusiveUntil": "Exclusivity reserved until {date}"
+    "exclusiveUntil": "Exclusivity reserved until {date}",
+    "termDaysLabel": "Licence term (days)",
+    "exclusivityHoursLabel": "Exclusivity duration (hours)"
   },
   "board": {
     "title": "Newsroom board",

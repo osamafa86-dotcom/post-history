@@ -47,7 +47,7 @@ export function safeCatalogItem(item: CatalogItem): CatalogItem {
     shot_on: item.shot_on && /^\d{4}-\d{2}-\d{2}/.exec(item.shot_on)?.[0] || null, duration_ms: item.duration_ms, width: item.width, height: item.height, credit: item.credit,
     offers: item.offers.map(o => ({ license_template_id: o.license_template_id, license_version: o.license_version, type: o.type, name: text(o.name), ...(o.terms ? { terms: safeLicenseTerms(o.terms) } : {}), price: { amount_minor: o.price.amount_minor, currency: o.price.currency } })),
     verified_on: catalogDay(item.verified_on), editorial_approved_on: catalogDay(item.editorial_approved_on),
-    exclusive_unavailable_until: typeof item.exclusive_unavailable_until === "string" && Number.isFinite(Date.parse(item.exclusive_unavailable_until)) ? item.exclusive_unavailable_until : null,
+    exclusive_unavailable_until: typeof item.exclusive_unavailable_until === "string" && Number.isFinite(Date.parse(item.exclusive_unavailable_until)) ? new Date(item.exclusive_unavailable_until).toISOString() : null,
     exclusive_available: item.exclusive_available, listed_at: item.listed_at,
   };
 }

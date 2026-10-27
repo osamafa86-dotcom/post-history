@@ -62,7 +62,7 @@ export function NewsroomBoard({ locale }: { locale: Locale }) {
           const reservation = snapshot.reserved.find(r => r.material_id === material.id);
           return <article key={material.id} className={`board-card ${material.priority}`} data-testid="board-card">
             <Link prefetch={false} href={`/${locale}/materials/${material.id}`}>{material.title}</Link>
-            <div className="board-meta"><small className={`priority ${material.priority}`}>{m.states.priority[material.priority]}</small><small className="muted">{elapsed(material.created_at, now, locale)}</small>{reservation && <small className="badge">{internalNames(me) && reservation.reserved_by_name ? t.reservedName.replace("{name}", reservation.reserved_by_name) : t.reservedBadge}</small>}</div>
+            <div className="board-meta"><small className={`priority ${material.priority}`}>{m.states.priority[material.priority]}</small><small className="muted">{elapsed(material.created_at, now, locale)}</small>{reservation && <small className="badge">{reservation.reserved_by === me.user_id ? m.review.yourReservation : t.reservedBadge}{internalNames(me) && reservation.reserved_by_name && <> · {t.reservedName.replace("{name}", reservation.reserved_by_name)}</>}</small>}</div>
             {overdueTime(material.acknowledgement_due_at, now) && <p className="attention-text" data-testid="ack-overdue">{t.overdueAge.replace("{time}", overdueTime(material.acknowledgement_due_at, now)!)}</p>}
           </article>;
         })}

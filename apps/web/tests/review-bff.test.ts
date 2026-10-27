@@ -206,7 +206,7 @@ describe("ADR 0035 writes and staff-only names", () => {
     for (const role of ["supervisor", "reporter", "buyer_member"] as const) {
       const user: Me = { ...me, roles: [{ name: role, scopes: [] }] };
       const materialRead = await action(`materials/${item.id}`, { method: "GET", user, upstream: r => Response.json(r.url.includes("/forms/") ? form : raw) });
-      const materialData = await materialRead.result.json(); expect(materialData.acknowledgement_due_at).toBe(raw.acknowledgement_due_at);
+      const materialData = await materialRead.result.json(); expect(materialData.acknowledgement_due_at).toBe(role === "supervisor" ? raw.acknowledgement_due_at : undefined);
       expect(materialData.reserved_by_name).toBe(role === "supervisor" ? "Synthetic staff" : undefined);
       const history = await action(`materials/${item.id}/transitions`, { method: "GET", user, upstream: r => r.url.endsWith("/transitions") ? Response.json({ items: [{ id: target, track: "editorial", from: "inbox", to: "reviewing", reason: "", actor_id: target, actor_name: "Synthetic staff", occurred_at: raw.created_at }] }) : Response.json(raw) });
       const entry = (await history.result.json()).items[0]; expect(entry.actor_name).toBe(role === "supervisor" ? "Synthetic staff" : undefined);
