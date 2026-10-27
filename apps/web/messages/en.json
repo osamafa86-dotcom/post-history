@@ -1050,14 +1050,14 @@
   },
   "privacy": {
     "title": "Privacy policy",
-    "temporary": "Text awaiting the owner's approval — the operator details marked in square brackets (name, contact email, effective date, jurisdiction and retention periods) must be completed before this policy is treated as approved.",
+    "temporary": "Contact details pending — the privacy contact email will be published on this page soon, and until then there is no approved email address for requests.",
     "body": "This policy explains what data the platform collects, why, who can see it, and what never happens to it. It is written from the practices documented for the platform, and where something has not yet been decided we say so explicitly instead of assuming it.",
     "sections": [
       {
         "heading": "Who operates the platform and who this policy covers",
         "paragraphs": [
-          "This platform is operated by [Operator name — set by the owner] (the “Operator”). This policy covers the iOS and Android apps built for the organization's accredited reporters and field crews, and the web interface used by newsroom staff and by organizations that buy licensed material.",
-          "Accounts are issued by the Operator; the apps do not offer self-registration. This policy takes effect on: [Policy effective date — set by the owner]."
+          "This platform is operated by Palestine Post (the “Operator”). This policy covers the iOS and Android apps built for the organization's accredited reporters and field crews, and the web interface used by newsroom staff and by organizations that buy licensed material.",
+          "Accounts are issued by the Operator; the apps do not offer self-registration. This policy takes effect on: 1 November 2026."
         ]
       },
       {
@@ -1131,7 +1131,7 @@
           "The original is kept unmodified with its fingerprint. Deleting the local copy from a reporter's phone after the receipt is the reporter's own decision. The app offers an emergency wipe of the session data, queues and local receipts.",
           "Encrypted backups of the platform's data are kept, so deleted data may remain in backups until their retention period ends.",
           "The audit log and the financial ledger entries are append-only and are not edited, and sales records and invoices remain even when a sold item is withdrawn.",
-          "Retention periods: the detailed retention and deletion policy has not yet been approved by the Operator's administration, so no periods are stated here. [Retention periods — set by the owner]"
+          "Retention periods: materials and their originals are kept with no automatic deletion period while the archive operates, and the original is never modified. Any other deletion is handled on request through the contact email given in the section “Your rights and how to reach us”, and no periods are stated here for any other records."
         ]
       },
       {
@@ -1143,12 +1143,13 @@
       {
         "heading": "Your rights and how to reach us",
         "paragraphs": [
-          "You can ask the Operator to let you see, correct or delete your data, or ask about this policy, by email: [Privacy contact email — set by the owner]. We consider each request and tell you what can be deleted and what must be kept for legal, editorial, financial or security reasons, such as sales records, invoices and the audit log.",
+          "You can ask the Operator to let you see, correct or delete your data, or ask about this policy, by the privacy contact email: {email}. We consider each request and tell you what can be deleted and what must be kept for legal, editorial, financial or security reasons, such as sales records, invoices and the audit log.",
           "You can also delete the local copy on your phone at any time, sign out to unregister your device from notifications, and run the emergency wipe.",
-          "Operator: [Operator name — set by the owner]. Jurisdiction and hosting location: [Jurisdiction and hosting location — set by the owner]. The current version of this policy is published on this page."
+          "Operator: Palestine Post. Jurisdiction and hosting location: Palestinian law, with GoDaddy as the hosting provider. The current version of this policy is published on this page."
         ]
       }
     ],
+    "emailPending": "will be published soon",
     "languageNavigation": "Privacy policy language",
     "otherLanguage": "العربية"
   },
