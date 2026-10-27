@@ -55,6 +55,9 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: مكتبة بوست
+        # رقم البناء والنسخة من إعدادات البناء: سير الرفع يمرر CURRENT_PROJECT_VERSION وMARKETING_VERSION، وبدونهما يبقى كل بناء «1» فترفض آبل ما بعد الأول.
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleDevelopmentRegion: ar
         CFBundleLocalizations: [ar, en]
         UILaunchScreen: {}
@@ -78,6 +81,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.palpost.posthistory
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: 0.1.0
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: false
