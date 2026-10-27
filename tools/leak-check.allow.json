@@ -1,79 +1,949 @@
 {
-  "comment": "قائمة السماح لفاحص التسريب tools/leak-check.mjs — القيم العامة الموثقة فقط؛ أي مضيف أو عنوان داخلي حقيقي لا يُدرج هنا بل يُزال من المصدر. النطاق يطابق ذاته ونطاقاته الفرعية.",
+  "comment": "قائمة السماح لفاحص التسريب tools/leak-check.mjs. لكل مدخل «reason» إلزامي، و«paths» (أنماط glob) تقصر السماح على الملفات التي يظهر فيها؛ بدونها يسري على كل المستودع. لا تُدرج إلا القيم العلنية الموثقة؛ أي مضيف أو عنوان داخلي حقيقي يُزال من المصدر ولا يُدرج هنا. الأسرار والإحداثيات تُدرج بـsha256 لقيمتها لا بنصها (انظر tools/leak-check.md).",
   "domains": [
-    "localhost",
-    "test",
-    "invalid",
-    "example",
-    "example.com",
-    "example.net",
-    "example.org",
-    "play.google.com",
-    "apps.apple.com",
-    "itunes.apple.com",
-    "github.com",
-    "github.io",
-    "npmjs.org",
-    "google.com",
-    "google.dev",
-    "googleblog.com",
-    "android.com",
-    "apple.com",
-    "cloudflare.com",
-    "stripe.com",
-    "lemonsqueezy.com",
-    "paddle.com",
-    "checkout.com",
-    "paytabs.com",
-    "hyperpay.com",
-    "oppwa.com",
-    "iyzico.com",
-    "lahza.io",
-    "paytr.com",
-    "paylexer.com",
-    "tap.company",
-    "c2pa.org",
-    "contentauthenticity.org",
-    "videojs.org",
-    "tus.io",
-    "figma.com",
-    "huggingface.co",
-    "quay.io",
-    "opencollective.com",
-    "transloadit.com",
-    "sentiance.com",
-    "schema.org",
-    "json-schema.org",
-    "bbc.com",
-    "reuters.com",
-    "reutersagency.com",
-    "afp.com",
-    "canon.co.uk",
-    "ssl.com",
-    "lumethic.com",
-    "identicapi.com",
-    "ecosire.com",
-    "easywaretech.com",
-    "claude.ai",
-    "archive.info",
-    "backup.info",
-    "pttl.gr",
-    "npmjs.com",
-    "leaf.ec"
+    {
+      "value": "localhost",
+      "reason": "اسم الحلقة المحلية الموثّق؛ لا يعرّف بنية"
+    },
+    {
+      "value": "test",
+      "reason": "لاحقة أو نطاق محجوز للتوثيق والاختبار (RFC 2606/6761)؛ لا يُحل إلى مضيف حقيقي"
+    },
+    {
+      "value": "invalid",
+      "reason": "لاحقة أو نطاق محجوز للتوثيق والاختبار (RFC 2606/6761)؛ لا يُحل إلى مضيف حقيقي"
+    },
+    {
+      "value": "example",
+      "reason": "لاحقة أو نطاق محجوز للتوثيق والاختبار (RFC 2606/6761)؛ لا يُحل إلى مضيف حقيقي"
+    },
+    {
+      "value": "example.com",
+      "reason": "لاحقة أو نطاق محجوز للتوثيق والاختبار (RFC 2606/6761)؛ لا يُحل إلى مضيف حقيقي"
+    },
+    {
+      "value": "example.org",
+      "reason": "لاحقة أو نطاق محجوز للتوثيق والاختبار (RFC 2606/6761)؛ لا يُحل إلى مضيف حقيقي"
+    },
+    {
+      "value": "github.com",
+      "reason": "منصة الشيفرة العامة: روابط مستودعات وإصدارات وتنبيهات أمنية منشورة، تتكرر في وثائق وسكربتات كثيرة"
+    },
+    {
+      "value": "github.io",
+      "reason": "روابط توثيق عامة لمكتبات مفتوحة المصدر",
+      "paths": [
+        "docs/design/tokens.json",
+        "docs/plan/decisions/0015-web-player.md"
+      ]
+    },
+    {
+      "value": "npmjs.org",
+      "reason": "عناوين resolved لحزم npm العامة في ملف القفل",
+      "paths": [
+        "tools/acceptance/package-lock.json"
+      ]
+    },
+    {
+      "value": "opencollective.com",
+      "reason": "رابط تمويل حزمة npm عامة داخل ملف القفل",
+      "paths": [
+        "tools/acceptance/package-lock.json"
+      ]
+    },
+    {
+      "value": "google.com",
+      "reason": "روابط توثيق جوجل العامة في وثائق البحث",
+      "paths": [
+        "docs/research/2026-10-c2pa-video.md",
+        "docs/research/2026-10-store-review-requirements.md"
+      ]
+    },
+    {
+      "value": "google.dev",
+      "reason": "رابط توثيق عام لواجهة الذكاء الاصطناعي من جوجل مستشهد به في مراجع الخطة",
+      "paths": [
+        "docs/plan/الخطة-النسخة-الثالثة.md"
+      ]
+    },
+    {
+      "value": "googleblog.com",
+      "reason": "رابط مدونة مطوري أندرويد العامة في مراجع الخطة",
+      "paths": [
+        "docs/plan/الخطة-النسخة-الثالثة.md"
+      ]
+    },
+    {
+      "value": "blog.google",
+      "reason": "مقال علني على مدونة جوجل مستشهد به في بحث C2PA",
+      "paths": [
+        "docs/research/2026-10-c2pa-video.md"
+      ]
+    },
+    {
+      "value": "android.com",
+      "reason": "روابط سياسات أندرويد العلنية في الخطة وبحث متطلبات المتاجر",
+      "paths": [
+        "docs/plan/الخطة-النسخة-الثالثة.md",
+        "docs/research/2026-10-store-review-requirements.md"
+      ]
+    },
+    {
+      "value": "apple.com",
+      "reason": "روابط إرشادات آبل العلنية في الخطة وبحث متطلبات المتاجر",
+      "paths": [
+        "docs/plan/الخطة-النسخة-الثالثة.md",
+        "docs/research/2026-10-store-review-requirements.md"
+      ]
+    },
+    {
+      "value": "cloudflare.com",
+      "reason": "نطاق خدمة Cloudflare العلني (قوائم العناوين ودلائل النشر)",
+      "paths": [
+        "apps/api/.env.example",
+        "docs/ops/deploy-guide.md",
+        "docs/ops/field-trial-hosting.md",
+        "docs/plan/الخطة-النسخة-الثالثة.md",
+        "infra/field-trial/trial.env.example"
+      ]
+    },
+    {
+      "value": "stripe.com",
+      "reason": "توثيق Stripe العلني للمزوّد التجريبي",
+      "paths": [
+        "docs/plan/decisions/0032-payment-provider-sandbox.md",
+        "docs/plan/الخطة-النسخة-الثالثة.md",
+        "docs/research/2026-10-payment-providers.md"
+      ]
+    },
+    {
+      "value": "lemonsqueezy.com",
+      "reason": "توثيق مزوّد دفع علني في بحث المزوّدين",
+      "paths": [
+        "docs/research/2026-10-payment-providers.md"
+      ]
+    },
+    {
+      "value": "paddle.com",
+      "reason": "توثيق مزوّد دفع علني في بحث المزوّدين",
+      "paths": [
+        "docs/research/2026-10-payment-providers.md"
+      ]
+    },
+    {
+      "value": "checkout.com",
+      "reason": "توثيق مزوّد دفع علني في بحث المزوّدين",
+      "paths": [
+        "docs/research/2026-10-payment-providers.md"
+      ]
+    },
+    {
+      "value": "paytabs.com",
+      "reason": "توثيق مزوّد دفع علني في بحث المزوّدين",
+      "paths": [
+        "docs/research/2026-10-payment-providers.md"
+      ]
+    },
+    {
+      "value": "hyperpay.com",
+      "reason": "توثيق مزوّد دفع علني في بحث المزوّدين",
+      "paths": [
+        "docs/research/2026-10-payment-providers.md"
+      ]
+    },
+    {
+      "value": "oppwa.com",
+      "reason": "توثيق بوابة مزوّد دفع علني في بحث المزوّدين",
+      "paths": [
+        "docs/research/2026-10-payment-providers.md"
+      ]
+    },
+    {
+      "value": "iyzico.com",
+      "reason": "توثيق مزوّد دفع علني في بحث المزوّدين",
+      "paths": [
+        "docs/research/2026-10-payment-providers.md"
+      ]
+    },
+    {
+      "value": "lahza.io",
+      "reason": "توثيق مزوّد دفع علني في بحث المزوّدين",
+      "paths": [
+        "docs/research/2026-10-payment-providers.md"
+      ]
+    },
+    {
+      "value": "paytr.com",
+      "reason": "توثيق مزوّد دفع علني في بحث المزوّدين",
+      "paths": [
+        "docs/research/2026-10-payment-providers.md"
+      ]
+    },
+    {
+      "value": "paylexer.com",
+      "reason": "دليل تكامل طرف ثالث علني مستشهد به في بحث المزوّدين",
+      "paths": [
+        "docs/research/2026-10-payment-providers.md"
+      ]
+    },
+    {
+      "value": "tap.company",
+      "reason": "توثيق مزوّد دفع علني في بحث المزوّدين",
+      "paths": [
+        "docs/research/2026-10-payment-providers.md"
+      ]
+    },
+    {
+      "value": "ecosire.com",
+      "reason": "مقال طرف ثالث علني مستشهد به في بحث المزوّدين",
+      "paths": [
+        "docs/research/2026-10-payment-providers.md"
+      ]
+    },
+    {
+      "value": "easywaretech.com",
+      "reason": "مقال طرف ثالث علني مستشهد به في بحث المزوّدين",
+      "paths": [
+        "docs/research/2026-10-payment-providers.md"
+      ]
+    },
+    {
+      "value": "c2pa.org",
+      "reason": "مواصفة C2PA العلنية",
+      "paths": [
+        "docs/research/2026-10-c2pa-video.md"
+      ]
+    },
+    {
+      "value": "contentauthenticity.org",
+      "reason": "توثيق Content Authenticity العلني",
+      "paths": [
+        "docs/research/2026-10-c2pa-video.md"
+      ]
+    },
+    {
+      "value": "bbc.com",
+      "reason": "مصدر خبري علني مستشهد به في بحث C2PA",
+      "paths": [
+        "docs/research/2026-10-c2pa-video.md"
+      ]
+    },
+    {
+      "value": "reuters.com",
+      "reason": "مصدر خبري علني مستشهد به في بحث C2PA",
+      "paths": [
+        "docs/research/2026-10-c2pa-video.md"
+      ]
+    },
+    {
+      "value": "reutersagency.com",
+      "reason": "مصدر علني مستشهد به في بحث C2PA",
+      "paths": [
+        "docs/research/2026-10-c2pa-video.md"
+      ]
+    },
+    {
+      "value": "afp.com",
+      "reason": "مصدر خبري علني مستشهد به في بحث C2PA",
+      "paths": [
+        "docs/research/2026-10-c2pa-video.md"
+      ]
+    },
+    {
+      "value": "canon.co.uk",
+      "reason": "إعلان علني للمصنّع مستشهد به في بحث C2PA",
+      "paths": [
+        "docs/research/2026-10-c2pa-video.md"
+      ]
+    },
+    {
+      "value": "ssl.com",
+      "reason": "مقال علني مستشهد به في بحث C2PA",
+      "paths": [
+        "docs/research/2026-10-c2pa-video.md"
+      ]
+    },
+    {
+      "value": "lumethic.com",
+      "reason": "مقال طرف ثالث علني مستشهد به في بحث C2PA",
+      "paths": [
+        "docs/research/2026-10-c2pa-video.md"
+      ]
+    },
+    {
+      "value": "identicapi.com",
+      "reason": "مقال طرف ثالث علني مستشهد به في بحث C2PA",
+      "paths": [
+        "docs/research/2026-10-c2pa-video.md"
+      ]
+    },
+    {
+      "value": "pttl.gr",
+      "reason": "مقال علني مستشهد به في بحث C2PA",
+      "paths": [
+        "docs/research/2026-10-c2pa-video.md"
+      ]
+    },
+    {
+      "value": "tus.io",
+      "reason": "موقع بروتوكول الرفع tus العلني",
+      "paths": [
+        "docs/plan/الخطة-النسخة-الثالثة.md"
+      ]
+    },
+    {
+      "value": "videojs.org",
+      "reason": "توثيق مشغّل علني مستشهد به في قرار المشغّل والخطة",
+      "paths": [
+        "docs/plan/decisions/0015-web-player.md",
+        "docs/plan/الخطة-النسخة-الثالثة.md"
+      ]
+    },
+    {
+      "value": "figma.com",
+      "reason": "رابط ملف تصميم علني في وثائق التصميم",
+      "paths": [
+        "docs/design/design-system.md",
+        "docs/design/tokens.json"
+      ]
+    },
+    {
+      "value": "transloadit.com",
+      "reason": "رابط مرجع طرف ثالث علني في مراجع الخطة",
+      "paths": [
+        "docs/plan/الخطة-النسخة-الثالثة.md"
+      ]
+    },
+    {
+      "value": "sentiance.com",
+      "reason": "رابط مرجع طرف ثالث علني في مراجع الخطة",
+      "paths": [
+        "docs/plan/الخطة-النسخة-الثالثة.md"
+      ]
+    },
+    {
+      "value": "ppc.land",
+      "reason": "مقال علني مستشهد به في مراجع الخطة",
+      "paths": [
+        "docs/plan/الخطة-النسخة-الثالثة.md"
+      ]
+    },
+    {
+      "value": "huggingface.co",
+      "reason": "مستودع الأوزان وبيانات FLEURS العلني، مثبّتة بالنسخة",
+      "paths": [
+        ".github/workflows/ai-worker.yml",
+        "docs/plan/decisions/0019-ai-worker-local-runtime.md",
+        "infra/ai/models.lock",
+        "infra/ai/smoke-ai.sh",
+        "tools/acceptance/lib/speech-pin.mjs"
+      ]
+    },
+    {
+      "value": "quay.io",
+      "reason": "سجل صور حاويات علني (مرجع صورة بالبصمة)",
+      "paths": [
+        "docs/plan/decisions/0004-minio-images-pinned-community-build.md",
+        "infra/observability/compose.monitoring.yml"
+      ]
+    },
+    {
+      "value": "schema.org",
+      "reason": "معرّف مساحة أسماء مخطط علني (@context) لا مضيف اتصال",
+      "paths": [
+        "tools/acceptance/test/c2pa-manifest.test.mjs"
+      ]
+    },
+    {
+      "value": "json-schema.org",
+      "reason": "معرّف $schema علني لا مضيف اتصال",
+      "paths": [
+        "tools/acceptance/scripts/upload-contract.mjs"
+      ]
+    },
+    {
+      "value": "claude.ai",
+      "reason": "رابط سجل الجلسات: مصدر التغيير في الوثائق",
+      "paths": [
+        "docs/plan/سجل-جلسات-الوكلاء.md"
+      ]
+    },
+    {
+      "value": "npmjs.com",
+      "reason": "رابط تنبيه أمني علني لحزمة npm",
+      "paths": [
+        "docs/research/2026-10-multer-advisory.md"
+      ]
+    },
+    {
+      "value": "crates.io",
+      "reason": "سجل حزم Rust العلني (مصدر بناء أداة C2PA)",
+      "paths": [
+        ".github/workflows/acceptance.yml"
+      ]
+    },
+    {
+      "value": "scripts.sil.org",
+      "reason": "رابط رخصة الخطوط OFL داخل نص الرخصة الأصلي",
+      "paths": [
+        "docs/design/store-assets/fonts/LICENSE-IBMPlexMono.txt",
+        "docs/design/store-assets/fonts/LICENSE-Inter.txt"
+      ]
+    },
+    {
+      "value": "openfontlicense.org",
+      "reason": "رابط رخصة الخطوط OFL داخل نص الرخصة الأصلي",
+      "paths": [
+        "docs/design/store-assets/fonts/LICENSE-NotoSansArabic.txt"
+      ]
+    },
+    {
+      "value": "w3.org",
+      "reason": "معرّف مساحة الأسماء القياسية لـSVG (xmlns) لا مضيف اتصال",
+      "paths": [
+        "apps/ios/store/icon/AppIcon.svg",
+        "docs/design/store-assets/generate.cjs"
+      ]
+    },
+    {
+      "value": "download.docker.com",
+      "reason": "مستودع حزم Docker الرسمي في سكربت إقلاع المضيف",
+      "paths": [
+        "infra/deploy/bootstrap.sh"
+      ]
+    },
+    {
+      "value": "containerd.io",
+      "reason": "اسم حزمة apt (containerd.io=الإصدار) لا مضيف",
+      "paths": [
+        "infra/deploy/bootstrap.sh"
+      ]
+    },
+    {
+      "value": "age-encryption.org",
+      "reason": "ترويسة صيغة ملفات age الثابتة في فحص الملف المختوم، لا مضيف اتصال",
+      "paths": [
+        "infra/deploy/test-dry-run.sh"
+      ]
+    },
+    {
+      "value": "letsencrypt.org",
+      "reason": "نقطة ACME العلنية في فحص الخروج قبل النشر",
+      "paths": [
+        "infra/field-trial/preflight.sh"
+      ]
+    },
+    {
+      "value": "archive.info",
+      "reason": "اسم ملف في مستودع pgBackRest مذكور في نص قرار، وليس مضيفًا",
+      "paths": [
+        "docs/plan/decisions/0051-postgres-wal-archiving.md"
+      ]
+    },
+    {
+      "value": "backup.info",
+      "reason": "اسم ملف في مستودع pgBackRest مذكور في نص قرار، وليس مضيفًا",
+      "paths": [
+        "docs/plan/decisions/0051-postgres-wal-archiving.md"
+      ]
+    },
+    {
+      "value": "leaf.ec",
+      "reason": "اسم ملف مفتاح EC مؤقت في سكربت توليد الشهادات الاختبارية، وليس مضيفًا",
+      "paths": [
+        "tools/acceptance/scripts/c2pa-manifest.mjs"
+      ]
+    },
+    {
+      "value": "service.name",
+      "reason": "مفتاح خاصية في OpenTelemetry لا مضيف",
+      "paths": [
+        "infra/observability/monitoring/otel-collector.yaml",
+        "infra/observability/smoke-monitoring.sh"
+      ]
+    },
+    {
+      "value": "edge.conf.in",
+      "reason": "اسم قالب إعداد nginx داخل compose المعاينة، وليس مضيفًا",
+      "paths": [
+        "infra/preview/docker-compose.preview.yml"
+      ]
+    },
+    {
+      "value": "api.lib.internal",
+      "reason": "اسم مستعار لحاوية على شبكة Docker الداخلية، موثق في قرار المعاينة الخفيفة؛ لا يُحل خارج الشبكة",
+      "paths": [
+        "docs/plan/decisions/0023-light-preview-shared-server.md",
+        "infra/preview/docker-compose.preview.yml",
+        "infra/preview/edge/edge.conf.in"
+      ]
+    },
+    {
+      "value": "api.internal",
+      "reason": "مثال اسم الخادم الداخلي للخطّافات في نص قرار SEC-06؛ لا يُحل خارج الشبكة",
+      "paths": [
+        "docs/plan/decisions/SEC-06-tusd-hook-authentication.md"
+      ]
+    },
+    {
+      "value": "minio",
+      "reason": "اسم خدمة Docker Compose على شبكة داخلية؛ لا يُحل خارج الشبكة ولا يكشف نطاقًا",
+      "paths": [
+        "infra/compose/.env.example",
+        "infra/field-trial/docker-compose.trial.yml",
+        "infra/minio/check-media-policy.sh",
+        "infra/minio/init.sh",
+        "infra/preview/docker-compose.preview.yml",
+        "infra/preview/smoke-preview.sh"
+      ]
+    },
+    {
+      "value": "api",
+      "reason": "اسم خدمة Docker Compose على شبكة داخلية؛ لا يُحل خارج الشبكة ولا يكشف نطاقًا",
+      "paths": [
+        "docs/plan/decisions/SEC-06-tusd-hook-authentication.md",
+        "infra/compose/.env.example",
+        "infra/compose/docker-compose.yml",
+        "infra/compose/smoke-media.sh"
+      ]
+    },
+    {
+      "value": "tusd",
+      "reason": "اسم خدمة Docker Compose على شبكة داخلية؛ لا يُحل خارج الشبكة ولا يكشف نطاقًا",
+      "paths": [
+        "infra/proxy/tusd.conf"
+      ]
+    },
+    {
+      "value": "loki",
+      "reason": "اسم خدمة Docker Compose على شبكة داخلية؛ لا يُحل خارج الشبكة ولا يكشف نطاقًا",
+      "paths": [
+        "infra/observability/monitoring/grafana/provisioning/datasources/datasources.yaml",
+        "infra/observability/monitoring/otel-collector.yaml",
+        "infra/observability/smoke-monitoring.sh"
+      ]
+    },
+    {
+      "value": "prometheus",
+      "reason": "اسم خدمة Docker Compose على شبكة داخلية؛ لا يُحل خارج الشبكة ولا يكشف نطاقًا",
+      "paths": [
+        "infra/observability/monitoring/grafana/provisioning/datasources/datasources.yaml"
+      ]
+    },
+    {
+      "value": "otel-collector",
+      "reason": "اسم خدمة Docker Compose على شبكة داخلية؛ لا يُحل خارج الشبكة ولا يكشف نطاقًا",
+      "paths": [
+        "infra/observability/smoke-monitoring.sh"
+      ]
+    },
+    {
+      "value": "backup-remote",
+      "reason": "اسم خدمة Docker Compose على شبكة داخلية؛ لا يُحل خارج الشبكة ولا يكشف نطاقًا",
+      "paths": [
+        "infra/backup/test/compose.remote-lock.yml",
+        "infra/field-trial/smoke-trial.sh"
+      ]
+    },
+    {
+      "value": "api-hooks",
+      "reason": "اسم خدمة Docker Compose على شبكة داخلية؛ لا يُحل خارج الشبكة ولا يكشف نطاقًا",
+      "paths": [
+        "infra/field-trial/smoke-trial.sh",
+        "infra/ingest/nginx.conf"
+      ]
+    },
+    {
+      "value": "tusd-proxy",
+      "reason": "اسم خدمة Docker Compose على شبكة داخلية؛ لا يُحل خارج الشبكة ولا يكشف نطاقًا",
+      "paths": [
+        "infra/ingest/nginx.conf"
+      ]
+    },
+    {
+      "value": "media-it-minio",
+      "reason": "اسم خدمة Docker Compose على شبكة داخلية؛ لا يُحل خارج الشبكة ولا يكشف نطاقًا",
+      "paths": [
+        ".github/workflows/ci.yml"
+      ]
+    },
+    {
+      "value": "ph-preview-api",
+      "reason": "اسم خدمة Docker Compose على شبكة داخلية؛ لا يُحل خارج الشبكة ولا يكشف نطاقًا",
+      "paths": [
+        "infra/preview/docker-compose.preview.yml",
+        "infra/preview/edge/edge.conf.in",
+        "infra/preview/smoke-preview.sh"
+      ]
+    },
+    {
+      "value": "ph-preview-ingest",
+      "reason": "اسم خدمة Docker Compose على شبكة داخلية؛ لا يُحل خارج الشبكة ولا يكشف نطاقًا",
+      "paths": [
+        "infra/preview/edge/edge.conf.in"
+      ]
+    },
+    {
+      "value": "ph-preview-web-app",
+      "reason": "اسم خدمة Docker Compose على شبكة داخلية؛ لا يُحل خارج الشبكة ولا يكشف نطاقًا",
+      "paths": [
+        "infra/preview/edge/edge.conf.in"
+      ]
+    },
+    {
+      "value": "lib-web",
+      "reason": "اسم خدمة Docker Compose على شبكة داخلية؛ لا يُحل خارج الشبكة ولا يكشف نطاقًا",
+      "paths": [
+        "infra/preview/smoke-preview.sh"
+      ]
+    },
+    {
+      "value": "web",
+      "reason": "اسم خدمة الويب في مثال عنوان عودة داخل تعليق سكربت قبول",
+      "paths": [
+        "tools/acceptance/scripts/web-buyer-checkout.mjs"
+      ]
+    },
+    {
+      "value": "host",
+      "reason": "نائب (placeholder) في أمثلة سطر الأوامر والتوثيق",
+      "paths": [
+        "tools/acceptance/field-trial/pack.mjs",
+        "tools/acceptance/lib/target.mjs",
+        "tools/acceptance/run.mjs"
+      ]
+    },
+    {
+      "value": "x",
+      "reason": "مضيف اصطناعي من حرف واحد في مخدّم اختبار وبناء URL نسبي",
+      "paths": [
+        "tools/acceptance/live/sandbox-purchase.mjs",
+        "tools/acceptance/test/core-gate.test.mjs",
+        "tools/acceptance/test/invite-conflict-totp.test.mjs"
+      ]
+    },
+    {
+      "value": "h",
+      "reason": "مضيف اصطناعي من حرف واحد في اختبار مفتاح كائن tus",
+      "paths": [
+        "tools/acceptance/test/scripts.test.mjs"
+      ]
+    },
+    {
+      "value": "mock",
+      "reason": "مضيف اصطناعي لمخدّم Stripe الوهمي في اختبار الويب هوك",
+      "paths": [
+        "tools/acceptance/test/stripe-webhook.test.mjs"
+      ]
+    },
+    {
+      "value": "a.b",
+      "reason": "مضيف اصطناعي في اختبار منقّح الخرج",
+      "paths": [
+        "tools/acceptance/test/web-scrub.test.mjs"
+      ]
+    },
+    {
+      "value": "x.y",
+      "reason": "مضيف اصطناعي في اختبار منقّح الخرج",
+      "paths": [
+        "tools/acceptance/test/web-scrub.test.mjs"
+      ]
+    },
+    {
+      "value": "only-in-env.corp.zzz",
+      "reason": "مضيف اصطناعي يمثل متغير بيئة في اختبار منقّح الخرج",
+      "paths": [
+        "tools/acceptance/test/web-scrub.test.mjs"
+      ]
+    },
+    {
+      "value": "acme-staging.xyz",
+      "reason": "نطاق اصطناعي تُجرَّب عليه دالة التنقيح في اختبار منقّح الخرج",
+      "paths": [
+        "tools/acceptance/test/web-scrub.test.mjs"
+      ]
+    },
+    {
+      "value": "vendor.io",
+      "reason": "نطاق اصطناعي تُجرَّب عليه دالة التنقيح في اختبار منقّح الخرج",
+      "paths": [
+        "tools/acceptance/test/web-scrub.test.mjs"
+      ]
+    }
   ],
   "ips": [
-    "1.1.1.1"
+    {
+      "value": "1.1.1.1",
+      "reason": "عنوان DNS عام معروف يُستعمل هدفًا لفحص منع الخروج من حاوية العامل (يجب ألا يصله)",
+      "paths": [
+        ".github/workflows/acceptance.yml",
+        "infra/ai/smoke-ai.sh",
+        "infra/compose/smoke-media.sh",
+        "tools/acceptance/scripts/transcript-draft.mjs"
+      ]
+    },
+    {
+      "value": "173.245.48.0",
+      "reason": "بداية نطاق Cloudflare المنشور علنًا، عيّنة في الفحص الجاف",
+      "paths": [
+        "infra/deploy/test-dry-run.sh"
+      ]
+    },
+    {
+      "value": "103.21.244.0",
+      "reason": "بداية نطاق Cloudflare المنشور علنًا، عيّنة في الفحص الجاف",
+      "paths": [
+        "infra/deploy/test-dry-run.sh"
+      ]
+    }
   ],
-  "emails": [],
   "hashes": [
-    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    {
+      "value": "e8c8d7738275d2d9377db953aecbc242262d3620e77fbd3c1491361d9cea6ac8",
+      "reason": "مجموع تحقق إصدار tusd العام الذي تتحقق منه خطوة CI قبل الفك",
+      "paths": [
+        ".github/workflows/ios.yml"
+      ]
+    },
+    {
+      "value": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+      "reason": "بصمة أوزان نموذج علني منشور في نتيجة قياس؛ ليست بصمة مادة مراسل",
+      "paths": [
+        "docs/measurements/asr-bench/2026-10-20-fw-base.json"
+      ]
+    },
+    {
+      "value": "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da",
+      "reason": "بصمة أوزان نموذج علني منشور في نتيجة قياس؛ ليست بصمة مادة مراسل",
+      "paths": [
+        "docs/measurements/asr-bench/2026-10-20-fw-large-v3-turbo-vad.json",
+        "docs/measurements/asr-bench/2026-10-20-fw-large-v3-turbo.json",
+        "infra/ai/models.lock"
+      ]
+    },
+    {
+      "value": "69f74147e3334731bc3a76048724833325d2ec74642fb52620eda87352e3d4f1",
+      "reason": "بصمة أوزان نموذج علني منشور في نتيجة قياس؛ ليست بصمة مادة مراسل",
+      "paths": [
+        "docs/measurements/asr-bench/2026-10-20-fw-large-v3.json"
+      ]
+    },
+    {
+      "value": "9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae",
+      "reason": "بصمة أوزان نموذج علني منشور في نتيجة قياس؛ ليست بصمة مادة مراسل",
+      "paths": [
+        "docs/measurements/asr-bench/2026-10-20-fw-medium.json"
+      ]
+    },
+    {
+      "value": "3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671",
+      "reason": "بصمة أوزان نموذج علني منشور في نتيجة قياس؛ ليست بصمة مادة مراسل",
+      "paths": [
+        "docs/measurements/asr-bench/2026-10-20-fw-small.json"
+      ]
+    },
+    {
+      "value": "dcb76c6586fc06cbdac6dd21f14cfd129cc4cdd9dce19bf4ffa62e59cbe6e6d1",
+      "reason": "بصمة أوزان نموذج علني منشور في نتيجة قياس؛ ليست بصمة مادة مراسل",
+      "paths": [
+        "docs/measurements/asr-bench/2026-10-20-fw-tiny.json",
+        "infra/ai/models.lock"
+      ]
+    },
+    {
+      "value": "76ff69fcdfe78b5d0bcfc877f95035535191f073fead3cc47553dc3c68fc5b19",
+      "reason": "بصمة أوزان نموذج علني منشور في نتيجة قياس؛ ليست بصمة مادة مراسل",
+      "paths": [
+        "docs/measurements/asr-bench/2026-10-20-vox*-rt-ar.json"
+      ]
+    },
+    {
+      "value": "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+      "reason": "بصمة أوزان نموذج علني منشور في نتيجة قياس؛ ليست بصمة مادة مراسل",
+      "paths": [
+        "docs/measurements/asr-bench/2026-10-20-wcpp-large-v3-turbo-q5-0.json",
+        "docs/measurements/infra/2026-10-20-ai-worker-large-v3-turbo-q5-0-cpu.json"
+      ]
+    },
+    {
+      "value": "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb",
+      "reason": "بصمة أوزان نموذج علني منشور في نتيجة قياس؛ ليست بصمة مادة مراسل",
+      "paths": [
+        "docs/measurements/asr-bench/2026-10-20-wcpp-small-q5-1.json"
+      ]
+    },
+    {
+      "value": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+      "reason": "بصمة أوزان نموذج علني منشور في نتيجة قياس؛ ليست بصمة مادة مراسل",
+      "paths": [
+        "docs/measurements/asr-bench/2026-10-22-llm-drafts-*-cpu2.json",
+        "docs/measurements/asr-bench/2026-10-22-llm-drafts-*-cpu4.json"
+      ]
+    },
+    {
+      "value": "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d",
+      "reason": "بصمة أوزان نموذج علني منشور في نتيجة قياس؛ ليست بصمة مادة مراسل",
+      "paths": [
+        "docs/measurements/asr-bench/2026-10-22-llm-drafts-*-cpu4.json"
+      ]
+    },
+    {
+      "value": "8c5805deec8138a43036692b97e72df827b008e7698af0630498c262ef0ccaa7",
+      "reason": "بصمة ملف قفل مؤقت للحزم المقيسة في اختيار المشغّل؛ ليست بصمة مادة",
+      "paths": [
+        "docs/measurements/web/2026-10-24-player-choice.json"
+      ]
+    },
+    {
+      "value": "b0253ea6c0d3bea6b1e19e91a02acfd3b53f4467362efcb5a3e6b16c9b3a9b7e",
+      "reason": "بصمة ملف نموذج علني (LFS sha256 لدى Hugging Face) في ملف تثبيت الأوزان models.lock؛ ليست بصمة مادة",
+      "paths": [
+        "infra/ai/models.lock"
+      ]
+    },
+    {
+      "value": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
+      "reason": "بصمة ملف نموذج علني (LFS sha256 لدى Hugging Face) في ملف تثبيت الأوزان models.lock؛ ليست بصمة مادة",
+      "paths": [
+        "infra/ai/models.lock"
+      ]
+    },
+    {
+      "value": "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd",
+      "reason": "بصمة ملف نموذج علني (LFS sha256 لدى Hugging Face) في ملف تثبيت الأوزان models.lock؛ ليست بصمة مادة",
+      "paths": [
+        "infra/ai/models.lock"
+      ]
+    },
+    {
+      "value": "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1",
+      "reason": "بصمة ملف نموذج علني (LFS sha256 لدى Hugging Face) في ملف تثبيت الأوزان models.lock؛ ليست بصمة مادة",
+      "paths": [
+        "infra/ai/models.lock"
+      ]
+    },
+    {
+      "value": "a73a28cdfe1c43ccc7202fa333d1f89c202477271407ae9a7f19afa52039cac8",
+      "reason": "بصمة ملف نموذج علني (LFS sha256 لدى Hugging Face) في ملف تثبيت الأوزان models.lock؛ ليست بصمة مادة",
+      "paths": [
+        "infra/ai/models.lock"
+      ]
+    },
+    {
+      "value": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
+      "reason": "بصمة ملف نموذج علني (LFS sha256 لدى Hugging Face) في ملف تثبيت الأوزان models.lock؛ ليست بصمة مادة",
+      "paths": [
+        "infra/ai/models.lock"
+      ]
+    },
+    {
+      "value": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913",
+      "reason": "بصمة ملف نموذج علني (LFS sha256 لدى Hugging Face) في ملف تثبيت الأوزان models.lock؛ ليست بصمة مادة",
+      "paths": [
+        "infra/ai/models.lock"
+      ]
+    },
+    {
+      "value": "9dc858229fc7dd38854ae2d88d81803c0ebfcd88",
+      "reason": "بصمة مفتاح توقيع مستودع Docker العلنية المثبّتة في سكربت الإقلاع",
+      "paths": [
+        "infra/deploy/bootstrap.sh"
+      ]
+    },
+    {
+      "value": "787dc348725c0924ff58c8e379d4ef41a7e488dc2ab2990a0eba4a063856edb1",
+      "reason": "بصمة عيّنة كلام عامة من مجموعة FLEURS (CC-BY-4.0) المثبّتة بالنسخة؛ ليست مادة مراسل",
+      "paths": [
+        "tools/acceptance/fixtures/td-speech.json"
+      ]
+    },
+    {
+      "value": "716562422145f66adfe3b478da9c5d12ad53a244faad985926fca95fd4529a5b",
+      "reason": "بصمة عيّنة كلام عامة من مجموعة FLEURS (CC-BY-4.0) المثبّتة بالنسخة؛ ليست مادة مراسل",
+      "paths": [
+        "tools/acceptance/fixtures/td-speech.json"
+      ]
+    },
+    {
+      "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "reason": "SHA-256 لسلسلة فارغة: ثابت معروف يُقارَن به في اختبار حزمة التصدير",
+      "paths": [
+        "tools/acceptance/test/export-package.test.mjs"
+      ]
+    },
+    {
+      "value": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "reason": "SHA-256 لكلمة test: متجه اختبار عام في اختبار منقّح الخرج",
+      "paths": [
+        "tools/acceptance/test/web-scrub.test.mjs"
+      ]
+    },
+    {
+      "value": "deadbeefcafebabe",
+      "reason": "ست عشرية اصطناعية في اختبار منقّح الخرج",
+      "paths": [
+        "tools/acceptance/test/web-scrub.test.mjs"
+      ]
+    },
+    {
+      "value": "0123456789abcdef0123",
+      "reason": "ست عشرية اصطناعية في اختبار منقّح الخرج",
+      "paths": [
+        "tools/acceptance/test/web-scrub.test.mjs"
+      ]
+    }
   ],
   "secrets": [
-    "whsec_test_secret",
-    "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+    {
+      "sha256": "7a200eb89adb0904fd5bc5ac4cac4f9528b0ac7bf03cbc2aa1508c26b055776f",
+      "reason": "سر ويب هوك تجريبي عام (whsec_test_secret) يستعمله خادم Stripe الوهمي في اختبار القبول",
+      "paths": [
+        "tools/acceptance/test/stripe-webhook.test.mjs"
+      ]
+    },
+    {
+      "sha256": "549c9390539efcfa01d2744e82e7da34409a63dd0feaf310f7a6e12551fe7668",
+      "reason": "بذرة TOTP المعيارية المنشورة في RFC 4226 (ملحق D) لا سر فعلي؛ متجه اختبار عام",
+      "paths": [
+        "tools/acceptance/test/web-commerce.test.mjs"
+      ]
+    }
   ],
-  "hashPaths": [
-    "docs/measurements/**",
-    "tools/acceptance/fixtures/**"
+  "gps": [
+    {
+      "sha256": "23e9dabefdf58c701e1326af86c69ac7a507760f12d9ec183a29b72ccfaa389e",
+      "reason": "إحداثي اصطناعي (أرقام متسلسلة) تزرعه بذور القبول لتجربة تقنيع الموقع",
+      "paths": [
+        "tools/acceptance/lib/target.mjs",
+        "tools/acceptance/live/seed.mjs"
+      ]
+    },
+    {
+      "sha256": "6050e375a0396d98d7c3c86c2eb545447ac961682d3c58f1e3ea0f7c84479ccd",
+      "reason": "إحداثي اصطناعي (أرقام متسلسلة) تزرعه بذور القبول لتجربة تقنيع الموقع",
+      "paths": [
+        "tools/acceptance/lib/target.mjs",
+        "tools/acceptance/live/seed.mjs"
+      ]
+    },
+    {
+      "sha256": "756e970a4dc858ad50178dde326d9f9f7010ba0d1c75b88fc0b1acfd4de9ab1f",
+      "reason": "إحداثي اصطناعي مزروع عمدًا في اختبارات كاشف التسريب (PII) ليُكتشف؛ ليس موقعًا حقيقيًا",
+      "paths": [
+        "tools/acceptance/scripts/pii-leak.mjs",
+        "tools/acceptance/test/core-gate.test.mjs",
+        "tools/acceptance/test/scripts.test.mjs"
+      ]
+    },
+    {
+      "sha256": "c07c1d169e2090b335eea130f875c3de51639f236d267fee36b9862184eed197",
+      "reason": "قيمة ISO 6709 اصطناعية مزروعة عمدًا في اختبارات بيان C2PA وحزمة التصدير ليُكتشف تسريبها",
+      "paths": [
+        "tools/acceptance/lib/media-clips.mjs",
+        "tools/acceptance/test/c2pa-manifest.test.mjs",
+        "tools/acceptance/test/export-package.test.mjs"
+      ]
+    }
   ]
 }
