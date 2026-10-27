@@ -228,13 +228,13 @@ test("الإحداثيات: أزواج عشرية بأربع خانات فأكث
     "range 123.4567, 234.5678", // 4: خارج المدى
     "samples 0.1234, 0.5678, 0.9012", // 5: قائمة أعداد
     `"lat": ${LAT}, "lon": "${LON}"`, // 6: مسميات
-    "latitude: 1.23", // 7: دقة منخفضة
+    "latitude: 1.23", // 7: مسمّاة ولو بخانتين (حذف الأصفار الأخيرة — المتابعة H)
     `loc ${ISO_DEC}/`, // 8: ISO 6709 عشري
     `loc ${ISO_DM}`, // 9: ISO 6709 درجات ودقائق
     "version +12345-12345 و 2026-10-27T10:00:00+0200", // 10: ليس إحداثيًا
   ].join("\n"));
   assert.deepEqual(lk(f), [
-    [1, "gps", "decimal"], [2, "gps", "decimal"], [6, "gps", "named"], [8, "gps", "iso6709"], [9, "gps", "iso6709"],
+    [1, "gps", "decimal"], [2, "gps", "decimal"], [6, "gps", "named"], [7, "gps", "named"], [8, "gps", "iso6709"], [9, "gps", "iso6709"],
   ]);
 });
 
@@ -248,6 +248,62 @@ test("الإحداثيات الاصطناعية المعروفة تُسكَت ب
   assert.equal(scanText(`loc ${ISO_DM}`, "docs/x.md", allow).length, 0);
   // المدخل بلا sha256 مرفوض: لا إحداثي حرفي في قائمة السماح.
   assert.throws(() => parseAllow({ gps: [{ value: PAIR, reason: R }] }), /sha256/);
+});
+
+test("المتابعة H (إحداثيات): المسمّى بلا نقطتين، وحروف الاتجاه، والقيم المحذوفة أصفارها الأخيرة", () => {
+  const g1 = ["31", "5"].join("."); // 31.5: كأنها 31.5000 بعد حذف الأصفار
+  const g2 = ["34", "4"].join(".");
+  const g3 = ["33", "25"].join(".");
+  const g4 = ["44", "75"].join(".");
+  const f = scanText([
+    `fix lat ${g1} lon ${g2}`, // 1: مسمّى بلا نقطتين
+    `heading ${g1}N ${g2}E`, // 2: حرفا اتجاه متجاوران
+    `neg ${g3}S ${g4}W`, // 3: S وW (سالبتان)
+    `watt ${["12", "5"].join(".")}W`, // 4: رمز وحيد (واط) ليس إحداثيًا
+    `lat ${["95", "5"].join(".")}`, // 5: خط عرض خارج المدى
+    `dir ${["95", "5"].join(".")}N ${g2}E`, // 6: رمز N خارج المدى: لا زوج
+    `trailing lon ${["2", "5"].join(".")}`, // 7: خانتان (حذف الأصفار)
+  ].join("\n"));
+  assert.deepEqual(lk(f), [
+    [1, "gps", "named"], [2, "gps", "dir"], [3, "gps", "dir"], [7, "gps", "named"],
+  ]);
+  // القيمة المسموحة لزوج الاتجاهات «lat,lon» بإشارتي S وW، وعلى مسارها وحدها.
+  const allow = parseAllow({ gps: [{ sha256: sha(`-${g3},-${g4}`), reason: R, paths: ["docs/**"] }] });
+  assert.equal(scanText(`neg ${g3}S ${g4}W`, "docs/x.md", allow).length, 0);
+  assert.equal(scanText(`neg ${g3}S ${g4}W`, "infra/x.yml", allow).length, 1);
+});
+
+test("المتابعة H (ست عشري): البصمة بالبادئة 0x تُلتقط، والسماح يطابق الخانات دون البادئة", () => {
+  const f = scanText([
+    `contract 0x${HEX64}`, // 1: 64 خانة بلا شرط سياق
+    `fp 0x${"ab12".repeat(8)}`, // 2: 32 خانة بلا كلمة سياق: لا
+    `fingerprint 0x${"ab12".repeat(8)}`, // 3: 32 خانة بسياق
+    `num 0x${"1234567890".repeat(2)}`, // 4: عشرون خانة عشرية بلا حرف a-f: لا
+    `short 0x${"ab12".repeat(2)}`, // 5: ثماني خانات: لا
+  ].join("\n"));
+  assert.deepEqual(lk(f), [[1, "hash", "sha256"], [3, "hash", "md5"]]);
+  // السماح يُدرج بقيمة الخانات وحدها ويطابق النص ذا البادئة.
+  const allow = parseAllow({ hashes: [{ value: HEX64, reason: R }] });
+  assert.equal(scanText(`contract 0x${HEX64}`, "docs/x.md", allow).length, 0);
+});
+
+test("المتابعة H (مضيفون): مضيف روابط redis وpostgres وamqp وs3 وmongodb يُلتقط، وuserinfo لا يحجبه، والقالب يُتخطى", () => {
+  const f = scanText([
+    "REDIS_URL=redis://queue-internal:6379/0", // 1
+    "DB=postgres://user:pw@pg-box:5432/app", // 2: userinfo لا يحجب المضيف
+    "Q=amqp://guest@mq-staging:5672/v", // 3
+    "S3=s3://backup-bucket/pg", // 4
+    "M=mongodb://mongo-box:27017/db", // 5
+    "OK=postgres://user:pw@localhost:5432/db", // 6: localhost مسموح رغم userinfo
+    "T=redis://${REDIS_HOST}:6379 و s3://<bucket>/x", // 7: قوالب تُتخطى
+  ].join("\n"));
+  assert.deepEqual(lk(f), [
+    [1, "domain", "host"], [2, "domain", "host"], [3, "domain", "host"], [4, "domain", "host"], [5, "domain", "host"],
+  ]);
+  // اسم خدمة compose مسموح في موضعه وحده: خارج مسارات المدخل يُبلَّغ.
+  const scoped = parseAllow({ domains: [{ value: "redis", reason: R, paths: ["infra/compose/**"] }] });
+  assert.equal(scanText("REDIS_URL=redis://redis:6379", "infra/compose/c.yml", scoped).length, 0);
+  assert.equal(scanText("REDIS_URL=redis://redis:6379", "docs/x.md", scoped).length, 1);
 });
 
 test("الشرط 7: قائمة السماح تشترط سببًا لكل مدخل ولا تذكر القيمة في رسالة الخطأ", () => {
@@ -281,6 +337,12 @@ test("sanitize: مضيف وعنوان وبريد إلى <base> وبصمة إلى
   assert.equal(sanitize("db.corp.internal و http://stagingbox:9000/x و http://localhost:3000"), "<base> و <base>:9000/x و http://localhost:3000");
   assert.equal(sanitize(`h ${HEX128} و ${PAIR} و ${ISO_DEC}/ و lat: ${LAT}`), "h <hash> و <gps> و <gps> و lat: <gps>");
   assert.equal(sanitize(`${["AKI", "AIOSFODNN7EXAMPLE"].join("")} و Bearer ${"abc123".repeat(4)}`), "<secret> و <secret>");
+  // المتابعة H: مضيف redis بلا لاحقة، وبصمة بادئتها 0x، وزوج حروف اتجاه؛ والرمز الوحيد (واط) يبقى.
+  assert.equal(sanitize("Q=redis://queue-internal:6379/0"), "Q=<base>:6379/0");
+  assert.equal(sanitize(`c 0x${HEX64}`), "c <hash>");
+  const dl = `${["31", "5"].join(".")}N ${["34", "4"].join(".")}E`;
+  const w = ["12", "5"].join(".");
+  assert.equal(sanitize(`fix ${dl}\nlamp ${w}W`), `fix <gps>N <gps>E\nlamp ${w}W`);
 });
 
 test("الشرط 6: النطاق يشمل infra/ و.github/ وملفات .env.example وapps/<تطبيق>/store", () => {

@@ -57,7 +57,9 @@ const CCTLD = new Set("ac ad ae af ag ai al am ao aq ar as at au aw ax az ba bb 
 // «(?!-[A-Za-z0-9])»: لا يُقتطع اسم مركّب بشرطة (preview.no-device) فتُحسب لاحقته رمز بلد.
 const DOMAIN_RE = /\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,}\b(?!-[A-Za-z0-9])/g;
 // سلطة URL: المضيف (دون userinfo والمنفذ) بأي لاحقة، حتى بلا نقطة (اسم خدمة داخلي)؛ يُتخطى القالب ${...} و<...>.
-const URL_HOST_RE = /\b(?:https?|wss?):\/\/(?:[^\s/?#@"'`<>]*@)?([A-Za-z0-9][A-Za-z0-9._-]*)(?![A-Za-z0-9._${}<%*-])/g;
+// بروتوكولات المفحوص مضيفها: الويب وقواعد البيانات والطوابير والتخزين وغيرها (متابعة H: لا تقتصر على http).
+const URL_SCHEMES = "https?|wss?|redis|rediss|postgres(?:ql)?|amqps?|s3|mysql|mariadb|mongodb(?:\\+srv)?|nats";
+const URL_HOST_RE = new RegExp(`\\b(?:${URL_SCHEMES})://(?:[^\\s/?#@"'\`<>]*@)?([A-Za-z0-9][A-Za-z0-9._-]*)(?![A-Za-z0-9._\${}<%*-])`, "g");
 const IP_RE = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
 const IPV6_RE = /(?<![0-9A-Za-z_.:])(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}|(?:[0-9A-Fa-f]{1,4}:){1,7}:|(?:[0-9A-Fa-f]{1,4}:){1,6}:[0-9A-Fa-f]{1,4}|(?:[0-9A-Fa-f]{1,4}:){1,5}(?::[0-9A-Fa-f]{1,4}){1,2}|(?:[0-9A-Fa-f]{1,4}:){1,4}(?::[0-9A-Fa-f]{1,4}){1,3}|(?:[0-9A-Fa-f]{1,4}:){1,3}(?::[0-9A-Fa-f]{1,4}){1,4}|(?:[0-9A-Fa-f]{1,4}:){1,2}(?::[0-9A-Fa-f]{1,4}){1,5}|[0-9A-Fa-f]{1,4}:(?:(?::[0-9A-Fa-f]{1,4}){1,6})|:(?:(?::[0-9A-Fa-f]{1,4}){1,7}|:))(?![0-9A-Fa-f:])/g;
 const EMAIL_RE = /\b[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b/g;
@@ -76,14 +78,17 @@ const SECRET_DEFS = [
 const TOTP_RE = /(?:totp|otpauth|base32)[^\n]{0,40}?\b[A-Z2-7]{16,}\b/gi;
 const HASH_CTX_RE = /(?:sha\d*-?\d*|hash|fingerprint|بصمة|تجزئة)/i;
 // ست عشرية 16–128 خانة؛ 64 (SHA-256) و128 (SHA-512) تُعلَّمان بلا شرط سياق، وما عداهما بكلمة سياق في السطر نفسه.
-const HEX_RE = /(?<![0-9A-Za-z])[0-9A-Fa-f]{16,128}(?![0-9A-Za-z])/g;
+const HEX_RE = /(?<![0-9A-Za-z])(?:0[xX])?([0-9A-Fa-f]{16,128})(?![0-9A-Za-z])/g;
 const HEX_KIND = { 32: "md5", 40: "sha1", 64: "sha256", 128: "sha512" };
 const OCI_REF_RE = /[A-Za-z0-9][A-Za-z0-9._/-]*(?::[A-Za-z0-9._-]+)?@sha256:$/;
 const OCI_SCOPE_RE = /^(?:infra|\.github)\//;
 
 // إحداثيات: أزواج عشرية بأربع خانات كسرية فأكثر (~11 م)، وصيغة ISO 6709، وlat/lon بقيمة.
 const GPS_PAIR_RE = /(?<![\w.])(-?\d{1,3}\.\d{4,})\s*[,;]\s*(-?\d{1,3}\.\d{4,})(?![\d]|\.\d)/g;
-const GPS_NAMED_RE = /\b(?:lat(?:itude)?|lon(?:g|gitude)?|lng)\b["']?\s*[:=]\s*["']?(-?\d{1,3}\.\d{4,})/gi;
+// مسماة: lat/lon بقيمة عشرية بنقطتين أو بمسافة، ولو حُذفت أصفارها الأخيرة (متابعة H)؛ يُتحقق من المدى باسم المحور.
+const GPS_NAMED_RE = /\b(lat(?:itude)?|lon(?:g|gitude)?|lng)\b["']?\s*[:=]?\s*["']?(-?\d{1,3}\.\d+)/gi;
+// حروف الاتجاه: 31.5N 34.4E؛ لا يُحسب الرمز وحده إحداثيًا (قد تكون «12.5W» قدرة) بل زوج N/S مع E/W في السطر نفسه.
+const GPS_DIR_TOKEN_RE = /(?<![\w.])(-?\d{1,3}\.\d+)\s*°?\s*([NSEW])(?![A-Za-z0-9.])/g;
 const ISO6709_RE = /(?<![\w.])[+-]\d{2}(?:\d{2}(?:\d{2})?)?(?:\.\d+)?[+-]\d{3}(?:\d{2}(?:\d{2})?)?(?:\.\d+)?(?:[+-]\d+(?:\.\d+)?)?(?:CRS\w+)?\//g;
 const ISO6709_DEC_RE = /(?<![\w.])[+-]\d{2}\.\d{4,}[+-]\d{3}\.\d{4,}(?:[+-]\d+(?:\.\d+)?)?(?:CRS\w+)?\/?(?![\d.])/g;
 
@@ -361,7 +366,7 @@ export function scanFile(path, relPath, allow) {
   }
   // بصمة: 64 أو 128 خانة ست عشرية بلا شرط، وغيرهما (16–128) بكلمة سياق في السطر نفسه.
   for (const m of text.matchAll(HEX_RE)) {
-    const hex = m[0];
+    const hex = m[1]; // المجموعة الأولى: الخانات دون بادئة 0x إن وُجدت
     if (!hasHexLetter(hex)) continue;
     const strong = hex.length === 64 || hex.length === 128;
     // مرجع صورة حاوية مثبّتة بالبصمة (name:tag@sha256:…) في infra/ و.github/ فقط: بصمة صورة عامة لا بصمة مادة.
@@ -382,7 +387,26 @@ export function scanFile(path, relPath, allow) {
     if (!allowedValue(allow, "gps", `${m[1]},${m[2]}`, relPath)) add(m.index, "gps", "decimal");
   }
   for (const m of text.matchAll(GPS_NAMED_RE)) {
-    if (!allowedValue(allow, "gps", m[1], relPath)) add(m.index, "gps", "named");
+    const limit = m[1].toLowerCase().startsWith("lat") ? 90 : 180;
+    if (Math.abs(Number(m[2])) > limit) continue; // خارج مدى المحور: ليس إحداثيًا
+    if (!allowedValue(allow, "gps", m[2], relPath)) add(m.index, "gps", "named");
+  }
+  // زوج حروف الاتجاه في السطر: رمز N/S ورمز E/W معًا، وبمدى المحور؛ القيمة المسموحة «lat,lon» (S وW سالبتان).
+  const dirByLine = new Map();
+  for (const m of text.matchAll(GPS_DIR_TOKEN_RE)) {
+    const line = lineOf(m.index);
+    const value = Number(m[1]);
+    const dir = m[2];
+    const limit = dir === "N" || dir === "S" ? 90 : 180;
+    if (Math.abs(value) > limit) continue;
+    const signed = dir === "S" || dir === "W" ? -value : value;
+    const entry = dirByLine.get(line) ?? { index: m.index };
+    if (dir === "N" || dir === "S") entry.lat = signed; else entry.lon = signed;
+    dirByLine.set(line, entry);
+  }
+  for (const [line, e] of [...dirByLine].sort((a, b) => a[0] - b[0])) {
+    if (e.lat === undefined || e.lon === undefined) continue; // رمز وحيد ليس إحداثيًا
+    if (!allowedValue(allow, "gps", `${e.lat},${e.lon}`, relPath)) add(e.index, "gps", "dir");
   }
   for (const re of [ISO6709_RE, ISO6709_DEC_RE]) {
     for (const m of text.matchAll(re)) {
@@ -422,18 +446,25 @@ export function formatFindings(findings) {
 export function sanitize(text) {
   let out = String(text);
   for (const [, re] of SECRET_DEFS) out = out.replace(re, "<secret>");
-  return out
+  out = out
     .replace(new RegExp(TOTP_RE.source, "gi"), (m) => m.replace(/[A-Z2-7]{16,}/i, "<secret>"))
     .replace(EMAIL_RE, (m) => (isDomainToken(m.split("@")[1]) ? "<base>" : m))
-    .replace(/\b(?:https?|wss?):\/\/(?:[^\s/?#@"'`<>]*@)?([A-Za-z0-9][A-Za-z0-9._-]*)/g, (m, host) => (host.toLowerCase() === "localhost" ? m : "<base>"))
+    .replace(new RegExp(`\\b(?:${URL_SCHEMES})://(?:[^\\s/?#@"'\`<>]*@)?([A-Za-z0-9][A-Za-z0-9._-]*)`, "g"), (m, host) => (host.toLowerCase() === "localhost" ? m : "<base>"))
     .replace(DOMAIN_RE, (m, offset, whole) => (isDomainToken(m) && whole[offset - 1] !== "." && !looksLikeIdentifier(m) ? "<base>" : m))
     .replace(IP_RE, (m) => (m.split(".").every((p) => Number(p) <= 255) ? "<base>" : m))
     .replace(IPV6_RE, (m) => (/[a-fA-F]/.test(m) ? "<base>" : m))
-    .replace(HEX_RE, (m) => (hasHexLetter(m) ? "<hash>" : m))
+    .replace(HEX_RE, (m, g) => (hasHexLetter(g) ? "<hash>" : m))
     .replace(GPS_PAIR_RE, (m, a, b) => (validLatLon(a, b) ? "<gps>" : m))
-    .replace(GPS_NAMED_RE, (m, v) => m.replace(v, "<gps>"))
+    .replace(GPS_NAMED_RE, (m, name, v) => m.replace(v, "<gps>"))
     .replace(ISO6709_DEC_RE, (m) => (validIso6709(m) ? "<gps>" : m))
     .replace(ISO6709_RE, (m) => (validIso6709(m) ? "<gps>" : m));
+  // أزواج حروف الاتجاه: تُقنَّع القيمة حيث اجتمع محورا N/S وE/W ضمن المدى في السطر نفسه (منطق الفحص نفسه).
+  const inRange = (v, d) => Math.abs(Number(v)) <= (d === "N" || d === "S" ? 90 : 180);
+  return out.split("\n").map((line) => {
+    const tokens = [...line.matchAll(GPS_DIR_TOKEN_RE)].filter((t) => inRange(t[1], t[2]));
+    if (!tokens.some((t) => t[2] === "N" || t[2] === "S") || !tokens.some((t) => t[2] === "E" || t[2] === "W")) return line;
+    return line.replace(GPS_DIR_TOKEN_RE, (m, v, d) => (inRange(v, d) ? m.replace(v, "<gps>") : m));
+  }).join("\n");
 }
 
 function defaultRoots(base) {
