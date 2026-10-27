@@ -1,6 +1,12 @@
 package net.palpost.library.ui
 
 import net.palpost.library.ui.earnings.EarningsScreen
+import net.palpost.library.ui.earnings.EarningsViewModel
+import net.palpost.library.ui.earnings.ApiEarningsSource
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,6 +43,10 @@ fun AppRoot(container: AppContainer, openRequest: String? = null, onOpenHandled:
             else -> LoginScreen(container, sessionRevoked = false)
         }
         is AuthState.SignedIn -> {
+            // يُنشأ عند استعادة الجلسة أيضًا، قبل فتح شاشة الأرباح، حتى يُمسح المحفوظ عند الخروج من الرئيسية.
+            val earnings: EarningsViewModel = viewModel(key = "earnings:${state.userId}", factory = viewModelFactory {
+                initializer { EarningsViewModel(ApiEarningsSource(container.authApi, container.earningsApi), createSavedStateHandle(), container.auth.state, state.userId) }
+            })
             var screen by rememberSaveable { mutableStateOf(Screen.Home) }
             // Arguments of the reporter flow (#387): the receipt shown on A3, the draft or material A1 opens with.
             var receiptTaskId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -76,7 +86,7 @@ fun AppRoot(container: AppContainer, openRequest: String? = null, onOpenHandled:
                     onReceipt = { receipt(it, Screen.Materials) }, onReplacement = { newMaterial(material = it) },
                 )
                 Screen.Notifications -> NotificationsScreen(container, onBack = { screen = Screen.Home })
-                Screen.Earnings -> EarningsScreen(container, userId = state.userId, onBack = { screen = Screen.Home })
+                Screen.Earnings -> EarningsScreen(earnings, onBack = { screen = Screen.Home })
                 Screen.Review -> ReviewScreen(container, onBack = { screen = Screen.Home })
                 Screen.Setup -> TaskKillerSetupScreen(container, onDone = { screen = Screen.Home }, onBack = { screen = Screen.Home })
                 Screen.SetupThenNewMaterial -> TaskKillerSetupScreen(container, onDone = { screen = Screen.NewMaterial }, onBack = { screen = Screen.Home })

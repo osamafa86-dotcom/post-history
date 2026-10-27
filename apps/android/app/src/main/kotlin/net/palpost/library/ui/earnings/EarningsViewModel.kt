@@ -3,17 +3,20 @@ package net.palpost.library.ui.earnings
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import net.palpost.library.api.apis.AuthApi
 import net.palpost.library.api.apis.EarningsApi
 import net.palpost.library.api.infrastructure.ClientException
 import net.palpost.library.api.models.*
 import net.palpost.library.core.net.IdempotencyKey
+import net.palpost.library.core.auth.AuthState
 import java.math.BigDecimal
 import java.text.NumberFormat
 import java.util.Locale
@@ -58,7 +61,12 @@ class ApiEarningsSource(private val auth: AuthApi, private val api: EarningsApi)
 }
 
 /** لا حساب للرصيد محليًا؛ يبقى الخادم حكم الدور والحد والمتاح. محاولة الشبكة الملتبسة تحتفظ بجسمها ومفتاحها. */
-class EarningsViewModel(private val source: EarningsSource, private val saved: SavedStateHandle) : ViewModel() {
+class EarningsViewModel(
+    private val source: EarningsSource,
+    private val saved: SavedStateHandle,
+    private val session: StateFlow<AuthState>,
+    private val userId: String,
+) : ViewModel() {
     private val _state = MutableStateFlow(EarningsUiState(pendingAttempt = saved.get<String>("payout_key") != null))
     val state: StateFlow<EarningsUiState> = _state
     private var entriesJob: Job? = null
@@ -68,7 +76,29 @@ class EarningsViewModel(private val source: EarningsSource, private val saved: S
     private var entryGeneration = 0
     private var payoutGeneration = 0
 
+    init {
+        // يبقى المراقب حيًا عند مغادرة الشاشة؛ الخروج من الحساب يمحو المحاولة حتى من الشاشة الرئيسية.
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            session.collect { if (!hasSession()) endSession() }
+        }
+    }
+
+    private fun hasSession() = (session.value as? AuthState.SignedIn)?.userId == userId
+
+    private fun checkSession(): Boolean {
+        if (hasSession()) return true
+        endSession()
+        return false
+    }
+
+    private fun endSession() {
+        leave()
+        clearAttempt()
+        _state.value = EarningsUiState(loading = false)
+    }
+
     fun refresh() {
+        if (!checkSession()) return
         if (_state.value.requestBusy || refreshJob?.isActive == true) return
         entriesJob?.cancel(); payoutsJob?.cancel(); entryGeneration++; payoutGeneration++
         refreshJob = viewModelScope.launch {
@@ -85,6 +115,7 @@ class EarningsViewModel(private val source: EarningsSource, private val saved: S
     }
 
     fun filter(currency: Currency?, state: PayableState?) {
+        if (!checkSession()) return
         if (!_state.value.allowed || (_state.value.currency == currency && _state.value.payableState == state)) return
         entriesJob?.cancel(); entryGeneration++
         _state.update { it.copy(currency = currency, payableState = state, entriesBusy = false, entries = emptyList(), entryCursor = null, failure = null) }
@@ -92,6 +123,7 @@ class EarningsViewModel(private val source: EarningsSource, private val saved: S
     }
 
     fun loadEntries(reset: Boolean = false) {
+        if (!checkSession()) return
         val s = _state.value
         if (!s.allowed || s.entriesBusy || (!reset && s.entryCursor == null)) return
         val generation = ++entryGeneration
@@ -106,6 +138,7 @@ class EarningsViewModel(private val source: EarningsSource, private val saved: S
     }
 
     fun loadPayouts(reset: Boolean = false) {
+        if (!checkSession()) return
         val s = _state.value
         if (!s.allowed || s.payoutsBusy || (!reset && s.payoutCursor == null)) return
         val generation = ++payoutGeneration
@@ -120,6 +153,7 @@ class EarningsViewModel(private val source: EarningsSource, private val saved: S
     }
 
     fun request(balance: EarningsBalance) {
+        if (!checkSession()) return
         val s = _state.value
         if (!s.allowed || s.loading || s.requestBusy || s.pendingAttempt || s.requestNeedsRefresh || !canRequest(balance)) return
         // الجسم والمفتاح يُحفظان مع حالة الشاشة، قبل بدء الطلب، لإعادة المحاولة بعد إعادة الإنشاء أيضًا.
@@ -131,6 +165,7 @@ class EarningsViewModel(private val source: EarningsSource, private val saved: S
     }
 
     fun retryRequest() {
+        if (!checkSession()) return
         val s = _state.value
         val key = saved.get<String>("payout_key") ?: return
         val minor = saved.get<Long>("payout_amount") ?: return
