@@ -1,6 +1,13 @@
 name: acceptance
 
 on:
+  workflow_dispatch:
+    inputs:
+      measure:
+        description: "تسجيل قياس الاختبارات السبعة على main ببيانات اصطناعية"
+        type: boolean
+        required: true
+        default: true
   pull_request:
     paths-ignore: ['docs/security/**', 'docs/ops/**']
 
@@ -8,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -21,6 +28,7 @@ env:
 
 jobs:
   changes:
+    if: github.event_name == 'pull_request' || (inputs.measure && github.ref == 'refs/heads/main')
     name: changes (which parts of the repository this change touches)
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -39,6 +47,7 @@ jobs:
           media_e2e='^(workers/media/|workers/ai/|apps/api/|tools/acceptance/|infra/compose/|infra/ai/|infra/minio/|\.github/(workflows/acceptance\.yml|scripts/))'
 
   acceptance:
+    if: github.event_name == 'pull_request'
     name: acceptance (unit tests, results gate, conformance, upload-resume vs tusd)
     runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     timeout-minutes: 20
@@ -92,7 +101,7 @@ jobs:
     runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     timeout-minutes: 25
     needs: changes
-    if: needs.changes.outputs.live == 'true'
+    if: needs.changes.outputs.live == 'true' && (github.event_name == 'pull_request' || (inputs.measure && github.ref == 'refs/heads/main'))
     services:
       postgres:
         image: postgres:16-alpine
@@ -144,6 +153,7 @@ jobs:
         working-directory: tools/acceptance
         run: npm ci
       - name: Web client result on the shared form cases (the file the dynamic-fields gate judges)
+        if: github.event_name == 'pull_request'
         working-directory: apps/web
         run: |
           npm ci --no-audit --no-fund
@@ -152,14 +162,28 @@ jobs:
         working-directory: tools/acceptance
         env:
           DYN_PLATFORM_FILES: ${{ github.workspace }}/apps/web/.artifacts/web.json
+        if: github.event_name == 'pull_request'
         run: |
           set -o pipefail
           node live/run.mjs --dry-run 2>&1 | tee "$RUNNER_TEMP/live.log"
+      - name: قياس اختبارات القبول الحية الخمسة
+        if: github.event_name == 'workflow_dispatch' && inputs.measure
+        working-directory: tools/acceptance
+        env:
+          ACCEPTANCE_RESULTS_DIR: ${{ github.workspace }}/docs/measurements/acceptance/manual-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -o pipefail
+          node live/run.mjs --only=admin-quorum,optimistic-concurrency,reporter-identity-access,reservation-conflict,notification-delivery 2>&1 | node --input-type=module -e '
+            import { scrub } from "./scripts/web-gap-helpers.mjs";
+            let log = ""; for await (const chunk of process.stdin) log += chunk;
+            process.stdout.write(scrub(log));'
       - name: dynamic-fields gate judged the web client and the live server together (ios and android join when their files are handed over)
+        if: github.event_name == 'pull_request'
         run: |
           grep -E "^reference 57/57; platforms: web 57/57$" "$RUNNER_TEMP/live.log"
           grep -E "^dynamic-fields +partial$" "$RUNNER_TEMP/live.log"
       - name: upload-resume against tusd on S3 with downloads disabled (hash read from MinIO, as in compose)
+        if: github.event_name == 'pull_request'
         working-directory: tools/acceptance
         env:
           UPLOAD_ENDPOINT: http://127.0.0.1:8081/files/
@@ -177,12 +201,46 @@ jobs:
           for i in $(seq 1 30); do curl -fsS -X OPTIONS http://127.0.0.1:8081/files/ -H 'Tus-Resumable: 1.0.0' -o /dev/null && break; sleep 1; done
           node run.mjs upload-resume --dry-run
 
+      - name: تنقية نتائج القياس وتصديقها والتحقق من اكتمال النطاق
+        id: measured
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.measure
+        env:
+          MEASURE_DIR: ${{ github.workspace }}/docs/measurements/acceptance/manual-${{ github.run_id }}-${{ github.run_attempt }}
+          EXPECTED_TESTS: admin-quorum,optimistic-concurrency,reporter-identity-access,reservation-conflict,notification-delivery
+        run: |
+          node --input-type=module <<'JS'
+          import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { scrub } from './tools/acceptance/scripts/web-gap-helpers.mjs';
+          import { checkResult } from './tools/acceptance/validate-results.mjs';
+          const dir = process.env.MEASURE_DIR;
+          const expected = process.env.EXPECTED_TESTS.split(',').sort();
+          const names = [];
+          const clean = value => typeof value === 'string' ? scrub(value) : Array.isArray(value) ? value.map(clean) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, clean(item)])) : value;
+          for (const file of readdirSync(dir)) {
+            if (!file.endsWith('.json')) throw new Error('unexpected measurement file');
+            const path = join(dir, file), doc = clean(JSON.parse(readFileSync(path, 'utf8')));
+            if (checkResult(path, doc).length) throw new Error('measurement validation failed');
+            names.push(doc.test_name);
+            writeFileSync(path, JSON.stringify(doc, null, 2) + '\n');
+          }
+          if (JSON.stringify(names.sort()) !== JSON.stringify(expected)) throw new Error('missing or unexpected measurements');
+          console.log(`${names.length} validated measurement files; original numeric values and verdicts retained`);
+          JS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && github.event_name == 'workflow_dispatch' && steps.measured.outcome == 'success'
+        with:
+          name: acceptance-measure-live
+          path: docs/measurements/acceptance/manual-${{ github.run_id }}-${{ github.run_attempt }}/*.json
+          if-no-files-found: error
+          retention-days: 14
+
   media-e2e:
     name: "media e2e (full compose stack: upload, worker, proxy, hostile files)"
     runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
     timeout-minutes: 75  # was 40 and cancelled runs without a failing test (#295, #333); the ai profile fetches the production weights (1.6 GB) and transcribes six clips. Split planned, target under 30
     needs: changes
-    if: needs.changes.outputs.media_e2e == 'true'
+    if: needs.changes.outputs.media_e2e == 'true' && (github.event_name == 'pull_request' || (inputs.measure && github.ref == 'refs/heads/main'))
     permissions:
       contents: read
       actions: read  # the step timings read this run's own job steps
@@ -200,6 +258,7 @@ jobs:
       - name: Start the stack (API from source, tusd, MinIO, Redis, Postgres, media worker; the ai worker runs in the ai-e2e job)
         run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media up -d --wait --build
       - name: Media pipeline end to end (results are printed and kept as an artifact; nothing is written to docs/measurements)
+        if: github.event_name == 'pull_request'
         run: |
           set -a; . infra/compose/.env; set +a
           mkdir -p "$RUNNER_TEMP/out"
@@ -213,6 +272,7 @@ jobs:
           node tools/acceptance/scripts/media-e2e.mjs --out-dir="$RUNNER_TEMP/out"
       # The export package built by the worker's own code (workers/media/src, the runner's FFmpeg) from synthetic phone and HDR clips.
       - name: "cut-export (editing package: streams, rotation, HDR tags, cut points, sequences, no revealing tags; always partial)"
+        if: github.event_name == 'pull_request'
         run: node tools/acceptance/scripts/cut-export.mjs --dry-run
       # ADR 0060: the condition for switching MEDIA_ENABLE_C2PA on. c2patool is the one the worker image carries (built there from crates.io,
       # pinned), run through `docker run` on the image compose just built; the signing code is workers/media/src, the clips are made on the
@@ -228,11 +288,24 @@ jobs:
           exec docker run --rm --network none -u "\$(id -u):\$(id -g)" -v "$RUNNER_TEMP/c2pa:$RUNNER_TEMP/c2pa" -w "\$PWD" --entrypoint c2patool $img "\$@"
           EOF
           chmod +x "$RUNNER_TEMP/c2patool"
-          TMPDIR="$RUNNER_TEMP/c2pa" C2PATOOL_BIN="$RUNNER_TEMP/c2patool" node tools/acceptance/scripts/c2pa-manifest.mjs --dry-run
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            TMPDIR="$RUNNER_TEMP/c2pa" C2PATOOL_BIN="$RUNNER_TEMP/c2patool" node tools/acceptance/scripts/c2pa-manifest.mjs --dry-run
+          fi
       # The buyer delivery package (original, audio, stills, all C2PA-signed as jobs.py does) judged from outside with the same whitelist and the
       # same image c2patool (the wrapper above): no planted value, position or raw original digest in any file of the package. Always `partial`.
       - name: "delivery-leak (buyer delivery package: files signed inside the closed list, nothing revealing anywhere in it; always partial)"
-        run: TMPDIR="$RUNNER_TEMP/c2pa" C2PATOOL_BIN="$RUNNER_TEMP/c2patool" node tools/acceptance/scripts/delivery-leak.mjs --dry-run
+        env:
+          ACCEPTANCE_RESULTS_DIR: ${{ github.workspace }}/docs/measurements/acceptance/manual-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            TMPDIR="$RUNNER_TEMP/c2pa" C2PATOOL_BIN="$RUNNER_TEMP/c2patool" node tools/acceptance/scripts/delivery-leak.mjs --dry-run
+          else
+            set -o pipefail
+            TMPDIR="$RUNNER_TEMP/c2pa" C2PATOOL_BIN="$RUNNER_TEMP/c2patool" node tools/acceptance/scripts/delivery-leak.mjs 2>&1 | node --input-type=module -e '
+              import { scrub } from "./tools/acceptance/scripts/web-gap-helpers.mjs";
+              let log = ""; for await (const chunk of process.stdin) log += chunk;
+              process.stdout.write(scrub(log));'
+          fi
       # The link lives 10 minutes by contract: waiting for it to expire (DL_WAIT_EXPIRY=1) is left out of the PR run, so the result is
       # `partial` for that reason alone; run the script by hand with DL_WAIT_EXPIRY=1 for the full check.
       - name: download-url (core gate; signed link for verified derivatives, original is 404)
@@ -243,8 +316,17 @@ jobs:
           export DL_API_URL="http://127.0.0.1:$API_PORT/v1" DL_TUS_URL="http://127.0.0.1:$TUSD_PORT/files/"
           export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
           export DL_TOKENS="$(node -e "import('./live/seed.mjs').then(async (m) => { const s = await m.seed({ databaseUrl: process.env.DATABASE_URL, apiUrl: process.env.DL_API_URL }); console.log(JSON.stringify({ reporter: s.allTokens.reporter, reporter_b: s.allTokens.reporter_b })); })")"
-          ACCEPTANCE_RESULTS_DIR="$RUNNER_TEMP/out" node scripts/download-url.mjs
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            ACCEPTANCE_RESULTS_DIR="$RUNNER_TEMP/out" node scripts/download-url.mjs
+          else
+            set -o pipefail
+            ACCEPTANCE_RESULTS_DIR="$GITHUB_WORKSPACE/docs/measurements/acceptance/manual-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" node scripts/download-url.mjs 2>&1 | node --input-type=module -e '
+              import { scrub } from "./scripts/web-gap-helpers.mjs";
+              let log = ""; for await (const chunk of process.stdin) log += chunk;
+              process.stdout.write(scrub(log));'
+          fi
       - name: Remote session revocation (SEC-01; time to the first refusal on the API and on the upload path)
+        if: github.event_name == 'pull_request'
         run: |
           set -a; . infra/compose/.env; set +a
           export REVOKE_API_URL="http://127.0.0.1:$API_PORT/v1" REVOKE_TUS_URL="http://127.0.0.1:$TUSD_PORT/files/"
@@ -252,6 +334,7 @@ jobs:
           export REVOKE_ENV_LABEL="compose on a GitHub-hosted runner: api + tusd + minio + redis + postgres"
           node tools/acceptance/scripts/session-revocation.mjs --out-dir="$RUNNER_TEMP/out"
       - name: Field-trial pack rehearsal (the same command a trial host gets, against this stack)
+        if: github.event_name == 'pull_request'
         run: |
           set -a; . infra/compose/.env; set +a
           export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB"
@@ -259,18 +342,18 @@ jobs:
           export FT_ACCOUNTS FT_TUS_URL="http://127.0.0.1:$TUSD_PORT/files/"
           node tools/acceptance/run.mjs --target "http://127.0.0.1:$API_PORT" --confirm --out-dir="$RUNNER_TEMP/pack"
       - name: Step timings of this job (measurement file next to the other results)
-        if: always()
+        if: always() && github.event_name == 'pull_request'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: ACCEPTANCE_RESULTS_DIR="$RUNNER_TEMP/out" node tools/acceptance/ci/step-timings.mjs || true
       - name: Print the pack report
-        if: always()
+        if: always() && github.event_name == 'pull_request'
         run: '[ -f "$RUNNER_TEMP/pack/REPORT.md" ] && head -60 "$RUNNER_TEMP/pack/REPORT.md" || true'
       - name: Print the result files (committed to docs/measurements/acceptance/ as written here)
-        if: always()
+        if: always() && github.event_name == 'pull_request'
         run: for f in "$RUNNER_TEMP"/out/*.json; do [ -f "$f" ] && { echo "== $(basename "$f")"; cat "$f"; }; done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+        if: always() && github.event_name == 'pull_request'
         with:
           name: media-e2e-results
           path: |
@@ -279,8 +362,41 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
       - name: Stack logs on failure
-        if: failure()
+        if: failure() && github.event_name == 'pull_request'
         run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media --profile ai logs --no-color --timestamps --tail 3000 api media-worker tusd ai-worker
+      - name: تنقية نتائج القياس وتصديقها والتحقق من اكتمال النطاق
+        id: measured
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.measure
+        env:
+          MEASURE_DIR: ${{ github.workspace }}/docs/measurements/acceptance/manual-${{ github.run_id }}-${{ github.run_attempt }}
+          EXPECTED_TESTS: delivery-leak,download-url
+        run: |
+          node --input-type=module <<'JS'
+          import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { scrub } from './tools/acceptance/scripts/web-gap-helpers.mjs';
+          import { checkResult } from './tools/acceptance/validate-results.mjs';
+          const dir = process.env.MEASURE_DIR;
+          const expected = process.env.EXPECTED_TESTS.split(',').sort();
+          const names = [];
+          const clean = value => typeof value === 'string' ? scrub(value) : Array.isArray(value) ? value.map(clean) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, clean(item)])) : value;
+          for (const file of readdirSync(dir)) {
+            if (!file.endsWith('.json')) throw new Error('unexpected measurement file');
+            const path = join(dir, file), doc = clean(JSON.parse(readFileSync(path, 'utf8')));
+            if (checkResult(path, doc).length) throw new Error('measurement validation failed');
+            names.push(doc.test_name);
+            writeFileSync(path, JSON.stringify(doc, null, 2) + '\n');
+          }
+          if (JSON.stringify(names.sort()) !== JSON.stringify(expected)) throw new Error('missing or unexpected measurements');
+          console.log(`${names.length} validated measurement files; original numeric values and verdicts retained`);
+          JS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && github.event_name == 'workflow_dispatch' && steps.measured.outcome == 'success'
+        with:
+          name: acceptance-measure-media
+          path: docs/measurements/acceptance/manual-${{ github.run_id }}-${{ github.run_attempt }}/*.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Tear down
         if: always()
         run: docker compose -f infra/compose/docker-compose.yml --profile api --profile media --profile ai down -v
@@ -293,7 +409,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60  # a healthy run is about 14 minutes; the weights (1.6 GB) and the speech archive (243 MB) download here
     needs: changes
-    if: needs.changes.outputs.media_e2e == 'true'
+    if: github.event_name == 'pull_request' && needs.changes.outputs.media_e2e == 'true'
     permissions:
       contents: read
       actions: read
