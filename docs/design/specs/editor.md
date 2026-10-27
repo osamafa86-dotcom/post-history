@@ -7,7 +7,7 @@
 
 | البند | القيمة |
 | --- | --- |
-| الخطوط | `next/font`: Noto Sans Arabic (ar)، Inter (en)، IBM Plex Mono للإيصالات والأزمنة؛ `font-size` أساس 16px؛ لا نص أقل من 12px، الجداول 14px |
+| الخطوط | `@font-face` من `public/fonts`: Vazirmatn (ar وen)، Reem Kufi للعرض، IBM Plex Mono للإيصالات والأزمنة؛ `font-size` أساس 16px؛ لا نص أقل من 12px، الجداول 14px |
 | الشبكة | `size.content-max` 1440؛ هوامش 32 (≥1200)، 24 (768–1199)، 16 (<768)؛ الشريط الجانبي `size.sidebar-w` 240 يختفي دون 1000 ويصبح قائمة علوية |
 | المكوّنات | `Button`, `Form Field`, `State Badge`, `Priority Badge`, `Material Card/Inbox row`, `Alert/Inline|Toast`, `Table Row`, `Player` — كل خاصية بصرية من الرموز |
 | التركيز | `outline: 3px solid var(--vl-color-border-focus); outline-offset: 2px` على كل عنصر تفاعلي؛ لا `outline: none` |

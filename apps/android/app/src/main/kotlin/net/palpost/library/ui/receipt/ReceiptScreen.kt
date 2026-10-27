@@ -302,7 +302,7 @@ private suspend fun shareReceipt(context: Context, content: ReceiptModel.ShareCo
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(out)
         canvas.drawColor(palette.background)
-        val text = runCatching { androidx.core.content.res.ResourcesCompat.getFont(context, if (context.resources.configuration.locales[0]?.language == "en") R.font.inter_500 else R.font.noto_sans_arabic_500) }.getOrNull()
+        val text = runCatching { androidx.core.content.res.ResourcesCompat.getFont(context, R.font.vazirmatn_500) }.getOrNull()
         val mono = runCatching { androidx.core.content.res.ResourcesCompat.getFont(context, R.font.ibm_plex_mono_500) }.getOrNull()
         val card = android.graphics.RectF(80f, 380f, w - 80f, 970f)
         val fill = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = palette.card }

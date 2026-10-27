@@ -8,7 +8,7 @@
 
 | البند | القيمة | السبب |
 | --- | --- | --- |
-| الخطوط | AR: Noto Sans Arabic؛ EN: Inter؛ أرقام/إيصالات: IBM Plex Mono (`font.family.*`) | ترخيص مفتوح، متاح على المنصتين عبر Google Fonts / حزمة الموارد |
+| الخطوط | AR وEN: Vazirmatn؛ العرض: Reem Kufi؛ أرقام/إيصالات: IBM Plex Mono (`font.family.*`) | ترخيص مفتوح، متاح على المنصتين عبر Google Fonts / حزمة الموارد |
 | الثيم | `color.semantic.*` بوضعين؛ أندرويد: `lightColorScheme/darkColorScheme` من الرموز؛ iOS: `Color` assets بوضعين | الوضع الداكن للميدان ليلًا (تدقيق 9) |
 | هدف اللمس | ≥ `size.touch-min` (44) للأزرار والصفوف؛ الزر الأساسي ملء العرض ارتفاعه `size.control-md` | ضغط ميداني وإبهام واحد |
 | الحشو | شاشة: `space.5` (16) جانبيًا؛ بين البطاقات `space.4` (12) أو `space.5`؛ داخل البطاقة `space.5` وفجوة `space.3`/`space.4` | قاعدة 4/8/16 |

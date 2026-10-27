@@ -30,6 +30,8 @@ extension Color {
         static let bgDisabled = Color("vl/bg-disabled")
         /// `bg/media`
         static let bgMedia = Color("vl/bg-media")
+        /// `bg/slate`
+        static let bgSlate = Color("vl/bg-slate")
         /// `text/primary`
         static let textPrimary = Color("vl/text-primary")
         /// `text/secondary`
@@ -48,6 +50,8 @@ extension Color {
         static let textDisabled = Color("vl/text-disabled")
         /// `text/on-media`
         static let textOnMedia = Color("vl/text-on-media")
+        /// `text/on-slate`
+        static let textOnSlate = Color("vl/text-on-slate")
         /// `border/default`
         static let borderDefault = Color("vl/border-default")
         /// `border/strong`
@@ -58,6 +62,8 @@ extension Color {
         static let borderDanger = Color("vl/border-danger")
         /// `border/focus`
         static let borderFocus = Color("vl/border-focus")
+        /// `border/on-slate`
+        static let borderOnSlate = Color("vl/border-on-slate")
         /// `icon/default`
         static let iconDefault = Color("vl/icon-default")
         /// `icon/muted`
@@ -114,6 +120,16 @@ extension Color {
         static let trackRightsAccent = Color("vl/track-rights-accent")
         /// `track/rights/subtle`
         static let trackRightsSubtle = Color("vl/track-rights-subtle")
+        /// `track/state/done`
+        static let trackStateDone = Color("vl/track-state-done")
+        /// `track/state/progress`
+        static let trackStateProgress = Color("vl/track-state-progress")
+        /// `track/state/attention`
+        static let trackStateAttention = Color("vl/track-state-attention")
+        /// `track/state/blocked`
+        static let trackStateBlocked = Color("vl/track-state-blocked")
+        /// `track/state/empty`
+        static let trackStateEmpty = Color("vl/track-state-empty")
     }
 }
 
@@ -222,30 +238,31 @@ enum VL {
         static func linear(_ duration: Double) -> Animation { .linear(duration: duration) }
     }
     enum FontFamily {
-        static let arabic = "Noto Sans Arabic"
-        static let latin = "Inter"
+        static let arabic = "Vazirmatn"
+        static let display = "Reem Kufi"
+        static let latin = "Vazirmatn"
         static let mono = "IBM Plex Mono"
     }
 }
 
-/// أدوار الخط: العائلة (نص عربي/لاتيني أو أحادي)، والحجم والسطر والوزن بالنقاط.
+/// أدوار الخط: العائلة (نص، أو عرض للعناوين الكبيرة، أو أحادي)، والحجم والسطر والوزن بالنقاط.
 struct VLTextRole: Sendable {
-    enum Family: Sendable { case text, mono }
+    enum Family: Sendable { case text, display, mono }
     let family: Family
     let size: CGFloat
     let lineHeight: CGFloat
     let weight: Int
 
     /// `font.role.display/xl`
-    static let displayXl = VLTextRole(family: .text, size: 64, lineHeight: 80, weight: 700)
+    static let displayXl = VLTextRole(family: .display, size: 64, lineHeight: 76, weight: 700)
     /// `font.role.display/lg`
-    static let displayLg = VLTextRole(family: .text, size: 48, lineHeight: 60, weight: 700)
+    static let displayLg = VLTextRole(family: .display, size: 48, lineHeight: 58, weight: 700)
     /// `font.role.display/md`
-    static let displayMd = VLTextRole(family: .text, size: 40, lineHeight: 52, weight: 700)
+    static let displayMd = VLTextRole(family: .display, size: 40, lineHeight: 48, weight: 700)
     /// `font.role.heading/h1`
-    static let headingH1 = VLTextRole(family: .text, size: 32, lineHeight: 44, weight: 700)
+    static let headingH1 = VLTextRole(family: .display, size: 32, lineHeight: 40, weight: 700)
     /// `font.role.heading/h2`
-    static let headingH2 = VLTextRole(family: .text, size: 24, lineHeight: 34, weight: 600)
+    static let headingH2 = VLTextRole(family: .text, size: 24, lineHeight: 34, weight: 700)
     /// `font.role.heading/h3`
     static let headingH3 = VLTextRole(family: .text, size: 20, lineHeight: 30, weight: 600)
     /// `font.role.heading/h4`
@@ -265,15 +282,15 @@ struct VLTextRole: Sendable {
     /// `font.role.caption/md`
     static let captionMd = VLTextRole(family: .text, size: 12, lineHeight: 18, weight: 400)
     /// `font.role.overline/md`
-    static let overlineMd = VLTextRole(family: .text, size: 12, lineHeight: 16, weight: 600)
+    static let overlineMd = VLTextRole(family: .text, size: 12, lineHeight: 16, weight: 500)
     /// `font.role.board/number`
-    static let boardNumber = VLTextRole(family: .text, size: 96, lineHeight: 104, weight: 700)
+    static let boardNumber = VLTextRole(family: .display, size: 96, lineHeight: 104, weight: 700)
     /// `font.role.board/title`
-    static let boardTitle = VLTextRole(family: .text, size: 28, lineHeight: 36, weight: 700)
+    static let boardTitle = VLTextRole(family: .display, size: 32, lineHeight: 40, weight: 700)
     /// `font.role.board/card`
-    static let boardCard = VLTextRole(family: .text, size: 22, lineHeight: 30, weight: 600)
+    static let boardCard = VLTextRole(family: .text, size: 32, lineHeight: 40, weight: 600)
     /// `font.role.board/meta`
-    static let boardMeta = VLTextRole(family: .text, size: 18, lineHeight: 24, weight: 500)
+    static let boardMeta = VLTextRole(family: .text, size: 24, lineHeight: 32, weight: 500)
     /// `font.role.mono/md`
     static let monoMd = VLTextRole(family: .mono, size: 14, lineHeight: 20, weight: 400)
     /// `font.role.mono/lg`

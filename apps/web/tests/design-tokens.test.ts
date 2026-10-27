@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { tokensCss } from "../scripts/design-tokens.mjs";
 
@@ -40,6 +40,19 @@ describe("design tokens are the web's single source (#385)", () => {
       for (const [name, value] of Object.entries(segments)) for (const bg of ["bg/surface", "bg/canvas"]) expect(contrast(value, color(bg, mode)), `${mode} ${name} on ${bg}`).toBeGreaterThanOrEqual(3);
       expect(contrast(color("text/on-brand", mode), hex("bg/danger", mode)), `${mode} hatch on blocked`).toBeGreaterThanOrEqual(3);
     }
+  });
+  it("takes fonts from the Figma file and hosts every face it names, with its OFL licence beside it (ADR 0079)", () => {
+    const family = (key: string) => tokens.font.family[key].$value;
+    expect([family("arabic"), family("latin"), family("display"), family("mono")]).toEqual(["Vazirmatn", "Vazirmatn", "Reem Kufi", "IBM Plex Mono"]);
+    expect(tokens.font.role["display/xl"].$value.fontFamily).toBe("{font.family.display}");
+    expect(tokens.font.role["body/md"].$value.fontFamily).not.toContain("display");
+    const files = [...generated.matchAll(/url\("\/fonts\/([^"]+)"\)/g)].map(m => m[1]);
+    expect(files.sort()).toEqual(["ReemKufi-Bold.ttf", "Vazirmatn-Bold.ttf", "Vazirmatn-Medium.ttf", "Vazirmatn-Regular.ttf", "Vazirmatn-SemiBold.ttf"]);
+    for (const file of files) {
+      const bytes = readFileSync(new URL(`../public/fonts/${file}`, import.meta.url));
+      expect(bytes.readUInt32BE(0), `${file} is a static TrueType font`).toBe(0x00010000);
+    }
+    for (const licence of ["OFL-Vazirmatn.txt", "OFL-ReemKufi.txt"]) expect(existsSync(new URL(`../public/fonts/${licence}`, import.meta.url)), licence).toBe(true);
   });
   it("meets WCAG 2.1 AA for text in both modes", () => {
     const pairs: [string, string][] = [["text/primary", "bg/surface"], ["text/primary", "bg/canvas"], ["text/secondary", "bg/surface"], ["text/secondary", "bg/canvas"], ["text/muted", "bg/surface"], ["text/brand", "bg/surface"], ["text/danger", "bg/surface"],

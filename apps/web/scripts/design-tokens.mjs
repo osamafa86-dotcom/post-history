@@ -21,6 +21,9 @@ function resolver(tokens) {
   return resolve;
 }
 
+/** ملفات الخطوط الساكنة (TTF بترخيص OFL) في public/fonts بجانب نصوص تراخيصها؛ الاسم هو قيمة font.family في الرموز. */
+const fontFiles = { "Vazirmatn": [[400, "Regular"], [500, "Medium"], [600, "SemiBold"], [700, "Bold"]], "Reem Kufi": [[700, "Bold"]] };
+
 export function tokensCss(tokens) {
   const resolve = resolver(tokens), light = [], dark = [];
   for (const [key, node] of Object.entries(tokens.color.semantic)) {
@@ -33,8 +36,9 @@ export function tokensCss(tokens) {
   const fixed = [];
   for (const group of ["space", "radius", "size", "border"]) for (const [key, node] of Object.entries(tokens[group])) if (!key.startsWith("$")) fixed.push(`--vl-${group}-${name([key])}: ${node.$value};`);
   const families = Object.fromEntries(Object.entries(tokens.font.family).filter(([k]) => !k.startsWith("$")).map(([k, n]) => [k, n.$value]));
-  // الخطوط غير مضمَّنة بعد (CSP font-src 'self')؛ البدائل من النظام حتى تُستضاف ملفاتها محليًا.
-  fixed.push(`--vl-font-family-sans: "${families.arabic}", "${families.latin}", Tahoma, Arial, sans-serif;`, `--vl-font-family-latin: "${families.latin}", Arial, sans-serif;`, `--vl-font-family-mono: "${families.mono}", ui-monospace, monospace;`);
+  // الخطوط مستضافة محليًا في public/fonts (CSP font-src 'self')؛ البدائل من النظام إن تأخر التحميل. المرجع ملف Figma (ADR 0079).
+  const stack = (...names) => [...new Set(names)].map(n => (/^(sans-serif|monospace|ui-monospace|Tahoma|Arial)$/.test(n) ? n : `"${n}"`)).join(", ");
+  fixed.push(`--vl-font-family-sans: ${stack(families.arabic, families.latin, "Tahoma", "Arial", "sans-serif")};`, `--vl-font-family-display: ${stack(families.display, families.arabic, "Tahoma", "Arial", "sans-serif")};`, `--vl-font-family-latin: ${stack(families.latin, "Arial", "sans-serif")};`, `--vl-font-family-mono: ${stack(families.mono, "ui-monospace", "monospace")};`);
   for (const [key, node] of Object.entries(tokens.font.role)) {
     if (key.startsWith("$")) continue;
     const role = resolve(node.$value), id = name([key]);
@@ -43,8 +47,12 @@ export function tokensCss(tokens) {
     if (role.fontWeight) fixed.push(`--vl-font-${id}-weight: ${role.fontWeight};`);
   }
   for (const [group, entries] of Object.entries(tokens.motion)) if (!group.startsWith("$")) for (const [key, node] of Object.entries(entries)) if (!key.startsWith("$")) fixed.push(`--vl-motion-${group}-${name([key])}: ${node.$value};`);
+  const used = new Set(Object.values(families));
+  const faces = Object.entries(fontFiles).filter(([family]) => used.has(family)).flatMap(([family, weights]) => weights.map(([weight, style]) =>
+    `@font-face {\n  font-family: "${family}";\n  font-style: normal;\n  font-weight: ${weight};\n  font-display: swap;\n  src: url("/fonts/${family.replaceAll(" ", "")}-${style}.ttf") format("truetype");\n}\n`));
   const block = (selector, lines) => `${selector} {\n${lines.map(l => `  ${l}`).join("\n")}\n}\n`;
   return "/* مولَّد من docs/design/tokens.json بـ npm run generate:tokens؛ لا يُعدَّل يدويًا. */\n"
+    + faces.join("")
     + block(":root", [...light, ...fixed, "color-scheme: light;"])
     + `@media (prefers-color-scheme: dark) {\n${block(':root:not([data-theme="light"])', [...dark, "color-scheme: dark;"]).replace(/^/gm, "  ").trimEnd()}\n}\n`
     + block(':root[data-theme="dark"]', [...dark, "color-scheme: dark;"]);
