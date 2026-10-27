@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "quality",
+  "test_name": "delivery-leak",
+  "started_at": "2026-10-27T05:47:16.740Z",
+  "ended_at": "2026-10-27T05:47:34.685Z",
+  "result": "partial",
+  "metrics": {
+    "checks_failed": 0,
+    "case1_files": 9,
+    "case2_files": 9,
+    "cases": 2
+  },
+  "upload_path": "n/a",
+  "file": {
+    "codec": "synthetic H.264 phone clip (tags, GPS, SEI) and HEVC 10-bit HLG clip (tags, GPS), delivered with original, audio and stills"
+  },
+  "notes": "حزمة تسليم المشتري (أصل وصوت وخمس صور، كلها موقَّعة C2PA) على مقطعين اصطناعيين بوسوم وموقع وSEI: محتويات الحزمة، والبصمات، وبيان كل ملف بقائمة بيضاء مكتوبة في السكربت، وغياب القيم المزروعة وأنماط الموقع وبصمة الأصل الخام من كل ملف فيها بما فيه manifest.json، والأصل لم يُمس، ورفض المقيّم لحزمة حُقنت فيها قيمة. لا pass: جذر الاختبار مؤقت (لا ثقة حقيقية)، ووحدة المفاتيح لم تُجرَّب، ولا ملف حقيقي. c2patool 0.28.2."
+}

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "tool": "acceptance",
+  "role": "qa",
+  "test_name": "download-url",
+  "started_at": "2026-10-27T05:47:36.608Z",
+  "ended_at": "2026-10-27T05:57:47.567Z",
+  "result": "pass",
+  "metrics": {
+    "link_fetched": true,
+    "expiry_waited": true,
+    "checks_failed": 0
+  },
+  "device": {
+    "platform": "server"
+  },
+  "upload_path": "n/a",
+  "notes": "الرابط جُلب وانتهى فعلًا"
+}
