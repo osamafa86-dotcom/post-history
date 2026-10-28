@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 /// A1 · مادة جديدة بأربع خطوات (docs/design/specs/reporter.md): الملف → البيانات → نموذج المكتب → مراجعة وإرسال.
 /// «حفظ مسودة» متاح دائمًا والمسودة على الجهاز فقط. الأصل يُرفع كما صُوِّر؛ لا إحداثيات ولا معرّف جهاز.
 /// `replacing`: «رفع لقطة بديلة» لمادة قائمة — خطوة الملف ثم المراجعة فقط، وبملف واحد.
-/// الملفات المختارة (حتى 20) مادة واحدة بعنوان وبيانات واحدة؛ كلٌّ منها يُرفع أصلًا بجلسته (ADR 0081).
+/// الملفات المختارة (حتى 20) تتشارك البيانات المدخلة مرة واحدة، ولكل ملف مادته بعنوان `<العنوان> (i/N)` (ADR 0081).
 /// الورقة لا تُغلق بالسحب متى وُجد إدخال؛ الإغلاق بزر الإلغاء يسأل: مسودة أو تجاهل أو متابعة.
 struct NewMaterialFlow: View {
     enum Step: Int, CaseIterable {
@@ -250,10 +250,10 @@ struct NewMaterialFlow: View {
     // MARK: الخطوة 2 · البيانات
 
     @ViewBuilder private var fieldsStep: some View {
-        field("material.title", issue: .titleLength) {
+        field("material.title", issue: issues.contains(.titleTooLongForSet) ? .titleTooLongForSet : .titleLength) {
             TextField("material.title", text: $draft.title, axis: .vertical)
-                .vlInput(invalid: issues.contains(.titleLength))
-            Text(verbatim: "\(DraftValidator.titleLength(draft.title))/\(DraftValidator.titleRange.upperBound)")
+                .vlInput(invalid: issues.contains(.titleLength) || issues.contains(.titleTooLongForSet))
+            Text(verbatim: "\(DraftValidator.titleLength(draft.title))/\(DraftValidator.titleLimit(forFileCount: draft.files.count))")
                 .vlText(.captionMd).foregroundStyle(Color.vl.textMuted).environment(\.layoutDirection, .leftToRight)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
@@ -435,42 +435,44 @@ struct NewMaterialFlow: View {
         guard !draft.files.isEmpty else { issues = [.fileMissing]; return }
         // اختيار النسخة الخفيفة واحد للمجموعة ويسري على كل فيديو فيها؛ الصور أصلًا فقط.
         let choice = ProxyChoice(rawValue: draft.lightCopy ?? "") ?? .originalOnly
-        // ما لم يدخل الطابور بعد: عند فشل في المنتصف تبقى هذه الملفات وحدها في المسودة فلا يُرفع ملف مرتين.
-        var pending = draft.files
-        do {
-            if let replacing {
-                guard let file = pending.first else { return }
+        if let replacing {
+            do {
+                guard let file = draft.files.first else { return }
                 try await queue.enqueue(relativePath: file.relativePath, materialId: replacing.id, filename: file.filename, mimeType: file.mimeType,
                                         lightCopy: file.isVideo ? choice : .originalOnly, title: replacing.title, priority: replacing.priority)
                 dismiss()
-                return
+            } catch {
+                submitError = "material.error.create"
             }
-            guard let form, FormValidator.validate(form: form, materialType: primaryType.rawValue, values: draft.dynamicValues).valid else {
-                draft.step = Step.form.rawValue
-                return
-            }
-            draft.formVersion = form.version
-            let visible = Set(FormValidator.visibleFields(form: form, materialType: primaryType.rawValue, values: draft.dynamicValues).map(\.key))
-            let dynamic = draft.dynamicValues.filter { visible.contains($0.key) && !$0.value.isEmpty }.mapValues(\.jsonValue)
-            guard let body = DraftValidator.materialCreate(draft, dynamicFields: dynamic) else {
-                issues = DraftValidator.fieldIssues(draft)
-                draft.step = Step.fields.rawValue
-                return
-            }
-            // المفتاح ثابت للمسودة: إعادة الإرسال بعد انقطاع تعيد المادة نفسها ولا تنشئ ثانية.
-            let material = try await MaterialsAPI.createMaterial(idempotencyKey: draft.createIdempotencyKey, materialCreate: body, apiConfiguration: app.api)
-            draft.createdMaterialId = material.id
-            // المادة واحدة، وكل ملف أصلٌ بجلسته بترتيب اختياره.
-            while let file = pending.first {
-                try await queue.enqueue(relativePath: file.relativePath, materialId: material.id, filename: file.filename, mimeType: file.mimeType,
-                                        lightCopy: file.isVideo ? choice : .originalOnly, title: body.title, priority: body.priority)
-                pending.removeFirst()
-            }
+            return
+        }
+        guard let form, FormValidator.validate(form: form, materialType: primaryType.rawValue, values: draft.dynamicValues).valid else {
+            draft.step = Step.form.rawValue
+            return
+        }
+        draft.formVersion = form.version
+        let visible = Set(FormValidator.visibleFields(form: form, materialType: primaryType.rawValue, values: draft.dynamicValues).map(\.key))
+        let dynamic = draft.dynamicValues.filter { visible.contains($0.key) && !$0.value.isEmpty }.mapValues(\.jsonValue)
+        let fieldIssues = DraftValidator.fieldIssues(draft)
+        guard fieldIssues.isEmpty else {
+            issues = fieldIssues
+            draft.step = Step.fields.rawValue
+            return
+        }
+        // مادة لكل ملف بالبيانات المشتركة نفسها (الخادم يحتفظ بأصل واحد للمادة، ADR 0081). لكل ملف مفتاح إنشاء ثابت يُحفظ مع المسودة،
+        // وما دخل الطابور يُسقَط منها؛ عند الفشل تُحفظ المسودة بما بقي فلا يُنشأ شيء ولا يُدخل مرتين.
+        let outcome = await DraftSubmission.run(draft, dynamicFields: dynamic) { key, body in
+            try await MaterialsAPI.createMaterial(idempotencyKey: key, materialCreate: body, apiConfiguration: app.api).id
+        } enqueue: { file, materialId, body in
+            try await queue.enqueue(relativePath: file.relativePath, materialId: materialId, filename: file.filename, mimeType: file.mimeType,
+                                    lightCopy: file.isVideo ? choice : .originalOnly, title: body.title, priority: body.priority)
+        }
+        if outcome.error == nil {
             queue.deleteDraft(draft.id)
             dismiss()
-        } catch {
+        } else {
             submitError = "material.error.create"
-            draft.files = pending
+            draft = outcome.draft
             queue.saveDraft(draft)
         }
     }

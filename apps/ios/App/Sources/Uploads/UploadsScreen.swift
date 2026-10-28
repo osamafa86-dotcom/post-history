@@ -119,11 +119,7 @@ struct ActiveUploadCard: View {
     let record: UploadRecord
 
     @State private var confirmCancel = false
-    /// المادة قد تحمل عدة فيديوهات بنسخ خفيفة؛ تُعرض الجارية أولًا.
-    private var proxy: UploadRecord? {
-        let all = queue.records.filter { $0.kind == .proxy && $0.materialId == record.materialId }
-        return all.first { !$0.phase.isTerminal } ?? all.last
-    }
+    private var proxy: UploadRecord? { queue.records.first { $0.kind == .proxy && $0.materialId == record.materialId } }
     private var paused: Bool { record.isPaused == true }
     private var networkBlocked: Bool { queue.networkState != .online && !record.phase.isTerminal }
 
@@ -308,7 +304,7 @@ private struct QueueRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: VL.Space.s2) {
             Text(verbatim: record.materialTitle ?? record.filename).vlText(.labelMd).foregroundStyle(Color.vl.textPrimary).lineLimit(2)
-            // عدة ملفات للمادة الواحدة تحمل العنوان نفسه؛ الاسم يفرّق بينها.
+            // عنوان الملفات المرفوعة معًا متشابه (`… (i/N)`)؛ الاسم يفرّق بينها.
             if record.materialTitle != nil {
                 Text(verbatim: record.filename).vlText(.captionMd).foregroundStyle(Color.vl.textSecondary).lineLimit(1)
             }

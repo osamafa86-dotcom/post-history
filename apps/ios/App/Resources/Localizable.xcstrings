@@ -4819,13 +4819,13 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "يمكنك اختيار حتى 20 ملفًا دفعة واحدة؛ كلها تُرفع في مادة واحدة."
+            "value": "يمكنك اختيار حتى 20 ملفًا دفعة واحدة؛ تُنشأ لكل ملف مادة بالبيانات نفسها."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "You can pick up to 20 files at once; they all upload as one material."
+            "value": "You can pick up to 20 files at once; each file becomes its own material with the same details."
           }
         }
       }
@@ -4887,13 +4887,13 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "يسري على كل الفيديوهات في المادة، والاقتراح مبني على أطولها."
+            "value": "يسري على كل الفيديوهات، والاقتراح مبني على أطولها."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Applies to every video in this material; the suggestion is based on the longest one."
+            "value": "Applies to every video; the suggestion is based on the longest one."
           }
         }
       }
@@ -4904,13 +4904,13 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "الملفات: %lld · الحجم الكلي %@"
+            "value": "%lld مواد ستُنشأ بالبيانات نفسها · الحجم الكلي %@"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Files: %lld · total size %@"
+            "value": "%lld materials will be created with the same details · total size %@"
           }
         }
       }
@@ -5132,6 +5132,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld files"
+          }
+        }
+      }
+    },
+    "draft.issue.titleTooLongForSet": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "العنوان طويل: يلزم أن يتسع مع عدّاد الملفات (مثل ‎(3/20)‎) في 80 حرفًا."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The title is too long: it must fit with the file counter (like (3/20)) in 80 characters."
           }
         }
       }
