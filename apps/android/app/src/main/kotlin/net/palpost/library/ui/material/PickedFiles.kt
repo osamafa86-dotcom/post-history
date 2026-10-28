@@ -34,21 +34,31 @@ object PickedFiles {
 
     fun remaining(current: List<PickedOriginal>): Int = (MAX - current.size).coerceAtLeast(0)
 
-    /** يُلحق الجديد بالترتيب الذي اختاره المراسل؛ يتجاهل المكرر (الرابط نفسه) ويقتطع ما زاد على الحد. */
-    fun add(current: List<PickedOriginal>, incoming: List<PickedOriginal>): Added {
+    /** ما يدخل من اختيار جديد (روابطه) وما لا يدخل ولماذا؛ يُحسب قبل أخذ أي صلاحية قراءة، فلا تُؤخذ لملف مرفوض. */
+    data class Selection(val accepted: List<String>, val duplicates: Int, val overLimit: Int)
+
+    /** يقبل الروابط بترتيبها؛ يتجاهل المكرر (موجود أو متكرر في الاختيار نفسه) ويقتطع ما زاد على الحد. */
+    fun select(current: List<PickedOriginal>, uris: List<String>): Selection {
         val seen = current.mapTo(HashSet()) { it.uri }
-        val result = current.toMutableList()
-        var added = 0
+        val accepted = ArrayList<String>()
         var duplicates = 0
         var overLimit = 0
-        for (f in incoming) {
+        for (u in uris) {
             when {
-                !seen.add(f.uri) -> duplicates++
-                result.size >= MAX -> overLimit++
-                else -> { result.add(f); added++ }
+                !seen.add(u) -> duplicates++
+                current.size + accepted.size >= MAX -> overLimit++
+                else -> accepted.add(u)
             }
         }
-        return Added(result, added, duplicates, overLimit)
+        return Selection(accepted, duplicates, overLimit)
+    }
+
+    /** يُلحق الجديد بالترتيب الذي اختاره المراسل؛ يتجاهل المكرر (الرابط نفسه) ويقتطع ما زاد على الحد. */
+    fun add(current: List<PickedOriginal>, incoming: List<PickedOriginal>): Added {
+        val sel = select(current, incoming.map { it.uri })
+        val byUri = incoming.associateBy { it.uri }
+        val result = current + sel.accepted.map { byUri.getValue(it) }
+        return Added(result, sel.accepted.size, sel.duplicates, sel.overLimit)
     }
 
     /** إزالة صف من القائمة؛ لا يمسّ الملف على الهاتف ولا شيئًا في قائمة الرفع. */

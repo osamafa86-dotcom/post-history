@@ -5,11 +5,12 @@ import kotlin.coroutines.cancellation.CancellationException
 /**
  * إرسال الدفعة: لكل ملف مادة مستقلة ثم صف رفع، بالترتيب. المنطق صِرف ليُختبر على JVM بلا شبكة ولا Room.
  *
- * القاعدة: لا يُنشأ شيء ولا يُدرج مرتين.
- * - من له [PickedOriginal.createdMaterialId] لا تُنشأ مادته ثانية.
- * - الملف الذي أُدرج صفّه يخرج من [Result.remaining] فورًا.
- * - عند أول فشل يتوقف الإرسال، وتبقى في [Result.remaining] بقية الملفات (أولها الفاشل ومعه معرّف مادته إن كانت
- *   قد أُنشئت)، وهي ما تُحفظ مسودة؛ فإعادة التشغيل بها تكمل من حيث توقفت.
+ * القاعدة: لا يُنشأ شيء ولا يُدرج مرتين، حتى لو قُتلت العملية في أي لحظة. لذلك تُكتب المسودة (الملفات المتبقية
+ * ومعها معرّفات موادها) عبر `persist` في كل خطوة، والترتيب فيها هو الضمان:
+ * 1. قبل الحلقة: كل الملفات كما هي (البيانات والمفاتيح محفوظة قبل أول طلب).
+ * 2. بعد إنشاء المادة وقبل إدراج الصف: الملف ومعه `createdMaterialId` (فإعادة التشغيل لا تنشئها ثانية).
+ * 3. بعد إدراج الصف: بقية الملفات بدون هذا الملف (فإن قُتلت العملية بين الإدراج والكتابة فالإعادة تكتب الصف نفسه، لأن
+ *    معرّفه مشتق من المادة ولا يُصفَّر صف تقدّم).
  */
 object MaterialBatch {
     /**
@@ -22,29 +23,29 @@ object MaterialBatch {
     /**
      * @param createMaterial ينشئ مادة الملف بمفتاحه ويعيد معرّفها.
      * @param enqueue يُدرج صف رفع الملف على مادته ويعيد معرّف الصف.
-     * @param onProgress يُستدعى بعد كل خطوة تغيّر [Result.remaining] (إنشاء مادة أو إدراج صف)، ليظهر الباقي في الواجهة.
+     * @param persist يحفظ القائمة المتبقية (مسودة) ويحدّث الواجهة؛ يُستدعى بالترتيب الموصوف أعلاه، وفشله يوقف الدفعة.
      */
     suspend fun run(
         files: List<PickedOriginal>,
         createMaterial: suspend (PickedOriginal) -> String,
         enqueue: suspend (PickedOriginal, String) -> String,
-        onProgress: (List<PickedOriginal>) -> Unit = {},
+        persist: suspend (List<PickedOriginal>) -> Unit = {},
     ): Result {
         var remaining = files
         val queued = ArrayList<String>()
         try {
+            persist(remaining)
             while (remaining.isNotEmpty()) {
                 var file = remaining.first()
-                val existing = file.createdMaterialId
-                if (existing == null) {
+                if (file.createdMaterialId == null) {
                     val created = createMaterial(file)
                     file = file.copy(createdMaterialId = created)
                     remaining = listOf(file) + remaining.drop(1)
-                    onProgress(remaining)
+                    persist(remaining)
                 }
                 queued.add(enqueue(file, file.createdMaterialId!!))
                 remaining = remaining.drop(1)
-                onProgress(remaining)
+                persist(remaining)
             }
         } catch (e: CancellationException) {
             throw e

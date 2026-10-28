@@ -125,7 +125,7 @@
     <string name="material_city">المدينة أو البلدة</string>
     <string name="material_priority">الأولوية</string>
     <string name="material_sensitivity">الحساسية</string>
-    <string name="material_sensitivity_help">أسئلة إلزامية؛ أي «نعم» يفعّل التمويه والتحذير ويحوّل المعالجة إلى المسار المحلي.</string>
+    <string name="material_sensitivity_help">أسئلة إلزامية؛ أي «نعم» يفعّل التمويه والتحذير ويحوّل المعالجة إلى المسار المحلي. وتنطبق إجاباتك على كل الملفات التي اخترتها.</string>
     <string name="material_sensitivity_minors">تظهر فيها وجوه قاصرين؟</string>
     <string name="material_sensitivity_injured">تظهر فيها إصابات؟</string>
     <string name="material_sensitivity_graphic">مشاهد صادمة؟</string>
@@ -391,7 +391,6 @@
     <string name="a1_partial_failed">أُنشئت %1$d من %2$d مواد وأُدرجت في قائمة الرفع؛ حُفظ الباقي (%3$d) مسودة، فأعد الإرسال لإكمالها.</string>
     <string name="a1_title_too_long_many">العنوان طويل على %1$d ملفات: الحد %2$d حرفًا قبل الترقيم.</string>
     <string name="a1_title_help_many">من 5 إلى %1$d حرفًا؛ يُضاف ترقيم مثل %2$s إلى عنوان كل مادة</string>
-    <string name="a1_review_materials">%1$d مواد ستُنشأ بالبيانات نفسها · الحجم الكلي %2$s</string>
     <string name="a1_leave_title">ما أدخلته لم يُحفظ</string>
     <string name="a1_leave_body">احفظه مسودة لتكمله لاحقًا، أو تجاهله، أو تابع التحرير. ما يجري رفعه في قائمة الرفع لا يتأثر بأي اختيار.</string>
     <string name="a1_leave_body_no_draft">تجاهله أو تابع التحرير. ما يجري رفعه في قائمة الرفع لا يتأثر بأي اختيار.</string>
@@ -445,4 +444,12 @@
     <string name="earnings_status_failed">فشل</string>
     <string name="earnings_status_rejected">مرفوض</string>
     <string name="earnings_status_cancelled">ملغى</string>
+    <plurals name="a1_review_materials">
+        <item quantity="zero">لا مواد ستُنشأ · الحجم الكلي %2$s</item>
+        <item quantity="one">مادة واحدة ستُنشأ بالبيانات نفسها · الحجم الكلي %2$s</item>
+        <item quantity="two">مادتان ستُنشآن بالبيانات نفسها · الحجم الكلي %2$s</item>
+        <item quantity="few">%1$d مواد ستُنشأ بالبيانات نفسها · الحجم الكلي %2$s</item>
+        <item quantity="many">%1$d مادة ستُنشأ بالبيانات نفسها · الحجم الكلي %2$s</item>
+        <item quantity="other">%1$d مادة ستُنشأ بالبيانات نفسها · الحجم الكلي %2$s</item>
+    </plurals>
 </resources>

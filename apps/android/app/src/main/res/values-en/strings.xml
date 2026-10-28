@@ -113,7 +113,7 @@
     <string name="material_city">City or town</string>
     <string name="material_priority">Priority</string>
     <string name="material_sensitivity">Sensitivity</string>
-    <string name="material_sensitivity_help">Required. Any “yes” enables blurring and warnings and moves processing to the local path.</string>
+    <string name="material_sensitivity_help">Required. Any “yes” enables blurring and warnings and moves processing to the local path. Your answers apply to every file you picked.</string>
     <string name="material_sensitivity_minors">Faces of minors visible?</string>
     <string name="material_sensitivity_injured">Injuries visible?</string>
     <string name="material_sensitivity_graphic">Graphic scenes?</string>
@@ -376,7 +376,6 @@
     <string name="a1_partial_failed">%1$d of %2$d materials were created and queued; the other %3$d are saved as a draft: send again to finish them.</string>
     <string name="a1_title_too_long_many">The title is too long for %1$d files: at most %2$d characters before the numbering.</string>
     <string name="a1_title_help_many">5 to %1$d characters; numbering such as %2$s is added to each material\'s title</string>
-    <string name="a1_review_materials">%1$d materials will be created with the same details · %2$s in total</string>
     <string name="a1_leave_title">What you entered is not saved</string>
     <string name="a1_leave_body">Save it as a draft to finish later, discard it, or keep editing. Whatever is uploading in the upload list is not affected by any choice.</string>
     <string name="a1_leave_body_no_draft">Discard it or keep editing. Whatever is uploading in the upload list is not affected by any choice.</string>
@@ -430,4 +429,8 @@
     <string name="earnings_status_failed">Failed</string>
     <string name="earnings_status_rejected">Rejected</string>
     <string name="earnings_status_cancelled">Cancelled</string>
+    <plurals name="a1_review_materials">
+        <item quantity="one">%1$d material will be created with the same details · %2$s in total</item>
+        <item quantity="other">%1$d materials will be created with the same details · %2$s in total</item>
+    </plurals>
 </resources>

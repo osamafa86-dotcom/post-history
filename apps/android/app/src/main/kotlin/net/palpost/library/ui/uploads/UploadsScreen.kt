@@ -96,6 +96,7 @@ import net.palpost.library.ui.theme.tokens.VlSize
 import net.palpost.library.ui.theme.tokens.VlSpace
 import net.palpost.library.ui.material.priorityLabel
 import net.palpost.library.upload.UploadScheduler
+import net.palpost.library.upload.UriGrants
 
 /** A2 · the upload that resumes (docs/design/specs/reporter.md): where it is, that a cut is safe, and what comes next. */
 class UploadsViewModel(private val app: Application, private val container: AppContainer) : ViewModel() {
@@ -164,7 +165,10 @@ class UploadsViewModel(private val app: Application, private val container: AppC
     }
 
     /** The confirmed "cancel" / "remove" of a queue row: drops an unfinished task or a finished one; the file on the phone is untouched. */
-    fun remove(task: UploadTaskEntity) = viewModelScope.launch { container.database.uploads().delete(task.id) }
+    fun remove(task: UploadTaskEntity) = viewModelScope.launch {
+        container.database.uploads().delete(task.id)
+        UriGrants.releaseIfUnused(app, container.database, task.fileUri) // the file is no longer needed by this app
+    }
 
     companion object {
         val DONE = setOf(UploadState.VERIFIED.name, UploadState.DEDUPLICATED.name)

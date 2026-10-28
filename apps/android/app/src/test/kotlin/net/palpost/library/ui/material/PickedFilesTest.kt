@@ -157,4 +157,14 @@ class PickedFilesTest {
         }
         assertEquals("", MaterialTitles.suffix(1, 1)) // a single file's title is untouched
     }
+
+    @Test
+    fun `selection decides before anything is read, so a refused file never gets a grant`() {
+        val current = (1..19).map { file(it) }
+        val sel = PickedFiles.select(current, listOf(file(3).uri, file(20).uri, file(20).uri, file(21).uri, file(22).uri))
+        assertEquals(listOf(file(20).uri), sel.accepted) // 3 is already there, the second 20 repeats, 21 and 22 are past the limit
+        assertEquals(2, sel.duplicates)
+        assertEquals(2, sel.overLimit)
+        assertEquals(PickedFiles.add(current, listOf(file(3), file(20), file(20), file(21), file(22))).files, current + file(20))
+    }
 }

@@ -120,6 +120,7 @@ import net.palpost.library.ui.theme.tokens.VlRadius
 import net.palpost.library.ui.theme.tokens.VlSize
 import net.palpost.library.ui.theme.tokens.VlSpace
 import net.palpost.library.upload.UploadScheduler
+import net.palpost.library.upload.UriGrants
 import java.io.File
 import java.util.UUID
 
@@ -196,6 +197,8 @@ class NewMaterialViewModel(
     private val id = draftId ?: UUID.randomUUID().toString()
     private val formCache = File(app.filesDir, "form_cache.json")
     private val formAdapter = Serializer.moshi.adapter(UploadForm::class.java)
+    /** URIs of the files in the draft as last saved or opened; their grants stay until a save no longer holds them. */
+    private var savedUris: Set<String> = emptySet()
 
     init {
         if (attachTo == null) loadForm()
@@ -216,6 +219,7 @@ class NewMaterialViewModel(
                 values = d.values, originals = PickedFiles.stampKeys(if (s.attachTo != null) d.files.take(1) else d.files, materialIdempotencyKey, IdempotencyKey::generate),
             )
         }
+        savedUris = d.files.map { it.uri }.toSet()
         _state.value.originals.forEach { describe(it) }
     }
 
@@ -238,23 +242,59 @@ class NewMaterialViewModel(
     fun setValue(key: String, value: Any?) = _state.update { it.copy(values = it.values + (key to value), draftSaved = false, dirty = true) }
     fun setPicked(key: String, files: List<PickedFile>) = _state.update { it.copy(picked = it.picked + (key to files), dirty = true) }
 
-    /** More originals for the same material (one title, one form): appended in the order picked, nothing dropped silently. */
-    fun addFiles(incoming: List<PickedOriginal>) {
-        if (incoming.isEmpty()) return
-        val result = PickedFiles.add(_state.value.originals, incoming)
-        _state.update { it.copy(originals = result.files, skippedDuplicates = result.duplicates, skippedOverLimit = result.overLimit, draftSaved = false, dirty = it.dirty || result.added > 0, error = null) }
-        result.files.takeLast(result.added).forEach { describe(it) }
+    /**
+     * More originals for the same batch (one set of details, one material each): appended in the order picked, nothing dropped
+     * silently. Duplicates and files beyond the limit are filtered out first, so a read grant is only taken for a file that enters.
+     */
+    fun addUris(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val selection = PickedFiles.select(_state.value.originals, uris.map { it.toString() })
+        val accepted = uris.filter { it.toString() in selection.accepted }.distinctBy { it.toString() }.map { describeUri(it) }
+        val result = PickedFiles.add(_state.value.originals, accepted)
+        _state.update { it.copy(originals = result.files, skippedDuplicates = selection.duplicates, skippedOverLimit = selection.overLimit, draftSaved = false, dirty = it.dirty || result.added > 0, error = null) }
+        accepted.forEach { describe(it) }
     }
 
-    /** "Upload a replacement shot" stays a single pick: the new file replaces the old one. */
-    fun replaceFile(original: PickedOriginal) {
+    /** "Upload a replacement shot" stays a single pick: the new file replaces the old one (and the old file's grant is let go). */
+    fun replaceUri(uri: Uri) {
+        val original = describeUri(uri)
+        val old = _state.value.originals.map { it.uri }.filter { it != original.uri }
         _state.update { it.copy(originals = listOf(original), skippedDuplicates = 0, skippedOverLimit = 0, draftSaved = false, dirty = true) }
+        old.forEach { releaseUnsaved(it) }
         describe(original)
     }
 
-    /** Drops one row from the list. The file on the phone and the upload queue are untouched. */
-    fun removeFile(uri: String) = _state.update {
-        it.copy(originals = PickedFiles.remove(it.originals, uri), details = it.details - uri, skippedDuplicates = 0, skippedOverLimit = 0, draftSaved = false, dirty = true)
+    /** Drops one row from the list. The file on the phone and the upload queue are untouched; its read grant is let go. */
+    fun removeFile(uri: String) {
+        _state.update {
+            it.copy(originals = PickedFiles.remove(it.originals, uri), details = it.details - uri, skippedDuplicates = 0, skippedOverLimit = 0, draftSaved = false, dirty = true)
+        }
+        releaseUnsaved(uri)
+    }
+
+    /** Leaving with "discard": the grants taken for this visit's files are let go, except those a saved draft still holds. */
+    fun discard() {
+        _state.value.originals.forEach { releaseUnsaved(it.uri) }
+    }
+
+    /** Name, size and type of a picked file, and its persistent read grant (the transfer outlives this screen and the process). */
+    private fun describeUri(uri: Uri): PickedOriginal {
+        try { app.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (e: SecurityException) { /* provider does not persist grants */ }
+        var name = "original"
+        var size = 0L
+        app.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { c ->
+            if (c.moveToFirst()) {
+                c.getColumnIndex(OpenableColumns.DISPLAY_NAME).takeIf { it >= 0 }?.let { i -> c.getString(i)?.let { name = it } }
+                c.getColumnIndex(OpenableColumns.SIZE).takeIf { it >= 0 }?.let { i -> if (!c.isNull(i)) size = c.getLong(i) }
+            }
+        }
+        // The key that creates this file's material, fixed now so every retry (and a saved draft) replays the same request.
+        return PickedOriginal(uri.toString(), name, size, app.contentResolver.getType(uri), materialKey = IdempotencyKey.generate())
+    }
+
+    private fun releaseUnsaved(uri: String) {
+        if (uri in savedUris) return
+        viewModelScope.launch { UriGrants.releaseIfUnused(app, container.database, uri) }
     }
 
     /** Thumbnail and duration for the file row, read by the system without copying the file. */
@@ -300,6 +340,11 @@ class NewMaterialViewModel(
             values = s.values.filterKeys { it !in attachmentKeys }, files = s.originals, step = s.step,
         )
         container.database.drafts().upsert(DraftEntity(id, s.title, d.toJson(), System.currentTimeMillis()))
+        val held = s.originals.map { it.uri }.toSet()
+        val dropped = savedUris - held
+        savedUris = held
+        // Files the previous save held and this one does not (removed, or already queued) lose their grant unless something else uses them.
+        for (u in dropped) UriGrants.releaseIfUnused(app, container.database, u)
         _state.update { it.copy(draftSaved = true, dirty = false) }
     }
 
@@ -366,7 +411,12 @@ class NewMaterialViewModel(
                 container.uploadStore.insert(task, title = titleOf(f), priority = s.priority.value)
                 task.id
             },
-            onProgress = { rest -> _state.update { st -> st.copy(originals = rest, details = st.details.filterKeys { k -> rest.any { it.uri == k } }) } },
+            persist = { rest ->
+                _state.update { st -> st.copy(originals = rest, details = st.details.filterKeys { k -> rest.any { it.uri == k } }) }
+                // The draft is written at every step (before the loop, after each create, after each queued row) so a killed process
+                // loses nothing and the repeat skips what was done. The last step writes nothing: the draft is deleted when the batch ends.
+                if (rest.isNotEmpty()) writeDraft()
+            },
         )
         val queuedBytes = files.filter { f -> result.remaining.none { it.uri == f.uri } }.sumOf { it.sizeBytes.coerceAtLeast(0) }
         if (result.queuedTaskIds.isNotEmpty()) UploadScheduler.start(app, queuedBytes)
@@ -375,8 +425,7 @@ class NewMaterialViewModel(
             container.database.drafts().delete(id)
             _state.update { it.copy(submitting = false, dirty = false, createdTaskId = result.queuedTaskIds.first()) }
         } else {
-            // What is left (the failed file with its material id if it has one, and the rest) is kept as the draft.
-            runCatching { writeDraft() }
+            // The draft already holds what is left (the failed file with its material id if it has one, and the rest).
             val note = if (result.queuedTaskIds.isNotEmpty()) "\n" + app.getString(R.string.a1_partial_failed, result.queuedTaskIds.size, files.size, result.remaining.size) else ""
             _state.update { it.copy(submitting = false, error = describeFailure(app, failure) + note) }
         }
@@ -393,28 +442,13 @@ fun NewMaterialScreen(container: AppContainer, draftId: String?, attachToMateria
     val s by vm.state.collectAsStateWithLifecycle()
     if (s.createdTaskId != null) { onQueued(); return }
 
-    // Reads name, size and type of a picked file and keeps read access for as long as the system allows.
-    fun describePicked(uri: Uri): PickedOriginal {
-        // The transfer outlives this screen and the process: keep read access for as long as the system allows.
-        try { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (e: SecurityException) { /* provider does not persist grants */ }
-        var name = "original"
-        var size = 0L
-        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { c ->
-            if (c.moveToFirst()) {
-                c.getColumnIndex(OpenableColumns.DISPLAY_NAME).takeIf { it >= 0 }?.let { i -> c.getString(i)?.let { name = it } }
-                c.getColumnIndex(OpenableColumns.SIZE).takeIf { it >= 0 }?.let { i -> if (!c.isNull(i)) size = c.getLong(i) }
-            }
-        }
-        // The key that creates this file's material, fixed now so every retry (and a saved draft) replays the same request.
-        return PickedOriginal(uri.toString(), name, size, context.contentResolver.getType(uri), materialKey = IdempotencyKey.generate())
-    }
     // Several originals for one material (up to PickedFiles.MAX); the files of one pick enter the list in the order the picker returns them.
     val multiPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(PickedFiles.MAX)) { uris ->
-        vm.addFiles(uris.map { describePicked(it) })
+        vm.addUris(uris)
     }
     // The replacement shot of an existing material is still one file.
     val singlePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) vm.replaceFile(describePicked(uri))
+        if (uri != null) vm.replaceUri(uri)
     }
     val pickOriginals: () -> Unit = {
         if (s.attachTo != null) singlePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
@@ -428,7 +462,7 @@ fun NewMaterialScreen(container: AppContainer, draftId: String?, attachToMateria
     if (confirmLeave) LeaveDialog(
         canSaveDraft = s.attachTo == null,
         onSave = { confirmLeave = false; vm.saveDraft(onSaved = onBack) },
-        onDiscard = { confirmLeave = false; onBack() },
+        onDiscard = { confirmLeave = false; vm.discard(); onBack() },
         onKeep = { confirmLeave = false },
     )
 
@@ -634,7 +668,7 @@ private fun ReviewStep(s: NewMaterialUiState, goTo: (Int) -> Unit) {
     }
     Summary(stringResource(R.string.a1_what_uploads), onEdit = { goTo(1) }) {
         if (s.originals.size == 1) s.originals.first().let { Line(stringResource(R.string.a1_the_original), it.name + " · " + FieldInput.describeBytes(it.sizeBytes)) }
-        else if (s.originals.size > 1) Line(stringResource(R.string.a1_the_originals), stringResource(R.string.a1_review_materials, s.originals.size, FieldInput.describeBytes(PickedFiles.totalBytes(s.originals))))
+        else if (s.originals.size > 1) Line(stringResource(R.string.a1_the_originals), LocalContext.current.resources.getQuantityString(R.plurals.a1_review_materials, s.originals.size, s.originals.size, FieldInput.describeBytes(PickedFiles.totalBytes(s.originals))))
         Text(stringResource(R.string.a1_original_as_is), style = Vl.text.captionMd, color = Vl.colors.textSecondary)
     }
 }

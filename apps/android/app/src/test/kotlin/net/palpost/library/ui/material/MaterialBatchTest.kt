@@ -100,4 +100,53 @@ class MaterialBatchTest {
         assertTrue(r.queuedTaskIds.isEmpty())
         assertTrue(fake.createdKeys.isEmpty())
     }
+
+    @Test
+    fun `the draft is saved before the first request, with the material id before its row is queued, and the file is dropped after`() = runBlocking {
+        val events = ArrayList<String>()
+        val files = (1..2).map { file(it) }
+        val r = MaterialBatch.run(
+            files,
+            createMaterial = { f -> events.add("create:${f.position}"); "m-${f.materialKey}" },
+            enqueue = { f, id -> events.add("enqueue:${f.position}:$id"); UploadIds.taskId(id) },
+            persist = { rest ->
+                // What the draft would hold at this moment: each remaining file, marked with its material id when it has one.
+                events.add("draft:" + rest.joinToString(",") { "${it.position}${it.createdMaterialId?.let { id -> "=$id" } ?: ""}" })
+            },
+        )
+        assertNull(r.failure)
+        assertEquals(
+            listOf(
+                "draft:1,2", // before anything is sent: details and keys are already safe
+                "create:1", "draft:1=m-key-1,2", // the id is saved before the file is queued
+                "enqueue:1:m-key-1", "draft:2", // the file leaves the draft only after its row exists
+                "create:2", "draft:2=m-key-2",
+                "enqueue:2:m-key-2", "draft:",
+            ),
+            events,
+        )
+    }
+
+    @Test
+    fun `a process killed after the id was saved resumes from that draft without creating the material again`() = runBlocking {
+        val fake = Fake()
+        var lastDraft: List<PickedOriginal> = emptyList()
+        // The "process" dies the moment the draft holding the id has been written, before the row is queued.
+        val killed = try {
+            MaterialBatch.run(
+                (1..3).map { file(it) }, fake::create, fake::enqueue,
+                persist = { rest -> lastDraft = rest; if (rest.firstOrNull()?.createdMaterialId != null) throw IllegalStateException("killed") },
+            )
+        } catch (e: IllegalStateException) { null }
+        // run() reports the failure as a result instead of throwing; either way only the saved draft survives the "crash".
+        assertTrue(killed == null || killed.failure is IllegalStateException)
+        assertEquals(file(1, created = "m-key-1"), lastDraft.first())
+        assertEquals(listOf("key-1"), fake.createdKeys)
+        assertTrue(fake.queued.isEmpty())
+
+        val resumed = MaterialBatch.run(MaterialDraft.fromJson(MaterialDraft(files = lastDraft).toJson())!!.files, fake::create, fake::enqueue)
+        assertNull(resumed.failure)
+        assertEquals(listOf("key-1", "key-2", "key-3"), fake.createdKeys) // key-1 was created once, in the first life
+        assertEquals((1..3).map { "m-key-$it" }, fake.queued)
+    }
 }

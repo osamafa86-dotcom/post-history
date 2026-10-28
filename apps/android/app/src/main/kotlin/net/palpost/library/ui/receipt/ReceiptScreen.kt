@@ -105,6 +105,7 @@ import net.palpost.library.ui.theme.tokens.VlBorder
 import net.palpost.library.ui.theme.tokens.VlMotion
 import net.palpost.library.ui.theme.tokens.VlRadius
 import net.palpost.library.ui.theme.tokens.VlSpace
+import net.palpost.library.upload.UriGrants
 import java.io.File
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -127,7 +128,12 @@ class ReceiptViewModel(private val app: Application, private val container: AppC
         }
     }
 
-    fun localCopyHandled(id: String) = viewModelScope.launch { container.database.uploads().setLocalCopyHandled(id, true) }
+    fun localCopyHandled(id: String) = viewModelScope.launch {
+        val uri = container.database.uploads().get(id)?.fileUri
+        container.database.uploads().setLocalCopyHandled(id, true)
+        // The reporter has decided about the local copy (deleted it or kept it): the app no longer needs its read grant.
+        if (uri != null) UriGrants.releaseIfUnused(app, container.database, uri, exceptTaskId = id)
+    }
 }
 
 @Composable
