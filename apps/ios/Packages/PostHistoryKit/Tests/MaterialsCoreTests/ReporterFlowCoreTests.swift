@@ -7,7 +7,7 @@ import PostHistoryAPI
 final class ReporterFlowCoreTests: XCTestCase {
     private func complete() -> MaterialDraft {
         var d = MaterialDraft()
-        d.file = .init(relativePath: "Uploads/a.mov", filename: "a.mov", sizeBytes: 10, mimeType: "video/quicktime", isVideo: true, durationSeconds: 60)
+        d.files = [.init(relativePath: "Uploads/a.mov", filename: "a.mov", sizeBytes: 10, mimeType: "video/quicktime", isVideo: true, durationSeconds: 60)]
         d.title = "قصف على حي"
         d.materialTypes = [.report]
         d.governorate = "غزة"; d.city = "غزة"

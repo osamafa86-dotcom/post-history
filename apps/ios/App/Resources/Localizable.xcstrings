@@ -4795,6 +4795,476 @@
           }
         }
       }
+    },
+    "a1.file.addMore": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إضافة ملفات أخرى"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add more files"
+          }
+        }
+      }
+    },
+    "a1.file.multiHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يمكنك اختيار حتى 20 ملفًا دفعة واحدة؛ تُنشأ لكل ملف مادة بالبيانات نفسها."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can pick up to 20 files at once; each file becomes its own material with the same details."
+          }
+        }
+      }
+    },
+    "a1.files.count %lld %lld": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الملفات المختارة: %lld من %lld"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Files selected: %lld of %lld"
+          }
+        }
+      }
+    },
+    "a1.file.remove": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إزالة الملف"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove file"
+          }
+        }
+      }
+    },
+    "a1.file.importing": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جارٍ نسخ الملفات إلى التطبيق…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copying files into the app…"
+          }
+        }
+      }
+    },
+    "a1.lightCopy.allVideos": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يسري على كل الفيديوهات، والاقتراح مبني على أطولها."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Applies to every video; the suggestion is based on the longest one."
+          }
+        }
+      }
+    },
+    "a1.close.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ماذا تفعل بما أدخلته؟"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What should happen to what you entered?"
+          }
+        }
+      }
+    },
+    "a1.close.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لم يُرسل شيء بعد. الرفوعات التي بدأت من قبل لا تتأثر."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing has been submitted yet. Uploads that already started are not affected."
+          }
+        }
+      }
+    },
+    "a1.close.discard": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تجاهل ما أدخلته"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discard"
+          }
+        }
+      }
+    },
+    "a1.close.keep": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "متابعة التحرير"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep editing"
+          }
+        }
+      }
+    },
+    "upload.cancel.confirm.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إلغاء هذا الرفع؟"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel this upload?"
+          }
+        }
+      }
+    },
+    "upload.cancel.confirm.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يتوقف هذا الرفع ولا يُستأنف؛ لإرساله لاحقًا تبدؤه من جديد."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This upload stops and won't resume; to send it later you start again."
+          }
+        }
+      }
+    },
+    "upload.cancel.confirm.action": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "نعم، ألغِ الرفع"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yes, cancel the upload"
+          }
+        }
+      }
+    },
+    "upload.cancel.confirm.keep": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "متابعة الرفع"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep uploading"
+          }
+        }
+      }
+    },
+    "draft.delete.confirm.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "حذف هذه المسودة؟"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete this draft?"
+          }
+        }
+      }
+    },
+    "draft.delete.confirm.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يُحذف ما أدخلته ونسخ الملفات المحفوظة في التطبيق. الأصل في معرض الصور لا يُمس."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What you entered and the copies saved in the app are deleted. The original in your photo library is untouched."
+          }
+        }
+      }
+    },
+    "upload.remove.confirm.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إزالة من القائمة؟"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove from the list?"
+          }
+        }
+      }
+    },
+    "upload.remove.confirm.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تُزال من هذه القائمة فقط؛ ما وصل إلى الخادم لا يتأثر."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It is removed from this list only; what reached the server is not affected."
+          }
+        }
+      }
+    },
+    "draft.files %lld": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "variations": {
+            "plural": {
+              "zero": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "لا ملفات"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "ملف واحد"
+                }
+              },
+              "two": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "ملفان"
+                }
+              },
+              "few": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld ملفات"
+                }
+              },
+              "many": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld ملفًا"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld ملف"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld file"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld files"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "draft.issue.titleTooLongForSet": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "العنوان طويل: يلزم أن يتسع مع عدّاد الملفات (مثل ‎(3/20)‎) في 80 حرفًا."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The title is too long: it must fit with the file counter (like (3/20)) in 80 characters."
+          }
+        }
+      }
+    },
+    "a1.review.materials %lld": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "variations": {
+            "plural": {
+              "zero": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "لا مواد ستُنشأ بالبيانات نفسها"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "مادة واحدة ستُنشأ بالبيانات نفسها"
+                }
+              },
+              "two": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "مادتان ستُنشآن بالبيانات نفسها"
+                }
+              },
+              "few": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld مواد ستُنشأ بالبيانات نفسها"
+                }
+              },
+              "many": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld مادة ستُنشأ بالبيانات نفسها"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld مادة ستُنشأ بالبيانات نفسها"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld material will be created with the same details"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld materials will be created with the same details"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "a1.review.totalSize %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الحجم الكلي: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Total size: %@"
+          }
+        }
+      }
     }
   }
 }
