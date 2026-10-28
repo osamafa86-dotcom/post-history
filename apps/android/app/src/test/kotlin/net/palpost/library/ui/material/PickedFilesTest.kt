@@ -136,4 +136,25 @@ class PickedFilesTest {
         assertFalse(UploadIds.taskId("material-1") == UploadIds.taskId("material-2"))
         assertFalse(UploadIds.taskId("material-1") == UploadIds.sessionKey("material-1"))
     }
+
+    @Test
+    fun `the stored title has a plain ASCII suffix and no invisible direction characters`() {
+        val bidi = Regex("[\\u2066-\\u2069\\u200E\\u200F\\u202A-\\u202E]")
+        val asciiSuffix = Regex(" \\(\\d{1,2}/\\d{1,2}\\)")
+        for (total in 2..PickedFiles.MAX) {
+            for (i in 1..total) {
+                val suffix = MaterialTitles.suffix(i, total)
+                assertTrue(suffix, asciiSuffix.matches(suffix) && suffix.all { it.code < 128 })
+                assertFalse(suffix, bidi.containsMatchIn(suffix))
+                val title = MaterialTitles.titleFor("قصف على حي الرمال", i, total)
+                assertFalse(title, bidi.containsMatchIn(title))
+                assertTrue(title.endsWith(suffix))
+            }
+        }
+        // The reserve the validator keeps is exactly the longest stored suffix, nothing more or less.
+        for (total in 2..PickedFiles.MAX) {
+            assertEquals(MaterialTitles.MAX - MaterialTitles.longestSuffix(total).length, MaterialTitles.maxBase(total))
+        }
+        assertEquals("", MaterialTitles.suffix(1, 1)) // a single file's title is untouched
+    }
 }
