@@ -4,9 +4,13 @@ import SwiftUI
 import UploadCore
 
 /// A2 · الرفع يستأنف (docs/design/specs/reporter.md): بطاقة الرفع النشط، والمسودات، وقائمة الانتظار.
+/// لا إجراء مدمّر بالسحب الكامل هنا: التمرير في القائمة كان يلغي الرفع عرَضًا (ADR 0081). الإلغاء زر صريح
+/// بتأكيد؛ وحذف المسودة وإزالة الصف المنتهي بسحبٍ جزئي (`allowsFullSwipe: false`) ثم تأكيد.
 struct UploadsScreen: View {
     @EnvironmentObject private var queue: UploadQueueModel
     @Binding var editingDraft: MaterialDraft?
+    @State private var draftToDelete: MaterialDraft?
+    @State private var recordToRemove: UploadRecord?
 
     private var originals: [UploadRecord] { queue.records.filter { $0.kind == .original } }
     private var active: UploadRecord? { originals.first { !$0.phase.isTerminal } }
@@ -19,7 +23,9 @@ struct UploadsScreen: View {
                     ForEach(queue.drafts) { draft in
                         Button { editingDraft = draft } label: { DraftRow(draft: draft) }
                             .buttonStyle(.plain)
-                            .swipeActions { Button("draft.delete", role: .destructive) { queue.deleteDraft(draft.id) } }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button("draft.delete", role: .destructive) { draftToDelete = draft }
+                            }
                     }
                 } header: { VLOverline("drafts.title") }
                 .listRowBackground(Color.vl.bgSurface)
@@ -29,18 +35,15 @@ struct UploadsScreen: View {
                     ActiveUploadCard(record: active)
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
-                        .swipeActions { Button("upload.cancel", role: .destructive) { Task { await queue.cancel(active) } } }
                 }
             }
             if !others.isEmpty {
                 Section {
                     ForEach(others) { rec in
                         QueueRow(record: rec)
-                            .swipeActions {
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 if rec.phase.isTerminal {
-                                    Button("upload.remove", role: .destructive) { Task { await queue.remove(rec) } }
-                                } else {
-                                    Button("upload.cancel", role: .destructive) { Task { await queue.cancel(rec) } }
+                                    Button("upload.remove", role: .destructive) { recordToRemove = rec }
                                 }
                             }
                     }
@@ -55,6 +58,35 @@ struct UploadsScreen: View {
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(Color.vl.bgCanvas.ignoresSafeArea())
+        .confirmationDialog("draft.delete.confirm.title", isPresented: Binding(get: { draftToDelete != nil }, set: { if !$0 { draftToDelete = nil } }),
+                            titleVisibility: .visible, presenting: draftToDelete) { draft in
+            Button("draft.delete", role: .destructive) { queue.discardDraft(draft) }
+            Button("material.cancel", role: .cancel) {}
+        } message: { _ in
+            Text("draft.delete.confirm.message")
+        }
+        .confirmationDialog("upload.remove.confirm.title", isPresented: Binding(get: { recordToRemove != nil }, set: { if !$0 { recordToRemove = nil } }),
+                            titleVisibility: .visible, presenting: recordToRemove) { record in
+            Button("upload.remove", role: .destructive) { Task { await queue.remove(record) } }
+            Button("material.cancel", role: .cancel) {}
+        } message: { _ in
+            Text("upload.remove.confirm.message")
+        }
+    }
+}
+
+/// تأكيد إلغاء الرفع: واحد لكل مواضع الإلغاء كي لا يختلف النص ولا يُلغى رفع بلمسة واحدة.
+private struct CancelUploadConfirmation: ViewModifier {
+    @Binding var isPresented: Bool
+    let confirm: () -> Void
+
+    func body(content: Content) -> some View {
+        content.confirmationDialog("upload.cancel.confirm.title", isPresented: $isPresented, titleVisibility: .visible) {
+            Button("upload.cancel.confirm.action", role: .destructive, action: confirm)
+            Button("upload.cancel.confirm.keep", role: .cancel) {}
+        } message: {
+            Text("upload.cancel.confirm.message")
+        }
     }
 }
 
@@ -71,6 +103,9 @@ private struct DraftRow: View {
                     .vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
             }
             Spacer()
+            if draft.files.count > 1 {
+                Text("draft.files \(draft.files.count)").vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
+            }
             StateBadge(labelKey: "draft.badge", tone: .neutral)
         }
         .frame(minHeight: VL.Size.touchMin)
@@ -83,6 +118,7 @@ struct ActiveUploadCard: View {
     @EnvironmentObject private var settings: AppSettings
     let record: UploadRecord
 
+    @State private var confirmCancel = false
     private var proxy: UploadRecord? { queue.records.first { $0.kind == .proxy && $0.materialId == record.materialId } }
     private var paused: Bool { record.isPaused == true }
     private var networkBlocked: Bool { queue.networkState != .online && !record.phase.isTerminal }
@@ -95,6 +131,7 @@ struct ActiveUploadCard: View {
             reassurance
             actions
         }
+        .modifier(CancelUploadConfirmation(isPresented: $confirmCancel) { Task { await queue.cancel(record) } })
     }
 
     private var header: some View {
@@ -213,15 +250,20 @@ struct ActiveUploadCard: View {
 
     @ViewBuilder private var actions: some View {
         if !record.phase.isTerminal {
-            HStack(spacing: VL.Space.s3) {
-                Button {
-                    Task { if paused { await queue.resume(record) } else { await queue.pause(record) } }
-                } label: { Label(LocalizedStringKey(paused ? "upload.resume" : "upload.pause"), systemImage: paused ? "play.fill" : "pause.fill") }
-                    .buttonStyle(.vlSecondary)
-                Button {
-                    settings.uploadOverWifiOnly.toggle()
-                    queue.updateNetworkState()
-                } label: { Label(LocalizedStringKey(settings.uploadOverWifiOnly ? "upload.wifiOnly.on" : "upload.wifiOnly.off"), systemImage: "wifi") }
+            VStack(spacing: VL.Space.s3) {
+                HStack(spacing: VL.Space.s3) {
+                    Button {
+                        Task { if paused { await queue.resume(record) } else { await queue.pause(record) } }
+                    } label: { Label(LocalizedStringKey(paused ? "upload.resume" : "upload.pause"), systemImage: paused ? "play.fill" : "pause.fill") }
+                        .buttonStyle(.vlSecondary)
+                    Button {
+                        settings.uploadOverWifiOnly.toggle()
+                        queue.updateNetworkState()
+                    } label: { Label(LocalizedStringKey(settings.uploadOverWifiOnly ? "upload.wifiOnly.on" : "upload.wifiOnly.off"), systemImage: "wifi") }
+                        .buttonStyle(.vlGhost)
+                }
+                // إلغاء صريح بتأكيد؛ لا يُلغى الرفع بسحب ولا بلمسة واحدة.
+                Button(role: .destructive) { confirmCancel = true } label: { Label("upload.cancel", systemImage: "xmark.circle") }
                     .buttonStyle(.vlGhost)
             }
         }
@@ -257,10 +299,15 @@ struct ChunkBarsView: View {
 private struct QueueRow: View {
     @EnvironmentObject private var queue: UploadQueueModel
     let record: UploadRecord
+    @State private var confirmCancel = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: VL.Space.s2) {
             Text(verbatim: record.materialTitle ?? record.filename).vlText(.labelMd).foregroundStyle(Color.vl.textPrimary).lineLimit(2)
+            // عنوان الملفات المرفوعة معًا متشابه (`… (i/N)`)؛ الاسم يفرّق بينها.
+            if record.materialTitle != nil {
+                Text(verbatim: record.filename).vlText(.captionMd).foregroundStyle(Color.vl.textSecondary).lineLimit(1)
+            }
             switch record.phase {
             case .verified(let receipt):
                 Button { queue.presentedReceipt = ReceiptTarget(materialId: record.materialId, recordId: record.id) } label: {
@@ -275,7 +322,12 @@ private struct QueueRow: View {
             default:
                 Text(record.isPaused == true ? "upload.paused" : record.phase.labelKey).vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
             }
+            if !record.phase.isTerminal {
+                Button(role: .destructive) { confirmCancel = true } label: { Label("upload.cancel", systemImage: "xmark.circle") }
+                    .buttonStyle(.vlGhost)
+            }
         }
         .frame(minHeight: VL.Size.touchMin, alignment: .leading)
+        .modifier(CancelUploadConfirmation(isPresented: $confirmCancel) { Task { await queue.cancel(record) } })
     }
 }

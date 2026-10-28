@@ -9,7 +9,9 @@ import UniformTypeIdentifiers
 
 /// A1 · مادة جديدة بأربع خطوات (docs/design/specs/reporter.md): الملف → البيانات → نموذج المكتب → مراجعة وإرسال.
 /// «حفظ مسودة» متاح دائمًا والمسودة على الجهاز فقط. الأصل يُرفع كما صُوِّر؛ لا إحداثيات ولا معرّف جهاز.
-/// `replacing`: «رفع لقطة بديلة» لمادة قائمة — خطوة الملف ثم المراجعة فقط.
+/// `replacing`: «رفع لقطة بديلة» لمادة قائمة — خطوة الملف ثم المراجعة فقط، وبملف واحد.
+/// الملفات المختارة (حتى 20) تتشارك البيانات المدخلة مرة واحدة، ولكل ملف مادته بعنوان `<العنوان> (i/N)` (ADR 0081).
+/// الورقة لا تُغلق بالسحب متى وُجد إدخال؛ الإغلاق بزر الإلغاء يسأل: مسودة أو تجاهل أو متابعة.
 struct NewMaterialFlow: View {
     enum Step: Int, CaseIterable {
         case file = 1, fields, form, review
@@ -36,9 +38,12 @@ struct NewMaterialFlow: View {
     @State private var issues: [DraftValidator.Issue] = []
     @State private var submitError: LocalizedStringKey?
     @State private var busy = false
-    @State private var pickerItem: PhotosPickerItem?
+    @State private var pickerItems: [PhotosPickerItem] = []
     @State private var showFileImporter = false
-    @State private var thumbnail: Image?
+    /// مصغّرات الملفات المختارة بمسارها النسبي (للعرض فقط).
+    @State private var thumbnails: [String: Image] = [:]
+    @State private var importing = false
+    @State private var confirmClose = false
 
     init(draft: MaterialDraft? = nil, replacing: PostHistoryAPI.Material? = nil) {
         _draft = State(initialValue: draft ?? MaterialDraft())
@@ -48,6 +53,11 @@ struct NewMaterialFlow: View {
     private var step: Step { Step(rawValue: draft.step) ?? .file }
     private var steps: [Step] { replacing == nil ? Step.allCases : [.file, .review] }
     private var position: Int { (steps.firstIndex(of: step) ?? 0) + 1 }
+    /// «لقطة بديلة» ملف واحد؛ المادة الجديدة حتى `MaterialDraft.maxFiles`.
+    private var pickLimit: Int { replacing == nil ? max(1, MaterialDraft.maxFiles - draft.files.count) : 1 }
+    private var atLimit: Bool { replacing == nil && draft.files.count >= MaterialDraft.maxFiles }
+    /// المسودة محفوظة على القرص مسبقًا (فُتحت من قائمة المسودات أو حُفظت من هنا).
+    private var draftIsSaved: Bool { queue.drafts.contains { $0.id == draft.id } }
 
     var body: some View {
         NavigationStack {
@@ -74,73 +84,132 @@ struct NewMaterialFlow: View {
                 ToolbarItem(placement: .cancellationAction) {
                     if position > 1 {
                         Button { go(by: -1) } label: { Label("a1.back", systemImage: "chevron.backward") }
+                            .disabled(busy || importing)
                     } else {
-                        Button("material.cancel") { dismiss() }
+                        Button("material.cancel") { requestClose() }.disabled(busy || importing)
                     }
                 }
                 if replacing == nil {
                     ToolbarItem(placement: .primaryAction) {
-                        Button("a1.saveDraft") { queue.saveDraft(draft); dismiss() }.buttonStyle(.vlGhost)
+                        Button("a1.saveDraft") { queue.saveDraft(draft); dismiss() }.buttonStyle(.vlGhost).disabled(busy || importing)
                     }
                 }
             }
-            .onChange(of: pickerItem) { _, item in Task { await importPicked(item) } }
-            .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.movie, .image], allowsMultipleSelection: false) { result in
-                guard case .success(let urls) = result, let url = urls.first else { return }
-                let scoped = url.startAccessingSecurityScopedResource()
-                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                Task { await importFile(url) }
+            // ما دام فيه إدخال لا تُغلق الورقة بسحبٍ عابر أثناء التمرير؛ الإغلاق بزر الإلغاء وبسؤال.
+            .interactiveDismissDisabled(draft.hasInput || importing || busy)
+            .confirmationDialog("a1.close.title", isPresented: $confirmClose, titleVisibility: .visible) {
+                if replacing == nil {
+                    Button("a1.saveDraft") { queue.saveDraft(draft); dismiss() }
+                }
+                Button(LocalizedStringKey(draftIsSaved ? "draft.delete" : "a1.close.discard"), role: .destructive) { discardAndClose() }
+                Button("a1.close.keep", role: .cancel) {}
+            } message: {
+                Text("a1.close.message")
+            }
+            .onChange(of: pickerItems) { _, items in
+                guard !items.isEmpty else { return }
+                Task { await importPicked(items) }
+            }
+            .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.movie, .image], allowsMultipleSelection: replacing == nil) { result in
+                guard case .success(let urls) = result, !urls.isEmpty else { return }
+                Task { await importScoped(urls) }
             }
             .task(id: draft.materialTypes) { await loadForm() }
             .onChange(of: draft.priority) { _, _ in Task { await suggestLightCopy() } }
-            .task { await loadThumbnail() }
+            .task(id: draft.files.map(\.relativePath)) { await loadMissingThumbnails() }
         }
+    }
+
+    /// الإلغاء على الخطوة الأولى: بلا إدخال يُغلق مباشرة، وإلا يُسأل المراسل.
+    private func requestClose() {
+        if draft.hasInput { confirmClose = true } else { dismiss() }
+    }
+
+    /// التجاهل يحذف النسخ المحلية التي أنشأتها هذه الورقة (لا الأصل في المعرض)، ومسودتها المحفوظة إن وُجدت.
+    /// الرفوعات التي دخلت الطابور من قبل لا تتأثر: ملفاتها نسخ أخرى في سجلاتها.
+    private func discardAndClose() {
+        for file in draft.files { UploadServices.shared.deleteLocalCopy(relativePath: file.relativePath) }
+        if replacing == nil { queue.deleteDraft(draft.id) }
+        dismiss()
     }
 
     // MARK: الخطوة 1 · الملف
 
     @ViewBuilder private var fileStep: some View {
-        if let file = draft.file {
-            VLCard {
-                HStack(alignment: .top, spacing: VL.Space.s4) {
-                    thumbnailView
-                    VStack(alignment: .leading, spacing: VL.Space.s2) {
-                        Text(verbatim: file.filename).vlText(.labelLg).foregroundStyle(Color.vl.textPrimary).lineLimit(2)
-                        Text(verbatim: fileFacts(file)).vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
-                    }
-                }
-                if file.isVideo { lightCopyLine }
-                pickButtons(primary: false)
-            }
-        } else {
+        if draft.files.isEmpty, !importing {
             VStack(spacing: VL.Space.s4) {
                 Image(systemName: "photo.on.rectangle.angled").font(.largeTitle).foregroundStyle(Color.vl.iconMuted)
                 Text("a1.file.empty").vlText(.bodyMd).foregroundStyle(Color.vl.textSecondary).multilineTextAlignment(.center)
+                if replacing == nil {
+                    Text("a1.file.multiHint").vlText(.captionMd).foregroundStyle(Color.vl.textSecondary).multilineTextAlignment(.center)
+                }
                 pickButtons(primary: true)
             }
             .padding(VL.Space.s7)
             .frame(maxWidth: .infinity)
             .overlay(RoundedRectangle(cornerRadius: VL.Radius.lg)
                 .strokeBorder(Color.vl.borderStrong, style: StrokeStyle(lineWidth: VL.Border.hairline, dash: [VL.Space.s3, VL.Space.s2])))
+        } else {
+            VLCard {
+                if replacing == nil {
+                    Text("a1.files.count \(draft.files.count) \(MaterialDraft.maxFiles)").vlText(.labelMd).foregroundStyle(Color.vl.textSecondary)
+                }
+                ForEach(draft.files, id: \.relativePath) { file in fileRow(file) }
+                if importing {
+                    HStack(spacing: VL.Space.s3) {
+                        ProgressView()
+                        Text("a1.file.importing").vlText(.bodySm).foregroundStyle(Color.vl.textSecondary)
+                    }
+                }
+                if draft.videoCount > 0 { lightCopyLine }
+                pickButtons(primary: false)
+            }
         }
     }
 
-    @ViewBuilder private var thumbnailView: some View {
-        if let thumbnail {
-            thumbnail.resizable().scaledToFill()
-                .frame(width: VL.Size.thumbW / 2, height: VL.Size.thumbH / 2)
-                .clipShape(RoundedRectangle(cornerRadius: VL.Radius.md))
-                .accessibilityHidden(true)
+    /// صف ملف مختار: مصغّرة واسم وحقائق وزر إزالة (يحذف النسخة المحلية فقط).
+    private func fileRow(_ file: MaterialDraft.PickedFile) -> some View {
+        HStack(alignment: .center, spacing: VL.Space.s4) {
+            thumbnailView(for: file)
+            VStack(alignment: .leading, spacing: VL.Space.s2) {
+                Text(verbatim: file.filename).vlText(.labelLg).foregroundStyle(Color.vl.textPrimary).lineLimit(2)
+                Text(verbatim: fileFacts(file)).vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
+            }
+            Spacer(minLength: 0)
+            if replacing == nil {
+                Button { remove(file) } label: { Label("a1.file.remove", systemImage: "xmark.circle.fill").labelStyle(.iconOnly) }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.vl.iconMuted)
+                    .frame(minWidth: VL.Size.touchMin, minHeight: VL.Size.touchMin)
+                    .disabled(busy || importing)
+            }
         }
+    }
+
+    private func thumbnailView(for file: MaterialDraft.PickedFile) -> some View {
+        Group {
+            if let image = thumbnails[file.relativePath] {
+                image.resizable().scaledToFill()
+            } else {
+                Color.vl.bgSubtle.overlay(Image(systemName: file.isVideo ? "video" : "photo").foregroundStyle(Color.vl.iconMuted))
+            }
+        }
+        .frame(width: VL.Size.thumbW / 2, height: VL.Size.thumbH / 2)
+        .clipShape(RoundedRectangle(cornerRadius: VL.Radius.md))
+        .accessibilityHidden(true)
     }
 
     private func pickButtons(primary: Bool) -> some View {
         VStack(spacing: VL.Space.s3) {
-            PhotosPicker(selection: $pickerItem, matching: .any(of: [.videos, .images]), preferredItemEncoding: .current) {
-                Label(LocalizedStringKey(primary ? "a1.file.pick" : "a1.file.change"), systemImage: "photo.on.rectangle")
+            PhotosPicker(selection: $pickerItems, maxSelectionCount: pickLimit, selectionBehavior: .ordered,
+                         matching: .any(of: [.videos, .images]), preferredItemEncoding: .current) {
+                Label(LocalizedStringKey(primary ? "a1.file.pick" : (replacing == nil ? "a1.file.addMore" : "a1.file.change")), systemImage: "photo.on.rectangle")
             }
             .buttonStyle(primary ? AnyButtonStyle(VLPrimaryButtonStyle()) : AnyButtonStyle(VLSecondaryButtonStyle()))
-            Button { showFileImporter = true } label: { Label("material.file.fromFiles", systemImage: "folder") }.buttonStyle(.vlGhost)
+            .disabled(importing || atLimit)
+            Button { showFileImporter = true } label: { Label("material.file.fromFiles", systemImage: "folder") }
+                .buttonStyle(.vlGhost)
+                .disabled(importing || atLimit)
         }
     }
 
@@ -151,6 +220,9 @@ struct NewMaterialFlow: View {
                 Text("material.lightCopy").vlText(.labelMd).foregroundStyle(Color.vl.textPrimary)
                 Text(LocalizedStringKey("material.lightCopy." + (draft.lightCopy ?? ProxyChoice.originalOnly.rawValue)))
                     .vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
+                if draft.videoCount > 1 {
+                    Text("a1.lightCopy.allVideos").vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
+                }
             }
             Spacer()
             Menu {
@@ -178,10 +250,10 @@ struct NewMaterialFlow: View {
     // MARK: الخطوة 2 · البيانات
 
     @ViewBuilder private var fieldsStep: some View {
-        field("material.title", issue: .titleLength) {
+        field("material.title", issue: issues.contains(.titleTooLongForSet) ? .titleTooLongForSet : .titleLength) {
             TextField("material.title", text: $draft.title, axis: .vertical)
-                .vlInput(invalid: issues.contains(.titleLength))
-            Text(verbatim: "\(DraftValidator.titleLength(draft.title))/\(DraftValidator.titleRange.upperBound)")
+                .vlInput(invalid: issues.contains(.titleLength) || issues.contains(.titleTooLongForSet))
+            Text(verbatim: "\(DraftValidator.titleLength(draft.title))/\(DraftValidator.titleLimit(forFileCount: draft.files.count))")
                 .vlText(.captionMd).foregroundStyle(Color.vl.textMuted).environment(\.layoutDirection, .leftToRight)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
@@ -277,16 +349,25 @@ struct NewMaterialFlow: View {
             }
         }
         summary(.file) {
-            if let f = draft.file {
-                Text(verbatim: f.filename).vlText(.bodyMd)
-                Text(uploadPlanKey).vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
+            if draft.files.count > 1 {
+                Text("a1.review.materials \(draft.files.count)").vlText(.bodyMd)
+                Text("a1.review.totalSize \(ByteCountFormatter.string(fromByteCount: draft.totalSizeBytes, countStyle: .file))")
+                    .vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
             }
+            ForEach(draft.files, id: \.relativePath) { f in
+                if draft.files.count > 1 {
+                    Text(verbatim: f.filename).vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
+                } else {
+                    Text(verbatim: f.filename).vlText(.bodyMd)
+                }
+            }
+            Text(uploadPlanKey).vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
         }
     }
 
     private var uploadPlanKey: LocalizedStringKey {
         let choice = ProxyChoice(rawValue: draft.lightCopy ?? "") ?? .originalOnly
-        return draft.file?.isVideo == true && choice != .originalOnly ? "a1.review.plan.lightThenOriginal" : "a1.review.plan.originalOnly"
+        return draft.videoCount > 0 && choice != .originalOnly ? "a1.review.plan.lightThenOriginal" : "a1.review.plan.originalOnly"
     }
 
     private func summary<Content: View>(_ target: Step, @ViewBuilder content: () -> Content) -> some View {
@@ -315,8 +396,8 @@ struct NewMaterialFlow: View {
                 .buttonStyle(.vlPrimary)
                 .disabled(busy || (replacing == nil && formUnavailable && form == nil))
             } else {
-                Button("a1.next") { go(by: 1) }.buttonStyle(.vlPrimary)
-                if step == .file, draft.file == nil {
+                Button("a1.next") { go(by: 1) }.buttonStyle(.vlPrimary).disabled(importing)
+                if step == .file, draft.files.isEmpty {
                     Text("a1.next.needsFile").vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
                 }
             }
@@ -353,50 +434,92 @@ struct NewMaterialFlow: View {
         submitError = nil
         busy = true
         defer { busy = false }
-        guard let file = draft.file else { issues = [.fileMissing]; return }
-        let lightCopy = file.isVideo ? (ProxyChoice(rawValue: draft.lightCopy ?? "") ?? .originalOnly) : .originalOnly
-        do {
-            if let replacing {
+        guard !draft.files.isEmpty else { issues = [.fileMissing]; return }
+        // اختيار النسخة الخفيفة واحد للمجموعة ويسري على كل فيديو فيها؛ الصور أصلًا فقط.
+        let choice = ProxyChoice(rawValue: draft.lightCopy ?? "") ?? .originalOnly
+        if let replacing {
+            do {
+                guard let file = draft.files.first else { return }
                 try await queue.enqueue(relativePath: file.relativePath, materialId: replacing.id, filename: file.filename, mimeType: file.mimeType,
-                                        lightCopy: lightCopy, title: replacing.title, priority: replacing.priority)
+                                        lightCopy: file.isVideo ? choice : .originalOnly, title: replacing.title, priority: replacing.priority)
                 dismiss()
-                return
+            } catch {
+                submitError = "material.error.create"
             }
-            guard let form, FormValidator.validate(form: form, materialType: primaryType.rawValue, values: draft.dynamicValues).valid else {
-                draft.step = Step.form.rawValue
-                return
-            }
-            draft.formVersion = form.version
-            let visible = Set(FormValidator.visibleFields(form: form, materialType: primaryType.rawValue, values: draft.dynamicValues).map(\.key))
-            let dynamic = draft.dynamicValues.filter { visible.contains($0.key) && !$0.value.isEmpty }.mapValues(\.jsonValue)
-            guard let body = DraftValidator.materialCreate(draft, dynamicFields: dynamic) else {
-                issues = DraftValidator.fieldIssues(draft)
-                draft.step = Step.fields.rawValue
-                return
-            }
-            // المفتاح ثابت للمسودة: إعادة الإرسال بعد انقطاع تعيد المادة نفسها ولا تنشئ ثانية.
-            let material = try await MaterialsAPI.createMaterial(idempotencyKey: draft.createIdempotencyKey, materialCreate: body, apiConfiguration: app.api)
-            draft.createdMaterialId = material.id
-            try await queue.enqueue(relativePath: file.relativePath, materialId: material.id, filename: file.filename, mimeType: file.mimeType,
-                                    lightCopy: lightCopy, title: body.title, priority: body.priority)
+            return
+        }
+        guard let form, FormValidator.validate(form: form, materialType: primaryType.rawValue, values: draft.dynamicValues).valid else {
+            draft.step = Step.form.rawValue
+            return
+        }
+        draft.formVersion = form.version
+        let visible = Set(FormValidator.visibleFields(form: form, materialType: primaryType.rawValue, values: draft.dynamicValues).map(\.key))
+        let dynamic = draft.dynamicValues.filter { visible.contains($0.key) && !$0.value.isEmpty }.mapValues(\.jsonValue)
+        let fieldIssues = DraftValidator.fieldIssues(draft)
+        guard fieldIssues.isEmpty else {
+            issues = fieldIssues
+            draft.step = Step.fields.rawValue
+            return
+        }
+        // مادة لكل ملف بالبيانات المشتركة نفسها (الخادم يحتفظ بأصل واحد للمادة، ADR 0081). لكل ملف مفتاح إنشاء ثابت يُحفظ مع المسودة،
+        // وما دخل الطابور يُسقَط منها؛ عند الفشل تُحفظ المسودة بما بقي فلا يُنشأ شيء ولا يُدخل مرتين.
+        let outcome = await DraftSubmission.run(draft, dynamicFields: dynamic) { key, body in
+            try await MaterialsAPI.createMaterial(idempotencyKey: key, materialCreate: body, apiConfiguration: app.api).id
+        } enqueue: { file, materialId, body in
+            try await queue.enqueue(relativePath: file.relativePath, materialId: materialId, filename: file.filename, mimeType: file.mimeType,
+                                    lightCopy: file.isVideo ? choice : .originalOnly, title: body.title, priority: body.priority)
+        }
+        if outcome.error == nil {
             queue.deleteDraft(draft.id)
             dismiss()
-        } catch {
+        } else {
             submitError = "material.error.create"
+            draft = outcome.draft
             queue.saveDraft(draft)
         }
     }
 
     // MARK: الملف والنموذج والنسخة الخفيفة
 
-    /// النسخة الأصلية من PhotosUI تُنقل كملف (`FileRepresentation`) بلا إعادة ترميز ولا تجريد.
-    private func importPicked(_ item: PhotosPickerItem?) async {
-        guard let item, let picked = try? await item.loadTransferable(type: PickedFile.self) else { return }
-        await importFile(picked.url)
-        try? FileManager.default.removeItem(at: picked.url)
+    /// الأصول المختارة من PhotosUI تُنقل ملفاتٍ (`FileRepresentation`) بلا إعادة ترميز ولا تجريد، واحدًا بعد آخر بترتيب الاختيار.
+    private func importPicked(_ items: [PhotosPickerItem]) async {
+        pickerItems = []
+        importing = true
+        defer { importing = false }
+        var failed = false
+        var imported = false
+        for item in items {
+            guard draft.files.count < maxFilesNow else { break }
+            guard let picked = try? await item.loadTransferable(type: PickedFile.self) else { failed = true; continue }
+            if await importFile(picked.url) { imported = true } else { failed = true }
+            try? FileManager.default.removeItem(at: picked.url)
+        }
+        if failed { submitError = "material.error.import" }
+        if imported { await suggestLightCopy() }
     }
 
-    private func importFile(_ url: URL) async {
+    /// ملفات تطبيق «الملفات»: الوصول المحمي بالنطاق يبدأ لكل رابط ويُنهى بعد نسخه.
+    private func importScoped(_ urls: [URL]) async {
+        importing = true
+        defer { importing = false }
+        var failed = false
+        var imported = false
+        for url in urls {
+            guard draft.files.count < maxFilesNow else { break }
+            let scoped = url.startAccessingSecurityScopedResource()
+            if await importFile(url) { imported = true } else { failed = true }
+            if scoped { url.stopAccessingSecurityScopedResource() }
+        }
+        if failed { submitError = "material.error.import" }
+        if imported { await suggestLightCopy() }
+    }
+
+    /// الحدّ الجاري: ملف واحد في «لقطة بديلة»، وإلا `MaterialDraft.maxFiles`.
+    private var maxFilesNow: Int { replacing == nil ? MaterialDraft.maxFiles : Int.max }
+
+    /// ينسخ ملفًا إلى مجلد الرفع ويضيفه إلى المسودة. في «لقطة بديلة» يحلّ محل السابق ونسخته المحلية.
+    @discardableResult
+    private func importFile(_ url: URL) async -> Bool {
         do {
             let (path, size) = try UploadServices.shared.importFile(from: url, preferredName: url.lastPathComponent)
             let type = UTType(filenameExtension: url.pathExtension)
@@ -406,37 +529,58 @@ struct NewMaterialFlow: View {
                 let asset = AVURLAsset(url: UploadServices.shared.documentsDirectory.appendingPathComponent(path))
                 duration = (try? await asset.load(.duration)).map(CMTimeGetSeconds)
             }
-            if let old = draft.file { UploadServices.shared.deleteLocalCopy(relativePath: old.relativePath) }
-            draft.file = .init(relativePath: path, filename: url.lastPathComponent, sizeBytes: size, mimeType: type?.preferredMIMEType,
-                               isVideo: isVideo, durationSeconds: duration)
-            draft.lightCopyChosenByReporter = false
+            if replacing != nil {
+                for old in draft.files { UploadServices.shared.deleteLocalCopy(relativePath: old.relativePath) }
+                draft.files = []
+                draft.lightCopyChosenByReporter = false
+            }
+            draft.files.append(.init(relativePath: path, filename: url.lastPathComponent, sizeBytes: size, mimeType: type?.preferredMIMEType,
+                                     isVideo: isVideo, durationSeconds: duration))
             issues = []
-            await loadThumbnail()
-            await suggestLightCopy()
+            return true
         } catch {
-            submitError = "material.error.import"
+            return false
         }
     }
 
+    /// إزالة ملف من المجموعة تحذف نسخته المحلية فقط؛ الأصل في المعرض أو الملفات لا يُمس.
+    private func remove(_ file: MaterialDraft.PickedFile) {
+        UploadServices.shared.deleteLocalCopy(relativePath: file.relativePath)
+        draft.files.removeAll { $0.relativePath == file.relativePath }
+        thumbnails[file.relativePath] = nil
+        // مسودة محفوظة تشير إلى الملف المحذوف؛ تُحدَّث كي لا تبقى بمرجع ميت.
+        if draftIsSaved { queue.saveDraft(draft) }
+        Task { await suggestLightCopy() }
+    }
+
+    /// الاقتراح من أطول فيديو في المجموعة ويسري على كل فيديوهاتها؛ اختيار المراسل لا يُستبدل.
     private func suggestLightCopy() async {
-        guard let file = draft.file, !draft.lightCopyChosenByReporter else { return }
-        guard file.isVideo else { draft.lightCopy = ProxyChoice.originalOnly.rawValue; return }
-        let context = await DeviceConditions.context(isVideo: true, durationSeconds: file.durationSeconds ?? 0, priority: draft.priority ?? .normal)
+        guard !draft.lightCopyChosenByReporter else { return }
+        guard let longest = draft.longestVideoSeconds else { draft.lightCopy = ProxyChoice.originalOnly.rawValue; return }
+        let context = await DeviceConditions.context(isVideo: true, durationSeconds: longest, priority: draft.priority ?? .normal)
         draft.lightCopy = ProxyPolicy.suggest(context).rawValue
     }
 
-    /// مصغّرة محلية للعرض فقط؛ لا تخرج من الجهاز.
-    private func loadThumbnail() async {
-        guard let file = draft.file else { thumbnail = nil; return }
+    /// مصغّرات محلية للعرض فقط؛ لا تخرج من الجهاز. تُحمَّل الناقصة وتُترك مصغّرات الملفات المزالة.
+    private func loadMissingThumbnails() async {
+        let present = Set(draft.files.map(\.relativePath))
+        thumbnails = thumbnails.filter { present.contains($0.key) }
+        for file in draft.files where thumbnails[file.relativePath] == nil {
+            if let image = await makeThumbnail(for: file) { thumbnails[file.relativePath] = image }
+        }
+    }
+
+    private func makeThumbnail(for file: MaterialDraft.PickedFile) async -> Image? {
         let url = UploadServices.shared.documentsDirectory.appendingPathComponent(file.relativePath)
         if file.isVideo {
             let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
             generator.appliesPreferredTrackTransform = true
             generator.maximumSize = CGSize(width: VL.Size.thumbW, height: VL.Size.thumbH)
-            if let cg = try? await generator.image(at: .zero).image { thumbnail = Image(decorative: cg, scale: 1) }
+            if let cg = try? await generator.image(at: .zero).image { return Image(decorative: cg, scale: 1) }
         } else if let ui = UIImage(contentsOfFile: url.path)?.preparingThumbnail(of: CGSize(width: VL.Size.thumbW, height: VL.Size.thumbH)) {
-            thumbnail = Image(uiImage: ui)
+            return Image(uiImage: ui)
         }
+        return nil
     }
 
     /// آخر نسخة ناجحة من النموذج لكل نوع تُحفظ مؤقتًا؛ بلا شبكة تُستعمل بشارة «إصدار محفوظ»، وإلا فالمسودة فقط.
@@ -491,7 +635,7 @@ struct PickedFile: Transferable {
     let url: URL
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(importedContentType: .item) { received in
-            let copy = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString)-\(received.file.lastPathComponent)")
+            let copy = FileManager.default.temporaryDirectory.appendingPathComponent(PickedTempFiles.newName(for: received.file.lastPathComponent))
             try FileManager.default.copyItem(at: received.file, to: copy)
             return PickedFile(url: copy)
         }

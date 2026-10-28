@@ -147,7 +147,8 @@ struct VLGhostButtonStyle: ButtonStyle {
             .vlText(.labelLg)
             .frame(minHeight: VL.Size.touchMin)
             .padding(.horizontal, VL.Space.s3)
-            .foregroundStyle(Color.vl.textBrand)
+            // الدور المدمّر يأخذ لون الخطر كما في الزر الثانوي.
+            .foregroundStyle(configuration.role == .destructive ? Color.vl.textDanger : Color.vl.textBrand)
             .opacity(configuration.isPressed ? 0.7 : 1)
             .contentShape(Rectangle())
     }

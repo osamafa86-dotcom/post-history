@@ -39,6 +39,8 @@ final class UploadQueueModel: ObservableObject {
         self.settings = settings
         draftStore = try? FileDraftStore(directory: UploadServices.shared.draftsDirectory)
         drafts = draftStore?.loadAll() ?? []
+        // نسخ الاختيار المؤقتة التي خلّفها إنهاء التطبيق قبل نقلها إلى مجلد الرفع.
+        PickedTempFiles.sweep(in: FileManager.default.temporaryDirectory)
     }
 
     private func startPathMonitor() {
@@ -128,6 +130,12 @@ final class UploadQueueModel: ObservableObject {
     func deleteDraft(_ id: UUID) {
         draftStore?.delete(id)
         drafts = draftStore?.loadAll() ?? []
+    }
+
+    /// حذف مسودة بقرار المراسل: تُحذف نسخ ملفاتها المحلية أيضًا (لا الأصل في المعرض). لا يُستعمل بعد الإرسال لأن الملفات حينئذ في الطابور.
+    func discardDraft(_ draft: MaterialDraft) {
+        for file in draft.files { UploadServices.shared.deleteLocalCopy(relativePath: file.relativePath) }
+        deleteDraft(draft.id)
     }
 
     /// بعد المسح الطارئ: المجلد مُحي، والقائمة تُفرغ.
