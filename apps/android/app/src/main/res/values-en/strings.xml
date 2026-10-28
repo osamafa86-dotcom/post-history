@@ -113,7 +113,7 @@
     <string name="material_city">City or town</string>
     <string name="material_priority">Priority</string>
     <string name="material_sensitivity">Sensitivity</string>
-    <string name="material_sensitivity_help">Required. Any “yes” enables blurring and warnings and moves processing to the local path.</string>
+    <string name="material_sensitivity_help">Required. Any “yes” enables blurring and warnings and moves processing to the local path. Your answers apply to every file you picked.</string>
     <string name="material_sensitivity_minors">Faces of minors visible?</string>
     <string name="material_sensitivity_injured">Injuries visible?</string>
     <string name="material_sensitivity_graphic">Graphic scenes?</string>
@@ -297,6 +297,16 @@
     <string name="a2_wifi_only_off">Wi‑Fi only</string>
     <string name="a2_remove">Remove</string>
     <string name="a2_cancel">Cancel</string>
+    <string name="a2_cancel_title">Cancel this upload?</string>
+    <string name="a2_cancel_body">This upload stops and won\'t resume; to send it later you start again.</string>
+    <string name="a2_cancel_confirm">Yes, cancel the upload</string>
+    <string name="a2_cancel_keep">No, keep uploading</string>
+    <string name="a2_remove_title">Remove this upload from the list?</string>
+    <string name="a2_remove_body">Its record is deleted from your phone, including the receipt number. What reached the office is not affected.</string>
+    <string name="a2_remove_confirm">Yes, remove it</string>
+    <string name="a2_remove_keep">No, keep it</string>
+    <string name="a2_cancel_named">Cancel the upload of %1$s</string>
+    <string name="a2_remove_named">Remove %1$s from the list</string>
     <string name="a2_eta">about %1$s left</string>
     <string name="a2_eta_seconds">%1$d s</string>
     <string name="a2_eta_minutes">%1$d min</string>
@@ -355,6 +365,23 @@
     <string name="a1_form_unavailable">The office form could not be loaded and no copy is saved on the phone; save the material as a draft and finish it when the network is back.</string>
     <string name="a1_what_uploads">What will upload</string>
     <string name="a1_the_original">Original</string>
+    <string name="a1_files_help">Photos and videos from the phone\'s gallery, as uncompressed originals. Pick up to %1$d files at once; each file becomes its own material with the details you enter once in the next step.</string>
+    <string name="a1_pick_gallery_many">Pick from the gallery (several files)</string>
+    <string name="a1_add_more">Add more</string>
+    <string name="a1_files_total">%1$d of %2$d files · %3$s in total</string>
+    <string name="a1_files_over_limit">A material holds at most %1$d files; %2$d of the picked files were not added.</string>
+    <string name="a1_files_duplicates">%1$d of the picked files were ignored because they are already added.</string>
+    <string name="a1_remove_file">Remove %1$s from the list</string>
+    <string name="a1_the_originals">Originals</string>
+    <string name="a1_partial_failed">%1$d of %2$d materials were created and queued; the other %3$d are saved as a draft: send again to finish them.</string>
+    <string name="a1_title_too_long_many">The title is too long for %1$d files: at most %2$d characters before the numbering.</string>
+    <string name="a1_title_help_many">5 to %1$d characters; numbering such as %2$s is added to each material\'s title</string>
+    <string name="a1_leave_title">What you entered is not saved</string>
+    <string name="a1_leave_body">Save it as a draft to finish later, discard it, or keep editing. Whatever is uploading in the upload list is not affected by any choice.</string>
+    <string name="a1_leave_body_no_draft">Discard it or keep editing. Whatever is uploading in the upload list is not affected by any choice.</string>
+    <string name="a1_leave_save">Save draft</string>
+    <string name="a1_leave_discard">Discard what I entered</string>
+    <string name="a1_leave_keep">Keep editing</string>
     <string name="a1_edit">Edit</string>
     <string name="a1_required">required</string>
 
@@ -402,4 +429,8 @@
     <string name="earnings_status_failed">Failed</string>
     <string name="earnings_status_rejected">Rejected</string>
     <string name="earnings_status_cancelled">Cancelled</string>
+    <plurals name="a1_review_materials">
+        <item quantity="one">%1$d material will be created with the same details · %2$s in total</item>
+        <item quantity="other">%1$d materials will be created with the same details · %2$s in total</item>
+    </plurals>
 </resources>

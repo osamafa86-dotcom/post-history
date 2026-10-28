@@ -125,7 +125,7 @@
     <string name="material_city">المدينة أو البلدة</string>
     <string name="material_priority">الأولوية</string>
     <string name="material_sensitivity">الحساسية</string>
-    <string name="material_sensitivity_help">أسئلة إلزامية؛ أي «نعم» يفعّل التمويه والتحذير ويحوّل المعالجة إلى المسار المحلي.</string>
+    <string name="material_sensitivity_help">أسئلة إلزامية؛ أي «نعم» يفعّل التمويه والتحذير ويحوّل المعالجة إلى المسار المحلي. وتنطبق إجاباتك على كل الملفات التي اخترتها.</string>
     <string name="material_sensitivity_minors">تظهر فيها وجوه قاصرين؟</string>
     <string name="material_sensitivity_injured">تظهر فيها إصابات؟</string>
     <string name="material_sensitivity_graphic">مشاهد صادمة؟</string>
@@ -312,6 +312,16 @@
     <string name="a2_wifi_only_off">Wi‑Fi فقط</string>
     <string name="a2_remove">إزالة</string>
     <string name="a2_cancel">إلغاء</string>
+    <string name="a2_cancel_title">إلغاء هذا الرفع؟</string>
+    <string name="a2_cancel_body">يتوقف هذا الرفع ولا يُستأنف؛ لإرساله لاحقًا تبدؤه من جديد.</string>
+    <string name="a2_cancel_confirm">نعم، ألغِ الرفع</string>
+    <string name="a2_cancel_keep">لا، تابع الرفع</string>
+    <string name="a2_remove_title">إزالة هذا الرفع من القائمة؟</string>
+    <string name="a2_remove_body">يُحذف سجله من هاتفك، ومنه رقم الإيصال. ما وصل إلى المكتب لا يتأثر.</string>
+    <string name="a2_remove_confirm">نعم، أزِله</string>
+    <string name="a2_remove_keep">لا، أبقِه</string>
+    <string name="a2_cancel_named">إلغاء رفع %1$s</string>
+    <string name="a2_remove_named">إزالة %1$s من القائمة</string>
     <string name="a2_eta">نحو %1$s متبقية</string>
     <string name="a2_eta_seconds">%1$d ث</string>
     <string name="a2_eta_minutes">%1$d د</string>
@@ -370,6 +380,23 @@
     <string name="a1_form_unavailable">تعذّر تحميل نموذج المكتب ولا نسخة محفوظة منه على الهاتف؛ احفظ المادة مسودة وأكملها حين تعود الشبكة.</string>
     <string name="a1_what_uploads">ما سيُرفع</string>
     <string name="a1_the_original">الأصل</string>
+    <string name="a1_files_help">صور وفيديوهات من معرض الهاتف بالأصل غير المضغوط. اختر حتى %1$d ملفًا دفعة واحدة؛ يصير كل ملف مادة مستقلة بالبيانات التي تدخلها مرة واحدة في الخطوة التالية.</string>
+    <string name="a1_pick_gallery_many">اختر من المعرض (عدة ملفات)</string>
+    <string name="a1_add_more">إضافة المزيد</string>
+    <string name="a1_files_total">%1$d من %2$d ملفًا · الحجم الكلي %3$s</string>
+    <string name="a1_files_over_limit">الحد الأقصى %1$d ملفًا في المادة الواحدة؛ لم يُضَف %2$d من الملفات المختارة.</string>
+    <string name="a1_files_duplicates">تُجوهل %1$d من الملفات المختارة لأنها مضافة من قبل.</string>
+    <string name="a1_remove_file">إزالة %1$s من القائمة</string>
+    <string name="a1_the_originals">الملفات الأصلية</string>
+    <string name="a1_partial_failed">أُنشئت %1$d من %2$d مواد وأُدرجت في قائمة الرفع؛ حُفظ الباقي (%3$d) مسودة، فأعد الإرسال لإكمالها.</string>
+    <string name="a1_title_too_long_many">العنوان طويل على %1$d ملفات: الحد %2$d حرفًا قبل الترقيم.</string>
+    <string name="a1_title_help_many">من 5 إلى %1$d حرفًا؛ يُضاف ترقيم مثل %2$s إلى عنوان كل مادة</string>
+    <string name="a1_leave_title">ما أدخلته لم يُحفظ</string>
+    <string name="a1_leave_body">احفظه مسودة لتكمله لاحقًا، أو تجاهله، أو تابع التحرير. ما يجري رفعه في قائمة الرفع لا يتأثر بأي اختيار.</string>
+    <string name="a1_leave_body_no_draft">تجاهله أو تابع التحرير. ما يجري رفعه في قائمة الرفع لا يتأثر بأي اختيار.</string>
+    <string name="a1_leave_save">احفظ مسودة</string>
+    <string name="a1_leave_discard">تجاهل ما أدخلت</string>
+    <string name="a1_leave_keep">تابع التحرير</string>
     <string name="a1_edit">تعديل</string>
     <string name="a1_required">مطلوب</string>
 
@@ -417,4 +444,12 @@
     <string name="earnings_status_failed">فشل</string>
     <string name="earnings_status_rejected">مرفوض</string>
     <string name="earnings_status_cancelled">ملغى</string>
+    <plurals name="a1_review_materials">
+        <item quantity="zero">لا مواد ستُنشأ · الحجم الكلي %2$s</item>
+        <item quantity="one">مادة واحدة ستُنشأ بالبيانات نفسها · الحجم الكلي %2$s</item>
+        <item quantity="two">مادتان ستُنشآن بالبيانات نفسها · الحجم الكلي %2$s</item>
+        <item quantity="few">%1$d مواد ستُنشأ بالبيانات نفسها · الحجم الكلي %2$s</item>
+        <item quantity="many">%1$d مادة ستُنشأ بالبيانات نفسها · الحجم الكلي %2$s</item>
+        <item quantity="other">%1$d مادة ستُنشأ بالبيانات نفسها · الحجم الكلي %2$s</item>
+    </plurals>
 </resources>

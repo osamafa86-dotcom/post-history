@@ -5,8 +5,14 @@ import net.palpost.library.api.infrastructure.Serializer
 
 /**
  * An A1 draft as it is kept on the phone (`Save draft`, spec A1): the fixed fields, the office form's values and
- * the picked original's URI, by contract values so a draft survives app updates. Attachment fields of the office
+ * the picked originals' URIs, by contract values so a draft survives app updates. Attachment fields of the office
  * form are not kept: their files must be picked again (their read grant may not outlive the draft).
+ *
+ * v1 kept one original (`originalUri` and its siblings); v2 keeps a list (`files`), each entry with the per-file
+ * material key, the id of its material once created, and its numbering (see [PickedOriginal]); those four read as
+ * null when absent. [fromJson] reads both versions, so a draft saved before multi-pick opens with its one file (and,
+ * with no key of its own, takes the draft-level key: [PickedFiles.stampKeys]). No Room migration is needed: the
+ * table holds JSON text.
  */
 data class MaterialDraft(
     val title: String = "",
@@ -20,18 +26,17 @@ data class MaterialDraft(
     val displayMode: String = "network",
     val pseudonym: String = "",
     val values: Map<String, Any?> = emptyMap(),
-    val originalUri: String? = null,
-    val originalName: String? = null,
-    val originalSize: Long = 0,
-    val originalMime: String? = null,
+    val files: List<PickedOriginal> = emptyList(),
     val step: Int = 1,
 ) {
     fun toJson(): String = adapter.toJson(
         mapOf(
-            "v" to 1, "title" to title, "types" to types, "governorate" to governorate, "city" to city, "priority" to priority,
+            "v" to 2, "title" to title, "types" to types, "governorate" to governorate, "city" to city, "priority" to priority,
             "minors" to minors, "injured" to injured, "graphic" to graphic, "displayMode" to displayMode, "pseudonym" to pseudonym,
-            "values" to values, "originalUri" to originalUri, "originalName" to originalName, "originalSize" to originalSize,
-            "originalMime" to originalMime, "step" to step,
+            "values" to values, "files" to files.map { f ->
+                mapOf("uri" to f.uri, "name" to f.name, "size" to f.sizeBytes, "mime" to f.mimeType, "materialKey" to f.materialKey, "materialId" to f.createdMaterialId, "pos" to f.position, "of" to f.total)
+            },
+            "step" to step,
         ),
     )
 
@@ -51,10 +56,28 @@ data class MaterialDraft(
                 displayMode = m["displayMode"] as? String ?: "network",
                 pseudonym = m["pseudonym"] as? String ?: "",
                 values = (m["values"] as? Map<String, Any?>).orEmpty(),
-                originalUri = m["originalUri"] as? String, originalName = m["originalName"] as? String,
-                originalSize = (m["originalSize"] as? Number)?.toLong() ?: 0, originalMime = m["originalMime"] as? String,
+                files = readFiles(m),
                 step = (m["step"] as? Number)?.toInt()?.coerceIn(1, 4) ?: 1,
             )
         }.getOrNull()
+
+        /** `files` (v2) when present; otherwise the single original of a v1 draft. Unreadable entries are skipped, the cap holds. */
+        @Suppress("UNCHECKED_CAST")
+        private fun readFiles(m: Map<String, Any?>): List<PickedOriginal> {
+            val list = m["files"] as? List<*>
+            if (list != null) {
+                return list.mapNotNull { e ->
+                    val f = e as? Map<String, Any?> ?: return@mapNotNull null
+                    val uri = (f["uri"] as? String)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    PickedOriginal(
+                        uri, f["name"] as? String ?: "original", (f["size"] as? Number)?.toLong() ?: 0, f["mime"] as? String,
+                        materialKey = (f["materialKey"] as? String)?.takeIf { it.isNotBlank() }, createdMaterialId = (f["materialId"] as? String)?.takeIf { it.isNotBlank() },
+                        position = (f["pos"] as? Number)?.toInt()?.takeIf { it >= 1 }, total = (f["of"] as? Number)?.toInt()?.takeIf { it >= 1 },
+                    )
+                }.distinctBy { it.uri }.take(PickedFiles.MAX)
+            }
+            val legacy = (m["originalUri"] as? String)?.takeIf { it.isNotBlank() } ?: return emptyList()
+            return listOf(PickedOriginal(legacy, m["originalName"] as? String ?: "original", (m["originalSize"] as? Number)?.toLong() ?: 0, m["originalMime"] as? String))
+        }
     }
 }

@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
@@ -72,6 +74,8 @@ interface DraftDao {
     @Query("SELECT * FROM drafts WHERE id = :id") suspend fun get(id: String): DraftEntity?
     @Upsert suspend fun upsert(entity: DraftEntity)
     @Query("DELETE FROM drafts WHERE id = :id") suspend fun delete(id: String)
+    /** How many drafts mention this content URI (a LIKE over the JSON: wildcard characters in the URI only over-count, which keeps a grant). */
+    @Query("SELECT COUNT(*) FROM drafts WHERE json LIKE '%' || :uri || '%'") suspend fun countMentioning(uri: String): Int
 }
 
 @Dao
@@ -80,6 +84,10 @@ interface UploadDao {
     @Query("SELECT * FROM upload_tasks WHERE id = :id") fun observe(id: String): Flow<UploadTaskEntity?>
     @Query("SELECT * FROM upload_tasks WHERE materialId = :materialId AND state IN ('VERIFIED','DEDUPLICATED') ORDER BY updatedAtEpochMs DESC LIMIT 1") suspend fun receiptFor(materialId: String): UploadTaskEntity?
     @Upsert suspend fun upsert(entity: UploadTaskEntity)
+    /** Queues a row only if its id is new: a repeat of the same send never resets a row that has already progressed. Returns -1 when the row existed. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertIfAbsent(entity: UploadTaskEntity): Long
+    /** Rows other than [exceptId] that still point at this content URI (the file is in use while one does). */
+    @Query("SELECT COUNT(*) FROM upload_tasks WHERE fileUri = :uri AND id != :exceptId") suspend fun countByUri(uri: String, exceptId: String): Int
     @Query("SELECT * FROM upload_tasks WHERE state NOT IN ('VERIFIED','DEDUPLICATED','FAILED') ORDER BY createdAtEpochMs") suspend fun pending(): List<UploadTaskEntity>
     @Query("SELECT COUNT(*) FROM upload_tasks WHERE state NOT IN ('VERIFIED','DEDUPLICATED','FAILED')") suspend fun pendingCount(): Int
     @Query("SELECT * FROM upload_tasks ORDER BY createdAtEpochMs DESC") fun observeAll(): Flow<List<UploadTaskEntity>>
@@ -128,7 +136,10 @@ class RoomUploadStore(private val dao: UploadDao, private val sealer: KeystoreSe
 
     override suspend fun pending(): List<UploadTask> = dao.pending().map { toTask(it) }
 
-    suspend fun insert(task: UploadTask, title: String, priority: String? = null) = dao.upsert(toEntity(task, title, localCopyHandled = false, priority = priority))
+    /** Queues the task if its id is new; an existing row (same id after a repeated send) keeps its state and progress. */
+    suspend fun insert(task: UploadTask, title: String, priority: String? = null) {
+        dao.insertIfAbsent(toEntity(task, title, localCopyHandled = false, priority = priority))
+    }
 
     fun toTask(e: UploadTaskEntity) = UploadTask(
         id = e.id, materialId = e.materialId, kind = e.kind, fileUri = e.fileUri, filename = e.filename, mimeType = e.mimeType,

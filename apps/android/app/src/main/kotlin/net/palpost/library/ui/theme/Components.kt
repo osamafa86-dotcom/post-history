@@ -37,10 +37,14 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import net.palpost.library.ui.theme.tokens.VlBorder
 import net.palpost.library.ui.theme.tokens.VlRadius
 import net.palpost.library.ui.theme.tokens.VlSize
 import net.palpost.library.ui.theme.tokens.VlSpace
+
+/** The smallest target for a control that cancels or removes something (WCAG 2.5.8 and Material: 48dp); `size.touch-min` is 44. */
+val MinTouchTarget = 48.dp
 
 /** The tones of the design system (`tone/...`): every status carries one, and an icon or text besides the colour. */
 enum class Tone { NEUTRAL, PROGRESS, GOOD, ATTENTION, BAD, URGENT }
