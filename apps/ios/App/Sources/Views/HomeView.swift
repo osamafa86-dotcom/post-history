@@ -70,27 +70,52 @@ struct SettingsScreen: View {
     @State private var confirmLogoutAll = false
 
     var body: some View {
-        List {
-            Section {
-                Toggle("settings.deleteLocalAfterReceipt", isOn: $settings.deleteLocalAfterReceipt)
-            } header: { Text("settings.localCopies") } footer: { Text("settings.deleteLocalAfterReceipt.help") }
-            Section {
-                Toggle("settings.uploadOverWifiOnly", isOn: $settings.uploadOverWifiOnly)
-                    .onChange(of: settings.uploadOverWifiOnly) { _, _ in queue.updateNetworkState() }
-            } footer: { Text("settings.uploadOverWifiOnly.help") }
-            Section {
-                Toggle("settings.appLock", isOn: Binding(get: { lock.state.isEnabled }, set: { on in Task { await lock.setEnabled(on) } }))
-            } footer: { Text(lock.unavailable ? LocalizedStringKey("settings.appLock.unavailable") : LocalizedStringKey("settings.appLock.help")) }
-            Section("settings.session") {
-                Button("settings.logout") { Task { await app.logout(allSessions: false) } }
-                Button("settings.logoutAll", role: .destructive) { confirmLogoutAll = true }
+        ScrollView {
+            VStack(alignment: .leading, spacing: VL.Space.s7) {
+                section(title: "settings.localCopies") {
+                    Toggle("settings.deleteLocalAfterReceipt", isOn: $settings.deleteLocalAfterReceipt)
+                        .vlText(.labelLg).foregroundStyle(Color.vl.textPrimary)
+                    helpText(Text("settings.deleteLocalAfterReceipt.help"))
+                }
+                section {
+                    Toggle("settings.uploadOverWifiOnly", isOn: $settings.uploadOverWifiOnly)
+                        .vlText(.labelLg).foregroundStyle(Color.vl.textPrimary)
+                        .onChange(of: settings.uploadOverWifiOnly) { _, _ in queue.updateNetworkState() }
+                    helpText(Text("settings.uploadOverWifiOnly.help"))
+                }
+                section {
+                    Toggle("settings.appLock", isOn: Binding(get: { lock.state.isEnabled }, set: { on in Task { await lock.setEnabled(on) } }))
+                        .vlText(.labelLg).foregroundStyle(Color.vl.textPrimary)
+                    helpText(Text(lock.unavailable ? LocalizedStringKey("settings.appLock.unavailable") : LocalizedStringKey("settings.appLock.help")))
+                }
+                section(title: "settings.session") {
+                    Button("settings.logout") { Task { await app.logout(allSessions: false) } }.buttonStyle(.vlSecondary)
+                    Button("settings.logoutAll", role: .destructive) { confirmLogoutAll = true }.buttonStyle(.vlSecondary)
+                }
+                section(title: "wipe.section") {
+                    EmergencyWipeButton().buttonStyle(.vlSecondary)
+                    helpText(Text("wipe.help"))
+                }
             }
-            Section { EmergencyWipeButton() } header: { Text("wipe.section") } footer: { Text("wipe.help") }
+            .padding(VL.Space.s5)
         }
+        .vlScreen()
         .tint(Color.vl.bgBrand)
         .navigationTitle("tab.settings")
         .confirmationDialog("settings.logoutAll.confirm", isPresented: $confirmLogoutAll, titleVisibility: .visible) {
             Button("settings.logoutAll", role: .destructive) { Task { await app.logout(allSessions: true) } }
         }
+    }
+
+    /// مجموعة إعدادات في بطاقة، بعنوان قسم اختياري (`overline/md`) يعلنه قارئ الشاشة عنوانًا كما كان رأس القائمة.
+    private func section<Content: View>(title: String? = nil, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: VL.Space.s3) {
+            if let title { VLOverline(title).accessibilityAddTraits(.isHeader) }
+            VLCard { content() }
+        }
+    }
+
+    private func helpText(_ text: Text) -> some View {
+        text.vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
     }
 }

@@ -6,13 +6,16 @@ struct SessionRevokedView: View {
     @EnvironmentObject private var app: AppModel
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "lock.slash").font(.system(size: 48)).foregroundStyle(.red)
-            Text("revoked.title").font(.title2.weight(.semibold))
-            Text("revoked.body").multilineTextAlignment(.center).foregroundStyle(.secondary)
-            Button("revoked.signInAgain") { app.acknowledgeAndSignIn() }.buttonStyle(.borderedProminent)
+        VStack(spacing: VL.Space.s5) {
+            VLHeroIcon(systemImage: "lock.slash", tone: .bad)
+            Text("revoked.title").vlText(.headingH2).foregroundStyle(Color.vl.textPrimary).multilineTextAlignment(.center)
+            Text("revoked.body").vlText(.bodyMd).foregroundStyle(Color.vl.textSecondary).multilineTextAlignment(.center)
+            Button("revoked.signInAgain") { app.acknowledgeAndSignIn() }.buttonStyle(.vlPrimary)
         }
-        .padding()
+        .padding(VL.Space.s5)
+        .frame(maxWidth: 560)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.vl.bgCanvas.ignoresSafeArea())
     }
 }
 
@@ -22,24 +25,31 @@ struct WipedView: View {
     let report: WipeReport
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: report.allClean ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
-                .font(.system(size: 48)).foregroundStyle(report.allClean ? .green : .orange)
-            Text(report.allClean ? "wipe.done" : "wipe.partial").font(.title2.weight(.semibold))
-            List(report.outcomes, id: \.step) { outcome in
-                HStack {
-                    Text(LocalizedStringKey("wipe.step." + outcome.step))
-                    Spacer()
-                    switch outcome.status {
-                    case .wiped: Image(systemName: "checkmark").foregroundStyle(.green)
-                    case .absent: Image(systemName: "minus").foregroundStyle(.secondary)
-                    case .failed: Image(systemName: "xmark").foregroundStyle(.red)
+        VStack(spacing: VL.Space.s5) {
+            VLHeroIcon(systemImage: report.allClean ? "checkmark.shield.fill" : "exclamationmark.shield.fill",
+                       tone: report.allClean ? .good : .attention)
+            Text(report.allClean ? "wipe.done" : "wipe.partial").vlText(.headingH2).foregroundStyle(Color.vl.textPrimary)
+            ScrollView {
+                VLCard {
+                    ForEach(report.outcomes, id: \.step) { outcome in
+                        HStack {
+                            Text(LocalizedStringKey("wipe.step." + outcome.step)).vlText(.bodyMd).foregroundStyle(Color.vl.textPrimary)
+                            Spacer()
+                            switch outcome.status {
+                            case .wiped: Image(systemName: "checkmark").foregroundStyle(Color.vl.toneGoodFg)
+                            case .absent: Image(systemName: "minus").foregroundStyle(Color.vl.iconMuted)
+                            case .failed: Image(systemName: "xmark").foregroundStyle(Color.vl.toneBadFg)
+                            }
+                        }
                     }
                 }
             }
-            Button("wipe.continue") { app.acknowledgeAndSignIn() }.buttonStyle(.borderedProminent)
+            Button("wipe.continue") { app.acknowledgeAndSignIn() }.buttonStyle(.vlPrimary)
         }
-        .padding()
+        .padding(VL.Space.s5)
+        .frame(maxWidth: 560)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.vl.bgCanvas.ignoresSafeArea())
     }
 }
 
