@@ -213,10 +213,10 @@ public enum DraftValidator {
     public static func titleLength(_ title: String) -> Int { title.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars.count }
 
     /// لاحقة العنوان لملف في الموضع `position` (من 1) من `count`: فارغة لملف واحد.
-    /// أرقام ASCII داخل عزل يساري-يميني (U+2066 … U+2069) كي يبقى «3/20» مقروءًا في عنوان عربي.
+    /// أرقام ASCII بلا محارف تحكم خفية (لا تُخزَّن في العنوان): «2/5» تبقى مرتبة داخل النص العربي بخوارزمية الاتجاه.
     public static func titleSuffix(position: Int, of count: Int) -> String {
         guard count > 1 else { return "" }
-        return " \u{2066}(\(position)/\(count))\u{2069}"
+        return " (\(position)/\(count))"
     }
 
     /// طول أطول لاحقة لمجموعة من `count` ملفات بنقاط الترميز (لاحقة آخر ملف).

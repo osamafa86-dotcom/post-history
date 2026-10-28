@@ -152,28 +152,30 @@ final class MultiFileDraftTests: XCTestCase {
         XCTAssertEqual(decoded.files[0].createdMaterialId, source.createdMaterialId, "an already created material is not created again")
     }
 
-    func testTheSuffixIsEmptyForOneFileAndAsciiLtrForMany() {
+    func testTheSuffixIsEmptyForOneFileAndPlainAsciiForMany() {
         XCTAssertEqual(DraftValidator.titleSuffix(position: 1, of: 1), "")
-        XCTAssertEqual(DraftValidator.titleSuffix(position: 3, of: 12), " \u{2066}(3/12)\u{2069}")
+        XCTAssertEqual(DraftValidator.titleSuffix(position: 3, of: 12), " (3/12)")
+        XCTAssertFalse(DraftValidator.titleSuffix(position: 3, of: 12).unicodeScalars.contains { $0.properties.generalCategory == .format || $0.properties.generalCategory == .control },
+                       "no hidden control characters in what is stored")
         var d = complete(files: [file("a.mov")])
         XCTAssertEqual(d.materialTitle(at: 0), "قصف على حي", "a single file has no suffix")
         d.files.append(file("b.mov"))
-        XCTAssertEqual(d.materialTitle(at: 1), "قصف على حي \u{2066}(2/2)\u{2069}")
+        XCTAssertEqual(d.materialTitle(at: 1), "قصف على حي (2/2)")
     }
 
     func testTheBaseTitleMustLeaveRoomForTheLongestSuffix() {
-        // " ⁦(20/20)⁩" = 1 + 1 + 7 + 1 = 10 نقطة ترميز
-        XCTAssertEqual(DraftValidator.longestSuffixLength(forFileCount: 20), 10)
-        XCTAssertEqual(DraftValidator.longestSuffixLength(forFileCount: 9), 8)
+        // " (20/20)" = 8 نقاط ترميز، بلا محارف تحكم
+        XCTAssertEqual(DraftValidator.longestSuffixLength(forFileCount: 20), 8)
+        XCTAssertEqual(DraftValidator.longestSuffixLength(forFileCount: 9), 6)
         XCTAssertEqual(DraftValidator.longestSuffixLength(forFileCount: 1), 0)
-        XCTAssertEqual(DraftValidator.titleLimit(forFileCount: 20), 70)
+        XCTAssertEqual(DraftValidator.titleLimit(forFileCount: 20), 72)
         XCTAssertEqual(DraftValidator.titleLimit(forFileCount: 1), 80)
 
         let many = (1...20).map { file("f\($0).mov") }
         var d = complete(files: many)
-        d.title = String(repeating: "م", count: 70)
+        d.title = String(repeating: "م", count: 72)
         XCTAssertEqual(DraftValidator.fieldIssues(d), [])
-        d.title = String(repeating: "م", count: 71)
+        d.title = String(repeating: "م", count: 73)
         XCTAssertEqual(DraftValidator.fieldIssues(d), [.titleTooLongForSet])
         XCTAssertTrue(d.materialTitle(at: 19).unicodeScalars.count > DraftValidator.titleRange.upperBound)
 
@@ -182,10 +184,10 @@ final class MultiFileDraftTests: XCTestCase {
         d.title = String(repeating: "م", count: 81)
         XCTAssertEqual(DraftValidator.fieldIssues(d), [.titleLength], "the plain limit is still reported as before")
 
-        d.files = [file("a.mov"), file("b.mov")]  // أطول لاحقة " ⁦(2/2)⁩" = 8
-        d.title = String(repeating: "م", count: 72)
+        d.files = [file("a.mov"), file("b.mov")]  // أطول لاحقة " (2/2)" = 6
+        d.title = String(repeating: "م", count: 74)
         XCTAssertEqual(DraftValidator.fieldIssues(d), [])
-        d.title = String(repeating: "م", count: 73)
+        d.title = String(repeating: "م", count: 75)
         XCTAssertEqual(DraftValidator.fieldIssues(d), [.titleTooLongForSet])
     }
 
@@ -193,7 +195,7 @@ final class MultiFileDraftTests: XCTestCase {
         var d = complete(files: [file("a.mov"), file("b.mov"), file("c.mov")])
         d.pinTitleSuffixes()
         d.files.removeFirst()
-        XCTAssertEqual(d.materialTitle(at: 0), "قصف على حي \u{2066}(2/3)\u{2069}", "the second file stays 2/3 after the first is gone")
+        XCTAssertEqual(d.materialTitle(at: 0), "قصف على حي (2/3)", "the second file stays 2/3 after the first is gone")
         var single = complete(files: [file("a.mov")])
         single.pinTitleSuffixes()
         XCTAssertNil(single.files[0].titleSuffix, "nothing is pinned for one file")
@@ -233,7 +235,7 @@ final class MultiFileDraftTests: XCTestCase {
         XCTAssertTrue(outcome.draft.files.isEmpty)
         XCTAssertEqual(outcome.enqueuedCount, 3)
         XCTAssertEqual(r.created.map(\.key), draft.files.map(\.createIdempotencyKey))
-        XCTAssertEqual(r.created.map(\.title), (1...3).map { "قصف على حي \u{2066}(\($0)/3)\u{2069}" })
+        XCTAssertEqual(r.created.map(\.title), (1...3).map { "قصف على حي (\($0)/3)" })
         XCTAssertEqual(r.enqueued.map(\.file), ["a.mov", "b.jpg", "c.mov"])
         XCTAssertEqual(Set(r.enqueued.map(\.material)).count, 3, "each file goes to its own material")
     }
@@ -266,7 +268,7 @@ final class MultiFileDraftTests: XCTestCase {
         XCTAssertEqual(r.created.map(\.key), keys, "three creates in total, each key once")
         XCTAssertEqual(r.enqueued.map(\.file), ["a.mov", "b.mov", "c.mov"], "each file enqueued exactly once")
         XCTAssertEqual(r.enqueued[1].material, r.materials[keys[1]], "b.mov goes to the material created before the failure")
-        XCTAssertEqual(r.created.map(\.title), (1...3).map { "قصف على حي \u{2066}(\($0)/3)\u{2069}" }, "numbering survived the partial failure")
+        XCTAssertEqual(r.created.map(\.title), (1...3).map { "قصف على حي (\($0)/3)" }, "numbering survived the partial failure")
     }
 
     @MainActor func testAFailedCreateStopsTheRunAndLeavesTheRestUntouched() async {
