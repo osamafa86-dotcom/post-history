@@ -28,7 +28,10 @@ final class UploadQueueModel: ObservableObject {
     let settings: AppSettings
     let draftStore: FileDraftStore?
     private let transcoder: any ProxyTranscoder = AVFoundationProxyTranscoder()
+    /// مهام تحضير النسخ الخفيفة بمعرّف لكل مهمة لا بمعرّف المادة: المادة الواحدة قد تحمل عدة فيديوهات تُحضَّر نسخها معًا،
+    /// ويبقى المسح الطارئ قادرًا على إلغائها كلها. `preparingCounts` يعدّ الجارية لكل مادة.
     private var proxyTasks: [UUID: Task<Void, Never>] = [:]
+    private var preparingCounts: [UUID: Int] = [:]
     private var watcher: Task<Void, Never>?
     private var estimators: [UUID: TransferRateEstimator] = [:]
     private var pathMonitor: NWPathMonitor?
@@ -130,6 +133,12 @@ final class UploadQueueModel: ObservableObject {
         drafts = draftStore?.loadAll() ?? []
     }
 
+    /// حذف مسودة بقرار المراسل: تُحذف نسخ ملفاتها المحلية أيضًا (لا الأصل في المعرض). لا يُستعمل بعد الإرسال لأن الملفات حينئذ في الطابور.
+    func discardDraft(_ draft: MaterialDraft) {
+        for file in draft.files { UploadServices.shared.deleteLocalCopy(relativePath: file.relativePath) }
+        deleteDraft(draft.id)
+    }
+
     /// بعد المسح الطارئ: المجلد مُحي، والقائمة تُفرغ.
     func reloadDrafts() { drafts = draftStore?.loadAll() ?? [] }
 
@@ -152,8 +161,10 @@ final class UploadQueueModel: ObservableObject {
         let output = services.uploadsDirectory.appendingPathComponent(name)
         let transcoder = transcoder
         let engine = engine
+        let taskId = UUID()
+        preparingCounts[materialId, default: 0] += 1
         preparingProxy.insert(materialId)
-        proxyTasks[materialId] = Task { [weak self] in
+        proxyTasks[taskId] = Task { [weak self] in
             // يستمر التحضير قليلًا بعد الخروج إلى الخلفية؛ إن أُنهي التطبيق يُرفع الأصل وحده عند الإطلاق التالي.
             let background = BackgroundAssertion(name: "light-copy")
             defer { background.end() }
@@ -166,9 +177,19 @@ final class UploadQueueModel: ObservableObject {
                 try? FileManager.default.removeItem(at: output)
                 await engine.releaseProxyHold(materialId: materialId)
             }
-            self?.preparingProxy.remove(materialId)
-            self?.proxyTasks[materialId] = nil
+            self?.finishPreparing(materialId: materialId, taskId: taskId)
             await self?.refresh()
+        }
+    }
+
+    private func finishPreparing(materialId: UUID, taskId: UUID) {
+        proxyTasks[taskId] = nil
+        let left = (preparingCounts[materialId] ?? 1) - 1
+        if left > 0 {
+            preparingCounts[materialId] = left
+        } else {
+            preparingCounts[materialId] = nil
+            preparingProxy.remove(materialId)
         }
     }
 
@@ -184,6 +205,7 @@ final class UploadQueueModel: ObservableObject {
     func cancelLightCopies() {
         proxyTasks.values.forEach { $0.cancel() }
         proxyTasks.removeAll()
+        preparingCounts.removeAll()
         preparingProxy.removeAll()
     }
 }

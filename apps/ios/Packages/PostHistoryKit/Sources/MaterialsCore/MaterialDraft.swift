@@ -24,8 +24,12 @@ public struct MaterialDraft: Codable, Equatable, Sendable, Identifiable {
         }
     }
 
+    /// أقصى عدد ملفات في المادة الواحدة (اختيار المعرض يحدّ نفسه به).
+    public static let maxFiles = 20
+
     public var id: UUID
-    public var file: PickedFile?
+    /// ملفات المادة بترتيب اختيارها؛ كلها تُرفع أصولًا لمادة واحدة بعنوانها وبياناتها. فارغة = لم يُختر شيء بعد.
+    public var files: [PickedFile]
     /// وضع النسخة الخفيفة (`ProxyChoice.rawValue`)، و«اختاره المراسل» يمنع إعادة الاقتراح فوقه.
     public var lightCopy: String?
     public var lightCopyChosenByReporter: Bool
@@ -50,7 +54,7 @@ public struct MaterialDraft: Codable, Equatable, Sendable, Identifiable {
 
     public init(id: UUID = UUID(), now: Date = Date()) {
         self.id = id
-        file = nil
+        files = []
         lightCopy = nil
         lightCopyChosenByReporter = false
         title = ""
@@ -75,6 +79,67 @@ public struct MaterialDraft: Codable, Equatable, Sendable, Identifiable {
         guard let minors, let injured, let graphic else { return nil }
         return Sensitivity(minors: minors, injured: injured, graphic: graphic)
     }
+
+    /// مجموع أحجام الملفات المختارة (للمراجعة).
+    public var totalSizeBytes: Int64 { files.reduce(0) { $0 + $1.sizeBytes } }
+
+    public var videoCount: Int { files.filter(\.isVideo).count }
+
+    /// مدة أطول فيديو في المجموعة؛ عليها يُبنى اقتراح النسخة الخفيفة لكل الفيديوهات. `nil` إن لم يكن فيها فيديو.
+    public var longestVideoSeconds: Double? {
+        let durations = files.filter(\.isVideo).map { $0.durationSeconds ?? 0 }
+        return durations.max()
+    }
+
+    /// هل أدخل المراسل شيئًا يضيع بإغلاق الورقة: ملف مختار أو أي حقل مكتوب أو مجاب. يمنع الإغلاق بالسحب ويستدعي سؤال التأكيد.
+    public var hasInput: Bool {
+        if !files.isEmpty { return true }
+        if !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        if !governorate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        if !city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        if !pseudonym.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        if !materialTypes.isEmpty || priority != nil || minors != nil || injured != nil || graphic != nil || displayMode != nil { return true }
+        return dynamicValues.contains { !$0.value.isEmpty }
+    }
+
+    // المسودات المحفوظة قبل دعم عدة ملفات تحمل مفتاح `file` (ملف واحد)؛ تُقرأ وتصير مصفوفة بعنصر واحد.
+    // الكتابة دائمًا بمفتاح `files`. باقي الحقول بالترميز المركّب نفسه فلا تتغير صيغتها.
+    private struct LegacyKey: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { return nil }
+        static let file = LegacyKey(stringValue: "file")!
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        if let current = try c.decodeIfPresent([PickedFile].self, forKey: .files) {
+            files = current
+        } else {
+            let legacy = try decoder.container(keyedBy: LegacyKey.self)
+            files = try legacy.decodeIfPresent(PickedFile.self, forKey: .file).map { [$0] } ?? []
+        }
+        lightCopy = try c.decodeIfPresent(String.self, forKey: .lightCopy)
+        lightCopyChosenByReporter = try c.decode(Bool.self, forKey: .lightCopyChosenByReporter)
+        title = try c.decode(String.self, forKey: .title)
+        materialTypes = try c.decode(Set<MaterialType>.self, forKey: .materialTypes)
+        governorate = try c.decode(String.self, forKey: .governorate)
+        city = try c.decode(String.self, forKey: .city)
+        priority = try c.decodeIfPresent(Priority.self, forKey: .priority)
+        minors = try c.decodeIfPresent(Bool.self, forKey: .minors)
+        injured = try c.decodeIfPresent(Bool.self, forKey: .injured)
+        graphic = try c.decodeIfPresent(Bool.self, forKey: .graphic)
+        displayMode = try c.decodeIfPresent(DisplayName.Mode.self, forKey: .displayMode)
+        pseudonym = try c.decode(String.self, forKey: .pseudonym)
+        formVersion = try c.decodeIfPresent(Int.self, forKey: .formVersion)
+        dynamicValues = try c.decode([String: FormValue].self, forKey: .dynamicValues)
+        step = try c.decode(Int.self, forKey: .step)
+        createIdempotencyKey = try c.decode(String.self, forKey: .createIdempotencyKey)
+        createdMaterialId = try c.decodeIfPresent(UUID.self, forKey: .createdMaterialId)
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+    }
 }
 
 /// تحقق الخطوتين الأولى والثانية (العقد والخطة). النموذج الديناميكي يتحقق منه `FormValidator` المشترك.
@@ -92,7 +157,7 @@ public enum DraftValidator {
     /// طول العنوان بنقاط الترميز كما يعدّها الخادم (لا بوحدات UTF-16).
     public static func titleLength(_ title: String) -> Int { title.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars.count }
 
-    public static func fileIssues(_ d: MaterialDraft) -> [Issue] { d.file == nil ? [.fileMissing] : [] }
+    public static func fileIssues(_ d: MaterialDraft) -> [Issue] { d.files.isEmpty ? [.fileMissing] : [] }
 
     public static func fieldIssues(_ d: MaterialDraft) -> [Issue] {
         var issues: [Issue] = []
