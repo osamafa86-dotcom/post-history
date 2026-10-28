@@ -313,7 +313,7 @@
     <string name="a2_remove">إزالة</string>
     <string name="a2_cancel">إلغاء</string>
     <string name="a2_cancel_title">إلغاء هذا الرفع؟</string>
-    <string name="a2_cancel_body">سيُحذف ما رُفع منه وتبدأ من جديد إن أعدته.</string>
+    <string name="a2_cancel_body">يتوقف هذا الرفع ولا يُستأنف؛ لإرساله لاحقًا تبدؤه من جديد.</string>
     <string name="a2_cancel_confirm">نعم، ألغِ الرفع</string>
     <string name="a2_cancel_keep">لا، تابع الرفع</string>
     <string name="a2_remove_title">إزالة هذا الرفع من القائمة؟</string>

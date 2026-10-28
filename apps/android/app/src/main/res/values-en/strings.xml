@@ -298,7 +298,7 @@
     <string name="a2_remove">Remove</string>
     <string name="a2_cancel">Cancel</string>
     <string name="a2_cancel_title">Cancel this upload?</string>
-    <string name="a2_cancel_body">What has been uploaded of it will be deleted, and you start over if you add it again.</string>
+    <string name="a2_cancel_body">This upload stops and won\'t resume; to send it later you start again.</string>
     <string name="a2_cancel_confirm">Yes, cancel the upload</string>
     <string name="a2_cancel_keep">No, keep uploading</string>
     <string name="a2_remove_title">Remove this upload from the list?</string>
