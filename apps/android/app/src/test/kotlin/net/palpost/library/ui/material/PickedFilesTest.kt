@@ -69,4 +69,71 @@ class PickedFilesTest {
         assertFalse(file(1, mime = "image/jpeg").isVideo)
         assertFalse(file(1, mime = null).isVideo)
     }
+
+    @Test
+    fun `only a file without a key gets one, and a lone legacy file takes the draft-level key`() {
+        var n = 0
+        val gen = { "gen-${++n}" }
+        // A draft saved before multi-pick: one file, no key of its own.
+        assertEquals(listOf(file(1).copy(materialKey = "draft-key")), PickedFiles.stampKeys(listOf(file(1)), "draft-key", gen))
+        assertEquals(0, n)
+        // Several files with no keys get one each; a file that has its key keeps it.
+        val stamped = PickedFiles.stampKeys(listOf(file(1).copy(materialKey = "mine"), file(2), file(3)), "draft-key", gen)
+        assertEquals(listOf("mine", "gen-1", "gen-2"), stamped.map { it.materialKey })
+        // Stamping twice changes nothing: the keys are already there.
+        assertEquals(stamped, PickedFiles.stampKeys(stamped, "draft-key", gen))
+    }
+
+    @Test
+    fun `the first send numbers the files 1 to n of n`() {
+        val numbered = PickedFiles.assignPositions((1..4).map { file(it) })
+        assertEquals(listOf(1, 2, 3, 4), numbered.map { it.position })
+        assertEquals(listOf(4, 4, 4, 4), numbered.map { it.total })
+    }
+
+    @Test
+    fun `files left after a partial send keep their numbers, and new ones continue after them`() {
+        val left = listOf(file(1).copy(position = 4, total = 5), file(2).copy(position = 5, total = 5))
+        assertEquals(left, PickedFiles.assignPositions(left))
+        assertEquals(5, PickedFiles.groupSize(left))
+        val more = PickedFiles.assignPositions(left + file(3))
+        assertEquals(listOf(4, 5, 6), more.map { it.position })
+        assertEquals(listOf(5, 5, 6), more.map { it.total })
+    }
+
+    @Test
+    fun `the title leaves room for the longest suffix and a single file has none`() {
+        assertEquals("", MaterialTitles.suffix(1, 1))
+        assertEquals(" (2/5)", MaterialTitles.suffix(2, 5))
+        assertEquals(80, MaterialTitles.maxBase(1))
+        assertEquals(74, MaterialTitles.maxBase(5)) // " (5/5)" is 6 characters
+        assertEquals(80 - " (9/9)".length, MaterialTitles.maxBase(9))
+        assertEquals(80 - " (10/10)".length, MaterialTitles.maxBase(10))
+        assertEquals(72, MaterialTitles.maxBase(PickedFiles.MAX)) // " (20/20)" is 8 characters
+    }
+
+    @Test
+    fun `a base title is valid only if it plus the longest suffix fits`() {
+        val seventy2 = "ع".repeat(72)
+        assertTrue(MaterialTitles.baseValid(seventy2, 20))
+        assertFalse(MaterialTitles.baseValid(seventy2 + "ع", 20))
+        assertTrue(MaterialTitles.baseValid(seventy2 + "ع", 1)) // 73 characters fit when there is no numbering
+        assertFalse(MaterialTitles.baseValid("abcd", 3)) // below the minimum
+        assertTrue(MaterialTitles.baseValid("abcde", 3))
+        // The longest numbered title never passes the contract maximum.
+        for (total in 2..PickedFiles.MAX) {
+            val base = "x".repeat(MaterialTitles.maxBase(total))
+            for (i in 1..total) assertTrue(MaterialTitles.length(MaterialTitles.titleFor(base, i, total)) <= MaterialTitles.MAX)
+        }
+        // Characters are counted as code points, as the server counts them.
+        assertEquals(2, MaterialTitles.length("a\uD83D\uDE00"))
+    }
+
+    @Test
+    fun `the queue row and session key follow the material, so a repeat rewrites the same row`() {
+        assertEquals(UploadIds.taskId("material-1"), UploadIds.taskId("material-1"))
+        assertEquals(UploadIds.sessionKey("material-1"), UploadIds.sessionKey("material-1"))
+        assertFalse(UploadIds.taskId("material-1") == UploadIds.taskId("material-2"))
+        assertFalse(UploadIds.taskId("material-1") == UploadIds.sessionKey("material-1"))
+    }
 }

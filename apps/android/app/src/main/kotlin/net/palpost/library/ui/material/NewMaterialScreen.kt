@@ -165,7 +165,10 @@ data class NewMaterialUiState(
     val primaryType: MaterialType get() = types.firstOrNull() ?: MaterialType.report
     val dynamicResult: ValidationResult? get() = form?.let { FormValidator.validate(it, primaryType, values) }
     val titleLength: Int get() = title.codePointCount(0, title.length)
-    val titleError: Boolean get() = titleLength !in 5..80
+    /** Files in the batch: each becomes its own material and gets `(i/N)` after the title, so the base title must leave room for it. */
+    val batchSize: Int get() = PickedFiles.groupSize(originals).coerceAtLeast(1)
+    val titleMax: Int get() = MaterialTitles.maxBase(batchSize)
+    val titleError: Boolean get() = titleLength !in MaterialTitles.MIN..titleMax
     val sensitivityMissing: Boolean get() = minors == null || injured == null || graphic == null
     val pseudonymMissing: Boolean get() = displayMode == DisplayName.Mode.pseudonym && pseudonym.isBlank()
     val fixedValid: Boolean get() = !titleError && types.isNotEmpty() && governorate.isNotBlank() && city.isNotBlank() && !sensitivityMissing && !pseudonymMissing
@@ -174,6 +177,7 @@ data class NewMaterialUiState(
         1 -> if (originals.isEmpty()) 1 else 0
         2 -> listOf(titleError, types.isEmpty(), governorate.isBlank(), city.isBlank(), minors == null, injured == null, graphic == null, pseudonymMissing).count { it }
         3 -> dynamicResult?.errors?.size ?: 1
+        4 -> if (attachTo == null && titleError) 1 else 0 // files added after the title was typed can make it too long for the numbering
         else -> 0
     }
     val steps: List<Int> get() = if (attachTo != null) listOf(1, 4) else listOf(1, 2, 3, 4)
@@ -187,11 +191,9 @@ class NewMaterialViewModel(
 ) : ViewModel() {
     private val _state = MutableStateFlow(NewMaterialUiState(attachTo = attachTo))
     val state: StateFlow<NewMaterialUiState> = _state
-    /** One key per draft: a retry of the same material after a network error replays, it does not duplicate. */
+    /** The draft-level key: a draft saved before multi-pick (one file, no key of its own) creates its material with it. */
     private val materialIdempotencyKey = IdempotencyKey.generate()
     private val id = draftId ?: UUID.randomUUID().toString()
-    /** Queue row id and session key per picked file (by URI), fixed on first use for the reason given in [submit]. */
-    private val taskIds = HashMap<String, Pair<String, String>>()
     private val formCache = File(app.filesDir, "form_cache.json")
     private val formAdapter = Serializer.moshi.adapter(UploadForm::class.java)
 
@@ -211,7 +213,7 @@ class NewMaterialViewModel(
                 governorate = d.governorate, city = d.city, priority = Priority.entries.firstOrNull { it.value == d.priority } ?: Priority.normal,
                 minors = d.minors, injured = d.injured, graphic = d.graphic,
                 displayMode = DisplayName.Mode.entries.firstOrNull { it.value == d.displayMode } ?: DisplayName.Mode.network, pseudonym = d.pseudonym,
-                values = d.values, originals = if (s.attachTo != null) d.files.take(1) else d.files,
+                values = d.values, originals = PickedFiles.stampKeys(if (s.attachTo != null) d.files.take(1) else d.files, materialIdempotencyKey, IdempotencyKey::generate),
             )
         }
         _state.value.originals.forEach { describe(it) }
@@ -284,6 +286,12 @@ class NewMaterialViewModel(
 
     /** Keeps the draft on the phone only, shown on A2 until it is sent. [onSaved] runs once it is written (leaving the screen). */
     fun saveDraft(onSaved: () -> Unit = {}) = viewModelScope.launch {
+        writeDraft()
+        onSaved()
+    }
+
+    /** Writes the current state as the draft: with the files still to send only, each with its key and its material id if created. */
+    private suspend fun writeDraft() {
         val s = _state.value
         val attachmentKeys = s.form?.fields?.filter { it.type == UploadFormField.Type.attachment }?.map { it.key }?.toSet().orEmpty()
         val d = MaterialDraft(
@@ -293,7 +301,6 @@ class NewMaterialViewModel(
         )
         container.database.drafts().upsert(DraftEntity(id, s.title, d.toJson(), System.currentTimeMillis()))
         _state.update { it.copy(draftSaved = true, dirty = false) }
-        onSaved()
     }
 
     fun submit() {
@@ -303,44 +310,75 @@ class NewMaterialViewModel(
         if (s.submitting) return
         _state.update { it.copy(submitting = true, error = null) }
         viewModelScope.launch {
-            try {
-                val materialId: String
-                val title: String
-                if (attach != null) {
-                    materialId = attach; title = s.attachTitle
-                } else {
-                    val form = s.form!!
-                    val visibleKeys = FormValidator.visibleFields(form, s.primaryType, s.values).map { it.key }.toSet()
-                    val material = container.materialsApi.createMaterial(
-                        materialIdempotencyKey,
-                        MaterialCreate(
-                            title = s.title, materialTypes = s.types, governorate = s.governorate.trim(), city = s.city.trim(),
-                            priority = s.priority, sensitivity = Sensitivity(minors = s.minors!!, injured = s.injured!!, graphic = s.graphic!!),
-                            displayName = DisplayName(mode = s.displayMode, pseudonym = s.pseudonym.takeIf { s.displayMode == DisplayName.Mode.pseudonym }),
-                            formVersion = form.version,
-                            dynamicFields = s.values.filterKeys { it in visibleKeys }.filterValues { it != null }.mapValues { it.value as Any },
-                        ),
-                    )
-                    materialId = material.id.toString(); title = s.title
-                }
-                // One material, then one `original` session per file, in the order shown. Ids and keys are fixed per file on the
-                // first attempt, so a retry after a failure part-way replays the same rows instead of queuing the files twice.
-                val now = System.currentTimeMillis()
-                val tasks = s.originals.mapIndexed { i, original ->
-                    val ids = taskIds.getOrPut(original.uri) { UUID.randomUUID().toString() to IdempotencyKey.generate() }
-                    UploadTask(
-                        id = ids.first, materialId = materialId, kind = "original",
-                        fileUri = original.uri, filename = original.name, mimeType = original.mimeType, sizeBytes = original.sizeBytes,
-                        idempotencyKey = ids.second, createdAtEpochMs = now + i, // the queue runs oldest first
-                    )
-                }
-                for (task in tasks) container.uploadStore.insert(task, title = title, priority = if (attach == null) s.priority.value else null)
-                if (draftId != null) container.database.drafts().delete(draftId)
-                UploadScheduler.start(app, PickedFiles.totalBytes(s.originals))
-                _state.update { it.copy(submitting = false, dirty = false, createdTaskId = tasks.first().id) }
-            } catch (t: Throwable) {
-                _state.update { it.copy(submitting = false, error = describeFailure(app, t)) }
-            }
+            if (attach != null) submitReplacement(s, attach) else submitBatch(s)
+        }
+    }
+
+    /** A replacement shot goes to its existing material: one file, no new material. */
+    private suspend fun submitReplacement(s: NewMaterialUiState, materialId: String) {
+        try {
+            val original = s.originals.first()
+            val task = UploadTask(
+                id = UUID.randomUUID().toString(), materialId = materialId, kind = "original",
+                fileUri = original.uri, filename = original.name, mimeType = original.mimeType, sizeBytes = original.sizeBytes,
+                idempotencyKey = IdempotencyKey.generate(), createdAtEpochMs = System.currentTimeMillis(),
+            )
+            container.uploadStore.insert(task, title = s.attachTitle, priority = null)
+            UploadScheduler.start(app, original.sizeBytes)
+            _state.update { it.copy(submitting = false, dirty = false, createdTaskId = task.id) }
+        } catch (t: Throwable) {
+            _state.update { it.copy(submitting = false, error = describeFailure(app, t)) }
+        }
+    }
+
+    /**
+     * One material per file (the server keeps one original per material), all with the details typed once. Per file, in order:
+     * create the material (skipped if the file already has its material id), then queue its upload, then drop it from the list.
+     * Keys and row ids are stable, so nothing is created or queued twice; on a failure the files still to send are saved as the draft.
+     */
+    private suspend fun submitBatch(s: NewMaterialUiState) {
+        val form = s.form!!
+        val visibleKeys = FormValidator.visibleFields(form, s.primaryType, s.values).map { it.key }.toSet()
+        val files = PickedFiles.assignPositions(PickedFiles.stampKeys(s.originals, materialIdempotencyKey, IdempotencyKey::generate))
+        _state.update { it.copy(originals = files) }
+        val now = System.currentTimeMillis()
+        fun titleOf(f: PickedOriginal) = MaterialTitles.titleFor(s.title, f.position!!, f.total!!)
+        val result = MaterialBatch.run(
+            files,
+            createMaterial = { f ->
+                container.materialsApi.createMaterial(
+                    f.materialKey!!,
+                    MaterialCreate(
+                        title = titleOf(f), materialTypes = s.types, governorate = s.governorate.trim(), city = s.city.trim(),
+                        priority = s.priority, sensitivity = Sensitivity(minors = s.minors!!, injured = s.injured!!, graphic = s.graphic!!),
+                        displayName = DisplayName(mode = s.displayMode, pseudonym = s.pseudonym.takeIf { s.displayMode == DisplayName.Mode.pseudonym }),
+                        formVersion = form.version,
+                        dynamicFields = s.values.filterKeys { it in visibleKeys }.filterValues { it != null }.mapValues { it.value as Any },
+                    ),
+                ).id.toString()
+            },
+            enqueue = { f, materialId ->
+                val task = UploadTask(
+                    id = UploadIds.taskId(materialId), materialId = materialId, kind = "original",
+                    fileUri = f.uri, filename = f.name, mimeType = f.mimeType, sizeBytes = f.sizeBytes,
+                    idempotencyKey = UploadIds.sessionKey(materialId), createdAtEpochMs = now + f.position!!, // the queue runs oldest first
+                )
+                container.uploadStore.insert(task, title = titleOf(f), priority = s.priority.value)
+                task.id
+            },
+            onProgress = { rest -> _state.update { st -> st.copy(originals = rest, details = st.details.filterKeys { k -> rest.any { it.uri == k } }) } },
+        )
+        val queuedBytes = files.filter { f -> result.remaining.none { it.uri == f.uri } }.sumOf { it.sizeBytes.coerceAtLeast(0) }
+        if (result.queuedTaskIds.isNotEmpty()) UploadScheduler.start(app, queuedBytes)
+        val failure = result.failure
+        if (failure == null) {
+            container.database.drafts().delete(id)
+            _state.update { it.copy(submitting = false, dirty = false, createdTaskId = result.queuedTaskIds.first()) }
+        } else {
+            // What is left (the failed file with its material id if it has one, and the rest) is kept as the draft.
+            runCatching { writeDraft() }
+            val note = if (result.queuedTaskIds.isNotEmpty()) "\n" + app.getString(R.string.a1_partial_failed, result.queuedTaskIds.size, files.size, result.remaining.size) else ""
+            _state.update { it.copy(submitting = false, error = describeFailure(app, failure) + note) }
         }
     }
 }
@@ -367,7 +405,8 @@ fun NewMaterialScreen(container: AppContainer, draftId: String?, attachToMateria
                 c.getColumnIndex(OpenableColumns.SIZE).takeIf { it >= 0 }?.let { i -> if (!c.isNull(i)) size = c.getLong(i) }
             }
         }
-        return PickedOriginal(uri.toString(), name, size, context.contentResolver.getType(uri))
+        // The key that creates this file's material, fixed now so every retry (and a saved draft) replays the same request.
+        return PickedOriginal(uri.toString(), name, size, context.contentResolver.getType(uri), materialKey = IdempotencyKey.generate())
     }
     // Several originals for one material (up to PickedFiles.MAX); the files of one pick enter the list in the order the picker returns them.
     val multiPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(PickedFiles.MAX)) { uris ->
@@ -515,8 +554,17 @@ private fun DataStep(s: NewMaterialUiState, vm: NewMaterialViewModel) {
     OutlinedTextField(
         value = s.title, onValueChange = { v -> vm.update { copy(title = v) } }, label = { Text(stringResource(R.string.material_title) + " *") },
         isError = s.showErrors && s.titleError, textStyle = Vl.text.bodyMd, singleLine = true, modifier = Modifier.fillMaxWidth(),
-        supportingText = { Row { Text(stringResource(R.string.material_title_help), modifier = Modifier.weight(1f)); Text("${s.titleLength}/80") } },
+        supportingText = {
+            Row {
+                Text(
+                    if (s.batchSize > 1) stringResource(R.string.a1_title_help_many, s.titleMax, ltr(MaterialTitles.longestSuffix(s.batchSize).trim())) else stringResource(R.string.material_title_help),
+                    modifier = Modifier.weight(1f),
+                )
+                Text("${s.titleLength}/${s.titleMax}")
+            }
+        },
     )
+    if (s.batchSize > 1 && s.titleLength > s.titleMax) ErrorLine(stringResource(R.string.a1_title_too_long_many, s.batchSize, s.titleMax))
     Label(stringResource(R.string.material_types), required = true)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(VlSpace.s3), verticalArrangement = Arrangement.spacedBy(VlSpace.s3)) {
         for (t in MaterialType.entries) {
@@ -573,7 +621,8 @@ private fun FormStep(s: NewMaterialUiState, vm: NewMaterialViewModel) {
 private fun ReviewStep(s: NewMaterialUiState, goTo: (Int) -> Unit) {
     if (s.attachTo == null) {
         Summary(stringResource(R.string.a1_step_data), onEdit = { goTo(2) }) {
-            Line(stringResource(R.string.material_title), s.title)
+            Line(stringResource(R.string.material_title), reviewTitles(s))
+            if (s.batchSize > 1 && s.titleLength > s.titleMax) ErrorLine(stringResource(R.string.a1_title_too_long_many, s.batchSize, s.titleMax))
             Line(stringResource(R.string.material_types), s.types.map { materialTypeLabel(it) }.joinToString("، "))
             Line(stringResource(R.string.material_governorate), s.governorate + " · " + s.city)
             Line(stringResource(R.string.material_priority), priorityLabel(s.priority))
@@ -585,9 +634,19 @@ private fun ReviewStep(s: NewMaterialUiState, goTo: (Int) -> Unit) {
     }
     Summary(stringResource(R.string.a1_what_uploads), onEdit = { goTo(1) }) {
         if (s.originals.size == 1) s.originals.first().let { Line(stringResource(R.string.a1_the_original), it.name + " · " + FieldInput.describeBytes(it.sizeBytes)) }
-        else if (s.originals.size > 1) Line(stringResource(R.string.a1_the_originals), stringResource(R.string.a1_review_files, s.originals.size, FieldInput.describeBytes(PickedFiles.totalBytes(s.originals))))
+        else if (s.originals.size > 1) Line(stringResource(R.string.a1_the_originals), stringResource(R.string.a1_review_materials, s.originals.size, FieldInput.describeBytes(PickedFiles.totalBytes(s.originals))))
         Text(stringResource(R.string.a1_original_as_is), style = Vl.text.captionMd, color = Vl.colors.textSecondary)
     }
+}
+
+/** Wraps text that must read left to right (numbers, slash, brackets) inside Arabic text; display only, never stored or sent. */
+private fun ltr(text: String): String = "\u2066$text\u2069"
+
+/** The title line of the review: the typed title, or with several files the first and the last numbered title. */
+private fun reviewTitles(s: NewMaterialUiState): String {
+    val n = s.batchSize
+    if (n <= 1) return s.title
+    return s.title + " " + ltr(MaterialTitles.suffix(1, n).trim()) + " … " + s.title + " " + ltr(MaterialTitles.suffix(n, n).trim())
 }
 
 @Composable

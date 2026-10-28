@@ -59,4 +59,33 @@ class MaterialDraftTest {
         assertEquals(4, MaterialDraft.fromJson("""{"step": 9}""")!!.step)
         assertNull(MaterialDraft.fromJson("""{"step": 1}""")!!.minors) // no default for the sensitivity questions
     }
+
+    @Test
+    fun `per-file keys, material ids and numbering are the same after save and load`() {
+        val files = listOf(
+            PickedOriginal("content://f/1", "a.mp4", 10, "video/mp4", materialKey = "key-1", createdMaterialId = "m-1", position = 1, total = 3),
+            PickedOriginal("content://f/2", "b.mp4", 20, "video/mp4", materialKey = "key-2", position = 2, total = 3),
+            PickedOriginal("content://f/3", "c.jpg", 30, "image/jpeg", materialKey = "key-3"),
+        )
+        val once = MaterialDraft.fromJson(MaterialDraft(files = files).toJson())!!
+        assertEquals(files, once.files)
+        // Saving what was loaded writes the same entries: nothing is regenerated on the way.
+        assertEquals(files, MaterialDraft.fromJson(once.toJson())!!.files)
+        assertNull(once.files[1].createdMaterialId)
+        assertNull(once.files[2].position)
+    }
+
+    @Test
+    fun `a legacy draft maps its one file to the draft-level key and the keys then stay`() {
+        val v1 = """{"v":1,"title":"عنوان قديم","originalUri":"content://media/picker/0/1","originalName":"clip.mp4","originalSize":5,"originalMime":"video/mp4","step":2}"""
+        val loaded = MaterialDraft.fromJson(v1)!!
+        assertNull(loaded.files.single().materialKey) // the old JSON has no key: decoded as absent, not invented
+        assertNull(loaded.files.single().createdMaterialId)
+        val stamped = PickedFiles.stampKeys(loaded.files, "draft-level-key") { "never-used" }
+        assertEquals("draft-level-key", stamped.single().materialKey)
+        // Saved and loaded again, the file still carries that key, so a retry replays the same create request.
+        val again = MaterialDraft.fromJson(MaterialDraft(files = stamped).toJson())!!
+        assertEquals("draft-level-key", again.files.single().materialKey)
+        assertEquals(stamped, PickedFiles.stampKeys(again.files, "another-vm-key") { "never-used" })
+    }
 }

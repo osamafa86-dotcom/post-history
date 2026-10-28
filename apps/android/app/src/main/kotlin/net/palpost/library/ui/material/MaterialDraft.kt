@@ -8,8 +8,11 @@ import net.palpost.library.api.infrastructure.Serializer
  * the picked originals' URIs, by contract values so a draft survives app updates. Attachment fields of the office
  * form are not kept: their files must be picked again (their read grant may not outlive the draft).
  *
- * v1 kept one original (`originalUri` and its siblings); v2 keeps a list (`files`). [fromJson] reads both, so a
- * draft saved before multi-pick opens with its one file, and no Room migration is needed (the table holds JSON text).
+ * v1 kept one original (`originalUri` and its siblings); v2 keeps a list (`files`), each entry with the per-file
+ * material key, the id of its material once created, and its numbering (see [PickedOriginal]); those four read as
+ * null when absent. [fromJson] reads both versions, so a draft saved before multi-pick opens with its one file (and,
+ * with no key of its own, takes the draft-level key: [PickedFiles.stampKeys]). No Room migration is needed: the
+ * table holds JSON text.
  */
 data class MaterialDraft(
     val title: String = "",
@@ -30,7 +33,9 @@ data class MaterialDraft(
         mapOf(
             "v" to 2, "title" to title, "types" to types, "governorate" to governorate, "city" to city, "priority" to priority,
             "minors" to minors, "injured" to injured, "graphic" to graphic, "displayMode" to displayMode, "pseudonym" to pseudonym,
-            "values" to values, "files" to files.map { mapOf("uri" to it.uri, "name" to it.name, "size" to it.sizeBytes, "mime" to it.mimeType) },
+            "values" to values, "files" to files.map { f ->
+                mapOf("uri" to f.uri, "name" to f.name, "size" to f.sizeBytes, "mime" to f.mimeType, "materialKey" to f.materialKey, "materialId" to f.createdMaterialId, "pos" to f.position, "of" to f.total)
+            },
             "step" to step,
         ),
     )
@@ -64,7 +69,11 @@ data class MaterialDraft(
                 return list.mapNotNull { e ->
                     val f = e as? Map<String, Any?> ?: return@mapNotNull null
                     val uri = (f["uri"] as? String)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                    PickedOriginal(uri, f["name"] as? String ?: "original", (f["size"] as? Number)?.toLong() ?: 0, f["mime"] as? String)
+                    PickedOriginal(
+                        uri, f["name"] as? String ?: "original", (f["size"] as? Number)?.toLong() ?: 0, f["mime"] as? String,
+                        materialKey = (f["materialKey"] as? String)?.takeIf { it.isNotBlank() }, createdMaterialId = (f["materialId"] as? String)?.takeIf { it.isNotBlank() },
+                        position = (f["pos"] as? Number)?.toInt()?.takeIf { it >= 1 }, total = (f["of"] as? Number)?.toInt()?.takeIf { it >= 1 },
+                    )
                 }.distinctBy { it.uri }.take(PickedFiles.MAX)
             }
             val legacy = (m["originalUri"] as? String)?.takeIf { it.isNotBlank() } ?: return emptyList()
