@@ -29,13 +29,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -46,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -99,6 +104,7 @@ import net.palpost.library.ui.forms.PickedFile
 import net.palpost.library.ui.forms.materialTypeLabel
 import net.palpost.library.ui.theme.GhostButton
 import net.palpost.library.ui.theme.InlineAlert
+import net.palpost.library.ui.theme.MinTouchTarget
 import net.palpost.library.ui.theme.PrimaryButton
 import net.palpost.library.ui.theme.SecondaryButton
 import net.palpost.library.ui.theme.SectionTitle
@@ -117,8 +123,8 @@ import net.palpost.library.upload.UploadScheduler
 import java.io.File
 import java.util.UUID
 
-/** The file the reporter picked for the original: kept as a persistable content URI, never copied. */
-data class PickedOriginal(val uri: Uri, val name: String, val sizeBytes: Long, val mimeType: String?)
+/** What the system read from one picked file for its row: thumbnail and (videos) length, never copied anywhere. */
+data class FileDetail(val thumbnail: ImageBitmap? = null, val durationMs: Long? = null)
 
 data class NewMaterialUiState(
     val step: Int = 1,
@@ -138,9 +144,13 @@ data class NewMaterialUiState(
     val formError: String? = null,
     val values: Map<String, Any?> = emptyMap(),
     val picked: Map<String, List<PickedFile>> = emptyMap(),
-    val original: PickedOriginal? = null,
-    val thumbnail: ImageBitmap? = null,
-    val durationMs: Long? = null,
+    /** The originals of this one material, in the order they will be queued; up to [PickedFiles.MAX]. */
+    val originals: List<PickedOriginal> = emptyList(),
+    /** Row details by content URI. */
+    val details: Map<String, FileDetail> = emptyMap(),
+    /** Files of the last pick that did not enter the list: the same file twice, or beyond the limit. */
+    val skippedDuplicates: Int = 0,
+    val skippedOverLimit: Int = 0,
     val showErrors: Boolean = false,
     val submitting: Boolean = false,
     val error: String? = null,
@@ -149,6 +159,8 @@ data class NewMaterialUiState(
     val attachTo: String? = null,
     val attachTitle: String = "",
     val draftSaved: Boolean = false,
+    /** Something was typed or picked since the screen opened or the draft was last saved: leaving asks first. */
+    val dirty: Boolean = false,
 ) {
     val primaryType: MaterialType get() = types.firstOrNull() ?: MaterialType.report
     val dynamicResult: ValidationResult? get() = form?.let { FormValidator.validate(it, primaryType, values) }
@@ -159,7 +171,7 @@ data class NewMaterialUiState(
     val fixedValid: Boolean get() = !titleError && types.isNotEmpty() && governorate.isNotBlank() && city.isNotBlank() && !sensitivityMissing && !pseudonymMissing
     /** How many things stop the current step, for the one summary line above the button (spec A1). */
     val stepProblems: Int get() = when (step) {
-        1 -> if (original == null) 1 else 0
+        1 -> if (originals.isEmpty()) 1 else 0
         2 -> listOf(titleError, types.isEmpty(), governorate.isBlank(), city.isBlank(), minors == null, injured == null, graphic == null, pseudonymMissing).count { it }
         3 -> dynamicResult?.errors?.size ?: 1
         else -> 0
@@ -178,6 +190,8 @@ class NewMaterialViewModel(
     /** One key per draft: a retry of the same material after a network error replays, it does not duplicate. */
     private val materialIdempotencyKey = IdempotencyKey.generate()
     private val id = draftId ?: UUID.randomUUID().toString()
+    /** Queue row id and session key per picked file (by URI), fixed on first use for the reason given in [submit]. */
+    private val taskIds = HashMap<String, Pair<String, String>>()
     private val formCache = File(app.filesDir, "form_cache.json")
     private val formAdapter = Serializer.moshi.adapter(UploadForm::class.java)
 
@@ -197,10 +211,10 @@ class NewMaterialViewModel(
                 governorate = d.governorate, city = d.city, priority = Priority.entries.firstOrNull { it.value == d.priority } ?: Priority.normal,
                 minors = d.minors, injured = d.injured, graphic = d.graphic,
                 displayMode = DisplayName.Mode.entries.firstOrNull { it.value == d.displayMode } ?: DisplayName.Mode.network, pseudonym = d.pseudonym,
-                values = d.values, original = d.originalUri?.let { PickedOriginal(Uri.parse(it), d.originalName ?: "original", d.originalSize, d.originalMime) },
+                values = d.values, originals = if (s.attachTo != null) d.files.take(1) else d.files,
             )
         }
-        _state.value.original?.let { describe(it) }
+        _state.value.originals.forEach { describe(it) }
     }
 
     /** The current form; on failure the last one saved on the phone, marked as such (flows A1, "no network"). */
@@ -218,22 +232,37 @@ class NewMaterialViewModel(
         }
     }
 
-    fun update(block: NewMaterialUiState.() -> NewMaterialUiState) = _state.update { it.block().copy(error = null, draftSaved = false) }
-    fun setValue(key: String, value: Any?) = _state.update { it.copy(values = it.values + (key to value), draftSaved = false) }
-    fun setPicked(key: String, files: List<PickedFile>) = _state.update { it.copy(picked = it.picked + (key to files)) }
+    fun update(block: NewMaterialUiState.() -> NewMaterialUiState) = _state.update { it.block().copy(error = null, draftSaved = false, dirty = true) }
+    fun setValue(key: String, value: Any?) = _state.update { it.copy(values = it.values + (key to value), draftSaved = false, dirty = true) }
+    fun setPicked(key: String, files: List<PickedFile>) = _state.update { it.copy(picked = it.picked + (key to files), dirty = true) }
 
-    fun pick(original: PickedOriginal) {
-        _state.update { it.copy(original = original, thumbnail = null, durationMs = null, draftSaved = false) }
+    /** More originals for the same material (one title, one form): appended in the order picked, nothing dropped silently. */
+    fun addFiles(incoming: List<PickedOriginal>) {
+        if (incoming.isEmpty()) return
+        val result = PickedFiles.add(_state.value.originals, incoming)
+        _state.update { it.copy(originals = result.files, skippedDuplicates = result.duplicates, skippedOverLimit = result.overLimit, draftSaved = false, dirty = it.dirty || result.added > 0, error = null) }
+        result.files.takeLast(result.added).forEach { describe(it) }
+    }
+
+    /** "Upload a replacement shot" stays a single pick: the new file replaces the old one. */
+    fun replaceFile(original: PickedOriginal) {
+        _state.update { it.copy(originals = listOf(original), skippedDuplicates = 0, skippedOverLimit = 0, draftSaved = false, dirty = true) }
         describe(original)
     }
 
-    /** Thumbnail and duration for the file card, read by the system without copying the file. */
+    /** Drops one row from the list. The file on the phone and the upload queue are untouched. */
+    fun removeFile(uri: String) = _state.update {
+        it.copy(originals = PickedFiles.remove(it.originals, uri), details = it.details - uri, skippedDuplicates = 0, skippedOverLimit = 0, draftSaved = false, dirty = true)
+    }
+
+    /** Thumbnail and duration for the file row, read by the system without copying the file. */
     private fun describe(o: PickedOriginal) = viewModelScope.launch(Dispatchers.IO) {
-        val thumb = runCatching { app.contentResolver.loadThumbnail(o.uri, Size(320, 180), null).asImageBitmap() }.getOrNull()
-        val duration = if (o.mimeType?.startsWith("video/") == true) runCatching {
-            MediaMetadataRetriever().run { try { setDataSource(app, o.uri); extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() } finally { release() } }
+        val uri = Uri.parse(o.uri)
+        val thumb = runCatching { app.contentResolver.loadThumbnail(uri, Size(320, 180), null).asImageBitmap() }.getOrNull()
+        val duration = if (o.isVideo) runCatching {
+            MediaMetadataRetriever().run { try { setDataSource(app, uri); extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() } finally { release() } }
         }.getOrNull() else null
-        _state.update { if (it.original?.uri == o.uri) it.copy(thumbnail = thumb, durationMs = duration) else it }
+        _state.update { if (it.originals.any { f -> f.uri == o.uri }) it.copy(details = it.details + (o.uri to FileDetail(thumb, duration))) else it }
     }
 
     fun next() {
@@ -253,24 +282,24 @@ class NewMaterialViewModel(
 
     fun goTo(step: Int) = _state.update { it.copy(step = step, showErrors = false) }
 
-    /** Keeps the draft on the phone only, shown on A2 until it is sent. */
-    fun saveDraft() = viewModelScope.launch {
+    /** Keeps the draft on the phone only, shown on A2 until it is sent. [onSaved] runs once it is written (leaving the screen). */
+    fun saveDraft(onSaved: () -> Unit = {}) = viewModelScope.launch {
         val s = _state.value
         val attachmentKeys = s.form?.fields?.filter { it.type == UploadFormField.Type.attachment }?.map { it.key }?.toSet().orEmpty()
         val d = MaterialDraft(
             title = s.title, types = s.types.map { it.value }, governorate = s.governorate, city = s.city, priority = s.priority.value,
             minors = s.minors, injured = s.injured, graphic = s.graphic, displayMode = s.displayMode.value, pseudonym = s.pseudonym,
-            values = s.values.filterKeys { it !in attachmentKeys }, originalUri = s.original?.uri?.toString(), originalName = s.original?.name,
-            originalSize = s.original?.sizeBytes ?: 0, originalMime = s.original?.mimeType, step = s.step,
+            values = s.values.filterKeys { it !in attachmentKeys }, files = s.originals, step = s.step,
         )
         container.database.drafts().upsert(DraftEntity(id, s.title, d.toJson(), System.currentTimeMillis()))
-        _state.update { it.copy(draftSaved = true) }
+        _state.update { it.copy(draftSaved = true, dirty = false) }
+        onSaved()
     }
 
     fun submit() {
         val s = _state.value
         val attach = s.attachTo
-        if (s.original == null || (attach == null && (!s.fixedValid || s.dynamicResult?.valid != true))) { _state.update { it.copy(showErrors = true) }; return }
+        if (s.originals.isEmpty() || (attach == null && (!s.fixedValid || s.dynamicResult?.valid != true))) { _state.update { it.copy(showErrors = true) }; return }
         if (s.submitting) return
         _state.update { it.copy(submitting = true, error = null) }
         viewModelScope.launch {
@@ -294,16 +323,21 @@ class NewMaterialViewModel(
                     )
                     materialId = material.id.toString(); title = s.title
                 }
-                val original = s.original
-                val task = UploadTask(
-                    id = UUID.randomUUID().toString(), materialId = materialId, kind = "original",
-                    fileUri = original.uri.toString(), filename = original.name, mimeType = original.mimeType, sizeBytes = original.sizeBytes,
-                    idempotencyKey = IdempotencyKey.generate(), createdAtEpochMs = System.currentTimeMillis(),
-                )
-                container.uploadStore.insert(task, title = title, priority = if (attach == null) s.priority.value else null)
+                // One material, then one `original` session per file, in the order shown. Ids and keys are fixed per file on the
+                // first attempt, so a retry after a failure part-way replays the same rows instead of queuing the files twice.
+                val now = System.currentTimeMillis()
+                val tasks = s.originals.mapIndexed { i, original ->
+                    val ids = taskIds.getOrPut(original.uri) { UUID.randomUUID().toString() to IdempotencyKey.generate() }
+                    UploadTask(
+                        id = ids.first, materialId = materialId, kind = "original",
+                        fileUri = original.uri, filename = original.name, mimeType = original.mimeType, sizeBytes = original.sizeBytes,
+                        idempotencyKey = ids.second, createdAtEpochMs = now + i, // the queue runs oldest first
+                    )
+                }
+                for (task in tasks) container.uploadStore.insert(task, title = title, priority = if (attach == null) s.priority.value else null)
                 if (draftId != null) container.database.drafts().delete(draftId)
-                UploadScheduler.start(app, original.sizeBytes)
-                _state.update { it.copy(submitting = false, createdTaskId = task.id) }
+                UploadScheduler.start(app, PickedFiles.totalBytes(s.originals))
+                _state.update { it.copy(submitting = false, dirty = false, createdTaskId = tasks.first().id) }
             } catch (t: Throwable) {
                 _state.update { it.copy(submitting = false, error = describeFailure(app, t)) }
             }
@@ -315,12 +349,14 @@ class NewMaterialViewModel(
 fun NewMaterialScreen(container: AppContainer, draftId: String?, attachToMaterialId: String?, onBack: () -> Unit, onQueued: () -> Unit) {
     val context = LocalContext.current
     val app = context.applicationContext as Application
-    val vm: NewMaterialViewModel = viewModel(key = "new-$draftId-$attachToMaterialId", factory = viewModelFactory { initializer { NewMaterialViewModel(app, container, draftId, attachToMaterialId) } })
+    // A fresh view model per visit: leaving by "discard" (or after queuing) must not bring the old input back on the next visit.
+    val visit = rememberSaveable { UUID.randomUUID().toString() }
+    val vm: NewMaterialViewModel = viewModel(key = "new-$draftId-$attachToMaterialId-$visit", factory = viewModelFactory { initializer { NewMaterialViewModel(app, container, draftId, attachToMaterialId) } })
     val s by vm.state.collectAsStateWithLifecycle()
     if (s.createdTaskId != null) { onQueued(); return }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+    // Reads name, size and type of a picked file and keeps read access for as long as the system allows.
+    fun describePicked(uri: Uri): PickedOriginal {
         // The transfer outlives this screen and the process: keep read access for as long as the system allows.
         try { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (e: SecurityException) { /* provider does not persist grants */ }
         var name = "original"
@@ -331,10 +367,31 @@ fun NewMaterialScreen(container: AppContainer, draftId: String?, attachToMateria
                 c.getColumnIndex(OpenableColumns.SIZE).takeIf { it >= 0 }?.let { i -> if (!c.isNull(i)) size = c.getLong(i) }
             }
         }
-        vm.pick(PickedOriginal(uri, name, size, context.contentResolver.getType(uri)))
+        return PickedOriginal(uri.toString(), name, size, context.contentResolver.getType(uri))
     }
-    val pickOriginal = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }
-    androidx.activity.compose.BackHandler(enabled = s.step != s.steps.first()) { vm.back() }
+    // Several originals for one material (up to PickedFiles.MAX); the files of one pick enter the list in the order the picker returns them.
+    val multiPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(PickedFiles.MAX)) { uris ->
+        vm.addFiles(uris.map { describePicked(it) })
+    }
+    // The replacement shot of an existing material is still one file.
+    val singlePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) vm.replaceFile(describePicked(uri))
+    }
+    val pickOriginals: () -> Unit = {
+        if (s.attachTo != null) singlePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+        else multiPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+    }
+
+    // Leaving with unsaved input asks first (save the draft / discard / keep editing); enqueued uploads are never touched by it.
+    var confirmLeave by rememberSaveable { mutableStateOf(false) }
+    val requestLeave: () -> Unit = { if (s.dirty) { confirmLeave = true } else { onBack() } }
+    androidx.activity.compose.BackHandler { if (!vm.back()) requestLeave() }
+    if (confirmLeave) LeaveDialog(
+        canSaveDraft = s.attachTo == null,
+        onSave = { confirmLeave = false; vm.saveDraft(onSaved = onBack) },
+        onDiscard = { confirmLeave = false; onBack() },
+        onKeep = { confirmLeave = false },
+    )
 
     val stepNames = listOf(R.string.a1_step_file, R.string.a1_step_data, R.string.a1_step_form, R.string.a1_step_review)
     val position = s.steps.indexOf(s.step) + 1
@@ -343,7 +400,7 @@ fun NewMaterialScreen(container: AppContainer, draftId: String?, attachToMateria
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(if (s.attachTo != null) R.string.a1_title_replacement else R.string.material_new_title), style = Vl.text.headingH3) },
-                navigationIcon = { TextButton(onClick = { if (!vm.back()) onBack() }) { Text(stringResource(R.string.action_back)) } },
+                navigationIcon = { TextButton(onClick = { if (!vm.back()) requestLeave() }) { Text(stringResource(R.string.action_back)) } },
                 actions = { if (s.attachTo == null) GhostButton(stringResource(if (s.draftSaved) R.string.a1_draft_saved else R.string.a1_save_draft), { vm.saveDraft() }) },
             )
         },
@@ -353,7 +410,7 @@ fun NewMaterialScreen(container: AppContainer, draftId: String?, attachToMateria
                 s.error?.let { Text(it, style = Vl.text.bodySm, color = Vl.colors.textDanger) }
                 if (s.step == 4) PrimaryButton(stringResource(if (s.submitting) R.string.a1_creating else R.string.material_submit), vm::submit, enabled = !s.submitting)
                 else PrimaryButton(stringResource(R.string.a1_next), vm::next, enabled = s.step != 3 || s.form != null)
-                if (s.step == 1 && s.original == null) Text(stringResource(R.string.a1_next_needs_file), style = Vl.text.captionMd, color = Vl.colors.textSecondary)
+                if (s.step == 1 && s.originals.isEmpty()) Text(stringResource(R.string.a1_next_needs_file), style = Vl.text.captionMd, color = Vl.colors.textSecondary)
             }
         },
     ) { padding ->
@@ -365,7 +422,7 @@ fun NewMaterialScreen(container: AppContainer, draftId: String?, attachToMateria
                 Column(verticalArrangement = Arrangement.spacedBy(VlSpace.s5)) {
                     Stepper(position, s.steps.size, stringResource(R.string.a1_step_caption, position, s.steps.size, stringResource(stepNames[s.step - 1])))
                     when (s.step) {
-                        1 -> FileStep(s, pickOriginal)
+                        1 -> FileStep(s, pickOriginals, vm::removeFile)
                         2 -> DataStep(s, vm)
                         3 -> FormStep(s, vm)
                         else -> ReviewStep(s, vm::goTo)
@@ -377,10 +434,10 @@ fun NewMaterialScreen(container: AppContainer, draftId: String?, attachToMateria
 }
 
 @Composable
-private fun FileStep(s: NewMaterialUiState, pick: () -> Unit) {
-    if (s.attachTo != null) Text(stringResource(R.string.a1_replacement_for, s.attachTitle), style = Vl.text.bodyMd, color = Vl.colors.textSecondary)
-    val o = s.original
-    if (o == null) {
+private fun FileStep(s: NewMaterialUiState, pick: () -> Unit, remove: (String) -> Unit) {
+    val replacing = s.attachTo != null
+    if (replacing) Text(stringResource(R.string.a1_replacement_for, s.attachTitle), style = Vl.text.bodyMd, color = Vl.colors.textSecondary)
+    if (s.originals.isEmpty()) {
         // Dashed border and one action: pick from the gallery.
         val dash = Vl.colors.borderStrong
         Column(
@@ -390,22 +447,61 @@ private fun FileStep(s: NewMaterialUiState, pick: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(VlSpace.s4),
         ) {
             Icon(Icons.Outlined.PhotoLibrary, contentDescription = null, tint = Vl.colors.iconMuted, modifier = Modifier.size(VlSize.iconLg))
-            Text(stringResource(R.string.a1_file_help), style = Vl.text.bodySm, color = Vl.colors.textSecondary)
-            SecondaryButton(stringResource(R.string.a1_pick_gallery), pick)
+            Text(if (replacing) stringResource(R.string.a1_file_help) else stringResource(R.string.a1_files_help, PickedFiles.MAX), style = Vl.text.bodySm, color = Vl.colors.textSecondary)
+            SecondaryButton(stringResource(if (replacing) R.string.a1_pick_gallery else R.string.a1_pick_gallery_many), pick)
             if (s.showErrors) Text(stringResource(R.string.material_file_required), style = Vl.text.bodySm, color = Vl.colors.textDanger)
         }
-    } else VlCard {
-        Row(horizontalArrangement = Arrangement.spacedBy(VlSpace.s4), verticalAlignment = Alignment.CenterVertically) {
-            s.thumbnail?.let { Image(it, contentDescription = null, modifier = Modifier.size(width = VlSize.thumbW, height = VlSize.thumbH).clip(RoundedCornerShape(VlRadius.md))) }
-            Column(verticalArrangement = Arrangement.spacedBy(VlSpace.s1)) {
-                Text(o.name, style = Vl.text.labelMd, color = Vl.colors.textPrimary, maxLines = 2)
-                val meta = listOfNotNull(FieldInput.describeBytes(o.sizeBytes), s.durationMs?.let { formatClip(it) }).joinToString(" · ")
-                Text(meta, style = Vl.text.captionMd, color = Vl.colors.textSecondary)
-            }
+    } else if (replacing) {
+        val o = s.originals.first()
+        VlCard {
+            FileRow(o, s.details[o.uri], onRemove = null)
+            Text(stringResource(R.string.a1_original_as_is), style = Vl.text.bodySm, color = Vl.colors.textSecondary)
+            GhostButton(stringResource(R.string.a1_change_file), pick)
         }
+    } else {
+        // One material, many originals: each row can be dropped before sending (the file on the phone is not touched).
+        Text(stringResource(R.string.a1_files_total, s.originals.size, PickedFiles.MAX, FieldInput.describeBytes(PickedFiles.totalBytes(s.originals))), style = Vl.text.labelMd, color = Vl.colors.textSecondary)
+        for (o in s.originals) VlCard(gap = VlSpace.s3) { FileRow(o, s.details[o.uri], onRemove = { remove(o.uri) }) }
+        if (s.skippedOverLimit > 0) InlineAlert(Tone.ATTENTION, stringResource(R.string.a1_files_over_limit, PickedFiles.MAX, s.skippedOverLimit))
+        if (s.skippedDuplicates > 0) InlineAlert(Tone.NEUTRAL, stringResource(R.string.a1_files_duplicates, s.skippedDuplicates))
         Text(stringResource(R.string.a1_original_as_is), style = Vl.text.bodySm, color = Vl.colors.textSecondary)
-        GhostButton(stringResource(R.string.a1_change_file), pick)
+        SecondaryButton(stringResource(R.string.a1_add_more), pick, enabled = PickedFiles.remaining(s.originals) > 0)
     }
+}
+
+/** One picked file: thumbnail when the system gave one, name, size and (videos) length; [onRemove] drops the row only. */
+@Composable
+private fun FileRow(o: PickedOriginal, d: FileDetail?, onRemove: (() -> Unit)?) {
+    Row(horizontalArrangement = Arrangement.spacedBy(VlSpace.s4), verticalAlignment = Alignment.CenterVertically) {
+        d?.thumbnail?.let { Image(it, contentDescription = null, modifier = Modifier.size(width = VlSize.thumbW, height = VlSize.thumbH).clip(RoundedCornerShape(VlRadius.md))) }
+        Column(verticalArrangement = Arrangement.spacedBy(VlSpace.s1), modifier = Modifier.weight(1f)) {
+            Text(o.name, style = Vl.text.labelMd, color = Vl.colors.textPrimary, maxLines = 2)
+            val meta = listOfNotNull(FieldInput.describeBytes(o.sizeBytes), d?.durationMs?.let { formatClip(it) }).joinToString(" · ")
+            Text(meta, style = Vl.text.captionMd, color = Vl.colors.textSecondary)
+        }
+        if (onRemove != null) IconButton(onClick = onRemove, modifier = Modifier.size(MinTouchTarget)) {
+            Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.a1_remove_file, o.name), tint = Vl.colors.iconMuted)
+        }
+    }
+}
+
+/** Back with unsaved input: save the draft, discard it, or keep editing (dismissing the dialog keeps editing). */
+@Composable
+private fun LeaveDialog(canSaveDraft: Boolean, onSave: () -> Unit, onDiscard: () -> Unit, onKeep: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onKeep,
+        title = { Text(stringResource(R.string.a1_leave_title), style = Vl.text.headingH4) },
+        text = { Text(stringResource(if (canSaveDraft) R.string.a1_leave_body else R.string.a1_leave_body_no_draft), style = Vl.text.bodySm) },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                if (canSaveDraft) TextButton(onClick = onSave, modifier = Modifier.heightIn(min = MinTouchTarget)) { Text(stringResource(R.string.a1_leave_save), style = Vl.text.labelLg) }
+                TextButton(onClick = onKeep, modifier = Modifier.heightIn(min = MinTouchTarget)) { Text(stringResource(R.string.a1_leave_keep), style = Vl.text.labelLg) }
+                TextButton(onClick = onDiscard, modifier = Modifier.heightIn(min = MinTouchTarget), colors = ButtonDefaults.textButtonColors(contentColor = Vl.colors.textDanger)) {
+                    Text(stringResource(R.string.a1_leave_discard), style = Vl.text.labelLg)
+                }
+            }
+        },
+    )
 }
 
 private fun formatClip(ms: Long): String {
@@ -488,7 +584,8 @@ private fun ReviewStep(s: NewMaterialUiState, goTo: (Int) -> Unit) {
         }
     }
     Summary(stringResource(R.string.a1_what_uploads), onEdit = { goTo(1) }) {
-        s.original?.let { Line(stringResource(R.string.a1_the_original), it.name + " · " + FieldInput.describeBytes(it.sizeBytes)) }
+        if (s.originals.size == 1) s.originals.first().let { Line(stringResource(R.string.a1_the_original), it.name + " · " + FieldInput.describeBytes(it.sizeBytes)) }
+        else if (s.originals.size > 1) Line(stringResource(R.string.a1_the_originals), stringResource(R.string.a1_review_files, s.originals.size, FieldInput.describeBytes(PickedFiles.totalBytes(s.originals))))
         Text(stringResource(R.string.a1_original_as_is), style = Vl.text.captionMd, color = Vl.colors.textSecondary)
     }
 }

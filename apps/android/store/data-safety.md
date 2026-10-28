@@ -79,7 +79,7 @@
 
 | النوع / Type | يُجمع | يُشارك | الاختيار | الأغراض | المصدر |
 | --- | --- | --- | --- | --- | --- |
-| الصور / Photos | نعم / Yes | نعم، مشتقات مجرَّدة من البيانات الكاشفة للمؤسسات المشترية / Yes, derivatives stripped of revealing data, to buyer organizations **[OC-1]** | إلزامي: لا مادة بلا أصل / Required: no material without an original | App functionality | A:`NewMaterialScreen.kt` (`PickVisualMedia.ImageAndVideo`، و`submit` يشترط `original`)، P2، P8، I2 |
+| الصور / Photos | نعم / Yes | نعم، مشتقات مجرَّدة من البيانات الكاشفة للمؤسسات المشترية / Yes, derivatives stripped of revealing data, to buyer organizations **[OC-1]** | إلزامي: لا مادة بلا أصل / Required: no material without an original | App functionality | A:`NewMaterialScreen.kt` (`PickMultipleVisualMedia` حتى 20 ملفًا للمادة الواحدة، و`PickVisualMedia.ImageAndVideo` للقطة البديلة؛ و`submit` يشترط ملفًا أصليًا واحدًا على الأقل)، P2، P8، I2 |
 | الفيديو / Videos | نعم / Yes | كما أعلاه / as above | إلزامي / Required | App functionality | نفسه / same |
 
 **العربية.** يختار المراسل الملف يدويًا من منتقي النظام فقط؛ لا كاميرا داخل التطبيق ولا صلاحية وسائط (M؛ ADR61 البند 3؛ R صف «صلاحيات الصور والفيديو»). يُرفع الأصل بلا مساس. الأصل لا يُسلَّم للمشتري؛ يتسلّم المشتري نسخًا مجرَّدة، مفحوصة قبل التسليم، بروابط موقّعة قصيرة العمر ومعاينات بعلامة مائية (P8). المواد الموسومة بالحساسية لا تُرسل إلى مزوّد خارجي أبدًا (P7).

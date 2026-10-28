@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,19 +30,21 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,6 +79,7 @@ import net.palpost.library.data.UploadTaskEntity
 import net.palpost.library.ui.forms.FieldInput
 import net.palpost.library.ui.theme.GhostButton
 import net.palpost.library.ui.theme.InlineAlert
+import net.palpost.library.ui.theme.MinTouchTarget
 import net.palpost.library.ui.theme.PrimaryButton
 import net.palpost.library.ui.theme.PriorityBadge
 import net.palpost.library.ui.theme.SecondaryButton
@@ -159,7 +163,7 @@ class UploadsViewModel(private val app: Application, private val container: AppC
         UploadScheduler.start(app, task.sizeBytes)
     }
 
-    /** Swipe on a queue row: cancels an unfinished task or removes a finished one; the file on the phone is untouched. */
+    /** The confirmed "cancel" / "remove" of a queue row: drops an unfinished task or a finished one; the file on the phone is untouched. */
     fun remove(task: UploadTaskEntity) = viewModelScope.launch { container.database.uploads().delete(task.id) }
 
     companion object {
@@ -183,6 +187,14 @@ fun UploadsScreen(container: AppContainer, onBack: () -> Unit, onReceipt: (Strin
 
     val active = UploadsViewModel.activeOf(tasks)
     val queue = tasks.filter { it.id != active?.id }
+    // Cancelling or removing never happens on a gesture: a button asks here first, so a scroll can't lose an upload.
+    var pendingRemoveId by rememberSaveable { mutableStateOf<String?>(null) }
+    val pendingRemove = tasks.firstOrNull { it.id == pendingRemoveId }
+    if (pendingRemove != null) RemoveDialog(
+        done = pendingRemove.state in UploadsViewModel.DONE,
+        onConfirm = { pendingRemoveId = null; vm.remove(pendingRemove) },
+        onDismiss = { pendingRemoveId = null },
+    )
     Scaffold(
         containerColor = Vl.colors.bgCanvas,
         topBar = { TopAppBar(title = { Text(stringResource(R.string.uploads_title), style = Vl.text.headingH3) }, navigationIcon = { TextButton(onClick = onBack) { Text(stringResource(R.string.action_back)) } }) },
@@ -202,14 +214,30 @@ fun UploadsScreen(container: AppContainer, onBack: () -> Unit, onReceipt: (Strin
                 }
             }
             if (active != null) item(key = "active-" + active.id) {
-                ActiveCard(active, online, paused, wifiOnly, vm.etaSeconds(active), onPause = vm::togglePause, onWifi = vm::toggleWifiOnly, onRetry = { vm.retry(active) }, onRemove = { vm.remove(active) })
+                ActiveCard(active, online, paused, wifiOnly, vm.etaSeconds(active), onPause = vm::togglePause, onWifi = vm::toggleWifiOnly, onRetry = { vm.retry(active) }, onRemove = { pendingRemoveId = active.id })
             }
             if (queue.isNotEmpty()) {
                 item { SectionTitle(stringResource(R.string.a2_queue_title)) }
-                items(queue, key = { it.id }) { t -> QueueRow(t, onOpen = { if (t.state in UploadsViewModel.DONE) onReceipt(t.id) }, onRemove = { vm.remove(t) }) }
+                items(queue, key = { it.id }) { t -> QueueRow(t, onOpen = { if (t.state in UploadsViewModel.DONE) onReceipt(t.id) }, onRemove = { pendingRemoveId = t.id }) }
             }
         }
     }
+}
+
+/** Asks before an upload is cancelled (unfinished) or its row removed (finished). Destructive confirm; dismiss keeps everything. */
+@Composable
+private fun RemoveDialog(done: Boolean, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(if (done) R.string.a2_remove_title else R.string.a2_cancel_title), style = Vl.text.headingH4) },
+        text = { Text(stringResource(if (done) R.string.a2_remove_body else R.string.a2_cancel_body), style = Vl.text.bodySm) },
+        confirmButton = {
+            TextButton(onClick = onConfirm, modifier = Modifier.heightIn(min = MinTouchTarget), colors = ButtonDefaults.textButtonColors(contentColor = Vl.colors.textDanger)) {
+                Text(stringResource(if (done) R.string.a2_remove_confirm else R.string.a2_cancel_confirm), style = Vl.text.labelLg)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = MinTouchTarget)) { Text(stringResource(if (done) R.string.a2_remove_keep else R.string.a2_cancel_keep), style = Vl.text.labelLg) } },
+    )
 }
 
 @Composable
@@ -245,7 +273,7 @@ private fun ActiveCard(
             UploadState.UPLOADING, UploadState.AWAITING_RECEIPT -> Progress(t, state, online, paused, etaSeconds)
             UploadState.FAILED -> InlineAlert(Tone.BAD, failureLabel(t), Icons.Outlined.ErrorOutline) {
                 SecondaryButton(stringResource(R.string.uploads_retry), onRetry)
-                GhostButton(stringResource(R.string.a2_remove), onRemove)
+                GhostButton(stringResource(R.string.a2_remove), onRemove, modifier = Modifier.heightIn(min = MinTouchTarget))
             }
             UploadState.VERIFIED, UploadState.DEDUPLICATED -> Unit
         }
@@ -314,22 +342,27 @@ private fun formatDuration(seconds: Long): String = when {
 
 @Composable
 private fun QueueRow(t: UploadTaskEntity, onOpen: () -> Unit, onRemove: () -> Unit) {
-    val dismiss = rememberSwipeToDismissBoxState(confirmValueChange = { v -> if (v != SwipeToDismissBoxValue.Settled) onRemove(); v != SwipeToDismissBoxValue.Settled })
     val done = t.state in UploadsViewModel.DONE
-    SwipeToDismissBox(state = dismiss, backgroundContent = {
-        Box(Modifier.fillMaxSize().clip(RoundedCornerShape(VlRadius.lg)).background(Vl.colors.bgDangerSubtle).padding(VlSpace.s5), contentAlignment = Alignment.CenterEnd) {
-            Text(stringResource(if (done) R.string.a2_remove else R.string.a2_cancel), style = Vl.text.labelMd, color = Vl.colors.textDanger)
-        }
-    }) {
-        VlCard(modifier = Modifier.heightIn(min = VlSize.touchMin).clickable(enabled = done, onClick = onOpen), gap = VlSpace.s2) {
-            Text(t.title.ifBlank { t.filename }, style = Vl.text.labelMd, color = Vl.colors.textPrimary, maxLines = 2)
-            val receipt = t.receiptNumber
-            if (receipt != null) {
-                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                    Text(receipt, style = Vl.text.monoMd, color = Vl.colors.textBrand)
-                }
-                if (!t.localCopyHandled) Text(stringResource(R.string.a2_local_copy_pending), style = Vl.text.captionMd, color = Vl.colors.toneAttentionFg)
-            } else Text(stateLabel(t), style = Vl.text.captionMd, color = if (t.state == UploadState.FAILED.name) Vl.colors.textDanger else Vl.colors.textSecondary)
+    VlCard(modifier = Modifier.heightIn(min = VlSize.touchMin), gap = VlSpace.s2) {
+        Row(horizontalArrangement = Arrangement.spacedBy(VlSpace.s3), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).clickable(enabled = done, onClick = onOpen), verticalArrangement = Arrangement.spacedBy(VlSpace.s2)) {
+                Text(t.title.ifBlank { t.filename }, style = Vl.text.labelMd, color = Vl.colors.textPrimary, maxLines = 2)
+                // Several files belong to one material and share its title: the file name tells the rows apart.
+                if (t.title.isNotBlank()) Text(t.filename, style = Vl.text.captionMd, color = Vl.colors.textSecondary, maxLines = 1)
+                val receipt = t.receiptNumber
+                if (receipt != null) {
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Text(receipt, style = Vl.text.monoMd, color = Vl.colors.textBrand)
+                    }
+                    if (!t.localCopyHandled) Text(stringResource(R.string.a2_local_copy_pending), style = Vl.text.captionMd, color = Vl.colors.toneAttentionFg)
+                } else Text(stateLabel(t), style = Vl.text.captionMd, color = if (t.state == UploadState.FAILED.name) Vl.colors.textDanger else Vl.colors.textSecondary)
+            }
+            // An explicit button, never a swipe: it only opens the confirmation.
+            val named = stringResource(if (done) R.string.a2_remove_named else R.string.a2_cancel_named, t.filename)
+            TextButton(
+                onClick = onRemove, modifier = Modifier.heightIn(min = MinTouchTarget).widthIn(min = MinTouchTarget).semantics { contentDescription = named },
+                colors = ButtonDefaults.textButtonColors(contentColor = Vl.colors.textDanger),
+            ) { Text(stringResource(if (done) R.string.a2_remove else R.string.a2_cancel), style = Vl.text.labelMd) }
         }
     }
 }
