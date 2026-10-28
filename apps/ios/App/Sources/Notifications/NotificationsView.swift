@@ -62,18 +62,26 @@ struct NotificationsView: View {
     @EnvironmentObject private var model: NotificationsModel
 
     var body: some View {
-        List {
-            if model.failed { Text("notifications.loadFailed").foregroundStyle(.secondary) }
-            if model.items.isEmpty, !model.failed { Text("notifications.empty").foregroundStyle(.secondary) }
-            ForEach(model.items, id: \.id) { n in
-                NotificationRow(notification: n)
-                    .contentShape(Rectangle())
-                    .onTapGesture { Task { await model.open(n.id) } }
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: VL.Space.s4) {
+                if model.failed { VLAlert(tone: .attention, systemImage: "exclamationmark.triangle.fill", text: "notifications.loadFailed") }
+                if model.items.isEmpty, !model.failed {
+                    Text("notifications.empty").vlText(.bodyMd).foregroundStyle(Color.vl.textSecondary).padding(VL.Space.s5)
+                }
+                ForEach(model.items, id: \.id) { n in
+                    VLCard { NotificationRow(notification: n) }
+                        .contentShape(Rectangle())
+                        .onTapGesture { Task { await model.open(n.id) } }
+                }
+                if !model.reachedEnd, !model.items.isEmpty {
+                    Button("notifications.loadMore") { Task { await model.loadMore() } }.buttonStyle(.vlGhost)
+                }
             }
-            if !model.reachedEnd, !model.items.isEmpty {
-                Button("notifications.loadMore") { Task { await model.loadMore() } }
-            }
+            .padding(VL.Space.s5)
         }
+        // السحب للتحديث متاح والقائمة فارغة أو قصيرة (نص الفشل يطلبه).
+        .scrollBounceBehavior(.always)
+        .vlScreen()
         .navigationTitle("notifications.title")
         .refreshable { await model.refresh() }
         .task { await model.refresh() }
@@ -87,14 +95,15 @@ struct NotificationRow: View {
     private var unread: Bool { notification.state == .sent || notification.state == .delivered }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Circle().fill(unread ? Color.accentColor : .clear).frame(width: 8, height: 8).padding(.top, 6)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(notification.title ?? "").font(unread ? .headline : .body)
-                Text(notification.createdAt, style: .relative).font(.caption).foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: VL.Space.s4) {
+            Circle().fill(unread ? Color.vl.bgBrand : Color.clear).frame(width: VL.Space.s3, height: VL.Space.s3).padding(.top, VL.Space.s3)
+            VStack(alignment: .leading, spacing: VL.Space.s2) {
+                // غير المقروء أثقل وزنًا (لا يُعتمد على النقطة الملوّنة وحدها).
+                Text(notification.title ?? "").vlText(unread ? .headingH4 : .bodyMd).foregroundStyle(Color.vl.textPrimary)
+                Text(notification.createdAt, style: .relative).vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
                 if notification.assignmentState == .assigned {
                     Button("notifications.acknowledge") { Task { await model.acknowledge(notification.id) } }
-                        .buttonStyle(.borderedProminent).controlSize(.small)
+                        .buttonStyle(.vlSecondary)
                 }
             }
         }

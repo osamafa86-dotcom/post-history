@@ -127,13 +127,16 @@ struct VLSecondaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        // الدور المدمّر (`role: .destructive`) يأخذ لون الخطر وحده؛ لا يُستعمل الأحمر للزخرفة.
+        let destructive = configuration.role == .destructive
+        return configuration.label
             .vlText(.labelLg)
             .frame(maxWidth: .infinity, minHeight: VL.Size.controlMd)
             .padding(.horizontal, VL.Space.s5)
-            .foregroundStyle(isEnabled ? Color.vl.textPrimary : Color.vl.textDisabled)
+            .foregroundStyle(isEnabled ? (destructive ? Color.vl.textDanger : Color.vl.textPrimary) : Color.vl.textDisabled)
             .background(configuration.isPressed ? Color.vl.bgSubtle : Color.vl.bgSurface, in: RoundedRectangle(cornerRadius: VL.Radius.md))
-            .overlay(RoundedRectangle(cornerRadius: VL.Radius.md).strokeBorder(Color.vl.borderStrong, lineWidth: VL.Border.hairline))
+            .overlay(RoundedRectangle(cornerRadius: VL.Radius.md)
+                .strokeBorder(destructive ? Color.vl.borderDanger : Color.vl.borderStrong, lineWidth: VL.Border.hairline))
             .contentShape(Rectangle())
     }
 }
@@ -373,6 +376,127 @@ struct VLOverline: View {
     init(_ text: String) { self.text = text }
     var body: some View {
         Text(LocalizedStringKey(text)).vlText(.overlineMd).foregroundStyle(Color.vl.textSecondary).textCase(.uppercase)
+    }
+}
+
+/// صندوق حقل الإدخال كما في مكوّن Form Field في Figma: ارتفاع `control-md`، سطح `bg/surface`، حد `border/strong` (1)،
+/// وعند التركيز `border/focus` (2) مع حلقة التركيز، وعند الخطأ `border/danger` (2). نص القيمة `body/md` (16).
+private struct VLInputBox: ViewModifier {
+    var invalid: Bool
+    @Environment(\.isEnabled) private var isEnabled
+    @FocusState private var focused: Bool
+
+    private var borderColor: Color {
+        if invalid { return .vl.borderDanger }
+        return focused ? .vl.borderFocus : .vl.borderStrong
+    }
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: VL.Radius.md)
+        return content
+            .vlText(.bodyMd)
+            .foregroundStyle(isEnabled ? Color.vl.textPrimary : Color.vl.textDisabled)
+            .focused($focused)
+            .padding(.horizontal, VL.Space.s4)
+            .padding(.vertical, VL.Space.s3)
+            .frame(maxWidth: .infinity, minHeight: VL.Size.controlMd, alignment: .leading)
+            .background(isEnabled ? Color.vl.bgSurface : Color.vl.bgDisabled, in: shape)
+            .overlay(shape.strokeBorder(borderColor, lineWidth: invalid || focused ? VL.Border.regular : VL.Border.hairline))
+            .overlay {
+                if focused { shape.stroke(Color.vl.borderFocus.opacity(0.3), lineWidth: VL.Border.emphasis).padding(-VL.Border.emphasis) }
+            }
+            .contentShape(shape)
+            .onTapGesture { focused = true }
+    }
+}
+
+extension View {
+    /// يلبس حقل نص (`TextField` / `SecureField`) صندوق Form Field؛ يُستعمل داخل `VLField` أو منفردًا.
+    func vlInput(invalid: Bool = false) -> some View { modifier(VLInputBox(invalid: invalid)) }
+}
+
+/// حقل بعنوان فوقه، فعلامة «مطلوب» أو «اختياري»، ونص مساعد تحته. رسالة الخطأ تستبدل نص المساعدة ولا تُضاف إليه (المواصفة §6).
+/// العنوان المرئي مخفي عن قارئ الشاشة، وعنوان العنصر لقارئ الشاشة هو `a11yLabel` (يساوي العنوان المرئي افتراضيًا).
+struct VLField<Content: View>: View {
+    let label: Text
+    var a11yLabel: Text?
+    var isRequired = false
+    var isOptional = false
+    var help: Text?
+    var error: Text?
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: VL.Space.s2) {
+            HStack(spacing: VL.Space.s3) {
+                label.vlText(.labelMd).foregroundStyle(error == nil ? Color.vl.textPrimary : Color.vl.textDanger)
+                if isRequired { Text(verbatim: "*").vlText(.labelMd).foregroundStyle(Color.vl.textDanger) }
+                if isOptional { Text("form.optional").vlText(.captionMd).foregroundStyle(Color.vl.textMuted) }
+            }
+            .accessibilityHidden(true)
+            content
+                .vlInput(invalid: error != nil)
+                .accessibilityLabel(a11yLabel ?? label)
+            if let error {
+                error.vlText(.captionMd).foregroundStyle(Color.vl.textDanger)
+            } else if let help {
+                help.vlText(.captionMd).foregroundStyle(Color.vl.textMuted)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// تنبيه كما في مكوّن Alert في Figma: سطح أبيض وحد 1px، والنبرة تحملها الأيقونة والنص لا الخلفية.
+/// (`VLInlineAlert` أعلاه يلوّن الخلفية بالنبرة ويبقى للشاشات المنفَّذة سابقًا.)
+struct VLAlert: View {
+    let tone: VLTone
+    let systemImage: String
+    let text: LocalizedStringKey
+
+    var body: some View {
+        HStack(alignment: .top, spacing: VL.Space.s4) {
+            Image(systemName: systemImage).imageScale(.large).foregroundStyle(tone.foreground).accessibilityHidden(true)
+            Text(text).vlText(.labelLg).foregroundStyle(tone.foreground).frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, VL.Space.s5)
+        .padding(.vertical, VL.Space.s4)
+        .background(Color.vl.bgSurface, in: RoundedRectangle(cornerRadius: VL.Radius.md))
+        .overlay(RoundedRectangle(cornerRadius: VL.Radius.md).strokeBorder(Color.vl.borderDefault, lineWidth: VL.Border.hairline))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// رأس العلامة في شاشة الدخول: شريط داكن (`bg/slate`) باسم التطبيق بخط العرض، على نمط الشريط العلوي في إطارات الهاتف.
+struct VLBrandHeader: View {
+    let nameKey: LocalizedStringKey
+
+    var body: some View {
+        Text(nameKey)
+            .vlText(.displayMd)
+            .foregroundStyle(Color.vl.textOnSlate)
+            .lineLimit(2)
+            .minimumScaleFactor(0.7)
+            .padding(.horizontal, VL.Space.s5)
+            .padding(.vertical, VL.Space.s7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.vl.bgSlate.ignoresSafeArea(edges: .top))
+    }
+}
+
+/// دائرة أيقونة بنبرة لشاشات الحالة الكاملة (قفل، إبطال الجلسة، المسح)؛ زخرفية فلا يقرؤها قارئ الشاشة.
+struct VLHeroIcon: View {
+    let systemImage: String
+    let tone: VLTone
+
+    var body: some View {
+        ZStack {
+            Circle().fill(tone.background)
+            Circle().strokeBorder(tone.border, lineWidth: VL.Border.regular)
+            Image(systemName: systemImage).font(.system(size: VL.Space.s9, weight: .semibold)).foregroundStyle(tone.foreground)
+        }
+        .frame(width: VL.Space.s12 + VL.Space.s3, height: VL.Space.s12 + VL.Space.s3)
+        .accessibilityHidden(true)
     }
 }
 

@@ -9,7 +9,9 @@ struct RootView: View {
         ZStack {
             switch app.phase {
             case .loading:
-                ProgressView()
+                ProgressView().tint(Color.vl.bgBrand)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.vl.bgCanvas.ignoresSafeArea())
             case .signedOut:
                 LoginView()
             case .signedIn:

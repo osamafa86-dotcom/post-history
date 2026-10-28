@@ -180,7 +180,7 @@ struct NewMaterialFlow: View {
     @ViewBuilder private var fieldsStep: some View {
         field("material.title", issue: .titleLength) {
             TextField("material.title", text: $draft.title, axis: .vertical)
-                .vlText(.bodyMd).textFieldStyle(.roundedBorder)
+                .vlInput(invalid: issues.contains(.titleLength))
             Text(verbatim: "\(DraftValidator.titleLength(draft.title))/\(DraftValidator.titleRange.upperBound)")
                 .vlText(.captionMd).foregroundStyle(Color.vl.textMuted).environment(\.layoutDirection, .leftToRight)
                 .frame(maxWidth: .infinity, alignment: .trailing)
@@ -191,10 +191,10 @@ struct NewMaterialFlow: View {
         }
         // المحافظة والمدينة نصًّا كما في العقد (لا قائمة فيه)، ولا إحداثيات افتراضيًا.
         field("material.governorate", issue: .governorateMissing) {
-            TextField("material.governorate", text: $draft.governorate).vlText(.bodyMd).textFieldStyle(.roundedBorder)
+            TextField("material.governorate", text: $draft.governorate).vlInput(invalid: issues.contains(.governorateMissing))
         }
         field("material.city", issue: .cityMissing) {
-            TextField("material.city", text: $draft.city).vlText(.bodyMd).textFieldStyle(.roundedBorder)
+            TextField("material.city", text: $draft.city).vlInput(invalid: issues.contains(.cityMissing))
         }
         field("material.priority", issue: .priorityMissing) {
             VLSegmented(options: [Priority.normal, .important, .urgent].map { ($0, "material.priority." + $0.rawValue) },
@@ -214,7 +214,7 @@ struct NewMaterialFlow: View {
             }
             .pickerStyle(.menu)
             if draft.displayMode == .pseudonym {
-                TextField("material.pseudonym", text: $draft.pseudonym).vlText(.bodyMd).textFieldStyle(.roundedBorder)
+                TextField("material.pseudonym", text: $draft.pseudonym).vlInput(invalid: issues.contains(.pseudonymMissing))
             }
         }
     }

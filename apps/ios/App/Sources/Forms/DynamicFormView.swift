@@ -15,13 +15,8 @@ struct DynamicFormView: View {
 
     var body: some View {
         ForEach(FormValidator.visibleFields(form: form, materialType: materialType, values: values), id: \.key) { field in
-            VStack(alignment: .leading, spacing: 4) {
-                FieldControl(field: field, label: text(field.label), optionLabel: text, value: binding(field.key))
-                if let help = field.help { Text(text(help)).font(.caption).foregroundStyle(.secondary) }
-                if let error = errors.first(where: { $0.field == field.key }) {
-                    Text(error.code.labelKey).font(.caption).foregroundStyle(.red)
-                }
-            }
+            FieldControl(field: field, label: text(field.label), optionLabel: text, help: field.help.map(text),
+                         errorKey: errors.first(where: { $0.field == field.key })?.code.labelKey, value: binding(field.key))
         }
     }
 
@@ -30,63 +25,118 @@ struct DynamicFormView: View {
     }
 }
 
+/// حقل واحد بمكوّنات نظام التصميم: حقول النص والقوائم داخل `VLField` (Form Field)، والبقية بعنوان وسطر مساعد.
+/// رسالة الخطأ تستبدل نص المساعدة (docs/design/design-system.md §6). عنوان قارئ الشاشة كما كان: «العنوان *» للمطلوب.
 private struct FieldControl: View {
     let field: UploadFormField
     let label: String
     let optionLabel: (UploadFormLocalized) -> String
+    let help: String?
+    let errorKey: LocalizedStringKey?
     @Binding var value: FormValue
     @State private var showAttachmentPicker = false
 
-    private var title: Text { Text(label) + (field.required ? Text(" *").foregroundColor(.red) : Text("")) }
+    private var title: Text { Text(label) + (field.required ? Text(" *").foregroundColor(Color.vl.textDanger) : Text("")) }
+    private var a11yTitle: Text { Text(verbatim: field.required ? label + " *" : label) }
+    private var helpText: Text? { help.map { Text(verbatim: $0) } }
+    private var errorText: Text? { errorKey.map { Text($0) } }
+    private var options: [UploadFormOption] { field.validation?.options ?? [] }
 
     var body: some View {
         switch field.type {
         case .shortText:
-            TextField(text: stringBinding) { title }
+            boxed { TextField(text: stringBinding, prompt: Text(verbatim: "")) { a11yTitle } }
         case .longText:
-            TextField(text: stringBinding, axis: .vertical) { title }.lineLimit(3...8)
+            boxed { TextField(text: stringBinding, prompt: Text(verbatim: ""), axis: .vertical) { a11yTitle }.lineLimit(3...8) }
         case .number:
-            TextField(text: numberBinding) { title }.keyboardType(.decimalPad)
+            boxed { TextField(text: numberBinding, prompt: Text(verbatim: "")) { a11yTitle }.keyboardType(.decimalPad) }
         case .select:
-            Picker(selection: stringBinding) {
-                Text("form.select.none").tag("")
-                ForEach(field.validation?.options ?? [], id: \.value) { Text(optionLabel($0.label)).tag($0.value) }
-            } label: { title }
+            boxed { selectMenu }
         case .multiSelect:
-            title
-            ForEach(field.validation?.options ?? [], id: \.value) { option in
-                Toggle(optionLabel(option.label), isOn: multiBinding(option.value))
+            plain {
+                titleRow
+                ForEach(options, id: \.value) { option in
+                    Toggle(isOn: multiBinding(option.value)) { Text(verbatim: optionLabel(option.label)) }
+                        .vlText(.bodyMd).foregroundStyle(Color.vl.textPrimary)
+                }
             }
         case .datetime:
-            DatePicker(selection: dateBinding) { title }
+            boxed { DatePicker(selection: dateBinding) { a11yTitle }.labelsHidden() }
         case .boolean:
-            Toggle(isOn: Binding(get: { value.boolValue ?? false }, set: { value = .bool($0) })) { title }
+            plain {
+                Toggle(isOn: Binding(get: { value.boolValue ?? false }, set: { value = .bool($0) })) { title.vlText(.labelMd) }
+                    .foregroundStyle(Color.vl.textPrimary)
+            }
         case .staffMember:
-            TextField(text: stringBinding) { title }.textInputAutocapitalization(.never).autocorrectionDisabled()
+            boxed { TextField(text: stringBinding, prompt: Text(verbatim: "")) { a11yTitle }.textInputAutocapitalization(.never).autocorrectionDisabled() }
         case .attachment:
             // قيمة التحقق `[{mime, size_bytes}]`؛ الشكل النهائي لإرسال ملفات المرفق في dynamic_fields من اختصاص العقد.
-            HStack {
-                title
-                Spacer()
-                Button("form.attachment.add") { showAttachmentPicker = true }
-            }
-            Text("form.attachment.count \(value.arrayValue?.count ?? 0)").font(.caption).foregroundStyle(.secondary)
-                .fileImporter(isPresented: $showAttachmentPicker, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
-                    guard case .success(let urls) = result else { return }
-                    var items = value.arrayValue ?? []
-                    for url in urls {
-                        let scoped = url.startAccessingSecurityScopedResource()
-                        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                        let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.doubleValue ?? 0
-                        let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
-                        items.append(.object(["mime": .string(mime), "size_bytes": .number(size)]))
-                    }
-                    value = .array(items)
+            plain {
+                HStack {
+                    title.vlText(.labelMd).foregroundStyle(Color.vl.textPrimary)
+                    Spacer()
+                    Button("form.attachment.add") { showAttachmentPicker = true }.buttonStyle(.vlGhost)
                 }
+                Text("form.attachment.count \(value.arrayValue?.count ?? 0)").vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
+                    .fileImporter(isPresented: $showAttachmentPicker, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+                        guard case .success(let urls) = result else { return }
+                        var items = value.arrayValue ?? []
+                        for url in urls {
+                            let scoped = url.startAccessingSecurityScopedResource()
+                            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                            let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.doubleValue ?? 0
+                            let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+                            items.append(.object(["mime": .string(mime), "size_bytes": .number(size)]))
+                        }
+                        value = .array(items)
+                    }
+            }
         case .location, .unknownDefaultOpenApi:
             // غير مسموح في نماذج v0 (بوابة الخادم)؛ نوع تفاعل جديد يحتاج إصدارًا من التطبيق.
-            Label("form.field.unsupported", systemImage: "lock").foregroundStyle(.secondary)
+            plain { Label("form.field.unsupported", systemImage: "lock").vlText(.bodySm).foregroundStyle(Color.vl.textSecondary) }
         }
+    }
+
+    private func boxed<C: View>(@ViewBuilder _ control: @escaping () -> C) -> some View {
+        VLField(label: Text(verbatim: label), a11yLabel: a11yTitle, isRequired: field.required, help: helpText, error: errorText) { control() }
+    }
+
+    private func plain<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: VL.Space.s2) {
+            content()
+            if let errorText {
+                errorText.vlText(.captionMd).foregroundStyle(Color.vl.textDanger)
+            } else if let helpText {
+                helpText.vlText(.captionMd).foregroundStyle(Color.vl.textMuted)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// عنوان مرئي لمجموعة اختيارات؛ عنصر واحد لقارئ الشاشة («العنوان *»).
+    private var titleRow: some View {
+        title.vlText(.labelMd).foregroundStyle(errorKey == nil ? Color.vl.textPrimary : Color.vl.textDanger)
+    }
+
+    /// قائمة منسدلة بعرض الحقل كله (منطقة اللمس هي الصندوق)؛ الخيار «لا شيء» أولًا ثم خيارات النموذج.
+    private var selectMenu: some View {
+        let selected = options.first { $0.value == (value.stringValue ?? "") }
+        let shown: Text = selected.map { Text(verbatim: optionLabel($0.label)) } ?? Text("form.select.none")
+        return Menu {
+            Picker(selection: stringBinding) {
+                Text("form.select.none").tag("")
+                ForEach(options, id: \.value) { Text(optionLabel($0.label)).tag($0.value) }
+            } label: { a11yTitle }
+        } label: {
+            HStack(spacing: VL.Space.s3) {
+                shown.foregroundStyle(Color.vl.textPrimary)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.down").imageScale(.small).foregroundStyle(Color.vl.iconDefault).accessibilityHidden(true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .accessibilityValue(shown)
     }
 
     private var stringBinding: Binding<String> {
