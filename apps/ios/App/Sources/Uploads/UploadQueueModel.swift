@@ -39,6 +39,8 @@ final class UploadQueueModel: ObservableObject {
         self.settings = settings
         draftStore = try? FileDraftStore(directory: UploadServices.shared.draftsDirectory)
         drafts = draftStore?.loadAll() ?? []
+        // نسخ الاختيار المؤقتة التي خلّفها إنهاء التطبيق قبل نقلها إلى مجلد الرفع.
+        PickedTempFiles.sweep(in: FileManager.default.temporaryDirectory)
     }
 
     private func startPathMonitor() {

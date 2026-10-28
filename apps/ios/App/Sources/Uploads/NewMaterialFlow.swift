@@ -350,7 +350,9 @@ struct NewMaterialFlow: View {
         }
         summary(.file) {
             if draft.files.count > 1 {
-                Text("a1.review.files \(draft.files.count) \(ByteCountFormatter.string(fromByteCount: draft.totalSizeBytes, countStyle: .file))").vlText(.bodyMd)
+                Text("a1.review.materials \(draft.files.count)").vlText(.bodyMd)
+                Text("a1.review.totalSize \(ByteCountFormatter.string(fromByteCount: draft.totalSizeBytes, countStyle: .file))")
+                    .vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
             }
             ForEach(draft.files, id: \.relativePath) { f in
                 if draft.files.count > 1 {
@@ -633,7 +635,7 @@ struct PickedFile: Transferable {
     let url: URL
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(importedContentType: .item) { received in
-            let copy = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString)-\(received.file.lastPathComponent)")
+            let copy = FileManager.default.temporaryDirectory.appendingPathComponent(PickedTempFiles.newName(for: received.file.lastPathComponent))
             try FileManager.default.copyItem(at: received.file, to: copy)
             return PickedFile(url: copy)
         }

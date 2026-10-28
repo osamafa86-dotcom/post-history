@@ -4898,23 +4898,6 @@
         }
       }
     },
-    "a1.review.files %lld %@": {
-      "extractionState": "manual",
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld مواد ستُنشأ بالبيانات نفسها · الحجم الكلي %@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld materials will be created with the same details · total size %@"
-          }
-        }
-      }
-    },
     "a1.close.title": {
       "extractionState": "manual",
       "localizations": {
@@ -5006,13 +4989,13 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "سيُحذف ما رُفع منه وتبدأ من جديد إن أعدته."
+            "value": "يتوقف هذا الرفع ولا يُستأنف؛ لإرساله لاحقًا تبدؤه من جديد."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "What was already uploaded will be deleted, and you will start over if you upload it again."
+            "value": "This upload stops and won't resume; to send it later you start again."
           }
         }
       }
@@ -5123,15 +5106,63 @@
       "extractionState": "manual",
       "localizations": {
         "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld ملفات"
+          "variations": {
+            "plural": {
+              "zero": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "لا ملفات"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "ملف واحد"
+                }
+              },
+              "two": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "ملفان"
+                }
+              },
+              "few": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld ملفات"
+                }
+              },
+              "many": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld ملفًا"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld ملف"
+                }
+              }
+            }
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld files"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld file"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld files"
+                }
+              }
+            }
           }
         }
       }
@@ -5149,6 +5180,88 @@
           "stringUnit": {
             "state": "translated",
             "value": "The title is too long: it must fit with the file counter (like (3/20)) in 80 characters."
+          }
+        }
+      }
+    },
+    "a1.review.materials %lld": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "variations": {
+            "plural": {
+              "zero": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "لا مواد ستُنشأ بالبيانات نفسها"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "مادة واحدة ستُنشأ بالبيانات نفسها"
+                }
+              },
+              "two": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "مادتان ستُنشآن بالبيانات نفسها"
+                }
+              },
+              "few": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld مواد ستُنشأ بالبيانات نفسها"
+                }
+              },
+              "many": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld مادة ستُنشأ بالبيانات نفسها"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld مادة ستُنشأ بالبيانات نفسها"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld material will be created with the same details"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld materials will be created with the same details"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "a1.review.totalSize %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الحجم الكلي: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Total size: %@"
           }
         }
       }
