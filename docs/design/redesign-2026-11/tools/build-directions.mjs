@@ -28,7 +28,7 @@ const DIRS = {
   },
   c: {
     home: 'light',
-    fonts: { display: "'Rubik', 'Noto Kufi Arabic', system-ui, sans-serif", text: "'Noto Kufi Arabic', 'Noto Sans Arabic', system-ui, sans-serif", num: "'Noto Kufi Arabic', ui-monospace, monospace" },
+    fonts: { display: "'Rubik', 'Readex Pro', system-ui, sans-serif", text: "'Readex Pro', 'Noto Sans Arabic', system-ui, sans-serif", num: "'Rubik', ui-monospace, monospace" },
     light: { bg: '#F4F6F9', raised: '#FFFFFF', sunken: '#E9EDF3', line: '#DCE2EA', edge: '#6E7B93', text: '#0D1524', text2: '#55617A', brand: '#08717E', brand2: '#2E56E8', brandInk: '#FFFFFF', brandSoft: '#E0F1F4', gold: '#8A6608', goldSoft: '#F5E6B8', urgent: '#C8312B', ok: '#1C7F55', warn: '#8A6200' },
     dark: { bg: '#090D15', raised: '#121A28', sunken: '#060910', line: '#232C3D', edge: '#6E7B93', text: '#EDF1F7', text2: '#96A2B8', brand: '#42CFDF', brand2: '#8A9DFF', brandInk: '#0A1F26', brandSoft: '#10303A', gold: '#E1B64B', goldSoft: '#3D3110', urgent: '#FF6A60', ok: '#4FD69B', warn: '#E9B649' },
   },

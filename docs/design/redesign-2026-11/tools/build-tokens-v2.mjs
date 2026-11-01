@@ -48,7 +48,7 @@ const semantic = {
     edge: sem('color.border.edge', 'neutral.400', 'neutral.400', STROKE),
   },
   action: {
-    primary: sem('color.action.primary', 'brand.600', 'brand.300'),
+    primary: sem('color.action.primary', 'brand.600', 'brand.300', [...FILL, ...STROKE]),
     // نهاية التدرّج: زرّ الإرسال الرئيسي وأيقونة التطبيق وحدهما
     'gradient-end': sem('color.action.gradient-end', 'blue.600', 'blue.300'),
     soft: sem('color.action.soft', 'brand.50', 'brand.900'),
@@ -83,13 +83,13 @@ const doc = {
   color: { ...primitives, ...semantic, 'material-state': states },
   font: {
     family: {
-      display: { $type: 'fontFamily', $value: ['Rubik', 'Noto Kufi Arabic', 'system-ui', 'sans-serif'] },
-      text: { $type: 'fontFamily', $value: ['Noto Kufi Arabic', 'Noto Sans Arabic', 'system-ui', 'sans-serif'] },
-      // Noto Kufi Arabic فيه tnum؛ الأرقام تُعرض بـ font-variant-numeric: tabular-nums
-      num: { $type: 'fontFamily', $value: ['Noto Kufi Arabic', 'ui-monospace', 'monospace'] },
+      display: { $type: 'fontFamily', $value: ['Rubik', 'Readex Pro', 'system-ui', 'sans-serif'] },
+      text: { $type: 'fontFamily', $value: ['Readex Pro', 'Noto Sans Arabic', 'system-ui', 'sans-serif'] },
+      // Readex Pro بلا tnum، فالأرقام من Rubik (فيه tnum) بـ font-variant-numeric: tabular-nums
+      num: { $type: 'fontFamily', $value: ['Rubik', 'ui-monospace', 'monospace'] },
     },
     role: Object.fromEntries([
-      ['display', 'display', 34, 40, 800], ['title', 'display', 22, 30, 700], ['headline', 'text', 17, 26, 700],
+      ['display', 'display', 34, 44, 800], ['title', 'display', 22, 32, 700], ['headline', 'text', 17, 26, 700],
       ['body', 'text', 16, 26, 400], ['label', 'text', 13, 20, 600], ['caption', 'text', 12, 18, 500], ['num', 'num', 15, 22, 600],
     ].map(([n, fam, size, line, weight]) => [n, { $type: 'typography', $value: { fontFamily: `{font.family.${fam}}`, fontSize: `${size}px`, lineHeight: `${line}px`, fontWeight: weight } }])),
   },
