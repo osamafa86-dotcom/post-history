@@ -67,7 +67,7 @@ const T = {
   sSend: ['الإرسال', 'Send'], sUpload: ['الرفع', 'Upload'], sReceipt: ['الإيصال', 'Receipt'], sGallery: ['موادي', 'My materials'],
   newSend: ['إرسال جديد', 'New send'], files: ['3 ملفات', '3 files'],
   fTitle: ['عنوان التغطية', 'Coverage title'], titleVal: ['توزيع مساعدات غذائية في مخيم النصيرات', 'Food aid distribution in Nuseirat camp'],
-  fType: ['نوع التغطية', 'Coverage type'], tyEvent: ['حدث ميداني', 'Field event'], tyReport: ['تقرير', 'Report'], tyInterview: ['مقابلة', 'Interview'], tyBroll: ['مشاهد عامة', 'B-roll'],
+  fType: ['نوع التغطية', 'Coverage type'], tyEvent: ['حدث ميداني', 'Field event'], tyReport: ['تقرير', 'Report'], tyInterview: ['مقابلة', 'Interview'], tyBroll: ['مشاهد خام', 'Raw footage'],
   fTags: ['الوسوم', 'Tags'], tag1: ['مساعدات', 'Aid'], tag2: ['النصيرات', 'Nuseirat'], tag3: ['شتاء', 'Winter'], addTag: ['أضف وسمًا', 'Add a tag'], suggest: ['طوابير', 'Queues'], fromAdmin: ['من قائمة الإدارة', 'From the desk list'],
   fPlace: ['المكان', 'Location'], placeVal: ['دير البلح · النصيرات', 'Deir al-Balah · Nuseirat'], remembered: ['من آخر إرسال', 'From your last send'],
   urgent: ['عاجل', 'Urgent'], urgentHint: ['يصل المحرر فورًا مع تنبيه', 'Alerts the editor right away'],
