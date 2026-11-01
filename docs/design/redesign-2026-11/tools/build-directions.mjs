@@ -29,8 +29,8 @@ const DIRS = {
   c: {
     home: 'light',
     fonts: { display: "'Rubik', 'Noto Kufi Arabic', system-ui, sans-serif", text: "'Noto Kufi Arabic', 'Noto Sans Arabic', system-ui, sans-serif", num: "'Noto Kufi Arabic', ui-monospace, monospace" },
-    light: { bg: '#F4F6F9', raised: '#FFFFFF', sunken: '#E9EDF3', line: '#DCE2EA', edge: '#7E8A9F', text: '#0D1524', text2: '#55617A', brand: '#08717E', brand2: '#2E56E8', brandInk: '#FFFFFF', brandSoft: '#E0F1F4', gold: '#8A6608', goldSoft: '#F5E6B8', urgent: '#C8312B', ok: '#1C7F55', warn: '#8A6200' },
-    dark: { bg: '#090D15', raised: '#121A28', sunken: '#060910', line: '#232C3D', edge: '#5A677E', text: '#EDF1F7', text2: '#96A2B8', brand: '#42CFDF', brand2: '#8A9DFF', brandInk: '#04151A', brandSoft: '#10303A', gold: '#E1B64B', goldSoft: '#3D3110', urgent: '#FF6A60', ok: '#4FD69B', warn: '#E9B649' },
+    light: { bg: '#F4F6F9', raised: '#FFFFFF', sunken: '#E9EDF3', line: '#DCE2EA', edge: '#6B7790', text: '#0D1524', text2: '#55617A', brand: '#08717E', brand2: '#2E56E8', brandInk: '#FFFFFF', brandSoft: '#E0F1F4', gold: '#8A6608', goldSoft: '#F5E6B8', urgent: '#C8312B', ok: '#1C7F55', warn: '#8A6200' },
+    dark: { bg: '#090D15', raised: '#121A28', sunken: '#060910', line: '#232C3D', edge: '#6E7B93', text: '#EDF1F7', text2: '#96A2B8', brand: '#42CFDF', brand2: '#8A9DFF', brandInk: '#04151A', brandSoft: '#10303A', gold: '#E1B64B', goldSoft: '#3D3110', urgent: '#FF6A60', ok: '#4FD69B', warn: '#E9B649' },
   },
 };
 
@@ -59,10 +59,10 @@ const T = {
   pageTitle: ['اتجاهات بوست ميدان', 'Post Maydan directions'],
   pageLede: ['ثلاث هويات مقترحة لتطبيق المراسل والمكتبة المرئية. جرّب كل اتجاه بالوضعين واللغتين، ثم اختر واحدًا أو امزج بين اثنين.', 'Three proposed identities for the reporter app and the visual library. Try each one in both modes and both languages, then pick one or mix two.'],
   lang: ['English', 'عربي'], dark: ['داكن', 'Dark'], light: ['فاتح', 'Light'], stress: ['عنوان طويل و12 وسمًا', 'Long title + 12 tags'],
-  a: ['بثّ', 'Broadcast'], b: ['ميدان', 'Field'], c: ['إشارة', 'Signal'],
+  a: ['بثّ', 'Broadcast'], b: ['ميدان', 'Field'], c: ['إشارة ✓', 'Signal ✓'],
   aBlurb: ['داكن عميق كشاشة غرفة الأخبار، فيروزي كهربائي، وذهبي نادر. دوائر البثّ تنبض أثناء الرفع، وهو الأقرب إلى إحساس الجزيرة 360 بين الثلاثة.', 'Deep newsroom-screen dark, electric teal, rare gold. Broadcast rings pulse while uploading. Closest to Al Jazeera 360.'],
   bBlurb: ['فاتح كدفتر المراسل، فيروزي عميق، ونقاط خريطة الشعار. حدود حبر واضحة وأختام بدل الظلال الناعمة. يُقرأ في شمس الميدان.', 'Light like a reporter’s notebook, deep teal, the logo’s map dots. Clear ink edges and stamps instead of soft shadows. Readable in field sunlight.'],
-  cBlurb: ['محايد بارد بالغ الحداثة، فيروزي يتدرّج إلى الأزرق، زجاج خفيف وزوايا واسعة، ودوائر بثّ بخطّ رفيع.', 'Cool, neutral, very current. Teal shading into blue, light glass, wide corners, hairline broadcast rings.'],
+  cBlurb: ['المعتمد (2026-11-01). محايد بارد بالغ الحداثة، والفيروزي غالب. التدرّج إلى الأزرق في زر الإرسال والأيقونة وحدهما، ودوائر البثّ تنبض أثناء الرفع، وحدود الحقول وسؤال الحساسية أوضح ليُقرأ في الشمس.', 'Chosen (1 Nov 2026). Cool and neutral, teal leading. The teal-to-blue blend only on the send button and the icon, broadcast rings pulse while uploading, and field edges and the sensitivity question are stronger for sunlight.'],
   secScreens: ['شاشات المراسل', 'Reporter screens'], secStore: ['وجه المؤسسات والأيقونة', 'Buyer face and app icon'], secColor: ['اللون والتباين', 'Colour and contrast'], secType: ['الخط', 'Type'],
   sSend: ['الإرسال', 'Send'], sUpload: ['الرفع', 'Upload'], sReceipt: ['الإيصال', 'Receipt'], sGallery: ['موادي', 'My materials'],
   newSend: ['إرسال جديد', 'New send'], files: ['3 ملفات', '3 files'],
@@ -160,7 +160,7 @@ const RECEIPT = phone(t('sReceipt'), `
     <div><dt>${t('rSize')}</dt><dd class="num" dir="ltr">412 MB</dd></div>
     <div><dt>${t('rHash')}</dt><dd class="num" dir="ltr">9f2c…a71e</dd></div>
   </dl>
-  <div class="two"><button class="cta ghost">${t('again')}</button><button class="cta">${t('mine')}</button></div>
+  <div class="two"><button class="cta ghost">${t('again')}</button><button class="cta solid">${t('mine')}</button></div>
 </div>`);
 
 const card = (th, dur, kind, tech, edit, rights, urgent = false) => `<article class="mcard">
@@ -263,6 +263,7 @@ h2.sec{font:800 20px/1.3 var(--f-display);margin:40px 0 16px;text-wrap:balance}
 .sens .chip{min-width:72px;justify-content:center}
 .cta{border:0;border-radius:var(--r-cta);background:var(--cta-bg);color:var(--brand-ink);font-weight:700;font-size:17px;min-height:54px;padding:0 22px;inline-size:100%;box-shadow:var(--sh-cta)}
 .cta.ghost{background:transparent;color:var(--text);border:var(--b-field) solid var(--edge);box-shadow:none}
+.cta.solid{background:var(--cta-solid)}
 .cta.small{min-height:44px;font-size:15px;inline-size:auto}
 .rings{position:relative;inline-size:220px;block-size:220px;margin-block:6px}
 .rings svg{inline-size:100%;block-size:100%;overflow:visible}
@@ -383,15 +384,17 @@ h2.sec{font:800 20px/1.3 var(--f-display);margin:40px 0 16px;text-wrap:balance}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── ج «إشارة»: زجاج وخط رفيع وتدرّج ── */
-:root[data-d="c"]{--r-phone:44px;--r-lg:28px;--r-md:18px;--r-sm:14px;--r-chip:12px;--r-cta:18px;--b-field:1px;--ring-w:.8;--slip-border:solid;--cta-bg:linear-gradient(120deg,var(--brand),var(--brand2));--cta-solid:var(--brand);--sh-phone:0 1px 0 var(--line),0 40px 90px -40px rgba(13,21,36,.35);--sh-cta:0 12px 30px -14px var(--brand2);--icon-bg:linear-gradient(140deg,#0A7987,#2E56E8);--icon-fg:#FFFFFF;--icon-core:#FFFFFF;--icon-w:2.5}
+:root[data-d="c"]{--r-phone:44px;--r-lg:28px;--r-md:18px;--r-sm:14px;--r-chip:12px;--r-cta:18px;--b-field:1.5px;--ring-w:1.4;--slip-border:solid;--cta-bg:linear-gradient(120deg,var(--brand),var(--brand2));--cta-solid:var(--brand);--sh-phone:0 1px 0 var(--line),0 40px 90px -40px rgba(13,21,36,.35);--sh-cta:0 12px 30px -14px var(--brand2);--icon-bg:linear-gradient(140deg,#0A7987,#2E56E8);--icon-fg:#FFFFFF;--icon-core:#FFFFFF;--icon-w:2.5}
 :root[data-d="c"]{--arc:var(--brand)}
 :root[data-d="c"] .phone{background:linear-gradient(180deg,var(--raised),var(--bg) 40%)}
-:root[data-d="c"] .input,:root[data-d="c"] .tags,:root[data-d="c"] .ulist li,:root[data-d="c"] .slip{background:color-mix(in srgb,var(--raised) 70%,transparent);backdrop-filter:blur(12px);box-shadow:0 1px 2px rgba(13,21,36,.06)}
+:root[data-d="c"] .ulist li,:root[data-d="c"] .slip{background:color-mix(in srgb,var(--raised) 70%,transparent);backdrop-filter:blur(12px);box-shadow:0 1px 2px rgba(13,21,36,.06)}
 :root[data-d="c"] .ring{stroke-dasharray:none}
 :root[data-d="c"] .r1{opacity:.9}:root[data-d="c"] .r2{opacity:.5}:root[data-d="c"] .r3{opacity:.25}
 :root[data-d="c"] .arc{stroke-width:6}:root[data-d="c"] .track{stroke-width:6}
 :root[data-d="c"] .chip.on{background:var(--text);color:var(--bg);border-color:var(--text)}
-:root[data-d="c"] .sens{background:var(--brand-soft)}
+:root[data-d="c"] .sens{background:var(--gold-soft);border:1.5px solid var(--warn)}
+/* المعتمد 2026-11-01: الدوائر تنبض أثناء الرفع، والتدرّج في الزر الرئيسي والأيقونة وحدهما، وحدود أوضح للشمس */
+:root[data-d="c"] .rings .r1{animation:pulse 2.4s ease-out infinite}:root[data-d="c"] .rings .r2{animation:pulse 2.4s .4s ease-out infinite}:root[data-d="c"] .rings .r3{animation:pulse 2.4s .8s ease-out infinite}
 
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 `;
@@ -466,5 +469,5 @@ ${tabs}
 }
 
 for (const d of ['a', 'b', 'c']) writeFileSync(join(OUT, `${d}.html`), page([d]));
-writeFileSync(join(OUT, 'index.html'), page(['a', 'b', 'c']));
+writeFileSync(join(OUT, 'index.html'), page(['c', 'a', 'b'])); // المعتمد أولًا
 console.log('built a.html b.html c.html index.html');
