@@ -1,5 +1,8 @@
 # نظام التصميم — المكتبة المرئية
 
+> **v2 «إشارة» حلّ محلّ هذا النظام لتطبيق المراسل «بوست ميدان»** (ADR 0085): انظر `design-system-v2.md` و`tokens.v2.json`.
+> هذا الملف يبقى مرجعًا لصفحات الويب حتى تصل مرحلتها في الانتقال.
+
 **ملف Figma:** «Visual Library — Design System» — https://www.figma.com/design/U4OJG4hM6NoPt7SsFM7zkO
 **المرجع للخطوط والألوان:** ملف Figma يعلو `tokens.json` (قرار المالك 2026-10-27، ADR 0079). عند الاختلاف يُحدَّث الـJSON ليطابق Figma، لا العكس.
 **مصدر الرموز للكود:** `docs/design/tokens.json` (صيغة W3C Design Tokens؛ الألوان بوضعين `light`/`dark` داخل `$value`، وكل رمز لوني يحمل اسم متغيّر CSS في `$extensions.vl.css` ونطاقات Figma في `$extensions.vl.figmaScopes`).
