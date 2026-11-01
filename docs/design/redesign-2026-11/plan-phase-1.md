@@ -101,7 +101,7 @@
 - Figma: صفحة «v2 — Foundations» ثم «v2 — Components» في ملف نظام التصميم القائم (`U4OJG4hM6NoPt7SsFM7zkO`)
 
 **الواجهات:**
-- ينتج: أسماء الرموز التي تستعملها المهام 5–7: `color.brand.{50..950}`، `color.accent.gold.{…}`، `color.bg.{base,raised,sunken,overlay}`،
+- ينتج: أسماء الرموز التي تستعملها المهام 5–7: `color.brand.{50..950}`، `color.accent.gold.{…}`، `color/bg/{base,raised,sunken,overlay}`،
   `color.text.{primary,secondary,on-brand}`، `color.state.{technical,editorial,rights}.{tone}`، `color.priority.urgent`،
   `font.display`، `font.text`، `font.mono`، `type.{display,title,body,caption}.{size,line,weight}`، `space.{1..12}`، `radius.{sm,md,lg,full}`، `motion.{fast,base,slow}`.
 - مكوّنات Figma (لكلٍّ متغيّرات `Direction=RTL|LTR` و`Mode=Light|Dark` والحالات): Button · TextField · TitleField (عدّاد) ·

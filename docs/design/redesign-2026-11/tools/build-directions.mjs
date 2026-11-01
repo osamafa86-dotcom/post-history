@@ -396,7 +396,7 @@ h2.sec{font:800 20px/1.3 var(--f-display);margin:40px 0 16px;text-wrap:balance}
 /* المعتمد 2026-11-01: الدوائر تنبض أثناء الرفع، والتدرّج في الزر الرئيسي والأيقونة وحدهما، وحدود أوضح للشمس */
 :root[data-d="c"] .rings .r1{animation:pulse 2.4s ease-out infinite}:root[data-d="c"] .rings .r2{animation:pulse 2.4s .4s ease-out infinite}:root[data-d="c"] .rings .r3{animation:pulse 2.4s .8s ease-out infinite}
 
-@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+@media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
 `;
 
 // ── السلوك: اللغة والوضع والتبويب واختبار الضغط وجدول التباين ────────────────
@@ -428,12 +428,12 @@ function render(){
   const groups=[['bg','raised','sunken','line'],['text','text2','edge'],['brand','brand2','brandSoft','brandInk'],['gold','goldSoft'],['urgent','ok','warn']];
   document.getElementById('palette').innerHTML=groups.map(g=>'<div class="sw"><div class="c">'+g.map(k=>'<span style="background:'+p[k]+'"></span>').join('')+'</div>'+g.map(k=>'<p><b>'+k+'</b><span class="num" dir="ltr">'+p[k]+'</span></p>').join('')+'</div>').join('');
   const need={text:4.5,large:3,ui:3};
-  document.querySelector('#contrast tbody').innerHTML=PAIRS.filter(x=>x.d===st.d&&x.mode===mode).map(x=>{const r=ratio(x.fg,x.bg),ok=r>=need[x.role];return '<tr><td><span class="chipx" style="background:'+x.bg+';box-shadow:inset 0 0 0 5px '+x.bg+',inset 0 0 0 9px '+x.fg+'"></span><span dir="ltr">'+x.name.split(' ').slice(1).join(' ')+'</span></td><td class="n">'+r.toFixed(2)+'</td><td class="n">'+need[x.role]+'</td><td class="'+(ok?'ok-t':'bad-t')+'">'+(ok?T.pass[li]:T.fail[li])+'</td></tr>'}).join('');
+  document.querySelector('#contrast tbody').innerHTML=PAIRS.filter(x=>x.d===st.d&&x.mode===mode).map(x=>{const r=ratio(x.fg,x['bg']),ok=r>=need[x.role];return '<tr><td><span class="chipx" style="background:'+x['bg']+';box-shadow:inset 0 0 0 5px '+x['bg']+',inset 0 0 0 9px '+x.fg+'"></span><span dir="ltr">'+x.name.split(' ').slice(1).join(' ')+'</span></td><td class="n">'+r.toFixed(2)+'</td><td class="n">'+need[x.role]+'</td><td class="'+(ok?'ok-t':'bad-t')+'">'+(ok?T.pass[li]:T.fail[li])+'</td></tr>'}).join('');
   const f=PAL[st.d].fonts;document.getElementById('fontnames').textContent=[f.display,f.text,f.num].map(s=>s.split(',')[0].replace(/'/g,'')).join(' · ');
   store.set('d',st.d);store.set('lang',st.lang);
 }
 document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
-  if(b.dataset.d){st.d=b.dataset.d;st.mode=null}else if(b.dataset.modeBtn){st.mode=b.dataset.modeBtn}else if(b.dataset.langBtn){st.lang=b.dataset.langBtn}else if(b.id==='stress'){st.stress=!st.stress}else return;render()});
+  if(b.dataset.d){st.d=b.dataset.d;st.mode=null}else if(b.dataset.modeBtn){st.mode=b.dataset.modeBtn}else if(b.dataset.langBtn){st.lang=b.dataset.langBtn}else if(b['id']==='stress'){st.stress=!st.stress}else return;render()});
 const card=document.querySelector('.store'),vid=card&&card.querySelector('video');
 if(vid){const on=()=>{vid.play().catch(()=>{});card.classList.add('playing')},off=()=>{vid.pause();card.classList.remove('playing')};
   card.addEventListener('pointerenter',e=>{if(e.pointerType==='mouse')on()});card.addEventListener('pointerleave',e=>{if(e.pointerType==='mouse')off()});

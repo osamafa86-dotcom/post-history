@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'tokens.v2.json');
 const col = (v) => ({ $type: 'color', $value: v });
 const ramp = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, col(v)]));
-const css = (path) => `--v2-${path.replace(/\./g, '-').replace(/^color-/, 'c-')}`;
+const css = (path) => `--v2-c-${path.replace(/\//g, '-')}`;
 const FILL = ['FRAME_FILL', 'SHAPE_FILL'];
 const sem = (path, light, dark, scopes = FILL) => ({
   $type: 'color', $value: { light: `{color.${light}}`, dark: `{color.${dark}}` },
@@ -29,42 +29,42 @@ const TEXT = ['TEXT_FILL'];
 const STROKE = ['STROKE_COLOR'];
 const semantic = {
   bg: {
-    base: sem('color.bg.base', 'neutral.25', 'neutral.900'),
-    raised: sem('color.bg.raised', 'neutral.0', 'neutral.800'),
-    sunken: sem('color.bg.sunken', 'neutral.50', 'neutral.950'),
+    base: sem('bg/base', 'neutral.25', 'neutral.900'),
+    raised: sem('bg/raised', 'neutral.0', 'neutral.800'),
+    sunken: sem('bg/sunken', 'neutral.50', 'neutral.950'),
     // وجه المؤسسات داكن في الوضعين (قرار المالك 2026-11-01)
-    store: sem('color.bg.store', 'neutral.850', 'neutral.850'),
+    store: sem('bg/store', 'neutral.850', 'neutral.850'),
   },
   text: {
-    primary: sem('color.text.primary', 'neutral.850', 'neutral.20', TEXT),
-    secondary: sem('color.text.secondary', 'neutral.500', 'neutral.300', TEXT),
-    'on-brand': sem('color.text.on-brand', 'neutral.0', 'brand.950', TEXT),
-    brand: sem('color.text.brand', 'brand.600', 'brand.300', TEXT),
-    'on-store': sem('color.text.on-store', 'neutral.20', 'neutral.20', TEXT),
+    primary: sem('text/primary', 'neutral.850', 'neutral.20', TEXT),
+    secondary: sem('text/secondary', 'neutral.500', 'neutral.300', TEXT),
+    'on-brand': sem('text/on-brand', 'neutral.0', 'brand.950', TEXT),
+    brand: sem('text/brand', 'brand.600', 'brand.300', TEXT),
+    'on-store': sem('text/on-store', 'neutral.20', 'neutral.20', TEXT),
   },
   border: {
-    line: sem('color.border.line', 'neutral.100', 'neutral.700', STROKE),
+    line: sem('border/line', 'neutral.100', 'neutral.700', STROKE),
     // حدود الحقول ≥ 3:1 للعمل في الشمس (التعديل المعتمد)
-    edge: sem('color.border.edge', 'neutral.400', 'neutral.400', STROKE),
+    edge: sem('border/edge', 'neutral.400', 'neutral.400', STROKE),
   },
   action: {
-    primary: sem('color.action.primary', 'brand.600', 'brand.300', [...FILL, ...STROKE]),
+    primary: sem('action/primary', 'brand.600', 'brand.300', [...FILL, ...STROKE]),
     // نهاية التدرّج: زرّ الإرسال الرئيسي وأيقونة التطبيق وحدهما
-    'gradient-end': sem('color.action.gradient-end', 'blue.600', 'blue.300'),
-    soft: sem('color.action.soft', 'brand.50', 'brand.900'),
-    store: sem('color.action.store', 'accent.gold.500', 'accent.gold.500'),
+    'gradient-end': sem('action/gradient-end', 'blue.600', 'blue.300'),
+    soft: sem('action/soft', 'brand.50', 'brand.900'),
+    store: sem('action/store', 'accent.gold.500', 'accent.gold.500'),
   },
-  priority: { urgent: sem('color.priority.urgent', 'red.700', 'red.400', [...FILL, ...TEXT, ...STROKE]) },
+  priority: { urgent: sem('priority/urgent', 'red.700', 'red.400', [...FILL, ...TEXT, ...STROKE]) },
   sensitivity: {
-    bg: sem('color.sensitivity.bg', 'accent.gold.100', 'accent.gold.900'),
-    border: sem('color.sensitivity.border', 'amber.700', 'amber.400', STROKE),
+    bg: sem('sensitivity/bg', 'accent.gold.100', 'accent.gold.900'),
+    border: sem('sensitivity/border', 'amber.700', 'amber.400', STROKE),
   },
   state: {
-    ok: sem('color.state.ok', 'green.700', 'green.400', [...TEXT, ...FILL]),
-    warn: sem('color.state.warn', 'amber.700', 'amber.400', [...TEXT, ...FILL]),
-    muted: sem('color.state.muted', 'neutral.500', 'neutral.300', [...TEXT, ...FILL]),
-    brand: sem('color.state.brand', 'brand.600', 'brand.300', [...TEXT, ...FILL]),
-    danger: sem('color.state.danger', 'red.700', 'red.400', [...TEXT, ...FILL]),
+    ok: sem('state/ok', 'green.700', 'green.400', [...TEXT, ...FILL]),
+    warn: sem('state/warn', 'amber.700', 'amber.400', [...TEXT, ...FILL]),
+    muted: sem('state/muted', 'neutral.500', 'neutral.300', [...TEXT, ...FILL]),
+    brand: sem('state/brand', 'brand.600', 'brand.300', [...TEXT, ...FILL]),
+    danger: sem('state/danger', 'red.700', 'red.400', [...TEXT, ...FILL]),
   },
 };
 
@@ -103,17 +103,18 @@ const doc = {
   },
   $extensions: {
     'v2.figma': { file: 'https://www.figma.com/design/U4OJG4hM6NoPt7SsFM7zkO', collections: { 'v2 Primitives': 'color.{neutral,brand,blue,accent,red,green,amber}', 'v2 Color': 'semantic (modes Light/Dark)', 'v2 Spacing': 'space', 'v2 Radius': 'radius' } },
+    // مسارات دلالية بشرطة مائلة تحت color (كأسماء Figma)
     'v2.contrastPairs': [
-      ['color.text.primary', 'color.bg.base', 'text'], ['color.text.secondary', 'color.bg.base', 'text'],
-      ['color.text.primary', 'color.bg.raised', 'text'], ['color.text.secondary', 'color.bg.raised', 'text'],
-      ['color.text.secondary', 'color.bg.sunken', 'text'], ['color.text.on-brand', 'color.action.primary', 'text'],
-      ['color.text.on-brand', 'color.action.gradient-end', 'text'], ['color.text.brand', 'color.bg.base', 'text'],
-      ['color.text.brand', 'color.bg.raised', 'text'], ['color.text.brand', 'color.action.soft', 'text'],
-      ['color.text.primary', 'color.sensitivity.bg', 'text'], ['color.sensitivity.border', 'color.sensitivity.bg', 'ui'],
-      ['color.priority.urgent', 'color.bg.raised', 'text'], ['color.state.ok', 'color.bg.raised', 'text'],
-      ['color.state.warn', 'color.bg.raised', 'text'], ['color.state.muted', 'color.bg.raised', 'text'],
-      ['color.border.edge', 'color.bg.raised', 'ui'], ['color.border.edge', 'color.bg.base', 'ui'],
-      ['color.text.on-store', 'color.bg.store', 'text'], ['color.bg.store', 'color.action.store', 'text'],
+      ['text/primary', 'bg/base', 'text'], ['text/secondary', 'bg/base', 'text'],
+      ['text/primary', 'bg/raised', 'text'], ['text/secondary', 'bg/raised', 'text'],
+      ['text/secondary', 'bg/sunken', 'text'], ['text/on-brand', 'action/primary', 'text'],
+      ['text/on-brand', 'action/gradient-end', 'text'], ['text/brand', 'bg/base', 'text'],
+      ['text/brand', 'bg/raised', 'text'], ['text/brand', 'action/soft', 'text'],
+      ['text/primary', 'sensitivity/bg', 'text'], ['sensitivity/border', 'sensitivity/bg', 'ui'],
+      ['priority/urgent', 'bg/raised', 'text'], ['state/ok', 'bg/raised', 'text'],
+      ['state/warn', 'bg/raised', 'text'], ['state/muted', 'bg/raised', 'text'],
+      ['border/edge', 'bg/raised', 'ui'], ['border/edge', 'bg/base', 'ui'],
+      ['text/on-store', 'bg/store', 'text'], ['bg/store', 'action/store', 'text'],
     ],
   },
 };

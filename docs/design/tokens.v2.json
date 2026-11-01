@@ -826,103 +826,103 @@
   },
   "v2.contrastPairs": [
    [
-    "color.text.primary",
-    "color.bg.base",
+    "text/primary",
+    "bg/base",
     "text"
    ],
    [
-    "color.text.secondary",
-    "color.bg.base",
+    "text/secondary",
+    "bg/base",
     "text"
    ],
    [
-    "color.text.primary",
-    "color.bg.raised",
+    "text/primary",
+    "bg/raised",
     "text"
    ],
    [
-    "color.text.secondary",
-    "color.bg.raised",
+    "text/secondary",
+    "bg/raised",
     "text"
    ],
    [
-    "color.text.secondary",
-    "color.bg.sunken",
+    "text/secondary",
+    "bg/sunken",
     "text"
    ],
    [
-    "color.text.on-brand",
-    "color.action.primary",
+    "text/on-brand",
+    "action/primary",
     "text"
    ],
    [
-    "color.text.on-brand",
-    "color.action.gradient-end",
+    "text/on-brand",
+    "action/gradient-end",
     "text"
    ],
    [
-    "color.text.brand",
-    "color.bg.base",
+    "text/brand",
+    "bg/base",
     "text"
    ],
    [
-    "color.text.brand",
-    "color.bg.raised",
+    "text/brand",
+    "bg/raised",
     "text"
    ],
    [
-    "color.text.brand",
-    "color.action.soft",
+    "text/brand",
+    "action/soft",
     "text"
    ],
    [
-    "color.text.primary",
-    "color.sensitivity.bg",
+    "text/primary",
+    "sensitivity/bg",
     "text"
    ],
    [
-    "color.sensitivity.border",
-    "color.sensitivity.bg",
+    "sensitivity/border",
+    "sensitivity/bg",
     "ui"
    ],
    [
-    "color.priority.urgent",
-    "color.bg.raised",
+    "priority/urgent",
+    "bg/raised",
     "text"
    ],
    [
-    "color.state.ok",
-    "color.bg.raised",
+    "state/ok",
+    "bg/raised",
     "text"
    ],
    [
-    "color.state.warn",
-    "color.bg.raised",
+    "state/warn",
+    "bg/raised",
     "text"
    ],
    [
-    "color.state.muted",
-    "color.bg.raised",
+    "state/muted",
+    "bg/raised",
     "text"
    ],
    [
-    "color.border.edge",
-    "color.bg.raised",
+    "border/edge",
+    "bg/raised",
     "ui"
    ],
    [
-    "color.border.edge",
-    "color.bg.base",
+    "border/edge",
+    "bg/base",
     "ui"
    ],
    [
-    "color.text.on-store",
-    "color.bg.store",
+    "text/on-store",
+    "bg/store",
     "text"
    ],
    [
-    "color.bg.store",
-    "color.action.store",
+    "bg/store",
+    "action/store",
     "text"
    ]
   ]

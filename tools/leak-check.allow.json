@@ -33,7 +33,9 @@
       "value": "github.io",
       "reason": "روابط توثيق عامة لمكتبات مفتوحة المصدر",
       "paths": [
+        "docs/design/redesign-2026-11/**",
         "docs/design/tokens.json",
+        "docs/design/tokens.v2.json",
         "docs/plan/decisions/0015-web-player.md"
       ]
     },
@@ -303,8 +305,26 @@
       "value": "figma.com",
       "reason": "رابط ملف تصميم علني في وثائق التصميم",
       "paths": [
+        "docs/design/design-system-v2.md",
         "docs/design/design-system.md",
-        "docs/design/tokens.json"
+        "docs/design/redesign-2026-11/**",
+        "docs/design/specs/reporter-v2.md",
+        "docs/design/tokens.json",
+        "docs/design/tokens.v2.json"
+      ]
+    },
+    {
+      "value": "fonts.googleapis.com",
+      "reason": "خدمة خطوط Google العامة (Readex Pro وRubik، رخصة OFL) في نماذج التصميم الحيّة وأدوات توليدها؛ لا تعرّف بنية",
+      "paths": [
+        "docs/design/redesign-2026-11/**"
+      ]
+    },
+    {
+      "value": "fonts.gstatic.com",
+      "reason": "خدمة خطوط Google العامة (Readex Pro وRubik، رخصة OFL) في نماذج التصميم الحيّة وأدوات توليدها؛ لا تعرّف بنية",
+      "paths": [
+        "docs/design/redesign-2026-11/**"
       ]
     },
     {
@@ -402,6 +422,7 @@
       "reason": "معرّف مساحة الأسماء القياسية لـSVG (xmlns) لا مضيف اتصال",
       "paths": [
         "apps/ios/store/icon/AppIcon.svg",
+        "docs/design/redesign-2026-11/**",
         "docs/design/store-assets/generate.cjs"
       ]
     },

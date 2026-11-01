@@ -7,12 +7,13 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
 const tokens = JSON.parse(readFileSync(join(ROOT, '..', 'tokens.v2.json'), 'utf8'));
-const at = (ref) => ref.split('.').reduce((o, k) => o?.[k], tokens);
+const at = (ref) => (ref.includes('/') && !ref.startsWith('color/') ? `color/${ref}` : ref).split(/[./]/).reduce((o, k) => o?.[k], tokens);
 const resolve = (ref, mode) => { let v = at(ref).$value; if (typeof v === 'object') v = v[mode]; const m = typeof v === 'string' && v.match(/^\{(.+)\}$/); return m ? resolve(m[1], mode) : v; };
 
-const SEM = ['bg.base', 'bg.raised', 'bg.sunken', 'text.primary', 'text.secondary', 'text.on-brand', 'border.line', 'border.edge', 'action.primary', 'action.gradient-end', 'priority.urgent', 'sensitivity.bg', 'sensitivity.border', 'state.ok', 'state.warn', 'state.muted', 'state.brand', 'state.danger'];
-const block = (mode) => SEM.map((p) => `--${p.replace('.', '-')}:${resolve(`color.${p}`, mode)}`).join(';')
-  + `;--page:${mode === 'light' ? resolve('color.neutral.50', 'light') : resolve('color.neutral.950', 'light')};color-scheme:${mode}`;
+// المسارات بشرطة مائلة (كأسماء Figma)؛ تُحوَّل إلى نقاط عند الحلّ.
+const SEM = ['bg/base', 'bg/raised', 'bg/sunken', 'text/primary', 'text/secondary', 'text/on-brand', 'border/line', 'border/edge', 'action/primary', 'action/gradient-end', 'priority/urgent', 'sensitivity/bg', 'sensitivity/border', 'state/ok', 'state/warn', 'state/muted', 'state/brand', 'state/danger'];
+const block = (mode) => SEM.map((p) => `--${p.replace('/', '-')}:${resolve(`color/${p}`, mode)}`).join(';')
+  + `;--page:${mode === 'light' ? resolve('color/neutral/50', 'light') : resolve('color/neutral/950', 'light')};color-scheme:${mode}`;
 const fam = (k) => tokens.font.family[k].$value.map((f) => (f.includes(' ') ? `'${f}'` : f)).join(',');
 const r = (k) => tokens.radius[k].$value;
 const css = `:root{${block('light')};--f-display:${fam('display')};--f-text:${fam('text')};--f-num:${fam('num')};--r-sm:${r('sm')};--r-md:${r('md')};--r-chip:${r('chip')}}\n:root[data-mode="dark"]{${block('dark')}}`;
@@ -64,7 +65,7 @@ let html = readFileSync(join(ROOT, 'prototype', 'post-maydan.src.html'), 'utf8')
 const video = `data:video/mp4;base64,${readFileSync(join(ROOT, 'directions', 'samples', 'store-sample.mp4')).toString('base64')}`;
 const put = (s, k, v) => s.split(k).join(v);
 html = put(put(put(put(put(html, '/*__TOKENS__*/', css), '__PAIRS__', JSON.stringify({ pairs })), '__STRINGS__', JSON.stringify(T)), '__ICONS__', JSON.stringify(ICONS)), '__VIDEO__', video).replace(/__I_([a-z]+)__/g, (_, n) => ICONS[n]);
-const missing = [...html.matchAll(/data-(?:i|al)="([^"]+)"/g)].map((m) => m[1]).filter((k) => !T[k]);
+const missing = [...html.matchAll(/data-(?:i|aria)="([^"]+)"/g)].map((m) => m[1]).filter((k) => !T[k]);
 if (missing.length) throw new Error(`missing strings: ${[...new Set(missing)].join(', ')}`);
 writeFileSync(join(ROOT, 'prototype', 'post-maydan.html'), html);
 console.log('built prototype/post-maydan.html');

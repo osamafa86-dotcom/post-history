@@ -118,11 +118,11 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .states div{display:flex;justify-content:space-between;gap:8px;padding:9px 0;border-bottom:1px solid var(--border-line);font-size:.875rem}
 .states div:last-child{border:0}
 .states span{display:flex;gap:4px;align-items:center;color:var(--tone);font-weight:600}
-@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+@media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
 </style>
 <script type="application/json" id="tokens">__PAIRS__</script>
 
-<div class="review" role="group" data-al="alReview">
+<div class="review" role="group" data-aria="alReview">
   <div class="seg"><button data-set="lang" data-v="ar">عربي</button><button data-set="lang" data-v="en">English</button></div>
   <div class="seg"><button data-set="mode" data-v="light">فاتح</button><button data-set="mode" data-v="dark">داكن</button></div>
   <div class="seg"><button data-set="scale" data-v="1">خط 100%</button><button data-set="scale" data-v="2">خط 200%</button></div>
@@ -131,7 +131,7 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 
 <main class="phone" id="app">
   <!-- 1. الرئيسية -->
-  <section class="scr on" id="s-home" data-al="alHome">
+  <section class="scr on" id="s-home" data-aria="alHome">
     <h1 class="h1" data-i="hello">مساء الخير، سامي</h1>
     <button class="btn primary big" data-go="send">__I_bolt__<span data-i="sendField">إرسال من الميدان</span></button>
     <p class="muted small" data-i="shareHint">أو شارك من معرض الصور مباشرة: اختر المقاطع ← مشاركة ← بوست ميدان</p>
@@ -141,13 +141,13 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
   </section>
 
   <!-- 2. الإرسال -->
-  <section class="scr" id="s-send" data-al="alSend">
-    <div class="bar"><span style="inline-size:44px"></span><h2 data-i="newSend">إرسال جديد</h2><button class="iconbtn" data-go="home" data-al="alClose">__I_close__</button></div>
+  <section class="scr" id="s-send" data-aria="alSend">
+    <div class="bar"><span style="inline-size:44px"></span><h2 data-i="newSend">إرسال جديد</h2><button class="iconbtn" data-go="home" data-aria="alClose">__I_close__</button></div>
     <div class="picked"><div class="pk th1"><span class="dur num">1:42</span></div><div class="pk th2"><span class="dur num">3:05</span></div><div class="pk th3"></div><div class="pkm"><b data-i="files">3 ملفات</b><span class="num" dir="ltr">412 MB</span></div></div>
     <p class="note small" style="--tone:var(--state-ok)">__I_check__<span data-i="lightStarted">بدأ رفع نسخة خفيفة الآن، وتُكمل الحقول وأنت مطمئن.</span></p>
-    <label class="fld"><span class="lbl" data-i="fTitle">عنوان التغطية</span><span class="input"><textarea id="title" rows="1" maxlength="80" autocomplete="off" data-ph="titlePh"></textarea><span class="count num" dir="ltr" id="count">0/80</span></span></label>
+    <label class="fld"><span class="lbl" data-i="fTitle">عنوان التغطية</span><span class="input"><textarea id="title" rows="1" maxlength="80" autocomplete="off" data-hint="titlePh"></textarea><span class="count num" dir="ltr" id="count">0/80</span></span></label>
     <div class="fld"><span class="lbl" id="typeL" data-i="fType">نوع التغطية</span><div class="chips" id="types" role="group" aria-labelledby="typeL"></div></div>
-    <div class="fld"><span class="lbl" data-i="fTags">الوسوم</span><div class="tags" id="tags"><input id="tagIn" data-ph="addTag" enterkeyhint="done"></div>
+    <div class="fld"><span class="lbl" data-i="fTags">الوسوم</span><div class="tags" id="tags"><input id="tagIn" data-hint="addTag" enterkeyhint="done"></div>
       <div class="sugg"><span data-i="fromDesk">من قائمة الإدارة:</span><span id="sugg"></span></div></div>
     <div class="row2"><div class="place">__I_pin__<div><b data-i="place">دير البلح · النصيرات</b><small data-i="remembered">من آخر إرسال</small></div></div>
       <button class="urgent" id="urgent" aria-pressed="false">__I_bolt__<span data-i="urgent">عاجل</span></button></div>
@@ -159,7 +159,7 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
   </section>
 
   <!-- 3. الرفع -->
-  <section class="scr" id="s-upload" data-al="alUpload">
+  <section class="scr" id="s-upload" data-aria="alUpload">
     <div class="bar"><h2 data-i="uploading">الرفع</h2></div>
     <div class="rings live" id="rings"><svg viewBox="0 0 200 200" aria-hidden="true"><circle class="ring r3" cx="100" cy="100" r="94"/><circle class="ring r2" cx="100" cy="100" r="78"/><circle class="ring r1" cx="100" cy="100" r="62"/><circle class="track" cx="100" cy="100" r="46"/><circle class="arc" id="arc" cx="100" cy="100" r="46" pathLength="100" stroke-dasharray="0 100"/></svg>
       <div class="rc" role="status" aria-live="polite"><b class="num" id="pct">0%</b><span class="st" id="pst"></span></div></div>
@@ -170,7 +170,7 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
   </section>
 
   <!-- 4. الإيصال -->
-  <section class="scr" id="s-receipt" data-al="alReceipt">
+  <section class="scr" id="s-receipt" data-aria="alReceipt">
     <div class="rings celebrate" style="inline-size:11rem;block-size:11rem;margin-top:1.5rem"><svg viewBox="0 0 200 200" aria-hidden="true"><circle class="ring r3" cx="100" cy="100" r="94"/><circle class="ring r2" cx="100" cy="100" r="76"/><circle class="ring r1" cx="100" cy="100" r="58"/><circle cx="100" cy="100" r="40" fill="var(--action-primary)"/><path d="M82 101l12 12 24-26" fill="none" stroke="var(--text-on-brand)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
     <h1 class="h1 center" data-i="delivered">وصلت المواد</h1>
     <p class="muted center" style="margin:0"><span data-i="deliveredSub">استلم المحرّرون 3 مواد بعنوان</span> «<b id="rTitle" style="color:var(--text-primary);unicode-bidi:plaintext"></b>»</p>
@@ -180,20 +180,20 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
   </section>
 
   <!-- 5. موادي -->
-  <section class="scr" id="s-mine" data-al="alMine">
-    <div class="bar"><h1 class="h1" style="flex:1" data-i="mine">موادي</h1><button class="iconbtn" data-go="home" data-al="alClose">__I_close__</button></div>
+  <section class="scr" id="s-mine" data-aria="alMine">
+    <div class="bar"><h1 class="h1" style="flex:1" data-i="mine">موادي</h1><button class="iconbtn" data-go="home" data-aria="alClose">__I_close__</button></div>
     <div class="chips" id="filters"></div>
     <div id="groups"></div>
   </section>
 
   <!-- 6. المادة والمشغّل -->
-  <section class="scr" id="s-item" data-al="alItem">
-    <div class="bar"><span style="inline-size:44px"></span><h2 data-i="item">مادة</h2><button class="iconbtn" data-go="mine" data-al="alBack">__I_close__</button></div>
+  <section class="scr" id="s-item" data-aria="alItem">
+    <div class="bar"><span style="inline-size:44px"></span><h2 data-i="item">مادة</h2><button class="iconbtn" data-go="mine" data-aria="alBack">__I_close__</button></div>
     <div class="player" id="player"><video id="vid" playsinline loop muted preload="metadata" src="__VIDEO__"></video>
-      <div class="pc"><input type="range" id="scrub" min="0" max="1000" value="0" data-al="alSeek">
+      <div class="pc"><input type="range" id="scrub" min="0" max="1000" value="0" data-aria="alSeek">
         <div class="pcb"><span class="num" id="time" dir="ltr">0:00 / 0:06</span>
-          <span style="display:flex;gap:4px;align-items:center"><button id="fb" data-al="alFb">−1f</button><button class="pp" id="pp" data-al="alPlay">__I_play__</button><button id="ff" data-al="alFf">+1f</button></span>
-          <span style="display:flex"><button id="speed">1×</button><button id="fs" data-al="alFs">⛶</button></span></div></div></div>
+          <span style="display:flex;gap:4px;align-items:center"><button id="fb" data-aria="alFb">−1f</button><button class="pp" id="pp" data-aria="alPlay">__I_play__</button><button id="ff" data-aria="alFf">+1f</button></span>
+          <span style="display:flex"><button id="speed">1×</button><button id="fs" data-aria="alFs">⛶</button></span></div></div></div>
     <h2 class="h1" style="font-size:1.25rem" id="iTitle"></h2>
     <p class="muted small" style="margin:0" data-i="iMeta">دير البلح · اليوم · 1:42 · فيديو</p>
     <div class="states" id="istates"></div>
@@ -215,9 +215,9 @@ if(!q.get('mode')&&!store.get('mode')&&matchMedia('(prefers-color-scheme: dark)'
 function applyReview(){const r=document.documentElement;r.lang=S.lang;r.dir=S.lang==='en'?'ltr':'rtl';r.dataset.mode=S.mode;r.style.setProperty('--scale',S.scale);
   $$('[data-set]').forEach(b=>b.setAttribute('aria-pressed',String(S[b.dataset.set]===b.dataset.v)));
   $$('[data-i]').forEach(e=>{if(T[e.dataset.i])e.textContent=t(e.dataset.i)});
-  $$('[data-ph]').forEach(e=>e.placeholder=t(e.dataset.ph));$$('[data-al]').forEach(e=>e.setAttribute('aria-label',t(e.dataset.al)));
+  $$('[data-hint]').forEach(e=>e.placeholder=t(e.dataset.hint));$$('[data-aria]').forEach(e=>e.setAttribute('aria-label',t(e.dataset.aria)));
   renderTypes();renderTags();renderSens();validate();renderMine();for(const k of ['lang','mode','scale'])store.set(k,S[k])}
-function go(id){$$('.scr').forEach(s=>s.classList.toggle('on',s.id==='s-'+id));$('#app').scrollIntoView({block:'start'});if(id==='send')resetSend();if(id==='mine')renderMine();}
+function go(id){$$('.scr').forEach(s=>s.classList.toggle('on',s['id']==='s-'+id));$('#app').scrollIntoView({block:'start'});if(id==='send')resetSend();if(id==='mine')renderMine();}
 document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
   if(b.dataset.set){S[b.dataset.set]=b.dataset.v;applyReview();return}
   if(b.dataset.go){go(b.dataset.go);return}
@@ -250,9 +250,9 @@ function validate(){const n=[...$('#title').value.trim()].length;let need='';
 $('#sendBtn').addEventListener('click',startUpload);
 // الرفع
 let timer=null,online=true,files=[];
-function startUpload(){files=[{n:t('clip1'),d:'1:42',th:'th1',p:0,sz:120},{n:t('clip2'),d:'3:05',th:'th2',p:0,sz:230},{n:t('photo3'),d:'',th:'th3',p:0,sz:62}];online=true;go('upload');tick();clearInterval(timer);timer=setInterval(tick,450)}
-function tick(){if(online){for(const f of files){if(f.p<100){f.p=Math.min(100,f.p+Math.max(4,Math.round(1800/f.sz)));break}}}
-  const tot=files.reduce((a,f)=>a+f.sz,0),done=files.reduce((a,f)=>a+f.sz*f.p/100,0),pct=Math.round(done/tot*100);
+function startUpload(){files=[{n:t('clip1'),d:'1:42',thumb:'th1',p:0,bytes:120},{n:t('clip2'),d:'3:05',thumb:'th2',p:0,bytes:230},{n:t('photo3'),d:'',thumb:'th3',p:0,bytes:62}];online=true;go('upload');tick();clearInterval(timer);timer=setInterval(tick,450)}
+function tick(){if(online){for(const f of files){if(f.p<100){f.p=Math.min(100,f.p+Math.max(4,Math.round(1800/f.bytes)));break}}}
+  const tot=files.reduce((a,f)=>a+f.bytes,0),done=files.reduce((a,f)=>a+f.bytes*f.p/100,0),pct=Math.round(done/tot*100);
   const r=$('#rings');r.style.setProperty('--tone',online?'var(--action-primary)':'var(--state-warn)');r.classList.toggle('live',online&&pct<100);
   $('#arc').setAttribute('stroke-dasharray',pct+' 100');$('#pct').textContent=pct+'%';
   $('#pst').innerHTML=online?t('uploading'):ICON.wifi+t('waitingNet');
@@ -262,22 +262,22 @@ function tick(){if(online){for(const f of files){if(f.p<100){f.p=Math.min(100,f.
   const stage=p=>p>=100?3:p>=85?2:p>=40?1:0,SL=['stPreview','stOriginal','stBackup'];
   $('#ulist').innerHTML=files.map(f=>{const g=stage(f.p);const dots=`<span class="stages" data-stage="${g}" role="img" aria-label="${g?t(SL[g-1]):t('uploading')}">${[1,2,3].map(i=>`<i class="${i<=g?'on':''}"></i>`).join('')}</span>`;
     const st=f.p>=100?['var(--state-ok)',ICON.check+t('stBackup')+dots]:!online?['var(--state-warn)',ICON.wifi+t('waitingNet')+dots]:g?['var(--state-ok)',ICON.check+t(SL[g-1])+dots]:['var(--action-primary)',`<span class="num" dir="ltr">${f.p}%</span>`+dots];
-    return `<li style="--tone:${st[0]}"><span class="ut ${f.th}"></span><span class="un">${f.n}${f.d?` <span class="num">· ${f.d}</span>`:''}</span><span class="us">${st[1]}</span>${f.p<100&&online?`<span class="ub"><i style="inline-size:${f.p}%"></i></span>`:''}</li>`}).join('');
+    return `<li style="--tone:${st[0]}"><span class="ut ${f.thumb}"></span><span class="un">${f.n}${f.d?` <span class="num">· ${f.d}</span>`:''}</span><span class="us">${st[1]}</span>${f.p<100&&online?`<span class="ub"><i style="inline-size:${f.p}%"></i></span>`:''}</li>`}).join('');
   if(pct>=100){clearInterval(timer);setTimeout(receipt,700)}}
 $('#off').addEventListener('click',()=>{online=false;tick()});$('#on').addEventListener('click',()=>{online=true;tick()});
 function receipt(){const title=$('#title').value.trim();$('#rTitle').textContent=title;const d=new Date();$('#rT').textContent=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
-  S.items.unshift({title,types:[...S.types],urgent:S.urgent,cards:[['th1','1:42','v'],['th2','3:05','v'],['th3','','p']],today:true});go('receipt');const c=$('#s-receipt .rings');c.classList.remove('celebrate');void c.offsetWidth;c.classList.add('celebrate')}
+  S.items.unshift({title,types:[...S.types],urgent:S.urgent,cards:[['th1','1:42','v'],['th2','3:05','v'],['th3','','p']],isToday:true});go('receipt');const c=$('#s-receipt .rings');c.classList.remove('celebrate');void c.offsetWidth;c.classList.add('celebrate')}
 // موادي
-const SEED=[{title:null,key:'g2',types:['report'],cards:[['th4','0:58','v'],['th5','2:11','v']],today:false}];
+const SEED=[{title:null,key:'g2',types:['report'],cards:[['th4','0:58','v'],['th5','2:11','v']],isToday:false}];
 function badge(tone,ic,k){return `<span style="--tone:var(--state-${tone})">${ICON[ic]}${t(k)}</span>`}
 function renderMine(){const fl=[['all','fAll'],['v','fVideo'],['p','fPhotos'],['urgent','fUrgent']];S.filter=S.filter||'all';
   $('#filters').innerHTML=fl.map(([v,k])=>`<button class="chip" data-filter="${v}" aria-pressed="${S.filter===v}">${t(k)}</button>`).join('');
   const all=[...S.items,...SEED];let i=0;
   $('#groups').innerHTML=all.filter(g=>S.filter!=='urgent'||g.urgent).map(g=>{const ty=TYPES.find(x=>x[0]===g.types[0]);const cards=g.cards.filter(c=>S.filter==='all'||S.filter==='urgent'||c[2]===S.filter);if(!cards.length)return '';
-    return `<section class="group" style="margin-bottom:1.25rem"><h3>${g.title?esc(g.title):t(g.key)}</h3><small>${ty?(S.lang==='en'?ty[2]:ty[1]):''} · ${t(g.today?'today':'yesterday')}</small><div class="grid">${cards.map(c=>{const id=i++;return `<button class="card" data-item="${id}" aria-label="${t('open')}"><span class="tb ${c[0]}">${c[1]?`<span class="dur num">${c[1]}</span>`:''}</span><span class="badges">${g.today?badge('muted','clock','processing')+badge('warn','pen','inReview'):badge('ok','check','ready')+badge('ok','check','approved')}${badge(g.today?'muted':'brand','key',g.today?'internal':'listed')}</span></button>`}).join('')}</div></section>`}).join('')||`<p class="muted center">${t('empty')}</p>`}
+    return `<section class="group" style="margin-bottom:1.25rem"><h3>${g.title?esc(g.title):t(g.key)}</h3><small>${ty?(S.lang==='en'?ty[2]:ty[1]):''} · ${t(g.isToday?'today':'yesterday')}</small><div class="grid">${cards.map(c=>{const id=i++;return `<button class="card" data-item="${id}" aria-label="${t('open')}"><span class="tb ${c[0]}">${c[1]?`<span class="dur num">${c[1]}</span>`:''}</span><span class="badges">${g.isToday?badge('muted','clock','processing')+badge('warn','pen','inReview'):badge('ok','check','ready')+badge('ok','check','approved')}${badge(g.isToday?'muted':'brand','key',g.isToday?'internal':'listed')}</span></button>`}).join('')}</div></section>`}).join('')||`<p class="muted center">${t('empty')}</p>`}
 function openItem(id){const all=[...S.items,...SEED];let n=0,g0;for(const g of all){if(id<n+g.cards.length){g0=g;break}n+=g.cards.length}
   $('#iTitle').textContent=g0.title||t(g0.key);
-  $('#istates').innerHTML=[['stTech',g0.today?['muted','clock','processing']:['ok','check','ready'],'whyTech'],['stEdit',g0.today?['warn','pen','inReview']:['ok','check','approved'],'whyEdit'],['stRights',g0.today?['muted','key','internal']:['brand','key','listed'],'whyRights']].map(([k,b])=>`<div><b>${t(k)}</b>${badge(...b)}</div>`).join('');
+  $('#istates').innerHTML=[['stTech',g0.isToday?['muted','clock','processing']:['ok','check','ready'],'whyTech'],['stEdit',g0.isToday?['warn','pen','inReview']:['ok','check','approved'],'whyEdit'],['stRights',g0.isToday?['muted','key','internal']:['brand','key','listed'],'whyRights']].map(([k,b])=>`<div><b>${t(k)}</b>${badge(...b)}</div>`).join('');
   go('item')}
 // المشغّل
 const v=$('#vid'),FPS=24;
@@ -285,7 +285,7 @@ const fmt=s=>Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
 const upd=()=>{if(v.duration){$('#scrub').value=Math.round(v.currentTime/v.duration*1000);$('#time').textContent=fmt(v.currentTime)+' / '+fmt(v.duration)}};
 v.addEventListener('timeupdate',upd);v.addEventListener('loadedmetadata',upd);
 $('#pp').addEventListener('click',()=>{v.paused?v.play().catch(()=>{}):v.pause()});
-v.addEventListener('play',()=>{$('#pp').innerHTML=ICON.pause;$('#pp').dataset.al='alPause';$('#pp').setAttribute('aria-label',t('alPause'))});v.addEventListener('pause',()=>{$('#pp').innerHTML=ICON.play;$('#pp').dataset.al='alPlay';$('#pp').setAttribute('aria-label',t('alPlay'))});
+v.addEventListener('play',()=>{$('#pp').innerHTML=ICON.pause;$('#pp').dataset.aria='alPause';$('#pp').setAttribute('aria-label',t('alPause'))});v.addEventListener('pause',()=>{$('#pp').innerHTML=ICON.play;$('#pp').dataset.aria='alPlay';$('#pp').setAttribute('aria-label',t('alPlay'))});
 $('#scrub').addEventListener('input',e=>{if(v.duration)v.currentTime=e.target.value/1000*v.duration});
 $('#fb').addEventListener('click',()=>{v.pause();v.currentTime=Math.max(0,v.currentTime-1/FPS)});$('#ff').addEventListener('click',()=>{v.pause();v.currentTime=Math.min(v.duration||0,v.currentTime+1/FPS)});
 const SP=[1,1.5,2,0.5];$('#speed').addEventListener('click',()=>{const i=(SP.indexOf(v.playbackRate)+1)%SP.length;v.playbackRate=SP[i];$('#speed').textContent=SP[i]+'×'});

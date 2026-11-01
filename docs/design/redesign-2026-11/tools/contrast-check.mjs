@@ -37,7 +37,8 @@ export function checkFile(path) {
 // ملف رموز W3C: يحلّ المراجع لكل وضع ويفحص الأزواج المعلنة في $extensions["v2.contrastPairs"].
 export function checkTokens(path) {
   const doc = JSON.parse(readFileSync(path, 'utf8'));
-  const at = (ref) => ref.split('.').reduce((o, k) => o?.[k], doc);
+  // المرجع إما {color.x.y} (W3C) أو مسار دلالي بشرطة مائلة تحت color (x/y)
+  const at = (ref) => (ref.includes('/') ? ['color', ...ref.split('/')] : ref.split('.')).reduce((o, k) => o?.[k], doc);
   const resolve = (ref, mode, depth = 0) => {
     const node = at(ref);
     if (!node || depth > 8) throw new Error(`${path}: unresolved ${ref}`);
