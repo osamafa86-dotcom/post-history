@@ -33,9 +33,11 @@ for (const [w, h, lang, scale, motion] of [[390, 844, 'ar', 1, 'no-preference'],
   check(await page.isDisabled('#sendBtn'), `${tag} send disabled before fields`);
   await page.fill('#title', lang === 'ar' ? 'توزيع مساعدات WFP على 1,250 عائلة في مخيم النصيرات وسط قطاع غزة يوم 28/10 صباحًا' : 'WFP aid to 1,250 families in مخيم النصيرات, central Gaza Strip, on 28 Oct, day 3');
   await page.click('[data-type="breaking"]');
+  await page.click('[data-sens="no"]');
+  check(await page.isDisabled('#sendBtn'), `${tag} send stays disabled without tags`);
   for (const tg of ['مساعدات', 'النصيرات', 'شتاء', 'WFP', 'طوابير', 'أطفال', 'دير البلح', 'نزوح', 'خيام', 'مطر', 'وكالة الغوث UNRWA', 'توزيع الطحين في الصباح الباكر']) { await page.fill('#tagIn', tg); await page.press('#tagIn', 'Enter'); }
   check(await page.locator('#tags .tag').count() === 12, `${tag} 12 tags added`);
-  check(await page.isDisabled('#sendBtn'), `${tag} send stays disabled until sensitivity answered`);
+  check(!(await page.isDisabled('#sendBtn')), `${tag} title + type + tags + «no» enable send`);
   await page.click('[data-sens="yes"]');
   check(await page.isDisabled('#sendBtn'), `${tag} «yes» requires the three follow-ups`);
   for (const k of ['minors', 'injured', 'graphic']) await page.click(`[data-fu="${k}"][data-v="0"]`);
@@ -43,9 +45,17 @@ for (const [w, h, lang, scale, motion] of [[390, 844, 'ar', 1, 'no-preference'],
   check(await over() === 0, `${tag} send: no horizontal scroll`);
   const cl = await clipped(page); check(cl.length === 0, `${tag} send: no clipped text ${cl.join(' | ')}`);
   const es = await escapes(page); check(es.length === 0, `${tag} send: everything inside the phone ${es.join(' | ')}`);
+  const small = await page.evaluate(() => [...document.querySelectorAll('.scr.on button, .scr.on [role=button]')].filter((e) => e.offsetParent).map((e) => [e.textContent.trim().slice(0, 12) || e.getAttribute('aria-label'), e.getBoundingClientRect()]).filter(([, r]) => r.width < 43.5 || r.height < 43.5).map(([n, r]) => `${n} ${Math.round(r.width)}x${Math.round(r.height)}`));
+  check(small.length === 0, `${tag} every send-screen target ≥ 44×44 ${small.slice(0, 5).join(' | ')}`);
+  const fuName = await page.evaluate(() => { const b = document.querySelector('[data-fu="minors"][data-v="0"]'); const g = b.closest('[role=group]'); const lab = g && document.getElementById(g.getAttribute('aria-labelledby')); return lab ? lab.textContent : ''; });
+  check(fuName.length > 5, `${tag} follow-up answers sit in a labelled group («${fuName}»)`);
+  const enLabels = await page.evaluate((lang) => lang === 'ar' ? [...document.querySelectorAll('[aria-label]')].map((e) => e.getAttribute('aria-label')).filter((l) => /^[a-z ]+$/i.test(l)) : [], lang);
+  check(enLabels.length === 0, `${tag} aria-labels follow the language ${enLabels.join(',')}`);
   const btn = await page.locator('#sendBtn').boundingBox(); check(btn.height >= 44, `${tag} send button ≥ 44 high (${Math.round(btn.height)})`);
   await page.screenshot({ path: join(out, `${tag}-send.png`), fullPage: true });
   await page.click('#sendBtn');
+  await page.waitForFunction(() => document.querySelectorAll('#ulist [data-stage]').length === 3, null, { timeout: 5000 }).catch(() => {});
+  check(await page.locator('#ulist [data-stage]').count() === 3, `${tag} each file shows its three-stage progress`);
   await page.waitForTimeout(900); await page.click('#off'); await page.waitForTimeout(400);
   check((await page.textContent('#pst')).length > 3 && await page.locator('#ulist .us').filter({ hasText: lang === 'ar' ? 'بانتظار' : 'Waiting' }).count() > 0, `${tag} offline state shown`);
   { const es2 = await escapes(page); check(es2.length === 0, `${tag} offline: layout intact ${es2.join(' | ')}`); }
@@ -54,11 +64,13 @@ for (const [w, h, lang, scale, motion] of [[390, 844, 'ar', 1, 'no-preference'],
   await page.click('#on');
   await page.waitForSelector('#s-receipt.on', { timeout: 20000 });
   check((await page.textContent('#rTitle')).includes('1,250'), `${tag} receipt carries the title`);
+  check(await page.isVisible('#delLocal'), `${tag} receipt offers deleting the local copy`);
   await page.screenshot({ path: join(out, `${tag}-receipt.png`), fullPage: true });
   await page.click('#s-receipt [data-go="mine"]');
   check(await page.locator('#groups .group').count() === 2, `${tag} new group on top of «my materials»`);
   await page.click('[data-item="0"]');
   check(await page.isVisible('#vid'), `${tag} player opens`);
+  check(await page.$eval('#iTitle', (e) => getComputedStyle(e).unicodeBidi) === 'plaintext', `${tag} item title is bidi-isolated`);
   check(await over() === 0, `${tag} player: no horizontal scroll`);
   await page.screenshot({ path: join(out, `${tag}-player.png`), fullPage: true });
   await ctx.close();

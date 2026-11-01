@@ -8,7 +8,7 @@
 | | العربية | English |
 |---|---|---|
 | الاسم (≤ 30) | بوست ميدان | Post Maydan |
-| العنوان الفرعي iOS (≤ 30) | من الميدان إلى المكتبة المرئية | From the field to the newsroom |
+| العنوان الفرعي iOS (≤ 30) | من الميدان إلى المكتبة المرئية | From the field to the library |
 | الوصف القصير Play (≤ 80) | أرسل مقاطعك من الميدان بخطوة واحدة، وتابع وصولها ومراجعتها. | Send field footage in one step and follow its delivery and review. |
 
 ## الوصف الطويل
@@ -22,7 +22,7 @@
 - **رفع يطمئن:** نسخة خفيفة تصل المحرر خلال ثوانٍ، والأصل يُرفع كاملًا ويُستأنف وحده إن انقطعت الشبكة.
 - **إيصال لكل إرسال:** رقم وبصمة يثبتان وصول موادك كما صوّرتها.
 - **موادي:** معرض مرتّب بالعنوان والتاريخ، فيه حالة كل مادة الفنية والتحريرية والحقوقية، ومشغّل إطار بإطار.
-- **خصوصية المصدر:** لا يرسل التطبيق موقعك الدقيق، ولا يظهر اسم مصدر محمي في أي معاينة أو إشعار.
+- **خصوصية المصدر:** لا يظهر موقعك الدقيق ولا اسم مصدر محمي في أي معاينة أو إشعار.
 
 يتطلب حسابًا من إدارة الشبكة.
 
@@ -37,8 +37,7 @@ Post Maydan is the Palestine Post network’s app for reporters to send footage 
 - **A receipt for every send:** a number and fingerprint prove your footage arrived as you shot it.
 - **My materials:** a gallery by title and date showing each item’s technical, editorial and rights status, with a
   frame-by-frame player.
-- **Source privacy:** the app never sends your precise location, and no protected source name appears in any preview
-  or notification.
+- **Source privacy:** your precise location and protected source names never appear in any preview or notification.
 
 Requires an account from the network’s desk.
 

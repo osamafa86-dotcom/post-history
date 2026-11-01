@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const MIN = { text: 4.5, large: 3, ui: 3 };
+const need = (p) => { if (!(p.role in MIN)) throw new Error(`unknown role «${p.role}» in ${p.name ?? p.fg}`); return MIN[p.role]; };
 
 function channel(v) {
   const c = v / 255;
@@ -29,7 +30,7 @@ export function checkFile(path) {
   const { pairs } = JSON.parse(m[1]);
   const failures = pairs
     .map((p) => ({ ...p, ratio: contrastRatio(p.fg, p.bg) }))
-    .filter((p) => p.ratio < MIN[p.role]);
+    .filter((p) => p.ratio < need(p));
   return { ok: failures.length === 0, failures, total: pairs.length };
 }
 
@@ -51,7 +52,7 @@ export function checkTokens(path) {
     const p = { name: `${mode} ${fg} on ${bg}`, fg: resolve(fg, mode), bg: resolve(bg, mode), role };
     return { ...p, ratio: contrastRatio(p.fg, p.bg) };
   }));
-  const failures = all.filter((p) => p.ratio < MIN[p.role]);
+  const failures = all.filter((p) => p.ratio < need(p));
   return { ok: failures.length === 0, failures, total: all.length };
 }
 

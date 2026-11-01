@@ -55,7 +55,7 @@ Readex Pro بلا `tnum`، فكل رقم يُصطفّ (عدّاد، مدة، إ�
 | المكوّن | المتغيّرات | متى | الوصولية |
 |---|---|---|---|
 | `Button` | Style = Primary · Solid · Outline × Size = Large · Small | Primary لزرّ الإرسال وحده؛ Solid للإجراء الرئيسي؛ Outline للثانوي | ≥ 44 ارتفاعًا؛ النص 17 Bold |
-| `Chip` | State = Default · Selected | نوع التغطية، الفلاتر، أجوبة الحساسية | المحدَّد بحبر داكن، لا لون وحده |
+| `Chip` | State = Default · Selected | نوع التغطية، الفلاتر، أجوبة الحساسية | ≥ 44×44؛ المحدَّد بحبر داكن، لا لون وحده؛ المجموعة لها اسم |
 | `Tag` | Kind = Removable · Suggested | وسم المراسل (×) ومقترح الإدارة (منقّط) | زرّ الإزالة هدف لمس كامل |
 | `Tag input` | — | حقل الوسوم مع اقتراح | يلتفّ ولا يدفع «أرسل» خارج الشاشة |
 | `Text field` | State = Default · Focused · Error | عنوان التغطية (5–80) وأي حقل نصّي | عدّاد LTR؛ الخطأ نصّ لا لون |
@@ -63,7 +63,7 @@ Readex Pro بلا `tnum`، فكل رقم يُصطفّ (عدّاد، مدة، إ�
 | `Location chip` | — | المحافظة والمدينة المتذكَّرتان | لا إحداثيات أبدًا |
 | `Sensitivity question` | Answer = Unanswered · No · Yes | قبل الإرسال دائمًا؛ «نعم» تفتح ثلاثة أسئلة | لا إرسال قبل جواب |
 | `Broadcast rings` | State = Uploading · Paused · Done · Failed | تقدّم الرفع والإيصال | الحالة كلمة وأيقونة؛ النبض يتوقف مع تقليل الحركة |
-| `Upload row` | State = Arrived · Uploading · Waiting · Failed | طابور الرفع | لا حذف بالسحب؛ الإلغاء زرّ بتأكيد |
+| `Upload row` | State = Arrived · Uploading · Waiting · Failed | طابور الرفع؛ Arrived = «اكتملت النسخة الاحتياطية»، والمرحلتان قبلها (المعاينة، الأصل) كلمة المرحلة مع ثلاث نقاط | لا حذف بالسحب؛ الإلغاء زرّ بتأكيد |
 | `Receipt` | — | ورقة الإيصال | أرقام LTR جدولية |
 | `Media card` | Kind = Video · Photo | «موادي» | الحالات الثلاث شارات منفصلة |
 | `State badge` | Tone = ok · warn · muted · brand · danger | داخل البطاقة وتفاصيل المادة | أيقونة + كلمة |

@@ -63,3 +63,10 @@ test('checkTokens resolves semantic refs per mode and reports failing pairs', as
   assert.equal(res.total, 4);
   assert.deepEqual(res.failures.map((p) => p.name), ['light color.text.link on color.bg.base']);
 });
+
+test('an unknown role is an error, not a silent pass', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cc-'));
+  const f = join(dir, 'r.html');
+  writeFileSync(f, `<html><script type="application/json" id="tokens">${JSON.stringify({ pairs: [{ fg: '#FFFFFF', bg: '#FFFFFF', role: 'txt', name: 'typo' }] })}</script></html>`);
+  assert.throws(() => checkFile(f), /role/);
+});

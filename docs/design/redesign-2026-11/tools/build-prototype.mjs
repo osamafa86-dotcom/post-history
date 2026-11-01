@@ -51,14 +51,20 @@ const T = {
   fAll: ['الكل', 'All'], fVideo: ['فيديو', 'Video'], fPhotos: ['صور', 'Photos'], fUrgent: ['عاجل', 'Urgent'], today: ['اليوم', 'Today'], yesterday: ['أمس', 'Yesterday'],
   processing: ['تُعالَج', 'Processing'], inReview: ['قيد المراجعة', 'In review'], ready: ['جاهزة', 'Ready'], approved: ['معتمدة', 'Approved'], internal: ['داخلي', 'Internal'], listed: ['للعرض', 'Listed'],
   open: ['افتح المادة', 'Open item'], empty: ['لا مواد بهذا الفلتر.', 'Nothing matches this filter.'], remove: ['إزالة', 'Remove'],
+  needTags: ['أضف وسمًا واحدًا على الأقل', 'Add at least one tag'],
+  stPreview: ['وصلت المعاينة', 'Preview arrived'], stOriginal: ['وصل الأصل وتحقّق', 'Original verified'], stBackup: ['اكتملت النسخة الاحتياطية', 'Backup complete'],
+  delLocal: ['احذف النسخ المحلية من الهاتف بعد اكتمال النسخة الاحتياطية', 'Delete the copies on this phone once the backup completes'],
+  delLocalHint: ['الأصل محفوظ ببصمته على الخادم، ويبقى في «موادي».', 'The original is kept with its fingerprint on the server and stays in My materials.'],
+  alReview: ['أدوات المراجعة', 'Review tools'], alHome: ['الرئيسية', 'Home'], alSend: ['إرسال جديد', 'New send'], alUpload: ['الرفع', 'Upload'], alReceipt: ['الإيصال', 'Receipt'], alMine: ['موادي', 'My materials'], alItem: ['مادة', 'Item'],
+  alClose: ['إغلاق', 'Close'], alBack: ['رجوع', 'Back'], alSeek: ['موضع التشغيل', 'Playback position'], alFb: ['إطار للخلف', 'Back one frame'], alFf: ['إطار للأمام', 'Forward one frame'], alPlay: ['تشغيل', 'Play'], alPause: ['إيقاف مؤقت', 'Pause'], alFs: ['ملء الشاشة', 'Full screen'],
   item: ['مادة', 'Item'], iMeta: ['دير البلح · 1:42 · فيديو', 'Deir al-Balah · 1:42 · Video'], stTech: ['فنية', 'Technical'], stEdit: ['تحريرية', 'Editorial'], stRights: ['حقوق', 'Rights'],
 };
 
 let html = readFileSync(join(ROOT, 'prototype', 'post-maydan.src.html'), 'utf8');
 const video = `data:video/mp4;base64,${readFileSync(join(ROOT, 'directions', 'samples', 'store-sample.mp4')).toString('base64')}`;
-html = html.replace('/*__TOKENS__*/', css).replace('__PAIRS__', JSON.stringify({ pairs })).replace('__STRINGS__', JSON.stringify(T))
-  .replace('__ICONS__', JSON.stringify(ICONS)).replace('__VIDEO__', video).replace(/__I_([a-z]+)__/g, (_, n) => ICONS[n]);
-const missing = [...html.matchAll(/data-i="([^"]+)"/g)].map((m) => m[1]).filter((k) => !T[k]);
+const put = (s, k, v) => s.split(k).join(v);
+html = put(put(put(put(put(html, '/*__TOKENS__*/', css), '__PAIRS__', JSON.stringify({ pairs })), '__STRINGS__', JSON.stringify(T)), '__ICONS__', JSON.stringify(ICONS)), '__VIDEO__', video).replace(/__I_([a-z]+)__/g, (_, n) => ICONS[n]);
+const missing = [...html.matchAll(/data-(?:i|al)="([^"]+)"/g)].map((m) => m[1]).filter((k) => !T[k]);
 if (missing.length) throw new Error(`missing strings: ${[...new Set(missing)].join(', ')}`);
 writeFileSync(join(ROOT, 'prototype', 'post-maydan.html'), html);
 console.log('built prototype/post-maydan.html');
