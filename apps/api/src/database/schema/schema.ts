@@ -1,5 +1,5 @@
 import { bytea } from "../bytea"
-import { pgTable, uuid, text, timestamp, index, foreignKey, unique, check, integer, jsonb, bigint, uniqueIndex, boolean, time, type AnyPgColumn, real, smallint, primaryKey, numeric, pgSequence } from "drizzle-orm/pg-core"
+import { pgTable, uuid, text, timestamp, index, foreignKey, unique, check, integer, jsonb, bigint, uniqueIndex, time, boolean, type AnyPgColumn, real, smallint, primaryKey, numeric, pgSequence } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 
@@ -336,6 +336,7 @@ export const materials = pgTable("materials", {
 	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
 	acknowledgedBy: uuid("acknowledged_by"),
 	acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true, mode: 'string' }),
+	tags: text().array().default([""]).notNull(),
 }, (table) => [
 	index("materials_board_idx").using("btree", table.officeId.asc().nullsLast().op("uuid_ops"), table.editorialState.asc().nullsLast().op("timestamptz_ops"), table.priority.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("materials_cursor_idx").using("btree", table.createdAt.desc().nullsFirst().op("uuid_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")),
@@ -382,6 +383,7 @@ export const materials = pgTable("materials", {
 	check("materials_reservation_consistent", sql`(reserved_by IS NULL) = (reserved_at IS NULL)`),
 	check("materials_rights_state_check", sql`rights_state = ANY (ARRAY['unknown'::text, 'documented'::text, 'sellable'::text, 'blocked'::text, 'withdrawn'::text])`),
 	check("materials_row_version_positive", sql`row_version >= 1`),
+	check("materials_tags_valid", sql`CHECK (material_tags_valid(tags`),
 	check("materials_technical_state_check", sql`technical_state = ANY (ARRAY['pending'::text, 'proxy_received'::text, 'original_received'::text, 'verified'::text, 'failed'::text])`),
 	check("materials_title_len", sql`(char_length(title) >= 1) AND (char_length(title) <= 200)`),
 	check("materials_types_known", sql`material_types <@ allowed_material_types()`),
