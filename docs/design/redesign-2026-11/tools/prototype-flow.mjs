@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const { chromium } = createRequire(import.meta.url)('playwright');
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const url = pathToFileURL(join(ROOT, 'prototype', 'post-maydan.html')).href;
-const out = join(ROOT, 'prototype', 'shots'); mkdirSync(out, { recursive: true });
+const out = join(ROOT, 'prototype', 'shots'); mkdirSync(out, { recursive: true }); // PNG هنا؛ تُحوَّل إلى WebP قبل الالتزام
 const browser = await chromium.launch({ proxy: process.env.HTTPS_PROXY ? { server: process.env.HTTPS_PROXY } : undefined });
 let fails = 0;
 const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (!ok) fails++; };
