@@ -14,6 +14,7 @@ public struct MaterialUpdate: Sendable, Codable, Hashable {
     public static let governorateRule = StringRule(minLength: 1, maxLength: 64, pattern: nil)
     public static let cityRule = StringRule(minLength: 1, maxLength: 64, pattern: nil)
     public static let formVersionRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
+    public static let tagsRule = ArrayRule(minItems: nil, maxItems: 12, uniqueItems: true)
     public var title: String?
     public var materialTypes: Set<MaterialType>?
     public var governorate: String?
@@ -25,8 +26,10 @@ public struct MaterialUpdate: Sendable, Codable, Hashable {
     /** يُرسل مع `dynamic_fields` عند إكمال مسودة قديمة بإصدار أحدث */
     public var formVersion: Int?
     public var dynamicFields: [String: JSONValue]?
+    /** وسوم المادة (ADR 0086، أُضيف بعد v0.3 فقد يغيب). اختياري في العقد حفاظًا على عملاء v0 (القاعدة 12)، والخادم يحفظ الغائب مصفوفة فارغة؛ أما واجهات المراسل v2 فتُلزم وسمًا واحدًا على الأقل قبل الإرسال (قرار المالك 2026-11-01). ليست بيانات كاشفة، لكنها نص حرّ: لا تدخل حمولة حدث ولا إشعارًا خارجيًا. */
+    public var tags: Set<String>?
 
-    public init(title: String? = nil, materialTypes: Set<MaterialType>? = nil, governorate: String? = nil, city: String? = nil, shotAt: Date? = nil, priority: Priority? = nil, sensitivity: Sensitivity? = nil, displayName: DisplayName? = nil, formVersion: Int? = nil, dynamicFields: [String: JSONValue]? = nil) {
+    public init(title: String? = nil, materialTypes: Set<MaterialType>? = nil, governorate: String? = nil, city: String? = nil, shotAt: Date? = nil, priority: Priority? = nil, sensitivity: Sensitivity? = nil, displayName: DisplayName? = nil, formVersion: Int? = nil, dynamicFields: [String: JSONValue]? = nil, tags: Set<String>? = nil) {
         self.title = title
         self.materialTypes = materialTypes
         self.governorate = governorate
@@ -37,6 +40,7 @@ public struct MaterialUpdate: Sendable, Codable, Hashable {
         self.displayName = displayName
         self.formVersion = formVersion
         self.dynamicFields = dynamicFields
+        self.tags = tags
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -50,6 +54,7 @@ public struct MaterialUpdate: Sendable, Codable, Hashable {
         case displayName = "display_name"
         case formVersion = "form_version"
         case dynamicFields = "dynamic_fields"
+        case tags
     }
 
     // Encodable protocol methods
@@ -66,6 +71,7 @@ public struct MaterialUpdate: Sendable, Codable, Hashable {
         try container.encodeIfPresent(displayName, forKey: .displayName)
         try container.encodeIfPresent(formVersion, forKey: .formVersion)
         try container.encodeIfPresent(dynamicFields, forKey: .dynamicFields)
+        try container.encodeIfPresent(tags, forKey: .tags)
     }
 }
 

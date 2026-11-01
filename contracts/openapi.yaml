@@ -3683,6 +3683,27 @@ components:
           type: [string, "null"]
           format: uuid
           description: جلسة رفع الملاحظة الصوتية إن سبقت إنشاء المادة
+        tags:
+          $ref: "#/components/schemas/MaterialTags"
+
+    MaterialTag:
+      type: string
+      minLength: 1
+      maxLength: 40
+      pattern: "^[^\\s\\u0000-\\u001F\\u007F\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069](?:[^\\u0000-\\u001F\\u007F\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]*[^\\s\\u0000-\\u001F\\u007F\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069])?$"
+      description: >-
+        وسم حرّ يكتبه المراسل أو تقترحه الإدارة (ADR 0086): 1–40 محرفًا، مشذَّب من الطرفين، بلا محارف تحكم ولا محارف
+        اتجاه (U+200E/U+200F وU+202A–U+202E وU+2066–U+2069). القيد نفسه في قاعدة البيانات (`material_tags_valid`).
+
+    MaterialTags:
+      type: array
+      maxItems: 12
+      uniqueItems: true
+      items: { $ref: "#/components/schemas/MaterialTag" }
+      description: >-
+        وسوم المادة (ADR 0086، أُضيف بعد v0.3 فقد يغيب). اختياري في العقد حفاظًا على عملاء v0 (القاعدة 12)، والخادم يحفظ
+        الغائب مصفوفة فارغة؛ أما واجهات المراسل v2 فتُلزم وسمًا واحدًا على الأقل قبل الإرسال (قرار المالك 2026-11-01).
+        ليست بيانات كاشفة، لكنها نص حرّ: لا تدخل حمولة حدث ولا إشعارًا خارجيًا.
 
     MaterialUpdate:
       type: object
@@ -3707,6 +3728,8 @@ components:
         dynamic_fields:
           type: object
           additionalProperties: true
+        tags:
+          $ref: "#/components/schemas/MaterialTags"
 
     Material:
       allOf:
@@ -3782,6 +3805,7 @@ components:
         display_name: { mode: network, pseudonym: null }
         form_version: 1
         dynamic_fields: { guest_name: المتحدث باسم الدفاع المدني, guest_title: متحدث }
+        tags: [الدفاع المدني, مؤتمر صحفي]
         contributors:
           - { user_id: 1e2d3c4b-5a69-4788-9796-a5b4c3d2e1f0, role: photographer, share_percent: 100 }
         voice_note_upload_id: null

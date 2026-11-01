@@ -78,6 +78,22 @@ SELECT pg_temp.expect_error($q$ UPDATE materials SET display_name_mode = 'pseudo
 SELECT pg_temp.expect_error($q$ UPDATE materials SET material_types = '{podcast}' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE materials SET material_types = '{}' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE materials SET reserved_by = '00000000-0000-4000-8000-000000000013' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+
+-- وسوم المادة (ADR 0086): فارغة افتراضيًا، 12 على الأكثر بلا تكرار، كلٌّ 1–40 محرفًا مشذَّبًا بلا محارف تحكم أو اتجاه
+SELECT pg_temp.assert((SELECT tags = '{}' FROM materials WHERE id = '00000000-0000-4000-8000-000000000101'), 'tags default to empty');
+UPDATE materials SET tags = '{مساعدات,النصيرات,"وكالة الغوث UNRWA"}' WHERE id = '00000000-0000-4000-8000-000000000101';
+SELECT pg_temp.assert((SELECT cardinality(tags) = 3 FROM materials WHERE id = '00000000-0000-4000-8000-000000000101'), 'three tags stored');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = '{a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13}' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = '{مطر,مطر}' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = '{""}' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[' مطر'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[repeat('و', 41)] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'\u202Eمطر'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[NULL::text] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = NULL WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23502');
+SELECT pg_temp.assert(
+  (SELECT count(*) = 1 FROM materials WHERE tags @> '{مساعدات}'),
+  'materials are found by tag');
 SELECT pg_temp.expect_error($q$ UPDATE materials SET dynamic_fields = '[]' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE materials SET form_version = 99 WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23503');
 
