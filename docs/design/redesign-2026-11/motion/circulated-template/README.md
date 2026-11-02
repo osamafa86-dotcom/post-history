@@ -22,7 +22,10 @@ npm run typecheck
 | `Circulated-Horizontal` | 1920×1080 | صورة تجريبية |
 | `Circulated-Square` | 1080×1080 | صورة تجريبية |
 | `Overlay-Vertical` | 1080×1920 | شفافة، تُركَّب فوق المقطع |
-| `Check-LongLine` | 1080×1920 | صورة تجريبية؛ سطر من 39 حرفًا يصغر ثم يلتفّ |
+| `Circulated-Vertical-FromHorizontal` | 1080×1920 | VT-08: مصدر 16:9 مركزه عند y≈580 فوق ملء مموّه منه |
+| `Check-LongLine` | 1080×1920 | صورة تجريبية؛ سطر أطول من الحدّ فتصغر الكتلة كلها بنسبة واحدة، ولا التفاف |
+| `Check-NoTagNoLocation` | 1080×1920 | وسم `none` ومكان `null`: لا صندوق ولا كبسولة ولا موجات |
+| `Check-25fps` | 1080×1920 | مصدر 25 إطارًا/ث: الطبقة بمعدل الناتج نفسه |
 
 النصوص في كل التركيبات نصّ تجريبي ظاهر («عنوان تجريبي للمادة المتداولة»، «مدينة، محافظة»)، لا عناوين أخبار ولا أماكن حقيقية.
 
@@ -30,10 +33,12 @@ npm run typecheck
 
 | المعامل | النوع | القاعدة |
 |---|---|---|
-| `titleLines` | `string[]` | سطر إلى ثلاثة؛ ما زاد يُهمل. يقسمها المحرّر على معنى الجملة. السطر الأطول من عرضه يصغر حتى 80% ثم يلتفّ (`fitText` من `@remotion/layout-utils`) |
-| `location` | `string` | المدينة والمحافظة وحدهما، بلا إحداثيات |
-| `tag` | `string` | «مشاهد متداولة» افتراضيًا |
-| `layout` | `vertical` · `horizontal` · `square` | المقاسات من إطارات Figma |
+| `titleLines` | `string[]` | سطر إلى ثلاثة؛ ما زاد يُهمل. يقسمها المحرّر على معنى الجملة. أعرض سطر يحدّد نسبة واحدة للكتلة كلها حتى 70%، ولا التفاف؛ ما لا يتّسع يرفضه العامل بـ `title_overflow` (`measureText` من `@remotion/layout-utils`) |
+| `location` | `string \| null` | المدينة والمحافظة وحدهما، يبنيهما الخادم؛ `null` أو الفارغ لا يرسم الكبسولة |
+| `tag` | `circulated_footage` · `none` | الأول يرسم «مشاهد متداولة»، والثاني لا يرسم شيئًا |
+| `aspect` | `vertical` · `horizontal` · `square` | منه مقاس الإطار، كما في إطارات Figma |
+| `fps` | `25` · `30` | من المصدر (ADR 0091)، يُمرَّر عبر `calculateMetadata` |
+| `previewSource` | `native` · `horizontal` | للمعاينة وحدها: `horizontal` يرسم VT-08 |
 | `background` | `plate` · `none` | `none` لطبقة شفافة |
 | `reducedMotion` | `boolean` | تلاشٍ وحده، بلا انزلاق ولا مسح ولا موجات ولا تكبير للصورة |
 | `durationInSeconds` | `number` | طول المقطع المتداول؛ الخروج في آخر 0.6 ث |
@@ -51,7 +56,7 @@ npx remotion render src/index.ts Circulated-Vertical out/vertical.mp4 --codec=h2
 ```bash
 npx remotion render src/index.ts Overlay-Vertical out/overlay.mov \
   --codec=prores --prores-profile=4444 --pixel-format=yuva444p10le --image-format=png \
-  --props='{"titleLines":["…","…"],"location":"…","tag":"مشاهد متداولة","layout":"vertical","background":"none","reducedMotion":false,"durationInSeconds":42}'
+  --props='{"titleLines":["…","…"],"location":"…","tag":"circulated_footage","aspect":"vertical","fps":30,"background":"none","reducedMotion":false,"durationInSeconds":42}'
 ```
 
 ```bash
