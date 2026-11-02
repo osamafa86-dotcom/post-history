@@ -538,7 +538,7 @@ export const materialFiles = pgTable("material_files", {
 	licenseId: uuid("license_id"),
 }, (table) => [
 	uniqueIndex("material_files_delivery_license_key").using("btree", table.derivedFromId.asc().nullsLast().op("uuid_ops"), table.licenseId.asc().nullsLast().op("uuid_ops")).where(sql`(kind = 'delivery'::text)`),
-	uniqueIndex("material_files_derived_kind_key").using("btree", table.derivedFromId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops")).where(sql`((derived_from_id IS NOT NULL) AND (kind <> 'delivery'::text))`),
+	uniqueIndex("material_files_derived_kind_key").using("btree", table.derivedFromId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("uuid_ops")).where(sql`((derived_from_id IS NOT NULL) AND (kind <> ALL (ARRAY['delivery'::text, 'circulated_render'::text])))`),
 	index("material_files_material_kind_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("text_ops")),
 	index("material_files_recent_receipts_idx").using("btree", table.verifiedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`((receipt_number IS NOT NULL) AND (verified_at IS NOT NULL))`),
 	uniqueIndex("material_files_receipt_number_key").using("btree", table.receiptNumber.asc().nullsLast().op("text_ops")).where(sql`(receipt_number IS NOT NULL)`),

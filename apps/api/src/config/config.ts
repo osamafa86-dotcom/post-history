@@ -166,6 +166,14 @@ const schema = z.object({
   VERIFY_POLL_INTERVAL_MS: z.coerce.number().int().min(100).default(2000),
   // UPLOAD_VERIFIER=external: أحداث الاستلام تُنشر إلى Redis Stream `media:events` بطول أقصى تقريبي (ADR 0006)
   MEDIA_STREAM_MAXLEN: z.coerce.number().int().min(1000).default(100_000),
+  // نسخ قالب «مواد متداولة» (ADR 0091): مطفأ = نقطتا /materials/{id}/renders 404. يجوز في المعاينة والتجربة الميدانية
+  // للتقييم ويبقى مطفأ في الإنتاج (قرار المالك 2026-11-02، البند 8)
+  MEDIA_ENABLE_RENDERS: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  // حدّ مدة الأصل للنسخة بالمللي ثانية؛ مؤقت يثبّته القياس (ADR 0091 البند 7)، ويُعاد في details.max_source_duration_ms
+  MEDIA_RENDER_MAX_SOURCE_MS: z.coerce.number().int().min(1000).default(300_000),
   // رمز عامل الوسائط لنقاط /internal/media/* (ترويسة Bearer)، منفصل عن TUSD_HOOK_SECRET؛ غير مضبوط = النقاط 404
   MEDIA_WORKER_TOKEN: z
     .string()

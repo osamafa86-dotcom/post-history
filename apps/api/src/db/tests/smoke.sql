@@ -1016,14 +1016,19 @@ SELECT pg_temp.expect_error($q$
 SELECT pg_temp.expect_error($q$
   UPDATE material_files SET aligned_at = NULL WHERE id = '00000000-0000-4000-8000-000000000302' $q$, '23514');
 -- حزمة تسليم المشتري (ADR 0025 الجزء 9): لكل ترخيص حزمته، وlicense_id للتسليم وحده
--- تسجيل المشتق المتساوي الأثر يستدل الفهرس الجزئي بشرطه الكامل؛ الشرط القديم وحده لا يطابقه بعد هذا الترحيل
+-- تسجيل المشتق المتساوي الأثر يستدل الفهرس الجزئي بشرطه الكامل (ترحيلا 026 و038، media.service)؛ الشرطان القديمان لا
+-- يطابقانه
 INSERT INTO material_files (material_id, kind, state, derived_from_id)
 VALUES ('00000000-0000-4000-8000-000000000101', 'proxy', 'received', '00000000-0000-4000-8000-000000000301')
-ON CONFLICT (derived_from_id, kind) WHERE derived_from_id IS NOT NULL AND kind <> 'delivery' DO NOTHING;
+ON CONFLICT (derived_from_id, kind) WHERE derived_from_id IS NOT NULL AND kind NOT IN ('delivery', 'circulated_render') DO NOTHING;
 SELECT pg_temp.expect_error($q$
   INSERT INTO material_files (material_id, kind, state, derived_from_id)
   VALUES ('00000000-0000-4000-8000-000000000101', 'proxy', 'received', '00000000-0000-4000-8000-000000000301')
   ON CONFLICT (derived_from_id, kind) WHERE derived_from_id IS NOT NULL DO NOTHING $q$, '42P10');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_files (material_id, kind, state, derived_from_id)
+  VALUES ('00000000-0000-4000-8000-000000000101', 'proxy', 'received', '00000000-0000-4000-8000-000000000301')
+  ON CONFLICT (derived_from_id, kind) WHERE derived_from_id IS NOT NULL AND kind <> 'delivery' DO NOTHING $q$, '42P10');
 INSERT INTO material_files (material_id, kind, state, derived_from_id, license_id)
 VALUES ('00000000-0000-4000-8000-000000000101', 'delivery', 'received', '00000000-0000-4000-8000-000000000301', '00000000-0000-4000-8000-000000000801');
 INSERT INTO material_files (material_id, kind, state, derived_from_id, license_id)
@@ -1452,6 +1457,10 @@ WHERE id = '00000000-0000-4000-8000-000000000d01';
 SELECT pg_temp.expect_error($q$
   UPDATE material_renders SET state = 'ready', failure_reason = NULL, file_id = '00000000-0000-4000-8000-000000000d11'
    WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23505');
+-- نسخة لكل طلب: مشتق ثانٍ من الأصل نفسه مسموح (ترحيل 038)
+INSERT INTO material_files (id, material_id, kind, state, derived_from_id, mime_type, sha256, verified_at)
+VALUES ('00000000-0000-4000-8000-000000000d12', '00000000-0000-4000-8000-000000000101', 'circulated_render', 'verified',
+        '00000000-0000-4000-8000-000000000301', 'video/mp4', sha256('render 2'::bytea), now());
 INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, actor_id, payload)
 VALUES ('render.requested', 'material', '00000000-0000-4000-8000-000000000101', 'render.requested:00000000-0000-4000-8000-000000000d01',
         '00000000-0000-4000-8000-000000000012',
