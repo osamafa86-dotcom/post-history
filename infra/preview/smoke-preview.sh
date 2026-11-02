@@ -21,7 +21,7 @@ while [ $# -gt 0 ]; do
     *) echo "usage: $0 [--json FILE] [--media-json DIR]" >&2; exit 2 ;;
   esac
 done
-LIMIT_MB=2560
+LIMIT_MB=2760
 C=(docker compose -f "$HERE/docker-compose.preview.yml")
 created_env=0 created_net=0
 work="$(mktemp -d)"
@@ -421,8 +421,9 @@ const web = await req("POST", "/api/bff/auth/login", json, cred);
 if (web.status !== 200) die(`login through the web: ${web.status}`);
 const cookie = String(web.headers["set-cookie"] ?? "").split(";")[0];
 const bff = (path, body) => req("POST", `/api/bff/${path}`, { ...json, cookie, "idempotency-key": randomUUID() }, JSON.stringify(body));
-async function upload(materialId, file, filename, mime) {
-  const bytes = readFileSync(file);
+// chunk: the PATCH size. 8 MiB as a foreground client, 64 MiB as the iOS background session (ADR 0009).
+async function upload(materialId, file, filename, mime, chunk = 8 * 1024 * 1024) {
+  const bytes = Buffer.isBuffer(file) ? file : readFileSync(file);
   const c = await bff("uploads", { material_id: materialId, kind: "original", size_bytes: bytes.length, filename, mime_type: mime,
     client_sha256: createHash("sha256").update(bytes).digest("hex") });
   if (c.status !== 201) return { status: c.status };
@@ -436,7 +437,7 @@ async function upload(materialId, file, filename, mime) {
   const path = new URL(tc.headers.location).pathname;
   for (let off = 0; off < bytes.length; ) {
     const p = await req("PATCH", path, { ...tusH, "upload-offset": String(off), "content-type": "application/offset+octet-stream" },
-      bytes.subarray(off, off + 32 * 1024 * 1024));
+      bytes.subarray(off, off + chunk));
     if (p.status !== 204) die(`tus PATCH at ${off}: ${p.status}`);
     off = Number(p.headers["upload-offset"]);
   }
@@ -448,6 +449,14 @@ async function upload(materialId, file, filename, mime) {
     await sleep(1000);
   }
   die("an upload was not verified within 120 s");
+}
+async function newMaterial() {
+  const version = JSON.parse((await pub("GET", "/forms/current", bearer)).body).version;
+  const mat = await pub("POST", "/materials", { ...bearer, "idempotency-key": randomUUID() }, { title: `${process.env.MARK} measurement`,
+    material_types: ["report"], governorate: "gaza", city: "Test city", priority: "normal", sensitivity: { minors: false, injured: false, graphic: false },
+    display_name: { mode: "network" }, form_version: version, dynamic_fields: {} });
+  if (mat.status !== 201) die(`a material on public /v1: ${mat.status}`);
+  return JSON.parse(mat.body).id;
 }
 const verified = (m, kind) => m.files.filter((f) => f.kind === kind && f.state === "verified");
 async function derivatives(mid, seconds) {
@@ -565,13 +574,11 @@ measure() {
   gen_s=$((SECONDS - g0))
   mout="$(EMAIL="$(val PREVIEW_REPORTER_EMAIL)" PASSWORD="$(val PREVIEW_REPORTER_PASSWORD)" DOMAIN="$DOMAIN" CLIP="/clip/m-$prof.mov" probe <<<"$JS_LIB
 $(cat <<'JS'
-const version = JSON.parse((await pub("GET", "/forms/current", bearer)).body).version;
-const mat = await pub("POST", "/materials", { ...bearer, "idempotency-key": randomUUID() }, { title: `${process.env.MARK} measurement`,
-  material_types: ["report"], governorate: "gaza", city: "Test city", priority: "normal", sensitivity: { minors: false, injured: false, graphic: false },
-  display_name: { mode: "network" }, form_version: version, dynamic_fields: {} });
-if (mat.status !== 201) die(`a material on public /v1: ${mat.status}`);
-const id = JSON.parse(mat.body).id;
-if ((await upload(id, process.env.CLIP, `${process.env.MARK}-measure.mov`, "video/quicktime")).status !== 201) die("the measurement upload");
+const id = await newMaterial();
+// 64 MiB PATCHes, as the iOS background session sends them (ADR 0009).
+if ((await upload(id, process.env.CLIP, `${process.env.MARK}-measure.mov`, "video/quicktime", 64 * 1024 * 1024)).status !== 201) {
+  die("the measurement upload");
+}
 say(`MATERIAL=${id}`);
 JS
 )")" || { echo "$mout"; fail "the $prof measurement upload"; }
@@ -644,7 +651,74 @@ sys.exit(0 if ok else 1)
 PY
   echo "measured $prof: see $MEDIA_OUT/preview-media-worker-$prof.json"
 }
+# tusd under one 64 MiB PATCH (the iOS background session's size, ADR 0009) with the preview's 5 MiB parts: a fresh cgroup,
+# then memory.peak (with page cache) and anon sampled every 10 ms from the host. Random bytes as application/octet-stream,
+# so the feeder never gives them to the worker.
+measure_tusd() {
+  local tid tcg peak oom t0 t1 tout limit
+  tid="$("${C[@]}" ps -q tusd)"
+  docker restart "$tid" >/dev/null
+  for _ in $(seq 1 30); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$tid")" = healthy ] && break; sleep 1; done
+  tcg="$(cgdir "$tid")"
+  [ -n "$tcg" ] || fail "no host cgroup for tusd (the 64 MiB PATCH measurement reads memory.peak there)"
+  rm -f "$work/tusd-stop"
+  python3 - "$tcg" "$work/tusd-stop" > "$work/tusd-sampled" <<'PY' &
+import os, sys, time
+cg, stop = sys.argv[1], sys.argv[2]
+cur = anon = 0
+while not os.path.exists(stop):
+    try:
+        cur = max(cur, int(open(cg + "/memory.current").read()))
+        anon = max(anon, next(int(l.split()[1]) for l in open(cg + "/memory.stat") if l.startswith("anon ")))
+    except (OSError, ValueError, StopIteration):
+        pass
+    time.sleep(0.01)
+print(cur, anon)
+PY
+  local sp=$!
+  t0="$(date +%s.%N)"
+  tout="$(EMAIL="$(val PREVIEW_REPORTER_EMAIL)" PASSWORD="$(val PREVIEW_REPORTER_PASSWORD)" DOMAIN="$DOMAIN" probe <<<"$JS_LIB
+$(cat <<'JS'
+const id = await newMaterial();
+const size = 64 * 1024 * 1024;
+if ((await upload(id, (await import("node:crypto")).randomBytes(size), `${process.env.MARK}-tusd.bin`, "application/octet-stream", size)).status !== 201) {
+  die("the 64 MiB single-PATCH upload");
+}
+say("one 64 MiB PATCH through the edge, the gate and tusd, verified: ok");
+JS
+)")" || { touch "$work/tusd-stop"; echo "$tout"; fail "the 64 MiB single-PATCH upload (tusd OOM-killed: $(cat "$tcg/memory.events" 2>/dev/null | tr '\n' ' '))"; }
+  t1="$(date +%s.%N)"
+  touch "$work/tusd-stop"; wait "$sp" || true
+  echo "$tout"
+  peak="$(cat "$tcg/memory.peak")" oom="$(awk '$1 == "oom_kill" { print $2 }' "$tcg/memory.events")"
+  limit="$(docker inspect -f '{{.HostConfig.Memory}}' "$tid")"
+  python3 - "$MEDIA_OUT/preview-tusd-64mib-patch.json" "$peak" "$oom" "$limit" "$t0" "$t1" $(cat "$work/tusd-sampled") <<'PY' || fail "tusd under one 64 MiB PATCH"
+import datetime, json, os, sys
+out, peak, oom, limit, t0, t1, cur, anon = sys.argv[1:9]
+mib = lambda b: round(int(b) / 2**20, 1)
+ts = lambda t: datetime.datetime.fromtimestamp(float(t), datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+ok = int(oom) == 0 and int(peak) < int(limit)
+json.dump({"schema_version": 1, "tool": "other", "role": "infra", "test_name": "preview-tusd-one-64mib-patch",
+           "started_at": ts(t0), "ended_at": ts(t1), "result": "pass" if ok else "fail",
+           "device": {"platform": "server", "model": os.environ.get("MEASURE_HOST", "local docker compose")}, "upload_path": "tusd",
+           "file": {"size_bytes": 64 * 2**20},
+           "metrics": {"patch_bytes": 64 * 2**20, "tusd_part_size_bytes": 5 * 2**20, "tusd_mem_limit_mib": mib(limit),
+                       "tusd_memory_peak_mib": mib(peak), "tusd_memory_current_peak_mib_sampled": mib(cur),
+                       "tusd_anon_peak_mib_sampled": mib(anon), "tusd_oom_kills": int(oom), "upload_s": round(float(t1) - float(t0), 1)},
+           "notes": ("infra/preview/smoke-preview.sh --media-json (ADR 0092): tusd v2.10.1 as the preview runs it (-s3-part-size and "
+                     "-s3-min-part-size 5 MiB, temporary parts on a volume, GOMEMLIMIT 40MiB), restarted for a fresh cgroup, then one "
+                     "upload of 64 MiB of random bytes in a single PATCH through the edge and the ingest gate, as the iOS background "
+                     "session sends (ADR 0009). memory.peak is the cgroup high-water mark, page cache of the temporary parts included; "
+                     "anon and memory.current sampled every 10 ms from the host. Upload time includes the probe container, two logins "
+                     "and the API's verification.")},
+          open(out, "w"), indent=2)
+print(f"tusd: memory.peak {mib(peak)} MiB, anon {mib(anon)} MiB, limit {mib(limit)} MiB, oom kills {oom}")
+sys.exit(0 if ok else 1)
+PY
+}
 if [ -n "$MEDIA_OUT" ]; then
+  mkdir -p "$MEDIA_OUT"
+  measure_tusd
   for prof in ${MEDIA_PROFILES:-1080p}; do measure "$prof"; done
 fi
 
