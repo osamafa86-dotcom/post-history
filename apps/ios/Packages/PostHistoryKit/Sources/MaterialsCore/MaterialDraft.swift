@@ -372,9 +372,12 @@ public final class FileDraftStore: @unchecked Sendable {
     private let lock = NSLock()
     private let encoder: JSONEncoder = { let e = JSONEncoder(); e.outputFormatting = [.sortedKeys]; return e }()
     private let decoder = JSONDecoder()
+    private let readData: @Sendable (URL) throws -> Data
 
-    public init(directory: URL) throws {
+    /// `readData` يُستبدل في الاختبار وحده (ملف محمي لا يُقرأ والهاتف مقفل).
+    public init(directory: URL, readData: @escaping @Sendable (URL) throws -> Data = { try Data(contentsOf: $0) }) throws {
         self.directory = directory
+        self.readData = readData
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
@@ -398,8 +401,23 @@ public final class FileDraftStore: @unchecked Sendable {
         lock.withLock {
             let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
             return files.filter { $0.pathExtension == "json" }
-                .compactMap { try? decoder.decode(MaterialDraft.self, from: Data(contentsOf: $0)) }
+                .compactMap { url in (try? readData(url)).flatMap { try? decoder.decode(MaterialDraft.self, from: $0) } }
                 .sorted { $0.updatedAt > $1.updatedAt }
+        }
+    }
+
+    /// كل المسودات، أو `nil` إن تعذّرت قراءة ملف منها (محمي والهاتف مقفل في إطلاق خلفي): القارئ يُبقي آخر حالة جيدة في الذاكرة
+    /// بدل قائمة ناقصة، كما في الإرسالات. مجلد غائب (بعد المسح) قائمة فارغة صادقة، وملف قُرئ ولم يُفهم يُتجاوز كما في `loadAll`.
+    public func loadAllIfReadable() -> [MaterialDraft]? {
+        lock.withLock {
+            guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
+            guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return nil }
+            var drafts: [MaterialDraft] = []
+            for url in files where url.pathExtension == "json" {
+                guard let data = try? readData(url) else { return nil }
+                if let draft = try? decoder.decode(MaterialDraft.self, from: data) { drafts.append(draft) }
+            }
+            return drafts.sorted { $0.updatedAt > $1.updatedAt }
         }
     }
 

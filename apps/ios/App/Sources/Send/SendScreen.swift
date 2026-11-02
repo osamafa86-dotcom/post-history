@@ -133,8 +133,9 @@ struct SendScreen: View {
         .onChange(of: reason) { old, new in
             guard let new, new.isFormError else { return }
             revealRequired = true
-            // صار النموذج ما يمنع الإرسال بعد سبب آخر (لا أثناء الكتابة في حقل كان سليمًا): الشاشة تأخذ المراسل إلى أول خطأ.
-            if let old, old != new { revealFirstFormError() }
+            // صار النموذج ما يمنع الإرسال بعد سبب من خارجه: الشاشة تأخذ المراسل إلى أول خطأ. لا تمرير والسبب يتنقّل بين خطأَي
+            // النموذج (ناقص ← غير صالح أثناء الكتابة في الحقل نفسه)، ولا حين كان الزرّ جاهزًا (الكتابة جعلت قيمة غير صالحة).
+            if let old, !old.isFormError { revealFirstFormError() }
         }
     }
 

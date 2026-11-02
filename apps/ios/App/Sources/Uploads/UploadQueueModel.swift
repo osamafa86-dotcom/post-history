@@ -43,7 +43,7 @@ final class UploadQueueModel: ObservableObject {
         self.settings = settings
         draftStore = try? FileDraftStore(directory: UploadServices.shared.draftsDirectory)
         ledger = SendBatchLedger(store: SendBatchStore(fileURL: UploadServices.shared.batchesFile))
-        drafts = draftStore?.loadAll() ?? []
+        drafts = draftStore?.loadAllIfReadable() ?? []
         batches = ledger.batches
         // نسخ الاختيار المؤقتة التي خلّفها إنهاء التطبيق قبل نقلها إلى مجلد الرفع.
         PickedTempFiles.sweep(in: FileManager.default.temporaryDirectory)
@@ -103,7 +103,7 @@ final class UploadQueueModel: ObservableObject {
     /// عودة المشهد نشطًا (الهاتف مفتوح): يُعاد ما تعذّرت قراءته في إطلاق خلفي والهاتف مقفل؛ قراءة فاشلة لا تمحو شيئًا.
     func reloadFromDisk() {
         batches = ledger.refresh()
-        drafts = draftStore?.loadAll() ?? []
+        reloadDrafts()
     }
 
     private func receiptArrived(_ id: UUID) async {
@@ -112,8 +112,8 @@ final class UploadQueueModel: ObservableObject {
             records = await engine.allRecords()
             presentReceiptIfDue(for: rec)
         }
-        // النسخة الخفيفة مشتقة يصنعها التطبيق: تُحذف دائمًا بعد إيصالها. الأصل قرار المراسل.
-        guard rec.kind == .proxy || settings.deleteLocalAfterReceipt else { return }
+        // النسخة الخفيفة مشتقة يصنعها التطبيق: تُحذف دائمًا بعد إيصالها. الأصل قرار المراسل، وبعد التحقق وحده (`LocalCopyPolicy`).
+        guard rec.kind == .proxy || (settings.deleteLocalAfterReceipt && LocalCopyPolicy.mayDelete(record: rec)) else { return }
         UploadServices.shared.deleteLocalCopy(relativePath: rec.sourcePath)
     }
 
@@ -212,7 +212,10 @@ final class UploadQueueModel: ObservableObject {
         await refresh()
     }
 
+    /// حذف نسخة أصل بقرار المراسل: لما تحقّق أو طوبق وحده (`LocalCopyPolicy`)، ولو طُلب من مسار لا يفحص.
     func deleteLocalCopy(_ rec: UploadRecord) {
+        let current = records.first { $0.id == rec.id } ?? rec
+        guard LocalCopyPolicy.mayDelete(record: current) else { return }
         UploadServices.shared.deleteLocalCopy(relativePath: rec.sourcePath)
         localCopies.remove(rec.id)
     }
@@ -234,12 +237,12 @@ final class UploadQueueModel: ObservableObject {
         var d = draft
         d.updatedAt = Date()
         try? draftStore?.save(d)
-        drafts = draftStore?.loadAll() ?? []
+        reloadDrafts()
     }
 
     func deleteDraft(_ id: UUID) {
         draftStore?.delete(id)
-        drafts = draftStore?.loadAll() ?? []
+        reloadDrafts()
     }
 
     /// حذف مسودة بقرار المراسل: تُحذف نسخ ملفاتها المحلية أيضًا (لا الأصل في المعرض). لا يُستعمل بعد الإرسال لأن الملفات حينئذ في الطابور.
@@ -248,8 +251,11 @@ final class UploadQueueModel: ObservableObject {
         deleteDraft(draft.id)
     }
 
-    /// بعد المسح الطارئ: المجلد مُحي، والقائمة تُفرغ.
-    func reloadDrafts() { drafts = draftStore?.loadAll() ?? [] }
+    /// يقرأ المسودات من القرص بلا محو: ملف لا يُقرأ (الهاتف مقفل في إطلاق خلفي) يُبقي آخر حالة جيدة في الذاكرة كما في الإرسالات،
+    /// والمجلد الذي محاه المسح الطارئ قائمة فارغة.
+    func reloadDrafts() {
+        if let all = draftStore?.loadAllIfReadable() { drafts = all }
+    }
 
     /// الأصل يدخل الطابور فورًا (يُبصم ولا يضيع إن أُنهي التطبيق)، ونسخته الخفيفة تُحضَّر ثم تُرفع قبله.
     func enqueue(relativePath: String, materialId: UUID, filename: String, mimeType: String?, lightCopy: ProxyChoice = .originalOnly,

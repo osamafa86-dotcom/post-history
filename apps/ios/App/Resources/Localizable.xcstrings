@@ -5708,6 +5708,23 @@
         }
       }
     },
+    "receipt.deleteLocal.afterVerification": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "سنتيح الحذف بعد التحقق من البصمة."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deleting the copies becomes available once the fingerprint is verified."
+          }
+        }
+      }
+    },
     "receipt.fingerprint.a11y %@": {
       "extractionState": "manual",
       "localizations": {

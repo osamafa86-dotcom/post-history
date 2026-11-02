@@ -189,6 +189,26 @@ final class SendBatchLedgerTests: XCTestCase {
         XCTAssertEqual(launched.batch(containing: oldMaterial)?.id, old.id)
     }
 
+    func testADraftReloadThatCannotReadKeepsTheLastGoodList() throws {
+        let lock = Lock()
+        let draftsDir = dir.appendingPathComponent("Drafts")
+        let store = try FileDraftStore(directory: draftsDir, readData: { try lock.read($0) })
+        var draft = MaterialDraft()
+        draft.title = "مسودة"
+        try store.save(draft)
+        XCTAssertEqual(store.loadAllIfReadable()?.map(\.id), [draft.id])
+
+        lock.isLocked = true
+        XCTAssertNil(store.loadAllIfReadable(), "a protected draft is not a missing one: the caller keeps what it has")
+        XCTAssertEqual(store.loadAll(), [], "the plain reader drops it, so the reload no longer uses it")
+
+        lock.isLocked = false
+        try Data("not json".utf8).write(to: draftsDir.appendingPathComponent("broken.json"))
+        XCTAssertEqual(store.loadAllIfReadable()?.map(\.id), [draft.id], "a file read but not understood is skipped as before")
+        try FileManager.default.removeItem(at: draftsDir)
+        XCTAssertEqual(store.loadAllIfReadable(), [], "after a wipe the list is truly empty")
+    }
+
     @MainActor func testACorruptFileIsReplacedByTheLastGoodListAndAMissingOneIsEmpty() async throws {
         XCTAssertEqual(store().read(), .batches([]), "no file means no sends")
         let ledger = SendBatchLedger(store: store())

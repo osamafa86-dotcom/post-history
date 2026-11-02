@@ -49,9 +49,12 @@ struct ReceiptScreen: View {
     private var deduplicated: Bool { batch == nil && details?.deduplicated == true }
     private var count: Int { max(scope.count, 1) }
     private var title: String { batch?.title ?? details?.title ?? "" }
-    private var withLocalCopy: [UploadRecord] {
-        scope.filter { queue.localCopies.contains($0.id) && !settings.localCopyHandled.contains($0.materialId) }
+    /// خيار الحذف بقاعدة `LocalCopyPolicy` الواحدة للنطاقين: يُعرض لما تحقّق أو طوبق وحده (الخطة: بعد «وصل الأصل وتم التحقق منه»)،
+    /// وما زال في طريقه إلى التحقق يُقال إن حذفه بعده. «عرض الإيصال» من «موادي» قد يفتح المادة قبل التحقق (`original_received`).
+    private var localCopyChoice: LocalCopyPolicy.ReceiptChoice {
+        LocalCopyPolicy.receiptChoice(scope: scope) { queue.localCopies.contains($0.id) && !settings.localCopyHandled.contains($0.materialId) }
     }
+    private var withLocalCopy: [UploadRecord] { localCopyChoice.deletable }
 
     var body: some View {
         ScrollView {
@@ -72,6 +75,8 @@ struct ReceiptScreen: View {
                     }
                     .toggleStyle(VLCheckboxStyle())
                     .disabled(deletedLocal)
+                } else if !localCopyChoice.awaitingVerification.isEmpty {
+                    VLNote(tone: .muted, systemImage: "clock", text: Text("receipt.deleteLocal.afterVerification"))
                 }
                 if !deduplicated { slip }
                 if let details, !deduplicated { singleExtras(details) }
@@ -209,7 +214,7 @@ struct ReceiptScreen: View {
     }
 
     /// قرار المراسل يُطبَّق لحظة وضع العلامة، لا عند مغادرة الإيصال: قفل الهاتف والإيصال مفتوح، أو إنهاء التطبيق، لا يُبقي النسخ
-    /// (للسلامة عند المصادرة). يشمل نسخ كل ملفات الإرسالة الواصلة. الإبقاء لا يُسجَّل فيعود السؤال مع الإيصال التالي لهذه المواد.
+    /// (للسلامة عند المصادرة). يشمل نسخ ما تحقّق أو طوبق من ملفات النطاق وحده. الإبقاء لا يُسجَّل فيعود السؤال مع الإيصال التالي.
     private func deleteLocalCopies() {
         guard !deletedLocal else { return }
         for rec in withLocalCopy {

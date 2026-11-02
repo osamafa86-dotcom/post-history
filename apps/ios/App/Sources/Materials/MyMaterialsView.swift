@@ -193,7 +193,8 @@ struct MyMaterialsView: View {
             // «الرد على المشرف» مخفي: العقد لا يحمل انتقالًا للرد (قرار للمنسّق، المواصفة A4).
             Button { replacing = m } label: { Label("a4.replaceShot", systemImage: "arrow.triangle.2.circlepath.camera") }.buttonStyle(.vlSolid)
         case .showReceipt:
-            Button { queue.presentedReceipt = ReceiptTarget(materialId: m.id, recordId: queue.records.first { $0.materialId == m.id && $0.kind == .original }?.id) } label: {
+            // السجل المتحقَّق أو المطابَق، لا أول سجل: الإيصال لا يعرض حذف النسخة لغيره (`LocalCopyPolicy`).
+            Button { queue.presentedReceipt = ReceiptTarget(materialId: m.id, recordId: LocalCopyPolicy.receiptRecord(forMaterial: m.id, in: queue.records)?.id) } label: {
                 Label("a4.showReceipt", systemImage: "doc.text")
             }.buttonStyle(.vlOutline)
         case .none:
