@@ -16,6 +16,8 @@ COPY --from=build /src/apps/web/package.json /src/apps/web/next.config.ts ./
 COPY --from=build /src/apps/web/node_modules node_modules
 COPY --from=build /src/apps/web/.next .next
 COPY --from=build /src/apps/web/messages messages
+# public/ (الخطوط ذاتية الاستضافة ورخصها، ADR 0090) لا يدخل .next: بدونه تردّ /fonts/* بـ 404 ويقع المتصفح على خط النظام.
+COPY --from=build /src/apps/web/public public
 USER node
 EXPOSE 3100
 CMD ["node_modules/.bin/next", "start", "--hostname", "0.0.0.0", "--port", "3100"]

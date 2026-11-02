@@ -6,7 +6,7 @@ async function login(page: Page, role = "reviewer", locale: "ar" | "en" = "ar") 
   const m = locale === "ar" ? ar : en;
   await page.goto(`/${locale}/login`); await page.getByLabel(m.email).fill(`${role}@example.test`); await page.getByLabel(m.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(m.totp, { exact: true }).fill("123456"); await page.getByRole("button", { name: m.signIn, exact: true }).click(); await expect(page.getByTestId("material-row")).toHaveCount(50);
 }
-async function detail(page: Page, id = first, locale = "ar") { await page.goto(`/${locale}/materials/${id}`); await expect(page.getByRole("heading", { name: locale === "ar" ? ar.review.title : en.review.title, exact: true })).toBeVisible(); }
+async function detail(page: Page, id = first, locale = "ar") { await page.goto(`/${locale}/materials/${id}`); await expect(page.getByRole("heading", { name: locale === "ar" ? ar.shell.material.nextStep : en.shell.material.nextStep, exact: true })).toBeVisible(); }
 /** يفتح حوار التحويل إن لم يكن مفتوحًا ويختار المسار والهدف والسبب؛ زر التأكيد يُسمّى بالحالة الهدف. */
 async function choose(page: Page, to: string, reason: string, track?: "editorial" | "rights" | "technical") {
   const dialog = page.getByRole("dialog");

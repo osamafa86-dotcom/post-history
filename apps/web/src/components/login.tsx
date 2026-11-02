@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { authPost } from "@/lib/browser-api";
 import { clearUploads } from "@/lib/upload-store";
 import { messages, type Locale } from "@/lib/i18n";
+import { BrandMark, Icon } from "./icon";
 
 export function Login({ locale, reason }: { locale: Locale; reason?: string }) {
   const m = messages[locale]; const [busy, setBusy] = useState(false), [error, setError] = useState("");
@@ -19,9 +20,31 @@ export function Login({ locale, reason }: { locale: Locale; reason?: string }) {
       window.location.replace(`/${locale}/inbox`);
     } catch { setError(m.error); } finally { setBusy(false); }
   }
-  return <main className="login-shell"><section className="login-story"><div className="brand"><span className="brand-mark" aria-hidden="true" /><span>{m.brand}<small>{m.product}</small></span></div><div><p className="eyebrow">{m.workspace}</p><h1>{m.inbox}</h1><p>{m.inboxLead}</p></div><span className="story-line" aria-hidden="true" /></section>
-    <section className="login-panel"><a className="locale-link" href={`/${locale === "ar" ? "en" : "ar"}/login`}>{m.language}</a><div className="login-card"><p className="eyebrow">{m.product}</p><h2>{m.login}</h2><p className="muted">{m.loginLead}</p>
-      {reason === "revoked" && <p className="notice" role="status">{m.revoked}</p>}{reason === "signed-out" && <p className="notice">{m.signedOut}</p>}
-      <form onSubmit={submit}><label>{m.email}<input name="email" type="email" dir="ltr" autoComplete="username" maxLength={254} required /></label><label>{m.password}<input name="password" type="password" dir="ltr" autoComplete="current-password" minLength={8} maxLength={1024} required /></label><label>{m.totp}<input name="totp" inputMode="numeric" dir="ltr" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} aria-describedby="totp-help" /></label><small id="totp-help" className="muted">{m.totpHelp}</small>
-      {error && <p className="notice error" role="alert">{error}</p>}<button className="full-width" disabled={busy}>{busy ? m.signingIn : m.signIn}</button></form></div></section></main>;
+  const t = m.signInPage;
+  // P1: لوحة الهوية الداكنة في جهة البداية ونصف للنموذج (وضع داكن صريح، ودوائر البثّ). المراسل يُحال إلى تطبيق «ميدان بوست»، ولا مفتاح مرور ولا استعادة من الويب (ليسا في العقد).
+  return <main className="login-shell">
+    <section className="login-story" data-mode="dark" aria-labelledby="story-title">
+      <span className="rings" aria-hidden="true"><span /><span /><span /></span>
+      <div><h2 id="story-title">{t.storyTitle}</h2><p>{t.storyLead}</p></div>
+    </section>
+    <section className="login-panel">
+      <a className="locale-link" href={`/${locale === "ar" ? "en" : "ar"}/login`} lang={locale === "ar" ? "en" : "ar"}>{m.language}</a>
+      <div className="login-card">
+        <p className="login-brand"><BrandMark size={28} /><span>{m.product}</span></p>
+        <h1>{t.welcome}</h1>
+        <p className="login-lead">{t.lead}</p>
+        <p className="login-reporters"><Icon name="mine" /><span>{t.reporters}</span></p>
+        {reason === "revoked" && <p className="notice" role="status">{m.revoked}</p>}{reason === "signed-out" && <p className="notice">{m.signedOut}</p>}
+        <form onSubmit={submit}>
+          <label>{m.email}<input name="email" type="email" dir="ltr" autoComplete="username" maxLength={254} required /></label>
+          <label>{m.password}<input name="password" type="password" dir="ltr" autoComplete="current-password" minLength={8} maxLength={1024} required /></label>
+          <label>{m.totp}<input name="totp" inputMode="numeric" dir="ltr" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} aria-describedby="totp-help" /></label>
+          <small id="totp-help" className="field-help">{m.totpHelp}</small>
+          {error && <p className="notice error" role="alert">{error}</p>}
+          <button className="full-width" disabled={busy}>{busy ? m.signingIn : m.signIn}</button>
+        </form>
+        <p className="login-session"><Icon name="shield" size={16} /><span>{t.session}</span></p>
+      </div>
+    </section>
+  </main>;
 }

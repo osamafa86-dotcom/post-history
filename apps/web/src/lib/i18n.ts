@@ -23,3 +23,10 @@ export function humanDuration(ms: number, locale: Locale) {
   const value = unit === "second" ? seconds : unit === "minute" ? Math.floor(seconds / 60) : unit === "hour" ? Math.floor(seconds / 3600) : Math.floor(seconds / 86400);
   return new Intl.NumberFormat(locale === "ar" ? "ar-u-nu-latn" : "en", { style: "unit", unit, unitDisplay: "long" }).format(value);
 }
+
+export type PluralForms = Record<"zero" | "one" | "two" | "few" | "many" | "other", string>;
+/** العدد بصيغة الجمع في لغته (العربية ست صيغ: «ملف واحد»، «ملفان»، «3 ملفات»، «11 ملفًا»)؛ أرقام لاتينية. */
+export function plural(n: number, forms: PluralForms, locale: Locale) {
+  const rule = new Intl.PluralRules(locale).select(n) as keyof PluralForms;
+  return (forms[rule] ?? forms.other).replace("{n}", String(n));
+}

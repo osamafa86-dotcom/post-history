@@ -1,4 +1,5 @@
 "use client";
+import { NoAccess } from "../empty-state";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -47,7 +48,7 @@ export function OrdersPage({ locale }: { locale: Locale }) {
     void browserApi().GET("/orders", { signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setItems(data.items); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [allowed, attempt]);
-  if (!allowed) return <section className="center-state"><h1>{o.title}</h1><p role="alert">{o.denied}</p></section>;
+  if (!allowed) return <NoAccess locale={locale} me={me} title={o.title} denied={o.denied} />;
   return <><Link prefetch={false} className="back-link" href={`/${locale}/store`}>{m.store.back}</Link>
     <div className="page-heading"><div><h1>{o.title}</h1><p className="muted">{o.lead}</p></div></div>
     {error ? <section className="center-state" role="alert"><p>{m.error}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></section>

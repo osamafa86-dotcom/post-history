@@ -1,4 +1,5 @@
 "use client";
+import { NoAccess } from "../empty-state";
 import { useEffect, useState } from "react";
 import { messages, type Locale } from "@/lib/i18n";
 import { hasRole } from "@/lib/review";
@@ -48,7 +49,7 @@ export function StoreCatalog({ locale }: { locale: Locale }) {
       .then(data => { setPage(data); setError(false); }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [allowed, query, cursor, attempt]);
-  if (!allowed) return <section className="center-state"><h1>{s.title}</h1><p role="alert">{s.denied}</p></section>;
+  if (!allowed) return <NoAccess locale={locale} me={me} title={s.title} denied={s.denied} />;
   const set = (key: keyof Filters, value: string) => { setPage(null); setCursors([null]); setFilters(current => ({ ...current, [key]: value })); };
   const active = (Object.entries(filters) as [keyof Filters, string][]).filter(([, value]) => value);
   const label = (key: keyof Filters, value: string) => key === "q" ? `«${value}»` : key === "material_type" ? m.types[value as keyof typeof m.types] : key === "license_type" ? s.licenseTypes[value as keyof typeof s.licenseTypes]

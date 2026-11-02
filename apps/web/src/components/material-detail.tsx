@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { browserApi, dataOrThrow, RequestError } from "@/lib/browser-api";
-import { formatDate, messages, type Locale } from "@/lib/i18n";
+import { formatDate, messages, plural, shortTime, type Locale } from "@/lib/i18n";
 import type { Form, Material, TransitionRecord } from "@/lib/types";
 import { internalNames } from "@/lib/work-name";
 import { lastEvents, timecode, timeline, type Track } from "@/lib/editor";
@@ -11,13 +11,18 @@ import { useUser } from "./session-boundary";
 import { photographer, StateBadge } from "./states";
 import { DynamicForm } from "./dynamic-form";
 import { MediaPreview } from "./media-preview";
-import { ReviewActions } from "./review-actions";
+import { Contributors, ReviewActions } from "./review-actions";
 import { ListingPanel } from "./listing-panel";
+import { EmptyState } from "./empty-state";
+import { Icon } from "./icon";
 import { materialTag } from "@/lib/review";
 
-/** تفاصيل المادة (B2): ثلاث بطاقات حالة مستقلة بلون مسارها، والمشغّل والبيانات، والخط الزمني الموحّد بجانبها. */
+/**
+ * تفاصيل المادة (W2، والجوال M2): المشغّل والعنوان وسطر الوصف والوسوم وسطر الحساسية في العمود الرئيسي، والحالات الثلاث (أزرار تصفّي السجل)
+ * والخطوة التالية والسجل في العمود الجانبي. المكان المحافظة والمدينة وحدهما (حقلا العقد)؛ إحداثيات GPS لا تُقرأ ولا تُعرض أبدًا (ADR 0087).
+ */
 export function MaterialDetail({ locale, id }: { locale: Locale; id: string }) {
-  const m = messages[locale], me = useUser(), [material, setMaterial] = useState<Material | null>(null), [schema, setSchema] = useState<Form | null>(null), [error, setError] = useState(0), [attempt, setAttempt] = useState(0);
+  const m = messages[locale], w = m.shell.material, me = useUser(), [material, setMaterial] = useState<Material | null>(null), [schema, setSchema] = useState<Form | null>(null), [error, setError] = useState(0), [attempt, setAttempt] = useState(0);
   const editing = useRef(false), [tag, setTag] = useState<string | null>(null);
   const [toast, setToast] = useState(""), [records, setRecords] = useState<TransitionRecord[] | null>(null), [historyFailed, setHistoryFailed] = useState(false), [filter, setFilter] = useState<Track | null>(null);
   function reload() { editing.current = false; setMaterial(null); setAttempt(n => n + 1); }
@@ -44,27 +49,39 @@ export function MaterialDetail({ locale, id }: { locale: Locale; id: string }) {
     return () => controller.abort();
   }, [id, attempt]);
 
-  const back = <Link prefetch={false} className="back-link" href={`/${locale}/inbox`}>{m.back}</Link>;
-  if (error) return <>{back}<section className="center-state" role="alert"><p>{error === 404 ? m.notFound : error === 403 ? m.material.outOfScope : m.error}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></section></>;
-  if (!material) return <>{back}<p className="center-state" role="status">{m.loading}</p></>;
+  const crumbs = (title?: string) => <nav className="breadcrumb" aria-label={w.breadcrumb}><Link prefetch={false} className="back-link" href={`/${locale}/inbox`} aria-label={m.back}>{m.inbox}</Link>{title && <><span aria-hidden="true">‹</span><span aria-current="page">{title}</span></>}</nav>;
+  if (error) return <>{crumbs()}<EmptyState icon={error === 403 ? "key" : error === 404 ? "search" : "alert"} role="alert" title={error === 404 ? m.notFound : error === 403 ? m.material.outOfScope : m.error} actions={<button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button>} /></>;
+  if (!material) return <>{crumbs()}<p className="visually-hidden" role="status">{m.loading}</p><div className="material-layout" aria-hidden="true"><div className="material-main"><span className="skeleton media" /><span className="skeleton line wide" /><span className="skeleton line" /></div><div className="material-side"><span className="skeleton card" /><span className="skeleton card" /></div></div></>;
   const receipt = material.files.find(f => f.receipt_number)?.receipt_number, last = lastEvents(records ?? []), names = { technical: m.technical, editorial: m.editorial, rights: m.rights };
-  return <>{back}{toast && <p className="toast" role="status">{m.review.transitioned.replace("{state}", toast)}</p>}
-    <div className="page-heading material-heading"><div><p className="caption">{m.version} {material.version} · <bdi dir="ltr">{receipt ?? m.noReceipt}</bdi>{material.acknowledged_at && <> · {m.material.acknowledged} {formatDate(material.acknowledged_at, locale)}</>} <span className={`badge ${material.priority === "urgent" ? "urgent" : ""}`}>{m.states.priority[material.priority]}</span></p><h1>{material.title}</h1></div></div>
-    <div className="state-grid">{tracks.map(track => <button type="button" key={track} className={`state-card track-${track}`} aria-pressed={filter === track} onClick={() => setFilter(current => current === track ? null : track)}>
-      <span className="state-card-title">{names[track]}</span><StateBadge track={stateColumn[track]} value={material[stateColumn[track]]} locale={locale} />
-      <small className="muted">{last[track] ? `${formatDate(last[track]!.occurred_at, locale)}` : m.material.noEvent}</small></button>)}</div>
-    <div className="detail-grid">
-      <div className="detail-main"><MediaPreview locale={locale} material={material} />
+  const files = material.files.filter(f => f.kind === "original").length, time = shortTime(material.shot_at);
+  const flags = (["minors", "injured", "graphic"] as const).filter(flag => material.sensitivity?.[flag]);
+  return <>{crumbs(material.title)}{toast && <p className="toast" role="status">{m.review.transitioned.replace("{state}", toast)}</p>}
+    <div className="material-layout">
+      <div className="material-main">
+        <MediaPreview locale={locale} material={material} />
+        <div className="material-title"><h1>{material.title}</h1>{material.priority !== "normal" && <span className={`priority-pill ${material.priority}`}>{material.priority === "urgent" && <Icon name="bolt" size={12} />}{m.states.priority[material.priority]}</span>}</div>
+        <p className="material-meta"><span>{photographer(material, locale)}</span><span>{material.governorate}</span><span>{material.city}</span>{time && <span>{w.shot} <bdi dir="ltr">{time}</bdi></span>}{material.material_types.map(type => <span key={type}>{(m.types as Record<string, string>)[type] ?? type}</span>)}{files > 0 && <span>{plural(files, m.shell.inbox.files, locale)}</span>}<span>{m.version} <bdi dir="ltr">{material.version}</bdi></span><span className="receipt"><bdi dir="ltr">{receipt ?? m.noReceipt}</bdi></span>{material.acknowledged_at && <span>{m.material.acknowledged} {formatDate(material.acknowledged_at, locale)}</span>}</p>
+        {material.tags?.length ? <ul className="tag-list large" aria-label={m.shell.inbox.tags}>{material.tags.map(tag => <li key={tag}><bdi>{tag}</bdi></li>)}</ul> : null}
+        <p className={`sensitivity-line${flags.length ? " flagged" : ""}`} data-testid="sensitivity-line"><Icon name="shield" size={18} /><span><strong>{w.sensitivity}: </strong>{flags.length ? <>{flags.map(flag => m.upload[flag]).join(m.shell.listSeparator)} — {w.sensitiveRule}</> : w.notSensitive}</span></p>
         <section className="card"><h2>{m.details}</h2><dl className="metadata">{[[m.photographer, photographer(material, locale)], [m.governorate, material.governorate], [m.city, material.city], [m.shotAt, formatDate(material.shot_at, locale)], [m.createdAt, formatDate(material.created_at, locale)], [m.receipt, receipt ?? m.noReceipt], [m.formVersion, material.form_version]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>
         <section className="card"><h2>{m.dynamicData}</h2>{material.redacted_field_keys?.length ? <p className="notice locked">{m.hiddenFields}</p> : null}{schema && Object.keys(material.dynamic_fields).length ? <DynamicForm key={`${material.id}-${material.updated_at}`} schema={schema} type={material.material_types[0]} permissions={me.permissions} locale={locale} initialValues={material.dynamic_fields} readOnly /> : <p className="muted">{schema ? m.noDynamic : m.formMissing}</p>}</section>
-        <ReviewActions key={`${material.id}:${tag}`} locale={locale} material={material} tag={tag} editing={() => { editing.current = true; }} reload={reload} notify={setToast} /><ListingPanel key={`${material.id}:listing:${material.rights_state}`} locale={locale} material={material} />
+        <ListingPanel key={`${material.id}:listing:${material.rights_state}`} locale={locale} material={material} />
+        <Contributors key={`${material.id}:contributors:${tag}`} locale={locale} material={material} tag={tag} editing={() => { editing.current = true; }} reload={reload} />
       </div>
-      <Timeline internal={internalNames(me)} locale={locale} records={records} failed={historyFailed} filter={filter} clear={() => setFilter(null)} />
+      <div className="material-side">
+        <section className="card states-card" aria-labelledby="states-title"><h2 id="states-title">{w.states}</h2>
+          <div className="state-grid">{tracks.map(track => <button type="button" key={track} className={`state-card track-${track}`} aria-pressed={filter === track} onClick={() => setFilter(current => current === track ? null : track)}>
+            <span className="state-card-text"><span className="state-card-title">{names[track]}</span><small>{last[track] ? `${formatDate(last[track]!.occurred_at, locale)}` : m.material.noEvent}</small></span>
+            <StateBadge track={stateColumn[track]} value={material[stateColumn[track]]} locale={locale} /></button>)}</div>
+          <p className="caption">{w.statesHelp}</p></section>
+        <ReviewActions key={`${material.id}:${tag}`} locale={locale} material={material} tag={tag} editing={() => { editing.current = true; }} reload={reload} notify={setToast} />
+        <Timeline internal={internalNames(me)} locale={locale} records={records} failed={historyFailed} filter={filter} clear={() => setFilter(null)} />
+      </div>
     </div>
   </>;
 }
 
-/** الخط الزمني: الأحداث تنازليًا، كل حدث بلون مساره؛ السبب يظهر لمن يعيده الـBFF وحده (صاحب المادة). */
+/** السجل: الأحداث تنازليًا، كل حدث بلون مساره؛ السبب يظهر لمن يعيده الـBFF وحده (صاحب المادة). */
 function Timeline({ internal, locale, records, failed, filter, clear }: { internal: boolean; locale: Locale; records: TransitionRecord[] | null; failed: boolean; filter: Track | null; clear: () => void }) {
   const m = messages[locale], names = { technical: m.technical, editorial: m.editorial, rights: m.rights };
   const label = (record: TransitionRecord, value: string) => (m.states[stateColumn[record.track as Track]] as Record<string, string>)[value] ?? value;

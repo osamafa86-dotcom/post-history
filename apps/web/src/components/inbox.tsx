@@ -3,13 +3,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { beep } from "@/lib/alert-sound";
-import { formatDate, humanDuration, longDate, messages, shortTime, type Locale } from "@/lib/i18n";
+import { humanDuration, longDate, messages, plural, shortTime, type Locale } from "@/lib/i18n";
 import type { Material, MaterialPage, MaterialQuery, NewsroomDashboard } from "@/lib/types";
 import { materialQuery, states } from "@/lib/query";
-import { photographer, type StateTrack } from "./states";
-import { TrackLine } from "./track-line";
+import { photographer, StateBadge, type StateTrack } from "./states";
+import { Icon } from "./icon";
+import { EmptyState } from "./empty-state";
+import { useInboxBadge, useShellSearch } from "./app-shell";
 import { activeTab, inboxTabs, isOpenUrgent, matchesSearch, tabCounts, tabQuery, type InboxTab } from "@/lib/inbox-tabs";
-import { clock, urgentUnacknowledged } from "@/lib/editor";
+import { urgentUnacknowledged } from "@/lib/editor";
 import { hasRole, transitionOptions } from "@/lib/review";
 import { useMutation } from "@/lib/use-mutation";
 import { useUser } from "./session-boundary";
@@ -17,20 +19,29 @@ import { ActionStatus } from "./action-status";
 import { InboxNow } from "./newsroom-board";
 
 const dashboardRoles = ["supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin"] as const;
+const filterKeys = ["priority", "technical_state", "editorial_state", "rights_state", "governorate", "reporter_id", "shot_after", "shot_before"] as const;
+type FilterKey = (typeof filterKeys)[number];
+type Messages = (typeof messages)[Locale];
 
 type Sort = "shot_at" | "governorate" | "reporter_id" | StateTrack;
+/**
+ * الوارد (W1، والجوال M1، واللوح T1): رأس بحالة الاتصال، ومؤشّرات اللقطة، وتصفية سريعة برقاقات، وصفوف بمصغّرة وشارات الحالات الثلاث منفصلة،
+ * والعاجل أولًا (شريط التنبيه فوق كل شيء، وتبويب «عاجلة»). الحالات: E1 فارغ، E2 هياكل، E3 انقطاع (آخر بيانات كما هي وأفعالها معطّلة)، E4 بلا نتائج.
+ * البحث في الشريط العلوي، داخل الصفحة المحمّلة كما كان (العقد بلا معامل بحث).
+ */
 export function Inbox({ locale }: { locale: Locale }) {
-  const m = messages[locale], [query, setQuery] = useState<MaterialQuery>({ limit: 50 }), [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
+  const m = messages[locale], w = m.shell.inbox, [query, setQuery] = useState<MaterialQuery>({ limit: 50 }), [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const [page, setPage] = useState<MaterialPage | null>(null), [error, setError] = useState(false), [invalid, setInvalid] = useState(false), [offline, setOffline] = useState(false), [unread, setUnread] = useState(0), [updated, setUpdated] = useState("");
-  const [refresh, setRefresh] = useState(0), [sort, setSort] = useState<Sort>("shot_at"), [descending, setDescending] = useState(true), [needle, setNeedle] = useState(""), [formKey, setFormKey] = useState(0);
+  const [refresh, setRefresh] = useState(0), [sort, setSort] = useState<Sort>("shot_at"), [descending, setDescending] = useState(true), [formKey, setFormKey] = useState(0);
+  const { query: needle, setQuery: setNeedle } = useShellSearch(), setBadge = useInboxBadge();
   const me = useUser(), staff = hasRole(me, ...dashboardRoles), [snapshot, setSnapshot] = useState<NewsroomDashboard | null>(null), [now, setNow] = useState(0);
   // لقطة غرفة الأخبار كل 5 ثوانٍ (حداثتها في العقد) لأدوار اللوحة وحدها؛ والعدّاد الحي كل ثانية.
   useEffect(() => {
     if (!staff) return;
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
-    async function poll() { try { const data = dataOrThrow(await browserApi().GET("/dashboard/newsroom", { signal: controller.signal })); if (!controller.signal.aborted) setSnapshot(data); } catch { /* الإحصاءات تبقى بآخر قيمة */ } finally { if (!controller.signal.aborted) timer = setTimeout(poll, 5000); } }
+    async function poll() { try { const data = dataOrThrow(await browserApi().GET("/dashboard/newsroom", { signal: controller.signal })); if (!controller.signal.aborted) { setSnapshot(data); setBadge(data.urgent_open); } } catch { /* الإحصاءات تبقى بآخر قيمة */ } finally { if (!controller.signal.aborted) timer = setTimeout(poll, 5000); } }
     void poll(); return () => { controller.abort(); clearTimeout(timer); };
-  }, [staff, refresh]);
+  }, [staff, refresh, setBadge]);
   useEffect(() => { const tick = () => setNow(Date.now()); tick(); const timer = setInterval(tick, 1000); return () => clearInterval(timer); }, []);
   useEffect(() => {
     const controller = new AbortController(); let disposed = false, timer: ReturnType<typeof setTimeout>;
@@ -45,8 +56,9 @@ export function Inbox({ locale }: { locale: Locale }) {
       finally { if (!disposed) timer = setTimeout(poll, 15000); }
     }
     const online = () => { clearTimeout(timer); setRefresh(n => n + 1); };
-    window.addEventListener("online", online); void poll();
-    return () => { disposed = true; controller.abort(); clearTimeout(timer); window.removeEventListener("online", online); };
+    const lost = () => setOffline(true);
+    window.addEventListener("online", online); window.addEventListener("offline", lost); void poll();
+    return () => { disposed = true; controller.abort(); clearTimeout(timer); window.removeEventListener("online", online); window.removeEventListener("offline", lost); };
   }, [query, refresh]);
   const rows = useMemo(() => [...(page?.items ?? [])].sort((a, b) => {
     const av = a[sort] ?? "", bv = b[sort] ?? "";
@@ -54,57 +66,120 @@ export function Inbox({ locale }: { locale: Locale }) {
     return (descending ? -1 : 1) * result;
   }), [page, sort, descending, locale]);
   const tab = activeTab(query), counts = snapshot ? tabCounts(snapshot) : null;
-  const visible = useMemo(() => rows.filter(item => (tab !== "urgent" || isOpenUrgent(item)) && matchesSearch(needle, [item.title, item.governorate, item.files.find(f => f.receipt_number)?.receipt_number])), [rows, tab, needle]);
+  const tabbed = useMemo(() => rows.filter(item => tab !== "urgent" || isOpenUrgent(item)), [rows, tab]);
+  const visible = useMemo(() => tabbed.filter(item => matchesSearch(needle, searchFields(item))), [tabbed, needle]);
   function choose(next: InboxTab) { setQuery({ limit: 50, ...tabQuery[next] }); setPage(null); setCursors([undefined]); setInvalid(false); setFormKey(n => n + 1); }
   function filter(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); const data = new FormData(event.currentTarget), params = new URLSearchParams();
     for (const [key, value] of data) if (typeof value === "string" && value) params.set(key, key.startsWith("shot_") ? new Date(value).toISOString() : value);
     try { setQuery({ ...materialQuery(params), limit: 50 }); setPage(null); setCursors([undefined]); setInvalid(false); } catch { setInvalid(true); }
   }
+  function drop(key: FilterKey) { const next: MaterialQuery = { ...query, cursor: undefined }; delete next[key]; setQuery(next); setPage(null); setCursors([undefined]); setFormKey(n => n + 1); }
+  function clearAll() { setNeedle(""); choose("all"); }
   function move(next: boolean) {
     const stack = next ? [...cursors, page?.next_cursor ?? undefined] : cursors.slice(0, -1);
     setCursors(stack); setQuery({ ...query, cursor: stack.at(-1) }); setPage(null);
   }
   const summary = counts && m.inboxSummary.replace("{total}", String(counts.all)).replace("{urgent}", String(counts.urgent)).replace("{inbox}", String(counts.inbox)).replace("{reviewing}", String(counts.reviewing)).replace("{accepted}", String(counts.accepted)).replace("{stopped}", String(counts.stopped));
+  // E3: آخر بيانات معروضة كما هي، ووقت آخر تحديث، والأفعال معطّلة حتى يعود الاتصال.
+  const disconnected = offline || (error && !!page);
+  const active = filterKeys.filter(key => query[key] !== undefined && !(tab && key in tabQuery[tab]));
+  const search = needle.trim();
+  const chips = [
+    ...(search ? [{ key: "search", label: `«${search}»`, remove: () => setNeedle("") }] : []),
+    ...(tab && tab !== "all" ? [{ key: "tab", label: m.inboxTabs[tab], remove: () => choose("all") }] : []),
+    ...active.map(key => ({ key, label: `${filterLabel(key, m)}: ${filterValue(key, String(query[key]), m, locale)}`, remove: () => drop(key) })),
+  ];
+  const lastArrival = snapshot?.recent_receipts[0]?.verified_at;
+  let list: React.ReactNode;
+  if (!page) list = error ? null : <><p className="visually-hidden" role="status">{m.loading}</p><ul className="inbox-rows" aria-hidden="true" data-testid="inbox-skeleton">{[0, 1, 2, 3, 4].map(i => <li key={i} className="inbox-row skeleton-row"><span className="skeleton thumb" /><span className="row-main"><span className="skeleton line wide" /><span className="skeleton line" /></span><span className="skeleton pill" /></li>)}</ul></>;
+  else if (visible.length) list = <ul className="inbox-rows">{visible.map(material => <MaterialRow key={material.id} material={material} locale={locale} now={now} disabled={disconnected} done={() => setRefresh(n => n + 1)} />)}</ul>;
+  else if (chips.length || cursors.length > 1) list = <EmptyState icon="search" testId="inbox-no-results" title={search ? w.noResultsFor.replace("{q}", search) : m.empty}
+    actions={search && tabbed.length ? <button type="button" onClick={() => setNeedle("")}>{w.showWithoutSearch.replace("{n}", String(tabbed.length))}</button> : chips.length ? <button type="button" className="secondary" onClick={clearAll}>{w.clearAll}</button> : null}>
+    <p>{search ? (tabbed.length ? w.noResultsHint.replace("{n}", String(tabbed.length)) : w.noResultsNone) : w.noFilterResults}</p></EmptyState>;
+  else list = <EmptyState icon="inbox" testId="inbox-empty" title={w.emptyTitle} actions={staff ? <Link prefetch={false} className="button" href={`/${locale}/board`}>{m.board.title}</Link> : null}>
+    <p>{w.emptyBody}{lastArrival && now ? <> {w.lastArrival.replace("{time}", humanDuration(now - Date.parse(lastArrival), locale))}</> : null}</p></EmptyState>;
   return <>
-    {page && <UrgentAlert locale={locale} items={urgentUnacknowledged(page.items)} now={now} done={() => setRefresh(n => n + 1)} showAll={() => { setQuery({ limit: 50, priority: "urgent", editorial_state: "inbox" }); setPage(null); setCursors([undefined]); }} />}
-    <div className="inbox-head"><h1>{m.inbox}</h1><p className="inbox-summary">{summary ?? m.inboxLead}</p></div>
-    <div className="live-strip" aria-live="polite"><span className="live-dot" aria-hidden="true" />{m.live}<span>{m.notifications}: <b>{unread}</b></span>{updated && <small>{m.updated}: {formatDate(updated, locale)}</small>}<button className="secondary" onClick={() => setRefresh(n => n + 1)}>{m.refresh}</button></div>
+    {page && <UrgentAlert locale={locale} items={urgentUnacknowledged(page.items)} now={now} disabled={disconnected} done={() => setRefresh(n => n + 1)} showAll={() => { setQuery({ limit: 50, priority: "urgent", editorial_state: "inbox" }); setPage(null); setCursors([undefined]); }} />}
+    <div className="page-head inbox-head">
+      <div><h1>{m.inbox}</h1>
+        <p className={`live-line${disconnected ? " stale" : ""}`} aria-live="polite"><span className="live-dot" aria-hidden="true" />{disconnected ? <>{m.updated} <bdi dir="ltr">{updated ? shortTime(updated) : m.notAvailable}</bdi></> : <>{w.live} · {m.live}</>}{!disconnected && unread > 0 && <> · {m.notifications}: <b dir="ltr">{unread}</b></>}</p>
+        {summary && <p className="inbox-summary">{summary}</p>}</div>
+      <div className="page-actions">{staff && <Link prefetch={false} className="button secondary" href={`/${locale}/board?display=1`}>{w.openWall}</Link>}<button className="secondary" onClick={() => setRefresh(n => n + 1)}>{m.refresh}</button></div>
+    </div>
+    {disconnected && <section className="offline-banner" role="status" data-testid="offline-banner"><Icon name="offline" size={22} /><div><h2>{w.offlineTitle}</h2><p>{offline ? m.offline : w.offlineBody}</p></div><button className="secondary" onClick={() => setRefresh(n => n + 1)}>{w.retryNow}</button></section>}
+    {error && !page && <p className="notice error" role="alert">{m.error}</p>}
+    {staff ? <div className="kpis" data-testid="kpis">{!snapshot || !counts ? [0, 1, 2, 3].map(i => <article key={i} className="kpi" aria-hidden="true"><span className="skeleton num" /><span className="skeleton line" /></article>) : <>
+      <article className="kpi"><strong dir="ltr">{counts.inbox}</strong><span>{w.kpiInbox}</span></article>
+      <article className={`kpi${snapshot.urgent_open ? " urgent" : ""}`} data-testid="stat-urgent"><strong dir="ltr">{snapshot.urgent_open}</strong><span>{w.kpiUrgent}</span></article>
+      <article className="kpi"><strong dir="ltr">{counts.accepted}</strong><span>{w.kpiProducer}</span></article>
+      <article className={`kpi${snapshot.overdue_acknowledgements ? " attention" : ""}`}><strong dir="ltr">{snapshot.overdue_acknowledgements}</strong><span>{m.editor.overdue}</span></article></>}</div>
+    : <div className="kpis three"><article className="kpi"><strong dir="ltr">{page?.items.length ?? "—"}</strong><span>{m.visibleCount}</span></article><article className="kpi"><strong dir="ltr">{page?.items.filter(x => x.technical_state === "pending").length ?? "—"}</strong><span>{m.pendingCount}</span></article><article className="kpi"><strong dir="ltr">{page?.items.filter(x => x.priority === "urgent").length ?? "—"}</strong><span>{m.urgentCount}</span></article></div>}
     <div className="inbox-tools">
-      <div className="inbox-search"><label htmlFor="inbox-search" className="visually-hidden">{m.inboxSearch.label}</label><input id="inbox-search" type="search" value={needle} onChange={e => setNeedle(e.target.value)} placeholder={m.inboxSearch.placeholder} aria-describedby="inbox-search-help" maxLength={200} /><small id="inbox-search-help" className="visually-hidden">{m.inboxSearch.help}</small></div>
-      <nav className="quick-tabs" aria-label={m.inboxTabs.label}>{inboxTabs.map(item => <button key={item} type="button" className={tab === item ? "tab active" : "tab"} aria-pressed={tab === item} onClick={() => choose(item)}>{m.inboxTabs[item]}{counts && <> <span className="tab-count" dir="ltr">{counts[item]}</span></>}</button>)}</nav>
+      <nav className="quick-tabs" aria-label={m.inboxTabs.label}>{inboxTabs.map(item => <button key={item} type="button" className={tab === item ? "chip active" : "chip"} aria-pressed={tab === item} onClick={() => choose(item)}>{item === "urgent" && <Icon name="bolt" size={14} />}{m.inboxTabs[item]}{counts && <> <span className="tab-count" dir="ltr">{counts[item]}</span></>}</button>)}</nav>
+      <div className="sort-tools"><label>{m.sort}<select value={sort} onChange={e => setSort(e.target.value as Sort)}>{([["shot_at", m.shotAt], ["governorate", m.governorate], ["reporter_id", m.reporterId], ["technical_state", m.technical], ["editorial_state", m.editorial], ["rights_state", m.rights]] as [Sort, string][]).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><button className="secondary small" onClick={() => setDescending(!descending)}>{descending ? m.descending : m.ascending}</button></div>
     </div>
     <details className="filter-panel"><summary>{m.filters}</summary><form key={formKey} onSubmit={filter} className="filters">
-      {(Object.keys(states) as (keyof typeof states)[]).map(key => <label key={key}>{key === "priority" ? m.priority : key === "technical_state" ? m.technical : key === "editorial_state" ? m.editorial : m.rights}<select name={key}><option value="">{m.all}</option>{states[key].map(state => <option key={state} value={state}>{(m.states[key] as Record<string, string>)[state]}</option>)}</select></label>)}
-      <label>{m.governorate}<input name="governorate" maxLength={64} /></label><label>{m.reporterId}<input name="reporter_id" dir="ltr" /></label><label>{m.shotAfter}<input type="datetime-local" name="shot_after" /></label><label>{m.shotBefore}<input type="datetime-local" name="shot_before" /></label><div className="actions"><button>{m.apply}</button><button type="reset" className="quiet" onClick={() => { setPage(null); setQuery({ limit: 50 }); setCursors([undefined]); setInvalid(false); }}>{m.reset}</button></div>
+      {(Object.keys(states) as (keyof typeof states)[]).map(key => <label key={key}>{filterLabel(key, m)}<select name={key} defaultValue={query[key] ?? ""}><option value="">{m.all}</option>{states[key].map(state => <option key={state} value={state}>{(m.states[key] as Record<string, string>)[state]}</option>)}</select></label>)}
+      <label>{m.governorate}<input name="governorate" maxLength={64} defaultValue={query.governorate ?? ""} /></label><label>{m.reporterId}<input name="reporter_id" dir="ltr" defaultValue={query.reporter_id ?? ""} /></label><label>{m.shotAfter}<input type="datetime-local" name="shot_after" /></label><label>{m.shotBefore}<input type="datetime-local" name="shot_before" /></label><div className="actions"><button>{m.apply}</button><button type="reset" className="quiet" onClick={() => { setPage(null); setQuery({ limit: 50 }); setCursors([undefined]); setInvalid(false); }}>{m.reset}</button></div>
     </form>{invalid && <p className="notice error" role="alert">{m.invalidFilters}</p>}</details>
-    {(error || offline) && <p className="notice attention" role="status">{offline ? m.offline : page ? `${m.stale} ${updated ? clock(updated, now) : ""}` : m.error}</p>}
-    <section className="table-panel" aria-label={m.inbox}>
-      <div className="table-tools"><label>{m.sort}<select value={sort} onChange={e => setSort(e.target.value as Sort)}>{([ ["shot_at", m.shotAt], ["governorate", m.governorate], ["reporter_id", m.reporterId], ["technical_state", m.technical], ["editorial_state", m.editorial], ["rights_state", m.rights] ] as [Sort, string][]).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><button className="quiet" onClick={() => setDescending(!descending)}>{descending ? m.descending : m.ascending}</button><small className="muted">{m.pageSortNote}</small></div>
-      {!page ? <p className="empty" role="status">{error ? m.error : m.loading}</p> : visible.length === 0 ? <p className="empty">{m.empty}</p> : <div className="table-scroll"><table className="inbox-table"><thead><tr><th scope="col">{m.title}</th><th scope="col">{m.trackLine.column}</th><th scope="col">{m.receipt}</th></tr></thead><tbody>{visible.map(material => <MaterialRow key={material.id} material={material} locale={locale} />)}</tbody></table></div>}
-      <footer className="pagination"><span>{m.page} {cursors.length}</span><div className="actions"><button className="secondary" disabled={cursors.length === 1 || !page} onClick={() => move(false)}>{m.previous}</button><button className="secondary" disabled={!page?.next_cursor} onClick={() => move(true)}>{m.next}</button></div></footer>
+    {chips.length > 0 && <ul className="filter-chips" aria-label={w.activeFilters}>{chips.map(chip => <li key={chip.key}><button type="button" className="chip removable" onClick={chip.remove} aria-label={w.removeFilter.replace("{filter}", chip.label)}>{chip.label}<Icon name="x" size={14} /></button></li>)}<li><button type="button" className="link-button" onClick={clearAll}>{w.clearAll}</button></li></ul>}
+    <section className="inbox-list" aria-label={m.inbox} aria-busy={!page}>
+      {list}
+      {page && (cursors.length > 1 || page.next_cursor) ? <footer className="pagination"><span>{m.page} <span dir="ltr">{cursors.length}</span></span><div className="actions"><button className="secondary" disabled={cursors.length === 1 || !page} onClick={() => move(false)}>{m.previous}</button><button className="secondary" disabled={!page?.next_cursor} onClick={() => move(true)}>{m.next}</button></div></footer> : null}
     </section>
-    {snapshot ? <div className="stats editor-stats">
-      <article className={snapshot.urgent_open ? "tone-urgent" : ""} data-testid="stat-urgent"><span>{m.editor.urgentOpen}</span><strong>{snapshot.urgent_open}</strong></article>
-      <article className="tone-neutral"><span>{m.pendingCount}</span><strong>{snapshot.technical.find(x => x.state === "pending")?.count ?? 0}</strong></article>
-      <article className={snapshot.overdue_acknowledgements ? "tone-attention" : ""}><span>{m.editor.overdue}</span><strong>{snapshot.overdue_acknowledgements}</strong></article>
-      <article className="tone-progress"><span>{m.editor.reserved}</span><strong>{snapshot.reserved.length}</strong></article></div>
-    : <div className="stats"><article><span>{m.visibleCount}</span><strong>{page?.items.length ?? "—"}</strong></article><article><span>{m.pendingCount}</span><strong>{page?.items.filter(x => x.technical_state === "pending").length ?? "—"}</strong></article><article><span>{m.urgentCount}</span><strong>{page?.items.filter(x => x.priority === "urgent").length ?? "—"}</strong></article></div>}
     {snapshot && <InboxNow locale={locale} snapshot={snapshot} now={now} />}
   </>;
 }
-/** صف الوارد (Figma 169:97): المادة بسطر وصف (الأولوية والمحافظة والتاريخ والساعة) وشريط عاجل على حافة البداية، ثم خط المسارات، ثم رقم الإيصال. */
-function MaterialRow({ material, locale }: { material: Material; locale: Locale }) {
-  const m = messages[locale], receipt = material.files.find(f => f.receipt_number)?.receipt_number, urgent = material.priority === "urgent", time = shortTime(material.shot_at);
-  return <tr data-testid="material-row" className={urgent ? "urgent" : undefined}>
-    <td className="material-cell"><Link className="material-link" prefetch={false} href={`/${locale}/materials/${material.id}`}>{material.title}</Link>
-      <p className="material-meta">{material.priority !== "normal" && <span className={`priority ${material.priority}`}>{m.states.priority[material.priority]}</span>}<span>{material.governorate}</span><span>{longDate(material.shot_at, locale)}</span>{time && <span dir="ltr">{time}</span>}<span className="muted">{photographer(material, locale)}</span></p></td>
-    <td className="tracks-cell"><TrackLine material={material} locale={locale} note /></td>
-    <td className="receipt" dir="ltr">{receipt ?? m.noReceipt}</td></tr>;
+
+/** ما يطابقه بحث الشريط العلوي في الصفحة المحمّلة: العنوان والمكان والإيصال واسم الظهور المستعار والوسوم المعروضة كلها في الصف. */
+function searchFields(item: Material) {
+  return [item.title, item.governorate, item.city, item.files.find(f => f.receipt_number)?.receipt_number, item.display_name.mode === "pseudonym" ? item.display_name.pseudonym : null, ...(item.tags ?? [])];
+}
+function filterLabel(key: FilterKey, m: Messages) {
+  return key === "priority" ? m.priority : key === "technical_state" ? m.technical : key === "editorial_state" ? m.editorial : key === "rights_state" ? m.rights : key === "governorate" ? m.governorate : key === "reporter_id" ? m.reporterId : key === "shot_after" ? m.shotAfter : m.shotBefore;
+}
+function filterValue(key: FilterKey, value: string, m: Messages, locale: Locale) {
+  if (key === "priority" || key === "technical_state" || key === "editorial_state" || key === "rights_state") return (m.states[key] as Record<string, string>)[value] ?? value;
+  return key.startsWith("shot_") ? longDate(value, locale) : value;
+}
+
+/**
+ * صف الوارد (`Web/Inbox row`): مصغّرة (بلا جلب صورة في القائمة)، والعنوان وشارة الأولوية بكلمة، وسطر المراسل والمحافظة والنوع وعدد الملفات والإيصال،
+ * والوسوم، والزمن منذ الوصول، والحالات الثلاث شارات منفصلة بأيقونة وكلمة، والخطوة التالية «استلام» لمن يملكها. العاجل حدّ وشارة وكلمة، لا لون وحده.
+ */
+function MaterialRow({ material, locale, now, disabled, done }: { material: Material; locale: Locale; now: number; disabled: boolean; done: () => void }) {
+  const m = messages[locale], w = m.shell.inbox, receipt = material.files.find(f => f.receipt_number)?.receipt_number, urgent = material.priority === "urgent";
+  const files = material.files.filter(f => f.kind === "original").length;
+  const type = material.material_types[0] ? (m.types as Record<string, string>)[material.material_types[0]] : null;
+  const tracks: [StateTrack, string][] = [["technical_state", m.technical], ["editorial_state", m.editorial], ["rights_state", m.rights]];
+  return <li data-testid="material-row" className={`inbox-row${urgent ? " urgent" : ""}`}>
+    <span className="row-thumb" aria-hidden="true"><Icon name={material.material_types.includes("photos") ? "preview" : "play"} /></span>
+    <div className="row-main">
+      <p className="row-title"><Link className="material-link" prefetch={false} href={`/${locale}/materials/${material.id}`}>{material.title}</Link>{material.priority !== "normal" && <span className={`priority-pill ${material.priority}`}>{urgent && <Icon name="bolt" size={12} />}{m.states.priority[material.priority]}</span>}</p>
+      <p className="row-meta"><span>{photographer(material, locale)}</span><span>{material.governorate}</span>{type && <span>{type}</span>}{files > 0 && <span>{plural(files, w.files, locale)}</span>}<span className="receipt"><bdi dir="ltr">{receipt ?? m.noReceipt}</bdi></span></p>
+      {material.tags?.length ? <ul className="tag-list" aria-label={w.tags}>{material.tags.map(tag => <li key={tag}><bdi>{tag}</bdi></li>)}</ul> : null}
+    </div>
+    <p className={`row-time${urgent ? " urgent" : ""}`}>{now ? w.since.replace("{time}", humanDuration(now - Date.parse(material.created_at), locale)) : longDate(material.created_at, locale)}</p>
+    <ul className="row-states" aria-label={w.states}>{tracks.map(([track, name]) => <li key={track}><span className="visually-hidden">{name}: </span><StateBadge track={track} value={material[track]} locale={locale} /></li>)}</ul>
+    <div className="row-actions"><RowReceive material={material} locale={locale} disabled={disabled} done={done} /></div>
+  </li>;
+}
+
+/** «استلام» من الصف: انتقال `inbox → acknowledged` نفسه الذي في شريط العاجل («الاستلام يبلّغ المراسل أن المحرر رأى مادته»)، بـ If-Match ومفتاح منع التكرار. */
+function RowReceive({ material, locale, disabled, done }: { material: Material; locale: Locale; disabled: boolean; done: () => void }) {
+  const m = messages[locale], me = useUser(), mutation = useMutation(), tag = Number.isSafeInteger(material.row_version) ? `"${material.row_version}"` : null;
+  if (!tag || !transitionOptions(material, me, "editorial").includes("acknowledged")) return null;
+  async function receive() {
+    if (!tag) return;
+    const body = { track: "editorial" as const, to: "acknowledged", reason: m.editor.ackReason };
+    if (await mutation.run(`${material.id}:ack:${tag}`, header => browserApi().POST("/materials/{id}/transitions", { params: { path: { id: material.id }, header: { ...header, "If-Match": tag } }, body }))) done();
+  }
+  return <><button className="secondary small" disabled={disabled || mutation.busy} onClick={() => void receive()} aria-label={`${m.shell.inbox.receive}: ${material.title}`}><Icon name="check" size={16} />{m.shell.inbox.receive}</button>{mutation.status && mutation.status !== 200 ? <ActionStatus status={mutation.status} locale={locale} /> : null}</>;
 }
 
 /** التنبيه العاجل (B1): ما دامت مادة عاجلة بلا اطّلاع، بعدّاد منذ وصولها وزر «اطّلعت»؛ وصوت مرة لكل مادة جديدة ما لم يُكتم على هذا الجهاز. */
-function UrgentAlert({ locale, items, now, done, showAll }: { locale: Locale; items: Material[]; now: number; done: () => void; showAll: () => void }) {
+function UrgentAlert({ locale, items, now, disabled, done, showAll }: { locale: Locale; items: Material[]; now: number; disabled: boolean; done: () => void; showAll: () => void }) {
   const m = messages[locale], t = m.editor, me = useUser(), mutation = useMutation(), heard = useRef(new Set<string>());
   const [muted, setMuted] = useState(() => { try { return localStorage.getItem("ph-urgent-muted") === "1"; } catch { return false; } });
   useEffect(() => {
@@ -123,10 +198,11 @@ function UrgentAlert({ locale, items, now, done, showAll }: { locale: Locale; it
   }
   const due = first.acknowledgement_due_at ? Date.parse(first.acknowledgement_due_at) : NaN, escalation = !single || !Number.isFinite(due) ? null : due > now ? t.escalatesIn.replace("{time}", humanDuration(due - now, locale)) : t.escalationDue;
   return <section className="alert urgent" role="alert" aria-labelledby="urgent-title" data-testid="urgent-alert">
+    <span className="alert-icon" aria-hidden="true"><Icon name="bolt" size={20} /></span>
     <div><h2 id="urgent-title">{single ? t.urgentOne : t.urgentMany.replace("{n}", String(items.length))} {t.since} <span data-testid="urgent-since">{humanDuration(now - Date.parse(first.created_at), locale)}</span></h2>
       {escalation && <p data-testid="urgent-escalation">{escalation}</p>}
       {single ? <p><Link prefetch={false} href={`/${locale}/materials/${first.id}`}>{first.title}</Link></p> : <p>{t.urgentManyHelp}</p>}</div>
-    <div className="actions">{canAck && <button onClick={() => void acknowledge()} disabled={mutation.busy}>{t.ack}</button>}{!single && <button className="secondary" onClick={showAll}>{t.showUrgent}</button>}
+    <div className="actions">{canAck && <button onClick={() => void acknowledge()} disabled={disabled || mutation.busy}>{t.ack}</button>}{!single && <button className="secondary" onClick={showAll}>{t.showUrgent}</button>}
       <label className="check"><input type="checkbox" checked={muted} onChange={e => { setMuted(e.target.checked); try { localStorage.setItem("ph-urgent-muted", e.target.checked ? "1" : "0"); } catch { /* تفضيل محلي اختياري */ } }} />{t.mute}</label></div>
     <ActionStatus status={mutation.status} locale={locale} />
   </section>;

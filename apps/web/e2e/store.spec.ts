@@ -16,7 +16,7 @@ test("editor in chief browses the bilingual catalog, opens an item with a waterm
   await login(page, "chief@example.test");
   await page.getByRole("link", { name: ar.store.title }).click();
   await expect(page.getByTestId("catalog-card")).toHaveCount(2);
-  await page.getByLabel(ar.store.search).fill("1"); await page.getByRole("button", { name: ar.store.browse.searchButton, exact: true }).click();
+  await page.getByLabel(ar.store.search, { exact: true }).fill("1"); await page.getByRole("button", { name: ar.store.browse.searchButton, exact: true }).click();
   await expect(page.getByTestId("catalog-card")).toHaveCount(1);
   await expect(page.getByTestId("catalog-card")).toContainText("150.00");
   await page.getByRole("link", { name: "لقطات اصطناعية 1" }).first().click();

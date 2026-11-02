@@ -1,4 +1,5 @@
 "use client";
+import { NoAccess } from "../empty-state";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { browserApi, dataOrThrow, RequestError } from "@/lib/browser-api";
@@ -22,7 +23,7 @@ export function LicensesPage({ locale }: { locale: Locale }) {
     void browserApi().GET("/licenses", { signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setItems(data.items); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [allowed, attempt]);
-  if (!allowed) return <section className="center-state"><h1>{t.title}</h1><p role="alert">{t.denied}</p></section>;
+  if (!allowed) return <NoAccess locale={locale} me={me} title={t.title} denied={t.denied} />;
   return <><div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p></div><Link prefetch={false} className="button secondary" href={`/${locale}/store/orders`}>{t.invoices}</Link></div>
     {error ? <section className="center-state" role="alert"><p>{m.error}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></section>
       : !items ? <p className="center-state" role="status">{m.loading}</p> : !items.length ? <section className="empty"><p>{t.empty}</p><Link prefetch={false} href={`/${locale}/store`}>{m.store.back}</Link></section>

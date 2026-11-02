@@ -13,24 +13,31 @@ type Props = { locale: Locale; material: Material; tag: string | null; editing: 
 export function ReviewActions(props: Props) {
   const { locale, material, tag, editing, reload, notify } = props, m = messages[locale], t = m.review, me = useUser();
   const available = tracks.filter(track => transitionOptions(material, me, track).length);
-  const reservation = useMutation(), [open, setOpen] = useState(false), opener = useRef<HTMLButtonElement>(null);
+  const reservation = useMutation(), receive = useMutation(), [open, setOpen] = useState(false), opener = useRef<HTMLButtonElement>(null);
   const mayReserve = hasRole(me, "producer", "editor_in_chief") && ["accepted", "in_production"].includes(material.editorial_state) && material.reserved_by === null;
   const mayRelease = !!material.reserved_by && (hasRole(me, "supervisor", "editor_in_chief", "system_admin") || hasRole(me, "producer") && material.reserved_by === me.user_id);
+  // «استلام» (W2، M2): انتقال `inbox → acknowledged` الذي يبلّغ المراسل أن المحرر رأى مادته؛ وبقية الانتقالات في حوار «تحويل الحالة».
+  const mayReceive = !!tag && transitionOptions(material, me, "editorial").includes("acknowledged");
   const close = () => { setOpen(false); opener.current?.focus(); };
   return <>
-    <section className="card" aria-labelledby="review-title"><div className="page-heading"><h2 id="review-title">{t.title}</h2><button className="secondary" disabled={reservation.busy} onClick={reload}>{t.reload}</button></div>
-      <p className="muted">{t.lead}</p>{!tag && <p className="notice">{t.versionMissing}</p>}
-      <div className="actions">{available.length ? <button ref={opener} disabled={!tag} onClick={() => { editing(); setOpen(true); }}>{t.open}</button> : <p className="notice">{t.noTransitions}</p>}
+    <section className="card next-step" aria-labelledby="review-title"><h2 id="review-title">{m.shell.material.nextStep}</h2>
+      {!tag && <p className="notice">{t.versionMissing}</p>}
+      <div className="next-actions">
+        {mayReceive && <button disabled={!tag || receive.busy} onClick={async () => { editing(); if (tag && await receive.run(`${material.id}:ack:${tag}`, header => browserApi().POST("/materials/{id}/transitions", { params: { path: { id: material.id }, header: { ...header, "If-Match": tag } }, body: { track: "editorial", to: "acknowledged", reason: m.editor.ackReason } }))) { notify?.(m.states.editorial_state.acknowledged); reload(); } }}>{m.shell.inbox.receive}</button>}
+        {available.length ? <button ref={opener} className={mayReceive ? "secondary" : undefined} disabled={!tag} onClick={() => { editing(); setOpen(true); }}>{t.open}</button> : <p className="notice">{t.noTransitions}</p>}
         {mayReserve && <button className="secondary" disabled={!tag || reservation.busy || reservation.status === 412} onClick={async () => { editing(); if (tag && await reservation.run(JSON.stringify([material.id, "reserve", tag]), header => browserApi().POST("/materials/{id}/reservation", { params: { path: { id: material.id }, header: { ...header, "If-Match": tag } } }))) reload(); }}>{t.reserve}</button>}
-        {mayRelease && <button className="secondary" disabled={reservation.busy} onClick={async () => { editing(); if (await reservation.run(`${material.id}:release`, header => browserApi().DELETE("/materials/{id}/reservation", { params: { path: { id: material.id }, header } }))) reload(); }}>{material.reserved_by === me.user_id ? t.releaseMine : t.release}</button>}</div>
-      <p className="muted reservation-state">{t.reservation}: <span>{material.reserved_by === undefined ? m.notAvailable : material.reserved_by === null ? t.unreserved : material.reserved_by === me.user_id ? t.yourReservation : t.reserved}</span>{material.reserved_at && <> · {formatDate(material.reserved_at, locale)}</>}</p>
-      <ActionStatus status={reservation.status} locale={locale} />
+        {mayRelease && <button className="secondary" disabled={reservation.busy} onClick={async () => { editing(); if (await reservation.run(`${material.id}:release`, header => browserApi().DELETE("/materials/{id}/reservation", { params: { path: { id: material.id }, header } }))) reload(); }}>{material.reserved_by === me.user_id ? t.releaseMine : t.release}</button>}
+      </div>
+      <p className="caption">{mayReceive ? m.shell.material.receiveHelp : t.lead}</p>
+      <p className="caption reservation-state">{t.reservation}: <span>{material.reserved_by === undefined ? m.notAvailable : material.reserved_by === null ? t.unreserved : material.reserved_by === me.user_id ? t.yourReservation : t.reserved}</span>{material.reserved_at && <> · {formatDate(material.reserved_at, locale)}</>}</p>
+      <ActionStatus status={receive.status || reservation.status} locale={locale} />
+      <button className="quiet small" disabled={reservation.busy} onClick={reload}>{t.reload}</button>
     </section>
     {open && <TransitionDialog locale={locale} material={material} tag={tag} editing={editing} reload={() => { setOpen(false); reload(); }} onClose={close} onDone={label => { setOpen(false); notify?.(label); }} />}
-    <Contributors {...props} />
   </>;
 }
-function Contributors({ locale, material, tag, editing, reload }: Props) {
+/** المساهمون وحصصهم (لمسؤول الحقوق ومدير النظام)؛ في العمود الرئيسي من W2. */
+export function Contributors({ locale, material, tag, editing, reload }: Omit<Props, "notify">) {
   const m = messages[locale], t = m.review, me = useUser(), mutation = useMutation();
   const [rows, setRows] = useState<Contributor[]>(material.contributors?.map(row => ({ ...row })) ?? []);
   const editable = hasRole(me, "rights_officer", "system_admin"), valid = validContributors(rows);
