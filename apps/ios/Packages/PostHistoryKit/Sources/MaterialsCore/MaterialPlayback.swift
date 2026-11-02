@@ -28,8 +28,10 @@ public enum LocalOriginals {
     /// أصل المادة على هذا الهاتف بما عند المكتب، لا بالأحدث؛ فلا تُعرض «لقطة بديلة» ما زالت في الطريق أو ردّها الخادم (409 لأصل
     /// ثانٍ بعد التحقق) على أنها الأصل:
     /// 1. على الخادم أصل متحقَّق ببصمة: السجل الذي تطابق بصمته (`sha256Hex`، تُحسب قبل الرفع) وحده، وإلا لا نسخة هاتف (يُعرض مشتق
-    ///    الخادم أو «قيد المعالجة»)؛ فلا يُعرض سجل يُرفع أو فشل أو أُلغي.
-    /// 2. على الخادم أصل متحقَّق بلا بصمة مكتوبة: سجل أكّده الخادم وحده (`verified` أو `deduplicated`)، الأحدث.
+    ///    الخادم أو «قيد المعالجة»)؛ فلا يُعرض سجل يُرفع أو فشل أو أُلغي. وسجل بلا بصمة محفوظة (من بناء لم يحفظها) لا يُقارن، فيُقبل
+    ///    بالقاعدة 2 وحدها: أكّده الخادم. فسجل يحمل بصمة أخرى لا يُعرض أبدًا.
+    /// 2. على الخادم أصل متحقَّق بلا بصمة مكتوبة (أو بلا بصمة في السجلات): سجل أكّده الخادم وحده (`verified` أو `deduplicated`)،
+    ///    الأحدث.
     /// 3. لا أصل متحقَّق على الخادم بعد: الأحدث مما لم يفشل ولم يُلغَ، ثم الأحدث أيًّا كان (ما صوّره المراسل ولم يصل).
     /// والنسخة على الهاتف شرط في الثلاثة. النسخة الخفيفة لا تُعدّ: مشتق يصنعه التطبيق ويحذفه بعد إيصاله. القراءة وحدها.
     public static func find(for material: Material, in records: [UploadRecord],
@@ -42,12 +44,24 @@ public enum LocalOriginals {
         let chosen: UploadRecord?
         if !hashes.isEmpty {
             chosen = newest(candidates.filter { $0.sha256Hex.map { hashes.contains($0.lowercased()) } ?? false })
+                ?? newest(candidates.filter { ($0.sha256Hex ?? "").isEmpty && confirmed($0.phase) })
         } else if !verified.isEmpty {
             chosen = newest(candidates.filter { confirmed($0.phase) })
         } else {
             chosen = newest(candidates.filter { !unsuccessful($0.phase) }) ?? newest(candidates)
         }
         return chosen.map { LocalOriginal(recordId: $0.id, relativePath: $0.sourcePath, mimeType: $0.mimeType) }
+    }
+
+    /// لماذا لا تُعرض نسخة الهاتف (`find` لم يجد شيئًا)، كما يقولها سطر «قيد المعالجة» في التفاصيل؛ فلا يُقال «الأصل ليس على هذا
+    /// الهاتف» إلا إن صدق. `nil` إن وُجدت نسخة تُعرض.
+    public static func absence(for material: Material, in records: [UploadRecord],
+                               hasLocalCopy: (UploadRecord) -> Bool) -> LocalOriginalAbsence? {
+        guard find(for: material, in: records, hasLocalCopy: hasLocalCopy) == nil else { return nil }
+        let originals = records.filter { $0.materialId == material.id && $0.kind == .original }
+        if originals.isEmpty { return .notOnPhone }
+        if !originals.contains(where: hasLocalCopy) { return .removedFromPhone }
+        return .notTheVerifiedOriginal
     }
 
     /// أكّده الخادم: تحقّق من بصمته أو طابقه بأصل سابق.
@@ -62,6 +76,19 @@ public enum LocalOriginals {
         if case .failed = phase { return true }
         return phase == .cancelled
     }
+}
+
+/// سبب غياب نسخة الهاتف (`LocalOriginals.absence`)، ولكلٍّ جملته في التفاصيل.
+public enum LocalOriginalAbsence: String, Equatable, Sendable, CaseIterable {
+    /// لا سجل رفع لأصل هذه المادة على الهاتف: أُرسلت من جهاز آخر، أو قبل تثبيت التطبيق من جديد، أو مُحي الطابور (المسح أو الإبطال).
+    case notOnPhone
+    /// سجل أصلها على الهاتف لكن ملفه حُذف: بعد الإيصال، بقرار المراسل أو بإعداد «حذف النسخة بعد الإيصال».
+    case removedFromPhone
+    /// على الهاتف نسخة لها، لكنها ليست الأصل الذي تحقّق منه الخادم (لقطة بديلة لم تُقبل، أو رفع لم يصل).
+    case notTheVerifiedOriginal
+
+    /// جملة «قيد المعالجة» في التفاصيل.
+    public var textKey: String { "detail.placeholder.body." + rawValue }
 }
 
 /// الجودة كما يقولها المشغّل: الأصل، أو النسخة الخفيفة بخطوطها (540p أو 360p)، أو البث المتكيّف.
