@@ -65,9 +65,9 @@ const L = {
 /** خطأ يتعرّف عليه العامل فيبلغ عنه بـ `title_overflow` (ADR 0091): سطر لا يتّسع حتى عند 70% */
 export class TitleOverflowError extends Error {
   readonly code = 'title_overflow' as const;
+  override readonly name = 'TitleOverflowError';
   constructor(readonly lineIndex: number, readonly requiredScale: number) {
     super(`title_overflow: line ${lineIndex + 1} needs scale ${Math.round(requiredScale * 1000) / 1000} < ${MIN_TITLE_SCALE}`);
-    this.name = 'TitleOverflowError';
   }
 }
 
