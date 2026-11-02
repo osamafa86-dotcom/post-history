@@ -47,10 +47,12 @@ struct ReplaceShotView: View {
                         }
                     }
                     if importing { ProgressView().frame(maxWidth: .infinity) }
+                    // قيمة ثابتة قبل الالتقاط: تسمية PhotosPicker مغلّف Sendable لا يقرأ حالة العرض المعزولة.
+                    let hasFile = file != nil
                     PhotosPicker(selection: $pickerItem, matching: .any(of: [.videos, .images]), preferredItemEncoding: .current) {
-                        Label(LocalizedStringKey(file == nil ? "send.files.pick" : "a1.file.change"), systemImage: "photo.on.rectangle")
+                        Label(LocalizedStringKey(hasFile ? "a1.file.change" : "send.files.pick"), systemImage: "photo.on.rectangle")
                     }
-                    .buttonStyle(file == nil ? AnyButtonStyle(VLButtonStyle(kind: .solid)) : AnyButtonStyle(VLButtonStyle(kind: .outline)))
+                    .buttonStyle(hasFile ? AnyButtonStyle(VLButtonStyle(kind: .outline)) : AnyButtonStyle(VLButtonStyle(kind: .solid)))
                     .disabled(importing || busy)
                     Button { showFileImporter = true } label: { Label("material.file.fromFiles", systemImage: "folder") }
                         .buttonStyle(.vlGhost)
