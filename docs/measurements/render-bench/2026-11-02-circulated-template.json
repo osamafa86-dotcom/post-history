@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "tool": "render-bench",
+  "role": "product-design",
+  "test_name": "circulated-template-render",
+  "started_at": "2026-11-02T20:51:02Z",
+  "ended_at": "2026-11-02T20:52:25Z",
+  "result": "info",
+  "device": {
+    "platform": "server",
+    "model": "4 vCPU Intel Xeon @ 2.10GHz, 16 GB RAM (cloud container)",
+    "os_version": "Linux 6.18"
+  },
+  "upload_path": "n/a",
+  "file": {
+    "duration_s": 8,
+    "codec": "h264"
+  },
+  "metrics": {
+    "remotion_version": "4.0.537",
+    "node_version": "22.22.0",
+    "ffmpeg_version": "6.1.1",
+    "frames": 240,
+    "fps": 30,
+    "preview_h264_composition": "Circulated-Vertical 1080x1920",
+    "preview_h264_render_time_s": 26.23,
+    "preview_h264_peak_rss_mb": 1726,
+    "preview_h264_pix_fmt": "yuvj420p",
+    "preview_h264_size_bytes": 2873845,
+    "overlay_prores_composition": "Overlay-Vertical 1080x1920",
+    "overlay_prores_render_time_s": 40.73,
+    "overlay_prores_peak_rss_mb": 1654,
+    "overlay_prores_pix_fmt_requested": "yuva444p10le",
+    "overlay_prores_pix_fmt_out": "yuva444p12le",
+    "overlay_prores_size_bytes": 466298062,
+    "composite_ffmpeg_time_s": 11.38,
+    "composite_ffmpeg_peak_rss_mb": 787,
+    "composite_pix_fmt": "yuv420p",
+    "composite_size_bytes": 2625447,
+    "logo_contrast_over_white_vertical": 4.3,
+    "logo_contrast_over_white_horizontal": 4.3,
+    "logo_contrast_over_white_square": 4.58
+  },
+  "notes": "Synthetic plates and sample text only, no material. The composite base clip is FFmpeg testsrc2 (8 s, 1080x1920). Peak RSS is the sum over the whole process tree (node, Chrome Headless Shell, compositor), sampled every 100 ms. ProRes 4444 is written as yuva444p12le even when 10-bit is requested; the overlay is about 58 MB per second, so long clips need disk budget (noted for ADR 0091). Logo contrast: white over the darkest-covered point behind the logo box on a white background, at frame 120, from a transparent still composited over white. Commands are in docs/design/redesign-2026-11/motion/circulated-template/README.md."
+}

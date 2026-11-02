@@ -20,17 +20,20 @@ npm run typecheck
 | `Circulated-Horizontal` | 1920×1080 | صورة تجريبية |
 | `Circulated-Square` | 1080×1080 | صورة تجريبية |
 | `Overlay-Vertical` | 1080×1920 | شفافة، تُركَّب فوق المقطع |
+| `Check-LongLine` | 1080×1920 | صورة تجريبية؛ سطر من 39 حرفًا يصغر ثم يلتفّ |
+
+النصوص في كل التركيبات نصّ تجريبي ظاهر («عنوان تجريبي للمادة المتداولة»، «مدينة، محافظة»)، لا عناوين أخبار ولا أماكن حقيقية.
 
 ## المعاملات
 
 | المعامل | النوع | القاعدة |
 |---|---|---|
-| `titleLines` | `string[]` | سطر إلى ثلاثة؛ ما زاد يُهمل. يقسمها المحرّر على معنى الجملة |
+| `titleLines` | `string[]` | سطر إلى ثلاثة؛ ما زاد يُهمل. يقسمها المحرّر على معنى الجملة. السطر الأطول من عرضه يصغر حتى 80% ثم يلتفّ (`fitText` من `@remotion/layout-utils`) |
 | `location` | `string` | المدينة والمحافظة وحدهما، بلا إحداثيات |
 | `tag` | `string` | «مشاهد متداولة» افتراضيًا |
 | `layout` | `vertical` · `horizontal` · `square` | المقاسات من إطارات Figma |
 | `background` | `plate` · `none` | `none` لطبقة شفافة |
-| `reducedMotion` | `boolean` | تلاشٍ وحده، بلا انزلاق ولا مسح ولا موجات |
+| `reducedMotion` | `boolean` | تلاشٍ وحده، بلا انزلاق ولا مسح ولا موجات ولا تكبير للصورة |
 | `durationInSeconds` | `number` | طول المقطع المتداول؛ الخروج في آخر 0.6 ث |
 
 ## التصدير
@@ -54,7 +57,13 @@ ffmpeg -i clip.mp4 -i out/overlay.mov \
   -filter_complex "[0:v][1:v]overlay=format=auto,format=yuv420p" -c:a copy out/final.mp4
 ```
 
-قيس على هذه الحاوية: 240 إطارًا (8 ث) عمودية بـ H.264 في نحو 22 ثانية، والطبقة الشفافة خرجت `yuva444p12le` وتركّبت فوق صورة ثابتة بلا حواف.
+القياس في `docs/measurements/render-bench/2026-11-02-circulated-template.json`: 240 إطارًا (8 ثوانٍ) على 4 أنوية:
+
+- المعاينة بـ H.264 في 26.2 ثانية، وذروة الذاكرة 1.7 غيغابايت.
+- الطبقة الشفافة في 40.7 ثانية، وخرجت `yuva444p12le` (يُكتب ProRes 4444 بعمق 12 بت ولو طُلب 10). حجمها نحو 58 ميغابايت للثانية.
+- التركيب بـ FFmpeg في 11.4 ثانية.
+
+ومعه تباين الشعار فوق الأبيض.
 
 ## ما في `public/`
 
@@ -66,4 +75,4 @@ ffmpeg -i clip.mp4 -i out/overlay.mov \
 python3 docs/design/redesign-2026-11/tools/make-plates.py docs/design/redesign-2026-11/motion/circulated-template/public/plates
 ```
 
-ومخرجات التصدير (`*.mp4` و`*.mov`) خارج المستودع (`.gitignore`).
+ومخرجات التصدير والصور الثابتة في `out/`، وهو خارج المستودع (`.gitignore`).

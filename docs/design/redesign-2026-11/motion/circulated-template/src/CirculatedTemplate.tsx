@@ -10,6 +10,7 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
+import { fitText } from '@remotion/layout-utils';
 import { TEXT_FONT, TITLE_FONT } from './fonts';
 
 export type Layout = 'vertical' | 'horizontal' | 'square';
@@ -25,21 +26,27 @@ export type CirculatedProps = {
   readonly durationInSeconds: number;
 };
 
-// الفيروزي المطوَّر (specs/video-template.md)
+// الفيروزي المطوَّر (specs/video-template.md). كل قيمة رمز من tokens.v2.json أو لون الشعار (ADR 0085)
 const C = {
-  signal: '#42CFDF',
-  logo: '#5CB0BE',
-  deep: 'rgba(10, 70, 80, 0.9)',
-  night: '6, 38, 45',
-  gold: '#D0A030',
-  ink: '#04232A',
+  signal: '#42CFDF', // color/brand/300
+  logo: '#5CB0BE', // لون الشعار
+  deep: 'rgba(10, 70, 80, 0.9)', // color/brand/800 بعتامة 90%
+  night: '10, 31, 38', // color/brand/950 للتدرّجين وهالة الشعار
+  gold: '#D0A030', // color/accent/gold/500
+  ink: '#0A1F26', // color/brand/950 للنص فوق الفيروزي والذهبي
 };
+
+// عتامة هالة الشعار: الأبيض فوق brand/950 بعتامة 55% فوق خلفية بيضاء = 3.86:1 (عنصر غير نصّي، الحدّ 3:1)
+const LOGO_PLATE_ALPHA = 0.55;
+// السطر يصغر حتى 80% من حجمه قبل أن يلتفّ
+const MIN_TITLE_SCALE = 0.8;
 
 // المقاسات كما في إطارات Figma VT-01 وVT-04 وVT-05
 const L = {
-  vertical: { m: 72, logoW: 300, logoTop: 220, bottom: 560, title: 66, tag: 28, loc: 32, plate: 'plates/plate-9x16.jpg' },
-  horizontal: { m: 96, logoW: 300, logoTop: 72, bottom: 110, title: 64, tag: 28, loc: 32, plate: 'plates/plate-16x9.jpg' },
-  square: { m: 64, logoW: 260, logoTop: 64, bottom: 96, title: 58, tag: 26, loc: 30, plate: 'plates/plate-1x1.jpg' },
+  // block: أقصى عرض للكتلة السفلية من عرض الإطار؛ الأفقي يبقى شريطًا سفليًا في جهة البداية لا يمتدّ على العرض كله
+  vertical: { m: 72, logoW: 300, logoTop: 220, bottom: 560, title: 66, tag: 28, loc: 32, block: 1, plate: 'plates/plate-9x16.jpg' },
+  horizontal: { m: 96, logoW: 300, logoTop: 72, bottom: 110, title: 64, tag: 28, loc: 32, block: 0.55, plate: 'plates/plate-16x9.jpg' },
+  square: { m: 64, logoW: 260, logoTop: 64, bottom: 96, title: 58, tag: 26, loc: 30, block: 1, plate: 'plates/plate-1x1.jpg' },
 } as const;
 
 const EASE_IN = Easing.bezier(0.16, 1, 0.3, 1);
@@ -161,10 +168,25 @@ export const CirculatedTemplate: React.FC<CirculatedProps> = ({
   const pillH = s.loc * 0.69 + ring;
   const cx = W - s.m - s.loc * 0.5 - ring / 2;
   const cy = H - s.bottom - pillH / 2;
-  const kenBurns = interpolate(frame, [0, durationInFrames], [1, 1.06]);
+  // تكبير بطيء للصورة التجريبية، ويتوقف في وضع تقليل الحركة
+  const kenBurns = rm ? 1 : interpolate(frame, [0, durationInFrames], [1, 1.06]);
+
+  // عرض السطر الأقصى: الإطار ناقص الهامشين والعمود وحشوة اللوح
+  const padX = Math.round(s.title * 0.36);
+  const accentW = Math.max(8, Math.round(s.title * 0.18));
+  const maxLineW = Math.min(W - 2 * s.m, Math.round(W * s.block)) - accentW - 2 * padX;
+  const lineSize = (line: string) => {
+    const fit = fitText({ text: line, withinWidth: maxLineW, fontFamily: TITLE_FONT, fontWeight: 700 }).fontSize;
+    return Math.max(Math.round(s.title * MIN_TITLE_SCALE), Math.min(s.title, Math.floor(fit)));
+  };
+
+  // هالة الشعار: قطع ناقص يغطّي صندوق الشعار بعتامة ثابتة ثم يتلاشى
+  const logoH = s.logoW * (125 / 300);
+  const plateRx = Math.round((s.logoW / 2) * 1.414 / 0.6) + 20;
+  const plateRy = Math.round((logoH / 2) * 1.414 / 0.6) + 20;
 
   return (
-    <AbsoluteFill style={{ backgroundColor: background === 'none' ? 'transparent' : '#06090d' }}>
+    <AbsoluteFill style={{ backgroundColor: background === 'none' ? 'transparent' : `rgb(${C.night})` }}>
       {background === 'plate' ? (
         <AbsoluteFill style={{ overflow: 'hidden' }}>
           <Img src={staticFile(s.plate)} style={{ width: '100%', height: '100%', objectFit: 'cover', scale: String(kenBurns) }} />
@@ -175,9 +197,17 @@ export const CirculatedTemplate: React.FC<CirculatedProps> = ({
       <AbsoluteFill
         style={{
           opacity: scrim * (1 - xScrim),
-          background: `linear-gradient(to bottom, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0) ${Math.round(H * 0.22)}px, rgba(0,0,0,0) ${Math.round(
+          background: `linear-gradient(to bottom, rgba(${C.night},0.45) 0%, rgba(${C.night},0) ${Math.round(H * 0.22)}px, rgba(0,0,0,0) ${Math.round(
             H * 0.48,
           )}px, rgba(${C.night},0.55) ${Math.round(H * 0.69)}px, rgba(${C.night},0.94) 100%)`,
+        }}
+      />
+
+      {/* 1أ · هالة الشعار: تضمن قراءته فوق أي لقطة، حتى البيضاء */}
+      <AbsoluteFill
+        style={{
+          opacity: logo * (1 - xLogo),
+          background: `radial-gradient(ellipse ${plateRx}px ${plateRy}px at ${s.m + s.logoW / 2}px ${s.logoTop + logoH / 2}px, rgba(${C.night},${LOGO_PLATE_ALPHA}) 0%, rgba(${C.night},${LOGO_PLATE_ALPHA}) 60%, rgba(${C.night},0) 100%)`,
         }}
       />
 
@@ -240,7 +270,7 @@ export const CirculatedTemplate: React.FC<CirculatedProps> = ({
         <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'stretch' }}>
           <div
             style={{
-              width: Math.max(8, Math.round(s.title * 0.18)),
+              width: accentW,
               background: `linear-gradient(to bottom, ${C.signal}, ${C.logo})`,
               boxShadow: `0 0 22px rgba(66,207,223,${0.7 * accent})`,
               transformOrigin: 'center bottom',
@@ -252,12 +282,14 @@ export const CirculatedTemplate: React.FC<CirculatedProps> = ({
             {lines.map((line, i) => {
               const box = lineIn(i);
               const txt = textIn(i);
+              const size = lineSize(line);
               return (
                 <div
                   key={i}
                   style={{
                     background: C.deep,
-                    padding: `${Math.round(s.title * 0.15)}px ${Math.round(s.title * 0.36)}px ${Math.round(s.title * 0.21)}px`,
+                    padding: `${Math.round(s.title * 0.15)}px ${padX}px ${Math.round(s.title * 0.21)}px`,
+                    maxWidth: maxLineW + 2 * padX,
                     // المسح من اليمين (جهة القراءة) إلى اليسار
                     clipPath: rm ? undefined : `inset(0 0 0 ${(1 - box) * 100}%)`,
                     opacity: (rm ? box : 1) * (1 - xLines),
@@ -268,10 +300,12 @@ export const CirculatedTemplate: React.FC<CirculatedProps> = ({
                     style={{
                       fontFamily: TITLE_FONT,
                       fontWeight: 700,
-                      fontSize: s.title,
+                      fontSize: size,
                       lineHeight: 1.2,
                       color: '#FFFFFF',
-                      whiteSpace: 'nowrap',
+                      // بعد أدنى حجم يلتفّ السطر داخل لوحه بدل أن يُقصّ عند الحافة
+                      whiteSpace: 'normal',
+                      textWrap: 'balance',
                       opacity: txt,
                       translate: rm ? undefined : `${(1 - txt) * 28}px 0px`,
                     }}
