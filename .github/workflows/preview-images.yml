@@ -53,7 +53,9 @@ jobs:
           for i in api:node web:node media:media; do
             img=post-history-preview-${i%%:*}:latest
             [ "$(docker image inspect -f '{{.Config.User}}' "$img")" = "${i#*:}" ] || { echo "$img: not the ${i#*:} user"; exit 1; }
-            if docker image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$img" | grep -iE '(secret|password|token|key)='; then
+            # GPG_KEY in the python base image is the public fingerprint of the Python release signing key, not a secret.
+            if docker image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$img" | grep -vE '^GPG_KEY=[0-9A-F]{40}$' \
+              | grep -iE '(secret|password|token|key)='; then
               echo "$img: secret-looking variable baked in"; exit 1; fi
           done
       - name: Preview compose on these images (web, desktop upload, media worker, memory under 2560 MB; worker measured on 60 s clips)
