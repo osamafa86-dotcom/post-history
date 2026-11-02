@@ -5,7 +5,16 @@ import { constantTimeEqual } from '../common/crypto';
 import { ApiError } from '../common/errors';
 import { Public } from '../identity/auth.guard';
 import type { components } from '../generated/api';
-import { type MediaAlignmentBody, type MediaDerivativeBody, MediaService, type MediaSessionView, type MediaVerificationBody, type MediaVerificationResult } from './media.service';
+import {
+  type MediaAlignmentBody,
+  type MediaDerivativeBody,
+  type MediaRenderFailureBody,
+  type MediaRenderJob,
+  MediaService,
+  type MediaSessionView,
+  type MediaVerificationBody,
+  type MediaVerificationResult,
+} from './media.service';
 
 /**
  * نقاط عامل الوسائط (ADR 0006، x-internal في العقد v0.1): خارج /v1 وخارج حارس الجلسات، ومقصورة على INTERNAL_ALLOWED_CIDRS.
@@ -59,6 +68,30 @@ export class MediaController {
   async alignment(@Headers('authorization') auth: string | undefined, @Param('file_id') fileId: string, @Body() body: unknown): Promise<void> {
     this.authorize(auth);
     await this.media.putAlignment(fileId, validateBody<MediaAlignmentBody>('/internal/media/files/{file_id}/alignment', 'put', body));
+  }
+
+  // نسخ قالب «مواد متداولة» (ADR 0091): القراءة والالتقاط والفشل؛ النجاح بتسجيل المشتق circulated_render
+  @Public()
+  @Get('renders/:render_id')
+  render(@Headers('authorization') auth: string | undefined, @Param('render_id') renderId: string): Promise<MediaRenderJob> {
+    this.authorize(auth);
+    return this.media.render(renderId);
+  }
+
+  @Public()
+  @Post('renders/:render_id/start')
+  @HttpCode(204)
+  async startRender(@Headers('authorization') auth: string | undefined, @Param('render_id') renderId: string): Promise<void> {
+    this.authorize(auth);
+    await this.media.startRender(renderId);
+  }
+
+  @Public()
+  @Post('renders/:render_id/failure')
+  @HttpCode(204)
+  async failRender(@Headers('authorization') auth: string | undefined, @Param('render_id') renderId: string, @Body() body: unknown): Promise<void> {
+    this.authorize(auth);
+    await this.media.failRender(renderId, validateBody<MediaRenderFailureBody>('/internal/media/renders/{render_id}/failure', 'post', body));
   }
 
   private authorize(header: string | undefined, alternate?: string): void {

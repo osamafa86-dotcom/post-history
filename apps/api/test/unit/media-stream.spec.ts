@@ -1,4 +1,4 @@
-import { isMediaEvent } from '../../src/outbox/media-stream';
+import { isMediaEvent, MEDIA_STREAM, mediaStreamFor, RENDER_STREAM } from '../../src/outbox/media-stream';
 import type { OutboxRow } from '../../src/outbox/outbox.dispatcher';
 
 describe('media:events selection', () => {
@@ -14,5 +14,11 @@ describe('media:events selection', () => {
 
   it('keeps every other event off the stream', () => {
     for (const type of ['upload.failed', 'upload.started', 'material.created', 'auth.recovery_approved']) expect(isMediaEvent(row(type))).toBe(false);
+  });
+
+  it('routes render requests to their own media:renders stream and keeps the other render events off both (ADR 0091)', () => {
+    expect(mediaStreamFor(row('render.requested'))).toBe(RENDER_STREAM);
+    expect(mediaStreamFor(row('export.requested'))).toBe(MEDIA_STREAM);
+    for (const type of ['render.started', 'render.completed', 'render.failed']) expect(mediaStreamFor(row(type))).toBeNull();
   });
 });

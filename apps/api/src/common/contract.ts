@@ -46,6 +46,11 @@ export function schemaValidator(name: string): ValidateFunction {
   return compile(`#/components/schemas/${escape(name)}`);
 }
 
+/** مكوّن مسمّى في العقد كما هو، للقراءة وحدها (مثل نمط RenderTitleLine لنص يبنيه الخادم). */
+export function componentSchema(name: string): Readonly<Record<string, any>> {
+  return contract().components.schemas[name];
+}
+
 /** مدقق لملف مخطط مستقل في contracts/schemas بمعرّفه ($id)، مثل schemaFileValidator('notification-channel-payload.json'). */
 export function schemaFileValidator(file: string): ValidateFunction {
   const id = `https://post-history/contracts/schemas/${file}`;
