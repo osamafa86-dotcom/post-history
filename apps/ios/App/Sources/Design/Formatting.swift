@@ -24,6 +24,16 @@ enum VLFormat {
         return formatter.string(from: date)
     }
 
+    /// «1 نوفمبر 2026» / «November 1, 2026» بلغة التطبيق وأرقام لاتينية (يوم مجموعة في «موادي»، وتاريخ التصوير).
+    static func day(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        let english = Bundle.main.preferredLocalizations.first?.hasPrefix("en") == true
+        formatter.locale = Locale(identifier: english ? "en_US" : "ar@numbers=latn")
+        formatter.timeZone = .current
+        formatter.setLocalizedDateFormatFromTemplate("d MMMM y")
+        return formatter.string(from: date)
+    }
+
     /// «3:05» أو «1:02:05».
     static func duration(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds > 0 else { return "" }

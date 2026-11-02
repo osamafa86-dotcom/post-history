@@ -7,6 +7,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
 
+    /// التطبيق عمودي، والمشغّل ملء الشاشة وحده يسمح بالأفقي (`OrientationLock`، ADR 0089).
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        OrientationLock.mask
+    }
+
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
         guard identifier == UploadServices.backgroundSessionIdentifier else { return completionHandler() }
         UploadServices.shared.transport.backgroundCompletionHandler = completionHandler

@@ -13,15 +13,19 @@ public struct SendBatch: Codable, Equatable, Sendable, Identifiable {
     public var materialIds: [UUID]
     public var createdAt: Date
     public var receiptShown: Bool
+    /// جواب سؤال الحساسية للإرسالة («نعم» في أيٍّ من الثلاثة): تُحجب صور موادها في صفوف الرفع قبل أن تُعرف المادة من الخادم
+    /// (ADR 0089). `nil` لملف كتبه بناء سابق، فتُحجب حتى تُعرف.
+    public var sensitive: Bool?
 
     public init(id: UUID = UUID(), title: String, fileKeys: [String] = [], materialIds: [UUID] = [], createdAt: Date = Date(),
-                receiptShown: Bool = false) {
+                receiptShown: Bool = false, sensitive: Bool? = nil) {
         self.id = id
         self.title = title
         self.fileKeys = fileKeys
         self.materialIds = materialIds
         self.createdAt = createdAt
         self.receiptShown = receiptShown
+        self.sensitive = sensitive
     }
 
     /// ملف كتبه بناء سابق من هذا الطلب بلا مفاتيح الملفات يُقرأ كما هو.
@@ -33,6 +37,7 @@ public struct SendBatch: Codable, Equatable, Sendable, Identifiable {
         materialIds = try c.decode([UUID].self, forKey: .materialIds)
         createdAt = try c.decode(Date.self, forKey: .createdAt)
         receiptShown = try c.decode(Bool.self, forKey: .receiptShown)
+        sensitive = try c.decodeIfPresent(Bool.self, forKey: .sensitive)
     }
 }
 
@@ -139,8 +144,8 @@ public final class SendBatchLedger {
 
     /// قبل أول `POST /materials`: الإرسالة بمعرّفها ومفاتيح ملفاتها، مفتوحةً حتى `finish`.
     @discardableResult
-    public func begin(title: String, fileKeys: [String], now: Date = Date()) -> SendBatch {
-        let batch = SendBatch(title: title, fileKeys: fileKeys, createdAt: now)
+    public func begin(title: String, fileKeys: [String], sensitive: Bool? = nil, now: Date = Date()) -> SendBatch {
+        let batch = SendBatch(title: title, fileKeys: fileKeys, createdAt: now, sensitive: sensitive)
         batches.insert(batch, at: 0)
         open.insert(batch.id)
         commit()
@@ -224,7 +229,8 @@ public enum BatchedSubmission {
                            create: (String, MaterialCreate) async throws -> UUID,
                            enqueue: (MaterialDraft.PickedFile, UUID, MaterialCreate) async throws -> Void) async -> Outcome {
         let batch = ledger.begin(title: draft.title.trimmingCharacters(in: .whitespacesAndNewlines),
-                                 fileKeys: draft.files.map(\.createIdempotencyKey))
+                                 fileKeys: draft.files.map(\.createIdempotencyKey),
+                                 sensitive: draft.sensitivity.map { $0.minors || $0.injured || $0.graphic })
         var queued: [UUID] = []
         let outcome = await DraftSubmission.run(draft, dynamicFields: dynamicFields, create: create) { file, materialId, body in
             ledger.add(materialId, to: batch.id)

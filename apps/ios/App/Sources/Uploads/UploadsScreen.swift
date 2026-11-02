@@ -9,6 +9,7 @@ import UploadCore
 /// الإلغاء زرّ بتأكيد (ADR 0081)، والإزالة زرّ بتأكيد.
 struct UploadsScreen: View {
     @EnvironmentObject private var queue: UploadQueueModel
+    @EnvironmentObject private var materials: MyMaterialsModel
 
     @State private var cancelTarget: UploadRecord?
     @State private var removeTarget: UploadRecord?
@@ -152,9 +153,11 @@ struct UploadsScreen: View {
 
     private func row(_ rec: UploadRecord) -> some View {
         let item = queue.item(rec)
+        // الحسّاسة (أو مجهولة الحساسية) مموّهة بقاعدة المعرض نفسها (ADR 0089).
         return UploadRow(title: rec.materialTitle ?? rec.filename, thumbnailPath: queue.localCopies.contains(rec.id) ? rec.sourcePath : nil,
                          isVideo: rec.mimeType?.hasPrefix("video") ?? false, item: item,
-                         status: UploadRowStatus.make(item, network: queue.networkState)) {
+                         status: UploadRowStatus.make(item, network: queue.networkState),
+                         concealed: queue.concealsPreview(rec, materials: materials.items)) {
             actions(rec, item)
         }
     }

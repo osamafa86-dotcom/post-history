@@ -122,11 +122,13 @@ extension ButtonStyle where Self == VLButtonStyle {
 
 extension ButtonStyle where Self == VLGhostButtonStyle { static var vlGhost: VLGhostButtonStyle { VLGhostButtonStyle() } }
 
-/// زر أيقونة دائري 44×44 بسطح غائر (إغلاق، إعدادات، إشعارات)؛ عنوانه لقارئ الشاشة إلزامي.
+/// زر أيقونة دائري 44×44 بسطح غائر (إغلاق، إعدادات، إشعارات، العرض والتصفية)؛ عنوانه لقارئ الشاشة إلزامي.
+/// قيمة الشارة لقارئ الشاشة «غير مقروءة» افتراضيًا، و`badgeValue` لغيرها (عدد الفلاتر المفعّلة).
 struct VLIconButton: View {
     let systemImage: String
     let label: LocalizedStringKey
     var badge: Int = 0
+    var badgeValue: Text?
     let action: () -> Void
 
     var body: some View {
@@ -151,7 +153,7 @@ struct VLIconButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(label))
-        .accessibilityValue(badge > 0 ? Text("a11y.unread \(badge)") : Text(verbatim: ""))
+        .accessibilityValue(badge > 0 ? (badgeValue ?? Text("a11y.unread \(badge)")) : Text(verbatim: ""))
     }
 }
 

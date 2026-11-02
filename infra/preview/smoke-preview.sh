@@ -110,6 +110,12 @@ if (!/noindex/.test(page.headers["x-robots-tag"] ?? "")) die(`no X-Robots-Tag on
 if (!page.body.includes("Preview: test data and accounts only")) die(`no preview banner in the page (${page.status})`);
 say("noindex header and preview banner on the page: ok");
 if (!(await req("GET", "/robots.txt")).body.includes("Disallow: /")) die("robots.txt does not disallow");
+const font = await req("GET", "/fonts/Rubik-Bold.woff2");
+if (font.status !== 200 || !/font\/woff2/.test(font.headers["content-type"] ?? "")) die(`self-hosted font through the edge: ${font.status} ${font.headers["content-type"] ?? ""}`);
+const sheets = [...new Set(page.body.match(/\/_next\/static\/[A-Za-z0-9._\/-]+\.css/g) ?? [])];
+const css = (await Promise.all(sheets.map((h) => req("GET", h)))).map((r) => (r.status === 200 ? r.body : "")).join("");
+if (!sheets.length || !css.includes("Rubik") || !css.includes("/fonts/")) die(`page stylesheets do not load the v2 fonts (${sheets.length} sheets)`);
+say(`self-hosted font and ${sheets.length} page stylesheet(s) with the v2 fonts through the edge: ok`);
 const json = { origin, "x-requested-with": "post-history-web", "content-type": "application/json" };
 const login = await req("POST", "/api/bff/auth/login", json, JSON.stringify({ email: process.env.EMAIL, password: process.env.PASSWORD }));
 if (login.status !== 200) die(`demo login through the web: ${login.status} ${login.body}`);
