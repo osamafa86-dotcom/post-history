@@ -32,7 +32,7 @@ const ICONS = {
 const T = {
   hint: ['نموذج تجريبي: الملفات والصور عيّنات، ولا يُرسل شيء.', 'Prototype: files and images are samples. Nothing is sent.'],
   hello: ['مساء الخير، سامي', 'Good evening, Sami'], sendField: ['إرسال من الميدان', 'Send from the field'],
-  shareHint: ['أو شارك من معرض الصور مباشرة: اختر المقاطع ← مشاركة ← بوست ميدان', 'Or share straight from Photos: pick clips → Share → Post Maydan'],
+  shareHint: ['أو شارك من معرض الصور مباشرة: اختر المقاطع ← مشاركة ← ميدان بوست', 'Or share straight from Photos: pick clips → Share → Maydan Post'],
   recent: ['آخر الإرسالات', 'Recent sends'], g2: ['غرق الخيام بعد المنخفض الجوي', 'Tents flooded after the storm'], arrived: ['وصل', 'Arrived'], mine: ['موادي', 'My materials'],
   newSend: ['إرسال جديد', 'New send'], files: ['3 ملفات', '3 files'], lightStarted: ['نجهّز نسخة خفيفة على الهاتف الآن، ويبدأ رفعها حين تضغط «أرسل».', 'Preparing a light copy on your phone. It starts uploading when you tap Send.'],
   fTitle: ['عنوان التغطية', 'Coverage title'], titlePh: ['مثال: توزيع مساعدات في مخيم النصيرات', 'e.g. Aid distribution in Nuseirat camp'],

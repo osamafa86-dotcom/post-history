@@ -59,7 +59,7 @@ function tokenCss(ids) {
 
 // ── النصوص بالعربية والإنجليزية ──────────────────────────────────────────────
 const T = {
-  pageTitle: ['اتجاهات بوست ميدان', 'Post Maydan directions'],
+  pageTitle: ['اتجاهات ميدان بوست', 'Maydan Post directions'],
   pageLede: ['ثلاث هويات مقترحة لتطبيق المراسل والمكتبة المرئية. جرّب كل اتجاه بالوضعين واللغتين، ثم اختر واحدًا أو امزج بين اثنين.', 'Three proposed identities for the reporter app and the visual library. Try each one in both modes and both languages, then pick one or mix two.'],
   lang: ['English', 'عربي'], dark: ['داكن', 'Dark'], light: ['فاتح', 'Light'], stress: ['عنوان طويل و12 وسمًا', 'Long title + 12 tags'],
   a: ['بثّ', 'Broadcast'], b: ['ميدان', 'Field'], c: ['إشارة ✓', 'Signal ✓'],
@@ -448,7 +448,7 @@ function page(ids) {
   const pairs = pairsFor(ids);
   const fontsHref = 'https://fonts.googleapis.com/css2?family=Alexandria:wght@700;800&family=Baloo+Bhaijaan+2:wght@600;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&family=Noto+Kufi+Arabic:wght@400;500;600;700&family=Readex+Pro:wght@300..700&family=Rubik:wght@500;700;800&display=swap';
   const tabs = ids.length > 1 ? `<nav class="tabs" role="tablist">${ids.map((d) => `<button role="tab" data-d="${d}" aria-selected="false"><span class="lt">${d.toUpperCase()}</span>${t(d)}</button>`).join('')}</nav>` : `<h2 class="sec" style="margin-top:22px">${t(ids[0])}</h2>`;
-  return `<title>اتجاهات بوست ميدان</title>
+  return `<title>اتجاهات ميدان بوست</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="${fontsHref}">
 <style>${tokenCss(ids)}${CSS}</style>
