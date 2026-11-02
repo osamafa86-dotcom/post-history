@@ -1,4 +1,4 @@
-// تغليف «بوست ميدان»: الأيقونة (iOS 1024 + طبقتا أندرويد)، ولقطات المتجرين من النموذج الحيّ.
+// تغليف «ميدان بوست»: الأيقونة (iOS 1024 + طبقتا أندرويد)، ولقطات المتجرين من النموذج الحيّ.
 // الاستعمال: node tools/build-packaging.mjs   (يتطلب prototype/post-maydan.html مبنيًا)
 import { createRequire } from 'node:module';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';

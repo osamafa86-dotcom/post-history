@@ -1,7 +1,9 @@
-# مواصفة تطبيق المراسل «بوست ميدان» — v2
+# مواصفة تطبيق المراسل «ميدان بوست» — v2
+
+> **الاسم:** «ميدان بوست» بالعربية و"Maydan Post" بالإنجليزية، بهذا الترتيب (قرار المالك 2026-11-02، كان «بوست ميدان»). أسماء الملفات (`post-maydan.*`) معرّفات تبقى كما هي.
 
 **المصادر:** المواصفة `docs/design/redesign-2026-11/design-brief.md` §5 · نظام التصميم `docs/design/design-system-v2.md` ·
-Figma صفحة `v2 — Post Maydan` في https://www.figma.com/design/U4OJG4hM6NoPt7SsFM7zkO · اللقطات
+Figma صفحة `v2 — Maydan Post` في https://www.figma.com/design/U4OJG4hM6NoPt7SsFM7zkO · اللقطات
 `docs/design/redesign-2026-11/screens/` · العقد `contracts/openapi.yaml` (`MaterialCreate`).
 
 كل الشاشات RTL بعرض 390pt (الأدنى 375pt)، والإنجليزية بالتخطيط المنطقي نفسه. الفاتح أساس، والداكن يتبع الهاتف.

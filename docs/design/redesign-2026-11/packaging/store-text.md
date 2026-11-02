@@ -1,4 +1,4 @@
-# نصوص المتجرين — «بوست ميدان»
+# نصوص المتجرين — «ميدان بوست»
 
 التطبيق داخلي لمراسلي شبكة فلسطين بوست (حسابات تُنشئها الإدارة)، فالنشر المقترح **غير مُدرج** في App Store
 (Unlisted) و«اختبار داخلي/مغلق» في Google Play، والنصوص مكتوبة لمن يصل بالرابط.
@@ -7,7 +7,7 @@
 
 | | العربية | English |
 |---|---|---|
-| الاسم (≤ 30) | بوست ميدان | Post Maydan |
+| الاسم (≤ 30) | ميدان بوست | Maydan Post |
 | العنوان الفرعي iOS (≤ 30) | من الميدان إلى المكتبة المرئية | From the field to the library |
 | الوصف القصير Play (≤ 80) | أرسل مقاطعك من الميدان بخطوة واحدة، وتابع وصولها ومراجعتها. | Send field footage in one step and follow its delivery and review. |
 
@@ -15,7 +15,7 @@
 
 ### العربية
 
-بوست ميدان تطبيق مراسلي شبكة فلسطين بوست لإرسال المواد المرئية من الميدان إلى المكتبة المرئية.
+ميدان بوست تطبيق مراسلي شبكة فلسطين بوست لإرسال المواد المرئية من الميدان إلى المكتبة المرئية.
 
 - **إرسال بخطوة واحدة:** اختر المقاطع أو شاركها من معرض الصور، واكتب عنوان التغطية ونوعها ووسومها، وأجب عن سؤال
   الحساسية، ثم أرسل.
@@ -28,7 +28,7 @@
 
 ### English
 
-Post Maydan is the Palestine Post network’s app for reporters to send footage from the field to the visual library.
+Maydan Post is the Palestine Post network’s app for reporters to send footage from the field to the visual library.
 
 - **One-step sending:** pick clips or share them from Photos, add the coverage title, type and tags, answer the safety
   question, and send.

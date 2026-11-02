@@ -1,6 +1,6 @@
 # نظام التصميم — المكتبة المرئية
 
-> **v2 «إشارة» حلّ محلّ هذا النظام لتطبيق المراسل «بوست ميدان»** (ADR 0085): انظر `design-system-v2.md` و`tokens.v2.json`.
+> **v2 «إشارة» حلّ محلّ هذا النظام لتطبيق المراسل «ميدان بوست»** (ADR 0085): انظر `design-system-v2.md` و`tokens.v2.json`.
 > هذا الملف يبقى مرجعًا لصفحات الويب حتى تصل مرحلتها في الانتقال.
 
 **ملف Figma:** «Visual Library — Design System» — https://www.figma.com/design/U4OJG4hM6NoPt7SsFM7zkO
