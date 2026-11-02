@@ -6,19 +6,22 @@ import UploadCore
 /// «موادي»: ما أرسله المراسل وحالاته الثلاث المستقلة والخط الزمني لكل مادة. بلا إحداثيات ولا أسماء مصادر.
 @MainActor
 final class MyMaterialsModel: ObservableObject {
-    @Published private(set) var items: [PostHistoryAPI.Material] = []
+    /// المواد وتقدّم الصفحات وآخر تحديث (`MaterialsListState`، مختبر): كل تحميل يأخذ تذكرة جيله حين يبدأ، ونتيجته تسقط إن مُسحت
+    /// القائمة بعدها (المسح الطارئ والخروج والإبطال)، فلا تعود قائمة المراسل السابق إلى الذاكرة.
+    @Published private(set) var list = MaterialsListState()
     @Published private(set) var loading = false
     /// صفحة تالية في الطريق أو في الطابور: «لا مواد بهذا الفلتر» لا تُقال قبل أن تنتهي.
     @Published private(set) var loadingMore = false
+    @Published private(set) var timelines: [UUID: MaterialTimeline] = [:]
+    var items: [PostHistoryAPI.Material] { list.items }
     /// تقدّم الصفحات (`MaterialsFeed.progress`) مع فشل آخر تحميل؛ مفتاح مهمة «الصفحة التالية» في آخر المعرض. لا يتغيّر إلا بطلب
     /// أُرسل (صفحة غيّرت المؤشر أو النهاية، أو طلب فشل أو نجح بعد فشل)، فتحميل بلا طلب لا يعيد المهمة ولا تدور (ADR 0089).
-    @Published private(set) var pages = PageProgress()
+    var pages: PageProgress { list.pages }
     var reachedEnd: Bool { pages.reachedEnd }
     /// آخر تحميل فشل؛ الإلغاء ليس فشلًا (`LoadOutcome`).
     var failed: Bool { pages.failed }
     /// آخر تحديث ناجح؛ عند الفشل تبقى البيانات المعروضة مع شريط «غير محدّث منذ …».
-    @Published private(set) var lastUpdated: Date?
-    @Published private(set) var timelines: [UUID: MaterialTimeline] = [:]
+    var lastUpdated: Date? { list.lastUpdated }
     let feed: MaterialsFeed
     /// «الصفحة التالية» يملكها النموذج في مهمة غير مهيكلة: لا يلغيها اختفاء آخر المعرض ولا تحميل آخر، ولا تُطلب غيرها وهي جارية
     /// أو في الطابور. الجيل يمنع مهمة ألغاها المسح من محو مهمة بعده.
@@ -52,14 +55,14 @@ final class MyMaterialsModel: ObservableObject {
     }
 
     private func update(_ fetch: (MaterialsFeed) async throws -> [PostHistoryAPI.Material]) async {
+        let ticket = list.ticket()
         loading = true
         defer { loading = false }
         do {
             let fresh = try await fetch(feed)
-            await settle(.success(fresh))
-            lastUpdated = Date()
+            await settle(ticket, .success(fresh), stamp: true)
         } catch {
-            await settle(.failure(error))
+            await settle(ticket, .failure(error))
         }
     }
 
@@ -76,52 +79,54 @@ final class MyMaterialsModel: ObservableObject {
     }
 
     private func loadMore() async {
+        let ticket = list.ticket()
         loadingMore = true
         defer { loadingMore = false }
         do {
             let fresh = try await feed.loadMore()
-            await settle(.success(fresh))
+            await settle(ticket, .success(fresh))
         } catch {
-            await settle(.failure(error))
+            await settle(ticket, .failure(error))
         }
     }
 
-    /// بعد كل تحميل: الإلغاء (مهمة ألغاها SwiftUI، أو طلب URLSession أُلغي معها) لا يُعدّ فشلًا فلا شريط ولا زرّ ولا «لا مواد بهذا
-    /// الفلتر» قبل أوانها؛ والفشل يُبقي المعروض. وما لم يتغيّر لا يُنشر، فلا تُعاد الشاشات ولا مهمة آخر المعرض بلا سبب.
-    private func settle(_ result: Result<[PostHistoryAPI.Material], any Error>) async {
-        var next = await feed.progress
-        switch result {
-        case .success(let fresh):
-            if fresh != items { items = fresh }
-            next.failed = false
-        case .failure(let error):
-            next.failed = LoadOutcome.isCancellation(error) ? pages.failed : true
-        }
-        if next != pages { pages = next }
+    /// بعد كل تحميل (`MaterialsListState.settle`): نتيجة تحميل بدأ قبل مسح تسقط؛ والإلغاء (مهمة ألغاها SwiftUI، أو طلب URLSession أُلغي
+    /// معها) لا يُعدّ فشلًا فلا شريط ولا زرّ ولا «لا مواد بهذا الفلتر» قبل أوانها؛ والفشل يُبقي المعروض. وما لم يتغيّر لا يُنشر، فلا
+    /// تُعاد الشاشات ولا مهمة آخر المعرض بلا سبب. التذكرة تُفحص بعد آخر انتظار، لحظة الكتابة.
+    private func settle(_ ticket: MaterialsListState.Ticket, _ result: Result<[PostHistoryAPI.Material], any Error>,
+                        stamp: Bool = false) async {
+        let progress = await feed.progress
+        var next = list
+        next.settle(ticket, result, progress: progress, updatedAt: stamp ? Date() : nil)
+        if next != list { list = next }
     }
 
-    /// يحدّث مادة واحدة (شاشة التفاصيل، أو إشعار عن مادة لم تُحمَّل صفحتها)؛ `nil` إن تعذّر.
+    /// يحدّث مادة واحدة (شاشة التفاصيل، أو إشعار عن مادة لم تُحمَّل صفحتها)؛ `nil` إن تعذّر أو مُسحت القائمة أثناءه.
     @discardableResult
     func reload(_ id: UUID) async -> PostHistoryAPI.Material? {
+        let ticket = list.ticket()
         let fresh = try? await feed.reload(id: id)
-        items = await feed.items
+        let all = await feed.items
+        var next = list
+        guard next.replaceItems(ticket, with: all) else { return nil }
+        if next != list { list = next }
         return fresh
     }
 
     func loadTimeline(_ id: UUID) async {
-        guard let records = try? await transitions(id) else { return }
+        let ticket = list.ticket()
+        guard let records = try? await transitions(id), list.accepts(ticket) else { return }
         timelines[id] = MaterialTimeline(records)
     }
 
+    /// المسح الطارئ والخروج والإبطال. الجيل يرتفع أولًا وقبل أي انتظار، فتحميل عادت نتيجته قبل `feed.clear()` لا يكتبها بعده.
     func clear() async {
+        list.clear()
+        timelines = [:]
         pageGeneration += 1
         pageTask?.cancel()
         pageTask = nil
         await feed.clear()
-        items = []
-        timelines = [:]
-        pages = PageProgress()
-        lastUpdated = nil
     }
 }
 
