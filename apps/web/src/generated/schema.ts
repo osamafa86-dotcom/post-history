@@ -2160,7 +2160,12 @@ export interface components {
              * @description جلسة رفع الملاحظة الصوتية إن سبقت إنشاء المادة
              */
             voice_note_upload_id?: string | null;
+            tags?: components["schemas"]["MaterialTags"];
         };
+        /** @description وسم حرّ يكتبه المراسل أو تقترحه الإدارة (ADR 0086): 1–40 محرفًا (نقاط ترميز Unicode)، بلا مسافة من أي نوع في أوله ولا في آخره (صنف `\s` في JSON Schema: U+0009–U+000D وU+0020 وU+00A0 وU+1680 وU+2000–U+200A وU+2028 وU+2029 وU+202F وU+205F وU+3000 وU+FEFF)، وبلا محارف تحكم (U+0000–U+001F وU+007F–U+009F) ولا محارف اتجاه (U+061C وU+200E/U+200F وU+202A–U+202E وU+2066–U+2069). القاعدة نفسها بالمجموعات نفسها من المحارف في قاعدة البيانات (`material_tags_valid`). */
+        MaterialTag: string;
+        /** @description وسوم المادة (ADR 0086، أُضيف بعد v0.3 فقد يغيب). اختياري في العقد حفاظًا على عملاء v0 (القاعدة 12)، والخادم يحفظ الغائب مصفوفة فارغة؛ أما واجهات المراسل v2 فتُلزم وسمًا واحدًا على الأقل قبل الإرسال (قرار المالك 2026-11-01). نص حرّ قد يحوي أسماءً حساسة، فلا يدخل حمولة Outbox ولا إشعارًا ولا مخططًا يراه المشتري. */
+        MaterialTags: components["schemas"]["MaterialTag"][];
         MaterialUpdate: {
             title?: string;
             material_types?: components["schemas"]["MaterialType"][];
@@ -2176,6 +2181,7 @@ export interface components {
             dynamic_fields?: {
                 [key: string]: unknown;
             };
+            tags?: components["schemas"]["MaterialTags"];
         };
         /**
          * @example {
@@ -2205,6 +2211,10 @@ export interface components {
          *         "guest_name": "المتحدث باسم الدفاع المدني",
          *         "guest_title": "متحدث"
          *       },
+         *       "tags": [
+         *         "الدفاع المدني",
+         *         "مؤتمر صحفي"
+         *       ],
          *       "contributors": [
          *         {
          *           "user_id": "1e2d3c4b-5a69-4788-9796-a5b4c3d2e1f0",
