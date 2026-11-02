@@ -61,6 +61,37 @@ public struct MaterialStatus: Equatable, Sendable {
         }
     }
 
+    /// المسارات الثلاثة؛ كلٌّ شارة منفصلة.
+    public enum Track: String, CaseIterable, Sendable { case technical, editorial, rights }
+
+    /// نغمات الهوية v2 (`color.state.*`)، ولكلٍّ أيقونة وكلمة في الواجهة فلا يُعتمد على اللون وحده.
+    public enum SignalTone: String, Sendable { case ok, warn, muted, brand, danger }
+
+    public func badge(_ track: Track) -> Badge {
+        switch track {
+        case .technical: return technical
+        case .editorial: return editorial
+        case .rights: return rights
+        }
+    }
+
+    /// نغمة الشارة في الهوية v2 بحسب مسارها (design-system-v2.md «نغمات الحالات»، `material-state.*` في tokens.v2.json):
+    /// فنية (جاهزة ok، تُعالَج muted، فشلت danger) · تحريرية (قيد المراجعة warn، معتمدة ok، مرفوضة danger) ·
+    /// حقوق (داخلي muted، للعرض brand، مقيّد warn).
+    public static func signalTone(_ tone: Tone, track: Track) -> SignalTone {
+        switch (track, tone) {
+        case (.technical, .good): return .ok
+        case (.technical, .bad): return .danger
+        case (.technical, _): return .muted
+        case (.editorial, .good): return .ok
+        case (.editorial, .bad): return .danger
+        case (.editorial, _): return .warn
+        case (.rights, .good): return .brand
+        case (.rights, .bad): return .warn
+        case (.rights, _): return .muted
+        }
+    }
+
     /// كل مفاتيح النصوص الممكنة؛ اختبار يتأكد أن لكلٍّ ترجمة عربية وإنجليزية.
     public static var allLabelKeys: [String] {
         let t = TechnicalState.allCases.map { badge($0).labelKey }

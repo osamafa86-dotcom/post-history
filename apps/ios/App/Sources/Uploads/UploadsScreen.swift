@@ -1,333 +1,202 @@
 import MaterialsCore
+import PhotosUI
 import PostHistoryAPI
 import SwiftUI
 import UploadCore
 
-/// A2 · الرفع يستأنف (docs/design/specs/reporter.md): بطاقة الرفع النشط، والمسودات، وقائمة الانتظار.
-/// لا إجراء مدمّر بالسحب الكامل هنا: التمرير في القائمة كان يلغي الرفع عرَضًا (ADR 0081). الإلغاء زر صريح
-/// بتأكيد؛ وحذف المسودة وإزالة الصف المنتهي بسحبٍ جزئي (`allowsFullSwipe: false`) ثم تأكيد.
+/// 05 · الرفع (docs/design/specs/reporter-v2.md «الرفع»): دوائر البثّ بنسبة ما وصل من آخر إرسالة، وتحتها كل ملف بمرحلته.
+/// الانقطاع لا يحتاج فعلًا من المراسل (05b)، والفشل النهائي يقول السبب بكلماته وخطوتين (05c). لا إجراء مدمّر بالسحب:
+/// الإلغاء زرّ بتأكيد (ADR 0081)، والإزالة زرّ بتأكيد.
 struct UploadsScreen: View {
     @EnvironmentObject private var queue: UploadQueueModel
-    @Binding var editingDraft: MaterialDraft?
-    @State private var draftToDelete: MaterialDraft?
-    @State private var recordToRemove: UploadRecord?
 
-    private var originals: [UploadRecord] { queue.records.filter { $0.kind == .original } }
-    private var active: UploadRecord? { originals.first { !$0.phase.isTerminal } }
-    private var others: [UploadRecord] { originals.filter { $0.id != active?.id }.sorted { $0.createdAt > $1.createdAt } }
+    @State private var cancelTarget: UploadRecord?
+    @State private var removeTarget: UploadRecord?
+    @State private var repickTarget: UploadRecord?
+    @State private var repickItem: PhotosPickerItem?
+    @State private var repickError = false
+
+    private var shown: [UploadRecord] { queue.uploadScreenRecords }
+    private var items: [UploadItem] { shown.map { queue.item($0) } }
+    private var online: Bool { queue.networkState == .online }
+    private var ringState: UploadOverview.RingState { UploadOverview.ringState(items, online: online) }
+    private var fraction: Double { UploadOverview.fraction(items) }
+    private var firstFailure: (record: UploadRecord, failure: UploadFailure)? {
+        for rec in shown { if case .failed(let f) = rec.phase { return (rec, f) } }
+        return nil
+    }
 
     var body: some View {
-        List {
-            if !queue.drafts.isEmpty {
-                Section {
-                    ForEach(queue.drafts) { draft in
-                        Button { editingDraft = draft } label: { DraftRow(draft: draft) }
-                            .buttonStyle(.plain)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button("draft.delete", role: .destructive) { draftToDelete = draft }
-                            }
-                    }
-                } header: { VLOverline("drafts.title") }
-                .listRowBackground(Color.vl.bgSurface)
-            }
-            if let active {
-                Section {
-                    ActiveUploadCard(record: active)
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
+        ScrollView {
+            VStack(spacing: VL.Space.s5) {
+                if shown.isEmpty {
+                    VLEmptyState(title: "uploads.empty.title", message: "uploads.empty.body")
+                } else {
+                    rings
+                    note
+                    ForEach(shown, id: \.id) { rec in row(rec) }
+                    Text("upload.background").vlText(.caption).foregroundStyle(Color.vl.textSecondary).multilineTextAlignment(.center)
                 }
             }
-            if !others.isEmpty {
-                Section {
-                    ForEach(others) { rec in
-                        QueueRow(record: rec)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                if rec.phase.isTerminal {
-                                    Button("upload.remove", role: .destructive) { recordToRemove = rec }
-                                }
-                            }
-                    }
-                } header: { VLOverline("uploads.queue") }
-                .listRowBackground(Color.vl.bgSurface)
-            }
-            if active == nil, others.isEmpty, queue.drafts.isEmpty {
-                Text("home.uploads.empty").vlText(.bodyMd).foregroundStyle(Color.vl.textSecondary)
-                    .listRowBackground(Color.clear)
-            }
+            .padding(VL.Space.s5)
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .background(Color.vl.bgCanvas.ignoresSafeArea())
-        .confirmationDialog("draft.delete.confirm.title", isPresented: Binding(get: { draftToDelete != nil }, set: { if !$0 { draftToDelete = nil } }),
-                            titleVisibility: .visible, presenting: draftToDelete) { draft in
-            Button("draft.delete", role: .destructive) { queue.discardDraft(draft) }
-            Button("material.cancel", role: .cancel) {}
-        } message: { _ in
-            Text("draft.delete.confirm.message")
-        }
-        .confirmationDialog("upload.remove.confirm.title", isPresented: Binding(get: { recordToRemove != nil }, set: { if !$0 { recordToRemove = nil } }),
-                            titleVisibility: .visible, presenting: recordToRemove) { record in
-            Button("upload.remove", role: .destructive) { Task { await queue.remove(record) } }
+        .vlScreen()
+        .navigationTitle("uploads.title")
+        .navigationBarTitleDisplayMode(.inline)
+        .modifier(CancelUploadConfirmation(isPresented: Binding(get: { cancelTarget != nil }, set: { if !$0 { cancelTarget = nil } })) {
+            if let rec = cancelTarget { Task { await queue.cancel(rec) } }
+        })
+        .confirmationDialog("upload.remove.confirm.title", isPresented: Binding(get: { removeTarget != nil }, set: { if !$0 { removeTarget = nil } }),
+                            titleVisibility: .visible, presenting: removeTarget) { rec in
+            Button("upload.remove", role: .destructive) { Task { await queue.remove(rec) } }
             Button("material.cancel", role: .cancel) {}
         } message: { _ in
             Text("upload.remove.confirm.message")
         }
-    }
-}
-
-/// تأكيد إلغاء الرفع: واحد لكل مواضع الإلغاء كي لا يختلف النص ولا يُلغى رفع بلمسة واحدة.
-private struct CancelUploadConfirmation: ViewModifier {
-    @Binding var isPresented: Bool
-    let confirm: () -> Void
-
-    func body(content: Content) -> some View {
-        content.confirmationDialog("upload.cancel.confirm.title", isPresented: $isPresented, titleVisibility: .visible) {
-            Button("upload.cancel.confirm.action", role: .destructive, action: confirm)
-            Button("upload.cancel.confirm.keep", role: .cancel) {}
-        } message: {
-            Text("upload.cancel.confirm.message")
+        .photosPicker(isPresented: Binding(get: { repickTarget != nil && repickItem == nil }, set: { if !$0, repickItem == nil { repickTarget = nil } }),
+                      selection: $repickItem, matching: .any(of: [.videos, .images]), preferredItemEncoding: .current)
+        .onChange(of: repickItem) { _, item in
+            guard let item, let target = repickTarget else { return }
+            Task { await repick(target, item) }
         }
-    }
-}
-
-/// مسودة محفوظة على الجهاز: عنوانها (أو «بلا عنوان») وشارة محايدة.
-private struct DraftRow: View {
-    let draft: MaterialDraft
-
-    var body: some View {
-        HStack(spacing: VL.Space.s4) {
-            VStack(alignment: .leading, spacing: VL.Space.s2) {
-                Group { if draft.title.isEmpty { Text("draft.untitled") } else { Text(verbatim: draft.title) } }
-                    .vlText(.labelMd).foregroundStyle(Color.vl.textPrimary).lineLimit(2)
-                Text("stepper.position \(draft.step) \(4) \(Text(LocalizedStringKey(NewMaterialFlow.Step(rawValue: draft.step)?.titleKey ?? "")))")
-                    .vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
-            }
-            Spacer()
-            if draft.files.count > 1 {
-                Text("draft.files \(draft.files.count)").vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
-            }
-            StateBadge(labelKey: "draft.badge", tone: .neutral)
-        }
-        .frame(minHeight: VL.Size.touchMin)
-    }
-}
-
-/// بطاقة الرفع النشط: ثلاث حقائق دائمًا (أين وصلنا، أن الانقطاع آمن، وما الخطوة التالية).
-struct ActiveUploadCard: View {
-    @EnvironmentObject private var queue: UploadQueueModel
-    @EnvironmentObject private var settings: AppSettings
-    let record: UploadRecord
-
-    @State private var confirmCancel = false
-    private var proxy: UploadRecord? { queue.records.first { $0.kind == .proxy && $0.materialId == record.materialId } }
-    private var paused: Bool { record.isPaused == true }
-    private var networkBlocked: Bool { queue.networkState != .online && !record.phase.isTerminal }
-
-    var body: some View {
-        VLCard(border: networkBlocked || paused ? Color.vl.toneNeutralBorder : Color.vl.toneProgressBorder) {
-            header
-            lightCopyLine
-            progressBlock
-            reassurance
-            actions
-        }
-        .modifier(CancelUploadConfirmation(isPresented: $confirmCancel) { Task { await queue.cancel(record) } })
+        .alert("material.error.import", isPresented: $repickError) { Button("receipt.done", role: .cancel) {} }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: VL.Space.s2) {
-            HStack(alignment: .top, spacing: VL.Space.s3) {
-                Text(verbatim: record.materialTitle ?? record.filename).vlText(.headingH4).foregroundStyle(Color.vl.textPrimary).lineLimit(2)
-                Spacer(minLength: 0)
-                if let raw = record.materialPriority, let p = Priority(rawValue: raw) { PriorityBadge(priority: p) }
-            }
-            Text(verbatim: "\(record.filename) · \(ByteCountFormatter.string(fromByteCount: record.sizeBytes, countStyle: .file))")
-                .vlText(.captionMd).foregroundStyle(Color.vl.textSecondary).lineLimit(1)
-        }
-    }
+    // MARK: الدوائر والملاحظة
 
-    @ViewBuilder private var lightCopyLine: some View {
-        if let proxy, case .verified = proxy.phase {
-            HStack(spacing: VL.Space.s3) {
-                StateBadge(labelKey: "material.technical.verified", tone: .good, track: .technical)
-                Text("proxy.arrived \(proxy.updatedAt.formatted(date: .omitted, time: .shortened))")
-                    .vlText(.bodySm).foregroundStyle(Color.vl.textSecondary)
-            }
-        } else if let proxy, !proxy.phase.isTerminal {
-            VStack(alignment: .leading, spacing: VL.Space.s2) {
-                Text("proxy.uploading").vlText(.labelMd).foregroundStyle(Color.vl.textPrimary)
-                ProgressView(value: proxy.fractionTransferred).tint(Color.vl.bgBrand)
-            }
-        } else if queue.preparingProxy.contains(record.materialId) {
-            Label("upload.preparingProxy", systemImage: "wand.and.rays").vlText(.bodySm).foregroundStyle(Color.vl.textSecondary)
-        }
-    }
-
-    @ViewBuilder private var progressBlock: some View {
-        if paused {
-            stateLine("upload.paused", systemImage: "pause.circle")
-            bar(fraction: record.fractionTransferred, color: Color.vl.toneNeutralBorder)
-        } else if networkBlocked {
-            stateLine(queue.networkState == .waitingForWifi ? "upload.waitingForWifi" : "upload.waitingForNetwork", systemImage: "wifi.slash")
-            bar(fraction: record.fractionTransferred, color: Color.vl.toneNeutralBorder)
-        } else {
-            switch record.phase {
-            case .hashing, .creatingSession, .creatingUpload:
-                HStack(spacing: VL.Space.s3) {
-                    ProgressView()
-                    Text(LocalizedStringKey(queue.waitingForProxy.contains(record.id) ? "upload.waitingForProxy" : "upload.state.preparing"))
-                        .vlText(.labelLg).foregroundStyle(Color.vl.textPrimary)
-                }
-            case .transferring:
-                transferring
-            case .completing, .awaitingReceipt:
-                stateLine("upload.awaitingReceipt", systemImage: "checkmark.seal")
-                bar(fraction: 1, color: Color.vl.toneProgressBorder)
-            case .failed(let failure):
-                VLInlineAlert(tone: .bad, systemImage: "xmark.octagon.fill", textKey: failure.textKey, actionKey: "upload.retry") {
-                    Task { await queue.retry(record) }
-                }
-            case .verified, .deduplicated, .cancelled:
-                EmptyView()
-            }
-        }
-    }
-
-    private var transferring: some View {
-        VStack(alignment: .leading, spacing: VL.Space.s3) {
-            HStack(alignment: .firstTextBaseline, spacing: VL.Space.s3) {
-                Text(record.fractionTransferred, format: .percent.precision(.fractionLength(0)))
-                    .vlText(.displayMd).foregroundStyle(Color.vl.textBrand)
-                    .environment(\.layoutDirection, .leftToRight)
-                Text("upload.originalUploading").vlText(.labelLg).foregroundStyle(Color.vl.textPrimary)
-            }
-            Text(bytesLine).vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
-            bar(fraction: record.fractionTransferred, color: Color.vl.bgBrand)
-            ChunkBarsView(bars: chunkBars.bars)
-            Text("chunks.status \(chunkBars.confirmedParts) \(chunkBars.totalParts) \(chunkBars.inFlightPart ?? min(chunkBars.confirmedParts + 1, chunkBars.totalParts))")
-                .vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private var chunkBars: ChunkBars {
-        ChunkBars(sizeBytes: record.sizeBytes, chunkSizeBytes: record.chunkSizeBytes, confirmedOffset: record.confirmedOffset, inFlightOffset: record.inFlightOffset)
-    }
-
-    private var bytesLine: LocalizedStringKey {
-        let done = ByteCountFormatter.string(fromByteCount: record.confirmedOffset, countStyle: .file)
-        let total = ByteCountFormatter.string(fromByteCount: record.sizeBytes, countStyle: .file)
-        guard let eta = queue.etaSeconds[record.id] else { return "upload.bytes \(done) \(total)" }
-        let left = Duration.seconds(eta).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated, maximumUnitCount: 2))
-        return "upload.bytesEta \(done) \(total) \(left)"
-    }
-
-    private func stateLine(_ key: String, systemImage: String) -> some View {
-        Label(LocalizedStringKey(key), systemImage: systemImage).vlText(.labelLg).foregroundStyle(Color.vl.textPrimary)
-    }
-
-    private func bar(fraction: Double, color: Color) -> some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.vl.bgSubtle)
-                Capsule().fill(color).frame(width: geo.size.width * min(max(fraction, 0), 1))
-                    .animation(VL.Easing.linear(VL.Duration.progress), value: fraction)
-            }
-        }
-        .frame(height: VL.Space.s3 + VL.Space.s1)
-        .environment(\.layoutDirection, .leftToRight)
-        .accessibilityHidden(true)
-    }
-
-    private var reassurance: some View {
-        Label { Text("upload.reassurance").vlText(.bodySm).foregroundStyle(Color.vl.textPrimary) } icon: {
-            Image(systemName: "shield.lefthalf.filled").foregroundStyle(Color.vl.iconBrand)
-        }
-        .padding(VL.Space.s4)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.vl.bgBrandSubtle, in: RoundedRectangle(cornerRadius: VL.Radius.md))
-    }
-
-    @ViewBuilder private var actions: some View {
-        if !record.phase.isTerminal {
-            VStack(spacing: VL.Space.s3) {
-                HStack(spacing: VL.Space.s3) {
-                    Button {
-                        Task { if paused { await queue.resume(record) } else { await queue.pause(record) } }
-                    } label: { Label(LocalizedStringKey(paused ? "upload.resume" : "upload.pause"), systemImage: paused ? "play.fill" : "pause.fill") }
-                        .buttonStyle(.vlSecondary)
-                    Button {
-                        settings.uploadOverWifiOnly.toggle()
-                        queue.updateNetworkState()
-                    } label: { Label(LocalizedStringKey(settings.uploadOverWifiOnly ? "upload.wifiOnly.on" : "upload.wifiOnly.off"), systemImage: "wifi") }
-                        .buttonStyle(.vlGhost)
-                }
-                // إلغاء صريح بتأكيد؛ لا يُلغى الرفع بسحب ولا بلمسة واحدة.
-                Button(role: .destructive) { confirmCancel = true } label: { Label("upload.cancel", systemImage: "xmark.circle") }
-                    .buttonStyle(.vlGhost)
-            }
-        }
-    }
-}
-
-/// شرائط الأجزاء: مؤكَّد / جارٍ / لاحق، 12 حدًّا أقصى.
-struct ChunkBarsView: View {
-    let bars: [ChunkBars.State]
-
-    var body: some View {
-        HStack(spacing: VL.Space.s1) {
-            ForEach(bars.indices, id: \.self) { i in
-                RoundedRectangle(cornerRadius: VL.Radius.full)
-                    .fill(color(bars[i]))
-                    .frame(width: VL.Space.s7, height: VL.Space.s2 + VL.Space.s1)
-            }
-        }
-        .environment(\.layoutDirection, .leftToRight)
-        .accessibilityHidden(true)
-    }
-
-    private func color(_ s: ChunkBars.State) -> Color {
-        switch s {
-        case .confirmed: return .vl.bgBrand
-        case .inFlight: return .vl.toneProgressBorder
-        case .pending: return .vl.borderDefault
-        }
-    }
-}
-
-/// صف في قائمة الانتظار: العنوان وحالته، والإيصال بخط أحادي للمستلم.
-private struct QueueRow: View {
-    @EnvironmentObject private var queue: UploadQueueModel
-    let record: UploadRecord
-    @State private var confirmCancel = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: VL.Space.s2) {
-            Text(verbatim: record.materialTitle ?? record.filename).vlText(.labelMd).foregroundStyle(Color.vl.textPrimary).lineLimit(2)
-            // عنوان الملفات المرفوعة معًا متشابه (`… (i/N)`)؛ الاسم يفرّق بينها.
-            if record.materialTitle != nil {
-                Text(verbatim: record.filename).vlText(.captionMd).foregroundStyle(Color.vl.textSecondary).lineLimit(1)
-            }
-            switch record.phase {
-            case .verified(let receipt):
-                Button { queue.presentedReceipt = ReceiptTarget(materialId: record.materialId, recordId: record.id) } label: {
-                    Label { Text(verbatim: receipt).vlText(.monoMd).environment(\.layoutDirection, .leftToRight) } icon: {
-                        Image(systemName: "checkmark.seal.fill").foregroundStyle(Color.vl.toneGoodFg)
+    private var rings: some View {
+        VStack(spacing: VL.Space.s3) {
+            ZStack {
+                BroadcastRings(state: ringsState, fraction: fraction, diameter: 220)
+                // عند الوصول تمتلئ الدائرة بعلامة ✓ وتنتقل الكلمة تحتها.
+                if ringState != .done {
+                    VStack(spacing: VL.Space.s1) {
+                        Text(verbatim: VLFormat.percent(fraction))
+                            .vlText(.bigNumber)
+                            .foregroundStyle(Color.vl.textPrimary)
+                            .environment(\.layoutDirection, .leftToRight)
+                        ringLabel
                     }
+                    .frame(maxWidth: 220 * 0.42)
+                    .minimumScaleFactor(0.6)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text("upload.receipt \(receipt)"))
-            case .failed(let failure):
-                Text(failure.labelKey).vlText(.captionMd).foregroundStyle(Color.vl.textDanger)
-            default:
-                Text(record.isPaused == true ? "upload.paused" : record.phase.labelKey).vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
             }
-            if !record.phase.isTerminal {
-                Button(role: .destructive) { confirmCancel = true } label: { Label("upload.cancel", systemImage: "xmark.circle") }
+            if ringState == .done { ringLabel }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("uploads.rings.a11y \(VLFormat.percent(fraction)) \(Text(ringWord))"))
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    private var ringLabel: some View {
+        Label { Text(ringWord).vlText(.label) } icon: { if let icon = ringIcon { Image(systemName: icon) } }
+            .labelStyle(VLCompactLabelStyle())
+            .foregroundStyle(ringTone)
+            .multilineTextAlignment(.center)
+    }
+
+    private var ringsState: BroadcastRings.State {
+        switch ringState {
+        case .uploading: return .uploading
+        case .waiting: return .waiting
+        case .done: return .done
+        case .failed: return .failed
+        }
+    }
+
+    private var ringWord: LocalizedStringKey {
+        switch ringState {
+        case .uploading: return "upload.ring.uploading"
+        case .waiting: return online ? "upload.paused" : (queue.networkState == .waitingForWifi ? "upload.waitingForWifi" : "upload.waitingForNetwork")
+        case .done: return "upload.ring.done"
+        case .failed: return "upload.ring.failed"
+        }
+    }
+
+    private var ringIcon: String? {
+        switch ringState {
+        case .uploading: return nil
+        case .waiting: return online ? "pause" : "wifi.slash"
+        case .done: return "checkmark"
+        case .failed: return "exclamationmark.triangle"
+        }
+    }
+
+    private var ringTone: Color {
+        switch ringState {
+        case .uploading: return .vl.textSecondary
+        case .waiting: return .vl.stateWarn
+        case .done: return .vl.stateOk
+        case .failed: return .vl.stateDanger
+        }
+    }
+
+    /// ثلاثة أشياء دائمًا: أين وصلنا، وأن الانقطاع آمن، وما الخطوة التالية (design-brief.md §5.2).
+    @ViewBuilder private var note: some View {
+        if let failed = firstFailure {
+            VLNote(tone: .danger, systemImage: "exclamationmark.triangle",
+                   text: Text("upload.note.failed \(failed.record.materialTitle ?? failed.record.filename) \(Text(LocalizedStringKey(failed.failure.textKey)))"))
+        } else if !online, ringState != .done {
+            VLNote(tone: .warn, systemImage: "wifi.slash", text: Text("upload.offline"))
+        } else if ringState == .done {
+            VLNote(tone: .ok, systemImage: "checkmark", text: Text("upload.note.done"))
+        } else if UploadOverview.previewCount(items) > 0 {
+            VLNote(tone: .ok, systemImage: "checkmark", text: Text("upload.light.arrived"))
+        } else {
+            VLNote(tone: .brand, systemImage: "shield", text: Text("upload.reassurance"))
+        }
+    }
+
+    // MARK: الصفوف
+
+    private func row(_ rec: UploadRecord) -> some View {
+        let item = queue.item(rec)
+        return UploadRow(title: rec.materialTitle ?? rec.filename, thumbnailPath: queue.localCopies.contains(rec.id) ? rec.sourcePath : nil,
+                         isVideo: rec.mimeType?.hasPrefix("video") ?? false, item: item,
+                         status: UploadRowStatus.make(item, network: queue.networkState)) {
+            actions(rec, item)
+        }
+    }
+
+    @ViewBuilder private func actions(_ rec: UploadRecord, _ item: UploadItem) -> some View {
+        switch rec.phase {
+        case .failed(let failure):
+            HStack(spacing: VL.Space.s3) {
+                if failure == .sourceMissing {
+                    Button("upload.repick") { repickTarget = rec }.buttonStyle(VLButtonStyle(kind: .solid, size: .small))
+                } else {
+                    Button("upload.retry") { Task { await queue.retry(rec) } }.buttonStyle(VLButtonStyle(kind: .solid, size: .small))
+                }
+                Button("upload.removeShort") { removeTarget = rec }.buttonStyle(VLButtonStyle(kind: .outline, size: .small))
+            }
+        case .verified, .deduplicated, .cancelled:
+            EmptyView()
+        default:
+            HStack(spacing: VL.Space.s2) {
+                Button {
+                    Task { if item.paused { await queue.resume(rec) } else { await queue.pause(rec) } }
+                } label: {
+                    Label(LocalizedStringKey(item.paused ? "upload.resume" : "upload.pause"), systemImage: item.paused ? "play" : "pause")
+                }
+                .buttonStyle(.vlGhost)
+                Spacer(minLength: 0)
+                // إلغاء صريح بتأكيد؛ لا يُلغى الرفع بسحب ولا بلمسة واحدة (ADR 0081).
+                Button(role: .destructive) { cancelTarget = rec } label: { Label("upload.cancel", systemImage: "xmark.circle") }
                     .buttonStyle(.vlGhost)
             }
         }
-        .frame(minHeight: VL.Size.touchMin, alignment: .leading)
-        .modifier(CancelUploadConfirmation(isPresented: $confirmCancel) { Task { await queue.cancel(record) } })
+    }
+
+    private func repick(_ rec: UploadRecord, _ item: PhotosPickerItem) async {
+        defer { repickItem = nil; repickTarget = nil }
+        guard let picked = try? await item.loadTransferable(type: PickedFile.self) else { repickError = true; return }
+        defer { try? FileManager.default.removeItem(at: picked.url) }
+        do {
+            let file = try await FileImport.importFile(picked.url)
+            try await queue.repick(rec, relativePath: file.relativePath, filename: file.filename, mimeType: file.mimeType)
+        } catch {
+            repickError = true
+        }
     }
 }

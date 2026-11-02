@@ -22,11 +22,15 @@ final class UploadQueueModel: ObservableObject {
     @Published private(set) var etaSeconds: [UUID: TimeInterval] = [:]
     /// مسودات «مادة جديدة» المحفوظة على الجهاز (تظهر أعلى شاشة الرفع).
     @Published private(set) var drafts: [MaterialDraft] = []
-    /// إيصال وصل للتو: يُعرض شاشة الإيصال تلقائيًا (A3).
+    /// إيصال وصل للتو: يُعرض شاشة الإيصال تلقائيًا، مرة للإرسالة كلها حين يصل آخر ملفاتها (06، ADR 0088).
     @Published var presentedReceipt: ReceiptTarget?
+    /// الإرسالات الأخيرة، الأحدث أولًا: تجمع ملفات الإرسالة الواحدة في دوائر واحدة وإيصال واحد. مرآة `ledger.batches`.
+    @Published private(set) var batches: [SendBatch] = []
     let engine: UploadEngine
     let settings: AppSettings
     let draftStore: FileDraftStore?
+    /// الإرسالات بحماية سجلات الرفع نفسها، وآخر حالة جيدة في الذاكرة لا تمحوها قراءة فاشلة والهاتف مقفل (ADR 0088).
+    private let ledger: SendBatchLedger
     private let transcoder: any ProxyTranscoder = AVFoundationProxyTranscoder()
     private var proxyTasks: [UUID: Task<Void, Never>] = [:]
     private var watcher: Task<Void, Never>?
@@ -38,7 +42,9 @@ final class UploadQueueModel: ObservableObject {
         self.engine = engine
         self.settings = settings
         draftStore = try? FileDraftStore(directory: UploadServices.shared.draftsDirectory)
-        drafts = draftStore?.loadAll() ?? []
+        ledger = SendBatchLedger(store: SendBatchStore(fileURL: UploadServices.shared.batchesFile))
+        drafts = draftStore?.loadAllIfReadable() ?? []
+        batches = ledger.batches
         // نسخ الاختيار المؤقتة التي خلّفها إنهاء التطبيق قبل نقلها إلى مجلد الرفع.
         PickedTempFiles.sweep(in: FileManager.default.temporaryDirectory)
     }
@@ -94,15 +100,122 @@ final class UploadQueueModel: ObservableObject {
         localCopies = Set(records.filter { UploadServices.shared.localCopyExists(relativePath: $0.sourcePath) }.map(\.id))
     }
 
+    /// عودة المشهد نشطًا (الهاتف مفتوح): يُعاد ما تعذّرت قراءته في إطلاق خلفي والهاتف مقفل؛ قراءة فاشلة لا تمحو شيئًا.
+    func reloadFromDisk() {
+        batches = ledger.refresh()
+        reloadDrafts()
+    }
+
     private func receiptArrived(_ id: UUID) async {
         guard let rec = await engine.record(id) else { return }
-        if rec.kind == .original { presentedReceipt = ReceiptTarget(materialId: rec.materialId, recordId: rec.id) }
-        // النسخة الخفيفة مشتقة يصنعها التطبيق: تُحذف دائمًا بعد إيصالها. الأصل قرار المراسل.
-        guard rec.kind == .proxy || settings.deleteLocalAfterReceipt else { return }
+        if rec.kind == .original {
+            records = await engine.allRecords()
+            presentReceiptIfDue(for: rec)
+        }
+        // النسخة الخفيفة مشتقة يصنعها التطبيق: تُحذف دائمًا بعد إيصالها. الأصل قرار المراسل، وبعد التحقق وحده (`LocalCopyPolicy`).
+        guard rec.kind == .proxy || (settings.deleteLocalAfterReceipt && LocalCopyPolicy.mayDelete(record: rec)) else { return }
         UploadServices.shared.deleteLocalCopy(relativePath: rec.sourcePath)
     }
 
+    /// ملف من إرسالة: يُعرض إيصالها مرة حين يصل كل ما بقي منها وقد أُغلقت حلقتها. ملف بلا إرسالة («لقطة بديلة» أو من إصدار سابق):
+    /// إيصاله وحده. القرار في `SendBatchLedger` (MaterialsCore، مختبر)؛ والقراءة قبله لا تمحو شيئًا إن كان الملف لا يُقرأ.
+    private func presentReceiptIfDue(for rec: UploadRecord) {
+        ledger.refresh()
+        present(ledger.receiptDue(forMaterial: rec.materialId) { items(of: $0) }, record: rec)
+    }
+
+    private func present(_ scope: SendBatchLedger.ReceiptScope?, record rec: UploadRecord?) {
+        switch scope {
+        case .material(let materialId)?:
+            presentedReceipt = ReceiptTarget(materialId: materialId, recordId: rec?.id)
+        case .batch(let batchId)?:
+            // يُعلَّم في الذاكرة قبل العرض: لا يتكرر ولو تعذّر الحفظ.
+            ledger.markReceiptShown(batchId)
+            guard let materialId = rec?.materialId ?? ledger.batches.first(where: { $0.id == batchId })?.materialIds.last else { break }
+            presentedReceipt = ReceiptTarget(materialId: materialId, recordId: rec?.id, batchId: batchId)
+        case nil:
+            break
+        }
+        batches = ledger.batches
+    }
+
+    // MARK: الإرسالات وما تعرضه الشاشات
+
+    /// «أرسل N مواد» (`BatchedSubmission`): الإرسالة تُسجَّل بمفاتيح ملفاتها قبل أول طلب، ومادة كل ملف تُضاف إليها قبل أن يدخل
+    /// الطابور، وتُغلق بعد الحلقة. فإن وصلت ملفاتها كلها أثناء الحلقة يُعرض إيصالها الواحد عند الإغلاق.
+    func submit(_ draft: MaterialDraft, dynamicFields: [String: JSONValue], lightCopy: ProxyChoice,
+                create: (String, MaterialCreate) async throws -> UUID) async -> BatchedSubmission.Outcome {
+        let result = await BatchedSubmission.run(draft, dynamicFields: dynamicFields, ledger: ledger, create: create) { file, materialId, body in
+            batches = ledger.batches
+            try await enqueue(relativePath: file.relativePath, materialId: materialId, filename: file.filename, mimeType: file.mimeType,
+                              lightCopy: file.isVideo ? lightCopy : .originalOnly, title: body.title, priority: body.priority)
+        }
+        batches = ledger.batches
+        await refresh()
+        present(ledger.receiptDue(forBatch: result.batchId) { items(of: $0) }, record: nil)
+        return result
+    }
+
+    /// الإبطال والمسح: لا تبقى إرسالات تشير إلى طابور مُحي.
+    func forgetBatches() {
+        ledger.forgetAll()
+        batches = []
+    }
+
+    var originals: [UploadRecord] { records.filter { $0.kind == .original } }
+
+    /// أصول الإرسالة كما تحسبها شاشة الرفع (لقرار الإيصال).
+    private func items(of batch: SendBatch) -> [UploadItem] { originals(of: batch).map { item($0) } }
+
+    func originals(of batch: SendBatch) -> [UploadRecord] {
+        let ids = Set(batch.materialIds)
+        return originals.filter { ids.contains($0.materialId) }.sorted { $0.createdAt < $1.createdAt }
+    }
+
+    /// شاشة الرفع (05): ملفات آخر إرسالة، وكل ملف لم ينتهِ أو فشل من غيرها.
+    var uploadScreenRecords: [UploadRecord] {
+        let latest = Set(batches.first?.materialIds ?? [])
+        return originals.filter { rec in
+            if latest.contains(rec.materialId) { return true }
+            if case .failed = rec.phase { return true }
+            return !rec.phase.isTerminal
+        }
+        .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    /// «آخر الإرسالات» في الرئيسية: أحدث خمسة أصول.
+    var recentOriginals: [UploadRecord] { Array(originals.filter { $0.phase != .cancelled }.sorted { $0.createdAt > $1.createdAt }.prefix(5)) }
+
+    var hasActiveUploads: Bool { originals.contains { !$0.phase.isTerminal } }
+
+    /// السجل كما تحسبه شاشة الرفع: الحالة وما وصل، ووصول نسخته الخفيفة.
+    func item(_ rec: UploadRecord) -> UploadItem {
+        let state: UploadItem.State
+        switch rec.phase {
+        case .hashing, .creatingSession, .creatingUpload: state = .preparing
+        case .transferring: state = .transferring
+        case .completing, .awaitingReceipt: state = .finishing
+        case .verified, .deduplicated: state = .arrived
+        case .failed: state = .failed
+        case .cancelled: state = .cancelled
+        }
+        let previewArrived = records.contains { $0.kind == .proxy && $0.materialId == rec.materialId && $0.phase.isVerified }
+        return UploadItem(id: rec.id, materialId: rec.materialId, sizeBytes: rec.sizeBytes, confirmedOffset: rec.confirmedOffset,
+                          state: state, paused: rec.isPaused == true, previewArrived: previewArrived)
+    }
+
+    /// «اختيار الملف» لرفع فشل لأن نسخته المحلية لم تعد موجودة (05c): ملف جديد أصلًا للمادة نفسها، ثم يُزال السجل الفاشل.
+    func repick(_ rec: UploadRecord, relativePath: String, filename: String, mimeType: String?) async throws {
+        try await enqueue(relativePath: relativePath, materialId: rec.materialId, filename: filename, mimeType: mimeType,
+                          lightCopy: .originalOnly, title: rec.materialTitle, priority: rec.materialPriority.flatMap(Priority.init(rawValue:)))
+        try? await engine.remove(rec.id)
+        await refresh()
+    }
+
+    /// حذف نسخة أصل بقرار المراسل: لما تحقّق أو طوبق وحده (`LocalCopyPolicy`)، ولو طُلب من مسار لا يفحص.
     func deleteLocalCopy(_ rec: UploadRecord) {
+        let current = records.first { $0.id == rec.id } ?? rec
+        guard LocalCopyPolicy.mayDelete(record: current) else { return }
         UploadServices.shared.deleteLocalCopy(relativePath: rec.sourcePath)
         localCopies.remove(rec.id)
     }
@@ -124,12 +237,12 @@ final class UploadQueueModel: ObservableObject {
         var d = draft
         d.updatedAt = Date()
         try? draftStore?.save(d)
-        drafts = draftStore?.loadAll() ?? []
+        reloadDrafts()
     }
 
     func deleteDraft(_ id: UUID) {
         draftStore?.delete(id)
-        drafts = draftStore?.loadAll() ?? []
+        reloadDrafts()
     }
 
     /// حذف مسودة بقرار المراسل: تُحذف نسخ ملفاتها المحلية أيضًا (لا الأصل في المعرض). لا يُستعمل بعد الإرسال لأن الملفات حينئذ في الطابور.
@@ -138,8 +251,11 @@ final class UploadQueueModel: ObservableObject {
         deleteDraft(draft.id)
     }
 
-    /// بعد المسح الطارئ: المجلد مُحي، والقائمة تُفرغ.
-    func reloadDrafts() { drafts = draftStore?.loadAll() ?? [] }
+    /// يقرأ المسودات من القرص بلا محو: ملف لا يُقرأ (الهاتف مقفل في إطلاق خلفي) يُبقي آخر حالة جيدة في الذاكرة كما في الإرسالات،
+    /// والمجلد الذي محاه المسح الطارئ قائمة فارغة.
+    func reloadDrafts() {
+        if let all = draftStore?.loadAllIfReadable() { drafts = all }
+    }
 
     /// الأصل يدخل الطابور فورًا (يُبصم ولا يضيع إن أُنهي التطبيق)، ونسخته الخفيفة تُحضَّر ثم تُرفع قبله.
     func enqueue(relativePath: String, materialId: UUID, filename: String, mimeType: String?, lightCopy: ProxyChoice = .originalOnly,
@@ -196,11 +312,12 @@ final class UploadQueueModel: ObservableObject {
     }
 }
 
-/// شاشة إيصال لمادة، مع سجل الرفع إن وُجد (للعرض دون اتصال).
+/// شاشة إيصال لمادة، مع سجل الرفع إن وُجد (للعرض دون اتصال)، أو لإرسالة كاملة حين يُعرف `batchId`.
 struct ReceiptTarget: Identifiable, Equatable {
     let materialId: UUID
     let recordId: UUID?
-    var id: UUID { materialId }
+    var batchId: UUID?
+    var id: UUID { batchId ?? materialId }
 }
 
 /// مهلة خلفية من النظام لعمل قصير على الجهاز؛ تُنهى مرة واحدة عند الانتهاء أو عند انقضاء المهلة.
@@ -222,6 +339,12 @@ final class BackgroundAssertion {
 }
 
 extension UploadPhase {
+    /// تحقّق الخادم وأصدر إيصالًا.
+    var isVerified: Bool {
+        if case .verified = self { return true }
+        return false
+    }
+
     var labelKey: LocalizedStringKey {
         switch self {
         case .hashing: return "upload.phase.hashing"

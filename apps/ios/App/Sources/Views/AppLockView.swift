@@ -73,16 +73,10 @@ struct AppLockView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        VStack(spacing: VL.Space.s6) {
-            VLHeroIcon(systemImage: "lock.fill", tone: .neutral)
-            Text("lock.title").vlText(.headingH2).foregroundStyle(Color.vl.textPrimary).multilineTextAlignment(.center)
-            Button("lock.unlock") { Task { await lock.unlock() } }.buttonStyle(.vlPrimary)
-            EmergencyWipeButton().buttonStyle(.vlSecondary)
+        VLStatusScreen(systemImage: "lock", tone: .brand, title: "lock.title") {
+            Button("lock.unlock") { Task { await lock.unlock() } }.buttonStyle(.vlSolid)
+            EmergencyWipeButton().buttonStyle(.vlOutline)
         }
-        .padding(VL.Space.s5)
-        .frame(maxWidth: 560)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.vl.bgCanvas.ignoresSafeArea())
         // عند الإطلاق مقفلًا: المطالبة مرة حين يظهر القفل والمشهد نشط؛ العودة من الخلفية تتولاها `sceneChanged`.
         .onAppear { if scenePhase == .active { Task { await lock.unlock() } } }
     }

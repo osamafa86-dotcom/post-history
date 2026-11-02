@@ -9,9 +9,7 @@ struct RootView: View {
         ZStack {
             switch app.phase {
             case .loading:
-                ProgressView().tint(Color.vl.bgBrand)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.vl.bgCanvas.ignoresSafeArea())
+                SplashView()
             case .signedOut:
                 LoginView()
             case .signedIn:
@@ -29,8 +27,11 @@ struct RootView: View {
                 Rectangle().fill(.ultraThinMaterial).ignoresSafeArea()
             }
         }
+        .tint(Color.vl.actionPrimary)
         .onChange(of: scenePhase) { _, phase in
             if case .signedIn = app.phase { lock.sceneChanged(to: phase, signedIn: true) } else { lock.sceneChanged(to: phase, signedIn: false) }
+            // الهاتف فُتح: ما تعذّرت قراءته في إطلاق خلفي والهاتف مقفل (الإرسالات والمسودات) يُقرأ الآن.
+            if phase == .active { app.uploads.reloadFromDisk() }
         }
     }
 }

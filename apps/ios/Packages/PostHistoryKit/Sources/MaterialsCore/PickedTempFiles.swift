@@ -8,6 +8,16 @@ public enum PickedTempFiles {
 
     public static func newName(for filename: String) -> String { "\(prefix)\(UUID().uuidString.lowercased())-\(filename)" }
 
+    /// اسم الملف كما اختاره المراسل من اسم النسخة المؤقتة (بلا البادئة والمعرّف)؛ أي اسم آخر يعود كما هو.
+    public static func originalName(_ name: String) -> String {
+        guard name.hasPrefix(prefix) else { return name }
+        let rest = name.dropFirst(prefix.count)
+        let uuidLength = 36
+        guard rest.count > uuidLength + 1, UUID(uuidString: String(rest.prefix(uuidLength))) != nil,
+              rest.dropFirst(uuidLength).first == "-" else { return name }
+        return String(rest.dropFirst(uuidLength + 1))
+    }
+
     /// يحذف كل ما يحمل بادئة الاختيار في المجلد ويعيد عدده. يُستدعى عند الإطلاق وحده: لا اختيار جارٍ حينها.
     @discardableResult
     public static func sweep(in directory: URL) -> Int {

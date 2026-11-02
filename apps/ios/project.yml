@@ -60,20 +60,24 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleDevelopmentRegion: ar
         CFBundleLocalizations: [ar, en]
-        UILaunchScreen: {}
+        # شاشة الإطلاق بلون خلفية الهوية v2 (`bg/base` بوضعيه) فلا يومض لون آخر قبل شاشة الإقلاع (ADR 0088).
+        UILaunchScreen:
+          UIColorName: vl/bg-base
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         ITSAppUsesNonExemptEncryption: false
         # النص المعروض في طلب Face ID؛ ترجمته في App/Resources/InfoPlist.xcstrings.
         NSFaceIDUsageDescription: يستخدم التطبيق Face ID لقفل موادك ورفعك.
         PHAPIBaseURL: $(PH_API_BASE_URL)
-        # خطوط نظام التصميم بترخيص OFL 1.1 (App/Resources/Fonts، والتراخيص بجانبها).
+        # خطوط الهوية v2 بترخيص OFL 1.1 (App/Resources/Fonts، والتراخيص بجانبها؛ ADR 0088): Rubik للعرض والأرقام،
+        # وReadex Pro للنص، وIBM Plex Mono لرقم الإيصال والبصمة. أوزان ثابتة من Google Fonts.
         UIAppFonts:
-          - Vazirmatn_400Regular.ttf
-          - Vazirmatn_500Medium.ttf
-          - Vazirmatn_600SemiBold.ttf
-          - Vazirmatn_700Bold.ttf
-          - ReemKufi_700Bold.ttf
-          - IBMPlexMono_400Regular.ttf
+          - Rubik_600SemiBold.ttf
+          - Rubik_700Bold.ttf
+          - Rubik_800ExtraBold.ttf
+          - ReadexPro_400Regular.ttf
+          - ReadexPro_500Medium.ttf
+          - ReadexPro_600SemiBold.ttf
+          - ReadexPro_700Bold.ttf
           - IBMPlexMono_500Medium.ttf
     settings:
       base:
