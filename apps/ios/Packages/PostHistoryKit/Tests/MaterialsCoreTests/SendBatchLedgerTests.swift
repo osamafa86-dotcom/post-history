@@ -247,6 +247,37 @@ final class SendBatchLedgerTests: XCTestCase {
         XCTAssertEqual(onDisk.first { $0.id == sensitive.batchId }?.sensitive, true, "kept on disk for the upload rows")
     }
 
+    // MARK: الحساب صاحب الإرسالة (ADR 0091)
+
+    @MainActor func testTheSendCarriesItsOwnerAndOnlyItsOwnerSeesIt() async {
+        let a = UUID(), b = UUID()
+        let ledger = SendBatchLedger(store: store())
+        let mine = await BatchedSubmission.run(ready(files: 1), dynamicFields: [:], ledger: ledger, owner: a) { _, _ in UUID() } enqueue: { _, _, _ in }
+        let theirs = await BatchedSubmission.run(ready(files: 1), dynamicFields: [:], ledger: ledger, owner: b) { _, _ in UUID() } enqueue: { _, _, _ in }
+        guard case .batches(let onDisk) = SendBatchStore(fileURL: fileURL).read() else { return XCTFail("unreadable") }
+        XCTAssertEqual(onDisk.first { $0.id == mine.batchId }?.owner, a, "the owner is kept on disk")
+        XCTAssertEqual(AccountScope(current: a).visible(ledger.batches).map(\.id), [mine.batchId])
+        XCTAssertEqual(AccountScope(current: b).visible(ledger.batches).map(\.id), [theirs.batchId])
+        XCTAssertTrue(AccountScope().visible(ledger.batches).isEmpty, "signed out: no send is shown")
+        let old = SendBatch(title: "قديمة")
+        XCTAssertEqual(AccountScope(current: a, sole: a).visible([old]).map(\.id), [old.id], "an older send belongs to the sole account")
+        XCTAssertTrue(AccountScope(current: a, sole: nil).visible([old]).isEmpty, "and to nobody once two accounts signed in")
+    }
+
+    @MainActor func testAReceiptDueWhileItsOwnerWasOutIsFoundWhenTheOwnerSignsIn() async {
+        let a = UUID(), b = UUID()
+        let ledger = SendBatchLedger(store: store())
+        let first = await BatchedSubmission.run(ready(files: 1), dynamicFields: [:], ledger: ledger, owner: a) { _, _ in UUID() } enqueue: { _, _, _ in }
+        let second = await BatchedSubmission.run(ready(files: 1), dynamicFields: [:], ledger: ledger, owner: a) { _, _ in UUID() } enqueue: { _, _, _ in }
+        let other = await BatchedSubmission.run(ready(files: 1), dynamicFields: [:], ledger: ledger, owner: b) { _, _ in UUID() } enqueue: { _, _, _ in }
+        let everything = arrived(Set(first.queued + second.queued + other.queued))
+        XCTAssertEqual(ledger.receiptsDue(forOwner: a, items: everything), [first.batchId, second.batchId], "the owner's, oldest first")
+        XCTAssertEqual(ledger.receiptsDue(forOwner: b, items: everything), [other.batchId])
+        ledger.markReceiptShown(first.batchId)
+        XCTAssertEqual(ledger.receiptsDue(forOwner: a, items: everything), [second.batchId], "a receipt already shown is not shown again")
+        XCTAssertTrue(ledger.receiptsDue(forOwner: a, items: arrived([])).isEmpty, "nothing before the last file arrives")
+    }
+
     @MainActor func testTheFileUsesTheUploadRecordsProtectionAndReadsOlderEntries() async throws {
         XCTAssertEqual(store().writingOptions, UploadFileProtection.writingOptions,
                        "readable after first unlock, like the upload records the background session wakes for")
