@@ -34,7 +34,7 @@ public actor MaterialsFeed {
         self.pageSize = pageSize
     }
 
-    /// الصفحة الأولى من جديد (السحب للتحديث، العودة إلى الشاشة). القائمة السابقة تبقى إن فشل الطلب.
+    /// الصفحة الأولى من جديد وتسقط ما بعدها (السحب للتحديث، والتحميل الأول). القائمة السابقة تبقى إن فشل الطلب.
     @discardableResult
     public func refresh() async throws -> [Material] {
         guard !loading else { return items }
@@ -44,6 +44,32 @@ public actor MaterialsFeed {
         items = page.items
         nextCursor = page.nextCursor
         reachedEnd = page.nextCursor == nil
+        return items
+    }
+
+    /// الاستطلاع والعودة إلى المعرض (ADR 0089): الصفحة الأولى تُدمج فوق ما حُمّل، فلا يعود المعرض إلى صفحته الأولى ولا تُعاد الصفحات.
+    /// ما تغيّر يُحدَّث في مكانه، والجديد يُضاف أعلاه، وما بعدها ومؤشره يبقيان (الترتيب `created_desc`، فالجديد يأتي أعلى ولا يمس
+    /// موضع المؤشر). وتُستبدل القائمة كلها في حالتين: الصفحة الأولى هي القائمة كلها (لا مؤشر بعدها، فتسقط المحذوفة أيضًا)، أو لا
+    /// تتقاطع مع ما حُمّل وبعدها مؤشر (جديد أكثر من صفحة، فجوة لا يملؤها المؤشر القديم). بلا شيء محمَّل هي `refresh()`.
+    @discardableResult
+    public func refreshHead() async throws -> [Material] {
+        if items.isEmpty { return try await refresh() }
+        guard !loading else { return items }
+        loading = true
+        defer { loading = false }
+        let page = try await api.page(cursor: nil, limit: pageSize)
+        let known = Set(items.map(\.id))
+        if page.nextCursor == nil || !page.items.contains(where: { known.contains($0.id) }) {
+            items = page.items
+            nextCursor = page.nextCursor
+            reachedEnd = page.nextCursor == nil
+            return items
+        }
+        var fresh: [UUID: Material] = [:]
+        for m in page.items { fresh[m.id] = m }
+        var added: [Material] = []
+        for m in page.items where !known.contains(m.id) && !added.contains(where: { $0.id == m.id }) { added.append(m) }
+        items = added + items.map { fresh[$0.id] ?? $0 }
         return items
     }
 

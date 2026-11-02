@@ -94,14 +94,32 @@ enum MediaImages {
         return URLSession(configuration: config)
     }()
 
-    /// مصغّرات لا صور كاملة: حدّ للحجم يمنع تحميل ملف كبير بالخطأ.
+    /// مصغّرات وصور عرض لا ملفات كاملة: حدّ يُفرض أثناء التنزيل، فلا يدخل الذاكرة جسمٌ أكبر منه.
     static let maxBytes = 12 << 20
 
+    /// يرفض قبل التنزيل إن أعلن الخادم طولًا أكبر من الحد، ويقطع التنزيل لحظة يتجاوزه ما وصل (ولو لم يُعلن طول).
     static func data(_ url: URL) async -> Data? {
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        guard let (data, response) = try? await session.data(for: request),
-              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count <= maxBytes else { return nil }
+        guard let (bytes, response) = try? await session.bytes(for: request) else { return nil }
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              http.expectedContentLength <= Int64(maxBytes) else {
+            bytes.task.cancel()
+            return nil
+        }
+        var data = Data()
+        if http.expectedContentLength > 0 { data.reserveCapacity(Int(http.expectedContentLength)) }
+        do {
+            for try await byte in bytes {
+                data.append(byte)
+                if data.count > maxBytes {
+                    bytes.task.cancel()
+                    return nil
+                }
+            }
+        } catch {
+            return nil
+        }
         return data
     }
 
@@ -354,7 +372,8 @@ struct ReceiptSlip: View {
 // MARK: - المعرض
 
 /// `Media card` (Video · Photo) لمعرض «موادي»: مصغّرة 9:16 بمدتها، وتحتها الحالات الثلاث شاراتٍ منفصلة.
-/// المادة الموسومة بالحساسية لا معاينة سحابية لها، فتظهر شارة «حسّاسة» بدل الصورة إن لم تتوفر نسخة محلية (CLAUDE.md §5).
+/// المادة الموسومة بالحساسية لا معاينة سحابية لها (CLAUDE.md §5): علامة «لا معاينة سحابية · تُعالَج محليًا» وشارة «حسّاسة» كما في
+/// 07c، ومصغّرة الهاتف إن وُجدت مموّهة تحتها لا ظاهرة (ADR 0089).
 /// `title` يظهر تحت الصورة حين لا يكون عنوان المجموعة عنوانها (التجميع بالنوع).
 struct MediaCard: View {
     enum Kind { case video, photo }
@@ -371,16 +390,20 @@ struct MediaCard: View {
             ZStack {
                 Color.vl.bgSunken
                 if let thumbnail {
+                    // الحسّاسة مموّهة تحت علامتها (07c) ولو كانت من الهاتف؛ تُكشف في التفاصيل بلمسة المراسل وحدها.
                     thumbnail.resizable().scaledToFill()
-                } else if sensitive {
+                        .blur(radius: sensitive ? VL.Space.s4 : 0, opaque: true)
+                }
+                if sensitive {
+                    if thumbnail != nil { Color.vl.bgSunken.opacity(0.6) }
                     VStack(spacing: VL.Space.s2) {
                         Image(systemName: "shield")
                         Text("media.sensitive.noCloud").vlText(.caption).multilineTextAlignment(.center)
                         Text("media.sensitive.local").vlText(.caption).multilineTextAlignment(.center)
                     }
-                    .foregroundStyle(Color.vl.textSecondary)
+                    .foregroundStyle(thumbnail == nil ? Color.vl.textSecondary : Color.vl.textPrimary)
                     .padding(VL.Space.s3)
-                } else {
+                } else if thumbnail == nil {
                     // لا معاينة بعد (قيد المعالجة): أيقونة النوع هادئة، فلا يبدو الفراغ خطأً.
                     Image(systemName: kind == .video ? "film" : "photo")
                         .font(.title2)

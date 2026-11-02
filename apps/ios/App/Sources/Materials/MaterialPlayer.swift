@@ -32,7 +32,15 @@ final class PlayerModel: ObservableObject {
     @Published private(set) var videoAspect: CGFloat?
 
     let player: AVPlayer
+    /// المصدر المطبَّق على العنصر الحالي.
     private(set) var source: PlaybackSource = .unavailable
+    /// آخر مصدر طلبته الشاشة وبديله (`hls` ← `proxy`)؛ يُطبَّق عند التشغيل وإعادة المحاولة ولو جاء والمشغّل يعمل.
+    private var requestedSource: PlaybackSource = .unavailable
+    private var requestedFallback: PlaybackSource?
+    private var fallbackSource: PlaybackSource?
+    private var usedFallback = false
+    /// موضع الاستئناف بعد تحميل عنصر جديد (تجديد الرابط، أو البديل): يُبحث عنه عند `readyToPlay` لا قبله.
+    private var pendingResume: Double?
     private var link: (@Sendable (UUID) async throws -> FileDownloadUrl)?
     private var lease: SignedURLLease?
     private var refreshesWithoutProgress = 0
@@ -63,17 +71,45 @@ final class PlayerModel: ObservableObject {
         player.preventsDisplaySleepDuringVideoPlayback = true
     }
 
-    /// المصدر قبل التشغيل؛ يتبدّل وهو متوقف حين تتحدث المادة (مثلًا صار `hls` جاهزًا)، ولا يمس تشغيلًا جاريًا.
-    func configure(source: PlaybackSource, knownDurationSeconds: Double?, link: @escaping @Sendable (UUID) async throws -> FileDownloadUrl) {
+    /// آخر مصدر تطلبه الشاشة، يُحفظ دائمًا. متوقفًا يُطبَّق فورًا. وأثناء العرض: إن تبدّلت نسخة الهاتف (حذفها المراسل من الإيصال أو
+    /// حُذفت بعده) يُترك العنصر فورًا فيُحرَّر مقبض الملف المحذوف، ويعود المشغّل إلى الملصق بالمصدر الجديد من الموضع نفسه؛ وتبدّل
+    /// مصدر بعيد بآخر (صار `hls` جاهزًا) لا يقطع العرض ويُطبَّق في التشغيل التالي.
+    func configure(source: PlaybackSource, fallback: PlaybackSource?, knownDurationSeconds: Double?,
+                   link: @escaping @Sendable (UUID) async throws -> FileDownloadUrl) {
         self.link = link
-        guard phase == .idle || phase == .failed else { return }
-        if source != self.source { lease = nil; refreshesWithoutProgress = 0; phase = .idle }
-        self.source = source
-        quality = source.quality
-        if let knownDurationSeconds, knownDurationSeconds > 0 { durationSeconds = knownDurationSeconds }
+        requestedSource = source
+        requestedFallback = fallback
+        if phase == .idle || phase == .failed, let knownDurationSeconds, knownDurationSeconds > 0 { durationSeconds = knownDurationSeconds }
+        guard source != self.source else {
+            // المصدر نفسه وصار له بديل (نسخة خفيفة تحقّقت بعد بدء `hls`).
+            if !usedFallback { fallbackSource = fallback }
+            return
+        }
+        switch phase {
+        case .idle, .failed:
+            apply(source, fallback: fallback)
+        case .loading, .ready:
+            guard case .local = self.source else { return }
+            let position = isScrubbing ? scrubSeconds : currentSeconds
+            stop()
+            currentSeconds = position
+            apply(source, fallback: fallback)
+        }
     }
 
-    var canPlay: Bool { source != .unavailable }
+    private func apply(_ newSource: PlaybackSource, fallback: PlaybackSource?) {
+        if newSource != source {
+            lease = nil
+            refreshesWithoutProgress = 0
+        }
+        source = newSource
+        fallbackSource = fallback
+        usedFallback = false
+        quality = newSource.quality
+        if phase == .failed { phase = .idle }
+    }
+
+    var canPlay: Bool { requestedSource != .unavailable }
 
     // MARK: التشغيل
 
@@ -83,11 +119,15 @@ final class PlayerModel: ObservableObject {
         guard canPlay else { return }
         switch phase {
         case .idle, .failed:
+            // آخر مصدر مطلوب لا ما بقي من قبل: إعادة المحاولة بعد حذف نسخة الهاتف لا تعود إلى ملف محذوف.
+            apply(requestedSource, fallback: requestedFallback)
+            guard source != .unavailable else { return }
             refreshesWithoutProgress = 0
             phase = .loading
             Task { await load(resumeAt: currentSeconds, autoplay: true) }
         case .loading:
-            break
+            // ما زال يُحمَّل (تجديد رابط مثلًا): يبدأ التشغيل حين يجهز.
+            wantsPlay = true
         case .ready:
             // رابط بعيد قارب الانتهاء والمشغّل متوقف: رابط جديد من الموضع نفسه قبل الاستئناف.
             if case .remote = source, SignedURLRefresh.beforePlayback(lease, now: Date()) == .fetchNew {
@@ -166,6 +206,8 @@ final class PlayerModel: ObservableObject {
         currentSeconds = scrubSeconds
         reachedEnd = false
         chase(to: scrubSeconds, exact: true)
+        // العنصر يُعاد تحميله (تجديد الرابط) والمراسل يسحب: يُستأنف من حيث أفلت حين يجهز.
+        if player.currentItem?.status != .readyToPlay { pendingResume = scrubSeconds }
         pendingPreview = nil
         scrubPreview = nil
         if wasPlayingBeforeScrub { play() }
@@ -231,6 +273,11 @@ final class PlayerModel: ObservableObject {
         case .local(let local):
             lease = nil
             let file = UploadServices.shared.documentsDirectory.appendingPathComponent(local.relativePath)
+            // النسخة حُذفت قبل أن تعلم الشاشة: لا يُفتح ملف غير موجود، ومحاولة واحدة لكل لمسة.
+            guard FileManager.default.fileExists(atPath: file.path) else {
+                phase = .failed
+                return
+            }
             previewFile = file
             asset = AVURLAsset(url: file)
         case .remote(let fileId, _, _):
@@ -256,12 +303,10 @@ final class PlayerModel: ObservableObject {
         chaseTarget = CMTime(seconds: resumeAt, preferredTimescale: 600)
         player.replaceCurrentItem(with: item)
         progressMark = resumeAt
-        if resumeAt > 0 {
-            // الموضع السابق قبل أول إطار (بعد تجديد الرابط)؛ بالنسخة ذات المعالج لأن البديل غير المتزامن يُختار في سياق async.
-            player.seek(to: chaseTarget, toleranceBefore: .zero, toleranceAfter: .zero, completionHandler: { _ in })
-        }
+        // الموضع السابق يُطلب عند `readyToPlay` (لا بحث بمعالج قبل أن يجهز العنصر)، والتشغيل بعده.
+        pendingResume = resumeAt > 0 ? resumeAt : nil
         wantsPlay = autoplay
-        if autoplay { player.play() }
+        if autoplay, pendingResume == nil { player.play() }
     }
 
     private func attach(_ item: AVPlayerItem) {
@@ -318,6 +363,7 @@ final class PlayerModel: ObservableObject {
                 let size = item.presentationSize
                 if size.width > 0, size.height > 0 { videoAspect = size.width / size.height }
             }
+            resumeWhenReady()
         case .failed:
             itemFailed()
         default:
@@ -325,12 +371,35 @@ final class PlayerModel: ObservableObject {
         }
     }
 
-    /// فشل العنصر: نسخة بعيدة انتهى رابطها أو تعثّرت ← رابط جديد ويُستأنف من الموضع نفسه (`SignedURLRefresh`)، بحدٍّ بلا تقدّم.
+    /// بعد تحميل عنصر بموضع سابق: البحث إليه الآن والعنصر جاهز (أو إلى موضع السحب إن كان المراسل يسحب)، ثم التشغيل إن أراده.
+    private func resumeWhenReady() {
+        guard let resume = pendingResume else {
+            if wantsPlay, !isScrubbing, player.timeControlStatus == .paused { player.play() }
+            return
+        }
+        pendingResume = nil
+        let target = CMTime(seconds: isScrubbing ? scrubSeconds : resume, preferredTimescale: 600)
+        chaseTarget = target
+        chaseExact = true
+        seekInProgress = true
+        let epoch = seekEpoch
+        player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, epoch == self.seekEpoch else { return }
+                if CMTimeCompare(target, self.chaseTarget) == 0 { self.seekInProgress = false } else { self.seekToChaseTarget() }
+                if self.wantsPlay, !self.isScrubbing { self.player.play() }
+            }
+        }
+    }
+
+    /// فشل العنصر: نسخة بعيدة انتهى رابطها أو تعثّرت ← رابط جديد ويُستأنف من الموضع نفسه (`SignedURLRefresh`)، بحدٍّ بلا تقدّم؛
+    /// ثم `hls` يرجع مرة واحدة إلى النسخة الخفيفة المتحقَّقة (`PlaybackSourcePolicy.fallback`) قبل «تعذّر التشغيل». والموضع موضع
+    /// السحب إن انقطع والمراسل يسحب.
     private func itemFailed() {
         guard !failureHandled else { return }
         failureHandled = true
-        let resumeAt = currentSeconds
-        let resume = wantsPlay
+        let resumeAt = isScrubbing ? scrubSeconds : currentSeconds
+        let resume = wantsPlay || (isScrubbing && wasPlayingBeforeScrub)
         guard case .remote = source else { phase = .failed; return }
         switch SignedURLRefresh.afterFailure(lease, now: Date(), refreshesWithoutProgress: refreshesWithoutProgress) {
         case .fetchNew:
@@ -338,7 +407,13 @@ final class PlayerModel: ObservableObject {
             lease = nil
             Task { await load(resumeAt: resumeAt, autoplay: resume) }
         case .useCurrent, .giveUp:
-            phase = .failed
+            guard !usedFallback, let fallback = fallbackSource else { phase = .failed; return }
+            usedFallback = true
+            source = fallback
+            quality = fallback.quality
+            lease = nil
+            refreshesWithoutProgress = 0
+            Task { await load(resumeAt: resumeAt, autoplay: resume) }
         }
     }
 
@@ -347,6 +422,7 @@ final class PlayerModel: ObservableObject {
         loadToken = UUID()
         seekEpoch += 1
         wantsPlay = false
+        pendingResume = nil
         player.pause()
         detach()
         player.replaceCurrentItem(with: nil)

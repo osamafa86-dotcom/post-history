@@ -9925,6 +9925,23 @@
           }
         }
       }
+    },
+    "detail.still.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر عرض الصورة. تحقّق من الشبكة وأعد المحاولة."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t show the photo. Check the network and try again."
+          }
+        }
+      }
     }
   }
 }

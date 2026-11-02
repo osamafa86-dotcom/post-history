@@ -25,13 +25,34 @@ public struct LocalOriginal: Equatable, Sendable {
 }
 
 public enum LocalOriginals {
-    /// أحدث أصل لهذه المادة ما زالت نسخته على الهاتف، أيًّا كانت مرحلة رفعه (هو ما صوّره المراسل). النسخة الخفيفة لا تُعدّ:
-    /// مشتق يصنعه التطبيق ويحذفه بعد إيصاله. القراءة وحدها؛ لا شيء هنا يغيّر الطابور.
-    public static func find(forMaterial materialId: UUID, in records: [UploadRecord],
+    /// أصل المادة على هذا الهاتف بما وصل الخادم، لا بالأحدث وحده؛ فلا تُعرض «لقطة بديلة» ردّها الخادم (409 لأصل ثانٍ بعد التحقق)
+    /// على أنها الأصل والمكتب يرى غيرها:
+    /// 1. السجل الذي تطابق بصمته (`sha256Hex`) بصمة أصل المادة المتحقَّق على الخادم.
+    /// 2. وإن كان على الخادم أصل متحقَّق لا يطابقه سجل: لا يُعرض سجل فشل أو أُلغي، والأحدث مما بقي.
+    /// 3. وإلا (لم يتحقق أصل على الخادم بعد): الأحدث مما لم يفشل ولم يُلغَ، ثم الأحدث أيًّا كان (ما صوّره المراسل ولم يصل).
+    /// والنسخة على الهاتف شرط في الثلاثة. النسخة الخفيفة لا تُعدّ: مشتق يصنعه التطبيق ويحذفه بعد إيصاله. القراءة وحدها.
+    public static func find(for material: Material, in records: [UploadRecord],
                             hasLocalCopy: (UploadRecord) -> Bool) -> LocalOriginal? {
-        records.filter { $0.materialId == materialId && $0.kind == .original && hasLocalCopy($0) }
-            .max { $0.createdAt < $1.createdAt }
-            .map { LocalOriginal(recordId: $0.id, relativePath: $0.sourcePath, mimeType: $0.mimeType) }
+        let candidates = records.filter { $0.materialId == material.id && $0.kind == .original && hasLocalCopy($0) }
+        guard !candidates.isEmpty else { return nil }
+        func newest(_ records: [UploadRecord]) -> UploadRecord? { records.max { $0.createdAt < $1.createdAt } }
+        let verified = material.files.filter { $0.kind == .original && $0.state == .verified }
+        let hashes = Set(verified.compactMap { $0.sha256?.lowercased() })
+        let settled = candidates.filter { !unsuccessful($0.phase) }
+        let chosen: UploadRecord?
+        if let match = newest(candidates.filter { $0.sha256Hex.map { hashes.contains($0.lowercased()) } ?? false }) {
+            chosen = match
+        } else if !verified.isEmpty {
+            chosen = newest(settled)
+        } else {
+            chosen = newest(settled) ?? newest(candidates)
+        }
+        return chosen.map { LocalOriginal(recordId: $0.id, relativePath: $0.sourcePath, mimeType: $0.mimeType) }
+    }
+
+    static func unsuccessful(_ phase: UploadPhase) -> Bool {
+        if case .failed = phase { return true }
+        return phase == .cancelled
     }
 }
 
@@ -95,29 +116,40 @@ public enum PlaybackSourcePolicy {
         return .unavailable
     }
 
+    /// الحسّاسة تُحجب صورتها، مموّهةً تحت علامة الحساسية كما في 07c، في المعرض وملصق التفاصيل أيًّا كان مصدرها (الهاتف أو الخادم)،
+    /// ولا تُكشف إلا بلمسة المراسل في التفاصيل («تشغيل» أو «عرض الصورة»).
+    public static func conceals(_ m: Material, revealed: Bool) -> Bool { m.isSensitive && !revealed }
+
     /// مصغّرة البطاقة في المعرض: الأصل على الهاتف ← `thumbnail` متحقَّق ← لا شيء. المادة الحسّاسة لا تُطلب لها معاينة من الخادم
-    /// (07c: «لا معاينة سحابية · تُعالَج محليًا»)؛ يظهر لها ما على الهاتف وحده.
+    /// (07c: «لا معاينة سحابية · تُعالَج محليًا»)، ومصغّرة الهاتف لها تُعرض مموّهة (`conceals`).
     public static func thumbnail(for m: Material, local: LocalOriginal?) -> PreviewSource {
         if let local { return .local(local) }
         guard !m.isSensitive, let thumb = newestVerified(.thumbnail, in: m) else { return .unavailable }
         return .remote(fileId: thumb.id)
     }
 
-    /// الصورة في تفاصيل مادة صورة: الأصل على الهاتف ← نسخة خفيفة صورةً ← `thumbnail` متحقَّق ← لا شيء. للمادة الحسّاسة لا تُطلب
-    /// إلا بلمسة المراسل (`requested`)، فلا معاينة تظهر وحدها؛ والمشغّل كذلك لا يطلب رابطًا إلا عند «تشغيل».
+    /// الصورة في تفاصيل مادة صورة: الأصل على الهاتف ← نسخة خفيفة صورةً ← `thumbnail` متحقَّق ← لا شيء. للمادة الحسّاسة لا تُعرض
+    /// من الهاتف ولا من الخادم إلا بلمسة المراسل (`requested`)، فلا صورة تظهر وحدها؛ والمشغّل كذلك لا يبدأ إلا عند «تشغيل».
     public static func still(for m: Material, local: LocalOriginal?, requested: Bool) -> PreviewSource {
+        guard !conceals(m, revealed: requested) else { return .unavailable }
         if let local { return .local(local) }
-        guard !m.isSensitive || requested else { return .unavailable }
         if let proxy = newestVerified(.proxy, in: m, where: { MaterialMedia.isImage(mimeType: $0.mimeType) }) { return .remote(fileId: proxy.id) }
         if let thumb = newestVerified(.thumbnail, in: m) { return .remote(fileId: thumb.id) }
         return .unavailable
+    }
+
+    /// بعد فشل `hls` (مقاطع قائمته النسبية لا يشملها رابط «يخص هذا الملف وحده» مثلًا): `proxy` متحقَّق مرة واحدة قبل «تعذّر
+    /// التشغيل». ولا بديل لغير `hls`.
+    public static func fallback(after source: PlaybackSource, for m: Material) -> PlaybackSource? {
+        guard case .remote(_, .hls, _) = source, let proxy = newestVerified(.proxy, in: m) else { return nil }
+        return .remote(fileId: proxy.id, kind: .proxy, quality: .lightCopy(proxy))
     }
 }
 
 // MARK: - الرابط الموقّع
 
 /// رابط قراءة موقّع قصير العمر (≤ 10 دقائق، `Cache-Control: no-store`): في الذاكرة وحدها طوال المشاهدة، لا في UserDefaults
-/// ولا على القرص، ولا يُسجَّل.
+/// ولا على القرص، ولا يُسجَّل. `https` وحده، فلا يعتمد الأمان على إعداد ATS خارج الكود.
 public struct SignedURLLease: Equatable, Sendable {
     public let url: URL
     public let expiresAt: Date
@@ -131,7 +163,7 @@ public struct SignedURLLease: Equatable, Sendable {
     }
 
     public init?(_ link: FileDownloadUrl) {
-        guard let url = URL(string: link.url), let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else { return nil }
+        guard let url = URL(string: link.url), url.scheme?.lowercased() == "https", url.host != nil else { return nil }
         self.init(url: url, expiresAt: link.expiresAt)
     }
 

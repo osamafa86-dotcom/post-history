@@ -161,11 +161,12 @@ final class AppModel: ObservableObject {
     }
 
     func logout(allSessions: Bool) async {
+        // التشغيل يتوقف ويُمحى رابطه قبل أي انتظار على الشبكة، كما في المسح والإبطال.
+        PlaybackCenter.shared.stopAll()
         // الرموز تُمسح محليًا قبل الاتصال؛ فشل الشبكة لا يبقي الجلسة على الجهاز.
         await push.willSignOut()
         try? await auth.logout(allSessions: allSessions)
-        // لا يبقى لمراسل خرج مكانٌ ولا وسوم ولا مصغّرات ولا تشغيل لمن يدخل بعده على الهاتف نفسه.
-        PlaybackCenter.shared.stopAll()
+        // لا يبقى لمراسل خرج مكانٌ ولا وسوم ولا مصغّرات لمن يدخل بعده على الهاتف نفسه.
         memory.clear()
         ThumbnailCache.shared.clear()
         workName = nil

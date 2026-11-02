@@ -69,23 +69,101 @@ final class MaterialPlaybackTests: XCTestCase {
         let sensitive = galleryMaterial(sensitive: true, files: [thumb])
         XCTAssertEqual(PlaybackSourcePolicy.still(for: sensitive, local: nil, requested: false), .unavailable)
         XCTAssertEqual(PlaybackSourcePolicy.still(for: sensitive, local: nil, requested: true), .remote(fileId: thumb.id))
-        XCTAssertEqual(PlaybackSourcePolicy.still(for: sensitive, local: local, requested: false), .local(local))
+        // ولا من الهاتف قبل اللمس: الصورة الحسّاسة لا تظهر وحدها أيًّا كان مصدرها.
+        XCTAssertEqual(PlaybackSourcePolicy.still(for: sensitive, local: local, requested: false), .unavailable)
+        XCTAssertEqual(PlaybackSourcePolicy.still(for: sensitive, local: local, requested: true), .local(local))
     }
 
-    func testTheLocalOriginalIsTheNewestOriginalStillOnThePhone() {
-        let material = UUID()
-        func rec(_ kind: UploadSessionCreate.Kind, _ seconds: TimeInterval, for id: UUID? = nil, phase: UploadPhase = .verified(receiptNumber: "R")) -> UploadRecord {
-            var r = UploadRecord(materialId: id ?? material, kind: kind, sourcePath: "Uploads/\(UUID().uuidString).mov", filename: "a.mov",
-                                 mimeType: "video/quicktime", sizeBytes: 1, now: Date(timeIntervalSince1970: seconds))
-            r.phase = phase
-            return r
-        }
-        let older = rec(.original, 1), newer = rec(.original, 2, phase: .failed(.sourceMissing)), gone = rec(.original, 3)
-        let proxy = rec(.proxy, 4), other = rec(.original, 5, for: UUID())
-        let onPhone: Set<UUID> = [older.id, newer.id, proxy.id, other.id]
-        let found = LocalOriginals.find(forMaterial: material, in: [older, newer, gone, proxy, other]) { onPhone.contains($0.id) }
-        XCTAssertEqual(found, LocalOriginal(recordId: newer.id, relativePath: newer.sourcePath, mimeType: "video/quicktime"))
-        XCTAssertNil(LocalOriginals.find(forMaterial: material, in: [gone, proxy]) { onPhone.contains($0.id) })
+    func testASensitiveMaterialStaysConcealedUntilTheReporterRevealsIt() {
+        let sensitive = galleryMaterial(sensitive: true), plain = galleryMaterial()
+        XCTAssertTrue(PlaybackSourcePolicy.conceals(sensitive, revealed: false))
+        XCTAssertFalse(PlaybackSourcePolicy.conceals(sensitive, revealed: true))
+        XCTAssertFalse(PlaybackSourcePolicy.conceals(plain, revealed: false))
+    }
+
+    func testAFailedHlsFallsBackOnceToTheVerifiedLightCopy() {
+        let hls = mediaFile(.hls), proxy = mediaFile(.proxy, proxyMode: .urgent)
+        let m = galleryMaterial(files: [hls, proxy, mediaFile(.proxy, .received)])
+        let first = PlaybackSourcePolicy.player(for: m, local: nil)
+        XCTAssertEqual(first, .remote(fileId: hls.id, kind: .hls, quality: .adaptive))
+        let fallback = PlaybackSourcePolicy.fallback(after: first, for: m)
+        XCTAssertEqual(fallback, .remote(fileId: proxy.id, kind: .proxy, quality: .lightCopy(lines: 360)))
+        // مرة واحدة: لا بديل بعد النسخة الخفيفة، ولا لنسخة الهاتف، ولا بلا نسخة خفيفة متحقَّقة.
+        XCTAssertNil(PlaybackSourcePolicy.fallback(after: fallback!, for: m))
+        XCTAssertNil(PlaybackSourcePolicy.fallback(after: .local(local), for: m))
+        XCTAssertNil(PlaybackSourcePolicy.fallback(after: first, for: galleryMaterial(files: [hls, mediaFile(.proxy, .uploading)])))
+    }
+
+    // MARK: أصل المادة على الهاتف بما وصل الخادم
+
+    private func record(_ material: UUID, at seconds: TimeInterval, phase: UploadPhase, sha: String?,
+                        kind: UploadSessionCreate.Kind = .original) -> UploadRecord {
+        var r = UploadRecord(materialId: material, kind: kind, sourcePath: "Uploads/\(UUID().uuidString).mov", filename: "a.mov",
+                             mimeType: "video/quicktime", sizeBytes: 1, now: Date(timeIntervalSince1970: seconds))
+        r.phase = phase
+        r.sha256Hex = sha
+        return r
+    }
+
+    private func serverOriginal(sha: String?, _ state: MaterialFile.State = .verified) -> MaterialFile {
+        var f = mediaFile(.original, state, mime: "video/quicktime")
+        f.sha256 = sha
+        return f
+    }
+
+    private func found(_ m: Material, _ records: [UploadRecord], onPhone: Set<UUID>? = nil) -> UUID? {
+        LocalOriginals.find(for: m, in: records) { onPhone?.contains($0.id) ?? true }?.recordId
+    }
+
+    private let shaA = String(repeating: "a", count: 64), shaB = String(repeating: "b", count: 64)
+
+    func testAReplacementShotTheServerRejectedIsNotShownAsTheOriginal() {
+        // «رفع لقطة بديلة» لمادة تحقّق أصلها: الخادم يرد 409 فيصير السجل الأحدث `failed(.rejected)` وملفه باقٍ على الهاتف.
+        var m = galleryMaterial(files: [serverOriginal(sha: shaA)])
+        let accepted = record(m.id, at: 1, phase: .verified(receiptNumber: "R"), sha: shaA)
+        let rejected = record(m.id, at: 2, phase: .failed(.rejected), sha: shaB)
+        XCTAssertEqual(found(m, [accepted, rejected]), accepted.id, "the copy matching the server's fingerprint")
+        // حذف المراسل نسخة الأصل المقبول من الهاتف: لا يُعرض المرفوض مكانه.
+        XCTAssertEqual(found(m, [accepted, rejected], onPhone: [rejected.id]), nil)
+        // الخادم لم يكتب البصمة بعد: الأصل متحقَّق ولا سجل يطابقه، فالفاشل والملغى لا يُعرضان.
+        m.files = [serverOriginal(sha: nil)]
+        XCTAssertEqual(found(m, [accepted, rejected]), accepted.id)
+        let cancelled = record(m.id, at: 3, phase: .cancelled, sha: nil)
+        XCTAssertEqual(found(m, [rejected, cancelled]), nil)
+    }
+
+    func testAFailedOriginalThenAnAcceptedReplacementShowsTheReplacement() {
+        let m = galleryMaterial(files: [serverOriginal(sha: shaB)])
+        let failed = record(m.id, at: 1, phase: .failed(.checksumMismatch), sha: shaA)
+        let replacement = record(m.id, at: 2, phase: .verified(receiptNumber: "R"), sha: shaB.uppercased())
+        XCTAssertEqual(found(m, [failed, replacement]), replacement.id)
+        XCTAssertEqual(found(m, [replacement, failed]), replacement.id, "order of records does not matter")
+    }
+
+    func testBeforeTheServerVerifiesTheNewestUnfailedCopyIsShownThenAnyCopy() {
+        // الأصل الأول فشل والبديل ما زال يُرفع: البديل.
+        let m = galleryMaterial(technical: .pending, files: [serverOriginal(sha: nil, .uploading)])
+        let failed = record(m.id, at: 1, phase: .failed(.expired), sha: shaA)
+        let uploading = record(m.id, at: 2, phase: .transferring, sha: shaB)
+        let olderUploading = record(m.id, at: 0, phase: .transferring, sha: nil)
+        XCTAssertEqual(found(m, [failed, uploading, olderUploading]), uploading.id)
+        // لم يصل شيء قط والنسخة الوحيدة لرفع فشل: هي ما صوّره المراسل فتُعرض.
+        XCTAssertEqual(found(m, [failed]), failed.id)
+        var bare = m
+        bare.files = []
+        XCTAssertEqual(found(bare, [failed]), failed.id)
+    }
+
+    func testOnlyThisMaterialsOriginalsStillOnThePhoneCount() {
+        let m = galleryMaterial(technical: .pending)
+        let kept = record(m.id, at: 1, phase: .transferring, sha: nil)
+        let gone = record(m.id, at: 3, phase: .transferring, sha: nil)
+        let proxy = record(m.id, at: 4, phase: .verified(receiptNumber: "R"), sha: nil, kind: .proxy)
+        let other = record(UUID(), at: 5, phase: .transferring, sha: nil)
+        let onPhone: Set<UUID> = [kept.id, proxy.id, other.id]
+        XCTAssertEqual(LocalOriginals.find(for: m, in: [kept, gone, proxy, other]) { onPhone.contains($0.id) },
+                       LocalOriginal(recordId: kept.id, relativePath: kept.sourcePath, mimeType: "video/quicktime"))
+        XCTAssertNil(LocalOriginals.find(for: m, in: [gone, proxy, other]) { onPhone.contains($0.id) })
         XCTAssertTrue(LocalOriginal(recordId: UUID(), relativePath: "Uploads/x.jpg", mimeType: nil).isImage)
     }
 
@@ -109,9 +187,11 @@ final class MaterialPlaybackTests: XCTestCase {
         XCTAssertEqual(SignedURLRefresh.afterFailure(fresh, now: now, refreshesWithoutProgress: 1), .giveUp)
     }
 
-    func testTheLeaseAcceptsOnlyAWebLink() {
+    func testTheLeaseAcceptsOnlyAnHttpsLink() {
         let at = Date(timeIntervalSince1970: 5)
         XCTAssertEqual(SignedURLLease(FileDownloadUrl(url: "https://storage.example.invalid/o/1", expiresAt: at))?.expiresAt, at)
+        XCTAssertNil(SignedURLLease(FileDownloadUrl(url: "http://storage.example.invalid/o/1", expiresAt: at)))
+        XCTAssertNil(SignedURLLease(FileDownloadUrl(url: "https:///o/1", expiresAt: at)))
         XCTAssertNil(SignedURLLease(FileDownloadUrl(url: "file:///etc/passwd", expiresAt: at)))
         XCTAssertNil(SignedURLLease(FileDownloadUrl(url: "", expiresAt: at)))
     }

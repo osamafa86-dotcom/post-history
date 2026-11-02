@@ -42,6 +42,53 @@ final class MaterialsCoreTests: XCTestCase {
         XCTAssertEqual(api.calls, [nil, "p2"], "no request past the last page")
     }
 
+    func testPollingMergesTheFirstPageAndKeepsTheLoadedPagesAndCursor() async throws {
+        // المعرض بصفحتين وبعدهما مؤشر؛ وصلت مادة جديدة وتغيّرت حالة مادة في الصفحة الأولى.
+        let a = material(title: "a"), b = material(), c = material(), d = material()
+        let api = FakeMaterialsAPI()
+        api.pages[nil] = MaterialPage(items: [a, b], nextCursor: "p2")
+        api.pages["p2"] = MaterialPage(items: [c, d], nextCursor: "p3")
+        let feed = MaterialsFeed(api: api, pageSize: 2)
+        try await feed.refresh()
+        try await feed.loadMore()
+        let new = material(), updated = material(a.id, title: "a", editorial: .accepted)
+        api.pages[nil] = MaterialPage(items: [new, updated], nextCursor: "q2")
+        let merged = try await feed.refreshHead()
+        XCTAssertEqual(merged.map(\.id), [new.id, a.id, b.id, c.id, d.id], "nothing loaded is dropped")
+        XCTAssertEqual(merged[1].editorialState, .accepted, "the changed item is updated in place")
+        let cursor = await feed.nextCursor
+        XCTAssertEqual(cursor, "p3", "the cursor after the loaded pages is kept, so no page is walked again")
+        try await feed.loadMore()
+        XCTAssertEqual(api.calls, [nil, "p2", nil, "p3"])
+    }
+
+    func testPollingResetsOnlyWhenTheFirstPageIsTheWholeListOrLeavesAGap() async throws {
+        let a = material(), b = material(), c = material()
+        let api = FakeMaterialsAPI()
+        api.pages[nil] = MaterialPage(items: [a, b], nextCursor: "p2")
+        let feed = MaterialsFeed(api: api, pageSize: 2)
+        try await feed.refresh()
+        // أكثر من صفحة جديدة: لا تقاطع مع ما حُمّل وبعدها مؤشر، فلا يُدمج فوق فجوة.
+        let x = material(), y = material()
+        api.pages[nil] = MaterialPage(items: [x, y], nextCursor: "q2")
+        var items = try await feed.refreshHead()
+        XCTAssertEqual(items.map(\.id), [x.id, y.id])
+        var cursor = await feed.nextCursor
+        XCTAssertEqual(cursor, "q2")
+        // الصفحة الأولى هي القائمة كلها: تُستبدل، فتسقط المحذوفة.
+        api.pages[nil] = MaterialPage(items: [c, x], nextCursor: nil)
+        items = try await feed.refreshHead()
+        XCTAssertEqual(items.map(\.id), [c.id, x.id])
+        cursor = await feed.nextCursor
+        let end = await feed.reachedEnd
+        XCTAssertNil(cursor)
+        XCTAssertTrue(end)
+        // بلا شيء محمَّل: تحميل أول.
+        let empty = MaterialsFeed(api: api, pageSize: 2)
+        let first = try await empty.refreshHead()
+        XCTAssertEqual(first.map(\.id), [c.id, x.id])
+    }
+
     func testRefreshReplacesTheListAndReloadUpdatesInPlace() async throws {
         let a = material(title: "old")
         let api = FakeMaterialsAPI()

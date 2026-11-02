@@ -21,6 +21,9 @@ struct MaterialDetailView: View {
     @State private var stillRequested = false
     @State private var poster: Image?
     @State private var still: Image?
+    /// تعذّر جلب الصورة أو قراءتها: حالة خطأ بزرّ «أعد المحاولة» لا مؤشر انتظار بلا نهاية.
+    @State private var stillFailed = false
+    @State private var stillAttempt = 0
     @State private var localDuration: Double?
     @State private var trackFilter: MaterialStatus.Track?
     /// آخر نسخة معروفة: تحديث المعرض يعيد القائمة إلى صفحتها الأولى، فلا تختفي مادة من صفحة أبعد وهي مفتوحة.
@@ -28,12 +31,20 @@ struct MaterialDetailView: View {
 
     private var material: PostHistoryAPI.Material? { model.items.first { $0.id == materialId } ?? snapshot }
 
+    /// أصل المادة على الهاتف بما وصل الخادم (`LocalOriginals.find`)، لا أحدث سجل؛ فلا تُعرض لقطة بديلة ردّها الخادم.
     private var local: LocalOriginal? {
-        LocalOriginals.find(forMaterial: materialId, in: queue.records) { queue.localCopies.contains($0.id) }
+        guard let material else { return nil }
+        let copies = queue.localCopies
+        return LocalOriginals.find(for: material, in: queue.records) { copies.contains($0.id) }
     }
 
     private var playbackSource: PlaybackSource {
         material.map { PlaybackSourcePolicy.player(for: $0, local: local) } ?? .unavailable
+    }
+
+    /// بديل `hls` إن فشل: النسخة الخفيفة المتحقَّقة، مرة واحدة.
+    private var fallbackSource: PlaybackSource? {
+        material.flatMap { PlaybackSourcePolicy.fallback(after: playbackSource, for: $0) }
     }
 
     private var knownDuration: Double? {
@@ -89,7 +100,7 @@ struct MaterialDetailView: View {
     private func configurePlayer(_ source: PlaybackSource) {
         let fetch = model.downloadURL
         let id = materialId
-        player.configure(source: source, knownDurationSeconds: knownDuration) { fileId in try await fetch(id, fileId) }
+        player.configure(source: source, fallback: fallbackSource, knownDurationSeconds: knownDuration) { fileId in try await fetch(id, fileId) }
     }
 
     @ViewBuilder private func content(_ m: PostHistoryAPI.Material) -> some View {
@@ -119,18 +130,24 @@ struct MaterialDetailView: View {
         }
     }
 
-    /// قبل التشغيل: صورة من نسخة الهاتف أو مصغّرة الخادم (لغير الحسّاسة)، وزرّ «تشغيل»؛ أو «قيد المعالجة» صريحة إن لم يوجد ما يُشغَّل.
+    /// قبل التشغيل: صورة من نسخة الهاتف أو مصغّرة الخادم، وزرّ «تشغيل»؛ أو «قيد المعالجة» صريحة إن لم يوجد ما يُشغَّل. الحسّاسة
+    /// مموّهة صغيرة تحت علامتها أيًّا كان مصدرها، و«تشغيل» هو الكشف (`PlaybackSourcePolicy.conceals`).
     private func posterView(_ m: PostHistoryAPI.Material) -> some View {
         let source = PlaybackSourcePolicy.thumbnail(for: m, local: local)
+        let concealed = PlaybackSourcePolicy.conceals(m, revealed: false)
         return ZStack {
             Color.vl.bgStore
             if let poster {
-                poster.resizable().scaledToFit()
+                if concealed {
+                    poster.resizable().scaledToFill().blur(radius: VL.Space.s5, opaque: true).accessibilityHidden(true)
+                    Color.vl.bgStore.opacity(0.5)
+                } else {
+                    poster.resizable().scaledToFit()
+                }
             }
             if player.canPlay {
                 VStack(spacing: VL.Space.s4) {
-                    // الحسّاسة بلا نسخة على الهاتف: لا معاينة تظهر وحدها، والتشغيل بلمسة المراسل.
-                    if poster == nil, m.isSensitive { sensitiveNote }
+                    if concealed { sensitiveNote }
                     Button { player.play() } label: {
                         Image(systemName: "play.fill")
                             .font(.title.weight(.semibold))
@@ -152,35 +169,56 @@ struct MaterialDetailView: View {
         .task(id: source) {
             switch source {
             case .local(let original):
-                poster = await ThumbnailCache.shared.image(relativePath: original.relativePath, isVideo: true, maxPixel: 900)
+                poster = await ThumbnailCache.shared.image(relativePath: original.relativePath, isVideo: true, maxPixel: concealed ? 48 : 900)
                 if MaterialMedia.durationMs(of: m) == nil {
                     localDuration = await ThumbnailCache.shared.duration(relativePath: original.relativePath)
                 }
             case .remote(let fileId):
                 let fetch = model.downloadURL
                 let id = m.id
-                poster = await ThumbnailCache.shared.remoteImage(fileId: fileId, maxPixel: 900) { try await fetch(id, fileId) }
+                poster = await ThumbnailCache.shared.remoteImage(fileId: fileId, maxPixel: concealed ? 48 : 900) { try await fetch(id, fileId) }
             case .unavailable:
                 poster = nil
             }
         }
     }
 
-    /// مادة صورة: الأصل على الهاتف، أو نسخة الخادم المصغّرة؛ والحسّاسة بلمسة «عرض الصورة». الصورة الكبيرة لا تُخزَّن في الذاكرة المؤقتة.
+    /// طلب الصورة: مصدرها ورقم المحاولة («أعد المحاولة» تعيد الجلب).
+    private struct StillRequest: Equatable {
+        let source: PreviewSource
+        let attempt: Int
+    }
+
+    /// مادة صورة: الأصل على الهاتف، أو نسخة الخادم. الحسّاسة مموّهة صغيرة تحت علامتها حتى «عرض الصورة» أيًّا كان مصدرها. الصورة
+    /// الكبيرة لا تُخزَّن في ذاكرة المصغّرات، وتعذّر جلبها أو قراءتها حالة خطأ بزرّ «أعد المحاولة» لا انتظار بلا نهاية.
     private func stillView(_ m: PostHistoryAPI.Material) -> some View {
         let source = PlaybackSourcePolicy.still(for: m, local: local, requested: stillRequested)
-        let canRequest = m.isSensitive && !stillRequested && PlaybackSourcePolicy.still(for: m, local: nil, requested: true) != .unavailable
+        let concealed = PlaybackSourcePolicy.conceals(m, revealed: stillRequested)
+        let canReveal = concealed && PlaybackSourcePolicy.still(for: m, local: local, requested: true) != .unavailable
+        let blurredSource: PreviewSource = concealed ? PlaybackSourcePolicy.thumbnail(for: m, local: local) : .unavailable
         return VStack(alignment: .leading, spacing: VL.Space.s2) {
             ZStack {
                 Color.vl.bgStore
-                if let still {
-                    still.resizable().scaledToFit()
-                        .accessibilityLabel(Text(verbatim: m.title))
-                } else if canRequest {
+                if canReveal {
+                    if let poster {
+                        poster.resizable().scaledToFill().blur(radius: VL.Space.s5, opaque: true).accessibilityHidden(true)
+                        Color.vl.bgStore.opacity(0.5)
+                    }
                     VStack(spacing: VL.Space.s4) {
                         sensitiveNote
                         Button("detail.action.show") { stillRequested = true }.buttonStyle(.vlOutlineSmall)
                     }
+                } else if let still {
+                    still.resizable().scaledToFit()
+                        .accessibilityLabel(Text(verbatim: m.title))
+                } else if stillFailed {
+                    VStack(spacing: VL.Space.s3) {
+                        Image(systemName: "exclamationmark.triangle").font(.title2).accessibilityHidden(true)
+                        Text("detail.still.failed").vlText(.body).multilineTextAlignment(.center)
+                        Button("player.retry") { stillAttempt += 1 }.buttonStyle(.vlOutlineSmall)
+                    }
+                    .foregroundStyle(Color.vl.textOnStore)
+                    .padding(VL.Space.s5)
                 } else if source == .unavailable {
                     processingNote
                 } else {
@@ -191,26 +229,40 @@ struct MaterialDetailView: View {
             .aspectRatio(1, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: VL.Radius.md, style: .continuous))
             .environment(\.colorScheme, .dark)
-            if still != nil {
+            if still != nil, !canReveal {
                 Text(LocalizedStringKey(local != nil ? "detail.still.original" : "detail.still.server"))
                     .vlText(.caption).foregroundStyle(Color.vl.textSecondary)
             }
         }
-        .task(id: source) {
+        .task(id: StillRequest(source: source, attempt: stillAttempt)) {
+            stillFailed = false
             switch source {
             case .local(let original):
                 let url = UploadServices.shared.documentsDirectory.appendingPathComponent(original.relativePath)
                 still = await MediaImages.downsample(fileURL: url, maxPixel: 1600).map { Image(decorative: $0, scale: 1) }
+                stillFailed = still == nil
             case .remote(let fileId):
                 let fetch = model.downloadURL
                 let id = m.id
                 // للعرض وحده: الصورة في حالة الشاشة، لا في ذاكرة المصغّرات.
                 guard let lease = (try? await fetch(id, fileId)).flatMap({ SignedURLLease($0) }),
                       let data = await MediaImages.data(lease.url),
-                      let image = await MediaImages.downsample(data: data, maxPixel: 1600) else { still = nil; return }
+                      let image = await MediaImages.downsample(data: data, maxPixel: 1600) else {
+                    still = nil
+                    stillFailed = !Task.isCancelled
+                    return
+                }
                 still = Image(decorative: image, scale: 1)
             case .unavailable:
                 still = nil
+            }
+        }
+        // ما يظهر مموّهًا قبل الكشف: مصغّرة الهاتف وحدها، صغيرة جدًا.
+        .task(id: blurredSource) {
+            if case .local(let original) = blurredSource {
+                poster = await ThumbnailCache.shared.image(relativePath: original.relativePath, isVideo: false, maxPixel: 48)
+            } else {
+                poster = nil
             }
         }
     }

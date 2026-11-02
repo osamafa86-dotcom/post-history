@@ -10,6 +10,8 @@ final class MyMaterialsModel: ObservableObject {
     @Published private(set) var reachedEnd = false
     @Published private(set) var failed = false
     @Published private(set) var loading = false
+    /// صفحة تالية في الطريق: «لا مواد بهذا الفلتر» لا تُقال قبل أن تنتهي.
+    @Published private(set) var loadingMore = false
     /// آخر تحديث ناجح؛ عند الفشل تبقى البيانات المعروضة مع شريط «غير محدّث منذ …».
     @Published private(set) var lastUpdated: Date?
     @Published private(set) var timelines: [UUID: MaterialTimeline] = [:]
@@ -25,11 +27,27 @@ final class MyMaterialsModel: ObservableObject {
         self.downloadURL = downloadURL
     }
 
+    /// السحب للتحديث: من الأول، وتسقط الصفحات المحمّلة.
     func refresh() async {
+        await update { try await $0.refresh() }
+    }
+
+    /// الاستطلاع: الصفحة الأولى تُدمج فوق ما حُمّل (`MaterialsFeed.refreshHead`)، فلا يعود المعرض إلى أوله ولا تُعاد صفحاته.
+    func poll() async {
+        await update { try await $0.refreshHead() }
+    }
+
+    /// الظهور (أول مرة، أو الرجوع من التفاصيل): لا طلب إن كان آخر تحديث قريبًا، وإلا استطلاع لا يمس موضع المراسل.
+    func refreshIfStale(maxAge: TimeInterval = 30) async {
+        if let lastUpdated, !items.isEmpty, Date().timeIntervalSince(lastUpdated) < maxAge { return }
+        await poll()
+    }
+
+    private func update(_ fetch: (MaterialsFeed) async throws -> [PostHistoryAPI.Material]) async {
         loading = true
         defer { loading = false }
         do {
-            items = try await feed.refresh()
+            items = try await fetch(feed)
             failed = false
             lastUpdated = Date()
         } catch { failed = true }
@@ -37,7 +55,12 @@ final class MyMaterialsModel: ObservableObject {
     }
 
     func loadMore() async {
-        do { items = try await feed.loadMore() } catch { failed = true }
+        loadingMore = true
+        defer { loadingMore = false }
+        do {
+            items = try await feed.loadMore()
+            failed = false
+        } catch { failed = true }
         reachedEnd = await feed.reachedEnd
     }
 
@@ -90,7 +113,7 @@ struct MyMaterialsView: View {
                     (value: quick, label: Text(LocalizedStringKey("gallery.quick.\(quick.rawValue)")))
                 }, selection: $filter.quick)
                 notes
-                if sections.isEmpty, !model.loading, !model.failed { empty }
+                if sections.isEmpty { empty }
                 ForEach(sections) { section in
                     sectionView(section, locals: locals)
                 }
@@ -115,14 +138,15 @@ struct MyMaterialsView: View {
                              badgeValue: Text("gallery.options.active \(filter.sheetCount)")) { showOptions = true }
             }
         }
+        // السحب وحده يعيد المعرض إلى أوله؛ الظهور والاستطلاع يدمجان الصفحة الأولى ويبقى الموضع والصفحات المحمّلة.
         .refreshable { await model.refresh() }
         .task {
-            await model.refresh()
+            await model.refreshIfStale()
             // استطلاع كل 30 ثانية ما دامت الشاشة ظاهرة.
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
                 guard !Task.isCancelled else { break }
-                await model.refresh()
+                await model.poll()
             }
         }
         .sheet(isPresented: $showOptions) {
@@ -130,14 +154,15 @@ struct MyMaterialsView: View {
         }
     }
 
-    /// أصول المواد التي ما زالت نسخها على الهاتف (قراءة سجلات الطابور وحدها).
+    /// أصول المواد التي ما زالت نسخها على الهاتف (قراءة سجلات الطابور وحدها)، بقاعدة `LocalOriginals.find`. السجلات تُفهرس بالمادة
+    /// مرة واحدة، فلا يتكرر المرور عليها لكل مادة مع كل حدث تقدّم في الطابور.
     private var localOriginals: [UUID: LocalOriginal] {
-        let ids = Set(model.items.map(\.id))
+        let byMaterial = Dictionary(grouping: queue.records.filter { $0.kind == .original }, by: \.materialId)
+        let copies = queue.localCopies
         var out: [UUID: LocalOriginal] = [:]
-        for id in ids {
-            if let found = LocalOriginals.find(forMaterial: id, in: queue.records, hasLocalCopy: { queue.localCopies.contains($0.id) }) {
-                out[id] = found
-            }
+        for m in model.items {
+            guard let records = byMaterial[m.id] else { continue }
+            if let found = LocalOriginals.find(for: m, in: records, hasLocalCopy: { copies.contains($0.id) }) { out[m.id] = found }
         }
         return out
     }
@@ -154,13 +179,18 @@ struct MyMaterialsView: View {
         }
     }
 
-    /// 07b: مراسل بلا مواد يرى ما سيظهر هنا وزرّ الإرسال؛ ومع فلتر لا يطابق شيئًا يُقال ذلك ويُعرض مسحه.
+    /// 07b: مراسل بلا مواد يرى ما سيظهر هنا وزرّ الإرسال؛ ومع فلتر لا يطابق شيئًا يُقال ذلك ويُعرض مسحه، لكن بعد أن ينتهي التحميل
+    /// وتُجلب كل الصفحات (أو يتعذّر الجلب)، لا والصفحات التالية في الطريق.
     @ViewBuilder private var empty: some View {
-        if model.items.isEmpty {
-            VLEmptyState(title: "mine.empty.title", message: "mine.empty") {
-                Button("home.send", action: onNewMaterial).buttonStyle(.vlPrimary)
+        if model.loading || model.loadingMore {
+            EmptyView()
+        } else if model.items.isEmpty {
+            if !model.failed {
+                VLEmptyState(title: "mine.empty.title", message: "mine.empty") {
+                    Button("home.send", action: onNewMaterial).buttonStyle(.vlPrimary)
+                }
             }
-        } else {
+        } else if model.reachedEnd || model.failed {
             VLEmptyState(title: "gallery.filtered.empty", message: "gallery.filtered.hint") {
                 Button("gallery.clear") { filter = GalleryFilter() }.buttonStyle(.vlOutline)
             }
@@ -255,17 +285,20 @@ struct GalleryCell: View {
             .task(id: preview) { await load() }
     }
 
+    /// الحسّاسة تُحمَّل صغيرة جدًا ثم تُموَّه (`MediaCard`)، فلا تفصيل يُستعاد منها؛ وغيرها بحجم البطاقة.
+    private var thumbnailPixels: CGFloat { PlaybackSourcePolicy.conceals(material, revealed: false) ? 48 : 480 }
+
     private func load() async {
         switch preview {
         case .local(let original):
-            image = await ThumbnailCache.shared.image(relativePath: original.relativePath, isVideo: !original.isImage, maxPixel: 480)
+            image = await ThumbnailCache.shared.image(relativePath: original.relativePath, isVideo: !original.isImage, maxPixel: thumbnailPixels)
             if !original.isImage, MaterialMedia.durationMs(of: material) == nil {
                 localDuration = await ThumbnailCache.shared.duration(relativePath: original.relativePath)
             }
         case .remote(let fileId):
             let fetch = model.downloadURL
             let materialId = material.id
-            image = await ThumbnailCache.shared.remoteImage(fileId: fileId, maxPixel: 480) { try await fetch(materialId, fileId) }
+            image = await ThumbnailCache.shared.remoteImage(fileId: fileId, maxPixel: thumbnailPixels) { try await fetch(materialId, fileId) }
         case .unavailable:
             image = nil
         }
