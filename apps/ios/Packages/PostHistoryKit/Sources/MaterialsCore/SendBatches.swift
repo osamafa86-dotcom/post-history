@@ -1,6 +1,7 @@
 import Foundation
 import PostHistoryAPI
 import enum UploadCore.UploadFileProtection
+import struct UploadCore.AccountScope
 
 /// إرسالة واحدة من شاشة الإرسال: عنوانها الأساسي، ومفاتيح إنشاء ملفاتها كما خُطِّط لها قبل أول طلب، ومواد ما دخل الطابور منها،
 /// كي يجمعها إيصال واحد ودوائر واحدة (ADR 0088).
@@ -16,9 +17,11 @@ public struct SendBatch: Codable, Equatable, Sendable, Identifiable {
     /// جواب سؤال الحساسية للإرسالة («نعم» في أيٍّ من الثلاثة): تُحجب صور موادها في صفوف الرفع قبل أن تُعرف المادة من الخادم
     /// (ADR 0089). `nil` لملف كتبه بناء سابق، فتُحجب حتى تُعرف.
     public var sensitive: Bool?
+    /// الحساب صاحب الإرسالة بمعرّفه المحلي المعتم (`LocalAccounts`، ADR 0091): تُعرض له وحده. `nil` لملف كتبه بناء سابق.
+    public var owner: UUID?
 
     public init(id: UUID = UUID(), title: String, fileKeys: [String] = [], materialIds: [UUID] = [], createdAt: Date = Date(),
-                receiptShown: Bool = false, sensitive: Bool? = nil) {
+                receiptShown: Bool = false, sensitive: Bool? = nil, owner: UUID? = nil) {
         self.id = id
         self.title = title
         self.fileKeys = fileKeys
@@ -26,6 +29,7 @@ public struct SendBatch: Codable, Equatable, Sendable, Identifiable {
         self.createdAt = createdAt
         self.receiptShown = receiptShown
         self.sensitive = sensitive
+        self.owner = owner
     }
 
     /// ملف كتبه بناء سابق من هذا الطلب بلا مفاتيح الملفات يُقرأ كما هو.
@@ -38,6 +42,14 @@ public struct SendBatch: Codable, Equatable, Sendable, Identifiable {
         createdAt = try c.decode(Date.self, forKey: .createdAt)
         receiptShown = try c.decode(Bool.self, forKey: .receiptShown)
         sensitive = try c.decodeIfPresent(Bool.self, forKey: .sensitive)
+        owner = try c.decodeIfPresent(UUID.self, forKey: .owner)
+    }
+}
+
+extension AccountScope {
+    /// إرسالات الحساب الداخل وحده (ADR 0091)؛ إرسالة حساب آخر لا يظهر منها عنوان ولا عدد.
+    public func visible(_ batches: [SendBatch]) -> [SendBatch] {
+        batches.filter { owns($0.owner) }
     }
 }
 
@@ -144,8 +156,8 @@ public final class SendBatchLedger {
 
     /// قبل أول `POST /materials`: الإرسالة بمعرّفها ومفاتيح ملفاتها، مفتوحةً حتى `finish`.
     @discardableResult
-    public func begin(title: String, fileKeys: [String], sensitive: Bool? = nil, now: Date = Date()) -> SendBatch {
-        let batch = SendBatch(title: title, fileKeys: fileKeys, createdAt: now, sensitive: sensitive)
+    public func begin(title: String, fileKeys: [String], sensitive: Bool? = nil, owner: UUID? = nil, now: Date = Date()) -> SendBatch {
+        let batch = SendBatch(title: title, fileKeys: fileKeys, createdAt: now, sensitive: sensitive, owner: owner)
         batches.insert(batch, at: 0)
         open.insert(batch.id)
         commit()
@@ -172,6 +184,12 @@ public final class SendBatchLedger {
         guard let i = batches.firstIndex(where: { $0.id == batchId }), !batches[i].receiptShown else { return }
         batches[i].receiptShown = true
         commit()
+    }
+
+    /// إرسالات الحساب `owner` التي استحق إيصالها ولم يُعرض (وصل آخر ملفاتها وهو خارج)، الأقدم أولًا: تُعرض حين يدخل (ADR 0091).
+    /// إرسالات الإصدارات السابقة بلا مالك لا تُعرض هنا، فلا يظهر بعد الترقية إيصال قديم فجأة.
+    public func receiptsDue(forOwner owner: UUID, items: (SendBatch) -> [UploadItem]) -> [UUID] {
+        batches.filter { $0.owner == owner && due($0, items: items) != nil }.reversed().map(\.id)
     }
 
     /// الإبطال والمسح: لا تبقى إرسالات تشير إلى طابور مُحي.
@@ -225,12 +243,12 @@ public enum BatchedSubmission {
     }
 
     @MainActor
-    public static func run(_ draft: MaterialDraft, dynamicFields: [String: JSONValue], ledger: SendBatchLedger,
+    public static func run(_ draft: MaterialDraft, dynamicFields: [String: JSONValue], ledger: SendBatchLedger, owner: UUID? = nil,
                            create: (String, MaterialCreate) async throws -> UUID,
                            enqueue: (MaterialDraft.PickedFile, UUID, MaterialCreate) async throws -> Void) async -> Outcome {
         let batch = ledger.begin(title: draft.title.trimmingCharacters(in: .whitespacesAndNewlines),
                                  fileKeys: draft.files.map(\.createIdempotencyKey),
-                                 sensitive: draft.sensitivity.map { $0.minors || $0.injured || $0.graphic })
+                                 sensitive: draft.sensitivity.map { $0.minors || $0.injured || $0.graphic }, owner: owner)
         var queued: [UUID] = []
         let outcome = await DraftSubmission.run(draft, dynamicFields: dynamicFields, create: create) { file, materialId, body in
             ledger.add(materialId, to: batch.id)
