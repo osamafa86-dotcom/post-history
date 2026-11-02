@@ -7,6 +7,7 @@ import type { WebConfig } from "../src/server/config";
 import { MemoryStore } from "./memory-store";
 import { form, material, me, tokens } from "./fixtures";
 import { identityReasons, permissions } from "../src/lib/admin-policy";
+import { sensitivityState } from "../src/lib/sensitivity";
 const config: WebConfig = { origin: "https://web.example.test", api: "https://api.example.test/v1", key: randomBytes(32), redisUrl: "redis://127.0.0.1:6379/1", secure: true, cookieName: "__Host-ph-session", lifetimeSeconds: 28800, mediaOrigins: [], tusOrigins: [], trustForwardedFor: false };
 const key = randomUUID(), item = material(), target = "10000000-0000-4000-8000-000000000002";
 const admin: Me = { ...me, roles: [{ name: "system_admin", scopes: [] }] };
@@ -221,4 +222,22 @@ it("forwards dashboard reservation names and the oldest server deadline only to 
   const data = await result.json(); expect(data.reserved[0].reserved_by_name).toBe("Synthetic staff"); expect(data.oldest_overdue_acknowledgement_at).toBe(due); expect(JSON.stringify(data)).not.toContain("canary");
   const nulls = await action("dashboard/newsroom", { method: "GET", user: supervisor, upstream: () => Response.json({ ...raw, oldest_overdue_acknowledgement_at: null, reserved: [{ ...raw.reserved[0], reserved_by_name: null }] }) });
   const empty = await nulls.result.json(); expect(empty.reserved[0].reserved_by_name).toBeNull(); expect(empty.oldest_overdue_acknowledgement_at).toBeNull();
+});
+
+describe("a material without its sensitivity field (fail closed)", () => {
+  const bare = () => { const raw: Record<string, unknown> = { ...material() }; delete raw.sensitivity; return raw; };
+  const upstream = (body: unknown) => async (r: Request) => r.url.includes("/forms/") ? Response.json(form) : Response.json(body);
+  it("serves the material detail without throwing and without the field, so the page reads «unknown»", async () => {
+    const { result } = await action(`materials/${item.id}`, { method: "GET", upstream: upstream(bare()) });
+    expect(result.status).toBe(200); const body = await result.json();
+    expect(Object.hasOwn(body, "sensitivity")).toBe(false); expect(sensitivityState(body.sensitivity)).toEqual({ known: false }); expect(body.id).toBe(item.id);
+  });
+  it("drops an incomplete or non-boolean field the same way, and passes a complete one through", async () => {
+    for (const sensitivity of [{ minors: true }, { minors: "false", injured: false, graphic: false }, null]) {
+      const { result } = await action("materials?limit=50", { method: "GET", upstream: upstream({ items: [{ ...bare(), sensitivity }], next_cursor: null }) });
+      expect(result.status).toBe(200); expect(Object.hasOwn((await result.json()).items[0], "sensitivity"), JSON.stringify(sensitivity)).toBe(false);
+    }
+    const { result } = await action("materials?limit=50", { method: "GET", upstream: upstream({ items: [{ ...bare(), sensitivity: { minors: false, injured: true, graphic: false } }], next_cursor: null }) });
+    expect((await result.json()).items[0].sensitivity).toEqual({ minors: false, injured: true, graphic: false });
+  });
 });

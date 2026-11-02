@@ -44,6 +44,9 @@ for (const locale of ["ar", "en"] as Locale[]) {
     expect(await page.getByRole("heading", { level: 1 }).evaluate(el => getComputedStyle(el).fontFamily)).toMatch(/^"?Rubik/);
     expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toMatch(/^"?Readex Pro/);
     await expect.poll(() => page.evaluate(() => document.fonts.check('16px "Readex Pro"') && document.fonts.check('700 22px "Rubik"'))).toBe(true);
+    // نص العنصر النائب في البحث ≥ 4.5:1 على خلفية الحقل (الوضع الفاتح).
+    const field = await bar.getByRole("searchbox").evaluate(el => [getComputedStyle(el, "::placeholder").color, getComputedStyle(el).backgroundColor]);
+    expect(ratio(field[0], field[1])).toBeGreaterThanOrEqual(4.5);
     const account = bar.getByRole("button", { name: new RegExp(`^${m.shell.account}`) }); await account.click();
     await expect(page.getByTestId("topbar-user")).toHaveText(/\S/); await expect(page.getByTestId("topbar-user")).not.toContainText("@");
     await expect(page.getByRole("button", { name: m.logout, exact: true })).toBeVisible(); await expect(page.getByRole("link", { name: m.language, exact: true })).toBeVisible();
@@ -104,4 +107,56 @@ test("a page outside the role says so, names the role and leads back (E5)", asyn
   await expect(state.getByRole("alert")).toHaveText(ar.payouts.denied); await expect(state).toContainText(ar.shell.noAccess.title);
   await expect(page.getByTestId("sidebar").getByRole("link", { name: ar.payouts.nav })).toHaveCount(0);
   await state.getByRole("link", { name: ar.shell.noAccess.backInbox }).click(); await expect(page).toHaveURL(/\/ar\/inbox$/);
+});
+
+const luminance = (rgb: string) => { const [r, g, b] = rgb.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(v => v / 255).map(c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+const ratio = (a: string, b: string) => { const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
+
+// لا تمرير أفقي للصفحة على عرض 390 في أي صفحة، بالعربية والإنجليزية (ملاحظة المراجعة على /en/forms).
+for (const locale of ["ar", "en"] as Locale[]) test(`no page scrolls sideways at 390px (${locale})`, async ({ page, context }) => {
+  test.setTimeout(180000); await page.setViewportSize({ width: 390, height: 844 });
+  const pages: [string | null, string[]][] = [
+    [null, ["login", "privacy", "verify/PH-2026-7K3M9Q2XRT"]],
+    ["admin", ["inbox", "board", "notifications", "form-preview", "store", "store/licenses", "store/orders", "license-templates", "admin", "forms", "notification-rules", "buyer-organizations", "payouts", "commission-rules", "invite-conflicts", "materials/20000000-0000-4000-8000-000000000001"]],
+    ["reviewer", ["upload", "materials/20000000-0000-4000-8000-000000000005"]],
+    ["reporter", ["my-materials", "earnings"]],
+    ["buyer", ["store", "store/licenses", "store/cart", "organization"]],
+  ];
+  const wide: string[] = [];
+  for (const [who, paths] of pages) {
+    await context.clearCookies(); if (who) await login(page, who, locale);
+    for (const path of paths) {
+      await page.goto(`/${locale}/${path}`); await page.waitForLoadState("networkidle").catch(() => {});
+      await page.evaluate(() => document.fonts.ready.then(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))));
+      const [scroll, width] = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
+      if (scroll > width) wide.push(`${path} ${scroll}`);
+    }
+  }
+  expect(wide).toEqual([]);
+});
+
+test("touch layouts give the sort controls, chips, «clear all», filter fields, the breadcrumb back link and the reload button 44px or more", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 }); await login(page, "reviewer", "ar");
+  const height = async (locator: import("@playwright/test").Locator) => (await locator.boundingBox())!.height;
+  expect(await height(page.locator(".sort-tools select"))).toBeGreaterThanOrEqual(44); expect(await height(page.locator(".sort-tools button"))).toBeGreaterThanOrEqual(44);
+  await page.getByLabel(ar.inboxSearch.label).fill("050"); const chips = page.getByRole("list", { name: ar.shell.inbox.activeFilters });
+  expect(await height(chips.locator(".chip.removable"))).toBeGreaterThanOrEqual(44); expect(await height(chips.getByRole("button", { name: ar.shell.inbox.clearAll }))).toBeGreaterThanOrEqual(44);
+  await page.getByText(ar.filters, { exact: true }).click();
+  for (const field of await page.locator(".filters input, .filters select").all()) expect(await height(field)).toBeGreaterThanOrEqual(44);
+  await page.goto("/ar/materials/20000000-0000-4000-8000-000000000005");
+  expect(await height(page.getByRole("link", { name: ar.back }))).toBeGreaterThanOrEqual(44);
+  expect(await height(page.getByRole("button", { name: ar.review.reload, exact: true }))).toBeGreaterThanOrEqual(44);
+});
+
+test("the inbox page polls the newsroom snapshot once; the shell counter polls only elsewhere", async ({ page }) => {
+  // المستطلعان (الوارد والهيكل) يطلقان عند التركيب معًا، فالمكرَّر يُطلب قبل أن يعود أول ردّ؛ والاستطلاع التالي الشرعي بعد الردّ بخمس ثوانٍ.
+  // الدخول ينتهي في الوارد نفسه؛ تُغلق تلك الصفحة أولًا كي لا يُعدّ استطلاعها الجاري.
+  await login(page, "reviewer", "ar"); await page.goto("about:blank"); let calls = 0, beforeFirstResponse = -1;
+  const isSnapshot = (url: string) => url.endsWith("/api/bff/dashboard/newsroom");
+  page.on("request", request => { if (isSnapshot(request.url())) calls++; });
+  page.on("response", response => { if (isSnapshot(response.url()) && beforeFirstResponse < 0) beforeFirstResponse = calls; });
+  const first = page.waitForResponse(response => isSnapshot(response.url()));
+  await page.goto("/ar/inbox"); await first; await expect(page.getByTestId("material-row")).toHaveCount(50);
+  expect(beforeFirstResponse).toBe(1);
+  calls = 0; await page.goto("/ar/notifications"); await expect.poll(() => calls).toBeGreaterThanOrEqual(1);
 });
