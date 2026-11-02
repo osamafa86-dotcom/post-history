@@ -62,3 +62,6 @@ docker-compose.override.yml
 # local redis snapshots
 dump.rdb
 *.rdb
+
+# motion projects: render outputs and stills
+docs/design/redesign-2026-11/motion/*/out/
