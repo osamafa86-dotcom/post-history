@@ -1,6 +1,6 @@
 # Draft of apps/<app>.yml for osamafa86-dotcom/appstore-release (its owner places it; this repository holds no
 # store secrets). Placeholders in <…> are the owner's: see issue #157. Android only: no iOS keys are needed here.
-name: "المكتبة المرئية"
+name: "ميدان بوست"
 source:
   repo: osamafa86-dotcom/post-history
   ref: main
