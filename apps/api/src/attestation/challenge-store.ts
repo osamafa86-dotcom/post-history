@@ -41,8 +41,13 @@ export class ChallengeStore {
     return { id, challenge, expiresAt };
   }
 
-  /** التحدي الخام إن كان حيًّا ولهذا المستخدم، ويُحذف في الحالين؛ وإلا null (410 challenge_expired). */
-  async consume(id: string, userId: string): Promise<Buffer | null> {
+  /**
+   * التحدي الخام إن كان حيًّا ولهذا المستخدم، ويُحذف في الحالين؛ وإلا null (410 challenge_expired).
+   * المعرّف UUID لا يفرّق بين الحروف الكبيرة والصغيرة (RFC 4122)، ومفاتيح Redis تفرّق: عميل iOS المولَّد يرسله
+   * بحروف كبيرة (`UUID.uuidString`)، فيُوحَّد هنا إلى الصغيرة كما يُصدره `randomUUID` وإلا ضاع كل تحدٍّ منه.
+   */
+  async consume(rawId: string, userId: string): Promise<Buffer | null> {
+    const id = rawId.toLowerCase();
     if (this.redis) {
       let raw: string | null;
       try {

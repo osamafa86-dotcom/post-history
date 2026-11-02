@@ -124,6 +124,20 @@ describe('device attestation and ingest tokens (SEC-07, ADR 0011)', () => {
     expect(attempt.body.code).toBe('challenge_expired');
   });
 
+  it('accepts the challenge id in upper case, as the generated iOS client sends it', async () => {
+    // عميل Swift المولَّد يرمّز UUID بحروف كبيرة؛ قبل التوحيد كان كل تسجيل من التطبيق يعود 410 challenge_expired
+    const device = fx.newDevice();
+    const c = await challenge(reporter);
+    expect(c.id).toBe(c.id.toLowerCase());
+    const res = await post(reporter, '/device-attestations', {
+      platform: 'ios',
+      key_id: device.keyId.toString('base64'),
+      attestation: fx.attest(device, c.bytes, APP_ID),
+      challenge_id: c.id.toUpperCase(),
+    }).then(want(201));
+    expect(res.body).toEqual({ key_ref: expect.any(String) });
+  });
+
   it('registers an App Attest key: only the key_id hash is stored, and nothing identifying is audited', async () => {
     const device = fx.newDevice();
     const res = await register(reporter, device).then(want(201));
