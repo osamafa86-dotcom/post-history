@@ -1,4 +1,5 @@
 "use client";
+import { NoAccess } from "./empty-state";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
@@ -45,7 +46,7 @@ export function NewsroomBoard({ locale }: { locale: Locale }) {
     return () => { disposed = true; controller.abort(); clearTimeout(fast); clearTimeout(slow); };
   }, [allowed]);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
-  if (!allowed) return <section className="center-state"><h1>{t.title}</h1><p role="alert">{t.denied}</p></section>;
+  if (!allowed) return <NoAccess locale={locale} me={me} title={t.title} denied={t.denied} />;
   const { counts, cards, capped } = snapshot && loaded ? arrange(snapshot, loaded, cardLimit) : { counts: null, cards: null, capped: false };
   return <><div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p></div><Link prefetch={false} className="button secondary" href={`/${locale}/board?display=1`}>{t.openDisplay}</Link></div>
     {error && <p className="notice error" role="alert">{m.stale}</p>}

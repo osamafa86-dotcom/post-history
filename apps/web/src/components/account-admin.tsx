@@ -1,4 +1,5 @@
 "use client";
+import { NoAccess } from "./empty-state";
 import { useState } from "react";
 import { browserApi } from "@/lib/browser-api";
 import { messages, type Locale } from "@/lib/i18n";
@@ -21,7 +22,7 @@ export function AccountAdmin({ locale }: { locale: Locale }) {
   const [id, setId] = useState(""), [reason, setReason] = useState(""), [intent, setIntent] = useState<Intent | null>(null);
   const [revision, setRevision] = useState(0);
   function confirm(action: Intent) { mutation.clearStatus(); setIntent(action); }
-  if (!hasRole(me, "system_admin")) return <section className="center-state"><h1>{t.title}</h1><p role="alert">{t.denied}</p></section>;
+  if (!hasRole(me, "system_admin")) return <NoAccess locale={locale} me={me} title={t.title} denied={t.denied} />;
   const valid = uuid.test(id), permissionLabel = (p: Permission) => label(p, locale);
   async function apply() {
     if (!intent) return;

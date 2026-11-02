@@ -1,4 +1,5 @@
 "use client";
+import { NoAccess } from "./empty-state";
 import { useEffect, useState } from "react";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { formatDate, messages, type Locale } from "@/lib/i18n";
@@ -26,7 +27,7 @@ export function PayoutsPage({ locale }: { locale: Locale }) {
     void browserApi().GET("/payout-requests", { params: { query: state ? { state } : {} }, signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setItems(data.items); setCursor(data.next_cursor); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [allowed, state, attempt]);
-  if (!allowed || !me) return <section className="center-state"><h1>{t.title}</h1><p role="alert">{t.denied}</p></section>;
+  if (!allowed || !me) return <NoAccess locale={locale} me={me} title={t.title} denied={t.denied} />;
 
   async function more() {
     if (!cursor) return;

@@ -55,9 +55,13 @@ test("notifications are compact, sectioned and navigable with j/k", async ({ pag
   await page.getByRole("button", { name: ar.notice.readAll }).click(); await expect(page.getByRole("button", { name: ar.notice.readAll })).toBeDisabled();
 });
 
-test("below 760px the inbox table becomes stacked cards", async ({ page }) => {
+test("below 768px the inbox rows become cards with the time and place, and the bottom bar takes over (M1)", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await login(page);
-  await expect(page.locator(".table-panel thead")).toHaveCSS("position", "absolute"); await expect(page.locator(".table-panel tr").nth(1)).toHaveCSS("display", "block");
+  const row = page.getByTestId("material-row").first();
+  await expect(row.locator(".row-states")).not.toBeVisible(); await expect(row.locator(".row-time")).toBeVisible(); await expect(row.locator(".row-meta")).toContainText(ar.networkName);
+  expect((await row.locator(".row-thumb").boundingBox())!.width).toBe(72);
+  await expect(page.getByRole("navigation", { name: ar.shell.bottomNav })).toBeVisible(); await expect(page.getByTestId("sidebar")).not.toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: ".artifacts/editor-inbox-phone-ar.png" });
 });
 
@@ -81,30 +85,69 @@ test("ADR 0035 read-all sends one stable request and cutoff across a lost respon
     if (writes.length === 1) await route.fulfill({ status: 503, json: { code: "temporarily_unavailable" } }); else await route.continue();
   });
   const button = page.getByRole("button", { name: ar.notice.readAll, exact: true }); await button.click();
-  await expect(page.getByRole("alert")).toBeVisible(); await button.click(); await expect(button).toBeDisabled();
+  await expect(page.locator("main").getByRole("alert")).toBeVisible(); await button.click(); await expect(button).toBeDisabled();
   expect(writes).toHaveLength(2); expect(writes[1]).toEqual(writes[0]); expect(writes[0].key).toBeTruthy(); expect(Object.keys(writes[0].body as object)).toEqual(["before"]);
 });
 
-test("the inbox follows the Figma screen: summary, quick filters with counts, page search and three-track rows, in RTL and LTR (193:590)", async ({ page }) => {
-  await login(page); await page.setViewportSize({ width: 1440, height: 900 });
+test("the inbox follows W1: summary, chips with counts, top-bar search and rows with three separate state badges, in RTL and LTR", async ({ page }) => {
+  await login(page); await page.setViewportSize({ width: 1440, height: 900 }); const w = ar.shell.inbox;
   await expect(page.locator(".inbox-head h1")).toHaveText(ar.inbox); await expect(page.locator(".inbox-summary")).toContainText(/^200 مادة: 40 عاجلة مفتوحة/);
+  await expect(page.getByTestId("kpis").locator(".kpi")).toHaveCount(4); await expect(page.getByTestId("stat-urgent")).toContainText(w.kpiUrgent);
   const tabs = page.getByRole("navigation", { name: ar.inboxTabs.label }), tab = (label: string) => tabs.getByRole("button", { name: new RegExp(`^${label}`) });
   await expect(tabs.getByRole("button")).toHaveCount(6); await expect(tab(ar.inboxTabs.all)).toHaveAttribute("aria-pressed", "true"); await expect(tab(ar.inboxTabs.all)).toContainText("200"); await expect(tab(ar.inboxTabs.urgent)).toContainText("40");
-  const first = page.getByTestId("material-row").first(), line = first.getByTestId("track-line");
-  await expect(line).toHaveAttribute("role", "img"); await expect(line).toHaveAttribute("aria-label", "الفنية مكتملة، التحريرية لم تبدأ، الحقوق لم تبدأ"); await expect(line.locator(".track-seg")).toHaveCount(3);
-  const x = async (track: string) => (await line.locator(`[data-track='${track}']`).boundingBox())!.x;
-  expect(await x("technical_state")).toBeGreaterThan(await x("rights_state"));
+  // الحالات الثلاث شارات منفصلة، كلٌّ بأيقونة وكلمة، ولا تُترك للون وحده.
+  const first = page.getByTestId("material-row").first();
+  for (const [track, label] of [["technical_state", ar.states.technical_state.verified], ["editorial_state", ar.states.editorial_state.inbox], ["rights_state", ar.states.rights_state.unknown]]) {
+    const badge = first.locator(`[data-track='${track}']`); await expect(badge).toHaveText(label); await expect(badge.locator("svg")).toHaveCount(1);
+  }
   await tab(ar.inboxTabs.urgent).click(); await expect(tab(ar.inboxTabs.urgent)).toHaveAttribute("aria-pressed", "true"); await expect(page.getByTestId("material-row")).toHaveCount(40);
-  await expect(page.getByTestId("material-row").first()).toHaveClass(/urgent/); await expect(page.getByTestId("material-row").first().locator("td.material-cell")).toHaveCSS("border-inline-start-width", "6px");
+  const urgent = page.getByTestId("material-row").first(); await expect(urgent).toHaveClass(/urgent/); await expect(urgent).toHaveCSS("border-inline-start-width", "6px");
+  await expect(urgent.locator(".priority-pill.urgent")).toHaveText(ar.states.priority.urgent); await expect(urgent.locator(".priority-pill svg")).toHaveCount(1);
+  await expect(page.getByRole("list", { name: w.activeFilters })).toContainText(ar.inboxTabs.urgent);
   await tab(ar.inboxTabs.stopped).click(); await expect(page.getByTestId("material-row")).toHaveCount(1);
-  await expect(page.getByTestId("material-row").locator("[data-track='technical_state']")).toHaveAttribute("data-state", "blocked"); await expect(page.locator(".track-note")).toHaveText(`فنية: ${ar.states.technical_state.failed}`);
+  await expect(page.getByTestId("material-row").locator("[data-track='technical_state']")).toHaveAttribute("data-state", "failed"); await expect(page.getByTestId("material-row").locator("[data-track='technical_state']")).toHaveText(ar.states.technical_state.failed);
   await tab(ar.inboxTabs.all).click(); await expect(page.getByTestId("material-row")).toHaveCount(50);
   await page.getByLabel(ar.inboxSearch.label).fill("rcpt-20261020-000050"); await expect(page.getByTestId("material-row")).toHaveCount(1); await expect(page.getByTestId("material-row")).toContainText("RCPT-20261020-000050");
-  await page.getByLabel(ar.inboxSearch.label).fill("zzz"); await expect(page.getByText(ar.empty)).toBeVisible(); await page.getByLabel(ar.inboxSearch.label).fill("");
+  // E4: بحث بلا نتائج يقول ما بحثتَ عنه، ويعرض المرشّح رقاقة قابلة للإزالة، ويقترح العدد بلا بحث.
+  await page.getByLabel(ar.inboxSearch.label).fill("zzz"); const none = page.getByTestId("inbox-no-results");
+  await expect(none).toContainText(w.noResultsFor.replace("{q}", "zzz")); await expect(none.getByRole("button", { name: w.showWithoutSearch.replace("{n}", "50") })).toBeVisible();
+  await page.getByRole("list", { name: w.activeFilters }).getByRole("button", { name: w.removeFilter.replace("{filter}", "«zzz»") }).click();
+  await expect(page.getByTestId("material-row")).toHaveCount(50); await expect(page.getByLabel(ar.inboxSearch.label)).toHaveValue("");
   await expect(page.locator(".filter-panel")).not.toHaveAttribute("open");
-  await page.screenshot({ path: ".artifacts/inbox-figma-ar.png" });
+  await page.screenshot({ path: ".artifacts/inbox-w1-ar.png" });
   await page.goto("/en/inbox"); await expect(page.getByTestId("material-row")).toHaveCount(50); await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
-  const en1 = page.getByTestId("material-row").first().getByTestId("track-line"), ex = async (track: string) => (await en1.locator(`[data-track='${track}']`).boundingBox())!.x;
-  expect(await ex("technical_state")).toBeLessThan(await ex("rights_state")); await expect(en1).toHaveAttribute("aria-label", "Technical complete, Editorial not started, Rights not started");
+  const row = page.getByTestId("material-row").first(), x = async (selector: string) => (await row.locator(selector).boundingBox())!.x;
+  expect(await x(".row-thumb")).toBeLessThan(await x(".row-states")); expect(await x(".row-main")).toBeLessThan(await x(".row-actions"));
+  await expect(row.locator("[data-track='technical_state']")).toHaveText(en.states.technical_state.verified);
   await expect(page.locator(".inbox-summary")).toContainText(/^200 items: 40 urgent open/);
+});
+
+test("the inbox shows skeletons while loading, keeps the last rows with disabled actions offline, and says when it is empty (E1–E3)", async ({ page, context }) => {
+  await login(page); const w = ar.shell.inbox;
+  // E3: آخر بيانات كما هي، ووقت آخر تحديث، والأفعال معطّلة.
+  await context.setOffline(true); await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+  await expect(page.getByTestId("offline-banner")).toContainText(w.offlineTitle); await expect(page.locator(".live-line")).toContainText(ar.updated);
+  await expect(page.getByTestId("material-row")).toHaveCount(50);
+  for (const button of await page.getByTestId("material-row").first().getByRole("button").all()) await expect(button).toBeDisabled();
+  await context.setOffline(false); await page.evaluate(() => window.dispatchEvent(new Event("online"))); await expect(page.getByTestId("offline-banner")).toHaveCount(0);
+  // E2: هياكل بشكل الصفوف، ومع «تقليل الحركة» بلا وميض.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.route("**/api/bff/materials?**", () => new Promise(() => {})); await page.reload();
+  const skeleton = page.getByTestId("inbox-skeleton"); await expect(skeleton).toBeVisible(); await expect(skeleton.locator(".skeleton").first()).toHaveCSS("animation-name", "none");
+  // E1: الوارد فارغ يقول متى تصل المواد.
+  await page.unroute("**/api/bff/materials?**"); await page.route("**/api/bff/materials?**", route => route.fulfill({ json: { items: [], next_cursor: null } })); await page.reload();
+  await expect(page.getByTestId("inbox-empty")).toContainText(w.emptyTitle); await expect(page.getByTestId("inbox-empty")).toContainText(w.emptyBody);
+});
+
+test("the material page follows W2: breadcrumb, player, separate states, the sensitivity line, the next step and the log, with no coordinates", async ({ page }) => {
+  await login(page); await page.goto("/ar/materials/20000000-0000-4000-8000-000000000005"); const w = ar.shell.material;
+  await expect(page.getByRole("navigation", { name: w.breadcrumb })).toContainText(ar.inbox);
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible(); await expect(page.locator(".material-title .priority-pill.urgent")).toBeVisible();
+  await expect(page.getByTestId("sensitivity-line")).toContainText(w.sensitivity); await expect(page.locator(".material-meta")).toContainText("مدينة اختبار");
+  const states = page.locator(".states-card .state-card"); await expect(states).toHaveCount(3);
+  await expect(page.locator(".next-step").getByRole("button", { name: ar.shell.inbox.receive, exact: true })).toBeVisible();
+  await expect(page.locator(".next-step").getByRole("button", { name: ar.review.open, exact: true })).toBeVisible();
+  const main = (await page.locator(".material-main").boundingBox())!, side = (await page.locator(".material-side").boundingBox())!; expect(main.x).toBeGreaterThan(side.x);
+  expect(await page.locator("main").textContent()).not.toMatch(/\b(lat|lon|latitude|longitude|gps)\b|31\.\d{3,}/i);
+  await page.screenshot({ path: ".artifacts/material-w2-ar.png" });
 });

@@ -86,7 +86,7 @@ export function BoardDisplay({ locale, light }: { locale: Locale; light: boolean
   ];
   return <div className={`board-wall ${idle ? "idle" : ""}`} data-testid="board-display">
     {exit}
-    <TopBar variant="wall" locale={locale} brandHref={`/${locale}/board`} navLabel={m.workspace} items={[{ key: "board", href: `/${locale}/board?display=1`, label: d.nav, active: true }]}>
+    <TopBar variant="wall" locale={locale} brandHref={`/${locale}/board`} navLabel={m.workspace} items={[{ key: "board", href: `/${locale}/board?display=1`, label: d.nav, short: d.nav, active: true, group: "newsroom", icon: "wall" }]}>
       <span className="topbar-clock" dir="ltr" data-testid="wall-clock">{wallClock(now)}</span><span className="topbar-date wall-date">{wallDate(now, locale)}</span>
     </TopBar>
     {failedSince !== null ? <p className="wall-banner bad" role="alert">{d.stale.replace("{time}", clock(new Date(lastOk).toISOString(), now))}</p>

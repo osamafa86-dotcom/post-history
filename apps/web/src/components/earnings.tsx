@@ -1,4 +1,5 @@
 "use client";
+import { NoAccess } from "./empty-state";
 import { useEffect, useState } from "react";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { formatDate, messages, type Locale } from "@/lib/i18n";
@@ -27,7 +28,7 @@ export function EarningsPage({ locale }: { locale: Locale }) {
       .catch(() => { if (!signal.aborted) setError(true); });
     return () => controller.abort();
   }, [allowed, attempt]);
-  if (!allowed) return <section className="center-state"><h1>{t.title}</h1><p role="alert">{t.denied}</p></section>;
+  if (!allowed) return <NoAccess locale={locale} me={me} title={t.title} denied={t.denied} />;
 
   const balance = summary?.balances.find(b => b.currency === currency);
   async function request() {

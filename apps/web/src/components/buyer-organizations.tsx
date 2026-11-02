@@ -1,4 +1,5 @@
 "use client";
+import { NoAccess } from "./empty-state";
 import { useEffect, useState } from "react";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { formatDate, messages, type Locale } from "@/lib/i18n";
@@ -23,7 +24,7 @@ export function BuyerOrganizations({ locale }: { locale: Locale }) {
     void browserApi().GET("/buyer-organizations", { params: { query: status ? { status } : {} }, signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setItems(data.items); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [attempt, allowed, status]);
-  if (!allowed) return <section className="center-state"><h1>{t.title}</h1><p role="alert">{t.denied}</p></section>;
+  if (!allowed) return <NoAccess locale={locale} me={me} title={t.title} denied={t.denied} />;
   async function create() {
     if (!creating) return;
     const input = organizationCreate(creating as unknown as Record<string, unknown>);
