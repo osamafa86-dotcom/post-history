@@ -1,5 +1,7 @@
 import AVFoundation
+import ImageIO
 import MaterialsCore
+import PostHistoryAPI
 import SwiftUI
 import UIKit
 
@@ -7,31 +9,121 @@ import UIKit
 
 // MARK: - المصغّرات المحلية
 
-/// مصغّرات من نسخ الملفات على الجهاز وحدها؛ لا تخرج من الجهاز ولا تُكتب على القرص، وتُمحى مع المسح الطارئ والخروج.
+/// مصغّرات «موادي» والرفع في الذاكرة وحدها: من نسخ الملفات على الجهاز، ومن مشتق `thumbnail` متحقَّق على الخادم برابط موقّع
+/// يُطلب قبيل التحميل ولا يُحفظ (ADR 0089). لا مصغّرة تُكتب على القرص؛ الذاكرة محدودة (`NSCache` يُفرَغ أيضًا عند ضغط الذاكرة)،
+/// وتُمحى مع المسح الطارئ والخروج والإبطال. ومعها مدد الفيديو المحلية للبطاقات.
 @MainActor
 final class ThumbnailCache {
     static let shared = ThumbnailCache()
-    private var images: [String: Image] = [:]
 
-    func image(relativePath: String, isVideo: Bool) async -> Image? {
-        if let cached = images[relativePath] { return cached }
+    private final class Entry {
+        let image: Image
+        init(_ image: Image) { self.image = image }
+    }
+
+    private let images = NSCache<NSString, Entry>()
+    private var durations: [String: Double] = [:]
+    /// يرتفع مع كل محو، فتحميل بدأ قبله لا يعيد ما مُحي.
+    private var generation = 0
+
+    init() { images.countLimit = 160 }
+
+    func image(relativePath: String, isVideo: Bool, maxPixel: CGFloat = 240) async -> Image? {
+        let key = "local:\(relativePath)#\(Int(maxPixel))" as NSString
+        if let cached = images.object(forKey: key) { return cached.image }
         let url = UploadServices.shared.documentsDirectory.appendingPathComponent(relativePath)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        let size = CGSize(width: 240, height: 240)
-        var made: Image?
+        let gen = generation
+        var made: CGImage?
         if isVideo {
             let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
             generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = size
-            if let cg = try? await generator.image(at: .zero).image { made = Image(decorative: cg, scale: 1) }
-        } else if let ui = UIImage(contentsOfFile: url.path)?.preparingThumbnail(of: size) {
-            made = Image(uiImage: ui)
+            generator.maximumSize = CGSize(width: maxPixel, height: maxPixel)
+            made = try? await generator.image(at: .zero).image
+        } else {
+            made = await MediaImages.downsample(fileURL: url, maxPixel: maxPixel)
         }
-        if let made { images[relativePath] = made }
-        return made
+        guard let made else { return nil }
+        let image = Image(decorative: made, scale: 1)
+        if gen == generation { images.setObject(Entry(image), forKey: key) }
+        return image
     }
 
-    func clear() { images.removeAll() }
+    /// مصغّرة من مشتق على الخادم: `link` يطلب الرابط الموقّع لحظتها، والبايتات بجلسة بلا ذاكرة ولا قرص (`MediaImages.session`).
+    func remoteImage(fileId: UUID, maxPixel: CGFloat, link: @Sendable () async throws -> FileDownloadUrl) async -> Image? {
+        let key = "remote:\(fileId.uuidString)#\(Int(maxPixel))" as NSString
+        if let cached = images.object(forKey: key) { return cached.image }
+        let gen = generation
+        guard let lease = (try? await link()).flatMap({ SignedURLLease($0) }),
+              let data = await MediaImages.data(lease.url),
+              let made = await MediaImages.downsample(data: data, maxPixel: maxPixel) else { return nil }
+        let image = Image(decorative: made, scale: 1)
+        if gen == generation { images.setObject(Entry(image), forKey: key) }
+        return image
+    }
+
+    /// مدة فيديو على الهاتف بالثواني (حين لا يعرفها الخادم بعد).
+    func duration(relativePath: String) async -> Double? {
+        if let known = durations[relativePath] { return known }
+        let url = UploadServices.shared.documentsDirectory.appendingPathComponent(relativePath)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let gen = generation
+        guard let time = try? await AVURLAsset(url: url).load(.duration), time.isNumeric else { return nil }
+        let seconds = CMTimeGetSeconds(time)
+        if gen == generation { durations[relativePath] = seconds }
+        return seconds
+    }
+
+    func clear() {
+        generation += 1
+        images.removeAllObjects()
+        durations.removeAll()
+    }
+}
+
+/// تحميل الصور وتصغيرها خارج الخيط الرئيسي. الجلسة عابرة بلا ذاكرة طلبات ولا كعكات ولا قرص، فلا يبقى من الرابط الموقّع ولا من
+/// البايتات شيء بعد التحميل؛ ولا يُسجَّل رابط ولا اسم ملف.
+enum MediaImages {
+    static let session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        config.timeoutIntervalForRequest = 30
+        return URLSession(configuration: config)
+    }()
+
+    /// مصغّرات لا صور كاملة: حدّ للحجم يمنع تحميل ملف كبير بالخطأ.
+    static let maxBytes = 12 << 20
+
+    static func data(_ url: URL) async -> Data? {
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        guard let (data, response) = try? await session.data(for: request),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count <= maxBytes else { return nil }
+        return data
+    }
+
+    static func downsample(data: Data, maxPixel: CGFloat) async -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
+        return thumbnail(source, maxPixel: maxPixel)
+    }
+
+    static func downsample(fileURL: URL, maxPixel: CGFloat) async -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(fileURL as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
+        return thumbnail(source, maxPixel: maxPixel)
+    }
+
+    private static func thumbnail(_ source: CGImageSource, maxPixel: CGFloat) -> CGImage? {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    }
 }
 
 /// مصغّرة ملف محلي بزاوية، أو سطح غائر بأيقونة النوع إن لم تتوفر النسخة.
@@ -263,6 +355,7 @@ struct ReceiptSlip: View {
 
 /// `Media card` (Video · Photo) لمعرض «موادي»: مصغّرة 9:16 بمدتها، وتحتها الحالات الثلاث شاراتٍ منفصلة.
 /// المادة الموسومة بالحساسية لا معاينة سحابية لها، فتظهر شارة «حسّاسة» بدل الصورة إن لم تتوفر نسخة محلية (CLAUDE.md §5).
+/// `title` يظهر تحت الصورة حين لا يكون عنوان المجموعة عنوانها (التجميع بالنوع).
 struct MediaCard: View {
     enum Kind { case video, photo }
 
@@ -271,6 +364,7 @@ struct MediaCard: View {
     var duration: String?
     let status: MaterialStatus
     var sensitive = false
+    var title: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: VL.Space.s2) {
@@ -281,10 +375,16 @@ struct MediaCard: View {
                 } else if sensitive {
                     VStack(spacing: VL.Space.s2) {
                         Image(systemName: "shield")
+                        Text("media.sensitive.noCloud").vlText(.caption).multilineTextAlignment(.center)
                         Text("media.sensitive.local").vlText(.caption).multilineTextAlignment(.center)
                     }
                     .foregroundStyle(Color.vl.textSecondary)
                     .padding(VL.Space.s3)
+                } else {
+                    // لا معاينة بعد (قيد المعالجة): أيقونة النوع هادئة، فلا يبدو الفراغ خطأً.
+                    Image(systemName: kind == .video ? "film" : "photo")
+                        .font(.title2)
+                        .foregroundStyle(Color.vl.textSecondary)
                 }
             }
             .aspectRatio(9 / 16, contentMode: .fit)
@@ -301,6 +401,9 @@ struct MediaCard: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: VL.Radius.sm, style: .continuous))
+            if let title {
+                Text(verbatim: title).vlText(.label).foregroundStyle(Color.vl.textPrimary).lineLimit(2)
+            }
             if sensitive {
                 StateBadge(labelKey: "media.sensitive", tone: .warn, systemImage: "shield")
             }

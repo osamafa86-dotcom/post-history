@@ -48,7 +48,9 @@ final class AppModel: ObservableObject {
         // نواة الرفع فوق الجلسة الخلفية المشتركة؛ تُستأنف السجلات غير المكتملة عند كل إطلاق.
         self.uploads = UploadQueueModel(engine: try! UploadServices.shared.makeEngine(api: api), settings: settings)
         self.materials = MyMaterialsModel(feed: MaterialsFeed(api: GeneratedMaterialsListAPI(configuration: api)),
-                                          transitions: { try await MaterialsAPI.listTransitions(id: $0, apiConfiguration: api).items })
+                                          transitions: { try await MaterialsAPI.listTransitions(id: $0, apiConfiguration: api).items },
+                                          // رابط المشتق الموقّع (≤ 10 دقائق، no-store) يُطلب لحظة العرض ولا يُحفظ (ADR 0089).
+                                          downloadURL: { try await MaterialsAPI.getMaterialFileDownloadUrl(id: $0, fileId: $1, apiConfiguration: api) })
         self.notifications = NotificationsModel(feed: NotificationsFeed(api: GeneratedNotificationsListAPI(configuration: api)))
         let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         self.push = PushRegistrar(api: GeneratedPushDevicesAPI(configuration: api), ids: KeychainInstallationIdStore(), appVersion: appVersion)
@@ -70,6 +72,7 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             for await event in await auth.events() {
                 guard case .sessionRevoked(let at) = event else { continue }
+                PlaybackCenter.shared.stopAll()
                 uploads.cancelLightCopies()
                 _ = await uploads.engine.wipeAll()
                 await uploads.refresh()
@@ -89,6 +92,8 @@ final class AppModel: ObservableObject {
     /// المسح الطارئ (SEC-01): محلي فقط وبلا اتصال؛ يوقف النقل ويمحو الرموز والحالة والأجزاء والأصول المستوردة والمصغّرات وذاكرة الصور،
     /// ثم يعيد التطبيق إلى شاشة البداية. لا يُسجَّل شيء.
     func emergencyWipe() async {
+        // التشغيل يتوقف أولًا ويُمحى رابطه ومعايناته، قبل محو الملفات التي قد يقرؤها.
+        PlaybackCenter.shared.stopAll()
         uploads.cancelLightCopies()
         let services = UploadServices.shared
         let engine = uploads.engine
@@ -159,7 +164,8 @@ final class AppModel: ObservableObject {
         // الرموز تُمسح محليًا قبل الاتصال؛ فشل الشبكة لا يبقي الجلسة على الجهاز.
         await push.willSignOut()
         try? await auth.logout(allSessions: allSessions)
-        // لا يبقى لمراسل خرج مكانٌ ولا وسوم ولا مصغّرات لمن يدخل بعده على الهاتف نفسه.
+        // لا يبقى لمراسل خرج مكانٌ ولا وسوم ولا مصغّرات ولا تشغيل لمن يدخل بعده على الهاتف نفسه.
+        PlaybackCenter.shared.stopAll()
         memory.clear()
         ThumbnailCache.shared.clear()
         workName = nil

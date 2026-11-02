@@ -2,8 +2,8 @@ import MaterialsCore
 import SwiftUI
 import UploadCore
 
-/// وجهات الرئيسية.
-enum HomeRoute: Hashable { case uploads, materials, notifications, settings }
+/// وجهات الرئيسية؛ تفاصيل المادة تُدفع من «موادي» أو من إشعار عنها.
+enum HomeRoute: Hashable { case uploads, materials, material(UUID), notifications, settings }
 
 /// 03 · الرئيسية (docs/design/specs/reporter-v2.md): التحية، وزرّ «إرسال من الميدان» كبيرًا، والمسودات، وآخر الإرسالات بحالة رفعها،
 /// و«موادي». الإرسال (04) يغطي الشاشة، والرفع (05) و«موادي» والإشعارات والإعدادات تُدفع فوقها، والإيصال (06) ورقة.
@@ -18,7 +18,6 @@ struct HomeView: View {
     /// شاشة الإرسال ظاهرة حتى يكتمل إغلاقها. الإيصال ينتظرها: إرسالة وصلت ملفاتها أثناء الحلقة يُقرَّر إيصالها عند «أرسل» نفسها،
     /// وورقةٌ تُطلب فوق غطاء يُغلق لا تظهر، وقد عُلِّم الإيصال معروضًا فلا يعود.
     @State private var sendCoverShown = false
-    @State private var focusMaterial: UUID?
     @State private var draftToDelete: MaterialDraft?
 
     var body: some View {
@@ -39,7 +38,8 @@ struct HomeView: View {
             .navigationDestination(for: HomeRoute.self) { route in
                 switch route {
                 case .uploads: UploadsScreen()
-                case .materials: MyMaterialsView(focus: $focusMaterial) { sending = true }
+                case .materials: MyMaterialsView { sending = true }
+                case .material(let id): MaterialDetailView(materialId: id)
                 case .notifications: NotificationsView()
                 case .settings: SettingsScreen()
                 }
@@ -70,8 +70,7 @@ struct HomeView: View {
         }
         .onChange(of: notifications.openedMaterialId) { _, id in
             guard let id else { return }
-            focusMaterial = id
-            path = [.materials]
+            path = [.materials, .material(id)]
         }
         .task { await app.loadProfile() }
     }
