@@ -247,6 +247,26 @@ final class UploadEngineTests: XCTestCase {
         XCTAssertEqual(try store.loadAll().count, 0)
     }
 
+    /// بناء 1.0 (11): ملف سجل واحد لا يُقرأ كان يرمي القراءة كلها، فتبدأ النواة بطابور فارغ ولا يُعرف أصل على الهاتف لأي مادة.
+    func testOneUnreadableRecordDoesNotHideTheOthersAtLaunch() async throws {
+        let dir = Fixtures.tempDir("store-partial")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try FileUploadStateStore(directory: dir)
+        var first = UploadRecord(materialId: UUID(), kind: .original, sourcePath: "Uploads/a.mov", filename: "a.mov", mimeType: "video/quicktime", sizeBytes: 1)
+        first.phase = .verified(receiptNumber: "R-1")
+        var second = UploadRecord(materialId: UUID(), kind: .original, sourcePath: "Uploads/b.mov", filename: "b.mov", mimeType: "video/quicktime", sizeBytes: 1)
+        second.phase = .verified(receiptNumber: "R-2")
+        try store.save(first)
+        try store.save(second)
+        try Data("{\"truncated\":".utf8).write(to: dir.appendingPathComponent("\(UUID().uuidString.lowercased()).json"))
+        XCTAssertEqual(Set(try store.loadAll().map(\.id)), [first.id, second.id], "the readable records load")
+        let engine = UploadEngine(store: store, secrets: InMemoryUploadSecretStore(), api: FakeUploadAPI(), transport: FakeTransport(),
+                                  slicer: ChunkSlicer(chunksDirectory: dir.appendingPathComponent("chunks")))
+        await engine.resumeAll()
+        let ids = await engine.allRecords().map(\.id)
+        XCTAssertEqual(Set(ids), [first.id, second.id], "the engine resumes with them, not with an empty queue")
+    }
+
     func testChunkSizePolicyAndPlanner() {
         let p = ChunkSizePolicy()
         XCTAssertEqual(p.chunkSize(background: false, measuredUplinkBytesPerSecond: 10_000_000), 8 << 20)

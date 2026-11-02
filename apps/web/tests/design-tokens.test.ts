@@ -50,6 +50,10 @@ describe("design tokens v2 «Signal» are the web's single source (ADR 0085)", (
     expect(styles).not.toContain("--v2-c-action-gradient-end");
     expect(styles).not.toMatch(/linear-gradient\([^)]*--v2-c-action/);
   });
+  it("draws placeholders in text/secondary at full opacity, a pair that reaches 4.5:1 on every field surface in both modes", () => {
+    expect(styles).toContain("::placeholder { color: var(--v2-c-text-secondary); opacity: 1; }");
+    for (const mode of ["light", "dark"] as Mode[]) for (const bg of ["bg/raised", "bg/sunken", "bg/base"]) expect(contrast(color("text/secondary", mode), color(bg, mode)), `${mode} placeholder on ${bg}`).toBeGreaterThanOrEqual(4.5);
+  });
   it("meets the contrast pairs the design system names, in both modes (WCAG 2.1 AA: text 4.5, ui 3)", () => {
     const pairs = tokens.$extensions["v2.contrastPairs"] as [string, string, "text" | "ui"][];
     expect(pairs.length).toBeGreaterThanOrEqual(25);

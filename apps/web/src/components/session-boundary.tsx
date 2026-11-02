@@ -64,7 +64,7 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
       {!buyer && <Sidebar items={items} locale={locale} brandHref={inboxHref} badge={badge} />}
       <div className="app-main">
         <ShellTopBar me={me} locale={locale} buyer={buyer} items={items} inboxHref={inboxHref} account={account} />
-        <main id="main-content" className="main-content">{error && <p className="notice error" role="alert">{m.error}</p>}{!buyer && <UrgentBadge me={me} />}{children}</main>
+        <main id="main-content" className="main-content">{error && <p className="notice error" role="alert">{m.error}</p>}{!buyer && <UrgentBadge me={me} skip={/^\/(ar|en)\/inbox(\/|$)/.test(pathname)} />}{children}</main>
       </div>
       {!buyer && <BottomBar items={items} locale={locale} badge={badge} account={account} />}
     </div>
@@ -72,14 +72,17 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
   </>}</ShellState></UserContext.Provider>;
 }
 
-/** عدّاد بند الوارد: العاجل المفتوح من لقطة غرفة الأخبار كل 60 ثانية لأدوار اللوحة وحدها (الوارد نفسه يحدّثه أسرع). */
-function UrgentBadge({ me }: { me: Me }) {
+/**
+ * عدّاد بند الوارد: العاجل المفتوح من لقطة غرفة الأخبار كل 60 ثانية لأدوار اللوحة وحدها. صفحة الوارد تستطلع اللقطة نفسها كل 5 ثوانٍ
+ * وتحدّث العدّاد منها، فلا يستطلع الهيكل هناك (`skip`)، كي لا يعمل مستطلعان لنقطة واحدة.
+ */
+function UrgentBadge({ me, skip }: { me: Me; skip: boolean }) {
   const set = useInboxBadge(), allowed = hasRole(me, "supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin");
   useEffect(() => {
-    if (!allowed) return;
+    if (!allowed || skip) return;
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
     async function poll() { try { const data = dataOrThrow(await browserApi().GET("/dashboard/newsroom", { signal: controller.signal })); if (!controller.signal.aborted) set(data.urgent_open); } catch { /* يبقى بآخر قيمة */ } finally { if (!controller.signal.aborted) timer = setTimeout(poll, 60000); } }
     void poll(); return () => { controller.abort(); clearTimeout(timer); };
-  }, [allowed, set]);
+  }, [allowed, skip, set]);
   return null;
 }

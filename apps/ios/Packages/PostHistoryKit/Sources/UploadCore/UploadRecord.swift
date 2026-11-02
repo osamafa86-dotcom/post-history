@@ -98,6 +98,9 @@ public struct UploadRecord: Codable, Equatable, Sendable, Identifiable {
     /// عنوان المادة وأولويتها لبطاقة الرفع دون اتصال؛ على الجهاز فقط ويمحوهما المسح الطارئ مع السجل.
     public var materialTitle: String?
     public var materialPriority: String?
+    /// الحساب صاحب الرفع بمعرّفه المحلي المعتم (`LocalAccounts`، ADR 0091)، لا ببريده ولا بمعرّفه على الخادم: يُعرض له وحده، ولا
+    /// تُرسل طلباته المصادَق عليها إلا وهو الداخل (`AccountScope`). `nil` لسجلات الإصدارات السابقة.
+    public var ownerAccount: UUID?
     /// الملف الأصلي داخل حاوية التطبيق (مسار نسبي إلى مجلد المستندات) أو مسار مطلق في الاختبارات.
     public var sourcePath: String
     public var filename: String

@@ -1,0 +1,49 @@
+import Foundation
+import PostHistoryAPI
+
+// مفاتيح نصوص الواجهة المبنية من قيم التعداد (إصلاح بناء 1.0 (11)). تُبنى `String` هنا ثم تُمرَّر إلى `LocalizedStringKey(_:)` بقيمة
+// لا بحرفي: الحرفي المُدرج `LocalizedStringKey("gallery.quick.\(x)")` تحوّله `LocalizedStringKey.StringInterpolation` إلى مفتاح صيغة
+// "gallery.quick.%@" لا وجود له في الكتالوج، فيظهر المفتاح نفسه على الشاشة. كل قيمة لها مفتاحها في `Localizable.xcstrings` بالعربية
+// والإنجليزية (`TextKeys.all`، مختبر)، وحرفي مُدرج في `LocalizedStringKey(`/`Text(` يُرفض في اختبار يقرأ مصادر التطبيق.
+
+extension GalleryQuickFilter {
+    public var textKey: String { "gallery.quick." + rawValue }
+}
+
+extension MediaKind {
+    public var textKey: String { "gallery.kind." + rawValue }
+}
+
+extension GalleryGrouping {
+    public var textKey: String { "gallery.grouping." + rawValue }
+}
+
+extension GalleryDateRange {
+    public var textKey: String { "gallery.date." + rawValue }
+}
+
+extension GalleryStateFilter {
+    public var textKey: String { "gallery.state." + rawValue }
+}
+
+extension MaterialStatus.Track {
+    /// عنوان المسار في تفاصيل المادة.
+    public var detailKey: String { "detail.track." + rawValue }
+}
+
+extension MaterialType {
+    /// اسم نوع التغطية؛ نوع لا يعرفه هذا الإصدار من العقد («غير معروف») له مفتاحه، فلا يظهر مفتاح خام.
+    public var textKey: String {
+        self == .unknownDefaultOpenApi ? "material.type.unknown" : "material.type." + rawValue
+    }
+}
+
+public enum TextKeys {
+    /// كل مفتاح تبنيه الواجهة من قيمة تعداد؛ يُفحص وجوده في الكتالوج بالعربية والإنجليزية.
+    public static var all: [String] {
+        GalleryQuickFilter.allCases.map(\.textKey) + MediaKind.allCases.map(\.textKey)
+            + GalleryGrouping.allCases.map(\.textKey) + GalleryDateRange.allCases.map(\.textKey)
+            + GalleryStateFilter.allCases.map(\.textKey) + MaterialStatus.Track.allCases.map(\.detailKey)
+            + MaterialType.allCases.map(\.textKey)
+    }
+}

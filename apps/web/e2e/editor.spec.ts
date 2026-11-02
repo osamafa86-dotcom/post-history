@@ -143,11 +143,34 @@ test("the material page follows W2: breadcrumb, player, separate states, the sen
   await login(page); await page.goto("/ar/materials/20000000-0000-4000-8000-000000000005"); const w = ar.shell.material;
   await expect(page.getByRole("navigation", { name: w.breadcrumb })).toContainText(ar.inbox);
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible(); await expect(page.locator(".material-title .priority-pill.urgent")).toBeVisible();
-  await expect(page.getByTestId("sensitivity-line")).toContainText(w.sensitivity); await expect(page.locator(".material-meta")).toContainText("مدينة اختبار");
+  await expect(page.getByTestId("sensitivity-line")).toContainText(w.sensitivity); await expect(page.getByTestId("sensitivity-line")).toContainText(w.notSensitive); await expect(page.locator(".material-meta")).toContainText("مدينة اختبار");
+  // فاصل المسار أيقونة تشير إلى نهاية السطر: معكوسة في RTL، وكما هي في LTR.
+  await expect(page.locator(".breadcrumb-sep")).toHaveCSS("transform", "matrix(-1, 0, 0, 1, 0, 0)"); await expect(page.locator(".breadcrumb")).not.toContainText("\u2039");
   const states = page.locator(".states-card .state-card"); await expect(states).toHaveCount(3);
   await expect(page.locator(".next-step").getByRole("button", { name: ar.shell.inbox.receive, exact: true })).toBeVisible();
   await expect(page.locator(".next-step").getByRole("button", { name: ar.review.open, exact: true })).toBeVisible();
   const main = (await page.locator(".material-main").boundingBox())!, side = (await page.locator(".material-side").boundingBox())!; expect(main.x).toBeGreaterThan(side.x);
   expect(await page.locator("main").textContent()).not.toMatch(/\b(lat|lon|latitude|longitude|gps)\b|31\.\d{3,}/i);
   await page.screenshot({ path: ".artifacts/material-w2-ar.png" });
+  await page.goto("/en/materials/20000000-0000-4000-8000-000000000005"); await expect(page.locator(".breadcrumb-sep")).toHaveCSS("transform", "none");
+  // حقل الحساسية الغائب يُقرأ «غير معروف» لا «لم يُوسَم».
+  await page.route("**/api/bff/materials/20000000-0000-4000-8000-000000000005", async route => { const response = await route.fetch(), data = await response.json(); delete data.sensitivity; await route.fulfill({ response, json: data }); });
+  await page.reload(); await expect(page.getByTestId("sensitivity-line")).toContainText(en.shell.material.sensitivityUnknown); await expect(page.getByTestId("sensitivity-line")).toContainText(en.shell.material.unknownRule); await expect(page.getByTestId("sensitivity-line")).not.toContainText(en.shell.material.notSensitive);
+});
+
+test("on a phone the material's primary actions stay pinned above the bottom bar (M2)", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 }); await login(page); await page.goto("/ar/materials/20000000-0000-4000-8000-000000000005");
+  const actions = page.getByTestId("next-actions"), bar = page.getByRole("navigation", { name: ar.shell.bottomNav });
+  await expect(actions).toHaveCSS("position", "sticky"); expect((await page.locator(".next-step-info h2").boundingBox())!.y).toBeLessThan((await page.locator(".reservation-state").boundingBox())!.y); await expect(actions.getByRole("button", { name: ar.shell.inbox.receive, exact: true })).toBeInViewport();
+  const pinned = async () => { const box = (await actions.boundingBox())!, top = (await bar.boundingBox())!.y, gap = top - (box.y + box.height); return gap >= 0 && gap <= 16 && box.y > 844 / 2 && box.width >= 390 - 2 * 16 - 1; };
+  expect(await page.evaluate(() => window.scrollY)).toBe(0); expect(await pinned()).toBe(true);
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect.poll(() => page.evaluate(() => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 1 && window.scrollY > 844)).toBe(true);
+  expect(await pinned()).toBe(true); await page.evaluate(() => window.scrollTo(0, 0)); await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  for (const button of await actions.getByRole("button").all()) expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await page.screenshot({ path: ".artifacts/material-m2-ar.png" });
+  // فشل «استلام» من الشريط المثبَّت يظهر بجانب أزراره، لا في البطاقة خارج الرؤية.
+  await page.route("**/api/bff/materials/*/transitions", route => route.request().method() === "POST" ? route.fulfill({ status: 412, json: { code: "precondition_failed" } }) : route.continue());
+  await actions.getByRole("button", { name: ar.shell.inbox.receive, exact: true }).click();
+  const alert = actions.getByRole("alert"); await expect(alert).toHaveText(ar.review.changed); await expect(alert).toBeInViewport();
 });

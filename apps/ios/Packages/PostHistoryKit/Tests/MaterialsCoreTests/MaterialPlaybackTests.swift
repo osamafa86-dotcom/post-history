@@ -147,6 +147,42 @@ final class MaterialPlaybackTests: XCTestCase {
         XCTAssertEqual(found(m, [rejected, cancelled, uploading]), nil)
     }
 
+    // MARK: بناء 1.0 (11): فيديو رُفع من الهاتف وعرض «الأصل ليس على هذا الهاتف»
+
+    func testAConfirmedRecordWithoutAStoredFingerprintIsTheOriginalEvenWhenTheServerHasOne() {
+        // سجل من بناء لم يحفظ البصمة (أو لم تُكتب فيه)، والخادم تحقّق ببصمته: كانت القاعدة 1 لا تجد ما تقارنه فلا تعرض شيئًا.
+        let m = galleryMaterial(files: [serverOriginal(sha: shaA)])
+        let mine = record(m.id, at: 1, phase: .verified(receiptNumber: "R"), sha: nil)
+        XCTAssertEqual(found(m, [mine]), mine.id, "a record the server confirmed is the original")
+        let dedup = record(m.id, at: 1, phase: .deduplicated(duplicateOfFileId: nil), sha: nil)
+        XCTAssertEqual(found(m, [dedup]), dedup.id)
+        // والسلامة باقية: لا يُعرض ما لم يُرسل أو فشل أو أُلغي، ولا سجل ببصمة أخرى.
+        XCTAssertNil(found(m, [record(m.id, at: 2, phase: .hashing, sha: nil)]))
+        XCTAssertNil(found(m, [record(m.id, at: 2, phase: .transferring, sha: nil)]))
+        XCTAssertNil(found(m, [record(m.id, at: 2, phase: .failed(.rejected), sha: nil)]))
+        XCTAssertNil(found(m, [record(m.id, at: 2, phase: .cancelled, sha: nil)]))
+        XCTAssertNil(found(m, [record(m.id, at: 2, phase: .verified(receiptNumber: "R2"), sha: shaB)]), "another file the server verified elsewhere")
+        // والمطابق ببصمته يغلب سجلًا بلا بصمة.
+        let matched = record(m.id, at: 0, phase: .failed(.expired), sha: shaA)
+        XCTAssertEqual(found(m, [matched, mine]), matched.id)
+    }
+
+    func testTheReasonLineSaysWhyThePhoneCopyIsNotShown() {
+        let m = galleryMaterial(files: [serverOriginal(sha: shaA)])
+        func absence(_ records: [UploadRecord], onPhone: Set<UUID>? = nil) -> LocalOriginalAbsence? {
+            LocalOriginals.absence(for: m, in: records) { onPhone?.contains($0.id) ?? true }
+        }
+        let sent = record(m.id, at: 1, phase: .verified(receiptNumber: "R"), sha: shaA)
+        XCTAssertNil(absence([sent]), "the copy is shown")
+        XCTAssertEqual(absence([]), .notOnPhone, "sent from another device, or the queue was wiped")
+        XCTAssertEqual(absence([record(UUID(), at: 1, phase: .verified(receiptNumber: "R"), sha: shaA)]), .notOnPhone)
+        XCTAssertEqual(absence([record(m.id, at: 1, phase: .verified(receiptNumber: "R"), sha: shaA, kind: .proxy)]), .notOnPhone,
+                       "the light copy is not the original")
+        XCTAssertEqual(absence([sent], onPhone: []), .removedFromPhone, "deleted after the receipt")
+        XCTAssertEqual(absence([record(m.id, at: 2, phase: .failed(.rejected), sha: shaB)]), .notTheVerifiedOriginal)
+        for reason in LocalOriginalAbsence.allCases { XCTAssertTrue(reason.textKey.hasPrefix("detail.placeholder.body.")) }
+    }
+
     func testAReplacementStillUploadingIsNotShownWhileTheServerHoldsAVerifiedOriginal() {
         // اللقطة البديلة في الطريق (بلا شبكة في الميدان أو موقوفة) قبل أن يصل ردّ 409: ليست ما عند المكتب، فلا تُعرض «الأصل».
         let m = galleryMaterial(files: [serverOriginal(sha: shaA)])
@@ -256,7 +292,7 @@ final class MaterialPlaybackTests: XCTestCase {
             .appendingPathComponent("../../../../App/Resources/Localizable.xcstrings").standardized
         let json = try JSONSerialization.jsonObject(with: Data(contentsOf: catalog)) as! [String: Any]
         let strings = json["strings"] as! [String: Any]
-        for key in MaterialStatus.allExplanationKeys + MaterialFileList.allTextKeys {
+        for key in MaterialStatus.allExplanationKeys + MaterialFileList.allTextKeys + LocalOriginalAbsence.allCases.map(\.textKey) {
             let loc = (strings[key] as? [String: Any])?["localizations"] as? [String: Any]
             XCTAssertNotNil(loc?["ar"], "missing ar for \(key)")
             XCTAssertNotNil(loc?["en"], "missing en for \(key)")

@@ -1,4 +1,5 @@
 import type { Field, Form, Material, Me, Permission, Values, Notification, TransitionRecord, NewsroomDashboard } from "./types";
+import { sensitivityState } from "./sensitivity";
 import { workName } from "./work-name";
 import { uuid, states } from "./query";
 
@@ -16,6 +17,14 @@ export function safeMe(me: Me): Me {
 export function safeForm<T extends Form>(form: T, permissions: Permission[]): T {
   return { ...form, fields: form.fields.filter(field => mayReadField(field, permissions)) };
 }
+/**
+ * الأعلام الثلاثة كما هي إن كانت كلها منطقية؛ وإلا يُحذف الحقل من الردّ (فشل مغلق)، فيقرؤه المتصفح «غير معروف»
+ * ولا يطمئن عن بيانات غائبة، ولا يرمي الـBFF على مادة ناقصة.
+ */
+export function safeSensitivity(value: unknown): Material["sensitivity"] | undefined {
+  const state = sensitivityState(value);
+  return state.known ? { minors: state.flags.includes("minors"), injured: state.flags.includes("injured"), graphic: state.flags.includes("graphic") } : undefined;
+}
 export function safeMaterial(material: Material, permissions: Permission[], form?: Form, internal = false): Material {
   // قائمة بيضاء تمنع انتقال حقول جديدة غير مراجعة إلى المتصفح؛ GPS writeOnly في العقد الحالي.
   return {
@@ -25,7 +34,7 @@ export function safeMaterial(material: Material, permissions: Permission[], form
     contributors: material.contributors?.map(({ user_id, role, share_percent }) => ({ user_id, role, share_percent })),
     title: material.title, material_types: material.material_types, governorate: material.governorate, city: material.city,
     shot_at: material.shot_at, priority: material.priority,
-    sensitivity: { minors: material.sensitivity.minors, injured: material.sensitivity.injured, graphic: material.sensitivity.graphic },
+    sensitivity: safeSensitivity(material.sensitivity) as Material["sensitivity"],
     display_name: { mode: material.display_name.mode, pseudonym: material.display_name.mode === "pseudonym" ? material.display_name.pseudonym : null },
     form_version: material.form_version, dynamic_fields: redactValues(material.dynamic_fields, form, permissions, material.redacted_field_keys),
     technical_state: material.technical_state, editorial_state: material.editorial_state, rights_state: material.rights_state,

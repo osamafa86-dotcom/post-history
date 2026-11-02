@@ -949,6 +949,16 @@
     "state/ok",
     "action/soft",
     "text"
+   ],
+   [
+    "text/on-brand",
+    "action/primary",
+    "ui"
+   ],
+   [
+    "text/on-brand",
+    "border/edge",
+    "ui"
    ]
   ]
  }
