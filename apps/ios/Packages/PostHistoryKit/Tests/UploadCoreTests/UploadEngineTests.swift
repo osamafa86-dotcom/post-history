@@ -251,9 +251,12 @@ final class UploadEngineTests: XCTestCase {
         let p = ChunkSizePolicy()
         XCTAssertEqual(p.chunkSize(background: false, measuredUplinkBytesPerSecond: 10_000_000), 8 << 20)
         XCTAssertEqual(p.chunkSize(background: true, measuredUplinkBytesPerSecond: nil), 64 << 20)
-        XCTAssertEqual(p.chunkSize(background: true, measuredUplinkBytesPerSecond: 1_048_576), 120 << 20) // ~دقيقتان على 1 MiB/s
+        XCTAssertEqual(p.chunkSize(background: true, measuredUplinkBytesPerSecond: 600_000), 68 << 20) // ~دقيقتان على 0.6 MB/s
+        XCTAssertEqual(p.chunkSize(background: true, measuredUplinkBytesPerSecond: 1_048_576), 90 << 20) // دقيقتان على 1 MiB/s تتجاوز السقف
         XCTAssertEqual(p.chunkSize(background: true, measuredUplinkBytesPerSecond: 50_000), 64 << 20) // لا يقل عن الحد الأدنى
-        XCTAssertEqual(p.chunkSize(background: true, measuredUplinkBytesPerSecond: 104_857_600), 512 << 20) // لا يتجاوز الحد الأقصى
+        XCTAssertEqual(p.chunkSize(background: true, measuredUplinkBytesPerSecond: 104_857_600), 90 << 20) // لا يتجاوز الحد الأقصى
+        // لا جزء يتجاوز حدّ جسم الطلب على /files/ (100m في الحافة ووكيل tusd، infra/proxy/tusd.conf)
+        XCTAssertLessThan(p.backgroundMaxBytes, 100 * 1_000_000)
 
         let plan = ChunkPlanner.chunksToPrepare(sizeBytes: 10, confirmedOffset: 4, chunkSize: 4, prepared: [], window: 2)
         XCTAssertEqual(plan.map(\.offset), [4, 8])

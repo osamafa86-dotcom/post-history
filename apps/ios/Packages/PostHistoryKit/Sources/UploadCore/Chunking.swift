@@ -3,10 +3,13 @@ import Foundation
 /// حجم جزء tus الذي يرسله الهاتف، ثابت لكل جلسة.
 /// في الخلفية أجزاء كبيرة (نهج TUSKit) لأن إيقاظ التطبيق بعد كل جزء يخضع لميزانية الطاقة؛ في المقدمة أجزاء صغيرة.
 /// مع قياس للشبكة يُستهدف جزء يستغرق نحو دقيقتين، محصورًا بين الحدين.
+/// السقف تحت حدّ جسم الطلب على مسار /files/ (`client_max_body_size 100m` في الحافة ووكيل tusd، وحدّ 100 MB الشائع
+/// في الوكلاء أمامها)؛ جزء أكبر منه يُرد بـ 413 فيفشل الرفع نهائيًا (`rejected`). اليوم لا يُمرَّر قياس الصعود، فالجزء
+/// الخلفي 64 MiB دائمًا؛ السقف حارس لحين يُوصَل القياس.
 public struct ChunkSizePolicy: Sendable, Equatable {
     public var foregroundBytes: Int64 = 8 << 20
     public var backgroundMinBytes: Int64 = 64 << 20
-    public var backgroundMaxBytes: Int64 = 512 << 20
+    public var backgroundMaxBytes: Int64 = 90 << 20
     public var targetChunkSeconds: Double = 120
     /// عدد الأجزاء المُجهَّزة مسبقًا على القرص (بما فيها الذي في الطريق): يحد المساحة المؤقتة على الهواتف الممتلئة.
     public var preparedWindow: Int = 2
