@@ -521,9 +521,12 @@ bf="$("$HERE/backfill-media.sh" 2>/dev/null)" || fail "backfill-media.sh failed 
 echo "backfill-media.sh again: nothing eligible, nothing given, nothing dead-lettered: ok"
 
 # The worker's MinIO user: reads an upload but not its tus .info (file metadata), writes derived/ only, deletes and lists nothing.
-policy="$(mcx 'set -u
-info="$(mc --config-dir /tmp/mc ls "local/$S3_BUCKET_UPLOADS/" | sed -n "s/.* \([^ ]*\.info\)$/\1/p" | head -1)"
-[ -n "$info" ] || { echo "no upload in the bucket"; exit 1; }
+# (The mc image has a shell but no sed or awk: the listing is read here.)
+info="$(mcx 'mc --config-dir /tmp/mc ls --json "local/$S3_BUCKET_UPLOADS/"' | python3 -c '
+import json, sys
+print(next((j["key"] for j in map(json.loads, (l for l in sys.stdin if l.startswith("{"))) if j.get("key", "").endswith(".info")), ""))')"
+[[ "$info" =~ ^[A-Za-z0-9]+\.info$ ]] || fail "no completed upload in the uploads bucket to check the worker's MinIO user against"
+policy="$(mcx "info=$info"'
 t() { if echo z | mc --config-dir /tmp/mc "$@" >/dev/null 2>&1; then echo allow; else echo deny; fi; }
 echo "read-upload $(t cat "w/$S3_BUCKET_UPLOADS/${info%.info}")"
 echo "read-info $(t cat "w/$S3_BUCKET_UPLOADS/$info")"
