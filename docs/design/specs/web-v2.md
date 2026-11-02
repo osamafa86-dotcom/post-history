@@ -167,7 +167,7 @@
 | `store.invoice.title` | فاتورة | Invoice |
 | `store.invoice.order` | طلب {id} | Order {id} |
 | `store.invoice.sandbox` | بيئة دفع تجريبية: هذا مستند تجريبي وليس فاتورة ضريبية، ولم يُخصم مال حقيقي. | Test payment environment: this is a test document, not a tax invoice, and no real money was charged. |
-| `store.invoice.to` | إلى | Billed to |
+| `store.invoice.billedTo` | إلى | Billed to |
 | `store.invoice.status` | الحالة | Status |
 | `store.invoice.paid` | مدفوعة | Paid |
 | `store.invoice.colItem` | المادة | Item |
