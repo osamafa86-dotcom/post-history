@@ -112,6 +112,10 @@ public final class URLSessionTusTransport: NSObject, TusTransport, URLSessionDat
 
     private let lock = NSLock()
     private var session: URLSession!
+    /// جلسة طلبات التحكم (إنشاء الرفع POST وموضع الخادم HEAD). الجلسة الخلفية لا تقبل إلا مهام الرفع والتنزيل
+    /// من ملف، وأي `data(for:)` فيها يرمي استثناءً يُنهي التطبيق؛ فتُرسل هذه الطلبات القصيرة في جلسة عابرة بلا
+    /// ذاكرة مؤقتة ولا كوكيز، وتبقى أجزاء PATCH وحدها في الجلسة الخلفية.
+    private(set) var controlSession: URLSession!
     private weak var delegate: TusTransportDelegate?
     private var responses: [Int: HTTPURLResponse] = [:]
     /// آخر تقدم في إرسال الجسم لكل مهمة PATCH (مراقب الخمول).
@@ -131,6 +135,7 @@ public final class URLSessionTusTransport: NSObject, TusTransport, URLSessionDat
         self.idleTimeout = idleTimeout
         super.init()
         session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+        controlSession = configuration.identifier == nil ? session : URLSession(configuration: Self.controlConfiguration(from: configuration))
         if let idleTimeout {
             watchdog = Task { [weak self] in
                 while !Task.isCancelled {
@@ -142,6 +147,18 @@ public final class URLSessionTusTransport: NSObject, TusTransport, URLSessionDat
     }
 
     deinit { watchdog?.cancel() }
+
+    /// إعداد جلسة التحكم من إعداد الجلسة الخلفية: عابرة، بمهلة الطلب نفسها وانتظار الاتصال نفسه.
+    static func controlConfiguration(from background: URLSessionConfiguration) -> URLSessionConfiguration {
+        let c = URLSessionConfiguration.ephemeral
+        c.timeoutIntervalForRequest = background.timeoutIntervalForRequest
+        #if canImport(Darwin)
+        c.waitsForConnectivity = background.waitsForConnectivity
+        #endif
+        c.urlCache = nil
+        c.httpCookieStorage = nil
+        return c
+    }
 
     private func cancelIdleTasks(olderThan timeout: TimeInterval) async {
         let stale: Set<Int> = lock.withLock {
@@ -261,7 +278,7 @@ public final class URLSessionTusTransport: NSObject, TusTransport, URLSessionDat
 
     private func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         do {
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await controlSession.data(for: request)
             guard let http = response as? HTTPURLResponse else { throw TusError.transport("non_http") }
             return (data, http)
         } catch let e as TusError { throw e } catch { throw TusError.transport(String((error as NSError).code)) }
