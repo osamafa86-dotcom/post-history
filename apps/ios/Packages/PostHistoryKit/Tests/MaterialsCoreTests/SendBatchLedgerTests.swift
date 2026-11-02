@@ -234,6 +234,19 @@ final class SendBatchLedgerTests: XCTestCase {
         XCTAssertEqual(SendBatchLedger(store: store()).batches, [])
     }
 
+    @MainActor func testTheSendRecordsItsSensitivityAnswer() async {
+        let ledger = SendBatchLedger(store: store())
+        let plain = await BatchedSubmission.run(ready(files: 1), dynamicFields: [:], ledger: ledger) { _, _ in UUID() } enqueue: { _, _, _ in }
+        var draft = ready(files: 1)
+        draft.answerSensitivity(.yes)
+        draft.minors = false; draft.injured = true; draft.graphic = false
+        let sensitive = await BatchedSubmission.run(draft, dynamicFields: [:], ledger: ledger) { _, _ in UUID() } enqueue: { _, _, _ in }
+        XCTAssertEqual(ledger.batches.first { $0.id == plain.batchId }?.sensitive, false)
+        XCTAssertEqual(ledger.batches.first { $0.id == sensitive.batchId }?.sensitive, true)
+        guard case .batches(let onDisk) = SendBatchStore(fileURL: fileURL).read() else { return XCTFail("unreadable") }
+        XCTAssertEqual(onDisk.first { $0.id == sensitive.batchId }?.sensitive, true, "kept on disk for the upload rows")
+    }
+
     @MainActor func testTheFileUsesTheUploadRecordsProtectionAndReadsOlderEntries() async throws {
         XCTAssertEqual(store().writingOptions, UploadFileProtection.writingOptions,
                        "readable after first unlock, like the upload records the background session wakes for")

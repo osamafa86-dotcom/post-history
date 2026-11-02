@@ -47,6 +47,14 @@ struct MaterialDetailView: View {
         material.flatMap { PlaybackSourcePolicy.fallback(after: playbackSource, for: $0) }
     }
 
+    /// ما يُبلَّغ به المشغّل: المصدر وبديله معًا، فتحقّقُ نسخة خفيفة بعد اختيار `hls` يصل المشغّل ولو لم يتغيّر المصدر.
+    private struct PlaybackRequest: Equatable {
+        let source: PlaybackSource
+        let fallback: PlaybackSource?
+    }
+
+    private var playbackRequest: PlaybackRequest { PlaybackRequest(source: playbackSource, fallback: fallbackSource) }
+
     private var knownDuration: Double? {
         material.flatMap(MaterialMedia.durationMs).map { Double($0) / 1000 } ?? localDuration
     }
@@ -80,8 +88,8 @@ struct MaterialDetailView: View {
                 await load()
             }
         }
-        .onChange(of: playbackSource, initial: true) { _, source in configurePlayer(source) }
-        .onChange(of: localDuration) { _, _ in configurePlayer(playbackSource) }
+        .onChange(of: playbackRequest, initial: true) { _, request in configurePlayer(request) }
+        .onChange(of: localDuration) { _, _ in configurePlayer(playbackRequest) }
         .onChange(of: scenePhase) { _, phase in if phase != .active { player.pause() } }
         // ملء الشاشة غطاء فوق التفاصيل: لا يوقف التشغيل؛ مغادرة التفاصيل توقفه وتمحو الرابط.
         .onDisappear { if !fullscreen { player.stop() } }
@@ -97,10 +105,12 @@ struct MaterialDetailView: View {
         await model.loadTimeline(materialId)
     }
 
-    private func configurePlayer(_ source: PlaybackSource) {
+    private func configurePlayer(_ request: PlaybackRequest) {
         let fetch = model.downloadURL
         let id = materialId
-        player.configure(source: source, fallback: fallbackSource, knownDurationSeconds: knownDuration) { fileId in try await fetch(id, fileId) }
+        player.configure(source: request.source, fallback: request.fallback, knownDurationSeconds: knownDuration) { fileId in
+            try await fetch(id, fileId)
+        }
     }
 
     @ViewBuilder private func content(_ m: PostHistoryAPI.Material) -> some View {

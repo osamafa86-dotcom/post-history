@@ -25,11 +25,12 @@ public struct LocalOriginal: Equatable, Sendable {
 }
 
 public enum LocalOriginals {
-    /// أصل المادة على هذا الهاتف بما وصل الخادم، لا بالأحدث وحده؛ فلا تُعرض «لقطة بديلة» ردّها الخادم (409 لأصل ثانٍ بعد التحقق)
-    /// على أنها الأصل والمكتب يرى غيرها:
-    /// 1. السجل الذي تطابق بصمته (`sha256Hex`) بصمة أصل المادة المتحقَّق على الخادم.
-    /// 2. وإن كان على الخادم أصل متحقَّق لا يطابقه سجل: لا يُعرض سجل فشل أو أُلغي، والأحدث مما بقي.
-    /// 3. وإلا (لم يتحقق أصل على الخادم بعد): الأحدث مما لم يفشل ولم يُلغَ، ثم الأحدث أيًّا كان (ما صوّره المراسل ولم يصل).
+    /// أصل المادة على هذا الهاتف بما عند المكتب، لا بالأحدث؛ فلا تُعرض «لقطة بديلة» ما زالت في الطريق أو ردّها الخادم (409 لأصل
+    /// ثانٍ بعد التحقق) على أنها الأصل:
+    /// 1. على الخادم أصل متحقَّق ببصمة: السجل الذي تطابق بصمته (`sha256Hex`، تُحسب قبل الرفع) وحده، وإلا لا نسخة هاتف (يُعرض مشتق
+    ///    الخادم أو «قيد المعالجة»)؛ فلا يُعرض سجل يُرفع أو فشل أو أُلغي.
+    /// 2. على الخادم أصل متحقَّق بلا بصمة مكتوبة: سجل أكّده الخادم وحده (`verified` أو `deduplicated`)، الأحدث.
+    /// 3. لا أصل متحقَّق على الخادم بعد: الأحدث مما لم يفشل ولم يُلغَ، ثم الأحدث أيًّا كان (ما صوّره المراسل ولم يصل).
     /// والنسخة على الهاتف شرط في الثلاثة. النسخة الخفيفة لا تُعدّ: مشتق يصنعه التطبيق ويحذفه بعد إيصاله. القراءة وحدها.
     public static func find(for material: Material, in records: [UploadRecord],
                             hasLocalCopy: (UploadRecord) -> Bool) -> LocalOriginal? {
@@ -37,17 +38,24 @@ public enum LocalOriginals {
         guard !candidates.isEmpty else { return nil }
         func newest(_ records: [UploadRecord]) -> UploadRecord? { records.max { $0.createdAt < $1.createdAt } }
         let verified = material.files.filter { $0.kind == .original && $0.state == .verified }
-        let hashes = Set(verified.compactMap { $0.sha256?.lowercased() })
-        let settled = candidates.filter { !unsuccessful($0.phase) }
+        let hashes = Set(verified.compactMap { $0.sha256?.lowercased() }.filter { !$0.isEmpty })
         let chosen: UploadRecord?
-        if let match = newest(candidates.filter { $0.sha256Hex.map { hashes.contains($0.lowercased()) } ?? false }) {
-            chosen = match
+        if !hashes.isEmpty {
+            chosen = newest(candidates.filter { $0.sha256Hex.map { hashes.contains($0.lowercased()) } ?? false })
         } else if !verified.isEmpty {
-            chosen = newest(settled)
+            chosen = newest(candidates.filter { confirmed($0.phase) })
         } else {
-            chosen = newest(settled) ?? newest(candidates)
+            chosen = newest(candidates.filter { !unsuccessful($0.phase) }) ?? newest(candidates)
         }
         return chosen.map { LocalOriginal(recordId: $0.id, relativePath: $0.sourcePath, mimeType: $0.mimeType) }
+    }
+
+    /// أكّده الخادم: تحقّق من بصمته أو طابقه بأصل سابق.
+    static func confirmed(_ phase: UploadPhase) -> Bool {
+        switch phase {
+        case .verified, .deduplicated: return true
+        default: return false
+        }
     }
 
     static func unsuccessful(_ phase: UploadPhase) -> Bool {
@@ -119,6 +127,14 @@ public enum PlaybackSourcePolicy {
     /// الحسّاسة تُحجب صورتها، مموّهةً تحت علامة الحساسية كما في 07c، في المعرض وملصق التفاصيل أيًّا كان مصدرها (الهاتف أو الخادم)،
     /// ولا تُكشف إلا بلمسة المراسل في التفاصيل («تشغيل» أو «عرض الصورة»).
     public static func conceals(_ m: Material, revealed: Bool) -> Bool { m.isSensitive && !revealed }
+
+    /// صف رفع على الهاتف (آخر الإرسالات في الرئيسية، وشاشة الرفع) لمادة: بقاعدة `conceals` نفسها إن عُرفت المادة من الخادم، وإلا
+    /// بحساسية الإرسالة المسجَّلة على الهاتف عند «أرسل»، وإلا تُحجب (لقطة بديلة أو سجل من إصدار سابق قبل أن تُحمَّل «موادي»): الحجب
+    /// أسلم من صورة حسّاسة ظاهرة.
+    public static func concealsUpload(material: Material?, batch: SendBatch?) -> Bool {
+        if let material { return conceals(material, revealed: false) }
+        return batch?.sensitive ?? true
+    }
 
     /// مصغّرة البطاقة في المعرض: الأصل على الهاتف ← `thumbnail` متحقَّق ← لا شيء. المادة الحسّاسة لا تُطلب لها معاينة من الخادم
     /// (07c: «لا معاينة سحابية · تُعالَج محليًا»)، ومصغّرة الهاتف لها تُعرض مموّهة (`conceals`).

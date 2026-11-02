@@ -94,6 +94,20 @@ final class MaterialPlaybackTests: XCTestCase {
         XCTAssertNil(PlaybackSourcePolicy.fallback(after: first, for: galleryMaterial(files: [hls, mediaFile(.proxy, .uploading)])))
     }
 
+    func testUploadRowsUseTheSameConcealmentAndHideWhatIsUnknown() {
+        let sensitive = galleryMaterial(sensitive: true), plain = galleryMaterial()
+        let sensitiveSend = SendBatch(title: "t", sensitive: true), plainSend = SendBatch(title: "t", sensitive: false)
+        // المادة من الخادم تغلب: قاعدة `conceals` نفسها.
+        XCTAssertTrue(PlaybackSourcePolicy.concealsUpload(material: sensitive, batch: plainSend))
+        XCTAssertFalse(PlaybackSourcePolicy.concealsUpload(material: plain, batch: sensitiveSend))
+        // قبل أن تُعرف المادة: جواب الإرسالة على الهاتف.
+        XCTAssertTrue(PlaybackSourcePolicy.concealsUpload(material: nil, batch: sensitiveSend))
+        XCTAssertFalse(PlaybackSourcePolicy.concealsUpload(material: nil, batch: plainSend))
+        // مجهولة (لقطة بديلة بلا إرسالة، أو ملف إرسالات قديم بلا الجواب): تُحجب.
+        XCTAssertTrue(PlaybackSourcePolicy.concealsUpload(material: nil, batch: nil))
+        XCTAssertTrue(PlaybackSourcePolicy.concealsUpload(material: nil, batch: SendBatch(title: "t")))
+    }
+
     // MARK: أصل المادة على الهاتف بما وصل الخادم
 
     private func record(_ material: UUID, at seconds: TimeInterval, phase: UploadPhase, sha: String?,
@@ -125,11 +139,25 @@ final class MaterialPlaybackTests: XCTestCase {
         XCTAssertEqual(found(m, [accepted, rejected]), accepted.id, "the copy matching the server's fingerprint")
         // حذف المراسل نسخة الأصل المقبول من الهاتف: لا يُعرض المرفوض مكانه.
         XCTAssertEqual(found(m, [accepted, rejected], onPhone: [rejected.id]), nil)
-        // الخادم لم يكتب البصمة بعد: الأصل متحقَّق ولا سجل يطابقه، فالفاشل والملغى لا يُعرضان.
+        // الخادم لم يكتب البصمة بعد: الأصل متحقَّق، فسجل أكّده الخادم وحده يُعرض، لا فاشل ولا ملغى ولا ما يُرفع.
         m.files = [serverOriginal(sha: nil)]
         XCTAssertEqual(found(m, [accepted, rejected]), accepted.id)
         let cancelled = record(m.id, at: 3, phase: .cancelled, sha: nil)
-        XCTAssertEqual(found(m, [rejected, cancelled]), nil)
+        let uploading = record(m.id, at: 4, phase: .transferring, sha: shaB)
+        XCTAssertEqual(found(m, [rejected, cancelled, uploading]), nil)
+    }
+
+    func testAReplacementStillUploadingIsNotShownWhileTheServerHoldsAVerifiedOriginal() {
+        // اللقطة البديلة في الطريق (بلا شبكة في الميدان أو موقوفة) قبل أن يصل ردّ 409: ليست ما عند المكتب، فلا تُعرض «الأصل».
+        let m = galleryMaterial(files: [serverOriginal(sha: shaA)])
+        let accepted = record(m.id, at: 1, phase: .verified(receiptNumber: "R"), sha: shaA)
+        let uploading = record(m.id, at: 2, phase: .transferring, sha: shaB)
+        let hashing = record(m.id, at: 3, phase: .hashing, sha: nil)
+        let paused = record(m.id, at: 4, phase: .awaitingReceipt, sha: shaB)
+        XCTAssertEqual(found(m, [accepted, uploading, hashing, paused]), accepted.id, "only the record with the server's fingerprint")
+        // والأصل المقبول حُذف من الهاتف: نسخة الخادم (أو «قيد المعالجة»)، لا البديل الذي يُرفع.
+        XCTAssertNil(found(m, [uploading, hashing, paused]))
+        XCTAssertEqual(PlaybackSourcePolicy.player(for: m, local: LocalOriginals.find(for: m, in: [uploading]) { _ in true }), .unavailable)
     }
 
     func testAFailedOriginalThenAnAcceptedReplacementShowsTheReplacement() {

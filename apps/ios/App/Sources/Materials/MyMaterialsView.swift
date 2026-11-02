@@ -12,6 +12,9 @@ final class MyMaterialsModel: ObservableObject {
     @Published private(set) var loading = false
     /// صفحة تالية في الطريق: «لا مواد بهذا الفلتر» لا تُقال قبل أن تنتهي.
     @Published private(set) var loadingMore = false
+    /// يرتفع مع كل تحميل ينتهي (سحب، أو استطلاع، أو صفحة تالية) ولو لم يتغيّر العدد؛ مفتاح مهمة «الصفحة التالية» في آخر المعرض،
+    /// فلا يبقى مؤشرها يدور بعد استطلاع دمج الصفحة الأولى بلا جديد.
+    @Published private(set) var revision = 0
     /// آخر تحديث ناجح؛ عند الفشل تبقى البيانات المعروضة مع شريط «غير محدّث منذ …».
     @Published private(set) var lastUpdated: Date?
     @Published private(set) var timelines: [UUID: MaterialTimeline] = [:]
@@ -52,6 +55,7 @@ final class MyMaterialsModel: ObservableObject {
             lastUpdated = Date()
         } catch { failed = true }
         reachedEnd = await feed.reachedEnd
+        revision += 1
     }
 
     func loadMore() async {
@@ -62,6 +66,7 @@ final class MyMaterialsModel: ObservableObject {
             failed = false
         } catch { failed = true }
         reachedEnd = await feed.reachedEnd
+        revision += 1
     }
 
     /// يحدّث مادة واحدة (شاشة التفاصيل، أو إشعار عن مادة لم تُحمَّل صفحتها)؛ `nil` إن تعذّر.
@@ -121,7 +126,7 @@ struct MyMaterialsView: View {
                     // آخر المعرض: الصفحة التالية بالمؤشر القائم (`MaterialsFeed.loadMore`)؛ ومع فلتر يخفي ما حُمّل تُتابع الصفحات.
                     ProgressView()
                         .frame(maxWidth: .infinity, minHeight: VL.Size.touchMin)
-                        .task(id: model.items.count) { if !model.failed { await model.loadMore() } }
+                        .task(id: model.revision) { if !model.failed { await model.loadMore() } }
                     if model.failed {
                         Button("materials.loadMore") { Task { await model.loadMore() } }.buttonStyle(.vlGhost)
                     }
@@ -385,5 +390,14 @@ struct GalleryOptionsSheet: View {
             VLSectionHeader(title)
             content()
         }
+    }
+}
+
+extension UploadQueueModel {
+    /// حجب صورة سجل في صفوف الرفع (آخر الإرسالات في الرئيسية، وشاشة الرفع) بقاعدة المعرض نفسها (`PlaybackSourcePolicy.concealsUpload`):
+    /// المادة من «موادي» إن حُمّلت، وإلا جواب الإرسالة على الهاتف، وإلا تُحجب.
+    func concealsPreview(_ rec: UploadRecord, materials: [PostHistoryAPI.Material]) -> Bool {
+        PlaybackSourcePolicy.concealsUpload(material: materials.first { $0.id == rec.materialId },
+                                            batch: batches.first { $0.materialIds.contains(rec.materialId) })
     }
 }

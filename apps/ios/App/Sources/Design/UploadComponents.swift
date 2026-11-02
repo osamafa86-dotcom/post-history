@@ -144,31 +144,43 @@ enum MediaImages {
     }
 }
 
-/// مصغّرة ملف محلي بزاوية، أو سطح غائر بأيقونة النوع إن لم تتوفر النسخة.
+/// مصغّرة ملف محلي بزاوية، أو سطح غائر بأيقونة النوع إن لم تتوفر النسخة. `concealed` لمادة حسّاسة (أو مجهولة الحساسية) في صفوف
+/// الرفع: تُحمَّل 48 بكسلًا وتُموَّه تحت علامة الدرع، بقاعدة المعرض نفسها (ADR 0089).
 struct LocalThumbnail: View {
     let relativePath: String?
     let isVideo: Bool
     var width: CGFloat = 40
     var height: CGFloat = 40
     var radius: CGFloat = VL.Space.s3
+    var concealed = false
 
     @State private var image: Image?
+
+    private struct Request: Equatable {
+        let path: String?
+        let concealed: Bool
+    }
 
     var body: some View {
         ZStack {
             Color.vl.bgSunken
             if let image {
                 image.resizable().scaledToFill()
-            } else {
+                    .blur(radius: concealed ? VL.Space.s3 : 0, opaque: true)
+            } else if !concealed {
                 Image(systemName: isVideo ? "film" : "photo").foregroundStyle(Color.vl.textSecondary)
+            }
+            if concealed {
+                Color.vl.bgSunken.opacity(image == nil ? 0 : 0.5)
+                Image(systemName: "shield").foregroundStyle(Color.vl.textPrimary)
             }
         }
         .frame(width: width, height: height)
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .accessibilityHidden(true)
-        .task(id: relativePath) {
+        .task(id: Request(path: relativePath, concealed: concealed)) {
             guard let relativePath else { image = nil; return }
-            image = await ThumbnailCache.shared.image(relativePath: relativePath, isVideo: isVideo)
+            image = await ThumbnailCache.shared.image(relativePath: relativePath, isVideo: isVideo, maxPixel: concealed ? 48 : 240)
         }
     }
 }
@@ -215,6 +227,8 @@ struct UploadRow<Actions: View>: View {
     let isVideo: Bool
     let item: UploadItem
     let status: UploadRowStatus
+    /// مادة حسّاسة أو مجهولة الحساسية: المصغّرة مموّهة تحت الدرع، وشارة «حسّاسة» تحت العنوان.
+    var concealed = false
     @ViewBuilder var actions: Actions
 
     private var stage: UploadStage { UploadOverview.stage(item) }
@@ -223,7 +237,7 @@ struct UploadRow<Actions: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: VL.Space.s3) {
             HStack(alignment: .center, spacing: VL.Space.s4) {
-                LocalThumbnail(relativePath: thumbnailPath, isVideo: isVideo)
+                LocalThumbnail(relativePath: thumbnailPath, isVideo: isVideo, concealed: concealed)
                 VStack(alignment: .leading, spacing: VL.Space.s2) {
                     ViewThatFits(in: .horizontal) {
                         HStack(spacing: VL.Space.s3) {
@@ -237,6 +251,7 @@ struct UploadRow<Actions: View>: View {
                         }
                     }
                     if showsBar { bar }
+                    if concealed { StateBadge(labelKey: "media.sensitive", tone: .warn, systemImage: "shield") }
                 }
             }
             .accessibilityElement(children: .combine)
@@ -282,8 +297,10 @@ struct UploadRow<Actions: View>: View {
 }
 
 extension UploadRow where Actions == EmptyView {
-    init(title: String, thumbnailPath: String?, isVideo: Bool, item: UploadItem, status: UploadRowStatus) {
-        self.init(title: title, thumbnailPath: thumbnailPath, isVideo: isVideo, item: item, status: status) { EmptyView() }
+    init(title: String, thumbnailPath: String?, isVideo: Bool, item: UploadItem, status: UploadRowStatus, concealed: Bool = false) {
+        self.init(title: title, thumbnailPath: thumbnailPath, isVideo: isVideo, item: item, status: status, concealed: concealed) {
+            EmptyView()
+        }
     }
 }
 

@@ -266,6 +266,14 @@ final class PlayerModel: ObservableObject {
     private func load(resumeAt: Double, autoplay: Bool) async {
         let token = UUID()
         loadToken = token
+        // عنصر جديد يُحمَّل (أول مرة، أو تجديد الرابط، أو البديل): سحبٌ قطعه التحميل لا يبقى معلّقًا، وموضعه حُسب قبل هذا.
+        clearScrub()
+        // النسخة حُذفت قبل أن تعلم الشاشة: لا يُفتح ملف غير موجود، ولا تُنشَّط جلسة الصوت ولا تُوقف مشغّلات غيره قبل ذلك.
+        if case .local(let local) = source,
+           !FileManager.default.fileExists(atPath: UploadServices.shared.documentsDirectory.appendingPathComponent(local.relativePath).path) {
+            phase = .failed
+            return
+        }
         phase = .loading
         PlaybackCenter.shared.activate(self)
         let asset: AVURLAsset
@@ -273,17 +281,15 @@ final class PlayerModel: ObservableObject {
         case .local(let local):
             lease = nil
             let file = UploadServices.shared.documentsDirectory.appendingPathComponent(local.relativePath)
-            // النسخة حُذفت قبل أن تعلم الشاشة: لا يُفتح ملف غير موجود، ومحاولة واحدة لكل لمسة.
-            guard FileManager.default.fileExists(atPath: file.path) else {
-                phase = .failed
-                return
-            }
             previewFile = file
             asset = AVURLAsset(url: file)
         case .remote(let fileId, _, _):
             // يُطلب قبيل التشغيل، ولا يُكتب في أي مكان غير هذا النموذج.
             guard let link, let fresh = (try? await link(fileId)).flatMap({ SignedURLLease($0) }) else {
-                if loadToken == token { phase = .failed }
+                if loadToken == token {
+                    clearScrub()
+                    phase = .failed
+                }
                 return
             }
             guard loadToken == token else { return }
@@ -400,6 +406,9 @@ final class PlayerModel: ObservableObject {
         failureHandled = true
         let resumeAt = isScrubbing ? scrubSeconds : currentSeconds
         let resume = wantsPlay || (isScrubbing && wasPlayingBeforeScrub)
+        // الموضع حُسب: السحب المقطوع لا يبقى معلّقًا والشريط معطَّل (الإيماءة قد تُلغى بلا `onEnded`).
+        if isScrubbing { currentSeconds = scrubSeconds }
+        clearScrub()
         guard case .remote = source else { phase = .failed; return }
         switch SignedURLRefresh.afterFailure(lease, now: Date(), refreshesWithoutProgress: refreshesWithoutProgress) {
         case .fetchNew:
@@ -415,6 +424,13 @@ final class PlayerModel: ObservableObject {
             refreshesWithoutProgress = 0
             Task { await load(resumeAt: resumeAt, autoplay: resume) }
         }
+    }
+
+    /// ينهي حالة السحب بلا بحث ولا استئناف (قطعها تحميل أو فشل): لا يبقى الشريط معلّقًا ولا الوقت ثابتًا.
+    private func clearScrub() {
+        isScrubbing = false
+        pendingPreview = nil
+        scrubPreview = nil
     }
 
     /// يوقف كل شيء ويمحو الرابط والمعاينات من الذاكرة (مغادرة التفاصيل، والمسح الطارئ، والخروج).

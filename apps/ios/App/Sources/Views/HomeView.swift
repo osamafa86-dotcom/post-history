@@ -12,6 +12,7 @@ struct HomeView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var queue: UploadQueueModel
     @EnvironmentObject private var notifications: NotificationsModel
+    @EnvironmentObject private var materials: MyMaterialsModel
     @State private var path: [HomeRoute] = []
     @State private var sending = false
     @State private var editingDraft: MaterialDraft?
@@ -72,7 +73,11 @@ struct HomeView: View {
             guard let id else { return }
             path = [.materials, .material(id)]
         }
-        .task { await app.loadProfile() }
+        .task {
+            await app.loadProfile()
+            // حساسية «آخر الإرسالات» من المواد على الخادم حين تُعرف (وإلا من الإرسالة على الهاتف، وإلا تُحجب).
+            await materials.refreshIfStale()
+        }
     }
 
     private func showUploads() { path = [.uploads] }
@@ -168,7 +173,8 @@ struct HomeView: View {
                         UploadRow(title: rec.materialTitle ?? rec.filename,
                                   thumbnailPath: queue.localCopies.contains(rec.id) ? rec.sourcePath : nil,
                                   isVideo: rec.mimeType?.hasPrefix("video") ?? false, item: item,
-                                  status: UploadRowStatus.make(item, network: queue.networkState))
+                                  status: UploadRowStatus.make(item, network: queue.networkState),
+                                  concealed: queue.concealsPreview(rec, materials: materials.items))
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint(Text("home.recent.hint"))
