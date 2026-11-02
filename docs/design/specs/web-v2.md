@@ -1,7 +1,7 @@
 # واجهات الويب v2 — غرفة الأخبار والمكتب والمتجر والإدارة
 
 **المرجع:** ملف Figma «Visual Library — Design System»، الصفحات `Web: Newsroom & Desk` و`Web: Store` و`Web: Admin`
-و`Web: Sign-in & Public` و`Web: Responsive & States` و`Web: EN, Dark & Flows` (الرابط في `design-system-v2.md`). مبنية من مكوّنات v2 ومتغيّراتها
+و`Web: Sign-in & Public` و`Web: Responsive & States` و`Web: EN, Dark & Flows` و`Web · طلب نسخة بقالب المتداول` (الرابط في `design-system-v2.md`). مبنية من مكوّنات v2 ومتغيّراتها
 (`design-system-v2.md`)، ولقطاتها في `docs/design/redesign-2026-11/screens/web/`. سطح المكتب 1440×900، والجوال 390×844، والتابلت 1024×768، والجدار
 1920×1080. الوجه الداكن للمتجر والجدار بوضع `Dark` المضبوط صراحةً على الإطار، لا بألوان منسوخة.
 
@@ -135,6 +135,175 @@
 | `storage_error` | «تعذّر حفظ الملف عندنا، والخطأ ليس منك. أعد المحاولة بعد قليل» |
 
 اسم الملف لاتيني في العيّنة لأن الاسم المختلط اللغة ينقلب اتجاهه في Figma. في التنفيذ يُعزل اسم الملف والأحجام والنِّسب (`<bdi>`)، والحجم بوحدة عربية داخل الجملة («ميغابايت»). واسم الملف يُعرض في البطاقة لصاحب الجلسة وحده، ولا يُنقل إلى إشعار أو سجل.
+
+## نسخة بقالب المتداول (صفحة Figma `Web · طلب نسخة بقالب المتداول`)
+
+**مقترح يطابق ADR 0091 وعقده (#469)، وقرارات المنسّق عليه (2026-11-02).** قرار المالك (2026-11-02): «نعم نربطه بخط الإنتاج». القالب نفسه في `video-template.md`، وهذا القسم يرسم طلبه من الويب وحالاته.
+
+- **من يطلب:** أدوار `supervisor`، `producer`، `editor_in_chief` ضمن نطاقها.
+- **كيف:** طلب صريح من الطاقم. لا يُطلق آليًا، وليس محرّرًا.
+- **العيّنة:** مادة «مقبولة» بأصل واحد. والنصوص كلها تجريبية محايدة: «عنوان تجريبي للمادة»، و«مدينة، محافظة»، و«وسم تجريبي»، ولا أماكن حقيقية ولا عناوين أخبار.
+
+| الرمز | الشاشة | اللقطة |
+|---|---|---|
+| C1 | W2 وفيها بطاقة «الملفات» بالحالات الأربع، وزرّ «تجهيز نسخة بقالب المتداول» | `c1-material-copies` |
+| C2 | نافذة الطلب فوق W2، والوسم لم يُختر بعد فالإرسال معطَّل | `c2-request-dialog` |
+| C3 | النافذة، داكن، و«بلا وسم» مختار | `c3-request-dialog-dark` |
+| C4 | النافذة، إنجليزية فاتحة | `c4-request-dialog-en` |
+| C5 | C1 داكن | `c5-material-copies-dark` |
+| C6 | C1 إنجليزية داكنة | `c6-material-copies-en-dark` |
+| C7 | M2 على الهاتف ومعها بطاقة الملفات والزرّ | `c7-material-phone` |
+| C8 | ورقة الطلب من أسفل الشاشة | `c8-request-sheet-phone` |
+| C9 | الورقة بعد التمرير، داكن، والوسم مختار | `c9-request-sheet-phone-dark` |
+| C10 | الورقة، إنجليزية فاتحة | `c10-request-sheet-phone-en` |
+| C11 | حالات المنع والأخطاء | `c11-errors` |
+| C12 | حالات المنع والأخطاء، إنجليزية | `c12-errors-en` |
+
+**الزرّ** في آخر بطاقة «الملفات» (Outline)، تحت النسخ التي طُلبت. لا يدخل «الخطوة التالية»، لأن تلك البطاقة لسير المادة التحريري، والنسخة طلب جانبي لا يغيّر شيئًا من الحالات الثلاث. وحين لا تُتاح النسخة لا يختفي الزرّ: يظهر معطَّلًا وتحته السبب (C11).
+
+**النافذة** (760 عرضًا على سطح المكتب، وورقة من أسفل الشاشة على الهاتف). حقولها هي `MaterialRenderRequest`:
+
+- **العنوان على الفيديو (`title_lines`):**
+  - من سطر إلى ثلاثة، حتى 22 حرفًا للسطر، ولكل سطر عدّاد `12/22`.
+  - العدّاد يعدّ نقاط الترميز (`Array.from(line).length`) كما يعدّها الخادم، لا وحدات UTF-16.
+  - تملأ الواجهة الحقول ابتداءً من عنوان المادة مقسومًا على الكلمات، والطاقم يعيد القسمة على المعنى. والخادم لا يقسم شيئًا.
+  - «استعادة عنوان المادة» تعيد القسمة الأولى.
+  - فوق 22 يصير العدّاد والإطار بلون الخطر، ويتعطّل «تجهيز النسخة». ومحارف الاتجاه والتحكم والمسافات في الطرفين تُنظَّف عند اللصق، لأن الخادم يرفضها.
+- **المقاس (`aspect`):** ثلاث بطاقات بشكل المقاس مصغّرًا: `vertical` 9:16 (الافتراضي)، `horizontal` 16:9، `square` 1:1. الفيديو يدخل الإطار كاملًا، والفراغ حوله بخلفية مموّهة منه، فلا قصّ.
+- **المعاينة:** القالب مصغّرًا بالعنوان والمكان، ويتبدّل مع المقاس والاختيارات. الخلفية صورة تجريبية، لا إطار من المادة: المادة قد تكون حسّاسة، ولا يلزم لها مسار عرض جديد.
+- **إظهار المكان (`show_location`):**
+  - مشغَّل افتراضيًا، والسطر تحته يكتب ما سيظهر.
+  - النصّ يبنيه الخادم من حقلَي المادة، فلا إحداثيات ولا تفصيل أدقّ (`CLAUDE.md` §5).
+  - إن لم يصلح للقالب بطوله أو محارفه (`422 render_location_unusable`) يُعطَّل المفتاح، ويقول السبب.
+- **وسم «مشاهد متداولة» (`label`): اختيار إلزامي بلا افتراض:**
+  - خياران لا يُختار أيٌّ منهما سلفًا: `circulated_footage` أو `none`. في الهاتف يُكدَّسان عموديًا كي لا يُقصّ النصّ.
+  - «تجهيز النسخة» معطَّل حتى يُختار أحدهما.
+  - الخطأ ممكن في الاتجاهين، والاختيار يُسجَّل مع الطالب.
+- **الملاحظة:** «الأصل لا يُمسّ: النسخة ملف جديد». وللمادة الحسّاسة تُضاف: «تُجهَّز النسخة محليًا وتمرّ بالبوابات نفسها».
+- **الأفعال:** «تجهيز النسخة» (Solid) و«إلغاء».
+  - في العربية يقع الفعل الأول يسارًا، عكس ترتيبه في الإنجليزية.
+  - والسطر بجانبهما يقول ما ينقص قبل الإرسال («اختر الوسم أولًا»)، ثم «قد يستغرق التجهيز دقائق». ولا رقم للمدة حتى يقيسها ADR 0091 (البند 7).
+
+**الحالات في بطاقة «الملفات»:**
+
+- النسخ لا تأتي من `Material.files`، بل من `GET /materials/{id}/renders`. وتُعرض تحت الأصل والنسخة الخفيفة في مجموعة «نسخ بقالب المتداول»، بوسم «داخلية» موروث من المادة.
+- الحالات بقرار المنسّق: `requested` ← `rendering` ← `ready` أو `failed`.
+- كل نسخة صفّ فيه شكل مقاسها، وكل حالة كلمة وأيقونة ولون معًا.
+
+| `state` | الوسم | ما يقوله الصفّ | الفعل |
+|---|---|---|---|
+| `requested` | `muted` «مطلوبة» | «في الطابور» | لا شيء |
+| `rendering` | `brand` «قيد التجهيز» | «بدأ 14:55» (`started_at`)، وشريط غير محدَّد يتحرّك بلا رقم، لأن العقد لا يعطي نسبة. للشريط `role="progressbar"` بلا `aria-valuenow`، ونصّه المقروء (`aria-label`) «قيد التجهيز». ومع تقليل الحركة يصير تلاشيًا هادئًا بلا انزلاق. وأيقونة الوسم شريط فيلم | لا شيء |
+| `ready` | `ok` «جاهزة» | «جاهزة 14:52 · التنزيل برابط مؤقت»، وتحته «للاستعمال الداخلي؛ النشر يمر ببوابة النشر» | «تنزيل»: تنزيل داخلي مُدقَّق، يطلب `download-url` عند النقر، فلا يُخزَّن رابط في الصفحة. وإن سقطت الحقوق يردّ `409 render_not_allowed` ويقول السبب. «تنزيل جاهز للنشر» مؤجَّل إلى مرحلة «مكتب المحرر» (ADR 0084) |
+| `failed` | `danger` «تعذّرت» | السبب من `failure_reason` (الجدول أدناه) | «طلب جديد»: يفتح النافذة مملوءة بمعاملات النسخة الفاشلة، فيعدّلها الطاقم، لا سيما العنوان بعد `title_overflow`. وهو طلب جديد لأن `failed` نهائية |
+
+| `failure_reason` | ما يقوله الصفّ |
+|---|---|
+| `title_overflow` | «سطر في العنوان أطول من أن يتّسع في القالب. اختصره واطلب نسخة جديدة.» (المرسوم) |
+| `source_unavailable` | «تعذّر الوصول إلى الأصل. أعد الطلب بعد قليل.» |
+| `render_failed` | «تعذّر تجهيز النسخة. أعد الطلب، وإن تكرّر فأبلغ الدعم.» |
+
+**المنع والأخطاء (لوحتا C11، C12):** السبب من رمز الخطأ ومن `details.failed` في ردّ 409.
+
+| الرمز | ما تقوله الواجهة |
+|---|---|
+| `409 render_not_allowed` · `editorial_state` | «تُتاح بعد قبول المادة تحريريًا»، ومعها الحالة الآن |
+| `409 render_not_allowed` · `source` | «تُتاح حين يصل الأصل ويُتحقَّق من بصمته. والمقطع أطول من {max} المسموحة للقالب». `{max}` من `details.max_source_duration_ms` في الردّ، مكتوبة بالدقائق، فلا رقم ثابت في الواجهة |
+| `409 render_not_allowed` · `rights_state` | «لا تُجهَّز نسخ لمادة حقوقها محجوبة أو مسحوبة»، وتتوقف روابط النسخ القائمة |
+| `409 render_limit_reached` | «ثلاث نسخ لهذه المادة قيد الطلب أو التجهيز»، فالحدّ يعدّ الحالتين معًا |
+| `422 render_location_unusable` | مفتاح المكان معطَّل: «نص المكان لا يصلح للقالب (طوله أو محارفه)» |
+| `422` تحقّق السطر | يُمنع في الواجهة قبل الإرسال: عدّاد أحمر، و«تجهيز النسخة» معطَّل |
+
+**اللمس:** كل هدف على الهاتف ≥ 44 بكسلًا: زرّ التنزيل، وزرّ الإغلاق، و«طلب جديد» (زرّ بحدود)، وخيارا الوسم. ولمفتاح المكان، هدف اللمس **الصفّ كله** (العنوان والسطر والمفتاح)، لا المفتاح وحده.
+
+**المفتاح** مكوّن جديد اسمه `Switch` (القيمة × الاتجاه):
+
+- **المسار:** `action/primary` مشغَّلًا، `border/edge` مطفأً.
+- **المقبض مشغَّلًا:** `text/on-brand`، وتباينه 5.72:1 فاتحًا و9.07:1 داكنًا.
+- **المقبض مطفأً:** `text/on-brand` أيضًا، فلا لون أوّليّ في الواجهة (ADR 0090)، وتباينه فوق `border/edge` 4.27:1 فاتحًا و3.98:1 داكنًا.
+- **الأزواج:** في `v2.contrastPairs` بملف `tokens.v2.json`، وفحص `contrast-check` يمرّ على 54 زوجًا، واختبار رموز الويب (`apps/web/tests/design-tokens.test.ts`) 9 من 9.
+- **الاتجاه:** مقبضه في العربية يسارًا حين يُشغَّل.
+- **الوسم ليس مفتاحًا:** اختياره بين خيارين بلا افتراض.
+
+**الإنجليزية:** الواجهة معكوسة كلها، ما عدا أسطر العنوان والمعاينة، فهي عربية لأن القالب عربي، ونسخته اللاتينية سؤال مفتوح في ADR 0091.
+
+**النصوص:** كل نصّ ظاهر في الإطارات له مفتاح. وما بين `{}` قيمة تُملأ وقت العرض، ويُعزل اتجاهها (`<bdi>`).
+
+| المفتاح | العربية | English |
+|---|---|---|
+| `derivative.template.action` | تجهيز نسخة بقالب المتداول | Prepare a circulated-template copy |
+| `derivative.template.title` | تجهيز نسخة بقالب المتداول | Prepare a circulated-template copy |
+| `derivative.template.subtitle` | {title} · نسخة جديدة، والأصل كما هو | {title} · a new copy; the original stays as is |
+| `derivative.template.subtitleShort` | {title} · الأصل كما هو | {title} · original untouched |
+| `derivative.template.close` | إغلاق | Close |
+| `derivative.template.preview` | معاينة | Preview |
+| `derivative.template.previewCaption` | صورة تجريبية. التحريك كما في القالب. | Sample image. Motion as in the template. |
+| `derivative.template.previewCaptionPhone` | تتبدّل مع المقاس والمفاتيح. صورة تجريبية، والتحريك كما في القالب. | Changes with the ratio and switches. Sample image; motion as in the template. |
+| `derivative.template.titleLines` | العنوان على الفيديو | Title on the video |
+| `derivative.template.titleHint` | سطر إلى ثلاثة، حتى 22 حرفًا للسطر. اقسم على معنى الجملة. | One to three lines, up to 22 characters each, split by meaning. |
+| `derivative.template.lineCounter` | {count}/22 | {count}/22 |
+| `derivative.template.lineNumber` | السطر {n} | Line {n} |
+| `derivative.template.line3Placeholder` | سطر ثالث اختياري | Optional third line |
+| `derivative.template.restoreTitle` | استعادة عنوان المادة | Restore material title |
+| `derivative.template.ratio` | المقاس | Aspect ratio |
+| `derivative.template.aspect.vertical` | عمودي · 9:16 | Vertical · 9:16 |
+| `derivative.template.aspect.verticalCaption` | ريلز وقصص | Reels and stories |
+| `derivative.template.aspect.horizontal` | أفقي · 16:9 | Horizontal · 16:9 |
+| `derivative.template.aspect.horizontalCaption` | يوتيوب والشاشات | YouTube and screens |
+| `derivative.template.aspect.square` | مربّع · 1:1 | Square · 1:1 |
+| `derivative.template.aspect.squareCaption` | منشورات | Posts |
+| `derivative.template.ratioHint` | الفيديو كاملًا داخل الإطار، والفراغ حوله بخلفية مموّهة منه. لا قصّ. | The whole video fits the frame on a blurred fill. No cropping. |
+| `derivative.template.showLocation` | إظهار المكان | Show location |
+| `derivative.template.locationHint` | يظهر: «{location}». المدينة والمحافظة فقط، بلا إحداثيات. | Shows “{location}”. City and governorate only. |
+| `derivative.template.label` | وسم «مشاهد متداولة» (اختيار إلزامي) | “Circulated footage” label (required) |
+| `derivative.template.labelHint` | اختر لكل نسخة. ضعه حين لم تصوّر الشبكة المشاهد، ولا تضعه حين صوّرتها؛ والخطأ في الاتجاهين يضلّل المشاهد. | Choose for every copy. Use it when the network did not film the footage; leave it off when it did. Both mistakes mislead the viewer. |
+| `derivative.template.labelWith` | بوسم «مشاهد متداولة» | With the label |
+| `derivative.template.labelNone` | بلا وسم | No label |
+| `derivative.template.note` | الأصل لا يُمسّ: النسخة ملف جديد. | The original is untouched: the copy is a new file. |
+| `derivative.template.noteSensitive` | والمادة حسّاسة، فتُجهَّز النسخة محليًا وتمرّ بالبوابات نفسها. | This material is sensitive, so the copy is prepared locally and passes the same gates. |
+| `derivative.template.chooseLabelFirst` | اختر الوسم أولًا. | Choose the label first. |
+| `derivative.template.footer` | قد يستغرق التجهيز دقائق، وتصلك إشارة حين تجهز. | It may take a few minutes; you will be notified when it is ready. |
+| `derivative.template.cancel` | إلغاء | Cancel |
+| `derivative.template.submit` | تجهيز النسخة | Prepare copy |
+| `derivative.files.title` | الملفات | Files |
+| `derivative.files.original` | الأصل | Original |
+| `derivative.files.originalSub` | محفوظ كما وصل، وبصمته متحقَّقة | Kept as received, fingerprint verified |
+| `derivative.files.proxy` | النسخة الخفيفة · MP4 | Light copy · MP4 |
+| `derivative.files.proxySub` | للمعاينة في المتصفح | For browser preview |
+| `derivative.group.title` | نسخ بقالب المتداول | Circulated-template copies |
+| `derivative.group.internalBadge` | داخلية | Internal |
+| `derivative.group.inherit` | ترث حساسية المادة، فتبقى داخلية حتى تمرّ بالبوابات. | They inherit the material’s sensitivity and stay internal until they pass the gates. |
+| `derivative.row.aspect.vertical` | عمودي · 9:16 | Vertical · 9:16 |
+| `derivative.row.aspect.horizontal` | أفقي · 16:9 | Horizontal · 16:9 |
+| `derivative.row.aspect.square` | مربّع · 1:1 | Square · 1:1 |
+| `derivative.state.requested` | مطلوبة | Requested |
+| `derivative.state.rendering` | قيد التجهيز | Rendering |
+| `derivative.state.ready` | جاهزة | Ready |
+| `derivative.state.failed` | تعذّرت | Failed |
+| `derivative.row.requestedSub` | في الطابور | Queued |
+| `derivative.row.renderingSub` | بدأ {time} | Started {time} |
+| `derivative.row.readySub` | جاهزة {time} · التنزيل برابط مؤقت | Ready {time} · download through a temporary link |
+| `derivative.row.internalUse` | للاستعمال الداخلي؛ النشر يمر ببوابة النشر. | For internal use; publishing goes through the publishing gate. |
+| `derivative.row.download` | تنزيل | Download |
+| `derivative.row.renderingAria` | قيد التجهيز | Rendering |
+| `derivative.row.downloadAria` | تنزيل نسخة {aspect} | Download the {aspect} copy |
+| `derivative.newRequest` | طلب جديد | New request |
+| `derivative.failure.title_overflow` | سطر في العنوان أطول من أن يتّسع في القالب. اختصره واطلب نسخة جديدة. | A title line is too wide for the template. Shorten it and request a new copy. |
+| `derivative.failure.source_unavailable` | تعذّر الوصول إلى الأصل. أعد الطلب بعد قليل. | The original could not be reached. Request again shortly. |
+| `derivative.failure.render_failed` | تعذّر تجهيز النسخة. أعد الطلب، وإن تكرّر فأبلغ الدعم. | The copy could not be prepared. Request again, and report it if it repeats. |
+| `derivative.blocked.intro` | الزرّ لا يختفي حين لا تُتاح النسخة: يظهر معطَّلًا وتحته السبب. | The button does not disappear when a copy is not available: it is shown disabled with the reason under it. |
+| `derivative.blocked.editorial_state.title` | قبل القبول التحريري | Before editorial acceptance |
+| `derivative.blocked.editorial_state` | تُتاح بعد قبول المادة تحريريًا. الحالة الآن: {state}. | Available once the material is accepted. It is {state} now. |
+| `derivative.blocked.source.title` | قبل التحقق من الأصل | Before the original is verified |
+| `derivative.blocked.source` | تُتاح حين يصل الأصل ويُتحقَّق من بصمته. والمقطع أطول من {max} المسموحة للقالب. | Available once the original arrives and its fingerprint is verified. The clip is longer than the {max} the template allows. |
+| `derivative.blocked.rights_state.title` | حقوق محجوبة أو مسحوبة | Rights blocked or withdrawn |
+| `derivative.blocked.rights_state` | لا تُجهَّز نسخ لمادة حقوقها محجوبة أو مسحوبة، وتتوقف روابط تنزيل النسخ القائمة. | No copies for material whose rights are blocked or withdrawn, and download links for existing copies stop working. |
+| `derivative.blocked.limit.title` | ثلاث نسخ قيد الطلب أو التجهيز | Three copies requested or rendering |
+| `derivative.blocked.limit` | ثلاث نسخ لهذه المادة قيد الطلب أو التجهيز. انتظر حتى تجهز إحداها أو تتعذّر. | Three copies of this material are requested or rendering. Wait until one is ready or fails. |
+| `derivative.blocked.location.title` | نص المكان لا يصلح للقالب | Location text does not suit the template |
+| `derivative.blocked.location` | معطَّل: نص المكان لا يصلح للقالب (طوله أو محارفه). صحّح حقلي المادة، أو اطلب النسخة بلا مكان. | Disabled: the location text does not suit the template (its length or characters). Fix the material fields, or request the copy without a location. |
+| `derivative.blocked.line.title` | سطر أطول من 22 حرفًا | A line over 22 characters |
+| `derivative.blocked.line` | اختصر السطر أو انقل كلمة إلى السطر التالي. «تجهيز النسخة» معطَّل حتى يُصلَح. | Shorten the line or move a word to the next one. “Prepare copy” stays disabled until it is fixed. |
 
 ## النصوص بالإنجليزية (المتجر والرفع)
 

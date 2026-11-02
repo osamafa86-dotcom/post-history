@@ -18,7 +18,7 @@ export type NavItem = { key: string; href: string; label: string; short: string;
 /**
  * وجهات التنقّل بحسب الدور (W1، `Web/Sidebar`): ثلاث مجموعات (غرفة الأخبار، المكتبة، الإدارة) بالصفحات القائمة وحدها، وبند واحد نشط
  * (`aria-current="page"`). الشريط لا يعرض ما لا يملكه الدور (E5)؛ وحساب المشتري لا يرى غير المتجر ومؤسسته.
- * لا تُضاف وجهة لصفحة لم تُبنَ (المهام والمحرر العاجل والأرشيف الجاهز والوسوم: ADR 0089).
+ * لا تُضاف وجهة لصفحة لم تُبنَ (المهام والمحرر العاجل والأرشيف الجاهز والوسوم: ADR 0090).
  */
 export function navItems(me: Me, locale: Locale, pathname: string): NavItem[] {
   const m = messages[locale], short = m.shell.short as Record<string, string>, path = pathname.replace(/^\/(ar|en)(?=\/|$)/, ""), ends = (page: string) => path === `/${page}` || path.startsWith(`/${page}/`);

@@ -9943,6 +9943,74 @@
         }
       }
     },
+    "material.type.unknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "نوع آخر"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other type"
+          }
+        }
+      }
+    },
+    "detail.placeholder.body.notOnPhone": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الأصل ليس على هذا الهاتف، ولم تجهز على الخادم نسخة للمشاهدة بعد."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The original isn’t on this phone, and the server hasn’t prepared a copy to watch yet."
+          }
+        }
+      }
+    },
+    "detail.placeholder.body.removedFromPhone": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "حُذفت نسخة الأصل من هذا الهاتف بعد الإيصال، ولم تجهز على الخادم نسخة للمشاهدة بعد."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The original’s copy was deleted from this phone after the receipt, and the server hasn’t prepared a copy to watch yet."
+          }
+        }
+      }
+    },
+    "detail.placeholder.body.notTheVerifiedOriginal": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "النسخة على هذا الهاتف ليست الأصل الذي تحقّق منه الخادم، ولم تجهز على الخادم نسخة للمشاهدة بعد."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The copy on this phone isn’t the original the server verified, and the server hasn’t prepared a copy to watch yet."
+          }
+        }
+      }
+    },
     "settings.logout.pending.title": {
       "extractionState": "manual",
       "localizations": {

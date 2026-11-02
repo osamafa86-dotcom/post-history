@@ -38,6 +38,13 @@ struct MaterialDetailView: View {
         return LocalOriginals.find(for: material, in: queue.records) { copies.contains($0.id) }
     }
 
+    /// لماذا لا تُعرض نسخة الهاتف، بدقة (`LocalOriginals.absence`): ليست عليه، أو حُذفت بعد الإيصال، أو ليست الأصل المتحقَّق منه.
+    private var localAbsence: LocalOriginalAbsence? {
+        guard let material else { return nil }
+        let copies = queue.localCopies
+        return LocalOriginals.absence(for: material, in: queue.records) { copies.contains($0.id) }
+    }
+
     private var playbackSource: PlaybackSource {
         material.map { PlaybackSourcePolicy.player(for: $0, local: local) } ?? .unavailable
     }
@@ -294,7 +301,7 @@ struct MaterialDetailView: View {
         VStack(spacing: VL.Space.s3) {
             Image(systemName: "hourglass").font(.title2).accessibilityHidden(true)
             Text("detail.placeholder.title").vlText(.headline)
-            Text("detail.placeholder.body").vlText(.body)
+            Text(key: localAbsence?.textKey ?? "detail.placeholder.body").vlText(.body)
         }
         .multilineTextAlignment(.center)
         .foregroundStyle(Color.vl.textOnStore)
@@ -308,7 +315,7 @@ struct MaterialDetailView: View {
         let dot = Text(verbatim: " \u{00B7} ")
         var meta = Text(verbatim: m.governorate) + dot + Text(verbatim: VLFormat.day(m.shotAt ?? m.createdAt))
         if kind == .video, let d = knownDuration, d > 0 { meta = meta + dot + Text(verbatim: VLFormat.duration(d)) }
-        meta = meta + dot + Text(LocalizedStringKey("gallery.kind.\(kind.rawValue)"))
+        meta = meta + dot + Text(key: kind.textKey)
         return VStack(alignment: .leading, spacing: VL.Space.s2) {
             Text(verbatim: m.title).vlText(.title).foregroundStyle(Color.vl.textPrimary).accessibilityAddTraits(.isHeader)
             meta.vlText(.label).foregroundStyle(Color.vl.textSecondary)
@@ -344,7 +351,7 @@ struct MaterialDetailView: View {
             explanation = explanation + Text(verbatim: " \u{00B7} ") + Text("detail.since \(VLFormat.time(since))")
         }
         let texts = VStack(alignment: .leading, spacing: VL.Space.s1) {
-            Text(LocalizedStringKey("detail.track.\(track.rawValue)")).vlText(.headline).foregroundStyle(Color.vl.textPrimary)
+            Text(key: track.detailKey).vlText(.headline).foregroundStyle(Color.vl.textPrimary)
             explanation.vlText(.caption).foregroundStyle(Color.vl.textSecondary)
         }
         let mark = StateBadge(labelKey: badge.labelKey, tone: tone, systemImage: track.systemImage(tone))
@@ -400,8 +407,8 @@ struct MaterialDetailView: View {
                 if types.isEmpty {
                     Text("gallery.section.untyped")
                 } else {
-                    types.dropFirst().reduce(Text(LocalizedStringKey("material.type.\(types[0].rawValue)"))) { text, type in
-                        text + Text("list.separator") + Text(LocalizedStringKey("material.type.\(type.rawValue)"))
+                    types.dropFirst().reduce(Text(key: types[0].textKey)) { text, type in
+                        text + Text("list.separator") + Text(key: type.textKey)
                     }
                 }
             }
