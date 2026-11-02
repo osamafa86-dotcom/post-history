@@ -117,8 +117,8 @@ const doc = {
       ['text/on-store', 'bg/store', 'text'], ['bg/store', 'action/store', 'text'],
       ['state/danger', 'bg/raised', 'text'], ['state/brand', 'bg/raised', 'text'],
       ['state/brand', 'action/soft', 'text'], ['state/ok', 'bg/sunken', 'text'], ['state/ok', 'action/soft', 'text'],
-      // مقبض المفتاح (Switch): مشغَّلًا text/on-brand فوق action/primary، ومطفأً neutral/0 فوق border/edge
-      ['text/on-brand', 'action/primary', 'ui'], ['neutral/0', 'border/edge', 'ui'],
+      // مقبض المفتاح (Switch): text/on-brand في الحالتين، فوق action/primary مشغَّلًا وفوق border/edge مطفأً
+      ['text/on-brand', 'action/primary', 'ui'], ['text/on-brand', 'border/edge', 'ui'],
     ],
   },
 };

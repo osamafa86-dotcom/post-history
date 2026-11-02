@@ -32,8 +32,8 @@
 - **نغمات الحالات** في `color.material-state.{technical,editorial,rights}.*` تشير إلى `color.state.*`:
   فنية (جاهزة ok، تُعالَج muted، فشلت danger) · تحريرية (قيد المراجعة warn، معتمدة ok، مرفوضة danger) ·
   حقوق (داخلي muted، للعرض brand، مقيّد warn).
-- **التباين:** `node docs/design/redesign-2026-11/tools/contrast-check.mjs docs/design/tokens.v2.json` يفحص 25 زوجًا
-  بالوضعين (50) ويجب أن يخرج بـ 0. أي تغيير لون يمرّ به. ومنها شارات الحالة على `bg/sunken` و`action/soft` (لذلك `green.700` = `#18764E`).
+- **التباين:** `node docs/design/redesign-2026-11/tools/contrast-check.mjs docs/design/tokens.v2.json` يفحص 27 زوجًا
+  بالوضعين (54) ويجب أن يخرج بـ 0. أي تغيير لون يمرّ به. ومنها شارات الحالة على `bg/sunken` و`action/soft` (لذلك `green.700` = `#18764E`).
 
 ## الخط
 
