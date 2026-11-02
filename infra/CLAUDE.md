@@ -48,11 +48,11 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
   - على main ويدويًا، ترفعها `preview-images.yml` tar مضغوطًا مع `SHA256SUMS` إلى الإصدار التمهيدي `preview-latest`.
   - الخادم ينزّلها بـ `fetch-images.sh`، يتحقق من البصمات كلها ثم `docker load`. لا بناء على الخادم.
 - **`docker-compose.preview.yml`:** Postgres وRedis وMinIO والخادم والويب، وtusd ووكيله وبوابة ingest للرفع من الحاسوب، وعامل الوسائط وموزّعه.
-  - لكل خدمة `mem_limit` و`memswap_limit` مساوٍ له، والمجموع 2560 MB تحت سقف 2560 MB (منها 1536 للعامل، ADR 0092).
+  - لكل خدمة `mem_limit` و`memswap_limit` مساوٍ له، والمجموع 2560 MB تحت سقف 2560 MB (منها 1472 للعامل، ADR 0092).
   - لا منفذ على المضيف.
   - `web` (nginx) وحده على الشبكة الخارجية `deploy_default` باسم `lib-web:8080`. يصل إلى منابعه بأسماء فريدة على الشبكات الداخلية (`ph-preview-api`، `ph-preview-api-public`، `ph-preview-web-app`)، لأن الاسم القصير قد يُحل على الشبكة المشتركة إلى حاوية أخرى. يضع `X-Robots-Tag: noindex` وشريط «معاينة»، ويُنهي TLS داخليًا للخادم على عنوانه الداخلي وحده، لأن الـBFF يشترط https.
   - الرفع من الحاسوب: الحافة تمرر `/files/` على أصل المعاينة إلى البوابة (`ph-preview-ingest`) ثم `tusd-proxy` ثم tusd، بعناوين ثابتة يقبلها الخادم في `/internal` (البوابة إلى `/internal/ingest/` وحده). رمز الويب للـBFF وحده (`BFF_SOURCE_ADDRESSES` = عنوان الحافة على الشبكة الداخلية). لا تفريغ.
-  - **عامل الوسائط (ADR 0092):** نسخة خفيفة 480p ومصغّرات فقط؛ HLS والتفريغ والتصدير والتسليم وC2PA مطفأة ثابتة في compose. 1536 MB بلا swap، و1.5 معالج، و`cpu_shares` 256، و`oom_score_adj` 500، والشبكة الداخلية وحدها، وعنوان ثابت يصل إلى `/internal/media/` وحده، ومستخدم MinIO لا يقرأ `.info` ولا يكتب الرفع.
+  - **عامل الوسائط (ADR 0092):** نسخة خفيفة 480p ومصغّرات فقط؛ HLS والتفريغ والتصدير والتسليم وC2PA مطفأة ثابتة في compose. 1472 MB بلا swap، و1.5 معالج، و`cpu_shares` 256، و`oom_score_adj` 500، والشبكة الداخلية وحدها، وعنوان ثابت يصل إلى `/internal/media/` وحده، ومستخدم MinIO لا يقرأ `.info` ولا يكتب الرفع.
     - الخادم يبقى المتحقق (`in_process`): العامل يرفض الصور، والرفع لا ينتظره. `media-feeder` (صورة الخادم) يعطيه كل 10 ث أصل فيديو متحققًا بلا نسخة خفيفة، العاجل أولًا، مهمة تنتظر على الأكثر، ولا مهمة والقرص الحر دون 8 GiB (`PREVIEW_MEDIA_MIN_FREE_GIB`).
     - `backfill-media.sh` دورة يدوية بالأعداد وحدها (`--wait` حتى تنتهي). و`.env` قائم: `./gen-env.sh --add-media`.
     - روابط القراءة موقّعة لأصل المعاينة (`S3_PUBLIC_ENDPOINT`)، والحافة تمرر `GET` على `/<حاوية المشتقات>/derived/<uuid>/<uuid>/{proxy-480p.mp4,poster.jpg}` وحده إلى MinIO (`ph-preview-minio`) بالمضيف كما هو، بلا تخزين.

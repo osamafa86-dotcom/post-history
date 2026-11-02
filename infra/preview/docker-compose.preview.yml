@@ -10,7 +10,7 @@
 # لا منفذ على المضيف: الوكيل الأمامي للخادم (Caddy) يصل إلى "web" وحده عبر الشبكة الخارجية deploy_default باسم lib-web.
 # بناء iOS التجريبي (ADR 0077): الحافة تمرر /v1/ علنًا إلى الخادم عبر شبكة داخلية ثانية (public-api) عنوان الحافة عليها ليس في BFF_SOURCE_ADDRESSES.
 # الحدود: mem_limit لكل خدمة وmemswap_limit مساوٍ له (بلا swap)، والمجموع 2560 MB تحت سقف 2560 MB (ADR 0092، كان 960 في 0023)،
-# منها 1536 لعامل الوسائط وحده.
+# منها 1472 لعامل الوسائط وحده.
 name: post-history-preview
 
 x-limits: &hardened
@@ -101,7 +101,7 @@ services:
         condition: service_healthy
     # Storage on the shared server (ADR 0023, 0092): hard quotas, uploads 10112 MiB and derived files 2048 MiB, and tusd's
     # temporary parts (at most the gate's 10 connections x 5 MiB) in 64 MiB outside them; and the media worker's MinIO user
-    # (read the uploads but not their .info/.part, read and write media/derived/ only). The admin calls need 64 MB.
+    # (read the uploads but not their .info/.part, read and write media/derived/ only). The admin calls were killed at 64 MB in CI.
     entrypoint: ["sh", "/minio-init.sh"]
     environment:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
@@ -118,8 +118,8 @@ services:
     cap_drop: [ALL]
     read_only: true
     tmpfs: ["/tmp:size=4m"]
-    mem_limit: 64m
-    memswap_limit: 64m
+    mem_limit: 128m
+    memswap_limit: 128m
     cpus: 0.25
     networks: [internal]
 
@@ -342,7 +342,7 @@ services:
   # عامل الوسائط (ADR 0092): نسخة خفيفة 480p ومصغّرتان لكل أصل فيديو متحقق، وما سوى ذلك مطفأ صراحة (HLS والتفريغ والتصدير
   # ومعاينة المتجر والتسليم وC2PA والمحاذاة والبصمة الإدراكية). يعالج ملفات غير موثوقة: جذر للقراءة فقط، بلا صلاحيات ولا رفع
   # امتيازات، مستخدم غير الجذر، والشبكة الداخلية وحدها (لا خروج)، وعنوان ثابت يقصره الخادم على /internal/media/. حدود صارمة على
-  # خادم مشترك: 1536 MB بلا swap، و1.5 معالج، وأولوية معالج منخفضة (cpu_shares 256 من 1024) فيتنازل للمواقع عند التزاحم، وهو
+  # خادم مشترك: 1472 MB بلا swap، و1.5 معالج، وأولوية معالج منخفضة (cpu_shares 256 من 1024) فيتنازل للمواقع عند التزاحم، وهو
   # أول ما يقتله OOM المضيف إن ضاقت الذاكرة كلها. /scratch حجم لا tmpfs (الأصل حتى 2 GiB لا يُحسب من الذاكرة)؛ حارس القرص
   # في media-feeder.
   media-worker:
@@ -380,8 +380,8 @@ services:
       MEDIA_ENABLE_C2PA: "false"
     volumes:
       - media-scratch:/scratch
-    mem_limit: 1536m
-    memswap_limit: 1536m
+    mem_limit: 1472m
+    memswap_limit: 1472m
     cpus: 1.5
     cpu_shares: 256
     oom_score_adj: 500

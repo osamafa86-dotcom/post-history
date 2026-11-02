@@ -124,7 +124,7 @@ env = dict(e.split("=", 1) for e in cfg["Env"])
 want = {
     "user": (cfg["User"], "10001:10001"), "read-only root": (h["ReadonlyRootfs"], True), "cap_drop": (h["CapDrop"], ["ALL"]),
     "no-new-privileges": ("no-new-privileges:true" in (h["SecurityOpt"] or []), True),
-    "memory": (h["Memory"], 1536 * 2**20), "no swap": (h["MemorySwap"], h["Memory"]), "cpus": (h["NanoCpus"], 1_500_000_000),
+    "memory": (h["Memory"], 1472 * 2**20), "no swap": (h["MemorySwap"], h["Memory"]), "cpus": (h["NanoCpus"], 1_500_000_000),
     "cpu shares": (h["CpuShares"], 256), "pids": (h["PidsLimit"], 128), "oom score": (h["OomScoreAdj"], 500),
     "host ports": (h["PortBindings"] or {}, {}), "networks": (sorted(c["NetworkSettings"]["Networks"]), ["post-history-preview_internal"]),
 }
@@ -152,7 +152,7 @@ got = {"media, its token": status(f"/internal/media/sessions/{uuid.uuid4()}", to
 want = {"media, its token": 410, "media, no token": 404, "tusd hook": 403, "ingest": 403}
 assert got == want, got
 PY
-echo "media worker: user 10001, read-only, no capabilities, 1536 MB / 1.5 CPU / shares 256 / 128 pids, internal network only, HLS, AI, export, delivery and C2PA off, /internal/media/ alone: ok"
+echo "media worker: user 10001, read-only, no capabilities, 1472 MB / 1.5 CPU / shares 256 / 128 pids, internal network only, HLS, AI, export, delivery and C2PA off, /internal/media/ alone: ok"
 
 # No host port anywhere, and only "web" on the shared server's network.
 for id in $("${C[@]}" ps -aq); do
@@ -612,7 +612,7 @@ mib = lambda b: round(b / 2**20, 1)
 derived = sum(o.get("size", 0) for o in objs)
 orig = os.path.getsize(clip)
 peak_b = int(peak) if peak else max(r[0] for r in rows)
-limit = 1536 * 2**20
+limit = 1472 * 2**20
 ok = int(oom) == 0 and peak_b < limit and outcome == "verified+proxy+thumbnails"
 ts = lambda t: datetime.datetime.fromtimestamp(float(t), datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 res = {"schema_version": 1, "tool": "other", "role": "infra", "test_name": f"preview-media-worker-60s-{prof}",
@@ -621,7 +621,7 @@ res = {"schema_version": 1, "tool": "other", "role": "infra", "test_name": f"pre
        "upload_path": "tusd",
        "file": {"size_bytes": orig, "duration_s": 60.0, "bitrate_kbps": round(orig * 8 / 60 / 1000), "codec": "h264", "vfr": False, "hdr": False},
        "metrics": {"resolution": {"1080p": "1920x1080", "2160p": "3840x2160"}[prof], "frame_rate": 30,
-                   "worker_mem_limit_mib": 1536, "worker_cpus": 1.5,
+                   "worker_mem_limit_mib": 1472, "worker_cpus": 1.5,
                    "worker_memory_peak_mib": mib(peak_b), "worker_memory_peak_source": "cgroup memory.peak" if peak else "sampled memory.current",
                    "worker_anon_peak_mib_sampled": mib(max(r[1] for r in rows)), "worker_oom_kills": int(oom),
                    "worker_cpu_s": round((int(cpu1) - int(cpu0)) / 1e6, 1), "job_wall_s": round(float(t_off) - float(t_on), 1),
@@ -634,7 +634,7 @@ res = {"schema_version": 1, "tool": "other", "role": "infra", "test_name": f"pre
                  "verified by the API, then given to the media worker by the feeder. Wall time is from the job's delivery to its "
                  "acknowledgement on media:events (download, hash match, 480p proxy, poster and contact sheet, registration), polled "
                  "every 0.25 s. CPU time from the worker's cgroup cpu.stat; memory.peak includes page cache; anon is sampled every "
-                 "0.5 s. Worker limits as deployed (1536 MiB, no swap, 1.5 CPU). Synthetic content, not a phone file; not the shared "
+                 "0.5 s. Worker limits as deployed (1472 MiB, no swap, 1.5 CPU). Synthetic content, not a phone file; not the shared "
                  "server itself.")}
 json.dump(res, open(out, "w"), indent=2)
 print(json.dumps(res["metrics"]))
