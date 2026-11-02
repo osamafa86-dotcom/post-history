@@ -44,7 +44,7 @@ test("the rights officer drafts a listing, then lists it once the rights are sel
 });
 test("the listing stays hidden from roles outside the contract and read-only for the editor in chief", async ({ page, context }) => {
   await login(page, "reporter"); await page.goto(`/ar/materials/${first}`);
-  await expect(page.getByRole("heading", { name: ar.review.title, exact: true })).toBeVisible(); await expect(page.getByRole("region", { name: l.title })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: ar.shell.material.nextStep, exact: true })).toBeVisible(); await expect(page.getByRole("region", { name: l.title })).toHaveCount(0);
   await context.clearCookies(); await login(page, "chief", "en"); await page.goto(`/en/materials/${first}`);
   const panel = page.getByRole("region", { name: en.listing.title }); await expect(panel.getByText(en.listing.none)).toBeVisible();
   await expect(panel.getByRole("button", { name: en.listing.create })).toHaveCount(0);

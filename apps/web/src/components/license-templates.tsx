@@ -1,4 +1,5 @@
 "use client";
+import { NoAccess } from "./empty-state";
 import { useEffect, useState } from "react";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { messages, type Locale } from "@/lib/i18n";
@@ -22,7 +23,7 @@ export function LicenseTemplates({ locale }: { locale: Locale }) {
     void browserApi().GET("/license-templates", { params: { query: { include_disabled: disabled } }, signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setItems(data.items); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [attempt, allowed, disabled]);
-  if (!allowed) return <section className="center-state"><h1>{t.title}</h1><p role="alert">{t.denied}</p></section>;
+  if (!allowed) return <NoAccess locale={locale} me={me} title={t.title} denied={t.denied} />;
 
   async function open(template: Template) {
     // القراءة المفردة تعطي الإصدار الحالي في ETag؛ الحفظ يكتب إصدارًا جديدًا بعده.

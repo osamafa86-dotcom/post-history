@@ -1,4 +1,5 @@
 "use client";
+import { NoAccess } from "./empty-state";
 import { useEffect, useRef, useState } from "react";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { fieldTypes, formBodyLimit, formReaders, formWriters, newField, nextForm, publishBody, validForm, type FormSummary } from "@/lib/form-admin";
@@ -26,7 +27,7 @@ export function FormAdmin({ locale }: { locale: Locale }) {
       .catch(() => { if (!controller.signal.aborted && counter.value === seq) setError(true); });
     return () => { controller.abort(); counter.value++; };
   }, [allowed, attempt]);
-  if (!allowed) return <section className="center-state"><h1>{t.title}</h1><p role="alert">{t.denied}</p></section>;
+  if (!allowed) return <NoAccess locale={locale} me={me} title={t.title} denied={t.denied} />;
 
   async function select(version: number) {
     const seq = ++sequence.current.value; setReading(true); setError(false);

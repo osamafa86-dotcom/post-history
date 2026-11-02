@@ -96,7 +96,7 @@ test("wall display: dark top bar with clock, dark by default, big tiles, four co
   await expect(page.locator(".track-legend li")).toHaveCount(5); await expect(page.locator(".track-legend")).toContainText(ar.trackLine.legend);
   const head = page.getByTestId("wall-column-incoming").locator("h2"); await expect(head.locator(".wall-count")).toHaveText("198"); await expect(head).toHaveCSS("border-bottom-width", "2px");
   const card = page.getByTestId("wall-column-incoming").getByTestId("wall-card").first();
-  const strip = await card.locator(".wall-slate").evaluate(el => { const i = document.createElement("i"); i.style.backgroundColor = "var(--vl-color-bg-slate)"; document.body.append(i); const slate = getComputedStyle(i).backgroundColor; i.remove(); return { strip: getComputedStyle(el).backgroundColor, slate }; });
+  const strip = await card.locator(".wall-slate").evaluate(el => { const i = document.createElement("i"); i.style.backgroundColor = "var(--v2-c-bg-store)"; document.body.append(i); const slate = getComputedStyle(i).backgroundColor; i.remove(); return { strip: getComputedStyle(el).backgroundColor, slate }; });
   expect(strip.strip).toBe(strip.slate);
   await expect(card.locator(".wall-slate .wall-receipt")).toHaveText(/^RCPT-/); await expect(card.locator(".wall-priority.urgent")).toHaveText(ar.states.priority.urgent);
   await expect(card.getByTestId("track-line").locator(".track-seg")).toHaveCount(3); await expect(card.locator(".wall-place")).toHaveText(/\S/);

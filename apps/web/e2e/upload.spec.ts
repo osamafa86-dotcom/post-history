@@ -108,7 +108,7 @@ test("production staff upload from the desktop; other roles do not see it and th
   await page.getByLabel(ar.upload.choose).setInputFiles(camera(1048576 + 7, "C0002.MP4").file);
   await describe(page);
   await expect(page.getByTestId("upload-row")).toHaveAttribute("data-phase", "done", { timeout: 20000 });
-  await page.getByRole("button", { name: ar.logout }).click(); await expect(page).toHaveURL(/\/ar\/login/);
+  await page.getByRole("button", { name: new RegExp(`^${ar.shell.account}`) }).click(); await page.getByRole("button", { name: ar.logout }).click(); await expect(page).toHaveURL(/\/ar\/login/);
   await page.getByLabel(ar.email).fill("admin@example.test"); await page.getByLabel(ar.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(ar.totp, { exact: true }).fill("123456");
   await page.getByRole("button", { name: ar.signIn, exact: true }).click();
   await expect(page.getByTestId("material-row")).toHaveCount(50);
