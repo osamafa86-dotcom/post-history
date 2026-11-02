@@ -23,8 +23,10 @@ struct MaterialDetailView: View {
     @State private var still: Image?
     @State private var localDuration: Double?
     @State private var trackFilter: MaterialStatus.Track?
+    /// آخر نسخة معروفة: تحديث المعرض يعيد القائمة إلى صفحتها الأولى، فلا تختفي مادة من صفحة أبعد وهي مفتوحة.
+    @State private var snapshot: PostHistoryAPI.Material?
 
-    private var material: PostHistoryAPI.Material? { model.items.first { $0.id == materialId } }
+    private var material: PostHistoryAPI.Material? { model.items.first { $0.id == materialId } ?? snapshot }
 
     private var local: LocalOriginal? {
         LocalOriginals.find(forMaterial: materialId, in: queue.records) { queue.localCopies.contains($0.id) }
@@ -79,8 +81,8 @@ struct MaterialDetailView: View {
     }
 
     private func load() async {
-        let ok = await model.reload(materialId)
-        loadFailed = !ok && material == nil
+        if let fresh = await model.reload(materialId) { snapshot = fresh }
+        loadFailed = material == nil
         await model.loadTimeline(materialId)
     }
 

@@ -41,12 +41,12 @@ final class MyMaterialsModel: ObservableObject {
         reachedEnd = await feed.reachedEnd
     }
 
-    /// يحدّث مادة واحدة (شاشة التفاصيل، أو إشعار عن مادة لم تُحمَّل صفحتها)؛ `false` إن تعذّر.
+    /// يحدّث مادة واحدة (شاشة التفاصيل، أو إشعار عن مادة لم تُحمَّل صفحتها)؛ `nil` إن تعذّر.
     @discardableResult
-    func reload(_ id: UUID) async -> Bool {
-        let ok = (try? await feed.reload(id: id)) != nil
+    func reload(_ id: UUID) async -> PostHistoryAPI.Material? {
+        let fresh = try? await feed.reload(id: id)
         items = await feed.items
-        return ok
+        return fresh
     }
 
     func loadTimeline(_ id: UUID) async {
