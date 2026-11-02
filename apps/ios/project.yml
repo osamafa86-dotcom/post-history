@@ -54,7 +54,7 @@ targets:
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: مكتبة بوست
+        CFBundleDisplayName: ميدان بوست
         # رقم البناء والنسخة من إعدادات البناء: سير الرفع يمرر CURRENT_PROJECT_VERSION وMARKETING_VERSION، وبدونهما يبقى كل بناء «1» فترفض آبل ما بعد الأول.
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleShortVersionString: $(MARKETING_VERSION)
