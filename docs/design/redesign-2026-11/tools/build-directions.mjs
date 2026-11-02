@@ -69,7 +69,7 @@ const T = {
   secScreens: ['شاشات المراسل', 'Reporter screens'], secStore: ['وجه المؤسسات والأيقونة', 'Buyer face and app icon'], secColor: ['اللون والتباين', 'Colour and contrast'], secType: ['الخط', 'Type'],
   sSend: ['الإرسال', 'Send'], sUpload: ['الرفع', 'Upload'], sReceipt: ['الإيصال', 'Receipt'], sGallery: ['موادي', 'My materials'],
   newSend: ['إرسال جديد', 'New send'], files: ['3 ملفات', '3 files'],
-  fTitle: ['عنوان التغطية', 'Coverage title'], titleVal: ['توزيع مساعدات غذائية في مخيم النصيرات', 'Food aid distribution in Nuseirat camp'],
+  fTitle: ['عنوان التغطية', 'Coverage title'], titleVal: ['عنوان تجريبي لمادة ميدانية ١', 'Sample field material title 1'],
   fType: ['نوع التغطية', 'Coverage type'], tyEvent: ['حدث ميداني', 'Field event'], tyReport: ['تقرير', 'Report'], tyInterview: ['مقابلة', 'Interview'], tyBroll: ['مشاهد خام', 'Raw footage'],
   fTags: ['الوسوم', 'Tags'], tag1: ['مساعدات', 'Aid'], tag2: ['النصيرات', 'Nuseirat'], tag3: ['شتاء', 'Winter'], addTag: ['أضف وسمًا', 'Add a tag'], suggest: ['طوابير', 'Queues'], fromAdmin: ['من قائمة الإدارة', 'From the desk list'],
   fPlace: ['المكان', 'Location'], placeVal: ['دير البلح · النصيرات', 'Deir al-Balah · Nuseirat'], remembered: ['من آخر إرسال', 'From your last send'],
@@ -83,10 +83,10 @@ const T = {
   rNo: ['رقم الإيصال', 'Receipt no.'], rTime: ['الوقت', 'Time'], rSize: ['الحجم', 'Size'], rHash: ['البصمة', 'Fingerprint'],
   again: ['إرسال آخر', 'Send another'], mine: ['موادي', 'My materials'],
   fAll: ['الكل', 'All'], fVideo: ['فيديو', 'Video'], fPhotos: ['صور', 'Photos'], fUrgent: ['عاجل', 'Urgent'],
-  today: ['حدث ميداني · اليوم', 'Field event · Today'], g2Title: ['غرق الخيام بعد المنخفض الجوي', 'Tents flooded after the storm'], yesterday: ['تقرير · أمس', 'Report · Yesterday'],
+  today: ['حدث ميداني · اليوم', 'Field event · Today'], g2Title: ['عنوان تجريبي لمادة ميدانية ٤', 'Sample field material title 4'], yesterday: ['تقرير · أمس', 'Report · Yesterday'],
   stTech: ['فنية', 'Technical'], stEdit: ['تحريرية', 'Editorial'], stRights: ['حقوق', 'Rights'],
   ready: ['جاهزة', 'Ready'], processing: ['تُعالَج', 'Processing'], inReview: ['قيد المراجعة', 'In review'], approved: ['معتمدة', 'Approved'], internal: ['داخلي', 'Internal'], forSale: ['للعرض', 'Listed'],
-  preview: ['معاينة', 'Preview'], storeTitle: ['طوابير الخبز في النصيرات', 'Bread queues in Nuseirat'], filmed: ['صُوّر 28 أكتوبر 2026', 'Filmed 28 Oct 2026'], gov: ['دير البلح', 'Deir al-Balah'],
+  preview: ['معاينة', 'Preview'], storeTitle: ['عنوان تجريبي لمادة ميدانية ٣', 'Sample field material title 3'], filmed: ['صُوّر 28 أكتوبر 2026', 'Filmed 28 Oct 2026'], gov: ['دير البلح', 'Deir al-Balah'],
   hover: ['مرّر أو المس للمعاينة', 'Hover or tap to preview'], request: ['اطلب المادة', 'Request footage'], iconCap: ['أيقونة التطبيق', 'App icon'],
   typeDisplay: ['المكتبة المرئية', 'The Visual Library'], typeTitle: ['ما يصوّره المراسل يصل كاملًا', 'What reporters film arrives whole'],
   typeBody: ['المراسل يرسل من الميدان بخطوة واحدة، والمحرر يرى نسخة خفيفة أولًا، والأصل يصل كاملًا ببصمته.', 'Reporters send from the field in one step. Editors see a light copy first, and the original arrives intact with its fingerprint.'],
@@ -95,9 +95,9 @@ const T = {
   sample: ['عيّنة', 'Sample'],
 };
 const STRESS = {
-  title: ['توزيع مساعدات WFP على 1,250 عائلة في مخيم النصيرات وسط قطاع غزة يوم 28/10 صباحًا', 'WFP aid to 1,250 families in مخيم النصيرات, central Gaza Strip, on 28 Oct, day 3'],
-  tags: [['مساعدات', 'النصيرات', 'شتاء', 'WFP', 'طوابير', 'أطفال', 'دير البلح', 'نزوح', 'خيام', 'مطر', 'وكالة الغوث UNRWA', 'توزيع الطحين في الصباح الباكر'],
-    ['Aid', 'Nuseirat', 'Winter', 'WFP', 'Queues', 'Children', 'Deir al-Balah', 'Displacement', 'Tents', 'Rain', 'UNRWA وكالة', 'Early-morning flour distribution']],
+  title: ['وصف تجريبي للمادة: ما صُوِّر ومتى، بلا أسماء ولا تفاصيل تكشف أحدًا.', 'Sample description: what was filmed and when, with no names or identifying details.'],
+  tags: [['مساعدات', 'النصيرات', 'شتاء', 'وسم Sample تجريبي', 'طوابير', 'أطفال', 'دير البلح', 'وسم تجريبي ٨', 'وسم تجريبي ٩', 'وسم تجريبي ١٠', 'وسم تجريبي ١١', 'وسم تجريبي طويل لاختبار الالتفاف'],
+    ['Aid', 'Nuseirat', 'Winter', 'Sample وسم', 'Queues', 'Children', 'Deir al-Balah', 'Sample tag 8', 'Sample tag 9', 'Sample tag 10', 'Sample tag 11', 'A long sample tag to test wrapping']],
 };
 const t = (k) => `<span data-i="${k}">${T[k][0]}</span>`;
 
