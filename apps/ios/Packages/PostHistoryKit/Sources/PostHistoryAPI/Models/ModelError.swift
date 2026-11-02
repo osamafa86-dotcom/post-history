@@ -62,6 +62,9 @@ public struct ModelError: Sendable, Codable, Hashable {
         case selfApprovalForbidden = "self_approval_forbidden"
         case alreadyApproved = "already_approved"
         case payoutPolicyExists = "payout_policy_exists"
+        case renderNotAllowed = "render_not_allowed"
+        case renderLimitReached = "render_limit_reached"
+        case renderLocationUnusable = "render_location_unusable"
         case internalError = "internal_error"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
