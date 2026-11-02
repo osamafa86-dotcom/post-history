@@ -521,12 +521,10 @@ bf="$("$HERE/backfill-media.sh" 2>/dev/null)" || fail "backfill-media.sh failed 
 echo "backfill-media.sh again: nothing eligible, nothing given, nothing dead-lettered: ok"
 
 # The worker's MinIO user: reads an upload but not its tus .info (file metadata), writes derived/ only, deletes and lists nothing.
-# (The mc image has a shell but no sed or awk: the listing is read here.)
-info="$(mcx 'mc --config-dir /tmp/mc ls --json "local/$S3_BUCKET_UPLOADS/"' | python3 -c '
-import json, sys
-print(next((j["key"] for j in map(json.loads, (l for l in sys.stdin if l.startswith("{"))) if j.get("key", "").endswith(".info")), ""))')"
-[[ "$info" =~ ^[A-Za-z0-9]+\.info$ ]] || fail "no completed upload in the uploads bucket to check the worker's MinIO user against"
-policy="$(mcx "info=$info"'
+# The object of a verified upload, from the API's own record (tusd writes <key> and its metadata beside it as <key>.info).
+key="$("${C[@]}" exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -c "SELECT storage_key FROM upload_sessions WHERE state = '"'verified'"' AND storage_key IS NOT NULL LIMIT 1"')"
+[[ "$key" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ && "$key" != *..* ]] || fail "no verified upload object to check the worker's MinIO user against"
+policy="$(mcx "info=$key.info"'
 t() { if echo z | mc --config-dir /tmp/mc "$@" >/dev/null 2>&1; then echo allow; else echo deny; fi; }
 echo "read-upload $(t cat "w/$S3_BUCKET_UPLOADS/${info%.info}")"
 echo "read-info $(t cat "w/$S3_BUCKET_UPLOADS/$info")"
