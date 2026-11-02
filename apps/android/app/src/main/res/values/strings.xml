@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- العربية هي اللغة الافتراضية؛ الإنجليزية في values-en. كل نص واجهة هنا، لا في الكود. -->
 <resources>
-    <string name="app_name">المكتبة المرئية</string>
+    <string name="app_name">ميدان بوست</string>
 
     <!-- الدخول -->
     <string name="login_title">تسجيل الدخول</string>

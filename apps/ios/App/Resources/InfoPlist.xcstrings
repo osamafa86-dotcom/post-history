@@ -25,13 +25,13 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "مكتبة بوست"
+            "value" : "ميدان بوست"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Post Library"
+            "value" : "Maydan Post"
           }
         }
       }
