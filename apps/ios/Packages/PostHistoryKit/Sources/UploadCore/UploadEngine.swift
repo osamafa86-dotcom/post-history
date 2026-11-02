@@ -52,7 +52,7 @@ public actor UploadEngine: TusTransportDelegate {
     private var releasedProxyHolds: Set<UUID> = []
     /// حد التجديدات المتتالية: رمز جديد ما زال يُرفض = مشكلة لا يحلها التجديد.
     static let maxIngestRefreshes = 3
-    /// الحساب الداخل (ADR 0091): طلبات `/uploads` المصادَق عليها تُرسل باسمه، فسجل حساب آخر (أو والكل خارج) لا يطلبها بل ينتظر
+    /// الحساب الداخل (ADR 0093): طلبات `/uploads` المصادَق عليها تُرسل باسمه، فسجل حساب آخر (أو والكل خارج) لا يطلبها بل ينتظر
     /// صاحبه، ونقل tus برمز الرفع يكمل. `nil`: بلا تمييز (الاختبارات، وما قبل أول ضبط).
     private var accountScope: AccountScope?
     /// سجلات تنتظر دخول صاحبها عند خطوة تحتاج طلبًا باسمه.
@@ -572,5 +572,5 @@ public actor UploadEngine: TusTransportDelegate {
     }
 }
 
-/// سجل ينتظر دخول صاحبه قبل طلب باسمه (ADR 0091). ليس فشلًا.
+/// سجل ينتظر دخول صاحبه قبل طلب باسمه (ADR 0093). ليس فشلًا.
 struct AwaitingOwner: Error, Equatable {}

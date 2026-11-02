@@ -2,7 +2,7 @@ import XCTest
 import UploadCore
 @testable import MaterialsCore
 
-/// الإيصال لصاحبه وحده (ADR 0091): يُعرض للحساب الداخل، وينتظر صاحبه إن كان لغيره أو والكل خارج، ويعود إلى الانتظار عند الخروج.
+/// الإيصال لصاحبه وحده (ADR 0093): يُعرض للحساب الداخل، وينتظر صاحبه إن كان لغيره أو والكل خارج، ويعود إلى الانتظار عند الخروج.
 final class ReceiptInboxTests: XCTestCase {
     struct Target: Equatable, Sendable { let name: String }
 

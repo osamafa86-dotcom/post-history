@@ -31,7 +31,7 @@ final class UploadServices: @unchecked Sendable {
 
     var memoryFile: URL { memoryDirectory.appendingPathComponent("reporter-memory.json") }
     var batchesFile: URL { batchesDirectory.appendingPathComponent("send-batches.json") }
-    /// الحسابات التي دخلت على الجهاز (ADR 0091) في مجلد حالة الرفع، بلا امتداد `.json` فلا يقرؤه المخزن سجلًّا؛ يمحوه المسح الطارئ معه.
+    /// الحسابات التي دخلت على الجهاز (ADR 0093) في مجلد حالة الرفع، بلا امتداد `.json` فلا يقرؤه المخزن سجلًّا؛ يمحوه المسح الطارئ معه.
     var accountsFile: URL { stateDirectory.appendingPathComponent("local-accounts") }
 
     private init() {

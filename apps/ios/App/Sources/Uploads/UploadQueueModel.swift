@@ -10,7 +10,7 @@ import UploadCore
 /// طابور الرفع كما تراه الواجهة؛ يراقب أحداث النواة ويطبّق قرار الحذف المحلي.
 @MainActor
 final class UploadQueueModel: ObservableObject {
-    /// من الداخل الآن (ADR 0091): يحدد ما يُعرض من السجلات والإرسالات والإيصالات، وباسم من تطلب النواة.
+    /// من الداخل الآن (ADR 0093): يحدد ما يُعرض من السجلات والإرسالات والإيصالات، وباسم من تطلب النواة.
     @Published private(set) var scope = AccountScope()
     /// ما يُعرض: سجلات الحساب الداخل وحده. سجلات غيره تُرفع في الخلفية ولا يظهر عنها شيء (لا عنوان ولا مصغّرة ولا عدد).
     @Published private(set) var records: [UploadRecord] = []
@@ -28,7 +28,7 @@ final class UploadQueueModel: ObservableObject {
     /// مسودات «مادة جديدة» المحفوظة على الجهاز (تظهر أعلى شاشة الرفع).
     @Published private(set) var drafts: [MaterialDraft] = []
     /// إيصال وصل للتو: يُعرض شاشة الإيصال تلقائيًا، مرة للإرسالة كلها حين يصل آخر ملفاتها (06، ADR 0088). للحساب الداخل
-    /// وحده: إيصال غيره ينتظر صاحبه (`ReceiptInbox`، ADR 0091).
+    /// وحده: إيصال غيره ينتظر صاحبه (`ReceiptInbox`، ADR 0093).
     @Published var presentedReceipt: ReceiptTarget?
     /// الإرسالات الأخيرة للحساب الداخل، الأحدث أولًا: تجمع ملفات الإرسالة الواحدة في دوائر واحدة وإيصال واحد. من `ledger.batches`.
     @Published private(set) var batches: [SendBatch] = []
@@ -113,7 +113,7 @@ final class UploadQueueModel: ObservableObject {
         batches = scope.visible(ledger.batches)
     }
 
-    /// الدخول والخروج وبدء التشغيل (ADR 0091): النواة تطلب باسم الداخل وحده، والشاشات ترى سجلاته وحده. الإيصال المعروض لغيره
+    /// الدخول والخروج وبدء التشغيل (ADR 0093): النواة تطلب باسم الداخل وحده، والشاشات ترى سجلاته وحده. الإيصال المعروض لغيره
     /// يعود إلى انتظار صاحبه، وما ينتظر الداخل يُعرض الآن.
     func setScope(_ new: AccountScope) async {
         if let shown = presentedReceipt, !new.owns(shown.owner) {
@@ -154,7 +154,7 @@ final class UploadQueueModel: ObservableObject {
         present(ledger.receiptDue(forMaterial: rec.materialId) { items(of: $0) }, record: rec)
     }
 
-    /// إيصال استحق: يُعرض للحساب الداخل إن كان صاحبه، وإلا ينتظر صاحبه (ADR 0091).
+    /// إيصال استحق: يُعرض للحساب الداخل إن كان صاحبه، وإلا ينتظر صاحبه (ADR 0093).
     private func present(_ due: SendBatchLedger.ReceiptScope?, record rec: UploadRecord?) {
         if let target = receiptTarget(due, record: rec), let now = inbox.arrive(target, owner: target.owner, scope: scope) { show(now) }
         batches = scope.visible(ledger.batches)
@@ -328,7 +328,7 @@ final class UploadQueueModel: ObservableObject {
     }
 
     /// الأصل يدخل الطابور فورًا (يُبصم ولا يضيع إن أُنهي التطبيق)، ونسخته الخفيفة تُحضَّر ثم تُرفع قبله. صاحبه الحساب الداخل
-    /// (ADR 0091) ما لم يُذكر غيره.
+    /// (ADR 0093) ما لم يُذكر غيره.
     func enqueue(relativePath: String, materialId: UUID, filename: String, mimeType: String?, lightCopy: ProxyChoice = .originalOnly,
                  title: String? = nil, priority: Priority? = nil, owner: UUID? = nil) async throws {
         let owner = owner ?? scope.current
@@ -386,7 +386,7 @@ final class UploadQueueModel: ObservableObject {
 }
 
 /// شاشة إيصال لمادة، مع سجل الرفع إن وُجد (للعرض دون اتصال)، أو لإرسالة كاملة حين يُعرف `batchId`. `owner` الحساب صاحبه
-/// (ADR 0091): لا يُعرض لغيره.
+/// (ADR 0093): لا يُعرض لغيره.
 struct ReceiptTarget: Identifiable, Equatable, Sendable {
     let materialId: UUID
     let recordId: UUID?

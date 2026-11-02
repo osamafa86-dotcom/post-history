@@ -28,7 +28,7 @@ final class AppModel: ObservableObject {
     let push: PushRegistrar
     /// ما يتذكّره التطبيق للمراسل بين إرسال وآخر (المكان واسم الظهور ووسومه السابقة، ADR 0088).
     let memory = ReporterMemoryStore(fileURL: UploadServices.shared.memoryFile)
-    /// الحسابات التي دخلت على هذا الجهاز بمعرّفات محلية معتمة (ADR 0091)؛ يمحوها المسح الطارئ مع حالة الرفع، ولا يمحوها الخروج.
+    /// الحسابات التي دخلت على هذا الجهاز بمعرّفات محلية معتمة (ADR 0093)؛ يمحوها المسح الطارئ مع حالة الرفع، ولا يمحوها الخروج.
     private let accountsStore = LocalAccountsStore(fileURL: UploadServices.shared.accountsFile)
     /// آخر ما قُرئ منها؛ `nil` إن تعذّرت القراءة (الهاتف مقفل في إطلاق خلفي)، فتُعاد حين يُفتح.
     private var accounts: LocalAccounts?
@@ -82,7 +82,7 @@ final class AppModel: ObservableObject {
         return nil
     }
 
-    /// من الداخل الآن (ADR 0091): يُسجَّل الحساب إن دخل أول مرة بمعرّف محلي معتم، ثم ترى الشاشات سجلاته وحده وتطلب النواة باسمه
+    /// من الداخل الآن (ADR 0093): يُسجَّل الحساب إن دخل أول مرة بمعرّف محلي معتم، ثم ترى الشاشات سجلاته وحده وتطلب النواة باسمه
     /// وحده. سجل حسابات لا يُقرأ نطاقٌ بلا أحد: لا يُعرض شيء ولا يُطلب باسم أحد حتى يُقرأ.
     private func applyAccountScope(signedIn: UUID?) async {
         if accounts == nil { accounts = accountsStore.load() }
@@ -206,7 +206,7 @@ final class AppModel: ObservableObject {
         // الرموز تُمسح محليًا قبل الاتصال؛ فشل الشبكة لا يبقي الجلسة على الجهاز.
         await push.willSignOut()
         try? await auth.logout(allSessions: allSessions)
-        // سجلات الرفع باقية وتكمل في الخلفية (قرار المنسّق، ADR 0091)، لكن لا يُعرض منها شيء حتى يدخل صاحبها، ولا تطلب النواة
+        // سجلات الرفع باقية وتكمل في الخلفية (قرار المنسّق، ADR 0093)، لكن لا يُعرض منها شيء حتى يدخل صاحبها، ولا تطلب النواة
         // باسم أحد؛ والإيصال المعروض يعود إلى انتظار صاحبه.
         await applyAccountScope(signedIn: nil)
         // لا يبقى لمراسل خرج مكانٌ ولا وسوم ولا مصغّرات، ولا إرسالاته بعناوينها وجواب حساسيتها (`send-batches.json`)، لمن يدخل
