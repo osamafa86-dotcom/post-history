@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "infra",
+  "test_name": "preview-media-worker-60s-1080p",
+  "started_at": "2026-11-02T23:33:39Z",
+  "ended_at": "2026-11-02T23:34:14Z",
+  "result": "pass",
+  "device": {
+    "platform": "server",
+    "model": "GitHub-hosted runner (ubuntu-24.04, 4 vCPU)"
+  },
+  "upload_path": "tusd",
+  "file": {
+    "size_bytes": 121598298,
+    "duration_s": 60.0,
+    "bitrate_kbps": 16213,
+    "codec": "h264",
+    "vfr": false,
+    "hdr": false
+  },
+  "metrics": {
+    "resolution": "1920x1080",
+    "frame_rate": 30,
+    "worker_mem_limit_mib": 1472,
+    "worker_cpus": 1.5,
+    "worker_memory_peak_mib": 299.0,
+    "worker_memory_peak_source": "cgroup memory.peak",
+    "worker_anon_peak_mib_sampled": 173.8,
+    "worker_oom_kills": 0,
+    "worker_cpu_s": 50.4,
+    "job_wall_s": 34.4,
+    "scratch_peak_mib_sampled": 118.9,
+    "original_mib": 116.0,
+    "derived_total_bytes": 3157657,
+    "proxy_bytes": 3071526,
+    "poster_bytes": 27126,
+    "contact_sheet_bytes": 59005,
+    "derived_to_original_pct": 2.6,
+    "worker_outcome": "verified+proxy+thumbnails",
+    "clip_generate_s": 49,
+    "samples": 73
+  },
+  "notes": "infra/preview/smoke-preview.sh --media-json (ADR 0092): a synthetic clip (ffmpeg testsrc2 with temporal noise and a sine tone, H.264 at a phone-like bit rate, planted location and device tags) uploaded through the preview edge, verified by the API, then given to the media worker by the feeder. Wall time is from the job's delivery to its acknowledgement on media:events (download, hash match, 480p proxy, poster and contact sheet, registration), polled every 0.25 s. CPU time from the worker's cgroup cpu.stat; memory.peak includes page cache; anon is sampled every 0.5 s. Worker limits as deployed (1472 MiB, no swap, 1.5 CPU). Synthetic content, not a phone file; not the shared server itself."
+}

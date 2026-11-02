@@ -521,13 +521,14 @@ bf="$("$HERE/backfill-media.sh" 2>/dev/null)" || fail "backfill-media.sh failed 
 echo "backfill-media.sh again: nothing eligible, nothing given, nothing dead-lettered: ok"
 
 # The worker's MinIO user: reads an upload but not its tus .info (file metadata), writes derived/ only, deletes and lists nothing.
-# The object of a verified upload, from the API's own record (tusd writes <key> and its metadata beside it as <key>.info).
+# The object of a verified upload, from the API's own record; tusd writes its metadata beside it, the same name with ".info".
 key="$("${C[@]}" exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -c "SELECT storage_key FROM upload_sessions WHERE state = '"'verified'"' AND storage_key IS NOT NULL LIMIT 1"')"
 [[ "$key" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ && "$key" != *..* ]] || fail "no verified upload object to check the worker's MinIO user against"
-policy="$(mcx "info=$key.info"'
+policy="$(mcx "obj=$key"'
+meta="$(printf "%s.%s" "$obj" info)"
 t() { if echo z | mc --config-dir /tmp/mc "$@" >/dev/null 2>&1; then echo allow; else echo deny; fi; }
-echo "read-upload $(t cat "w/$S3_BUCKET_UPLOADS/${info%.info}")"
-echo "read-info $(t cat "w/$S3_BUCKET_UPLOADS/$info")"
+echo "read-upload $(t cat "w/$S3_BUCKET_UPLOADS/$obj")"
+echo "read-info $(t cat "w/$S3_BUCKET_UPLOADS/$meta")"
 echo "list-uploads $(t ls "w/$S3_BUCKET_UPLOADS/")"
 echo "write-uploads $(t pipe "w/$S3_BUCKET_UPLOADS/policy-check")"
 echo "write-derived $(t pipe "w/$S3_BUCKET_MEDIA/derived/policy-check")"
@@ -687,7 +688,10 @@ echo "memory in use: $used_mb MB of $total MB limits (ceiling $LIMIT_MB MB): ok"
 logs="$("${C[@]}" logs --no-color 2>&1)"
 # Upload ids are bearer capabilities (SEC-06): the edge, the gate and the proxy log /files/-, never /files/<id>.
 edge_logs="$("${C[@]}" logs --no-color web ingest-gate tusd-proxy 2>&1)"
-if grep -qE '/files/[A-Za-z0-9]' <<<"$edge_logs"; then grep -E '/files/[A-Za-z0-9]' <<<"$edge_logs" | head -3 | cut -c1-200 >&2; fail "an upload id in an edge log"; fi
+# Anchored to the tus path itself (method, then a path starting /files/): /v1/materials/<id>/files/<id>/download-url carries
+# material and file ids, which are not capabilities.
+tus_id_re=' (GET|HEAD|PATCH|POST|PUT|DELETE|OPTIONS) /files/[A-Za-z0-9]'
+if grep -qE "$tus_id_re" <<<"$edge_logs"; then grep -E "$tus_id_re" <<<"$edge_logs" | head -3 | cut -c1-200 >&2; fail "an upload id in an edge log"; fi
 grep -qF '/files/-' <<<"$edge_logs" || fail "no redacted upload path in the edge logs (nothing logged?)"
 for k in POSTGRES_PASSWORD REDIS_PASSWORD S3_SECRET_KEY JWT_SECRET PREVIEW_REPORTER_PASSWORD TUSD_HOOK_SECRET INGEST_GATE_TOKEN \
          MEDIA_WORKER_TOKEN S3_MEDIA_SECRET_KEY; do
