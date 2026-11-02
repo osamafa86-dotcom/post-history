@@ -540,6 +540,7 @@
         "infra/minio/check-media-policy.sh",
         "infra/minio/init.sh",
         "infra/preview/docker-compose.preview.yml",
+        "infra/preview/minio-init.sh",
         "infra/preview/smoke-preview.sh"
       ]
     },
@@ -626,6 +627,14 @@
       "value": "ph-preview-api-public",
       "reason": "اسم خدمة Docker Compose على شبكة داخلية؛ لا يُحل خارج الشبكة ولا يكشف نطاقًا",
       "paths": [
+        "infra/preview/edge/edge.conf.in"
+      ]
+    },
+    {
+      "value": "ph-preview-minio",
+      "reason": "اسم خدمة Docker Compose على شبكة داخلية؛ لا يُحل خارج الشبكة ولا يكشف نطاقًا",
+      "paths": [
+        "infra/preview/docker-compose.preview.yml",
         "infra/preview/edge/edge.conf.in"
       ]
     },
