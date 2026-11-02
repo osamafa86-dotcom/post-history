@@ -1501,6 +1501,7 @@
       "sensitivity": "Sensitivity",
       "sensitiveRule": "processed locally, never published or sent to an external provider.",
       "notSensitive": "no minors, injured people or graphic scenes flagged.",
+      "sensitivityUnknown": "Unknown",
       "states": "States",
       "statesHelp": "Select a state to filter the log by its track.",
       "nextStep": "Next step",

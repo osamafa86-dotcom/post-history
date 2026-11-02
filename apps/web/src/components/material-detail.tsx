@@ -16,6 +16,7 @@ import { ListingPanel } from "./listing-panel";
 import { EmptyState } from "./empty-state";
 import { Icon } from "./icon";
 import { materialTag } from "@/lib/review";
+import { sensitivityState } from "@/lib/sensitivity";
 
 /**
  * تفاصيل المادة (W2، والجوال M2): المشغّل والعنوان وسطر الوصف والوسوم وسطر الحساسية في العمود الرئيسي، والحالات الثلاث (أزرار تصفّي السجل)
@@ -49,12 +50,12 @@ export function MaterialDetail({ locale, id }: { locale: Locale; id: string }) {
     return () => controller.abort();
   }, [id, attempt]);
 
-  const crumbs = (title?: string) => <nav className="breadcrumb" aria-label={w.breadcrumb}><Link prefetch={false} className="back-link" href={`/${locale}/inbox`} aria-label={m.back}>{m.inbox}</Link>{title && <><span aria-hidden="true">‹</span><span aria-current="page">{title}</span></>}</nav>;
+  const crumbs = (title?: string) => <nav className="breadcrumb" aria-label={w.breadcrumb}><Link prefetch={false} className="back-link" href={`/${locale}/inbox`} aria-label={m.back}>{m.inbox}</Link>{title && <><span className="breadcrumb-sep"><Icon name="chevron" size={14} /></span><span aria-current="page">{title}</span></>}</nav>;
   if (error) return <>{crumbs()}<EmptyState icon={error === 403 ? "key" : error === 404 ? "search" : "alert"} role="alert" title={error === 404 ? m.notFound : error === 403 ? m.material.outOfScope : m.error} actions={<button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button>} /></>;
   if (!material) return <>{crumbs()}<p className="visually-hidden" role="status">{m.loading}</p><div className="material-layout" aria-hidden="true"><div className="material-main"><span className="skeleton media" /><span className="skeleton line wide" /><span className="skeleton line" /></div><div className="material-side"><span className="skeleton card" /><span className="skeleton card" /></div></div></>;
   const receipt = material.files.find(f => f.receipt_number)?.receipt_number, last = lastEvents(records ?? []), names = { technical: m.technical, editorial: m.editorial, rights: m.rights };
   const files = material.files.filter(f => f.kind === "original").length, time = shortTime(material.shot_at);
-  const flags = (["minors", "injured", "graphic"] as const).filter(flag => material.sensitivity?.[flag]);
+  const sensitivity = sensitivityState(material.sensitivity);
   return <>{crumbs(material.title)}{toast && <p className="toast" role="status">{m.review.transitioned.replace("{state}", toast)}</p>}
     <div className="material-layout">
       <div className="material-main">
@@ -62,7 +63,7 @@ export function MaterialDetail({ locale, id }: { locale: Locale; id: string }) {
         <div className="material-title"><h1>{material.title}</h1>{material.priority !== "normal" && <span className={`priority-pill ${material.priority}`}>{material.priority === "urgent" && <Icon name="bolt" size={12} />}{m.states.priority[material.priority]}</span>}</div>
         <p className="material-meta"><span>{photographer(material, locale)}</span><span>{material.governorate}</span><span>{material.city}</span>{time && <span>{w.shot} <bdi dir="ltr">{time}</bdi></span>}{material.material_types.map(type => <span key={type}>{(m.types as Record<string, string>)[type] ?? type}</span>)}{files > 0 && <span>{plural(files, m.shell.inbox.files, locale)}</span>}<span>{m.version} <bdi dir="ltr">{material.version}</bdi></span><span className="receipt"><bdi dir="ltr">{receipt ?? m.noReceipt}</bdi></span>{material.acknowledged_at && <span>{m.material.acknowledged} {formatDate(material.acknowledged_at, locale)}</span>}</p>
         {material.tags?.length ? <ul className="tag-list large" aria-label={m.shell.inbox.tags}>{material.tags.map(tag => <li key={tag}><bdi>{tag}</bdi></li>)}</ul> : null}
-        <p className={`sensitivity-line${flags.length ? " flagged" : ""}`} data-testid="sensitivity-line"><Icon name="shield" size={18} /><span><strong>{w.sensitivity}: </strong>{flags.length ? <>{flags.map(flag => m.upload[flag]).join(m.shell.listSeparator)} — {w.sensitiveRule}</> : w.notSensitive}</span></p>
+        <p className={`sensitivity-line${!sensitivity.known ? " unknown" : sensitivity.flags.length ? " flagged" : ""}`} data-testid="sensitivity-line"><Icon name={sensitivity.known ? "shield" : "alert"} size={18} /><span><strong>{w.sensitivity}: </strong>{!sensitivity.known ? w.sensitivityUnknown : sensitivity.flags.length ? <>{sensitivity.flags.map(flag => m.upload[flag]).join(m.shell.listSeparator)} — {w.sensitiveRule}</> : w.notSensitive}</span></p>
         <section className="card"><h2>{m.details}</h2><dl className="metadata">{[[m.photographer, photographer(material, locale)], [m.governorate, material.governorate], [m.city, material.city], [m.shotAt, formatDate(material.shot_at, locale)], [m.createdAt, formatDate(material.created_at, locale)], [m.receipt, receipt ?? m.noReceipt], [m.formVersion, material.form_version]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>
         <section className="card"><h2>{m.dynamicData}</h2>{material.redacted_field_keys?.length ? <p className="notice locked">{m.hiddenFields}</p> : null}{schema && Object.keys(material.dynamic_fields).length ? <DynamicForm key={`${material.id}-${material.updated_at}`} schema={schema} type={material.material_types[0]} permissions={me.permissions} locale={locale} initialValues={material.dynamic_fields} readOnly /> : <p className="muted">{schema ? m.noDynamic : m.formMissing}</p>}</section>
         <ListingPanel key={`${material.id}:listing:${material.rights_state}`} locale={locale} material={material} />

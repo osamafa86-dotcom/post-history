@@ -20,18 +20,22 @@ export function ReviewActions(props: Props) {
   const mayReceive = !!tag && transitionOptions(material, me, "editorial").includes("acknowledged");
   const close = () => { setOpen(false); opener.current?.focus(); };
   return <>
-    <section className="card next-step" aria-labelledby="review-title"><h2 id="review-title">{m.shell.material.nextStep}</h2>
+    {/* M2: على الجوال تُثبَّت الأفعال الأساسية أسفل الشاشة فوق الشريط السفلي (`.next-actions` لاصقة)، وتبقى البقية بطاقةً في مكانها. */}
+    <section className="card next-step" aria-labelledby="review-title"><div className="next-step-info"><h2 id="review-title">{m.shell.material.nextStep}</h2>
       {!tag && <p className="notice">{t.versionMissing}</p>}
-      <div className="next-actions">
-        {mayReceive && <button disabled={!tag || receive.busy} onClick={async () => { editing(); if (tag && await receive.run(`${material.id}:ack:${tag}`, header => browserApi().POST("/materials/{id}/transitions", { params: { path: { id: material.id }, header: { ...header, "If-Match": tag } }, body: { track: "editorial", to: "acknowledged", reason: m.editor.ackReason } }))) { notify?.(m.states.editorial_state.acknowledged); reload(); } }}>{m.shell.inbox.receive}</button>}
-        {available.length ? <button ref={opener} className={mayReceive ? "secondary" : undefined} disabled={!tag} onClick={() => { editing(); setOpen(true); }}>{t.open}</button> : <p className="notice">{t.noTransitions}</p>}
+      {!available.length && <p className="notice">{t.noTransitions}</p>}
+      {(mayReserve || mayRelease) && <div className="next-more">
         {mayReserve && <button className="secondary" disabled={!tag || reservation.busy || reservation.status === 412} onClick={async () => { editing(); if (tag && await reservation.run(JSON.stringify([material.id, "reserve", tag]), header => browserApi().POST("/materials/{id}/reservation", { params: { path: { id: material.id }, header: { ...header, "If-Match": tag } } }))) reload(); }}>{t.reserve}</button>}
         {mayRelease && <button className="secondary" disabled={reservation.busy} onClick={async () => { editing(); if (await reservation.run(`${material.id}:release`, header => browserApi().DELETE("/materials/{id}/reservation", { params: { path: { id: material.id }, header } }))) reload(); }}>{material.reserved_by === me.user_id ? t.releaseMine : t.release}</button>}
-      </div>
+      </div>}
       <p className="caption">{mayReceive ? m.shell.material.receiveHelp : t.lead}</p>
       <p className="caption reservation-state">{t.reservation}: <span>{material.reserved_by === undefined ? m.notAvailable : material.reserved_by === null ? t.unreserved : material.reserved_by === me.user_id ? t.yourReservation : t.reserved}</span>{material.reserved_at && <> · {formatDate(material.reserved_at, locale)}</>}</p>
       <ActionStatus status={receive.status || reservation.status} locale={locale} />
-      <button className="quiet small" disabled={reservation.busy} onClick={reload}>{t.reload}</button>
+      <button className="quiet small" disabled={reservation.busy} onClick={reload}>{t.reload}</button></div>
+      {(mayReceive || available.length > 0) && <div className="next-actions" data-testid="next-actions">
+        {mayReceive && <button disabled={!tag || receive.busy} onClick={async () => { editing(); if (tag && await receive.run(`${material.id}:ack:${tag}`, header => browserApi().POST("/materials/{id}/transitions", { params: { path: { id: material.id }, header: { ...header, "If-Match": tag } }, body: { track: "editorial", to: "acknowledged", reason: m.editor.ackReason } }))) { notify?.(m.states.editorial_state.acknowledged); reload(); } }}>{m.shell.inbox.receive}</button>}
+        {available.length > 0 && <button ref={opener} className={mayReceive ? "secondary" : undefined} disabled={!tag} onClick={() => { editing(); setOpen(true); }}>{t.open}</button>}
+      </div>}
     </section>
     {open && <TransitionDialog locale={locale} material={material} tag={tag} editing={editing} reload={() => { setOpen(false); reload(); }} onClose={close} onDone={label => { setOpen(false); notify?.(label); }} />}
   </>;
