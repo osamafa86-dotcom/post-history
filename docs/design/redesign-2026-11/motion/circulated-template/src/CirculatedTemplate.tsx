@@ -66,7 +66,7 @@ const L = {
 export class TitleOverflowError extends Error {
   readonly code = 'title_overflow' as const;
   constructor(readonly lineIndex: number, readonly requiredScale: number) {
-    super(`title_overflow: line ${lineIndex + 1} needs scale ${requiredScale.toFixed(3)} < ${MIN_TITLE_SCALE}`);
+    super(`title_overflow: line ${lineIndex + 1} needs scale ${Math.round(requiredScale * 1000) / 1000} < ${MIN_TITLE_SCALE}`);
     this.name = 'TitleOverflowError';
   }
 }
