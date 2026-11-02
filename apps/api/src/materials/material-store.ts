@@ -181,6 +181,8 @@ export async function toMaterialDtos(
       form_version: m.formVersion,
       dynamic_fields: fields,
       redacted_field_keys: redacted,
+      // الوسوم بترتيب حفظها (ADR 0086)؛ العمود NOT NULL فلا null هنا. تبقى في Material ولا تنتقل إلى حدث أو إشعار أو الكتالوج
+      tags: m.tags,
       contributors: contributors
         .filter((c) => c.materialId === m.id)
         .map((c) => ({ user_id: c.userId, role: c.role as 'reporter', share_percent: Number(c.sharePercent) })),
@@ -227,7 +229,10 @@ export function iso(v: string | null): string | null {
   return v === null ? null : new Date(v).toISOString();
 }
 
-/** مفاتيح حمولة أحداث المادة (القائمة البيضاء في outbox_payload_allowed_keys). */
+/**
+ * مفاتيح حمولة أحداث المادة (القائمة البيضاء في outbox_payload_allowed_keys). قائمة مغلقة عمدًا: لا `tags` ولا غيرها من
+ * النصوص الحرة، فالوسوم قد تحوي أسماءً حساسة (ADR 0086). تغيير هذه القائمة يوجب تغيير القائمة البيضاء في القاعدة.
+ */
 export function materialPayload(m: MaterialRow): Record<string, string | number> {
   return { material_id: m.id, priority: m.priority, ...(m.officeId ? { office_id: m.officeId } : {}) };
 }
