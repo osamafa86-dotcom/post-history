@@ -73,7 +73,7 @@ const T = {
   fType: ['نوع التغطية', 'Coverage type'], tyEvent: ['حدث ميداني', 'Field event'], tyReport: ['تقرير', 'Report'], tyInterview: ['مقابلة', 'Interview'], tyBroll: ['مشاهد خام', 'Raw footage'],
   fTags: ['الوسوم', 'Tags'], tag1: ['مساعدات', 'Aid'], tag2: ['النصيرات', 'Nuseirat'], tag3: ['شتاء', 'Winter'], addTag: ['أضف وسمًا', 'Add a tag'], suggest: ['طوابير', 'Queues'], fromAdmin: ['من قائمة الإدارة', 'From the desk list'],
   fPlace: ['المكان', 'Location'], placeVal: ['دير البلح · النصيرات', 'Deir al-Balah · Nuseirat'], remembered: ['من آخر إرسال', 'From your last send'],
-  urgent: ['عاجل', 'Urgent'], urgentHint: ['يصل المحرر فورًا مع تنبيه', 'Alerts the editor right away'],
+  urgent: ['عاجل', 'Urgent'], urgentHint: ['يُنبَّه المحرر المناوب', 'Alerts the editor on duty'],
   sens: ['هل تتضمن المواد قاصرين أو مصابين أو مشاهد صادمة؟', 'Does it include minors, injured people or graphic scenes?'], no: ['لا', 'No'], yes: ['نعم', 'Yes'],
   sendCta: ['أرسل 3 مواد', 'Send 3 items'],
   uploading: ['يُرفع', 'Uploading'], reassure: ['وصلت نسخة خفيفة من الملفين الأولين، والمحرر يستطيع مشاهدتهما الآن.', 'A light copy of the first two files has arrived. Editors can watch them now.'],
@@ -158,7 +158,7 @@ const RECEIPT = phone(t('sReceipt'), `
   <h2 class="disp">${t('delivered')}</h2>
   <p class="muted">${t('deliveredSub')} <q data-i="titleVal" data-stress="title">${T.titleVal[0]}</q></p>
   <dl class="slip">
-    <div><dt>${t('rNo')}</dt><dd class="num" dir="ltr">PH-2611-0482</dd></div>
+    <div><dt>${t('rNo')}</dt><dd class="num" dir="ltr">R-261102-000482</dd></div>
     <div><dt>${t('rTime')}</dt><dd class="num" dir="ltr">14:32</dd></div>
     <div><dt>${t('rSize')}</dt><dd class="num" dir="ltr">412 MB</dd></div>
     <div><dt>${t('rHash')}</dt><dd class="num" dir="ltr">9f2c…a71e</dd></div>
@@ -192,7 +192,7 @@ const STORE = `<div class="store-row">
 </div>`;
 
 const COLOR = `<div class="palette" id="palette"></div><div class="tblwrap"><table class="contrast" id="contrast"><caption class="sr">contrast</caption><thead><tr><th scope="col">${t('thPair')}</th><th scope="col">${t('thRatio')}</th><th scope="col">${t('thNeed')}</th><th scope="col"></th></tr></thead><tbody></tbody></table></div>`;
-const TYPE = `<div class="typescale"><p class="ts-d disp">${t('typeDisplay')}</p><p class="ts-t">${t('typeTitle')}</p><p class="ts-b">${t('typeBody')}</p><p class="ts-n num" dir="ltr">PH-2611-0482 · 14:32 · 412 MB · 1,250</p><p class="ts-c">${t('typeCaption')}</p><p class="ts-fonts" id="fontnames"></p></div>`;
+const TYPE = `<div class="typescale"><p class="ts-d disp">${t('typeDisplay')}</p><p class="ts-t">${t('typeTitle')}</p><p class="ts-b">${t('typeBody')}</p><p class="ts-n num" dir="ltr">R-261102-000482 · 14:32 · 412 MB · 1,250</p><p class="ts-c">${t('typeCaption')}</p><p class="ts-fonts" id="fontnames"></p></div>`;
 
 // ── الأنماط ─────────────────────────────────────────────────────────────────
 const CSS = `
