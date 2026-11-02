@@ -44,7 +44,8 @@ final class PlayerModel: ObservableObject {
     private var timeObserver: Any?
     private var observations: [NSKeyValueObservation] = []
     private var notificationTokens: [NSObjectProtocol] = []
-    private var previewGenerator: AVAssetImageGenerator?
+    /// ملف نسخة الهاتف لمعاينة السحب؛ `nil` للنسخة البعيدة (الوقت وحده في الفقاعة).
+    private var previewFile: URL?
     private var pendingPreview: Double?
     private var previewTask: Task<Void, Never>?
     private var seekInProgress = false
@@ -194,17 +195,28 @@ final class PlayerModel: ObservableObject {
 
     /// المعاينة من نسخة الهاتف: آخر موضع مطلوب يفوز، وطلب واحد في كل لحظة.
     private func requestPreview(at seconds: Double) {
-        guard previewGenerator != nil else { return }
+        guard previewFile != nil else { return }
         pendingPreview = seconds
         guard previewTask == nil else { return }
         previewTask = Task { [weak self] in
-            while let self, let generator = self.previewGenerator, let next = self.pendingPreview {
+            while let self, let file = self.previewFile, let next = self.pendingPreview {
                 self.pendingPreview = nil
-                let image = try? await generator.image(at: CMTime(seconds: next, preferredTimescale: 600)).image
+                let image = await Self.previewFrame(file: file, seconds: next)
                 if self.isScrubbing, let image { self.scrubPreview = Image(decorative: image, scale: 1) }
             }
             self?.previewTask = nil
         }
+    }
+
+    /// إطار مصغّر من ملف الهاتف خارج الخيط الرئيسي؛ المولّد محلي هنا فلا يعبر بين سياقات العزل.
+    nonisolated private static func previewFrame(file: URL, seconds: Double) async -> CGImage? {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file))
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 320, height: 320)
+        let tolerance = CMTime(seconds: 0.25, preferredTimescale: 600)
+        generator.requestedTimeToleranceBefore = tolerance
+        generator.requestedTimeToleranceAfter = tolerance
+        return try? await generator.image(at: CMTime(seconds: seconds, preferredTimescale: 600)).image
     }
 
     // MARK: التحميل والرابط
@@ -218,7 +230,9 @@ final class PlayerModel: ObservableObject {
         switch source {
         case .local(let local):
             lease = nil
-            asset = AVURLAsset(url: UploadServices.shared.documentsDirectory.appendingPathComponent(local.relativePath))
+            let file = UploadServices.shared.documentsDirectory.appendingPathComponent(local.relativePath)
+            previewFile = file
+            asset = AVURLAsset(url: file)
         case .remote(let fileId, _, _):
             // يُطلب قبيل التشغيل، ولا يُكتب في أي مكان غير هذا النموذج.
             guard let link, let fresh = (try? await link(fileId)).flatMap({ SignedURLLease($0) }) else {
@@ -227,6 +241,7 @@ final class PlayerModel: ObservableObject {
             }
             guard loadToken == token else { return }
             lease = fresh
+            previewFile = nil
             asset = AVURLAsset(url: fresh.url)
         case .unavailable:
             phase = .idle
@@ -244,16 +259,6 @@ final class PlayerModel: ObservableObject {
         if resumeAt > 0 {
             // الموضع السابق قبل أول إطار (بعد تجديد الرابط)؛ بالنسخة ذات المعالج لأن البديل غير المتزامن يُختار في سياق async.
             player.seek(to: chaseTarget, toleranceBefore: .zero, toleranceAfter: .zero, completionHandler: { _ in })
-        }
-        if case .local = source {
-            let generator = AVAssetImageGenerator(asset: asset)
-            generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 320, height: 320)
-            generator.requestedTimeToleranceBefore = CMTime(seconds: 0.25, preferredTimescale: 600)
-            generator.requestedTimeToleranceAfter = CMTime(seconds: 0.25, preferredTimescale: 600)
-            previewGenerator = generator
-        } else {
-            previewGenerator = nil
         }
         wantsPlay = autoplay
         if autoplay { player.play() }
@@ -348,7 +353,7 @@ final class PlayerModel: ObservableObject {
         lease = nil
         previewTask?.cancel()
         previewTask = nil
-        previewGenerator = nil
+        previewFile = nil
         pendingPreview = nil
         scrubPreview = nil
         isScrubbing = false
