@@ -1,7 +1,7 @@
 # واجهات الويب v2 — غرفة الأخبار والمكتب والمتجر والإدارة
 
-**المرجع:** ملف Figma «Visual Library — Design System»، الصفحات `Web: Newsroom & Desk` و`Web: Store` و`Web: Admin`
-و`Web: Sign-in & Public` و`Web: Responsive & States` و`Web: EN, Dark & Flows` و`Web · طلب نسخة بقالب المتداول` (الرابط في `design-system-v2.md`). مبنية من مكوّنات v2 ومتغيّراتها
+**المرجع:** ملف Figma «Visual Library — Design System»، الصفحات `Web: Newsroom & Desk`، `Web: Store`، `Web: Admin`،
+`Web: Sign-in & Public`، `Web: Responsive & States`، `Web: EN, Dark & Flows`، `Web · طلب نسخة بقالب المتداول` (الرابط في `design-system-v2.md`). مبنية من مكوّنات v2 ومتغيّراتها
 (`design-system-v2.md`)، ولقطاتها في `docs/design/redesign-2026-11/screens/web/`. سطح المكتب 1440×900، والجوال 390×844، والتابلت 1024×768، والجدار
 1920×1080. الوجه الداكن للمتجر والجدار بوضع `Dark` المضبوط صراحةً على الإطار، لا بألوان منسوخة.
 
@@ -147,8 +147,8 @@
 | الرمز | الشاشة | اللقطة |
 |---|---|---|
 | C1 | W2 وفيها بطاقة «الملفات» بالحالات الأربع، وزرّ «تجهيز نسخة بقالب المتداول» | `c1-material-copies` |
-| C2 | نافذة الطلب فوق W2، والوسم لم يُختر بعد فالإرسال معطَّل | `c2-request-dialog` |
-| C3 | النافذة، داكن، و«بلا وسم» مختار | `c3-request-dialog-dark` |
+| C2 | نافذة الطلب فوق W2، والوسم لم يُختر بعد فالإرسال معطَّل، والمادة حسّاسة فمفتاح المكان مطفأ افتراضيًا | `c2-request-dialog` |
+| C3 | النافذة، داكن، و«بلا وسم» مختار، والطاقم شغّل المكان فظهر نصّه قبل الإرسال | `c3-request-dialog-dark` |
 | C4 | النافذة، إنجليزية فاتحة | `c4-request-dialog-en` |
 | C5 | C1 داكن | `c5-material-copies-dark` |
 | C6 | C1 إنجليزية داكنة | `c6-material-copies-en-dark` |
@@ -172,7 +172,8 @@
 - **المقاس (`aspect`):** ثلاث بطاقات بشكل المقاس مصغّرًا: `vertical` 9:16 (الافتراضي)، `horizontal` 16:9، `square` 1:1. الفيديو يدخل الإطار كاملًا، والفراغ حوله بخلفية مموّهة منه، فلا قصّ.
 - **المعاينة:** القالب مصغّرًا بالعنوان والمكان، ويتبدّل مع المقاس والاختيارات. الخلفية صورة تجريبية، لا إطار من المادة: المادة قد تكون حسّاسة، ولا يلزم لها مسار عرض جديد.
 - **إظهار المكان (`show_location`):**
-  - مشغَّل افتراضيًا، والسطر تحته يكتب ما سيظهر.
+  - مشغَّل افتراضيًا للمادة غير الحسّاسة، والسطر تحته يكتب ما سيظهر.
+  - **مطفأ افتراضيًا للمادة الحسّاسة** (قرار المنسّق 2026-11-02)، والسطر تحته: «المادة حسّاسة، فالمكان مخفيّ افتراضيًا». وإن شغّله الطاقم ظهر قبل الإرسال النصّ الذي يبنيه الخادم كما سيُطبع («مدينة، محافظة»)، فلا يُرسل مكانٌ لم يُقرأ.
   - النصّ يبنيه الخادم من حقلَي المادة، فلا إحداثيات ولا تفصيل أدقّ (`CLAUDE.md` §5).
   - إن لم يصلح للقالب بطوله أو محارفه (`422 render_location_unusable`) يُعطَّل المفتاح، ويقول السبب.
 - **وسم «مشاهد متداولة» (`label`): اختيار إلزامي بلا افتراض:**
@@ -208,7 +209,7 @@
 | الرمز | ما تقوله الواجهة |
 |---|---|
 | `409 render_not_allowed` · `editorial_state` | «تُتاح بعد قبول المادة تحريريًا»، ومعها الحالة الآن |
-| `409 render_not_allowed` · `source` | «تُتاح حين يصل الأصل ويُتحقَّق من بصمته. والمقطع أطول من {max} المسموحة للقالب». `{max}` من `details.max_source_duration_ms` في الردّ، مكتوبة بالدقائق، فلا رقم ثابت في الواجهة |
+| `409 render_not_allowed` · `source` | «تُتاح حين يصل الأصل ويُتحقَّق من بصمته.» وتُلحق جملة المدة «والمقطع أطول من {max} المسموحة للقالب.» **فقط** حين يحمل الردّ `details.max_source_duration_ms`؛ `{max}` منه مكتوبة بالدقائق، فلا رقم ثابت في الواجهة، وبغيابه لا تُذكر مدة |
 | `409 render_not_allowed` · `rights_state` | «لا تُجهَّز نسخ لمادة حقوقها محجوبة أو مسحوبة»، وتتوقف روابط النسخ القائمة |
 | `409 render_limit_reached` | «ثلاث نسخ لهذه المادة قيد الطلب أو التجهيز»، فالحدّ يعدّ الحالتين معًا |
 | `422 render_location_unusable` | مفتاح المكان معطَّل: «نص المكان لا يصلح للقالب (طوله أو محارفه)» |
@@ -219,8 +220,8 @@
 **المفتاح** مكوّن جديد اسمه `Switch` (القيمة × الاتجاه):
 
 - **المسار:** `action/primary` مشغَّلًا، `border/edge` مطفأً.
-- **المقبض مشغَّلًا:** `text/on-brand`، وتباينه 5.72:1 فاتحًا و9.07:1 داكنًا.
-- **المقبض مطفأً:** `text/on-brand` أيضًا، فلا لون أوّليّ في الواجهة (ADR 0090)، وتباينه فوق `border/edge` 4.27:1 فاتحًا و3.98:1 داكنًا.
+- **المقبض مشغَّلًا:** `text/on-brand`، وتباينه في الفاتح 5.72:1، وفي الداكن 9.07:1.
+- **المقبض مطفأً:** `text/on-brand` أيضًا، فلا لون أوّليّ في الواجهة (ADR 0090)، وتباينه فوق `border/edge` في الفاتح 4.27:1، وفي الداكن 3.98:1.
 - **الأزواج:** في `v2.contrastPairs` بملف `tokens.v2.json`، وفحص `contrast-check` يمرّ على 54 زوجًا، واختبار رموز الويب (`apps/web/tests/design-tokens.test.ts`) 9 من 9.
 - **الاتجاه:** مقبضه في العربية يسارًا حين يُشغَّل.
 - **الوسم ليس مفتاحًا:** اختياره بين خيارين بلا افتراض.
@@ -255,6 +256,7 @@
 | `derivative.template.ratioHint` | الفيديو كاملًا داخل الإطار، والفراغ حوله بخلفية مموّهة منه. لا قصّ. | The whole video fits the frame on a blurred fill. No cropping. |
 | `derivative.template.showLocation` | إظهار المكان | Show location |
 | `derivative.template.locationHint` | يظهر: «{location}». المدينة والمحافظة فقط، بلا إحداثيات. | Shows “{location}”. City and governorate only. |
+| `derivative.template.locationOffSensitive` | المادة حسّاسة، فالمكان مخفيّ افتراضيًا. | This material is sensitive, so the location is hidden by default. |
 | `derivative.template.label` | وسم «مشاهد متداولة» (اختيار إلزامي) | “Circulated footage” label (required) |
 | `derivative.template.labelHint` | اختر لكل نسخة. ضعه حين لم تصوّر الشبكة المشاهد، ولا تضعه حين صوّرتها؛ والخطأ في الاتجاهين يضلّل المشاهد. | Choose for every copy. Use it when the network did not film the footage; leave it off when it did. Both mistakes mislead the viewer. |
 | `derivative.template.labelWith` | بوسم «مشاهد متداولة» | With the label |
@@ -295,7 +297,8 @@
 | `derivative.blocked.editorial_state.title` | قبل القبول التحريري | Before editorial acceptance |
 | `derivative.blocked.editorial_state` | تُتاح بعد قبول المادة تحريريًا. الحالة الآن: {state}. | Available once the material is accepted. It is {state} now. |
 | `derivative.blocked.source.title` | قبل التحقق من الأصل | Before the original is verified |
-| `derivative.blocked.source` | تُتاح حين يصل الأصل ويُتحقَّق من بصمته. والمقطع أطول من {max} المسموحة للقالب. | Available once the original arrives and its fingerprint is verified. The clip is longer than the {max} the template allows. |
+| `derivative.blocked.source` | تُتاح حين يصل الأصل ويُتحقَّق من بصمته. | Available once the original arrives and its fingerprint is verified. |
+| `derivative.blocked.sourceDuration` | والمقطع أطول من {max} المسموحة للقالب. (تُلحق فقط مع `details.max_source_duration_ms`) | The clip is longer than the {max} the template allows. (Appended only with `details.max_source_duration_ms`) |
 | `derivative.blocked.rights_state.title` | حقوق محجوبة أو مسحوبة | Rights blocked or withdrawn |
 | `derivative.blocked.rights_state` | لا تُجهَّز نسخ لمادة حقوقها محجوبة أو مسحوبة، وتتوقف روابط تنزيل النسخ القائمة. | No copies for material whose rights are blocked or withdrawn, and download links for existing copies stop working. |
 | `derivative.blocked.limit.title` | ثلاث نسخ قيد الطلب أو التجهيز | Three copies requested or rendering |

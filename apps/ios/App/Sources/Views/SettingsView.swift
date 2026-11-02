@@ -12,6 +12,8 @@ struct SettingsScreen: View {
     @EnvironmentObject private var lock: AppLockModel
     @EnvironmentObject private var queue: UploadQueueModel
     @State private var confirmLogoutAll = false
+    /// خروج وللحساب ملفات لم يكتمل رفعها: تُكمل في الخلفية وتبقى مخفية حتى يعود (ADR 0091)، فيُقال ذلك قبل الخروج.
+    @State private var confirmLogoutPending = false
     @State private var memory = ReporterMemory()
     @State private var editingPlace = false
     @State private var placeGovernorate = ""
@@ -83,7 +85,10 @@ struct SettingsScreen: View {
                            isOn: Binding(get: { lock.state.isEnabled }, set: { on in Task { await lock.setEnabled(on) } }))
                 }
                 VStack(spacing: VL.Space.s3) {
-                    Button("settings.logout") { Task { await app.logout(allSessions: false) } }.buttonStyle(.vlOutline)
+                    Button("settings.logout") {
+                        if queue.pendingUploadsAtLogout > 0 { confirmLogoutPending = true } else { Task { await app.logout(allSessions: false) } }
+                    }
+                    .buttonStyle(.vlOutline)
                     Button("settings.logoutAll", role: .destructive) { confirmLogoutAll = true }.buttonStyle(.vlOutline)
                 }
                 VStack(alignment: .leading, spacing: VL.Space.s3) {
@@ -98,7 +103,13 @@ struct SettingsScreen: View {
         .navigationTitle("tab.settings")
         .navigationBarTitleDisplayMode(.large)
         .confirmationDialog("settings.logoutAll.confirm", isPresented: $confirmLogoutAll, titleVisibility: .visible) {
+            // إبطال كل الجلسات يبطل رموز الرفع المفتوحة أيضًا، فلا يُقال إن الرفع يكمل؛ نص التأكيد يذكر ذلك.
             Button("settings.logoutAll", role: .destructive) { Task { await app.logout(allSessions: true) } }
+        }
+        .confirmationDialog("settings.logout.pending.title", isPresented: $confirmLogoutPending, titleVisibility: .visible) {
+            Button("settings.logout", role: .destructive) { Task { await app.logout(allSessions: false) } }
+        } message: {
+            Text("settings.logout.pending.message \(queue.pendingUploadsAtLogout)")
         }
         .sheet(isPresented: $editingPlace, onDismiss: savePlace) {
             PlaceEditor(governorate: $placeGovernorate, city: $placeCity)

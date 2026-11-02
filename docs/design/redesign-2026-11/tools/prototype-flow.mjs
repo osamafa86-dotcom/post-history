@@ -31,11 +31,11 @@ for (const [w, h, lang, scale, motion] of [[390, 844, 'ar', 1, 'no-preference'],
   check(await over() === 0, `${tag} home: no horizontal scroll`);
   await page.click('[data-go="send"]');
   check(await page.isDisabled('#sendBtn'), `${tag} send disabled before fields`);
-  await page.fill('#title', lang === 'ar' ? 'توزيع مساعدات WFP على 1,250 عائلة في مخيم النصيرات وسط قطاع غزة يوم 28/10 صباحًا' : 'WFP aid to 1,250 families in مخيم النصيرات, central Gaza Strip, on 28 Oct, day 3');
+  await page.fill('#title', lang === 'ar' ? 'وصف تجريبي للمادة: ما صُوِّر ومتى، بلا أسماء ولا تفاصيل تكشف أحدًا.' : 'Sample description: what was filmed and when, with no names or identifying details.');
   await page.click('[data-type="breaking"]');
   await page.click('[data-sens="no"]');
   check(await page.isDisabled('#sendBtn'), `${tag} send stays disabled without tags`);
-  for (const tg of ['مساعدات', 'النصيرات', 'شتاء', 'WFP', 'طوابير', 'أطفال', 'دير البلح', 'نزوح', 'خيام', 'مطر', 'وكالة الغوث UNRWA', 'توزيع الطحين في الصباح الباكر']) { await page.fill('#tagIn', tg); await page.press('#tagIn', 'Enter'); }
+  for (const tg of ['مساعدات', 'النصيرات', 'شتاء', 'وسم Sample تجريبي', 'طوابير', 'أطفال', 'دير البلح', 'وسم تجريبي ٨', 'وسم تجريبي ٩', 'وسم تجريبي ١٠', 'وسم تجريبي ١١', 'وسم تجريبي طويل لاختبار الالتفاف']) { await page.fill('#tagIn', tg); await page.press('#tagIn', 'Enter'); }
   check(await page.locator('#tags .tag').count() === 12, `${tag} 12 tags added`);
   check(!(await page.isDisabled('#sendBtn')), `${tag} title + type + tags + «no» enable send`);
   await page.click('[data-sens="yes"]');
@@ -63,7 +63,7 @@ for (const [w, h, lang, scale, motion] of [[390, 844, 'ar', 1, 'no-preference'],
   await page.screenshot({ path: join(out, `${tag}-offline.png`), fullPage: true });
   await page.click('#on');
   await page.waitForSelector('#s-receipt.on', { timeout: 20000 });
-  check((await page.textContent('#rTitle')).includes('1,250'), `${tag} receipt carries the title`);
+  check((await page.textContent('#rTitle')).includes(lang === 'ar' ? 'وصف تجريبي للمادة' : 'Sample description'), `${tag} receipt carries the title`);
   check(await page.isVisible('#delLocal'), `${tag} receipt offers deleting the local copy`);
   await page.screenshot({ path: join(out, `${tag}-receipt.png`), fullPage: true });
   await page.click('#s-receipt [data-go="mine"]');

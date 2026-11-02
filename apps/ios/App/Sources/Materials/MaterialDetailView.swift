@@ -389,8 +389,7 @@ struct MaterialDetailView: View {
             if receipt {
                 // السجل المتحقَّق أو المطابَق، لا أول سجل: الإيصال لا يعرض حذف النسخة لغيره (`LocalCopyPolicy`).
                 Button {
-                    queue.presentedReceipt = ReceiptTarget(materialId: m.id,
-                                                           recordId: LocalCopyPolicy.receiptRecord(forMaterial: m.id, in: queue.records)?.id)
+                    queue.showReceipt(materialId: m.id, recordId: LocalCopyPolicy.receiptRecord(forMaterial: m.id, in: queue.records)?.id)
                 } label: { Label("a4.showReceipt", systemImage: "doc.text") }
                     .buttonStyle(.vlOutline)
             }
