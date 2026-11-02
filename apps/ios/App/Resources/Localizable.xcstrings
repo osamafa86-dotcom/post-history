@@ -5680,13 +5680,30 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "وصل الأصل وتحقّقت بصمته على الخادم، ويبقى في «موادي». تُحذف النسخ حين تغادر الإيصال."
+            "value": "وصل الأصل وتحقّقت بصمته على الخادم، ويبقى في «موادي». تُحذف النسخ فور وضع العلامة."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The original arrived and its fingerprint was verified on the server; it stays in My materials. The copies are deleted when you leave the receipt."
+            "value": "The original arrived and its fingerprint was verified on the server; it stays in My materials. The copies are deleted as soon as you tick this."
+          }
+        }
+      }
+    },
+    "receipt.deleteLocal.done": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "حُذفت النسخ من هذا الهاتف، والأصل في «موادي»."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The copies on this phone were deleted; the original is in My materials."
           }
         }
       }
@@ -6870,13 +6887,13 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "أغلق التطبيق متى شئت، والرفع يكمل وحده."
+            "value": "يكمل الرفع والتطبيق في الخلفية، وإن أُغلق التطبيق نهائيًا يستأنف من آخر ما وصل حين تفتحه."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Close the app any time. The upload carries on."
+            "value": "The upload carries on while the app is in the background. If the app is closed completely, it resumes from the last part that arrived when you open it again."
           }
         }
       }
@@ -7493,6 +7510,23 @@
         }
       }
     },
+    "send.need.pendingTag": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الوسم المكتوب لا يُضاف: عدّله أو امسحه"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The tag you typed can’t be added: edit or clear it"
+          }
+        }
+      }
+    },
     "send.need.tags": {
       "extractionState": "manual",
       "localizations": {
@@ -7608,6 +7642,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Fill in the desk’s required fields"
+          }
+        }
+      }
+    },
+    "send.need.formInvalid": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "صحّح القيمة المعلَّمة في حقول المكتب"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fix the marked value in the desk fields"
           }
         }
       }

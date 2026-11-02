@@ -554,3 +554,14 @@ struct AnyButtonStyle: ButtonStyle {
     init<S: ButtonStyle>(_ style: S) { make = { AnyView(style.makeBody(configuration: $0)) } }
     func makeBody(configuration: Configuration) -> some View { make(configuration) }
 }
+
+// MARK: - الحركة
+
+/// كل تغيير متحرّك في الشاشات يمرّ من هنا (الدوائر تقرأ الإعداد بنفسها): مع «تقليل الحركة» يحدث التغيير فورًا بلا حركة
+/// والمعنى باقٍ (ADR 0088 §3). `reduceMotion` من `@Environment(\.accessibilityReduceMotion)` في الشاشة.
+enum VLMotion {
+    static func animate<Result>(_ reduceMotion: Bool, _ animation: Animation = .easeOut(duration: VL.Duration.base),
+                                _ body: () throws -> Result) rethrows -> Result {
+        try withAnimation(reduceMotion ? nil : animation, body)
+    }
+}

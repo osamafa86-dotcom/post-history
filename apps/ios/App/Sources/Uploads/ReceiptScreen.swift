@@ -6,7 +6,7 @@ import UIKit
 import UploadCore
 
 /// 06 · الإيصال الاحتفالي (docs/design/specs/reporter-v2.md «الإيصال»): دوائر تمتلئ، و«وصلت المواد»، ورقم الإيصال والوقت والحجم
-/// والبصمة (أرقام LTR)، وخيار حذف النسخ المحلية (غير مفعّل افتراضيًا، يُطبَّق عند مغادرة الإيصال)، وإجراءان «إرسال آخر» و«موادي».
+/// والبصمة (أرقام LTR)، وخيار حذف النسخ المحلية (غير مفعّل افتراضيًا، يُطبَّق لحظة وضع العلامة)، وإجراءان «إرسال آخر» و«موادي».
 /// إرسالة بعدة ملفات لها إيصال واحد حين يصل آخرها (ADR 0088)؛ ومادة بلا إرسالة («لقطة بديلة») لها إيصالها كما كان.
 /// لا اسم مصدر ولا موقع؛ رمز QR يشفّر معرّف المادة وحده، والصورة المشاركة تحمل الرقم والوقت وحدهما (ADR 0076).
 struct ReceiptScreen: View {
@@ -14,13 +14,15 @@ struct ReceiptScreen: View {
     @EnvironmentObject private var queue: UploadQueueModel
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let target: ReceiptTarget
     var onSendAnother: () -> Void = {}
     var onMyMaterials: () -> Void = {}
 
     @State private var material: PostHistoryAPI.Material?
-    @State private var deleteLocal = false
+    /// حُذفت النسخ المحلية من هذا الإيصال (لا رجعة فيه، فالعلامة لا تُرفع بعده).
+    @State private var deletedLocal = false
     @State private var copied = false
     @State private var showAllNumbers = false
     @State private var appeared = false
@@ -60,14 +62,16 @@ struct ReceiptScreen: View {
                 }
                 BroadcastRings(state: .done, diameter: 176)
                 headline
-                if !withLocalCopy.isEmpty {
-                    Toggle(isOn: $deleteLocal) {
+                if !withLocalCopy.isEmpty || deletedLocal {
+                    Toggle(isOn: Binding(get: { deletedLocal }, set: { if $0 { deleteLocalCopies() } })) {
                         VStack(alignment: .leading, spacing: VL.Space.s1) {
                             Text("receipt.deleteLocal").vlText(.headline).foregroundStyle(Color.vl.textPrimary)
-                            Text("receipt.deleteLocal.hint").vlText(.caption).foregroundStyle(Color.vl.textSecondary)
+                            Text(LocalizedStringKey(deletedLocal ? "receipt.deleteLocal.done" : "receipt.deleteLocal.hint"))
+                                .vlText(.caption).foregroundStyle(Color.vl.textSecondary)
                         }
                     }
                     .toggleStyle(VLCheckboxStyle())
+                    .disabled(deletedLocal)
                 }
                 if !deduplicated { slip }
                 if let details, !deduplicated { singleExtras(details) }
@@ -82,7 +86,6 @@ struct ReceiptScreen: View {
         .sensoryFeedback(.success, trigger: appeared) { _, new in new && !deduplicated }
         .onAppear { appeared = true }
         .task { await load() }
-        .onDisappear(perform: applyLocalCopyChoice)
     }
 
     private var headline: some View {
@@ -111,7 +114,7 @@ struct ReceiptScreen: View {
         VStack(alignment: .leading, spacing: VL.Space.s2) {
             ReceiptSlip(rows: slipRows)
             if receiptNumbers.count > 1 {
-                Button { withAnimation(.easeOut(duration: VL.Duration.base)) { showAllNumbers.toggle() } } label: {
+                Button { VLMotion.animate(reduceMotion) { showAllNumbers.toggle() } } label: {
                     if showAllNumbers { Text("receipt.numbers.hide") } else { Text("receipt.numbers.show \(receiptNumbers.count)") }
                 }
                 .buttonStyle(.vlGhost)
@@ -205,13 +208,15 @@ struct ReceiptScreen: View {
         return Image(uiImage: ui)
     }
 
-    /// قرار المراسل: يُطبَّق حين يغادر الإيصال؛ الإبقاء لا يُسجَّل فيعود السؤال مع الإيصال التالي لهذه المواد.
-    private func applyLocalCopyChoice() {
-        guard deleteLocal else { return }
+    /// قرار المراسل يُطبَّق لحظة وضع العلامة، لا عند مغادرة الإيصال: قفل الهاتف والإيصال مفتوح، أو إنهاء التطبيق، لا يُبقي النسخ
+    /// (للسلامة عند المصادرة). يشمل نسخ كل ملفات الإرسالة الواصلة. الإبقاء لا يُسجَّل فيعود السؤال مع الإيصال التالي لهذه المواد.
+    private func deleteLocalCopies() {
+        guard !deletedLocal else { return }
         for rec in withLocalCopy {
             queue.deleteLocalCopy(rec)
             settings.markLocalCopyHandled(rec.materialId)
         }
+        deletedLocal = true
     }
 
     /// المادة من الخادم (العنوان واطّلاع المشرف وإيصال الأصل)؛ بلا شبكة يكفي سجل الرفع المحلي.

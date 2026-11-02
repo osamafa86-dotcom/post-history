@@ -24,12 +24,13 @@ final class UploadQueueModel: ObservableObject {
     @Published private(set) var drafts: [MaterialDraft] = []
     /// إيصال وصل للتو: يُعرض شاشة الإيصال تلقائيًا، مرة للإرسالة كلها حين يصل آخر ملفاتها (06، ADR 0088).
     @Published var presentedReceipt: ReceiptTarget?
-    /// الإرسالات الأخيرة، الأحدث أولًا: تجمع ملفات الإرسالة الواحدة في دوائر واحدة وإيصال واحد.
+    /// الإرسالات الأخيرة، الأحدث أولًا: تجمع ملفات الإرسالة الواحدة في دوائر واحدة وإيصال واحد. مرآة `ledger.batches`.
     @Published private(set) var batches: [SendBatch] = []
     let engine: UploadEngine
     let settings: AppSettings
     let draftStore: FileDraftStore?
-    private let batchStore = SendBatchStore(fileURL: UploadServices.shared.batchesFile)
+    /// الإرسالات بحماية سجلات الرفع نفسها، وآخر حالة جيدة في الذاكرة لا تمحوها قراءة فاشلة والهاتف مقفل (ADR 0088).
+    private let ledger: SendBatchLedger
     private let transcoder: any ProxyTranscoder = AVFoundationProxyTranscoder()
     private var proxyTasks: [UUID: Task<Void, Never>] = [:]
     private var watcher: Task<Void, Never>?
@@ -42,7 +43,8 @@ final class UploadQueueModel: ObservableObject {
         self.settings = settings
         draftStore = try? FileDraftStore(directory: UploadServices.shared.draftsDirectory)
         drafts = draftStore?.loadAll() ?? []
-        batches = batchStore.load()
+        ledger = SendBatchLedger(store: SendBatchStore(fileURL: UploadServices.shared.batchesFile))
+        batches = ledger.batches
         // نسخ الاختيار المؤقتة التي خلّفها إنهاء التطبيق قبل نقلها إلى مجلد الرفع.
         PickedTempFiles.sweep(in: FileManager.default.temporaryDirectory)
     }
@@ -98,43 +100,72 @@ final class UploadQueueModel: ObservableObject {
         localCopies = Set(records.filter { UploadServices.shared.localCopyExists(relativePath: $0.sourcePath) }.map(\.id))
     }
 
+    /// عودة المشهد نشطًا (الهاتف مفتوح): يُعاد ما تعذّرت قراءته في إطلاق خلفي والهاتف مقفل؛ قراءة فاشلة لا تمحو شيئًا.
+    func reloadFromDisk() {
+        batches = ledger.refresh()
+        drafts = draftStore?.loadAll() ?? []
+    }
+
     private func receiptArrived(_ id: UUID) async {
         guard let rec = await engine.record(id) else { return }
         if rec.kind == .original {
             records = await engine.allRecords()
-            presentReceiptIfComplete(for: rec)
+            presentReceiptIfDue(for: rec)
         }
         // النسخة الخفيفة مشتقة يصنعها التطبيق: تُحذف دائمًا بعد إيصالها. الأصل قرار المراسل.
         guard rec.kind == .proxy || settings.deleteLocalAfterReceipt else { return }
         UploadServices.shared.deleteLocalCopy(relativePath: rec.sourcePath)
     }
 
-    /// ملف من إرسالة: يُعرض إيصالها مرة حين يصل كل ما بقي منها. ملف بلا إرسالة («لقطة بديلة» أو من إصدار سابق): إيصاله وحده.
-    private func presentReceiptIfComplete(for rec: UploadRecord) {
-        guard let batch = SendBatchStore.batch(containing: rec.materialId, in: batches) else {
-            presentedReceipt = ReceiptTarget(materialId: rec.materialId, recordId: rec.id)
-            return
+    /// ملف من إرسالة: يُعرض إيصالها مرة حين يصل كل ما بقي منها وقد أُغلقت حلقتها. ملف بلا إرسالة («لقطة بديلة» أو من إصدار سابق):
+    /// إيصاله وحده. القرار في `SendBatchLedger` (MaterialsCore، مختبر)؛ والقراءة قبله لا تمحو شيئًا إن كان الملف لا يُقرأ.
+    private func presentReceiptIfDue(for rec: UploadRecord) {
+        ledger.refresh()
+        present(ledger.receiptDue(forMaterial: rec.materialId) { items(of: $0) }, record: rec)
+    }
+
+    private func present(_ scope: SendBatchLedger.ReceiptScope?, record rec: UploadRecord?) {
+        switch scope {
+        case .material(let materialId)?:
+            presentedReceipt = ReceiptTarget(materialId: materialId, recordId: rec?.id)
+        case .batch(let batchId)?:
+            // يُعلَّم في الذاكرة قبل العرض: لا يتكرر ولو تعذّر الحفظ.
+            ledger.markReceiptShown(batchId)
+            guard let materialId = rec?.materialId ?? ledger.batches.first(where: { $0.id == batchId })?.materialIds.last else { break }
+            presentedReceipt = ReceiptTarget(materialId: materialId, recordId: rec?.id, batchId: batchId)
+        case nil:
+            break
         }
-        guard !batch.receiptShown, UploadOverview.isComplete(originals(of: batch).map { item($0) }) else { return }
-        batches = batchStore.markReceiptShown(batch.id)
-        presentedReceipt = ReceiptTarget(materialId: rec.materialId, recordId: rec.id, batchId: batch.id)
+        batches = ledger.batches
     }
 
     // MARK: الإرسالات وما تعرضه الشاشات
 
-    /// تُسجَّل بعد دخول ملفاتها الطابور (كلها أو ما دخل منها قبل فشل جزئي).
-    func recordBatch(title: String, materialIds: [UUID]) {
-        guard !materialIds.isEmpty else { return }
-        batches = batchStore.record(SendBatch(title: title, materialIds: materialIds))
+    /// «أرسل N مواد» (`BatchedSubmission`): الإرسالة تُسجَّل بمفاتيح ملفاتها قبل أول طلب، ومادة كل ملف تُضاف إليها قبل أن يدخل
+    /// الطابور، وتُغلق بعد الحلقة. فإن وصلت ملفاتها كلها أثناء الحلقة يُعرض إيصالها الواحد عند الإغلاق.
+    func submit(_ draft: MaterialDraft, dynamicFields: [String: JSONValue], lightCopy: ProxyChoice,
+                create: (String, MaterialCreate) async throws -> UUID) async -> BatchedSubmission.Outcome {
+        let result = await BatchedSubmission.run(draft, dynamicFields: dynamicFields, ledger: ledger, create: create) { file, materialId, body in
+            batches = ledger.batches
+            try await enqueue(relativePath: file.relativePath, materialId: materialId, filename: file.filename, mimeType: file.mimeType,
+                              lightCopy: file.isVideo ? lightCopy : .originalOnly, title: body.title, priority: body.priority)
+        }
+        batches = ledger.batches
+        await refresh()
+        present(ledger.receiptDue(forBatch: result.batchId) { items(of: $0) }, record: nil)
+        return result
     }
 
     /// الإبطال والمسح: لا تبقى إرسالات تشير إلى طابور مُحي.
     func forgetBatches() {
-        batchStore.save([])
+        ledger.forgetAll()
         batches = []
     }
 
     var originals: [UploadRecord] { records.filter { $0.kind == .original } }
+
+    /// أصول الإرسالة كما تحسبها شاشة الرفع (لقرار الإيصال).
+    private func items(of batch: SendBatch) -> [UploadItem] { originals(of: batch).map { item($0) } }
 
     func originals(of batch: SendBatch) -> [UploadRecord] {
         let ids = Set(batch.materialIds)

@@ -15,10 +15,14 @@ struct DynamicFormView: View {
     private var isArabic: Bool { Locale.current.language.languageCode?.identifier == "ar" }
     private func text(_ l: UploadFormLocalized) -> String { isArabic ? l.ar : l.en }
 
+    /// معرّف الحقل للتمرير إليه (`ScrollViewProxy.scrollTo`) حين يكون أول خطأ يمنع الإرسال.
+    static func anchor(_ key: String) -> String { "form.field.\(key)" }
+
     var body: some View {
         ForEach(FormValidator.visibleFields(form: form, materialType: materialType, values: values).filter(include), id: \.key) { field in
             FieldControl(field: field, label: text(field.label), optionLabel: text, help: field.help.map(text),
                          errorKey: errors.first(where: { $0.field == field.key })?.code.labelKey, value: binding(field.key))
+                .id(Self.anchor(field.key))
         }
     }
 

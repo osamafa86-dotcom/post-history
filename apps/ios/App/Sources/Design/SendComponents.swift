@@ -95,14 +95,23 @@ struct CoverageTypePicker: View {
 /// وما لم يُضَف يُقال سببه. يلتفّ ولا يدفع «أرسل» خارج الشاشة.
 struct TagInput: View {
     @Binding var tags: [String]
+    /// ما يُكتب ولم يُثبَّت بعد؛ عند الشاشة كي يُثبَّت عند «أرسل» (لمس الزرّ لا ينزع التركيز من الحقل).
+    @Binding var text: String
     let history: [String]
     var showsError = false
     @FocusState.Binding var focused: Bool
 
-    @State private var text = ""
     @State private var problem: MaterialTagRules.AddResult?
 
     private var suggestions: [String] { TagSuggestions.match(text, history: history, excluding: tags) }
+
+    /// ما يُكتب ولا يُضاف (أطول من الحد أو فوق العدد) يُقال أثناء الكتابة، لا بعد «تم» وحدها.
+    private var shownProblem: MaterialTagRules.AddResult? {
+        if let problem { return problem }
+        var probe = tags
+        let result = MaterialTagRules.add(text, to: &probe)
+        return result == .tooLong || result == .limitReached ? result : nil
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: VL.Space.s2) {
@@ -142,7 +151,7 @@ struct TagInput: View {
             .overlay(RoundedRectangle(cornerRadius: VL.Radius.md, style: .continuous)
                 .strokeBorder(showsError ? Color.vl.stateDanger : (focused ? Color.vl.actionPrimary : Color.vl.borderEdge),
                               lineWidth: focused || showsError ? VL.Border.field + 0.5 : VL.Border.field))
-            if let problem, let key = Self.problemKey(problem) {
+            if let shownProblem, let key = Self.problemKey(shownProblem) {
                 VLFieldError(text: Text(key))
             }
             if !suggestions.isEmpty, tags.count < MaterialTagRules.maxCount {

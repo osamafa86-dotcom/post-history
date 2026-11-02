@@ -1,4 +1,6 @@
 import Foundation
+import FormEngine
+import PostHistoryAPI
 
 /// قاعدة الوسم كما في العقد (`MaterialTag`، ADR 0086)، بالمجموعات نفسها من المحارف:
 /// 1–40 نقطة ترميز، بلا مسافة من صنف `\s` في JSON Schema في أوله ولا في آخره، وبلا محارف تحكم ولا محارف اتجاه في أي موضع؛
@@ -85,6 +87,16 @@ public enum MaterialTagRules {
         return .added(tag)
     }
 
+    /// وسم مكتوب في الحقل لم يُثبَّت بفاصلة أو «تم» أو مغادرة الحقل (لمس «أرسل» لا ينزع التركيز): يُثبَّت عند الإرسال إن صلح.
+    /// يعيد `true` حين يُفرَّغ الحقل: أُضيف، أو لا شيء فيه، أو مضاف من قبل. `false`: لا يُضاف (طويل أو فوق الحد) فيمنع الإرسال.
+    @discardableResult
+    public static func commitPending(_ text: String, to tags: inout [String]) -> Bool {
+        switch add(text, to: &tags) {
+        case .added, .empty, .duplicate: return true
+        case .tooLong, .limitReached: return false
+        }
+    }
+
     /// الفواصل التي تُنهي وسمًا أثناء الكتابة: الفاصلة اللاتينية والعربية والسطر الجديد (كما في النموذج الحيّ).
     public static let separators: Set<Character> = [",", "\u{060C}", "\n"]
 
@@ -159,27 +171,39 @@ public enum CaptureDate {
 /// ما ينقص قبل «أرسل N مواد»، بترتيب الشاشة (reporter-v2.md «الإرسال»): الزرّ معطّل ونصّه أول سبب.
 public enum SendReadiness {
     public enum Reason: String, CaseIterable, Sendable {
-        case files, title, titleTooLongForSet, type, tags, place, sensitivity, followups, displayName, pseudonym
-        /// حقول إلزامية في نموذج المكتب لم تُملأ.
+        case files, title, titleTooLongForSet, type
+        /// وسم مكتوب في الحقل لا يُضاف (أطول من 40 أو فوق 12): لا يضيع بصمت عند «أرسل».
+        case pendingTag
+        case tags, place, sensitivity, followups, displayName, pseudonym
+        /// حقل مطلوب في نموذج المكتب فارغ.
         case formFields
+        /// قيمة في حقل من نموذج المكتب (مطلوب أو تحت «المزيد») تخالف قاعدته: طول أو نمط أو حدّ أو خيار.
+        case formInvalid
         /// النموذج يُحمَّل؛ والآخر: لا شبكة ولا نسخة محفوظة منه (الإرسال يحتاج `form_version`).
         case formLoading, formUnavailable
 
         /// مفتاح النص في `Localizable.xcstrings`.
         public var labelKey: String { "send.need.\(rawValue)" }
+
+        /// السبب خطأ في حقل من نموذج المكتب: الشاشة تكشف أخطاءه وتمرّر إلى أولها.
+        public var isFormError: Bool { self == .formFields || self == .formInvalid }
     }
 
-    /// حالة نموذج المكتب كما تعرفها الشاشة.
-    public enum FormState: Equatable, Sendable { case ready, missingFields, loading, unavailable }
+    /// حالة نموذج المكتب كما تعرفها الشاشة (`SendFormCheck.state` حين يُحمَّل).
+    public enum FormState: Equatable, Sendable { case ready, missingFields, invalidFields, loading, unavailable }
 
-    public static func reasons(_ d: MaterialDraft, form: FormState) -> [Reason] {
+    /// `pendingTag`: ما في حقل الوسوم ولم يُثبَّت؛ يُحسب كأنه أُضيف عند «أرسل» (`MaterialTagRules.commitPending`).
+    public static func reasons(_ d: MaterialDraft, form: FormState, pendingTag: String = "") -> [Reason] {
         var out: [Reason] = []
         if d.files.isEmpty { out.append(.files) }
         let issues = DraftValidator.fieldIssues(d)
         if issues.contains(.titleLength) { out.append(.title) }
         if issues.contains(.titleTooLongForSet) { out.append(.titleTooLongForSet) }
         if issues.contains(.typeMissing) { out.append(.type) }
-        if d.tags.isEmpty || issues.contains(.tagsInvalid) { out.append(.tags) }
+        var tags = d.tags
+        // ما لا يُضاف يُسمّى قبل «أضف وسمًا»: المراسل كتب وسمًا ويحتاج أن يعرف لماذا لا يُحسب.
+        if !MaterialTagRules.commitPending(pendingTag, to: &tags) { out.append(.pendingTag) }
+        if tags.isEmpty || issues.contains(.tagsInvalid) { out.append(.tags) }
         if issues.contains(.governorateMissing) || issues.contains(.cityMissing) { out.append(.place) }
         switch d.sensitivityGate {
         case nil: out.append(.sensitivity)
@@ -191,6 +215,7 @@ public enum SendReadiness {
         switch form {
         case .ready: break
         case .missingFields: out.append(.formFields)
+        case .invalidFields: out.append(.formInvalid)
         case .loading: out.append(.formLoading)
         case .unavailable: out.append(.formUnavailable)
         }
@@ -198,5 +223,41 @@ public enum SendReadiness {
     }
 
     /// أول ما ينقص، أو `nil` حين يكتمل كل شيء.
-    public static func firstReason(_ d: MaterialDraft, form: FormState) -> Reason? { reasons(d, form: form).first }
+    public static func firstReason(_ d: MaterialDraft, form: FormState, pendingTag: String = "") -> Reason? {
+        reasons(d, form: form, pendingTag: pendingTag).first
+    }
+}
+
+/// نموذج المكتب كما تعرضه شاشة الإرسال (ADR 0088): الحقول الإلزامية فوق الزرّ، والاختيارية تحت «المزيد».
+/// الأخطاء من `FormValidator` المشترك كما هي (خطأ واحد لكل حقل ظاهر)، وأولها بترتيب الشاشة يحدّد سبب التعطيل:
+/// حقل مطلوب فارغ «ناقص» (`formFields`)، وقيمة تخالف قاعدة حقلها «غير صالحة» (`formInvalid`) ولو في حقل اختياري.
+public struct SendFormCheck: Equatable, Sendable {
+    /// أخطاء الحقول الظاهرة بترتيب الشاشة: الإلزامية أولًا، ثم ما تحت «المزيد»، وكلٌّ بترتيب النموذج.
+    public let errors: [FieldError]
+    /// مفاتيح الحقول الظاهرة الإلزامية (فوق الزرّ).
+    public let requiredKeys: Set<String>
+
+    public init(form: UploadForm, materialType: String, values: [String: FormValue]) {
+        let visible = FormValidator.visibleFields(form: form, materialType: materialType, values: values)
+        let required = Set(visible.filter(\.required).map(\.key))
+        let all = FormValidator.validate(form: form, materialType: materialType, values: values).errors
+        errors = all.filter { required.contains($0.field) } + all.filter { !required.contains($0.field) }
+        requiredKeys = required
+    }
+
+    /// أول خطأ بترتيب الشاشة؛ إليه تمرّر الشاشة.
+    public var first: FieldError? { errors.first }
+
+    /// حقل أول خطأ تحت «المزيد»: تفتحه الشاشة إن كان مطويًّا قبل أن تمرّر إليه.
+    public var firstIsUnderMore: Bool { first.map { !requiredKeys.contains($0.field) } ?? false }
+
+    public var state: SendReadiness.FormState {
+        guard let first else { return .ready }
+        return first.code == .required ? .missingFields : .invalidFields
+    }
+
+    /// ما يُعرض تحت كل حقل: خطأ القيمة فورًا، و«مطلوب» بعد أن يصير النموذج ما يمنع الإرسال (`revealRequired`)، فلا تبدأ الشاشة حمراء.
+    public func shownErrors(revealRequired: Bool) -> [FieldError] {
+        errors.filter { $0.code != .required || revealRequired }
+    }
 }

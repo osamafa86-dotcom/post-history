@@ -14,6 +14,7 @@ struct SendScreen: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var queue: UploadQueueModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var draft: MaterialDraft
     private let opensPicker: Bool
@@ -34,6 +35,12 @@ struct SendScreen: View {
     @State private var confirmClose = false
     @State private var editingPlace = false
     @State private var showMore = false
+    /// ما في حقل الوسوم ولم يُثبَّت بعد؛ يُثبَّت عند «أرسل» إن صلح، وإلا فهو سبب التعطيل.
+    @State private var pendingTag = ""
+    /// «مطلوب» تحت حقول النموذج الفارغة يظهر منذ صار النموذج ما يمنع الإرسال، لا من أول الشاشة.
+    @State private var revealRequired = false
+    /// الحقل الذي تمرّر إليه الشاشة (أول خطأ في النموذج).
+    @State private var scrollTarget: String?
     @FocusState private var titleFocused: Bool
     @FocusState private var tagsFocused: Bool
 
@@ -52,37 +59,51 @@ struct SendScreen: View {
         MaterialType.allCases.first { draft.materialTypes.contains($0) && $0 != .unknownDefaultOpenApi } ?? .report
     }
 
-    private var formState: SendReadiness.FormState {
-        guard let form else { return formUnavailable ? .unavailable : .loading }
-        return FormValidator.validate(form: form, materialType: primaryType.rawValue, values: draft.dynamicValues).valid ? .ready : .missingFields
+    /// أخطاء نموذج المكتب بترتيب الشاشة (`SendFormCheck`، مختبر): «ناقص» غير «غير صالح»، وكل حقل يعرض خطأه.
+    private var formCheck: SendFormCheck? {
+        form.map { SendFormCheck(form: $0, materialType: primaryType.rawValue, values: draft.dynamicValues) }
     }
 
-    private var reason: SendReadiness.Reason? { SendReadiness.firstReason(draft, form: formState) }
+    private var formState: SendReadiness.FormState {
+        guard let formCheck else { return formUnavailable ? .unavailable : .loading }
+        return formCheck.state
+    }
+
+    private var formErrors: [FieldError] { formCheck?.shownErrors(revealRequired: revealRequired) ?? [] }
+
+    private var reason: SendReadiness.Reason? { SendReadiness.firstReason(draft, form: formState, pendingTag: pendingTag) }
 
     var body: some View {
         VStack(spacing: 0) {
             header
-            ScrollView {
-                VStack(alignment: .leading, spacing: VL.Space.s6) {
-                    filesSection
-                    TitleField(title: $draft.title, fileCount: draft.files.count, focused: $titleFocused)
-                        .onSubmit { tagsFocused = true }
-                    CoverageTypePicker(selection: $draft.materialTypes)
-                    TagInput(tags: $draft.tags, history: memory.recentTags, focused: $tagsFocused)
-                    HStack(alignment: .top, spacing: VL.Space.s3) {
-                        LocationChip(governorate: draft.governorate, city: draft.city,
-                                     remembered: memory.isRemembered(governorate: draft.governorate, city: draft.city)) { editingPlace = true }
-                        UrgentToggle(isOn: Binding(get: { draft.priority == .urgent }, set: { draft.priority = $0 ? .urgent : .normal }))
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: VL.Space.s6) {
+                        filesSection
+                        TitleField(title: $draft.title, fileCount: draft.files.count, focused: $titleFocused)
+                            .onSubmit { tagsFocused = true }
+                        CoverageTypePicker(selection: $draft.materialTypes)
+                        TagInput(tags: $draft.tags, text: $pendingTag, history: memory.recentTags, focused: $tagsFocused)
+                        HStack(alignment: .top, spacing: VL.Space.s3) {
+                            LocationChip(governorate: draft.governorate, city: draft.city,
+                                         remembered: memory.isRemembered(governorate: draft.governorate, city: draft.city)) { editingPlace = true }
+                            UrgentToggle(isOn: Binding(get: { draft.priority == .urgent }, set: { draft.priority = $0 ? .urgent : .normal }))
+                        }
+                        SensitivityQuestion(draft: $draft)
+                        requiredFormFields
+                        moreSection
                     }
-                    SensitivityQuestion(draft: $draft)
-                    requiredFormFields
-                    moreSection
+                    .padding(.horizontal, VL.Space.s5)
+                    .padding(.top, VL.Space.s3)
+                    .padding(.bottom, VL.Space.s7)
                 }
-                .padding(.horizontal, VL.Space.s5)
-                .padding(.top, VL.Space.s3)
-                .padding(.bottom, VL.Space.s7)
+                .scrollDismissesKeyboard(.interactively)
+                .onChange(of: scrollTarget) { _, target in
+                    guard let target else { return }
+                    VLMotion.animate(reduceMotion) { proxy.scrollTo(target, anchor: .center) }
+                    scrollTarget = nil
+                }
             }
-            .scrollDismissesKeyboard(.interactively)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { sendBar }
         .vlScreen()
@@ -109,6 +130,12 @@ struct SendScreen: View {
         .task { await start() }
         .task(id: primaryType) { await loadForm() }
         .onChange(of: draft.priority) { _, _ in Task { await suggestLightCopy() } }
+        .onChange(of: reason) { old, new in
+            guard let new, new.isFormError else { return }
+            revealRequired = true
+            // صار النموذج ما يمنع الإرسال بعد سبب آخر (لا أثناء الكتابة في حقل كان سليمًا): الشاشة تأخذ المراسل إلى أول خطأ.
+            if let old, old != new { revealFirstFormError() }
+        }
     }
 
     // MARK: الرأس والملفات
@@ -247,14 +274,14 @@ struct SendScreen: View {
         if let form, FormValidator.visibleFields(form: form, materialType: primaryType.rawValue, values: draft.dynamicValues).contains(where: \.required) {
             VStack(alignment: .leading, spacing: VL.Space.s4) {
                 VLSectionHeader("send.form.required")
-                DynamicFormView(form: form, materialType: primaryType.rawValue, values: $draft.dynamicValues, errors: [], include: { $0.required })
+                DynamicFormView(form: form, materialType: primaryType.rawValue, values: $draft.dynamicValues, errors: formErrors, include: { $0.required })
             }
         }
     }
 
     private var moreSection: some View {
         VStack(alignment: .leading, spacing: VL.Space.s4) {
-            Button { withAnimation(.easeOut(duration: VL.Duration.base)) { showMore.toggle() } } label: {
+            Button { VLMotion.animate(reduceMotion) { showMore.toggle() } } label: {
                 HStack {
                     Text("send.more").vlText(.headline).foregroundStyle(Color.vl.textPrimary)
                     Spacer()
@@ -280,13 +307,26 @@ struct SendScreen: View {
                     displayNameEditor
                     if let form {
                         if formFromCache { StateBadge(labelKey: "a1.form.cached", tone: .warn, systemImage: "clock") }
-                        DynamicFormView(form: form, materialType: primaryType.rawValue, values: $draft.dynamicValues, errors: [], include: { !$0.required })
+                        DynamicFormView(form: form, materialType: primaryType.rawValue, values: $draft.dynamicValues, errors: formErrors, include: { !$0.required })
                     }
                 }
             }
             if formUnavailable, form == nil {
                 VLNote(tone: .warn, systemImage: "wifi.slash", text: Text("a1.form.unavailable"))
             }
+        }
+    }
+
+    /// أول خطأ في النموذج بترتيب الشاشة: «المزيد» يُفتح إن كان الحقل تحته ومطويًّا، ثم تمرّر الشاشة إلى الحقل.
+    private func revealFirstFormError() {
+        guard let check = formCheck, let first = check.first else { return }
+        let target = DynamicFormView.anchor(first.field)
+        guard check.firstIsUnderMore, !showMore else { scrollTarget = target; return }
+        VLMotion.animate(reduceMotion) { showMore = true }
+        // يُرسم الحقل تحت «المزيد» أولًا، ثم يُمرَّر إليه.
+        Task {
+            try? await Task.sleep(for: .milliseconds(150))
+            scrollTarget = target
         }
     }
 
@@ -366,6 +406,9 @@ struct SendScreen: View {
     }
 
     private func submit() async {
+        // وسم كُتب ولم يُثبَّت: لمس «أرسل» لا ينزع التركيز من الحقل، فيُثبَّت هنا قبل الفحص (وما لا يُضاف هو سبب التعطيل).
+        guard MaterialTagRules.commitPending(pendingTag, to: &draft.tags) else { return }
+        pendingTag = ""
         guard SendReadiness.firstReason(draft, form: formState) == nil, let form else { return }
         submitError = nil
         busy = true
@@ -378,26 +421,21 @@ struct SendScreen: View {
         // اختيار النسخة الخفيفة واحد للإرسالة ويسري على كل فيديو فيها؛ الصور أصلًا فقط.
         let choice = ProxyChoice(rawValue: ready.lightCopy ?? "") ?? .originalOnly
         let api = app.api
-        var created: [UUID] = []
         // مادة لكل ملف بالبيانات المشتركة نفسها (ADR 0081)؛ لكل ملف مفتاح إنشاء ثابت، وما دخل الطابور يُسقَط من المسودة.
-        let outcome = await DraftSubmission.run(ready, dynamicFields: dynamic) { key, body in
+        // والإرسالة تُسجَّل قبل أول ملف وتُغلق بعد آخره، فيجمعها إيصال واحد (ADR 0088).
+        let result = await queue.submit(ready, dynamicFields: dynamic, lightCopy: choice) { key, body in
             try await MaterialsAPI.createMaterial(idempotencyKey: key, materialCreate: body, apiConfiguration: api).id
-        } enqueue: { file, materialId, body in
-            try await queue.enqueue(relativePath: file.relativePath, materialId: materialId, filename: file.filename, mimeType: file.mimeType,
-                                    lightCopy: file.isVideo ? choice : .originalOnly, title: body.title, priority: body.priority)
-            created.append(materialId)
         }
-        queue.recordBatch(title: ready.title.trimmingCharacters(in: .whitespacesAndNewlines), materialIds: created)
-        if !created.isEmpty {
+        if !result.queued.isEmpty {
             app.memory.update { $0.rememberSend(governorate: ready.governorate, city: ready.city, tags: ready.tags) }
         }
-        if outcome.error == nil {
+        if result.submission.error == nil {
             queue.deleteDraft(ready.id)
             dismiss()
             onSent()
         } else {
             submitError = "material.error.create"
-            draft = outcome.draft
+            draft = result.submission.draft
             queue.saveDraft(draft)
         }
     }

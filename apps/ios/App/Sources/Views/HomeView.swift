@@ -15,6 +15,9 @@ struct HomeView: View {
     @State private var path: [HomeRoute] = []
     @State private var sending = false
     @State private var editingDraft: MaterialDraft?
+    /// شاشة الإرسال ظاهرة حتى يكتمل إغلاقها. الإيصال ينتظرها: إرسالة وصلت ملفاتها أثناء الحلقة يُقرَّر إيصالها عند «أرسل» نفسها،
+    /// وورقةٌ تُطلب فوق غطاء يُغلق لا تظهر، وقد عُلِّم الإيصال معروضًا فلا يعود.
+    @State private var sendCoverShown = false
     @State private var focusMaterial: UUID?
     @State private var draftToDelete: MaterialDraft?
 
@@ -43,9 +46,14 @@ struct HomeView: View {
             }
         }
         .tint(Color.vl.actionPrimary)
-        .fullScreenCover(isPresented: $sending) { SendScreen(onSent: showUploads) }
-        .fullScreenCover(item: $editingDraft) { draft in SendScreen(draft: draft, onSent: showUploads) }
-        .sheet(item: $queue.presentedReceipt) { target in
+        .fullScreenCover(isPresented: $sending, onDismiss: { sendCoverShown = false }) {
+            SendScreen(onSent: showUploads).onAppear { sendCoverShown = true }
+        }
+        .fullScreenCover(item: $editingDraft, onDismiss: { sendCoverShown = false }) { draft in
+            SendScreen(draft: draft, onSent: showUploads).onAppear { sendCoverShown = true }
+        }
+        .sheet(item: Binding(get: { sending || editingDraft != nil || sendCoverShown ? nil : queue.presentedReceipt },
+                             set: { queue.presentedReceipt = $0 })) { target in
             ReceiptScreen(target: target, onSendAnother: sendAfterSheet, onMyMaterials: { path = [.materials] })
         }
         .confirmationDialog("draft.delete.confirm.title", isPresented: Binding(get: { draftToDelete != nil }, set: { if !$0 { draftToDelete = nil } }),

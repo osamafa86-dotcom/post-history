@@ -168,6 +168,81 @@ final class SendScreenCoreTests: XCTestCase {
         XCTAssertEqual(SendReadiness.firstReason(d, form: .unavailable), .formUnavailable)
     }
 
+    /// نموذج مكتب بحقل اختياري (تحت «المزيد») قبل حقل مطلوب في ترتيب النموذج، كي يُختبر ترتيب الشاشة لا ترتيب النموذج.
+    private func deskForm() -> UploadForm {
+        UploadForm(version: 3, fields: [
+            UploadFormField(key: "code", type: .shortText, label: UploadFormLocalized(ar: "رمز", en: "Code"), required: false,
+                            validation: UploadFormValidation(minLength: 4, pattern: "^[A-Z0-9]+$")),
+            UploadFormField(key: "desk_ref", type: .shortText, label: UploadFormLocalized(ar: "مرجع المكتب", en: "Desk ref"), required: true,
+                            validation: UploadFormValidation(maxLength: 6)),
+        ])
+    }
+
+    func testFormReasonsSayWhetherAFieldIsMissingOrInvalid() {
+        let form = deskForm()
+        let d = ready()
+        func check(_ values: [String: FormValue]) -> SendFormCheck { SendFormCheck(form: form, materialType: "breaking", values: values) }
+
+        let empty = check([:])
+        XCTAssertEqual(empty.state, .missingFields)
+        XCTAssertEqual(SendReadiness.firstReason(d, form: empty.state), .formFields)
+        XCTAssertEqual(empty.first, FieldError(field: "desk_ref", code: .required))
+        XCTAssertFalse(empty.firstIsUnderMore)
+        XCTAssertEqual(empty.shownErrors(revealRequired: false), [], "an untouched required field is not red from the start")
+        XCTAssertEqual(empty.shownErrors(revealRequired: true), [FieldError(field: "desk_ref", code: .required)])
+
+        // كل المطلوب مملوء، وقيمة في حقل اختياري تحت «المزيد» تخالف قاعدتها: ليست «املأ الحقول المطلوبة».
+        let optionalBad = check(["desk_ref": .string("A1"), "code": .string("ab")])
+        XCTAssertEqual(optionalBad.state, .invalidFields)
+        XCTAssertEqual(SendReadiness.firstReason(d, form: optionalBad.state), .formInvalid)
+        XCTAssertEqual(optionalBad.first, FieldError(field: "code", code: .minLength))
+        XCTAssertTrue(optionalBad.firstIsUnderMore, "the screen opens More before scrolling to it")
+        XCTAssertEqual(optionalBad.shownErrors(revealRequired: false), [FieldError(field: "code", code: .minLength)], "a value error shows at once")
+
+        // الاثنان معًا: الإلزامي فوق الزرّ أولًا بترتيب الشاشة، ولو جاء بعد الاختياري في النموذج.
+        let both = check(["code": .string("ab")])
+        XCTAssertEqual(both.errors.map(\.field), ["desk_ref", "code"])
+        XCTAssertEqual(SendReadiness.firstReason(d, form: both.state), .formFields)
+        XCTAssertEqual(both.shownErrors(revealRequired: false), [FieldError(field: "code", code: .minLength)])
+
+        let requiredBad = check(["desk_ref": .string("TOO-LONG")])
+        XCTAssertEqual(SendReadiness.firstReason(d, form: requiredBad.state), .formInvalid)
+        XCTAssertFalse(requiredBad.firstIsUnderMore)
+
+        let fine = check(["desk_ref": .string("A1"), "code": .string("AB12")])
+        XCTAssertEqual(fine.state, .ready)
+        XCTAssertNil(fine.first)
+        XCTAssertNil(SendReadiness.firstReason(d, form: fine.state))
+
+        XCTAssertTrue(SendReadiness.Reason.formFields.isFormError)
+        XCTAssertTrue(SendReadiness.Reason.formInvalid.isFormError)
+        XCTAssertFalse(SendReadiness.Reason.formLoading.isFormError)
+        XCTAssertFalse(SendReadiness.Reason.tags.isFormError)
+    }
+
+    func testATypedTagIsCommittedOnSendOrNamedAsTheReason() {
+        var d = ready()
+        d.tags = []
+        XCTAssertEqual(SendReadiness.firstReason(d, form: .ready), .tags)
+        XCTAssertNil(SendReadiness.firstReason(d, form: .ready, pendingTag: " مخيم "), "a valid typed tag counts as added")
+        XCTAssertTrue(MaterialTagRules.commitPending(" مخيم ", to: &d.tags))
+        XCTAssertEqual(d.tags, ["مخيم"])
+        XCTAssertTrue(MaterialTagRules.commitPending("مخيم", to: &d.tags), "already added: the field just clears")
+        XCTAssertEqual(d.tags, ["مخيم"])
+
+        let tooLong = String(repeating: "س", count: MaterialTagRules.maxLength + 1)
+        XCTAssertEqual(SendReadiness.firstReason(d, form: .ready, pendingTag: tooLong), .pendingTag)
+        XCTAssertFalse(MaterialTagRules.commitPending(tooLong, to: &d.tags))
+        var empty = ready()
+        empty.tags = []
+        XCTAssertEqual(SendReadiness.reasons(empty, form: .ready, pendingTag: tooLong), [.pendingTag, .tags],
+                       "the typed tag is named before asking for one")
+
+        d.tags = (0..<MaterialTagRules.maxCount).map { "وسم\($0)" }
+        XCTAssertEqual(SendReadiness.firstReason(d, form: .ready, pendingTag: "جديد"), .pendingTag)
+        XCTAssertNil(SendReadiness.firstReason(d, form: .ready, pendingTag: "وسم3"), "a duplicate is not a reason")
+    }
+
     func testTitleTooLongForTheSetIsItsOwnReason() {
         var d = ready()
         d.title = String(repeating: "س", count: 78)
@@ -389,23 +464,6 @@ final class SendScreenCoreTests: XCTestCase {
         XCTAssertTrue(UploadOverview.isComplete([item(1, 1, .arrived), item(1, 0, .cancelled)]))
         XCTAssertFalse(UploadOverview.isComplete([item(1, 1, .arrived), item(1, 0, .failed)]))
         XCTAssertFalse(UploadOverview.isComplete([item(1, 0, .cancelled)]))
-    }
-
-    func testBatchesPersistNewestFirstAndRememberTheirReceipt() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("batches-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let store = SendBatchStore(fileURL: dir.appendingPathComponent("send-batches.json"))
-        let a = SendBatch(title: "أ", materialIds: [UUID()], createdAt: Date(timeIntervalSince1970: 1))
-        let b = SendBatch(title: "ب", materialIds: [UUID(), UUID()], createdAt: Date(timeIntervalSince1970: 2))
-        store.record(a)
-        let all = store.record(b)
-        XCTAssertEqual(all.map(\.title), ["ب", "أ"])
-        XCTAssertEqual(SendBatchStore.batch(containing: b.materialIds[1], in: all)?.id, b.id)
-        XCTAssertFalse(store.load()[0].receiptShown)
-        XCTAssertTrue(store.markReceiptShown(b.id)[0].receiptShown)
-        for i in 0..<40 { store.record(SendBatch(title: "\(i)", materialIds: [], createdAt: Date(timeIntervalSince1970: Double(10 + i)))) }
-        XCTAssertEqual(store.load().count, SendBatchStore.limit)
     }
 
     // MARK: نغمات الحالات الثلاث

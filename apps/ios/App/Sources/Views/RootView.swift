@@ -30,6 +30,8 @@ struct RootView: View {
         .tint(Color.vl.actionPrimary)
         .onChange(of: scenePhase) { _, phase in
             if case .signedIn = app.phase { lock.sceneChanged(to: phase, signedIn: true) } else { lock.sceneChanged(to: phase, signedIn: false) }
+            // الهاتف فُتح: ما تعذّرت قراءته في إطلاق خلفي والهاتف مقفل (الإرسالات والمسودات) يُقرأ الآن.
+            if phase == .active { app.uploads.reloadFromDisk() }
         }
     }
 }

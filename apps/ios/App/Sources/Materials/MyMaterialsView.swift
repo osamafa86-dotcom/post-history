@@ -62,6 +62,7 @@ struct MyMaterialsView: View {
 
     @EnvironmentObject private var model: MyMaterialsModel
     @EnvironmentObject private var queue: UploadQueueModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var focus: UUID?
     var onNewMaterial: () -> Void = {}
 
@@ -137,7 +138,7 @@ struct MyMaterialsView: View {
     }
 
     private func collapsedCard(_ m: PostHistoryAPI.Material) -> some View {
-        Button { withAnimation(.easeOut(duration: VL.Duration.base)) { expanded = m.id } } label: {
+        Button { VLMotion.animate(reduceMotion) { expanded = m.id } } label: {
             VLCard {
                 header(m)
                 ThreeStateBadges(status: MaterialStatus(m), axis: .horizontal)
