@@ -15,9 +15,9 @@ test("Arabic RTL inbox, independent states, explicit filters, pagination and det
   for (const track of ["technical_state", "editorial_state", "rights_state"]) await expect(page.locator(`[data-track='${track}']`)).toHaveCount(50);
   const payload = await page.request.get("/api/bff/materials"); expect(await payload.text()).not.toContain("never-display-canary");
   await page.getByRole("button", { name: ar.next, exact: true }).click(); await expect(page.getByTestId("material-row")).toHaveCount(50);
-  await expect(page.locator("tbody")).toContainText("100");
+  await expect(page.locator(".inbox-rows")).toContainText("100");
   await page.getByText(ar.filters, { exact: true }).click(); await page.getByLabel(ar.governorate, { exact: true }).fill("غزة"); await page.getByRole("button", { name: ar.apply }).click();
-  await expect(page.getByTestId("material-row")).toHaveCount(50); await expect(page.locator("tbody")).not.toContainText("القدس");
+  await expect(page.getByTestId("material-row")).toHaveCount(50); await expect(page.locator(".inbox-rows")).not.toContainText("القدس");
   await page.locator(".material-link").first().click(); await expect(page.getByRole("heading", { name: ar.details, exact: true })).toBeVisible();
   await expect(page.locator("video")).toBeVisible();
   await expect.poll(() => page.locator("video").evaluate((v: HTMLVideoElement) => v.readyState)).toBeGreaterThanOrEqual(1);
@@ -52,9 +52,9 @@ test("revocation clears the screen and shows the sign-in reason", async ({ page,
 });
 test("all-device logout requires explicit confirmation and clears the HttpOnly session", async ({ page }) => {
   await login(page); const cookies = await page.context().cookies(); expect(cookies.find(c => c.name === "ph-session")?.httpOnly).toBe(true);
-  await page.getByRole("button", { name: ar.logoutAll, exact: true }).click(); await expect(page.getByRole("dialog")).toContainText(ar.logoutAllWarning);
+  await page.getByRole("button", { name: new RegExp(`^${ar.shell.account}`) }).click(); await page.getByRole("button", { name: ar.logoutAll, exact: true }).click(); await expect(page.getByRole("dialog")).toContainText(ar.logoutAllWarning);
   await page.getByRole("button", { name: ar.cancel, exact: true }).click(); await expect(page.getByTestId("material-row")).toHaveCount(50);
-  await page.getByRole("button", { name: ar.logoutAll, exact: true }).click();
+  await page.getByRole("button", { name: new RegExp(`^${ar.shell.account}`) }).click(); await page.getByRole("button", { name: ar.logoutAll, exact: true }).click();
   const logout = page.waitForResponse(r => r.url().endsWith("/api/bff/auth/logout"));
   await page.getByRole("button", { name: ar.confirm, exact: true }).click();
   expect((await logout).status()).toBe(200); await expect(page).toHaveURL(/reason=signed-out/);
@@ -66,7 +66,7 @@ test("small viewport keeps navigation usable and the table scrolls within its pa
 });
 test("signing out clears another open tab and history cannot restore its private rows", async ({ page, context }) => {
   await login(page); const other = await context.newPage(); await other.goto("/ar/inbox"); await expect(other.getByTestId("material-row")).toHaveCount(50);
-  await page.getByRole("button", { name: ar.logout, exact: true }).click(); await expect(page).toHaveURL(/reason=signed-out/);
+  await page.getByRole("button", { name: new RegExp(`^${ar.shell.account}`) }).click(); await page.getByRole("button", { name: ar.logout, exact: true }).click(); await expect(page).toHaveURL(/reason=signed-out/);
   await expect(other).toHaveURL(/\/ar\/login/); await expect(other.getByTestId("material-row")).toHaveCount(0);
   await other.goBack(); await expect(other.getByTestId("material-row")).toHaveCount(0);
 });

@@ -1,4 +1,5 @@
 "use client";
+import { NoAccess } from "../empty-state";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { messages, type Locale } from "@/lib/i18n";
@@ -26,7 +27,7 @@ export function StoreItem({ locale, id }: { locale: Locale; id: string }) {
     return () => controller.abort();
   }, [allowed, id]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(false), 4000); return () => clearTimeout(timer); }, [toast]);
-  if (!allowed) return <section className="center-state"><h1>{s.title}</h1><p role="alert">{s.denied}</p></section>;
+  if (!allowed) return <NoAccess locale={locale} me={me} title={s.title} denied={s.denied} />;
   const back = <Link prefetch={false} className="back-link" href={`/${locale}/store`}>{s.back}</Link>;
   if (status) return <>{back}<p className="center-state" role="alert">{status === 404 ? s.notFound : m.error}</p></>;
   if (!item) return <>{back}<p className="center-state" role="status">{m.loading}</p></>;

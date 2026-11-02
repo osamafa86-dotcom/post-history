@@ -1,4 +1,5 @@
 "use client";
+import { NoAccess } from "./empty-state";
 import { useEffect, useState } from "react";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { messages, type Locale } from "@/lib/i18n";
@@ -25,7 +26,7 @@ export function NotificationRules({ locale }: { locale: Locale }) {
     void browserApi().GET("/notification-rules", { signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setRules(data.items); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [attempt, allowed]);
-  if (!allowed) return <section className="center-state"><h1>{t.title}</h1><p role="alert">{t.denied}</p></section>;
+  if (!allowed) return <NoAccess locale={locale} me={me} title={t.title} denied={t.denied} />;
 
   async function open(rule: Rule) {
     // القراءة المفردة تعطي ETag الحالي؛ الاستبدال يرسله في If-Match.

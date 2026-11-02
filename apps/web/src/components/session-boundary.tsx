@@ -5,8 +5,9 @@ import type { Me } from "@/lib/types";
 import { messages, type Locale } from "@/lib/i18n";
 import { authPost, browserApi, dataOrThrow, leaveSession } from "@/lib/browser-api";
 import { isBuyer } from "@/lib/buyer-policy";
-import { TopBar } from "./top-bar";
-import { navItems, userLine } from "./workspace-nav";
+import { hasRole } from "@/lib/review";
+import { AccountActions, BottomBar, ShellState, ShellTopBar, Sidebar, useInboxBadge } from "./app-shell";
+import { navItems } from "./workspace-nav";
 
 const UserContext = createContext<Me | null>(null);
 export function useUser() { const me = useContext(UserContext); if (!me) throw new Error("Session required"); return me; }
@@ -52,16 +53,33 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
   // حساب المشتري لا يرى صفحات الطاقم: المتجر ومؤسسته وحدهما.
   const buyer = !!me && isBuyer(me), buyerPage = /^\/(ar|en)\/(store|organization)(\/|$)/.test(pathname);
   useEffect(() => { if (buyer && !buyerPage) router.replace(`/${locale}/store`); }, [buyer, buyerPage, locale, router]);
-  if (!me || (buyer && !buyerPage)) return <main className="center-state" role="status">{error ? <><p>{m.error}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></> : m.loading}</main>;
-  return <UserContext.Provider value={me}>
+  if (!me || (buyer && !buyerPage)) return <main className="center-state" role="status">{error ? <><p>{m.error}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></> : <><span className="skeleton block" aria-hidden="true" />{m.loading}</>}</main>;
+  const items = navItems(me, locale, pathname), inboxHref = `/${locale}/${buyer ? "store" : "inbox"}`;
+  const account = <AccountActions me={me} locale={locale} languageHref={pathname.replace(`/${locale}`, locale === "ar" ? "/en" : "/ar")} busy={busy} logout={() => void logout(false)} logoutAll={() => setConfirmAll(true)} />;
+  // هيكل v2 (W1، M1، T1): الشريط الجانبي في جهة البداية، والشريط العلوي فوق المحتوى، والشريط السفلي على الجوال.
+  // المشتري بلا شريط جانبي ولا سفلي (M4)، ووجه المتجر داكن صراحةً كما في إطارات S (`data-mode`).
+  return <UserContext.Provider value={me}><ShellState>{badge => <>
     <a className="skip-link" href="#main-content">{m.skip}</a>
-    <TopBar variant="workspace" locale={locale} brandHref={`/${locale}/${buyer ? "store" : "inbox"}`} items={navItems(me, locale, pathname)} navLabel={m.workspace}>
-      <span className="topbar-user" data-testid="topbar-user">{userLine(me, locale)}</span>
-      <a href={pathname.replace(`/${locale}`, locale === "ar" ? "/en" : "/ar")} lang={locale === "ar" ? "en" : "ar"}>{m.language}</a>
-      <button disabled={busy} onClick={() => void logout(false)}>{m.logout}</button>
-      <button onClick={() => setConfirmAll(true)}>{m.logoutAll}</button>
-    </TopBar>
-    <div className="workspace-shell"><main id="main-content" className="main-content">{error && <p className="notice error" role="alert">{m.error}</p>}{children}</main></div>
+    <div className={`app-shell${buyer ? " buyer" : ""}`} data-mode={buyer ? "dark" : undefined}>
+      {!buyer && <Sidebar items={items} locale={locale} brandHref={inboxHref} badge={badge} />}
+      <div className="app-main">
+        <ShellTopBar me={me} locale={locale} buyer={buyer} items={items} inboxHref={inboxHref} account={account} />
+        <main id="main-content" className="main-content">{error && <p className="notice error" role="alert">{m.error}</p>}{!buyer && <UrgentBadge me={me} />}{children}</main>
+      </div>
+      {!buyer && <BottomBar items={items} locale={locale} badge={badge} account={account} />}
+    </div>
     {confirmAll && <dialog className="modal" ref={node => { if (node && !node.open) node.showModal(); }} onCancel={() => setConfirmAll(false)} aria-labelledby="logout-title"><h2 id="logout-title">{m.logoutAll}</h2><p>{m.logoutAllWarning}</p><div className="actions"><button autoFocus className="secondary" disabled={busy} onClick={() => setConfirmAll(false)}>{m.cancel}</button><button className="danger" disabled={busy} onClick={() => void logout(true)}>{m.confirm}</button></div></dialog>}
-  </UserContext.Provider>;
+  </>}</ShellState></UserContext.Provider>;
+}
+
+/** عدّاد بند الوارد: العاجل المفتوح من لقطة غرفة الأخبار كل 60 ثانية لأدوار اللوحة وحدها (الوارد نفسه يحدّثه أسرع). */
+function UrgentBadge({ me }: { me: Me }) {
+  const set = useInboxBadge(), allowed = hasRole(me, "supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin");
+  useEffect(() => {
+    if (!allowed) return;
+    const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
+    async function poll() { try { const data = dataOrThrow(await browserApi().GET("/dashboard/newsroom", { signal: controller.signal })); if (!controller.signal.aborted) set(data.urgent_open); } catch { /* يبقى بآخر قيمة */ } finally { if (!controller.signal.aborted) timer = setTimeout(poll, 60000); } }
+    void poll(); return () => { controller.abort(); clearTimeout(timer); };
+  }, [allowed, set]);
+  return null;
 }
