@@ -5,5 +5,8 @@ import { staticFile } from 'remotion';
 export const TITLE_FONT = 'PP Rubik';
 export const TEXT_FONT = 'PP Readex Pro';
 
-loadFont({ family: TITLE_FONT, url: staticFile('fonts/Rubik_700Bold.ttf'), weight: '700' });
-loadFont({ family: TEXT_FONT, url: staticFile('fonts/ReadexPro_600SemiBold.ttf'), weight: '600' });
+// وعد التحميل مُصدَّر: `calculateMetadata` ينتظره قبل قياس العنوان، وإلا قاس بخطّ بديل
+export const fontsReady = Promise.all([
+  loadFont({ family: TITLE_FONT, url: staticFile('fonts/Rubik_700Bold.ttf'), weight: '700' }),
+  loadFont({ family: TEXT_FONT, url: staticFile('fonts/ReadexPro_600SemiBold.ttf'), weight: '600' }),
+]);
