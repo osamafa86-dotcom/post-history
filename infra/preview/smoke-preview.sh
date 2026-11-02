@@ -73,6 +73,15 @@ gen -f lavfi -i "testsrc2=size=640x480" -frames:v 1 /out/photo.jpg || fail "coul
 [ "$(stat -c %s "$work/smoke.mov")" -gt $((4 * 1048576)) ] || fail "the synthetic clip is under 4 MiB (the upload is cut at 3 MiB)"
 src_tags="$(ff ffprobe -v error -show_entries format_tags -of json /out/smoke.mov)"
 grep -qF "$MARK-device" <<<"$src_tags" && grep -qF "$GPS" <<<"$src_tags" || fail "the planted tags are not in the synthetic clip"
+# Why the API stays the verifier here (ADR 0092): the worker's probe refuses a still photo, so as the verifier it would fail them.
+ff python -c 'import sys
+from media_worker.probe import InvalidMediaError, probe
+try:
+    probe("/out/photo.jpg")
+except InvalidMediaError:
+    sys.exit(0)
+sys.exit(1)' || fail "the worker's probe now accepts a still photo: ADR 0092's reason to keep the API as the verifier changed"
+echo "the worker's probe refuses a still photo (the API stays the verifier): ok"
 export MARK GPS
 echo "synthetic clip ($(($(stat -c %s "$work/smoke.mov") / 1024)) KiB, planted location and device tags) and photo: ok"
 
