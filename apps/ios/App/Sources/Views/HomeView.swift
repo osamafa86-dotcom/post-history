@@ -52,8 +52,8 @@ struct HomeView: View {
         .fullScreenCover(item: $editingDraft, onDismiss: { sendCoverShown = false }) { draft in
             SendScreen(draft: draft, onSent: showUploads).onAppear { sendCoverShown = true }
         }
-        .sheet(item: Binding(get: { sending || editingDraft != nil || sendCoverShown ? nil : queue.presentedReceipt },
-                             set: { queue.presentedReceipt = $0 })) { target in
+        .sheet(item: Binding<ReceiptTarget?>(get: { sending || editingDraft != nil || sendCoverShown ? nil : queue.presentedReceipt },
+                                             set: { queue.presentedReceipt = $0 })) { target in
             ReceiptScreen(target: target, onSendAnother: sendAfterSheet, onMyMaterials: { path = [.materials] })
         }
         .confirmationDialog("draft.delete.confirm.title", isPresented: Binding(get: { draftToDelete != nil }, set: { if !$0 { draftToDelete = nil } }),

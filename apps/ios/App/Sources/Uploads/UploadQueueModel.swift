@@ -42,8 +42,8 @@ final class UploadQueueModel: ObservableObject {
         self.engine = engine
         self.settings = settings
         draftStore = try? FileDraftStore(directory: UploadServices.shared.draftsDirectory)
-        drafts = draftStore?.loadAll() ?? []
         ledger = SendBatchLedger(store: SendBatchStore(fileURL: UploadServices.shared.batchesFile))
+        drafts = draftStore?.loadAll() ?? []
         batches = ledger.batches
         // نسخ الاختيار المؤقتة التي خلّفها إنهاء التطبيق قبل نقلها إلى مجلد الرفع.
         PickedTempFiles.sweep(in: FileManager.default.temporaryDirectory)
