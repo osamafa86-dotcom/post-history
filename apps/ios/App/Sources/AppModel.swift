@@ -166,8 +166,10 @@ final class AppModel: ObservableObject {
         // الرموز تُمسح محليًا قبل الاتصال؛ فشل الشبكة لا يبقي الجلسة على الجهاز.
         await push.willSignOut()
         try? await auth.logout(allSessions: allSessions)
-        // لا يبقى لمراسل خرج مكانٌ ولا وسوم ولا مصغّرات لمن يدخل بعده على الهاتف نفسه.
+        // لا يبقى لمراسل خرج مكانٌ ولا وسوم ولا مصغّرات، ولا إرسالاته بعناوينها وجواب حساسيتها (`send-batches.json`)، لمن يدخل
+        // بعده على الهاتف نفسه؛ كما في الإبطال والمسح.
         memory.clear()
+        uploads.forgetBatches()
         ThumbnailCache.shared.clear()
         workName = nil
         await materials.clear()

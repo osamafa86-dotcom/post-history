@@ -7,18 +7,23 @@ import UploadCore
 @MainActor
 final class MyMaterialsModel: ObservableObject {
     @Published private(set) var items: [PostHistoryAPI.Material] = []
-    @Published private(set) var reachedEnd = false
-    @Published private(set) var failed = false
     @Published private(set) var loading = false
-    /// صفحة تالية في الطريق: «لا مواد بهذا الفلتر» لا تُقال قبل أن تنتهي.
+    /// صفحة تالية في الطريق أو في الطابور: «لا مواد بهذا الفلتر» لا تُقال قبل أن تنتهي.
     @Published private(set) var loadingMore = false
-    /// يرتفع مع كل تحميل ينتهي (سحب، أو استطلاع، أو صفحة تالية) ولو لم يتغيّر العدد؛ مفتاح مهمة «الصفحة التالية» في آخر المعرض،
-    /// فلا يبقى مؤشرها يدور بعد استطلاع دمج الصفحة الأولى بلا جديد.
-    @Published private(set) var revision = 0
+    /// تقدّم الصفحات (`MaterialsFeed.progress`) مع فشل آخر تحميل؛ مفتاح مهمة «الصفحة التالية» في آخر المعرض. لا يتغيّر إلا بطلب
+    /// أُرسل (صفحة غيّرت المؤشر أو النهاية، أو طلب فشل أو نجح بعد فشل)، فتحميل بلا طلب لا يعيد المهمة ولا تدور (ADR 0089).
+    @Published private(set) var pages = PageProgress()
+    var reachedEnd: Bool { pages.reachedEnd }
+    /// آخر تحميل فشل؛ الإلغاء ليس فشلًا (`LoadOutcome`).
+    var failed: Bool { pages.failed }
     /// آخر تحديث ناجح؛ عند الفشل تبقى البيانات المعروضة مع شريط «غير محدّث منذ …».
     @Published private(set) var lastUpdated: Date?
     @Published private(set) var timelines: [UUID: MaterialTimeline] = [:]
     let feed: MaterialsFeed
+    /// «الصفحة التالية» يملكها النموذج في مهمة غير مهيكلة: لا يلغيها اختفاء آخر المعرض ولا تحميل آخر، ولا تُطلب غيرها وهي جارية
+    /// أو في الطابور. الجيل يمنع مهمة ألغاها المسح من محو مهمة بعده.
+    private var pageTask: Task<Void, Never>?
+    private var pageGeneration = 0
     private let transitions: @Sendable (UUID) async throws -> [TransitionRecord]
     /// رابط قراءة موقّع لمشتق (`getMaterialFileDownloadUrl`، ≤ 10 دقائق): يُطلب قبيل الاستعمال، ولا يُحفظ ولا يُسجَّل (ADR 0089).
     let downloadURL: @Sendable (_ materialId: UUID, _ fileId: UUID) async throws -> FileDownloadUrl
@@ -50,23 +55,49 @@ final class MyMaterialsModel: ObservableObject {
         loading = true
         defer { loading = false }
         do {
-            items = try await fetch(feed)
-            failed = false
+            let fresh = try await fetch(feed)
+            await settle(.success(fresh))
             lastUpdated = Date()
-        } catch { failed = true }
-        reachedEnd = await feed.reachedEnd
-        revision += 1
+        } catch {
+            await settle(.failure(error))
+        }
     }
 
-    func loadMore() async {
+    /// آخر المعرض ظهر، أو تقدّمت صفحاته وهو ظاهر (فلتر يخفي ما حُمّل): الصفحة التالية إن أرادها `PageProgress.wantsNextPage`،
+    /// ولا شيء إن كان طلبها جاريًا أو في الطابور. `retry` لزرّ «تحميل المزيد» بعد فشل.
+    func loadMoreIfNeeded(retry: Bool = false) {
+        guard pages.wantsNextPage(pending: pageTask != nil, retry: retry) else { return }
+        pageGeneration += 1
+        let generation = pageGeneration
+        pageTask = Task {
+            await loadMore()
+            if generation == pageGeneration { pageTask = nil }
+        }
+    }
+
+    private func loadMore() async {
         loadingMore = true
         defer { loadingMore = false }
         do {
-            items = try await feed.loadMore()
-            failed = false
-        } catch { failed = true }
-        reachedEnd = await feed.reachedEnd
-        revision += 1
+            let fresh = try await feed.loadMore()
+            await settle(.success(fresh))
+        } catch {
+            await settle(.failure(error))
+        }
+    }
+
+    /// بعد كل تحميل: الإلغاء (مهمة ألغاها SwiftUI، أو طلب URLSession أُلغي معها) لا يُعدّ فشلًا فلا شريط ولا زرّ ولا «لا مواد بهذا
+    /// الفلتر» قبل أوانها؛ والفشل يُبقي المعروض. وما لم يتغيّر لا يُنشر، فلا تُعاد الشاشات ولا مهمة آخر المعرض بلا سبب.
+    private func settle(_ result: Result<[PostHistoryAPI.Material], any Error>) async {
+        var next = await feed.progress
+        switch result {
+        case .success(let fresh):
+            if fresh != items { items = fresh }
+            next.failed = false
+        case .failure(let error):
+            next.failed = LoadOutcome.isCancellation(error) ? pages.failed : true
+        }
+        if next != pages { pages = next }
     }
 
     /// يحدّث مادة واحدة (شاشة التفاصيل، أو إشعار عن مادة لم تُحمَّل صفحتها)؛ `nil` إن تعذّر.
@@ -83,10 +114,13 @@ final class MyMaterialsModel: ObservableObject {
     }
 
     func clear() async {
+        pageGeneration += 1
+        pageTask?.cancel()
+        pageTask = nil
         await feed.clear()
         items = []
         timelines = [:]
-        reachedEnd = false
+        pages = PageProgress()
         lastUpdated = nil
     }
 }
@@ -124,11 +158,15 @@ struct MyMaterialsView: View {
                 }
                 if !model.reachedEnd, !model.items.isEmpty {
                     // آخر المعرض: الصفحة التالية بالمؤشر القائم (`MaterialsFeed.loadMore`)؛ ومع فلتر يخفي ما حُمّل تُتابع الصفحات.
+                    // الطلب في مهمة يملكها النموذج، فلا يلغيه اختفاء هذا الصف ولا تحميل آخر؛ والمفتاح تقدّم الصفحات وحده.
                     ProgressView()
                         .frame(maxWidth: .infinity, minHeight: VL.Size.touchMin)
-                        .task(id: model.revision) { if !model.failed { await model.loadMore() } }
+                        .task(id: model.pages) {
+                            guard !Task.isCancelled else { return }
+                            model.loadMoreIfNeeded()
+                        }
                     if model.failed {
-                        Button("materials.loadMore") { Task { await model.loadMore() } }.buttonStyle(.vlGhost)
+                        Button("materials.loadMore") { model.loadMoreIfNeeded(retry: true) }.buttonStyle(.vlGhost)
                     }
                 }
             }
