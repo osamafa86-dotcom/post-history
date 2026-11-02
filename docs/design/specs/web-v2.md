@@ -35,8 +35,8 @@
 | W10 | لوحة التنبيهات | تنسدل من الجرس؛ تبويبات الكل/مهامي/المتجر؛ العاجل والحسّاس أولًا بأيقونة وكلمة |
 | S1 | المتجر: الكتالوج | بحث بالحدث والمكان والتاريخ؛ شرائح المحافظة؛ لا اسم مراسل ولا مصدر |
 | S2 | المتجر: صفحة المادة | معاينة بعلامة مائية وجودة أقل؛ «صُوّر» بالتاريخ؛ المحافظة وحدها؛ ثلاثة تراخيص بسعر كلٍّ منها؛ زرّ أساسي واحد |
-| S3 | السلة والدفع | رقم أمر شراء اختياري؛ سطر ثابت: «بيئة دفع تجريبية: لا يُخصم مال حقيقي» |
-| S4 | تراخيصي | الترخيص مرتبط بفاتورته وبصمة الملف؛ المنتهي كلمة بلون التحذير وزرّ «تجديد» |
+| S3 | السلة والدفع | الملخّص هو الإجمالي (`total`) وحده، بلا مجموع فرعي ولا ضريبة (فجوة عقد كما في S7)؛ رقم أمر شراء اختياري (ليس في `Order` بعد)؛ سطر ثابت: «بيئة دفع تجريبية: لا يُخصم مال حقيقي» |
+| S4 | تراخيصي | الترخيص مرتبط بطلبه، والطلب يُعرَّف بأول ثمانية محارف من معرّفه كما في S7، وببصمة الملف؛ المنتهي كلمة بلون التحذير وزرّ «تجديد» |
 | A1 | المستخدمون والأدوار | شارات الدور والحالة؛ مصفوفة «ما يستطيعه كل دور» بعلامة وكلمة |
 | A2 | الوسوم | المقترحة بترتيب ظهورها للمراسل؛ 1–40 حرفًا و12 وسمًا للمادة (ADR 0086)؛ الدمج يحفظ الأصل في السجلّ |
 | A3 | منشئ النماذج | إصدار للنموذج؛ التغيير يسري على الإرسالات الجديدة فقط؛ حقول العقد لا تُحذف؛ «المكان» موسوم «مشفّر» |
@@ -85,7 +85,7 @@
 | E5 | لا صلاحية | يقول الدور وما يملكه؛ والشريط الجانبي لا يعرض ما لا يملكه الدور (المحرّر: غرفة الأخبار والأرشيف). «اطلب الوصول» **مقترح** خارج الخطة والعقد، يحتاج موافقة المنسّق قبل بنائه (ومعه حدّ طول للسبب وتهريبه وتحديد معدّل وسجل تدقيق) |
 | E6 | المتجر بلا نتائج | يقول لماذا (المواد تظهر بعد المراجعة واعتماد الحقوق)، و«أشعرني حين تصل» (البحث المحفوظ بتنبيه في الخطة)؛ الفعل الأساسي ذهبي ثابت كما في S1 وS3 |
 
-**الأزرار:** الفعل الأساسي في الويب «Solid» ثابت؛ التدرّج لزرّ الإرسال في تطبيق المراسل وأيقونته وحدهما (`design-system-v2.md`). وزرّا A1 «دعوة مستخدم» وA4 «صرف المحدّد» المدموجان بالتدرّج يُصحَّحان مع شاشات الإدارة في طلب لاحق.
+**الأزرار:** الفعل الأساسي في الويب «Solid» ثابت؛ التدرّج لزرّ الإرسال في تطبيق المراسل وأيقونته وحدهما (`design-system-v2.md`). والأزرار الأساسية المدموجة بالتدرّج صارت «Solid» في A1 إلى A6 وW7 وW8 وP1.
 
 ## الإنجليزية والوضع الداكن لغرفة الأخبار (صفحة Figma `Web: EN, Dark & Flows`)
 
@@ -104,7 +104,7 @@
 | S5 | قبول الدعوة | رمز الدعوة يُسلَّم كرمز الاستعادة، فالصفحة إكمال استعادة (`/auth/recovery/complete`): كلمة مرور من 12 حرفًا فأكثر وتأكيدها، ثم ربط المصادقة الثنائية (TOTP)، وهو إلزامي عند أول دخول. الخطوتان ظاهرتان في رأس البطاقة. البريد محدّد بالدعوة ولا يُغيَّر. حساب العضو يُنشأ عند الدعوة (`inviteBuyerMember`، الحالة `invited`)، فسطر التجاهل يقول إن الرابط ينتهي وحده، ولا يعد بأن لا حساب. **فجوة عقد:** عرض اسم المؤسسة والدور والبريد يحتاج قراءة الدعوة برمزها، وهذه القراءة ليست في العقد. بدونها تعرض الصفحة «عيّن كلمة المرور» وحدها. إن أُضيفت فبثلاثة شروط: ردّ `401` واحد لرمز مجهول أو منتهٍ أو مستهلك (بلا مؤسسة ولا بريد ولا فرق في الزمن)، وحدّ معدّل بمفتاح بصمة الرمز كما في `/auth/recovery/complete`، ولا يُسجَّل الرمز |
 | S5b | رابط الدعوة غير صالح | العقد يردّ `401` للرمز المنتهي والمستهلك معًا، فالصفحة لا تعرف السبب: «لم يعد هذا الرابط صالحًا». الرابط لمدة أقصاها 24 ساعة (`invite_token_expires_at`). المخرج: «اطلب من مدير مؤسستك أن يدعوك من جديد». لا يقول هل البريد مسجَّل |
 | S6 | مؤسسة قيد التحقّق | `pending_verification` لا تشتري، والكتالوج يردّ `403 forbidden_scope`، فلا يُعرض كتالوج باهت. البطاقة تقول ما تراجعه الإدارة (البنود الثلاثة في A5)، بلا حالة لكل بند لأنها ليست في العقد. «ما تستطيعه الآن»: دعوة الأعضاء ضمن المقاعد (`seats` و`active_members`)، والعقد لا يمنع الدعوة قبل التفعيل. `suspended` بالنمط نفسه: الشراء والتنزيل الجديد متوقفان. **لا إشعار بالتفعيل** اليوم: لا حدث لتغيّر حالة المؤسسة ولا مُرسل إلى `billing_email`، فالبطاقة لا تعد به. إن أُريد فهو تغيير عقد (حدث في Outbox) |
-| S7 | الفاتورة | ورقة فاتحة (وضع `Light` صريح) داخل المتجر الداكن، فعلها «طباعة» من المتصفح. لافتة ثابتة: «مستند تجريبي وليس فاتورة ضريبية، ولم يُخصم مال حقيقي» ما دام المزوّد تجريبيًا. البيانات من `Order` (البنود وسعر كلٍّ منها و`total` و`paid_at`)، و`BuyerOrganization` (`legal_name` و`country` و`billing_email`)، و`License` (`license_number`). الطلب يُعرَّف بأول ثمانية محارف من معرّفه (UUID)، لأن `Order` بلا رقم مقروء. الأسعار بالدولار والعملة في رأس العمود، والإجمالي تحت الجدول هو `total` وحده. **فجوات عقد، فلا تُرسم:** كائن الفاتورة وترقيمها ورقم طلب مقروء، وبيانات المُصدِر القانونية (سطر مكانها يقول ذلك)، والمجموع الفرعي والضريبة (في الخطة تُطرح الضرائب من سعر البيع في معادلة النصيب، والأساس تختاره الإدارة)، وملف PDF للفاتورة (مقترح). ورقم أمر الشراء (هنا وفي S3) ليس في `Order` بعد، وسطر الضريبة في S3 المدموجة يُعالج بالطريقة نفسها في طلب لاحق |
+| S7 | الفاتورة | ورقة فاتحة (وضع `Light` صريح) داخل المتجر الداكن، فعلها «طباعة» من المتصفح. لافتة ثابتة: «مستند تجريبي وليس فاتورة ضريبية، ولم يُخصم مال حقيقي» ما دام المزوّد تجريبيًا. البيانات من `Order` (البنود وسعر كلٍّ منها و`total` و`paid_at`)، و`BuyerOrganization` (`legal_name` و`country` و`billing_email`)، و`License` (`license_number`). الطلب يُعرَّف بأول ثمانية محارف من معرّفه (UUID)، لأن `Order` بلا رقم مقروء. الأسعار بالدولار والعملة في رأس العمود، والإجمالي تحت الجدول هو `total` وحده. **فجوات عقد، فلا تُرسم:** كائن الفاتورة وترقيمها ورقم طلب مقروء، وبيانات المُصدِر القانونية (سطر مكانها يقول ذلك)، والمجموع الفرعي والضريبة (في الخطة تُطرح الضرائب من سعر البيع في معادلة النصيب، والأساس تختاره الإدارة)، وملف PDF للفاتورة (مقترح). ورقم أمر الشراء (هنا وفي S3) ليس في `Order` بعد |
 
 ## رفع المادة المُنتَجة (المونتير)
 
@@ -124,17 +124,75 @@
 | 5 | نتحقّق | `completed` | وصل الملف كاملًا والخادم يحسب البصمة. لا يُقبل قبلها |
 | 6 | اكتمل | `verified` | «وصل وتحقّقنا من بصمته»، و«استبدل الملف» قبل التسليم، و«سلّم للمحرّر» فعّال |
 | 7 | فشل | `failed` | السبب من `failure_reason` بكلمات (الجدول أدناه)، و«ارفع من جديد». المرسوم `checksum_mismatch` |
-| 8 | مكرّر | `deduplicated` | «تعرّفنا على هذا الملف، فلا حاجة لرفعه ثانية». المطابقة بالبصمة الكاملة على كل الملفات لا على المادة، فلا تقول البطاقة لمن هو. «سلّم للمحرّر» معطّل: تسليم ملف يطابق ملفًا قد يخصّ مادة أخرى سؤال حقوق للمنسّق |
+| 8 | مكرّر | `deduplicated` | «تعرّفنا على هذا الملف، فلا حاجة لرفعه ثانية». المطابقة بالبصمة الكاملة على كل الملفات لا على المادة، فلا تقول البطاقة لمن هو. «سلّم للمحرّر» معطّل، وتحته للمونتير: «لا يُسلَّم ملف موجود من قبل من هنا. إن كان هو ما تريد تسليمه فاسأل المحرّر». تسليم ملف يطابق ملفًا قد يخصّ مادة أخرى سؤال حقوق للمنسّق |
 
 | `failure_reason` | ما تقوله البطاقة |
 |---|---|
 | `checksum_mismatch` | «لم يطابق ما وصل الملفَّ المرسَل، فلم نحفظه. غالبًا انقطع جزء أثناء النقل، فارفعه من جديد» |
-| `invalid_file` | «هذا الملف ليس فيديو أو صورة نقبلها. اختر MP4 أو MOV» |
+| `invalid_file` | «هذا الملف ليس فيديو نقبله. اختر MP4 أو MOV» |
 | `expired` | «انتهت مهلة هذه الجلسة قبل أن يكتمل الرفع. ابدأ رفعًا جديدًا» (من يعود بعد أيام) |
 | `aborted` | «ألغيتَ الرفع، وحذفنا ما وصل منه» (هذه وحدها يضمن العقد فيها حذف ما وصل) |
 | `storage_error` | «تعذّر حفظ الملف عندنا، والخطأ ليس منك. أعد المحاولة بعد قليل» |
 
 اسم الملف لاتيني في العيّنة لأن الاسم المختلط اللغة ينقلب اتجاهه في Figma. في التنفيذ يُعزل اسم الملف والأحجام والنِّسب (`<bdi>`)، والحجم بوحدة عربية داخل الجملة («ميغابايت»). واسم الملف يُعرض في البطاقة لصاحب الجلسة وحده، ولا يُنقل إلى إشعار أو سجل.
+
+## النصوص بالإنجليزية (المتجر والرفع)
+
+مقابل نصوص S5 إلى S7 ومراحل الرفع، لتُنقل إلى `apps/web/messages/{ar,en}.json` عند البناء. المفاتيح مقترحة. وW1 وW2 بالإنجليزية في لقطاتهما (`w01-inbox-en` و`w02-material-en`).
+
+| المفتاح | العربية | English |
+|---|---|---|
+| `store.invite.badge` | دعوة إلى المتجر | Store invitation |
+| `store.invite.title` | انضمّ إلى {org} | Join {org} |
+| `store.invite.lead` | دعاك مدير المؤسسة إلى المتجر بدور «{role}». الرابط صالح حتى {time}. | Your organization's admin invited you to the store as {role}. The link works until {time}. |
+| `store.invite.stepPassword` | ١ كلمة المرور | 1 Password |
+| `store.invite.stepTotp` | ٢ المصادقة الثنائية | 2 Two-step verification |
+| `store.invite.passwordHint` | 12 حرفًا على الأقل. البريد محدّد بالدعوة ولا يُغيَّر. | At least 12 characters. The email comes from the invitation and can't be changed. |
+| `store.invite.submit` | عيّن كلمة المرور وتابع | Set password and continue |
+| `store.invite.next` | الخطوة التالية: تربط تطبيق المصادقة (TOTP)، وهو إلزامي عند أول دخول. | Next, you'll link an authenticator app (TOTP). It's required at first sign-in. |
+| `store.invite.ignore` | لم تتوقّع هذه الدعوة؟ تجاهلها، وينتهي الرابط خلال 24 ساعة. | Weren't expecting this? Ignore it, and the link expires within 24 hours. |
+| `store.invite.invalidTitle` | لم يعد هذا الرابط صالحًا | This link is no longer valid |
+| `store.invite.invalidBody` | رابط الدعوة يصلح مرة واحدة ولمدة أقصاها 24 ساعة. اطلب من مدير مؤسستك أن يدعوك من جديد، فيصلك رابط آخر. | Invitation links work once, for up to 24 hours. Ask your organization's admin to invite you again for a new link. |
+| `store.invite.signIn` | لديك حساب؟ سجّل الدخول | Have an account? Sign in |
+| `store.org.pendingBadge` | قيد التحقّق | Pending verification |
+| `store.org.pendingTitle` | مؤسستك قيد التحقّق | Your organization is being verified |
+| `store.org.pendingBody` | الكتالوج والشراء يُفتحان حين تعتمد إدارة المتجر مؤسستك. | The catalog and purchasing open once the store team approves your organization. |
+| `store.org.checks` | ما تراجعه الإدارة | What the team reviews |
+| `store.org.checkRegistry` | السجلّ التجاري للمؤسسة | Commercial registration |
+| `store.org.checkEmail` | البريد المؤسسي لمديرها | The admin's work email |
+| `store.org.checkAgreement` | قبول اتفاقية الترخيص | Acceptance of the licence agreement |
+| `store.org.nowTitle` | ما تستطيعه الآن | What you can do now |
+| `store.org.nowSeats` | دعوة أعضاء فريقك · المقاعد: {used} من {seats} | Invite your team · Seats: {used} of {seats} |
+| `store.org.invite` | ادعُ عضوًا | Invite a member |
+| `store.invoice.title` | فاتورة | Invoice |
+| `store.invoice.order` | طلب {id} | Order {id} |
+| `store.invoice.sandbox` | بيئة دفع تجريبية: هذا مستند تجريبي وليس فاتورة ضريبية، ولم يُخصم مال حقيقي. | Test payment environment: this is a test document, not a tax invoice, and no real money was charged. |
+| `store.invoice.to` | إلى | Billed to |
+| `store.invoice.status` | الحالة | Status |
+| `store.invoice.paid` | مدفوعة | Paid |
+| `store.invoice.colItem` | المادة | Item |
+| `store.invoice.colLicence` | الترخيص | Licence |
+| `store.invoice.colLicenceNo` | رقم الترخيص | Licence number |
+| `store.invoice.colPrice` | السعر (USD) | Price (USD) |
+| `store.invoice.total` | الإجمالي (USD) | Total (USD) |
+| `store.invoice.print` | طباعة | Print |
+| `upload.produced.title` | رفع المادة المُنتَجة | Upload the produced version |
+| `upload.produced.created` | جهّزنا جلسة الرفع، ويبدأ النقل خلال لحظات. | Upload session ready. Transfer starts in a moment. |
+| `upload.produced.progress` | وصل {sent} من {total} ميغابايت ({pct}%) · بقي نحو {eta} | {sent} of {total} MB received ({pct}%) · about {eta} left |
+| `upload.produced.keepOpen` | لا تغلق التبويب: إغلاقه يوقف النقل، ونكمل من حيث توقّف حين تعود. | Keep this tab open. Closing it pauses the transfer, and we'll continue from where it stopped. |
+| `upload.produced.offline` | انقطع الاتصال. ما وصل محفوظ، ونستأنف وحدنا حين يعود. | You're offline. What arrived is safe, and we'll resume when you reconnect. |
+| `upload.produced.reselect` | المتصفح لا يحتفظ بالملف بعد الإغلاق: اختر الملف نفسه لنكمل من {pct}%. ملف مختلف يبدأ رفعًا جديدًا. | The browser doesn't keep the file after closing. Choose the same file to continue from {pct}%. A different file starts a new upload. |
+| `upload.produced.verifying` | وصل الملف كاملًا. نحسب بصمته على الخادم ونطابقها بما أُرسل. | The whole file arrived. We're checking its fingerprint on the server. |
+| `upload.produced.verified` | وصل وتحقّقنا من بصمته. | Received and fingerprint verified. |
+| `upload.produced.duplicate` | تعرّفنا على هذا الملف، فلا حاجة لرفعه ثانية. | We already have this file, so there's no need to upload it again. |
+| `upload.produced.duplicateHandoff` | لا يُسلَّم ملف موجود من قبل من هنا. إن كان هو ما تريد تسليمه فاسأل المحرّر. | A file that already exists can't be handed off from here. If it's the one you mean to deliver, ask the editor. |
+| `upload.produced.handoff` | سلّم للمحرّر | Hand to editor |
+| `upload.produced.gate` | يُفعَّل بعد أن يصل الملف ونتحقّق من بصمته. | Available once the file arrives and its fingerprint is verified. |
+| `upload.failed.checksum_mismatch` | لم يطابق ما وصل الملفَّ المرسَل، فلم نحفظه. غالبًا انقطع جزء أثناء النقل، فارفعه من جديد. | What arrived didn't match the file you sent, so we didn't keep it. Part of it was probably lost in transfer. Please upload it again. |
+| `upload.failed.invalid_file` | هذا الملف ليس فيديو نقبله. اختر MP4 أو MOV. | This file isn't a video we accept. Choose MP4 or MOV. |
+| `upload.failed.expired` | انتهت مهلة هذه الجلسة قبل أن يكتمل الرفع. ابدأ رفعًا جديدًا. | This session expired before the upload finished. Start a new upload. |
+| `upload.failed.aborted` | ألغيتَ الرفع، وحذفنا ما وصل منه. | You cancelled the upload, and we deleted what arrived. |
+| `upload.failed.storage_error` | تعذّر حفظ الملف عندنا، والخطأ ليس منك. أعد المحاولة بعد قليل. | We couldn't store the file. It's not your fault. Try again shortly. |
 
 ## قواعد مشتركة
 
