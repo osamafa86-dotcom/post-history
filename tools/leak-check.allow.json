@@ -43,14 +43,37 @@
       "value": "npmjs.org",
       "reason": "عناوين resolved لحزم npm العامة في ملف القفل",
       "paths": [
-        "tools/acceptance/package-lock.json"
+        "tools/acceptance/package-lock.json",
+        "docs/design/redesign-2026-11/motion/*/package-lock.json"
       ]
     },
     {
       "value": "opencollective.com",
       "reason": "رابط تمويل حزمة npm عامة داخل ملف القفل",
       "paths": [
-        "tools/acceptance/package-lock.json"
+        "tools/acceptance/package-lock.json",
+        "docs/design/redesign-2026-11/motion/*/package-lock.json"
+      ]
+    },
+    {
+      "value": "tidelift.com",
+      "reason": "رابط تمويل حزمة npm عامة داخل ملف القفل",
+      "paths": [
+        "docs/design/redesign-2026-11/motion/*/package-lock.json"
+      ]
+    },
+    {
+      "value": "patreon.com",
+      "reason": "رابط تمويل حزمة npm عامة داخل ملف القفل",
+      "paths": [
+        "docs/design/redesign-2026-11/motion/*/package-lock.json"
+      ]
+    },
+    {
+      "value": "dotenvx.com",
+      "reason": "رابط تمويل حزمة npm عامة داخل ملف القفل",
+      "paths": [
+        "docs/design/redesign-2026-11/motion/*/package-lock.json"
       ]
     },
     {
@@ -414,7 +437,8 @@
       "value": "openfontlicense.org",
       "reason": "رابط رخصة الخطوط OFL داخل نص الرخصة الأصلي",
       "paths": [
-        "docs/design/store-assets/fonts/LICENSE-NotoSansArabic.txt"
+        "docs/design/store-assets/fonts/LICENSE-NotoSansArabic.txt",
+        "docs/design/redesign-2026-11/motion/*/public/fonts/OFL-*.txt"
       ]
     },
     {
