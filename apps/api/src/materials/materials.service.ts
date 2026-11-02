@@ -170,6 +170,8 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
           gpsEnc: body.gps ? this.fieldKeys.encrypt(Buffer.from(JSON.stringify(body.gps))) : null,
           formVersion: body.form_version,
           dynamicFields: storedDynamicFields(body.dynamic_fields, check.visible),
+          // الغائب = مصفوفة فارغة (ADR 0086)؛ تُمرَّر صراحةً لا اعتمادًا على افتراض العمود
+          tags: body.tags ?? [],
         })
         .returning();
       const m = { ...created!, officeGovernorate: null };
@@ -218,6 +220,8 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
         if (isSensitive(flagged)) await suspendListing(tx, m.id, 'sensitive_flagged', p.userId);
       }
       if (body.display_name) Object.assign(changes, displayNameColumns(body.display_name));
+      // الوسوم تُستبدل كلها إن وُجدت (وبمصفوفة فارغة تُمحى)، وغيابها يُبقيها (ADR 0086)
+      if (body.tags !== undefined) changes.tags = body.tags;
 
       // تعديل إصدار معتمد: version + 1 وعودة إلى final_review لأن ما يُعتمد إصدار محدد (العقد)
       const approved = (APPROVED_STATES as readonly string[]).includes(m.editorialState);
