@@ -1398,7 +1398,7 @@ SELECT pg_temp.expect_error($q$ UPDATE users SET work_name = 'مشترٍ' WHERE 
 -- بقاعدة الوسوم نفسها، والجاهز يشير إلى مشتق circulated_render، والفشل بسبب من القائمة، والحمولة معرّفات وحدها
 INSERT INTO material_renders (id, material_id, material_version, source_file_id, template, aspect, title_lines, location_text, label, requested_by)
 VALUES ('00000000-0000-4000-8000-000000000d01', '00000000-0000-4000-8000-000000000101', 1, '00000000-0000-4000-8000-000000000301',
-        'circulated', 'vertical', ARRAY['طوابير طويلة أمام', 'المخابز في دير البلح'], 'دير البلح، وسط قطاع غزة', 'circulated_footage',
+        'circulated', 'vertical', ARRAY['عنوان تجريبي', 'للمادة المتداولة'], 'مدينة، محافظة', 'circulated_footage',
         '00000000-0000-4000-8000-000000000012');
 -- نسخة ثانية من الأصل نفسه بلا مكان ولا وسم: عدة نسخ لكل أصل
 INSERT INTO material_renders (id, material_id, material_version, source_file_id, template, aspect, title_lines, label, requested_by)
@@ -1420,7 +1420,7 @@ SELECT pg_temp.expect_error($q$ UPDATE material_renders SET title_lines = ARRAY[
 SELECT pg_temp.expect_error($q$ UPDATE material_renders SET title_lines = ARRAY[ARRAY['أ'], ARRAY['ب']] WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE material_renders SET location_text = repeat('د', 45) WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE material_renders SET location_text = '' WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
-SELECT pg_temp.expect_error($q$ UPDATE material_renders SET location_text = E'دير البلح\u200f' WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE material_renders SET location_text = E'مدينة\u200f' WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
 UPDATE material_renders SET location_text = repeat('د', 44) WHERE id = '00000000-0000-4000-8000-000000000d02';
 UPDATE material_renders SET location_text = NULL WHERE id = '00000000-0000-4000-8000-000000000d02';
 SELECT pg_temp.expect_error($q$ UPDATE material_renders SET aspect = 'portrait' WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
@@ -1431,6 +1431,11 @@ SELECT pg_temp.expect_error($q$ UPDATE material_renders SET state = 'ready', com
 SELECT pg_temp.expect_error($q$ UPDATE material_renders SET state = 'failed', completed_at = now() WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE material_renders SET state = 'failed', failure_reason = 'because', completed_at = now() WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE material_renders SET state = 'failed', failure_reason = 'render_failed' WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE material_renders SET state = 'rendering' WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE material_renders SET started_at = now() WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE material_renders SET state = 'rendering', started_at = now(), completed_at = now() WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE material_renders SET state = 'paused', started_at = now() WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
+UPDATE material_renders SET state = 'rendering', started_at = now() WHERE id = '00000000-0000-4000-8000-000000000d02';
 UPDATE material_renders SET state = 'failed', failure_reason = 'title_overflow', completed_at = now() WHERE id = '00000000-0000-4000-8000-000000000d02';
 -- المشتق من الأصل وحده، ونسخة واحدة لكل ملف
 SELECT pg_temp.expect_error($q$
@@ -1438,6 +1443,10 @@ SELECT pg_temp.expect_error($q$
 INSERT INTO material_files (id, material_id, kind, state, derived_from_id, mime_type, sha256, verified_at)
 VALUES ('00000000-0000-4000-8000-000000000d11', '00000000-0000-4000-8000-000000000101', 'circulated_render', 'verified',
         '00000000-0000-4000-8000-000000000301', 'video/mp4', sha256('render'::bytea), now());
+SELECT pg_temp.expect_error($q$
+  UPDATE material_renders SET state = 'ready', file_id = '00000000-0000-4000-8000-000000000d11', completed_at = now()
+   WHERE id = '00000000-0000-4000-8000-000000000d01' $q$, '23514');
+UPDATE material_renders SET state = 'rendering', started_at = now() WHERE id = '00000000-0000-4000-8000-000000000d01';
 UPDATE material_renders SET state = 'ready', file_id = '00000000-0000-4000-8000-000000000d11', completed_at = now()
 WHERE id = '00000000-0000-4000-8000-000000000d01';
 SELECT pg_temp.expect_error($q$
@@ -1448,6 +1457,14 @@ VALUES ('render.requested', 'material', '00000000-0000-4000-8000-000000000101', 
         '00000000-0000-4000-8000-000000000012',
         '{"material_id": "00000000-0000-4000-8000-000000000101", "render_id": "00000000-0000-4000-8000-000000000d01",
           "source_file_id": "00000000-0000-4000-8000-000000000301", "requested_by": "00000000-0000-4000-8000-000000000012"}');
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+VALUES ('render.started', 'material', '00000000-0000-4000-8000-000000000101', 'render.started:00000000-0000-4000-8000-000000000d01',
+        '{"material_id": "00000000-0000-4000-8000-000000000101", "render_id": "00000000-0000-4000-8000-000000000d01"}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('render.started', 'material', '00000000-0000-4000-8000-000000000101', 'render.started:smoke:worker',
+          '{"material_id": "00000000-0000-4000-8000-000000000101", "render_id": "00000000-0000-4000-8000-000000000d01",
+            "worker_host": "media-render-1"}') $q$, '23514');
 INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
 VALUES ('render.completed', 'material', '00000000-0000-4000-8000-000000000101', 'render.completed:00000000-0000-4000-8000-000000000d01',
         '{"material_id": "00000000-0000-4000-8000-000000000101", "render_id": "00000000-0000-4000-8000-000000000d01",
@@ -1460,7 +1477,7 @@ SELECT pg_temp.expect_error($q$
   INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
   VALUES ('render.requested', 'material', '00000000-0000-4000-8000-000000000101', 'render.requested:smoke:title',
           '{"material_id": "00000000-0000-4000-8000-000000000101", "render_id": "00000000-0000-4000-8000-000000000d01",
-            "title_lines": ["طوابير طويلة أمام"]}') $q$, '23514');
+            "title_lines": ["عنوان تجريبي"]}') $q$, '23514');
 SELECT pg_temp.expect_error($q$
   INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
   VALUES ('render.completed', 'material', '00000000-0000-4000-8000-000000000101', 'render.completed:smoke:key',
@@ -1470,7 +1487,7 @@ SELECT pg_temp.expect_error($q$
   INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
   VALUES ('render.failed', 'material', '00000000-0000-4000-8000-000000000101', 'render.failed:smoke:location',
           '{"material_id": "00000000-0000-4000-8000-000000000101", "render_id": "00000000-0000-4000-8000-000000000d02",
-            "location_text": "دير البلح"}') $q$, '23514');
+            "location_text": "مدينة، محافظة"}') $q$, '23514');
 SET CONSTRAINTS ALL DEFERRED;
 -- الدوال تعمل بمسار بحث فارغ (الاستعادة)
 SET LOCAL search_path = '';
@@ -1479,7 +1496,7 @@ SELECT pg_temp.expect_error($q$
   VALUES ('00000000-0000-4000-8000-0000000009c2', '00000000-0000-4000-8000-000000000014') $q$, '23514');
 SELECT pg_temp.assert(public.payout_entry_matches('00000000-0000-4000-8000-0000000009b1', '00000000-0000-4000-8000-0000000009c1'),
   'payout entry check works with an empty search_path');
-SELECT pg_temp.assert(public.render_title_lines_valid(ARRAY['طوابير طويلة أمام']) AND NOT public.render_title_lines_valid(ARRAY[E'\u202eعنوان']),
+SELECT pg_temp.assert(public.render_title_lines_valid(ARRAY['عنوان تجريبي']) AND NOT public.render_title_lines_valid(ARRAY[E'\u202eعنوان']),
   'render title check works with an empty search_path');
 SELECT pg_temp.expect_error($q$
   UPDATE public.material_renders SET title_lines = ARRAY[' عنوان'] WHERE id = '00000000-0000-4000-8000-000000000d01' $q$, '23514');

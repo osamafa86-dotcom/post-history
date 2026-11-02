@@ -1,6 +1,6 @@
 -- Up Migration
 -- نسخ قالب «مواد متداولة» (ADR 0091، قرار المالك 2026-11-02 «نعم نربطه بخط الإنتاج»): طلب يكتبه الطاقم لكل نسخة،
--- ومشتق circulated_render من الأصل المتحقق يكتبه عامل الوسائط، وثلاثة أحداث بمعرّفات فقط. الأصل لا يُمس، ولا تتغيّر
+-- ومشتق circulated_render من الأصل المتحقق يكتبه عامل الوسائط، وأربعة أحداث بمعرّفات فقط. الأصل لا يُمس، ولا تتغيّر
 -- أيٌّ من الحالات الثلاث للمادة. فرادة الملف لكل نسخة في material_renders.file_id.
 -- عدة نسخ للأصل الواحد مسموحة في العقد (نسخة لكل طلب)، لكن الفهرس material_files_derived_kind_key يبقى هنا كما هو: تسجيل
 -- المشتق في الخادم (media.service) يستدل الفهرس الجزئي بشرطه الحرفي (اختبار الدخان)، فاستثناء النوع منه يغيّر الشرطين معًا
@@ -56,6 +56,7 @@ CREATE TABLE material_renders (
   failure_reason   text,
   requested_by     uuid NOT NULL REFERENCES users (id),
   requested_at     timestamptz NOT NULL DEFAULT now(),
+  started_at       timestamptz,
   completed_at     timestamptz,
   updated_at       timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT material_renders_material_version_check CHECK (material_version >= 1),
@@ -64,12 +65,16 @@ CREATE TABLE material_renders (
   CONSTRAINT material_renders_label_check CHECK (label IN ('circulated_footage', 'none')),
   CONSTRAINT material_renders_title_lines_valid CHECK (public.render_title_lines_valid(title_lines)),
   CONSTRAINT material_renders_location_text_valid CHECK (location_text IS NULL OR public.render_text_valid(location_text, 44)),
-  CONSTRAINT material_renders_state_check CHECK (state IN ('requested', 'ready', 'failed')),
+  CONSTRAINT material_renders_state_check CHECK (state IN ('requested', 'rendering', 'ready', 'failed')),
   CONSTRAINT material_renders_ready_has_file CHECK ((state = 'ready') = (file_id IS NOT NULL)),
   CONSTRAINT material_renders_failure_reason_check CHECK (
     (state = 'failed') = (failure_reason IS NOT NULL)
     AND (failure_reason IS NULL OR failure_reason IN ('source_unavailable', 'title_overflow', 'render_failed'))),
-  CONSTRAINT material_renders_completed_at_check CHECK ((state = 'requested') = (completed_at IS NULL))
+  -- requested ثم rendering حين يلتقطها العامل ثم ready أو failed النهائيتان؛ الفشل قد يسبق الالتقاط
+  CONSTRAINT material_renders_started_at_check CHECK (
+    (state = 'requested' AND started_at IS NULL) OR (state IN ('rendering', 'ready') AND started_at IS NOT NULL)
+    OR state = 'failed'),
+  CONSTRAINT material_renders_completed_at_check CHECK ((state IN ('requested', 'rendering')) = (completed_at IS NULL))
 );
 CREATE INDEX material_renders_material_idx ON material_renders (material_id, requested_at DESC);
 CREATE TRIGGER material_renders_set_updated_at BEFORE UPDATE ON material_renders
@@ -89,7 +94,7 @@ ALTER TABLE outbox_events ADD CONSTRAINT outbox_events_type_check CHECK (type IN
     'catalog.listing_changed', 'license.delivery_requested',
     'order.status_changed', 'license.issued', 'license.revoked',
     'payout.status_changed',
-    'render.requested', 'render.completed', 'render.failed'));
+    'render.requested', 'render.started', 'render.completed', 'render.failed'));
 
 -- حمولة أحداث النسخة معرّفات وحدها (ADR SEC-03): لا عنوان ولا مكان ولا اسم ملف ولا مفتاح تخزين
 CREATE OR REPLACE FUNCTION outbox_payload_allowed_keys(event_type text) RETURNS text[]
@@ -123,6 +128,7 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     WHEN event_type = 'license.revoked'         THEN ARRAY['license_id', 'organization_id', 'material_id', 'revoked_reason']
     WHEN event_type = 'payout.status_changed'   THEN ARRAY['payout_request_id', 'user_id', 'state', 'reason_code']
     WHEN event_type = 'render.requested'        THEN ARRAY['material_id', 'render_id', 'source_file_id', 'requested_by']
+    WHEN event_type = 'render.started'          THEN ARRAY['material_id', 'render_id']
     WHEN event_type = 'render.completed'        THEN ARRAY['material_id', 'render_id', 'file_id']
     WHEN event_type = 'render.failed'           THEN ARRAY['material_id', 'render_id', 'failure_reason']
     ELSE ARRAY[]::text[]
@@ -165,7 +171,7 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
   END
 $$;
 
-DELETE FROM outbox_events WHERE type IN ('render.requested', 'render.completed', 'render.failed');
+DELETE FROM outbox_events WHERE type IN ('render.requested', 'render.started', 'render.completed', 'render.failed');
 ALTER TABLE outbox_events DROP CONSTRAINT outbox_events_type_check;
 ALTER TABLE outbox_events ADD CONSTRAINT outbox_events_type_check CHECK (type IN (
     'material.created', 'material.urgent_received', 'material.updated', 'material.version_created',

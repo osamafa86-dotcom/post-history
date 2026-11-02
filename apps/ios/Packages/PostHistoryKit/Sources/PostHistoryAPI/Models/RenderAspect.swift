@@ -7,7 +7,7 @@
 
 import Foundation
 
-/** &#x60;vertical&#x60; 9:16 بـ 1080×1920 (الأساس)، &#x60;horizontal&#x60; 16:9 بـ 1920×1080، &#x60;square&#x60; 1:1 بـ 1080×1080 */
+/** &#x60;vertical&#x60; 9:16 بـ 1080×1920 (الأساس)، &#x60;horizontal&#x60; 16:9 بـ 1920×1080، &#x60;square&#x60; 1:1 بـ 1080×1080. الاسم نفسه معامل القالب &#x60;aspect&#x60;. */
 public enum RenderAspect: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
     case vertical = "vertical"
     case horizontal = "horizontal"

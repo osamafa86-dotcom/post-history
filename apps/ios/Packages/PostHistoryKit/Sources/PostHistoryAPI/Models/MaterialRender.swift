@@ -16,6 +16,7 @@ public struct MaterialRender: Sendable, Codable, Hashable {
     }
     public enum State: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
         case requested = "requested"
+        case rendering = "rendering"
         case ready = "ready"
         case failed = "failed"
         case unknownDefaultOpenApi = "unknown_default_open_api"
@@ -33,28 +34,30 @@ public struct MaterialRender: Sendable, Codable, Hashable {
     public var materialId: UUID
     /** إصدار المادة ساعة الطلب */
     public var materialVersion: Int
-    /** الأصل المتحقق الذي تُبنى منه */
+    /** أصل المادة المتحقق الذي تُبنى منه (واحد لكل مادة، ADR 0081)؛ يملؤه الخادم */
     public var sourceFileId: UUID
     public var template: Template
     public var aspect: RenderAspect
-    /** العنوان سطرًا إلى ثلاثة بترتيبها، يقسمها الطاقم على معنى الجملة لا على العرض (المواصفة)، فلا يقسمها الخادم ولا العامل. المجموع ≤ 66 محرفًا بحكم الحدّين. الواجهة تملؤها ابتداءً من عنوان المادة. */
+    /** العنوان سطرًا إلى ثلاثة بترتيبها، يقسمها الطاقم على معنى الجملة لا على العرض (المواصفة)، فلا يقسمها الخادم ولا العامل. المجموع ≤ 66 نقطة ترميز بحكم الحدّين. الواجهة تملؤها ابتداءً من عنوان المادة. يصير `titleLines` في معاملات القالب. */
     public var titleLines: [String]
     public var showLocation: Bool
-    /** ما يُرسم في كبسولة المكان كما بناه الخادم ساعة الطلب؛ `null` حين `show_location` خطأ */
+    /** ما يُرسم في كبسولة المكان كما بناه الخادم ساعة الطلب؛ `null` حين `show_location` خطأ، فلا كبسولة */
     public var locationText: String?
     public var label: RenderLabel
-    /** `requested` في الطابور أو قيد البناء، `ready` جاهزة، `failed` نهائية (اطلب نسخة جديدة) */
+    /** `requested` في الطابور ← `rendering` التقطها العامل ← `ready` جاهزة أو `failed`. `failed` نهائية: إعادة المحاولة طلب جديد بمفتاح `Idempotency-Key` جديد (الويب يعيد فتح الحوار مملوءًا). كل انتقال بحدث Outbox (`render.started` و`render.completed` و`render.failed`). */
     public var state: State
     /** مشتق `circulated_render` حين تجهز؛ رابطه من `GET /materials/{id}/files/{file_id}/download-url` */
     public var fileId: UUID?
-    /** `source_unavailable` الأصل غير متاح للعامل، `title_overflow` سطر لا يتسع حتى بأدنى تصغير يسمح به القالب، `render_failed` غير ذلك بعد إعادة المحاولة */
+    /** `source_unavailable` الأصل غير متاح للعامل، `title_overflow` سطر لا يتسع حتى بتصغير الكتلة إلى 70%، `render_failed` غير ذلك بعد إعادة المحاولة */
     public var failureReason: FailureReason?
     public var requestedBy: UUID
     public var requestedAt: Date
+    /** متى التقطها العامل؛ `null` قبل ذلك */
+    public var startedAt: Date?
     /** متى جهزت أو فشلت */
     public var completedAt: Date?
 
-    public init(id: UUID, materialId: UUID, materialVersion: Int, sourceFileId: UUID, template: Template, aspect: RenderAspect, titleLines: [String], showLocation: Bool, locationText: String?, label: RenderLabel, state: State, fileId: UUID?, failureReason: FailureReason?, requestedBy: UUID, requestedAt: Date, completedAt: Date?) {
+    public init(id: UUID, materialId: UUID, materialVersion: Int, sourceFileId: UUID, template: Template, aspect: RenderAspect, titleLines: [String], showLocation: Bool, locationText: String?, label: RenderLabel, state: State, fileId: UUID?, failureReason: FailureReason?, requestedBy: UUID, requestedAt: Date, startedAt: Date?, completedAt: Date?) {
         self.id = id
         self.materialId = materialId
         self.materialVersion = materialVersion
@@ -70,6 +73,7 @@ public struct MaterialRender: Sendable, Codable, Hashable {
         self.failureReason = failureReason
         self.requestedBy = requestedBy
         self.requestedAt = requestedAt
+        self.startedAt = startedAt
         self.completedAt = completedAt
     }
 
@@ -89,6 +93,7 @@ public struct MaterialRender: Sendable, Codable, Hashable {
         case failureReason = "failure_reason"
         case requestedBy = "requested_by"
         case requestedAt = "requested_at"
+        case startedAt = "started_at"
         case completedAt = "completed_at"
     }
 
@@ -111,6 +116,7 @@ public struct MaterialRender: Sendable, Codable, Hashable {
         try container.encode(failureReason, forKey: .failureReason)
         try container.encode(requestedBy, forKey: .requestedBy)
         try container.encode(requestedAt, forKey: .requestedAt)
+        try container.encode(startedAt, forKey: .startedAt)
         try container.encode(completedAt, forKey: .completedAt)
     }
 }

@@ -884,17 +884,25 @@ paths:
         فيبني عامل الوسائط من الأصل المتحقق كاملًا، من أول إطار إلى آخره، ملفًا جديدًا `circulated_render` بلا قص ولا تجميع.
         الأصل لا يُمس، ولا تتغيّر أيٌّ من الحالات الثلاث للمادة.
 
+        - **المصدر:** أصل المادة المتحقق، وهو واحد لكل مادة (ADR 0081)، فلا يحمل الطلب `source_file_id`.
         - **الشروط** (وإلا `409 render_not_allowed` و`details.failed` بالشروط الفاشلة): أصل `original` بحالة `verified` فيه
-          مسار صورة ومدته ≤ 300 ث (`source`)، والحالة التحريرية `accepted` أو `in_production` أو `final_review` أو `published`
-          (`editorial_state`)، والحقوق غير `blocked` ولا `withdrawn` (`rights_state`). الحساسية لا تمنع الطلب: المعالجة
-          محلية لا يغادر منها شيء الخادم، وبوابة النشر (ADR 0084 بند 4) تبقى كما هي على ما يُنشر.
+          مسار صورة ولا تتجاوز مدته الحدّ (`source`)، والحالة التحريرية `accepted` أو `in_production` أو `final_review` أو
+          `published` (`editorial_state`)، والحقوق غير `blocked` ولا `withdrawn` (`rights_state`). الحساسية لا تمنع الطلب:
+          المعالجة محلية لا يغادر منها شيء الخادم، وبوابة النشر (ADR 0084 بند 4) تبقى كما هي على ما يُنشر.
+        - **حدّ المدة** 300 ث مؤقتًا، ويثبّته القياس (ADR 0091 البند 7)، فلا يثبّته العميل في شفرته: فشل `source` بسبب المدة
+          يحمل الحدّ الساري في `details.max_source_duration_ms`.
         - **المكان** يبنيه الخادم من حقلي المادة وحدهما ساعة الطلب: «المدينة، المحافظة» (والمدينة وحدها إن ساوت المحافظة)،
-          ويُحفظ في `location_text`. لا يُقرأ `gps` أبدًا. إن تجاوز 44 محرفًا أو خالف قاعدة النص فـ `422 render_location_unusable`:
-          يُطفأ المكان أو يُصحَّح حقلا المادة.
+          ويُحفظ في `location_text`. لا يأخذ الطلب نص مكان من العميل أبدًا (`show_location` منطقي وحده، وأي مفتاح آخر `422`)،
+          ولا يُقرأ `gps` أبدًا. `422 render_location_unusable` للحالتين: تجاوز 44 نقطة ترميز، أو مخالفة قاعدة النص
+          (`RenderTitleLine`). يُطفأ المكان أو يُصحَّح حقلا المادة.
+        - **العنوان** يتحقق منه الخادم بقاعدة `RenderTitleLine` نفسها، والطول بنقاط ترميز Unicode لا بوحدات UTF-16.
         - **مفتاح منع التكرار:** كل مفتاح جديد نسخة جديدة (عدة نسخ للمادة مسموحة)، والتكرار بالمفتاح نفسه يعيد النسخة نفسها
-          دون حدث جديد. أكثر من ثلاث نسخ `requested` للمادة الواحدة `409 render_limit_reached`.
+          دون حدث جديد. أكثر من ثلاث نسخ غير منتهية (`requested` أو `rendering`) للمادة الواحدة `409 render_limit_reached`.
         - **الأثر:** صف النسخة وحدث `render.requested` (معرّفات وحدها) في معاملة واحدة. العنوان والمكان لا يدخلان حدثًا ولا
-          إشعارًا ولا سجلًا.
+          إشعارًا ولا سجلًا. ثم `requested` ← `rendering` حين يلتقطها العامل ← `ready` أو `failed`، وكل انتقال بحدثه
+          (`render.started` و`render.completed` و`render.failed`). `failed` نهائية، وإعادة المحاولة طلب جديد بمفتاح جديد.
+        - **التنزيل في هذه المرحلة** داخلي ومدقَّق وحده، برابط `download-url` (≤ 10 دقائق، `no-store`). «تنزيل جاهز للنشر»
+          خلف بوابة ADR 0084 لمرحلة «مكتب المحرر».
       operationId: requestMaterialRender
       x-roles: [supervisor, producer, editor_in_chief]
       parameters:
@@ -1546,8 +1554,9 @@ paths:
       x-internal: true
       description: >-
         يقرؤه العامل عند `render.requested`، لأن الحدث لا يحمل نصًا. النصوص هنا تعبر الشبكة الداخلية وحدها إلى العامل،
-        ولا تُكتب في سجل. النسخة غير `requested` تُعاد بحالتها فيتجاوزها العامل. فشل المصادقة أو العنوان `404` كبقية
-        `/internal/*`؛ والنسخة غير الموجودة برمز صحيح `410 media_resource_gone`.
+        ولا تُكتب في سجل. النسخة `ready` أو `failed` تُعاد بحالتها فيتجاوزها العامل، و`rendering` تعني إعادة تسليم بعد انقطاع
+        فيعيد العامل بناءها. فشل المصادقة أو العنوان `404` كبقية `/internal/*`؛ والنسخة غير الموجودة برمز صحيح
+        `410 media_resource_gone`.
       operationId: mediaGetRender
       x-roles: []
       security: [{ mediaWorkerToken: [] }]
@@ -1558,6 +1567,29 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/MediaRenderJob" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "410": { $ref: "#/components/responses/MediaResourceGone" }
+
+  /internal/media/renders/{render_id}/start:
+    servers:
+      - url: http://api.internal:3000
+        description: شبكة media الداخلية فقط (ADR 0006)
+    parameters:
+      - $ref: "#/components/parameters/RenderId"
+    post:
+      tags: [uploads]
+      summary: التقاط العامل نسخة قالب «مواد متداولة» (داخلي، ADR 0091)
+      x-internal: true
+      description: >-
+        `requested` ← `rendering` بـ `started_at`، ويكتب `render.started` في المعاملة نفسها. متساوٍ الأثر: النسخة `rendering`
+        تُعاد `204` دون حدث جديد (إعادة تسليم بعد انقطاع)، و`ready` أو `failed` `409`. النسخة غير الموجودة برمز صحيح
+        `410 media_resource_gone`.
+      operationId: mediaPostRenderStart
+      x-roles: []
+      security: [{ mediaWorkerToken: [] }]
+      responses:
+        "204": { description: "التقطها العامل (`rendering`)" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "410": { $ref: "#/components/responses/MediaResourceGone" }
 
   /internal/media/renders/{render_id}/failure:
@@ -4555,12 +4587,15 @@ components:
         render_id: { type: string, format: uuid }
         material_id: { type: string, format: uuid }
         source_file_id: { type: string, format: uuid }
-        state: { type: string, enum: [requested, ready, failed] }
+        state: { type: string, enum: [requested, rendering, ready, failed] }
         template: { type: string, enum: [circulated] }
         aspect: { $ref: "#/components/schemas/RenderAspect" }
-        title_lines: { $ref: "#/components/schemas/RenderTitleLines" }
-        location_text: { type: [string, "null"], maxLength: 44, description: "`null` = بلا كبسولة مكان" }
-        label: { $ref: "#/components/schemas/RenderLabel" }
+        title_lines: { $ref: "#/components/schemas/RenderTitleLines", description: "يصير `titleLines` في معاملات القالب" }
+        location_text:
+          type: [string, "null"]
+          maxLength: 44
+          description: "`null` = لا كبسولة مكان أبدًا (لا كبسولة فارغة)؛ يصير `location` في معاملات القالب، ولا مصدر له غير الخادم"
+        label: { $ref: "#/components/schemas/RenderLabel", description: "`none` = لا وسم أبدًا (لا صندوق ذهبي فارغ)" }
 
     MediaRenderFailure:
       x-internal: true
@@ -4647,10 +4682,12 @@ components:
       maxLength: 22
       pattern: "^[^\\s\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069](?:[^\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]*[^\\s\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069])?$"
       description: >-
-        سطر من عنوان النسخة يكتبه الطاقم (ADR 0091): 1–22 محرفًا (نقاط ترميز Unicode)، والحدّ مقيس على إطارات VT بخط القالب
-        وهو «نحو 22 حرفًا للسطر» في `docs/design/specs/video-template.md`. قاعدة `MaterialTag` نفسها (ADR 0086): بلا مسافة من
+        سطر من عنوان النسخة يكتبه الطاقم (ADR 0091): 1–22 **نقطة ترميز Unicode**، لا وحدة UTF-16 (المحرف خارج المستوى الأساسي
+        يُعدّ مرة، وعلامات التشكيل تُعدّ كل منها). 22 حدّ تحريري؛ والقالب يسع بالحجم الكامل 26 عموديًا و32 أفقيًا و31 مربعًا
+        (`docs/design/specs/video-template.md`، «طول السطر»، الحدّ الآمن). قاعدة `MaterialTag` نفسها (ADR 0086): بلا مسافة من
         أي نوع في طرفيه، وبلا محارف تحكم (فلا سطر جديد داخل السطر) ولا محارف اتجاه (U+061C وU+200E/U+200F وU+202A–U+202E
-        وU+2066–U+2069). القاعدة نفسها في قاعدة البيانات (`render_title_lines_valid`).
+        وU+2066–U+2069). يتحقق منها الخادم، والقاعدة نفسها في قاعدة البيانات (`render_title_lines_valid`). السطر الأعرض من
+        صندوقه يُصغَّر مع الكتلة كلها بنسبة واحدة حتى 70% ولا يلتفّ، وما لا يتسع بعدها يفشل بـ `title_overflow`.
 
     RenderTitleLines:
       type: array
@@ -4659,18 +4696,20 @@ components:
       items: { $ref: "#/components/schemas/RenderTitleLine" }
       description: >-
         العنوان سطرًا إلى ثلاثة بترتيبها، يقسمها الطاقم على معنى الجملة لا على العرض (المواصفة)، فلا يقسمها الخادم ولا العامل.
-        المجموع ≤ 66 محرفًا بحكم الحدّين. الواجهة تملؤها ابتداءً من عنوان المادة.
+        المجموع ≤ 66 نقطة ترميز بحكم الحدّين. الواجهة تملؤها ابتداءً من عنوان المادة. يصير `titleLines` في معاملات القالب.
 
     RenderAspect:
       type: string
-      description: "`vertical` 9:16 بـ 1080×1920 (الأساس)، `horizontal` 16:9 بـ 1920×1080، `square` 1:1 بـ 1080×1080"
+      description: >-
+        `vertical` 9:16 بـ 1080×1920 (الأساس)، `horizontal` 16:9 بـ 1920×1080، `square` 1:1 بـ 1080×1080. الاسم نفسه معامل
+        القالب `aspect`.
       enum: [vertical, horizontal, square]
 
     RenderLabel:
       type: string
       description: >-
-        وسم القالب: `circulated_footage` يرسم «مشاهد متداولة» (ليس من تصوير الشبكة)، و`none` بلا وسم. اختيار لكل طلب بلا قيمة
-        افتراضية، والعقد لا يحمل صفة «متداولة» للمادة (ADR 0091).
+        وسم القالب: `circulated_footage` يرسم «مشاهد متداولة» (ليس من تصوير الشبكة)، و`none` لا يرسم شيئًا مكانه (لا صندوق
+        فارغ). اختيار لكل طلب بلا قيمة افتراضية، والعقد لا يحمل صفة «متداولة» للمادة (ADR 0091).
       enum: [circulated_footage, none]
 
     MaterialRenderRequest:
@@ -4687,12 +4726,13 @@ components:
         show_location:
           type: boolean
           description: >-
-            إظهار «المدينة، المحافظة» من حقلي المادة؛ `false` يطفئه (حماية المصدر). لا إحداثيات في أي حال.
+            إظهار «المدينة، المحافظة» يبنيها الخادم من حقلي المادة؛ `false` يطفئه (حماية المصدر). لا يأخذ الطلب نص مكان من
+            العميل، ولا إحداثيات في أي حال.
         label: { $ref: "#/components/schemas/RenderLabel" }
 
     MaterialRender:
       type: object
-      required: [id, material_id, material_version, source_file_id, template, aspect, title_lines, show_location, location_text, label, state, file_id, failure_reason, requested_by, requested_at, completed_at]
+      required: [id, material_id, material_version, source_file_id, template, aspect, title_lines, show_location, location_text, label, state, file_id, failure_reason, requested_by, requested_at, started_at, completed_at]
       description: >-
         طلب نسخة على قالب «مواد متداولة» بمعاملاته كما رُسمت (ADR 0091). النسخة ملف للمادة نفسها، فترث حساسيتها وحقوقها،
         ولا تدخل الكتالوج ولا حزمة تسليم ولا تُعرض للبيع.
@@ -4700,7 +4740,7 @@ components:
         id: { type: string, format: uuid }
         material_id: { type: string, format: uuid }
         material_version: { type: integer, minimum: 1, description: إصدار المادة ساعة الطلب }
-        source_file_id: { type: string, format: uuid, description: الأصل المتحقق الذي تُبنى منه }
+        source_file_id: { type: string, format: uuid, description: "أصل المادة المتحقق الذي تُبنى منه (واحد لكل مادة، ADR 0081)؛ يملؤه الخادم" }
         template: { type: string, enum: [circulated] }
         aspect: { $ref: "#/components/schemas/RenderAspect" }
         title_lines: { $ref: "#/components/schemas/RenderTitleLines" }
@@ -4708,12 +4748,15 @@ components:
         location_text:
           type: [string, "null"]
           maxLength: 44
-          description: ما يُرسم في كبسولة المكان كما بناه الخادم ساعة الطلب؛ `null` حين `show_location` خطأ
+          description: ما يُرسم في كبسولة المكان كما بناه الخادم ساعة الطلب؛ `null` حين `show_location` خطأ، فلا كبسولة
         label: { $ref: "#/components/schemas/RenderLabel" }
         state:
           type: string
-          description: "`requested` في الطابور أو قيد البناء، `ready` جاهزة، `failed` نهائية (اطلب نسخة جديدة)"
-          enum: [requested, ready, failed]
+          description: >-
+            `requested` في الطابور ← `rendering` التقطها العامل ← `ready` جاهزة أو `failed`. `failed` نهائية: إعادة المحاولة
+            طلب جديد بمفتاح `Idempotency-Key` جديد (الويب يعيد فتح الحوار مملوءًا). كل انتقال بحدث Outbox (`render.started`
+            و`render.completed` و`render.failed`).
+          enum: [requested, rendering, ready, failed]
         file_id:
           type: [string, "null"]
           format: uuid
@@ -4721,11 +4764,12 @@ components:
         failure_reason:
           type: [string, "null"]
           description: >-
-            `source_unavailable` الأصل غير متاح للعامل، `title_overflow` سطر لا يتسع حتى بأدنى تصغير يسمح به القالب،
+            `source_unavailable` الأصل غير متاح للعامل، `title_overflow` سطر لا يتسع حتى بتصغير الكتلة إلى 70%،
             `render_failed` غير ذلك بعد إعادة المحاولة
           enum: [source_unavailable, title_overflow, render_failed, null]
         requested_by: { type: string, format: uuid }
         requested_at: { type: string, format: date-time }
+        started_at: { type: [string, "null"], format: date-time, description: متى التقطها العامل؛ `null` قبل ذلك }
         completed_at: { type: [string, "null"], format: date-time, description: متى جهزت أو فشلت }
       example:
         id: 4e5f6a7b-8c9d-4e0f-a1b2-c3d4e5f6a7b8
@@ -4734,15 +4778,16 @@ components:
         source_file_id: 0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d
         template: circulated
         aspect: vertical
-        title_lines: [طوابير طويلة أمام, المخابز في دير البلح]
+        title_lines: [عنوان تجريبي, للمادة المتداولة]
         show_location: true
-        location_text: دير البلح، وسط قطاع غزة
+        location_text: مدينة، محافظة
         label: circulated_footage
         state: ready
         file_id: 5b6c7d8e-9f0a-4b1c-8d2e-3f4a5b6c7d8e
         failure_reason: null
         requested_by: 2f3e4d5c-6b7a-4899-8a7b-6c5d4e3f2a1b
         requested_at: "2026-11-02T10:00:00Z"
+        started_at: "2026-11-02T10:00:05Z"
         completed_at: "2026-11-02T10:01:10Z"
 
     DuplicateCandidate:

@@ -7,7 +7,7 @@
 
 import Foundation
 
-/** وسم القالب: &#x60;circulated_footage&#x60; يرسم «مشاهد متداولة» (ليس من تصوير الشبكة)، و&#x60;none&#x60; بلا وسم. اختيار لكل طلب بلا قيمة افتراضية، والعقد لا يحمل صفة «متداولة» للمادة (ADR 0091). */
+/** وسم القالب: &#x60;circulated_footage&#x60; يرسم «مشاهد متداولة» (ليس من تصوير الشبكة)، و&#x60;none&#x60; لا يرسم شيئًا مكانه (لا صندوق فارغ). اختيار لكل طلب بلا قيمة افتراضية، والعقد لا يحمل صفة «متداولة» للمادة (ADR 0091). */
 public enum RenderLabel: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
     case circulatedFootage = "circulated_footage"
     case `none` = "none"

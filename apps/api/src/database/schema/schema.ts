@@ -595,6 +595,7 @@ export const materialRenders = pgTable("material_renders", {
 	failureReason: text("failure_reason"),
 	requestedBy: uuid("requested_by").notNull(),
 	requestedAt: timestamp("requested_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }),
 	completedAt: timestamp("completed_at", { withTimezone: true, mode: 'string' }),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
@@ -626,10 +627,11 @@ export const materialRenders = pgTable("material_renders", {
 	check("material_renders_label_check", sql`label = ANY (ARRAY['circulated_footage'::text, 'none'::text])`),
 	check("material_renders_title_lines_valid", sql`CHECK (render_title_lines_valid(title_lines`),
 	check("material_renders_location_text_valid", sql`(location_text IS NULL) OR render_text_valid(location_text, 44)`),
-	check("material_renders_state_check", sql`state = ANY (ARRAY['requested'::text, 'ready'::text, 'failed'::text])`),
+	check("material_renders_started_at_check", sql`((state = 'requested'::text) AND (started_at IS NULL)) OR ((state = ANY (ARRAY['rendering'::text, 'ready'::text])) AND (started_at IS NOT NULL)) OR (state = 'failed'::text)`),
+	check("material_renders_state_check", sql`state = ANY (ARRAY['requested'::text, 'rendering'::text, 'ready'::text, 'failed'::text])`),
 	check("material_renders_ready_has_file", sql`(state = 'ready'::text) = (file_id IS NOT NULL)`),
 	check("material_renders_failure_reason_check", sql`((state = 'failed'::text) = (failure_reason IS NOT NULL)) AND ((failure_reason IS NULL) OR (failure_reason = ANY (ARRAY['source_unavailable'::text, 'title_overflow'::text, 'render_failed'::text])))`),
-	check("material_renders_completed_at_check", sql`(state = 'requested'::text) = (completed_at IS NULL)`),
+	check("material_renders_completed_at_check", sql`(state = ANY (ARRAY['requested'::text, 'rendering'::text])) = (completed_at IS NULL)`),
 ]);
 
 export const materialExports = pgTable("material_exports", {
@@ -746,7 +748,7 @@ export const outboxEvents = pgTable("outbox_events", {
 	check("outbox_events_idempotency_key_len", sql`(char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 200)`),
 	check("outbox_events_payload_is_object", sql`jsonb_typeof(payload) = 'object'::text`),
 	check("outbox_events_payload_whitelisted", sql`CHECK (outbox_payload_is_whitelisted(type, payload`),
-	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text, 'license.revoked'::text, 'payout.status_changed'::text, 'render.requested'::text, 'render.completed'::text, 'render.failed'::text])`),
+	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text, 'license.revoked'::text, 'payout.status_changed'::text, 'render.requested'::text, 'render.started'::text, 'render.completed'::text, 'render.failed'::text])`),
 ]);
 
 export const recoveryCodes = pgTable("recovery_codes", {

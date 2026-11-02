@@ -60,6 +60,7 @@
         "license.revoked",
         "payout.status_changed",
         "render.requested",
+        "render.started",
         "render.completed",
         "render.failed"
       ]
@@ -1107,6 +1108,39 @@
                 "$ref": "#/$defs/uuid"
               },
               "requested_by": {
+                "$ref": "#/$defs/uuid"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "render.started"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "material"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "التقط عامل الوسائط النسخة (requested ← rendering، ADR 0091): معرّفان وحدهما، بلا اسم مضيف ولا عملية.",
+            "required": [
+              "material_id",
+              "render_id"
+            ],
+            "properties": {
+              "material_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "render_id": {
                 "$ref": "#/$defs/uuid"
               }
             }

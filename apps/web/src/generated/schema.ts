@@ -491,17 +491,25 @@ export interface paths {
          *     فيبني عامل الوسائط من الأصل المتحقق كاملًا، من أول إطار إلى آخره، ملفًا جديدًا `circulated_render` بلا قص ولا تجميع.
          *     الأصل لا يُمس، ولا تتغيّر أيٌّ من الحالات الثلاث للمادة.
          *
+         *     - **المصدر:** أصل المادة المتحقق، وهو واحد لكل مادة (ADR 0081)، فلا يحمل الطلب `source_file_id`.
          *     - **الشروط** (وإلا `409 render_not_allowed` و`details.failed` بالشروط الفاشلة): أصل `original` بحالة `verified` فيه
-         *       مسار صورة ومدته ≤ 300 ث (`source`)، والحالة التحريرية `accepted` أو `in_production` أو `final_review` أو `published`
-         *       (`editorial_state`)، والحقوق غير `blocked` ولا `withdrawn` (`rights_state`). الحساسية لا تمنع الطلب: المعالجة
-         *       محلية لا يغادر منها شيء الخادم، وبوابة النشر (ADR 0084 بند 4) تبقى كما هي على ما يُنشر.
+         *       مسار صورة ولا تتجاوز مدته الحدّ (`source`)، والحالة التحريرية `accepted` أو `in_production` أو `final_review` أو
+         *       `published` (`editorial_state`)، والحقوق غير `blocked` ولا `withdrawn` (`rights_state`). الحساسية لا تمنع الطلب:
+         *       المعالجة محلية لا يغادر منها شيء الخادم، وبوابة النشر (ADR 0084 بند 4) تبقى كما هي على ما يُنشر.
+         *     - **حدّ المدة** 300 ث مؤقتًا، ويثبّته القياس (ADR 0091 البند 7)، فلا يثبّته العميل في شفرته: فشل `source` بسبب المدة
+         *       يحمل الحدّ الساري في `details.max_source_duration_ms`.
          *     - **المكان** يبنيه الخادم من حقلي المادة وحدهما ساعة الطلب: «المدينة، المحافظة» (والمدينة وحدها إن ساوت المحافظة)،
-         *       ويُحفظ في `location_text`. لا يُقرأ `gps` أبدًا. إن تجاوز 44 محرفًا أو خالف قاعدة النص فـ `422 render_location_unusable`:
-         *       يُطفأ المكان أو يُصحَّح حقلا المادة.
+         *       ويُحفظ في `location_text`. لا يأخذ الطلب نص مكان من العميل أبدًا (`show_location` منطقي وحده، وأي مفتاح آخر `422`)،
+         *       ولا يُقرأ `gps` أبدًا. `422 render_location_unusable` للحالتين: تجاوز 44 نقطة ترميز، أو مخالفة قاعدة النص
+         *       (`RenderTitleLine`). يُطفأ المكان أو يُصحَّح حقلا المادة.
+         *     - **العنوان** يتحقق منه الخادم بقاعدة `RenderTitleLine` نفسها، والطول بنقاط ترميز Unicode لا بوحدات UTF-16.
          *     - **مفتاح منع التكرار:** كل مفتاح جديد نسخة جديدة (عدة نسخ للمادة مسموحة)، والتكرار بالمفتاح نفسه يعيد النسخة نفسها
-         *       دون حدث جديد. أكثر من ثلاث نسخ `requested` للمادة الواحدة `409 render_limit_reached`.
+         *       دون حدث جديد. أكثر من ثلاث نسخ غير منتهية (`requested` أو `rendering`) للمادة الواحدة `409 render_limit_reached`.
          *     - **الأثر:** صف النسخة وحدث `render.requested` (معرّفات وحدها) في معاملة واحدة. العنوان والمكان لا يدخلان حدثًا ولا
-         *       إشعارًا ولا سجلًا.
+         *       إشعارًا ولا سجلًا. ثم `requested` ← `rendering` حين يلتقطها العامل ← `ready` أو `failed`، وكل انتقال بحدثه
+         *       (`render.started` و`render.completed` و`render.failed`). `failed` نهائية، وإعادة المحاولة طلب جديد بمفتاح جديد.
+         *     - **التنزيل في هذه المرحلة** داخلي ومدقَّق وحده، برابط `download-url` (≤ 10 دقائق، `no-store`). «تنزيل جاهز للنشر»
+         *       خلف بوابة ADR 0084 لمرحلة «مكتب المحرر».
          */
         post: operations["requestMaterialRender"];
         delete?: never;
@@ -923,11 +931,34 @@ export interface paths {
         };
         /**
          * معاملات نسخة قالب «مواد متداولة» كما يحتاجها العامل (داخلي، ADR 0091)
-         * @description يقرؤه العامل عند `render.requested`، لأن الحدث لا يحمل نصًا. النصوص هنا تعبر الشبكة الداخلية وحدها إلى العامل، ولا تُكتب في سجل. النسخة غير `requested` تُعاد بحالتها فيتجاوزها العامل. فشل المصادقة أو العنوان `404` كبقية `/internal/*`؛ والنسخة غير الموجودة برمز صحيح `410 media_resource_gone`.
+         * @description يقرؤه العامل عند `render.requested`، لأن الحدث لا يحمل نصًا. النصوص هنا تعبر الشبكة الداخلية وحدها إلى العامل، ولا تُكتب في سجل. النسخة `ready` أو `failed` تُعاد بحالتها فيتجاوزها العامل، و`rendering` تعني إعادة تسليم بعد انقطاع فيعيد العامل بناءها. فشل المصادقة أو العنوان `404` كبقية `/internal/*`؛ والنسخة غير الموجودة برمز صحيح `410 media_resource_gone`.
          */
         get: operations["mediaGetRender"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/media/renders/{render_id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف نسخة القالب (`MaterialRender.id`) */
+                render_id: components["parameters"]["RenderId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * التقاط العامل نسخة قالب «مواد متداولة» (داخلي، ADR 0091)
+         * @description `requested` ← `rendering` بـ `started_at`، ويكتب `render.started` في المعاملة نفسها. متساوٍ الأثر: النسخة `rendering` تُعاد `204` دون حدث جديد (إعادة تسليم بعد انقطاع)، و`ready` أو `failed` `409`. النسخة غير الموجودة برمز صحيح `410 media_resource_gone`.
+         */
+        post: operations["mediaPostRenderStart"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2866,13 +2897,15 @@ export interface components {
             /** Format: uuid */
             source_file_id: string;
             /** @enum {string} */
-            state: "requested" | "ready" | "failed";
+            state: "requested" | "rendering" | "ready" | "failed";
             /** @enum {string} */
             template: "circulated";
             aspect: components["schemas"]["RenderAspect"];
+            /** @description يصير `titleLines` في معاملات القالب */
             title_lines: components["schemas"]["RenderTitleLines"];
-            /** @description `null` = بلا كبسولة مكان */
+            /** @description `null` = لا كبسولة مكان أبدًا (لا كبسولة فارغة)؛ يصير `location` في معاملات القالب، ولا مصدر له غير الخادم */
             location_text: string | null;
+            /** @description `none` = لا وسم أبدًا (لا صندوق ذهبي فارغ) */
             label: components["schemas"]["RenderLabel"];
         };
         MediaRenderFailure: {
@@ -2953,17 +2986,17 @@ export interface components {
             /** @enum {string|null} */
             failure_reason?: "source_unavailable" | "build_failed" | null;
         };
-        /** @description سطر من عنوان النسخة يكتبه الطاقم (ADR 0091): 1–22 محرفًا (نقاط ترميز Unicode)، والحدّ مقيس على إطارات VT بخط القالب وهو «نحو 22 حرفًا للسطر» في `docs/design/specs/video-template.md`. قاعدة `MaterialTag` نفسها (ADR 0086): بلا مسافة من أي نوع في طرفيه، وبلا محارف تحكم (فلا سطر جديد داخل السطر) ولا محارف اتجاه (U+061C وU+200E/U+200F وU+202A–U+202E وU+2066–U+2069). القاعدة نفسها في قاعدة البيانات (`render_title_lines_valid`). */
+        /** @description سطر من عنوان النسخة يكتبه الطاقم (ADR 0091): 1–22 **نقطة ترميز Unicode**، لا وحدة UTF-16 (المحرف خارج المستوى الأساسي يُعدّ مرة، وعلامات التشكيل تُعدّ كل منها). 22 حدّ تحريري؛ والقالب يسع بالحجم الكامل 26 عموديًا و32 أفقيًا و31 مربعًا (`docs/design/specs/video-template.md`، «طول السطر»، الحدّ الآمن). قاعدة `MaterialTag` نفسها (ADR 0086): بلا مسافة من أي نوع في طرفيه، وبلا محارف تحكم (فلا سطر جديد داخل السطر) ولا محارف اتجاه (U+061C وU+200E/U+200F وU+202A–U+202E وU+2066–U+2069). يتحقق منها الخادم، والقاعدة نفسها في قاعدة البيانات (`render_title_lines_valid`). السطر الأعرض من صندوقه يُصغَّر مع الكتلة كلها بنسبة واحدة حتى 70% ولا يلتفّ، وما لا يتسع بعدها يفشل بـ `title_overflow`. */
         RenderTitleLine: string;
-        /** @description العنوان سطرًا إلى ثلاثة بترتيبها، يقسمها الطاقم على معنى الجملة لا على العرض (المواصفة)، فلا يقسمها الخادم ولا العامل. المجموع ≤ 66 محرفًا بحكم الحدّين. الواجهة تملؤها ابتداءً من عنوان المادة. */
+        /** @description العنوان سطرًا إلى ثلاثة بترتيبها، يقسمها الطاقم على معنى الجملة لا على العرض (المواصفة)، فلا يقسمها الخادم ولا العامل. المجموع ≤ 66 نقطة ترميز بحكم الحدّين. الواجهة تملؤها ابتداءً من عنوان المادة. يصير `titleLines` في معاملات القالب. */
         RenderTitleLines: components["schemas"]["RenderTitleLine"][];
         /**
-         * @description `vertical` 9:16 بـ 1080×1920 (الأساس)، `horizontal` 16:9 بـ 1920×1080، `square` 1:1 بـ 1080×1080
+         * @description `vertical` 9:16 بـ 1080×1920 (الأساس)، `horizontal` 16:9 بـ 1920×1080، `square` 1:1 بـ 1080×1080. الاسم نفسه معامل القالب `aspect`.
          * @enum {string}
          */
         RenderAspect: "vertical" | "horizontal" | "square";
         /**
-         * @description وسم القالب: `circulated_footage` يرسم «مشاهد متداولة» (ليس من تصوير الشبكة)، و`none` بلا وسم. اختيار لكل طلب بلا قيمة افتراضية، والعقد لا يحمل صفة «متداولة» للمادة (ADR 0091).
+         * @description وسم القالب: `circulated_footage` يرسم «مشاهد متداولة» (ليس من تصوير الشبكة)، و`none` لا يرسم شيئًا مكانه (لا صندوق فارغ). اختيار لكل طلب بلا قيمة افتراضية، والعقد لا يحمل صفة «متداولة» للمادة (ADR 0091).
          * @enum {string}
          */
         RenderLabel: "circulated_footage" | "none";
@@ -2975,7 +3008,7 @@ export interface components {
             template: "circulated";
             aspect: components["schemas"]["RenderAspect"];
             title_lines: components["schemas"]["RenderTitleLines"];
-            /** @description إظهار «المدينة، المحافظة» من حقلي المادة؛ `false` يطفئه (حماية المصدر). لا إحداثيات في أي حال. */
+            /** @description إظهار «المدينة، المحافظة» يبنيها الخادم من حقلي المادة؛ `false` يطفئه (حماية المصدر). لا يأخذ الطلب نص مكان من العميل، ولا إحداثيات في أي حال. */
             show_location: boolean;
             label: components["schemas"]["RenderLabel"];
         };
@@ -2989,17 +3022,18 @@ export interface components {
          *       "template": "circulated",
          *       "aspect": "vertical",
          *       "title_lines": [
-         *         "طوابير طويلة أمام",
-         *         "المخابز في دير البلح"
+         *         "عنوان تجريبي",
+         *         "للمادة المتداولة"
          *       ],
          *       "show_location": true,
-         *       "location_text": "دير البلح، وسط قطاع غزة",
+         *       "location_text": "مدينة، محافظة",
          *       "label": "circulated_footage",
          *       "state": "ready",
          *       "file_id": "5b6c7d8e-9f0a-4b1c-8d2e-3f4a5b6c7d8e",
          *       "failure_reason": null,
          *       "requested_by": "2f3e4d5c-6b7a-4899-8a7b-6c5d4e3f2a1b",
          *       "requested_at": "2026-11-02T10:00:00Z",
+         *       "started_at": "2026-11-02T10:00:05Z",
          *       "completed_at": "2026-11-02T10:01:10Z"
          *     }
          */
@@ -3012,7 +3046,7 @@ export interface components {
             material_version: number;
             /**
              * Format: uuid
-             * @description الأصل المتحقق الذي تُبنى منه
+             * @description أصل المادة المتحقق الذي تُبنى منه (واحد لكل مادة، ADR 0081)؛ يملؤه الخادم
              */
             source_file_id: string;
             /** @enum {string} */
@@ -3020,21 +3054,21 @@ export interface components {
             aspect: components["schemas"]["RenderAspect"];
             title_lines: components["schemas"]["RenderTitleLines"];
             show_location: boolean;
-            /** @description ما يُرسم في كبسولة المكان كما بناه الخادم ساعة الطلب؛ `null` حين `show_location` خطأ */
+            /** @description ما يُرسم في كبسولة المكان كما بناه الخادم ساعة الطلب؛ `null` حين `show_location` خطأ، فلا كبسولة */
             location_text: string | null;
             label: components["schemas"]["RenderLabel"];
             /**
-             * @description `requested` في الطابور أو قيد البناء، `ready` جاهزة، `failed` نهائية (اطلب نسخة جديدة)
+             * @description `requested` في الطابور ← `rendering` التقطها العامل ← `ready` جاهزة أو `failed`. `failed` نهائية: إعادة المحاولة طلب جديد بمفتاح `Idempotency-Key` جديد (الويب يعيد فتح الحوار مملوءًا). كل انتقال بحدث Outbox (`render.started` و`render.completed` و`render.failed`).
              * @enum {string}
              */
-            state: "requested" | "ready" | "failed";
+            state: "requested" | "rendering" | "ready" | "failed";
             /**
              * Format: uuid
              * @description مشتق `circulated_render` حين تجهز؛ رابطه من `GET /materials/{id}/files/{file_id}/download-url`
              */
             file_id: string | null;
             /**
-             * @description `source_unavailable` الأصل غير متاح للعامل، `title_overflow` سطر لا يتسع حتى بأدنى تصغير يسمح به القالب، `render_failed` غير ذلك بعد إعادة المحاولة
+             * @description `source_unavailable` الأصل غير متاح للعامل، `title_overflow` سطر لا يتسع حتى بتصغير الكتلة إلى 70%، `render_failed` غير ذلك بعد إعادة المحاولة
              * @enum {string|null}
              */
             failure_reason: "source_unavailable" | "title_overflow" | "render_failed" | null;
@@ -3042,6 +3076,11 @@ export interface components {
             requested_by: string;
             /** Format: date-time */
             requested_at: string;
+            /**
+             * Format: date-time
+             * @description متى التقطها العامل؛ `null` قبل ذلك
+             */
+            started_at: string | null;
             /**
              * Format: date-time
              * @description متى جهزت أو فشلت
@@ -4208,7 +4247,7 @@ export interface components {
             /** @description تسلسلي متزايد (رقم الصف في جدول Outbox) بصيغة نصية؛ يُستخدم مؤشرًا في `after` */
             id: string;
             /** @enum {string} */
-            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested" | "order.status_changed" | "license.issued" | "license.revoked" | "payout.status_changed" | "render.requested" | "render.completed" | "render.failed";
+            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested" | "order.status_changed" | "license.issued" | "license.revoked" | "payout.status_changed" | "render.requested" | "render.started" | "render.completed" | "render.failed";
             /** @enum {string} */
             aggregate_type: "material" | "upload" | "notification" | "form" | "user" | "listing" | "license" | "order" | "payout";
             /** Format: uuid */
@@ -4247,7 +4286,7 @@ export interface components {
                 /** @enum {string} */
                 priority: "urgent" | "important" | "normal";
             };
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
     };
     responses: {
         /** @description طلب غير صالح (معاملات استعلام أو مؤشر غير مفهوم) */
@@ -5920,6 +5959,30 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            410: components["responses"]["MediaResourceGone"];
+        };
+    };
+    mediaPostRenderStart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف نسخة القالب (`MaterialRender.id`) */
+                render_id: components["parameters"]["RenderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description التقطها العامل (`rendering`) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             410: components["responses"]["MediaResourceGone"];
         };
     };
