@@ -247,7 +247,7 @@ final class SendBatchLedgerTests: XCTestCase {
         XCTAssertEqual(onDisk.first { $0.id == sensitive.batchId }?.sensitive, true, "kept on disk for the upload rows")
     }
 
-    // MARK: الحساب صاحب الإرسالة (ADR 0091)
+    // MARK: الحساب صاحب الإرسالة (ADR 0093)
 
     @MainActor func testTheSendCarriesItsOwnerAndOnlyItsOwnerSeesIt() async {
         let a = UUID(), b = UUID()

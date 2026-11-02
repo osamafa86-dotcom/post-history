@@ -2,7 +2,7 @@ import XCTest
 import PostHistoryAPI
 @testable import UploadCore
 
-/// سجلات الرفع لصاحبها وحده (ADR 0091): لا تُعرض لحساب آخر، ولا تُرسل طلباتها المصادَق عليها باسم غيره؛ تنتظر صاحبها ونقل tus يكمل.
+/// سجلات الرفع لصاحبها وحده (ADR 0093): لا تُعرض لحساب آخر، ولا تُرسل طلباتها المصادَق عليها باسم غيره؛ تنتظر صاحبها ونقل tus يكمل.
 final class AccountScopeTests: XCTestCase {
     typealias Harness = UploadEngineTests.Harness
 

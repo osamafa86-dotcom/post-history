@@ -12,7 +12,7 @@ struct SettingsScreen: View {
     @EnvironmentObject private var lock: AppLockModel
     @EnvironmentObject private var queue: UploadQueueModel
     @State private var confirmLogoutAll = false
-    /// خروج وللحساب ملفات لم يكتمل رفعها: تُكمل في الخلفية وتبقى مخفية حتى يعود (ADR 0091)، فيُقال ذلك قبل الخروج.
+    /// خروج وللحساب ملفات لم يكتمل رفعها: تُكمل في الخلفية وتبقى مخفية حتى يعود (ADR 0093)، فيُقال ذلك قبل الخروج.
     @State private var confirmLogoutPending = false
     @State private var memory = ReporterMemory()
     @State private var editingPlace = false

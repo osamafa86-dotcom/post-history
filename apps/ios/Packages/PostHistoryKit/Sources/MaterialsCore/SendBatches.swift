@@ -17,7 +17,7 @@ public struct SendBatch: Codable, Equatable, Sendable, Identifiable {
     /// جواب سؤال الحساسية للإرسالة («نعم» في أيٍّ من الثلاثة): تُحجب صور موادها في صفوف الرفع قبل أن تُعرف المادة من الخادم
     /// (ADR 0089). `nil` لملف كتبه بناء سابق، فتُحجب حتى تُعرف.
     public var sensitive: Bool?
-    /// الحساب صاحب الإرسالة بمعرّفه المحلي المعتم (`LocalAccounts`، ADR 0091): تُعرض له وحده. `nil` لملف كتبه بناء سابق.
+    /// الحساب صاحب الإرسالة بمعرّفه المحلي المعتم (`LocalAccounts`، ADR 0093): تُعرض له وحده. `nil` لملف كتبه بناء سابق.
     public var owner: UUID?
 
     public init(id: UUID = UUID(), title: String, fileKeys: [String] = [], materialIds: [UUID] = [], createdAt: Date = Date(),
@@ -47,7 +47,7 @@ public struct SendBatch: Codable, Equatable, Sendable, Identifiable {
 }
 
 extension AccountScope {
-    /// إرسالات الحساب الداخل وحده (ADR 0091)؛ إرسالة حساب آخر لا يظهر منها عنوان ولا عدد.
+    /// إرسالات الحساب الداخل وحده (ADR 0093)؛ إرسالة حساب آخر لا يظهر منها عنوان ولا عدد.
     public func visible(_ batches: [SendBatch]) -> [SendBatch] {
         batches.filter { owns($0.owner) }
     }
@@ -186,7 +186,7 @@ public final class SendBatchLedger {
         commit()
     }
 
-    /// إرسالات الحساب `owner` التي استحق إيصالها ولم يُعرض (وصل آخر ملفاتها وهو خارج)، الأقدم أولًا: تُعرض حين يدخل (ADR 0091).
+    /// إرسالات الحساب `owner` التي استحق إيصالها ولم يُعرض (وصل آخر ملفاتها وهو خارج)، الأقدم أولًا: تُعرض حين يدخل (ADR 0093).
     /// إرسالات الإصدارات السابقة بلا مالك لا تُعرض هنا، فلا يظهر بعد الترقية إيصال قديم فجأة.
     public func receiptsDue(forOwner owner: UUID, items: (SendBatch) -> [UploadItem]) -> [UUID] {
         batches.filter { $0.owner == owner && due($0, items: items) != nil }.reversed().map(\.id)
