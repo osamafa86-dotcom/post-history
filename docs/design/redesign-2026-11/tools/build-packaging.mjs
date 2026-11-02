@@ -30,7 +30,7 @@ const SCENES = [
 ];
 const SUB = {
   send: ['العنوان والنوع والوسوم وسؤال الحساسية، في شاشة واحدة.', 'Title, type, tags and the safety question on one screen.'],
-  upload: ['نسخة خفيفة تصل المحرر فورًا، والأصل يُستأنف إن انقطعت الشبكة.', 'A light copy reaches editors at once; the original resumes after a drop.'],
+  upload: ['نسخة خفيفة تصل المحرر أولًا، والأصل يُستأنف إن انقطعت الشبكة.', 'A light copy reaches editors first; the original resumes if the network drops.'],
   receipt: ['رقم وبصمة لكل إرسال، بلا أي بيانات كاشفة.', 'A number and fingerprint for each send, with nothing revealing.'],
   mine: ['ما أرسلته، وحالته التحريرية وحقوقه، في معرض واحد.', 'What you sent, with its editorial and rights status, in one gallery.'],
   player: ['إطار بإطار، بالسرعة التي تريد، وملء الشاشة.', 'Frame by frame, at any speed, full screen.'],

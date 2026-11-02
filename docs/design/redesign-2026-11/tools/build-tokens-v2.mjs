@@ -21,7 +21,7 @@ const primitives = {
   blue: ramp({ 50: '#EEF1FF', 100: '#D9E0FF', 200: '#B4C1FF', 300: '#8A9DFF', 400: '#6680FA', 500: '#4A69F2', 600: '#2E56E8', 700: '#2442C2', 800: '#1C3394', 900: '#15266B' }),
   accent: { gold: ramp({ 100: '#F5E6B8', 300: '#E1B64B', 500: '#D0A030', 700: '#8A6608', 900: '#3D3110' }) },
   red: ramp({ 400: '#FF6A60', 700: '#C8312B' }),
-  green: ramp({ 400: '#4FD69B', 700: '#1C7F55' }),
+  green: ramp({ 400: '#4FD69B', 700: '#18764E' }),
   amber: ramp({ 400: '#E9B649', 700: '#8A6200' }),
 };
 
@@ -115,6 +115,8 @@ const doc = {
       ['state/warn', 'bg/raised', 'text'], ['state/muted', 'bg/raised', 'text'],
       ['border/edge', 'bg/raised', 'ui'], ['border/edge', 'bg/base', 'ui'],
       ['text/on-store', 'bg/store', 'text'], ['bg/store', 'action/store', 'text'],
+      ['state/danger', 'bg/raised', 'text'], ['state/brand', 'bg/raised', 'text'],
+      ['state/brand', 'action/soft', 'text'], ['state/ok', 'bg/sunken', 'text'], ['state/ok', 'action/soft', 'text'],
     ],
   },
 };

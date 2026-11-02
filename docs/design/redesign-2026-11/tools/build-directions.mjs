@@ -2,6 +2,9 @@
 //   directions/a.html · b.html · c.html  — اتجاه واحد مثبّت في كلٍّ منها
 //   directions/index.html                — الثلاثة بتبويبات (هي ما يُنشر للمالك)
 // الاستعمال: node tools/build-directions.mjs
+// العيّنات في directions/samples/ مستبعدة من جيت (.gitignore: samples/ و*.mp4)، فتُولَّد قبل التشغيل:
+//   ffmpeg -f lavfi -i "gradients=s=270x480:d=6:c0=0x0B6E79:c1=0x0A1A2F:speed=0.02" -pix_fmt yuv420p -c:v libx264 directions/samples/store-sample.mp4
+//   شعار logo-480.png: brand/palpost-logo.svg مرسومًا بعرض 480 (أي محوّل SVG→PNG)
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,7 +32,7 @@ const DIRS = {
   c: {
     home: 'light',
     fonts: { display: "'Rubik', 'Readex Pro', system-ui, sans-serif", text: "'Readex Pro', 'Noto Sans Arabic', system-ui, sans-serif", num: "'Rubik', ui-monospace, monospace" },
-    light: { bg: '#F4F6F9', raised: '#FFFFFF', sunken: '#E9EDF3', line: '#DCE2EA', edge: '#6E7B93', text: '#0D1524', text2: '#55617A', brand: '#08717E', brand2: '#2E56E8', brandInk: '#FFFFFF', brandSoft: '#E0F1F4', gold: '#8A6608', goldSoft: '#F5E6B8', urgent: '#C8312B', ok: '#1C7F55', warn: '#8A6200' },
+    light: { bg: '#F4F6F9', raised: '#FFFFFF', sunken: '#E9EDF3', line: '#DCE2EA', edge: '#6E7B93', text: '#0D1524', text2: '#55617A', brand: '#08717E', brand2: '#2E56E8', brandInk: '#FFFFFF', brandSoft: '#E0F1F4', gold: '#8A6608', goldSoft: '#F5E6B8', urgent: '#C8312B', ok: '#18764E', warn: '#8A6200' },
     dark: { bg: '#090D15', raised: '#121A28', sunken: '#060910', line: '#232C3D', edge: '#6E7B93', text: '#EDF1F7', text2: '#96A2B8', brand: '#42CFDF', brand2: '#8A9DFF', brandInk: '#0A1F26', brandSoft: '#10303A', gold: '#E1B64B', goldSoft: '#3D3110', urgent: '#FF6A60', ok: '#4FD69B', warn: '#E9B649' },
   },
 };
@@ -71,7 +74,7 @@ const T = {
   fTags: ['الوسوم', 'Tags'], tag1: ['مساعدات', 'Aid'], tag2: ['النصيرات', 'Nuseirat'], tag3: ['شتاء', 'Winter'], addTag: ['أضف وسمًا', 'Add a tag'], suggest: ['طوابير', 'Queues'], fromAdmin: ['من قائمة الإدارة', 'From the desk list'],
   fPlace: ['المكان', 'Location'], placeVal: ['دير البلح · النصيرات', 'Deir al-Balah · Nuseirat'], remembered: ['من آخر إرسال', 'From your last send'],
   urgent: ['عاجل', 'Urgent'], urgentHint: ['يصل المحرر فورًا مع تنبيه', 'Alerts the editor right away'],
-  sens: ['هل في المواد ما قد يعرّض أحدًا للخطر؟', 'Could this material put anyone at risk?'], no: ['لا', 'No'], yes: ['نعم', 'Yes'],
+  sens: ['هل تتضمن المواد قاصرين أو مصابين أو مشاهد صادمة؟', 'Does it include minors, injured people or graphic scenes?'], no: ['لا', 'No'], yes: ['نعم', 'Yes'],
   sendCta: ['أرسل 3 مواد', 'Send 3 items'],
   uploading: ['يُرفع', 'Uploading'], reassure: ['وصلت نسخة خفيفة من الملفين الأولين، والمحرر يستطيع مشاهدتهما الآن.', 'A light copy of the first two files has arrived. Editors can watch them now.'],
   bg: ['أغلق التطبيق متى شئت، والرفع يكمل وحده.', 'Close the app any time. The upload carries on.'],
@@ -86,7 +89,7 @@ const T = {
   preview: ['معاينة', 'Preview'], storeTitle: ['طوابير الخبز في النصيرات', 'Bread queues in Nuseirat'], filmed: ['صُوّر 28 أكتوبر 2026', 'Filmed 28 Oct 2026'], gov: ['دير البلح', 'Deir al-Balah'],
   hover: ['مرّر أو المس للمعاينة', 'Hover or tap to preview'], request: ['اطلب المادة', 'Request footage'], iconCap: ['أيقونة التطبيق', 'App icon'],
   typeDisplay: ['المكتبة المرئية', 'The Visual Library'], typeTitle: ['ما يصوّره المراسل يصل كاملًا', 'What reporters film arrives whole'],
-  typeBody: ['المراسل يرسل من الميدان بخطوة واحدة، والمحرر يرى نسخة خفيفة خلال ثوانٍ، والأصل يصل كاملًا ببصمته.', 'Reporters send from the field in one step. Editors see a light copy within seconds, and the original arrives intact with its fingerprint.'],
+  typeBody: ['المراسل يرسل من الميدان بخطوة واحدة، والمحرر يرى نسخة خفيفة أولًا، والأصل يصل كاملًا ببصمته.', 'Reporters send from the field in one step. Editors see a light copy first, and the original arrives intact with its fingerprint.'],
   typeCaption: ['تعليق · 13 بكسل', 'Caption · 13px'],
   thPair: ['الزوج', 'Pair'], thRatio: ['النسبة', 'Ratio'], thNeed: ['المطلوب', 'Needed'], pass: ['يجتاز', 'Pass'], fail: ['لا يجتاز', 'Fail'],
   sample: ['عيّنة', 'Sample'],
@@ -446,7 +449,6 @@ function page(ids) {
   const fontsHref = 'https://fonts.googleapis.com/css2?family=Alexandria:wght@700;800&family=Baloo+Bhaijaan+2:wght@600;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&family=Noto+Kufi+Arabic:wght@400;500;600;700&family=Readex+Pro:wght@300..700&family=Rubik:wght@500;700;800&display=swap';
   const tabs = ids.length > 1 ? `<nav class="tabs" role="tablist">${ids.map((d) => `<button role="tab" data-d="${d}" aria-selected="false"><span class="lt">${d.toUpperCase()}</span>${t(d)}</button>`).join('')}</nav>` : `<h2 class="sec" style="margin-top:22px">${t(ids[0])}</h2>`;
   return `<title>اتجاهات بوست ميدان</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="${fontsHref}">
 <style>${tokenCss(ids)}${CSS}</style>

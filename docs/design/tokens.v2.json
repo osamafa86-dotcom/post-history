@@ -185,7 +185,7 @@
    },
    "700": {
     "$type": "color",
-    "$value": "#1C7F55"
+    "$value": "#18764E"
    }
   },
   "amber": {
@@ -923,6 +923,31 @@
    [
     "bg/store",
     "action/store",
+    "text"
+   ],
+   [
+    "state/danger",
+    "bg/raised",
+    "text"
+   ],
+   [
+    "state/brand",
+    "bg/raised",
+    "text"
+   ],
+   [
+    "state/brand",
+    "action/soft",
+    "text"
+   ],
+   [
+    "state/ok",
+    "bg/sunken",
+    "text"
+   ],
+   [
+    "state/ok",
+    "action/soft",
     "text"
    ]
   ]

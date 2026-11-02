@@ -19,7 +19,7 @@
 
 - **إرسال بخطوة واحدة:** اختر المقاطع أو شاركها من معرض الصور، واكتب عنوان التغطية ونوعها ووسومها، وأجب عن سؤال
   الحساسية، ثم أرسل.
-- **رفع يطمئن:** نسخة خفيفة تصل المحرر خلال ثوانٍ، والأصل يُرفع كاملًا ويُستأنف وحده إن انقطعت الشبكة.
+- **رفع يطمئن:** نسخة خفيفة تصل المحرر أولًا، والأصل يُرفع كاملًا ويُستأنف وحده إن انقطعت الشبكة.
 - **إيصال لكل إرسال:** رقم وبصمة يثبتان وصول موادك كما صوّرتها.
 - **موادي:** معرض مرتّب بالعنوان والتاريخ، فيه حالة كل مادة الفنية والتحريرية والحقوقية، ومشغّل إطار بإطار.
 - **خصوصية المصدر:** لا يظهر موقعك الدقيق ولا اسم مصدر محمي في أي معاينة أو إشعار.
@@ -32,7 +32,7 @@ Post Maydan is the Palestine Post network’s app for reporters to send footage 
 
 - **One-step sending:** pick clips or share them from Photos, add the coverage title, type and tags, answer the safety
   question, and send.
-- **Uploads you can trust:** a light copy reaches editors within seconds, and the original uploads in full, resuming on
+- **Uploads you can trust:** a light copy reaches editors first, and the original uploads in full, resuming on
   its own after a network drop.
 - **A receipt for every send:** a number and fingerprint prove your footage arrived as you shot it.
 - **My materials:** a gallery by title and date showing each item’s technical, editorial and rights status, with a
@@ -56,4 +56,4 @@ Requires an account from the network’s desk.
 | 4 | موادي | موادك **مرتّبة** بالعنوان والتاريخ | Your footage, **organised** |
 | 5 | المشغّل | شاهد كل **إطار** | See **every frame** |
 
-iPhone 6.9″ ‏1320×2868، وأندرويد 1080×1920، باللغتين (20 لقطة JPEG بلا شفافية، كما يقبلها المتجران). البيانات فيها عيّنات، لا مواد مراسلين حقيقية.
+iPhone 6.9″ 1320×2868، وأندرويد 1080×1920، باللغتين (20 لقطة JPEG بلا شفافية، كما يقبلها المتجران). البيانات فيها عيّنات، لا مواد مراسلين حقيقية.
