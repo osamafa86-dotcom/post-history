@@ -43,6 +43,16 @@ npm run typecheck
 | `reducedMotion` | `boolean` | تلاشٍ وحده، بلا انزلاق ولا مسح ولا موجات ولا تكبير للصورة |
 | `durationInSeconds` | `number` | طول المقطع المتداول؛ الخروج في آخر 0.6 ث |
 
+## `title_overflow`
+
+`calculateMetadata` ينتظر تحميل الخط، ثم يقيس كل سطر. وإن احتاج سطر نسبة أصغر من 70% رمى `TitleOverflowError` (`code: 'title_overflow'`، ومعه رقم السطر والنسبة المطلوبة) قبل رسم أي إطار، فيبلغ عنه العامل بالرمز نفسه. لا تركيبة له في القائمة لأن الرمي يوقف عرض التركيبات كلها؛ يُجرَّب بمعامل:
+
+```bash
+npx remotion still src/index.ts Circulated-Vertical out/x.png \
+  --props='{"titleLines":["ضضضضضضضضضضضضضضضضضضضضضضضضضضضضضضضضضضضض"],"location":null,"tag":"none","aspect":"vertical","fps":30,"background":"none","reducedMotion":false,"durationInSeconds":8}'
+# TitleOverflowError: title_overflow: line 1 needs scale 0.399 < 0.7
+```
+
 ## التصدير
 
 المعاينة:

@@ -62,6 +62,39 @@ const L = {
 } as const;
 
 // الدخول بمنحنى ease-out (يبدأ سريعًا ويستقرّ)، والخروج بمنحنى ease-in (يبدأ هادئًا ويتسارع)
+/** خطأ يتعرّف عليه العامل فيبلغ عنه بـ `title_overflow` (ADR 0091): سطر لا يتّسع حتى عند 70% */
+export class TitleOverflowError extends Error {
+  readonly code = 'title_overflow' as const;
+  constructor(readonly lineIndex: number, readonly requiredScale: number) {
+    super(`title_overflow: line ${lineIndex + 1} needs scale ${requiredScale.toFixed(3)} < ${MIN_TITLE_SCALE}`);
+    this.name = 'TitleOverflowError';
+  }
+}
+
+export const cleanLines = (titleLines: string[]) => titleLines.filter((l) => l.trim().length > 0).slice(0, 3);
+
+/** هندسة العنوان: عرض السطر الأقصى، ونسبة الكتلة الواحدة، وأيّ سطر يتجاوز حدّ 70% (أو -1) */
+export const titleFit = (titleLines: string[], aspect: Aspect, frameWidth: number) => {
+  const s = L[aspect];
+  const lines = cleanLines(titleLines);
+  const padX = Math.round(s.title * 0.36);
+  const accentW = Math.max(8, Math.round(s.title * 0.18));
+  // عرض السطر الأقصى: الإطار ناقص الهامشين والعمود وحشوة اللوح
+  const maxLineW = Math.min(frameWidth - 2 * s.m, Math.round(frameWidth * s.block)) - accentW - 2 * padX;
+  const widths = lines.map((line) => measureText({ text: line, fontFamily: TITLE_FONT, fontSize: s.title, fontWeight: '700' }).width);
+  const widest = Math.max(1, ...widths);
+  const needed = Math.min(1, maxLineW / widest);
+  const overflowLine = widths.findIndex((w) => maxLineW / w < MIN_TITLE_SCALE);
+  return { lines, padX, accentW, maxLineW, needed, scale: Math.max(MIN_TITLE_SCALE, needed), overflowLine };
+};
+
+/** يرمي `TitleOverflowError` إن لم يتّسع سطر عند 70%؛ يُنادى من `calculateMetadata` بعد تحميل الخط */
+export const assertTitleFits = (titleLines: string[], aspect: Aspect, frameWidth: number) => {
+  const fit = titleFit(titleLines, aspect, frameWidth);
+  if (fit.overflowLine >= 0) throw new TitleOverflowError(fit.overflowLine, fit.needed);
+  return fit;
+};
+
 const EASE_OUT = Easing.bezier(0.16, 1, 0.3, 1);
 const EASE_IN = Easing.bezier(0.7, 0, 0.84, 0);
 const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;
@@ -156,7 +189,6 @@ export const CirculatedTemplate: React.FC<CirculatedProps> = ({
   const s = L[aspect];
   const place = location && location.trim().length > 0 ? location : null;
   const showTag = tag === 'circulated_footage';
-  const lines = titleLines.filter((l) => l.trim().length > 0).slice(0, 3);
   const rm = reducedMotion;
 
   // الدخول (بالثواني) كما في خطة التحريك
@@ -189,17 +221,9 @@ export const CirculatedTemplate: React.FC<CirculatedProps> = ({
   // تكبير بطيء للصورة التجريبية، ويتوقف في وضع تقليل الحركة
   const kenBurns = rm ? 1 : interpolate(frame, [0, durationInFrames], [1, 1.06]);
 
-  // عرض السطر الأقصى: الإطار ناقص الهامشين والعمود وحشوة اللوح
-  const padX = Math.round(s.title * 0.36);
-  const accentW = Math.max(8, Math.round(s.title * 0.18));
-  const maxLineW = Math.min(W - 2 * s.m, Math.round(W * s.block)) - accentW - 2 * padX;
   // نسبة واحدة للكتلة كلها: أعرض سطر يحدّدها، ولا تنزل تحت 70%. السطر لا يلتفّ أبدًا
-  const widest = Math.max(
-    1,
-    ...lines.map((line) => measureText({ text: line, fontFamily: TITLE_FONT, fontSize: s.title, fontWeight: '700' }).width),
-  );
-  const blockScale = Math.max(MIN_TITLE_SCALE, Math.min(1, maxLineW / widest));
-  const titleSize = Math.floor(s.title * blockScale);
+  const { lines, padX, accentW, scale } = titleFit(titleLines, aspect, W);
+  const titleSize = Math.floor(s.title * scale);
 
   // هالة الشعار: قطع ناقص يغطّي صندوق الشعار بعتامة ثابتة ثم يتلاشى
   const logoH = s.logoW * (125 / 300);

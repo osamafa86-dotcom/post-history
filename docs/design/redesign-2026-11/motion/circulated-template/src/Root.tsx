@@ -1,6 +1,7 @@
 import React from 'react';
 import { CalculateMetadataFunction, Composition, Folder } from 'remotion';
-import { Aspect, CirculatedProps, CirculatedTemplate } from './CirculatedTemplate';
+import { Aspect, assertTitleFits, CirculatedProps, CirculatedTemplate } from './CirculatedTemplate';
+import { fontsReady } from './fonts';
 
 const SIZE: Record<Aspect, { width: number; height: number }> = {
   vertical: { width: 1080, height: 1920 },
@@ -10,11 +11,16 @@ const SIZE: Record<Aspect, { width: number; height: number }> = {
 
 // العيّنات نصّ تجريبي ظاهر، لا عناوين أخبار ولا أماكن حقيقية: لقطة منها قد تُتداول خارج المستودع
 // المقاس من `aspect`، ومعدل الإطارات من `fps` (25 أو 30 بحسب المصدر)، والمدة من `durationInSeconds` (ADR 0091)
-const metadata: CalculateMetadataFunction<CirculatedProps> = ({ props }) => ({
-  fps: props.fps,
-  ...SIZE[props.aspect],
-  durationInFrames: Math.max(3 * props.fps, Math.round(props.durationInSeconds * props.fps)),
-});
+// وسطرٌ لا يتّسع عند 70% يرمي `TitleOverflowError` (`code: 'title_overflow'`) قبل رسم أي إطار، فيبلغ عنه العامل بالرمز نفسه
+const metadata: CalculateMetadataFunction<CirculatedProps> = async ({ props }) => {
+  await fontsReady;
+  assertTitleFits(props.titleLines, props.aspect, SIZE[props.aspect].width);
+  return {
+    fps: props.fps,
+    ...SIZE[props.aspect],
+    durationInFrames: Math.max(3 * props.fps, Math.round(props.durationInSeconds * props.fps)),
+  };
+};
 
 const base: CirculatedProps = {
   titleLines: ['عنوان تجريبي', 'للمادة المتداولة'],
