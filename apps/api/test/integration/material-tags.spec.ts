@@ -131,9 +131,9 @@ describe('material tags (/v1/materials)', () => {
       ['an empty tag', [''], ['/tags/0']],
       ['a tag over 40 characters', [secret.padEnd(41, 'x')], ['/tags/0']],
       ['a leading space', [` ${secret}`], ['/tags/0']],
-      ['a trailing no-break space', ['fine', `${secret} `], ['/tags/1']],
+      ['a trailing no-break space', ['fine', `${secret}\u00a0`], ['/tags/1']],
       ['a control character', [`${secret}\u0007`], ['/tags/0']],
-      ['a bidi control character', [`${secret}‮`], ['/tags/0']],
+      ['a bidi control character', [`${secret}\u202e`], ['/tags/0']],
       ['a non-string item', [secret, 7], ['/tags/1']],
       ['a value that is not an array', secret, ['/tags']],
     ];
