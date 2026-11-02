@@ -196,7 +196,7 @@ open class MaterialsAPI {
     /**
      رابط قراءة موقّع قصير العمر لمشتق من المادة (v0.1)
      - GET /materials/{id}/files/{file_id}/download-url
-     - للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail` و`transcript` و`captions` و`shot_list`) في حالة `verified`. الأصل والملاحظة الصوتية وحزمة التصدير لا تُعطى رابطًا هنا (`404`؛ الحزمة من `/materials/{id}/export/download-url`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`). **المشتقات النصية حساسة افتراضيًا (`transcript` و`captions` و`shot_list`، threat-model §9.1):** رابطها لأدوار تعديل المادة وحدها، أي `x-roles` على `PATCH /materials/{id}` ضمن النطاق (`reporter` مالك المادة، و`supervisor` و`editor_in_chief` و`system_admin`). غيرهم يُرد `404` بالشكل نفسه للملف المفقود، لا `403`. وكل إصدار رابط لها يُسجَّل في التدقيق قراءةً حساسة `material.sensitive_read` (`material_id` و`file_id` و`field_keys: [<النوع>]`).
+     - للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail` و`transcript` و`captions` و`shot_list`، و`circulated_render` بشرطه أدناه) في حالة `verified`. الأصل والملاحظة الصوتية وحزمة التصدير لا تُعطى رابطًا هنا (`404`؛ الحزمة من `/materials/{id}/export/download-url`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`). **المشتقات النصية حساسة افتراضيًا (`transcript` و`captions` و`shot_list`، threat-model §9.1):** رابطها لأدوار تعديل المادة وحدها، أي `x-roles` على `PATCH /materials/{id}` ضمن النطاق (`reporter` مالك المادة، و`supervisor` و`editor_in_chief` و`system_admin`). غيرهم يُرد `404` بالشكل نفسه للملف المفقود، لا `403`. وكل إصدار رابط لها يُسجَّل في التدقيق قراءةً حساسة `material.sensitive_read` (`material_id` و`file_id` و`field_keys: [<النوع>]`). **نسخة قالب «مواد متداولة» (`circulated_render`، ADR 0091، أُضيف بعد v0.3):** `file_id` من `MaterialRender.file_id` (لا تظهر في `Material.files`). رابطها لأدوار طلب النسخة وحدها (`x-roles` على `POST /materials/{id}/renders` ضمن النطاق)، وغيرهم `404` بالشكل نفسه. وإن لم تعد المادة تستوفي شروط النسخة الحقوقية والتحريرية (حقوق `blocked` أو `withdrawn`، أو حالة تحريرية خارج `accepted` و`in_production` و`final_review` و`published`) فـ `409 render_not_allowed`: المشتق يسقط بسقوط أصله. الحساسية لا تمنع الرابط (قرار المالك 2026-11-02). كل إصدار رابط يُسجَّل في التدقيق كغيره (`material_file.download_url_issued`، `material_id` و`file_id`).
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -275,6 +275,55 @@ open class MaterialsAPI {
         let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
 
         let localVariableRequestBuilder: RequestBuilder<ListMaterialDuplicates200Response>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     نسخ المادة على قالب «مواد متداولة»، الأحدث أولًا (ADR 0091)
+     
+     - parameter id: (path) معرّف المادة 
+     - parameter limit: (query) الحد الأقصى للنسخ المعادة، الأحدث أولًا (optional, default to 20)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: ListMaterialRenders200Response
+     */
+    open class func listMaterialRenders(id: UUID, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> ListMaterialRenders200Response {
+        return try await listMaterialRendersWithRequestBuilder(id: id, limit: limit, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     نسخ المادة على قالب «مواد متداولة»، الأحدث أولًا (ADR 0091)
+     - GET /materials/{id}/renders
+     - كل طلب نسخة بمعاملاته كما طُلبت وحالته. النسخة الجاهزة تُنزَّل برابط `GET /materials/{id}/files/{file_id}/download-url` بـ `file_id` منها، ولا تظهر في `Material.files`. بأدوار طلب النسخة وضمن نطاقها؛ المادة خارج النطاق `404`.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter id: (path) معرّف المادة 
+     - parameter limit: (query) الحد الأقصى للنسخ المعادة، الأحدث أولًا (optional, default to 20)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<ListMaterialRenders200Response> 
+     */
+    open class func listMaterialRendersWithRequestBuilder(id: UUID, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<ListMaterialRenders200Response> {
+        var localVariablePath = "/materials/{id}/renders"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        var localVariableUrlComponents = URLComponents(string: localVariableURLString)
+        let localVariableQueryParameters: [String: (wrappedValue: (any Sendable)?, isExplode: Bool)] = [
+            "limit": (wrappedValue: limit?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+        ]
+        localVariableUrlComponents?.queryItems = APIHelper.mapValuesToQueryItems(localVariableQueryParameters)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<ListMaterialRenders200Response>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
@@ -490,6 +539,54 @@ open class MaterialsAPI {
         let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
 
         let localVariableRequestBuilder: RequestBuilder<MaterialExport>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     طلب نسخة من المادة على قالب «مواد متداولة» (ADR 0091)
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف المادة 
+     - parameter materialRenderRequest: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: MaterialRender
+     */
+    open class func requestMaterialRender(idempotencyKey: String, id: UUID, materialRenderRequest: MaterialRenderRequest, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> MaterialRender {
+        return try await requestMaterialRenderWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, materialRenderRequest: materialRenderRequest, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     طلب نسخة من المادة على قالب «مواد متداولة» (ADR 0091)
+     - POST /materials/{id}/renders
+     - طلب واحد لا محرر (ADR 0091، و`CLAUDE.md` §1 «لا محرر» باقٍ): يكتب الطاقم العنوان ويختار المقاس وإظهار المكان والوسم، فيبني عامل الوسائط من الأصل المتحقق كاملًا، من أول إطار إلى آخره، ملفًا جديدًا `circulated_render` بلا قص ولا تجميع. الأصل لا يُمس، ولا تتغيّر أيٌّ من الحالات الثلاث للمادة.  - **المصدر:** أصل المادة المتحقق، وهو واحد لكل مادة (ADR 0081)، فلا يحمل الطلب `source_file_id`. - **الشروط** (وإلا `409 render_not_allowed` و`details.failed` بالشروط الفاشلة): أصل `original` بحالة `verified` فيه   مسار صورة ولا تتجاوز مدته الحدّ (`source`)، والحالة التحريرية `accepted` أو `in_production` أو `final_review` أو   `published` (`editorial_state`)، والحقوق غير `blocked` ولا `withdrawn` (`rights_state`). الحساسية لا تمنع الطلب:   المعالجة محلية لا يغادر منها شيء الخادم، وبوابة النشر (ADR 0084 بند 4) تبقى كما هي على ما يُنشر. - **حدّ المدة** 300 ث مؤقتًا، ويثبّته القياس (ADR 0091 البند 7)، فلا يثبّته العميل في شفرته: فشل `source` بسبب المدة   يحمل الحدّ الساري في `details.max_source_duration_ms`. - **المكان** يبنيه الخادم من حقلي المادة وحدهما ساعة الطلب: «المدينة، المحافظة» (والمدينة وحدها إن ساوت المحافظة)،   ويُحفظ في `location_text`. لا يأخذ الطلب نص مكان من العميل أبدًا (`show_location` منطقي وحده، وأي مفتاح آخر `422`)،   ولا يُقرأ `gps` أبدًا. `422 render_location_unusable` للحالتين: تجاوز 44 نقطة ترميز، أو مخالفة قاعدة النص   (`RenderTitleLine`). يُطفأ المكان أو يُصحَّح حقلا المادة. - **العنوان** يتحقق منه الخادم بقاعدة `RenderTitleLine` نفسها، والطول بنقاط ترميز Unicode لا بوحدات UTF-16. - **مفتاح منع التكرار:** كل مفتاح جديد نسخة جديدة (عدة نسخ للمادة مسموحة)، والتكرار بالمفتاح نفسه يعيد النسخة نفسها   دون حدث جديد. أكثر من ثلاث نسخ غير منتهية (`requested` أو `rendering`) للمادة الواحدة `409 render_limit_reached`. - **الأثر:** صف النسخة وحدث `render.requested` (معرّفات وحدها) في معاملة واحدة. العنوان والمكان لا يدخلان حدثًا ولا   إشعارًا ولا سجلًا. ثم `requested` ← `rendering` حين يلتقطها العامل ← `ready` أو `failed`، وكل انتقال بحدثه   (`render.started` و`render.completed` و`render.failed`). `failed` نهائية، وإعادة المحاولة طلب جديد بمفتاح جديد. - **التنزيل في هذه المرحلة** داخلي ومدقَّق وحده، برابط `download-url` (≤ 10 دقائق، `no-store`). «تنزيل جاهز للنشر»   خلف بوابة ADR 0084 لمرحلة «مكتب المحرر». 
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف المادة 
+     - parameter materialRenderRequest: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<MaterialRender> 
+     */
+    open class func requestMaterialRenderWithRequestBuilder(idempotencyKey: String, id: UUID, materialRenderRequest: MaterialRenderRequest, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<MaterialRender> {
+        var localVariablePath = "/materials/{id}/renders"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: materialRenderRequest, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<MaterialRender>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }

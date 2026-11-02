@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { buyerInviteConflicts, buyerOrganizations, catalogListings, commissionRules, deviceAttestationKeys, exclusiveHolds, idempotencyKeys, journalEntries, ledgerAccounts, licenseDownloadGrants, licenseTemplateVersions, licenseTemplates, licenses, listingOffers, materialContributors, materialExports, materialFiles, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, orderItems, orders, outboxEvents, paymentEvents, payoutApprovals, payoutPolicies, payoutRequests, postings, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, refundItems, refunds, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
+import { buyerInviteConflicts, buyerOrganizations, catalogListings, commissionRules, deviceAttestationKeys, exclusiveHolds, idempotencyKeys, journalEntries, ledgerAccounts, licenseDownloadGrants, licenseTemplateVersions, licenseTemplates, licenses, listingOffers, materialContributors, materialExports, materialFiles, materialRenders, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, orderItems, orders, outboxEvents, paymentEvents, payoutApprovals, payoutPolicies, payoutRequests, postings, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, refundItems, refunds, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
 
 export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => ({
 	refreshToken: one(refreshTokens, {
@@ -95,6 +95,7 @@ export const usersRelations = relations(users, ({one, many}) => ({
 	}),
 	idempotencyKeys: many(idempotencyKeys),
 	licenseTemplateVersions: many(licenseTemplateVersions),
+	materialRenders: many(materialRenders),
 }));
 
 export const pushDevicesRelations = relations(pushDevices, ({one}) => ({
@@ -157,6 +158,7 @@ export const materialsRelations = relations(materials, ({one, many}) => ({
 	catalogListings: many(catalogListings),
 	materialFiles: many(materialFiles),
 	materialContributors: many(materialContributors),
+	materialRenders: many(materialRenders),
 }));
 
 export const uploadSessionsRelations = relations(uploadSessions, ({one, many}) => ({
@@ -220,6 +222,12 @@ export const materialFilesRelations = relations(materialFiles, ({one, many}) => 
 		fields: [materialFiles.uploadSessionId],
 		references: [uploadSessions.id],
 		relationName: "materialFiles_uploadSessionId_uploadSessions_id"
+	}),
+	materialRenders_sourceFileId: many(materialRenders, {
+		relationName: "materialRenders_sourceFileId_materialFiles_id"
+	}),
+	materialRenders_fileId: many(materialRenders, {
+		relationName: "materialRenders_fileId_materialFiles_id"
 	}),
 }));
 
@@ -292,6 +300,27 @@ export const outboxEventsRelations = relations(outboxEvents, ({one, many}) => ({
 	notifications: many(notifications),
 	user: one(users, {
 		fields: [outboxEvents.actorId],
+		references: [users.id]
+	}),
+}));
+
+export const materialRendersRelations = relations(materialRenders, ({one}) => ({
+	material: one(materials, {
+		fields: [materialRenders.materialId],
+		references: [materials.id]
+	}),
+	materialFile_sourceFileId: one(materialFiles, {
+		fields: [materialRenders.sourceFileId],
+		references: [materialFiles.id],
+		relationName: "materialRenders_sourceFileId_materialFiles_id"
+	}),
+	materialFile_fileId: one(materialFiles, {
+		fields: [materialRenders.fileId],
+		references: [materialFiles.id],
+		relationName: "materialRenders_fileId_materialFiles_id"
+	}),
+	user: one(users, {
+		fields: [materialRenders.requestedBy],
 		references: [users.id]
 	}),
 }));
