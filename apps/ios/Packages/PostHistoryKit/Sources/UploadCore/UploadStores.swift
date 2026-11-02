@@ -67,9 +67,11 @@ public final class FileUploadStateStore: UploadStateStore, @unchecked Sendable {
 
     private func url(_ id: UUID) -> URL { directory.appendingPathComponent("\(id.uuidString.lowercased()).json") }
 
+    /// كل سجل يُقرأ وحده: ملف لا يُقرأ (الهاتف مقفل قبل أول فتح منذ التشغيل، أو ملف تالف) يُترك ولا يُخفي غيره. كان ملف واحد كذلك
+    /// يرمي القراءة كلها، فتبدأ النواة بطابور فارغ في الذاكرة: لا رفع يُستأنف، ولا ترى «موادي» أصلًا على الهاتف (بناء 1.0 (11)).
     public func loadAll() throws -> [UploadRecord] {
         let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).filter { $0.pathExtension == "json" }
-        return try files.map { try decoder.decode(UploadRecord.self, from: Data(contentsOf: $0)) }.sorted { $0.createdAt < $1.createdAt }
+        return files.compactMap { try? decoder.decode(UploadRecord.self, from: Data(contentsOf: $0)) }.sorted { $0.createdAt < $1.createdAt }
     }
 
     public func save(_ record: UploadRecord) throws {

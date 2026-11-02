@@ -138,6 +138,7 @@ struct MyMaterialsView: View {
     @EnvironmentObject private var model: MyMaterialsModel
     @EnvironmentObject private var queue: UploadQueueModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     var onNewMaterial: () -> Void = {}
 
     @AppStorage("materials.grouping") private var groupingRaw = GalleryGrouping.coverage.rawValue
@@ -154,8 +155,8 @@ struct MyMaterialsView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: VL.Space.s6) {
                 VLFilterChips(groupLabel: "gallery.quick.label", options: GalleryQuickFilter.allCases.map { quick in
-                    (value: quick, label: Text(LocalizedStringKey("gallery.quick.\(quick.rawValue)")))
-                }, selection: $filter.quick)
+                    (value: quick, label: Text(key: quick.textKey))
+                }, selection: $filter.quick, wraps: false)
                 notes
                 if sections.isEmpty { empty }
                 ForEach(sections) { section in
@@ -245,12 +246,15 @@ struct MyMaterialsView: View {
         }
     }
 
+    /// كما في 07: ثلاثة أعمدة على الهاتف، والبطاقة 9:16 بعرض العمود، من بداية السطر (اليمين بالعربية). بخط «إمكانية الوصول» عمودان لا
+    /// عمود واحد، فلا تصير بطاقة بلا معاينة صفحةً كاملة. وعلى الشاشة العريضة (iPad) أعمدة بعرض البطاقة نفسه تقريبًا لا بطاقات أكبر.
     private var columns: [GridItem] {
-        if dynamicTypeSize >= .accessibility3 { return [GridItem(.flexible(), alignment: .top)] }
-        if dynamicTypeSize.isAccessibilitySize {
-            return Array(repeating: GridItem(.flexible(), spacing: VL.Space.s4, alignment: .top), count: 2)
+        let column = GridItem(.flexible(), spacing: VL.Space.s4, alignment: .top)
+        if dynamicTypeSize.isAccessibilitySize { return Array(repeating: column, count: 2) }
+        if horizontalSizeClass == .regular {
+            return [GridItem(.adaptive(minimum: 104, maximum: 150), spacing: VL.Space.s4, alignment: .top)]
         }
-        return [GridItem(.adaptive(minimum: 100, maximum: 220), spacing: VL.Space.s4, alignment: .top)]
+        return Array(repeating: column, count: 3)
     }
 
     private func sectionView(_ section: GallerySection, locals: [UUID: LocalOriginal]) -> some View {
@@ -274,7 +278,7 @@ struct MyMaterialsView: View {
     private func heading(_ section: GallerySection) -> Text {
         switch section.heading {
         case .coverage(let title): return Text(verbatim: title)
-        case .type(let type?): return Text(LocalizedStringKey("material.type.\(type.rawValue)"))
+        case .type(let type?): return Text(key: type.textKey)
         case .type(nil): return Text("gallery.section.untyped")
         }
     }
@@ -290,7 +294,7 @@ struct MyMaterialsView: View {
         }
         let count = Text("gallery.section.count \(section.materials.count)")
         if grouping == .coverage, let type = section.primaryType {
-            return Text(LocalizedStringKey("material.type.\(type.rawValue)")) + dot + day + dot + count
+            return Text(key: type.textKey) + dot + day + dot + count
         }
         return day + dot + count
     }
@@ -354,7 +358,7 @@ struct GalleryCell: View {
 
     private func accessibilityText(_ status: MaterialStatus) -> Text {
         let sep = Text("list.separator")
-        var text = Text(verbatim: material.title) + sep + Text(LocalizedStringKey("gallery.kind.\(kind.rawValue)"))
+        var text = Text(verbatim: material.title) + sep + Text(key: kind.textKey)
         if kind == .video, let d = durationSeconds, d > 0 { text = text + sep + Text(verbatim: VLFormat.duration(d)) }
         if material.isSensitive { text = text + sep + Text("media.sensitive") }
         for track in MaterialStatus.Track.allCases {
@@ -377,12 +381,12 @@ struct GalleryOptionsSheet: View {
                 VStack(alignment: .leading, spacing: VL.Space.s6) {
                     group("gallery.grouping") {
                         VLFilterChips(groupLabel: "gallery.grouping", options: GalleryGrouping.allCases.map { g in
-                            (value: g, label: Text(LocalizedStringKey("gallery.grouping.\(g.rawValue)")))
+                            (value: g, label: Text(key: g.textKey))
                         }, selection: $grouping)
                     }
                     group("gallery.date") {
                         VLFilterChips(groupLabel: "gallery.date", options: GalleryDateRange.allCases.map { r in
-                            (value: r, label: Text(LocalizedStringKey("gallery.date.\(r.rawValue)")))
+                            (value: r, label: Text(key: r.textKey))
                         }, selection: $filter.dateRange)
                     }
                     group("gallery.type") {
@@ -415,7 +419,7 @@ struct GalleryOptionsSheet: View {
     private var typeOptions: [(value: MaterialType?, label: Text)] {
         var options: [(value: MaterialType?, label: Text)] = [(value: nil, label: Text("gallery.type.any"))]
         for type in MaterialType.allCases where type != .unknownDefaultOpenApi {
-            options.append((value: type, label: Text(LocalizedStringKey("material.type.\(type.rawValue)"))))
+            options.append((value: type, label: Text(key: type.textKey)))
         }
         return options
     }
@@ -423,7 +427,7 @@ struct GalleryOptionsSheet: View {
     private var stateOptions: [(value: GalleryStateFilter?, label: Text)] {
         var options: [(value: GalleryStateFilter?, label: Text)] = [(value: nil, label: Text("gallery.state.any"))]
         for state in GalleryStateFilter.allCases {
-            options.append((value: state, label: Text(LocalizedStringKey("gallery.state.\(state.rawValue)"))))
+            options.append((value: state, label: Text(key: state.textKey)))
         }
         return options
     }

@@ -423,12 +423,13 @@ struct MediaCard: View {
                 } else if thumbnail == nil {
                     // لا معاينة بعد (قيد المعالجة): أيقونة النوع هادئة، فلا يبدو الفراغ خطأً.
                     Image(systemName: kind == .video ? "film" : "photo")
-                        .font(.title2)
+                        .font(.title3)
                         .foregroundStyle(Color.vl.textSecondary)
                 }
             }
             .aspectRatio(9 / 16, contentMode: .fit)
-            .overlay(alignment: .topTrailing) {
+            // أيقونة النوع في الزاوية العليا من بداية السطر (اليمين بالعربية)، والمدة في السفلى من نهايته، كما في 07.
+            .overlay(alignment: .topLeading) {
                 pill { Image(systemName: kind == .video ? "film" : "photo").imageScale(.small) }
                     .padding(VL.Space.s2)
                     .accessibilityHidden(true)
