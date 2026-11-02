@@ -4,6 +4,8 @@
 
 ## التشغيل
 
+أول تصدير ينزّل Chrome Headless Shell من الشبكة، إلا إن مُرِّر متصفح موجود بـ `--browser-executable`. وبناء المتصفح يغيّر ناتج المعاينة بـ H.264: صيغة البكسل وحجم الملف (التفصيل في ملف القياس).
+
 ```bash
 cd docs/design/redesign-2026-11/motion/circulated-template
 npm ci

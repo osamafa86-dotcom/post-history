@@ -20,26 +20,31 @@
     "remotion_version": "4.0.537",
     "node_version": "22.22.0",
     "ffmpeg_version": "6.1.1",
+    "browser": "Chrome Headless Shell 153.0.8010.12 (the container's pre-installed build, passed with --browser-executable)",
     "frames": 240,
     "fps": 30,
     "preview_h264_composition": "Circulated-Vertical 1080x1920",
+    "preview_h264_command": "npx remotion render src/index.ts Circulated-Vertical out/vertical.mp4 --codec=h264 --crf=20 --browser-executable=/opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell --log=error",
     "preview_h264_render_time_s": 26.23,
     "preview_h264_peak_rss_mb": 1726,
     "preview_h264_pix_fmt": "yuvj420p",
     "preview_h264_size_bytes": 2873845,
     "overlay_prores_composition": "Overlay-Vertical 1080x1920",
+    "overlay_prores_command": "npx remotion render src/index.ts Overlay-Vertical out/overlay.mov --codec=prores --prores-profile=4444 --pixel-format=yuva444p10le --image-format=png --browser-executable=<same> --log=error",
     "overlay_prores_render_time_s": 40.73,
     "overlay_prores_peak_rss_mb": 1654,
     "overlay_prores_pix_fmt_requested": "yuva444p10le",
     "overlay_prores_pix_fmt_out": "yuva444p12le",
     "overlay_prores_size_bytes": 466298062,
     "composite_ffmpeg_time_s": 11.38,
+    "composite_command": "ffmpeg -i clip.mp4 -i out/overlay.mov -filter_complex \"[0:v][1:v]overlay=format=auto,format=yuv420p\" out/final.mp4 (clip.mp4 = testsrc2 1080x1920, 30 fps, 8 s, libx264 yuv420p)",
     "composite_ffmpeg_peak_rss_mb": 787,
     "composite_pix_fmt": "yuv420p",
     "composite_size_bytes": 2625447,
     "logo_contrast_over_white_vertical": 4.3,
     "logo_contrast_over_white_horizontal": 4.3,
-    "logo_contrast_over_white_square": 4.58
+    "logo_contrast_over_white_square": 4.58,
+    "preview_h264_color_range": "pc"
   },
-  "notes": "Synthetic plates and sample text only, no material. The composite base clip is FFmpeg testsrc2 (8 s, 1080x1920). Peak RSS is the sum over the whole process tree (node, Chrome Headless Shell, compositor), sampled every 100 ms. ProRes 4444 is written as yuva444p12le even when 10-bit is requested; the overlay is about 58 MB per second, so long clips need disk budget (noted for ADR 0091). Logo contrast: white over the darkest-covered point behind the logo box on a white background, at frame 120, from a transparent still composited over white. Commands are in docs/design/redesign-2026-11/motion/circulated-template/README.md."
+  "notes": "Synthetic plates and sample text only, no material. The composite base clip is FFmpeg testsrc2 (8 s, 1080x1920). Peak RSS is the sum over the whole process tree (node, Chrome Headless Shell, compositor), sampled every 100 ms. ProRes 4444 is written as yuva444p12le even when 10-bit is requested; the overlay is about 58 MB per second, so long clips need disk budget (noted for ADR 0091). Logo contrast: white over the darkest-covered point behind the logo box on a white background, at frame 120, from a transparent still composited over white. Commands are in docs/design/redesign-2026-11/motion/circulated-template/README.md. The H.264 preview pixel format and size depend on the browser build: with this container's Chrome Headless Shell the output is yuvj420p (full range) and 2,873,845 bytes, reproduced byte for byte on a second run; the review run without --browser-executable (Remotion downloads its own Chrome Headless Shell) gave yuv420p and 1,829,559 bytes. The cause was not isolated further."
 }

@@ -87,7 +87,7 @@ export const Root: React.FC = () => (
       />
     </Folder>
     <Folder name="Checks">
-      {/* سطر طويل (36 حرفًا): يصغر حتى 80% ثم يلتفّ داخل لوحه، ولا يُقصّ عند الحافة */}
+      {/* سطر طويل (39 حرفًا): يصغر حتى 80% ثم يلتفّ داخل لوحه، ولا يُقصّ عند الحافة */}
       <Composition
         id="Check-LongLine"
         component={CirculatedTemplate}
