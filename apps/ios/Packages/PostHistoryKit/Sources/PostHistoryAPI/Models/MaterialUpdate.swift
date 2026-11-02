@@ -26,7 +26,7 @@ public struct MaterialUpdate: Sendable, Codable, Hashable {
     /** يُرسل مع `dynamic_fields` عند إكمال مسودة قديمة بإصدار أحدث */
     public var formVersion: Int?
     public var dynamicFields: [String: JSONValue]?
-    /** وسوم المادة (ADR 0086، أُضيف بعد v0.3 فقد يغيب). اختياري في العقد حفاظًا على عملاء v0 (القاعدة 12)، والخادم يحفظ الغائب مصفوفة فارغة؛ أما واجهات المراسل v2 فتُلزم وسمًا واحدًا على الأقل قبل الإرسال (قرار المالك 2026-11-01). ليست بيانات كاشفة، لكنها نص حرّ: لا تدخل حمولة حدث ولا إشعارًا خارجيًا. */
+    /** وسوم المادة (ADR 0086، أُضيف بعد v0.3 فقد يغيب). اختياري في العقد حفاظًا على عملاء v0 (القاعدة 12)، والخادم يحفظ الغائب مصفوفة فارغة؛ أما واجهات المراسل v2 فتُلزم وسمًا واحدًا على الأقل قبل الإرسال (قرار المالك 2026-11-01). نص حرّ قد يحوي أسماءً حساسة، فلا يدخل حمولة Outbox ولا إشعارًا ولا مخططًا يراه المشتري. */
     public var tags: Set<String>?
 
     public init(title: String? = nil, materialTypes: Set<MaterialType>? = nil, governorate: String? = nil, city: String? = nil, shotAt: Date? = nil, priority: Priority? = nil, sensitivity: Sensitivity? = nil, displayName: DisplayName? = nil, formVersion: Int? = nil, dynamicFields: [String: JSONValue]? = nil, tags: Set<String>? = nil) {

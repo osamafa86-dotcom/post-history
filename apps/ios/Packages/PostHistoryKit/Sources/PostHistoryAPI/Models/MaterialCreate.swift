@@ -34,7 +34,7 @@ public struct MaterialCreate: Sendable, Codable, Hashable {
     public var contributors: [Contributor]?
     /** جلسة رفع الملاحظة الصوتية إن سبقت إنشاء المادة */
     public var voiceNoteUploadId: UUID?
-    /** وسوم المادة (ADR 0086، أُضيف بعد v0.3 فقد يغيب). اختياري في العقد حفاظًا على عملاء v0 (القاعدة 12)، والخادم يحفظ الغائب مصفوفة فارغة؛ أما واجهات المراسل v2 فتُلزم وسمًا واحدًا على الأقل قبل الإرسال (قرار المالك 2026-11-01). ليست بيانات كاشفة، لكنها نص حرّ: لا تدخل حمولة حدث ولا إشعارًا خارجيًا. */
+    /** وسوم المادة (ADR 0086، أُضيف بعد v0.3 فقد يغيب). اختياري في العقد حفاظًا على عملاء v0 (القاعدة 12)، والخادم يحفظ الغائب مصفوفة فارغة؛ أما واجهات المراسل v2 فتُلزم وسمًا واحدًا على الأقل قبل الإرسال (قرار المالك 2026-11-01). نص حرّ قد يحوي أسماءً حساسة، فلا يدخل حمولة Outbox ولا إشعارًا ولا مخططًا يراه المشتري. */
     public var tags: Set<String>?
 
     public init(title: String, materialTypes: Set<MaterialType>, governorate: String, city: String, shotAt: Date? = nil, priority: Priority, sensitivity: Sensitivity, displayName: DisplayName, gps: GpsPoint? = nil, formVersion: Int, dynamicFields: [String: JSONValue], contributors: [Contributor]? = nil, voiceNoteUploadId: UUID? = nil, tags: Set<String>? = nil) {
