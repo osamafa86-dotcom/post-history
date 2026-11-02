@@ -60,6 +60,10 @@ ffmpeg -i clip.mp4 -i out/overlay.mov \
 
 - `fonts/`: Rubik Bold وReadex Pro SemiBold من تطبيق iOS، ورخصتا OFL. لا خط من الشبكة ولا من النظام.
 - `brand/palpost-logo-white.png`: الشعار الأبيض من `docs/design/redesign-2026-11/brand/`.
-- `plates/`: خلفيات تجريبية مولَّدة (مدينة ليلًا خارج التركيز)، لا مواد حقيقية.
+- `plates/`: خلفيات اصطناعية يرسمها `docs/design/redesign-2026-11/tools/make-plates.py` من الصفر (تدرّج سماء، وخط أبنية، وأضواء مموّهة، وتظليل، وحبيبات)، فلا صورة ولا لقطة ولا مادة من طرف ثالث، ولا مصدر ولا رخصة تُنسب. الناتج ثابت لكل تشغيل، وPillow لا يكتب EXIF: في الملفات ترويسة JFIF وحدها (فُحصت بـ exiftool). وإطارات Figma رُسمت على تشغيل أقدم للمولّد نفسه، قبل أن تصير الحبيبات بذرة ثابتة.
+
+```bash
+python3 docs/design/redesign-2026-11/tools/make-plates.py docs/design/redesign-2026-11/motion/circulated-template/public/plates
+```
 
 ومخرجات التصدير (`*.mp4` و`*.mov`) خارج المستودع (`.gitignore`).
