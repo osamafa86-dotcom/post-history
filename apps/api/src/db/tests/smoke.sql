@@ -78,6 +78,91 @@ SELECT pg_temp.expect_error($q$ UPDATE materials SET display_name_mode = 'pseudo
 SELECT pg_temp.expect_error($q$ UPDATE materials SET material_types = '{podcast}' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE materials SET material_types = '{}' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE materials SET reserved_by = '00000000-0000-4000-8000-000000000013' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+
+-- وسوم المادة (ADR 0086): فارغة افتراضيًا، 12 على الأكثر بلا تكرار، كلٌّ 1–40 محرفًا مشذَّبًا بلا محارف تحكم أو اتجاه
+SELECT pg_temp.assert((SELECT tags = '{}' FROM materials WHERE id = '00000000-0000-4000-8000-000000000101'), 'tags default to empty');
+UPDATE materials SET tags = '{مساعدات,النصيرات,"وكالة الغوث UNRWA"}' WHERE id = '00000000-0000-4000-8000-000000000101';
+SELECT pg_temp.assert((SELECT cardinality(tags) = 3 FROM materials WHERE id = '00000000-0000-4000-8000-000000000101'), 'three tags stored');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = '{a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13}' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = '{مطر,مطر}' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = '{""}' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[' مطر'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[repeat('و', 41)] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'\u202Eمطر'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[NULL::text] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = NULL WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23502');
+-- رفض بحسب كل قاعدة في القيد (الأمثلة بتهريبات E'' فلا محارف غير مرئية في الملف): محارف التحكم C0 وDEL وC1
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'\u0001'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'م\tطر'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'م\x7fطر'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'م\u0085ط'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'م\u009fط'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+-- محارف الاتجاه: العلامتان LRM/RLM، وU+202A، والعزل U+2066 وU+2069، وعلامة الحرف العربي U+061C
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'\u200eمطر'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'مطر\u200f'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'م\u202aطر'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'م\u2066ط'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'م\u2069ط'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'م\u061cطر'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+-- المسافة في الطرفين: الفراغ الأخير، وU+00A0 وحدها أو في أول الوسم، وفراغات يونيكود لا يقصّها btrim (U+3000 وU+FEFF وU+2028)
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'مطر\x20'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'\u00a0'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'\u00a0مطر'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'مطر\u3000'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'مطر\ufeff'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[E'مطر\u2028'] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+-- الطول يُعدّ بنقاط الترميز لا بالوحدات: 41 محرفًا خارج BMP مرفوضة
+SELECT pg_temp.expect_error($q$ UPDATE materials SET tags = ARRAY[repeat(chr(128167), 41)] WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
+-- الصنف كله لا أمثلة متفرقة (مجموعات المحارف نفسها في نمط MaterialTag بـ openapi.yaml): كل محرف مسافة يُرفض وحده وفي أول الوسم وفي آخره
+SELECT pg_temp.assert(
+  (SELECT bool_and(NOT material_tags_valid(ARRAY[chr(cp)])
+                   AND NOT material_tags_valid(ARRAY[chr(cp) || 'مطر'])
+                   AND NOT material_tags_valid(ARRAY['مطر' || chr(cp)]))
+   FROM (SELECT generate_series(9, 13) AS cp
+         UNION ALL SELECT unnest(ARRAY[32, 160, 5760, 8232, 8233, 8239, 8287, 12288, 65279])
+         UNION ALL SELECT generate_series(8192, 8202)) AS ws),
+  'every whitespace character of the JSON Schema class is rejected alone, first and last');
+-- ... ويُقبل داخل الوسم ما عدا ما هو تحكم أصلًا (U+0009–U+000D)
+SELECT pg_temp.assert(
+  (SELECT bool_and(material_tags_valid(ARRAY['م' || chr(cp) || 'ط']))
+   FROM (SELECT unnest(ARRAY[32, 160, 5760, 8232, 8233, 8239, 8287, 12288, 65279])
+         UNION ALL SELECT generate_series(8192, 8202)) AS ws(cp)),
+  'whitespace inside a tag is accepted');
+-- محارف التحكم والاتجاه تُرفض في كل موضع: C0 وDEL وC1 وU+061C وLRM/RLM وU+202A–U+202E وU+2066–U+2069
+SELECT pg_temp.assert(
+  (SELECT bool_and(NOT material_tags_valid(ARRAY[chr(cp)])
+                   AND NOT material_tags_valid(ARRAY[chr(cp) || 'مطر'])
+                   AND NOT material_tags_valid(ARRAY['م' || chr(cp) || 'ط'])
+                   AND NOT material_tags_valid(ARRAY['مطر' || chr(cp)]))
+   FROM (SELECT generate_series(1, 31) AS cp
+         UNION ALL SELECT generate_series(127, 159)
+         UNION ALL SELECT unnest(ARRAY[1564, 8206, 8207])
+         UNION ALL SELECT generate_series(8234, 8238)
+         UNION ALL SELECT generate_series(8294, 8297)) AS bad),
+  'every control and direction character is rejected in every position');
+-- الجيران القريبون من الصنفين يُقبلون في كل موضع (ZWNJ وZWJ لازمان للعربية والفارسية، وU+061B وU+061D قبل U+061C وبعدها)
+SELECT pg_temp.assert(
+  (SELECT bool_and(material_tags_valid(ARRAY[chr(cp)])
+                   AND material_tags_valid(ARRAY[chr(cp) || 'مطر'])
+                   AND material_tags_valid(ARRAY['م' || chr(cp) || 'ط'])
+                   AND material_tags_valid(ARRAY['مطر' || chr(cp)]))
+   FROM unnest(ARRAY[33, 126, 161, 173, 1563, 1565, 6158, 8203, 8204, 8205, 8208, 8293, 8298]) AS ok(cp)),
+  'characters next to the rejected classes are still accepted in every position');
+SELECT pg_temp.assert(
+  (SELECT count(*) = 1 FROM materials WHERE tags @> '{مساعدات}'),
+  'materials are found by tag');
+-- حدود القبول: اثنا عشر وسمًا، ووسم من 40 محرفًا (بالعربية وخارج BMP)، ووسم من محرف واحد، ومسافات وZWNJ وZWJ داخل الوسم
+UPDATE materials SET tags = ARRAY(SELECT 'tag' || g FROM generate_series(1, 12) g) WHERE id = '00000000-0000-4000-8000-000000000101';
+SELECT pg_temp.assert((SELECT cardinality(tags) = 12 FROM materials WHERE id = '00000000-0000-4000-8000-000000000101'), 'twelve tags are accepted');
+UPDATE materials SET tags = ARRAY[repeat('و', 40)] WHERE id = '00000000-0000-4000-8000-000000000101';
+SELECT pg_temp.assert((SELECT char_length(tags[1]) = 40 FROM materials WHERE id = '00000000-0000-4000-8000-000000000101'), 'a 40-character tag is accepted');
+UPDATE materials SET tags = ARRAY[repeat(chr(128167), 40)] WHERE id = '00000000-0000-4000-8000-000000000101';
+SELECT pg_temp.assert((SELECT char_length(tags[1]) = 40 FROM materials WHERE id = '00000000-0000-4000-8000-000000000101'), 'a 40-code-point tag outside the BMP is accepted');
+UPDATE materials SET tags = ARRAY['م'] WHERE id = '00000000-0000-4000-8000-000000000101';
+SELECT pg_temp.assert((SELECT char_length(tags[1]) = 1 FROM materials WHERE id = '00000000-0000-4000-8000-000000000101'), 'a one-character tag is accepted');
+UPDATE materials SET tags = ARRAY['م ط', E'م\u00a0ط', E'م\u3000ط', E'م\u200cط', E'م\u200dط'] WHERE id = '00000000-0000-4000-8000-000000000101';
+SELECT pg_temp.assert((SELECT cardinality(tags) = 5 FROM materials WHERE id = '00000000-0000-4000-8000-000000000101'), 'inner spaces, ZWNJ and ZWJ are accepted');
+UPDATE materials SET tags = '{مساعدات,النصيرات,"وكالة الغوث UNRWA"}' WHERE id = '00000000-0000-4000-8000-000000000101';
 SELECT pg_temp.expect_error($q$ UPDATE materials SET dynamic_fields = '[]' WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE materials SET form_version = 99 WHERE id = '00000000-0000-4000-8000-000000000101' $q$, '23503');
 
@@ -375,6 +460,11 @@ SELECT pg_temp.assert(NOT public.outbox_payload_is_whitelisted('material.created
   'outbox whitelist still rejects with an empty search_path');
 SELECT pg_temp.assert(public.audit_details_is_whitelisted('{"result": "ok"}'::jsonb), 'audit whitelist works with an empty search_path');
 SELECT pg_temp.assert(public.material_file_technical_is_whitelisted('{"vfr": true}'::jsonb), 'technical whitelist works with an empty search_path');
+SELECT pg_temp.assert(public.material_tags_valid(ARRAY['مطر', 'ركام']) AND NOT public.material_tags_valid(ARRAY['مطر', 'مطر']),
+  'tags check accepts and rejects with an empty search_path');
+SELECT pg_temp.assert(NOT public.material_tags_valid(ARRAY[E'\u00a0']) AND NOT public.material_tags_valid(ARRAY[E'م\u061cط']),
+  'tags check applies its whitespace and direction rules with an empty search_path');
+UPDATE public.materials SET tags = '{مطر,ركام}' WHERE id = '00000000-0000-4000-8000-000000000101';
 INSERT INTO public.outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
 VALUES ('material.created', 'material', '00000000-0000-4000-8000-000000000101', 'material.created:restore-sim',
         '{"material_id": "00000000-0000-4000-8000-000000000101", "priority": "normal"}');

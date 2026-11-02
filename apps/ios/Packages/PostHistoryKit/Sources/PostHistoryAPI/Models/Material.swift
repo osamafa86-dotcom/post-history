@@ -14,6 +14,7 @@ public struct Material: Sendable, Codable, Hashable {
     public static let governorateRule = StringRule(minLength: 1, maxLength: 64, pattern: nil)
     public static let cityRule = StringRule(minLength: 1, maxLength: 64, pattern: nil)
     public static let formVersionRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
+    public static let tagsRule = ArrayRule(minItems: nil, maxItems: 12, uniqueItems: true)
     public static let versionRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     public static let reservedByNameRule = StringRule(minLength: nil, maxLength: 80, pattern: nil)
     public static let reporterLegalNameRule = StringRule(minLength: nil, maxLength: 200, pattern: nil)
@@ -37,6 +38,8 @@ public struct Material: Sendable, Codable, Hashable {
     public var contributors: [Contributor]?
     /** جلسة رفع الملاحظة الصوتية إن سبقت إنشاء المادة */
     public var voiceNoteUploadId: UUID?
+    /** وسوم المادة (ADR 0086، أُضيف بعد v0.3 فقد يغيب). اختياري في العقد حفاظًا على عملاء v0 (القاعدة 12)، والخادم يحفظ الغائب مصفوفة فارغة؛ أما واجهات المراسل v2 فتُلزم وسمًا واحدًا على الأقل قبل الإرسال (قرار المالك 2026-11-01). نص حرّ قد يحوي أسماءً حساسة، فلا يدخل حمولة Outbox ولا إشعارًا ولا مخططًا يراه المشتري. */
+    public var tags: Set<String>?
     public var id: UUID
     /** يرتفع مع كل تعديل بعد الاعتماد */
     public var version: Int
@@ -69,7 +72,7 @@ public struct Material: Sendable, Codable, Hashable {
     /** يرتفع مع كل كتابة على المادة (بخلاف `version` الذي يرتفع مع التعديل بعد الاعتماد)؛ قيمة `ETag`. أُضيف في v0.1 فقد يغيب عند خادم v0. */
     public var rowVersion: Int?
 
-    public init(title: String, materialTypes: Set<MaterialType>, governorate: String, city: String, shotAt: Date? = nil, priority: Priority, sensitivity: Sensitivity, displayName: DisplayName, gps: GpsPoint? = nil, formVersion: Int, dynamicFields: [String: JSONValue], contributors: [Contributor]? = nil, voiceNoteUploadId: UUID? = nil, id: UUID, version: Int, reporterId: UUID, officeId: UUID?, technicalState: TechnicalState, editorialState: EditorialState, rightsState: RightsState, reservedBy: UUID? = nil, reservedByName: String? = nil, reservedAt: Date? = nil, acknowledgementDueAt: Date? = nil, acknowledgedBy: UUID? = nil, acknowledgedAt: Date? = nil, reporterLegalName: String? = nil, files: [MaterialFile], redactedFieldKeys: [String]? = nil, createdAt: Date, updatedAt: Date, rowVersion: Int? = nil) {
+    public init(title: String, materialTypes: Set<MaterialType>, governorate: String, city: String, shotAt: Date? = nil, priority: Priority, sensitivity: Sensitivity, displayName: DisplayName, gps: GpsPoint? = nil, formVersion: Int, dynamicFields: [String: JSONValue], contributors: [Contributor]? = nil, voiceNoteUploadId: UUID? = nil, tags: Set<String>? = nil, id: UUID, version: Int, reporterId: UUID, officeId: UUID?, technicalState: TechnicalState, editorialState: EditorialState, rightsState: RightsState, reservedBy: UUID? = nil, reservedByName: String? = nil, reservedAt: Date? = nil, acknowledgementDueAt: Date? = nil, acknowledgedBy: UUID? = nil, acknowledgedAt: Date? = nil, reporterLegalName: String? = nil, files: [MaterialFile], redactedFieldKeys: [String]? = nil, createdAt: Date, updatedAt: Date, rowVersion: Int? = nil) {
         self.title = title
         self.materialTypes = materialTypes
         self.governorate = governorate
@@ -83,6 +86,7 @@ public struct Material: Sendable, Codable, Hashable {
         self.dynamicFields = dynamicFields
         self.contributors = contributors
         self.voiceNoteUploadId = voiceNoteUploadId
+        self.tags = tags
         self.id = id
         self.version = version
         self.reporterId = reporterId
@@ -118,6 +122,7 @@ public struct Material: Sendable, Codable, Hashable {
         case dynamicFields = "dynamic_fields"
         case contributors
         case voiceNoteUploadId = "voice_note_upload_id"
+        case tags
         case id
         case version
         case reporterId = "reporter_id"
@@ -156,6 +161,7 @@ public struct Material: Sendable, Codable, Hashable {
         try container.encode(dynamicFields, forKey: .dynamicFields)
         try container.encodeIfPresent(contributors, forKey: .contributors)
         try container.encodeIfPresent(voiceNoteUploadId, forKey: .voiceNoteUploadId)
+        try container.encodeIfPresent(tags, forKey: .tags)
         try container.encode(id, forKey: .id)
         try container.encode(version, forKey: .version)
         try container.encode(reporterId, forKey: .reporterId)
