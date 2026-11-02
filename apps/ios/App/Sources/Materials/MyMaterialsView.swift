@@ -55,29 +55,51 @@ final class MyMaterialsModel: ObservableObject {
     }
 }
 
-/// A4 · موادي — الخط الزمني (docs/design/specs/reporter.md).
+/// «موادي» بقائمتها وخطها الزمني كما كانت (A4)، بالهوية v2: فلاتر برقاقات، وبطاقات بالحالات الثلاث شاراتٍ منفصلة بأيقونة وكلمة.
+/// معرض «موادي» (07) وتفاصيل المادة والمشغّل في الطلب التالي (ADR 0088).
 struct MyMaterialsView: View {
-    enum Tab: Hashable { case all, needsAction }
+    enum Filter: Hashable { case all, needsAction, urgent }
 
     @EnvironmentObject private var model: MyMaterialsModel
     @EnvironmentObject private var queue: UploadQueueModel
     @Binding var focus: UUID?
     var onNewMaterial: () -> Void = {}
 
-    @State private var tab: Tab = .all
+    @State private var filter: Filter = .all
     @State private var expanded: UUID?
-    @State private var trackFilter: [UUID: VLTrack] = [:]
+    @State private var trackFilter: [UUID: MaterialStatus.Track] = [:]
     @State private var replacing: PostHistoryAPI.Material?
 
-    private var visible: [PostHistoryAPI.Material] { tab == .all ? model.items : model.items.filter(\.needsAction) }
+    private var visible: [PostHistoryAPI.Material] {
+        switch filter {
+        case .all: return model.items
+        case .needsAction: return model.items.filter(\.needsAction)
+        case .urgent: return model.items.filter { $0.priority == .urgent }
+        }
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: VL.Space.s4) {
-                tabs
-                if model.failed, let updated = model.lastUpdated { staleBanner(updated) }
-                if model.failed, model.lastUpdated == nil { VLInlineAlert(tone: .attention, systemImage: "wifi.slash", textKey: "materials.loadFailed") }
-                if visible.isEmpty, !model.loading, !model.failed { emptyState }
+                VLFilterChips(groupLabel: "materials.filter", options: [
+                    (Filter.all, Text("materials.tab.count \(Text("materials.tab.all")) \(model.items.count)")),
+                    (Filter.needsAction, Text("materials.tab.count \(Text("materials.tab.needsAction")) \(model.items.filter(\.needsAction).count)")),
+                    (Filter.urgent, Text("material.priority.urgent")),
+                ], selection: $filter)
+                if model.failed, let updated = model.lastUpdated {
+                    VLNote(tone: .warn, systemImage: "clock.arrow.circlepath",
+                           text: Text("materials.stale \(VLFormat.time(updated))"), actionKey: "materials.refresh") {
+                        Task { await model.refresh() }
+                    }
+                }
+                if model.failed, model.lastUpdated == nil {
+                    VLNote(tone: .warn, systemImage: "wifi.slash", text: Text("materials.loadFailed"))
+                }
+                if visible.isEmpty, !model.loading, !model.failed {
+                    VLEmptyState(title: "mine.empty.title", message: "mine.empty") {
+                        if filter == .all { Button("home.send", action: onNewMaterial).buttonStyle(.vlPrimary) }
+                    }
+                }
                 ForEach(visible, id: \.id) { m in
                     if expanded == m.id { expandedCard(m) } else { collapsedCard(m) }
                 }
@@ -88,6 +110,8 @@ struct MyMaterialsView: View {
             .padding(VL.Space.s5)
         }
         .vlScreen()
+        .navigationTitle("materials.title")
+        .navigationBarTitleDisplayMode(.large)
         .refreshable { await model.refresh() }
         .task {
             await model.refresh()
@@ -100,91 +124,39 @@ struct MyMaterialsView: View {
             }
         }
         .task(id: expanded) { if let expanded { await model.loadTimeline(expanded) } }
-        .onChange(of: focus) { _, id in if let id { tab = .all; expanded = id } }
-        .sheet(item: $replacing) { m in NewMaterialFlow(replacing: m) }
+        .onChange(of: focus) { _, id in if let id { filter = .all; expanded = id } }
+        .sheet(item: $replacing) { m in ReplaceShotView(material: m) }
     }
 
-    private var tabs: some View {
-        HStack(spacing: VL.Space.s3) {
-            tabChip(.all, "materials.tab.all", count: model.items.count)
-            tabChip(.needsAction, "materials.tab.needsAction", count: model.items.filter(\.needsAction).count)
+    private func header(_ m: PostHistoryAPI.Material) -> some View {
+        HStack(alignment: .top, spacing: VL.Space.s3) {
+            Text(verbatim: m.title).vlText(.headline).foregroundStyle(Color.vl.textPrimary).multilineTextAlignment(.leading)
+            Spacer(minLength: 0)
+            PriorityBadge(priority: m.priority)
         }
-    }
-
-    private func tabChip(_ t: Tab, _ key: String, count: Int) -> some View {
-        let selected = tab == t
-        return Button { withAnimation(VL.Easing.standard(VL.Duration.base)) { tab = t } } label: {
-            Text("materials.tab.count \(Text(LocalizedStringKey(key))) \(count)")
-                .vlText(.labelMd)
-                .padding(.horizontal, VL.Space.s4)
-                .frame(minHeight: VL.Size.touchMin)
-                .foregroundStyle(selected ? Color.vl.textOnBrand : Color.vl.textPrimary)
-                .background(selected ? Color.vl.bgBrand : Color.vl.bgSurface, in: Capsule())
-                .overlay(Capsule().strokeBorder(selected ? Color.clear : Color.vl.borderDefault, lineWidth: VL.Border.hairline))
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
-    }
-
-    private func staleBanner(_ updated: Date) -> some View {
-        HStack {
-            Label { Text("materials.stale \(updated.formatted(date: .omitted, time: .shortened))").vlText(.bodySm) } icon: { Image(systemName: "clock.arrow.circlepath") }
-                .foregroundStyle(Color.vl.toneAttentionFg)
-            Spacer()
-            Button("materials.refresh") { Task { await model.refresh() } }.buttonStyle(.vlGhost)
-        }
-        .padding(VL.Space.s3)
-        .background(Color.vl.toneAttentionBg, in: RoundedRectangle(cornerRadius: VL.Radius.md))
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: VL.Space.s4) {
-            Image(systemName: "tray").font(.largeTitle).foregroundStyle(Color.vl.iconMuted).accessibilityHidden(true)
-            Text("materials.empty").vlText(.bodyMd).foregroundStyle(Color.vl.textSecondary)
-            Button("material.new", action: onNewMaterial).buttonStyle(.vlPrimary)
-        }
-        .padding(VL.Space.s8)
-        .frame(maxWidth: .infinity)
     }
 
     private func collapsedCard(_ m: PostHistoryAPI.Material) -> some View {
-        Button { withAnimation(VL.Easing.standard(VL.Duration.base)) { expanded = m.id } } label: {
+        Button { withAnimation(.easeOut(duration: VL.Duration.base)) { expanded = m.id } } label: {
             VLCard {
-                HStack(alignment: .top) {
-                    Text(verbatim: m.title).vlText(.headingH4).foregroundStyle(Color.vl.textPrimary).lineLimit(2).multilineTextAlignment(.leading)
-                    Spacer(minLength: 0)
-                    PriorityBadge(priority: m.priority)
-                }
-                ThreeStateBadges(status: MaterialStatus(m))
+                header(m)
+                ThreeStateBadges(status: MaterialStatus(m), axis: .horizontal)
             }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityHint(Text("materials.expand.hint"))
     }
 
     private func expandedCard(_ m: PostHistoryAPI.Material) -> some View {
-        let status = MaterialStatus(m)
         let timeline = model.timelines[m.id]
-        return VLCard(border: .vl.borderStrong) {
-            HStack(alignment: .top) {
-                Text(verbatim: m.title).vlText(.headingH4).foregroundStyle(Color.vl.textPrimary)
-                Spacer(minLength: 0)
-                PriorityBadge(priority: m.priority)
-            }
-            ThreeStateBadges(status: status) { track in
+        return VLCard(border: .vl.borderEdge) {
+            header(m)
+            ThreeStateBadges(status: MaterialStatus(m), axis: .horizontal) { track in
                 trackFilter[m.id] = trackFilter[m.id] == track ? nil : track
             }
             if let note = timeline?.supervisorNote(for: m) {
-                VStack(alignment: .leading, spacing: VL.Space.s2) {
-                    Label { Text(note.occurredAt.formatted(date: .abbreviated, time: .shortened)).vlText(.captionMd) } icon: { Image(systemName: "pencil") }
-                        .foregroundStyle(Color.vl.toneAttentionFg)
-                    Text(verbatim: note.reason).vlText(.bodySm).foregroundStyle(Color.vl.textPrimary)
-                }
-                .padding(VL.Space.s4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.vl.toneAttentionBg, in: RoundedRectangle(cornerRadius: VL.Radius.md))
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(Text("materials.supervisorNote \(note.reason)"))
+                VLNote(tone: .warn, systemImage: "pencil", text: Text("materials.supervisorNote \(note.reason)"))
             }
             timelineView(m, timeline)
             primaryAction(m)
@@ -194,17 +166,17 @@ struct MyMaterialsView: View {
     @ViewBuilder private func timelineView(_ m: PostHistoryAPI.Material, _ timeline: MaterialTimeline?) -> some View {
         VStack(alignment: .leading, spacing: VL.Space.s3) {
             HStack {
-                VLOverline("timeline.title")
+                VLSectionHeader("timeline.title")
                 Spacer()
                 if let track = trackFilter[m.id] {
                     Button { trackFilter[m.id] = nil } label: { Label(LocalizedStringKey(track.labelKey), systemImage: "xmark.circle.fill") }
-                        .vlText(.labelSm).buttonStyle(.vlGhost)
+                        .buttonStyle(.vlGhost)
                         .accessibilityLabel(Text("timeline.filter.clear"))
                 }
             }
             if let timeline {
                 let events = timeline.filtered(trackFilter[m.id].map(Self.apiTrack))
-                if events.isEmpty { Text("timeline.empty").vlText(.bodySm).foregroundStyle(Color.vl.textSecondary) }
+                if events.isEmpty { Text("timeline.empty").vlText(.body).foregroundStyle(Color.vl.textSecondary) }
                 ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
                     TimelineEventRow(event: event, isLast: index == events.count - 1)
                 }
@@ -218,17 +190,17 @@ struct MyMaterialsView: View {
         switch m.primaryAction {
         case .replaceShot:
             // «الرد على المشرف» مخفي: العقد لا يحمل انتقالًا للرد (قرار للمنسّق، المواصفة A4).
-            Button { replacing = m } label: { Label("a4.replaceShot", systemImage: "arrow.triangle.2.circlepath.camera") }.buttonStyle(.vlPrimary)
+            Button { replacing = m } label: { Label("a4.replaceShot", systemImage: "arrow.triangle.2.circlepath.camera") }.buttonStyle(.vlSolid)
         case .showReceipt:
             Button { queue.presentedReceipt = ReceiptTarget(materialId: m.id, recordId: queue.records.first { $0.materialId == m.id && $0.kind == .original }?.id) } label: {
                 Label("a4.showReceipt", systemImage: "doc.text")
-            }.buttonStyle(.vlSecondary)
+            }.buttonStyle(.vlOutline)
         case .none:
             EmptyView()
         }
     }
 
-    static func apiTrack(_ t: VLTrack) -> TransitionRecord.Track {
+    static func apiTrack(_ t: MaterialStatus.Track) -> TransitionRecord.Track {
         switch t {
         case .technical: return .technical
         case .editorial: return .editorial
@@ -237,26 +209,47 @@ struct MyMaterialsView: View {
     }
 }
 
-/// حدث في الخط الزمني: أيقونة المسار ولونه، نقطة وخط، نص الحالة ووقتها. لا يعتمد على اللون وحده.
+extension MaterialStatus.Track {
+    init?(_ track: TransitionRecord.Track) {
+        switch track {
+        case .technical: self = .technical
+        case .editorial: self = .editorial
+        case .rights: self = .rights
+        default: return nil
+        }
+    }
+
+    /// أيقونة المسار في الخط الزمني.
+    var trackImage: String {
+        switch self {
+        case .technical: return "film"
+        case .editorial: return "pencil"
+        case .rights: return "key"
+        }
+    }
+}
+
+/// حدث في الخط الزمني: أيقونة المسار، نقطة وخط، نص الحالة ووقتها. لا يعتمد على اللون وحده.
 private struct TimelineEventRow: View {
     let event: TransitionRecord
     let isLast: Bool
 
     var body: some View {
-        let track = VLTrack(event.track) ?? .technical
+        let track = MaterialStatus.Track(event.track) ?? .technical
         HStack(alignment: .top, spacing: VL.Space.s3) {
             VStack(spacing: VL.Space.s1) {
-                Circle().fill(track.accent).frame(width: VL.Space.s4, height: VL.Space.s4)
-                if !isLast { Rectangle().fill(track.subtle).frame(width: VL.Border.regular).frame(maxHeight: .infinity) }
+                Circle().fill(Color.vl.actionPrimary).frame(width: VL.Space.s4, height: VL.Space.s4)
+                if !isLast { Rectangle().fill(Color.vl.borderLine).frame(width: VL.Border.field).frame(maxHeight: .infinity) }
             }
             .frame(width: VL.Space.s4)
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: VL.Space.s1) {
-                Label { Text(LocalizedStringKey(MaterialTimeline.labelKey(event))).vlText(.bodySm).foregroundStyle(Color.vl.textPrimary) } icon: {
-                    Image(systemName: track.systemImage).foregroundStyle(track.accent)
+                Label { Text(LocalizedStringKey(MaterialTimeline.labelKey(event))).vlText(.body).foregroundStyle(Color.vl.textPrimary) } icon: {
+                    Image(systemName: track.trackImage).foregroundStyle(Color.vl.textSecondary)
                 }
-                Text(event.occurredAt.formatted(date: .abbreviated, time: .shortened))
-                    .vlText(.monoMd).foregroundStyle(Color.vl.textSecondary)
+                Text(verbatim: VLFormat.time(event.occurredAt))
+                    .vlText(.num).foregroundStyle(Color.vl.textSecondary)
+                    .environment(\.layoutDirection, .leftToRight)
             }
             .padding(.bottom, VL.Space.s3)
         }

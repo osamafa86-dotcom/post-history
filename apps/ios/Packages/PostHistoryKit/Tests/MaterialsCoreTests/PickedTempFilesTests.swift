@@ -23,4 +23,11 @@ final class PickedTempFilesTests: XCTestCase {
         XCTAssertNotEqual(a, b)
         XCTAssertTrue(a.hasPrefix(PickedTempFiles.prefix) && a.hasSuffix("-clip.mov"))
     }
+
+    func testTheOriginalNameComesBackWithoutThePrefixAndId() {
+        XCTAssertEqual(PickedTempFiles.originalName(PickedTempFiles.newName(for: "IMG_0042.MOV")), "IMG_0042.MOV")
+        XCTAssertEqual(PickedTempFiles.originalName(PickedTempFiles.newName(for: "a-b-c.jpg")), "a-b-c.jpg")
+        XCTAssertEqual(PickedTempFiles.originalName("clip.mov"), "clip.mov")
+        XCTAssertEqual(PickedTempFiles.originalName("picked-not-a-uuid-clip.mov"), "picked-not-a-uuid-clip.mov")
+    }
 }

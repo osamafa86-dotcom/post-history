@@ -14,6 +14,8 @@ final class AppModel: ObservableObject {
     enum Phase: Equatable { case loading, signedOut, signedIn(StoredSession), revoked(at: Date), wiped(WipeReport) }
 
     @Published private(set) var phase: Phase = .loading
+    /// اسم العمل للتحية في الرئيسية (`GET /me`)؛ يبقى في الذاكرة وحدها ولا يُكتب على القرص.
+    @Published private(set) var workName: String?
 
     let auth: AuthSession
     /// إعداد العميل لكل المسارات المصادَق عليها (يضيف Bearer ويحدّث عند 401).
@@ -24,6 +26,8 @@ final class AppModel: ObservableObject {
     let materials: MyMaterialsModel
     let notifications: NotificationsModel
     let push: PushRegistrar
+    /// ما يتذكّره التطبيق للمراسل بين إرسال وآخر (المكان واسم الظهور ووسومه السابقة، ADR 0088).
+    let memory = ReporterMemoryStore(fileURL: UploadServices.shared.memoryFile)
     private var authWatcher: Task<Void, Never>?
 
     init(store: any TokenStore = KeychainTokenStore(), baseURL: String = AppConfiguration.apiBaseURL) {
@@ -69,6 +73,10 @@ final class AppModel: ObservableObject {
                 uploads.cancelLightCopies()
                 _ = await uploads.engine.wipeAll()
                 await uploads.refresh()
+                uploads.forgetBatches()
+                memory.clear()
+                ThumbnailCache.shared.clear()
+                workName = nil
                 await materials.clear()
                 await push.forgetLocally()
                 await notifications.clear()
@@ -102,6 +110,9 @@ final class AppModel: ObservableObject {
             LocalDataWiper.directoryStep(name: "chunks", url: services.chunksDirectory),
             LocalDataWiper.directoryStep(name: "imported_originals", url: services.uploadsDirectory),
             LocalDataWiper.directoryStep(name: "drafts", url: services.draftsDirectory),
+            // المكان المتذكَّر واسم الظهور والوسوم السابقة (قد تحوي أسماء حساسة، ADR 0086)، والإرسالات الأخيرة بعناوينها.
+            LocalDataWiper.directoryStep(name: "reporter_memory", url: services.memoryDirectory),
+            LocalDataWiper.directoryStep(name: "send_batches", url: services.batchesDirectory),
             LocalDataWiper.directoryStep(name: "caches", url: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]),
             LocalDataWiper.directoryStep(name: "temporary", url: FileManager.default.temporaryDirectory),
             WipeStep(name: "url_cache") { URLCache.shared.removeAllCachedResponses(); return 1 },
@@ -110,9 +121,13 @@ final class AppModel: ObservableObject {
             },
         ]
         let report = await EmergencyWipe(steps: steps).run()
+        ThumbnailCache.shared.clear()
+        workName = nil
+        services.recreateProtectedDirectories()
         settings.reload()
         lock.reset()
         uploads.reloadDrafts()
+        uploads.forgetBatches()
         await uploads.refresh()
         await materials.clear()
         await notifications.clear()
@@ -120,6 +135,12 @@ final class AppModel: ObservableObject {
     }
 
     func acknowledgeAndSignIn() { phase = .signedOut }
+
+    /// اسم التحية؛ بلا شبكة تبقى التحية بلا اسم.
+    func loadProfile() async {
+        guard case .signedIn = phase else { return }
+        workName = (try? await AuthAPI.getMe(apiConfiguration: api))?.workName.flatMap { $0.isEmpty ? nil : $0 }
+    }
 
     /// بعد الدخول: الإذن ثم APNs، والتسجيل لدى الخادم حين يصل الرمز.
     private func startPush() async {
@@ -138,6 +159,10 @@ final class AppModel: ObservableObject {
         // الرموز تُمسح محليًا قبل الاتصال؛ فشل الشبكة لا يبقي الجلسة على الجهاز.
         await push.willSignOut()
         try? await auth.logout(allSessions: allSessions)
+        // لا يبقى لمراسل خرج مكانٌ ولا وسوم ولا مصغّرات لمن يدخل بعده على الهاتف نفسه.
+        memory.clear()
+        ThumbnailCache.shared.clear()
+        workName = nil
         await materials.clear()
         await notifications.clear()
         await NotificationTraceWiper.wipe(SystemNotificationCenterTraces())

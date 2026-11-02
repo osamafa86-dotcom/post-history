@@ -9,12 +9,14 @@ struct DynamicFormView: View {
     let materialType: String
     @Binding var values: [String: FormValue]
     let errors: [FieldError]
+    /// أيّ الحقول الظاهرة تُرسم هنا: شاشة الإرسال ترسم الإلزامية فوق زرّ الإرسال والاختيارية تحت «المزيد» (ADR 0088).
+    var include: (UploadFormField) -> Bool = { _ in true }
 
     private var isArabic: Bool { Locale.current.language.languageCode?.identifier == "ar" }
     private func text(_ l: UploadFormLocalized) -> String { isArabic ? l.ar : l.en }
 
     var body: some View {
-        ForEach(FormValidator.visibleFields(form: form, materialType: materialType, values: values), id: \.key) { field in
+        ForEach(FormValidator.visibleFields(form: form, materialType: materialType, values: values).filter(include), id: \.key) { field in
             FieldControl(field: field, label: text(field.label), optionLabel: text, help: field.help.map(text),
                          errorKey: errors.first(where: { $0.field == field.key })?.code.labelKey, value: binding(field.key))
         }
@@ -36,7 +38,7 @@ private struct FieldControl: View {
     @Binding var value: FormValue
     @State private var showAttachmentPicker = false
 
-    private var title: Text { Text(label) + (field.required ? Text(" *").foregroundColor(Color.vl.textDanger) : Text("")) }
+    private var title: Text { Text(label) + (field.required ? Text(" *").foregroundColor(Color.vl.stateDanger) : Text("")) }
     private var a11yTitle: Text { Text(verbatim: field.required ? label + " *" : label) }
     private var helpText: Text? { help.map { Text(verbatim: $0) } }
     private var errorText: Text? { errorKey.map { Text($0) } }
@@ -57,14 +59,14 @@ private struct FieldControl: View {
                 titleRow
                 ForEach(options, id: \.value) { option in
                     Toggle(isOn: multiBinding(option.value)) { Text(verbatim: optionLabel(option.label)) }
-                        .vlText(.bodyMd).foregroundStyle(Color.vl.textPrimary)
+                        .vlText(.body).foregroundStyle(Color.vl.textPrimary)
                 }
             }
         case .datetime:
             boxed { DatePicker(selection: dateBinding) { a11yTitle }.labelsHidden() }
         case .boolean:
             plain {
-                Toggle(isOn: Binding(get: { value.boolValue ?? false }, set: { value = .bool($0) })) { title.vlText(.labelMd) }
+                Toggle(isOn: Binding(get: { value.boolValue ?? false }, set: { value = .bool($0) })) { title.vlText(.headline) }
                     .foregroundStyle(Color.vl.textPrimary)
             }
         case .staffMember:
@@ -73,11 +75,11 @@ private struct FieldControl: View {
             // قيمة التحقق `[{mime, size_bytes}]`؛ الشكل النهائي لإرسال ملفات المرفق في dynamic_fields من اختصاص العقد.
             plain {
                 HStack {
-                    title.vlText(.labelMd).foregroundStyle(Color.vl.textPrimary)
+                    title.vlText(.headline).foregroundStyle(Color.vl.textPrimary)
                     Spacer()
                     Button("form.attachment.add") { showAttachmentPicker = true }.buttonStyle(.vlGhost)
                 }
-                Text("form.attachment.count \(value.arrayValue?.count ?? 0)").vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
+                Text("form.attachment.count \(value.arrayValue?.count ?? 0)").vlText(.caption).foregroundStyle(Color.vl.textSecondary)
                     .fileImporter(isPresented: $showAttachmentPicker, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
                         guard case .success(let urls) = result else { return }
                         var items = value.arrayValue ?? []
@@ -93,7 +95,7 @@ private struct FieldControl: View {
             }
         case .location, .unknownDefaultOpenApi:
             // غير مسموح في نماذج v0 (بوابة الخادم)؛ نوع تفاعل جديد يحتاج إصدارًا من التطبيق.
-            plain { Label("form.field.unsupported", systemImage: "lock").vlText(.bodySm).foregroundStyle(Color.vl.textSecondary) }
+            plain { Label("form.field.unsupported", systemImage: "lock").vlText(.caption).foregroundStyle(Color.vl.textSecondary) }
         }
     }
 
@@ -105,9 +107,9 @@ private struct FieldControl: View {
         VStack(alignment: .leading, spacing: VL.Space.s2) {
             content()
             if let errorText {
-                errorText.vlText(.captionMd).foregroundStyle(Color.vl.textDanger)
+                errorText.vlText(.caption).foregroundStyle(Color.vl.stateDanger)
             } else if let helpText {
-                helpText.vlText(.captionMd).foregroundStyle(Color.vl.textMuted)
+                helpText.vlText(.caption).foregroundStyle(Color.vl.textSecondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -115,7 +117,7 @@ private struct FieldControl: View {
 
     /// عنوان مرئي لمجموعة اختيارات؛ عنصر واحد لقارئ الشاشة («العنوان *»).
     private var titleRow: some View {
-        title.vlText(.labelMd).foregroundStyle(errorKey == nil ? Color.vl.textPrimary : Color.vl.textDanger)
+        title.vlText(.headline).foregroundStyle(errorKey == nil ? Color.vl.textPrimary : Color.vl.stateDanger)
     }
 
     /// قائمة منسدلة بعرض الحقل كله (منطقة اللمس هي الصندوق)؛ الخيار «لا شيء» أولًا ثم خيارات النموذج.
@@ -131,7 +133,7 @@ private struct FieldControl: View {
             HStack(spacing: VL.Space.s3) {
                 shown.foregroundStyle(Color.vl.textPrimary)
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.down").imageScale(.small).foregroundStyle(Color.vl.iconDefault).accessibilityHidden(true)
+                Image(systemName: "chevron.down").imageScale(.small).foregroundStyle(Color.vl.textSecondary).accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())

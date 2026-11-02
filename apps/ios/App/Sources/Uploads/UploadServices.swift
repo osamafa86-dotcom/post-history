@@ -24,6 +24,13 @@ final class UploadServices: @unchecked Sendable {
     let stateDirectory: URL
     /// مسودات «مادة جديدة» (المواصفة A1)؛ يمحوها المسح الطارئ.
     let draftsDirectory: URL
+    /// ذاكرة المراسل (المكان واسم الظهور ووسومه السابقة، ADR 0088)؛ يمحوها المسح الطارئ والخروج والإبطال.
+    let memoryDirectory: URL
+    /// الإرسالات الأخيرة لتجميع الرفع والإيصال (ADR 0088). خارج `stateDirectory` لأن مخزن الحالة يقرأ كل JSON فيه سجلَّ رفع.
+    let batchesDirectory: URL
+
+    var memoryFile: URL { memoryDirectory.appendingPathComponent("reporter-memory.json") }
+    var batchesFile: URL { batchesDirectory.appendingPathComponent("send-batches.json") }
 
     private init() {
         let config = URLSessionConfiguration.background(withIdentifier: Self.backgroundSessionIdentifier)
@@ -37,7 +44,9 @@ final class UploadServices: @unchecked Sendable {
         chunksDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("UploadChunks", isDirectory: true)
         stateDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("UploadState", isDirectory: true)
         draftsDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Drafts", isDirectory: true)
-        for dir in [uploadsDirectory, chunksDirectory, stateDirectory, draftsDirectory] {
+        memoryDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ReporterMemory", isDirectory: true)
+        batchesDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("SendBatches", isDirectory: true)
+        for dir in [uploadsDirectory, chunksDirectory, stateDirectory, draftsDirectory, memoryDirectory, batchesDirectory] {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: UploadFileProtection.attributes)
             // الملفات المحلية للمراسل وحالة الرفع (تحمل رابط tus) لا تدخل النسخ الاحتياطي (iCloud/iTunes).
             var values = URLResourceValues()
@@ -65,6 +74,17 @@ final class UploadServices: @unchecked Sendable {
         let backend: any AppAttestBackend = UnsupportedAppAttestBackend()
         #endif
         return AppAttestIngestTokenProvider(backend: backend, api: GeneratedAttestationAPI(configuration: api), keys: KeychainAttestationKeyStore())
+    }
+
+    /// بعد المسح الطارئ: المجلدات المحمية تُعاد فارغة بالسمات نفسها (حماية الملف واستثناء النسخ الاحتياطي).
+    func recreateProtectedDirectories() {
+        for dir in [memoryDirectory, batchesDirectory] {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: UploadFileProtection.attributes)
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            var url = dir
+            try? url.setResourceValues(values)
+        }
     }
 
     /// ينسخ الملف المختار إلى مجلد الرفع ويعيد مساره النسبي (الأصل كما هو؛ لا تحويل).

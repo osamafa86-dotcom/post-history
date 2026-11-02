@@ -58,20 +58,24 @@ final class NotificationsModel: ObservableObject {
     }
 }
 
+/// 11 · الإشعارات (docs/design/specs/reporter-v2.md): بطاقة لكل إشعار بأيقونة نوعه ونغمته، والعنوان ووقته. القائمة داخل التطبيق
+/// خلف الدخول؛ إشعار شاشة القفل يحمل رقم المادة وحالتها فقط (docs/security/threat-model.md).
 struct NotificationsView: View {
     @EnvironmentObject private var model: NotificationsModel
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: VL.Space.s4) {
-                if model.failed { VLAlert(tone: .attention, systemImage: "exclamationmark.triangle.fill", text: "notifications.loadFailed") }
+            LazyVStack(alignment: .leading, spacing: VL.Space.s3) {
+                if model.failed { VLNote(tone: .warn, systemImage: "exclamationmark.triangle", text: Text("notifications.loadFailed")) }
                 if model.items.isEmpty, !model.failed {
-                    Text("notifications.empty").vlText(.bodyMd).foregroundStyle(Color.vl.textSecondary).padding(VL.Space.s5)
+                    VLEmptyState(title: "notifications.empty", message: "notifications.empty.body")
                 }
                 ForEach(model.items, id: \.id) { n in
-                    VLCard { NotificationRow(notification: n) }
-                        .contentShape(Rectangle())
+                    // لمسة على البطاقة تفتحها؛ وزرّ «أقرّ الاستلام» داخلها يبقى زرًّا مستقلًا.
+                    NotificationRow(notification: n)
                         .onTapGesture { Task { await model.open(n.id) } }
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityAction { Task { await model.open(n.id) } }
                 }
                 if !model.reachedEnd, !model.items.isEmpty {
                     Button("notifications.loadMore") { Task { await model.loadMore() } }.buttonStyle(.vlGhost)
@@ -83,6 +87,7 @@ struct NotificationsView: View {
         .scrollBounceBehavior(.always)
         .vlScreen()
         .navigationTitle("notifications.title")
+        .navigationBarTitleDisplayMode(.large)
         .refreshable { await model.refresh() }
         .task { await model.refresh() }
     }
@@ -94,19 +99,61 @@ struct NotificationRow: View {
 
     private var unread: Bool { notification.state == .sent || notification.state == .delivered }
 
+    /// أيقونة النوع ونغمته من نوع حدث Outbox الذي ولّد الإشعار؛ لا يُعتمد على اللون وحده (العنوان يقول ما حدث).
+    private var kind: (image: String, tone: VLTone) {
+        switch notification.type {
+        case "material.change_requested": return ("pencil", .warn)
+        case "material.accepted_for_production", "material.published", "material.acknowledged", "upload.verified": return ("checkmark", .ok)
+        case "catalog.listing_changed", "license.issued": return ("key", .brand)
+        case "upload.failed", "material.urgent_received": return ("exclamationmark.triangle", .danger)
+        default: return ("bell", .muted)
+        }
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: VL.Space.s4) {
-            Circle().fill(unread ? Color.vl.bgBrand : Color.clear).frame(width: VL.Space.s3, height: VL.Space.s3).padding(.top, VL.Space.s3)
-            VStack(alignment: .leading, spacing: VL.Space.s2) {
-                // غير المقروء أثقل وزنًا (لا يُعتمد على النقطة الملوّنة وحدها).
-                Text(notification.title ?? "").vlText(unread ? .headingH4 : .bodyMd).foregroundStyle(Color.vl.textPrimary)
-                Text(notification.createdAt, style: .relative).vlText(.captionMd).foregroundStyle(Color.vl.textSecondary)
+            Image(systemName: kind.image)
+                .foregroundStyle(kind.tone.color)
+                .frame(width: 36, height: 36)
+                .background(Color.vl.bgSunken, in: Circle())
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: VL.Space.s1) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: VL.Space.s3) {
+                        title
+                        Spacer(minLength: VL.Space.s3)
+                        time
+                    }
+                    VStack(alignment: .leading, spacing: VL.Space.s1) {
+                        title
+                        time
+                    }
+                }
+                if unread {
+                    StateBadge(labelKey: "notifications.unread", tone: .brand, systemImage: "circle.fill")
+                }
                 if notification.assignmentState == .assigned {
                     Button("notifications.acknowledge") { Task { await model.acknowledge(notification.id) } }
-                        .buttonStyle(.vlSecondary)
+                        .buttonStyle(VLButtonStyle(kind: .outline, size: .small, fullWidth: false))
                 }
             }
         }
+        .padding(VL.Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.vl.bgRaised, in: RoundedRectangle(cornerRadius: VL.Radius.md, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: VL.Radius.md, style: .continuous)
+            .strokeBorder(unread ? Color.vl.actionPrimary : Color.vl.borderLine, lineWidth: unread ? VL.Border.field : VL.Border.hairline))
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+
+    // غير المقروء أثقل وزنًا وبشارة «جديد» (لا يُعتمد على الإطار الملوّن وحده).
+    private var title: some View {
+        Text(notification.title ?? "").vlText(unread ? .headline : .body).foregroundStyle(Color.vl.textPrimary)
+            .multilineTextAlignment(.leading)
+    }
+
+    private var time: some View {
+        Text(notification.createdAt, style: .relative).vlText(.caption).foregroundStyle(Color.vl.textSecondary)
     }
 }
