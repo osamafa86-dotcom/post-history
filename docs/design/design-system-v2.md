@@ -1,6 +1,6 @@
 # نظام التصميم v2 — «إشارة»
 
-**المرجع:** ملف Figma «Visual Library — Design System»، صفحات `v2 — Foundations` و`v2 — Components` و`v2 — Post Maydan`
+**المرجع:** ملف Figma «Visual Library — Design System»، صفحات `v2 — Foundations` و`v2 — Components` و`v2 — Post Maydan`، وواجهات الويب في `specs/web-v2.md`
 (https://www.figma.com/design/U4OJG4hM6NoPt7SsFM7zkO). الرموز في `docs/design/tokens.v2.json`، ويولّدها
 `docs/design/redesign-2026-11/tools/build-tokens-v2.mjs`. القرار: ADR 0085. Figma هو المرجع (ADR 0079): يتغيّر
 الملف والرموز معًا.
