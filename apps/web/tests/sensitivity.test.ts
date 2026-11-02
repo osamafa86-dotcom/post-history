@@ -15,8 +15,10 @@ describe("the W2 sensitivity line never reassures about data it does not have", 
     expect(sensitivityState({ graphic: true, minors: true, injured: false })).toEqual({ known: true, flags: ["minors", "graphic"] });
     expect(sensitivityState({ minors: false, injured: true, graphic: false })).toEqual({ known: true, flags: ["injured"] });
   });
-  it("has the unknown wording in both languages", () => {
+  it("has the unknown wording and its rule in both languages", () => {
     expect(ar.shell.material.sensitivityUnknown).toBe("غير معروف");
     expect(en.shell.material.sensitivityUnknown).toBe("Unknown");
+    expect(ar.shell.material.unknownRule).toBe("تعامَل معها كحساسة حتى تُعرف.");
+    expect(en.shell.material.unknownRule).toBe("treat as sensitive until known.");
   });
 });

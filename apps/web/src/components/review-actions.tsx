@@ -19,6 +19,8 @@ export function ReviewActions(props: Props) {
   // «استلام» (W2، M2): انتقال `inbox → acknowledged` الذي يبلّغ المراسل أن المحرر رأى مادته؛ وبقية الانتقالات في حوار «تحويل الحالة».
   const mayReceive = !!tag && transitionOptions(material, me, "editorial").includes("acknowledged");
   const close = () => { setOpen(false); opener.current?.focus(); };
+  // نتيجة الإجراء تحت أزراره: على الجوال الأزرار مثبَّتة أسفل الشاشة، فلا يُرسم خطؤها في البطاقة خارج الرؤية.
+  const actions = mayReceive || available.length > 0, status = <ActionStatus status={receive.status || reservation.status} locale={locale} />;
   return <>
     {/* M2: على الجوال تُثبَّت الأفعال الأساسية أسفل الشاشة فوق الشريط السفلي (`.next-actions` لاصقة)، وتبقى البقية بطاقةً في مكانها. */}
     <section className="card next-step" aria-labelledby="review-title"><div className="next-step-info"><h2 id="review-title">{m.shell.material.nextStep}</h2>
@@ -30,11 +32,12 @@ export function ReviewActions(props: Props) {
       </div>}
       <p className="caption">{mayReceive ? m.shell.material.receiveHelp : t.lead}</p>
       <p className="caption reservation-state">{t.reservation}: <span>{material.reserved_by === undefined ? m.notAvailable : material.reserved_by === null ? t.unreserved : material.reserved_by === me.user_id ? t.yourReservation : t.reserved}</span>{material.reserved_at && <> · {formatDate(material.reserved_at, locale)}</>}</p>
-      <ActionStatus status={receive.status || reservation.status} locale={locale} />
+      {!actions && status}
       <button className="quiet small" disabled={reservation.busy} onClick={reload}>{t.reload}</button></div>
-      {(mayReceive || available.length > 0) && <div className="next-actions" data-testid="next-actions">
+      {actions && <div className="next-actions" data-testid="next-actions">
         {mayReceive && <button disabled={!tag || receive.busy} onClick={async () => { editing(); if (tag && await receive.run(`${material.id}:ack:${tag}`, header => browserApi().POST("/materials/{id}/transitions", { params: { path: { id: material.id }, header: { ...header, "If-Match": tag } }, body: { track: "editorial", to: "acknowledged", reason: m.editor.ackReason } }))) { notify?.(m.states.editorial_state.acknowledged); reload(); } }}>{m.shell.inbox.receive}</button>}
         {available.length > 0 && <button ref={opener} className={mayReceive ? "secondary" : undefined} disabled={!tag} onClick={() => { editing(); setOpen(true); }}>{t.open}</button>}
+        {status}
       </div>}
     </section>
     {open && <TransitionDialog locale={locale} material={material} tag={tag} editing={editing} reload={() => { setOpen(false); reload(); }} onClose={close} onDone={label => { setOpen(false); notify?.(label); }} />}
