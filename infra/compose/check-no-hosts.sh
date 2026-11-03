@@ -29,7 +29,7 @@ host_allow='(^|\.)(example\.(com|net|org)|github\.com|githubusercontent\.com|ghc
 tlds='com|net|org|io|dev|app|cloud|co|info|xyz|ps|news|tv|media|site|online|tech|me|ai|uk|de|fr|eu'
 
 bad=()
-# `==` قبل الرقم تثبيت إصدار حزمة (opencv-python-headless==4.12.0.88) لا عنوان.
+# `==` قبل الرقم تثبيت إصدار حزمة في requirements (إصدار من أربعة أجزاء يشبه العنوان) لا عنوان.
 while IFS=: read -r f n ip; do
   [[ "$ip" =~ $ip_private || "$ip" =~ $ip_allow ]] && continue
   IFS=. read -r a b c d <<<"$ip"; (( a <= 255 && b <= 255 && c <= 255 && d <= 255 )) || continue

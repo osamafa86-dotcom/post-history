@@ -51,12 +51,12 @@ B="$WORK/backups"
   create table events (id bigserial primary key, at timestamptz default now());
   insert into events select from generate_series(1, 3000);" || fail "seeding postgres"
 head -c 3000000 /dev/urandom > "$WORK/big"
-printf '{"ID":"big","Size":3000000}' > "$WORK/big.info"
+head -c 4096 /dev/urandom > "$WORK/big.part"   # the same prefix as big, as tus's side files: mc stat matches both
 head -c 65536 /dev/urandom > "$WORK/gone"
 head -c 200000 /dev/urandom > "$WORK/proxy"
 put_obj() { "${C[@]}" exec -T -e MC_HOST_a minio mc pipe --quiet "a/$1" < "$2" >/dev/null || fail "seeding $1"; }
 put_obj uploads/tus/big "$WORK/big"
-put_obj uploads/tus/big.info "$WORK/big.info"
+put_obj uploads/tus/big.part "$WORK/big.part"
 put_obj uploads/tus/gone "$WORK/gone"
 put_obj media/derived/m1/f1/proxy-480p.mp4 "$WORK/proxy"
 
@@ -93,7 +93,7 @@ ok "an object read cut mid-stream leaves no copy and fails"
 bk -e FAIL_CAT_KEY=uploads/tus/gone -e FAIL_CAT_VANISH=1 > "$WORK/3.log" 2>&1 || failog 3 "a vanished object failed the backup"
 [ "$(last objects_vanished)" = 1 ] && [ ! -e "$B/objects/uploads/tus/gone.cms" ] || fail "the vanished object is not counted as such"
 ok "an object removed between the listing and the read is counted, not a failure"
-for o in "uploads/tus/big:big" "uploads/tus/big.info:big.info" "media/derived/m1/f1/proxy-480p.mp4:proxy"; do
+for o in "uploads/tus/big:big" "uploads/tus/big.part:big.part" "media/derived/m1/f1/proxy-480p.mp4:proxy"; do
   rel="objects/${o%%:*}.cms" src="$WORK/${o#*:}"
   [ "$(cat "$B/$rel.size")" = "$(wc -c < "$src")" ] || fail "$rel: recorded size is not the source's"
   [ "$(dec "$rel" | sha256sum | cut -d' ' -f1)" = "$(sha256sum < "$src" | cut -d' ' -f1)" ] || fail "$rel does not decrypt to its source"

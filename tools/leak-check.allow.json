@@ -568,7 +568,9 @@
         "workers/ai/tests/test_service_unit.py",
         "workers/media/bench/download_bench.py",
         "workers/media/tests/test_service_unit.py",
-        "workers/media/tests/test_storage.py"
+        "workers/media/tests/test_storage.py",
+        "infra/backup/test/test-backup.sh",
+        "infra/backup/test/compose.backup-test.yml"
       ]
     },
     {
