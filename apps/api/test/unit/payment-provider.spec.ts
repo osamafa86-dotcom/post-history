@@ -71,7 +71,7 @@ describe('sandbox payment provider', () => {
 
   describe('configuration (ADR 0032)', () => {
     const base = { DATABASE_URL: 'postgres://x', JWT_SECRET: 'j'.repeat(40), FIELD_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'), TUSD_HOOK_SECRET: 't'.repeat(40), S3_BUCKET_UPLOADS: 'uploads' };
-    const prod = { ...base, NODE_ENV: 'production', REDIS_URL: 'redis://x', UPLOAD_VERIFIER: 'external', MEDIA_WORKER_TOKEN: 'm'.repeat(40) };
+    const prod = { ...base, NODE_ENV: 'production', REDIS_URL: 'redis://x', UPLOAD_VERIFIER: 'external', MEDIA_WORKER_TOKEN: 'm'.repeat(40), UPLOAD_MAX_BYTES: '2147483648' };
     const sandbox = { PAYMENT_PROVIDER: 'sandbox', SANDBOX_WEBHOOK_SECRET: secret };
 
     it('sandbox needs its webhook secret, and boots outside production', () => {
@@ -89,7 +89,7 @@ describe('sandbox payment provider', () => {
 
     it('DEPLOY_STAGE=production refuses sandbox always, whatever NODE_ENV and the flag', () => {
       expect(() => loadConfig({ ...prod, ...sandbox, DEPLOY_STAGE: 'production', PAYMENT_SANDBOX_ALLOWED: '1' })).toThrow(/PAYMENT_PROVIDER/);
-      expect(() => loadConfig({ ...base, NODE_ENV: 'development', ...sandbox, DEPLOY_STAGE: 'production', PAYMENT_SANDBOX_ALLOWED: '1' })).toThrow(/PAYMENT_PROVIDER/);
+      expect(() => loadConfig({ ...base, NODE_ENV: 'development', ...sandbox, DEPLOY_STAGE: 'production', PAYMENT_SANDBOX_ALLOWED: '1', UPLOAD_MAX_BYTES: '1000' })).toThrow(/PAYMENT_PROVIDER/);
       expect(loadConfig({ ...prod, DEPLOY_STAGE: 'production' }).PAYMENT_PROVIDER).toBe('none');
     });
 
@@ -110,7 +110,7 @@ describe('sandbox checkout page in the trial (NODE_ENV=production behind the two
 
   it('serves the page and the outcomes: the field-trial host runs with NODE_ENV=production, and the page was a 404 there', async () => {
     const prod = { DATABASE_URL: 'postgres://x', JWT_SECRET: 'j'.repeat(40), FIELD_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'), TUSD_HOOK_SECRET: 't'.repeat(40), S3_BUCKET_UPLOADS: 'uploads',
-      NODE_ENV: 'production', REDIS_URL: 'redis://x', UPLOAD_VERIFIER: 'external', MEDIA_WORKER_TOKEN: 'm'.repeat(40),
+      NODE_ENV: 'production', REDIS_URL: 'redis://x', UPLOAD_VERIFIER: 'external', MEDIA_WORKER_TOKEN: 'm'.repeat(40), UPLOAD_MAX_BYTES: '2147483648',
       PAYMENT_PROVIDER: 'sandbox', SANDBOX_WEBHOOK_SECRET: secret, DEPLOY_STAGE: 'trial', PAYMENT_SANDBOX_ALLOWED: '1' };
     const config = loadConfig(prod);
     expect(config.NODE_ENV).toBe('production');

@@ -6,8 +6,28 @@ services:
     restart: unless-stopped
   minio:
     restart: unless-stopped
+  # The base command with one flag more: one file at most 2 GiB (ADR 0023, 0115). tusd answers 413 before any hook or byte,
+  # and the API answers 422 earlier when the session is created (UPLOAD_MAX_BYTES below, the same value).
   tusd:
     restart: unless-stopped
+    command: >
+      -port=8080
+      -base-path=/files/
+      -s3-endpoint=${S3_ENDPOINT}
+      -s3-bucket=${S3_BUCKET_UPLOADS}
+      -s3-object-prefix=${TUSD_OBJECT_PREFIX}
+      -s3-part-size=${TUSD_PART_SIZE_BYTES}
+      -s3-min-part-size=${TUSD_PART_SIZE_BYTES}
+      -s3-disable-content-hashes=${TUSD_DISABLE_CONTENT_HASHES}
+      -hooks-http-forward-headers=Authorization
+      -hooks-enabled-events=pre-create,post-create,post-receive,post-finish
+      -progress-hooks-interval=1s
+      -hooks-http-retry=5
+      -hooks-http-backoff=2s
+      -show-greeting=false
+      -disable-download
+      -max-size=2147483648
+      ${TUSD_EXTRA_FLAGS}
   tusd-proxy:
     restart: unless-stopped
   # The API from the image built for this very commit (ADR 0050: infra/deploy/api-image.sh, CI's api-image.yml), not from
@@ -26,6 +46,8 @@ services:
       start_period: 60s
     environment:
       NODE_ENV: production
+      # Required with NODE_ENV=production (ADR 0115): the same 2 GiB as tusd -max-size above; POST /uploads answers 422 above it.
+      UPLOAD_MAX_BYTES: "2147483648"
       # Caddy reaches the API through a port on 127.0.0.1, so the API sees the default network's gateway as the peer.
       # Trusting that one address (not 172.16.0.0/12) lets req.ip come from Caddy's X-Forwarded-For while no other
       # container can forge it; without it every client shares one rate-limit bucket.

@@ -37,7 +37,7 @@ describe('ADR 0035 computed fields', () => {
     const row:any={id:'listing',material_version:1,title_ar:'a',title_en:'e',description_ar:'a',description_en:'e',shot_list:[],material_types:['report'],governorate:'gaza',shot_on:null,duration_ms:null,width:null,height:null,listed_at:'2026-01-01T00:00:00Z',verified_on:'2026-01-01',editorial_approved_on:'2026-01-02',editorial_approver_role:'supervisor',exclusive_unavailable_until:'2026-02-01T00:00:00.000Z',exclusive_blocked:true,work_name:'private',sha256:'private'};
     const db:any={execute:async()=>({rows:[row]}),select:()=>({from:()=>({where:async()=>[]})})};
     const svc=new CatalogService(db,{CATALOG_CREDIT:'شبكة اصطناعية'} as never,{} as never);
-    const dto=(await svc.search({})).items[0]!;
+    const dto=(await svc.search({},principal('finance'))).items[0]!;
     expect((dto as any)[field]).toBe(row[field]);expect(dto.exclusive_available).toBe(false);
     expect(dto).not.toHaveProperty('work_name');expect(dto).not.toHaveProperty('sha256');
     expect(dto).not.toHaveProperty('exclusive_blocked');

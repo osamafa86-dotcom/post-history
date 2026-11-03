@@ -18,14 +18,14 @@ export class CatalogController {
     await this.catalog.assertReader(req.principal!);
     // material_type يتكرر في العقد (explode)؛ القيمة الواحدة تصل نصًّا من Express فتُلفّ مصفوفة قبل التحقق
     const q = typeof query.material_type === 'string' ? { ...query, material_type: [query.material_type] } : query;
-    return this.catalog.search(validateQuery<CatalogQuery>('/catalog', 'get', q));
+    return this.catalog.search(validateQuery<CatalogQuery>('/catalog', 'get', q), req.principal!);
   }
 
   @Get(':listingId')
   @Roles(...READERS)
   async item(@Param('listingId') id: string, @Req() req: Request): Promise<components['schemas']['CatalogItem']> {
     await this.catalog.assertReader(req.principal!);
-    return this.catalog.item(id);
+    return this.catalog.item(id, req.principal!);
   }
 
   @Get(':listingId/preview-url')

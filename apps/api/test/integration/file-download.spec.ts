@@ -55,4 +55,38 @@ describe('GET /materials/{id}/files/{file_id}/download-url (v0.1)', () => {
     const { rows } = await h.pool.query(`SELECT details FROM audit_log WHERE action = 'material_file.download_url_issued' AND target_id = $1`, [proxy]);
     expect(rows).toEqual([{ details: { material_id: materialId, file_id: proxy } }]);
   });
+
+  // ADR 0115: نسخة الهاتف الخفيفة (حاوية الرفع، بلا مصدر على الخادم) لم تُنقَّ؛ الطاقم يرى ما صنعه العامل من الأصل وحده
+  it('serves the phone-made proxy to the material owner only; staff see and fetch the server-made proxy alone', async () => {
+    const office = (await h.pool.query<{ id: string }>(`INSERT INTO offices (name_ar, name_en) VALUES ('م', 'o') RETURNING id`)).rows[0]!.id;
+    const reporter = await loginAs(h, [{ role: 'reporter' }], { officeId: office });
+    const supervisor = await loginAs(h, [{ role: 'supervisor', scopeKind: 'office', scopeId: office }]);
+    const { materialId } = await seedUploadSession(h, reporter.id);
+    await h.pool.query(`UPDATE materials SET office_id = $2 WHERE id = $1`, [materialId, office]);
+    const insert = async (kind: string, derivedFrom: string | null, key: string) =>
+      (
+        await h.pool.query<{ id: string }>(
+          `INSERT INTO material_files (material_id, kind, state, derived_from_id, storage_key, size_bytes, sha256, mime_type, verified_at, proxy_mode)
+           VALUES ($1, $2, 'verified', $3, $4, 10, $5, 'video/mp4', now(), CASE WHEN $2 = 'proxy' THEN 'normal' END) RETURNING id`,
+          [materialId, kind, derivedFrom, key, Buffer.alloc(32, 2)],
+        )
+      ).rows[0]!.id;
+    const phone = await insert('proxy', null, `tus/${randomUUID()}`);
+    const original = await insert('original', null, `tus/${randomUUID()}`);
+    const server = await insert('proxy', original, `derived/${materialId}/${original}/proxy-480p.mp4`);
+    const url = (token: string, fileId: string) =>
+      request(h.app.getHttpServer()).get(`/v1/materials/${materialId}/files/${fileId}/download-url`).set('Authorization', `Bearer ${token}`);
+    const files = async (token: string) =>
+      ((await request(h.app.getHttpServer()).get(`/v1/materials/${materialId}`).set('Authorization', `Bearer ${token}`).expect(200)).body.files as Array<{ id: string; kind: string }>)
+        .filter((f) => f.kind === 'proxy')
+        .map((f) => f.id)
+        .sort();
+
+    expect(await files(reporter.token)).toEqual([phone, server].sort());
+    expect(await files(supervisor.token)).toEqual([server]);
+    await url(reporter.token, phone).expect(200);
+    expect((await url(supervisor.token, phone).expect(404)).body.code).toBe('not_found');
+    const staff = await url(supervisor.token, server).expect(200);
+    expect(new URL(staff.body.url).pathname).toContain(`/${h.config.S3_BUCKET_MEDIA}/`);
+  });
 });

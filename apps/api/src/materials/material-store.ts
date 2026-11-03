@@ -79,6 +79,14 @@ export function canSeeProduced(p: Principal, m: MaterialRow): boolean {
 }
 
 /** هل يظهر الملف في Material.files لهذا المستدعي؟ القاعدة نفسها في القائمة والقراءة. */
+/**
+ * النسخة الخفيفة التي رفعها الهاتف (`proxy` بلا مصدر على الخادم، في حاوية الرفع) لم تُنقَّ من بيانات الجهاز والموقع: لصاحب المادة
+ * وحده، ولا تُرى ولا تُعطى رابطًا لغيره. ما يراه الطاقم من `proxy` صنعه عامل الوسائط من الأصل (`derived_from_id`، ADR 0115).
+ */
+export function clientProxyHidden(p: Principal, m: { reporterId: string }, f: { kind: string; derivedFromId: string | null }): boolean {
+  return f.kind === 'proxy' && f.derivedFromId === null && p.userId !== m.reporterId;
+}
+
 function fileVisible(kind: string, editor: boolean, production: boolean): boolean {
   if (HIDDEN_FROM_FILES.includes(kind)) return false;
   if (EDITOR_ONLY_KINDS.includes(kind)) return editor;
@@ -221,7 +229,7 @@ export async function toMaterialDtos(
       ...(legalNames.has(m.reporterId) ? { reporter_legal_name: legalName ?? null } : {}),
       files: files
         // حزمة التصدير ليست MaterialFile في العقد؛ حالتها من /materials/{id}/export
-        .filter((f) => f.materialId === m.id && fileVisible(f.kind, editor, production))
+        .filter((f) => f.materialId === m.id && fileVisible(f.kind, editor, production) && !clientProxyHidden(p, m, f))
         .map((f) => ({
           id: f.id,
           kind: f.kind as 'original',

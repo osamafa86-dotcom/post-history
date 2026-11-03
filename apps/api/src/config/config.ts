@@ -158,8 +158,13 @@ const schema = z.object({
   UPLOAD_PATH: z.enum(['tusd', 'direct']).default('tusd'),
   // نسب المادة في الكتالوج (v0.3، CatalogItem.credit): اسم الشبكة كما يراه المشتري
   CATALOG_CREDIT: z.string().min(1).max(200).default('Palestine Post'),
-  // حد حجم الملف الواحد في POST /uploads (بايت)؛ غيابه = بلا حد. المعاينة تضبطه مع -max-size في tusd (#235)
-  UPLOAD_MAX_BYTES: z.coerce.number().int().min(1).optional(),
+  // حد حجم الملف الواحد في POST /uploads (بايت)، ولا يتجاوز سقف العقد 2 GiB (ADR 0023). إلزامي في الإنتاج والتجربة (ADR 0115)، ويُضبط
+  // مع -max-size في tusd (#235). غيابه محليًا = سقف العقد وحده
+  UPLOAD_MAX_BYTES: z.coerce.number().int().min(1).max(2 * 1024 ** 3).optional(),
+  // حصة كل مستخدم من جلسات الرفع المفتوحة (created وin_progress غير المنتهية) ومن بايتاتها المنتظرة (ADR 0115). الافتراضي يتسع لأكبر
+  // دفعة يرسلها تطبيق المراسل (20 ملفًا بأصل ونسخة خفيفة لكلٍّ، كل أصل ≤ 2 GiB)؛ تجاوزها 429 حتى يكتمل رفع أو يُلغى أو ينتهي
+  UPLOAD_MAX_OPEN_SESSIONS_PER_USER: z.coerce.number().int().min(1).max(10_000).default(60),
+  UPLOAD_MAX_PENDING_BYTES_PER_USER: z.coerce.number().int().min(1).default(40 * 1024 ** 3),
   // true (افتراضيًا مع عقد v0.1، ADR 0012: «على كل عميل إرسالها»): إنشاء جلسة رفع بلا client_sha256 يُرفض (422)
   UPLOAD_REQUIRE_CLIENT_SHA256: z
     .enum(['true', 'false'])
@@ -422,6 +427,10 @@ const validated = schema.superRefine((c, ctx) => {
   // ADR 0032: المزوّد التجريبي ممنوع دائمًا في مرحلة الإنتاج، وفي NODE_ENV=production لا يُقبل إلا للتجربة بعلمين معًا
   if (c.PAYMENT_PROVIDER === 'sandbox' && c.DEPLOY_STAGE === 'production') {
     ctx.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'sandbox is never allowed with DEPLOY_STAGE=production' });
+  }
+  // ADR 0115: لا خادم منشور بلا حد لحجم الملف الواحد؛ والقيمة نفسها في -max-size لدى tusd
+  if ((c.NODE_ENV === 'production' || c.DEPLOY_STAGE === 'trial' || c.DEPLOY_STAGE === 'production') && c.UPLOAD_MAX_BYTES === undefined) {
+    ctx.addIssue({ code: 'custom', path: ['UPLOAD_MAX_BYTES'], message: 'required with NODE_ENV=production or DEPLOY_STAGE=trial|production' });
   }
   if (c.NODE_ENV !== 'production') return;
   // عنوان Stripe البديل للاختبار وحده (خادم محاكاة)؛ في الإنتاج لا يذهب المفتاح إلا إلى Stripe نفسه

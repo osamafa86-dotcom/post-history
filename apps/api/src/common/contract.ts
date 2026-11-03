@@ -71,13 +71,31 @@ function compile(pointer: string): ValidateFunction {
   return fn;
 }
 
-/** يتحقق من الجسم مقابل العقد؛ الفشل 422 بمسارات الحقول فقط (لا قيم). */
+// محارف التحكم C0 غير الجدولة والسطر الجديد وعودة العربة، وDEL (ADR 0115). الثلاثة مقبولة حيث لا يمنعها نمط الحقل.
+const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
+
+/** مسارات JSON Pointer لكل نص (قيمة أو مفتاح) فيه محرف تحكم ممنوع. */
+export function controlCharacterPaths(value: unknown, at = ''): string[] {
+  if (typeof value === 'string') return CONTROL.test(value) ? [at || '/'] : [];
+  if (Array.isArray(value)) return value.flatMap((v, i) => controlCharacterPaths(v, `${at}/${i}`));
+  if (value && typeof value === 'object') {
+    return Object.entries(value).flatMap(([k, v]) => {
+      const here = `${at}/${escape(k)}`;
+      return CONTROL.test(k) ? [at || '/'] : controlCharacterPaths(v, here);
+    });
+  }
+  return [];
+}
+
+/** يتحقق من الجسم مقابل العقد؛ الفشل 422 بمسارات الحقول فقط (لا قيم). ومحرف التحكم في أي نص 422 على مساره (ADR 0115). */
 export function validateBody<T>(path: string, method: string, body: unknown): T {
   const validate = requestBodyValidator(path, method);
   if (!validate(body)) {
     const fields = [...new Set((validate.errors ?? []).map((e) => e.instancePath || '/'))];
     throw ApiError.validation({ fields });
   }
+  const control = controlCharacterPaths(body);
+  if (control.length > 0) throw ApiError.validation({ fields: [...new Set(control)] });
   return body as T;
 }
 
@@ -104,6 +122,8 @@ export function validateQuery<T>(path: string, method: string, query: Record<str
     const names = [...new Set((fn.errors ?? []).map((e) => e.instancePath.split('/')[1] || e.params?.additionalProperty || '/'))];
     throw new ApiError(400, 'bad_request', 'Invalid query parameters.', { params: names });
   }
+  const control = controlCharacterPaths(copy).map((p) => p.split('/')[1] || '/');
+  if (control.length > 0) throw new ApiError(400, 'bad_request', 'Invalid query parameters.', { params: [...new Set(control)] });
   return copy as T;
 
   function pointerOf(param: Record<string, any>, raw: Record<string, any>): string {

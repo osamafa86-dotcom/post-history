@@ -190,6 +190,41 @@ describe('upload sessions (/v1/uploads)', () => {
       }
       expect(h.config.UPLOAD_MAX_BYTES).toBeUndefined();
     });
+
+    // ADR 0115: بلا حد، يفتح مستخدم واحد جلسات وبايتات بلا نهاية؛ العقد يسقف الملف بـ 2 GiB والخادم يحصي ما لكل مستخدم
+    it('caps one file at 2 GiB by contract, and each user to a quota of open sessions and pending bytes (429 until one finishes)', async () => {
+      const limited = await createHarness({ env: { UPLOAD_MAX_OPEN_SESSIONS_PER_USER: '2', UPLOAD_MAX_PENDING_BYTES_PER_USER: '5000' } });
+      try {
+        const owner = await loginAs(limited, [{ role: 'reporter' }], { officeId: office });
+        const peer = await loginAs(limited, [{ role: 'reporter' }], { officeId: office });
+        const post = (a: Actor, url: string, body: object) =>
+          request(limited.app.getHttpServer()).post(url).set('Authorization', `Bearer ${a.token}`).set('Idempotency-Key', randomUUID()).send(body);
+        const materialId = (await post(owner, '/v1/materials', materialBody).expect(201)).body.id;
+        const huge = await post(owner, '/v1/uploads', { material_id: materialId, kind: 'original', size_bytes: 2 * 1024 ** 3 + 1, client_sha256: 'a'.repeat(64), filename: 'f' }).expect(422);
+        expect(huge.body.details.fields).toContain('/size_bytes');
+
+        const first = await post(owner, '/v1/uploads', { material_id: materialId, kind: 'proxy', ...file(3000), filename: 'p' }).expect(201);
+        // البايتات المنتظرة: 3000 + 3000 > 5000
+        const bytes = await post(owner, '/v1/uploads', { material_id: materialId, kind: 'original', ...file(3000), filename: 'f' }).expect(429);
+        expect(bytes.body.code).toBe('rate_limited');
+        expect(Number(bytes.headers['retry-after'])).toBeGreaterThan(0);
+        await post(owner, '/v1/uploads', { material_id: materialId, kind: 'original', ...file(1000), filename: 'f' }).expect(201);
+        // الجلسات المفتوحة: الثالثة فوق الحد ولو صغيرة
+        await post(owner, '/v1/uploads', { material_id: materialId, kind: 'original', ...file(10), filename: 'f' }).expect(429);
+        // الحصة لكل مستخدم: غيره لا يتأثر
+        const peerMaterial = (await post(peer, '/v1/materials', materialBody).expect(201)).body.id;
+        await post(peer, '/v1/uploads', { material_id: peerMaterial, kind: 'original', ...file(10), filename: 'f' }).expect(201);
+        // إلغاء جلسة يفسح مكانها
+        await request(limited.app.getHttpServer())
+          .delete(`/v1/uploads/${first.body.id}`)
+          .set('Authorization', `Bearer ${owner.token}`)
+          .set('Idempotency-Key', randomUUID())
+          .expect(204);
+        await post(owner, '/v1/uploads', { material_id: materialId, kind: 'original', ...file(10), filename: 'f' }).expect(201);
+      } finally {
+        await limited.close();
+      }
+    });
   });
 
   describe('direct upload path', () => {

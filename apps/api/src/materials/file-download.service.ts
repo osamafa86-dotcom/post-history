@@ -7,7 +7,7 @@ import { auditLog, materialFiles } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import type { Principal } from '../identity/principal';
 import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
-import { canEditMaterial, canSeeProduced, EDITOR_ONLY_KINDS, findScoped, PRODUCTION_ONLY_KINDS } from './material-store';
+import { canEditMaterial, canSeeProduced, clientProxyHidden, EDITOR_ONLY_KINDS, findScoped, PRODUCTION_ONLY_KINDS } from './material-store';
 import { canRequestRender, renderNotAllowed, renderStateFailures } from './renders.service';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -45,6 +45,8 @@ export class FileDownloadService {
       );
     if (!file?.storageKey || (EDITOR_ONLY_KINDS.includes(file.kind) && !canEditMaterial(p, material))) throw ApiError.notFound();
     if (PRODUCTION_ONLY_KINDS.includes(file.kind) && !canSeeProduced(p, material)) throw ApiError.notFound();
+    // نسخة الهاتف الخفيفة لصاحب المادة وحده (ADR 0115)
+    if (clientProxyHidden(p, material, file)) throw ApiError.notFound();
     if (file.kind === 'circulated_render') {
       if (!canRequestRender(p, material)) throw ApiError.notFound();
       const failed = renderStateFailures(material);
