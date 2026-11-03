@@ -2261,6 +2261,8 @@
       "title": "تجهيز نسخة بقالب المتداول",
       "subtitle": "{title} · نسخة جديدة، والأصل كما هو",
       "subtitleShort": "{title} · الأصل كما هو",
+      "templateLegend": "القالب",
+      "templateHint": "قالبان للمواد المتداولة بالحقول نفسها والشروط نفسها. «الشاهد» لا يكتب تاريخًا ولا اسم حساب.",
       "close": "إغلاق",
       "preview": "معاينة",
       "previewCaption": "صورة تجريبية. التحريك كما في القالب.",
@@ -2268,6 +2270,7 @@
       "previewTag": "مشاهد متداولة",
       "titleLines": "العنوان على الفيديو",
       "titleHint": "سطر إلى ثلاثة، حتى 22 حرفًا للسطر. اقسم على معنى الجملة.",
+      "witnessTitleHint": "صندوق العنوان في «الشاهد» أضيق، فالسطر العريض قد لا يتّسع فيه.",
       "lineCounter": "{count}/22",
       "lineNumber": "السطر {n}",
       "line3Placeholder": "سطر ثالث اختياري",
@@ -2296,6 +2299,12 @@
       "cancel": "إلغاء",
       "submit": "تجهيز النسخة"
     },
+    "templates": {
+      "circulated": "مواد متداولة",
+      "circulatedCaption": "الشعار والعنوان على ألواح",
+      "witness": "الشاهد",
+      "witnessCaption": "زوايا مضيئة حول المشهد"
+    },
     "files": {
       "title": "الملفات",
       "original": "الأصل",
@@ -2304,7 +2313,8 @@
       "proxySub": "للمعاينة في المتصفح"
     },
     "group": {
-      "title": "نسخ بقالب المتداول",
+      "title": "نسخ بقوالب المتداول",
+      "template": "قالب «{template}»",
       "internalBadge": "داخلية",
       "inherit": "ترث حساسية المادة، فتبقى داخلية حتى تمرّ بالبوابات."
     },
@@ -2321,7 +2331,7 @@
       "rightsUnknown": "الحقوق غير موثقة.",
       "download": "تنزيل",
       "renderingAria": "قيد التجهيز",
-      "downloadAria": "تنزيل نسخة {aspect}"
+      "downloadAria": "تنزيل نسخة «{template}» {aspect}"
     },
     "state": {
       "requested": "مطلوبة",

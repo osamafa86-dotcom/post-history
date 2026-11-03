@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { RenderDialog } from "../src/components/render-dialog";
-import { canSubmit, cleanLine, codePoints, initialDraft, isSensitive, lineOver, locationPreview, pollRenders, renderDetails, renderInput, renderPollMs, renderRequest, safeRender, shouldPoll, splitTitle, validLine } from "../src/lib/render-policy";
+import { byTemplate, canSubmit, cleanLine, codePoints, initialDraft, isSensitive, lineOver, locationPreview, pollRenders, renderDetails, renderInput, renderPollMs, renderRequest, renderTemplates, safeRender, shouldPoll, splitTitle, validLine } from "../src/lib/render-policy";
 import type { Material, MaterialRender } from "../src/lib/types";
 import ar from "../messages/ar.json";
 import en from "../messages/en.json";
@@ -49,7 +49,7 @@ describe("the label is required with no default", () => {
     expect(renderRequest({ ...draft, label: "circulated_footage" })?.label).toBe("circulated_footage");
   });
   it("sends only the five contract fields and never a location text", () => {
-    const body = renderRequest({ aspect: "square", lines: [" عنوان تجريبي ", "", "سطر"], showLocation: true, label: "none" });
+    const body = renderRequest({ template: "circulated", aspect: "square", lines: [" عنوان تجريبي ", "", "سطر"], showLocation: true, label: "none" });
     expect(body).toEqual({ template: "circulated", aspect: "square", title_lines: ["عنوان تجريبي", "سطر"], show_location: true, label: "none" });
     expect(JSON.stringify(body)).not.toContain("مدينة");
   });
@@ -76,7 +76,39 @@ describe("location defaults by sensitivity and is previewed from city and govern
   });
   it("prefills a new request from a failed copy, label included", () => {
     expect(initialDraft(sample({ sensitivity: { minors: true, injured: false, graphic: false } }), render({ aspect: "horizontal", title_lines: ["سطر"], show_location: true, label: "circulated_footage" })))
-      .toEqual({ aspect: "horizontal", lines: ["سطر", "", ""], showLocation: true, label: "circulated_footage" });
+      .toEqual({ template: "circulated", aspect: "horizontal", lines: ["سطر", "", ""], showLocation: true, label: "circulated_footage" });
+  });
+});
+
+// قالب «الشاهد» (ADR 0109 و0110): خيار في الطلب نفسه، والنسخ تُعرض بقالبها
+describe("the template is a choice in the same request", () => {
+  it("opens on the circulated template, sends the chosen one, and a failed Witness copy reopens on Witness", () => {
+    expect(renderTemplates).toEqual(["circulated", "witness"]);
+    const draft = { ...initialDraft(sample()), label: "none" as const };
+    expect(draft.template).toBe("circulated"); expect(renderRequest(draft)?.template).toBe("circulated");
+    expect(renderRequest({ ...draft, template: "witness" })).toEqual({ template: "witness", aspect: "vertical", title_lines: ["عنوان تجريبي"], show_location: true, label: "none" });
+    expect(initialDraft(sample(), render({ template: "witness", aspect: "square" }))).toMatchObject({ template: "witness", aspect: "square" });
+  });
+  it("draws both template options with circulated checked, and the Witness title hint only for Witness", () => {
+    const html = renderToStaticMarkup(<RenderDialog locale="ar" material={sample()} onClose={() => {}} onCreated={() => {}} onRefused={() => {}} />);
+    expect(html).toContain(ar.derivative.templates.circulated); expect(html).toContain(ar.derivative.templates.witness); expect(html).toContain(ar.derivative.template.templateHint);
+    const radio = (value: string) => html.match(new RegExp(`<input[^>]*name="render-template"[^>]*value="${value}"[^>]*>`))?.[0] ?? "";
+    expect(radio("circulated")).toContain('checked=""'); expect(radio("witness")).not.toContain("checked");
+    expect(html).not.toContain(ar.derivative.template.witnessTitleHint); expect(html).toMatch(/class="render-preview vertical circulated"/);
+    const witness = renderToStaticMarkup(<RenderDialog locale="en" material={sample()} from={render({ template: "witness", state: "failed", failure_reason: "title_overflow" })} onClose={() => {}} onCreated={() => {}} onRefused={() => {}} />);
+    expect(witness).toContain(en.derivative.template.witnessTitleHint); expect(witness).toMatch(/class="render-preview vertical witness"/); expect(witness).toContain("preview-corners");
+  });
+  it("the BFF accepts both templates and nothing else, and keeps the template on the row", () => {
+    const body = { template: "witness", aspect: "horizontal", title_lines: ["عنوان"], show_location: true, label: "circulated_footage" };
+    expect(renderInput(body)).toEqual(body);
+    for (const template of ["Witness", "urgent", "default", "", null, undefined]) expect(renderInput({ ...body, template } as Record<string, unknown>)).toBeNull();
+    expect(safeRender(render({ template: "witness" }))?.template).toBe("witness");
+    expect(safeRender(render({ template: "urgent" as MaterialRender["template"] }))).toBeNull();
+  });
+  it("groups copies by template in template order, newest first inside each", () => {
+    const a = render({ id: "60000000-0000-4000-8000-00000000000a", template: "witness" }), b = render({ id: "60000000-0000-4000-8000-00000000000b" }), c = render({ id: "60000000-0000-4000-8000-00000000000c", template: "witness" });
+    expect(byTemplate([a, b, c]).map(g => [g.template, g.items.map(i => i.id)])).toEqual([["circulated", [b.id]], ["witness", [a.id, c.id]]]);
+    expect(byTemplate([b]).map(g => g.template)).toEqual(["circulated"]); expect(byTemplate([])).toEqual([]);
   });
 });
 

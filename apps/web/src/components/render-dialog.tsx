@@ -2,8 +2,8 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { browserApi } from "@/lib/browser-api";
 import { messages, type Locale } from "@/lib/i18n";
-import type { Material, MaterialRender, RenderAspect } from "@/lib/types";
-import { canSubmit, cleanLine, codePoints, initialDraft, isSensitive, lineOver, locationPreview, renderAspects, renderDetails, renderLabels, renderRequest, titleLinesMax, type RenderCondition, type RenderDraft } from "@/lib/render-policy";
+import type { Material, MaterialRender, RenderAspect, RenderTemplate } from "@/lib/types";
+import { canSubmit, cleanLine, codePoints, initialDraft, isSensitive, lineOver, locationPreview, renderAspects, renderDetails, renderLabels, renderRequest, renderTemplates, titleLinesMax, type RenderCondition, type RenderDraft } from "@/lib/render-policy";
 import { useMutation } from "@/lib/use-mutation";
 import { ActionStatus } from "./action-status";
 import { BrandMark, Icon } from "./icon";
@@ -20,8 +20,9 @@ export type RenderRefusal = { code: "render_not_allowed"; failed: RenderConditio
 type Props = { locale: Locale; material: Material; from?: MaterialRender; onClose: () => void; onCreated: (render: MaterialRender) => void; onRefused: (refusal: RenderRefusal) => void };
 
 /**
- * حوار طلب النسخة (C2–C4، وورقة الهاتف C8–C10): حقول `MaterialRenderRequest` وحدها. الوسم إلزامي بلا افتراض، والمكان مطفأ
- * افتراضيًا للمادة الحسّاسة، ونصّه يبنيه الخادم فلا يُرسل؛ والمعاينة صورة تجريبية لا إطار من المادة.
+ * حوار طلب النسخة (C2–C4، وورقة الهاتف C8–C10): حقول `MaterialRenderRequest` وحدها. القالب أولها («مواد متداولة» أو «الشاهد»،
+ * ADR 0110) والمعاينة تتبعه، والوسم إلزامي بلا افتراض، والمكان مطفأ افتراضيًا للمادة الحسّاسة، ونصّه يبنيه الخادم فلا يُرسل؛
+ * والمعاينة صورة تجريبية لا إطار من المادة.
  */
 export function RenderDialog({ locale, material, from, onClose, onCreated, onRefused }: Props) {
   const m = messages[locale], t = m.derivative.template, d = m.derivative, mutation = useMutation(), dialog = useRef<HTMLDialogElement>(null);
@@ -57,8 +58,16 @@ export function RenderDialog({ locale, material, from, onClose, onCreated, onRef
       </header>
       <div className="render-body">
         <div className="render-fields">
-          <fieldset className="render-lines" aria-describedby="title-hint"><legend>{t.titleLines}</legend>
+          <fieldset className="render-templates" aria-describedby="template-hint"><legend>{t.templateLegend}</legend>
+            <p id="template-hint" className="field-hint">{t.templateHint}</p>
+            <div className="template-options">{renderTemplates.map(template => <label key={template} className={`template-option${draft.template === template ? " selected" : ""}`}>
+              <input className="visually-hidden" type="radio" name="render-template" value={template} checked={draft.template === template} onChange={() => update({ template })} />
+              <span className={`template-swatch ${template}`} aria-hidden="true"><i /><i /></span>
+              <span className="template-text"><strong>{d.templates[template]}</strong><small>{d.templates[`${template}Caption` as `${RenderTemplate}Caption`]}</small></span></label>)}</div>
+          </fieldset>
+          <fieldset className="render-lines" aria-describedby={draft.template === "witness" ? "title-hint witness-title-hint" : "title-hint"}><legend>{t.titleLines}</legend>
             <p id="title-hint" className="field-hint">{t.titleHint}</p>
+            {draft.template === "witness" && <p id="witness-title-hint" className="field-hint">{t.witnessTitleHint}</p>}
             {draft.lines.map((line, i) => {
               const over = lineOver(line);
               return <div key={i} className={`render-line${over ? " over" : ""}`}>
@@ -94,7 +103,7 @@ export function RenderDialog({ locale, material, from, onClose, onCreated, onRef
         </div>
         <aside className="render-preview-panel" aria-label={t.preview}>
           <p className="preview-title">{t.preview}</p>
-          <RenderPreview aspect={draft.aspect} lines={draft.lines} tag={draft.label === "circulated_footage" ? t.previewTag : null} location={draft.showLocation && !unusable ? location : null} />
+          <RenderPreview template={draft.template} aspect={draft.aspect} lines={draft.lines} tag={draft.label === "circulated_footage" ? t.previewTag : null} location={draft.showLocation && !unusable ? location : null} />
           <p className="preview-caption"><span className="wide-only">{t.previewCaption}</span><span className="narrow-only">{t.previewCaptionPhone}</span></p>
         </aside>
       </div>
@@ -108,13 +117,18 @@ export function RenderDialog({ locale, material, from, onClose, onCreated, onRef
   </dialog>;
 }
 
-/** القالب مصغّرًا بالعنوان والوسم والمكان فوق خلفية تجريبية؛ عربي دائمًا لأن القالب عربي، وزخرفي لأن الحقول تحمل المعنى. */
-function RenderPreview({ aspect, lines, tag, location }: { aspect: RenderAspect; lines: string[]; tag: string | null; location: string | null }) {
-  const shown = lines.map(line => line.trim()).filter(Boolean);
-  return <div className={`render-preview ${aspect}`} dir="rtl" lang="ar" aria-hidden="true" data-testid="render-preview">
+/**
+ * القالب مصغّرًا بالعنوان والوسم والمكان فوق خلفية تجريبية؛ عربي دائمًا لأن القالب عربي، وزخرفي لأن الحقول تحمل المعنى.
+ * «الشاهد»: أربع زوايا حول المشهد، والوسم كبسولة ذهبية أعلى البداية، والعنوان بلا ألواح وسطره الأول فيروزي، ولا شريط حساب.
+ */
+function RenderPreview({ template, aspect, lines, tag, location }: { template: RenderTemplate; aspect: RenderAspect; lines: string[]; tag: string | null; location: string | null }) {
+  const shown = lines.map(line => line.trim()).filter(Boolean), witness = template === "witness";
+  return <div className={`render-preview ${aspect} ${template}`} dir="rtl" lang="ar" aria-hidden="true" data-testid="render-preview">
+    {witness && <span className="preview-corners"><i /><i /><i /><i /></span>}
     <span className="preview-logo"><BrandMark size={16} /></span>
+    {witness && tag && <span className="preview-pill">{tag}</span>}
     <span className="preview-block">
-      {tag && <span className="preview-tag">{tag}</span>}
+      {!witness && tag && <span className="preview-tag">{tag}</span>}
       {shown.map((line, i) => <span key={i} className="preview-line">{line}</span>)}
       {location && <span className="preview-location">{location}</span>}
     </span>

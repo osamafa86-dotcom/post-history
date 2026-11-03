@@ -2261,6 +2261,8 @@
       "title": "Prepare a circulated-template copy",
       "subtitle": "{title} · a new copy; the original stays as is",
       "subtitleShort": "{title} · original untouched",
+      "templateLegend": "Template",
+      "templateHint": "Two templates for circulated footage, with the same fields and conditions. Witness writes no date and no account name.",
       "close": "Close",
       "preview": "Preview",
       "previewCaption": "Sample image. Motion as in the template.",
@@ -2268,6 +2270,7 @@
       "previewTag": "مشاهد متداولة",
       "titleLines": "Title on the video",
       "titleHint": "One to three lines, up to 22 characters each, split by meaning.",
+      "witnessTitleHint": "The Witness title box is narrower, so a wide line may not fit.",
       "lineCounter": "{count}/22",
       "lineNumber": "Line {n}",
       "line3Placeholder": "Optional third line",
@@ -2296,6 +2299,12 @@
       "cancel": "Cancel",
       "submit": "Prepare copy"
     },
+    "templates": {
+      "circulated": "Circulated",
+      "circulatedCaption": "Logo and title on panels",
+      "witness": "Witness",
+      "witnessCaption": "Glowing corners around the scene"
+    },
     "files": {
       "title": "Files",
       "original": "Original",
@@ -2305,6 +2314,7 @@
     },
     "group": {
       "title": "Circulated-template copies",
+      "template": "{template} template",
       "internalBadge": "Internal",
       "inherit": "They inherit the material’s sensitivity and stay internal until they pass the gates."
     },
@@ -2321,7 +2331,7 @@
       "rightsUnknown": "Rights not documented.",
       "download": "Download",
       "renderingAria": "Rendering",
-      "downloadAria": "Download the {aspect} copy"
+      "downloadAria": "Download the {template} {aspect} copy"
     },
     "state": {
       "requested": "Requested",

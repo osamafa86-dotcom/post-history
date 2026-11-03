@@ -29,3 +29,5 @@ export type MaterialRender = components["schemas"]["MaterialRender"];
 export type MaterialRenderRequest = components["schemas"]["MaterialRenderRequest"];
 export type RenderAspect = components["schemas"]["RenderAspect"];
 export type RenderLabel = components["schemas"]["RenderLabel"];
+/** قالب النسخة (ADR 0109): «مواد متداولة» أو «الشاهد»؛ التعداد مضمَّن في العقد بلا اسم نوع. */
+export type RenderTemplate = components["schemas"]["MaterialRenderRequest"]["template"];
