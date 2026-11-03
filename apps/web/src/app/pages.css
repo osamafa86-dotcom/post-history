@@ -168,7 +168,7 @@ html:has(.public-shell.store-face), body:has(.public-shell.store-face) { backgro
 .invite-form { display: grid; gap: var(--v2-space-3); }
 .invite-form label { display: grid; gap: var(--v2-space-2); font-weight: 600; font-size: var(--v2-font-label-size); }
 .invite-form input { min-block-size: var(--v2-size-touch-min); }
-.invite-form button.store { min-block-size: var(--v2-size-touch-min); margin-block-start: var(--v2-space-3); }
+.invite-form > button { min-block-size: var(--v2-size-touch-min); margin-block-start: var(--v2-space-3); }
 .invite-form .caption { margin: 0; }
 .totp-secret { display: grid; gap: var(--v2-space-3); padding: var(--v2-space-5); border-radius: var(--v2-radius-chip); background: var(--v2-c-bg-sunken); }
 .totp-secret output { font-size: 18px; line-height: 28px; letter-spacing: 0.06em; overflow-wrap: anywhere; user-select: all; }
@@ -233,4 +233,44 @@ html:has(.public-shell.store-face), body:has(.public-shell.store-face) { backgro
   .balance-block .kpi { min-inline-size: 0; padding: var(--v2-space-4); }
   .balance-block .kpi strong { font-size: 22px; line-height: 30px; overflow-wrap: anywhere; }
   .payout-form .rule-row { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* استعادة الحساب ومفاتيح المرور (ADR 0108): «نسيت كلمة المرور» بطريقين متجاورين، والرابط والرموز تُعرض مرة في كتلة واحدة، والأمان بطاقتان. */
+.recovery-card { inline-size: min(880px, 100%); margin-inline: auto; display: grid; gap: var(--v2-space-5); padding: var(--v2-space-7); }
+.recovery-card h1 { margin: 0; font-size: var(--v2-font-title-size); line-height: var(--v2-font-title-line); }
+.recovery-card > p { margin: 0; }
+.recovery-card > .button { justify-self: start; min-block-size: var(--v2-size-touch-min); }
+.recovery-paths { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--v2-space-5); align-items: start; }
+.recovery-path { display: grid; gap: var(--v2-space-3); padding: var(--v2-space-5); border: var(--v2-border-hairline) solid var(--v2-c-border-line); border-radius: var(--v2-radius-md); }
+.recovery-path h2, .security-card h2, .one-time-link h3 { display: flex; align-items: center; gap: var(--v2-space-3); margin: 0; font-size: var(--v2-font-label-size); line-height: 22px; }
+.recovery-path h2 .icon, .security-card h2 .icon, .one-time-link h3 .icon { color: var(--v2-c-text-brand); }
+.recovery-path p, .recovery-path .notice { margin: 0; }
+.recovery-path .notice p { margin: var(--v2-space-2) 0 0; }
+.one-time-link { display: grid; gap: var(--v2-space-3); padding: var(--v2-space-5); border-radius: var(--v2-radius-chip); background: var(--v2-c-bg-sunken); }
+.one-time-link > p, .one-time-link .notice { margin: 0; }
+.one-time-value { display: grid; gap: var(--v2-space-2); }
+.one-time-value output { padding: var(--v2-space-4); border-radius: var(--v2-radius-sm); background: var(--v2-c-bg-raised); font-size: var(--v2-font-label-size); line-height: 22px; text-align: left; overflow-wrap: anywhere; user-select: all; }
+.security-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--v2-space-6); align-items: start; }
+.security-card { display: grid; gap: var(--v2-space-4); margin: 0; }
+.security-card > p, .security-card > .notice { margin: 0; }
+.security-form { padding-block-start: var(--v2-space-4); border-block-start: var(--v2-border-hairline) solid var(--v2-c-border-line); }
+.security-form h3 { margin: 0; font-size: var(--v2-font-label-size); }
+.passkey-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.passkey-list article { display: flex; align-items: center; flex-wrap: wrap; gap: var(--v2-space-3) var(--v2-space-4); padding-block: var(--v2-space-4); border-block-start: var(--v2-border-hairline) solid var(--v2-c-border-line); }
+.passkey-list article > div { flex: 1 1 12rem; min-inline-size: 0; }
+.passkey-list p { margin: var(--v2-space-1) 0 0; }
+.backup-code-list { margin: 0; padding-inline-start: var(--v2-space-7); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--v2-space-2) var(--v2-space-6); font-size: 16px; line-height: 26px; user-select: all; }
+.reset-link-card { display: grid; gap: var(--v2-space-4); }
+.reset-link-card > p, .reset-link-card > .notice, .reset-link-card h2 { margin: 0; }
+.reset-link-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--v2-space-4); }
+.reset-link-form label { display: grid; gap: var(--v2-space-2); font-size: var(--v2-font-label-size); font-weight: 600; }
+.reset-link-form select { min-block-size: var(--v2-size-touch-min); }
+.recovery-approval { display: grid; gap: var(--v2-space-4); max-inline-size: 720px; }
+.recovery-approval > p, .recovery-approval > .notice { margin: 0; }
+.recovery-approval textarea { min-block-size: 96px; }
+@media (max-width: 767px) {
+  .recovery-card { padding: var(--v2-space-5); }
+  .recovery-paths, .security-grid { grid-template-columns: minmax(0, 1fr); }
+  .backup-code-list { grid-template-columns: minmax(0, 1fr); }
+  .recovery-card > .button, .reset-link-form, .reset-link-form label, .reset-link-form select { inline-size: 100%; }
 }

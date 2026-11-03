@@ -31,10 +31,11 @@ export function panelOrder(items: Notification[]): Notification[] {
   return [...items].sort((a, b) => Number(b.priority === "urgent") - Number(a.priority === "urgent") || Number(unread(b)) - Number(unread(a)) || Date.parse(b.created_at) - Date.parse(a.created_at));
 }
 
-export type KindWord = "urgent" | "task" | "store" | "money" | "upload" | "update";
-/** كلمة البند وأيقونته (لا لون وحده): العاجل، ثم المهمة، ثم المتجر والمال والرفع بنوع الحدث، وإلا «تحديث على مادة». */
+export type KindWord = "urgent" | "task" | "store" | "money" | "upload" | "account" | "update";
+/** كلمة البند وأيقونته (لا لون وحده): العاجل، ثم طلب استعادة الحساب (ADR 0108)، ثم المهمة، ثم المتجر والمال والرفع بنوع الحدث، وإلا «تحديث على مادة». */
 export function notificationKind(n: Notification): { word: KindWord; icon: IconName } {
   if (n.priority === "urgent") return { word: "urgent", icon: "bolt" };
+  if (n.recovery_request_id || n.type.startsWith("auth.recovery_")) return { word: "account", icon: "key" };
   if (n.assignment_state || n.assignment_id || n.type.startsWith("assignment.")) return { word: "task", icon: "tasks" };
   if (isStore(n)) return { word: "store", icon: "store" };
   if (n.type.startsWith("payout.")) return { word: "money", icon: "money" };

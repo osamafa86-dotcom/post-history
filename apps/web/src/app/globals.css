@@ -708,6 +708,10 @@ p.alert.urgent { display: block; padding: var(--v2-space-4); }
 .login-card input { min-block-size: var(--v2-size-field-min); border-radius: var(--v2-radius-sm); }
 .field-help { margin-block-start: calc(var(--v2-space-3) * -1); color: var(--v2-c-text-secondary); font-size: var(--v2-font-caption-size); line-height: var(--v2-font-caption-line); }
 .login-card form > button { min-block-size: var(--v2-size-cta-min); font-size: 17px; }
+.login-forgot { justify-self: center; color: var(--v2-c-text-brand); font-size: var(--v2-font-label-size); font-weight: 700; }
+.login-or { display: flex; align-items: center; gap: var(--v2-space-4); margin: 0; color: var(--v2-c-text-secondary); font-size: var(--v2-font-caption-size); }
+.login-or::before, .login-or::after { content: ""; flex: 1; border-block-start: var(--v2-border-hairline) solid var(--v2-c-border-line); }
+.login-card .login-passkey { min-block-size: var(--v2-size-cta-min); }
 .login-session { display: flex; align-items: center; justify-content: center; gap: var(--v2-space-3); margin: 0; color: var(--v2-c-text-secondary); font-size: var(--v2-font-caption-size); }
 .full-width { width: 100%; }
 @media (max-width: 899px) {

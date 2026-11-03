@@ -48,6 +48,9 @@ export function resetAdmin() {
   platform = { platform_name: "المكتبة المرئية", app_name: "ميدان بوست", watermark_text: "معاينة · المكتبة المرئية", version: 1, updated_at: "2026-11-03T09:00:00Z" };
 }
 
+/** حساب طاقم بمعرّفه (رابط إعادة التعيين، ADR 0108): الإصدار يضعه في «استعادة جارية». */
+export const staffAccount = (target: string) => staff.find(s => s.id === target) ?? null;
+
 /** تغيير متزامن من جلسة أخرى: يرتفع الإصدار، فيردّ الاستبدال التالي بإصدار قديم 412. */
 export function bumpAdmin(what: string | null) {
   if (what === "platform") platform = { ...platform, app_name: `${platform.app_name} ٢`, version: platform.version + 1, updated_at: new Date().toISOString() };

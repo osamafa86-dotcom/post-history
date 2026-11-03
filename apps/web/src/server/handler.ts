@@ -31,6 +31,7 @@ import { manageForms } from "./form-admin";
 import { formBodyLimit } from "@/lib/form-admin";
 import { adminRead, adminReadPath } from "./admin";
 import { completeInvite, confirmInvite } from "./invite";
+import { accountPublic, accountRead, accountReadPath, accountWrite, accountWritePath, publicAccountPaths } from "./account";
 
 const privateHeaders = { "Cache-Control": "private, no-store, max-age=0", "Pragma": "no-cache", "Vary": "Cookie" };
 const json = (value: unknown, status = 200) => NextResponse.json(value, { status, headers: privateHeaders });
@@ -74,7 +75,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
     const isWrite = ["POST", "PUT", "DELETE"].includes(request.method);
     if (isWrite) assertSameOrigin(request, config);
     if (request.method !== "GET" && !isWrite) throw new WebError(405, "request_failed");
-    if (isWrite && !(isPost && ["auth/login", "auth/logout", "auth/recovery/complete", "auth/totp/confirm", "forms"].includes(path)) && !actionPath(path, request.method) && !uploadPath(path, request.method)) throw new WebError(405, "request_failed");
+    if (isWrite && !(isPost && ["auth/login", "auth/logout", "auth/recovery/complete", "auth/totp/confirm", "forms", ...publicAccountPaths].includes(path)) && !actionPath(path, request.method) && !uploadPath(path, request.method) && !accountWritePath(path, request.method)) throw new WebError(405, "request_failed");
 
     if (path === "auth/login" && isPost) {
       const input = await bodyOf(request);
@@ -93,6 +94,8 @@ export async function handle(request: NextRequest, path: string, deps?: { config
     const cookie: Parameters<typeof completeInvite>[6] = (response, value) => setSession(response, config!, value);
     if (path === "auth/recovery/complete" && isPost) return await completeInvite(request, await bodyOf(request), config, store, id, json, cookie, transport);
     if (path === "auth/totp/confirm" && isPost) return await confirmInvite(await bodyOf(request), config, store, id, json, cookie, transport);
+    // استعادة الحساب برمز احتياطي والدخول بمفتاح المرور بلا جلسة (ADR 0107، 0108، server/account.ts)
+    if (isPost && publicAccountPaths.includes(path)) return await accountPublic(request, path, await bodyOf(request, path === "auth/passkeys/login" ? 65536 : 8192), config, store, id, json, cookie, transport);
 
     const verification = /^license-verifications\/([^/]+)$/.exec(path);
     if (verification && request.method === "GET") return await licenseVerify(request, verification[1], config, transport);
@@ -109,6 +112,9 @@ export async function handle(request: NextRequest, path: string, deps?: { config
       const me = requireOk(await api.GET("/auth/me"));
       if (path === "forms") return manageForms(request, api, me, isPost ? await bodyOf(request, formBodyLimit) : undefined);
       if (isWrite && uploadPath(path, request.method)) return uploadAction(request, path, api, me, await bodyOf(request, uploadBodyLimit(path)), config!);
+      // الرموز الاحتياطية ومفاتيح المرور ورابط إعادة التعيين واعتماد الاستعادة؛ رد المصادِق عند التسجيل أكبر من 8 KiB
+      if (isWrite && accountWritePath(path, request.method)) return accountWrite(request, path, api, me, await bodyOf(request, path === "me/passkeys" ? 65536 : 8192));
+      if (accountReadPath(path)) return accountRead(request, path, api);
       // نصوص القالب ثنائية اللغة حتى 4000 حرف لكل حقل؛ أكبر من حد إجراءات المراجعة.
       // القائمة المقترحة حتى 50 وسمًا بأربعين نقطة ترميز (حتى 4 بايتات لكلٍّ منها) تتجاوز 8 KiB.
       if (isWrite) return reviewAction(request, path, api, me, await bodyOf(request, path.startsWith("license-templates") ? 65536 : /^materials\/[0-9a-f-]{36}\/listing$/i.test(path) ? 262144 : path === "tag-suggestions" ? 16384 : 8192), config!);
