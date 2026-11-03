@@ -3,7 +3,7 @@ name: preview-images
 # Light preview on a shared server (ADR 0023, 0092): the API, web and media worker images are built here, never on the server.
 # Every run brings the preview compose up on the freshly built images (health, a demo login through the web, a desktop upload,
 # the media worker's proxy and thumbnail read through a signed link, no host port, the memory limits and actual use under
-# 2560 MB) and measures the worker on synthetic 60 s clips. On main (and by hand) the images then go as gzipped tars, with their
+# 2632 MB) and measures the worker on synthetic 60 s clips. On main (and by hand) the images then go as gzipped tars, with their
 # sha256, onto the fixed prerelease "preview-latest": the repository is public, so the server downloads them with no
 # token and runs `docker load`. No registry: personal packages are private by default.
 on:
@@ -35,7 +35,7 @@ concurrency:
 
 jobs:
   images:
-    name: preview images (build, smoke and media worker under 2560 MB, publish on main)
+    name: preview images (build, smoke and media worker under 2632 MB, publish on main)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -58,7 +58,7 @@ jobs:
               | grep -iE '(secret|password|token|key)='; then
               echo "$img: secret-looking variable baked in"; exit 1; fi
           done
-      - name: Preview compose on these images (web, desktop upload, media worker, memory under 2560 MB; worker measured on 60 s clips)
+      - name: Preview compose on these images (web, desktop upload, media worker, memory under 2632 MB; worker measured on 60 s clips)
         env:
           MEASURE_HOST: GitHub-hosted runner (ubuntu-24.04, 4 vCPU)
           MEDIA_PROFILES: 1080p 2160p

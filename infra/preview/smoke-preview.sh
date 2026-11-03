@@ -9,7 +9,7 @@
 # ورابط النسخة الموقّع من /v1 يُقرأ عبر الحافة video/mp4 بلا الوسوم، والمعدّل والمقطوع والمكتوب مرفوض، والصورة لا تصله،
 # وسجله بلا عنوان ولا اسم ملف ولا موقع ولا جهاز، ومستخدمه في MinIO لا يقرأ .info ولا يكتب الرفع ولا يحذف)، و/v1 العلني كما يصله بناء iOS التجريبي (ADR 0077: دخول وتحدٍّ وتسجيل مرفوض بشهادة مزيفة، ونقاط الـBFF
 # وحده لا تصل: رمز الويب 404 وعنوان العميل المنتحل لا يغيّر سلة حد المعدل، وبلا /internal)، والخادم على شبكة العلنية مع الحافة وحدها
-# لا على deploy_default، ومجموع حدود الذاكرة ≤ 2560 MB بلا swap واستهلاكها الفعلي (docker stats) تحته، ولا سر في السجلات.
+# لا على deploy_default، ومجموع حدود الذاكرة ≤ 2632 MB بلا swap واستهلاكها الفعلي (docker stats) تحته، ولا سر في السجلات.
 # ومع --media-json: ذروة ذاكرة العامل وزمن المعالج والزمن الكلي والقرص لمقطع اصطناعي 60 ث لكل ملف تعريف (ملف قياس لكل منها).
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,7 +21,7 @@ while [ $# -gt 0 ]; do
     *) echo "usage: $0 [--json FILE] [--media-json DIR]" >&2; exit 2 ;;
   esac
 done
-LIMIT_MB=2760
+LIMIT_MB=2632
 C=(docker compose -f "$HERE/docker-compose.preview.yml")
 created_env=0 created_net=0
 work="$(mktemp -d)"
@@ -723,7 +723,7 @@ if [ -n "$MEDIA_OUT" ]; then
 fi
 
 # The feeder as a service: back on, it logs that it started and nothing else while there is nothing to do.
-"${C[@]}" start media-feeder >/dev/null 2>&1 || fail "media-feeder does not start"
+started="$("${C[@]}" up -d --no-deps media-feeder 2>&1)" || { echo "$started" | tail -5; fail "media-feeder does not start"; }
 sleep 12
 "${C[@]}" logs --no-color media-feeder 2>&1 | grep -q '"msg":"media feeder started"' || fail "media-feeder did not start its loop"
 [ "$(docker inspect -f '{{.State.Running}}' "$("${C[@]}" ps -q media-feeder)")" = true ] || fail "media-feeder is not running"
