@@ -17,6 +17,7 @@ import { useMutation } from "@/lib/use-mutation";
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
 import { InboxNow } from "./newsroom-board";
+import { AssignButton } from "./task-parts";
 
 const dashboardRoles = ["supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin"] as const;
 const filterKeys = ["priority", "technical_state", "editorial_state", "rights_state", "governorate", "reporter_id", "shot_after", "shot_before"] as const;
@@ -146,7 +147,7 @@ function filterValue(key: FilterKey, value: string, m: Messages, locale: Locale)
 
 /**
  * صف الوارد (`Web/Inbox row`): مصغّرة (بلا جلب صورة في القائمة)، والعنوان وشارة الأولوية بكلمة، وسطر المراسل والمحافظة والنوع وعدد الملفات والإيصال،
- * والوسوم، والزمن منذ الوصول، والحالات الثلاث شارات منفصلة بأيقونة وكلمة، والخطوة التالية «استلام» لمن يملكها. العاجل حدّ وشارة وكلمة، لا لون وحده.
+ * والوسوم، والزمن منذ الوصول، والحالات الثلاث شارات منفصلة بأيقونة وكلمة، والخطوة التالية «استلام» لمن يملكها و«حوّل» للمقبولة للإنتاج (W3). العاجل حدّ وشارة وكلمة، لا لون وحده.
  */
 function MaterialRow({ material, locale, now, disabled, done }: { material: Material; locale: Locale; now: number; disabled: boolean; done: () => void }) {
   const m = messages[locale], w = m.shell.inbox, receipt = material.files.find(f => f.receipt_number)?.receipt_number, urgent = material.priority === "urgent";
@@ -162,7 +163,7 @@ function MaterialRow({ material, locale, now, disabled, done }: { material: Mate
     </div>
     <p className={`row-time${urgent ? " urgent" : ""}`}>{now ? w.since.replace("{time}", humanDuration(now - Date.parse(material.created_at), locale)) : longDate(material.created_at, locale)}</p>
     <ul className="row-states" aria-label={w.states}>{tracks.map(([track, name]) => <li key={track}><span className="visually-hidden">{name}: </span><StateBadge track={track} value={material[track]} locale={locale} /></li>)}</ul>
-    <div className="row-actions"><RowReceive material={material} locale={locale} disabled={disabled} done={done} /></div>
+    <div className="row-actions"><RowReceive material={material} locale={locale} disabled={disabled} done={done} /><AssignButton locale={locale} material={material} compact disabled={disabled} onAssigned={done} /></div>
   </li>;
 }
 

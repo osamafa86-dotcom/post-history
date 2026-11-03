@@ -39,7 +39,7 @@ export function safeMaterial(material: Material, permissions: Permission[], form
     form_version: material.form_version, dynamic_fields: redactValues(material.dynamic_fields, form, permissions, material.redacted_field_keys),
     technical_state: material.technical_state, editorial_state: material.editorial_state, rights_state: material.rights_state,
     created_at: material.created_at, updated_at: material.updated_at,
-    files: material.files.map(f => ({ id: f.id, kind: f.kind, state: f.state, mime_type: f.mime_type, duration_ms: f.duration_ms,
+    files: material.files.map(f => ({ id: f.id, kind: f.kind, state: f.state, mime_type: f.mime_type, size_bytes: Number.isSafeInteger(f.size_bytes) ? f.size_bytes : null, duration_ms: f.duration_ms,
       width: f.width, height: f.height, receipt_number: f.receipt_number, created_at: f.created_at, verified_at: f.verified_at })),
     redacted_field_keys: material.redacted_field_keys ?? [],
   };
@@ -47,6 +47,7 @@ export function safeMaterial(material: Material, permissions: Permission[], form
 export function safeNotification(item: Notification): Notification {
   return { id: item.id, type: "", title: "", material_id: item.material_id && uuid.test(item.material_id) ? item.material_id : null,
     priority: item.priority, state: item.state, escalation_level: item.escalation_level, assignment_state: item.assignment_state,
+    ...(item.assignment_id && uuid.test(item.assignment_id) ? { assignment_id: item.assignment_id } : {}),
     created_at: item.created_at, read_at: item.read_at, acknowledged_at: item.acknowledged_at };
 }
 export function safeTransition(item: TransitionRecord, internal = false): TransitionRecord {

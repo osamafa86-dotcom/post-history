@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { formatDate, messages, type Locale } from "@/lib/i18n";
 import type { Notification, NotificationPage } from "@/lib/types";
-import { uuid } from "@/lib/query";
+import { notificationTarget } from "@/lib/assignment-policy";
 import { groupNotifications, type NotificationGroup } from "@/lib/editor";
 import { useMutation } from "@/lib/use-mutation";
 import { ActionStatus } from "./action-status";
@@ -49,7 +49,7 @@ export function Notifications({ locale }: { locale: Locale }) {
     {!data ? <p role="status" className="center-state">{failed ? m.error : m.loading}</p> : !groups.length ? <p className="empty">{t.empty}</p> : <div className="notification-grid">
       <ul className="notification-list compact" ref={list} onKeyDown={keys}>{sections.map(section => <li key={section.name} className="notification-section"><h2 className="overline">{t.sections[section.name]}</h2><ul>
         {section.groups.map(group => { const head = group.head, status = state(head);
-          return <li key={group.key} data-key={group.key} data-testid="notification" tabIndex={0} className={`notification-row ${selected === group.key ? "selected" : ""} ${group.unread ? "unread" : ""}`} onFocus={() => setSelected(group.key)} onClick={() => setSelected(group.key)} onKeyDown={e => { if (e.key === "Enter" && head.material_id && uuid.test(head.material_id)) router.push(`/${locale}/materials/${head.material_id}`); }}>
+          return <li key={group.key} data-key={group.key} data-testid="notification" tabIndex={0} className={`notification-row ${selected === group.key ? "selected" : ""} ${group.unread ? "unread" : ""}`} onFocus={() => setSelected(group.key)} onClick={() => setSelected(group.key)} onKeyDown={e => { const target = notificationTarget(head, locale); if (e.key === "Enter" && target) router.push(target); }}>
             <span className={`notification-icon tone-${head.priority === "urgent" ? "bad" : "neutral"}`} aria-hidden="true" />
             <span className="notification-text"><strong>{label(group)}{group.items.length > 1 && <span className="muted"> +{group.items.length - 1}</span>}</strong><small className="muted">{formatDate(head.created_at, locale)}{head.escalation_level ? ` · ${t.escalation}: ${head.escalation_level}` : ""}</small></span>
             <span className="badge">{status === "acknowledged" ? t.acknowledged : status === "read" ? t.readState : t.unreadState}</span>
@@ -59,7 +59,7 @@ export function Notifications({ locale }: { locale: Locale }) {
       <aside className="card notification-preview-panel" aria-live="polite">{current ? <>
         {current.needsAck ? <p className="alert urgent">{t.needsAck}</p> : <p className="muted">{label(current)}</p>}
         <p>{formatDate(current.head.created_at, locale)}{current.items.length > 1 && <> · {t.grouped.replace("{n}", String(current.items.length))}</>}</p>
-        <div className="actions">{current.head.material_id && uuid.test(current.head.material_id) && <Link prefetch={false} className="back-link" href={`/${locale}/materials/${current.head.material_id}`}>{t.open}</Link>}
+        <div className="actions">{notificationTarget(current.head, locale) && <Link prefetch={false} className="back-link" href={notificationTarget(current.head, locale)!}>{current.head.assignment_id ? t.openTask : t.open}</Link>}
           {state(current.head) !== "acknowledged" && <button disabled={mutation.busy} onClick={() => void change(current, "ack")}>{t.ack}</button>}</div>
       </> : <p className="muted">{t.choose}</p>}</aside>
     </div>}

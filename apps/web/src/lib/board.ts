@@ -2,16 +2,23 @@ import type { Material } from "./types";
 
 // مساعدات عرض للوحة غرفة الأخبار على الشاشة الكبيرة (#385، docs/design/specs/supervisor-board.md)؛ لا تقرر حالة.
 export const displayPage = 8, rotateMs = 20000;
+/** بلاطات الجدار في الصفحة (W4): أربع في الصف وصفّان كما في الإطار، فيبقى شريط الرفع والتذييل داخل 1920×1080. */
+export const wallPage = 8;
 const rank: Record<Material["priority"], number> = { urgent: 0, important: 1, normal: 2 };
 
 /** ترتيب العمود: عاجل ثم مهم ثم الأقدم. */
 export const boardOrder = (items: Material[]) => [...items].sort((a, b) => rank[a.priority] - rank[b.priority] || Date.parse(a.created_at) - Date.parse(b.created_at));
 
-/** نافذة التدوير: ثماني بطاقات، وتنتقل الصفحة كل عشرين ثانية حين يزيد العمود عنها. */
-export function rotation(items: Material[], tick: number) {
-  const pages = Math.max(1, Math.ceil(items.length / displayPage)), page = tick % pages;
-  return { shown: items.slice(page * displayPage, page * displayPage + displayPage), page, pages };
+/** نافذة التدوير: ثماني بطاقات (أو `size`)، وتنتقل الصفحة كل عشرين ثانية حين تزيد القائمة عنها. */
+export function rotation<T>(items: T[], tick: number, size = displayPage) {
+  const pages = Math.max(1, Math.ceil(items.length / size)), page = tick % pages;
+  return { shown: items.slice(page * size, page * size + size), page, pages };
 }
+
+/** ترتيب الجدار (W4): «العاجل أولًا، ثم الأحدث». */
+export const wallOrder = (items: Material[]) => [...items].sort((a, b) => Number(b.priority === "urgent") - Number(a.priority === "urgent") || Date.parse(b.created_at) - Date.parse(a.created_at) || a.id.localeCompare(b.id));
+/** ساعة الجدار HH:MM بتوقيت الجهاز كما في W4؛ أرقام لاتينية. */
+export const wallMinutes = (at: number) => new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
 
 /** HH:MM:SS بتوقيت الجهاز للساعة وآخر لقطة؛ أرقام لاتينية في الواجهتين. */
 export const wallClock = (at: number) => new Date(at).toLocaleTimeString("en-GB", { hour12: false });

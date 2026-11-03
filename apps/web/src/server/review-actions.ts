@@ -15,6 +15,7 @@ import { conflictWrite } from "./invite-conflicts";
 import { earningsPath, earningsWrite } from "./earnings";
 import { orderWrite } from "./orders";
 import { renderWrite } from "./renders";
+import { assignmentPath, assignmentWrite } from "./assignments";
 import { identityAccesses, identityReasons, permissions, reasonLimits } from "@/lib/admin-policy";
 import { safeIdentitySetting } from "@/lib/admin-privacy";
 import { ruleInput, safeRule } from "@/lib/notification-policy";
@@ -55,6 +56,9 @@ export const actionRoutes = [
   { path: "/buyer-organizations/{org_id}/members", methods: ["post"] },
   { path: "/buyer-organizations/{org_id}/members/{user_id}", methods: ["put"] },
   { path: "/materials/{id}/renders", methods: ["post"] },
+  { path: "/materials/{id}/assignments", methods: ["post"] },
+  { path: "/assignments/{assignment_id}/transitions", methods: ["post"] },
+  { path: "/materials/{id}/export", methods: ["post"] },
 ] as const;
 const routePatterns = actionRoutes.map(route => ({ ...route, pattern: new RegExp(`^${route.path.slice(1).replaceAll(/\{[^}]+\}/g, "[^/]+")}$`) }));
 export const actionPath = (path: string, method: string) => routePatterns.some(route => route.pattern.test(path) && (route.methods as readonly string[]).includes(method.toLowerCase()));
@@ -113,6 +117,8 @@ export async function reviewAction(request: Request, path: string, api: Api, me:
   // نسخة بقالب «مواد متداولة» (ADR 0091): طلب جديد لكل مفتاح، بلا If-Match لأن الحالات الثلاث لا تتغيّر.
   const renderPath = /^materials\/([^/]+)\/renders$/.exec(path);
   if (renderPath && request.method === "POST") return renderWrite(renderPath[1], api, me, body, header);
+  // إسناد المادة وانتقالات المهمة وطلب حزمة التصدير (ADR 0096، ADR 0097): بلا If-Match، فالحالات الثلاث لا تتغيّر.
+  if (assignmentPath(path)) return assignmentWrite(request, path, api, me, body, header);
   const workNamePath = /^users\/([^/]+)\/work-name$/.exec(path);
   if (workNamePath && uuid.test(workNamePath[1]) && request.method === "PUT") {
     requireRole(me, "system_admin"); keys(body, ["work_name"]);
