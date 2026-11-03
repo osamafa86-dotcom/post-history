@@ -1,11 +1,24 @@
 name: ci
 
+# Everything but docs/ and Markdown, as before, except two paths under docs/ that jobs here test: the v2 design tokens (the web
+# job's token tests) and the circulated-template project (the media job's render image and bench). The order matters: a later
+# pattern overrides an earlier one, so Markdown is excluded last.
 on:
   push:
     branches: [main]
-    paths-ignore: ['docs/**', '**/*.md']
+    paths:
+      - '**'
+      - '!docs/**'
+      - 'docs/design/tokens.v2.json'
+      - 'docs/design/redesign-2026-11/motion/circulated-template/**'
+      - '!**/*.md'
   pull_request:
-    paths-ignore: ['docs/**', '**/*.md']
+    paths:
+      - '**'
+      - '!docs/**'
+      - 'docs/design/tokens.v2.json'
+      - 'docs/design/redesign-2026-11/motion/circulated-template/**'
+      - '!**/*.md'
 
 permissions:
   contents: read
@@ -33,7 +46,7 @@ jobs:
       - id: f
         run: |
           .github/scripts/changed-paths.sh \
-          web='^(apps/web/|contracts/|tools/acceptance/form-conformance/|\.github/(workflows/ci\.yml|scripts/))' \
+          web='^(apps/web/|contracts/|docs/design/tokens\.v2\.json$|tools/acceptance/form-conformance/|\.github/(workflows/ci\.yml|scripts/))' \
           db='^(apps/api/src/db/|tools/acceptance/|contracts/|\.github/(workflows/ci\.yml|scripts/))' \
           api='^(apps/api/|contracts/|infra/compose/docker-compose\.yml|\.github/(workflows/ci\.yml|scripts/))' \
           compose='^(infra/|apps/api/|workers/media/|tools/acceptance/|\.github/(workflows/ci\.yml|scripts/))' \
