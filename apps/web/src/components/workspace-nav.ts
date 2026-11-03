@@ -14,6 +14,7 @@ import { myTaskRoles } from "@/lib/assignment-policy";
 import { tagAdmins } from "@/lib/tag-policy";
 import { platformAdmins } from "@/lib/platform-policy";
 import { staffReaders } from "@/lib/staff-policy";
+import { archiveRoles } from "@/lib/archive";
 import type { IconName } from "./icon";
 
 export type NavGroup = "newsroom" | "library" | "admin";
@@ -22,7 +23,7 @@ export type NavItem = { key: string; href: string; label: string; short: string;
 /**
  * وجهات التنقّل بحسب الدور (W1، `Web/Sidebar`): ثلاث مجموعات (غرفة الأخبار، المكتبة، الإدارة) بالصفحات القائمة وحدها، وبند واحد نشط
  * (`aria-current="page"`). الشريط لا يعرض ما لا يملكه الدور (E5)؛ وحساب المشتري لا يرى غير المتجر ومؤسسته.
- * لا تُضاف وجهة لصفحة لم تُبنَ (المحرر العاجل والأرشيف الجاهز: ADR 0090). «المهام» لفريق الإنتاج (W5، ADR 0097).
+ * لا تُضاف وجهة لصفحة لم تُبنَ (المحرر العاجل: ADR 0090). «المهام» لفريق الإنتاج (W5، ADR 0097)، و«الأرشيف الجاهز» لطاقم غرفة الأخبار (W9، ADR 0103).
  * الإدارة بترتيب إطارات A1–A6: المستخدمون، الوسوم، النماذج، المال، الإعدادات، ثم المؤسسات والقواعد والعمولة والتعارض (ADR 0102).
  */
 export function navItems(me: Me, locale: Locale, pathname: string): NavItem[] {
@@ -47,6 +48,7 @@ export function navItems(me: Me, locale: Locale, pathname: string): NavItem[] {
     ...(hasRole(me, ...uploadRoles) ? [item("upload", m.upload.nav, ends("upload"), "newsroom", "upload")] : []),
     item("notifications", m.notice.title, ends("notifications"), "newsroom", "bell"),
     item("form-preview", m.formPreview, ends("form-preview"), "newsroom", "preview"),
+    ...(hasRole(me, ...archiveRoles) ? [item("archive", m.archive.nav, ends("archive"), "library", "archive")] : []),
     ...(hasRole(me, ...catalogRoles) ? [item("store", m.store.title, store && !licenses && !/^\/store\/orders(\/|$)/.test(path), "library", "store")] : []),
     ...(has("system_admin", "finance", "rights_officer") ? [item("licenses", m.licenses.nav, licenses, "library", "license", "store/licenses")] : []),
     ...(has("system_admin", "finance") ? [item("orders", m.orders.staffNav, /^\/store\/orders(\/|$)/.test(path), "library", "orders", "store/orders")] : []),
@@ -69,11 +71,11 @@ export function navGroups(items: NavItem[]): [NavGroup, NavItem[]][] {
 }
 
 /**
- * الشريط السفلي على الجوال (M1، M3): أربع وجهات بترتيب الأولوية مما يملكه الدور (الوارد ثم المهام كما في M3)، و«المزيد» خامسة تفتح الباقي. التنبيهات بينها دائمًا.
+ * الشريط السفلي على الجوال (M1، M3): أربع وجهات بترتيب الأولوية مما يملكه الدور (الوارد ثم المهام ثم الأرشيف كما في M1)، و«المزيد» خامسة تفتح الباقي. التنبيهات بينها دائمًا.
  * والنشط في «المزيد» يجعلها هي النشطة (M5).
  */
 export function bottomItems(items: NavItem[]): { primary: NavItem[]; more: NavItem[] } {
-  const order = ["inbox", "tasks", "board", "my-materials", "store", "upload", "earnings"], notifications = items.find(item => item.key === "notifications");
+  const order = ["inbox", "tasks", "archive", "board", "my-materials", "store", "upload", "earnings"], notifications = items.find(item => item.key === "notifications");
   const ranked = order.map(key => items.find(item => item.key === key)).filter((item): item is NavItem => !!item);
   const primary = [...ranked.slice(0, notifications ? 3 : 4), ...(notifications ? [notifications] : [])];
   return { primary, more: items.filter(item => !primary.includes(item)) };

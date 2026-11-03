@@ -7,16 +7,19 @@ export const states = {
   priority: ["urgent", "important", "normal"],
 } as const satisfies { [K in "technical_state" | "editorial_state" | "rights_state" | "priority"]: readonly Material[K][] };
 export const materialTypes = ["breaking", "report", "interview", "raw_footage", "aerial", "press_conference", "eyewitness", "photos"] as const satisfies readonly MaterialType[];
+export const materialSorts = ["created_desc", "created_asc", "shot_desc", "updated_desc"] as const satisfies readonly NonNullable<MaterialQuery["sort"]>[];
 export const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const dateTime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/i;
 export function materialQuery(params: URLSearchParams): MaterialQuery {
   const result: Record<string, string | number> = {};
-  const allowed = new Set(["governorate", "reporter_id", "shot_after", "shot_before", "cursor", "limit", ...Object.keys(states)]);
+  const allowed = new Set(["governorate", "reporter_id", "shot_after", "shot_before", "cursor", "limit", "sort", ...Object.keys(states)]);
   for (const [key, value] of params) {
     if (!allowed.has(key) || params.getAll(key).length !== 1) throw new Error("Invalid query");
     if (!value) continue;
     if (key in states && !(states[key as keyof typeof states] as readonly string[]).includes(value)) throw new Error("Invalid state");
     if (key === "reporter_id" && !uuid.test(value)) throw new Error("Invalid reporter");
+    // الترتيب من قائمة العقد وحدها (v0.2)؛ الأرشيف الجاهز (W9) بالأحدث تعديلًا.
+    if (key === "sort" && !(materialSorts as readonly string[]).includes(value)) throw new Error("Invalid sort");
     if ((key === "shot_after" || key === "shot_before") && (!dateTime.test(value) || !Number.isFinite(Date.parse(value)))) throw new Error("Invalid date");
     if ((key === "governorate" && value.length > 64) || value.length > 2048) throw new Error("Query too long");
     if (key === "limit") {

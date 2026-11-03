@@ -3,6 +3,7 @@ import { messages, isLocale } from "@/lib/i18n";
 import "@/generated/tokens.css";
 import "./globals.css";
 import "./store.css";
+import "./pages.css";
 export const dynamic = "force-dynamic";
 export async function generateMetadata() {
   const value = (await headers()).get("x-web-locale") ?? "ar", locale = isLocale(value) ? value : "ar";

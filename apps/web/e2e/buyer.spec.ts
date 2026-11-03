@@ -167,9 +167,13 @@ test("licences: the certificate from the licence number; the public page shows n
   await expect(page.getByTestId("verification-status")).toHaveText(en.licenses.statuses.active);
   await expect(verification).toContainText("PH-2026-7K3M9Q2XRT"); await expect(verification).not.toContainText(/canary|Synthetic|worldwide/i);
   const raw = await (await page.request.get("/api/bff/license-verifications/PH-2026-7K3M9Q2XRT")).json();
-  expect(Object.keys(raw).sort()).toEqual(["license_number", "status"]);
-  await page.goto("/ar/verify/PH-2026-0000000000"); await expect(page.locator("main").getByRole("alert")).toHaveText(l.verify.notFound);
-  await page.goto("/ar/verify/not-a-number"); await expect(page.locator("main").getByRole("alert")).toHaveText(l.verify.notFound);
+  expect(Object.keys(raw).sort()).toEqual(["license_number", "status", "valid_until"]);
+  await expect(verification).toContainText(en.licenses.verify.noExpiry); await expect(verification).toContainText(en.licenses.verify.scope);
+  // P3: الرقم المجهول يقول السبب المحتمل ويعيد الرقم كما كُتب؛ والرقم بغير صيغة العقد لا يُرسل ولا يُعاد.
+  await page.goto("/ar/verify/PH-2026-0000000000"); await expect(page.locator("main").getByRole("heading", { level: 1 })).toHaveText(l.verify.notFound);
+  await expect(page.getByTestId("verification")).toContainText(l.verify.notFoundBody); await expect(page.getByTestId("verification")).toContainText("PH-2026-0000000000");
+  await page.goto("/ar/verify/not-a-number"); await expect(page.locator("main").getByRole("heading", { level: 1 })).toHaveText(l.verify.notFound);
+  await expect(page.getByTestId("verification")).not.toContainText("not-a-number");
 });
 
 test("ADR 0035 buyer sees proof days and offer terms, with null proof and dated exclusivity", async ({ page }) => {

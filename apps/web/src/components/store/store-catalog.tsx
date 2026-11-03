@@ -8,6 +8,10 @@ import type { CatalogItem } from "@/lib/store-format";
 import { useUser } from "../session-boundary";
 import { Icon } from "../icon";
 import { CatalogCard } from "./catalog-card";
+import { OrgPending } from "./org-pending";
+import { browserApi, dataOrThrow } from "@/lib/browser-api";
+import type { components } from "@/generated/schema";
+type Organization = components["schemas"]["BuyerOrganization"];
 
 // أدوار المشترين (#192) تتصفح الكتالوج كما في x-roles.
 export const catalogRoles = ["system_admin", "rights_officer", "editor_in_chief", "finance", "buyer_admin", "buyer_member"] as const;
@@ -51,21 +55,31 @@ export function governorateChips(seen: Map<string, string>, active?: string) {
 export function StoreCatalog({ locale }: { locale: Locale }) {
   const m = messages[locale], s = m.store, b = s.browse, c = s.catalog, me = useUser(), allowed = hasRole(me, ...catalogRoles);
   const [filters, setFilters] = useState<Filters>({}), [cursors, setCursors] = useState<(string | null)[]>([null]), [page, setPage] = useState<Page | null>(null), [error, setError] = useState(false), [attempt, setAttempt] = useState(0);
-  const [seen, setSeen] = useState<Map<string, string>>(() => new Map());
+  const [seen, setSeen] = useState<Map<string, string>>(() => new Map()), [held, setHeld] = useState<Organization | null>(null);
   const cursor = cursors.at(-1) ?? null, query = catalogParams(filters).toString();
   useEffect(() => {
     if (!allowed) return;
     const controller = new AbortController(), params = new URLSearchParams(query), unfiltered = !params.has("governorate");
     params.set("limit", "24"); if (cursor) params.set("cursor", cursor);
     void fetch(`/api/bff/catalog?${params}`, { credentials: "same-origin", cache: "no-store", signal: controller.signal })
-      .then(async response => { if (response.status === 401) window.dispatchEvent(new Event("session-revoked")); if (!response.ok) throw new Error(); return await response.json() as Page; })
+      .then(async response => {
+        if (response.status === 401) window.dispatchEvent(new Event("session-revoked"));
+        // S6: مؤسسة غير مفعّلة يردّ لها الكتالوج 403 forbidden_scope؛ تُقرأ حالتها فتظهر بطاقتها بدل كتالوج باهت أو خطأ بلا سبب.
+        if (response.status === 403 && me.organization_id) {
+          const organization = dataOrThrow(await browserApi().GET("/buyer-organizations/{org_id}", { params: { path: { org_id: me.organization_id } }, signal: controller.signal }));
+          if (organization.status !== "active") { setHeld(organization); return null; }
+        }
+        if (!response.ok) throw new Error(); return await response.json() as Page;
+      })
       .then(data => {
-        setPage(data); setError(false);
+        if (!data) return;
+        setPage(data); setError(false); setHeld(null);
         if (unfiltered) setSeen(current => data.items.some(item => item.governorate && current.get(item.listing_id) !== item.governorate) ? new Map([...current, ...data.items.filter(item => item.governorate).map(item => [item.listing_id, item.governorate] as [string, string])]) : current);
       }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
-  }, [allowed, query, cursor, attempt]);
+  }, [allowed, query, cursor, attempt, me.organization_id]);
   if (!allowed) return <NoAccess locale={locale} me={me} title={s.title} denied={s.denied} />;
+  if (held) return <div className="store-page org-pending-page"><OrgPending locale={locale} organization={held} canInvite={hasRole(me, "buyer_admin")} /></div>;
   const update = (next: Filters) => { setPage(null); setCursors([null]); setFilters(next); };
   const set = (key: keyof Filters, value: string) => update({ ...filters, [key]: value });
   const active = (Object.entries(filters) as [keyof Filters, string][]).filter(([, value]) => value);

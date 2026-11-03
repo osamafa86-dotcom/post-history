@@ -5,7 +5,7 @@ import { fontFiles, tokensCss } from "../scripts/design-tokens.mjs";
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const tokens = JSON.parse(read("../../../docs/design/tokens.v2.json"));
 const generated = read("../src/generated/tokens.css");
-const styles = ["../src/app/globals.css", "../src/app/store.css", "../src/components/material-player.css"].map(read).join("\n");
+const styles = ["../src/app/globals.css", "../src/app/store.css", "../src/app/pages.css", "../src/components/material-player.css"].map(read).join("\n");
 type Mode = "light" | "dark";
 
 /** قيمة الرمز الدلالي (`bg/base`…) بعد حل الإحالة في الوضع المطلوب. */

@@ -66,13 +66,13 @@ for (const locale of ["ar", "en"] as Locale[]) {
   });
 }
 
-test("the bell opens the notifications panel (W10): tabs, urgent first, mark all read and a link to the full page", async ({ page }) => {
+test("the bell opens the notifications panel (W10): tabs all, mine and store, urgent first, mark all read and a link to the full page", async ({ page }) => {
   await login(page, "reviewer", "ar"); const t = ar.shell.bell;
   await page.getByRole("banner").getByRole("button", { name: t.open }).click();
   const panel = page.getByTestId("notifications-panel"); await expect(panel).toBeVisible();
-  await expect(panel.getByRole("tab")).toHaveText([new RegExp(`^${t.tabs.all}`), t.tabs.mine, t.tabs.urgent]);
+  await expect(panel.getByRole("tab")).toHaveText([new RegExp(`^${t.tabs.all}`), t.tabs.mine, t.tabs.store]);
   await expect(panel.getByTestId("bell-item")).toHaveCount(3); await expect(panel).not.toContainText("never-display-canary");
-  await panel.getByRole("tab", { name: t.tabs.urgent }).click(); await expect(panel.getByRole("tab", { name: t.tabs.urgent })).toHaveAttribute("aria-selected", "true");
+  await panel.getByRole("tab", { name: t.tabs.store }).click(); await expect(panel.getByRole("tab", { name: t.tabs.store })).toHaveAttribute("aria-selected", "true");
   await panel.getByRole("tab", { name: new RegExp(`^${t.tabs.all}`) }).click();
   await panel.getByRole("button", { name: t.readAll }).click(); await expect(panel.getByRole("button", { name: t.readAll })).toBeDisabled();
   await panel.getByRole("tab", { name: t.tabs.mine }).focus(); await page.keyboard.press("Escape"); await expect(panel).toHaveCount(0);
