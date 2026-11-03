@@ -6,10 +6,11 @@ import { ExportService } from './export.service';
 import { FileDownloadService } from './file-download.service';
 import { MaterialsController } from './materials.controller';
 import { MaterialsService } from './materials.service';
+import { RendersService } from './renders.service';
 
 @Module({
   imports: [FormsModule, VerificationModule],
   controllers: [MaterialsController],
-  providers: [MaterialsService, FileDownloadService, ExportService, DuplicatesService],
+  providers: [MaterialsService, FileDownloadService, ExportService, DuplicatesService, RendersService],
 })
 export class MaterialsModule {}

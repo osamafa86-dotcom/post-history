@@ -58,7 +58,11 @@
         "order.status_changed",
         "license.issued",
         "license.revoked",
-        "payout.status_changed"
+        "payout.status_changed",
+        "render.requested",
+        "render.started",
+        "render.completed",
+        "render.failed"
       ]
     },
     "aggregate_type": {
@@ -1063,6 +1067,159 @@
                   "channel_failed",
                   "other",
                   null
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "render.requested"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "material"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "طلب نسخة على قالب «مواد متداولة» (ADR 0091): معرّفات وحدها. العنوان والمكان والوسم والمقاس لا تدخل الحدث؛ يقرؤها عامل الوسائط من /internal/media/renders/{render_id}.",
+            "required": [
+              "material_id",
+              "render_id",
+              "source_file_id",
+              "requested_by"
+            ],
+            "properties": {
+              "material_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "render_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "source_file_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "requested_by": {
+                "$ref": "#/$defs/uuid"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "render.started"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "material"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "التقط عامل الوسائط النسخة (requested ← rendering، ADR 0091): معرّفان وحدهما، بلا اسم مضيف ولا عملية.",
+            "required": [
+              "material_id",
+              "render_id"
+            ],
+            "properties": {
+              "material_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "render_id": {
+                "$ref": "#/$defs/uuid"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "render.completed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "material"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "جهزت النسخة (ADR 0091): المشتق circulated_render بمعرّفه، بلا مفتاح تخزين ولا اسم ملف.",
+            "required": [
+              "material_id",
+              "render_id",
+              "file_id"
+            ],
+            "properties": {
+              "material_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "render_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "file_id": {
+                "$ref": "#/$defs/uuid"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "render.failed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "material"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "فشلت النسخة نهائيًا (ADR 0091): سبب مرمّز وحده، لا نص حر ولا مخرج FFmpeg أو Chromium.",
+            "required": [
+              "material_id",
+              "render_id",
+              "failure_reason"
+            ],
+            "properties": {
+              "material_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "render_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "failure_reason": {
+                "type": "string",
+                "enum": [
+                  "source_unavailable",
+                  "title_overflow",
+                  "render_failed"
                 ]
               }
             }

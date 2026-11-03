@@ -1,6 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { Tx } from '../database/database.module';
-import { materials, notificationRuleEscalations, notifications, offices, userRoles, users } from '../database/schema/schema';
+import { materialRenders, materials, notificationRuleEscalations, notifications, offices, userRoles, users } from '../database/schema/schema';
 import { highestRank, type RoleName } from '../identity/principal';
 import type { OutboxRow } from '../outbox/outbox.dispatcher';
 import { enqueuePush } from '../push/push-delivery.worker';
@@ -47,6 +47,7 @@ export async function fanOut(tx: Tx, event: OutboxRow, opts: FanOutOptions): Pro
   if (event.type === 'auth.recovery_requested') return recoveryRequested(tx, event, payload, opts);
   if (event.type === 'auth.recovery_completed') return recoveryCompleted(tx, event, opts);
   if (event.type === 'setting.changed') return settingChanged(tx, event, opts);
+  if (event.type === 'render.completed' || event.type === 'render.failed') return renderFinished(tx, event, payload, opts);
   const materialId = typeof payload.material_id === 'string' ? payload.material_id : undefined;
   const receipt = typeof payload.receipt_number === 'string' ? payload.receipt_number : undefined;
   const custom = materialId && RULEABLE.test(event.type) ? await enabledRules(tx, event.type) : [];
@@ -231,6 +232,34 @@ async function systemAdmins(tx: Tx): Promise<string[]> {
 }
 
 /** إكمال الاستعادة (ضابط ADR 0012): تنبيه لصاحب الحساب وحده بلا معرّف الطلب، فيعرف إن استُولي على حسابه. */
+/**
+ * نسخة القالب الجاهزة أو الفاشلة تُشعر طالبها وحده داخل المنصة (ADR 0091 البند 6): رقم المادة وحالة النسخة بقالب الخادم،
+ * بلا عنوان النسخة ولا مكانها، ولا دفع. لا تدخل قواعد التنبيه الإدارية.
+ */
+async function renderFinished(tx: Tx, event: OutboxRow, payload: Record<string, unknown>, opts: FanOutOptions): Promise<number> {
+  const renderId = typeof payload.render_id === 'string' ? payload.render_id : undefined;
+  if (!renderId) return 0;
+  const [r] = await tx
+    .select({ requestedBy: materialRenders.requestedBy, materialId: materialRenders.materialId })
+    .from(materialRenders)
+    .where(eq(materialRenders.id, renderId));
+  if (!r) return 0;
+  const inserted = await tx
+    .insert(notifications)
+    .values({
+      userId: r.requestedBy,
+      eventId: event.id,
+      type: event.type,
+      materialId: r.materialId,
+      priority: 'normal',
+      title: notificationTitle(event.type, opts.locale, { ref: materialRef(r.materialId) }),
+      assignmentState: null,
+    })
+    .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
+    .returning({ id: notifications.id });
+  return inserted.length;
+}
+
 async function recoveryCompleted(tx: Tx, event: OutboxRow, opts: FanOutOptions): Promise<number> {
   const inserted = await tx
     .insert(notifications)

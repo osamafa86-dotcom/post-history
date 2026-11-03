@@ -24,6 +24,15 @@ export const NOTIFICATION_TITLES: Record<string, Record<Locale, string>> = {
     ar: 'تغيّر إعداد من يرى الاسم الحقيقي للمراسلين؛ راجع سجل التدقيق',
     en: 'The setting for who sees reporters\' legal names changed; check the audit log',
   },
+  // نسخة قالب «مواد متداولة» لطالبها وحده (ADR 0091): رقم المادة وحالة النسخة، بلا عنوانها ولا مكانها
+  'render.completed': {
+    ar: 'نسختك من المادة #{ref} على قالب «مواد متداولة» جاهزة',
+    en: 'Your circulated-template copy of material #{ref} is ready',
+  },
+  'render.failed': {
+    ar: 'تعذّر إنتاج نسختك من المادة #{ref} على قالب «مواد متداولة»',
+    en: 'Your circulated-template copy of material #{ref} could not be made',
+  },
   // عنوان عام لأحداث تضبط لها الإدارة قاعدة ولا قالب خاص لها (v0.2)
   'material.generic': { ar: 'تحديث على المادة #{ref}', en: 'Update on material #{ref}' },
   'upload.verified': {

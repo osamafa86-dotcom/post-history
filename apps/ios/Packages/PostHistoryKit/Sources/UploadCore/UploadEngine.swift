@@ -52,6 +52,11 @@ public actor UploadEngine: TusTransportDelegate {
     private var releasedProxyHolds: Set<UUID> = []
     /// حد التجديدات المتتالية: رمز جديد ما زال يُرفض = مشكلة لا يحلها التجديد.
     static let maxIngestRefreshes = 3
+    /// الحساب الداخل (ADR 0093): طلبات `/uploads` المصادَق عليها تُرسل باسمه، فسجل حساب آخر (أو والكل خارج) لا يطلبها بل ينتظر
+    /// صاحبه، ونقل tus برمز الرفع يكمل. `nil`: بلا تمييز (الاختبارات، وما قبل أول ضبط).
+    private var accountScope: AccountScope?
+    /// سجلات تنتظر دخول صاحبها عند خطوة تحتاج طلبًا باسمه.
+    private var parkedForAccount: Set<UUID> = []
 
     public init(store: any UploadStateStore, secrets: any UploadSecretStore, api: any UploadAPI, transport: any TusTransport,
                 ingestTokens: (any IngestTokenProvider)? = nil,
@@ -86,7 +91,8 @@ public actor UploadEngine: TusTransportDelegate {
     /// `awaitsProxy`: أصل تُحضَّر نسخته الخفيفة الآن؛ يُبصم لكن لا تُنشأ جلسته حتى `releaseProxyHold` أو وصول النسخة إلى الطابور.
     @discardableResult
     public func enqueue(sourcePath: String, materialId: UUID, kind: UploadSessionCreate.Kind, filename: String, mimeType: String?, proxyMode: UploadSessionCreate.ProxyMode? = nil,
-                        awaitsProxy: Bool = false, materialTitle: String? = nil, materialPriority: String? = nil) async throws -> UploadRecord {
+                        awaitsProxy: Bool = false, materialTitle: String? = nil, materialPriority: String? = nil,
+                        ownerAccount: UUID? = nil) async throws -> UploadRecord {
         let url = resolve(sourcePath)
         let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
         let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
@@ -94,6 +100,7 @@ public actor UploadEngine: TusTransportDelegate {
         if awaitsProxy, kind == .original { record.awaitsProxy = true }
         record.materialTitle = materialTitle
         record.materialPriority = materialPriority
+        record.ownerAccount = ownerAccount
         records[record.id] = record
         try store.save(record)
         Task { await self.step(record.id) }
@@ -148,9 +155,29 @@ public actor UploadEngine: TusTransportDelegate {
     public func retry(_ id: UUID) async throws -> UploadRecord? {
         guard let rec = records[id], case .failed = rec.phase, FileManager.default.fileExists(atPath: resolve(rec.sourcePath).path) else { return nil }
         let fresh = try await enqueue(sourcePath: rec.sourcePath, materialId: rec.materialId, kind: rec.kind, filename: rec.filename, mimeType: rec.mimeType,
-                                      proxyMode: rec.proxyMode, materialTitle: rec.materialTitle, materialPriority: rec.materialPriority)
+                                      proxyMode: rec.proxyMode, materialTitle: rec.materialTitle, materialPriority: rec.materialPriority,
+                                      ownerAccount: rec.ownerAccount)
         try? remove(id)
         return fresh
+    }
+
+    /// الحساب الداخل تغيّر (دخول، أو خروج، أو بدء التشغيل): ما كان ينتظر صاحبه وقد دخل يُستأنف من حيث وقف.
+    public func setAccountScope(_ scope: AccountScope?) {
+        accountScope = scope
+        let ready = parkedForAccount.filter { id in records[id].map(mayRequest) ?? true }
+        parkedForAccount.subtract(ready)
+        for id in ready { Task { await self.step(id) } }
+    }
+
+    /// السجلات التي تنتظر دخول صاحبها (للاختبارات).
+    func waitingForOwner() -> Set<UUID> { parkedForAccount }
+
+    /// تُرسل طلبات هذا السجل المصادَق عليها الآن: صاحبه هو الداخل.
+    private func mayRequest(_ rec: UploadRecord) -> Bool { accountScope?.owns(rec.ownerAccount) ?? true }
+
+    /// قبل كل طلب باسم الحساب (إنشاء الجلسة، ورمز البوابة، والإكمال، وسؤال الإيصال): سجل غيره ينتظر صاحبه بلا فشل ولا محاولة.
+    private func requireOwner(_ rec: UploadRecord) throws {
+        guard mayRequest(rec) else { throw AwaitingOwner() }
     }
 
     /// تحضير النسخة الخفيفة انتهى أو فشل: أصل المادة لا ينتظرها بعد الآن.
@@ -231,6 +258,7 @@ public actor UploadEngine: TusTransportDelegate {
         busy.removeAll()
         resyncing.removeAll()
         parkedForProxy.removeAll()
+        parkedForAccount.removeAll()
         yieldingSince.removeAll()
         releasedProxyHolds.removeAll()
         ingestRefreshes.removeAll()
@@ -299,6 +327,7 @@ public actor UploadEngine: TusTransportDelegate {
                     setPhase(&rec, .creatingSession)
                 case .creatingSession:
                     if mustYieldToProxy(rec) { park(rec); return }
+                    try requireOwner(rec)
                     let body = UploadSessionCreate(materialId: rec.materialId, kind: rec.kind, sizeBytes: Int(rec.sizeBytes), filename: rec.filename, mimeType: rec.mimeType, proxyMode: rec.proxyMode, clientSha256: rec.sha256Hex)
                     let created = try await api.createSession(idempotencyKey: rec.createIdempotencyKey, body)
                     guard let endpoint = URL(string: created.tusEndpoint) else { throw UploadError.invalidEndpoint }
@@ -345,11 +374,13 @@ public actor UploadEngine: TusTransportDelegate {
                     continue
                 case .completing:
                     guard let remote = rec.remote else { throw UploadAPIError.notFound }
+                    try requireOwner(rec)
                     do { try await api.complete(idempotencyKey: rec.completeIdempotencyKey, id: remote.uploadSessionId, reportedSha256: rec.sha256Hex) }
                     catch UploadAPIError.conflict {} // مسار tusd: الاكتمال يصل من الخطّاف؛ نكتفي بانتظار التحقق
                     setPhase(&rec, .awaitingReceipt)
                 case .awaitingReceipt:
                     guard let remote = rec.remote else { throw UploadAPIError.notFound }
+                    try requireOwner(rec)
                     let session = try await api.session(id: remote.uploadSessionId)
                     switch session.state {
                     case .verified:
@@ -378,6 +409,11 @@ public actor UploadEngine: TusTransportDelegate {
     /// يصنّف الخطأ: نهائي ← `failed`؛ قابل للإعادة ← محاولة بعد مهلة متزايدة.
     private func fail(or error: any Error, id: UUID) async {
         guard var rec = records[id] else { return }
+        if error is AwaitingOwner {
+            // ليس خطأ: يُستأنف حين يدخل صاحبه (`setAccountScope`)، ولا تُستهلك محاولة.
+            parkedForAccount.insert(id)
+            return
+        }
         rec.lastErrorCode = String(describing: error)
         switch error {
         case UploadError.sourceTruncated, is CocoaError:
@@ -472,6 +508,7 @@ public actor UploadEngine: TusTransportDelegate {
     private func ingestToken(_ rec: UploadRecord, forceRefresh: Bool) async throws -> String? {
         guard let remote = rec.remote, remote.ingestTokenRequired == true else { return nil }
         guard let ingest else { throw IngestTokenError.unsupported }
+        try requireOwner(rec)
         return try await ingest.ingestToken(uploadSessionId: remote.uploadSessionId, forceRefresh: forceRefresh)
     }
 
@@ -534,3 +571,6 @@ public actor UploadEngine: TusTransportDelegate {
         }
     }
 }
+
+/// سجل ينتظر دخول صاحبه قبل طلب باسمه (ADR 0093). ليس فشلًا.
+struct AwaitingOwner: Error, Equatable {}

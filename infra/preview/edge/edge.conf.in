@@ -1,4 +1,5 @@
-# @EDGE_IP@ = عنوان هذه الحاوية على الشبكة الداخلية (PREVIEW_EDGE_IP)، يكتبه أمر البدء.
+# @EDGE_IP@ = عنوان هذه الحاوية على الشبكة الداخلية (PREVIEW_EDGE_IP)، و@MEDIA_BUCKET@ = حاوية المشتقات (S3_BUCKET_MEDIA)، يكتبهما
+# أمر البدء.
 # المنابع بأسماء فريدة على الشبكات الداخلية (ph-preview-*): هذه الحاوية على deploy_default أيضًا، والاسم القصير قد يُحل هناك.
 
 # الويب عبر Caddy الخادم المشترك: لا فهرسة، وشريط «معاينة» في كل صفحة HTML.
@@ -39,6 +40,30 @@ server {
         proxy_read_timeout 60s;
         add_header X-Robots-Tag "noindex, nofollow" always;
     }
+    # روابط القراءة الموقّعة لمشتقات عامل الوسائط (ADR 0092): الخادم يوقّعها لأصل المعاينة نفسه (S3_PUBLIC_ENDPOINT)، فتمر هنا إلى
+    # MinIO والمضيف كما وصل (التوقيع يشمله). القراءة وحدها، ولمسارين ثابتين لكل ملف: النسخة الخفيفة والملصق، بمعرّفين بصيغة
+    # UUID؛ ما سواها (حاوية الرفع وملفات .info وأي كائن آخر) لا يطابق فيذهب إلى تطبيق الويب. MinIO يرفض كل طلب بلا توقيع صالح
+    # لهذا الكائن بعينه وفي مدته (≤ 10 دقائق)، والخادم لا يوقّع إلا مشتقًا verified لمادة يراها المتصل. لا ترويسة Authorization
+    # ولا كعكة تمر، ولا تخزين عند وكيل أمامي، وبلا تخزين مؤقت هنا (الملف يتدفق بطلبات Range للمشغّل).
+    location ~ "^/@MEDIA_BUCKET@/derived/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/(proxy-480p\.mp4|poster\.jpg)$" {
+        limit_except GET { deny all; }
+        if ($request_uri ~ "^[^?]*(%|//|\.\.)") { return 400; }
+        set $minio http://ph-preview-minio:9000;
+        proxy_pass $minio;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header Authorization "";
+        proxy_set_header Cookie "";
+        proxy_buffering off;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 60s;
+        proxy_hide_header Cache-Control;
+        proxy_hide_header Set-Cookie;
+        add_header Cache-Control "private, no-store, max-age=0" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Robots-Tag "noindex, nofollow" always;
+    }
     location / {
         set $web_app http://ph-preview-web-app:3100;
         proxy_pass $web_app;
@@ -51,7 +76,7 @@ server {
         proxy_read_timeout 120s;
         add_header X-Robots-Tag "noindex, nofollow" always;
         sub_filter_once on;
-        sub_filter '</body>' '<div role="status" lang="ar" dir="rtl" style="position:fixed;inset-block-end:0;inset-inline:0;z-index:2147483647;padding:4px 8px;background:#7a1f1f;color:#fff;font:600 13px/1.4 system-ui,sans-serif;text-align:center">معاينة: بيانات وحسابات تجريبية فقط، والمواد المرفوعة تبقى «بانتظار المعالجة» · <span lang="en" dir="ltr">Preview: test data and accounts only; uploads stay awaiting processing</span></div></body>';
+        sub_filter '</body>' '<div role="status" lang="ar" dir="rtl" style="position:fixed;inset-block-end:0;inset-inline:0;z-index:2147483647;padding:4px 8px;background:#7a1f1f;color:#fff;font:600 13px/1.4 system-ui,sans-serif;text-align:center">معاينة: بيانات وحسابات تجريبية فقط، ومعالجة محدودة (نسخة خفيفة ومصغّرة) · <span lang="en" dir="ltr">Preview: test data and accounts only; limited processing (light copy and thumbnail)</span></div></body>';
     }
 }
 

@@ -9942,6 +9942,156 @@
           }
         }
       }
+    },
+    "material.type.unknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "نوع آخر"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other type"
+          }
+        }
+      }
+    },
+    "detail.placeholder.body.notOnPhone": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الأصل ليس على هذا الهاتف، ولم تجهز على الخادم نسخة للمشاهدة بعد."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The original isn’t on this phone, and the server hasn’t prepared a copy to watch yet."
+          }
+        }
+      }
+    },
+    "detail.placeholder.body.removedFromPhone": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "حُذفت نسخة الأصل من هذا الهاتف بعد الإيصال، ولم تجهز على الخادم نسخة للمشاهدة بعد."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The original’s copy was deleted from this phone after the receipt, and the server hasn’t prepared a copy to watch yet."
+          }
+        }
+      }
+    },
+    "detail.placeholder.body.notTheVerifiedOriginal": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "النسخة على هذا الهاتف ليست الأصل الذي تحقّق منه الخادم، ولم تجهز على الخادم نسخة للمشاهدة بعد."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The copy on this phone isn’t the original the server verified, and the server hasn’t prepared a copy to watch yet."
+          }
+        }
+      }
+    },
+    "settings.logout.pending.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تسجيل الخروج والرفع لم يكتمل؟"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign out while uploads are unfinished?"
+          }
+        }
+      }
+    },
+    "settings.logout.pending.message %lld": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "variations": {
+            "plural": {
+              "zero": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "لا ملفات تنتظر الرفع."
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "ملف واحد لم يكتمل رفعه بعد. سيُكمل في الخلفية، ويبقى مخفيًا مع إيصاله حتى تدخل بهذا الحساب من جديد."
+                }
+              },
+              "two": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "ملفان لم يكتمل رفعهما بعد. سيُكملان في الخلفية، ويبقيان مخفيين مع إيصاليهما حتى تدخل بهذا الحساب من جديد."
+                }
+              },
+              "few": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld ملفات لم يكتمل رفعها بعد. ستُكمل في الخلفية، وتبقى مخفية مع إيصالها حتى تدخل بهذا الحساب من جديد."
+                }
+              },
+              "many": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld ملفًا لم يكتمل رفعها بعد. ستُكمل في الخلفية، وتبقى مخفية مع إيصالها حتى تدخل بهذا الحساب من جديد."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld ملف لم يكتمل رفعها بعد. ستُكمل في الخلفية، وتبقى مخفية مع إيصالها حتى تدخل بهذا الحساب من جديد."
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld file hasn’t finished uploading. It will continue in the background and stay hidden, with its receipt, until this account signs in again."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld files haven’t finished uploading. They will continue in the background and stay hidden, with their receipts, until this account signs in again."
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

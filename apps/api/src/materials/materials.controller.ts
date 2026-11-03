@@ -1,12 +1,15 @@
-import { Body, Controller, Delete, Get, Header, Headers, HttpCode, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Headers, HttpCode, Inject, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { validateBody, validateQuery } from '../common/contract';
+import { ApiError } from '../common/errors';
+import { APP_CONFIG, type AppConfig } from '../config/config';
 import type { components } from '../generated/api';
 import { Roles } from '../identity/principal';
 import { DuplicatesService } from './duplicates.service';
 import { ExportService } from './export.service';
 import { FileDownloadService } from './file-download.service';
 import { type ListQuery, MaterialsService } from './materials.service';
+import { RendersService } from './renders.service';
 
 type Material = components['schemas']['Material'];
 
@@ -20,6 +23,8 @@ export class MaterialsController {
     private readonly downloads: FileDownloadService,
     private readonly exports: ExportService,
     private readonly duplicates: DuplicatesService,
+    private readonly renders: RendersService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   // حزمة التصدير بأدوار تنزيل الأصل (العقد v0.2)
@@ -48,6 +53,23 @@ export class MaterialsController {
   listDuplicates(@Param('id') id: string, @Query() query: Record<string, unknown>, @Req() req: Request): Promise<{ items: components['schemas']['DuplicateCandidate'][] }> {
     const q = validateQuery<{ limit?: number }>('/materials/{id}/duplicates', 'get', query);
     return this.duplicates.list(req.principal!, id, q.limit);
+  }
+
+  // نسخ قالب «مواد متداولة» (ADR 0091) خلف MEDIA_ENABLE_RENDERS: مطفأ = النقطتان 404
+  @Get(':id/renders')
+  @Roles('supervisor', 'producer', 'editor_in_chief')
+  async listRenders(@Param('id') id: string, @Query() query: Record<string, unknown>, @Req() req: Request): Promise<{ items: components['schemas']['MaterialRender'][] }> {
+    this.rendersEnabled();
+    const q = validateQuery<{ limit?: number }>('/materials/{id}/renders', 'get', query);
+    return { items: await this.renders.list(req.principal!, id, q.limit) };
+  }
+
+  @Post(':id/renders')
+  @HttpCode(202)
+  @Roles('supervisor', 'producer', 'editor_in_chief')
+  requestRender(@Param('id') id: string, @Body() body: unknown, @Req() req: Request): Promise<components['schemas']['MaterialRender']> {
+    this.rendersEnabled();
+    return this.renders.request(req.principal!, id, validateBody('/materials/{id}/renders', 'post', body));
   }
 
   @Get(':id/files/:fileId/download-url')
@@ -114,5 +136,9 @@ export class MaterialsController {
   @Roles('producer', 'supervisor', 'editor_in_chief', 'system_admin')
   async release(@Param('id') id: string, @Req() req: Request): Promise<void> {
     await this.materials.release(req.principal!, id);
+  }
+
+  private rendersEnabled(): void {
+    if (!this.config.MEDIA_ENABLE_RENDERS) throw ApiError.notFound();
   }
 }

@@ -2,6 +2,7 @@
 # يولّد .env المعاينة (ADR 0023) مرة على الخادم، بجانب docker-compose.preview.yml، وشهادة TLS الداخلية في tls/:
 #   PREVIEW_DOMAIN=<النطاق> ./gen-env.sh
 #   ./gen-env.sh --add-upload     # .env قائم من قبل الرفع: يضيف مفاتيح الرفع الناقصة وحدها ولا يمس الباقي
+#   ./gen-env.sh --add-media      # .env قائم من قبل عامل الوسائط (ADR 0092): يضيف كل مفتاح ناقص منها وحده ولا يمس الموجود
 # أسرار عشوائية بصلاحية 0600 لا تُطبع. يرفض الكتابة فوق .env قائم (الأسرار تُدار مرة، ولا تُستبدل بإعادة تشغيل).
 # الشهادة لاسم api.lib.internal وحده، من سلطة يُحذف مفتاحها بعد التوقيع، فلا تصدر شهادة ثانية منها.
 set -euo pipefail
@@ -17,6 +18,27 @@ upload_env() {
   echo "INGEST_GATE_TOKEN=$(hex 32)"
   sed -n '/^PREVIEW_TUSD_IP=/p;/^PREVIEW_GATE_IP=/p' preview.env.example
 }
+# مفاتيح عامل الوسائط (ADR 0092): رمزه نحو /internal/media، ومستخدمه في MinIO (ينشئه minio-init.sh)، وعنوانه الثابت.
+media_env() {
+  echo "MEDIA_WORKER_TOKEN=$(hex 32)"
+  echo "S3_MEDIA_ACCESS_KEY=preview-media-$(hex 6)"
+  echo "S3_MEDIA_SECRET_KEY=$(hex 24)"
+  sed -n '/^PREVIEW_MEDIA_IP=/p' preview.env.example
+}
+if [ "${1:-}" = --add-media ]; then
+  [ -f .env ] || { echo "no .env here: run without --add-media first" >&2; exit 1; }
+  added=0
+  while IFS= read -r line; do
+    grep -q "^${line%%=*}=." .env && continue
+    tmp="$(mktemp .env.XXXXXX)"
+    grep -v "^${line%%=*}=" .env > "$tmp" || true
+    printf '%s\n' "$line" >> "$tmp"
+    chmod 600 "$tmp" && mv -f "$tmp" .env
+    added=$((added + 1))
+  done < <(media_env)
+  echo "media worker keys: $added added to .env, the rest kept (no value printed)"
+  exit 0
+fi
 if [ "${1:-}" = --add-upload ]; then
   [ -f .env ] || { echo "no .env here: run without --add-upload first" >&2; exit 1; }
   if grep -q '^INGEST_TOKEN_SIGNING_KEY=.' .env; then echo "upload keys exist in .env: not changed"; exit 0; fi
@@ -45,6 +67,7 @@ TUSD_HOOK_SECRET=$(hex 32)
 WEB_SESSION_KEY=$(openssl rand -base64 32)
 ENV
   upload_env
+  media_env
 } > .env.tmp
 mv .env.tmp .env
 

@@ -64,8 +64,8 @@ export function roleCovers(p: Principal, role: RoleName, m: MaterialRow): boolea
  * تعديل المادة، وغيره لا يُلمَّح له بوجودهما.
  */
 // shot_list يحمل مقتطفات من التفريغ (الوكيل 5)، فحكمه حكمهما
-// حزمة التصدير برابطها الخاص، ومعاينة المشتري المائية برابط الكتالوج وحده (v0.3)
-const HIDDEN_FROM_FILES: readonly string[] = ['export', 'watermarked_preview'];
+// حزمة التصدير برابطها الخاص، ومعاينة المشتري المائية برابط الكتالوج وحده (v0.3)، ونسخة القالب من قائمة نسخها (ADR 0091)
+const HIDDEN_FROM_FILES: readonly string[] = ['export', 'watermarked_preview', 'circulated_render'];
 
 export const EDITOR_ONLY_KINDS: readonly string[] = ['transcript', 'captions', 'shot_list'];
 

@@ -12,6 +12,9 @@
   محاولة وبلا إبلاغ (لا شيء يُبلَّغ عنه).
 - عند الإقلاع تُحذف مجلدات مهام قديمة في `/scratch` تركها عامل قُتل أثناء مهمة.
 - السجل: معرّف الحدث ونوعه والنتيجة فقط؛ لا حمولة ولا مفاتيح تخزين ولا رسائل ffmpeg.
+- `serve --queue renders` (حاوية `media-render`، ADR 0091): الطابور `media:renders` بمجموعة `render`، وطبقة القالب من
+  الصورة نفسها؛ نقصها يمنع الإقلاع والعلم مفعّل. الموتى في `media:dead` نفسه بحقل `stream`، وتعيدهم `requeue-dead`
+  إلى طابورهم.
 """
 
 from __future__ import annotations
@@ -30,6 +33,7 @@ import redis
 
 from .api import ApiAuthError, ApiConflict, ApiGone, ApiRejected, InternalApi
 from .c2pa import Signing, signing_from_env
+from .circulated import OverlayRenderer
 from .jobs import Buckets, Jobs
 from .probe import InvalidMediaError
 from .proxy import ProxyTimingError
@@ -40,6 +44,10 @@ log = logging.getLogger("media_worker.service")
 STREAM = "media:events"
 DEAD = "media:dead"
 GROUP = "media"
+# نسخ القالب في طابورها وحاويتها: النسخة دقائق من المعالج فلا تؤخّر معاينات المواد الجديدة (ADR 0091 البند 5)
+RENDER_STREAM = "media:renders"
+RENDER_GROUP = "render"
+QUEUES = {"events": (STREAM, GROUP), "renders": (RENDER_STREAM, RENDER_GROUP)}
 # أخطاء لا تزول بإعادة المحاولة على الملف نفسه
 # (فشل ffmpeg قد يكون نفاد ذاكرة أو مهلة، فيُعاد حتى MEDIA_MAX_DELIVERIES ثم يُنقل إلى media:dead)
 PERMANENT = (ApiRejected, ApiConflict, InvalidMediaError, ProxyTimingError, ValueError, KeyError)
@@ -83,6 +91,8 @@ class Config:
     enable_store_preview: bool = False
     enable_delivery: bool = False
     enable_alignment: bool = False
+    # نسخ قالب «مواد متداولة» (ADR 0091): مطفأ افتراضيًا، ويجوز في المعاينة والتجربة الميدانية وحدهما
+    enable_renders: bool = False
     watermark_key: bytes = field(default=b"", repr=False)
     # توقيع C2PA (ADR 0060) خلف MEDIA_ENABLE_C2PA؛ الإعداد الناقص يرفض الإقلاع
     c2pa: Signing | None = None
@@ -107,6 +117,7 @@ class Config:
             enable_store_preview=e.get("MEDIA_ENABLE_STORE_PREVIEW", "false").lower() == "true",
             enable_delivery=e.get("MEDIA_ENABLE_DELIVERY", "false").lower() == "true",
             enable_alignment=e.get("MEDIA_ENABLE_ALIGNMENT", "false").lower() == "true",
+            enable_renders=e.get("MEDIA_ENABLE_RENDERS", "false").lower() == "true",
             watermark_key=e.get("MEDIA_WATERMARK_KEY", "").encode(),
             c2pa=signing_from_env(dict(e)),
         )
@@ -115,8 +126,10 @@ class Config:
 class Service:
     def __init__(self, r: redis.Redis, jobs: Jobs, consumer: str, block_ms: int = 5000,
                  claim_idle_ms: int = 15 * 60 * 1000, max_deliveries: int = 5, auth_backoff_max_s: float = 300.0,
-                 sleep=time.sleep, auth_isolate_after_s: float = 1800.0):
+                 sleep=time.sleep, auth_isolate_after_s: float = 1800.0, stream: str = STREAM, group: str = GROUP):
         self.r = r
+        self.stream = stream
+        self.group = group
         self.auth_backoff_max_s = auth_backoff_max_s
         self.auth_isolate_after_s = auth_isolate_after_s
         self.sleep = sleep
@@ -130,13 +143,13 @@ class Service:
     def ensure_group(self) -> None:
         try:
             # من بداية الدفق: ما نُشر قبل أول تشغيل للعامل يُعالج أيضًا
-            self.r.xgroup_create(STREAM, GROUP, id="0", mkstream=True)
+            self.r.xgroup_create(self.stream, self.group, id="0", mkstream=True)
         except redis.ResponseError as err:
             if "BUSYGROUP" not in str(err):
                 raise
 
     def _deliveries(self, entry_id: str) -> int:
-        pending = self.r.xpending_range(STREAM, GROUP, min=entry_id, max=entry_id, count=1)
+        pending = self.r.xpending_range(self.stream, self.group, min=entry_id, max=entry_id, count=1)
         return int(pending[0]["times_delivered"]) if pending else 1
 
     def _dead_letter(self, entry_id: str, fields: dict, event: object, reason: str, result: str | None) -> str:
@@ -147,9 +160,9 @@ class Service:
                 reported = self.jobs.report_failure(event, result)
             except Exception as err:  # الإبلاغ نفسه فشل: يُنقل الحدث على أي حال حتى لا يحجب الطابور، والسبب محفوظ
                 reported = f"report-failed:{type(err).__name__}"
-        self.r.xadd(DEAD, {"entry_id": entry_id, **fields, "reason": reason, "reported": reported},
+        self.r.xadd(DEAD, {"entry_id": entry_id, **fields, "stream": self.stream, "reason": reason, "reported": reported},
                     maxlen=10000, approximate=True)
-        self.r.xack(STREAM, GROUP, entry_id)
+        self.r.xack(self.stream, self.group, entry_id)
         log.error("event dead-lettered entry=%s reason=%s reported=%s", entry_id, reason, reported)
         return f"dead:{reason}"
 
@@ -188,7 +201,7 @@ class Service:
                 log.warning("internal API refused the worker token; retrying entry=%s in %.0fs", entry_id, delay)
                 self._wait(delay)
                 waited += delay
-                self.r.xclaim(STREAM, GROUP, self.consumer, min_idle_time=0, message_ids=[entry_id], justid=True)
+                self.r.xclaim(self.stream, self.group, self.consumer, min_idle_time=0, message_ids=[entry_id], justid=True)
                 delay = min(delay * 2, self.auth_backoff_max_s)
             except ApiGone:
                 return self._dead_letter(entry_id, fields, event, "gone", None)
@@ -198,26 +211,26 @@ class Service:
             except Exception as err:  # عطل مؤقت (تخزين، شبكة، 5xx، ffmpeg): يبقى معلّقًا ويُستعاد لاحقًا
                 log.warning("event deferred entry=%s error=%s", entry_id, type(err).__name__)
                 return f"deferred:{type(err).__name__}"
-        self.r.xack(STREAM, GROUP, entry_id)
+        self.r.xack(self.stream, self.group, entry_id)
         log.info("event done entry=%s type=%s outcome=%s", entry_id, event.get("type"), outcome)
         return outcome
 
     def next_entries(self) -> list[tuple[str, dict]]:
-        claimed = self.r.xautoclaim(STREAM, GROUP, self.consumer, min_idle_time=self.claim_idle_ms,
+        claimed = self.r.xautoclaim(self.stream, self.group, self.consumer, min_idle_time=self.claim_idle_ms,
                                     start_id="0-0", count=1)
         if claimed[1]:
             return claimed[1]
-        res = self.r.xreadgroup(GROUP, self.consumer, {STREAM: ">"}, count=1, block=self.block_ms)
+        res = self.r.xreadgroup(self.group, self.consumer, {self.stream: ">"}, count=1, block=self.block_ms)
         return res[0][1] if res else []
 
     def requeue_dead(self, reason: str) -> int:
         """يعيد أحداث `media:dead` ذات السبب المعطى إلى الطابور (بعد إصلاح التهيئة مثلًا) ويحذفها من الموتى."""
         moved = 0
         for dead_id, fields in self.r.xrange(DEAD):
-            if fields.get("reason") != reason:
+            if fields.get("reason") != reason or fields.get("stream", STREAM) != self.stream:
                 continue
             original = {k: v for k, v in fields.items() if k in ("event_id", "event")}
-            self.r.xadd(STREAM, original)
+            self.r.xadd(self.stream, original)
             self.r.xdel(DEAD, dead_id)
             moved += 1
         return moved
@@ -234,35 +247,45 @@ class Service:
             self.run_once()
 
 
-def requeue_main(reason: str) -> None:
-    """أداة تشغيل: `python -m media_worker requeue-dead <reason>`؛ تكفيها REDIS_URL."""
-    svc = Service(redis.Redis.from_url(os.environ["REDIS_URL"], decode_responses=True), None, "requeue")  # type: ignore[arg-type]
+def requeue_main(reason: str, queue: str = "events") -> None:
+    """أداة تشغيل: `python -m media_worker requeue-dead <reason> [--queue renders]`؛ تكفيها REDIS_URL."""
+    stream, group = QUEUES[queue]
+    svc = Service(redis.Redis.from_url(os.environ["REDIS_URL"], decode_responses=True), None, "requeue",  # type: ignore[arg-type]
+                  stream=stream, group=group)
     print(f"requeued {svc.requeue_dead(reason)} event(s) with reason={reason}")
 
 
-def main() -> None:
+def main(queue: str = "events") -> None:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
                         format='{"level":"%(levelname)s","msg":"%(message)s","logger":"%(name)s"}')
     cfg = Config.from_env()
     cfg.scratch.mkdir(parents=True, exist_ok=True)
     if removed := clean_scratch(cfg.scratch):
         log.warning("removed %d stale job directories from scratch", removed)
+    stream, group = QUEUES[queue]
+    renderer = None
+    if queue == "renders":
+        renderer = OverlayRenderer.from_env(dict(os.environ))
+        if cfg.enable_renders and (missing := renderer.missing()):
+            # يُغلق عند العطل: لا تنزيل متصفح ولا حزمة وقت التشغيل
+            raise SystemExit(f"render image incomplete: {', '.join(missing)}")
     storage = S3Storage(cfg.s3_endpoint, cfg.s3_region, cfg.s3_access_key, cfg.s3_secret_key, cfg.bucket_derived)
     jobs = Jobs(InternalApi(cfg.api_url, cfg.token), storage, Buckets(cfg.bucket_uploads, cfg.bucket_derived),
                 cfg.scratch, enable_hls=cfg.enable_hls, enable_phash=cfg.enable_phash,
                 enable_export=cfg.enable_export,
                 enable_store_preview=cfg.enable_store_preview, watermark_key=cfg.watermark_key, c2pa=cfg.c2pa,
-                enable_delivery=cfg.enable_delivery, enable_alignment=cfg.enable_alignment)
+                enable_delivery=cfg.enable_delivery, enable_alignment=cfg.enable_alignment,
+                enable_renders=cfg.enable_renders and queue == "renders", renderer=renderer)
     svc = Service(redis.Redis.from_url(cfg.redis_url, decode_responses=True), jobs, cfg.consumer, cfg.block_ms,
                   cfg.claim_idle_ms, cfg.max_deliveries, cfg.auth_backoff_max_s,
-                  auth_isolate_after_s=cfg.auth_isolate_after_s)
+                  auth_isolate_after_s=cfg.auth_isolate_after_s, stream=stream, group=group)
 
     def stop(*_):
         svc.stopped = True
 
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    log.info("media worker started")
+    log.info("media worker started queue=%s", stream)
     svc.run()
 
 

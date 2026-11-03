@@ -12,7 +12,7 @@ export type PanelTab = "all" | "mine" | "urgent";
 
 /**
  * تبويب التنبيه: «مهامي» لما أُسند إلى المستخدم (`assignment_state`)، و«العاجل» بالأولوية. الـBFF يحذف نوع الحدث وعنوانه من كل إشعار
- * (`safeNotification`)، فلا يُعرف منه ما يخص المتجر: تبويب «المتجر» في W10 مؤجّل (ADR 0089).
+ * (`safeNotification`)، فلا يُعرف منه ما يخص المتجر: تبويب «المتجر» في W10 مؤجّل (ADR 0090).
  */
 export function inTab(n: Notification, tab: PanelTab): boolean {
   return tab === "all" || (tab === "mine" ? !!n.assignment_state : n.priority === "urgent");

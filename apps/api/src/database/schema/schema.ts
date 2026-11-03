@@ -1,5 +1,5 @@
 import { bytea } from "../bytea"
-import { pgTable, uuid, text, timestamp, index, foreignKey, unique, check, integer, jsonb, bigint, uniqueIndex, time, boolean, type AnyPgColumn, real, smallint, primaryKey, numeric, pgSequence } from "drizzle-orm/pg-core"
+import { pgTable, uuid, text, timestamp, index, foreignKey, unique, check, integer, jsonb, bigint, uniqueIndex, time, boolean, type AnyPgColumn, smallint, real, primaryKey, numeric, pgSequence } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 
@@ -538,7 +538,7 @@ export const materialFiles = pgTable("material_files", {
 	licenseId: uuid("license_id"),
 }, (table) => [
 	uniqueIndex("material_files_delivery_license_key").using("btree", table.derivedFromId.asc().nullsLast().op("uuid_ops"), table.licenseId.asc().nullsLast().op("uuid_ops")).where(sql`(kind = 'delivery'::text)`),
-	uniqueIndex("material_files_derived_kind_key").using("btree", table.derivedFromId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops")).where(sql`((derived_from_id IS NOT NULL) AND (kind <> 'delivery'::text))`),
+	uniqueIndex("material_files_derived_kind_key").using("btree", table.derivedFromId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("uuid_ops")).where(sql`((derived_from_id IS NOT NULL) AND (kind <> ALL (ARRAY['delivery'::text, 'circulated_render'::text])))`),
 	index("material_files_material_kind_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("text_ops")),
 	index("material_files_recent_receipts_idx").using("btree", table.verifiedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`((receipt_number IS NOT NULL) AND (verified_at IS NOT NULL))`),
 	uniqueIndex("material_files_receipt_number_key").using("btree", table.receiptNumber.asc().nullsLast().op("text_ops")).where(sql`(receipt_number IS NOT NULL)`),
@@ -563,7 +563,8 @@ export const materialFiles = pgTable("material_files", {
 	check("material_files_delivery_license_check", sql`(kind = 'delivery'::text) = (license_id IS NOT NULL)`),
 	check("material_files_dims_positive", sql`((width IS NULL) OR (width > 0)) AND ((height IS NULL) OR (height > 0))`),
 	check("material_files_head_sha256_len", sql`(head_sha256 IS NULL) OR (octet_length(head_sha256) = 32)`),
-	check("material_files_kind_check", sql`kind = ANY (ARRAY['original'::text, 'proxy'::text, 'hls'::text, 'audio'::text, 'thumbnail'::text, 'voice_note'::text, 'export'::text, 'transcript'::text, 'captions'::text, 'watermarked_preview'::text, 'shot_list'::text, 'delivery'::text, 'produced'::text])`),
+	check("material_files_kind_check", sql`kind = ANY (ARRAY['original'::text, 'proxy'::text, 'hls'::text, 'audio'::text, 'thumbnail'::text, 'voice_note'::text, 'export'::text, 'transcript'::text, 'captions'::text, 'watermarked_preview'::text, 'shot_list'::text, 'delivery'::text, 'produced'::text, 'circulated_render'::text])`),
+	check("material_files_circulated_render_derived_check", sql`(kind <> 'circulated_render'::text) OR (derived_from_id IS NOT NULL)`),
 	check("material_files_perceptual_hash_size", sql`(perceptual_hash IS NULL) OR (((cardinality(perceptual_hash) >= 1) AND (cardinality(perceptual_hash) <= 32)) AND (array_position(perceptual_hash, NULL::bigint) IS NULL))`),
 	check("material_files_perceptual_hash_video_only", sql`(perceptual_hash IS NULL) OR (kind = 'original'::text)`),
 	check("material_files_proxy_mode_check", sql`(proxy_mode IS NULL) OR (proxy_mode = ANY (ARRAY['urgent'::text, 'normal'::text]))`),
@@ -577,6 +578,60 @@ export const materialFiles = pgTable("material_files", {
 	check("material_files_technical_whitelisted", sql`(technical IS NULL) OR material_file_technical_is_whitelisted(technical)`),
 	check("material_files_verified_consistent", sql`(state = 'verified'::text) = (verified_at IS NOT NULL)`),
 	check("material_files_verified_has_sha", sql`(state <> 'verified'::text) OR (sha256 IS NOT NULL)`),
+]);
+
+export const materialRenders = pgTable("material_renders", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	materialId: uuid("material_id").notNull(),
+	materialVersion: integer("material_version").notNull(),
+	sourceFileId: uuid("source_file_id").notNull(),
+	template: text().notNull(),
+	aspect: text().notNull(),
+	titleLines: text("title_lines").array().notNull(),
+	locationText: text("location_text"),
+	label: text().notNull(),
+	state: text().default('requested').notNull(),
+	fileId: uuid("file_id"),
+	failureReason: text("failure_reason"),
+	requestedBy: uuid("requested_by").notNull(),
+	requestedAt: timestamp("requested_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }),
+	completedAt: timestamp("completed_at", { withTimezone: true, mode: 'string' }),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("material_renders_material_idx").using("btree", table.materialId.asc().nullsLast().op("timestamptz_ops"), table.requestedAt.desc().nullsFirst().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.materialId],
+			foreignColumns: [materials.id],
+			name: "material_renders_material_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.sourceFileId],
+			foreignColumns: [materialFiles.id],
+			name: "material_renders_source_file_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.fileId],
+			foreignColumns: [materialFiles.id],
+			name: "material_renders_file_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.requestedBy],
+			foreignColumns: [users.id],
+			name: "material_renders_requested_by_fkey"
+		}),
+	unique("material_renders_file_id_key").on(table.fileId),
+	check("material_renders_material_version_check", sql`material_version >= 1`),
+	check("material_renders_template_check", sql`template = 'circulated'::text`),
+	check("material_renders_aspect_check", sql`aspect = ANY (ARRAY['vertical'::text, 'horizontal'::text, 'square'::text])`),
+	check("material_renders_label_check", sql`label = ANY (ARRAY['circulated_footage'::text, 'none'::text])`),
+	check("material_renders_title_lines_valid", sql`CHECK (render_title_lines_valid(title_lines`),
+	check("material_renders_location_text_valid", sql`(location_text IS NULL) OR render_text_valid(location_text, 44)`),
+	check("material_renders_started_at_check", sql`((state = 'requested'::text) AND (started_at IS NULL)) OR ((state = ANY (ARRAY['rendering'::text, 'ready'::text])) AND (started_at IS NOT NULL)) OR (state = 'failed'::text)`),
+	check("material_renders_state_check", sql`state = ANY (ARRAY['requested'::text, 'rendering'::text, 'ready'::text, 'failed'::text])`),
+	check("material_renders_ready_has_file", sql`(state = 'ready'::text) = (file_id IS NOT NULL)`),
+	check("material_renders_failure_reason_check", sql`((state = 'failed'::text) = (failure_reason IS NOT NULL)) AND ((failure_reason IS NULL) OR (failure_reason = ANY (ARRAY['source_unavailable'::text, 'title_overflow'::text, 'render_failed'::text])))`),
+	check("material_renders_completed_at_check", sql`(state = ANY (ARRAY['requested'::text, 'rendering'::text])) = (completed_at IS NULL)`),
 ]);
 
 export const materialExports = pgTable("material_exports", {
@@ -693,7 +748,7 @@ export const outboxEvents = pgTable("outbox_events", {
 	check("outbox_events_idempotency_key_len", sql`(char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 200)`),
 	check("outbox_events_payload_is_object", sql`jsonb_typeof(payload) = 'object'::text`),
 	check("outbox_events_payload_whitelisted", sql`CHECK (outbox_payload_is_whitelisted(type, payload`),
-	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text, 'license.revoked'::text, 'payout.status_changed'::text])`),
+	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text, 'license.revoked'::text, 'payout.status_changed'::text, 'render.requested'::text, 'render.started'::text, 'render.completed'::text, 'render.failed'::text])`),
 ]);
 
 export const recoveryCodes = pgTable("recovery_codes", {

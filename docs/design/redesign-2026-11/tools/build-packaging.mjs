@@ -49,7 +49,7 @@ async function capture(lang, scene) {
   await page.addStyleTag({ content: '.review{display:none!important}.phone{margin:0!important;border:0!important;border-radius:0!important;box-shadow:none!important;max-width:none!important}body{padding:0!important}.sim{display:none!important}' });
   const fill = async () => {
     await page.click('[data-go="send"]');
-    await page.fill('#title', lang === 'ar' ? 'توزيع مساعدات غذائية في مخيم النصيرات' : 'Food aid distribution in Nuseirat camp');
+    await page.fill('#title', lang === 'ar' ? 'عنوان تجريبي لمادة ميدانية ١' : 'Sample field material title 1');
     await page.click('[data-type="breaking"]');
     for (const t of lang === 'ar' ? ['مساعدات', 'النصيرات', 'شتاء'] : ['Aid', 'Nuseirat', 'Winter']) { await page.fill('#tagIn', t); await page.press('#tagIn', 'Enter'); }
     await page.click('[data-sens="no"]');

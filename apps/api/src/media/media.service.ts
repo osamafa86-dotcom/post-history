@@ -3,7 +3,8 @@ import { and, desc, eq, ne, sql, type SQL } from 'drizzle-orm';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { ApiError } from '../common/errors';
 import { DB, type Database, type Tx } from '../database/database.module';
-import { materialExports, materialFiles, uploadSessions } from '../database/schema/schema';
+import { materialExports, materialFiles, materialRenders, uploadSessions } from '../database/schema/schema';
+import { writeOutboxEvent } from '../outbox/outbox';
 import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
 import { recordVerification, type UploadSessionRow, type VerificationOutcome } from '../verification/verification';
 import type { components } from '../generated/api';
@@ -15,6 +16,8 @@ export type MediaVerificationResult = components['schemas']['MediaVerificationRe
 export type MediaVerificationBody = components['schemas']['MediaVerification'];
 export type MediaDerivativeBody = components['schemas']['MediaDerivative'];
 export type MediaAlignmentBody = components['schemas']['MediaAlignment'];
+export type MediaRenderJob = components['schemas']['MediaRenderJob'];
+export type MediaRenderFailureBody = components['schemas']['MediaRenderFailure'];
 type MediaTechnical = components['schemas']['MediaTechnical'];
 
 /** ما يُخزَّن في material_files.technical؛ يطابق material_file_technical_keys() في القاعدة. الباقي (المدة، بداية
@@ -53,6 +56,12 @@ const conflict = (msg: string) => new ApiError(409, 'upload_state_conflict', msg
 // الرمز صحيح (فحصه قبل هذه الطبقة، وفشله 404 لإخفاء النقطة) لكن الجلسة أو الملف المصدر غير موجود: حدث متقادم ينقله
 // العامل إلى media:dead بدل إعادة المحاولة (عقد v0.1)
 const gone = () => new ApiError(410, 'media_resource_gone', 'The upload session or source file does not exist.');
+const renderGone = () => new ApiError(410, 'media_resource_gone', 'The render does not exist.');
+const renderConflict = (state: string) => new ApiError(409, 'upload_state_conflict', `The render is ${state}.`);
+
+// فرادة (المصدر، النوع) لكل مشتق عدا حزمة التسليم (لكل ترخيص) ونسخة القالب (لكل طلب، material_renders.file_id)؛
+// الشرط حرفيًا شرط الفهرس الجزئي (ترحيل 038) فيستدلّه Postgres
+const DERIVED_KIND_UNIQUE = sql`derived_from_id IS NOT NULL AND kind NOT IN ('delivery', 'circulated_render')`;
 
 /**
  * جانب الخادم من واجهة عامل الوسائط (ADR 0006). الخادم يبقى الكاتب الوحيد: العامل يبلّغ ما حسبه، والخادم يتحقق
@@ -186,6 +195,7 @@ export class MediaService {
 
       const sha256 = Buffer.from(body.sha256, 'hex');
       const { columns, json } = splitTechnical(body.technical);
+      if (body.kind === 'circulated_render') return this.registerRender(tx, source, body, sha256, columns, json);
       const [created] = await tx
         .insert(materialFiles)
         .values({
@@ -203,8 +213,7 @@ export class MediaService {
           ...columns,
           technical: json,
         })
-        // الشرط يستلزم شرط الفهرس الجزئي القائم والذي يستثني delivery (ترحيل 026)، فيستدلّه Postgres في الحالين
-        .onConflictDoNothing({ target: [materialFiles.derivedFromId, materialFiles.kind], where: sql`derived_from_id IS NOT NULL AND kind <> 'delivery'` })
+        .onConflictDoNothing({ target: [materialFiles.derivedFromId, materialFiles.kind], where: DERIVED_KIND_UNIQUE })
         .returning({ id: materialFiles.id });
       if (created) {
         // حزمة التصدير (v0.2) تجعل طلبها جاهزًا
@@ -223,6 +232,115 @@ export class MediaService {
         .where(and(eq(materialFiles.derivedFromId, source.id), eq(materialFiles.kind, body.kind)));
       if (existing && existing.storageKey === body.storage_key && existing.sha256?.equals(sha256)) return { file_id: existing.id };
       throw conflict('A different derivative of this kind already exists for this file.');
+    });
+  }
+
+  /**
+   * نسخة قالب «مواد متداولة» (ADR 0091): لكل نسخة ملفها. صف النسخة مقفول حتى نهاية المعاملة فلا يسجّل تسليمان ملفين لها،
+   * والتكرار بالملف نفسه يعيده. التسجيل يجعل النسخة ready ويكتب render.completed في المعاملة نفسها.
+   */
+  private async registerRender(
+    tx: Tx,
+    source: typeof materialFiles.$inferSelect,
+    body: MediaDerivativeBody,
+    sha256: Buffer,
+    columns: ReturnType<typeof splitTechnical>['columns'],
+    json: Record<string, unknown>,
+  ): Promise<{ file_id: string }> {
+    const [render] = await tx.select().from(materialRenders).where(eq(materialRenders.id, body.render_id!)).for('update');
+    if (!render) throw renderGone();
+    if (render.sourceFileId !== source.id) throw ApiError.validation({ fields: ['/render_id'] });
+    if (render.fileId) {
+      const [existing] = await tx.select().from(materialFiles).where(eq(materialFiles.id, render.fileId));
+      if (existing && existing.storageKey === body.storage_key && existing.sha256?.equals(sha256)) return { file_id: existing.id };
+      throw conflict('A different file is already registered for this render.');
+    }
+    // العامل يلتقط النسخة قبل أي عمل (start)، والفاشلة نهائية
+    if (render.state !== 'rendering') throw renderConflict(render.state);
+    const [created] = await tx
+      .insert(materialFiles)
+      .values({
+        materialId: source.materialId,
+        kind: 'circulated_render',
+        state: 'verified',
+        derivedFromId: source.id,
+        storageKey: body.storage_key,
+        sizeBytes: body.size_bytes,
+        sha256,
+        mimeType: body.mime_type!,
+        verifiedAt: sql`now()` as never,
+        ...columns,
+        technical: json,
+      })
+      .returning({ id: materialFiles.id });
+    const fileId = created!.id;
+    await tx.update(materialRenders).set({ state: 'ready', fileId, completedAt: sql`now()` }).where(eq(materialRenders.id, render.id));
+    await writeOutboxEvent(tx, {
+      type: 'render.completed',
+      aggregateType: 'material',
+      aggregateId: render.materialId,
+      idempotencyKey: `render.completed:${render.id}`,
+      payload: { material_id: render.materialId, render_id: render.id, file_id: fileId },
+    });
+    return { file_id: fileId };
+  }
+
+  /** معاملات النسخة كما يمررها العامل إلى القالب؛ النصوص تعبر الشبكة الداخلية وحدها ولا تُسجَّل. */
+  async render(renderId: string): Promise<MediaRenderJob> {
+    if (!UUID.test(renderId)) throw renderGone();
+    const [r] = await this.db.select().from(materialRenders).where(eq(materialRenders.id, renderId));
+    if (!r) throw renderGone();
+    return {
+      render_id: r.id,
+      material_id: r.materialId,
+      source_file_id: r.sourceFileId,
+      state: r.state as MediaRenderJob['state'],
+      template: r.template as MediaRenderJob['template'],
+      aspect: r.aspect as MediaRenderJob['aspect'],
+      title_lines: r.titleLines,
+      location_text: r.locationText,
+      label: r.label as MediaRenderJob['label'],
+    };
+  }
+
+  /** الالتقاط: requested ← rendering بـ started_at وحدث render.started. الملتقطة تُعاد بلا حدث (إعادة تسليم). */
+  async startRender(renderId: string): Promise<void> {
+    if (!UUID.test(renderId)) throw renderGone();
+    await this.db.transaction(async (tx) => {
+      const [r] = await tx.select().from(materialRenders).where(eq(materialRenders.id, renderId)).for('update');
+      if (!r) throw renderGone();
+      if (r.state === 'rendering') return;
+      if (r.state !== 'requested') throw renderConflict(r.state);
+      await tx.update(materialRenders).set({ state: 'rendering', startedAt: sql`now()` }).where(eq(materialRenders.id, r.id));
+      await writeOutboxEvent(tx, {
+        type: 'render.started',
+        aggregateType: 'material',
+        aggregateId: r.materialId,
+        idempotencyKey: `render.started:${r.id}`,
+        payload: { material_id: r.materialId, render_id: r.id },
+      });
+    });
+  }
+
+  /** الفشل بسبب مرمّز، من requested أو rendering؛ الفاشلة تُعاد بسببها الأول بلا حدث، والجاهزة 409. */
+  async failRender(renderId: string, body: MediaRenderFailureBody): Promise<void> {
+    if (!UUID.test(renderId)) throw renderGone();
+    await this.db.transaction(async (tx) => {
+      const [r] = await tx.select().from(materialRenders).where(eq(materialRenders.id, renderId)).for('update');
+      if (!r) throw renderGone();
+      if (r.state === 'failed') return;
+      if (r.state === 'ready') throw renderConflict(r.state);
+      await tx
+        .update(materialRenders)
+        .set({ state: 'failed', failureReason: body.reason, completedAt: sql`now()` })
+        .where(eq(materialRenders.id, r.id));
+      await writeOutboxEvent(tx, {
+        type: 'render.failed',
+        aggregateType: 'material',
+        aggregateId: r.materialId,
+        idempotencyKey: `render.failed:${r.id}`,
+        payload: { material_id: r.materialId, render_id: r.id, failure_reason: body.reason },
+      });
     });
   }
 

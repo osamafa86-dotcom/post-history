@@ -54,7 +54,7 @@ struct HomeView: View {
             SendScreen(draft: draft, onSent: showUploads).onAppear { sendCoverShown = true }
         }
         .sheet(item: Binding<ReceiptTarget?>(get: { sending || editingDraft != nil || sendCoverShown ? nil : queue.presentedReceipt },
-                                             set: { queue.presentedReceipt = $0 })) { target in
+                                             set: { if let target = $0 { queue.presentedReceipt = target } else { queue.receiptDismissed() } })) { target in
             ReceiptScreen(target: target, onSendAnother: sendAfterSheet, onMyMaterials: { path = [.materials] })
         }
         .confirmationDialog("draft.delete.confirm.title", isPresented: Binding(get: { draftToDelete != nil }, set: { if !$0 { draftToDelete = nil } }),

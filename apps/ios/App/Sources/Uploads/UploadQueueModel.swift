@@ -10,7 +10,12 @@ import UploadCore
 /// طابور الرفع كما تراه الواجهة؛ يراقب أحداث النواة ويطبّق قرار الحذف المحلي.
 @MainActor
 final class UploadQueueModel: ObservableObject {
+    /// من الداخل الآن (ADR 0093): يحدد ما يُعرض من السجلات والإرسالات والإيصالات، وباسم من تطلب النواة.
+    @Published private(set) var scope = AccountScope()
+    /// ما يُعرض: سجلات الحساب الداخل وحده. سجلات غيره تُرفع في الخلفية ولا يظهر عنها شيء (لا عنوان ولا مصغّرة ولا عدد).
     @Published private(set) var records: [UploadRecord] = []
+    /// كل سجلات الطابور لكل الحسابات، لقرارات الطابور وحدها (الإيصال، والنسخ نصف المكتوبة)؛ لا تصل الشاشات.
+    private var allRecords: [UploadRecord] = []
     @Published private(set) var localCopies: Set<UUID> = []
     /// أصول تنتظر نسخة خفيفة في الطابور، ومواد تُحضَّر نسختها الآن (ADR 0075).
     @Published private(set) var waitingForProxy: Set<UUID> = []
@@ -22,10 +27,12 @@ final class UploadQueueModel: ObservableObject {
     @Published private(set) var etaSeconds: [UUID: TimeInterval] = [:]
     /// مسودات «مادة جديدة» المحفوظة على الجهاز (تظهر أعلى شاشة الرفع).
     @Published private(set) var drafts: [MaterialDraft] = []
-    /// إيصال وصل للتو: يُعرض شاشة الإيصال تلقائيًا، مرة للإرسالة كلها حين يصل آخر ملفاتها (06، ADR 0088).
+    /// إيصال وصل للتو: يُعرض شاشة الإيصال تلقائيًا، مرة للإرسالة كلها حين يصل آخر ملفاتها (06، ADR 0088). للحساب الداخل
+    /// وحده: إيصال غيره ينتظر صاحبه (`ReceiptInbox`، ADR 0093).
     @Published var presentedReceipt: ReceiptTarget?
-    /// الإرسالات الأخيرة، الأحدث أولًا: تجمع ملفات الإرسالة الواحدة في دوائر واحدة وإيصال واحد. مرآة `ledger.batches`.
+    /// الإرسالات الأخيرة للحساب الداخل، الأحدث أولًا: تجمع ملفات الإرسالة الواحدة في دوائر واحدة وإيصال واحد. من `ledger.batches`.
     @Published private(set) var batches: [SendBatch] = []
+    private var inbox = ReceiptInbox<ReceiptTarget>()
     let engine: UploadEngine
     let settings: AppSettings
     let draftStore: FileDraftStore?
@@ -44,7 +51,6 @@ final class UploadQueueModel: ObservableObject {
         draftStore = try? FileDraftStore(directory: UploadServices.shared.draftsDirectory)
         ledger = SendBatchLedger(store: SendBatchStore(fileURL: UploadServices.shared.batchesFile))
         drafts = draftStore?.loadAllIfReadable() ?? []
-        batches = ledger.batches
         // نسخ الاختيار المؤقتة التي خلّفها إنهاء التطبيق قبل نقلها إلى مجلد الرفع.
         PickedTempFiles.sweep(in: FileManager.default.temporaryDirectory)
     }
@@ -95,21 +101,45 @@ final class UploadQueueModel: ObservableObject {
     }
 
     func refresh() async {
-        records = await engine.allRecords()
+        allRecords = await engine.allRecords()
         waitingForProxy = await engine.waitingForProxy()
-        localCopies = Set(records.filter { UploadServices.shared.localCopyExists(relativePath: $0.sourcePath) }.map(\.id))
+        publishVisible()
     }
+
+    /// ما تراه الشاشات من سجلات الطابور وإرسالاته: للحساب الداخل وحده (`AccountScope`).
+    private func publishVisible() {
+        records = scope.visible(allRecords)
+        localCopies = Set(records.filter { UploadServices.shared.localCopyExists(relativePath: $0.sourcePath) }.map(\.id))
+        batches = scope.visible(ledger.batches)
+    }
+
+    /// الدخول والخروج وبدء التشغيل (ADR 0093): النواة تطلب باسم الداخل وحده، والشاشات ترى سجلاته وحده. الإيصال المعروض لغيره
+    /// يعود إلى انتظار صاحبه، وما ينتظر الداخل يُعرض الآن.
+    func setScope(_ new: AccountScope) async {
+        if let shown = presentedReceipt, !new.owns(shown.owner) {
+            inbox.hold(shown, owner: shown.owner)
+            presentedReceipt = nil
+        }
+        scope = new
+        await engine.setAccountScope(new)
+        await refresh()
+        if presentedReceipt == nil { showWaitingReceipt() }
+    }
+
+    /// أصول الحساب الداخل التي لم تنتهِ: تُكمل في الخلفية بعد الخروج، فيسأل الخروج أولًا إن وُجد منها شيء.
+    var pendingUploadsAtLogout: Int { scope.pendingOriginals(allRecords) }
 
     /// عودة المشهد نشطًا (الهاتف مفتوح): يُعاد ما تعذّرت قراءته في إطلاق خلفي والهاتف مقفل؛ قراءة فاشلة لا تمحو شيئًا.
     func reloadFromDisk() {
-        batches = ledger.refresh()
+        ledger.refresh()
+        batches = scope.visible(ledger.batches)
         reloadDrafts()
     }
 
     private func receiptArrived(_ id: UUID) async {
         guard let rec = await engine.record(id) else { return }
         if rec.kind == .original {
-            records = await engine.allRecords()
+            await refresh()
             presentReceiptIfDue(for: rec)
         }
         // النسخة الخفيفة مشتقة يصنعها التطبيق: تُحذف دائمًا بعد إيصالها. الأصل قرار المراسل، وبعد التحقق وحده (`LocalCopyPolicy`).
@@ -124,19 +154,56 @@ final class UploadQueueModel: ObservableObject {
         present(ledger.receiptDue(forMaterial: rec.materialId) { items(of: $0) }, record: rec)
     }
 
-    private func present(_ scope: SendBatchLedger.ReceiptScope?, record rec: UploadRecord?) {
-        switch scope {
+    /// إيصال استحق: يُعرض للحساب الداخل إن كان صاحبه، وإلا ينتظر صاحبه (ADR 0093).
+    private func present(_ due: SendBatchLedger.ReceiptScope?, record rec: UploadRecord?) {
+        if let target = receiptTarget(due, record: rec), let now = inbox.arrive(target, owner: target.owner, scope: scope) { show(now) }
+        batches = scope.visible(ledger.batches)
+    }
+
+    private func receiptTarget(_ due: SendBatchLedger.ReceiptScope?, record rec: UploadRecord?) -> ReceiptTarget? {
+        switch due {
         case .material(let materialId)?:
-            presentedReceipt = ReceiptTarget(materialId: materialId, recordId: rec?.id)
+            return ReceiptTarget(materialId: materialId, recordId: rec?.id, owner: rec?.ownerAccount)
         case .batch(let batchId)?:
-            // يُعلَّم في الذاكرة قبل العرض: لا يتكرر ولو تعذّر الحفظ.
-            ledger.markReceiptShown(batchId)
-            guard let materialId = rec?.materialId ?? ledger.batches.first(where: { $0.id == batchId })?.materialIds.last else { break }
-            presentedReceipt = ReceiptTarget(materialId: materialId, recordId: rec?.id, batchId: batchId)
+            let batch = ledger.batches.first { $0.id == batchId }
+            guard let materialId = rec?.materialId ?? batch?.materialIds.last else { return nil }
+            return ReceiptTarget(materialId: materialId, recordId: rec?.id, batchId: batchId, owner: batch?.owner ?? rec?.ownerAccount)
         case nil:
-            break
+            return nil
         }
-        batches = ledger.batches
+    }
+
+    /// يعرض إيصالًا للحساب الداخل. إيصال الإرسالة يُعلَّم في الذاكرة قبل العرض: لا يتكرر ولو تعذّر الحفظ.
+    private func show(_ target: ReceiptTarget) {
+        if let batchId = target.batchId { ledger.markReceiptShown(batchId) }
+        presentedReceipt = target
+    }
+
+    /// بعد الدخول، أو بعد إغلاق إيصال: أقدم ما ينتظر الحساب الداخل، ثم إيصال إرسالة له استحق وهو خارج (من سجلها).
+    private func showWaitingReceipt() {
+        if let next = inbox.next(for: scope) { return show(next) }
+        guard let owner = scope.current, let batchId = ledger.receiptsDue(forOwner: owner, items: { items(of: $0) }).first else { return }
+        present(.batch(batchId), record: nil)
+    }
+
+    /// الإيصال المعروض أُغلق: يتبعه ما ينتظر الحساب الداخل، بعد أن تكتمل حركة الإغلاق.
+    func receiptDismissed() {
+        presentedReceipt = nil
+        Task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            if presentedReceipt == nil { showWaitingReceipt() }
+        }
+    }
+
+    /// الإيصال يدويًا من تفاصيل مادة («عرض الإيصال»): للحساب الداخل.
+    func showReceipt(materialId: UUID, recordId: UUID?) {
+        presentedReceipt = ReceiptTarget(materialId: materialId, recordId: recordId, owner: scope.current)
+    }
+
+    /// المسح الطارئ والإبطال: لا إيصال ينتظر أحدًا.
+    func forgetWaitingReceipts() {
+        inbox.removeAll()
+        presentedReceipt = nil
     }
 
     // MARK: الإرسالات وما تعرضه الشاشات
@@ -145,12 +212,11 @@ final class UploadQueueModel: ObservableObject {
     /// الطابور، وتُغلق بعد الحلقة. فإن وصلت ملفاتها كلها أثناء الحلقة يُعرض إيصالها الواحد عند الإغلاق.
     func submit(_ draft: MaterialDraft, dynamicFields: [String: JSONValue], lightCopy: ProxyChoice,
                 create: (String, MaterialCreate) async throws -> UUID) async -> BatchedSubmission.Outcome {
-        let result = await BatchedSubmission.run(draft, dynamicFields: dynamicFields, ledger: ledger, create: create) { file, materialId, body in
-            batches = ledger.batches
+        let result = await BatchedSubmission.run(draft, dynamicFields: dynamicFields, ledger: ledger, owner: scope.current, create: create) { file, materialId, body in
+            batches = scope.visible(ledger.batches)
             try await enqueue(relativePath: file.relativePath, materialId: materialId, filename: file.filename, mimeType: file.mimeType,
                               lightCopy: file.isVideo ? lightCopy : .originalOnly, title: body.title, priority: body.priority)
         }
-        batches = ledger.batches
         await refresh()
         present(ledger.receiptDue(forBatch: result.batchId) { items(of: $0) }, record: nil)
         return result
@@ -164,8 +230,11 @@ final class UploadQueueModel: ObservableObject {
 
     var originals: [UploadRecord] { records.filter { $0.kind == .original } }
 
-    /// أصول الإرسالة كما تحسبها شاشة الرفع (لقرار الإيصال).
-    private func items(of batch: SendBatch) -> [UploadItem] { originals(of: batch).map { item($0) } }
+    /// أصول الإرسالة كما تحسبها شاشة الرفع (لقرار الإيصال)، من كل الطابور: إرسالة حساب خارج تُحسب كما هي لا فارغة.
+    private func items(of batch: SendBatch) -> [UploadItem] {
+        let ids = Set(batch.materialIds)
+        return allRecords.filter { $0.kind == .original && ids.contains($0.materialId) }.map { item($0) }
+    }
 
     func originals(of batch: SendBatch) -> [UploadRecord] {
         let ids = Set(batch.materialIds)
@@ -199,7 +268,7 @@ final class UploadQueueModel: ObservableObject {
         case .failed: state = .failed
         case .cancelled: state = .cancelled
         }
-        let previewArrived = records.contains { $0.kind == .proxy && $0.materialId == rec.materialId && $0.phase.isVerified }
+        let previewArrived = allRecords.contains { $0.kind == .proxy && $0.materialId == rec.materialId && $0.phase.isVerified }
         return UploadItem(id: rec.id, materialId: rec.materialId, sizeBytes: rec.sizeBytes, confirmedOffset: rec.confirmedOffset,
                           state: state, paused: rec.isPaused == true, previewArrived: previewArrived)
     }
@@ -207,7 +276,8 @@ final class UploadQueueModel: ObservableObject {
     /// «اختيار الملف» لرفع فشل لأن نسخته المحلية لم تعد موجودة (05c): ملف جديد أصلًا للمادة نفسها، ثم يُزال السجل الفاشل.
     func repick(_ rec: UploadRecord, relativePath: String, filename: String, mimeType: String?) async throws {
         try await enqueue(relativePath: relativePath, materialId: rec.materialId, filename: filename, mimeType: mimeType,
-                          lightCopy: .originalOnly, title: rec.materialTitle, priority: rec.materialPriority.flatMap(Priority.init(rawValue:)))
+                          lightCopy: .originalOnly, title: rec.materialTitle, priority: rec.materialPriority.flatMap(Priority.init(rawValue:)),
+                          owner: rec.ownerAccount ?? scope.current)
         try? await engine.remove(rec.id)
         await refresh()
     }
@@ -257,19 +327,21 @@ final class UploadQueueModel: ObservableObject {
         if let all = draftStore?.loadAllIfReadable() { drafts = all }
     }
 
-    /// الأصل يدخل الطابور فورًا (يُبصم ولا يضيع إن أُنهي التطبيق)، ونسخته الخفيفة تُحضَّر ثم تُرفع قبله.
+    /// الأصل يدخل الطابور فورًا (يُبصم ولا يضيع إن أُنهي التطبيق)، ونسخته الخفيفة تُحضَّر ثم تُرفع قبله. صاحبه الحساب الداخل
+    /// (ADR 0093) ما لم يُذكر غيره.
     func enqueue(relativePath: String, materialId: UUID, filename: String, mimeType: String?, lightCopy: ProxyChoice = .originalOnly,
-                 title: String? = nil, priority: Priority? = nil) async throws {
+                 title: String? = nil, priority: Priority? = nil, owner: UUID? = nil) async throws {
+        let owner = owner ?? scope.current
         try await engine.enqueue(sourcePath: relativePath, materialId: materialId, kind: .original, filename: filename, mimeType: mimeType,
-                                 awaitsProxy: lightCopy.preset != nil, materialTitle: title, materialPriority: priority?.rawValue)
+                                 awaitsProxy: lightCopy.preset != nil, materialTitle: title, materialPriority: priority?.rawValue, ownerAccount: owner)
         if let preset = lightCopy.preset, let mode = lightCopy.uploadMode {
-            prepareLightCopy(relativePath: relativePath, materialId: materialId, preset: preset, mode: mode, title: title, priority: priority)
+            prepareLightCopy(relativePath: relativePath, materialId: materialId, preset: preset, mode: mode, title: title, priority: priority, owner: owner)
         }
         await refresh()
     }
 
     private func prepareLightCopy(relativePath: String, materialId: UUID, preset: ProxyPreset, mode: UploadSessionCreate.ProxyMode,
-                                  title: String?, priority: Priority?) {
+                                  title: String?, priority: Priority?, owner: UUID?) {
         let services = UploadServices.shared
         let source = services.documentsDirectory.appendingPathComponent(relativePath)
         let name = LightCopyFiles.newName()
@@ -285,7 +357,8 @@ final class UploadQueueModel: ObservableObject {
                 _ = try await transcoder.makeProxy(source: source, preset: preset, output: output)
                 try Task.checkCancellation()
                 try await engine.enqueue(sourcePath: "Uploads/\(name)", materialId: materialId, kind: .proxy, filename: "light-copy.mov",
-                                         mimeType: "video/quicktime", proxyMode: mode, materialTitle: title, materialPriority: priority?.rawValue)
+                                         mimeType: "video/quicktime", proxyMode: mode, materialTitle: title, materialPriority: priority?.rawValue,
+                                         ownerAccount: owner)
             } catch {
                 try? FileManager.default.removeItem(at: output)
                 await engine.releaseProxyHold(materialId: materialId)
@@ -298,7 +371,7 @@ final class UploadQueueModel: ObservableObject {
 
     /// تحضير قطعه إنهاء التطبيق يترك نسخة نصف مكتوبة لا يشير إليها سجل؛ الأصل يُرفع وحده (ADR 0075) والملف يُحذف.
     private func removeHalfWrittenLightCopies() {
-        let referenced = Set(records.map { URL(fileURLWithPath: $0.sourcePath).lastPathComponent })
+        let referenced = Set(allRecords.map { URL(fileURLWithPath: $0.sourcePath).lastPathComponent })
         for url in LightCopyFiles.orphans(in: UploadServices.shared.uploadsDirectory, referenced: referenced) {
             try? FileManager.default.removeItem(at: url)
         }
@@ -312,11 +385,21 @@ final class UploadQueueModel: ObservableObject {
     }
 }
 
-/// شاشة إيصال لمادة، مع سجل الرفع إن وُجد (للعرض دون اتصال)، أو لإرسالة كاملة حين يُعرف `batchId`.
-struct ReceiptTarget: Identifiable, Equatable {
+/// شاشة إيصال لمادة، مع سجل الرفع إن وُجد (للعرض دون اتصال)، أو لإرسالة كاملة حين يُعرف `batchId`. `owner` الحساب صاحبه
+/// (ADR 0093): لا يُعرض لغيره.
+struct ReceiptTarget: Identifiable, Equatable, Sendable {
     let materialId: UUID
     let recordId: UUID?
     var batchId: UUID?
+    var owner: UUID?
+
+    init(materialId: UUID, recordId: UUID?, batchId: UUID? = nil, owner: UUID? = nil) {
+        self.materialId = materialId
+        self.recordId = recordId
+        self.batchId = batchId
+        self.owner = owner
+    }
+
     var id: UUID { batchId ?? materialId }
 }
 

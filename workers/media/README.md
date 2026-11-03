@@ -30,6 +30,7 @@
 | التصدير النهائي (`render.render`) | مقاطع من الأصل بنقاط قص على خط زمن المصدر، H.264 CRF 18 بالدقة الكاملة، SDR، الاتجاه مطبّق، بلا وسوم؛ NVENC حين تحويه نسخة ffmpeg | ينتظر حدث التصدير من المحرر في العقد |
 | حزمة تسليم المشتري (`delivery.build_delivery`) | بنود قالب الترخيص: `original` (نسخ تيارات بلا وسوم)، `audio` (WAV 48 kHz)، `stills` (خمس صور بالدقة الكاملة)، و`produced` (نوع `produced` وحده) وإلا `not_available`؛ التفريغ لا يدخل التسليم (R11)؛ `manifest.json` بلا بصمة الأصل و`SHA256SUMS`؛ ملفاتها موقَّعة C2PA حين يُفعَّل؛ عند `license.delivery_requested` خلف `MEDIA_ENABLE_DELIVERY` في `derived/<m>/<f>/delivery/<license_id>.zip` | `kind=delivery` مع `license_id` (#252) |
 | `audio-16k.m4a` | للملاحظة الصوتية: AAC أحادية 16 kHz بلا وسوم، `-copyts` يحفظ خط زمن الأصل | `kind=audio` |
+| `renders/<render_id>/circulated-<aspect>.mp4` | نسخة قالب «مواد متداولة» (ADR 0091): الأصل كاملًا تحت طبقة القالب الشفافة (Remotion يرسم الدخول ودورة 0.6 ث والخروج، وFFmpeg يكرّر الدورة ويركّب)، بالملاءمة المموّهة وموضع VT-08، `yuv420p` بنطاق tv وBT.709، H.264 High بـ CRF 19 وسقف 10 Mb/s (6 للمربع)، 25 أو 30 إطارًا/ث، AAC 48 kHz، بلا وسوم ولا SEI؛ عند `render.requested` من طابور `media:renders` في حاوية `render`، خلف `MEDIA_ENABLE_RENDERS` | `kind=circulated_render` مع `render_id` |
 | `preview-watermarked.mp4` | معاينة المتجر: 360p بمعدل بت محدود وشبكة أشرطة قطرية معتمة محروقة في الصورة، موضعها مزاح لكل مادة بـ HMAC من `MEDIA_WATERMARK_KEY`، بلا وسوم، `-copyts`؛ من `source_file_id` عند `catalog.listing_changed` بحالة `listed`؛ موقَّعة C2PA بعد العلامة حين يُفعَّل `MEDIA_ENABLE_C2PA`؛ خلف `MEDIA_ENABLE_STORE_PREVIEW` | `kind=watermarked_preview` (v0.3) |
 
 المصغّرات بلا وسوم ولا EXIF. هي ونسخة الخادم `proxy-480p.mp4` تُصنع لكل أصل مرئي، حتى حين تصل النسخة الخفيفة من الهاتف؛ العمّال اللاحقون يقرؤون نسخة الخادم.
@@ -40,4 +41,9 @@
 docker build --target test -t media-worker:test workers/media && docker run --rm media-worker:test
 python -m media_worker {probe,digest,proxy} FILE [OUT]   # داخل الصورة
 python -m media_worker requeue-dead config_error          # يعيد أحداث media:dead بسبب معيّن إلى الطابور
+# حاوية media-render (ADR 0091): الهدف render بسياق القالب، وتعمل على media:renders
+docker build --target render --build-context template=docs/design/redesign-2026-11/motion/circulated-template \
+  -t media-worker:render workers/media      # CMD: serve --queue renders
 ```
+
+صورة `render` = `runtime` + Node 22.22.0 (أرشيف nodejs.org ببصمته) + `render/` (`@remotion/renderer` 4.0.537 بقفله، و`overlay.mjs`) + حزمة القالب مجمّعة وقت البناء + Chrome Headless Shell 157.0.8080.0 ببصمته في `/opt`. لا تنزيل وقت التشغيل ولا مفتاح ترخيص (`licenseKey: null`، قرار المالك 2026-11-02)، ونقص أي منها يمنع الإقلاع والعلم مفعّل. الإعداد: `MEDIA_ENABLE_RENDERS` (مطفأ)، و`MEDIA_RENDER_CONCURRENCY` (افتراض Remotion)، ومسارات `MEDIA_RENDER_{NODE,SCRIPT,BUNDLE,BROWSER}` لغير الصورة. الميزانية: حجم الأصل + 1 GiB حرة في `/scratch` قبل الالتقاط، وإلا يعود الحدث لاحقًا.

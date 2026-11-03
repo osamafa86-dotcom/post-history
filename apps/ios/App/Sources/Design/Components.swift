@@ -2,6 +2,13 @@ import MaterialsCore
 import PostHistoryAPI
 import SwiftUI
 
+extension Text {
+    /// نص من مفتاح مبني في وقت التشغيل (`textKey` في MaterialsCore)، بقيمة `String` لا بحرفي. لا يُكتب
+    /// `Text(LocalizedStringKey("gallery.quick.\(x)"))`: الحرفي المُدرج يصير مفتاح صيغة "gallery.quick.%@" لا وجود له، فيظهر المفتاح
+    /// خامًا على الشاشة (بناء 1.0 (11)). اختبار في MaterialsCore يرفض ذلك في مصادر التطبيق.
+    init(key: String) { self.init(LocalizedStringKey(key)) }
+}
+
 // مكوّنات الهوية v2 «إشارة» (docs/design/design-system-v2.md «المكوّنات»؛ ADR 0085 و0088) من الرموز المولَّدة وحدها؛
 // لا قيم ألوان أو مسافات مكتوبة هنا. كل مكوّن: RTL أولًا، حجم الخط الديناميكي حتى أحجام الوصولية، هدف لمس ≥ 44،
 // والحالة كلمة وأيقونة لا لون وحده.
@@ -291,20 +298,34 @@ struct VLChip: View {
     }
 }
 
-/// `Filter chips`: اختيار واحد من مجموعة لها اسم لقارئ الشاشة؛ تلتفّ ولا تُقصّ.
+/// `Filter chips`: اختيار واحد من مجموعة لها اسم لقارئ الشاشة؛ تلتفّ ولا تُقصّ. و`wraps: false` صفٌّ واحد كما في رقاقات المعرض (07):
+/// يتسع لها السطر عادةً، وإلا (خط أكبر، أو لغة أطول) يُمرَّر أفقيًا ولا يلتفّ إلى سطرين.
 struct VLFilterChips<Value: Hashable>: View {
     let groupLabel: LocalizedStringKey
     let options: [(value: Value, label: Text)]
     @Binding var selection: Value
+    var wraps = true
 
     var body: some View {
-        VLFlow(spacing: VL.Space.s3) {
-            ForEach(options, id: \.value) { option in
-                VLChip(label: option.label, selected: selection == option.value) { selection = option.value }
+        Group {
+            if wraps {
+                VLFlow(spacing: VL.Space.s3) { chips }
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: VL.Space.s3) { chips }
+                    ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: VL.Space.s3) { chips } }
+                }
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(groupLabel))
+    }
+
+    private var chips: some View {
+        ForEach(options, id: \.value) { option in
+            VLChip(label: option.label, selected: selection == option.value) { selection = option.value }
+                .fixedSize(horizontal: !wraps, vertical: false)
+        }
     }
 }
 

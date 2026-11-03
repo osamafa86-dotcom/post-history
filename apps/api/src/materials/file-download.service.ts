@@ -8,15 +8,17 @@ import type { components } from '../generated/api';
 import type { Principal } from '../identity/principal';
 import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
 import { canEditMaterial, EDITOR_ONLY_KINDS, findScoped } from './material-store';
+import { canRequestRender, renderNotAllowed, renderStateFailures } from './renders.service';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const DERIVATIVE_KINDS = ['proxy', 'hls', 'audio', 'thumbnail', 'transcript', 'captions', 'shot_list'];
+const DERIVATIVE_KINDS = ['proxy', 'hls', 'audio', 'thumbnail', 'transcript', 'captions', 'shot_list', 'circulated_render'];
 const TTL_SECONDS = 600;
 
 /**
  * رابط قراءة موقّع لمشتق verified من مادة يراها المستدعي (عقد v0.1). الأصل والملاحظة الصوتية وكل ما لا يُرى 404 بلا
  * تفريق، والتفريغ والترجمة لمن يملك تعديل المادة وحده (R11). مفتاح التخزين بالمعرّفات وحدها فلا يحمل الرابط اسم ملف ولا
- * مراسل. الرابط نفسه لا يُسجَّل ولا يدخل التدقيق؛ إصداره يُدقَّق، وللنوعين النصيين قراءةً حساسة بنوعهما.
+ * مراسل. الرابط نفسه لا يُسجَّل ولا يدخل التدقيق؛ إصداره يُدقَّق، وللنوعين النصيين قراءةً حساسة بنوعهما. نسخة القالب
+ * (circulated_render، ADR 0091) لأدوار طلبها وحدها، وتسقط بسقوط شرطي أصلها التحريري والحقوقي (409).
  */
 @Injectable()
 export class FileDownloadService {
@@ -41,6 +43,11 @@ export class FileDownloadService {
         ),
       );
     if (!file?.storageKey || (EDITOR_ONLY_KINDS.includes(file.kind) && !canEditMaterial(p, material))) throw ApiError.notFound();
+    if (file.kind === 'circulated_render') {
+      if (!canRequestRender(p, material)) throw ApiError.notFound();
+      const failed = renderStateFailures(material);
+      if (failed.length > 0) throw renderNotAllowed(failed);
+    }
     // مشتقات العامل في حاوية الوسائط، والوكيل المرفوع من العميل في حاوية الرفع
     const bucket = file.derivedFromId ? this.config.S3_BUCKET_MEDIA : this.config.S3_BUCKET_UPLOADS;
     const now = new Date();
