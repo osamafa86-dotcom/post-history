@@ -42,7 +42,7 @@ export class AssignmentsController {
   @Get('me/assignments')
   @Roles('producer')
   mine(@Query() query: Record<string, unknown>, @Req() req: Request): Promise<components['schemas']['MyAssignmentPage']> {
-    const q = validateQuery<{ status?: 'open' | 'closed'; cursor?: string; limit?: number }>('/me/assignments', 'get', query);
+    const q = validateQuery<{ status?: 'active' | 'closed'; cursor?: string; limit?: number }>('/me/assignments', 'get', query);
     return this.assignments.mine(req.principal!, q);
   }
 

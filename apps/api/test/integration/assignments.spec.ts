@@ -288,7 +288,8 @@ describe('material assignments', () => {
     expect(open.body.items.map((x: { id: string }) => x.id)).toEqual([late, soon, later]);
     expect(open.body.items[0]).toMatchObject({ overdue: true });
     expect(open.body.items[1]).toMatchObject({ overdue: false, priority: 'urgent' });
-    expect(open.body.summary).toEqual({ open: 3, overdue: 1, done_last_7_days: 1 });
+    expect(open.body.summary).toEqual({ active: 3, overdue: 1, done_last_7_days: 1 });
+    expect((await as(mine).get('/me/assignments?status=active').expect(200)).body.items).toEqual(open.body.items);
     expect(open.body.next_cursor).toBeNull();
 
     const page1 = await as(mine).get('/me/assignments?limit=2').expect(200);
@@ -299,7 +300,7 @@ describe('material assignments', () => {
 
     const closed = await as(mine).get('/me/assignments?status=closed').expect(200);
     expect(closed.body.items.map((x: { id: string }) => x.id)).toEqual([finished]);
-    await as(mine).get('/me/assignments?status=all').expect(400);
+    await as(mine).get('/me/assignments?status=open').expect(400);
     await as(mine).get('/me/assignments?cursor=bad').expect(400);
     await as(supervisor).get('/me/assignments').expect(403);
     expect((await as(producer2).get('/me/assignments').expect(200)).body.items.map((x: { assignee_id: string }) => x.assignee_id)).not.toContain(mine.id);

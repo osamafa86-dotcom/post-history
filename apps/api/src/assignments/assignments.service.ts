@@ -146,23 +146,23 @@ export class AssignmentsService {
   }
 
   /** «مهامي»: المفتوحة بالأقرب موعدًا (فالمتأخر أولًا)، والمغلقة بالأحدث إغلاقًا؛ والملخص على كل مهام المستدعي. */
-  async mine(p: Principal, q: { status?: 'open' | 'closed'; cursor?: string; limit?: number }): Promise<MyAssignmentPage> {
-    const status = q.status ?? 'open';
+  async mine(p: Principal, q: { status?: 'active' | 'closed'; cursor?: string; limit?: number }): Promise<MyAssignmentPage> {
+    const open = (q.status ?? 'active') === 'active';
     const limit = q.limit ?? 50;
     const where: SQL[] = [
       eq(materialAssignments.assigneeId, p.userId),
-      inArray(materialAssignments.state, [...(status === 'open' ? OPEN_STATES : CLOSED_STATES)]),
+      inArray(materialAssignments.state, [...(open ? OPEN_STATES : CLOSED_STATES)]),
     ];
-    const key = status === 'open' ? materialAssignments.dueAt : materialAssignments.closedAt;
+    const key = open ? materialAssignments.dueAt : materialAssignments.closedAt;
     if (q.cursor) {
       const c = decodeCursor(q.cursor);
       where.push(
-        status === 'open'
+        open
           ? sql`(${key}, ${materialAssignments.id}) > (${c.at}::timestamptz, ${c.id}::uuid)`
           : sql`(${key}, ${materialAssignments.id}) < (${c.at}::timestamptz, ${c.id}::uuid)`,
       );
     }
-    const order = status === 'open' ? [asc(key), asc(materialAssignments.id)] : [desc(key), desc(materialAssignments.id)];
+    const order = open ? [asc(key), asc(materialAssignments.id)] : [desc(key), desc(materialAssignments.id)];
     const rows = (await this.db
       .select(assignmentSelection)
       .from(materialAssignments)
@@ -172,16 +172,16 @@ export class AssignmentsService {
       .limit(limit + 1)) as AssignmentView[];
     const page = rows.slice(0, limit);
     const last = page[page.length - 1];
-    const lastKey = last ? (status === 'open' ? last.dueAt : last.closedAt) : null;
+    const lastKey = last ? (open ? last.dueAt : last.closedAt) : null;
     const [summary] = (await this.db.execute(sql`
-      SELECT count(*) FILTER (WHERE state IN ('assigned', 'acknowledged', 'in_progress'))::int AS open,
+      SELECT count(*) FILTER (WHERE state IN ('assigned', 'acknowledged', 'in_progress'))::int AS active,
              count(*) FILTER (WHERE state IN ('assigned', 'acknowledged', 'in_progress') AND due_at < now())::int AS overdue,
              count(*) FILTER (WHERE state = 'done' AND closed_at >= now() - interval '7 days')::int AS done_last_7_days
-        FROM material_assignments WHERE assignee_id = ${p.userId}`)).rows as Array<{ open: number; overdue: number; done_last_7_days: number }>;
+        FROM material_assignments WHERE assignee_id = ${p.userId}`)).rows as Array<{ active: number; overdue: number; done_last_7_days: number }>;
     return {
       items: page.map((r) => toAssignmentDto(p, r)),
       next_cursor: rows.length > limit && last && lastKey ? Buffer.from(JSON.stringify([lastKey, last.id])).toString('base64url') : null,
-      summary: { open: summary?.open ?? 0, overdue: summary?.overdue ?? 0, done_last_7_days: summary?.done_last_7_days ?? 0 },
+      summary: { active: summary?.active ?? 0, overdue: summary?.overdue ?? 0, done_last_7_days: summary?.done_last_7_days ?? 0 },
     };
   }
 
