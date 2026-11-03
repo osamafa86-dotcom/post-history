@@ -1,5 +1,5 @@
-// Shared steps of the server-backed commerce scripts (sandbox provider only, no real money): a sellable material with a
-// verified original (written by SQL: no media worker in the live stack), a licence template, a listing, an order paid on the
+// Shared steps of the server-backed commerce scripts (sandbox provider only, no real money): a sellable, editorially approved
+// material with a verified original (written by SQL: no media worker in the live stack), a licence template, a listing, an order paid on the
 // hosted sandbox page, and the signed provider notification. Everything synthetic, random per run.
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { materialBody, sleep } from "./live.mjs";
@@ -22,7 +22,8 @@ export function commerce({ http, db, tokens, uniq = randomUUID().slice(0, 8) }) 
     formVersion ??= (await http.get(tokens.reporter, "/forms/current")).body?.version;
     const r = await http.call(tokens.reporter, "POST", "/materials", { body: materialBody(formVersion, `commerce-${label}-${uniq}`) });
     if (r.status !== 201) throw new Error(`fixture material answered ${r.status}`);
-    await db.query(`UPDATE materials SET rights_state = $2 WHERE id = $1`, [r.body.id, rights]);
+    // the three sale conditions (ADR 0118): rights as asked, the listed version approved, and a verified original
+    await db.query(`UPDATE materials SET rights_state = $2, editorial_state = 'published'${original ? ", technical_state = 'verified'" : ""} WHERE id = $1`, [r.body.id, rights]);
     if (original) {
       await db.query(`INSERT INTO material_files (material_id, kind, state, size_bytes, sha256, storage_key, verified_at) VALUES ($1, 'original', 'verified', 100, $2, $3, now())`, [r.body.id, randomBytes(32), `tus/${randomUUID()}`]);
     }
