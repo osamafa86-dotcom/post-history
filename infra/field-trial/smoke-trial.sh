@@ -138,15 +138,33 @@ if curl -sS --max-time 10 -o /dev/null --cacert "$WORK/ca.crt" --resolve main.lo
 echo "edge routing and address isolation: ok"
 
 # Client address through the edge (Caddy trusts CF-Connecting-IP from CLOUDFLARE_CIDRS, the API trusts the default
-# network gateway alone): ten failed logins for one email from address A fill that (email, address) bucket, so the
-# eleventh from A is 429 while the same email from B is still 401. One shared bucket would make B 429 too.
-login() { c -o /dev/null -w '%{http_code}' -X POST https://main.localhost/v1/auth/login -H 'Content-Type: application/json' \
-            -H "CF-Connecting-IP: $1" -d "{\"email\":\"$email\",\"password\":\"wrong-password-$(hex 4)\"}"; }
+# network gateway alone). Two limits answer a failed login with 429 (ADR 0117): the (email, address) bucket, ten failures
+# per window, with the rest of the window as Retry-After; and the per-account backoff, whatever the address, five free
+# failures and then a short delay that doubles, with that delay as Retry-After. The probe waits out the short one, so ten
+# failed logins for one email from address A fill A's bucket: the eleventh from A is 429 with the window's Retry-After,
+# while the same email from B (once the account delay has passed) is still 401. One shared bucket would make B 429 too.
+login() { # login <client address> -> "<status> <retry-after>"
+  c -o /dev/null -w '%{http_code} %header{retry-after}' -X POST https://main.localhost/v1/auth/login -H 'Content-Type: application/json' \
+    -H "CF-Connecting-IP: $1" -d "{\"email\":\"$email\",\"password\":\"wrong-password-$(hex 4)\"}" || echo "000 "; }
+short_wait() { [ "${1%% *}" = 429 ] && [ -n "${1#* }" ] && [ "${1#* }" -ge 1 ] && [ "${1#* }" -le 60 ]; }
+failed_login() { # failed_login <client address> -> its status once a short per-account delay has been waited out
+  local r
+  for _ in 1 2 3; do r="$(login "$1")"; short_wait "$r" || break; sleep "$(( ${r#* } + 1 ))"; done
+  echo "${r%% *}"
+}
 email="edge-ip-$(hex 4)@example.com"
-for _ in $(seq 1 10); do [ "$(login 198.51.100.1)" = 401 ] || fail "login through the edge should be 401"; done
-[ "$(login 198.51.100.1)" = 429 ] || fail "11th failed login from one client address should be 429"
-[ "$(login 198.51.100.2)" = 401 ] || fail "another client address shares the rate-limit bucket (client address lost at the edge)"
+for _ in $(seq 1 10); do [ "$(failed_login 198.51.100.1)" = 401 ] || fail "login through the edge should be 401"; done
+r="$(login 198.51.100.1)"
+{ [ "${r%% *}" = 429 ] && [ "${r#* }" -gt 60 ]; } || fail "11th failed login from one client address should be 429 from its address bucket (got: $r)"
+[ "$(failed_login 198.51.100.2)" = 401 ] || fail "another client address shares the rate-limit bucket (client address lost at the edge)"
 echo "client address through the edge: ok"
+# The per-account backoff does not care where the guesses come from (ADR 0117): one email, each failure from an address
+# that never failed before, five free 401s and a sixth, then 429 with the short delay as Retry-After.
+email="edge-account-$(hex 4)@example.com"
+for i in 1 2 3 4 5 6; do r="$(login "198.51.100.3$i")"; [ "${r%% *}" = 401 ] || fail "failed login $i for one account should be 401 (got: $r)"; done
+for i in 1 2 3; do r="$(login "198.51.100.4$i")"; [ "${r%% *}" = 429 ] && break; done
+short_wait "$r" || fail "a failed login for one account after six failures should be 429 with a short Retry-After from a fresh address (got: $r)"
+echo "per-account backoff through the edge, whatever the client address: ok"
 
 # The gate's rate limit counts per client on both domains (20 r/s, burst 40, then 429 before any token check): a burst from
 # one client is cut while another client is still served, and a client cannot pick its bucket with X-Forwarded-For (each

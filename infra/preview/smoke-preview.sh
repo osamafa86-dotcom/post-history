@@ -408,15 +408,34 @@ const bffWeb = await bff(`uploads/${ps.id}/web-ingest-token`, {});
 if (bffWeb.status !== 200) die(`the same web ingest token through the BFF: ${bffWeb.status} (the public 404 would prove nothing)`);
 say("the web ingest token: 404 on public /v1, 200 through the BFF for the same session: ok");
 // The caller does not choose its client address: ten failed logins for one email under ten different X-Client-Address values
-// still hit that email's limit on the eleventh, because the API ignores the header from any address but the BFF's.
-let throttled = 0;
-for (let i = 1; i <= 11; i++) {
-  const r = await pub("POST", "/auth/login", { "x-client-address": `198.51.100.${i}` }, { email: "nobody@preview-smoke.invalid", password: "wrong-password-123" });
-  if (i <= 10 && r.status !== 401) die(`failed login ${i} on public /v1 with a forged client address: ${r.status} (want 401)`);
-  throttled = r.status;
+// still fill that email's (email, address) bucket, so the eleventh is 429 with the rest of the window as Retry-After, because
+// the API ignores the header from any address but the BFF's. On the way the per-account backoff (ADR 0117: five free
+// failures, then a short delay that doubles, whatever the address) answers 429 with that short delay; the probe asserts it
+// and waits it out, so only the address bucket can answer the eleventh with a long Retry-After.
+const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+const ghost = `nobody-${randomBytes(4).toString("hex")}@preview-smoke.invalid`;
+const forged = (i) => pub("POST", "/auth/login", { "x-client-address": `198.51.100.${i}` }, { email: ghost, password: "wrong-password-123" });
+let backoffSeen = 0;
+for (let i = 1; i <= 10; i++) {
+  let r = await forged(i);
+  for (let tries = 0; r.status === 429 && tries < 3; tries++) {
+    const wait = Number(r.headers["retry-after"]);
+    if (i <= 6) die(`failed login ${i} on public /v1 with a forged client address: 429 before the five free failures were spent`);
+    if (!(wait >= 1 && wait <= 60)) die(`failed login ${i} on public /v1 with a forged client address: 429 with Retry-After ${wait} (want the short per-account delay)`);
+    backoffSeen++;
+    await sleepMs(wait * 1000 + 500);
+    r = await forged(i);
+  }
+  if (r.status !== 401) die(`failed login ${i} on public /v1 with a forged client address: ${r.status} (want 401)`);
 }
-if (throttled !== 429) die(`11th failed login with ten forged client addresses: ${throttled} (want 429: the header must be ignored on public /v1)`);
+if (!backoffSeen) die("the per-account backoff never answered 429 after the five free failures (ADR 0117)");
+const eleventh = await forged(11);
+const windowLeft = Number(eleventh.headers["retry-after"]);
+if (eleventh.status !== 429 || !(windowLeft > 60)) {
+  die(`11th failed login with ten forged client addresses: ${eleventh.status}, Retry-After ${windowLeft} (want 429 from the address bucket: the header must be ignored on public /v1)`);
+}
 say("a forged X-Client-Address does not give a public caller a rate-limit bucket of its own: ok");
+say("the per-account backoff answers 429 with a short Retry-After after five failed logins: ok");
 // Not exposed here: the server's internal routes, its health check, and bodies beyond what JSON needs.
 for (const [method, path] of [["GET", "/internal/ingest/session-status?sid=x"], ["POST", "/internal/tusd-hooks/x"], ["GET", "/health"], ["POST", "/payments/webhooks/sandbox"]]) {
   const r = await pub(method, path, bearer);
