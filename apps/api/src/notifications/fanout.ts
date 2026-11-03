@@ -243,10 +243,12 @@ async function renderFinished(tx: Tx, event: OutboxRow, payload: Record<string, 
   const renderId = typeof payload.render_id === 'string' ? payload.render_id : undefined;
   if (!renderId) return 0;
   const [r] = await tx
-    .select({ requestedBy: materialRenders.requestedBy, materialId: materialRenders.materialId })
+    .select({ requestedBy: materialRenders.requestedBy, materialId: materialRenders.materialId, template: materialRenders.template })
     .from(materialRenders)
     .where(eq(materialRenders.id, renderId));
   if (!r) return 0;
+  // العنوان يسمّي القالب («الشاهد»، ADR 0109)، ونوع الإشعار هو الحدث نفسه
+  const titleKey = r.template === 'witness' ? `${event.type}.witness` : event.type;
   const inserted = await tx
     .insert(notifications)
     .values({
@@ -255,7 +257,7 @@ async function renderFinished(tx: Tx, event: OutboxRow, payload: Record<string, 
       type: event.type,
       materialId: r.materialId,
       priority: 'normal',
-      title: notificationTitle(event.type, opts.locale, { ref: materialRef(r.materialId) }),
+      title: notificationTitle(titleKey, opts.locale, { ref: materialRef(r.materialId) }),
       assignmentState: null,
     })
     .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })

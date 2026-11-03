@@ -401,6 +401,58 @@ describe('circulated-template renders', () => {
     }
   });
 
+  // قالب «الشاهد» (ADR 0109): خيار في الطلب نفسه، بالشروط والحدود والأحداث والمشتق نفسها؛ والقالب يُسجَّل ويعود للعامل
+  it('a Witness render is the same request with the template as a choice: recorded, returned to the worker, finished and linked alike', async () => {
+    const m = await ready();
+    const post = (over: object, a: Actor = supervisor) => as(a).post(`/materials/${m.id}/renders`, body(over));
+    // القالب إلزامي بلا قيمة افتراضية، ومن القائمة وحدها
+    const noTemplate: Record<string, unknown> = body();
+    delete noTemplate.template;
+    await as(supervisor).post(`/materials/${m.id}/renders`, noTemplate).expect(422);
+    await post({ template: 'Witness' }).expect(422);
+    await post({ template: 'default' }).expect(422);
+    // والشروط نفسها: الوارد مرفوض بسببه، والمراسل ليس من أدوار الطلب
+    const inbox = await material();
+    await original(inbox);
+    expect((await as(supervisor).post(`/materials/${inbox}/renders`, body({ template: 'witness' })).expect(409)).body.details).toEqual({
+      failed: ['editorial_state'],
+    });
+    await post({ template: 'witness' }, reporter).expect(403);
+
+    const w = (await post({ template: 'witness' }).expect(202)).body;
+    expect(w).toMatchObject({ template: 'witness', aspect: 'vertical', location_text: `${CITY}، ${GOVERNORATE}`, label: 'circulated_footage', state: 'requested' });
+    const c = (await post({ template: 'circulated', aspect: 'square' }).expect(202)).body;
+    const list = (await as(chief).get(`/materials/${m.id}/renders`).expect(200)).body.items as Array<{ id: string; template: string }>;
+    expect(list.map((r) => [r.id, r.template])).toEqual([
+      [c.id, 'circulated'],
+      [w.id, 'witness'],
+    ]);
+    expect((await worker.get(`/renders/${w.id}`).expect(200)).body).toMatchObject({ template: 'witness', title_lines: [CANARY], label: 'circulated_footage' });
+
+    await worker.post(`/renders/${w.id}/start`).expect(204);
+    const file = (await register(m.source, m.id, w.id, 'witness-vertical.mp4').expect(200)).body.file_id as string;
+    expect((await as(supervisor).get(`/materials/${m.id}/renders`).expect(200)).body.items[1]).toMatchObject({ id: w.id, template: 'witness', state: 'ready', file_id: file });
+    const link = await as(producer).get(`/materials/${m.id}/files/${file}/download-url`).expect(200);
+    expect(link.body.url).toContain(`/media/derived/${m.id}/${m.source}/renders/${w.id}/witness-vertical.mp4`);
+    await as(reporter).get(`/materials/${m.id}/files/${file}/download-url`).expect(404);
+    await worker.post(`/renders/${c.id}/failure`, { reason: 'title_overflow' }).expect(204);
+
+    // الأحداث بمفاتيحها وحدها كالقالب الأول، والإشعار يسمّي القالب بلا عنوان ولا مكان
+    expect((await events(w.id)).map((e) => [e.type, Object.keys(e.payload).sort()])).toEqual([
+      ['render.requested', ['material_id', 'render_id', 'requested_by', 'source_file_id']],
+      ['render.started', ['material_id', 'render_id']],
+      ['render.completed', ['file_id', 'material_id', 'render_id']],
+    ]);
+    await drainOutbox(h);
+    const inboxRows = (
+      await h.pool.query<{ type: string; title: string }>(`SELECT type, title FROM notifications WHERE material_id = $1 AND type LIKE 'render.%' ORDER BY created_at`, [m.id])
+    ).rows;
+    expect(inboxRows.map((n) => n.type)).toEqual(['render.completed', 'render.failed']);
+    expect(inboxRows[0]!.title).toMatch(/«الشاهد»|Witness/);
+    expect(inboxRows[1]!.title).toMatch(/«مواد متداولة»|circulated/);
+    expect(JSON.stringify([inboxRows, await events(w.id)])).not.toContain(CANARY);
+  });
+
   it('issues an audited link to the request roles only, and refuses it once the material falls out of the conditions', async () => {
     const m = await ready();
     const r = (await as(supervisor).post(`/materials/${m.id}/renders`, body()).expect(202)).body;
