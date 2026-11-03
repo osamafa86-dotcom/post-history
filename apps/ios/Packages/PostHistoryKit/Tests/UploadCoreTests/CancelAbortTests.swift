@@ -11,6 +11,8 @@ final class CancelAbortTests: XCTestCase {
         let h = Harness(name: "cancel-abort", script: [.hang])
         let rec = try await h.enqueue()
         _ = await h.engine.waitUntil(rec.id) { $0.inFlightOffset == 0 }
+        // The offset is set before the transport registers its task, so wait for the chunk to be really in flight.
+        for _ in 0..<300 where h.transport.activeKeys.isEmpty { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertEqual(h.transport.activeKeys.count, 1)
 
         await h.engine.cancel(rec.id)
