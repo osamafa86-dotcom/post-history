@@ -18,6 +18,7 @@ import * as conflicts from "../src/lib/invite-conflict-policy";
 import * as earnings from "../src/lib/earnings-policy";
 import { formReaders, formWriters } from "../src/lib/form-admin";
 import * as render from "../src/lib/render-policy";
+import * as assignment from "../src/lib/assignment-policy";
 
 const { load } = createRequire(import.meta.url)("js-yaml") as { load: (text: string) => unknown };
 const contract = load(readFileSync(new URL("../../../contracts/openapi.yaml", import.meta.url), "utf8"));
@@ -146,5 +147,18 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
     expect(render.titleLineMax).toBe(at("components", "schemas", "RenderTitleLine", "maxLength")); expect(render.titleLinesMax).toBe(at("components", "schemas", "RenderTitleLines", "maxItems"));
     expect(render.locationMax).toBe(at("components", "schemas", "MaterialRender", "properties", "location_text", "maxLength")); expect(render.titleLinePattern).toBe(at("components", "schemas", "RenderTitleLine", "pattern"));
     expect(at("components", "schemas", "MaterialRenderRequest", "required")).toEqual(["template", "aspect", "title_lines", "show_location", "label"]);
+  });
+  it("keeps assignment roles, states, limits and the note rule aligned with ADR 0096", () => {
+    expect([...assignment.assignRoles]).toEqual(at("paths", "/materials/{id}/assignments", "post", "x-roles")); expect([...assignment.assignRoles]).toEqual(at("paths", "/assignment-candidates", "get", "x-roles"));
+    for (const path of ["/materials/{id}/assignments", "/assignments/{assignment_id}"]) expect([...assignment.taskReaders]).toEqual(at("paths", path, "get", "x-roles"));
+    expect([...assignment.transitionRoles]).toEqual(at("paths", "/assignments/{assignment_id}/transitions", "post", "x-roles")); expect([...assignment.myTaskRoles]).toEqual(at("paths", "/me/assignments", "get", "x-roles"));
+    for (const [path, method] of [["/materials/{id}/export", "get"], ["/materials/{id}/export", "post"], ["/materials/{id}/export/download-url", "get"]]) expect([...assignment.exportRoles]).toEqual(at("paths", path, method, "x-roles"));
+    expect([...assignment.assignmentStates]).toEqual(at("components", "schemas", "MaterialAssignmentState", "enum")); expect([...assignment.transitionTargets]).toEqual(at("components", "schemas", "AssignmentTransition", "properties", "to", "enum"));
+    expect([...assignment.exportStates]).toEqual(at("components", "schemas", "MaterialExport", "properties", "state", "enum"));
+    expect(assignment.noteMax).toBe(at("components", "schemas", "AssignmentNote", "maxLength")); expect(assignment.notePattern).toBe(at("components", "schemas", "AssignmentNote", "pattern"));
+    expect(assignment.candidatesMax).toBe(at("paths", "/assignment-candidates", "get", "responses", "200", "content", "application/json", "schema", "properties", "items", "maxItems"));
+    const status = (at("paths", "/me/assignments", "get", "parameters") as { name?: string; schema?: { enum?: string[] } }[]).find(p => p.name === "status");
+    expect([...assignment.myTaskStatuses]).toEqual(status?.schema?.enum);
+    for (const route of ["/materials/{id}/assignments", "/assignments/{assignment_id}/transitions", "/materials/{id}/export"]) expect(at("paths", route, "post", "parameters")).toEqual(expect.arrayContaining([{ $ref: "#/components/parameters/IdempotencyKey" }]));
   });
 });

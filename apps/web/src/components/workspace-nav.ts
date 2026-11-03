@@ -10,6 +10,7 @@ import { earnerRoles, payoutStaff } from "@/lib/earnings-policy";
 import { templateRoles } from "@/lib/license-policy";
 import { formReaders } from "@/lib/form-admin";
 import { workName } from "@/lib/work-name";
+import { myTaskRoles } from "@/lib/assignment-policy";
 import type { IconName } from "./icon";
 
 export type NavGroup = "newsroom" | "library" | "admin";
@@ -18,7 +19,7 @@ export type NavItem = { key: string; href: string; label: string; short: string;
 /**
  * وجهات التنقّل بحسب الدور (W1، `Web/Sidebar`): ثلاث مجموعات (غرفة الأخبار، المكتبة، الإدارة) بالصفحات القائمة وحدها، وبند واحد نشط
  * (`aria-current="page"`). الشريط لا يعرض ما لا يملكه الدور (E5)؛ وحساب المشتري لا يرى غير المتجر ومؤسسته.
- * لا تُضاف وجهة لصفحة لم تُبنَ (المهام والمحرر العاجل والأرشيف الجاهز والوسوم: ADR 0090).
+ * لا تُضاف وجهة لصفحة لم تُبنَ (المحرر العاجل والأرشيف الجاهز والوسوم: ADR 0090). «المهام» لفريق الإنتاج (W5، ADR 0097).
  */
 export function navItems(me: Me, locale: Locale, pathname: string): NavItem[] {
   const m = messages[locale], short = m.shell.short as Record<string, string>, path = pathname.replace(/^\/(ar|en)(?=\/|$)/, ""), ends = (page: string) => path === `/${page}` || path.startsWith(`/${page}/`);
@@ -34,6 +35,7 @@ export function navItems(me: Me, locale: Locale, pathname: string): NavItem[] {
   return [
     item("inbox", m.inbox, ends("inbox") || ends("materials"), "newsroom", "inbox"),
     ...(has("supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin") ? [item("board", m.board.title, ends("board"), "newsroom", "wall")] : []),
+    ...(hasRole(me, ...myTaskRoles) ? [item("tasks", m.tasks.nav, ends("tasks"), "newsroom", "tasks")] : []),
     ...(has("reporter") ? [item("my-materials", m.mine.nav, ends("my-materials"), "newsroom", "mine")] : []),
     ...(hasRole(me, ...earnerRoles) ? [item("earnings", m.earnings.nav, ends("earnings"), "newsroom", "money")] : []),
     ...(hasRole(me, ...uploadRoles) ? [item("upload", m.upload.nav, ends("upload"), "newsroom", "upload")] : []),
@@ -59,11 +61,11 @@ export function navGroups(items: NavItem[]): [NavGroup, NavItem[]][] {
 }
 
 /**
- * الشريط السفلي على الجوال (M1): أربع وجهات بترتيب الأولوية مما يملكه الدور، و«المزيد» خامسة تفتح الباقي. التنبيهات بينها دائمًا.
+ * الشريط السفلي على الجوال (M1، M3): أربع وجهات بترتيب الأولوية مما يملكه الدور (الوارد ثم المهام كما في M3)، و«المزيد» خامسة تفتح الباقي. التنبيهات بينها دائمًا.
  * والنشط في «المزيد» يجعلها هي النشطة (M5).
  */
 export function bottomItems(items: NavItem[]): { primary: NavItem[]; more: NavItem[] } {
-  const order = ["inbox", "board", "my-materials", "store", "upload", "earnings"], notifications = items.find(item => item.key === "notifications");
+  const order = ["inbox", "tasks", "board", "my-materials", "store", "upload", "earnings"], notifications = items.find(item => item.key === "notifications");
   const ranked = order.map(key => items.find(item => item.key === key)).filter((item): item is NavItem => !!item);
   const primary = [...ranked.slice(0, notifications ? 3 : 4), ...(notifications ? [notifications] : [])];
   return { primary, more: items.filter(item => !primary.includes(item)) };

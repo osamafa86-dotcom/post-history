@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { createHash, randomUUID } from "node:crypto";
 import { form, material, me, tokens } from "../tests/fixtures";
 import assets from "../tests/media-fixture.json";
+import { assignmentRead, assignmentWrite, resetAssignments, seedAssignments } from "./fixture-assignments";
 import type { Form, Me, Material, Notification, TransitionRecord, PermissionHistoryEntry, ReporterIdentitySetting, ReporterIdentitySettingUpdate, Permission } from "../src/lib/types";
 const materials: Material[] = [], notifications: Notification[] = [], history = new Map<string, TransitionRecord[]>();
 const writes: { path: string; method: string; key: string; body: Record<string, unknown> }[] = [];
@@ -174,7 +175,8 @@ const server = createServer(async (req, res) => {
   if (url.pathname.startsWith("/files/")) { res.removeHeader("Content-Type"); return tus(req, res, url); }
   if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
   if (url.pathname === "/__test/uploads") return send([...uploads.values()].map(u => ({ state: u.session.state, receipt: u.session.receipt_number, ingest_tokens: [...ingestTokens.values()].filter(t => t.sid === u.session.id).length, ...(u.tus ? (({ length, offset, patches, resent, cuts }) => ({ length, offset, patches, resent, cuts }))(tusFiles.get(u.tus) ?? { length: 0, offset: 0, patches: 0, resent: 0, cuts: 0 }) : {}) })));
-  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); seedOrders(); seedLicenses(); seedTemplates(); seedOrganizations(); seedCommission(); seedConflicts(); seedEarnings(); reset(); resetUploads(); return send({ ok: true }); }
+  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); seedOrders(); seedLicenses(); seedTemplates(); seedOrganizations(); seedCommission(); seedConflicts(); seedEarnings(); reset(); resetUploads(); resetAssignments(); return send({ ok: true }); }
+  if (url.pathname === "/__test/assignments" && req.method === "POST") { seedAssignments(materials, me); return send({ ok: true }); }
   const sandbox = /^\/sandbox\/(checkout|pay)\/([^/]+)$/.exec(url.pathname);
   if (sandbox) {
     const order = orders.get(sandbox[2]); if (!order) return send({}, 404);
@@ -503,10 +505,14 @@ const server = createServer(async (req, res) => {
       for (const item of notifications) if (!item.read_at && Date.parse(item.created_at) <= Date.parse(String(body.before))) { item.read_at = stamp; if (item.state !== "acknowledged") item.state = "read"; read_count++; }
       return commit({ read_count }, 200);
     }
+    const assigned = assignmentWrite(path, user, body, materials);
+    if (assigned) return assigned.status < 400 ? commit(assigned.value, assigned.status) : send(assigned.value, assigned.status);
     const notice = /^\/v1\/notifications\/([^/]+)\/(read|ack)$/.exec(path);
     if (notice) { const item = notifications.find(n => n.id === notice[1]); if (!item) return send({}, 404); item.read_at = new Date().toISOString(); item.state = notice[2] === "ack" ? "acknowledged" : "read"; if (notice[2] === "ack") item.acknowledged_at = item.read_at; return commit(null); }
     return send({}, 405);
   }
+  const assignmentReply = assignmentRead(url, user, () => { const signature = randomUUID(); signed.set(signature, { kind: "proxy", expires: Date.now() + 300000 }); return `${fixtureOrigin}/derived/fixture?signature=${signature}`; });
+  if (assignmentReply) return send(assignmentReply.value, assignmentReply.status);
   if (url.pathname === "/v1/admin/settings/reporter-identity") {
     if (!user.roles.some(role => role.name === "system_admin")) return send({}, 403);
     return send({ ...identitySetting, reporter_legal_name: "never-display-canary" });

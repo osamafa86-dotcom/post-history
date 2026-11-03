@@ -10,6 +10,7 @@ import type { components } from "@/generated/schema";
 import type { MaterialType } from "@/lib/types";
 import { streamDerivative } from "./media";
 import { renderDownload, renderRead } from "./renders";
+import { assignmentPath, assignmentRead } from "./assignments";
 import { actionPath, reviewAction } from "./review-actions";
 import { hasRole, materialTag } from "@/lib/review";
 import { organizationRead } from "./organizations";
@@ -109,6 +110,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         return json(safeIdentitySetting(requireOk(await api.GET("/admin/settings/reporter-identity"))));
       }
       if (earningsPath(path)) return earningsRead(request, path, api, me);
+      if (assignmentPath(path)) return assignmentRead(request, path, api, me, config!);
       const permissionHistory = /^users\/([^/]+)\/permissions\/history$/.exec(path);
       if (permissionHistory && uuid.test(permissionHistory[1])) {
         if (!hasRole(me, "system_admin")) throw new WebError(403, "request_failed");

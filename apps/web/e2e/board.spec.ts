@@ -48,9 +48,10 @@ test("states group into the four columns and the overlaps follow the documented 
   await expect(has("stalled", "011")).toHaveCount(1); await expect(has("ready", "011")).toHaveCount(0);            // مقبولة وفشل فني: متوقفة لا جاهزة
   await expect(page.getByText(title("014"), { exact: true })).toHaveCount(0);                                       // منشورة: خارج اللوحة
   await expect(page.getByTestId("urgent-open")).toBeVisible(); await expect(page.getByTestId("inbox-now")).toBeVisible();
+  // الجدار (W4) يعرض الوارد وحده: 190 مادة بحالة «في الوارد» بعد المزيج، وبلاطاتها كلها «في الوارد».
   await page.goto("/ar/board?display=1");
-  for (const [column, count] of [["incoming", "188"], ["checking", "4"], ["ready", "3"], ["stalled", "4"]]) await expect(page.getByTestId(`wall-column-${column}`).locator("h2 .wall-count")).toHaveText(count);
-  await expect(page.locator(".wall-columns > section")).toHaveCount(4);
+  await expect(page.getByTestId("wall-inbox")).toContainText("190");
+  await expect(page.getByTestId("wall-card").first()).toContainText(`${ar.states.editorial_state.inbox} · ${ar.board.wall.notReceived}`);
 });
 
 test("English board shows the four column names left to right", async ({ page }) => {
@@ -71,44 +72,45 @@ test("reporters do not see the board and the BFF refuses them", async ({ page })
   await page.goto("/ar/board"); await expect(page.getByText(ar.board.denied)).toBeVisible();
 });
 
-test("wall display: dark top bar with clock, dark by default, big tiles, four columns of eight and no leaked fields", async ({ page }) => {
+test("wall display (W4): dark by default, title, three indicators and a clock, eight inbox tiles urgent first, and no leaked fields", async ({ page }) => {
   await login(page, "reviewer@example.test");
   await page.getByRole("navigation", { name: ar.workspace }).getByRole("link", { name: ar.board.title }).click();
   await page.getByRole("link", { name: ar.board.openDisplay }).click();
   await expect(page).toHaveURL(/\/ar\/board\?display=1$/);
   await expect(page.getByTestId("board-display")).toBeVisible();
-  // Figma 193:865: شريط الشاشة الكبيرة بدل شريط مساحة العمل؛ بند واحد نشط (لوحة الإنتاج) والساعة والتاريخ في النهاية.
-  await expect(page.locator(".topbar.workspace")).toBeHidden(); await expect(page.locator(".topbar.wall")).toBeVisible();
-  const wallNav = page.locator(".topbar.wall").getByRole("navigation", { name: ar.workspace }); await expect(wallNav.getByRole("link")).toHaveCount(1); await expect(wallNav.getByRole("link", { name: ar.board.display.nav })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByTestId("wall-clock")).toHaveText(/^\d{2}:\d{2}:\d{2}$/);
-  const brandBox = await page.locator(".topbar.wall .topbar-brand").boundingBox(), clockBox = await page.getByTestId("wall-clock").boundingBox(); expect(brandBox!.x).toBeGreaterThan(clockBox!.x);
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.locator(".topbar.workspace")).toBeHidden(); await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.getByRole("heading", { level: 1, name: ar.board.wall.title, exact: true })).toBeVisible(); await expect(page.getByText(ar.board.wall.lead, { exact: true })).toBeVisible();
+  await expect(page.getByTestId("wall-clock")).toHaveText(/^\d{2}:\d{2}$/);
+  // RTL: العنوان في جهة البداية (اليمين) والساعة في النهاية.
+  const titleBox = await page.locator(".wall-heading").boundingBox(), clockBox = await page.getByTestId("wall-clock").boundingBox(); expect(titleBox!.x).toBeGreaterThan(clockBox!.x);
+  await expect(page.getByTestId("wall-inbox")).toContainText("199"); await expect(page.getByTestId("wall-inbox")).toContainText(ar.board.wall.inbox);
   await expect(page.getByTestId("wall-urgent-open")).toContainText("40"); await expect(page.getByTestId("wall-urgent-open")).toHaveClass(/tone-urgent/);
-  await expect(page.getByTestId("wall-overdue")).toContainText("2");
-  await expect(page.locator(".wall-tiles")).toHaveAttribute("aria-live", "polite");
-  await expect(page.locator(".wall-columns > section")).toHaveCount(4);
-  await expect(page.locator(".wall-columns h2")).toHaveText(columns.map(c => new RegExp(`^${ar.board.columns[c]}`)));
-  await expect(page.getByTestId("wall-column-incoming").getByTestId("wall-card")).toHaveCount(8);
-  await expect(page.getByTestId("wall-column-incoming").getByTestId("wall-card").first()).toHaveClass(/urgent/);
-  await expect(page.getByTestId("wall-column-incoming")).toContainText(ar.board.display.more.replace("{n}", "190"));
-  await expect(page.getByTestId("wall-column-checking")).toContainText(ar.board.display.empty);
-  // Figma 193:862: دليل المسارات، رقم العمود الكبير بخط سفلي، وبطاقة بشريط داكن (إيصال وعمر) ولسان عاجل وخط مسارات وسطر محافظة.
-  await expect(page.locator(".track-legend li")).toHaveCount(5); await expect(page.locator(".track-legend")).toContainText(ar.trackLine.legend);
-  const head = page.getByTestId("wall-column-incoming").locator("h2"); await expect(head.locator(".wall-count")).toHaveText("198"); await expect(head).toHaveCSS("border-bottom-width", "2px");
-  const card = page.getByTestId("wall-column-incoming").getByTestId("wall-card").first();
-  const strip = await card.locator(".wall-slate").evaluate(el => { const i = document.createElement("i"); i.style.backgroundColor = "var(--v2-c-bg-store)"; document.body.append(i); const slate = getComputedStyle(i).backgroundColor; i.remove(); return { strip: getComputedStyle(el).backgroundColor, slate }; });
-  expect(strip.strip).toBe(strip.slate);
-  await expect(card.locator(".wall-slate .wall-receipt")).toHaveText(/^RCPT-/); await expect(card.locator(".wall-priority.urgent")).toHaveText(ar.states.priority.urgent);
-  await expect(card.getByTestId("track-line").locator(".track-seg")).toHaveCount(3); await expect(card.locator(".wall-place")).toHaveText(/\S/);
-  await expect(page.locator(".wall-date")).toContainText(/\d{4}/);
+  await expect(page.getByTestId("wall-overdue")).toContainText("2"); await expect(page.locator(".wall-kpis")).toHaveAttribute("aria-live", "polite");
+  const tiles = page.getByTestId("wall-card"); await expect(tiles).toHaveCount(8);
+  for (const i of [0, 7]) await expect(tiles.nth(i)).toHaveClass(/urgent/);
+  const first = tiles.first();
+  await expect(first.locator(".wall-place")).toHaveText(/\S/); await expect(first.locator(".tile-age")).toContainText(ar.board.wall.since.split("{time}")[0].trim());
+  await expect(first.locator(".tile-title")).toHaveText(/مادة اختبار اصطناعية/); await expect(first).toContainText(ar.networkName);
+  await expect(first).toContainText(`${ar.states.editorial_state.inbox} · ${ar.board.wall.notReceived}`);
+  await expect(first).toHaveCSS("border-top-width", "2px");
+  await expect(page.getByTestId("wall-more")).toContainText(ar.board.display.more.replace("{n}", "191"));
   await expect(page.getByTestId("wall-upload")).toHaveCount(1); await expect(page.getByTestId("wall-upload")).toContainText("25%");
   await expect(page.getByTestId("wall-sound")).toContainText(ar.board.display.soundOff);
   await page.mouse.click(5, 5); await expect(page.getByTestId("wall-sound")).toContainText(ar.board.display.soundOn);
   expect(await page.locator("body").textContent()).not.toContain("never-display-canary");
   await page.setViewportSize({ width: 1920, height: 1080 });
+  const foot = await page.locator(".wall-foot").boundingBox(); expect(foot!.y + foot!.height).toBeLessThanOrEqual(1080);
   await page.screenshot({ path: ".artifacts/board-wall-1920.png" });
   await page.getByRole("link", { name: ar.board.display.exit }).focus(); await page.keyboard.press("Enter");
-  await expect(page.locator(".topbar.workspace")).toBeVisible(); await expect(page.locator(".topbar.wall")).toHaveCount(0); await expect(page.locator("html")).not.toHaveAttribute("data-theme", "dark");
+  await expect(page.locator(".topbar.workspace")).toBeVisible(); await expect(page.locator("html")).not.toHaveAttribute("data-theme", "dark");
+});
+
+test("English wall reads left to right with the same indicators", async ({ page }) => {
+  await login(page, "reviewer@example.test", "en"); await page.goto("/en/board?display=1");
+  await expect(page.getByRole("heading", { level: 1, name: en.board.wall.title, exact: true })).toBeVisible();
+  await expect(page.getByTestId("wall-urgent-open")).toContainText(en.board.wall.urgent);
+  const titleBox = await page.locator(".wall-heading").boundingBox(), clockBox = await page.getByTestId("wall-clock").boundingBox(); expect(titleBox!.x).toBeLessThan(clockBox!.x);
+  await expect(page.getByTestId("wall-card").first()).toContainText(en.board.wall.notReceived);
 });
 
 test("wall display goes stale and dims when the snapshot fails, and can be light", async ({ page }) => {
@@ -126,7 +128,8 @@ test("ADR 0035 board and wall use server names and deadlines, tolerating null fi
   await expect(page.getByTestId("column-incoming")).toContainText(ar.board.reservedName.replace("{name}", "Synthetic staff"));
   await expect(page.getByTestId("ack-overdue")).toHaveCount(1);
   await expect(page.getByTestId("overdue")).toContainText(ar.board.oldestOverdue.split("{time}")[0]);
-  await page.goto("/ar/board?display=1"); await expect(page.getByTestId("wall-column-incoming")).toContainText("Synthetic staff");
+  // الجدار: المتأخر عن الإقرار من الموعد الذي أعاده الخادم، على بلاطة المادة وفي المؤشّر.
+  await page.goto("/ar/board?display=1"); await expect(page.getByTestId("board-display").getByTestId("ack-overdue")).toHaveCount(1);
   await expect(page.getByTestId("wall-overdue")).toContainText(ar.board.oldestOverdue.split("{time}")[0]);
   await page.route("**/api/bff/materials?*", async route => { const response = await route.fetch(), data = await response.json(); for (const item of data.items) { item.reserved_by_name = null; item.acknowledgement_due_at = null; } await route.fulfill({ response, json: data }); });
   await page.route("**/api/bff/dashboard/newsroom", async route => { const response = await route.fetch(), data = await response.json(); data.oldest_overdue_acknowledgement_at = null; for (const item of data.reserved) item.reserved_by_name = null; await route.fulfill({ response, json: data }); });
@@ -144,8 +147,8 @@ test("beyond the fetch cap the counts say 'and more' instead of landing in the w
   expect(incoming).toMatch(/\d+\+/); expect(Number(incoming.match(/\d+/)![0])).toBeLessThanOrEqual(198);
   await expect(page.getByTestId("count-stalled")).toBeVisible();
   await page.getByRole("link", { name: ar.board.openDisplay }).click();
-  await expect(page.getByTestId("wall-capped")).toBeVisible();
-  await expect(page.getByTestId("wall-column-checking").locator(".wall-count")).toContainText("500+");
+  await expect(page.getByTestId("wall-capped")).toBeVisible(); await expect(page.getByTestId("wall-capped")).toContainText("100");
+  await expect(page.getByTestId("wall-card")).toHaveCount(8);
   await expect(page.getByTestId("wall-upload")).toHaveCount(3);
   await expect(page.locator(".wall-now .wall-more")).toHaveText(ar.board.display.more.replace("{n}", "2"));
   expect(await page.locator("body").textContent()).not.toContain("never-display-canary");

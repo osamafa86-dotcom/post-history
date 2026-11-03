@@ -320,7 +320,8 @@
     "urgentType": "Urgent alert",
     "needsAck": "Urgent: needs acknowledgement.",
     "grouped": "{n} alerts for the same material",
-    "choose": "Choose an alert to preview it."
+    "choose": "Choose an alert to preview it.",
+    "openTask": "Open task"
   },
   "rules": {
     "title": "Notification rules",
@@ -578,7 +579,23 @@
       "ready": "Approved and waiting to publish",
       "stalled": "Needs changes, rejected, or reception failed"
     },
-    "columnsLabel": "Production board columns"
+    "columnsLabel": "Production board columns",
+    "wall": {
+      "title": "Wall",
+      "lead": "Urgent first, then newest",
+      "inbox": "In the inbox",
+      "urgent": "Urgent not received",
+      "overdue": "Overdue acknowledgement",
+      "since": "{time} ago",
+      "notReceived": "Not received",
+      "received": "Received",
+      "ackOverdue": "Acknowledgement overdue {time}",
+      "empty": "Nothing in the inbox right now",
+      "emptyBody": "Materials show up here as they arrive, urgent first.",
+      "page": "{page} of {pages}",
+      "tilesLabel": "Inbox materials",
+      "capped": "More than {n} materials in the inbox: the wall shows the urgent ones first, then the newest {n}; the count above comes from the snapshot."
+    }
   },
   "upload": {
     "nav": "Desktop upload",
@@ -1429,7 +1446,8 @@
       "payouts": "Payouts",
       "commission-rules": "Commission",
       "invite-conflicts": "Conflicts",
-      "organization": "My org"
+      "organization": "My org",
+      "tasks": "Tasks"
     },
     "bottomNav": "Main destinations",
     "more": "More",
@@ -1606,5 +1624,141 @@
       "line.title": "A line over 22 characters",
       "line": "Shorten the line or move a word to the next one. “Prepare copy” stays disabled until it is fixed."
     }
+  },
+  "tasks": {
+    "nav": "Tasks",
+    "title": "My tasks",
+    "lead": "What editors assigned to you: overdue first, then nearest deadline.",
+    "denied": "My tasks is for the production team: the materials assigned to you.",
+    "kpiActive": "In progress",
+    "kpiOverdue": "Overdue",
+    "kpiDone": "Delivered in the last 7 days",
+    "tabsLabel": "Task status",
+    "tabs": {
+      "active": "Active",
+      "closed": "Closed"
+    },
+    "emptyActive": "No active tasks",
+    "emptyActiveBody": "When an editor assigns you a material it appears here and you get a notification.",
+    "emptyClosed": "No closed tasks yet",
+    "emptyClosedBody": "What you deliver or return shows up here.",
+    "from": "From {name}",
+    "fromEditor": "From the editor",
+    "rushes": {
+      "zero": "No rushes",
+      "one": "1 rush",
+      "two": "2 rushes",
+      "few": "{n} rushes",
+      "many": "{n} rushes",
+      "other": "{n} rushes"
+    },
+    "due": {
+      "overdue": "Overdue {time}",
+      "soon": "Due in {time}",
+      "today": "Today {time}",
+      "later": "{date}",
+      "closed": "Due {date}"
+    },
+    "state": {
+      "assigned": "Not started",
+      "acknowledged": "Received",
+      "in_progress": "In progress",
+      "done": "Delivered",
+      "returned": "Returned"
+    },
+    "overdueBadge": "Overdue",
+    "sensitive": "Sensitive",
+    "download": "Download rushes",
+    "open": "Open task",
+    "phoneNote": "You can download rushes on the phone; the edit itself happens on the computer.",
+    "materialUnavailable": "This material is not available to you right now",
+    "loadMore": "More"
+  },
+  "task": {
+    "crumb": "My tasks",
+    "back": "Tasks",
+    "assignedBy": "Assigned by {name} {time}",
+    "assignedByEditor": "Assigned by the editor {time}",
+    "assignee": "Editor: {name}",
+    "assigneeUnnamed": "A production team member",
+    "dueLine": "Due {due}",
+    "note": "Editor's note",
+    "noNote": "The editor left no note.",
+    "returnNote": "Reason for return",
+    "rushesTitle": "Rushes ({n})",
+    "rushesLead": "The original as shot, with its fingerprint.",
+    "clip": "Clip {n}",
+    "photo": "Photo {n}",
+    "file": "File {n}",
+    "downloadAll": "Download all",
+    "downloadAllSize": "Download all ({size})",
+    "preparing": "Preparing the package… the status refreshes every ten seconds.",
+    "exportFailed": "The package could not be prepared. Request it again.",
+    "exportRetry": "Prepare again",
+    "exportRoleOnly": "The package is for the production team and those allowed to download the original.",
+    "exportHint": "One package with the original, the light copy and FCPXML and EDL files: it opens directly in Premiere and CapCut, with names ordered by sequence and title.",
+    "actionsTitle": "Task",
+    "act": {
+      "acknowledged": "Acknowledge",
+      "in_progress": "Start work",
+      "done": "Mark delivered",
+      "returned": "Return task"
+    },
+    "doneHint": "Delivering here carries no file: uploading the produced material needs a later contract change.",
+    "returnTitle": "Return the task",
+    "returnHint": "Only whoever assigned it sees this, in the task; it never goes into a notification. Up to 500 characters, no line breaks.",
+    "returnReason": "Reason (optional)",
+    "confirmReturn": "Return task",
+    "closedDone": "Delivered {time}",
+    "closedReturned": "Returned {time}",
+    "openMaterial": "Open material",
+    "denied": "Tasks are for supervisors, the production team and the editor-in-chief.",
+    "changed": "The task changed since you opened it; it was reloaded.",
+    "moved": "Task is now: {state}",
+    "invalidNote": "The reason is up to 500 characters, with no line break and no space at either end."
+  },
+  "assign": {
+    "action": "Assign to editor",
+    "rowAction": "Assign",
+    "title": "Assign to a video editor",
+    "subtitle": "“{title}” · {files} · {priority}",
+    "candidates": "Video editor",
+    "free": "Available now",
+    "openTasks": {
+      "zero": "No tasks",
+      "one": "1 task",
+      "two": "2 tasks",
+      "few": "{n} tasks",
+      "many": "{n} tasks",
+      "other": "{n} tasks"
+    },
+    "urgentTasks": "{n} urgent",
+    "overdueTasks": "{n} overdue",
+    "unnamed": "A production team member",
+    "loadingCandidates": "Loading the production team…",
+    "noCandidates": "Nobody is on the production team right now.",
+    "due": "Needed within",
+    "presets": {
+      "30m": "30 minutes",
+      "1h": "1 hour",
+      "today": "Today"
+    },
+    "dueAt": "Due {time}",
+    "note": "Note for the editor",
+    "noteHint": "The editor sees it in the task only, never in the notification. Up to 500 characters, no line breaks.",
+    "submit": "Assign to {name}",
+    "submitPlain": "Assign",
+    "cancel": "Cancel",
+    "close": "Close",
+    "chooseFirst": "Choose a production team member.",
+    "notAllowed": "Accept the material for production first, then assign it.",
+    "open": "This material already has an open task; return it first to reassign.",
+    "notEligible": "This member can no longer be assigned; choose someone else.",
+    "done": "Assigned to {name}.",
+    "cardTitle": "Video editor",
+    "cardNone": "Not assigned to an editor yet.",
+    "cardNoneReader": "No open task on this material.",
+    "cardCurrent": "{state} · {name}",
+    "cardLast": "Last task: {state} {time}"
   }
 }

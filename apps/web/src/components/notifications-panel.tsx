@@ -4,7 +4,7 @@ import Link from "next/link";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { humanDuration, messages, type Locale } from "@/lib/i18n";
 import type { Notification } from "@/lib/types";
-import { uuid } from "@/lib/query";
+import { notificationTarget } from "@/lib/assignment-policy";
 import { useMutation } from "@/lib/use-mutation";
 import { Icon, type IconName } from "./icon";
 
@@ -57,7 +57,7 @@ export function NotificationsPanel({ locale, onClose }: { locale: Locale; onClos
     {mutation.status && mutation.status !== 200 ? <p className="notice error" role="alert">{m.error}</p> : null}
     {failed && !items ? <p className="bell-empty" role="alert">{m.error}</p> : !items ? <ul className="bell-list" aria-busy="true">{[0, 1, 2].map(i => <li key={i} className="skeleton-row"><span className="skeleton circle" /><span className="skeleton line" /></li>)}</ul>
       : !visible.length ? <p className="bell-empty">{t.empty}</p>
-      : <ul className="bell-list">{visible.map(n => { const k = kind(n), href = n.material_id && uuid.test(n.material_id) ? `/${locale}/materials/${n.material_id}` : `/${locale}/notifications`;
+      : <ul className="bell-list">{visible.map(n => { const k = kind(n), href = notificationTarget(n, locale) ?? `/${locale}/notifications`;
         return <li key={n.id} className={`bell-item ${k.word} ${unread(n) ? "unread" : ""}`} data-testid="bell-item">
           <span className={`bell-icon ${k.word}`}><Icon name={k.icon} /></span>
           <Link prefetch={false} href={href} onClick={onClose}><strong>{t.kinds[k.word]}</strong><span className="bell-text">{n.escalation_level ? `${m.notice.escalation}: ${n.escalation_level}` : unread(n) ? m.notice.unreadState : n.acknowledged_at || n.state === "acknowledged" ? m.notice.acknowledged : m.notice.readState}</span></Link>
