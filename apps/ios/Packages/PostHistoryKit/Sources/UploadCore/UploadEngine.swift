@@ -57,14 +57,28 @@ public actor UploadEngine: TusTransportDelegate {
     private var accountScope: AccountScope?
     /// سجلات تنتظر دخول صاحبها عند خطوة تحتاج طلبًا باسمه.
     private var parkedForAccount: Set<UUID> = []
+    /// جيل المسح: يزيد مع كل `wipeAll()`. خطوة علّقت على انتظار (بصمة، أو طلب، أو نقل) لا تكتب سجلها ولا رمزه بعد أن تغيّر
+    /// الجيل، فلا يعود سجل مُحي إلى الذاكرة ولا إلى القرص (ADR 0113).
+    private var wipeGeneration: UInt64 = 0
+    /// سجلات تحمل الآن مكانًا في الطابور (البصمة ثم الجلسة ثم الأجزاء)، لا أكثر من `policy.maxConcurrentTransfers`.
+    private var transferSlots: Set<UUID> = []
+    /// سجلات تنتظر مكانًا؛ تُمنح بترتيب الطابور (`transferOrder`): النسخ الخفيفة أولًا، ثم الأقدم دخولًا.
+    private var waitingForSlot: Set<UUID> = []
+    /// سجلات توقفت لأن قرص الهاتف امتلأ أثناء تجهيز جزء؛ تُعاد بعد مهلة، وتخرج من هنا بأول جزء يُجهَّز.
+    private var outOfSpace: Set<UUID> = []
+    /// جلسات سجلات ألغاها المراسل ولم يصل إجهاضها الخادم بعد (ADR 0113).
+    private let aborts: any AbortStore
+    private var drainingAborts = false
+    private var abortDrainRequested = false
 
     public init(store: any UploadStateStore, secrets: any UploadSecretStore, api: any UploadAPI, transport: any TusTransport,
-                ingestTokens: (any IngestTokenProvider)? = nil,
+                ingestTokens: (any IngestTokenProvider)? = nil, aborts: (any AbortStore)? = nil,
                 slicer: ChunkSlicer, policy: ChunkSizePolicy = ChunkSizePolicy(), timing: Timing = Timing(), environment: Environment = Environment()) {
         self.store = store
         self.secrets = secrets
         self.api = api
         self.transport = transport
+        self.aborts = aborts ?? InMemoryAbortStore()
         self.ingest = ingestTokens
         self.slicer = slicer
         self.policy = policy
@@ -103,6 +117,8 @@ public actor UploadEngine: TusTransportDelegate {
         record.ownerAccount = ownerAccount
         records[record.id] = record
         try store.save(record)
+        // دوره في الطابور من لحظة دخوله، لا من لحظة بدء خطوته.
+        waitingForSlot.insert(record.id)
         Task { await self.step(record.id) }
         return record
     }
@@ -114,7 +130,16 @@ public actor UploadEngine: TusTransportDelegate {
         // تحضير النسخة الخفيفة لا ينجو من إنهاء التطبيق: أصل ينتظر نسخة لم تصل الطابور يُرفع بلا نسخة خفيفة.
         for rec in records.values where isHeldForProxy(rec) { releaseHold(rec.materialId) }
         let active = await transport.activePatchKeys()
-        for var rec in records.values where !rec.phase.isTerminal && rec.isPaused != true {
+        let resumable = records.values.filter { !$0.phase.isTerminal && $0.isPaused != true }
+        // مهمة ما زالت في النظام تنقل الآن فتحمل مكانها ولو تجاوز العدد؛ وما عداها ينتظر دوره بترتيب الطابور.
+        for rec in resumable where Self.holdsTransferSlot(rec.phase) {
+            if rec.phase == .transferring, let off = rec.inFlightOffset, active.contains(TusTaskKey(uploadId: rec.id, offset: off)) {
+                transferSlots.insert(rec.id)
+            } else {
+                waitingForSlot.insert(rec.id)
+            }
+        }
+        for var rec in resumable {
             let id = rec.id
             if rec.phase == .transferring, let off = rec.inFlightOffset, active.contains(TusTaskKey(uploadId: rec.id, offset: off)) { continue }
             if rec.phase == .transferring {
@@ -125,6 +150,7 @@ public actor UploadEngine: TusTransportDelegate {
                 Task { await self.step(id) }
             }
         }
+        Task { await self.drainAborts() }
     }
 
     /// إيقاف مؤقت بطلب المراسل: تُلغى مهمة الجزء الجارية، ولا يُجدوَل جزء حتى `resume`. ما أكّده الخادم لا يضيع.
@@ -135,6 +161,8 @@ public actor UploadEngine: TusTransportDelegate {
         save(rec, settingPause: true)
         retryTasks[id]?.cancel()
         retryTasks[id] = nil
+        // الموقوف لا يحجز مكانًا عن غيره؛ يعود إلى دوره حين يُستأنف.
+        releaseSlot(id)
         await transport.cancel(uploadId: id)
         emit(.phaseChanged(id: id, phase: rec.phase))
     }
@@ -167,13 +195,16 @@ public actor UploadEngine: TusTransportDelegate {
         let ready = parkedForAccount.filter { id in records[id].map(mayRequest) ?? true }
         parkedForAccount.subtract(ready)
         for id in ready { Task { await self.step(id) } }
+        // إجهاض ينتظر صاحبه يُرسل حين يدخل.
+        Task { await self.drainAborts() }
     }
 
     /// السجلات التي تنتظر دخول صاحبها (للاختبارات).
     func waitingForOwner() -> Set<UUID> { parkedForAccount }
 
     /// تُرسل طلبات هذا السجل المصادَق عليها الآن: صاحبه هو الداخل.
-    private func mayRequest(_ rec: UploadRecord) -> Bool { accountScope?.owns(rec.ownerAccount) ?? true }
+    private func mayRequest(_ rec: UploadRecord) -> Bool { mayRequest(owner: rec.ownerAccount) }
+    private func mayRequest(owner: UUID?) -> Bool { accountScope?.owns(owner) ?? true }
 
     /// قبل كل طلب باسم الحساب (إنشاء الجلسة، ورمز البوابة، والإكمال، وسؤال الإيصال): سجل غيره ينتظر صاحبه بلا فشل ولا محاولة.
     private func requireOwner(_ rec: UploadRecord) throws {
@@ -229,32 +260,75 @@ public actor UploadEngine: TusTransportDelegate {
         for id in ids { Task { await self.step(id) } }
     }
 
+    /// الإلغاء يُكتب أولًا، قبل أي انتظار: حدث متأخر من النقل، أو خطوة معلّقة على طلب، تجد السجل منتهيًا فلا تعيده ولا تجدول جزءًا
+    /// (`save` لا يكتب فوق سجل منتهٍ). ثم يُلغى النقل الجاري، وتُنهى الجلسة على الخادم باسم صاحبها (`DELETE /uploads/{id}`)، أو
+    /// تُحفظ لتُرسل لاحقًا إن تعذّر الآن (ADR 0113، كما في أندرويد ADR 0112).
     public func cancel(_ id: UUID) async {
         guard var rec = records[id], !rec.phase.isTerminal else { return }
         retryTasks[id]?.cancel()
-        await transport.cancel(uploadId: id)
+        retryTasks[id] = nil
         rec.inFlightOffset = nil
-        rec.prepared = []
+        setPhase(&rec, .cancelled)
         slicer.discardAll(uploadId: id)
         try? secrets.removeToken(for: id)
+        await transport.cancel(uploadId: id)
+        if let remote = rec.remote { await keepAbort(sessionId: remote.uploadSessionId, owner: rec.ownerAccount, record: id) }
         await forgetIngest(rec)
-        setPhase(&rec, .cancelled)
     }
+
+    // MARK: إجهاض الجلسة على الخادم
+
+    /// يُبقي إجهاض جلسة سجل ملغى ثم يرسل ما بقي. إن تعذّر الحفظ (الملف لا يُقرأ الآن) يُرسل مرة بلا حفظ، فلا يضيع إن كانت الشبكة متاحة.
+    private func keepAbort(sessionId: UUID, owner: UUID?, record: UUID) async {
+        let abort = PendingAbort(sessionId: sessionId, ownerAccount: owner, idempotencyKey: PendingAbort.idempotencyKey(forRecord: record), createdAt: env.now())
+        do {
+            try aborts.add(abort)
+        } catch {
+            if mayRequest(owner: owner) { _ = try? await api.abort(idempotencyKey: abort.idempotencyKey, id: sessionId) }
+            return
+        }
+        await drainAborts()
+    }
+
+    /// يرسل الإجهاضات المحفوظة لأصحابها الداخلين، الأقدم أولًا، ويتوقف عند أول ما يُعاد لاحقًا (انقطاع، `5xx`، `429`): التالي سيلقاه
+    /// أيضًا. الجواب الأخير يُسقطه: `204`، و`404` (غائبة أو لغيره)، و`409` (تحقّق أصلها قبل الإلغاء)، و`401`/`403` (المعترض حدّث
+    /// الجلسة وأعاد الطلب من قبل؛ ما بقي منهما جلسة أُبطلت، والإبطال يمحو الطابور وإجهاضاته). يُستدعى عند الإلغاء والإطلاق والدخول
+    /// وعودة التطبيق إلى المقدمة.
+    public func drainAborts() async {
+        guard !drainingAborts else { abortDrainRequested = true; return }
+        drainingAborts = true
+        defer { drainingAborts = false }
+        let generation = wipeGeneration
+        repeat {
+            abortDrainRequested = false
+            for abort in (try? aborts.all()) ?? [] {
+                guard generation == wipeGeneration else { return }
+                guard mayRequest(owner: abort.ownerAccount) else { continue }
+                do {
+                    try await api.abort(idempotencyKey: abort.idempotencyKey, id: abort.sessionId)
+                } catch let e as UploadAPIError where !e.isRetryable {
+                    // جواب أخير من الخادم: لا يُعاد.
+                } catch {
+                    break
+                }
+                guard generation == wipeGeneration else { return }
+                try? aborts.remove(sessionId: abort.sessionId)
+            }
+        } while abortDrainRequested && generation == wipeGeneration
+    }
+
+    /// الإجهاضات التي لم تصل الخادم بعد.
+    public func pendingAborts() -> [PendingAbort] { (try? aborts.all()) ?? [] }
 
     /// المسح الطارئ أو إبطال الجلسة: يلغي كل مهام النقل الخلفية ويحذف كل السجلات وملفات الأجزاء ورموز الرفع. لا يُسجَّل شيء.
     /// لا يلمس الملفات الأصلية؛ حذفها على طبقة التطبيق (`LocalDataWiper`).
+    /// الطابور يُفرَّغ في الذاكرة ويتغيّر الجيل قبل أول انتظار: خطوة معلّقة تعود بعده لا تجد سجلها فلا تكتبه (ADR 0113).
     public func wipeAll() async -> Int {
-        let ids = Array(records.keys)
-        for id in ids {
-            retryTasks[id]?.cancel()
-            retryTasks[id] = nil
-            await transport.cancel(uploadId: id)
-            if let rec = records[id] { await forgetIngest(rec) }
-            slicer.discardAll(uploadId: id)
-            try? secrets.removeToken(for: id)
-            try? store.remove(id: id)
-        }
+        wipeGeneration &+= 1
+        let wiped = records
         records.removeAll()
+        for task in retryTasks.values { task.cancel() }
+        retryTasks.removeAll()
         busy.removeAll()
         resyncing.removeAll()
         parkedForProxy.removeAll()
@@ -262,7 +336,19 @@ public actor UploadEngine: TusTransportDelegate {
         yieldingSince.removeAll()
         releasedProxyHolds.removeAll()
         ingestRefreshes.removeAll()
-        return ids.count
+        transferSlots.removeAll()
+        waitingForSlot.removeAll()
+        outOfSpace.removeAll()
+        // لا إجهاض ينتظر بعد المسح: لا يبقى أثر لجلسة على الهاتف (والمسح الطارئ يبطل الجلسات على الخادم بأفضل جهد).
+        try? aborts.removeAll()
+        for (id, rec) in wiped {
+            await transport.cancel(uploadId: id)
+            await forgetIngest(rec)
+            slicer.discardAll(uploadId: id)
+            try? secrets.removeToken(for: id)
+            try? store.remove(id: id)
+        }
+        return wiped.count
     }
 
     /// يحذف سجلًا منتهيًا وآثاره (لا يحذف الملف الأصلي؛ حذفه قرار المراسل في الواجهة).
@@ -272,6 +358,8 @@ public actor UploadEngine: TusTransportDelegate {
         try? secrets.removeToken(for: id)
         try store.remove(id: id)
         records[id] = nil
+        releaseSlot(id)
+        outOfSpace.remove(id)
     }
 
     // MARK: TusTransportDelegate
@@ -307,29 +395,44 @@ public actor UploadEngine: TusTransportDelegate {
                 return
             }
             save(rec)
-            await resync(rec.id)
+            // `5xx` و`429` و`423`: موضع الخادم أولًا (HEAD) فلا يبدأ شيء من الصفر، ثم مهلة متزايدة قبل الجزء التالي.
+            await resync(rec.id, backoff: error.wantsBackoff)
         }
     }
 
     // MARK: الدفع
 
+    /// كل انتظار في الخطوة (بصمة، أو طلب، أو نقل) قد يمر عليه مسح أو إلغاء أو حذف؛ النسخة المحلية من السجل لا تُكتب بعده
+    /// إلا والسجل حي في الجيل نفسه (`isCurrent`).
     private func step(_ id: UUID) async {
         guard !busy.contains(id) else { return }
         busy.insert(id)
         defer { busy.remove(id) }
+        let generation = wipeGeneration
         while var rec = records[id], !rec.phase.isTerminal, rec.isPaused != true {
             do {
                 switch rec.phase {
                 case .hashing:
+                    guard takeSlot(rec) else { return }
                     let source = try sourceURL(rec)
                     let hasher = env.hasher
                     rec.sha256Hex = try await Task.detached(priority: .utility) { try hasher(source) }.value
+                    guard isCurrent(id, generation) else { return }
                     setPhase(&rec, .creatingSession)
                 case .creatingSession:
-                    if mustYieldToProxy(rec) { park(rec); return }
+                    if mustYieldToProxy(rec) { releaseSlot(id); park(rec); return }
                     try requireOwner(rec)
+                    guard takeSlot(rec) else { return }
                     let body = UploadSessionCreate(materialId: rec.materialId, kind: rec.kind, sizeBytes: Int(rec.sizeBytes), filename: rec.filename, mimeType: rec.mimeType, proxyMode: rec.proxyMode, clientSha256: rec.sha256Hex)
                     let created = try await api.createSession(idempotencyKey: rec.createIdempotencyKey, body)
+                    // مُسح الطابور أو أُلغي السجل أثناء الطلب: لا رمز رفع ولا سجل يُكتب له. والجلسة التي أنشأها هذا الطلب لسجل
+                    // ألغاه المراسل لا تفلت من الإجهاض (الإلغاء لم يرها).
+                    guard isCurrent(id, generation) else {
+                        if generation == wipeGeneration, records[id].map({ $0.phase == .cancelled }) ?? true {
+                            await keepAbort(sessionId: created.id, owner: rec.ownerAccount, record: id)
+                        }
+                        return
+                    }
                     guard let endpoint = URL(string: created.tusEndpoint) else { throw UploadError.invalidEndpoint }
                     try secrets.setToken(created.uploadToken, for: rec.id)
                     var metadata = created.tusMetadata.additionalProperties
@@ -341,8 +444,10 @@ public actor UploadEngine: TusTransportDelegate {
                     setPhase(&rec, .creatingUpload)
                 case .creatingUpload:
                     guard let remote = rec.remote else { setPhase(&rec, .creatingSession); continue }
+                    guard takeSlot(rec) else { return }
                     let uploadToken = try token(rec.id)
                     let ingestToken = try await ingestToken(rec, forceRefresh: false)
+                    guard isCurrent(id, generation) else { await forgetIngest(rec); return }
                     do {
                         rec.tusUploadURL = try await transport.createUpload(TusCreateRequest(endpoint: remote.tusEndpoint, token: uploadToken, length: rec.sizeBytes, metadata: remote.tusMetadata, ingestToken: ingestToken))
                         rec.confirmedOffset = 0
@@ -357,17 +462,23 @@ public actor UploadEngine: TusTransportDelegate {
                         rec.confirmedOffset = try await transport.currentOffset(uploadURL: deterministic, token: uploadToken, ingestToken: ingestToken)
                         rec.tusUploadURL = deterministic
                     }
+                    guard isCurrent(id, generation) else { return }
                     setPhase(&rec, .transferring)
                 case .transferring:
                     if rec.confirmedOffset >= rec.sizeBytes { setPhase(&rec, .completing); continue }
                     if rec.inFlightOffset != nil || resyncing.contains(id) { return } // بانتظار حدث النقل أو موضع الخادم
+                    guard takeSlot(rec) else { return }
                     try prepareWindow(&rec)
+                    outOfSpace.remove(id)
                     guard let chunk = rec.prepared.first, let uploadURL = rec.tusUploadURL else { throw UploadError.sourceTruncated }
                     let ingestToken = try await ingestToken(rec, forceRefresh: false)
+                    guard isCurrent(id, generation) else { await forgetIngest(rec); return }
                     let request = TusPatchRequest(key: TusTaskKey(uploadId: rec.id, offset: chunk.offset), uploadURL: uploadURL, token: try token(rec.id), chunk: chunk, chunkFile: slicer.url(of: chunk), ingestToken: ingestToken)
                     rec.inFlightOffset = chunk.offset
                     save(rec)
                     try await transport.schedulePatch(request)
+                    // مُسح الطابور أو أُلغي السجل أو حُذف أثناء الجدولة: إلغاء النقل سبق تسجيل المهمة، فيُلغى الجزء الآن.
+                    guard isCurrent(id, generation) else { await transport.cancel(uploadId: id); return }
                     // أُوقف الرفع أثناء الجدولة: الإلغاء سبق تسجيل المهمة، فيُلغى الجزء الآن.
                     if records[id]?.isPaused == true { await transport.cancel(uploadId: id); return }
                     // قد تصل نتيجة الجزء أثناء الجدولة (والمستدعي من الحدث يجد السجل مشغولًا)؛ تُعاد قراءة الحالة بدل الخروج.
@@ -377,19 +488,23 @@ public actor UploadEngine: TusTransportDelegate {
                     try requireOwner(rec)
                     do { try await api.complete(idempotencyKey: rec.completeIdempotencyKey, id: remote.uploadSessionId, reportedSha256: rec.sha256Hex) }
                     catch UploadAPIError.conflict {} // مسار tusd: الاكتمال يصل من الخطّاف؛ نكتفي بانتظار التحقق
+                    guard isCurrent(id, generation) else { return }
                     setPhase(&rec, .awaitingReceipt)
                 case .awaitingReceipt:
                     guard let remote = rec.remote else { throw UploadAPIError.notFound }
                     try requireOwner(rec)
                     let session = try await api.session(id: remote.uploadSessionId)
+                    guard isCurrent(id, generation) else { return }
                     switch session.state {
                     case .verified:
                         try? secrets.removeToken(for: rec.id)
                         await forgetIngest(rec)
+                        guard isCurrent(id, generation) else { return }
                         setPhase(&rec, .verified(receiptNumber: session.receiptNumber ?? ""))
                     case .deduplicated:
                         try? secrets.removeToken(for: rec.id)
                         await forgetIngest(rec)
+                        guard isCurrent(id, generation) else { return }
                         setPhase(&rec, .deduplicated(duplicateOfFileId: session.duplicateOfFileId))
                     case .failed:
                         setPhase(&rec, .failed(Self.failure(session.failureReason)))
@@ -400,22 +515,106 @@ public actor UploadEngine: TusTransportDelegate {
                     return
                 }
             } catch {
+                // خطأ وصل بعد مسح أو إلغاء: لا فشل ولا محاولة تُكتب لسجل لم يعد في الطابور.
+                guard isCurrent(id, generation) else { return }
                 await fail(or: error, id: id)
                 return
             }
         }
     }
 
+    /// السجل ما زال حيًّا بعد انتظار: لم يمحه مسح (الجيل نفسه)، ولم يُحذف، ولم ينتهِ (إلغاء أو فشل من حدث النقل).
+    private func isCurrent(_ id: UUID, _ generation: UInt64) -> Bool {
+        generation == wipeGeneration && records[id].map { !$0.phase.isTerminal } == true
+    }
+
+    // MARK: أماكن الطابور
+
+    /// المراحل التي تحمل مكانًا: البصمة (قراءة الأصل كاملًا) والجلسة والأجزاء على القرص. الإكمال وانتظار الإيصال طلبات قصيرة لا تحمله.
+    static func holdsTransferSlot(_ phase: UploadPhase) -> Bool {
+        switch phase {
+        case .hashing, .creatingSession, .creatingUpload, .transferring: return true
+        default: return false
+        }
+    }
+
+    /// ترتيب الطابور (ADR 0113): النسخ الخفيفة أولًا (ADR 0075)، ثم الأقدم دخولًا.
+    static func transferOrder(_ a: UploadRecord, _ b: UploadRecord) -> Bool {
+        if (a.kind == .proxy) != (b.kind == .proxy) { return a.kind == .proxy }
+        if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
+        return a.id.uuidString < b.id.uuidString
+    }
+
+    /// يأخذ السجل مكانه إن كان دوره وفي الطابور مكان، وإلا ينتظر (`grantSlots` يوقظه). حامل المكان عند حدّ جزء يتخلى عنه لمن
+    /// يسبقه في الترتيب وينتظر والأماكن ممتلئة: نسخة خفيفة، أو سجل عاد من مهلة إعادة المحاولة.
+    private func takeSlot(_ rec: UploadRecord) -> Bool {
+        let id = rec.id
+        // المستدعي في خطوته الآن: لا ينتظر صاحبه ولا نسخة خفيفة.
+        parkedForAccount.remove(id)
+        parkedForProxy.remove(id)
+        if transferSlots.contains(id) {
+            guard yieldsSlot(rec) else { return true }
+            transferSlots.remove(id)
+        }
+        waitingForSlot.insert(id)
+        grantSlots(caller: id)
+        return transferSlots.contains(id)
+    }
+
+    private func yieldsSlot(_ rec: UploadRecord) -> Bool {
+        guard rec.phase == .transferring, rec.inFlightOffset == nil, transferSlots.count >= policy.maxConcurrentTransfers else { return false }
+        return waitingForSlot.contains { other in records[other].map { mayTakeSlot($0) && Self.transferOrder($0, rec) } ?? false }
+    }
+
+    /// سجل ينتظر مكانًا ويستطيع أن يتقدم إن أخذه: لا موقوف ولا منتهٍ ولا ينتظر صاحبه أو نسخة خفيفة.
+    private func mayTakeSlot(_ rec: UploadRecord) -> Bool {
+        !rec.phase.isTerminal && rec.isPaused != true && Self.holdsTransferSlot(rec.phase)
+            && !parkedForAccount.contains(rec.id) && !parkedForProxy.contains(rec.id)
+    }
+
+    /// يمنح الأماكن الشاغرة لمن ينتظر بترتيب الطابور ويوقظ خطوته (عدا المستدعي، فهو في خطوته الآن).
+    private func grantSlots(caller: UUID? = nil) {
+        waitingForSlot = waitingForSlot.filter { records[$0].map(mayTakeSlot) ?? false }
+        while transferSlots.count < policy.maxConcurrentTransfers,
+              let next = waitingForSlot.compactMap({ records[$0] }).min(by: Self.transferOrder) {
+            waitingForSlot.remove(next.id)
+            transferSlots.insert(next.id)
+            if next.id != caller { Task { await self.step(next.id) } }
+        }
+    }
+
+    private func releaseSlot(_ id: UUID) {
+        waitingForSlot.remove(id)
+        guard transferSlots.remove(id) != nil else { return }
+        grantSlots()
+    }
+
+    /// ما ينتظر دوره في الطابور الآن (لتعرض الواجهة «بانتظار دوره» بدل «جارٍ التحضير»).
+    public func waitingForTransferSlot() -> Set<UUID> {
+        waitingForSlot.filter { records[$0].map(mayTakeSlot) ?? false }
+    }
+
+    /// ما توقف لأن قرص الهاتف ممتلئ، ويُعاد بعد مهلة.
+    public func waitingForSpace() -> Set<UUID> { outOfSpace }
+
     /// يصنّف الخطأ: نهائي ← `failed`؛ قابل للإعادة ← محاولة بعد مهلة متزايدة.
     private func fail(or error: any Error, id: UUID) async {
         guard var rec = records[id] else { return }
         if error is AwaitingOwner {
-            // ليس خطأ: يُستأنف حين يدخل صاحبه (`setAccountScope`)، ولا تُستهلك محاولة.
+            // ليس خطأ: يُستأنف حين يدخل صاحبه (`setAccountScope`)، ولا تُستهلك محاولة، ولا يحجز مكانًا عن غيره.
             parkedForAccount.insert(id)
+            releaseSlot(id)
             return
         }
         rec.lastErrorCode = String(describing: error)
         switch error {
+        case _ where UploadError.isOutOfSpace(error):
+            // القرص ممتلئ أثناء تجهيز جزء: الأصل سليم وما وصل الخادم باقٍ، فلا فشل نهائي ولا «الملف غير موجود»؛
+            // يُعاد بعد مهلة متزايدة، والواجهة تقول السبب (`waitingForSpace`).
+            rec.lastErrorCode = String(describing: UploadError.outOfSpace)
+            outOfSpace.insert(id)
+            save(rec)
+            scheduleRetry(id)
         case UploadError.sourceTruncated, is CocoaError:
             setPhase(&rec, .failed(.sourceMissing))
         case IngestTokenError.unsupported, IngestTokenError.attestationRejected:
@@ -444,6 +643,8 @@ public actor UploadEngine: TusTransportDelegate {
         rec.attempt += 1
         let delay = timing.retryDelays[min(rec.attempt, timing.retryDelays.count) - 1]
         save(rec)
+        // سجل ينتظر مهلته لا يوقف الطابور: مكانه لمن ينتظر، ويعود إلى دوره بترتيبه حين تنقضي (وحامل مكانه يتخلى عنه عند حدّ جزء).
+        if !waitingForSlot.isEmpty { releaseSlot(id) }
         emit(.retryScheduled(id: id, attempt: rec.attempt, after: delay))
         retryTasks[id]?.cancel()
         retryTasks[id] = Task { [timing] in
@@ -452,10 +653,11 @@ public actor UploadEngine: TusTransportDelegate {
         }
     }
 
-    /// يسأل الخادم عن موضعه (HEAD) ويُعيد مواءمة الأجزاء المُجهَّزة، ثم يستأنف.
-    private func resync(_ id: UUID, refreshIngest: Bool = false) async {
+    /// يسأل الخادم عن موضعه (HEAD) ويُعيد مواءمة الأجزاء المُجهَّزة، ثم يستأنف. `backoff`: الخادم مشغول، فالجزء التالي بعد مهلة.
+    private func resync(_ id: UUID, refreshIngest: Bool = false, backoff: Bool = false) async {
         guard let rec = records[id], rec.phase == .transferring, rec.inFlightOffset == nil, let url = rec.tusUploadURL, !resyncing.contains(id),
               rec.isPaused != true else { return }
+        let generation = wipeGeneration
         resyncing.insert(id)
         let head: Result<Int64, any Error>
         do {
@@ -463,13 +665,13 @@ public actor UploadEngine: TusTransportDelegate {
             head = .success(try await transport.currentOffset(uploadURL: url, token: try token(id), ingestToken: ingestToken))
         } catch { head = .failure(error) }
         resyncing.remove(id)
-        guard var rec = records[id], rec.phase == .transferring else { return }
+        guard generation == wipeGeneration, var rec = records[id], rec.phase == .transferring else { return }
         switch head {
         case .success(let serverOffset):
             applyServerOffset(&rec, serverOffset)
             save(rec)
             emit(.progress(id: id, confirmedOffset: rec.confirmedOffset, sizeBytes: rec.sizeBytes))
-            if rec.attempt == 0 { await step(id) } else { scheduleRetry(id) }
+            if rec.attempt == 0, !backoff { await step(id) } else { scheduleRetry(id) }
         case .failure(let error):
             await fail(or: error, id: id)
         }
@@ -482,14 +684,21 @@ public actor UploadEngine: TusTransportDelegate {
         rec.prepared = keep
     }
 
-    /// يجهّز الأجزاء حتى امتلاء النافذة، ويعيد تجهيز ما فُقد ملفه (مثلًا بعد إعادة تشغيل الجهاز).
+    /// يجهّز الأجزاء حتى امتلاء النافذة ضمن ميزانية الطابور المشتركة، ويعيد تجهيز ما فُقد ملفه (مثلًا بعد إعادة تشغيل الجهاز).
+    /// أجزاء السجلات الأخرى على القرص (الجارية والموقوفة) تُحسب من الميزانية.
     private func prepareWindow(_ rec: inout UploadRecord) throws {
         let source = try sourceURL(rec)
         if let i = rec.prepared.firstIndex(where: { !slicer.exists($0) }) { rec.prepared.removeSubrange(i...) }
-        for (offset, length) in ChunkPlanner.chunksToPrepare(sizeBytes: rec.sizeBytes, confirmedOffset: rec.confirmedOffset, chunkSize: rec.chunkSizeBytes, prepared: rec.prepared, window: policy.preparedWindow) {
+        let id = rec.id
+        let onDisk = records.values.reduce(Int64(0)) { sum, other in other.id == id ? sum : sum + Self.preparedBytes(other) }
+        let budget = policy.sharedChunkBudgetBytes - onDisk - Self.preparedBytes(rec)
+        for (offset, length) in ChunkPlanner.chunksToPrepare(sizeBytes: rec.sizeBytes, confirmedOffset: rec.confirmedOffset, chunkSize: rec.chunkSizeBytes,
+                                                             prepared: rec.prepared, window: policy.preparedWindow, budgetBytes: budget) {
             rec.prepared.append(try slicer.prepare(uploadId: rec.id, source: source, offset: offset, length: length))
         }
     }
+
+    static func preparedBytes(_ rec: UploadRecord) -> Int64 { rec.prepared.reduce(0) { $0 + $1.length } }
 
     // MARK: مساعدات
 
@@ -534,16 +743,26 @@ public actor UploadEngine: TusTransportDelegate {
     }
 
     private func setPhase(_ rec: inout UploadRecord, _ phase: UploadPhase) {
+        guard records[rec.id] != nil else { return }
         rec.phase = phase
-        if phase.isTerminal { rec.inFlightOffset = nil }
+        if phase.isTerminal {
+            rec.inFlightOffset = nil
+            // أجزاء سجل انتهى لا تُرسل أبدًا (إعادة المحاولة سجل جديد): تُحذف فلا تشغل القرص ولا ميزانية الطابور.
+            rec.prepared.forEach(slicer.discard)
+            rec.prepared = []
+            outOfSpace.remove(rec.id)
+        }
         save(rec)
         emit(.phaseChanged(id: rec.id, phase: phase))
+        if !Self.holdsTransferSlot(phase) { releaseSlot(rec.id) }
         if rec.kind == .proxy, phase.isTerminal { wakeParked() }
     }
 
     /// `pause` و`resume` وحدهما يغيّران علم الإيقاف؛ أي حفظ آخر (نسخة محلية قديمة بعد انتظار) يُبقي العلم المخزَّن،
-    /// والمسجَّل الموقوف لا يحمل جزءًا جاريًا.
+    /// والمسجَّل الموقوف لا يحمل جزءًا جاريًا. سجل ليس في الطابور (مُحي أو حُذف) لا يُكتب: لا يعود بنسخة محلية قديمة.
+    /// والسجل المنتهي (ملغى أو متحقق أو فاشل) لا يُكتب فوقه: إعادة المحاولة سجل جديد.
     private func save(_ rec: UploadRecord, settingPause: Bool = false) {
+        guard let current = records[rec.id], !current.phase.isTerminal else { return }
         var r = rec
         if !settingPause, let stored = records[r.id] {
             r.isPaused = stored.isPaused

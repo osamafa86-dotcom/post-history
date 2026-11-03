@@ -1310,7 +1310,8 @@
     "reasons": {
       "manual": "يدويًا",
       "rights_changed": "تغيّرت الحقوق",
-      "sensitive_flagged": "موسومة بالحساسية"
+      "sensitive_flagged": "موسومة بالحساسية",
+      "editorial_changed": "سقط الاعتماد التحريري للإصدار"
     },
     "listingTitle": "العنوان للمشتري",
     "description": "الوصف للمشتري",

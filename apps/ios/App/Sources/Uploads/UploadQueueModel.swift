@@ -20,13 +20,18 @@ final class UploadQueueModel: ObservableObject {
     /// أصول تنتظر نسخة خفيفة في الطابور، ومواد تُحضَّر نسختها الآن (ADR 0075).
     @Published private(set) var waitingForProxy: Set<UUID> = []
     @Published private(set) var preparingProxy: Set<UUID> = []
+    /// سجلات تنتظر دورها في الطابور، وسجلات توقفت لأن مساحة الهاتف ممتلئة (ADR 0113).
+    @Published private(set) var queuedForTransfer: Set<UUID> = []
+    @Published private(set) var waitingForSpace: Set<UUID> = []
     /// الشبكة كما تراها بطاقة الرفع (المواصفة A2): بلا شبكة، أو بانتظار Wi‑Fi حين يكون «Wi‑Fi فقط» مفعّلًا.
     enum NetworkState: Equatable { case online, offline, waitingForWifi }
     @Published private(set) var networkState: NetworkState = .online
     /// الزمن المتبقي التقديري لكل سجل من سرعة آخر 30 ثانية؛ يغيب بلا عيّنات كافية أو بلا شبكة.
     @Published private(set) var etaSeconds: [UUID: TimeInterval] = [:]
-    /// مسودات «مادة جديدة» المحفوظة على الجهاز (تظهر أعلى شاشة الرفع).
+    /// مسودات «مادة جديدة» للحساب الداخل وحده (ADR 0113، متابعة ADR 0093): مسودة غيره على الهاتف المشترك لا تظهر.
     @Published private(set) var drafts: [MaterialDraft] = []
+    /// كل المسودات على القرص لكل الحسابات؛ لا تصل الشاشات.
+    private var allDrafts: [MaterialDraft] = []
     /// إيصال وصل للتو: يُعرض شاشة الإيصال تلقائيًا، مرة للإرسالة كلها حين يصل آخر ملفاتها (06، ADR 0088). للحساب الداخل
     /// وحده: إيصال غيره ينتظر صاحبه (`ReceiptInbox`، ADR 0093).
     @Published var presentedReceipt: ReceiptTarget?
@@ -50,7 +55,8 @@ final class UploadQueueModel: ObservableObject {
         self.settings = settings
         draftStore = try? FileDraftStore(directory: UploadServices.shared.draftsDirectory)
         ledger = SendBatchLedger(store: SendBatchStore(fileURL: UploadServices.shared.batchesFile))
-        drafts = draftStore?.loadAllIfReadable() ?? []
+        // النطاق بلا أحد حتى يُضبط (`setScope`)، فلا تظهر مسودة قبل أن يُعرف الداخل.
+        allDrafts = draftStore?.loadAllIfReadable() ?? []
         // نسخ الاختيار المؤقتة التي خلّفها إنهاء التطبيق قبل نقلها إلى مجلد الرفع.
         PickedTempFiles.sweep(in: FileManager.default.temporaryDirectory)
     }
@@ -67,9 +73,12 @@ final class UploadQueueModel: ObservableObject {
     }
 
     func updateNetworkState() {
+        let was = networkState
         if !lastPath.satisfied { networkState = .offline }
         else if settings.uploadOverWifiOnly, lastPath.expensive || lastPath.constrained { networkState = .waitingForWifi }
         else { networkState = .online }
+        // عادت الشبكة: إجهاض جلسة ألغاها المراسل وهو بلا شبكة يُرسل الآن (ADR 0113).
+        if was != .online, lastPath.satisfied { Task { await engine.drainAborts() } }
         if networkState != .online { etaSeconds = [:]; for id in estimators.keys { estimators[id]?.reset() } }
     }
 
@@ -103,14 +112,17 @@ final class UploadQueueModel: ObservableObject {
     func refresh() async {
         allRecords = await engine.allRecords()
         waitingForProxy = await engine.waitingForProxy()
+        queuedForTransfer = await engine.waitingForTransferSlot()
+        waitingForSpace = await engine.waitingForSpace()
         publishVisible()
     }
 
-    /// ما تراه الشاشات من سجلات الطابور وإرسالاته: للحساب الداخل وحده (`AccountScope`).
+    /// ما تراه الشاشات من سجلات الطابور وإرسالاته ومسوداته: للحساب الداخل وحده (`AccountScope`).
     private func publishVisible() {
         records = scope.visible(allRecords)
         localCopies = Set(records.filter { UploadServices.shared.localCopyExists(relativePath: $0.sourcePath) }.map(\.id))
         batches = scope.visible(ledger.batches)
+        drafts = scope.visible(allDrafts)
     }
 
     /// الدخول والخروج وبدء التشغيل (ADR 0093): النواة تطلب باسم الداخل وحده، والشاشات ترى سجلاته وحده. الإيصال المعروض لغيره
@@ -134,6 +146,7 @@ final class UploadQueueModel: ObservableObject {
         ledger.refresh()
         batches = scope.visible(ledger.batches)
         reloadDrafts()
+        Task { await engine.drainAborts() }
     }
 
     private func receiptArrived(_ id: UUID) async {
@@ -210,13 +223,26 @@ final class UploadQueueModel: ObservableObject {
 
     /// «أرسل N مواد» (`BatchedSubmission`): الإرسالة تُسجَّل بمفاتيح ملفاتها قبل أول طلب، ومادة كل ملف تُضاف إليها قبل أن يدخل
     /// الطابور، وتُغلق بعد الحلقة. فإن وصلت ملفاتها كلها أثناء الحلقة يُعرض إيصالها الواحد عند الإغلاق.
+    /// المسودة تُحفظ بعد كل خطوة (ADR 0113): إنهاء التطبيق أثناء الإرسال يترك على القرص ما بقي بمواد ما أُنشئ منه، فإعادة الإرسال
+    /// لا تنشئ مادة ولا تُدخل ملفًا مرتين.
     func submit(_ draft: MaterialDraft, dynamicFields: [String: JSONValue], lightCopy: ProxyChoice,
                 create: (String, MaterialCreate) async throws -> UUID) async -> BatchedSubmission.Outcome {
-        let result = await BatchedSubmission.run(draft, dynamicFields: dynamicFields, ledger: ledger, owner: scope.current, create: create) { file, materialId, body in
+        let owner = draft.owner ?? scope.current
+        let result = await BatchedSubmission.run(draft, dynamicFields: dynamicFields, ledger: ledger, owner: scope.current, create: create, enqueue: { file, materialId, body in
             batches = scope.visible(ledger.batches)
+            // أُنهي التطبيق بين إدخال الملف وحفظ المسودة: أصل المادة في الطابور، فلا يُدخل ثانية.
+            let inQueue = await engine.allRecords()
+            guard !inQueue.contains(where: { $0.materialId == materialId && $0.kind == .original && $0.phase != .cancelled }) else { return }
             try await enqueue(relativePath: file.relativePath, materialId: materialId, filename: file.filename, mimeType: file.mimeType,
                               lightCopy: file.isVideo ? lightCopy : .originalOnly, title: body.title, priority: body.priority)
-        }
+        }, persist: { [draftStore] snapshot in
+            guard let draftStore else { return }
+            guard !snapshot.files.isEmpty else { draftStore.delete(snapshot.id); return }
+            var d = snapshot
+            d.owner = owner
+            d.updatedAt = Date()
+            try draftStore.save(d)
+        })
         await refresh()
         present(ledger.receiptDue(forBatch: result.batchId) { items(of: $0) }, record: nil)
         return result
@@ -270,7 +296,8 @@ final class UploadQueueModel: ObservableObject {
         }
         let previewArrived = allRecords.contains { $0.kind == .proxy && $0.materialId == rec.materialId && $0.phase.isVerified }
         return UploadItem(id: rec.id, materialId: rec.materialId, sizeBytes: rec.sizeBytes, confirmedOffset: rec.confirmedOffset,
-                          state: state, paused: rec.isPaused == true, previewArrived: previewArrived)
+                          state: state, paused: rec.isPaused == true, previewArrived: previewArrived,
+                          queued: queuedForTransfer.contains(rec.id), waitingForSpace: waitingForSpace.contains(rec.id))
     }
 
     /// «اختيار الملف» لرفع فشل لأن نسخته المحلية لم تعد موجودة (05c): ملف جديد أصلًا للمادة نفسها، ثم يُزال السجل الفاشل.
@@ -303,8 +330,10 @@ final class UploadQueueModel: ObservableObject {
 
     // MARK: المسودات
 
+    /// المسودة لصاحبها: الحساب الداخل حين تُحفظ أول مرة، ولا يتغيّر بعدها (ADR 0113).
     func saveDraft(_ draft: MaterialDraft) {
         var d = draft
+        if d.owner == nil { d.owner = allDrafts.first { $0.id == d.id }?.owner ?? scope.current }
         d.updatedAt = Date()
         try? draftStore?.save(d)
         reloadDrafts()
@@ -324,7 +353,8 @@ final class UploadQueueModel: ObservableObject {
     /// يقرأ المسودات من القرص بلا محو: ملف لا يُقرأ (الهاتف مقفل في إطلاق خلفي) يُبقي آخر حالة جيدة في الذاكرة كما في الإرسالات،
     /// والمجلد الذي محاه المسح الطارئ قائمة فارغة.
     func reloadDrafts() {
-        if let all = draftStore?.loadAllIfReadable() { drafts = all }
+        if let all = draftStore?.loadAllIfReadable() { allDrafts = all }
+        drafts = scope.visible(allDrafts)
     }
 
     /// الأصل يدخل الطابور فورًا (يُبصم ولا يضيع إن أُنهي التطبيق)، ونسخته الخفيفة تُحضَّر ثم تُرفع قبله. صاحبه الحساب الداخل
