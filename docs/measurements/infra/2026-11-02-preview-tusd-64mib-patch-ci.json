@@ -3,8 +3,8 @@
   "tool": "other",
   "role": "infra",
   "test_name": "preview-tusd-one-64mib-patch",
-  "started_at": "2026-11-03T00:02:17Z",
-  "ended_at": "2026-11-03T00:02:22Z",
+  "started_at": "2026-11-03T00:38:52Z",
+  "ended_at": "2026-11-03T00:38:55Z",
   "result": "pass",
   "device": {
     "platform": "server",
@@ -17,12 +17,12 @@
   "metrics": {
     "patch_bytes": 67108864,
     "tusd_part_size_bytes": 5242880,
-    "tusd_mem_limit_mib": 256.0,
-    "tusd_memory_peak_mib": 75.4,
-    "tusd_memory_current_peak_mib_sampled": 75.2,
+    "tusd_mem_limit_mib": 128.0,
+    "tusd_memory_peak_mib": 58.5,
+    "tusd_memory_current_peak_mib_sampled": 58.1,
     "tusd_anon_peak_mib_sampled": 9.3,
     "tusd_oom_kills": 0,
-    "upload_s": 4.9
+    "upload_s": 3.2
   },
   "notes": "infra/preview/smoke-preview.sh --media-json (ADR 0092): tusd v2.10.1 as the preview runs it (-s3-part-size and -s3-min-part-size 5 MiB, temporary parts on a volume, GOMEMLIMIT 40MiB), restarted for a fresh cgroup, then one upload of 64 MiB of random bytes in a single PATCH through the edge and the ingest gate, as the iOS background session sends (ADR 0009). memory.peak is the cgroup high-water mark, page cache of the temporary parts included; anon and memory.current sampled every 10 ms from the host. Upload time includes the probe container, two logins and the API's verification."
 }

@@ -48,7 +48,7 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
   - على main ويدويًا، ترفعها `preview-images.yml` tar مضغوطًا مع `SHA256SUMS` إلى الإصدار التمهيدي `preview-latest`.
   - الخادم ينزّلها بـ `fetch-images.sh`، يتحقق من البصمات كلها ثم `docker load`. لا بناء على الخادم.
 - **`docker-compose.preview.yml`:** Postgres وRedis وMinIO والخادم والويب، وtusd ووكيله وبوابة ingest للرفع من الحاسوب، وعامل الوسائط وموزّعه.
-  - لكل خدمة `mem_limit` و`memswap_limit` مساوٍ له، والمجموع 2632 MB تحت سقف 2632 MB (منها 1472 للعامل، ADR 0092).
+  - لكل خدمة `mem_limit` و`memswap_limit` مساوٍ له، والمجموع 2760 MB تحت سقف 2760 MB (منها 1472 للعامل، ADR 0092).
   - لا منفذ على المضيف.
   - `web` (nginx) وحده على الشبكة الخارجية `deploy_default` باسم `lib-web:8080`. يصل إلى منابعه بأسماء فريدة على الشبكات الداخلية (`ph-preview-api`، `ph-preview-api-public`، `ph-preview-web-app`)، لأن الاسم القصير قد يُحل على الشبكة المشتركة إلى حاوية أخرى. يضع `X-Robots-Tag: noindex` وشريط «معاينة»، ويُنهي TLS داخليًا للخادم على عنوانه الداخلي وحده، لأن الـBFF يشترط https.
   - الرفع من الحاسوب: الحافة تمرر `/files/` على أصل المعاينة إلى البوابة (`ph-preview-ingest`) ثم `tusd-proxy` ثم tusd، بعناوين ثابتة يقبلها الخادم في `/internal` (البوابة إلى `/internal/ingest/` وحده). رمز الويب للـBFF وحده (`BFF_SOURCE_ADDRESSES` = عنوان الحافة على الشبكة الداخلية). لا تفريغ.

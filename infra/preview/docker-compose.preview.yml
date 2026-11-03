@@ -9,7 +9,7 @@
 #   ./backfill-media.sh     # الأصول المتحققة قبل العامل: الأعداد وحدها (--wait حتى تنتهي)
 # لا منفذ على المضيف: الوكيل الأمامي للخادم (Caddy) يصل إلى "web" وحده عبر الشبكة الخارجية deploy_default باسم lib-web.
 # بناء iOS التجريبي (ADR 0077): الحافة تمرر /v1/ علنًا إلى الخادم عبر شبكة داخلية ثانية (public-api) عنوان الحافة عليها ليس في BFF_SOURCE_ADDRESSES.
-# الحدود: mem_limit لكل خدمة وmemswap_limit مساوٍ له (بلا swap)، والمجموع 2632 MB تحت سقف 2632 MB (ADR 0092، كان 960 في 0023)،
+# الحدود: mem_limit لكل خدمة وmemswap_limit مساوٍ له (بلا swap)، والمجموع 2760 MB تحت سقف 2760 MB (ADR 0092، كان 960 في 0023)،
 # منها 1472 لعامل الوسائط وحده.
 name: post-history-preview
 
@@ -86,6 +86,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 20
+    # 256 MB (was 128, ADR 0092): after two large uploads in 64 MiB PATCHes it went away at 128 MB, and at 256 MB it reached
+    # the limit with reclaimable page cache and was not killed.
     mem_limit: 256m
     memswap_limit: 256m
     cpus: 0.5
@@ -241,7 +243,7 @@ services:
   # الرفع: tusd خلف وكيله (حجب أجسام 500، infra/proxy/tusd.conf) وخلف بوابة ingest (رمز ES256 قصير وحالة الجلسة عند
   # الخادم، infra/ingest). الثلاثة على الشبكة الداخلية وحدها، والحافة تمرر /files/ إلى البوابة. المجموع 168 MB.
   # tusd 128 MB (كان 56، ADR 0092): قُتل عند 56 تحت PATCH من 32 MiB، وPATCH واحد من 64 MiB (جلسة iOS الخلفية، ADR 0009)
-  # يبلغ 75.4 MiB، أغلبها ذاكرة صفحات أجزائه المؤقتة لا ذاكرة مجهولة (9.3 MiB).
+  # يبلغ 58.5 إلى 75.4 MiB، أغلبها ذاكرة صفحات أجزائه المؤقتة لا ذاكرة مجهولة (9.3 MiB).
   tusd:
     <<: *hardened
     image: tusproject/tusd:v2.10.1@sha256:7b1c552a8b42f4b36cb01f2a3bd49f82ab078b2eefd191459e716141dd50376c
