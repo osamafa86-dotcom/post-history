@@ -3,6 +3,7 @@
 #   PREVIEW_DOMAIN=<النطاق> ./gen-env.sh
 #   ./gen-env.sh --add-upload     # .env قائم من قبل الرفع: يضيف مفاتيح الرفع الناقصة وحدها ولا يمس الباقي
 #   ./gen-env.sh --add-media      # .env قائم من قبل عامل الوسائط (ADR 0092): يضيف كل مفتاح ناقص منها وحده ولا يمس الموجود
+#   ./gen-env.sh --add-render     # .env قائم من قبل نسخ القالب (ملحق ADR 0092): مستخدم media-render في MinIO وعنوانه، كذلك
 # أسرار عشوائية بصلاحية 0600 لا تُطبع. يرفض الكتابة فوق .env قائم (الأسرار تُدار مرة، ولا تُستبدل بإعادة تشغيل).
 # الشهادة لاسم api.lib.internal وحده، من سلطة يُحذف مفتاحها بعد التوقيع، فلا تصدر شهادة ثانية منها.
 set -euo pipefail
@@ -25,9 +26,17 @@ media_env() {
   echo "S3_MEDIA_SECRET_KEY=$(hex 24)"
   sed -n '/^PREVIEW_MEDIA_IP=/p' preview.env.example
 }
-if [ "${1:-}" = --add-media ]; then
-  [ -f .env ] || { echo "no .env here: run without --add-media first" >&2; exit 1; }
-  added=0
+# مفاتيح media-render (نسخ قالب «مواد متداولة»، ملحق ADR 0092): مستخدمه في MinIO (يكتب derived/*/*/renders/ وحدها، ينشئه
+# minio-init.sh) وعنوانه الثابت. رمزه نحو /internal/media هو MEDIA_WORKER_TOKEN نفسه، والخادم يقصر عنوانه على مسارات النسخ.
+render_env() {
+  echo "S3_RENDER_ACCESS_KEY=preview-render-$(hex 6)"
+  echo "S3_RENDER_SECRET_KEY=$(hex 24)"
+  sed -n '/^PREVIEW_RENDER_IP=/p' preview.env.example
+}
+# .env قائم: يضيف كل مفتاح ناقص (أو فارغ) من المجموعة وحده، ولا يمس الموجود ولا يطبع قيمة.
+add_keys() {
+  local what="$1" gen="$2" added=0 line tmp
+  [ -f .env ] || { echo "no .env here: run gen-env.sh without options first" >&2; exit 1; }
   while IFS= read -r line; do
     grep -q "^${line%%=*}=." .env && continue
     tmp="$(mktemp .env.XXXXXX)"
@@ -35,10 +44,13 @@ if [ "${1:-}" = --add-media ]; then
     printf '%s\n' "$line" >> "$tmp"
     chmod 600 "$tmp" && mv -f "$tmp" .env
     added=$((added + 1))
-  done < <(media_env)
-  echo "media worker keys: $added added to .env, the rest kept (no value printed)"
-  exit 0
-fi
+  done < <("$gen")
+  echo "$what keys: $added added to .env, the rest kept (no value printed)"
+}
+case "${1:-}" in
+  --add-media) add_keys "media worker" media_env; exit 0 ;;
+  --add-render) add_keys "media-render" render_env; exit 0 ;;
+esac
 if [ "${1:-}" = --add-upload ]; then
   [ -f .env ] || { echo "no .env here: run without --add-upload first" >&2; exit 1; }
   if grep -q '^INGEST_TOKEN_SIGNING_KEY=.' .env; then echo "upload keys exist in .env: not changed"; exit 0; fi
@@ -68,6 +80,7 @@ WEB_SESSION_KEY=$(openssl rand -base64 32)
 ENV
   upload_env
   media_env
+  render_env
 } > .env.tmp
 mv .env.tmp .env
 

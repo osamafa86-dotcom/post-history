@@ -1,9 +1,13 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import { eq } from 'drizzle-orm';
 import Redis from 'ioredis';
 import request from 'supertest';
+import { DB, type Database } from '../../src/database/database.module';
+import { uploadSessions } from '../../src/database/schema/schema';
 import { MEDIA_STREAM, RENDER_STREAM } from '../../src/outbox/media-stream';
 import { OBJECT_STORAGE, type ObjectStorage } from '../../src/verification/object-storage';
-import { createHarness, drainOutbox, ensureForm, type Harness, loginAs } from './harness';
+import { recordVerification } from '../../src/verification/verification';
+import { createHarness, drainOutbox, ensureForm, type Harness, loginAs, seedUploadSession } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
 
@@ -196,6 +200,66 @@ describe('circulated-template renders', () => {
     const ok = await ready();
     await h.pool.query(`UPDATE materials SET sensitivity_injured = true, rights_state = 'unknown' WHERE id = $1`, [ok.id]);
     await as(supervisor).post(`/materials/${ok.id}/renders`, body()).expect(202);
+  });
+
+  // المعاينة الخفيفة (UPLOAD_VERIFIER=in_process، ملحق ADR 0092): الخادم يتحقق ببصمة الأصل وحدها، فلا مدة ولا مسار صورة
+  // مسجّلان، وشرط source يرفض. تقرير العامل في مسار الاستئناف (البصمة نفسها) يملأ الفارغ، ولا يستبدل قيمة مسجلة.
+  it('an original the API verified itself becomes renderable once the media worker reports its probe; state, checksum and receipt unchanged', async () => {
+    const sha = randomBytes(32);
+    const s = await seedUploadSession(h, reporter.id, { state: 'completed', size: 5000 });
+    await h.pool.query(`UPDATE upload_sessions SET storage_key = $2 WHERE id = $1`, [s.id, `tus/${s.id}`]);
+    const db = h.app.get<Database>(DB);
+    await db.transaction(async (tx) => {
+      const [session] = await tx.select().from(uploadSessions).where(eq(uploadSessions.id, s.id));
+      // كما يطبّقه المتحقق داخل الخادم: البصمة والحجم وحدهما
+      expect(await recordVerification(tx, session!, { result: 'verified', sha256: sha, sizeBytes: 5000 })).toBe('applied');
+    });
+    const file = async () =>
+      (
+        await h.pool.query(
+          `SELECT id, state, sha256, receipt_number, verified_at, duration_ms, start_pts_us, width, height, technical
+           FROM material_files WHERE material_id = $1 AND kind = 'original'`,
+          [s.materialId],
+        )
+      ).rows;
+    const [before] = await file();
+    expect(before).toMatchObject({ state: 'verified', duration_ms: null, width: null, technical: null });
+    await setStates(s.materialId, 'accepted');
+    const refused = await as(chief).post(`/materials/${s.materialId}/renders`, body({ show_location: false })).expect(409);
+    expect(refused.body.details).toEqual({ failed: ['source'] });
+
+    const probe = { duration_ms: 6000, start_pts_us: 0, width: 1280, height: 720, container: 'mov', video_codec: 'h264', audio_codec: 'aac' };
+    const report = (technical: object, checksum = sha) => ({
+      result: 'verified',
+      sha256: checksum.toString('hex'),
+      size_bytes: 5000,
+      head_sha256: randomBytes(32).toString('hex'),
+      tail_sha256: randomBytes(32).toString('hex'),
+      technical,
+    });
+    const res = await worker.post(`/sessions/${s.id}/verification`, report(probe)).expect(200);
+    expect(res.body).toEqual({ state: 'verified', file_id: before.id, receipt_number: before.receipt_number, failure_reason: null });
+    const [after] = await file();
+    expect(after).toMatchObject({
+      id: before.id,
+      state: 'verified',
+      receipt_number: before.receipt_number,
+      verified_at: before.verified_at,
+      duration_ms: '6000',
+      start_pts_us: '0',
+      width: 1280,
+      height: 720,
+      technical: { container: 'mov', video_codec: 'h264', audio_codec: 'aac' },
+    });
+    expect(after.sha256.equals(sha)).toBe(true);
+    // تقرير لاحق بقيم أخرى لا يستبدل شيئًا، وبصمة أخرى تعارض كما كانت ولا تسجّل شيئًا
+    await worker.post(`/sessions/${s.id}/verification`, report({ ...probe, duration_ms: 9000, width: 640, video_codec: 'hevc' })).expect(200);
+    expect((await worker.post(`/sessions/${s.id}/verification`, report(probe, randomBytes(32))).expect(409)).body.code).toBe('upload_state_conflict');
+    expect(await file()).toEqual([after]);
+    expect((await h.pool.query(`SELECT state FROM upload_sessions WHERE id = $1`, [s.id])).rows[0].state).toBe('verified');
+
+    const r = await as(chief).post(`/materials/${s.materialId}/renders`, body({ show_location: false })).expect(202);
+    expect(r.body).toMatchObject({ source_file_id: before.id, state: 'requested' });
   });
 
   it('validates the title by code points and refuses any client location', async () => {

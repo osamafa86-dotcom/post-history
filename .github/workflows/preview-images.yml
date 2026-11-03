@@ -1,11 +1,14 @@
 name: preview-images
 
-# Light preview on a shared server (ADR 0023, 0092): the API, web and media worker images are built here, never on the server.
-# Every run brings the preview compose up on the freshly built images (health, a demo login through the web, a desktop upload,
-# the media worker's proxy and thumbnail read through a signed link, no host port, the memory limits and actual use under
-# 2760 MB) and measures the worker on synthetic 60 s clips. On main (and by hand) the images then go as gzipped tars, with their
-# sha256, onto the fixed prerelease "preview-latest": the repository is public, so the server downloads them with no
-# token and runs `docker load`. No registry: personal packages are private by default.
+# Light preview on a shared server (ADR 0023, 0092): the API, web, media worker and media-render images are built here, never
+# on the server. media-render is the `render` target of workers/media with the circulated template bundled from its named build
+# context and Chrome Headless Shell pinned by sha256 (ADR 0091 §5): nothing is downloaded when it runs. Every run brings the
+# preview compose up on the freshly built images (health, a demo login through the web, a desktop upload, the media worker's
+# proxy and thumbnail read through a signed link, a circulated-template render read the same way and a title_overflow case, no
+# host port, the memory limits and actual use under 6952 MB) and measures the worker and media-render on synthetic 60 s clips.
+# On main (and by hand) the images then go as gzipped tars, with their sha256, onto the fixed prerelease "preview-latest": the
+# repository is public, so the server downloads them with no token and runs `docker load`. No registry: personal packages are
+# private by default.
 on:
   push:
     branches: [main]
@@ -15,6 +18,7 @@ on:
       - "contracts/**"
       - "infra/preview/**"
       - "workers/media/**"
+      - "docs/design/redesign-2026-11/motion/circulated-template/**"
       - ".github/workflows/preview-images.yml"
   pull_request:
     paths:
@@ -23,6 +27,7 @@ on:
       - "contracts/**"
       - "infra/preview/**"
       - "workers/media/**"
+      - "docs/design/redesign-2026-11/motion/circulated-template/**"
       - ".github/workflows/preview-images.yml"
   workflow_dispatch:
 
@@ -35,22 +40,24 @@ concurrency:
 
 jobs:
   images:
-    name: preview images (build, smoke and media worker under 2760 MB, publish on main)
+    name: preview images (build, smoke, media worker and renders under 6952 MB, publish on main)
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       contents: write  # the preview-latest release assets, on main and by hand only
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Build the API, web and media worker images
+      - name: Build the API, web, media worker and media-render images
         run: |
           docker build -q -f infra/preview/api.Dockerfile -t post-history-preview-api:latest .
           docker build -q -f infra/preview/web.Dockerfile -t post-history-preview-web:latest .
           docker build -q --target runtime -t post-history-preview-media:latest workers/media
+          docker build -q --target render -t post-history-preview-render:latest \
+            --build-context template=docs/design/redesign-2026-11/motion/circulated-template workers/media
           docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep post-history-preview
       - name: Images run as a non-root user and carry no secret-looking environment
         run: |
-          for i in api:node web:node media:media; do
+          for i in api:node web:node media:media render:media; do
             img=post-history-preview-${i%%:*}:latest
             [ "$(docker image inspect -f '{{.Config.User}}' "$img")" = "${i#*:}" ] || { echo "$img: not the ${i#*:} user"; exit 1; }
             # GPG_KEY in the python base image is the public fingerprint of the Python release signing key, not a secret.
@@ -58,7 +65,21 @@ jobs:
               | grep -iE '(secret|password|token|key)='; then
               echo "$img: secret-looking variable baked in"; exit 1; fi
           done
-      - name: Preview compose on these images (web, desktop upload, media worker, memory under 2760 MB; worker measured on 60 s clips)
+      # ADR 0091 §5: the worker refuses to start without its renderer, bundle and browser, and nothing is fetched at run time.
+      - name: media-render carries its renderer, template bundle and pinned browser, read-only with no network
+        run: |
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --user 10001:10001 \
+            --entrypoint python post-history-preview-render:latest -c '
+          import os, subprocess, sys
+          from media_worker.circulated import OverlayRenderer
+          r = OverlayRenderer.from_env(dict(os.environ))
+          if r.missing():
+              sys.exit("missing: " + ", ".join(r.missing()))
+          if not os.access(r.browser, os.X_OK) or not (r.bundle / "index.html").is_file():
+              sys.exit("the browser is not executable or the bundle has no index.html")
+          node = subprocess.run([r.node, "--version"], capture_output=True, text=True, check=True).stdout.strip()
+          print(f"node {node}, bundle and browser in the image: ok")'
+      - name: Preview compose on these images (web, desktop upload, media worker, renders, memory under 6952 MB; measured on 60 s clips)
         env:
           MEASURE_HOST: GitHub-hosted runner (ubuntu-24.04, 4 vCPU)
           MEDIA_PROFILES: 1080p 2160p
@@ -73,10 +94,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           out="$RUNNER_TEMP/preview" && mkdir -p "$out"
-          for i in api web media; do docker save "post-history-preview-$i:latest" | gzip -6 > "$out/post-history-preview-$i.tar.gz"; done
+          for i in api web media render; do docker save "post-history-preview-$i:latest" | gzip -6 > "$out/post-history-preview-$i.tar.gz"; done
           printf 'commit %s\nbuilt %s\n' "$GITHUB_SHA" "$(date -u +%FT%TZ)" > "$out/preview-manifest.txt"
-          (cd "$out" && sha256sum post-history-preview-api.tar.gz post-history-preview-web.tar.gz post-history-preview-media.tar.gz preview-manifest.txt > SHA256SUMS)
+          (cd "$out" && sha256sum post-history-preview-api.tar.gz post-history-preview-web.tar.gz post-history-preview-media.tar.gz \
+            post-history-preview-render.tar.gz preview-manifest.txt > SHA256SUMS)
           gh release view preview-latest >/dev/null 2>&1 || gh release create preview-latest --prerelease --target "$GITHUB_SHA" \
-            --title "preview-latest" --notes "Light preview images (ADR 0023, 0092: API, web, media worker), rebuilt on every change to main; the commit is in preview-manifest.txt. Not for the field trial."
+            --title "preview-latest" --notes "Light preview images (ADR 0023, 0092: API, web, media worker, media-render), rebuilt on every change to main; the commit is in preview-manifest.txt. Not for the field trial."
           gh release upload preview-latest "$out"/*.tar.gz "$out/preview-manifest.txt" "$out/SHA256SUMS" --clobber
           cat "$out/SHA256SUMS"

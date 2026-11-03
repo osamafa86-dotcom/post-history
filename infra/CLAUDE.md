@@ -41,21 +41,26 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 - أرشفة WAL (ADR 0051): Postgres التجربة مبنية من `infra/postgres` (الأساس بالبصمة وWAL-G من وسم مثبّت بالتزامه)، و`archive_command` بـ WAL-G إلى حاوية مقفلة لدى المزوّد الثاني بمفتاح كتابة فقط، مشفّرة بمفتاح PGP عام (الخاص عند المالك). `walg-base` نسخة أساسية يومية بدور `walg_backup` (بدء النسخة وإنهاؤها وقراءة الإعدادات) ومجلد البيانات للقراءة فقط. مطفأة ما لم يُضبط `WALG_ARCHIVE_MODE=on`. التمرين `infra/backup/pitr-drill.sh`، والدخان يثبت: الأرشفة، والقفل، وأن مفتاح الكتابة لا يقرأ ولا يحذف، وأن المفتاح العام لا يفك، وألا مفتاح خاص في بيئة أي حاوية أو ملف مركّب، والاستعادة لأي لحظة. `check-no-private-keys.sh` مع فحص الأسرار في كل PR، و`healthcheck.sh` (`wal:archive`) ينبّه بعد 10 دقائق انتظار.
 - الفحص: `smoke-trial.sh` (CI، على 127.0.0.1 و127.0.0.2 بشهادات محلية، ومعه حزمة القبول عبر الحافة، وفي آخره تمرين التوفر `availability` (يقتل عملية الحاوية من المضيف كالانهيار، لا `docker kill` الذي لا تعيده سياسة restart))، و`preflight.sh` على المضيف. ما يوفّره المالك في `docs/ops/field-trial-hosting.md`.
 
-## المعاينة الخفيفة (`infra/preview/`، ADR 0023 و0077 و0092)
+## المعاينة الخفيفة (`infra/preview/`، ADR 0023 و0077 و0092 وملحقه)
 
 - معاينة على خادم مشترك ذاكرته شبه ممتلئة. معاينة فقط، لا تُنقل إلى التجربة.
-- **الصور الثلاث تُبنى في CI وحده** (`api.Dockerfile`، `web.Dockerfile`، وهدف `runtime` من `workers/media`؛ إنتاج، ومستخدم غير الجذر، وبلا أسرار).
+- **الصور الأربع تُبنى في CI وحده** (`api.Dockerfile`، `web.Dockerfile`، وهدفا `runtime` و`render` من `workers/media`، والثاني بسياق القالب المسمّى؛ إنتاج، ومستخدم غير الجذر، وبلا أسرار).
   - على main ويدويًا، ترفعها `preview-images.yml` tar مضغوطًا مع `SHA256SUMS` إلى الإصدار التمهيدي `preview-latest`.
   - الخادم ينزّلها بـ `fetch-images.sh`، يتحقق من البصمات كلها ثم `docker load`. لا بناء على الخادم.
-- **`docker-compose.preview.yml`:** Postgres وRedis وMinIO والخادم والويب، وtusd ووكيله وبوابة ingest للرفع من الحاسوب، وعامل الوسائط وموزّعه.
-  - لكل خدمة `mem_limit` و`memswap_limit` مساوٍ له، والمجموع 2760 MB تحت سقف 2760 MB (منها 1472 للعامل، ADR 0092).
+- **`docker-compose.preview.yml`:** Postgres وRedis وMinIO والخادم والويب، وtusd ووكيله وبوابة ingest للرفع من الحاسوب، وعامل الوسائط وموزّعه، و`media-render`.
+  - لكل خدمة `mem_limit` و`memswap_limit` مساوٍ له، والمجموع 6952 MB تحت سقف 6952 MB (منها 1472 للعامل و4096 لـ `media-render`، ملحق ADR 0092؛ كان 2856).
   - لا منفذ على المضيف.
   - `web` (nginx) وحده على الشبكة الخارجية `deploy_default` باسم `lib-web:8080`. يصل إلى منابعه بأسماء فريدة على الشبكات الداخلية (`ph-preview-api`، `ph-preview-api-public`، `ph-preview-web-app`)، لأن الاسم القصير قد يُحل على الشبكة المشتركة إلى حاوية أخرى. يضع `X-Robots-Tag: noindex` وشريط «معاينة»، ويُنهي TLS داخليًا للخادم على عنوانه الداخلي وحده، لأن الـBFF يشترط https.
   - الرفع من الحاسوب: الحافة تمرر `/files/` على أصل المعاينة إلى البوابة (`ph-preview-ingest`) ثم `tusd-proxy` ثم tusd، بعناوين ثابتة يقبلها الخادم في `/internal` (البوابة إلى `/internal/ingest/` وحده). رمز الويب للـBFF وحده (`BFF_SOURCE_ADDRESSES` = عنوان الحافة على الشبكة الداخلية). لا تفريغ.
   - **عامل الوسائط (ADR 0092):** نسخة خفيفة 480p ومصغّرات فقط؛ HLS والتفريغ والتصدير والتسليم وC2PA مطفأة ثابتة في compose. 1472 MB بلا swap، و1.5 معالج، و`cpu_shares` 256، و`oom_score_adj` 500، والشبكة الداخلية وحدها، وعنوان ثابت يصل إلى `/internal/media/` وحده، ومستخدم MinIO لا يقرأ `.info` ولا يكتب الرفع.
     - الخادم يبقى المتحقق (`in_process`): العامل يرفض الصور، والرفع لا ينتظره. `media-feeder` (صورة الخادم) يعطيه كل 10 ث أصل فيديو متحققًا بلا نسخة خفيفة، العاجل أولًا، مهمة تنتظر على الأكثر، ولا مهمة والقرص الحر دون 8 GiB (`PREVIEW_MEDIA_MIN_FREE_GIB`).
     - `backfill-media.sh` دورة يدوية بالأعداد وحدها (`--wait` حتى تنتهي). و`.env` قائم: `./gen-env.sh --add-media`.
-    - روابط القراءة موقّعة لأصل المعاينة (`S3_PUBLIC_ENDPOINT`)، والحافة تمرر `GET` على `/<حاوية المشتقات>/derived/<uuid>/<uuid>/{proxy-480p.mp4,poster.jpg}` وحده إلى MinIO (`ph-preview-minio`) بالمضيف كما هو، بلا تخزين.
+    - روابط القراءة موقّعة لأصل المعاينة (`S3_PUBLIC_ENDPOINT`)، والحافة تمرر `GET` على `/<حاوية المشتقات>/derived/<uuid>/<uuid>/{proxy-480p.mp4,poster.jpg}` و`.../renders/<uuid>/circulated-<المقاس>.mp4` وحدها إلى MinIO (`ph-preview-minio`) بالمضيف كما هو، بلا تخزين.
+  - **نسخ قالب «مواد متداولة» (ADR 0091 البند 8 للتقييم، ملحق ADR 0092):** `MEDIA_ENABLE_RENDERS=true` للخادم و`media-render` وحدهما، ثابت في compose.
+    - `media-render` هدف `render` (Node والقالب المجمّع وChrome Headless Shell مثبّت؛ لا تنزيل وقت التشغيل ولا مفتاح ترخيص) على `media:renders`: مهمة واحدة وRemotion بتوازٍ 1، و4096 MB بلا swap، ومعالجان، و`cpu_shares` 128، و`oom_score_adj` 800، و512 عملية، وتحصين العامل نفسه.
+    - عنوانه الثابت (`PREVIEW_RENDER_IP`) يصل إلى `/internal/media/renders/` و`/internal/media/files/` وحدهما، ومستخدمه في MinIO يكتب `derived/*/*/renders/` وحدها (`./gen-env.sh --add-render`).
+    - الخادم لا ينشر `render.requested` مع `in_process`، فـ `media-feeder` يعطي النسخ المطلوبة، نسخة تنتظر على الأكثر، ولا نسخة والقرص الحر دون الحد + حجم أصلها + 1 GiB.
+    - شرط `source` يحتاج فحص الأصل، والخادم لا يفحص ما يتحقق منه بنفسه: تقرير العامل في مسار الاستئناف يملأ الفارغ منه (`replay()`)، والموزّع يعيد إلى العامل أصلًا له نسخته ولا فحص له (`media:feed:probe:<الجلسة>`)، فيسجّل النسخة الموجودة كما هي.
   - **بناء iOS التجريبي (ADR 0077):** الحافة تمرر `/v1/` علنًا (`location /v1/`، بلا إعادة كتابة مسار، بلا `sub_filter`، جسم ≤ 1 MB) إلى الخادم.
     - **عزل امتيازات الـBFF:** المسار العلني على شبكة ثانية `public-api` (`internal: true`، لا يشاركها غير الحافة والخادم)، فيراه الخادم من عنوان ليس في `BFF_SOURCE_ADDRESSES`. لا رمز ويب (`web-ingest-token` 404)، ولا تُقبل `X-Client-Address` من المتصل، ولا `/internal` ولا `/health`. لا تضع الحافة والخادم على شبكة واحدة، ولا تحاول حجب المسارات عند الحافة بدل ذلك.
     - **شهادة الجهاز:** `ATTESTATION_MODE=production` و`INGEST_REQUIRED=true` و`APP_ATTEST_APP_ID` = معرّف التطبيق الحقيقي (الفريق + الحزمة، علنيان). TestFlight يستعمل بيئة الإنتاج لـApp Attest، و`APP_ATTEST_ALLOW_DEVELOPMENT` يبقى `false`. أندرويد (Play Integrity) مغلق: لا `PLAY_INTEGRITY_PACKAGE_NAME`.
@@ -76,7 +81,8 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
   - رفع tus صغير عبر الـBFF والحافة والبوابة، يُقطع ويُستأنف، والجلسة `completed` أو `verified`؛
   - عزل الخادم عن الشبكة المشتركة (وعلى شبكتين داخليتين وحدهما، و`public-api` للحافة والخادم وحدهما، وعنوان الحافة عليها ليس عنوان الـBFF)؛
   - عامل الوسائط: تحصينه وأعلامه، وحارس القرص، وbackfill، ورابط النسخة الموقّع عبر الحافة بلا الوسوم المزروعة، وسجله بلا عنوان ولا اسم ملف ولا موقع ولا جهاز، وقياسه على مقطعين 60 ث (1080p و2160p)؛
-  - مجموع الحدود والاستهلاك الفعلي.
+  - مجموع الحدود والاستهلاك الفعلي؛
+  - نسخ القالب (`smoke-renders.sh`): تحصين `media-render` ووصوله ومستخدمه في MinIO، وحارس القرص لكل نسخة، ونسخة عمودية تُقرأ عبر الحافة 1080×1920 BT.709 بلا الوسوم ولا العنوان، وحالة `title_overflow`، وقياسه بحدوده؛ وقبلها فحص الأصل يسجّله الخادم، وإعادته لأصل بلا فحص بلا ترميز جديد.
 
 ## tusd (`infra/tusd/`)
 
@@ -94,7 +100,7 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
 
 - `contracts`: redocly lint + ajv compile. `secrets`: gitleaks. `compose`: config + pull + `infra/compose/smoke.sh` + `infra/compose/e2e-hooks.sh` (مسار الخطّاف مع الخادم) + `infra/compose/smoke-media.sh` (تحصين العامل وعزله) + `infra/ingest/test-gate.sh` (بوابة ingest) + `infra/ingest/e2e-attested.sh` (الخادم والبوابة معًا). `api`: يشغّل MinIO المثبّت لاختبار محوّل S3، و`npm audit --audit-level=high` (وكذلك `acceptance`).
 - `field-trial` (`.github/workflows/field-trial.yml`): `infra/field-trial/smoke-trial.sh` على كل PR يمس `infra/**` أو `apps/api/src/db/**`.
-- `preview-images` (`.github/workflows/preview-images.yml`): صور المعاينة الثلاث و`smoke-preview.sh` (مع قياس العامل) على كل PR يمس التطبيقين أو العقد أو `infra/preview` أو `workers/media`، والنشر إلى `preview-latest` على main.
+- `preview-images` (`.github/workflows/preview-images.yml`): صور المعاينة الأربع و`smoke-preview.sh` (مع `smoke-renders.sh` وقياس العامل و`media-render`) على كل PR يمس التطبيقين أو العقد أو `infra/preview` أو `workers/media` أو مشروع القالب، والنشر إلى `preview-latest` على main.
 - `netlab` (`.github/workflows/netlab.yml`): فحص قصير لـ field-weak بوضع netem ومحاكاة الحجب (`blocking.py`) على كل PR يمس netlab أو compose أو ingest، وقياس كامل يدويًا.
 - Dependabot (`.github/dependabot.yml`): طلب أسبوعي لـ minor+patch لكل مجلد، والإصدارات الرئيسية مُتجاهلة حتى ما بعد التجربة الميدانية. لذلك يحرس `npm audit` الثغرات العالية، وتُراجَع تنبيهات Dependabot أسبوعيًا ويُبلَّغ المنسّق بما يستدعي ترقية رئيسية.
 - كل حزمة تضيف وظيفتها الخاصة حين يوجد كود.

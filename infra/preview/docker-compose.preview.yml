@@ -1,16 +1,18 @@
 # معاينة خفيفة على خادم مشترك (ADR 0023): Postgres وRedis وMinIO والخادم والويب، وtusd وبوابة ingest للرفع من الحاسوب،
-# وعامل الوسائط بحدود صارمة (ADR 0092: نسخة خفيفة ومصغّرات فقط، بلا تفريغ ولا HLS ولا تسليم ولا C2PA)، بصور مبنية في CI
-# (preview-images.yml، لا بناء هنا). على الخادم، من هذا المجلد:
+# وعامل الوسائط بحدود صارمة (ADR 0092: نسخة خفيفة ومصغّرات فقط، بلا تفريغ ولا HLS ولا تسليم ولا C2PA)، ونسخ قالب
+# «مواد متداولة» للتقييم في حاوية media-render (ADR 0091، ملحق ADR 0092)، بصور مبنية في CI (preview-images.yml، لا بناء
+# هنا). على الخادم، من هذا المجلد:
 #   ./gen-env.sh            # مرة: .env بأسرار عشوائية وشهادة داخلية في tls/، لا يطبع شيئًا سريًا
-#                           # (.env قائم: --add-upload لمفاتيح الرفع، و--add-media لمفاتيح عامل الوسائط)
-#   ./fetch-images.sh       # الصور الثلاث من الإصدار preview-latest (تُتحقق ببصمة sha256 أولًا) ثم docker load
+#                           # (.env قائم: --add-upload لمفاتيح الرفع، و--add-media لمفاتيح عامل الوسائط، و--add-render
+#                           # لمستخدم media-render في MinIO وعنوانه)
+#   ./fetch-images.sh       # الصور الأربع من الإصدار preview-latest (تُتحقق ببصمة sha256 أولًا) ثم docker load
 #   docker compose -f docker-compose.preview.yml up -d --wait
 #   ./seed-preview.sh       # مرة: حسابات تجريبية ومواد اصطناعية؛ كلمات السر في .env لا في المخرج
 #   ./backfill-media.sh     # الأصول المتحققة قبل العامل: الأعداد وحدها (--wait حتى تنتهي)
 # لا منفذ على المضيف: الوكيل الأمامي للخادم (Caddy) يصل إلى "web" وحده عبر الشبكة الخارجية deploy_default باسم lib-web.
 # بناء iOS التجريبي (ADR 0077): الحافة تمرر /v1/ علنًا إلى الخادم عبر شبكة داخلية ثانية (public-api) عنوان الحافة عليها ليس في BFF_SOURCE_ADDRESSES.
-# الحدود: mem_limit لكل خدمة وmemswap_limit مساوٍ له (بلا swap)، والمجموع 2760 MB تحت سقف 2760 MB (ADR 0092، كان 960 في 0023)،
-# منها 1472 لعامل الوسائط وحده.
+# الحدود: mem_limit لكل خدمة وmemswap_limit مساوٍ له (بلا swap)، والمجموع 6952 MB تحت سقف 6952 MB (ملحق ADR 0092؛ كان 2856
+# قبل النسخ، و960 في 0023)، منها 1472 لعامل الوسائط و4096 لـ media-render، وكلاهما يمسك ذاكرته وقت المهمة وحدها.
 name: post-history-preview
 
 x-limits: &hardened
@@ -102,8 +104,9 @@ services:
       minio:
         condition: service_healthy
     # Storage on the shared server (ADR 0023, 0092): hard quotas, uploads 10112 MiB and derived files 2048 MiB, and tusd's
-    # temporary parts (at most the gate's 10 connections x 5 MiB) in 64 MiB outside them; and the media worker's MinIO user
-    # (read the uploads but not their .info/.part, read and write media/derived/ only). The admin calls were killed at 64 MB in CI.
+    # temporary parts (at most the gate's 10 connections x 5 MiB) in 64 MiB outside them; the media worker's MinIO user
+    # (read the uploads but not their .info/.part, read and write media/derived/ only), and media-render's (the same uploads,
+    # read and write derived/*/*/renders/ only). The admin calls were killed at 64 MB in CI.
     entrypoint: ["sh", "/minio-init.sh"]
     environment:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
@@ -112,6 +115,8 @@ services:
       S3_BUCKET_MEDIA: ${S3_BUCKET_MEDIA:?}
       S3_MEDIA_ACCESS_KEY: ${S3_MEDIA_ACCESS_KEY:?gen-env.sh --add-media}
       S3_MEDIA_SECRET_KEY: ${S3_MEDIA_SECRET_KEY:?gen-env.sh --add-media}
+      S3_RENDER_ACCESS_KEY: ${S3_RENDER_ACCESS_KEY:?gen-env.sh --add-render}
+      S3_RENDER_SECRET_KEY: ${S3_RENDER_SECRET_KEY:?gen-env.sh --add-render}
       GOMEMLIMIT: 40MiB
     volumes:
       - ./minio-init.sh:/minio-init.sh:ro
@@ -173,7 +178,8 @@ services:
       BFF_SOURCE_ADDRESSES: ${PREVIEW_EDGE_IP:-10.211.47.10}/32
       INTERNAL_ALLOWED_CIDRS: ${PREVIEW_TUSD_IP:-10.211.47.12}/32,${PREVIEW_GATE_IP:-10.211.47.13}/32
       # The ingest gate reaches /internal/ingest/ alone, and the media worker /internal/media/ alone (ADR 0092).
-      INTERNAL_SOURCE_PATHS: "${PREVIEW_GATE_IP:-10.211.47.13}/32=/internal/ingest/;${PREVIEW_MEDIA_IP:-10.211.47.14}/32=/internal/media/"
+      # media-render reaches what a render needs alone: its render and the source file, then the derivative registration.
+      INTERNAL_SOURCE_PATHS: "${PREVIEW_GATE_IP:-10.211.47.13}/32=/internal/ingest/;${PREVIEW_MEDIA_IP:-10.211.47.14}/32=/internal/media/;${PREVIEW_RENDER_IP:-10.211.47.15}/32=/internal/media/renders/|/internal/media/files/"
       # One file at most 2 GiB (ADR 0023): POST /uploads answers 422 above it (#238), and tusd -max-size matches.
       UPLOAD_MAX_BYTES: "2147483648"
       UPLOAD_RECONCILE_ENABLED: "false"
@@ -181,6 +187,9 @@ services:
       # worker). media-feeder hands verified video originals to the worker, which reports on /internal/media/* with this token.
       UPLOAD_VERIFIER: in_process
       MEDIA_WORKER_TOKEN: ${MEDIA_WORKER_TOKEN:?gen-env.sh --add-media}
+      # Circulated-template renders for evaluation (ADR 0091 §8: the free Remotion licence covers the preview and the trial, not
+      # production; addendum to ADR 0092). Fixed here, not from .env, and set for this API and media-render alone.
+      MEDIA_ENABLE_RENDERS: "true"
       # Signed read links for derived files are signed for the preview's own origin; the edge passes GET on
       # /<media bucket>/derived/<id>/<id>/{proxy-480p.mp4,poster.jpg} to MinIO with the Host unchanged (ADR 0092).
       S3_PUBLIC_ENDPOINT: https://${PREVIEW_DOMAIN}
@@ -398,8 +407,10 @@ services:
         ipv4_address: ${PREVIEW_MEDIA_IP:-10.211.47.14}
 
   # يعطي العامل مهامه (ADR 0092): أصل فيديو متحقق بلا نسخة خفيفة، العاجل أولًا، مهمة تنتظر على الأكثر، ولا مهمة جديدة والمساحة
-  # الحرة على قرص الحجوم دون PREVIEW_MEDIA_MIN_FREE_GIB (8 افتراضيًا): تبقى المادة معلّقة وتُعاد كل دورة. الحجم disk-probe
-  # فارغ، يُركَّب ليقيس قرص الحجوم (حيث minio-data وmedia-scratch) لا ليقرأ شيئًا. السجل أعداد فقط.
+  # الحرة على قرص الحجوم دون PREVIEW_MEDIA_MIN_FREE_GIB (8 افتراضيًا): تبقى المادة معلّقة وتُعاد كل دورة. ويعطي media-render
+  # نسخ القالب المطلوبة على media:renders (الخادم لا ينشرها مع in_process) بالقواعد نفسها، والقرص يتسع لحجم الأصل + 1 GiB
+  # فوق ذلك الحد. الحجم disk-probe فارغ، يُركَّب ليقيس قرص الحجوم (حيث minio-data وmedia-scratch وrender-scratch) لا ليقرأ
+  # شيئًا. السجل أعداد فقط.
   media-feeder:
     <<: *hardened
     image: post-history-preview-api:latest
@@ -423,6 +434,61 @@ services:
     memswap_limit: 64m
     cpus: 0.1
     networks: [internal]
+
+  # نسخ قالب «مواد متداولة» للتقييم (ADR 0091، ملحق ADR 0092): هدف render من workers/media (العامل نفسه وNode وحزمة القالب
+  # وChrome Headless Shell مثبّتًا مخبوزًا في الصورة؛ لا تنزيل وقت التشغيل ولا مفتاح ترخيص) على طابور media:renders، يعطيه
+  # media-feeder نسخة واحدة على الأكثر بحارس قرص لكل مهمة (حجم الأصل + 1 GiB فوق PREVIEW_MEDIA_MIN_FREE_GIB). مهمة واحدة في
+  # كل مرة، وRemotion بتوازٍ 1. تحصين عامل الوسائط نفسه: جذر للقراءة فقط، بلا صلاحيات ولا رفع امتيازات، مستخدم غير الجذر،
+  # الشبكة الداخلية وحدها، وعنوان ثابت يصل إلى /internal/media/renders/ و/internal/media/files/ وحدهما، ومستخدم MinIO يكتب
+  # derived/*/*/renders/ وحدها. 4096 MB بلا swap (ذروة القياس 3763 MB بتوازي Remotion الافتراضي على 4 vCPU)، ومعالجان،
+  # وأولوية دون الخادم وعامل الوسائط (cpu_shares 128)، وأول ما يقتله OOM المضيف (oom_score_adj 800).
+  media-render:
+    <<: *hardened
+    image: post-history-preview-render:latest
+    pull_policy: never
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      api:
+        condition: service_healthy
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    command: ["serve", "--queue", "renders"]
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      MEDIA_API_URL: http://ph-preview-api:3000
+      MEDIA_WORKER_TOKEN: ${MEDIA_WORKER_TOKEN:?gen-env.sh --add-media}
+      S3_ENDPOINT: http://ph-preview-minio:9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY: ${S3_RENDER_ACCESS_KEY:?gen-env.sh --add-render}
+      S3_SECRET_KEY: ${S3_RENDER_SECRET_KEY:?gen-env.sh --add-render}
+      S3_BUCKET_UPLOADS: ${S3_BUCKET_UPLOADS}
+      S3_BUCKET_MEDIA: ${S3_BUCKET_MEDIA}
+      MEDIA_SCRATCH_DIR: /scratch
+      # Fixed here, not from .env: renders on (evaluation, ADR 0091 §8), one Remotion tab, and nothing else.
+      MEDIA_ENABLE_RENDERS: "true"
+      MEDIA_RENDER_CONCURRENCY: "1"
+      MEDIA_ENABLE_HLS: "false"
+      MEDIA_ENABLE_PHASH: "false"
+      MEDIA_ENABLE_EXPORT: "false"
+      MEDIA_ENABLE_STORE_PREVIEW: "false"
+      MEDIA_ENABLE_DELIVERY: "false"
+      MEDIA_ENABLE_ALIGNMENT: "false"
+      MEDIA_ENABLE_C2PA: "false"
+    volumes:
+      - render-scratch:/scratch
+    mem_limit: 4096m
+    memswap_limit: 4096m
+    cpus: 2
+    cpu_shares: 128
+    oom_score_adj: 800
+    pids_limit: 512
+    networks:
+      internal:
+        ipv4_address: ${PREVIEW_RENDER_IP:-10.211.47.15}
 
   # The only service on the shared server's network: X-Robots-Tag noindex, the "preview" banner, and the internal TLS
   # listener the BFF needs for the API (bound to its address on the internal network alone).
@@ -480,4 +546,5 @@ volumes:
   minio-data:
   tusd-tmp:
   media-scratch:
+  render-scratch:
   disk-probe:

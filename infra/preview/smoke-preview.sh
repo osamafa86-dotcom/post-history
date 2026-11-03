@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# دخان المعاينة الخفيفة (ADR 0023، 0092) على صور CI المحمّلة (post-history-preview-{api,web,media}:latest)، بلا بناء:
+# دخان المعاينة الخفيفة (ADR 0023، 0092) على صور CI المحمّلة (post-history-preview-{api,web,media,render}:latest)، بلا بناء:
 #   infra/preview/smoke-preview.sh [--json FILE] [--media-json DIR]   # MEDIA_PROFILES="1080p 2160p" لقياس العامل (1080p افتراضيًا)
 # يثبت: compose يقوم بالصورتين وحدهما وبلا منفذ على المضيف، و"web" وحده على deploy_default (باسم lib-web) والخادم لا يُصل
 # منها، و/health 200، والدخول عبر الويب بحساب تجريبي يرى مواده الاصطناعية، وX-Robots-Tag وشريط «معاينة»، والرفع من
@@ -9,8 +9,13 @@
 # ورابط النسخة الموقّع من /v1 يُقرأ عبر الحافة video/mp4 بلا الوسوم، والمعدّل والمقطوع والمكتوب مرفوض، والصورة لا تصله،
 # وسجله بلا عنوان ولا اسم ملف ولا موقع ولا جهاز، ومستخدمه في MinIO لا يقرأ .info ولا يكتب الرفع ولا يحذف)، و/v1 العلني كما يصله بناء iOS التجريبي (ADR 0077: دخول وتحدٍّ وتسجيل مرفوض بشهادة مزيفة، ونقاط الـBFF
 # وحده لا تصل: رمز الويب 404 وعنوان العميل المنتحل لا يغيّر سلة حد المعدل، وبلا /internal)، والخادم على شبكة العلنية مع الحافة وحدها
-# لا على deploy_default، ومجموع حدود الذاكرة ≤ 2760 MB بلا swap واستهلاكها الفعلي (docker stats) تحته، ولا سر في السجلات.
-# ومع --media-json: ذروة ذاكرة العامل وزمن المعالج والزمن الكلي والقرص لمقطع اصطناعي 60 ث لكل ملف تعريف (ملف قياس لكل منها).
+# لا على deploy_default، ومجموع حدود الذاكرة ≤ 6952 MB بلا swap واستهلاكها الفعلي (docker stats) تحته، ولا سر في السجلات.
+# ونسخ قالب «مواد متداولة» (ADR 0091، ملحق ADR 0092): تحصين media-render وحدوده وعنوانه ومستخدمه في MinIO، و--add-render،
+# ثم مادة مقبولة تحريريًا بمقطعها الاصطناعي ونسختها الخفيفة: حارس القرص لكل نسخة (حجم الأصل + 1 GiB فوق الحد الأدنى)، ونسخة
+# عمودية بالوسم وبلا مكان تصير ready ويُقرأ ملفها برابط موقّع عبر الحافة video/mp4 بمقاس 1080×1920 وBT.709 بلا الوسوم المزروعة
+# ولا العنوان، وسطر لا يتّسع يصير failed بـ title_overflow، وسجل media-render بلا عنوان ولا مكان.
+# ومع --media-json: ذروة ذاكرة العامل وزمن المعالج والزمن الكلي والقرص لمقطع اصطناعي 60 ث لكل ملف تعريف (ملف قياس لكل منها)،
+# ومثلها لـ media-render على نسخة عمودية من المقطع نفسه، وللنسختين على المقطع القصير.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JSON="" MEDIA_OUT=""
@@ -21,7 +26,7 @@ while [ $# -gt 0 ]; do
     *) echo "usage: $0 [--json FILE] [--media-json DIR]" >&2; exit 2 ;;
   esac
 done
-LIMIT_MB=2856
+LIMIT_MB=6952
 C=(docker compose -f "$HERE/docker-compose.preview.yml")
 created_env=0 created_net=0
 work="$(mktemp -d)"
@@ -38,7 +43,8 @@ cleanup() {
 trap cleanup EXIT
 fail() { echo "!! $*" >&2; "${C[@]}" logs --tail 40 >&2 || true; exit 1; }
 
-docker image inspect post-history-preview-api:latest post-history-preview-web:latest post-history-preview-media:latest >/dev/null \
+docker image inspect post-history-preview-api:latest post-history-preview-web:latest post-history-preview-media:latest \
+  post-history-preview-render:latest >/dev/null \
   || fail "load the CI images first"
 docker network inspect deploy_default >/dev/null 2>&1 || { docker network create deploy_default >/dev/null; created_net=1; }
 if [ ! -e "$HERE/.env" ]; then PREVIEW_DOMAIN=preview.localhost "$HERE/gen-env.sh" >/dev/null; created_env=1; fi
@@ -56,6 +62,16 @@ if [ "$created_env" = 1 ]; then
   [ "$(grep -E "$MEDIA_KEYS" "$HERE/.env" | sha256sum)" != "$media" ] || fail "gen-env.sh --add-media reused old values"
   [ "$(stat -c %a "$HERE/.env")" = 600 ] || fail ".env is not 0600 after --add-media"
   echo "gen-env.sh --add-media: adds the four media keys to an older .env, leaves the rest, and is repeatable: ok"
+  # An .env from before the renders (addendum to ADR 0092): --add-render adds media-render's MinIO user and address the same way.
+  RENDER_KEYS='^(S3_RENDER_ACCESS_KEY|S3_RENDER_SECRET_KEY|PREVIEW_RENDER_IP)='
+  kept="$(grep -vE "$RENDER_KEYS" "$HERE/.env" | sha256sum)" render="$(grep -E "$RENDER_KEYS" "$HERE/.env" | sha256sum)"
+  grep -vE "$RENDER_KEYS" "$HERE/.env" > "$work/env" && cat "$work/env" > "$HERE/.env"
+  "$HERE/gen-env.sh" --add-render | grep -q "3 added" || fail "gen-env.sh --add-render did not add the three render keys"
+  "$HERE/gen-env.sh" --add-render | grep -q "0 added" || fail "gen-env.sh --add-render is not repeatable"
+  [ "$(grep -vE "$RENDER_KEYS" "$HERE/.env" | sha256sum)" = "$kept" ] || fail "gen-env.sh --add-render changed a key it does not own"
+  [ "$(grep -E "$RENDER_KEYS" "$HERE/.env" | sha256sum)" != "$render" ] || fail "gen-env.sh --add-render reused old values"
+  [ "$(stat -c %a "$HERE/.env")" = 600 ] || fail ".env is not 0600 after --add-render"
+  echo "gen-env.sh --add-render: adds media-render's MinIO user and address to an older .env, leaves the rest, and is repeatable: ok"
 fi
 
 # Synthetic media only (CLAUDE.md §5): a short clip carrying planted location, device and title tags (a coordinate built at
@@ -153,6 +169,57 @@ want = {"media, its token": 410, "media, no token": 404, "tusd hook": 403, "inge
 assert got == want, got
 PY
 echo "media worker: user 10001, read-only, no capabilities, 1472 MB / 1.5 CPU / shares 256 / 128 pids, internal network only, HLS, AI, export, delivery and C2PA off, /internal/media/ alone: ok"
+
+# media-render (addendum to ADR 0092): the worker's hardening with its own limits, renders on with one Remotion tab and nothing else,
+# on the internal network alone with a MinIO user of its own. Renders are on for the API and media-render, not the ingest worker.
+rnd="$("${C[@]}" ps -q media-render)"
+[ -n "$rnd" ] || fail "media-render is not running"
+python3 - "$rnd" "$wid" "$("${C[@]}" ps -q api)" <<'PY' || fail "media-render is not hardened and limited as the addendum to ADR 0092 says"
+import json, subprocess, sys
+c, worker, api = (json.loads(subprocess.check_output(["docker", "inspect", i]))[0] for i in sys.argv[1:4])
+h, cfg = c["HostConfig"], c["Config"]
+envof = lambda x: dict(e.split("=", 1) for e in x["Config"]["Env"])
+env = envof(c)
+want = {
+    "user": (cfg["User"], "10001:10001"), "read-only root": (h["ReadonlyRootfs"], True), "cap_drop": (h["CapDrop"], ["ALL"]),
+    "no-new-privileges": ("no-new-privileges:true" in (h["SecurityOpt"] or []), True),
+    "memory": (h["Memory"], 4096 * 2**20), "no swap": (h["MemorySwap"], h["Memory"]), "cpus": (h["NanoCpus"], 2_000_000_000),
+    "cpu shares": (h["CpuShares"], 128), "pids": (h["PidsLimit"], 512), "oom score": (h["OomScoreAdj"], 800),
+    "host ports": (h["PortBindings"] or {}, {}), "networks": (sorted(c["NetworkSettings"]["Networks"]), ["post-history-preview_internal"]),
+    "command": (cfg["Cmd"], ["serve", "--queue", "renders"]),
+    "MEDIA_ENABLE_RENDERS": (env.get("MEDIA_ENABLE_RENDERS"), "true"), "MEDIA_RENDER_CONCURRENCY": (env.get("MEDIA_RENDER_CONCURRENCY"), "1"),
+    "renders on for the API": (envof(api).get("MEDIA_ENABLE_RENDERS"), "true"),
+    "renders not on the ingest worker": (envof(worker).get("MEDIA_ENABLE_RENDERS", "false"), "false"),
+}
+for flag in ("HLS", "PHASH", "EXPORT", "STORE_PREVIEW", "DELIVERY", "ALIGNMENT", "C2PA"):
+    want[f"MEDIA_ENABLE_{flag}"] = (env.get(f"MEDIA_ENABLE_{flag}"), "false")
+bad = [f"{k}: {v[0]!r} (want {v[1]!r})" for k, v in want.items() if v[0] != v[1]]
+for k in ("AI_WORKER_TOKEN", "MEDIA_C2PA_CERT_CHAIN", "MEDIA_WATERMARK_KEY"):
+    if env.get(k):
+        bad.append(f"{k} is set")
+if env.get("S3_ACCESS_KEY") == envof(worker).get("S3_ACCESS_KEY"):
+    bad.append("media-render shares the media worker's MinIO user")
+print("\n".join(bad)); sys.exit(1 if bad else 0)
+PY
+"${C[@]}" exec -T media-render python - <<'PY' || fail "media-render reaches more than renders and source files on the API"
+import os, urllib.error, urllib.request, uuid
+def status(path, token=None):
+    req = urllib.request.Request("http://ph-preview-api:3000" + path, headers={"Authorization": f"Bearer {token}"} if token else {})
+    try:
+        return urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=10).status
+    except urllib.error.HTTPError as err:
+        return err.code
+token = os.environ["MEDIA_WORKER_TOKEN"]
+got = {"render, its token": status(f"/internal/media/renders/{uuid.uuid4()}", token),
+       "source file, its token": status(f"/internal/media/files/{uuid.uuid4()}", token),
+       "render, no token": status(f"/internal/media/renders/{uuid.uuid4()}"),
+       "upload session": status(f"/internal/media/sessions/{uuid.uuid4()}", token),
+       "tusd hook": status("/internal/tusd-hooks/x", token), "ingest": status("/internal/ingest/session-status?sid=x", token)}
+want = {"render, its token": 410, "source file, its token": 410, "render, no token": 404, "upload session": 403, "tusd hook": 403,
+        "ingest": 403}
+assert got == want, got
+PY
+echo "media-render: user 10001, read-only, no capabilities, 4096 MB / 2 CPU / shares 128 / 512 pids / oom_score_adj 800, internal network only, renders on (Remotion concurrency 1) and nothing else, its own MinIO user, renders and source files alone on the API: ok"
 
 # No host port anywhere, and only "web" on the shared server's network.
 for id in $("${C[@]}" ps -aq); do
@@ -373,7 +440,9 @@ rx() { docker exec "$rid" sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli --no-
 mc_image="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["minio-init"]["image"])' <<<"$cfg")"
 # mc as a throwaway container on the internal network; the keys come from .env by name, never on the command line.
 mcx() { docker run --rm --network post-history-preview_internal --env-file "$HERE/.env" --entrypoint sh "$mc_image" -c \
-  'export MC_HOST_local="http://$S3_ACCESS_KEY:$S3_SECRET_KEY@minio:9000" MC_HOST_w="http://$S3_MEDIA_ACCESS_KEY:$S3_MEDIA_SECRET_KEY@minio:9000"; '"$1"; }
+  'export MC_HOST_local="http://$S3_ACCESS_KEY:$S3_SECRET_KEY@minio:9000" MC_HOST_w="http://$S3_MEDIA_ACCESS_KEY:$S3_MEDIA_SECRET_KEY@minio:9000" MC_HOST_r="http://$S3_RENDER_ACCESS_KEY:$S3_RENDER_SECRET_KEY@minio:9000"; '"$1"; }
+# One query on the preview's own database, rows space-separated.
+sql() { "${C[@]}" exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -F " " -c "$1"' sql "$1"; }
 feed() { "${C[@]}" run --rm --no-deps -T "$@" media-feeder --once 2>/dev/null; }
 field() { python3 -c 'import json, sys; print(json.loads(sys.argv[1])[sys.argv[2]])' "$1" "$2"; }
 
@@ -529,6 +598,30 @@ bf="$("$HERE/backfill-media.sh" 2>/dev/null)" || fail "backfill-media.sh failed 
 [ "$(rx XLEN media:dead)" = 0 ] || fail "the worker dead-lettered an event"
 echo "backfill-media.sh again: nothing eligible, nothing given, nothing dead-lettered: ok"
 
+# The API keeps the worker's probe of an original it verified itself (addendum to ADR 0092; the render precondition reads it).
+orig_id="$(sql "SELECT file_id FROM upload_sessions WHERE material_id = '$MATERIAL' AND kind = 'original' AND state = 'verified'")"
+probe_of() { sql "SELECT technical->>'video_codec', duration_ms > 5000, width, height FROM material_files WHERE id = '$orig_id'"; }
+probe0="$(probe_of)"
+[ "$probe0" = "h264 t 1280 720" ] || fail "the API did not keep the worker's probe of the original it verified itself: '$probe0'"
+# An original processed before that (the preview until this change) is given again for its probe alone: the worker's report
+# fills it, and the existing proxy is registered as it is, not encoded again.
+proxy0="$(sql "SELECT id, sha256 FROM material_files WHERE derived_from_id = '$orig_id' AND kind = 'proxy'")"
+sql "UPDATE material_files SET technical = NULL, duration_ms = NULL, start_pts_us = NULL, width = NULL, height = NULL WHERE id = '$orig_id'" >/dev/null
+bf="$("$HERE/backfill-media.sh" 2>/dev/null)" || fail "backfill-media.sh failed for an original with no probe"
+[ "$(field "$bf" eligible)" = 1 ] && [ "$(field "$bf" enqueued)" = 1 ] || fail "an original with no probe was not given again: $bf"
+for _ in $(seq 1 60); do
+  "${C[@]}" logs --no-color media-worker 2>&1 | grep 'event done' | tail -1 | grep -q 'outcome=verified+proxy-existing' && break
+  sleep 2
+done
+"${C[@]}" logs --no-color media-worker 2>&1 | grep 'event done' | tail -1 | grep -q 'outcome=verified+proxy-existing' \
+  || fail "the worker did not register the existing proxy for the probe backfill"
+[ "$(probe_of)" = "$probe0" ] || fail "the probe backfill did not restore the original's probe"
+[ "$(sql "SELECT id, sha256 FROM material_files WHERE derived_from_id = '$orig_id' AND kind = 'proxy'")" = "$proxy0" ] \
+  || fail "the probe backfill made a new proxy"
+bf="$("$HERE/backfill-media.sh" 2>/dev/null)" || fail "backfill-media.sh failed after the probe backfill"
+[ "$(field "$bf" eligible)" = 0 ] && [ "$(field "$bf" enqueued)" = 0 ] && [ "$(rx XLEN media:dead)" = 0 ] || fail "after the probe backfill: $bf"
+echo "the API keeps the worker's probe of an original it verified itself, and an original with none is given again for it alone (proxy registered as it was): ok"
+
 # The worker's MinIO user: reads an upload but not its tus .info (file metadata), writes derived/ only, deletes and lists nothing.
 # The object of a verified upload, from the API's own record; tusd writes its metadata beside it, the same name with ".info".
 key="$("${C[@]}" exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -c "SELECT storage_key FROM upload_sessions WHERE state = '"'verified'"' AND storage_key IS NOT NULL LIMIT 1"')"
@@ -554,6 +647,34 @@ write-elsewhere deny
 delete-derived deny"
 [ "$(grep -E '^(read|list|write|delete)-' <<<"$policy")" = "$want_policy" ] || { echo "$policy" >&2; fail "the worker's MinIO user can do more or less than ADR 0092 says"; }
 echo "the worker's MinIO user reads uploads but not their .info, writes derived/ only, lists and deletes nothing: ok"
+
+# media-render's MinIO user: the same uploads, and derived/<material>/<original>/renders/ alone: not the proxy beside it.
+proxy_key="$(sql "SELECT storage_key FROM material_files WHERE kind = 'proxy' AND state = 'verified' LIMIT 1")"
+[[ "$proxy_key" =~ ^derived/[0-9a-f-]{36}/[0-9a-f-]{36}/proxy-480p\.mp4$ ]] || fail "no verified proxy to check media-render's MinIO user against"
+rpolicy="$(mcx "obj=$key proxy=$proxy_key"'
+meta="$(printf "%s.%s" "$obj" info)"
+mine="${proxy%/proxy-480p.mp4}/renders/00000000-0000-4000-8000-000000000000/circulated-vertical.mp4"
+t() { if echo z | mc --config-dir /tmp/mc "$@" >/dev/null 2>&1; then echo allow; else echo deny; fi; }
+echo "read-upload $(t cat "r/$S3_BUCKET_UPLOADS/$obj")"
+echo "read-info $(t cat "r/$S3_BUCKET_UPLOADS/$meta")"
+echo "write-uploads $(t pipe "r/$S3_BUCKET_UPLOADS/policy-check")"
+echo "write-render $(t pipe "r/$S3_BUCKET_MEDIA/$mine")"
+echo "read-render $(t cat "r/$S3_BUCKET_MEDIA/$mine")"
+echo "read-proxy $(t cat "r/$S3_BUCKET_MEDIA/$proxy")"
+echo "write-beside $(t pipe "r/$S3_BUCKET_MEDIA/${proxy%.mp4}-check.mp4")"
+echo "list-derived $(t ls "r/$S3_BUCKET_MEDIA/derived/")"
+echo "delete-render $(t rm "r/$S3_BUCKET_MEDIA/$mine")"' 2>&1)" || { echo "$rpolicy" | tail -3; fail "could not check media-render's MinIO user"; }
+want_rpolicy="read-upload allow
+read-info deny
+write-uploads deny
+write-render allow
+read-render allow
+read-proxy deny
+write-beside deny
+list-derived deny
+delete-render deny"
+[ "$(grep -E '^(read|list|write|delete)-' <<<"$rpolicy")" = "$want_rpolicy" ] || { echo "$rpolicy" >&2; fail "media-render's MinIO user can do more or less than the addendum to ADR 0092 says"; }
+echo "media-render's MinIO user reads uploads but not their .info, writes derived/*/*/renders/ only (not the proxy beside it), lists and deletes nothing: ok"
 
 # Measurement (--media-json): a synthetic 60 s clip per profile, end to end on the worker as deployed (its limits, the edge,
 # the API's verification, the feeder), timed from the job's delivery to its acknowledgement on the queue.
@@ -583,6 +704,7 @@ say(`MATERIAL=${id}`);
 JS
 )")" || { echo "$mout"; api_state; fail "the $prof measurement upload"; }
   mid="$(sed -n 's/^MATERIAL=//p' <<<"$mout")"
+  MEASURED+=("$prof:$mid")
   # A fresh cgroup for the worker, so memory.peak is this job's.
   docker restart "$wid" >/dev/null && sleep 3
   cg="$(cgdir "$wid")"
@@ -654,6 +776,7 @@ PY
 # The API verifies every upload itself (in_process), large ones included, and a login's argon2 hash comes on top: after each
 # large upload its restarts, OOM flag and cgroup memory.peak are printed (kept for the --json file), and a restart fails.
 api_peak_mb=0
+MEASURED=()
 api_state() {
   local aid acg s r o pk
   aid="$("${C[@]}" ps -q api)"
@@ -788,6 +911,9 @@ docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' $("${C[@]}" ps -q)
 [ "$used_mb" -lt "$total" ] || fail "memory in use $used_mb MB is not under the limits ($total MB)"
 echo "memory in use: $used_mb MB of $total MB limits (ceiling $LIMIT_MB MB): ok"
 
+# ---- Circulated-template renders (ADR 0091 §8: evaluation on the preview; addendum to ADR 0092) ----
+. "$HERE/smoke-renders.sh"
+
 logs="$("${C[@]}" logs --no-color 2>&1)"
 # Upload ids are bearer capabilities (SEC-06): the edge, the gate and the proxy log /files/-, never /files/<id>.
 edge_logs="$("${C[@]}" logs --no-color web ingest-gate tusd-proxy 2>&1)"
@@ -797,7 +923,7 @@ tus_id_re=' (GET|HEAD|PATCH|POST|PUT|DELETE|OPTIONS) /files/[A-Za-z0-9]'
 if grep -qE "$tus_id_re" <<<"$edge_logs"; then grep -E "$tus_id_re" <<<"$edge_logs" | head -3 | cut -c1-200 >&2; fail "an upload id in an edge log"; fi
 grep -qF '/files/-' <<<"$edge_logs" || fail "no redacted upload path in the edge logs (nothing logged?)"
 for k in POSTGRES_PASSWORD REDIS_PASSWORD S3_SECRET_KEY JWT_SECRET PREVIEW_REPORTER_PASSWORD TUSD_HOOK_SECRET INGEST_GATE_TOKEN \
-         MEDIA_WORKER_TOKEN S3_MEDIA_SECRET_KEY; do
+         MEDIA_WORKER_TOKEN S3_MEDIA_SECRET_KEY S3_RENDER_SECRET_KEY; do
   if grep -qF "$(val "$k")" <<<"$logs"; then fail "$k appears in a container log"; fi
 done
 echo "no secret in the logs: ok"
