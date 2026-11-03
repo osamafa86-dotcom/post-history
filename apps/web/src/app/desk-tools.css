@@ -1,0 +1,54 @@
+/* أدوات المكتب والإدارة (ADR 0105): أدوار الحساب، رفض طلب الانضمام، مفتاحا الحقل، النسخة المُنتَجة، مصغّرة الوارد ورقاقات النوع، تعديل الوسوم.
+   الخصائص المنطقية وحدها (inline/block) كي يعمل RTL أولًا والإنجليزية معًا. */
+
+/* A1: أدوار الحساب */
+.roles-card { display: grid; gap: var(--v2-space-4); }
+.roles-card > h2, .roles-card > p { margin: 0; }
+.role-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--v2-space-2); }
+.role-lines li { display: flex; align-items: center; gap: var(--v2-space-3); min-inline-size: 0; overflow-wrap: anywhere; }
+.roles-form { display: grid; gap: var(--v2-space-4); }
+.role-checks .check, .scope-group .check { min-block-size: var(--v2-size-touch-min); align-items: center; }
+.scope-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--v2-space-2); flex-basis: 100%; }
+.scope-add { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--v2-space-3); flex-basis: 100%; }
+.scope-add label { flex: 1 1 14rem; min-inline-size: 0; }
+
+/* A5: رفض الطلب */
+.join-card .actions { flex-wrap: wrap; }
+.confirm-dialog .confirm-body label select { inline-size: 100%; }
+
+/* A3: مفتاحا الحقل */
+.field-toggles { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--v2-space-1) var(--v2-space-4); border: 1px solid var(--v2-c-border-line); border-radius: 6px; padding: 10px 12px; }
+.field-toggles small { margin-block-end: var(--v2-space-2); }
+.field-toggles label:has(input:disabled) { color: var(--v2-c-text-secondary); }
+
+/* W6: النسخة المُنتَجة */
+.produced-card { display: grid; gap: var(--v2-space-4); }
+.produced-card > h2, .produced-card > p { margin: 0; }
+.produced-card .actions { flex-wrap: wrap; }
+
+/* W1: مصغّرة الصف ورقاقات النوع */
+.row-thumb.image { overflow: hidden; background: var(--v2-c-bg-sunken); }
+.row-thumb.image img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.row-thumb.sensitive { gap: var(--v2-space-1); padding: var(--v2-space-1); background: var(--v2-c-sensitivity-bg); border: 1px solid var(--v2-c-sensitivity-border); color: var(--v2-c-text-primary); text-align: center; }
+.row-thumb.sensitive small { font-size: var(--v2-font-caption-size); line-height: 1.2; font-weight: 700; }
+.type-chips { margin-block: var(--v2-space-3); }
+
+/* W2: الوسوم */
+.material-tags { display: grid; gap: var(--v2-space-3); justify-items: start; }
+.material-tags > .muted { margin: 0; }
+.tag-editor { display: grid; gap: var(--v2-space-3); justify-self: stretch; }
+.tag-editor h3 { margin: 0; }
+.tag-list.editable li { padding: 0; background: none; }
+.tag-add { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--v2-space-3); }
+.tag-add label { flex: 1 1 14rem; min-inline-size: 0; }
+.tag-suggested { display: grid; gap: var(--v2-space-2); }
+.tag-suggested .chip { display: inline-flex; align-items: center; gap: var(--v2-space-1); }
+.field-hint.error { color: var(--v2-c-state-danger); }
+
+@media (max-width: 999px) {
+  .material-main > .material-tags { order: 4; }
+}
+@media (max-width: 767px) {
+  .row-thumb.image, .row-thumb.sensitive { inline-size: 72px; block-size: 72px; }
+  .tag-add button, .scope-add button, .produced-card .actions button { flex: 1 1 auto; min-block-size: var(--v2-size-touch-min); }
+}

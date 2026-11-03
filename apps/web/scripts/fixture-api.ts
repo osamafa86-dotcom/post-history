@@ -25,7 +25,7 @@ function reset() {
   permissionAudit.splice(0, permissionAudit.length, ...Array.from({ length: 21 }, (_, i) => ({ target: "10000000-0000-4000-8000-000000000002", entry: { id: String(21 - i), kind: i % 2 ? "permission_revoked" as const : "permission_granted" as const, permission: "reporter_identity:read" as const, actor_id: me.user_id, occurred_at: new Date(Date.parse(identitySetting.updated_at) - i * 1000).toISOString(), reason_code: null } })));
 }
 // الرفع من الحاسوب (#88): جلسات رفع وخادم tus اصطناعي بفحص رمز ingest كالبوابة، وCORS لأصل الويب وحده.
-type FixtureUpload = { session: Record<string, unknown> & { id: string; material_id: string; state: string; size_bytes: number; bytes_received: number; receipt_number: string | null; failure_reason: string | null }; sha: string; token: string; tus?: string };
+type FixtureUpload = { session: Record<string, unknown> & { id: string; material_id: string; kind: string; state: string; size_bytes: number; bytes_received: number; receipt_number: string | null; failure_reason: string | null }; sha: string; token: string; tus?: string };
 const uploads = new Map<string, FixtureUpload>(), tusFiles = new Map<string, { sid: string; length: number; offset: number; hash: ReturnType<typeof createHash>; patches: number; resent: number; cuts: number }>();
 const ingestTokens = new Map<string, { sid: string; expires: number }>();
 const tusFaults = { rejectIngest: 0, failPatches: 0, cutNext: false, revoked: false };
@@ -35,8 +35,10 @@ function finishUpload(upload: FixtureUpload, digest: string) {
   const item = materials.find(m => m.id === upload.session.material_id);
   if (digest !== upload.sha) { Object.assign(upload.session, { state: "failed", failure_reason: "checksum_mismatch" }); if (item) item.technical_state = "failed"; return; }
   const receipt = `R-261021-${String(uploads.size).padStart(6, "0")}`;
-  Object.assign(upload.session, { state: "verified", receipt_number: receipt, bytes_received: upload.session.size_bytes });
-  if (item) { item.technical_state = "verified"; item.files = [{ id: randomUUID(), kind: "original", state: "verified", mime_type: "video/quicktime", receipt_number: receipt, created_at: new Date().toISOString() }]; }
+  const fileId = randomUUID();
+  Object.assign(upload.session, { state: "verified", receipt_number: receipt, bytes_received: upload.session.size_bytes, file_id: fileId });
+  if (item && upload.session.kind === "produced") { item.files = [...item.files, { id: fileId, kind: "produced", state: "verified", mime_type: "video/mp4", size_bytes: upload.session.size_bytes, created_at: new Date().toISOString() }]; return; }
+  if (item) { item.technical_state = "verified"; item.files = [{ id: fileId, kind: "original", state: "verified", mime_type: "video/quicktime", receipt_number: receipt, created_at: new Date().toISOString() }]; }
 }
 async function tus(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse, url: URL) {
   res.setHeader("Access-Control-Allow-Origin", webOrigin); res.setHeader("Vary", "Origin"); res.setHeader("Tus-Resumable", "1.0.0");
@@ -162,7 +164,7 @@ function seedTemplates() {
   templates.set("81000000-0000-4000-8000-000000000002", [{ ...base, id: "81000000-0000-4000-8000-000000000002", version: 3, type: "editorial_term", term_days: 365, name: { ar: "تحريري سنوي قديم", en: "Old annual editorial" }, terms: { ar: "شروط", en: "Terms" }, base_price: { amount_minor: 40000, currency: "ILS" }, enabled: false }]);
 }
 reset(); seedTemplates(); seedOrganizations(); seedLicenses(); seedCommission(); seedOrders(); seedConflicts(); seedEarnings(); resetAdmin();
-const signed = new Map<string, { kind: "proxy" | "thumbnail"; expires: number }>();
+const signed = new Map<string, { kind: "proxy" | "thumbnail" | "produced"; expires: number }>();
 let expireNextProxy = false;
 const access = new Map<string, Me>(), refresh = new Map<string, Me>();
 function profile(email: string): Me {
@@ -235,11 +237,19 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/__test/revoke-role" && req.method === "POST") { for (const user of access.values()) user.roles = []; return send({ ok: true }); }
   if (url.pathname === "/__test/revoke" && req.method === "POST") { access.clear(); refresh.clear(); tusFaults.revoked = true; return send({ ok: true }); }
   if (url.pathname === "/__test/expire-media" && req.method === "POST") { expireNextProxy = true; return send({ ok: true }); }
+  // W1 (ADR 0105): `thumbnail_file_id` لمصغّرة متحقَّقة على أربع مواد، والرابعة صور حسّاسة فلا تُطلب مصغّرتها.
+  if (url.pathname === "/__test/thumbs" && req.method === "POST") {
+    for (const i of [0, 1, 2, 3]) materials[i].thumbnail_file_id = materials[i].files.find(file => file.kind === "thumbnail")!.id;
+    Object.assign(materials[3], { sensitivity: { minors: true, injured: false, graphic: false }, material_types: ["photos"] }); return send({ ok: true });
+  }
+  // تغيير متزامن على المادة من جلسة أخرى: يرتفع إصدار صفها، فيردّ الحفظ التالي بإصدار قديم 412.
+  const bumpMaterial = /^\/__test\/materials\/([^/]+)\/bump$/.exec(url.pathname);
+  if (bumpMaterial && req.method === "POST") { const item = materials.find(m => m.id === bumpMaterial[1]); if (!item) return send({}, 404); item.row_version!++; item.tags = [...(item.tags ?? []), "وسم من جلسة أخرى"]; return send({ ok: true }); }
   if (url.pathname === "/derived/fixture") {
     const grant = signed.get(url.searchParams.get("signature") ?? "");
     if (!grant || grant.expires <= Date.now() || req.headers.authorization || req.headers.cookie) return send({}, 403);
-    const bytes = Buffer.from(grant.kind === "proxy" ? assets.mp4 : assets.png, "base64");
-    res.setHeader("Content-Type", grant.kind === "proxy" ? "video/mp4" : "image/png"); res.setHeader("Accept-Ranges", "bytes");
+    const bytes = Buffer.from(grant.kind === "thumbnail" ? assets.png : assets.mp4, "base64");
+    res.setHeader("Content-Type", grant.kind === "thumbnail" ? "image/png" : "video/mp4"); res.setHeader("Accept-Ranges", "bytes");
     let start = 0, end = bytes.length - 1;
     if (req.headers.range) {
       const match = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
@@ -315,6 +325,17 @@ const server = createServer(async (req, res) => {
       const snapshot = { ...structuredClone(body), published_at: new Date().toISOString(), published_by: user.user_id } as Form;
       formVersions.set(snapshot.version, snapshot); return commit(snapshot, 201);
     }
+    const tagsPath = /^\/v1\/materials\/([^/]+)\/tags$/.exec(path);
+    if (tagsPath && req.method === "PUT") {
+      const item = materials.find(m => m.id === tagsPath[1]); if (!item) return send({}, 404);
+      if (!has("supervisor", "editor_in_chief")) return send({ code: "forbidden_role" }, 403);
+      if (req.headers["if-match"] === undefined) return send({ code: "precondition_required" }, 428);
+      if (req.headers["if-match"] !== `"${item.row_version}"`) return send({ message: "never-display-canary" }, 412);
+      const tags = body.tags as string[];
+      if (Object.keys(body).join() !== "tags" || !Array.isArray(tags) || tags.length > 12 || tags.some(tag => typeof tag !== "string" || !tag.length || Array.from(tag).length > 40 || tag.trim() !== tag) || new Set(tags).size !== tags.length) return send({ code: "validation_failed" }, 422);
+      item.tags = [...tags]; item.row_version!++; item.updated_at = new Date().toISOString();
+      res.setHeader("ETag", `"${item.row_version}"`); return commit(item, 200);
+    }
     const match = /^\/v1\/materials\/([^/]+)\/(transitions|reservation|contributors)$/.exec(path);
     if (match) {
       const item = materials.find(m => m.id === match[1]); if (!item) return send({}, 404);
@@ -361,7 +382,9 @@ const server = createServer(async (req, res) => {
       if (!has("reporter", "supervisor", "producer", "editor_in_chief")) return send({}, 403);
       if (!materials.some(m => m.id === body.material_id)) return send({}, 404);
       const id = randomUUID(), now = Date.now();
-      const session = { id, material_id: String(body.material_id), kind: "original", state: "created", size_bytes: Number(body.size_bytes), tus_endpoint: process.env.FIXTURE_TUS_ENDPOINT ?? `${fixtureOrigin}/files/`,
+      if (body.kind !== "original" && body.kind !== "produced") return send({ code: "validation_failed" }, 422);
+      if (body.kind === "produced" && !has("producer")) return send({ code: "forbidden_role" }, 403);
+      const session = { id, material_id: String(body.material_id), kind: String(body.kind), state: "created", size_bytes: Number(body.size_bytes), tus_endpoint: process.env.FIXTURE_TUS_ENDPOINT ?? `${fixtureOrigin}/files/`,
         tus_metadata: { upload_session_id: id, filename: String(body.filename) }, part_size_bytes: Number(process.env.FIXTURE_PART_SIZE ?? 1048576), bytes_received: 0, ingest_token_required: !process.env.FIXTURE_TUS_ENDPOINT,
         ietf_resumable: false, checksum_algorithm: "sha256", expires_at: new Date(now + 86400000).toISOString(), file_id: null, duplicate_of_file_id: null, failure_reason: null, receipt_number: null, created_at: new Date(now).toISOString() };
       const token = randomUUID(); uploads.set(id, { session, sha: String(body.client_sha256), token });
@@ -439,6 +462,16 @@ const server = createServer(async (req, res) => {
       if (orderWrite[2] === "cancel") { Object.assign(order, { status: "cancelled", cancel_reason: "buyer", updated_at: new Date().toISOString() }); return commit(order, 200); }
       return commit({ checkout_url: `http://127.0.0.1:${process.env.WEB_FIXTURE_PORT ?? 3201}/sandbox/checkout/${order.id}`, provider: "sandbox", expires_at: order.expires_at, session_secret: "never-display-canary" }, 200);
     }
+    const rejection = /^\/v1\/buyer-organizations\/([^/]+)\/rejection$/.exec(path);
+    if (rejection && req.method === "POST") {
+      if (!has("system_admin")) return send({ code: "forbidden_role" }, 403);
+      const current = organizations.get(rejection[1]); if (!current) return send({}, 404);
+      if (req.headers["if-match"] !== `"${current.row}"`) return send({ message: "never-display-canary" }, 412);
+      if (current.status !== "pending_verification") return send({ code: "invalid_transition" }, 409);
+      if (Object.keys(body).join() !== "reason_code" || !["commercial_registry", "institutional_email", "license_agreement", "duplicate_organization", "other"].includes(String(body.reason_code))) return send({ code: "validation_failed" }, 422);
+      const next = { ...current, status: "rejected", rejection_reason: String(body.reason_code), row: current.row + 1, updated_at: new Date().toISOString() }; organizations.set(current.id, next);
+      res.setHeader("ETag", `"${next.row}"`); return commit({ ...Object.fromEntries(Object.entries(next).filter(([key]) => key !== "row")), active_members: members.get(current.id)!.filter(m => m.status === "active").length }, 200);
+    }
     const orgWrite = /^\/v1\/buyer-organizations(?:\/([^/]+)(\/members)?(?:\/([^/]+))?)?$/.exec(path);
     if (orgWrite) {
       const [, id, isMembers, userId] = orgWrite, mine = (orgId: string) => !user.organization_id || user.organization_id === orgId;
@@ -453,7 +486,7 @@ const server = createServer(async (req, res) => {
         if (!has("system_admin", "buyer_admin")) return send({}, 403);
         if (req.headers["if-match"] !== `"${current.row}"`) return send({}, 412);
         if (!has("system_admin") && (body.status !== current.status || body.seats !== current.seats)) return send({ code: "forbidden_role" }, 403);
-        const next = { ...current, ...body, row: current.row + 1, updated_at: new Date().toISOString() }; organizations.set(id, next);
+        const next: Record<string, unknown> & { id: string; row: number; seats: number } = { ...current, ...body, row: current.row + 1, updated_at: new Date().toISOString() }; if (next.status !== "rejected") delete next.rejection_reason; organizations.set(id, next);
         res.setHeader("ETag", `"${next.row}"`); return commit(Object.fromEntries(Object.entries(next).filter(([key]) => key !== "row")), 200);
       }
       if (!has("system_admin", "buyer_admin")) return send({}, 403);
@@ -693,7 +726,9 @@ const server = createServer(async (req, res) => {
   const derivative = /^\/v1\/materials\/([^/]+)\/files\/([^/]+)\/download-url$/.exec(url.pathname);
   if (derivative) {
     const file = materials.find(m => m.id === derivative[1])?.files.find(f => f.id === derivative[2] && f.state === "verified");
-    if (!file || (file.kind !== "proxy" && file.kind !== "thumbnail")) return send({ code: "not_found" }, 404);
+    // النسخة المُنتَجة لأدوار الإنتاج وحدها (ADR 0104).
+    const production = user.roles.some(role => ["producer", "supervisor", "editor_in_chief", "system_admin"].includes(role.name));
+    if (!file || (file.kind !== "proxy" && file.kind !== "thumbnail" && !(file.kind === "produced" && production))) return send({ code: "not_found" }, 404);
     const signature = randomUUID(), expires = Date.now() + 300000;
     signed.set(signature, { kind: file.kind, expires: file.kind === "proxy" && expireNextProxy ? 0 : expires });
     if (file.kind === "proxy") expireNextProxy = false;

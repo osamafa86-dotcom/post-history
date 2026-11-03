@@ -36,6 +36,18 @@ export function rewriteInput(body: Record<string, unknown>): TagRewriteCreate | 
   return Object.keys(body).sort().join() === "source,target" && validTag(body.source) && validTag(body.target) && body.source !== body.target ? { source: body.source, target: body.target } : null;
 }
 
+// وسوم المادة من المكتب (W2، ADR 0104، 0105): المشرف في نطاقه ورئيس التحرير كما في `x-roles`.
+export type MaterialTagsUpdate = components["schemas"]["MaterialTagsUpdate"];
+export const materialTagEditors = ["supervisor", "editor_in_chief"] as const satisfies readonly Role[];
+/** وسوم المادة كما يقبلها العقد: حتى 12 وسمًا صالحًا بلا تكرار (ADR 0086). */
+export function validMaterialTags(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length <= tagLimits.perMaterial && value.every(validTag) && new Set(value).size === value.length;
+}
+/** جسم `PUT /materials/{id}/tags`: مفتاح `tags` وحده. */
+export function materialTagsInput(body: Record<string, unknown>): MaterialTagsUpdate | null {
+  return Object.keys(body).join() === "tags" && validMaterialTags(body.tags) ? { tags: [...body.tags] } : null;
+}
+
 /** مرشّحات `GET /tags`: جزء من الوسم، والمقترحة أو غيرها، والمؤشّر والحد. */
 export function tagUsageQuery(params: URLSearchParams): TagUsageQuery {
   if ([...params.keys()].some(key => !["q", "suggested", "cursor", "limit"].includes(key) || params.getAll(key).length > 1)) throw new Error("Invalid query");

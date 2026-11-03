@@ -28,3 +28,15 @@ export function matchesSearch(needle: string, fields: (string | null | undefined
   const q = needle.trim().toLocaleLowerCase();
   return !q || fields.some(field => field?.toLocaleLowerCase().includes(q));
 }
+
+/**
+ * مصغّرة صف الوارد (W1، ADR 0104، 0105): `thumbnail_file_id` وحده، والخادم لا يضعه إلا لمصغّرة متحقَّقة. المادة الحسّاسة أو المجهولة الحساسية
+ * لا تُطلب مصغّرتها (فشل مغلق، ADR 0089 §1) فتظهر علامتها، وما سواها أيقونة النوع.
+ */
+export function rowThumb(material: { thumbnail_file_id?: string | null; material_types: readonly string[] }, sensitive: boolean): { kind: "sensitive" } | { kind: "thumbnail"; id: string } | { kind: "icon"; photos: boolean } {
+  if (sensitive) return { kind: "sensitive" };
+  return material.thumbnail_file_id ? { kind: "thumbnail", id: material.thumbnail_file_id } : { kind: "icon", photos: material.material_types.includes("photos") };
+}
+
+/** رقاقات النوع: تصفّي الصفحة المحمّلة وحدها (عقد `/materials` بلا معامل نوع)، و«كل الأنواع» بلا قيمة. */
+export const matchesType = (material: { material_types: readonly string[] }, type: string) => !type || material.material_types.includes(type);

@@ -195,4 +195,20 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
     for (const path of ["/tag-suggestions", "/platform-settings"]) expect(at("paths", path, "put", "parameters")).toEqual(expect.arrayContaining([{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/IfMatch" }]));
     expect(at("paths", "/tag-rewrites", "post", "parameters")).toEqual([{ $ref: "#/components/parameters/IdempotencyKey" }]);
   });
+  it("keeps the build-gap writes aligned with ADR 0104 (roles, reasons, limits, headers, upload kind)", () => {
+    const roles = (path: string, method = "get") => at("paths", path, method, "x-roles");
+    expect([...staff.roleEditors]).toEqual(roles("/users/{id}/roles")); expect([...staff.roleEditors]).toEqual(roles("/users/{id}/roles", "put"));
+    expect(staff.roleLimits.roles).toBe(at("components", "schemas", "StaffRolesUpdate", "properties", "roles", "maxItems"));
+    const staffNames = (at("components", "schemas", "RoleName", "enum") as string[]).filter(name => !["system_admin", "buyer_admin", "buyer_member"].includes(name));
+    expect([...staff.editableRoles].sort()).toEqual(staffNames.sort());
+    expect(at("components", "schemas", "Scope", "properties", "kind", "enum")).toEqual(expect.arrayContaining(["office", "governorate"]));
+    expect([...buyers.organizationRejecters]).toEqual(roles("/buyer-organizations/{org_id}/rejection", "post"));
+    expect([...buyers.rejectionReasons]).toEqual(at("components", "schemas", "BuyerOrganizationRejectionReason", "enum"));
+    expect([...buyers.organizationStatuses]).toEqual(at("components", "schemas", "BuyerOrganizationStatus", "enum"));
+    expect([...tags.materialTagEditors]).toEqual(roles("/materials/{id}/tags", "put"));
+    for (const [path, method] of [["/materials/{id}/tags", "put"], ["/buyer-organizations/{org_id}/rejection", "post"]]) expect(at("paths", path, method, "parameters")).toEqual(expect.arrayContaining([{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/IfMatch" }]));
+    expect(at("components", "schemas", "UploadSessionCreate", "properties", "kind", "enum")).toEqual(expect.arrayContaining(["original", "produced"]));
+    expect(at("components", "schemas", "AssignmentTransition", "properties")).toHaveProperty("produced_file_id");
+    for (const route of ["/users/{id}/roles", "/buyer-organizations/{org_id}/rejection", "/materials/{id}/tags"]) expect(actionRoutes.some(item => item.path === route)).toBe(true);
+  });
 });

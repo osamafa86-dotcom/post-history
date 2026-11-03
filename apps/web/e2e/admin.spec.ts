@@ -158,13 +158,13 @@ test("A4 shows the month's earnings: cards from the same totals, the formula, re
   await page.getByRole("button", { name: ar.money.monthPrev }).click(); await expect(page.getByTestId("money-empty")).toBeVisible();
 });
 
-test("A5 shows each organization's purchases this year and activates a pending one after a confirmation; there is no reject", async ({ page, request }) => {
+test("A5 shows each organization's purchases this year and activates a pending one after a confirmation; reject sits beside it (ADR 0105)", async ({ page, request }) => {
   await login(page); await page.getByRole("link", { name: ar.buyers.nav, exact: true }).click();
   await expect(page.getByTestId("organization-row")).toHaveCount(2);
   const active = page.getByTestId("organization-row").filter({ hasText: "شبكة الأخبار" });
   await expect(active.getByTestId("organization-purchases")).toContainText("8,420.00"); await expect(active.getByTestId("organization-purchases")).toContainText("12 طلبًا");
   const card = page.getByTestId("join-request"); await expect(card).toHaveCount(1); await expect(card).toContainText(fill(ar.buyers.joinTitle, { name: "مؤسسة أخرى" }));
-  await expect(card.getByRole("button", { name: /رفض/ })).toHaveCount(0);
+  await expect(card.getByTestId("reject-request")).toHaveText(ar.buyers.reject.action);
   await card.getByRole("button", { name: ar.buyers.activate, exact: true }).click();
   const dialog = page.getByTestId("confirm-activate"); await expect(dialog).toContainText(fill(ar.buyers.activateEffect, { name: "مؤسسة أخرى" }));
   const put = page.waitForRequest(r => r.url().endsWith("/buyer-organizations/90000000-0000-4000-8000-000000000002") && r.method() === "PUT");
@@ -188,7 +188,7 @@ test("A3 builds on three panes: contract fields are fixed with «encrypted» on 
   await expect(page.getByTestId("field-row").last()).toHaveAttribute("class", /selected/);
   await expect(page.getByTestId("field-editor").getByLabel(ar.formsAdmin.type, { exact: true })).toHaveValue("number");
   await expect(page.getByRole("button", { name: fill(ar.formsAdmin.addType, { type: ar.formsAdmin.types.location }) })).toBeDisabled();
-  await expect(page.getByText(/يظهر في الإرسال العاجل|يُرسل إلى المتجر/)).toHaveCount(0);
+  await expect(page.getByTestId("field-editor").getByTestId("field-toggles")).toContainText(ar.formsAdmin.toggles.inUrgent);
 });
 
 test("the admin pages fit a 375 px phone without sideways scroll, with rows as cards and the money list as records (M5)", async ({ page }) => {

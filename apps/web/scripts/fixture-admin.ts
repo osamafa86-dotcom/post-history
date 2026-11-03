@@ -10,6 +10,10 @@ import type { PlatformSettings } from "../src/lib/platform-policy";
 type Reply = { status: number; value: unknown; etag?: string } | null;
 type Staff = StaffUser & { email: string; created_at: string };
 const staff: Staff[] = [], usage = new Map<string, { count: number; last: string | null }>();
+// نطاقات المشرف (A1، ADR 0104): فارغ = كل المكاتب، والمحافظة باسم محافظة مكتب موجود.
+type Scope = { kind: "office" | "governorate"; id: string };
+const scopes = new Map<string, Scope[]>(), officeGovernorates = ["محافظة تجريبية ١", "محافظة تجريبية ٢", "محافظة تجريبية ٣"];
+const editable = ["reporter", "supervisor", "producer", "editor_in_chief", "rights_officer", "finance"];
 let suggestions: TagSuggestions, platform: PlatformSettings;
 const id = (n: number) => `10000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
@@ -37,6 +41,7 @@ export function resetAdmin() {
     row(11, "مراسل تجريبي ٥", ["reporter"], "محافظة تجريبية ٢", "active", 1800000),
     row(12, "مراسل تجريبي ٦", ["reporter"], "محافظة تجريبية ٣", "active", 5400000),
   );
+  scopes.clear(); scopes.set(id(2), [{ kind: "governorate", id: "محافظة تجريبية ١" }]);
   usage.clear();
   for (const [tag, count, days] of [["وسم تجريبي ١", 412, 0], ["وسم تجريبي ٢", 318, 0], ["وسم تجريبي ٣", 207, 1], ["وسم تجريبى ٣", 9, 3], ["خيمة", 64, 0], ["خيام", 21, 7], ["مياه", 30, 2], ["مياة", 4, 9]] as const) usage.set(tag, { count, last: ago(days * 86400000 + 60000) });
   suggestions = { tags: ["وسم تجريبي ١", "وسم تجريبي ٢", "وسم تجريبي ٣", "مياه", "خيام", "مدارس"], version: 3, updated_at: "2026-11-03T09:00:00Z" };
@@ -55,8 +60,16 @@ function usageRows() {
     .sort((a, b) => b.material_count - a.material_count || (a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0));
 }
 
+const rolesOf = (row: Staff) => row.roles.map(name => ({ name, scopes: name === "supervisor" ? scopes.get(row.id) ?? [] : [] }));
+
 export function adminRead(url: URL, user: Me): Reply {
   const path = url.pathname;
+  const rolesPath = /^\/v1\/users\/([^/]+)\/roles$/.exec(path);
+  if (rolesPath) {
+    if (!has(user, "system_admin")) return { status: 403, value: { code: "forbidden_role" } };
+    const row = staff.find(s => s.id === rolesPath[1]); if (!row) return { status: 404, value: {} };
+    return { status: 200, value: { user_id: row.id, roles: rolesOf(row), internal_note: "never-display-canary" } };
+  }
   if (path === "/v1/users") {
     if (!has(user, "system_admin")) return { status: 403, value: { code: "forbidden_role" } };
     const roles = url.searchParams.getAll("role"), status = url.searchParams.get("status"), q = url.searchParams.get("q")?.toLowerCase();
@@ -133,6 +146,18 @@ export function adminWrite(path: string, method: string, user: Me, body: Record<
     const next = { platform_name: String(body.platform_name), app_name: String(body.app_name), watermark_text: String(body.watermark_text) };
     if (next.platform_name !== platform.platform_name || next.app_name !== platform.app_name || next.watermark_text !== platform.watermark_text) platform = { ...next, version: platform.version + 1, updated_at: new Date().toISOString() };
     return { status: 200, value: platform, etag: `"${platform.version}"` };
+  }
+  const rolesPath = /^\/v1\/users\/([^/]+)\/roles$/.exec(path);
+  if (rolesPath && method === "PUT") {
+    if (!has(user, "system_admin")) return { status: 403, value: { code: "forbidden_role" } };
+    const row = staff.find(s => s.id === rolesPath[1]); if (!row) return { status: 404, value: {} };
+    if (row.id === user.user_id || row.roles.includes("system_admin")) return { status: 403, value: { code: "admin_quorum_required" } };
+    const roles = body.roles as { name: string; scopes: Scope[] }[];
+    const ok = Object.keys(body).join() === "roles" && Array.isArray(roles) && roles.length >= 1 && roles.length <= 7 && new Set(roles.map(r => r.name)).size === roles.length
+      && roles.every(r => editable.includes(r.name) && Array.isArray(r.scopes) && (r.name === "supervisor" || !r.scopes.length) && r.scopes.every(scope => scope.kind === "governorate" ? officeGovernorates.includes(scope.id) : scope.kind === "office"));
+    if (!ok) return { status: 422, value: { code: "validation_failed" } };
+    row.roles = roles.map(r => r.name as StaffUser["roles"][number]); scopes.set(row.id, roles.find(r => r.name === "supervisor")?.scopes ?? []);
+    return { status: 200, value: { user_id: row.id, roles: rolesOf(row) } };
   }
   const status = /^\/v1\/users\/([^/]+)\/status$/.exec(path);
   if (status && method === "PUT" && has(user, "system_admin")) { const row = staff.find(s => s.id === status[1]); if (row && (body.status === "active" || body.status === "suspended")) row.status = body.status; }

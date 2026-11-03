@@ -6,7 +6,7 @@ import { formatDate, messages, type Locale } from "@/lib/i18n";
 import { hasRole } from "@/lib/review";
 import { useMutation } from "@/lib/use-mutation";
 import { localized } from "@/lib/store-format";
-import { buyerRoles, emptyOrganization, inputOf, memberInvite, memberManagers, organizationAdmins, organizationCreate, organizationEditors, organizationInput, organizationLimits, organizationStatuses, type InviteToken, type Member, type Organization, type OrganizationCreate, type OrganizationInput } from "@/lib/buyer-policy";
+import { buyerRoles, emptyOrganization, inputOf, memberInvite, memberManagers, organizationAdmins, organizationCreate, organizationEditors, organizationInput, organizationLimits, organizationStatuses, rejectionReasons, type InviteToken, type Member, type Organization, type OrganizationCreate, type OrganizationInput, type RejectionReason } from "@/lib/buyer-policy";
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
 import { EmptyState } from "./empty-state";
@@ -108,9 +108,26 @@ function OrganizationTable({ locale, items, open }: { locale: Locale; items: Org
   </table>{failed && <p className="caption table-foot" role="alert">{t.purchasesFailed}</p>}</div>;
 }
 
-/** «طلب انضمام» (A5، S6): البنود الثلاثة معايير مكتوبة تراجعها الإدارة خارج المنصة، والتفعيل بحالة المؤسسة وحدها بتأكيد يقول أثره. */
+/**
+ * «طلب انضمام» (A5، S6): البنود الثلاثة معايير مكتوبة تراجعها الإدارة خارج المنصة، والتفعيل بحالة المؤسسة وحدها بتأكيد يقول أثره.
+ * والرفض (ADR 0104، 0105) بسبب من القائمة المغلقة على `POST …/rejection` بإصدار الملف الحالي؛ السبب يراه أعضاء المؤسسة، ولا نص حر.
+ */
 function JoinRequest({ locale, organization, admin, onOpen, onActivated }: { locale: Locale; organization: Organization; admin: boolean; onOpen: () => void; onActivated: () => void }) {
   const m = messages[locale], t = m.buyers, mutation = useMutation(), [confirming, setConfirming] = useState(false), [stale, setStale] = useState(false), name = localized(organization.display_name, locale);
+  const [rejecting, setRejecting] = useState(false), [reason, setReason] = useState<RejectionReason | "">("");
+  async function reject() {
+    if (!reason) return;
+    setStale(false);
+    const box: { status?: number } = {}, body = { reason_code: reason };
+    const ok = await mutation.run(JSON.stringify(["reject", organization.id, reason]), async header => {
+      const read = await browserApi().GET("/buyer-organizations/{org_id}", { params: { path: { org_id: organization.id } } });
+      if (!read.data) { box.status = read.response.status; return read; }
+      const result = await browserApi().POST("/buyer-organizations/{org_id}/rejection", { params: { path: { org_id: organization.id }, header: { ...header, "If-Match": read.response.headers.get("ETag") ?? "" } }, body });
+      box.status = result.response.status; return result;
+    });
+    if (ok) { setRejecting(false); onActivated(); }
+    else if (box.status === 412 || box.status === 409) { setRejecting(false); setStale(true); mutation.clearStatus(); onActivated(); }
+  }
   async function activate() {
     setStale(false);
     const box: { status?: number } = {};
@@ -127,11 +144,17 @@ function JoinRequest({ locale, organization, admin, onOpen, onActivated }: { loc
   }
   return <section className="card join-card" aria-labelledby={`join-${organization.id}`} data-testid="join-request">
     <div className="join-head"><div><h2 id={`join-${organization.id}`}>{fill(t.joinTitle, { name })}</h2><p className="muted">{t.joinLead}</p></div>
-      <div className="actions">{admin && <button type="button" disabled={mutation.busy} onClick={() => { mutation.clearStatus(); setConfirming(true); }}>{t.activate}</button>}<button type="button" className="secondary" onClick={onOpen}>{t.open}</button></div></div>
+      <div className="actions">{admin && <button type="button" disabled={mutation.busy} onClick={() => { mutation.clearStatus(); setConfirming(true); }}>{t.activate}</button>}
+        {admin && <button type="button" className="danger" data-testid="reject-request" disabled={mutation.busy} onClick={() => { mutation.clearStatus(); setReason(""); setRejecting(true); }}>{t.reject.action}</button>}
+        <button type="button" className="secondary" onClick={onOpen}>{t.open}</button></div></div>
     <ul className="join-checks">{(["registry", "email", "agreement"] as const).map(check => <li key={check}><Icon name="check" size={14} />{t.checks[check]}</li>)}</ul>
     <p className="caption">{t.joinNote}</p>
     {stale && <p className="notice attention" role="alert">{t.changedOrg}</p>}
-    {!confirming && mutation.status !== 0 && mutation.status !== 200 && <ActionStatus status={mutation.status} locale={locale} />}
+    {!confirming && !rejecting && mutation.status !== 0 && mutation.status !== 200 && <ActionStatus status={mutation.status} locale={locale} />}
+    {rejecting && <ConfirmDialog locale={locale} testId="confirm-reject" title={fill(t.reject.title, { name })} confirm={t.reject.action} busy={mutation.busy} status={mutation.status} danger confirmDisabled={!reason} onConfirm={() => void reject()} onCancel={() => setRejecting(false)}>
+      <label>{t.reject.reason}<select data-testid="reject-reason" value={reason} onChange={event => setReason(event.target.value as RejectionReason | "")}><option value="" disabled>{m.choose}</option>{rejectionReasons.map(code => <option key={code} value={code}>{t.reject.reasons[code]}</option>)}</select></label>
+      <p>{fill(t.reject.effect, { name })}</p>
+    </ConfirmDialog>}
     {confirming && <ConfirmDialog locale={locale} testId="confirm-activate" title={t.activate} confirm={t.activate} busy={mutation.busy} status={mutation.status} onConfirm={() => void activate()} onCancel={() => setConfirming(false)}>
       <p>{fill(t.activateEffect, { name })}</p>
     </ConfirmDialog>}
@@ -184,6 +207,7 @@ function OrganizationPanel({ locale, id }: { locale: Locale; id: string }) {
       {editor && !draft && <button onClick={() => { mutation.clearStatus(); setInvalid(false); setDraft(inputOf(o)); }}>{t.edit}</button>}</div>
     {o.status === "pending_verification" && <p className="notice">{t.pendingHelp}</p>}
     {o.status === "suspended" && <p className="notice error">{t.suspendedHelp}</p>}
+    {o.status === "rejected" && <p className="notice error" data-testid="organization-rejected">{admin ? fill(t.reject.help, { reason: t.reject.reasons[o.rejection_reason ?? "other"] }) : fill(m.store.org.rejected.body, { reason: m.store.org.rejected.reasons[o.rejection_reason ?? "other"] })}</p>}
     {draft ? <form className="card form-card rule-form" noValidate onSubmit={e => { e.preventDefault(); void save(); }}>
       <ProfileFields locale={locale} value={draft} set={(key, value) => setDraft(d => d && { ...d, [key]: value })} admin={admin} />
       {invalid && <p className="notice error" role="alert">{t.invalid}</p>}

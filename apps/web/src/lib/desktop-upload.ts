@@ -7,7 +7,7 @@ import { findUpload, forgetUpload, recordKey, rememberUpload, type PendingUpload
 
 type Created = components["schemas"]["UploadSessionCreated"];
 // ما يعيده الـBFF من جلسة الرفع (server/uploads.ts)، مشتق من العقد لا مكتوب يدويًا.
-export type SessionView = Pick<Created, "id" | "material_id" | "kind" | "state" | "size_bytes" | "bytes_received" | "failure_reason" | "receipt_number" | "expires_at" | "created_at">;
+export type SessionView = Pick<Created, "id" | "material_id" | "kind" | "state" | "size_bytes" | "bytes_received" | "failure_reason" | "receipt_number" | "expires_at" | "created_at" | "file_id">;
 type CreatedView = SessionView & Pick<Created, "tus_endpoint" | "tus_metadata" | "part_size_bytes" | "ingest_token_required" | "upload_token" | "upload_token_expires_at">;
 type IngestToken = components["schemas"]["IngestToken"];
 
@@ -47,7 +47,8 @@ const noStorage = { findAllUploads: async () => [], findUploadsByFingerprint: as
 
 export type UploadControl = { pause(): void; resume(): void; stop(): void; cancel(): void; done: Promise<UploadUpdate> };
 
-export function startUpload(file: File, materialId: string, report: (update: UploadUpdate) => void): UploadControl {
+/** `kind`: الأصل من مركز الرفع، أو النسخة المُنتَجة من المهمة (W6، ADR 0105) بالمسار نفسه. */
+export function startUpload(file: File, materialId: string, report: (update: UploadUpdate) => void, kind: "original" | "produced" = "original"): UploadControl {
   const controller = new AbortController(), keyed = recordKey(fileKey(file));
   let key = "";
   let update: UploadUpdate = { phase: "hashing", hashed: 0, sent: 0, total: file.size, resumed: false };
@@ -57,12 +58,12 @@ export function startUpload(file: File, materialId: string, report: (update: Upl
   async function prepare(): Promise<PendingUpload> {
     key = await keyed;
     const known = await findUpload(key);
-    if (known && known.material_id === materialId) { emit({ hashed: file.size, resumed: true }); return known; }
+    if (known && known.material_id === materialId && known.create.kind === kind) { emit({ hashed: file.size, resumed: true }); return known; }
     // البصمة الكاملة قبل إنشاء الجلسة: العقد يلزم client_sha256 عند POST /uploads.
     const sha = await hashFile(file, hashed => emit({ hashed }), controller.signal);
     const pending: PendingUpload = {
       key, material_id: materialId, idempotency_key: crypto.randomUUID(), updated_at: Date.now(),
-      create: { material_id: materialId, kind: "original", size_bytes: file.size, client_sha256: sha, client_fingerprint: await fileFingerprint(file) },
+      create: { material_id: materialId, kind, size_bytes: file.size, client_sha256: sha, client_fingerprint: await fileFingerprint(file) },
     };
     await rememberUpload(pending); return pending;
   }

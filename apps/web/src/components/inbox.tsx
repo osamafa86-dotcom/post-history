@@ -1,16 +1,18 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { beep } from "@/lib/alert-sound";
 import { humanDuration, longDate, messages, plural, shortTime, type Locale } from "@/lib/i18n";
 import type { Material, MaterialPage, MaterialQuery, NewsroomDashboard } from "@/lib/types";
-import { materialQuery, states } from "@/lib/query";
+import { materialQuery, materialTypes, states } from "@/lib/query";
+import { isSensitive } from "@/lib/render-policy";
 import { photographer, StateBadge, type StateTrack } from "./states";
 import { Icon } from "./icon";
 import { EmptyState } from "./empty-state";
 import { useInboxBadge, useShellSearch } from "./app-shell";
-import { activeTab, inboxTabs, isOpenUrgent, matchesSearch, tabCounts, tabQuery, type InboxTab } from "@/lib/inbox-tabs";
+import { activeTab, inboxTabs, isOpenUrgent, matchesSearch, matchesType, rowThumb, tabCounts, tabQuery, type InboxTab } from "@/lib/inbox-tabs";
 import { urgentUnacknowledged } from "@/lib/editor";
 import { hasRole, transitionOptions } from "@/lib/review";
 import { useMutation } from "@/lib/use-mutation";
@@ -34,6 +36,7 @@ export function Inbox({ locale }: { locale: Locale }) {
   const m = messages[locale], w = m.shell.inbox, [query, setQuery] = useState<MaterialQuery>({ limit: 50 }), [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const [page, setPage] = useState<MaterialPage | null>(null), [error, setError] = useState(false), [invalid, setInvalid] = useState(false), [offline, setOffline] = useState(false), [unread, setUnread] = useState(0), [updated, setUpdated] = useState("");
   const [refresh, setRefresh] = useState(0), [sort, setSort] = useState<Sort>("shot_at"), [descending, setDescending] = useState(true), [formKey, setFormKey] = useState(0);
+  const [type, setType] = useState("");
   const { query: needle, setQuery: setNeedle } = useShellSearch(), setBadge = useInboxBadge();
   const me = useUser(), staff = hasRole(me, ...dashboardRoles), [snapshot, setSnapshot] = useState<NewsroomDashboard | null>(null), [now, setNow] = useState(0);
   // لقطة غرفة الأخبار كل 5 ثوانٍ (حداثتها في العقد) لأدوار اللوحة وحدها؛ والعدّاد الحي كل ثانية.
@@ -67,7 +70,7 @@ export function Inbox({ locale }: { locale: Locale }) {
     return (descending ? -1 : 1) * result;
   }), [page, sort, descending, locale]);
   const tab = activeTab(query), counts = snapshot ? tabCounts(snapshot) : null;
-  const tabbed = useMemo(() => rows.filter(item => tab !== "urgent" || isOpenUrgent(item)), [rows, tab]);
+  const tabbed = useMemo(() => rows.filter(item => (tab !== "urgent" || isOpenUrgent(item)) && matchesType(item, type)), [rows, tab, type]);
   const visible = useMemo(() => tabbed.filter(item => matchesSearch(needle, searchFields(item))), [tabbed, needle]);
   function choose(next: InboxTab) { setQuery({ limit: 50, ...tabQuery[next] }); setPage(null); setCursors([undefined]); setInvalid(false); setFormKey(n => n + 1); }
   function filter(event: React.FormEvent<HTMLFormElement>) {
@@ -76,7 +79,7 @@ export function Inbox({ locale }: { locale: Locale }) {
     try { setQuery({ ...materialQuery(params), limit: 50 }); setPage(null); setCursors([undefined]); setInvalid(false); } catch { setInvalid(true); }
   }
   function drop(key: FilterKey) { const next: MaterialQuery = { ...query, cursor: undefined }; delete next[key]; setQuery(next); setPage(null); setCursors([undefined]); setFormKey(n => n + 1); }
-  function clearAll() { setNeedle(""); choose("all"); }
+  function clearAll() { setNeedle(""); setType(""); choose("all"); }
   function move(next: boolean) {
     const stack = next ? [...cursors, page?.next_cursor ?? undefined] : cursors.slice(0, -1);
     setCursors(stack); setQuery({ ...query, cursor: stack.at(-1) }); setPage(null);
@@ -89,6 +92,7 @@ export function Inbox({ locale }: { locale: Locale }) {
   const chips = [
     ...(search ? [{ key: "search", label: `«${search}»`, remove: () => setNeedle("") }] : []),
     ...(tab && tab !== "all" ? [{ key: "tab", label: m.inboxTabs[tab], remove: () => choose("all") }] : []),
+    ...(type ? [{ key: "type", label: `${w.typeFilter.label}: ${(m.types as Record<string, string>)[type] ?? type}`, remove: () => setType("") }] : []),
     ...active.map(key => ({ key, label: `${filterLabel(key, m)}: ${filterValue(key, String(query[key]), m, locale)}`, remove: () => drop(key) })),
   ];
   const lastArrival = snapshot?.recent_receipts[0]?.verified_at;
@@ -120,6 +124,8 @@ export function Inbox({ locale }: { locale: Locale }) {
       <nav className="quick-tabs" aria-label={m.inboxTabs.label}>{inboxTabs.map(item => <button key={item} type="button" className={tab === item ? "chip active" : "chip"} aria-pressed={tab === item} onClick={() => choose(item)}>{item === "urgent" && <Icon name="bolt" size={14} />}{m.inboxTabs[item]}{counts && <> <span className="tab-count" dir="ltr">{counts[item]}</span></>}</button>)}</nav>
       <div className="sort-tools"><label>{m.sort}<select value={sort} onChange={e => setSort(e.target.value as Sort)}>{([["shot_at", m.shotAt], ["governorate", m.governorate], ["reporter_id", m.reporterId], ["technical_state", m.technical], ["editorial_state", m.editorial], ["rights_state", m.rights]] as [Sort, string][]).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><button className="secondary small" onClick={() => setDescending(!descending)}>{descending ? m.descending : m.ascending}</button></div>
     </div>
+    <nav className="quick-tabs type-chips" aria-label={w.typeFilter.label} aria-describedby="type-filter-hint" data-testid="type-chips">{(["", ...materialTypes] as string[]).map(value => <button key={value || "all"} type="button" className={type === value ? "chip active" : "chip"} aria-pressed={type === value} onClick={() => setType(value)}>{value ? (m.types as Record<string, string>)[value] : w.typeFilter.all}</button>)}</nav>
+    <p id="type-filter-hint" className="caption visually-hidden">{w.typeFilter.hint}</p>
     <details className="filter-panel"><summary>{m.filters}</summary><form key={formKey} onSubmit={filter} className="filters">
       {(Object.keys(states) as (keyof typeof states)[]).map(key => <label key={key}>{filterLabel(key, m)}<select name={key} defaultValue={query[key] ?? ""}><option value="">{m.all}</option>{states[key].map(state => <option key={state} value={state}>{(m.states[key] as Record<string, string>)[state]}</option>)}</select></label>)}
       <label>{m.governorate}<input name="governorate" maxLength={64} defaultValue={query.governorate ?? ""} /></label><label>{m.reporterId}<input name="reporter_id" dir="ltr" defaultValue={query.reporter_id ?? ""} /></label><label>{m.shotAfter}<input type="datetime-local" name="shot_after" /></label><label>{m.shotBefore}<input type="datetime-local" name="shot_before" /></label><div className="actions"><button>{m.apply}</button><button type="reset" className="quiet" onClick={() => { setPage(null); setQuery({ limit: 50 }); setCursors([undefined]); setInvalid(false); }}>{m.reset}</button></div>
@@ -146,7 +152,7 @@ function filterValue(key: FilterKey, value: string, m: Messages, locale: Locale)
 }
 
 /**
- * صف الوارد (`Web/Inbox row`): مصغّرة (بلا جلب صورة في القائمة)، والعنوان وشارة الأولوية بكلمة، وسطر المراسل والمحافظة والنوع وعدد الملفات والإيصال،
+ * صف الوارد (`Web/Inbox row`): مصغّرة متحقَّقة من `thumbnail_file_id` عبر الـBFF (لا للحسّاسة؛ ADR 0105)، والعنوان وشارة الأولوية بكلمة، وسطر المراسل والمحافظة والنوع وعدد الملفات والإيصال،
  * والوسوم، والزمن منذ الوصول، والحالات الثلاث شارات منفصلة بأيقونة وكلمة، والخطوة التالية «استلام» لمن يملكها و«حوّل» للمقبولة للإنتاج (W3). العاجل حدّ وشارة وكلمة، لا لون وحده.
  */
 function MaterialRow({ material, locale, now, disabled, done }: { material: Material; locale: Locale; now: number; disabled: boolean; done: () => void }) {
@@ -154,8 +160,11 @@ function MaterialRow({ material, locale, now, disabled, done }: { material: Mate
   const files = material.files.filter(f => f.kind === "original").length;
   const type = material.material_types[0] ? (m.types as Record<string, string>)[material.material_types[0]] : null;
   const tracks: [StateTrack, string][] = [["technical_state", m.technical], ["editorial_state", m.editorial], ["rights_state", m.rights]];
+  const thumb = rowThumb(material, isSensitive(material)), [broken, setBroken] = useState(false);
   return <li data-testid="material-row" className={`inbox-row${urgent ? " urgent" : ""}`}>
-    <span className="row-thumb" aria-hidden="true"><Icon name={material.material_types.includes("photos") ? "preview" : "play"} /></span>
+    {thumb.kind === "sensitive" ? <span className="row-thumb sensitive" data-testid="row-thumb-sensitive"><Icon name="shield" size={18} /><small>{w.typeFilter.sensitive}</small></span>
+      : thumb.kind === "thumbnail" && !broken ? <span className="row-thumb image" aria-hidden="true"><Image unoptimized src={`/api/bff/materials/${material.id}/files/${thumb.id}/content`} alt="" width={96} height={64} loading="lazy" data-testid="row-thumb-image" onError={() => setBroken(true)} /></span>
+      : <span className="row-thumb" aria-hidden="true"><Icon name={material.material_types.includes("photos") ? "preview" : "play"} /></span>}
     <div className="row-main">
       <p className="row-title"><Link className="material-link" prefetch={false} href={`/${locale}/materials/${material.id}`}>{material.title}</Link>{material.priority !== "normal" && <span className={`priority-pill ${material.priority}`}>{urgent && <Icon name="bolt" size={12} />}{m.states.priority[material.priority]}</span>}</p>
       <p className="row-meta"><span>{photographer(material, locale)}</span><span>{material.governorate}</span>{type && <span>{type}</span>}{files > 0 && <span>{plural(files, w.files, locale)}</span>}<span className="receipt"><bdi dir="ltr">{receipt ?? m.noReceipt}</bdi></span></p>

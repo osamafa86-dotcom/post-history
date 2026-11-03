@@ -44,6 +44,16 @@ export function newField(type: Field["type"], key: string): Field {
     ...(type === "attachment" ? { validation: { accept: ["application/pdf"], max_size_bytes: 10485760 } } : {}) };
 }
 
+// مفتاحا الحقل (A3، ADR 0104، 0105): خاصيتان في الإصدار الجديد، بقاعدتي `upload-form.json` نفسيهما.
+/** الحقل الإلزامي يظهر في الإرسال العاجل دائمًا. */
+export const urgentLocked = (field: Pick<Field, "required">) => field.required;
+/** لا اسم طاقم ولا مرفق ولا موقع ولا حساس إلى المتجر. */
+export const storeBlocked = (field: { type: string; sensitive?: boolean }) => ["staff_member", "attachment", "location"].includes(field.type) || field.sensitive === true;
+/** يُصلح المفتاحين بعد تغيير الإلزام أو النوع، فلا يخرج إصدار يرفضه المخطط بسبب مفتاح نسيه المدير. */
+export function withToggles(field: Field): Field {
+  return { ...field, show_in_urgent: urgentLocked(field) ? true : field.show_in_urgent ?? true, send_to_store: storeBlocked(field) ? false : field.send_to_store ?? false };
+}
+
 export function safeFormSummary(value: FormSummary): FormSummary {
   if (!Number.isSafeInteger(value.version) || value.version < 1 || value.version > 999999999 || !Number.isInteger(value.field_count) || value.field_count < 0 || !Number.isFinite(Date.parse(value.published_at))) throw new Error("Invalid form summary");
   return { version: value.version, field_count: value.field_count, published_at: value.published_at, ...(typeof value.is_current === "boolean" ? { is_current: value.is_current } : {}) };

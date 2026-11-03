@@ -4,7 +4,7 @@ import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { messages, plural, type Locale, type PluralForms } from "@/lib/i18n";
 import { hasRole } from "@/lib/review";
 import { cleanText, fill, stripHidden } from "@/lib/admin-text";
-import { capabilities, staffLimits, staffReaders, staffRoles, type StaffUser, type StaffUserPage } from "@/lib/staff-policy";
+import { capabilities, editableRoles, rolesInput, roleLimits, sameRoles, staffLimits, staffReaders, staffRoles, type StaffRole, type StaffUser, type StaffUserPage } from "@/lib/staff-policy";
 import { permissions, reasonLimits } from "@/lib/admin-policy";
 import { permissionLabel } from "@/lib/admin-labels";
 import type { Permission, RoleName } from "@/lib/types";
@@ -128,6 +128,7 @@ type Intent = { kind: "grant" | "revoke"; permission: Permission; reason: string
 function AccountView({ user, locale, onBack }: { user: StaffUser; locale: Locale; onBack: () => void }) {
   const m = messages[locale], t = m.admin, me = useUser(), mutation = useMutation();
   const [status, setStatus] = useState(user.status), [reason, setReason] = useState(""), [intent, setIntent] = useState<Intent | null>(null), [revision, setRevision] = useState(0), [done, setDone] = useState("");
+  const [roles, setRoles] = useState<RoleName[]>(user.roles);
   const name = nameOf(user, locale), self = user.id === me.user_id, otherAdmin = !self && user.roles.includes("system_admin");
   async function apply() {
     if (!intent) return;
@@ -148,7 +149,7 @@ function AccountView({ user, locale, onBack }: { user: StaffUser; locale: Locale
   return <>
     <button type="button" className="quiet back-link" onClick={onBack}><Icon name="chevron" /> {t.back}</button>
     <div className="page-head account-head"><div className="person large"><Avatar name={user.work_name} fallback="?" /><div><h1><bdi>{name}</bdi></h1>
-      <p className="account-meta"><RoleBadges roles={user.roles} locale={locale} /><StatusBadge status={status} locale={locale} /></p>
+      <p className="account-meta"><RoleBadges roles={roles} locale={locale} /><StatusBadge status={status} locale={locale} /></p>
       <p className="muted">{[user.governorate, relativeTime(user.last_active_at, locale) ?? t.never].filter(Boolean).join(" · ")} · <span className="mono" dir="ltr">{user.id.slice(0, 8)}</span></p></div></div></div>
     {done && <p className="notice good" role="status">{done}</p>}
     {!intent && mutation.status !== 200 && <ActionStatus status={mutation.status} locale={locale} />}
@@ -164,10 +165,81 @@ function AccountView({ user, locale, onBack }: { user: StaffUser; locale: Locale
           <div className="actions"><button type="button" className="small" disabled={!reason.trim() || mutation.busy} onClick={() => ask({ kind: "grant", permission, reason: reason.trim() })}>{t.grant}</button><button type="button" className="secondary small" disabled={mutation.busy} onClick={() => ask({ kind: "revoke", permission, reason: "" })}>{t.revoke}</button></div></article></li>)}</ul>
       </section>
     </div>
+    <RolesCard user={user} name={name} locale={locale} onChanged={setRoles} />
     <WorkNameEditor id={user.id} locale={locale} />
     <PermissionHistory id={user.id} revision={revision} locale={locale} />
     {intent && <ConfirmDialog locale={locale} testId="confirm-account" title={intent.kind === "status" ? (intent.status === "suspended" ? t.suspend : t.activate) : intent.kind === "grant" ? t.grant : t.revoke} confirm={t.confirm} busy={mutation.busy} status={mutation.status} danger={intent.kind === "status" && intent.status === "suspended"} onConfirm={() => void apply()} onCancel={() => setIntent(null)}>
       <p>{effect}</p>{intent.kind !== "status" && <p className="muted">{t.permissionAudit}</p>}
     </ConfirmDialog>}
   </>;
+}
+
+type RoleDraft = Record<string, { on: boolean; scopes: StaffRole["scopes"] }>;
+const draftOf = (roles: StaffRole[]): RoleDraft => Object.fromEntries(editableRoles.map(role => { const found = roles.find(r => r.name === role); return [role, { on: !!found, scopes: found?.scopes ?? [] }]; }));
+const rolesOfDraft = (draft: RoleDraft, scoped: boolean): StaffRole[] => editableRoles.filter(role => draft[role]?.on).map(role => ({ name: role, scopes: role === "supervisor" && scoped ? draft[role].scopes : [] }));
+
+/**
+ * أدوار الحساب (A1، ADR 0104، 0105): القراءة من `GET /users/{id}/roles`، والتغيير استبدال كامل بتأكيد يقول الأثر. النطاق للمشرف وحده:
+ * «كل المكاتب» أو محافظات بالاسم ومكاتب قائمة (لا قائمة مكاتب في العقد، فالمكتب الجديد من سطر الأوامر). حسابك وحساب مدير نظام
+ * خارجها بسطر يقول السبب، ودور مدير النظام لا يُمنح من هنا (إجراء الشخصين).
+ */
+function RolesCard({ user, name, locale, onChanged }: { user: StaffUser; name: string; locale: Locale; onChanged: (roles: RoleName[]) => void }) {
+  const m = messages[locale], t = m.admin.roles, labels = m.topbar.roles as Record<string, string>, me = useUser(), mutation = useMutation();
+  const [current, setCurrent] = useState<StaffRole[] | null>(null), [failed, setFailed] = useState(false), [draft, setDraft] = useState<RoleDraft | null>(null);
+  const [scoped, setScoped] = useState(false), [governorate, setGovernorate] = useState(""), [confirming, setConfirming] = useState(false), [done, setDone] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    void browserApi().GET("/users/{id}/roles", { params: { path: { id: user.id } }, signal: controller.signal }).then(dataOrThrow)
+      .then(data => { if (!controller.signal.aborted) { setCurrent(data.roles); setFailed(false); } }).catch(() => { if (!controller.signal.aborted) setFailed(true); });
+    return () => controller.abort();
+  }, [user.id]);
+  const self = user.id === me.user_id, admin = (current ?? []).some(role => role.name === "system_admin") || user.roles.includes("system_admin");
+  const scopeText = (scope: StaffRole["scopes"][number]) => scope.kind === "office" ? fill(t.scopeOffice, { id: scope.id.slice(0, 8) }) : fill(t.scopeGovernorate, { name: scope.id });
+  const describe = (role: StaffRole) => `${labels[role.name] ?? role.name}${role.name === "supervisor" ? ` (${role.scopes.length ? role.scopes.map(scopeText).join(m.shell.listSeparator) : t.scopeAll})` : ""}`;
+  const wanted = draft ? rolesOfDraft(draft, scoped) : [], input = draft ? rolesInput({ roles: wanted }) : null;
+  const supervisorOn = !!draft?.supervisor?.on, scopeMissing = supervisorOn && scoped && !draft?.supervisor?.scopes.length;
+  const unchanged = !!current && sameRoles(wanted, current.filter(role => role.name !== "system_admin"));
+  const gov = cleanText(governorate).trim(), govValid = !!gov && Array.from(gov).length <= roleLimits.governorate && !draft?.supervisor?.scopes.some(s => s.kind === "governorate" && s.id === gov);
+  function edit() { if (!current) return; mutation.clearStatus(); setDone(false); setDraft(draftOf(current)); setScoped((current.find(r => r.name === "supervisor")?.scopes.length ?? 0) > 0); setGovernorate(""); }
+  function toggle(role: string, on: boolean) { setDraft(d => d && { ...d, [role]: { ...d[role], on } }); }
+  function setScopes(next: StaffRole["scopes"]) { setDraft(d => d && { ...d, supervisor: { ...d.supervisor, scopes: next } }); }
+  async function save() {
+    if (!input) return;
+    let next: StaffRole[] | undefined;
+    const ok = await mutation.run(JSON.stringify([user.id, input]), async header => { const result = await browserApi().PUT("/users/{id}/roles", { params: { path: { id: user.id }, header }, body: input }); next = result.data?.roles; return result; });
+    if (ok && next) { setCurrent(next); setDraft(null); setConfirming(false); setDone(true); onChanged(next.map(role => role.name)); }
+    else setConfirming(false);
+  }
+  return <section className="card roles-card" aria-labelledby="account-roles-title" data-testid="roles-card"><h2 id="account-roles-title">{t.title}</h2><p className="muted">{t.help}</p>
+    {self && <p className="notice">{t.self}</p>}{!self && admin && <p className="notice">{t.adminQuorum}</p>}
+    {failed ? <p className="notice error" role="alert">{t.loadFailed}</p> : !current ? <p role="status" className="muted">{m.loading}</p>
+      : !draft ? <>
+        <ul className="role-lines" data-testid="role-lines">{current.map(role => <li key={role.name}><Icon name={roleIcons[role.name] ?? "users"} size={14} /><bdi>{describe(role)}</bdi></li>)}</ul>
+        {done && <p className="notice good" role="status">{t.changed}</p>}
+        <div className="actions"><button type="button" className="secondary" disabled={self || admin || mutation.busy} onClick={edit}>{t.edit}</button></div>
+      </> : <form className="roles-form" onSubmit={event => { event.preventDefault(); if (input && !scopeMissing && !unchanged) { mutation.clearStatus(); setConfirming(true); } }}>
+        <fieldset className="check-group role-checks"><legend>{t.title}</legend>
+          {editableRoles.map(role => <label className="check" key={role}><input type="checkbox" checked={!!draft[role]?.on} disabled={mutation.busy} onChange={event => toggle(role, event.target.checked)} />{labels[role]}</label>)}
+        </fieldset>
+        <p className="caption">{t.adminNote}</p>
+        {supervisorOn && <fieldset className="check-group scope-group" data-testid="scope-group"><legend>{labels.supervisor}</legend>
+          <label className="check"><input type="radio" name="scope" checked={!scoped} onChange={() => setScoped(false)} />{t.scopeAll}</label>
+          <label className="check"><input type="radio" name="scope" checked={scoped} onChange={() => setScoped(true)} />{t.scopeSome}</label>
+          {scoped && <>
+            <ul className="scope-chips">{draft.supervisor.scopes.map(scope => <li key={`${scope.kind}:${scope.id}`}><button type="button" className="chip removable" aria-label={fill(t.scopeRemove, { scope: scopeText(scope) })} onClick={() => setScopes(draft.supervisor.scopes.filter(s => s !== scope))}><bdi>{scopeText(scope)}</bdi><Icon name="x" size={14} /></button></li>)}</ul>
+            <div className="scope-add"><label>{t.scopeLabel}<input value={governorate} maxLength={roleLimits.governorate} onChange={event => setGovernorate(stripHidden(event.target.value))} /></label>
+              <button type="button" className="secondary small" disabled={!govValid || draft.supervisor.scopes.length >= roleLimits.scopes} onClick={() => { setScopes([...draft.supervisor.scopes, { kind: "governorate", id: gov }]); setGovernorate(""); }}>{t.scopeAdd}</button></div>
+            <p className="caption">{t.scopeOfficeNote}</p>
+            {scopeMissing && <p className="field-hint" role="status">{t.scopeEmpty}</p>}
+          </>}
+        </fieldset>}
+        {!wanted.length && <p className="field-hint" role="status">{t.none}</p>}
+        {mutation.status === 422 && <p className="notice error" role="alert">{t.invalid}</p>}
+        {!confirming && mutation.status !== 0 && mutation.status !== 200 && mutation.status !== 422 && <ActionStatus status={mutation.status} locale={locale} />}
+        <div className="actions"><button type="submit" disabled={!input || scopeMissing || unchanged || mutation.busy}>{t.save}</button><button type="button" className="secondary" disabled={mutation.busy} onClick={() => setDraft(null)}>{t.cancel}</button></div>
+      </form>}
+    {confirming && <ConfirmDialog locale={locale} testId="confirm-roles" title={t.edit} confirm={t.save} busy={mutation.busy} status={0} onConfirm={() => void save()} onCancel={() => setConfirming(false)}>
+      <p>{fill(t.effect, { name, roles: wanted.map(describe).join(m.shell.listSeparator) })}</p>
+    </ConfirmDialog>}
+  </section>;
 }

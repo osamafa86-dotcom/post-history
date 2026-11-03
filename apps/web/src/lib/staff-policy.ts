@@ -67,3 +67,55 @@ export function safeStaffPage(page: StaffUserPage): StaffUserPage {
     summary: { total: summary.total, suspended: summary.suspended, roles: summary.roles.filter(row => (allRoles as readonly string[]).includes(row.role) && count(row.count)).map(row => ({ role: row.role, count: row.count })) },
   };
 }
+
+// أدوار حساب الطاقم (A1، ADR 0104، 0105): القراءة والاستبدال لمدير النظام وحده كما في `x-roles`.
+export type StaffRoles = components["schemas"]["StaffRoles"];
+export type StaffRolesUpdate = components["schemas"]["StaffRolesUpdate"];
+export type StaffRole = components["schemas"]["Role"];
+export const roleEditors = ["system_admin"] as const satisfies readonly Role[];
+/** ما يُغيَّر من الويب: أدوار الطاقم بلا `system_admin` (إجراء الشخصين، ADR 0005 و0030). */
+export const editableRoles = ["reporter", "supervisor", "producer", "editor_in_chief", "rights_officer", "finance"] as const satisfies readonly Role[];
+export const roleLimits = { roles: 7, scopes: 20, governorate: 64 } as const;
+
+function scopesOf(value: unknown, name: string): StaffRole["scopes"] | null {
+  if (!Array.isArray(value) || value.length > roleLimits.scopes || (value.length > 0 && name !== "supervisor")) return null;
+  const seen = new Set<string>(), scopes: StaffRole["scopes"] = [];
+  for (const scope of value) {
+    if (!scope || typeof scope !== "object" || Array.isArray(scope) || Object.keys(scope).sort().join() !== "id,kind") return null;
+    const { kind, id } = scope as { kind: unknown; id: unknown };
+    if (kind === "office" ? typeof id !== "string" || !uuid.test(id) : kind === "governorate" ? !plainText(id, roleLimits.governorate) || id !== id.trim() : true) return null;
+    const key = `${kind}:${id}`; if (seen.has(key)) return null; seen.add(key);
+    scopes.push({ kind: kind as "office" | "governorate", id: id as string });
+  }
+  return scopes;
+}
+/** جسم الاستبدال بقواعد العقد: دور طاقم قابل للتغيير مرة واحدة، والنطاق للمشرف وحده. غيره null فيُرد 422 دون سؤال الخادم. */
+export function rolesInput(body: Record<string, unknown>): StaffRolesUpdate | null {
+  if (Object.keys(body).join() !== "roles" || !Array.isArray(body.roles) || body.roles.length < 1 || body.roles.length > roleLimits.roles) return null;
+  const names = new Set<string>(), roles: StaffRole[] = [];
+  for (const role of body.roles) {
+    if (!role || typeof role !== "object" || Array.isArray(role) || Object.keys(role).sort().join() !== "name,scopes") return null;
+    const { name, scopes } = role as { name: unknown; scopes: unknown };
+    if (typeof name !== "string" || !(editableRoles as readonly string[]).includes(name) || names.has(name)) return null;
+    names.add(name);
+    const valid = scopesOf(scopes, name); if (!valid) return null;
+    roles.push({ name: name as Role, scopes: valid });
+  }
+  return { roles };
+}
+/** أدوار الحساب بقائمة بيضاء؛ الرد المخالف يرمي فيصير 502. */
+export function safeStaffRoles(value: StaffRoles): StaffRoles {
+  if (!value || !uuid.test(value.user_id) || !Array.isArray(value.roles)) throw new Error("Invalid roles");
+  return {
+    user_id: value.user_id,
+    roles: value.roles.filter(role => (staffRoles as readonly string[]).includes(role.name) && Array.isArray(role.scopes)).map(role => ({
+      name: role.name,
+      scopes: role.scopes.filter(scope => (scope.kind === "office" && uuid.test(scope.id)) || (scope.kind === "governorate" && plainText(scope.id, roleLimits.governorate) && scope.id === scope.id.trim())).map(scope => ({ kind: scope.kind, id: scope.id })),
+    })),
+  };
+}
+/** هل تغيّر شيء بين الأدوار الحالية والمختارة؟ الترتيب لا يهم. */
+export function sameRoles(a: readonly StaffRole[], b: readonly StaffRole[]): boolean {
+  const key = (roles: readonly StaffRole[]) => roles.map(r => `${r.name}[${r.scopes.map(s => `${s.kind}:${s.id}`).sort().join(",")}]`).sort().join("|");
+  return key(a) === key(b);
+}

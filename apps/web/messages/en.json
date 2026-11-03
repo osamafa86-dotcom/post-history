@@ -423,7 +423,31 @@
     "revokeEffect": "“{permission}” will be revoked from {name}'s account, effective on its next request.",
     "granted": "“{permission}” granted.",
     "revoked": "“{permission}” revoked.",
-    "permissionAudit": "The change is recorded in the audit log."
+    "permissionAudit": "The change is recorded in the audit log.",
+    "roles": {
+      "title": "Roles",
+      "help": "The account's roles and their scopes. A supervisor without a scope sees every office.",
+      "edit": "Change roles",
+      "save": "Save roles",
+      "cancel": "Cancel",
+      "none": "Choose at least one role.",
+      "self": "You don't change your own roles; another system administrator does.",
+      "adminQuorum": "A system administrator account: its roles change through the two-person procedure on the command line, not here.",
+      "adminNote": "The system administrator role is not granted here.",
+      "scopeAll": "All offices",
+      "scopeSome": "Specific scope",
+      "scopeOffice": "Office {id}",
+      "scopeGovernorate": "{name}",
+      "scopeAdd": "Add governorate",
+      "scopeLabel": "Governorate name as on its offices",
+      "scopeRemove": "Remove {scope}",
+      "scopeOfficeNote": "A new office scope is added from the command line: the contract has no office list.",
+      "scopeEmpty": "Choose “All offices” or add a governorate.",
+      "effect": "{name}'s roles will become: {roles}. The change applies on their next request and is audited with the roles before and after.",
+      "changed": "Roles changed.",
+      "invalid": "Check the scope: a governorate of an existing office, and no scope outside the supervisor role.",
+      "loadFailed": "The roles could not be loaded."
+    }
   },
   "notice": {
     "title": "Notifications",
@@ -803,7 +827,19 @@
       "nowTitle": "What you can do now",
       "nowSeats": "Invite your team · Seats: {used} of {seats}",
       "nowMember": "Your organization's admin invites members and follows up on verification with the store team.",
-      "invite": "Invite a member"
+      "invite": "Invite a member",
+      "rejected": {
+        "badge": "Rejected",
+        "title": "Your organization's request was not accepted",
+        "body": "The store team reviewed the join request and did not accept it: {reason}. Contact the store team to correct it.",
+        "reasons": {
+          "commercial_registry": "Commercial registry not verified",
+          "institutional_email": "Institutional email not verified",
+          "license_agreement": "License agreement not accepted",
+          "duplicate_organization": "Duplicate organization",
+          "other": "Another reason"
+        }
+      }
     }
   },
   "board": {
@@ -1230,6 +1266,14 @@
         "label": "Display name",
         "hint": "Network name or a pseudonym"
       }
+    },
+    "toggles": {
+      "inUrgent": "Shown in the urgent send",
+      "inUrgentHelp": "A required field is always shown. Kept on the version; the apps read it once they build the urgent send.",
+      "toStore": "Sent to the store",
+      "toStoreHelp": "Kept on the version; the store does not show field values yet. Staff names and attachments are never sent.",
+      "outOfUrgent": "Not in urgent",
+      "storeBadge": "To the store"
     }
   },
   "listing": {
@@ -1363,7 +1407,22 @@
     "joinNote": "The platform does not record a state for each item; activation changes the organization's status alone.",
     "activate": "Activate account",
     "activateEffect": "{name} will become active: the catalog and purchasing open to it, and the verification time is recorded. No activation notice is sent.",
-    "changedOrg": "The organization changed in another session, so we loaded the latest version. Review it, then activate again."
+    "changedOrg": "The organization changed in another session, so we loaded the latest version. Review it, then activate again.",
+    "reject": {
+      "action": "Reject",
+      "title": "Reject the join request of “{name}”",
+      "reason": "Reason",
+      "reasons": {
+        "commercial_registry": "Commercial registry not verified",
+        "institutional_email": "Institutional email not verified",
+        "license_agreement": "License agreement not accepted",
+        "duplicate_organization": "Duplicate organization",
+        "other": "Another reason"
+      },
+      "effect": "The request of “{name}” will be rejected: it cannot browse the catalog or buy, and its members see the reason. You can restore it later from its profile.",
+      "done": "The join request was rejected.",
+      "help": "The join request was rejected: {reason}. It cannot browse or buy until you return it to “Pending verification” or activate it from its profile."
+    }
   },
   "licenses": {
     "nav": "Licenses",
@@ -1989,7 +2048,13 @@
       "tags": "Tags",
       "since": "{time} ago",
       "states": "States",
-      "receive": "Receive"
+      "receive": "Receive",
+      "typeFilter": {
+        "label": "Filter by type",
+        "all": "All types",
+        "hint": "The type filters the loaded page.",
+        "sensitive": "Sensitive"
+      }
     },
     "material": {
       "breadcrumb": "Breadcrumb",
@@ -2002,7 +2067,25 @@
       "states": "States",
       "statesHelp": "Select a state to filter the log by its track.",
       "nextStep": "Next step",
-      "receiveHelp": "Receiving tells the reporter an editor has seen their material."
+      "receiveHelp": "Receiving tells the reporter an editor has seen their material.",
+      "tagEditor": {
+        "title": "Tags",
+        "edit": "Edit tags",
+        "none": "No tags.",
+        "add": "Add a tag",
+        "addButton": "Add",
+        "counter": "{n} of 40",
+        "max": "At most 12 tags per material.",
+        "invalid": "A tag is 1 to 40 characters, with no space at either end, and not repeated.",
+        "remove": "Remove “{tag}”",
+        "suggested": "Suggested",
+        "save": "Save tags",
+        "cancel": "Cancel",
+        "effect": "The material's tags will be replaced by your choice ({n}). Its version and three states do not change, and tags never enter a notification.",
+        "saved": "Tags saved.",
+        "stale": "The material changed since you opened it, so we loaded the latest copy. Review the tags and save again.",
+        "scope": "This material is outside your scope."
+      }
     },
     "searchOpen": "Open the search field"
   },
@@ -2182,7 +2265,7 @@
       "done": "Mark delivered",
       "returned": "Return task"
     },
-    "doneHint": "Delivering here carries no file: uploading the produced material needs a later contract change.",
+    "doneHint": "Whoever assigned the task is told inside the platform.",
     "returnTitle": "Return the task",
     "returnHint": "Only whoever assigned it sees this, in the task; it never goes into a notification. Up to 500 characters, no line breaks.",
     "returnReason": "Reason (optional)",
@@ -2193,7 +2276,24 @@
     "denied": "Tasks are for supervisors, the production team and the editor-in-chief.",
     "changed": "The task changed since you opened it; it was reloaded.",
     "moved": "Task is now: {state}",
-    "invalidNote": "The reason is up to 500 characters, with no line break and no space at either end."
+    "invalidNote": "The reason is up to 500 characters, with no line break and no space at either end.",
+    "produced": {
+      "title": "Produced file",
+      "lead": "Upload the file after editing, then “Task delivered”. The original stays as it is; the produced file is a new file on the material.",
+      "choose": "Choose the produced file",
+      "replace": "Replace the file",
+      "again": "Upload again",
+      "duplicate": "We already know this file, so there is no need to upload it again. A file that already exists is not delivered from here; if it is what you want to deliver, ask the editor.",
+      "ready": "Ready to deliver: “Task delivered” sends it with the task.",
+      "waiting": "“Task delivered” turns on once we verify the file checksum.",
+      "download": "Download the produced file",
+      "deliveredWith": "The task was delivered with a produced file.",
+      "deliveredWithout": "The task was delivered without a file.",
+      "downloadFailed": "The download link could not be issued. Try again.",
+      "effectWithFile": "The task will be delivered with the uploaded file: the supervisor and the editor-in-chief see and download it, and the original stays as it is. A delivered task is not returned.",
+      "effectWithout": "The task will be delivered without a file: whoever assigned it is told, and a delivered task is not returned.",
+      "fileLabel": "Produced file"
+    }
   },
   "assign": {
     "action": "Assign to editor",
