@@ -1431,6 +1431,10 @@ UPDATE material_renders SET location_text = NULL WHERE id = '00000000-0000-4000-
 SELECT pg_temp.expect_error($q$ UPDATE material_renders SET aspect = 'portrait' WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE material_renders SET label = 'third_party' WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE material_renders SET template = 'urgent' WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
+-- «الشاهد» قالب ثانٍ بالقيود نفسها (ADR 0109، ترحيل 045)، وما سواهما مرفوض
+UPDATE material_renders SET template = 'witness' WHERE id = '00000000-0000-4000-8000-000000000d02';
+SELECT pg_temp.expect_error($q$ UPDATE material_renders SET template = 'Witness' WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
+UPDATE material_renders SET template = 'circulated' WHERE id = '00000000-0000-4000-8000-000000000d02';
 SELECT pg_temp.expect_error($q$ UPDATE material_renders SET material_version = 0 WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE material_renders SET state = 'ready', completed_at = now() WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE material_renders SET state = 'failed', completed_at = now() WHERE id = '00000000-0000-4000-8000-000000000d02' $q$, '23514');

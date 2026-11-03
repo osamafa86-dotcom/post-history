@@ -687,7 +687,7 @@ export const materialRenders = pgTable("material_renders", {
 		}),
 	unique("material_renders_file_id_key").on(table.fileId),
 	check("material_renders_material_version_check", sql`material_version >= 1`),
-	check("material_renders_template_check", sql`template = 'circulated'::text`),
+	check("material_renders_template_check", sql`template = ANY (ARRAY['circulated'::text, 'witness'::text])`),
 	check("material_renders_aspect_check", sql`aspect = ANY (ARRAY['vertical'::text, 'horizontal'::text, 'square'::text])`),
 	check("material_renders_label_check", sql`label = ANY (ARRAY['circulated_footage'::text, 'none'::text])`),
 	check("material_renders_title_lines_valid", sql`CHECK (render_title_lines_valid(title_lines`),

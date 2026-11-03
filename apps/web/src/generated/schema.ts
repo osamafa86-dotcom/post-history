@@ -481,7 +481,7 @@ export interface paths {
         };
         /**
          * رابط قراءة موقّع قصير العمر لمشتق من المادة (v0.1)
-         * @description للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail` و`transcript` و`captions` و`shot_list`، و`circulated_render` بشرطه أدناه) في حالة `verified`. الأصل والملاحظة الصوتية وحزمة التصدير لا تُعطى رابطًا هنا (`404`؛ الحزمة من `/materials/{id}/export/download-url`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`). **المشتقات النصية حساسة افتراضيًا (`transcript` و`captions` و`shot_list`، threat-model §9.1):** رابطها لأدوار تعديل المادة وحدها، أي `x-roles` على `PATCH /materials/{id}` ضمن النطاق (`reporter` مالك المادة، و`supervisor` و`editor_in_chief` و`system_admin`). غيرهم يُرد `404` بالشكل نفسه للملف المفقود، لا `403`. وكل إصدار رابط لها يُسجَّل في التدقيق قراءةً حساسة `material.sensitive_read` (`material_id` و`file_id` و`field_keys: [<النوع>]`). **نسخة قالب «مواد متداولة» (`circulated_render`، ADR 0091، أُضيف بعد v0.3):** `file_id` من `MaterialRender.file_id` (لا تظهر في `Material.files`). رابطها لأدوار طلب النسخة وحدها (`x-roles` على `POST /materials/{id}/renders` ضمن النطاق)، وغيرهم `404` بالشكل نفسه. وإن لم تعد المادة تستوفي شروط النسخة الحقوقية والتحريرية (حقوق `blocked` أو `withdrawn`، أو حالة تحريرية خارج `accepted` و`in_production` و`final_review` و`published`) فـ `409 render_not_allowed`: المشتق يسقط بسقوط أصله. الحساسية لا تمنع الرابط (قرار المالك 2026-11-02). كل إصدار رابط يُسجَّل في التدقيق كغيره (`material_file.download_url_issued`، `material_id` و`file_id`). **النسخة المُنتَجة (`produced`، ADR 0104، أُضيف بعد v0.3):** المرفوعة من المونتير ومشتق العامل معًا، لأدوار الإنتاج وحدها: `producer` و`supervisor` في نطاقه و`editor_in_chief` و`system_admin`. غيرهم `404` بالشكل نفسه، ويُسجَّل الإصدار كغيره.
+         * @description للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail` و`transcript` و`captions` و`shot_list`، و`circulated_render` بشرطه أدناه) في حالة `verified`. الأصل والملاحظة الصوتية وحزمة التصدير لا تُعطى رابطًا هنا (`404`؛ الحزمة من `/materials/{id}/export/download-url`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`). **المشتقات النصية حساسة افتراضيًا (`transcript` و`captions` و`shot_list`، threat-model §9.1):** رابطها لأدوار تعديل المادة وحدها، أي `x-roles` على `PATCH /materials/{id}` ضمن النطاق (`reporter` مالك المادة، و`supervisor` و`editor_in_chief` و`system_admin`). غيرهم يُرد `404` بالشكل نفسه للملف المفقود، لا `403`. وكل إصدار رابط لها يُسجَّل في التدقيق قراءةً حساسة `material.sensitive_read` (`material_id` و`file_id` و`field_keys: [<النوع>]`). **نسخة قالب «مواد متداولة» أو «الشاهد» (`circulated_render`، ADR 0091 و0109، أُضيف بعد v0.3):** `file_id` من `MaterialRender.file_id` (لا تظهر في `Material.files`). رابطها لأدوار طلب النسخة وحدها (`x-roles` على `POST /materials/{id}/renders` ضمن النطاق)، وغيرهم `404` بالشكل نفسه. وإن لم تعد المادة تستوفي شروط النسخة الحقوقية والتحريرية (حقوق `blocked` أو `withdrawn`، أو حالة تحريرية خارج `accepted` و`in_production` و`final_review` و`published`) فـ `409 render_not_allowed`: المشتق يسقط بسقوط أصله. الحساسية لا تمنع الرابط (قرار المالك 2026-11-02). كل إصدار رابط يُسجَّل في التدقيق كغيره (`material_file.download_url_issued`، `material_id` و`file_id`). **النسخة المُنتَجة (`produced`، ADR 0104، أُضيف بعد v0.3):** المرفوعة من المونتير ومشتق العامل معًا، لأدوار الإنتاج وحدها: `producer` و`supervisor` في نطاقه و`editor_in_chief` و`system_admin`. غيرهم `404` بالشكل نفسه، ويُسجَّل الإصدار كغيره.
          */
         get: operations["getMaterialFileDownloadUrl"];
         put?: never;
@@ -550,17 +550,20 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * نسخ المادة على قالب «مواد متداولة»، الأحدث أولًا (ADR 0091)
-         * @description كل طلب نسخة بمعاملاته كما طُلبت وحالته. النسخة الجاهزة تُنزَّل برابط `GET /materials/{id}/files/{file_id}/download-url` بـ `file_id` منها، ولا تظهر في `Material.files`. بأدوار طلب النسخة وضمن نطاقها؛ المادة خارج النطاق `404`.
+         * نسخ المادة على قالبي المواد المتداولة («مواد متداولة» و«الشاهد»)، الأحدث أولًا (ADR 0091، 0109)
+         * @description كل طلب نسخة بمعاملاته كما طُلبت (ومنها القالب `template`) وحالته. النسخة الجاهزة تُنزَّل برابط `GET /materials/{id}/files/{file_id}/download-url` بـ `file_id` منها، ولا تظهر في `Material.files`. بأدوار طلب النسخة وضمن نطاقها؛ المادة خارج النطاق `404`.
          */
         get: operations["listMaterialRenders"];
         put?: never;
         /**
-         * طلب نسخة من المادة على قالب «مواد متداولة» (ADR 0091)
-         * @description طلب واحد لا محرر (ADR 0091، و`CLAUDE.md` §1 «لا محرر» باقٍ): يكتب الطاقم العنوان ويختار المقاس وإظهار المكان والوسم،
+         * طلب نسخة من المادة على قالب «مواد متداولة» أو «الشاهد» (ADR 0091، 0109)
+         * @description طلب واحد لا محرر (ADR 0091، و`CLAUDE.md` §1 «لا محرر» باقٍ): يكتب الطاقم العنوان ويختار القالب والمقاس وإظهار المكان والوسم،
          *     فيبني عامل الوسائط من الأصل المتحقق كاملًا، من أول إطار إلى آخره، ملفًا جديدًا `circulated_render` بلا قص ولا تجميع.
          *     الأصل لا يُمس، ولا تتغيّر أيٌّ من الحالات الثلاث للمادة.
          *
+         *     - **القالب (`template`، ADR 0109، أُضيف بعد v0.3):** `circulated` «مواد متداولة» أو `witness` «الشاهد»، اختيار لكل طلب
+         *       بلا قيمة افتراضية. الطلب نفسه والشروط والحدود والأحداث والإشعار والرابط واحدة للقالبين، والنوع `circulated_render`
+         *       نفسه. «الشاهد» لا يرسم تاريخًا ولا اسم حساب في النسخة أبدًا (لا مصدر في أي إطار)، فلا يحمل الطلب شيئًا منهما.
          *     - **المصدر:** أصل المادة المتحقق، وهو واحد لكل مادة (ADR 0081)، فلا يحمل الطلب `source_file_id`.
          *     - **الشروط** (وإلا `409 render_not_allowed` و`details.failed` بالشروط الفاشلة): أصل `original` بحالة `verified` فيه
          *       مسار صورة ولا تتجاوز مدته الحدّ (`source`)، والحالة التحريرية `accepted` أو `in_production` أو `final_review` أو
@@ -1143,7 +1146,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * معاملات نسخة قالب «مواد متداولة» كما يحتاجها العامل (داخلي، ADR 0091)
+         * معاملات نسخة القالب («مواد متداولة» أو «الشاهد») كما يحتاجها العامل (داخلي، ADR 0091، 0109)
          * @description يقرؤه العامل عند `render.requested`، لأن الحدث لا يحمل نصًا. النصوص هنا تعبر الشبكة الداخلية وحدها إلى العامل، ولا تُكتب في سجل. النسخة `ready` أو `failed` تُعاد بحالتها فيتجاوزها العامل، و`rendering` تعني إعادة تسليم بعد انقطاع فيعيد العامل بناءها. فشل المصادقة أو العنوان `404` كبقية `/internal/*`؛ والنسخة غير الموجودة برمز صحيح `410 media_resource_gone`.
          */
         get: operations["mediaGetRender"];
@@ -1168,7 +1171,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * التقاط العامل نسخة قالب «مواد متداولة» (داخلي، ADR 0091)
+         * التقاط العامل نسخة القالب (داخلي، ADR 0091، 0109)
          * @description `requested` ← `rendering` بـ `started_at`، ويكتب `render.started` في المعاملة نفسها. متساوٍ الأثر: النسخة `rendering` تُعاد `204` دون حدث جديد (إعادة تسليم بعد انقطاع)، و`ready` أو `failed` `409`. النسخة غير الموجودة برمز صحيح `410 media_resource_gone`.
          */
         post: operations["mediaPostRenderStart"];
@@ -1191,7 +1194,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * تسجيل فشل نسخة قالب «مواد متداولة» (داخلي، ADR 0091)
+         * تسجيل فشل نسخة القالب (داخلي، ADR 0091، 0109)
          * @description يجعل النسخة `failed` بسبب مرمّز ويكتب `render.failed` في المعاملة نفسها. متساوٍ الأثر: النسخة الفاشلة تُعاد `204` بسببها الأول دون حدث جديد، والجاهزة `409`. النجاح لا يمر هنا بل بتسجيل المشتق `circulated_render` على `/internal/media/files/{file_id}/derivatives` بـ `render_id`. النسخة غير الموجودة برمز صحيح `410 media_resource_gone`.
          */
         post: operations["mediaPostRenderFailure"];
@@ -3298,7 +3301,7 @@ export interface components {
             /** @enum {string|null} */
             failure_reason: "checksum_mismatch" | "invalid_file" | "expired" | "aborted" | "storage_error" | null;
         };
-        /** @description `proxy` و`hls` و`audio` مشتقات زمنية: `technical` يحمل `duration_ms` و`start_pts_us`. `thumbnail` صورة (الملصق أو ورقة اللقطات): `duration_ms` اختياري، و`width` و`height` إلزاميان غير فارغين، و`mime_type` إلزامي. `proxy_mode` يكتبه الخادم `normal` للنسخة الخفيفة وحدها و`NULL` لغيرها. `export` حزمة التصدير (#99، v0.2): `application/zip`، و`technical` هو `technical` الأصل؛ تُبنى عند الطلب (`export.requested`) لا عند الاستيعاب، ولا تحمل بيانات كاشفة. `transcript` (`application/json`، نص بتوقيت الكلمات والمتحدثين) و`captions` (`text/vtt`) من عامل التفريغ (v0.2): زمنيان على خط زمن الأصل، فيحملان `duration_ms` و`start_pts_us` الأصل. `watermarked_preview` (v0.3، ADR 0025) معاينة المشتري: نسخة منخفضة بعلامة مائية مرئية، زمنية كـ `proxy`، لا تظهر في `Material.files` ولا يعطيها غير رابط الكتالوج. `shot_list` (`application/json`، قائمة اللقطات من عامل الذكاء الاصطناعي) زمني وحساس كالتفريغ والترجمة (threat-model §9.1): يقرؤه من يعدّل المادة وحده، ولا يدخل تصديرًا ولا إشعارًا ولا حدثًا ولا فهرس بحث، و`ai.draft_ready` لا تتغير حمولته. `delivery` (v0.3، ADR 0025 الجزء 9) حزمة تسليم المشتري لترخيص بعينه: `application/zip`، و`technical` هو `technical` الأصل كـ `export`، و`license_id` إلزامي معه وممنوع لغيره. متساوٍ الأثر على (`derived_from_id`، `license_id`): لكل ترخيص حزمته. لا تظهر في `Material.files`، ويُنزّلها المشتري من الترخيص وحده، ولا تضم التفريغ (R11). `produced` (v0.3، ADR 0025 الجزء 9) التصدير النهائي: `video/mp4` زمني كـ `proxy` بـ `technical` الناتج، يكتبه عامل الوسائط وحده من `render` (نقاط قص المصدر). لا نقطة محرر ولا واجهة تحرير، ولا ترجمة ولا تفريغ محروق فيه (R11)، وهو وحده ما يقبله `produced_file_id` في `license.delivery_requested`. `circulated_render` (ADR 0091) نسخة قالب «مواد متداولة» من الأصل المتحقق: `video/mp4` زمني بـ `technical` الناتج، و`render_id` إلزامي معه وممنوع لغيره، والأصل في المسار هو `source_file_id` النسخة وإلا `422`. متساوٍ الأثر على `render_id`: لكل نسخة ملفها، وتسجيله يجعل النسخة `ready` ويكتب `render.completed` في المعاملة نفسها. لا يظهر في `Material.files`، ولا يقبله `produced_file_id`. */
+        /** @description `proxy` و`hls` و`audio` مشتقات زمنية: `technical` يحمل `duration_ms` و`start_pts_us`. `thumbnail` صورة (الملصق أو ورقة اللقطات): `duration_ms` اختياري، و`width` و`height` إلزاميان غير فارغين، و`mime_type` إلزامي. `proxy_mode` يكتبه الخادم `normal` للنسخة الخفيفة وحدها و`NULL` لغيرها. `export` حزمة التصدير (#99، v0.2): `application/zip`، و`technical` هو `technical` الأصل؛ تُبنى عند الطلب (`export.requested`) لا عند الاستيعاب، ولا تحمل بيانات كاشفة. `transcript` (`application/json`، نص بتوقيت الكلمات والمتحدثين) و`captions` (`text/vtt`) من عامل التفريغ (v0.2): زمنيان على خط زمن الأصل، فيحملان `duration_ms` و`start_pts_us` الأصل. `watermarked_preview` (v0.3، ADR 0025) معاينة المشتري: نسخة منخفضة بعلامة مائية مرئية، زمنية كـ `proxy`، لا تظهر في `Material.files` ولا يعطيها غير رابط الكتالوج. `shot_list` (`application/json`، قائمة اللقطات من عامل الذكاء الاصطناعي) زمني وحساس كالتفريغ والترجمة (threat-model §9.1): يقرؤه من يعدّل المادة وحده، ولا يدخل تصديرًا ولا إشعارًا ولا حدثًا ولا فهرس بحث، و`ai.draft_ready` لا تتغير حمولته. `delivery` (v0.3، ADR 0025 الجزء 9) حزمة تسليم المشتري لترخيص بعينه: `application/zip`، و`technical` هو `technical` الأصل كـ `export`، و`license_id` إلزامي معه وممنوع لغيره. متساوٍ الأثر على (`derived_from_id`، `license_id`): لكل ترخيص حزمته. لا تظهر في `Material.files`، ويُنزّلها المشتري من الترخيص وحده، ولا تضم التفريغ (R11). `produced` (v0.3، ADR 0025 الجزء 9) التصدير النهائي: `video/mp4` زمني كـ `proxy` بـ `technical` الناتج، يكتبه عامل الوسائط وحده من `render` (نقاط قص المصدر). لا نقطة محرر ولا واجهة تحرير، ولا ترجمة ولا تفريغ محروق فيه (R11)، وهو وحده ما يقبله `produced_file_id` في `license.delivery_requested`. `circulated_render` (ADR 0091) نسخة قالب «مواد متداولة» أو «الشاهد» (ADR 0109) من الأصل المتحقق: `video/mp4` زمني بـ `technical` الناتج، و`render_id` إلزامي معه وممنوع لغيره، والأصل في المسار هو `source_file_id` النسخة وإلا `422`. متساوٍ الأثر على `render_id`: لكل نسخة ملفها، وتسجيله يجعل النسخة `ready` ويكتب `render.completed` في المعاملة نفسها. لا يظهر في `Material.files`، ولا يقبله `produced_file_id`. */
         MediaDerivative: {
             /** @enum {string} */
             kind: "proxy" | "thumbnail" | "hls" | "audio" | "export" | "transcript" | "captions" | "watermarked_preview" | "shot_list" | "delivery" | "produced" | "circulated_render";
@@ -3345,8 +3348,11 @@ export interface components {
             source_file_id: string;
             /** @enum {string} */
             state: "requested" | "rendering" | "ready" | "failed";
-            /** @enum {string} */
-            template: "circulated";
+            /**
+             * @description تركيبة القالب في حزمته (ADR 0109)
+             * @enum {string}
+             */
+            template: "circulated" | "witness";
             aspect: components["schemas"]["RenderAspect"];
             /** @description يصير `titleLines` في معاملات القالب */
             title_lines: components["schemas"]["RenderTitleLines"];
@@ -3449,10 +3455,10 @@ export interface components {
         RenderLabel: "circulated_footage" | "none";
         MaterialRenderRequest: {
             /**
-             * @description القالب؛ «مواد متداولة» وحده الآن
+             * @description القالب، اختيار لكل طلب بلا قيمة افتراضية: `circulated` «مواد متداولة» (ADR 0091) و`witness` «الشاهد» (ADR 0109، أُضيف بعد v0.3). المعاملات الأخرى والشروط واحدة للقالبين.
              * @enum {string}
              */
-            template: "circulated";
+            template: "circulated" | "witness";
             aspect: components["schemas"]["RenderAspect"];
             title_lines: components["schemas"]["RenderTitleLines"];
             /** @description إظهار «المدينة، المحافظة» يبنيها الخادم من حقلي المادة؛ `false` يطفئه (حماية المصدر). لا يأخذ الطلب نص مكان من العميل، ولا إحداثيات في أي حال. */
@@ -3460,7 +3466,7 @@ export interface components {
             label: components["schemas"]["RenderLabel"];
         };
         /**
-         * @description طلب نسخة على قالب «مواد متداولة» بمعاملاته كما رُسمت (ADR 0091). النسخة ملف للمادة نفسها، فترث حساسيتها وحقوقها، ولا تدخل الكتالوج ولا حزمة تسليم ولا تُعرض للبيع.
+         * @description طلب نسخة على قالب «مواد متداولة» أو «الشاهد» بمعاملاته كما رُسمت (ADR 0091، 0109). النسخة ملف للمادة نفسها، فترث حساسيتها وحقوقها، ولا تدخل الكتالوج ولا حزمة تسليم ولا تُعرض للبيع.
          * @example {
          *       "id": "4e5f6a7b-8c9d-4e0f-a1b2-c3d4e5f6a7b8",
          *       "material_id": "7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b",
@@ -3496,8 +3502,11 @@ export interface components {
              * @description أصل المادة المتحقق الذي تُبنى منه (واحد لكل مادة، ADR 0081)؛ يملؤه الخادم
              */
             source_file_id: string;
-            /** @enum {string} */
-            template: "circulated";
+            /**
+             * @description القالب كما طُلب (`witness` أُضيف بعد v0.3، ADR 0109)
+             * @enum {string}
+             */
+            template: "circulated" | "witness";
             aspect: components["schemas"]["RenderAspect"];
             title_lines: components["schemas"]["RenderTitleLines"];
             show_location: boolean;

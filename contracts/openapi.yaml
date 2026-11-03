@@ -888,7 +888,7 @@ paths:
         المادة وحدها، أي `x-roles` على `PATCH /materials/{id}` ضمن النطاق (`reporter` مالك المادة، و`supervisor`
         و`editor_in_chief` و`system_admin`). غيرهم يُرد `404` بالشكل نفسه للملف المفقود، لا `403`. وكل إصدار رابط لها
         يُسجَّل في التدقيق قراءةً حساسة `material.sensitive_read` (`material_id` و`file_id` و`field_keys: [<النوع>]`).
-        **نسخة قالب «مواد متداولة» (`circulated_render`، ADR 0091، أُضيف بعد v0.3):** `file_id` من `MaterialRender.file_id`
+        **نسخة قالب «مواد متداولة» أو «الشاهد» (`circulated_render`، ADR 0091 و0109، أُضيف بعد v0.3):** `file_id` من `MaterialRender.file_id`
         (لا تظهر في `Material.files`). رابطها لأدوار طلب النسخة وحدها (`x-roles` على `POST /materials/{id}/renders` ضمن
         النطاق)، وغيرهم `404` بالشكل نفسه. وإن لم تعد المادة تستوفي شروط النسخة الحقوقية والتحريرية (حقوق `blocked` أو
         `withdrawn`، أو حالة تحريرية خارج `accepted` و`in_production` و`final_review` و`published`) فـ `409 render_not_allowed`:
@@ -990,9 +990,9 @@ paths:
       - $ref: "#/components/parameters/MaterialId"
     get:
       tags: [materials]
-      summary: نسخ المادة على قالب «مواد متداولة»، الأحدث أولًا (ADR 0091)
+      summary: نسخ المادة على قالبي المواد المتداولة («مواد متداولة» و«الشاهد»)، الأحدث أولًا (ADR 0091، 0109)
       description: >-
-        كل طلب نسخة بمعاملاته كما طُلبت وحالته. النسخة الجاهزة تُنزَّل برابط `GET /materials/{id}/files/{file_id}/download-url`
+        كل طلب نسخة بمعاملاته كما طُلبت (ومنها القالب `template`) وحالته. النسخة الجاهزة تُنزَّل برابط `GET /materials/{id}/files/{file_id}/download-url`
         بـ `file_id` منها، ولا تظهر في `Material.files`. بأدوار طلب النسخة وضمن نطاقها؛ المادة خارج النطاق `404`.
       operationId: listMaterialRenders
       x-roles: [supervisor, producer, editor_in_chief]
@@ -1018,12 +1018,15 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
     post:
       tags: [materials]
-      summary: طلب نسخة من المادة على قالب «مواد متداولة» (ADR 0091)
+      summary: طلب نسخة من المادة على قالب «مواد متداولة» أو «الشاهد» (ADR 0091، 0109)
       description: |
-        طلب واحد لا محرر (ADR 0091، و`CLAUDE.md` §1 «لا محرر» باقٍ): يكتب الطاقم العنوان ويختار المقاس وإظهار المكان والوسم،
+        طلب واحد لا محرر (ADR 0091، و`CLAUDE.md` §1 «لا محرر» باقٍ): يكتب الطاقم العنوان ويختار القالب والمقاس وإظهار المكان والوسم،
         فيبني عامل الوسائط من الأصل المتحقق كاملًا، من أول إطار إلى آخره، ملفًا جديدًا `circulated_render` بلا قص ولا تجميع.
         الأصل لا يُمس، ولا تتغيّر أيٌّ من الحالات الثلاث للمادة.
 
+        - **القالب (`template`، ADR 0109، أُضيف بعد v0.3):** `circulated` «مواد متداولة» أو `witness` «الشاهد»، اختيار لكل طلب
+          بلا قيمة افتراضية. الطلب نفسه والشروط والحدود والأحداث والإشعار والرابط واحدة للقالبين، والنوع `circulated_render`
+          نفسه. «الشاهد» لا يرسم تاريخًا ولا اسم حساب في النسخة أبدًا (لا مصدر في أي إطار)، فلا يحمل الطلب شيئًا منهما.
         - **المصدر:** أصل المادة المتحقق، وهو واحد لكل مادة (ADR 0081)، فلا يحمل الطلب `source_file_id`.
         - **الشروط** (وإلا `409 render_not_allowed` و`details.failed` بالشروط الفاشلة): أصل `original` بحالة `verified` فيه
           مسار صورة ولا تتجاوز مدته الحدّ (`source`)، والحالة التحريرية `accepted` أو `in_production` أو `final_review` أو
@@ -1881,7 +1884,7 @@ paths:
       - $ref: "#/components/parameters/RenderId"
     get:
       tags: [uploads]
-      summary: معاملات نسخة قالب «مواد متداولة» كما يحتاجها العامل (داخلي، ADR 0091)
+      summary: معاملات نسخة القالب («مواد متداولة» أو «الشاهد») كما يحتاجها العامل (داخلي، ADR 0091، 0109)
       x-internal: true
       description: >-
         يقرؤه العامل عند `render.requested`، لأن الحدث لا يحمل نصًا. النصوص هنا تعبر الشبكة الداخلية وحدها إلى العامل،
@@ -1908,7 +1911,7 @@ paths:
       - $ref: "#/components/parameters/RenderId"
     post:
       tags: [uploads]
-      summary: التقاط العامل نسخة قالب «مواد متداولة» (داخلي، ADR 0091)
+      summary: التقاط العامل نسخة القالب (داخلي، ADR 0091، 0109)
       x-internal: true
       description: >-
         `requested` ← `rendering` بـ `started_at`، ويكتب `render.started` في المعاملة نفسها. متساوٍ الأثر: النسخة `rendering`
@@ -1931,7 +1934,7 @@ paths:
       - $ref: "#/components/parameters/RenderId"
     post:
       tags: [uploads]
-      summary: تسجيل فشل نسخة قالب «مواد متداولة» (داخلي، ADR 0091)
+      summary: تسجيل فشل نسخة القالب (داخلي، ADR 0091، 0109)
       x-internal: true
       description: >-
         يجعل النسخة `failed` بسبب مرمّز ويكتب `render.failed` في المعاملة نفسها. متساوٍ الأثر: النسخة الفاشلة تُعاد `204`
@@ -5223,7 +5226,7 @@ components:
         `produced` (v0.3، ADR 0025 الجزء 9) التصدير النهائي: `video/mp4` زمني كـ `proxy` بـ `technical` الناتج، يكتبه عامل
         الوسائط وحده من `render` (نقاط قص المصدر). لا نقطة محرر ولا واجهة تحرير، ولا ترجمة ولا تفريغ محروق فيه (R11)، وهو
         وحده ما يقبله `produced_file_id` في `license.delivery_requested`.
-        `circulated_render` (ADR 0091) نسخة قالب «مواد متداولة» من الأصل المتحقق: `video/mp4` زمني بـ `technical` الناتج،
+        `circulated_render` (ADR 0091) نسخة قالب «مواد متداولة» أو «الشاهد» (ADR 0109) من الأصل المتحقق: `video/mp4` زمني بـ `technical` الناتج،
         و`render_id` إلزامي معه وممنوع لغيره، والأصل في المسار هو `source_file_id` النسخة وإلا `422`. متساوٍ الأثر على
         `render_id`: لكل نسخة ملفها، وتسجيله يجعل النسخة `ready` ويكتب `render.completed` في المعاملة نفسها. لا يظهر في
         `Material.files`، ولا يقبله `produced_file_id`.
@@ -5293,7 +5296,7 @@ components:
         material_id: { type: string, format: uuid }
         source_file_id: { type: string, format: uuid }
         state: { type: string, enum: [requested, rendering, ready, failed] }
-        template: { type: string, enum: [circulated] }
+        template: { type: string, enum: [circulated, witness], description: "تركيبة القالب في حزمته (ADR 0109)" }
         aspect: { $ref: "#/components/schemas/RenderAspect" }
         title_lines: { $ref: "#/components/schemas/RenderTitleLines", description: "يصير `titleLines` في معاملات القالب" }
         location_text:
@@ -5424,8 +5427,10 @@ components:
       properties:
         template:
           type: string
-          description: القالب؛ «مواد متداولة» وحده الآن
-          enum: [circulated]
+          description: >-
+            القالب، اختيار لكل طلب بلا قيمة افتراضية: `circulated` «مواد متداولة» (ADR 0091) و`witness` «الشاهد» (ADR 0109، أُضيف
+            بعد v0.3). المعاملات الأخرى والشروط واحدة للقالبين.
+          enum: [circulated, witness]
         aspect: { $ref: "#/components/schemas/RenderAspect" }
         title_lines: { $ref: "#/components/schemas/RenderTitleLines" }
         show_location:
@@ -5439,14 +5444,14 @@ components:
       type: object
       required: [id, material_id, material_version, source_file_id, template, aspect, title_lines, show_location, location_text, label, state, file_id, failure_reason, requested_by, requested_at, started_at, completed_at]
       description: >-
-        طلب نسخة على قالب «مواد متداولة» بمعاملاته كما رُسمت (ADR 0091). النسخة ملف للمادة نفسها، فترث حساسيتها وحقوقها،
+        طلب نسخة على قالب «مواد متداولة» أو «الشاهد» بمعاملاته كما رُسمت (ADR 0091، 0109). النسخة ملف للمادة نفسها، فترث حساسيتها وحقوقها،
         ولا تدخل الكتالوج ولا حزمة تسليم ولا تُعرض للبيع.
       properties:
         id: { type: string, format: uuid }
         material_id: { type: string, format: uuid }
         material_version: { type: integer, minimum: 1, description: إصدار المادة ساعة الطلب }
         source_file_id: { type: string, format: uuid, description: "أصل المادة المتحقق الذي تُبنى منه (واحد لكل مادة، ADR 0081)؛ يملؤه الخادم" }
-        template: { type: string, enum: [circulated] }
+        template: { type: string, enum: [circulated, witness], description: "القالب كما طُلب (`witness` أُضيف بعد v0.3، ADR 0109)" }
         aspect: { $ref: "#/components/schemas/RenderAspect" }
         title_lines: { $ref: "#/components/schemas/RenderTitleLines" }
         show_location: { type: boolean }
