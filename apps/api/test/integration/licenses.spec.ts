@@ -39,7 +39,7 @@ describe('licenses (/v1/licenses) and the sandbox return', () => {
         PAYMENT_PROVIDER: 'sandbox',
         SANDBOX_WEBHOOK_SECRET: SECRET,
         SANDBOX_CHECKOUT_BASE_URL: 'http://api.test',
-        SANDBOX_RETURN_URL: 'https://web.example/ar/orders/{order_id}',
+        SANDBOX_RETURN_URL: 'https://web.example/{locale}/store/orders/{order_id}?returned=1',
         LICENSE_DOWNLOAD_LIMIT: '2',
         LICENSE_DOWNLOAD_URL_SECONDS: '600',
         LICENSE_VERIFY_RATE_LIMIT_MAX: '6',
@@ -277,15 +277,36 @@ describe('licenses (/v1/licenses) and the sandbox return', () => {
     expect((await download(suspended.buyer.token, suspended.licenseId).expect(403)).body.code).toBe('forbidden_scope');
   });
 
-  it('the sandbox page returns the buyer to the configured web page only, with the outcome as a hint', async () => {
+  // صفحة المزوّد التجريبي بلغة المشتري (ADR 0032، ملحق 2026-11-03): lang وdir، ونص التجربة الثابت في المتجر، وأزرار بأسمائها،
+  // والعودة إلى /{locale}/store/orders/{order_id} من قالب الإعداد وحده، و{locale} من قائمة مغلقة
+  it('the sandbox page speaks the checkout locale and returns the buyer to the configured web page only, in that locale', async () => {
     const t = await template();
     const { listingId } = await listed([t]);
     const b = await buyer(await organization());
     const created = (await post(b.token, '/orders', { items: [{ listing_id: listingId, license_template_id: t }] }).expect(201)).body;
+    // بلا لغة: العربية
     const { ref: r } = await ref(b.token, created.id);
-    expect((await http().get(`/sandbox/checkout/${r}`).expect(200)).text).toContain(`${r}/succeeded?return=1`);
+    const ar = (await http().get(`/sandbox/checkout/${r}`).expect(200)).text;
+    expect(ar).toContain('<html lang="ar" dir="rtl">');
+    expect(ar).toContain('بيئة دفع تجريبية: لا يُخصم مال حقيقي.');
+    expect(ar).toContain(`${r}/succeeded?return=1`);
+    expect(ar).toContain('>نجح الدفع<');
+    expect(ar).not.toMatch(/<button[^>]*>(succeeded|failed|delayed|duplicate|out_of_order)</);
+    // العودة دون دفع إلى الطلب نفسه، بلا علامة الرجوع من المزوّد
+    expect(ar).toContain(`href="https://web.example/ar/store/orders/${created.id}"`);
+    // الجلسة نفسها بلغة آخر طلب
+    const en = (await post(b.token, `/orders/${created.id}/checkout`, { locale: 'en' }).expect(200)).body;
+    expect((en.checkout_url as string).split('/').pop()).toBe(r);
+    const page = (await http().get(`/sandbox/checkout/${r}`).expect(200)).text;
+    expect(page).toContain('<html lang="en" dir="ltr">');
+    expect(page).toContain('Test payment environment: no real money is charged.');
+    expect(page).toContain('>Payment succeeds<');
+    expect(page).toContain(`href="https://web.example/en/store/orders/${created.id}"`);
+    // لغة خارج القائمة أو مفتاح آخر 422
+    expect((await post(b.token, `/orders/${created.id}/checkout`, { locale: 'fr' }).expect(422)).body.details).toEqual({ fields: ['/locale'] });
+    await post(b.token, `/orders/${created.id}/checkout`, { return_url: 'https://evil.example' }).expect(422);
     const back = await http().post(`/sandbox/checkout/${r}/succeeded?return=1`).expect(303);
-    expect(back.headers.location).toBe(`https://web.example/ar/orders/${created.id}?outcome=succeeded`);
+    expect(back.headers.location).toBe(`https://web.example/en/store/orders/${created.id}?returned=1&outcome=succeeded`);
     // بلا return=1 (نداء آلي) 202 كما كان، ولا شيء من الطلب يغيّر الوجهة
     await http().post(`/sandbox/checkout/${r}/failed?return=https://evil.example`).expect(202);
     expect((await order(b.token, created.id)).status).toBe('paid');

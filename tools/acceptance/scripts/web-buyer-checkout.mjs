@@ -8,7 +8,7 @@
 // Security: the result carries no payment page origin or URL (only whether it was allowed) and no raw error text (the step and the error's class).
 //   ACCEPTANCE_BASE_URL (the web app) ACCEPTANCE_BUYER_EMAIL ACCEPTANCE_BUYER_PASSWORD ACCEPTANCE_LISTING_ID WEB_CHECKOUT_ORIGINS (the origins the hosted page may be on)
 //   optional: ACCEPTANCE_DELIVERY_WAIT_S (90) ACCEPTANCE_TIMEOUT_MS (30000)
-//   The API must return the browser to the order page with `?returned=1` (SANDBOX_RETURN_URL=https://web/ar/store/orders/{order_id}?returned=1).
+//   The API must return the browser to the order page with `?returned=1` (SANDBOX_RETURN_URL=https://web/{locale}/store/orders/{order_id}?returned=1; the API fills the locale the checkout asked for).
 import { banner } from "../lib/measurement.mjs";
 import { envMissing, url, loadPlaywright, login, envDoc, checkList, finishAndWrite, EnvironmentError } from "./web-gap-helpers.mjs";
 import { LABELS, allowedOrigins, amountDigits, licenseNumberIn, originAllowed, remainingIn, safeFailure, step } from "./web-commerce-helpers.mjs";

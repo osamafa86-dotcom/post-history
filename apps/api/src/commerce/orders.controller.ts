@@ -6,6 +6,8 @@ import { Public } from '../identity/auth.guard';
 import { Roles } from '../identity/principal';
 import { type Order, type OrderCreate, OrdersService } from './orders.service';
 import { PAYMENT_PROVIDER, type PaymentProvider, SandboxPaymentProvider } from './payment-provider';
+import { sandboxPage } from './sandbox-page';
+import type { components } from '../generated/api';
 
 /** الطلبات (v0.3، الجزء 4) بأدوار x-roles في العقد؛ النطاق في الخدمة. */
 @Controller('orders')
@@ -33,8 +35,10 @@ export class OrdersController {
   @Post(':orderId/checkout')
   @Roles('buyer_admin', 'buyer_member')
   @HttpCode(200)
-  checkout(@Param('orderId') id: string, @Req() req: Request) {
-    return this.orders.checkout(req.principal!, id);
+  checkout(@Param('orderId') id: string, @Body() body: unknown, @Req() req: Request) {
+    // الجسم اختياري (CheckoutRequest): بلا جسم أو `{}` العربية كما كان
+    const input = validateBody<components['schemas']['CheckoutRequest']>('/orders/{order_id}/checkout', 'post', body ?? {});
+    return this.orders.checkout(req.principal!, id, input.locale ?? 'ar');
   }
 
   @Post(':orderId/cancel')
@@ -80,15 +84,12 @@ export class SandboxCheckoutController {
   @Public()
   @Get(':ref')
   page(@Param('ref') ref: string, @Res() res: Response): void {
-    const amount = this.sandbox().amountOf(ref);
+    const sandbox = this.sandbox();
+    const amount = sandbox.amountOf(ref);
     if (!amount) throw ApiError.notFound();
-    const shown = `${(Number(amount.amountMinor) / 100).toFixed(2)} ${amount.currency}`;
-    const buttons = ['succeeded', 'failed', 'delayed', 'duplicate', 'out_of_order']
-      // من المتصفح ?return=1: بعد النتيجة يعود المشتري إلى صفحة الويب المعدّة (303)
-      .map((o) => `<form method="post" action="${encodeURIComponent(ref)}/${o}?return=1"><button>${o}</button></form>`)
-      .join('');
+    // بلغة الجلسة (CheckoutRequest.locale)، بنص التجربة الثابت في المتجر، وأزرار بأسمائها، ورابط العودة إلى الطلب
     res.setHeader('Cache-Control', 'no-store');
-    res.type('html').send(`<!doctype html><meta charset="utf-8"><title>Sandbox checkout</title><p>${shown}</p>${buttons}`);
+    res.type('html').send(sandboxPage(ref, amount, sandbox.localeOf(ref), sandbox.returnUrlOf(ref)));
   }
 
   @Public()

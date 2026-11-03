@@ -116,7 +116,7 @@ if [ -f "$ENV_FILE" ]; then
                || bad "secret length >= 32: SANDBOX_WEBHOOK_SECRET (PAYMENT_PROVIDER=sandbox)" ;;
     *) bad "PAYMENT_PROVIDER must be none or sandbox in the trial (a real provider needs its ADR first)" ;;
   esac
-  for k in DEPLOY_STAGE PAYMENT_SANDBOX_ALLOWED; do
+  for k in DEPLOY_STAGE PAYMENT_SANDBOX_ALLOWED SANDBOX_RETURN_URL; do
     grep -q "^$k=" "$ENV_FILE" && bad "$k must not be set in the secrets (fixed in docker-compose.trial.yml)" || ok "$k not switchable from the secrets"
   done
   # حزمة التسليم ثابتة مطفأة في docker-compose.trial.yml حتى يمر شراء sandbox كاملًا: لا تُفتح من ملف الأسرار.
@@ -222,6 +222,11 @@ if [ "$RUNNING" = 1 ]; then
     "[ -n \"\$(env_of ingest-gate)\" ] && [ \"\$(has ingest-gate INGEST_QA_PUBLIC_KEY)\$(has api ACCEPTANCE_UPLOADER_USER_ID)\" = $qa_want$qa_want ]"
   check "the API runs as the trial stage (DEPLOY_STAGE=trial), never production" \
     "e=\"\$(env_of api)\" && grep -qx 'DEPLOY_STAGE=trial' <<<\"\$e\""
+  # العودة من صفحة الدفع التجريبية إلى طلب المشتري بلغته (ADR 0032، ملحق 2026-11-03)، من النطاق الرئيسي وحده
+  if [ "$(type -t val)" = function ] && [ "$(val PAYMENT_PROVIDER)" = sandbox ]; then
+    check "the API returns the buyer to the order in their locale (SANDBOX_RETURN_URL with {locale} and {order_id})" \
+      "e=\"\$(env_of api)\" && grep -qxF 'SANDBOX_RETURN_URL=https://${MAIN_DOMAIN:-}/{locale}/store/orders/{order_id}?returned=1' <<<\"\$e\""
+  fi
   check "the media worker runs with delivery off and alignment on" \
     "e=\"\$(env_of media-worker)\" && grep -qx 'MEDIA_ENABLE_DELIVERY=false' <<<\"\$e\" && grep -qx 'MEDIA_ENABLE_ALIGNMENT=true' <<<\"\$e\""
   if [ "${WALG_ARCHIVE_MODE:-}" = on ]; then

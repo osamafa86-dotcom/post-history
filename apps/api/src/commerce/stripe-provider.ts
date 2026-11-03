@@ -19,7 +19,7 @@ export class StripeTestProvider implements PaymentProvider {
     private readonly timeoutMs = 10_000,
   ) {}
 
-  async createCheckout(input: { orderId: string; amount: Money; returnUrl: string; idempotencyKey: string }): Promise<{ checkoutUrl: string; providerRef: string; expiresAt: Date }> {
+  async createCheckout(input: { orderId: string; amount: Money; returnUrl: string; locale?: string; idempotencyKey: string }): Promise<{ checkoutUrl: string; providerRef: string; expiresAt: Date }> {
     // أقصر مهلة يقبلها Stripe 30 دقيقة؛ المهلة الأقصر للطلب نفسه يفرضها الخادم
     const expiresAt = new Date(Date.now() + 31 * 60 * 1000);
     const back = input.returnUrl || undefined;
