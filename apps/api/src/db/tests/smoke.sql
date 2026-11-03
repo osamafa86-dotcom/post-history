@@ -248,7 +248,7 @@ SELECT pg_temp.expect_error($q$ UPDATE material_files SET receipt_number = 'R-20
 -- البيانات الفنية قائمة بيضاء مغلقة (لا وسوم ملف)، والبصمة الرخيصة 32 بايتًا، ومشتق واحد من كل نوع لكل مصدر
 UPDATE material_files SET technical = '{"video_codec": "h264", "vfr": true, "frame_rate": 29.97}', head_sha256 = sha256('h'::bytea),
   tail_sha256 = sha256('t'::bytea) WHERE id = '00000000-0000-4000-8000-000000000301';
-SELECT pg_temp.expect_error($q$ UPDATE material_files SET technical = '{"video_codec": "h264", "location": "+31.77+035.23/"}' WHERE id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE material_files SET technical = '{"video_codec": "h264", "location": "planted"}' WHERE id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE material_files SET technical = '[]' WHERE id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
 SELECT pg_temp.expect_error($q$ UPDATE material_files SET head_sha256 = 'short'::bytea WHERE id = '00000000-0000-4000-8000-000000000301' $q$, '23514');
 INSERT INTO material_files (material_id, kind, state, derived_from_id, proxy_mode)

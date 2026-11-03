@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, inArray, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lte, ne, sql } from 'drizzle-orm';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { pgError } from '../common/db-errors';
 import { ApiError } from '../common/errors';
@@ -172,6 +172,13 @@ export class OrdersService {
       .leftJoin(exclusiveHolds, eq(exclusiveHolds.orderItemId, orderItems.id))
       .where(and(eq(orderItems.orderId, id), eq(orderItems.licenseType, 'exclusive_temporary'), sql`(${exclusiveHolds.state} IS DISTINCT FROM 'held' OR ${exclusiveHolds.heldUntil} <= now())`));
     if (lost.length > 0) throw new ApiError(409, 'exclusive_unavailable', 'The exclusive hold is no longer held.');
+    // والحقوق قبل الجلسة (العقد): مادة خرجت حقوقها من sellable بعد الطلب لا يُفتح لها دفع، فلا يُقبض ما سيُسترد
+    const unsellable = await tx
+      .select({ id: orderItems.id })
+      .from(orderItems)
+      .innerJoin(materials, eq(materials.id, orderItems.materialId))
+      .where(and(eq(orderItems.orderId, id), ne(materials.rightsState, 'sellable')));
+    if (unsellable.length > 0) throw new ApiError(409, 'rights_not_sellable', 'The rights of an item are no longer sellable.');
     return o;
   }
 

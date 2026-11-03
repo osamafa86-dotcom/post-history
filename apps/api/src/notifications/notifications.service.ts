@@ -104,7 +104,25 @@ export class NotificationsService {
       if (n.type === 'notification.escalated') {
         const [event] = await tx.select({ payload: outboxEvents.payload }).from(outboxEvents).where(eq(outboxEvents.id, n.eventId));
         const original = (event?.payload as { notification_id?: string } | undefined)?.notification_id;
-        if (original) await tx.update(notifications).set({ escalateAt: null }).where(eq(notifications.id, original));
+        // ونسخ المهمة نفسها للمادة عند بقية المستلمين، فلا تتقدم السلسلة من نسخة أخرى (escalation.worker.ts)
+        if (original && UUID.test(original)) {
+          const [o] = await tx.select().from(notifications).where(eq(notifications.id, original));
+          if (o) {
+            await tx
+              .update(notifications)
+              .set({ escalateAt: null })
+              .where(
+                o.materialId
+                  ? and(
+                      eq(notifications.materialId, o.materialId),
+                      eq(notifications.type, o.type),
+                      sql`${notifications.ruleId} IS NOT DISTINCT FROM ${o.ruleId}`,
+                      isNull(notifications.acknowledgedAt),
+                    )
+                  : eq(notifications.id, o.id),
+              );
+          }
+        }
         return;
       }
       // «أقرّ الاستلام» على إشعار «أُسندت» يقرّ المهمة نفسها (ADR 0096)، فلا يتعارض الإشعار والمهمة

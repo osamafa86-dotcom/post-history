@@ -223,6 +223,8 @@ describe('sandbox purchase (/v1/orders, /payments/webhooks/sandbox)', () => {
     const { ref: r2 } = await ref(b.token, changed.body.id);
     await h.pool.query(`UPDATE catalog_listings SET state = 'suspended', suspended_reason = 'rights_changed' WHERE id = $1`, [c.listingId]);
     await h.pool.query(`UPDATE materials SET rights_state = 'documented' WHERE id = $1`, [c.materialId]);
+    // الحقوق تُعاد قبل الجلسة (العقد): لا دفع جديد لمادة خرجت حقوقها من sellable
+    expect((await post(b.token, `/orders/${changed.body.id}/checkout`).expect(409)).body.code).toBe('rights_not_sellable');
     await pay(r2);
     expect(await order(b.token, changed.body.id)).toMatchObject({ status: 'cancelled', cancel_reason: 'rights_changed' });
     expect(await count(`SELECT count(*)::int AS n FROM licenses l JOIN order_items i ON i.id = l.order_item_id WHERE i.order_id = $1`, [changed.body.id])).toBe(0);

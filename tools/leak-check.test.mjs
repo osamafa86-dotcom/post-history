@@ -211,13 +211,24 @@ test("الشرط 2 (hashPaths): لا إعفاء مسار شامل لـdocs/measu
   assert.throws(() => parseAllow({ hashPaths: ["docs/measurements/**"] }), /hashPaths/);
 });
 
-test("بصمة صورة الحاوية (name:tag@sha256:…) تُستثنى في infra/ و.github/ وحدهما", () => {
+test("بصمة صورة الحاوية (name:tag@sha256:…) تُستثنى في infra/ و.github/ وworkers/ وحدها", () => {
   const image = `image: quay.io/org/app:1.2.3@sha256:${HEX64}`;
   const allow = parseAllow({ domains: [{ value: "quay.io", reason: R }] });
   assert.equal(scanText(image, "infra/compose/x.yml", allow).length, 0);
   assert.equal(scanText(`FROM app:1@sha256:${HEX64}`, ".github/workflows/w.yml", allow).length, 0);
+  assert.equal(scanText(`FROM app:1@sha256:${HEX64} AS base`, "workers/media/Dockerfile", allow).length, 0);
+  assert.deepEqual(lt(scanText(`FROM app:1@sha256:${HEX64}`, "apps/api/src/Dockerfile", allow)), [[1, "hash"]]);
   assert.deepEqual(lt(scanText(image, "docs/x.md", allow)), [[1, "hash"]]);
   assert.deepEqual(lt(scanText(`sha256:${HEX64}`, "infra/compose/x.yml", allow)), [[1, "hash"]]);
+});
+
+test("تثبيت pip بالبصمة (--hash=sha256:…) يُستثنى في ملف requirements*.txt وحده", () => {
+  const pin = `numpy==2.3.4 \\\n    --hash=sha256:${HEX64}\n`;
+  assert.equal(scanText(pin, "workers/ai/requirements.txt").length, 0);
+  assert.equal(scanText(pin, "workers/media/requirements-test.txt").length, 0);
+  // خارج ملف القفل، أو بلا بادئة --hash=، تبقى بصمة تُبلَّغ.
+  assert.deepEqual(lt(scanText(pin, "docs/x.md")), [[2, "hash"]]);
+  assert.deepEqual(lt(scanText(`sha256 ${HEX64}\n`, "workers/ai/requirements.txt")), [[1, "hash"]]);
 });
 
 test("الإحداثيات: أزواج عشرية بأربع خانات فأكثر وISO 6709 وlat/lon بقيمة تُبلَّغ، وما دون ذلك أو خارج المدى أو قوائم الأعداد لا", () => {
@@ -283,7 +294,7 @@ test("sanitize: مضيف وعنوان وبريد إلى <base> وبصمة إلى
   assert.equal(sanitize(`${["AKI", "AIOSFODNN7EXAMPLE"].join("")} و Bearer ${"abc123".repeat(4)}`), "<secret> و <secret>");
 });
 
-test("الشرط 6: النطاق يشمل infra/ و.github/ وملفات .env.example وapps/<تطبيق>/store", () => {
+test("الشرط 6: النطاق يشمل infra/ و.github/ وملفات .env.example وapps/<تطبيق>/store وsrc وapps/ios/App وcontracts/ وworkers/", () => {
   withTmp((dir) => {
     const bad = "x https://evil-corp.io/y\n";
     writeTree(dir, {
@@ -293,15 +304,41 @@ test("الشرط 6: النطاق يشمل infra/ و.github/ وملفات .env.ex
       ".github/workflows/w.yml": bad,
       "apps/web/.env.example": "URL=https://evil-corp.io/z\n",
       "apps/ios/store/s.md": bad,
+      "apps/web/src/lib/a.ts": 'const u = "https://evil-corp.io/a";\n',
+      "apps/ios/App/Sources/A.swift": 'let u = "https://evil-corp.io/a"\n',
+      "contracts/openapi.yaml": "servers: [{url: https://evil-corp.io/v1}]\n",
+      "workers/media/src/x.py": 'U = "https://evil-corp.io/x"\n',
       "services/deep/.env.example": "URL=https://evil-corp.io/z\n",
-      "apps/web/src/skip.md": bad, // خارج النطاق
+      "apps/web/scripts/skip.md": bad, // خارج النطاق
     });
     const r = runIn(dir, ["--json"]);
     assert.equal(r.code, 1);
     assert.deepEqual(JSON.parse(r.out).map((f) => f.file), [
-      ".github/workflows/w.yml", "apps/ios/store/s.md", "apps/web/.env.example", "infra/compose/c.yml", "services/deep/.env.example",
+      ".github/workflows/w.yml", "apps/ios/App/Sources/A.swift", "apps/ios/store/s.md", "apps/web/.env.example", "apps/web/src/lib/a.ts",
+      "contracts/openapi.yaml", "infra/compose/c.yml", "services/deep/.env.example", "workers/media/src/x.py",
     ]);
   });
+});
+
+test("جذور المصدر: tsx وsql وcss كود (وصول الخصائص والمحدِّدات والتحويلات ليست نطاقات ولا عناوين)، والمقتبس يُحسب", () => {
+  // وصول خصائص في TSX، وأعمدة SQL، ومحدِّد CSS: لا شيء؛ والنطاق المقتبس في كل منها يُبلَّغ.
+  assert.deepEqual(lt(scanText('<li key={item.id}>{m.store}</li>\nconst u = "feed.evil-corp.io";\n', "apps/web/src/a.tsx")), [[2, "domain"]]);
+  assert.deepEqual(lt(scanText("SELECT NEW.id, o.status FROM public.orders o;\nSELECT 'feed.evil-corp.io';\n", "apps/api/src/m.sql")), [[2, "domain"]]);
+  assert.equal(scanText("a.button.store { color: red }\n", "apps/web/src/app/x.css").length, 0);
+  // ::bigint و::date و::bytea في SQL، و::before و::after في CSS، ليست IPv6؛ والعنوان الحقيقي يبقى يُبلَّغ.
+  assert.equal(scanText("sql`${v}::bigint` و x::date و '\\x00'::bytea\n", "apps/api/src/a.ts").length, 0);
+  assert.equal(scanText("td[data-label]::before { content: none } a::after {}\n", "apps/web/src/app/x.css").length, 0);
+  assert.deepEqual(lk(scanText("const peer = '2001:470::dead:beef';\n", "apps/api/src/a.ts")), [[1, "ip", "v6"]]);
+});
+
+test("TOTP: معرّف بحالة حروف مختلطة بجوار الكلمة ليس بذرة، والبذرة بحالة واحدة تُبلَّغ كبيرة أو صغيرة", () => {
+  assert.equal(scanText("set({ totpEnabled: false, totpPendingSecretEnc: null })\n", "apps/api/src/a.ts").length, 0);
+  const seed = ["JBSWY3DP", "EHPK3PXP"].join("").repeat(2);
+  assert.deepEqual(lk(scanText(`totpPendingSecretEnc = "${seed}"\n`, "apps/api/src/a.ts")), [[1, "secret", "totp"]]);
+  assert.deepEqual(lk(scanText(`otpauth secret ${seed.toLowerCase()}\n`)), [[1, "secret", "totp"]]);
+  // المسموح يُقارَن بالبذرة نفسها لا بالمعرّف الذي سبقها.
+  const allow = parseAllow({ secrets: [{ sha256: sha(seed), reason: R }] });
+  assert.equal(scanText(`totpPendingSecretEnc = "${seed}"\n`, "apps/api/src/a.ts", allow).length, 0);
 });
 
 test("run (الشرط 7 و8): مجلد apps/ غائب لا يُسقط الأداة، والخروج 0 للنظيف و1 للتسريب و--json يطبع المصفوفة", () => {

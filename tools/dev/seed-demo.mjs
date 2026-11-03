@@ -48,6 +48,15 @@ export async function acknowledgeVerified(http, token, materialId, {attempts=120
   }
   throw new Error('demo verification or transition timed out');
 }
+// البذرة المشتركة (live/seed.mjs) تكتب رموز محافظات لاختبارات القبول؛ /admin والوارد والأرشيف تعرض الحقل كما هو، فالعرض
+// التجريبي يحمل أسماءها كما يكتبها المراسل
+export const DEMO_GOVERNORATES=Object.freeze({gaza:'غزة',khan_younis:'خان يونس'});
+export async function relabelGovernorates(db,{officeIds,materialIds}) {
+  const codes=Object.keys(DEMO_GOVERNORATES),names=codes.map(c=>DEMO_GOVERNORATES[c]);
+  const relabel=column=>`${column}=COALESCE((SELECT n FROM unnest($1::text[],$2::text[]) AS g(c,n) WHERE g.c=${column}),${column})`;
+  await db.query(`UPDATE offices SET ${relabel('governorate')} WHERE id=ANY($3::uuid[])`,[codes,names,officeIds]);
+  await db.query(`UPDATE materials SET ${relabel('governorate')} WHERE id=ANY($3::uuid[])`,[codes,names,materialIds]);
+}
 export const states = i => ({technical:['pending','proxy_received','original_received','verified','failed'][i%5], editorial:['inbox','acknowledged','reviewing','needs_changes','accepted','in_production','final_review','published','rejected'][i%9], rights:['unknown','documented','sellable','blocked','withdrawn'][i%5]});
 export function failureMessage(phase) {
   const known=['configuration','ffmpeg','database','base_seed','accounts','media','materials','first_transition','sandbox_purchase','refund_verification','paid_order','credentials'];
@@ -109,6 +118,7 @@ export async function run(env=process.env) {
       await db.query('UPDATE materials SET reporter_id=$1,office_id=$2,technical_state=$3,editorial_state=$4,rights_state=$5 WHERE id=$6',[r.id,officeIds[i%2],st.technical,st.editorial,st.rights,m.body.id]);
       return m.body.id;
     });
+    await relabelGovernorates(db,{officeIds,materialIds:[...materialIds,s.uploads.materialA,s.uploads.materialB]});
     const materialCount=(await db.query('SELECT count(*)::int AS n FROM materials WHERE id=ANY($1::uuid[])',[materialIds])).rows[0].n;
     if(materialCount!==DEMO_MATERIAL_COUNT)throw new Error('demo material count mismatch');
     // الأداة المشتركة تمر عبر المزوّد التجريبي وتتحقق من القيد والترخيص والاسترداد المتاح؛ لا نكررها.

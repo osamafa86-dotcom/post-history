@@ -7,9 +7,12 @@ trap 'rm -rf "$tmp"' EXIT
 scripts/db-pull.sh "$tmp"
 # ترتيب ما يخرجه drizzle-kit pull (العلاقات والقيود) يتبع ترتيب فهرس Postgres ويختلف بين قاعدتين؛
 # المقارنة على الأسطر مرتبة: أي سطر مضاف أو محذوف أو متغير يُكتشف، وإعادة الترتيب وحدها لا تُعد اختلافًا.
+# وفئة مشغّل الفهرس (`.op("…")`) يخمّنها drizzle-kit pull لكل عمود بلا ثبات بين تشغيلين (`uuid_ops` مرة و`timestamptz_ops`
+# مرة للعمود نفسه)، وليست مصدر الحقيقة: الترحيلات هي. تُحذف من الطرفين قبل المقارنة، وتبقى أسماء الفهارس وأعمدتها وترتيبها وشروطها.
+norm() { sed -E 's/\.op\("[a-z0-9_]+"\)//g' "$1" | LC_ALL=C sort; }
 status=0
 for f in schema.ts relations.ts; do
-  if ! diff -u <(LC_ALL=C sort "src/database/schema/$f") <(LC_ALL=C sort "$tmp/$f") > "$tmp/$f.diff"; then
+  if ! diff -u <(norm "src/database/schema/$f") <(norm "$tmp/$f") > "$tmp/$f.diff"; then
     echo "--- $f" >&2; cat "$tmp/$f.diff" >&2; status=1
   fi
 done

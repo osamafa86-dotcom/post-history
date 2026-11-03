@@ -4,7 +4,7 @@
 # هنا). على الخادم، من هذا المجلد:
 #   ./gen-env.sh            # مرة: .env بأسرار عشوائية وشهادة داخلية في tls/، لا يطبع شيئًا سريًا
 #                           # (.env قائم: --add-upload لمفاتيح الرفع، و--add-media لمفاتيح عامل الوسائط، و--add-render
-#                           # لمستخدم media-render في MinIO وعنوانه)
+#                           # لمستخدم media-render في MinIO وعنوانه، و--add-storage لمستخدمي tusd والخادم في MinIO)
 #   ./fetch-images.sh       # الصور الأربع من الإصدار preview-latest (تُتحقق ببصمة sha256 أولًا) ثم docker load
 #   docker compose -f docker-compose.preview.yml up -d --wait
 #   ./seed-preview.sh       # مرة: حسابات تجريبية ومواد اصطناعية؛ كلمات السر في .env لا في المخرج
@@ -26,6 +26,9 @@ services:
     image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
     # The entrypoint drops to the postgres user itself, so it needs these back (cap_drop ALL above).
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    # Read-only root: the data is the volume, the socket and its lock go to tmpfs (a few KB, inside the limit below).
+    read_only: true
+    tmpfs: ["/var/run/postgresql:size=1m", "/tmp:size=4m"]
     command: ["postgres", "-c", "shared_buffers=16MB", "-c", "max_connections=30", "-c", "work_mem=2MB",
               "-c", "maintenance_work_mem=16MB", "-c", "effective_cache_size=48MB", "-c", "max_wal_size=96MB",
               "-c", "wal_buffers=1MB"]
@@ -50,6 +53,9 @@ services:
     image: redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     # Runs as redis directly (the shell command skips the image's own drop from root), so /data stays its own.
     user: redis
+    # Read-only root: the append-only file is the volume, the config written below goes to tmpfs.
+    read_only: true
+    tmpfs: ["/tmp:size=1m"]
     # كلمة المرور من البيئة إلى ملف إعداد لا إلى سطر الأوامر (SEC-05)؛ سقف ذاكرة داخلي تحت حد الحاوية.
     environment:
       REDIS_PASSWORD: "${REDIS_PASSWORD:?}"
@@ -72,7 +78,14 @@ services:
   minio:
     <<: *hardened
     image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
-    command: ["server", "/data"]
+    # MinIO runs as uid 1000, not root. A volume from before this is root's, so the entrypoint gives /data to 1000:1000 first
+    # (chown -R changes the top directory last, so it is skipped once that is done), then drops with chroot --userspec. The
+    # capabilities are for those two steps; minio itself holds none (no-new-privileges, and uid 1000 after the drop).
+    cap_add: [CHOWN, SETGID, SETUID, SYS_CHROOT]
+    entrypoint: ["sh", "-c", "[ \"$$(stat -c %u:%g /data)\" = 1000:1000 ] || chown -R 1000:1000 /data || exit 1; exec chroot --userspec=1000:1000 / minio server /data"]
+    # Read-only root: the objects are the volume; /tmp holds the healthcheck's mc config (MC_CONFIG_DIR in the image).
+    read_only: true
+    tmpfs: ["/tmp:size=4m"]
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:?}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?}
@@ -104,15 +117,21 @@ services:
       minio:
         condition: service_healthy
     # Storage on the shared server (ADR 0023, 0092): hard quotas, uploads 10112 MiB and derived files 2048 MiB, and tusd's
-    # temporary parts (at most the gate's 10 connections x 5 MiB) in 64 MiB outside them; the media worker's MinIO user
-    # (read the uploads but not their .info/.part, read and write media/derived/ only), and media-render's (the same uploads,
-    # read and write derived/*/*/renders/ only). The admin calls were killed at 64 MB in CI.
+    # temporary parts (at most the gate's 10 connections x 5 MiB) in 64 MiB outside them; and a least-privilege MinIO user
+    # for each client: tusd (read and write the upload bucket only), the API (read both buckets, delete tus objects; no write,
+    # no admin), the media worker (read the uploads but not their .info/.part, read and write media/derived/ only), and
+    # media-render (the same uploads, read and write derived/*/*/renders/ only). The root user is for this container alone.
+    # The admin calls were killed at 64 MB in CI.
     entrypoint: ["sh", "/minio-init.sh"]
     environment:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_BUCKET_UPLOADS: ${S3_BUCKET_UPLOADS:?}
       S3_BUCKET_MEDIA: ${S3_BUCKET_MEDIA:?}
+      S3_TUSD_ACCESS_KEY: ${S3_TUSD_ACCESS_KEY:?gen-env.sh --add-storage}
+      S3_TUSD_SECRET_KEY: ${S3_TUSD_SECRET_KEY:?gen-env.sh --add-storage}
+      S3_API_ACCESS_KEY: ${S3_API_ACCESS_KEY:?gen-env.sh --add-storage}
+      S3_API_SECRET_KEY: ${S3_API_SECRET_KEY:?gen-env.sh --add-storage}
       S3_MEDIA_ACCESS_KEY: ${S3_MEDIA_ACCESS_KEY:?gen-env.sh --add-media}
       S3_MEDIA_SECRET_KEY: ${S3_MEDIA_SECRET_KEY:?gen-env.sh --add-media}
       S3_RENDER_ACCESS_KEY: ${S3_RENDER_ACCESS_KEY:?gen-env.sh --add-render}
@@ -159,8 +178,9 @@ services:
       TUSD_HOOK_SECRET: ${TUSD_HOOK_SECRET:?}
       S3_ENDPOINT: http://minio:9000
       S3_REGION: us-east-1
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
-      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      # The API's own MinIO user (minio-init.sh): read both buckets, delete tus objects; no write, no admin.
+      S3_ACCESS_KEY: ${S3_API_ACCESS_KEY:?gen-env.sh --add-storage}
+      S3_SECRET_KEY: ${S3_API_SECRET_KEY:?gen-env.sh --add-storage}
       S3_BUCKET_UPLOADS: ${S3_BUCKET_UPLOADS}
       S3_BUCKET_MEDIA: ${S3_BUCKET_MEDIA}
       # معاينة فقط، لا تُنقل إلى التجربة. الرفع من الحاسوب ومن بناء iOS التجريبي (ADR 0077): tusd خلف بوابة ingest،
@@ -268,8 +288,9 @@ services:
     entrypoint: ["sh", "/usr/local/bin/tusd-entrypoint.sh"]
     read_only: true
     environment:
-      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
-      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+      # tusd's own MinIO user (minio-init.sh): read and write the upload bucket only.
+      AWS_ACCESS_KEY_ID: ${S3_TUSD_ACCESS_KEY:?gen-env.sh --add-storage}
+      AWS_SECRET_ACCESS_KEY: ${S3_TUSD_SECRET_KEY:?gen-env.sh --add-storage}
       AWS_REGION: us-east-1
       TUSD_HOOK_URL: http://ph-preview-api:3000/internal/tusd-hooks
       TUSD_HOOK_SECRET: ${TUSD_HOOK_SECRET:?}
@@ -399,6 +420,14 @@ services:
       MEDIA_ENABLE_C2PA: "false"
     volumes:
       - media-scratch:/scratch
+    # Healthy while it holds its connection to the queue: an established TCP connection to Redis (6379 = 18EB in /proc/net/tcp),
+    # which the worker keeps open between jobs and through one. grep alone, no interpreter: nothing to speak of next to a job.
+    healthcheck:
+      test: ["CMD-SHELL", "grep -sqE '^ *[0-9]+: [0-9A-F]+:[0-9A-F]{4} [0-9A-F]+:18EB 01 ' /proc/net/tcp /proc/net/tcp6"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
     mem_limit: 1472m
     memswap_limit: 1472m
     cpus: 1.5
@@ -424,8 +453,18 @@ services:
     read_only: true
     entrypoint: ["node", "--max-old-space-size=32", "preview/media-feeder.mjs"]
     command: ["--loop"]
+    # Healthy while its cycles succeed: each one touches MEDIA_FEED_HEARTBEAT (tmpfs), and a cycle runs every 10 s. The check is
+    # sh and stat, no node: the service has 64 MB.
+    tmpfs: ["/tmp:size=1m"]
+    healthcheck:
+      test: ["CMD-SHELL", "[ $$(( $$(date +%s) - $$(stat -c %Y /tmp/media-feeder.alive) )) -lt 60 ]"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
     environment:
       NODE_ENV: production
+      MEDIA_FEED_HEARTBEAT: /tmp/media-feeder.alive
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       MEDIA_MIN_FREE_GIB: ${PREVIEW_MEDIA_MIN_FREE_GIB:-8}
@@ -483,6 +522,14 @@ services:
       MEDIA_ENABLE_C2PA: "false"
     volumes:
       - render-scratch:/scratch
+    # Healthy while it holds its connection to the queue: an established TCP connection to Redis (6379 = 18EB in /proc/net/tcp),
+    # which the worker keeps open between jobs and through one. grep alone, no interpreter: nothing to speak of next to a job.
+    healthcheck:
+      test: ["CMD-SHELL", "grep -sqE '^ *[0-9]+: [0-9A-F]+:[0-9A-F]{4} [0-9A-F]+:18EB 01 ' /proc/net/tcp /proc/net/tcp6"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
     mem_limit: 4096m
     memswap_limit: 4096m
     cpus: 2

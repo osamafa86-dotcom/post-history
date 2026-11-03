@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import {createRequire} from 'node:module';
 import assert from 'node:assert/strict';
 import {localOnly,requireDemo} from './local-only.mjs';
-import {states,populateMaterials,DEMO_MATERIAL_COUNT,verifyCommerce,failureMessage,run,acknowledgeVerified,ACTIVE_ORDER_LICENSE_SQL} from './seed-demo.mjs';
+import {states,populateMaterials,DEMO_MATERIAL_COUNT,verifyCommerce,failureMessage,run,acknowledgeVerified,ACTIVE_ORDER_LICENSE_SQL,DEMO_GOVERNORATES,relabelGovernorates} from './seed-demo.mjs';
 test('refuse external services and require explicit disposable database consent',()=>{
   assert.throws(()=>requireDemo({}));
   assert.throws(()=>localOnly('https:'+String.fromCharCode(47,47)+'external',['http:']));
@@ -66,4 +66,33 @@ test('active license query executes on the migrated local database', {skip:!proc
     assert(columns.rows.some(r=>r.column_name==='order_item_id'));
     assert(!columns.rows.some(r=>r.column_name==='order_id'));
   } finally {await db.query('ROLLBACK').catch(()=>{});await db.end();}
+});
+
+test('demo offices and materials carry governorate names, not the acceptance seed codes',async()=>{
+  const queries=[];
+  await relabelGovernorates({query:async(text,params)=>{queries.push({text,params});}},{officeIds:['o1','o2'],materialIds:['m1']});
+  assert.equal(queries.length,2);
+  assert.match(queries[0].text,/^UPDATE offices SET governorate=/);assert.match(queries[1].text,/^UPDATE materials SET governorate=/);
+  for(const q of queries){
+    const [codes,names]=q.params;
+    // كل رمز تكتبه البذرة المشتركة له اسم عرض، ولا اسم عرض يشبه رمزًا
+    assert.deepEqual(codes,['gaza','khan_younis']);
+    assert.ok(names.every(n=>!/^[a-z_]+$/.test(n)),names.join(','));
+    assert.equal(names[codes.indexOf('khan_younis')],'خان يونس');
+  }
+  assert.deepEqual(queries.map(q=>q.params[2]),[['o1','o2'],['m1']]);
+  assert.ok(Object.isFrozen(DEMO_GOVERNORATES));
+});
+test('the relabel statement maps codes and keeps any other value on the migrated local database', {skip:!process.env.DEMO_TEST_DATABASE_URL},async()=>{
+  const pg=createRequire(new URL('../acceptance/package.json',import.meta.url))('pg');
+  localOnly(process.env.DEMO_TEST_DATABASE_URL,['postgres:','postgresql:']);
+  const db=new pg.Client({connectionString:process.env.DEMO_TEST_DATABASE_URL});
+  await db.connect();
+  try {
+    await db.query('BEGIN');
+    const ids=(await db.query("INSERT INTO offices(name_ar,name_en,governorate) VALUES('م','o','khan_younis'),('م','o','رفح') RETURNING id")).rows.map(r=>r.id);
+    await relabelGovernorates(db,{officeIds:ids,materialIds:[]});
+    const rows=(await db.query('SELECT governorate FROM offices WHERE id=ANY($1::uuid[]) ORDER BY governorate',[ids])).rows.map(r=>r.governorate);
+    assert.deepEqual(rows.sort(),['خان يونس','رفح'].sort());
+  } finally { await db.query('ROLLBACK'); await db.end(); }
 });

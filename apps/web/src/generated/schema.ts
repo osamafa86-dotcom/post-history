@@ -2023,7 +2023,7 @@ export interface paths {
         put?: never;
         /**
          * جلسة دفع مستضافة لدى المزوّد
-         * @description يعيد رابط صفحة الدفع المستضافة (ADR 0032): لا تمر بيانات بطاقة بخوادمنا ولا في أي عقد. يُعاد التحقق من الحجز الحصري والحقوق قبل إنشاء الجلسة. الطلب غير `pending_payment` أو المنتهي `409 order_state_conflict`، والحجز الذي ضاع `409 exclusive_unavailable`. التكرار والجلسة صالحة يعيد الجلسة نفسها. العودة من صفحة المزوّد لا تؤكد الدفع: التأكيد من الإشعار الموقّع وحده، والعميل يقرأ الطلب حتى `paid`.
+         * @description يعيد رابط صفحة الدفع المستضافة (ADR 0032): لا تمر بيانات بطاقة بخوادمنا ولا في أي عقد. يُعاد التحقق من الحجز الحصري والحقوق قبل إنشاء الجلسة. الطلب غير `pending_payment` أو المنتهي `409 order_state_conflict`، والحجز الذي ضاع `409 exclusive_unavailable`، والمادة التي خرجت حقوقها من `sellable` `409 rights_not_sellable`. التكرار والجلسة صالحة يعيد الجلسة نفسها. العودة من صفحة المزوّد لا تؤكد الدفع: التأكيد من الإشعار الموقّع وحده، والعميل يقرأ الطلب حتى `paid`. الجسم اختياري (`CheckoutRequest`، إضافي): `locale` لغة الويب التي بدأ منها المشتري، فتُعرض بها صفحة المزوّد التجريبي ويعود منها إلى طلبه بلغته (`{locale}` في قالب العودة من إعداد الخادم)؛ بلا جسم أو بلا `locale` العربية.
          */
         post: operations["createOrderCheckout"];
         delete?: never;
@@ -2223,7 +2223,7 @@ export interface paths {
         };
         /**
          * صفحة الدفع المستضافة للمزوّد التجريبي
-         * @description تعرض المبلغ وأزرار النتيجة، ولا تطلب بطاقة ولا أي بيانات دفع. `checkout_url` في `CheckoutSession` يشير إليها حين `provider = sandbox`. المرجع المجهول أو المنتهي `404`.
+         * @description تعرض المبلغ وأزرار النتيجة، ولا تطلب بطاقة ولا أي بيانات دفع. `checkout_url` في `CheckoutSession` يشير إليها حين `provider = sandbox`. بلغة الجلسة (`locale` في `CheckoutRequest`، و`lang` و`dir` على الصفحة)، وعليها نص «لا مال حقيقي» الثابت في المتجر ورابط العودة إلى الطلب حين يُضبط قالب العودة، وأزرار النتيجة بأسماء مفهومة. المرجع المجهول أو المنتهي `404`.
          */
         get: operations["getSandboxCheckout"];
         put?: never;
@@ -4518,6 +4518,14 @@ export interface components {
         OrderPage: {
             items: components["schemas"]["Order"][];
             next_cursor: string | null;
+        };
+        /** @description طلب جلسة الدفع (إضافي على v0.3). كل حقل اختياري، و`{}` كالجسم الغائب. لا يغيّر الطلب ولا مبلغه، ولا يُحفظ معه. */
+        CheckoutRequest: {
+            /**
+             * @description لغة صفحة المزوّد التجريبي (`lang` و`dir`) والعودة منها إلى `/{locale}/store/orders/{order_id}` في الويب؛ الافتراض `ar`. قيمة من القائمة وحدها: الوجهة نفسها من إعداد الخادم لا من الطلب، فلا تحويل مفتوح.
+             * @enum {string}
+             */
+            locale?: "ar" | "en";
         };
         CheckoutSession: {
             /**
@@ -8968,7 +8976,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CheckoutRequest"];
+            };
+        };
         responses: {
             /** @description الجلسة */
             200: {

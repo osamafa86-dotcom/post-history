@@ -49,18 +49,22 @@ export async function seed({ databaseUrl, apiUrl, fieldKey = null }) {
   // account-recovery (ADR 0107): a throwaway account the run resets (its sessions end, its password and TOTP change)
   users.recovery_target = await user("recovery-target", "producer");
   // v0.3 buyers: an active synthetic organization with its admin and member, so the write matrix has a token for the /orders roles
-  const org = (await q(
+  // and a second active organization (tenant-isolation): its orders, licences and members are another tenant for the first
+  const organization = async (name) => (await q(
     `INSERT INTO buyer_organizations (legal_name, display_name_ar, display_name_en, country, billing_email, status, verified_at, verified_by)
-     VALUES ('Synthetic Buyer', 'مشترٍ', 'Buyer', 'PS', $1, 'active', now(), $2) RETURNING id`,
-    [`billing-${randomUUID()}@example.test`, users.system_admin.id])).rows[0].id;
-  const buyer = async (label, role) => {
+     VALUES ($3, 'مشترٍ', 'Buyer', 'PS', $1, 'active', now(), $2) RETURNING id`,
+    [`billing-${randomUUID()}@example.test`, users.system_admin.id, name])).rows[0].id;
+  const org = await organization("Synthetic Buyer");
+  const orgB = await organization("Synthetic Buyer B");
+  const buyer = async (label, role, orgId = org) => {
     const email = `${label}-${randomUUID()}@example.test`;
-    const { rows } = await q(`INSERT INTO users (email, password_hash, status, organization_id) VALUES ($1, $2, 'active', $3) RETURNING id`, [email, passwordHash, org]);
-    await q(`INSERT INTO user_roles (user_id, role, scope_kind, scope_id) VALUES ($1, $2, 'organization', $3)`, [rows[0].id, role, org]);
+    const { rows } = await q(`INSERT INTO users (email, password_hash, status, organization_id) VALUES ($1, $2, 'active', $3) RETURNING id`, [email, passwordHash, orgId]);
+    await q(`INSERT INTO user_roles (user_id, role, scope_kind, scope_id) VALUES ($1, $2, 'organization', $3)`, [rows[0].id, role, orgId]);
     return { id: rows[0].id, email };
   };
   users.buyer_admin = await buyer("buyer-admin", "buyer_admin");
   users.buyer_member = await buyer("buyer-member", "buyer_member");
+  users.buyer_admin_b = await buyer("buyer-admin-b", "buyer_admin", orgB);
 
   const login = async (u) => {
     const res = await freshFetch(`${apiUrl}/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: u.email, password }) });
@@ -139,13 +143,15 @@ export async function seed({ databaseUrl, apiUrl, fieldKey = null }) {
     }
   }
   await pool.end();
-  const { reporter_b: _b, supervisor_b: _sb, producer_b: _pb, system_admin_b: _ab, system_admin_c: _ac, victim_reporter: _vr, recovery_target: _rt, ...roleTokens } = tokens;
+  const { reporter_b: _b, supervisor_b: _sb, producer_b: _pb, system_admin_b: _ab, system_admin_c: _ac, victim_reporter: _vr, recovery_target: _rt, buyer_admin_b: _bb, ...roleTokens } = tokens;
   return {
     tokens: roleTokens, allTokens: tokens, users, password, totp, legalName,
     fixtures: {
       other_reporter_material_id: mB.id, out_of_scope_material_id: mB.id,
       other_reporter_upload_id: session, other_reporter_notification_id: notificationB,
       own_material_id: mA.id, sensitive_field_keys: [],
+      // the order and licence of the second organization come from live/tenant-commerce.mjs (it needs a payment provider)
+      own_org_id: org, other_org_id: orgB,
     },
     canaries, formVersion, uploads: { sessionB: session, sessionA, materialA: mA.id, materialB: mB.id, hookSessions },
   };

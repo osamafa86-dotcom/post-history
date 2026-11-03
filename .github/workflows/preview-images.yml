@@ -17,6 +17,10 @@ on:
       - "apps/web/**"
       - "contracts/**"
       - "infra/preview/**"
+      # Mounted by the preview compose: the ingest gate, tusd's proxy config and tusd's entrypoint.
+      - "infra/ingest/**"
+      - "infra/proxy/**"
+      - "infra/tusd/**"
       - "workers/media/**"
       - "docs/design/redesign-2026-11/motion/circulated-template/**"
       - ".github/workflows/preview-images.yml"
@@ -26,6 +30,10 @@ on:
       - "apps/web/**"
       - "contracts/**"
       - "infra/preview/**"
+      # Mounted by the preview compose: the ingest gate, tusd's proxy config and tusd's entrypoint.
+      - "infra/ingest/**"
+      - "infra/proxy/**"
+      - "infra/tusd/**"
       - "workers/media/**"
       - "docs/design/redesign-2026-11/motion/circulated-template/**"
       - ".github/workflows/preview-images.yml"

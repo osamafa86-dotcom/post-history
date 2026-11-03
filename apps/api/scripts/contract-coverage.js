@@ -25,17 +25,21 @@ function contractOperations() {
   return ops;
 }
 
+// المتحكم قد يجاور خدمته في ملف لا ينتهي بـ .controller.js (commerce/licenses.js وrefunds.js وcommission-rules.js)، فيُقرأ
+// كل ملف .js في dist ويُحمَّل منه ما فيه مزخرف @Controller وحده: لا يُحمَّل main.js ولا أوامر cli/ (لها أثر عند التحميل)
+const CONTROLLER_DECORATOR = /\.Controller\)\(/;
+
 function controllerFiles(dir) {
   return readdirSync(dir).flatMap((f) => {
     const p = join(dir, f);
     if (statSync(p).isDirectory()) return controllerFiles(p);
-    return f.endsWith('.controller.js') ? [p] : [];
+    return f.endsWith('.js') && CONTROLLER_DECORATOR.test(readFileSync(p, 'utf8')) ? [p] : [];
   });
 }
 
-function serverRoutes() {
+function serverRoutes(dist = join(ROOT, 'dist')) {
   const routes = [];
-  for (const file of controllerFiles(join(ROOT, 'dist'))) {
+  for (const file of controllerFiles(dist)) {
     for (const exported of Object.values(require(file))) {
       if (typeof exported !== 'function') continue;
       const base = Reflect.getMetadata('path', exported);
@@ -52,6 +56,9 @@ function serverRoutes() {
   }
   return new Set(routes);
 }
+
+module.exports = { controllerFiles, serverRoutes };
+if (require.main !== module) return;
 
 const ops = contractOperations();
 const routes = serverRoutes();

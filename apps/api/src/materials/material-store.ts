@@ -7,6 +7,7 @@ import type { UploadForm } from '../forms/dynamic-fields';
 import type { components } from '../generated/api';
 import type { Permission, Principal, RoleName } from '../identity/principal';
 import { revokeMaterialLicenses, suspendListing } from '../commerce/listing-store';
+import { closeMaterialTasks, RECEIPT_TYPES } from '../notifications/task-closure';
 import { writeOutboxEvent, type OutboxEventType } from '../outbox/outbox';
 import { redactDynamicFields } from './redaction';
 import { PRODUCTION_VISIBLE_STATES, STATE_COLUMN, type Track } from './transitions';
@@ -314,6 +315,8 @@ export async function applyTransition(
       actorId: t.actorId,
     })
     .returning({ id: materialTransitions.id });
+  // استلام المادة (أو رفضها) من inbox يغلق مهام «مادة واردة» لكل مشرف وتصعيدها: أحدٌ تولّاها، فلا تصل رئيس التحرير بعده
+  if (t.track === 'editorial' && from === 'inbox') await closeMaterialTasks(tx, m.id, RECEIPT_TYPES, t.actorId);
   const note: Record<string, number> = t.noteTimecodeMs != null ? { note_timecode_ms: t.noteTimecodeMs } : {};
   await writeOutboxEvent(tx, {
     type: `material.${t.track}_transition` as OutboxEventType,

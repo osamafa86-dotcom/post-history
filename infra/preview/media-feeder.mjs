@@ -18,7 +18,7 @@
 // فوق MEDIA_MIN_FREE_GIB، وإلا تبقى requested وتُعاد في الدورة التالية.
 // السجل أعداد فقط: لا معرّف ولا عنوان ولا اسم ملف.
 import { randomUUID } from "node:crypto";
-import { statfsSync } from "node:fs";
+import { statfsSync, writeFileSync } from "node:fs";
 import pg from "pg";
 import Redis from "ioredis";
 
@@ -32,6 +32,8 @@ const minFree = Number(env.MEDIA_MIN_FREE_GIB ?? 8) * GIB;
 const diskPath = env.MEDIA_DISK_PATH ?? "/disk";
 const intervalMs = Number(env.MEDIA_FEED_INTERVAL_S ?? 10) * 1000;
 const retryS = Number(env.MEDIA_FEED_RETRY_S ?? 86400);
+// تُلمس بعد كل دورة تكتمل؛ فحص صحة الخدمة يقرأ عمرها (الدورة كل MEDIA_FEED_INTERVAL_S ثانية).
+const heartbeat = env.MEDIA_FEED_HEARTBEAT;
 const mode = process.argv[2];
 if (!["--loop", "--once"].includes(mode) || !(minFree > 0) || !(intervalMs >= 1000) || !(retryS >= 60)) {
   console.error("usage: media-feeder.mjs --loop|--once (MEDIA_MIN_FREE_GIB > 0, MEDIA_FEED_INTERVAL_S >= 1, MEDIA_FEED_RETRY_S >= 60)");
@@ -210,6 +212,13 @@ if (mode === "--once") {
   while (!stopped) {
     try {
       await cycle(db, r);
+      if (heartbeat) {
+        try {
+          writeFileSync(heartbeat, `${Date.now()}\n`);
+        } catch {
+          /* لا ملف: فحص الصحة يبلّغ عنه، والدورة نفسها تمت */
+        }
+      }
     } catch (err) {
       // اسم الخطأ وحده: رسائل الأخطاء قد تحمل قيمًا
       say({ msg: "media feed cycle failed", error: err?.name ?? "Error" });
