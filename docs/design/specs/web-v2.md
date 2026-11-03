@@ -163,6 +163,11 @@
 
 **النافذة** (760 عرضًا على سطح المكتب، وورقة من أسفل الشاشة على الهاتف). حقولها هي `MaterialRenderRequest`:
 
+- **القالب (`template`، ADR 0110 فوق عقد 0109):** بطاقتان أول الحقول، «مواد متداولة» و«الشاهد»، لكلٍّ علامة مصغّرة وسطر يصفها.
+  - تُفتح النافذة على «مواد متداولة» كما كانت، و«طلب جديد» على قالب النسخة الفاشلة. والطلب يحمل الاختيار صريحًا دائمًا.
+  - المعاينة تتبع القالب: «الشاهد» بأربع زوايا، والوسم كبسولة ذهبية في جهة البداية، والعنوان بلا ألواح وسطره الأول فيروزي. ولا شريط حساب ولا تاريخ، فالنسخة لا ترسمهما.
+  - مع «الشاهد» سطر تحت تلميح العنوان: صندوقه أضيق، فالسطر العريض قد لا يتّسع (`title_overflow`).
+  - كل ما سواه (الأسطر والمقاس والمكان والوسم والشروط) واحد للقالبين.
 - **العنوان على الفيديو (`title_lines`):**
   - من سطر إلى ثلاثة، حتى 22 حرفًا للسطر، ولكل سطر عدّاد `12/22`.
   - العدّاد يعدّ نقاط الترميز (`Array.from(line).length`) كما يعدّها الخادم، لا وحدات UTF-16.
@@ -187,7 +192,8 @@
 
 **الحالات في بطاقة «الملفات»:**
 
-- النسخ لا تأتي من `Material.files`، بل من `GET /materials/{id}/renders`. وتُعرض تحت الأصل والنسخة الخفيفة في مجموعة «نسخ بقالب المتداول»، بوسم «داخلية» موروث من المادة.
+- النسخ لا تأتي من `Material.files`، بل من `GET /materials/{id}/renders`. وتُعرض تحت الأصل والنسخة الخفيفة في مجموعة «نسخ بقوالب المتداول»، بوسم «داخلية» موروث من المادة.
+- **بقالبها (ADR 0110):** داخل المجموعة عنوان لكل قالب فيه نسخة («قالب «مواد متداولة»» ثم «قالب «الشاهد»»)، والأحدث أولًا تحته. واسم زرّ التنزيل المقروء يذكر القالب والمقاس، فلا تشتبه نسختان عموديتان.
 - الحالات بقرار المنسّق: `requested` ← `rendering` ← `ready` أو `failed`.
 - كل نسخة صفّ فيه شكل مقاسها، وكل حالة كلمة وأيقونة ولون معًا.
 
@@ -236,12 +242,19 @@
 | `derivative.template.title` | تجهيز نسخة بقالب المتداول | Prepare a circulated-template copy |
 | `derivative.template.subtitle` | {title} · نسخة جديدة، والأصل كما هو | {title} · a new copy; the original stays as is |
 | `derivative.template.subtitleShort` | {title} · الأصل كما هو | {title} · original untouched |
+| `derivative.template.templateLegend` | القالب | Template |
+| `derivative.template.templateHint` | قالبان للمواد المتداولة بالحقول نفسها والشروط نفسها. «الشاهد» لا يكتب تاريخًا ولا اسم حساب. | Two templates for circulated footage, with the same fields and conditions. Witness writes no date and no account name. |
+| `derivative.templates.circulated` | مواد متداولة | Circulated |
+| `derivative.templates.circulatedCaption` | الشعار والعنوان على ألواح | Logo and title on panels |
+| `derivative.templates.witness` | الشاهد | Witness |
+| `derivative.templates.witnessCaption` | زوايا مضيئة حول المشهد | Glowing corners around the scene |
 | `derivative.template.close` | إغلاق | Close |
 | `derivative.template.preview` | معاينة | Preview |
 | `derivative.template.previewCaption` | صورة تجريبية. التحريك كما في القالب. | Sample image. Motion as in the template. |
 | `derivative.template.previewCaptionPhone` | تتبدّل مع المقاس والمفاتيح. صورة تجريبية، والتحريك كما في القالب. | Changes with the ratio and switches. Sample image; motion as in the template. |
 | `derivative.template.titleLines` | العنوان على الفيديو | Title on the video |
 | `derivative.template.titleHint` | سطر إلى ثلاثة، حتى 22 حرفًا للسطر. اقسم على معنى الجملة. | One to three lines, up to 22 characters each, split by meaning. |
+| `derivative.template.witnessTitleHint` | صندوق العنوان في «الشاهد» أضيق، فالسطر العريض قد لا يتّسع فيه. | The Witness title box is narrower, so a wide line may not fit. |
 | `derivative.template.lineCounter` | {count}/22 | {count}/22 |
 | `derivative.template.lineNumber` | السطر {n} | Line {n} |
 | `derivative.template.line3Placeholder` | سطر ثالث اختياري | Optional third line |
@@ -272,7 +285,8 @@
 | `derivative.files.originalSub` | محفوظ كما وصل، وبصمته متحقَّقة | Kept as received, fingerprint verified |
 | `derivative.files.proxy` | النسخة الخفيفة · MP4 | Light copy · MP4 |
 | `derivative.files.proxySub` | للمعاينة في المتصفح | For browser preview |
-| `derivative.group.title` | نسخ بقالب المتداول | Circulated-template copies |
+| `derivative.group.title` | نسخ بقوالب المتداول | Circulated-template copies |
+| `derivative.group.template` | قالب «{template}» | {template} template |
 | `derivative.group.internalBadge` | داخلية | Internal |
 | `derivative.group.inherit` | ترث حساسية المادة، فتبقى داخلية حتى تمرّ بالبوابات. | They inherit the material’s sensitivity and stay internal until they pass the gates. |
 | `derivative.row.aspect.vertical` | عمودي · 9:16 | Vertical · 9:16 |
@@ -288,7 +302,7 @@
 | `derivative.row.internalUse` | للاستعمال الداخلي؛ النشر يمر ببوابة النشر. | For internal use; publishing goes through the publishing gate. |
 | `derivative.row.download` | تنزيل | Download |
 | `derivative.row.renderingAria` | قيد التجهيز | Rendering |
-| `derivative.row.downloadAria` | تنزيل نسخة {aspect} | Download the {aspect} copy |
+| `derivative.row.downloadAria` | تنزيل نسخة «{template}» {aspect} | Download the {template} {aspect} copy |
 | `derivative.newRequest` | طلب جديد | New request |
 | `derivative.failure.title_overflow` | سطر في العنوان أطول من أن يتّسع في القالب. اختصره واطلب نسخة جديدة. | A title line is too wide for the template. Shorten it and request a new copy. |
 | `derivative.failure.source_unavailable` | تعذّر الوصول إلى الأصل. أعد الطلب بعد قليل. | The original could not be reached. Request again shortly. |

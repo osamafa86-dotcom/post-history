@@ -1,12 +1,14 @@
-import type { Material, MaterialRender, MaterialRenderRequest, RenderAspect, RenderLabel, RoleName } from "./types";
+import type { Material, MaterialRender, MaterialRenderRequest, RenderAspect, RenderLabel, RenderTemplate, RoleName } from "./types";
 import { sensitivityState } from "./sensitivity";
 import { dateTime, uuid } from "./query";
 
 /**
- * نسخة المادة على قالب «مواد متداولة» (ADR 0091، web-v2.md «نسخة بقالب المتداول»): ما يقرّره الويب قبل الطلب وبعده.
- * القيم هنا من العقد، واختبار التطابق (`contract-drift.test.ts`) يقارنها به.
+ * نسخة المادة على قالب «مواد متداولة» أو «الشاهد» (ADR 0091 و0109، web-v2.md «نسخة بقالب المتداول»؛ الويب ADR 0110): ما يقرّره
+ * الويب قبل الطلب وبعده. القيم هنا من العقد، واختبار التطابق (`contract-drift.test.ts`) يقارنها به.
  */
 export const renderRoles = ["supervisor", "producer", "editor_in_chief"] as const satisfies readonly RoleName[];
+/** القالبان بترتيب العرض: الأول ما يُفتح عليه الحوار، والطلب يحمل الاختيار صريحًا دائمًا (لا افتراض في العقد). */
+export const renderTemplates = ["circulated", "witness"] as const satisfies readonly RenderTemplate[];
 export const renderAspects = ["vertical", "horizontal", "square"] as const satisfies readonly RenderAspect[];
 export const renderLabels = ["circulated_footage", "none"] as const satisfies readonly RenderLabel[];
 export const renderStates = ["requested", "rendering", "ready", "failed"] as const satisfies readonly MaterialRender["state"][];
@@ -66,12 +68,15 @@ export function isSensitive(material: Pick<Material, "sensitivity">) {
 export const locationPreview = (material: Pick<Material, "city" | "governorate">) =>
   material.city === material.governorate ? material.city : `${material.city}، ${material.governorate}`;
 
-export type RenderDraft = { aspect: RenderAspect; lines: string[]; showLocation: boolean; label: RenderLabel | null };
+export type RenderDraft = { template: RenderTemplate; aspect: RenderAspect; lines: string[]; showLocation: boolean; label: RenderLabel | null };
 const pad = (lines: string[]) => [...lines, "", "", ""].slice(0, titleLinesMax);
-/** الحوار ابتداءً، أو مملوءًا بمعاملات النسخة الفاشلة («طلب جديد»). الوسم بلا قيمة افتراضية في الطلب الجديد. */
-export function initialDraft(material: Pick<Material, "title" | "sensitivity">, from?: Pick<MaterialRender, "aspect" | "title_lines" | "show_location" | "label">): RenderDraft {
-  if (from) return { aspect: from.aspect, lines: pad(from.title_lines), showLocation: from.show_location, label: from.label };
-  return { aspect: "vertical", lines: pad(splitTitle(material.title)), showLocation: !isSensitive(material), label: null };
+/**
+ * الحوار ابتداءً، أو مملوءًا بمعاملات النسخة الفاشلة («طلب جديد») ومنها قالبها. الوسم بلا قيمة افتراضية في الطلب الجديد،
+ * والقالب على «مواد متداولة» كما كان قبل «الشاهد» (لا يضلّل أيّهما، فالاختيار ظاهر يغيّره الطاقم).
+ */
+export function initialDraft(material: Pick<Material, "title" | "sensitivity">, from?: Pick<MaterialRender, "template" | "aspect" | "title_lines" | "show_location" | "label">): RenderDraft {
+  if (from) return { template: from.template, aspect: from.aspect, lines: pad(from.title_lines), showLocation: from.show_location, label: from.label };
+  return { template: renderTemplates[0], aspect: "vertical", lines: pad(splitTitle(material.title)), showLocation: !isSensitive(material), label: null };
 }
 export const lineOver = (line: string) => codePoints(line) > titleLineMax;
 /** ما يمنع الإرسال: سطر فوق 22 أو مخالف، أو لا سطر، أو وسم لم يُختر. */
@@ -82,16 +87,16 @@ export function canSubmit(draft: RenderDraft) {
 /** جسم الطلب كما في `MaterialRenderRequest` وحده: لا نص مكان ولا مفتاح غيره (المخطط مغلق). */
 export function renderRequest(draft: RenderDraft): MaterialRenderRequest | null {
   if (!canSubmit(draft) || draft.label === null) return null;
-  return { template: "circulated", aspect: draft.aspect, title_lines: draft.lines.map(line => line.trim()).filter(Boolean), show_location: draft.showLocation, label: draft.label };
+  return { template: draft.template, aspect: draft.aspect, title_lines: draft.lines.map(line => line.trim()).filter(Boolean), show_location: draft.showLocation, label: draft.label };
 }
 
 /** التحقق في الـBFF قبل الخادم: المفاتيح الخمسة وحدها، والقيم من العقد، ويُعاد بناء الجسم منها. */
 export function renderInput(body: Record<string, unknown>): MaterialRenderRequest | null {
   const keys = Object.keys(body).sort().join(","), lines = body.title_lines;
-  if (keys !== "aspect,label,show_location,template,title_lines" || body.template !== "circulated" || typeof body.show_location !== "boolean") return null;
+  if (keys !== "aspect,label,show_location,template,title_lines" || !(renderTemplates as readonly unknown[]).includes(body.template) || typeof body.show_location !== "boolean") return null;
   if (!(renderAspects as readonly unknown[]).includes(body.aspect) || !(renderLabels as readonly unknown[]).includes(body.label)) return null;
   if (!Array.isArray(lines) || lines.length < 1 || lines.length > titleLinesMax || !lines.every(line => typeof line === "string" && validLine(line))) return null;
-  return { template: "circulated", aspect: body.aspect as RenderAspect, title_lines: lines as string[], show_location: body.show_location, label: body.label as RenderLabel };
+  return { template: body.template as RenderTemplate, aspect: body.aspect as RenderAspect, title_lines: lines as string[], show_location: body.show_location, label: body.label as RenderLabel };
 }
 
 const time = (value: unknown) => typeof value === "string" && dateTime.test(value) && Number.isFinite(Date.parse(value));
@@ -101,11 +106,11 @@ export function safeRender(item: MaterialRender): MaterialRender | null {
   const fileId = optional<string>(item.file_id, v => typeof v === "string" && uuid.test(v)), reason = optional<MaterialRender["failure_reason"]>(item.failure_reason, v => (renderFailures as readonly unknown[]).includes(v));
   const location = optional<string>(item.location_text, v => typeof v === "string" && codePoints(v) <= locationMax);
   const started = optional<string>(item.started_at, time), completed = optional<string>(item.completed_at, time);
-  if (![item.id, item.material_id, item.source_file_id, item.requested_by].every(v => typeof v === "string" && uuid.test(v)) || !Number.isSafeInteger(item.material_version) || item.template !== "circulated"
+  if (![item.id, item.material_id, item.source_file_id, item.requested_by].every(v => typeof v === "string" && uuid.test(v)) || !Number.isSafeInteger(item.material_version) || !(renderTemplates as readonly string[]).includes(item.template)
     || !(renderAspects as readonly string[]).includes(item.aspect) || !(renderLabels as readonly string[]).includes(item.label) || !(renderStates as readonly string[]).includes(item.state)
     || typeof item.show_location !== "boolean" || !Array.isArray(item.title_lines) || item.title_lines.length < 1 || item.title_lines.length > titleLinesMax || !item.title_lines.every(line => typeof line === "string" && validLine(line))
     || !time(item.requested_at) || [fileId, reason, location, started, completed].includes(undefined)) return null;
-  return { id: item.id, material_id: item.material_id, material_version: item.material_version, source_file_id: item.source_file_id, template: "circulated", aspect: item.aspect,
+  return { id: item.id, material_id: item.material_id, material_version: item.material_version, source_file_id: item.source_file_id, template: item.template, aspect: item.aspect,
     title_lines: [...item.title_lines], show_location: item.show_location, location_text: location ?? null, label: item.label, state: item.state, file_id: fileId ?? null,
     failure_reason: reason ?? null, requested_by: item.requested_by, requested_at: item.requested_at, started_at: started ?? null, completed_at: completed ?? null };
 }
@@ -119,6 +124,9 @@ export function renderDetails(value: unknown): { failed: RenderCondition[]; max_
 }
 
 export const unfinished = <T extends Pick<MaterialRender, "state">>(items: readonly T[]) => items.filter(item => item.state === "requested" || item.state === "rendering");
+/** النسخ بقالبها لبطاقة الملفات: مجموعة لكل قالب فيه نسخة، بترتيب القالبين، والأحدث أولًا داخلها كما جاءت. */
+export const byTemplate = <T extends Pick<MaterialRender, "template">>(items: readonly T[]) =>
+  renderTemplates.map(template => ({ template, items: items.filter(item => item.template === template) })).filter(group => group.items.length > 0);
 /** هل يُعاد الطلب؟ ما دامت نسخة في الطابور أو قيد التجهيز. */
 export const shouldPoll = (items: readonly Pick<MaterialRender, "state">[]) => unfinished(items).length > 0;
 

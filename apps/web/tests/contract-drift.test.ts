@@ -159,6 +159,8 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
     expect(render.titleLineMax).toBe(at("components", "schemas", "RenderTitleLine", "maxLength")); expect(render.titleLinesMax).toBe(at("components", "schemas", "RenderTitleLines", "maxItems"));
     expect(render.locationMax).toBe(at("components", "schemas", "MaterialRender", "properties", "location_text", "maxLength")); expect(render.titleLinePattern).toBe(at("components", "schemas", "RenderTitleLine", "pattern"));
     expect(at("components", "schemas", "MaterialRenderRequest", "required")).toEqual(["template", "aspect", "title_lines", "show_location", "label"]);
+    // القالبان (ADR 0109) في الطلب والنسخة كما في العقد
+    for (const schema of ["MaterialRenderRequest", "MaterialRender"]) expect([...render.renderTemplates]).toEqual(at("components", "schemas", schema, "properties", "template", "enum"));
   });
   it("keeps assignment roles, states, limits and the note rule aligned with ADR 0096", () => {
     expect([...assignment.assignRoles]).toEqual(at("paths", "/materials/{id}/assignments", "post", "x-roles")); expect([...assignment.assignRoles]).toEqual(at("paths", "/assignment-candidates", "get", "x-roles"));
