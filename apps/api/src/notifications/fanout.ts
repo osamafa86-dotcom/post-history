@@ -1,7 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { Tx } from '../database/database.module';
 import { materialAssignments, materialRenders, materials, notificationRuleEscalations, notifications, offices, userRoles, users } from '../database/schema/schema';
-import { highestRank, type RoleName } from '../identity/principal';
+import { isReporterAccount } from '../identity/principal';
 import type { OutboxRow } from '../outbox/outbox.dispatcher';
 import { enqueuePush } from '../push/push-delivery.worker';
 import { materialRef, notificationTitle, type Locale } from './messages';
@@ -174,23 +174,22 @@ async function audience(
 
 /**
  * طلب استعادة: مهمة لمن يملك اعتماده بمعرّف الطلب، وتنبيه لصاحب الحساب على أجهزته القائمة. بلا مادة.
- * من يملك الاعتماد يتبع قاعدة التسلسل (identity/principal.ts): مشرفو نطاق صاحب الحساب، إلا إن كان دوره المشرف أو
- * أعلى فمديرو النظام وحدهم (غير صاحب الحساب نفسه).
+ * من يملك الاعتماد (ADR 0113): مشرفو نطاق صاحب الحساب إن كان حساب مراسل وحده، وإلا (مشترٍ، أو طاقم بأي دور غير المراسل) مديرو
+ * النظام وحدهم (غير صاحب الحساب نفسه)، كما يقرر `approveRecovery`.
  */
 async function recoveryRequested(tx: Tx, event: OutboxRow, payload: Record<string, unknown>, opts: FanOutOptions): Promise<number> {
   const requestId = typeof payload.recovery_request_id === 'string' ? payload.recovery_request_id : undefined;
   if (!requestId) return 0;
   const [owner] = await tx
-    .select({ id: users.id, officeId: users.officeId, governorate: offices.governorate })
+    .select({ id: users.id, officeId: users.officeId, organizationId: users.organizationId, governorate: offices.governorate })
     .from(users)
     .leftJoin(offices, eq(offices.id, users.officeId))
     .where(eq(users.id, event.aggregateId));
   if (!owner) return 0;
   const ownerRoles = await tx.select({ role: userRoles.role }).from(userRoles).where(eq(userRoles.userId, owner.id));
-  const approvers =
-    highestRank(ownerRoles.map((r) => r.role as RoleName)) >= highestRank(['supervisor'])
-      ? await systemAdmins(tx)
-      : await audience(tx, 'supervisors', { reporterId: owner.id, officeId: owner.officeId, governorate: owner.governorate });
+  const approvers = isReporterAccount(ownerRoles.map((r) => r.role), owner.organizationId)
+    ? await audience(tx, 'supervisors', { reporterId: owner.id, officeId: owner.officeId, governorate: owner.governorate })
+    : await systemAdmins(tx);
   const rows = [
     ...approvers
       .filter((id) => id !== owner.id)

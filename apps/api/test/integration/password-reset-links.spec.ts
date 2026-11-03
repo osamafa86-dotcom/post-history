@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { base32Decode, totp } from '../../src/common/crypto';
 import { schemaValidator } from '../../src/common/contract';
-import { createHarness, drainOutbox, type Harness, loginAs, seedUser } from './harness';
+import { createHarness, drainOutbox, freshTotp, type Harness, loginAs, seedUser } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
 
@@ -33,7 +33,7 @@ describe('admin-issued password reset links (POST /users/{id}/password-reset-lin
     await h.pool.query(`UPDATE users SET office_id = $2 WHERE id = $1`, [user.id, office]);
     const session = await http()
       .post('/v1/auth/login')
-      .send({ email: user.email, password: user.password, totp_code: totp(user.totpSecret!, Date.now()) })
+      .send({ email: user.email, password: user.password, totp_code: freshTotp(user.id, user.totpSecret!) })
       .expect(200);
     return { ...user, token: session.body.access_token as string };
   }
@@ -67,7 +67,7 @@ describe('admin-issued password reset links (POST /users/{id}/password-reset-lin
     const full = await http()
       .post('/v1/auth/totp/confirm')
       .set(bearer(done.body.session.access_token))
-      .send({ totp_code: totp(secret, Date.now()) })
+      .send({ totp_code: freshTotp(user.id, secret) })
       .expect(200);
     await http().get('/v1/auth/sessions').set(bearer(full.body.access_token)).expect(200);
 

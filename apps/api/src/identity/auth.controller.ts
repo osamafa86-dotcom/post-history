@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Put, Req } from '@nestjs/common';
 import type { BlockList } from 'node:net';
 import type { Request } from 'express';
-import { clientAddress } from '../common/client-address';
+import { clientBucket } from '../common/client-address';
 import { validateBody } from '../common/contract';
 import { APP_CONFIG, type AppConfig, blockListOf } from '../config/config';
 import type { components } from '../generated/api';
@@ -32,7 +32,7 @@ export class AuthController {
   @HttpCode(200)
   login(@Body() body: unknown, @Req() req: Request): Promise<Session> {
     const input = validateBody<components['schemas']['LoginRequest']>('/auth/login', 'post', body);
-    return this.auth.login(input, clientAddress(req, this.bff));
+    return this.auth.login(input, clientBucket(req, this.bff));
   }
 
   @Public()
@@ -75,7 +75,7 @@ export class AuthController {
   @HttpCode(202)
   async startRecovery(@Body() body: unknown, @Req() req: Request): Promise<components['schemas']['RecoveryAccepted']> {
     const input = validateBody<{ email: string; backup_code: string }>('/auth/recovery', 'post', body);
-    await this.account.startRecovery(input.email, input.backup_code, clientAddress(req, this.bff));
+    await this.account.startRecovery(input.email, input.backup_code, clientBucket(req, this.bff));
     return { accepted: true };
   }
 
@@ -92,7 +92,7 @@ export class AuthController {
   @HttpCode(200)
   completeRecovery(@Body() body: unknown, @Req() req: Request): Promise<components['schemas']['RecoveryCompletion']> {
     const input = validateBody<{ reset_token: string; new_password: string }>('/auth/recovery/complete', 'post', body);
-    return this.auth.completeRecovery(input.reset_token, input.new_password, clientAddress(req, this.bff));
+    return this.auth.completeRecovery(input.reset_token, input.new_password, clientBucket(req, this.bff));
   }
 
   @Post('totp/confirm')
@@ -111,11 +111,14 @@ export class AuthController {
     return this.account.recoveryCodeStatus(req.auth!.userId);
   }
 
+  // إعادة التحقق في الجسم (ADR 0113): الجسم الغائب أو الفارغ يصل إلى إعادة التحقق فيرد 401، والمشوّه 422
   @Post('recovery-codes')
   @HttpCode(200)
   @Roles('authenticated')
-  generateRecoveryCodes(@Req() req: Request): Promise<components['schemas']['RecoveryCodes']> {
-    return this.account.generateRecoveryCodes(req.auth!.userId);
+  generateRecoveryCodes(@Body() body: unknown, @Req() req: Request): Promise<components['schemas']['RecoveryCodes']> {
+    const empty = body === undefined || body === null || (typeof body === 'object' && !Array.isArray(body) && Object.keys(body).length === 0);
+    const input = empty ? undefined : validateBody<components['schemas']['PasskeyStepUp']>('/auth/recovery-codes', 'post', body);
+    return this.account.generateRecoveryCodes(req.auth!.userId, input);
   }
 }
 

@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Req } from '@nestjs/common';
 import type { BlockList } from 'node:net';
 import type { Request } from 'express';
-import { clientAddress } from '../common/client-address';
+import { clientBucket } from '../common/client-address';
 import { validateBody } from '../common/contract';
 import { APP_CONFIG, type AppConfig, blockListOf } from '../config/config';
 import type { components } from '../generated/api';
@@ -35,7 +35,7 @@ export class PasskeyAuthController {
   @Post('login-options')
   @HttpCode(200)
   loginOptions(@Req() req: Request): Promise<PasskeyChallenge> {
-    return this.passkeys.loginOptions(clientAddress(req, this.bff));
+    return this.passkeys.loginOptions(clientBucket(req, this.bff));
   }
 
   @Public()
@@ -43,7 +43,7 @@ export class PasskeyAuthController {
   @HttpCode(200)
   login(@Body() body: unknown, @Req() req: Request): Promise<components['schemas']['Session']> {
     const input = validateBody<components['schemas']['PasskeyAssertion']>('/auth/passkeys/login', 'post', body);
-    return this.passkeys.login(input, clientAddress(req, this.bff));
+    return this.passkeys.login(input, clientBucket(req, this.bff));
   }
 }
 

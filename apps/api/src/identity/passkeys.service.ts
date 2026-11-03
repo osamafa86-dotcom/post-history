@@ -1,5 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { verify as argon2Verify } from '@node-rs/argon2';
 import {
   type AuthenticationResponseJSON,
   generateAuthenticationOptions,
@@ -10,8 +9,7 @@ import {
 } from '@simplewebauthn/server';
 import { and, count, desc, eq, isNull, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
-import { APP_CONFIG, type AppConfig, fieldKeyring } from '../config/config';
-import { type FieldKeyring, verifyTotp } from '../common/crypto';
+import { APP_CONFIG, type AppConfig } from '../config/config';
 import { pgError } from '../common/db-errors';
 import { ApiError } from '../common/errors';
 import { DB, type Database } from '../database/database.module';
@@ -22,6 +20,7 @@ import { writeOutboxEvent } from '../outbox/outbox';
 import type { RateLimiter } from './rate-limiter';
 import { RateLimitsService } from './rate-limits.service';
 import { AuthService } from './auth.service';
+import { CredentialAttempts } from './credential-attempts';
 import { audit } from './recovery-approval';
 import { SessionService } from './session.service';
 import { matchesChallenge, WebAuthnChallenges } from './webauthn-challenges';
@@ -54,8 +53,6 @@ export function userHandle(userId: string): Buffer {
 @Injectable()
 export class PasskeysService {
   private readonly challenges: WebAuthnChallenges;
-  private readonly fieldKeys: FieldKeyring;
-  private readonly stepUpByUser: RateLimiter;
   private readonly optionsByUser: RateLimiter;
   private readonly loginOptionsByIp: RateLimiter;
   private readonly loginByIp: RateLimiter;
@@ -66,10 +63,9 @@ export class PasskeysService {
     private readonly sessions: SessionService,
     private readonly auth: AuthService,
     limits: RateLimitsService,
+    private readonly attempts: CredentialAttempts,
   ) {
     this.challenges = new WebAuthnChallenges(config.PASSKEY_CHALLENGE_TTL_SECONDS);
-    this.fieldKeys = fieldKeyring(config);
-    this.stepUpByUser = limits.create('passkey-step-up-user', config.LOGIN_RATE_LIMIT_MAX);
     this.optionsByUser = limits.create('passkey-options-user', config.PASSKEY_RATE_LIMIT_MAX);
     this.loginOptionsByIp = limits.create('passkey-login-options-ip', config.LOGIN_RATE_LIMIT_IP_MAX);
     this.loginByIp = limits.create('passkey-login-ip', config.LOGIN_RATE_LIMIT_IP_MAX);
@@ -77,27 +73,15 @@ export class PasskeysService {
 
   // ---------- التسجيل ----------
 
-  /** إعادة التحقق (كلمة المرور ثم TOTP إن فُعّل) ثم خيارات الإنشاء بتحدٍّ لهذا المستخدم. */
+  /**
+   * إعادة التحقق (كلمة المرور ثم TOTP إن فُعّل، بعدّادي الفشل لكل حساب نفسيهما في الدخول ورمز يحجز خطوته، ADR 0113) ثم خيارات
+   * الإنشاء بتحدٍّ لهذا المستخدم.
+   */
   async registrationOptions(userId: string, body: components['schemas']['PasskeyStepUp']): Promise<PasskeyChallenge> {
     const rpID = this.rpId();
-    const wait = Math.max(await this.stepUpByUser.retryAfter(userId), await this.optionsByUser.retryAfter(userId));
+    const wait = await this.optionsByUser.retryAfter(userId);
     if (wait > 0) throw rateLimited(wait);
-
-    const [user] = await this.db
-      .select({ email: users.email, passwordHash: users.passwordHash, totpEnabled: users.totpEnabled, totpSecretEnc: users.totpSecretEnc })
-      .from(users)
-      .where(eq(users.id, userId));
-    if (!user) throw ApiError.unauthorized();
-    const fail = async (): Promise<never> => {
-      await this.stepUpByUser.record(userId);
-      throw ApiError.unauthorized();
-    };
-    if (!(await argon2Verify(user.passwordHash, body.password).catch(() => false))) await fail();
-    if (user.totpEnabled) {
-      if (!body.totp_code) throw new ApiError(401, 'totp_required', 'TOTP code required.');
-      if (!verifyTotp(this.fieldKeys.decrypt(user.totpSecretEnc!), body.totp_code)) await fail();
-    }
-    await this.stepUpByUser.reset(userId);
+    const user = await this.attempts.stepUp(userId, body);
     await this.optionsByUser.record(userId);
 
     const active = await this.db

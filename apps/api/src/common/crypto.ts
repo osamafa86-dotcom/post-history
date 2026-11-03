@@ -117,9 +117,18 @@ export function totp(secret: Buffer, timeMs: number, step = 30, digits = 6): str
 
 /** يقبل الرمز في الخطوة الحالية أو المجاورة لها (انحراف ساعة الهاتف). */
 export function verifyTotp(secret: Buffer, code: string, nowMs = Date.now()): boolean {
-  let ok = false;
+  return totpStep(secret, code, nowMs) !== null;
+}
+
+/**
+ * رقم الخطوة الزمنية (عدّاد RFC 6238) التي يطابقها الرمز، في الخطوة الحالية أو المجاورة لها، وإلا null. المقارنات الثلاث كلها
+ * بزمن ثابت. يحجز المستدعي (المستخدم، الخطوة) قبل قبول الرمز فلا يُعاد في نافذته (ADR 0113).
+ */
+export function totpStep(secret: Buffer, code: string, nowMs = Date.now()): number | null {
+  let step: number | null = null;
   for (const drift of [-1, 0, 1]) {
-    if (constantTimeEqual(totp(secret, nowMs + drift * 30_000), code)) ok = true;
+    const at = nowMs + drift * 30_000;
+    if (constantTimeEqual(totp(secret, at), code)) step ??= Math.floor(at / 30_000);
   }
-  return ok;
+  return step;
 }

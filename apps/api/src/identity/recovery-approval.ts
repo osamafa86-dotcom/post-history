@@ -1,7 +1,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Executor, Tx } from '../database/database.module';
 import { randomToken, sha256 } from '../common/crypto';
-import { auditLog, passkeys, recoveryRequests, users } from '../database/schema/schema';
+import { auditLog, passkeys, recoveryCodes, recoveryRequests, users } from '../database/schema/schema';
 import { writeOutboxEvent } from '../outbox/outbox';
 import { revokeAllAccess } from './session.service';
 
@@ -62,7 +62,8 @@ export async function recordRecoveryApproval(
 
 /**
  * أثر إعادة التعيين على الحساب داخل المعاملة (اعتماد الاستعادة ورابط مدير النظام، ADR 0107): إبطال كل وصوله (الجلسات ورموز الرفع
- * وأجهزة الإشعار ومفاتيح الشهادة)، وكل مفاتيح مروره (فالهاتف المفقود أو المفتاح الذي أضافه غيره لا يدخل بعدها)، و«إعادة تعيين
+ * وأجهزة الإشعار ومفاتيح الشهادة)، وكل مفاتيح مروره (فالهاتف المفقود أو المفتاح الذي أضافه غيره لا يدخل بعدها)، وكل رموزه
+ * الاحتياطية (رمز في يد من استولى على الحساب لا يفتح استعادة بعدها، ADR 0113؛ صاحبه يولّد غيرها بعد الإكمال)، و«إعادة تعيين
  * إلزامية» بلا سر TOTP معلّق من دورة سابقة. يعيد عدد مفاتيح المرور المبطَلة.
  */
 export async function resetCredentials(tx: Tx, userId: string): Promise<number> {
@@ -74,6 +75,7 @@ export async function resetCredentials(tx: Tx, userId: string): Promise<number> 
     .set({ revokedAt: sql`now()`, revokedReason: 'credential_reset' })
     .where(and(eq(passkeys.userId, userId), isNull(passkeys.revokedAt)))
     .returning({ id: passkeys.id });
+  await tx.delete(recoveryCodes).where(eq(recoveryCodes.userId, userId));
   return revoked.length;
 }
 

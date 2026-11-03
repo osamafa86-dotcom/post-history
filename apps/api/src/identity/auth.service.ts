@@ -3,11 +3,12 @@ import { hash as argon2Hash, verify as argon2Verify } from '@node-rs/argon2';
 import { randomBytes } from 'node:crypto';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { APP_CONFIG, type AppConfig, fieldKeyring } from '../config/config';
-import { base32Encode, type FieldKeyring, randomToken, sha256, verifyTotp } from '../common/crypto';
+import { base32Encode, type FieldKeyring, randomToken, sha256 } from '../common/crypto';
 import { ApiError } from '../common/errors';
 import { DB, type Database } from '../database/database.module';
 import { recoveryRequests, userPermissions, userRoles, users } from '../database/schema/schema';
 import type { components } from '../generated/api';
+import { CredentialAttempts } from './credential-attempts';
 import type { RateLimiter } from './rate-limiter';
 import { RateLimitsService } from './rate-limits.service';
 import { writeOutboxEvent } from '../outbox/outbox';
@@ -41,6 +42,7 @@ export class AuthService {
     @Inject(APP_CONFIG) config: AppConfig,
     private readonly sessions: SessionService,
     limits: RateLimitsService,
+    private readonly attempts: CredentialAttempts,
   ) {
     this.byIp = limits.create('login-ip', config.LOGIN_RATE_LIMIT_IP_MAX);
     this.byEmailIp = limits.create('login-email-ip', config.LOGIN_RATE_LIMIT_MAX);
@@ -52,14 +54,18 @@ export class AuthService {
     this.dummyHash = argon2Hash(randomToken());
   }
 
+  /**
+   * `ip` سلة العنوان (rateLimitBucket: IPv6 على /64). فوق حدَّي العنوان و(البريد، العنوان)، عدّادا فشل لكل حساب مستقلان عن العنوان
+   * لكلمة المرور ولرمز TOTP بتأخير متضاعف (ADR 0113)، يُفحصان قبل أي تحقق؛ والبريد غير الموجود يُعدّ ويُؤخَّر كالموجود، فلا يكشف
+   * 429 وجود حساب. رمز TOTP المقبول يحجز خطوته لهذا الحساب قبل قبوله.
+   */
   async login(body: LoginRequest, ip: string): Promise<Session> {
     const email = body.email.trim().toLowerCase();
     const ipKey = ip;
     const pairKey = `${email}|${ip}`;
-    const wait = Math.max(await this.byIp.retryAfter(ipKey), await this.byEmailIp.retryAfter(pairKey));
-    if (wait > 0) {
-      throw new ApiError(429, 'rate_limited', 'Too many attempts.', undefined, { 'Retry-After': String(wait) });
-    }
+    const tooMany = (wait: number) => new ApiError(429, 'rate_limited', 'Too many attempts.', undefined, { 'Retry-After': String(wait) });
+    const byAddress = Math.max(await this.byIp.retryAfter(ipKey), await this.byEmailIp.retryAfter(pairKey));
+    if (byAddress > 0) throw tooMany(byAddress);
 
     const [user] = await this.db
       .select({
@@ -72,24 +78,31 @@ export class AuthService {
       })
       .from(users)
       .where(sql`lower(${users.email}) = ${email}`);
+    const account = this.attempts.accountKey(user?.id, email);
+    const byAccount = await this.attempts.wait(account, user?.id);
+    if (byAccount > 0) throw tooMany(byAccount);
 
-    const fail = async (): Promise<never> => {
-      await Promise.all([this.byIp.record(ipKey), this.byEmailIp.record(pairKey)]);
+    const fail = async (step: 'password' | 'totp'): Promise<never> => {
+      await Promise.all([
+        this.byIp.record(ipKey),
+        this.byEmailIp.record(pairKey),
+        step === 'password' ? this.attempts.passwordFailed(account) : this.attempts.totpFailed(user!.id),
+      ]);
       throw ApiError.unauthorized();
     };
 
     const passwordOk = await argon2Verify(user?.passwordHash ?? (await this.dummyHash), body.password).catch(() => false);
     // في «إعادة التعيين الإلزامية» لا دخول عاديًا: الطريق /auth/recovery/complete ثم /auth/totp/confirm (الرد نفسه
     // فلا يُكشف أن الحساب في استعادة)
-    if (!user || !passwordOk || user.status !== 'active' || user.credentialResetRequired) await fail();
+    if (!user || !passwordOk || user.status !== 'active' || user.credentialResetRequired) await fail('password');
 
     if (user!.totpEnabled) {
       // غياب الرمز بعد كلمة مرور صحيحة ليس تخمينًا فلا يُعد فشلًا
       if (!body.totp_code) throw new ApiError(401, 'totp_required', 'TOTP code required.');
       const secret = this.fieldKeys.decrypt(user!.totpSecretEnc!);
-      if (!verifyTotp(secret, body.totp_code)) await fail();
+      if (!(await this.attempts.acceptTotp(user!.id, secret, body.totp_code))) await fail('totp');
     }
-    await this.byEmailIp.reset(pairKey);
+    await Promise.all([this.byEmailIp.reset(pairKey), this.attempts.succeeded(account, user!.id)]);
 
     return this.db.transaction(async (tx) => {
       const issued = await this.sessions.issue(tx, user!.id);
@@ -216,6 +229,8 @@ export class AuthService {
       return { userId: r.userId, email: r.email, issued };
     });
     if (!done) return rejected();
+    // كلمة مرور جديدة: فشل ما قبلها لا يبقى عائقًا لصاحب الحساب في تأكيد TOTP ولا في الدخول بعده
+    await this.attempts.succeeded(done.userId, done.userId);
     const secretBase32 = base32Encode(secret);
     return {
       session: await this.toSession(done.userId, done.issued),
@@ -231,7 +246,7 @@ export class AuthService {
    * جلسة كاملة جديدة. خارج «إعادة التعيين الإلزامية» 409، والرمز الخاطئ 401 ويُعد في حد المعدل لكل حساب.
    */
   async confirmTotp(userId: string, code: string): Promise<Session> {
-    const wait = await this.confirmByUser.retryAfter(userId);
+    const wait = Math.max(await this.confirmByUser.retryAfter(userId), await this.attempts.totpWait(userId));
     if (wait > 0) throw new ApiError(429, 'rate_limited', 'Too many attempts.', undefined, { 'Retry-After': String(wait) });
     const notPending = () => new ApiError(409, 'recovery_state_conflict', 'No two-factor enrollment is pending for this account.');
 
@@ -240,8 +255,9 @@ export class AuthService {
       .from(users)
       .where(eq(users.id, userId));
     if (!u?.resetRequired || !u.pending) throw notPending();
-    if (!verifyTotp(this.fieldKeys.decrypt(u.pending), code)) {
-      await this.confirmByUser.record(userId);
+    // الرمز يحجز خطوته قبل القبول (ADR 0113)، والخاطئ يُعد في عدّاد TOTP لكل حساب
+    if (!(await this.attempts.acceptTotp(userId, this.fieldKeys.decrypt(u.pending), code))) {
+      await Promise.all([this.confirmByUser.record(userId), this.attempts.totpFailed(userId)]);
       throw ApiError.unauthorized();
     }
     const issued = await this.db.transaction(async (tx) => {
@@ -257,7 +273,7 @@ export class AuthService {
       return this.sessions.issue(tx, userId);
     });
     if (!issued) throw notPending();
-    await this.confirmByUser.reset(userId);
+    await Promise.all([this.confirmByUser.reset(userId), this.attempts.succeeded(userId, userId)]);
     return this.toSession(userId, issued);
   }
 

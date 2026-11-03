@@ -34,3 +34,11 @@ export function rateLimitBucket(address: string): string {
   const groups = bare.includes('::') ? [...left, ...Array(8 - left.length - right.length).fill('0'), ...right] : left;
   return `${groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, '')).join(':')}::/64`;
 }
+
+/**
+ * سلة حد المعدل لعنوان العميل (clientAddress ثم rateLimitBucket): ما تأخذه كل حدود العنوان في الهوية والتراخيص (ADR 0113)،
+ * فلا يدور عميل IPv6 على شبكته /64 ليتجاوز الحد.
+ */
+export function clientBucket(req: Request, bff: BlockList): string {
+  return rateLimitBucket(clientAddress(req, bff));
+}

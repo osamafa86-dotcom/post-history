@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { schemaValidator } from '../../src/common/contract';
-import { createHarness, drainOutbox, type Harness, loginAs } from './harness';
+import { createHarness, drainOutbox, freshTotp, type Harness, loginAs, seedUser } from './harness';
 
 /**
  * الرموز الاحتياطية (ADR 0107): كانت تُستهلك في POST /auth/recovery ولا يصدرها شيء. صاحب الحساب يولّد عشرة تُعرض مرة وتبطل ما قبلها،
@@ -17,7 +17,9 @@ describe('backup codes (GET/POST /auth/recovery-codes)', () => {
   const http = () => request(h.app.getHttpServer());
   const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
   const status = (token: string) => http().get('/v1/auth/recovery-codes').set(bearer(token));
-  const generate = (token: string) => http().post('/v1/auth/recovery-codes').set(bearer(token));
+  // إعادة التحقق في الجسم (ADR 0113): كلمة المرور لحساب بلا TOTP
+  const generate = (u: { token: string; password: string }, body: object = { password: u.password }) =>
+    http().post('/v1/auth/recovery-codes').set(bearer(u.token)).send(body);
   const start = (email: string, backup_code: string) => http().post('/v1/auth/recovery').send({ email, backup_code }).expect(202);
   const requests = async (userId: string) =>
     (await h.pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM recovery_requests WHERE user_id = $1`, [userId])).rows[0]!.n;
@@ -25,7 +27,7 @@ describe('backup codes (GET/POST /auth/recovery-codes)', () => {
   it('generates ten codes shown once, stored as digests, audited and announced by count only', async () => {
     const u = await loginAs(h, [{ role: 'producer' }]);
     expect((await status(u.token).expect(200)).body).toEqual({ remaining: 0, generated_at: null });
-    const res = await generate(u.token).expect(200);
+    const res = await generate(u).expect(200);
     const valid = schemaValidator('RecoveryCodes');
     expect(valid(res.body) ? [] : valid.errors).toEqual([]);
     const codes: string[] = res.body.codes;
@@ -50,7 +52,7 @@ describe('backup codes (GET/POST /auth/recovery-codes)', () => {
 
   it('a code opens a recovery request once; a new set makes the old codes worthless', async () => {
     const u = await loginAs(h, [{ role: 'producer' }]);
-    const first: string[] = (await generate(u.token).expect(200)).body.codes;
+    const first: string[] = (await generate(u).expect(200)).body.codes;
     await start(u.email, first[0]!);
     expect(await requests(u.id)).toBe(1);
     expect((await status(u.token).expect(200)).body.remaining).toBe(9);
@@ -58,7 +60,7 @@ describe('backup codes (GET/POST /auth/recovery-codes)', () => {
     expect(await requests(u.id)).toBe(1);
 
     // الطلب يبطل الجلسات حين يُعتمد لا قبل ذلك، فالجلسة ما زالت تولّد مجموعة جديدة
-    const second: string[] = (await generate(u.token).expect(200)).body.codes;
+    const second: string[] = (await generate(u).expect(200)).body.codes;
     expect((await status(u.token).expect(200)).body.remaining).toBe(10);
     await start(u.email, first[1]!);
     expect(await requests(u.id)).toBe(1);
@@ -68,8 +70,8 @@ describe('backup codes (GET/POST /auth/recovery-codes)', () => {
 
   it('is rate-limited per account and closed to a restricted session', async () => {
     const u = await loginAs(h, [{ role: 'producer' }]);
-    for (let i = 0; i < 5; i++) await generate(u.token).expect(200);
-    const limited = await generate(u.token).expect(429);
+    for (let i = 0; i < 5; i++) await generate(u).expect(200);
+    const limited = await generate(u).expect(429);
     expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
 
     const r = await loginAs(h, [{ role: 'producer' }]);
@@ -80,8 +82,41 @@ describe('backup codes (GET/POST /auth/recovery-codes)', () => {
        VALUES ($1, 'approved', $1, 'test', now(), now() + interval '1 hour', $2, now() + interval '1 hour', now())`,
       [r.id, randomBytes(32)],
     );
-    expect((await generate(r.token).expect(403)).body.code).toBe('credential_reset_required');
+    expect((await generate(r).expect(403)).body.code).toBe('credential_reset_required');
     expect((await status(r.token).expect(403)).body.code).toBe('credential_reset_required');
     await http().post('/v1/auth/recovery-codes').set('Idempotency-Key', randomUUID()).expect(401);
+  });
+
+  // ADR 0113: جلسة مسروقة وحدها لا تأخذ رموزًا ولا تبطل رموز صاحبها
+  it('needs the password again, and TOTP when enabled; a code already used to sign in is refused', async () => {
+    const u = await seedUser(h, { totp: true, roles: [{ role: 'producer' }] });
+    const loginCode = freshTotp(u.id, u.totpSecret!);
+    const token = (await http().post('/v1/auth/login').send({ email: u.email, password: u.password, totp_code: loginCode }).expect(200)).body.access_token;
+    const actor = { token, password: u.password };
+    await http().post('/v1/auth/recovery-codes').set(bearer(token)).expect(401);
+    await generate(actor, {}).expect(401);
+    expect((await generate(actor, { password: 'not the password' }).expect(401)).body.code).toBe('unauthorized');
+    expect((await generate(actor, { password: u.password }).expect(401)).body.code).toBe('totp_required');
+    expect((await generate(actor, { password: u.password, totp_code: 'abc' }).expect(422)).body.code).toBe('validation_failed');
+    // الرمز الذي دخل به لا يُقبل ثانية في خطوته
+    expect((await generate(actor, { password: u.password, totp_code: loginCode }).expect(401)).body.code).toBe('unauthorized');
+    expect(await h.pool.query(`SELECT 1 FROM recovery_codes WHERE user_id = $1`, [u.id]).then((r) => r.rowCount)).toBe(0);
+    const res = await generate(actor, { password: u.password, totp_code: freshTotp(u.id, u.totpSecret!) }).expect(200);
+    expect(res.body.codes).toHaveLength(10);
+  });
+
+  it('a credential reset deletes every backup code of the account', async () => {
+    const u = await loginAs(h, [{ role: 'reporter' }]);
+    const codes: string[] = (await generate(u).expect(200)).body.codes;
+    const admin = await loginAs(h, [{ role: 'system_admin' }]);
+    await http()
+      .post(`/v1/users/${u.id}/password-reset-links`)
+      .set(bearer(admin.token))
+      .set('Idempotency-Key', randomUUID())
+      .send({ reason: 'lost_device' })
+      .expect(201);
+    expect((await h.pool.query(`SELECT count(*)::int AS n FROM recovery_codes WHERE user_id = $1`, [u.id])).rows[0].n).toBe(0);
+    await start(u.email, codes[0]!);
+    expect(await h.pool.query(`SELECT count(*)::int AS n FROM recovery_requests WHERE user_id = $1 AND state = 'pending_approval'`, [u.id]).then((r) => r.rows[0].n)).toBe(0);
   });
 });

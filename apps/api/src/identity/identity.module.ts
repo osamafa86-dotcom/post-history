@@ -6,6 +6,7 @@ import { AccountService } from './account.service';
 import { AuthController, UserPasswordResetLinksController, UserStatusController, UserWorkNameController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
+import { CredentialAttempts } from './credential-attempts';
 import { MyPasskeysController, PasskeyAuthController } from './passkeys.controller';
 import { PasskeysService } from './passkeys.service';
 import { JWT_OPTIONS, SessionService } from './session.service';
@@ -40,6 +41,7 @@ import { UsersDirectoryController, UsersDirectoryService } from './users-directo
     AuthService,
     AccountService,
     PasskeysService,
+    CredentialAttempts,
     RateLimitsService,
     UsersDirectoryService,
     UserRolesService,

@@ -7,7 +7,16 @@ import { LOGGER } from '../common/logger';
 import { REDIS } from '../common/redis.module';
 import { DB, type Database } from '../database/database.module';
 import { auditLog } from '../database/schema/schema';
-import { MemoryRateLimiter, type RateLimiter, rateLimitKeyMaterial, RedisRateLimiter, ResilientRateLimiter } from './rate-limiter';
+import {
+  type BackoffPolicy,
+  MemoryBackoffLimiter,
+  MemoryRateLimiter,
+  type RateLimiter,
+  rateLimitKeyMaterial,
+  RedisBackoffLimiter,
+  RedisRateLimiter,
+  ResilientRateLimiter,
+} from './rate-limiter';
 
 /**
  * يصنع محدّدات المعدل لمسارات الهوية (الدخول، الاستعادة): Redis مشترك بين النسخ، وعند تعطله احتياط في الذاكرة
@@ -37,6 +46,13 @@ export class RateLimitsService {
           this.health,
         )
       : new MemoryRateLimiter(max, windowMs);
+  }
+
+  /** عدّاد فشل بتأخير متضاعف (ADR 0113)، بالاحتياط نفسه في الذاكرة عند تعطل Redis. */
+  backoff(name: string, policy: BackoffPolicy): RateLimiter {
+    return this.redis
+      ? new ResilientRateLimiter(new RedisBackoffLimiter(this.redis, name, policy, this.keyMaterial), new MemoryBackoffLimiter(policy), this.health)
+      : new MemoryBackoffLimiter(policy);
   }
 
   private readonly used = new Map<string, number>();
