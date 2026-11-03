@@ -10,6 +10,45 @@ import Foundation
 open class AdminAPI {
 
     /**
+     هوية المنصة (A6، ADR 0099)
+     
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: PlatformSettings
+     */
+    open class func getPlatformSettings(apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> PlatformSettings {
+        return try await getPlatformSettingsWithRequestBuilder(apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     هوية المنصة (A6، ADR 0099)
+     - GET /platform-settings
+     - اسم المنصة واسم تطبيق المراسل ونص العلامة المائية في المعاينات. `ETag` هو `\"<version>\"`. لا يقرؤها بعد عامل الوسائط ولا التطبيقان: تُحفظ هنا ويأخذها كلٌّ منها في طلبه (ADR 0099).
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - responseHeaders: [ETag(String)]
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<PlatformSettings> 
+     */
+    open class func getPlatformSettingsWithRequestBuilder(apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<PlatformSettings> {
+        let localVariablePath = "/platform-settings"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<PlatformSettings>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      من يرى الاسم الحقيقي للمراسل (ADR 0021)
      
      - parameter apiConfiguration: The configuration for the http request.
@@ -44,6 +83,109 @@ open class AdminAPI {
         let localVariableRequestBuilder: RequestBuilder<ReporterIdentitySetting>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     حسابات الطاقم لمدير النظام (A1، ADR 0099)
+     
+     - parameter role: (query) حسابات تحمل أحد هذه الأدوار (optional)
+     - parameter status: (query)  (optional)
+     - parameter q: (query) جزء من اسم العمل أو البريد، بلا تفريق بين الأحرف الكبيرة والصغيرة (optional)
+     - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
+     - parameter limit: (query) حجم الصفحة (optional, default to 50)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: StaffUserPage
+     */
+    open class func listUsers(role: Set<RoleName>? = nil, status: StaffUserStatus? = nil, q: String? = nil, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> StaffUserPage {
+        return try await listUsersWithRequestBuilder(role: role, status: status, q: q, cursor: cursor, limit: limit, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     حسابات الطاقم لمدير النظام (A1، ADR 0099)
+     - GET /users
+     - حسابات الطاقم وحدها (لا حساب مشترٍ؛ تلك في المؤسسات المشترية)، الأحدث إنشاءً أولًا. كل حساب بما يعرضه A1 وحده: اسم العمل (ADR 0035) والأدوار والمحافظة (محافظة مكتبه) والحالة وآخر نشاط. لا بريد ولا اسم حقيقي ولا جهاز ولا موقع في الرد؛ `q` يطابق جزءًا من اسم العمل أو البريد دون أن يُعاد البريد. `summary` على كل حسابات الطاقم لا على الصفحة ولا المرشّح. الأفعال على الحساب بمعرّفه في النقاط القائمة (`/users/{id}/status` والصلاحيات واسم العمل).
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter role: (query) حسابات تحمل أحد هذه الأدوار (optional)
+     - parameter status: (query)  (optional)
+     - parameter q: (query) جزء من اسم العمل أو البريد، بلا تفريق بين الأحرف الكبيرة والصغيرة (optional)
+     - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
+     - parameter limit: (query) حجم الصفحة (optional, default to 50)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<StaffUserPage> 
+     */
+    open class func listUsersWithRequestBuilder(role: Set<RoleName>? = nil, status: StaffUserStatus? = nil, q: String? = nil, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<StaffUserPage> {
+        let localVariablePath = "/users"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        var localVariableUrlComponents = URLComponents(string: localVariableURLString)
+        let localVariableQueryParameters: [String: (wrappedValue: (any Sendable)?, isExplode: Bool)] = [
+            "role": (wrappedValue: role?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "status": (wrappedValue: status?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "q": (wrappedValue: q?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "cursor": (wrappedValue: cursor?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "limit": (wrappedValue: limit?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+        ]
+        localVariableUrlComponents?.queryItems = APIHelper.mapValuesToQueryItems(localVariableQueryParameters)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<StaffUserPage>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     تغيير هوية المنصة
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter platformSettingsUpdate: (body)  
+     - parameter ifMatch: (header) قيمة &#x60;ETag&#x60; الأخيرة التي رآها العميل (&#x60;\&quot;&lt;row_version&gt;\&quot;&#x60; للمادة، &#x60;\&quot;&lt;version&gt;\&quot;&#x60; للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ &#x60;412 precondition_failed&#x60; دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. (optional)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: PlatformSettings
+     */
+    open class func replacePlatformSettings(idempotencyKey: String, platformSettingsUpdate: PlatformSettingsUpdate, ifMatch: String? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> PlatformSettings {
+        return try await replacePlatformSettingsWithRequestBuilder(idempotencyKey: idempotencyKey, platformSettingsUpdate: platformSettingsUpdate, ifMatch: ifMatch, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     تغيير هوية المنصة
+     - PUT /platform-settings
+     - الحقول الثلاثة معًا. القيم نفسها مرة ثانية لا تكتب شيئًا ولا ترفع الإصدار. التغيير في معاملة واحدة مع حدث `platform_settings.changed` وسطر تدقيق، وكلاهما بالإصدار وأسماء الحقول التي تغيّرت وحدها، بلا نص.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - responseHeaders: [ETag(String)]
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter platformSettingsUpdate: (body)  
+     - parameter ifMatch: (header) قيمة &#x60;ETag&#x60; الأخيرة التي رآها العميل (&#x60;\&quot;&lt;row_version&gt;\&quot;&#x60; للمادة، &#x60;\&quot;&lt;version&gt;\&quot;&#x60; للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ &#x60;412 precondition_failed&#x60; دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. (optional)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<PlatformSettings> 
+     */
+    open class func replacePlatformSettingsWithRequestBuilder(idempotencyKey: String, platformSettingsUpdate: PlatformSettingsUpdate, ifMatch: String? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<PlatformSettings> {
+        let localVariablePath = "/platform-settings"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: platformSettingsUpdate, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+            "If-Match": ifMatch?.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<PlatformSettings>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "PUT", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
 
     /**

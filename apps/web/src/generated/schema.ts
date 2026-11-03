@@ -201,6 +201,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * حسابات الطاقم لمدير النظام (A1، ADR 0099)
+         * @description حسابات الطاقم وحدها (لا حساب مشترٍ؛ تلك في المؤسسات المشترية)، الأحدث إنشاءً أولًا. كل حساب بما يعرضه A1 وحده: اسم العمل (ADR 0035) والأدوار والمحافظة (محافظة مكتبه) والحالة وآخر نشاط. لا بريد ولا اسم حقيقي ولا جهاز ولا موقع في الرد؛ `q` يطابق جزءًا من اسم العمل أو البريد دون أن يُعاد البريد. `summary` على كل حسابات الطاقم لا على الصفحة ولا المرشّح. الأفعال على الحساب بمعرّفه في النقاط القائمة (`/users/{id}/status` والصلاحيات واسم العمل).
+         */
+        get: operations["listUsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/{id}/status": {
         parameters: {
             query?: never;
@@ -1413,6 +1433,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/platform-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * هوية المنصة (A6، ADR 0099)
+         * @description اسم المنصة واسم تطبيق المراسل ونص العلامة المائية في المعاينات. `ETag` هو `"<version>"`. لا يقرؤها بعد عامل الوسائط ولا التطبيقان: تُحفظ هنا ويأخذها كلٌّ منها في طلبه (ADR 0099).
+         */
+        get: operations["getPlatformSettings"];
+        /**
+         * تغيير هوية المنصة
+         * @description الحقول الثلاثة معًا. القيم نفسها مرة ثانية لا تكتب شيئًا ولا ترفع الإصدار. التغيير في معاملة واحدة مع حدث `platform_settings.changed` وسطر تدقيق، وكلاهما بالإصدار وأسماء الحقول التي تغيّرت وحدها، بلا نص.
+         */
+        put: operations["replacePlatformSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/push-devices": {
         parameters: {
             query?: never;
@@ -1982,6 +2026,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/buyer-purchase-totals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * مشتريات كل مؤسسة في سنة (A5، ADR 0099)
+         * @description قراءة مجمّعة للطلبات المدفوعة في السنة (`paid_at` بتوقيت UTC) لكل مؤسسة وعملة: عددها ومجموعها، والمسترد منها (استردادات `succeeded`). المؤسسة بلا طلب مدفوع في السنة لا صف لها. بلا بنود ولا مواد ولا أعضاء.
+         */
+        get: operations["listBuyerPurchaseTotals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/buyer-invite-conflicts": {
         parameters: {
             query?: never;
@@ -2075,6 +2139,26 @@ export interface paths {
         };
         /** أرصدة أرباح مساهم (للمالية) */
         get: operations["getUserEarnings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contributor-earnings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * مستحقات المساهمين في شهر (A4، ADR 0099)
+         * @description قراءة مجمّعة من دفتر الأستاذ لكل مساهم قُيّد له نصيب من بيعة في الشهر (UTC)، لكل عملة صف. البيعات عدد قيود البيع التي قُيّد له فيها، والمبيعات والرسوم والضرائب والصافي حصته منها بنسبة نصيبه من نصيب المساهمين في كل قيد، والنصيب ما قُيّد له، والمسترد ما رُدّ من نصيبه بقيود الاسترداد في الشهر نفسه. الرصيد الحالي (لا رصيد الشهر) لحالة الصرف. `totals` مجاميع الصفوف كلها لكل عملة، فالبطاقات مجاميع الجدول نفسه. المزوّد تجريبي (ADR 0032): لا رسوم ولا ضريبة بعد، ولا مال حقيقي. اسم العمل وحده، بلا بريد ولا اسم حقيقي ولا مشترٍ.
+         */
+        get: operations["listContributorEarnings"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4440,6 +4524,124 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        /**
+         * @description `recovery` في استعادة حساب جارية
+         * @enum {string}
+         */
+        StaffUserStatus: "active" | "suspended" | "recovery";
+        StaffUser: {
+            /** Format: uuid */
+            id: string;
+            /** @description اسم العمل (ADR 0035)؛ `null` بلا اسم معيَّن */
+            work_name: string | null;
+            roles: components["schemas"]["RoleName"][];
+            /** @description محافظة مكتبه؛ `null` بلا مكتب */
+            governorate: string | null;
+            status: components["schemas"]["StaffUserStatus"];
+            /**
+             * Format: date-time
+             * @description آخر دخول أو تجديد جلسة؛ `null` لحساب لم يدخل بعد
+             */
+            last_active_at: string | null;
+        };
+        StaffUserPage: {
+            items: components["schemas"]["StaffUser"][];
+            next_cursor: string | null;
+            /** @description على كل حسابات الطاقم، لا على الصفحة ولا المرشّح */
+            summary: {
+                total: number;
+                suspended: number;
+                /** @description عدد الحسابات لكل دور (الحساب متعدد الأدوار في كل دور له) */
+                roles: {
+                    role: components["schemas"]["RoleName"];
+                    count: number;
+                }[];
+            };
+        };
+        /** @description كل نص بقاعدة `MaterialTag` (ADR 0086): بلا مسافة في الطرفين ولا محارف تحكم أو اتجاه، فلا يقلب اتجاه واجهة أو صورة. القاعدة نفسها في قاعدة البيانات (`render_text_valid`). */
+        PlatformSettingsUpdate: {
+            /** @description اسم المنصة كما يظهر في الويب */
+            platform_name: string;
+            /** @description اسم تطبيق المراسل */
+            app_name: string;
+            /** @description نص العلامة المائية في معاينات المتجر */
+            watermark_text: string;
+        };
+        /**
+         * @example {
+         *       "platform_name": "المكتبة المرئية",
+         *       "app_name": "ميدان بوست",
+         *       "watermark_text": "معاينة · المكتبة المرئية",
+         *       "version": 1,
+         *       "updated_at": "2026-11-03T09:00:00Z"
+         *     }
+         */
+        PlatformSettings: {
+            platform_name: string;
+            app_name: string;
+            watermark_text: string;
+            /** @description يرتفع مع كل تغيير؛ قيمة `ETag` */
+            version: number;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ContributorEarnings: {
+            /** Format: uuid */
+            user_id: string;
+            /** @description اسم العمل (ADR 0035) */
+            work_name: string | null;
+            currency: components["schemas"]["Currency"];
+            /** @description قيود البيع في الشهر التي قُيّد له فيها نصيب */
+            sales: number;
+            /** @description حصته من سعر البيع */
+            gross: components["schemas"]["Money"];
+            /** @description حصته من رسوم البوابة والضرائب */
+            fees_and_taxes: components["schemas"]["Money"];
+            /** @description المبيعات بعد الرسوم والضرائب */
+            net: components["schemas"]["Money"];
+            /** @description ما قُيّد له من البيعات (نصيبه) */
+            share: components["schemas"]["Money"];
+            /** @description ما رُدّ من نصيبه بقيود الاسترداد في الشهر */
+            refunded: components["schemas"]["Money"];
+            /** @description نسبة المساهمين المجمّدة في قيوده إن اتفقت كلها، وإلا `null` */
+            share_basis_points: number | null;
+            /** @description رصيده الحالي بهذه العملة */
+            balance: components["schemas"]["EarningsBalance"];
+        };
+        ContributorEarningsTotals: {
+            currency: components["schemas"]["Currency"];
+            contributors: number;
+            /** @description مجموع عمود البيعات */
+            sales: number;
+            gross: components["schemas"]["Money"];
+            fees_and_taxes: components["schemas"]["Money"];
+            net: components["schemas"]["Money"];
+            share: components["schemas"]["Money"];
+            refunded: components["schemas"]["Money"];
+            share_basis_points: number | null;
+        };
+        ContributorEarningsPage: {
+            month: string;
+            items: components["schemas"]["ContributorEarnings"][];
+            /** @description لكل عملة على كل الصفوف لا على الصفحة */
+            totals: components["schemas"]["ContributorEarningsTotals"][];
+            next_cursor: string | null;
+        };
+        BuyerPurchaseTotal: {
+            /** Format: uuid */
+            organization_id: string;
+            currency: components["schemas"]["Currency"];
+            paid_orders: number;
+            /** @description مجموع الطلبات المدفوعة في السنة */
+            paid: components["schemas"]["Money"];
+            /** @description المسترد منها */
+            refunded: components["schemas"]["Money"];
+        };
+        BuyerPurchaseTotalsPage: {
+            year: number;
+            items: components["schemas"]["BuyerPurchaseTotal"][];
+            next_cursor: string | null;
+        };
         OutboxEvent: components["schemas"]["outbox-event"];
         EventPage: {
             items: components["schemas"]["outbox-event"][];
@@ -4642,7 +4844,7 @@ export interface components {
             /** @description تسلسلي متزايد (رقم الصف في جدول Outbox) بصيغة نصية؛ يُستخدم مؤشرًا في `after` */
             id: string;
             /** @enum {string} */
-            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested" | "order.status_changed" | "license.issued" | "license.revoked" | "payout.status_changed" | "render.requested" | "render.started" | "render.completed" | "render.failed" | "assignment.created" | "assignment.state_changed" | "tag.suggestions_changed" | "tag.rewritten";
+            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested" | "order.status_changed" | "license.issued" | "license.revoked" | "payout.status_changed" | "render.requested" | "render.started" | "render.completed" | "render.failed" | "assignment.created" | "assignment.state_changed" | "tag.suggestions_changed" | "tag.rewritten" | "platform_settings.changed";
             /** @enum {string} */
             aggregate_type: "material" | "upload" | "notification" | "form" | "user" | "listing" | "license" | "order" | "payout";
             /** Format: uuid */
@@ -4681,7 +4883,7 @@ export interface components {
                 /** @enum {string} */
                 priority: "urgent" | "important" | "normal";
             };
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
     };
     responses: {
         /** @description طلب غير صالح (معاملات استعلام أو مؤشر غير مفهوم) */
@@ -5102,6 +5304,39 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             409: components["responses"]["Conflict"];
             429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listUsers: {
+        parameters: {
+            query?: {
+                /** @description حسابات تحمل أحد هذه الأدوار */
+                role?: components["schemas"]["RoleName"][];
+                status?: components["schemas"]["StaffUserStatus"];
+                /** @description جزء من اسم العمل أو البريد، بلا تفريق بين الأحرف الكبيرة والصغيرة */
+                q?: string;
+                /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description حجم الصفحة */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description صفحة من الحسابات */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffUserPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     setUserStatus: {
@@ -7157,6 +7392,63 @@ export interface operations {
             422: components["responses"]["UnprocessableEntity"];
         };
     };
+    getPlatformSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الإعداد */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformSettings"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    replacePlatformSettings: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description قيمة `ETag` الأخيرة التي رآها العميل (`"<row_version>"` للمادة، `"<version>"` للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ `412 precondition_failed` دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlatformSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description الإعداد بعد التغيير */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformSettings"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
     registerPushDevice: {
         parameters: {
             query?: never;
@@ -8214,6 +8506,35 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    listBuyerPurchaseTotals: {
+        parameters: {
+            query: {
+                year: number;
+                /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description حجم الصفحة */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description صفحة من المجاميع */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyerPurchaseTotalsPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     listBuyerInviteConflicts: {
         parameters: {
             query?: {
@@ -8352,6 +8673,37 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listContributorEarnings: {
+        parameters: {
+            query: {
+                /** @description الشهر بتوقيت UTC */
+                month: string;
+                currency?: components["schemas"]["Currency"];
+                /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description حجم الصفحة */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description صفحة من المستحقات، الأعلى نصيبًا أولًا */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContributorEarningsPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     listMyPayoutRequests: {

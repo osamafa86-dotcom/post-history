@@ -361,6 +361,47 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
 
+  /users:
+    get:
+      tags: [admin]
+      summary: حسابات الطاقم لمدير النظام (A1، ADR 0099)
+      description: >-
+        حسابات الطاقم وحدها (لا حساب مشترٍ؛ تلك في المؤسسات المشترية)، الأحدث إنشاءً أولًا. كل حساب بما يعرضه A1 وحده: اسم
+        العمل (ADR 0035) والأدوار والمحافظة (محافظة مكتبه) والحالة وآخر نشاط. لا بريد ولا اسم حقيقي ولا جهاز ولا موقع في الرد؛
+        `q` يطابق جزءًا من اسم العمل أو البريد دون أن يُعاد البريد. `summary` على كل حسابات الطاقم لا على الصفحة ولا المرشّح.
+        الأفعال على الحساب بمعرّفه في النقاط القائمة (`/users/{id}/status` والصلاحيات واسم العمل).
+      operationId: listUsers
+      x-roles: [system_admin]
+      parameters:
+        - name: role
+          in: query
+          description: حسابات تحمل أحد هذه الأدوار
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 9
+            uniqueItems: true
+            items: { $ref: "#/components/schemas/RoleName" }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/StaffUserStatus" }
+        - name: q
+          in: query
+          description: جزء من اسم العمل أو البريد، بلا تفريق بين الأحرف الكبيرة والصغيرة
+          schema: { type: string, minLength: 1, maxLength: 80 }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: صفحة من الحسابات
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffUserPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /users/{id}/status:
     parameters:
       - name: id
@@ -2278,6 +2319,54 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
+  /platform-settings:
+    get:
+      tags: [admin]
+      summary: هوية المنصة (A6، ADR 0099)
+      description: >-
+        اسم المنصة واسم تطبيق المراسل ونص العلامة المائية في المعاينات. `ETag` هو `"<version>"`. لا يقرؤها بعد عامل الوسائط ولا
+        التطبيقان: تُحفظ هنا ويأخذها كلٌّ منها في طلبه (ADR 0099).
+      operationId: getPlatformSettings
+      x-roles: [system_admin]
+      responses:
+        "200":
+          description: الإعداد
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlatformSettings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    put:
+      tags: [admin]
+      summary: تغيير هوية المنصة
+      description: >-
+        الحقول الثلاثة معًا. القيم نفسها مرة ثانية لا تكتب شيئًا ولا ترفع الإصدار. التغيير في معاملة واحدة مع حدث
+        `platform_settings.changed` وسطر تدقيق، وكلاهما بالإصدار وأسماء الحقول التي تغيّرت وحدها، بلا نص.
+      operationId: replacePlatformSettings
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlatformSettingsUpdate" }
+      responses:
+        "200":
+          description: الإعداد بعد التغيير
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlatformSettings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
   /push-devices:
     put:
       tags: [notifications]
@@ -3271,6 +3360,32 @@ paths:
         "202": { description: أُرسل الإشعار أو جُدول }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /buyer-purchase-totals:
+    get:
+      tags: [commerce]
+      summary: مشتريات كل مؤسسة في سنة (A5، ADR 0099)
+      description: >-
+        قراءة مجمّعة للطلبات المدفوعة في السنة (`paid_at` بتوقيت UTC) لكل مؤسسة وعملة: عددها ومجموعها، والمسترد منها
+        (استردادات `succeeded`). المؤسسة بلا طلب مدفوع في السنة لا صف لها. بلا بنود ولا مواد ولا أعضاء.
+      operationId: listBuyerPurchaseTotals
+      x-roles: [system_admin, finance]
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema: { type: integer, minimum: 2020, maximum: 2100 }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: صفحة من المجاميع
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BuyerPurchaseTotalsPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /buyer-invite-conflicts:
     get:
       tags: [commerce]
@@ -3397,6 +3512,39 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /contributor-earnings:
+    get:
+      tags: [earnings]
+      summary: مستحقات المساهمين في شهر (A4، ADR 0099)
+      description: >-
+        قراءة مجمّعة من دفتر الأستاذ لكل مساهم قُيّد له نصيب من بيعة في الشهر (UTC)، لكل عملة صف. البيعات عدد قيود البيع التي
+        قُيّد له فيها، والمبيعات والرسوم والضرائب والصافي حصته منها بنسبة نصيبه من نصيب المساهمين في كل قيد، والنصيب ما قُيّد
+        له، والمسترد ما رُدّ من نصيبه بقيود الاسترداد في الشهر نفسه. الرصيد الحالي (لا رصيد الشهر) لحالة الصرف. `totals`
+        مجاميع الصفوف كلها لكل عملة، فالبطاقات مجاميع الجدول نفسه. المزوّد تجريبي (ADR 0032): لا رسوم ولا ضريبة بعد، ولا مال
+        حقيقي. اسم العمل وحده، بلا بريد ولا اسم حقيقي ولا مشترٍ.
+      operationId: listContributorEarnings
+      x-roles: [system_admin, finance]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          description: الشهر بتوقيت UTC
+          schema: { type: string, pattern: "^20[0-9]{2}-(0[1-9]|1[0-2])$" }
+        - name: currency
+          in: query
+          schema: { $ref: "#/components/schemas/Currency" }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: صفحة من المستحقات، الأعلى نصيبًا أولًا
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContributorEarningsPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /me/payout-requests:
     get:
@@ -6580,6 +6728,167 @@ components:
             created_by: { type: string, format: uuid }
             created_at: { type: string, format: date-time }
       unevaluatedProperties: false
+
+    StaffUserStatus:
+      type: string
+      description: "`recovery` في استعادة حساب جارية"
+      enum: [active, suspended, recovery]
+
+    StaffUser:
+      type: object
+      required: [id, work_name, roles, governorate, status, last_active_at]
+      properties:
+        id: { type: string, format: uuid }
+        work_name:
+          type: [string, "null"]
+          maxLength: 80
+          description: اسم العمل (ADR 0035)؛ `null` بلا اسم معيَّن
+        roles:
+          type: array
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/RoleName" }
+        governorate: { type: [string, "null"], description: محافظة مكتبه؛ `null` بلا مكتب }
+        status: { $ref: "#/components/schemas/StaffUserStatus" }
+        last_active_at:
+          type: [string, "null"]
+          format: date-time
+          description: آخر دخول أو تجديد جلسة؛ `null` لحساب لم يدخل بعد
+
+    StaffUserPage:
+      type: object
+      required: [items, next_cursor, summary]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/StaffUser" }
+        next_cursor: { type: [string, "null"] }
+        summary:
+          type: object
+          required: [total, suspended, roles]
+          description: على كل حسابات الطاقم، لا على الصفحة ولا المرشّح
+          properties:
+            total: { type: integer, minimum: 0 }
+            suspended: { type: integer, minimum: 0 }
+            roles:
+              type: array
+              description: عدد الحسابات لكل دور (الحساب متعدد الأدوار في كل دور له)
+              items:
+                type: object
+                required: [role, count]
+                properties:
+                  role: { $ref: "#/components/schemas/RoleName" }
+                  count: { type: integer, minimum: 0 }
+
+    PlatformSettingsUpdate:
+      type: object
+      additionalProperties: false
+      required: [platform_name, app_name, watermark_text]
+      description: >-
+        كل نص بقاعدة `MaterialTag` (ADR 0086): بلا مسافة في الطرفين ولا محارف تحكم أو اتجاه، فلا يقلب اتجاه واجهة أو صورة.
+        القاعدة نفسها في قاعدة البيانات (`render_text_valid`).
+      properties:
+        platform_name:
+          type: string
+          minLength: 1
+          maxLength: 60
+          pattern: "^[^\\s\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069](?:[^\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]*[^\\s\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069])?$"
+          description: اسم المنصة كما يظهر في الويب
+        app_name:
+          type: string
+          minLength: 1
+          maxLength: 40
+          pattern: "^[^\\s\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069](?:[^\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]*[^\\s\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069])?$"
+          description: اسم تطبيق المراسل
+        watermark_text:
+          type: string
+          minLength: 1
+          maxLength: 60
+          pattern: "^[^\\s\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069](?:[^\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]*[^\\s\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069])?$"
+          description: نص العلامة المائية في معاينات المتجر
+
+    PlatformSettings:
+      type: object
+      required: [platform_name, app_name, watermark_text, version, updated_at]
+      properties:
+        platform_name: { type: string, maxLength: 60 }
+        app_name: { type: string, maxLength: 40 }
+        watermark_text: { type: string, maxLength: 60 }
+        version: { type: integer, minimum: 1, description: يرتفع مع كل تغيير؛ قيمة `ETag` }
+        updated_at: { type: string, format: date-time }
+      example:
+        platform_name: المكتبة المرئية
+        app_name: ميدان بوست
+        watermark_text: معاينة · المكتبة المرئية
+        version: 1
+        updated_at: "2026-11-03T09:00:00Z"
+
+    ContributorEarnings:
+      type: object
+      required: [user_id, work_name, currency, sales, gross, fees_and_taxes, net, share, refunded, share_basis_points, balance]
+      properties:
+        user_id: { type: string, format: uuid }
+        work_name: { type: [string, "null"], maxLength: 80, description: اسم العمل (ADR 0035) }
+        currency: { $ref: "#/components/schemas/Currency" }
+        sales: { type: integer, minimum: 0, description: قيود البيع في الشهر التي قُيّد له فيها نصيب }
+        gross: { $ref: "#/components/schemas/Money", description: حصته من سعر البيع }
+        fees_and_taxes: { $ref: "#/components/schemas/Money", description: حصته من رسوم البوابة والضرائب }
+        net: { $ref: "#/components/schemas/Money", description: المبيعات بعد الرسوم والضرائب }
+        share: { $ref: "#/components/schemas/Money", description: ما قُيّد له من البيعات (نصيبه) }
+        refunded: { $ref: "#/components/schemas/Money", description: ما رُدّ من نصيبه بقيود الاسترداد في الشهر }
+        share_basis_points:
+          type: [integer, "null"]
+          minimum: 0
+          maximum: 10000
+          description: نسبة المساهمين المجمّدة في قيوده إن اتفقت كلها، وإلا `null`
+        balance: { $ref: "#/components/schemas/EarningsBalance", description: رصيده الحالي بهذه العملة }
+
+    ContributorEarningsTotals:
+      type: object
+      required: [currency, contributors, sales, gross, fees_and_taxes, net, share, refunded, share_basis_points]
+      properties:
+        currency: { $ref: "#/components/schemas/Currency" }
+        contributors: { type: integer, minimum: 0 }
+        sales: { type: integer, minimum: 0, description: مجموع عمود البيعات }
+        gross: { $ref: "#/components/schemas/Money" }
+        fees_and_taxes: { $ref: "#/components/schemas/Money" }
+        net: { $ref: "#/components/schemas/Money" }
+        share: { $ref: "#/components/schemas/Money" }
+        refunded: { $ref: "#/components/schemas/Money" }
+        share_basis_points: { type: [integer, "null"], minimum: 0, maximum: 10000 }
+
+    ContributorEarningsPage:
+      type: object
+      required: [month, items, totals, next_cursor]
+      properties:
+        month: { type: string, pattern: "^20[0-9]{2}-(0[1-9]|1[0-2])$" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ContributorEarnings" }
+        totals:
+          type: array
+          description: لكل عملة على كل الصفوف لا على الصفحة
+          items: { $ref: "#/components/schemas/ContributorEarningsTotals" }
+        next_cursor: { type: [string, "null"] }
+
+    BuyerPurchaseTotal:
+      type: object
+      required: [organization_id, currency, paid_orders, paid, refunded]
+      properties:
+        organization_id: { type: string, format: uuid }
+        currency: { $ref: "#/components/schemas/Currency" }
+        paid_orders: { type: integer, minimum: 1 }
+        paid: { $ref: "#/components/schemas/Money", description: مجموع الطلبات المدفوعة في السنة }
+        refunded: { $ref: "#/components/schemas/Money", description: المسترد منها }
+
+    BuyerPurchaseTotalsPage:
+      type: object
+      required: [year, items, next_cursor]
+      properties:
+        year: { type: integer }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/BuyerPurchaseTotal" }
+        next_cursor: { type: [string, "null"] }
 
     OutboxEvent:
       $ref: "./schemas/outbox-event.json"

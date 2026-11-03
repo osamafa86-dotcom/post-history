@@ -915,6 +915,56 @@ open class CommerceAPI {
     }
 
     /**
+     مشتريات كل مؤسسة في سنة (A5، ADR 0099)
+     
+     - parameter year: (query)  
+     - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
+     - parameter limit: (query) حجم الصفحة (optional, default to 50)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: BuyerPurchaseTotalsPage
+     */
+    open class func listBuyerPurchaseTotals(year: Int, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> BuyerPurchaseTotalsPage {
+        return try await listBuyerPurchaseTotalsWithRequestBuilder(year: year, cursor: cursor, limit: limit, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     مشتريات كل مؤسسة في سنة (A5، ADR 0099)
+     - GET /buyer-purchase-totals
+     - قراءة مجمّعة للطلبات المدفوعة في السنة (`paid_at` بتوقيت UTC) لكل مؤسسة وعملة: عددها ومجموعها، والمسترد منها (استردادات `succeeded`). المؤسسة بلا طلب مدفوع في السنة لا صف لها. بلا بنود ولا مواد ولا أعضاء.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter year: (query)  
+     - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
+     - parameter limit: (query) حجم الصفحة (optional, default to 50)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<BuyerPurchaseTotalsPage> 
+     */
+    open class func listBuyerPurchaseTotalsWithRequestBuilder(year: Int, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<BuyerPurchaseTotalsPage> {
+        let localVariablePath = "/buyer-purchase-totals"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        var localVariableUrlComponents = URLComponents(string: localVariableURLString)
+        let localVariableQueryParameters: [String: (wrappedValue: (any Sendable)?, isExplode: Bool)] = [
+            "year": (wrappedValue: year.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "cursor": (wrappedValue: cursor?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "limit": (wrappedValue: limit?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+        ]
+        localVariableUrlComponents?.queryItems = APIHelper.mapValuesToQueryItems(localVariableQueryParameters)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<BuyerPurchaseTotalsPage>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      قواعد العمولة (ADR 0025 الجزء 6)
      
      - parameter scope: (query)  (optional)

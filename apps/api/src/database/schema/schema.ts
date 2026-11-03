@@ -805,7 +805,7 @@ export const outboxEvents = pgTable("outbox_events", {
 	check("outbox_events_idempotency_key_len", sql`(char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 200)`),
 	check("outbox_events_payload_is_object", sql`jsonb_typeof(payload) = 'object'::text`),
 	check("outbox_events_payload_whitelisted", sql`CHECK (outbox_payload_is_whitelisted(type, payload`),
-	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text, 'license.revoked'::text, 'payout.status_changed'::text, 'render.requested'::text, 'render.started'::text, 'render.completed'::text, 'render.failed'::text, 'assignment.created'::text, 'assignment.state_changed'::text, 'tag.suggestions_changed'::text, 'tag.rewritten'::text])`),
+	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text, 'license.revoked'::text, 'payout.status_changed'::text, 'render.requested'::text, 'render.started'::text, 'render.completed'::text, 'render.failed'::text, 'assignment.created'::text, 'assignment.state_changed'::text, 'tag.suggestions_changed'::text, 'tag.rewritten'::text, 'platform_settings.changed'::text])`),
 ]);
 
 export const recoveryCodes = pgTable("recovery_codes", {
@@ -1633,4 +1633,25 @@ export const tagRewriteMaterials = pgTable("tag_rewrite_materials", {
 			name: "tag_rewrite_materials_tag_rewrite_id_fkey"
 		}),
 	primaryKey({ columns: [table.tagRewriteId, table.materialId], name: "tag_rewrite_materials_pkey"}),
+]);
+
+export const platformSettings = pgTable("platform_settings", {
+	id: boolean().default(true).primaryKey().notNull(),
+	platformName: text("platform_name").notNull(),
+	appName: text("app_name").notNull(),
+	watermarkText: text("watermark_text").notNull(),
+	version: integer().default(1).notNull(),
+	updatedBy: uuid("updated_by"),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.updatedBy],
+			foreignColumns: [users.id],
+			name: "platform_settings_updated_by_fkey"
+		}),
+	check("platform_settings_app_name_valid", sql`CHECK (render_text_valid(app_name, 40`),
+	check("platform_settings_platform_name_valid", sql`CHECK (render_text_valid(platform_name, 60`),
+	check("platform_settings_singleton", sql`CHECK (id)`),
+	check("platform_settings_version_positive", sql`version >= 1`),
+	check("platform_settings_watermark_text_valid", sql`CHECK (render_text_valid(watermark_text, 60`),
 ]);

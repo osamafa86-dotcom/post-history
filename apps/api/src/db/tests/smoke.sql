@@ -1617,6 +1617,27 @@ VALUES ('00000000-0000-4000-8000-000000000012', 'tag.suggestions_changed', 'tag_
 SELECT pg_temp.expect_error($q$
   INSERT INTO audit_log (actor_id, action, target_type, target_id, details, hash)
   VALUES (NULL, 'tag.rewritten', 'tag_rewrite', NULL, '{"source": "مياة"}', '\x00') $q$, '23514');
+-- ---------- هوية المنصة (ADR 0099) ----------
+SELECT pg_temp.assert((SELECT count(*) = 1 AND bool_and(version = 1 AND platform_name = 'المكتبة المرئية') FROM platform_settings), 'platform settings seeded once');
+SELECT pg_temp.expect_error($q$ INSERT INTO platform_settings (id, platform_name, app_name, watermark_text) VALUES (false, 'م', 'ت', 'ع') $q$, '23514');
+SELECT pg_temp.expect_error($q$ INSERT INTO platform_settings (platform_name, app_name, watermark_text) VALUES ('م', 'ت', 'ع') $q$, '23505');
+UPDATE platform_settings SET watermark_text = repeat('م', 60), version = version + 1, updated_by = '00000000-0000-4000-8000-000000000012';
+SELECT pg_temp.expect_error($q$ UPDATE platform_settings SET watermark_text = repeat('م', 61) $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE platform_settings SET app_name = repeat('م', 41) $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE platform_settings SET platform_name = ' منصة' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE platform_settings SET app_name = E'تطبيق\u202e' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE platform_settings SET watermark_text = '' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE platform_settings SET version = 0 $q$, '23514');
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, actor_id, payload)
+VALUES ('platform_settings.changed', 'user', '00000000-0000-4000-8000-000000000012', 'platform_settings.changed:smoke',
+        '00000000-0000-4000-8000-000000000012', '{"settings_version": 2, "changed_fields": ["watermark_text"]}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('platform_settings.changed', 'user', '00000000-0000-4000-8000-000000000012', 'platform_settings.changed:smoke:text',
+          '{"settings_version": 3, "watermark_text": "معاينة"}') $q$, '23514');
+INSERT INTO audit_log (actor_id, action, target_type, target_id, details, hash)
+VALUES ('00000000-0000-4000-8000-000000000012', 'platform_settings.changed', 'platform_settings', 'platform_settings',
+        '{"settings_version": 2, "field_keys": ["watermark_text"]}', '\x00');
 SET CONSTRAINTS ALL DEFERRED;
 -- الدوال تعمل بمسار بحث فارغ (الاستعادة)
 SET LOCAL search_path = '';
