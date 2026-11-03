@@ -5,6 +5,7 @@ import { DB, type Database } from '../database/database.module';
 import { notifications, outboxEvents } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import type { Principal } from '../identity/principal';
+import { applyAssignmentTransition, lockAssignment, materialPriority } from '../assignments/assignment-store';
 import { applyTransition, iso, lockMaterial, roleCovers } from '../materials/material-store';
 
 type Notification = components['schemas']['Notification'];
@@ -76,6 +77,12 @@ export class NotificationsService {
   async ack(p: Principal, id: string): Promise<void> {
     if (!UUID.test(id)) throw ApiError.notFound();
     await this.db.transaction(async (tx) => {
+      // ترتيب الأقفال كما في انتقال المهمة (المهمة ثم إشعارها)، فلا يتعانق «أقرّ الاستلام» من الطرفين
+      const [peek] = await tx
+        .select({ type: notifications.type, assignmentId: notifications.assignmentId })
+        .from(notifications)
+        .where(and(eq(notifications.id, id), eq(notifications.userId, p.userId)));
+      if (peek?.type === 'assignment.created' && peek.assignmentId) await lockAssignment(tx, peek.assignmentId);
       const [n] = await tx
         .select()
         .from(notifications)
@@ -100,6 +107,14 @@ export class NotificationsService {
         if (original) await tx.update(notifications).set({ escalateAt: null }).where(eq(notifications.id, original));
         return;
       }
+      // «أقرّ الاستلام» على إشعار «أُسندت» يقرّ المهمة نفسها (ADR 0096)، فلا يتعارض الإشعار والمهمة
+      if (n.type === 'assignment.created' && n.assignmentId) {
+        const a = await lockAssignment(tx, n.assignmentId);
+        if (a && a.state === 'assigned' && a.assigneeId === p.userId) {
+          await applyAssignmentTransition(tx, a, 'acknowledged', p.userId, { priority: await materialPriority(tx, a.materialId) });
+        }
+        return;
+      }
       if (!INCOMING.includes(n.type) || !n.materialId) return;
       const m = await lockMaterial(tx, n.materialId);
       if (m && m.editorialState === 'inbox' && roleCovers(p, 'supervisor', m)) {
@@ -120,6 +135,7 @@ function toDto(n: typeof notifications.$inferSelect): Notification {
     assignment_state: n.assignmentState as Notification['assignment_state'],
     escalation_level: n.escalationLevel,
     recovery_request_id: n.recoveryRequestId,
+    assignment_id: n.assignmentId,
     created_at: iso(n.createdAt)!,
     read_at: iso(n.readAt),
     acknowledged_at: iso(n.acknowledgedAt),

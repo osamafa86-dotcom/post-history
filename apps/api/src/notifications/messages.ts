@@ -33,6 +33,10 @@ export const NOTIFICATION_TITLES: Record<string, Record<Locale, string>> = {
     ar: 'تعذّر إنتاج نسختك من المادة #{ref} على قالب «مواد متداولة»',
     en: 'Your circulated-template copy of material #{ref} could not be made',
   },
+  // إسناد المادة إلى المونتير (ADR 0096): رقم المادة وحده، بلا ملاحظة ولا موعد ولا اسم
+  'assignment.created': { ar: 'مهمة جديدة: المادة #{ref}', en: 'New task: material #{ref}' },
+  'assignment.done': { ar: 'سُلّمت مهمة المادة #{ref}', en: 'Task on material #{ref} delivered' },
+  'assignment.returned': { ar: 'أُعيدت مهمة المادة #{ref}', en: 'Task on material #{ref} returned' },
   // عنوان عام لأحداث تضبط لها الإدارة قاعدة ولا قالب خاص لها (v0.2)
   'material.generic': { ar: 'تحديث على المادة #{ref}', en: 'Update on material #{ref}' },
   'upload.verified': {
