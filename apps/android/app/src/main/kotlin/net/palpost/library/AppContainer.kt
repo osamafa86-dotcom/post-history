@@ -15,6 +15,10 @@ import net.palpost.library.core.auth.AuthManager
 import net.palpost.library.core.auth.TokenStore
 import net.palpost.library.core.upload.FileSource
 import net.palpost.library.data.RoomUploadStore
+import net.palpost.library.data.FileSendBatchStore
+import net.palpost.library.data.ReporterMemoryStore
+import net.palpost.library.core.send.SendBatchLedger
+import net.palpost.library.ui.receipt.ReceiptCenter
 import net.palpost.library.data.UploadDatabase
 import net.palpost.library.upload.ContentResolverFileSource
 import okhttp3.OkHttpClient
@@ -55,4 +59,13 @@ class AppContainer(context: Context) {
         IngestTokens(uploadsApi, BuildConfig.PLAY_CLOUD_PROJECT_NUMBER.takeIf { it > 0 }?.let { PlayIntegrityAttester(app, it) })
     }
     val settings: AppSettings by lazy { AppSettings(app) }
+
+    /** The reporter's last place, display name and earlier tags (never coordinates); erased on sign-out, revocation and wipe. */
+    val reporterMemory: ReporterMemoryStore by lazy { ReporterMemoryStore(java.io.File(app.noBackupFilesDir, "reporter-memory.json")) }
+
+    /** The sends of the send screen and their one receipt each (ADR 0088); erased on sign-out, revocation and wipe. */
+    val sendBatches: SendBatchLedger by lazy { SendBatchLedger(FileSendBatchStore(java.io.File(app.noBackupFilesDir, "send-batches.json"))) }
+
+    /** Decides when a receipt shows: once per send when its last file arrives, or per material outside a send. */
+    val receipts: ReceiptCenter by lazy { ReceiptCenter(this) }
 }

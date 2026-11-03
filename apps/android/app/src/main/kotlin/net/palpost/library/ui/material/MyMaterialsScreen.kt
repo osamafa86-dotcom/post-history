@@ -67,21 +67,23 @@ import net.palpost.library.core.net.IdempotencyKey
 import net.palpost.library.ui.describeFailure
 import net.palpost.library.ui.review.ReviewPolicy
 import net.palpost.library.ui.theme.GhostButton
-import net.palpost.library.ui.theme.Overline
+import net.palpost.library.ui.theme.FieldLabel
+import net.palpost.library.ui.theme.MinTouchTarget
+import net.palpost.library.ui.theme.TrackBadge
+import net.palpost.library.ui.theme.VlEasing
+import net.palpost.library.ui.theme.VlIcon
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.outlined.Gavel
+import androidx.compose.material.icons.outlined.Movie
 import net.palpost.library.ui.theme.PrimaryButton
 import net.palpost.library.ui.theme.PriorityBadge
-import net.palpost.library.ui.theme.StateBadge
 import net.palpost.library.ui.theme.Tone
 import net.palpost.library.ui.theme.Track
 import net.palpost.library.ui.theme.Vl
 import net.palpost.library.ui.theme.VlCard
-import net.palpost.library.ui.theme.icon
 import net.palpost.library.ui.theme.priorityTone
 import net.palpost.library.ui.theme.rememberReduceMotion
-import net.palpost.library.ui.theme.trackAccent
-import net.palpost.library.ui.theme.trackSubtle
 import net.palpost.library.ui.theme.tokens.VlMotion
-import net.palpost.library.ui.theme.tokens.VlSize
 import net.palpost.library.ui.theme.tokens.VlSpace
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -203,8 +205,8 @@ fun MyMaterialsScreen(container: AppContainer, onBack: () -> Unit, onNewMaterial
     LaunchedEffect(Unit) { if (s.items.isEmpty()) vm.refresh(); vm.poll() }
 
     Scaffold(
-        containerColor = Vl.colors.bgCanvas,
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.materials_title), style = Vl.text.headingH3) }, navigationIcon = { TextButton(onClick = onBack) { Text(stringResource(R.string.action_back)) } }) },
+        containerColor = Vl.colors.bgBase,
+        topBar = { TopAppBar(title = { Text(stringResource(R.string.materials_title), style = Vl.text.headline) }, navigationIcon = { TextButton(onClick = onBack) { Text(stringResource(R.string.action_back)) } }) },
     ) { padding ->
         PullToRefreshBox(isRefreshing = s.loading, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize().padding(padding)) {
             LazyColumn(
@@ -215,9 +217,9 @@ fun MyMaterialsScreen(container: AppContainer, onBack: () -> Unit, onNewMaterial
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(VlSpace.s3)) {
                         FilterChip(selected = s.tab == MyMaterialsViewModel.Tab.ALL, onClick = { vm.tab(MyMaterialsViewModel.Tab.ALL) },
-                            label = { Text(stringResource(R.string.a4_tab_all, s.items.size), style = Vl.text.labelMd) }, modifier = Modifier.height(VlSize.touchMin))
+                            label = { Text(stringResource(R.string.a4_tab_all, s.items.size), style = Vl.text.label) }, modifier = Modifier.heightIn(min = MinTouchTarget))
                         FilterChip(selected = s.tab == MyMaterialsViewModel.Tab.NEEDS_ACTION, onClick = { vm.tab(MyMaterialsViewModel.Tab.NEEDS_ACTION) },
-                            label = { Text(stringResource(R.string.a4_tab_needs_action, s.needsActionCount), style = Vl.text.labelMd) }, modifier = Modifier.height(VlSize.touchMin))
+                            label = { Text(stringResource(R.string.a4_tab_needs_action, s.needsActionCount), style = Vl.text.label) }, modifier = Modifier.heightIn(min = MinTouchTarget))
                     }
                 }
                 s.staleSinceMs?.let { since -> item {
@@ -228,7 +230,7 @@ fun MyMaterialsScreen(container: AppContainer, onBack: () -> Unit, onNewMaterial
                 s.error?.let { item { net.palpost.library.ui.theme.InlineAlert(Tone.BAD, it) { GhostButton(stringResource(R.string.action_retry), vm::refresh) } } }
                 if (s.loaded && s.items.isEmpty()) item {
                     VlCard {
-                        Text(stringResource(R.string.a4_empty), style = Vl.text.bodyMd, color = Vl.colors.textSecondary)
+                        Text(stringResource(R.string.a4_empty), style = Vl.text.body, color = Vl.colors.textSecondary)
                         PrimaryButton(stringResource(R.string.home_new_material), onNewMaterial)
                     }
                 }
@@ -246,12 +248,12 @@ fun MyMaterialsScreen(container: AppContainer, onBack: () -> Unit, onNewMaterial
     if (replying != null && target != null) {
         AlertDialog(
             onDismissRequest = { if (!replying.sending) vm.cancelReply() },
-            title = { Text(stringResource(R.string.a4_reply), style = Vl.text.headingH4) },
+            title = { Text(stringResource(R.string.a4_reply), style = Vl.text.headline) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(VlSpace.s3)) {
-                    Text(stringResource(R.string.a4_reply_hint), style = Vl.text.bodySm)
-                    OutlinedTextField(value = replying.reason, onValueChange = { if (it.length <= ReviewPolicy.REASON_MAX) vm.replyText(it) }, textStyle = Vl.text.bodyMd, minLines = 2)
-                    replying.error?.let { Text(stringResource(it), color = Vl.colors.textDanger, style = Vl.text.bodySm) }
+                    Text(stringResource(R.string.a4_reply_hint), style = Vl.text.body)
+                    OutlinedTextField(value = replying.reason, onValueChange = { if (it.length <= ReviewPolicy.REASON_MAX) vm.replyText(it) }, textStyle = Vl.text.body, minLines = 2)
+                    replying.error?.let { Text(stringResource(it), color = Vl.colors.stateDanger, style = Vl.text.body) }
                 }
             },
             confirmButton = { TextButton(onClick = { vm.sendReply(target) }, enabled = !replying.sending && ReviewPolicy.reason(replying.reason) != null) { Text(stringResource(R.string.a4_reply_send)) } },
@@ -263,7 +265,7 @@ fun MyMaterialsScreen(container: AppContainer, onBack: () -> Unit, onNewMaterial
 @Composable
 private fun Collapsed(m: Material, onClick: () -> Unit) {
     VlCard(modifier = Modifier.clickable(onClick = onClick), gap = VlSpace.s3) {
-        Text(m.title, style = Vl.text.headingH4, color = Vl.colors.textPrimary, maxLines = 2)
+        Text(m.title, style = Vl.text.headline, color = Vl.colors.textPrimary, maxLines = 2)
         Badges(m, selected = null, onTrack = null)
     }
 }
@@ -276,11 +278,11 @@ private fun Badges(m: Material, selected: Track?, onTrack: ((Track) -> Unit)?) {
         val tech = stringResource(technical(m.technicalState))
         val ed = stringResource(editorial(m.editorialState))
         val rt = stringResource(rights(m.rightsState))
-        StateBadge(Track.TECHNICAL, tech, MaterialTimeline.technicalTone(m.technicalState.value), stringResource(R.string.material_state_technical) + ": " + tech,
+        TrackBadge(Track.TECHNICAL, MaterialTimeline.technicalTone(m.technicalState.value), tech, stringResource(R.string.material_state_technical),
             onClick = onTrack?.let { { it(Track.TECHNICAL) } }, selected = selected == Track.TECHNICAL)
-        StateBadge(Track.EDITORIAL, ed, MaterialTimeline.editorialTone(m.editorialState.value), stringResource(R.string.material_state_editorial) + ": " + ed,
+        TrackBadge(Track.EDITORIAL, MaterialTimeline.editorialTone(m.editorialState.value), ed, stringResource(R.string.material_state_editorial),
             onClick = onTrack?.let { { it(Track.EDITORIAL) } }, selected = selected == Track.EDITORIAL)
-        StateBadge(Track.RIGHTS, rt, MaterialTimeline.rightsTone(m.rightsState.value), stringResource(R.string.material_state_rights) + ": " + rt,
+        TrackBadge(Track.RIGHTS, MaterialTimeline.rightsTone(m.rightsState.value), rt, stringResource(R.string.material_state_rights),
             onClick = onTrack?.let { { it(Track.RIGHTS) } }, selected = selected == Track.RIGHTS)
     }
 }
@@ -289,25 +291,25 @@ private fun Badges(m: Material, selected: Track?, onTrack: ((Track) -> Unit)?) {
 private fun Expanded(m: Material, s: MyMaterialsViewModel.UiState, vm: MyMaterialsViewModel, onReceipt: (String) -> Unit, onReplacement: (String) -> Unit) {
     val reduceMotion = rememberReduceMotion()
     val transitions = s.transitions[m.id].orEmpty()
-    VlCard(modifier = Modifier.animateContentSize(tween(if (reduceMotion) 0 else VlMotion.baseMs, easing = VlMotion.standard)), border = Vl.colors.borderStrong) {
+    VlCard(modifier = Modifier.animateContentSize(tween(if (reduceMotion) 0 else VlMotion.baseMs, easing = VlEasing.standard)), border = Vl.colors.borderEdge) {
         Row(horizontalArrangement = Arrangement.spacedBy(VlSpace.s3), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { vm.toggle(m) }) {
             PriorityBadge(priorityLabel(m.priority), priorityTone(m.priority))
-            Text(m.title, style = Vl.text.headingH4, color = Vl.colors.textPrimary, maxLines = 3)
+            Text(m.title, style = Vl.text.headline, color = Vl.colors.textPrimary, maxLines = 3)
         }
         Badges(m, s.trackFilter, vm::filter)
         MaterialTimeline.supervisorNote(m, transitions)?.let { note ->
-            VlCard(background = Vl.colors.toneAttentionBg, border = Vl.colors.toneAttentionBorder, gap = VlSpace.s2) {
+            VlCard(background = Vl.colors.bgSunken, border = Vl.colors.stateWarn, gap = VlSpace.s2) {
                 Row(horizontalArrangement = Arrangement.spacedBy(VlSpace.s3), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Edit, contentDescription = null, tint = Vl.colors.toneAttentionFg, modifier = Modifier.size(VlSize.iconMd))
-                    Text(stringResource(R.string.a4_supervisor_note), style = Vl.text.labelMd, color = Vl.colors.toneAttentionFg)
+                    Icon(Icons.Outlined.Edit, contentDescription = null, tint = Vl.colors.stateWarn, modifier = Modifier.size(VlIcon.md))
+                    Text(stringResource(R.string.a4_supervisor_note), style = Vl.text.label, color = Vl.colors.stateWarn)
                     Time(note)
                 }
-                Text(note.reason, style = Vl.text.bodySm, color = Vl.colors.textPrimary)
+                Text(note.reason, style = Vl.text.body, color = Vl.colors.textPrimary)
             }
         }
-        Overline(stringResource(R.string.a4_timeline))
+        FieldLabel(stringResource(R.string.a4_timeline))
         val events = MaterialTimeline.events(transitions, s.trackFilter)
-        if (events.isEmpty()) Text(stringResource(R.string.review_history_empty), style = Vl.text.bodySm, color = Vl.colors.textSecondary)
+        if (events.isEmpty()) Text(stringResource(R.string.review_history_empty), style = Vl.text.body, color = Vl.colors.textSecondary)
         Column {
             events.forEachIndexed { i, r -> Event(r, last = i == events.lastIndex) }
         }
@@ -327,17 +329,17 @@ private fun Expanded(m: Material, s: MyMaterialsViewModel.UiState, vm: MyMateria
 @Composable
 private fun Event(r: TransitionRecord, last: Boolean) {
     val track = MaterialTimeline.trackOf(r)
-    val accent = trackAccent(track)
+    val accent = trackColor(track)
     val label = stringResource(R.string.a4_event, trackName(track), stateLabel(r.track.value, r.to))
     Row(horizontalArrangement = Arrangement.spacedBy(VlSpace.s3), modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = label }) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(track.icon, contentDescription = null, tint = accent, modifier = Modifier.size(VlSize.iconMd))
+            Icon(trackIconOf(track), contentDescription = null, tint = accent, modifier = Modifier.size(VlIcon.md))
             Box(Modifier.size(12.dp).clip(CircleShape).background(accent))
-            if (!last) Box(Modifier.width(2.dp).height(VlSpace.s7).background(trackSubtle(track)))
+            if (!last) Box(Modifier.width(2.dp).height(VlSpace.s7).background(Vl.colors.borderLine))
         }
         Column(verticalArrangement = Arrangement.spacedBy(VlSpace.s1), modifier = Modifier.padding(bottom = VlSpace.s4)) {
-            Text(label, style = Vl.text.bodySm, color = Vl.colors.textPrimary)
-            if (track == Track.EDITORIAL && r.reason.isNotBlank()) Text(r.reason, style = Vl.text.captionMd, color = Vl.colors.textSecondary, maxLines = 3)
+            Text(label, style = Vl.text.body, color = Vl.colors.textPrimary)
+            if (track == Track.EDITORIAL && r.reason.isNotBlank()) Text(r.reason, style = Vl.text.caption, color = Vl.colors.textSecondary, maxLines = 3)
             Time(r)
         }
     }
@@ -347,10 +349,16 @@ private fun Event(r: TransitionRecord, last: Boolean) {
 private fun Time(r: TransitionRecord) {
     val locale = LocalConfiguration.current.locales[0]
     val text = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(locale).format(r.occurredAt.atZoneSameInstant(ZoneId.systemDefault()))
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) { Text(text, style = Vl.text.monoMd, color = Vl.colors.textSecondary) }
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) { Text(text, style = Vl.text.num, color = Vl.colors.textSecondary) }
 }
 
 @Composable
 private fun trackName(t: Track): String = stringResource(
     when (t) { Track.TECHNICAL -> R.string.material_state_technical; Track.EDITORIAL -> R.string.material_state_editorial; Track.RIGHTS -> R.string.material_state_rights },
 )
+
+/** Each track's mark in the timeline: technical in brand, editorial in warn, rights in muted (the v2 state tones). */
+@Composable
+private fun trackColor(t: Track) = when (t) { Track.TECHNICAL -> Vl.colors.stateBrand; Track.EDITORIAL -> Vl.colors.stateWarn; Track.RIGHTS -> Vl.colors.stateMuted }
+
+private fun trackIconOf(t: Track) = when (t) { Track.TECHNICAL -> Icons.Outlined.Movie; Track.EDITORIAL -> Icons.Outlined.Edit; Track.RIGHTS -> Icons.Outlined.Gavel }

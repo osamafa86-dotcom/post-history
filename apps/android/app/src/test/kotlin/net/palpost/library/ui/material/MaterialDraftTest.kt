@@ -88,4 +88,27 @@ class MaterialDraftTest {
         assertEquals("draft-level-key", again.files.single().materialKey)
         assertEquals(stamped, PickedFiles.stampKeys(again.files, "another-vm-key") { "never-used" })
     }
+
+    @Test
+    fun `a v3 draft keeps its tags, the one sensitivity answer and each file's filming time`() {
+        val d = MaterialDraft(
+            title = "sample title", types = listOf("report"), governorate = "G", city = "C", minors = false, injured = false, graphic = false,
+            files = listOf(PickedOriginal("content://media/picker/0/7", "a.mp4", 10, "video/mp4", materialKey = "k", capturedAtEpochMs = 1_793_000_000_000)),
+            tags = listOf("\u0648\u0633\u0645", "tag"), gate = "no",
+        )
+        val back = MaterialDraft.fromJson(d.toJson())!!
+        assertEquals(d, back)
+        assertEquals(1_793_000_000_000, back.files.single().capturedAtEpochMs)
+    }
+
+    @Test
+    fun `a v2 draft opens with no tags and no recorded answer`() {
+        val v2 = """{"v":2,"title":"t","types":["report"],"governorate":"G","city":"C","priority":"normal","minors":false,"injured":true,"graphic":null,
+            "displayMode":"real_name","pseudonym":"","values":{},"files":[{"uri":"content://x/1","name":"n","size":1,"mime":null}],"step":2}"""
+        val d = MaterialDraft.fromJson(v2)!!
+        assertEquals(emptyList<String>(), d.tags)
+        assertNull(d.gate)
+        assertNull(d.files.single().capturedAtEpochMs)
+        assertNull(MaterialDraft.fromJson("""{"v":3,"gate":"maybe"}""")!!.gate)
+    }
 }

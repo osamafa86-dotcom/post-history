@@ -38,7 +38,7 @@ fun EarningsScreen(vm: EarningsViewModel, onBack: () -> Unit) {
         actions = { TextButton(onClick = vm::refresh, enabled = !s.loading && !s.requestBusy) { Text(stringResource(R.string.earnings_refresh)) } },
     ) }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(VlSpace.s5), verticalArrangement = Arrangement.spacedBy(VlSpace.s4)) {
-            item { VlCard { Text(stringResource(R.string.earnings_sandbox), style = Vl.text.bodyMd) } }
+            item { VlCard { Text(stringResource(R.string.earnings_sandbox), style = Vl.text.body) } }
             if (s.loading) item { Text(stringResource(R.string.home_loading)) }
             s.failure?.let { failure -> item { Text(stringResource(when (failure) {
                 EarningsFailure.NETWORK -> R.string.earnings_network
@@ -59,7 +59,7 @@ fun EarningsScreen(vm: EarningsViewModel, onBack: () -> Unit) {
                     if (summary.balances.isEmpty()) item { Text(stringResource(R.string.earnings_empty_balances)) }
                     items(summary.balances, key = { it.currency.value }) { balance ->
                         VlCard {
-                            Text(balance.currency.value, style = Vl.text.bodyMd)
+                            Text(balance.currency.value, style = Vl.text.body)
                             Text(stringResource(R.string.earnings_balance_pending, money(balance.pending.amountMinor, balance.currency)))
                             Text(stringResource(R.string.earnings_requestable, money(balance.requestable.amountMinor, balance.currency)))
                             Text(stringResource(R.string.earnings_minimum, money(balance.minimum.amountMinor, balance.currency)))
@@ -70,7 +70,7 @@ fun EarningsScreen(vm: EarningsViewModel, onBack: () -> Unit) {
                         }
                     }
                 }
-                item { Text(stringResource(R.string.earnings_entries), style = Vl.text.bodyMd) }
+                item { Text(stringResource(R.string.earnings_entries), style = Vl.text.body) }
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(VlSpace.s2)) {
                         Text(stringResource(R.string.earnings_currency))
@@ -88,7 +88,7 @@ fun EarningsScreen(vm: EarningsViewModel, onBack: () -> Unit) {
                 items(s.entries, key = { "entry:${it.id}" }) { entry ->
                     VlCard {
                         Text(stringResource(entryLabel(entry.kind.value)))
-                        Text(money(entry.amount.amountMinor, entry.amount.currency, signed = true), style = Vl.text.bodyMd)
+                        Text(money(entry.amount.amountMinor, entry.amount.currency, signed = true), style = Vl.text.body)
                         Text(stringResource(payableLabel(entry.state.value)))
                         Text(date(entry.occurredAt))
                     }
@@ -96,10 +96,10 @@ fun EarningsScreen(vm: EarningsViewModel, onBack: () -> Unit) {
                 if (s.entriesBusy) item { Text(stringResource(R.string.home_loading)) }
                 else if (s.entries.isEmpty() && s.failure == null) item { Text(stringResource(R.string.earnings_empty_entries)) }
                 if (s.entryCursor != null) item { OutlinedButton(onClick = { vm.loadEntries() }, enabled = !s.entriesBusy) { Text(stringResource(R.string.earnings_more_entries)) } }
-                item { Text(stringResource(R.string.earnings_payouts), style = Vl.text.bodyMd) }
+                item { Text(stringResource(R.string.earnings_payouts), style = Vl.text.body) }
                 items(s.payouts, key = { "payout:${it.id}" }) { payout ->
                     VlCard {
-                        Text(money(payout.amount.amountMinor, payout.amount.currency), style = Vl.text.bodyMd)
+                        Text(money(payout.amount.amountMinor, payout.amount.currency), style = Vl.text.body)
                         Text(stringResource(payoutLabel(payout.state.value)))
                         Text(date(payout.requestedAt))
                         Text(stringResource(R.string.earnings_sandbox_short))

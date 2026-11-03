@@ -24,6 +24,13 @@ class ReceiptModelTest {
     }
 
     @Test
+    fun `the v2 fingerprint is eight characters, four from each end`() {
+        assertEquals("0123…cdef", ReceiptModel.fingerprint("0123456789abcdef".repeat(4)))
+        assertEquals("abcd", ReceiptModel.fingerprint("abcd"))
+        assertNull(ReceiptModel.fingerprint(null))
+    }
+
+    @Test
     fun `the QR link carries only the material id, over https, in the app's language`() {
         assertEquals("https://lib.example/ar/materials/m-1", ReceiptModel.materialLink("https://lib.example/", "ar", "m-1"))
         assertEquals("https://lib.example/en/materials/m-1", ReceiptModel.materialLink("https://lib.example", "en", "m-1"))

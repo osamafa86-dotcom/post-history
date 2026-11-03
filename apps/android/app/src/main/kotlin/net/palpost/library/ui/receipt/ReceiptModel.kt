@@ -15,6 +15,9 @@ object ReceiptModel {
     fun shareContent(receiptNumber: String?, receivedAtEpochMs: Long): ShareContent? =
         receiptNumber?.takeIf { it.isNotBlank() }?.let { ShareContent(it, receivedAtEpochMs) }
 
+    /** The v2 receipt's fingerprint: eight characters of the SHA-256, four from each end («9f2c…a71e», spec 06). */
+    fun fingerprint(sha256: String?): String? = sha256?.takeIf { it.length > 8 }?.let { it.take(4) + "…" + it.takeLast(4) } ?: sha256
+
     /** SHA-256 shortened to its first and last 8 characters, as the card prints it. */
     fun shortDigest(sha256: String?): String? = sha256?.takeIf { it.length > 16 }?.let { it.take(8) + "…" + it.takeLast(8) } ?: sha256
 

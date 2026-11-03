@@ -71,6 +71,10 @@ internal fun relative(epochMs: Long): String = DateUtils.getRelativeTimeSpanStri
     MaterialFile.State.failed -> R.string.file_state_failed
 }
 
+@Composable
+fun priorityLabel(p: net.palpost.library.api.models.Priority): String =
+    stringResource(when (p.value) { "urgent" -> R.string.priority_urgent; "important" -> R.string.priority_important; else -> R.string.priority_normal })
+
 /** A state's label by its contract value, for transition records (strings); an unknown value shows as sent. */
 @Composable
 fun stateLabel(track: String, value: String): String = when (track) {

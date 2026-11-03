@@ -48,6 +48,7 @@ data class PickedFile(val uri: Uri, val name: String, val value: AttachmentValue
 /**
  * Renders a form version field by field, in form order, showing only what [FormValidator.visibleFields]
  * says is visible for this material type and these values. Values are the JSON shapes the validator checks.
+ * [include] picks a part of it: the send screen shows required fields above its button and the rest under «More».
  */
 @Composable
 fun DynamicForm(
@@ -58,9 +59,10 @@ fun DynamicForm(
     picked: Map<String, List<PickedFile>>,
     onValueChange: (key: String, value: Any?) -> Unit,
     onFilesPicked: (key: String, files: List<PickedFile>) -> Unit,
+    include: (UploadFormField) -> Boolean = { true },
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        for (field in FormValidator.visibleFields(form, materialType, values)) {
+        for (field in FormValidator.visibleFields(form, materialType, values).filter(include)) {
             FieldRow(field, values[field.key], errors?.errorFor(field.key), picked[field.key].orEmpty(), onValueChange, onFilesPicked)
         }
     }

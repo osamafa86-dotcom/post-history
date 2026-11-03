@@ -16,4 +16,10 @@ class SignOutTest {
         runCatching { SignOut({ calls += "notifications" }, { throw IllegalStateException("offline") }, { calls += "session" }).run(false) }
         assertEquals("notifications", calls.first())
     }
+
+    @Test fun `what the app remembers for the reporter goes before the network calls`() = runBlocking {
+        val calls = ArrayList<String>()
+        SignOut({ calls += "notifications" }, { calls += "push" }, { calls += "session" }, forgetReporter = { calls += "memory" }).run(false)
+        assertEquals(listOf("notifications", "memory", "push", "session"), calls)
+    }
 }

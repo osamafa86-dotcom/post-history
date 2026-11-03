@@ -1,27 +1,30 @@
 package net.palpost.library.ui
 
-import net.palpost.library.security.SignOut
-import net.palpost.library.push.Push
 import android.app.Application
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -30,24 +33,39 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import net.palpost.library.AppContainer
-import net.palpost.library.PostHistoryApp
 import net.palpost.library.R
-import net.palpost.library.ui.security.EmergencyWipeDialog
 import net.palpost.library.api.models.Me
 import net.palpost.library.api.models.RoleName
+import net.palpost.library.data.DraftEntity
+import net.palpost.library.data.UploadTaskEntity
+import net.palpost.library.ui.theme.ButtonSize
+import net.palpost.library.ui.theme.MinTouchTarget
+import net.palpost.library.ui.theme.OutlineButton
+import net.palpost.library.ui.theme.PrimaryButton
+import net.palpost.library.ui.theme.SectionTitle
+import net.palpost.library.ui.theme.Signal
+import net.palpost.library.ui.theme.StateBadge
+import net.palpost.library.ui.theme.Vl
+import net.palpost.library.ui.theme.VlCard
+import net.palpost.library.ui.theme.VlIconButton
+import net.palpost.library.ui.theme.tokens.VlSpace
+import net.palpost.library.ui.uploads.UploadsViewModel
+import net.palpost.library.ui.uploads.stageWord
+import java.time.LocalTime
 
-data class HomeUiState(val me: Me? = null, val loading: Boolean = true, val error: String? = null, val signingOut: Boolean = false, val wiping: Boolean = false)
+data class HomeUiState(val me: Me? = null, val loading: Boolean = true, val error: String? = null)
 
 class HomeViewModel(private val app: Application, private val container: AppContainer) : ViewModel() {
     private val _state = MutableStateFlow(HomeUiState())
     val state: StateFlow<HomeUiState> = _state
+    val drafts: StateFlow<List<DraftEntity>> = container.database.drafts().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val uploads: StateFlow<List<UploadTaskEntity>> = container.database.uploads().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init { load() }
 
@@ -60,25 +78,6 @@ class HomeViewModel(private val app: Application, private val container: AppCont
                 _state.update { it.copy(loading = false, error = describeFailure(app, t)) }
             }
         }
-    }
-
-    fun logout(allSessions: Boolean) {
-        if (_state.value.signingOut) return
-        _state.update { it.copy(signingOut = true) }
-        viewModelScope.launch {
-            SignOut(
-                cancelShownNotifications = { androidx.core.app.NotificationManagerCompat.from(app).cancelAll() },
-                unregisterPush = { Push.unregister(container) },
-                endSession = { all -> container.auth.logout(all) },
-            ).run(allSessions)
-        }
-    }
-
-    /** SEC-01 emergency wipe: everything on the device, now; the server is not told (no network needed). */
-    fun emergencyWipe() {
-        if (_state.value.wiping) return
-        _state.update { it.copy(wiping = true) }
-        viewModelScope.launch { (app as PostHistoryApp).emergencyWipe() }
     }
 }
 
@@ -100,46 +99,80 @@ fun roleLabel(name: RoleName): String = stringResource(
     },
 )
 
+/**
+ * 03 · home: the greeting, notifications and settings, the big «Send from the field», drafts, the latest sends with their upload
+ * state, and «My materials». The four former tabs became one screen that the destinations are pushed from (ADR 0088).
+ */
 @Composable
-fun HomeScreen(container: AppContainer, onOpenForm: () -> Unit, onNewMaterial: () -> Unit, onUploads: () -> Unit, onMaterials: () -> Unit, onNotifications: () -> Unit, onReview: () -> Unit, onEarnings: () -> Unit, onSetup: () -> Unit) {
+fun HomeScreen(
+    container: AppContainer, onSend: () -> Unit, onOpenDraft: (String) -> Unit, onUploads: () -> Unit, onMaterials: () -> Unit,
+    onNotifications: () -> Unit, onSettings: () -> Unit, onReview: () -> Unit, onEarnings: () -> Unit,
+) {
     val app = LocalContext.current.applicationContext as Application
     val vm: HomeViewModel = viewModel(factory = viewModelFactory { initializer { HomeViewModel(app, container) } })
     val s by vm.state.collectAsStateWithLifecycle()
-    Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.home_title)) }) }) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            when {
-                s.loading -> Text(stringResource(R.string.home_loading))
-                s.error != null -> {
-                    Text(s.error!!, color = MaterialTheme.colorScheme.error)
-                    TextButton(onClick = vm::load) { Text(stringResource(R.string.action_retry)) }
+    val drafts by vm.drafts.collectAsStateWithLifecycle()
+    val uploads by vm.uploads.collectAsStateWithLifecycle()
+    Column(
+        Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(VlSpace.s5),
+        verticalArrangement = Arrangement.spacedBy(VlSpace.s5),
+    ) {
+        Column(Modifier.widthIn(max = 600.dp).align(Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(VlSpace.s5)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(VlSpace.s3)) {
+                val morning = LocalTime.now().hour < 12
+                val name = s.me?.workName?.takeIf { it.isNotBlank() }
+                val greeting = when {
+                    name != null -> stringResource(if (morning) R.string.home_greeting_morning_named else R.string.home_greeting_evening_named, name)
+                    else -> stringResource(if (morning) R.string.home_greeting_morning else R.string.home_greeting_evening)
                 }
-                s.me != null -> {
-                    val me = s.me!!
-                    Text(stringResource(R.string.home_signed_in_as, me.email), style = MaterialTheme.typography.titleMedium)
-                    val roles = me.roles.map { roleLabel(it.name) }
-                    Text(if (roles.isEmpty()) stringResource(R.string.home_no_roles) else stringResource(R.string.home_roles, roles.joinToString("، ")))
-                }
+                Text(greeting, style = Vl.text.title, color = Vl.colors.textPrimary, modifier = Modifier.weight(1f).semantics { heading() })
+                VlIconButton(Icons.Outlined.Notifications, stringResource(R.string.home_notifications), onNotifications)
+                VlIconButton(Icons.Outlined.Settings, stringResource(R.string.settings_title), onSettings)
             }
-            Button(onClick = onNewMaterial, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_new_material)) }
-            OutlinedButton(onClick = onUploads, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_uploads)) }
-            OutlinedButton(onClick = onMaterials, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_materials)) }
+            s.error?.let { err ->
+                Text(err, style = Vl.text.caption, color = Vl.colors.stateDanger)
+                net.palpost.library.ui.theme.GhostButton(stringResource(R.string.action_retry), vm::load)
+            }
+            PrimaryButton(stringResource(R.string.home_send), onSend, size = ButtonSize.HERO)
+            if (drafts.isNotEmpty()) {
+                SectionTitle(stringResource(R.string.home_drafts))
+                for (d in drafts) DraftRow(d) { onOpenDraft(d.id) }
+            }
+            val recent = uploads.sortedByDescending { it.createdAtEpochMs }.take(RECENT)
+            if (recent.isNotEmpty()) {
+                SectionTitle(stringResource(R.string.home_recent))
+                for (t in recent) RecentRow(t, onUploads)
+                OutlineButton(stringResource(R.string.home_uploads), onUploads, small = true)
+            }
+            OutlineButton(stringResource(R.string.home_materials), onMaterials)
             // The review inbox is offered to supervisors; the server still decides what each may see and do.
-            if (s.me?.roles?.any { it.name.value == "supervisor" } == true) {
-                Button(onClick = onReview, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_review)) }
-            }
-            OutlinedButton(onClick = onNotifications, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_notifications)) }
-            if (s.me?.roles?.any { it.name.value == "reporter" } == true) {
-                OutlinedButton(onClick = onEarnings, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.earnings_title)) }
-            }
-            OutlinedButton(onClick = onSetup, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_setup)) }
-            TextButton(onClick = onOpenForm, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_open_form)) }
-            OutlinedButton(onClick = { vm.logout(allSessions = false) }, enabled = !s.signingOut, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_logout)) }
-            TextButton(onClick = { vm.logout(allSessions = true) }, enabled = !s.signingOut, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_logout_all)) }
-            var confirmWipe by remember { mutableStateOf(false) }
-            TextButton(onClick = { confirmWipe = true }, enabled = !s.wiping, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.home_emergency_wipe), color = MaterialTheme.colorScheme.error)
-            }
-            if (confirmWipe) EmergencyWipeDialog(busy = s.wiping, onConfirm = { vm.emergencyWipe() }, onDismiss = { confirmWipe = false })
+            if (s.me?.roles?.any { it.name.value == "supervisor" } == true) OutlineButton(stringResource(R.string.home_review), onReview)
+            if (s.me?.roles?.any { it.name.value == "reporter" } == true) OutlineButton(stringResource(R.string.earnings_title), onEarnings)
+        }
+    }
+}
+
+private const val RECENT = 5
+
+@Composable
+private fun DraftRow(d: DraftEntity, onOpen: () -> Unit) {
+    VlCard(modifier = Modifier.heightIn(min = MinTouchTarget).clickable(onClick = onOpen), gap = VlSpace.s2, padding = VlSpace.s4) {
+        Row(horizontalArrangement = Arrangement.spacedBy(VlSpace.s3), verticalAlignment = Alignment.CenterVertically) {
+            StateBadge(stringResource(R.string.a2_draft_badge), Signal.MUTED)
+            Text(d.title.ifBlank { stringResource(R.string.a2_draft_untitled) }, style = Vl.text.headline, color = Vl.colors.textPrimary, maxLines = 1)
+        }
+    }
+}
+
+/** A recent send's file: its title and its stage in a word and a colour (no thumbnail here, so nothing sensitive shows on the home screen). */
+@Composable
+private fun RecentRow(t: UploadTaskEntity, onOpen: () -> Unit) {
+    val done = t.state in UploadsViewModel.DONE
+    val failed = t.state == net.palpost.library.core.upload.UploadState.FAILED.name
+    VlCard(modifier = Modifier.fillMaxWidth().heightIn(min = MinTouchTarget).clickable(onClick = onOpen), gap = VlSpace.s1, padding = VlSpace.s4) {
+        Row(horizontalArrangement = Arrangement.spacedBy(VlSpace.s3), verticalAlignment = Alignment.CenterVertically) {
+            Text(t.title.ifBlank { stringResource(R.string.a3_untitled) }, style = Vl.text.headline, color = Vl.colors.textPrimary, maxLines = 1, modifier = Modifier.weight(1f))
+            StateBadge(stageWord(t), if (done) Signal.OK else if (failed) Signal.DANGER else Signal.BRAND)
         }
     }
 }
