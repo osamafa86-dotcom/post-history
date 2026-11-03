@@ -54,6 +54,10 @@ const L = {
 
 const LOGO_PLATE_ALPHA = 0.55; // كالقالب الأول: 3:1 على الأقل فوق لقطة بيضاء
 const MIN_TITLE_SCALE = 0.7; // ADR 0091: تصغير الكتلة كلها بنسبة واحدة حتى 70%، بلا التفاف
+// شريط الحساب: مدة كل ظهور، وأقلّ فاصل بين الظهورين قبل دمجهما في ظهور واحد
+const CREDIT_DWELL = 5;
+const CREDIT_GAP = 3;
+
 const EASE = Easing.bezier(0.22, 1, 0.36, 1);
 const EASE_EXIT = Easing.bezier(0.64, 0, 0.78, 0);
 const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;
@@ -129,8 +133,7 @@ export const WitnessTemplate: React.FC<WitnessProps> = ({
   const sp = (at: number, damping = 18) =>
     rm ? enter(at, at + 0.3) : spring({ frame: frame - at * fps, fps, config: { damping, stiffness: 140, mass: 0.9 } });
 
-  // الخروج المعكوس
-  const xCredit = exitAt(0);
+  // الخروج المعكوس (الشريط له خروجه في نافذتيه، أدناه)
   const xDate = exitAt(1);
   const xLine = exitAt(2);
   const xTitle = exitAt(3);
@@ -183,11 +186,32 @@ export const WitnessTemplate: React.FC<WitnessProps> = ({
   // 7 · سطر المكان
   const ringsPop = rm ? 1 : sp(1.5, 12) * (1 - xDate);
   const dateIn = enter(1.62, 1.9) * (1 - xDate);
-  // 8 · شريط الحساب
-  const cLine = enter(1.8, 1.95);
-  const cSlide = rm ? 1 : sp(1.92, 17);
-  const cName = enter(2.15, 2.4);
-  const cLineOut = interpolate(xCredit, [0.4, 1], [0, 1], clamp);
+  // 8 · شريط الحساب: يظهر مرّتين (قرار المالك 2026-11-03)، بعد الدخول لمن بدأ المشاهدة، وقبل الخروج لمن وصل متأخّرًا.
+  // كلّ ظهور CREDIT_DWELL ثانية. وإن قصر المقطع فتقاربت النافذتان (أقلّ من CREDIT_GAP بينهما) صارتا ظهورًا واحدًا متّصلًا.
+  const D = durationInFrames / fps;
+  const finalOut = D - 0.6;
+  const firstIn = 1.8;
+  const firstOut = firstIn + CREDIT_DWELL;
+  const secondIn = finalOut - CREDIT_DWELL;
+  const creditWindows =
+    secondIn - firstOut < CREDIT_GAP
+      ? [{ inAt: firstIn, outAt: finalOut }]
+      : [
+          { inAt: firstIn, outAt: firstOut },
+          { inAt: secondIn, outAt: finalOut },
+        ];
+  const creditAt = (inAt: number, outAt: number) => {
+    const x = interpolate(t, [outAt, outAt + 0.28], [0, 1], { ...clamp, easing: EASE_EXIT });
+    return {
+      line: enter(inAt, inAt + 0.15),
+      slide: rm ? 1 : sp(inAt + 0.12, 17),
+      name: enter(inAt + 0.35, inAt + 0.6),
+      fade: rm ? enter(inAt + 0.1, inAt + 0.4) : 1,
+      x,
+      lineOut: interpolate(x, [0.4, 1], [0, 1], clamp),
+      visible: t >= inAt - 0.05 && t <= outAt + 0.3,
+    };
+  };
 
   return (
     <AbsoluteFill style={{ backgroundColor: background === 'none' ? 'transparent' : `rgb(${C.night})`, overflow: 'hidden' }}>
@@ -397,50 +421,56 @@ export const WitnessTemplate: React.FC<WitnessProps> = ({
       </div>
 
       {/* 8 · شريط الحساب الأصلي على الحافة اليسرى، يُقرأ من الأسفل إلى الأعلى */}
-      {credit ? (
-        <>
-          <div
-            style={{
-              position: 'absolute',
-              left: f.l - 1,
-              top: s.creditY - 160,
-              width: 3,
-              height: 320,
-              background: `linear-gradient(to top, ${C.signal}, rgba(${C.signalRgb},0))`,
-              transformOrigin: 'center bottom',
-              scale: `1 ${cLine * (1 - cLineOut)}`,
-              opacity: 0.85,
-            }}
-          />
-          <div
-            style={{
-              position: 'absolute',
-              left: f.l,
-              top: s.creditY,
-              transform: `translate(-50%, -50%) rotate(-90deg) translateY(${rm ? 0 : (1 - Math.min(cSlide, 1)) * 90 + xCredit * 110}px)`,
-              opacity: (rm ? enter(1.9, 2.2) : Math.min(1, cSlide * 1.6)) * (1 - interpolate(xCredit, [0.5, 1], [0, 1], clamp)),
-              display: 'flex',
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: Math.round(s.credit * 0.45),
-              padding: `${Math.round(s.credit * 0.34)}px ${Math.round(s.credit * 0.8)}px ${Math.round(s.credit * 0.42)}px ${Math.round(s.credit * 0.5)}px`,
-              borderRadius: 999,
-              background: `rgba(${C.night},0.62)`,
-              border: `1.5px solid rgba(${C.signalRgb},0.55)`,
-              backdropFilter: 'blur(16px)',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <Rings size={Math.round(s.credit * 0.9)} pulse={pulse} pop={1} />
-            <div style={{ fontFamily: TEXT_FONT, fontWeight: 600, fontSize: s.credit, color: '#FFFFFF', opacity: cName }} dir="ltr">
-              {credit}
-            </div>
-            <div style={{ fontFamily: TEXT_FONT, fontWeight: 600, fontSize: Math.round(s.credit * 0.82), color: 'rgba(255,255,255,0.72)', opacity: cName }}>
-              بعدسة
-            </div>
-          </div>
-        </>
-      ) : null}
+      {credit
+        ? creditWindows.map(({ inAt, outAt }) => {
+            const c = creditAt(inAt, outAt);
+            if (!c.visible) return null;
+            return (
+              <React.Fragment key={inAt}>
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: f.l - 1,
+                    top: s.creditY - 160,
+                    width: 3,
+                    height: 320,
+                    background: `linear-gradient(to top, ${C.signal}, rgba(${C.signalRgb},0))`,
+                    transformOrigin: 'center bottom',
+                    scale: `1 ${c.line * (1 - c.lineOut)}`,
+                    opacity: 0.85,
+                  }}
+                />
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: f.l,
+                    top: s.creditY,
+                    transform: `translate(-50%, -50%) rotate(-90deg) translateY(${rm ? 0 : (1 - Math.min(c.slide, 1)) * 90 + c.x * 110}px)`,
+                    opacity: (rm ? c.fade : Math.min(1, c.slide * 1.6)) * (1 - interpolate(c.x, [0.5, 1], [0, 1], clamp)),
+                    display: 'flex',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: Math.round(s.credit * 0.45),
+                    padding: `${Math.round(s.credit * 0.34)}px ${Math.round(s.credit * 0.8)}px ${Math.round(s.credit * 0.42)}px ${Math.round(s.credit * 0.5)}px`,
+                    borderRadius: 999,
+                    background: `rgba(${C.night},0.62)`,
+                    border: `1.5px solid rgba(${C.signalRgb},0.55)`,
+                    backdropFilter: 'blur(16px)',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <Rings size={Math.round(s.credit * 0.9)} pulse={pulse} pop={1} />
+                  <div style={{ fontFamily: TEXT_FONT, fontWeight: 600, fontSize: s.credit, color: '#FFFFFF', opacity: c.name }} dir="ltr">
+                    {credit}
+                  </div>
+                  <div style={{ fontFamily: TEXT_FONT, fontWeight: 600, fontSize: Math.round(s.credit * 0.82), color: 'rgba(255,255,255,0.72)', opacity: c.name }}>
+                    بعدسة
+                  </div>
+                </div>
+              </React.Fragment>
+            );
+          })
+        : null}
     </AbsoluteFill>
   );
 };

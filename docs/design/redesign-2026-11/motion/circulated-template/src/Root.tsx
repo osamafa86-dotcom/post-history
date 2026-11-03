@@ -130,6 +130,8 @@ export const Root: React.FC = () => (
       <Composition id="Witness-Vertical-ThreeLines" component={WitnessTemplate} fps={FPS} width={1080} height={1920} durationInFrames={240} calculateMetadata={witnessMeta} defaultProps={witness('vertical', ['عنوان تجريبي', 'من ثلاثة أسطر', 'للمادة المتداولة'])} />
       <Composition id="Witness-Horizontal" component={WitnessTemplate} fps={FPS} width={1920} height={1080} durationInFrames={240} calculateMetadata={witnessMeta} defaultProps={witness('horizontal', ['عنوان تجريبي', 'للمادة المتداولة'])} />
       <Composition id="Witness-Square" component={WitnessTemplate} fps={FPS} width={1080} height={1080} durationInFrames={240} calculateMetadata={witnessMeta} defaultProps={witness('square', ['عنوان تجريبي', 'للمادة المتداولة'])} />
+      {/* مقطع 20 ث: شريط الحساب يظهر مرّتين، بعد الدخول وقبل الخروج */}
+      <Composition id="Witness-Vertical-Long" component={WitnessTemplate} fps={FPS} width={1080} height={1920} durationInFrames={600} calculateMetadata={witnessMeta} defaultProps={{ ...witness('vertical', ['عنوان تجريبي', 'للمادة المتداولة']), durationInSeconds: 20 }} />
       <Composition id="Witness-Overlay-Vertical" component={WitnessTemplate} fps={FPS} width={1080} height={1920} durationInFrames={240} calculateMetadata={witnessMeta} defaultProps={witness('vertical', ['عنوان تجريبي', 'للمادة المتداولة'], 'none')} />
     </Folder>
     <Folder name="Overlay">
