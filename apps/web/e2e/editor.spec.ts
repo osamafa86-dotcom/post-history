@@ -9,7 +9,7 @@ test.beforeEach(async ({ request }) => { await request.post("http://127.0.0.1:32
 
 test("the inbox leads with unseen urgent material and the newsroom counters", async ({ page }) => {
   await login(page); const alert = page.getByTestId("urgent-alert");
-  await expect(alert).toBeVisible(); await expect(alert).toContainText(ar.editor.urgentMany.replace("{n}", "10")); await expect(alert.getByTestId("urgent-since")).toHaveText(/\S/); await expect(alert.getByTestId("urgent-since")).not.toContainText(":");
+  await expect(alert).toBeVisible(); await expect(alert).toContainText(ar.editor.urgentMany.few.replace("{n}", "10")); await expect(alert.getByTestId("urgent-since")).toHaveText(/\S/); await expect(alert.getByTestId("urgent-since")).not.toContainText(":");
   await expect(page.getByTestId("stat-urgent")).toBeVisible();
   await alert.getByRole("button", { name: ar.editor.showUrgent }).click(); await expect(page.getByTestId("material-row")).toHaveCount(40); await expect(page.getByTestId("material-row").filter({ hasText: ar.states.priority.urgent })).toHaveCount(40);
   await expect(page.locator(".filter-panel")).not.toHaveAttribute("open");

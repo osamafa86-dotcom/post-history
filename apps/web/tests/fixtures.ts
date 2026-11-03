@@ -12,7 +12,8 @@ export function material(index = 1): Material {
     sensitivity: { minors: false, injured: false, graphic: false }, display_name: { mode: "network" }, form_version: form.version,
     dynamic_fields: {}, technical_state: "verified", editorial_state: "inbox", rights_state: "unknown",
     files: [
-      { id: `30000000-0000-4000-8000-${String(index).padStart(12, "0")}`, kind: "proxy", state: "verified", mime_type: "video/mp4", receipt_number: `RCPT-20261020-${String(index).padStart(6, "0")}`, created_at: "2026-10-19T12:00:00Z" },
+      // نسخة خفيفة صنعها الخادم من الأصل (`derived_from_id`)؛ الحقل يقرؤه الويب بحذر ريثما يصفه العقد.
+      { id: `30000000-0000-4000-8000-${String(index).padStart(12, "0")}`, kind: "proxy", state: "verified", mime_type: "video/mp4", receipt_number: `RCPT-20261020-${String(index).padStart(6, "0")}`, created_at: "2026-10-19T12:00:00Z", derived_from_id: `50000000-0000-4000-8000-${String(index).padStart(12, "0")}` } as Material["files"][number],
       { id: `40000000-0000-4000-8000-${String(index).padStart(12, "0")}`, kind: "thumbnail", state: "verified", mime_type: "image/png", created_at: "2026-10-19T12:00:00Z" },
       { id: `50000000-0000-4000-8000-${String(index).padStart(12, "0")}`, kind: "original", state: "verified", mime_type: "video/mp4", created_at: "2026-10-19T12:00:00Z" },
     ],

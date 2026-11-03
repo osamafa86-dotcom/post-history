@@ -4,7 +4,8 @@ import en from "../messages/en.json" with { type: "json" };
 async function login(page: Page, role: string, locale: "ar" | "en" = "ar") {
   const m = locale === "ar" ? ar : en;
   await page.goto(`/${locale}/login`); await page.getByLabel(m.email).fill(`${role}@example.test`); await page.getByLabel(m.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(m.totp, { exact: true }).fill("123456"); await page.getByRole("button", { name: m.signIn, exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/${locale}/inbox$`));
+  // المالية لا تقرأ المواد: تهبط في الصرف، والبقية في الوارد.
+  await expect(page).toHaveURL(new RegExp(`/${locale}/${role === "finance" ? "payouts" : "inbox"}$`));
 }
 test.beforeEach(async ({ request }) => { await request.post("http://127.0.0.1:3201/__test/reset"); });
 

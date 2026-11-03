@@ -25,7 +25,8 @@ export function ListingPanel({ locale, material }: { locale: Locale; material: M
     (async () => {
       try {
         const result = await browserApi().GET("/materials/{id}/listing", { params: { path: { id: material.id } }, signal: controller.signal });
-        const found = result.response.status === 404 ? null : dataOrThrow(result);
+        // بلا إدراج: 204 من الـBFF (و404 من خادم أقدم)، فالحالة فارغة.
+        const found = [204, 404].includes(result.response.status) ? null : dataOrThrow(result);
         const list = writer ? dataOrThrow(await browserApi().GET("/license-templates", { signal: controller.signal })).items : [];
         if (!controller.signal.aborted) { setLoaded({ listing: found, tag: result.response.headers.get("ETag") }); setTemplates(list); setError(false); }
       } catch (e) { if (!controller.signal.aborted && !(e instanceof RequestError && e.status === 404)) setError(true); }

@@ -8,6 +8,7 @@ import type { Order } from "@/lib/order-policy";
 import type { Organization } from "@/lib/buyer-policy";
 import { EmptyState } from "../empty-state";
 import { Icon } from "../icon";
+import { ScrollRegion } from "../scroll-region";
 
 type Loaded = { order: Order; organization: Organization | null; licenses: Record<string, string> };
 
@@ -59,7 +60,7 @@ export function InvoicePage({ locale, id }: { locale: Locale; id: string }) {
         <section><h2>{v.status}</h2><p className={`state-word ${order.status === "refunded" ? "muted" : "ok"}`}><Icon name={order.status === "refunded" ? "money" : "check"} size={14} />{order.status === "refunded" ? v.refunded : v.paid}</p>
           <p className="caption">{fill(v.gatewayConfirmed, "{time}", ref(shortTime(order.paid_at)))}</p></section>
       </div>
-      <div className="invoice-table"><table>
+      <ScrollRegion className="invoice-table" label={v.linesLabel} testId="invoice-lines"><table>
         <thead><tr><th scope="col">{v.colItem}</th><th scope="col">{v.colLicence}</th><th scope="col">{v.colLicenceNo}</th><th scope="col" className="ref">{v.colPrice.replace("{currency}", currency)}</th></tr></thead>
         <tbody>{order.items.map(item => <tr key={item.id} data-testid="invoice-line">
           <td>{localized(item.title, locale)}</td>
@@ -68,7 +69,7 @@ export function InvoicePage({ locale, id }: { locale: Locale; id: string }) {
           <td className="ref" dir="ltr">{formatAmount(item.price, locale)}</td>
         </tr>)}</tbody>
         <tfoot><tr><th scope="row" colSpan={3}>{v.total.replace("{currency}", currency)}</th><td className="ref" dir="ltr" data-testid="invoice-total">{formatAmount(order.total, locale)}</td></tr></tfoot>
-      </table></div>
+      </table></ScrollRegion>
       <footer className="invoice-notes"><p>{v.paymentNote}</p><p>{v.filesNote}</p></footer>
     </article>
   </>;

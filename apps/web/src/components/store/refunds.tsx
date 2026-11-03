@@ -9,6 +9,7 @@ import type { Order } from "@/lib/order-policy";
 import { refundable, refundReaders, refundReasons, refundWriters, type Refund, type RefundCreate } from "@/lib/refund-policy";
 import { useUser } from "../session-boundary";
 import { ActionStatus } from "../action-status";
+import { ScrollRegion } from "../scroll-region";
 
 const tone = (status: Refund["status"]) => status === "succeeded" ? "good" : status === "failed" ? "bad" : "";
 
@@ -38,8 +39,8 @@ export function RefundsPanel({ locale, order, onChange }: { locale: Locale; orde
   return <section className="card" aria-labelledby="refunds-title"><h2 id="refunds-title">{r.title}</h2>
     {error ? <><p role="alert">{m.error}</p><button className="secondary" onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></>
       : !items ? <p role="status">{m.loading}</p>
-      : <>{!items.length ? <p className="muted">{r.empty}</p> : <div className="table-scroll"><table><thead><tr>{[r.created, r.items, r.amount, r.reason, r.status].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
-          <tbody>{items.map(refund => <tr key={refund.id} data-testid="refund-row"><td>{formatDate(refund.created_at, locale)}</td><td>{refund.order_item_ids.map(title).join("، ")}</td><td dir="ltr">{formatMoney(refund.amount, locale)}</td><td>{r.reasons[refund.reason_code]}</td><td><span className={`badge ${tone(refund.status)}`}>{r.statuses[refund.status]}</span></td></tr>)}</tbody></table></div>}
+      : <>{!items.length ? <p className="muted">{r.empty}</p> : <ScrollRegion className="table-scroll" label={r.historyLabel} testId="refund-history"><table><thead><tr>{[r.created, r.items, r.amount, r.reason, r.status].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+          <tbody>{items.map(refund => <tr key={refund.id} data-testid="refund-row"><td>{formatDate(refund.created_at, locale)}</td><td>{refund.order_item_ids.map(title).join("، ")}</td><td dir="ltr">{formatMoney(refund.amount, locale)}</td><td>{r.reasons[refund.reason_code]}</td><td><span className={`badge ${tone(refund.status)}`}>{r.statuses[refund.status]}</span></td></tr>)}</tbody></table></ScrollRegion>}
         {items.some(i => i.status === "pending") && <p className="muted">{r.pendingHelp}</p>}
         {writer && (open.length ? <form className="rule-form" noValidate onSubmit={e => { e.preventDefault(); void submit(); }}>
           <fieldset className="check-group"><legend>{r.choose}</legend>{open.map(item => <label key={item.id} className="check"><input type="checkbox" checked={selected.includes(item.id)} onChange={() => setSelected(list => list.includes(item.id) ? list.filter(id => id !== item.id) : [...list, item.id])} />{localized(item.title, locale)} <small className="muted">{localized(item.license_name, locale)} · <bdi dir="ltr">{formatMoney(item.price, locale)}</bdi></small></label>)}</fieldset>

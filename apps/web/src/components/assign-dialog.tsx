@@ -6,6 +6,7 @@ import { messages, plural, shortTime, type Locale } from "@/lib/i18n";
 import type { Material } from "@/lib/types";
 import { candidateLoad, cleanNote, dueAt, duePresets, noteMax, rushes, validNote, type AssignmentCandidate, type AssignmentCreate, type DuePreset, type MaterialAssignment } from "@/lib/assignment-policy";
 import { useMutation } from "@/lib/use-mutation";
+import { accountName } from "@/lib/work-name";
 import { ActionStatus } from "./action-status";
 import { fill } from "./render-dialog";
 import { Icon } from "./icon";
@@ -15,8 +16,8 @@ const currentTime = () => Date.now();
 type Refusal = { code: "assignment_open"; assignmentId?: string } | { code: "assignment_not_allowed" } | { code: "assignee_not_eligible" };
 type Props = { locale: Locale; material: Pick<Material, "id" | "title" | "priority" | "files">; onClose: () => void; onAssigned: (task: MaterialAssignment, name: string) => void };
 
-/** اسم المرشّح كما يُعرض: اسم العمل، أو «عضو في فريق الإنتاج» بلا اسم. لا بريد ولا اسم حقيقي. */
-export const candidateName = (c: Pick<AssignmentCandidate, "work_name">, locale: Locale) => c.work_name ?? messages[locale].assign.unnamed;
+/** اسم المرشّح كما يُعرض: اسم العمل، أو «حساب <أول 8 من المعرّف>» بلا اسم كما في الإدارة، فلا يتشابه مرشّحان بلا اسم. لا بريد ولا اسم حقيقي. */
+export const candidateName = (c: Pick<AssignmentCandidate, "user_id" | "work_name">, locale: Locale) => accountName(c.user_id, c.work_name, locale);
 const initials = (name: string) => { const words = name.split(/\s+/).filter(Boolean); return (words.length > 1 ? [...words[0]][0] + [...words[1]][0] : [...(words[0] ?? "?")].slice(0, 2).join("")).toLocaleUpperCase(); };
 
 /**

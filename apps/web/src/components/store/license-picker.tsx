@@ -1,6 +1,6 @@
 "use client";
 import type { components } from "@/generated/schema";
-import { formatDate, messages, type Locale } from "@/lib/i18n";
+import { formatDate, messages, plural, type Locale } from "@/lib/i18n";
 import { formatMoney, localized, type LicenseType, type Localized, type Price } from "@/lib/store-format";
 
 export type Offer = { id: string; type: LicenseType; name: Localized; price: Price; terms?: components["schemas"]["LicenseTerms"] };
@@ -8,7 +8,7 @@ export type Offer = { id: string; type: LicenseType; name: Localized; price: Pri
 /** سطر الشروط تحت اسم الترخيص (S2): نوعه ومدته، من شروط إصدار القالب قبل الشراء (ADR 0035) إن وصلت. */
 function summary(offer: Offer, locale: Locale) {
   const s = messages[locale].store, days = offer.terms?.term_days;
-  return [s.licenseTypes[offer.type], offer.terms ? (days ? s.item.termDays.replace("{n}", String(days)) : s.item.noTerm) : null].filter(Boolean).join(s.catalog.listSeparator);
+  return [s.licenseTypes[offer.type], offer.terms ? (days ? plural(days, s.item.termDays, locale) : s.item.noTerm) : null].filter(Boolean).join(s.catalog.listSeparator);
 }
 
 // اختيار الترخيص (S2): بطاقات راديو حقيقية بسعر كلٍّ منها؛ الحصري يُعطَّل حين لا يتاح (exclusive_available=false)، والتجاري يحتاج موافقة الإدارة.

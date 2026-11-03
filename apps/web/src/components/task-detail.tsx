@@ -55,7 +55,7 @@ export function TaskDetail({ locale, id }: { locale: Locale; id: string }) {
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(""), 8000); return () => clearTimeout(timer); }, [notice]);
 
   const mine = hasRole(me, "producer");
-  const crumbs = (title?: string) => <nav className="breadcrumb" aria-label={m.shell.material.breadcrumb}><Link prefetch={false} className="back-link" href={`/${locale}/${mine ? "tasks" : "inbox"}`} aria-label={m.back}>{mine ? t.crumb : m.inbox}</Link>{title && <><span className="breadcrumb-sep"><Icon name="chevron" size={14} /></span><span aria-current="page">{title}</span></>}</nav>;
+  const crumbs = (title?: string) => <nav className="breadcrumb" aria-label={m.shell.material.breadcrumb}><Link prefetch={false} className="back-link" href={`/${locale}/${mine ? "tasks" : "inbox"}`} aria-label={mine ? t.backToTasks : m.back}>{mine ? t.crumb : m.inbox}</Link>{title && <><span className="breadcrumb-sep"><Icon name="chevron" size={14} /></span><span aria-current="page">{title}</span></>}</nav>;
   if (!allowed) return <NoAccess locale={locale} me={me} title={m.tasks.title} denied={t.denied} />;
   if (error && !task) return <>{crumbs()}<EmptyState icon={error === 404 ? "search" : "alert"} role="alert" title={error === 404 ? m.notFound : m.error} actions={<button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button>} /></>;
   if (!task) return <>{crumbs()}<p className="visually-hidden" role="status">{m.loading}</p><div className="material-layout" aria-hidden="true"><div className="material-main"><span className="skeleton line wide" /><span className="skeleton card" /></div><div className="material-side"><span className="skeleton card" /></div></div></>;

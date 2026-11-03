@@ -30,12 +30,28 @@ export function LicensesPage({ locale }: { locale: Locale }) {
   const m = messages[locale], t = m.licenses, me = useUser(), allowed = hasRole(me, ...licenseReaders), downloader = hasRole(me, ...licenseDownloaders), mutation = useMutation();
   const [items, setItems] = useState<IssuedLicense[] | null>(null), [error, setError] = useState(false), [attempt, setAttempt] = useState(0), [working, setWorking] = useState<string | null>(null), [remaining, setRemaining] = useState<{ id: string; n: number } | null>(null);
   const [now] = useState(() => Date.now()), clicks = useRef(0);
+  // عضو المؤسسة يرى تراخيص مؤسسته كلها، لكن طلباته وحدها (العقد): رابط الفاتورة لطلب يفتحه وحده، وغيره رقم بلا رابط.
+  const member = hasRole(me, "buyer_member") && !hasRole(me, "buyer_admin"), [ownOrders, setOwnOrders] = useState<Set<string> | null>(null);
   useEffect(() => {
     if (!allowed) return;
     const controller = new AbortController();
     void browserApi().GET("/licenses", { signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setItems(data.items); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [allowed, attempt]);
+  useEffect(() => {
+    if (!allowed || !member) return;
+    const controller = new AbortController();
+    void (async () => {
+      const ids = new Set<string>(); let cursor: string | undefined;
+      for (let page = 0; page < 10; page++) {
+        const data = dataOrThrow(await browserApi().GET("/orders", { params: { query: { limit: 100, ...(cursor ? { cursor } : {}) } }, signal: controller.signal }));
+        data.items.forEach(order => ids.add(order.id)); cursor = data.next_cursor ?? undefined; if (!cursor) break;
+      }
+      if (!controller.signal.aborted) setOwnOrders(ids);
+    })().catch(() => { /* بلا قائمة لا روابط فواتير، والأرقام ظاهرة */ });
+    return () => controller.abort();
+  }, [allowed, member, attempt]);
+  const opens = (orderId: string) => !member || !!ownOrders?.has(orderId);
   async function download(id: string) {
     let url: string | undefined, left: number | undefined;
     setWorking(id);
@@ -56,7 +72,7 @@ export function LicensesPage({ locale }: { locale: Locale }) {
           const title = localized(l.title, locale), view = licenseView(l, now), order = orderLabel({ id: l.order_id, order_number: l.order_number });
           return <tr key={l.id} data-testid="license-row" data-view={view}>
             <td data-label={t.colMaterial}><strong>{title}</strong><small className="license-number-line"><Link prefetch={false} href={`/${locale}/store/licenses/${l.id}`}><bdi dir="ltr" className="mono">{l.license_number}</bdi></Link></small></td>
-            <td data-label={t.colOrder}><Link prefetch={false} href={`/${locale}/store/orders/${l.order_id}/invoice`} aria-label={t.invoiceFor.replace("{id}", order)}><bdi dir="ltr" className="ref">{order}</bdi></Link></td>
+            <td data-label={t.colOrder}>{opens(l.order_id) ? <Link prefetch={false} href={`/${locale}/store/orders/${l.order_id}/invoice`} aria-label={t.invoiceFor.replace("{id}", order)}><bdi dir="ltr" className="ref">{order}</bdi></Link> : <bdi dir="ltr" className="ref" data-testid="order-plain">{order}</bdi>}</td>
             <td data-label={t.colLicence}>{localized(l.terms.name, locale)}</td>
             <td data-label={t.colEnds}>{view === "ended" ? <span className="state-word warn"><Icon name="alert" size={14} />{t.endedOn.replace("{date}", longDate(l.valid_until, locale))}</span> : l.valid_until ? longDate(l.valid_until, locale) : t.noExpiry}</td>
             <td data-label={t.colAction} className="license-action">{

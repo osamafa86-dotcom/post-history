@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { browserApi, dataOrThrow } from "@/lib/browser-api";
+import { browserApi, dataOrThrow, RequestError } from "@/lib/browser-api";
 import { beep } from "@/lib/alert-sound";
 import { humanDuration, longDate, messages, plural, shortTime, type Locale } from "@/lib/i18n";
 import type { Material, MaterialPage, MaterialQuery, NewsroomDashboard } from "@/lib/types";
@@ -10,11 +10,11 @@ import { materialQuery, materialTypes, states } from "@/lib/query";
 import { isSensitive } from "@/lib/render-policy";
 import { photographer, StateBadge, type StateTrack } from "./states";
 import { Icon } from "./icon";
-import { EmptyState } from "./empty-state";
+import { EmptyState, NoAccess } from "./empty-state";
 import { useInboxBadge, useShellSearch } from "./app-shell";
 import { activeTab, inboxTabs, isOpenUrgent, matchesSearch, matchesType, rowThumb, tabCounts, tabQuery, type InboxTab } from "@/lib/inbox-tabs";
 import { urgentUnacknowledged } from "@/lib/editor";
-import { hasRole, transitionOptions } from "@/lib/review";
+import { hasRole, materialReaders, transitionOptions } from "@/lib/review";
 import { useMutation } from "@/lib/use-mutation";
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
@@ -39,6 +39,8 @@ export function Inbox({ locale }: { locale: Locale }) {
   const [type, setType] = useState("");
   const { query: needle, setQuery: setNeedle } = useShellSearch(), setBadge = useInboxBadge();
   const me = useUser(), staff = hasRole(me, ...dashboardRoles), [snapshot, setSnapshot] = useState<NewsroomDashboard | null>(null), [now, setNow] = useState(0);
+  // E5: الوارد لمن يقرأ المواد وحده، و403 من الخادم (نطاق تغيّر) يقول السبب بدل «تعذّر التحميل».
+  const reader = hasRole(me, ...materialReaders), [forbidden, setForbidden] = useState(false);
   // لقطة غرفة الأخبار كل 5 ثوانٍ (حداثتها في العقد) لأدوار اللوحة وحدها؛ والعدّاد الحي كل ثانية.
   useEffect(() => {
     if (!staff) return;
@@ -48,7 +50,8 @@ export function Inbox({ locale }: { locale: Locale }) {
   }, [staff, refresh, setBadge]);
   useEffect(() => { const tick = () => setNow(Date.now()); tick(); const timer = setInterval(tick, 1000); return () => clearInterval(timer); }, []);
   useEffect(() => {
-    const controller = new AbortController(); let disposed = false, timer: ReturnType<typeof setTimeout>;
+    if (!reader) return;
+    const controller = new AbortController(); let disposed = false, stopped = false, timer: ReturnType<typeof setTimeout>;
     async function poll() {
       if (!navigator.onLine) { setOffline(true); timer = setTimeout(poll, 15000); return; }
       try {
@@ -56,14 +59,17 @@ export function Inbox({ locale }: { locale: Locale }) {
         const notification = dataOrThrow(await browserApi().GET("/notifications", { signal: controller.signal }));
         const data = dataOrThrow(await browserApi().GET("/materials", { params: { query }, signal: controller.signal }));
         if (!disposed) { setPage(data); setUnread(notification.unread_count); setError(false); setOffline(false); setUpdated(new Date().toISOString()); }
-      } catch { if (!disposed && !controller.signal.aborted) setError(true); }
-      finally { if (!disposed) timer = setTimeout(poll, 15000); }
+      } catch (e) {
+        if (disposed || controller.signal.aborted) return;
+        if (e instanceof RequestError && e.status === 403) { stopped = true; setForbidden(true); } else setError(true);
+      }
+      finally { if (!disposed && !stopped) timer = setTimeout(poll, 15000); }
     }
     const online = () => { clearTimeout(timer); setRefresh(n => n + 1); };
     const lost = () => setOffline(true);
     window.addEventListener("online", online); window.addEventListener("offline", lost); void poll();
     return () => { disposed = true; controller.abort(); clearTimeout(timer); window.removeEventListener("online", online); window.removeEventListener("offline", lost); };
-  }, [query, refresh]);
+  }, [query, refresh, reader]);
   const rows = useMemo(() => [...(page?.items ?? [])].sort((a, b) => {
     const av = a[sort] ?? "", bv = b[sort] ?? "";
     const result = sort === "shot_at" ? (Date.parse(av) || 0) - (Date.parse(bv) || 0) : av.localeCompare(bv, locale);
@@ -101,9 +107,10 @@ export function Inbox({ locale }: { locale: Locale }) {
   else if (visible.length) list = <ul className="inbox-rows">{visible.map(material => <MaterialRow key={material.id} material={material} locale={locale} now={now} disabled={disconnected} done={() => setRefresh(n => n + 1)} />)}</ul>;
   else if (chips.length || cursors.length > 1) list = <EmptyState icon="search" testId="inbox-no-results" title={search ? w.noResultsFor.replace("{q}", search) : m.empty}
     actions={search && tabbed.length ? <button type="button" onClick={() => setNeedle("")}>{w.showWithoutSearch.replace("{n}", String(tabbed.length))}</button> : chips.length ? <button type="button" className="secondary" onClick={clearAll}>{w.clearAll}</button> : null}>
-    <p>{search ? (tabbed.length ? w.noResultsHint.replace("{n}", String(tabbed.length)) : w.noResultsNone) : w.noFilterResults}</p></EmptyState>;
+    <p>{search ? (tabbed.length ? w.noResultsHint.replace("{count}", plural(tabbed.length, m.counts.materials, locale)) : w.noResultsNone) : w.noFilterResults}</p></EmptyState>;
   else list = <EmptyState icon="inbox" testId="inbox-empty" title={w.emptyTitle} actions={staff ? <Link prefetch={false} className="button" href={`/${locale}/board`}>{m.board.title}</Link> : null}>
     <p>{w.emptyBody}{lastArrival && now ? <> {w.lastArrival.replace("{time}", humanDuration(now - Date.parse(lastArrival), locale))}</> : null}</p></EmptyState>;
+  if (!reader || forbidden) return <NoAccess locale={locale} me={me} title={m.inbox} denied={w.denied} />;
   return <>
     {page && <UrgentAlert locale={locale} items={urgentUnacknowledged(page.items)} now={now} disabled={disconnected} done={() => setRefresh(n => n + 1)} showAll={() => { setQuery({ limit: 50, priority: "urgent", editorial_state: "inbox" }); setPage(null); setCursors([undefined]); }} />}
     <div className="page-head inbox-head">
@@ -209,7 +216,7 @@ function UrgentAlert({ locale, items, now, disabled, done, showAll }: { locale: 
   const due = first.acknowledgement_due_at ? Date.parse(first.acknowledgement_due_at) : NaN, escalation = !single || !Number.isFinite(due) ? null : due > now ? t.escalatesIn.replace("{time}", humanDuration(due - now, locale)) : t.escalationDue;
   return <section className="alert urgent" role="alert" aria-labelledby="urgent-title" data-testid="urgent-alert">
     <span className="alert-icon" aria-hidden="true"><Icon name="bolt" size={20} /></span>
-    <div><h2 id="urgent-title">{single ? t.urgentOne : t.urgentMany.replace("{n}", String(items.length))} {t.since} <span data-testid="urgent-since">{humanDuration(now - Date.parse(first.created_at), locale)}</span></h2>
+    <div><h2 id="urgent-title">{single ? t.urgentOne : plural(items.length, t.urgentMany, locale)} {t.since} <span data-testid="urgent-since">{humanDuration(now - Date.parse(first.created_at), locale)}</span></h2>
       {escalation && <p data-testid="urgent-escalation">{escalation}</p>}
       {single ? <p><Link prefetch={false} href={`/${locale}/materials/${first.id}`}>{first.title}</Link></p> : <p>{t.urgentManyHelp}</p>}</div>
     <div className="actions">{canAck && <button onClick={() => void acknowledge()} disabled={disabled || mutation.busy}>{t.ack}</button>}{!single && <button className="secondary" onClick={showAll}>{t.showUrgent}</button>}

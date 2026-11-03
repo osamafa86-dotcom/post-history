@@ -86,6 +86,8 @@ export function ShellTopBar({ me, locale, buyer, items, inboxHref, account }: { 
   const m = messages[locale], t = m.shell, router = useRouter(), { query, setQuery } = useShellSearch();
   const [bell, setBell] = useState(false), [menu, setMenu] = useState(false), [searching, setSearching] = useState(false);
   const bellRef = useDismiss(bell, () => setBell(false)), menuRef = useDismiss(menu, () => setMenu(false)), onInbox = items.some(item => item.key === "inbox" && item.active);
+  // البحث يعمل في الوارد؛ من لا يقرأ المواد (المالية) لا يُعرض له بحث يقود إلى صفحة لا يملكها.
+  const searchable = items.some(item => item.key === "inbox");
   // Escape يغلق المنبثقة من أي عنصر فيها أو من زرّها، ويعيد التركيز إلى الزرّ.
   const escape = (open: boolean, close: () => void) => (event: React.KeyboardEvent<HTMLDivElement>) => { if (event.key === "Escape" && open) { close(); event.currentTarget.querySelector<HTMLButtonElement>("button")?.focus(); } };
   return <header className={`topbar workspace${buyer ? " store" : ""}`} data-testid="topbar">
@@ -94,13 +96,13 @@ export function ShellTopBar({ me, locale, buyer, items, inboxHref, account }: { 
       <nav className="topbar-nav" aria-label={m.workspace}>{items.map(item => <Link key={item.key} prefetch={false} href={item.href} aria-current={item.active ? "page" : undefined}>{item.label}</Link>)}</nav>
     </> : <>
       <Link prefetch={false} className="topbar-brand compact" href={inboxHref} aria-label={m.product}><BrandMark /></Link>
-      <form role="search" className={`topbar-search${searching ? " open" : ""}`} onSubmit={event => { event.preventDefault(); if (!onInbox) router.push(inboxHref); }}>
+      {searchable && <><form role="search" className={`topbar-search${searching ? " open" : ""}`} onSubmit={event => { event.preventDefault(); if (!onInbox) router.push(inboxHref); }}>
         <label htmlFor="shell-search" className="visually-hidden">{m.inboxSearch.label}</label>
         <span className="search-icon"><Icon name="search" /></span>
         <input id="shell-search" type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder={m.inboxSearch.placeholder} aria-describedby="shell-search-help" maxLength={200} autoComplete="off" />
         <small id="shell-search-help" className="visually-hidden">{m.inboxSearch.help}</small>
       </form>
-      <button type="button" className="icon-button search-toggle" aria-expanded={searching} aria-controls="shell-search" aria-label={t.searchOpen} onClick={() => setSearching(value => !value)}><Icon name="search" /></button>
+      <button type="button" className="icon-button search-toggle" aria-expanded={searching} aria-controls="shell-search" aria-label={t.searchOpen} onClick={() => setSearching(value => !value)}><Icon name="search" /></button></>}
     </>}
     <div className="topbar-end">
       {buyer && <CartChip locale={locale} />}

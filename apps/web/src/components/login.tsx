@@ -1,17 +1,22 @@
 "use client";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { authPost, publicPost } from "@/lib/browser-api";
+import { authPost, browserApi, publicPost } from "@/lib/browser-api";
 import { ceremonyFailure, passkeysSupported, signInCeremony } from "@/lib/passkey-client";
 import type { PasskeyChallenge } from "@/lib/passkey-policy";
 import { clearUploads } from "@/lib/upload-store";
 import { messages, type Locale } from "@/lib/i18n";
+import { homePage, type HomePage } from "@/lib/home-page";
+import { clearCart } from "./store/cart";
 import { BrandMark, Icon } from "./icon";
 
 const still = () => () => {};
-const signedIn = (locale: Locale) => {
+/** بعد الدخول: صفحة يقرؤها الدور (المالية في الصرف، المشتري في المتجر)، لا الوارد لكل أحد. تعذّر القراءة يعيد إلى الوارد كما كان. */
+const signedIn = async (locale: Locale) => {
   if ("BroadcastChannel" in window) { const channel = new BroadcastChannel("web-session"); channel.postMessage("signed-in"); channel.close(); }
-  window.location.replace(`/${locale}/inbox`);
+  let page: HomePage = "inbox";
+  try { const result = await browserApi().GET("/auth/me"); if (result.response.ok && result.data) page = homePage(result.data); } catch { /* الوارد */ }
+  window.location.replace(`/${locale}/${page}`);
 };
 
 export function Login({ locale, reason }: { locale: Locale; reason?: string }) {
@@ -19,14 +24,14 @@ export function Login({ locale, reason }: { locale: Locale; reason?: string }) {
   // دعم WebAuthn يُعرف في المتصفح وحده؛ لقطة الخادم «غير مدعوم» فلا يُرسم زرّ لا يعمل قبل التحميل.
   const supported = useSyncExternalStore(still, passkeysSupported, () => false);
   // صفحة الدخول تعني لا جلسة: لا يبقى من رفعات مستخدم سابق على هذا الحاسوب شيء (S10).
-  useEffect(() => { clearUploads(); }, []);
+  useEffect(() => { clearUploads(); clearCart(); }, []);
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = event.currentTarget, fields = new FormData(form);
     setBusy(true); setError("");
     try {
       const result = await authPost("login", { email: fields.get("email"), password: fields.get("password"), ...(fields.get("totp") ? { totp_code: fields.get("totp") } : {}) });
       if (!result.response.ok) { setError(result.body.code === "totp_required" ? m.totpRequired : m.loginFailed); return; }
-      form.reset(); signedIn(locale);
+      form.reset(); await signedIn(locale);
     } catch { setError(m.error); } finally { setBusy(false); }
   }
   const t = m.signInPage;
@@ -43,7 +48,7 @@ export function Login({ locale, reason }: { locale: Locale; reason?: string }) {
       try { credential = await signInCeremony(options.body as PasskeyChallenge); }
       catch (failure) { setError(ceremonyFailure(failure) === "cancelled" ? t.passkeyCancelled : t.passkeyFailed); return; }
       const result = await publicPost("auth/passkeys/login", { challenge_id: options.body.challenge_id, credential });
-      if (result.status === 200) { signedIn(locale); return; }
+      if (result.status === 200) { await signedIn(locale); return; }
       setError(result.status === 410 ? t.passkeyExpired : result.status === 404 ? t.passkeyUnavailable : result.status === 401 ? t.passkeyFailed : m.error);
     } catch { setError(m.error); } finally { setPasskeyBusy(false); }
   }

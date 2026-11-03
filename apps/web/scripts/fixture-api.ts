@@ -20,6 +20,8 @@ function reset() {
   materials.splice(0, materials.length, ...Array.from({ length: 200 }, (_, i) => ({ ...material(i + 1), row_version: 17, reserved_by: null, reserved_at: null, contributors: [{ user_id: me.user_id, role: "reporter" as const, share_percent: 100 }] })));
   Object.assign(materials[4], { reserved_by: "10000000-0000-4000-8000-000000000002", reserved_by_name: "Synthetic staff", acknowledgement_due_at: new Date(Date.now() - 123000).toISOString() });
   materials[1].editorial_state = "accepted"; materials[2].technical_state = "failed";
+  // نسخة الهاتف الخفيفة وحدها (مرفوعة لا مشتقة): المادة 30 بملصقها، و31 بلا ملصق؛ معاينة الطاقم لا تعرضها.
+  for (const [index, poster] of [[29, true], [30, false]] as const) materials[index].files = materials[index].files.filter(f => f.kind === "original" || (poster && f.kind === "thumbnail")).concat({ id: `31000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, kind: "proxy", state: "verified", mime_type: "video/mp4", proxy_mode: "urgent", created_at: "2026-10-19T12:00:00Z" });
   notifications.splice(0, notifications.length, ...Array.from({ length: 3 }, (_, i) => ({ id: `60000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`, type: "never-display-canary", title: "never-display-canary", material_id: materials[i].id, priority: "normal" as const, state: "sent" as const, created_at: "2026-10-20T12:00:00Z" })));
   history.clear(); writes.length = 0; applied.clear(); dropNextWrite = false; extraUploadsInProgress = 0;
   identitySetting = { access: "separate", updated_at: "2026-10-21T10:00:00Z", updated_by: null }; historyUnavailable = false; auditSequence = 21;
@@ -169,7 +171,10 @@ const signed = new Map<string, { kind: "proxy" | "thumbnail" | "produced"; expir
 let expireNextProxy = false;
 const access = new Map<string, Me>(), refresh = new Map<string, Me>();
 function profile(email: string): Me {
-  const names: Record<string, Me["roles"]> = { chief: [{ name: "editor_in_chief", scopes: [] }], reviewer: ["supervisor", "rights_officer", "producer"].map(name => ({ name: name as Me["roles"][number]["name"], scopes: [] })), admin: [{ name: "system_admin", scopes: [] }], reporter: [{ name: "reporter", scopes: [] }], buyeradmin: [{ name: "buyer_admin", scopes: [] }], buyer: [{ name: "buyer_member", scopes: [] }], finance: [{ name: "finance", scopes: [] }] };
+  const names: Record<string, Me["roles"]> = { chief: [{ name: "editor_in_chief", scopes: [] }], reviewer: ["supervisor", "rights_officer", "producer"].map(name => ({ name: name as Me["roles"][number]["name"], scopes: [] })), admin: [{ name: "system_admin", scopes: [] }], reporter: [{ name: "reporter", scopes: [] }], buyeradmin: [{ name: "buyer_admin", scopes: [] }], buyer: [{ name: "buyer_member", scopes: [] }], finance: [{ name: "finance", scopes: [] }],
+    // الحساب الاصطناعي العام (مراسل المواد كلها في البذرة) وحساب الصلاحيات المنفصلة: مراسل يقرأ المواد كالخادم الحقيقي، لا حساب بلا دور
+    // يقرأ ما يرفضه `x-roles` (الحساب بلا دور يهبط في التنبيهات، ADR 0119).
+    fixture: [{ name: "reporter", scopes: [] }], permissions: [{ name: "reporter", scopes: [] }] };
   const local = email.split("@")[0], buyer = local === "buyeradmin" || local === "buyer";
   // مدير مؤسسة قيد التحقّق (S6): المؤسسة الأخرى في البذرة، والكتالوج يردّه 403.
   if (local === "pendingbuyer") return { ...me, user_id: "91000000-0000-4000-8000-000000000009", organization_id: otherOrg, roles: [{ name: "buyer_admin", scopes: [] }], permissions: [] };
@@ -651,7 +656,9 @@ const server = createServer(async (req, res) => {
   const orderRead = /^\/v1\/orders(?:\/([^/]+))?$/.exec(url.pathname);
   if (orderRead) {
     if (!user.roles.some(role => ["system_admin", "finance", "buyer_admin", "buyer_member"].includes(role.name))) return send({}, 403);
-    const visible = [...orders.values()].filter(o => !user.organization_id || o.organization_id === user.organization_id).reverse();
+    // `buyer_member` يرى ما أنشأه وحده من طلبات مؤسسته (العقد)، و`buyer_admin` طلباتها كلها.
+    const memberOnly = !user.roles.some(role => role.name === "buyer_admin") && user.roles.some(role => role.name === "buyer_member");
+    const visible = [...orders.values()].filter(o => (!user.organization_id || o.organization_id === user.organization_id) && (!memberOnly || o.created_by === user.user_id)).reverse();
     if (!orderRead[1]) return send({ items: visible, next_cursor: null });
     const found = visible.find(o => o.id === orderRead[1]); return found ? send({ ...found, provider_reference: "never-display-canary" }) : send({}, 404);
   }
