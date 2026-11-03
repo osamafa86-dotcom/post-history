@@ -72,6 +72,11 @@ data class UploadTask(
     /** Stable error code from the API when [failure] is REJECTED, for support; never shown raw. */
     val failureCode: String? = null,
     val attempts: Int = 0,
+    /**
+     * The opaque local id of the account that queued it (ADR 0093): its authenticated requests go only while that account is
+     * signed in. Null for rows of earlier releases.
+     */
+    val ownerAccount: String? = null,
 ) {
     val progress: Float get() = if (sizeBytes <= 0) 0f else (bytesConfirmed.toDouble() / sizeBytes).coerceIn(0.0, 1.0).toFloat()
 }

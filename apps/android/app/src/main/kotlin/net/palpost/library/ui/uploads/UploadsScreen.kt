@@ -4,10 +4,8 @@ import android.app.Application
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.net.Uri
-import android.util.Size
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,8 +24,6 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Schedule
@@ -41,15 +37,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
@@ -66,6 +58,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -76,10 +69,15 @@ import net.palpost.library.core.net.IdempotencyKey
 import net.palpost.library.core.send.SendBatch
 import net.palpost.library.core.send.UploadItem
 import net.palpost.library.core.send.UploadOverview
+import net.palpost.library.core.materials.LocalOriginal
+import net.palpost.library.core.materials.MediaKind
+import net.palpost.library.core.materials.PlaybackSourcePolicy
+import net.palpost.library.core.materials.PreviewSource
 import net.palpost.library.core.upload.UploadFailure
 import net.palpost.library.core.upload.UploadState
 import net.palpost.library.data.UploadTaskEntity
 import net.palpost.library.ui.forms.FieldInput
+import net.palpost.library.ui.material.Thumbnail
 import net.palpost.library.ui.theme.BroadcastRings
 import net.palpost.library.ui.theme.GhostButton
 import net.palpost.library.ui.theme.MinTouchTarget
@@ -97,7 +95,9 @@ import kotlin.math.roundToInt
 
 /** 05 · the upload with the broadcast rings: the last send and every file not finished or failed, one row each; a cut is safe. */
 class UploadsViewModel(private val app: Application, private val container: AppContainer) : ViewModel() {
-    val tasks: StateFlow<List<UploadTaskEntity>> = container.database.uploads().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /** The signed-in account's rows alone (ADR 0093): another's rows stay in the queue with nothing shown of them, not even a count. */
+    val tasks: StateFlow<List<UploadTaskEntity>> = combine(container.database.uploads().observeAll(), container.scope) { rows, scope -> rows.filter { scope.owns(it.ownerAccount) } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _online = MutableStateFlow(true)
     val online: StateFlow<Boolean> = _online
@@ -123,7 +123,7 @@ class UploadsViewModel(private val app: Application, private val container: AppC
     override fun onCleared() { runCatching { connectivity?.unregisterNetworkCallback(callback) } }
 
     /** The newest send, from the ledger (read each time the rows change). */
-    fun lastBatch(): SendBatch? = container.sendBatches.batches.firstOrNull()
+    fun lastBatch(): SendBatch? = container.scope.value.let { scope -> container.sendBatches.batches.firstOrNull { scope.owns(it.owner) } }
 
     fun togglePause() = viewModelScope.launch {
         val now = !container.settings.uploadsPaused
@@ -174,6 +174,7 @@ fun UploadsScreen(container: AppContainer, onBack: () -> Unit, onReceipt: (Strin
     val paused by vm.paused.collectAsStateWithLifecycle()
     val wifiOnly by vm.wifiOnly.collectAsStateWithLifecycle()
     val last = vm.lastBatch()
+    val materials by container.materials.state.collectAsStateWithLifecycle()
     val rows = UploadsViewModel.rowsInScope(tasks, last)
     val items = rows.map { UploadsViewModel.itemOf(it, paused) }
     val ring = UploadOverview.ringState(items, online && !paused)
@@ -225,8 +226,10 @@ fun UploadsScreen(container: AppContainer, onBack: () -> Unit, onReceipt: (Strin
                 VlCard(background = Vl.colors.bgSunken, padding = VlSpace.s4) { Text(stringResource(line), style = Vl.text.body, color = Vl.colors.textPrimary) }
             }
             items(rows, key = { it.id }) { t ->
+                val material = materials.items.firstOrNull { it.id.toString() == t.materialId }
                 UploadRow(
-                    t, concealed = last == null || t.materialId !in last.materialIds || last.sensitive != false, online = online, paused = paused,
+                    container, t, concealed = PlaybackSourcePolicy.concealsUpload(material, container.sendBatches.batchContaining(t.materialId)?.sensitive),
+                    online = online, paused = paused,
                     onOpen = { if (t.state in UploadsViewModel.DONE) onReceipt(t.id) }, onRetry = { vm.retry(t) }, onPickFile = { onPickFileFor(t.materialId) },
                     onRemove = { pendingRemoveId = t.id },
                 )
@@ -249,7 +252,7 @@ fun UploadsScreen(container: AppContainer, onBack: () -> Unit, onReceipt: (Strin
  */
 @Composable
 private fun UploadRow(
-    t: UploadTaskEntity, concealed: Boolean, online: Boolean, paused: Boolean,
+    container: AppContainer, t: UploadTaskEntity, concealed: Boolean, online: Boolean, paused: Boolean,
     onOpen: () -> Unit, onRetry: () -> Unit, onPickFile: () -> Unit, onRemove: () -> Unit,
 ) {
     val state = UploadState.valueOf(t.state)
@@ -257,7 +260,7 @@ private fun UploadRow(
     val c = Vl.colors
     VlCard(gap = VlSpace.s3, padding = VlSpace.s4, modifier = Modifier.semantics(mergeDescendants = false) {}) {
         Row(horizontalArrangement = Arrangement.spacedBy(VlSpace.s3), verticalAlignment = Alignment.CenterVertically) {
-            Thumb(t, concealed)
+            Thumb(container, t, concealed)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(VlSpace.s1)) {
                 Text(t.title.ifBlank { stringResource(R.string.a3_untitled) }, style = Vl.text.headline, color = c.textPrimary, maxLines = 2)
                 Text(FieldInput.describeBytes(t.sizeBytes), style = Vl.text.num, color = c.textSecondary)
@@ -301,21 +304,22 @@ private fun UploadRow(
 
 private fun UploadTaskEntity.progressFraction(): Float = if (sizeBytes > 0) (bytesConfirmed.toFloat() / sizeBytes).coerceIn(0f, 1f) else 0f
 
-/** The row's picture: the system's thumbnail of the picked file, never a copy; an icon while the material may be sensitive. */
+/**
+ * The row's picture: the system's thumbnail of the picked file, never a copy. While the material may be sensitive it is blurred
+ * (a tiny picture, enlarged) until the reporter taps it (ADR 0089).
+ */
 @Composable
-private fun Thumb(t: UploadTaskEntity, concealed: Boolean) {
-    val context = LocalContext.current
-    val video = t.mimeType?.startsWith("video/") == true
-    val bitmap by produceState<ImageBitmap?>(null, t.fileUri, concealed) {
-        value = if (concealed) null else withContext(Dispatchers.IO) {
-            runCatching { context.contentResolver.loadThumbnail(Uri.parse(t.fileUri), Size(144, 144), null).asImageBitmap() }.getOrNull()
-        }
-    }
-    val shape = RoundedCornerShape(VlRadius.sm)
-    Box(Modifier.size(MinTouchTarget).clip(shape).background(Vl.colors.bgSunken), contentAlignment = Alignment.Center) {
-        val b = bitmap
-        if (b != null) Image(b, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
-        else Icon(if (video) Icons.Outlined.Movie else Icons.Outlined.Image, contentDescription = null, tint = Vl.colors.textSecondary, modifier = Modifier.size(VlIcon.md))
+private fun Thumb(container: AppContainer, t: UploadTaskEntity, concealed: Boolean) {
+    var revealed by rememberSaveable(t.id) { mutableStateOf(false) }
+    val hidden = concealed && !revealed
+    val kind = if (t.mimeType?.startsWith("video/") == true) MediaKind.VIDEO else MediaKind.PHOTO
+    val reveal = stringResource(R.string.sensitive_reveal)
+    Box(
+        Modifier.size(MinTouchTarget).clip(RoundedCornerShape(VlRadius.sm)).background(Vl.colors.bgSunken)
+            .then(if (hidden) Modifier.clickable(onClickLabel = reveal) { revealed = true } else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        Thumbnail(container, null, PreviewSource.Local(LocalOriginal(t.id, t.fileUri, t.mimeType)), concealed = hidden, kind = kind, iconSize = VlIcon.md)
     }
 }
 

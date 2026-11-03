@@ -24,12 +24,14 @@ import java.io.File
  *
  * Stores the app owns and what happens to each (plus, for the emergency path only, `server_sessions`: every
  * session of the user ended on the server when the request got through in time):
- *  - transfers: scheduled job / foreground service stopped, progress and result notifications cancelled
+ *  - transfers: scheduled job / foreground service stopped, progress and result notifications cancelled, the players stopped and
+ *    the list of My materials with its thumbnails dropped from memory (ADR 0089)
  *  - session: Keystore-sealed tokens removed from the `session` preferences, the Keystore key destroyed
  *  - upload_queue: every Room table cleared (the queue and the drafts, with the sealed filming location of a send that stopped
- *    part-way, ADR 0087), then the database files deleted (`uploads.db`, `-wal`, `-shm`)
+ *    part-way, ADR 0087), then the database files deleted (`uploads.db`, `-wal`, `-shm`); the accounts record in memory with it
+ *    and its `local-accounts` file (ADR 0093)
  *  - reporter_memory: the sends ledger and its file (titles, sensitivity answers), the remembered place and tags, and the
- *    receipts waiting to show, in memory and on disk (ADR 0088)
+ *    receipts waiting to show or waiting for their owner, in memory and on disk (ADR 0088, 0093)
  *  - file_grants: persistable read grants on picked originals released (the originals themselves belong to the
  *    reporter and are deleted only through the explicit per-file choice)
  *  - preferences: every SharedPreferences file (setup flags included)
@@ -62,6 +64,10 @@ class DeviceWipe(private val context: Context, private val container: AppContain
             UploadScheduler.cancel(context)
             context.stopService(Intent(context, UploadForegroundService::class.java))
             context.getSystemService(NotificationManager::class.java)?.cancelAll()
+            // What is on screen goes first (ADR 0089): the players, the list of My materials and its thumbnails in memory.
+            container.playback.stopAll()
+            container.materials.clear()
+            container.thumbnails.clear()
         },
         WipeStep("session") {
             container.auth.forgetSession(reason)
@@ -72,6 +78,8 @@ class DeviceWipe(private val context: Context, private val container: AppContain
             db.clearAllTables()
             db.close()
             for (suffix in listOf("", "-wal", "-shm", "-journal")) context.getDatabasePath("uploads.db$suffix").delete()
+            // The accounts record and its file go with the queue (ADR 0093 §7).
+            container.forgetAccounts()
         },
         WipeStep("reporter_memory") {
             container.receipts.clear()

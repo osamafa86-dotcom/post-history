@@ -25,6 +25,7 @@ import net.palpost.library.core.send.LocationConsent
 import net.palpost.library.ui.earnings.ApiEarningsSource
 import net.palpost.library.ui.earnings.EarningsScreen
 import net.palpost.library.ui.earnings.EarningsViewModel
+import net.palpost.library.ui.material.MaterialDetailScreen
 import net.palpost.library.ui.material.MyMaterialsScreen
 import net.palpost.library.ui.notifications.NotificationsScreen
 import net.palpost.library.ui.receipt.ReceiptScreen
@@ -39,7 +40,7 @@ import net.palpost.library.ui.setup.TaskKillerSetupScreen
 import net.palpost.library.ui.theme.Vl
 import net.palpost.library.ui.uploads.UploadsScreen
 
-private enum class Screen { Home, FormPreview, Send, SetupThenSend, LocationThenSend, ReplaceShot, Uploads, Materials, Notifications, Review, Earnings, Receipt, Setup, Settings }
+private enum class Screen { Home, FormPreview, Send, SetupThenSend, LocationThenSend, ReplaceShot, Uploads, Materials, MaterialDetail, Notifications, Review, Earnings, Receipt, Setup, Settings }
 
 /** Screens a receipt never opens over: the send screen while it closes, and the steps leading to it (ADR 0088). */
 private val NO_RECEIPT_OVER = setOf(Screen.Send, Screen.SetupThenSend, Screen.LocationThenSend, Screen.ReplaceShot, Screen.Receipt)
@@ -71,6 +72,8 @@ private fun SignedIn(container: AppContainer, app: PostHistoryApp, userId: Strin
     var screen by rememberSaveable { mutableStateOf(Screen.Home) }
     var draftId by rememberSaveable { mutableStateOf<String?>(null) }
     var replaceFor by rememberSaveable { mutableStateOf<String?>(null) }
+    var replaceBack by rememberSaveable { mutableStateOf(Screen.Materials) }
+    var detailId by rememberSaveable { mutableStateOf<String?>(null) }
     var receiptBatch by rememberSaveable { mutableStateOf<String?>(null) }
     var receiptTask by rememberSaveable { mutableStateOf<String?>(null) }
     var receiptBack by rememberSaveable { mutableStateOf(Screen.Home) }
@@ -100,8 +103,14 @@ private fun SignedIn(container: AppContainer, app: PostHistoryApp, userId: Strin
     LaunchedEffect(openRequest) {
         if (openRequest == MainActivity.OPEN_NOTIFICATIONS) { screen = Screen.Notifications; onOpenHandled() }
     }
+    fun replace(materialId: String, from: Screen) { replaceFor = materialId; replaceBack = from; screen = Screen.ReplaceShot }
+    fun closeReceipt() { container.receipts.closed(); screen = receiptBack }
     BackHandler(enabled = screen != Screen.Home && screen != Screen.Send && screen != Screen.ReplaceShot) {
-        screen = if (screen == Screen.Receipt) receiptBack else Screen.Home
+        when (screen) {
+            Screen.Receipt -> closeReceipt()
+            Screen.MaterialDetail -> screen = Screen.Materials
+            else -> screen = Screen.Home
+        }
     }
     when (screen) {
         Screen.Home -> HomeScreen(
@@ -118,21 +127,28 @@ private fun SignedIn(container: AppContainer, app: PostHistoryApp, userId: Strin
         Screen.SetupThenSend -> TaskKillerSetupScreen(container, onDone = { screen = afterSetup() }, onBack = { screen = Screen.Home })
         Screen.LocationThenSend -> LocationPermissionScreen(onDone = { _ -> container.settings.locationAsked = true; screen = Screen.Send })
         Screen.Send -> SendScreen(container, draftId, onClose = { screen = Screen.Home }, onSent = { screen = Screen.Uploads })
-        Screen.ReplaceShot -> replaceFor?.let { m -> ReplaceShotScreen(container, m, onClose = { screen = Screen.Materials }, onQueued = { screen = Screen.Uploads }) }
+        Screen.ReplaceShot -> replaceFor?.let { m -> ReplaceShotScreen(container, m, onClose = { screen = replaceBack }, onQueued = { screen = Screen.Uploads }) }
         Screen.Uploads -> UploadsScreen(
             container, onBack = { screen = Screen.Home }, onReceipt = { openReceipt(ReceiptTarget.Task(it), Screen.Uploads) },
-            onPickFileFor = { replaceFor = it; screen = Screen.ReplaceShot },
+            onPickFileFor = { replace(it, Screen.Materials) },
         )
         Screen.Receipt -> {
             val target = receiptBatch?.let { ReceiptTarget.Batch(it) } ?: receiptTask?.let { ReceiptTarget.Task(it) }
             if (target != null) ReceiptScreen(
-                container, target, onDone = { screen = receiptBack }, onSendAnother = { startSend() }, onMyMaterials = { screen = Screen.Materials },
+                container, target, onDone = { closeReceipt() }, onSendAnother = { container.receipts.closed(); startSend() },
+                onMyMaterials = { container.receipts.closed(); screen = Screen.Materials },
             )
         }
         Screen.Materials -> MyMaterialsScreen(
             container, onBack = { screen = Screen.Home }, onNewMaterial = { startSend() },
-            onReceipt = { openReceipt(ReceiptTarget.Task(it), Screen.Materials) }, onReplacement = { replaceFor = it; screen = Screen.ReplaceShot },
+            onOpen = { detailId = it; screen = Screen.MaterialDetail },
         )
+        Screen.MaterialDetail -> detailId?.let { id ->
+            MaterialDetailScreen(
+                container, id, onBack = { screen = Screen.Materials },
+                onReceipt = { openReceipt(ReceiptTarget.Task(it), Screen.MaterialDetail) }, onReplacement = { replace(it, Screen.MaterialDetail) },
+            )
+        }
         Screen.Notifications -> NotificationsScreen(container, onBack = { screen = Screen.Home })
         Screen.Earnings -> EarningsScreen(earnings, onBack = { screen = Screen.Home })
         Screen.Review -> ReviewScreen(container, onBack = { screen = Screen.Home })

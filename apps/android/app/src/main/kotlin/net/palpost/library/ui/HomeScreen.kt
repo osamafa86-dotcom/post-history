@@ -34,6 +34,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -65,7 +66,9 @@ class HomeViewModel(private val app: Application, private val container: AppCont
     private val _state = MutableStateFlow(HomeUiState())
     val state: StateFlow<HomeUiState> = _state
     val drafts: StateFlow<List<DraftEntity>> = container.database.drafts().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    val uploads: StateFlow<List<UploadTaskEntity>> = container.database.uploads().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /** «Latest sends»: the signed-in account's rows alone (ADR 0093). */
+    val uploads: StateFlow<List<UploadTaskEntity>> = combine(container.database.uploads().observeAll(), container.scope) { rows, scope -> rows.filter { scope.owns(it.ownerAccount) } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init { load() }
 

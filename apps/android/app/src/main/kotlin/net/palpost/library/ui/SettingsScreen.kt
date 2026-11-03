@@ -27,6 +27,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -108,8 +110,19 @@ class SettingsViewModel(private val app: Application, private val container: App
     }
 
     /**
-     * Sign-out: shown notifications, then what the app remembers for this reporter (place, tags, the sends file), then the push
-     * registration and the session. The upload queue carries on (ADR 0093 for the shared phone comes in the next change).
+     * The signed-in account's originals not finished yet (ADR 0093 §6): they carry on after sign-out and stay hidden with their
+     * receipt until this account signs in again, so sign-out says so first.
+     */
+    suspend fun pendingAtLogout(): Int = withContext(Dispatchers.IO) {
+        container.scope.value.pending(container.database.uploads().all(), { it.ownerAccount }) {
+            it.kind == "original" && !net.palpost.library.core.upload.UploadState.valueOf(it.state).terminal
+        }
+    }
+
+    /**
+     * Sign-out: shown notifications, then what the app remembers for this reporter (place, tags, the sends file; the receipts on
+     * screen or waiting go back to waiting for their owner), then the push registration and the session. The upload queue
+     * carries on in its owners' names (ADR 0093).
      */
     fun logout(allSessions: Boolean) {
         if (_state.value.signingOut) return
@@ -120,7 +133,7 @@ class SettingsViewModel(private val app: Application, private val container: App
                 unregisterPush = { Push.unregister(container) },
                 endSession = { all -> container.auth.logout(all) },
                 forgetReporter = {
-                    container.receipts.clear()
+                    container.receipts.signedOut()
                     withContext(Dispatchers.IO) { container.reporterMemory.clear(); container.sendBatches.forgetAll(); container.database.drafts().forgetAllGps() }
                 },
             ).run(allSessions)
@@ -152,6 +165,15 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit, onSetup: () -> U
         confirmButton = { GhostButton(stringResource(R.string.home_logout_all), { confirmLogoutAll = false; vm.logout(allSessions = true) }, destructive = true) },
         dismissButton = { GhostButton(stringResource(R.string.review_cancel), { confirmLogoutAll = false }) },
     )
+    var pendingLogout by remember { mutableStateOf(0) }
+    if (pendingLogout > 0) AlertDialog(
+        onDismissRequest = { pendingLogout = 0 },
+        title = { Text(stringResource(R.string.settings_logout_pending_title), style = Vl.text.headline) },
+        text = { Text(pluralStringResource(R.plurals.settings_logout_pending_body, pendingLogout, pendingLogout), style = Vl.text.body) },
+        confirmButton = { GhostButton(stringResource(R.string.settings_logout_pending_confirm), { pendingLogout = 0; vm.logout(allSessions = false) }) },
+        dismissButton = { GhostButton(stringResource(R.string.review_cancel), { pendingLogout = 0 }) },
+    )
+    val scope = rememberCoroutineScope()
     Scaffold(
         containerColor = Vl.colors.bgBase,
         topBar = {
@@ -191,7 +213,9 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit, onSetup: () -> U
             OutlineButton(stringResource(R.string.home_setup), onSetup)
             GhostButton(stringResource(R.string.home_open_form), onOpenForm)
             SectionTitle(stringResource(R.string.settings_session))
-            OutlineButton(stringResource(R.string.home_logout), { vm.logout(allSessions = false) }, enabled = !s.signingOut)
+            OutlineButton(stringResource(R.string.home_logout), {
+                scope.launch { vm.pendingAtLogout().let { n -> if (n > 0) pendingLogout = n else vm.logout(allSessions = false) } }
+            }, enabled = !s.signingOut)
             GhostButton(stringResource(R.string.home_logout_all), { confirmLogoutAll = true }, enabled = !s.signingOut, destructive = true)
             GhostButton(stringResource(R.string.home_emergency_wipe), { confirmWipe = true }, enabled = !s.wiping, destructive = true)
         }

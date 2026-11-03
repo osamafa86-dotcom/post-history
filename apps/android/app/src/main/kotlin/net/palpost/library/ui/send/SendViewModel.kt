@@ -390,7 +390,8 @@ class SendViewModel(
         val title = s.title.trim()
         fun titleOf(f: PickedOriginal) = MaterialTitles.titleFor(title, f.position!!, f.total!!)
         val ledger = container.sendBatches
-        val batch = ledger.begin(title, files.map { it.materialKey!! }, s.sensitivity.sensitive, owner = null, nowMs = now)
+        val owner = container.scope.value.current
+        val batch = ledger.begin(title, files.map { it.materialKey!! }, s.sensitivity.sensitive, owner = owner, nowMs = now)
         val queued = ArrayList<String>()
         val point = gps?.let { GpsPoint(BigDecimal.valueOf(it.lat), BigDecimal.valueOf(it.lng), it.accuracyM?.let(BigDecimal::valueOf)) }
         val result = MaterialBatch.run(
@@ -417,6 +418,7 @@ class SendViewModel(
                     id = UploadIds.taskId(materialId), materialId = materialId, kind = "original",
                     fileUri = f.uri, filename = f.name, mimeType = f.mimeType, sizeBytes = f.sizeBytes,
                     idempotencyKey = UploadIds.sessionKey(materialId), createdAtEpochMs = now + f.position!!, // the queue runs oldest first
+                    ownerAccount = owner, // ADR 0093: the signed-in account's opaque local id, never its email or server id
                 )
                 container.uploadStore.insert(task, title = titleOf(f), priority = s.priority.value)
                 queued.add(materialId)
