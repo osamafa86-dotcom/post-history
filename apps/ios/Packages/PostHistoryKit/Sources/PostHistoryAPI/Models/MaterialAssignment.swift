@@ -38,9 +38,11 @@ public struct MaterialAssignment: Sendable, Codable, Hashable {
     public var startedAt: Date?
     /** متى سُلّمت (`done`) أو أُعيدت (`returned`) */
     public var closedAt: Date?
+    /** النسخة المُنتَجة التي سُلّمت بها المهمة (`done`، ADR 0104)؛ `null` بلا ملف. تُنزَّل بـ `/materials/{id}/files/{file_id}/download-url` لأدوار الإنتاج. أُضيف بعد v0.3 فقد يغيب */
+    public var producedFileId: UUID?
     public var updatedAt: Date
 
-    public init(id: UUID, materialId: UUID, priority: Priority, assigneeId: UUID, assigneeName: String? = nil, assignedBy: UUID, assignedByName: String? = nil, state: MaterialAssignmentState, dueAt: Date, overdue: Bool, note: String?, returnedBy: UUID?, returnNote: String?, createdAt: Date, acknowledgedAt: Date?, startedAt: Date?, closedAt: Date?, updatedAt: Date) {
+    public init(id: UUID, materialId: UUID, priority: Priority, assigneeId: UUID, assigneeName: String? = nil, assignedBy: UUID, assignedByName: String? = nil, state: MaterialAssignmentState, dueAt: Date, overdue: Bool, note: String?, returnedBy: UUID?, returnNote: String?, createdAt: Date, acknowledgedAt: Date?, startedAt: Date?, closedAt: Date?, producedFileId: UUID? = nil, updatedAt: Date) {
         self.id = id
         self.materialId = materialId
         self.priority = priority
@@ -58,6 +60,7 @@ public struct MaterialAssignment: Sendable, Codable, Hashable {
         self.acknowledgedAt = acknowledgedAt
         self.startedAt = startedAt
         self.closedAt = closedAt
+        self.producedFileId = producedFileId
         self.updatedAt = updatedAt
     }
 
@@ -79,6 +82,7 @@ public struct MaterialAssignment: Sendable, Codable, Hashable {
         case acknowledgedAt = "acknowledged_at"
         case startedAt = "started_at"
         case closedAt = "closed_at"
+        case producedFileId = "produced_file_id"
         case updatedAt = "updated_at"
     }
 
@@ -103,6 +107,7 @@ public struct MaterialAssignment: Sendable, Codable, Hashable {
         try container.encode(acknowledgedAt, forKey: .acknowledgedAt)
         try container.encode(startedAt, forKey: .startedAt)
         try container.encode(closedAt, forKey: .closedAt)
+        try container.encodeIfPresent(producedFileId, forKey: .producedFileId)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
 }

@@ -1,0 +1,6 @@
+{
+  "version": 8,
+  "fields": [
+    { "key": "permit", "type": "attachment", "label": { "ar": "تصريح", "en": "Permit" }, "required": false, "send_to_store": true, "validation": { "accept": ["image/jpeg"], "max_size_bytes": 1048576 } }
+  ]
+}

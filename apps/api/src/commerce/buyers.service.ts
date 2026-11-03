@@ -1,4 +1,5 @@
 import { hash } from '@node-rs/argon2';
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, count, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { randomToken, sha256 } from '../common/crypto';
@@ -11,17 +12,20 @@ import { hasRole, type Principal } from '../identity/principal';
 import { audit } from '../identity/recovery-approval';
 import { RESET_TOKEN_DELIVERY, type ResetTokenDelivery } from '../identity/reset-token-delivery';
 import { iso } from '../materials/material-store';
+import { writeOutboxEvent } from '../outbox/outbox';
 import { validTimestamp } from '../uploads/uploads.service';
 
 export type BuyerOrganization = components['schemas']['BuyerOrganization'];
 export type BuyerOrganizationCreate = components['schemas']['BuyerOrganizationCreate'];
 export type BuyerOrganizationInput = components['schemas']['BuyerOrganizationInput'];
+export type BuyerOrganizationRejection = components['schemas']['BuyerOrganizationRejection'];
 export type BuyerMember = components['schemas']['BuyerMember'];
 type InviteToken = components['schemas']['BuyerInviteToken'];
 export type BuyerMemberInvite = components['schemas']['BuyerMemberInvite'];
 export type BuyerMemberUpdate = components['schemas']['BuyerMemberUpdate'];
 type OrgRow = typeof buyerOrganizations.$inferSelect;
 type Status = components['schemas']['BuyerOrganizationStatus'];
+type RejectionReason = components['schemas']['BuyerOrganizationRejectionReason'];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BUYER_ROLES = ['buyer_admin', 'buyer_member'] as const;
@@ -103,6 +107,8 @@ export class BuyersService {
       }
       const status = input.status ?? org.status;
       const seats = input.seats ?? org.seats;
+      // الرفض بسببه من /rejection وحده (ADR 0104)؛ PUT يُبقي المرفوضة أو يعيدها إلى غيرها فيُمحى السبب
+      if (status === 'rejected' && org.status !== 'rejected') throw ApiError.validation({ fields: ['/status'] });
       // الحالة والمقاعد لمدير النظام وحده؛ مدير المؤسسة يعدّل ملفها
       if (!admin && (status !== org.status || seats !== org.seats)) {
         throw new ApiError(403, 'forbidden_role', 'Only a system administrator changes the organization status or seats.');
@@ -118,12 +124,35 @@ export class BuyersService {
           billingEmail: input.billing_email,
           seats,
           status,
+          ...(status !== 'rejected' ? { rejectionReason: null } : {}),
           ...(activating ? { verifiedAt: sql`now()`, verifiedBy: p.userId } : {}),
         })
         .where(eq(buyerOrganizations.id, id));
-      if (status !== org.status) {
-        await audit(tx, p.userId, 'buyer_organization.status_changed', p.userId, { organization_id: id, from: org.status, to: status });
+      if (status !== org.status) await recordStatusChange(tx, p.userId, id, org.status as Status, status as Status, null);
+      return this.read(tx, id);
+    });
+  }
+
+  /**
+   * رفض طلب انضمام مؤسسة قيد التحقق بسبب مرمّز (A5، ADR 0104): من pending_verification وحدها، في معاملة واحدة مع الحدث
+   * والتدقيق. المرفوضة لا تتصفح ولا تشتري ولا تنزّل لأن كل بوّابة تشترط active.
+   */
+  async reject(p: Principal, id: string, reason: RejectionReason, ifMatch: string | undefined): Promise<{ org: BuyerOrganization; etag: string }> {
+    if (!UUID.test(id)) throw ApiError.notFound();
+    return this.db.transaction(async (tx) => {
+      const [org] = await tx.select().from(buyerOrganizations).where(eq(buyerOrganizations.id, id)).for('update');
+      if (!org) throw ApiError.notFound();
+      if (ifMatch !== undefined && ifMatch.trim() !== (await etagOf(tx, id))) {
+        throw new ApiError(412, 'precondition_failed', 'The resource has changed; read it again and retry.');
       }
+      if (org.status !== 'pending_verification') {
+        throw new ApiError(409, 'invalid_transition', `Only an organization pending verification is rejected; this one is ${org.status}.`, {
+          from: org.status,
+          to: 'rejected',
+        });
+      }
+      await tx.update(buyerOrganizations).set({ status: 'rejected', rejectionReason: reason }).where(eq(buyerOrganizations.id, id));
+      await recordStatusChange(tx, p.userId, id, 'pending_verification', 'rejected', reason);
       return this.read(tx, id);
     });
   }
@@ -285,6 +314,27 @@ export class BuyersService {
   }
 }
 
+/**
+ * تغيّر حالة مؤسسة (ADR 0104): حدث buyer_organization.status_changed بالمعرّف والحالتين والسبب المرمّز وحده، وتدقيق بالمفاتيح
+ * نفسها. لا اسم ولا بريد.
+ */
+async function recordStatusChange(tx: Tx, actorId: string, orgId: string, from: Status, to: Status, reason: RejectionReason | null): Promise<void> {
+  await writeOutboxEvent(tx, {
+    type: 'buyer_organization.status_changed',
+    aggregateType: 'organization',
+    aggregateId: orgId,
+    idempotencyKey: `buyer_organization.status_changed:${orgId}:${to}:${randomUUID()}`,
+    actorId,
+    payload: { organization_id: orgId, from, to, reason_code: reason },
+  });
+  await audit(tx, actorId, 'buyer_organization.status_changed', actorId, {
+    organization_id: orgId,
+    from,
+    to,
+    ...(reason ? { reason_code: reason } : {}),
+  });
+}
+
 async function etagOf(executor: Executor, id: string): Promise<string> {
   const [r] = await executor
     .select({ v: sql<string>`(extract(epoch from ${buyerOrganizations.updatedAt}) * 1000000)::bigint::text` })
@@ -393,6 +443,8 @@ function toDto(o: OrgRow, activeMembers: number): BuyerOrganization {
     status: o.status as Status,
     active_members: activeMembers,
     verified_at: iso(o.verifiedAt),
+    // يظهر مع rejected وحدها (ADR 0104)، فيبقى الملف المقروء صالحًا جسمًا لـ PUT في غيرها
+    ...(o.rejectionReason ? { rejection_reason: o.rejectionReason as RejectionReason } : {}),
     created_at: iso(o.createdAt)!,
     updated_at: iso(o.updatedAt)!,
   };

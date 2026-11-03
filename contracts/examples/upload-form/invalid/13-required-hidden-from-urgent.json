@@ -1,0 +1,6 @@
+{
+  "version": 8,
+  "fields": [
+    { "key": "guest_name", "type": "short_text", "label": { "ar": "اسم الضيف", "en": "Guest name" }, "required": true, "show_in_urgent": false }
+  ]
+}

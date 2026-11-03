@@ -241,6 +241,16 @@
           "type": "boolean",
           "default": false
         },
+        "show_in_urgent": {
+          "description": "«يظهر في الإرسال العاجل» (A3، ADR 0104): الغائب true كما ترسم التطبيقات كل حقل اليوم. الحقل الإلزامي لا يُخفى منه (انظر allOf)، فلا يتعطّل إرسال عاجل بحقل لا يراه المراسل. يُحفظ في الإصدار، والتطبيقان يقرآنه حين يُبنى فيهما الإرسال العاجل",
+          "type": "boolean",
+          "default": true
+        },
+        "send_to_store": {
+          "description": "«يُرسل إلى المتجر» (A3، ADR 0104): الغائب false. لأنواع القيم المعروضة وحدها، فلا يحمله staff_member ولا attachment ولا الحساس (انظر allOf). يُحفظ في الإصدار، والكتالوج لا يحمل الحقول الديناميكية بعد",
+          "type": "boolean",
+          "default": false
+        },
         "default": {
           "description": "قيمة افتراضية من نوع الحقل نفسه",
           "type": [
@@ -518,6 +528,61 @@
           "then": {
             "properties": {
               "searchable": {
+                "const": false
+              }
+            }
+          }
+        },
+        {
+          "$comment": "ADR 0104: الحقل الإلزامي يظهر في الإرسال العاجل",
+          "if": {
+            "properties": {
+              "required": {
+                "const": true
+              }
+            },
+            "required": [
+              "required"
+            ]
+          },
+          "then": {
+            "properties": {
+              "show_in_urgent": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "$comment": "ADR 0104: لا اسم طاقم ولا ملف ولا موقع ولا حساس إلى المتجر",
+          "if": {
+            "anyOf": [
+              {
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "staff_member",
+                      "attachment",
+                      "location"
+                    ]
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "sensitive": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "sensitive"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "send_to_store": {
                 "const": false
               }
             }

@@ -13,6 +13,7 @@ public struct UploadSessionCreate: Sendable, Codable, Hashable {
         case original = "original"
         case proxy = "proxy"
         case voiceNote = "voice_note"
+        case produced = "produced"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
     public enum ProxyMode: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
@@ -24,6 +25,7 @@ public struct UploadSessionCreate: Sendable, Codable, Hashable {
     public static let filenameRule = StringRule(minLength: 1, maxLength: 255, pattern: nil)
     public static let clientSha256Rule = StringRule(minLength: nil, maxLength: nil, pattern: "^[0-9a-f]{64}$")
     public var materialId: UUID
+    /** `produced` النسخة المُنتَجة للمسنَد إليه المادة في مهمة مفتوحة (ADR 0104) */
     public var kind: Kind
     public var sizeBytes: Int
     /** اسم الملف على الجهاز؛ لا يُعرض خارج النطاق */

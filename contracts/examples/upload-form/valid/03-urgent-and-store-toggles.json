@@ -1,0 +1,8 @@
+{
+  "version": 8,
+  "fields": [
+    { "key": "guest_name", "type": "short_text", "label": { "ar": "اسم الضيف", "en": "Guest name" }, "required": true, "show_in_urgent": true, "send_to_store": true },
+    { "key": "editor_note", "type": "long_text", "label": { "ar": "ملاحظة للمحرر", "en": "Note to the editor" }, "required": false, "show_in_urgent": false, "send_to_store": false },
+    { "key": "camera_operator", "type": "staff_member", "label": { "ar": "المصوّر", "en": "Camera operator" }, "required": false, "show_in_urgent": false }
+  ]
+}

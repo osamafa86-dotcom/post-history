@@ -67,7 +67,9 @@
         "assignment.state_changed",
         "tag.suggestions_changed",
         "tag.rewritten",
-        "platform_settings.changed"
+        "platform_settings.changed",
+        "user.roles_changed",
+        "buyer_organization.status_changed"
       ]
     },
     "aggregate_type": {
@@ -81,7 +83,8 @@
         "listing",
         "license",
         "order",
-        "payout"
+        "payout",
+        "organization"
       ]
     },
     "aggregate_id": {
@@ -364,7 +367,8 @@
                 "enum": [
                   "original",
                   "proxy",
-                  "voice_note"
+                  "voice_note",
+                  "produced"
                 ]
               },
               "priority": {
@@ -435,7 +439,8 @@
                 "enum": [
                   "original",
                   "proxy",
-                  "voice_note"
+                  "voice_note",
+                  "produced"
                 ]
               },
               "priority": {
@@ -1463,6 +1468,109 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "user.roles_changed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "user"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "تغيّرت أدوار حساب طاقم (A1، ADR 0104): معرّف الحساب وحده، بلا أدوار ولا اسم ولا بريد. تُقرأ الأدوار من GET /users/{id}/roles، ومن غيّرها في actor_id.",
+            "required": [
+              "user_id"
+            ],
+            "properties": {
+              "user_id": {
+                "$ref": "#/$defs/uuid"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "buyer_organization.status_changed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "organization"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "تغيّرت حالة مؤسسة مشترية (ADR 0104): بالرفض بسببه المرمّز، أو بـ PUT المؤسسة (التفعيل والتعليق والإعادة). معرّف وحالتان ورمز، بلا اسم ولا بريد.",
+            "required": [
+              "organization_id",
+              "from",
+              "to",
+              "reason_code"
+            ],
+            "properties": {
+              "organization_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "from": {
+                "$ref": "#/$defs/organizationStatus"
+              },
+              "to": {
+                "$ref": "#/$defs/organizationStatus"
+              },
+              "reason_code": {
+                "description": "سبب الرفض مع to = rejected وحدها، و null لغيرها",
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "commercial_registry",
+                  "institutional_email",
+                  "license_agreement",
+                  "duplicate_organization",
+                  "other",
+                  null
+                ]
+              }
+            },
+            "if": {
+              "properties": {
+                "to": {
+                  "const": "rejected"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "reason_code": {
+                  "type": "string"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "reason_code": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -1483,6 +1591,15 @@
         "urgent",
         "important",
         "normal"
+      ]
+    },
+    "organizationStatus": {
+      "type": "string",
+      "enum": [
+        "pending_verification",
+        "active",
+        "suspended",
+        "rejected"
       ]
     }
   }

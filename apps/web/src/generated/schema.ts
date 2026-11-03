@@ -267,6 +267,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{id}/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المستخدم */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * أدوار حساب طاقم بنطاقاتها (A1، ADR 0104)
+         * @description أدوار الحساب ونطاق كلٍّ منها، لتعديلها بـ `PUT`. حساب المشتري وغير الموجود `404`: أدوار المشترين في المؤسسات المشترية.
+         */
+        get: operations["getUserRoles"];
+        /**
+         * استبدال أدوار حساب طاقم (A1، ADR 0104)
+         * @description يستبدل أدوار الحساب كلها. النطاق (`scopes`) للمشرف وحده: مكتب موجود أو محافظة مكتب موجود، والمشرف بلا نطاق يرى الكل؛ وغير المشرف بلا نطاق. أدوار المشترين ونطاق `organization` لا تُقبل هنا. ما خالف ذلك `422 validation_failed` بمسار الحقل. لا يغيّر المدير أدواره (`403 forbidden_scope`). ودور `system_admin` خارج هذه النقطة في الاتجاهين: منحه، أو أي تغيير لحساب يحمله، `403 admin_quorum_required` (إجراء الشخصين من سطر الأوامر، ADR 0005 و0030)؛ فلا يسقط منها آخر مدير ولا غيره. القائمة نفسها مرة ثانية لا تكتب شيئًا. التغيير في معاملة واحدة مع حدث `user.roles_changed` بمعرّف الحساب وحده، وتدقيق بالمعرّف ورموز الأدوار قبل وبعد. يسري على الطلب التالي للحساب.
+         */
+        put: operations["replaceUserRoles"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/{id}/permissions/history": {
         parameters: {
             query?: never;
@@ -372,6 +399,29 @@ export interface paths {
         patch: operations["updateMaterial"];
         trace?: never;
     };
+    "/materials/{id}/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المادة */
+                id: components["parameters"]["MaterialId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * استبدال وسوم مادة من المكتب (W2، ADR 0104)
+         * @description للمشرف في نطاقه ولرئيس التحرير؛ المشرف خارج نطاق المادة `403 forbidden_scope`، والمادة التي لا يراها `404`. يستبدل الوسوم كلها بقاعدة `MaterialTags` (ADR 0086)، والمصفوفة الفارغة تمحوها. الوسم صفة أرشفة لا مضمون يُعاد اعتماده (ADR 0098): لا يرتفع `version` ولا تتغيّر الحالات الثلاث ولا الحجز، ويرتفع `row_version` وحده (`ETag`). القائمة نفسها لا تكتب شيئًا. حدث `material.updated` بحمولة المادة القائمة وتدقيق `material.tags_changed` بمعرّف المادة؛ لا نص وسم في حدث ولا تدقيق ولا إشعار. `PATCH` باقٍ للمراسل.
+         */
+        put: operations["replaceMaterialTags"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/materials/{id}/transitions": {
         parameters: {
             query?: never;
@@ -431,7 +481,7 @@ export interface paths {
         };
         /**
          * رابط قراءة موقّع قصير العمر لمشتق من المادة (v0.1)
-         * @description للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail` و`transcript` و`captions` و`shot_list`، و`circulated_render` بشرطه أدناه) في حالة `verified`. الأصل والملاحظة الصوتية وحزمة التصدير لا تُعطى رابطًا هنا (`404`؛ الحزمة من `/materials/{id}/export/download-url`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`). **المشتقات النصية حساسة افتراضيًا (`transcript` و`captions` و`shot_list`، threat-model §9.1):** رابطها لأدوار تعديل المادة وحدها، أي `x-roles` على `PATCH /materials/{id}` ضمن النطاق (`reporter` مالك المادة، و`supervisor` و`editor_in_chief` و`system_admin`). غيرهم يُرد `404` بالشكل نفسه للملف المفقود، لا `403`. وكل إصدار رابط لها يُسجَّل في التدقيق قراءةً حساسة `material.sensitive_read` (`material_id` و`file_id` و`field_keys: [<النوع>]`). **نسخة قالب «مواد متداولة» (`circulated_render`، ADR 0091، أُضيف بعد v0.3):** `file_id` من `MaterialRender.file_id` (لا تظهر في `Material.files`). رابطها لأدوار طلب النسخة وحدها (`x-roles` على `POST /materials/{id}/renders` ضمن النطاق)، وغيرهم `404` بالشكل نفسه. وإن لم تعد المادة تستوفي شروط النسخة الحقوقية والتحريرية (حقوق `blocked` أو `withdrawn`، أو حالة تحريرية خارج `accepted` و`in_production` و`final_review` و`published`) فـ `409 render_not_allowed`: المشتق يسقط بسقوط أصله. الحساسية لا تمنع الرابط (قرار المالك 2026-11-02). كل إصدار رابط يُسجَّل في التدقيق كغيره (`material_file.download_url_issued`، `material_id` و`file_id`).
+         * @description للمشتقات وحدها (`proxy` و`hls` و`audio` و`thumbnail` و`transcript` و`captions` و`shot_list`، و`circulated_render` بشرطه أدناه) في حالة `verified`. الأصل والملاحظة الصوتية وحزمة التصدير لا تُعطى رابطًا هنا (`404`؛ الحزمة من `/materials/{id}/export/download-url`)، وكذلك ملف لا يخص المادة أو مادة خارج نطاق المستدعي، بلا تفريق. الرابط موقّع من التخزين ومدته ≤ 10 دقائق (`expires_at`)، يخص هذا الملف وحده، ولا يحمل بيانات كاشفة: لا اسم ملف أصلي ولا اسم مراسل ولا معرّف جهاز، ومفتاح التخزين بالمعرّفات وحدها. يُعاد طلبه عند الانتهاء ولا يُخزَّن (`Cache-Control: no-store`). **المشتقات النصية حساسة افتراضيًا (`transcript` و`captions` و`shot_list`، threat-model §9.1):** رابطها لأدوار تعديل المادة وحدها، أي `x-roles` على `PATCH /materials/{id}` ضمن النطاق (`reporter` مالك المادة، و`supervisor` و`editor_in_chief` و`system_admin`). غيرهم يُرد `404` بالشكل نفسه للملف المفقود، لا `403`. وكل إصدار رابط لها يُسجَّل في التدقيق قراءةً حساسة `material.sensitive_read` (`material_id` و`file_id` و`field_keys: [<النوع>]`). **نسخة قالب «مواد متداولة» (`circulated_render`، ADR 0091، أُضيف بعد v0.3):** `file_id` من `MaterialRender.file_id` (لا تظهر في `Material.files`). رابطها لأدوار طلب النسخة وحدها (`x-roles` على `POST /materials/{id}/renders` ضمن النطاق)، وغيرهم `404` بالشكل نفسه. وإن لم تعد المادة تستوفي شروط النسخة الحقوقية والتحريرية (حقوق `blocked` أو `withdrawn`، أو حالة تحريرية خارج `accepted` و`in_production` و`final_review` و`published`) فـ `409 render_not_allowed`: المشتق يسقط بسقوط أصله. الحساسية لا تمنع الرابط (قرار المالك 2026-11-02). كل إصدار رابط يُسجَّل في التدقيق كغيره (`material_file.download_url_issued`، `material_id` و`file_id`). **النسخة المُنتَجة (`produced`، ADR 0104، أُضيف بعد v0.3):** المرفوعة من المونتير ومشتق العامل معًا، لأدوار الإنتاج وحدها: `producer` و`supervisor` في نطاقه و`editor_in_chief` و`system_admin`. غيرهم `404` بالشكل نفسه، ويُسجَّل الإصدار كغيره.
          */
         get: operations["getMaterialFileDownloadUrl"];
         put?: never;
@@ -699,7 +749,10 @@ export interface paths {
          *       الإشعار (`POST /notifications/{id}/ack`) ينقل المهمة إلى `acknowledged` بالمقابل. و`returned` قبل الإقرار يوقف التصعيد.
          *       `done` و`returned` يُشعران الطرف الآخر (من أسند أو المسنَدة إليه) داخل المنصة، و`returned` بدفع إلى الهاتف كذلك.
          *     - **الأثر في معاملة واحدة:** حدث `assignment.state_changed` بالمعرّفات و`from` و`to`، وسطر تدقيق `assignment.transitioned`.
-         *       الحالات الثلاث للمادة وحجزها لا تتغيّر، و`done` لا يحمل ملفًا (رفع المادة المُنتَجة تغيير عقد لاحق).
+         *       الحالات الثلاث للمادة وحجزها لا تتغيّر.
+         *     - **التسليم بملف (ADR 0104):** `produced_file_id` مع `done` وحدها، لملف `produced` متحقق من المادة نفسها رفعه المسنَد إليه
+         *       (`POST /uploads` بـ `kind: produced`)؛ وغير ذلك `422 validation_failed` بمسار الحقل. يعود في
+         *       `MaterialAssignment.produced_file_id`، وفي التدقيق `file_id`. و`done` بلا ملف قائم كما كان.
          */
         post: operations["transitionAssignment"];
         delete?: never;
@@ -763,7 +816,7 @@ export interface paths {
         put?: never;
         /**
          * إنشاء جلسة رفع لملف يخص مادة (أصل أو نسخة خفيفة أو ملاحظة صوتية)
-         * @description تعيد نقطة tus ورمزًا قصير العمر وحجم الجزء الثابت لهذه الجلسة. يرسل العميل `tus_metadata` كما هي في ترويسة `Upload-Metadata` عند إنشاء رفع tus. النسخة الخفيفة لها الأولوية على الأصل في قائمة انتظار العميل. `client_fingerprint` يرشّح المكررات فقط ولا يمنح أي حق؛ الربط الفعلي بملف موجود لا يتم إلا بتطابق `sha256` الكاملة على الخادم. الجلسة لمنشئ المادة وحده (غيره `404`)؛ ويرفع الطاقم من الويب الأصل وحده (`kind: original`)، والنسخة الخفيفة يولّدها عامل الوسائط.
+         * @description تعيد نقطة tus ورمزًا قصير العمر وحجم الجزء الثابت لهذه الجلسة. يرسل العميل `tus_metadata` كما هي في ترويسة `Upload-Metadata` عند إنشاء رفع tus. النسخة الخفيفة لها الأولوية على الأصل في قائمة انتظار العميل. `client_fingerprint` يرشّح المكررات فقط ولا يمنح أي حق؛ الربط الفعلي بملف موجود لا يتم إلا بتطابق `sha256` الكاملة على الخادم. الجلسة لمنشئ المادة وحده (غيره `404`)؛ ويرفع الطاقم من الويب الأصل وحده (`kind: original`)، والنسخة الخفيفة يولّدها عامل الوسائط. **النسخة المُنتَجة (`kind: produced`، ADR 0104):** لمن يحمل مهمة مفتوحة (`assigned` أو `acknowledged` أو `in_progress`) مسندة إليه على المادة، لا لمنشئها؛ المادة خارج نطاقه `404`، وفي نطاقه بلا مهمة له `403 forbidden_scope`. ملف جديد من نوع `produced` والأصل لا يُمس: لا إيصال ولا انتقال في المسار الفني. اكتمالها `upload.original_received` بـ `kind: produced`، وأحداثها لا تصير إشعارًا ولا تظهر في «الوارد الآن».
          */
         post: operations["createUploadSession"];
         delete?: never;
@@ -1673,10 +1726,33 @@ export interface paths {
         get: operations["getBuyerOrganization"];
         /**
          * تعديل ملف المؤسسة
-         * @description `buyer_admin` يعدّل ملف مؤسسته (الأسماء وبريد الفوترة والبلد). الحالة لمدير النظام وحده؛ تغييرها من غيره `403 forbidden_role`. التعليق يوقف الشراء والتنزيل الجديد، ولا يمس تراخيص سابقة.
+         * @description `buyer_admin` يعدّل ملف مؤسسته (الأسماء وبريد الفوترة والبلد). الحالة لمدير النظام وحده؛ تغييرها من غيره `403 forbidden_role`. التعليق يوقف الشراء والتنزيل الجديد، ولا يمس تراخيص سابقة. `rejected` لا تُوضع من هنا (`422 validation_failed` على `/status`؛ الرفض بسببه من `/rejection`)، والخروج منها إلى غيرها يمحو `rejection_reason` (حالة مقروءة كـ `verified_at`، فلا تُرسل في الجسم). كل تغيير حالة يكتب `buyer_organization.status_changed` (ADR 0104).
          */
         put: operations["replaceBuyerOrganization"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/buyer-organizations/{org_id}/rejection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المؤسسة المشترية */
+                org_id: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * رفض طلب انضمام مؤسسة قيد التحقق (A5، ADR 0104)
+         * @description من `pending_verification` وحدها إلى `rejected`، وغيرها `409 invalid_transition`. السبب رمز من قائمة مغلقة بلا نص حرّ، ويعود في `rejection_reason`. المرفوضة لا تتصفح ولا تشتري ولا تنزّل. `PUT` المؤسسة لا يضع `rejected` ويملك إعادتها إلى غيرها فيُمحى السبب. في معاملة واحدة: الحالة، وحدث `buyer_organization.status_changed` بالمعرّف والحالتين والسبب، وتدقيق `buyer_organization.status_changed` بالمفاتيح نفسها.
+         */
+        post: operations["rejectBuyerOrganization"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2643,6 +2719,10 @@ export interface components {
             /** Format: uuid */
             created_by: string;
         };
+        /** @description وسوم المادة كلها من المكتب (ADR 0104)؛ المصفوفة الفارغة تمحوها */
+        MaterialTagsUpdate: {
+            tags: components["schemas"]["MaterialTags"];
+        };
         MaterialUpdate: {
             title?: string;
             material_types?: components["schemas"]["MaterialType"][];
@@ -2772,8 +2852,13 @@ export interface components {
             acknowledged_at?: string | null;
             /** @description الاسم الحقيقي للمراسل (v0.2). الصلاحية التي تكشفه يحددها الإعداد الإداري `reporter_legal_name_access` (`/admin/settings/reporter-identity`، ADR 0021): `reporter_identity:read` حين يكون `separate` (الافتراضي)، و`protected_source:read` حين يكون `protected_source`. يغيب المفتاح عمّن لا يحمل الصلاحية الفعّالة. كل قراءة تُسجَّل في التدقيق (`material.sensitive_read`، `field_keys: [reporter_legal_name]`). لا يدخل إشعارًا ولا حدثًا ولا تصديرًا. `null` = غير مسجّل. */
             reporter_legal_name?: string | null;
-            /** @description المشتقات النصية (`transcript` و`captions` و`shot_list`) تظهر لأدوار تعديل المادة وحدها، وتُحذف من القائمة لغيرهم فلا يُلمَّح إلى وجودها (threat-model §9.1). */
+            /** @description المشتقات النصية (`transcript` و`captions` و`shot_list`) تظهر لأدوار تعديل المادة وحدها، وتُحذف من القائمة لغيرهم فلا يُلمَّح إلى وجودها (threat-model §9.1). والنسخة المُنتَجة (`produced`) لأدوار الإنتاج وحدها (ADR 0104). وحزم تسليم التراخيص ومعاينات المتجر وحزمة التصدير ونسخ القالب لا تظهر هنا لأحد، فلكلٍّ رابطها. */
             files: components["schemas"]["MaterialFile"][];
+            /**
+             * Format: uuid
+             * @description أحدث مصغّرة (`thumbnail`) متحققة للمادة لصف الوارد (W1، ADR 0104)؛ `null` بلا مصغّرة متحققة. تُجلب برابطها من `/materials/{id}/files/{file_id}/download-url` ولا يحمل الرد رابطًا. أُضيف بعد v0.3 فقد يغيب
+             */
+            thumbnail_file_id?: string | null;
             /** @description مفاتيح `dynamic_fields` التي حُذفت من هذه الاستجابة بقاعدة الحجب (حقول `sensitive` أو `location`) لأن المستدعي لا يحمل الصلاحية المقابلة؛ فارغة لحاملها. */
             redacted_field_keys?: string[];
             /** Format: date-time */
@@ -2793,10 +2878,10 @@ export interface components {
             /** Format: uuid */
             id: string;
             /**
-             * @description الأصل لا يُمس؛ كل معالجة تنتج ملفًا جديدًا
+             * @description الأصل لا يُمس؛ كل معالجة تنتج ملفًا جديدًا. `produced` النسخة المُنتَجة (ADR 0104، أُضيف بعد v0.3): يرفعها المونتير المسنَدة إليه المادة، أو يشتقها عامل الوسائط للتسليم؛ تظهر لأدوار الإنتاج وحدها (`producer` و`supervisor` و`editor_in_chief` و`system_admin`).
              * @enum {string}
              */
-            kind: "original" | "proxy" | "hls" | "audio" | "thumbnail" | "voice_note" | "transcript" | "captions" | "shot_list";
+            kind: "original" | "proxy" | "hls" | "audio" | "thumbnail" | "voice_note" | "transcript" | "captions" | "shot_list" | "produced";
             /** @enum {string} */
             state: "uploading" | "received" | "verified" | "failed";
             /**
@@ -2836,8 +2921,11 @@ export interface components {
         UploadSessionCreate: {
             /** Format: uuid */
             material_id: string;
-            /** @enum {string} */
-            kind: "original" | "proxy" | "voice_note";
+            /**
+             * @description `produced` النسخة المُنتَجة للمسنَد إليه المادة في مهمة مفتوحة (ADR 0104)
+             * @enum {string}
+             */
+            kind: "original" | "proxy" | "voice_note" | "produced";
             size_bytes: number;
             /** @description اسم الملف على الجهاز؛ لا يُعرض خارج النطاق */
             filename: string;
@@ -2891,7 +2979,7 @@ export interface components {
             /** Format: uuid */
             material_id: string;
             /** @enum {string} */
-            kind: "original" | "proxy" | "voice_note";
+            kind: "original" | "proxy" | "voice_note" | "produced";
             /**
              * @description created → in_progress → completed → verified؛ failed أو deduplicated نهائيتان
              * @enum {string}
@@ -3156,7 +3244,7 @@ export interface components {
             /** Format: uuid */
             material_id: string;
             /** @enum {string} */
-            kind: "original" | "proxy" | "voice_note";
+            kind: "original" | "proxy" | "voice_note" | "produced";
             /** @enum {string} */
             state: "created" | "in_progress" | "completed" | "verified" | "failed" | "deduplicated";
             size_bytes: number;
@@ -3471,6 +3559,11 @@ export interface components {
             to: "acknowledged" | "in_progress" | "done" | "returned";
             /** @description سبب الإعادة، مع `returned` وحدها */
             note?: components["schemas"]["AssignmentNote"];
+            /**
+             * Format: uuid
+             * @description النسخة المُنتَجة المسلَّمة، مع `done` وحدها (ADR 0104): ملف `produced` متحقق من المادة نفسها رفعه المسنَد إليه. اختياري
+             */
+            produced_file_id?: string;
         };
         /**
          * @description إسناد مادة إلى المونتير (ADR 0096). معرّفات المادة والأشخاص وحالات وأوقات، والملاحظتان؛ تفاصيل المادة من `GET /materials/{id}` بقاعدة الحجب نفسها.
@@ -3533,6 +3626,11 @@ export interface components {
              * @description متى سُلّمت (`done`) أو أُعيدت (`returned`)
              */
             closed_at: string | null;
+            /**
+             * Format: uuid
+             * @description النسخة المُنتَجة التي سُلّمت بها المهمة (`done`، ADR 0104)؛ `null` بلا ملف. تُنزَّل بـ `/materials/{id}/files/{file_id}/download-url` لأدوار الإنتاج. أُضيف بعد v0.3 فقد يغيب
+             */
+            produced_file_id?: string | null;
             /** Format: date-time */
             updated_at: string;
         };
@@ -3987,10 +4085,18 @@ export interface components {
             next_cursor: string | null;
         };
         /**
-         * @description `pending_verification` لا تشتري؛ `active` تشتري؛ `suspended` يوقف الشراء والتنزيل الجديد
+         * @description `pending_verification` لا تشتري؛ `active` تشتري؛ `suspended` يوقف الشراء والتنزيل الجديد؛ `rejected` رُفض طلب انضمامها بسبب في `rejection_reason`، فلا تتصفح ولا تشتري (ADR 0104، أُضيف بعد v0.3)
          * @enum {string}
          */
-        BuyerOrganizationStatus: "pending_verification" | "active" | "suspended";
+        BuyerOrganizationStatus: "pending_verification" | "active" | "suspended" | "rejected";
+        /**
+         * @description سبب رفض طلب الانضمام (ADR 0104): بنود التحقق الثلاثة في A5 (السجل التجاري، والبريد المؤسسي، واتفاقية الترخيص)، والمؤسسة المكررة، وغير ذلك. لا نص حرّ.
+         * @enum {string}
+         */
+        BuyerOrganizationRejectionReason: "commercial_registry" | "institutional_email" | "license_agreement" | "duplicate_organization" | "other";
+        BuyerOrganizationRejection: {
+            reason_code: components["schemas"]["BuyerOrganizationRejectionReason"];
+        };
         BuyerOrganizationFields: {
             /** @description الاسم القانوني على الفاتورة */
             legal_name: string;
@@ -4021,6 +4127,8 @@ export interface components {
              * @description أول انتقال إلى `active`
              */
             verified_at: string | null;
+            /** @description سبب الرفض، ويظهر مع `rejected` وحدها ويغيب مع غيرها (ADR 0104)، فلا ينكسر عميل يعيد إرسال المؤسسة المقروءة في `PUT`. حالة مقروءة لا تُرسل في `PUT` (`BuyerOrganizationInput` لا يقبلها) */
+            rejection_reason?: components["schemas"]["BuyerOrganizationRejectionReason"];
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -4569,6 +4677,36 @@ export interface components {
                 }[];
             };
         };
+        /**
+         * @description أدوار حساب طاقم بنطاقاتها (A1، ADR 0104)
+         * @example {
+         *       "user_id": "2f3e4d5c-6b7a-4899-8a7b-6c5d4e3f2a1b",
+         *       "roles": [
+         *         {
+         *           "name": "supervisor",
+         *           "scopes": [
+         *             {
+         *               "kind": "office",
+         *               "id": "0f1e2d3c-4b5a-4697-8877-665544332211"
+         *             }
+         *           ]
+         *         },
+         *         {
+         *           "name": "producer",
+         *           "scopes": []
+         *         }
+         *       ]
+         *     }
+         */
+        StaffRoles: {
+            /** Format: uuid */
+            user_id: string;
+            roles: components["schemas"]["Role"][];
+        };
+        /** @description الأدوار كلها بعد التغيير (ADR 0104): دور طاقم مرة واحدة، والنطاق للمشرف وحده (`office` بمعرّف مكتب موجود، أو `governorate` باسم محافظة مكتب موجود؛ فارغ = الكل)، وغيره بنطاق فارغ. لا `system_admin` ولا أدوار المشترين. */
+        StaffRolesUpdate: {
+            roles: components["schemas"]["Role"][];
+        };
         /** @description كل نص بقاعدة `MaterialTag` (ADR 0086): بلا مسافة في الطرفين ولا محارف تحكم أو اتجاه، فلا يقلب اتجاه واجهة أو صورة. القاعدة نفسها في قاعدة البيانات (`render_text_valid`). */
         PlatformSettingsUpdate: {
             /** @description اسم المنصة كما يظهر في الويب */
@@ -4727,6 +4865,16 @@ export interface components {
              * @default false
              */
             searchable: boolean;
+            /**
+             * @description «يظهر في الإرسال العاجل» (A3، ADR 0104): الغائب true كما ترسم التطبيقات كل حقل اليوم. الحقل الإلزامي لا يُخفى منه (انظر allOf)، فلا يتعطّل إرسال عاجل بحقل لا يراه المراسل. يُحفظ في الإصدار، والتطبيقان يقرآنه حين يُبنى فيهما الإرسال العاجل
+             * @default true
+             */
+            show_in_urgent: boolean;
+            /**
+             * @description «يُرسل إلى المتجر» (A3، ADR 0104): الغائب false. لأنواع القيم المعروضة وحدها، فلا يحمله staff_member ولا attachment ولا الحساس (انظر allOf). يُحفظ في الإصدار، والكتالوج لا يحمل الحقول الديناميكية بعد
+             * @default false
+             */
+            send_to_store: boolean;
             /** @description قيمة افتراضية من نوع الحقل نفسه */
             default?: string | number | boolean | unknown[] | null;
             /** @description يظهر الحقل مع هذه الأنواع فقط؛ فارغ أو غائب = الكل */
@@ -4737,7 +4885,7 @@ export interface components {
             /** @constant */
             sensitive?: false;
             type: unknown;
-        } & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
         /**
          * UploadForm
          * @description نموذج الرفع الديناميكي الذي تضبطه الإدارة. هذه المجموعة الفرعية المسموحة وحدها ترسمها الواجهات الثلاث (الويب، iOS، أندرويد) ويتحقق بها الخادم. كل إصدار لقطة كاملة غير قابلة للتعديل؛ المادة تحفظ رقم الإصدار الذي رُفعت به.
@@ -4828,6 +4976,16 @@ export interface components {
                      * @default false
                      */
                     searchable: boolean;
+                    /**
+                     * @description «يظهر في الإرسال العاجل» (A3، ADR 0104): الغائب true كما ترسم التطبيقات كل حقل اليوم. الحقل الإلزامي لا يُخفى منه (انظر allOf)، فلا يتعطّل إرسال عاجل بحقل لا يراه المراسل. يُحفظ في الإصدار، والتطبيقان يقرآنه حين يُبنى فيهما الإرسال العاجل
+                     * @default true
+                     */
+                    show_in_urgent: boolean;
+                    /**
+                     * @description «يُرسل إلى المتجر» (A3، ADR 0104): الغائب false. لأنواع القيم المعروضة وحدها، فلا يحمله staff_member ولا attachment ولا الحساس (انظر allOf). يُحفظ في الإصدار، والكتالوج لا يحمل الحقول الديناميكية بعد
+                     * @default false
+                     */
+                    send_to_store: boolean;
                     /** @description قيمة افتراضية من نوع الحقل نفسه */
                     default?: string | number | boolean | unknown[] | null;
                     /** @description يظهر الحقل مع هذه الأنواع فقط؛ فارغ أو غائب = الكل */
@@ -4838,7 +4996,7 @@ export interface components {
                     /** @constant */
                     sensitive?: false;
                     type: unknown;
-                } & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+                } & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
             };
         };
         /** Format: uuid */
@@ -4847,6 +5005,8 @@ export interface components {
         priority: "urgent" | "important" | "normal";
         /** Format: uuid */
         nullableUuid: string | null;
+        /** @enum {string} */
+        organizationStatus: "pending_verification" | "active" | "suspended" | "rejected";
         /**
          * OutboxEvent
          * @description حدث يُحفظ في جدول Outbox داخل معاملة الحفظ نفسها ثم يُرسل من طابور قابل لإعادة المحاولة. idempotency_key يمنع إنشاء مهمتين أو رسالتين لتكرار واحد. الأحداث نفسها تُبث على WebSocket وتُقرأ من GET /v1/events. حمولة كل نوع حدث قائمة بيضاء مغلقة (ADR SEC-03): لا أسماء ولا عناوين ولا إحداثيات ولا معرّفات أجهزة، لأن الحمولة قد تصل إلى قنوات خارجية.
@@ -4855,9 +5015,9 @@ export interface components {
             /** @description تسلسلي متزايد (رقم الصف في جدول Outbox) بصيغة نصية؛ يُستخدم مؤشرًا في `after` */
             id: string;
             /** @enum {string} */
-            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested" | "order.status_changed" | "license.issued" | "license.revoked" | "payout.status_changed" | "render.requested" | "render.started" | "render.completed" | "render.failed" | "assignment.created" | "assignment.state_changed" | "tag.suggestions_changed" | "tag.rewritten" | "platform_settings.changed";
+            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested" | "order.status_changed" | "license.issued" | "license.revoked" | "payout.status_changed" | "render.requested" | "render.started" | "render.completed" | "render.failed" | "assignment.created" | "assignment.state_changed" | "tag.suggestions_changed" | "tag.rewritten" | "platform_settings.changed" | "user.roles_changed" | "buyer_organization.status_changed";
             /** @enum {string} */
-            aggregate_type: "material" | "upload" | "notification" | "form" | "user" | "listing" | "license" | "order" | "payout";
+            aggregate_type: "material" | "upload" | "notification" | "form" | "user" | "listing" | "license" | "order" | "payout" | "organization";
             /** Format: uuid */
             aggregate_id: string;
             /** Format: date-time */
@@ -4893,8 +5053,10 @@ export interface components {
                 nullableUuid: string | null;
                 /** @enum {string} */
                 priority: "urgent" | "important" | "normal";
+                /** @enum {string} */
+                organizationStatus: "pending_verification" | "active" | "suspended" | "rejected";
             };
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
     };
     responses: {
         /** @description طلب غير صالح (معاملات استعلام أو مؤشر غير مفهوم) */
@@ -5421,6 +5583,66 @@ export interface operations {
             422: components["responses"]["UnprocessableEntity"];
         };
     };
+    getUserRoles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المستخدم */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الأدوار */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffRoles"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    replaceUserRoles: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description معرّف المستخدم */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffRolesUpdate"];
+            };
+        };
+        responses: {
+            /** @description الأدوار بعد الاستبدال */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffRoles"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
     listPermissionHistory: {
         parameters: {
             query?: {
@@ -5658,6 +5880,44 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    replaceMaterialTags: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description قيمة `ETag` الأخيرة التي رآها العميل (`"<row_version>"` للمادة، `"<version>"` للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ `412 precondition_failed` دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description معرّف المادة */
+                id: components["parameters"]["MaterialId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MaterialTagsUpdate"];
+            };
+        };
+        responses: {
+            /** @description المادة بعد الاستبدال */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Material"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             412: components["responses"]["PreconditionFailed"];
             422: components["responses"]["UnprocessableEntity"];
         };
@@ -7950,6 +8210,45 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    rejectBuyerOrganization: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description قيمة `ETag` الأخيرة التي رآها العميل (`"<row_version>"` للمادة، `"<version>"` للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ `412 precondition_failed` دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description معرّف المؤسسة المشترية */
+                org_id: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuyerOrganizationRejection"];
+            };
+        };
+        responses: {
+            /** @description المؤسسة بعد الرفض */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyerOrganization"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             412: components["responses"]["PreconditionFailed"];
             422: components["responses"]["UnprocessableEntity"];
         };

@@ -102,6 +102,58 @@ open class MaterialTagsAPI {
     }
 
     /**
+     استبدال وسوم مادة من المكتب (W2، ADR 0104)
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف المادة 
+     - parameter materialTagsUpdate: (body)  
+     - parameter ifMatch: (header) قيمة &#x60;ETag&#x60; الأخيرة التي رآها العميل (&#x60;\&quot;&lt;row_version&gt;\&quot;&#x60; للمادة، &#x60;\&quot;&lt;version&gt;\&quot;&#x60; للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ &#x60;412 precondition_failed&#x60; دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. (optional)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: Material
+     */
+    open class func replaceMaterialTags(idempotencyKey: String, id: UUID, materialTagsUpdate: MaterialTagsUpdate, ifMatch: String? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> Material {
+        return try await replaceMaterialTagsWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, materialTagsUpdate: materialTagsUpdate, ifMatch: ifMatch, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     استبدال وسوم مادة من المكتب (W2، ADR 0104)
+     - PUT /materials/{id}/tags
+     - للمشرف في نطاقه ولرئيس التحرير؛ المشرف خارج نطاق المادة `403 forbidden_scope`، والمادة التي لا يراها `404`. يستبدل الوسوم كلها بقاعدة `MaterialTags` (ADR 0086)، والمصفوفة الفارغة تمحوها. الوسم صفة أرشفة لا مضمون يُعاد اعتماده (ADR 0098): لا يرتفع `version` ولا تتغيّر الحالات الثلاث ولا الحجز، ويرتفع `row_version` وحده (`ETag`). القائمة نفسها لا تكتب شيئًا. حدث `material.updated` بحمولة المادة القائمة وتدقيق `material.tags_changed` بمعرّف المادة؛ لا نص وسم في حدث ولا تدقيق ولا إشعار. `PATCH` باقٍ للمراسل.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - responseHeaders: [ETag(String)]
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف المادة 
+     - parameter materialTagsUpdate: (body)  
+     - parameter ifMatch: (header) قيمة &#x60;ETag&#x60; الأخيرة التي رآها العميل (&#x60;\&quot;&lt;row_version&gt;\&quot;&#x60; للمادة، &#x60;\&quot;&lt;version&gt;\&quot;&#x60; للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ &#x60;412 precondition_failed&#x60; دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. (optional)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<Material> 
+     */
+    open class func replaceMaterialTagsWithRequestBuilder(idempotencyKey: String, id: UUID, materialTagsUpdate: MaterialTagsUpdate, ifMatch: String? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Material> {
+        var localVariablePath = "/materials/{id}/tags"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: materialTagsUpdate, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+            "If-Match": ifMatch?.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<Material>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "PUT", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      استبدال القائمة المقترحة كلها (إضافة وحذف وإعادة ترتيب)
      
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 

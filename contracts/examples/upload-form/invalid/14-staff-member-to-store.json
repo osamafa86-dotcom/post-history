@@ -1,0 +1,6 @@
+{
+  "version": 8,
+  "fields": [
+    { "key": "camera_operator", "type": "staff_member", "label": { "ar": "المصوّر", "en": "Camera operator" }, "required": false, "send_to_store": true }
+  ]
+}

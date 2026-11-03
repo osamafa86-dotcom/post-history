@@ -9,6 +9,7 @@ import {
   type BuyerOrganization,
   type BuyerOrganizationCreate,
   type BuyerOrganizationInput,
+  type BuyerOrganizationRejection,
   BuyersService,
 } from './buyers.service';
 
@@ -50,6 +51,22 @@ export class BuyersController {
   ): Promise<BuyerOrganization> {
     const input = validateBody<BuyerOrganizationInput>('/buyer-organizations/{org_id}', 'put', body);
     const { org, etag } = await this.buyers.replace(req.principal!, id, input, ifMatch);
+    res.setHeader('ETag', etag);
+    return org;
+  }
+
+  @Post(':orgId/rejection')
+  @HttpCode(200)
+  @Roles('system_admin')
+  async reject(
+    @Param('orgId') id: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Headers('if-match') ifMatch?: string,
+  ): Promise<BuyerOrganization> {
+    const input = validateBody<BuyerOrganizationRejection>('/buyer-organizations/{org_id}/rejection', 'post', body);
+    const { org, etag } = await this.buyers.reject(req.principal!, id, input.reason_code, ifMatch);
     res.setHeader('ETag', etag);
     return org;
   }

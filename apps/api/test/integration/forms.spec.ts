@@ -58,6 +58,35 @@ describe('forms (/v1/forms)', () => {
     expect(rows[0].payload).toEqual({ version: v });
   });
 
+  // مفتاحا A3 (ADR 0104): «يظهر في الإرسال العاجل» و«يُرسل إلى المتجر» خاصيتا حقل في إصدار جديد، والإصدار السابق كما هو
+  it('keeps the urgent-send and store toggles on a new version, leaves the previous version untouched, and enforces their rules', async () => {
+    const before = await currentFormVersion(h);
+    const v = before + 1;
+    const toggled = form(v, [
+      { key: 'editor_note', type: 'long_text', label: { ar: 'ملاحظة', en: 'Note' }, required: false, show_in_urgent: false },
+      { key: 'event_name', type: 'short_text', label: { ar: 'الحدث', en: 'Event' }, required: true, show_in_urgent: true, send_to_store: true },
+    ]);
+    const res = await publish(admin, toggled).expect(201);
+    const fields = res.body.fields as Array<{ key: string; show_in_urgent?: boolean; send_to_store?: boolean }>;
+    expect(fields.find((f) => f.key === 'editor_note')).toMatchObject({ show_in_urgent: false });
+    expect(fields.find((f) => f.key === 'event_name')).toMatchObject({ show_in_urgent: true, send_to_store: true });
+    const read = await http().get(`/v1/forms/${v}`).set('Authorization', `Bearer ${reporter}`).expect(200);
+    expect(read.body.fields).toEqual(res.body.fields);
+    if (before > 0) {
+      const previous = await http().get(`/v1/forms/${before}`).set('Authorization', `Bearer ${reporter}`).expect(200);
+      expect(previous.body.fields.some((f: { key: string }) => f.key === 'event_name' || f.key === 'editor_note')).toBe(false);
+    }
+    // الحقل الإلزامي لا يُخفى من الإرسال العاجل، ولا اسم طاقم ولا مرفق إلى المتجر
+    const refused = async (field: object) => {
+      const r = await publish(admin, form(v + 1, [field])).expect(422);
+      expect(r.body.code).toBe('validation_failed');
+    };
+    await refused({ key: 'hidden', type: 'short_text', label: { ar: 'م', en: 'h' }, required: true, show_in_urgent: false });
+    await refused({ key: 'crew', type: 'staff_member', label: { ar: 'م', en: 'c' }, required: false, send_to_store: true });
+    await refused({ key: 'permit', type: 'attachment', label: { ar: 'م', en: 'p' }, required: false, send_to_store: true, validation: { accept: ['image/jpeg'], max_size_bytes: 1048576 } });
+    expect(await currentFormVersion(h)).toBe(v);
+  });
+
   it('rejects a stale or skipped version with 409 form_version_conflict', async () => {
     const v = await currentFormVersion(h);
     expect((await publish(admin, form(v)).expect(409)).body.code).toBe('form_version_conflict');

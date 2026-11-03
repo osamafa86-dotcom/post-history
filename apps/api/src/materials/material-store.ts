@@ -64,10 +64,27 @@ export function roleCovers(p: Principal, role: RoleName, m: MaterialRow): boolea
  * تعديل المادة، وغيره لا يُلمَّح له بوجودهما.
  */
 // shot_list يحمل مقتطفات من التفريغ (الوكيل 5)، فحكمه حكمهما
-// حزمة التصدير برابطها الخاص، ومعاينة المشتري المائية برابط الكتالوج وحده (v0.3)، ونسخة القالب من قائمة نسخها (ADR 0091)
-const HIDDEN_FROM_FILES: readonly string[] = ['export', 'watermarked_preview', 'circulated_render'];
+// حزمة التصدير برابطها الخاص، ومعاينة المشتري المائية برابط الكتالوج وحده (v0.3)، ونسخة القالب من قائمة نسخها (ADR 0091)،
+// وحزمة تسليم الترخيص لمشترٍ بعينه برابط الترخيص وحده (ADR 0104): لا تظهر في Material.files لأحد
+const HIDDEN_FROM_FILES: readonly string[] = ['export', 'watermarked_preview', 'circulated_render', 'delivery'];
 
 export const EDITOR_ONLY_KINDS: readonly string[] = ['transcript', 'captions', 'shot_list'];
+
+/** النسخة المُنتَجة (المرفوعة من المونتير ومشتق العامل) لأدوار الإنتاج وحدها (ADR 0104)؛ لا المراسل ولا مسؤول الحقوق. */
+export const PRODUCTION_ONLY_KINDS: readonly string[] = ['produced'];
+
+/** من يرى النسخة المُنتَجة وينزّلها: الإنتاج، والمشرف في نطاقه، ورئيس التحرير، ومدير النظام. */
+export function canSeeProduced(p: Principal, m: MaterialRow): boolean {
+  return p.roles.some((r) => r.role === 'producer' || r.role === 'editor_in_chief' || r.role === 'system_admin') || roleCovers(p, 'supervisor', m);
+}
+
+/** هل يظهر الملف في Material.files لهذا المستدعي؟ القاعدة نفسها في القائمة والقراءة. */
+function fileVisible(kind: string, editor: boolean, production: boolean): boolean {
+  if (HIDDEN_FROM_FILES.includes(kind)) return false;
+  if (EDITOR_ONLY_KINDS.includes(kind)) return editor;
+  if (PRODUCTION_ONLY_KINDS.includes(kind)) return production;
+  return true;
+}
 
 export function canEditMaterial(p: Principal, m: MaterialRow): boolean {
   return (
@@ -164,6 +181,11 @@ export async function toMaterialDtos(
       });
     }
     const editor = canEditMaterial(p, m);
+    const production = canSeeProduced(p, m);
+    // أحدث مصغّرة متحققة لصف الوارد (ADR 0104): من ملفات الصفحة المحمّلة نفسها، بلا استعلام آخر
+    const thumbnail = files
+      .filter((f) => f.materialId === m.id && f.kind === 'thumbnail' && f.state === 'verified')
+      .sort((a, b) => (b.verifiedAt ?? '').localeCompare(a.verifiedAt ?? '') || b.id.localeCompare(a.id))[0];
     const reservationLive = m.reservedAt !== null && Date.parse(m.reservedAt) + idleSeconds * 1000 > Date.now();
     dtos.push({
       id: m.id,
@@ -199,7 +221,7 @@ export async function toMaterialDtos(
       ...(legalNames.has(m.reporterId) ? { reporter_legal_name: legalName ?? null } : {}),
       files: files
         // حزمة التصدير ليست MaterialFile في العقد؛ حالتها من /materials/{id}/export
-        .filter((f) => f.materialId === m.id && !HIDDEN_FROM_FILES.includes(f.kind) && (editor || !EDITOR_ONLY_KINDS.includes(f.kind)))
+        .filter((f) => f.materialId === m.id && fileVisible(f.kind, editor, production))
         .map((f) => ({
           id: f.id,
           kind: f.kind as 'original',
@@ -217,6 +239,7 @@ export async function toMaterialDtos(
           created_at: iso(f.createdAt)!,
           verified_at: iso(f.verifiedAt),
         })),
+      thumbnail_file_id: thumbnail?.id ?? null,
       created_at: iso(m.createdAt)!,
       updated_at: iso(m.updatedAt)!,
       row_version: m.rowVersion,

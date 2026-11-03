@@ -63,8 +63,10 @@ public struct Material: Sendable, Codable, Hashable {
     public var acknowledgedAt: Date?
     /** الاسم الحقيقي للمراسل (v0.2). الصلاحية التي تكشفه يحددها الإعداد الإداري `reporter_legal_name_access` (`/admin/settings/reporter-identity`، ADR 0021): `reporter_identity:read` حين يكون `separate` (الافتراضي)، و`protected_source:read` حين يكون `protected_source`. يغيب المفتاح عمّن لا يحمل الصلاحية الفعّالة. كل قراءة تُسجَّل في التدقيق (`material.sensitive_read`، `field_keys: [reporter_legal_name]`). لا يدخل إشعارًا ولا حدثًا ولا تصديرًا. `null` = غير مسجّل. */
     public var reporterLegalName: String?
-    /** المشتقات النصية (`transcript` و`captions` و`shot_list`) تظهر لأدوار تعديل المادة وحدها، وتُحذف من القائمة لغيرهم فلا يُلمَّح إلى وجودها (threat-model §9.1). */
+    /** المشتقات النصية (`transcript` و`captions` و`shot_list`) تظهر لأدوار تعديل المادة وحدها، وتُحذف من القائمة لغيرهم فلا يُلمَّح إلى وجودها (threat-model §9.1). والنسخة المُنتَجة (`produced`) لأدوار الإنتاج وحدها (ADR 0104). وحزم تسليم التراخيص ومعاينات المتجر وحزمة التصدير ونسخ القالب لا تظهر هنا لأحد، فلكلٍّ رابطها. */
     public var files: [MaterialFile]
+    /** أحدث مصغّرة (`thumbnail`) متحققة للمادة لصف الوارد (W1، ADR 0104)؛ `null` بلا مصغّرة متحققة. تُجلب برابطها من `/materials/{id}/files/{file_id}/download-url` ولا يحمل الرد رابطًا. أُضيف بعد v0.3 فقد يغيب */
+    public var thumbnailFileId: UUID?
     /** مفاتيح `dynamic_fields` التي حُذفت من هذه الاستجابة بقاعدة الحجب (حقول `sensitive` أو `location`) لأن المستدعي لا يحمل الصلاحية المقابلة؛ فارغة لحاملها. */
     public var redactedFieldKeys: [String]?
     public var createdAt: Date
@@ -72,7 +74,7 @@ public struct Material: Sendable, Codable, Hashable {
     /** يرتفع مع كل كتابة على المادة (بخلاف `version` الذي يرتفع مع التعديل بعد الاعتماد)؛ قيمة `ETag`. أُضيف في v0.1 فقد يغيب عند خادم v0. */
     public var rowVersion: Int?
 
-    public init(title: String, materialTypes: Set<MaterialType>, governorate: String, city: String, shotAt: Date? = nil, priority: Priority, sensitivity: Sensitivity, displayName: DisplayName, gps: GpsPoint? = nil, formVersion: Int, dynamicFields: [String: JSONValue], contributors: [Contributor]? = nil, voiceNoteUploadId: UUID? = nil, tags: Set<String>? = nil, id: UUID, version: Int, reporterId: UUID, officeId: UUID?, technicalState: TechnicalState, editorialState: EditorialState, rightsState: RightsState, reservedBy: UUID? = nil, reservedByName: String? = nil, reservedAt: Date? = nil, acknowledgementDueAt: Date? = nil, acknowledgedBy: UUID? = nil, acknowledgedAt: Date? = nil, reporterLegalName: String? = nil, files: [MaterialFile], redactedFieldKeys: [String]? = nil, createdAt: Date, updatedAt: Date, rowVersion: Int? = nil) {
+    public init(title: String, materialTypes: Set<MaterialType>, governorate: String, city: String, shotAt: Date? = nil, priority: Priority, sensitivity: Sensitivity, displayName: DisplayName, gps: GpsPoint? = nil, formVersion: Int, dynamicFields: [String: JSONValue], contributors: [Contributor]? = nil, voiceNoteUploadId: UUID? = nil, tags: Set<String>? = nil, id: UUID, version: Int, reporterId: UUID, officeId: UUID?, technicalState: TechnicalState, editorialState: EditorialState, rightsState: RightsState, reservedBy: UUID? = nil, reservedByName: String? = nil, reservedAt: Date? = nil, acknowledgementDueAt: Date? = nil, acknowledgedBy: UUID? = nil, acknowledgedAt: Date? = nil, reporterLegalName: String? = nil, files: [MaterialFile], thumbnailFileId: UUID? = nil, redactedFieldKeys: [String]? = nil, createdAt: Date, updatedAt: Date, rowVersion: Int? = nil) {
         self.title = title
         self.materialTypes = materialTypes
         self.governorate = governorate
@@ -102,6 +104,7 @@ public struct Material: Sendable, Codable, Hashable {
         self.acknowledgedAt = acknowledgedAt
         self.reporterLegalName = reporterLegalName
         self.files = files
+        self.thumbnailFileId = thumbnailFileId
         self.redactedFieldKeys = redactedFieldKeys
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -138,6 +141,7 @@ public struct Material: Sendable, Codable, Hashable {
         case acknowledgedAt = "acknowledged_at"
         case reporterLegalName = "reporter_legal_name"
         case files
+        case thumbnailFileId = "thumbnail_file_id"
         case redactedFieldKeys = "redacted_field_keys"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -177,6 +181,7 @@ public struct Material: Sendable, Codable, Hashable {
         try container.encodeIfPresent(acknowledgedAt, forKey: .acknowledgedAt)
         try container.encodeIfPresent(reporterLegalName, forKey: .reporterLegalName)
         try container.encode(files, forKey: .files)
+        try container.encodeIfPresent(thumbnailFileId, forKey: .thumbnailFileId)
         try container.encodeIfPresent(redactedFieldKeys, forKey: .redactedFieldKeys)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)

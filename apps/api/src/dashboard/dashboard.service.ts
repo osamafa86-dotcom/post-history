@@ -109,7 +109,8 @@ export class DashboardService {
       .from(uploadSessions)
       .innerJoin(materials, eq(materials.id, uploadSessions.materialId))
       .leftJoin(offices, eq(offices.id, materials.officeId))
-      .where(and(scope, sql`${uploadSessions.state} IN ('created', 'in_progress')`, sql`${uploadSessions.expiresAt} > now()`))
+      // رفع النسخة المُنتَجة عمل غرفة الأخبار لا وارد الميدان (ADR 0104)، فلا يظهر هنا
+      .where(and(scope, sql`${uploadSessions.state} IN ('created', 'in_progress')`, sql`${uploadSessions.expiresAt} > now()`, sql`${uploadSessions.kind} <> 'produced'`))
       .orderBy(sql`(${materials.priority} = 'urgent') DESC`, desc(uploadSessions.updatedAt))
       .limit(50);
     const [{ rows }, reserved, receipts, [overdue], inflight] = await Promise.all([

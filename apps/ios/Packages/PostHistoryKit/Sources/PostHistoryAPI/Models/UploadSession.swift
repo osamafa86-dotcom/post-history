@@ -13,6 +13,7 @@ public struct UploadSession: Sendable, Codable, Hashable {
         case original = "original"
         case proxy = "proxy"
         case voiceNote = "voice_note"
+        case produced = "produced"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
     public enum State: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {

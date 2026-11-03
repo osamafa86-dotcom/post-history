@@ -7,11 +7,12 @@
 
 import Foundation
 
-/** &#x60;pending_verification&#x60; لا تشتري؛ &#x60;active&#x60; تشتري؛ &#x60;suspended&#x60; يوقف الشراء والتنزيل الجديد */
+/** &#x60;pending_verification&#x60; لا تشتري؛ &#x60;active&#x60; تشتري؛ &#x60;suspended&#x60; يوقف الشراء والتنزيل الجديد؛ &#x60;rejected&#x60; رُفض طلب انضمامها بسبب في &#x60;rejection_reason&#x60;، فلا تتصفح ولا تشتري (ADR 0104، أُضيف بعد v0.3) */
 public enum BuyerOrganizationStatus: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
     case pendingVerification = "pending_verification"
     case active = "active"
     case suspended = "suspended"
+    case rejected = "rejected"
     case unknownDefaultOpenApi = "unknown_default_open_api"
 }
 
