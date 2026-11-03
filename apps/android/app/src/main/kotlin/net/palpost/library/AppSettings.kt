@@ -32,6 +32,17 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_LOCATION_ASKED, false)
         set(value) { prefs.edit().putBoolean(KEY_LOCATION_ASKED, value).apply() }
 
+    /**
+     * A random key of this installation that every notification's tap carries (ADR 0106), so only the app's own notifications
+     * open a material or a receipt; another app sending an intent cannot. Not derived from the device; erased by the wipe.
+     */
+    val notificationLinkKey: String
+        get() = prefs.getString(KEY_LINK, null) ?: run {
+            val bytes = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+            android.util.Base64.encodeToString(bytes, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING)
+                .also { prefs.edit().putString(KEY_LINK, it).commit() }
+        }
+
     /** My materials grouped by type instead of by coverage (ADR 0089); a view preference only. */
     var galleryByType: Boolean
         get() = prefs.getBoolean(KEY_GALLERY_BY_TYPE, false)
@@ -44,5 +55,6 @@ class AppSettings(context: Context) {
         const val KEY_WIFI_ONLY = "upload_over_wifi_only"
         const val KEY_TASK_KILLER_SETUP = "task_killer_setup_done"
         const val KEY_INSTALLATION = "installation_id"
+        const val KEY_LINK = "notification_link_key"
     }
 }

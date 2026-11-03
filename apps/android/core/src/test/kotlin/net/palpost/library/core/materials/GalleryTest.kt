@@ -4,13 +4,19 @@ import net.palpost.library.api.models.EditorialState
 import net.palpost.library.api.models.MaterialFile.Kind
 import net.palpost.library.api.models.MaterialType
 import net.palpost.library.api.models.Priority
+import net.palpost.library.api.models.RightsState
+import net.palpost.library.api.models.TechnicalState
 import net.palpost.library.core.materials.Fixtures.file
 import net.palpost.library.core.materials.Fixtures.material
 import net.palpost.library.core.upload.AccountScope
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
+import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.ZoneOffset
 
 class GalleryTest {
@@ -28,24 +34,85 @@ class GalleryTest {
         val a1 = material(1, title = "Alpha (1/2)")
         val a2 = material(2, title = "Alpha (2/2)")
         val b = material(3, title = "Beta", types = setOf(MaterialType.interview))
-        val sections = MaterialGallery.sections(listOf(a1, b, a2), GalleryGrouping.COVERAGE, GalleryQuickFilter.ALL) { MediaKind.VIDEO }
+        val sections = MaterialGallery.sections(listOf(a1, b, a2), GalleryGrouping.COVERAGE) { MediaKind.VIDEO }
         assertEquals(listOf("Beta", "Alpha"), sections.map { it.coverage })
         assertEquals(listOf(a2.id, a1.id), sections[1].materials.map { it.id })
-        val byType = MaterialGallery.sections(listOf(a1, b, a2), GalleryGrouping.TYPE, GalleryQuickFilter.ALL) { MediaKind.VIDEO }
+        val byType = MaterialGallery.sections(listOf(a1, b, a2), GalleryGrouping.TYPE) { MediaKind.VIDEO }
         assertEquals(listOf(MaterialType.interview, MaterialType.report), byType.map { it.type })
     }
 
     @Test
-    fun `quick filters each look at one thing`() {
+    fun `quick chips are the four of frame 07 and each looks at one thing`() {
+        assertEquals(listOf("ALL", "VIDEO", "PHOTO", "URGENT"), GalleryQuickFilter.entries.map { it.name })
         val urgent = material(1, priority = Priority.urgent)
         val photo = material(2, files = listOf(file(1, Kind.original, mime = "image/jpeg")))
         val needs = material(3, editorial = EditorialState.needs_changes)
         val all = listOf(urgent, photo, needs)
-        fun ids(f: GalleryQuickFilter) = MaterialGallery.sections(all, GalleryGrouping.COVERAGE, f) { MaterialMedia.kind(it) }.flatMap { it.materials }.map { it.id }
+        fun ids(f: GalleryQuickFilter) = MaterialGallery.sections(all, GalleryGrouping.COVERAGE, GalleryFilter(quick = f)) { MaterialMedia.kind(it) }.flatMap { it.materials }.map { it.id }
         assertEquals(listOf(urgent.id), ids(GalleryQuickFilter.URGENT))
         assertEquals(listOf(photo.id), ids(GalleryQuickFilter.PHOTO))
         assertEquals(listOf(needs.id, urgent.id), ids(GalleryQuickFilter.VIDEO))
-        assertEquals(listOf(needs.id), ids(GalleryQuickFilter.NEEDS_ACTION))
+        assertEquals(listOf(needs.id, photo.id, urgent.id), ids(GalleryQuickFilter.ALL))
+    }
+
+    @Test
+    fun `each status in the sheet looks at its own track only`() {
+        val needs = material(1, editorial = EditorialState.needs_changes)
+        val failed = material(2, technical = TechnicalState.failed, editorial = EditorialState.accepted)
+        val processing = material(3, technical = TechnicalState.original_received, editorial = EditorialState.reviewing)
+        val approved = material(4, technical = TechnicalState.verified, editorial = EditorialState.published)
+        val rejected = material(5, technical = TechnicalState.verified, editorial = EditorialState.rejected)
+        val listed = material(6, technical = TechnicalState.verified, editorial = EditorialState.in_production, rights = RightsState.sellable)
+        val all = listOf(needs, failed, processing, approved, rejected, listed)
+        fun ids(s: GalleryStateFilter) = all.filter { GalleryStates.matches(it, s) }.map { it.id }
+        assertEquals(listOf(needs.id, failed.id), ids(GalleryStateFilter.NEEDS_ACTION))
+        // Technical: neither verified nor failed (pending in the fixtures by default).
+        assertEquals(listOf(needs.id, processing.id), ids(GalleryStateFilter.PROCESSING))
+        // Editorial: in review is neither approved nor rejected, changes asked included (its badge is «in review»).
+        assertEquals(listOf(needs.id, processing.id), ids(GalleryStateFilter.IN_REVIEW))
+        assertEquals(listOf(failed.id, approved.id, listed.id), ids(GalleryStateFilter.APPROVED))
+        assertEquals(listOf(rejected.id), ids(GalleryStateFilter.REJECTED))
+        // Rights: listed is sellable alone; documented, blocked and withdrawn are not.
+        assertEquals(listOf(listed.id), ids(GalleryStateFilter.LISTED))
+        assertFalse(GalleryStates.matches(material(7, rights = RightsState.documented), GalleryStateFilter.LISTED))
+    }
+
+    @Test
+    fun `the date range counts the phone's calendar days and a late clock never hides a material`() {
+        val zone: ZoneId = ZoneOffset.ofHours(2)
+        val now = OffsetDateTime.parse("2026-11-03T00:30:00+02:00").toInstant().toEpochMilli()
+        fun at(s: String) = OffsetDateTime.parse(s).toInstant().toEpochMilli()
+        // Half an hour earlier is yesterday on the phone's calendar, though it is the same day in UTC.
+        assertFalse(GalleryStates.within(GalleryDateRange.TODAY, at("2026-11-02T23:59:59+02:00"), now, zone))
+        assertTrue(GalleryStates.within(GalleryDateRange.TODAY, at("2026-11-03T00:00:00+02:00"), now, zone))
+        assertTrue(GalleryStates.within(GalleryDateRange.WEEK, at("2026-10-28T00:00:00+02:00"), now, zone))
+        assertFalse(GalleryStates.within(GalleryDateRange.WEEK, at("2026-10-27T23:59:59+02:00"), now, zone))
+        assertTrue(GalleryStates.within(GalleryDateRange.MONTH, at("2026-10-05T00:00:00+02:00"), now, zone))
+        assertFalse(GalleryStates.within(GalleryDateRange.MONTH, at("2026-10-04T23:59:59+02:00"), now, zone))
+        assertTrue(GalleryStates.within(GalleryDateRange.ANY, 0, now, zone))
+        // A send dated ahead of the phone's clock.
+        assertTrue(GalleryStates.within(GalleryDateRange.TODAY, now + 86_400_000, now, zone))
+    }
+
+    @Test
+    fun `the sheet's filters combine with the chip, count apart from it, and clear without it`() {
+        val now = Fixtures.t0.plusDays(1).toInstant().toEpochMilli()
+        val old = material(1, at = Fixtures.t0.minusDays(40), types = setOf(MaterialType.interview), priority = Priority.urgent)
+        val recentInterview = material(2, types = setOf(MaterialType.interview, MaterialType.report), priority = Priority.urgent)
+        val recentReport = material(3, types = setOf(MaterialType.report), priority = Priority.urgent)
+        val calm = material(4, types = setOf(MaterialType.interview))
+        val all = listOf(old, recentInterview, recentReport, calm)
+        val f = GalleryFilter(quick = GalleryQuickFilter.URGENT, dateRange = GalleryDateRange.MONTH, coverageType = MaterialType.interview)
+        val shown = MaterialGallery.sections(all, GalleryGrouping.TYPE, f, nowMs = now, zone = ZoneOffset.UTC) { MediaKind.VIDEO }.flatMap { it.materials }
+        assertEquals(listOf(recentInterview.id), shown.map { it.id })
+        assertEquals(2, f.sheetCount)
+        assertTrue(f.isActive)
+        assertEquals(0, GalleryFilter(quick = GalleryQuickFilter.VIDEO).sheetCount)
+        assertTrue(GalleryFilter(quick = GalleryQuickFilter.VIDEO).isActive)
+        assertFalse(GalleryFilter().isActive)
+        val cleared = f.copy(state = GalleryStateFilter.LISTED).clearSheet()
+        assertEquals(GalleryFilter(quick = GalleryQuickFilter.URGENT), cleared)
+        assertEquals(0, cleared.sheetCount)
     }
 
     @Test

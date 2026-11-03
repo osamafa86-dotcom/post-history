@@ -10,6 +10,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -23,6 +25,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Category
@@ -30,18 +33,25 @@ import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Shield
-import androidx.compose.material.icons.outlined.Title
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -55,6 +65,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -71,13 +82,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import net.palpost.library.AppContainer
 import net.palpost.library.R
 import net.palpost.library.api.models.Material
+import net.palpost.library.api.models.MaterialType
+import net.palpost.library.core.materials.GalleryDateRange
 import net.palpost.library.core.materials.GalleryDay
+import net.palpost.library.core.materials.GalleryFilter
 import net.palpost.library.core.materials.GalleryGrouping
 import net.palpost.library.core.materials.GalleryQuickFilter
+import net.palpost.library.core.materials.GalleryStateFilter
 import net.palpost.library.core.materials.LocalOriginals
 import net.palpost.library.core.materials.LocalRecord
 import net.palpost.library.core.materials.MaterialGallery
@@ -96,6 +112,7 @@ import net.palpost.library.ui.theme.GhostButton
 import net.palpost.library.ui.theme.InlineAlert
 import net.palpost.library.ui.theme.OutlineButton
 import net.palpost.library.ui.theme.PrimaryButton
+import net.palpost.library.ui.theme.SectionTitle
 import net.palpost.library.ui.theme.Tone
 import net.palpost.library.ui.theme.Track
 import net.palpost.library.ui.theme.TrackBadge
@@ -126,11 +143,13 @@ class MyMaterialsViewModel(private val app: Application, private val container: 
     val rows: StateFlow<List<UploadTaskEntity>> = container.database.uploads().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     private val _grouping = MutableStateFlow(if (container.settings.galleryByType) GalleryGrouping.TYPE else GalleryGrouping.COVERAGE)
     val grouping: StateFlow<GalleryGrouping> = _grouping
-    private val _quick = MutableStateFlow(GalleryQuickFilter.ALL)
-    val quick: StateFlow<GalleryQuickFilter> = _quick
+    // The filters are this screen's while it lives (as on iOS); the grouping is a view preference kept on the phone.
+    private val _filter = MutableStateFlow(GalleryFilter())
+    val filter: StateFlow<GalleryFilter> = _filter
 
     fun group(g: GalleryGrouping) { _grouping.value = g; container.settings.galleryByType = g == GalleryGrouping.TYPE }
-    fun quick(q: GalleryQuickFilter) { _quick.value = q }
+    fun setFilter(f: GalleryFilter) { _filter.value = f }
+    fun quick(q: GalleryQuickFilter) = _filter.update { it.copy(quick = q) }
 
     /** Pull to refresh alone returns the gallery to its top. */
     fun refresh() = viewModelScope.launch { runCatching { container.materials.refresh() } }
@@ -152,8 +171,9 @@ class MyMaterialsViewModel(private val app: Application, private val container: 
 
 /**
  * 07 · My materials as a gallery (ADR 0089 on Android): cards 9:16 in three columns, newest first, grouped by coverage title or by
- * type, with the quick chips in one row that scrolls. A sensitive material shows no cloud preview: a shield and «processed on the
- * phone» over its phone thumbnail, small and blurred. The three states are three badges, never one.
+ * type, with the quick chips in one row that scrolls and the «View and filters» sheet behind the top bar's button, which counts
+ * what is set in it (ADR 0106). A sensitive material shows no cloud preview: a shield and «processed on the phone» over its phone
+ * thumbnail, small and blurred. The three states are three badges, never one.
  */
 @Composable
 fun MyMaterialsScreen(container: AppContainer, onBack: () -> Unit, onNewMaterial: () -> Unit, onOpen: (String) -> Unit) {
@@ -162,13 +182,14 @@ fun MyMaterialsScreen(container: AppContainer, onBack: () -> Unit, onNewMaterial
     val s by vm.state.collectAsStateWithLifecycle()
     val rows by vm.rows.collectAsStateWithLifecycle()
     val grouping by vm.grouping.collectAsStateWithLifecycle()
-    val quick by vm.quick.collectAsStateWithLifecycle()
+    val filter by vm.filter.collectAsStateWithLifecycle()
     val scope by container.scope.collectAsStateWithLifecycle()
+    var showOptions by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { if (s.items.isEmpty()) vm.refresh(); vm.poll() }
     val context = LocalContext.current
     val records = localRecords(rows, scope)
     val hasCopy = hasLocalCopy(context, rows)
-    val sections = MaterialGallery.sections(s.items, grouping, quick) { m -> MaterialMedia.kind(m, records.firstOrNull { it.materialId == m.id.toString() }?.mimeType) }
+    val sections = MaterialGallery.sections(s.items, grouping, filter) { m -> MaterialMedia.kind(m, records.firstOrNull { it.materialId == m.id.toString() }?.mimeType) }
     val wideText = LocalConfiguration.current.fontScale >= 1.5f
 
     Scaffold(
@@ -177,15 +198,7 @@ fun MyMaterialsScreen(container: AppContainer, onBack: () -> Unit, onNewMaterial
             TopAppBar(
                 title = { Text(stringResource(R.string.materials_title), style = Vl.text.headline) },
                 navigationIcon = { VlIconButton(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.action_back), onBack, modifier = Modifier.padding(horizontal = VlSpace.s2)) },
-                actions = {
-                    val byType = grouping == GalleryGrouping.TYPE
-                    VlIconButton(
-                        if (byType) Icons.Outlined.Title else Icons.Outlined.Category,
-                        stringResource(if (byType) R.string.gallery_group_by_title else R.string.gallery_group_by_type),
-                        { vm.group(if (byType) GalleryGrouping.COVERAGE else GalleryGrouping.TYPE) },
-                        modifier = Modifier.padding(horizontal = VlSpace.s2),
-                    )
-                },
+                actions = { OptionsButton(filter.sheetCount, { showOptions = true }, Modifier.padding(horizontal = VlSpace.s2)) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Vl.colors.bgBase),
             )
         },
@@ -198,7 +211,7 @@ fun MyMaterialsScreen(container: AppContainer, onBack: () -> Unit, onNewMaterial
                 verticalArrangement = Arrangement.spacedBy(VlSpace.s3),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                item(span = { GridItemSpan(maxLineSpan) }, key = "chips") { QuickChips(quick, vm::quick) }
+                item(span = { GridItemSpan(maxLineSpan) }, key = "chips") { QuickChips(filter.quick, vm::quick) }
                 if (s.pages.failed && s.items.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "stale") {
                     InlineAlert(Tone.NEUTRAL, stringResource(R.string.a4_stale, s.lastUpdatedEpochMs?.let { relative(it) } ?: "—")) { GhostButton(stringResource(R.string.materials_refresh), vm::refresh) }
                 }
@@ -211,7 +224,7 @@ fun MyMaterialsScreen(container: AppContainer, onBack: () -> Unit, onNewMaterial
                     InlineAlert(Tone.BAD, stringResource(R.string.gallery_load_failed)) { GhostButton(stringResource(R.string.action_retry), vm::refresh) }
                 } else if (sections.isEmpty() && s.items.isNotEmpty() && settled) item(span = { GridItemSpan(maxLineSpan) }, key = "nomatch") {
                     EmptyState(Icons.Outlined.Category, stringResource(R.string.gallery_no_match), "") {
-                        OutlineButton(stringResource(R.string.gallery_clear_filters), { vm.quick(GalleryQuickFilter.ALL) }, small = true)
+                        OutlineButton(stringResource(R.string.gallery_clear_filters), { vm.setFilter(GalleryFilter()) }, small = true)
                     }
                 }
                 for (section in sections) {
@@ -229,6 +242,20 @@ fun MyMaterialsScreen(container: AppContainer, onBack: () -> Unit, onNewMaterial
             }
         }
     }
+    if (showOptions) GalleryOptionsSheet(grouping, vm::group, filter, vm::setFilter, onDone = { showOptions = false })
+}
+
+/** The top bar's «View and filters» button, with a badge counting what is set in the sheet; TalkBack reads the count too. */
+@Composable
+private fun OptionsButton(count: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val name = stringResource(R.string.gallery_options)
+    val label = if (count > 0) stringResource(R.string.gallery_options_with_count, name, pluralStringResource(R.plurals.gallery_options_active, count, count)) else name
+    BadgedBox(
+        badge = { if (count > 0) Badge(containerColor = Vl.colors.actionPrimary, contentColor = Vl.colors.textOnBrand) { Text(count.toString(), modifier = Modifier.clearAndSetSemantics {}) } },
+        modifier = modifier,
+    ) {
+        VlIconButton(Icons.Outlined.Tune, label, onClick)
+    }
 }
 
 /** The quick chips in one row that scrolls sideways and never wraps (frame 07). */
@@ -244,7 +271,73 @@ private fun quickLabel(q: GalleryQuickFilter) = when (q) {
     GalleryQuickFilter.VIDEO -> R.string.gallery_quick_video
     GalleryQuickFilter.PHOTO -> R.string.gallery_quick_photo
     GalleryQuickFilter.URGENT -> R.string.gallery_quick_urgent
-    GalleryQuickFilter.NEEDS_ACTION -> R.string.gallery_quick_needs_action
+}
+
+private fun dateLabel(r: GalleryDateRange) = when (r) {
+    GalleryDateRange.ANY -> R.string.gallery_date_any
+    GalleryDateRange.TODAY -> R.string.gallery_today
+    GalleryDateRange.WEEK -> R.string.gallery_date_week
+    GalleryDateRange.MONTH -> R.string.gallery_date_month
+}
+
+private fun stateLabel(s: GalleryStateFilter) = when (s) {
+    GalleryStateFilter.NEEDS_ACTION -> R.string.gallery_state_needs_action
+    GalleryStateFilter.PROCESSING -> R.string.gallery_state_processing
+    GalleryStateFilter.IN_REVIEW -> R.string.gallery_state_in_review
+    GalleryStateFilter.APPROVED -> R.string.gallery_state_approved
+    GalleryStateFilter.REJECTED -> R.string.gallery_state_rejected
+    GalleryStateFilter.LISTED -> R.string.gallery_state_listed
+}
+
+/**
+ * The «View and filters» sheet (ADR 0106, iOS `GalleryOptionsSheet`): grouping (by coverage title or by type), date, coverage type
+ * and status, each a group of chips under its heading; the selected one is dark ink with the «selected» state. Every change applies
+ * at once behind the sheet; «Clear filters» shows when something is set and leaves the quick chip and the grouping alone. The sheet
+ * is a window of this activity, so it keeps the secure flag (no screenshot, no recording).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GalleryOptionsSheet(
+    grouping: GalleryGrouping, onGrouping: (GalleryGrouping) -> Unit, filter: GalleryFilter, onFilter: (GalleryFilter) -> Unit, onDone: () -> Unit,
+) {
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    ModalBottomSheet(onDismissRequest = onDone, sheetState = sheet, containerColor = Vl.colors.bgBase) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = VlSpace.s5).padding(bottom = VlSpace.s6),
+            verticalArrangement = Arrangement.spacedBy(VlSpace.s6),
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.gallery_options), style = Vl.text.headline, color = Vl.colors.textPrimary, modifier = Modifier.weight(1f).semantics { heading() })
+                GhostButton(stringResource(R.string.gallery_done), onDone)
+            }
+            OptionGroup(stringResource(R.string.gallery_grouping)) {
+                VlChip(stringResource(R.string.gallery_group_by_title), grouping == GalleryGrouping.COVERAGE, { onGrouping(GalleryGrouping.COVERAGE) })
+                VlChip(stringResource(R.string.gallery_group_by_type), grouping == GalleryGrouping.TYPE, { onGrouping(GalleryGrouping.TYPE) })
+            }
+            OptionGroup(stringResource(R.string.gallery_date)) {
+                for (r in GalleryDateRange.entries) VlChip(stringResource(dateLabel(r)), filter.dateRange == r, { onFilter(filter.copy(dateRange = r)) })
+            }
+            OptionGroup(stringResource(R.string.gallery_type)) {
+                VlChip(stringResource(R.string.gallery_type_any), filter.coverageType == null, { onFilter(filter.copy(coverageType = null)) })
+                for (t in MaterialType.entries) VlChip(materialTypeLabel(t), filter.coverageType == t, { onFilter(filter.copy(coverageType = t)) })
+            }
+            OptionGroup(stringResource(R.string.gallery_state)) {
+                VlChip(stringResource(R.string.gallery_state_any), filter.state == null, { onFilter(filter.copy(state = null)) })
+                for (st in GalleryStateFilter.entries) VlChip(stringResource(stateLabel(st)), filter.state == st, { onFilter(filter.copy(state = st)) })
+            }
+            if (filter.sheetCount > 0) OutlineButton(stringResource(R.string.gallery_clear_filters), { onFilter(filter.clearSheet()) }, small = true)
+        }
+    }
+}
+
+/** A heading and its chips, wrapping onto as many lines as the language and the font size need. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun OptionGroup(title: String, chips: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(VlSpace.s3)) {
+        SectionTitle(title)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(VlSpace.s2), verticalArrangement = Arrangement.spacedBy(VlSpace.s2)) { chips() }
+    }
 }
 
 /** The group's heading and its sub-line «type · day · N items» (by title) or «day · N items» (by type). */
