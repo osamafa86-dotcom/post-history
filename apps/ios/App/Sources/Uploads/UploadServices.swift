@@ -33,6 +33,8 @@ final class UploadServices: @unchecked Sendable {
     var batchesFile: URL { batchesDirectory.appendingPathComponent("send-batches.json") }
     /// الحسابات التي دخلت على الجهاز (ADR 0093) في مجلد حالة الرفع، بلا امتداد `.json` فلا يقرؤه المخزن سجلًّا؛ يمحوه المسح الطارئ معه.
     var accountsFile: URL { stateDirectory.appendingPathComponent("local-accounts") }
+    /// جلسات رفوع ألغاها المراسل ولم يصل إجهاضها الخادم بعد (ADR 0113)؛ في مجلد حالة الرفع بلا امتداد `.json`، ويمحوه المسح معه.
+    var abortsFile: URL { stateDirectory.appendingPathComponent("pending-aborts") }
 
     private init() {
         let config = URLSessionConfiguration.background(withIdentifier: Self.backgroundSessionIdentifier)
@@ -63,7 +65,7 @@ final class UploadServices: @unchecked Sendable {
         env.documentsDirectory = documentsDirectory
         env.isBackground = { true } // جزء كبير افتراضيًا: الرفع يستمر بعد خروج التطبيق إلى الخلفية
         return UploadEngine(store: try FileUploadStateStore(directory: stateDirectory), secrets: KeychainUploadSecretStore(), api: GeneratedUploadAPI(configuration: api),
-                            transport: transport, ingestTokens: Self.makeIngestTokens(api: api),
+                            transport: transport, ingestTokens: Self.makeIngestTokens(api: api), aborts: FileAbortStore(fileURL: abortsFile),
                             slicer: ChunkSlicer(chunksDirectory: chunksDirectory), environment: env)
     }
 

@@ -10,6 +10,8 @@ public protocol UploadAPI: Sendable {
     func session(id: UUID) async throws -> UploadSession
     /// `202` عند القبول. في مسار tusd يعيد الخادم `409 upload_state_conflict` ما لم يكن الخطّاف قد أكمل الجلسة؛ يبلّغه التنفيذ كـ `UploadAPIError.conflict`.
     func complete(idempotencyKey: String, id: UUID, reportedSha256: String?) async throws
+    /// `DELETE /uploads/{id}` يلغيها صاحبها: `204` (ولو كانت ملغاة)، و`404` لغائبة أو لغيره، و`409` لأصل تحقّق.
+    func abort(idempotencyKey: String, id: UUID) async throws
 }
 
 public enum UploadAPIError: Error, Equatable, Sendable {
@@ -54,6 +56,11 @@ public struct GeneratedUploadAPI: UploadAPI {
 
     public func complete(idempotencyKey: String, id: UUID, reportedSha256: String?) async throws {
         do { try await UploadsAPI.completeUpload(idempotencyKey: idempotencyKey, id: id, uploadComplete: UploadComplete(reportedSha256: reportedSha256), apiConfiguration: configuration) }
+        catch { throw UploadAPIError.map(error) }
+    }
+
+    public func abort(idempotencyKey: String, id: UUID) async throws {
+        do { try await UploadsAPI.abortUploadSession(idempotencyKey: idempotencyKey, id: id, apiConfiguration: configuration) }
         catch { throw UploadAPIError.map(error) }
     }
 }

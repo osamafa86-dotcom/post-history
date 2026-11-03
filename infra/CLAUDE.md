@@ -57,6 +57,7 @@ Docker Compose على 3–4 خوادم أولًا؛ Kubernetes وOpenSearch وTe
     - `backfill-media.sh` دورة يدوية بالأعداد وحدها (`--wait` حتى تنتهي). و`.env` قائم: `./gen-env.sh --add-media`.
     - روابط القراءة موقّعة لأصل المعاينة (`S3_PUBLIC_ENDPOINT`)، والحافة تمرر `GET` على `/<حاوية المشتقات>/derived/<uuid>/<uuid>/{proxy-480p.mp4,poster.jpg}` و`.../renders/<uuid>/{circulated,witness}-<المقاس>.mp4` وحدها إلى MinIO (`ph-preview-minio`) بالمضيف كما هو، بلا تخزين.
   - **نسخ قالب «مواد متداولة» (ADR 0091 البند 8 للتقييم، ملحق ADR 0092):** `MEDIA_ENABLE_RENDERS=true` للخادم و`media-render` وحدهما، ثابت في compose.
+  - **مفاتيح المرور على الويب (ADR 0107 و0108):** `WEBAUTHN_RP_ID` و`WEBAUTHN_ORIGINS` للخادم من `PREVIEW_DOMAIN` (في `.env` وحده)، فتعمل مفاتيح المرور لنطاق المعاينة وحده؛ وبلا ضبط تردّ مساراتها 404.
     - `media-render` هدف `render` (Node والقالب المجمّع وChrome Headless Shell مثبّت؛ لا تنزيل وقت التشغيل ولا مفتاح ترخيص) على `media:renders`: مهمة واحدة وRemotion بتوازٍ 1، و4096 MB بلا swap، ومعالجان، و`cpu_shares` 128، و`oom_score_adj` 800، و512 عملية، وتحصين العامل نفسه.
     - عنوانه الثابت (`PREVIEW_RENDER_IP`) يصل إلى `/internal/media/renders/` و`/internal/media/files/` وحدهما، ومستخدمه في MinIO يكتب `derived/*/*/renders/` وحدها (`./gen-env.sh --add-render`).
     - الخادم لا ينشر `render.requested` مع `in_process`، فـ `media-feeder` يعطي النسخ المطلوبة، نسخة تنتظر على الأكثر، ولا نسخة والقرص الحر دون الحد + حجم أصلها + 1 GiB.

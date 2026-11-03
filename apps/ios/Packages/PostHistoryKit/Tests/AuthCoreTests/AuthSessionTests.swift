@@ -29,9 +29,17 @@ final class FakeGateway: AuthGateway, @unchecked Sendable {
         if let status = rejectLoginStatus { throw errorResponse(status, code: rejectLoginCode) }
         return session(1)
     }
+    /// الرد يصل ولو أُلغيت المهمة (طلب شبكة لا يحترم الإلغاء).
+    var refreshIgnoresCancellation = false
+
     func refresh(refreshToken: String) async throws -> Session {
         let n = lock.withLock { refreshCalls += 1; seenRefreshTokens.append(refreshToken); return refreshCalls }
-        if refreshDelay > 0 { try await Task.sleep(nanoseconds: refreshDelay) }
+        if refreshDelay > 0, refreshIgnoresCancellation {
+            let delay = refreshDelay
+            await Task.detached { try? await Task.sleep(nanoseconds: delay) }.value
+        } else if refreshDelay > 0 {
+            try await Task.sleep(nanoseconds: refreshDelay)
+        }
         if rejectRefresh { throw errorResponse(401, code: .unauthorized) }
         return session(n + 1)
     }
@@ -172,6 +180,44 @@ final class AuthRevocationTests: XCTestCase {
         let signedOutAuth = AuthSession(store: InMemoryTokenStore(), gateway: gw)
         let none = await signedOutAuth.revokeEverywhereBestEffort(timeout: 3)
         XCTAssertFalse(none, "nothing to revoke without a session")
+    }
+
+    /// مراجعة شاملة: تحديث يصل رده بعد الخروج كان يحفظ الرموز الجديدة ويعيد الدخول.
+    func testRefreshAnsweredAfterLogoutDoesNotSaveTokensOrSignInAgain() async throws {
+        let store = InMemoryTokenStore(stored(expiresIn: 0)); let gw = FakeGateway(); gw.refreshDelay = 200_000_000; gw.refreshIgnoresCancellation = true
+        let auth = AuthSession(store: store, gateway: gw)
+        let pending = Task { try await auth.validAccessToken() }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        try await auth.logout()
+        let result = await pending.result
+        XCTAssertThrowsError(try result.get())
+        XCTAssertNil(try store.load(), "the late tokens are not stored")
+        let signedIn = await auth.isSignedIn
+        XCTAssertFalse(signedIn, "a late refresh does not sign the reporter back in")
+    }
+
+    func testRefreshAnsweredAfterForgetLocallyOrANewLoginLeavesTheNewStateAlone() async throws {
+        let store = InMemoryTokenStore(stored(expiresIn: 0)); let gw = FakeGateway(); gw.refreshDelay = 200_000_000; gw.refreshIgnoresCancellation = true
+        let auth = AuthSession(store: store, gateway: gw)
+        let late = Task { try await auth.validAccessToken() }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        await auth.forgetLocally() // emergency wipe
+        _ = await late.result
+        XCTAssertNil(try store.load())
+        let afterWipe = await auth.isSignedIn
+        XCTAssertFalse(afterWipe)
+
+        // a refresh of the old session that is rejected after someone signed in again must not clear the new session
+        let store2 = InMemoryTokenStore(stored(expiresIn: 0)); let gw2 = FakeGateway(); gw2.refreshDelay = 200_000_000; gw2.rejectRefresh = true; gw2.refreshIgnoresCancellation = true
+        let auth2 = AuthSession(store: store2, gateway: gw2)
+        let rejected = Task { try await auth2.validAccessToken() }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        try await auth2.logout()
+        let fresh = try await auth2.login(email: "r@example.invalid", password: "password1", totpCode: nil)
+        _ = await rejected.result
+        XCTAssertEqual(try store2.load(), fresh, "the new session survives the old refresh's rejection")
+        let current = await auth2.session
+        XCTAssertEqual(current, fresh)
     }
 
     func testForgetLocallyClearsWithoutNetworkAndEmitsSignedOut() async throws {
