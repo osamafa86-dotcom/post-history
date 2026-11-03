@@ -7,11 +7,12 @@
 
 import Foundation
 
-/** طلب نسخة على قالب «مواد متداولة» بمعاملاته كما رُسمت (ADR 0091). النسخة ملف للمادة نفسها، فترث حساسيتها وحقوقها، ولا تدخل الكتالوج ولا حزمة تسليم ولا تُعرض للبيع. */
+/** طلب نسخة على قالب «مواد متداولة» أو «الشاهد» بمعاملاته كما رُسمت (ADR 0091، 0109). النسخة ملف للمادة نفسها، فترث حساسيتها وحقوقها، ولا تدخل الكتالوج ولا حزمة تسليم ولا تُعرض للبيع. */
 public struct MaterialRender: Sendable, Codable, Hashable {
 
     public enum Template: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
         case circulated = "circulated"
+        case witness = "witness"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
     public enum State: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
@@ -36,6 +37,7 @@ public struct MaterialRender: Sendable, Codable, Hashable {
     public var materialVersion: Int
     /** أصل المادة المتحقق الذي تُبنى منه (واحد لكل مادة، ADR 0081)؛ يملؤه الخادم */
     public var sourceFileId: UUID
+    /** القالب كما طُلب (`witness` أُضيف بعد v0.3، ADR 0109) */
     public var template: Template
     public var aspect: RenderAspect
     /** العنوان سطرًا إلى ثلاثة بترتيبها، يقسمها الطاقم على معنى الجملة لا على العرض (المواصفة)، فلا يقسمها الخادم ولا العامل. المجموع ≤ 66 نقطة ترميز بحكم الحدّين. الواجهة تملؤها ابتداءً من عنوان المادة. يصير `titleLines` في معاملات القالب. */

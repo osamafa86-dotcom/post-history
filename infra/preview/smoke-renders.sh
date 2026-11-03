@@ -6,6 +6,8 @@
 #     media:renders والنسخة تبقى requested.
 #   - نسخة عمودية بالوسم وبلا مكان تصير ready، ويُقرأ ملفها برابط موقّع من /v1 عبر الحافة: video/mp4 بمقاس 1080×1920 وH.264
 #     yuv420p بنطاق tv وBT.709، بلا الوسوم المزروعة ولا العنوان؛ ولا رابط ولا قائمة للمراسل.
+#   - نسخة «الشاهد» (ADR 0109) بالطلب نفسه والقالب خيارًا: تصير ready بملف witness-vertical.mp4 يُقرأ عبر الحافة كذلك، بمقاسه
+#     ولونه، بلا الوسوم ولا العنوان.
 #   - سطر أعرض من صندوقه حتى عند 70% يصير failed بـ title_overflow بلا ملف.
 #   - ذروة ذاكرة media-render (memory.peak بحدوده كما تُنشر) وخموله وزمن معالجه وقرصه، وسجله بلا عنوان ولا مكان ولا وسم.
 # شرط source يقرأ فحص العامل الذي يسجّله الخادم لأصل تحقق منه بنفسه (in_process، ملحق ADR 0092)؛ غيابه رسالة صريحة.
@@ -18,7 +20,7 @@ export REPORTER_EMAIL REPORTER_PASSWORD
 mkdir -p "$work/rendered" && chmod 777 "$work/rendered"
 # As probe, with a writable /rendered for the file read through the edge (ffprobe reads it after).
 probe_rw() { docker run --rm -i --network deploy_default -v "$work:/clip:ro" -v "$work/rendered:/rendered" -e DOMAIN -e EMAIL -e PASSWORD \
-  -e REPORTER_EMAIL -e REPORTER_PASSWORD -e MARK -e GPS -e MATERIAL -e RENDER_OK -e RENDER_OVERFLOW \
+  -e REPORTER_EMAIL -e REPORTER_PASSWORD -e MARK -e GPS -e MATERIAL -e RENDER_OK -e RENDER_OVERFLOW -e RENDER_WITNESS \
   --entrypoint node post-history-preview-api:latest --input-type=module -; }
 rfield() { python3 -c 'import json, sys; print(json.loads(sys.argv[1])["renders"][sys.argv[2]])' "$1" "$2"; }
 
@@ -29,7 +31,7 @@ JS_RENDER="$JS_LIB
 $(cat <<'JS'
 const TITLE = ["عنوان تجريبي", "للمادة المتداولة"];
 const OVERFLOW = ["Ж".repeat(22)];
-const renderBody = (title_lines) => ({ template: "circulated", aspect: "vertical", title_lines, show_location: false, label: "circulated_footage" });
+const renderBody = (title_lines, template = "circulated") => ({ template, aspect: "vertical", title_lines, show_location: false, label: "circulated_footage" });
 const BLOCKED = "render_not_allowed (source): the API holds no technical data for an original it verified itself (UPLOAD_VERIFIER=in_process): " +
   "the media worker's probe of that original was not recorded (addendum to ADR 0092)";
 async function accept(mid) {
@@ -38,13 +40,13 @@ async function accept(mid) {
     if (t.status !== 200) die(`editorial ${to}: ${t.status} ${t.body.slice(0, 160)}`);
   }
 }
-async function requestRender(mid, titleLines) {
-  const r = await pub("POST", `/materials/${mid}/renders`, { ...bearer, "idempotency-key": randomUUID() }, renderBody(titleLines));
+async function requestRender(mid, titleLines, template = "circulated") {
+  const r = await pub("POST", `/materials/${mid}/renders`, { ...bearer, "idempotency-key": randomUUID() }, renderBody(titleLines, template));
   if (r.status === 409 && (JSON.parse(r.body).details?.failed ?? []).includes("source")) die(BLOCKED);
   if (r.status !== 202) die(`render request: ${r.status} ${r.body.slice(0, 200)}`);
   const b = JSON.parse(r.body);
-  if (b.state !== "requested" || b.show_location !== false || b.location_text !== null || b.label !== "circulated_footage") {
-    die(`render request answered ${b.state}, show_location ${b.show_location}, label ${b.label}`);
+  if (b.state !== "requested" || b.show_location !== false || b.location_text !== null || b.label !== "circulated_footage" || b.template !== template) {
+    die(`render request answered ${b.state}, show_location ${b.show_location}, label ${b.label}, template ${b.template}`);
   }
   return b.id;
 }
@@ -57,12 +59,12 @@ rcat() { if [ -n "$rcg" ]; then cat "$rcg/$1"; else docker exec "$rnd" cat "/sys
 rscratch() { if [ "$host_du" = 1 ]; then sudo -n du -sb "$rscratch_vol" | cut -f1; else docker exec "$rnd" du -sb /scratch | cut -f1; fi; }
 # render_run LABEL SOURCE ID:EXPECT...: a fresh cgroup for media-render (restart), its idle memory, then feeder cycles every 3 s
 # until every render is ready or failed; memory.peak (page cache included), sampled anon and scratch, CPU time, each render's own
-# time (started to completed, from the API's record) and output size. EXPECT is ready or a failure reason. --media-json writes
-# preview-media-render-LABEL.json.
+# time (started to completed, from the API's record) and output size. EXPECT is ready or a failure reason, and an optional third
+# field names the render's metrics (default EXPECT). --media-json writes preview-media-render-LABEL.json.
 render_run() {
   local label="$1" source="$2"; shift 2
   local ids=() expect=() x idle cpu0 cpu1 t0 t1 spid deadline done_n peak oom rows q
-  for x in "$@"; do ids+=("${x%%:*}"); expect+=("${x#*:}"); done
+  for x in "$@"; do ids+=("${x%%:*}"); x="${x#*:}"; expect+=("${x%%:*}"); done
   q="$(printf "'%s'," "${ids[@]}")"; q="${q%,}"
   docker restart "$rnd" >/dev/null && sleep 5
   rcg="$(cgdir "$rnd")"
@@ -95,7 +97,9 @@ render_run() {
     "$cpu1" "$t0" "$t1" "${peak:-}" "${oom:-0}" "$rows" "$*" <<'PY' || fail "media-render on $label"
 import datetime, json, os, sys
 out, label, source, samples, idle, cpu0, cpu1, t0, t1, peak, oom, rows, expect = sys.argv[1:14]
-want = dict(x.split(":", 1) for x in expect.split())
+entries = [x.split(":") for x in expect.split()]
+want = {e[0]: e[1] for e in entries}
+names = {e[0]: e[2] if len(e) > 2 else e[1] for e in entries}
 samp = [[int(v) for v in l.split()] for l in open(samples) if len(l.split()) == 3]
 mib = lambda b: round(int(b) / 2**20, 1)
 peak_b = int(peak) if peak else max(r[0] for r in samp)
@@ -104,7 +108,7 @@ got, metrics = {}, {}
 for i, line in enumerate(sorted(rows.splitlines(), key=lambda l: list(want).index(l.split()[0]))):
     rid, state, reason, secs, size = line.split()
     got[rid] = state if state == "ready" else reason
-    tag = "ready" if want[rid] == "ready" else want[rid]
+    tag = names[rid]
     metrics.update({f"{tag}__state": state, f"{tag}__failure_reason": "none" if reason == "-" else reason,
                     f"{tag}__render_s": float(secs), f"{tag}__output_bytes": int(size)})
 ok = int(oom) == 0 and peak_b < limit and got == want
@@ -125,8 +129,9 @@ if out:
                "metrics": metrics,
                "notes": ("infra/preview/smoke-preview.sh (smoke-renders.sh, addendum to ADR 0092): media-render as the preview runs it "
                          "(the render target of workers/media, 4096 MiB with no swap, 2 CPU, cpu_shares 128, read-only, Remotion "
-                         "concurrency 1, internal network only), restarted for a fresh cgroup, then given vertical circulated-template "
-                         "renders of a synthetic clip by the feeder, one at a time. memory.peak is the cgroup high-water mark with page "
+                         "concurrency 1, internal network only), restarted for a fresh cgroup, then given vertical renders of a synthetic "
+                         "clip by the feeder (the circulated template, and on the short clip a Witness one too, ADR 0109), one at a "
+                         "time. memory.peak is the cgroup high-water mark with page "
                          "cache; anon and scratch sampled every 0.5 s; idle is memory.current 5 s after the restart. render_s is "
                          "started_at to completed_at in the API's record; feed_to_done_s adds the feeder's 3 s cycles. Synthetic "
                          "content; not the shared server itself.")},
@@ -147,19 +152,21 @@ say("a render of a material still in the inbox is refused (409 render_not_allowe
 await accept(mid);
 say(`RENDER_OK=${await requestRender(mid, TITLE)}`);
 say(`RENDER_OVERFLOW=${await requestRender(mid, OVERFLOW)}`);
-say("the supervisor accepted the material and asked for a vertical render and a title_overflow one (202, requested, no location): ok");
+say(`RENDER_WITNESS=${await requestRender(mid, TITLE, "witness")}`);
+say("the supervisor accepted the material and asked for a vertical render, a title_overflow one and a Witness one (202, requested, no location): ok");
 JS
 )")" || { echo "$out"; fail "render requests"; }
 echo "$out"
 RENDER_OK="$(sed -n 's/^RENDER_OK=//p' <<<"$out")" RENDER_OVERFLOW="$(sed -n 's/^RENDER_OVERFLOW=//p' <<<"$out")"
-[ -n "$RENDER_OK" ] && [ -n "$RENDER_OVERFLOW" ] || fail "the render requests printed no ids"
-export RENDER_OK RENDER_OVERFLOW
+RENDER_WITNESS="$(sed -n 's/^RENDER_WITNESS=//p' <<<"$out")"
+[ -n "$RENDER_OK" ] && [ -n "$RENDER_OVERFLOW" ] && [ -n "$RENDER_WITNESS" ] || fail "the render requests printed no ids"
+export RENDER_OK RENDER_OVERFLOW RENDER_WITNESS
 
 # 2. The disk guard per render: under the floor, and above the floor but under the render's budget (its source + 1 GiB on top),
-# nothing reaches media:renders and both renders stay requested.
+# nothing reaches media:renders and the three renders stay requested.
 xr0="$(rx XLEN media:renders)"
 g1="$(feed -e MEDIA_MIN_FREE_GIB=1048576)" || fail "the feeder failed with the disk guard on"
-[ "$(rfield "$g1" state)" = paused_low_disk ] && [ "$(rfield "$g1" enqueued)" = 0 ] && [ "$(rfield "$g1" eligible)" = 2 ] \
+[ "$(rfield "$g1" state)" = paused_low_disk ] && [ "$(rfield "$g1" enqueued)" = 0 ] && [ "$(rfield "$g1" eligible)" = 3 ] \
   || fail "render disk guard under the floor: $g1"
 free_mb="$(field "$g1" free_mb)"
 floor="$(python3 -c 'import sys; print(round((int(sys.argv[1]) - 512) / 1024, 3))' "$free_mb")"
@@ -168,13 +175,13 @@ g2="$(feed -e MEDIA_MIN_FREE_GIB="$floor")" || fail "the feeder failed with the 
   && [ "$(rfield "$g2" need_mb)" -gt "$(field "$g2" free_mb)" ] || fail "render disk guard above the floor, under the render's budget: $g2"
 grep -qF "no new render" <<<"$g2" || fail "the render disk guard does not say why it holds the render"
 [ "$(rx XLEN media:renders)" = "$xr0" ] || fail "a render reached media:renders under the disk guard"
-[ "$(sql "SELECT count(*) FROM material_renders WHERE id IN ('$RENDER_OK', '$RENDER_OVERFLOW') AND state = 'requested'")" = 2 ] \
+[ "$(sql "SELECT count(*) FROM material_renders WHERE id IN ('$RENDER_OK', '$RENDER_OVERFLOW', '$RENDER_WITNESS') AND state = 'requested'")" = 3 ] \
   || fail "a render left requested under the disk guard"
-echo "render disk guard: under the floor, and above it but under the render's budget (source + 1 GiB), no render is given, it is logged, and both stay requested: ok"
+echo "render disk guard: under the floor, and above it but under the render's budget (source + 1 GiB), no render is given, it is logged, and all three stay requested: ok"
 
-# 3. The feeder gives them one at a time: one ready, one title_overflow.
+# 3. The feeder gives them one at a time: one ready, one title_overflow, and the Witness one ready.
 render_run 6s-720p "synthetic 6 s 1280x720 H.264 30 fps with AAC, planted location and device tags" \
-  "$RENDER_OK:ready" "$RENDER_OVERFLOW:title_overflow"
+  "$RENDER_OK:ready" "$RENDER_OVERFLOW:title_overflow" "$RENDER_WITNESS:ready:witness_ready"
 
 # 4. Read as the newsroom reads it: the list, then a signed link from public /v1 through the edge; the reporter gets neither.
 out="$(EMAIL="$SUP_EMAIL" PASSWORD="$SUP_PASSWORD" DOMAIN="$DOMAIN" probe_rw <<<"$JS_RENDER
@@ -210,6 +217,24 @@ const ranged = await req("GET", u.pathname + u.search, { range: "bytes=0-99" });
 if (ranged.status !== 206 || ranged.buf.length !== 100) die(`a ranged GET of the render: ${ranged.status}`);
 (await import("node:fs")).writeFileSync("/rendered/render.mp4", got.buf);
 say(`the render through the edge on a signed link: 200 video/mp4 (${got.buf.length} bytes, ranges too), no-store, no planted tag or title text: ok`);
+// The Witness template (ADR 0109): the template as asked, a second file named after its template, read through the edge alike.
+const w = items.find((x) => x.id === process.env.RENDER_WITNESS);
+if (a.template !== "circulated" || !w || w.template !== "witness" || w.state !== "ready" || !w.file_id || w.file_id === a.file_id || w.location_text !== null) {
+  die(`the Witness render: ${JSON.stringify(w && { template: w.template, state: w.state, failure_reason: w.failure_reason, file: Boolean(w.file_id) })}`);
+}
+const wr = await pub("GET", `/materials/${mid}/files/${w.file_id}/download-url`, bearer);
+if (wr.status !== 200) die(`Witness render download-url: ${wr.status}`);
+const wu = new URL(JSON.parse(wr.body).url);
+if (!/\/derived\/[0-9a-f-]{36}\/[0-9a-f-]{36}\/renders\/[0-9a-f-]{36}\/witness-vertical\.mp4$/.test(wu.pathname)) die("the Witness link is not the render's own key");
+const wgot = await req("GET", wu.pathname + wu.search);
+if (wgot.status !== 200 || !/^video\/mp4/.test(wgot.headers["content-type"] ?? "") || wgot.buf.subarray(4, 8).toString() !== "ftyp") {
+  die(`the Witness render through the edge: ${wgot.status} ${wgot.headers["content-type"]}`);
+}
+for (const planted of [process.env.MARK, process.env.GPS, process.env.GPS.slice(1, 8), ...TITLE]) {
+  if (wgot.buf.includes(planted)) die("a planted tag or the title text reached the Witness render's bytes");
+}
+(await import("node:fs")).writeFileSync("/rendered/witness.mp4", wgot.buf);
+say(`the Witness render ready as its own file (witness-vertical.mp4), read through the edge: 200 video/mp4 (${wgot.buf.length} bytes), no planted tag or title text: ok`);
 const rl = await pub("POST", "/auth/login", {}, { email: process.env.REPORTER_EMAIL, password: process.env.REPORTER_PASSWORD });
 if (rl.status !== 200) die(`reporter login: ${rl.status}`);
 const rb = { authorization: `Bearer ${JSON.parse(rl.body).access_token}` };
@@ -219,10 +244,11 @@ say(`the reporter (not a render role) gets no render list (${rlist.status}) and 
 JS
 )")" || { echo "$out"; fail "the render through the edge"; }
 echo "$out"
-[ -s "$work/rendered/render.mp4" ] || fail "the render read through the edge was not kept"
+for rendered in render witness; do
+[ -s "$work/rendered/$rendered.mp4" ] || fail "the $rendered render read through the edge was not kept"
 rinfo="$(ff ffprobe -v error -show_entries stream=codec_type,codec_name,profile,width,height,pix_fmt,color_range,color_space,color_primaries,color_transfer,sample_rate:format=duration:format_tags \
-  -of json /out/rendered/render.mp4)" || fail "ffprobe could not read the render"
-python3 - "$rinfo" <<'PY' || fail "the render is not the vertical H.264 BT.709 file ADR 0091 §4 describes"
+  -of json "/out/rendered/$rendered.mp4")" || fail "ffprobe could not read the $rendered render"
+python3 - "$rinfo" <<'PY' || fail "the $rendered render is not the vertical H.264 BT.709 file ADR 0091 §4 describes"
 import json, os, sys
 d = json.loads(sys.argv[1])
 v = [x for x in d["streams"] if x["codec_type"] == "video"]
@@ -240,7 +266,8 @@ if any(mark in str(t) for t in d["format"].get("tags", {}).values()):
 print(f"render: {got['video']}, {got['audio']}, {dur:.2f} s" if not bad else f"wrong: {bad}")
 sys.exit(1 if bad else 0)
 PY
-echo "the render is 1080x1920 H.264 yuv420p, tv range, BT.709, AAC 48 kHz, the source's 6 s: ok"
+echo "the $rendered render is 1080x1920 H.264 yuv420p, tv range, BT.709, AAC 48 kHz, the source's 6 s: ok"
+done
 
 # 5. Measurement (--media-json): a vertical render of each 60 s clip measured above, with media-render's limits as deployed.
 if [ -n "$MEDIA_OUT" ]; then

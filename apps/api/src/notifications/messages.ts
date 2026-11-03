@@ -42,6 +42,15 @@ export const NOTIFICATION_TITLES: Record<string, Record<Locale, string>> = {
     ar: 'تعذّر إنتاج نسختك من المادة #{ref} على قالب «مواد متداولة»',
     en: 'Your circulated-template copy of material #{ref} could not be made',
   },
+  // نسخة قالب «الشاهد» (ADR 0109): الحدثان أنفسهما، والعنوان يسمّي القالب الذي طُلب
+  'render.completed.witness': {
+    ar: 'نسختك من المادة #{ref} على قالب «الشاهد» جاهزة',
+    en: 'Your Witness-template copy of material #{ref} is ready',
+  },
+  'render.failed.witness': {
+    ar: 'تعذّر إنتاج نسختك من المادة #{ref} على قالب «الشاهد»',
+    en: 'Your Witness-template copy of material #{ref} could not be made',
+  },
   // إسناد المادة إلى المونتير (ADR 0096): رقم المادة وحده، بلا ملاحظة ولا موعد ولا اسم
   'assignment.created': { ar: 'مهمة جديدة: المادة #{ref}', en: 'New task: material #{ref}' },
   'assignment.done': { ar: 'سُلّمت مهمة المادة #{ref}', en: 'Task on material #{ref} delivered' },

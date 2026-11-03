@@ -11,10 +11,11 @@ public struct MaterialRenderRequest: Sendable, Codable, Hashable {
 
     public enum Template: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
         case circulated = "circulated"
+        case witness = "witness"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
     public static let titleLinesRule = ArrayRule(minItems: 1, maxItems: 3, uniqueItems: false)
-    /** القالب؛ «مواد متداولة» وحده الآن */
+    /** القالب، اختيار لكل طلب بلا قيمة افتراضية: `circulated` «مواد متداولة» (ADR 0091) و`witness` «الشاهد» (ADR 0109، أُضيف بعد v0.3). المعاملات الأخرى والشروط واحدة للقالبين. */
     public var template: Template
     public var aspect: RenderAspect
     /** العنوان سطرًا إلى ثلاثة بترتيبها، يقسمها الطاقم على معنى الجملة لا على العرض (المواصفة)، فلا يقسمها الخادم ولا العامل. المجموع ≤ 66 نقطة ترميز بحكم الحدّين. الواجهة تملؤها ابتداءً من عنوان المادة. يصير `titleLines` في معاملات القالب. */
