@@ -3,7 +3,7 @@ import { and, desc, eq, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { ApiError } from '../common/errors';
 import { DB, type Database, type Tx } from '../database/database.module';
-import { materialExports, materialFiles, materialRenders, uploadSessions } from '../database/schema/schema';
+import { licenses, materialExports, materialFiles, materialRenders, uploadSessions } from '../database/schema/schema';
 import { writeOutboxEvent } from '../outbox/outbox';
 import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
 import { recordVerification, type UploadSessionRow, type VerificationOutcome } from '../verification/verification';
@@ -196,6 +196,7 @@ export class MediaService {
       const sha256 = Buffer.from(body.sha256, 'hex');
       const { columns, json } = splitTechnical(body.technical);
       if (body.kind === 'circulated_render') return this.registerRender(tx, source, body, sha256, columns, json);
+      if (body.kind === 'delivery') return this.registerDelivery(tx, source, body, sha256, columns, json);
       const [created] = await tx
         .insert(materialFiles)
         .values({
@@ -233,6 +234,50 @@ export class MediaService {
       if (existing && existing.storageKey === body.storage_key && existing.sha256?.equals(sha256)) return { file_id: existing.id };
       throw conflict('A different derivative of this kind already exists for this file.');
     });
+  }
+
+  /**
+   * حزمة تسليم ترخيص (ADR 0025 الجزء 9): لكل ترخيص حزمته، من أصل مادة الترخيص نفسها. `license_id` يُكتب في الصف (قيد
+   * material_files_delivery_license_check)، والترخيص المجهول أو ترخيص مادة أخرى 422 قبل أي كتابة. متساوٍ الأثر على
+   * (المصدر، الترخيص): الطلب نفسه يعيد الملف نفسه، وحزمة مختلفة للترخيص والمصدر نفسيهما 409.
+   */
+  private async registerDelivery(
+    tx: Tx,
+    source: typeof materialFiles.$inferSelect,
+    body: MediaDerivativeBody,
+    sha256: Buffer,
+    columns: ReturnType<typeof splitTechnical>['columns'],
+    json: Record<string, unknown>,
+  ): Promise<{ file_id: string }> {
+    const licenseId = body.license_id!;
+    const [license] = await tx.select({ materialId: licenses.materialId }).from(licenses).where(eq(licenses.id, licenseId));
+    if (!license || license.materialId !== source.materialId) throw ApiError.validation({ fields: ['/license_id'] });
+    const [created] = await tx
+      .insert(materialFiles)
+      .values({
+        materialId: source.materialId,
+        kind: 'delivery',
+        state: 'verified',
+        derivedFromId: source.id,
+        licenseId,
+        storageKey: body.storage_key,
+        sizeBytes: body.size_bytes,
+        sha256,
+        mimeType: body.mime_type!,
+        verifiedAt: sql`now()` as never,
+        ...columns,
+        technical: json,
+      })
+      // الشرط حرفيًا شرط الفهرس الجزئي material_files_delivery_license_key فيستدلّه Postgres
+      .onConflictDoNothing({ target: [materialFiles.derivedFromId, materialFiles.licenseId], where: sql`kind = 'delivery'` })
+      .returning({ id: materialFiles.id });
+    if (created) return { file_id: created.id };
+    const [existing] = await tx
+      .select()
+      .from(materialFiles)
+      .where(and(eq(materialFiles.derivedFromId, source.id), eq(materialFiles.licenseId, licenseId), eq(materialFiles.kind, 'delivery')));
+    if (existing && existing.storageKey === body.storage_key && existing.sha256?.equals(sha256)) return { file_id: existing.id };
+    throw conflict('A different delivery package is already registered for this license.');
   }
 
   /**
