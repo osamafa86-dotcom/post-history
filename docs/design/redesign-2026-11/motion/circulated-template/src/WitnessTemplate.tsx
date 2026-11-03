@@ -1,12 +1,9 @@
 // القالب الثاني للمواد المتداولة: «الشاهد».
 // إطار من أربع زوايا مضيئة حول المشهد، ووسم ذهبي أسطواني، وعنوان بلا ألواح، وسطر مكان وتاريخ،
 // وشريط جانبي لحساب صاحب المادة الأصلي. التصميم في Figma (صفحة «Video Template 2 · الشاهد»، VT2-01..07).
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   AbsoluteFill,
-  cancelRender,
-  continueRender,
-  delayRender,
   Easing,
   Img,
   interpolate,
@@ -17,7 +14,7 @@ import {
 } from 'remotion';
 import { measureText } from '@remotion/layout-utils';
 import { CirculatedProps, cleanLines, MIN_TITLE_SCALE, TitleOverflowError } from './CirculatedTemplate';
-import { fontsReady, TEXT_FONT, TITLE_FONT } from './fonts';
+import { TEXT_FONT, TITLE_FONT, useFontsLoaded } from './fonts';
 
 export type WitnessLayout = 'vertical' | 'horizontal' | 'square';
 
@@ -511,25 +508,6 @@ export const WitnessTemplate: React.FC<WitnessProps> = ({
 };
 
 /**
- * لا يُرسم القالب في الصفحة قبل تحميل الخطّين: `measureText` يحفظ أول قياس لكل نصّ في ذاكرة الصفحة، فقياسٌ قبل الخط يثبت
- * عرض الخط البديل لكبسولة الوسم وحجم العنوان في كل إطارات تلك الصفحة. والمرسِم يوزّع الإطارات على صفحات متوازية، فتختلف
- * الإطارات بين صفحة وأخرى (قيس: كل إطار ثانٍ بعد ظهور الوسم بين رسمين كاملين). `delayRender` يمنع التصوير حتى يُرسم القالب
- * بالخطّين.
- */
-const useFontsLoaded = () => {
-  const [handle] = useState(() => delayRender('fonts before the Witness measurements'));
-  const [loaded, setLoaded] = useState(false);
-  useEffect(() => {
-    fontsReady.then(() => setLoaded(true), (err) => cancelRender(err));
-  }, []);
-  // بعد أن يُثبَّت الرسم بالقياس الصحيح، لا قبله
-  useEffect(() => {
-    if (loaded) continueRender(handle);
-  }, [loaded, handle]);
-  return loaded;
-};
-
-/**
  * «الشاهد» في خط الإنتاج (ADR 0109): يأخذ معاملات طبقة «مواد متداولة» نفسها كما يمررها العامل من العقد (`aspect`،
  * و`location` يبنيه الخادم، و`tag` الوسم المرمّز)، ونصّ الوسم من القالب. التاريخ والحساب فارغان دائمًا: لا اسم حساب ولا
  * مصدر في أي إطار (`CLAUDE.md` §5)، فالشريط الجانبي لا يُرسم أبدًا في النسخة.
@@ -543,7 +521,7 @@ export const WitnessRender: React.FC<CirculatedProps> = ({
   reducedMotion,
   durationInSeconds,
 }) => {
-  const loaded = useFontsLoaded();
+  const loaded = useFontsLoaded('fonts before the Witness measurements');
   if (!loaded) return null;
   return (
     <WitnessTemplate
