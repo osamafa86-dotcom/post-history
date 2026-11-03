@@ -60,6 +60,7 @@ export const EXTRA = [
   { name: "sensitive-material-visibility", mode: "automated", source: "invariant: sensitive material excluded from buyer catalog", criterion: "المادة الموسومة بالحساسية تُعلَّق إدراجاتها ولا تظهر في بحث المشتري أو قراءته المباشرة، مع بقاء مادة ضابطة غير موسومة ظاهرة" },
   { name: "stripe-webhook", mode: "automated", source: "plan row «الدفع المكرر» (الصف 12 من جدول اختبارات القبول)", criterion: "إشعار Stripe التجريبي الموقّع على خادم محلي: التوقيع السيئ 400 بلا أثر في القاعدة، وحدث livemode مرفوض، والإشعار الصحيح ترخيص واحد وقيد متوازن، وإعادته عشر مرات وبمعرّفه بجسم مختلف بلا أثر ثانٍ" },
   { name: "invite-conflict-totp", mode: "automated", source: "security follow-up #304 / contract #361 (#366)", criterion: "حسم تعارض دعوة مشترٍ برمز TOTP: الصحيح يُقبل مرة واحدة وإعادته 401، والمحاولات الخاطئة فوق الحد 429 بـRetry-After وأثناء الحد حتى الصحيح 429، والتعارض يبقى معلقًا بعد الفشل" },
+  { name: "account-recovery", mode: "automated", source: "ADR 0107", criterion: "استعادة بلا بريد: رابط مدير النظام يُرى مرة (التكرار بلا رمز) ويوقف جلسات الحساب ويُكمَل مرة واحدة بكلمة مرور وTOTP جديدين، والرمز الاحتياطي يفتح طلب استعادة ويُستهلك؛ ومفتاح المرور يُسجَّل بعد إعادة التحقق ويدخل بلا كلمة مرور ولا يدخل بعد إبطاله؛ والأحداث معرّفات وأعداد، ولا رمز ولا تحدٍّ ولا معرّف اعتماد في حدث أو سجل الخادم" },
 ];
 
 export const NAMES = [...CATALOG, ...EXTRA].map((t) => t.name);

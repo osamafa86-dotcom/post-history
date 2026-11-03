@@ -1,7 +1,7 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Executor, Tx } from '../database/database.module';
 import { randomToken, sha256 } from '../common/crypto';
-import { auditLog, recoveryRequests, users } from '../database/schema/schema';
+import { auditLog, passkeys, recoveryRequests, users } from '../database/schema/schema';
 import { writeOutboxEvent } from '../outbox/outbox';
 import { revokeAllAccess } from './session.service';
 
@@ -37,13 +37,12 @@ export async function recordRecoveryApproval(
     })
     .where(eq(recoveryRequests.id, request.id))
     .returning();
-  await revokeAllAccess(tx, request.userId);
-  // سر TOTP المعلّق من استعادة سابقة لم تكتمل لا يبقى: كل اعتماد يبدأ الدورة من أولها
-  await tx.update(users).set({ credentialResetRequired: true, totpPendingSecretEnc: null }).where(eq(users.id, request.userId));
+  const passkeysRevoked = await resetCredentials(tx, request.userId);
   await audit(tx, approverId, 'auth.recovery_approved', request.userId, {
     recovery_request_id: request.id,
     target_user_id: request.userId,
     ...(reasonCode ? { reason_code: reasonCode } : {}),
+    ...(passkeysRevoked ? { passkeys_revoked: String(passkeysRevoked) } : {}),
   });
   await audit(tx, approverId, 'auth.reset_token_issued', request.userId, {
     recovery_request_id: request.id,
@@ -59,6 +58,23 @@ export async function recordRecoveryApproval(
     payload: { recovery_request_id: request.id, ...(request.officeId ? { office_id: request.officeId } : {}) },
   });
   return { approved: approved!, resetToken };
+}
+
+/**
+ * أثر إعادة التعيين على الحساب داخل المعاملة (اعتماد الاستعادة ورابط مدير النظام، ADR 0107): إبطال كل وصوله (الجلسات ورموز الرفع
+ * وأجهزة الإشعار ومفاتيح الشهادة)، وكل مفاتيح مروره (فالهاتف المفقود أو المفتاح الذي أضافه غيره لا يدخل بعدها)، و«إعادة تعيين
+ * إلزامية» بلا سر TOTP معلّق من دورة سابقة. يعيد عدد مفاتيح المرور المبطَلة.
+ */
+export async function resetCredentials(tx: Tx, userId: string): Promise<number> {
+  await revokeAllAccess(tx, userId);
+  // سر TOTP المعلّق من استعادة سابقة لم تكتمل لا يبقى: كل اعتماد يبدأ الدورة من أولها
+  await tx.update(users).set({ credentialResetRequired: true, totpPendingSecretEnc: null }).where(eq(users.id, userId));
+  const revoked = await tx
+    .update(passkeys)
+    .set({ revokedAt: sql`now()`, revokedReason: 'credential_reset' })
+    .where(and(eq(passkeys.userId, userId), isNull(passkeys.revokedAt)))
+    .returning({ id: passkeys.id });
+  return revoked.length;
 }
 
 /** سجل التدقيق: مفاتيح القائمة البيضاء فقط (audit_details_allowed_keys)، والتجزئة يحسبها المحفّز. */

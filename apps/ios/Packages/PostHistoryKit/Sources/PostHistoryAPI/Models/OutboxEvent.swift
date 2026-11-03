@@ -56,6 +56,9 @@ public struct OutboxEvent: Sendable, Codable, Hashable {
         case tagPeriodSuggestionsChanged = "tag.suggestions_changed"
         case tagPeriodRewritten = "tag.rewritten"
         case platformSettingsPeriodChanged = "platform_settings.changed"
+        case authPeriodPasskeyAdded = "auth.passkey_added"
+        case authPeriodPasskeyRevoked = "auth.passkey_revoked"
+        case authPeriodRecoveryCodesGenerated = "auth.recovery_codes_generated"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
     public enum AggregateType: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {

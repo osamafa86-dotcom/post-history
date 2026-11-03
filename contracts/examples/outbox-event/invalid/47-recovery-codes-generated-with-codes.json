@@ -1,0 +1,13 @@
+{
+  "id": "4114",
+  "type": "auth.recovery_codes_generated",
+  "aggregate_type": "user",
+  "aggregate_id": "3a4b5c6d-7e8f-4091-a2b3-c4d5e6f70812",
+  "occurred_at": "2026-11-03T13:10:00Z",
+  "idempotency_key": "auth.recovery_codes_generated:7b8c9d0e-1f2a-4b3c-8d4e-5f6a7b8c9d0e",
+  "actor_id": "3a4b5c6d-7e8f-4091-a2b3-c4d5e6f70812",
+  "payload": {
+    "codes_count": 1,
+    "codes": ["ABCDEFGHJKMN"]
+  }
+}

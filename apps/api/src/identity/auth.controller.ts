@@ -103,6 +103,34 @@ export class AuthController {
     const input = validateBody<{ totp_code: string }>('/auth/totp/confirm', 'post', body);
     return this.auth.confirmTotp(req.auth!.userId, input.totp_code);
   }
+
+  // الرموز الاحتياطية (ADR 0107): ردّ التوليد يحمل الرموز مرة واحدة، فلا Idempotency-Key كبقية /auth/*
+  @Get('recovery-codes')
+  @Roles('authenticated')
+  recoveryCodeStatus(@Req() req: Request): Promise<components['schemas']['RecoveryCodeStatus']> {
+    return this.account.recoveryCodeStatus(req.auth!.userId);
+  }
+
+  @Post('recovery-codes')
+  @HttpCode(200)
+  @Roles('authenticated')
+  generateRecoveryCodes(@Req() req: Request): Promise<components['schemas']['RecoveryCodes']> {
+    return this.account.generateRecoveryCodes(req.auth!.userId);
+  }
+}
+
+// رابط إعادة التعيين من مدير النظام (A1، ADR 0107): Idempotency-Key، والرمز يُحذف من الرد المحفوظ (withoutTokens) فلا يُعاد عند التكرار
+@Controller('users/:id/password-reset-links')
+export class UserPasswordResetLinksController {
+  constructor(private readonly account: AccountService) {}
+
+  @Post()
+  @HttpCode(201)
+  @Roles('system_admin')
+  issue(@Param('id') id: string, @Body() body: unknown, @Req() req: Request): Promise<components['schemas']['PasswordResetLink']> {
+    const input = validateBody<components['schemas']['PasswordResetLinkCreate']>('/users/{id}/password-reset-links', 'post', body);
+    return this.account.issuePasswordResetLink(req.principal!, id, input.reason);
+  }
 }
 
 @Controller('users/:id/work-name')
