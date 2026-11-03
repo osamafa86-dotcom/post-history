@@ -20,6 +20,10 @@ import * as earnings from "../src/lib/earnings-policy";
 import { formReaders, formWriters } from "../src/lib/form-admin";
 import * as render from "../src/lib/render-policy";
 import * as assignment from "../src/lib/assignment-policy";
+import * as staff from "../src/lib/staff-policy";
+import * as tags from "../src/lib/tag-policy";
+import * as platform from "../src/lib/platform-policy";
+import * as reports from "../src/lib/finance-reports";
 
 const { load } = createRequire(import.meta.url)("js-yaml") as { load: (text: string) => unknown };
 const contract = load(readFileSync(new URL("../../../contracts/openapi.yaml", import.meta.url), "utf8"));
@@ -168,5 +172,27 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
     const status = (at("paths", "/me/assignments", "get", "parameters") as { name?: string; schema?: { enum?: string[] } }[]).find(p => p.name === "status");
     expect([...assignment.myTaskStatuses]).toEqual(status?.schema?.enum);
     for (const route of ["/materials/{id}/assignments", "/assignments/{assignment_id}/transitions", "/materials/{id}/export"]) expect(at("paths", route, "post", "parameters")).toEqual(expect.arrayContaining([{ $ref: "#/components/parameters/IdempotencyKey" }]));
+  });
+  it("keeps the admin panel reads and writes aligned with ADR 0098 and 0099 (roles, enums, limits, patterns, revisions)", () => {
+    const roles = (path: string, method = "get") => at("paths", path, method, "x-roles");
+    expect([...staff.staffReaders]).toEqual(roles("/users")); expect([...staff.staffStatuses]).toEqual(at("components", "schemas", "StaffUserStatus", "enum"));
+    const users = at("paths", "/users", "get", "parameters") as { name?: string; schema?: { maxLength?: number; maxItems?: number } }[];
+    expect(staff.staffLimits.q).toBe(users.find(p => p.name === "q")?.schema?.maxLength); expect(staff.staffLimits.roles).toBe(users.find(p => p.name === "role")?.schema?.maxItems);
+    expect(at("components", "schemas", "RoleName", "enum")).toEqual(expect.arrayContaining([...staff.staffRoles]));
+    expect([...tags.suggestionReaders]).toEqual(roles("/tag-suggestions")); expect([...tags.tagAdmins]).toEqual(roles("/tag-suggestions", "put"));
+    expect([...tags.tagAdmins]).toEqual(roles("/tags")); expect([...tags.tagAdmins]).toEqual(roles("/tag-rewrites", "post"));
+    expect([...tags.rewriteModes]).toEqual(at("components", "schemas", "TagRewrite", "properties", "mode", "enum"));
+    expect(tags.tagLimits.tag).toBe(at("components", "schemas", "MaterialTag", "maxLength")); expect(tags.tagLimits.suggestions).toBe(at("components", "schemas", "TagSuggestionList", "maxItems"));
+    expect(tags.tagLimits.perMaterial).toBe(at("components", "schemas", "MaterialTags", "maxItems"));
+    expect([...platform.platformAdmins]).toEqual(roles("/platform-settings")); expect([...platform.platformAdmins]).toEqual(roles("/platform-settings", "put"));
+    for (const field of platform.platformFields) expect(platform.platformLimits[field]).toBe(at("components", "schemas", "PlatformSettingsUpdate", "properties", field, "maxLength"));
+    expect([...platform.platformFields].sort()).toEqual([...(at("components", "schemas", "PlatformSettingsUpdate", "required") as string[])].sort());
+    expect([...reports.reportReaders]).toEqual(roles("/contributor-earnings")); expect([...reports.reportReaders]).toEqual(roles("/buyer-purchase-totals"));
+    const month = (at("paths", "/contributor-earnings", "get", "parameters") as { name?: string; schema?: { pattern?: string } }[]).find(p => p.name === "month");
+    expect(reports.monthPattern.source).toBe(month?.schema?.pattern);
+    const year = (at("paths", "/buyer-purchase-totals", "get", "parameters") as { name?: string; schema?: { minimum?: number; maximum?: number } }[]).find(p => p.name === "year");
+    expect([reports.yearLimits.min, reports.yearLimits.max]).toEqual([year?.schema?.minimum, year?.schema?.maximum]);
+    for (const path of ["/tag-suggestions", "/platform-settings"]) expect(at("paths", path, "put", "parameters")).toEqual(expect.arrayContaining([{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/IfMatch" }]));
+    expect(at("paths", "/tag-rewrites", "post", "parameters")).toEqual([{ $ref: "#/components/parameters/IdempotencyKey" }]);
   });
 });

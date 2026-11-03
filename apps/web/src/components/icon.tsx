@@ -47,6 +47,17 @@ const paths = {
   pin: "M12 21s-7-6.3-7-11.5a7 7 0 0 1 14 0C19 14.7 12 21 12 21M12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5",
   printer: "M7 8V3h10v5M7 17H4v-7h16v7h-3M7 14h10v7H7z",
   cart: "M3 4h2l2.5 11h11L21 7H6.5M9.5 20a1 1 0 1 0 0-.1M17.5 20a1 1 0 1 0 0-.1",
+  text: "M5 6h14M12 6v13M9 19h6",
+  list: "M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01",
+  calendar: "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4",
+  hash: "M5 9h14M5 15h14M10 4 8 20M16 4l-2 16",
+  toggle: "M7 7h10a5 5 0 0 1 0 10H7A5 5 0 0 1 7 7M7 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4",
+  clip: "M20 11.5 12 19.5a5 5 0 0 1-7-7L13.5 4a3.5 3.5 0 0 1 5 5L10 17.5a2 2 0 0 1-3-3L15 6.5",
+  user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8M4 21a8 8 0 0 1 16 0",
+  tag: "M3 12V4h8l10 10-8 8zM7.5 8.5h.01",
+  lock: "M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4",
+  plus: "M12 5v14M5 12h14",
+  grip: "M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01",
 } as const;
 
 export type IconName = keyof typeof paths;

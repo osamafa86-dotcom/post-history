@@ -230,28 +230,21 @@
     }
   },
   "admin": {
-    "title": "Account administration",
-    "lead": "Manage independent reading permissions, account access and reporter identity policy.",
+    "title": "Users and roles",
     "denied": "System administrator access is required.",
-    "target": "Target user ID",
-    "targetHelp": "Enter the exact user ID supplied by your administrator.",
-    "permissions": "Reading permissions",
+    "permissions": "Independent permissions",
     "location": "Read sensitive locations",
     "source": "Read protected sources",
     "reason": "Reason for granting access",
     "grant": "Grant permission",
     "revoke": "Revoke permission",
     "confirm": "Confirm change",
-    "grantWarning": "Grant this permission to the selected account?",
-    "revokeWarning": "Revoke this permission from the selected account?",
     "history": "Permission history",
-    "status": "Account access",
+    "status": "Account status",
     "suspend": "Suspend account",
     "activate": "Reactivate account",
-    "suspendWarning": "Suspending this account revokes its sessions and cancels ongoing uploads. Continue?",
-    "activateWarning": "Reactivate the selected account? Previous sessions will remain revoked.",
     "self": "You cannot suspend your own account.",
-    "statusHelp": "The audit reason is the selected action: suspension or reactivation.",
+    "statusHelp": "The audit log records the action alone: suspension or reactivation.",
     "reasonHelp": "Do not include protected source names, precise locations or device identifiers.",
     "identity": "Read reporter identities",
     "identityTitle": "Reporter identity access",
@@ -267,7 +260,7 @@
     "settingAudit": "This change is recorded in the audit history and administrators are notified.",
     "loadHistory": "Load permission history",
     "historyHelp": "Newest events first, including organization-wide identity policy changes. This history is not a list of current grants.",
-    "selectHistoryUser": "Enter a user ID, then load their history.",
+    "selectHistoryUser": "Load the history to see this account's permission grants and revocations.",
     "historyMissing": "The user or permission history is unavailable.",
     "emptyHistory": "No permission changes recorded.",
     "globalSetting": "Applies to all users",
@@ -290,7 +283,147 @@
     "workNameHelp": "Staff only; not a reporter or buyer name and never shown to them.",
     "workNameSave": "Save work name",
     "workNameClear": "Clear work name",
-    "workNameRejected": "Work name rejected; check the format and that the account is staff, not a reporter or buyer."
+    "workNameRejected": "Work name rejected; check the format and that the account is staff, not a reporter or buyer.",
+    "nav": "Users",
+    "users": {
+      "zero": "No users",
+      "one": "{n} user",
+      "two": "{n} users",
+      "few": "{n} users",
+      "many": "{n} users",
+      "other": "{n} users"
+    },
+    "rolePlurals": {
+      "reporter": {
+        "zero": "no reporters",
+        "one": "{n} reporter",
+        "two": "{n} reporters",
+        "few": "{n} reporters",
+        "many": "{n} reporters",
+        "other": "{n} reporters"
+      },
+      "supervisor": {
+        "zero": "no supervisors",
+        "one": "{n} supervisor",
+        "two": "{n} supervisors",
+        "few": "{n} supervisors",
+        "many": "{n} supervisors",
+        "other": "{n} supervisors"
+      },
+      "producer": {
+        "zero": "no producers",
+        "one": "{n} producer",
+        "two": "{n} producers",
+        "few": "{n} producers",
+        "many": "{n} producers",
+        "other": "{n} producers"
+      },
+      "editor_in_chief": {
+        "zero": "no editors in chief",
+        "one": "{n} editor in chief",
+        "two": "{n} editors in chief",
+        "few": "{n} editors in chief",
+        "many": "{n} editors in chief",
+        "other": "{n} editors in chief"
+      },
+      "rights_officer": {
+        "zero": "no rights officers",
+        "one": "{n} rights officer",
+        "two": "{n} rights officers",
+        "few": "{n} rights officers",
+        "many": "{n} rights officers",
+        "other": "{n} rights officers"
+      },
+      "finance": {
+        "zero": "no finance accounts",
+        "one": "{n} finance account",
+        "two": "{n} finance accounts",
+        "few": "{n} finance accounts",
+        "many": "{n} finance accounts",
+        "other": "{n} finance accounts"
+      },
+      "system_admin": {
+        "zero": "no system administrators",
+        "one": "{n} system administrator",
+        "two": "{n} system administrators",
+        "few": "{n} system administrators",
+        "many": "{n} system administrators",
+        "other": "{n} system administrators"
+      }
+    },
+    "suspendedPlural": {
+      "zero": "none suspended",
+      "one": "{n} suspended",
+      "two": "{n} suspended",
+      "few": "{n} suspended",
+      "many": "{n} suspended",
+      "other": "{n} suspended"
+    },
+    "createNote": "Staff accounts are created with the create-user command on the server, not on this page.",
+    "searchLabel": "Search by work name or email",
+    "searchHelp": "Email is matched in the search and never shown in the list.",
+    "filtersLabel": "Filter accounts",
+    "chips": {
+      "all": "All",
+      "reporter": "Reporters",
+      "supervisor": "Supervisors",
+      "producer": "Producers",
+      "editor_in_chief": "Editors in chief",
+      "rights_officer": "Rights officers",
+      "finance": "Finance",
+      "system_admin": "Administrators",
+      "suspended": "Suspended"
+    },
+    "columns": {
+      "name": "Name",
+      "roles": "Role",
+      "governorate": "Governorate",
+      "lastActive": "Last active",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "statuses": {
+      "active": "Active",
+      "suspended": "Suspended",
+      "recovery": "Recovery in progress"
+    },
+    "unnamed": "Account {id}",
+    "noWorkName": "No work name",
+    "noGovernorate": "No governorate office",
+    "never": "Never signed in",
+    "manage": "Manage {name}'s account",
+    "empty": "No staff accounts yet",
+    "emptyBody": "Accounts appear here once they are created with the create-user command on the server.",
+    "emptyFiltered": "No accounts match these filters",
+    "emptyFilteredBody": "Try another role or clear the search.",
+    "clearFilters": "Clear filters",
+    "loadMore": "Show more",
+    "matrixTitle": "What each role can do",
+    "matrixLead": "From the contract's own roles. Independent permissions (sensitive locations, protected sources and reporter identity) do not come with a role; they are granted to one account.",
+    "capability": "Capability",
+    "capabilities": {
+      "upload": "Upload materials from the app or a computer",
+      "assign": "Take the inbox and hand materials to a producer",
+      "production": "Production tasks",
+      "rights": "Rights and store listing",
+      "money": "Earnings and payouts",
+      "admin": "Accounts, tags and settings"
+    },
+    "can": "Yes",
+    "cannot": "No",
+    "back": "All accounts",
+    "adminQuorum": "Another system administrator's account cannot be suspended from here.",
+    "recoveryNote": "This account has a recovery in progress.",
+    "suspendEffect": "{name}'s account will be suspended, and all its sessions and upload tokens revoked at once.",
+    "activateEffect": "{name}'s account will be active again. Earlier sessions stay revoked, so they sign in again.",
+    "suspended": "Account suspended and its sessions revoked.",
+    "activated": "Account active again.",
+    "permissionsHelp": "They do not come with a role; a system administrator grants them explicitly. The list does not return current grants, so the history below is the record.",
+    "grantEffect": "{name}'s account will be granted “{permission}”, and the grant and its reason recorded in the permission history.",
+    "revokeEffect": "“{permission}” will be revoked from {name}'s account, effective on its next request.",
+    "granted": "“{permission}” granted.",
+    "revoked": "“{permission}” revoked.",
+    "permissionAudit": "The change is recorded in the audit log."
   },
   "notice": {
     "title": "Notifications",
@@ -920,6 +1053,61 @@
       "boolean": "Yes / no",
       "staff_member": "Staff member",
       "attachment": "Attachment"
+    },
+    "nav": "Forms",
+    "titleV2": "Submission form",
+    "titleVersion": "{title} · Version {version}",
+    "titleDraft": "{title} · Draft of version {version}",
+    "leadV2": "What reporters fill in before uploading. A change applies to new submissions only.",
+    "publishVersion": "Publish version {version}",
+    "palette": "Field types",
+    "addType": "Add a “{type}” field",
+    "paletteHelp": "Create a new version to add fields.",
+    "fieldsTitle": "Fields",
+    "contractFields": "Contract fields",
+    "contractNote": "Contract fields: they cannot be removed or edited here, and their text lives in the reporter app.",
+    "encrypted": "Encrypted",
+    "optional": "Optional",
+    "dynamicFields": "Form fields",
+    "noFields": "No fields in this version yet.",
+    "untitled": "Field {n}",
+    "moveUpField": "Move field {field} up",
+    "moveDownField": "Move field {field} down",
+    "settingsTitle": "Field settings",
+    "selectField": "Choose a field to see its settings.",
+    "core": {
+      "title": {
+        "label": "Title",
+        "hint": "Short text · 5 to 80 characters"
+      },
+      "material_types": {
+        "label": "Material type",
+        "hint": "One type or more"
+      },
+      "tags": {
+        "label": "Tags",
+        "hint": "Suggested or new · 1–12"
+      },
+      "location": {
+        "label": "Place",
+        "hint": "Governorate and city · coordinates are encrypted and never shown"
+      },
+      "shot_at": {
+        "label": "Time shot",
+        "hint": "Date and time · from the file by default"
+      },
+      "priority": {
+        "label": "Priority",
+        "hint": "Urgent, important or normal"
+      },
+      "sensitivity": {
+        "label": "Sensitivity",
+        "hint": "The sensitivity question and its flags"
+      },
+      "display_name": {
+        "label": "Display name",
+        "hint": "Network name or a pseudonym"
+      }
     }
   },
   "listing": {
@@ -957,11 +1145,11 @@
     "nav": "Buyer organizations",
     "myOrganization": "My organization",
     "title": "Buyer organizations",
-    "lead": "Organizations that buy from the store, their verification and seats. An organization cannot buy before it is active.",
+    "lead": "Store accounts, joining requests and purchase limits. An organization cannot buy before it is activated.",
     "denied": "This page is for the system admin and finance.",
     "readOnly": "Read only; creating and editing is for the system admin.",
     "empty": "No organizations yet.",
-    "new": "New organization",
+    "new": "Add organization",
     "create": "Create organization",
     "cancel": "Cancel",
     "save": "Save",
@@ -982,7 +1170,7 @@
       "active": "Active",
       "suspended": "Suspended"
     },
-    "members": "Members",
+    "members": "Users",
     "createdAt": "Created",
     "verifiedAt": "Activated",
     "firstAdmin": "First admin's email",
@@ -1020,7 +1208,38 @@
     "tokenExpires": "Expires",
     "tokenOnce": "This code is shown once and is not saved. Hand it to the invitee yourself outside the system; if it is lost, invite them again.",
     "tokenMissing": "The invitation was created, but the code is not shown because the request was repeated. If the invitee did not get it, invite them again.",
-    "done": "I have handed it over; hide it"
+    "done": "I have handed it over; hide it",
+    "filtersLabel": "Filter organizations",
+    "chips": {
+      "pending_verification": "Pending verification",
+      "active": "Active",
+      "suspended": "Suspended"
+    },
+    "emptyFiltered": "No organizations with this status",
+    "emptyBody": "Organizations do not register themselves: a system administrator creates one with its first admin.",
+    "purchases": "Purchases {year}",
+    "purchasesIn": "Purchases {year} {cur}",
+    "orders": {
+      "zero": "No orders",
+      "one": "{n} order",
+      "two": "{n} orders",
+      "few": "{n} orders",
+      "many": "{n} orders",
+      "other": "{n} orders"
+    },
+    "refundedPart": "{amount} refunded",
+    "purchasesFailed": "This year's purchases could not load; the rest of the table is as it is.",
+    "joinTitle": "Joining request: {name}",
+    "joinLead": "Before activation, the team reviews three items outside the platform:",
+    "checks": {
+      "registry": "Commercial registration",
+      "email": "Its admin's work email",
+      "agreement": "Signed licence agreement"
+    },
+    "joinNote": "The platform does not record a state for each item; activation changes the organization's status alone.",
+    "activate": "Activate account",
+    "activateEffect": "{name} will become active: the catalog and purchasing open to it, and the verification time is recorded. No activation notice is sent.",
+    "changedOrg": "The organization changed in another session, so we loaded the latest version. Review it, then activate again."
   },
   "licenses": {
     "nav": "Licenses",
@@ -1415,7 +1634,7 @@
     }
   },
   "payouts": {
-    "nav": "Payout requests",
+    "nav": "Money",
     "title": "Payout requests",
     "lead": "Contributors' requests, longest waiting first. Each approver approves once, and nobody approves their own request; above the policy threshold two approvers are needed.",
     "denied": "This page is for finance and system administrators.",
@@ -1553,15 +1772,17 @@
       "licenses": "Licences",
       "orders": "Orders",
       "license-templates": "Templates",
-      "admin": "Accounts",
+      "admin": "Users",
       "forms": "Forms",
       "notification-rules": "Rules",
       "buyer-organizations": "Orgs",
-      "payouts": "Payouts",
+      "payouts": "Money",
       "commission-rules": "Commission",
       "invite-conflicts": "Conflicts",
       "organization": "My org",
-      "tasks": "Tasks"
+      "tasks": "Tasks",
+      "tags": "Tags",
+      "settings": "Settings"
     },
     "bottomNav": "Main destinations",
     "more": "More",
@@ -1874,5 +2095,185 @@
     "cardNoneReader": "No open task on this material.",
     "cardCurrent": "{state} · {name}",
     "cardLast": "Last task: {state} {time}"
+  },
+  "tags": {
+    "nav": "Tags",
+    "title": "Tags",
+    "denied": "System administrator access is required to manage tags.",
+    "lead": "Suggested tags appear to reporters when sending, in this order. Up to {perMaterial} tags per material, each 1 to {max} characters.",
+    "newTag": "New tag",
+    "usageTitle": "Tag usage",
+    "searchLabel": "Search tags",
+    "filtersLabel": "Filter tags",
+    "filters": {
+      "all": "All",
+      "suggested": "Suggested",
+      "reporters": "From reporters"
+    },
+    "columns": {
+      "tag": "Tag",
+      "materials": "Materials",
+      "source": "Source",
+      "lastUsed": "Last used",
+      "actions": "Actions"
+    },
+    "sourceSuggested": "Suggested · {n}",
+    "sourceReporters": "From reporters",
+    "neverUsed": "Never used",
+    "suggest": "Suggest it",
+    "suggestLabel": "Add “{tag}” to the suggestions",
+    "mergeInto": "Merge into “{tag}”",
+    "mergeIntoLabel": "Merge “{tag}” into “{target}”",
+    "rewrite": "Merge or rename",
+    "rewriteLabel": "Merge or rename “{tag}”",
+    "mergeNote": "Merging moves every material to the target tag and keeps the original in the log.",
+    "empty": "No tags yet",
+    "emptyFiltered": "No tags match this search",
+    "emptyBody": "A tag appears here once it is used on a material or suggested.",
+    "clear": "Clear the search",
+    "loadMore": "Show more",
+    "panelTitle": "Suggested to reporters",
+    "panelLead": "In the order reporters see them. Drag to reorder, or use the move buttons. Every change is saved at once.",
+    "count": "{count} of {max}",
+    "version": "Version {version}",
+    "emptyList": "No suggested tags yet; reporters write their own freely.",
+    "moveUp": "Move “{tag}” up",
+    "moveDown": "Move “{tag}” down",
+    "remove": "Remove “{tag}” from the suggestions",
+    "dragHint": "Drag a tag to reorder it, or use the move buttons beside it.",
+    "addLabel": "Add a suggested tag",
+    "add": "Add",
+    "addHelp": "It goes to the end of the list.",
+    "addInvalid": "A tag is 1 to {max} characters, with no space at either end.",
+    "duplicate": "That tag is already in the list.",
+    "full": "The list is full: {max} tags. Remove one to add another.",
+    "added": "Added “{tag}” to the suggestions (version {version}).",
+    "removed": "Removed “{tag}” from the suggestions (version {version}).",
+    "moved": "“{tag}” is now at position {n} (version {version}).",
+    "listChanged": "The suggested list changed in another session, so we loaded the latest version. Review it, then repeat what you were doing.",
+    "materials": {
+      "zero": "0 materials",
+      "one": "{n} material",
+      "two": "{n} materials",
+      "few": "{n} materials",
+      "many": "{n} materials",
+      "other": "{n} materials"
+    },
+    "dialogTitle": "Merge or rename “{tag}”",
+    "target": "Target tag",
+    "targetHelp": "Type an existing tag to merge, or a new name to rename.",
+    "sameTag": "The target is the same tag.",
+    "modeMerge": "Merge:",
+    "modeRename": "Rename:",
+    "effectMerge": "“{source}” will be replaced with “{target}” on {count}; materials carrying both keep “{target}” alone.",
+    "effectRename": "“{source}” will become “{target}” on {count}.",
+    "effectSuggested": "In the suggested list, “{target}” takes the place of “{source}”.",
+    "effectSuggestedDrop": "“{source}” leaves the suggested list because “{target}” is already there.",
+    "effectLog": "The original and the materials that carried it are kept in the rewrite log; material states and versions do not change. There is no undo on this page.",
+    "serverDecides": "The server settles merge or rename by the target tag's state when it runs.",
+    "confirmMerge": "Merge",
+    "confirmRename": "Rename",
+    "doneMerge": "Merged “{source}” into “{target}” on {count}.",
+    "doneRename": "“{source}” is now “{target}” on {count}.",
+    "notFound": "“{source}” is no longer on any material or in the suggested list, so we reloaded the tags."
+  },
+  "settings": {
+    "nav": "Settings",
+    "title": "Settings",
+    "denied": "System administrator access is required to change platform settings.",
+    "lead": "Platform identity, alert rules and the reporter identity policy.",
+    "save": "Save changes",
+    "identityTitle": "Platform identity",
+    "fields": {
+      "platform_name": "Platform name",
+      "app_name": "Reporter app name",
+      "watermark_text": "Preview watermark text"
+    },
+    "help": {
+      "platform_name": "As shown on the web.",
+      "app_name": "The reporter app's name.",
+      "watermark_text": "On store previews."
+    },
+    "invalidField": "1 to {max} characters, with no space at either end.",
+    "version": "Version {version} · {date}",
+    "notConsumed": "Saved here and recorded in the audit log; neither the media worker nor the two apps read it yet. Today's watermark is a pattern without text, and the apps carry their names in their own resources.",
+    "saved": "Platform identity saved (version {version}).",
+    "changed": "The platform identity changed in another session, so we loaded the latest version. Review it, then save again.",
+    "fixedTitle": "Fixed rules",
+    "fixedLead": "Two platform rules, not settings, so they cannot be switched off here.",
+    "fixed": {
+      "hideName": "Reporter name hidden from buyers",
+      "hideNameWhy": "The catalog, item page and licence carry no reporter name and no source.",
+      "stripLocation": "Delivered files carry no location data",
+      "stripLocationWhy": "The delivery package is built without tags, coordinates or device identifiers."
+    },
+    "always": "Always",
+    "rulesTitle": "Alert rules",
+    "addRule": "Add a rule",
+    "allRules": "All rules",
+    "noRules": "No alert rules yet.",
+    "columns": {
+      "when": "When",
+      "who": "Who is alerted",
+      "channel": "Channel",
+      "enabled": "Enabled"
+    },
+    "quiet": "Quiet {start}–{end}",
+    "toggle": "Enable “{name}”",
+    "ruleOn": "“{name}” enabled.",
+    "ruleOff": "“{name}” disabled.",
+    "ruleChanged": "The rule changed in another session, so we loaded the latest version. Review it and try again.",
+    "quietNote": "Quiet hours are set per rule; non-urgent alerts that fall inside them wait or join the digest. Urgent alerts always arrive."
+  },
+  "money": {
+    "title": "Money",
+    "lead": "{month} · Commission, earnings and payouts",
+    "unnamed": "Contributor {id}",
+    "monthLabel": "Month",
+    "monthPrev": "Previous month",
+    "monthNext": "Next month",
+    "currency": "Currency",
+    "export": "Export statement",
+    "exportFile": "money-{month}-{cur}.csv",
+    "sandbox": "Sandbox payment provider: these figures are for the trial, and no real money is paid out before the payout trial is approved.",
+    "sandboxShort": "Sandbox provider: no real money is paid out.",
+    "emptyTitle": "No earnings in {month}",
+    "emptyBody": "The month's sales appear here once payment is confirmed, in UTC.",
+    "kpiGross": "Sales this month",
+    "kpiNet": "Net after fees and taxes",
+    "kpiShare": "Reporters' share",
+    "kpiReady": "Ready to pay out now",
+    "formula": "Reporter share = (sale price − gateway fees − taxes) × commission rate{pct} × their share among contributors. The rule in force when payment is confirmed is frozen in the sale record.",
+    "formulaPct": " ({pct})",
+    "formulaMixed": "The rate differs between this month's sales; each sale keeps its frozen rate.",
+    "tableTitle": "Reporter earnings",
+    "partial": "The page shows the first thousand rows; totals cover the whole month.",
+    "columns": {
+      "contributor": "Reporter",
+      "sales": "Sales",
+      "gross": "Gross {cur}",
+      "fees": "Fees and taxes {cur}",
+      "net": "Net {cur}",
+      "share": "Share {pct} {cur}",
+      "refunded": "Refunded {cur}",
+      "status": "Status"
+    },
+    "readiness": {
+      "ready": "Ready to pay out",
+      "in_payout": "Payout in progress",
+      "below_minimum": "Below the minimum"
+    },
+    "total": "Total",
+    "totalLine": "Total · {sales}",
+    "sales": {
+      "zero": "0 sales",
+      "one": "{n} sale",
+      "two": "{n} sales",
+      "few": "{n} sales",
+      "many": "{n} sales",
+      "other": "{n} sales"
+    },
+    "lineSale": "Sales {gross} · Net {net}",
+    "readyNote": "“Ready to pay out” comes from the current balance, not the month: what can be requested after the reserve has reached the minimum. A payout is a request from the reporter and an approval from finance, under “Payout requests” below."
   }
 }

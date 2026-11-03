@@ -1,6 +1,6 @@
 "use client";
 import { NoAccess } from "./empty-state";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { formatDate, messages, type Locale } from "@/lib/i18n";
 import { hasRole } from "@/lib/review";
@@ -11,13 +11,21 @@ import { approvable, earningsLimits, payoutReasons, payoutStaff, payoutStates, p
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
 import { Balances, payoutTone } from "./earnings";
+import { MoneyOverview, monthLabel } from "./money-overview";
+import { currentMonth } from "@/lib/finance-reports";
+import { fill } from "@/lib/admin-text";
 
 type State = PayoutRequest["state"];
 type Reason = (typeof payoutReasons)[number];
 
-/** طلبات الصرف للمالية ومدير النظام: الاعتماد (مرة لكل معتمد، لا لصاحب الطلب) والرفض بسبب مرمّز، وأرصدة المساهم. */
+/**
+ * المال (A4، والجوال M5): مستحقات المساهمين في الشهر ومعادلتها، ثم طلبات الصرف للمالية ومدير النظام (الاعتماد مرة لكل معتمد، لا لصاحب
+ * الطلب، والرفض بسبب مرمّز، وأرصدة المساهم)، ثم سياسات الصرف.
+ */
 export function PayoutsPage({ locale }: { locale: Locale }) {
   const m = messages[locale], t = m.payouts, e = m.earnings, me = useUser(), allowed = hasRole(me, ...payoutStaff), mutation = useMutation();
+  const [month, setMonth] = useState(currentMonth), [names, setNames] = useState<Record<string, string>>({});
+  const remember = useCallback((found: Record<string, string>) => setNames(old => ({ ...old, ...found })), []);
   const [state, setState] = useState<State | "">("requested"), [items, setItems] = useState<PayoutRequest[] | null>(null), [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState(false), [attempt, setAttempt] = useState(0), [reasons, setReasons] = useState<Record<string, Reason | "">>({});
   const [balances, setBalances] = useState<EarningsSummary | null>(null);
@@ -47,14 +55,16 @@ export function PayoutsPage({ locale }: { locale: Locale }) {
     try { setBalances(dataOrThrow(await browserApi().GET("/users/{id}/earnings", { params: { path: { id: user } } }))); } catch { setError(true); }
   }
 
-  return <><div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p><p className="notice">{e.sandbox}</p></div></div>
+  return <><div className="page-head"><div><h1>{m.money.title}</h1><p className="muted">{fill(m.money.lead, { month: monthLabel(month, locale) })}</p></div></div>
+    <MoneyOverview locale={locale} month={month} onMonth={setMonth} onNames={remember} />
+    <section className="money-requests" aria-labelledby="payout-requests-title"><div className="card-head"><div><h2 id="payout-requests-title">{t.title}</h2><p className="muted">{t.lead}</p></div></div>
     <ActionStatus status={mutation.status} locale={locale} />{mutation.status === 409 && <p className="notice error">{t.conflict}</p>}
-    <label>{e.state}<select value={state} onChange={ev => { setItems(null); setState(ev.target.value as State | ""); }}><option value="">{m.all}</option>{payoutStates.map(s => <option key={s} value={s}>{e.states[s]}</option>)}</select></label>
+    <label className="inline-filter">{e.state}<select value={state} onChange={ev => { setItems(null); setState(ev.target.value as State | ""); }}><option value="">{m.all}</option>{payoutStates.map(s => <option key={s} value={s}>{e.states[s]}</option>)}</select></label>
     {error ? <section className="center-state" role="alert"><p>{m.error}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></section>
       : !items ? <p className="center-state" role="status">{m.loading}</p> : !items.length ? <p className="empty">{t.empty}</p>
       : <><div className="table-panel"><div className="table-scroll"><table><thead><tr>{[e.requestedAt, t.contributor, e.amount, e.state, e.approvals, ""].map((label, i) => <th scope="col" key={i}>{label}</th>)}</tr></thead>
         <tbody>{items.map(p => <tr key={p.id} data-testid="payout-row"><td>{formatDate(p.requested_at, locale)}</td>
-          <td><button className="quiet" onClick={() => void showBalances(p.user_id)}><bdi dir="ltr">{p.user_id.slice(0, 8)}</bdi> · {t.balances}</button></td>
+          <td><button className="quiet" onClick={() => void showBalances(p.user_id)}>{names[p.user_id] ? <bdi>{names[p.user_id]}</bdi> : <bdi dir="ltr">{p.user_id.slice(0, 8)}</bdi>} · {t.balances}</button></td>
           <td dir="ltr">{formatMoney(p.amount, locale)}</td><td><span className={`badge ${payoutTone(p.state)}`}>{e.states[p.state]}</span>{p.reason_code && <small className="muted"> {e.reasons[p.reason_code]}</small>}</td>
           <td>{p.approvals.length}/{p.approvals_required}{p.approvals_required === 2 && <small className="muted"> {t.dual}</small>}</td>
           <td><div className="actions">{approvable(p, me.user_id) && <button disabled={mutation.busy} onClick={() => void approve(p.id)}>{t.approve}</button>}
@@ -62,6 +72,7 @@ export function PayoutsPage({ locale }: { locale: Locale }) {
             {rejectable(p) && <><select aria-label={t.reason} value={reasons[p.id] ?? ""} onChange={ev => setReasons(r => ({ ...r, [p.id]: ev.target.value as Reason | "" }))}><option value="">{t.reason}</option>{payoutReasons.map(code => <option key={code} value={code}>{e.reasons[code]}</option>)}</select>
               <button className="danger" disabled={mutation.busy || !reasons[p.id]} onClick={() => void reject(p.id)}>{t.reject}</button></>}</div></td></tr>)}</tbody></table></div></div>
         {cursor && <button className="secondary" onClick={() => void more()}>{m.next}</button>}</>}
+    </section>
     {balances && <section className="card" aria-labelledby="contributor-balances"><h2 id="contributor-balances">{t.balancesOf} <bdi dir="ltr">{balances.user_id.slice(0, 8)}</bdi></h2>
       {balances.balances.length ? <Balances locale={locale} summary={balances} /> : <p className="muted">{e.noBalance}</p>}</section>}
     <PayoutPolicies locale={locale} />
