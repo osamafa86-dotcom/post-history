@@ -21,14 +21,15 @@ public struct UploadSessionCreate: Sendable, Codable, Hashable {
         case normal = "normal"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
-    public static let sizeBytesRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
+    public static let sizeBytesRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: 2147483648, exclusiveMaximum: false, multipleOf: nil)
     public static let filenameRule = StringRule(minLength: 1, maxLength: 255, pattern: nil)
     public static let clientSha256Rule = StringRule(minLength: nil, maxLength: nil, pattern: "^[0-9a-f]{64}$")
     public var materialId: UUID
     /** `produced` النسخة المُنتَجة للمسنَد إليه المادة في مهمة مفتوحة (ADR 0104) */
     public var kind: Kind
+    /** ≤ 2 GiB للملف الواحد (ADR 0023، 0114). الخادم يفرض حدًّا أضيق إن ضُبط في بيئته (`422` على `/size_bytes`)، وحصة لكل مستخدم من الجلسات المفتوحة والبايتات المنتظرة (`429 rate_limited`). */
     public var sizeBytes: Int
-    /** اسم الملف على الجهاز؛ لا يُعرض خارج النطاق */
+    /** اسم الملف على الجهاز؛ لا يُعرض خارج النطاق، ويُمحى من الجلسة المنتهية بعد مدة الاحتفاظ (ADR 0115) */
     public var filename: String
     public var mimeType: String?
     /** لـ proxy فقط */

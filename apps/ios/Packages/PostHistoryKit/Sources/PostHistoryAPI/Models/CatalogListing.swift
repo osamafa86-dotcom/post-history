@@ -13,6 +13,7 @@ public struct CatalogListing: Sendable, Codable, Hashable {
         case manual = "manual"
         case rightsChanged = "rights_changed"
         case sensitiveFlagged = "sensitive_flagged"
+        case editorialChanged = "editorial_changed"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
     public static let shotListRule = ArrayRule(minItems: nil, maxItems: 200, uniqueItems: false)
@@ -30,6 +31,7 @@ public struct CatalogListing: Sendable, Codable, Hashable {
     public var materialId: UUID
     /** الإصدار المعروض للبيع؛ البيعة تجمّده */
     public var materialVersion: Int
+    /** `editorial_changed` سقوط الاعتماد التحريري للإصدار المعروض (ADR 0113، أُضيف بعد v0.3) */
     public var suspendedReason: SuspendedReason?
     /** أول انتقال إلى `listed` */
     public var listedAt: Date?

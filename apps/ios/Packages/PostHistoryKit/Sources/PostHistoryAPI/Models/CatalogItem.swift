@@ -26,6 +26,7 @@ public struct CatalogItem: Sendable, Codable, Hashable {
     public var materialVersion: Int
     public var title: LocalizedText
     public var description: LocalizedText
+    /** قائمة اللقطات لأدوار الطاقم؛ فارغة دائمًا لأدوار المشتري (`buyer_admin`، `buyer_member`) من الخادم نفسه (ADR 0114) */
     public var shotList: [CatalogItemShotListInner]
     public var materialTypes: [MaterialType]
     public var governorate: String
