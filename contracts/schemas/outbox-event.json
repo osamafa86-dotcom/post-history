@@ -64,7 +64,9 @@
         "render.completed",
         "render.failed",
         "assignment.created",
-        "assignment.state_changed"
+        "assignment.state_changed",
+        "tag.suggestions_changed",
+        "tag.rewritten"
       ]
     },
     "aggregate_type": {
@@ -1338,6 +1340,78 @@
                   "done",
                   "returned"
                 ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "tag.suggestions_changed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "user"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "تغيّرت القائمة المقترحة للمراسلين (ADR 0098): الإصدار وحده. الوسوم نص حرّ (ADR 0086) فلا تدخل الحدث؛ تُقرأ من GET /tag-suggestions. المجمّع مدير النظام الذي غيّرها، كما في setting.changed.",
+            "required": [
+              "suggestions_version"
+            ],
+            "properties": {
+              "suggestions_version": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "tag.rewritten"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "user"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "دُمج وسم في آخر أو أُعيدت تسميته على كل المواد (ADR 0098): معرّف السجل ونوعه وعدد المواد وحدها، بلا الأصل ولا الهدف. المجمّع مدير النظام الذي نفّذه.",
+            "required": [
+              "tag_rewrite_id",
+              "mode",
+              "materials_updated"
+            ],
+            "properties": {
+              "tag_rewrite_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "merge",
+                  "rename"
+                ]
+              },
+              "materials_updated": {
+                "type": "integer",
+                "minimum": 0
               }
             }
           }

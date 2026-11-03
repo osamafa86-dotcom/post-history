@@ -1349,6 +1349,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tag-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * الوسوم المقترحة للمراسلين بترتيب ظهورها (ADR 0098)
+         * @description قائمة يضعها مدير النظام ويراها المراسل اقتراحات عند الإرسال بالترتيب نفسه. الاقتراح لا يُلزم: المراسل يكتب غيره بقاعدة `MaterialTag` (ADR 0086). `ETag` هو `"<version>"`.
+         */
+        get: operations["getTagSuggestions"];
+        /**
+         * استبدال القائمة المقترحة كلها (إضافة وحذف وإعادة ترتيب)
+         * @description الجسم القائمة كاملة بترتيبها الجديد، فالإضافة والحذف والسحب لإعادة الترتيب طلب واحد. القائمة نفسها مرة ثانية لا تكتب شيئًا ولا ترفع الإصدار. التغيير في معاملة واحدة مع حدث `tag.suggestions_changed` وسطر تدقيق، وكلاهما بالإصدار وحده بلا نص وسم. لا يمسّ وسوم المواد.
+         */
+        put: operations["replaceTagSuggestions"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * استعمال الوسوم — عدد المواد وآخر استعمال وموضع الاقتراح (ADR 0098)
+         * @description كل وسم على مادة واحدة على الأقل، وكل وسم مقترح ولو لم يُستعمل (عدده 0). العدّ على كل المواد، فهو لمدير النظام وحده الذي يراها كلها. الترتيب الأكثر استعمالًا أولًا ثم الوسم بترتيب نقاط الترميز. «من المراسلين» في الإطار A2 هو `suggested=false`.
+         */
+        get: operations["listTagUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tag-rewrites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * دمج وسم في آخر أو إعادة تسميته على كل المواد (ADR 0098)
+         * @description يستبدل `source` بـ `target` في وسوم كل مادة تحمله، بموضعه، ومن كانت تحمل الاثنين يبقى لها `target` وحده. `merge` إن كان `target` على مادة أو في القائمة المقترحة قبل الطلب، وإلا `rename`. وفي القائمة المقترحة يأخذ `target` موضع `source`، أو يُحذف `source` إن كان `target` فيها. معاملة واحدة: المواد (يرتفع `row_version` لكلٍّ منها، ولا تتغيّر `version` ولا أيٌّ من الحالات الثلاث)، والقائمة، وسجل الدمج بالأصل والمواد التي حملته، وحدث `tag.rewritten` وسطر تدقيق بالمعرّف والعدد وحدهما، بلا نص وسم. `404` إن لم يكن `source` على مادة ولا في القائمة.
+         */
+        post: operations["rewriteTag"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/push-devices": {
         parameters: {
             query?: never;
@@ -2424,6 +2488,77 @@ export interface components {
         MaterialTag: string;
         /** @description وسوم المادة (ADR 0086، أُضيف بعد v0.3 فقد يغيب). اختياري في العقد حفاظًا على عملاء v0 (القاعدة 12)، والخادم يحفظ الغائب مصفوفة فارغة؛ أما واجهات المراسل v2 فتُلزم وسمًا واحدًا على الأقل قبل الإرسال (قرار المالك 2026-11-01). نص حرّ قد يحوي أسماءً حساسة، فلا يدخل حمولة Outbox ولا إشعارًا ولا مخططًا يراه المشتري. */
         MaterialTags: components["schemas"]["MaterialTag"][];
+        /** @description الوسوم المقترحة بترتيب ظهورها للمراسل (ADR 0098)، كلٌّ بقاعدة `MaterialTag`، حتى 50 بلا تكرار. القاعدة نفسها في قاعدة البيانات (`tag_list_valid`). */
+        TagSuggestionList: components["schemas"]["MaterialTag"][];
+        /**
+         * @example {
+         *       "tags": [
+         *         "وسم تجريبي ١",
+         *         "وسم تجريبي ٢"
+         *       ],
+         *       "version": 3,
+         *       "updated_at": "2026-11-03T09:00:00Z"
+         *     }
+         */
+        TagSuggestions: {
+            tags: components["schemas"]["TagSuggestionList"];
+            /** @description يرتفع مع كل تغيير في القائمة؛ قيمة `ETag` */
+            version: number;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        TagSuggestionsUpdate: {
+            tags: components["schemas"]["TagSuggestionList"];
+        };
+        TagUsage: {
+            tag: components["schemas"]["MaterialTag"];
+            /** @description عدد المواد التي تحمله */
+            material_count: number;
+            /**
+             * Format: date-time
+             * @description وقت إنشاء أحدث مادة تحمله؛ `null` لمقترح لم يُستعمل
+             */
+            last_used_at: string | null;
+            /** @description موضعه في القائمة المقترحة (1 أولًا)؛ `null` لغير المقترح */
+            suggested_position: number | null;
+        };
+        TagUsagePage: {
+            items: components["schemas"]["TagUsage"][];
+            next_cursor: string | null;
+        };
+        TagRewriteCreate: {
+            source: components["schemas"]["MaterialTag"];
+            /** @description الوسم الهدف؛ غير `source` (`422 validation_failed`) */
+            target: components["schemas"]["MaterialTag"];
+        };
+        /**
+         * @example {
+         *       "id": "7b0f3c2e-1d4a-4e5b-9c6d-8e7f6a5b4c3d",
+         *       "source": "وسم تجريبي ٣",
+         *       "target": "وسم تجريبي ١",
+         *       "mode": "merge",
+         *       "materials_updated": 9,
+         *       "created_at": "2026-11-03T09:05:00Z",
+         *       "created_by": "2c1b0a9f-8e7d-4c6b-a5f4-e3d2c1b0a9f8"
+         *     }
+         */
+        TagRewrite: {
+            /** Format: uuid */
+            id: string;
+            source: components["schemas"]["MaterialTag"];
+            target: components["schemas"]["MaterialTag"];
+            /**
+             * @description `merge` إن كان الهدف مستعملًا أو مقترحًا قبل الطلب، و`rename` إن كان جديدًا
+             * @enum {string}
+             */
+            mode: "merge" | "rename";
+            /** @description المواد التي حملت `source` فاستُبدل فيها */
+            materials_updated: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            created_by: string;
+        };
         MaterialUpdate: {
             title?: string;
             material_types?: components["schemas"]["MaterialType"][];
@@ -4507,7 +4642,7 @@ export interface components {
             /** @description تسلسلي متزايد (رقم الصف في جدول Outbox) بصيغة نصية؛ يُستخدم مؤشرًا في `after` */
             id: string;
             /** @enum {string} */
-            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested" | "order.status_changed" | "license.issued" | "license.revoked" | "payout.status_changed" | "render.requested" | "render.started" | "render.completed" | "render.failed" | "assignment.created" | "assignment.state_changed";
+            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested" | "order.status_changed" | "license.issued" | "license.revoked" | "payout.status_changed" | "render.requested" | "render.started" | "render.completed" | "render.failed" | "assignment.created" | "assignment.state_changed" | "tag.suggestions_changed" | "tag.rewritten";
             /** @enum {string} */
             aggregate_type: "material" | "upload" | "notification" | "form" | "user" | "listing" | "license" | "order" | "payout";
             /** Format: uuid */
@@ -4546,7 +4681,7 @@ export interface components {
                 /** @enum {string} */
                 priority: "urgent" | "important" | "normal";
             };
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
     };
     responses: {
         /** @description طلب غير صالح (معاملات استعلام أو مؤشر غير مفهوم) */
@@ -6899,6 +7034,126 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    getTagSuggestions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description القائمة */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagSuggestions"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    replaceTagSuggestions: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description قيمة `ETag` الأخيرة التي رآها العميل (`"<row_version>"` للمادة، `"<version>"` للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ `412 precondition_failed` دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TagSuggestionsUpdate"];
+            };
+        };
+        responses: {
+            /** @description القائمة بعد التغيير */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagSuggestions"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    listTagUsage: {
+        parameters: {
+            query?: {
+                /** @description جزء من الوسم، بلا تفريق بين الأحرف الكبيرة والصغيرة */
+                q?: string;
+                /** @description `true` المقترحة وحدها، و`false` غير المقترحة وحدها؛ الغياب الكل */
+                suggested?: boolean;
+                /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description حجم الصفحة */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description صفحة من الوسوم */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagUsagePage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    rewriteTag: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TagRewriteCreate"];
+            };
+        };
+        responses: {
+            /** @description الدمج أو إعادة التسمية كما سُجّل */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagRewrite"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
         };
     };

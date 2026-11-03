@@ -1,0 +1,17 @@
+{
+  "id": "3305",
+  "type": "tag.rewritten",
+  "aggregate_type": "user",
+  "aggregate_id": "2f3e4d5c-6b7a-4899-8a7b-6c5d4e3f2a1b",
+  "occurred_at": "2026-11-03T09:05:00Z",
+  "idempotency_key": "tag.rewritten:smoke-target",
+  "actor_id": "2f3e4d5c-6b7a-4899-8a7b-6c5d4e3f2a1b",
+  "payload": {
+    "tag_rewrite_id": "5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b",
+    "mode": "merge",
+    "materials_updated": 2,
+    "target": "وسم تجريبي ١"
+  },
+  "published_at": null,
+  "attempts": 0
+}

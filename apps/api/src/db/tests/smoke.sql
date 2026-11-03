@@ -1562,9 +1562,68 @@ VALUES ('00000000-0000-4000-8000-000000000012', 'assignment.created', 'material_
 SELECT pg_temp.expect_error($q$
   INSERT INTO audit_log (actor_id, action, target_type, target_id, details, hash)
   VALUES (NULL, 'assignment.created', 'material_assignment', NULL, '{"note": "تقرير تجريبي"}', '\x00') $q$, '23514');
+
+-- ---------- إدارة الوسوم (ADR 0098) ----------
+-- القائمة المقترحة صف واحد مبذور، وكل وسم فيها بقاعدة MaterialTag حتى 50 بلا تكرار
+SELECT pg_temp.assert((SELECT count(*) = 1 AND bool_and(tags = '{}' AND version = 1) FROM tag_suggestions), 'tag suggestions seeded once, empty');
+SELECT pg_temp.expect_error($q$ INSERT INTO tag_suggestions (id) VALUES (false) $q$, '23514');
+SELECT pg_temp.expect_error($q$ INSERT INTO tag_suggestions DEFAULT VALUES $q$, '23505');
+UPDATE tag_suggestions SET tags = ARRAY['نزوح', 'مساعدات'], version = version + 1, updated_by = '00000000-0000-4000-8000-000000000012';
+UPDATE tag_suggestions SET tags = (SELECT array_agg('وسم ' || i) FROM generate_series(1, 50) AS i);
+SELECT pg_temp.expect_error($q$ UPDATE tag_suggestions SET tags = (SELECT array_agg('وسم ' || i) FROM generate_series(1, 51) AS i) $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE tag_suggestions SET tags = ARRAY['نزوح', 'نزوح'] $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE tag_suggestions SET tags = ARRAY[' نزوح'] $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE tag_suggestions SET tags = ARRAY[E'نزو\u200fح'] $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE tag_suggestions SET tags = ARRAY[NULL::text] $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE tag_suggestions SET tags = ARRAY[repeat('م', 41)] $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE tag_suggestions SET version = 0 $q$, '23514');
+-- سجل الدمج: أصل وهدف مختلفان بالقاعدة نفسها، ونوع مغلق، ولا يُعدَّل ولا يُحذف
+INSERT INTO tag_rewrites (id, source, target, mode, materials_updated, created_by)
+VALUES ('00000000-0000-4000-8000-000000000f01', 'مياة', 'مياه', 'rename', 1, '00000000-0000-4000-8000-000000000012');
+INSERT INTO tag_rewrite_materials (tag_rewrite_id, material_id)
+VALUES ('00000000-0000-4000-8000-000000000f01', '00000000-0000-4000-8000-000000000101');
+SELECT pg_temp.expect_error($q$ INSERT INTO tag_rewrites (source, target, mode, materials_updated, created_by)
+  VALUES ('مياه', 'مياه', 'merge', 0, '00000000-0000-4000-8000-000000000012') $q$, '23514');
+SELECT pg_temp.expect_error($q$ INSERT INTO tag_rewrites (source, target, mode, materials_updated, created_by)
+  VALUES ('مياه', 'خيام', 'split', 0, '00000000-0000-4000-8000-000000000012') $q$, '23514');
+SELECT pg_temp.expect_error($q$ INSERT INTO tag_rewrites (source, target, mode, materials_updated, created_by)
+  VALUES (E'مياه\n', 'خيام', 'merge', 0, '00000000-0000-4000-8000-000000000012') $q$, '23514');
+SELECT pg_temp.expect_error($q$ INSERT INTO tag_rewrites (source, target, mode, materials_updated, created_by)
+  VALUES ('مياه', 'خيام', 'merge', -1, '00000000-0000-4000-8000-000000000012') $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE tag_rewrites SET target = 'خيام' WHERE id = '00000000-0000-4000-8000-000000000f01' $q$, '42501');
+SELECT pg_temp.expect_error($q$ DELETE FROM tag_rewrites WHERE id = '00000000-0000-4000-8000-000000000f01' $q$, '42501');
+-- الحدثان والتدقيق أرقام ومعرّفات: لا نص وسم
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, actor_id, payload)
+VALUES ('tag.suggestions_changed', 'user', '00000000-0000-4000-8000-000000000012', 'tag.suggestions_changed:smoke',
+        '00000000-0000-4000-8000-000000000012', '{"suggestions_version": 2}');
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, actor_id, payload)
+VALUES ('tag.rewritten', 'user', '00000000-0000-4000-8000-000000000012', 'tag.rewritten:00000000-0000-4000-8000-000000000f01',
+        '00000000-0000-4000-8000-000000000012',
+        '{"tag_rewrite_id": "00000000-0000-4000-8000-000000000f01", "mode": "rename", "materials_updated": 1}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('tag.rewritten', 'user', '00000000-0000-4000-8000-000000000012', 'tag.rewritten:smoke:source',
+          '{"tag_rewrite_id": "00000000-0000-4000-8000-000000000f01", "source": "مياة"}') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('tag.suggestions_changed', 'user', '00000000-0000-4000-8000-000000000012', 'tag.suggestions_changed:smoke:tags',
+          '{"suggestions_version": 3, "tags": ["نزوح"]}') $q$, '23514');
+INSERT INTO audit_log (actor_id, action, target_type, target_id, details, hash)
+VALUES ('00000000-0000-4000-8000-000000000012', 'tag.rewritten', 'tag_rewrite', '00000000-0000-4000-8000-000000000f01',
+        '{"tag_rewrite_id": "00000000-0000-4000-8000-000000000f01", "mode": "rename", "materials_updated": 1}', '\x00');
+INSERT INTO audit_log (actor_id, action, target_type, target_id, details, hash)
+VALUES ('00000000-0000-4000-8000-000000000012', 'tag.suggestions_changed', 'tag_suggestions', 'tag_suggestions',
+        '{"suggestions_version": 2}', '\x00');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details, hash)
+  VALUES (NULL, 'tag.rewritten', 'tag_rewrite', NULL, '{"source": "مياة"}', '\x00') $q$, '23514');
 SET CONSTRAINTS ALL DEFERRED;
 -- الدوال تعمل بمسار بحث فارغ (الاستعادة)
 SET LOCAL search_path = '';
+SELECT pg_temp.assert(public.tag_list_valid(ARRAY['نزوح'], 50) AND NOT public.tag_list_valid(ARRAY['نزوح', 'نزوح'], 50)
+  AND NOT public.tag_list_valid(ARRAY[E'\u2066نزوح'], 50), 'tag list check works with an empty search_path');
+SELECT pg_temp.expect_error($q$ UPDATE public.tag_suggestions SET tags = ARRAY[' نزوح'] $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
 SELECT pg_temp.expect_error($q$
   INSERT INTO public.payout_approvals (payout_request_id, approver_id)
   VALUES ('00000000-0000-4000-8000-0000000009c2', '00000000-0000-4000-8000-000000000014') $q$, '23514');

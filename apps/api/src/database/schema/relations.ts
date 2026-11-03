@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { buyerInviteConflicts, buyerOrganizations, catalogListings, commissionRules, deviceAttestationKeys, exclusiveHolds, idempotencyKeys, journalEntries, ledgerAccounts, licenseDownloadGrants, licenseTemplateVersions, licenseTemplates, licenses, listingOffers, materialAssignments, materialContributors, materialExports, materialFiles, materialRenders, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, orderItems, orders, outboxEvents, paymentEvents, payoutApprovals, payoutPolicies, payoutRequests, postings, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, refundItems, refunds, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
+import { buyerInviteConflicts, buyerOrganizations, catalogListings, commissionRules, deviceAttestationKeys, exclusiveHolds, idempotencyKeys, journalEntries, ledgerAccounts, licenseDownloadGrants, licenseTemplateVersions, licenseTemplates, licenses, listingOffers, materialAssignments, materialContributors, materialExports, materialFiles, materialRenders, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, orderItems, orders, outboxEvents, paymentEvents, payoutApprovals, payoutPolicies, payoutRequests, postings, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, refundItems, refunds, systemSettings, tagRewriteMaterials, tagRewrites, tagSuggestions, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
 
 export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => ({
 	refreshToken: one(refreshTokens, {
@@ -93,6 +93,8 @@ export const usersRelations = relations(users, ({one, many}) => ({
 		relationName: "materialAssignments_returnedBy_users_id"
 	}),
 	notifications: many(notifications),
+	tagSuggestions: many(tagSuggestions),
+	tagRewrites: many(tagRewrites),
 	outboxEvents: many(outboxEvents),
 	recoveryCodes: many(recoveryCodes),
 	payoutApprovals: many(payoutApprovals),
@@ -169,6 +171,7 @@ export const materialsRelations = relations(materials, ({one, many}) => ({
 	materialAssignments: many(materialAssignments),
 	notifications: many(notifications),
 	materialContributors: many(materialContributors),
+	tagRewriteMaterials: many(tagRewriteMaterials),
 }));
 
 export const uploadSessionsRelations = relations(uploadSessions, ({one, many}) => ({
@@ -732,5 +735,31 @@ export const payoutApprovalsRelations = relations(payoutApprovals, ({one}) => ({
 	payoutRequest: one(payoutRequests, {
 		fields: [payoutApprovals.payoutRequestId],
 		references: [payoutRequests.id]
+	}),
+}));
+
+export const tagSuggestionsRelations = relations(tagSuggestions, ({one}) => ({
+	user: one(users, {
+		fields: [tagSuggestions.updatedBy],
+		references: [users.id]
+	}),
+}));
+
+export const tagRewritesRelations = relations(tagRewrites, ({one, many}) => ({
+	user: one(users, {
+		fields: [tagRewrites.createdBy],
+		references: [users.id]
+	}),
+	tagRewriteMaterials: many(tagRewriteMaterials),
+}));
+
+export const tagRewriteMaterialsRelations = relations(tagRewriteMaterials, ({one}) => ({
+	material: one(materials, {
+		fields: [tagRewriteMaterials.materialId],
+		references: [materials.id]
+	}),
+	tagRewrite: one(tagRewrites, {
+		fields: [tagRewriteMaterials.tagRewriteId],
+		references: [tagRewrites.id]
 	}),
 }));
