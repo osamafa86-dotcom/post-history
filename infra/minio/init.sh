@@ -1,12 +1,56 @@
 #!/bin/sh
-# تهيئة MinIO المحلي: الحاويتان، ومستخدم مستقل لعامل الوسائط (ADR 0006) بأقل صلاحية:
-# قراءة على بادئة الرفع في حاوية الرفع، وكتابة على derived/ في حاوية الوسائط. بلا حذف ولا سرد خارجهما.
+# تهيئة MinIO المحلي: الحاويتان، ومستخدم مستقل بأقل صلاحية لكل عميل: tusd والخادم وعامل الوسائط (ADR 0006) وعامل التفريغ
+# والنسخ الاحتياطي. الجذر (S3_ACCESS_KEY) لهذه الحاوية وحدها. مستخدم بلا مفتاحيه في البيئة لا يُنشأ.
 set -eu
+
+# mkuser NAME ACCESS SECRET POLICY_FILE: المستخدم بسياسته، وإعادة التشغيل تحدّث السياسة ولا تفشل.
+mkuser() {
+  mc admin user add local "$2" "$3" >/dev/null
+  mc admin policy create local "$1" "$4" >/dev/null 2>&1 || mc admin policy update local "$1" "$4" >/dev/null 2>&1 || true
+  mc admin policy attach local "$1" --user "$2" >/dev/null 2>&1 || true
+}
 
 mc alias set local http://minio:9000 "$S3_ACCESS_KEY" "$S3_SECRET_KEY" >/dev/null
 mc mb --ignore-existing "local/$S3_BUCKET_UPLOADS"
 mc mb --ignore-existing "local/$S3_BUCKET_MEDIA"
 
+# tusd: يقرأ ويكتب ويحذف بادئة الرفع في حاوية الرفع وحدها (الكائن و.info و.part وأجزاء الرفع المتعدد)، ويسرد الحاوية (بلا
+# سرد يرد MinIO على HEAD لكائن غائب بـ 403 لا 404، فيظنه tusd عطلًا). لا يرى حاوية الوسائط ولا الإدارة.
+if [ -n "${S3_TUSD_ACCESS_KEY:-}" ] && [ -n "${S3_TUSD_SECRET_KEY:-}" ]; then
+  cat >/tmp/tusd-policy.json <<JSON
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {"Effect": "Allow", "Action": ["s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:GetBucketLocation"],
+     "Resource": ["arn:aws:s3:::$S3_BUCKET_UPLOADS"]},
+    {"Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload",
+                                   "s3:ListMultipartUploadParts"],
+     "Resource": ["arn:aws:s3:::$S3_BUCKET_UPLOADS/${TUSD_OBJECT_PREFIX}*"]}
+  ]
+}
+JSON
+  mkuser tusd "$S3_TUSD_ACCESS_KEY" "$S3_TUSD_SECRET_KEY" /tmp/tusd-policy.json
+  echo "tusd user ready (read+write ${S3_BUCKET_UPLOADS}/${TUSD_OBJECT_PREFIX}*)"
+fi
+# الخادم: يقرأ أصول الرفع (التحقق والروابط الموقّعة) ومشتقات حاوية الوسائط، ويحذف كائنات tus لجلسة ملغاة أو منتهية ويلغي
+# رفعها المتعدد. لا يكتب ولا يدير؛ والسرد لأن رد 403 على كائن غائب يعدّه الخادم خطأ تهيئة.
+if [ -n "${S3_API_ACCESS_KEY:-}" ] && [ -n "${S3_API_SECRET_KEY:-}" ]; then
+  cat >/tmp/api-policy.json <<JSON
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {"Effect": "Allow", "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
+     "Resource": ["arn:aws:s3:::$S3_BUCKET_UPLOADS", "arn:aws:s3:::$S3_BUCKET_MEDIA"]},
+    {"Effect": "Allow", "Action": ["s3:ListBucketMultipartUploads"], "Resource": ["arn:aws:s3:::$S3_BUCKET_UPLOADS"]},
+    {"Effect": "Allow", "Action": ["s3:GetObject", "s3:DeleteObject", "s3:AbortMultipartUpload"],
+     "Resource": ["arn:aws:s3:::$S3_BUCKET_UPLOADS/${TUSD_OBJECT_PREFIX}*"]},
+    {"Effect": "Allow", "Action": ["s3:GetObject"], "Resource": ["arn:aws:s3:::$S3_BUCKET_MEDIA/*"]}
+  ]
+}
+JSON
+  mkuser api "$S3_API_ACCESS_KEY" "$S3_API_SECRET_KEY" /tmp/api-policy.json
+  echo "api user ready (read ${S3_BUCKET_UPLOADS}/${TUSD_OBJECT_PREFIX}* and ${S3_BUCKET_MEDIA}/*, delete tus objects)"
+fi
 if [ -n "${S3_MEDIA_ACCESS_KEY:-}" ] && [ -n "${S3_MEDIA_SECRET_KEY:-}" ]; then
   policy=/tmp/media-worker-policy.json
   cat >"$policy" <<JSON

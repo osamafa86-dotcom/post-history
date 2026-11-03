@@ -271,6 +271,8 @@ jobs:
                  -e "s/^S3_AI_SECRET_KEY=.*/S3_AI_SECRET_KEY=$(openssl rand -hex 16)/" \
                  -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" \
                  -e "s/^REDIS_PASSWORD=.*/REDIS_PASSWORD=$(openssl rand -hex 16)/" \
+                 -e "s/^S3_TUSD_SECRET_KEY=.*/S3_TUSD_SECRET_KEY=$(openssl rand -hex 16)/" \
+                 -e "s/^S3_API_SECRET_KEY=.*/S3_API_SECRET_KEY=$(openssl rand -hex 16)/" \
                  -e "s/^S3_SECRET_KEY=.*/S3_SECRET_KEY=$(openssl rand -hex 16)/" infra/compose/.env
           docker compose -f infra/compose/docker-compose.yml config -q
           docker compose -f infra/compose/docker-compose.yml --profile api config -q

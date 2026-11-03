@@ -16,4 +16,6 @@ sed -i -e "s/^TUSD_HOOK_SECRET=.*/TUSD_HOOK_SECRET=$(openssl rand -hex 32)/" \
        -e "s/^S3_MEDIA_SECRET_KEY=.*/S3_MEDIA_SECRET_KEY=$(openssl rand -hex 16)/" \
        -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" \
        -e "s/^REDIS_PASSWORD=.*/REDIS_PASSWORD=$(openssl rand -hex 16)/" \
+       -e "s/^S3_TUSD_SECRET_KEY=.*/S3_TUSD_SECRET_KEY=$(openssl rand -hex 16)/" \
+       -e "s/^S3_API_SECRET_KEY=.*/S3_API_SECRET_KEY=$(openssl rand -hex 16)/" \
        -e "s/^S3_SECRET_KEY=.*/S3_SECRET_KEY=$(openssl rand -hex 16)/" infra/compose/.env
