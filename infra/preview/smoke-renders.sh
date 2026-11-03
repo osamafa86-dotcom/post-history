@@ -252,9 +252,9 @@ await accept(process.env.MATERIAL);
 say(`RENDER=${await requestRender(process.env.MATERIAL, TITLE)}`);
 JS
 )")" || { echo "$out"; fail "the $prof render request"; }
-    rid="$(sed -n 's/^RENDER=//p' <<<"$out")"
+    measured_render="$(sed -n 's/^RENDER=//p' <<<"$out")"
     case "$prof" in 1080p) size=1920x1080 ;; *) size=3840x2160 ;; esac
-    render_run "60s-$prof" "synthetic 60 s $size H.264 30 fps with AAC (the media worker's measurement clip)" "$rid:ready"
+    render_run "60s-$prof" "synthetic 60 s $size H.264 30 fps with AAC (the media worker's measurement clip)" "$measured_render:ready"
     echo "measured media-render on the 60 s $prof clip: see $MEDIA_OUT/preview-media-render-60s-$prof.json"
   done
 fi

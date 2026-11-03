@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "tool": "other",
+  "role": "infra",
+  "test_name": "preview-media-render-6s-720p",
+  "started_at": "2026-11-03T05:46:49Z",
+  "ended_at": "2026-11-03T05:47:30Z",
+  "result": "pass",
+  "device": {
+    "platform": "server",
+    "model": "GitHub-hosted runner (ubuntu-24.04, 4 vCPU)"
+  },
+  "upload_path": "n/a",
+  "metrics": {
+    "source": "synthetic 6 s 1280x720 H.264 30 fps with AAC, planted location and device tags",
+    "aspect": "vertical",
+    "render_mem_limit_mib": 4096,
+    "render_cpus": 2,
+    "render_cpu_shares": 128,
+    "remotion_concurrency": 1,
+    "render_idle_mib": 23.6,
+    "render_memory_peak_mib": 1744.8,
+    "render_memory_peak_source": "cgroup memory.peak",
+    "render_anon_peak_mib_sampled": 1461.9,
+    "render_oom_kills": 0,
+    "render_cpu_s": 68.4,
+    "feed_to_done_s": 41.7,
+    "scratch_peak_mib_sampled": 267.7,
+    "samples": 81,
+    "ready__state": "ready",
+    "ready__failure_reason": "none",
+    "ready__render_s": 34.7,
+    "ready__output_bytes": 8200799,
+    "title_overflow__state": "failed",
+    "title_overflow__failure_reason": "title_overflow",
+    "title_overflow__render_s": 0.5,
+    "title_overflow__output_bytes": 0
+  },
+  "notes": "infra/preview/smoke-preview.sh (smoke-renders.sh, addendum to ADR 0092): media-render as the preview runs it (the render target of workers/media, 4096 MiB with no swap, 2 CPU, cpu_shares 128, read-only, Remotion concurrency 1, internal network only), restarted for a fresh cgroup, then given vertical circulated-template renders of a synthetic clip by the feeder, one at a time. memory.peak is the cgroup high-water mark with page cache; anon and scratch sampled every 0.5 s; idle is memory.current 5 s after the restart. render_s is started_at to completed_at in the API's record; feed_to_done_s adds the feeder's 3 s cycles. Synthetic content; not the shared server itself."
+}
