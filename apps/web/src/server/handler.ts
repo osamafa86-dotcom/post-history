@@ -170,6 +170,8 @@ export async function handle(request: NextRequest, path: string, deps?: { config
       if (listing && uuid.test(listing[1])) {
         if (!hasRole(me, ...listingReaders) || request.nextUrl.search) throw new WebError(403, "request_failed");
         const result = await api.GET("/materials/{id}/listing", { params: { path: { id: listing[1] } } });
+        // مادة بلا إدراج: حالة فارغة لا خطأ، فتصل 204 بلا جسم (لا «فشل تحميل مورد» في وحدة التحكم).
+        if (result.response.status === 404) return new NextResponse(null, { status: 204, headers: privateHeaders });
         const data = requireOk(result), response = json(safeListing(data)), tag = result.response.headers.get("ETag");
         if (tag && /^"[0-9]{1,19}"$/.test(tag)) response.headers.set("ETag", tag);
         return response;

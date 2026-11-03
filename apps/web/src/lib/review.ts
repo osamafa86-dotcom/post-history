@@ -3,6 +3,8 @@ import { uuid } from "./query";
 
 export const tracks = ["technical", "editorial", "rights"] as const;
 export const hasRole = (me: Me, ...roles: RoleName[]) => me.roles.some(role => roles.includes(role.name));
+/** من يقرأ قائمة المواد (`GET /materials`، `x-roles` في العقد): الوارد لهم وحدهم، والمالية خارجه. */
+export const materialReaders = ["reporter", "supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin"] as const satisfies readonly RoleName[];
 export const stateColumn = { technical: "technical_state", editorial: "editorial_state", rights: "rights_state" } as const;
 
 // مساعد عرض فقط؛ الخادم يقرر النطاق وصلاحية الحجز عند كل كتابة.

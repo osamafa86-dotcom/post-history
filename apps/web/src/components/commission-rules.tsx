@@ -1,5 +1,6 @@
 "use client";
 import { NoAccess } from "./empty-state";
+import { TrialNotice } from "./store/trial-notice";
 import { useEffect, useState } from "react";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { formatDate, messages, type Locale } from "@/lib/i18n";
@@ -39,7 +40,7 @@ export function CommissionRules({ locale }: { locale: Locale }) {
   const current = items ? currentRules(items, checkedAt) : new Set<string>();
   const target = (rule: CommissionRule) => rule.scope === "default" ? t.allMaterials : rule.scope === "material_type" ? m.types[rule.scope_id as keyof typeof m.types] ?? rule.scope_id : rule.scope_id;
 
-  return <><div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p>{!writer && <p className="notice">{t.readOnly}</p>}</div>{writer && !draft && <button onClick={() => start()}>{t.new}</button>}</div>
+  return <><TrialNotice locale={locale} /><div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p>{!writer && <p className="notice">{t.readOnly}</p>}</div>{writer && !draft && <button onClick={() => start()}>{t.new}</button>}</div>
     {draft ? <RuleForm locale={locale} draft={draft} set={setDraft} busy={mutation.busy} invalid={invalid} status={mutation.status} onSave={() => void save()} onCancel={() => setDraft(null)} />
       : <><ActionStatus status={mutation.status} locale={locale} />
         <label>{t.scope}<select value={scope} onChange={e => { setItems(null); setScope(e.target.value as Scope | ""); }}><option value="">{m.all}</option>{commissionScopes.map(s => <option key={s} value={s}>{t.scopes[s]}</option>)}</select></label>

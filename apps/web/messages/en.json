@@ -182,12 +182,11 @@
     "release": "Release reservation",
     "contributors": "Contributors",
     "contributorsMissing": "The contributor list is unavailable. Saving will replace the full list.",
-    "userId": "User ID",
     "role": "Contribution role",
     "share": "Share (%)",
     "remove": "Remove",
     "add": "Add contributor",
-    "shareHelp": "Saving replaces the full list. Use unique user IDs, up to two decimal places, and a total share of 100%.",
+    "shareHelp": "Saving replaces the full list. Choose each person once, with up to two decimal places and a total share of 100%.",
     "saveContributors": "Save contributors",
     "noContributors": "No contributors listed.",
     "history": "State history",
@@ -227,7 +226,14 @@
       "blocked": "It is blocked from sale.",
       "withdrawn": "It is withdrawn from the catalog.",
       "pending": "The technical track runs again."
-    }
+    },
+    "person": "Person",
+    "choosePerson": "Choose a person",
+    "materialReporter": "Reporter of this material",
+    "findPeople": "Find a staff account by work name",
+    "findButton": "Search",
+    "peopleLimited": "Your role does not list staff accounts: choose from the material's reporter, whoever holds it and the current contributors; a system administrator can add others.",
+    "peopleFailed": "Could not load the list of people; the current contributors stay as they are."
   },
   "admin": {
     "title": "Users and roles",
@@ -494,7 +500,14 @@
     },
     "urgentType": "Urgent alert",
     "needsAck": "Urgent: needs acknowledgement.",
-    "grouped": "{n} alerts for the same material",
+    "grouped": {
+      "zero": "{n} alerts for the same material",
+      "one": "{n} alert for the same material",
+      "two": "{n} alerts for the same material",
+      "few": "{n} alerts for the same material",
+      "many": "{n} alerts for the same material",
+      "other": "{n} alerts for the same material"
+    },
     "choose": "Choose an alert to preview it.",
     "openTask": "Open task",
     "tabsLabel": "Filter notifications",
@@ -625,7 +638,7 @@
     "currencies": "Currencies are not combined; each total is paid separately.",
     "eyebrow": "Store (sandbox)",
     "title": "Catalog",
-    "lead": "Every item here came from a known reporter, has a receipt and a fingerprint, and was not altered after it arrived. The licence is chosen at purchase.",
+    "lead": "Every item here came from a known reporter, has a receipt and a fingerprint, and was not altered after it arrived. The license is chosen at purchase.",
     "denied": "The catalog is open now to administration, rights, the editor in chief and finance; buyer accounts arrive with organizations.",
     "search": "Search",
     "licenseType": "License type",
@@ -647,9 +660,16 @@
         "Verified original",
         "Editorial approval",
         "Documented rights",
-        "A public verification page for every licence"
+        "A public verification page for every license"
       ],
-      "count": "{n} items on this page",
+      "count": {
+        "zero": "{n} items on this page",
+        "one": "{n} item on this page",
+        "two": "{n} items on this page",
+        "few": "{n} items on this page",
+        "many": "{n} items on this page",
+        "other": "{n} items on this page"
+      },
       "searchHelp": "Search in Arabic or English",
       "filters": "Filters",
       "from": "From date",
@@ -672,12 +692,12 @@
       "editorialHelp": "Approved by the editors before it was offered for sale",
       "rights": "Documented rights",
       "rightsHolder": "Rights holder: {credit}",
-      "verifyNote": "Every licence is proven by a public verification page for its number, not by showing fingerprints or technical identifiers.",
+      "verifyNote": "Every license is proven by a public verification page for its number, not by showing fingerprints or technical identifiers.",
       "addFor": "Add to cart — {price}",
       "deliveryTitle": "Delivery specifications",
       "deliveryText": "Ready formats are delivered with descriptive metadata, stripped of precise location and device data; the raw original is never delivered.",
       "holdNote": "Held for 15 minutes once payment starts.",
-      "changeLicense": "Change licence",
+      "changeLicense": "Change license",
       "summary": "Order summary",
       "filesAfterPayment": "Files open only after the gateway's signed payment confirmation.",
       "searchButton": "Search",
@@ -702,12 +722,12 @@
       "startsAt": "Starts at"
     },
     "exclusiveUntil": "Exclusivity reserved until {date}",
-    "termDaysLabel": "Licence term (days)",
+    "termDaysLabel": "License term (days)",
     "exclusivityHoursLabel": "Exclusivity duration (hours)",
     "heading": "Verified footage from the field",
     "nav": {
       "materials": "Footage",
-      "licenses": "My licences",
+      "licenses": "My licenses",
       "orders": "Orders",
       "cart": "Cart",
       "cartCount": "Cart: {n}"
@@ -715,7 +735,7 @@
     "catalog": {
       "heading": "Footage",
       "headingAccent": "from the field",
-      "lead": "Field footage with a short title, the shoot date and the governorate. Watch the preview, then choose the licence that fits your publication.",
+      "lead": "Field footage with a short title, the shoot date and the governorate. Watch the preview, then choose the license that fits your publication.",
       "searchPlaceholder": "Search by event, place or date",
       "searchHelp": "In Arabic or English",
       "chipsLabel": "Filter by governorate and period",
@@ -735,8 +755,8 @@
     "card": {
       "previewBadge": "Preview · watermark",
       "shot": "Shot {date}",
-      "cta": "Licences and prices",
-      "ctaFor": "Licences and prices: {title}"
+      "cta": "Licenses and prices",
+      "ctaFor": "Licenses and prices: {title}"
     },
     "item": {
       "breadcrumb": "Breadcrumb",
@@ -745,8 +765,15 @@
       "previewNote": "This is a watermarked, lower-quality preview.",
       "deliveryNote": "Delivered without a watermark at full resolution, stripped of precise location and device data, after the signed gateway confirmation.",
       "rightsHelp": "The rights officer approved it for sale",
-      "choose": "Choose a licence to add it to the cart.",
-      "termDays": "{n} days",
+      "choose": "Choose a license to add it to the cart.",
+      "termDays": {
+        "zero": "{n} days",
+        "one": "{n} day",
+        "two": "{n} days",
+        "few": "{n} days",
+        "many": "{n} days",
+        "other": "{n} days"
+      },
       "noTerm": "No end date"
     },
     "cartPage": {
@@ -760,7 +787,7 @@
       "sandbox": "Test payment environment: no real money is charged.",
       "removeFor": "Remove {title}",
       "emptyTitle": "Your cart is empty",
-      "emptyBody": "Pick footage and a licence from the catalog to see it here. The cart lives in this tab only and is cleared when you sign out.",
+      "emptyBody": "Pick footage and a license from the catalog to see it here. The cart lives in this tab only and is cleared when you sign out.",
       "browse": "Browse footage",
       "checkoutFailed": "The order was created but the payment page didn't open. Continue from the order page.",
       "openOrder": "Open the order"
@@ -776,25 +803,26 @@
       "paid": "Paid",
       "refunded": "Refunded",
       "colItem": "Item",
-      "colLicence": "Licence",
-      "colLicenceNo": "Licence number",
+      "colLicence": "License",
+      "colLicenceNo": "License number",
       "colPrice": "Price ({currency})",
       "total": "Total ({currency})",
-      "breadcrumbHome": "My licences",
+      "breadcrumbHome": "My licenses",
       "breadcrumbCurrent": "Invoice for order {id}",
       "issuerPending": "Legal name, address and tax number: added after legal review",
       "orderNumber": "Order number {id}",
       "purchaseOrder": "Purchase order {po}",
       "paidAt": "Paid on {date}",
       "gatewayConfirmed": "Signed gateway confirmation · {time}",
-      "paymentNote": "Payment: test provider (sandbox). Each licence has a public verification page under its number.",
+      "paymentNote": "Payment: test provider (sandbox). Each license has a public verification page under its number.",
       "filesNote": "Delivered files are stripped of precise location and device data.",
       "print": "Print",
       "notPaidTitle": "No invoice for this order yet",
       "notPaidBody": "The invoice and its number are issued after the signed gateway confirmation.",
       "notFoundTitle": "We couldn't find this invoice",
       "notFoundBody": "Invoices are for whoever placed the order, the organization's admin and finance. If a colleague placed it, ask your organization's admin.",
-      "licencePending": "Issued after confirmation"
+      "licencePending": "Issued after confirmation",
+      "linesLabel": "Invoice lines"
     },
     "invite": {
       "badge": "Store invitation",
@@ -837,11 +865,11 @@
       "pendingBody": "The catalog and purchasing open once the store team approves your organization.",
       "suspendedBadge": "Suspended",
       "suspendedTitle": "Your organization is suspended",
-      "suspendedBody": "Purchasing and new downloads are paused until the store team reactivates the organization. Your existing licences don't change.",
+      "suspendedBody": "Purchasing and new downloads are paused until the store team reactivates the organization. Your existing licenses don't change.",
       "checks": "What the team reviews",
       "checkRegistry": "Commercial registration",
       "checkEmail": "The admin's work email",
-      "checkAgreement": "Acceptance of the licence agreement",
+      "checkAgreement": "Acceptance of the license agreement",
       "nowTitle": "What you can do now",
       "nowSeats": "Invite your team · Seats: {used} of {seats}",
       "nowMember": "Your organization's admin invites members and follows up on verification with the store team.",
@@ -1421,7 +1449,7 @@
     "checks": {
       "registry": "Commercial registration",
       "email": "Its admin's work email",
-      "agreement": "Signed licence agreement"
+      "agreement": "Signed license agreement"
     },
     "joinNote": "The platform does not record a state for each item; activation changes the organization's status alone.",
     "activate": "Activate account",
@@ -1479,42 +1507,42 @@
     "downloadHelp": "Every download is counted; the link is short-lived and never saved.",
     "downloadConflict": "Could not download: the limit is reached, the license is not active, or the package is not ready.",
     "verify": {
-      "title": "Licence verification",
-      "notFound": "We couldn't find a licence with this number",
+      "title": "License verification",
+      "notFound": "We couldn't find a license with this number",
       "tooMany": "Too many attempts in a row",
-      "scope": "This page confirms only that the number belongs to an existing licence, with its status and end. It doesn't show the material, licence type, organization, price or reporter.",
+      "scope": "This page confirms only that the number belongs to an existing license, with its status and end. It doesn't show the material, license type, organization, price or reporter.",
       "link": "Verification page",
-      "lead": "This number belongs to an existing licence issued by Palestine Post.",
-      "number": "Licence number",
+      "lead": "This number belongs to an existing license issued by Palestine Post.",
+      "number": "License number",
       "status": "Status",
       "ends": "Ends",
       "noExpiry": "No end date",
-      "notFoundBody": "Check the number exactly as printed on the licence certificate. After many attempts in a row the page pauses briefly, to protect numbers from enumeration.",
-      "tooManyBody": "The page pauses briefly to protect licence numbers from enumeration. Try again in a minute.",
+      "notFoundBody": "Check the number exactly as printed on the license certificate. After many attempts in a row the page pauses briefly, to protect numbers from enumeration.",
+      "tooManyBody": "The page pauses briefly to protect license numbers from enumeration. Try again in a minute.",
       "unavailable": "Verification is unavailable right now",
       "unavailableBody": "The server didn't respond, and the number isn't the problem. Reload the page shortly."
     },
     "days": "{n} days",
     "invoices": "Orders and invoices",
-    "revokedHelp": "This licence is revoked ({reason}): new use and downloads stop.",
+    "revokedHelp": "This license is revoked ({reason}): new use and downloads stop.",
     "filesNote": "Delivered files are stripped of precise location and device data; the raw original is never delivered.",
     "deliveryContents": "Delivery contents",
     "deliverySize": "Package size: {size} MiB",
-    "mine": "My licences",
+    "mine": "My licenses",
     "colMaterial": "Footage",
     "colOrder": "Order",
-    "colLicence": "Licence",
+    "colLicence": "License",
     "colEnds": "Ends",
     "colAction": "Action",
     "endedOn": "Ended {date}",
     "renew": "Renew",
-    "renewFor": "Renew {title}: buy a new licence",
+    "renewFor": "Renew {title}: buy a new license",
     "downloadFor": "Download the delivery package: {title}",
     "preparingShort": "Package being prepared",
     "revokedShort": "Revoked",
-    "footnote": "Each licence is tied to its order. Downloads use a short-lived signed link while the licence is active, a limited number of times; renewing means buying a new licence from the footage page.",
-    "emptyTitle": "No licences yet",
-    "emptyBody": "A licence is issued after the signed gateway confirmation and shows here with its order.",
+    "footnote": "Each license is tied to its order. Downloads use a short-lived signed link while the license is active, a limited number of times; renewing means buying a new license from the footage page.",
+    "emptyTitle": "No licenses yet",
+    "emptyBody": "A license is issued after the signed gateway confirmation and shows here with its order.",
     "invoiceFor": "Invoice for order {id}"
   },
   "commission": {
@@ -1642,7 +1670,8 @@
       "dispute": "Dispute",
       "exclusivity_lost": "Exclusivity lost",
       "other": "Other"
-    }
+    },
+    "historyLabel": "Refund history"
   },
   "privacy": {
     "title": "Privacy policy",
@@ -1661,6 +1690,7 @@
         "paragraphs": [
           "Account and sign-in data: to sign in, the apps send your email, your password and, when two-factor authentication is enabled on the account, a six-digit code from your authenticator. The server keeps the password only as a one-way hash, never in readable form. Apart from that, email is the only contact information the apps rely on, and they do not ask for your legal name. For buyer organizations on the web we record the organization's details (legal name, display name, country, billing email and seat count) and the email and role of its members.",
           "Uploaded material: the video and photo files a reporter chooses manually, together with the fixed fields and the desk form attached to them. The fixed fields are the title, the material types, the governorate and the city (both required, typed as text: an approximate place, not coordinates), the priority, three sensitivity questions (minors, injuries, graphic scenes) and the display name. The reporter chooses the display name for each material: their real name, a pseudonym they type themselves, or the network's name. The apps send that choice, and the pseudonym text only if one is chosen; they do not ask for or send the reporter's legal name. Authorized staff see the display name together with the material.",
+          "Filming location (Android only): the Android app asks for the location permission only while the app is in use, once before the first send, on a screen that explains why before the system prompt, and it never asks for background location. If you allow it, the phone reads its location when the send screen opens and when you tap Send, and sends the coordinates with the material; a reading older than ten minutes is not sent. The permission is optional: declining, or choosing “Not now”, never blocks a send, and the material is then sent without coordinates. The iOS app does not collect the filming location in this version: it does not request the location permission and does not read your device's location.",
           "File and technical data: when an upload starts, the app sends the file's name as it appears on the device, its type and its size, together with a SHA-256 checksum of the whole file that the server compares after assembling it. The Android app also sends checksums of the first and last megabyte, used only to spot duplicates.",
           "Notification identifiers: a randomly generated installation UUID that is not derived from device identifiers, together with an APNs token on iOS or an FCM token on Android, and the platform and app version. They are used only to send notifications. The apps do not collect the advertising identifier or persistent hardware identifiers.",
           "App integrity token: a short-lived verification token (App Attest on iOS, Play Integrity on Android) that shows an upload request comes from a genuine copy of the app and passes through the operating system's services. We do not use it to track you.",
@@ -1672,7 +1702,7 @@
         "paragraphs": [
           "The original file is uploaded exactly as the camera recorded it, without compression or re-encoding, and its metadata is not stripped before upload, so that its digital fingerprint (SHA-256) is preserved and we can verify the material arrived complete. The original may therefore carry the location, time and device model the camera recorded.",
           "The original is stored on the Operator's servers as it arrived, including the camera location if present, and is not modified. It is never shown in raw form and never delivered to any buyer. Stripping happens in the derivatives the server produces (previews, thumbnails and delivered copies): every processing step produces a new file free of location and revealing data, while the original stays preserved with its fingerprint.",
-          "Precise location: the apps do not request the location permission from the operating system, do not read your device's location, and do not send coordinates of their own, neither in the material's fields nor anywhere else. Precise location can reach the platform only inside the metadata of the original file you choose, if the file carries it (for example what the camera recorded); this holds for both the Android and iOS apps, since neither strips the original. We treat it as collected for the apps' function and do not use it for tracking. The server interface can also store optional coordinates entered in a material's fields, encrypted at field level, but neither app nor the web interface sends them. The governorate and city you type are an approximate place, not precise location.",
+          "Precise location: it can reach the platform in two ways. The first is the filming location the Android app sends with your permission, as described in “The data we collect”: the server encrypts it at field level, and it is written only, never read back for display, so no screen in either app or in the web interface shows it, it never enters a preview, notification, export or log, and it is never shown to buyers or in the catalog. It does not stay on the phone either: the app keeps it in memory only, or sealed with a key in the device's secure hardware if a send stopped before all its materials were created, and it is erased from the phone once it has been sent with the material, when you sign out, and by the emergency wipe. The second is whatever the metadata of the original file you choose may carry (for example what the camera recorded); this holds for both the Android and iOS apps, since neither strips the original. The iOS app does not request the location permission, does not read your device's location and sends no coordinates of its own in this version; collecting the filming location on iOS is deferred. We treat precise location as collected for the apps' function and do not use it for tracking. The governorate and city you type are an approximate place, not precise location.",
           "Precise coordinates and protected source names are visible only to someone the administration has granted a separate permission for each, with no default grant to any role; every grant, revocation and actual read is recorded in an audit log."
         ]
       },
@@ -1709,16 +1739,16 @@
       {
         "heading": "Licensing to buyer organizations",
         "paragraphs": [
-          "Material may be licensed, according to its rights and by the Operator's decision, to buyer media organizations, and this sharing does take place. The buyer receives copies produced on the server with their metadata stripped, and the raw original is never delivered. The buyer also sees the listing details of the material: its title, description, shot list, material types, governorate, shooting date (without the time of day), duration and dimensions, the licence terms, and a credit line. The governorate is coarse location. Buyers never see precise location: no GPS coordinates, no city, no device identifiers, no protected source names and no reporter identity. The display name the reporter chose, including a pseudonym, is not delivered to buyers: the credit line is a single network name set by the Operator.",
+          "Material may be licensed, according to its rights and by the Operator's decision, to buyer media organizations, and this sharing does take place. The buyer receives copies produced on the server with their metadata stripped, and the raw original is never delivered. The buyer also sees the listing details of the material: its title, description, shot list, material types, governorate, shooting date (without the time of day), duration and dimensions, the license terms, and a credit line. The governorate is coarse location. Buyers never see precise location: no GPS coordinates, no city, no device identifiers, no protected source names and no reporter identity. The display name the reporter chose, including a pseudonym, is not delivered to buyers: the credit line is a single network name set by the Operator.",
           "Every final copy is checked before delivery (its metadata and any accompanying provenance data) to make sure it reveals no protected identity or location. Download links are signed and short-lived, and previews carry a watermark.",
-          "Each sale keeps a record of the licence terms, the price and the version the buyer agreed to, and the public verification page shows only the licence number, its status and its validity."
+          "Each sale keeps a record of the license terms, the price and the version the buyer agreed to, and the public verification page shows only the license number, its status and its validity."
         ]
       },
       {
         "heading": "Payments at this stage",
         "paragraphs": [
           "At this stage payments run on a test payment provider in test mode only: no real money moves and no real payout channel is enabled. Choosing the real provider and payout channels is a later decision that has not yet been made.",
-          "The payment page is hosted by the provider; card details never pass through our servers and are not stored in any log, and you should not enter a real card in test mode. We keep the order record (items, amount, status, dates and the buying organization) and the licence record, and the test provider learns only the order number and amount.",
+          "The payment page is hosted by the provider; card details never pass through our servers and are not stored in any log, and you should not enter a real card in test mode. We keep the order record (items, amount, status, dates and the buying organization) and the license record, and the test provider learns only the order number and amount.",
           "Reporters' payout requests are also test-only: no real money and no bank details."
         ]
       },
@@ -1887,7 +1917,14 @@
     "overdue": "Overdue acknowledgement",
     "reserved": "Reserved for production",
     "urgentOne": "Urgent material arrived and has not been seen",
-    "urgentMany": "{n} urgent materials have not been seen",
+    "urgentMany": {
+      "zero": "{n} urgent materials have not been seen",
+      "one": "{n} urgent material has not been seen",
+      "two": "{n} urgent materials have not been seen",
+      "few": "{n} urgent materials have not been seen",
+      "many": "{n} urgent materials have not been seen",
+      "other": "{n} urgent materials have not been seen"
+    },
     "urgentManyHelp": "Show them filtered and start with the oldest.",
     "since": "for",
     "ack": "Seen",
@@ -2133,7 +2170,7 @@
       "notifications": "Alerts",
       "form-preview": "Form",
       "store": "Catalog",
-      "licenses": "Licences",
+      "licenses": "Licenses",
       "orders": "Orders",
       "license-templates": "Templates",
       "admin": "Users",
@@ -2169,7 +2206,7 @@
         "task": "Task assigned to you",
         "account": "Account recovery request",
         "update": "Update on an item",
-        "store": "Store order or licence",
+        "store": "Store order or license",
         "money": "Payout request update",
         "upload": "Upload update"
       },
@@ -2182,7 +2219,9 @@
       "noRole": "Your account has no newsroom role.",
       "direct": "If a direct link brought you here, go back to what your role covers; the sidebar shows nothing else.",
       "backInbox": "Back to the inbox",
-      "backStore": "Back to the catalog"
+      "backStore": "Back to the catalog",
+      "backPayouts": "Back to payouts",
+      "backNotifications": "Back to notifications"
     },
     "inbox": {
       "live": "Live",
@@ -2198,7 +2237,7 @@
       "clearAll": "Clear all",
       "noResultsFor": "No results for “{q}”",
       "showWithoutSearch": "Show all {n} items",
-      "noResultsHint": "Search matches title, tags, place and receipt on this page. This page has {n} items without the search; try a single word.",
+      "noResultsHint": "Search matches title, tags, place and receipt on this page. This page has {count} without the search; try a single word.",
       "noResultsNone": "This page has no items at all with the current filters. Remove a filter to widen the results.",
       "noFilterResults": "The active filters are narrow. Remove one from the chips above, or clear them all.",
       "emptyTitle": "Nothing in the inbox right now",
@@ -2221,7 +2260,8 @@
         "all": "All types",
         "hint": "The type filters the loaded page.",
         "sensitive": "Sensitive"
-      }
+      },
+      "denied": "The inbox is for the newsroom team and reporters: it lists materials, which your role does not read."
     },
     "material": {
       "breadcrumb": "Breadcrumb",
@@ -2254,7 +2294,12 @@
         "scope": "This material is outside your scope."
       }
     },
-    "searchOpen": "Open the search field"
+    "searchOpen": "Open the search field",
+    "offline": {
+      "title": "Can't reach the server",
+      "body": "Your session is kept. We retry automatically every 15 seconds and when the network returns; the page content appears once the connection is back.",
+      "retry": "Try again now"
+    }
   },
   "derivative": {
     "template": {
@@ -2456,13 +2501,13 @@
     "invalidNote": "The reason is up to 500 characters, with no line break and no space at either end.",
     "produced": {
       "title": "Produced file",
-      "lead": "Upload the file after editing, then “Task delivered”. The original stays as it is; the produced file is a new file on the material.",
+      "lead": "Upload the file after editing, then “Mark delivered”. The original stays as it is; the produced file is a new file on the material.",
       "choose": "Choose the produced file",
       "replace": "Replace the file",
       "again": "Upload again",
       "duplicate": "We already know this file, so there is no need to upload it again. A file that already exists is not delivered from here; if it is what you want to deliver, ask the editor.",
-      "ready": "Ready to deliver: “Task delivered” sends it with the task.",
-      "waiting": "“Task delivered” turns on once we verify the file checksum.",
+      "ready": "Ready to deliver: “Mark delivered” sends it with the task.",
+      "waiting": "“Mark delivered” turns on once we verify the file checksum.",
       "download": "Download the produced file",
       "deliveredWith": "The task was delivered with a produced file.",
       "deliveredWithout": "The task was delivered without a file.",
@@ -2470,7 +2515,8 @@
       "effectWithFile": "The task will be delivered with the uploaded file: the supervisor and the editor-in-chief see and download it, and the original stays as it is. A delivered task is not returned.",
       "effectWithout": "The task will be delivered without a file: whoever assigned it is told, and a delivered task is not returned.",
       "fileLabel": "Produced file"
-    }
+    },
+    "backToTasks": "Back to my tasks"
   },
   "assign": {
     "action": "Assign to editor",
@@ -2489,7 +2535,6 @@
     },
     "urgentTasks": "{n} urgent",
     "overdueTasks": "{n} overdue",
-    "unnamed": "A production team member",
     "loadingCandidates": "Loading the production team…",
     "noCandidates": "Nobody is on the production team right now.",
     "due": "Needed within",
@@ -2623,7 +2668,7 @@
     "fixedLead": "Two platform rules, not settings, so they cannot be switched off here.",
     "fixed": {
       "hideName": "Reporter name hidden from buyers",
-      "hideNameWhy": "The catalog, item page and licence carry no reporter name and no source.",
+      "hideNameWhy": "The catalog, item page and license carry no reporter name and no source.",
       "stripLocation": "Delivered files carry no location data",
       "stripLocationWhy": "The delivery package is built without tags, coordinates or device identifiers."
     },
@@ -2721,9 +2766,54 @@
     "noResultsFor": "No results for “{q}”",
     "noResultsHint": "The active filter is narrow. Remove it with its chip above, or search one word.",
     "noResultsHintMany": "The {n} filters together are narrow. Remove one with the chips above, or search one word.",
-    "noResultsCount": "The loaded archive has {n} materials without filters.",
+    "noResultsCount": "The loaded archive has {count} without filters.",
     "showAll": "Show all materials ({n})",
     "staleBody": "What you see is from the last update ({time}). Try again when the connection is back.",
     "errorBody": "The archive couldn't be loaded. Nothing changed; try again now."
+  },
+  "previewPreparing": "The server is preparing the preview; it appears here once ready.",
+  "timeUnits": {
+    "second": {
+      "zero": "{n} seconds",
+      "one": "{n} second",
+      "two": "{n} seconds",
+      "few": "{n} seconds",
+      "many": "{n} seconds",
+      "other": "{n} seconds"
+    },
+    "minute": {
+      "zero": "{n} minutes",
+      "one": "{n} minute",
+      "two": "{n} minutes",
+      "few": "{n} minutes",
+      "many": "{n} minutes",
+      "other": "{n} minutes"
+    },
+    "hour": {
+      "zero": "{n} hours",
+      "one": "{n} hour",
+      "two": "{n} hours",
+      "few": "{n} hours",
+      "many": "{n} hours",
+      "other": "{n} hours"
+    },
+    "day": {
+      "zero": "{n} days",
+      "one": "{n} day",
+      "two": "{n} days",
+      "few": "{n} days",
+      "many": "{n} days",
+      "other": "{n} days"
+    }
+  },
+  "counts": {
+    "materials": {
+      "zero": "{n} materials",
+      "one": "{n} material",
+      "two": "{n} materials",
+      "few": "{n} materials",
+      "many": "{n} materials",
+      "other": "{n} materials"
+    }
   }
 }

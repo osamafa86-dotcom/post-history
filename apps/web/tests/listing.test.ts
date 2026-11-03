@@ -36,7 +36,9 @@ describe("listing BFF", () => {
   it("reads the listing for staff with its ETag, passes 404 through and refuses other roles", async () => {
     const { result } = await call(`materials/${item.id}/listing`, { method: "GET", user: chief, upstream: () => Response.json({ ...stored, reporter_id: "canary" }, { headers: { ETag: '"4"' } }) });
     expect(result.headers.get("ETag")).toBe('"4"'); expect(await result.text()).not.toContain("canary");
-    expect((await call(`materials/${item.id}/listing`, { method: "GET", upstream: () => Response.json({ code: "not_found" }, { status: 404 }) })).result.status).toBe(404);
+    // مادة بلا إدراج حالة فارغة لا خطأ: 204 بلا جسم، فلا «فشل تحميل مورد» في وحدة التحكم، ولا تخزين.
+    const none = (await call(`materials/${item.id}/listing`, { method: "GET", upstream: () => Response.json({ code: "not_found" }, { status: 404 }) })).result;
+    expect(none.status).toBe(204); expect(await none.text()).toBe(""); expect(none.headers.get("Cache-Control")).toContain("no-store");
     expect((await call(`materials/${item.id}/listing`, { method: "GET", user: supervisor })).result.status).toBe(403);
   });
   it("creates with the idempotency key, replaces with If-Match, and keeps writes to the contract roles", async () => {

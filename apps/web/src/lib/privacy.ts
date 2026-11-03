@@ -27,6 +27,11 @@ export function safeSensitivity(value: unknown): Material["sensitivity"] | undef
   const state = sensitivityState(value);
   return state.known ? { minors: state.flags.includes("minors"), injured: state.flags.includes("injured"), graphic: state.flags.includes("graphic") } : undefined;
 }
+/** مصدر المشتق إن أعاده الخادم: معرّف ملف أو null وحدهما، فتعرف المعاينة ما صنعه الخادم (`serverMade`). غير ذلك لا يمر. */
+function derivedFrom(file: Material["files"][number]): { derived_from_id?: string | null } {
+  const source = (file as Material["files"][number] & { derived_from_id?: unknown }).derived_from_id;
+  return source === null || (typeof source === "string" && uuid.test(source)) ? { derived_from_id: source } : {};
+}
 export function safeMaterial(material: Material, permissions: Permission[], form?: Form, internal = false): Material {
   // قائمة بيضاء تمنع انتقال حقول جديدة غير مراجعة إلى المتصفح؛ GPS writeOnly في العقد الحالي.
   return {
@@ -42,7 +47,7 @@ export function safeMaterial(material: Material, permissions: Permission[], form
     technical_state: material.technical_state, editorial_state: material.editorial_state, rights_state: material.rights_state,
     created_at: material.created_at, updated_at: material.updated_at,
     files: material.files.map(f => ({ id: f.id, kind: f.kind, state: f.state, mime_type: f.mime_type, size_bytes: Number.isSafeInteger(f.size_bytes) ? f.size_bytes : null, duration_ms: f.duration_ms,
-      width: f.width, height: f.height, receipt_number: f.receipt_number, created_at: f.created_at, verified_at: f.verified_at })),
+      width: f.width, height: f.height, receipt_number: f.receipt_number, created_at: f.created_at, verified_at: f.verified_at, ...derivedFrom(f) })),
     redacted_field_keys: material.redacted_field_keys ?? [],
     // الوسوم بقاعدة العقد وحدها (ADR 0086)، والمصغّرة معرّف ملف يجلبه الـBFF من مساره (ADR 0104، 0105)؛ غير ذلك لا يمر.
     ...(validMaterialTags(material.tags) ? { tags: [...material.tags] } : {}),

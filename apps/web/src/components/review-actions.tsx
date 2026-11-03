@@ -1,10 +1,14 @@
 "use client";
-import { useRef, useState } from "react";
-import { browserApi } from "@/lib/browser-api";
+import { useEffect, useRef, useState } from "react";
+import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { formatDate, messages, type Locale } from "@/lib/i18n";
 import type { Contributor, Material } from "@/lib/types";
 import { contributorRoles, hasRole, tracks, transitionOptions, validContributors } from "@/lib/review";
 import { useMutation } from "@/lib/use-mutation";
+import { staffLimits, staffReaders } from "@/lib/staff-policy";
+import { assignRoles } from "@/lib/assignment-policy";
+import { accountName, workName } from "@/lib/work-name";
+import { uuid } from "@/lib/query";
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
 import { TransitionDialog } from "./transition-dialog";
@@ -43,19 +47,67 @@ export function ReviewActions(props: Props) {
     {open && <TransitionDialog locale={locale} material={material} tag={tag} editing={editing} reload={() => { setOpen(false); reload(); }} onClose={close} onDone={label => { setOpen(false); notify?.(label); }} />}
   </>;
 }
-/** المساهمون وحصصهم (لمسؤول الحقوق ومدير النظام)؛ في العمود الرئيسي من W2. */
+type Person = { id: string; name: string };
+/**
+ * أسماء العمل التي عُرفت في هذا التبويب، في الذاكرة وحدها. البطاقة تُركَّب من جديد بعد كل حفظ (مفتاحها إصدار المادة)، فبلا هذا يعود المساهم
+ * المحفوظ «حساب <أول 8>» ريثما تصل القائمة. تُمحى مع الحالة الخاصة (الخروج والإبطال).
+ */
+const knownNames = new Map<string, string | null>();
+/**
+ * من يُختار مساهمًا، بأسمائهم لا بمعرّفاتهم: حسابات الطاقم النشطة لمدير النظام (`GET /users`، وبحث باسم العمل)، والمرشّحون للإسناد لمن يقرؤهم
+ * (`GET /assignment-candidates`)، ومن على المادة نفسها (مراسلها، ومن يحجزها، والمساهمون الحاليون). الاسم المجهول «حساب <أول 8>».
+ */
+function usePeople(material: Material, locale: Locale) {
+  const me = useUser(), t = messages[locale].review, admin = hasRole(me, ...staffReaders), candidates = hasRole(me, ...assignRoles);
+  const [listed, setListed] = useState<Record<string, string | null>>(() => Object.fromEntries(knownNames)), [failed, setFailed] = useState(false), [search, setSearch] = useState(""), [busy, setBusy] = useState(false);
+  useEffect(() => { const forget = () => knownNames.clear(); window.addEventListener("clear-private-state", forget); return () => window.removeEventListener("clear-private-state", forget); }, []);
+  useEffect(() => {
+    if (!admin && !candidates) return;
+    const controller = new AbortController(), signal = controller.signal;
+    void Promise.all([
+      admin ? browserApi().GET("/users", { params: { query: { status: "active", limit: staffLimits.page, ...(search ? { q: search } : {}) } }, signal }).then(dataOrThrow).then(page => page.items.map(user => [user.id, workName(user.work_name)] as const)) : [],
+      candidates ? browserApi().GET("/assignment-candidates", { signal }).then(dataOrThrow).then(data => data.items.map(item => [item.user_id, workName(item.work_name)] as const)) : [],
+    ]).then(([users, others]) => {
+      if (signal.aborted) return;
+      for (const [id, value] of [...others, ...users]) knownNames.set(id, value);
+      setListed(old => ({ ...old, ...Object.fromEntries([...others, ...users]) })); setFailed(false);
+    })
+      .catch(() => { if (!signal.aborted) setFailed(true); }).finally(() => { if (!signal.aborted) setBusy(false); });
+    return () => controller.abort();
+  }, [admin, candidates, search]);
+  const name = (id: string) => listed[id] ?? (id === material.reporter_id ? t.materialReporter : id === material.reserved_by ? workName(material.reserved_by_name) : null) ?? accountName(id, null, locale);
+  const ids = [...new Set([material.reporter_id, ...(material.reserved_by ? [material.reserved_by] : []), ...(material.contributors ?? []).map(row => row.user_id), ...Object.keys(listed)])];
+  const people: Person[] = ids.filter(id => uuid.test(id)).map(id => ({ id, name: name(id) }));
+  return { people, name, admin, failed, busy, limited: !admin && !candidates, find: (value: string) => { const next = value.trim().slice(0, staffLimits.q); if (next !== search) { setBusy(true); setSearch(next); } } };
+}
+
+/** المساهمون وحصصهم (لمسؤول الحقوق ومدير النظام)؛ في العمود الرئيسي من W2. يُختار الشخص باسمه من القائمة، ولا يُكتب معرّف. */
 export function Contributors({ locale, material, tag, editing, reload }: Omit<Props, "notify">) {
-  const m = messages[locale], t = m.review, me = useUser(), mutation = useMutation();
-  const [rows, setRows] = useState<Contributor[]>(material.contributors?.map(row => ({ ...row })) ?? []);
+  const m = messages[locale], t = m.review, me = useUser(), mutation = useMutation(), directory = usePeople(material, locale);
+  const [rows, setRows] = useState<Contributor[]>(material.contributors?.map(row => ({ ...row })) ?? []), [needle, setNeedle] = useState("");
   const editable = hasRole(me, "rights_officer", "system_admin"), valid = validContributors(rows);
   function update(index: number, patch: Partial<Contributor>) { editing(); setRows(old => old.map((row, i) => i === index ? { ...row, ...patch } : row)); }
   return <section className="card" aria-labelledby="contributors-title"><h2 id="contributors-title">{t.contributors}</h2>
     {material.contributors === undefined && <p className="notice">{t.contributorsMissing}</p>}
+    {editable && directory.admin && <div className="people-search" role="search" aria-label={t.findPeople}>
+      <label>{t.findPeople}<input type="search" value={needle} maxLength={staffLimits.q} autoComplete="off" onChange={e => setNeedle(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); directory.find(needle); } }} /></label>
+      <button type="button" className="secondary" disabled={directory.busy} onClick={() => directory.find(needle)}>{t.findButton}</button>
+    </div>}
+    {editable && directory.limited && <p className="caption">{t.peopleLimited}</p>}
+    {editable && directory.failed && <p className="notice error" role="alert">{t.peopleFailed}</p>}
     <form className="action-form" onSubmit={async event => { event.preventDefault(); editing(); if (!tag || !valid) return;
       const body = { contributors: rows }; if (await mutation.run(JSON.stringify([material.id, tag, body]), header => browserApi().PUT("/materials/{id}/contributors", { params: { path: { id: material.id }, header: { ...header, "If-Match": tag } }, body }))) reload();
     }}><fieldset disabled={!editable || !tag || mutation.busy || mutation.status === 412}>
-      {rows.map((row, i) => <div className="contributor-row" key={i}><label>{t.userId}<input required dir="ltr" value={row.user_id} onChange={e => update(i, { user_id: e.target.value })} /></label><label>{t.role}<select aria-label={t.role} value={row.role} onChange={e => update(i, { role: e.target.value as Contributor["role"] })}>{contributorRoles.map(role => <option value={role} key={role}>{t.roles[role]}</option>)}</select></label><label>{t.share}<input required type="number" min="0" max="100" step="0.01" value={Number.isNaN(row.share_percent) ? "" : row.share_percent} onChange={e => update(i, { share_percent: e.target.value === "" ? NaN : Number(e.target.value) })} /></label>{editable && <button className="secondary" type="button" onClick={() => { editing(); setRows(old => old.filter((_, index) => index !== i)); }}>{t.remove}</button>}</div>)}
+      {rows.map((row, i) => {
+        const taken = new Set(rows.filter((_, index) => index !== i).map(other => other.user_id));
+        const options = directory.people.filter(person => !taken.has(person.id) || person.id === row.user_id);
+        return <div className="contributor-row" key={i} data-testid="contributor-row"><label>{t.person}<select required value={row.user_id} onChange={e => update(i, { user_id: e.target.value })}>
+          {!row.user_id && <option value="" disabled>{t.choosePerson}</option>}
+          {row.user_id && !options.some(person => person.id === row.user_id) && <option value={row.user_id}>{directory.name(row.user_id)}</option>}
+          {options.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}
+        </select></label><label>{t.role}<select aria-label={t.role} value={row.role} onChange={e => update(i, { role: e.target.value as Contributor["role"] })}>{contributorRoles.map(role => <option value={role} key={role}>{t.roles[role]}</option>)}</select></label><label>{t.share}<input required type="number" min="0" max="100" step="0.01" value={Number.isNaN(row.share_percent) ? "" : row.share_percent} onChange={e => update(i, { share_percent: e.target.value === "" ? NaN : Number(e.target.value) })} /></label>{editable && <button className="secondary" type="button" onClick={() => { editing(); setRows(old => old.filter((_, index) => index !== i)); }}>{t.remove}</button>}</div>;
+      })}
       {!rows.length && <p className="muted">{t.noContributors}</p>}
-      {editable && <><p className="notice">{t.shareHelp}</p><div className="actions"><button type="button" className="secondary" onClick={() => { editing(); setRows(old => [...old, { user_id: "", role: "photographer", share_percent: 0 }]); }}>{t.add}</button><button disabled={!valid}>{t.saveContributors}</button></div></>}
+      {editable && <><p className="notice">{t.shareHelp}</p><div className="actions"><button type="button" className="secondary" onClick={() => { editing(); setRows(old => [...old, { user_id: directory.people.find(person => !old.some(row => row.user_id === person.id))?.id ?? "", role: "photographer", share_percent: 0 }]); }}>{t.add}</button><button disabled={!valid}>{t.saveContributors}</button></div></>}
     </fieldset></form><ActionStatus status={mutation.status} locale={locale} /></section>;
 }

@@ -24,6 +24,7 @@ import * as staff from "../src/lib/staff-policy";
 import * as tags from "../src/lib/tag-policy";
 import * as platform from "../src/lib/platform-policy";
 import * as reports from "../src/lib/finance-reports";
+import { materialReaders } from "../src/lib/review";
 
 const { load } = createRequire(import.meta.url)("js-yaml") as { load: (text: string) => unknown };
 const contract = load(readFileSync(new URL("../../../contracts/openapi.yaml", import.meta.url), "utf8"));
@@ -63,6 +64,9 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
     expect(ruleEvents).toEqual(input("event_type", "enum")); expect(channels).toEqual(at("components", "schemas", "NotificationChannel", "enum"));
     expect(at("components", "schemas", "RoleName", "enum")).toEqual(expect.arrayContaining([...roles])); expect(scopeKinds).toEqual(input("scope_kind", "enum"));
     expect([ruleLimits.name, ruleLimits.scope, ruleLimits.delay, ruleLimits.digestMin, ruleLimits.digestMax, ruleLimits.steps, ruleLimits.stepMin, ruleLimits.stepMax]).toEqual([input("name", "maxLength"), input("scope_id", "maxLength"), input("delay_seconds", "maximum"), input("digest_interval_minutes", "minimum"), input("digest_interval_minutes", "maximum"), input("escalation", "maxItems"), step("after_seconds", "minimum"), step("after_seconds", "maximum")]);
+  });
+  it("shows the inbox to exactly the roles that read GET /materials, and lands the rest elsewhere", () => {
+    expect([...materialReaders]).toEqual(at("paths", "/materials", "get", "x-roles"));
   });
   it("opens desktop upload to exactly the roles the contract allows", () => {
     for (const [path, method] of [["/materials", "post"], ["/uploads", "post"], ["/uploads/{id}/web-ingest-token", "post"]]) expect([...uploadRoles]).toEqual(at("paths", path, method, "x-roles"));

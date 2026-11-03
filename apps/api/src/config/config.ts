@@ -337,8 +337,9 @@ const schema = z.object({
   PAYOUT_DEFAULT_MINIMUM_MINOR: z.coerce.number().int().min(1).default(5_000),
   PAYOUT_DEFAULT_DUAL_APPROVAL_ABOVE_MINOR: z.coerce.number().int().min(0).default(100_000),
   PAYOUT_DEFAULT_RESERVE_BPS: z.coerce.number().int().min(0).max(5000).default(0),
-  // صفحة الويب التي تعود إليها صفحة الدفع التجريبية بعد النتيجة، قالبًا بـ {order_id}. من الإعداد وحده لا من الطلب، فلا
-  // تحويل مفتوح؛ https إلا لـ localhost. بلا قيمة لا عودة.
+  // صفحة الويب التي تعود إليها صفحة الدفع بعد النتيجة، قالبًا بـ {order_id} (إلزامي) و{locale} (لغة المشتري من
+  // CheckoutRequest، قائمة مغلقة): https://<الويب>/{locale}/store/orders/{order_id}?returned=1. من الإعداد وحده لا من
+  // الطلب، فلا تحويل مفتوح؛ https إلا لـ localhost. بلا قيمة لا عودة.
   SANDBOX_RETURN_URL: z
     .string()
     .url()
@@ -346,6 +347,7 @@ const schema = z.object({
       const u = new URL(v);
       return u.protocol === 'https:' || (u.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(u.hostname));
     }, 'must be https (or http on localhost)')
+    .refine((v) => v.includes('{order_id}'), 'must carry {order_id}')
     .optional(),
   // رابط تنزيل حزمة الترخيص: عمره بالثواني (العقد ≤ 24 ساعة؛ دقائق فعليًا) وعدد المنح لكل ترخيص
   LICENSE_DOWNLOAD_URL_SECONDS: z.coerce.number().int().min(60).max(86_400).default(600),

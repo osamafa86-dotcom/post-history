@@ -5,6 +5,7 @@ import { MaterialPlayer } from "./material-player";
 import { messages, type Locale } from "@/lib/i18n";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import type { Material, MaterialFile } from "@/lib/types";
+import { staffPreview } from "@/lib/preview-policy";
 
 function PreviewAsset({ locale, materialId, file }: { locale: Locale; materialId: string; file: MaterialFile }) {
   const m = messages[locale], [attempt, setAttempt] = useState(0), [failed, setFailed] = useState(false);
@@ -26,13 +27,16 @@ function PreviewAsset({ locale, materialId, file }: { locale: Locale; materialId
   </div>;
 }
 
+/**
+ * معاينة الطاقم: النسخة الخفيفة التي أنتجها الخادم وحدها (`staffPreview`)، لا نسخة الهاتف المرفوعة. بلا نسخة من الخادم يظهر الملصق مكانها
+ * مع «قيد التحضير»، أو الحالة وحدها إن لم يُنتَج ملصق بعد.
+ */
 export function MediaPreview({ locale, material }: { locale: Locale; material: Material }) {
-  const m = messages[locale];
-  const verified = material.files.filter(file => file.state === "verified");
-  const proxy = verified.find(file => file.kind === "proxy" && file.mime_type === "video/mp4");
-  const thumbnails = verified.filter(file => file.kind === "thumbnail");
+  const m = messages[locale], { proxy, poster, thumbnails } = staffPreview(material);
+  const strip = proxy ? thumbnails : thumbnails.filter(file => file !== poster);
   return <section className="preview-panel" aria-label={m.preview}>
-    {proxy ? <PreviewAsset key={`${material.id}-${proxy.id}`} locale={locale} materialId={material.id} file={proxy} /> : <div className="preview-empty"><span className="play-mark" aria-hidden="true" /><p>{m.previewUnavailable}</p></div>}
-    {thumbnails.length > 0 && <div className="thumbnails">{thumbnails.map(file => <PreviewAsset key={`${material.id}-${file.id}`} locale={locale} materialId={material.id} file={file} />)}</div>}
+    {proxy ? <PreviewAsset key={`${material.id}-${proxy.id}`} locale={locale} materialId={material.id} file={proxy} />
+      : <div className="preview-empty" data-testid="preview-preparing">{poster ? <PreviewAsset key={`${material.id}-${poster.id}`} locale={locale} materialId={material.id} file={poster} /> : <span className="play-mark" aria-hidden="true" />}<p role="status">{m.previewPreparing}</p></div>}
+    {strip.length > 0 && <div className="thumbnails">{strip.map(file => <PreviewAsset key={`${material.id}-${file.id}`} locale={locale} materialId={material.id} file={file} />)}</div>}
   </section>;
 }

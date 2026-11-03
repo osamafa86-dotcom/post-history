@@ -29,7 +29,10 @@ function renderOk<T>(result: { data?: T; error?: unknown; response: Response }):
 export async function renderRead(request: Request, materialId: string, api: Api, me: Me) {
   allowed(me, materialId);
   if (new URL(request.url).search) throw new WebError(400, "request_failed");
-  const page = requireOk(await api.GET("/materials/{id}/renders", { params: { path: { id: materialId } } }));
+  const result = await api.GET("/materials/{id}/renders", { params: { path: { id: materialId } } });
+  // العلم المطفأ عند الخادم 404: حالة لا خطأ، فتصل المتصفح 204 بلا جسم (لا «فشل تحميل مورد» في وحدة التحكم) وتخفي الواجهة البطاقة.
+  if (result.response.status === 404) return new NextResponse(null, { status: 204, headers: privateHeaders });
+  const page = requireOk(result);
   return json({ items: page.items.map(safeRender).filter(item => item !== null) });
 }
 

@@ -135,6 +135,9 @@ describe('sandbox return page and license download settings', () => {
     expect(() => loadConfig({ ...base, SANDBOX_RETURN_URL: 'http://web.example/orders' })).toThrow(/SANDBOX_RETURN_URL/);
     expect(() => loadConfig({ ...base, SANDBOX_RETURN_URL: 'javascript:alert(1)' })).toThrow(/SANDBOX_RETURN_URL/);
     expect(loadConfig({ ...base, SANDBOX_RETURN_URL: '' }).SANDBOX_RETURN_URL).toBeUndefined();
+    // القالب القياسي بلغة المشتري، ولا قالب بلا معرّف الطلب
+    expect(loadConfig({ ...base, SANDBOX_RETURN_URL: 'https://web.example/{locale}/store/orders/{order_id}?returned=1' }).SANDBOX_RETURN_URL).toBeDefined();
+    expect(() => loadConfig({ ...base, SANDBOX_RETURN_URL: 'https://web.example/{locale}/store/orders' })).toThrow(/SANDBOX_RETURN_URL/);
   });
 
   it('the download link lives minutes by default and never beyond 24 hours', () => {

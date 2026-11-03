@@ -31,9 +31,10 @@ test("a buyer adds a license to the cart, pays at the sandbox provider, sees the
 test("a buyer cancels an unpaid order, and staff cannot buy", async ({ page, context }) => {
   await login(page, "buyeradmin"); await expect(page).toHaveURL(/\/ar\/store$/);
   await page.goto("/ar/store/71000000-0000-4000-8000-000000000002"); await page.getByRole("radio").first().check(); await page.getByRole("button", { name: s.browse.addFor.replace("{price}", "") }).click();
-  await page.goto("/ar/store/cart"); await expect(page.getByTestId("cart-line")).toHaveCount(0); // السلة في الذاكرة؛ التنقل الكامل يبدأ سلة جديدة
-  await page.goto("/ar/store/71000000-0000-4000-8000-000000000002"); await page.getByRole("radio").first().check(); await page.getByRole("button", { name: s.browse.addFor.replace("{price}", "") }).click();
-  await page.getByRole("link", { name: s.inCart }).click(); await page.getByRole("button", { name: c.checkout }).click();
+  // السلة في هذا التبويب باسم صاحبها: التحميل الكامل للصفحة لا يفرغها (ADR 0119)
+  await expect(page.getByTestId("cart-chip")).toHaveAccessibleName(s.nav.cartCount.replace("{n}", "1"));
+  await page.goto("/ar/store/cart"); await expect(page.getByTestId("cart-line")).toHaveCount(1);
+  await page.getByRole("button", { name: c.checkout }).click();
   await expect(page).toHaveURL(/127\.0\.0\.1:3201\/sandbox\/checkout\//);
   await page.goto(`/ar/store/orders/${page.url().split("/").pop()}`);
   await expect(page.getByTestId("order-status")).toHaveText(o.statuses.pending_payment); await expect(page.getByText(o.sandbox)).toBeVisible();

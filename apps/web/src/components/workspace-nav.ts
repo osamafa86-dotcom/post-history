@@ -1,6 +1,6 @@
 import type { Me, RoleName } from "@/lib/types";
 import { messages, type Locale } from "@/lib/i18n";
-import { hasRole } from "@/lib/review";
+import { hasRole, materialReaders } from "@/lib/review";
 import { catalogRoles } from "./store/store-catalog";
 import { uploadRoles } from "@/lib/upload-policy";
 import { isBuyer, organizationAdmins } from "@/lib/buyer-policy";
@@ -40,7 +40,8 @@ export function navItems(me: Me, locale: Locale, pathname: string): NavItem[] {
   ];
   const has = (...roles: RoleName[]) => hasRole(me, ...roles);
   return [
-    item("inbox", m.inbox, ends("inbox") || ends("materials"), "newsroom", "inbox"),
+    // الوارد لمن يقرأ قائمة المواد وحده (المالية خارجها، فبدايتها الصرف)؛ لا بند يقود إلى 403.
+    ...(hasRole(me, ...materialReaders) ? [item("inbox", m.inbox, ends("inbox") || ends("materials"), "newsroom", "inbox")] : []),
     ...(has("supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin") ? [item("board", m.board.title, ends("board"), "newsroom", "wall")] : []),
     ...(hasRole(me, ...myTaskRoles) ? [item("tasks", m.tasks.nav, ends("tasks"), "newsroom", "tasks")] : []),
     ...(has("reporter") ? [item("my-materials", m.mine.nav, ends("my-materials"), "newsroom", "mine")] : []),
@@ -75,7 +76,7 @@ export function navGroups(items: NavItem[]): [NavGroup, NavItem[]][] {
  * والنشط في «المزيد» يجعلها هي النشطة (M5).
  */
 export function bottomItems(items: NavItem[]): { primary: NavItem[]; more: NavItem[] } {
-  const order = ["inbox", "tasks", "archive", "board", "my-materials", "store", "upload", "earnings"], notifications = items.find(item => item.key === "notifications");
+  const order = ["inbox", "tasks", "archive", "board", "my-materials", "store", "upload", "earnings", "payouts"], notifications = items.find(item => item.key === "notifications");
   const ranked = order.map(key => items.find(item => item.key === key)).filter((item): item is NavItem => !!item);
   const primary = [...ranked.slice(0, notifications ? 3 : 4), ...(notifications ? [notifications] : [])];
   return { primary, more: items.filter(item => !primary.includes(item)) };

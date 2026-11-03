@@ -7,7 +7,7 @@
 
 import Foundation
 
-/** إعادة التحقق قبل تسجيل مفتاح مرور وقبل توليد الرموز الاحتياطية (ADR 0107، 0113) */
+/** إعادة التحقق قبل تسجيل مفتاح مرور وقبل توليد الرموز الاحتياطية (ADR 0107، 0117) */
 public struct PasskeyStepUp: Sendable, Codable, Hashable {
 
     public static let passwordRule = StringRule(minLength: 8, maxLength: 256, pattern: nil)

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import ar from "../messages/ar.json" with { type: "json" };
 import en from "../messages/en.json" with { type: "json" };
-const first = "20000000-0000-4000-8000-000000000001", second = "20000000-0000-4000-8000-000000000002", target = "10000000-0000-4000-8000-000000000002", targetName = "محرر تجريبي ١";
+const first = "20000000-0000-4000-8000-000000000001", second = "20000000-0000-4000-8000-000000000002", target = "10000000-0000-4000-8000-000000000002", targetName = "محرر تجريبي ١", producerTwo = "10000000-0000-4000-8000-000000000003";
 async function login(page: Page, role = "reviewer", locale: "ar" | "en" = "ar") {
   const m = locale === "ar" ? ar : en;
   await page.goto(`/${locale}/login`); await page.getByLabel(m.email).fill(`${role}@example.test`); await page.getByLabel(m.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(m.totp, { exact: true }).fill("123456"); await page.getByRole("button", { name: m.signIn, exact: true }).click(); await expect(page.getByTestId("material-row")).toHaveCount(50);
@@ -51,8 +51,22 @@ test("contributors require exact totals and reservation can be released", async 
   await page.getByRole("button", { name: ar.review.reserve, exact: true }).click(); await expect(page.getByText(ar.review.yourReservation, { exact: true })).toBeVisible();
   await page.getByRole("button", { name: ar.review.releaseMine, exact: true }).click(); await expect(page.getByText(ar.review.unreserved, { exact: true })).toBeVisible();
   await page.getByLabel(ar.review.share, { exact: true }).fill("33.33"); await expect(page.getByRole("button", { name: ar.review.saveContributors, exact: true })).toBeDisabled();
-  await page.getByRole("button", { name: ar.review.add, exact: true }).click(); await page.getByLabel(ar.review.userId, { exact: true }).nth(1).fill(target); await page.getByLabel(ar.review.share, { exact: true }).nth(1).fill("66.67"); const saved = page.waitForResponse(r => r.url().endsWith("/contributors") && r.request().method() === "PUT"); await page.getByRole("button", { name: ar.review.saveContributors, exact: true }).click(); expect((await saved).status()).toBe(200);
-  await expect(page.getByLabel(ar.review.userId, { exact: true })).toHaveCount(2); await expect(page.getByLabel(ar.review.share, { exact: true }).nth(1)).toHaveValue("66.67");
+  // الشخص يُختار باسم عمله (مرشّحو الإسناد لدور المشرف)، لا بمعرّف يُكتب؛ ولا يظهر معرّف في القائمة.
+  const people = page.getByRole("combobox", { name: ar.review.person, exact: true });
+  const chosen = (index: number) => people.nth(index).evaluate((select: HTMLSelectElement) => select.selectedOptions[0]?.textContent);
+  expect(await chosen(0)).toBe("مونتير تجريبي ١");
+  await page.getByRole("button", { name: ar.review.add, exact: true }).click(); await people.nth(1).selectOption({ label: "مونتير تجريبي ٢" });
+  for (const text of await people.nth(1).locator("option").allTextContents()) expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/);
+  await expect(people.nth(1).locator("option", { hasText: "مونتير تجريبي ١" })).toHaveCount(0);
+  await expect(people.nth(1).locator("option", { hasText: ar.admin.unnamed.replace("{id}", "10000000") })).toHaveCount(1);
+  // بعد الحفظ تتأخر القائمة عمدًا: الاسم يجب أن يأتي مما عُرف، لا أن ينتظرها
+  await page.route("**/api/bff/assignment-candidates", async route => { await new Promise(resolve => setTimeout(resolve, 2500)); await route.continue(); });
+  await people.nth(1).evaluate(select => select.setAttribute("data-before-save", ""));
+  await page.getByLabel(ar.review.share, { exact: true }).nth(1).fill("66.67"); const saved = page.waitForResponse(r => r.url().endsWith("/contributors") && r.request().method() === "PUT"); await page.getByRole("button", { name: ar.review.saveContributors, exact: true }).click(); expect((await saved).status()).toBe(200);
+  expect((await saved).request().postDataJSON().contributors[1].user_id).toBe(producerTwo);
+  await expect(people).toHaveCount(2); await expect(page.getByLabel(ar.review.share, { exact: true }).nth(1)).toHaveValue("66.67");
+  // البطاقة تُركَّب من جديد بالإصدار الجديد (عنصر جديد)، والاسم المعروف من أول رسم، لا «حساب <أول 8>» ريثما تصل القائمة المتأخرة
+  await expect(page.locator("select[data-before-save]")).toHaveCount(0); expect(await chosen(1)).toBe("مونتير تجريبي ٢");
 });
 /** يفتح A1 من الشريط الجانبي ثم حساب الطاقم بسطره في القائمة (لا معرّف يُكتب: القائمة من `GET /users`). */
 async function openAccount(page: Page, locale: "ar" | "en" = "ar", name = targetName) {

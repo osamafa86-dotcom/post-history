@@ -57,6 +57,6 @@ test("the system admin creates and activates an organization; finance reads only
   await row.getByRole("button", { name: e.open }).click(); await page.getByRole("button", { name: e.edit }).click();
   await page.getByLabel(e.status).selectOption("active"); await page.getByRole("button", { name: e.save }).click();
   await expect(page.getByTestId("organization-status")).toHaveText(e.statuses.active);
-  await context.clearCookies(); await login(page, "finance"); await expect(page).toHaveURL(/\/ar\/inbox$/); await page.goto("/ar/buyer-organizations");
+  await context.clearCookies(); await login(page, "finance"); await expect(page).toHaveURL(/\/ar\/payouts$/); await page.goto("/ar/buyer-organizations");
   await expect(page.getByText(b.readOnly)).toBeVisible(); await expect(page.getByRole("button", { name: b.new })).toHaveCount(0);
 });
