@@ -80,3 +80,14 @@ test("the Stripe stand-in answers the adapter's calls only with a test key, idem
     assert.equal((await (await fetch(`${fake.url}/v1/checkout/sessions/${a.id}`, { headers: { authorization: testKey } })).json()).id, a.id);
   } finally { await fake.close(); }
 });
+
+test("every live script that sells has its own contributor, so no sale is released into a balance another script counts", async () => {
+  const { CONTRIBUTORS, DEDICATED_CONTRIBUTORS } = await import("../live/contributors.mjs");
+  const owners = Object.values(CONTRIBUTORS);
+  assert.equal(new Set(owners).size, owners.length, "two selling scripts share a reporter");
+  for (const name of ["sandbox-purchase", "tenant-isolation", "duplicate-payment", "rights-exclusivity", "payout-concurrent", "refund-after-payout"]) {
+    assert.ok(CONTRIBUTORS[name], `${name} has no contributor`);
+  }
+  assert.ok(!DEDICATED_CONTRIBUTORS.includes("reporter"));
+  assert.deepEqual([...DEDICATED_CONTRIBUTORS].sort(), owners.filter((o) => o !== "reporter").sort());
+});

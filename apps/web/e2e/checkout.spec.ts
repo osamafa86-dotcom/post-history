@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import ar from "../messages/ar.json" with { type: "json" };
+import en from "../messages/en.json" with { type: "json" };
 const s = ar.store, o = ar.orders, c = ar.store.cartPage;
 async function login(page: Page, role: string) {
   await page.goto("/ar/login"); await page.getByLabel(ar.email).fill(`${role}@example.test`); await page.getByLabel(ar.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(ar.totp, { exact: true }).fill("123456"); await page.getByRole("button", { name: ar.signIn, exact: true }).click();
@@ -28,6 +29,21 @@ test("a buyer adds a license to the cart, pays at the sandbox provider, sees the
   await expect(page.getByTestId("order-row").first()).toContainText(/ORD-\d{4}-[0-9A-HJKMNP-TV-Z]{8}/);
   await page.screenshot({ path: ".artifacts/orders-ar.png", fullPage: true });
 });
+test("checkout follows the buyer's language: the sandbox page and the return to the order are in English", async ({ page }) => {
+  const e = en.store, eo = en.orders;
+  await page.goto("/en/login"); await page.getByLabel(en.email).fill("buyer@example.test"); await page.getByLabel(en.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(en.totp, { exact: true }).fill("123456"); await page.getByRole("button", { name: en.signIn, exact: true }).click();
+  await expect(page).toHaveURL(/\/en\/store$/); await page.goto("/en/store/71000000-0000-4000-8000-000000000001");
+  await page.getByRole("radio").first().check(); await page.getByRole("button", { name: e.browse.addFor.replace("{price}", "") }).click();
+  await page.getByRole("link", { name: e.inCart }).click(); await expect(page).toHaveURL(/\/en\/store\/cart$/);
+  const session = page.waitForRequest(r => /\/api\/bff\/orders\/[0-9a-f-]{36}\/checkout$/.test(r.url()));
+  await page.getByRole("button", { name: e.cartPage.checkout }).click();
+  expect((await session).postDataJSON()).toEqual({ locale: "en" });
+  await expect(page).toHaveURL(/127\.0\.0\.1:3201\/sandbox\/checkout\//); await expect(page.locator("html")).toHaveAttribute("lang", "en"); await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
+  await page.getByRole("link", { name: "Pay (sandbox)" }).click();
+  await expect(page).toHaveURL(/\/en\/store\/orders\/[0-9a-f-]{36}\?returned=1$/);
+  await expect(page.getByTestId("order-status")).toHaveText(eo.statuses.paid, { timeout: 15000 });
+});
+
 test("a buyer cancels an unpaid order, and staff cannot buy", async ({ page, context }) => {
   await login(page, "buyeradmin"); await expect(page).toHaveURL(/\/ar\/store$/);
   await page.goto("/ar/store/71000000-0000-4000-8000-000000000002"); await page.getByRole("radio").first().check(); await page.getByRole("button", { name: s.browse.addFor.replace("{price}", "") }).click();

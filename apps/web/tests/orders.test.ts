@@ -84,6 +84,14 @@ describe("orders BFF", () => {
     expect(stripe.result.status).toBe(200); expect((await stripe.result.json()).provider).toBe("stripe");
     const unknown = await call(`orders/${orderId}/checkout`, { cfg: stripeConfig, upstream: () => Response.json({ checkout_url: "https://sandbox.pay.example.test/s/abc", provider: "paypal", expires_at: order.expires_at }) });
     expect(unknown.result.status).toBe(502);
+    // `CheckoutRequest` (ملحق ADR 0032): `{locale}` من القائمة يمرّ كما هو، و`{}` جسم فارغ، وغيرهما 422 قبل الخادم
+    for (const [sent, forwarded] of [[{ locale: "en" }, { locale: "en" }], [{ locale: "ar" }, { locale: "ar" }], [{}, {}]] as const) {
+      const session = await call(`orders/${orderId}/checkout`, { body: sent, upstream: async r => { expect(await r.json()).toEqual(forwarded); return Response.json({ checkout_url: "https://sandbox.pay.example.test/s/abc", provider: "sandbox", expires_at: order.expires_at }); } });
+      expect(session.result.status).toBe(200); expect(session.calls).toHaveLength(1);
+    }
+    for (const bad of [{ locale: "fr" }, { locale: "en", return_url: "https://evil.example.test" }, { return_url: "https://evil.example.test" }, { locale: ["en"] }]) {
+      const refused = await call(`orders/${orderId}/checkout`, { body: bad }); expect(refused.result.status).toBe(422); expect(refused.calls).toHaveLength(0);
+    }
     const cancelled = await call(`orders/${orderId}/cancel`, { upstream: () => Response.json({ ...order, status: "cancelled", cancel_reason: "buyer" }) });
     expect((await cancelled.result.json()).status).toBe("cancelled");
     expect((await call(`orders/${orderId}/cancel`, { body: { reason: "x" } })).result.status).toBe(422);

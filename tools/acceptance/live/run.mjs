@@ -9,6 +9,7 @@ import { parseArgs } from "../lib/measurement.mjs";
 import { startApi } from "./stack.mjs";
 import { seed } from "./seed.mjs";
 import { seedTenantCommerce } from "./tenant-commerce.mjs";
+import { CONTRIBUTORS } from "./contributors.mjs";
 import { startFakeStripe } from "../lib/fake-stripe.mjs";
 import { setLogSource } from "../scripts/pii-leak.mjs";
 import { setLogSource as setRecoveryLogSource } from "../scripts/account-recovery.mjs";
@@ -58,7 +59,7 @@ try {
   try { sha = execFileSync("git", ["rev-parse", "--short", "HEAD"]).toString().trim(); } catch { /* not a checkout */ }
   const tokens = JSON.stringify(s.tokens);
   // the second buyer organization's order, licence and a listing not on sale: tenant-isolation's organization cases
-  const tenantFixtures = { ...s.fixtures, ...(await seedTenantCommerce({ databaseUrl, apiUrl: stack.apiUrl, rootUrl: stack.baseUrl, tokens: s.allTokens })) };
+  const tenantFixtures = { ...s.fixtures, ...(await seedTenantCommerce({ databaseUrl, apiUrl: stack.apiUrl, rootUrl: stack.baseUrl, tokens: { ...s.allTokens, reporter: s.allTokens[CONTRIBUTORS["tenant-isolation"]] } })) };
   const common = {
     PII_BASE_URL: stack.apiUrl, PII_TOKENS: tokens,
     PII_CANARIES: JSON.stringify(s.canaries.coordinates), PII_CHANNEL_CANARIES: JSON.stringify(s.canaries.titles),
@@ -66,10 +67,10 @@ try {
     // duplicate-payment: sandbox on the first API, Stripe test mode on the second, one database
     DP_API_URL: stack.apiUrl, DP_ROOT_URL: stack.baseUrl, DP_WEBHOOK_SECRET: sandboxSecret, DP_DATABASE_URL: databaseUrl,
     DP_STRIPE_API_URL: stripeStack.apiUrl, DP_STRIPE_ROOT_URL: stripeStack.baseUrl, DP_STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
-    DP_TOKENS: JSON.stringify({ reporter: s.allTokens.reporter, rights_officer: s.allTokens.rights_officer, buyer_admin: s.allTokens.buyer_admin }),
+    DP_TOKENS: JSON.stringify({ reporter: s.allTokens[CONTRIBUTORS["duplicate-payment"]], rights_officer: s.allTokens.rights_officer, buyer_admin: s.allTokens.buyer_admin }),
     // rights-exclusivity: sandbox provider, buyers of both seeded organizations
     RX_API_URL: stack.apiUrl, RX_ROOT_URL: stack.baseUrl, RX_DATABASE_URL: databaseUrl, RX_WEBHOOK_SECRET: sandboxSecret,
-    RX_TOKENS: JSON.stringify({ reporter: s.allTokens.reporter, rights_officer: s.allTokens.rights_officer, buyer_admin: s.allTokens.buyer_admin, buyer_member: s.allTokens.buyer_member, buyer_admin_b: s.allTokens.buyer_admin_b }),
+    RX_TOKENS: JSON.stringify({ reporter: s.allTokens[CONTRIBUTORS["rights-exclusivity"]], rights_officer: s.allTokens.rights_officer, buyer_admin: s.allTokens.buyer_admin, buyer_member: s.allTokens.buyer_member, buyer_admin_b: s.allTokens.buyer_admin_b }),
     UPLOAD_CONTRACT_API_URL: stack.apiUrl, UPLOAD_CONTRACT_TOKENS: tokens,
     OUTBOX_API_URL: stack.apiUrl, OUTBOX_TOKENS: tokens, OUTBOX_DATABASE_URL: databaseUrl,
     STATE_API_URL: stack.apiUrl, STATE_TOKENS: tokens,
@@ -114,10 +115,15 @@ try {
   const summary = [];
   names.splice(2, 0, "upload-contract", "outbox-transaction", "material-state-independence");
   const only = typeof args.only === "string" ? args.only.split(",") : null;
+  // the payout scripts judge their reporter's balance to the unit: each sells its own contributor's material, so no other script's
+  // sale is released into that balance while it counts (the payout worker releases every due sale a moment after it is paid)
+  const spTokens = JSON.parse(common.SP_TOKENS);
+  const own = (name) => ({ SP_TOKENS: JSON.stringify({ ...spTokens, reporter: s.allTokens[CONTRIBUTORS[name]] }) });
+  const perScript = { "payout-concurrent": own("payout-concurrent"), "refund-after-payout": own("refund-after-payout") };
   for (const name of names.filter((n) => !only || only.includes(n))) {
     const mod = await import(["sandbox-purchase", "payout-concurrent", "refund-after-payout"].includes(name) ? `./${name}.mjs` : `../scripts/${name}.mjs`);
     try {
-      const { code, doc } = await mod.run(passthrough);
+      const { code, doc } = perScript[name] ? await mod.run(passthrough, { ...process.env, ...perScript[name] }) : await mod.run(passthrough);
       summary.push([name, code ? "FAIL" : doc?.result ?? "ok"]);
       worst = Math.max(worst, code);
     } catch (e) {
