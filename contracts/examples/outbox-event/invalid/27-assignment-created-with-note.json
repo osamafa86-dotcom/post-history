@@ -1,0 +1,19 @@
+{
+  "id": "3203",
+  "type": "assignment.created",
+  "aggregate_type": "material",
+  "aggregate_id": "7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b",
+  "occurred_at": "2026-11-03T14:30:00Z",
+  "idempotency_key": "assignment.created:smoke-note",
+  "actor_id": "3a4b5c6d-7e8f-4a9b-8c0d-1e2f3a4b5c6d",
+  "payload": {
+    "material_id": "7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b",
+    "assignment_id": "6f7a8b9c-0d1e-4f2a-8b3c-4d5e6f7a8b9c",
+    "priority": "urgent",
+    "assignee_id": "2f3e4d5c-6b7a-4899-8a7b-6c5d4e3f2a1b",
+    "assigned_by": "3a4b5c6d-7e8f-4a9b-8c0d-1e2f3a4b5c6d",
+    "note": "تقرير عاجل 60 ثانية طولي"
+  },
+  "published_at": null,
+  "attempts": 0
+}

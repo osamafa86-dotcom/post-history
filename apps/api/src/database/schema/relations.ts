@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { buyerInviteConflicts, buyerOrganizations, catalogListings, commissionRules, deviceAttestationKeys, exclusiveHolds, idempotencyKeys, journalEntries, ledgerAccounts, licenseDownloadGrants, licenseTemplateVersions, licenseTemplates, licenses, listingOffers, materialContributors, materialExports, materialFiles, materialRenders, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, orderItems, orders, outboxEvents, paymentEvents, payoutApprovals, payoutPolicies, payoutRequests, postings, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, refundItems, refunds, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
+import { buyerInviteConflicts, buyerOrganizations, catalogListings, commissionRules, deviceAttestationKeys, exclusiveHolds, idempotencyKeys, journalEntries, ledgerAccounts, licenseDownloadGrants, licenseTemplateVersions, licenseTemplates, licenses, listingOffers, materialAssignments, materialContributors, materialExports, materialFiles, materialRenders, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, orderItems, orders, outboxEvents, paymentEvents, payoutApprovals, payoutPolicies, payoutRequests, postings, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, refundItems, refunds, systemSettings, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
 
 export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => ({
 	refreshToken: one(refreshTokens, {
@@ -17,61 +17,26 @@ export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => 
 }));
 
 export const usersRelations = relations(users, ({one, many}) => ({
-	office: one(offices, {
-		fields: [users.officeId],
-		references: [offices.id]
-	}),
-	buyerOrganization: one(buyerOrganizations, {
-		fields: [users.organizationId],
-		references: [buyerOrganizations.id]
-	}),
-	uploadSessions: many(uploadSessions),
-	catalogListings: many(catalogListings),
-	ledgerAccounts: many(ledgerAccounts),
-	journalEntries: many(journalEntries),
-	orders: many(orders),
-	licenseDownloadGrants: many(licenseDownloadGrants),
-	buyerInviteConflicts_existingUserId: many(buyerInviteConflicts, {
-		relationName: "buyerInviteConflicts_existingUserId_users_id"
-	}),
-	buyerInviteConflicts_invitedBy: many(buyerInviteConflicts, {
-		relationName: "buyerInviteConflicts_invitedBy_users_id"
-	}),
-	buyerInviteConflicts_resolvedBy: many(buyerInviteConflicts, {
-		relationName: "buyerInviteConflicts_resolvedBy_users_id"
-	}),
-	refunds: many(refunds),
-	commissionRules: many(commissionRules),
 	refreshTokens: many(refreshTokens),
 	pushDevices: many(pushDevices),
 	uploadForms: many(uploadForms),
 	materialTransitions: many(materialTransitions),
-	recoveryRequests_approvedBy: many(recoveryRequests, {
-		relationName: "recoveryRequests_approvedBy_users_id"
-	}),
 	recoveryRequests_userId: many(recoveryRequests, {
 		relationName: "recoveryRequests_userId_users_id"
 	}),
+	recoveryRequests_approvedBy: many(recoveryRequests, {
+		relationName: "recoveryRequests_approvedBy_users_id"
+	}),
 	deviceAttestationKeys: many(deviceAttestationKeys),
-	materials_acknowledgedBy: many(materials, {
-		relationName: "materials_acknowledgedBy_users_id"
-	}),
-	materials_reporterId: many(materials, {
-		relationName: "materials_reporterId_users_id"
-	}),
-	materials_reservedBy: many(materials, {
-		relationName: "materials_reservedBy_users_id"
-	}),
-	notifications: many(notifications),
 	materialExports: many(materialExports),
+	userPermissions_userId: many(userPermissions, {
+		relationName: "userPermissions_userId_users_id"
+	}),
 	userPermissions_grantedBy: many(userPermissions, {
 		relationName: "userPermissions_grantedBy_users_id"
 	}),
 	userPermissions_revokedBy: many(userPermissions, {
 		relationName: "userPermissions_revokedBy_users_id"
-	}),
-	userPermissions_userId: many(userPermissions, {
-		relationName: "userPermissions_userId_users_id"
 	}),
 	systemSettings: many(systemSettings),
 	notificationRules_createdBy: many(notificationRules, {
@@ -81,21 +46,65 @@ export const usersRelations = relations(users, ({one, many}) => ({
 		relationName: "notificationRules_updatedBy_users_id"
 	}),
 	licenseTemplates: many(licenseTemplates),
+	uploadSessions: many(uploadSessions),
+	catalogListings: many(catalogListings),
+	ledgerAccounts: many(ledgerAccounts),
+	journalEntries: many(journalEntries),
+	licenseDownloadGrants: many(licenseDownloadGrants),
+	buyerInviteConflicts_resolvedBy: many(buyerInviteConflicts, {
+		relationName: "buyerInviteConflicts_resolvedBy_users_id"
+	}),
+	buyerInviteConflicts_existingUserId: many(buyerInviteConflicts, {
+		relationName: "buyerInviteConflicts_existingUserId_users_id"
+	}),
+	buyerInviteConflicts_invitedBy: many(buyerInviteConflicts, {
+		relationName: "buyerInviteConflicts_invitedBy_users_id"
+	}),
+	refunds: many(refunds),
+	commissionRules: many(commissionRules),
+	orders: many(orders),
 	payoutPolicies: many(payoutPolicies),
 	payoutRequests: many(payoutRequests),
+	office: one(offices, {
+		fields: [users.officeId],
+		references: [offices.id]
+	}),
+	buyerOrganization: one(buyerOrganizations, {
+		fields: [users.organizationId],
+		references: [buyerOrganizations.id]
+	}),
+	materials_reporterId: many(materials, {
+		relationName: "materials_reporterId_users_id"
+	}),
+	materials_reservedBy: many(materials, {
+		relationName: "materials_reservedBy_users_id"
+	}),
+	materials_acknowledgedBy: many(materials, {
+		relationName: "materials_acknowledgedBy_users_id"
+	}),
+	materialRenders: many(materialRenders),
+	materialAssignments_assigneeId: many(materialAssignments, {
+		relationName: "materialAssignments_assigneeId_users_id"
+	}),
+	materialAssignments_assignedBy: many(materialAssignments, {
+		relationName: "materialAssignments_assignedBy_users_id"
+	}),
+	materialAssignments_returnedBy: many(materialAssignments, {
+		relationName: "materialAssignments_returnedBy_users_id"
+	}),
+	notifications: many(notifications),
 	outboxEvents: many(outboxEvents),
 	recoveryCodes: many(recoveryCodes),
 	payoutApprovals: many(payoutApprovals),
 	materialContributors: many(materialContributors),
-	userRoles_grantedBy: many(userRoles, {
-		relationName: "userRoles_grantedBy_users_id"
-	}),
 	userRoles_userId: many(userRoles, {
 		relationName: "userRoles_userId_users_id"
 	}),
+	userRoles_grantedBy: many(userRoles, {
+		relationName: "userRoles_grantedBy_users_id"
+	}),
 	idempotencyKeys: many(idempotencyKeys),
 	licenseTemplateVersions: many(licenseTemplateVersions),
-	materialRenders: many(materialRenders),
 }));
 
 export const pushDevicesRelations = relations(pushDevices, ({one}) => ({
@@ -125,40 +134,41 @@ export const materialTransitionsRelations = relations(materialTransitions, ({one
 }));
 
 export const materialsRelations = relations(materials, ({one, many}) => ({
-	orderItems: many(orderItems),
-	licenses: many(licenses),
-	exclusiveHolds: many(exclusiveHolds),
 	materialTransitions: many(materialTransitions),
-	user_acknowledgedBy: one(users, {
-		fields: [materials.acknowledgedBy],
+	materialExports: many(materialExports),
+	uploadSessions: many(uploadSessions),
+	catalogListings: many(catalogListings),
+	orderItems: many(orderItems),
+	exclusiveHolds: many(exclusiveHolds),
+	licenses: many(licenses),
+	user_reporterId: one(users, {
+		fields: [materials.reporterId],
 		references: [users.id],
-		relationName: "materials_acknowledgedBy_users_id"
-	}),
-	uploadForm: one(uploadForms, {
-		fields: [materials.formVersion],
-		references: [uploadForms.version]
+		relationName: "materials_reporterId_users_id"
 	}),
 	office: one(offices, {
 		fields: [materials.officeId],
 		references: [offices.id]
 	}),
-	user_reporterId: one(users, {
-		fields: [materials.reporterId],
-		references: [users.id],
-		relationName: "materials_reporterId_users_id"
+	uploadForm: one(uploadForms, {
+		fields: [materials.formVersion],
+		references: [uploadForms.version]
 	}),
 	user_reservedBy: one(users, {
 		fields: [materials.reservedBy],
 		references: [users.id],
 		relationName: "materials_reservedBy_users_id"
 	}),
-	notifications: many(notifications),
-	materialExports: many(materialExports),
-	uploadSessions: many(uploadSessions),
-	catalogListings: many(catalogListings),
+	user_acknowledgedBy: one(users, {
+		fields: [materials.acknowledgedBy],
+		references: [users.id],
+		relationName: "materials_acknowledgedBy_users_id"
+	}),
 	materialFiles: many(materialFiles),
-	materialContributors: many(materialContributors),
 	materialRenders: many(materialRenders),
+	materialAssignments: many(materialAssignments),
+	notifications: many(notifications),
+	materialContributors: many(materialContributors),
 }));
 
 export const uploadSessionsRelations = relations(uploadSessions, ({one, many}) => ({
@@ -272,7 +282,34 @@ export const notificationRulesRelations = relations(notificationRules, ({one, ma
 	notificationRuleEscalations: many(notificationRuleEscalations),
 }));
 
+export const materialAssignmentsRelations = relations(materialAssignments, ({one, many}) => ({
+	material: one(materials, {
+		fields: [materialAssignments.materialId],
+		references: [materials.id]
+	}),
+	user_assigneeId: one(users, {
+		fields: [materialAssignments.assigneeId],
+		references: [users.id],
+		relationName: "materialAssignments_assigneeId_users_id"
+	}),
+	user_assignedBy: one(users, {
+		fields: [materialAssignments.assignedBy],
+		references: [users.id],
+		relationName: "materialAssignments_assignedBy_users_id"
+	}),
+	user_returnedBy: one(users, {
+		fields: [materialAssignments.returnedBy],
+		references: [users.id],
+		relationName: "materialAssignments_returnedBy_users_id"
+	}),
+	notifications: many(notifications),
+}));
+
 export const notificationsRelations = relations(notifications, ({one, many}) => ({
+	user: one(users, {
+		fields: [notifications.userId],
+		references: [users.id]
+	}),
 	outboxEvent: one(outboxEvents, {
 		fields: [notifications.eventId],
 		references: [outboxEvents.id]
@@ -289,9 +326,9 @@ export const notificationsRelations = relations(notifications, ({one, many}) => 
 		fields: [notifications.ruleId],
 		references: [notificationRules.id]
 	}),
-	user: one(users, {
-		fields: [notifications.userId],
-		references: [users.id]
+	materialAssignment: one(materialAssignments, {
+		fields: [notifications.assignmentId],
+		references: [materialAssignments.id]
 	}),
 	notificationDeliveries: many(notificationDeliveries),
 }));

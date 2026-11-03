@@ -20,7 +20,7 @@ import { freshFetch } from "../lib/http.mjs";
 import { scan, CHANNEL_KEYS } from "../lib/pii.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-export const NOTIFICATION_KEYS = ["id", "type", "material_id", "title", "priority", "state", "assignment_state", "escalation_level", "recovery_request_id", "created_at", "read_at", "acknowledged_at"];
+export const NOTIFICATION_KEYS = ["id", "type", "material_id", "title", "priority", "state", "assignment_state", "escalation_level", "recovery_request_id", "assignment_id", "created_at", "read_at", "acknowledged_at"];
 
 /** The allowed payload keys of one event type, from the closed whitelist in the contract. */
 export function allowedPayloadKeys(type, schema = JSON.parse(readFileSync(join(HERE, "../../../contracts/schemas/outbox-event.json"), "utf8"))) {

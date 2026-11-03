@@ -1,6 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { Tx } from '../database/database.module';
-import { materialRenders, materials, notificationRuleEscalations, notifications, offices, userRoles, users } from '../database/schema/schema';
+import { materialAssignments, materialRenders, materials, notificationRuleEscalations, notifications, offices, userRoles, users } from '../database/schema/schema';
 import { highestRank, type RoleName } from '../identity/principal';
 import type { OutboxRow } from '../outbox/outbox.dispatcher';
 import { enqueuePush } from '../push/push-delivery.worker';
@@ -48,6 +48,7 @@ export async function fanOut(tx: Tx, event: OutboxRow, opts: FanOutOptions): Pro
   if (event.type === 'auth.recovery_completed') return recoveryCompleted(tx, event, opts);
   if (event.type === 'setting.changed') return settingChanged(tx, event, opts);
   if (event.type === 'render.completed' || event.type === 'render.failed') return renderFinished(tx, event, payload, opts);
+  if (event.type === 'assignment.created' || event.type === 'assignment.state_changed') return assignmentEvent(tx, event, payload, opts);
   const materialId = typeof payload.material_id === 'string' ? payload.material_id : undefined;
   const receipt = typeof payload.receipt_number === 'string' ? payload.receipt_number : undefined;
   const custom = materialId && RULEABLE.test(event.type) ? await enabledRules(tx, event.type) : [];
@@ -258,6 +259,78 @@ async function renderFinished(tx: Tx, event: OutboxRow, payload: Record<string, 
     .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
     .returning({ id: notifications.id });
   return inserted.length;
+}
+
+/**
+ * إسناد المادة (ADR 0096) بآلية مهام الإشعارات القائمة: «أُسندت» إشعار مهمة للمونتير (assignment_state = assigned) بسلّم
+ * التصعيد الافتراضي للعاجل والمهم وبدفع، ومعرّف المهمة فيه. فإن أقرّها قبل أن يصل المُرسل إلى الحدث وصل الإشعار مُقرًّا بلا
+ * تصعيد. والتسليم والإعادة يُعلمان الطرف الآخر داخل المنصة، والإعادة بدفع كذلك. العنوان رقم المادة وحده بقالب الخادم، بلا
+ * ملاحظة ولا موعد ولا اسم. لا تدخل قواعد التنبيه الإدارية.
+ */
+async function assignmentEvent(tx: Tx, event: OutboxRow, payload: Record<string, unknown>, opts: FanOutOptions): Promise<number> {
+  const assignmentId = typeof payload.assignment_id === 'string' ? payload.assignment_id : undefined;
+  if (!assignmentId) return 0;
+  const [a] = await tx
+    .select({
+      id: materialAssignments.id,
+      materialId: materialAssignments.materialId,
+      assigneeId: materialAssignments.assigneeId,
+      assignedBy: materialAssignments.assignedBy,
+      state: materialAssignments.state,
+      priority: materials.priority,
+    })
+    .from(materialAssignments)
+    .innerJoin(materials, eq(materials.id, materialAssignments.materialId))
+    .where(eq(materialAssignments.id, assignmentId))
+    // قفل مشترك: انتقال متزامن (قفل كامل) ينتظر حتى يُثبَّت الإشعار فيقرّه، أو يسبقه فيُقرأ بعده بحالته الجديدة
+    .for('share', { of: materialAssignments });
+  if (!a) return 0;
+  const ref = materialRef(a.materialId);
+  if (event.type === 'assignment.created') {
+    const pending = a.state === 'assigned';
+    const delay = pending ? opts.escalationSeconds[a.priority as 'urgent'] : undefined;
+    const rows = await tx
+      .insert(notifications)
+      .values({
+        userId: a.assigneeId,
+        eventId: event.id,
+        type: event.type,
+        materialId: a.materialId,
+        title: notificationTitle(event.type, opts.locale, { ref }),
+        priority: a.priority,
+        assignmentState: pending ? 'assigned' : 'acknowledged',
+        ...(pending ? {} : { state: 'acknowledged', readAt: sql`now()`, acknowledgedAt: sql`now()` }),
+        escalateAt: delay ? sql`now() + make_interval(secs => ${delay})` : null,
+        assignmentId: a.id,
+      })
+      .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
+      .returning({ id: notifications.id });
+    if (opts.push && pending) await enqueuePush(tx, rows.map((r) => r.id));
+    return rows.length;
+  }
+  const to = payload.to;
+  if (to !== 'done' && to !== 'returned') return 0;
+  const recipients = [...new Set([a.assigneeId, a.assignedBy])].filter((id) => id !== event.actorId);
+  if (recipients.length === 0) return 0;
+  const title = notificationTitle(`assignment.${to}`, opts.locale, { ref });
+  const rows = await tx
+    .insert(notifications)
+    .values(
+      recipients.map((userId) => ({
+        userId,
+        eventId: event.id,
+        type: event.type,
+        materialId: a.materialId,
+        title,
+        priority: a.priority,
+        assignmentState: null,
+        assignmentId: a.id,
+      })),
+    )
+    .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
+    .returning({ id: notifications.id });
+  if (opts.push && to === 'returned') await enqueuePush(tx, rows.map((r) => r.id));
+  return rows.length;
 }
 
 async function recoveryCompleted(tx: Tx, event: OutboxRow, opts: FanOutOptions): Promise<number> {

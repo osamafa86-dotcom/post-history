@@ -51,6 +51,8 @@ public struct OutboxEvent: Sendable, Codable, Hashable {
         case renderPeriodStarted = "render.started"
         case renderPeriodCompleted = "render.completed"
         case renderPeriodFailed = "render.failed"
+        case assignmentPeriodCreated = "assignment.created"
+        case assignmentPeriodStateChanged = "assignment.state_changed"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
     public enum AggregateType: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {

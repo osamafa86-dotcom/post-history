@@ -1497,6 +1497,71 @@ SELECT pg_temp.expect_error($q$
   VALUES ('render.failed', 'material', '00000000-0000-4000-8000-000000000101', 'render.failed:smoke:location',
           '{"material_id": "00000000-0000-4000-8000-000000000101", "render_id": "00000000-0000-4000-8000-000000000d02",
             "location_text": "مدينة، محافظة"}') $q$, '23514');
+-- إسناد المادة إلى المونتير (ADR 0096): مهمة مفتوحة واحدة لكل مادة، والأوقات تتبع الحالة، والملاحظتان بقاعدة الوسوم،
+-- والحمولة معرّفات وحالات وحدها، وإشعار المهمة يحمل معرّفها
+INSERT INTO material_assignments (id, material_id, assignee_id, assigned_by, due_at, note)
+VALUES ('00000000-0000-4000-8000-000000000e01', '00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000013',
+        '00000000-0000-4000-8000-000000000012', now() + interval '30 minutes', 'تقرير تجريبي 60 ثانية طولي');
+SELECT pg_temp.assert((SELECT state = 'assigned' AND acknowledged_at IS NULL AND closed_at IS NULL FROM material_assignments
+  WHERE id = '00000000-0000-4000-8000-000000000e01'), 'an assignment starts assigned');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO material_assignments (material_id, assignee_id, assigned_by, due_at)
+  VALUES ('00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000013', '00000000-0000-4000-8000-000000000012',
+          now() + interval '1 hour') $q$, '23505');
+SELECT pg_temp.expect_error($q$ UPDATE material_assignments SET due_at = created_at - interval '1 minute' WHERE id = '00000000-0000-4000-8000-000000000e01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE material_assignments SET note = '' WHERE id = '00000000-0000-4000-8000-000000000e01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE material_assignments SET note = ' ملاحظة' WHERE id = '00000000-0000-4000-8000-000000000e01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE material_assignments SET note = E'ملا\u202eحظة' WHERE id = '00000000-0000-4000-8000-000000000e01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE material_assignments SET note = repeat('م', 501) WHERE id = '00000000-0000-4000-8000-000000000e01' $q$, '23514');
+UPDATE material_assignments SET note = repeat('م', 500) WHERE id = '00000000-0000-4000-8000-000000000e01';
+SELECT pg_temp.expect_error($q$ UPDATE material_assignments SET state = 'paused' WHERE id = '00000000-0000-4000-8000-000000000e01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE material_assignments SET state = 'acknowledged' WHERE id = '00000000-0000-4000-8000-000000000e01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE material_assignments SET state = 'in_progress', acknowledged_at = now() WHERE id = '00000000-0000-4000-8000-000000000e01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE material_assignments SET state = 'done', acknowledged_at = now(), started_at = now() WHERE id = '00000000-0000-4000-8000-000000000e01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE material_assignments SET state = 'returned', closed_at = now() WHERE id = '00000000-0000-4000-8000-000000000e01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE material_assignments SET return_note = 'سبب' WHERE id = '00000000-0000-4000-8000-000000000e01' $q$, '23514');
+UPDATE material_assignments SET state = 'acknowledged', acknowledged_at = now() WHERE id = '00000000-0000-4000-8000-000000000e01';
+UPDATE material_assignments SET state = 'in_progress', started_at = now() WHERE id = '00000000-0000-4000-8000-000000000e01';
+UPDATE material_assignments SET state = 'done', closed_at = now() WHERE id = '00000000-0000-4000-8000-000000000e01';
+-- بعد إغلاقها تُفتح مهمة جديدة للمادة نفسها، وتُعاد قبل الإقرار بسبب
+INSERT INTO material_assignments (id, material_id, assignee_id, assigned_by, due_at)
+VALUES ('00000000-0000-4000-8000-000000000e02', '00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000013',
+        '00000000-0000-4000-8000-000000000012', now() + interval '1 day');
+SELECT pg_temp.expect_error($q$ UPDATE material_assignments SET state = 'returned', closed_at = now(), returned_by = '00000000-0000-4000-8000-000000000012', return_note = E'سطر\nثانٍ' WHERE id = '00000000-0000-4000-8000-000000000e02' $q$, '23514');
+UPDATE material_assignments SET state = 'returned', closed_at = now(), returned_by = '00000000-0000-4000-8000-000000000012',
+       return_note = 'أُعيد توزيعها' WHERE id = '00000000-0000-4000-8000-000000000e02';
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, actor_id, payload)
+VALUES ('assignment.created', 'material', '00000000-0000-4000-8000-000000000101', 'assignment.created:00000000-0000-4000-8000-000000000e01',
+        '00000000-0000-4000-8000-000000000012',
+        '{"material_id": "00000000-0000-4000-8000-000000000101", "assignment_id": "00000000-0000-4000-8000-000000000e01",
+          "priority": "important", "assignee_id": "00000000-0000-4000-8000-000000000013",
+          "assigned_by": "00000000-0000-4000-8000-000000000012"}');
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, actor_id, payload)
+VALUES ('assignment.state_changed', 'material', '00000000-0000-4000-8000-000000000101', 'assignment.state_changed:smoke:done',
+        '00000000-0000-4000-8000-000000000013',
+        '{"material_id": "00000000-0000-4000-8000-000000000101", "assignment_id": "00000000-0000-4000-8000-000000000e01",
+          "priority": "important", "assignee_id": "00000000-0000-4000-8000-000000000013", "from": "in_progress", "to": "done"}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('assignment.created', 'material', '00000000-0000-4000-8000-000000000101', 'assignment.created:smoke:note',
+          '{"material_id": "00000000-0000-4000-8000-000000000101", "assignment_id": "00000000-0000-4000-8000-000000000e01",
+            "note": "تقرير تجريبي"}') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('assignment.state_changed', 'material', '00000000-0000-4000-8000-000000000101', 'assignment.state_changed:smoke:due',
+          '{"material_id": "00000000-0000-4000-8000-000000000101", "assignment_id": "00000000-0000-4000-8000-000000000e01",
+            "due_at": "2026-11-03T10:00:00Z"}') $q$, '23514');
+INSERT INTO notifications (user_id, event_id, type, material_id, title, priority, assignment_state, escalate_at, assignment_id)
+SELECT '00000000-0000-4000-8000-000000000013', id, type, '00000000-0000-4000-8000-000000000101', 'مهمة جديدة: المادة #00000000',
+       'important', 'assigned', now() + interval '5 minutes', '00000000-0000-4000-8000-000000000e01'
+FROM outbox_events WHERE idempotency_key = 'assignment.created:00000000-0000-4000-8000-000000000e01';
+INSERT INTO audit_log (actor_id, action, target_type, target_id, details, hash)
+VALUES ('00000000-0000-4000-8000-000000000012', 'assignment.created', 'material_assignment', '00000000-0000-4000-8000-000000000e01',
+        '{"assignment_id": "00000000-0000-4000-8000-000000000e01", "material_id": "00000000-0000-4000-8000-000000000101",
+          "target_user_id": "00000000-0000-4000-8000-000000000013", "to": "assigned"}', '\x00');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO audit_log (actor_id, action, target_type, target_id, details, hash)
+  VALUES (NULL, 'assignment.created', 'material_assignment', NULL, '{"note": "تقرير تجريبي"}', '\x00') $q$, '23514');
 SET CONSTRAINTS ALL DEFERRED;
 -- الدوال تعمل بمسار بحث فارغ (الاستعادة)
 SET LOCAL search_path = '';
@@ -1509,6 +1574,9 @@ SELECT pg_temp.assert(public.render_title_lines_valid(ARRAY['عنوان تجري
   'render title check works with an empty search_path');
 SELECT pg_temp.expect_error($q$
   UPDATE public.material_renders SET title_lines = ARRAY[' عنوان'] WHERE id = '00000000-0000-4000-8000-000000000d01' $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
+SELECT pg_temp.expect_error($q$
+  UPDATE public.material_assignments SET note = E'\u2067ملاحظة' WHERE id = '00000000-0000-4000-8000-000000000e02' $q$, '23514');
 SET CONSTRAINTS ALL DEFERRED;
 SET LOCAL search_path TO DEFAULT;
 

@@ -65,6 +65,9 @@ public struct ModelError: Sendable, Codable, Hashable {
         case renderNotAllowed = "render_not_allowed"
         case renderLimitReached = "render_limit_reached"
         case renderLocationUnusable = "render_location_unusable"
+        case assignmentNotAllowed = "assignment_not_allowed"
+        case assignmentOpen = "assignment_open"
+        case assigneeNotEligible = "assignee_not_eligible"
         case internalError = "internal_error"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }

@@ -442,6 +442,56 @@ export const notificationRules = pgTable("notification_rules", {
 	check("notification_rules_scope_kind_check", sql`scope_kind = ANY (ARRAY['all'::text, 'office'::text, 'governorate'::text])`),
 ]);
 
+export const materialAssignments = pgTable("material_assignments", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	materialId: uuid("material_id").notNull(),
+	assigneeId: uuid("assignee_id").notNull(),
+	assignedBy: uuid("assigned_by").notNull(),
+	state: text().default('assigned').notNull(),
+	dueAt: timestamp("due_at", { withTimezone: true, mode: 'string' }).notNull(),
+	note: text(),
+	returnedBy: uuid("returned_by"),
+	returnNote: text("return_note"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true, mode: 'string' }),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }),
+	closedAt: timestamp("closed_at", { withTimezone: true, mode: 'string' }),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("material_assignments_assignee_closed_idx").using("btree", table.assigneeId.asc().nullsLast().op("uuid_ops"), table.closedAt.desc().nullsFirst().op("uuid_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")).where(sql`(state = ANY (ARRAY['done'::text, 'returned'::text]))`),
+	index("material_assignments_assignee_open_idx").using("btree", table.assigneeId.asc().nullsLast().op("uuid_ops"), table.dueAt.asc().nullsLast().op("uuid_ops"), table.id.asc().nullsLast().op("uuid_ops")).where(sql`(state = ANY (ARRAY['assigned'::text, 'acknowledged'::text, 'in_progress'::text]))`),
+	index("material_assignments_material_idx").using("btree", table.materialId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("uuid_ops")),
+	uniqueIndex("material_assignments_open_key").using("btree", table.materialId.asc().nullsLast().op("uuid_ops")).where(sql`(state = ANY (ARRAY['assigned'::text, 'acknowledged'::text, 'in_progress'::text]))`),
+	foreignKey({
+			columns: [table.materialId],
+			foreignColumns: [materials.id],
+			name: "material_assignments_material_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.assigneeId],
+			foreignColumns: [users.id],
+			name: "material_assignments_assignee_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.assignedBy],
+			foreignColumns: [users.id],
+			name: "material_assignments_assigned_by_fkey"
+		}),
+	foreignKey({
+			columns: [table.returnedBy],
+			foreignColumns: [users.id],
+			name: "material_assignments_returned_by_fkey"
+		}),
+	check("material_assignments_state_check", sql`state = ANY (ARRAY['assigned'::text, 'acknowledged'::text, 'in_progress'::text, 'done'::text, 'returned'::text])`),
+	check("material_assignments_due_after_created", sql`due_at > created_at`),
+	check("material_assignments_note_valid", sql`(note IS NULL) OR render_text_valid(note, 500)`),
+	check("material_assignments_acknowledged_at_check", sql`((state = 'assigned'::text) AND (acknowledged_at IS NULL)) OR ((state = ANY (ARRAY['acknowledged'::text, 'in_progress'::text, 'done'::text])) AND (acknowledged_at IS NOT NULL)) OR (state = 'returned'::text)`),
+	check("material_assignments_started_at_check", sql`((state = ANY (ARRAY['assigned'::text, 'acknowledged'::text])) AND (started_at IS NULL)) OR ((state = ANY (ARRAY['in_progress'::text, 'done'::text])) AND (started_at IS NOT NULL)) OR (state = 'returned'::text)`),
+	check("material_assignments_closed_at_check", sql`(state = ANY (ARRAY['done'::text, 'returned'::text])) = (closed_at IS NOT NULL)`),
+	check("material_assignments_returned_by_check", sql`(state = 'returned'::text) = (returned_by IS NOT NULL)`),
+	check("material_assignments_return_note_check", sql`(return_note IS NULL) OR ((state = 'returned'::text) AND render_text_valid(return_note, 500))`),
+]);
+
 export const notifications = pgTable("notifications", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	userId: uuid("user_id").notNull(),
@@ -460,13 +510,20 @@ export const notifications = pgTable("notifications", {
 	acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true, mode: 'string' }),
 	recoveryRequestId: uuid("recovery_request_id"),
 	ruleId: uuid("rule_id"),
+	assignmentId: uuid("assignment_id"),
 }, (table) => [
+	index("notifications_assignment_idx").using("btree", table.assignmentId.asc().nullsLast().op("uuid_ops")).where(sql`(assignment_id IS NOT NULL)`),
 	index("notifications_escalation_idx").using("btree", table.escalateAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((acknowledged_at IS NULL) AND (escalate_at IS NOT NULL))`),
-	index("notifications_inbox_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("uuid_ops")),
-	index("notifications_material_ack_due_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops"), table.escalateAt.asc().nullsLast().op("uuid_ops")).where(sql`((assignment_state = 'assigned'::text) AND (acknowledged_at IS NULL) AND (material_id IS NOT NULL))`),
+	index("notifications_inbox_idx").using("btree", table.userId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("notifications_material_ack_due_idx").using("btree", table.materialId.asc().nullsLast().op("timestamptz_ops"), table.escalateAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((assignment_state = 'assigned'::text) AND (acknowledged_at IS NULL) AND (material_id IS NOT NULL))`),
 	index("notifications_material_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops")).where(sql`(material_id IS NOT NULL)`),
 	index("notifications_overdue_assignment_idx").using("btree", table.escalateAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((assignment_state = 'assigned'::text) AND (acknowledged_at IS NULL))`),
 	index("notifications_unread_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops")).where(sql`(read_at IS NULL)`),
+	foreignKey({
+			columns: [table.userId],
+			foreignColumns: [users.id],
+			name: "notifications_user_id_fkey"
+		}).onDelete("cascade"),
 	foreignKey({
 			columns: [table.eventId],
 			foreignColumns: [outboxEvents.id],
@@ -488,17 +545,17 @@ export const notifications = pgTable("notifications", {
 			name: "notifications_rule_id_fkey"
 		}).onDelete("set null"),
 	foreignKey({
-			columns: [table.userId],
-			foreignColumns: [users.id],
-			name: "notifications_user_id_fkey"
-		}).onDelete("cascade"),
+			columns: [table.assignmentId],
+			foreignColumns: [materialAssignments.id],
+			name: "notifications_assignment_id_fkey"
+		}).onDelete("set null"),
 	unique("notifications_user_event_key").on(table.userId, table.eventId),
-	check("notifications_ack_consistent", sql`(state = 'acknowledged'::text) = (acknowledged_at IS NOT NULL)`),
+	check("notifications_priority_check", sql`priority = ANY (ARRAY['urgent'::text, 'important'::text, 'normal'::text])`),
+	check("notifications_state_check", sql`state = ANY (ARRAY['sent'::text, 'delivered'::text, 'read'::text, 'acknowledged'::text])`),
 	check("notifications_assignment_state_check", sql`(assignment_state IS NULL) OR (assignment_state = ANY (ARRAY['assigned'::text, 'acknowledged'::text]))`),
 	check("notifications_escalation_nonneg", sql`escalation_level >= 0`),
-	check("notifications_priority_check", sql`priority = ANY (ARRAY['urgent'::text, 'important'::text, 'normal'::text])`),
 	check("notifications_read_consistent", sql`(state = ANY (ARRAY['read'::text, 'acknowledged'::text])) = (read_at IS NOT NULL)`),
-	check("notifications_state_check", sql`state = ANY (ARRAY['sent'::text, 'delivered'::text, 'read'::text, 'acknowledged'::text])`),
+	check("notifications_ack_consistent", sql`(state = 'acknowledged'::text) = (acknowledged_at IS NOT NULL)`),
 ]);
 
 export const materialFiles = pgTable("material_files", {
@@ -748,7 +805,7 @@ export const outboxEvents = pgTable("outbox_events", {
 	check("outbox_events_idempotency_key_len", sql`(char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 200)`),
 	check("outbox_events_payload_is_object", sql`jsonb_typeof(payload) = 'object'::text`),
 	check("outbox_events_payload_whitelisted", sql`CHECK (outbox_payload_is_whitelisted(type, payload`),
-	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text, 'license.revoked'::text, 'payout.status_changed'::text, 'render.requested'::text, 'render.started'::text, 'render.completed'::text, 'render.failed'::text])`),
+	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text, 'license.revoked'::text, 'payout.status_changed'::text, 'render.requested'::text, 'render.started'::text, 'render.completed'::text, 'render.failed'::text, 'assignment.created'::text, 'assignment.state_changed'::text])`),
 ]);
 
 export const recoveryCodes = pgTable("recovery_codes", {
