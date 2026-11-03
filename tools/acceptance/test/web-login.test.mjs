@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT } from "../lib/measurement.mjs";
-import { login, PASSWORD_SUBMIT } from "../scripts/web-gap-helpers.mjs";
+import { HOME_PAGES, LANDING, login, PASSWORD_SUBMIT } from "../scripts/web-gap-helpers.mjs";
 
 const fixture = JSON.parse(readFileSync(new URL("../fixtures/login-page.json", import.meta.url), "utf8"));
 const messages = (locale) => JSON.parse(readFileSync(join(ROOT, "apps/web/messages", `${locale}.json`), "utf8"));
@@ -13,9 +13,11 @@ const at = (tree, path) => path.split(".").reduce((node, key) => node?.[key], tr
  * صفحة بديلة بقواعد Playwright التي تكسر السكربتات: `getByRole`/`getByLabel` بتعبير منتظم يطابق جزءًا من الاسم، والوضع
  * الصارم يرمي حين يطابق المحدِّد أكثر من عنصر عند الفعل (click/fill). `first()` و`count()` لا يرميان.
  */
-function fakeLoginPage(locale) {
+function fakeLoginPage(locale, home = "inbox") {
   const page = fixture.locales[locale];
   const clicked = [], filled = {};
+  // بعد زر الدخول يذهب المتصفح إلى صفحة بداية الدور (الويب: window.location.replace)، وwaitForURL ينتظرها كما في Playwright
+  let url = `http://web.test/${locale}/login`;
   const locator = (kind, names, pattern) => {
     const hits = Object.entries(names).filter(([, name]) => pattern.test(name));
     const strict = (action) => {
@@ -23,7 +25,7 @@ function fakeLoginPage(locale) {
       return hits[0][0];
     };
     return {
-      click: async () => { clicked.push(strict("click")); },
+      click: async () => { const hit = strict("click"); clicked.push(hit); if (hit === "signIn") url = `http://web.test/${locale}/${home}`; },
       fill: async (value) => { filled[strict("fill")] = value; },
       count: async () => hits.length,
       first: () => locator(kind, Object.fromEntries(hits.slice(0, 1)), pattern),
@@ -34,7 +36,7 @@ function fakeLoginPage(locale) {
     goto: async () => {},
     getByLabel: (pattern) => locator("label", page.labels, pattern),
     getByRole: (role, { name }) => locator(role, role === "button" ? page.buttons : page.links, name),
-    waitForURL: async () => {},
+    waitForURL: async (pattern) => { if (!pattern.test(url)) throw new Error(`waitForURL: timeout, still on ${url}`); },
   };
 }
 
@@ -67,4 +69,23 @@ test("the old partial selector is what broke: it resolves to both buttons and tr
     assert.deepEqual(names.filter((n) => PASSWORD_SUBMIT.test(n)), [fixture.locales[locale].buttons.signIn], locale);
     await assert.rejects(() => fakeLoginPage(locale).getByRole("button", { name: /دخول|Sign in|Login/i }).click(), /strict mode violation/);
   }
+});
+
+test("login ends on every role's home page (finance on payouts, a role without materials on notifications), not only inbox and store", async () => {
+  const source = readFileSync(join(ROOT, "apps/web/src/lib/home-page.ts"), "utf8");
+  const declared = /export type HomePage = ([^;]+);/.exec(source)?.[1].match(/"([a-z-]+)"/g).map((q) => q.slice(1, -1));
+  assert.deepEqual([...HOME_PAGES].sort(), [...declared].sort(), "HOME_PAGES drifted from apps/web/src/lib/home-page.ts");
+  for (const home of HOME_PAGES) {
+    for (const locale of Object.keys(fixture.locales)) {
+      const page = fakeLoginPage(locale, home);
+      await login(page, { ACCEPTANCE_BASE_URL: "http://web.test" }, { email: "f@example.test", password: "x".repeat(12), locale });
+      assert.deepEqual(page.clicked, ["signIn"], `${home} ${locale}`);
+    }
+  }
+  assert.equal(LANDING.test("http://web.test/ar/login"), false, "the login page itself is not a landing");
+  assert.equal(LANDING.test("http://web.test/en/payouts?x=1"), true);
+  assert.equal(LANDING.test("http://web.test/en/payouts-archive"), false);
+  // the old wait matched inbox and store only, so a finance or notifications-only account timed out after a good sign-in
+  const old = /\/((ar|en)\/)?(inbox|store)(?:\?|$)/;
+  for (const home of ["payouts", "notifications"]) assert.ok(!old.test(`http://web.test/en/${home}`) && LANDING.test(`http://web.test/en/${home}`), home);
 });
