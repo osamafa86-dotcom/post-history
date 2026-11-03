@@ -27,6 +27,7 @@ import { applicableRule, type AppliedRule } from './commission-rules';
 import { requestDelivery } from './delivery';
 import { postEntry, type AccountRef } from './ledger';
 import { allocate, type Currency, money, type Money, percentToBasisPoints } from './money';
+import type { CheckoutLocale } from './sandbox-page';
 import { PAYMENT_PROVIDER, type PaymentProvider, type ProviderEvent, WebhookSignatureError } from './payment-provider';
 import { IgnoredWebhookEvent, LiveModeEvent } from './stripe-provider';
 import { applyRefundSucceeded } from './refunds';
@@ -134,7 +135,7 @@ export class OrdersService {
   }
 
   /** جلسة الدفع: يُعاد التحقق من المهلة والحجز الحصري قبل إنشائها، والتكرار والجلسة صالحة يعيد الجلسة نفسها. */
-  async checkout(p: Principal, id: string): Promise<components['schemas']['CheckoutSession']> {
+  async checkout(p: Principal, id: string, locale: CheckoutLocale = 'ar'): Promise<components['schemas']['CheckoutSession']> {
     if (!this.provider) throw new ApiError(409, 'order_state_conflict', 'No payment provider is configured.');
     const provider = this.provider;
     if (!UUID.test(id)) throw ApiError.notFound();
@@ -146,8 +147,9 @@ export class OrdersService {
     const session = await provider.createCheckout({
       orderId: id,
       amount: money(o.totalMinor, o.currency as Currency),
-      // صفحة الويب من الإعداد وحده بمعرّف الطلب؛ بلا قالب لا عودة
-      returnUrl: this.config.SANDBOX_RETURN_URL ? this.config.SANDBOX_RETURN_URL.replace('{order_id}', id) : '',
+      // صفحة الويب من الإعداد وحده بمعرّف الطلب ولغة المشتري (قائمة مغلقة)؛ بلا قالب لا عودة
+      returnUrl: this.config.SANDBOX_RETURN_URL ? returnUrlFor(this.config.SANDBOX_RETURN_URL, id, locale) : '',
+      locale,
       idempotencyKey: `checkout:${id}`,
     });
     return this.db.transaction(async (tx) => {
@@ -537,4 +539,9 @@ function decodeCursor(cursor: string): { at: string; id: string } {
     // يقع إلى 400 أدناه
   }
   throw new ApiError(400, 'bad_request', 'Invalid cursor.', { params: ['cursor'] });
+}
+
+/** قالب العودة من الإعداد (`{order_id}` إلزامي فيه، و`{locale}` اختياري) بمعرّف الطلب ولغته. */
+export function returnUrlFor(template: string, orderId: string, locale: CheckoutLocale): string {
+  return template.replaceAll('{order_id}', orderId).replaceAll('{locale}', locale);
 }

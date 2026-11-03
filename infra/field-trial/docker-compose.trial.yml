@@ -52,6 +52,9 @@ services:
       PAYMENT_PROVIDER: "${PAYMENT_PROVIDER:-none}"
       SANDBOX_WEBHOOK_SECRET: "${SANDBOX_WEBHOOK_SECRET:-}"
       SANDBOX_CHECKOUT_BASE_URL: "https://${MAIN_DOMAIN:?}"
+      # العودة من صفحة الدفع إلى طلب المشتري بلغته (ADR 0032، ملحق 2026-11-03): الويب على النطاق الرئيسي نفسه، والقالب ثابت
+      # هنا لا من الأسرار؛ {locale} و{order_id} يملؤهما الخادم. بلا قالب يبقى المشتري على ردّ 202 فارغ.
+      SANDBOX_RETURN_URL: "https://${MAIN_DOMAIN:?}/{locale}/store/orders/{order_id}?returned=1"
   # أرشفة WAL المستمرة إلى المزوّد الثاني (ADR 0051): الصورة نفسها مع WAL-G، والمفتاح العام وحده على المضيف. الأرشفة
   # مطفأة ما لم يُضبط WALG_ARCHIVE_MODE=on (preflight ينبّه)، فلا يتراكم WAL بلا وجهة.
   postgres:

@@ -1,5 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { type Currency, isCurrency, type Money, money } from './money';
+import type { CheckoutLocale } from './sandbox-page';
 
 /**
  * واجهة مزوّد الدفع (ADR 0032): الدفع مستضاف لدى المزوّد فلا تمر بيانات بطاقة بخوادمنا، والحقيقة من إشعار موقَّع أو من
@@ -17,7 +18,7 @@ export type ProviderPaymentStatus = 'pending' | 'succeeded' | 'failed' | 'refund
 
 export interface PaymentProvider {
   readonly name: string;
-  createCheckout(input: { orderId: string; amount: Money; returnUrl: string; idempotencyKey: string }): Promise<{ checkoutUrl: string; providerRef: string; expiresAt: Date }>;
+  createCheckout(input: { orderId: string; amount: Money; returnUrl: string; locale?: CheckoutLocale; idempotencyKey: string }): Promise<{ checkoutUrl: string; providerRef: string; expiresAt: Date }>;
   /** يرمي WebhookSignatureError عند توقيع أو وقت غير صالحين، قبل تحليل الجسم. */
   verifyWebhook(rawBody: Buffer, headers: Record<string, string | undefined>, now?: Date): ProviderEvent;
   refund(input: { providerRef: string; amount: Money; idempotencyKey: string }): Promise<{ refundRef: string }>;
@@ -94,7 +95,7 @@ function parseEvent(rawBody: Buffer): ProviderEvent {
  */
 export class SandboxPaymentProvider implements PaymentProvider {
   readonly name = 'sandbox';
-  private readonly payments = new Map<string, { status: ProviderPaymentStatus; amount: Money; checkoutKey: string; returnUrl: string }>();
+  private readonly payments = new Map<string, { status: ProviderPaymentStatus; amount: Money; checkoutKey: string; returnUrl: string; locale: CheckoutLocale }>();
   private readonly refunds = new Map<string, { refundRef: string; amount: Money }>();
 
   constructor(
@@ -102,10 +103,13 @@ export class SandboxPaymentProvider implements PaymentProvider {
     private readonly baseUrl: string,
   ) {}
 
-  async createCheckout(input: { orderId: string; amount: Money; returnUrl: string; idempotencyKey: string }): Promise<{ checkoutUrl: string; providerRef: string; expiresAt: Date }> {
+  async createCheckout(input: { orderId: string; amount: Money; returnUrl: string; locale?: CheckoutLocale; idempotencyKey: string }): Promise<{ checkoutUrl: string; providerRef: string; expiresAt: Date }> {
     const existing = [...this.payments.entries()].find(([, p]) => p.checkoutKey === input.idempotencyKey);
     const providerRef = existing?.[0] ?? `sbx_${randomBytes(16).toString('hex')}`;
-    if (!existing) this.payments.set(providerRef, { status: 'pending', amount: input.amount, checkoutKey: input.idempotencyKey, returnUrl: input.returnUrl });
+    const locale = input.locale ?? 'ar';
+    if (!existing) this.payments.set(providerRef, { status: 'pending', amount: input.amount, checkoutKey: input.idempotencyKey, returnUrl: input.returnUrl, locale });
+    // الجلسة نفسها لطلب الدفع ثانيةً، بلغة آخر طلب ووجهته (المشتري بدّل لغة الويب)
+    else Object.assign(existing[1], { returnUrl: input.returnUrl, locale });
     return { checkoutUrl: `${this.baseUrl.replace(/\/$/, '')}/sandbox/checkout/${providerRef}`, providerRef, expiresAt: new Date(Date.now() + 30 * 60 * 1000) };
   }
 
@@ -129,6 +133,11 @@ export class SandboxPaymentProvider implements PaymentProvider {
   /** صفحة العودة للجلسة (من إعداد الخادم وحده)، أو undefined بلا عودة أو للمرجع المجهول. */
   returnUrlOf(providerRef: string): string | undefined {
     return this.payments.get(providerRef)?.returnUrl || undefined;
+  }
+
+  /** لغة صفحة الجلسة (CheckoutRequest.locale)، والعربية للمرجع المجهول. */
+  localeOf(providerRef: string): CheckoutLocale {
+    return this.payments.get(providerRef)?.locale ?? 'ar';
   }
 
   /** مبلغ الجلسة لصفحة الدفع، أو undefined للمرجع المجهول. */
