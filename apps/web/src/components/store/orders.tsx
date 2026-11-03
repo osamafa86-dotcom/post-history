@@ -37,7 +37,8 @@ export function CartPage({ locale }: { locale: Locale }) {
     const order: Order = created;
     cart.clear(); setPlaced(order);
     let session: Session | undefined;
-    const opened = await checkout.run(`checkout:${order.id}`, async header => { const result = await browserApi().POST("/orders/{order_id}/checkout", { params: { path: { order_id: order.id }, header } }); session = result.data; return result; });
+    // صفحة المزوّد التجريبي والعودة منها بلغة الواجهة (`CheckoutRequest.locale`)
+    const opened = await checkout.run(`checkout:${order.id}`, async header => { const result = await browserApi().POST("/orders/{order_id}/checkout", { params: { path: { order_id: order.id }, header }, body: { locale } }); session = result.data; return result; });
     // المزوّد يحدده الخادم؛ الصفحة تسمّيه قبل التوجيه ولا تعرض اختيارًا.
     if (opened && session) { setRedirecting(session.provider === "stripe" ? "stripe" : "sandbox"); window.location.assign(session.checkout_url); }
   }
@@ -117,7 +118,7 @@ export function OrderPage({ locale, id, returned }: { locale: Locale; id: string
   }, [id, returned, attempt]);
   async function pay() {
     let session: Session | undefined;
-    const ok = await mutation.run(`checkout:${id}`, async header => { const result = await browserApi().POST("/orders/{order_id}/checkout", { params: { path: { order_id: id }, header } }); session = result.data; return result; });
+    const ok = await mutation.run(`checkout:${id}`, async header => { const result = await browserApi().POST("/orders/{order_id}/checkout", { params: { path: { order_id: id }, header }, body: { locale } }); session = result.data; return result; });
     if (ok && session) { setRedirecting(session.provider === "stripe" ? "stripe" : "sandbox"); window.location.assign(session.checkout_url); }
   }
   async function cancel() {
