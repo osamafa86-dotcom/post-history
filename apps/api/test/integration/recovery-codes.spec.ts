@@ -17,7 +17,7 @@ describe('backup codes (GET/POST /auth/recovery-codes)', () => {
   const http = () => request(h.app.getHttpServer());
   const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
   const status = (token: string) => http().get('/v1/auth/recovery-codes').set(bearer(token));
-  // إعادة التحقق في الجسم (ADR 0113): كلمة المرور لحساب بلا TOTP
+  // إعادة التحقق في الجسم (ADR 0117): كلمة المرور لحساب بلا TOTP
   const generate = (u: { token: string; password: string }, body: object = { password: u.password }) =>
     http().post('/v1/auth/recovery-codes').set(bearer(u.token)).send(body);
   const start = (email: string, backup_code: string) => http().post('/v1/auth/recovery').send({ email, backup_code }).expect(202);
@@ -87,14 +87,15 @@ describe('backup codes (GET/POST /auth/recovery-codes)', () => {
     await http().post('/v1/auth/recovery-codes').set('Idempotency-Key', randomUUID()).expect(401);
   });
 
-  // ADR 0113: جلسة مسروقة وحدها لا تأخذ رموزًا ولا تبطل رموز صاحبها
+  // ADR 0117: جلسة مسروقة وحدها لا تأخذ رموزًا ولا تبطل رموز صاحبها
   it('needs the password again, and TOTP when enabled; a code already used to sign in is refused', async () => {
     const u = await seedUser(h, { totp: true, roles: [{ role: 'producer' }] });
     const loginCode = freshTotp(u.id, u.totpSecret!);
     const token = (await http().post('/v1/auth/login').send({ email: u.email, password: u.password, totp_code: loginCode }).expect(200)).body.access_token;
     const actor = { token, password: u.password };
+    // بلا جسم (العميل القائم) 401؛ وجسم بلا كلمة مرور يُرفض بالمخطط كما في registration-options
     await http().post('/v1/auth/recovery-codes').set(bearer(token)).expect(401);
-    await generate(actor, {}).expect(401);
+    expect((await generate(actor, {}).expect(422)).body.code).toBe('validation_failed');
     expect((await generate(actor, { password: 'not the password' }).expect(401)).body.code).toBe('unauthorized');
     expect((await generate(actor, { password: u.password }).expect(401)).body.code).toBe('totp_required');
     expect((await generate(actor, { password: u.password, totp_code: 'abc' }).expect(422)).body.code).toBe('validation_failed');

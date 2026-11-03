@@ -111,13 +111,14 @@ export class AuthController {
     return this.account.recoveryCodeStatus(req.auth!.userId);
   }
 
-  // إعادة التحقق في الجسم (ADR 0113): الجسم الغائب أو الفارغ يصل إلى إعادة التحقق فيرد 401، والمشوّه 422
+  // إعادة التحقق في الجسم (ADR 0117): الجسم الغائب (العميل القائم) يصل إلى إعادة التحقق فيرد 401، وما أُرسل يُتحقق منه
+  // بالمخطط كما في registration-options، فجسم بلا كلمة مرور 422
   @Post('recovery-codes')
   @HttpCode(200)
   @Roles('authenticated')
   generateRecoveryCodes(@Body() body: unknown, @Req() req: Request): Promise<components['schemas']['RecoveryCodes']> {
-    const empty = body === undefined || body === null || (typeof body === 'object' && !Array.isArray(body) && Object.keys(body).length === 0);
-    const input = empty ? undefined : validateBody<components['schemas']['PasskeyStepUp']>('/auth/recovery-codes', 'post', body);
+    const absent = body === undefined || body === null || !req.is('application/json');
+    const input = absent ? undefined : validateBody<components['schemas']['PasskeyStepUp']>('/auth/recovery-codes', 'post', body);
     return this.account.generateRecoveryCodes(req.auth!.userId, input);
   }
 }
