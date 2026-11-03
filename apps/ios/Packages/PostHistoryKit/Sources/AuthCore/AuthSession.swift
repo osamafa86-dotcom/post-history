@@ -20,6 +20,8 @@ public actor AuthSession {
     private let refreshLeeway: TimeInterval
     private var current: StoredSession?
     private var refreshInFlight: Task<StoredSession, Error>?
+    /// جيل الجلسة: يزيد مع الدخول والخروج والنسيان المحلي. تحديث بدأ في جيل سابق لا يحفظ رموزه ولا يعيد الدخول (ADR 0113).
+    private var generation: UInt64 = 0
     private var subscribers: [UUID: AsyncStream<AuthEvent>.Continuation] = [:]
 
     public init(store: any TokenStore, gateway: any AuthGateway, refreshLeeway: TimeInterval = 60, now: @escaping Clock = { Date() }) {
@@ -60,6 +62,7 @@ public actor AuthSession {
 
     /// ينسى الجلسة محليًا دون أي اتصال (المسح الطارئ): يمسح المخزن ويلغي تحديثًا جاريًا. لا يُسجَّل شيء.
     public func forgetLocally() {
+        generation &+= 1
         refreshInFlight?.cancel()
         refreshInFlight = nil
         current = nil
@@ -70,6 +73,9 @@ public actor AuthSession {
     public func login(email: String, password: String, totpCode: String?) async throws -> StoredSession {
         do {
             let s = StoredSession(try await gateway.login(LoginRequest(email: email, password: password, totpCode: totpCode)))
+            generation &+= 1
+            refreshInFlight?.cancel()
+            refreshInFlight = nil
             try store.save(s)
             current = s
             return s
@@ -86,40 +92,60 @@ public actor AuthSession {
     }
 
     /// يحدّث الجلسة مرة واحدة مهما تعدد المنتظرون. إن كان الرمز الحالي أحدث من `staleAccessToken` فقد حُدِّث بالفعل.
+    /// الحفظ والمسح على الممثّل بعد الرد لا في المهمة: ردٌّ وصل بعد الخروج أو النسيان المحلي (أو بعد دخول جديد) لا يحفظ رموزه،
+    /// ولا يعيد الدخول، ولا يمسح جلسة أحدث منه.
     @discardableResult
     public func refresh(ifStillUsing staleAccessToken: String? = nil) async throws -> StoredSession {
         if let staleAccessToken, let s = current, s.accessToken != staleAccessToken { return s }
-        if let task = refreshInFlight { return try await task.value }
-        guard let s = current else { throw AuthError.notSignedIn }
-        let task = Task<StoredSession, Error> { [gateway, store] in
-            do {
-                let fresh = StoredSession(try await gateway.refresh(refreshToken: s.refreshToken))
-                try store.save(fresh)
-                return fresh
-            } catch {
-                let mapped = APIErrorMapper.map(error)
-                if mapped == .unauthorized { try? store.clear(); throw AuthError.sessionExpired }
-                throw mapped
+        let started = generation
+        let task: Task<StoredSession, Error>
+        if let inFlight = refreshInFlight {
+            task = inFlight
+        } else {
+            guard let s = current else { throw AuthError.notSignedIn }
+            task = Task<StoredSession, Error> { [gateway] in
+                do {
+                    return StoredSession(try await gateway.refresh(refreshToken: s.refreshToken))
+                } catch {
+                    let mapped = APIErrorMapper.map(error)
+                    if mapped == .unauthorized { throw AuthError.sessionExpired }
+                    throw mapped
+                }
             }
+            refreshInFlight = task
         }
-        refreshInFlight = task
-        defer { refreshInFlight = nil }
         do {
             let fresh = try await task.value
-            current = fresh
+            if refreshInFlight == task { refreshInFlight = nil }
+            guard generation == started else { throw AuthError.notSignedIn }
+            if current != fresh {
+                do { try store.save(fresh) } catch { throw APIErrorMapper.map(error) }
+                current = fresh
+            }
             return fresh
         } catch AuthError.sessionExpired {
-            current = nil
-            emit(.sessionRevoked(at: now()))
+            if refreshInFlight == task { refreshInFlight = nil }
+            guard generation == started else { throw AuthError.notSignedIn }
+            // أول منتظر يمسح ويبث الإبطال مرة واحدة؛ من بعده يجد الجلسة ممسوحة.
+            if current != nil {
+                try? store.clear()
+                current = nil
+                emit(.sessionRevoked(at: now()))
+            }
             throw AuthError.sessionExpired
+        } catch {
+            if refreshInFlight == task { refreshInFlight = nil }
+            throw error
         }
     }
 
     /// ينهي الجلسة محليًا دائمًا ثم يبلغ الخادم؛ خطأ الشبكة لا يُبقي الرموز على الجهاز.
     public func logout(allSessions: Bool = false) async throws {
+        generation &+= 1
         let s = current
         current = nil
         refreshInFlight?.cancel()
+        refreshInFlight = nil
         try? store.clear()
         guard let s else { return }
         do { try await gateway.logout(allSessions: allSessions, accessToken: s.accessToken) } catch { throw APIErrorMapper.map(error) }

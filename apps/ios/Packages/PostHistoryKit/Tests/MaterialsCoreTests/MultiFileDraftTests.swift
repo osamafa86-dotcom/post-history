@@ -1,6 +1,7 @@
 import XCTest
 import FormEngine
 import PostHistoryAPI
+import UploadCore
 @testable import MaterialsCore
 
 /// عدة ملفات في المادة الواحدة: ترحيل المسودات القديمة (ملف واحد)، والتحقق، وحقائق المجموعة، وما يعدّ إدخالًا يضيع بالإغلاق.
@@ -283,6 +284,63 @@ final class MultiFileDraftTests: XCTestCase {
         let second = await DraftSubmission.run(first.draft, dynamicFields: [:], create: r.create, enqueue: r.enqueue)
         XCTAssertNil(second.error)
         XCTAssertEqual(r.enqueued.map(\.file), ["a.mov", "b.mov", "c.mov"])
+    }
+
+    /// مراجعة شاملة: المسودة كانت تُحفظ مرة في آخر الإرسال، فإنهاء التطبيق في منتصفه يترك مادة بلا ملف أو ملفًا يُدخل مرتين.
+    /// الآن تُحفظ بعد كل خطوة (كما `MaterialBatch` في أندرويد)، وأي لقطة محفوظة تُستأنف بلا تكرار.
+    @MainActor func testTheDraftIsSavedAfterEachStepSoAKillAnywhereNeverDuplicates() async throws {
+        let draft = complete(files: [file("a.mov"), file("b.mov"), file("c.mov")])
+        let r = Recorder()
+        var saved: [MaterialDraft] = []
+        let outcome = await DraftSubmission.run(draft, dynamicFields: [:], create: r.create, enqueue: r.enqueue) { saved.append($0) }
+        XCTAssertNil(outcome.error)
+        // قبل أول طلب، ثم لكل ملف: بعد إنشاء مادته، وبعد إدخاله.
+        XCTAssertEqual(saved.map { $0.files.map(\.filename) },
+                       [["a.mov", "b.mov", "c.mov"], ["a.mov", "b.mov", "c.mov"], ["b.mov", "c.mov"],
+                        ["b.mov", "c.mov"], ["c.mov"], ["c.mov"], []])
+        XCTAssertEqual(saved[0].files.compactMap(\.titleSuffix), ["(1/3)", "(2/3)", "(3/3)"].map { " " + $0 }, "numbering is on disk before the first request")
+        XCTAssertNotNil(saved[3].files[0].createdMaterialId, "b.mov's material is on disk before b.mov is enqueued")
+
+        // يُنهى التطبيق عند كل لقطة محفوظة ثم يُعاد إرسال ما على القرص: كل مادة تُنشأ مرة، وكل ملف يُدخل مرة.
+        for (i, snapshot) in saved.enumerated() {
+            let replay = Recorder()
+            // ما قبل الإنهاء كما جرى حتى هذه اللقطة
+            let createdBefore = Set(saved[i].files.compactMap(\.createdMaterialId)).count + (3 - saved[i].files.count)
+            let reloaded = try JSONDecoder().decode(MaterialDraft.self, from: JSONEncoder().encode(snapshot))
+            let resumed = await DraftSubmission.run(reloaded, dynamicFields: [:], create: replay.create, enqueue: replay.enqueue)
+            XCTAssertNil(resumed.error)
+            XCTAssertEqual(createdBefore + replay.created.count, 3, "snapshot \(i): three materials in total")
+            XCTAssertEqual((3 - snapshot.files.count) + replay.enqueued.count, 3, "snapshot \(i): each file enqueued once")
+        }
+    }
+
+    @MainActor func testAFailedSaveStopsTheSendBeforeAnyRequest() async {
+        let r = Recorder()
+        let outcome = await DraftSubmission.run(complete(files: [file("a.mov")]), dynamicFields: [:], create: r.create, enqueue: r.enqueue) { _ in throw Boom() }
+        XCTAssertNotNil(outcome.error)
+        XCTAssertTrue(r.created.isEmpty, "nothing is sent that could not be remembered")
+        XCTAssertEqual(outcome.draft.files.count, 1)
+    }
+
+    // MARK: المسودة لصاحبها
+
+    func testDraftsAreShownToTheirOwnerOnly() throws {
+        let a = UUID(), b = UUID()
+        var mine = complete(files: [file("a.mov")]); mine.owner = a
+        var theirs = complete(files: [file("b.mov")]); theirs.owner = b
+        let legacy = complete(files: [file("c.mov")]) // كتبه بناء سابق بلا مالك
+        let all = [mine, theirs, legacy]
+
+        XCTAssertEqual(AccountScope(current: a, sole: nil).visible(all).map(\.id), [mine.id], "B's draft and an ownerless one are hidden from A on a shared phone")
+        XCTAssertEqual(AccountScope(current: b, sole: nil).visible(all).map(\.id), [theirs.id])
+        XCTAssertTrue(AccountScope(current: nil, sole: a).visible(all).isEmpty, "signed out: no draft at all")
+        XCTAssertEqual(Set(AccountScope(current: a, sole: a).visible(all).map(\.id)), [mine.id, legacy.id], "an old draft belongs to the only account that signed in")
+
+        let decoded = try JSONDecoder().decode(MaterialDraft.self, from: JSONEncoder().encode(mine))
+        XCTAssertEqual(decoded.owner, a)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(mine)) as? [String: Any])
+        object["owner"] = nil
+        XCTAssertNil(try JSONDecoder().decode(MaterialDraft.self, from: JSONSerialization.data(withJSONObject: object)).owner, "drafts saved before the field still decode")
     }
 
     @MainActor func testAnIncompleteDraftCreatesNothing() async {
