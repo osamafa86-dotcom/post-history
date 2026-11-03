@@ -232,7 +232,8 @@ def vmaf(aspect: str, seconds: int, work: Path) -> dict:
         timeout_s=1800)
     log = work / "vmaf.json"
     run([FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-i", str(control), "-i", str(lossless),
-         "-lavfi", f"[0:v]setpts=PTS-STARTPTS[d];[1:v]setpts=PTS-STARTPTS[r];[d][r]libvmaf=log_fmt=json:"
+         # الإطارات تُقرن بترتيبها لا بطوابعها: طوابع Matroska بالملّي ثانية تقرن إطارًا من كل ثلاثة بسابقه عند 30
+         "-lavfi", f"[0:v]setpts=N/{plan.fps}/TB[d];[1:v]setpts=N/{plan.fps}/TB[r];[d][r]libvmaf=log_fmt=json:"
                    f"log_path={log.name}:n_threads={os.cpu_count() or 4}", "-f", "null", "-"],
         timeout_s=3600, cwd=work)
     mean = json.loads(log.read_text())["pooled_metrics"]["vmaf"]["mean"]
