@@ -35,11 +35,17 @@ object UploadScheduler {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) context.getSystemService(JobScheduler::class.java).cancel(JOB_ID)
     }
 
-    /** On app open and after boot (Android 10–13): resume whatever is pending. */
-    suspend fun resumePending(context: Context): Boolean {
+    /**
+     * On app open, at sign-in and after boot (Android 10–13): resume whatever is pending. With nothing pending no run follows to send
+     * the cancelled sessions kept for their abort (ADR 0112), so they go from here; not from the boot broadcast, whose time is short.
+     */
+    suspend fun resumePending(context: Context, drainAborts: Boolean = true): Boolean {
         val container = (context.applicationContext as PostHistoryApp).container
         val pending = container.uploadStore.pending()
-        if (pending.isEmpty()) return false
+        if (pending.isEmpty()) {
+            if (drainAborts) container.sessionAborts().drain()
+            return false
+        }
         return start(context, pending.sumOf { it.sizeBytes - it.bytesConfirmed })
     }
 }

@@ -144,10 +144,19 @@ class UploadsViewModel(private val app: Application, private val container: AppC
         UploadScheduler.start(app, task.sizeBytes)
     }
 
-    /** The confirmed «cancel» / «remove» of a row: drops an unfinished task or a finished one; the file on the phone is untouched. */
+    /**
+     * The confirmed «cancel» / «remove» of a row: drops an unfinished task or a finished one; the file on the phone is untouched.
+     * A cancel stops the transfer too (ADR 0112): the mark first, which its run checks at every chunk and before every write, so
+     * it writes nothing more; then the row, read as last stored and deleted; then its server session, ended now or kept until the
+     * request can go. A run that wrote the session after this read ends it the same way when it finds the row gone.
+     */
     fun remove(task: UploadTaskEntity) = viewModelScope.launch {
+        val cancel = task.state !in DONE
+        if (cancel) container.cancelledUploads.add(task.id)
+        val last = container.uploadStore.get(task.id)
         container.database.uploads().delete(task.id)
         UriGrants.releaseIfUnused(app, container.database, task.fileUri) // the file is no longer needed by this app
+        if (cancel && last != null) container.sessionAborts().abort(last)
     }
 
     companion object {

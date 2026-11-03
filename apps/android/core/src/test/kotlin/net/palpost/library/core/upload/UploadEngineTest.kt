@@ -47,7 +47,7 @@ class UploadEngineTest {
 
     private suspend fun queue(): UploadTask {
         val t = UploadTask(id = "t1", materialId = "7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b", kind = "original", fileUri = file.absolutePath, filename = "clip.mov", mimeType = "video/quicktime", sizeBytes = fileSize, idempotencyKey = "idem-1", createdAtEpochMs = now)
-        store.save(t); return t
+        store.insert(t); return t
     }
 
     private fun serverBytesSha(): String = Hashing.hex(MessageDigest.getInstance("SHA-256").digest(fake.uploads.values.single().toByteArray()))
@@ -122,7 +122,7 @@ class UploadEngineTest {
         fake.sessionState = "verified"; fake.receipt = "R-202610-000004"
         val confirmedSeen = ArrayList<Long>()
         val watching = object : UploadStore by store {
-            override suspend fun save(task: UploadTask) { confirmedSeen.add(task.bytesConfirmed); store.save(task) }
+            override suspend fun update(task: UploadTask): Boolean { confirmedSeen.add(task.bytesConfirmed); return store.update(task) }
         }
         val e = UploadEngine(watching, files, UploadsApi(server.url("/v1").toString().trimEnd('/')), TusTransport(), { now }, { ms -> sleeps.add(ms); now += ms }, testConfig)
         assertEquals(RunOutcome.Finished, e.run("t1"))
@@ -198,7 +198,7 @@ class UploadEngineTest {
 
     @Test fun `a lapsed upload token is a terminal failure, not a loop`() = runBlocking {
         // Queued, session created, then the phone sat in a drawer past the token's life before any byte left.
-        store.save(queue().copy(state = UploadState.UPLOADING, sessionId = fake.sessionId, tusEndpoint = server.url("/files/").toString(), uploadToken = "upload-token-1", tokenExpiresAtEpochMs = now - 1, partSizeBytes = fake.partSize))
+        store.insert(queue().copy(state = UploadState.UPLOADING, sessionId = fake.sessionId, tusEndpoint = server.url("/files/").toString(), uploadToken = "upload-token-1", tokenExpiresAtEpochMs = now - 1, partSizeBytes = fake.partSize))
         assertEquals(RunOutcome.Finished, engine().run("t1"))
         val t = store.get("t1")!!
         assertEquals(UploadState.FAILED, t.state)
