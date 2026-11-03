@@ -35,7 +35,14 @@ object UploadNotifications {
         NotificationCompat.Builder(context, CHANNEL_PROGRESS)
             .setSmallIcon(R.drawable.ic_stat_upload)
             .setContentTitle(context.getString(R.string.notif_progress_title))
-            .setContentText(if (total == 0) context.getString(R.string.notif_progress_waiting) else context.getString(R.string.notif_progress_text, done + 1, total, percent ?: 0))
+            .setContentText(
+                when {
+                    // Another account's row (ADR 0093): no count, no percentage of anything that is not the signed-in reporter's.
+                    total < 0 -> context.getString(R.string.notif_progress_plain)
+                    total == 0 -> context.getString(R.string.notif_progress_waiting)
+                    else -> context.getString(R.string.notif_progress_text, done + 1, total, percent ?: 0)
+                },
+            )
             .setProgress(100, percent ?: 0, percent == null)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

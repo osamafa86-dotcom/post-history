@@ -103,6 +103,7 @@ class ReplaceShotViewModel(private val app: Application, private val container: 
                 val task = UploadTask(
                     id = UUID.randomUUID().toString(), materialId = materialId, kind = "original", fileUri = f.uri, filename = f.name,
                     mimeType = f.mimeType, sizeBytes = f.sizeBytes, idempotencyKey = IdempotencyKey.generate(), createdAtEpochMs = System.currentTimeMillis(),
+                    ownerAccount = container.scope.value.current, // ADR 0093
                 )
                 container.uploadStore.insert(task, title = s.title, priority = null)
                 UploadScheduler.start(app, f.sizeBytes)

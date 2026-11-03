@@ -8,6 +8,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import net.palpost.library.upload.UploadScheduler
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import net.palpost.library.core.auth.AuthState
@@ -35,8 +36,22 @@ class PostHistoryApp : Application() {
         Push.init(this)
         // SEC-01: a session the server revoked (401 on refresh) takes the device's upload state with it.
         scope.launch {
+            var signedInBefore: Boolean? = null
             container.auth.state.collect { state ->
-                if (state is AuthState.SignedIn) Push.register(container)
+                // ADR 0093: the scope first, so the queue asks in its owner's name alone and the screens show the owner's rows alone.
+                container.updateScope(state)
+                if (state is AuthState.SignedIn) {
+                    Push.register(container)
+                    container.receipts.signedIn()
+                    // A sign-in (not the session found at launch, which the activity resumes): what waited for this account goes on now.
+                    if (signedInBefore == false) runCatching { UploadScheduler.resumePending(this@PostHistoryApp) }
+                } else {
+                    // Nothing of the reporter who left stays on screen or in memory: players, the list, thumbnails.
+                    container.playback.stopAll()
+                    container.materials.clear()
+                    container.thumbnails.clear()
+                }
+                signedInBefore = state is AuthState.SignedIn
                 if (state is AuthState.SignedOut && state.reason == SignOutReason.SESSION_REVOKED && _lastWipe.value == null && !wipeRunning) {
                     wipeLock.withLock { if (_lastWipe.value == null) _lastWipe.value = DeviceWipe(this@PostHistoryApp, container).afterRevocation() }
                 }

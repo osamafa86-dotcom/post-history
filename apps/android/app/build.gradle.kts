@@ -106,6 +106,11 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.zxing.core)
+    // «My materials» player (ADR 0089, 0095): ExoPlayer for the phone's original and verified proxy/HLS, PlayerView for the surface only;
+    // no cache module, so nothing streamed is kept on disk.
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.exoplayer.hls)
+    implementation(libs.androidx.media3.ui)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.play.integrity)
     implementation(libs.firebase.messaging)

@@ -54,6 +54,8 @@ data class UploadTaskEntity(
     val localCopyHandled: Boolean = false,
     /** The material's priority as the reporter set it (contract value), for the A2 badge; null before v3. */
     val priority: String? = null,
+    /** The opaque local id of the account that queued it (ADR 0093); null for rows of earlier releases (v5). */
+    val ownerAccount: String? = null,
 )
 
 /**
@@ -106,14 +108,14 @@ interface UploadDao {
     @Query("DELETE FROM upload_tasks WHERE id = :id") suspend fun delete(id: String)
 }
 
-@Database(entities = [UploadTaskEntity::class, DraftEntity::class], version = 4, exportSchema = false)
+@Database(entities = [UploadTaskEntity::class, DraftEntity::class], version = 5, exportSchema = false)
 abstract class UploadDatabase : RoomDatabase() {
     abstract fun uploads(): UploadDao
     abstract fun drafts(): DraftDao
 
     companion object {
         fun open(context: Context): UploadDatabase =
-            Room.databaseBuilder(context.applicationContext, UploadDatabase::class.java, "uploads.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
+            Room.databaseBuilder(context.applicationContext, UploadDatabase::class.java, "uploads.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
 
         /** v2: sessions behind the ingest gate (SEC-07). Existing rows predate the gate. */
         val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
@@ -134,6 +136,13 @@ abstract class UploadDatabase : RoomDatabase() {
         val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE drafts ADD COLUMN sealedGps TEXT")
+            }
+        }
+
+        /** v5: each row's owner on a shared phone (ADR 0093); earlier rows have none. */
+        val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE upload_tasks ADD COLUMN ownerAccount TEXT")
             }
         }
     }
@@ -163,7 +172,7 @@ class RoomUploadStore(private val dao: UploadDao, private val sealer: KeystoreSe
         uploadToken = e.sealedUploadToken?.let { runCatching { sealer.openString(it) }.getOrNull() },
         tokenExpiresAtEpochMs = e.tokenExpiresAtEpochMs, sessionExpiresAtEpochMs = e.sessionExpiresAtEpochMs, partSizeBytes = e.partSizeBytes,
         ingestTokenRequired = e.ingestTokenRequired, bytesConfirmed = e.bytesConfirmed, receiptNumber = e.receiptNumber, failure = e.failure?.let { UploadFailure.valueOf(it) },
-        failureCode = e.failureCode, attempts = e.attempts,
+        failureCode = e.failureCode, attempts = e.attempts, ownerAccount = e.ownerAccount,
     )
 
     private fun toEntity(t: UploadTask, title: String, localCopyHandled: Boolean, priority: String?) = UploadTaskEntity(
@@ -174,6 +183,6 @@ class RoomUploadStore(private val dao: UploadDao, private val sealer: KeystoreSe
         sealedUploadToken = t.uploadToken?.let { sealer.sealString(it) },
         tokenExpiresAtEpochMs = t.tokenExpiresAtEpochMs, sessionExpiresAtEpochMs = t.sessionExpiresAtEpochMs, partSizeBytes = t.partSizeBytes,
         ingestTokenRequired = t.ingestTokenRequired, bytesConfirmed = t.bytesConfirmed, receiptNumber = t.receiptNumber, failure = t.failure?.name, failureCode = t.failureCode, attempts = t.attempts,
-        title = title, localCopyHandled = localCopyHandled, priority = priority,
+        title = title, localCopyHandled = localCopyHandled, priority = priority, ownerAccount = t.ownerAccount,
     )
 }

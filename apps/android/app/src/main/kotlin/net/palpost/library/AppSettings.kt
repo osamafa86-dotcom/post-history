@@ -32,7 +32,13 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_LOCATION_ASKED, false)
         set(value) { prefs.edit().putBoolean(KEY_LOCATION_ASKED, value).apply() }
 
+    /** My materials grouped by type instead of by coverage (ADR 0089); a view preference only. */
+    var galleryByType: Boolean
+        get() = prefs.getBoolean(KEY_GALLERY_BY_TYPE, false)
+        set(value) { prefs.edit().putBoolean(KEY_GALLERY_BY_TYPE, value).apply() }
+
     private companion object {
+        const val KEY_GALLERY_BY_TYPE = "gallery_by_type"
         const val KEY_LOCATION_ASKED = "location_asked"
         const val KEY_PAUSED = "uploads_paused"
         const val KEY_WIFI_ONLY = "upload_over_wifi_only"

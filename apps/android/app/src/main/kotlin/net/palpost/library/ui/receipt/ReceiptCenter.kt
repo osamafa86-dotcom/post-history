@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import net.palpost.library.AppContainer
+import net.palpost.library.core.materials.ReceiptInbox
 import net.palpost.library.core.send.SendBatch
 import net.palpost.library.core.send.SendBatchLedger
 import net.palpost.library.core.send.UploadItem
@@ -28,6 +29,9 @@ fun itemsOf(batch: SendBatch, rows: List<UploadTaskEntity>): List<UploadItem> = 
  * (when everything left of it has arrived and its loop has closed) and the material's own. Receipts wait in a queue that the
  * screens show one at a time, never over the send screen while it closes. Memory only; a send whose receipt was not shown
  * (the app was closed while its last file arrived) is found again from the ledger at the next start.
+ *
+ * A receipt goes to its owner alone (ADR 0093): one for another account, or with nobody signed in, waits in the inbox until its
+ * owner signs in; the receipts on screen or queued at sign-out go back to waiting.
  */
 class ReceiptCenter(private val container: AppContainer) {
     private val _pending = MutableStateFlow<List<ReceiptTarget>>(emptyList())
@@ -36,6 +40,13 @@ class ReceiptCenter(private val container: AppContainer) {
     @Volatile private var rows: List<UploadTaskEntity> = emptyList()
 
     private val ledger: SendBatchLedger get() = container.sendBatches
+    private val inbox = ReceiptInbox<ReceiptTarget>()
+    @Volatile private var onScreen: ReceiptTarget? = null
+
+    private fun ownerOf(t: ReceiptTarget): String? = when (t) {
+        is ReceiptTarget.Batch -> ledger.batches.firstOrNull { it.id == t.batchId }?.owner
+        is ReceiptTarget.Task -> rows.firstOrNull { it.id == t.taskId }?.ownerAccount
+    }
 
     /** Follows the queue while the app is open (call from a coroutine tied to the signed-in screen). */
     suspend fun run() {
@@ -77,17 +88,55 @@ class ReceiptCenter(private val container: AppContainer) {
         }
     }
 
-    private fun enqueue(target: ReceiptTarget) = _pending.update { if (target in it) it else it + target }
+    private fun enqueue(target: ReceiptTarget) {
+        val now = inbox.arrive(target, ownerOf(target), container.scope.value) ?: return
+        _pending.update { if (now in it) it else it + now }
+    }
 
     /** The receipt is on screen: a send's receipt is marked shown so it never comes twice. */
     fun shown(target: ReceiptTarget) {
         _pending.update { it - target }
+        onScreen = target
         if (target is ReceiptTarget.Batch) ledger.markReceiptShown(target.batchId)
     }
 
-    /** Sign-out and the wipe: nothing waits for anyone. */
+    /** The receipt on screen was closed. */
+    fun closed() { onScreen = null }
+
+    /** A sign-in: the receipts that waited for this account, oldest first. */
+    fun signedIn() {
+        val scope = container.scope.value
+        while (true) {
+            val next = inbox.next(scope) ?: break
+            _pending.update { if (next in it) it else it + next }
+        }
+    }
+
+    /**
+     * Sign-out, before the sends file is erased: the receipt on screen and the queued ones wait for their owner. A send's receipt
+     * waits as the receipt of its last arrived original, since its send will not be on the phone when the owner comes back.
+     */
+    fun signedOut() {
+        val list = rows
+        for (t in listOfNotNull(onScreen) + _pending.value) {
+            val owner = ownerOf(t)
+            val held = when (t) {
+                is ReceiptTarget.Task -> t
+                is ReceiptTarget.Batch -> ledger.batches.firstOrNull { it.id == t.batchId }
+                    ?.let { b -> itemsOf(b, list).lastOrNull { it.state == UploadItem.State.ARRIVED } }?.let { ReceiptTarget.Task(it.id) }
+            }
+            held?.let { inbox.hold(it, owner) }
+        }
+        _pending.value = emptyList()
+        onScreen = null
+        previous = null
+    }
+
+    /** The emergency wipe and revocation: nothing waits for anyone. */
     fun clear() {
         _pending.value = emptyList()
+        onScreen = null
+        inbox.removeAll()
         previous = null
     }
 

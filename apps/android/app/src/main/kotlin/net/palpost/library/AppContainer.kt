@@ -17,6 +17,15 @@ import net.palpost.library.core.upload.FileSource
 import net.palpost.library.data.RoomUploadStore
 import net.palpost.library.data.FileSendBatchStore
 import net.palpost.library.data.ReporterMemoryStore
+import net.palpost.library.data.LocalAccountsStore
+import net.palpost.library.core.auth.AuthState
+import net.palpost.library.core.upload.AccountScope
+import net.palpost.library.core.upload.LocalAccounts
+import net.palpost.library.ui.material.MaterialsRepository
+import net.palpost.library.ui.material.PlaybackCenter
+import net.palpost.library.ui.material.ThumbnailCache
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import net.palpost.library.core.send.SendBatchLedger
 import net.palpost.library.ui.receipt.ReceiptCenter
 import net.palpost.library.data.UploadDatabase
@@ -68,4 +77,51 @@ class AppContainer(context: Context) {
 
     /** Decides when a receipt shows: once per send when its last file arrives, or per material outside a send. */
     val receipts: ReceiptCenter by lazy { ReceiptCenter(this) }
+
+    /** My materials (ADR 0089): one feed for the app, cleared on sign-out, revocation and wipe. */
+    val materials: MaterialsRepository by lazy { MaterialsRepository { materialsApi } }
+
+    /**
+     * Thumbnails of verified derivatives, through signed links that are never kept: a plain client (no session header: the link
+     * is the authorisation) without a cache, memory only.
+     */
+    val thumbnails: ThumbnailCache by lazy { ThumbnailCache(httpClient) }
+
+    /** The players on screen: stopped together on sign-out, revocation and wipe. */
+    val playback = PlaybackCenter()
+
+    // ADR 0093: whom the rows, sends and receipts belong to, by an opaque local id per account (never its email or server id).
+    private val accountsStore = LocalAccountsStore(java.io.File(app.noBackupFilesDir, "local-accounts"))
+    private val accountsLock = Any()
+    private var accounts: LocalAccounts? = null
+    private val _scope = MutableStateFlow(AccountScope())
+    /** The signed-in account and the sole one, set before the queue resumes at launch (ADR 0093 §4). */
+    val scope: StateFlow<AccountScope> = _scope
+
+    /**
+     * Follows the session: a sign-in registers the account on its first sign-in here. An accounts file that cannot be read gives a
+     * scope with nobody (nothing shown, nothing asked in anyone's name) and is never written over; the next change reads it again.
+     */
+    fun updateScope(state: AuthState) = synchronized(accountsLock) {
+        val known = accounts ?: accountsStore.load()
+        if (known == null) { _scope.value = AccountScope(); return@synchronized }
+        val user = (state as? AuthState.SignedIn)?.userId
+        var next = known
+        if (user != null) {
+            val (record, _) = known.register(user)
+            if (record != known && !accountsStore.save(record)) { _scope.value = AccountScope(); return@synchronized }
+            next = record
+        }
+        accounts = next
+        _scope.value = next.scope(user)
+    }
+
+    /** The emergency wipe, with the queue: the record and its file go; the next sign-in starts a fresh one. */
+    fun forgetAccounts() = synchronized(accountsLock) {
+        accountsStore.delete()
+        accounts = null
+        _scope.value = AccountScope()
+    }
+
+    init { updateScope(auth.state.value) }
 }

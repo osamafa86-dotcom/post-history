@@ -82,3 +82,35 @@ fun stateLabel(track: String, value: String): String = when (track) {
     "rights" -> RightsState.entries.firstOrNull { it.value == value }?.let { stringResource(rights(it)) }
     else -> EditorialState.entries.firstOrNull { it.value == value }?.let { stringResource(editorial(it)) }
 } ?: value
+
+/** Each state in plain words for the material screen (08, ADR 0089), by contract value; a value this build does not know says so. */
+@StringRes internal fun technicalExplanation(value: String) = when (value) {
+    "pending" -> R.string.detail_explain_technical_pending
+    "proxy_received" -> R.string.detail_explain_technical_proxy_received
+    "original_received" -> R.string.detail_explain_technical_original_received
+    "verified" -> R.string.detail_explain_technical_verified
+    "failed" -> R.string.detail_explain_technical_failed
+    else -> R.string.detail_explain_unknown
+}
+
+@StringRes internal fun editorialExplanation(value: String) = when (value) {
+    "inbox" -> R.string.detail_explain_editorial_inbox
+    "acknowledged" -> R.string.detail_explain_editorial_acknowledged
+    "reviewing" -> R.string.detail_explain_editorial_reviewing
+    "needs_changes" -> R.string.detail_explain_editorial_needs_changes
+    "accepted" -> R.string.detail_explain_editorial_accepted
+    "in_production" -> R.string.detail_explain_editorial_in_production
+    "final_review" -> R.string.detail_explain_editorial_final_review
+    "published" -> R.string.detail_explain_editorial_published
+    "rejected" -> R.string.detail_explain_editorial_rejected
+    else -> R.string.detail_explain_unknown
+}
+
+@StringRes internal fun rightsExplanation(value: String) = when (value) {
+    "unknown" -> R.string.detail_explain_rights_unknown
+    "documented" -> R.string.detail_explain_rights_documented
+    "sellable" -> R.string.detail_explain_rights_sellable
+    "blocked" -> R.string.detail_explain_rights_blocked
+    "withdrawn" -> R.string.detail_explain_rights_withdrawn
+    else -> R.string.detail_explain_unknown
+}

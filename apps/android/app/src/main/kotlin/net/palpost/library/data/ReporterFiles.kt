@@ -7,6 +7,7 @@ import net.palpost.library.core.send.SendBatch
 import net.palpost.library.core.send.SendBatchCodec
 import net.palpost.library.core.send.SendBatchRead
 import net.palpost.library.core.send.SendBatchStore
+import net.palpost.library.core.upload.LocalAccounts
 
 /**
  * Small JSON files in the app's no-backup folder (excluded from backups and device transfer; the emergency wipe's
@@ -50,4 +51,24 @@ class FileSendBatchStore(private val file: File) : SendBatchStore {
     override fun write(batches: List<SendBatch>): Boolean = file.writeAtomically(SendBatchCodec.encode(batches))
 
     override fun clear() { file.delete() }
+}
+
+/**
+ * The accounts that signed in on this phone (`LocalAccounts`, ADR 0093), in the app's no-backup folder without a `.json`
+ * extension. The emergency wipe erases it with the queue; sign-out keeps it. A file that exists and cannot be read gives null,
+ * so a fresh record is never written over it.
+ */
+class LocalAccountsStore(private val file: File) {
+    private val lock = Any()
+
+    fun load(): LocalAccounts? = synchronized(lock) {
+        if (!file.exists()) return LocalAccounts()
+        val text = try { file.readText(Charsets.UTF_8) } catch (e: IOException) { return null }
+        LocalAccounts.fromJson(text)
+    }
+
+    fun save(accounts: LocalAccounts): Boolean = synchronized(lock) { file.writeAtomically(accounts.toJson()) }
+
+    /** The emergency wipe. */
+    fun delete() = synchronized(lock) { file.delete(); Unit }
 }

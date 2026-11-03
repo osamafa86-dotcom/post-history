@@ -21,6 +21,12 @@ sealed interface RunOutcome {
     data object Stopped : RunOutcome
     /** Could not progress now (offline, server down, receipt not issued yet); call again later. */
     data class Pending(val retryAfterMs: Long) : RunOutcome
+    /**
+     * The next step is an authenticated request and the row's owner is not signed in (ADR 0093): nothing failed and no attempt
+     * was spent; the row resumes from here when its owner signs in. The tus transfer, which carries the row's own upload token,
+     * does not wait for this.
+     */
+    data object AwaitingOwner : RunOutcome
 }
 
 /**
@@ -43,6 +49,11 @@ class UploadEngine(
     private val allowFullHash: () -> Boolean = { true },
     /** Gate tokens for sessions whose endpoint is behind the ingest gate (SEC-07); null where there is no attester. */
     private val ingestTokens: IngestTokens? = null,
+    /**
+     * May an authenticated request go for this row now (`AccountScope.owns(task.ownerAccount)`, ADR 0093)? Read before every
+     * session creation, gate token and receipt poll, so a sign-out mid-run is honoured at the next one.
+     */
+    private val mayAct: (UploadTask) -> Boolean = { true },
 ) {
     /** Consecutive 401s from the gate per session; one fresh token is tried before the session counts as lost. */
     private val gateRejections = HashMap<String, Int>()
@@ -82,13 +93,15 @@ class UploadEngine(
             try {
                 when (task.state) {
                     UploadState.QUEUED, UploadState.HASHING -> hash(task, shouldStop)
-                    UploadState.CREATING_SESSION -> createSession(task)
+                    UploadState.CREATING_SESSION -> if (mayAct(task)) createSession(task) else return RunOutcome.AwaitingOwner
                     UploadState.UPLOADING -> {
+                        // A session behind the ingest gate needs a token in its owner's name for every new part.
+                        if (task.ingestTokenRequired && !mayAct(task)) return RunOutcome.AwaitingOwner
                         val s = sizer ?: sizerFor(task).also { sizer = it }
                         val outcome = transfer(task, s, shouldStop, listener)
                         if (outcome != null) return outcome
                     }
-                    UploadState.AWAITING_RECEIPT -> awaitReceipt(task, shouldStop)?.let { return it }
+                    UploadState.AWAITING_RECEIPT -> if (mayAct(task)) awaitReceipt(task, shouldStop)?.let { return it } else return RunOutcome.AwaitingOwner
                     else -> return RunOutcome.Finished
                 }
                 transientFailures = 0
@@ -288,6 +301,7 @@ class UploadEngine(
         var poll = 0
         while (true) {
             if (shouldStop()) return RunOutcome.Stopped
+            if (!mayAct(task)) return RunOutcome.AwaitingOwner
             val session = try {
                 uploadsApi.getUploadSession(UUID.fromString(task.sessionId!!))
             } catch (e: ClientException) {
