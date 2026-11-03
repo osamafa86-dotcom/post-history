@@ -7,6 +7,7 @@ import { states } from "../src/lib/query";
 import * as buyers from "../src/lib/buyer-policy";
 import * as issued from "../src/lib/issued-licenses";
 import * as orders from "../src/lib/order-policy";
+import * as storeFormat from "../src/lib/store-format";
 import { uploadRoles } from "../src/lib/upload-policy";
 import { catalogRoles, licenseTypes } from "../src/server/catalog";
 import { channels, roles, ruleEvents, ruleLimits, scopeKinds } from "../src/lib/notification-policy";
@@ -136,6 +137,13 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
     for (const path of ["/orders", "/orders/{order_id}"]) expect([...orders.orderReaders]).toEqual(at("paths", path, "get", "x-roles"));
     for (const path of ["/orders", "/orders/{order_id}/checkout", "/orders/{order_id}/cancel"]) expect([...orders.orderWriters]).toEqual(at("paths", path, "post", "x-roles"));
     expect([...orders.orderStatuses]).toEqual(at("components", "schemas", "OrderStatus", "enum")); expect(orders.orderLimits.items).toBe(at("components", "schemas", "OrderCreate", "properties", "items", "maxItems"));
+  });
+  it("keeps the readable order, invoice and purchase order rules aligned with ADR 0100", () => {
+    expect(storeFormat.orderNumberPattern.source).toBe(at("components", "schemas", "Order", "properties", "order_number", "pattern"));
+    expect(storeFormat.orderNumberPattern.source).toBe(at("components", "schemas", "License", "properties", "order_number", "pattern"));
+    expect(storeFormat.invoiceNumberPattern.source).toBe(at("components", "schemas", "Order", "properties", "invoice_number", "pattern"));
+    expect(storeFormat.purchaseOrderPattern.source).toBe(at("components", "schemas", "OrderCreate", "properties", "purchase_order_number", "pattern"));
+    expect(storeFormat.purchaseOrderMax).toBe(at("components", "schemas", "OrderCreate", "properties", "purchase_order_number", "maxLength"));
   });
   it("keeps transition choices aligned with the three contract state enums", () => {
     for (const [key, schema] of [["technical_state", "TechnicalState"], ["editorial_state", "EditorialState"], ["rights_state", "RightsState"]] as const) expect(states[key]).toEqual(at("components", "schemas", schema, "enum"));

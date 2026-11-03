@@ -44,6 +44,9 @@ const paths = {
   chevron: "M9 6l6 6-6 6",
   download: "M12 4v11M7 10l5 5 5-5M4 20h16",
   film: "M4 4h16v16H4zM8 4v16M16 4v16M4 8h4M4 12h4M4 16h4M16 8h4M16 12h4M16 16h4",
+  pin: "M12 21s-7-6.3-7-11.5a7 7 0 0 1 14 0C19 14.7 12 21 12 21M12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5",
+  printer: "M7 8V3h10v5M7 17H4v-7h16v7h-3M7 14h10v7H7z",
+  cart: "M3 4h2l2.5 11h11L21 7H6.5M9.5 20a1 1 0 1 0 0-.1M17.5 20a1 1 0 1 0 0-.1",
 } as const;
 
 export type IconName = keyof typeof paths;

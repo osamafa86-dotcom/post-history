@@ -1,4 +1,5 @@
 import type { components } from "@/generated/schema";
+import { orderNumberPattern } from "./store-format";
 
 // التراخيص الصادرة وتنزيل حزمة التسليم (v0.3، ADR 0025 الجزءان 4 و9)؛ يطابقها contract-drift مع OpenAPI.
 export type IssuedLicense = components["schemas"]["License"];
@@ -17,7 +18,7 @@ const nonnegative = (v: unknown) => typeof v === "number" && Number.isSafeIntege
 export function safeLicense(l: IssuedLicense): IssuedLicense {
   const t = l.terms;
   return {
-    id: l.id, license_number: l.license_number, order_id: l.order_id, order_item_id: l.order_item_id, organization_id: l.organization_id, listing_id: l.listing_id, material_version: l.material_version,
+    id: l.id, license_number: l.license_number, order_id: l.order_id, ...(typeof l.order_number === "string" && orderNumberPattern.test(l.order_number) ? { order_number: l.order_number } : {}), order_item_id: l.order_item_id, organization_id: l.organization_id, listing_id: l.listing_id, material_version: l.material_version,
     title: text(l.title), license_template_id: l.license_template_id, license_version: l.license_version,
     terms: safeLicenseTerms(t),
     price: { amount_minor: l.price.amount_minor, currency: l.price.currency }, status: l.status, revoked_reason: l.revoked_reason ?? null,

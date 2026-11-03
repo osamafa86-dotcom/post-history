@@ -40,12 +40,15 @@ describe("v2 newsroom shell (W1, T1, M1; ADR 0085, web-v2.md)", () => {
   });
   it("gives a buyer only the store, licences, orders and organisation", () => {
     const buyer = as("buyer_member");
-    expect(navItems(buyer, "ar", "/ar/store").map(i => i.label)).toEqual([ar.store.title, ar.licenses.nav, ar.orders.nav, ar.buyers.myOrganization]);
+    expect(navItems(buyer, "ar", "/ar/store").map(i => i.label)).toEqual([ar.store.nav.materials, ar.store.nav.licenses, ar.store.nav.orders, ar.buyers.myOrganization]);
     expect(navItems(buyer, "ar", "/ar/store").filter(i => i.active).map(i => i.key)).toEqual(["store"]);
     expect(navItems(buyer, "ar", "/ar/store/licenses/9").filter(i => i.active).map(i => i.key)).toEqual(["licenses"]);
     expect(navItems(buyer, "ar", "/ar/store/orders").filter(i => i.active).map(i => i.key)).toEqual(["orders"]);
     expect(navItems(buyer, "ar", "/ar/organization").filter(i => i.active).map(i => i.key)).toEqual(["organization"]);
-    expect(navItems(buyer, "en", "/en/store").map(i => i.href)).toEqual(["/en/store", "/en/store/licenses", "/en/store/cart", "/en/organization"]);
+    expect(navItems(buyer, "en", "/en/store").map(i => i.href)).toEqual(["/en/store", "/en/store/licenses", "/en/store/orders", "/en/organization"]);
+    // السلة زرّ بعدّاده في الشريط لا وجهة: صفحتها لا تنشّط وجهة، والفاتورة تحت «الطلبات»
+    expect(navItems(buyer, "ar", "/ar/store/cart").filter(i => i.active)).toEqual([]);
+    expect(navItems(buyer, "ar", "/ar/store/orders/1/invoice").filter(i => i.active).map(i => i.key)).toEqual(["orders"]);
   });
   it("puts four destinations and «more» in the phone bar, notifications always among them (M1)", () => {
     const admin = bottomItems(navItems(as("system_admin"), "ar", "/ar/inbox"));

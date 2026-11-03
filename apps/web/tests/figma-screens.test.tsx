@@ -6,7 +6,7 @@ import { activeTab, inboxTabs, isOpenUrgent, matchesSearch, tabCounts, tabQuery 
 import { humanDuration, longDate, shortTime } from "../src/lib/i18n";
 import { wallDate } from "../src/lib/board";
 import { catalogParams, periodStart } from "../src/components/store/store-catalog";
-import { CatalogCard, licenseFamilies } from "../src/components/store/catalog-card";
+import { CatalogCard } from "../src/components/store/catalog-card";
 import type { NewsroomDashboard } from "../src/lib/types";
 import ar from "../messages/ar.json";
 import en from "../messages/en.json";
@@ -82,14 +82,9 @@ describe("catalog toolbar (Figma 185:330)", () => {
     expect(catalogParams({ period: "week" }, now).get("shot_from")).toBe("2026-10-21"); expect(catalogParams({ period: "week" }, now).has("period")).toBe(false);
     expect(catalogParams({ period: "week", shot_from: "2026-10-01" }, now).get("shot_from")).toBe("2026-10-01");
   });
-  it("summarises licence families, with exclusivity only when it is available now", () => {
-    expect(licenseFamilies(["editorial_single", "editorial_term", "exclusive_temporary"], true, "ar")).toEqual(["تحريري", ar.store.browse.exclusive]);
-    expect(licenseFamilies(["editorial_single", "exclusive_temporary", "commercial"], false, "en")).toEqual(["Editorial", "Commercial"]);
-    expect(licenseFamilies([], true, "en")).toEqual([]);
-  });
-  it("lays the card out as thumbnail, title, meta, credit and a price row without identifiers", () => {
-    const html = renderToStaticMarkup(<CatalogCard locale="ar" item={{ href: "/ar/store/x", title: { ar: "عنوان", en: "Title" }, governorate: "غزة", shotOn: "2026-10-26", durationMs: 134000, width: 1920, height: 1080, displayName: "فلسطين بوست", from: { amount_minor: 12000, currency: "USD" }, types: ["raw_footage"], licenses: ["editorial_single", "exclusive_temporary"], exclusive: true }} />);
-    expect(html).toContain("26 تشرين الأول 2026"); expect(html).toContain("2:14"); expect(html).toContain(ar.store.browse.startsAt); expect(html).toContain("تحريري، حصرية متاحة"); expect(html).toContain("thumb-play");
+  it("lays the store card out as cover, title, shoot day and governorate, and one action, without identifiers (S1)", () => {
+    const html = renderToStaticMarkup(<CatalogCard locale="ar" item={{ href: "/ar/store/x", title: { ar: "عنوان", en: "Title" }, governorate: "غزة", shotOn: "2026-10-26", durationMs: 134000, exclusive: true }} />);
+    expect(html).toContain("صُوّر 26 تشرين الأول 2026 · غزة"); expect(html).toContain("2:14"); expect(html).toContain(ar.store.card.cta); expect(html).toContain(ar.store.card.previewBadge);
     expect(html).not.toMatch(/RCPT|VL-\d|sha256|[0-9a-f]{32}/i);
   });
   it("has Arabic and English copy for every new key", () => {

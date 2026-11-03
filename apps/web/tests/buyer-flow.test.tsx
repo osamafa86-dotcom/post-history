@@ -32,10 +32,10 @@ describe("buyer flow (#385)", () => {
       .toBe(new URLSearchParams({ q: "غزة", min_duration_ms: "60000", max_duration_ms: "300000", min_height: "1080", exclusive_available: "true" }).toString());
     expect(catalogParams({ duration: "short" }).get("max_duration_ms")).toBe("60000");
   });
-  it("the card carries trust and exclusivity without fingerprints or identifiers", () => {
-    const html = renderToStaticMarkup(<CatalogCard locale="en" item={{ href: "/en/store/x", title: { ar: "ع", en: "Footage" }, governorate: "Gaza", shotOn: "2026-10-19T13:45:00Z", durationMs: 65000, width: 1920, height: 1080, displayName: "Palestine Post", from: { amount_minor: 15000, currency: "USD" }, types: ["raw_footage"], licenses: ["editorial_single", "exclusive_temporary"], exclusive: true }} />);
-    expect(html).toContain(en.store.browse.verified); expect(html).toContain(`${en.store.browse.family.editorial}, ${en.store.browse.exclusive}`);
-    expect(html).not.toMatch(/13:45|sha256|fingerprint/i);
+  it("the card carries the watermark badge and exclusivity without names, fingerprints or identifiers", () => {
+    const html = renderToStaticMarkup(<CatalogCard locale="en" item={{ href: "/en/store/x", title: { ar: "ع", en: "Footage" }, governorate: "Gaza", shotOn: "2026-10-19T13:45:00Z", durationMs: 65000, exclusive: true }} />);
+    expect(html).toContain(en.store.card.previewBadge); expect(html).toContain(en.store.browse.exclusive);
+    expect(html).not.toMatch(/13:45|sha256|fingerprint|Palestine Post|Credit/i);
   });
   it("tones licence statuses: active good, expired neutral, revoked bad", () => {
     expect(["active", "expired", "revoked"].map(s => licenseTone(s as never))).toEqual(["good", "", "bad"]);

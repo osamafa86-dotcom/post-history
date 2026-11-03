@@ -1,44 +1,81 @@
 "use client";
-import { NoAccess } from "../empty-state";
-import { useEffect, useState } from "react";
+import { EmptyState, NoAccess } from "../empty-state";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { browserApi, dataOrThrow, RequestError } from "@/lib/browser-api";
-import { formatDate, messages, type Locale } from "@/lib/i18n";
+import { formatDate, longDate, messages, type Locale } from "@/lib/i18n";
 import { hasRole } from "@/lib/review";
 import { useMutation } from "@/lib/use-mutation";
-import { formatDuration, formatMoney, localized } from "@/lib/store-format";
+import { formatDuration, formatMoney, localized, orderLabel } from "@/lib/store-format";
 import { licenseDownloaders, licenseReaders, type IssuedLicense } from "@/lib/issued-licenses";
 import { useUser } from "../session-boundary";
 import { ActionStatus } from "../action-status";
+import { Icon } from "../icon";
 import { licenseTone } from "./license-verify";
 
 
-/** تراخيص المؤسسة الصادرة (#203 بند 31). */
+/** عرض الترخيص في الجدول: المنتهي بتاريخه (وإن لم يحدّث الخادم حالته بعد)، والمبطل، والساري بحزمته جاهزة أو قيد التجهيز. */
+export function licenseView(l: IssuedLicense, now: number): "ended" | "revoked" | "ready" | "preparing" {
+  if (l.status === "revoked") return "revoked";
+  if (l.status === "expired" || (l.valid_until && Date.parse(l.valid_until) <= now)) return "ended";
+  return l.delivery_ready ? "ready" : "preparing";
+}
+
+/**
+ * تراخيصي (S4): الترخيص مرتبط بطلبه برقمه المقروء (ADR 0100)، والفعل «تنزيل حزمة التسليم» برابط موقّع قصير العمر يُطلب عند النقر ولا يُحفظ.
+ * المنتهي كلمة بتاريخه كاملًا بلون التحذير، و«تجديد» يفتح صفحة المادة لشراء ترخيص جديد (لا عملية تجديد في العقد). لا عدّاد استعمال: `License`
+ * لا يحمله، و`downloads_remaining` في ردّ رابط التنزيل وحده فيظهر بعده.
+ */
 export function LicensesPage({ locale }: { locale: Locale }) {
-  const m = messages[locale], t = m.licenses, me = useUser(), allowed = hasRole(me, ...licenseReaders);
-  const [items, setItems] = useState<IssuedLicense[] | null>(null), [error, setError] = useState(false), [attempt, setAttempt] = useState(0);
+  const m = messages[locale], t = m.licenses, me = useUser(), allowed = hasRole(me, ...licenseReaders), downloader = hasRole(me, ...licenseDownloaders), mutation = useMutation();
+  const [items, setItems] = useState<IssuedLicense[] | null>(null), [error, setError] = useState(false), [attempt, setAttempt] = useState(0), [working, setWorking] = useState<string | null>(null), [remaining, setRemaining] = useState<{ id: string; n: number } | null>(null);
+  const [now] = useState(() => Date.now()), clicks = useRef(0);
   useEffect(() => {
     if (!allowed) return;
     const controller = new AbortController();
     void browserApi().GET("/licenses", { signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setItems(data.items); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [allowed, attempt]);
-  if (!allowed) return <NoAccess locale={locale} me={me} title={t.title} denied={t.denied} />;
-  return <><div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p></div><Link prefetch={false} className="button secondary" href={`/${locale}/store/orders`}>{t.invoices}</Link></div>
-    {error ? <section className="center-state" role="alert"><p>{m.error}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></section>
-      : !items ? <p className="center-state" role="status">{m.loading}</p> : !items.length ? <section className="empty"><p>{t.empty}</p><Link prefetch={false} href={`/${locale}/store`}>{m.store.back}</Link></section>
-      : <ul className="license-cards">{items.map(l => <li key={l.id} className="card license-card" data-testid="license-row">
-        <p className="license-head"><bdi className="mono license-number" dir="ltr">{l.license_number}</bdi><span className={`badge ${licenseTone(l.status)}`}>{t.statuses[l.status]}</span></p>
-        <h2>{localized(l.title, locale)}</h2>
-        <p className="muted">{[m.store.licenseTypes[l.terms.type], l.terms.term_days ? t.days.replace("{n}", String(l.terms.term_days)) : null, l.terms.territory.kind === "worldwide" ? m.templates.worldwide : (l.terms.territory.countries ?? []).join(", "), l.valid_until ? `${t.validUntil} ${formatDate(l.valid_until, locale)}` : t.noExpiry].filter(Boolean).join(" · ")}</p>
-        <div className="actions"><Link prefetch={false} className="button secondary" href={`/${locale}/store/licenses/${l.id}`}>{t.open}</Link><Link prefetch={false} className="quiet" href={`/${locale}/verify/${l.license_number}`}>{t.verify.link}</Link></div></li>)}</ul>}
+  async function download(id: string) {
+    let url: string | undefined, left: number | undefined;
+    setWorking(id);
+    // كل نقرة منحة تنزيل جديدة تُحصى في الخادم: بصمة النية فريدة لكل نقرة
+    const ok = await mutation.run(`download:${id}:${++clicks.current}`, async header => { const result = await browserApi().POST("/licenses/{license_id}/download-url", { params: { path: { license_id: id }, header } }); url = result.data?.url; left = result.data?.downloads_remaining; return result; });
+    setWorking(null);
+    if (ok && url) { setRemaining(left === undefined ? null : { id, n: left }); window.location.assign(url); }
+  }
+  if (!allowed) return <NoAccess locale={locale} me={me} title={t.mine} denied={t.denied} />;
+  return <>
+    <div className="page-heading"><h1>{t.mine}</h1></div>
+    {mutation.status && mutation.status !== 200 ? <><ActionStatus status={mutation.status} locale={locale} />{mutation.status === 409 && <p className="notice error">{t.downloadConflict}</p>}</> : null}
+    {error ? <EmptyState icon="offline" role="alert" title={m.error} actions={<button className="secondary" onClick={() => setAttempt(n => n + 1)}>{m.retry}</button>} />
+      : !items ? <p className="center-state" role="status">{m.loading}</p>
+      : !items.length ? <EmptyState icon="license" title={t.emptyTitle} actions={<Link prefetch={false} className="button store" href={`/${locale}/store`}>{m.store.cartPage.browse}</Link>}><p>{t.emptyBody}</p></EmptyState>
+      : <div className="store-table licenses-table"><table><thead><tr>{[t.colMaterial, t.colOrder, t.colLicence, t.colEnds, t.colAction].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+        <tbody>{items.map(l => {
+          const title = localized(l.title, locale), view = licenseView(l, now), order = orderLabel({ id: l.order_id, order_number: l.order_number });
+          return <tr key={l.id} data-testid="license-row" data-view={view}>
+            <td data-label={t.colMaterial}><strong>{title}</strong><small className="license-number-line"><Link prefetch={false} href={`/${locale}/store/licenses/${l.id}`}><bdi dir="ltr" className="mono">{l.license_number}</bdi></Link></small></td>
+            <td data-label={t.colOrder}><Link prefetch={false} href={`/${locale}/store/orders/${l.order_id}/invoice`} aria-label={t.invoiceFor.replace("{id}", order)}><bdi dir="ltr" className="ref">{order}</bdi></Link></td>
+            <td data-label={t.colLicence}>{localized(l.terms.name, locale)}</td>
+            <td data-label={t.colEnds}>{view === "ended" ? <span className="state-word warn"><Icon name="alert" size={14} />{t.endedOn.replace("{date}", longDate(l.valid_until, locale))}</span> : l.valid_until ? longDate(l.valid_until, locale) : t.noExpiry}</td>
+            <td data-label={t.colAction} className="license-action">{
+              view === "revoked" ? <span className="state-word danger"><Icon name="ban" size={14} />{t.revokedShort}{l.revoked_reason && <small> ({t.reasons[l.revoked_reason]})</small>}</span>
+              : view === "ended" ? <Link prefetch={false} className="button secondary" href={`/${locale}/store/${l.listing_id}`} aria-label={t.renewFor.replace("{title}", title)}>{t.renew}</Link>
+              : !downloader ? <Link prefetch={false} href={`/${locale}/store/licenses/${l.id}`}>{t.open}</Link>
+              : view === "preparing" ? <span className="state-word muted"><Icon name="clock" size={14} />{t.preparingShort}</span>
+              : <button className="store" disabled={mutation.busy} aria-busy={working === l.id} aria-label={t.downloadFor.replace("{title}", title)} onClick={() => void download(l.id)}><Icon name="download" />{t.download}</button>}
+              {remaining?.id === l.id && <small className="muted" data-testid="downloads-remaining" role="status">{t.remaining.replace("{n}", String(remaining.n))}</small>}</td>
+          </tr>;
+        })}</tbody></table></div>}
+    <p className="caption store-footnote">{t.footnote}</p>
   </>;
 }
 
 /** شهادة الترخيص بشروطه المجمّدة، والتنزيل برابط موقّع قصير العمر لا يُحفظ. */
 export function LicenseCertificate({ locale, id }: { locale: Locale; id: string }) {
   const m = messages[locale], t = m.licenses, tp = m.templates, me = useUser(), mutation = useMutation(), downloader = hasRole(me, ...licenseDownloaders);
-  const [license, setLicense] = useState<IssuedLicense | null>(null), [status, setStatus] = useState(0), [remaining, setRemaining] = useState<number | null>(null);
+  const [license, setLicense] = useState<IssuedLicense | null>(null), [status, setStatus] = useState(0), [remaining, setRemaining] = useState<number | null>(null), clicks = useRef(0);
   useEffect(() => {
     const controller = new AbortController();
     void browserApi().GET("/licenses/{license_id}", { params: { path: { license_id: id } }, signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) setLicense(data); }).catch(e => { if (!controller.signal.aborted) setStatus(e instanceof RequestError ? e.status : 503); });
@@ -46,10 +83,11 @@ export function LicenseCertificate({ locale, id }: { locale: Locale; id: string 
   }, [id]);
   async function download() {
     let url: string | undefined, left: number | undefined;
-    const ok = await mutation.run(`download:${id}:${Date.now()}`, async header => { const result = await browserApi().POST("/licenses/{license_id}/download-url", { params: { path: { license_id: id }, header } }); url = result.data?.url; left = result.data?.downloads_remaining; return result; });
+    // كل نقرة منحة تنزيل جديدة تُحصى في الخادم: بصمة النية فريدة لكل نقرة
+    const ok = await mutation.run(`download:${id}:${++clicks.current}`, async header => { const result = await browserApi().POST("/licenses/{license_id}/download-url", { params: { path: { license_id: id }, header } }); url = result.data?.url; left = result.data?.downloads_remaining; return result; });
     if (ok && url) { setRemaining(left ?? null); window.location.assign(url); }
   }
-  const back = <Link prefetch={false} className="back-link" href={`/${locale}/store/licenses`}>{t.title}</Link>;
+  const back = <nav className="breadcrumb no-print" aria-label={m.store.item.breadcrumb}><ol><li><Link prefetch={false} href={`/${locale}/store/licenses`}>{t.mine}</Link></li>{license && <li aria-current="page"><bdi dir="ltr">{license.license_number}</bdi></li>}</ol></nav>;
   if (status) return <>{back}<p className="center-state" role="alert">{status === 404 ? t.notFound : m.error}</p></>;
   if (!license) return <>{back}<p className="center-state" role="status">{m.loading}</p></>;
   const terms = license.terms, territory = terms.territory.kind === "worldwide" ? tp.worldwide : (terms.territory.countries ?? []).join(", ");
@@ -58,7 +96,7 @@ export function LicenseCertificate({ locale, id }: { locale: Locale; id: string 
       <p className="eyebrow">{t.certificate}</p><h1>{localized(license.title, locale)}</h1>
       <p><span className={`badge ${licenseTone(license.status)}`} data-testid="license-status">{t.statuses[license.status]}</span>{license.revoked_reason && <small className="muted"> {t.reasons[license.revoked_reason]}</small>}</p>
       <dl className="metadata">{[
-        [t.number, <bdi dir="ltr" key="n">{license.license_number}</bdi>], [t.type, `${m.store.licenseTypes[terms.type]} · ${localized(terms.name, locale)}`],
+        [t.number, <bdi dir="ltr" key="n">{license.license_number}</bdi>], [m.orders.orderNumber, <bdi dir="ltr" key="o" className="ref">{orderLabel({ id: license.order_id, order_number: license.order_number })}</bdi>], [t.type, `${m.store.licenseTypes[terms.type]} · ${localized(terms.name, locale)}`],
         [tp.usage, terms.usage_media.map(u => tp.usageNames[u]).join("، ")], [tp.territory, territory], [tp.deliverables, terms.deliverables.map(d => tp.deliverableNames[d]).join("، ")],
         [tp.prohibitions, terms.prohibitions.map(p => tp.prohibitionNames[p]).join("، ") || "—"], [tp.attribution, localized(terms.attribution, locale)],
         [t.validFrom, formatDate(license.valid_from, locale)], [t.validUntil, license.valid_until ? formatDate(license.valid_until, locale) : t.noExpiry],
