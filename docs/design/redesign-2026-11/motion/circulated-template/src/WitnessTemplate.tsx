@@ -1,10 +1,23 @@
 // القالب الثاني للمواد المتداولة: «الشاهد».
 // إطار من أربع زوايا مضيئة حول المشهد، ووسم ذهبي أسطواني، وعنوان بلا ألواح، وسطر مكان وتاريخ،
 // وشريط جانبي لحساب صاحب المادة الأصلي. التصميم في Figma (صفحة «Video Template 2 · الشاهد»، VT2-01..07).
-import React from 'react';
-import { AbsoluteFill, Easing, Img, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
+import React, { useEffect, useState } from 'react';
+import {
+  AbsoluteFill,
+  cancelRender,
+  continueRender,
+  delayRender,
+  Easing,
+  Img,
+  interpolate,
+  spring,
+  staticFile,
+  useCurrentFrame,
+  useVideoConfig,
+} from 'remotion';
 import { measureText } from '@remotion/layout-utils';
-import { TEXT_FONT, TITLE_FONT } from './fonts';
+import { CirculatedProps, cleanLines, MIN_TITLE_SCALE, TitleOverflowError } from './CirculatedTemplate';
+import { fontsReady, TEXT_FONT, TITLE_FONT } from './fonts';
 
 export type WitnessLayout = 'vertical' | 'horizontal' | 'square';
 
@@ -23,6 +36,9 @@ export type WitnessProps = {
   readonly reducedMotion: boolean;
   readonly durationInSeconds: number;
 };
+
+// نصّ الوسم في النسخة، كالقالب الأول؛ الطلب يختار إظهاره أو إخفاءه وحده
+const WITNESS_TAG_TEXT = 'مشاهد متداولة';
 
 // كل لون رمز من tokens.v2.json
 const C = {
@@ -53,10 +69,30 @@ const L = {
 } as const;
 
 const LOGO_PLATE_ALPHA = 0.55; // كالقالب الأول: 3:1 على الأقل فوق لقطة بيضاء
-const MIN_TITLE_SCALE = 0.7; // ADR 0091: تصغير الكتلة كلها بنسبة واحدة حتى 70%، بلا التفاف
 // شريط الحساب: مدة كل ظهور، وأقلّ فاصل بين الظهورين قبل دمجهما في ظهور واحد
 const CREDIT_DWELL = 5;
 const CREDIT_GAP = 3;
+
+/**
+ * هندسة العنوان كما يرسمها القالب: عرض السطر الأقصى بين عمود أزرار المنصّة وحافّة الإطار، ونسبة الكتلة الواحدة (حتى 70%
+ * من MIN_TITLE_SCALE، ADR 0091)، وأيّ سطر لا يتّسع بعدها (أو -1).
+ */
+export const witnessTitleFit = (titleLines: string[], layout: WitnessLayout, frameWidth: number) => {
+  const s = L[layout];
+  const lines = cleanLines(titleLines);
+  const maxLineW = frameWidth - s.blockRight - s.frame.l - s.inset;
+  const widths = lines.map((ln) => measureText({ text: ln, fontFamily: TITLE_FONT, fontSize: s.title, fontWeight: '700' }).width);
+  const needed = Math.min(1, maxLineW / Math.max(1, ...widths));
+  const overflowLine = widths.findIndex((w) => maxLineW / w < MIN_TITLE_SCALE);
+  return { lines, maxLineW, needed, scale: Math.max(MIN_TITLE_SCALE, needed), overflowLine };
+};
+
+/** يرمي `TitleOverflowError` (`title_overflow`) كالقالب الأول؛ يُنادى من `calculateMetadata` بعد تحميل الخط */
+export const assertWitnessTitleFits = (titleLines: string[], layout: WitnessLayout, frameWidth: number) => {
+  const fit = witnessTitleFit(titleLines, layout, frameWidth);
+  if (fit.overflowLine >= 0) throw new TitleOverflowError(fit.overflowLine, fit.needed);
+  return fit;
+};
 
 const EASE = Easing.bezier(0.22, 1, 0.36, 1);
 const EASE_EXIT = Easing.bezier(0.64, 0, 0.78, 0);
@@ -122,7 +158,8 @@ export const WitnessTemplate: React.FC<WitnessProps> = ({
   const s = L[layout];
   const f = s.frame;
   const t = frame / fps;
-  const lines = titleLines.filter((l) => l.trim().length > 0).slice(0, 3);
+  const fit = witnessTitleFit(titleLines, layout, W);
+  const lines = fit.lines;
 
   const enter = (from: number, to: number) => interpolate(t, [from, to], [0, 1], { ...clamp, easing: EASE });
   // الخروج في آخر 0.6 ث؛ order يؤخّر ما دخل أوّلًا فيخرج أخيرًا
@@ -176,9 +213,7 @@ export const WitnessTemplate: React.FC<WitnessProps> = ({
   const tagOpacity = (rm ? enter(0.4, 0.7) * (1 - xTag) : 1) * (tag ? 1 : 0);
 
   // 5 · العنوان: الكتلة كلها بنسبة واحدة حتى 70%، كلمةً كلمة من جهة القراءة
-  const maxLineW = W - s.blockRight - f.l - s.inset;
-  const widest = Math.max(1, ...lines.map((ln) => measureText({ text: ln, fontFamily: TITLE_FONT, fontSize: s.title, fontWeight: '700' }).width));
-  const titleSize = Math.round(s.title * Math.max(MIN_TITLE_SCALE, Math.min(1, maxLineW / widest)));
+  const titleSize = Math.round(s.title * fit.scale);
   let wordIndex = 0;
 
   // 6 · خطّ الإشارة
@@ -472,5 +507,55 @@ export const WitnessTemplate: React.FC<WitnessProps> = ({
           })
         : null}
     </AbsoluteFill>
+  );
+};
+
+/**
+ * لا يُرسم القالب في الصفحة قبل تحميل الخطّين: `measureText` يحفظ أول قياس لكل نصّ في ذاكرة الصفحة، فقياسٌ قبل الخط يثبت
+ * عرض الخط البديل لكبسولة الوسم وحجم العنوان في كل إطارات تلك الصفحة. والمرسِم يوزّع الإطارات على صفحات متوازية، فتختلف
+ * الإطارات بين صفحة وأخرى (قيس: كل إطار ثانٍ بعد ظهور الوسم بين رسمين كاملين). `delayRender` يمنع التصوير حتى يُرسم القالب
+ * بالخطّين.
+ */
+const useFontsLoaded = () => {
+  const [handle] = useState(() => delayRender('fonts before the Witness measurements'));
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    fontsReady.then(() => setLoaded(true), (err) => cancelRender(err));
+  }, []);
+  // بعد أن يُثبَّت الرسم بالقياس الصحيح، لا قبله
+  useEffect(() => {
+    if (loaded) continueRender(handle);
+  }, [loaded, handle]);
+  return loaded;
+};
+
+/**
+ * «الشاهد» في خط الإنتاج (ADR 0109): يأخذ معاملات طبقة «مواد متداولة» نفسها كما يمررها العامل من العقد (`aspect`،
+ * و`location` يبنيه الخادم، و`tag` الوسم المرمّز)، ونصّ الوسم من القالب. التاريخ والحساب فارغان دائمًا: لا اسم حساب ولا
+ * مصدر في أي إطار (`CLAUDE.md` §5)، فالشريط الجانبي لا يُرسم أبدًا في النسخة.
+ */
+export const WitnessRender: React.FC<CirculatedProps> = ({
+  titleLines,
+  location,
+  tag,
+  aspect,
+  background,
+  reducedMotion,
+  durationInSeconds,
+}) => {
+  const loaded = useFontsLoaded();
+  if (!loaded) return null;
+  return (
+    <WitnessTemplate
+      titleLines={titleLines}
+      location={location ?? ''}
+      date=""
+      credit=""
+      tag={tag === 'circulated_footage' ? WITNESS_TAG_TEXT : ''}
+      layout={aspect}
+      background={background}
+      reducedMotion={reducedMotion}
+      durationInSeconds={durationInSeconds}
+    />
   );
 };

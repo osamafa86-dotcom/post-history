@@ -2,7 +2,7 @@ import React from 'react';
 import { CalculateMetadataFunction, Composition, Folder } from 'remotion';
 import { Aspect, assertTitleFits, CirculatedProps, CirculatedTemplate } from './CirculatedTemplate';
 import { fontsReady } from './fonts';
-import { WitnessProps, WitnessTemplate } from './WitnessTemplate';
+import { assertWitnessTitleFits, WitnessProps, WitnessRender, WitnessTemplate } from './WitnessTemplate';
 
 const SIZE: Record<Aspect, { width: number; height: number }> = {
   vertical: { width: 1080, height: 1920 },
@@ -20,6 +20,19 @@ const metadata: CalculateMetadataFunction<CirculatedProps> = async ({ props }) =
     fps: props.fps,
     ...SIZE[props.aspect],
     durationInFrames: Math.max(3 * props.fps, Math.round(props.durationInSeconds * props.fps)),
+  };
+};
+
+// طبقة «الشاهد» في خط الإنتاج (ADR 0109): المعاملات والمعدل والمقاس كطبقة «مواد متداولة»، وسطرٌ لا يتّسع عند 70% في
+// صندوق «الشاهد» يرمي `TitleOverflowError` قبل أي إطار. والمقطع لا يقصر عن 4 ث كتركيبات «الشاهد» في الأستوديو
+const WITNESS_MIN_SECONDS = 4;
+const witnessRenderMeta: CalculateMetadataFunction<CirculatedProps> = async ({ props }) => {
+  await fontsReady;
+  assertWitnessTitleFits(props.titleLines, props.aspect, SIZE[props.aspect].width);
+  return {
+    fps: props.fps,
+    ...SIZE[props.aspect],
+    durationInFrames: Math.max(WITNESS_MIN_SECONDS * props.fps, Math.round(props.durationInSeconds * props.fps)),
   };
 };
 
@@ -97,6 +110,16 @@ export const Root: React.FC = () => (
     <Folder name="Overlay">
       {/* طبقة شفافة تُصدَّر ProRes 4444 وتُركَّب فوق المقطع المتداول بـ FFmpeg */}
       <C id="Overlay-Vertical" props={{ background: 'none' }} />
+      {/* «الشاهد» بمعاملات العقد نفسها (ADR 0109): المقاس من `aspect`، والتاريخ والحساب فارغان دائمًا */}
+      <Composition
+        id="Witness-Overlay-Render"
+        component={WitnessRender}
+        fps={base.fps}
+        {...SIZE[base.aspect]}
+        durationInFrames={Math.round(base.durationInSeconds * base.fps)}
+        calculateMetadata={witnessRenderMeta}
+        defaultProps={{ ...base, background: 'none' }}
+      />
     </Folder>
   </>
 );
