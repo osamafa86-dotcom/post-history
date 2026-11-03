@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# يتحقق من صلاحيات مستخدم عامل الوسائط في MinIO (ADR 0006): قراءة بادئة الرفع وكتابة derived/ فقط؛ ومستخدم عامل
+# يتحقق من صلاحيات مستخدم عامل الوسائط في MinIO (ADR 0006): قراءة بادئة الرفع وكتابة derived/ فقط؛ ومستخدمي tusd (بادئة
+# الرفع قراءةً وكتابة وحدها) والخادم (قراءة الحاويتين وحذف كائنات tus، بلا كتابة ولا إدارة)؛ ومستخدم عامل
 # التفريغ (ADR 0019) إن ضُبط: قراءة derived/*/*/proxy-480p.mp4 وderived/*/*/audio-16k.m4a، وقراءة مشتقاته وكتابتها فقط:
 # derived/*/*/{transcript.json,transcript.vtt,shots.json,shot_list.json} (اللقطات ADR 0026).
 # يحتاج compose قائمًا و S3_MEDIA_ACCESS_KEY/S3_MEDIA_SECRET_KEY (وS3_AI_* اختياريًا) مضبوطين في infra/compose/.env.
@@ -38,6 +39,31 @@ expect deny  "delete an original"      wrk rm "w/$S3_BUCKET_UPLOADS/${TUSD_OBJEC
 expect deny  "delete a derivative"     wrk rm "w/$S3_BUCKET_MEDIA/derived/policy-check"
 expect deny  "list the upload bucket"  wrk ls "w/$S3_BUCKET_UPLOADS/"
 
+# tusd and the API run on their own users, not the root one (which minio-init alone holds).
+: "${S3_TUSD_ACCESS_KEY:?}" "${S3_TUSD_SECRET_KEY:?}" "${S3_API_ACCESS_KEY:?}" "${S3_API_SECRET_KEY:?}"
+export MC_HOST_u="http://$S3_TUSD_ACCESS_KEY:$S3_TUSD_SECRET_KEY@minio:9000"
+export MC_HOST_p="http://$S3_API_ACCESS_KEY:$S3_API_SECRET_KEY@minio:9000"
+tus_() { docker run --rm -i --network "$NET" -e MC_HOST_u "$MC" "$@"; }
+api_() { docker run --rm -i --network "$NET" -e MC_HOST_p "$MC" "$@"; }
+tus_put() { echo z | tus_ pipe "$1"; }
+api_put() { echo z | api_ pipe "$1"; }
+echo seed | adm pipe "a/$S3_BUCKET_UPLOADS/${TUSD_OBJECT_PREFIX}api-delete-check" >/dev/null
+echo seed | adm pipe "a/$S3_BUCKET_MEDIA/derived/m/policy-check/poster.jpg" >/dev/null
+expect ALLOW "tusd: write the upload prefix"      tus_put "u/$S3_BUCKET_UPLOADS/${TUSD_OBJECT_PREFIX}tusd-check"
+expect ALLOW "tusd: read the upload prefix"       tus_ cat "u/$S3_BUCKET_UPLOADS/${TUSD_OBJECT_PREFIX}policy-check"
+expect ALLOW "tusd: delete in the upload prefix"  tus_ rm "u/$S3_BUCKET_UPLOADS/${TUSD_OBJECT_PREFIX}tusd-check"
+expect deny  "tusd: write outside the prefix"     tus_put "u/$S3_BUCKET_UPLOADS/elsewhere/x"
+expect deny  "tusd: read the media bucket"        tus_ cat "u/$S3_BUCKET_MEDIA/derived/m/policy-check/poster.jpg"
+expect deny  "tusd: write the media bucket"       tus_put "u/$S3_BUCKET_MEDIA/derived/x"
+expect deny  "tusd: administer MinIO"             tus_ admin user list u
+expect ALLOW "api: read an original"              api_ cat "p/$S3_BUCKET_UPLOADS/${TUSD_OBJECT_PREFIX}policy-check"
+expect deny  "api: read outside the prefix"       api_ cat "p/$S3_BUCKET_UPLOADS/elsewhere/policy-check"
+expect ALLOW "api: read a derivative"             api_ cat "p/$S3_BUCKET_MEDIA/derived/m/policy-check/poster.jpg"
+expect ALLOW "api: delete a session's tus object" api_ rm "p/$S3_BUCKET_UPLOADS/${TUSD_OBJECT_PREFIX}api-delete-check"
+expect deny  "api: write the upload bucket"       api_put "p/$S3_BUCKET_UPLOADS/${TUSD_OBJECT_PREFIX}x"
+expect deny  "api: write the media bucket"        api_put "p/$S3_BUCKET_MEDIA/derived/x"
+expect deny  "api: delete a derivative"           api_ rm "p/$S3_BUCKET_MEDIA/derived/m/policy-check/poster.jpg"
+expect deny  "api: administer MinIO"              api_ admin user list p
 
 if [ -n "${S3_AI_ACCESS_KEY:-}" ] && [ -n "${S3_AI_SECRET_KEY:-}" ]; then
   export MC_HOST_t="http://$S3_AI_ACCESS_KEY:$S3_AI_SECRET_KEY@minio:9000"

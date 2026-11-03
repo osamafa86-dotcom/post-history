@@ -72,6 +72,16 @@ if [ "$created_env" = 1 ]; then
   [ "$(grep -E "$RENDER_KEYS" "$HERE/.env" | sha256sum)" != "$render" ] || fail "gen-env.sh --add-render reused old values"
   [ "$(stat -c %a "$HERE/.env")" = 600 ] || fail ".env is not 0600 after --add-render"
   echo "gen-env.sh --add-render: adds media-render's MinIO user and address to an older .env, leaves the rest, and is repeatable: ok"
+  # An .env from before tusd and the API had their own MinIO users (both ran on the root one): --add-storage adds the four keys.
+  STORAGE_KEYS='^(S3_TUSD_ACCESS_KEY|S3_TUSD_SECRET_KEY|S3_API_ACCESS_KEY|S3_API_SECRET_KEY)='
+  kept="$(grep -vE "$STORAGE_KEYS" "$HERE/.env" | sha256sum)" storage="$(grep -E "$STORAGE_KEYS" "$HERE/.env" | sha256sum)"
+  grep -vE "$STORAGE_KEYS" "$HERE/.env" > "$work/env" && cat "$work/env" > "$HERE/.env"
+  "$HERE/gen-env.sh" --add-storage | grep -q "4 added" || fail "gen-env.sh --add-storage did not add the four storage keys"
+  "$HERE/gen-env.sh" --add-storage | grep -q "0 added" || fail "gen-env.sh --add-storage is not repeatable"
+  [ "$(grep -vE "$STORAGE_KEYS" "$HERE/.env" | sha256sum)" = "$kept" ] || fail "gen-env.sh --add-storage changed a key it does not own"
+  [ "$(grep -E "$STORAGE_KEYS" "$HERE/.env" | sha256sum)" != "$storage" ] || fail "gen-env.sh --add-storage reused old values"
+  [ "$(stat -c %a "$HERE/.env")" = 600 ] || fail ".env is not 0600 after --add-storage"
+  echo "gen-env.sh --add-storage: adds the tusd and API MinIO users to an older .env, leaves the rest, and is repeatable: ok"
 fi
 
 # Synthetic media only (CLAUDE.md §5): a short clip carrying planted location, device and title tags (a coordinate built at
@@ -121,6 +131,19 @@ docker run -d --name ph-preview-decoy --network deploy_default --network-alias a
   "for (const p of [3000, 3100]) require('http').createServer((q, r) => { console.log('hit', p, q.method, q.url); r.statusCode = 418; r.end('decoy'); }).listen(p)" >/dev/null
 
 "${C[@]}" up -d --wait >/dev/null 2>&1 || fail "preview compose did not come up"
+# Postgres, Redis and MinIO on read-only roots, MinIO not as root, and the worker, media-render and the feeder healthy by
+# their own checks (up --wait waited for them): connected to the queue, and a feeder cycle within the last minute.
+for svc in postgres redis minio; do
+  [ "$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' "$("${C[@]}" ps -q "$svc")")" = true ] || fail "$svc root is not read-only"
+done
+tops="$(docker top "$("${C[@]}" ps -q minio)" -o pid,uid,args)"   # captured: pipefail + awk exit
+muid="$(awk 'NR > 1 && / minio server / { print $2; exit }' <<<"$tops")"
+[ "$muid" = 1000 ] || fail "MinIO runs as uid ${muid:-?}, not 1000"
+for svc in media-worker media-render media-feeder; do
+  [ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$("${C[@]}" ps -q "$svc")")" = healthy ] \
+    || fail "$svc is not healthy by its own check"
+done
+echo "postgres, redis and MinIO on read-only roots, MinIO as uid 1000, and the worker, media-render and the feeder healthy: ok"
 # The smoke hands the worker its jobs itself (backfill-media.sh), to see the disk guard and time the job; the feeder service
 # starts again at the end.
 "${C[@]}" stop media-feeder >/dev/null 2>&1 || fail "could not stop media-feeder"
@@ -440,7 +463,7 @@ rx() { docker exec "$rid" sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli --no-
 mc_image="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["minio-init"]["image"])' <<<"$cfg")"
 # mc as a throwaway container on the internal network; the keys come from .env by name, never on the command line.
 mcx() { docker run --rm --network post-history-preview_internal --env-file "$HERE/.env" --entrypoint sh "$mc_image" -c \
-  'export MC_HOST_local="http://$S3_ACCESS_KEY:$S3_SECRET_KEY@minio:9000" MC_HOST_w="http://$S3_MEDIA_ACCESS_KEY:$S3_MEDIA_SECRET_KEY@minio:9000" MC_HOST_r="http://$S3_RENDER_ACCESS_KEY:$S3_RENDER_SECRET_KEY@minio:9000"; '"$1"; }
+  'export MC_HOST_local="http://$S3_ACCESS_KEY:$S3_SECRET_KEY@minio:9000" MC_HOST_w="http://$S3_MEDIA_ACCESS_KEY:$S3_MEDIA_SECRET_KEY@minio:9000" MC_HOST_r="http://$S3_RENDER_ACCESS_KEY:$S3_RENDER_SECRET_KEY@minio:9000" MC_HOST_u="http://$S3_TUSD_ACCESS_KEY:$S3_TUSD_SECRET_KEY@minio:9000" MC_HOST_p="http://$S3_API_ACCESS_KEY:$S3_API_SECRET_KEY@minio:9000"; '"$1"; }
 # One query on the preview's own database, rows space-separated.
 sql() { "${C[@]}" exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -F " " -c "$1"' sql "$1"; }
 feed() { "${C[@]}" run --rm --no-deps -T "$@" media-feeder --once 2>/dev/null; }
@@ -675,6 +698,46 @@ list-derived deny
 delete-render deny"
 [ "$(grep -E '^(read|list|write|delete)-' <<<"$rpolicy")" = "$want_rpolicy" ] || { echo "$rpolicy" >&2; fail "media-render's MinIO user can do more or less than the addendum to ADR 0092 says"; }
 echo "media-render's MinIO user reads uploads but not their .info, writes derived/*/*/renders/ only (not the proxy beside it), lists and deletes nothing: ok"
+
+# tusd and the API on their own MinIO users, not the root one (minio-init's alone): tusd reads and writes the upload bucket
+# only; the API reads both buckets and deletes tus objects, and writes nothing. The uploads and the renders above ran on them.
+for svc in api tusd; do
+  envs="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$("${C[@]}" ps -q "$svc")")"   # captured: pipefail + grep -q
+  grep -qxE "(S3_ACCESS_KEY|AWS_ACCESS_KEY_ID)=$(val S3_ACCESS_KEY)" <<<"$envs" && fail "$svc runs on MinIO's root user"
+  grep -qxE "(S3_ACCESS_KEY|AWS_ACCESS_KEY_ID)=$(val "S3_${svc^^}_ACCESS_KEY")" <<<"$envs" || fail "$svc does not run on its own MinIO user"
+done
+spolicy="$(mcx "obj=$key proxy=$proxy_key"'
+echo z | mc --config-dir /tmp/mc pipe "local/$S3_BUCKET_UPLOADS/policy-check-api" >/dev/null || exit 1
+echo z | mc --config-dir /tmp/mc pipe "local/$S3_BUCKET_MEDIA/derived/policy-check-api" >/dev/null || exit 1
+t() { if echo z | mc --config-dir /tmp/mc "$@" >/dev/null 2>&1; then echo allow; else echo deny; fi; }
+echo "tusd-read-upload $(t cat "u/$S3_BUCKET_UPLOADS/$obj")"
+echo "tusd-write-upload $(t pipe "u/$S3_BUCKET_UPLOADS/policy-check-tusd")"
+echo "tusd-delete-upload $(t rm "u/$S3_BUCKET_UPLOADS/policy-check-tusd")"
+echo "tusd-read-derived $(t cat "u/$S3_BUCKET_MEDIA/$proxy")"
+echo "tusd-write-derived $(t pipe "u/$S3_BUCKET_MEDIA/derived/policy-check")"
+echo "tusd-admin $(t admin user list u)"
+echo "api-read-upload $(t cat "p/$S3_BUCKET_UPLOADS/$obj")"
+echo "api-read-derived $(t cat "p/$S3_BUCKET_MEDIA/$proxy")"
+echo "api-write-upload $(t pipe "p/$S3_BUCKET_UPLOADS/policy-check-api-write")"
+echo "api-write-derived $(t pipe "p/$S3_BUCKET_MEDIA/derived/policy-check")"
+echo "api-delete-derived $(t rm "p/$S3_BUCKET_MEDIA/derived/policy-check-api")"
+echo "api-delete-upload $(t rm "p/$S3_BUCKET_UPLOADS/policy-check-api")"
+echo "api-admin $(t admin user list p)"' 2>&1)" || { echo "$spolicy" | tail -3; fail "could not check the tusd and API MinIO users"; }
+want_spolicy="tusd-read-upload allow
+tusd-write-upload allow
+tusd-delete-upload allow
+tusd-read-derived deny
+tusd-write-derived deny
+tusd-admin deny
+api-read-upload allow
+api-read-derived allow
+api-write-upload deny
+api-write-derived deny
+api-delete-derived deny
+api-delete-upload allow
+api-admin deny"
+[ "$(grep -E '^(tusd|api)-' <<<"$spolicy")" = "$want_spolicy" ] || { echo "$spolicy" >&2; fail "the tusd or API MinIO user can do more or less than minio-init.sh says"; }
+echo "tusd and the API on their own MinIO users (tusd: the upload bucket only; the API: reads both, deletes tus objects, writes nothing), not the root one: ok"
 
 # Measurement (--media-json): a synthetic 60 s clip per profile, end to end on the worker as deployed (its limits, the edge,
 # the API's verification, the feeder), timed from the job's delivery to its acknowledgement on the queue.
@@ -923,7 +986,7 @@ tus_id_re=' (GET|HEAD|PATCH|POST|PUT|DELETE|OPTIONS) /files/[A-Za-z0-9]'
 if grep -qE "$tus_id_re" <<<"$edge_logs"; then grep -E "$tus_id_re" <<<"$edge_logs" | head -3 | cut -c1-200 >&2; fail "an upload id in an edge log"; fi
 grep -qF '/files/-' <<<"$edge_logs" || fail "no redacted upload path in the edge logs (nothing logged?)"
 for k in POSTGRES_PASSWORD REDIS_PASSWORD S3_SECRET_KEY JWT_SECRET PREVIEW_REPORTER_PASSWORD TUSD_HOOK_SECRET INGEST_GATE_TOKEN \
-         MEDIA_WORKER_TOKEN S3_MEDIA_SECRET_KEY S3_RENDER_SECRET_KEY; do
+         MEDIA_WORKER_TOKEN S3_MEDIA_SECRET_KEY S3_RENDER_SECRET_KEY S3_TUSD_SECRET_KEY S3_API_SECRET_KEY; do
   if grep -qF "$(val "$k")" <<<"$logs"; then fail "$k appears in a container log"; fi
 done
 echo "no secret in the logs: ok"
