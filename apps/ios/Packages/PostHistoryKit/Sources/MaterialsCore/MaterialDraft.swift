@@ -1,6 +1,7 @@
 import Foundation
 import FormEngine
 import PostHistoryAPI
+import struct UploadCore.AccountScope
 
 /// مسودة «مادة جديدة» (المواصفة A1): كل الخطوات محفوظة على الجهاز حتى الإرسال، بمفتاح تكرار ثابت لإنشاء المادة.
 /// الملفات المختارة تتشارك البيانات، ولكل ملف مادته (الخادم يحتفظ بأصل واحد للمادة، ADR 0081) ومفتاح إنشائه الثابت.
@@ -94,6 +95,9 @@ public struct MaterialDraft: Codable, Equatable, Sendable, Identifiable {
     public var createIdempotencyKey: String
     public var createdMaterialId: UUID?
     public var updatedAt: Date
+    /// الحساب صاحب المسودة بمعرّفه المحلي المعتم (`LocalAccounts`، ADR 0093 وADR 0113): تُعرض له وحده. `nil` لمسودة كتبها
+    /// بناء سابق، فتُعرض للحساب الوحيد الذي دخل على الجهاز وإلا لا لأحد، بقاعدة سجلات الرفع نفسها.
+    public var owner: UUID?
 
     public init(id: UUID = UUID(), now: Date = Date()) {
         self.id = id
@@ -119,6 +123,7 @@ public struct MaterialDraft: Codable, Equatable, Sendable, Identifiable {
         createIdempotencyKey = "material-create-\(id.uuidString.lowercased())"
         createdMaterialId = nil
         updatedAt = now
+        owner = nil
     }
 
     public var sensitivity: Sensitivity? {
@@ -240,6 +245,14 @@ public struct MaterialDraft: Codable, Equatable, Sendable, Identifiable {
         createIdempotencyKey = draftKey
         createdMaterialId = draftMaterial
         updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        owner = try c.decodeIfPresent(UUID.self, forKey: .owner)
+    }
+}
+
+extension AccountScope {
+    /// مسودات الحساب الداخل وحده (ADR 0113، متابعة ADR 0093): مسودة حساب آخر لا يظهر منها عنوان ولا ملف ولا عدد.
+    public func visible(_ drafts: [MaterialDraft]) -> [MaterialDraft] {
+        drafts.filter { owns($0.owner) }
     }
 }
 
@@ -323,6 +336,13 @@ public enum DraftValidator {
 
 /// إرسال المسودة: مادة لكل ملف بالبيانات المشتركة، بالترتيب، وكلٌّ بمفتاحه الثابت. ما أُدخل الطابور يُسقَط من المسودة،
 /// وعند الفشل يرجع ما بقي (ومعه مادة الملف الذي أُنشئت مادته ولم يُدخل) فلا يُنشأ شيء ولا يُدخل مرتين.
+///
+/// ولا مرتين حتى لو أُنهي التطبيق في أي لحظة (ADR 0113، كما في أندرويد `MaterialBatch`): المسودة تُحفظ بـ `persist` في كل خطوة،
+/// والترتيب هو الضمان:
+/// 1. قبل أول طلب: كل الملفات بلواحقها المثبَّتة ومفاتيحها.
+/// 2. بعد إنشاء مادة الملف وقبل إدخاله: الملف ومعه `createdMaterialId`، فلا تُنشأ ثانية.
+/// 3. بعد إدخاله الطابور: ما بقي بدونه، فلا يُدخل ثانية.
+/// وفشل الحفظ يوقف الإرسال كفشل الطلب.
 public enum DraftSubmission {
     public enum Failure: Error, Equatable { case incomplete }
 
@@ -334,14 +354,17 @@ public enum DraftSubmission {
         public var enqueuedCount: Int
     }
 
-    /// `create(key, body)` تعيد معرّف المادة؛ `enqueue(file, materialId, body)` تُدخل الملف أصلًا لتلك المادة.
+    /// `create(key, body)` تعيد معرّف المادة؛ `enqueue(file, materialId, body)` تُدخل الملف أصلًا لتلك المادة؛ `persist(draft)` تحفظ
+    /// المسودة كما هي الآن (وبلا ملفات: انتهت).
     @MainActor
     public static func run(_ input: MaterialDraft, dynamicFields: [String: JSONValue],
                            create: (String, MaterialCreate) async throws -> UUID,
-                           enqueue: (MaterialDraft.PickedFile, UUID, MaterialCreate) async throws -> Void) async -> Outcome {
+                           enqueue: (MaterialDraft.PickedFile, UUID, MaterialCreate) async throws -> Void,
+                           persist: (MaterialDraft) throws -> Void = { _ in }) async -> Outcome {
         var draft = input
         draft.pinTitleSuffixes()
         var enqueued = 0
+        do { try persist(draft) } catch { return Outcome(draft: draft, error: error, enqueuedCount: 0) }
         while let file = draft.files.first {
             let title = draft.materialTitle(at: 0)
             guard let body = DraftValidator.materialCreate(draft, title: title, file: file, dynamicFields: dynamicFields) else {
@@ -354,10 +377,12 @@ public enum DraftSubmission {
                 } else {
                     materialId = try await create(file.createIdempotencyKey, body)
                     draft.files[0].createdMaterialId = materialId
+                    try persist(draft)
                 }
                 try await enqueue(draft.files[0], materialId, body)
                 draft.files.removeFirst()
                 enqueued += 1
+                try persist(draft)
             } catch {
                 return Outcome(draft: draft, error: error, enqueuedCount: enqueued)
             }

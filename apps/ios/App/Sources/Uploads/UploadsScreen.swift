@@ -138,6 +138,9 @@ struct UploadsScreen: View {
         if let failed = firstFailure {
             VLNote(tone: .danger, systemImage: "exclamationmark.triangle",
                    text: Text("upload.note.failed \(failed.record.materialTitle ?? failed.record.filename) \(Text(LocalizedStringKey(failed.failure.textKey)))"))
+        } else if items.contains(where: \.waitingForSpace) {
+            // الهاتف ممتلئ: ما وصل باقٍ والرفع يُستأنف وحده حين تتوفر مساحة (ADR 0113).
+            VLNote(tone: .warn, systemImage: "externaldrive.badge.exclamationmark", text: Text("upload.note.storageFull"))
         } else if !online, ringState != .done {
             VLNote(tone: .warn, systemImage: "wifi.slash", text: Text("upload.offline"))
         } else if ringState == .done {
