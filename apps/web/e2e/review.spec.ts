@@ -59,10 +59,14 @@ test("contributors require exact totals and reservation can be released", async 
   for (const text of await people.nth(1).locator("option").allTextContents()) expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/);
   await expect(people.nth(1).locator("option", { hasText: "مونتير تجريبي ١" })).toHaveCount(0);
   await expect(people.nth(1).locator("option", { hasText: ar.admin.unnamed.replace("{id}", "10000000") })).toHaveCount(1);
+  // بعد الحفظ تتأخر القائمة عمدًا: الاسم يجب أن يأتي مما عُرف، لا أن ينتظرها
+  await page.route("**/api/bff/assignment-candidates", async route => { await new Promise(resolve => setTimeout(resolve, 2500)); await route.continue(); });
+  await people.nth(1).evaluate(select => select.setAttribute("data-before-save", ""));
   await page.getByLabel(ar.review.share, { exact: true }).nth(1).fill("66.67"); const saved = page.waitForResponse(r => r.url().endsWith("/contributors") && r.request().method() === "PUT"); await page.getByRole("button", { name: ar.review.saveContributors, exact: true }).click(); expect((await saved).status()).toBe(200);
   expect((await saved).request().postDataJSON().contributors[1].user_id).toBe(producerTwo);
   await expect(people).toHaveCount(2); await expect(page.getByLabel(ar.review.share, { exact: true }).nth(1)).toHaveValue("66.67");
-  expect(await chosen(1)).toBe("مونتير تجريبي ٢");
+  // البطاقة تُركَّب من جديد بالإصدار الجديد (عنصر جديد)، والاسم المعروف من أول رسم، لا «حساب <أول 8>» ريثما تصل القائمة المتأخرة
+  await expect(page.locator("select[data-before-save]")).toHaveCount(0); expect(await chosen(1)).toBe("مونتير تجريبي ٢");
 });
 /** يفتح A1 من الشريط الجانبي ثم حساب الطاقم بسطره في القائمة (لا معرّف يُكتب: القائمة من `GET /users`). */
 async function openAccount(page: Page, locale: "ar" | "en" = "ar", name = targetName) {

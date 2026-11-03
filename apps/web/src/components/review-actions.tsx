@@ -49,19 +49,29 @@ export function ReviewActions(props: Props) {
 }
 type Person = { id: string; name: string };
 /**
+ * أسماء العمل التي عُرفت في هذا التبويب، في الذاكرة وحدها. البطاقة تُركَّب من جديد بعد كل حفظ (مفتاحها إصدار المادة)، فبلا هذا يعود المساهم
+ * المحفوظ «حساب <أول 8>» ريثما تصل القائمة. تُمحى مع الحالة الخاصة (الخروج والإبطال).
+ */
+const knownNames = new Map<string, string | null>();
+/**
  * من يُختار مساهمًا، بأسمائهم لا بمعرّفاتهم: حسابات الطاقم النشطة لمدير النظام (`GET /users`، وبحث باسم العمل)، والمرشّحون للإسناد لمن يقرؤهم
  * (`GET /assignment-candidates`)، ومن على المادة نفسها (مراسلها، ومن يحجزها، والمساهمون الحاليون). الاسم المجهول «حساب <أول 8>».
  */
 function usePeople(material: Material, locale: Locale) {
   const me = useUser(), t = messages[locale].review, admin = hasRole(me, ...staffReaders), candidates = hasRole(me, ...assignRoles);
-  const [listed, setListed] = useState<Record<string, string | null>>({}), [failed, setFailed] = useState(false), [search, setSearch] = useState(""), [busy, setBusy] = useState(false);
+  const [listed, setListed] = useState<Record<string, string | null>>(() => Object.fromEntries(knownNames)), [failed, setFailed] = useState(false), [search, setSearch] = useState(""), [busy, setBusy] = useState(false);
+  useEffect(() => { const forget = () => knownNames.clear(); window.addEventListener("clear-private-state", forget); return () => window.removeEventListener("clear-private-state", forget); }, []);
   useEffect(() => {
     if (!admin && !candidates) return;
     const controller = new AbortController(), signal = controller.signal;
     void Promise.all([
       admin ? browserApi().GET("/users", { params: { query: { status: "active", limit: staffLimits.page, ...(search ? { q: search } : {}) } }, signal }).then(dataOrThrow).then(page => page.items.map(user => [user.id, workName(user.work_name)] as const)) : [],
       candidates ? browserApi().GET("/assignment-candidates", { signal }).then(dataOrThrow).then(data => data.items.map(item => [item.user_id, workName(item.work_name)] as const)) : [],
-    ]).then(([users, others]) => { if (!signal.aborted) { setListed(old => ({ ...old, ...Object.fromEntries([...others, ...users]) })); setFailed(false); } })
+    ]).then(([users, others]) => {
+      if (signal.aborted) return;
+      for (const [id, value] of [...others, ...users]) knownNames.set(id, value);
+      setListed(old => ({ ...old, ...Object.fromEntries([...others, ...users]) })); setFailed(false);
+    })
       .catch(() => { if (!signal.aborted) setFailed(true); }).finally(() => { if (!signal.aborted) setBusy(false); });
     return () => controller.abort();
   }, [admin, candidates, search]);
