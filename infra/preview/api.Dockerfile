@@ -20,6 +20,8 @@ COPY --from=build /src/apps/api/node_modules node_modules
 COPY --from=build /src/apps/api/dist dist
 COPY --from=build /src/apps/api/src/db/migrations migrations
 COPY infra/preview/seed-preview.mjs preview/seed-preview.mjs
+# موزّع مهام عامل الوسائط على المعاينة (ADR 0092)؛ خامل كسكربت البذر ما لم تشغّله خدمة media-feeder.
+COPY infra/preview/media-feeder.mjs preview/media-feeder.mjs
 USER node
 EXPOSE 3000
 CMD ["sh", "-c", "node_modules/.bin/node-pg-migrate up -m migrations -t schema_migrations --check-order --verbose=false && exec node dist/main.js"]

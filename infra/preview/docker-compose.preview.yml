@@ -1,12 +1,16 @@
 # معاينة خفيفة على خادم مشترك (ADR 0023): Postgres وRedis وMinIO والخادم والويب، وtusd وبوابة ingest للرفع من الحاسوب،
-# بصور مبنية في CI (preview-images.yml، لا بناء هنا). بلا عامل وسائط ولا تفريغ. على الخادم، من هذا المجلد:
-#   ./gen-env.sh            # مرة: .env بأسرار عشوائية وشهادة داخلية في tls/، لا يطبع شيئًا سريًا (--add-upload لـ .env قائم)
-#   docker load < ...       # الصورتان من الإصدار preview-latest (تُتحقق ببصمة sha256 أولًا)
+# وعامل الوسائط بحدود صارمة (ADR 0092: نسخة خفيفة ومصغّرات فقط، بلا تفريغ ولا HLS ولا تسليم ولا C2PA)، بصور مبنية في CI
+# (preview-images.yml، لا بناء هنا). على الخادم، من هذا المجلد:
+#   ./gen-env.sh            # مرة: .env بأسرار عشوائية وشهادة داخلية في tls/، لا يطبع شيئًا سريًا
+#                           # (.env قائم: --add-upload لمفاتيح الرفع، و--add-media لمفاتيح عامل الوسائط)
+#   ./fetch-images.sh       # الصور الثلاث من الإصدار preview-latest (تُتحقق ببصمة sha256 أولًا) ثم docker load
 #   docker compose -f docker-compose.preview.yml up -d --wait
 #   ./seed-preview.sh       # مرة: حسابات تجريبية ومواد اصطناعية؛ كلمات السر في .env لا في المخرج
+#   ./backfill-media.sh     # الأصول المتحققة قبل العامل: الأعداد وحدها (--wait حتى تنتهي)
 # لا منفذ على المضيف: الوكيل الأمامي للخادم (Caddy) يصل إلى "web" وحده عبر الشبكة الخارجية deploy_default باسم lib-web.
 # بناء iOS التجريبي (ADR 0077): الحافة تمرر /v1/ علنًا إلى الخادم عبر شبكة داخلية ثانية (public-api) عنوان الحافة عليها ليس في BFF_SOURCE_ADDRESSES.
-# الحدود: mem_limit لكل خدمة وmemswap_limit مساوٍ له (بلا swap)، والمجموع 928 MB تحت سقف 960 MB (ADR 0023).
+# الحدود: mem_limit لكل خدمة وmemswap_limit مساوٍ له (بلا swap)، والمجموع 2760 MB تحت سقف 2760 MB (ADR 0092، كان 960 في 0023)،
+# منها 1472 لعامل الوسائط وحده.
 name: post-history-preview
 
 x-limits: &hardened
@@ -82,31 +86,42 @@ services:
       interval: 10s
       timeout: 3s
       retries: 20
-    mem_limit: 128m
-    memswap_limit: 128m
+    # 256 MB (was 128, ADR 0092): after two large uploads in 64 MiB PATCHes it went away at 128 MB, and at 256 MB it reached
+    # the limit with reclaimable page cache and was not killed.
+    mem_limit: 256m
+    memswap_limit: 256m
     cpus: 0.5
-    networks: [internal]
+    # Unique name for the edge, which passes signed GETs of derived files here (ADR 0092) and also sits on deploy_default.
+    networks:
+      internal:
+        aliases: [ph-preview-minio]
 
   minio-init:
     image: pgsty/mc:RELEASE.2026-10-18T00-00-00Z@sha256:6ecdaec70bc5e8cf9d0e9a70c190f3beb1c83f11617ff4333f1fcd71ab1daf18
     depends_on:
       minio:
         condition: service_healthy
-    # Storage ceiling on the shared server, 10 GiB in all (ADR 0023): hard quotas on the two buckets, and tusd's temporary
-    # parts (at most the gate's 10 connections x 5 MiB) in the 64 MiB left over.
-    entrypoint: ["sh", "-c", "mc --config-dir /tmp/mc alias set local http://minio:9000 \"$$S3_ACCESS_KEY\" \"$$S3_SECRET_KEY\" >/dev/null && mc --config-dir /tmp/mc mb --ignore-existing \"local/$$S3_BUCKET_UPLOADS\" \"local/$$S3_BUCKET_MEDIA\" && mc --config-dir /tmp/mc quota set \"local/$$S3_BUCKET_UPLOADS\" --size 10112MiB >/dev/null && mc --config-dir /tmp/mc quota set \"local/$$S3_BUCKET_MEDIA\" --size 64MiB >/dev/null"]
+    # Storage on the shared server (ADR 0023, 0092): hard quotas, uploads 10112 MiB and derived files 2048 MiB, and tusd's
+    # temporary parts (at most the gate's 10 connections x 5 MiB) in 64 MiB outside them; and the media worker's MinIO user
+    # (read the uploads but not their .info/.part, read and write media/derived/ only). The admin calls were killed at 64 MB in CI.
+    entrypoint: ["sh", "/minio-init.sh"]
     environment:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_BUCKET_UPLOADS: ${S3_BUCKET_UPLOADS:?}
       S3_BUCKET_MEDIA: ${S3_BUCKET_MEDIA:?}
+      S3_MEDIA_ACCESS_KEY: ${S3_MEDIA_ACCESS_KEY:?gen-env.sh --add-media}
+      S3_MEDIA_SECRET_KEY: ${S3_MEDIA_SECRET_KEY:?gen-env.sh --add-media}
+      GOMEMLIMIT: 40MiB
+    volumes:
+      - ./minio-init.sh:/minio-init.sh:ro
     restart: "no"
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     read_only: true
     tmpfs: ["/tmp:size=4m"]
-    mem_limit: 32m
-    memswap_limit: 32m
+    mem_limit: 128m
+    memswap_limit: 128m
     cpus: 0.25
     networks: [internal]
 
@@ -131,6 +146,8 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       DATABASE_POOL_MAX: "6"
       VERIFY_CONCURRENCY: "1"
+      # One SHA-256 worker thread (ADR 0092): the API has 0.75 CPU, and each extra thread only holds memory.
+      VERIFY_HASH_THREADS: "1"
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       JWT_SECRET: ${JWT_SECRET:?}
       FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?}
@@ -144,7 +161,7 @@ services:
       # معاينة فقط، لا تُنقل إلى التجربة. الرفع من الحاسوب ومن بناء iOS التجريبي (ADR 0077): tusd خلف بوابة ingest،
       # ورمز الويب يصدره الخادم للـBFF وحده (عنوان الحافة على الشبكة الداخلية)، ورمز التطبيق بشهادة الجهاز. شهادة الجهاز
       # لـ iOS مفتوحة بمعرّف التطبيق الحقيقي (بيئة الإنتاج، وهي ما يستعمله TestFlight؛ بيئة التطوير ممنوعة)، وأندرويد مغلق
-      # (لا PLAY_INTEGRITY_PACKAGE_NAME). لا عامل وسائط ولا تفريغ، والإشعارات الخارجية معطّلة.
+      # (لا PLAY_INTEGRITY_PACKAGE_NAME). لا تفريغ، والإشعارات الخارجية معطّلة.
       ATTESTATION_MODE: production
       APP_ATTEST_APP_ID: Y4R9ZHWK9Y.net.palpost.posthistory
       INGEST_REQUIRED: "true"
@@ -155,12 +172,19 @@ services:
       INGEST_GATE_TOKEN: ${INGEST_GATE_TOKEN:?}
       BFF_SOURCE_ADDRESSES: ${PREVIEW_EDGE_IP:-10.211.47.10}/32
       INTERNAL_ALLOWED_CIDRS: ${PREVIEW_TUSD_IP:-10.211.47.12}/32,${PREVIEW_GATE_IP:-10.211.47.13}/32
-      INTERNAL_SOURCE_PATHS: ${PREVIEW_GATE_IP:-10.211.47.13}/32=/internal/ingest/
+      # The ingest gate reaches /internal/ingest/ alone, and the media worker /internal/media/ alone (ADR 0092).
+      INTERNAL_SOURCE_PATHS: "${PREVIEW_GATE_IP:-10.211.47.13}/32=/internal/ingest/;${PREVIEW_MEDIA_IP:-10.211.47.14}/32=/internal/media/"
       # One file at most 2 GiB (ADR 0023): POST /uploads answers 422 above it (#238), and tusd -max-size matches.
       UPLOAD_MAX_BYTES: "2147483648"
       UPLOAD_RECONCILE_ENABLED: "false"
+      # ADR 0092: the API still verifies every upload itself (in_process: photos included, and uploads never wait on the
+      # worker). media-feeder hands verified video originals to the worker, which reports on /internal/media/* with this token.
+      UPLOAD_VERIFIER: in_process
+      MEDIA_WORKER_TOKEN: ${MEDIA_WORKER_TOKEN:?gen-env.sh --add-media}
+      # Signed read links for derived files are signed for the preview's own origin; the edge passes GET on
+      # /<media bucket>/derived/<id>/<id>/{proxy-480p.mp4,poster.jpg} to MinIO with the Host unchanged (ADR 0092).
+      S3_PUBLIC_ENDPOINT: https://${PREVIEW_DOMAIN}
       AI_WORKER_TOKEN: ""
-      MEDIA_WORKER_TOKEN: ""
       PUSH_DELIVERY_ENABLED: "false"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
@@ -168,8 +192,8 @@ services:
       timeout: 3s
       retries: 30
       start_period: 60s
-    mem_limit: 224m
-    memswap_limit: 224m
+    mem_limit: 320m
+    memswap_limit: 320m
     cpus: 0.75
     # Unique upstream name for the edge: it also sits on deploy_default, where a short name may resolve elsewhere.
     # api-hooks: the name the ingest gate asks for session state (infra/ingest/nginx.conf); the gate is on this network only.
@@ -219,7 +243,9 @@ services:
         aliases: [ph-preview-web-app]
 
   # الرفع: tusd خلف وكيله (حجب أجسام 500، infra/proxy/tusd.conf) وخلف بوابة ingest (رمز ES256 قصير وحالة الجلسة عند
-  # الخادم، infra/ingest). الثلاثة على الشبكة الداخلية وحدها، والحافة تمرر /files/ إلى البوابة. المجموع 96 MB.
+  # الخادم، infra/ingest). الثلاثة على الشبكة الداخلية وحدها، والحافة تمرر /files/ إلى البوابة. المجموع 168 MB.
+  # tusd 128 MB (كان 56، ADR 0092): قُتل عند 56 تحت PATCH من 32 MiB، وPATCH واحد من 64 MiB (جلسة iOS الخلفية، ADR 0009)
+  # يبلغ 58.5 إلى 75.4 MiB، أغلبها ذاكرة صفحات أجزائه المؤقتة لا ذاكرة مجهولة (9.3 MiB).
   tusd:
     <<: *hardened
     image: tusproject/tusd:v2.10.1@sha256:7b1c552a8b42f4b36cb01f2a3bd49f82ab078b2eefd191459e716141dd50376c
@@ -236,7 +262,8 @@ services:
       TUSD_HOOK_URL: http://ph-preview-api:3000/internal/tusd-hooks
       TUSD_HOOK_SECRET: ${TUSD_HOOK_SECRET:?}
       GOMEMLIMIT: 40MiB
-    # Parts below the S3 minimum wait in /tmp: a volume, not tmpfs, so they do not count against the memory limit.
+    # Parts below the S3 minimum wait in /tmp: a volume, not tmpfs. Their page cache still counts against the memory limit
+    # until written back, which is what a fast 64 MiB PATCH fills (measured, ADR 0092).
     volumes:
       - ../tusd/entrypoint.sh:/usr/local/bin/tusd-entrypoint.sh:ro
       - tusd-tmp:/tmp
@@ -259,8 +286,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 20
-    mem_limit: 56m
-    memswap_limit: 56m
+    mem_limit: 128m
+    memswap_limit: 128m
     cpus: 0.5
     networks:
       internal:
@@ -319,6 +346,84 @@ services:
         ipv4_address: ${PREVIEW_GATE_IP:-10.211.47.13}
         aliases: [ph-preview-ingest]
 
+  # عامل الوسائط (ADR 0092): نسخة خفيفة 480p ومصغّرتان لكل أصل فيديو متحقق، وما سوى ذلك مطفأ صراحة (HLS والتفريغ والتصدير
+  # ومعاينة المتجر والتسليم وC2PA والمحاذاة والبصمة الإدراكية). يعالج ملفات غير موثوقة: جذر للقراءة فقط، بلا صلاحيات ولا رفع
+  # امتيازات، مستخدم غير الجذر، والشبكة الداخلية وحدها (لا خروج)، وعنوان ثابت يقصره الخادم على /internal/media/. حدود صارمة على
+  # خادم مشترك: 1472 MB بلا swap، و1.5 معالج، وأولوية معالج منخفضة (cpu_shares 256 من 1024) فيتنازل للمواقع عند التزاحم، وهو
+  # أول ما يقتله OOM المضيف إن ضاقت الذاكرة كلها. /scratch حجم لا tmpfs (الأصل حتى 2 GiB لا يُحسب من الذاكرة)؛ حارس القرص
+  # في media-feeder.
+  media-worker:
+    <<: *hardened
+    image: post-history-preview-media:latest
+    pull_policy: never
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      api:
+        condition: service_healthy
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      MEDIA_API_URL: http://ph-preview-api:3000
+      MEDIA_WORKER_TOKEN: ${MEDIA_WORKER_TOKEN:?gen-env.sh --add-media}
+      S3_ENDPOINT: http://ph-preview-minio:9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY: ${S3_MEDIA_ACCESS_KEY:?gen-env.sh --add-media}
+      S3_SECRET_KEY: ${S3_MEDIA_SECRET_KEY:?gen-env.sh --add-media}
+      S3_BUCKET_UPLOADS: ${S3_BUCKET_UPLOADS}
+      S3_BUCKET_MEDIA: ${S3_BUCKET_MEDIA}
+      MEDIA_SCRATCH_DIR: /scratch
+      # Fixed here, not from .env: what never runs on the preview.
+      MEDIA_ENABLE_HLS: "false"
+      MEDIA_ENABLE_PHASH: "false"
+      MEDIA_ENABLE_EXPORT: "false"
+      MEDIA_ENABLE_STORE_PREVIEW: "false"
+      MEDIA_ENABLE_DELIVERY: "false"
+      MEDIA_ENABLE_ALIGNMENT: "false"
+      MEDIA_ENABLE_C2PA: "false"
+    volumes:
+      - media-scratch:/scratch
+    mem_limit: 1472m
+    memswap_limit: 1472m
+    cpus: 1.5
+    cpu_shares: 256
+    oom_score_adj: 500
+    pids_limit: 128
+    networks:
+      internal:
+        ipv4_address: ${PREVIEW_MEDIA_IP:-10.211.47.14}
+
+  # يعطي العامل مهامه (ADR 0092): أصل فيديو متحقق بلا نسخة خفيفة، العاجل أولًا، مهمة تنتظر على الأكثر، ولا مهمة جديدة والمساحة
+  # الحرة على قرص الحجوم دون PREVIEW_MEDIA_MIN_FREE_GIB (8 افتراضيًا): تبقى المادة معلّقة وتُعاد كل دورة. الحجم disk-probe
+  # فارغ، يُركَّب ليقيس قرص الحجوم (حيث minio-data وmedia-scratch) لا ليقرأ شيئًا. السجل أعداد فقط.
+  media-feeder:
+    <<: *hardened
+    image: post-history-preview-api:latest
+    pull_policy: never
+    depends_on:
+      api:
+        condition: service_healthy
+    read_only: true
+    entrypoint: ["node", "--max-old-space-size=32", "preview/media-feeder.mjs"]
+    command: ["--loop"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      MEDIA_MIN_FREE_GIB: ${PREVIEW_MEDIA_MIN_FREE_GIB:-8}
+      MEDIA_DISK_PATH: /disk
+      MEDIA_FEED_INTERVAL_S: "10"
+    volumes:
+      - disk-probe:/disk:ro
+    mem_limit: 64m
+    memswap_limit: 64m
+    cpus: 0.1
+    networks: [internal]
+
   # The only service on the shared server's network: X-Robots-Tag noindex, the "preview" banner, and the internal TLS
   # listener the BFF needs for the API (bound to its address on the internal network alone).
   web:
@@ -334,7 +439,8 @@ services:
     tmpfs: ["/tmp:size=8m"]
     environment:
       PREVIEW_EDGE_IP: ${PREVIEW_EDGE_IP:-10.211.47.10}
-    entrypoint: ["sh", "-c", "sed \"s/@EDGE_IP@/$$PREVIEW_EDGE_IP/\" /etc/nginx/edge.conf.in > /tmp/edge.conf && exec nginx -c /etc/nginx/nginx.conf -g 'daemon off;'"]
+      PREVIEW_MEDIA_BUCKET: ${S3_BUCKET_MEDIA:?}
+    entrypoint: ["sh", "-c", "echo \"$$PREVIEW_MEDIA_BUCKET\" | grep -qxE '[a-z0-9][a-z0-9-]{1,61}[a-z0-9]' && sed -e \"s/@EDGE_IP@/$$PREVIEW_EDGE_IP/\" -e \"s/@MEDIA_BUCKET@/$$PREVIEW_MEDIA_BUCKET/\" /etc/nginx/edge.conf.in > /tmp/edge.conf && exec nginx -c /etc/nginx/nginx.conf -g 'daemon off;'"]
     volumes:
       - ./edge/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./edge/edge.conf.in:/etc/nginx/edge.conf.in:ro
@@ -373,3 +479,5 @@ volumes:
   redis-data:
   minio-data:
   tusd-tmp:
+  media-scratch:
+  disk-probe:
