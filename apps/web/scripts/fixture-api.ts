@@ -143,13 +143,13 @@ function seedCommission() {
 }
 // الطلبات والدفع التجريبي: أسعار عروض الكتالوج الاصطناعي، وصفحة مزوّد مستضافة تؤكد الدفع بعد العودة كما يفعل الإشعار الموقّع.
 const orders = new Map<string, Record<string, unknown> & { id: string; organization_id: string; status: string; created_by: string }>();
-const refunds = new Map<string, Record<string, unknown>[]>();
+const refunds = new Map<string, Record<string, unknown>[]>(), checkoutLocale = new Map<string, "ar" | "en">();
 // طلب مدفوع لمؤسسة أخرى غير مؤسسة المشتري الاصطناعي، كي تسترد منه المالية دون أن يظهر في طلبات المشتري؛ وطلب المشتري المدفوع الذي صدر منه
 // ترخيصاه برقمه المقروء وأمر شرائه وفاتورته (ADR 0100).
 let invoiceCounter = 2;
 const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ", orderNumber = () => `ORD-${new Date().getUTCFullYear()}-${Array.from(randomBytes(8), b => crockford[b % 32]).join("")}`;
 function seedOrders() {
-  orders.clear(); refunds.clear(); invoiceCounter = 2;
+  orders.clear(); refunds.clear(); checkoutLocale.clear(); invoiceCounter = 2;
   const stamp = "2026-10-25T10:00:00Z", line = (n: number, amount: number) => ({ id: `95000000-0000-4000-8000-00000000000${n}`, listing_id: `71000000-0000-4000-8000-00000000000${n}`, material_version: 1, license_template_id: "70000000-0000-4000-8000-000000000001", license_version: 1, license_type: "editorial_single", license_name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" }, title: { ar: `لقطات اصطناعية ${n}`, en: `Synthetic footage ${n}` }, price: { amount_minor: amount, currency: "USD" }, license_id: randomUUID() });
   orders.set("92000000-0000-4000-8000-000000000009", { id: "92000000-0000-4000-8000-000000000009", order_number: "ORD-2026-4M8T2W6Z", purchase_order_number: null, invoice_number: "INV-2026-000001", organization_id: "90000000-0000-4000-8000-000000000009", created_by: randomUUID(), status: "paid", cancel_reason: null, total: { amount_minor: 40000, currency: "USD" }, items: [line(1, 15000), line(2, 25000)], expires_at: stamp, paid_at: stamp, created_at: stamp, updated_at: stamp });
   const paidAt = "2026-10-26T10:00:00Z", own = [{ ...line(1, 15000), license_id: "93000000-0000-4000-8000-000000000001" }, { ...line(2, 15000), id: "95000000-0000-4000-8000-000000000012", license_id: "93000000-0000-4000-8000-000000000002" }];
@@ -207,9 +207,10 @@ const server = createServer(async (req, res) => {
   const sandbox = /^\/sandbox\/(checkout|pay)\/([^/]+)$/.exec(url.pathname);
   if (sandbox) {
     const order = orders.get(sandbox[2]); if (!order) return send({}, 404);
-    if (sandbox[1] === "checkout") { res.setHeader("Content-Type", "text/html; charset=utf-8"); res.end(`<!doctype html><title>Sandbox checkout</title><h1>Sandbox provider</h1><a href="/sandbox/pay/${order.id}">Pay (sandbox)</a>`); return; }
+    const lang = checkoutLocale.get(order.id) ?? "ar";
+    if (sandbox[1] === "checkout") { res.setHeader("Content-Type", "text/html; charset=utf-8"); res.end(`<!doctype html><html lang="${lang}" dir="${lang === "ar" ? "rtl" : "ltr"}"><title>Sandbox checkout</title><h1>Sandbox provider</h1><a href="/sandbox/pay/${order.id}">Pay (sandbox)</a></html>`); return; }
     setTimeout(() => { if (order.status === "pending_payment") Object.assign(order, { status: "paid", paid_at: new Date().toISOString(), updated_at: new Date().toISOString(), invoice_number: `INV-${new Date().getUTCFullYear()}-${String(++invoiceCounter).padStart(6, "0")}` }); }, 1500);
-    res.statusCode = 302; res.setHeader("Location", `http://127.0.0.1:3100/ar/store/orders/${order.id}?returned=1`); res.end(); return;
+    res.statusCode = 302; res.setHeader("Location", `http://127.0.0.1:3100/${lang}/store/orders/${order.id}?returned=1`); res.end(); return;
   }
   if (url.pathname === "/__test/state") return send({ writes, applied: applied.size, identitySetting, auditCount: permissionAudit.length });
   if (url.pathname === "/__test/request-changes" && req.method === "POST") {
@@ -486,6 +487,9 @@ const server = createServer(async (req, res) => {
       const order = orders.get(orderWrite[1]); if (!order || order.organization_id !== user.organization_id) return send({}, 404);
       if (order.status !== "pending_payment") return send({ code: "order_state_conflict" }, 409);
       if (orderWrite[2] === "cancel") { Object.assign(order, { status: "cancelled", cancel_reason: "buyer", updated_at: new Date().toISOString() }); return commit(order, 200); }
+      // `CheckoutRequest` (ملحق ADR 0032): `{}` أو `{locale}` من القائمة وحده؛ الصفحة والعودة بلغته، والعربية افتراضًا.
+      if (Object.keys(body).some(key => key !== "locale") || (body.locale !== undefined && !["ar", "en"].includes(String(body.locale)))) return send({ code: "validation_failed" }, 422);
+      checkoutLocale.set(order.id, body.locale === "en" ? "en" : "ar");
       return commit({ checkout_url: `http://127.0.0.1:${process.env.WEB_FIXTURE_PORT ?? 3201}/sandbox/checkout/${order.id}`, provider: "sandbox", expires_at: order.expires_at, session_secret: "never-display-canary" }, 200);
     }
     const rejection = /^\/v1\/buyer-organizations\/([^/]+)\/rejection$/.exec(path);
