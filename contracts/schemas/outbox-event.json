@@ -67,7 +67,10 @@
         "assignment.state_changed",
         "tag.suggestions_changed",
         "tag.rewritten",
-        "platform_settings.changed"
+        "platform_settings.changed",
+        "auth.passkey_added",
+        "auth.passkey_revoked",
+        "auth.recovery_codes_generated"
       ]
     },
     "aggregate_type": {
@@ -1458,6 +1461,69 @@
                     "watermark_text"
                   ]
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": [
+              "auth.passkey_added",
+              "auth.passkey_revoked"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "user"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "أُضيف مفتاح مرور إلى الحساب أو أبطله صاحبه (ADR 0107): المرجع الداخلي للمفتاح وحده، بلا معرّف الاعتماد ولا الاسم ولا الجهاز. المجمّع صاحب الحساب.",
+            "required": [
+              "passkey_id"
+            ],
+            "properties": {
+              "passkey_id": {
+                "$ref": "#/$defs/uuid"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "auth.recovery_codes_generated"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "user"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "وُلّدت رموز احتياطية جديدة للحساب وبطلت السابقة (ADR 0107): عددها وحده، بلا رمز ولا بصمة.",
+            "required": [
+              "codes_count"
+            ],
+            "properties": {
+              "codes_count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10
               }
             }
           }

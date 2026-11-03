@@ -131,6 +131,119 @@ open class AuthAPI {
     }
 
     /**
+     خيارات الدخول بمفتاح مرور (ADR 0107)
+     
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: PasskeyChallenge
+     */
+    open class func createPasskeyLoginOptions(apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> PasskeyChallenge {
+        return try await createPasskeyLoginOptionsWithRequestBuilder(apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     خيارات الدخول بمفتاح مرور (ADR 0107)
+     - POST /auth/passkeys/login-options
+     - خيارات `navigator.credentials.get()` بصيغة JSON من WebAuthn Level 3 (`PublicKeyCredentialRequestOptionsJSON`) بلا قائمة مفاتيح (المفتاح يُكتشف على الجهاز)، فلا يُسأل عن بريد ولا يُكشف وجود حساب. التحدي لمرة واحدة ويُخزَّن ببصمته. حد معدل لكل عنوان. معطّلة بلا إعداد البيئة: `404`.
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<PasskeyChallenge> 
+     */
+    open class func createPasskeyLoginOptionsWithRequestBuilder(apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<PasskeyChallenge> {
+        let localVariablePath = "/auth/passkeys/login-options"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<PasskeyChallenge>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: false, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     خيارات تسجيل مفتاح مرور بعد إعادة التحقق (ADR 0107)
+     
+     - parameter passkeyStepUp: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: PasskeyChallenge
+     */
+    open class func createPasskeyRegistrationOptions(passkeyStepUp: PasskeyStepUp, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> PasskeyChallenge {
+        return try await createPasskeyRegistrationOptionsWithRequestBuilder(passkeyStepUp: passkeyStepUp, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     خيارات تسجيل مفتاح مرور بعد إعادة التحقق (ADR 0107)
+     - POST /auth/passkeys/registration-options
+     - إعادة تحقق قبل إضافة وسيلة دخول: كلمة المرور، ورمز TOTP إن كانت المصادقة الثنائية مفعّلة (غيابه بعد كلمة مرور صحيحة `401 totp_required`)، فجلسة مسروقة وحدها لا تضيف مفتاحًا. الرد خيارات `navigator.credentials.create()` بصيغة JSON من WebAuthn Level 3 (`PublicKeyCredentialCreationOptionsJSON`): مفتاح قابل للاكتشاف، والتحقق من المستخدم إلزامي، وبلا شهادة (`none`)، ومفاتيح الحساب القائمة مستثناة. نطاق الطرف المعتمد (RP ID) ومصادره المسموحة من بيئة الخادم، لا نطاق مكتوبًا في الشفرة؛ غير مضبوطة = مفاتيح المرور معطّلة و`404`. التحدي لمرة واحدة ومربوط بالمستخدم، ويُخزَّن ببصمته وحدها. حد معدل لكل حساب على إعادة التحقق الفاشلة وعلى عدد التحديات. لا `Idempotency-Key` (مسارات `/auth/_*`). الحساب الذي بلغ عشرة مفاتيح `409 passkey_limit_reached`.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter passkeyStepUp: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<PasskeyChallenge> 
+     */
+    open class func createPasskeyRegistrationOptionsWithRequestBuilder(passkeyStepUp: PasskeyStepUp, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<PasskeyChallenge> {
+        let localVariablePath = "/auth/passkeys/registration-options"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: passkeyStepUp, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<PasskeyChallenge>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     توليد رموز احتياطية جديدة تبطل السابقة (ADR 0107)
+     
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RecoveryCodes
+     */
+    open class func generateRecoveryCodes(apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> RecoveryCodes {
+        return try await generateRecoveryCodesWithRequestBuilder(apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     توليد رموز احتياطية جديدة تبطل السابقة (ADR 0107)
+     - POST /auth/recovery-codes
+     - عشرة رموز base32 بطول 12 تُعرض **مرة واحدة** في هذا الرد وتُخزَّن ببصماتها وحدها، وكل رمز سابق للحساب (مستعملًا كان أو لا) يبطل في المعاملة نفسها. الرمز يبدأ استعادة الحساب في `POST /auth/recovery` ولا يكفي وحده: الطلب ينتظر اعتماد المشرف أو مدير النظام بعد التحقق من الهوية خارج النظام. لا `Idempotency-Key` هنا (مسارات `/auth/_*`) كي لا تُحفظ الرموز في جدول المفاتيح؛ التكرار يولّد مجموعة جديدة تبطل ما قبلها. حد معدل لكل حساب. التدقيق بعدد الرموز وحده، وحدث `auth.recovery_codes_generated` بلا رمز ينبّه صاحب الحساب على أجهزته.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<RecoveryCodes> 
+     */
+    open class func generateRecoveryCodesWithRequestBuilder(apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<RecoveryCodes> {
+        let localVariablePath = "/auth/recovery-codes"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<RecoveryCodes>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      المستخدم الحالي وأدواره ونطاقاته
      
      - parameter apiConfiguration: The configuration for the http request.
@@ -163,6 +276,44 @@ open class AuthAPI {
         let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
 
         let localVariableRequestBuilder: RequestBuilder<Me>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     حال الرموز الاحتياطية للحساب (ADR 0107)
+     
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RecoveryCodeStatus
+     */
+    open class func getRecoveryCodeStatus(apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> RecoveryCodeStatus {
+        return try await getRecoveryCodeStatusWithRequestBuilder(apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     حال الرموز الاحتياطية للحساب (ADR 0107)
+     - GET /auth/recovery-codes
+     - كم رمزًا احتياطيًا غير مستعمل بقي ومتى وُلّدت المجموعة الحالية. لا رمز في الرد: الرموز تُعرض مرة واحدة عند توليدها.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<RecoveryCodeStatus> 
+     */
+    open class func getRecoveryCodeStatusWithRequestBuilder(apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<RecoveryCodeStatus> {
+        let localVariablePath = "/auth/recovery-codes"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<RecoveryCodeStatus>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
@@ -218,6 +369,44 @@ open class AuthAPI {
         let localVariableRequestBuilder: RequestBuilder<Void>.Type = apiConfiguration.requestBuilderFactory.getNonDecodableBuilder()
 
         return localVariableRequestBuilder.init(method: "PUT", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     مفاتيح مروري الفاعلة (ADR 0107)
+     
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: PasskeyList
+     */
+    open class func listMyPasskeys(apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> PasskeyList {
+        return try await listMyPasskeysWithRequestBuilder(apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     مفاتيح مروري الفاعلة (ADR 0107)
+     - GET /me/passkeys
+     - الأحدث أولًا. لا معرّف اعتماد ولا مفتاح عام ولا جهاز في الرد؛ المعرّف مرجع داخلي للإبطال.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<PasskeyList> 
+     */
+    open class func listMyPasskeysWithRequestBuilder(apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<PasskeyList> {
+        let localVariablePath = "/me/passkeys"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<PasskeyList>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
 
     /**
@@ -348,6 +537,43 @@ open class AuthAPI {
     }
 
     /**
+     الدخول بمفتاح مرور (ADR 0107)
+     
+     - parameter passkeyAssertion: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: Session
+     */
+    open class func loginWithPasskey(passkeyAssertion: PasskeyAssertion, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> Session {
+        return try await loginWithPasskeyWithRequestBuilder(passkeyAssertion: passkeyAssertion, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     الدخول بمفتاح مرور (ADR 0107)
+     - POST /auth/passkeys/login
+     - يتحقق الخادم بمكتبة WebAuthn مثبّتة الإصدار من التوقيع والتحدي والمصدر وبصمة RP ID وعلمي الحضور والتحقق من المستخدم والعدّاد. مفتاح المرور بالتحقق من المستخدم (بصمة أو رمز الجهاز) عاملان معًا، فيحلّ محل كلمة المرور ورمز TOTP ويصدر جلسة كاملة. المفتاح المجهول أو المبطَل، والتوقيع الخاطئ، وعدّاد تراجع، والحساب المعلّق أو في «إعادة تعيين إلزامية»: `401 unauthorized` واحد بالرسالة نفسها. التحدي المنتهي أو المستهلك `410 challenge_expired`. حد معدل على الفشل لكل عنوان. معرّف المفتاح والتحدي لا يدخلان سجلًا ولا تدقيقًا ولا حدثًا. لا `Idempotency-Key` (مسارات `/auth/_*`).
+     - parameter passkeyAssertion: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<Session> 
+     */
+    open class func loginWithPasskeyWithRequestBuilder(passkeyAssertion: PasskeyAssertion, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Session> {
+        let localVariablePath = "/auth/passkeys/login"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: passkeyAssertion, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<Session>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: false, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      إنهاء الجلسة الحالية أو كل جلسات المستخدم (عند فقد الهاتف)
      
      - parameter logoutRequest: (body)  (optional)
@@ -421,6 +647,94 @@ open class AuthAPI {
         let localVariableRequestBuilder: RequestBuilder<Session>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: false, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     تسجيل مفتاح مرور برد المتصفح على التحدي (ADR 0107)
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter passkeyRegistration: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: Passkey
+     */
+    open class func registerPasskey(idempotencyKey: String, passkeyRegistration: PasskeyRegistration, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> Passkey {
+        return try await registerPasskeyWithRequestBuilder(idempotencyKey: idempotencyKey, passkeyRegistration: passkeyRegistration, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     تسجيل مفتاح مرور برد المتصفح على التحدي (ADR 0107)
+     - POST /me/passkeys
+     - `credential` هو `PublicKeyCredential.toJSON()` من `navigator.credentials.create()` (`RegistrationResponseJSON`). يتحقق الخادم من التحدي (لمرة واحدة، لهذا المستخدم، غير منتهٍ: وإلا `410 challenge_expired`) والمصدر وRP ID والتحقق من المستخدم والخوارزمية، ويحفظ المفتاح العام وعدّاده. رد لا يتحقق `422 validation_failed`، ومفتاح مسجَّل من قبل `409 passkey_exists`، وبلوغ عشرة مفاتيح `409 passkey_limit_reached`. معاملة واحدة: المفتاح، والتدقيق بمعرّفه الداخلي، وحدث `auth.passkey_added` بمعرّفه وحده ينبّه صاحب الحساب على أجهزته. الاسم اختياري يكتبه صاحب الحساب ليميّز مفاتيحه، ولا يدخل حدثًا ولا تدقيقًا.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter passkeyRegistration: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<Passkey> 
+     */
+    open class func registerPasskeyWithRequestBuilder(idempotencyKey: String, passkeyRegistration: PasskeyRegistration, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Passkey> {
+        let localVariablePath = "/me/passkeys"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: passkeyRegistration, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<Passkey>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     إبطال مفتاح مرور (ADR 0107)
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter passkeyId: (path) المعرّف الداخلي للمفتاح (&#x60;Passkey.id&#x60;) 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: Void
+     */
+    open class func revokeMyPasskey(idempotencyKey: String, passkeyId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) {
+        return try await revokeMyPasskeyWithRequestBuilder(idempotencyKey: idempotencyKey, passkeyId: passkeyId, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     إبطال مفتاح مرور (ADR 0107)
+     - DELETE /me/passkeys/{passkey_id}
+     - يبطل المفتاح فلا يدخل به أحد بعد الآن؛ الجلسات القائمة لا تتغيّر (`/auth/sessions` لإبطالها). مفتاح غير موجود أو لغير المستدعي أو مبطَل من قبل `404`. معاملة واحدة: الإبطال، والتدقيق، وحدث `auth.passkey_revoked` بمعرّفه وحده. اعتماد الاستعادة ورابط إعادة التعيين يبطلان كل مفاتيح الحساب (ADR 0107).
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter passkeyId: (path) المعرّف الداخلي للمفتاح (&#x60;Passkey.id&#x60;) 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<Void> 
+     */
+    open class func revokeMyPasskeyWithRequestBuilder(idempotencyKey: String, passkeyId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Void> {
+        var localVariablePath = "/me/passkeys/{passkey_id}"
+        let passkeyIdPreEscape = "\(APIHelper.mapValueToPathItem(passkeyId))"
+        let passkeyIdPostEscape = passkeyIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{passkey_id}", with: passkeyIdPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<Void>.Type = apiConfiguration.requestBuilderFactory.getNonDecodableBuilder()
+
+        return localVariableRequestBuilder.init(method: "DELETE", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }
 
     /**

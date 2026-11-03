@@ -68,6 +68,8 @@ public struct ModelError: Sendable, Codable, Hashable {
         case assignmentNotAllowed = "assignment_not_allowed"
         case assignmentOpen = "assignment_open"
         case assigneeNotEligible = "assignee_not_eligible"
+        case passkeyExists = "passkey_exists"
+        case passkeyLimitReached = "passkey_limit_reached"
         case internalError = "internal_error"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }

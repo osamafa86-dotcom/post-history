@@ -1680,6 +1680,77 @@ SELECT pg_temp.expect_error($q$ UPDATE invoice_counters SET last_value = last_va
 SELECT pg_temp.expect_error($q$ UPDATE invoice_counters SET last_value = last_value + 2 $q$, '23514');
 SELECT pg_temp.expect_error($q$ DELETE FROM invoice_counters $q$, '23001');
 SET CONSTRAINTS ALL DEFERRED;
+
+-- ---------- مفاتيح المرور والرموز الاحتياطية (ADR 0107؛ ترحيل 044) ----------
+-- الرمز الاحتياطي يحمل وقت توليد مجموعته
+INSERT INTO recovery_codes (user_id, code_hash) VALUES ('00000000-0000-4000-8000-000000000013', sha256('ABCDEFGHJKMN'::bytea));
+SELECT pg_temp.assert((SELECT created_at IS NOT NULL FROM recovery_codes WHERE user_id = '00000000-0000-4000-8000-000000000013'),
+  'a backup code records when its set was generated');
+INSERT INTO passkeys (id, user_id, credential_id, public_key, sign_count, transports, multi_device, backed_up, name)
+VALUES ('00000000-0000-4000-8000-000000000f01', '00000000-0000-4000-8000-000000000013', '\x0102', '\xa501', 0, '{internal,hybrid}',
+        true, true, 'هاتف العمل');
+-- معرّف الاعتماد فريد بين الحسابات كلها
+SELECT pg_temp.expect_error($q$
+  INSERT INTO passkeys (user_id, credential_id, public_key, multi_device, backed_up)
+  VALUES ('00000000-0000-4000-8000-000000000014', '\x0102', '\x01', false, false) $q$, '23505');
+-- الاسم بقاعدة MaterialTag، والنسخ الاحتياطي لمفتاح متزامن وحده، والعدّاد في مداه، والمعرّف والمفتاح غير فارغين، والإبطال بسبب من القائمة
+SELECT pg_temp.expect_error(format($q$ UPDATE passkeys SET name = %L WHERE id = '00000000-0000-4000-8000-000000000f01' $q$, n), '23514')
+  FROM unnest(ARRAY[' هاتف', 'هاتف ', '', E'\u202eهاتف', E'\u2066هاتف', E'ها\nتف', repeat('ه', 41)]) AS n;
+SELECT pg_temp.expect_error($q$ UPDATE passkeys SET multi_device = false WHERE id = '00000000-0000-4000-8000-000000000f01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE passkeys SET sign_count = -1 WHERE id = '00000000-0000-4000-8000-000000000f01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE passkeys SET sign_count = 4294967296 WHERE id = '00000000-0000-4000-8000-000000000f01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE passkeys SET credential_id = '\x' WHERE id = '00000000-0000-4000-8000-000000000f01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE passkeys SET public_key = '\x' WHERE id = '00000000-0000-4000-8000-000000000f01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE passkeys SET revoked_at = now() WHERE id = '00000000-0000-4000-8000-000000000f01' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE passkeys SET revoked_at = now(), revoked_reason = 'lost' WHERE id = '00000000-0000-4000-8000-000000000f01' $q$, '23514');
+UPDATE passkeys SET sign_count = 4294967295, last_used_at = now() WHERE id = '00000000-0000-4000-8000-000000000f01';
+UPDATE passkeys SET revoked_at = now(), revoked_reason = 'owner' WHERE id = '00000000-0000-4000-8000-000000000f01';
+-- التحدي ببصمته: للتسجيل مستخدمه وللدخول لا مستخدم، وعمره عشر دقائق على الأكثر
+INSERT INTO webauthn_challenges (purpose, user_id, challenge_hash, expires_at) VALUES
+  ('registration', '00000000-0000-4000-8000-000000000013', sha256('c1'::bytea), now() + interval '5 minutes'),
+  ('authentication', NULL, sha256('c2'::bytea), now() + interval '10 minutes');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO webauthn_challenges (purpose, user_id, challenge_hash, expires_at)
+  VALUES ('authentication', '00000000-0000-4000-8000-000000000013', sha256('c3'::bytea), now() + interval '5 minutes') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO webauthn_challenges (purpose, challenge_hash, expires_at)
+  VALUES ('registration', sha256('c3'::bytea), now() + interval '5 minutes') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO webauthn_challenges (purpose, challenge_hash, expires_at) VALUES ('signin', sha256('c3'::bytea), now() + interval '5 minutes') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO webauthn_challenges (purpose, challenge_hash, expires_at)
+  VALUES ('authentication', sha256('c3'::bytea), now() + interval '11 minutes') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO webauthn_challenges (purpose, challenge_hash, expires_at) VALUES ('authentication', '\x01', now() + interval '5 minutes') $q$, '23514');
+-- الأحداث الثلاثة بالمرجع الداخلي والعدد وحدهما: لا معرّف اعتماد ولا اسم ولا رمز
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload) VALUES
+  ('auth.passkey_added', 'user', '00000000-0000-4000-8000-000000000013', 'auth.passkey_added:smoke',
+   '{"passkey_id": "00000000-0000-4000-8000-000000000f01"}'),
+  ('auth.passkey_revoked', 'user', '00000000-0000-4000-8000-000000000013', 'auth.passkey_revoked:smoke',
+   '{"passkey_id": "00000000-0000-4000-8000-000000000f01"}'),
+  ('auth.recovery_codes_generated', 'user', '00000000-0000-4000-8000-000000000013', 'auth.recovery_codes_generated:smoke',
+   '{"codes_count": 10}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('auth.passkey_added', 'user', '00000000-0000-4000-8000-000000000013', 'auth.passkey_added:smoke:credential',
+          '{"passkey_id": "00000000-0000-4000-8000-000000000f01", "credential_id": "AQI"}') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('auth.recovery_codes_generated', 'user', '00000000-0000-4000-8000-000000000013', 'auth.recovery_codes_generated:smoke:codes',
+          '{"codes_count": 1, "codes": ["ABCDEFGHJKMN"]}') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('auth.recovery_approved', 'user', '00000000-0000-4000-8000-000000000013', 'auth.recovery_approved:smoke:token',
+          '{"recovery_request_id": "00000000-0000-4000-8000-000000000901", "reset_token": "t"}') $q$, '23514');
+INSERT INTO audit_log (actor_id, action, target_type, target_id, details, hash)
+VALUES ('00000000-0000-4000-8000-000000000013', 'auth.passkey_added', 'user', '00000000-0000-4000-8000-000000000013',
+        '{"target_user_id": "00000000-0000-4000-8000-000000000013", "passkey_id": "00000000-0000-4000-8000-000000000f01"}', '\x00'),
+       ('00000000-0000-4000-8000-000000000021', 'auth.reset_link_issued', 'user', '00000000-0000-4000-8000-000000000013',
+        '{"recovery_request_id": "00000000-0000-4000-8000-000000000901", "reason_code": "forgot_password", "passkeys_revoked": "1"}', '\x00'),
+       ('00000000-0000-4000-8000-000000000013', 'auth.recovery_codes_generated', 'user', '00000000-0000-4000-8000-000000000013',
+        '{"target_user_id": "00000000-0000-4000-8000-000000000013", "codes_count": "10"}', '\x00');
+SET CONSTRAINTS ALL DEFERRED;
 -- الدوال تعمل بمسار بحث فارغ (الاستعادة)
 SET LOCAL search_path = '';
 SELECT pg_temp.assert(public.order_number_new(now()) ~ '^ORD-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{8}$', 'order numbers work with an empty search_path');
@@ -1707,6 +1778,10 @@ SELECT pg_temp.expect_error($q$
 SET CONSTRAINTS ALL DEFERRED;
 SELECT pg_temp.expect_error($q$
   UPDATE public.material_assignments SET note = E'\u2067ملاحظة' WHERE id = '00000000-0000-4000-8000-000000000e02' $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
+-- اسم مفتاح المرور يُفحص بمسار بحث فارغ (passkeys_name_valid يستدعي public.render_text_valid)
+SELECT pg_temp.expect_error($q$
+  UPDATE public.passkeys SET name = E'\u202eهاتف' WHERE id = '00000000-0000-4000-8000-000000000f01' $q$, '23514');
 SET CONSTRAINTS ALL DEFERRED;
 SET LOCAL search_path TO DEFAULT;
 

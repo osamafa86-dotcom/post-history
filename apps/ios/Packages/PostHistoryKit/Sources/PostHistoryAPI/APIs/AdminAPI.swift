@@ -86,6 +86,54 @@ open class AdminAPI {
     }
 
     /**
+     رابط إعادة تعيين لمرة واحدة يصدره مدير النظام (A1، ADR 0107)
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف المستخدم 
+     - parameter passwordResetLinkCreate: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: PasswordResetLink
+     */
+    open class func issuePasswordResetLink(idempotencyKey: String, id: UUID, passwordResetLinkCreate: PasswordResetLinkCreate, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> PasswordResetLink {
+        return try await issuePasswordResetLinkWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, passwordResetLinkCreate: passwordResetLinkCreate, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     رابط إعادة تعيين لمرة واحدة يصدره مدير النظام (A1، ADR 0107)
+     - POST /users/{id}/password-reset-links
+     - لا مزوّد بريد في هذه المرحلة: يتحقق المدير من الهوية خارج النظام، ثم يصدر هذا الرمز فيراه **مرة واحدة** ويسلّمه بيده. الرابط يبنيه العميل من مصدره هو (`/{locale}/reset-password#token=…`، والرمز في جزء الرابط فلا يصل إلى أي خادم ولا سجل)، ويُكمله صاحب الحساب بـ `POST /auth/recovery/complete` ثم `POST /auth/totp/confirm` كما في الاستعادة. صلاحيته قصيرة من بيئة الخادم (ساعة افتراضيًا، 24 ساعة على الأكثر)، ويُستهلك مرة واحدة، ويُخزَّن ببصمته وحدها. معاملة واحدة كاعتماد الاستعادة: يبطل كل جلسات الحساب ورموز رفعه وأجهزة إشعاره ومفاتيح مروره، ويضعه في «إعادة تعيين إلزامية»، ويُغلق كل طلب استعادة مفتوح له (المنتظر يُرفض، والمعتمد الذي لم يُكمَل يبطل رمزه)، ويكتب التدقيق بالسبب ومعرّف الطلب، وحدث `auth.recovery_approved` بمعرّفات وحدها. التكرار بالمفتاح نفسه يعيد الرد **بلا** `reset_token` (الرموز لا تُحفظ في جدول المفاتيح)، فالرمز لا يُعرض مرتين؛ وإصدار رابط جديد يبطل السابق. لا يصدر المدير رابطًا لحسابه (`403 forbidden_scope`) ولا لحساب مدير نظام (`403 admin_quorum_required`: إجراء الشخصين من سطر الأوامر)، والحساب المعلّق `409 recovery_state_conflict`. حد معدل لكل مدير.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف المستخدم 
+     - parameter passwordResetLinkCreate: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<PasswordResetLink> 
+     */
+    open class func issuePasswordResetLinkWithRequestBuilder(idempotencyKey: String, id: UUID, passwordResetLinkCreate: PasswordResetLinkCreate, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<PasswordResetLink> {
+        var localVariablePath = "/users/{id}/password-reset-links"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: passwordResetLinkCreate, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<PasswordResetLink>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      حسابات الطاقم لمدير النظام (A1، ADR 0099)
      
      - parameter role: (query) حسابات تحمل أحد هذه الأدوار (optional)
