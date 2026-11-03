@@ -805,7 +805,7 @@ export const outboxEvents = pgTable("outbox_events", {
 	check("outbox_events_idempotency_key_len", sql`(char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 200)`),
 	check("outbox_events_payload_is_object", sql`jsonb_typeof(payload) = 'object'::text`),
 	check("outbox_events_payload_whitelisted", sql`CHECK (outbox_payload_is_whitelisted(type, payload`),
-	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text, 'license.revoked'::text, 'payout.status_changed'::text, 'render.requested'::text, 'render.started'::text, 'render.completed'::text, 'render.failed'::text, 'assignment.created'::text, 'assignment.state_changed'::text])`),
+	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text, 'license.revoked'::text, 'payout.status_changed'::text, 'render.requested'::text, 'render.started'::text, 'render.completed'::text, 'render.failed'::text, 'assignment.created'::text, 'assignment.state_changed'::text, 'tag.suggestions_changed'::text, 'tag.rewritten'::text])`),
 ]);
 
 export const recoveryCodes = pgTable("recovery_codes", {
@@ -1576,4 +1576,61 @@ export const payoutApprovals = pgTable("payout_approvals", {
 			name: "payout_approvals_payout_request_id_fkey"
 		}),
 	primaryKey({ columns: [table.payoutRequestId, table.approverId], name: "payout_approvals_pkey"}),
+]);
+
+export const tagSuggestions = pgTable("tag_suggestions", {
+	id: boolean().default(true).primaryKey().notNull(),
+	tags: text().array().default([""]).notNull(),
+	version: integer().default(1).notNull(),
+	updatedBy: uuid("updated_by"),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.updatedBy],
+			foreignColumns: [users.id],
+			name: "tag_suggestions_updated_by_fkey"
+		}),
+	check("tag_suggestions_singleton", sql`CHECK (id)`),
+	check("tag_suggestions_tags_valid", sql`CHECK (tag_list_valid(tags, 50`),
+	check("tag_suggestions_version_positive", sql`version >= 1`),
+]);
+
+export const tagRewrites = pgTable("tag_rewrites", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	source: text().notNull(),
+	target: text().notNull(),
+	mode: text().notNull(),
+	materialsUpdated: integer("materials_updated").notNull(),
+	createdBy: uuid("created_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("tag_rewrites_created_idx").using("btree", table.createdAt.desc().nullsFirst().op("timestamptz_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [users.id],
+			name: "tag_rewrites_created_by_fkey"
+		}),
+	check("tag_rewrites_distinct", sql`source <> target`),
+	check("tag_rewrites_materials_updated_check", sql`materials_updated >= 0`),
+	check("tag_rewrites_mode_check", sql`mode = ANY (ARRAY['merge'::text, 'rename'::text])`),
+	check("tag_rewrites_source_valid", sql`CHECK (render_text_valid(source, 40`),
+	check("tag_rewrites_target_valid", sql`CHECK (render_text_valid(target, 40`),
+]);
+
+export const tagRewriteMaterials = pgTable("tag_rewrite_materials", {
+	tagRewriteId: uuid("tag_rewrite_id").notNull(),
+	materialId: uuid("material_id").notNull(),
+}, (table) => [
+	index("tag_rewrite_materials_material_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.materialId],
+			foreignColumns: [materials.id],
+			name: "tag_rewrite_materials_material_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.tagRewriteId],
+			foreignColumns: [tagRewrites.id],
+			name: "tag_rewrite_materials_tag_rewrite_id_fkey"
+		}),
+	primaryKey({ columns: [table.tagRewriteId, table.materialId], name: "tag_rewrite_materials_pkey"}),
 ]);

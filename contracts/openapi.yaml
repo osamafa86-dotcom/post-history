@@ -90,6 +90,10 @@ tags:
     description: >-
       إسناد المادة إلى المونتير («حوّل للمونتير») و«مهامي» (ADR 0096) — مهمة بموعد وملاحظة وحالاتها، مستقلة عن الحالات الثلاث
       للمادة، وإشعارها آلية مهام الإشعارات القائمة نفسها.
+  - name: material-tags
+    description: >-
+      إدارة وسوم المادة (ADR 0098) — القائمة المقترحة للمراسلين بترتيب ظهورها، واستعمال كل وسم، والدمج وإعادة التسمية على كل
+      المواد في معاملة واحدة.
 
 paths:
   /auth/login:
@@ -2164,6 +2168,116 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
+  /tag-suggestions:
+    get:
+      tags: [material-tags]
+      summary: الوسوم المقترحة للمراسلين بترتيب ظهورها (ADR 0098)
+      description: >-
+        قائمة يضعها مدير النظام ويراها المراسل اقتراحات عند الإرسال بالترتيب نفسه. الاقتراح لا يُلزم: المراسل يكتب غيره بقاعدة
+        `MaterialTag` (ADR 0086). `ETag` هو `"<version>"`.
+      operationId: getTagSuggestions
+      x-roles: [reporter, supervisor, editor_in_chief, system_admin]
+      responses:
+        "200":
+          description: القائمة
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TagSuggestions" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    put:
+      tags: [material-tags]
+      summary: استبدال القائمة المقترحة كلها (إضافة وحذف وإعادة ترتيب)
+      description: >-
+        الجسم القائمة كاملة بترتيبها الجديد، فالإضافة والحذف والسحب لإعادة الترتيب طلب واحد. القائمة نفسها مرة ثانية لا تكتب
+        شيئًا ولا ترفع الإصدار. التغيير في معاملة واحدة مع حدث `tag.suggestions_changed` وسطر تدقيق، وكلاهما بالإصدار وحده بلا
+        نص وسم. لا يمسّ وسوم المواد.
+      operationId: replaceTagSuggestions
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TagSuggestionsUpdate" }
+      responses:
+        "200":
+          description: القائمة بعد التغيير
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TagSuggestions" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /tags:
+    get:
+      tags: [material-tags]
+      summary: استعمال الوسوم — عدد المواد وآخر استعمال وموضع الاقتراح (ADR 0098)
+      description: >-
+        كل وسم على مادة واحدة على الأقل، وكل وسم مقترح ولو لم يُستعمل (عدده 0). العدّ على كل المواد، فهو لمدير النظام وحده
+        الذي يراها كلها. الترتيب الأكثر استعمالًا أولًا ثم الوسم بترتيب نقاط الترميز. «من المراسلين» في الإطار A2 هو
+        `suggested=false`.
+      operationId: listTagUsage
+      x-roles: [system_admin]
+      parameters:
+        - name: q
+          in: query
+          description: جزء من الوسم، بلا تفريق بين الأحرف الكبيرة والصغيرة
+          schema: { type: string, minLength: 1, maxLength: 40 }
+        - name: suggested
+          in: query
+          description: "`true` المقترحة وحدها، و`false` غير المقترحة وحدها؛ الغياب الكل"
+          schema: { type: boolean }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: صفحة من الوسوم
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TagUsagePage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /tag-rewrites:
+    post:
+      tags: [material-tags]
+      summary: دمج وسم في آخر أو إعادة تسميته على كل المواد (ADR 0098)
+      description: >-
+        يستبدل `source` بـ `target` في وسوم كل مادة تحمله، بموضعه، ومن كانت تحمل الاثنين يبقى لها `target` وحده. `merge` إن كان
+        `target` على مادة أو في القائمة المقترحة قبل الطلب، وإلا `rename`. وفي القائمة المقترحة يأخذ `target` موضع `source`، أو
+        يُحذف `source` إن كان `target` فيها. معاملة واحدة: المواد (يرتفع `row_version` لكلٍّ منها، ولا تتغيّر `version` ولا أيٌّ
+        من الحالات الثلاث)، والقائمة، وسجل الدمج بالأصل والمواد التي حملته، وحدث `tag.rewritten` وسطر تدقيق بالمعرّف والعدد
+        وحدهما، بلا نص وسم. `404` إن لم يكن `source` على مادة ولا في القائمة.
+      operationId: rewriteTag
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TagRewriteCreate" }
+      responses:
+        "201":
+          description: الدمج أو إعادة التسمية كما سُجّل
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TagRewrite" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
   /push-devices:
     put:
       tags: [notifications]
@@ -4078,6 +4192,92 @@ components:
         وسوم المادة (ADR 0086، أُضيف بعد v0.3 فقد يغيب). اختياري في العقد حفاظًا على عملاء v0 (القاعدة 12)، والخادم يحفظ
         الغائب مصفوفة فارغة؛ أما واجهات المراسل v2 فتُلزم وسمًا واحدًا على الأقل قبل الإرسال (قرار المالك 2026-11-01).
         نص حرّ قد يحوي أسماءً حساسة، فلا يدخل حمولة Outbox ولا إشعارًا ولا مخططًا يراه المشتري.
+
+    TagSuggestionList:
+      type: array
+      maxItems: 50
+      uniqueItems: true
+      items: { $ref: "#/components/schemas/MaterialTag" }
+      description: >-
+        الوسوم المقترحة بترتيب ظهورها للمراسل (ADR 0098)، كلٌّ بقاعدة `MaterialTag`، حتى 50 بلا تكرار. القاعدة نفسها في قاعدة
+        البيانات (`tag_list_valid`).
+
+    TagSuggestions:
+      type: object
+      required: [tags, version, updated_at]
+      properties:
+        tags: { $ref: "#/components/schemas/TagSuggestionList" }
+        version: { type: integer, minimum: 1, description: يرتفع مع كل تغيير في القائمة؛ قيمة `ETag` }
+        updated_at: { type: string, format: date-time }
+      example:
+        tags: [وسم تجريبي ١, وسم تجريبي ٢]
+        version: 3
+        updated_at: "2026-11-03T09:00:00Z"
+
+    TagSuggestionsUpdate:
+      type: object
+      additionalProperties: false
+      required: [tags]
+      properties:
+        tags: { $ref: "#/components/schemas/TagSuggestionList" }
+
+    TagUsage:
+      type: object
+      required: [tag, material_count, last_used_at, suggested_position]
+      properties:
+        tag: { $ref: "#/components/schemas/MaterialTag" }
+        material_count: { type: integer, minimum: 0, description: عدد المواد التي تحمله }
+        last_used_at:
+          type: [string, "null"]
+          format: date-time
+          description: وقت إنشاء أحدث مادة تحمله؛ `null` لمقترح لم يُستعمل
+        suggested_position:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 50
+          description: موضعه في القائمة المقترحة (1 أولًا)؛ `null` لغير المقترح
+
+    TagUsagePage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/TagUsage" }
+        next_cursor: { type: [string, "null"] }
+
+    TagRewriteCreate:
+      type: object
+      additionalProperties: false
+      required: [source, target]
+      properties:
+        source: { $ref: "#/components/schemas/MaterialTag" }
+        target:
+          $ref: "#/components/schemas/MaterialTag"
+          description: الوسم الهدف؛ غير `source` (`422 validation_failed`)
+
+    TagRewrite:
+      type: object
+      required: [id, source, target, mode, materials_updated, created_at, created_by]
+      properties:
+        id: { type: string, format: uuid }
+        source: { $ref: "#/components/schemas/MaterialTag" }
+        target: { $ref: "#/components/schemas/MaterialTag" }
+        mode:
+          type: string
+          enum: [merge, rename]
+          description: "`merge` إن كان الهدف مستعملًا أو مقترحًا قبل الطلب، و`rename` إن كان جديدًا"
+        materials_updated: { type: integer, minimum: 0, description: المواد التي حملت `source` فاستُبدل فيها }
+        created_at: { type: string, format: date-time }
+        created_by: { type: string, format: uuid }
+      example:
+        id: 7b0f3c2e-1d4a-4e5b-9c6d-8e7f6a5b4c3d
+        source: وسم تجريبي ٣
+        target: وسم تجريبي ١
+        mode: merge
+        materials_updated: 9
+        created_at: "2026-11-03T09:05:00Z"
+        created_by: 2c1b0a9f-8e7d-4c6b-a5f4-e3d2c1b0a9f8
 
     MaterialUpdate:
       type: object
