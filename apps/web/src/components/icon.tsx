@@ -42,6 +42,8 @@ const paths = {
   play: "M8 5v14l11-7z",
   menu: "M4 6h16M4 12h16M4 18h16",
   chevron: "M9 6l6 6-6 6",
+  download: "M12 4v11M7 10l5 5 5-5M4 20h16",
+  film: "M4 4h16v16H4zM8 4v16M16 4v16M4 8h4M4 12h4M4 16h4M16 8h4M16 12h4M16 16h4",
 } as const;
 
 export type IconName = keyof typeof paths;

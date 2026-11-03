@@ -13,6 +13,7 @@ import { DynamicForm } from "./dynamic-form";
 import { MediaPreview } from "./media-preview";
 import { Contributors, ReviewActions } from "./review-actions";
 import { ListingPanel } from "./listing-panel";
+import { RenderFiles } from "./render-files";
 import { EmptyState } from "./empty-state";
 import { Icon } from "./icon";
 import { materialTag } from "@/lib/review";
@@ -20,7 +21,7 @@ import { sensitivityState } from "@/lib/sensitivity";
 
 /**
  * تفاصيل المادة (W2، والجوال M2): المشغّل والعنوان وسطر الوصف والوسوم وسطر الحساسية في العمود الرئيسي، والحالات الثلاث (أزرار تصفّي السجل)
- * والخطوة التالية والسجل في العمود الجانبي. المكان المحافظة والمدينة وحدهما (حقلا العقد)؛ إحداثيات GPS لا تُقرأ ولا تُعرض أبدًا (ADR 0087).
+ * والخطوة التالية وبطاقة «الملفات» (نسخ قالب المتداول، ADR 0091) والسجل في العمود الجانبي. المكان المحافظة والمدينة وحدهما (حقلا العقد)؛ إحداثيات GPS لا تُقرأ ولا تُعرض أبدًا (ADR 0087).
  */
 export function MaterialDetail({ locale, id }: { locale: Locale; id: string }) {
   const m = messages[locale], w = m.shell.material, me = useUser(), [material, setMaterial] = useState<Material | null>(null), [schema, setSchema] = useState<Form | null>(null), [error, setError] = useState(0), [attempt, setAttempt] = useState(0);
@@ -76,6 +77,7 @@ export function MaterialDetail({ locale, id }: { locale: Locale; id: string }) {
             <StateBadge track={stateColumn[track]} value={material[stateColumn[track]]} locale={locale} /></button>)}</div>
           <p className="caption">{w.statesHelp}</p></section>
         <ReviewActions key={`${material.id}:${tag}`} locale={locale} material={material} tag={tag} editing={() => { editing.current = true; }} reload={reload} notify={setToast} />
+        <RenderFiles key={`${material.id}:renders`} locale={locale} material={material} />
         <Timeline internal={internalNames(me)} locale={locale} records={records} failed={historyFailed} filter={filter} clear={() => setFilter(null)} />
       </div>
     </div>

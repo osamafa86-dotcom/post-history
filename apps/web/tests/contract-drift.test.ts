@@ -17,6 +17,7 @@ import * as refunds from "../src/lib/refund-policy";
 import * as conflicts from "../src/lib/invite-conflict-policy";
 import * as earnings from "../src/lib/earnings-policy";
 import { formReaders, formWriters } from "../src/lib/form-admin";
+import * as render from "../src/lib/render-policy";
 
 const { load } = createRequire(import.meta.url)("js-yaml") as { load: (text: string) => unknown };
 const contract = load(readFileSync(new URL("../../../contracts/openapi.yaml", import.meta.url), "utf8"));
@@ -137,5 +138,13 @@ describe("BFF policy remains aligned with the checked-in OpenAPI contract", () =
   });
   it("keeps transition choices aligned with the three contract state enums", () => {
     for (const [key, schema] of [["technical_state", "TechnicalState"], ["editorial_state", "EditorialState"], ["rights_state", "RightsState"]] as const) expect(states[key]).toEqual(at("components", "schemas", schema, "enum"));
+  });
+  it("keeps circulated render roles, enums, limits and the title rule aligned with ADR 0091", () => {
+    for (const method of ["get", "post"]) expect([...render.renderRoles]).toEqual(at("paths", "/materials/{id}/renders", method, "x-roles"));
+    expect([...render.renderAspects]).toEqual(at("components", "schemas", "RenderAspect", "enum")); expect([...render.renderLabels]).toEqual(at("components", "schemas", "RenderLabel", "enum"));
+    expect([...render.renderStates]).toEqual(at("components", "schemas", "MaterialRender", "properties", "state", "enum")); expect([...render.renderFailures, null]).toEqual(at("components", "schemas", "MaterialRender", "properties", "failure_reason", "enum"));
+    expect(render.titleLineMax).toBe(at("components", "schemas", "RenderTitleLine", "maxLength")); expect(render.titleLinesMax).toBe(at("components", "schemas", "RenderTitleLines", "maxItems"));
+    expect(render.locationMax).toBe(at("components", "schemas", "MaterialRender", "properties", "location_text", "maxLength")); expect(render.titleLinePattern).toBe(at("components", "schemas", "RenderTitleLine", "pattern"));
+    expect(at("components", "schemas", "MaterialRenderRequest", "required")).toEqual(["template", "aspect", "title_lines", "show_location", "label"]);
   });
 });
