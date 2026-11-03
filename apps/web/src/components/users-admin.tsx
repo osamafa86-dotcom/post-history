@@ -16,6 +16,8 @@ import { Avatar, ConfirmDialog, ToneBadge, relativeTime, useDebounced } from "./
 import { Icon, type IconName } from "./icon";
 import { WorkNameEditor } from "./work-name-editor";
 import { PermissionHistory } from "./permission-history";
+import { OneTimeLink } from "./one-time-link";
+import { resetLinkFor, resetLinkIssuers, resetReasons, type PasswordResetLink, type ResetReason } from "@/lib/recovery-policy";
 
 type Filter = "all" | "suspended" | (typeof staffRoles)[number];
 const roleIcons: Record<string, IconName> = { reporter: "upload", supervisor: "inbox", producer: "film", editor_in_chief: "pencil", rights_officer: "shield", finance: "money", system_admin: "key" };
@@ -166,12 +168,46 @@ function AccountView({ user, locale, onBack }: { user: StaffUser; locale: Locale
       </section>
     </div>
     <RolesCard user={user} name={name} locale={locale} onChanged={setRoles} />
+    {hasRole(me, ...resetLinkIssuers) && <ResetLinkCard user={user} name={name} status={status} locale={locale} onIssued={() => { setStatus("recovery"); setRevision(n => n + 1); }} />}
     <WorkNameEditor id={user.id} locale={locale} />
     <PermissionHistory id={user.id} revision={revision} locale={locale} />
     {intent && <ConfirmDialog locale={locale} testId="confirm-account" title={intent.kind === "status" ? (intent.status === "suspended" ? t.suspend : t.activate) : intent.kind === "grant" ? t.grant : t.revoke} confirm={t.confirm} busy={mutation.busy} status={mutation.status} danger={intent.kind === "status" && intent.status === "suspended"} onConfirm={() => void apply()} onCancel={() => setIntent(null)}>
       <p>{effect}</p>{intent.kind !== "status" && <p className="muted">{t.permissionAudit}</p>}
     </ConfirmDialog>}
   </>;
+}
+
+/**
+ * رابط إعادة التعيين (A1، ADR 0107، 0108): بلا بريد، يتحقق المدير من الهوية خارج النظام ثم يصدر رابطًا لمرة واحدة بسبب، بتأكيد يقول الأثر
+ * (خروج من كل الأجهزة وإبطال مفاتيح المرور والرابط السابق). الرابط يُبنى من مصدر الويب نفسه ويُعرض مرة؛ التكرار بالمفتاح نفسه لا يعيده.
+ * حسابك وحساب مدير نظام والحساب المعلّق خارجها بسطر يقول السبب.
+ */
+function ResetLinkCard({ user, name, status, locale, onIssued }: { user: StaffUser; name: string; status: StaffUser["status"]; locale: Locale; onIssued: () => void }) {
+  const m = messages[locale], t = m.admin.resetLink, me = useUser(), mutation = useMutation();
+  const [reason, setReason] = useState<ResetReason>("forgot_password"), [confirming, setConfirming] = useState(false), [issued, setIssued] = useState<{ link: string; expires: string } | null>(null), [note, setNote] = useState("");
+  const self = user.id === me.user_id, otherAdmin = !self && user.roles.includes("system_admin"), suspended = status === "suspended", blocked = self || otherAdmin || suspended;
+  async function issue() {
+    let data: PasswordResetLink | undefined;
+    const ok = await mutation.run(JSON.stringify(["password-reset-link", user.id, reason]), async header => { const result = await browserApi().POST("/users/{id}/password-reset-links", { params: { path: { id: user.id }, header }, body: { reason } }); data = result.data; return result; });
+    if (!ok || !data) return;
+    setConfirming(false); onIssued();
+    if (data.reset_token) setIssued({ link: resetLinkFor(window.location.origin, locale, data.reset_token), expires: data.reset_token_expires_at });
+    else setNote(t.notShown);
+  }
+  return <section className="card reset-link-card" aria-labelledby="reset-link-title" data-testid="reset-link-card">
+    <h2 id="reset-link-title">{t.title}</h2><p className="muted">{t.help}</p>
+    {self && <p className="notice">{t.self}</p>}{otherAdmin && <p className="notice">{t.adminQuorum}</p>}{suspended && !self && !otherAdmin && <p className="notice">{t.suspended}</p>}
+    {note && <p className="notice" role="status">{note}</p>}
+    {!confirming && mutation.status !== 200 && <ActionStatus status={mutation.status} locale={locale} />}
+    {issued ? <OneTimeLink link={issued.link} expiresAt={issued.expires} locale={locale} testId="admin-reset-link" onDone={() => { setIssued(null); mutation.clearStatus(); }} />
+      : <div className="reset-link-form">
+        <label>{t.reason}<select value={reason} disabled={blocked || mutation.busy} onChange={event => setReason(event.target.value as ResetReason)}>{resetReasons.map(value => <option key={value} value={value}>{t.reasons[value]}</option>)}</select></label>
+        <div className="actions"><button type="button" className="secondary" data-testid="issue-reset-link" disabled={blocked || mutation.busy} onClick={() => { mutation.clearStatus(); setNote(""); setConfirming(true); }}><Icon name="key" />{t.issue}</button></div>
+      </div>}
+    {confirming && <ConfirmDialog locale={locale} testId="confirm-reset-link" title={t.confirmTitle} confirm={t.issue} busy={mutation.busy} status={mutation.status} danger onConfirm={() => void issue()} onCancel={() => setConfirming(false)}>
+      <p>{fill(t.effect, { name })}</p><p className="muted">{t.reason}: {t.reasons[reason]}</p>
+    </ConfirmDialog>}
+  </section>;
 }
 
 type RoleDraft = Record<string, { on: boolean; scopes: StaffRole["scopes"] }>;

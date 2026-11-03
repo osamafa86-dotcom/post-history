@@ -52,7 +52,7 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
     finally { logoutPending.current = false; setBusy(false); }
   }
   // حساب المشتري لا يرى صفحات الطاقم: المتجر ومؤسسته وحدهما.
-  const buyer = !!me && isBuyer(me), buyerPage = /^\/(ar|en)\/(store|organization)(\/|$)/.test(pathname);
+  const buyer = !!me && isBuyer(me), buyerPage = /^\/(ar|en)\/(store|organization|security)(\/|$)/.test(pathname);
   useEffect(() => { if (buyer && !buyerPage) router.replace(`/${locale}/store`); }, [buyer, buyerPage, locale, router]);
   if (!me || (buyer && !buyerPage)) return <main className="center-state" role="status">{error ? <><p>{m.error}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></> : <><span className="skeleton block" aria-hidden="true" />{m.loading}</>}</main>;
   const items = navItems(me, locale, pathname), inboxHref = `/${locale}/${buyer ? "store" : "inbox"}`;

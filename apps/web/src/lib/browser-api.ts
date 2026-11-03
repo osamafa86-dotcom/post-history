@@ -28,6 +28,11 @@ export async function authPost(path: "login" | "logout", body: unknown) {
   const response = await fetch(`/api/bff/auth/${path}`, { method: "POST", credentials: "same-origin", cache: "no-store", headers: { "Content-Type": "application/json", "X-Requested-With": "post-history-web", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(body) });
   return { response, body: await response.json() as { ok?: boolean; code?: string } };
 }
+/** طلب بلا جلسة إلى الـBFF (بدء الاستعادة برمز احتياطي، والدخول بمفتاح المرور): الحالة والجسم، ولا يُعلَن به انتهاء جلسة. */
+export async function publicPost<T extends object = Record<string, never>>(path: "auth/recovery" | "auth/passkeys/login-options" | "auth/passkeys/login", body: unknown) {
+  const response = await fetch(`/api/bff/${path}`, { method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error", headers: { "Content-Type": "application/json", "X-Requested-With": "post-history-web" }, body: JSON.stringify(body) });
+  return { status: response.status, body: await response.json().catch(() => ({})) as Partial<T> & { code?: string } };
+}
 export function leaveSession(locale: Locale, reason: "revoked" | "signed-out", broadcast = true) {
   // رسالة القناة تصل إلى نسخة أخرى منها في التبويب نفسه؛ لا تغيّر سبب الخروج الذي تأكد بالفعل.
   if (departing) return;

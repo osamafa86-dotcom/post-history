@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@noble/hashes": "2.4.0",
+    "@simplewebauthn/browser": "14.0.0",
     "@uppy/core": "6.3.0",
     "@uppy/tus": "6.0.0",
     "ioredis": "6.0.0",

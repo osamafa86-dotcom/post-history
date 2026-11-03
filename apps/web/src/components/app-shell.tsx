@@ -71,6 +71,7 @@ export function AccountActions({ me, locale, languageHref, busy, logout, logoutA
   const m = messages[locale];
   return <>
     <p className="account-line" data-testid="topbar-user">{userLine(me, locale)}</p>
+    <Link prefetch={false} className="menu-item" href={`/${locale}/security`} data-testid="menu-security"><Icon name="lock" />{m.security.menu}</Link>
     <a className="menu-item" href={languageHref} lang={locale === "ar" ? "en" : "ar"}><Icon name="globe" />{m.language}</a>
     <button type="button" className="menu-item" disabled={busy} onClick={logout}><Icon name="logout" />{m.logout}</button>
     <button type="button" className="menu-item" onClick={logoutAll}><Icon name="logout" />{m.logoutAll}</button>

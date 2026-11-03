@@ -39,8 +39,9 @@ const noteRule = new RegExp(notePattern, "u"), forbidden = /[\u0000-\u001F\u007F
 export const cleanNote = (value: string) => value.replace(forbidden, "");
 export const validNote = (value: unknown): value is string => typeof value === "string" && Array.from(value).length <= noteMax && noteRule.test(value);
 /** وجهة الإشعار: مهمته إن حمل `assignment_id` (W6)، وإلا مادته، وإلا لا شيء. */
-export const notificationTarget = (n: { assignment_id?: string | null; material_id?: string | null }, locale: string) =>
-  n.assignment_id && uuid.test(n.assignment_id) ? `/${locale}/tasks/${n.assignment_id}` : n.material_id && uuid.test(n.material_id) ? `/${locale}/materials/${n.material_id}` : null;
+export const notificationTarget = (n: { assignment_id?: string | null; material_id?: string | null; recovery_request_id?: string | null }, locale: string) =>
+  n.assignment_id && uuid.test(n.assignment_id) ? `/${locale}/tasks/${n.assignment_id}` : n.material_id && uuid.test(n.material_id) ? `/${locale}/materials/${n.material_id}`
+    : n.recovery_request_id && uuid.test(n.recovery_request_id) ? `/${locale}/recovery-requests/${n.recovery_request_id}` : null;
 export const isOpen = (state: string) => (openStates as readonly string[]).includes(state);
 
 /**
