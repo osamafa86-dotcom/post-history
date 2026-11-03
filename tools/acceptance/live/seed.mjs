@@ -5,6 +5,7 @@ import { randomBytes, randomUUID, createHash, createCipheriv } from "node:crypto
 import { freshFetch } from "../lib/http.mjs";
 import pg from "pg";
 import { hash } from "@node-rs/argon2";
+import { DEDICATED_CONTRIBUTORS } from "./contributors.mjs";
 
 const ROLES = ["system_admin", "editor_in_chief", "supervisor", "producer", "finance", "reporter", "rights_officer"];
 const sha256 = (s) => createHash("sha256").update(s).digest();
@@ -48,6 +49,8 @@ export async function seed({ databaseUrl, apiUrl, fieldKey = null }) {
   users.system_admin_c = await user("system-admin-c", "system_admin");
   // account-recovery (ADR 0107): a throwaway account the run resets (its sessions end, its password and TOTP change)
   users.recovery_target = await user("recovery-target", "producer");
+  // one contributor per script that sells (live/contributors.mjs): no script's sale is released into another's balance
+  for (const k of DEDICATED_CONTRIBUTORS) users[k] = await user(k.replace(/_/g, "-"), "reporter", { officeId: officeA });
   // v0.3 buyers: an active synthetic organization with its admin and member, so the write matrix has a token for the /orders roles
   // and a second active organization (tenant-isolation): its orders, licences and members are another tenant for the first
   const organization = async (name) => (await q(
@@ -143,7 +146,9 @@ export async function seed({ databaseUrl, apiUrl, fieldKey = null }) {
     }
   }
   await pool.end();
-  const { reporter_b: _b, supervisor_b: _sb, producer_b: _pb, system_admin_b: _ab, system_admin_c: _ac, victim_reporter: _vr, recovery_target: _rt, buyer_admin_b: _bb, ...roleTokens } = tokens;
+  const { reporter_b: _b, supervisor_b: _sb, producer_b: _pb, system_admin_b: _ab, system_admin_c: _ac, victim_reporter: _vr, recovery_target: _rt, buyer_admin_b: _bb, ...rest } = tokens;
+  // one token per role for the role sweeps: the dedicated contributors are reporters too, and stay out of it
+  const roleTokens = Object.fromEntries(Object.entries(rest).filter(([k]) => !DEDICATED_CONTRIBUTORS.includes(k)));
   return {
     tokens: roleTokens, allTokens: tokens, users, password, totp, legalName,
     fixtures: {
