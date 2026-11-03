@@ -29,6 +29,8 @@ import net.palpost.library.R
 import net.palpost.library.api.models.PushDeviceRegistration
 import net.palpost.library.core.auth.AuthState
 import net.palpost.library.core.net.IdempotencyKey
+import net.palpost.library.core.notifications.NotificationLink
+import net.palpost.library.core.notifications.NotificationLinks
 import net.palpost.library.ui.MainActivity
 import java.util.UUID
 import kotlin.coroutines.resume
@@ -80,13 +82,18 @@ object Push {
     /**
      * The server's payload is a closed list (schemas/notification-channel-payload.json): a material number and state
      * in `title`, no names or places. It is shown inside the notification only; nothing on the lock screen.
+     *
+     * The tap (ADR 0106) opens the material, or the receipt of its original, by ids alone: the event type picks the screen and
+     * the intent carries the material id, the signed-in account's opaque local id and this installation's link key. Each
+     * notification has its own pending intent, so one tap never opens another's material.
      */
-    fun show(context: Context, data: Map<String, String>) {
+    fun show(context: Context, container: AppContainer, data: Map<String, String>) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
-        val open = PendingIntent.getActivity(
-            context, 0, Intent(context, MainActivity::class.java).putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_NOTIFICATIONS).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+        val id = NOTIFICATION_BASE_ID + ((data["notification_id"]?.hashCode() ?: 0) and 0xFFF)
+        val link = NotificationLink(NotificationLinks.targetOf(data["type"], data["material_id"]), container.scope.value.current)
+        val intent = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        for ((k, v) in NotificationLinks.extras(link, container.settings.notificationLinkKey)) intent.putExtra(k, v)
+        val open = PendingIntent.getActivity(context, id, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val urgent = data["priority"] == "urgent"
         val n = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_upload)
@@ -97,7 +104,6 @@ object Push {
             .setContentIntent(open)
             .setAutoCancel(true)
             .build()
-        val id = NOTIFICATION_BASE_ID + ((data["notification_id"]?.hashCode() ?: 0) and 0xFFF)
         NotificationManagerCompat.from(context).notify(id, n)
     }
 }
@@ -114,7 +120,7 @@ class FcmService : FirebaseMessagingService() {
         val container = (application as PostHistoryApp).container
         // A phone that was signed out or wiped shows nothing, whatever reaches it.
         if (container.auth.state.value !is AuthState.SignedIn) return
-        Push.show(this, message.data)
+        Push.show(this, container, message.data)
     }
 }
 
