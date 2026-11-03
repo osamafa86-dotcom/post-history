@@ -11,7 +11,7 @@ import {
   useVideoConfig,
 } from 'remotion';
 import { measureText } from '@remotion/layout-utils';
-import { TEXT_FONT, TITLE_FONT } from './fonts';
+import { TEXT_FONT, TITLE_FONT, useFontsLoaded } from './fonts';
 
 export type Aspect = 'vertical' | 'horizontal' | 'square';
 
@@ -175,7 +175,16 @@ const BroadcastField: React.FC<{ cx: number; cy: number; maxR: number; start: nu
   return <AbsoluteFill style={{ overflow: 'hidden', pointerEvents: 'none' }}>{waves}</AbsoluteFill>;
 };
 
-export const CirculatedTemplate: React.FC<CirculatedProps> = ({
+/**
+ * القالب لا يُرسم في الصفحة قبل تحميل الخطّين (ADR 0111): `titleFit` يقيس العنوان بـ `measureText`، وأول قياس يُحفظ للصفحة،
+ * فصفحة قاست بخطّ بديل ترسم العنوان المصغَّر بنسبة أخرى في كل إطاراتها. التركيبات كلها تمرّ من هنا.
+ */
+export const CirculatedTemplate: React.FC<CirculatedProps> = (props) => {
+  const loaded = useFontsLoaded('fonts before the circulated title measurement');
+  return loaded ? <CirculatedFrame {...props} /> : null;
+};
+
+const CirculatedFrame: React.FC<CirculatedProps> = ({
   titleLines,
   location,
   tag,
