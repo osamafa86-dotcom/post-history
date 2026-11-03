@@ -2,6 +2,7 @@ package net.palpost.library.ui.notifications
 
 import android.app.Application
 import android.text.format.DateUtils
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -39,6 +41,8 @@ import net.palpost.library.R
 import net.palpost.library.api.models.Notification
 import net.palpost.library.api.models.Priority
 import net.palpost.library.core.net.IdempotencyKey
+import net.palpost.library.core.notifications.NotificationLinks
+import net.palpost.library.core.notifications.NotificationTarget
 import net.palpost.library.ui.describeFailure
 
 /** The user's notifications (`GET /notifications`): read on open, acknowledgement where the newsroom asks for it. */
@@ -75,8 +79,12 @@ class NotificationsViewModel(private val app: Application, private val container
     }
 }
 
+/**
+ * The list. A notification about the reporter's own material opens it, and a receipt notification opens the receipt (ADR 0106),
+ * by the event type and the material id alone ([NotificationLinks.targetOf]); any other stays a line in the list.
+ */
 @Composable
-fun NotificationsScreen(container: AppContainer, onBack: () -> Unit) {
+fun NotificationsScreen(container: AppContainer, onBack: () -> Unit, onOpen: (NotificationTarget) -> Unit = {}) {
     val app = LocalContext.current.applicationContext as Application
     val vm: NotificationsViewModel = viewModel(factory = viewModelFactory { initializer { NotificationsViewModel(app, container) } })
     val s by vm.state.collectAsStateWithLifecycle()
@@ -92,7 +100,14 @@ fun NotificationsScreen(container: AppContainer, onBack: () -> Unit) {
             s.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
             if (s.items.isEmpty() && !s.loading && s.error == null) item { Text(stringResource(R.string.notifications_empty)) }
             items(s.items, key = { it.id }) { n ->
-                Card(Modifier.fillMaxWidth()) {
+                val target = NotificationLinks.targetOf(n.type, n.materialId?.toString())
+                val openLabel = when (target) {
+                    is NotificationTarget.Material -> stringResource(R.string.notifications_open_material)
+                    is NotificationTarget.Receipt -> stringResource(R.string.notifications_open_receipt)
+                    NotificationTarget.Inbox -> null
+                }
+                val open = if (openLabel != null) Modifier.clickable(onClickLabel = openLabel, role = Role.Button) { onOpen(target) } else Modifier
+                Card(Modifier.fillMaxWidth().then(open)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         val urgent = n.priority == Priority.urgent
                         Text(n.title ?: stringResource(R.string.notif_newsroom_title), style = MaterialTheme.typography.titleMedium, color = if (urgent) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)

@@ -25,11 +25,11 @@ internal object Fixtures {
     fun material(
         n: Int, title: String = "Sample title $n", at: OffsetDateTime = t0.plusMinutes(n.toLong()), files: List<MaterialFile> = emptyList(),
         sensitive: Boolean = false, types: Set<MaterialType> = setOf(MaterialType.report), priority: Priority = Priority.normal,
-        editorial: EditorialState = EditorialState.inbox, technical: TechnicalState = TechnicalState.pending,
+        editorial: EditorialState = EditorialState.inbox, technical: TechnicalState = TechnicalState.pending, rights: RightsState = RightsState.unknown,
     ) = Material(
         title = title, materialTypes = types, governorate = "G", city = "C", priority = priority,
         sensitivity = Sensitivity(minors = sensitive, injured = false, graphic = false), displayName = DisplayName(DisplayName.Mode.real_name),
         formVersion = 1, dynamicFields = emptyMap(), id = id(n), version = 1, reporterId = id(999), officeId = null,
-        technicalState = technical, editorialState = editorial, rightsState = RightsState.unknown, files = files, createdAt = at, updatedAt = at,
+        technicalState = technical, editorialState = editorial, rightsState = rights, files = files, createdAt = at, updatedAt = at,
     )
 }
