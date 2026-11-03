@@ -1169,7 +1169,7 @@ export const orders = pgTable("orders", {
 	purchaseOrderNumber: text("purchase_order_number"),
 	invoiceNumber: text("invoice_number"),
 }, (table) => [
-	index("orders_organization_idx").using("btree", table.organizationId.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("uuid_ops"), table.id.desc().nullsFirst().op("uuid_ops")),
+	index("orders_organization_idx").using("btree", table.organizationId.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops"), table.id.desc().nullsFirst().op("uuid_ops")),
 	index("orders_pending_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'pending_payment'::text)`),
 	uniqueIndex("orders_provider_ref_key").using("btree", table.provider.asc().nullsLast().op("text_ops"), table.providerRef.asc().nullsLast().op("text_ops")).where(sql`(provider_ref IS NOT NULL)`),
 	uniqueIndex("orders_invoice_number_key").using("btree", table.invoiceNumber.asc().nullsLast().op("text_ops")).where(sql`(invoice_number IS NOT NULL)`),
