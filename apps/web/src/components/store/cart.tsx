@@ -45,8 +45,9 @@ export function clearCart() { try { sessionStore()?.removeItem(storageKey); } ca
 export function CartProvider({ owner, children }: { owner: string; children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>(() => readCart(owner));
   useEffect(() => { const clear = () => { clearCart(); setItems([]); }; window.addEventListener("clear-private-state", clear); return () => window.removeEventListener("clear-private-state", clear); }, []);
-  // كل تغيير يُكتب لصاحبه؛ والسلة الفارغة تمحو النسخة.
-  const update = (next: (current: CartItem[]) => CartItem[]) => setItems(current => { const value = next(current); writeCart(owner, value); return value; });
+  // كل تغيير يُكتب لصاحبه بعد رسمه؛ والسلة الفارغة (ومنها سلة حساب آخر لم تُقرأ) تمحو النسخة.
+  useEffect(() => { writeCart(owner, items); }, [owner, items]);
+  const update = (next: (current: CartItem[]) => CartItem[]) => setItems(next);
   // بند واحد لكل إدراج: اختيار ترخيص آخر للمادة نفسها يستبدل السابق.
   const add = (item: CartItem) => update(current => [...current.filter(i => i.listing_id !== item.listing_id), item].slice(-cartMax));
   return <CartContext.Provider value={{ items, add, remove: id => update(current => current.filter(i => i.listing_id !== id)), clear: () => update(() => []) }}>{children}</CartContext.Provider>;
