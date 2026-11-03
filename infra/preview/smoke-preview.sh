@@ -21,7 +21,7 @@ while [ $# -gt 0 ]; do
     *) echo "usage: $0 [--json FILE] [--media-json DIR]" >&2; exit 2 ;;
   esac
 done
-LIMIT_MB=2632
+LIMIT_MB=2760
 C=(docker compose -f "$HERE/docker-compose.preview.yml")
 created_env=0 created_net=0
 work="$(mktemp -d)"
@@ -736,9 +736,23 @@ done
 grep -q 'event done' <<<"$media_logs" || fail "nothing in the worker log (cannot check it)"
 echo "worker and feeder logs: no title, file name, location or device tag: ok"
 
+# MinIO healthy before its admin API is read. A restart under the large uploads above is a finding, not something to wait out:
+# its restart count and OOM flag are printed, and an OOM kill fails the smoke.
+minio_id="$("${C[@]}" ps -q minio)"
+minio_ready() {
+  local s r o
+  for _ in $(seq 1 60); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$minio_id")" = healthy ] && break; sleep 1; done
+  read -r s r o <<<"$(docker inspect -f '{{.State.Health.Status}} {{.RestartCount}} {{.State.OOMKilled}}' "$minio_id")"
+  local mcg; mcg="$(cgdir "$minio_id")"
+  echo "minio: $s, restarts $r, last exit OOM-killed $o${mcg:+, memory.peak $(( $(cat "$mcg/memory.peak") / 1048576 )) MiB of $(( $(docker inspect -f '{{.HostConfig.Memory}}' "$minio_id") / 1048576 )), oom_kill $(awk '$1 == "oom_kill" { print $2 }' "$mcg/memory.events")}"
+  [ "$o" = false ] || fail "MinIO was OOM-killed under the uploads above"
+  [ "$s" = healthy ] || fail "MinIO is not healthy"
+}
+minio_ready
+
 # Storage ceiling: hard quotas, uploads 10112 MiB and derived files 2048 MiB, tusd's 64 MiB outside, stale uploads after 24 h.
 storage="$(docker run --rm --network post-history-preview_internal --env-file "$HERE/.env" --entrypoint sh "$mc_image" -c 'mc --config-dir /tmp/mc alias set local http://minio:9000 "$S3_ACCESS_KEY" "$S3_SECRET_KEY" >/dev/null && mc --config-dir /tmp/mc quota info --json "local/$S3_BUCKET_UPLOADS" && mc --config-dir /tmp/mc quota info --json "local/$S3_BUCKET_MEDIA" && mc --config-dir /tmp/mc admin config get local api' 2>&1)" \
-  || { echo "$storage" | tail -5; fail "could not read the storage quotas"; }
+  || { echo "$storage" | tail -5; minio_ready; fail "could not read the storage quotas"; }
 quota_total="$(python3 -c '
 import json, sys
 print(sum(json.loads(l).get("quota", 0) for l in sys.stdin if l.startswith("{")))' <<<"$storage")"

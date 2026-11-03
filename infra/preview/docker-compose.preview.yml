@@ -86,8 +86,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 20
-    mem_limit: 128m
-    memswap_limit: 128m
+    mem_limit: 256m
+    memswap_limit: 256m
     cpus: 0.5
     # Unique name for the edge, which passes signed GETs of derived files here (ADR 0092) and also sits on deploy_default.
     networks:
