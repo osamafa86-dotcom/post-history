@@ -1,5 +1,8 @@
 package net.palpost.library.ui.theme
 
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
@@ -14,6 +17,8 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import net.palpost.library.R
 import net.palpost.library.ui.theme.tokens.VlColors
 import net.palpost.library.ui.theme.tokens.VlDarkColors
@@ -23,76 +28,109 @@ import net.palpost.library.ui.theme.tokens.VlType
 import net.palpost.library.ui.theme.tokens.VlTypeRole
 
 /**
- * The design system (docs/design/design-system.md) on Compose: colours, type and shapes come from the generated
- * tokens (`ui/theme/tokens`, built from docs/design/tokens.json), never from literals. Dark mode follows the system,
- * for the field at night. Fonts are the open-licensed faces the system names (the Figma file's: Vazirmatn for text in
- * Arabic and English, Reem Kufi for display, ADR 0079), bundled so they work offline.
+ * Identity v2 «Signal» (ADR 0085, design-system-v2.md) on Compose. Colours, spacing and type roles come from the generated
+ * tokens (`ui/theme/tokens/DesignTokens.kt`, from docs/design/tokens.v2.json), never from literals. Light is the base, and
+ * dark follows the phone. Rubik draws titles and aligned numbers, Readex Pro the text, and IBM Plex Mono the receipt number
+ * and the digest alone (ADR 0088), all bundled so they work offline (docs/fonts.md).
  */
-private val Vazirmatn = FontFamily(
-    Font(R.font.vazirmatn_400, FontWeight.Normal),
-    Font(R.font.vazirmatn_500, FontWeight.Medium),
-    Font(R.font.vazirmatn_600, FontWeight.SemiBold),
-    Font(R.font.vazirmatn_700, FontWeight.Bold),
+private val Rubik = FontFamily(
+    Font(R.font.rubik_600, FontWeight.SemiBold),
+    Font(R.font.rubik_700, FontWeight.Bold),
+    Font(R.font.rubik_800, FontWeight.ExtraBold),
 )
-private val ReemKufi = FontFamily(
-    Font(R.font.reem_kufi_700, FontWeight.Bold),
+private val ReadexPro = FontFamily(
+    Font(R.font.readex_pro_400, FontWeight.Normal),
+    Font(R.font.readex_pro_500, FontWeight.Medium),
+    Font(R.font.readex_pro_600, FontWeight.SemiBold),
+    Font(R.font.readex_pro_700, FontWeight.Bold),
 )
-private val IbmPlexMono = FontFamily(
-    Font(R.font.ibm_plex_mono_400, FontWeight.Normal),
-    Font(R.font.ibm_plex_mono_500, FontWeight.Medium),
-)
+private val IbmPlexMono = FontFamily(Font(R.font.ibm_plex_mono_500, FontWeight.Medium))
 
-/** The type roles of the design system as text styles, each in its role's family. */
+/**
+ * Roles the tokens do not carry, from the component table (design-system-v2.md «المكوّنات»), as on iOS (ADR 0088):
+ * the big button, a chip's text (one size whether selected or not, so its width does not jump), the percentage in the
+ * broadcast rings, the small action of a dialog, and the receipt number and digest in the mono face.
+ */
+object VlExtraType {
+    val button = VlTypeRole(17.sp, 24.sp, FontWeight.Bold, VlFontKind.TEXT)
+    val chip = VlTypeRole(15.sp, 22.sp, FontWeight.Medium, VlFontKind.TEXT)
+    val chipSelected = VlTypeRole(15.sp, 22.sp, FontWeight.Bold, VlFontKind.TEXT)
+    val action = VlTypeRole(15.sp, 22.sp, FontWeight.SemiBold, VlFontKind.TEXT)
+    val bigNumber = VlTypeRole(30.sp, 34.sp, FontWeight.Bold, VlFontKind.NUM)
+}
+
+/** The type roles as text styles, each in its role's family; numbers in Rubik use tabular figures. */
 class VlTextStyles {
     fun of(role: VlTypeRole): TextStyle = TextStyle(
-        fontFamily = when (role.kind) { VlFontKind.MONO -> IbmPlexMono; VlFontKind.DISPLAY -> ReemKufi; VlFontKind.TEXT -> Vazirmatn },
+        fontFamily = when (role.kind) { VlFontKind.TEXT -> ReadexPro; VlFontKind.DISPLAY, VlFontKind.NUM -> Rubik },
         fontSize = role.size, lineHeight = role.lineHeight, fontWeight = role.weight,
+        fontFeatureSettings = if (role.kind == VlFontKind.NUM) "tnum" else null,
         lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
     )
-    val displayMd get() = of(VlType.displayMd)
-    val headingH2 get() = of(VlType.headingH2)
-    val headingH3 get() = of(VlType.headingH3)
-    val headingH4 get() = of(VlType.headingH4)
-    val bodyLg get() = of(VlType.bodyLg)
-    val bodyMd get() = of(VlType.bodyMd)
-    val bodySm get() = of(VlType.bodySm)
-    val labelLg get() = of(VlType.labelLg)
-    val labelMd get() = of(VlType.labelMd)
-    val labelSm get() = of(VlType.labelSm)
-    val captionMd get() = of(VlType.captionMd)
-    val overlineMd get() = of(VlType.overlineMd)
-    val monoMd get() = of(VlType.monoMd)
-    val monoLg get() = of(VlType.monoLg)
+    val display = of(VlType.display)
+    val title = of(VlType.title)
+    val headline = of(VlType.headline)
+    val body = of(VlType.body)
+    val label = of(VlType.label)
+    val caption = of(VlType.caption)
+    val num = of(VlType.num)
+    val button = of(VlExtraType.button)
+    val chip = of(VlExtraType.chip)
+    val chipSelected = of(VlExtraType.chipSelected)
+    val action = of(VlExtraType.action)
+    val bigNumber = of(VlExtraType.bigNumber)
+    /** The receipt number and the digest: mono, at the size of the `num` role. */
+    val receipt = TextStyle(fontFamily = IbmPlexMono, fontSize = VlType.num.size, lineHeight = VlType.num.lineHeight, fontWeight = FontWeight.Medium)
+}
+
+/** Easings of the motion tokens' animations (the durations are `VlMotion.*Ms`). */
+object VlEasing {
+    val standard: Easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+    val linear: Easing = LinearEasing
+}
+
+/** Icon sizes of the component table; not tokens, one place for all screens. */
+object VlIcon {
+    val sm = 16.dp
+    val md = 22.dp
+    val lg = 32.dp
 }
 
 private val LocalVlColors = staticCompositionLocalOf { VlLightColors }
 private val LocalVlText = staticCompositionLocalOf { VlTextStyles() }
+private val LocalVlDark = staticCompositionLocalOf { false }
 
-/** Access to the design tokens inside [PostHistoryTheme]: `Vl.colors.bgBrand`, `Vl.text.headingH4`. */
+/** Access to the design tokens inside [PostHistoryTheme]: `Vl.colors.actionPrimary`, `Vl.text.headline`. */
 object Vl {
     val colors: VlColors @Composable @ReadOnlyComposable get() = LocalVlColors.current
     val text: VlTextStyles @Composable @ReadOnlyComposable get() = LocalVlText.current
+    val dark: Boolean @Composable @ReadOnlyComposable get() = LocalVlDark.current
 }
+
+private val sharedStyles = VlTextStyles()
 
 @Composable
 fun PostHistoryTheme(content: @Composable () -> Unit) {
-    val c = if (isSystemInDarkTheme()) VlDarkColors else VlLightColors
-    val styles = VlTextStyles()
-    val scheme = (if (c === VlDarkColors) darkColorScheme() else lightColorScheme()).copy(
-        primary = c.bgBrand, onPrimary = c.textOnBrand, primaryContainer = c.bgBrandSubtle, onPrimaryContainer = c.textBrand,
-        secondary = c.textSecondary, onSecondary = c.bgSurface, secondaryContainer = c.bgSubtle, onSecondaryContainer = c.textPrimary,
-        background = c.bgCanvas, onBackground = c.textPrimary, surface = c.bgSurface, onSurface = c.textPrimary,
-        surfaceVariant = c.bgSubtle, onSurfaceVariant = c.textSecondary, surfaceContainer = c.bgSurface,
-        surfaceContainerLow = c.bgSurface, surfaceContainerHigh = c.bgSurfaceRaised, surfaceContainerHighest = c.bgSubtle,
-        error = c.textDanger, onError = c.textOnBrand, errorContainer = c.bgDangerSubtle, onErrorContainer = c.textDanger,
-        outline = c.borderStrong, outlineVariant = c.borderDefault, inverseSurface = c.bgInverse, inverseOnSurface = c.textInverse,
+    val dark = isSystemInDarkTheme()
+    val c = if (dark) VlDarkColors else VlLightColors
+    val styles = sharedStyles
+    val scheme = (if (dark) darkColorScheme() else lightColorScheme()).copy(
+        primary = c.actionPrimary, onPrimary = c.textOnBrand, primaryContainer = c.actionSoft, onPrimaryContainer = c.textBrand,
+        secondary = c.textSecondary, onSecondary = c.bgRaised, secondaryContainer = c.actionSoft, onSecondaryContainer = c.textPrimary,
+        tertiary = c.textBrand, onTertiary = c.textOnBrand,
+        background = c.bgBase, onBackground = c.textPrimary, surface = c.bgBase, onSurface = c.textPrimary,
+        surfaceVariant = c.bgSunken, onSurfaceVariant = c.textSecondary, surfaceContainerLowest = c.bgRaised, surfaceContainerLow = c.bgRaised,
+        surfaceContainer = c.bgRaised, surfaceContainerHigh = c.bgRaised, surfaceContainerHighest = c.bgSunken,
+        error = c.stateDanger, onError = c.textOnBrand, errorContainer = c.bgSunken, onErrorContainer = c.stateDanger,
+        outline = c.borderEdge, outlineVariant = c.borderLine, inverseSurface = c.textPrimary, inverseOnSurface = c.bgBase,
     )
     val typography = Typography(
-        displaySmall = styles.displayMd, headlineSmall = styles.headingH2, titleLarge = styles.headingH3,
-        titleMedium = styles.headingH4, titleSmall = styles.labelLg, bodyLarge = styles.bodyMd, bodyMedium = styles.bodyMd,
-        bodySmall = styles.bodySm, labelLarge = styles.labelLg, labelMedium = styles.labelMd, labelSmall = styles.labelSm,
+        displaySmall = styles.display, headlineLarge = styles.display, headlineMedium = styles.title, headlineSmall = styles.title,
+        titleLarge = styles.title, titleMedium = styles.headline, titleSmall = styles.action,
+        bodyLarge = styles.body, bodyMedium = styles.body, bodySmall = styles.caption,
+        labelLarge = styles.action, labelMedium = styles.label, labelSmall = styles.caption,
     )
-    CompositionLocalProvider(LocalVlColors provides c, LocalVlText provides styles) {
+    CompositionLocalProvider(LocalVlColors provides c, LocalVlText provides styles, LocalVlDark provides dark) {
         MaterialTheme(colorScheme = scheme, typography = typography, content = content)
     }
 }

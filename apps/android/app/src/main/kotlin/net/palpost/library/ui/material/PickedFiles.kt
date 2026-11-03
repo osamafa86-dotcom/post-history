@@ -20,6 +20,8 @@ data class PickedOriginal(
     val createdMaterialId: String? = null,
     val position: Int? = null,
     val total: Int? = null,
+    /** When it was filmed, read from the file (`shot_at`); null when unknown. Nothing else is read from it. */
+    val capturedAtEpochMs: Long? = null,
 ) {
     val isVideo: Boolean get() = mimeType?.startsWith("video/") == true
 }

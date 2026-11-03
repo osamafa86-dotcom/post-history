@@ -57,8 +57,11 @@ data class UploadTaskEntity(
 )
 
 /**
- * A1 draft kept on the phone only (`Save draft`): the material's fields and the picked original's URI as JSON,
- * shown on A2 until sent. Cleared with every table by the emergency wipe (SEC-01).
+ * A send draft kept on the phone only (`Save draft`, or what is left of a send that stopped part-way): the fields and the
+ * picked originals' URIs as JSON, shown on the home screen until sent. Cleared with every table by the emergency wipe (SEC-01).
+ *
+ * [sealedGps]: the filming location of a send that stopped before all its materials were created, sealed with the Keystore
+ * (ADR 0087): the rest of its files are created with it, then the row goes with the draft. A draft saved by hand has none.
  */
 @Entity(tableName = "drafts")
 data class DraftEntity(
@@ -66,6 +69,7 @@ data class DraftEntity(
     val title: String,
     val json: String,
     val updatedAtEpochMs: Long,
+    val sealedGps: String? = null,
 )
 
 @Dao
@@ -74,6 +78,7 @@ interface DraftDao {
     @Query("SELECT * FROM drafts WHERE id = :id") suspend fun get(id: String): DraftEntity?
     @Upsert suspend fun upsert(entity: DraftEntity)
     @Query("DELETE FROM drafts WHERE id = :id") suspend fun delete(id: String)
+    @Query("UPDATE drafts SET sealedGps = NULL") suspend fun forgetAllGps()
     /** How many drafts mention this content URI (a LIKE over the JSON: wildcard characters in the URI only over-count, which keeps a grant). */
     @Query("SELECT COUNT(*) FROM drafts WHERE json LIKE '%' || :uri || '%'") suspend fun countMentioning(uri: String): Int
 }
@@ -91,6 +96,8 @@ interface UploadDao {
     @Query("SELECT * FROM upload_tasks WHERE state NOT IN ('VERIFIED','DEDUPLICATED','FAILED') ORDER BY createdAtEpochMs") suspend fun pending(): List<UploadTaskEntity>
     @Query("SELECT COUNT(*) FROM upload_tasks WHERE state NOT IN ('VERIFIED','DEDUPLICATED','FAILED')") suspend fun pendingCount(): Int
     @Query("SELECT * FROM upload_tasks ORDER BY createdAtEpochMs DESC") fun observeAll(): Flow<List<UploadTaskEntity>>
+    @Query("SELECT * FROM upload_tasks ORDER BY createdAtEpochMs DESC") suspend fun all(): List<UploadTaskEntity>
+    @Query("SELECT * FROM upload_tasks WHERE materialId IN (:materialIds)") suspend fun forMaterials(materialIds: List<String>): List<UploadTaskEntity>
     @Query("UPDATE upload_tasks SET localCopyHandled = :handled WHERE id = :id") suspend fun setLocalCopyHandled(id: String, handled: Boolean)
     @Query("UPDATE upload_tasks SET state = 'QUEUED', failure = NULL, failureCode = NULL, attempts = 0, sessionId = NULL, tusEndpoint = NULL, tusUploadUrl = NULL, sealedUploadToken = NULL, tokenExpiresAtEpochMs = NULL, sessionExpiresAtEpochMs = NULL, ingestTokenRequired = 0, bytesConfirmed = 0, idempotencyKey = :newIdempotencyKey WHERE id = :id AND state = 'FAILED'")
     suspend fun requeueFailed(id: String, newIdempotencyKey: String)
@@ -99,14 +106,14 @@ interface UploadDao {
     @Query("DELETE FROM upload_tasks WHERE id = :id") suspend fun delete(id: String)
 }
 
-@Database(entities = [UploadTaskEntity::class, DraftEntity::class], version = 3, exportSchema = false)
+@Database(entities = [UploadTaskEntity::class, DraftEntity::class], version = 4, exportSchema = false)
 abstract class UploadDatabase : RoomDatabase() {
     abstract fun uploads(): UploadDao
     abstract fun drafts(): DraftDao
 
     companion object {
         fun open(context: Context): UploadDatabase =
-            Room.databaseBuilder(context.applicationContext, UploadDatabase::class.java, "uploads.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+            Room.databaseBuilder(context.applicationContext, UploadDatabase::class.java, "uploads.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
 
         /** v2: sessions behind the ingest gate (SEC-07). Existing rows predate the gate. */
         val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
@@ -120,6 +127,13 @@ abstract class UploadDatabase : RoomDatabase() {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE upload_tasks ADD COLUMN priority TEXT")
                 db.execSQL("CREATE TABLE IF NOT EXISTS drafts (id TEXT NOT NULL, title TEXT NOT NULL, json TEXT NOT NULL, updatedAtEpochMs INTEGER NOT NULL, PRIMARY KEY(id))")
+            }
+        }
+
+        /** v4: the sealed filming location of a send that stopped part-way (ADR 0087). */
+        val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE drafts ADD COLUMN sealedGps TEXT")
             }
         }
     }

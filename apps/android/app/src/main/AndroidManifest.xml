@@ -10,6 +10,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Android 14+: the transfer runs as a user-initiated data transfer job. -->
     <uses-permission android:name="android.permission.RUN_USER_INITIATED_JOBS" />
+    <!-- The filming location (ADR 0087): asked once before the first send, while the app is in use only. Precise and approximate
+         are requested together, as Android 12+ requires. Deliberately absent: ACCESS_BACKGROUND_LOCATION. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
     <!-- Deliberately absent: REQUEST_IGNORE_BATTERY_OPTIMIZATIONS (Play policy). The onboarding screen opens the
          settings pages instead, and only reads the exemption state. -->
 

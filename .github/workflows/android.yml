@@ -5,6 +5,7 @@ on:
     paths:
       - "apps/android/**"
       - "contracts/**"
+      - "docs/design/tokens.v2.json"
       - "tools/acceptance/form-conformance/**"
       - ".github/workflows/android.yml"
 
@@ -26,6 +27,16 @@ jobs:
         working-directory: apps/android
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      # Identity v2 (ADR 0085, 0088): the tokens are generated from docs/design/tokens.v2.json and committed; a change to one
+      # side without the other fails here, as in ios.yml.
+      - name: Regenerate design tokens from docs/design/tokens.v2.json and require no diff
+        working-directory: .
+        run: |
+          node apps/android/scripts/generate-design-tokens.mjs
+          git status --porcelain -- apps/android/app/src/main/kotlin/net/palpost/library/ui/theme/tokens | (! grep .)
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
@@ -42,9 +53,6 @@ jobs:
         run: ./gradlew --no-daemon :core:test --rerun :app:testDebugUnitTest
       - name: Lint (missing translations are errors)
         run: ./gradlew --no-daemon :app:lintDebug
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "22"
       - name: Form conformance judged by the shared runner (same cases as web, iOS and the server)
         working-directory: .
         run: |

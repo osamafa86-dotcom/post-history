@@ -26,7 +26,10 @@ import java.io.File
  * session of the user ended on the server when the request got through in time):
  *  - transfers: scheduled job / foreground service stopped, progress and result notifications cancelled
  *  - session: Keystore-sealed tokens removed from the `session` preferences, the Keystore key destroyed
- *  - upload_queue: every Room table cleared (the queue and the A1 drafts), then the database files deleted (`uploads.db`, `-wal`, `-shm`)
+ *  - upload_queue: every Room table cleared (the queue and the drafts, with the sealed filming location of a send that stopped
+ *    part-way, ADR 0087), then the database files deleted (`uploads.db`, `-wal`, `-shm`)
+ *  - reporter_memory: the sends ledger and its file (titles, sensitivity answers), the remembered place and tags, and the
+ *    receipts waiting to show, in memory and on disk (ADR 0088)
  *  - file_grants: persistable read grants on picked originals released (the originals themselves belong to the
  *    reporter and are deleted only through the explicit per-file choice)
  *  - preferences: every SharedPreferences file (setup flags included)
@@ -69,6 +72,11 @@ class DeviceWipe(private val context: Context, private val container: AppContain
             db.clearAllTables()
             db.close()
             for (suffix in listOf("", "-wal", "-shm", "-journal")) context.getDatabasePath("uploads.db$suffix").delete()
+        },
+        WipeStep("reporter_memory") {
+            container.receipts.clear()
+            container.sendBatches.forgetAll()
+            container.reporterMemory.clear()
         },
         WipeStep("file_grants") {
             val resolver = context.contentResolver

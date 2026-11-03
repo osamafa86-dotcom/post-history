@@ -4,13 +4,14 @@ import com.squareup.moshi.Types
 import net.palpost.library.api.infrastructure.Serializer
 
 /**
- * An A1 draft as it is kept on the phone (`Save draft`, spec A1): the fixed fields, the office form's values and
+ * A send draft as it is kept on the phone (`Save draft`, spec A1): the fixed fields, the office form's values and
  * the picked originals' URIs, by contract values so a draft survives app updates. Attachment fields of the office
  * form are not kept: their files must be picked again (their read grant may not outlive the draft).
  *
  * v1 kept one original (`originalUri` and its siblings); v2 keeps a list (`files`), each entry with the per-file
  * material key, the id of its material once created, and its numbering (see [PickedOriginal]); those four read as
- * null when absent. [fromJson] reads both versions, so a draft saved before multi-pick opens with its one file (and,
+ * null when absent. v3 (the one send screen, ADR 0088) adds [tags] and the one sensitivity answer [gate] (`no`/`yes`), and each
+ * file's filming time; a v2 draft reads with no tags and the answer its three replies imply. [fromJson] reads every version, so a draft saved before multi-pick opens with its one file (and,
  * with no key of its own, takes the draft-level key: [PickedFiles.stampKeys]). No Room migration is needed: the
  * table holds JSON text.
  */
@@ -28,13 +29,16 @@ data class MaterialDraft(
     val values: Map<String, Any?> = emptyMap(),
     val files: List<PickedOriginal> = emptyList(),
     val step: Int = 1,
+    val tags: List<String> = emptyList(),
+    /** The one sensitivity question as answered on the send screen: `no`, `yes`, or null. */
+    val gate: String? = null,
 ) {
     fun toJson(): String = adapter.toJson(
         mapOf(
-            "v" to 2, "title" to title, "types" to types, "governorate" to governorate, "city" to city, "priority" to priority,
+            "v" to 3, "title" to title, "tags" to tags, "gate" to gate, "types" to types, "governorate" to governorate, "city" to city, "priority" to priority,
             "minors" to minors, "injured" to injured, "graphic" to graphic, "displayMode" to displayMode, "pseudonym" to pseudonym,
             "values" to values, "files" to files.map { f ->
-                mapOf("uri" to f.uri, "name" to f.name, "size" to f.sizeBytes, "mime" to f.mimeType, "materialKey" to f.materialKey, "materialId" to f.createdMaterialId, "pos" to f.position, "of" to f.total)
+                mapOf("uri" to f.uri, "name" to f.name, "size" to f.sizeBytes, "mime" to f.mimeType, "materialKey" to f.materialKey, "materialId" to f.createdMaterialId, "pos" to f.position, "of" to f.total, "shotAt" to f.capturedAtEpochMs)
             },
             "step" to step,
         ),
@@ -58,6 +62,8 @@ data class MaterialDraft(
                 values = (m["values"] as? Map<String, Any?>).orEmpty(),
                 files = readFiles(m),
                 step = (m["step"] as? Number)?.toInt()?.coerceIn(1, 4) ?: 1,
+                tags = (m["tags"] as? List<*>)?.filterIsInstance<String>().orEmpty(),
+                gate = (m["gate"] as? String)?.takeIf { it == "no" || it == "yes" },
             )
         }.getOrNull()
 
@@ -73,6 +79,7 @@ data class MaterialDraft(
                         uri, f["name"] as? String ?: "original", (f["size"] as? Number)?.toLong() ?: 0, f["mime"] as? String,
                         materialKey = (f["materialKey"] as? String)?.takeIf { it.isNotBlank() }, createdMaterialId = (f["materialId"] as? String)?.takeIf { it.isNotBlank() },
                         position = (f["pos"] as? Number)?.toInt()?.takeIf { it >= 1 }, total = (f["of"] as? Number)?.toInt()?.takeIf { it >= 1 },
+                        capturedAtEpochMs = (f["shotAt"] as? Number)?.toLong(),
                     )
                 }.distinctBy { it.uri }.take(PickedFiles.MAX)
             }

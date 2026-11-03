@@ -85,6 +85,7 @@ fun wipeTargetLabel(name: String): String = stringResource(
         "session" -> R.string.wipe_target_session
         "upload_queue" -> R.string.wipe_target_upload_queue
         "file_grants" -> R.string.wipe_target_file_grants
+        "reporter_memory" -> R.string.wipe_target_reporter_memory
         "preferences" -> R.string.wipe_target_preferences
         "caches_and_files" -> R.string.wipe_target_caches
         else -> R.string.wipe_target_other

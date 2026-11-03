@@ -24,7 +24,16 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_WIFI_ONLY, false)
         set(value) { prefs.edit().putBoolean(KEY_WIFI_ONLY, value).commit() }
 
+    /**
+     * The location permission screen was shown once, before the first send (ADR 0087 §1), whatever the answer. A flag only;
+     * no location is ever kept here.
+     */
+    var locationAsked: Boolean
+        get() = prefs.getBoolean(KEY_LOCATION_ASKED, false)
+        set(value) { prefs.edit().putBoolean(KEY_LOCATION_ASKED, value).apply() }
+
     private companion object {
+        const val KEY_LOCATION_ASKED = "location_asked"
         const val KEY_PAUSED = "uploads_paused"
         const val KEY_WIFI_ONLY = "upload_over_wifi_only"
         const val KEY_TASK_KILLER_SETUP = "task_killer_setup_done"
