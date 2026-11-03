@@ -1,0 +1,15 @@
+{
+  "description": "صفحة الدخول في الويب كما يراها Playwright بالأدوار والأسماء (apps/web/src/components/login.tsx): الحقول بتسمياتها، وزر الدخول بكلمة المرور، وزر مفتاح المرور (ADR 0108) الذي يحمل كلمة الدخول نفسها، ورابط نسيان كلمة المرور. المفاتيح أسماء الرسائل في apps/web/messages، والاختبار يطابقها بالملفات.",
+  "locales": {
+    "ar": {
+      "labels": { "email": "البريد الإلكتروني", "password": "كلمة المرور", "totp": "رمز التحقق بخطوتين" },
+      "buttons": { "signIn": "دخول", "signInPage.passkey": "الدخول بمفتاح المرور" },
+      "links": { "signInPage.forgot": "نسيت كلمة المرور؟" }
+    },
+    "en": {
+      "labels": { "email": "Email", "password": "Password", "totp": "Two-factor code" },
+      "buttons": { "signIn": "Sign in", "signInPage.passkey": "Sign in with a passkey" },
+      "links": { "signInPage.forgot": "Forgot your password?" }
+    }
+  }
+}
