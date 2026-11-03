@@ -2,6 +2,7 @@ import React from 'react';
 import { CalculateMetadataFunction, Composition, Folder } from 'remotion';
 import { Aspect, assertTitleFits, CirculatedProps, CirculatedTemplate } from './CirculatedTemplate';
 import { fontsReady } from './fonts';
+import { WitnessProps, WitnessTemplate } from './WitnessTemplate';
 
 const SIZE: Record<Aspect, { width: number; height: number }> = {
   vertical: { width: 1080, height: 1920 },
@@ -21,6 +22,24 @@ const metadata: CalculateMetadataFunction<CirculatedProps> = async ({ props }) =
     durationInFrames: Math.max(3 * props.fps, Math.round(props.durationInSeconds * props.fps)),
   };
 };
+
+const WFPS = 30;
+const witnessMeta: CalculateMetadataFunction<WitnessProps> = ({ props }) => ({
+  durationInFrames: Math.max(4 * WFPS, Math.round(props.durationInSeconds * WFPS)),
+});
+
+// القالب الثاني «الشاهد»: نصّ تجريبي ظاهر كالأول، والحساب عيّنة لا حساب حقيقي
+const witness = (layout: WitnessProps['layout'], titleLines: string[], background: WitnessProps['background'] = 'plate'): WitnessProps => ({
+  titleLines,
+  location: 'مدينة، محافظة',
+  date: '2 نوفمبر 2026',
+  credit: '@sample_account',
+  tag: 'مشاهد متداولة',
+  layout,
+  background,
+  reducedMotion: false,
+  durationInSeconds: 8,
+});
 
 const base: CirculatedProps = {
   titleLines: ['عنوان تجريبي', 'للمادة المتداولة'],
@@ -65,6 +84,15 @@ export const Root: React.FC = () => (
       <C id="Check-NoTagNoLocation" props={{ tag: 'none', location: null }} />
       {/* مصدر 25 إطارًا/ث: الطبقة تُرسم بمعدل الناتج نفسه */}
       <C id="Check-25fps" props={{ fps: 25 }} />
+    </Folder>
+    <Folder name="Witness">
+      <Composition id="Witness-Vertical" component={WitnessTemplate} fps={WFPS} width={1080} height={1920} durationInFrames={240} calculateMetadata={witnessMeta} defaultProps={witness('vertical', ['عنوان تجريبي', 'للمادة المتداولة'])} />
+      <Composition id="Witness-Vertical-ThreeLines" component={WitnessTemplate} fps={WFPS} width={1080} height={1920} durationInFrames={240} calculateMetadata={witnessMeta} defaultProps={witness('vertical', ['عنوان تجريبي', 'من ثلاثة أسطر', 'للمادة المتداولة'])} />
+      <Composition id="Witness-Horizontal" component={WitnessTemplate} fps={WFPS} width={1920} height={1080} durationInFrames={240} calculateMetadata={witnessMeta} defaultProps={witness('horizontal', ['عنوان تجريبي', 'للمادة المتداولة'])} />
+      <Composition id="Witness-Square" component={WitnessTemplate} fps={WFPS} width={1080} height={1080} durationInFrames={240} calculateMetadata={witnessMeta} defaultProps={witness('square', ['عنوان تجريبي', 'للمادة المتداولة'])} />
+      {/* مقطع 20 ث: شريط الحساب يظهر مرّتين، بعد الدخول وقبل الخروج */}
+      <Composition id="Witness-Vertical-Long" component={WitnessTemplate} fps={WFPS} width={1080} height={1920} durationInFrames={600} calculateMetadata={witnessMeta} defaultProps={{ ...witness('vertical', ['عنوان تجريبي', 'للمادة المتداولة']), durationInSeconds: 20 }} />
+      <Composition id="Witness-Overlay-Vertical" component={WitnessTemplate} fps={WFPS} width={1080} height={1920} durationInFrames={240} calculateMetadata={witnessMeta} defaultProps={witness('vertical', ['عنوان تجريبي', 'للمادة المتداولة'], 'none')} />
     </Folder>
     <Folder name="Overlay">
       {/* طبقة شفافة تُصدَّر ProRes 4444 وتُركَّب فوق المقطع المتداول بـ FFmpeg */}
