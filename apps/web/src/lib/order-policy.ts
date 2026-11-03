@@ -13,6 +13,15 @@ export const orderLimits = { items: 20 } as const;
 // المزوّد إعداد خادم يعود في الجلسة (ADR 0032)؛ لا يختاره المشتري. Stripe بوضع الاختبار وحده وعلى أصل صفحته المستضافة.
 export const checkoutProviders = ["sandbox", "stripe"] as const satisfies readonly components["schemas"]["PaymentProvider"][];
 export const stripeCheckoutOrigin = "https://checkout.stripe.com";
+export type CheckoutRequest = components["schemas"]["CheckoutRequest"];
+/** لغة صفحة المزوّد التجريبي والعودة منها (`CheckoutRequest.locale`، ملحق ADR 0032): قيمة من القائمة وحدها. */
+export const checkoutLocales = ["ar", "en"] as const satisfies readonly NonNullable<CheckoutRequest["locale"]>[];
+/** جسم طلب جلسة الدفع: `{}` أو `{locale}` من القائمة وحده؛ غير ذلك null (لا حقل غيره يمر إلى الخادم). */
+export function checkoutRequest(body: Record<string, unknown>): CheckoutRequest | null {
+  const keys = Object.keys(body);
+  if (!keys.length) return {};
+  return keys.length === 1 && keys[0] === "locale" && (checkoutLocales as readonly unknown[]).includes(body.locale) ? { locale: body.locale as CheckoutRequest["locale"] } : null;
+}
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const plain = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
