@@ -19,18 +19,20 @@
 from __future__ import annotations
 
 import logging
+import shutil
 import tempfile
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .api import ApiConflict, ApiRejected, FileRef, InternalApi, Session
+from .api import ApiConflict, ApiGone, ApiRejected, FileRef, InternalApi, Session
 from .hashing import digest_file, digest_stream
 from .probe import InvalidMediaError, Probe, probe
 from .align import measure_offset
 from .audio import make_speech_audio
 from .c2pa import WORKER_VERSION, Signing, sign, source_ref
+from .circulated import OverlayRenderer, RenderJob, TitleOverflow, make_circulated
 from .delivery import build_delivery
 from .export import build_package
 from .watermark import make_watermarked_preview
@@ -48,6 +50,12 @@ VERIFY_EVENTS = {"upload.original_received", "upload.proxy_received"}
 # النسخة المنتَجة في حزمة التسليم: التصدير النهائي وحده. لا تفريغ ولا ترجمة ولا قائمة لقطات ولا أي مشتق تحريري (R11)،
 # ولا نسخة داخلية. العقد لم يعرّف نوع `produced` بعد، فيُرفض كل ما سواه حتى يُعرَّف
 PRODUCED_KINDS = frozenset({"produced"})
+# ميزانية القرص لنسخة القالب: حجم الأصل + 1 GiB (الطبقة القصيرة والناتج وهامش؛ ADR 0091 البند 5)
+RENDER_SCRATCH_MARGIN = 1 << 30
+
+
+class ScratchFull(RuntimeError):
+    """المساحة الحرة أقل من ميزانية النسخة: لا التقاط ولا إقرار، فيعود الحدث لاحقًا ولا تفشل النسخة."""
 
 
 class Storage(Protocol):
@@ -94,6 +102,11 @@ def produced_key(material_id: str, file_id: str) -> str:
     return f"{DERIVED_PREFIX}{material_id}/{file_id}/produced.mp4"
 
 
+def circulated_key(job: RenderJob) -> str:
+    """بالمعرّفات وحدها تحت مساحة الأصل (ADR 0091 البند 4)؛ لكل نسخة ملفها."""
+    return f"{DERIVED_PREFIX}{job.material_id}/{job.source_file_id}/renders/{job.render_id}/circulated-{job.aspect}.mp4"
+
+
 def export_key(material_id: str, file_id: str) -> str:
     return f"{DERIVED_PREFIX}{material_id}/{file_id}/export.zip"
 
@@ -122,7 +135,8 @@ class Jobs:
                  enable_hls: bool = False, enable_phash: bool = False, enable_export: bool = False,
                  enable_store_preview: bool = False, watermark_key: bytes = b"", c2pa: Signing | None = None,
                  enable_delivery: bool = False,
-                 enable_alignment: bool = False):
+                 enable_alignment: bool = False, enable_renders: bool = False,
+                 renderer: OverlayRenderer | None = None):
         # الأعلام مطفأة: البصمة الإدراكية حتى يقبلها العقد، والتصدير ومعاينة المتجر حتى شرطي الأمن (العلامة المائية
         # غير القابلة للعكس، ونزع البيانات المضمّنة)
         self.enable_store_preview = enable_store_preview
@@ -133,6 +147,10 @@ class Jobs:
         self.enable_delivery = enable_delivery
         # المحاذاة الصوتية بين نسخة الهاتف والأصل حتى تقبل نقطة الخادم الحقل (#249)
         self.enable_alignment = enable_alignment
+        # نسخ قالب «مواد متداولة» من طابور media:renders (ADR 0091)؛ مطفأ في الإنتاج حتى يعيد المالك قرار الترخيص
+        self.enable_renders = enable_renders
+        self.renderer = renderer
+        self.render_scratch_margin = RENDER_SCRATCH_MARGIN
         self.enable_export = enable_export
         self.enable_hls = enable_hls
         self.enable_phash = enable_phash
@@ -144,7 +162,18 @@ class Jobs:
     def report_failure(self, event: object, result: str) -> str:
         """يبلّغ الخادم بفشل نهائي فتنتقل الجلسة إلى failed بدل أن تبقى completed بلا أثر. الخادم يرد 409 إن كانت
         الجلسة قد قُضي فيها (مثلًا تحققت ثم فشلت النسخة الخفيفة)، فلا يقلب تحققًا ناجحًا إلى فشل."""
-        session_id = ((event if isinstance(event, dict) else {}).get("payload") or {}).get("upload_session_id")
+        event = event if isinstance(event, dict) else {}
+        render_id = (event.get("payload") or {}).get("render_id")
+        if event.get("type") == "render.requested" and render_id:
+            # النسخة تفشل بسبب مرمّز وحده؛ ما ليس عيبًا في الأصل ولا في العنوان render_failed بعد المحاولات
+            try:
+                self.api.fail_render(render_id, "render_failed")
+            except ApiConflict:
+                return "already-decided"
+            except ApiGone:
+                return "gone"
+            return "reported:failed"
+        session_id = (event.get("payload") or {}).get("upload_session_id")
         if not session_id:
             return "no-session"
         try:
@@ -164,6 +193,8 @@ class Jobs:
         if event.get("type") == "license.delivery_requested" and self.enable_delivery:
             return self.delivery(payload["material_id"], payload["source_file_id"], payload["license_id"],
                                  list(payload["deliverables"]), payload.get("produced_file_id"))
+        if event.get("type") == "render.requested" and self.enable_renders:
+            return self.circulated(payload["render_id"])
         if event.get("type") == "export.requested" and self.enable_export:
             return self.export(payload["material_id"], payload["source_file_id"])
         session_id = (event.get("payload") or {}).get("upload_session_id")
@@ -354,9 +385,9 @@ class Jobs:
             "technical": probe(out).to_dict(),
         })
 
-    def _source(self, material_id: str, file_id: str, dst: Path) -> FileRef:
+    def _source(self, material_id: str, file_id: str, dst: Path, ref: FileRef | None = None) -> FileRef:
         """ينزّل الأصل المتحقق لمشتق عند الطلب ويطابق بصمته المسجلة؛ غير ذلك خطأ نهائي لا يُعاد."""
-        ref = self.api.get_file(file_id)
+        ref = ref or self.api.get_file(file_id)
         if ref.material_id != material_id or ref.kind != "original" or ref.state != "verified" or not ref.sha256:
             raise ValueError("source must be the material's verified original")
         if _download(self.storage, self.buckets.uploads, ref.storage_key, dst).sha256 != ref.sha256:
@@ -386,6 +417,60 @@ class Jobs:
                 "technical": made.to_dict(),
             })
         return "store-preview"
+
+    def circulated(self, render_id: str) -> str:
+        """نسخة قالب «مواد متداولة» (ADR 0091) من الأصل المتحقق كاملًا. الالتقاط قبل أي عمل، والنجاح بتسجيل المشتق
+        `circulated_render` بـ `render_id`. عيب الأصل `source_unavailable` وسطر لا يتّسع `title_overflow`، نهائيان؛
+        وغيرهما يُعاد حتى حدّ المحاولات ثم `render_failed`. المرفوعة في تسليم سابق تُسجَّل كما هي بلا رسم جديد."""
+        if self.renderer is None:
+            raise ValueError("renders need the render image (overlay renderer)")
+        job = RenderJob.from_api(self.api.get_render(render_id))
+        if job.state in ("ready", "failed"):
+            return f"render-skip:{job.state}"
+        try:
+            ref = self.api.get_file(job.source_file_id)
+        except ApiGone:
+            return self._fail_render(job, "source_unavailable")
+        need = (ref.size_bytes or 0) + self.render_scratch_margin
+        if shutil.disk_usage(self.scratch or tempfile.gettempdir()).free < need:
+            raise ScratchFull("scratch below the render budget")
+        try:
+            self.api.start_render(render_id)
+        except ApiConflict:
+            return "render-skip:finished"
+        key = circulated_key(job)
+        with tempfile.TemporaryDirectory(dir=self.scratch, prefix="job-") as tmp:
+            work = Path(tmp)
+            out = work / f"circulated-{job.aspect}.mp4"
+            if self._exists(key):
+                d = _download(self.storage, self.buckets.derived, key, out)
+                made, outcome = probe(out), "render-existing"
+            else:
+                local = work / "source"
+                try:
+                    self._source(job.material_id, job.source_file_id, local, ref)
+                    info = probe(local)
+                except (ObjectMissing, ValueError, InvalidMediaError):
+                    return self._fail_render(job, "source_unavailable")
+                try:
+                    made = make_circulated(local, out, info, job, self.renderer, work)
+                except TitleOverflow:
+                    return self._fail_render(job, "title_overflow")
+                d = digest_file(out)
+                self.storage.put_file(self.buckets.derived, key, out, d.sha256, "video/mp4")
+                outcome = "render"
+            self.api.add_derivative(job.source_file_id, {
+                "kind": "circulated_render", "render_id": job.render_id, "storage_key": key, "sha256": d.sha256,
+                "size_bytes": d.size_bytes, "mime_type": "video/mp4", "technical": made.to_dict(),
+            })
+        return outcome
+
+    def _fail_render(self, job: RenderJob, reason: str) -> str:
+        try:
+            self.api.fail_render(job.render_id, reason)
+        except ApiConflict:
+            return "render-skip:finished"
+        return f"render-failed:{reason}"
 
     def _sign(self, src: Path, dst: Path, ref: FileRef, actions: list[str]) -> None:
         assert self.c2pa is not None and ref.sha256

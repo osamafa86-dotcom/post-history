@@ -52,6 +52,9 @@ class Probe:
     color_transfer: str | None = field(default=None, compare=False)
     color_primaries: str | None = field(default=None, compare=False)
     color_space: str | None = field(default=None, compare=False)
+    # نطاق القيم وصيغة البكسل، لتطبيع اللون في نسخة القالب (ADR 0091)؛ yuvj* نطاق كامل
+    color_range: str | None = field(default=None, compare=False)
+    pix_fmt: str | None = field(default=None, compare=False)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -60,7 +63,7 @@ class Probe:
         return d
 
 
-INTERNAL_KEYS = ("color_transfer", "color_primaries", "color_space")
+INTERNAL_KEYS = ("color_transfer", "color_primaries", "color_space", "color_range", "pix_fmt")
 
 
 def _rate(value: str | None) -> float | None:
@@ -174,4 +177,6 @@ def probe(path: Path, timeout_s: float = 120) -> Probe:
         color_transfer=video.get("color_transfer") if video else None,
         color_primaries=video.get("color_primaries") if video else None,
         color_space=video.get("color_space") if video else None,
+        color_range=video.get("color_range") if video else None,
+        pix_fmt=video.get("pix_fmt") if video else None,
     )
