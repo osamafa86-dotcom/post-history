@@ -98,7 +98,7 @@ test("a phone gets the bottom bar with five destinations and «more» holds the 
   for (const item of await bar.getByRole("listitem").all()) expect((await item.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await bar.getByRole("button", { name: ar.shell.more }).click();
   const sheet = page.locator("#more-sheet"); await expect(sheet.getByRole("button", { name: ar.logout, exact: true })).toBeVisible();
-  await sheet.getByRole("link", { name: ar.admin.title }).click(); await expect(page).toHaveURL(/\/ar\/admin$/);
+  await sheet.getByRole("link", { name: ar.admin.nav, exact: true }).click(); await expect(page).toHaveURL(/\/ar\/admin$/);
   await expect(bar.getByRole("button", { name: ar.shell.more })).toHaveAttribute("aria-current", "page");
 });
 
@@ -118,7 +118,7 @@ for (const locale of ["ar", "en"] as Locale[]) test(`no page scrolls sideways at
   test.setTimeout(180000); await page.setViewportSize({ width: 390, height: 844 });
   const pages: [string | null, string[]][] = [
     [null, ["login", "privacy", "verify/PH-2026-7K3M9Q2XRT"]],
-    ["admin", ["inbox", "board", "notifications", "form-preview", "store", "store/licenses", "store/orders", "license-templates", "admin", "forms", "notification-rules", "buyer-organizations", "payouts", "commission-rules", "invite-conflicts", "materials/20000000-0000-4000-8000-000000000001"]],
+    ["admin", ["inbox", "board", "notifications", "form-preview", "store", "store/licenses", "store/orders", "license-templates", "admin", "tags", "forms", "settings", "notification-rules", "buyer-organizations", "payouts", "commission-rules", "invite-conflicts", "materials/20000000-0000-4000-8000-000000000001"]],
     ["reviewer", ["upload", "materials/20000000-0000-4000-8000-000000000005"]],
     ["reporter", ["my-materials", "earnings"]],
     ["buyer", ["store", "store/71000000-0000-4000-8000-000000000001", "store/licenses", "store/cart", "store/orders", "store/orders/92000000-0000-4000-8000-000000000001", "store/orders/92000000-0000-4000-8000-000000000001/invoice", "organization"]],

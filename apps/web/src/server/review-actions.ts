@@ -21,6 +21,7 @@ import { safeIdentitySetting } from "@/lib/admin-privacy";
 import { ruleInput, safeRule } from "@/lib/notification-policy";
 import { safeTemplate, templateInput, templateWriters } from "@/lib/license-policy";
 import { listingInput, listingWriters, safeListing } from "@/lib/listing-policy";
+import { adminWrite, adminWritePath } from "./admin";
 
 const privateHeaders = { "Cache-Control": "private, no-store, max-age=0", "Pragma": "no-cache", "Vary": "Cookie" };
 export const actionRoutes = [
@@ -59,6 +60,9 @@ export const actionRoutes = [
   { path: "/materials/{id}/assignments", methods: ["post"] },
   { path: "/assignments/{assignment_id}/transitions", methods: ["post"] },
   { path: "/materials/{id}/export", methods: ["post"] },
+  { path: "/tag-suggestions", methods: ["put"] },
+  { path: "/tag-rewrites", methods: ["post"] },
+  { path: "/platform-settings", methods: ["put"] },
 ] as const;
 const routePatterns = actionRoutes.map(route => ({ ...route, pattern: new RegExp(`^${route.path.slice(1).replaceAll(/\{[^}]+\}/g, "[^/]+")}$`) }));
 export const actionPath = (path: string, method: string) => routePatterns.some(route => route.pattern.test(path) && (route.methods as readonly string[]).includes(method.toLowerCase()));
@@ -186,6 +190,8 @@ export async function reviewAction(request: Request, path: string, api: Api, me:
     if (tag && /^"[0-9]{1,19}"$/.test(tag)) response.headers.set("ETag", tag);
     return response;
   }
+  // إدارة الوسوم وهوية المنصة (ADR 0098، 0099): الاستبدال بـ If-Match، والدمج بلا If-Match لأن الخادم يحسم الوضع في معاملته.
+  if (adminWritePath(path, request.method)) return adminWrite(path, api, me, body, header, versioned);
   if (path.startsWith("licenses/")) return licenseDownload(path, api, me, body, header, config ?? { mediaOrigins: [] } as unknown as WebConfig);
   if (path.startsWith("buyer-invite-conflicts/")) return conflictWrite(request, path, api, me, body, header);
   if (earningsPath(path)) return earningsWrite(request, path, api, me, body, header);
