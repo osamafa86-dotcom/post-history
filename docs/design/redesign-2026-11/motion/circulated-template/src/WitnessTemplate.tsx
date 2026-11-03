@@ -36,17 +36,17 @@ const C = {
 // المقاسات كما في إطارات Figma (VT2-01 وVT2-03 وVT2-04)
 const L = {
   vertical: {
-    frame: { l: 72, r: 72, t: 200, b: 1360, arm: 120, th: 8 },
+    frame: { l: 72, r: 72, t: 200, b: 1360, arm: 120, stroke: 8 },
     inset: 44, logoW: 260, tag: 32, tagOff: 44, title: 84, loc: 34, blockRight: 160,
     scrimTop: 820, topScrim: 420, credit: 30, creditY: 780, plate: 'plates/plate-9x16.jpg',
   },
   horizontal: {
-    frame: { l: 96, r: 96, t: 72, b: 1008, arm: 110, th: 8 },
+    frame: { l: 96, r: 96, t: 72, b: 1008, arm: 110, stroke: 8 },
     inset: 40, logoW: 260, tag: 28, tagOff: 40, title: 76, loc: 32, blockRight: 150,
     scrimTop: 420, topScrim: 260, credit: 26, creditY: 540, plate: 'plates/plate-16x9.jpg',
   },
   square: {
-    frame: { l: 64, r: 64, t: 64, b: 1016, arm: 100, th: 7 },
+    frame: { l: 64, r: 64, t: 64, b: 1016, arm: 100, stroke: 7 },
     inset: 36, logoW: 230, tag: 28, tagOff: 36, title: 70, loc: 30, blockRight: 110,
     scrimTop: 420, topScrim: 260, credit: 24, creditY: 540, plate: 'plates/plate-1x1.jpg',
   },
@@ -205,7 +205,7 @@ export const WitnessTemplate: React.FC<WitnessProps> = ({
     return {
       line: enter(inAt, inAt + 0.15),
       slide: rm ? 1 : sp(inAt + 0.12, 17),
-      name: enter(inAt + 0.35, inAt + 0.6),
+      nameIn: enter(inAt + 0.35, inAt + 0.6),
       fade: rm ? enter(inAt + 0.1, inAt + 0.4) : 1,
       x,
       lineOut: interpolate(x, [0.4, 1], [0, 1], clamp),
@@ -257,10 +257,10 @@ export const WitnessTemplate: React.FC<WitnessProps> = ({
       </AbsoluteFill>
 
       {/* 2 · الزوايا */}
-      <Corner x={f.l} y={f.t} dx={1} dy={1} arm={f.arm} th={f.th} offset={cornerOffset} opacity={cornerOp} />
-      <Corner x={W - f.r} y={f.t} dx={-1} dy={1} arm={f.arm} th={f.th} offset={cornerOffset} opacity={cornerOp} />
-      <Corner x={f.l} y={f.b} dx={1} dy={-1} arm={f.arm} th={f.th} offset={cornerOffset} opacity={cornerOp} />
-      <Corner x={W - f.r} y={f.b} dx={-1} dy={-1} arm={f.arm} th={f.th} offset={cornerOffset} opacity={cornerOp} />
+      <Corner x={f.l} y={f.t} dx={1} dy={1} arm={f.arm} th={f.stroke} offset={cornerOffset} opacity={cornerOp} />
+      <Corner x={W - f.r} y={f.t} dx={-1} dy={1} arm={f.arm} th={f.stroke} offset={cornerOffset} opacity={cornerOp} />
+      <Corner x={f.l} y={f.b} dx={1} dy={-1} arm={f.arm} th={f.stroke} offset={cornerOffset} opacity={cornerOp} />
+      <Corner x={W - f.r} y={f.b} dx={-1} dy={-1} arm={f.arm} th={f.stroke} offset={cornerOffset} opacity={cornerOp} />
 
       {/* 3 · الشعار وهالته */}
       <AbsoluteFill
@@ -279,8 +279,8 @@ export const WitnessTemplate: React.FC<WitnessProps> = ({
         <div
           style={{
             position: 'absolute',
-            right: f.r + f.th + s.tagOff,
-            top: f.t + f.th + Math.round(s.tagOff * 0.6),
+            right: f.r + f.stroke + s.tagOff,
+            top: f.t + f.stroke + Math.round(s.tagOff * 0.6),
             width: tagW,
             height: tagH,
             borderRadius: 999,
@@ -460,10 +460,10 @@ export const WitnessTemplate: React.FC<WitnessProps> = ({
                   }}
                 >
                   <Rings size={Math.round(s.credit * 0.9)} pulse={pulse} pop={1} />
-                  <div style={{ fontFamily: TEXT_FONT, fontWeight: 600, fontSize: s.credit, color: '#FFFFFF', opacity: c.name }} dir="ltr">
+                  <div style={{ fontFamily: TEXT_FONT, fontWeight: 600, fontSize: s.credit, color: '#FFFFFF', opacity: c.nameIn }} dir="ltr">
                     {credit}
                   </div>
-                  <div style={{ fontFamily: TEXT_FONT, fontWeight: 600, fontSize: Math.round(s.credit * 0.82), color: 'rgba(255,255,255,0.72)', opacity: c.name }}>
+                  <div style={{ fontFamily: TEXT_FONT, fontWeight: 600, fontSize: Math.round(s.credit * 0.82), color: 'rgba(255,255,255,0.72)', opacity: c.nameIn }}>
                     بعدسة
                   </div>
                 </div>
