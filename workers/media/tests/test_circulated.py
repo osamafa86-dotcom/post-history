@@ -1,4 +1,5 @@
-"""نسخة قالب «مواد متداولة» (ADR 0091): التخطيط والملاءمة واللون، والتركيب فوق طبقة بديلة، ومهمة الطابور."""
+"""نسخة قالب «مواد متداولة» (ADR 0091) و«الشاهد» (ADR 0109): التخطيط والملاءمة واللون، والتركيب فوق طبقة بديلة، ومهمة
+الطابور."""
 
 from __future__ import annotations
 
@@ -12,8 +13,8 @@ import pytest
 from conftest import LEAKY_TAGS, STREAM_TAGS, synth
 from fakes import FakeApi, FakeStorage
 from media_worker.api import ApiConflict, FileRef, Session
-from media_worker.circulated import (OverlayError, OverlayRenderer, RenderJob, TitleOverflow, color_chain, fit,
-                                     make_circulated, output_fps, overlay_props, plan_overlay)
+from media_worker.circulated import (WITNESS, OverlayError, OverlayRenderer, RenderJob, TitleOverflow, color_chain, fit,
+                                     make_circulated, output_fps, overlay_props, plan_overlay, template_of)
 from media_worker.ffmpeg import FFMPEG, run
 from media_worker.jobs import Buckets, Jobs, ScratchFull, circulated_key
 from media_worker.probe import Probe, probe
@@ -54,6 +55,25 @@ def test_overlay_plan_renders_intro_one_cycle_and_the_real_ending():
     # أقصر من القطع الثلاث: يُرسم كاملًا، والتركيبة لا تقصر عن 3 ث
     short = plan_overlay(2_000, 30)
     assert [(x.first, x.last) for x in short.pieces] == [(0, 59)] and short.composition_frames == 90
+
+
+def test_witness_plan_has_its_own_intro_cycle_and_shortest_composition():
+    """«الشاهد» (ADR 0109): دخول 4.8 ث (البصمة دورية من 4.04 ث مقيسةً)، ودورة 1.2 ث، وخروج 0.6 ث، وتركيبة ≥ 4 ث."""
+    assert template_of("witness") is WITNESS and template_of("circulated").name == "circulated"
+    with pytest.raises(ValueError):
+        template_of("urgent")
+    p = plan_overlay(30_000, 30, WITNESS)
+    assert [(x.first, x.last) for x in p.pieces] == [(0, 143), (144, 179), (882, 899)]
+    assert p.fill == 900 - 144 - 18 and p.composition_frames == 900
+    p25 = plan_overlay(30_000, 25, WITNESS)
+    assert [(x.first, x.last) for x in p25.pieces] == [(0, 119), (120, 149), (735, 749)]
+    # أقصر من القطع الثلاث (198 إطارًا عند 30): يُرسم كاملًا، والتركيبة لا تقصر عن 4 ث
+    short = plan_overlay(6_500, 30, WITNESS)
+    assert [(x.first, x.last) for x in short.pieces] == [(0, 194)] and short.composition_frames == 195
+    assert plan_overlay(2_000, 25, WITNESS).composition_frames == 100
+    # المعاملات نفسها للقالبين: القالب يختار التركيبة، والتاريخ والحساب لا يمرّان من العامل أصلًا
+    props = overlay_props(_job(template="witness"), p25)
+    assert props == overlay_props(_job(), p25) and not {"date", "credit"} & set(props)
 
 
 def test_props_follow_the_contract_names_and_never_reduce_motion():
@@ -209,6 +229,21 @@ def test_render_job_starts_builds_and_registers_per_render(wide_clip: Path, tmp_
     jobs.renderer = replace(FAKE, script=Path("/nonexistent-script"))
     assert jobs.handle(_requested()) == "render-existing"
     assert api.derivatives[1][1]["sha256"] == body["sha256"]
+
+
+def test_witness_render_job_writes_its_own_file_name(wide_clip: Path, tmp_path: Path):
+    api, storage, jobs = _render_setup(wide_clip.read_bytes(), tmp_path, template="witness")
+    assert jobs.handle(_requested()) == "render"
+    (fid, body), = api.derivatives
+    key = f"derived/{MID}/{FakeApi.FILE_ID}/renders/{RID}/witness-square.mp4"
+    assert circulated_key(_job(template="witness", aspect="square")) == key
+    # النوع نفسه (`circulated_render`)، والقالب يغيّر اسم الملف وحده
+    assert body["kind"] == "circulated_render" and body["storage_key"] == key and ("media", key) in storage.objects
+    assert (body["technical"]["width"], body["technical"]["height"]) == (1080, 1080)
+    # قالب لا تعرفه الصورة: فشل نهائي بلا التقاط
+    api, _, jobs = _render_setup(wide_clip.read_bytes(), tmp_path, template="urgent")
+    assert jobs.handle(_requested()) == "render-failed:render_failed"
+    assert api.calls == ["fail:render_failed"] and not api.derivatives
 
 
 def test_render_job_codes_its_permanent_failures(wide_clip: Path, tmp_path: Path):

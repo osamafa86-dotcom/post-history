@@ -1,5 +1,6 @@
-// طبقة قالب «مواد متداولة» الشفافة (ADR 0091): ترسم مقاطع الإطارات المطلوبة من الحزمة المجمّعة وقت البناء بالمتصفح
-// المثبّت في الصورة، ProRes 4444 بقناة شفافية موسومًا BT.709 بنطاق محدود، ثم يركّبها FFmpeg فوق الأصل في العامل.
+// طبقة القالب الشفافة («مواد متداولة» ADR 0091، و«الشاهد» ADR 0109): ترسم مقاطع الإطارات المطلوبة من الحزمة المجمّعة وقت
+// البناء بالمتصفح المثبّت في الصورة، ProRes 4444 بقناة شفافية موسومًا BT.709 بنطاق محدود، ثم يركّبها FFmpeg فوق الأصل في
+// العامل.
 //
 // - المعاملات من ملف JSON يكتبه العامل (المسار وحده في سطر الأوامر)، وتصل القالب `inputProps` لا نصًّا في HTML.
 // - لا شبكة: الخطّان والشعار في الحزمة، والمتصفح مُمرَّر صراحةً فلا تنزيل. ولا مفتاح ترخيص (`licenseKey: null`):
@@ -9,18 +10,22 @@
 import { readFileSync } from 'node:fs';
 import { openBrowser, renderMedia, selectComposition } from '@remotion/renderer';
 
-const COMPOSITION = 'Overlay-Vertical'; // المقاس من `aspect` في المعاملات، لا من اسم التركيبة
+// التركيبة من القالب في ملف المهمة، من قائمة مغلقة؛ والمقاس من `aspect` في المعاملات، لا من اسم التركيبة. التركيبتان
+// تأخذان المعاملات نفسها، و«الشاهد» يرسم التاريخ والحساب فارغين دائمًا (لا اسم حساب ولا مصدر في أي إطار)
+const COMPOSITIONS = { circulated: 'Overlay-Vertical', witness: 'Witness-Overlay-Render' };
 const EXIT_TITLE_OVERFLOW = 3;
 
 const job = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const common = { logLevel: 'error', browserExecutable: job.browser, chromiumOptions: {} };
 let browser;
 try {
+  const id = Object.hasOwn(COMPOSITIONS, job.template) ? COMPOSITIONS[job.template] : null;
+  if (!id) throw Object.assign(new Error('unknown template'), { name: 'UnknownTemplate' });
   browser = await openBrowser('chrome', common);
   const composition = await selectComposition({
     ...common,
     serveUrl: job.serveUrl,
-    id: COMPOSITION,
+    id,
     inputProps: job.props,
     puppeteerInstance: browser,
   });

@@ -18,6 +18,8 @@ if props["titleLines"][0] == "CRASH":
     sys.stderr.write("overlay_failed Error\n")
     sys.exit(1)
 assert props["background"] == "none" and props["reducedMotion"] is False
+# القالب يصل overlay.mjs فيختار تركيبته من قائمة مغلقة (ADR 0109)
+assert job["template"] in ("circulated", "witness")
 assert round(props["durationInSeconds"] * props["fps"]) == job["frames"]
 for i, piece in enumerate(job["pieces"]):
     n = piece["to"] - piece["from"] + 1

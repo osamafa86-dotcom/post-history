@@ -1,10 +1,15 @@
-"""نسخة قالب «مواد متداولة» (ADR 0091): الأصل المتحقق كاملًا، من أول إطار إلى آخره، تحت طبقة القالب الشفافة.
+"""نسخة قالب «مواد متداولة» (ADR 0091) أو «الشاهد» (ADR 0109): الأصل المتحقق كاملًا، من أول إطار إلى آخره، تحت طبقة
+القالب الشفافة. القالبان يأخذان المعاملات نفسها من العقد، ويختلفان في التركيبة وتوقيت الطبقة القصيرة واسم الملف وحده؛
+والملاءمة واللون والترميز واحدة.
 
 - **الطبقة القصيرة:** Remotion يرسم الطبقة (`render/overlay.mjs`) بمعدل الناتج نفسه، لا المقطع كله. بعد الدخول (3.6 ث:
   آخر موجة تبدأ عند 1.2 ث وتعيش 2.4 ث) كل ما فيها دوري بدورة 0.6 ث، وهي عدد صحيح من الإطارات (18 عند 30، و15 عند 25).
   فتُرسم ثلاث قطع من خط زمن المقطع الكامل نفسه: الدخول، ودورة واحدة، والخروج (آخر 0.6 ث في موضعه الحقيقي)، ويكرر
   FFmpeg الدورة بينهما. الإطار f في الوسط هو إطار الدورة (f − الدخول) mod الدورة، وهو مطابق للرسم الكامل بالبصمة
   (يقيسه `tools/render-bench/circulated_bench.py`). المقطع الأقصر من القطع الثلاث يُرسم كاملًا.
+- **«الشاهد»** (`WITNESS`): ثباته دوري بدورة 1.2 ث (تنفّس الزوايا، ونبض الدوائر 0.6 ث داخلها)، وهي 36 إطارًا عند 30 و30 عند
+  25. ونوابض دخوله (الزوايا والوسم ودوائر المكان) تستقرّ أبطأ من منحنيات القالب الأول، فدخوله أطول (`WITNESS.intro_s`)،
+  والتكافؤ مقيس كالأول. والشريط الجانبي (الحساب) لا يُرسم أبدًا، فلا نافذة له تكسر الدورية.
 - **الملاءمة:** إن اختلفت نسبة المصدر عن الإطار بأكثر من 1%: خلفية من الإطارات نفسها مكبّرة لتغطي الإطار ومموّهة بدقة
   الربع ومعتّمة، والمقدّمة كاملة بلا قص؛ مركزها عند y=580 في المخرج العمودي حين يكون المصدر أعرض من 1:1 (VT-08)، وفي
   الوسط فيما عدا ذلك. التكبير مسموح ولا يُولَّد محتوى.
@@ -49,6 +54,24 @@ PERIOD_S = 0.6
 OUTRO_S = 0.6
 # القالب لا يقصر المقطع عن 3 ث (calculateMetadata)
 MIN_COMPOSITION_S = 3
+
+
+@dataclass(frozen=True)
+class Template:
+    """قالب النسخة كما في حزمة القالب: التركيبة (`render/overlay.mjs`)، وتوقيت الطبقة القصيرة، وأقصر تركيبة، واسم الملف."""
+    name: str
+    intro_s: float
+    period_s: float
+    outro_s: float
+    min_composition_s: int
+
+
+CIRCULATED = Template("circulated", INTRO_S, PERIOD_S, OUTRO_S, MIN_COMPOSITION_S)
+# «الشاهد» (ADR 0109): الدورة 1.2 ث، والدخول حتى تستقرّ النوابض. البصمة تتطابق بدورة 1.2 ث من 4.04 ث مقيسةً (25 و30،
+# عمودي وأفقي، ومع عنوان من 33 كلمة)، فالدخول 4.8 ث بهامش 0.76 ث، وهو 144 إطارًا عند 30 و120 عند 25. وأقصر تركيبة 4 ث
+# (`witnessRenderMeta` في Root.tsx). التكافؤ مع الرسم الكامل في circulated_bench.py
+WITNESS = Template("witness", 4.8, 1.2, 0.6, 4)
+TEMPLATES = {t.name: t for t in (CIRCULATED, WITNESS)}
 BT601 = {"smpte170m": "bt601-6-525", "bt470bg": "bt601-6-625"}
 # خصائص اللون على الإطارات نفسها: FFmpeg 8 يأخذ وسوم المرمّز من الإطار لا من خيارات سطر الأوامر وحدها
 TAG_FRAMES = "setparams=range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709"
@@ -102,6 +125,7 @@ class OverlayPlan:
     fps: int
     frames: int  # إطارات الناتج، وهي إطارات الطبقة
     pieces: tuple[Piece, ...]  # قطعة واحدة (المقطع كله) أو الدخول والدورة والخروج
+    min_composition_s: int = MIN_COMPOSITION_S
 
     @property
     def looped(self) -> bool:
@@ -114,7 +138,7 @@ class OverlayPlan:
 
     @property
     def composition_frames(self) -> int:
-        return max(self.frames, MIN_COMPOSITION_S * self.fps)
+        return max(self.frames, self.min_composition_s * self.fps)
 
 
 def output_fps(source: Probe) -> int:
@@ -123,17 +147,25 @@ def output_fps(source: Probe) -> int:
     return 25 if any(abs(rate - r) < 0.5 for r in (25.0, 50.0)) else 30
 
 
-def plan_overlay(duration_ms: int, fps: int) -> OverlayPlan:
+def template_of(name: str) -> Template:
+    """القالب من العقد (`MediaRenderJob.template`)؛ المجهول خطأ لا قالب افتراضي."""
+    if name not in TEMPLATES:
+        raise ValueError("unknown template")
+    return TEMPLATES[name]
+
+
+def plan_overlay(duration_ms: int, fps: int, template: Template = CIRCULATED) -> OverlayPlan:
     frames = max(1, round(duration_ms * fps / 1000))
-    intro, period, outro = round(INTRO_S * fps), round(PERIOD_S * fps), round(OUTRO_S * fps)
+    t = template
+    intro, period, outro = round(t.intro_s * fps), round(t.period_s * fps), round(t.outro_s * fps)
     if frames <= intro + period + outro:
-        return OverlayPlan(fps, frames, (Piece(0, frames - 1),))
+        return OverlayPlan(fps, frames, (Piece(0, frames - 1),), t.min_composition_s)
     return OverlayPlan(fps, frames, (Piece(0, intro - 1), Piece(intro, intro + period - 1),
-                                     Piece(frames - outro, frames - 1)))
+                                     Piece(frames - outro, frames - 1)), t.min_composition_s)
 
 
 def overlay_props(job: RenderJob, plan: OverlayPlan) -> dict:
-    """معاملات القالب (ADR 0091 البند 3)؛ `reducedMotion` خطأ دائمًا، والخلفية شفافة."""
+    """معاملات القالب (ADR 0091 البند 3)، نفسها للقالبين؛ `reducedMotion` خطأ دائمًا، والخلفية شفافة."""
     return {
         "titleLines": list(job.title_lines),
         "location": job.location_text,
@@ -172,6 +204,7 @@ class OverlayRenderer:
         outs = [workdir / f"overlay-{i}.mov" for i in range(len(plan.pieces))]
         spec = workdir / "overlay.json"
         spec.write_text(json.dumps({
+            "template": job.template,
             "serveUrl": str(self.bundle), "browser": str(self.browser), "frames": plan.composition_frames,
             "concurrency": self.concurrency, "props": overlay_props(job, plan),
             "pieces": [{"from": p.first, "to": p.last, "out": str(o)} for p, o in zip(plan.pieces, outs)],
@@ -310,7 +343,7 @@ def make_circulated(src: Path, dst: Path, source: Probe, job: RenderJob, rendere
         raise ValueError("no video stream")
     if job.aspect not in SIZES:
         raise ValueError("unknown aspect")
-    plan = plan_overlay(source.duration_ms, output_fps(source))
+    plan = plan_overlay(source.duration_ms, output_fps(source), template_of(job.template))
     seconds = source.duration_ms / 1000
     overlays = renderer.render(job, plan, workdir, timeout_s=max(600.0, sum(p.frames for p in plan.pieces) * 2.0))
     partial = dst.with_name(dst.name + ".partial")

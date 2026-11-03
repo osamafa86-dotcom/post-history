@@ -1,5 +1,5 @@
-"""قياس نسخة قالب «مواد متداولة» (ADR 0091 البند 7) على مقاطع اصطناعية، بالمسار نفسه الذي يسلكه العامل
-(`media_worker.circulated.make_circulated`): طبقة Remotion القصيرة بالمتصفح المثبّت، ثم تركيب FFmpeg.
+"""قياس نسخة قالب «مواد متداولة» (ADR 0091 البند 7) و«الشاهد» (ADR 0109) على مقاطع اصطناعية، بالمسار نفسه الذي يسلكه
+العامل (`media_worker.circulated.make_circulated`): طبقة Remotion القصيرة بالمتصفح المثبّت، ثم تركيب FFmpeg.
 
 لكل حالة: مصدر بعلامات تزامن (`av_sync`: ومضة ونبضة كل ثانيتين) ووسوم كاشفة مزروعة (ISO 6709 وطراز الجهاز)، ونصّ
 محايد. المقاييس:
@@ -8,7 +8,8 @@
 - ذروة الذاكرة: `memory.peak` للحاوية إن قُرئ، وأكبر RSS لعملية فرعية؛ وذروة القرص المؤقت (المصدر والطبقة والناتج).
 - اللون: `yuv420p` بنطاق tv وBT.709 في كل الحالات، ومنها النطاق الكامل وHLG. المعدل 25 للمصدر 25 وإلا 30.
 - المدة ± إطار، والتزامن ≤ 40 ms، والإطارات بعدّها، وصفر من القيم المزروعة في بايتات الناتج.
-- التكافؤ عند 25 و30: الطبقة المجمّعة (دخول ودورة مكرّرة وخروج) مطابقة لرسم كامل إطارًا بإطار (`framemd5`).
+- التكافؤ عند 25 و30 لكل قالب: الطبقة المجمّعة (دخول ودورة مكرّرة وخروج) مطابقة لرسم كامل إطارًا بإطار (`framemd5`).
+  «الشاهد» بدخوله ودورته (4.8 ث و1.2 ث، `media_worker.circulated.WITNESS`).
 - VMAF (إن حوته نسخة ffmpeg): نسخة ضابطة بلا طبقة بالملاءمة والترميز نفسهما مقابل السلسلة نفسها بلا فقد (≥ 93).
 
 النتيجة `partial` دائمًا حتى يُقاس على مواصفة خادم التجربة (8 vCPU و32 GB). داخل صورة `render`:
@@ -34,7 +35,7 @@ import av_sync
 from av_sync import THRESHOLD_MS, Case, make_source
 from media_worker import ffmpeg
 from media_worker.circulated import (PRESET, SIZES, OverlayPlan, OverlayRenderer, Piece, RenderJob, composite_args,
-                                     composite_graph, make_circulated, output_fps, plan_overlay)
+                                     composite_graph, make_circulated, output_fps, plan_overlay, template_of)
 from media_worker.ffmpeg import FFMPEG, FFPROBE, run
 from media_worker.probe import probe
 
@@ -51,6 +52,7 @@ class CircCase:
     aspect: str
     full_range: bool = False
     rotate: int = 0
+    template: str = "circulated"
 
 
 QUICK = (
@@ -63,6 +65,8 @@ QUICK = (
     CircCase("30s-1080p30-fullrange-vertical", Case("src-1080p30", 30), "vertical", full_range=True),
     CircCase("20s-1080p30-hlg-vertical", Case("src-hlg", 20, start_offset=1.5, hdr_transfer="arib-std-b67"),
              "vertical"),
+    # «الشاهد» (ADR 0109): الملاءمة واللون والترميز نفسها، وطبقته بدخوله ودورته
+    CircCase("30s-1080p30-vertical-witness", Case("src-1080p30", 30), "vertical", template="witness"),
 )
 FULL = QUICK + (
     CircCase("120s-1080p30-vertical", Case("src-1080p30-120", 120), "vertical"),
@@ -86,10 +90,11 @@ class TimedRenderer:
         return outs
 
 
-def job_for(aspect: str, render_id: str = "00000000-0000-4000-8000-000000000091") -> RenderJob:
+def job_for(aspect: str, template: str = "circulated",
+            render_id: str = "00000000-0000-4000-8000-000000000091") -> RenderJob:
     return RenderJob(render_id=render_id, material_id="00000000-0000-4000-8000-000000000001",
                      source_file_id="00000000-0000-4000-8000-000000000002", state="rendering",
-                     template="circulated", aspect=aspect, title_lines=tuple(TITLE), location_text="مدينة، محافظة",
+                     template=template, aspect=aspect, title_lines=tuple(TITLE), location_text="مدينة، محافظة",
                      label="circulated_footage")
 
 
@@ -138,7 +143,7 @@ def measure(c: CircCase, renderer: OverlayRenderer, work: Path, frames_dir: Path
     case_dir = work / f"job-{c.name}"
     case_dir.mkdir(exist_ok=True)
     t0 = time.perf_counter()
-    made = make_circulated(src, out, info, job_for(c.aspect), timed, case_dir)  # type: ignore[arg-type]
+    made = make_circulated(src, out, info, job_for(c.aspect, c.template), timed, case_dir)  # type: ignore[arg-type]
     total = time.perf_counter() - t0
     seconds = info.duration_ms / 1000
     fps = output_fps(info)
@@ -189,13 +194,13 @@ def framemd5(args: list[str]) -> list[str]:
     return [line.rsplit(",", 1)[-1].strip() for line in raw.splitlines() if line and not line.startswith("#")]
 
 
-def parity(renderer: OverlayRenderer, fps: int, seconds: int, work: Path) -> dict:
+def parity(renderer: OverlayRenderer, fps: int, seconds: int, work: Path, template: str = "circulated") -> dict:
     """الطبقة المجمّعة مقابل رسم كامل لخط الزمن نفسه، إطارًا بإطار بعد الفك (yuva444p12le كما خرجت)."""
-    d = work / f"parity-{fps}"
+    d = work / f"parity-{template}-{fps}"
     d.mkdir(exist_ok=True)
-    short = plan_overlay(seconds * 1000, fps)
-    full = OverlayPlan(fps, short.frames, (Piece(0, short.frames - 1),))
-    job = job_for("vertical")
+    short = plan_overlay(seconds * 1000, fps, template_of(template))
+    full = OverlayPlan(fps, short.frames, (Piece(0, short.frames - 1),), short.min_composition_s)
+    job = job_for("vertical", template)
     pieces = renderer.render(job, short, d, timeout_s=1800)
     # التجميع نفسه الذي يركّبه العامل: الدورة من الذاكرة بين الدخول والخروج. البصمات أولًا ثم تُحذف القطع، فلا تجتمع
     # الطبقتان على القرص
@@ -280,12 +285,14 @@ def main() -> None:
                 metrics[f"{c.name.replace('-', '_')}__{k}"] = v
             print(json.dumps({"case": c.name, **r}, ensure_ascii=False), flush=True)
         if not args.no_parity:
-            for fps in (30, 25):
-                p = parity(renderer, fps, args.parity_seconds, work)
-                passes.append(p["pass"])
-                for k, v in p.items():
-                    metrics[f"parity_{fps}fps_{args.parity_seconds}s__{k}"] = v
-                print(json.dumps({"parity_fps": fps, **p}), flush=True)
+            # المفاتيح القائمة لـ «مواد متداولة» كما هي، و«الشاهد» بسابقة اسمه
+            for template, prefix in (("circulated", "parity"), ("witness", "parity_witness")):
+                for fps in (30, 25):
+                    p = parity(renderer, fps, args.parity_seconds, work, template)
+                    passes.append(p["pass"])
+                    for k, v in p.items():
+                        metrics[f"{prefix}_{fps}fps_{args.parity_seconds}s__{k}"] = v
+                    print(json.dumps({"parity_template": template, "parity_fps": fps, **p}), flush=True)
         if not args.no_vmaf:
             v = vmaf("vertical", 30, work)
             passes.extend([v["pass"]] if v.get("available") else [])
@@ -306,7 +313,8 @@ def main() -> None:
         "upload_path": "n/a",
         "metrics": metrics,
         "notes": ("مقاطع اصطناعية بعلامات تزامن ووسوم مزروعة ونصّ محايد عبر make_circulated نفسه (طبقة Remotion القصيرة "
-                  "ثم تركيب FFmpeg). partial حتى القياس على مواصفة خادم التجربة (8 vCPU و32 GB) وحالتي 120 ث و300 ث "
+                  "ثم تركيب FFmpeg)، للقالبين «مواد متداولة» و«الشاهد» (ADR 0109: حالة عمودية وتكافؤ عند 25 و30). "
+                  "partial حتى القياس على مواصفة خادم التجربة (8 vCPU و32 GB) وحالتي 120 ث و300 ث "
                   "والفحص البصري لدور التصميم. الأمر: python tools/render-bench/circulated_bench.py داخل صورة "
                   "workers/media بهدف render."),
     }

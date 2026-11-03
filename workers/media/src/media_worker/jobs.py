@@ -32,7 +32,7 @@ from .probe import InvalidMediaError, Probe, probe
 from .align import measure_offset
 from .audio import make_speech_audio
 from .c2pa import WORKER_VERSION, Signing, sign, source_ref
-from .circulated import OverlayRenderer, RenderJob, TitleOverflow, make_circulated
+from .circulated import TEMPLATES, OverlayRenderer, RenderJob, TitleOverflow, make_circulated, template_of
 from .delivery import build_delivery
 from .export import build_package
 from .watermark import make_watermarked_preview
@@ -102,9 +102,14 @@ def produced_key(material_id: str, file_id: str) -> str:
     return f"{DERIVED_PREFIX}{material_id}/{file_id}/produced.mp4"
 
 
+def render_name(job: RenderJob) -> str:
+    """اسم الملف من القالب والمقاس وحدهما (`circulated-vertical.mp4`، و`witness-square.mp4` لـ «الشاهد»، ADR 0109)."""
+    return f"{template_of(job.template).name}-{job.aspect}.mp4"
+
+
 def circulated_key(job: RenderJob) -> str:
-    """بالمعرّفات وحدها تحت مساحة الأصل (ADR 0091 البند 4)؛ لكل نسخة ملفها."""
-    return f"{DERIVED_PREFIX}{job.material_id}/{job.source_file_id}/renders/{job.render_id}/circulated-{job.aspect}.mp4"
+    """بالمعرّفات وحدها تحت مساحة الأصل (ADR 0091 البند 4)؛ لكل نسخة ملفها، واسمه من القالب والمقاس."""
+    return f"{DERIVED_PREFIX}{job.material_id}/{job.source_file_id}/renders/{job.render_id}/{render_name(job)}"
 
 
 def export_key(material_id: str, file_id: str) -> str:
@@ -419,14 +424,18 @@ class Jobs:
         return "store-preview"
 
     def circulated(self, render_id: str) -> str:
-        """نسخة قالب «مواد متداولة» (ADR 0091) من الأصل المتحقق كاملًا. الالتقاط قبل أي عمل، والنجاح بتسجيل المشتق
-        `circulated_render` بـ `render_id`. عيب الأصل `source_unavailable` وسطر لا يتّسع `title_overflow`، نهائيان؛
-        وغيرهما يُعاد حتى حدّ المحاولات ثم `render_failed`. المرفوعة في تسليم سابق تُسجَّل كما هي بلا رسم جديد."""
+        """نسخة قالب «مواد متداولة» (ADR 0091) أو «الشاهد» (ADR 0109) من الأصل المتحقق كاملًا. الالتقاط قبل أي عمل،
+        والنجاح بتسجيل المشتق `circulated_render` بـ `render_id`. عيب الأصل `source_unavailable` وسطر لا يتّسع
+        `title_overflow`، نهائيان؛ وغيرهما يُعاد حتى حدّ المحاولات ثم `render_failed`. المرفوعة في تسليم سابق تُسجَّل كما
+        هي بلا رسم جديد."""
         if self.renderer is None:
             raise ValueError("renders need the render image (overlay renderer)")
         job = RenderJob.from_api(self.api.get_render(render_id))
         if job.state in ("ready", "failed"):
             return f"render-skip:{job.state}"
+        if job.template not in TEMPLATES:
+            # قالب لا تعرفه هذه الصورة (العقد أحدث منها): فشل نهائي قبل الالتقاط، لا إعادة ولا قالب بديل
+            return self._fail_render(job, "render_failed")
         try:
             ref = self.api.get_file(job.source_file_id)
         except ApiGone:
@@ -441,7 +450,7 @@ class Jobs:
         key = circulated_key(job)
         with tempfile.TemporaryDirectory(dir=self.scratch, prefix="job-") as tmp:
             work = Path(tmp)
-            out = work / f"circulated-{job.aspect}.mp4"
+            out = work / render_name(job)
             if self._exists(key):
                 d = _download(self.storage, self.buckets.derived, key, out)
                 made, outcome = probe(out), "render-existing"
