@@ -2,6 +2,7 @@ import type { Field, Form, Material, Me, Permission, Values, Notification, Trans
 import { sensitivityState } from "./sensitivity";
 import { workName } from "./work-name";
 import { uuid, states } from "./query";
+import { knownType } from "./notification-kind";
 
 export function mayReadField(field: Field, permissions: Permission[]) {
   return (!field.sensitive || permissions.includes("protected_source:read")) &&
@@ -44,8 +45,9 @@ export function safeMaterial(material: Material, permissions: Permission[], form
     redacted_field_keys: material.redacted_field_keys ?? [],
   };
 }
+/** الإشعار بقائمة بيضاء: العنوان الحرّ محذوف (ADR 0090)، والنوع فئة من قائمة Outbox المغلقة وحدها وإلا فارغ (ADR 0103). */
 export function safeNotification(item: Notification): Notification {
-  return { id: item.id, type: "", title: "", material_id: item.material_id && uuid.test(item.material_id) ? item.material_id : null,
+  return { id: item.id, type: knownType(item.type), title: "", material_id: item.material_id && uuid.test(item.material_id) ? item.material_id : null,
     priority: item.priority, state: item.state, escalation_level: item.escalation_level, assignment_state: item.assignment_state,
     ...(item.assignment_id && uuid.test(item.assignment_id) ? { assignment_id: item.assignment_id } : {}),
     created_at: item.created_at, read_at: item.read_at, acknowledged_at: item.acknowledged_at };

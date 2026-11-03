@@ -11,12 +11,28 @@ import { abortUpload, BffError, createMaterial, myUploads, startUpload, type Ses
 import { clearUploads, forgetUpload, findUpload, pendingUploads, recordKey, type PendingUpload } from "@/lib/upload-store";
 import { useUser } from "./session-boundary";
 import { DynamicForm } from "./dynamic-form";
+import { NoAccess } from "./empty-state";
+import { Icon, type IconName } from "./icon";
 
 type Row = { key: string; record: string; name: string; materialId: string; update: UploadUpdate; control?: UploadControl };
 type Base = { title: string; type: MaterialType; governorate: string; city: string; shot_at: string; priority: Material["priority"]; minors: boolean; injured: boolean; graphic: boolean; mode: Material["display_name"]["mode"]; pseudonym: string };
 const initial: Base = { title: "", type: "raw_footage", governorate: "", city: "", shot_at: "", priority: "normal", minors: false, injured: false, graphic: false, mode: "network", pseudonym: "" };
 const fill = (text: string, name: string) => text.replace("{name}", name);
 const percent = (value: number, total: number) => total ? Math.floor((value / total) * 100) : 0;
+/** الحجم بالميغابايت داخل الجملة («وصل 112 من 248 ميغابايت»، web-v2.md U2)، معزول الاتجاه عند العرض. */
+export const megabytes = (value: number, locale: Locale) => new Intl.NumberFormat(locale === "ar" ? "ar-u-nu-latn" : "en", { maximumFractionDigits: value < 10 * 1048576 ? 1 : 0 }).format(value / 1048576);
+/**
+ * مرحلة الواجهة فوق حالة الجلسة (U2: ثماني مراحل فوق ست حالات عقد): الكلمة والأيقونة والنغمة معًا، لا لون وحده.
+ * «انقطع الاتصال» مرحلة واجهة فوق `in_progress` حين يغيب الاتصال، و«مكرّر» فوق `deduplicated`.
+ */
+export function uploadStage(update: UploadUpdate, online = true): { stage: "hashing" | "created" | "uploading" | "offline" | "paused" | "verifying" | "verified" | "duplicate" | "failed"; tone: "brand" | "muted" | "warn" | "ok" | "danger"; icon: IconName } {
+  if (update.phase === "failed") return { stage: "failed", tone: "danger", icon: "alert" };
+  if (update.phase === "done") return update.session?.state === "deduplicated" ? { stage: "duplicate", tone: "muted", icon: "form" } : { stage: "verified", tone: "ok", icon: "check" };
+  if (update.phase === "processing") return { stage: "verifying", tone: "brand", icon: "shield" };
+  if (update.phase === "paused") return { stage: "paused", tone: "warn", icon: "clock" };
+  if (update.phase === "uploading") return online ? { stage: "uploading", tone: "brand", icon: "upload" } : { stage: "offline", tone: "warn", icon: "offline" };
+  return update.phase === "hashing" ? { stage: "hashing", tone: "muted", icon: "key" } : { stage: "created", tone: "muted", icon: "clock" };
+}
 
 export function DesktopUpload({ locale }: { locale: Locale }) {
   const m = messages[locale], u = m.upload, me = useUser(), reporter = hasRole(me, ...uploadRoles);
@@ -24,7 +40,10 @@ export function DesktopUpload({ locale }: { locale: Locale }) {
   const [base, setBase] = useState<Base>(initial), [schema, setSchema] = useState<Form | null>(null), [formError, setFormError] = useState(false), [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState(false), [failure, setFailure] = useState<"invalid" | "create" | "files" | null>(null);
   // مفتاح عدم التكرار لإنشاء المادة يبقى في الذاكرة لإعادة المحاولة نفسها، ويتجدد مع كل مادة جديدة.
-  const createKey = useRef(crypto.randomUUID()), controls = useRef(new Map<string, UploadControl>());
+  const createKey = useRef(crypto.randomUUID()), controls = useRef(new Map<string, UploadControl>()), picker = useRef<HTMLInputElement>(null);
+  const [online, setOnline] = useState(true);
+  // «انقطع الاتصال» (U2 المرحلة 3): ما وصل محفوظ، وtus يستأنف وحده حين يعود.
+  useEffect(() => { const sync = () => setOnline(navigator.onLine); sync(); window.addEventListener("online", sync); window.addEventListener("offline", sync); return () => { window.removeEventListener("online", sync); window.removeEventListener("offline", sync); }; }, []);
   const active = rows.some(row => ["hashing", "creating", "uploading", "paused"].includes(row.update.phase));
 
   // مركز الرفع: الجلسات غير النهائية من الخادم، وما يقابلها محليًا يُستأنف بإعادة اختيار الملف. السجل المحلي لجلسة
@@ -103,18 +122,18 @@ export function DesktopUpload({ locale }: { locale: Locale }) {
     finally { setBusy(false); }
   }
 
-  if (!reporter) return <><Heading locale={locale} /><p className="notice">{u.reporterOnly}</p></>;
+  if (!reporter) return <NoAccess locale={locale} me={me} title={u.title} denied={u.reporterOnly} />;
   const set = <K extends keyof Base>(key: K, value: Base[K]) => setBase(current => ({ ...current, [key]: value }));
   return <><Heading locale={locale} />
-    <section className="card form-card upload-files"><h2>{u.files}</h2>
-      <label>{u.choose}<input type="file" multiple accept={cameraExtensions.join(",")} aria-describedby="upload-files-help" onChange={e => { void choose(e.target.files); e.target.value = ""; }} /></label>
-      <small className="muted" id="upload-files-help">{u.filesHelp}</small>
+    <section className="card upload-step upload-files" aria-labelledby="upload-files-title"><h2 id="upload-files-title"><span className="step-number" dir="ltr">1</span>{u.files}</h2>
+      <label className="drop-zone"><Icon name="upload" size={28} /><strong id="upload-choose">{u.choose}</strong><small id="upload-files-help">{u.filesHelp}</small>
+        <input ref={picker} type="file" multiple accept={cameraExtensions.join(",")} aria-labelledby="upload-choose" aria-describedby="upload-files-help" onChange={e => { void choose(e.target.files); e.target.value = ""; }} /></label>
       {rejected.map(name => <p key={name} className="notice error" role="alert">{fill(u.unsupported, name)}</p>)}
-      {files.length > 0 && <ul className="upload-selection">{files.map(file => <li key={fileKey(file)} dir="auto">{file.name} <small className="muted" dir="ltr">{bytes(file.size, locale)}</small></li>)}</ul>}
-<UploadCenter locale={locale} sessions={(sessions ?? []).filter(s => !rows.some(row => row.update.session?.id === s.id))} pending={pending.filter(item => !rows.some(row => row.record === item.key))} changed={() => setRefresh(n => n + 1)} />
+      {files.length > 0 && <ul className="upload-selection">{files.map(file => <li key={fileKey(file)}><Icon name="film" size={16} /><bdi>{file.name}</bdi> <small className="muted"><bdi dir="ltr">{bytes(file.size, locale)}</bdi></small></li>)}</ul>}
+      <UploadCenter locale={locale} sessions={(sessions ?? []).filter(s => !rows.some(row => row.update.session?.id === s.id))} pending={pending.filter(item => !rows.some(row => row.record === item.key))} changed={() => setRefresh(n => n + 1)} pick={() => picker.current?.click()} />
     </section>
-    {rows.length > 0 && <section className="card upload-rows" aria-live="polite">{rows.map(row => <UploadRow key={row.key} row={row} locale={locale} />)}</section>}
-    {files.length > 0 && <section className="card form-card"><h2>{u.material}</h2>
+    {rows.length > 0 && <section className="upload-rows" aria-live="polite" aria-label={u.progressTitle}>{rows.map(row => <UploadRow key={row.key} row={row} online={online} locale={locale} pick={() => picker.current?.click()} />)}</section>}
+    {files.length > 0 && <section className="card form-card upload-step" aria-labelledby="upload-material-title"><h2 id="upload-material-title"><span className="step-number" dir="ltr">2</span>{u.material}</h2>
       {formError ? <div role="alert"><p>{m.formMissing}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></div> : !schema ? <p role="status">{m.loading}</p> :
         <DynamicForm key={`${base.type}-${schema.version}`} schema={schema} type={base.type} permissions={me.permissions} locale={locale} onSubmit={dynamic => void submit(dynamic)} submitLabel={busy ? u.creating : u.start} disabled={busy}>
           <div className="upload-base">
@@ -124,7 +143,7 @@ export function DesktopUpload({ locale }: { locale: Locale }) {
             <label>{u.city}<input value={base.city} maxLength={64} required onChange={e => set("city", e.target.value)} /></label>
             <label>{u.shotAt}<input type="datetime-local" value={base.shot_at} onChange={e => set("shot_at", e.target.value)} /></label>
             <label>{u.priority}<select value={base.priority} onChange={e => set("priority", e.target.value as Base["priority"])}>{states.priority.map(p => <option key={p} value={p}>{m.states.priority[p]}</option>)}</select></label>
-            <fieldset><legend>{u.sensitivity}</legend>{(["minors", "injured", "graphic"] as const).map(flag => <label key={flag} className="check"><input type="checkbox" checked={base[flag]} onChange={e => set(flag, e.target.checked)} />{u[flag]}</label>)}</fieldset>
+            <fieldset><legend>{u.sensitivity}</legend><small className="field-help">{u.sensitivityHelp}</small>{(["minors", "injured", "graphic"] as const).map(flag => <label key={flag} className="check"><input type="checkbox" checked={base[flag]} onChange={e => set(flag, e.target.checked)} />{u[flag]}</label>)}</fieldset>
             <label>{u.displayName}<select value={base.mode} onChange={e => set("mode", e.target.value as Base["mode"])}>{(["network", "pseudonym", "real_name"] as const).map(mode => <option key={mode} value={mode}>{u.displayModes[mode]}</option>)}</select></label>
             {base.mode === "pseudonym" && <label>{u.pseudonym}<input value={base.pseudonym} maxLength={80} onChange={e => set("pseudonym", e.target.value)} /></label>}
           </div>
@@ -134,7 +153,7 @@ export function DesktopUpload({ locale }: { locale: Locale }) {
   </>;
 }
 
-function UploadCenter({ locale, sessions, pending, changed }: { locale: Locale; sessions: SessionView[]; pending: PendingUpload[]; changed: () => void }) {
+function UploadCenter({ locale, sessions, pending, changed, pick }: { locale: Locale; sessions: SessionView[]; pending: PendingUpload[]; changed: () => void; pick: () => void }) {
   const u = messages[locale].upload, [busy, setBusy] = useState<string | null>(null), [failed, setFailed] = useState(false);
   // جلسات بلا سجل محلي (جهاز آخر، أو تخزين ممسوح) لا تُستأنف هنا، لكن تُلغى.
   const local = (id: string) => pending.find(item => item.session_id === id);
@@ -145,30 +164,47 @@ function UploadCenter({ locale, sessions, pending, changed }: { locale: Locale; 
     try { await abortUpload(id); const record = local(id); if (record) await forgetUpload(record.key); changed(); }
     catch { setFailed(true); } finally { setBusy(null); }
   }
-  return <div className="upload-pending"><h3>{u.pending}</h3><p className="muted">{u.pendingHelp}</p>{failed && <p className="notice error" role="alert">{u.abortFailed}</p>}<ul>
-    {sessions.map(s => <li key={s.id} data-testid="pending-upload" data-resumable={local(s.id) ? "true" : "false"}><span dir="ltr">{bytes(s.bytes_received, locale)} / {bytes(s.size_bytes, locale)}</span> <small className="muted">{formatDate(s.created_at, locale)}</small>{!local(s.id) && <small className="muted">{u.otherDevice}</small>}<button className="quiet" disabled={busy === s.id} onClick={() => void abort(s.id)}>{u.abort}</button></li>)}
-    {orphans.map(item => <li key={item.key} data-testid="pending-upload" data-resumable="true"><span dir="ltr">{bytes(item.create.size_bytes, locale)}</span> <small className="muted">{formatDate(new Date(item.updated_at).toISOString(), locale)}</small><button className="quiet" onClick={() => void forgetUpload(item.key).then(changed)}>{u.forget}</button></li>)}
+  // «أُغلق التبويب» (U2 المرحلة 4): الجلسة محفوظة لكن المتصفح لا يحتفظ بالملف، فيُعاد اختيار الملف نفسه ليكمل من نسبته.
+  return <div className="upload-pending"><h3>{u.pending}</h3>{failed && <p className="notice error" role="alert">{u.abortFailed}</p>}<ul>
+    {sessions.map(s => { const pct = percent(s.bytes_received, s.size_bytes), resumable = !!local(s.id);
+      return <li key={s.id} className="upload-card" data-testid="pending-upload" data-resumable={resumable ? "true" : "false"}>
+        <div className="upload-card-head"><span className="badge state warn"><Icon name="clock" size={14} />{u.stage.incomplete.replace("{pct}", String(pct))}</span><small className="muted">{formatDate(s.created_at, locale)}</small></div>
+        <span className="upload-bar" aria-hidden="true"><span style={{ inlineSize: `${pct}%` }} /></span>
+        <p className="caption"><bdi dir="ltr">{bytes(s.bytes_received, locale)} / {bytes(s.size_bytes, locale)}</bdi></p>
+        <p className="upload-note">{resumable ? u.reselect.replace("{pct}", String(pct)) : u.otherDevice}</p>
+        <div className="actions">{resumable && <button type="button" onClick={pick}>{u.chooseSame}</button>}<button type="button" className="secondary" disabled={busy === s.id} onClick={() => void abort(s.id)}>{u.abort}</button></div>
+      </li>; })}
+    {orphans.map(item => <li key={item.key} className="upload-card" data-testid="pending-upload" data-resumable="true">
+      <div className="upload-card-head"><span className="badge state warn"><Icon name="clock" size={14} />{u.stage.paused}</span><small className="muted">{formatDate(new Date(item.updated_at).toISOString(), locale)}</small></div>
+      <p className="caption"><bdi dir="ltr">{bytes(item.create.size_bytes, locale)}</bdi></p><p className="upload-note">{u.pendingHelp}</p>
+      <div className="actions"><button type="button" onClick={pick}>{u.chooseSame}</button><button type="button" className="secondary" onClick={() => void forgetUpload(item.key).then(changed)}>{u.forget}</button></div></li>)}
   </ul></div>;
 }
 
 function Heading({ locale }: { locale: Locale }) {
   const u = messages[locale].upload;
-  return <div className="page-heading"><div><p className="eyebrow">{u.nav}</p><h1>{u.title}</h1><p className="muted">{u.lead}</p></div></div>;
+  return <div className="page-head"><div><h1>{u.title}</h1><p className="muted">{u.lead}</p></div></div>;
 }
 
-function UploadRow({ row, locale }: { row: Row; locale: Locale }) {
-  const m = messages[locale], u = m.upload, { update, control } = row;
-  const value = update.phase === "hashing" ? update.hashed : update.sent;
-  return <article className={`upload-row ${update.phase}`} data-testid="upload-row" data-phase={update.phase}>
-    <div className="upload-row-head"><strong dir="auto">{row.name}</strong><span className={`badge ${update.phase === "done" ? "good" : update.phase === "failed" ? "bad" : ""}`}>{u.phase[update.phase]}</span>{update.resumed && <span className="badge">{u.resumed}</span>}</div>
-    {["hashing", "uploading", "paused"].includes(update.phase) && <><progress max={update.total} value={value} aria-label={fill(u.progress, row.name)} /><small className="muted" dir="ltr">{percent(value, update.total)}% · {bytes(value, locale)} / {bytes(update.total, locale)}</small></>}
-    {update.failure && <p className="notice error" role="alert">{u.failure[update.failure]}</p>}
-    {update.session?.receipt_number && <p>{u.receipt}: <span dir="ltr" data-testid="upload-receipt">{update.session.receipt_number}</span></p>}
+/** بطاقة الرفع (U2): اسم الملف وحجمه، والشريط، ثم سطر المرحلة بأيقونة وكلمة، ثم أفعالها. اسم الملف لصاحب الجلسة وحده ولا يُنقل إلى سجل. */
+function UploadRow({ row, online, locale, pick }: { row: Row; online: boolean; locale: Locale; pick: () => void }) {
+  const m = messages[locale], u = m.upload, { update, control } = row, { stage, tone, icon } = uploadStage(update, online);
+  const value = update.phase === "hashing" ? update.hashed : update.sent, pct = percent(value, update.total), moving = ["hashing", "uploading", "paused"].includes(update.phase);
+  const line = stage === "uploading" ? u.stage.progress.replace("{sent}", megabytes(update.sent, locale)).replace("{total}", megabytes(update.total, locale)).replace("{pct}", String(pct))
+    : stage === "paused" ? u.stage.pausedAt.replace("{pct}", String(pct)) : stage === "failed" ? u.failure[update.failure ?? "rejected"] : u.stage[stage];
+  return <article className={`upload-card ${update.phase}`} data-testid="upload-row" data-phase={update.phase} data-stage={stage}>
+    <div className="upload-card-head"><strong><bdi>{row.name}</bdi></strong><small className="muted"><bdi dir="ltr">{bytes(update.total, locale)}</bdi></small>{update.resumed && <span className="badge">{u.resumed}</span>}</div>
+    {moving ? <progress max={update.total} value={value} aria-label={fill(u.progress, row.name)} /> : <span className={`upload-bar ${tone}`} aria-hidden="true"><span style={{ inlineSize: update.phase === "failed" ? `${pct}%` : "100%" }} /></span>}
+    <p className={`upload-stage ${tone}`}><Icon name={icon} size={16} /><span><strong className="visually-hidden">{u.phase[update.phase]}: </strong>{line}</span></p>
+    {stage === "uploading" && <p className="caption">{u.stage.keepOpen}</p>}
+    {stage === "failed" && update.failure && ["checksum_mismatch", "network"].includes(update.failure) && <p className="caption">{u.stage.failedHint}</p>}
+    {update.session?.receipt_number && <p className="caption">{u.receipt}: <bdi dir="ltr" className="ref" data-testid="upload-receipt">{update.session.receipt_number}</bdi></p>}
     <div className="actions">
       {update.phase === "uploading" && <button className="secondary" onClick={() => control?.pause()}>{u.pause}</button>}
       {update.phase === "paused" && <button onClick={() => control?.resume()}>{u.resume}</button>}
-      {["hashing", "creating", "uploading", "paused"].includes(update.phase) && <button className="quiet" onClick={() => control?.cancel()}>{u.cancel}</button>}
-      {["processing", "done"].includes(update.phase) && <Link prefetch={false} href={`/${locale}/materials/${row.materialId}`}>{u.open}</Link>}
+      {["hashing", "creating", "uploading", "paused"].includes(update.phase) && <button className="secondary" onClick={() => control?.cancel()}>{u.cancel}</button>}
+      {update.phase === "failed" && update.failure !== "session_revoked" && <button type="button" onClick={pick}>{u.uploadAgain}</button>}
+      {["processing", "done"].includes(update.phase) && <Link prefetch={false} className="button secondary" href={`/${locale}/materials/${row.materialId}`}>{u.open}</Link>}
     </div>
   </article>;
 }

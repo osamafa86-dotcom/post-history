@@ -20,9 +20,12 @@ const rules = (selector: RegExp) => css.split("\n").filter(line => selector.test
 describe("v2 newsroom shell (W1, T1, M1; ADR 0085, web-v2.md)", () => {
   it("groups the role's destinations under newsroom, library and admin, with exactly one current page", () => {
     const supervisor = navItems(as("supervisor"), "ar", "/ar/board");
-    expect(supervisor.map(i => i.key)).toEqual(["inbox", "board", "upload", "notifications", "form-preview"]);
+    expect(supervisor.map(i => i.key)).toEqual(["inbox", "board", "upload", "notifications", "form-preview", "archive"]);
     expect(supervisor.filter(i => i.active).map(i => i.key)).toEqual(["board"]);
-    expect(navGroups(supervisor).map(([group]) => group)).toEqual(["newsroom"]);
+    expect(navGroups(supervisor).map(([group]) => group)).toEqual(["newsroom", "library"]);
+    // الأرشيف الجاهز (W9) في «المكتبة» لطاقم غرفة الأخبار، ولا يراه المراسل ولا المشتري.
+    expect(navItems(as("supervisor"), "ar", "/ar/archive").filter(i => i.active).map(i => i.key)).toEqual(["archive"]);
+    expect(navItems(as("reporter"), "ar", "/ar/inbox").map(i => i.key)).not.toContain("archive");
     const admin = navItems(as("system_admin"), "ar", "/ar/store/licenses");
     expect(navGroups(admin).map(([group]) => group)).toEqual(["newsroom", "library", "admin"]);
     expect(admin.filter(i => i.active).map(i => i.key)).toEqual(["licenses"]);
@@ -52,7 +55,7 @@ describe("v2 newsroom shell (W1, T1, M1; ADR 0085, web-v2.md)", () => {
   });
   it("puts four destinations and «more» in the phone bar, notifications always among them (M1)", () => {
     const admin = bottomItems(navItems(as("system_admin"), "ar", "/ar/inbox"));
-    expect(admin.primary.map(i => i.key)).toEqual(["inbox", "board", "store", "notifications"]);
+    expect(admin.primary.map(i => i.key)).toEqual(["inbox", "archive", "board", "notifications"]);
     expect(admin.more.map(i => i.key)).toContain("admin");
     const reporter = bottomItems(navItems(as("reporter"), "ar", "/ar/inbox"));
     expect(reporter.primary.length).toBeLessThanOrEqual(4); expect(reporter.primary.map(i => i.key)).toContain("notifications");
@@ -106,12 +109,12 @@ describe("state badges, notifications panel and no-access (W1, W10, E5)", () => 
     const html = renderToStaticMarkup(<StateBadge track="editorial_state" value="inbox" locale="ar" />);
     expect(html).toContain('data-track="editorial_state"'); expect(html).toContain("<svg"); expect(html).toContain(ar.states.editorial_state.inbox);
   });
-  it("orders the bell panel urgent first, then unread, then newest, and filters mine and urgent", () => {
+  it("orders the bell panel urgent first, then unread, then newest, and filters mine and store by the closed event type list", () => {
     const n = (id: string, priority: Notification["priority"], at: string, extra: Partial<Notification> = {}): Notification => ({ id, type: "", title: "", priority, state: "delivered", escalation_level: 0, created_at: at, read_at: null, acknowledged_at: null, ...extra });
-    const items = [n("a", "normal", "2026-11-02T10:00:00Z"), n("b", "urgent", "2026-11-02T09:00:00Z"), n("c", "normal", "2026-11-02T11:00:00Z", { read_at: "2026-11-02T11:01:00Z", state: "read" }), n("d", "normal", "2026-11-02T08:00:00Z", { assignment_state: "assigned" })];
-    expect(panelOrder(items).map(x => x.id)).toEqual(["b", "a", "d", "c"]);
+    const items = [n("a", "normal", "2026-11-02T10:00:00Z"), n("b", "urgent", "2026-11-02T09:00:00Z"), n("c", "normal", "2026-11-02T11:00:00Z", { read_at: "2026-11-02T11:01:00Z", state: "read" }), n("d", "normal", "2026-11-02T08:00:00Z", { assignment_state: "assigned" }), n("e", "normal", "2026-11-02T07:00:00Z", { type: "order.status_changed", read_at: "2026-11-02T07:01:00Z", state: "read" })];
+    expect(panelOrder(items).map(x => x.id)).toEqual(["b", "a", "d", "c", "e"]);
     expect(items.filter(x => inTab(x, "mine")).map(x => x.id)).toEqual(["d"]);
-    expect(items.filter(x => inTab(x, "urgent")).map(x => x.id)).toEqual(["b"]);
+    expect(items.filter(x => inTab(x, "store")).map(x => x.id)).toEqual(["e"]);
   });
   for (const locale of ["ar", "en"] as Locale[]) it(`says the role and what it owns, keeps the page's refusal as an alert, and offers no access request (${locale})`, () => {
     const m = messages[locale], html = renderToStaticMarkup(<NoAccess locale={locale} me={as("editor_in_chief")} title={m.payouts.title} denied={m.payouts.denied} />);

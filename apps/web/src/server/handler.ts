@@ -28,6 +28,7 @@ import { pageLimits } from "@/lib/admin-policy";
 import { safeRule } from "@/lib/notification-policy";
 import { manageForms } from "./form-admin";
 import { formBodyLimit } from "@/lib/form-admin";
+import { completeInvite, confirmInvite } from "./invite";
 
 const privateHeaders = { "Cache-Control": "private, no-store, max-age=0", "Pragma": "no-cache", "Vary": "Cookie" };
 const json = (value: unknown, status = 200) => NextResponse.json(value, { status, headers: privateHeaders });
@@ -71,7 +72,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
     const isWrite = ["POST", "PUT", "DELETE"].includes(request.method);
     if (isWrite) assertSameOrigin(request, config);
     if (request.method !== "GET" && !isWrite) throw new WebError(405, "request_failed");
-    if (isWrite && !(isPost && ["auth/login", "auth/logout", "forms"].includes(path)) && !actionPath(path, request.method) && !uploadPath(path, request.method)) throw new WebError(405, "request_failed");
+    if (isWrite && !(isPost && ["auth/login", "auth/logout", "auth/recovery/complete", "auth/totp/confirm", "forms"].includes(path)) && !actionPath(path, request.method) && !uploadPath(path, request.method)) throw new WebError(405, "request_failed");
 
     if (path === "auth/login" && isPost) {
       const input = await bodyOf(request);
@@ -85,6 +86,11 @@ export async function handle(request: NextRequest, path: string, deps?: { config
       const response = json({ ok: true });
       setSession(response, config, newId); return response;
     }
+
+    // قبول الدعوة (S5): إكمال الاستعادة بلا جلسة، ثم تأكيد TOTP بالجلسة المقيّدة (server/invite.ts).
+    const cookie: Parameters<typeof completeInvite>[6] = (response, value) => setSession(response, config!, value);
+    if (path === "auth/recovery/complete" && isPost) return await completeInvite(request, await bodyOf(request), config, store, id, json, cookie, transport);
+    if (path === "auth/totp/confirm" && isPost) return await confirmInvite(await bodyOf(request), config, store, id, json, cookie, transport);
 
     const verification = /^license-verifications\/([^/]+)$/.exec(path);
     if (verification && request.method === "GET") return await licenseVerify(request, verification[1], config, transport);

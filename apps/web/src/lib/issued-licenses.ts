@@ -1,3 +1,4 @@
+import { dateTime } from "./query";
 import type { components } from "@/generated/schema";
 import { orderNumberPattern } from "./store-format";
 
@@ -35,6 +36,10 @@ export function allowedDownload(value: unknown, origins: readonly string[]) {
 
 /** صيغة رقم الترخيص كما في العقد؛ أي رقم آخر لا يُرسل إلى الخادم. */
 export const licenseNumberPattern = /^PH-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{10}$/;
-export type PublicVerification = { license_number: string; status: IssuedLicense["status"] };
-/** صفحة التحقق العامة (قرار الأمن على #383، #385): رقم الترخيص وحالته فقط، وإن أعاد العقد أبعادًا أخرى. */
-export const safeVerification = (v: components["schemas"]["LicenseVerification"]): PublicVerification => ({ license_number: v.license_number, status: v.status });
+export type PublicVerification = { license_number: string; status: IssuedLicense["status"]; valid_until: string | null };
+/**
+ * صفحة التحقق العامة (P2): الحقول الثلاثة التي يغلق عليها العقد وحدها (#406 بعد قرار الأمن على #383): الرقم والحالة والنهاية، وإن أعاد الخادم
+ * أبعادًا أخرى. النهاية تاريخ صالح أو `null` (بلا انتهاء)، وأي قيمة أخرى تُقرأ `null` (ADR 0103).
+ */
+export const safeVerification = (v: components["schemas"]["LicenseVerification"]): PublicVerification => ({ license_number: v.license_number, status: v.status,
+  valid_until: typeof v.valid_until === "string" && dateTime.test(v.valid_until) && Number.isFinite(Date.parse(v.valid_until)) ? v.valid_until : null });

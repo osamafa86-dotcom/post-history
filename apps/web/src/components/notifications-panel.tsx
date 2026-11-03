@@ -6,29 +6,14 @@ import { humanDuration, messages, type Locale } from "@/lib/i18n";
 import type { Notification } from "@/lib/types";
 import { notificationTarget } from "@/lib/assignment-policy";
 import { useMutation } from "@/lib/use-mutation";
-import { Icon, type IconName } from "./icon";
+import { Icon } from "./icon";
+import { inTab, notificationKind, panelOrder, panelTabs, unread, type PanelTab } from "@/lib/notification-kind";
 
-export type PanelTab = "all" | "mine" | "urgent";
-
+export { inTab, panelOrder, type PanelTab };
 /**
- * تبويب التنبيه: «مهامي» لما أُسند إلى المستخدم (`assignment_state`)، و«العاجل» بالأولوية. الـBFF يحذف نوع الحدث وعنوانه من كل إشعار
- * (`safeNotification`)، فلا يُعرف منه ما يخص المتجر: تبويب «المتجر» في W10 مؤجّل (ADR 0090).
- */
-export function inTab(n: Notification, tab: PanelTab): boolean {
-  return tab === "all" || (tab === "mine" ? !!n.assignment_state : n.priority === "urgent");
-}
-/** الترتيب (W10): العاجل أولًا ثم غير المقروء ثم الأحدث. الإشعار لا يحمل علم الحساسية في العقد، فلا يُدّعى ترتيب به. */
-export function panelOrder(items: Notification[]): Notification[] {
-  const unread = (n: Notification) => !n.read_at && n.state !== "read" && n.state !== "acknowledged";
-  return [...items].sort((a, b) => Number(b.priority === "urgent") - Number(a.priority === "urgent") || Number(unread(b)) - Number(unread(a)) || Date.parse(b.created_at) - Date.parse(a.created_at));
-}
-function kind(n: Notification): { icon: IconName; word: "urgent" | "task" | "update" } {
-  return n.priority === "urgent" ? { icon: "bolt", word: "urgent" } : n.assignment_state ? { icon: "clock", word: "task" } : { icon: "inbox", word: "update" };
-}
-
-/**
- * لوحة التنبيهات المنسدلة من الجرس (W10): تبويبات الكل/مهامي/المتجر، والعاجل أولًا بأيقونة وكلمة، و«تعليم الكل كمقروء» بالطلب نفسه
- * الذي تستعمله صفحة الإشعارات (`read-all` بحدّ زمني ومفتاح ثابت)، ورابط إلى الصفحة الكاملة. نص كل بند كلمة نوعه ودرجة تصعيده، لا نص من الخادم.
+ * لوحة التنبيهات المنسدلة من الجرس (W10): تبويبات الكل/مهامي/المتجر (المتجر بنوع الحدث من القائمة المغلقة، ADR 0103)، والعاجل أولًا بأيقونة
+ * وكلمة، و«تعليم الكل كمقروء» بالطلب نفسه الذي تستعمله صفحة الإشعارات (`read-all` بحدّ زمني ومفتاح ثابت)، ورابط إلى الصفحة الكاملة. نص كل بند
+ * كلمة نوعه ودرجة تصعيده، لا نص من الخادم.
  */
 export function NotificationsPanel({ locale, onClose }: { locale: Locale; onClose: () => void }) {
   const m = messages[locale], t = m.shell.bell, mutation = useMutation(), bulkBefore = useRef<string | null>(null);
@@ -50,14 +35,13 @@ export function NotificationsPanel({ locale, onClose }: { locale: Locale; onClos
   }
   const visible = items ? panelOrder(items.filter(n => inTab(n, tab))) : [];
   const count = (which: PanelTab) => items?.filter(n => inTab(n, which)).length ?? 0;
-  const unread = (n: Notification) => !n.read_at && n.state !== "read" && n.state !== "acknowledged";
   return <section className="bell-panel" role="dialog" aria-modal="false" aria-labelledby="bell-title" data-testid="notifications-panel">
     <header className="bell-head"><h2 id="bell-title">{m.notice.title}</h2><button type="button" className="link-button" disabled={mutation.busy || !items?.some(unread)} onClick={() => void readAll()}>{t.readAll}</button></header>
-    <div className="bell-tabs" role="tablist" aria-label={t.tabsLabel}>{(["all", "mine", "urgent"] as PanelTab[]).map(which => <button key={which} type="button" role="tab" aria-selected={tab === which} className={tab === which ? "active" : undefined} onClick={() => setTab(which)}>{t.tabs[which]}{which === "all" && items ? <> · <span dir="ltr">{count(which)}</span></> : null}</button>)}</div>
+    <div className="bell-tabs" role="tablist" aria-label={t.tabsLabel}>{panelTabs.map(which => <button key={which} type="button" role="tab" aria-selected={tab === which} className={tab === which ? "active" : undefined} onClick={() => setTab(which)}>{t.tabs[which]}{which === "all" && items ? <> · <span dir="ltr">{count(which)}</span></> : null}</button>)}</div>
     {mutation.status && mutation.status !== 200 ? <p className="notice error" role="alert">{m.error}</p> : null}
     {failed && !items ? <p className="bell-empty" role="alert">{m.error}</p> : !items ? <ul className="bell-list" aria-busy="true">{[0, 1, 2].map(i => <li key={i} className="skeleton-row"><span className="skeleton circle" /><span className="skeleton line" /></li>)}</ul>
       : !visible.length ? <p className="bell-empty">{t.empty}</p>
-      : <ul className="bell-list">{visible.map(n => { const k = kind(n), href = notificationTarget(n, locale) ?? `/${locale}/notifications`;
+      : <ul className="bell-list">{visible.map(n => { const k = notificationKind(n), href = notificationTarget(n, locale) ?? `/${locale}/notifications`;
         return <li key={n.id} className={`bell-item ${k.word} ${unread(n) ? "unread" : ""}`} data-testid="bell-item">
           <span className={`bell-icon ${k.word}`}><Icon name={k.icon} /></span>
           <Link prefetch={false} href={href} onClick={onClose}><strong>{t.kinds[k.word]}</strong><span className="bell-text">{n.escalation_level ? `${m.notice.escalation}: ${n.escalation_level}` : unread(n) ? m.notice.unreadState : n.acknowledged_at || n.state === "acknowledged" ? m.notice.acknowledged : m.notice.readState}</span></Link>

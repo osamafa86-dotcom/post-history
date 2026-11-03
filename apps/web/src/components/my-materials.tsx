@@ -1,29 +1,36 @@
 "use client";
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
-import { formatDate, messages, type Locale } from "@/lib/i18n";
+import { formatDate, longDate, messages, plural, type Locale } from "@/lib/i18n";
 import type { Material, TransitionRecord } from "@/lib/types";
-import { states } from "@/lib/query";
+import { timecode } from "@/lib/editor";
+import { cardMedia, dayKind, durationLabel, groupMaterials, materialDuration, matchesFilter, mineCounts, mineFilters, needsAction, type MineFilter, type MineGroup, type MineGrouping } from "@/lib/my-materials";
 import { useUser } from "./session-boundary";
 import { StateBadge } from "./states";
+import { EmptyState } from "./empty-state";
+import { Icon } from "./icon";
 
-// ما يحتاج المراسل أن يفعل فيه شيئًا: طلب تعديل من المشرف، أو رفع فشل ويُعاد.
-export const needsAction = (material: Material) => material.editorial_state === "needs_changes" || material.technical_state === "failed";
+export { needsAction };
 // حد طلبات الملاحظات في الدورة الواحدة؛ ما زاد يفتحه المراسل من صفحة المادة.
-const noteLimit = 10;
-export function timecode(ms: number) {
-  const total = Math.floor(ms / 1000), h = Math.floor(total / 3600), mm = String(Math.floor(total / 60) % 60).padStart(2, "0"), ss = String(total % 60).padStart(2, "0");
-  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
-}
+const noteLimit = 10, groupingKey = "mine-grouping";
 /** آخر ملاحظة مكتوبة على طلب تعديل أو رفض؛ الخادم لا يرسل السبب إلا لصاحب المادة. */
 export function latestNote(items: TransitionRecord[]) {
   return items.filter(item => item.track === "editorial" && (item.to === "needs_changes" || item.to === "rejected") && item.reason).sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at))[0] ?? null;
 }
+// اختيار التجميع تفضيل لهذا المتصفح وحده؛ التخزين قد يغيب أو يرمي (نافذة خاصة)، فالافتراضي التغطية.
+// الصفحة تُرسم في المتصفح وحده بعد قراءة الجلسة (session-boundary)، فقراءة التخزين عند أول عرض لا تخالف ما رسمه الخادم.
+function savedGrouping(): MineGrouping { try { return typeof window !== "undefined" && window.localStorage.getItem(groupingKey) === "type" ? "type" : "coverage"; } catch { return "coverage"; } }
 
+/**
+ * «موادي» (ADR 0089 على الويب، ADR 0103): معرض بطاقات الأحدث أولًا، بالحالات الثلاث شاراتٍ منفصلة، مجمّع بعنوان التغطية أو بالنوع، ورقاقات
+ * «الكل · فيديو · صور · عاجل». ما يحتاج إجراءً فوق المعرض بملاحظة المشرف. المراسل يرى مواده وحدها (`reporter_id` = نفسه، والخادم يحصر النطاق).
+ */
 export function MyMaterials({ locale }: { locale: Locale }) {
   const m = messages[locale], t = m.mine, me = useUser();
   const [items, setItems] = useState<Material[] | null>(null), [more, setMore] = useState(false), [notes, setNotes] = useState<Record<string, TransitionRecord | null>>({}), [error, setError] = useState(false), [refresh, setRefresh] = useState(0);
+  const [filter, setFilter] = useState<MineFilter>("all"), [grouping, setGrouping] = useState<MineGrouping>(savedGrouping), [updated, setUpdated] = useState<string | null>(null);
   useEffect(() => {
     const controller = new AbortController(); let disposed = false, timer: ReturnType<typeof setTimeout>;
     async function load() {
@@ -34,34 +41,69 @@ export function MyMaterials({ locale }: { locale: Locale }) {
           try { return [item.id, latestNote(dataOrThrow(await browserApi().GET("/materials/{id}/transitions", { params: { path: { id: item.id } }, signal: controller.signal })).items)] as const; }
           catch { return [item.id, null] as const; }
         })));
-        if (!disposed) { setItems(page.items); setMore(!!page.next_cursor); setNotes(found); setError(false); }
+        if (!disposed) { setItems(page.items); setMore(!!page.next_cursor); setNotes(found); setError(false); setUpdated(new Date().toISOString()); }
       } catch { if (!disposed && !controller.signal.aborted) setError(true); }
       finally { if (!disposed) timer = setTimeout(load, 30000); }
     }
     void load();
     return () => { disposed = true; controller.abort(); clearTimeout(timer); };
   }, [me.user_id, refresh]);
-  const action = items?.filter(needsAction) ?? [];
+  function group(next: MineGrouping) { setGrouping(next); try { window.localStorage.setItem(groupingKey, next); } catch { /* تفضيل اختياري */ } }
+  const action = items?.filter(needsAction) ?? [], visible = items?.filter(item => matchesFilter(item, filter)) ?? [], counts = items ? mineCounts(items) : null;
   return <>
-    <div className="page-heading"><div><p className="eyebrow">{m.workspace}</p><h1>{t.title}</h1><p className="muted">{t.lead}</p></div><button className="secondary" onClick={() => setRefresh(n => n + 1)}>{m.refresh}</button></div>
-    {error && <p className="notice" role="status">{items ? m.stale : m.error}</p>}
-    {!items ? !error && <p className="center-state" role="status">{m.loading}</p> : <>
-      <section className="stats mine-stats" aria-label={t.counts}>{states.editorial_state.map(state => <article key={state} data-state={state}><span>{m.states.editorial_state[state]}</span><strong>{items.filter(item => item.editorial_state === state).length}</strong></article>)}</section>
-      {more && <p className="muted">{t.firstPage}</p>}
-      <section className="card" aria-labelledby="mine-action"><h2 id="mine-action">{t.action}</h2>{!action.length ? <p className="muted">{t.noAction}</p> : <ul className="mine-list">{action.map(item => <li key={item.id} data-testid="mine-action">
+    <div className="page-head"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p></div><div className="page-actions"><button type="button" className="secondary" onClick={() => setRefresh(n => n + 1)}>{m.refresh}</button></div></div>
+    {error && <section className="offline-banner" role="status" data-testid="mine-stale"><Icon name="offline" size={22} /><div><h2>{items ? t.staleTitle : m.error}</h2><p>{items && updated ? t.staleBody.replace("{time}", formatDate(updated, locale)) : t.errorBody}</p></div><button type="button" className="secondary" onClick={() => setRefresh(n => n + 1)}>{m.shell.inbox.retryNow}</button></section>}
+    <div className="kpis" data-testid="mine-kpis" aria-label={t.counts}>{counts ? (["all", "action", "reviewing", "approved"] as const).map(key =>
+      <article key={key} className={`kpi${key === "action" && counts.action ? " attention" : ""}`} data-kpi={key}><strong dir="ltr">{counts[key]}</strong><span>{t.kpi[key]}</span></article>)
+      : [0, 1, 2, 3].map(i => <article key={i} className="kpi" aria-hidden="true"><span className="skeleton num" /><span className="skeleton line" /></article>)}</div>
+    {!items ? !error && <><p className="visually-hidden" role="status">{m.loading}</p><ul className="mine-grid" aria-hidden="true">{[0, 1, 2, 3, 4, 5].map(i => <li key={i} className="mine-card"><span className="skeleton media" /><span className="skeleton line wide" /><span className="skeleton line" /></li>)}</ul></> : <>
+      {action.length > 0 && <section className="card mine-action" aria-labelledby="mine-action"><h2 id="mine-action"><Icon name="alert" size={18} />{t.action}</h2><ul className="mine-list">{action.map(item => <li key={item.id} data-testid="mine-action">
         <Link className="material-link" prefetch={false} href={`/${locale}/materials/${item.id}`}>{item.title}</Link>
         <p>{item.technical_state === "failed" ? t.uploadFailed : t.changesRequested}</p>
         <Note note={notes[item.id]} locale={locale} />
-      </li>)}</ul>}</section>
-      <section className="table-panel" aria-label={t.all}>{!items.length ? <p className="empty">{t.empty}</p> : <div className="table-scroll"><table><thead><tr>{[m.title, m.receipt, m.createdAt, m.technical, m.editorial, m.rights, t.note].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead><tbody>{items.map(item => <tr key={item.id} data-testid="mine-row">
-        <td><Link className="material-link" prefetch={false} href={`/${locale}/materials/${item.id}`}>{item.title}</Link></td>
-        <td className="receipt" dir="ltr">{item.files.find(f => f.receipt_number)?.receipt_number ?? m.noReceipt}</td>
-        <td>{formatDate(item.created_at, locale)}</td>
-        {(["technical_state", "editorial_state", "rights_state"] as const).map(track => <td key={track}><StateBadge track={track} value={item[track]} locale={locale} /></td>)}
-        <td>{item.editorial_state === "rejected" ? <Note note={notes[item.id]} locale={locale} /> : null}</td>
-      </tr>)}</tbody></table></div>}</section>
+      </li>)}</ul></section>}
+      {!items.length ? <EmptyState icon="mine" testId="mine-empty" title={t.emptyTitle}><p>{t.emptyBody}</p></EmptyState> : <>
+        <div className="mine-tools">
+          <nav className="quick-tabs" aria-label={t.filtersLabel}>{mineFilters.map(which => <button key={which} type="button" className={filter === which ? "chip active" : "chip"} aria-pressed={filter === which} onClick={() => setFilter(which)}>{t.filters[which]}</button>)}</nav>
+          <div className="segmented" role="group" aria-label={t.groupLabel}>{(["coverage", "type"] as MineGrouping[]).map(which => <button key={which} type="button" className={grouping === which ? "chip active" : "chip"} aria-pressed={grouping === which} onClick={() => group(which)}>{t.groupBy[which]}</button>)}</div>
+        </div>
+        {more && <p className="caption">{t.firstPage}</p>}
+        {!visible.length ? <EmptyState icon="filter" testId="mine-no-match" title={t.noMatchTitle} actions={<button type="button" className="secondary" onClick={() => setFilter("all")}>{t.clearFilter}</button>}><p>{t.noMatchBody}</p></EmptyState>
+          : groupMaterials(visible, grouping).map(g => <Group key={g.key} group={g} grouping={grouping} notes={notes} locale={locale} />)}
+      </>}
     </>}
   </>;
+}
+
+function Group({ group, grouping, notes, locale }: { group: MineGroup; grouping: MineGrouping; notes: Record<string, TransitionRecord | null>; locale: Locale }) {
+  const m = messages[locale], t = m.mine, day = dayKind(group.newest, new Date()), when = day === "date" ? longDate(group.newest, locale) : t.days[day];
+  const head = grouping === "coverage" ? group.title : group.type ? m.types[group.type] : m.notAvailable;
+  const meta = [grouping === "coverage" && group.type ? m.types[group.type] : null, when, plural(group.items.length, t.count, locale)].filter(Boolean).join(" · ");
+  return <section className="mine-group" aria-label={head}>
+    <header><h2><bdi>{head}</bdi></h2><p className="muted">{meta}</p></header>
+    <ul className="mine-grid">{group.items.map(item => <Card key={item.id} item={item} note={item.editorial_state === "rejected" ? notes[item.id] : undefined} locale={locale} />)}</ul>
+  </section>;
+}
+
+/** بطاقة المادة (`MediaCard`): الوسيط ومدته وأيقونة نوعه، ثم العنوان، ثم الحالات الثلاث منفصلة بأيقونة وكلمة. */
+function Card({ item, note, locale }: { item: Material; note: TransitionRecord | null | undefined; locale: Locale }) {
+  const m = messages[locale], t = m.mine, media = cardMedia(item), ms = item.material_types.includes("photos") ? null : materialDuration(item), duration = ms ? durationLabel(ms) : null;
+  const [broken, setBroken] = useState(false), href = `/${locale}/materials/${item.id}`, urgent = item.priority === "urgent";
+  return <li className={`mine-card${urgent ? " urgent" : ""}`} data-testid="mine-row" data-sensitive={media.kind === "sensitive" ? "true" : undefined}>
+    <Link prefetch={false} href={href} className="mine-media" aria-hidden="true" tabIndex={-1}>
+      {media.kind === "thumbnail" && !broken ? <Image unoptimized src={`/api/bff/materials/${item.id}/files/${media.file.id}/content`} alt="" width={180} height={320} loading="lazy" onError={() => setBroken(true)} />
+        : media.kind === "sensitive" ? <span className="mine-shield"><Icon name="shield" size={22} /><small>{t.noCloudPreview}</small></span>
+        : <span className="mine-icon"><Icon name={item.material_types.includes("photos") ? "preview" : "play"} size={24} /></span>}
+      <span className="mine-type" aria-hidden="true"><Icon name={item.material_types.includes("photos") ? "preview" : "film"} size={14} /></span>
+      {duration && <span className="mine-duration" dir="ltr">{duration}</span>}
+    </Link>
+    <div className="mine-body">
+      <p className="mine-title"><Link className="material-link" prefetch={false} href={href}>{item.title}</Link></p>
+      <p className="mine-flags">{urgent && <span className="priority-pill urgent"><Icon name="bolt" size={12} />{m.states.priority.urgent}</span>}{media.kind === "sensitive" && <span className="badge sensitive"><Icon name="shield" size={12} />{t.sensitive}</span>}</p>
+      <ul className="mine-states" aria-label={m.shell.inbox.states}>{(["technical_state", "editorial_state", "rights_state"] as const).map(track => <li key={track}><StateBadge track={track} value={item[track]} locale={locale} /></li>)}</ul>
+      {note !== undefined && <Note note={note} locale={locale} />}
+    </div>
+  </li>;
 }
 
 function Note({ note, locale }: { note: TransitionRecord | null | undefined; locale: Locale }) {

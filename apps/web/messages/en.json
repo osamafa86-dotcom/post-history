@@ -294,7 +294,7 @@
   },
   "notice": {
     "title": "Notifications",
-    "lead": "Read and acknowledge team updates without revealing protected information.",
+    "lead": "Team and store updates, urgent first. Read and acknowledge them here; no protected source name or precise location appears in them.",
     "generic": "Material update",
     "unread": "Unread only",
     "empty": "No notifications on this page.",
@@ -321,7 +321,20 @@
     "needsAck": "Urgent: needs acknowledgement.",
     "grouped": "{n} alerts for the same material",
     "choose": "Choose an alert to preview it.",
-    "openTask": "Open task"
+    "openTask": "Open task",
+    "tabsLabel": "Filter notifications",
+    "pageTabs": {
+      "all": "All",
+      "mine": "My tasks",
+      "store": "Store"
+    },
+    "emptyTitle": "No notifications here",
+    "emptyBody": "Everything about you from the inbox, tasks and store arrives here, and urgent material comes with an alert and a sound.",
+    "emptyTab": "No notifications in this tab on the current page.",
+    "staleTitle": "Couldn't refresh notifications",
+    "staleBody": "What you see is from the last update; we retry automatically every 15 seconds.",
+    "ago": "{time} ago",
+    "previewTitle": "Preview"
   },
   "rules": {
     "title": "Notification rules",
@@ -607,6 +620,57 @@
       "notFoundTitle": "We couldn't find this invoice",
       "notFoundBody": "Invoices are for whoever placed the order, the organization's admin and finance. If a colleague placed it, ask your organization's admin.",
       "licencePending": "Issued after confirmation"
+    },
+    "invite": {
+      "badge": "Store invitation",
+      "title": "Set your password",
+      "lead": "Your organization's admin invited you to the organizations store. Set a password for your account, then link an authenticator app. The link works once, for up to 24 hours.",
+      "stepsLabel": "Invitation steps",
+      "stepPassword": "1 Password",
+      "stepTotp": "2 Two-step verification",
+      "token": "Invitation code",
+      "tokenHelp": "The code your organization's admin gave you. It works once.",
+      "tokenInvalid": "The code is incomplete. Paste it as you received it, at least 32 characters.",
+      "newPassword": "New password",
+      "repeatPassword": "Enter it again",
+      "passwordHint": "At least 12 characters.",
+      "passwordShort": "The password is shorter than 12 characters.",
+      "mismatch": "The two passwords don't match.",
+      "invalidInput": "Check the fields: a password of 12 characters or more, and the code as you received it.",
+      "tooMany": "Too many attempts in a row. Wait a minute, then try again.",
+      "submit": "Set password and continue",
+      "next": "Next, you'll link an authenticator app (TOTP). It's required at first sign-in.",
+      "ignore": "Weren't expecting this? Ignore it, and the link expires within 24 hours.",
+      "totpTitle": "Link an authenticator app",
+      "totpLead": "Add an account in your authenticator app with the secret below, then enter the six-digit code it shows.",
+      "secret": "Secret for manual entry",
+      "secretOnce": "The secret is shown here once and we don't keep it. Don't copy it anywhere else, and don't share it.",
+      "openApp": "Open in authenticator app",
+      "code": "Code from the app",
+      "codeInvalid": "Enter the six-digit code.",
+      "codeWrong": "The code is wrong or expired. Enter the current code from the app.",
+      "confirm": "Confirm and enter the store",
+      "invalidTitle": "This link is no longer valid",
+      "invalidBody": "Invitation links work once, for up to 24 hours. Ask your organization's admin to invite you again for a new link.",
+      "expiredTitle": "This step timed out",
+      "expiredBody": "The authenticator app wasn't linked in time. Ask your organization's admin to invite you again.",
+      "signIn": "Have an account? Sign in"
+    },
+    "org": {
+      "pendingBadge": "Pending verification",
+      "pendingTitle": "Your organization is being verified",
+      "pendingBody": "The catalog and purchasing open once the store team approves your organization.",
+      "suspendedBadge": "Suspended",
+      "suspendedTitle": "Your organization is suspended",
+      "suspendedBody": "Purchasing and new downloads are paused until the store team reactivates the organization. Your existing licences don't change.",
+      "checks": "What the team reviews",
+      "checkRegistry": "Commercial registration",
+      "checkEmail": "The admin's work email",
+      "checkAgreement": "Acceptance of the licence agreement",
+      "nowTitle": "What you can do now",
+      "nowSeats": "Invite your team · Seats: {used} of {seats}",
+      "nowMember": "Your organization's admin invites members and follows up on verification with the store team.",
+      "invite": "Invite a member"
     }
   },
   "board": {
@@ -691,7 +755,7 @@
   "upload": {
     "nav": "Desktop upload",
     "title": "Upload camera files",
-    "lead": "Choose large files from your computer or a camera card, then fill in the material details. Uploads resume from the last received part after a dropped connection.",
+    "lead": "Choose large files from the computer or the camera card, then fill in the material's details. If the connection drops, the upload resumes from the last part that arrived.",
     "reporterOnly": "Desktop upload is for reporters, supervisors, producers and the editor in chief.",
     "files": "Files",
     "choose": "Choose files",
@@ -723,13 +787,13 @@
     "creating": "Creating material…",
     "createFailed": "Could not create the material. Try again with the same attempt.",
     "phase": {
-      "hashing": "Computing checksum",
-      "creating": "Preparing upload session",
+      "hashing": "Fingerprinting",
+      "creating": "Ready to upload",
       "uploading": "Uploading",
       "paused": "Paused",
-      "processing": "Upload finished, awaiting verification and receipt",
-      "done": "Received",
-      "failed": "Upload failed"
+      "processing": "Verifying",
+      "done": "Complete",
+      "failed": "Failed"
     },
     "failure": {
       "session_revoked": "Your session was revoked; the upload stopped.",
@@ -737,11 +801,11 @@
       "rejected": "The server rejected the upload.",
       "network": "The connection dropped after several attempts.",
       "hash": "Could not read the file to compute its checksum.",
-      "checksum_mismatch": "The checksum does not match what arrived; upload again.",
-      "invalid_file": "The file is not valid.",
-      "expired": "The upload session expired.",
-      "storage_error": "Storage error.",
-      "aborted": "Upload cancelled."
+      "checksum_mismatch": "What arrived didn't match the file you sent, so we didn't keep it.",
+      "invalid_file": "This isn't a file we accept. Choose a video or photo file from the camera.",
+      "expired": "This session expired before the upload finished. Start a new upload.",
+      "storage_error": "We couldn't store the file. It's not your fault. Try again shortly.",
+      "aborted": "You cancelled the upload, and we deleted what arrived."
     },
     "resumed": "Resumed",
     "pause": "Pause",
@@ -754,23 +818,81 @@
     "leaveWarning": "An upload is in progress. Leaving stops it; you can resume by choosing the file again.",
     "abort": "Cancel upload",
     "abortFailed": "Could not cancel the upload. Try again.",
-    "otherDevice": "Started on another device or its record here was cleared; it cannot resume from this browser."
+    "otherDevice": "Started on another device or its record here was cleared; it cannot resume from this browser.",
+    "progressTitle": "Uploads in progress",
+    "sensitivityHelp": "Flagged material is processed locally and never sent to an outside provider.",
+    "reselect": "The browser doesn't keep the file after closing. Choose the same file to continue from {pct}%. A different file starts a new upload.",
+    "chooseSame": "Choose the same file",
+    "uploadAgain": "Upload again",
+    "stage": {
+      "hashing": "We're computing the file's fingerprint (SHA-256) in the browser before the transfer starts.",
+      "created": "Upload session ready. Transfer starts in a moment.",
+      "uploading": "Uploading.",
+      "progress": "{sent} of {total} MB received ({pct}%)",
+      "keepOpen": "Keep this tab open. Closing it pauses the transfer, and we'll continue from where it stopped when you're back.",
+      "offline": "You're offline. What arrived is safe, and we'll resume when you reconnect.",
+      "paused": "Paused",
+      "pausedAt": "Paused at {pct}%. What arrived is safe.",
+      "incomplete": "Incomplete upload: {pct}% received",
+      "verifying": "The whole file arrived. We're computing its fingerprint on the server and matching it against what was sent.",
+      "verified": "Received and fingerprint verified.",
+      "duplicate": "We already have this file, so there's no need to upload it again.",
+      "failed": "The upload failed.",
+      "failedHint": "Part of it was probably lost in transfer. Please upload it again."
+    }
   },
   "mine": {
     "nav": "My materials",
     "title": "My materials",
-    "lead": "What you sent, its three states, and your supervisor's notes.",
-    "counts": "My materials per editorial state",
+    "lead": "Everything you sent, newest first, with its three states and the supervisor's notes. Open a material to watch it.",
+    "counts": "My material counts",
     "firstPage": "Only your latest 100 materials are shown; use the inbox to find older ones.",
     "action": "Needs your action",
     "noAction": "Nothing is waiting on you.",
     "uploadFailed": "Upload failed; upload the file again from the material page.",
     "changesRequested": "Your supervisor asked for changes; reply from the material page.",
-    "all": "All my materials",
-    "empty": "You have not sent any materials yet.",
-    "note": "Supervisor note",
     "openForNote": "Open the material to read the note.",
-    "at": "at"
+    "at": "at",
+    "kpi": {
+      "all": "All my materials",
+      "action": "Need your action",
+      "reviewing": "In review",
+      "approved": "Approved"
+    },
+    "filtersLabel": "Filter the gallery",
+    "filters": {
+      "all": "All",
+      "video": "Video",
+      "photos": "Photos",
+      "urgent": "Urgent"
+    },
+    "groupLabel": "Grouping",
+    "groupBy": {
+      "coverage": "By coverage",
+      "type": "By type"
+    },
+    "days": {
+      "today": "Today",
+      "yesterday": "Yesterday"
+    },
+    "count": {
+      "zero": "No materials",
+      "one": "1 material",
+      "two": "2 materials",
+      "few": "{n} materials",
+      "many": "{n} materials",
+      "other": "{n} materials"
+    },
+    "sensitive": "Sensitive",
+    "noCloudPreview": "No cloud preview",
+    "emptyTitle": "No materials yet",
+    "emptyBody": "What you send from the Maydan Post app or from desktop upload appears here with its three states.",
+    "noMatchTitle": "No materials match this filter",
+    "noMatchBody": "Nothing among your loaded materials matches the selected chip.",
+    "clearFilter": "Clear filters",
+    "staleTitle": "Couldn't refresh my materials",
+    "staleBody": "What you see is from the last update ({time}); we retry automatically every 30 seconds.",
+    "errorBody": "Your materials couldn't be loaded. We retry automatically, or try again now."
   },
   "templates": {
     "nav": "License templates",
@@ -1059,10 +1181,19 @@
     "downloadConflict": "Could not download: the limit is reached, the license is not active, or the package is not ready.",
     "verify": {
       "title": "Licence verification",
-      "notFound": "No licence has this number.",
-      "tooMany": "Too many attempts; try again shortly.",
-      "scope": "This page shows the licence number and its status only.",
-      "link": "Verification page"
+      "notFound": "We couldn't find a licence with this number",
+      "tooMany": "Too many attempts in a row",
+      "scope": "This page confirms only that the number belongs to an existing licence, with its status and end. It doesn't show the material, licence type, organization, price or reporter.",
+      "link": "Verification page",
+      "lead": "This number belongs to an existing licence issued by Palestine Post.",
+      "number": "Licence number",
+      "status": "Status",
+      "ends": "Ends",
+      "noExpiry": "No end date",
+      "notFoundBody": "Check the number exactly as printed on the licence certificate. After many attempts in a row the page pauses briefly, to protect numbers from enumeration.",
+      "tooManyBody": "The page pauses briefly to protect licence numbers from enumeration. Try again in a minute.",
+      "unavailable": "Verification is unavailable right now",
+      "unavailableBody": "The server didn't respond, and the number isn't the problem. Reload the page shortly."
     },
     "days": "{n} days",
     "invoices": "Orders and invoices",
@@ -1318,7 +1449,8 @@
     ],
     "emailPending": "will be published soon",
     "languageNavigation": "Privacy policy language",
-    "otherLanguage": "العربية"
+    "otherLanguage": "العربية",
+    "contents": "Policy sections"
   },
   "conflicts": {
     "nav": "Invite conflicts",
@@ -1365,7 +1497,7 @@
       "minimum": "Minimum request"
     },
     "requestTitle": "Request a payout",
-    "sandbox": "Sandbox payout: no real money and no bank details. The sandbox channel completes a request once it is approved.",
+    "sandbox": "The provider is a test one, and there are no real payouts before the payout trial is approved: a request here takes no bank details, and the sandbox channel completes it once approved.",
     "nothingToRequest": "No balance to request.",
     "currency": "Currency",
     "amount": "Amount",
@@ -1412,7 +1544,12 @@
       "available": "Available",
       "in_payout": "In payout",
       "paid": "Paid"
-    }
+    },
+    "noBalanceBody": "Your share appears here after the first sale of a material you contributed to, computed from the ledger.",
+    "errorTitle": "Your earnings couldn't be loaded",
+    "errorBody": "The server didn't respond. Nothing changed in your balance; try again.",
+    "formula": "Your share = (sale price − gateway fees − taxes) × commission rate × your share among contributors, under the rule in force when the payment was confirmed.",
+    "actions": "Action"
   },
   "payouts": {
     "nav": "Payout requests",
@@ -1561,7 +1698,8 @@
       "commission-rules": "Commission",
       "invite-conflicts": "Conflicts",
       "organization": "My org",
-      "tasks": "Tasks"
+      "tasks": "Tasks",
+      "archive": "Archive"
     },
     "bottomNav": "Main destinations",
     "more": "More",
@@ -1575,13 +1713,16 @@
       "tabs": {
         "all": "All",
         "mine": "My tasks",
-        "urgent": "Urgent"
+        "store": "Store"
       },
       "empty": "No notifications here right now.",
       "kinds": {
         "urgent": "Urgent item",
         "task": "Task assigned to you",
-        "update": "Update on an item"
+        "update": "Update on an item",
+        "store": "Store order or licence",
+        "money": "Payout request update",
+        "upload": "Upload update"
       },
       "ago": "{time} ago",
       "all": "All notifications and settings"
@@ -1874,5 +2015,35 @@
     "cardNoneReader": "No open task on this material.",
     "cardCurrent": "{state} · {name}",
     "cardLast": "Last task: {state} {time}"
+  },
+  "publicPage": {
+    "languageNav": "Page language"
+  },
+  "archive": {
+    "nav": "Ready archive",
+    "title": "Ready archive",
+    "lead": "Produced materials that were published, most recently updated first.",
+    "denied": "The ready archive is for the newsroom team.",
+    "search": "Search the archive",
+    "searchPlaceholder": "Search by title, tag or place",
+    "searchButton": "Search",
+    "chipsLabel": "Filter the archive",
+    "all": "All",
+    "periods": {
+      "week": "Last 7 days",
+      "month": "Last 30 days"
+    },
+    "today": "Today",
+    "loadMore": "Load more",
+    "emptyTitle": "Nothing published yet",
+    "emptyBody": "A material appears here once its production is complete and it is published.",
+    "noResults": "No results with these filters",
+    "noResultsFor": "No results for “{q}”",
+    "noResultsHint": "The active filter is narrow. Remove it with its chip above, or search one word.",
+    "noResultsHintMany": "The {n} filters together are narrow. Remove one with the chips above, or search one word.",
+    "noResultsCount": "The loaded archive has {n} materials without filters.",
+    "showAll": "Show all materials ({n})",
+    "staleBody": "What you see is from the last update ({time}). Try again when the connection is back.",
+    "errorBody": "The archive couldn't be loaded. Nothing changed; try again now."
   }
 }

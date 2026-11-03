@@ -15,14 +15,16 @@ const config: WebConfig = { origin: "https://web.example.test", api: "https://ap
 const full = { license_number: "PH-2026-7K3M9Q2XRT", status: "active", license_type: "editorial_single", title: { ar: "canary", en: "canary" }, usage_media: ["web"], territory: { kind: "worldwide" }, valid_from: "2026-10-21T10:00:00Z", valid_until: null, exclusive_until: null, organization: "canary" } as const;
 
 describe("buyer flow (#385)", () => {
-  it("the public verification shows the licence number and status only", () => {
-    expect(safeVerification(full as never)).toEqual({ license_number: "PH-2026-7K3M9Q2XRT", status: "active" });
+  it("the public verification shows the three fields the contract closes on: number, status and end (P2)", () => {
+    expect(safeVerification(full as never)).toEqual({ license_number: "PH-2026-7K3M9Q2XRT", status: "active", valid_until: null });
+    expect(safeVerification({ ...full, valid_until: "2027-10-28T00:00:00Z" } as never).valid_until).toBe("2027-10-28T00:00:00Z");
+    expect(safeVerification({ ...full, valid_until: "canary" } as never).valid_until).toBeNull();
   });
   it("verifies without a session, never forwards a cookie, and refuses malformed numbers without calling the API", async () => {
     const seen: Request[] = [];
     const fetch = (async (input: Request) => { seen.push(input); return Response.json(full); }) as typeof globalThis.fetch;
     const ok = await handle(new NextRequest(`${config.origin}/api/bff/license-verifications/PH-2026-7K3M9Q2XRT`), "license-verifications/PH-2026-7K3M9Q2XRT", { config, store: new MemoryStore(), fetch });
-    expect(ok.status).toBe(200); expect(await ok.json()).toEqual({ license_number: "PH-2026-7K3M9Q2XRT", status: "active" });
+    expect(ok.status).toBe(200); expect(await ok.json()).toEqual({ license_number: "PH-2026-7K3M9Q2XRT", status: "active", valid_until: null });
     expect(ok.headers.get("cache-control")).toBe("no-store"); expect(seen[0].headers.get("authorization")).toBeNull();
     const bad = await handle(new NextRequest(`${config.origin}/api/bff/license-verifications/PH-1`), "license-verifications/PH-1", { config, store: new MemoryStore(), fetch });
     expect(bad.status).toBe(404); expect(seen).toHaveLength(1);

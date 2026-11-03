@@ -10,6 +10,7 @@ const writes: { path: string; method: string; key: string; body: Record<string, 
 const applied = new Map<string, { fingerprint: string; value: unknown; status: number }>();
 const formVersions = new Map<number, Form>();
 let dropNextWrite = false, extraUploadsInProgress = 0;
+const consumedInvites = new Set<string>();
 let identitySetting: ReporterIdentitySetting, historyUnavailable = false, auditSequence = 21;
 const permissionAudit: { target: string | null; entry: PermissionHistoryEntry }[] = [];
 function reset() {
@@ -166,6 +167,8 @@ const access = new Map<string, Me>(), refresh = new Map<string, Me>();
 function profile(email: string): Me {
   const names: Record<string, Me["roles"]> = { chief: [{ name: "editor_in_chief", scopes: [] }], reviewer: ["supervisor", "rights_officer", "producer"].map(name => ({ name: name as Me["roles"][number]["name"], scopes: [] })), admin: [{ name: "system_admin", scopes: [] }], reporter: [{ name: "reporter", scopes: [] }], buyeradmin: [{ name: "buyer_admin", scopes: [] }], buyer: [{ name: "buyer_member", scopes: [] }], finance: [{ name: "finance", scopes: [] }] };
   const local = email.split("@")[0], buyer = local === "buyeradmin" || local === "buyer";
+  // مدير مؤسسة قيد التحقّق (S6): المؤسسة الأخرى في البذرة، والكتالوج يردّه 403.
+  if (local === "pendingbuyer") return { ...me, user_id: "91000000-0000-4000-8000-000000000009", organization_id: otherOrg, roles: [{ name: "buyer_admin", scopes: [] }], permissions: [] };
   return { ...me, ...(buyer ? { user_id: local === "buyer" ? "91000000-0000-4000-8000-000000000002" : "91000000-0000-4000-8000-000000000001", organization_id: buyerOrg } : {}), roles: names[local] ?? [], permissions: email.startsWith("permissions@") ? ["sensitive_location:read", "protected_source:read", "reporter_identity:read"] : [] };
 }
 function session(user: Me) {
@@ -182,7 +185,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname.startsWith("/files/")) { res.removeHeader("Content-Type"); return tus(req, res, url); }
   if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
   if (url.pathname === "/__test/uploads") return send([...uploads.values()].map(u => ({ state: u.session.state, receipt: u.session.receipt_number, ingest_tokens: [...ingestTokens.values()].filter(t => t.sid === u.session.id).length, ...(u.tus ? (({ length, offset, patches, resent, cuts }) => ({ length, offset, patches, resent, cuts }))(tusFiles.get(u.tus) ?? { length: 0, offset: 0, patches: 0, resent: 0, cuts: 0 }) : {}) })));
-  if (url.pathname === "/__test/reset" && req.method === "POST") { rules.clear(); listings.clear(); seedOrders(); seedLicenses(); seedTemplates(); seedOrganizations(); seedCommission(); seedConflicts(); seedEarnings(); reset(); resetUploads(); resetAssignments(); return send({ ok: true }); }
+  if (url.pathname === "/__test/reset" && req.method === "POST") { consumedInvites.clear(); rules.clear(); listings.clear(); seedOrders(); seedLicenses(); seedTemplates(); seedOrganizations(); seedCommission(); seedConflicts(); seedEarnings(); reset(); resetUploads(); resetAssignments(); return send({ ok: true }); }
   if (url.pathname === "/__test/assignments" && req.method === "POST") { seedAssignments(materials, me); return send({ ok: true }); }
   const sandbox = /^\/sandbox\/(checkout|pay)\/([^/]+)$/.exec(url.pathname);
   if (sandbox) {
@@ -198,6 +201,12 @@ const server = createServer(async (req, res) => {
     Object.assign(materials[0], { editorial_state: "needs_changes" }); Object.assign(materials[1], { editorial_state: "rejected" }); Object.assign(materials[2], { technical_state: "failed" });
     history.set(materials[0].id, [{ id: randomUUID(), track: "editorial", from: "inbox", to: "acknowledged", reason: "never-display-canary", note_timecode_ms: null, actor_id: supervisor, occurred_at: "2026-10-21T09:00:00Z" }, { id: randomUUID(), track: "editorial", from: "reviewing", to: "needs_changes", reason: "أعد اللقطة الافتتاحية بإضاءة أفضل", note_timecode_ms: 42000, actor_id: supervisor, occurred_at: stamp }]);
     history.set(materials[1].id, [{ id: randomUUID(), track: "editorial", from: "reviewing", to: "rejected", reason: "مكررة مع مادة سابقة", note_timecode_ms: null, actor_id: supervisor, occurred_at: stamp }]);
+    return send({ ok: true });
+  }
+  if (url.pathname === "/__test/published" && req.method === "POST") {
+    // الأرشيف الجاهز (W9): خمس مواد منشورة، واحدة حسّاسة، بمحافظتين وتعديل حديث.
+    for (const [i, governorate] of [[14, "غزة"], [15, "غزة"], [16, "خان يونس"], [17, "غزة"], [18, "خان يونس"]] as const) Object.assign(materials[i], { editorial_state: "published", governorate, updated_at: new Date(Date.now() - (i - 13) * 3600000).toISOString() });
+    Object.assign(materials[18], { sensitivity: { minors: true, injured: false, graphic: false }, updated_at: new Date(Date.now() - 40 * 86400000).toISOString() });
     return send({ ok: true });
   }
   if (url.pathname === "/__test/board-mix" && req.method === "POST") {
@@ -263,8 +272,26 @@ const server = createServer(async (req, res) => {
     if (!found) return send({ code: "not_found" }, 404);
     return send({ license_number: found.license_number, status: found.status, license_type: "editorial_single", title: found.title, usage_media: ["web"], territory: { kind: "worldwide" }, valid_from: "2026-10-21T10:00:00Z", valid_until: null, exclusive_until: null, organization: "never-display-canary" });
   }
+  // قبول الدعوة (S5): رمز الدعوة يُستهلك مرة واحدة، والجلسة الناتجة مقيّدة حتى تأكيد TOTP. أي رمز آخر 401 بلا تفريق.
+  if (url.pathname === "/v1/auth/recovery/complete" && req.method === "POST") {
+    const reset = String(body.reset_token ?? "");
+    if (!reset.startsWith("synthetic-invite-token-") || consumedInvites.has(reset)) return send({ code: "unauthorized" }, 401);
+    if (String(body.new_password ?? "").length < 12) return send({ code: "validation_failed" }, 422);
+    consumedInvites.add(reset);
+    const invited = { ...me, user_id: randomUUID(), organization_id: buyerOrg, roles: [{ name: "buyer_member" as const, scopes: [] }], permissions: [], totp_enabled: false, credential_reset_required: true };
+    return send({ session: session(invited), totp_enrollment: { secret_base32: "AAAABBBBCCCCDDDDEEEEFFFF", otpauth_uri: "otpauth://totp/Synthetic:member-0001?secret=AAAABBBBCCCCDDDDEEEEFFFF&issuer=Synthetic" } });
+  }
   const token = req.headers.authorization?.replace(/^Bearer /, "") ?? "";
   if (!access.has(token)) return send({ code: "unauthorized" }, 401);
+  // الجلسة المقيّدة بعد الاستعادة: المسموح /auth/me و/auth/logout و/auth/refresh و/auth/totp/confirm وحدها.
+  const restricted = access.get(token)!;
+  if (restricted.credential_reset_required) {
+    if (url.pathname === "/v1/auth/totp/confirm" && req.method === "POST") {
+      if (body.totp_code !== "123456") return send({ code: "unauthorized" }, 401);
+      access.delete(token); return send(session({ ...restricted, credential_reset_required: false, totp_enabled: true }));
+    }
+    if (!["/v1/auth/me", "/v1/auth/logout"].includes(url.pathname)) return send({ code: "credential_reset_required" }, 403);
+  }
   if (url.pathname === "/v1/auth/logout" && req.method === "POST") { if (body.all_sessions) { access.clear(); refresh.clear(); } else access.delete(token); return send(null, 204); }
   const user = access.get(token)!;
   if (url.pathname === "/v1/auth/me") return send(user);
@@ -626,6 +653,7 @@ const server = createServer(async (req, res) => {
   }
   if (url.pathname === "/v1/catalog" || url.pathname.startsWith("/v1/catalog/")) {
     if (!user.roles.some(role => ["system_admin", "rights_officer", "editor_in_chief", "finance", "buyer_admin", "buyer_member"].includes(role.name))) return send({}, 403);
+    if (user.organization_id && organizations.get(user.organization_id)?.status !== "active") return send({ code: "forbidden_scope" }, 403);
     // كتالوج اصطناعي: مادتان، بحقول خارج القائمة البيضاء للتأكد أنها لا تصل إلى المتصفح.
     const text = (ar: string, en: string) => ({ ar, en });
     const offer = (id: string, type: string, amount: number) => ({ license_template_id: `70000000-0000-4000-8000-00000000000${id}`, license_version: 1, type, name: text(type === "exclusive_temporary" ? "حصري 48 ساعة" : "تحريري لاستخدام واحد", type === "exclusive_temporary" ? "Exclusive 48 h" : "Editorial single use"), price: { amount_minor: amount, currency: "USD" }, terms: { type, name: text("شروط اصطناعية", "Synthetic terms"), terms: text("استخدام اصطناعي قبل الشراء", "Synthetic use before purchase"), usage_media: ["tv", "web"], territory: { kind: "worldwide" }, term_days: type === "exclusive_temporary" ? 365 : null, exclusivity_hours: type === "exclusive_temporary" ? 48 : null, deliverables: ["original"], attribution: text("شبكة اصطناعية", "Synthetic network"), prohibitions: ["resale"] } });

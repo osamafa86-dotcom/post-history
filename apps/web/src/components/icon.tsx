@@ -47,6 +47,7 @@ const paths = {
   pin: "M12 21s-7-6.3-7-11.5a7 7 0 0 1 14 0C19 14.7 12 21 12 21M12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5",
   printer: "M7 8V3h10v5M7 17H4v-7h16v7h-3M7 14h10v7H7z",
   cart: "M3 4h2l2.5 11h11L21 7H6.5M9.5 20a1 1 0 1 0 0-.1M17.5 20a1 1 0 1 0 0-.1",
+  archive: "M3 4h18v5H3zM5 9v11h14V9M10 13h4",
 } as const;
 
 export type IconName = keyof typeof paths;
