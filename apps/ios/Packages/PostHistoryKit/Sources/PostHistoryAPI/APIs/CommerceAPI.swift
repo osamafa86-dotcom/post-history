@@ -328,37 +328,40 @@ open class CommerceAPI {
      
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
      - parameter orderId: (path)  
+     - parameter checkoutRequest: (body)  (optional)
      - parameter apiConfiguration: The configuration for the http request.
      - returns: CheckoutSession
      */
-    open class func createOrderCheckout(idempotencyKey: String, orderId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> CheckoutSession {
-        return try await createOrderCheckoutWithRequestBuilder(idempotencyKey: idempotencyKey, orderId: orderId, apiConfiguration: apiConfiguration).execute().body
+    open class func createOrderCheckout(idempotencyKey: String, orderId: UUID, checkoutRequest: CheckoutRequest? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> CheckoutSession {
+        return try await createOrderCheckoutWithRequestBuilder(idempotencyKey: idempotencyKey, orderId: orderId, checkoutRequest: checkoutRequest, apiConfiguration: apiConfiguration).execute().body
     }
 
     /**
      جلسة دفع مستضافة لدى المزوّد
      - POST /orders/{order_id}/checkout
-     - يعيد رابط صفحة الدفع المستضافة (ADR 0032): لا تمر بيانات بطاقة بخوادمنا ولا في أي عقد. يُعاد التحقق من الحجز الحصري والحقوق قبل إنشاء الجلسة. الطلب غير `pending_payment` أو المنتهي `409 order_state_conflict`، والحجز الذي ضاع `409 exclusive_unavailable`. التكرار والجلسة صالحة يعيد الجلسة نفسها. العودة من صفحة المزوّد لا تؤكد الدفع: التأكيد من الإشعار الموقّع وحده، والعميل يقرأ الطلب حتى `paid`.
+     - يعيد رابط صفحة الدفع المستضافة (ADR 0032): لا تمر بيانات بطاقة بخوادمنا ولا في أي عقد. يُعاد التحقق من الحجز الحصري والحقوق قبل إنشاء الجلسة. الطلب غير `pending_payment` أو المنتهي `409 order_state_conflict`، والحجز الذي ضاع `409 exclusive_unavailable`، والمادة التي خرجت حقوقها من `sellable` `409 rights_not_sellable`. التكرار والجلسة صالحة يعيد الجلسة نفسها. العودة من صفحة المزوّد لا تؤكد الدفع: التأكيد من الإشعار الموقّع وحده، والعميل يقرأ الطلب حتى `paid`. الجسم اختياري (`CheckoutRequest`، إضافي): `locale` لغة الويب التي بدأ منها المشتري، فتُعرض بها صفحة المزوّد التجريبي ويعود منها إلى طلبه بلغته (`{locale}` في قالب العودة من إعداد الخادم)؛ بلا جسم أو بلا `locale` العربية.
      - Bearer Token:
        - type: http
        - name: bearerAuth
      - responseHeaders: [Cache-Control(String)]
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
      - parameter orderId: (path)  
+     - parameter checkoutRequest: (body)  (optional)
      - parameter apiConfiguration: The configuration for the http request.
      - returns: RequestBuilder<CheckoutSession> 
      */
-    open class func createOrderCheckoutWithRequestBuilder(idempotencyKey: String, orderId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<CheckoutSession> {
+    open class func createOrderCheckoutWithRequestBuilder(idempotencyKey: String, orderId: UUID, checkoutRequest: CheckoutRequest? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<CheckoutSession> {
         var localVariablePath = "/orders/{order_id}/checkout"
         let orderIdPreEscape = "\(APIHelper.mapValueToPathItem(orderId))"
         let orderIdPostEscape = orderIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
         localVariablePath = localVariablePath.replacingOccurrences(of: "{order_id}", with: orderIdPostEscape, options: .literal, range: nil)
         let localVariableURLString = apiConfiguration.basePath + localVariablePath
-        let localVariableParameters: [String: any Sendable]? = nil
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: checkoutRequest, codableHelper: apiConfiguration.codableHelper)
 
         let localVariableUrlComponents = URLComponents(string: localVariableURLString)
 
         let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
             "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
         ]
 

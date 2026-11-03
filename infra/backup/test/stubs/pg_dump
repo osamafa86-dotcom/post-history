@@ -1,0 +1,8 @@
+#!/bin/sh
+# Test stand-in (infra/backup/test/test-backup.sh): the real pg_dump; with FAIL_PG_DUMP set, its first 4 KiB and then a
+# failure, as a dump cut short by a dropped connection or a killed server.
+if [ -n "${FAIL_PG_DUMP:-}" ]; then
+  /usr/local/bin/pg_dump "$@" | head -c 4096
+  exit 1
+fi
+exec /usr/local/bin/pg_dump "$@"

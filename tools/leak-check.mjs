@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// فاحص التسريب في المخرجات النصية: يمسح docs/ وtools/acceptance/ وapps/<التطبيق>/store/ وinfra/ و.github/
-// وملفات .env.example (نصوصًا لا صورًا) بحثًا عن نطاقات ومضيفين وعناوين IP وبريدات وبصمات تجزئة
+// فاحص التسريب في المخرجات النصية: يمسح docs/ وtools/acceptance/ وapps/<التطبيق>/store/ وapps/<التطبيق>/src/
+// وapps/ios/App/ وcontracts/ وworkers/ وinfra/ و.github/ وملفات .env.example (نصوصًا لا صورًا) بحثًا عن نطاقات ومضيفين
+// وعناوين IP وبريدات وبصمات تجزئة
 // وإحداثيات GPS وأسرار (رموز TOTP ومفاتيح وJWT).
 // القاعدة الحاكمة: لا يُطبع أي جزء من القيمة المطابقة، لا في النص ولا في JSON؛ نوع التطابق وملف:سطر فقط.
 // الخروج 1 عند أي تطابق غير مسموح في tools/leak-check.allow.json. sanitize() تُصدَّر لتنقيح مخرجات أدوات أخرى.
@@ -12,7 +13,7 @@ import { fileURLToPath } from "node:url";
 // نصوص نعرفها بامتدادها؛ والامتدادات الثنائية المعروفة تُتخطى وتُعدّ في الملخص؛ وما عداهما يُشم بالبايت الصفري
 // (Caddyfile.main وmodels.lock وDockerfile وغيرها فلا يفلت ملف بنية لأن امتداده غريب).
 const TEXT_EXT = new Set([
-  ".md", ".txt", ".json", ".mjs", ".cjs", ".js", ".ts", ".yml", ".yaml", ".sh", ".csv", ".html", ".xml", ".plist",
+  ".md", ".txt", ".json", ".mjs", ".cjs", ".js", ".ts", ".tsx", ".jsx", ".yml", ".yaml", ".sh", ".csv", ".html", ".xml", ".plist",
   ".strings", ".toml", ".kt", ".kts", ".swift", ".py", ".conf", ".ini", ".properties", ".sql", ".tf", ".env", ".example",
   ".svg", ".css", ".gradle", ".lock",
 ]);
@@ -21,7 +22,8 @@ const BINARY_EXT = new Set([
   ".flac", ".m4a", ".pdf", ".woff", ".woff2", ".otf", ".ttf", ".zip", ".gz", ".tgz", ".tar", ".apk", ".aab", ".ipa",
   ".jar", ".wasm", ".p12", ".bin", ".keystore", ".jks",
 ]);
-const CODE_EXT = new Set([".mjs", ".cjs", ".js", ".ts", ".sh", ".json", ".py", ".kt", ".kts", ".swift"]);
+// ملفات الكود: النطاق لا يُحسب فيها إلا داخل نص مقتبس أو مسار URL (r.video وNEW.id ومحدِّد CSS مثل a.button.store ليست مضيفين).
+const CODE_EXT = new Set([".mjs", ".cjs", ".js", ".ts", ".tsx", ".jsx", ".sh", ".json", ".py", ".kt", ".kts", ".swift", ".sql", ".css"]);
 const SKIP_DIRS = new Set([".git", "node_modules"]);
 // ملفات البيئة النموذجية (.env.example وx.env.example وx.env.prod.example) في أي مكان من المستودع.
 const ENV_EXAMPLE_RE = /(?:^|\.)env(?:\.[\w-]+)*\.example$/;
@@ -59,7 +61,8 @@ const DOMAIN_RE = /\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z
 // سلطة URL: المضيف (دون userinfo والمنفذ) بأي لاحقة، حتى بلا نقطة (اسم خدمة داخلي)؛ يُتخطى القالب ${...} و<...>.
 const URL_HOST_RE = /\b(?:https?|wss?):\/\/(?:[^\s/?#@"'`<>]*@)?([A-Za-z0-9][A-Za-z0-9._-]*)(?![A-Za-z0-9._${}<%*-])/g;
 const IP_RE = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
-const IPV6_RE = /(?<![0-9A-Za-z_.:])(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}|(?:[0-9A-Fa-f]{1,4}:){1,7}:|(?:[0-9A-Fa-f]{1,4}:){1,6}:[0-9A-Fa-f]{1,4}|(?:[0-9A-Fa-f]{1,4}:){1,5}(?::[0-9A-Fa-f]{1,4}){1,2}|(?:[0-9A-Fa-f]{1,4}:){1,4}(?::[0-9A-Fa-f]{1,4}){1,3}|(?:[0-9A-Fa-f]{1,4}:){1,3}(?::[0-9A-Fa-f]{1,4}){1,4}|(?:[0-9A-Fa-f]{1,4}:){1,2}(?::[0-9A-Fa-f]{1,4}){1,5}|[0-9A-Fa-f]{1,4}:(?:(?::[0-9A-Fa-f]{1,4}){1,6})|:(?:(?::[0-9A-Fa-f]{1,4}){1,7}|:))(?![0-9A-Fa-f:])/g;
+// لا يلتصق العنوان بحرف بعده: ::bigint و::date في SQL و::before في CSS تحويلات وعناصر زائفة لا عناوين.
+const IPV6_RE = /(?<![0-9A-Za-z_.:])(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}|(?:[0-9A-Fa-f]{1,4}:){1,7}:|(?:[0-9A-Fa-f]{1,4}:){1,6}:[0-9A-Fa-f]{1,4}|(?:[0-9A-Fa-f]{1,4}:){1,5}(?::[0-9A-Fa-f]{1,4}){1,2}|(?:[0-9A-Fa-f]{1,4}:){1,4}(?::[0-9A-Fa-f]{1,4}){1,3}|(?:[0-9A-Fa-f]{1,4}:){1,3}(?::[0-9A-Fa-f]{1,4}){1,4}|(?:[0-9A-Fa-f]{1,4}:){1,2}(?::[0-9A-Fa-f]{1,4}){1,5}|[0-9A-Fa-f]{1,4}:(?:(?::[0-9A-Fa-f]{1,4}){1,6})|:(?:(?::[0-9A-Fa-f]{1,4}){1,7}|:))(?![0-9A-Za-z_:])/g;
 const EMAIL_RE = /\b[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b/g;
 
 // الأسرار: [النوع، النمط]. كل نمط يُستعمل في الفحص وفي sanitize.
@@ -73,13 +76,19 @@ const SECRET_DEFS = [
   ["google", /\bAIza[0-9A-Za-z_-]{35}\b/g],
   ["bearer", /\bBearer\s+(?=[A-Za-z0-9._~+/-]*\d)(?=[A-Za-z0-9._~+/-]*[A-Za-z])[A-Za-z0-9._~+/-]{16,}=*/g],
 ];
-const TOTP_RE = /(?:totp|otpauth|base32)[^\n]{0,40}?\b[A-Z2-7]{16,}\b/gi;
+// بذرة TOTP بحالة حروف واحدة (Base32 كبير أو صغير كله): معرّف بحالة مختلطة بجوار الكلمة (totpPendingSecretEnc) ليس بذرة.
+const TOTP_RE = /(?:[Tt][Oo][Tt][Pp]|[Oo][Tt][Pp][Aa][Uu][Tt][Hh]|[Bb][Aa][Ss][Ee]32)[^\n]{0,40}?\b([A-Z2-7]{16,}|[a-z2-7]{16,})\b/g;
+// للتنقيح وحده: أوسع عمدًا (أي حالة حروف)، فالإخراج الآمن يفضّل الحجب الزائد.
+const TOTP_ANY_RE = /(?:totp|otpauth|base32)[^\n]{0,40}?\b[A-Z2-7]{16,}\b/gi;
 const HASH_CTX_RE = /(?:sha\d*-?\d*|hash|fingerprint|بصمة|تجزئة)/i;
 // ست عشرية 16–128 خانة؛ 64 (SHA-256) و128 (SHA-512) تُعلَّمان بلا شرط سياق، وما عداهما بكلمة سياق في السطر نفسه.
 const HEX_RE = /(?<![0-9A-Za-z])[0-9A-Fa-f]{16,128}(?![0-9A-Za-z])/g;
 const HEX_KIND = { 32: "md5", 40: "sha1", 64: "sha256", 128: "sha512" };
 const OCI_REF_RE = /[A-Za-z0-9][A-Za-z0-9._/-]*(?::[A-Za-z0-9._-]+)?@sha256:$/;
-const OCI_SCOPE_RE = /^(?:infra|\.github)\//;
+const OCI_SCOPE_RE = /^(?:infra|\.github|workers)\//;
+// تثبيت حزمة pip بالبصمة (--hash=sha256:…) في ملف requirements*.txt: بصمة حزمة عامة من PyPI لا بصمة مادة.
+const PIP_HASH_RE = /--hash=sha256:$/;
+const PIP_FILE_RE = /(?:^|\/)requirements[\w.-]*\.txt$/;
 
 // إحداثيات: أزواج عشرية بأربع خانات كسرية فأكثر (~11 م)، وصيغة ISO 6709، وlat/lon بقيمة.
 const GPS_PAIR_RE = /(?<![\w.])(-?\d{1,3}\.\d{4,})\s*[,;]\s*(-?\d{1,3}\.\d{4,})(?![\d]|\.\d)/g;
@@ -356,7 +365,7 @@ export function scanFile(path, relPath, allow) {
     }
   }
   for (const m of text.matchAll(TOTP_RE)) {
-    const value = m[0].match(/[A-Z2-7]{16,}/i)[0].toUpperCase();
+    const value = m[1].toUpperCase();
     if (!secretAllowed(value, allow, relPath)) add(m.index, "secret", "totp");
   }
   // بصمة: 64 أو 128 خانة ست عشرية بلا شرط، وغيرهما (16–128) بكلمة سياق في السطر نفسه.
@@ -366,6 +375,8 @@ export function scanFile(path, relPath, allow) {
     const strong = hex.length === 64 || hex.length === 128;
     // مرجع صورة حاوية مثبّتة بالبصمة (name:tag@sha256:…) في infra/ و.github/ فقط: بصمة صورة عامة لا بصمة مادة.
     if (hex.length === 64 && OCI_SCOPE_RE.test(relPath) && OCI_REF_RE.test(text.slice(Math.max(0, m.index - 200), m.index))) continue;
+    // وتثبيت pip بالبصمة في ملف requirements*.txt وحده (ملف القفل الذي يولّده pip-compile --generate-hashes).
+    if (hex.length === 64 && PIP_FILE_RE.test(relPath) && PIP_HASH_RE.test(text.slice(Math.max(0, m.index - 14), m.index))) continue;
     if (!strong) {
       const from = text.lastIndexOf("\n", m.index - 1) + 1;
       const to = text.indexOf("\n", m.index);
@@ -423,7 +434,7 @@ export function sanitize(text) {
   let out = String(text);
   for (const [, re] of SECRET_DEFS) out = out.replace(re, "<secret>");
   return out
-    .replace(new RegExp(TOTP_RE.source, "gi"), (m) => m.replace(/[A-Z2-7]{16,}/i, "<secret>"))
+    .replace(TOTP_ANY_RE, (m) => m.replace(/[A-Z2-7]{16,}/i, "<secret>"))
     .replace(EMAIL_RE, (m) => (isDomainToken(m.split("@")[1]) ? "<base>" : m))
     .replace(/\b(?:https?|wss?):\/\/(?:[^\s/?#@"'`<>]*@)?([A-Za-z0-9][A-Za-z0-9._-]*)/g, (m, host) => (host.toLowerCase() === "localhost" ? m : "<base>"))
     .replace(DOMAIN_RE, (m, offset, whole) => (isDomainToken(m) && whole[offset - 1] !== "." && !looksLikeIdentifier(m) ? "<base>" : m))
@@ -439,7 +450,8 @@ export function sanitize(text) {
 function defaultRoots(base) {
   let apps = [];
   try {
-    apps = readdirSync(join(base, "apps")).map((a) => join(base, "apps", a, "store"));
+    // بيانات المتجر ومصدر كل تطبيق (apps/<التطبيق>/store وapps/<التطبيق>/src).
+    apps = readdirSync(join(base, "apps")).sort().flatMap((a) => [join(base, "apps", a, "store"), join(base, "apps", a, "src")]);
   } catch {
     // لا مجلد apps/ (مستودع جزئي أو نسخة مصغّرة): يُتخطى بلا استثناء.
   }
@@ -447,6 +459,10 @@ function defaultRoots(base) {
     join(base, "docs"),
     join(base, "tools/acceptance"),
     ...apps,
+    // تطبيق iOS مصدره وموارده في App/ لا src/؛ والعقود والعمّال تُشحن مع الصور وتُقرأ في المستودع العام.
+    join(base, "apps/ios/App"),
+    join(base, "contracts"),
+    join(base, "workers"),
     join(base, "infra"),
     join(base, ".github"),
     ...findEnvExamples(base),
