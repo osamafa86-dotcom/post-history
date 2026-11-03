@@ -56,7 +56,7 @@ const FG_CENTER_Y = 580;
 // المقاسات كما في إطارات Figma VT-01 وVT-04 وVT-05
 const L = {
   // block: أقصى عرض للكتلة السفلية من عرض الإطار؛ الأفقي يبقى شريطًا سفليًا في جهة البداية لا يمتدّ على العرض كله
-  vertical: { m: 72, logoW: 300, logoTop: 220, bottom: 560, title: 66, tag: 32, loc: 32, block: 1, plate: 'plates/plate-9x16.jpg' },
+  vertical: { m: 72, logoW: 300, logoTop: 220, bottom: 560, title: 66, tag: 28, loc: 32, block: 1, plate: 'plates/plate-9x16.jpg' },
   horizontal: { m: 96, logoW: 300, logoTop: 72, bottom: 110, title: 64, tag: 28, loc: 32, block: 0.55, plate: 'plates/plate-16x9.jpg' },
   square: { m: 64, logoW: 260, logoTop: 64, bottom: 96, title: 58, tag: 26, loc: 30, block: 1, plate: 'plates/plate-1x1.jpg' },
 } as const;
