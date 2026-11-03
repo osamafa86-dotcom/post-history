@@ -104,6 +104,13 @@ export class MaterialsController {
     return this.materials.update(req.principal!, id, validateBody('/materials/{id}', 'patch', body), ifMatch);
   }
 
+  @Put(':id/tags')
+  @Roles('supervisor', 'editor_in_chief')
+  replaceTags(@Param('id') id: string, @Body() body: unknown, @Req() req: Request, @Headers('if-match') ifMatch?: string): Promise<Material> {
+    const input = validateBody<components['schemas']['MaterialTagsUpdate']>('/materials/{id}/tags', 'put', body);
+    return this.materials.replaceTags(req.principal!, id, input.tags, ifMatch);
+  }
+
   @Get(':id/transitions')
   @Roles(...READERS)
   async transitions(@Param('id') id: string, @Req() req: Request): Promise<{ items: components['schemas']['TransitionRecord'][] }> {

@@ -13,6 +13,7 @@ export const notificationTypes = [
   "user.status_changed", "auth.recovery_completed", "export.requested", "setting.changed", "catalog.listing_changed", "license.delivery_requested",
   "order.status_changed", "license.issued", "license.revoked", "payout.status_changed", "render.requested", "render.started", "render.completed", "render.failed",
   "assignment.created", "assignment.state_changed", "tag.suggestions_changed", "tag.rewritten", "platform_settings.changed",
+  "user.roles_changed", "buyer_organization.status_changed",
 ] as const;
 export const knownType = (value: unknown): string => typeof value === "string" && (notificationTypes as readonly string[]).includes(value) ? value : "";
 

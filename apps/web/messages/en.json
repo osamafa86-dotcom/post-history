@@ -1290,7 +1290,8 @@
     "statuses": {
       "pending_verification": "Pending verification",
       "active": "Active",
-      "suspended": "Suspended"
+      "suspended": "Suspended",
+      "rejected": "Rejected"
     },
     "members": "Users",
     "createdAt": "Created",
@@ -1335,7 +1336,8 @@
     "chips": {
       "pending_verification": "Pending verification",
       "active": "Active",
-      "suspended": "Suspended"
+      "suspended": "Suspended",
+      "rejected": "Rejected"
     },
     "emptyFiltered": "No organizations with this status",
     "emptyBody": "Organizations do not register themselves: a system administrator creates one with its first admin.",

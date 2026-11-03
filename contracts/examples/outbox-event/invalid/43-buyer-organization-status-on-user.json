@@ -1,0 +1,17 @@
+{
+  "id": "3508",
+  "type": "buyer_organization.status_changed",
+  "aggregate_type": "user",
+  "aggregate_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+  "occurred_at": "2026-11-03T15:05:00Z",
+  "idempotency_key": "buyer_organization.status_changed:1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d:active:5",
+  "actor_id": "3a4b5c6d-7e8f-4a9b-8c0d-1e2f3a4b5c6d",
+  "payload": {
+    "organization_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+    "from": "pending_verification",
+    "to": "active",
+    "reason_code": null
+  },
+  "published_at": null,
+  "attempts": 0
+}

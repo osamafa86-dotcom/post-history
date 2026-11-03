@@ -86,6 +86,49 @@ open class AdminAPI {
     }
 
     /**
+     أدوار حساب طاقم بنطاقاتها (A1، ADR 0104)
+     
+     - parameter id: (path) معرّف المستخدم 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: StaffRoles
+     */
+    open class func getUserRoles(id: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> StaffRoles {
+        return try await getUserRolesWithRequestBuilder(id: id, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     أدوار حساب طاقم بنطاقاتها (A1، ADR 0104)
+     - GET /users/{id}/roles
+     - أدوار الحساب ونطاق كلٍّ منها، لتعديلها بـ `PUT`. حساب المشتري وغير الموجود `404`: أدوار المشترين في المؤسسات المشترية.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter id: (path) معرّف المستخدم 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<StaffRoles> 
+     */
+    open class func getUserRolesWithRequestBuilder(id: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<StaffRoles> {
+        var localVariablePath = "/users/{id}/roles"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<StaffRoles>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      حسابات الطاقم لمدير النظام (A1، ADR 0099)
      
      - parameter role: (query) حسابات تحمل أحد هذه الأدوار (optional)
@@ -184,6 +227,54 @@ open class AdminAPI {
         let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
 
         let localVariableRequestBuilder: RequestBuilder<PlatformSettings>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "PUT", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
+     استبدال أدوار حساب طاقم (A1، ADR 0104)
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف المستخدم 
+     - parameter staffRolesUpdate: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: StaffRoles
+     */
+    open class func replaceUserRoles(idempotencyKey: String, id: UUID, staffRolesUpdate: StaffRolesUpdate, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> StaffRoles {
+        return try await replaceUserRolesWithRequestBuilder(idempotencyKey: idempotencyKey, id: id, staffRolesUpdate: staffRolesUpdate, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     استبدال أدوار حساب طاقم (A1، ADR 0104)
+     - PUT /users/{id}/roles
+     - يستبدل أدوار الحساب كلها. النطاق (`scopes`) للمشرف وحده: مكتب موجود أو محافظة مكتب موجود، والمشرف بلا نطاق يرى الكل؛ وغير المشرف بلا نطاق. أدوار المشترين ونطاق `organization` لا تُقبل هنا. ما خالف ذلك `422 validation_failed` بمسار الحقل. لا يغيّر المدير أدواره (`403 forbidden_scope`). ودور `system_admin` خارج هذه النقطة في الاتجاهين: منحه، أو أي تغيير لحساب يحمله، `403 admin_quorum_required` (إجراء الشخصين من سطر الأوامر، ADR 0005 و0030)؛ فلا يسقط منها آخر مدير ولا غيره. القائمة نفسها مرة ثانية لا تكتب شيئًا. التغيير في معاملة واحدة مع حدث `user.roles_changed` بمعرّف الحساب وحده، وتدقيق بالمعرّف ورموز الأدوار قبل وبعد. يسري على الطلب التالي للحساب.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter id: (path) معرّف المستخدم 
+     - parameter staffRolesUpdate: (body)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<StaffRoles> 
+     */
+    open class func replaceUserRolesWithRequestBuilder(idempotencyKey: String, id: UUID, staffRolesUpdate: StaffRolesUpdate, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<StaffRoles> {
+        var localVariablePath = "/users/{id}/roles"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: staffRolesUpdate, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<StaffRoles>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
 
         return localVariableRequestBuilder.init(method: "PUT", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
     }

@@ -1,0 +1,16 @@
+{
+  "id": "3504",
+  "type": "upload.original_received",
+  "aggregate_type": "upload",
+  "aggregate_id": "5d6c7b8a-9f0e-4d1c-8b2a-3c4d5e6f7a8b",
+  "occurred_at": "2026-11-03T15:20:00Z",
+  "idempotency_key": "upload.original_received:5d6c7b8a-9f0e-4d1c-8b2a-3c4d5e6f7a8b",
+  "actor_id": null,
+  "payload": {
+    "material_id": "7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b",
+    "upload_session_id": "5d6c7b8a-9f0e-4d1c-8b2a-3c4d5e6f7a8b",
+    "kind": "produced"
+  },
+  "published_at": null,
+  "attempts": 0
+}

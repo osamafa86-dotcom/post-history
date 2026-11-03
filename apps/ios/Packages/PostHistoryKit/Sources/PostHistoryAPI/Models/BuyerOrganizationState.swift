@@ -14,13 +14,16 @@ public struct BuyerOrganizationState: Sendable, Codable, Hashable {
     public var activeMembers: Int
     /** أول انتقال إلى `active` */
     public var verifiedAt: Date?
+    /** سبب الرفض، ويظهر مع `rejected` وحدها ويغيب مع غيرها (ADR 0104)، فلا ينكسر عميل يعيد إرسال المؤسسة المقروءة في `PUT`. حالة مقروءة لا تُرسل في `PUT` (`BuyerOrganizationInput` لا يقبلها) */
+    public var rejectionReason: BuyerOrganizationRejectionReason?
     public var createdAt: Date
     public var updatedAt: Date
 
-    public init(id: UUID, activeMembers: Int, verifiedAt: Date?, createdAt: Date, updatedAt: Date) {
+    public init(id: UUID, activeMembers: Int, verifiedAt: Date?, rejectionReason: BuyerOrganizationRejectionReason? = nil, createdAt: Date, updatedAt: Date) {
         self.id = id
         self.activeMembers = activeMembers
         self.verifiedAt = verifiedAt
+        self.rejectionReason = rejectionReason
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -29,6 +32,7 @@ public struct BuyerOrganizationState: Sendable, Codable, Hashable {
         case id
         case activeMembers = "active_members"
         case verifiedAt = "verified_at"
+        case rejectionReason = "rejection_reason"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -40,6 +44,7 @@ public struct BuyerOrganizationState: Sendable, Codable, Hashable {
         try container.encode(id, forKey: .id)
         try container.encode(activeMembers, forKey: .activeMembers)
         try container.encode(verifiedAt, forKey: .verifiedAt)
+        try container.encodeIfPresent(rejectionReason, forKey: .rejectionReason)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
@@ -47,3 +52,10 @@ public struct BuyerOrganizationState: Sendable, Codable, Hashable {
 
 
 extension BuyerOrganizationState: Identifiable {}
+
+extension BuyerOrganizationState: UnknownCaseCheckable {
+    public var containsUnknownDefaultOpenApiCase: Bool {
+        if rejectionReason == .unknownDefaultOpenApi { return true }
+        return false
+    }
+}

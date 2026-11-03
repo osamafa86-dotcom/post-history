@@ -243,6 +243,7 @@ export const materialFilesRelations = relations(materialFiles, ({one, many}) => 
 	materialRenders_fileId: many(materialRenders, {
 		relationName: "materialRenders_fileId_materialFiles_id"
 	}),
+	materialAssignments: many(materialAssignments),
 }));
 
 export const recoveryRequestsRelations = relations(recoveryRequests, ({one, many}) => ({
@@ -290,6 +291,10 @@ export const materialAssignmentsRelations = relations(materialAssignments, ({one
 	material: one(materials, {
 		fields: [materialAssignments.materialId],
 		references: [materials.id]
+	}),
+	materialFile: one(materialFiles, {
+		fields: [materialAssignments.materialId],
+		references: [materialFiles.id]
 	}),
 	user_assigneeId: one(users, {
 		fields: [materialAssignments.assigneeId],

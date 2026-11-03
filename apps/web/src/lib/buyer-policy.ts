@@ -15,7 +15,7 @@ export const organizationReaders = ["system_admin", "finance", "buyer_admin", "b
 export const organizationEditors = ["system_admin", "buyer_admin"] as const satisfies readonly Role[];
 export const memberManagers = ["system_admin", "buyer_admin"] as const satisfies readonly Role[];
 export const buyerRoles = ["buyer_admin", "buyer_member"] as const satisfies readonly components["schemas"]["BuyerRole"][];
-export const organizationStatuses = ["pending_verification", "active", "suspended"] as const satisfies readonly components["schemas"]["BuyerOrganizationStatus"][];
+export const organizationStatuses = ["pending_verification", "active", "suspended", "rejected"] as const satisfies readonly components["schemas"]["BuyerOrganizationStatus"][];
 export const memberStatuses = ["active", "suspended"] as const satisfies readonly MemberUpdate["status"][];
 export const organizationLimits = { legalName: 200, email: 254, seatsMin: 1, seatsMax: 1000 } as const;
 

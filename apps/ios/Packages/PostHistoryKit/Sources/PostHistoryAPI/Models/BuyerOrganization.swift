@@ -27,10 +27,12 @@ public struct BuyerOrganization: Sendable, Codable, Hashable {
     public var activeMembers: Int
     /** أول انتقال إلى `active` */
     public var verifiedAt: Date?
+    /** سبب الرفض، ويظهر مع `rejected` وحدها ويغيب مع غيرها (ADR 0104)، فلا ينكسر عميل يعيد إرسال المؤسسة المقروءة في `PUT`. حالة مقروءة لا تُرسل في `PUT` (`BuyerOrganizationInput` لا يقبلها) */
+    public var rejectionReason: BuyerOrganizationRejectionReason?
     public var createdAt: Date
     public var updatedAt: Date
 
-    public init(legalName: String, displayName: LocalizedText, country: String, billingEmail: String, seats: Int? = 5, status: BuyerOrganizationStatus? = nil, id: UUID, activeMembers: Int, verifiedAt: Date?, createdAt: Date, updatedAt: Date) {
+    public init(legalName: String, displayName: LocalizedText, country: String, billingEmail: String, seats: Int? = 5, status: BuyerOrganizationStatus? = nil, id: UUID, activeMembers: Int, verifiedAt: Date?, rejectionReason: BuyerOrganizationRejectionReason? = nil, createdAt: Date, updatedAt: Date) {
         self.legalName = legalName
         self.displayName = displayName
         self.country = country
@@ -40,6 +42,7 @@ public struct BuyerOrganization: Sendable, Codable, Hashable {
         self.id = id
         self.activeMembers = activeMembers
         self.verifiedAt = verifiedAt
+        self.rejectionReason = rejectionReason
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -54,6 +57,7 @@ public struct BuyerOrganization: Sendable, Codable, Hashable {
         case id
         case activeMembers = "active_members"
         case verifiedAt = "verified_at"
+        case rejectionReason = "rejection_reason"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -71,6 +75,7 @@ public struct BuyerOrganization: Sendable, Codable, Hashable {
         try container.encode(id, forKey: .id)
         try container.encode(activeMembers, forKey: .activeMembers)
         try container.encode(verifiedAt, forKey: .verifiedAt)
+        try container.encodeIfPresent(rejectionReason, forKey: .rejectionReason)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
@@ -82,6 +87,7 @@ extension BuyerOrganization: Identifiable {}
 extension BuyerOrganization: UnknownCaseCheckable {
     public var containsUnknownDefaultOpenApiCase: Bool {
         if status == .unknownDefaultOpenApi { return true }
+        if rejectionReason == .unknownDefaultOpenApi { return true }
         return false
     }
 }

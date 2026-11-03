@@ -2,8 +2,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { pgError } from '../common/db-errors';
 import { ApiError } from '../common/errors';
-import { DB, type Database, type Executor } from '../database/database.module';
-import { auditLog, materialAssignments, materials } from '../database/schema/schema';
+import { DB, type Database, type Executor, type Tx } from '../database/database.module';
+import { auditLog, materialAssignments, materialFiles, materials, uploadSessions } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import type { Principal } from '../identity/principal';
 import { findScoped } from '../materials/material-store';
@@ -122,6 +122,7 @@ export class AssignmentsService {
   async transition(p: Principal, id: string, body: AssignmentTransition): Promise<MaterialAssignmentDto> {
     if (!UUID.test(id)) throw ApiError.notFound();
     if (body.note !== undefined && body.to !== 'returned') throw ApiError.validation({ fields: ['/note'] });
+    if (body.produced_file_id !== undefined && body.to !== 'done') throw ApiError.validation({ fields: ['/produced_file_id'] });
     return this.db.transaction(async (tx) => {
       const row = await lockAssignment(tx, id);
       if (!row) throw ApiError.notFound();
@@ -137,9 +138,13 @@ export class AssignmentsService {
       }
       const allowed = (owners.includes('assignee') && isAssignee) || (owners.includes('manager') && m !== undefined && canAssign(p, m));
       if (!allowed) throw new ApiError(403, 'forbidden_scope', 'This transition belongs to the assignee or to whoever manages the assignment.');
+      if (body.produced_file_id !== undefined && !(await isDeliverableProduced(tx, row.materialId, row.assigneeId, body.produced_file_id))) {
+        throw ApiError.validation({ fields: ['/produced_file_id'] });
+      }
       await applyAssignmentTransition(tx, row, body.to as AssignmentState, p.userId, {
         priority: m?.priority ?? (await materialPriority(tx, row.materialId)),
         note: body.note ?? null,
+        producedFileId: body.produced_file_id ?? null,
       });
       return toAssignmentDto(p, (await readAssignment(tx, id))!);
     });
@@ -238,4 +243,26 @@ function decodeCursor(cursor: string): { at: string; id: string } {
     // يقع إلى 400 أدناه
   }
   throw new ApiError(400, 'bad_request', 'Invalid cursor.', { params: ['cursor'] });
+}
+
+/**
+ * النسخة المُنتَجة التي تُسلَّم بها المهمة (ADR 0104): ملف produced متحقق من المادة نفسها، رفعه المسنَد إليه في جلسة رفع
+ * (لا مشتق العامل ولا ملف غيره). والقاعدة تثبت المادة نفسها بمفتاح أجنبي مركّب.
+ */
+async function isDeliverableProduced(tx: Tx, materialId: string, assigneeId: string, fileId: string): Promise<boolean> {
+  if (!UUID.test(fileId)) return false;
+  const [f] = await tx
+    .select({ id: materialFiles.id })
+    .from(materialFiles)
+    .innerJoin(uploadSessions, eq(uploadSessions.id, materialFiles.uploadSessionId))
+    .where(
+      and(
+        eq(materialFiles.id, fileId),
+        eq(materialFiles.materialId, materialId),
+        eq(materialFiles.kind, 'produced'),
+        eq(materialFiles.state, 'verified'),
+        eq(uploadSessions.createdBy, assigneeId),
+      ),
+    );
+  return f !== undefined;
 }

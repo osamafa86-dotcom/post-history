@@ -1290,7 +1290,8 @@
     "statuses": {
       "pending_verification": "بانتظار التحقق",
       "active": "مفعّلة",
-      "suspended": "معلّقة"
+      "suspended": "معلّقة",
+      "rejected": "مرفوضة"
     },
     "members": "المستخدمون",
     "createdAt": "أُنشئت",
@@ -1335,7 +1336,8 @@
     "chips": {
       "pending_verification": "بانتظار التحقق",
       "active": "نشطة",
-      "suspended": "موقوفة"
+      "suspended": "موقوفة",
+      "rejected": "مرفوضة"
     },
     "emptyFiltered": "لا مؤسسات بهذه الحالة",
     "emptyBody": "المؤسسة لا تسجّل نفسها: ينشئها مدير النظام ومعها مديرها الأول.",

@@ -10,7 +10,7 @@ import { ApiError } from '../common/errors';
 import { assertIfMatch } from '../common/preconditions';
 import { LOGGER } from '../common/logger';
 import { DB, type Database, type Tx } from '../database/database.module';
-import { materialContributors, materials, materialTransitions, offices } from '../database/schema/schema';
+import { auditLog, materialContributors, materials, materialTransitions, offices } from '../database/schema/schema';
 import { storedDynamicFields, validateDynamicFields } from '../forms/dynamic-fields';
 import { FormsService } from '../forms/forms.service';
 import type { components } from '../generated/api';
@@ -249,6 +249,42 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
     });
   }
 
+  /**
+   * وسوم المادة من المكتب (W2، ADR 0104): المشرف في نطاقه ورئيس التحرير. الوسم صفة أرشفة لا مضمون يُعاد اعتماده (ADR 0098):
+   * لا يرتفع version ولا تتغيّر الحالات الثلاث ولا الحجز، ويرتفع row_version وحده. القائمة نفسها لا تكتب شيئًا. الحدث
+   * material.updated بحمولة المادة القائمة (بلا وسوم)، والتدقيق بمعرّف المادة وحده.
+   */
+  async replaceTags(p: Principal, id: string, tags: string[], ifMatch?: string): Promise<MaterialDto> {
+    return this.write(p, async (tx) => {
+      const m = await findScoped(tx, p, id, { forUpdate: true });
+      if (!m) throw ApiError.notFound();
+      assertIfMatch(ifMatch, m.rowVersion);
+      if (!hasRole(p, 'editor_in_chief') && !roleCovers(p, 'supervisor', m)) {
+        throw new ApiError(403, 'forbidden_scope', 'Tags are edited by a supervisor covering this material or by the editor-in-chief.');
+      }
+      if (sameTags(m.tags, tags)) return m.id;
+      const [saved] = await tx.update(materials).set({ tags }).where(eq(materials.id, m.id)).returning();
+      const current: MaterialRow = { ...saved!, officeGovernorate: m.officeGovernorate };
+      await writeOutboxEvent(tx, {
+        type: 'material.updated',
+        aggregateType: 'material',
+        aggregateId: m.id,
+        idempotencyKey: `material.updated:${m.id}:${randomUUID()}`,
+        actorId: p.userId,
+        payload: { ...materialPayload(current), material_version: current.version, editorial_state: current.editorialState },
+      });
+      await tx.insert(auditLog).values({
+        actorId: p.userId,
+        action: 'material.tags_changed',
+        targetType: 'material',
+        targetId: m.id,
+        details: { material_id: m.id },
+        hash: Buffer.alloc(32),
+      });
+      return m.id;
+    });
+  }
+
   // ---------- الانتقالات ----------
 
   async transition(p: Principal, id: string, body: Transition, ifMatch?: string): Promise<MaterialDto> {
@@ -430,6 +466,10 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
       contributors.map((c) => ({ materialId, userId: c.user_id, role: c.role, sharePercent: c.share_percent.toFixed(2) })),
     );
   }
+}
+
+function sameTags(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((t, i) => t === b[i]);
 }
 
 function dynamicFieldsInvalid(errors: Array<{ field: string; code: string }>): ApiError {

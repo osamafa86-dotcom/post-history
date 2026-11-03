@@ -86,6 +86,7 @@ export function toAssignmentDto(p: Principal, a: AssignmentView): MaterialAssign
     acknowledged_at: iso(a.acknowledgedAt),
     started_at: iso(a.startedAt),
     closed_at: iso(a.closedAt),
+    produced_file_id: a.producedFileId,
     updated_at: iso(a.updatedAt)!,
   };
 }
@@ -101,7 +102,7 @@ export async function applyAssignmentTransition(
   row: AssignmentRow,
   to: AssignmentState,
   actorId: string,
-  opts: { priority: string; note?: string | null },
+  opts: { priority: string; note?: string | null; producedFileId?: string | null },
 ): Promise<void> {
   const at = sql`now()`;
   const closing = to === 'done' || to === 'returned';
@@ -114,6 +115,8 @@ export async function applyAssignmentTransition(
       ...(to === 'in_progress' ? { startedAt: at } : {}),
       ...(closing ? { closedAt: at } : {}),
       ...(to === 'returned' ? { returnedBy: actorId, returnNote: opts.note ?? null } : {}),
+      // «سلّمت المهمة» بالنسخة المُنتَجة (ADR 0104)؛ القيد يحصرها في done
+      ...(to === 'done' && opts.producedFileId ? { producedFileId: opts.producedFileId } : {}),
     })
     .where(eq(materialAssignments.id, row.id));
 
@@ -153,7 +156,7 @@ export async function applyAssignmentTransition(
     action: 'assignment.transitioned',
     targetType: 'material_assignment',
     targetId: row.id,
-    details: { assignment_id: row.id, material_id: row.materialId, from: row.state, to },
+    details: { assignment_id: row.id, material_id: row.materialId, from: row.state, to, ...(to === 'done' && opts.producedFileId ? { file_id: opts.producedFileId } : {}) },
     hash: Buffer.alloc(32),
   });
 }

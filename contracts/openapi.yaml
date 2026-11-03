@@ -478,6 +478,59 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
+  /users/{id}/roles:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: معرّف المستخدم
+        schema: { type: string, format: uuid }
+    get:
+      tags: [admin]
+      summary: أدوار حساب طاقم بنطاقاتها (A1، ADR 0104)
+      description: >-
+        أدوار الحساب ونطاق كلٍّ منها، لتعديلها بـ `PUT`. حساب المشتري وغير الموجود `404`: أدوار المشترين في المؤسسات المشترية.
+      operationId: getUserRoles
+      x-roles: [system_admin]
+      responses:
+        "200":
+          description: الأدوار
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffRoles" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [admin]
+      summary: استبدال أدوار حساب طاقم (A1، ADR 0104)
+      description: >-
+        يستبدل أدوار الحساب كلها. النطاق (`scopes`) للمشرف وحده: مكتب موجود أو محافظة مكتب موجود، والمشرف بلا نطاق يرى الكل؛
+        وغير المشرف بلا نطاق. أدوار المشترين ونطاق `organization` لا تُقبل هنا. ما خالف ذلك `422 validation_failed` بمسار الحقل.
+        لا يغيّر المدير أدواره (`403 forbidden_scope`). ودور `system_admin` خارج هذه النقطة في الاتجاهين: منحه، أو أي تغيير لحساب
+        يحمله، `403 admin_quorum_required` (إجراء الشخصين من سطر الأوامر، ADR 0005 و0030)؛ فلا يسقط منها آخر مدير ولا غيره.
+        القائمة نفسها مرة ثانية لا تكتب شيئًا. التغيير في معاملة واحدة مع حدث `user.roles_changed` بمعرّف الحساب وحده، وتدقيق
+        بالمعرّف ورموز الأدوار قبل وبعد. يسري على الطلب التالي للحساب.
+      operationId: replaceUserRoles
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StaffRolesUpdate" }
+      responses:
+        "200":
+          description: الأدوار بعد الاستبدال
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffRoles" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
   /users/{id}/permissions/history:
     parameters:
       - name: id
@@ -705,6 +758,42 @@ paths:
         "412": { $ref: "#/components/responses/PreconditionFailed" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
+  /materials/{id}/tags:
+    parameters:
+      - $ref: "#/components/parameters/MaterialId"
+    put:
+      tags: [material-tags]
+      summary: استبدال وسوم مادة من المكتب (W2، ADR 0104)
+      description: >-
+        للمشرف في نطاقه ولرئيس التحرير؛ المشرف خارج نطاق المادة `403 forbidden_scope`، والمادة التي لا يراها `404`. يستبدل
+        الوسوم كلها بقاعدة `MaterialTags` (ADR 0086)، والمصفوفة الفارغة تمحوها. الوسم صفة أرشفة لا مضمون يُعاد اعتماده (ADR 0098):
+        لا يرتفع `version` ولا تتغيّر الحالات الثلاث ولا الحجز، ويرتفع `row_version` وحده (`ETag`). القائمة نفسها لا تكتب شيئًا.
+        حدث `material.updated` بحمولة المادة القائمة وتدقيق `material.tags_changed` بمعرّف المادة؛ لا نص وسم في حدث ولا تدقيق ولا
+        إشعار. `PATCH` باقٍ للمراسل.
+      operationId: replaceMaterialTags
+      x-roles: [supervisor, editor_in_chief]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MaterialTagsUpdate" }
+      responses:
+        "200":
+          description: المادة بعد الاستبدال
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Material" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
   /materials/{id}/transitions:
     parameters:
       - $ref: "#/components/parameters/MaterialId"
@@ -805,6 +894,8 @@ paths:
         `withdrawn`، أو حالة تحريرية خارج `accepted` و`in_production` و`final_review` و`published`) فـ `409 render_not_allowed`:
         المشتق يسقط بسقوط أصله. الحساسية لا تمنع الرابط (قرار المالك 2026-11-02). كل إصدار رابط يُسجَّل في التدقيق كغيره
         (`material_file.download_url_issued`، `material_id` و`file_id`).
+        **النسخة المُنتَجة (`produced`، ADR 0104، أُضيف بعد v0.3):** المرفوعة من المونتير ومشتق العامل معًا، لأدوار الإنتاج وحدها:
+        `producer` و`supervisor` في نطاقه و`editor_in_chief` و`system_admin`. غيرهم `404` بالشكل نفسه، ويُسجَّل الإصدار كغيره.
       operationId: getMaterialFileDownloadUrl
       x-roles: [reporter, supervisor, producer, editor_in_chief, rights_officer, system_admin]
       responses:
@@ -1189,7 +1280,10 @@ paths:
           الإشعار (`POST /notifications/{id}/ack`) ينقل المهمة إلى `acknowledged` بالمقابل. و`returned` قبل الإقرار يوقف التصعيد.
           `done` و`returned` يُشعران الطرف الآخر (من أسند أو المسنَدة إليه) داخل المنصة، و`returned` بدفع إلى الهاتف كذلك.
         - **الأثر في معاملة واحدة:** حدث `assignment.state_changed` بالمعرّفات و`from` و`to`، وسطر تدقيق `assignment.transitioned`.
-          الحالات الثلاث للمادة وحجزها لا تتغيّر، و`done` لا يحمل ملفًا (رفع المادة المُنتَجة تغيير عقد لاحق).
+          الحالات الثلاث للمادة وحجزها لا تتغيّر.
+        - **التسليم بملف (ADR 0104):** `produced_file_id` مع `done` وحدها، لملف `produced` متحقق من المادة نفسها رفعه المسنَد إليه
+          (`POST /uploads` بـ `kind: produced`)؛ وغير ذلك `422 validation_failed` بمسار الحقل. يعود في
+          `MaterialAssignment.produced_file_id`، وفي التدقيق `file_id`. و`done` بلا ملف قائم كما كان.
       operationId: transitionAssignment
       x-roles: [supervisor, producer, editor_in_chief]
       parameters:
@@ -1305,6 +1399,10 @@ paths:
         على الأصل في قائمة انتظار العميل. `client_fingerprint` يرشّح المكررات فقط ولا يمنح أي حق؛ الربط
         الفعلي بملف موجود لا يتم إلا بتطابق `sha256` الكاملة على الخادم. الجلسة لمنشئ المادة وحده (غيره `404`)؛ ويرفع
         الطاقم من الويب الأصل وحده (`kind: original`)، والنسخة الخفيفة يولّدها عامل الوسائط.
+        **النسخة المُنتَجة (`kind: produced`، ADR 0104):** لمن يحمل مهمة مفتوحة (`assigned` أو `acknowledged` أو `in_progress`)
+        مسندة إليه على المادة، لا لمنشئها؛ المادة خارج نطاقه `404`، وفي نطاقه بلا مهمة له `403 forbidden_scope`. ملف جديد من نوع
+        `produced` والأصل لا يُمس: لا إيصال ولا انتقال في المسار الفني. اكتمالها `upload.original_received` بـ `kind: produced`،
+        وأحداثها لا تصير إشعارًا ولا تظهر في «الوارد الآن».
       operationId: createUploadSession
       x-roles: [reporter, supervisor, producer, editor_in_chief]
       parameters:
@@ -2787,7 +2885,10 @@ paths:
       summary: تعديل ملف المؤسسة
       description: >-
         `buyer_admin` يعدّل ملف مؤسسته (الأسماء وبريد الفوترة والبلد). الحالة لمدير النظام وحده؛ تغييرها من غيره
-        `403 forbidden_role`. التعليق يوقف الشراء والتنزيل الجديد، ولا يمس تراخيص سابقة.
+        `403 forbidden_role`. التعليق يوقف الشراء والتنزيل الجديد، ولا يمس تراخيص سابقة. `rejected` لا تُوضع من هنا
+        (`422 validation_failed` على `/status`؛ الرفض بسببه من `/rejection`)، والخروج منها إلى غيرها يمحو `rejection_reason`
+        (حالة مقروءة كـ `verified_at`، فلا تُرسل في الجسم).
+        كل تغيير حالة يكتب `buyer_organization.status_changed` (ADR 0104).
       operationId: replaceBuyerOrganization
       x-roles: [system_admin, buyer_admin]
       parameters:
@@ -2809,6 +2910,42 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /buyer-organizations/{org_id}/rejection:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    post:
+      tags: [commerce]
+      summary: رفض طلب انضمام مؤسسة قيد التحقق (A5، ADR 0104)
+      description: >-
+        من `pending_verification` وحدها إلى `rejected`، وغيرها `409 invalid_transition`. السبب رمز من قائمة مغلقة بلا نص حرّ،
+        ويعود في `rejection_reason`. المرفوضة لا تتصفح ولا تشتري ولا تنزّل. `PUT` المؤسسة لا يضع `rejected` ويملك إعادتها إلى غيرها
+        فيُمحى السبب. في معاملة واحدة: الحالة، وحدث `buyer_organization.status_changed` بالمعرّف والحالتين والسبب، وتدقيق
+        `buyer_organization.status_changed` بالمفاتيح نفسها.
+      operationId: rejectBuyerOrganization
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BuyerOrganizationRejection" }
+      responses:
+        "200":
+          description: المؤسسة بعد الرفض
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BuyerOrganization" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "412": { $ref: "#/components/responses/PreconditionFailed" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
@@ -4429,6 +4566,14 @@ components:
         created_at: "2026-11-03T09:05:00Z"
         created_by: 2c1b0a9f-8e7d-4c6b-a5f4-e3d2c1b0a9f8
 
+    MaterialTagsUpdate:
+      type: object
+      additionalProperties: false
+      required: [tags]
+      description: وسوم المادة كلها من المكتب (ADR 0104)؛ المصفوفة الفارغة تمحوها
+      properties:
+        tags: { $ref: "#/components/schemas/MaterialTags" }
+
     MaterialUpdate:
       type: object
       minProperties: 1
@@ -4498,8 +4643,15 @@ components:
               type: array
               description: >-
                 المشتقات النصية (`transcript` و`captions` و`shot_list`) تظهر لأدوار تعديل المادة وحدها، وتُحذف من القائمة لغيرهم
-                فلا يُلمَّح إلى وجودها (threat-model §9.1).
+                فلا يُلمَّح إلى وجودها (threat-model §9.1). والنسخة المُنتَجة (`produced`) لأدوار الإنتاج وحدها (ADR 0104).
+                وحزم تسليم التراخيص ومعاينات المتجر وحزمة التصدير ونسخ القالب لا تظهر هنا لأحد، فلكلٍّ رابطها.
               items: { $ref: "#/components/schemas/MaterialFile" }
+            thumbnail_file_id:
+              type: [string, "null"]
+              format: uuid
+              description: >-
+                أحدث مصغّرة (`thumbnail`) متحققة للمادة لصف الوارد (W1، ADR 0104)؛ `null` بلا مصغّرة متحققة. تُجلب برابطها من
+                `/materials/{id}/files/{file_id}/download-url` ولا يحمل الرد رابطًا. أُضيف بعد v0.3 فقد يغيب
             redacted_field_keys:
               type: array
               description: >-
@@ -4578,8 +4730,11 @@ components:
         id: { type: string, format: uuid }
         kind:
           type: string
-          description: الأصل لا يُمس؛ كل معالجة تنتج ملفًا جديدًا
-          enum: [original, proxy, hls, audio, thumbnail, voice_note, transcript, captions, shot_list]
+          description: >-
+            الأصل لا يُمس؛ كل معالجة تنتج ملفًا جديدًا. `produced` النسخة المُنتَجة (ADR 0104، أُضيف بعد v0.3): يرفعها المونتير
+            المسنَدة إليه المادة، أو يشتقها عامل الوسائط للتسليم؛ تظهر لأدوار الإنتاج وحدها (`producer` و`supervisor` و`editor_in_chief`
+            و`system_admin`).
+          enum: [original, proxy, hls, audio, thumbnail, voice_note, transcript, captions, shot_list, produced]
         state: { type: string, enum: [uploading, received, verified, failed] }
         proxy_mode: { type: [string, "null"], enum: [urgent, normal, null], description: وضع النسخة الخفيفة }
         alignment:
@@ -4621,7 +4776,10 @@ components:
       required: [material_id, kind, size_bytes, filename, client_sha256]
       properties:
         material_id: { type: string, format: uuid }
-        kind: { type: string, enum: [original, proxy, voice_note] }
+        kind:
+          type: string
+          enum: [original, proxy, voice_note, produced]
+          description: "`produced` النسخة المُنتَجة للمسنَد إليه المادة في مهمة مفتوحة (ADR 0104)"
         size_bytes: { type: integer, minimum: 1 }
         filename: { type: string, minLength: 1, maxLength: 255, description: اسم الملف على الجهاز؛ لا يُعرض خارج النطاق }
         mime_type: { type: [string, "null"] }
@@ -4653,7 +4811,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         material_id: { type: string, format: uuid }
-        kind: { type: string, enum: [original, proxy, voice_note] }
+        kind: { type: string, enum: [original, proxy, voice_note, produced] }
         state:
           type: string
           description: created → in_progress → completed → verified؛ failed أو deduplicated نهائيتان
@@ -4978,7 +5136,7 @@ components:
       required: [material_id, kind, state, size_bytes, storage_key, proxy_mode, material_has_proxy]
       properties:
         material_id: { type: string, format: uuid }
-        kind: { type: string, enum: [original, proxy, voice_note] }
+        kind: { type: string, enum: [original, proxy, voice_note, produced] }
         state: { type: string, enum: [created, in_progress, completed, verified, failed, deduplicated] }
         size_bytes: { type: integer, minimum: 1 }
         storage_key: { type: [string, "null"] }
@@ -5375,6 +5533,11 @@ components:
         note:
           $ref: "#/components/schemas/AssignmentNote"
           description: سبب الإعادة، مع `returned` وحدها
+        produced_file_id:
+          type: string
+          format: uuid
+          description: >-
+            النسخة المُنتَجة المسلَّمة، مع `done` وحدها (ADR 0104): ملف `produced` متحقق من المادة نفسها رفعه المسنَد إليه. اختياري
 
     MaterialAssignment:
       type: object
@@ -5415,6 +5578,12 @@ components:
         acknowledged_at: { type: [string, "null"], format: date-time }
         started_at: { type: [string, "null"], format: date-time }
         closed_at: { type: [string, "null"], format: date-time, description: "متى سُلّمت (`done`) أو أُعيدت (`returned`)" }
+        produced_file_id:
+          type: [string, "null"]
+          format: uuid
+          description: >-
+            النسخة المُنتَجة التي سُلّمت بها المهمة (`done`، ADR 0104)؛ `null` بلا ملف. تُنزَّل بـ
+            `/materials/{id}/files/{file_id}/download-url` لأدوار الإنتاج. أُضيف بعد v0.3 فقد يغيب
         updated_at: { type: string, format: date-time }
       example:
         id: 6f7a8b9c-0d1e-4f2a-8b3c-4d5e6f7a8b9c
@@ -6059,8 +6228,24 @@ components:
 
     BuyerOrganizationStatus:
       type: string
-      description: "`pending_verification` لا تشتري؛ `active` تشتري؛ `suspended` يوقف الشراء والتنزيل الجديد"
-      enum: [pending_verification, active, suspended]
+      description: >-
+        `pending_verification` لا تشتري؛ `active` تشتري؛ `suspended` يوقف الشراء والتنزيل الجديد؛ `rejected` رُفض طلب انضمامها بسبب
+        في `rejection_reason`، فلا تتصفح ولا تشتري (ADR 0104، أُضيف بعد v0.3)
+      enum: [pending_verification, active, suspended, rejected]
+
+    BuyerOrganizationRejectionReason:
+      type: string
+      description: >-
+        سبب رفض طلب الانضمام (ADR 0104): بنود التحقق الثلاثة في A5 (السجل التجاري، والبريد المؤسسي، واتفاقية الترخيص)، والمؤسسة
+        المكررة، وغير ذلك. لا نص حرّ.
+      enum: [commercial_registry, institutional_email, license_agreement, duplicate_organization, other]
+
+    BuyerOrganizationRejection:
+      type: object
+      additionalProperties: false
+      required: [reason_code]
+      properties:
+        reason_code: { $ref: "#/components/schemas/BuyerOrganizationRejectionReason" }
 
     BuyerOrganizationFields:
       type: object
@@ -6096,6 +6281,11 @@ components:
         id: { type: string, format: uuid }
         active_members: { type: integer, minimum: 0 }
         verified_at: { type: [string, "null"], format: date-time, description: أول انتقال إلى `active` }
+        rejection_reason:
+          $ref: "#/components/schemas/BuyerOrganizationRejectionReason"
+          description: >-
+            سبب الرفض، ويظهر مع `rejected` وحدها ويغيب مع غيرها (ADR 0104)، فلا ينكسر عميل يعيد إرسال المؤسسة المقروءة في `PUT`.
+            حالة مقروءة لا تُرسل في `PUT` (`BuyerOrganizationInput` لا يقبلها)
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
@@ -6813,6 +7003,35 @@ components:
                 properties:
                   role: { $ref: "#/components/schemas/RoleName" }
                   count: { type: integer, minimum: 0 }
+
+    StaffRoles:
+      type: object
+      required: [user_id, roles]
+      description: أدوار حساب طاقم بنطاقاتها (A1، ADR 0104)
+      properties:
+        user_id: { type: string, format: uuid }
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/Role" }
+      example:
+        user_id: 2f3e4d5c-6b7a-4899-8a7b-6c5d4e3f2a1b
+        roles:
+          - { name: supervisor, scopes: [{ kind: office, id: 0f1e2d3c-4b5a-4697-8877-665544332211 }] }
+          - { name: producer, scopes: [] }
+
+    StaffRolesUpdate:
+      type: object
+      additionalProperties: false
+      required: [roles]
+      description: >-
+        الأدوار كلها بعد التغيير (ADR 0104): دور طاقم مرة واحدة، والنطاق للمشرف وحده (`office` بمعرّف مكتب موجود، أو
+        `governorate` باسم محافظة مكتب موجود؛ فارغ = الكل)، وغيره بنطاق فارغ. لا `system_admin` ولا أدوار المشترين.
+      properties:
+        roles:
+          type: array
+          minItems: 1
+          maxItems: 7
+          items: { $ref: "#/components/schemas/Role" }
 
     PlatformSettingsUpdate:
       type: object

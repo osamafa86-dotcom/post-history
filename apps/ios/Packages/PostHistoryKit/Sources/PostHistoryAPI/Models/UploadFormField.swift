@@ -34,6 +34,10 @@ public struct UploadFormField: Sendable, Codable, Hashable {
     public var sensitive: Bool? = false
     /** تطلب الإدارة ترقيته إلى فهرس تعبيري أو عمود مُولَّد (لا فهرس GIN شامل)؛ لا يجتمع مع sensitive */
     public var searchable: Bool? = false
+    /** «يظهر في الإرسال العاجل» (A3، ADR 0104): الغائب true كما ترسم التطبيقات كل حقل اليوم. الحقل الإلزامي لا يُخفى منه (انظر allOf)، فلا يتعطّل إرسال عاجل بحقل لا يراه المراسل. يُحفظ في الإصدار، والتطبيقان يقرآنه حين يُبنى فيهما الإرسال العاجل */
+    public var showInUrgent: Bool? = true
+    /** «يُرسل إلى المتجر» (A3، ADR 0104): الغائب false. لأنواع القيم المعروضة وحدها، فلا يحمله staff_member ولا attachment ولا الحساس (انظر allOf). يُحفظ في الإصدار، والكتالوج لا يحمل الحقول الديناميكية بعد */
+    public var sendToStore: Bool? = false
     /** قيمة افتراضية من نوع الحقل نفسه */
     public var `default`: JSONValue?
     /** يظهر الحقل مع هذه الأنواع فقط؛ فارغ أو غائب = الكل */
@@ -41,7 +45,7 @@ public struct UploadFormField: Sendable, Codable, Hashable {
     public var condition: UploadFormCondition?
     public var validation: UploadFormValidation?
 
-    public init(key: String, type: ModelType, label: UploadFormLocalized, help: UploadFormLocalized? = nil, `required`: Bool, sensitive: Bool? = false, searchable: Bool? = false, `default`: JSONValue? = nil, materialTypes: Set<UploadFormMaterialType>? = nil, condition: UploadFormCondition? = nil, validation: UploadFormValidation? = nil) {
+    public init(key: String, type: ModelType, label: UploadFormLocalized, help: UploadFormLocalized? = nil, `required`: Bool, sensitive: Bool? = false, searchable: Bool? = false, showInUrgent: Bool? = true, sendToStore: Bool? = false, `default`: JSONValue? = nil, materialTypes: Set<UploadFormMaterialType>? = nil, condition: UploadFormCondition? = nil, validation: UploadFormValidation? = nil) {
         self.key = key
         self.type = type
         self.label = label
@@ -49,6 +53,8 @@ public struct UploadFormField: Sendable, Codable, Hashable {
         self.`required` = `required`
         self.sensitive = sensitive
         self.searchable = searchable
+        self.showInUrgent = showInUrgent
+        self.sendToStore = sendToStore
         self.`default` = `default`
         self.materialTypes = materialTypes
         self.condition = condition
@@ -63,6 +69,8 @@ public struct UploadFormField: Sendable, Codable, Hashable {
         case `required` = "required"
         case sensitive
         case searchable
+        case showInUrgent = "show_in_urgent"
+        case sendToStore = "send_to_store"
         case `default` = "default"
         case materialTypes = "material_types"
         case condition
@@ -80,6 +88,8 @@ public struct UploadFormField: Sendable, Codable, Hashable {
         try container.encode(`required`, forKey: .`required`)
         try container.encodeIfPresent(sensitive, forKey: .sensitive)
         try container.encodeIfPresent(searchable, forKey: .searchable)
+        try container.encodeIfPresent(showInUrgent, forKey: .showInUrgent)
+        try container.encodeIfPresent(sendToStore, forKey: .sendToStore)
         try container.encodeIfPresent(`default`, forKey: .`default`)
         try container.encodeIfPresent(materialTypes, forKey: .materialTypes)
         try container.encodeIfPresent(condition, forKey: .condition)

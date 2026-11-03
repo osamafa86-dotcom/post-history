@@ -1640,6 +1640,63 @@ VALUES ('00000000-0000-4000-8000-000000000012', 'platform_settings.changed', 'pl
         '{"settings_version": 2, "field_keys": ["watermark_text"]}', '\x00');
 SET CONSTRAINTS ALL DEFERRED;
 
+-- ---------- فجوات البناء (ADR 0104؛ ترحيل 043) ----------
+-- جلسة النسخة المُنتَجة نوع مقبول، وملفها لا يأخذ إيصالًا (المحفّز للأصل وحده)
+INSERT INTO upload_sessions (id, material_id, created_by, kind, size_bytes, filename, part_size_bytes, expires_at)
+VALUES ('00000000-0000-4000-8000-000000004301', '00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000013',
+        'produced', 1048576, 'cut.mp4', 16777216, now() + interval '7 days');
+SELECT pg_temp.expect_error($q$ UPDATE upload_sessions SET kind = 'edit' WHERE id = '00000000-0000-4000-8000-000000004301' $q$, '23514');
+INSERT INTO material_files (id, material_id, kind, state, upload_session_id, storage_key, size_bytes)
+VALUES ('00000000-0000-4000-8000-000000004302', '00000000-0000-4000-8000-000000000101', 'produced', 'received',
+        '00000000-0000-4000-8000-000000004301', 'uploads/produced', 1048576);
+UPDATE material_files SET state = 'verified', verified_at = now(), sha256 = sha256('cut'::bytea)
+ WHERE id = '00000000-0000-4000-8000-000000004302';
+SELECT pg_temp.assert((SELECT receipt_number IS NULL FROM material_files WHERE id = '00000000-0000-4000-8000-000000004302'),
+  'no receipt for a produced file');
+-- التسليم بالملف: من المادة نفسها، ومع done وحدها
+INSERT INTO materials (id, reporter_id, office_id, title, material_types, governorate, city, priority,
+                       sensitivity_minors, sensitivity_injured, sensitivity_graphic, display_name_mode, form_version, dynamic_fields)
+VALUES ('00000000-0000-4000-8000-000000004303', '00000000-0000-4000-8000-000000000011', '00000000-0000-4000-8000-000000000001',
+        'مادة تجريبية ثانية', '{report}', 'غزة', 'غزة', 'normal', false, false, false, 'network', 1, '{}');
+INSERT INTO material_files (id, material_id, kind, state, storage_key, size_bytes, sha256, verified_at)
+VALUES ('00000000-0000-4000-8000-000000004304', '00000000-0000-4000-8000-000000004303', 'produced', 'verified',
+        'uploads/other', 1048576, sha256('other'::bytea), now());
+UPDATE material_assignments SET produced_file_id = '00000000-0000-4000-8000-000000004302' WHERE id = '00000000-0000-4000-8000-000000000e01';
+SELECT pg_temp.expect_error($q$
+  UPDATE material_assignments SET produced_file_id = '00000000-0000-4000-8000-000000004304' WHERE id = '00000000-0000-4000-8000-000000000e01' $q$, '23503');
+SELECT pg_temp.expect_error($q$
+  UPDATE material_assignments SET produced_file_id = '00000000-0000-4000-8000-000000004302' WHERE id = '00000000-0000-4000-8000-000000000e02' $q$, '23514');
+-- المؤسسة المرفوضة: بسبب من القائمة المغلقة، ولا سبب لغيرها، ولا تحتاج تفعيلًا سابقًا
+INSERT INTO buyer_organizations (id, legal_name, display_name_ar, display_name_en, country, billing_email)
+VALUES ('00000000-0000-4000-8000-000000004305', 'Sample Media Ltd', 'وكالة تجريبية', 'Sample Media', 'GB', 'billing-2@example.invalid');
+SELECT pg_temp.expect_error($q$
+  UPDATE buyer_organizations SET status = 'rejected' WHERE id = '00000000-0000-4000-8000-000000004305' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE buyer_organizations SET status = 'rejected', rejection_reason = 'no_reason' WHERE id = '00000000-0000-4000-8000-000000004305' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  UPDATE buyer_organizations SET rejection_reason = 'other' WHERE id = '00000000-0000-4000-8000-000000004305' $q$, '23514');
+UPDATE buyer_organizations SET status = 'rejected', rejection_reason = 'commercial_registry' WHERE id = '00000000-0000-4000-8000-000000004305';
+-- الحدثان: معرّفات ورموز وحدها
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, actor_id, payload)
+VALUES ('buyer_organization.status_changed', 'organization', '00000000-0000-4000-8000-000000004305',
+        'buyer_organization.status_changed:smoke', '00000000-0000-4000-8000-000000000014',
+        '{"organization_id": "00000000-0000-4000-8000-000000004305", "from": "pending_verification", "to": "rejected", "reason_code": "commercial_registry"}');
+INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, actor_id, payload)
+VALUES ('user.roles_changed', 'user', '00000000-0000-4000-8000-000000000013', 'user.roles_changed:smoke',
+        '00000000-0000-4000-8000-000000000014', '{"user_id": "00000000-0000-4000-8000-000000000013"}');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('user.roles_changed', 'user', '00000000-0000-4000-8000-000000000013', 'user.roles_changed:smoke:roles',
+          '{"user_id": "00000000-0000-4000-8000-000000000013", "roles": ["producer"]}') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('buyer_organization.status_changed', 'organization', '00000000-0000-4000-8000-000000004305', 'buyer_organization.status_changed:smoke:name',
+          '{"organization_id": "00000000-0000-4000-8000-000000004305", "legal_name": "Sample Media Ltd"}') $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO outbox_events (type, aggregate_type, aggregate_id, idempotency_key, payload)
+  VALUES ('order.status_changed', 'buyer', '00000000-0000-4000-8000-000000004305', 'order.status_changed:smoke:aggregate', '{}') $q$, '23514');
+SET CONSTRAINTS ALL DEFERRED;
+
 -- ---------- أرقام الطلب (ADR 0100؛ ترحيل 042) ----------
 -- لكل طلب رقم عشوائي بصيغته وسنة إنشائه، فريد؛ وأمر الشراء كما كُتب
 SELECT pg_temp.assert((SELECT bool_and(order_number ~ '^ORD-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{8}$'

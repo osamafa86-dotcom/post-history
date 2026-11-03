@@ -6,8 +6,8 @@ import { APP_CONFIG, type AppConfig } from '../config/config';
 import { randomToken, sha256 } from '../common/crypto';
 import { ApiError } from '../common/errors';
 import { LOGGER } from '../common/logger';
-import { DB, type Database } from '../database/database.module';
-import { materialFiles, uploadSessions } from '../database/schema/schema';
+import { DB, type Database, type Tx } from '../database/database.module';
+import { materialAssignments, materialFiles, uploadSessions } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import { hasRole, type Principal } from '../identity/principal';
 import type { ReplayRehydrator } from '../idempotency/replay';
@@ -42,8 +42,8 @@ export class UploadsService implements ReplayRehydrator {
 
   async create(p: Principal, body: UploadSessionCreate): Promise<UploadSessionCreated> {
     if (body.proxy_mode && body.kind !== 'proxy') throw ApiError.validation({ fields: ['/proxy_mode'] });
-    // الطاقم يرفع الأصل وحده من الويب؛ النسخة الخفيفة والملاحظة الصوتية من تطبيق المراسل
-    if (!hasRole(p, 'reporter') && body.kind !== 'original') throw ApiError.validation({ fields: ['/kind'] });
+    // الطاقم يرفع الأصل وحده من الويب؛ النسخة الخفيفة والملاحظة الصوتية من تطبيق المراسل؛ والمُنتَجة للمسنَد إليه (ADR 0104)
+    if (!hasRole(p, 'reporter') && body.kind !== 'original' && body.kind !== 'produced') throw ApiError.validation({ fields: ['/kind'] });
     // يصير client_sha256 مطلوبًا في عقد v0.1؛ إلى أن يُدمج يفرضه هذا المتغير بالرد نفسه الذي سيعطيه التحقق بالعقد (422)
     if (this.config.UPLOAD_REQUIRE_CLIENT_SHA256 && !body.client_sha256) throw ApiError.validation({ fields: ['/client_sha256'] });
     if (this.config.UPLOAD_MAX_BYTES !== undefined && body.size_bytes > this.config.UPLOAD_MAX_BYTES) {
@@ -51,8 +51,16 @@ export class UploadsService implements ReplayRehydrator {
     }
     return this.db.transaction(async (tx) => {
       const material = await findScoped(tx, p, body.material_id, { forUpdate: true });
-      // المنشئ يرفع لمواده فقط (المراسل أو الطاقم)؛ مادة غيره غير موجودة بالنسبة إليه
-      if (!material || material.reporterId !== p.userId) throw ApiError.notFound();
+      if (body.kind === 'produced') {
+        // النسخة المُنتَجة لمن يحمل مهمة مفتوحة مسندة إليه على المادة، لا لمنشئها (ADR 0104)؛ والأصل لا يُمس
+        if (!material) throw ApiError.notFound();
+        if (!(await this.holdsOpenAssignment(tx, p.userId, material.id))) {
+          throw new ApiError(403, 'forbidden_scope', 'Only the assignee of an open task on this material uploads its produced file.');
+        }
+      } else if (!material || material.reporterId !== p.userId) {
+        // المنشئ يرفع لمواده فقط (المراسل أو الطاقم)؛ مادة غيره غير موجودة بالنسبة إليه
+        throw ApiError.notFound();
+      }
       if (body.kind === 'original' && material.technicalState === 'verified') {
         throw new ApiError(409, 'upload_state_conflict', 'The original of this material is already verified.');
       }
@@ -86,6 +94,21 @@ export class UploadsService implements ReplayRehydrator {
       });
       return { ...this.toDto(session!, null), upload_token: token, upload_token_expires_at: iso(session!.uploadTokenExpiresAt)! };
     });
+  }
+
+  /** مهمة مفتوحة (assigned أو acknowledged أو in_progress) على المادة مسندة إلى المستدعي (ADR 0096، 0104). */
+  private async holdsOpenAssignment(tx: Tx, userId: string, materialId: string): Promise<boolean> {
+    const [row] = await tx
+      .select({ id: materialAssignments.id })
+      .from(materialAssignments)
+      .where(
+        and(
+          eq(materialAssignments.materialId, materialId),
+          eq(materialAssignments.assigneeId, userId),
+          inArray(materialAssignments.state, ['assigned', 'acknowledged', 'in_progress']),
+        ),
+      );
+    return row !== undefined;
   }
 
   /**

@@ -20,15 +20,19 @@ public struct AssignmentTransition: Sendable, Codable, Hashable {
     public var to: To
     /** سبب الإعادة، مع `returned` وحدها */
     public var note: String?
+    /** النسخة المُنتَجة المسلَّمة، مع `done` وحدها (ADR 0104): ملف `produced` متحقق من المادة نفسها رفعه المسنَد إليه. اختياري */
+    public var producedFileId: UUID?
 
-    public init(to: To, note: String? = nil) {
+    public init(to: To, note: String? = nil, producedFileId: UUID? = nil) {
         self.to = to
         self.note = note
+        self.producedFileId = producedFileId
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case to
         case note
+        case producedFileId = "produced_file_id"
     }
 
     // Encodable protocol methods
@@ -37,6 +41,7 @@ public struct AssignmentTransition: Sendable, Codable, Hashable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(to, forKey: .to)
         try container.encodeIfPresent(note, forKey: .note)
+        try container.encodeIfPresent(producedFileId, forKey: .producedFileId)
     }
 }
 

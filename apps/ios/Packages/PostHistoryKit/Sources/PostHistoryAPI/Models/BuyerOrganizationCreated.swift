@@ -29,6 +29,8 @@ public struct BuyerOrganizationCreated: Sendable, Codable, Hashable {
     public var activeMembers: Int
     /** أول انتقال إلى `active` */
     public var verifiedAt: Date?
+    /** سبب الرفض، ويظهر مع `rejected` وحدها ويغيب مع غيرها (ADR 0104)، فلا ينكسر عميل يعيد إرسال المؤسسة المقروءة في `PUT`. حالة مقروءة لا تُرسل في `PUT` (`BuyerOrganizationInput` لا يقبلها) */
+    public var rejectionReason: BuyerOrganizationRejectionReason?
     public var createdAt: Date
     public var updatedAt: Date
     /** رمز تعيين كلمة المرور للمدعو، كرمز الاستعادة (`RecoveryApproval.reset_token`): يُعاد مرة واحدة في رد الإنشاء الأول، ولا يُعاد عند التكرار بمفتاح منع التكرار، ولا يُسجَّل ولا يُخزَّن إلا ببصمته. يسلّمه المنشئ للمدعو خارج النظام. العميل يعرضه مرة ولا يحفظه ولا يضعه في الحافظة. */
@@ -36,7 +38,7 @@ public struct BuyerOrganizationCreated: Sendable, Codable, Hashable {
     /** ≤ 24 ساعة من الإنشاء */
     public var inviteTokenExpiresAt: Date?
 
-    public init(legalName: String, displayName: LocalizedText, country: String, billingEmail: String, seats: Int? = 5, status: BuyerOrganizationStatus? = nil, id: UUID, activeMembers: Int, verifiedAt: Date?, createdAt: Date, updatedAt: Date, inviteToken: String? = nil, inviteTokenExpiresAt: Date? = nil) {
+    public init(legalName: String, displayName: LocalizedText, country: String, billingEmail: String, seats: Int? = 5, status: BuyerOrganizationStatus? = nil, id: UUID, activeMembers: Int, verifiedAt: Date?, rejectionReason: BuyerOrganizationRejectionReason? = nil, createdAt: Date, updatedAt: Date, inviteToken: String? = nil, inviteTokenExpiresAt: Date? = nil) {
         self.legalName = legalName
         self.displayName = displayName
         self.country = country
@@ -46,6 +48,7 @@ public struct BuyerOrganizationCreated: Sendable, Codable, Hashable {
         self.id = id
         self.activeMembers = activeMembers
         self.verifiedAt = verifiedAt
+        self.rejectionReason = rejectionReason
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.inviteToken = inviteToken
@@ -62,6 +65,7 @@ public struct BuyerOrganizationCreated: Sendable, Codable, Hashable {
         case id
         case activeMembers = "active_members"
         case verifiedAt = "verified_at"
+        case rejectionReason = "rejection_reason"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case inviteToken = "invite_token"
@@ -81,6 +85,7 @@ public struct BuyerOrganizationCreated: Sendable, Codable, Hashable {
         try container.encode(id, forKey: .id)
         try container.encode(activeMembers, forKey: .activeMembers)
         try container.encode(verifiedAt, forKey: .verifiedAt)
+        try container.encodeIfPresent(rejectionReason, forKey: .rejectionReason)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(inviteToken, forKey: .inviteToken)
@@ -94,6 +99,7 @@ extension BuyerOrganizationCreated: Identifiable {}
 extension BuyerOrganizationCreated: UnknownCaseCheckable {
     public var containsUnknownDefaultOpenApiCase: Bool {
         if status == .unknownDefaultOpenApi { return true }
+        if rejectionReason == .unknownDefaultOpenApi { return true }
         return false
     }
 }

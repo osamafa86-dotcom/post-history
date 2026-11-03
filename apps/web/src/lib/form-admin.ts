@@ -39,7 +39,7 @@ export function publishBody(form: Form): PublishForm {
   return nextForm(form, form.version - 1) as PublishForm;
 }
 export function newField(type: Field["type"], key: string): Field {
-  return { key, type, label: { ar: "", en: "" }, required: false, sensitive: false, searchable: false,
+  return { key, type, label: { ar: "", en: "" }, required: false, sensitive: false, searchable: false, show_in_urgent: true, send_to_store: false,
     ...(["select", "multi_select"].includes(type) ? { validation: { options: [{ value: "option_1", label: { ar: "", en: "" } }] } } : {}),
     ...(type === "attachment" ? { validation: { accept: ["application/pdf"], max_size_bytes: 10485760 } } : {}) };
 }
