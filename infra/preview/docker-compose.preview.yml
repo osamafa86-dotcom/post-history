@@ -195,6 +195,9 @@ services:
       S3_PUBLIC_ENDPOINT: https://${PREVIEW_DOMAIN}
       AI_WORKER_TOKEN: ""
       PUSH_DELIVERY_ENABLED: "false"
+      # Web passkeys (ADR 0107, 0108) for the preview's own origin alone; the domain comes from .env, never the repository.
+      WEBAUTHN_RP_ID: ${PREVIEW_DOMAIN}
+      WEBAUTHN_ORIGINS: https://${PREVIEW_DOMAIN}
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
       interval: 10s
