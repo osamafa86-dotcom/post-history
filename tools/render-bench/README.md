@@ -64,6 +64,26 @@ docker run --rm -v "$PWD/..:/bench:ro" -v /tmp/ut:/ut -w /bench --entrypoint pyt
 ```
 
 ترخيص Remotion مجاني حتى 3 موظفين (الخطة)، ثم ترخيص شركة.
+
+## نسخة قالب «مواد متداولة» (`circulated_bench.py`)
+
+قياس ADR 0091 البند 7 بالمسار نفسه الذي يسلكه العامل (`make_circulated`): طبقة Remotion القصيرة بالمتصفح المثبّت ثم تركيب
+FFmpeg، على مقاطع اصطناعية بعلامات تزامن ووسوم مزروعة ونص محايد.
+
+- **الحالات (`--quick`):** 30 ث 1080p30 أفقي إلى المقاسات الثلاثة، ونسخة هاتف 720p عمودية بمعدل متغير ودوران، و25 إطارًا/ث،
+  ونطاق كامل `yuvj420p`، وHLG. وبلا `--quick` تضاف حالتا 120 ث و300 ث.
+- **المقاييس:** زمن الطبقة والتركيب ونسبتهما إلى المدة، وذروة الذاكرة والقرص، واللون، والإطارات والمدة، والتزامن، والقيم
+  المزروعة، وتكافؤ الطبقة المجمّعة مع الرسم الكامل عند 25 و30، وVMAF للنسخة الضابطة.
+- **الحكم:** الصحة تحكم `--strict` في أي بيئة (CI)، والزمن يُسجَّل ويُحكم عليه على مواصفة خادم التجربة؛ فالنتيجة `partial`.
+
+```bash
+docker build --target render --build-context template=docs/design/redesign-2026-11/motion/circulated-template \
+  -t media-worker:render workers/media
+docker run --rm --network none -v "$PWD/tools/render-bench:/bench:ro" -v /tmp/cr:/out -e PYTHONPATH=/app/src:/bench \
+  -e MEDIA_SCRATCH_DIR=/out --entrypoint python media-worker:render /bench/circulated_bench.py --quick --strict \
+  --frames-dir /out/frames --out /out/circulated.json
+```
+
 ## مطابقة الطوابع الزمنية (`timestamp_alignment.py`)
 
 الشق الآلي من اختبار القبول «مطابقة الطوابع الزمنية» على `media_worker.align.measure_offset`: عشرة أصول 60 ث بمعدل متغير وفجوات، ونسخ هاتف بطوابع مصفَّرة تبدأ بعد الأصل بمقدار معروف. المعيار: خطأ ≤ 40 ms في الملفات كلها وكلها موثوقة. الأداة نفسها للملفات الحقيقية في السكربت الميداني:

@@ -1,0 +1,11 @@
+{
+  "name": "media-worker-circulated-overlay",
+  "private": true,
+  "type": "module",
+  "description": "Renders the transparent circulated-template layer from the template bundle (ADR 0091); FFmpeg composites it",
+  "dependencies": {
+    "@remotion/renderer": "4.0.537",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}

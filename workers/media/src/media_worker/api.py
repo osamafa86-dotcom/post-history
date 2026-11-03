@@ -114,6 +114,18 @@ class InternalApi:
     def add_derivative(self, file_id: str, body: dict) -> dict:
         return self._call("POST", f"/internal/media/files/{file_id}/derivatives", body)
 
+    def get_render(self, render_id: str) -> dict:
+        """`GET /internal/media/renders/{id}` (`MediaRenderJob`، ADR 0091): معاملات القالب؛ النصوص لا تُسجَّل."""
+        return self._call("GET", f"/internal/media/renders/{render_id}")
+
+    def start_render(self, render_id: str) -> None:
+        """`requested` ← `rendering`؛ متساوٍ الأثر، والجاهزة أو الفاشلة `409` (`ApiConflict`)."""
+        self._call("POST", f"/internal/media/renders/{render_id}/start")
+
+    def fail_render(self, render_id: str, reason: str) -> None:
+        """فشل بسبب مرمّز (`source_unavailable` أو `title_overflow` أو `render_failed`)؛ الجاهزة `409`."""
+        self._call("POST", f"/internal/media/renders/{render_id}/failure", {"reason": reason})
+
     def get_file(self, file_id: str) -> FileRef:
         """`GET /internal/media/files/{id}`: مفتاح التخزين والبصمة فقط؛ الملف المحذوف `410` (`ApiGone`)."""
         d = self._call("GET", f"/internal/media/files/{file_id}")

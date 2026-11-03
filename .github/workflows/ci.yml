@@ -37,7 +37,7 @@ jobs:
           db='^(apps/api/src/db/|tools/acceptance/|contracts/|\.github/(workflows/ci\.yml|scripts/))' \
           api='^(apps/api/|contracts/|infra/compose/docker-compose\.yml|\.github/(workflows/ci\.yml|scripts/))' \
           compose='^(infra/|apps/api/|workers/media/|tools/acceptance/|\.github/(workflows/ci\.yml|scripts/))' \
-          media='^(workers/media/|tools/render-bench/|infra/compose/|\.github/(workflows/ci\.yml|scripts/))'
+          media='^(workers/media/|tools/render-bench/|infra/compose/|docs/design/redesign-2026-11/motion/circulated-template/|\.github/(workflows/ci\.yml|scripts/))'
 
   web:
     name: web (lint, types, contracts, forms, BFF and browser)
@@ -298,7 +298,7 @@ jobs:
   media:
     name: media (probe, sha256, proxy on synthetic files with FFmpeg 8)
     runs-on: ubuntu-24.04  # pinned: ubuntu-latest moved to 26.04 (no postgresql-client-16, no Playwright headless shell)
-    timeout-minutes: 25
+    timeout-minutes: 45
     needs: changes
     if: github.event_name == 'pull_request' && needs.changes.outputs.media == 'true'
     steps:
@@ -333,6 +333,19 @@ jobs:
             python /wf/make_web_fixtures.py /out
       - name: Runtime image builds
         run: docker build --target runtime -t media-worker:runtime workers/media
+      # ADR 0091: Node, the circulated-template bundle (named build context) and Chrome Headless Shell pinned by sha256.
+      - name: Render image builds (circulated template)
+        run: |
+          docker build --target render -t media-worker:render \
+            --build-context template=docs/design/redesign-2026-11/motion/circulated-template workers/media
+      # No network: nothing leaves the container (no browser download, no licence event). Correctness gates the step
+      # (colour, frames, sync, planted tags, layer parity at 25 and 30, VMAF); timing is recorded, judged on the trial spec.
+      - name: Circulated render bench on synthetic clips (tools/render-bench/circulated_bench.py)
+        run: |
+          mkdir -p /tmp/cr && chmod 777 /tmp/cr
+          docker run --rm --network none -v "$PWD/tools/render-bench:/bench:ro" -v /tmp/cr:/out \
+            -e PYTHONPATH=/app/src:/bench -e MEDIA_SCRATCH_DIR=/out --entrypoint python media-worker:render \
+            /bench/circulated_bench.py --quick --strict --env-label "(GitHub-hosted runner)" --out /out/circulated.json
       - name: Proxy A/V sync on synthetic marker clips (tools/render-bench)
         run: |
           docker run --rm -v "$PWD/tools/render-bench:/bench:ro" -w /bench -e PYTHONPATH=/app/src:/bench \

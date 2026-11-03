@@ -1,4 +1,4 @@
-"""python -m media_worker serve (الخدمة) | requeue-dead REASON | reregister MID:FID… | {probe,digest,proxy} FILE [OUT] | align PROXY ORIGINAL
+"""python -m media_worker serve [--queue renders] (الخدمة) | requeue-dead REASON [--queue renders] | reregister MID:FID… | {probe,digest,proxy} FILE [OUT] | align PROXY ORIGINAL
 (للتجربة والقياس؛ `align` أداة الوسائط في سكربت القبول الميداني timestamp-alignment)"""
 
 from __future__ import annotations
@@ -16,8 +16,12 @@ from .proxy import make_proxy
 def main() -> None:
     parser = argparse.ArgumentParser(prog="media_worker")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("serve")
-    sub.add_parser("requeue-dead").add_argument("reason")
+    serve = sub.add_parser("serve")
+    requeue = sub.add_parser("requeue-dead")
+    requeue.add_argument("reason")
+    for q in (serve, requeue):
+        # renders: طابور نسخ قالب «مواد متداولة» في حاوية media-render (ADR 0091)
+        q.add_argument("--queue", choices=("events", "renders"), default="events")
     sub.add_parser("reregister").add_argument("pairs", nargs="+", help="material_id:file_id")
     for name in ("probe", "digest"):
         sub.add_parser(name).add_argument("file", type=Path)
@@ -32,7 +36,7 @@ def main() -> None:
     if args.cmd == "requeue-dead":
         from .service import requeue_main
 
-        requeue_main(args.reason)
+        requeue_main(args.reason, args.queue)
         return
     if args.cmd == "reregister":
         from .reregister import main as reregister
@@ -42,7 +46,7 @@ def main() -> None:
     if args.cmd == "serve":
         from .service import main as serve
 
-        serve()
+        serve(args.queue)
         return
     if args.cmd == "probe":
         out = probe(args.file).to_dict()
