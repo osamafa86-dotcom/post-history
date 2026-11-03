@@ -222,6 +222,42 @@ class AuthManagerTest {
         assertEquals(AuthState.SignedOut(SignOutReason.USER), manager.state.value)
     }
 
+    /** A rotation in flight (its answer held back) while the reporter leaves; returns what the rotation handed back. */
+    private fun refreshAcrossSignOut(answer: MockResponse, signOut: () -> Unit): SessionTokens? {
+        store.write(SessionTokens("a1", "r1", now + 600_000, "u"))
+        server.enqueue(answer.setHeadersDelay(400, TimeUnit.MILLISECONDS))
+        val pool = Executors.newSingleThreadExecutor()
+        val result = pool.submit<SessionTokens?> { manager.refreshBlocking("a1") }
+        assertEquals("/v1/auth/refresh", server.takeRequest(5, TimeUnit.SECONDS)!!.path)
+        signOut()
+        return result.get(10, TimeUnit.SECONDS).also { pool.shutdown() }
+    }
+
+    @Test fun `a refresh that returns after sign-out neither brings the tokens back nor signs in again`() {
+        val fresh = refreshAcrossSignOut(json(200, sessionJson("a2", "r2"))) { manager.forgetSession(SignOutReason.USER) }
+        assertNull(fresh)
+        assertNull(store.read())
+        assertEquals(AuthState.SignedOut(SignOutReason.USER), manager.state.value)
+    }
+
+    @Test fun `a refresh refused after sign-out is not taken for a revocation`() {
+        // The server ended the session at logout, so the late rotation is refused: that must not start the revocation wipe.
+        refreshAcrossSignOut(unauthorized) { manager.forgetSession(SignOutReason.USER) }
+        assertNull(store.read())
+        assertEquals(AuthState.SignedOut(SignOutReason.USER), manager.state.value)
+    }
+
+    @Test fun `a refresh from before a new sign-in does not overwrite the new session`() = runBlocking {
+        val newer = """{"access_token":"b1","refresh_token":"s1","expires_at":"${OffsetDateTime.ofInstant(Instant.ofEpochMilli(now + 900_000), ZoneOffset.UTC)}","user_id":"1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e","roles":[]}"""
+        refreshAcrossSignOut(json(200, sessionJson("a2", "r2"))) {
+            manager.forgetSession(SignOutReason.USER)
+            server.enqueue(json(200, newer))
+            runBlocking { manager.login("b@example.invalid", "password123", null) }
+        }
+        assertEquals("b1", store.read()?.accessToken)
+        assertEquals(AuthState.SignedIn("1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"), manager.state.value)
+    }
+
     @Test fun `the session client never caches API responses on disk, even when handed a client that does`() {
         val dir = java.nio.file.Files.createTempDirectory("okcache").toFile().apply { deleteOnExit() }
         val cached = okhttp3.OkHttpClient.Builder().cache(okhttp3.Cache(dir, 1024 * 1024)).build()

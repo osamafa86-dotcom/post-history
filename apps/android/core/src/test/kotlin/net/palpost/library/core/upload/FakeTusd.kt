@@ -34,6 +34,11 @@ class FakeTusd(private val baseUrl: () -> String, private val now: () -> Long) :
     val loseCreateResponseAt = HashSet<Int>()
     /** The pre-create hook rejects every creation (session not reserved / wrong state) and no upload exists. */
     var rejectCreate = false
+    /** PATCH numbers whose body is read and never answered: the client blocks in its read until the socket goes. */
+    val stallAtPatch = HashSet<Int>()
+    /** `DELETE /v1/uploads/{id}` (abortUploadSession): the status it answers and the Idempotency-Key of every call. */
+    var abortStatus = 204
+    val abortKeys = ArrayList<String>()
     val patches = AtomicInteger()
     val creates = AtomicInteger()
     val heads = AtomicInteger()
@@ -68,6 +73,11 @@ class FakeTusd(private val baseUrl: () -> String, private val now: () -> Long) :
                 json(201, sessionJson(withToken = true))
             }
             path == "/v1/uploads/$sessionId" && method == "GET" -> json(200, sessionJson(withToken = false))
+            path == "/v1/uploads/$sessionId" && method == "DELETE" -> {
+                abortKeys.add(request.getHeader("Idempotency-Key") ?: "")
+                if (abortStatus == 204) { sessionState = "failed"; failureReason = "aborted"; uploads.clear() }
+                if (abortStatus == 204) MockResponse().setResponseCode(204) else json(abortStatus, """{"code":"x","message":"x","request_id":"r"}""")
+            }
             path == "/v1/device-attestations/challenge" && method == "POST" -> {
                 val id = java.util.UUID.randomUUID().toString()
                 val bytes = ByteArray(32).also { java.util.Random(challengesIssued.size.toLong()).nextBytes(it) }
@@ -117,6 +127,7 @@ class FakeTusd(private val baseUrl: () -> String, private val now: () -> Long) :
                         val offset = request.getHeader("Upload-Offset")!!.toLong()
                         if (offset != store.size().toLong()) return MockResponse().setResponseCode(409)
                         val body = request.body.readByteArray()
+                        if (n in stallAtPatch) return MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE)
                         if (n in cutAtPatch) {
                             store.write(body, 0, body.size / 2)
                             return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)

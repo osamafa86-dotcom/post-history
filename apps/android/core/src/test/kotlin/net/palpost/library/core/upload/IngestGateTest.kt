@@ -42,7 +42,7 @@ class IngestGateTest {
 
     private val playIntegrity = DeviceAttester { hash -> hashes.add(hash); "integrity:$hash" }
 
-    private suspend fun queue() = store.save(UploadTask(id = "t1", materialId = "7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b", kind = "original", fileUri = file.absolutePath, filename = "clip.mov", mimeType = "video/quicktime", sizeBytes = fileSize, idempotencyKey = "idem-1", createdAtEpochMs = now))
+    private suspend fun queue() = store.insert(UploadTask(id = "t1", materialId = "7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b", kind = "original", fileUri = file.absolutePath, filename = "clip.mov", mimeType = "video/quicktime", sizeBytes = fileSize, idempotencyKey = "idem-1", createdAtEpochMs = now))
 
     @Test fun `a gated session uploads with a token bound to the session and the server's request hash`() = runBlocking {
         queue()
@@ -87,7 +87,7 @@ class IngestGateTest {
         assertEquals(RunOutcome.Finished, engine(flaky).run("t1"))
         assertEquals(UploadState.VERIFIED, store.get("t1")!!.state)
 
-        store.save(store.get("t1")!!.copy(id = "t2", state = UploadState.QUEUED, sessionId = null, tusUploadUrl = null, bytesConfirmed = 0))
+        store.insert(store.get("t1")!!.copy(id = "t2", state = UploadState.QUEUED, sessionId = null, tusUploadUrl = null, bytesConfirmed = 0))
         fake.uploads.clear(); fake.ingestTokenStatus = 403
         assertEquals(RunOutcome.Finished, engine(playIntegrity).run("t2"))
         assertEquals(UploadFailure.DEVICE_NOT_TRUSTED, store.get("t2")!!.failure)

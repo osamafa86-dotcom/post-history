@@ -141,7 +141,8 @@ class SendViewModel(
     val state: StateFlow<SendUiState> = _state
     /** The draft-level key: a draft saved before multi-pick (one file, no key of its own) creates its material with it. */
     private val materialIdempotencyKey = IdempotencyKey.generate()
-    private val id = draftId ?: UUID.randomUUID().toString()
+    /** The draft row this screen writes; a fresh one when the draft asked for is not the signed-in account's (ADR 0112). */
+    private var id = draftId ?: UUID.randomUUID().toString()
     private val formCache = File(app.filesDir, "form_cache.json")
     private val formAdapter = Serializer.moshi.adapter(UploadForm::class.java)
     /** URIs of the files in the draft as last saved or opened; their grants stay until a save no longer holds them. */
@@ -173,6 +174,9 @@ class SendViewModel(
 
     private suspend fun restore(draftId: String) {
         val row = container.database.drafts().get(draftId) ?: return
+        // Another account's draft is not opened (ADR 0112): only its owner sees it on the home screen, and only its owner opens it.
+        // This screen then starts a send of its own, under a row of its own, so neither a save nor a send here touches that draft.
+        if (!container.scope.value.owns(row.ownerAccount)) { id = UUID.randomUUID().toString(); return }
         val d = MaterialDraft.fromJson(row.json) ?: return
         draftFix = row.sealedGps?.let { sealed -> runCatching { GpsFix.decode(container.sealer.openString(sealed)) }.getOrNull() }
         _state.update { s ->
@@ -348,7 +352,7 @@ class SendViewModel(
             tags = s.tags, gate = when (s.sensitivity.gate) { SensitivityGate.NO -> "no"; SensitivityGate.YES -> "yes"; null -> null },
         )
         val sealed = sealedGps?.let { runCatching { container.sealer.sealString(it.encode()) }.getOrNull() }
-        container.database.drafts().upsert(DraftEntity(id, s.title, d.toJson(), System.currentTimeMillis(), sealedGps = sealed))
+        container.database.drafts().upsert(DraftEntity(id, s.title, d.toJson(), System.currentTimeMillis(), sealedGps = sealed, ownerAccount = container.scope.value.current))
         val held = s.originals.map { it.uri }.toSet()
         val dropped = savedUris - held
         savedUris = held
@@ -420,6 +424,8 @@ class SendViewModel(
                     idempotencyKey = UploadIds.sessionKey(materialId), createdAtEpochMs = now + f.position!!, // the queue runs oldest first
                     ownerAccount = owner, // ADR 0093: the signed-in account's opaque local id, never its email or server id
                 )
+                // Sent again (a draft that still held a file whose row was cancelled): a new decision, so the old mark goes (ADR 0112).
+                container.cancelledUploads.remove(task.id)
                 container.uploadStore.insert(task, title = titleOf(f), priority = s.priority.value)
                 queued.add(materialId)
                 task.id
@@ -428,7 +434,12 @@ class SendViewModel(
                 _state.update { st -> st.copy(originals = rest, details = st.details.filterKeys { k -> rest.any { it.uri == k } }) }
                 // Written at every step so a killed process loses nothing and the repeat skips what was done; the last step
                 // writes nothing: the draft (and the location sealed in it) goes when the send ends.
-                if (rest.isNotEmpty()) writeDraft(sealedGps = gps)
+                if (rest.isNotEmpty()) {
+                    writeDraft(sealedGps = gps)
+                    // Sealed now, it is the location of this send's rest: a later «Save draft» or a retry keeps it, never a new reading
+                    // nor none (the draft's own save writes [draftFix]).
+                    draftFix = gps
+                }
             },
         )
         ledger.finish(batch.id, queued)

@@ -59,10 +59,18 @@
   - **الحسّاسة:** المصغّرة مموّهة في كل مكان حتى يلمسها المراسل.
   - المسح والخروج والإبطال توقف المشغّلات وتمحو القائمة والمصغّرات (`PlaybackCenter` و`ThumbnailCache`).
 - الطابور لصاحبه (ADR 0093 و0095):
-  - **المعرّف:** `AppContainer.scope` (`core/upload/AccountScope`) من سجل `local-accounts`، و`upload_tasks.ownerAccount` (Room v5).
+  - **المعرّف:** `AppContainer.scope` (`core/upload/AccountScope`) من سجل `local-accounts`، و`upload_tasks.ownerAccount` (Room v5)،
+    و`drafts.ownerAccount` (Room v6، ADR 0112): المسودات للداخل وحده بالقاعدة نفسها.
   - **العرض:** الصفوف والإرسالات والإيصالات للداخل وحده، وإيصال غيره ينتظر في `ReceiptCenter`.
   - **النواة:** لا تطلب باسم غير صاحب السجل (`AwaitingOwner`)، والنقل يكمل بعد الخروج.
   - **الخروج:** يسأل أولًا إن بقي للحساب رفع لم يكتمل.
+- الإلغاء والمسح أثناء النقل (ADR 0112):
+  - **كتابة المحرك تحديث فقط** (`UploadStore.update`، و`@Update` جزئي في Room): الصف المحذوف لا يعود.
+  - **الإلغاء:** علامة `AppContainer.cancelledUploads` يسألها المحرك عند كل جزء وكل كتابة. والجلسة تُجهض بـ `DELETE /uploads/{id}`
+    باسم صاحبها (`core/upload/SessionAborts`)، وما لم يذهب يبقى في `upload_aborts` ويُرسل في بداية كل تشغيل وعند الفتح.
+  - **المسح:** `core/upload/TransferHalt` يقطع اتصال النقل المحجوز ويحرس مخازن التشغيل بجيله، ثم انتظار محدود قبل مسح الطابور.
+  - **التشغيل** يعيد قراءة الطابور بعد كل جولة، وما لا تتوقعه خطوة يُفشل الصف (`failUnexpected`) ولا يُسقط العملية.
+  - **معرّفات الإشعارات** من `core/notifications/NotificationIds` بمدى منفصل لكل نوع.
 - مراجعة المشرف (`ui/review/`):
   - الوارد بالحالة التحريرية، وقرارات المسار التحريري بسبب إلزامي و`Idempotency-Key` و`If-Match`.
   - لا إحداثيات ولا هوية مراسل.

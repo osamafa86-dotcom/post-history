@@ -20,7 +20,7 @@ class BootReceiver : BroadcastReceiver() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
-            try { UploadScheduler.resumePending(context) } finally { pending.finish() }
+            try { UploadScheduler.resumePending(context, drainAborts = false) } finally { pending.finish() }
         }
     }
 }

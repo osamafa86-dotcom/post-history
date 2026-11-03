@@ -129,9 +129,26 @@ open class TusTransport(
         }
     }
 
+    /** Connections this transport opened and that are not yet collected, for [cutAll]. */
+    private val open = java.util.Collections.newSetFromMap(java.util.WeakHashMap<HttpURLConnection, Boolean>())
+    @Volatile private var cut = false
+
+    /**
+     * Ends this transport for good, from any thread (SEC-01 wipe, [TransferHalt]): every open connection is disconnected, so a call
+     * blocked on it throws an IOException now instead of at its timeout, and every later connection fails before it opens.
+     */
+    fun cutAll() {
+        cut = true
+        val connections = synchronized(open) { open.toList() }
+        connections.forEach { runCatching { it.disconnect() } }
+    }
+
     /** [headers] is asked on every connection, so a gate token renewed mid-upload reaches the next request. */
     private fun client(token: String, headers: () -> Map<String, String>): TusClient = object : TusClient() {
         override fun prepareConnection(connection: HttpURLConnection) {
+            if (cut) throw IOException("transport cut")
+            synchronized(open) { open.add(connection) }
+            if (cut) throw IOException("transport cut") // cut while this one was being registered
             super.prepareConnection(connection)
             connection.readTimeout = readTimeoutMs
             headers().forEach { (k, v) -> connection.setRequestProperty(k, v) }

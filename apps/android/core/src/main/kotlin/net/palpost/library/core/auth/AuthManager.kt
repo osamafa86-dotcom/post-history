@@ -46,6 +46,13 @@ class AuthManager(
     private val publicAuthApi = AuthApi(baseUrl, this.httpClient)
     private val apiHost: HttpUrl = baseUrl.toHttpUrl()
     private val refreshLock = Any()
+    /**
+     * Guards the session's writes: a sign-in, a sign-out and the end of a refresh. A sign-in or sign-out ends the [generation], and a
+     * refresh that started under an earlier one writes nothing when it returns, so a rotation that was in flight at logout neither
+     * brings the tokens back nor signs the reporter in again, and a 401 it meets (the server ended that session) is not a revocation.
+     */
+    private val sessionLock = Any()
+    private var generation = 0L
     private val _state = MutableStateFlow<AuthState>(store.read()?.let { AuthState.SignedIn(it.userId) } ?: AuthState.SignedOut(null))
     val state: StateFlow<AuthState> = _state
 
@@ -63,8 +70,11 @@ class AuthManager(
     suspend fun login(email: String, password: String, totpCode: String?): Session {
         val session = publicAuthApi.login(LoginRequest(email = email, password = password, totpCode = totpCode?.takeIf { it.isNotBlank() }))
         val tokens = SessionTokens.from(session)
-        store.write(tokens)
-        _state.value = AuthState.SignedIn(tokens.userId)
+        synchronized(sessionLock) {
+            generation++
+            store.write(tokens)
+            _state.value = AuthState.SignedIn(tokens.userId)
+        }
         return session
     }
 
@@ -119,7 +129,8 @@ class AuthManager(
     /** Forgets the session on this device without telling the server (the wipe does it; the server session lapses on its own). */
     fun forgetSession(reason: SignOutReason) = signOut(reason)
 
-    private fun signOut(reason: SignOutReason) {
+    private fun signOut(reason: SignOutReason) = synchronized(sessionLock) {
+        generation++
         store.clear()
         _state.value = AuthState.SignedOut(reason)
     }
@@ -129,16 +140,19 @@ class AuthManager(
      * holds a different one, another caller refreshed meanwhile and that result is returned without a new call.
      */
     fun refreshBlocking(staleAccessToken: String?): SessionTokens? = synchronized(refreshLock) {
-        val current = store.read() ?: return null
+        val (current, started) = synchronized(sessionLock) { (store.read() ?: return null) to generation }
         if (staleAccessToken != null && current.accessToken != staleAccessToken) return current
         try {
             val session = runBlocking { publicAuthApi.refreshSession(RefreshSessionRequest(current.refreshToken)) }
             val tokens = SessionTokens.from(session)
-            store.write(tokens)
-            _state.value = AuthState.SignedIn(tokens.userId)
+            synchronized(sessionLock) {
+                if (generation != started) return null // signed out (or in again) meanwhile: this rotation belongs to no session now
+                store.write(tokens)
+                _state.value = AuthState.SignedIn(tokens.userId)
+            }
             tokens
         } catch (e: ClientException) {
-            if (e.statusCode == 401) signOut(SignOutReason.SESSION_REVOKED)
+            if (e.statusCode == 401) synchronized(sessionLock) { if (generation == started) signOut(SignOutReason.SESSION_REVOKED) }
             null
         } catch (e: IOException) {
             null

@@ -13,7 +13,11 @@ import net.palpost.library.auth.KeystoreSealer
 import net.palpost.library.auth.KeystoreTokenStore
 import net.palpost.library.core.auth.AuthManager
 import net.palpost.library.core.auth.TokenStore
+import net.palpost.library.core.upload.AbortStore
 import net.palpost.library.core.upload.FileSource
+import net.palpost.library.core.upload.SessionAborts
+import net.palpost.library.core.upload.TransferHalt
+import net.palpost.library.data.RoomAbortStore
 import net.palpost.library.data.RoomUploadStore
 import net.palpost.library.data.FileSendBatchStore
 import net.palpost.library.data.ReporterMemoryStore
@@ -62,6 +66,16 @@ class AppContainer(context: Context) {
     val database: UploadDatabase
         get() = synchronized(this) { db?.takeIf { it.isOpen } ?: UploadDatabase.open(app).also { db = it } }
     val uploadStore: RoomUploadStore get() = RoomUploadStore(database.uploads(), sealer)
+    val abortStore: RoomAbortStore get() = RoomAbortStore(database.aborts())
+
+    /** SEC-01: the wipe's hold on a running transfer, whose thread coroutine cancellation does not reach (ADR 0112). */
+    val halt = TransferHalt()
+
+    /** Rows the reporter cancelled in this process: their run stops at its next chunk and writes nothing more (ADR 0112). */
+    val cancelledUploads: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    /** Cancelled rows' server sessions, ended in their owner's name alone (ADR 0112, 0093); a run passes its guarded store. */
+    fun sessionAborts(store: AbortStore = abortStore): SessionAborts = SessionAborts(store, uploadsApi, mayAct = { owner -> scope.value.owns(owner) })
     val fileSource: FileSource by lazy { ContentResolverFileSource(app) }
     /** Gate tokens for uploads behind the ingest gate (SEC-07); one cache per process. */
     val ingestTokens: IngestTokens by lazy {

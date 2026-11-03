@@ -89,7 +89,7 @@ fun main(args: Array<String>) {
     val deadlineNs = t0 + maxSeconds * 1_000_000_000L
     emit("start", ""","size":${file.length()},"part_bytes":$partBytes""")
     val outcome = runBlocking {
-        store.save(task)
+        store.insert(task)
         var hashedEmitted = false
         engine.run("netlab", shouldStop = {
             val s = store.let { runBlocking { it.get("netlab") } }

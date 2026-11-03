@@ -9,6 +9,7 @@ import android.content.Intent
 import androidx.core.app.NotificationCompat
 import net.palpost.library.R
 import net.palpost.library.ui.MainActivity
+import net.palpost.library.core.notifications.NotificationIds
 
 /**
  * Progress and outcome notifications. They name no file, no title and no place: only counts, percentages
@@ -17,8 +18,8 @@ import net.palpost.library.ui.MainActivity
 object UploadNotifications {
     const val CHANNEL_PROGRESS = "uploads"
     const val CHANNEL_RESULTS = "upload_results"
-    const val PROGRESS_ID = 1001
-    private const val RESULT_BASE_ID = 2000
+    // Ids from one space with the push notifications, in ranges that never meet (NotificationIds).
+    const val PROGRESS_ID = NotificationIds.UPLOAD_PROGRESS
 
     fun ensureChannels(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java)
@@ -77,7 +78,7 @@ object UploadNotifications {
 
     private fun post(context: Context, taskId: String, n: Notification) {
         try {
-            context.getSystemService(NotificationManager::class.java).notify(RESULT_BASE_ID + (taskId.hashCode() and 0xffff), n)
+            context.getSystemService(NotificationManager::class.java).notify(NotificationIds.uploadResult(taskId), n)
         } catch (e: SecurityException) {
             // Notifications denied: the uploads screen still shows the outcome.
         }
