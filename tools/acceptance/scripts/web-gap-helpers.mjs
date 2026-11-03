@@ -92,6 +92,13 @@ export function syntheticClip(prefix, { seconds = 10, megabytes = 0 } = {}) {
  */
 export const PASSWORD_SUBMIT = /^\s*(?:دخول|Sign in)\s*$/i;
 
+/**
+ * صفحات البداية بعد الدخول (`HomePage` في apps/web/src/lib/home-page.ts، #517): المشتري في المتجر، ومن يقرأ المواد في الوارد،
+ * والمالية في الصرف، والباقي في التنبيهات. الدخول ينتهي حين يصل المتصفح إلى أيٍّ منها؛ الاختبار الذاتي يطابقها بمصدر الويب.
+ */
+export const HOME_PAGES = Object.freeze(["store", "inbox", "payouts", "notifications"]);
+export const LANDING = new RegExp(`/((ar|en)/)?(${HOME_PAGES.join("|")})(?:[?#]|$)`);
+
 export async function login(page, env, { email, password, locale = "ar" }) {
   await page.goto(url(env, `/${locale}/login`), { waitUntil: "domcontentloaded" });
   await page.getByLabel(/البريد الإلكتروني|Email/i).fill(email);
@@ -99,7 +106,7 @@ export async function login(page, env, { email, password, locale = "ar" }) {
   const totp = page.getByLabel(/رمز التحقق|TOTP|one-time|Two-factor/i).first();
   if (await totp.count()) await totp.fill(env.ACCEPTANCE_TOTP ?? "");
   await page.getByRole("button", { name: PASSWORD_SUBMIT }).click();
-  await page.waitForURL(/\/((ar|en)\/)?(inbox|store)(?:\?|$)/, { timeout: Number(env.ACCEPTANCE_TIMEOUT_MS ?? 30000) });
+  await page.waitForURL(LANDING, { timeout: Number(env.ACCEPTANCE_TIMEOUT_MS ?? 30000) });
 }
 
 /** مسار الرفع في نتيجة القياس لا يخرج عن قيم المخطط: `tusd` للرفع الفعلي، و`n/a` لما لا يرفع. */
