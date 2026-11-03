@@ -10,6 +10,7 @@ import { ApiError, StoredResponse } from '../common/errors';
 import { toErrorResponse } from '../common/error.filter';
 import { DB, type Database } from '../database/database.module';
 import { idempotencyKeys } from '../database/schema/schema';
+import { MaterialsService } from '../materials/materials.service';
 import { REPLAY_KEY, type ReplayRehydrator } from './replay';
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -51,14 +52,22 @@ export class IdempotencyInterceptor implements NestInterceptor {
     // أخطاء المطالبة نفسها (إعادة، 409، 422) تمر كما هي؛ التسوية تخص ما بعد تنفيذ المعالج فقط
     const rehydrator = this.reflector.get<new (...args: never[]) => ReplayRehydrator>(REPLAY_KEY, context.getHandler());
     return from(this.claim(userId, key, fingerprint)).pipe(
-      // الإعادة: ما حُذف عند الحفظ (رموز) يُعاد بناؤه بمعالج المسار إن وُجد، لا يُخزَّن رمز أبدًا
-      catchError((err: unknown) =>
-        err instanceof StoredResponse && rehydrator && err.status < 300
+      // الإعادة: ما حُذف عند الحفظ (رموز) يُعاد بناؤه بمعالج المسار إن وُجد، لا يُخزَّن رمز أبدًا. والمادة المحفوظة مرجعًا تُقرأ من
+      // جديد بصلاحيات المستدعي الحالية وتدقيق قراءتها الحساسة (ADR 0116)، لا من جدول المفاتيح
+      catchError((err: unknown) => {
+        if (!(err instanceof StoredResponse) || err.status >= 300) return throwError(() => err);
+        const material = materialReference(err.body);
+        if (material) {
+          return from(this.moduleRef.get(MaterialsService, { strict: false }).get(req.principal!, material.id)).pipe(
+            mergeMap((body) => throwError(() => new StoredResponse(err.status, body))),
+          );
+        }
+        return rehydrator
           ? from(this.moduleRef.get(rehydrator, { strict: false }).rehydrate(err.body, req)).pipe(
               mergeMap((body) => throwError(() => new StoredResponse(err.status, body))),
             )
-          : throwError(() => err),
-      ),
+          : throwError(() => err);
+      }),
       mergeMap(() =>
         next.handle().pipe(
           mergeMap(async (body) => {
@@ -121,7 +130,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
   private async complete(userId: string, key: string, status: number, body: unknown): Promise<void> {
     await this.db
       .update(idempotencyKeys)
-      .set({ state: 'completed', responseStatus: status, responseBody: withoutTokens(body) as never })
+      .set({ state: 'completed', responseStatus: status, responseBody: storable(body) as never })
       .where(and(eq(idempotencyKeys.userId, userId), eq(idempotencyKeys.key, key)));
   }
 
@@ -130,6 +139,30 @@ export class IdempotencyInterceptor implements NestInterceptor {
       .delete(idempotencyKeys)
       .where(and(eq(idempotencyKeys.userId, userId), eq(idempotencyKeys.key, key), eq(idempotencyKeys.state, 'in_progress')));
   }
+}
+
+/**
+ * ما يُحفظ من الاستجابة لإعادتها (ADR 0116): بلا رموز (withoutTokens)، والمادة مرجعًا وحده (`material_replay` بمعرّفها وإصدار صفها) لا
+ * جسمها: Material يحمل الاسم الحقيقي المفكوك وقيم الحقول الحساسة والموقع لحامل الصلاحية، فلا يبقى نصًّا صريحًا في جدول المفاتيح، ولا
+ * تُعاد لمن سُحبت صلاحيته ولا بلا تدقيق قراءتها.
+ */
+export function storable(body: unknown): unknown {
+  const material = materialBody(body);
+  return material ? { material_replay: { id: material.id, row_version: material.row_version } } : withoutTokens(body);
+}
+
+/** جسم Material في العقد: معرّف وإصدار صف ومفاتيح الحجب والحقول الديناميكية. */
+function materialBody(body: unknown): { id: string; row_version: number } | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const b = body as Record<string, unknown>;
+  return typeof b.id === 'string' && typeof b.row_version === 'number' && Array.isArray(b.redacted_field_keys) && 'dynamic_fields' in b
+    ? { id: b.id, row_version: b.row_version }
+    : null;
+}
+
+function materialReference(body: unknown): { id: string } | null {
+  const ref = (body as { material_replay?: { id?: unknown } } | null)?.material_replay;
+  return ref && typeof ref.id === 'string' ? { id: ref.id } : null;
 }
 
 /** لا تُحفظ الرموز في جدول المفاتيح (قاعدة المخطط): كل مفتاح علوي اسمه token أو ينتهي بـ _token يُحذف قبل الحفظ. */

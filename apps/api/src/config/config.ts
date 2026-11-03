@@ -241,6 +241,17 @@ const schema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+  // الكنس الدوري لما انتهت حاجته التقنية (ADR 0116): مفاتيح منع التكرار المنتهية، ورموز التحديث الميتة بعد مدة، واسم الملف على
+  // الجهاز في جلسة الرفع المنتهية، والإشعارات المقروءة القديمة. الافتراضات محافظة؛ الاحتفاظ التجاري بالمواد وبيانات المشترين قرار المالك
+  RETENTION_SWEEP_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  RETENTION_SWEEP_INTERVAL_MS: z.coerce.number().int().min(60_000).default(3_600_000),
+  RETENTION_SWEEP_BATCH: z.coerce.number().int().min(1).max(100_000).default(5000),
+  RETENTION_REFRESH_TOKEN_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
+  RETENTION_UPLOAD_FILENAME_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
+  RETENTION_READ_NOTIFICATION_DAYS: z.coerce.number().int().min(7).max(3650).default(180),
 
   // لغة عناوين الإشعارات المخزنة (القوالب بالعربية والإنجليزية في notifications/messages.ts)
   NOTIFICATION_LOCALE: z.enum(['ar', 'en']).default('ar'),
