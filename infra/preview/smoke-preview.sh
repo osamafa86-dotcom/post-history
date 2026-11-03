@@ -598,6 +598,30 @@ bf="$("$HERE/backfill-media.sh" 2>/dev/null)" || fail "backfill-media.sh failed 
 [ "$(rx XLEN media:dead)" = 0 ] || fail "the worker dead-lettered an event"
 echo "backfill-media.sh again: nothing eligible, nothing given, nothing dead-lettered: ok"
 
+# The API keeps the worker's probe of an original it verified itself (addendum to ADR 0092; the render precondition reads it).
+orig_id="$(sql "SELECT file_id FROM upload_sessions WHERE material_id = '$MATERIAL' AND kind = 'original' AND state = 'verified'")"
+probe_of() { sql "SELECT technical->>'video_codec', duration_ms > 5000, width, height FROM material_files WHERE id = '$orig_id'"; }
+probe0="$(probe_of)"
+[ "$probe0" = "h264 t 1280 720" ] || fail "the API did not keep the worker's probe of the original it verified itself: '$probe0'"
+# An original processed before that (the preview until this change) is given again for its probe alone: the worker's report
+# fills it, and the existing proxy is registered as it is, not encoded again.
+proxy0="$(sql "SELECT id, sha256 FROM material_files WHERE derived_from_id = '$orig_id' AND kind = 'proxy'")"
+sql "UPDATE material_files SET technical = NULL, duration_ms = NULL, start_pts_us = NULL, width = NULL, height = NULL WHERE id = '$orig_id'" >/dev/null
+bf="$("$HERE/backfill-media.sh" 2>/dev/null)" || fail "backfill-media.sh failed for an original with no probe"
+[ "$(field "$bf" eligible)" = 1 ] && [ "$(field "$bf" enqueued)" = 1 ] || fail "an original with no probe was not given again: $bf"
+for _ in $(seq 1 60); do
+  "${C[@]}" logs --no-color media-worker 2>&1 | grep 'event done' | tail -1 | grep -q 'outcome=verified+proxy-existing' && break
+  sleep 2
+done
+"${C[@]}" logs --no-color media-worker 2>&1 | grep 'event done' | tail -1 | grep -q 'outcome=verified+proxy-existing' \
+  || fail "the worker did not register the existing proxy for the probe backfill"
+[ "$(probe_of)" = "$probe0" ] || fail "the probe backfill did not restore the original's probe"
+[ "$(sql "SELECT id, sha256 FROM material_files WHERE derived_from_id = '$orig_id' AND kind = 'proxy'")" = "$proxy0" ] \
+  || fail "the probe backfill made a new proxy"
+bf="$("$HERE/backfill-media.sh" 2>/dev/null)" || fail "backfill-media.sh failed after the probe backfill"
+[ "$(field "$bf" eligible)" = 0 ] && [ "$(field "$bf" enqueued)" = 0 ] && [ "$(rx XLEN media:dead)" = 0 ] || fail "after the probe backfill: $bf"
+echo "the API keeps the worker's probe of an original it verified itself, and an original with none is given again for it alone (proxy registered as it was): ok"
+
 # The worker's MinIO user: reads an upload but not its tus .info (file metadata), writes derived/ only, deletes and lists nothing.
 # The object of a verified upload, from the API's own record; tusd writes its metadata beside it, the same name with ".info".
 key="$("${C[@]}" exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -c "SELECT storage_key FROM upload_sessions WHERE state = '"'verified'"' AND storage_key IS NOT NULL LIMIT 1"')"

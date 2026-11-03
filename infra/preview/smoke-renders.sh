@@ -8,7 +8,7 @@
 #     yuv420p بنطاق tv وBT.709، بلا الوسوم المزروعة ولا العنوان؛ ولا رابط ولا قائمة للمراسل.
 #   - سطر أعرض من صندوقه حتى عند 70% يصير failed بـ title_overflow بلا ملف.
 #   - ذروة ذاكرة media-render (memory.peak بحدوده كما تُنشر) وخموله وزمن معالجه وقرصه، وسجله بلا عنوان ولا مكان ولا وسم.
-# يقف عند أول طلب برسالة صريحة ما دام الخادم لا يسجّل البيانات الفنية لأصل تحقق منه بنفسه («العائق» في ملحق ADR 0092).
+# شرط source يقرأ فحص العامل الذي يسجّله الخادم لأصل تحقق منه بنفسه (in_process، ملحق ADR 0092)؛ غيابه رسالة صريحة.
 # shellcheck shell=bash
 
 "${C[@]}" stop media-feeder >/dev/null 2>&1 || fail "could not stop media-feeder for the renders"
@@ -30,8 +30,8 @@ $(cat <<'JS'
 const TITLE = ["عنوان تجريبي", "للمادة المتداولة"];
 const OVERFLOW = ["Ж".repeat(22)];
 const renderBody = (title_lines) => ({ template: "circulated", aspect: "vertical", title_lines, show_location: false, label: "circulated_footage" });
-const BLOCKED = "render_not_allowed (source): the API holds no technical data for an original it verified itself (UPLOAD_VERIFIER=in_process), " +
-  "so no render is allowed on the preview until apps/api records the media worker's probe of that original";
+const BLOCKED = "render_not_allowed (source): the API holds no technical data for an original it verified itself (UPLOAD_VERIFIER=in_process): " +
+  "the media worker's probe of that original was not recorded (addendum to ADR 0092)";
 async function accept(mid) {
   for (const to of ["acknowledged", "reviewing", "accepted"]) {
     const t = await pub("POST", `/materials/${mid}/transitions`, { ...bearer, "idempotency-key": randomUUID() }, { track: "editorial", to, reason: "preview smoke" });

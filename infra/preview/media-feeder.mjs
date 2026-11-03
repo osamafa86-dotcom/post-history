@@ -9,6 +9,9 @@
 // - مفتاح media:feed:<الجلسة> (NX، يعيش MEDIA_FEED_RETRY_S) يمنع تكرار الجلسة، وما نُقل إلى media:dead لا يُعاد؛
 // - حارس القرص: لا مهمة جديدة والمساحة الحرة على قرص الحجوم (MEDIA_DISK_PATH) دون MEDIA_MIN_FREE_GIB، فتبقى المادة
 //   معلّقة في القاعدة وتُعاد في الدورة التالية حين تتسع المساحة.
+// - الأصل الذي له نسخته الخفيفة ولا بيانات فنية له (عولج قبل أن يسجّل الخادم فحص العامل، ملحق ADR 0092) يُعطى مرة بعد
+//   الأصول التي بلا نسخة، بمفتاح media:feed:probe:<الجلسة>: العامل يعيد فحصه فيسجّل الخادم بياناته، ويسجّل النسخة
+//   الموجودة كما هي بلا ترميز جديد.
 // ونسخ قالب «مواد متداولة» (ADR 0091، ملحق ADR 0092): الخادم لا ينشر render.requested إلى Redis مع in_process، فالموزّع
 // يعطي حاوية media-render النسخة المطلوبة (requested) الأقدم على media:renders، بالقواعد نفسها (حدث واحد ينتظر على الأكثر،
 // ومفتاح media:feed:render:<النسخة>، وما في media:dead لا يُعاد)، وحارس قرص لكل مهمة: ميزانية ADR 0091 (حجم الأصل + 1 GiB)
@@ -36,18 +39,22 @@ if (!["--loop", "--once"].includes(mode) || !(minFree > 0) || !(intervalMs >= 10
 }
 const say = (fields) => console.log(JSON.stringify({ logger: "media_feeder", ...fields }));
 
-// أصل متحقق لمادة، ملفه verified، فيديو أو بلا نوع معلن (الصور يتحقق منها الخادم ولا يصنع لها العامل شيئًا)،
-// وليس له نسخة خفيفة متحققة من الخادم. العاجل أولًا (ADR 0075)، ثم الأقدم تحققًا.
+// أصل متحقق لمادة، ملفه verified، فيديو أو بلا نوع معلن (الصور يتحقق منها الخادم ولا يصنع لها العامل شيئًا)، وليس له
+// نسخة خفيفة متحققة من الخادم، أو له ولا بيانات فنية له (probe). ما بلا نسخة أولًا، ثم العاجل (ADR 0075)، ثم الأقدم تحققًا.
 const ELIGIBLE = `
-  SELECT us.id AS session_id, us.material_id
-  FROM upload_sessions us
-  JOIN material_files f ON f.id = us.file_id AND f.state = 'verified'
-  JOIN materials m ON m.id = us.material_id
-  WHERE us.kind = 'original' AND us.state = 'verified'
-    AND (f.mime_type IS NULL OR f.mime_type LIKE 'video/%')
-    AND NOT EXISTS (SELECT 1 FROM material_files d
-                    WHERE d.derived_from_id = f.id AND d.kind = 'proxy' AND d.state = 'verified')
-  ORDER BY (m.priority = 'urgent') DESC, f.verified_at, us.id`;
+  SELECT * FROM (
+    SELECT us.id AS session_id, us.material_id, m.priority, f.verified_at,
+           EXISTS (SELECT 1 FROM material_files d
+                   WHERE d.derived_from_id = f.id AND d.kind = 'proxy' AND d.state = 'verified') AS has_proxy,
+           (f.technical IS NULL OR f.duration_ms IS NULL) AS unprobed
+    FROM upload_sessions us
+    JOIN material_files f ON f.id = us.file_id AND f.state = 'verified'
+    JOIN materials m ON m.id = us.material_id
+    WHERE us.kind = 'original' AND us.state = 'verified'
+      AND (f.mime_type IS NULL OR f.mime_type LIKE 'video/%')
+  ) x
+  WHERE NOT has_proxy OR unprobed
+  ORDER BY has_proxy, (priority = 'urgent') DESC, verified_at, session_id`;
 
 // النسخ المطلوبة التي لم يلتقطها العامل، الأقدم أولًا، بحجم أصلها المتحقق (ميزانية القرص).
 const RENDERS = `
@@ -89,7 +96,8 @@ async function deadIds(r) {
 }
 
 async function enqueue(r, row) {
-  if ((await r.set(`media:feed:${row.session_id}`, "1", "EX", retryS, "NX")) !== "OK") return false;
+  const key = row.has_proxy ? `media:feed:probe:${row.session_id}` : `media:feed:${row.session_id}`;
+  if ((await r.set(key, "1", "EX", retryS, "NX")) !== "OK") return false;
   const event = {
     id: `feed-${randomUUID()}`, type: "upload.original_received", aggregate_type: "upload", aggregate_id: row.session_id,
     occurred_at: new Date().toISOString(), payload: { material_id: row.material_id, upload_session_id: row.session_id, kind: "original" },
@@ -97,7 +105,7 @@ async function enqueue(r, row) {
   try {
     await r.xadd(STREAM, "MAXLEN", "~", "1000", "*", "event_id", event.id, "event", JSON.stringify(event));
   } catch (err) {
-    await r.del(`media:feed:${row.session_id}`).catch(() => {});
+    await r.del(key).catch(() => {});
     throw err;
   }
   return true;
