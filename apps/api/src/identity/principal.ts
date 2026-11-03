@@ -70,6 +70,14 @@ export function supervisesUser(p: Principal, user: { officeId: string | null; go
   );
 }
 
+/**
+ * حساب مراسل (ADR 0117): دور `reporter` وحده بأي نطاق، وليس حساب مشترٍ. المشرف يعتمد استعادته ويبطل جلساته في نطاقه؛ وكل حساب
+ * غيره (المشترون، والإنتاج والمالية والحقوق، والمشرف فما فوق، وحساب بلا دور) لمدير النظام وحده.
+ */
+export function isReporterAccount(roles: readonly string[], organizationId: string | null): boolean {
+  return organizationId === null && roles.length > 0 && roles.every((r) => r === 'reporter');
+}
+
 /** رتبة الدور في تسلسل الطاقم: الأدوار التنفيذية في القاع، ثم المشرف، ثم رئيس التحرير، ثم مدير النظام. */
 // جزئي: الأدوار التي لا رتبة لها في تسلسل الطاقم (المشترون في العقد v0.3) رتبتها 0
 const ROLE_RANK: Partial<Record<RoleName, number>> = {

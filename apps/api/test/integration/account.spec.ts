@@ -74,7 +74,7 @@ describe('account: sessions and recovery', () => {
       await revoke(admin.token, thirdId).expect(404);
     });
 
-    it('scope is not enough: an equal or higher-ranked account is revoked only by a system admin, an admin by another admin', async () => {
+    it('scope is not enough: a non-reporter account is revoked only by a system admin, an admin by another admin', async () => {
       const sup = await loginAs(h, [{ role: 'supervisor', scopeKind: 'office', scopeId: officeA }]);
       const peer = await loginAs(h, [{ role: 'supervisor', scopeKind: 'office', scopeId: officeA }], { officeId: officeA });
       const editor = await loginAs(h, [{ role: 'editor_in_chief' }], { officeId: officeA });
@@ -82,9 +82,10 @@ describe('account: sessions and recovery', () => {
       const otherAdmin = await loginAs(h, [{ role: 'system_admin' }]);
       const firstSession = async (a: Actor) => (await sessions(a.token).expect(200)).body.items[0].id as string;
 
-      expect((await revoke(sup.token, await firstSession(editor)).expect(403)).body.code).toBe('forbidden_scope');
-      await revoke(sup.token, await firstSession(admin)).expect(403);
-      await revoke(sup.token, await firstSession(peer)).expect(403);
+      // ADR 0117: المشرف يقرر في حساب المراسل وحده، فجلسة غيره كالمفقودة بالنسبة إليه
+      expect((await revoke(sup.token, await firstSession(editor)).expect(404)).body.code).toBe('not_found');
+      await revoke(sup.token, await firstSession(admin)).expect(404);
+      await revoke(sup.token, await firstSession(peer)).expect(404);
       await revoke(admin.token, await firstSession(peer)).expect(204);
       await revoke(admin.token, await firstSession(editor)).expect(204);
       await revoke(otherAdmin.token, await firstSession(admin)).expect(204);
@@ -230,15 +231,73 @@ describe('account: sessions and recovery', () => {
       expect((await tasks(otherAdmin)).some((t) => t?.includes(adminReq.id))).toBe(true);
       expect((await tasks(admin)).some((t) => t?.includes(adminReq.id))).toBe(false);
 
-      expect((await approve(sup, editorReq.id).expect(403)).body.code).toBe('forbidden_scope');
-      await approve(sup, adminReq.id).expect(403);
-      await approve(sup, peerReq.id).expect(403);
+      // ADR 0117: طلب حساب غير المراسل كالمفقود للمشرف
+      expect((await approve(sup, editorReq.id).expect(404)).body.code).toBe('not_found');
+      await approve(sup, adminReq.id).expect(404);
+      await approve(sup, peerReq.id).expect(404);
       await approve(otherAdmin, peerReq.id).expect(200);
       // v0.1: حساب مدير النظام لا يُعتمد من الواجهة لأحد، ولا لنفسه (إجراء الشخصين من سطر الأوامر)
       expect((await approve(admin, adminReq.id).expect(403)).body.code).toBe('admin_quorum_required');
       expect((await approve(otherAdmin, adminReq.id).expect(403)).body.code).toBe('admin_quorum_required');
       expect(await requests(admin.id)).toEqual([{ id: adminReq.id, state: 'pending_approval' }]);
       await approve(admin, editorReq.id).expect(200);
+    });
+
+    // ADR 0117 (تعديل 0107): نطاق «all» يغطي المشترين وطاقم المالية والحقوق والإنتاج؛ المشرف يقرر في حساب المراسل وحده
+    it('a supervisor of every scope decides for reporter accounts only; buyers and non-reporter staff go to system admins alone', async () => {
+      const sup = await loginAs(h, [{ role: 'supervisor', scopeKind: 'all', scopeId: '' }]);
+      const admin = await loginAs(h, [{ role: 'system_admin' }]);
+      const { rows: orgs } = await h.pool.query<{ id: string }>(
+        `INSERT INTO buyer_organizations (legal_name, display_name_ar, display_name_en, country, billing_email, status, verified_at, verified_by)
+         VALUES ('Buyer LLC', 'مشترٍ', 'Buyer', 'JO', 'b@example.test', 'active', now(), gen_random_uuid()) RETURNING id`,
+      );
+      const buyer = await seedUser(h, { roles: [] });
+      await h.pool.query(`UPDATE users SET organization_id = $2 WHERE id = $1`, [buyer.id, orgs[0]!.id]);
+      await h.pool.query(`INSERT INTO user_roles (user_id, role, scope_kind, scope_id) VALUES ($1, 'buyer_member', 'organization', $2)`, [buyer.id, orgs[0]!.id]);
+      const accounts = {
+        reporter: await loginAs(h, [{ role: 'reporter' }], { officeId: officeA }),
+        producer: await loginAs(h, [{ role: 'producer' }], { officeId: officeA }),
+        finance: await loginAs(h, [{ role: 'finance' }], { officeId: officeA }),
+        rights: await loginAs(h, [{ role: 'rights_officer' }], { officeId: officeA }),
+        mixed: await loginAs(h, [{ role: 'reporter' }, { role: 'producer' }], { officeId: officeA }),
+        buyer: { ...buyer, token: (await login(buyer.email, buyer.password)).access_token },
+      };
+      const ids: Record<string, string> = {};
+      for (const [name, a] of Object.entries(accounts)) {
+        const c = `${name.toUpperCase().replace(/[^A-Z]/g, 'X').padEnd(10, 'Q').slice(0, 10)}2345`;
+        await seedCode(a.id, c);
+        await start(a.email, c).expect(202);
+        ids[name] = (await requests(a.id))[0].id;
+      }
+      await drainOutbox(h);
+      const tasks = async (a: Actor) =>
+        ((await http().get('/v1/notifications?limit=100').set('Authorization', `Bearer ${a.token}`).expect(200)).body.items as Array<Record<string, string>>)
+          .filter((n) => n.type === 'auth.recovery_requested' && n.assignment_state === 'assigned')
+          .map((n) => n.recovery_request_id);
+      const supTasks = await tasks(sup);
+      const adminTasks = await tasks(admin);
+      expect(supTasks).toContain(ids.reporter);
+      for (const name of ['producer', 'finance', 'rights', 'mixed', 'buyer']) {
+        expect(supTasks).not.toContain(ids[name]);
+        expect(adminTasks).toContain(ids[name]);
+      }
+      expect(adminTasks).not.toContain(ids.reporter);
+
+      const approve = (a: Actor, id: string) =>
+        http().post(`/v1/auth/recovery/${id}/approve`).set('Authorization', `Bearer ${a.token}`).send({ verification_note: 'verified in person' });
+      for (const name of ['producer', 'finance', 'rights', 'mixed', 'buyer']) {
+        expect((await approve(sup, ids[name]!).expect(404)).body.code).toBe('not_found');
+        const sid = (await sessions(accounts[name as keyof typeof accounts].token).expect(200)).body.items[0].id as string;
+        await revoke(sup.token, sid).expect(404);
+      }
+      const reporterApproval = await approve(sup, ids.reporter!).expect(200);
+      expect(typeof reporterApproval.body.reset_token).toBe('string');
+      await approve(admin, ids.buyer!).expect(200);
+      await approve(admin, ids.finance!).expect(200);
+      const { rows } = await h.pool.query(`SELECT count(*)::int AS n FROM recovery_requests WHERE id = ANY($1) AND state = 'pending_approval'`, [
+        [ids.producer, ids.rights, ids.mixed],
+      ]);
+      expect(rows[0].n).toBe(3);
     });
 
     it('rate-limits recovery attempts per email and address', async () => {

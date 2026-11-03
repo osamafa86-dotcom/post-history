@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { base32Decode, totp } from '../../src/common/crypto';
 import { schemaValidator } from '../../src/common/contract';
-import { createHarness, drainOutbox, type Harness, loginAs, seedUser } from './harness';
+import { createHarness, drainOutbox, freshTotp, type Harness, loginAs, seedUser } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
 
@@ -110,7 +110,7 @@ describe('recovery completion (/auth/recovery/complete, /auth/totp/confirm)', ()
     const done = (await complete(resetToken).expect(200)).body;
     const secret = base32Decode(done.totp_enrollment.secret_base32);
     const restricted = done.session.access_token;
-    const now = totp(secret, Date.now());
+    const now = freshTotp(user.id, secret);
     expect((await confirm(restricted, now === '000000' ? '111111' : '000000').expect(401)).body.code).toBe('unauthorized');
 
     const full = await confirm(restricted, now).expect(200);
@@ -122,8 +122,8 @@ describe('recovery completion (/auth/recovery/complete, /auth/totp/confirm)', ()
     expect(me.body).toMatchObject({ credential_reset_required: false, totp_enabled: true });
     await http().get('/v1/auth/sessions').set(bearer(full.body.access_token)).expect(200);
     // لا شيء معلّق بعد التأكيد: 409، والدخول بالسر الجديد يعمل
-    expect((await confirm(full.body.access_token, totp(secret, Date.now())).expect(409)).body.code).toBe('recovery_state_conflict');
-    await login(user.email, newPassword, totp(secret, Date.now())).expect(200);
+    expect((await confirm(full.body.access_token, freshTotp(user.id, secret)).expect(409)).body.code).toBe('recovery_state_conflict');
+    await login(user.email, newPassword, freshTotp(user.id, secret)).expect(200);
   });
 
   it('confirm outside a reset is 409; confirm is rate-limited per account', async () => {

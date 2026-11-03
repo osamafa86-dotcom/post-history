@@ -27,6 +27,7 @@ export const refreshTokens = pgTable("refresh_tokens", {
 	replacedBy: uuid("replaced_by"),
 }, (table) => [
 	index("refresh_tokens_user_active_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops")).where(sql`(revoked_at IS NULL)`),
+	index("refresh_tokens_dead_idx").using("btree", sql`LEAST(expires_at, COALESCE(revoked_at, expires_at))`),
 	foreignKey({
 			columns: [table.replacedBy],
 			foreignColumns: [table.id],
@@ -167,6 +168,7 @@ export const uploadSessions = pgTable("upload_sessions", {
 	index("upload_sessions_material_idx").using("btree", table.materialId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("uuid_ops")),
 	index("upload_sessions_owner_idx").using("btree", table.createdBy.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("uuid_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")),
 	index("upload_sessions_storage_pending_idx").using("btree", table.updatedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((state = 'failed'::text) AND (storage_removed_at IS NULL))`),
+	index("upload_sessions_scrub_idx").using("btree", table.updatedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((state = ANY (ARRAY['verified'::text, 'failed'::text, 'deduplicated'::text])) AND (filename <> '-'::text))`),
 	uniqueIndex("upload_sessions_tus_upload_id_key").using("btree", table.tusUploadId.asc().nullsLast().op("text_ops")).where(sql`(tus_upload_id IS NOT NULL)`),
 	foreignKey({
 			columns: [table.createdBy],
@@ -281,6 +283,7 @@ export const users = pgTable("users", {
 	legalNameEnc: bytea("legal_name_enc"),
 	organizationId: uuid("organization_id"),
 	workName: text("work_name"),
+	membershipSuspended: boolean("membership_suspended").default(false).notNull(),
 }, (table) => [
 	uniqueIndex("users_email_lower_key").using("btree", sql`lower(email)`),
 	index("users_office_idx").using("btree", table.officeId.asc().nullsLast().op("uuid_ops")).where(sql`(office_id IS NOT NULL)`),
@@ -296,6 +299,7 @@ export const users = pgTable("users", {
 			name: "users_organization_id_fkey"
 		}),
 	check("users_buyer_no_office", sql`(organization_id IS NULL) OR (office_id IS NULL)`),
+	check("users_membership_needs_organization", sql`(NOT membership_suspended) OR (organization_id IS NOT NULL)`),
 	check("users_status_check", sql`status = ANY (ARRAY['active'::text, 'suspended'::text, 'recovery'::text])`),
 	check("users_totp_consistent", sql`(NOT totp_enabled) OR (totp_secret_enc IS NOT NULL)`),
 	check("users_totp_pending_only_during_reset", sql`(totp_pending_secret_enc IS NULL) OR credential_reset_required`),
@@ -526,6 +530,7 @@ export const notifications = pgTable("notifications", {
 	index("notifications_material_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops")).where(sql`(material_id IS NOT NULL)`),
 	index("notifications_overdue_assignment_idx").using("btree", table.escalateAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((assignment_state = 'assigned'::text) AND (acknowledged_at IS NULL))`),
 	index("notifications_unread_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops")).where(sql`(read_at IS NULL)`),
+	index("notifications_read_idx").using("btree", table.readAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(read_at IS NOT NULL)`),
 	foreignKey({
 			columns: [table.userId],
 			foreignColumns: [users.id],

@@ -6,7 +6,7 @@ import { DB, type Database } from '../../src/database/database.module';
 import { AdminRecoveryError } from '../../src/identity/admin-recovery';
 import { type CreateUserInput, createUser } from '../../src/identity/create-user';
 import { parseCreateUserCliArgs } from '../../src/cli/create-user';
-import { createHarness, type Harness, seedUser } from './harness';
+import { createHarness, freshTotp, type Harness, seedUser } from './harness';
 
 describe('account creation on a real host (cli:create-user, ADR 0030)', () => {
   let h: Harness;
@@ -52,9 +52,10 @@ describe('account creation on a real host (cli:create-user, ADR 0030)', () => {
     const completed = await request(h.app.getHttpServer()).post('/v1/auth/recovery/complete').send({ reset_token: done.setupToken, new_password: newPassword }).expect(200);
     await login(e, newPassword).expect(401); // TOTP لم يُؤكَّد بعد
     const secret = base32Decode(completed.body.totp_enrollment.secret_base32);
-    await request(h.app.getHttpServer()).post('/v1/auth/totp/confirm').set('Authorization', `Bearer ${completed.body.session.access_token}`).send({ totp_code: totp(secret, Date.now()) }).expect(200);
+    await request(h.app.getHttpServer()).post('/v1/auth/totp/confirm').set('Authorization', `Bearer ${completed.body.session.access_token}`).send({ totp_code: freshTotp(done.userId, secret) }).expect(200);
     await login(e, newPassword).expect(401); // الرمز الثاني مطلوب الآن
-    await request(h.app.getHttpServer()).post('/v1/auth/login').send({ email: e, password: newPassword, totp_code: totp(secret, Date.now()) }).expect(200);
+    // خطوة لم تُقدَّم بعد: الخادم لا يقبل الخطوة نفسها مرتين لحساب واحد (ADR 0117)
+    await request(h.app.getHttpServer()).post('/v1/auth/login').send({ email: e, password: newPassword, totp_code: freshTotp(done.userId, secret) }).expect(200);
     // الرمز لمرة واحدة
     await request(h.app.getHttpServer()).post('/v1/auth/recovery/complete').send({ reset_token: done.setupToken, new_password: newPassword }).expect(401);
 

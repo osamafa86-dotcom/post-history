@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { Executor, Tx } from '../database/database.module';
-import { catalogListings, materialFiles } from '../database/schema/schema';
+import { catalogListings, licenses, materialFiles } from '../database/schema/schema';
 import { writeOutboxEvent } from '../outbox/outbox';
 
 type ListingRow = typeof catalogListings.$inferSelect;
@@ -39,8 +39,11 @@ export async function writeListingEvent(tx: Tx, listing: ListingRow, actorId: st
   });
 }
 
-/** ما يعلّق الإدراج المعروض آليًا: خروج الحقوق من `sellable`، أو وسم المادة بالحساسية (threat-model-commercial). */
-export type AutoSuspendReason = 'rights_changed' | 'sensitive_flagged';
+/**
+ * ما يعلّق الإدراج المعروض آليًا: خروج الحقوق من `sellable`، أو وسم المادة بالحساسية (threat-model-commercial)، أو سقوط الاعتماد
+ * التحريري للإصدار المعروض (إصدار جديد بتعديل بعد الاعتماد، أو خروج من `published`، ADR 0118).
+ */
+export type AutoSuspendReason = 'rights_changed' | 'sensitive_flagged' | 'editorial_changed';
 
 /**
  * يُعلَّق الإدراج المعروض في معاملة التغيير نفسها وقبله، لأن محفّزات القاعدة ترفض التغيير ما دام معروضًا. لا يعود
@@ -53,6 +56,30 @@ export async function suspendListing(tx: Tx, materialId: string, reason: AutoSus
     .where(and(eq(catalogListings.materialId, materialId), eq(catalogListings.state, 'listed')))
     .returning();
   if (suspended) await writeListingEvent(tx, suspended, actorId);
+}
+
+/**
+ * خروج حقوق المادة من `sellable` (حجب أو سحب) ووسمها بالحساسية يبطلان تراخيصها الفاعلة في المعاملة نفسها (ADR 0118): الحالة
+ * `revoked` بسبب `rights_withdrawn` (القيمة في العقد والقاعدة)، فيتوقف التنزيل، و`license.revoked` لكل ترخيص بالمعرّفات وحدها ينبّه
+ * المشتري. يعيد عدد التراخيص المبطَلة.
+ */
+export async function revokeMaterialLicenses(tx: Tx, materialId: string, actorId: string | null): Promise<number> {
+  const revoked = await tx
+    .update(licenses)
+    .set({ status: 'revoked', revokedReason: 'rights_withdrawn', updatedAt: sql`now()` })
+    .where(and(eq(licenses.materialId, materialId), eq(licenses.status, 'active')))
+    .returning();
+  for (const l of revoked) {
+    await writeOutboxEvent(tx, {
+      type: 'license.revoked',
+      aggregateType: 'license',
+      aggregateId: l.id,
+      idempotencyKey: `license.revoked:${l.id}`,
+      actorId,
+      payload: { license_id: l.id, organization_id: l.organizationId, material_id: l.materialId, revoked_reason: 'rights_withdrawn' },
+    });
+  }
+  return revoked.length;
 }
 
 /** المواد الموسومة بالحساسية (قاصرون، مصابون، مشاهد صادمة) خارج الكتالوج (threat-model-commercial، ملاحظة الأمن على #253). */

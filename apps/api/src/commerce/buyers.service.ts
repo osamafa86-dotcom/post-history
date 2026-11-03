@@ -10,6 +10,7 @@ import { buyerInviteConflicts, buyerOrganizations, recoveryRequests, userRoles, 
 import type { components } from '../generated/api';
 import { hasRole, type Principal } from '../identity/principal';
 import { audit } from '../identity/recovery-approval';
+import { revokeAllAccess } from '../identity/session.service';
 import { RESET_TOKEN_DELIVERY, type ResetTokenDelivery } from '../identity/reset-token-delivery';
 import { iso } from '../materials/material-store';
 import { writeOutboxEvent } from '../outbox/outbox';
@@ -105,14 +106,21 @@ export class BuyersService {
       if (ifMatch !== undefined && ifMatch.trim() !== (await etagOf(tx, id))) {
         throw new ApiError(412, 'precondition_failed', 'The resource has changed; read it again and retry.');
       }
-      const status = input.status ?? org.status;
       const seats = input.seats ?? org.seats;
-      // الرفض بسببه من /rejection وحده (ADR 0104)؛ PUT يُبقي المرفوضة أو يعيدها إلى غيرها فيُمحى السبب
-      if (status === 'rejected' && org.status !== 'rejected') throw ApiError.validation({ fields: ['/status'] });
       // الحالة والمقاعد لمدير النظام وحده؛ مدير المؤسسة يعدّل ملفها
-      if (!admin && (status !== org.status || seats !== org.seats)) {
+      if (!admin && ((input.status ?? org.status) !== org.status || seats !== org.seats)) {
         throw new ApiError(403, 'forbidden_role', 'Only a system administrator changes the organization status or seats.');
       }
+      // الاسم القانوني والبلد هما ما تحقق منه مدير النظام (ADR 0118): تغييرهما من مدير المؤسسة بعد التحقق يعيدها إلى
+      // pending_verification ويمحو verified_at في المعاملة نفسها، والمعلّقة لا تغيّرهما. مدير النظام هو المتحقق فتعديله لا يعيدها
+      const identityChanged = input.legal_name !== org.legalName || input.country !== org.country;
+      if (!admin && identityChanged && org.status === 'suspended') {
+        throw new ApiError(403, 'forbidden_role', 'A suspended organization cannot change its legal name or country.');
+      }
+      const reverify = !admin && identityChanged && org.status === 'active';
+      const status = reverify ? 'pending_verification' : (input.status ?? org.status);
+      // الرفض بسببه من /rejection وحده (ADR 0104)؛ PUT يُبقي المرفوضة أو يعيدها إلى غيرها فيُمحى السبب
+      if (status === 'rejected' && org.status !== 'rejected') throw ApiError.validation({ fields: ['/status'] });
       const activating = status === 'active' && org.verifiedAt === null;
       await tx
         .update(buyerOrganizations)
@@ -126,9 +134,14 @@ export class BuyersService {
           status,
           ...(status !== 'rejected' ? { rejectionReason: null } : {}),
           ...(activating ? { verifiedAt: sql`now()`, verifiedBy: p.userId } : {}),
+          ...(reverify ? { verifiedAt: null, verifiedBy: null } : {}),
         })
         .where(eq(buyerOrganizations.id, id));
       if (status !== org.status) await recordStatusChange(tx, p.userId, id, org.status as Status, status as Status, null);
+      // بريد الفوترة يتغيّر بلا إعادة تحقق، ويُدقَّق بلا قيمته
+      if (input.billing_email !== org.billingEmail) {
+        await audit(tx, p.userId, 'buyer_organization.billing_email_changed', p.userId, { organization_id: id, reason_code: 'billing_email_changed' });
+      }
       return this.read(tx, id);
     });
   }
@@ -210,6 +223,10 @@ export class BuyersService {
       if (!org) throw ApiError.notFound();
       const [current] = (await memberRows(tx, orgId)).filter((m) => m.id === userId);
       if (!current) throw ApiError.notFound();
+      // العضوية مستقلة عن حالة الحساب على المنصة (ADR 0118): هذا المسار لا يرفع تعليقًا وضعه مدير النظام على الحساب
+      if (current.platformSuspended && input.status === 'active') {
+        throw new ApiError(403, 'forbidden_role', 'A platform suspension is lifted by a system administrator through the account status only.');
+      }
       const reactivating = current.status === 'suspended' && input.status === 'active';
       if (reactivating && (await seatsTaken(tx, orgId)) >= org.seats) throw new ApiError(409, 'seats_exhausted', 'The organization has no free seat.');
       if (current.conflict) {
@@ -223,8 +240,11 @@ export class BuyersService {
           .update(userRoles)
           .set({ role: input.role })
           .where(and(eq(userRoles.userId, userId), inArray(userRoles.role, [...BUYER_ROLES])));
-        if (input.status !== (current.status === 'suspended' ? 'suspended' : 'active')) {
-          await tx.update(users).set({ status: input.status }).where(eq(users.id, userId));
+        const suspend = input.status === 'suspended';
+        if (suspend !== current.membershipSuspended) {
+          await tx.update(users).set({ membershipSuspended: suspend }).where(eq(users.id, userId));
+          // تعليق العضوية يبطل كل وصول العضو فورًا كالتعليق على المنصة؛ وإعادتها لا تعيد شيئًا منه
+          if (suspend) await revokeAllAccess(tx, userId);
         }
       }
       // لا تبقى مؤسسة فعّالة بلا مدير نشط
@@ -235,7 +255,8 @@ export class BuyersService {
       if (input.role !== current.role) {
         await audit(tx, p.userId, 'buyer_member.role_changed', userId, { organization_id: orgId, target_user_id: userId, from: current.role, to: input.role });
       }
-      if (input.status !== (current.status === 'suspended' ? 'suspended' : 'active')) {
+      // تغيّر العضوية وحدها يُدقَّق؛ حالة الحساب على المنصة لا يغيّرها هذا المسار
+      if ((input.status === 'suspended') !== current.membershipSuspended) {
         await audit(tx, p.userId, 'buyer_member.status_changed', userId, { organization_id: orgId, target_user_id: userId, to: input.status });
       }
     });
@@ -348,7 +369,7 @@ async function activeCounts(executor: Executor, ids: string[]): Promise<Map<stri
   const rows = await executor
     .select({ org: users.organizationId, n: count() })
     .from(users)
-    .where(and(inArray(users.organizationId, ids), eq(users.status, 'active'), eq(users.credentialResetRequired, false)))
+    .where(and(inArray(users.organizationId, ids), eq(users.status, 'active'), eq(users.membershipSuspended, false), eq(users.credentialResetRequired, false)))
     .groupBy(users.organizationId);
   return new Map(rows.map((r) => [r.org!, Number(r.n)]));
 }
@@ -357,7 +378,10 @@ const emailTaken = () => new ApiError(409, 'bad_request', 'An account with this 
 
 /** المقاعد المشغولة: كل حساب غير معلّق في المؤسسة، وكل دعوة متعارضة لم تُعلَّق ولم تُحسم. */
 async function seatsTaken(executor: Executor, orgId: string): Promise<number> {
-  const [{ n }] = (await executor.select({ n: count() }).from(users).where(and(eq(users.organizationId, orgId), ne(users.status, 'suspended')))) as [{ n: number }];
+  const [{ n }] = (await executor
+    .select({ n: count() })
+    .from(users)
+    .where(and(eq(users.organizationId, orgId), ne(users.status, 'suspended'), eq(users.membershipSuspended, false)))) as [{ n: number }];
   const [{ c }] = (await executor
     .select({ c: count() })
     .from(buyerInviteConflicts)
@@ -384,6 +408,10 @@ async function openConflict(executor: Executor, orgId: string, email: string): P
 interface MemberRow {
   id: string;
   conflict: boolean;
+  /** تعليق الحساب على المنصة (مدير النظام) */
+  platformSuspended: boolean;
+  /** تعليق العضوية في المؤسسة (مدير المؤسسة) */
+  membershipSuspended: boolean;
   email: string;
   role: string;
   status: 'invited' | 'active' | 'suspended';
@@ -398,6 +426,7 @@ async function memberRows(executor: Executor, orgId: string): Promise<MemberRow[
       email: users.email,
       role: userRoles.role,
       userStatus: users.status,
+      membershipSuspended: users.membershipSuspended,
       lastLoginAt: users.lastLoginAt,
       resetRequired: users.credentialResetRequired,
       totpEnabled: users.totpEnabled,
@@ -413,16 +442,18 @@ async function memberRows(executor: Executor, orgId: string): Promise<MemberRow[
   const members: MemberRow[] = rows.map((r) => ({
     id: r.id,
     conflict: false,
+    platformSuspended: r.userStatus === 'suspended',
+    membershipSuspended: r.membershipSuspended,
     email: r.email,
     role: r.role,
-    // المدعو لم يعيّن كلمته بعد؛ المعلّق بحالة حسابه
-    status: r.userStatus === 'suspended' ? 'suspended' : r.resetRequired && r.lastLoginAt === null ? 'invited' : 'active',
+    // المدعو لم يعيّن كلمته بعد؛ المعلّق بحالة حسابه على المنصة أو بعضويته
+    status: r.userStatus === 'suspended' || r.membershipSuspended ? 'suspended' : r.resetRequired && r.lastLoginAt === null ? 'invited' : 'active',
     totpEnabled: r.totpEnabled,
     createdAt: r.createdAt,
   }));
   // الدعوة المتعارضة عضو مدعو لا يكتمل أبدًا (حتى يحسمها مدير النظام)
   for (const c of conflicts) {
-    members.push({ id: c.id, conflict: true, email: c.email, role: c.role, status: c.state === 'suspended' ? 'suspended' : 'invited', totpEnabled: false, createdAt: c.createdAt });
+    members.push({ id: c.id, conflict: true, platformSuspended: false, membershipSuspended: c.state === 'suspended', email: c.email, role: c.role, status: c.state === 'suspended' ? 'suspended' : 'invited', totpEnabled: false, createdAt: c.createdAt });
   }
   // الطابعان بصيغة القاعدة نفسها، فالترتيب النصي ترتيب زمني
   return members.sort((a, b) => (a.createdAt === b.createdAt ? (a.id < b.id ? -1 : 1) : a.createdAt < b.createdAt ? -1 : 1));

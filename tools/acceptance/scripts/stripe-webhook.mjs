@@ -80,7 +80,8 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
     const uniq = randomUUID().slice(0, 8);
     const mat = await http.call(tokens.reporter, "POST", "/materials", { body: materialBody(form.version, `sw-${uniq}`) });
     if (mat.status !== 201) throw new Error(`fixture material answered ${mat.status}`);
-    await db.query(`UPDATE materials SET rights_state = 'sellable' WHERE id = $1`, [mat.body.id]);
+    // the three independent sale conditions (ADR 0118): sellable rights, the current version published, a verified original
+    await db.query(`UPDATE materials SET rights_state = 'sellable', editorial_state = 'published', technical_state = 'verified' WHERE id = $1`, [mat.body.id]);
     await db.query(`INSERT INTO material_files (material_id, kind, state, size_bytes, sha256, storage_key, verified_at) VALUES ($1, 'original', 'verified', 100, $2, $3, now())`, [mat.body.id, randomBytes(32), `tus/${randomUUID()}`]);
     const tpl = await http.call(tokens.rights_officer, "POST", "/license-templates", { body: {
       type: "editorial_single", name: { ar: "ترخيص", en: "License" }, terms: { ar: "شروط", en: "Terms" }, usage_media: ["web"], territory: { kind: "worldwide" },

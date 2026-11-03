@@ -1,6 +1,7 @@
 import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException, Inject } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import type { Logger } from 'pino';
+import { pgError } from './db-errors';
 import { ApiError, type ErrorBody, type ErrorCode, StoredResponse } from './errors';
 import { LOGGER, redactPath } from './logger';
 
@@ -17,6 +18,12 @@ const CODE_BY_STATUS: Record<number, ErrorCode> = {
   429: 'rate_limited',
 };
 
+/**
+ * رموز Postgres لقيمة مدخلة لا تصلح (ADR 0115): محرف لا يمثَّل في الترميز (NUL و22P05)، ونص أو رقم أو تاريخ لا يُفسَّر أو يتجاوز
+ * عموده. هي خطأ في الطلب لا في الخادم: 422 بلا تفاصيل، لا 500.
+ */
+const INVALID_INPUT_CODES = new Set(['22001', '22003', '22007', '22008', '22019', '22021', '22025', '2201B', '22P02', '22P05']);
+
 export function toErrorResponse(exception: unknown, requestId: string): { status: number; body: ErrorBody } {
   if (exception instanceof ApiError) {
     const body: ErrorBody = { code: exception.code, message: exception.message, request_id: requestId };
@@ -29,7 +36,23 @@ export function toErrorResponse(exception: unknown, requestId: string): { status
     const message = status === 404 ? 'Not found.' : status >= 500 ? 'Internal error.' : 'Bad request.';
     return { status, body: { code, message, request_id: requestId } };
   }
+  const { code } = pgError(exception);
+  if (code && INVALID_INPUT_CODES.has(code)) {
+    return { status: 422, body: { code: 'validation_failed', message: 'Request validation failed.', request_id: requestId } };
+  }
   return { status: 500, body: { code: 'internal_error', message: 'Internal error.', request_id: requestId } };
+}
+
+/**
+ * ما يُسجَّل عن خطأ 5xx (ADR 0115، CLAUDE.md §5): اسم الخطأ ورمز Postgres واسم القيد وحدها. لا رسالة ولا مكدّس: خطأ استعلام Drizzle
+ * يحمل في رسالته (والمكدّس يبدأ بها) «params: …» بكل القيم المربوطة، ومنها العناوين والأسماء المستعارة والبصمات والبريد.
+ */
+export function errorLogFields(exception: unknown): { err_name?: string; pg_code?: string; constraint?: string } {
+  const err = exception instanceof Error ? exception : undefined;
+  // DrizzleQueryError لا يضبط name، فاسم الصنف أنفع من «Error»
+  const name = err ? (err.name !== 'Error' ? err.name : (err.constructor?.name ?? err.name)) : undefined;
+  const { code, constraint } = pgError(exception);
+  return { err_name: name, ...(code ? { pg_code: code } : {}), ...(constraint ? { constraint } : {}) };
 }
 
 @Catch()
@@ -52,11 +75,7 @@ export class ErrorFilter implements ExceptionFilter {
 
     const { status, body } = toErrorResponse(exception, req.id ?? '');
     if (status >= 500) {
-      const err = exception instanceof Error ? exception : undefined;
-      this.logger.error(
-        { request_id: req.id, path: redactPath(req.originalUrl), err_name: err?.name, stack: err?.stack },
-        'unhandled error',
-      );
+      this.logger.error({ request_id: req.id, path: redactPath(req.originalUrl), ...errorLogFields(exception) }, 'unhandled error');
     }
     if (exception instanceof ApiError && exception.headers) {
       for (const [k, v] of Object.entries(exception.headers)) res.setHeader(k, v);

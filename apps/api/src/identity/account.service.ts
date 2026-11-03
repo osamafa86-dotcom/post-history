@@ -9,7 +9,8 @@ import { offices, recoveryCodes, recoveryRequests, refreshTokens, userRoles, use
 import type { components } from '../generated/api';
 import { iso } from '../materials/material-store';
 import { writeOutboxEvent } from '../outbox/outbox';
-import { hasRole, mayDecideFor, type Principal, type RoleName, supervisesUser } from './principal';
+import { hasRole, isReporterAccount, mayDecideFor, type Principal, type RoleName, supervisesUser } from './principal';
+import { CredentialAttempts } from './credential-attempts';
 import { audit, recordRecoveryApproval, resetCredentials } from './recovery-approval';
 import { RESET_TOKEN_DELIVERY, type ResetTokenDelivery } from './reset-token-delivery';
 import type { RateLimiter } from './rate-limiter';
@@ -43,6 +44,7 @@ export class AccountService {
     private readonly sessions: SessionService,
     limits: RateLimitsService,
     @Inject(RESET_TOKEN_DELIVERY) private readonly resetTokens: ResetTokenDelivery,
+    private readonly attempts: CredentialAttempts,
   ) {
     this.recoveryByEmail = limits.create('recovery-email', config.LOGIN_RATE_LIMIT_MAX);
     this.recoveryByIp = limits.create('recovery-ip', config.LOGIN_RATE_LIMIT_IP_MAX);
@@ -86,14 +88,14 @@ export class AccountService {
   }
 
   /**
-   * المستخدم يبطل جلساته؛ مشرف نطاق صاحبها أو مدير النظام يبطلها بعد بلاغ فقد الهاتف ويُسجَّل في التدقيق.
-   * ما ليس للمستدعي أن يبطله غير موجود بالنسبة إليه (404).
+   * المستخدم يبطل جلساته؛ مشرف نطاق صاحبها يبطلها بعد بلاغ فقد الهاتف لحساب مراسل وحده، ومدير النظام لأي حساب (ADR 0117)، ويُسجَّل في
+   * التدقيق. ما ليس للمستدعي أن يبطله غير موجود بالنسبة إليه (404).
    */
   async revokeSession(p: Principal, sessionId: string): Promise<void> {
     if (!UUID.test(sessionId)) throw ApiError.notFound();
     await this.db.transaction(async (tx) => {
       const [s] = await tx
-        .select({ id: refreshTokens.id, userId: refreshTokens.userId, officeId: users.officeId, governorate: offices.governorate })
+        .select({ id: refreshTokens.id, userId: refreshTokens.userId, officeId: users.officeId, organizationId: users.organizationId, governorate: offices.governorate })
         .from(refreshTokens)
         .innerJoin(users, eq(users.id, refreshTokens.userId))
         .leftJoin(offices, eq(offices.id, users.officeId))
@@ -101,7 +103,9 @@ export class AccountService {
         .for('update', { of: refreshTokens });
       if (!s) throw ApiError.notFound();
       const own = s.userId === p.userId;
-      if (!own && !hasRole(p, 'system_admin') && !supervisesUser(p, s)) throw ApiError.notFound();
+      if (!own && !hasRole(p, 'system_admin') && !(supervisesUser(p, s) && isReporterAccount(await rolesOf(tx, s.userId), s.organizationId))) {
+        throw ApiError.notFound();
+      }
       if (!own) await assertHierarchy(tx, p, s.userId);
       await tx.update(refreshTokens).set({ revokedAt: sql`now()` }).where(eq(refreshTokens.id, s.id));
       if (!own) {
@@ -171,6 +175,7 @@ export class AccountService {
           createdAt: recoveryRequests.createdAt,
           expiresAt: recoveryRequests.expiresAt,
           officeId: users.officeId,
+          organizationId: users.organizationId,
           governorate: offices.governorate,
         })
         .from(recoveryRequests)
@@ -178,8 +183,11 @@ export class AccountService {
         .leftJoin(offices, eq(offices.id, users.officeId))
         .where(eq(recoveryRequests.id, id))
         .for('update', { of: recoveryRequests });
-      if (!r || (!hasRole(p, 'system_admin') && !supervisesUser(p, r))) throw ApiError.notFound();
-      if ((await rolesOf(tx, r.userId)).includes('system_admin')) throw adminQuorumRequired();
+      if (!r) throw ApiError.notFound();
+      const targetRoles = await rolesOf(tx, r.userId);
+      // المشرف يعتمد استعادة حساب مراسل في نطاقه وحده؛ المشتري والطاقم بغير دور المراسل لمدير النظام (ADR 0117)
+      if (!hasRole(p, 'system_admin') && !(supervisesUser(p, r) && isReporterAccount(targetRoles, r.organizationId))) throw ApiError.notFound();
+      if (targetRoles.includes('system_admin')) throw adminQuorumRequired();
       await assertHierarchy(tx, p, r.userId);
       if (r.state === 'pending_approval' && new Date(r.expiresAt) <= new Date()) {
         // يُثبَّت الانتهاء ثم يُرفض الاعتماد خارج المعاملة (الرمي داخلها كان سيلغي هذا التحديث)
@@ -224,12 +232,14 @@ export class AccountService {
   }
 
   /**
-   * عشرة رموز جديدة تُعاد مرة واحدة وتُخزَّن ببصماتها، وكل رمز سابق للحساب يبطل في المعاملة نفسها. كل توليد يُعد في حد المعدل لكل
+   * عشرة رموز جديدة تُعاد مرة واحدة وتُخزَّن ببصماتها، وكل رمز سابق للحساب يبطل في المعاملة نفسها. إعادة تحقق قبلها (كلمة المرور ثم
+   * TOTP، ADR 0117) كما قبل تسجيل مفتاح المرور، فجلسة مسروقة وحدها لا تأخذ رموزًا ولا تبطل رموز صاحبها. كل توليد يُعد في حد المعدل لكل
    * حساب. التدقيق بالعدد وحده، والحدث بلا رمز ينبّه صاحب الحساب (رمز في يد غيره يبدأ استعادة تنتظر اعتماد المشرف، لا أكثر).
    */
-  async generateRecoveryCodes(userId: string): Promise<components['schemas']['RecoveryCodes']> {
+  async generateRecoveryCodes(userId: string, stepUp: components['schemas']['PasskeyStepUp'] | undefined): Promise<components['schemas']['RecoveryCodes']> {
     const wait = await this.codesByUser.retryAfter(userId);
     if (wait > 0) throw new ApiError(429, 'rate_limited', 'Too many attempts.', undefined, { 'Retry-After': String(wait) });
+    await this.attempts.stepUp(userId, stepUp);
     await this.codesByUser.record(userId);
     const codes = new Set<string>();
     while (codes.size < RECOVERY_CODE_COUNT) codes.add(recoveryCode());

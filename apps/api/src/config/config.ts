@@ -98,6 +98,12 @@ const schema = z.object({
   LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(10),
   LOGIN_RATE_LIMIT_IP_MAX: z.coerce.number().int().min(1).default(100),
   LOGIN_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).default(900),
+  // عدّادا فشل لكل حساب مستقلان عن العنوان، لكلمة المرور ولرمز TOTP (ADR 0117): محاولات مجانية ثم تأخير يتضاعف من الأساس حتى
+  // السقف، ويُنسى العدّاد بعد مدة بلا فشل. البريد غير الموجود يُعدّ كالموجود.
+  LOGIN_BACKOFF_FREE_ATTEMPTS: z.coerce.number().int().min(1).max(100).default(5),
+  LOGIN_BACKOFF_BASE_SECONDS: z.coerce.number().int().min(1).max(3600).default(1),
+  LOGIN_BACKOFF_MAX_SECONDS: z.coerce.number().int().min(1).max(24 * 3600).default(900),
+  LOGIN_BACKOFF_RESET_SECONDS: z.coerce.number().int().min(60).max(30 * 24 * 3600).default(24 * 3600),
 
   // طلب استعادة الحساب ينتظر اعتماد المشرف هذه المدة ثم ينتهي
   RECOVERY_REQUEST_TTL_SECONDS: z.coerce.number().int().min(300).default(24 * 3600),
@@ -152,8 +158,13 @@ const schema = z.object({
   UPLOAD_PATH: z.enum(['tusd', 'direct']).default('tusd'),
   // نسب المادة في الكتالوج (v0.3، CatalogItem.credit): اسم الشبكة كما يراه المشتري
   CATALOG_CREDIT: z.string().min(1).max(200).default('Palestine Post'),
-  // حد حجم الملف الواحد في POST /uploads (بايت)؛ غيابه = بلا حد. المعاينة تضبطه مع -max-size في tusd (#235)
-  UPLOAD_MAX_BYTES: z.coerce.number().int().min(1).optional(),
+  // حد حجم الملف الواحد في POST /uploads (بايت)، ولا يتجاوز سقف العقد 2 GiB (ADR 0023). إلزامي في الإنتاج والتجربة (ADR 0115)، ويُضبط
+  // مع -max-size في tusd (#235). غيابه محليًا = سقف العقد وحده
+  UPLOAD_MAX_BYTES: z.coerce.number().int().min(1).max(2 * 1024 ** 3).optional(),
+  // حصة كل مستخدم من جلسات الرفع المفتوحة (created وin_progress غير المنتهية) ومن بايتاتها المنتظرة (ADR 0115). الافتراضي يتسع لأكبر
+  // دفعة يرسلها تطبيق المراسل (20 ملفًا بأصل ونسخة خفيفة لكلٍّ، كل أصل ≤ 2 GiB)؛ تجاوزها 429 حتى يكتمل رفع أو يُلغى أو ينتهي
+  UPLOAD_MAX_OPEN_SESSIONS_PER_USER: z.coerce.number().int().min(1).max(10_000).default(60),
+  UPLOAD_MAX_PENDING_BYTES_PER_USER: z.coerce.number().int().min(1).default(40 * 1024 ** 3),
   // true (افتراضيًا مع عقد v0.1، ADR 0012: «على كل عميل إرسالها»): إنشاء جلسة رفع بلا client_sha256 يُرفض (422)
   UPLOAD_REQUIRE_CLIENT_SHA256: z
     .enum(['true', 'false'])
@@ -230,6 +241,17 @@ const schema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+  // الكنس الدوري لما انتهت حاجته التقنية (ADR 0116): مفاتيح منع التكرار المنتهية، ورموز التحديث الميتة بعد مدة، واسم الملف على
+  // الجهاز في جلسة الرفع المنتهية، والإشعارات المقروءة القديمة. الافتراضات محافظة؛ الاحتفاظ التجاري بالمواد وبيانات المشترين قرار المالك
+  RETENTION_SWEEP_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  RETENTION_SWEEP_INTERVAL_MS: z.coerce.number().int().min(60_000).default(3_600_000),
+  RETENTION_SWEEP_BATCH: z.coerce.number().int().min(1).max(100_000).default(5000),
+  RETENTION_REFRESH_TOKEN_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
+  RETENTION_UPLOAD_FILENAME_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
+  RETENTION_READ_NOTIFICATION_DAYS: z.coerce.number().int().min(7).max(3650).default(180),
 
   // لغة عناوين الإشعارات المخزنة (القوالب بالعربية والإنجليزية في notifications/messages.ts)
   NOTIFICATION_LOCALE: z.enum(['ar', 'en']).default('ar'),
@@ -418,6 +440,10 @@ const validated = schema.superRefine((c, ctx) => {
   // ADR 0032: المزوّد التجريبي ممنوع دائمًا في مرحلة الإنتاج، وفي NODE_ENV=production لا يُقبل إلا للتجربة بعلمين معًا
   if (c.PAYMENT_PROVIDER === 'sandbox' && c.DEPLOY_STAGE === 'production') {
     ctx.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'sandbox is never allowed with DEPLOY_STAGE=production' });
+  }
+  // ADR 0115: لا خادم منشور بلا حد لحجم الملف الواحد؛ والقيمة نفسها في -max-size لدى tusd
+  if ((c.NODE_ENV === 'production' || c.DEPLOY_STAGE === 'trial' || c.DEPLOY_STAGE === 'production') && c.UPLOAD_MAX_BYTES === undefined) {
+    ctx.addIssue({ code: 'custom', path: ['UPLOAD_MAX_BYTES'], message: 'required with NODE_ENV=production or DEPLOY_STAGE=trial|production' });
   }
   if (c.NODE_ENV !== 'production') return;
   // عنوان Stripe البديل للاختبار وحده (خادم محاكاة)؛ في الإنتاج لا يذهب المفتاح إلا إلى Stripe نفسه

@@ -32,6 +32,9 @@ export async function startApi({ databaseUrl, port = 13000, apiDir = join(ROOT, 
     RESERVATION_SWEEP_ENABLED: "false",
     LOGIN_RATE_LIMIT_MAX: "1000",
     LOGIN_RATE_LIMIT_IP_MAX: "100000",
+    // every load script uploads from one reporter account (concurrent-load opens 60 at once after its baseline and the
+    // earlier scripts' sessions), so the per-user upload quota (ADR 0115) is raised here the way the login limits are
+    UPLOAD_MAX_OPEN_SESSIONS_PER_USER: "1000",
     // short injected timers so escalation and verification are measurable in seconds, not the production minutes
     ESCALATION_URGENT_SECONDS: "3",
     ESCALATION_IMPORTANT_SECONDS: "6",

@@ -142,9 +142,21 @@ describe('production configuration', () => {
       loadConfig({ ...base, NODE_ENV: 'production', REDIS_URL: 'redis://r', UPLOAD_VERIFIER: 'external' } as NodeJS.ProcessEnv),
     ).toThrow(/MEDIA_WORKER_TOKEN/);
     expect(() =>
-      loadConfig({ ...base, NODE_ENV: 'production', REDIS_URL: 'redis://r', UPLOAD_VERIFIER: 'external', MEDIA_WORKER_TOKEN: 'm'.repeat(40) } as NodeJS.ProcessEnv),
+      loadConfig({ ...base, NODE_ENV: 'production', REDIS_URL: 'redis://r', UPLOAD_VERIFIER: 'external', MEDIA_WORKER_TOKEN: 'm'.repeat(40), UPLOAD_MAX_BYTES: '2147483648' } as NodeJS.ProcessEnv),
     ).not.toThrow();
     expect(() => loadConfig({ ...base, NODE_ENV: 'development' } as NodeJS.ProcessEnv)).not.toThrow();
+  });
+
+  // ADR 0115: لا خادم منشور بلا حد لحجم الملف الواحد، ولا حد فوق سقف العقد 2 GiB
+  it('requires UPLOAD_MAX_BYTES with NODE_ENV=production or DEPLOY_STAGE=trial|production, at most 2 GiB', () => {
+    const prod = { ...base, NODE_ENV: 'production', REDIS_URL: 'redis://r', UPLOAD_VERIFIER: 'external', MEDIA_WORKER_TOKEN: 'm'.repeat(40) };
+    expect(() => loadConfig(prod as NodeJS.ProcessEnv)).toThrow(/UPLOAD_MAX_BYTES/);
+    for (const stage of ['trial', 'production']) {
+      expect(() => loadConfig({ ...base, NODE_ENV: 'development', DEPLOY_STAGE: stage } as NodeJS.ProcessEnv)).toThrow(/UPLOAD_MAX_BYTES/);
+    }
+    expect(loadConfig({ ...base, NODE_ENV: 'development', DEPLOY_STAGE: 'local' } as NodeJS.ProcessEnv).UPLOAD_MAX_BYTES).toBeUndefined();
+    expect(() => loadConfig({ ...prod, UPLOAD_MAX_BYTES: String(2 * 1024 ** 3 + 1) } as NodeJS.ProcessEnv)).toThrow(/UPLOAD_MAX_BYTES/);
+    expect(loadConfig({ ...prod, UPLOAD_MAX_BYTES: '2147483648' } as NodeJS.ProcessEnv).UPLOAD_MAX_BYTES).toBe(2147483648);
   });
 
   it('previous field key and hook secret come with their pair, and the key versions differ', () => {

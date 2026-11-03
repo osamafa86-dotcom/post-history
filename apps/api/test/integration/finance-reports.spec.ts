@@ -5,7 +5,7 @@ import { type AccountRef, postEntry } from '../../src/commerce/ledger';
 import { money } from '../../src/commerce/money';
 import { schemaValidator } from '../../src/common/contract';
 import { DB, type Database } from '../../src/database/database.module';
-import { createHarness, type Harness, loginAs, seedUploadSession, seedUser } from './harness';
+import { createHarness, type Harness, loginAs, makeSaleable, seedUploadSession, seedUser } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
 type Row = { user_id: string; sales: number; gross: { amount_minor: number }; fees_and_taxes: { amount_minor: number }; net: { amount_minor: number };
@@ -131,7 +131,7 @@ describe('finance reports (/v1/contributor-earnings, /v1/buyer-purchase-totals)'
     const listings: string[] = [];
     for (let i = 0; i < 2; i++) {
       const { materialId } = await seedUploadSession(h, reporter);
-      await h.pool.query(`UPDATE materials SET rights_state = 'sellable' WHERE id = $1`, [materialId]);
+      await makeSaleable(h, materialId);
       const { rows } = await h.pool.query<{ id: string }>(
         `INSERT INTO catalog_listings (material_id, material_version, state, title_ar, title_en, description_ar, description_en, updated_by, listed_at)
          SELECT id, version, 'listed', 'عنوان', 'Title', 'وصف', 'Description', $2, now() FROM materials WHERE id = $1 RETURNING id`, [materialId, rights.id]);

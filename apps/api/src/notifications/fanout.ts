@@ -1,7 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { Tx } from '../database/database.module';
-import { materialAssignments, materialRenders, materials, notificationRuleEscalations, notifications, offices, userRoles, users } from '../database/schema/schema';
-import { highestRank, type RoleName } from '../identity/principal';
+import { licenses, materialAssignments, materialRenders, materials, notificationRuleEscalations, notifications, offices, userRoles, users } from '../database/schema/schema';
+import { isReporterAccount } from '../identity/principal';
 import type { OutboxRow } from '../outbox/outbox.dispatcher';
 import { enqueuePush } from '../push/push-delivery.worker';
 import { materialRef, notificationTitle, type Locale } from './messages';
@@ -51,6 +51,7 @@ export async function fanOut(tx: Tx, event: OutboxRow, opts: FanOutOptions): Pro
   // تغيّر وسائل الدخول (ADR 0107): صاحب الحساب يُنبَّه على أجهزته، والعنوان قالب ثابت بلا معرّف
   if (event.type === 'auth.passkey_added' || event.type === 'auth.recovery_codes_generated') return ownerAlert(tx, event, event.type, opts);
   if (event.type === 'setting.changed') return settingChanged(tx, event, opts);
+  if (event.type === 'license.revoked') return licenseRevoked(tx, event, payload, opts);
   if (event.type === 'render.completed' || event.type === 'render.failed') return renderFinished(tx, event, payload, opts);
   if (event.type === 'assignment.created' || event.type === 'assignment.state_changed') return assignmentEvent(tx, event, payload, opts);
   const materialId = typeof payload.material_id === 'string' ? payload.material_id : undefined;
@@ -174,23 +175,22 @@ async function audience(
 
 /**
  * طلب استعادة: مهمة لمن يملك اعتماده بمعرّف الطلب، وتنبيه لصاحب الحساب على أجهزته القائمة. بلا مادة.
- * من يملك الاعتماد يتبع قاعدة التسلسل (identity/principal.ts): مشرفو نطاق صاحب الحساب، إلا إن كان دوره المشرف أو
- * أعلى فمديرو النظام وحدهم (غير صاحب الحساب نفسه).
+ * من يملك الاعتماد (ADR 0117): مشرفو نطاق صاحب الحساب إن كان حساب مراسل وحده، وإلا (مشترٍ، أو طاقم بأي دور غير المراسل) مديرو
+ * النظام وحدهم (غير صاحب الحساب نفسه)، كما يقرر `approveRecovery`.
  */
 async function recoveryRequested(tx: Tx, event: OutboxRow, payload: Record<string, unknown>, opts: FanOutOptions): Promise<number> {
   const requestId = typeof payload.recovery_request_id === 'string' ? payload.recovery_request_id : undefined;
   if (!requestId) return 0;
   const [owner] = await tx
-    .select({ id: users.id, officeId: users.officeId, governorate: offices.governorate })
+    .select({ id: users.id, officeId: users.officeId, organizationId: users.organizationId, governorate: offices.governorate })
     .from(users)
     .leftJoin(offices, eq(offices.id, users.officeId))
     .where(eq(users.id, event.aggregateId));
   if (!owner) return 0;
   const ownerRoles = await tx.select({ role: userRoles.role }).from(userRoles).where(eq(userRoles.userId, owner.id));
-  const approvers =
-    highestRank(ownerRoles.map((r) => r.role as RoleName)) >= highestRank(['supervisor'])
-      ? await systemAdmins(tx)
-      : await audience(tx, 'supervisors', { reporterId: owner.id, officeId: owner.officeId, governorate: owner.governorate });
+  const approvers = isReporterAccount(ownerRoles.map((r) => r.role), owner.organizationId)
+    ? await audience(tx, 'supervisors', { reporterId: owner.id, officeId: owner.officeId, governorate: owner.governorate })
+    : await systemAdmins(tx);
   const rows = [
     ...approvers
       .filter((id) => id !== owner.id)
@@ -210,6 +210,36 @@ async function recoveryRequested(tx: Tx, event: OutboxRow, payload: Record<strin
     .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
     .returning({ id: notifications.id });
   if (opts.push) await enqueuePush(tx, inserted.map((r) => r.id));
+  return inserted.length;
+}
+
+/**
+ * ترخيص أبطله سحب حقوق المادة أو حجبها أو وسمها بالحساسية (ADR 0118): أعضاء مؤسسته الفاعلون يُنبَّهون داخل المنصة برقم الترخيص
+ * وحده، بلا المادة ولا السبب ولا دفع. إبطال الاسترداد (`refunded`) يعرفه المشتري من طلبه فلا يُنبَّه هنا.
+ */
+async function licenseRevoked(tx: Tx, event: OutboxRow, payload: Record<string, unknown>, opts: FanOutOptions): Promise<number> {
+  if (payload.revoked_reason !== 'rights_withdrawn') return 0;
+  const [l] = await tx.select({ number: licenses.licenseNumber, organizationId: licenses.organizationId }).from(licenses).where(eq(licenses.id, event.aggregateId));
+  if (!l) return 0;
+  const members = await tx
+    .selectDistinct({ userId: users.id })
+    .from(users)
+    .innerJoin(userRoles, eq(userRoles.userId, users.id))
+    .where(
+      and(
+        eq(users.organizationId, l.organizationId),
+        eq(users.status, 'active'),
+        eq(users.membershipSuspended, false),
+        sql`${userRoles.role} IN ('buyer_admin', 'buyer_member')`,
+      ),
+    );
+  if (members.length === 0) return 0;
+  const title = notificationTitle('license.revoked', opts.locale, { ref: l.number });
+  const inserted = await tx
+    .insert(notifications)
+    .values(members.map((m) => ({ userId: m.userId, eventId: event.id, type: event.type, materialId: null, title, priority: 'important', assignmentState: null })))
+    .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
+    .returning({ id: notifications.id });
   return inserted.length;
 }
 

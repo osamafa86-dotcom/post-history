@@ -6,7 +6,7 @@ import { Pool } from 'pg';
 import type { Logger } from 'pino';
 import { AppModule, configureApp } from '../../src/app.module';
 import { createLogger } from '../../src/common/logger';
-import { randomToken, sha256 } from '../../src/common/crypto';
+import { randomToken, sha256, totp } from '../../src/common/crypto';
 import { type AppConfig, fieldKeyring, loadConfig } from '../../src/config/config';
 import { OutboxDispatcher } from '../../src/outbox/outbox.dispatcher';
 
@@ -127,6 +127,27 @@ export async function loginAs(
   const res = await request(h.app.getHttpServer()).post('/v1/auth/login').send({ email: user.email, password: user.password });
   if (res.status !== 200) throw new Error(`login failed: ${res.status}`);
   return { ...user, token: res.body.access_token };
+}
+
+const usedTotpSteps = new Map<string, Set<number>>();
+
+/**
+ * رمز TOTP لخطوة لم يقدّمها الاختبار بعد لهذا الحساب: الخادم يحجز (المستخدم، الخطوة) أيًّا كان السر، ولا يقبل الخطوة مرتين
+ * (ADR 0117). الحالية ثم التالية ثم السابقة، وكلها في نافذة القبول؛ أكثر من ثلاثة في خطوة واحدة خطأ في الاختبار.
+ */
+export function freshTotp(userId: string, secret: Buffer, nowMs = Date.now()): string {
+  const used = usedTotpSteps.get(userId) ?? new Set<number>();
+  usedTotpSteps.set(userId, used);
+  const current = Math.floor(nowMs / 30_000);
+  const step = [current, current + 1, current - 1].find((s) => !used.has(s));
+  if (step === undefined) throw new Error('three TOTP steps already used in this window');
+  used.add(step);
+  return totp(secret, step * 30_000);
+}
+
+/** مادة تستوفي شروط البيع الثلاثة (ADR 0118): حقوق sellable، والإصدار الحالي published، وأصل متحقق فنيًّا. */
+export async function makeSaleable(h: Harness, materialId: string): Promise<void> {
+  await h.pool.query(`UPDATE materials SET rights_state = 'sellable', editorial_state = 'published', technical_state = 'verified' WHERE id = $1`, [materialId]);
 }
 
 export async function currentFormVersion(h: Harness): Promise<number> {

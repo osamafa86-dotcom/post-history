@@ -3,7 +3,7 @@ import request from 'supertest';
 import { schemaValidator } from '../../src/common/contract';
 import { DB, type Database } from '../../src/database/database.module';
 import { writeOutboxEvent } from '../../src/outbox/outbox';
-import { createHarness, currentFormVersion, drainOutbox, type Harness, loginAs } from './harness';
+import { createHarness, currentFormVersion, drainOutbox, type Harness, loginAs, makeSaleable } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
 
@@ -255,7 +255,7 @@ describe('material tags (/v1/materials)', () => {
           .expect(201)
       ).body.id as string;
       // قابلة للبيع بأصل متحقق منه، ثم إدراجها معروضةً
-      await h.pool.query(`UPDATE materials SET rights_state = 'sellable' WHERE id = $1`, [m.id]);
+      await makeSaleable(h, m.id);
       const { rows: file } = await h.pool.query<{ id: string }>(
         `INSERT INTO material_files (material_id, kind, state, size_bytes, sha256, storage_key, duration_ms, width, height)
          VALUES ($1, 'original', 'received', 5000, $2, $3, 60000, 1920, 1080) RETURNING id`,

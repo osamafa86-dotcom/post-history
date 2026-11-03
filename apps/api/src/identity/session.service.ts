@@ -72,10 +72,16 @@ export class SessionService {
       return null;
     }
     const [user] = await this.db
-      .select({ status: users.status, credentialResetRequired: users.credentialResetRequired, resetWindowOpen: resetWindowOpen() })
+      .select({
+        status: users.status,
+        membershipSuspended: users.membershipSuspended,
+        credentialResetRequired: users.credentialResetRequired,
+        resetWindowOpen: resetWindowOpen(),
+      })
       .from(users)
       .where(eq(users.id, claims.sub));
-    if (user?.status !== 'active') return null;
+    // حالة المنصة وعضوية المؤسسة معًا (ADR 0118)
+    if (user?.status !== 'active' || user.membershipSuspended) return null;
     // الجلسة المقيّدة تنتهي بانتهاء مهلة رمز إعادة التعيين، ولو بقي في رمز الوصول عمر
     if (user.credentialResetRequired && !user.resetWindowOpen) return null;
     return { userId: claims.sub, sessionId: claims.sid, credentialResetRequired: user.credentialResetRequired };
@@ -99,10 +105,15 @@ export class SessionService {
         return null;
       }
       const [user] = await tx
-        .select({ status: users.status, credentialResetRequired: users.credentialResetRequired, resetWindowOpen: resetWindowOpen() })
+        .select({
+          status: users.status,
+          membershipSuspended: users.membershipSuspended,
+          credentialResetRequired: users.credentialResetRequired,
+          resetWindowOpen: resetWindowOpen(),
+        })
         .from(users)
         .where(eq(users.id, current.userId));
-      if (user?.status !== 'active') return null;
+      if (user?.status !== 'active' || user.membershipSuspended) return null;
       // تحديث الجلسة المقيّدة مسموح حتى reset_token_expires_at للطلب المكتمل، ثم 401 واستعادة جديدة من أولها
       if (user.credentialResetRequired && !user.resetWindowOpen) return null;
       const issued = await this.issue(tx, current.userId, {

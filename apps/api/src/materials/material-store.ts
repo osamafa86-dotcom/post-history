@@ -6,7 +6,7 @@ import type { FieldKeyring } from '../common/crypto';
 import type { UploadForm } from '../forms/dynamic-fields';
 import type { components } from '../generated/api';
 import type { Permission, Principal, RoleName } from '../identity/principal';
-import { suspendListing } from '../commerce/listing-store';
+import { revokeMaterialLicenses, suspendListing } from '../commerce/listing-store';
 import { closeMaterialTasks, RECEIPT_TYPES } from '../notifications/task-closure';
 import { writeOutboxEvent, type OutboxEventType } from '../outbox/outbox';
 import { redactDynamicFields } from './redaction';
@@ -80,6 +80,14 @@ export function canSeeProduced(p: Principal, m: MaterialRow): boolean {
 }
 
 /** هل يظهر الملف في Material.files لهذا المستدعي؟ القاعدة نفسها في القائمة والقراءة. */
+/**
+ * النسخة الخفيفة التي رفعها الهاتف (`proxy` بلا مصدر على الخادم، في حاوية الرفع) لم تُنقَّ من بيانات الجهاز والموقع: لصاحب المادة
+ * وحده، ولا تُرى ولا تُعطى رابطًا لغيره. ما يراه الطاقم من `proxy` صنعه عامل الوسائط من الأصل (`derived_from_id`، ADR 0115).
+ */
+export function clientProxyHidden(p: Principal, m: { reporterId: string }, f: { kind: string; derivedFromId: string | null }): boolean {
+  return f.kind === 'proxy' && f.derivedFromId === null && p.userId !== m.reporterId;
+}
+
 function fileVisible(kind: string, editor: boolean, production: boolean): boolean {
   if (HIDDEN_FROM_FILES.includes(kind)) return false;
   if (EDITOR_ONLY_KINDS.includes(kind)) return editor;
@@ -222,7 +230,7 @@ export async function toMaterialDtos(
       ...(legalNames.has(m.reporterId) ? { reporter_legal_name: legalName ?? null } : {}),
       files: files
         // حزمة التصدير ليست MaterialFile في العقد؛ حالتها من /materials/{id}/export
-        .filter((f) => f.materialId === m.id && fileVisible(f.kind, editor, production))
+        .filter((f) => f.materialId === m.id && fileVisible(f.kind, editor, production) && !clientProxyHidden(p, m, f))
         .map((f) => ({
           id: f.id,
           kind: f.kind as 'original',
@@ -280,8 +288,14 @@ export async function applyTransition(
 ): Promise<MaterialRow> {
   const column = STATE_COLUMN[t.track];
   const from = m[column];
-  // إدراج معروض يُعلَّق قبل أن تخرج حقوق مادته من sellable، في المعاملة نفسها (محفّز القاعدة يرفض العكس)
-  if (t.track === 'rights' && from === 'sellable' && t.to !== 'sellable') await suspendListing(tx, m.id, 'rights_changed', t.actorId);
+  // إدراج معروض يُعلَّق قبل أن تخرج حقوق مادته من sellable، في المعاملة نفسها (محفّز القاعدة يرفض العكس)، وتبطل تراخيصها الفاعلة
+  // (ADR 0118)
+  if (t.track === 'rights' && from === 'sellable' && t.to !== 'sellable') {
+    await suspendListing(tx, m.id, 'rights_changed', t.actorId);
+    await revokeMaterialLicenses(tx, m.id, t.actorId);
+  }
+  // وخروج المادة من published يسقط الاعتماد التحريري للإصدار المعروض (ADR 0118)
+  if (t.track === 'editorial' && from === 'published' && t.to !== 'published') await suspendListing(tx, m.id, 'editorial_changed', t.actorId);
   // «اطّلعت» (v0.2): من نقل المادة من inbox إلى acknowledged ومتى، فيراه المراسل
   const seen = t.track === 'editorial' && t.to === 'acknowledged' && t.actorId ? { acknowledgedBy: t.actorId, acknowledgedAt: sql`now()` } : {};
   const [updated] = await tx

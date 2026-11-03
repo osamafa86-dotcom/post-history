@@ -1,10 +1,9 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
-import { totp } from '../../src/common/crypto';
 import { schemaValidator } from '../../src/common/contract';
 import { userHandle } from '../../src/identity/passkeys.service';
 import { SoftAuthenticator } from '../support/soft-authenticator';
-import { createHarness, drainOutbox, type Harness, seedUser, type SeededUser } from './harness';
+import { createHarness, drainOutbox, freshTotp, type Harness, seedUser, type SeededUser } from './harness';
 
 const ORIGIN = 'http://localhost:3000';
 const RP_ID = 'localhost';
@@ -32,11 +31,11 @@ describe('passkeys (WebAuthn registration, sign-in, list and revoke)', () => {
     const user = await seedUser(h, { totp: opts.totp, roles: opts.roles ?? [{ role: 'editor_in_chief' }] });
     const res = await http()
       .post('/v1/auth/login')
-      .send({ email: user.email, password: user.password, ...(user.totpSecret ? { totp_code: totp(user.totpSecret, Date.now()) } : {}) })
+      .send({ email: user.email, password: user.password, ...(user.totpSecret ? { totp_code: freshTotp(user.id, user.totpSecret) } : {}) })
       .expect(200);
     return { ...user, token: res.body.access_token };
   }
-  const stepUp = (u: SeededUser & { token: string }) => ({ password: u.password, ...(u.totpSecret ? { totp_code: totp(u.totpSecret, Date.now()) } : {}) });
+  const stepUp = (u: SeededUser & { token: string }) => ({ password: u.password, ...(u.totpSecret ? { totp_code: freshTotp(u.id, u.totpSecret) } : {}) });
   const options = (u: SeededUser & { token: string }, body: object = stepUp(u)) =>
     http().post('/v1/auth/passkeys/registration-options').set(bearer(u.token)).send(body);
   const register = (u: { token: string }, body: object, key = randomUUID()) =>

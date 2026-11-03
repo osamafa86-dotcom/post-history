@@ -15,7 +15,7 @@ import { storedDynamicFields, validateDynamicFields } from '../forms/dynamic-fie
 import { FormsService } from '../forms/forms.service';
 import type { components } from '../generated/api';
 import { hasRole, type Principal } from '../identity/principal';
-import { isSensitive, suspendListing } from '../commerce/listing-store';
+import { isSensitive, revokeMaterialLicenses, suspendListing } from '../commerce/listing-store';
 import { writeOutboxEvent } from '../outbox/outbox';
 import { legalNamePermission, ReporterIdentitySettings } from '../settings/reporter-identity.service';
 import {
@@ -217,7 +217,11 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
         });
         // وسم الحساسية يُخرج المادة من الكتالوج: إدراجها المعروض يُعلَّق قبل الحفظ، في المعاملة نفسها
         const flagged = { sensitivityMinors: body.sensitivity.minors, sensitivityInjured: body.sensitivity.injured, sensitivityGraphic: body.sensitivity.graphic };
-        if (isSensitive(flagged)) await suspendListing(tx, m.id, 'sensitive_flagged', p.userId);
+        if (isSensitive(flagged)) {
+          await suspendListing(tx, m.id, 'sensitive_flagged', p.userId);
+          // وتراخيصها الفاعلة تبطل (ADR 0118): المادة الحسّاسة لا تُنزَّل بترخيص سابق
+          await revokeMaterialLicenses(tx, m.id, p.userId);
+        }
       }
       if (body.display_name) Object.assign(changes, displayNameColumns(body.display_name));
       // الوسوم تُستبدل كلها إن وُجدت (وبمصفوفة فارغة تُمحى)، وغيابها يُبقيها (ADR 0086)
@@ -226,6 +230,8 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
       // تعديل إصدار معتمد: version + 1 وعودة إلى final_review لأن ما يُعتمد إصدار محدد (العقد)
       const approved = (APPROVED_STATES as readonly string[]).includes(m.editorialState);
       if (approved) changes.version = m.version + 1;
+      // إصدار جديد بلا اعتماد: الإدراج المعروض بالإصدار السابق يُعلَّق قبل رفع الإصدار، في المعاملة نفسها (ADR 0118)
+      if (approved) await suspendListing(tx, m.id, 'editorial_changed', p.userId);
       const [saved] = await tx.update(materials).set(changes).where(eq(materials.id, m.id)).returning();
       let current: MaterialRow = { ...saved!, officeGovernorate: m.officeGovernorate };
       if (approved && current.editorialState !== 'final_review') {

@@ -5,7 +5,7 @@ import { ApiError } from '../common/errors';
 import { DB, type Database } from '../database/database.module';
 import { buyerOrganizations, catalogListings, licenseTemplateVersions, listingOffers, materialFiles } from '../database/schema/schema';
 import type { components } from '../generated/api';
-import type { Principal } from '../identity/principal';
+import { hasRole, type Principal } from '../identity/principal';
 import { iso } from '../materials/material-store';
 import { validTimestamp } from '../uploads/uploads.service';
 import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
@@ -75,7 +75,7 @@ export class CatalogService {
     if (org?.status !== 'active') throw new ApiError(403, 'forbidden_scope', 'The organization cannot browse the catalog until it is active.');
   }
 
-  async search(q: CatalogQuery): Promise<components['schemas']['CatalogPage']> {
+  async search(q: CatalogQuery, p: Principal): Promise<components['schemas']['CatalogPage']> {
     const limit = q.limit ?? 50;
     const where: SQL[] = [sql`l.state = 'listed'`];
     if (q.q) {
@@ -103,17 +103,17 @@ export class CatalogService {
     const page = rows.slice(0, limit);
     const last = page[page.length - 1];
     return {
-      items: await this.items(page),
+      items: await this.items(page, p),
       next_cursor: rows.length > limit && last ? Buffer.from(JSON.stringify([last.listed_at_raw, last.id])).toString('base64url') : null,
     };
   }
 
   /** الإدراج غير `listed` كغير الموجود (404). */
-  async item(listingId: string): Promise<CatalogItem> {
+  async item(listingId: string, p: Principal): Promise<CatalogItem> {
     if (!UUID.test(listingId)) throw ApiError.notFound();
     const { rows } = await this.db.execute<Row>(sql`${selectItems()} WHERE l.state = 'listed' AND l.id = ${listingId}`);
     if (!rows[0]) throw ApiError.notFound();
-    return (await this.items(rows))[0]!;
+    return (await this.items(rows, p))[0]!;
   }
 
   /** معاينة `watermarked_preview` وحدها، المشتقة من الأصل المتحقق الحالي، برابط ≤ 10 دقائق. قبل جاهزيتها 409. */
@@ -140,7 +140,12 @@ export class CatalogService {
     return { url, expires_at: new Date(now.getTime() + PREVIEW_TTL_SECONDS * 1000).toISOString() };
   }
 
-  private async items(rows: Row[]): Promise<CatalogItem[]> {
+  /**
+   * قائمة اللقطات لأدوار الطاقم وحدها (ADR 0115): للمشتري فارغة من الخادم نفسه، لا بتفريغ الـBFF وحده، فرمز مشترٍ يقرأ الواجهة
+   * مباشرة لا يراها.
+   */
+  private async items(rows: Row[], p: Principal): Promise<CatalogItem[]> {
+    const buyer = hasRole(p, 'buyer_admin', 'buyer_member');
     const offers = await this.offers(rows.map((r) => r.id));
     return rows.map((r) => {
       const own = offers.get(r.id) ?? [];
@@ -149,7 +154,7 @@ export class CatalogService {
         material_version: r.material_version,
         title: { ar: r.title_ar, en: r.title_en },
         description: { ar: r.description_ar, en: r.description_en },
-        shot_list: r.shot_list,
+        shot_list: buyer ? [] : r.shot_list,
         material_types: r.material_types as CatalogItem['material_types'],
         governorate: r.governorate,
         shot_on: r.shot_on,

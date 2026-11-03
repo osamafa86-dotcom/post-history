@@ -50,6 +50,7 @@ export class UploadsService implements ReplayRehydrator {
       throw ApiError.validation({ fields: ['/size_bytes'] });
     }
     return this.db.transaction(async (tx) => {
+      await this.assertQuota(tx, p.userId, body.size_bytes);
       const material = await findScoped(tx, p, body.material_id, { forUpdate: true });
       if (body.kind === 'produced') {
         // النسخة المُنتَجة لمن يحمل مهمة مفتوحة مسندة إليه على المادة، لا لمنشئها (ADR 0104)؛ والأصل لا يُمس
@@ -94,6 +95,26 @@ export class UploadsService implements ReplayRehydrator {
       });
       return { ...this.toDto(session!, null), upload_token: token, upload_token_expires_at: iso(session!.uploadTokenExpiresAt)! };
     });
+  }
+
+  /**
+   * حصة المستخدم (ADR 0115): جلساته المفتوحة غير المنتهية (created وin_progress) ومجموع ما لم يصل من بايتاتها، مع الجلسة الجديدة،
+   * لا يتجاوزان الحدّين. قفل استشاري للمستخدم في المعاملة يسلسل الإنشاء المتزامن فلا يتجاوزهما طلبان معًا. التجاوز 429 بـ Retry-After.
+   */
+  private async assertQuota(tx: Tx, userId: string, sizeBytes: number): Promise<void> {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`upload-quota:${userId}`}, 0))`);
+    const [open] = await tx
+      .select({
+        sessions: sql<number>`count(*)::int`,
+        pending: sql<string>`COALESCE(sum(GREATEST(${uploadSessions.sizeBytes} - ${uploadSessions.bytesReceived}, 0)), 0)::text`,
+      })
+      .from(uploadSessions)
+      .where(and(eq(uploadSessions.createdBy, userId), inArray(uploadSessions.state, ['created', 'in_progress']), sql`${uploadSessions.expiresAt} > now()`));
+    const sessions = open?.sessions ?? 0;
+    const pending = BigInt(open?.pending ?? '0') + BigInt(sizeBytes);
+    if (sessions + 1 > this.config.UPLOAD_MAX_OPEN_SESSIONS_PER_USER || pending > BigInt(this.config.UPLOAD_MAX_PENDING_BYTES_PER_USER)) {
+      throw new ApiError(429, 'rate_limited', 'Too many open uploads; finish or cancel one first.', undefined, { 'Retry-After': '60' });
+    }
   }
 
   /** مهمة مفتوحة (assigned أو acknowledged أو in_progress) على المادة مسندة إلى المستدعي (ADR 0096، 0104). */
