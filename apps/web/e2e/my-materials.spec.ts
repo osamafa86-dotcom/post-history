@@ -12,7 +12,7 @@ test("the reporter sees their materials, what needs action and the supervisor's 
   await login(page, "reporter"); await page.getByRole("link", { name: ar.mine.nav, exact: true }).click();
   await expect(page.getByRole("heading", { name: ar.mine.title, exact: true })).toBeVisible();
   await expect(page.getByTestId("mine-row")).toHaveCount(100); await expect(page.getByText(ar.mine.firstPage)).toBeVisible();
-  await expect(page.locator("[data-state='needs_changes'] strong")).toHaveText("1");
+  await expect(page.getByTestId("mine-kpis").locator("[data-kpi='action'] strong")).toHaveText("2");
   const action = page.getByTestId("mine-action"); await expect(action).toHaveCount(2);
   await expect(action.first().getByTestId("supervisor-note")).toContainText("أعد اللقطة الافتتاحية بإضاءة أفضل");
   await expect(action.first().getByTestId("supervisor-note")).toContainText("00:42");

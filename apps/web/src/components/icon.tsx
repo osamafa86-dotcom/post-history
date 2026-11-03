@@ -58,6 +58,7 @@ const paths = {
   lock: "M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4",
   plus: "M12 5v14M5 12h14",
   grip: "M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01",
+  archive: "M3 4h18v5H3zM5 9v11h14V9M10 13h4",
 } as const;
 
 export type IconName = keyof typeof paths;
