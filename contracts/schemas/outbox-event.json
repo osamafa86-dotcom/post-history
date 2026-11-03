@@ -62,7 +62,9 @@
         "render.requested",
         "render.started",
         "render.completed",
-        "render.failed"
+        "render.failed",
+        "assignment.created",
+        "assignment.state_changed"
       ]
     },
     "aggregate_type": {
@@ -1220,6 +1222,121 @@
                   "source_unavailable",
                   "title_overflow",
                   "render_failed"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "assignment.created"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "material"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "أُسندت المادة إلى المونتير (ADR 0096): معرّفات والأولوية وحدها. الملاحظة والموعد والأسماء لا تدخل الحدث؛ تُقرأ من GET /assignments/{assignment_id} بصلاحيات القارئ.",
+            "required": [
+              "material_id",
+              "assignment_id",
+              "priority",
+              "assignee_id",
+              "assigned_by"
+            ],
+            "properties": {
+              "material_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "assignment_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "priority": {
+                "type": "string",
+                "enum": [
+                  "urgent",
+                  "important",
+                  "normal"
+                ]
+              },
+              "assignee_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "assigned_by": {
+                "$ref": "#/$defs/uuid"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "assignment.state_changed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "material"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "انتقلت المهمة (ADR 0096): معرّفات والحالتان وحدها، بلا سبب الإعادة ولا الموعد.",
+            "required": [
+              "material_id",
+              "assignment_id",
+              "priority",
+              "assignee_id",
+              "from",
+              "to"
+            ],
+            "properties": {
+              "material_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "assignment_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "priority": {
+                "type": "string",
+                "enum": [
+                  "urgent",
+                  "important",
+                  "normal"
+                ]
+              },
+              "assignee_id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "from": {
+                "type": "string",
+                "enum": [
+                  "assigned",
+                  "acknowledged",
+                  "in_progress"
+                ]
+              },
+              "to": {
+                "type": "string",
+                "enum": [
+                  "acknowledged",
+                  "in_progress",
+                  "done",
+                  "returned"
                 ]
               }
             }

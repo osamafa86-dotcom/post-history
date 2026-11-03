@@ -39,11 +39,13 @@ public struct Notification: Sendable, Codable, Hashable {
     public var recoveryRequestId: UUID?
     /** قاعدة التنبيه التي ولّدته؛ `null` للقواعد الافتراضية أو قاعدة حُذفت (أُضيف في v0.2) */
     public var ruleId: UUID?
+    /** مهمة الإسناد (ADR 0096) لإشعار `assignment.created` وإشعاري `done` و`returned`، يفتحها العميل من `GET /assignments/{assignment_id}`. «أقرّ الاستلام» على إشعار `assignment.created` يقرّ المهمة نفسها. `null` لغيرها؛ أُضيف بعد v0.3 فقد يغيب */
+    public var assignmentId: UUID?
     public var createdAt: Date
     public var readAt: Date?
     public var acknowledgedAt: Date?
 
-    public init(id: UUID, type: String, materialId: UUID? = nil, title: String? = nil, priority: Priority, state: State, assignmentState: AssignmentState? = nil, escalationLevel: Int? = nil, recoveryRequestId: UUID? = nil, ruleId: UUID? = nil, createdAt: Date, readAt: Date? = nil, acknowledgedAt: Date? = nil) {
+    public init(id: UUID, type: String, materialId: UUID? = nil, title: String? = nil, priority: Priority, state: State, assignmentState: AssignmentState? = nil, escalationLevel: Int? = nil, recoveryRequestId: UUID? = nil, ruleId: UUID? = nil, assignmentId: UUID? = nil, createdAt: Date, readAt: Date? = nil, acknowledgedAt: Date? = nil) {
         self.id = id
         self.type = type
         self.materialId = materialId
@@ -54,6 +56,7 @@ public struct Notification: Sendable, Codable, Hashable {
         self.escalationLevel = escalationLevel
         self.recoveryRequestId = recoveryRequestId
         self.ruleId = ruleId
+        self.assignmentId = assignmentId
         self.createdAt = createdAt
         self.readAt = readAt
         self.acknowledgedAt = acknowledgedAt
@@ -70,6 +73,7 @@ public struct Notification: Sendable, Codable, Hashable {
         case escalationLevel = "escalation_level"
         case recoveryRequestId = "recovery_request_id"
         case ruleId = "rule_id"
+        case assignmentId = "assignment_id"
         case createdAt = "created_at"
         case readAt = "read_at"
         case acknowledgedAt = "acknowledged_at"
@@ -89,6 +93,7 @@ public struct Notification: Sendable, Codable, Hashable {
         try container.encodeIfPresent(escalationLevel, forKey: .escalationLevel)
         try container.encodeIfPresent(recoveryRequestId, forKey: .recoveryRequestId)
         try container.encodeIfPresent(ruleId, forKey: .ruleId)
+        try container.encodeIfPresent(assignmentId, forKey: .assignmentId)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encodeIfPresent(readAt, forKey: .readAt)
         try container.encodeIfPresent(acknowledgedAt, forKey: .acknowledgedAt)

@@ -588,6 +588,146 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/materials/{id}/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المادة */
+                id: components["parameters"]["MaterialId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * مهام المادة، الأحدث أولًا (ADR 0096)
+         * @description كل إسناد للمادة بحالته وموعده: المفتوح منها (واحد على الأكثر) والمغلق. بهذه الأدوار وضمن نطاق رؤيتها للمادة؛ المادة خارج النطاق `404`، ومنها ما لم يبلغ `accepted` للإنتاج.
+         */
+        get: operations["listMaterialAssignments"];
+        put?: never;
+        /**
+         * «حوّل للمونتير» — إسناد المادة إلى عضو في فريق الإنتاج (ADR 0096)
+         * @description - **من يُسند:** المشرف لمادة يغطيها نطاقه، ورئيس التحرير لكل المواد. المادة خارج ذلك `404`.
+         *     - **من يُسنَد إليه:** مستخدم نشط بدور `producer` (المونتير)، وغيره `422 assignee_not_eligible`. القائمة بحمل كلٍّ منهم في
+         *       `GET /assignment-candidates`.
+         *     - **الشرط:** الحالة التحريرية مما يراه الإنتاج (`accepted` أو `in_production` أو `final_review` أو `published`)، وإلا
+         *       `409 assignment_not_allowed` و`details.failed: [editorial_state]`. **الإسناد لا يغيّر أيًّا من الحالات الثلاث:** القبول قبله
+         *       انتقال صريح قائم (`POST /materials/{id}/transitions`)، والحجز بعده كما كان (`POST /materials/{id}/reservation`).
+         *     - **مهمة مفتوحة واحدة للمادة** (`assigned` أو `acknowledged` أو `in_progress`)؛ الثانية `409 assignment_open` و`details.assignment_id`
+         *       للمفتوحة. إعادة التوزيع: `returned` على المفتوحة ثم إسناد جديد.
+         *     - **الموعد** `due_at` بعد وقت الطلب وفي 30 يومًا على الأكثر، وإلا `422 validation_failed` و`details.fields: [due_at]`.
+         *     - **الأثر في معاملة واحدة:** صف المهمة بحالة `assigned`، وحدث `assignment.created` بالمعرّفات وحدها، وسطر تدقيق
+         *       `assignment.created`. ثم يحوّل المُرسل الحدث إلى إشعار مهمة للمونتير (`assignment_state = assigned` و`assignment_id`)
+         *       بسلسلة التصعيد القائمة للعاجل والمهم، وبدفع إلى الهاتف. الملاحظة لا تدخل حدثًا ولا إشعارًا ولا سجل تدقيق.
+         *     - **مفتاح منع التكرار:** التكرار بالمفتاح نفسه يعيد المهمة نفسها دون حدث جديد.
+         */
+        post: operations["assignMaterial"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assignments/{assignment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المهمة (`MaterialAssignment.id`) */
+                assignment_id: components["parameters"]["AssignmentId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * مهمة واحدة (ADR 0096)
+         * @description يراها المونتير المسنَدة إليه، ومن يرى مادتها بهذه الأدوار ضمن نطاقه. غير ذلك `404` بلا تفريق عن المفقودة.
+         */
+        get: operations["getAssignment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assignments/{assignment_id}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المهمة (`MaterialAssignment.id`) */
+                assignment_id: components["parameters"]["AssignmentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * نقل المهمة إلى حالتها التالية (ADR 0096)
+         * @description | من | إلى | يملكه |
+         *     | --- | --- | --- |
+         *     | `assigned` | `acknowledged`، `in_progress` | المونتير المسنَدة إليه |
+         *     | `acknowledged` | `in_progress` | المونتير |
+         *     | `in_progress` | `done` | المونتير |
+         *     | `assigned`، `acknowledged`، `in_progress` | `returned` | المونتير (يعيدها)، أو من يملك الإسناد على المادة (يسحبها لإعادة التوزيع) |
+         *
+         *     - `done` و`returned` نهائيتان. ما ليس في الجدول، ومنه الطلب إلى الحالة الراهنة بمفتاح جديد، `409 invalid_transition`
+         *       و`details` بـ `from` و`to`. المهمة المرئية لغير مالك الانتقال `403 forbidden_scope`، وغير المرئية `404`.
+         *     - `note` مع `returned` وحدها (سبب الإعادة في `return_note`)، ومع غيرها `422 validation_failed`.
+         *     - `in_progress` من `assigned` يقرّ الاستلام ضمنًا (`acknowledged_at`).
+         *     - **الإشعار:** الإقرار (`acknowledged` أو `in_progress`) يقرّ إشعار المهمة نفسه ويوقف تصعيده، و«أقرّ الاستلام» على
+         *       الإشعار (`POST /notifications/{id}/ack`) ينقل المهمة إلى `acknowledged` بالمقابل. و`returned` قبل الإقرار يوقف التصعيد.
+         *       `done` و`returned` يُشعران الطرف الآخر (من أسند أو المسنَدة إليه) داخل المنصة، و`returned` بدفع إلى الهاتف كذلك.
+         *     - **الأثر في معاملة واحدة:** حدث `assignment.state_changed` بالمعرّفات و`from` و`to`، وسطر تدقيق `assignment.transitioned`.
+         *       الحالات الثلاث للمادة وحجزها لا تتغيّر، و`done` لا يحمل ملفًا (رفع المادة المُنتَجة تغيير عقد لاحق).
+         */
+        post: operations["transitionAssignment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * «مهامي» — المهام المسنَدة إليّ (ADR 0096)
+         * @description `open` (الافتراضي) بالأقرب موعدًا أولًا، فالمتأخر قبل غيره؛ و`closed` بالأحدث إغلاقًا. `summary` على كل مهام المستدعي لا على الصفحة. تفاصيل المادة (العنوان والملفات والحساسية) من `GET /materials/{id}` بقاعدة الحجب نفسها.
+         */
+        get: operations["listMyAssignments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assignment-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * من يجوز الإسناد إليه، بحمل كلٍّ منهم (ADR 0096)
+         * @description كل مستخدم نشط بدور `producer`، بعدد مهامه المفتوحة والعاجل والمتأخر منها، الأقل حملًا أولًا. اسم العمل وحده (ADR 0035)، بلا بريد ولا اسم حقيقي. لا مناوبات في العقد، فلا «خارج المناوبة».
+         */
+        get: operations["listAssignmentCandidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/uploads": {
         parameters: {
             query?: never;
@@ -2067,7 +2207,7 @@ export interface components {
              * @description رمز ثابت يتفرّع عليه العميل؛ الرسالة للبشر فقط. قائمة مفتوحة؛ الرمز المجهول = خطأ عام
              * @enum {string}
              */
-            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "seats_exhausted" | "last_buyer_admin" | "listing_unavailable" | "exclusive_unavailable" | "mixed_currency" | "price_changed" | "order_state_conflict" | "license_not_active" | "delivery_not_ready" | "download_limit_reached" | "webhook_signature_invalid" | "already_refunded" | "commission_rule_exists" | "live_payments_disabled" | "payout_below_minimum" | "insufficient_available" | "payout_state_conflict" | "self_approval_forbidden" | "already_approved" | "payout_policy_exists" | "render_not_allowed" | "render_limit_reached" | "render_location_unusable" | "internal_error";
+            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "seats_exhausted" | "last_buyer_admin" | "listing_unavailable" | "exclusive_unavailable" | "mixed_currency" | "price_changed" | "order_state_conflict" | "license_not_active" | "delivery_not_ready" | "download_limit_reached" | "webhook_signature_invalid" | "already_refunded" | "commission_rule_exists" | "live_payments_disabled" | "payout_below_minimum" | "insufficient_available" | "payout_state_conflict" | "self_approval_forbidden" | "already_approved" | "payout_policy_exists" | "render_not_allowed" | "render_limit_reached" | "render_location_unusable" | "assignment_not_allowed" | "assignment_open" | "assignee_not_eligible" | "internal_error";
             message: string;
             /** @description لتتبع الطلب في السجلات */
             request_id: string;
@@ -3087,6 +3227,121 @@ export interface components {
              */
             completed_at: string | null;
         };
+        /**
+         * @description «أُسندت» ← «أقرّ الاستلام» ← «قيد العمل» ← «سُلّمت»، أو «أُعيدت» من أيٍّ منها قبل التسليم (ADR 0096). مستقلة عن الحالات الثلاث للمادة ولا تحلّ محل أيٍّ منها.
+         * @enum {string}
+         */
+        MaterialAssignmentState: "assigned" | "acknowledged" | "in_progress" | "done" | "returned";
+        /** @description ملاحظة حرّة للمونتير أو سبب الإعادة (ADR 0096): 1–500 نقطة ترميز بقاعدة `MaterialTag` نفسها (لا مسافة في الطرفين، ولا محارف تحكم فلا سطر جديد، ولا محارف اتجاه)، والقاعدة نفسها في قاعدة البيانات. لا تدخل حدثًا ولا إشعارًا ولا سجل تدقيق ولا قناة خارجية؛ تعود في استجابات المهمة وحدها لمن يراها. */
+        AssignmentNote: string;
+        MaterialAssignmentCreate: {
+            /**
+             * Format: uuid
+             * @description مستخدم نشط بدور `producer`
+             */
+            assignee_id: string;
+            /**
+             * Format: date-time
+             * @description الموعد المطلوب؛ بعد وقت الطلب وفي 30 يومًا على الأكثر. «خلال 30 دقيقة» و«ساعة» و«اليوم» يحسبها العميل
+             */
+            due_at: string;
+            note?: components["schemas"]["AssignmentNote"];
+        };
+        AssignmentTransition: {
+            /** @enum {string} */
+            to: "acknowledged" | "in_progress" | "done" | "returned";
+            /** @description سبب الإعادة، مع `returned` وحدها */
+            note?: components["schemas"]["AssignmentNote"];
+        };
+        /**
+         * @description إسناد مادة إلى المونتير (ADR 0096). معرّفات المادة والأشخاص وحالات وأوقات، والملاحظتان؛ تفاصيل المادة من `GET /materials/{id}` بقاعدة الحجب نفسها.
+         * @example {
+         *       "id": "6f7a8b9c-0d1e-4f2a-8b3c-4d5e6f7a8b9c",
+         *       "material_id": "7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b",
+         *       "priority": "urgent",
+         *       "assignee_id": "2f3e4d5c-6b7a-4899-8a7b-6c5d4e3f2a1b",
+         *       "assignee_name": "مونتير تجريبي ١",
+         *       "assigned_by": "3a4b5c6d-7e8f-4a9b-8c0d-1e2f3a4b5c6d",
+         *       "assigned_by_name": "محرر تجريبي ١",
+         *       "state": "in_progress",
+         *       "due_at": "2026-11-03T15:00:00Z",
+         *       "overdue": false,
+         *       "note": "تقرير عاجل 60 ثانية طولي، مع تمويه الوجوه",
+         *       "returned_by": null,
+         *       "return_note": null,
+         *       "created_at": "2026-11-03T14:30:00Z",
+         *       "acknowledged_at": "2026-11-03T14:31:00Z",
+         *       "started_at": "2026-11-03T14:32:00Z",
+         *       "closed_at": null,
+         *       "updated_at": "2026-11-03T14:32:00Z"
+         *     }
+         */
+        MaterialAssignment: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            material_id: string;
+            priority: components["schemas"]["Priority"];
+            /** Format: uuid */
+            assignee_id: string;
+            /** @description اسم عمل المونتير (ADR 0035)؛ `null` بلا اسم معيَّن، ويغيب عمّن لا يرى أسماء العمل */
+            assignee_name?: string | null;
+            /** Format: uuid */
+            assigned_by: string;
+            /** @description اسم عمل من أسند؛ كـ `assignee_name` */
+            assigned_by_name?: string | null;
+            state: components["schemas"]["MaterialAssignmentState"];
+            /** Format: date-time */
+            due_at: string;
+            /** @description مفتوحة وتجاوزت `due_at` ساعة الاستجابة؛ يحسبها الخادم ولا يحسبها العميل */
+            overdue: boolean;
+            note: components["schemas"]["AssignmentNote"] | null;
+            /**
+             * Format: uuid
+             * @description من أعادها؛ مع `returned` وحدها
+             */
+            returned_by: string | null;
+            /** @description سبب الإعادة إن كُتب */
+            return_note: components["schemas"]["AssignmentNote"] | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            acknowledged_at: string | null;
+            /** Format: date-time */
+            started_at: string | null;
+            /**
+             * Format: date-time
+             * @description متى سُلّمت (`done`) أو أُعيدت (`returned`)
+             */
+            closed_at: string | null;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        MyAssignmentPage: {
+            items: components["schemas"]["MaterialAssignment"][];
+            next_cursor: string | null;
+            /** @description على كل مهام المستدعي لا على الصفحة */
+            summary: {
+                /** @description المفتوحة (`assigned` و`acknowledged` و`in_progress`) */
+                open: number;
+                /** @description المفتوحة التي تجاوزت موعدها */
+                overdue: number;
+                /** @description `done` في آخر 7 أيام (168 ساعة) حتى وقت الطلب */
+                done_last_7_days: number;
+            };
+        };
+        AssignmentCandidate: {
+            /** Format: uuid */
+            user_id: string;
+            /** @description اسم العمل (ADR 0035)؛ `null` بلا اسم معيَّن */
+            work_name: string | null;
+            /** @description مهامه المفتوحة */
+            open_count: number;
+            /** @description المفتوحة منها لمواد عاجلة */
+            urgent_open_count: number;
+            /** @description المفتوحة التي تجاوزت موعدها */
+            overdue_count: number;
+        };
         DuplicateCandidate: {
             /** Format: uuid */
             material_id: string;
@@ -3304,6 +3559,11 @@ export interface components {
              * @description قاعدة التنبيه التي ولّدته؛ `null` للقواعد الافتراضية أو قاعدة حُذفت (أُضيف في v0.2)
              */
             rule_id?: string | null;
+            /**
+             * Format: uuid
+             * @description مهمة الإسناد (ADR 0096) لإشعار `assignment.created` وإشعاري `done` و`returned`، يفتحها العميل من `GET /assignments/{assignment_id}`. «أقرّ الاستلام» على إشعار `assignment.created` يقرّ المهمة نفسها. `null` لغيرها؛ أُضيف بعد v0.3 فقد يغيب
+             */
+            assignment_id?: string | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -4247,7 +4507,7 @@ export interface components {
             /** @description تسلسلي متزايد (رقم الصف في جدول Outbox) بصيغة نصية؛ يُستخدم مؤشرًا في `after` */
             id: string;
             /** @enum {string} */
-            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested" | "order.status_changed" | "license.issued" | "license.revoked" | "payout.status_changed" | "render.requested" | "render.started" | "render.completed" | "render.failed";
+            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested" | "order.status_changed" | "license.issued" | "license.revoked" | "payout.status_changed" | "render.requested" | "render.started" | "render.completed" | "render.failed" | "assignment.created" | "assignment.state_changed";
             /** @enum {string} */
             aggregate_type: "material" | "upload" | "notification" | "form" | "user" | "listing" | "license" | "order" | "payout";
             /** Format: uuid */
@@ -4286,7 +4546,7 @@ export interface components {
                 /** @enum {string} */
                 priority: "urgent" | "important" | "normal";
             };
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
     };
     responses: {
         /** @description طلب غير صالح (معاملات استعلام أو مؤشر غير مفهوم) */
@@ -4409,6 +4669,8 @@ export interface components {
         LicenseId: string;
         /** @description معرّف نسخة القالب (`MaterialRender.id`) */
         RenderId: string;
+        /** @description معرّف المهمة (`MaterialAssignment.id`) */
+        AssignmentId: string;
         /** @description معرّف المادة */
         MaterialId: string;
         /** @description معرّف جلسة الرفع */
@@ -5404,6 +5666,187 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listMaterialAssignments: {
+        parameters: {
+            query?: {
+                /** @description الحد الأقصى للمهام المعادة، الأحدث أولًا */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description معرّف المادة */
+                id: components["parameters"]["MaterialId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description المهام */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["MaterialAssignment"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    assignMaterial: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description معرّف المادة */
+                id: components["parameters"]["MaterialId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MaterialAssignmentCreate"];
+            };
+        };
+        responses: {
+            /** @description المهمة بحالة `assigned` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterialAssignment"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    getAssignment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المهمة (`MaterialAssignment.id`) */
+                assignment_id: components["parameters"]["AssignmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description المهمة */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterialAssignment"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    transitionAssignment: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description معرّف المهمة (`MaterialAssignment.id`) */
+                assignment_id: components["parameters"]["AssignmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignmentTransition"];
+            };
+        };
+        responses: {
+            /** @description المهمة بعد الانتقال */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterialAssignment"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    listMyAssignments: {
+        parameters: {
+            query?: {
+                /** @description المفتوحة (`assigned` و`acknowledged` و`in_progress`) أو المغلقة (`done` و`returned`) */
+                status?: "open" | "closed";
+                /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description حجم الصفحة */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description صفحة من المهام */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyAssignmentPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listAssignmentCandidates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description المرشّحون */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["AssignmentCandidate"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     listMyUploadSessions: {
