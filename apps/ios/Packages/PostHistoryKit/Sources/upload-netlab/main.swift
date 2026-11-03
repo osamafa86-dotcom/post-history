@@ -56,6 +56,7 @@ final class NetlabStubAPI: UploadAPI, @unchecked Sendable {
                       receiptNumber: "R-000000-000000", createdAt: Date())
     }
     func complete(idempotencyKey: String, id: UUID, reportedSha256: String?) async throws {}
+    func abort(idempotencyKey: String, id: UUID) async throws {}
 }
 
 func log(_ s: String) { FileHandle.standardError.write(Data((s + "\n").utf8)) }

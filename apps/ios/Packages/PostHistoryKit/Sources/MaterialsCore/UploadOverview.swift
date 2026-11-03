@@ -23,8 +23,13 @@ public struct UploadItem: Equatable, Sendable, Identifiable {
     public var paused: Bool
     /// النسخة الخفيفة لهذه المادة وصلت وتحقّقت: المحرر يستطيع مشاهدتها.
     public var previewArrived: Bool
+    /// ينتظر دوره في الطابور (حتى نقلين في وقت واحد، ADR 0113).
+    public var queued: Bool
+    /// توقف لأن مساحة الهاتف ممتلئة، ويُستأنف وحده حين تتوفر (ADR 0113).
+    public var waitingForSpace: Bool
 
-    public init(id: UUID, materialId: UUID, sizeBytes: Int64, confirmedOffset: Int64, state: State, paused: Bool = false, previewArrived: Bool = false) {
+    public init(id: UUID, materialId: UUID, sizeBytes: Int64, confirmedOffset: Int64, state: State, paused: Bool = false, previewArrived: Bool = false,
+                queued: Bool = false, waitingForSpace: Bool = false) {
         self.id = id
         self.materialId = materialId
         self.sizeBytes = sizeBytes
@@ -32,6 +37,8 @@ public struct UploadItem: Equatable, Sendable, Identifiable {
         self.state = state
         self.paused = paused
         self.previewArrived = previewArrived
+        self.queued = queued
+        self.waitingForSpace = waitingForSpace
     }
 
     public var isActive: Bool { state == .preparing || state == .transferring || state == .finishing }

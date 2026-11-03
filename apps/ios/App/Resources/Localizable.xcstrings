@@ -2609,13 +2609,13 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "أُبطلت جلسة هذا الهاتف (من الإدارة أو من جهاز آخر). توقّف الرفع ومُحيت الرموز وحالة الرفع من هذا الجهاز. سجّل الدخول من جديد إن كان الهاتف بحوزتك."
+            "value": "أُبطلت جلسة هذا الهاتف (من الإدارة أو من جهاز آخر). توقّف الرفع، ومُحي من هذا الجهاز ما يمحوه المسح الطارئ: الرموز وحالة الرفع والملفات المستوردة والمسودات. الأصل في معرض الصور لا يُمس. سجّل الدخول من جديد إن كان الهاتف بحوزتك."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This phone's session was revoked (by the newsroom or from another device). Uploads stopped and the tokens and upload state were erased from this device. Sign in again if the phone is still yours."
+            "value": "This phone's session was revoked (by the newsroom or from another device). Uploads stopped, and what the emergency wipe erases was erased from this device: tokens, upload state, imported files and drafts. The originals in your photo library are untouched. Sign in again if the phone is still yours."
           }
         }
       }
@@ -10089,6 +10089,108 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "wipe.step.installation_id": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "معرّف التثبيت للإشعارات"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notification installation ID"
+          }
+        }
+      }
+    },
+    "wipe.step.delivered_notifications": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الإشعارات الظاهرة على الهاتف"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifications shown on the phone"
+          }
+        }
+      }
+    },
+    "wipe.step.attestation_key": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "مفتاح إثبات الجهاز (App Attest)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device attestation key (App Attest)"
+          }
+        }
+      }
+    },
+    "upload.queued": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "بانتظار دوره"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting its turn"
+          }
+        }
+      }
+    },
+    "upload.waitingForSpace": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "مساحة الهاتف ممتلئة"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Phone storage full"
+          }
+        }
+      }
+    },
+    "upload.note.storageFull": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "مساحة الهاتف ممتلئة. ما وصل محفوظ، والرفع يُستأنف وحده حين تُفرَّغ مساحة."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your phone’s storage is full. What arrived is safe, and the upload resumes on its own once you free some space."
           }
         }
       }

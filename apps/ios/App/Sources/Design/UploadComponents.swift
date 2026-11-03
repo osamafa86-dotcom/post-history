@@ -207,7 +207,11 @@ struct UploadRowStatus: Equatable {
             if network == .offline { return UploadRowStatus(textKey: "upload.waitingForNetwork", systemImage: "wifi.slash", tone: .warn) }
             if network == .waitingForWifi { return UploadRowStatus(textKey: "upload.waitingForWifi", systemImage: "wifi.slash", tone: .warn) }
             if item.paused { return UploadRowStatus(textKey: "upload.paused", systemImage: "pause", tone: .muted) }
+            // مساحة الهاتف ممتلئة: السبب وما يفعله المراسل، لا «فشل» (ADR 0113).
+            if item.waitingForSpace { return UploadRowStatus(textKey: "upload.waitingForSpace", systemImage: "externaldrive.badge.exclamationmark", tone: .warn) }
             if stage >= .preview { return UploadRowStatus(textKey: LocalizedStringKey(stage.labelKey), systemImage: "checkmark", tone: .ok) }
+            // حتى نقلين في وقت واحد بترتيب الطابور: ما بعدهما ينتظر دوره، لا «جارٍ التحضير» بلا نهاية.
+            if item.queued { return UploadRowStatus(textKey: "upload.queued", systemImage: "clock", tone: .muted) }
             switch item.state {
             case .finishing: return UploadRowStatus(textKey: "upload.awaitingReceipt", systemImage: "checkmark.seal", tone: .brand)
             case .preparing: return UploadRowStatus(textKey: "upload.state.preparing", systemImage: "clock", tone: .muted)
