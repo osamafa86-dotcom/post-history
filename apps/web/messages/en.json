@@ -1509,5 +1509,102 @@
       "receiveHelp": "Receiving tells the reporter an editor has seen their material."
     },
     "searchOpen": "Open the search field"
+  },
+  "derivative": {
+    "template": {
+      "action": "Prepare a circulated-template copy",
+      "title": "Prepare a circulated-template copy",
+      "subtitle": "{title} · a new copy; the original stays as is",
+      "subtitleShort": "{title} · original untouched",
+      "close": "Close",
+      "preview": "Preview",
+      "previewCaption": "Sample image. Motion as in the template.",
+      "previewCaptionPhone": "Changes with the ratio and switches. Sample image; motion as in the template.",
+      "previewTag": "مشاهد متداولة",
+      "titleLines": "Title on the video",
+      "titleHint": "One to three lines, up to 22 characters each, split by meaning.",
+      "lineCounter": "{count}/22",
+      "lineNumber": "Line {n}",
+      "line3Placeholder": "Optional third line",
+      "restoreTitle": "Restore material title",
+      "ratio": "Aspect ratio",
+      "aspect": {
+        "vertical": "Vertical · 9:16",
+        "verticalCaption": "Reels and stories",
+        "horizontal": "Horizontal · 16:9",
+        "horizontalCaption": "YouTube and screens",
+        "square": "Square · 1:1",
+        "squareCaption": "Posts"
+      },
+      "ratioHint": "The whole video fits the frame on a blurred fill. No cropping.",
+      "showLocation": "Show location",
+      "locationHint": "Shows “{location}”. City and governorate only.",
+      "locationOffSensitive": "This material is sensitive, so the location is hidden by default.",
+      "label": "“Circulated footage” label (required)",
+      "labelHint": "Choose for every copy. Use it when the network did not film the footage; leave it off when it did. Both mistakes mislead the viewer.",
+      "labelWith": "With the label",
+      "labelNone": "No label",
+      "note": "The original is untouched: the copy is a new file.",
+      "noteSensitive": "This material is sensitive, so the copy is prepared locally and passes the same gates.",
+      "chooseLabelFirst": "Choose the label first.",
+      "footer": "It may take a few minutes; you will be notified when it is ready.",
+      "cancel": "Cancel",
+      "submit": "Prepare copy"
+    },
+    "files": {
+      "title": "Files",
+      "original": "Original",
+      "originalSub": "Kept as received, fingerprint verified",
+      "proxy": "Light copy · MP4",
+      "proxySub": "For browser preview"
+    },
+    "group": {
+      "title": "Circulated-template copies",
+      "internalBadge": "Internal",
+      "inherit": "They inherit the material’s sensitivity and stay internal until they pass the gates."
+    },
+    "row": {
+      "aspect": {
+        "vertical": "Vertical · 9:16",
+        "horizontal": "Horizontal · 16:9",
+        "square": "Square · 1:1"
+      },
+      "requestedSub": "Queued",
+      "renderingSub": "Started {time}",
+      "readySub": "Ready {time} · download through a temporary link",
+      "internalUse": "For internal use; publishing goes through the publishing gate.",
+      "rightsUnknown": "Rights not documented.",
+      "download": "Download",
+      "renderingAria": "Rendering",
+      "downloadAria": "Download the {aspect} copy"
+    },
+    "state": {
+      "requested": "Requested",
+      "rendering": "Rendering",
+      "ready": "Ready",
+      "failed": "Failed"
+    },
+    "newRequest": "New request",
+    "failure": {
+      "title_overflow": "A title line is too wide for the template. Shorten it and request a new copy.",
+      "source_unavailable": "The original could not be reached. Request again shortly.",
+      "render_failed": "The copy could not be prepared. Request again, and report it if it repeats."
+    },
+    "blocked": {
+      "intro": "The button does not disappear when a copy is not available: it is shown disabled with the reason under it.",
+      "editorial_state.title": "Before editorial acceptance",
+      "editorial_state": "Available once the material is accepted. It is {state} now.",
+      "source.title": "Before the original is verified",
+      "source": "Available once the original arrives and its fingerprint is verified.",
+      "sourceDuration": "The clip is longer than the {max} the template allows.",
+      "rights_state.title": "Rights blocked or withdrawn",
+      "rights_state": "No copies for material whose rights are blocked or withdrawn, and download links for existing copies stop working.",
+      "limit.title": "Three copies requested or rendering",
+      "limit": "Three copies of this material are requested or rendering. Wait until one is ready or fails.",
+      "location.title": "Location text does not suit the template",
+      "location": "Disabled: the location text does not suit the template (its length or characters). Fix the material fields, or request the copy without a location.",
+      "line.title": "A line over 22 characters",
+      "line": "Shorten the line or move a word to the next one. “Prepare copy” stays disabled until it is fixed."
+    }
   }
 }

@@ -1,3 +1,4 @@
 export class WebError extends Error {
-  constructor(readonly status: number, readonly code: string) { super(code); }
+  /** `details` آلية منقّاة وحدها (مثل شروط النسخة الفاشلة)؛ لا نص من الخادم ولا رسالته. */
+  constructor(readonly status: number, readonly code: string, readonly details?: Record<string, unknown>) { super(code); }
 }

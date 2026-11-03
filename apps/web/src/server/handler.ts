@@ -9,6 +9,7 @@ import { materialQuery, materialTypes, uuid } from "@/lib/query";
 import type { components } from "@/generated/schema";
 import type { MaterialType } from "@/lib/types";
 import { streamDerivative } from "./media";
+import { renderDownload, renderRead } from "./renders";
 import { actionPath, reviewAction } from "./review-actions";
 import { hasRole, materialTag } from "@/lib/review";
 import { organizationRead } from "./organizations";
@@ -124,6 +125,10 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         const page = requireOk(await api.GET("/materials", { params: { query } }));
         return json({ items: page.items.map(m => safeMaterial(m, me.permissions, undefined, internalNames(me))), next_cursor: page.next_cursor });
       }
+      const renders = /^materials\/([^/]+)\/renders$/.exec(path);
+      if (renders) return renderRead(request, renders[1], api, me);
+      const renderLink = /^materials\/([^/]+)\/files\/([^/]+)\/download-url$/.exec(path);
+      if (renderLink) return renderDownload(request, renderLink[1], renderLink[2], api, me, config!);
       if (path.startsWith("materials/") && uuid.test(path.slice(10))) {
         const result = await api.GET("/materials/{id}", { params: { path: { id: path.slice(10) } } });
         const material = requireOk(result);
@@ -209,7 +214,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
     return response;
   } catch (error) {
     const known = error instanceof WebError ? error : new WebError(503, "temporarily_unavailable");
-    const response = json({ code: known.code }, known.status);
+    const response = json({ code: known.code, ...(known.details ? { details: known.details } : {}) }, known.status);
     if (known.status === 401 && config && known.code === "session_revoked") setSession(response, config, "");
     return response;
   }
