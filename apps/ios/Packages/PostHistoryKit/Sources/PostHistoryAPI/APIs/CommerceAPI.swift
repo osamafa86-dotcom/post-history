@@ -156,7 +156,7 @@ open class CommerceAPI {
     /**
      رابط تنزيل حزمة التسليم
      - POST /licenses/{license_id}/download-url
-     - مشتق `delivery` لهذا الترخيص وحده (بمواصفات قالبه، بلا تفريغ؛ R11)، برابط موقّع صالح ≤ 24 ساعة. كل طلب منحة تُحصى بقفل صف الترخيص، والحد في `downloads_remaining` (`409 download_limit_reached`). الترخيص غير `active` `409 license_not_active`، والحزمة قبل جاهزيتها `409 delivery_not_ready`، والمؤسسة المعلّقة `403 forbidden_scope`. الرابط لا يُسجَّل ولا يدخل حدثًا أو إشعارًا. ولا رابط إلا والترخيص `active` وحقوق مادته `sellable` وهي غير موسومة بالحساسية (ADR 0113)؛ غير ذلك `409 license_not_active`، فخروج الحقوق أو وسم الحساسية يوقف التنزيل فورًا ولو لم يُبطَل الترخيص بعد.
+     - مشتق `delivery` لهذا الترخيص وحده (بمواصفات قالبه، بلا تفريغ؛ R11)، برابط موقّع صالح ≤ 24 ساعة. كل طلب منحة تُحصى بقفل صف الترخيص، والحد في `downloads_remaining` (`409 download_limit_reached`). الترخيص غير `active` `409 license_not_active`، والحزمة قبل جاهزيتها `409 delivery_not_ready`، والمؤسسة المعلّقة `403 forbidden_scope`. الرابط لا يُسجَّل ولا يدخل حدثًا أو إشعارًا. ولا رابط إلا والترخيص `active` وحقوق مادته `sellable` وهي غير موسومة بالحساسية (ADR 0114)؛ غير ذلك `409 license_not_active`، فخروج الحقوق أو وسم الحساسية يوقف التنزيل فورًا ولو لم يُبطَل الترخيص بعد.
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -247,7 +247,7 @@ open class CommerceAPI {
     /**
      إدراج مادة في الكتالوج
      - POST /materials/{id}/listing
-     - إدراج واحد لكل مادة، يثبّت إصدارها الحالي (`material_version`). الحالة `listed` تلزمها الشروط الثلاثة المستقلة (ADR 0113): `rights_state = sellable` وإلا `409 rights_not_sellable`، واعتماد تحريري للإصدار المعروض (`editorial_state = published` والإصدار المثبّت هو الحالي) وأصل متحقق (`technical_state = verified`) وإلا `409 listing_conditions_unmet` بـ `details.failed` (`editorial_state` و/أو `technical_state`)، ومادة غير موسومة بالحساسية وإلا `422`. والقاعدة تعيد الشروط كلها بمحفّز. الحالات الثلاث للمادة لا تتغير بالإدراج. `commercial_allowed` ومعه عرض بترخيص `commercial` لمدير النظام وحده (`403 forbidden_role`). يُكتب `catalog.listing_changed` في المعاملة نفسها.
+     - إدراج واحد لكل مادة، يثبّت إصدارها الحالي (`material_version`). الحالة `listed` تلزمها الشروط الثلاثة المستقلة (ADR 0114): `rights_state = sellable` وإلا `409 rights_not_sellable`، واعتماد تحريري للإصدار المعروض (`editorial_state = published` والإصدار المثبّت هو الحالي) وأصل متحقق (`technical_state = verified`) وإلا `409 listing_conditions_unmet` بـ `details.failed` (`editorial_state` و/أو `technical_state`)، ومادة غير موسومة بالحساسية وإلا `422`. والقاعدة تعيد الشروط كلها بمحفّز. الحالات الثلاث للمادة لا تتغير بالإدراج. `commercial_allowed` ومعه عرض بترخيص `commercial` لمدير النظام وحده (`403 forbidden_role`). يُكتب `catalog.listing_changed` في المعاملة نفسها.
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -1270,7 +1270,7 @@ open class CommerceAPI {
     /**
      تعديل ملف المؤسسة
      - PUT /buyer-organizations/{org_id}
-     - `buyer_admin` يعدّل ملف مؤسسته (الأسماء وبريد الفوترة والبلد). الحالة لمدير النظام وحده؛ تغييرها من غيره `403 forbidden_role`. التعليق يوقف الشراء والتنزيل الجديد، ولا يمس تراخيص سابقة. `rejected` لا تُوضع من هنا (`422 validation_failed` على `/status`؛ الرفض بسببه من `/rejection`)، والخروج منها إلى غيرها يمحو `rejection_reason` (حالة مقروءة كـ `verified_at`، فلا تُرسل في الجسم). كل تغيير حالة يكتب `buyer_organization.status_changed` (ADR 0104). **إعادة التحقق (ADR 0113):** تغيير `legal_name` أو `country` من `buyer_admin` بعد التحقق يعيد المؤسسة إلى `pending_verification` ويمحو `verified_at` في المعاملة نفسها (فيتوقف الشراء والتنزيل حتى يعيد مدير النظام تفعيلها)، ويُكتب `buyer_organization.status_changed`. وتغيير `billing_email` مسموح ويُدقَّق بلا قيمته.
+     - `buyer_admin` يعدّل ملف مؤسسته (الأسماء وبريد الفوترة والبلد). الحالة لمدير النظام وحده؛ تغييرها من غيره `403 forbidden_role`. التعليق يوقف الشراء والتنزيل الجديد، ولا يمس تراخيص سابقة. `rejected` لا تُوضع من هنا (`422 validation_failed` على `/status`؛ الرفض بسببه من `/rejection`)، والخروج منها إلى غيرها يمحو `rejection_reason` (حالة مقروءة كـ `verified_at`، فلا تُرسل في الجسم). كل تغيير حالة يكتب `buyer_organization.status_changed` (ADR 0104). **إعادة التحقق (ADR 0114):** تغيير `legal_name` أو `country` من `buyer_admin` بعد التحقق يعيد المؤسسة إلى `pending_verification` ويمحو `verified_at` في المعاملة نفسها (فيتوقف الشراء والتنزيل حتى يعيد مدير النظام تفعيلها)، ويُكتب `buyer_organization.status_changed`. وتغيير `billing_email` مسموح ويُدقَّق بلا قيمته.
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -1374,7 +1374,7 @@ open class CommerceAPI {
     /**
      استبدال الإدراج (العناوين والعروض والحالة)
      - PUT /materials/{id}/listing
-     - يعيد تثبيت `material_version` على إصدار المادة الحالي. القيود نفسها في الإنشاء. حين تخرج حقوق المادة من `sellable` يعلّق الخادم الإدراج في معاملة الانتقال نفسها (`state = suspended`، `suspended_reason = rights_changed`)، ولا يعود `listed` إلا بطلب صريح. وحين تُوسم المادة بالحساسية (قاصرون أو مصابون أو مشاهد صادمة) يعلّقه بـ `sensitive_flagged` في معاملة الوسم نفسها، ويُرفض `listed` لمادة موسومة بـ `422`. وحين يسقط الاعتماد التحريري للإصدار المعروض (إصدار جديد بتعديل بعد الاعتماد، أو خروج المادة من `published`) يعلّقه بـ `editorial_changed` في المعاملة نفسها (ADR 0113)، ويعود `listed` بطلب صريح يثبّت الإصدار المعتمد الجديد. وفي معاملة خروج الحقوق من `sellable` ومعاملة وسم الحساسية تُبطَل تراخيص المادة الفاعلة (`revoked_reason = rights_withdrawn`) ويُكتب `license.revoked` لكل ترخيص.
+     - يعيد تثبيت `material_version` على إصدار المادة الحالي. القيود نفسها في الإنشاء. حين تخرج حقوق المادة من `sellable` يعلّق الخادم الإدراج في معاملة الانتقال نفسها (`state = suspended`، `suspended_reason = rights_changed`)، ولا يعود `listed` إلا بطلب صريح. وحين تُوسم المادة بالحساسية (قاصرون أو مصابون أو مشاهد صادمة) يعلّقه بـ `sensitive_flagged` في معاملة الوسم نفسها، ويُرفض `listed` لمادة موسومة بـ `422`. وحين يسقط الاعتماد التحريري للإصدار المعروض (إصدار جديد بتعديل بعد الاعتماد، أو خروج المادة من `published`) يعلّقه بـ `editorial_changed` في المعاملة نفسها (ADR 0114)، ويعود `listed` بطلب صريح يثبّت الإصدار المعتمد الجديد. وفي معاملة خروج الحقوق من `sellable` ومعاملة وسم الحساسية تُبطَل تراخيص المادة الفاعلة (`revoked_reason = rights_withdrawn`) ويُكتب `license.revoked` لكل ترخيص.
      - Bearer Token:
        - type: http
        - name: bearerAuth
@@ -1551,7 +1551,7 @@ open class CommerceAPI {
     /**
      تغيير دور العضو أو تعليقه
      - PUT /buyer-organizations/{org_id}/members/{user_id}
-     - لا تبقى مؤسسة `active` بلا `buyer_admin` نشط واحد على الأقل (`409 last_buyer_admin`). `status` هنا عضوية المؤسسة مستقلة عن حالة الحساب على المنصة (ADR 0113): التعليق يبطل كل وصول العضو فورًا (الجلسات ومفاتيح المرور تبقى مسجّلة لكنها لا تدخل)، وإعادة العضوية لا تعيد شيئًا منه ولا ترفع تعليقًا وضعه مدير النظام على الحساب (`PUT /users/{id}/status`): العضو المعلّق على المنصة يبقى `suspended` في القائمة، وطلب `active` له من `buyer_admin` يرد `403 forbidden_role`.
+     - لا تبقى مؤسسة `active` بلا `buyer_admin` نشط واحد على الأقل (`409 last_buyer_admin`). `status` هنا عضوية المؤسسة مستقلة عن حالة الحساب على المنصة (ADR 0114): التعليق يبطل كل وصول العضو فورًا (الجلسات ومفاتيح المرور تبقى مسجّلة لكنها لا تدخل)، وإعادة العضوية لا تعيد شيئًا منه ولا ترفع تعليقًا وضعه مدير النظام على الحساب (`PUT /users/{id}/status`): العضو المعلّق على المنصة يبقى `suspended` في القائمة، وطلب `active` له من `buyer_admin` يرد `403 forbidden_role`.
      - Bearer Token:
        - type: http
        - name: bearerAuth

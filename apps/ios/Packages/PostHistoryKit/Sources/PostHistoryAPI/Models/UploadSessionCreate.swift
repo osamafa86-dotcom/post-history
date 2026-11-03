@@ -27,9 +27,9 @@ public struct UploadSessionCreate: Sendable, Codable, Hashable {
     public var materialId: UUID
     /** `produced` النسخة المُنتَجة للمسنَد إليه المادة في مهمة مفتوحة (ADR 0104) */
     public var kind: Kind
-    /** ≤ 2 GiB للملف الواحد (ADR 0023، 0114). الخادم يفرض حدًّا أضيق إن ضُبط في بيئته (`422` على `/size_bytes`)، وحصة لكل مستخدم من الجلسات المفتوحة والبايتات المنتظرة (`429 rate_limited`). */
+    /** ≤ 2 GiB للملف الواحد (ADR 0023، 0115). الخادم يفرض حدًّا أضيق إن ضُبط في بيئته (`422` على `/size_bytes`)، وحصة لكل مستخدم من الجلسات المفتوحة والبايتات المنتظرة (`429 rate_limited`). */
     public var sizeBytes: Int
-    /** اسم الملف على الجهاز؛ لا يُعرض خارج النطاق، ويُمحى من الجلسة المنتهية بعد مدة الاحتفاظ (ADR 0115) */
+    /** اسم الملف على الجهاز؛ لا يُعرض خارج النطاق، ويُمحى من الجلسة المنتهية بعد مدة الاحتفاظ (ADR 0116) */
     public var filename: String
     public var mimeType: String?
     /** لـ proxy فقط */
