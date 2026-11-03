@@ -1,12 +1,15 @@
 // tenant-isolation: every attempt to reach another scope's files, search results and invoices fails.
-// v0 has no institutions yet (buyer/institution roles arrive with the commercial phase), so the isolation
-// that exists today is role access (x-roles), ownership/office scope (out of scope = 404) and permission
-// masking (x-permissions). The case structure is derived from the contract so a new operation without an
-// x-roles line, or a role missing from RoleName, fails here before any server exists.
+// Three layers, all derived from the contract so a new operation without an x-roles line, or a role missing from RoleName,
+// fails here before any server exists: role access (x-roles), ownership/office scope and buyer organizations (out of scope
+// = 404, never 403), and permission masking (x-permissions). Organization isolation (v0.3): a buyer of one organization
+// reaches no order, invoice (the order and its refunds), licence, download link, organization profile or member list of
+// another, and no listing that is not on sale (draft or suspended: staff-only catalog views); its lists carry none of them.
 //
 // Live mode: TENANT_BASE_URL=http://127.0.0.1:3000/v1
-//   TENANT_TOKENS='{"reporter":"…","supervisor":"…","producer":"…","finance":"…",…}'  one token per RoleName
-//   TENANT_FIXTURES='{"other_reporter_material_id":"…","other_reporter_upload_id":"…","other_reporter_notification_id":"…","out_of_scope_material_id":"…","sensitive_field_keys":["…"]}'
+//   TENANT_TOKENS='{"reporter":"…","supervisor":"…","producer":"…","finance":"…","buyer_admin":"…",…}'  one token per RoleName
+//   TENANT_FIXTURES='{"other_reporter_material_id":"…","other_reporter_upload_id":"…","other_reporter_notification_id":"…","out_of_scope_material_id":"…",
+//     "other_org_id":"…","other_org_order_id":"…","other_org_license_id":"…","unlisted_listing_id":"…","sensitive_field_keys":["…"]}'
+//   (live/seed.mjs seeds the second organization, live/tenant-commerce.mjs its order, licence and a listing not on sale)
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -17,12 +20,35 @@ import { loadWaivers } from "../lib/waivers.mjs";
 
 const SELF_SESSION = new Set(["POST /auth/logout", "DELETE /auth/sessions"]);
 const METHODS = ["get", "post", "put", "patch", "delete"];
-// Resources whose out-of-scope access must answer 404 (never 403, which would confirm existence).
+// Resources whose out-of-scope access must answer 404 (never 403, which would confirm existence). `method` defaults to get;
+// the writes listed here take no body, so a refusal cannot be mistaken for a validation error.
 const SCOPED = [
   { prefix: "/materials/{id}", fixture: "other_reporter_material_id", actor: "reporter" },
   { prefix: "/uploads/{id}", fixture: "other_reporter_upload_id", actor: "reporter" },
   { prefix: "/notifications/{id}", fixture: "other_reporter_notification_id", actor: "reporter" },
   { prefix: "/materials/{id}", fixture: "out_of_scope_material_id", actor: "supervisor" },
+  // buyer organizations (v0.3): another organization's order, invoice (the order and its refunds), licence and profile
+  { prefix: "/orders/{order_id}", fixture: "other_org_order_id", actor: "buyer_admin" },
+  { prefix: "/orders/{order_id}", fixture: "other_org_order_id", actor: "buyer_member" },
+  { prefix: "/orders/{order_id}/refunds", fixture: "other_org_order_id", actor: "buyer_admin" },
+  { prefix: "/orders/{order_id}/checkout", method: "post", fixture: "other_org_order_id", actor: "buyer_member" },
+  { prefix: "/orders/{order_id}/cancel", method: "post", fixture: "other_org_order_id", actor: "buyer_member" },
+  { prefix: "/licenses/{license_id}", fixture: "other_org_license_id", actor: "buyer_admin" },
+  { prefix: "/licenses/{license_id}", fixture: "other_org_license_id", actor: "buyer_member" },
+  { prefix: "/licenses/{license_id}/download-url", method: "post", fixture: "other_org_license_id", actor: "buyer_admin" },
+  { prefix: "/buyer-organizations/{org_id}", fixture: "other_org_id", actor: "buyer_member" },
+  { prefix: "/buyer-organizations/{org_id}/members", fixture: "other_org_id", actor: "buyer_admin" },
+  // catalog views private to staff: a listing that is not on sale is missing for every buyer
+  { prefix: "/catalog/{listing_id}", fixture: "unlisted_listing_id", actor: "buyer_member" },
+  { prefix: "/catalog/{listing_id}/preview-url", fixture: "unlisted_listing_id", actor: "buyer_member" },
+];
+// Lists that must carry nothing of another scope: [path, role, fixtures whose ids must be absent]
+const LISTS = [
+  ["/materials", "reporter", ["other_reporter_material_id", "other_reporter_notification_id"]],
+  ["/notifications", "reporter", ["other_reporter_material_id", "other_reporter_notification_id"]],
+  ["/orders", "buyer_admin", ["other_org_order_id", "other_org_license_id"]],
+  ["/licenses", "buyer_member", ["other_org_order_id", "other_org_license_id"]],
+  ["/catalog", "buyer_member", ["unlisted_listing_id"]],
 ];
 
 export function buildMatrix(api) {
@@ -62,13 +88,14 @@ export function buildMatrix(api) {
     }
   }
   for (const s of SCOPED) {
-    for (const op of ops.filter((o) => o.path === s.prefix && o.method === "get")) {
-      cases.push({ kind: "scope", op: op.id, method: "get", path: op.path, role: s.actor, fixture: s.fixture, expect: "404" });
+    const method = s.method ?? "get";
+    for (const op of ops.filter((o) => o.path === s.prefix && o.method === method)) {
+      cases.push({ kind: "scope", op: op.id, method, path: op.path, role: s.actor, fixture: s.fixture, expect: "404" });
     }
   }
-  for (const listPath of ["/materials", "/notifications"]) {
+  for (const [listPath, role, fixtures] of LISTS) {
     if (ops.some((o) => o.path === listPath && o.method === "get")) {
-      cases.push({ kind: "list-leak", op: `GET ${listPath}`, method: "get", path: listPath, role: "reporter", expect: "no-foreign-items", fixtures: ["other_reporter_material_id", "other_reporter_notification_id"] });
+      cases.push({ kind: "list-leak", op: `GET ${listPath}`, method: "get", path: listPath, role, expect: "no-foreign-items", fixtures });
     }
   }
   return { cases, problems, roles, operations: ops.length };
@@ -113,6 +140,7 @@ export async function execute(cases, { baseUrl, tokens, fixtures, fetchImpl = fe
       if (!keys.length) { results.push({ ...c, outcome: "skipped", why }); continue; }
     } else if (c.expect === "no-foreign-items") {
       const foreign = (c.fixtures ?? []).map((f) => fixtures[f]).filter(Boolean);
+      if (!foreign.length) { results.push({ ...c, outcome: "skipped", why: `no fixture ${c.fixtures.join("/")}` }); continue; }
       ok = !foreign.some((id) => text.includes(id));
       why = "foreign item id present in list";
     }
@@ -156,7 +184,8 @@ export async function run(argv = process.argv.slice(2)) {
     contract_problems_open: open.length, contract_problems_waived: waivedCount, cases_executed: executed, cases_failed: failed, cases_skipped: skipped, cases_unimplemented: unimplemented, live_checked: Boolean(exec),
   }, [exec ? null : "هيكل الحالات من العقد فقط؛ التنفيذ ضد الخادم لم يجرِ بعد فالنتيجة جزئية",
       waivedCount ? `${waivedCount} ثغرة توثيق في العقد مُستثناة بإذن مكتوب في waivers/tenant-isolation.json` : null,
-      "v0 بلا مؤسسات: عزل المؤسسات والفهارس والنسخ المؤقتة والفواتير يُضاف مع المرحلة التجارية ويبقى خارج هذه النتيجة"].filter(Boolean).join("؛ "));
+      "عزل المؤسسات: مؤسسة مشترية ثانية بطلب وترخيص لها وإدراج غير معروض؛ طلبها وفاتورتها (الطلب واستردادته) وترخيصها ورابط تنزيله وملفها وأعضاؤها والإدراج غير المعروض 404 لمشتري المؤسسة الأولى، وقوائمه بلا شيء منها",
+      "لم يُقَس: فهارس البحث والنسخ المؤقتة خارج الواجهة لا وجود لها في الخادم اليوم (البحث استعلام على القاعدة نفسها)، فالعزل يُقاس على ما تعيده الواجهة"].filter(Boolean).join("؛ "));
   if (args["dry-run"]) writeResult(doc, { dryRun: true });
   else console.log("wrote", writeResult(doc, { slug: exec ? "live" : "matrix" }));
   return { code: result === "fail" ? 1 : 0, doc };

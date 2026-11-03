@@ -21,14 +21,14 @@
 | كشف البيانات الكاشفة | `tools/acceptance/scripts/pii-leak.mjs` | 2026-10-19 — جزئي؛ ما لم يتحقق: الجزء الحي غطّى استجابات الواجهة والإشعارات والأحداث وسجلات الخادم؛ لم تُغطَّ بعد: previews-and-derivatives,exports,external-channels(push/… | workers/ + apps/ | القياس الأخير جزئي |
 | القص والتصدير | `tools/acceptance/scripts/cut-export.mjs` | 2026-10-21 — جزئي؛ ما لم يتحقق: اختبار القبول «القص والتصدير» على مصادر اصطناعية بعلامات ومضة/نغمة كل ثانيتين: 1080p30 متغير المعدل ببداية 3.5 ث، و1080p25، وHEVC 10 بت HLG… | workers/ | القياس الأخير جزئي |
 | الدفع المكرر | `tools/acceptance/scripts/duplicate-payment.mjs` | 2026-10-19 — جزئي؛ ما لم يتحقق: بديل مؤقت لمعيار الدفع المكرر: يقيس مفتاح منع التكرار على كل كتابة موجودة، ولا يدّعي معيار البوابة المالية (لا دفع في التأسيس) | apps/api | القياس الأخير جزئي |
-| الاسترداد | `tools/acceptance/scripts/refund.mjs` | لا يوجد | apps/api | الحزمة لم تُبنَ بعد؛ لا قياس بعد |
-| الحقوق والحصرية | `tools/acceptance/scripts/rights-exclusivity.mjs` | لا يوجد | apps/api | الحزمة لم تُبنَ بعد؛ لا قياس بعد |
-| صرف المستحقات | `tools/acceptance/scripts/payout.mjs` | لا يوجد | apps/api | الحزمة لم تُبنَ بعد؛ لا قياس بعد |
+| الاسترداد | `tools/acceptance/scripts/refund.mjs` | لا يوجد | apps/api | لا قياس بعد |
+| الحقوق والحصرية | `tools/acceptance/scripts/rights-exclusivity.mjs` | لا يوجد | apps/api | لا قياس بعد |
+| صرف المستحقات | `tools/acceptance/scripts/payout.mjs` | لا يوجد | apps/api | لا قياس بعد |
 | التعافي | `tools/acceptance/scripts/recovery.mjs` | 2026-10-26 — جزئي؛ ما لم يتحقق: ADR 0051 point-in-time restore: the latest WAL-G base backup fetched from the second provider and decrypted with the offline private key, W… | infra/ | القياس الأخير جزئي |
 | التوفر | `tools/acceptance/scripts/availability.mjs` | 2026-10-22 — جزئي؛ ما لم يتحقق: ADR 0050: tools/acceptance/scripts/availability.mjs --dry-run inside infra/field-trial/smoke-trial.sh, 4 readers 50 ms apart, the kill a SI… | infra/ | القياس الأخير جزئي |
 | الذكاء الاصطناعي | `tools/acceptance/scripts/ai-eval.mjs` | لا يوجد | workers/ | لا قياس بعد |
 | الأداء | `tools/acceptance/scripts/performance.mjs` | 2026-10-19 — جزئي؛ ما لم يتحقق: يقيس زمن قراءة الواجهة (القائمة والتفصيل والصندوق) تحت حمل متزامن على قاعدة اصطناعية؛ البحث النصي ومعاينة مقطع 10 دقائق غير موجودين بعد فلم… | apps/api | القياس الأخير جزئي |
-| تصدير القالب العاجل | `tools/acceptance/scripts/urgent-template-export.mjs` | 2026-10-21 — جزئي؛ ما لم يتحقق: تصدير القالب العاجل على مقطع دقيقتين 1080p30 (H.264 نحو 17 Mbps) بين مقدمة وخاتمة جاهزتين (3 ث لكل)، في ترميز واحد libx264 veryfast CRF 20 … | workers/ | الحزمة لم تُبنَ بعد؛ القياس الأخير جزئي |
+| تصدير القالب العاجل | `tools/acceptance/scripts/urgent-template-export.mjs` | 2026-10-21 — جزئي؛ ما لم يتحقق: تصدير القالب العاجل على مقطع دقيقتين 1080p30 (H.264 نحو 17 Mbps) بين مقدمة وخاتمة جاهزتين (3 ث لكل)، في ترميز واحد libx264 veryfast CRF 20 … | workers/ | القياس الأخير جزئي |
 | قاتلات المهام | `tools/acceptance/scripts/task-killers.mjs` | لا يوجد | apps/android + apps/ios | لا قياس بعد |
 | مطابقة الطوابع الزمنية | `tools/acceptance/scripts/timestamp-alignment.mjs` | 2026-10-26 — جزئي؛ ما لم يتحقق: محاذاة صوتية من الطرف إلى الطرف في المكدس: نسخة هاتف 240p (تبدأ بعد الأصل بمقدار معلوم وطوابعها مصفَّرة) تُرفع أولًا ثم الأصل (30 ث بمعدل م… | workers/ | القياس الأخير جزئي |
 
@@ -38,13 +38,13 @@
 
 | اختبار القبول | السكربت | آخر قياس | الحزمة | الفجوة |
 | --- | --- | --- | --- | --- |
-| delivery-leak | `tools/acceptance/scripts/delivery-leak.mjs` | 2026-10-26 — جزئي؛ ما لم يتحقق: حزمة تسليم المشتري (أصل وصوت وخمس صور، كلها موقَّعة C2PA) على مقطعين اصطناعيين بوسوم وموقع وSEI: محتويات الحزمة، والبصمات، وبيان كل ملف بقا… | apps/api + workers/ | القياس الأخير جزئي |
+| delivery-leak | `tools/acceptance/scripts/delivery-leak.mjs` | 2026-10-27 — جزئي؛ ما لم يتحقق: حزمة تسليم المشتري (أصل وصوت وخمس صور، كلها موقَّعة C2PA) على مقطعين اصطناعيين بوسوم وموقع وSEI: محتويات الحزمة، والبصمات، وبيان كل ملف بقا… | apps/api + workers/ | القياس الأخير جزئي |
 | c2pa-manifest | `tools/acceptance/scripts/c2pa-manifest.mjs` | 2026-10-26 — جزئي؛ ما لم يتحقق: توقيع C2PA (ADR 0060) على مقطعين اصطناعيين بوسوم وموقع (وSEI في مقطع الهاتف) عبر مساري التصدير ومعاينة المتجر: البيان يُقرأ كاملًا بقائمة ب… | workers/ + apps/api | القياس الأخير جزئي |
 | web-upload-resume | `tools/acceptance/scripts/web-upload-resume.mjs` | لا يوجد | — | لا قياس بعد |
 | web-sensitivity-catalog | `tools/acceptance/scripts/web-sensitivity-catalog.mjs` | لا يوجد | — | لا قياس بعد |
 | web-mobile-390 | `tools/acceptance/scripts/web-mobile-390.mjs` | لا يوجد | — | لا قياس بعد |
 | web-a11y | `tools/acceptance/scripts/web-a11y.mjs` | لا يوجد | — | لا قياس بعد |
-| ci-step-timings | `لا سكربت` | لا يوجد | — | لا سكربت |
+| ci-step-timings | `tools/acceptance/scripts/ci-step-timings.mjs` | لا يوجد | — | لا قياس بعد |
 | sandbox-purchase | `tools/acceptance/live/sandbox-purchase.mjs` | 2026-10-26 — جزئي؛ ما لم يتحقق: الشراء بالمزوّد التجريبي على خادم حي: مؤسسة وعضو بالواجهة، ومادة معروضة، وطلب بسعر مجمّد (100.01 USD) ومهلته، وحجز حصري 15 دقيقة، وصفحة الد… | — | القياس الأخير جزئي |
 | payout-concurrent | `tools/acceptance/live/payout-concurrent.mjs` | 2026-10-26 — جزئي؛ ما لم يتحقق: طلبات صرف متزامنة فوق المتاح لا تُقبل إلا بقدر المتاح: خمسة طلبات بـ2000 معًا ثم طلبان بـ4000 معًا على رصيد محرَّر من بيعة تجريبية؛ القبول … | — | القياس الأخير جزئي |
 | refund-after-payout | `tools/acceptance/live/refund-after-payout.mjs` | 2026-10-26 — جزئي؛ ما لم يتحقق: استرداد بعد الصرف: حصة المراسل من بيعة تجريبية تُحرَّر وتُطلب وتُعتمد وتُصرف بالقناة التجريبية (طلب، موافقة، معالجة، مصروف بأحداثها)، ثم يُ… | — | القياس الأخير جزئي |
@@ -52,13 +52,13 @@
 | web-invite-conflict | `tools/acceptance/scripts/web-invite-conflict.mjs` | 2026-10-26 — جزئي؛ ما لم يتحقق: طابور تعارض الدعوات من الخارج: دعوتان ببريدَي حسابين قائمين وثالثة ببريد جديد بالجواب نفسه شكلًا وحالةً (لا كشف لوجود حساب)، والطابور لمدير… | — | القياس الأخير جزئي |
 | session-revocation | `tools/acceptance/scripts/session-revocation.mjs` | 2026-10-20 — جزئي؛ ما لم يتحقق: «خلال ثوانٍ» حُوِّل إلى رقم مقترح: ≤ 5 ث من رد استدعاء الإبطال إلى أول رفض (القيم المقيسة في المقاييس، -1 = لم يُرفض ضمن 15 ث)؛ الرفع الجار… | apps/api + apps/ | القياس الأخير جزئي |
 | field-upload-1gb | `tools/acceptance/scripts/field-upload-1gb.mjs` | لا يوجد | apps/ + infra/ | لا قياس بعد |
-| notification-delivery | `tools/acceptance/scripts/notification-delivery.mjs` | 2026-10-26 — جزئي؛ ما لم يتحقق: 20 مادة؛ زمن الوصول بالاستطلاع كل 150 مللي ثانية؛ أقل من 20 جولة أو بلا التصعيد أو الأحداث أو مشرف المكتب الآخر فلا pass | apps/api + workers/ | القياس الأخير جزئي |
-| reservation-conflict | `tools/acceptance/scripts/reservation-conflict.mjs` | 2026-10-26 — ناجح | apps/api | مغلق بحسب آخر قياس |
-| optimistic-concurrency | `tools/acceptance/scripts/optimistic-concurrency.mjs` | 2026-10-26 — ناجح | apps/api | مغلق بحسب آخر قياس |
-| admin-quorum | `tools/acceptance/scripts/admin-quorum.mjs` | 2026-10-26 — ناجح | apps/api | مغلق بحسب آخر قياس |
-| download-url | `tools/acceptance/scripts/download-url.mjs` | 2026-10-26 — جزئي؛ ما لم يتحقق: الانتهاء الفعلي لم يُنتظر (DL_WAIT_EXPIRY=1)؛ فلا pass | apps/api | القياس الأخير جزئي |
+| notification-delivery | `tools/acceptance/scripts/notification-delivery.mjs` | 2026-10-27 — ناجح | apps/api + workers/ | مغلق بحسب آخر قياس |
+| reservation-conflict | `tools/acceptance/scripts/reservation-conflict.mjs` | 2026-10-27 — ناجح | apps/api | مغلق بحسب آخر قياس |
+| optimistic-concurrency | `tools/acceptance/scripts/optimistic-concurrency.mjs` | 2026-10-27 — ناجح | apps/api | مغلق بحسب آخر قياس |
+| admin-quorum | `tools/acceptance/scripts/admin-quorum.mjs` | 2026-10-27 — ناجح | apps/api | مغلق بحسب آخر قياس |
+| download-url | `tools/acceptance/scripts/download-url.mjs` | 2026-10-27 — ناجح | apps/api | مغلق بحسب آخر قياس |
 | transcript-draft | `tools/acceptance/scripts/transcript-draft.mjs` | 2026-10-26 — جزئي؛ ما لم يتحقق: 4 مقطع اصطناعي بكلام عربي (كلام حقيقي عام: FLEURS مثبّت ببصمته) ومقطع لمادة موسومة بالحساسية؛ لا دقة كلمات هنا (ذلك tools/asr-bench) ولا تس… | workers/ | القياس الأخير جزئي |
-| reporter-identity-access | `tools/acceptance/scripts/reporter-identity-access.mjs` | 2026-10-26 — ناجح | apps/api | مغلق بحسب آخر قياس |
+| reporter-identity-access | `tools/acceptance/scripts/reporter-identity-access.mjs` | 2026-10-27 — ناجح | apps/api | مغلق بحسب آخر قياس |
 | emergency-wipe | `tools/acceptance/field/emergency-wipe.md` | لا يوجد | — | لا قياس بعد |
 | upload-contract | `tools/acceptance/scripts/upload-contract.mjs` | لا يوجد | — | لا قياس بعد |
 | outbox-transaction | `tools/acceptance/scripts/outbox-transaction.mjs` | لا يوجد | — | لا قياس بعد |
@@ -66,9 +66,10 @@
 | sensitive-material-visibility | `tools/acceptance/scripts/sensitive-material-visibility.mjs` | لا يوجد | — | لا قياس بعد |
 | stripe-webhook | `tools/acceptance/scripts/stripe-webhook.mjs` | 2026-10-26 — جزئي؛ ما لم يتحقق: مزوّد Stripe في وضع الاختبار على بيئة محلية (لا مال حقيقي)؛ صفوف الحقوق والملف المتحقق مزروعة بـSQL لغياب عامل الوسائط؛ تشغيل واحد. يقيس ال… | — | القياس الأخير جزئي |
 | invite-conflict-totp | `tools/acceptance/scripts/invite-conflict-totp.mjs` | 2026-10-26 — جزئي؛ ما لم يتحقق: بيئة محلية بمستخدمين اصطناعيين وتشغيل واحد؛ لا يُنتَظر انتهاء نافذة الحد (15 دقيقة افتراضيًا) فيُقاس القطع لا التعافي | — | القياس الأخير جزئي |
+| account-recovery | `tools/acceptance/scripts/account-recovery.mjs` | لا يوجد | — | لا قياس بعد |
 
 ## الخلاصة
 
-- جدول الخطة: 22 اختبارًا، 0 مغلقًا بحسب آخر قياس، 16 بقياس جزئي، 0 بقياس فاشل، 6 بلا قياس، 4 ينتظر حزمته.
-- الإضافية: 28 اختبارًا، 4 مغلقًا بحسب آخر قياس، 13 بقياس جزئي، 0 بقياس فاشل، 10 بلا قياس، 0 ينتظر حزمته.
-- قياسات لا ترتبط باختبار قبول في الكتالوج: 52 (نتائج أدوات أخرى كـ netlab وasr-bench، وليست فجوات).
+- جدول الخطة: 22 اختبارًا، 0 مغلقًا بحسب آخر قياس، 16 بقياس جزئي، 0 بقياس فاشل، 6 بلا قياس، 0 ينتظر حزمته.
+- الإضافية: 29 اختبارًا، 6 مغلقًا بحسب آخر قياس، 11 بقياس جزئي، 0 بقياس فاشل، 12 بلا قياس، 0 ينتظر حزمته.
+- قياسات لا ترتبط باختبار قبول في الكتالوج: 62 (نتائج أدوات أخرى كـ netlab وasr-bench، وليست فجوات).

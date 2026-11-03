@@ -19,7 +19,7 @@ const HEADLINE = {
   "pii-leak": ["live_requests", "live_findings", "static_findings"],
   "invalid-file": ["hook_calls", "failed_reasons_checked", "failures"],
   "dynamic-fields": ["server_cases_matching", "conformance_cases", "platforms_judged"],
-  "duplicate-payment": ["write_operations_checked", "write_operations_unimplemented", "failures"],
+  "duplicate-payment": ["providers_measured", "replays", "checks", "checks_failed"],
   "field-upload-1gb": ["platform", "network_generation", "total_minutes", "bytes_lost", "interventions", "completed"],
   "task-killers": ["vendor", "locked_minutes", "interventions_before_complete", "completed"],
 };
