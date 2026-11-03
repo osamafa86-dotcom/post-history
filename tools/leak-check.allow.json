@@ -44,7 +44,8 @@
       "reason": "عناوين resolved لحزم npm العامة في ملف القفل",
       "paths": [
         "tools/acceptance/package-lock.json",
-        "docs/design/redesign-2026-11/motion/circulated-template/package-lock.json"
+        "docs/design/redesign-2026-11/motion/circulated-template/package-lock.json",
+        "workers/media/render/package-lock.json"
       ]
     },
     {
@@ -118,7 +119,9 @@
       "reason": "روابط إرشادات آبل العلنية في الخطة وبحث متطلبات المتاجر",
       "paths": [
         "docs/plan/الخطة-النسخة-الثالثة.md",
-        "docs/research/2026-10-store-review-requirements.md"
+        "docs/research/2026-10-store-review-requirements.md",
+        "apps/api/src/push/push.module.ts",
+        "apps/ios/App/Resources/PrivacyInfo.xcprivacy"
       ]
     },
     {
@@ -138,7 +141,10 @@
       "paths": [
         "docs/plan/decisions/0032-payment-provider-sandbox.md",
         "docs/plan/الخطة-النسخة-الثالثة.md",
-        "docs/research/2026-10-payment-providers.md"
+        "docs/research/2026-10-payment-providers.md",
+        "apps/api/src/commerce/stripe-provider.ts",
+        "apps/api/src/config/config.ts",
+        "apps/web/src/lib/order-policy.ts"
       ]
     },
     {
@@ -394,14 +400,22 @@
       "value": "schema.org",
       "reason": "معرّف مساحة أسماء مخطط علني (@context) لا مضيف اتصال",
       "paths": [
-        "tools/acceptance/test/c2pa-manifest.test.mjs"
+        "tools/acceptance/test/c2pa-manifest.test.mjs",
+        "workers/media/src/media_worker/c2pa.py"
       ]
     },
     {
       "value": "json-schema.org",
       "reason": "معرّف $schema علني لا مضيف اتصال",
       "paths": [
-        "tools/acceptance/scripts/upload-contract.mjs"
+        "tools/acceptance/scripts/upload-contract.mjs",
+        "contracts/schemas/attachment-value.json",
+        "contracts/schemas/measurement.json",
+        "contracts/schemas/notification-channel-payload.json",
+        "contracts/schemas/outbox-event.json",
+        "contracts/schemas/timeline.json",
+        "contracts/schemas/upload-form.json",
+        "apps/web/src/generated/form-validator.cjs"
       ]
     },
     {
@@ -422,7 +436,8 @@
       "value": "crates.io",
       "reason": "سجل حزم Rust العلني (مصدر بناء أداة C2PA)",
       "paths": [
-        ".github/workflows/acceptance.yml"
+        ".github/workflows/acceptance.yml",
+        "workers/media/Dockerfile"
       ]
     },
     {
@@ -430,7 +445,8 @@
       "reason": "رابط رخصة الخطوط OFL داخل نص الرخصة الأصلي",
       "paths": [
         "docs/design/store-assets/fonts/LICENSE-IBMPlexMono.txt",
-        "docs/design/store-assets/fonts/LICENSE-Inter.txt"
+        "docs/design/store-assets/fonts/LICENSE-Inter.txt",
+        "apps/ios/App/Resources/Fonts/OFL-IBMPlexMono.txt"
       ]
     },
     {
@@ -438,7 +454,9 @@
       "reason": "رابط رخصة الخطوط OFL داخل نص الرخصة الأصلي",
       "paths": [
         "docs/design/store-assets/fonts/LICENSE-NotoSansArabic.txt",
-        "docs/design/redesign-2026-11/motion/circulated-template/public/fonts/OFL-*.txt"
+        "docs/design/redesign-2026-11/motion/circulated-template/public/fonts/OFL-*.txt",
+        "apps/ios/App/Resources/Fonts/OFL-ReadexPro.txt",
+        "apps/ios/App/Resources/Fonts/OFL-Rubik.txt"
       ]
     },
     {
@@ -447,7 +465,8 @@
       "paths": [
         "apps/ios/store/icon/AppIcon.svg",
         "docs/design/redesign-2026-11/**",
-        "docs/design/store-assets/generate.cjs"
+        "docs/design/store-assets/generate.cjs",
+        "apps/web/src/generated/player.css"
       ]
     },
     {
@@ -496,7 +515,9 @@
       "value": "leaf.ec",
       "reason": "اسم ملف مفتاح EC مؤقت في سكربت توليد الشهادات الاختبارية، وليس مضيفًا",
       "paths": [
-        "tools/acceptance/scripts/c2pa-manifest.mjs"
+        "tools/acceptance/scripts/c2pa-manifest.mjs",
+        "workers/media/bench/produced_bench.py",
+        "workers/media/tests/test_c2pa.py"
       ]
     },
     {
@@ -528,7 +549,8 @@
       "value": "api.internal",
       "reason": "مثال اسم الخادم الداخلي للخطّافات في نص قرار SEC-06؛ لا يُحل خارج الشبكة",
       "paths": [
-        "docs/plan/decisions/SEC-06-tusd-hook-authentication.md"
+        "docs/plan/decisions/SEC-06-tusd-hook-authentication.md",
+        "contracts/openapi.yaml"
       ]
     },
     {
@@ -541,7 +563,12 @@
         "infra/minio/init.sh",
         "infra/preview/docker-compose.preview.yml",
         "infra/preview/minio-init.sh",
-        "infra/preview/smoke-preview.sh"
+        "infra/preview/smoke-preview.sh",
+        "workers/ai/tests/test_jobs.py",
+        "workers/ai/tests/test_service_unit.py",
+        "workers/media/bench/download_bench.py",
+        "workers/media/tests/test_service_unit.py",
+        "workers/media/tests/test_storage.py"
       ]
     },
     {
@@ -551,7 +578,9 @@
         "docs/plan/decisions/SEC-06-tusd-hook-authentication.md",
         "infra/compose/.env.example",
         "infra/compose/docker-compose.yml",
-        "infra/compose/smoke-media.sh"
+        "infra/compose/smoke-media.sh",
+        "workers/ai/tests/test_service_unit.py",
+        "workers/media/tests/test_service_unit.py"
       ]
     },
     {
@@ -732,6 +761,191 @@
       "paths": [
         "tools/acceptance/test/web-scrub.test.mjs"
       ]
+    },
+    {
+      "value": "oauth2.googleapis.com",
+      "reason": "نقطة Google العامة الموثقة التي يستدعيها الخادم (OAuth وFCM وPlay Integrity)؛ لا تعرّف بنية",
+      "paths": [
+        "apps/api/src/common/google-auth.ts"
+      ]
+    },
+    {
+      "value": "fcm.googleapis.com",
+      "reason": "نقطة Google العامة الموثقة التي يستدعيها الخادم (OAuth وFCM وPlay Integrity)؛ لا تعرّف بنية",
+      "paths": [
+        "apps/api/src/push/push-senders.ts"
+      ]
+    },
+    {
+      "value": "playintegrity.googleapis.com",
+      "reason": "نقطة Google العامة الموثقة التي يستدعيها الخادم (OAuth وFCM وPlay Integrity)؛ لا تعرّف بنية",
+      "paths": [
+        "apps/api/src/attestation/play-integrity.ts"
+      ]
+    },
+    {
+      "value": "www.googleapis.com",
+      "reason": "معرّف نطاق OAuth العام لدى Google (auth/firebase.messaging وauth/playintegrity)، لا مضيف بنية",
+      "paths": [
+        "apps/api/src/attestation/play-integrity.ts",
+        "apps/api/src/push/push-senders.ts"
+      ]
+    },
+    {
+      "value": "nodejs.org",
+      "reason": "موقع إصدارات Node.js العام الذي تنزّل منه صورة العامل حزمة Node المثبّتة بالبصمة",
+      "paths": [
+        "workers/media/Dockerfile",
+        "workers/media/README.md"
+      ]
+    },
+    {
+      "value": "remotion.media",
+      "reason": "مصدر Remotion العام لـChrome Headless Shell المثبّت بالبصمة في صورة media-render (ADR 0091)",
+      "paths": [
+        "workers/media/Dockerfile"
+      ]
+    },
+    {
+      "value": "examplebucket.s3.amazonaws.com",
+      "reason": "المضيف المثالي في متجه اختبار توقيع SigV4 المنشور في توثيق AWS، لا حاوية حقيقية",
+      "paths": [
+        "workers/media/tests/test_storage.py"
+      ]
+    },
+    {
+      "value": "post-history",
+      "reason": "معرّف $id لمخططات العقد ووثيقته (https://post-history/contracts/...): اسم معتم لا يُحل ولا يدل على خادم",
+      "paths": [
+        "apps/api/src/common/contract.ts",
+        "apps/web/src/generated/form-validator.cjs",
+        "contracts/schemas/attachment-value.json",
+        "contracts/schemas/measurement.json",
+        "contracts/schemas/notification-channel-payload.json",
+        "contracts/schemas/outbox-event.json",
+        "contracts/schemas/timeline.json",
+        "contracts/schemas/upload-form.json"
+      ]
+    },
+    {
+      "value": "passkey.id",
+      "reason": "اسم الحقل Passkey.id في وصف العقد والعميل المولَّد منه، لا نطاق",
+      "paths": [
+        "apps/web/src/generated/schema.ts",
+        "contracts/openapi.yaml"
+      ]
+    },
+    {
+      "value": "u.id",
+      "reason": "عمود SQL مقتبس في قالب sql`…`، لا نطاق",
+      "paths": [
+        "apps/api/src/assignments/assignments.service.ts"
+      ]
+    },
+    {
+      "value": "user.id",
+      "reason": "اسم حقل WebAuthn (user.id) في تعليق، لا نطاق",
+      "paths": [
+        "apps/api/src/identity/passkeys.service.ts"
+      ]
+    },
+    {
+      "value": "requirements.in",
+      "reason": "ملف المصدر الذي يولّد منه pip-compile ملف القفل (# via -r requirements.in)، لا نطاق",
+      "paths": [
+        "workers/ai/requirements.txt"
+      ]
+    },
+    {
+      "value": "requirements-test.in",
+      "reason": "ملف المصدر الذي يولّد منه pip-compile ملف القفل (# via -r requirements-test.in)، لا نطاق",
+      "paths": [
+        "workers/ai/requirements-test.txt"
+      ]
+    },
+    {
+      "value": "a1.no",
+      "reason": "مفتاح ترجمة في كتالوج iOS وموضع استعماله، لا نطاق",
+      "paths": [
+        "apps/ios/App/Resources/Localizable.xcstrings",
+        "apps/ios/App/Sources/Design/SendComponents.swift"
+      ]
+    },
+    {
+      "value": "wipe.confirm.no",
+      "reason": "مفتاح ترجمة في كتالوج iOS وموضع استعماله، لا نطاق",
+      "paths": [
+        "apps/ios/App/Resources/Localizable.xcstrings",
+        "apps/ios/App/Sources/Views/SecurityViews.swift"
+      ]
+    },
+    {
+      "value": "login.email",
+      "reason": "مفتاح ترجمة في كتالوج iOS وموضع استعماله، لا نطاق",
+      "paths": [
+        "apps/ios/App/Resources/Localizable.xcstrings",
+        "apps/ios/App/Sources/Views/LoginView.swift"
+      ]
+    },
+    {
+      "value": "material.city",
+      "reason": "مفتاح ترجمة في كتالوج iOS وموضع استعماله، لا نطاق",
+      "paths": [
+        "apps/ios/App/Resources/Localizable.xcstrings",
+        "apps/ios/App/Sources/Send/SendScreen.swift"
+      ]
+    },
+    {
+      "value": "media.sensitive.local",
+      "reason": "مفتاح ترجمة في كتالوج iOS وموضع استعماله، لا نطاق",
+      "paths": [
+        "apps/ios/App/Resources/Localizable.xcstrings",
+        "apps/ios/App/Sources/Design/UploadComponents.swift",
+        "apps/ios/App/Sources/Materials/MaterialDetailView.swift"
+      ]
+    },
+    {
+      "value": "gallery.date.today",
+      "reason": "مفتاح ترجمة في كتالوج iOS وموضع استعماله، لا نطاق",
+      "paths": [
+        "apps/ios/App/Resources/Localizable.xcstrings"
+      ]
+    },
+    {
+      "value": "gallery.day.today",
+      "reason": "مفتاح ترجمة في كتالوج iOS وموضع استعماله، لا نطاق",
+      "paths": [
+        "apps/ios/App/Resources/Localizable.xcstrings",
+        "apps/ios/App/Sources/Materials/MyMaterialsView.swift"
+      ]
+    },
+    {
+      "value": "gallery.kind.video",
+      "reason": "مفتاح ترجمة في كتالوج iOS وموضع استعماله، لا نطاق",
+      "paths": [
+        "apps/ios/App/Resources/Localizable.xcstrings"
+      ]
+    },
+    {
+      "value": "gallery.quick.video",
+      "reason": "مفتاح ترجمة في كتالوج iOS وموضع استعماله، لا نطاق",
+      "paths": [
+        "apps/ios/App/Resources/Localizable.xcstrings"
+      ]
+    },
+    {
+      "value": "radius.sm",
+      "reason": "اسم رمز التصميم radius.sm في تعليق الملف المولَّد من tokens.v2.json، لا نطاق",
+      "paths": [
+        "apps/ios/App/Sources/Design/DesignTokens.generated.swift"
+      ]
+    },
+    {
+      "value": "arrow.up.forward.app",
+      "reason": "اسم رمز SF Symbols من Apple، لا نطاق",
+      "paths": [
+        "apps/ios/App/Sources/Views/SettingsView.swift"
+      ]
     }
   ],
   "ips": [
@@ -757,6 +971,22 @@
       "reason": "بداية نطاق Cloudflare المنشور علنًا، عيّنة في الفحص الجاف",
       "paths": [
         "infra/deploy/test-dry-run.sh"
+      ]
+    },
+    {
+      "value": "::ffff:a",
+      "reason": "صيغة IPv4 المحمول في IPv6 (::ffff:a.b.c.d) بحروف نائبة في تعليق، لا عنوان",
+      "paths": [
+        "apps/api/src/common/client-address.ts",
+        "apps/api/src/config/config.ts"
+      ]
+    },
+    {
+      "value": "4.12.0.88",
+      "reason": "رقم إصدار opencv-python-headless المثبّت (==4.12.0.88)، لا عنوان",
+      "paths": [
+        "workers/ai/requirements.in",
+        "workers/ai/requirements.txt"
       ]
     }
   ],
@@ -810,7 +1040,8 @@
       "reason": "بصمة أوزان نموذج علني منشور في نتيجة قياس؛ ليست بصمة مادة مراسل",
       "paths": [
         "docs/measurements/asr-bench/2026-10-20-fw-tiny.json",
-        "infra/ai/models.lock"
+        "infra/ai/models.lock",
+        "workers/ai/tests/models.sha256"
       ]
     },
     {
@@ -889,21 +1120,24 @@
       "value": "a73a28cdfe1c43ccc7202fa333d1f89c202477271407ae9a7f19afa52039cac8",
       "reason": "بصمة ملف نموذج علني (LFS sha256 لدى Hugging Face) في ملف تثبيت الأوزان models.lock؛ ليست بصمة مادة",
       "paths": [
-        "infra/ai/models.lock"
+        "infra/ai/models.lock",
+        "workers/ai/tests/models.sha256"
       ]
     },
     {
       "value": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
       "reason": "بصمة ملف نموذج علني (LFS sha256 لدى Hugging Face) في ملف تثبيت الأوزان models.lock؛ ليست بصمة مادة",
       "paths": [
-        "infra/ai/models.lock"
+        "infra/ai/models.lock",
+        "workers/ai/tests/models.sha256"
       ]
     },
     {
       "value": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913",
       "reason": "بصمة ملف نموذج علني (LFS sha256 لدى Hugging Face) في ملف تثبيت الأوزان models.lock؛ ليست بصمة مادة",
       "paths": [
-        "infra/ai/models.lock"
+        "infra/ai/models.lock",
+        "workers/ai/tests/models.sha256"
       ]
     },
     {
@@ -931,7 +1165,8 @@
       "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "reason": "SHA-256 لسلسلة فارغة: ثابت معروف يُقارَن به في اختبار حزمة التصدير",
       "paths": [
-        "tools/acceptance/test/export-package.test.mjs"
+        "tools/acceptance/test/export-package.test.mjs",
+        "workers/media/tests/test_storage.py"
       ]
     },
     {
@@ -954,6 +1189,27 @@
       "paths": [
         "tools/acceptance/test/web-scrub.test.mjs"
       ]
+    },
+    {
+      "value": "7c4a2751b361aeb3cff3ed788fa18b7a0849371b983d478bb9205b6cc25a8c52",
+      "reason": "بصمة أرشيف Chrome Headless Shell العام الذي تتحقق منه صورة media-render قبل الفك (ADR 0091)",
+      "paths": [
+        "workers/media/Dockerfile"
+      ]
+    },
+    {
+      "value": "c33c39ed9c80deddde77c960d00119918b9e352426fd604ba41638d6526a4744",
+      "reason": "بصمة أرشيف Node.js العام الذي تتحقق منه صورة العامل قبل الفك",
+      "paths": [
+        "workers/media/Dockerfile"
+      ]
+    },
+    {
+      "value": "f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41",
+      "reason": "التوقيع المتوقَّع في متجه اختبار SigV4 المنشور في توثيق AWS، لا بصمة مادة",
+      "paths": [
+        "workers/media/tests/test_storage.py"
+      ]
     }
   ],
   "secrets": [
@@ -969,6 +1225,21 @@
       "reason": "بذرة TOTP المعيارية المنشورة في RFC 4226 (ملحق D) لا سر فعلي؛ متجه اختبار عام",
       "paths": [
         "tools/acceptance/test/web-commerce.test.mjs"
+      ]
+    },
+    {
+      "sha256": "1a5d44a2dca19669d72edf4c4f1c27c4c1ca4b4408fbb17f6ce4ad452d78ddb3",
+      "reason": "مفتاح الوصول المثالي AKIA…EXAMPLE المنشور في توثيق AWS لمتجه اختبار SigV4، لا مفتاح فعلي",
+      "paths": [
+        "workers/media/tests/test_storage.py"
+      ]
+    },
+    {
+      "sha256": "2fd67e69907bff621c0c4078b1aef595c8562a11f840dd0ec5c5d7c0a4e59331",
+      "reason": "أبجدية Base32 المعيارية (RFC 4648) ثابتًا في الكود، لا بذرة TOTP",
+      "paths": [
+        "apps/api/src/common/crypto.ts",
+        "apps/api/src/identity/account.service.ts"
       ]
     }
   ],
@@ -1005,6 +1276,29 @@
         "tools/acceptance/lib/media-clips.mjs",
         "tools/acceptance/test/c2pa-manifest.test.mjs",
         "tools/acceptance/test/export-package.test.mjs"
+      ]
+    },
+    {
+      "sha256": "c046aad0fe7da83bace1b4e4051923e2bfada696ee100d0d371e33971a70914d",
+      "reason": "إحداثي اصطناعي (أصفار وواحد) يزرعه العامل في مقاطع الاختبار ليثبت حذف الموقع؛ ليس موقعًا حقيقيًا",
+      "paths": [
+        "workers/media/bench/produced_bench.py",
+        "workers/media/bench/thumbnail_bench.py",
+        "workers/media/tests/conftest.py"
+      ]
+    },
+    {
+      "sha256": "a4ae97ffcac214dc1559aaeb23a36af6b9216a1c9f7ea3c6a2420f7f285ee832",
+      "reason": "إحداثي اصطناعي (أصفار وواحد) يزرعه العامل في مقاطع الاختبار ليثبت حذف الموقع؛ ليس موقعًا حقيقيًا",
+      "paths": [
+        "workers/media/tests/conftest.py"
+      ]
+    },
+    {
+      "sha256": "79ef88fcadad91eaf88dd5d1d0d2d23e839428eaf9983bd69a23fe8eeb2af428",
+      "reason": "إحداثي اصطناعي (أصفار وواحد) يزرعه العامل في مقاطع الاختبار ليثبت حذف الموقع؛ ليس موقعًا حقيقيًا",
+      "paths": [
+        "workers/media/tests/test_export.py"
       ]
     }
   ]
