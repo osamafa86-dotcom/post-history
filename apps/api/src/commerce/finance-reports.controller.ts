@@ -5,13 +5,18 @@ import { ApiError } from '../common/errors';
 import { DB, type Database } from '../database/database.module';
 import type { components } from '../generated/api';
 import { Roles } from '../identity/principal';
+import { APP_CONFIG, type AppConfig } from '../config/config';
 import { type Currency, money, toContract } from './money';
-import { PayoutsService } from './payouts';
+import { activePolicy, reserveOf } from './payouts';
 
 type ContributorEarnings = components['schemas']['ContributorEarnings'];
 type ContributorEarningsTotals = components['schemas']['ContributorEarningsTotals'];
 type ContributorEarningsPage = components['schemas']['ContributorEarningsPage'];
 type BuyerPurchaseTotalsPage = components['schemas']['BuyerPurchaseTotalsPage'];
+type EarningsBalance = components['schemas']['EarningsBalance'];
+
+/** أعلى مبلغ يحمله `Money` في العقد (`amount_minor`: 0 حتى 100000000000). */
+const MONEY_MAX = 100_000_000_000n;
 
 /** صف مستحقات قبل الرصيد: المبالغ bigint بأصغر وحدة. */
 export interface EarningsRow {
@@ -24,6 +29,17 @@ export interface EarningsRow {
   share: bigint;
   refunded: bigint;
   shareBasisPoints: number | null;
+  /** الرصيد الحالي بهذه العملة لكل حالة، موجبًا لصاحبه. */
+  balance?: { pending: bigint; available: bigint; inPayout: bigint; paid: bigint };
+}
+
+/**
+ * صف يحمله العقد: كل مبلغ فيه وفي رصيده بين 0 وحدّ `Money`. القيود من الطلبات لا تتجاوزه (مجموع الطلب مقيّد في القاعدة)؛ ما
+ * يتجاوزه قيد مكتوب يدويًا، فيُترك الصف كله من الصفحة والمجاميع بدل أن يُسقط الرد كله.
+ */
+export function representable(r: EarningsRow): boolean {
+  const amounts = [r.gross, r.net, r.share, r.refunded, r.gross - r.net, ...(r.balance ? Object.values(r.balance) : [])];
+  return amounts.every((a) => a >= 0n && a <= MONEY_MAX);
 }
 
 /** بداية الشهر ونهايته بتوقيت UTC (`2026-11` ← [2026-11-01، 2026-12-01)). */
@@ -61,7 +77,7 @@ export function earningsTotals(rows: readonly EarningsRow[]): ContributorEarning
 export class FinanceReportsService {
   constructor(
     @Inject(DB) private readonly db: Database,
-    private readonly payouts: PayoutsService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   /**
@@ -130,19 +146,33 @@ export class FinanceReportsService {
       .sort(compareRows);
   }
 
+  /** أرصدة المساهمين الحالية لكل عملة وحالة، باستعلام واحد لكل الصفوف. */
+  private async balances(rows: readonly EarningsRow[]): Promise<void> {
+    if (rows.length === 0) return;
+    const ids = [...new Set(rows.map((r) => r.userId))];
+    const { rows: lines } = await this.db.execute<{ owner_id: string; currency: Currency; state: string; total: string }>(sql`
+      SELECT a.owner_id, a.currency, a.payable_state AS state, (-coalesce(sum(p.amount_minor), 0))::text AS total
+      FROM ledger_accounts a LEFT JOIN postings p ON p.account_id = a.id
+      WHERE a.kind = 'contributor_payable' AND a.owner_id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})
+      GROUP BY a.owner_id, a.currency, a.payable_state`);
+    for (const r of rows) {
+      const of = (state: string) => BigInt(lines.find((l) => l.owner_id === r.userId && l.currency === r.currency && l.state === state)?.total ?? '0');
+      r.balance = { pending: of('pending'), available: of('available'), inPayout: of('in_payout'), paid: of('paid') };
+    }
+  }
+
   async contributorEarnings(q: { month: string; currency?: Currency; cursor?: string; limit?: number }): Promise<ContributorEarningsPage> {
     const limit = q.limit ?? 50;
-    const all = await this.contributorRows(q.month, q.currency);
+    const rows = await this.contributorRows(q.month, q.currency);
+    await this.balances(rows);
+    const all = rows.filter(representable);
     const after = q.cursor === undefined ? undefined : decodeEarningsCursor(q.cursor);
     const rest = after ? all.filter((r) => compareRows(r, after) > 0) : all;
     const page = rest.slice(0, limit);
+    const policies = new Map<Currency, Awaited<ReturnType<typeof activePolicy>>>();
     const items: ContributorEarnings[] = [];
     for (const r of page) {
-      const summary = await this.payouts.summary(r.userId);
-      const zero = toContract(money(0n, r.currency));
-      const balance = summary.balances.find((b) => b.currency === r.currency) ?? {
-        currency: r.currency, pending: zero, available: zero, in_payout: zero, paid: zero, reserve: zero, requestable: zero, minimum: zero,
-      };
+      if (!policies.has(r.currency)) policies.set(r.currency, await activePolicy(this.db, this.config, r.currency));
       items.push({
         user_id: r.userId,
         work_name: r.workName,
@@ -154,7 +184,7 @@ export class FinanceReportsService {
         share: toContract(money(r.share, r.currency)),
         refunded: toContract(money(r.refunded, r.currency)),
         share_basis_points: r.shareBasisPoints,
-        balance,
+        balance: balanceOf(r, policies.get(r.currency)!),
       });
     }
     const last = page[page.length - 1];
@@ -201,6 +231,23 @@ export class FinanceReportsService {
       next_cursor: rows.length > limit && last ? Buffer.from(JSON.stringify([last.organization_id, last.currency])).toString('base64url') : null,
     };
   }
+}
+
+/** الرصيد بصيغة العقد بسياسة العملة، كما يحسبه `PayoutsService.summary`: الاحتياطي من المتاح، والقابل للطلب ما بعده. */
+function balanceOf(r: EarningsRow, policy: Awaited<ReturnType<typeof activePolicy>>): EarningsBalance {
+  const b = r.balance!;
+  const reserve = reserveOf(b.available, policy.reserveBps);
+  const m = (v: bigint) => toContract(money(v, r.currency));
+  return {
+    currency: r.currency,
+    pending: m(b.pending),
+    available: m(b.available),
+    in_payout: m(b.inPayout),
+    paid: m(b.paid),
+    reserve: m(reserve),
+    requestable: m(b.available > reserve ? b.available - reserve : 0n),
+    minimum: m(policy.minimum),
+  };
 }
 
 /** الأعلى نصيبًا أولًا، ثم المعرّف والعملة لترتيب ثابت. */

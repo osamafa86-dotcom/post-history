@@ -1,4 +1,4 @@
-import { earningsTotals, type EarningsRow, monthRange } from '../../src/commerce/finance-reports.controller';
+import { earningsTotals, type EarningsRow, monthRange, representable } from '../../src/commerce/finance-reports.controller';
 import { changedFields } from '../../src/settings/platform-settings.controller';
 
 // قواعد القراءات المجمّعة وهوية المنصة (ADR 0099)
@@ -23,6 +23,17 @@ describe('admin reports and platform settings rules', () => {
     ]);
     expect(earningsTotals([row('a', 1n), row('b', 1n, { shareBasisPoints: 2500 })])[0]!.share_basis_points).toBeNull();
     expect(earningsTotals([])).toEqual([]);
+  });
+
+  it('keeps only rows the contract Money range can carry, balance included', () => {
+    const row = (over: Partial<EarningsRow> = {}): EarningsRow => ({
+      userId: 'a', workName: null, currency: 'USD', sales: 1, gross: 100n, net: 90n, share: 27n, refunded: 0n, shareBasisPoints: 3000,
+      balance: { pending: 27n, available: 0n, inPayout: 0n, paid: 0n }, ...over,
+    });
+    expect(representable(row())).toBe(true);
+    expect(representable(row({ gross: 100_000_000_001n, net: 100_000_000_001n }))).toBe(false);
+    expect(representable(row({ balance: { pending: -1n, available: 0n, inPayout: 0n, paid: 0n } }))).toBe(false);
+    expect(representable(row({ balance: { pending: 0n, available: 2n ** 62n, inPayout: 0n, paid: 0n } }))).toBe(false);
   });
 
   it('names the changed fields in contract order, and none for the same values', () => {
