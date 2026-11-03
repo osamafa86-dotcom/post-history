@@ -60,16 +60,29 @@ public enum TusError: Error, Equatable, Sendable {
     case gone
     /// `460`: بصمة الجزء خالفت ما وصل (tus checksum extension؛ لا يُرسل التطبيق بصمة، يبقى للتصنيف)؛ يُعاد إرسال الجزء.
     case checksumMismatch
-    /// حالة أخرى غير قابلة للإعادة.
+    /// حالة أخرى: `5xx` و`429` (الخادم أو وكيله متعثر أو مشغول) قابلة للإعادة من موضع الخادم بعد مهلة، كما على أندرويد؛
+    /// وما عداها نهائي.
     case http(Int)
     case cancelled
 
     public var isRetryable: Bool {
         switch self {
         case .offsetMismatch, .transport, .locked, .checksumMismatch, .cancelled: return true
-        case .authenticationRequired, .unauthorized, .gone, .http: return false
+        case .http(let status): return Self.isTransientStatus(status)
+        case .authenticationRequired, .unauthorized, .gone: return false
         }
     }
+
+    /// الخادم مشغول أو متعثر (`423` و`5xx` و`429`): بعد HEAD يُنتظر بمهلة متزايدة، لا جزء فوري يلقى الرد نفسه.
+    public var wantsBackoff: Bool {
+        switch self {
+        case .locked: return true
+        case .http(let status): return Self.isTransientStatus(status)
+        default: return false
+        }
+    }
+
+    static func isTransientStatus(_ status: Int) -> Bool { (500...599).contains(status) || status == 429 }
 
     public static func fromStatus(_ status: Int) -> TusError {
         switch status {

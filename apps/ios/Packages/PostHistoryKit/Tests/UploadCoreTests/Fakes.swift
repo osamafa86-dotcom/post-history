@@ -110,12 +110,15 @@ final class FakeUploadAPI: UploadAPI, @unchecked Sendable {
     var failureReason: UploadSession.FailureReason?
     var ingestTokenRequired: Bool?
     var polls = 0
+    /// إن ضُبطت: إنشاء الجلسة يُعلَّق عندها حتى تُفتح (مسح أثناء الطلب).
+    var createGate: Gate?
     let sessionId = UUID()
     let token = "upload-token-secret"
 
     func createSession(idempotencyKey: String, _ body: UploadSessionCreate) async throws -> UploadSessionCreated {
+        let gate = lock.withLock { createBodies.append(body); return createGate }
+        if let gate { await gate.wait() }
         try lock.withLock {
-            createBodies.append(body)
             if createFailuresBeforeSuccess > 0 { createFailuresBeforeSuccess -= 1; throw UploadAPIError.transport }
             if let e = createError { throw e }
         }
@@ -136,6 +139,19 @@ final class FakeUploadAPI: UploadAPI, @unchecked Sendable {
 
     func complete(idempotencyKey: String, id: UUID, reportedSha256: String?) async throws {
         try lock.withLock { completeCalls.append(reportedSha256); if let e = completeError { throw e } }
+    }
+
+    /// الإجهاضات التي قبلها الخادم (معرّف الجلسة ومفتاح الطلب)، وكل محاولة ولو فشلت.
+    var aborts: [(id: UUID, key: String)] = []
+    var abortAttempts = 0
+    var abortError: UploadAPIError?
+
+    func abort(idempotencyKey: String, id: UUID) async throws {
+        try lock.withLock {
+            abortAttempts += 1
+            if let e = abortError { throw e }
+            aborts.append((id, idempotencyKey))
+        }
     }
 }
 
@@ -178,6 +194,54 @@ extension UploadEngine {
         }
         return record(id)
     }
+}
+
+/// بوابة انتظار: ما يمر بها يُعلَّق حتى `open()`؛ لاختبار ما يجري والطلب معلّق.
+final class Gate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isOpen = false
+    private var arrivals = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    var arrived: Int { lock.withLock { arrivals } }
+
+    func wait() async {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            let now = lock.withLock { () -> Bool in
+                arrivals += 1
+                if isOpen { return true }
+                waiters.append(c)
+                return false
+            }
+            if now { c.resume() }
+        }
+    }
+
+    func open() {
+        let pending = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
+            isOpen = true
+            defer { waiters = [] }
+            return waiters
+        }
+        pending.forEach { $0.resume() }
+    }
+}
+
+/// ساعة تتقدم مع كل قراءة: ترتيب الدخول إلى الطابور ثابت في الاختبار.
+final class TestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var current = Date(timeIntervalSince1970: 1_800_000_000)
+    func now() -> Date { lock.withLock { current = current.addingTimeInterval(0.001); return current } }
+}
+
+/// ينتظر شرطًا حتى المهلة ويعيد آخر قيمته.
+func eventually(timeout: TimeInterval = 5, _ condition: @escaping () async -> Bool) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if await condition() { return true }
+        try? await Task.sleep(nanoseconds: 5_000_000)
+    }
+    return await condition()
 }
 
 /// مصدر رموز ingest محاكى: يصدر رموزًا مرقّمة، ويسجّل الطلبات القسرية والنسيان.

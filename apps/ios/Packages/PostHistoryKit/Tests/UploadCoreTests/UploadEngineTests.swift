@@ -296,8 +296,52 @@ final class UploadEngineTests: XCTestCase {
         XCTAssertEqual(TusError.fromStatus(409), .offsetMismatch)
         XCTAssertEqual(TusError.fromStatus(423), .locked)
         XCTAssertEqual(TusError.fromStatus(410), .gone)
-        XCTAssertFalse(TusError.http(500).isRetryable)
+        // 5xx و429 عابرة كما على أندرويد: تُعاد من موضع الخادم بعد مهلة؛ 4xx الأخرى نهائية.
+        for status in [500, 502, 503, 504, 429] {
+            XCTAssertTrue(TusError.fromStatus(status).isRetryable, "\(status)")
+            XCTAssertTrue(TusError.fromStatus(status).wantsBackoff, "\(status)")
+        }
+        for status in [400, 413, 415] { XCTAssertFalse(TusError.fromStatus(status).isRetryable, "\(status)") }
+        XCTAssertTrue(TusError.locked.wantsBackoff)
+        XCTAssertFalse(TusError.offsetMismatch.wantsBackoff, "an offset race resumes at once after HEAD")
         XCTAssertTrue(TusError.checksumMismatch.isRetryable)
+    }
+
+    func testServerErrorOnAChunkResumesFromTheServerOffsetAfterABackoff() async throws {
+        // جزء يُرد بـ 502 (الوكيل أمام tusd): لا فشل ولا رفع من الصفر؛ HEAD ثم مهلة ثم الجزء نفسه في الجلسة نفسها.
+        let h = Harness(name: "patch-502", script: [.ok, .fail(.http(502)), .ok, .ok])
+        let stream = await h.engine.events()
+        let retries = Task { () -> Int in
+            var n = 0
+            for await e in stream {
+                if case .retryScheduled = e { n += 1 }
+                if case .phaseChanged(_, let p) = e, p.isTerminal { break }
+            }
+            return n
+        }
+        let rec = try await h.enqueue()
+        let done = await h.engine.waitUntil(rec.id) { $0.phase.isTerminal }
+        XCTAssertEqual(done?.phase, .verified(receiptNumber: "R-202610-000042"))
+        XCTAssertEqual(h.transport.patches.map(\.offset), [0, 4, 4, 8], "resumes at the confirmed offset, never from byte 0")
+        XCTAssertEqual(h.transport.headCalls, 1)
+        XCTAssertEqual(h.transport.serverBytes, h.bytes)
+        XCTAssertEqual(h.api.createBodies.count, 1, "the same upload session")
+        let scheduled = await retries.value
+        XCTAssertEqual(scheduled, 1, "waits before the next chunk instead of hitting a failing server at once")
+        XCTAssertEqual(done?.attempt, 0, "the counter resets after the next accepted chunk")
+    }
+
+    func testTooManyRequestsOnTheFirstChunkIsRetriedAndAClientErrorStillFails() async throws {
+        let busy = Harness(name: "patch-429", script: [.fail(.http(429)), .ok, .ok, .ok])
+        let r1 = try await busy.enqueue()
+        let d1 = await busy.engine.waitUntil(r1.id) { $0.phase.isTerminal }
+        XCTAssertEqual(d1?.phase, .verified(receiptNumber: "R-202610-000042"))
+        XCTAssertEqual(busy.transport.patches.map(\.offset), [0, 0, 4, 8])
+
+        let tooLarge = Harness(name: "patch-413", script: [.fail(.http(413))])
+        let r2 = try await tooLarge.enqueue()
+        let d2 = await tooLarge.engine.waitUntil(r2.id) { $0.phase.isTerminal }
+        XCTAssertEqual(d2?.phase, .failed(.rejected))
     }
 
     func testStreamingSHA256MatchesKnownVector() throws {
@@ -335,5 +379,64 @@ final class UploadWipeTests: XCTestCase {
         await h.transport.finishHanging(accepting: h.bytes[0..<4])
         let after = await h.engine.allRecords()
         XCTAssertTrue(after.isEmpty)
+    }
+
+    /// مراجعة شاملة: خطوة معلّقة على إنشاء الجلسة كانت تكتب سجلها ورمزه بعد المسح، فيعود السجل في الذاكرة وعلى القرص.
+    func testWipeWhileTheSessionIsBeingCreatedDoesNotResurrectTheRecordOrItsToken() async throws {
+        let h = UploadEngineTests.Harness(name: "wipe-create")
+        let gate = Gate()
+        h.api.createGate = gate
+        let rec = try await h.enqueue()
+        let suspended = await eventually { gate.arrived == 1 }
+        XCTAssertTrue(suspended)
+
+        let wiped = await h.engine.wipeAll()
+        XCTAssertEqual(wiped, 1)
+        gate.open() // the server answers after the wipe
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        let records = await h.engine.allRecords()
+        XCTAssertTrue(records.isEmpty, "not back in memory")
+        XCTAssertEqual(try h.sharedStore.loadAll().count, 0, "not back on disk")
+        XCTAssertNil(try h.sharedSecrets.token(for: rec.id), "the late session's upload token is not stored")
+        XCTAssertTrue(h.transport.creates.isEmpty, "no tus upload for a wiped record")
+        XCTAssertTrue(h.chunkFiles.isEmpty)
+    }
+
+    func testWipeWhileHashingDoesNotResurrectTheRecord() async throws {
+        let started = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        var env = UploadEngine.Environment()
+        env.hasher = { url in
+            started.signal()
+            release.wait()
+            return try SHA256Stream.hex(of: url)
+        }
+        let h = UploadEngineTests.Harness(name: "wipe-hash", environment: env)
+        let rec = try await h.enqueue()
+        let hashing = await Task.detached { started.wait(timeout: .now() + 5) == .success }.value
+        XCTAssertTrue(hashing)
+
+        _ = await h.engine.wipeAll()
+        release.signal()
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        let gone = await h.engine.record(rec.id)
+        XCTAssertNil(gone)
+        XCTAssertEqual(try h.sharedStore.loadAll().count, 0)
+        XCTAssertTrue(h.api.createBodies.isEmpty, "no session for a wiped record")
+    }
+
+    /// الإلغاء ينتظر إلغاء النقل؛ مسح في أثنائه لا يُبقي سجلًا «ملغى» في الطابور.
+    func testWipeDuringCancelLeavesNothingBehind() async throws {
+        let h = UploadEngineTests.Harness(name: "wipe-cancel", script: [.hang])
+        let rec = try await h.enqueue()
+        _ = await h.engine.waitUntil(rec.id) { $0.inFlightOffset == 0 }
+        async let cancelled: Void = h.engine.cancel(rec.id)
+        async let wiped = h.engine.wipeAll()
+        _ = await (cancelled, wiped)
+        let records = await h.engine.allRecords()
+        XCTAssertTrue(records.isEmpty)
+        XCTAssertEqual(try h.sharedStore.loadAll().count, 0)
     }
 }

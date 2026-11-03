@@ -802,6 +802,7 @@
                   "manual",
                   "rights_changed",
                   "sensitive_flagged",
+                  "editorial_changed",
                   null
                 ]
               },

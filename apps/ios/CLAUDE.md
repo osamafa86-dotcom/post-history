@@ -10,7 +10,12 @@
 - `scripts/generate-api.sh` بعد كل تغيير في `contracts/openapi.yaml`؛ CI يفشل إن اختلف الناتج.
 - `node scripts/generate-design-tokens.mjs` بعد كل تغيير في `docs/design/tokens.v2.json` (الهوية v2 «إشارة»، ADR 0085 و0088): يولّد ألوان `App/Resources/DesignTokens.xcassets` و`App/Sources/Design/DesignTokens.generated.swift` (لا يُعدَّلان يدويًا؛ CI يفشل إن اختلف الناتج). المكونات في `App/Sources/Design/` (`Components.swift`، `SendComponents.swift`، `UploadComponents.swift`، `BroadcastRings.swift`، `Typography.swift`) وتستعمل الرموز الدلالية وحدها؛ الخطوط OFL في `App/Resources/Fonts/`: Rubik وReadex Pro وIBM Plex Mono لرقم الإيصال (ADR 0088).
 - «موادي» معرضًا وتفاصيل المادة والمشغّل الخاص فوق AVPlayer في `App/Sources/Materials/` (ADR 0089)؛ `PlaybackCenter.stopAll()` يوقف التشغيل في المسح الطارئ والخروج والإبطال، و`OrientationLock` يسمح بالأفقي في ملء الشاشة وحده.
-- طابور الرفع لصاحبه على الهاتف المشترك (ADR 0093): `AccountScope` و`LocalAccounts` (معرّف حساب محلي معتم في كل سجل وإرسالة) في `UploadCore`، و`ReceiptInbox` في `MaterialsCore`. الشاشات ترى سجلات الحساب الداخل وحده (`UploadQueueModel.records` و`batches`)، والنواة لا تطلب `/uploads` باسم غير صاحب السجل؛ لا تقرأ `allRecords` في شاشة.
+- طابور الرفع لصاحبه على الهاتف المشترك (ADR 0093): `AccountScope` و`LocalAccounts` (معرّف حساب محلي معتم في كل سجل وإرسالة ومسودة) في `UploadCore`، و`ReceiptInbox` في `MaterialsCore`. الشاشات ترى سجلات الحساب الداخل وحده (`UploadQueueModel.records` و`batches` و`drafts`)، والنواة لا تطلب `/uploads` باسم غير صاحب السجل؛ لا تقرأ `allRecords` في شاشة.
+- إصلاحات المراجعة الشاملة (ADR 0113):
+  - النواة: كل حفظ بعد انتظار يمر بـ `isCurrent` (جيل المسح)، والسجل المنتهي لا يُكتب فوقه. حتى سجلين يُنقلان معًا بترتيب الطابور (`maxConcurrentTransfers`)، وميزانية أجزاء مشتركة (`sharedChunkBudgetBytes`). وامتلاء القرص `UploadError.outOfSpace` يُعاد ولا يفشل.
+  - الإلغاء ينهي الجلسة بـ `DELETE /uploads/{id}`، وما تعذّر في `FileAbortStore` (`SessionAborts.swift`).
+  - القفل وغطاء المبدّل في نافذة مستقلة (`App/Sources/Views/PrivacyShield.swift`)، لا في `ZStack` الجذر.
+  - المسح الطارئ والإبطال قائمة خطوات واحدة (`AppModel.wipeLocally`)؛ كل خطوة جديدة تحتاج مفتاح `wipe.step.<الاسم>` بالعربية والإنجليزية.
 - شاشة الإرسال الواحدة في `App/Sources/Send/` ومنطقها الصرف (الوسوم بقاعدة العقد، وسبب تعطيل الإرسال، وسؤال الحساسية، والمكان المتذكَّر، والإرسالات) في `MaterialsCore` مختبر على Linux.
 - الاختبارات: `cd Packages/PostHistoryKit && swift test` (مع `TUSD_URL=http://127.0.0.1:8080/files/` يُشغَّل تكامل tusd الحي). النصوص في `App/Resources/Localizable.xcstrings` (ar/en).
 

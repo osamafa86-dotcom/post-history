@@ -11,7 +11,7 @@ import UploadCore
 /// تركيب الطبقات: عميل API مولَّد بمعترض الهوية، وجلسة الهوية فوق Keychain.
 @MainActor
 final class AppModel: ObservableObject {
-    enum Phase: Equatable { case loading, signedOut, signedIn(StoredSession), revoked(at: Date), wiped(WipeReport) }
+    enum Phase: Equatable { case loading, signedOut, signedIn(StoredSession), revoked(at: Date, report: WipeReport), wiped(WipeReport) }
 
     @Published private(set) var phase: Phase = .loading
     /// اسم العمل للتحية في الرئيسية (`GET /me`)؛ يبقى في الذاكرة وحدها ولا يُكتب على القرص.
@@ -98,27 +98,17 @@ final class AppModel: ObservableObject {
         await uploads.setScope(scope)
     }
 
-    /// إبطال عن بُعد (SEC-01): رُفض رمز التحديث ← تتوقف كل مهام الرفع الخلفية وتُمحى رموز الرفع وحالته، وتُعرض شاشة «أُبطلت الجلسة».
+    /// إبطال عن بُعد (SEC-01): رُفض رمز التحديث ← يُمحى كل ما يمحوه المسح الطارئ (ADR 0113، تعديل لنطاق ADR 0009 §3): مهام الرفع
+    /// الخلفية ورموزها وحالتها، والأصول المستوردة، والمسودات، ومعرّف مفتاح App Attest، والذاكرة المؤقتة وما في tmp؛ ثم شاشة
+    /// «أُبطلت الجلسة». الإبطال قد يكون بعد بلاغ فقد الهاتف، فلا يبقى عليه ما يُقرأ ممن يحمله.
     private func watchAuth() {
         authWatcher?.cancel()
         authWatcher = Task { [weak self] in
             guard let self else { return }
             for await event in await auth.events() {
                 guard case .sessionRevoked(let at) = event else { continue }
-                PlaybackCenter.shared.stopAll()
-                uploads.cancelLightCopies()
-                _ = await uploads.engine.wipeAll()
-                await uploads.refresh()
-                uploads.forgetBatches()
-                uploads.forgetWaitingReceipts()
-                memory.clear()
-                ThumbnailCache.shared.clear()
-                workName = nil
-                await materials.clear()
-                await push.forgetLocally()
-                await notifications.clear()
-                await NotificationTraceWiper.wipe(SystemNotificationCenterTraces())
-                phase = .revoked(at: at)
+                let report = await wipeLocally(revokeRemote: false)
+                phase = .revoked(at: at, report: report)
                 await applyAccountScope(signedIn: nil)
             }
         }
@@ -127,6 +117,14 @@ final class AppModel: ObservableObject {
     /// المسح الطارئ (SEC-01): محلي فقط وبلا اتصال؛ يوقف النقل ويمحو الرموز والحالة والأجزاء والأصول المستوردة والمصغّرات وذاكرة الصور،
     /// ثم يعيد التطبيق إلى شاشة البداية. لا يُسجَّل شيء.
     func emergencyWipe() async {
+        let report = await wipeLocally(revokeRemote: true)
+        phase = .wiped(report)
+        await applyAccountScope(signedIn: nil)
+    }
+
+    /// خطوات المسح كلها، للمسح الطارئ وللإبطال عن بُعد معًا (ADR 0113): قائمة واحدة فلا تنقص إحداهما عن الأخرى. `revokeRemote`:
+    /// المسح الطارئ يطلب من الخادم إبطال كل الجلسات أولًا؛ في الإبطال قد أبطلها الخادم أصلًا.
+    private func wipeLocally(revokeRemote: Bool) async -> WipeReport {
         // التشغيل يتوقف أولًا ويُمحى رابطه ومعايناته، قبل محو الملفات التي قد يقرؤها.
         PlaybackCenter.shared.stopAll()
         uploads.cancelLightCopies()
@@ -134,9 +132,12 @@ final class AppModel: ObservableObject {
         let engine = uploads.engine
         let auth = self.auth
         let push = self.push
-        let steps: [WipeStep] = [
+        var steps: [WipeStep] = []
+        if revokeRemote {
             // قرار المنسّق: إبطال كل الجلسات على الخادم بأفضل جهد (≤3 ث) قبل المحو؛ لا ينتظره المحو ولا يفشل بسببه.
-            WipeStep(name: "revoke_remote") { await auth.revokeEverywhereBestEffort(timeout: 3) ? 1 : 0 },
+            steps.append(WipeStep(name: "revoke_remote") { await auth.revokeEverywhereBestEffort(timeout: 3) ? 1 : 0 })
+        }
+        steps += [
             WipeStep(name: "uploads") { await engine.wipeAll() },
             // معرّف التثبيت يُنسى محليًا (بلا اتصال)؛ إلغاء الجهاز على الخادم يتبع إبطال الجلسات أعلاه.
             WipeStep(name: "installation_id") { await push.forgetLocally(); return 1 },
@@ -174,8 +175,7 @@ final class AppModel: ObservableObject {
         await uploads.refresh()
         await materials.clear()
         await notifications.clear()
-        phase = .wiped(report)
-        await applyAccountScope(signedIn: nil)
+        return report
     }
 
     func acknowledgeAndSignIn() { phase = .signedOut }

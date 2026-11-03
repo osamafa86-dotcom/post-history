@@ -242,19 +242,21 @@ public enum BatchedSubmission {
         public var queued: [UUID]
     }
 
+    /// `persist`: حفظ المسودة بعد كل خطوة (`DraftSubmission`)، فإنهاء التطبيق أثناء الإرسال لا ينشئ مادة ولا يُدخل ملفًا مرتين.
     @MainActor
     public static func run(_ draft: MaterialDraft, dynamicFields: [String: JSONValue], ledger: SendBatchLedger, owner: UUID? = nil,
                            create: (String, MaterialCreate) async throws -> UUID,
-                           enqueue: (MaterialDraft.PickedFile, UUID, MaterialCreate) async throws -> Void) async -> Outcome {
+                           enqueue: (MaterialDraft.PickedFile, UUID, MaterialCreate) async throws -> Void,
+                           persist: (MaterialDraft) throws -> Void = { _ in }) async -> Outcome {
         let batch = ledger.begin(title: draft.title.trimmingCharacters(in: .whitespacesAndNewlines),
                                  fileKeys: draft.files.map(\.createIdempotencyKey),
                                  sensitive: draft.sensitivity.map { $0.minors || $0.injured || $0.graphic }, owner: owner)
         var queued: [UUID] = []
-        let outcome = await DraftSubmission.run(draft, dynamicFields: dynamicFields, create: create) { file, materialId, body in
+        let outcome = await DraftSubmission.run(draft, dynamicFields: dynamicFields, create: create, enqueue: { file, materialId, body in
             ledger.add(materialId, to: batch.id)
             try await enqueue(file, materialId, body)
             queued.append(materialId)
-        }
+        }, persist: persist)
         ledger.finish(batch.id, queued: queued)
         return Outcome(submission: outcome, batchId: batch.id, queued: queued)
     }
