@@ -43,7 +43,8 @@ const downloadName = (m: typeof ar | typeof en, aspect: "vertical" | "horizontal
 test("feature off (404) or a role outside the request roles hides the whole render UI", async ({ page }) => {
   await login(page);
   const listed = page.waitForResponse(r => r.url().endsWith(`/materials/${id}/renders`));
-  await page.goto(`/ar/materials/${id}`); expect((await listed).status()).toBe(404);
+  // الخادم يردّ 404 (العلم مطفأ)، والـBFF يقولها 204 بلا جسم فلا خطأ في وحدة التحكم (ADR 0114)
+  await page.goto(`/ar/materials/${id}`); expect((await listed).status()).toBe(204);
   await expect(page.getByRole("heading", { name: ar.shell.material.states, exact: true })).toBeVisible();
   await expect(page.getByTestId("render-files")).toHaveCount(0); await expect(page.getByRole("button", { name: ar.derivative.template.action })).toHaveCount(0);
   await page.context().clearCookies();

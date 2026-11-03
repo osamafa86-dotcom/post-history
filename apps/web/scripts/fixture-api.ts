@@ -171,7 +171,10 @@ const signed = new Map<string, { kind: "proxy" | "thumbnail" | "produced"; expir
 let expireNextProxy = false;
 const access = new Map<string, Me>(), refresh = new Map<string, Me>();
 function profile(email: string): Me {
-  const names: Record<string, Me["roles"]> = { chief: [{ name: "editor_in_chief", scopes: [] }], reviewer: ["supervisor", "rights_officer", "producer"].map(name => ({ name: name as Me["roles"][number]["name"], scopes: [] })), admin: [{ name: "system_admin", scopes: [] }], reporter: [{ name: "reporter", scopes: [] }], buyeradmin: [{ name: "buyer_admin", scopes: [] }], buyer: [{ name: "buyer_member", scopes: [] }], finance: [{ name: "finance", scopes: [] }] };
+  const names: Record<string, Me["roles"]> = { chief: [{ name: "editor_in_chief", scopes: [] }], reviewer: ["supervisor", "rights_officer", "producer"].map(name => ({ name: name as Me["roles"][number]["name"], scopes: [] })), admin: [{ name: "system_admin", scopes: [] }], reporter: [{ name: "reporter", scopes: [] }], buyeradmin: [{ name: "buyer_admin", scopes: [] }], buyer: [{ name: "buyer_member", scopes: [] }], finance: [{ name: "finance", scopes: [] }],
+    // الحساب الاصطناعي العام (مراسل المواد كلها في البذرة) وحساب الصلاحيات المنفصلة: مراسل يقرأ المواد كالخادم الحقيقي، لا حساب بلا دور
+    // يقرأ ما يرفضه `x-roles` (الحساب بلا دور يهبط في التنبيهات، ADR 0114).
+    fixture: [{ name: "reporter", scopes: [] }], permissions: [{ name: "reporter", scopes: [] }] };
   const local = email.split("@")[0], buyer = local === "buyeradmin" || local === "buyer";
   // مدير مؤسسة قيد التحقّق (S6): المؤسسة الأخرى في البذرة، والكتالوج يردّه 403.
   if (local === "pendingbuyer") return { ...me, user_id: "91000000-0000-4000-8000-000000000009", organization_id: otherOrg, roles: [{ name: "buyer_admin", scopes: [] }], permissions: [] };
