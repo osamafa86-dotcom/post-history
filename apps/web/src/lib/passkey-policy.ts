@@ -13,13 +13,32 @@ export const passkeyLimits = { name: 40, max: 10, password: 256, credential: 491
 
 const b64url = (value: unknown, max: number) => typeof value === "string" && value.length >= 1 && value.length <= max && /^[A-Za-z0-9_-]+$/.test(value);
 
-/** إعادة التحقق قبل التسجيل: كلمة المرور، ورمز TOTP إن وُجد. */
+/** إعادة التحقق قبل تسجيل مفتاح المرور وقبل توليد الرموز الاحتياطية (ADR 0117): كلمة المرور، ورمز TOTP إن وُجد، ولا حقل غيرهما. */
 export function stepUpInput(body: Record<string, unknown>): { password: string; totp_code?: string } | null {
   if (Object.keys(body).some(key => !["password", "totp_code"].includes(key))) return null;
   const { password, totp_code: code } = body;
   if (typeof password !== "string" || password.length < 8 || password.length > passkeyLimits.password) return null;
   if (code !== undefined && (typeof code !== "string" || !/^[0-9]{6}$/.test(code))) return null;
   return { password, ...(code ? { totp_code: code as string } : {}) };
+}
+
+/** في المتصفح قبل الإرسال: كلمة المرور مطلوبة، والرمز إن كُتب ستة أرقام. الاسمان مفتاحا رسالتيهما في `security`. */
+export type StepUpProblem = "passwordRequired" | "totpInvalid";
+export function stepUpProblem(password: string, code: string): StepUpProblem | null {
+  if (!password) return "passwordRequired";
+  return code && !/^[0-9]{6}$/.test(code) ? "totpInvalid" : null;
+}
+export const stepUpBody = (password: string, code: string): components["schemas"]["PasskeyStepUp"] => ({ password, ...(code ? { totp_code: code } : {}) });
+
+/**
+ * رد الـBFF على إعادة التحقق: `401` جلسة منتهية (رفض كلمة المرور أو الرمز يصل `422` برمزه، فلا يُخرَج المستخدم)، و`429` محاولات كثيرة
+ * (عدّادا الفشل لكل حساب، ADR 0117). الأسماء غير `session` مفاتيح رسائلها في `security`؛ وما سواها لا يخص إعادة التحقق.
+ */
+export type StepUpRefusal = "session" | "totpRequired" | "stepUpFailed" | "tooMany";
+export function stepUpRefusal(status: number, code?: string): StepUpRefusal | null {
+  if (status === 401) return "session";
+  if (status === 422) return code === "totp_required" ? "totpRequired" : "stepUpFailed";
+  return status === 429 ? "tooMany" : null;
 }
 
 /** ردّ المتصفح (`toJSON()`): المعرّفان base64url والنوع والاستجابة كائنًا، بحدود العقد؛ وما عداها يمرّ كما هو. */

@@ -82,15 +82,59 @@ test("Security lists passkeys, adds one after a password and code re-check, revo
   await expect(page.getByTestId("confirm-revoke-passkey")).toContainText(fill(ar.security.revokeEffect, { name: "حاسوب المكتب" }));
   await page.getByTestId("confirm-revoke-passkey").getByRole("button", { name: ar.security.revoke }).click();
   await expect(page.getByTestId("passkeys-notice")).toHaveText(ar.security.revoked); await expect(passkeys.getByRole("listitem")).toHaveCount(1);
+  // الرموز الاحتياطية بإعادة التحقق نفسها (ADR 0117، 0120): كلمة المرور والرمز في النموذج، والأثر قبل التأكيد، والحقلان وحدهما إلى الخادم
   const codes = page.getByTestId("backup-codes");
   await expect(codes.getByTestId("codes-status")).toContainText(ar.security.codesNone);
-  await codes.getByTestId("generate-codes").click(); await expect(page.getByTestId("confirm-generate-codes")).toContainText(ar.security.generateEffect);
-  await page.getByTestId("confirm-generate-codes").getByRole("button", { name: ar.security.generate }).click();
+  await codes.getByTestId("generate-codes").click(); const codesForm = codes.getByTestId("codes-form");
+  await expect(codesForm).toContainText(ar.security.generateEffect); await expect(codesForm).toContainText(ar.security.codesStepUpLead);
+  await expect(codesForm.getByLabel(ar.security.password)).toBeFocused(); await expect(codesForm.getByLabel(ar.security.password)).toHaveAttribute("dir", "ltr");
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await codesForm.getByLabel(ar.security.password).fill("synthetic-password"); await codesForm.getByLabel(ar.security.totp).fill("123456");
+  await codesForm.getByRole("button", { name: ar.security.generate }).click();
   await expect(codes.getByTestId("codes-once").getByRole("listitem")).toHaveCount(10); await expect(codes.getByTestId("codes-once")).toContainText("SYNT-HETI-CODA");
+  await expect(codes.getByTestId("codes-form")).toHaveCount(0); await expect(codes.locator("input")).toHaveCount(0);
+  const [generated] = await writes(request, "/v1/auth/recovery-codes"); expect(Object.keys(generated.body).sort()).toEqual(["password", "totp_code"]); expect(generated.body.totp_code).toBe("123456");
   await page.screenshot({ path: ".artifacts/security-ar.png", fullPage: true });
   await codes.getByRole("button", { name: ar.security.codesDone }).click(); await expect(codes.getByTestId("codes-once")).toHaveCount(0);
   await expect(codes.getByTestId("codes-status")).toContainText("بقيت 10 رموز صالحة"); await expect(codes).not.toContainText("SYNT-HETI");
+  await expect(codes.getByTestId("generate-codes")).toHaveText(ar.security.regenerate);
   await page.setViewportSize({ width: 375, height: 812 }); await noSideScroll(page); await page.screenshot({ path: ".artifacts/security-ar-375.png", fullPage: true });
+});
+
+test("Backup codes say what went wrong in the re-check, keep the session, stop after too many attempts, and fit 375 and 1280", async ({ page, request }) => {
+  await login(page, "reviewer", "en"); await page.setViewportSize({ width: 1280, height: 900 }); await page.goto("/en/security");
+  const codes = page.getByTestId("backup-codes"); await expect(codes.getByTestId("codes-status")).toContainText(en.security.codesNone);
+  const [left, right] = [await page.getByTestId("passkeys").boundingBox(), await codes.boundingBox()];
+  expect(left && right && Math.abs(left.y - right.y) < 2 && left.x !== right.x).toBe(true); await noSideScroll(page);
+  await codes.getByTestId("generate-codes").click(); const form = codes.getByTestId("codes-form");
+  const submit = () => form.getByRole("button", { name: en.security.generate }).click();
+  await submit(); await expect(form.getByRole("alert")).toHaveText(en.security.passwordRequired);
+  await expect(form.getByLabel(en.security.password)).toHaveAttribute("aria-invalid", "true");
+  await form.getByLabel(en.security.password).fill("synthetic-password"); await form.getByLabel(en.security.totp).fill("12"); await submit();
+  await expect(form.getByRole("alert")).toHaveText(en.security.totpInvalid); expect(await writes(request, "/v1/auth/recovery-codes")).toHaveLength(0);
+  await form.getByLabel(en.security.password).fill("wrong-password"); await form.getByLabel(en.security.totp).fill("123456"); await submit();
+  await expect(form.getByRole("alert")).toHaveText(en.security.stepUpFailed); await expect(page.getByRole("banner")).toBeVisible(); await expect(page).toHaveURL(/\/en\/security$/);
+  await form.getByLabel(en.security.password).fill("synthetic-password"); await form.getByLabel(en.security.totp).fill(""); await submit();
+  await expect(form.getByRole("alert")).toHaveText(en.security.totpRequired);
+  expect((await writes(request, "/v1/auth/recovery-codes")).map(w => Object.keys(w.body).sort())).toEqual([["password", "totp_code"], ["password"]]);
+  await page.screenshot({ path: ".artifacts/security-codes-en-1280.png", fullPage: true });
+  await form.getByRole("button", { name: en.cancel, exact: true }).click(); await expect(codes.getByTestId("codes-form")).toHaveCount(0);
+  await expect(codes.getByTestId("codes-status")).toContainText(en.security.codesNone);
+  await codes.getByTestId("generate-codes").click(); await expect(form.getByLabel(en.security.password)).toHaveValue(""); await expect(form.getByRole("alert")).toHaveCount(0);
+  // the fixture counts each failed re-check per account like the server (ADR 0117): two so far, three more, then 429 even for the right ones
+  for (let n = 0; n < 3; n++) { await form.getByLabel(en.security.password).fill("wrong-password"); await submit(); await expect(form.getByRole("alert")).toHaveText(en.security.stepUpFailed); }
+  await form.getByLabel(en.security.password).fill("synthetic-password"); await form.getByLabel(en.security.totp).fill("123456"); await submit();
+  await expect(form.getByRole("alert")).toHaveText(en.security.tooMany); await expect(codes.getByTestId("codes-once")).toHaveCount(0); await expect(page.getByRole("banner")).toBeVisible();
+  await page.setViewportSize({ width: 375, height: 812 }); await noSideScroll(page); await page.screenshot({ path: ".artifacts/security-codes-en-375.png", fullPage: true });
+});
+
+test("Backup codes after the session ended go to sign-in and say why", async ({ page, request }) => {
+  await login(page, "reviewer"); await page.goto("/ar/security");
+  await page.getByTestId("generate-codes").click(); const form = page.getByTestId("codes-form");
+  await form.getByLabel(ar.security.password).fill("synthetic-password"); await form.getByLabel(ar.security.totp).fill("123456");
+  await request.post(`${api}/__test/revoke`); await form.getByRole("button", { name: ar.security.generate }).click();
+  await expect(page).toHaveURL(/\/ar\/login\?reason=revoked$/); await expect(page.getByText(ar.revoked)).toBeVisible();
+  expect(await writes(request, "/v1/auth/recovery-codes")).toHaveLength(0);
 });
 
 test("A1 issues a one-time reset link after a confirmation with its effect, shows it once, and the holder sets a new password with it", async ({ page, browser, request }) => {

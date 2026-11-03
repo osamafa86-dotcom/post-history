@@ -8,7 +8,7 @@ import { staffAccount } from "./fixture-admin";
 type Reply = { status: number; value: unknown; replay?: unknown } | null;
 type Key = { id: string; credential: string; owner: Me; name: string | null; multi_device: boolean; created_at: string; last_used_at: string | null };
 const passkeys: Key[] = [], challenges = new Map<string, { owner: Me | null; kind: "register" | "login"; expires: number }>();
-const codes = new Map<string, { remaining: number; generated_at: string }>();
+const codes = new Map<string, { remaining: number; generated_at: string }>(), stepUpFailures = new Map<string, number>();
 const requests = new Map<string, { state: "pending_approval" | "approved"; created_at: string; admin: boolean }>();
 const resetTokens = new Set<string>();
 let issued = 0, recoveryStarts = 0, passkeysOff = false;
@@ -21,7 +21,7 @@ const later = (ms: number) => new Date(Date.now() + ms).toISOString();
 const b64url = (value: unknown) => typeof value === "string" && /^[A-Za-z0-9_-]{1,1366}$/.test(value);
 
 export function resetAuth(owner: Me) {
-  challenges.clear(); codes.clear(); requests.clear(); resetTokens.clear(); issued = 0; recoveryStarts = 0; passkeysOff = false;
+  challenges.clear(); codes.clear(); stepUpFailures.clear(); requests.clear(); resetTokens.clear(); issued = 0; recoveryStarts = 0; passkeysOff = false;
   passkeys.splice(0, passkeys.length, { id: "80000000-0000-4000-8000-000000000001", credential: seededDevice, owner, name: "حاسوب المكتب", multi_device: true, created_at: "2026-10-20T09:00:00Z", last_used_at: "2026-10-21T08:30:00Z" });
   requests.set(recoveryRequestId(1), { state: "pending_approval", created_at: "2026-10-21T10:00:00Z", admin: false });
   requests.set(recoveryRequestId(2), { state: "pending_approval", created_at: "2026-10-21T10:00:00Z", admin: true });
@@ -75,8 +75,25 @@ export function authRead(path: string, user: Me): Reply {
   if (path === "/v1/me/passkeys") return passkeysOff ? { status: 404, value: {} } : { status: 200, value: { items: passkeys.filter(key => key.owner.user_id === user.user_id).map(view) } };
   return null;
 }
+/**
+ * إعادة التحقق قبل تسجيل مفتاح المرور وقبل توليد الرموز الاحتياطية (ADR 0117) كالخادم: الجسم الغائب وكلمة المرور الخاطئة `401`،
+ * والجسم بحقل زائد `422`، وغياب الرمز بعد كلمة مرور صحيحة `401 totp_required`. الفشل يُعدّ لكل حساب في عدّاد واحد للطريقين، وبعد خمس
+ * محاولات فاشلة `429` حتى إعادة الضبط (الخادم يؤخّر بتضاعف؛ هنا حدّ ثابت يكفي الاختبار)، والنجاح ينسى العدّاد.
+ */
+function stepUp(user: Me, body: Record<string, unknown>): Reply {
+  if (Object.keys(body).some(key => !["password", "totp_code"].includes(key))) return { status: 422, value: { code: "validation_failed" } };
+  if ((stepUpFailures.get(user.user_id) ?? 0) >= 5) return { status: 429, value: { code: "rate_limited" } };
+  const fail = (code: string): Reply => { stepUpFailures.set(user.user_id, (stepUpFailures.get(user.user_id) ?? 0) + 1); return { status: 401, value: { code } }; };
+  if (body.password !== "synthetic-password") return fail("unauthorized");
+  if (user.totp_enabled && body.totp_code === undefined) return fail("totp_required");
+  if (user.totp_enabled && body.totp_code !== "123456") return fail("unauthorized");
+  stepUpFailures.delete(user.user_id); return null;
+}
+
 export function authWrite(path: string, method: string, user: Me, body: Record<string, unknown>): Reply {
   if (path === "/v1/auth/recovery-codes" && method === "POST") {
+    const refused = stepUp(user, body);
+    if (refused) return refused;
     const generated_at = new Date().toISOString();
     codes.set(user.user_id, { remaining: 10, generated_at });
     // رموز متخيَّلة بنمط العقد `^[A-Z2-7]{12}$`
@@ -84,8 +101,8 @@ export function authWrite(path: string, method: string, user: Me, body: Record<s
   }
   if (path === "/v1/auth/passkeys/registration-options" && method === "POST") {
     if (passkeysOff) return { status: 404, value: {} };
-    if (body.password !== "synthetic-password") return { status: 401, value: { code: "unauthorized" } };
-    if (user.totp_enabled && body.totp_code !== "123456") return { status: 401, value: { code: "totp_required" } };
+    const refused = stepUp(user, body);
+    if (refused) return refused;
     if (passkeys.filter(key => key.owner.user_id === user.user_id).length >= 10) return { status: 409, value: { code: "passkey_limit_reached" } };
     return { status: 200, value: challenge(user, "register") };
   }

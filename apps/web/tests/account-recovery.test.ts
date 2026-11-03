@@ -152,13 +152,37 @@ describe("BFF: recovery and passkey sign-in without a session", () => {
 });
 
 describe("BFF: backup codes, passkeys, reset links and approvals with a session", () => {
-  it("reads the remaining count and generates codes once, without a stored key", async () => {
+  it("reads the remaining count, and generates codes once after a password and code re-check, without a stored key", async () => {
     const status = await call("auth/recovery-codes", { upstream: () => Response.json({ remaining: 7, generated_at: "2026-11-03T10:00:00Z", canary: "never-display-canary" }) });
     expect(await status.result.json()).toEqual({ remaining: 7, generated_at: "2026-11-03T10:00:00Z" });
-    const codes = Array.from({ length: 10 }, (_, i) => `SYNTHETICOD${"ABCDEFGHJK"[i]}`);
-    const fresh = await call("auth/recovery-codes", { method: "POST", upstream: () => Response.json({ codes, generated_at: "2026-11-03T10:00:00Z" }, { status: 201 }) });
-    expect(fresh.result.status).toBe(200); expect((await fresh.result.json()).codes).toEqual(codes); expect(fresh.result.headers.get("Cache-Control")).toContain("no-store");
-    expect((await call("auth/recovery-codes", { method: "POST", body: { count: 20 } })).result.status).toBe(422);
+    const codes = Array.from({ length: 10 }, (_, i) => `SYNTHETICOD${"ABCDEFGHJK"[i]}`), sent: unknown[] = [];
+    const fresh = await call("auth/recovery-codes", { method: "POST", body: { password: "synthetic-password", totp_code: "123456" }, upstream: async r => {
+      sent.push(await r.json()); return Response.json({ codes, generated_at: "2026-11-03T10:00:00Z", canary: "never-display-canary" });
+    } });
+    expect(fresh.result.status).toBe(200); expect(await fresh.result.json()).toEqual({ codes, generated_at: "2026-11-03T10:00:00Z" });
+    expect(sent).toEqual([{ password: "synthetic-password", totp_code: "123456" }]); expect(fresh.result.headers.get("Cache-Control")).toContain("no-store");
+    expect(fresh.calls[0].headers.get("Content-Type")).toContain("application/json");
+    // بلا رمز حين لا يكتبه المستخدم (الحساب بلا مصادقة ثنائية): كلمة المرور وحدها
+    const passwordOnly = await call("auth/recovery-codes", { method: "POST", body: { password: "synthetic-password" }, upstream: async r => { sent.push(await r.json()); return Response.json({ codes, generated_at: "2026-11-03T10:00:00Z" }); } });
+    expect(passwordOnly.result.status).toBe(200); expect(sent[1]).toEqual({ password: "synthetic-password" });
+  });
+  it("refuses a body without the re-check, or with anything beside it, before the server", async () => {
+    for (const body of [{}, { count: 20 }, { password: "short" }, { password: "synthetic-password", totp_code: "12345" }, { password: "synthetic-password", totp_code: 123456 }, { password: "synthetic-password", email: "someone@example.test" }]) {
+      const refused = await call("auth/recovery-codes", { method: "POST", body });
+      expect(refused.result.status, JSON.stringify(body)).toBe(422); expect(refused.calls).toHaveLength(0);
+      expect(await refused.result.json()).toEqual({ code: "request_failed" });
+    }
+  });
+  it("turns a wrong password or missing code before generating into 422 with its code, keeps the session, and passes 429 on", async () => {
+    const missing = await call("auth/recovery-codes", { method: "POST", body: { password: "synthetic-password" }, upstream: () => Response.json({ code: "totp_required" }, { status: 401 }) });
+    expect(missing.result.status).toBe(422); expect(await missing.result.json()).toEqual({ code: "totp_required" }); expect(missing.store.data.has(missing.id)).toBe(true);
+    const wrong = await call("auth/recovery-codes", { method: "POST", body: { password: "wrong-password", totp_code: "000000" }, upstream: () => Response.json({ code: "unauthorized", message: "never-display-canary" }, { status: 401 }) });
+    expect(wrong.result.status).toBe(422); const text = await wrong.result.text();
+    expect(JSON.parse(text)).toEqual({ code: "step_up_failed" }); expect(text).not.toContain("wrong-password"); expect(wrong.store.data.has(wrong.id)).toBe(true);
+    const limited = await call("auth/recovery-codes", { method: "POST", body: { password: "synthetic-password", totp_code: "123456" }, upstream: () => Response.json({ code: "rate_limited" }, { status: 429, headers: { "Retry-After": "4" } }) });
+    expect(limited.result.status).toBe(429); expect(limited.store.data.has(limited.id)).toBe(true);
+    const malformed = await call("auth/recovery-codes", { method: "POST", body: { password: "synthetic-password" }, upstream: () => Response.json({ codes: ["lowercase000"], generated_at: "2026-11-03T10:00:00Z" }) });
+    expect(malformed.result.status).toBe(502);
   });
   it("turns a wrong password or missing code before registering into 422, so the session stays", async () => {
     const wrong = await call("auth/passkeys/registration-options", { method: "POST", body: { password: "synthetic-password" }, upstream: () => Response.json({ code: "totp_required" }, { status: 401 }) });
