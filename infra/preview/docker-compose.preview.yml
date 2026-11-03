@@ -146,6 +146,8 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       DATABASE_POOL_MAX: "6"
       VERIFY_CONCURRENCY: "1"
+      # One SHA-256 worker thread (ADR 0092): the API has 0.75 CPU, and each extra thread only holds memory.
+      VERIFY_HASH_THREADS: "1"
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       JWT_SECRET: ${JWT_SECRET:?}
       FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?}
@@ -190,8 +192,8 @@ services:
       timeout: 3s
       retries: 30
       start_period: 60s
-    mem_limit: 224m
-    memswap_limit: 224m
+    mem_limit: 320m
+    memswap_limit: 320m
     cpus: 0.75
     # Unique upstream name for the edge: it also sits on deploy_default, where a short name may resolve elsewhere.
     # api-hooks: the name the ingest gate asks for session state (infra/ingest/nginx.conf); the gate is on this network only.

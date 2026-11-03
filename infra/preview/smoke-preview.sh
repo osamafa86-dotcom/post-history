@@ -21,7 +21,7 @@ while [ $# -gt 0 ]; do
     *) echo "usage: $0 [--json FILE] [--media-json DIR]" >&2; exit 2 ;;
   esac
 done
-LIMIT_MB=2760
+LIMIT_MB=2856
 C=(docker compose -f "$HERE/docker-compose.preview.yml")
 created_env=0 created_net=0
 work="$(mktemp -d)"
@@ -581,7 +581,7 @@ if ((await upload(id, process.env.CLIP, `${process.env.MARK}-measure.mov`, "vide
 }
 say(`MATERIAL=${id}`);
 JS
-)")" || { echo "$mout"; fail "the $prof measurement upload"; }
+)")" || { echo "$mout"; api_state; fail "the $prof measurement upload"; }
   mid="$(sed -n 's/^MATERIAL=//p' <<<"$mout")"
   # A fresh cgroup for the worker, so memory.peak is this job's.
   docker restart "$wid" >/dev/null && sleep 3
@@ -651,6 +651,20 @@ sys.exit(0 if ok else 1)
 PY
   echo "measured $prof: see $MEDIA_OUT/preview-media-worker-$prof.json"
 }
+# The API verifies every upload itself (in_process), large ones included, and a login's argon2 hash comes on top: after each
+# large upload its restarts, OOM flag and cgroup memory.peak are printed (kept for the --json file), and a restart fails.
+api_peak_mb=0
+api_state() {
+  local aid acg s r o pk
+  aid="$("${C[@]}" ps -q api)"
+  for _ in $(seq 1 60); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$aid")" = healthy ] && break; sleep 1; done
+  read -r s r o <<<"$(docker inspect -f '{{.State.Health.Status}} {{.RestartCount}} {{.State.OOMKilled}}' "$aid")"
+  acg="$(cgdir "$aid")"
+  pk="$([ -n "$acg" ] && echo $(( $(cat "$acg/memory.peak") / 1048576 )) || echo 0)"
+  [ "$pk" -gt "$api_peak_mb" ] && api_peak_mb="$pk"
+  echo "api: $s, restarts $r, last exit OOM-killed $o, memory.peak $pk MiB of $(( $(docker inspect -f '{{.HostConfig.Memory}}' "$aid") / 1048576 ))"
+  [ "$r" = 0 ] && [ "$o" = false ] && [ "$s" = healthy ] || fail "the API restarted or is unhealthy after a large upload (restarts $r, OOM-killed $o)"
+}
 # tusd under one 64 MiB PATCH (the iOS background session's size, ADR 0009) with the preview's 5 MiB parts: a fresh cgroup,
 # then memory.peak (with page cache) and anon sampled every 10 ms from the host. Random bytes as application/octet-stream,
 # so the feeder never gives them to the worker.
@@ -719,7 +733,8 @@ PY
 if [ -n "$MEDIA_OUT" ]; then
   mkdir -p "$MEDIA_OUT"
   measure_tusd
-  for prof in ${MEDIA_PROFILES:-1080p}; do measure "$prof"; done
+  api_state
+  for prof in ${MEDIA_PROFILES:-1080p}; do measure "$prof"; api_state; done
 fi
 
 # The feeder as a service: back on, it logs that it started and nothing else while there is nothing to do.
@@ -789,14 +804,15 @@ echo "no secret in the logs: ok"
 
 if [ -n "$JSON" ]; then
   mkdir -p "$(dirname "$JSON")"
-  python3 - "$JSON" "$total" "$used_mb" "$LIMIT_MB" <<'PY'
+  python3 - "$JSON" "$total" "$used_mb" "$LIMIT_MB" "$api_peak_mb" <<'PY'
 import json, os, sys, datetime
-out, total, used, ceiling = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+out, total, used, ceiling, api_peak = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
 now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 json.dump({"schema_version": 1, "tool": "other", "role": "infra", "started_at": now, "ended_at": now,
            "result": "pass" if used < total <= ceiling else "fail",
            "device": {"platform": "server", "model": os.environ.get("MEASURE_HOST", "local docker compose")},
-           "metrics": {"memory_limits_mb": total, "memory_used_mb": used, "memory_ceiling_mb": ceiling},
+           "metrics": {"memory_limits_mb": total, "memory_used_mb": used, "memory_ceiling_mb": ceiling,
+                       "api_memory_peak_mib_after_large_uploads": api_peak},
            "notes": "infra/preview/smoke-preview.sh (ADR 0023, 0092): preview compose on images built in CI (infra/preview/*.Dockerfile and workers/media), with tusd, its proxy, the ingest gate, the media worker and its feeder, after a demo login, a few page loads, a synthetic clip and photo uploaded through the edge and the worker's proxy and thumbnail (and any --media-json clips). Not the shared server itself."},
           open(out, "w"), indent=2)
 PY
