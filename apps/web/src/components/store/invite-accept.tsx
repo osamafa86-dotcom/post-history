@@ -24,9 +24,11 @@ async function post(path: "recovery/complete" | "totp/confirm", body: unknown) {
  * قبول الدعوة (S5) ورابطها غير الصالح (S5b) على وجه المتجر الداكن. خطوتان ظاهرتان في رأس البطاقة: كلمة المرور (12 حرفًا فأكثر وتأكيدها)، ثم ربط
  * تطبيق المصادقة (TOTP) وهو إلزامي. الرمز من جزء الرابط بعد `#` ويُمحى من شريط العنوان، أو يُلصق في حقله؛ ولا يُحفظ في أي تخزين.
  * اسم المؤسسة والدور والبريد لا تُعرض: قراءة الدعوة برمزها ليست في العقد (فجوة، ADR 0103)، فالصفحة «عيّن كلمة المرور» وحدها.
+ * `kind="reset"` صفحة إعادة التعيين (ADR 0107، 0108) بالخطوتين نفسيهما ونقطتيهما: رابط مدير النظام أو المشرف رمزٌ كرمز الدعوة، على الوجه
+ * الفاتح، وبعدها إلى الوارد (والمشتري يُحال منه إلى المتجر).
  */
-export function InviteAccept({ locale }: { locale: Locale }) {
-  const m = messages[locale], t = m.store.invite, other = locale === "ar" ? "en" : "ar";
+export function InviteAccept({ locale, kind = "invite" }: { locale: Locale; kind?: "invite" | "reset" }) {
+  const m = messages[locale], t: typeof m.store.invite = kind === "reset" ? m.recovery.reset : m.store.invite, other = locale === "ar" ? "en" : "ar", reset = kind === "reset";
   const fromLink = useSyncExternalStore(still, linkToken, () => null), [typed, setTyped] = useState(""), [spent, setSpent] = useState(false);
   const linked = !!fromLink && !spent, token = linked ? fromLink! : typed, setToken = (value: string) => { setTyped(value); if (!value) setSpent(true); };
   const [step, setStep] = useState<Step>("password"), [password, setPassword] = useState(""), [repeat, setRepeat] = useState("");
@@ -55,7 +57,7 @@ export function InviteAccept({ locale }: { locale: Locale }) {
       if (result.status === 200) {
         setEnrollment(null);
         if ("BroadcastChannel" in window) { const channel = new BroadcastChannel("web-session"); channel.postMessage("signed-in"); channel.close(); }
-        window.location.replace(`/${locale}/store`); return;
+        window.location.replace(`/${locale}/${reset ? "inbox" : "store"}`); return;
       }
       setCode("");
       if (result.status === 401 && result.body.code === "session_revoked") { setEnrollment(null); setStep("expired"); return; }
@@ -63,16 +65,16 @@ export function InviteAccept({ locale }: { locale: Locale }) {
     } catch { setError(m.error); } finally { setBusy(false); }
   }
   const lost = step === "invalid" || step === "expired";
-  return <PublicFrame locale={locale} switchHref={`/${other}/invite`} label={`${m.brand} · ${m.product}`} mode="dark">
+  return <PublicFrame locale={locale} switchHref={`/${other}/${reset ? "reset-password" : "invite"}`} label={`${m.brand} · ${m.product}`} mode={reset ? undefined : "dark"}>
     <main className="public-main invite-main" dir={locale === "ar" ? "rtl" : "ltr"} lang={locale}>
-      <section className="card invite-card" aria-labelledby="invite-title" data-testid="invite" data-step={step}>
-        {lost ? <div className="verify-missing" data-testid="invite-invalid">
+      <section className="card invite-card" aria-labelledby="invite-title" data-testid={kind} data-step={step}>
+        {lost ? <div className="verify-missing" data-testid={`${kind}-invalid`}>
           <span className="empty-icon warn"><Icon name="alert" size={22} /></span>
           <h1 id="invite-title">{step === "invalid" ? t.invalidTitle : t.expiredTitle}</h1>
           <p className="muted">{step === "invalid" ? t.invalidBody : t.expiredBody}</p>
           <Link prefetch={false} className="button secondary" href={`/${locale}/login`}>{t.signIn}</Link>
         </div> : <>
-          <p className="invite-badge"><Icon name="store" size={14} />{t.badge}</p>
+          <p className="invite-badge"><Icon name={reset ? "key" : "store"} size={14} />{t.badge}</p>
           <h1 id="invite-title">{step === "password" ? t.title : t.totpTitle}</h1>
           <p className="muted">{step === "password" ? t.lead : t.totpLead}</p>
           <ol className="invite-steps" aria-label={t.stepsLabel}>{(["password", "totp"] as const).map(which => <li key={which} aria-current={step === which ? "step" : undefined} className={step === which ? "active" : step === "totp" && which === "password" ? "done" : undefined}>{which === "password" ? t.stepPassword : t.stepTotp}</li>)}</ol>
@@ -83,7 +85,7 @@ export function InviteAccept({ locale }: { locale: Locale }) {
             <label>{t.repeatPassword}<input name="repeat-password" type="password" dir="ltr" autoComplete="new-password" maxLength={256} value={repeat} aria-invalid={checked && !same || undefined} onChange={e => setRepeat(e.target.value)} /></label>
             {checked && !same && <small className="field-error" role="alert">{t.mismatch}</small>}
             {error && <p className="notice error" role="alert">{error}</p>}
-            <button className="store full-width" disabled={busy}>{busy ? m.review.saving : t.submit}</button>
+            <button className={reset ? "full-width" : "store full-width"} disabled={busy}>{busy ? m.review.saving : t.submit}</button>
             <p className="caption">{t.next}</p>
           </form> : enrollment && <form className="invite-form" noValidate onSubmit={e => void confirm(e)}>
             <div className="totp-secret"><span className="caption">{t.secret}</span><output className="mono" dir="ltr" data-testid="totp-secret">{groupSecret(enrollment.secret_base32)}</output>
@@ -91,7 +93,7 @@ export function InviteAccept({ locale }: { locale: Locale }) {
             <p className="caption">{t.secretOnce}</p>
             <label>{t.code}<input name="totp" inputMode="numeric" dir="ltr" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ""))} /></label>
             {error && <p className="notice error" role="alert">{error}</p>}
-            <button className="store full-width" disabled={busy}>{busy ? m.review.saving : t.confirm}</button>
+            <button className={reset ? "full-width" : "store full-width"} disabled={busy}>{busy ? m.review.saving : t.confirm}</button>
           </form>}
           {step === "password" && <p className="invite-ignore caption">{t.ignore}</p>}
         </>}

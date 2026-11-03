@@ -1,12 +1,23 @@
 "use client";
-import { useEffect, useState } from "react";
-import { authPost } from "@/lib/browser-api";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
+import { authPost, publicPost } from "@/lib/browser-api";
+import { ceremonyFailure, passkeysSupported, signInCeremony } from "@/lib/passkey-client";
+import type { PasskeyChallenge } from "@/lib/passkey-policy";
 import { clearUploads } from "@/lib/upload-store";
 import { messages, type Locale } from "@/lib/i18n";
 import { BrandMark, Icon } from "./icon";
 
+const still = () => () => {};
+const signedIn = (locale: Locale) => {
+  if ("BroadcastChannel" in window) { const channel = new BroadcastChannel("web-session"); channel.postMessage("signed-in"); channel.close(); }
+  window.location.replace(`/${locale}/inbox`);
+};
+
 export function Login({ locale, reason }: { locale: Locale; reason?: string }) {
-  const m = messages[locale]; const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const m = messages[locale]; const [busy, setBusy] = useState(false), [error, setError] = useState(""), [passkeyBusy, setPasskeyBusy] = useState(false);
+  // دعم WebAuthn يُعرف في المتصفح وحده؛ لقطة الخادم «غير مدعوم» فلا يُرسم زرّ لا يعمل قبل التحميل.
+  const supported = useSyncExternalStore(still, passkeysSupported, () => false);
   // صفحة الدخول تعني لا جلسة: لا يبقى من رفعات مستخدم سابق على هذا الحاسوب شيء (S10).
   useEffect(() => { clearUploads(); }, []);
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -15,13 +26,29 @@ export function Login({ locale, reason }: { locale: Locale; reason?: string }) {
     try {
       const result = await authPost("login", { email: fields.get("email"), password: fields.get("password"), ...(fields.get("totp") ? { totp_code: fields.get("totp") } : {}) });
       if (!result.response.ok) { setError(result.body.code === "totp_required" ? m.totpRequired : m.loginFailed); return; }
-      form.reset();
-      if ("BroadcastChannel" in window) { const channel = new BroadcastChannel("web-session"); channel.postMessage("signed-in"); channel.close(); }
-      window.location.replace(`/${locale}/inbox`);
+      form.reset(); signedIn(locale);
     } catch { setError(m.error); } finally { setBusy(false); }
   }
   const t = m.signInPage;
-  // P1: لوحة الهوية الداكنة في جهة البداية ونصف للنموذج (وضع داكن صريح، ودوائر البثّ). المراسل يُحال إلى تطبيق «ميدان بوست»، ولا مفتاح مرور ولا استعادة من الويب (ليسا في العقد).
+  /** الدخول بمفتاح المرور (ADR 0108): التحدي من الخادم، ثم مراسم المتصفح، ثم التحقق في الخادم وجلسة جديدة. لا بريد يُكتب: المفتاح يعرّف صاحبه. */
+  async function passkey() {
+    setError("");
+    if (!passkeysSupported()) { setError(t.passkeyUnsupported); return; }
+    setPasskeyBusy(true);
+    try {
+      const options = await publicPost<PasskeyChallenge>("auth/passkeys/login-options", {});
+      if (options.status === 404) { setError(t.passkeyUnavailable); return; }
+      if (options.status !== 200 || !options.body.challenge_id || !options.body.public_key) { setError(m.error); return; }
+      let credential;
+      try { credential = await signInCeremony(options.body as PasskeyChallenge); }
+      catch (failure) { setError(ceremonyFailure(failure) === "cancelled" ? t.passkeyCancelled : t.passkeyFailed); return; }
+      const result = await publicPost("auth/passkeys/login", { challenge_id: options.body.challenge_id, credential });
+      if (result.status === 200) { signedIn(locale); return; }
+      setError(result.status === 410 ? t.passkeyExpired : result.status === 404 ? t.passkeyUnavailable : result.status === 401 ? t.passkeyFailed : m.error);
+    } catch { setError(m.error); } finally { setPasskeyBusy(false); }
+  }
+  // P1: لوحة الهوية الداكنة في جهة البداية ونصف للنموذج (وضع داكن صريح، ودوائر البثّ). المراسل يُحال إلى تطبيق «ميدان بوست». مفتاح المرور
+  // والاستعادة بلا بريد (ADR 0107، 0108): زرّ المفتاح حيث يدعمه المتصفح، و«نسيت كلمة المرور» تشرح الطريقين.
   return <main className="login-shell">
     <section className="login-story" data-mode="dark" aria-labelledby="story-title">
       <span className="rings" aria-hidden="true"><span /><span /><span /></span>
@@ -41,8 +68,13 @@ export function Login({ locale, reason }: { locale: Locale; reason?: string }) {
           <label>{m.totp}<input name="totp" inputMode="numeric" dir="ltr" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} aria-describedby="totp-help" /></label>
           <small id="totp-help" className="field-help">{m.totpHelp}</small>
           {error && <p className="notice error" role="alert">{error}</p>}
-          <button className="full-width" disabled={busy}>{busy ? m.signingIn : m.signIn}</button>
+          <button className="full-width" disabled={busy || passkeyBusy}>{busy ? m.signingIn : m.signIn}</button>
         </form>
+        <Link prefetch={false} className="login-forgot" href={`/${locale}/forgot-password`} data-testid="forgot-link">{t.forgot}</Link>
+        {supported && <>
+          <p className="login-or" aria-hidden="true"><span>{t.or}</span></p>
+          <button type="button" className="secondary full-width login-passkey" data-testid="passkey-sign-in" disabled={busy || passkeyBusy} onClick={() => void passkey()}><Icon name="key" />{passkeyBusy ? t.passkeyBusy : t.passkey}</button>
+        </>}
         <p className="login-session"><Icon name="shield" size={16} /><span>{t.session}</span></p>
       </div>
     </section>

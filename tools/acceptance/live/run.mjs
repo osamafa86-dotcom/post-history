@@ -9,6 +9,7 @@ import { parseArgs } from "../lib/measurement.mjs";
 import { startApi } from "./stack.mjs";
 import { seed } from "./seed.mjs";
 import { setLogSource } from "../scripts/pii-leak.mjs";
+import { setLogSource as setRecoveryLogSource } from "../scripts/account-recovery.mjs";
 
 const args = parseArgs(process.argv.slice(2));
 const databaseUrl = process.env.DATABASE_URL;
@@ -37,7 +38,9 @@ try {
     await s3FromEnv({ S3_ENDPOINT: s3.endpoint, S3_ACCESS_KEY: s3.accessKey, S3_SECRET_KEY: s3.secretKey, S3_REGION: s3.region }).ensureBucket("uploads");
   }
   stack = await startApi({ databaseUrl, port: livePort, redisUrl: process.env.LIVE_REDIS_URL, s3,
-    extraEnv: { PAYMENT_PROVIDER: "sandbox", PAYOUT_RELEASE_AFTER_DAYS: "0", PAYOUT_WORKER_INTERVAL_MS: "300", PAYOUT_DEFAULT_MINIMUM_MINOR: "1000", SANDBOX_WEBHOOK_SECRET: sandboxSecret, SANDBOX_CHECKOUT_BASE_URL: `http://127.0.0.1:${livePort}` } });
+    extraEnv: { PAYMENT_PROVIDER: "sandbox", PAYOUT_RELEASE_AFTER_DAYS: "0", PAYOUT_WORKER_INTERVAL_MS: "300", PAYOUT_DEFAULT_MINIMUM_MINOR: "1000", SANDBOX_WEBHOOK_SECRET: sandboxSecret, SANDBOX_CHECKOUT_BASE_URL: `http://127.0.0.1:${livePort}`,
+      // passkeys (ADR 0107) for account-recovery: the software authenticator signs for this origin; no domain, localhost alone
+      WEBAUTHN_RP_ID: "localhost", WEBAUTHN_ORIGINS: "http://localhost:3000" } });
   const coreOn = process.env.CORE_ACCEPTANCE === "1";
   const s = await seed({ databaseUrl, apiUrl: stack.apiUrl, fieldKey: coreOn ? stack.fieldKey : null });
   let sha = "unknown";
@@ -75,15 +78,20 @@ try {
     // sandbox-purchase: the whole sandbox purchase (API on /v1, the hosted page and the notification at the server root)
     SP_ENV_LABEL: `live stack: API from main@${sha} (dev mode, sandbox provider), Postgres 16${process.env.LIVE_REDIS_URL ? ", Redis" : ""}`,
     SP_API_URL: stack.apiUrl, SP_ROOT_URL: stack.baseUrl, SP_DATABASE_URL: databaseUrl, SP_WEBHOOK_SECRET: sandboxSecret,
+    ACCT_API_URL: stack.apiUrl, ACCT_ORIGIN: "http://localhost:3000",
+    ACCT_TOKENS: JSON.stringify({ system_admin: s.allTokens.system_admin, target: s.allTokens.recovery_target }),
+    ACCT_TARGET: JSON.stringify(s.users.recovery_target),
+    ACCT_ENV_LABEL: `live stack: API from main@${sha} (dev mode, passkeys on localhost), Postgres 16${process.env.LIVE_REDIS_URL ? ", Redis" : ""}`,
     SP_TOKENS: JSON.stringify({ system_admin: s.allTokens.system_admin, rights_officer: s.allTokens.rights_officer, reporter: s.allTokens.reporter, finance: s.allTokens.finance, buyer_admin: s.allTokens.buyer_admin, buyer_member: s.allTokens.buyer_member }),
   };
   Object.assign(process.env, common);
   const note = `الخادم من main@${sha} على Postgres 16 بقاعدة مؤقتة${process.env.LIVE_REDIS_URL ? " وRedis" : ""}${s3 ? " وتخزين S3" : ""}؛ بلا Cloudflare ولا tusd (الخطّاف مُحاكى)`;
   const passthrough = args["dry-run"] ? ["--dry-run"] : [];
   setLogSource(() => stack.logs());
+  setRecoveryLogSource(() => stack.logs());
     // pii-leak reads the server logs of everything before it; dynamic-fields last: it publishes the shared form, which becomes the current form (with required fields) for every later material
   const core = process.env.CORE_ACCEPTANCE === "1" ? ["reporter-identity-access", "reservation-conflict", "optimistic-concurrency", "admin-quorum", "notification-delivery"] : [];
-  const names = ["tenant-isolation", "duplicate-payment", "invalid-file", "receipt-notification", "concurrent-load", "performance", ...core, "sandbox-purchase", "payout-concurrent", "refund-after-payout", "pii-leak", "dynamic-fields"];
+  const names = ["tenant-isolation", "duplicate-payment", "invalid-file", "receipt-notification", "concurrent-load", "performance", ...core, "sandbox-purchase", "payout-concurrent", "refund-after-payout", "account-recovery", "pii-leak", "dynamic-fields"];
   const summary = [];
   names.splice(2, 0, "upload-contract", "outbox-transaction", "material-state-independence");
   const only = typeof args.only === "string" ? args.only.split(",") : null;

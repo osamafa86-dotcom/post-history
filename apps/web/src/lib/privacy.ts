@@ -54,6 +54,8 @@ export function safeNotification(item: Notification): Notification {
   return { id: item.id, type: knownType(item.type), title: "", material_id: item.material_id && uuid.test(item.material_id) ? item.material_id : null,
     priority: item.priority, state: item.state, escalation_level: item.escalation_level, assignment_state: item.assignment_state,
     ...(item.assignment_id && uuid.test(item.assignment_id) ? { assignment_id: item.assignment_id } : {}),
+    // طلب الاستعادة الذي ينتظر اعتماد المستلِم (ADR 0108): معرّفه وحده يفتح صفحة الاعتماد
+    ...(item.recovery_request_id && uuid.test(item.recovery_request_id) ? { recovery_request_id: item.recovery_request_id } : {}),
     created_at: item.created_at, read_at: item.read_at, acknowledged_at: item.acknowledged_at };
 }
 export function safeTransition(item: TransitionRecord, internal = false): TransitionRecord {

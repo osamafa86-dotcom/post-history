@@ -20,6 +20,15 @@ export const NOTIFICATION_TITLES: Record<string, Record<Locale, string>> = {
     ar: 'أُكملت استعادة حسابك بكلمة مرور ومصادقة جديدتين؛ إن لم تكن أنت فأبلغ مشرفك فورًا',
     en: 'Your account recovery was completed with a new password and two-factor setup; tell your supervisor now if it was not you',
   },
+  // تغيّر وسائل الدخول (ADR 0107): بلا اسم المفتاح ولا جهازه ولا الرموز
+  'auth.passkey_added': {
+    ar: 'أُضيف مفتاح مرور إلى حسابك؛ إن لم تكن أنت فأبلغ الإدارة فورًا',
+    en: 'A passkey was added to your account; tell an administrator now if it was not you',
+  },
+  'auth.recovery_codes_generated': {
+    ar: 'وُلّدت رموز احتياطية جديدة لحسابك وبطلت السابقة؛ إن لم تكن أنت فأبلغ الإدارة فورًا',
+    en: 'New backup codes were generated for your account and the old ones stopped working; tell an administrator now if it was not you',
+  },
   'setting.changed': {
     ar: 'تغيّر إعداد من يرى الاسم الحقيقي للمراسلين؛ راجع سجل التدقيق',
     en: 'The setting for who sees reporters\' legal names changed; check the audit log',

@@ -117,11 +117,11 @@ const ratio = (a: string, b: string) => { const [hi, lo] = [luminance(a), lumina
 for (const locale of ["ar", "en"] as Locale[]) test(`no page scrolls sideways at 390px (${locale})`, async ({ page, context }) => {
   test.setTimeout(180000); await page.setViewportSize({ width: 390, height: 844 });
   const pages: [string | null, string[]][] = [
-    [null, ["login", "privacy", "verify/PH-2026-7K3M9Q2XRT"]],
-    ["admin", ["inbox", "board", "notifications", "form-preview", "store", "store/licenses", "store/orders", "license-templates", "admin", "tags", "forms", "settings", "notification-rules", "buyer-organizations", "payouts", "commission-rules", "invite-conflicts", "materials/20000000-0000-4000-8000-000000000001"]],
+    [null, ["login", "privacy", "verify/PH-2026-7K3M9Q2XRT", "forgot-password", "reset-password"]],
+    ["admin", ["inbox", "board", "notifications", "form-preview", "store", "store/licenses", "store/orders", "license-templates", "admin", "tags", "forms", "settings", "notification-rules", "buyer-organizations", "payouts", "commission-rules", "invite-conflicts", "security", "recovery-requests/70000000-0000-4000-8000-000000000001", "materials/20000000-0000-4000-8000-000000000001"]],
     ["reviewer", ["upload", "materials/20000000-0000-4000-8000-000000000005"]],
     ["reporter", ["my-materials", "earnings"]],
-    ["buyer", ["store", "store/71000000-0000-4000-8000-000000000001", "store/licenses", "store/cart", "store/orders", "store/orders/92000000-0000-4000-8000-000000000001", "store/orders/92000000-0000-4000-8000-000000000001/invoice", "organization"]],
+    ["buyer", ["store", "store/71000000-0000-4000-8000-000000000001", "store/licenses", "store/cart", "store/orders", "store/orders/92000000-0000-4000-8000-000000000001", "store/orders/92000000-0000-4000-8000-000000000001/invoice", "organization", "security"]],
   ];
   const wide: string[] = [];
   for (const [who, paths] of pages) {

@@ -813,13 +813,14 @@ export const outboxEvents = pgTable("outbox_events", {
 	check("outbox_events_idempotency_key_len", sql`(char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 200)`),
 	check("outbox_events_payload_is_object", sql`jsonb_typeof(payload) = 'object'::text`),
 	check("outbox_events_payload_whitelisted", sql`CHECK (outbox_payload_is_whitelisted(type, payload`),
-	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text, 'license.revoked'::text, 'payout.status_changed'::text, 'render.requested'::text, 'render.started'::text, 'render.completed'::text, 'render.failed'::text, 'assignment.created'::text, 'assignment.state_changed'::text, 'tag.suggestions_changed'::text, 'tag.rewritten'::text, 'platform_settings.changed'::text, 'user.roles_changed'::text, 'buyer_organization.status_changed'::text])`),
+	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text, 'license.revoked'::text, 'payout.status_changed'::text, 'render.requested'::text, 'render.started'::text, 'render.completed'::text, 'render.failed'::text, 'assignment.created'::text, 'assignment.state_changed'::text, 'tag.suggestions_changed'::text, 'tag.rewritten'::text, 'platform_settings.changed'::text, 'user.roles_changed'::text, 'buyer_organization.status_changed'::text, 'auth.passkey_added'::text, 'auth.passkey_revoked'::text, 'auth.recovery_codes_generated'::text])`),
 ]);
 
 export const recoveryCodes = pgTable("recovery_codes", {
 	userId: uuid("user_id").notNull(),
 	codeHash: bytea("code_hash").notNull(),
 	usedAt: timestamp("used_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	foreignKey({
 			columns: [table.userId],
@@ -1659,6 +1660,59 @@ export const tagRewriteMaterials = pgTable("tag_rewrite_materials", {
 			name: "tag_rewrite_materials_tag_rewrite_id_fkey"
 		}),
 	primaryKey({ columns: [table.tagRewriteId, table.materialId], name: "tag_rewrite_materials_pkey"}),
+]);
+
+export const passkeys = pgTable("passkeys", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	userId: uuid("user_id").notNull(),
+	credentialId: bytea("credential_id").notNull(),
+	publicKey: bytea("public_key").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	signCount: bigint("sign_count", { mode: "number" }).default(0).notNull(),
+	transports: text().array().default([""]).notNull(),
+	multiDevice: boolean("multi_device").notNull(),
+	backedUp: boolean("backed_up").notNull(),
+	name: text(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastUsedAt: timestamp("last_used_at", { withTimezone: true, mode: 'string' }),
+	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
+	revokedReason: text("revoked_reason"),
+}, (table) => [
+	uniqueIndex("passkeys_credential_id_key").using("btree", table.credentialId.asc().nullsLast().op("bytea_ops")),
+	index("passkeys_user_active_idx").using("btree", table.userId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(revoked_at IS NULL)`),
+	foreignKey({
+			columns: [table.userId],
+			foreignColumns: [users.id],
+			name: "passkeys_user_id_fkey"
+		}).onDelete("cascade"),
+	check("passkeys_backed_up_multi_device", sql`(NOT backed_up) OR multi_device`),
+	check("passkeys_credential_id_len", sql`(octet_length(credential_id) >= 1) AND (octet_length(credential_id) <= 1023)`),
+	check("passkeys_name_valid", sql`(name IS NULL) OR render_text_valid(name, 40)`),
+	check("passkeys_public_key_len", sql`(octet_length(public_key) >= 1) AND (octet_length(public_key) <= 8192)`),
+	check("passkeys_revoked_consistent", sql`(revoked_at IS NULL) = (revoked_reason IS NULL)`),
+	check("passkeys_revoked_reason_check", sql`(revoked_reason IS NULL) OR (revoked_reason = ANY (ARRAY['owner'::text, 'credential_reset'::text]))`),
+	check("passkeys_sign_count_range", sql`(sign_count >= 0) AND (sign_count <= '4294967295'::bigint)`),
+	check("passkeys_transports_valid", sql`cardinality(transports) <= 8`),
+]);
+
+export const webauthnChallenges = pgTable("webauthn_challenges", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	purpose: text().notNull(),
+	userId: uuid("user_id"),
+	challengeHash: bytea("challenge_hash").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+}, (table) => [
+	index("webauthn_challenges_expires_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.userId],
+			foreignColumns: [users.id],
+			name: "webauthn_challenges_user_id_fkey"
+		}).onDelete("cascade"),
+	check("webauthn_challenges_hash_len", sql`octet_length(challenge_hash) = 32`),
+	check("webauthn_challenges_lifetime", sql`(expires_at > created_at) AND (expires_at <= (created_at + '00:10:00'::interval))`),
+	check("webauthn_challenges_purpose_check", sql`purpose = ANY (ARRAY['registration'::text, 'authentication'::text])`),
+	check("webauthn_challenges_user_check", sql`(purpose = 'registration'::text) = (user_id IS NOT NULL)`),
 ]);
 
 export const platformSettings = pgTable("platform_settings", {

@@ -47,7 +47,9 @@ export async function fanOut(tx: Tx, event: OutboxRow, opts: FanOutOptions): Pro
   // رفع النسخة المُنتَجة لا يصير إشعارًا ولا يطلق قاعدة تنبيه (ADR 0104): التسليم يُعلَم بانتقال المهمة
   if (event.type.startsWith('upload.') && payload.kind === 'produced') return 0;
   if (event.type === 'auth.recovery_requested') return recoveryRequested(tx, event, payload, opts);
-  if (event.type === 'auth.recovery_completed') return recoveryCompleted(tx, event, opts);
+  if (event.type === 'auth.recovery_completed') return ownerAlert(tx, event, 'auth.recovery_completed', opts);
+  // تغيّر وسائل الدخول (ADR 0107): صاحب الحساب يُنبَّه على أجهزته، والعنوان قالب ثابت بلا معرّف
+  if (event.type === 'auth.passkey_added' || event.type === 'auth.recovery_codes_generated') return ownerAlert(tx, event, event.type, opts);
   if (event.type === 'setting.changed') return settingChanged(tx, event, opts);
   if (event.type === 'render.completed' || event.type === 'render.failed') return renderFinished(tx, event, payload, opts);
   if (event.type === 'assignment.created' || event.type === 'assignment.state_changed') return assignmentEvent(tx, event, payload, opts);
@@ -337,7 +339,8 @@ async function assignmentEvent(tx: Tx, event: OutboxRow, payload: Record<string,
   return rows.length;
 }
 
-async function recoveryCompleted(tx: Tx, event: OutboxRow, opts: FanOutOptions): Promise<number> {
+/** تنبيه لصاحب الحساب وحده بقالب ثابت (إكمال الاستعادة، وإضافة مفتاح مرور، وتوليد رموز احتياطية). */
+async function ownerAlert(tx: Tx, event: OutboxRow, titleKey: string, opts: FanOutOptions): Promise<number> {
   const inserted = await tx
     .insert(notifications)
     .values({
@@ -346,7 +349,7 @@ async function recoveryCompleted(tx: Tx, event: OutboxRow, opts: FanOutOptions):
       type: event.type,
       materialId: null,
       priority: 'important',
-      title: notificationTitle('auth.recovery_completed', opts.locale, { ref: '' }),
+      title: notificationTitle(titleKey, opts.locale, { ref: '' }),
       assignmentState: null,
       recoveryRequestId: null,
     })

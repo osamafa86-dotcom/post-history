@@ -1,7 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, isNull, sql } from 'drizzle-orm';
+import { randomInt, randomUUID } from 'node:crypto';
 import { APP_CONFIG, type AppConfig } from '../config/config';
-import { sha256 } from '../common/crypto';
+import { randomToken, sha256 } from '../common/crypto';
 import { ApiError } from '../common/errors';
 import { DB, type Database, type Executor } from '../database/database.module';
 import { offices, recoveryCodes, recoveryRequests, refreshTokens, userRoles, users } from '../database/schema/schema';
@@ -9,7 +10,7 @@ import type { components } from '../generated/api';
 import { iso } from '../materials/material-store';
 import { writeOutboxEvent } from '../outbox/outbox';
 import { hasRole, mayDecideFor, type Principal, type RoleName, supervisesUser } from './principal';
-import { audit, recordRecoveryApproval } from './recovery-approval';
+import { audit, recordRecoveryApproval, resetCredentials } from './recovery-approval';
 import { RESET_TOKEN_DELIVERY, type ResetTokenDelivery } from './reset-token-delivery';
 import type { RateLimiter } from './rate-limiter';
 import { RateLimitsService } from './rate-limits.service';
@@ -18,6 +19,13 @@ import { recordStatusChange } from './user-status';
 
 type UserSession = components['schemas']['UserSession'];
 type RecoveryApproval = components['schemas']['RecoveryApproval'];
+type PasswordResetLink = components['schemas']['PasswordResetLink'];
+type PasswordResetReason = components['schemas']['PasswordResetReason'];
+
+/** عشرة رموز احتياطية base32 بطول 12 (60 بت لكل رمز)؛ تكفي مع اعتماد المشرف وحد المعدل (ADR 0107). */
+export const RECOVERY_CODE_COUNT = 10;
+const RECOVERY_CODE_LENGTH = 12;
+const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -26,6 +34,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export class AccountService {
   private readonly recoveryByEmail: RateLimiter;
   private readonly recoveryByIp: RateLimiter;
+  private readonly codesByUser: RateLimiter;
+  private readonly resetLinksByActor: RateLimiter;
 
   constructor(
     @Inject(DB) private readonly db: Database,
@@ -36,6 +46,8 @@ export class AccountService {
   ) {
     this.recoveryByEmail = limits.create('recovery-email', config.LOGIN_RATE_LIMIT_MAX);
     this.recoveryByIp = limits.create('recovery-ip', config.LOGIN_RATE_LIMIT_IP_MAX);
+    this.codesByUser = limits.create('recovery-codes-user', config.LOGIN_RATE_LIMIT_MAX);
+    this.resetLinksByActor = limits.create('reset-link-actor', config.LOGIN_RATE_LIMIT_MAX);
   }
 
   /** اسم داخلي مستقل؛ لا يذهب إلى التدقيق ولا Outbox. قفل المستخدم يسلسل التعيين. */
@@ -198,6 +210,119 @@ export class AccountService {
     };
   }
 
+  // ---------- الرموز الاحتياطية (ADR 0107) ----------
+
+  async recoveryCodeStatus(userId: string): Promise<components['schemas']['RecoveryCodeStatus']> {
+    const [r] = await this.db
+      .select({
+        remaining: sql<number>`(count(*) FILTER (WHERE ${recoveryCodes.usedAt} IS NULL))::int`,
+        generatedAt: sql<string | null>`max(${recoveryCodes.createdAt})`,
+      })
+      .from(recoveryCodes)
+      .where(eq(recoveryCodes.userId, userId));
+    return { remaining: r?.remaining ?? 0, generated_at: iso(r?.generatedAt ?? null) };
+  }
+
+  /**
+   * عشرة رموز جديدة تُعاد مرة واحدة وتُخزَّن ببصماتها، وكل رمز سابق للحساب يبطل في المعاملة نفسها. كل توليد يُعد في حد المعدل لكل
+   * حساب. التدقيق بالعدد وحده، والحدث بلا رمز ينبّه صاحب الحساب (رمز في يد غيره يبدأ استعادة تنتظر اعتماد المشرف، لا أكثر).
+   */
+  async generateRecoveryCodes(userId: string): Promise<components['schemas']['RecoveryCodes']> {
+    const wait = await this.codesByUser.retryAfter(userId);
+    if (wait > 0) throw new ApiError(429, 'rate_limited', 'Too many attempts.', undefined, { 'Retry-After': String(wait) });
+    await this.codesByUser.record(userId);
+    const codes = new Set<string>();
+    while (codes.size < RECOVERY_CODE_COUNT) codes.add(recoveryCode());
+    const generatedAt = await this.db.transaction(async (tx) => {
+      await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('update');
+      await tx.delete(recoveryCodes).where(eq(recoveryCodes.userId, userId));
+      const rows = await tx
+        .insert(recoveryCodes)
+        .values([...codes].map((code) => ({ userId, codeHash: sha256(code) })))
+        .returning({ createdAt: recoveryCodes.createdAt });
+      await audit(tx, userId, 'auth.recovery_codes_generated', userId, { target_user_id: userId, codes_count: String(codes.size) });
+      await writeOutboxEvent(tx, {
+        type: 'auth.recovery_codes_generated',
+        aggregateType: 'user',
+        aggregateId: userId,
+        idempotencyKey: `auth.recovery_codes_generated:${randomUUID()}`,
+        actorId: userId,
+        payload: { codes_count: codes.size },
+      });
+      return rows[0]!.createdAt;
+    });
+    return { codes: [...codes], generated_at: iso(generatedAt)! };
+  }
+
+  // ---------- رابط إعادة التعيين من مدير النظام (A1، ADR 0107) ----------
+
+  /**
+   * لا مزوّد بريد: المدير يتحقق من الهوية خارج النظام ثم يصدر رمزًا لمرة واحدة قصير العمر يراه مرة ويسلّمه بيده. الرمز طلب استعادة
+   * معتمد في recovery_requests، فيُكمل بـ /auth/recovery/complete ثم /auth/totp/confirm كأي استعادة. معاملة واحدة: كل طلب مفتوح
+   * للحساب يُغلق (المنتظر يُرفض، والمعتمد غير المكتمل يبطل رمزه)، وأثر إعادة التعيين (resetCredentials)، والتدقيق بالسبب، وحدث
+   * auth.recovery_approved بمعرّفات وحدها. لا يصدره المدير لحسابه ولا لحساب مدير نظام، والحساب غير الفاعل 409.
+   */
+  async issuePasswordResetLink(p: Principal, userId: string, reason: PasswordResetReason): Promise<PasswordResetLink> {
+    if (!hasRole(p, 'system_admin')) throw new ApiError(403, 'forbidden_scope', 'Administrator required.');
+    if (!UUID.test(userId)) throw ApiError.notFound();
+    if (userId === p.userId) throw new ApiError(403, 'forbidden_scope', 'An administrator cannot issue a reset link for their own account.');
+    const wait = await this.resetLinksByActor.retryAfter(p.userId);
+    if (wait > 0) throw new ApiError(429, 'rate_limited', 'Too many attempts.', undefined, { 'Retry-After': String(wait) });
+
+    const token = randomToken();
+    const ttl = this.config.PASSWORD_RESET_LINK_TTL_SECONDS;
+    const issued = await this.db.transaction(async (tx) => {
+      const [u] = await tx
+        .select({ id: users.id, status: users.status, officeId: users.officeId })
+        .from(users)
+        .where(eq(users.id, userId))
+        .for('update');
+      if (!u) throw ApiError.notFound();
+      if ((await rolesOf(tx, userId)).includes('system_admin')) throw adminQuorumRequired();
+      if (u.status !== 'active') throw new ApiError(409, 'recovery_state_conflict', `The account is ${u.status}.`);
+      await tx
+        .update(recoveryRequests)
+        .set({ state: 'rejected', decidedAt: sql`now()` })
+        .where(and(eq(recoveryRequests.userId, userId), eq(recoveryRequests.state, 'pending_approval')));
+      await tx
+        .update(recoveryRequests)
+        .set({ state: 'expired', resetTokenHash: null, resetTokenExpiresAt: null })
+        .where(and(eq(recoveryRequests.userId, userId), eq(recoveryRequests.state, 'approved'), isNull(recoveryRequests.completedAt)));
+      const [request] = await tx
+        .insert(recoveryRequests)
+        .values({
+          userId,
+          state: 'approved',
+          approvedBy: p.userId,
+          verificationNote: 'admin reset link',
+          decidedAt: sql`now()`,
+          expiresAt: sql`now() + make_interval(secs => ${ttl})` as never,
+          resetTokenHash: sha256(token),
+          resetTokenExpiresAt: sql`now() + make_interval(secs => ${ttl})` as never,
+        })
+        .returning({ id: recoveryRequests.id, expiresAt: recoveryRequests.resetTokenExpiresAt });
+      const passkeysRevoked = await resetCredentials(tx, userId);
+      await audit(tx, p.userId, 'auth.reset_link_issued', userId, {
+        recovery_request_id: request!.id,
+        target_user_id: userId,
+        reason_code: reason,
+        ...(passkeysRevoked ? { passkeys_revoked: String(passkeysRevoked) } : {}),
+      });
+      await writeOutboxEvent(tx, {
+        type: 'auth.recovery_approved',
+        aggregateType: 'user',
+        aggregateId: userId,
+        idempotencyKey: `auth.recovery_approved:${request!.id}`,
+        actorId: p.userId,
+        payload: { recovery_request_id: request!.id, ...(u.officeId ? { office_id: u.officeId } : {}) },
+      });
+      return { id: request!.id, expiresAt: iso(request!.expiresAt)! };
+    });
+    await this.resetLinksByActor.record(p.userId);
+    const delivered = await this.resetTokens.deliver({ token, expiresAt: issued.expiresAt, targetUserId: userId, recoveryRequestId: issued.id });
+    return { recovery_request_id: issued.id, ...(delivered ? {} : { reset_token: token }), reset_token_expires_at: issued.expiresAt };
+  }
+
   // ---------- حالة الحساب ----------
 
   /**
@@ -220,6 +345,13 @@ export class AccountService {
       await recordStatusChange(tx, p.userId, userId, status);
     });
   }
+}
+
+/** رمز احتياطي: 12 حرفًا من أبجدية base32 باختيار منتظم لكل حرف. */
+function recoveryCode(): string {
+  let code = '';
+  for (let i = 0; i < RECOVERY_CODE_LENGTH; i++) code += BASE32[randomInt(BASE32.length)];
+  return code;
 }
 
 const adminQuorumRequired = () =>

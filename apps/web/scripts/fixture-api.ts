@@ -5,6 +5,7 @@ import { form, material, me, tokens } from "../tests/fixtures";
 import assets from "../tests/media-fixture.json";
 import { assignmentRead, assignmentWrite, resetAssignments, seedAssignments } from "./fixture-assignments";
 import { adminRead, adminWrite, bumpAdmin, resetAdmin } from "./fixture-admin";
+import { authPublic, authRead, authState, authWrite, consumeResetToken, recoveryRequestId, resetAuth, resetTokenKnown, resetTokenPrefix, setPasskeysOff } from "./fixture-auth";
 import type { Form, Me, Material, Notification, TransitionRecord, PermissionHistoryEntry, ReporterIdentitySetting, ReporterIdentitySettingUpdate, Permission } from "../src/lib/types";
 const materials: Material[] = [], notifications: Notification[] = [], history = new Map<string, TransitionRecord[]>();
 const writes: { path: string; method: string; key: string; body: Record<string, unknown> }[] = [];
@@ -163,7 +164,7 @@ function seedTemplates() {
   templates.set("81000000-0000-4000-8000-000000000001", [{ ...base, id: "81000000-0000-4000-8000-000000000001", version: 1, type: "editorial_single", name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" }, terms: { ar: "شروط الاستخدام الواحد", en: "Single use terms" }, base_price: { amount_minor: 15000, currency: "USD" }, enabled: true, internal_note: "never-display-canary" }]);
   templates.set("81000000-0000-4000-8000-000000000002", [{ ...base, id: "81000000-0000-4000-8000-000000000002", version: 3, type: "editorial_term", term_days: 365, name: { ar: "تحريري سنوي قديم", en: "Old annual editorial" }, terms: { ar: "شروط", en: "Terms" }, base_price: { amount_minor: 40000, currency: "ILS" }, enabled: false }]);
 }
-reset(); seedTemplates(); seedOrganizations(); seedLicenses(); seedCommission(); seedOrders(); seedConflicts(); seedEarnings(); resetAdmin();
+reset(); seedTemplates(); seedOrganizations(); seedLicenses(); seedCommission(); seedOrders(); seedConflicts(); seedEarnings(); resetAdmin(); resetAuth(profile("reviewer@example.test"));
 const signed = new Map<string, { kind: "proxy" | "thumbnail" | "produced"; expires: number }>();
 let expireNextProxy = false;
 const access = new Map<string, Me>(), refresh = new Map<string, Me>();
@@ -188,7 +189,14 @@ const server = createServer(async (req, res) => {
   if (url.pathname.startsWith("/files/")) { res.removeHeader("Content-Type"); return tus(req, res, url); }
   if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
   if (url.pathname === "/__test/uploads") return send([...uploads.values()].map(u => ({ state: u.session.state, receipt: u.session.receipt_number, ingest_tokens: [...ingestTokens.values()].filter(t => t.sid === u.session.id).length, ...(u.tus ? (({ length, offset, patches, resent, cuts }) => ({ length, offset, patches, resent, cuts }))(tusFiles.get(u.tus) ?? { length: 0, offset: 0, patches: 0, resent: 0, cuts: 0 }) : {}) })));
-  if (url.pathname === "/__test/reset" && req.method === "POST") { consumedInvites.clear(); rules.clear(); listings.clear(); seedOrders(); seedLicenses(); seedTemplates(); seedOrganizations(); seedCommission(); seedConflicts(); seedEarnings(); reset(); resetUploads(); resetAssignments(); resetAdmin(); return send({ ok: true }); }
+  if (url.pathname === "/__test/reset" && req.method === "POST") { consumedInvites.clear(); rules.clear(); listings.clear(); seedOrders(); seedLicenses(); seedTemplates(); seedOrganizations(); seedCommission(); seedConflicts(); seedEarnings(); reset(); resetUploads(); resetAssignments(); resetAdmin(); resetAuth(profile("reviewer@example.test")); return send({ ok: true }); }
+  // الاستعادة ومفاتيح المرور (ADR 0108): حالة للتحقق، وإيقاف المفاتيح على الخادم، وتنبيه طلب استعادة ينتظر المشرف.
+  if (url.pathname === "/__test/auth") return send(authState());
+  if (url.pathname === "/__test/passkeys-off" && req.method === "POST") { setPasskeysOff(true); return send({ ok: true }); }
+  if (url.pathname === "/__test/recovery-notice" && req.method === "POST") {
+    notifications.unshift({ id: "60000000-0000-4000-8000-000000000099", type: "auth.recovery_requested", title: "never-display-canary", material_id: null, recovery_request_id: recoveryRequestId(Number(url.searchParams.get("n") ?? 1)), priority: "normal", state: "sent", created_at: new Date().toISOString() });
+    return send({ ok: true });
+  }
   if (url.pathname === "/__test/admin-bump" && req.method === "POST") { bumpAdmin(url.searchParams.get("what")); return send({ ok: true }); }
   if (url.pathname === "/__test/assignments" && req.method === "POST") { seedAssignments(materials, me); return send({ ok: true }); }
   const sandbox = /^\/sandbox\/(checkout|pay)\/([^/]+)$/.exec(url.pathname);
@@ -285,7 +293,7 @@ const server = createServer(async (req, res) => {
     return send({ license_number: found.license_number, status: found.status, license_type: "editorial_single", title: found.title, usage_media: ["web"], territory: { kind: "worldwide" }, valid_from: "2026-10-21T10:00:00Z", valid_until: null, exclusive_until: null, organization: "never-display-canary" });
   }
   // قبول الدعوة (S5): رمز الدعوة يُستهلك مرة واحدة، والجلسة الناتجة مقيّدة حتى تأكيد TOTP. أي رمز آخر 401 بلا تفريق.
-  if (url.pathname === "/v1/auth/recovery/complete" && req.method === "POST") {
+  if (url.pathname === "/v1/auth/recovery/complete" && req.method === "POST" && !String(body.reset_token ?? "").startsWith(resetTokenPrefix)) {
     const reset = String(body.reset_token ?? "");
     if (!reset.startsWith("synthetic-invite-token-") || consumedInvites.has(reset)) return send({ code: "unauthorized" }, 401);
     if (String(body.new_password ?? "").length < 12) return send({ code: "validation_failed" }, 422);
@@ -293,6 +301,16 @@ const server = createServer(async (req, res) => {
     const invited = { ...me, user_id: randomUUID(), organization_id: buyerOrg, roles: [{ name: "buyer_member" as const, scopes: [] }], permissions: [], totp_enabled: false, credential_reset_required: true };
     return send({ session: session(invited), totp_enrollment: { secret_base32: "AAAABBBBCCCCDDDDEEEEFFFF", otpauth_uri: "otpauth://totp/Synthetic:member-0001?secret=AAAABBBBCCCCDDDDEEEEFFFF&issuer=Synthetic" } });
   }
+  // رابط إعادة التعيين (ADR 0108): رمز صادر يُستهلك مرة، والجلسة الناتجة مقيّدة حتى تأكيد TOTP كالدعوة.
+  if (url.pathname === "/v1/auth/recovery/complete" && req.method === "POST" && String(body.reset_token ?? "").startsWith(resetTokenPrefix)) {
+    const reset = String(body.reset_token);
+    if (!resetTokenKnown(reset)) return send({ code: "unauthorized" }, 401);
+    if (String(body.new_password ?? "").length < 12) return send({ code: "validation_failed" }, 422);
+    consumeResetToken(reset);
+    return send({ session: session({ ...profile("reviewer@example.test"), totp_enabled: false, credential_reset_required: true }), totp_enrollment: { secret_base32: "AAAABBBBCCCCDDDDEEEEFFFF", otpauth_uri: "otpauth://totp/Synthetic:staff-0002?secret=AAAABBBBCCCCDDDDEEEEFFFF&issuer=Synthetic" } });
+  }
+  const publicAuth = authPublic(url.pathname, req.method ?? "", body, owner => session(owner));
+  if (publicAuth) return send(publicAuth.value, publicAuth.status);
   const token = req.headers.authorization?.replace(/^Bearer /, "") ?? "";
   if (!access.has(token)) return send({ code: "unauthorized" }, 401);
   // الجلسة المقيّدة بعد الاستعادة: المسموح /auth/me و/auth/logout و/auth/refresh و/auth/totp/confirm وحدها.
@@ -317,6 +335,9 @@ const server = createServer(async (req, res) => {
     const commit = (value: unknown, status = 204) => { applied.set(key, { fingerprint, value: structuredClone(value), status }); if (dropNextWrite) { dropNextWrite = false; return send({ message: "never-display-canary" }, 503); } return send(value, status); };
     const administered = adminWrite(path, req.method!, user, body, req.headers["if-match"] as string | undefined);
     if (administered) { if (administered.etag) res.setHeader("ETag", administered.etag); return administered.status < 400 ? commit(administered.value, administered.status) : send(administered.value, administered.status); }
+    // الرمز لا يُحفظ مع مفتاح منع التكرار: التكرار يعيد الرد بلا `reset_token` كالخادم.
+    const account = authWrite(path, req.method!, user, body);
+    if (account) { if (account.status < 400) applied.set(key, { fingerprint, value: structuredClone(account.replay ?? account.value), status: account.status }); return send(account.value, account.status); }
     if (path === "/v1/forms" && req.method === "POST") {
       if (!has("system_admin")) return send({}, 403);
       const current = Math.max(0, ...formVersions.keys());
@@ -584,6 +605,8 @@ const server = createServer(async (req, res) => {
     if (notice) { const item = notifications.find(n => n.id === notice[1]); if (!item) return send({}, 404); item.read_at = new Date().toISOString(); item.state = notice[2] === "ack" ? "acknowledged" : "read"; if (notice[2] === "ack") item.acknowledged_at = item.read_at; return commit(null); }
     return send({}, 405);
   }
+  const accountReply = authRead(url.pathname, user);
+  if (accountReply) return send(accountReply.value, accountReply.status);
   const adminReply = adminRead(url, user);
   if (adminReply) { if (adminReply.etag) res.setHeader("ETag", adminReply.etag); return send(adminReply.value, adminReply.status); }
   const assignmentReply = assignmentRead(url, user, () => { const signature = randomUUID(); signed.set(signature, { kind: "proxy", expires: Date.now() + 300000 }); return `${fixtureOrigin}/derived/fixture?signature=${signature}`; });
