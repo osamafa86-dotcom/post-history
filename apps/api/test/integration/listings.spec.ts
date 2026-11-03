@@ -59,7 +59,12 @@ describe('material listing (/v1/materials/{id}/listing)', () => {
     state: 'draft',
     ...over,
   });
-  const material = async () => (await seedUploadSession(h, reporterId)).materialId;
+  // الشرطان التحريري والفني مستوفيان افتراضيًا (ADR 0114)، والحقوق تمر بالانتقالات
+  const material = async (approved = true) => {
+    const id = (await seedUploadSession(h, reporterId)).materialId;
+    if (approved) await h.pool.query(`UPDATE materials SET editorial_state = 'published', technical_state = 'verified' WHERE id = $1`, [id]);
+    return id;
+  };
   const rightsTo = async (id: string, ...states: string[]) => {
     for (const to of states) await write(rights, 'post', `/materials/${id}/transitions`, { track: 'rights', to, reason: 'listing test' }).expect(200);
   };
@@ -129,6 +134,44 @@ describe('material listing (/v1/materials/{id}/listing)', () => {
     const kept = await write(rights, 'put', `/materials/${id}/listing`, listing({ state: 'suspended', title: { ar: 'جديد', en: 'New' } })).expect(200);
     expect(kept.body.suspended_reason).toBe('rights_changed');
     expect((await write(rights, 'put', `/materials/${id}/listing`, listing({ state: 'listed' })).expect(409)).body.code).toBe('rights_not_sellable');
+  });
+
+  // ADR 0114 (تعديل 0025): الشروط الثلاثة المستقلة في الخطة، لا الحقوق وحدها
+  it('listed needs editorial approval of the listed version and a verified original too (409 listing_conditions_unmet), from the database side as well', async () => {
+    const id = await material(false);
+    await rightsTo(id, 'documented', 'sellable');
+    const refused = await write(rights, 'post', `/materials/${id}/listing`, listing({ state: 'listed' })).expect(409);
+    expect(refused.body).toMatchObject({ code: 'listing_conditions_unmet', details: { failed: ['editorial_state', 'technical_state'] } });
+    await h.pool.query(`UPDATE materials SET editorial_state = 'published' WHERE id = $1`, [id]);
+    expect((await write(rights, 'post', `/materials/${id}/listing`, listing({ state: 'listed' })).expect(409)).body.details.failed).toEqual(['technical_state']);
+    const draft = await write(rights, 'post', `/materials/${id}/listing`, listing()).expect(201);
+    await expect(h.pool.query(`UPDATE catalog_listings SET state = 'listed', listed_at = now() WHERE id = $1`, [draft.body.id])).rejects.toThrow(/editorial approval/);
+    await h.pool.query(`UPDATE materials SET technical_state = 'verified' WHERE id = $1`, [id]);
+    await write(rights, 'put', `/materials/${id}/listing`, listing({ state: 'listed' })).expect(200);
+    await expect(h.pool.query(`UPDATE materials SET version = version + 1 WHERE id = $1`, [id])).rejects.toThrow(/suspend the listing/);
+  });
+
+  it('an edit after approval (a new version) or leaving published suspends the listing for editorial_changed in the same request; listing again pins the newly approved version', async () => {
+    const editor = await loginAs(h, [{ role: 'editor_in_chief' }]);
+    const id = await material();
+    await rightsTo(id, 'documented', 'sellable');
+    const created = await write(rights, 'post', `/materials/${id}/listing`, listing({ state: 'listed' })).expect(201);
+    await http().patch(`/v1/materials/${id}`).set('Authorization', `Bearer ${editor.token}`).set('Idempotency-Key', randomUUID()).send({ title: 'Edited after approval' }).expect(200);
+    expect((await get(rights, `/materials/${id}/listing`).expect(200)).body).toMatchObject({ state: 'suspended', suspended_reason: 'editorial_changed', material_version: 1 });
+    expect(await states(id)).toMatchObject({ editorial_state: 'final_review' });
+    expect((await write(rights, 'put', `/materials/${id}/listing`, listing({ state: 'listed' })).expect(409)).body.details.failed).toEqual(['editorial_state']);
+    await write(editor, 'post', `/materials/${id}/transitions`, { track: 'editorial', to: 'published', reason: 'approved again' }).expect(200);
+    const again = await write(rights, 'put', `/materials/${id}/listing`, listing({ state: 'listed' })).expect(200);
+    expect(again.body).toMatchObject({ state: 'listed', material_version: 2, suspended_reason: null });
+    // الخروج من published يسقط الاعتماد كذلك
+    await write(editor, 'post', `/materials/${id}/transitions`, { track: 'editorial', to: 'final_review', reason: 'pulled back' }).expect(200);
+    expect((await get(rights, `/materials/${id}/listing`).expect(200)).body).toMatchObject({ state: 'suspended', suspended_reason: 'editorial_changed' });
+    expect((await events(created.body.id)).map((e) => [e.state, e.suspended_reason, e.material_version])).toEqual([
+      ['listed', null, 1],
+      ['suspended', 'editorial_changed', 1],
+      ['listed', null, 2],
+      ['suspended', 'editorial_changed', 2],
+    ]);
   });
 
   it('commercial permission and commercial offers are for the system admin only; a rights officer edits around them', async () => {

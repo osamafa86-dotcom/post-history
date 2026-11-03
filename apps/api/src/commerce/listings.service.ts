@@ -23,7 +23,7 @@ export interface ListingWithTag {
 
 /**
  * إدراج المادة في الكتالوج (v0.3، ADR 0025): واحد لكل مادة، يثبّت إصدارها الحالي، وحالته مستقلة عن الحالات الثلاث.
- * `listed` يلزمه `rights_state = sellable` (409 rights_not_sellable). الإذن التجاري وعروضه لمدير النظام وحده.
+ * `listed` يلزمه الشروط الثلاثة (assertListable، ADR 0114). الإذن التجاري وعروضه لمدير النظام وحده.
  */
 @Injectable()
 export class ListingsService {
@@ -205,12 +205,23 @@ async function audited(tx: Tx, actorId: string, action: string, row: ListingRow)
 }
 
 /**
- * شروط العرض: حقوق قابلة للبيع (409 rights_not_sellable)، ومادة غير موسومة بالحساسية (422 على /state؛
- * threat-model-commercial: القاصرون والمصابون والمشاهد الصادمة خارج الكتالوج). ومحفّزات القاعدة تعيد الشرطين.
+ * شروط العرض، الثلاثة المستقلة في الخطة (ADR 0114، تعديل 0025): حقوق قابلة للبيع (409 rights_not_sellable)، واعتماد تحريري
+ * للإصدار المعروض (published، والإدراج يثبّت الإصدار الحالي) وأصل متحقق (technical_state = verified) وإلا 409
+ * listing_conditions_unmet بما فشل، ومادة غير موسومة بالحساسية (422 على /state؛ threat-model-commercial). ومحفّزات القاعدة تعيدها
+ * كلها (020 و027 و047).
  */
-function assertListable(m: { rightsState: string; sensitivityMinors: boolean; sensitivityInjured: boolean; sensitivityGraphic: boolean }): void {
+function assertListable(m: {
+  rightsState: string;
+  editorialState: string;
+  technicalState: string;
+  sensitivityMinors: boolean;
+  sensitivityInjured: boolean;
+  sensitivityGraphic: boolean;
+}): void {
   if (m.rightsState !== 'sellable') throw notSellable();
   if (isSensitive(m)) throw ApiError.validation({ fields: ['/state'] });
+  const failed = [...(m.editorialState !== 'published' ? ['editorial_state'] : []), ...(m.technicalState !== 'verified' ? ['technical_state'] : [])];
+  if (failed.length > 0) throw new ApiError(409, 'listing_conditions_unmet', 'A listed material needs editorial approval of its version and a verified original.', { failed });
 }
 
 const notSellable = () => new ApiError(409, 'rights_not_sellable', 'A listed material must have sellable rights.');

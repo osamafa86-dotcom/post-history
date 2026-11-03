@@ -72,6 +72,7 @@ export class AuthService {
         id: users.id,
         passwordHash: users.passwordHash,
         status: users.status,
+        membershipSuspended: users.membershipSuspended,
         totpEnabled: users.totpEnabled,
         totpSecretEnc: users.totpSecretEnc,
         credentialResetRequired: users.credentialResetRequired,
@@ -94,7 +95,8 @@ export class AuthService {
     const passwordOk = await argon2Verify(user?.passwordHash ?? (await this.dummyHash), body.password).catch(() => false);
     // في «إعادة التعيين الإلزامية» لا دخول عاديًا: الطريق /auth/recovery/complete ثم /auth/totp/confirm (الرد نفسه
     // فلا يُكشف أن الحساب في استعادة)
-    if (!user || !passwordOk || user.status !== 'active' || user.credentialResetRequired) await fail('password');
+    // العضوية المعلّقة في المؤسسة كالحساب المعلّق (ADR 0114)
+    if (!user || !passwordOk || user.status !== 'active' || user.membershipSuspended || user.credentialResetRequired) await fail('password');
 
     if (user!.totpEnabled) {
       // غياب الرمز بعد كلمة مرور صحيحة ليس تخمينًا فلا يُعد فشلًا
@@ -175,6 +177,7 @@ export class AuthService {
       isNull(recoveryRequests.completedAt),
       gt(recoveryRequests.resetTokenExpiresAt, sql`now()`),
       eq(users.status, 'active'),
+      eq(users.membershipSuspended, false),
       eq(users.credentialResetRequired, true),
     );
     const rejected = async (): Promise<never> => {

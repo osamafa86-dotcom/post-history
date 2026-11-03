@@ -107,6 +107,78 @@ describe('buyer organizations (/v1/buyer-organizations)', () => {
     expect(active.body).toMatchObject({ status: 'active', verified_at: expect.any(String) });
   });
 
+  // ADR 0114: ما تحقق منه مدير النظام (الاسم القانوني والبلد) لا يتغيّر بعد التحقق دون تحقق جديد
+  it('a buyer admin changing the legal name or country of a verified organization sends it back to pending_verification; billing email changes are audited', async () => {
+    const o = await created();
+    const owner = await buyer(o.id, 'buyer_admin');
+    await activate(o.id);
+    const fields = async () => {
+      const current = await get(owner.token, `/buyer-organizations/${o.id}`).expect(200);
+      const { id: _i, active_members: _a, verified_at: _v, created_at: _c, updated_at: _u, ...rest } = current.body;
+      return rest;
+    };
+    const mail = await write('put', owner.token, `/buyer-organizations/${o.id}`, { ...(await fields()), billing_email: 'accounts@example.test' }).expect(200);
+    expect(mail.body).toMatchObject({ status: 'active', billing_email: 'accounts@example.test', verified_at: expect.any(String) });
+    const { rows: audits } = await h.pool.query(`SELECT details FROM audit_log WHERE action = 'buyer_organization.billing_email_changed' AND details->>'organization_id' = $1`, [o.id]);
+    expect(audits).toEqual([{ details: { organization_id: o.id, reason_code: 'billing_email_changed' } }]);
+    expect(JSON.stringify(audits)).not.toContain('accounts@example.test');
+
+    for (const change of [{ legal_name: 'Another Name LLC' }, { country: 'PS' }]) {
+      await activate(o.id);
+      const res = await write('put', owner.token, `/buyer-organizations/${o.id}`, { ...(await fields()), ...change }).expect(200);
+      expect(res.body).toMatchObject({ ...change, status: 'pending_verification', verified_at: null });
+    }
+    const { rows: events } = await h.pool.query(`SELECT payload FROM outbox_events WHERE type = 'buyer_organization.status_changed' AND aggregate_id = $1 ORDER BY id`, [o.id]);
+    expect(events.map((e) => [e.payload.from, e.payload.to])).toEqual([
+      ['pending_verification', 'active'],
+      ['active', 'pending_verification'],
+      ['pending_verification', 'active'],
+      ['active', 'pending_verification'],
+    ]);
+    // مدير النظام هو المتحقق: تعديله لا يعيدها
+    await activate(o.id);
+    const byAdmin = await write('put', admin.token, `/buyer-organizations/${o.id}`, { ...(await fields()), legal_name: 'Corrected LLC' }).expect(200);
+    expect(byAdmin.body).toMatchObject({ status: 'active', legal_name: 'Corrected LLC' });
+  });
+
+  // ADR 0114: عضوية المؤسسة مستقلة عن تعليق الحساب على المنصة، والتعليق بأي طريق يبطل كل الوصول
+  it('a buyer admin suspends the membership (access revoked at once) but never lifts a platform suspension', async () => {
+    const o = await created({ seats: 10 });
+    const owner = await buyer(o.id, 'buyer_admin');
+    await activate(o.id);
+    const email = `member-${randomUUID()}@example.test`;
+    const password = randomUUID();
+    const { rows } = await h.pool.query<{ id: string }>(`INSERT INTO users (email, password_hash, organization_id) VALUES ($1, $2, $3) RETURNING id`, [email, await hash(password), o.id]);
+    const memberId = rows[0]!.id;
+    await h.pool.query(`INSERT INTO user_roles (user_id, role, scope_kind, scope_id) VALUES ($1, 'buyer_member', 'organization', $2)`, [memberId, o.id]);
+    const signIn = () => http().post('/v1/auth/login').send({ email, password });
+    const session = (await signIn().expect(200)).body;
+    const member = (status: 'active' | 'suspended', t = owner.token) =>
+      write('put', t, `/buyer-organizations/${o.id}/members/${memberId}`, { role: 'buyer_member', status });
+
+    expect((await member('suspended').expect(200)).body.status).toBe('suspended');
+    await get(session.access_token, '/auth/me').expect(401);
+    await http().post('/v1/auth/refresh').send({ refresh_token: session.refresh_token }).expect(401);
+    await signIn().expect(401);
+    expect((await h.pool.query(`SELECT status, membership_suspended FROM users WHERE id = $1`, [memberId])).rows[0]).toEqual({ status: 'active', membership_suspended: true });
+    await member('active').expect(200);
+    await signIn().expect(200);
+
+    // تعليق مدير النظام على المنصة: مدير المؤسسة لا يرفعه، والعضو يبقى معلّقًا ولا يدخل
+    await http().put(`/v1/users/${memberId}/status`).set(auth(admin.token)).set('Idempotency-Key', randomUUID()).send({ status: 'suspended' }).expect(204);
+    expect((await member('active').expect(403)).body.code).toBe('forbidden_role');
+    await member('active', admin.token).expect(403);
+    const listed = (await get(owner.token, `/buyer-organizations/${o.id}/members`).expect(200)).body.items.find((m: { user_id: string }) => m.user_id === memberId);
+    expect(listed.status).toBe('suspended');
+    await signIn().expect(401);
+    // تعليق العضوية فوقه لا يغيّر حالة المنصة، ورفع مدير النظام وحده لا يكفي ما دامت العضوية معلّقة
+    await member('suspended').expect(200);
+    await http().put(`/v1/users/${memberId}/status`).set(auth(admin.token)).set('Idempotency-Key', randomUUID()).send({ status: 'active' }).expect(204);
+    await signIn().expect(401);
+    await member('active').expect(200);
+    await signIn().expect(200);
+  });
+
   it('invites within the seats only (409 seats_exhausted), and keeps one active admin (409 last_buyer_admin)', async () => {
     const o = await created({ seats: 2 });
     const owner = await buyer(o.id, 'buyer_admin');

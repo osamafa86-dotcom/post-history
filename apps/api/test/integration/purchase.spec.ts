@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { schemaValidator } from '../../src/common/contract';
 import { signWebhook } from '../../src/commerce/payment-provider';
-import { createHarness, type Harness, loginAs, seedUploadSession, seedUser } from './harness';
+import { createHarness, type Harness, loginAs, makeSaleable, seedUploadSession, seedUser } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
 const SECRET = randomBytes(32).toString('hex');
@@ -45,7 +45,7 @@ describe('sandbox purchase (/v1/orders, /payments/webhooks/sandbox)', () => {
   // مادة قابلة للبيع ومعروضة بعروض القوالب المعطاة
   const listed = async (templates: string[]) => {
     const { materialId } = await seedUploadSession(h, reporter);
-    await h.pool.query(`UPDATE materials SET rights_state = 'sellable' WHERE id = $1`, [materialId]);
+    await makeSaleable(h, materialId);
     const { rows } = await h.pool.query<{ id: string }>(
       `INSERT INTO catalog_listings (material_id, material_version, state, title_ar, title_en, description_ar, description_en, updated_by, listed_at)
        SELECT id, version, 'listed', 'عنوان', 'Title', 'وصف', 'Description', $2, now() FROM materials WHERE id = $1 RETURNING id`,

@@ -77,7 +77,7 @@ describe('catalog (/v1/catalog)', () => {
   const listed = async (o: { state?: string; title?: string; governorate?: string; height?: number; durationMs?: number; shotAt?: string; offers?: object[] } = {}) => {
     const materialId = (await seedUploadSession(h, reporterId)).materialId;
     await h.pool.query(
-      `UPDATE materials SET rights_state = 'sellable', governorate = $2, city = 'secret-city', shot_at = $3, display_name_mode = 'pseudonym', display_name_pseudonym = 'Hidden Alias' WHERE id = $1`,
+      `UPDATE materials SET rights_state = 'sellable', editorial_state = 'published', technical_state = 'verified', governorate = $2, city = 'secret-city', shot_at = $3, display_name_mode = 'pseudonym', display_name_pseudonym = 'Hidden Alias' WHERE id = $1`,
       [materialId, o.governorate ?? 'gaza', o.shotAt ?? '2026-10-20T21:30:00Z'],
     );
     const { rows } = await h.pool.query<{ id: string }>(

@@ -26,6 +26,7 @@ import { validTimestamp } from '../uploads/uploads.service';
 import { applicableRule, type AppliedRule } from './commission-rules';
 import { requestDelivery } from './delivery';
 import { postEntry, type AccountRef } from './ledger';
+import { isSensitive } from './listing-store';
 import { allocate, type Currency, money, type Money, percentToBasisPoints } from './money';
 import { PAYMENT_PROVIDER, type PaymentProvider, type ProviderEvent, WebhookSignatureError } from './payment-provider';
 import { IgnoredWebhookEvent, LiveModeEvent } from './stripe-provider';
@@ -443,10 +444,29 @@ async function releaseHolds(tx: Tx, orderId: string): Promise<void> {
       FROM order_items i WHERE i.id = h.order_item_id AND i.order_id = ${orderId} AND h.state = 'held'`);
 }
 
+/**
+ * عند التأكيد (ADR 0114): الشروط الثلاثة للإصدار المبيع (حقوق sellable، والإصدار نفسه published، وأصل متحقق) ومادة غير حسّاسة، ثم
+ * الحصرية. سقوط أي شرط بيع = `rights_changed`: المشتري لا يُخبَر أيّها سقط (الحساسية قرار تحريري داخلي)، كما لا يصدر الترخيص
+ * (محفّزا القاعدة 030 و047).
+ */
 async function revalidate(tx: Tx, items: ItemRow[]): Promise<'exclusivity_lost' | 'rights_changed' | null> {
   for (const item of items) {
-    const [m] = await tx.select({ rights: materials.rightsState }).from(materials).where(eq(materials.id, item.materialId)).for('no key update');
-    if (m?.rights !== 'sellable') return 'rights_changed';
+    const [m] = await tx
+      .select({
+        rights: materials.rightsState,
+        editorial: materials.editorialState,
+        technical: materials.technicalState,
+        version: materials.version,
+        sensitivityMinors: materials.sensitivityMinors,
+        sensitivityInjured: materials.sensitivityInjured,
+        sensitivityGraphic: materials.sensitivityGraphic,
+      })
+      .from(materials)
+      .where(eq(materials.id, item.materialId))
+      .for('no key update');
+    if (!m || m.rights !== 'sellable' || m.editorial !== 'published' || m.version !== item.materialVersion || m.technical !== 'verified' || isSensitive(m)) {
+      return 'rights_changed';
+    }
     if (item.licenseType === 'exclusive_temporary') {
       const [h] = await tx.select({ state: exclusiveHolds.state }).from(exclusiveHolds).where(eq(exclusiveHolds.orderItemId, item.id));
       if (h?.state !== 'held') return 'exclusivity_lost';

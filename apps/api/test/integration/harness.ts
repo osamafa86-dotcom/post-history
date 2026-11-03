@@ -145,6 +145,11 @@ export function freshTotp(userId: string, secret: Buffer, nowMs = Date.now()): s
   return totp(secret, step * 30_000);
 }
 
+/** مادة تستوفي شروط البيع الثلاثة (ADR 0114): حقوق sellable، والإصدار الحالي published، وأصل متحقق فنيًّا. */
+export async function makeSaleable(h: Harness, materialId: string): Promise<void> {
+  await h.pool.query(`UPDATE materials SET rights_state = 'sellable', editorial_state = 'published', technical_state = 'verified' WHERE id = $1`, [materialId]);
+}
+
 export async function currentFormVersion(h: Harness): Promise<number> {
   const { rows } = await h.pool.query<{ v: number | null }>(`SELECT max(version) AS v FROM upload_forms`);
   return rows[0]!.v ?? 0;

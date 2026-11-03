@@ -7,7 +7,7 @@ import { validateQuery } from '../common/contract';
 import { ApiError } from '../common/errors';
 import { APP_CONFIG, type AppConfig, blockListOf } from '../config/config';
 import { DB, type Database, type Executor } from '../database/database.module';
-import { buyerOrganizations, licenseDownloadGrants, licenseTemplateVersions, licenses, materialFiles, orderItems, orders } from '../database/schema/schema';
+import { buyerOrganizations, licenseDownloadGrants, licenseTemplateVersions, licenses, materialFiles, materials, orderItems, orders } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import { Public } from '../identity/auth.guard';
 import { type Principal, Roles } from '../identity/principal';
@@ -17,6 +17,7 @@ import { iso } from '../materials/material-store';
 import { validTimestamp } from '../uploads/uploads.service';
 import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
 import { licenseTerms } from './license-templates.service';
+import { isSensitive } from './listing-store';
 import type { Currency } from './money';
 
 type License = components['schemas']['License'];
@@ -85,7 +86,18 @@ export class LicensesService {
       const [org] = await tx.select({ status: buyerOrganizations.status }).from(buyerOrganizations).where(eq(buyerOrganizations.id, l.organizationId));
       if (org?.status !== 'active') throw new ApiError(403, 'forbidden_scope', 'The organization cannot download until it is active.');
       const lapsed = l.validUntil !== null && Date.parse(iso(l.validUntil)!) <= Date.now();
-      if (l.status !== 'active' || lapsed) throw new ApiError(409, 'license_not_active', 'The license is not active.');
+      // لا رابط إلا والترخيص فاعل وحقوق مادته sellable وهي غير موسومة بالحساسية (ADR 0114)، ولو لم يُبطَل الترخيص بعد
+      const [m] = await tx
+        .select({
+          rightsState: materials.rightsState,
+          sensitivityMinors: materials.sensitivityMinors,
+          sensitivityInjured: materials.sensitivityInjured,
+          sensitivityGraphic: materials.sensitivityGraphic,
+        })
+        .from(materials)
+        .where(eq(materials.id, l.materialId));
+      const sellable = m !== undefined && m.rightsState === 'sellable' && !isSensitive(m);
+      if (l.status !== 'active' || lapsed || !sellable) throw new ApiError(409, 'license_not_active', 'The license is not active.');
       const [file] = await tx
         .select({ storageKey: materialFiles.storageKey })
         .from(materialFiles)

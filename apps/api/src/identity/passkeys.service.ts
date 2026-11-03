@@ -250,6 +250,7 @@ export class PasskeysService {
         signCount: passkeys.signCount,
         transports: passkeys.transports,
         status: users.status,
+        membershipSuspended: users.membershipSuspended,
         credentialResetRequired: users.credentialResetRequired,
       })
       .from(passkeys)
@@ -282,7 +283,7 @@ export class PasskeysService {
       verified = null;
     }
     // الحساب المعلّق أو في «إعادة التعيين الإلزامية» بالرد نفسه، فلا يُكشف حاله
-    if (!verified || key.status !== 'active' || key.credentialResetRequired) return fail();
+    if (!verified || key.status !== 'active' || key.membershipSuspended || key.credentialResetRequired) return fail();
 
     const issued = await this.db.transaction(async (tx) => {
       const [used] = await tx

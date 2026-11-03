@@ -4,7 +4,7 @@ import request from 'supertest';
 import { schemaValidator } from '../../src/common/contract';
 import { Readable } from 'node:stream';
 import { OBJECT_STORAGE, type ObjectStorage } from '../../src/verification/object-storage';
-import { createHarness, type Harness, loginAs, seedUploadSession, seedUser } from './harness';
+import { createHarness, drainOutbox, type Harness, loginAs, makeSaleable, seedUploadSession, seedUser } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
 const SECRET = randomBytes(32).toString('hex');
@@ -71,7 +71,7 @@ describe('licenses (/v1/licenses) and the sandbox return', () => {
   // مادة قابلة للبيع ومعروضة بعروض القوالب المعطاة
   const listed = async (templates: string[]) => {
     const { materialId } = await seedUploadSession(h, reporter);
-    await h.pool.query(`UPDATE materials SET rights_state = 'sellable' WHERE id = $1`, [materialId]);
+    await makeSaleable(h, materialId);
     const { rows } = await h.pool.query<{ id: string }>(
       `INSERT INTO catalog_listings (material_id, material_version, state, title_ar, title_en, description_ar, description_en, updated_by, listed_at)
        SELECT id, version, 'listed', 'عنوان', 'Title', 'وصف', 'Description', $2, now() FROM materials WHERE id = $1 RETURNING id`,
@@ -233,6 +233,78 @@ describe('licenses (/v1/licenses) and the sandbox return', () => {
     const suspended = await licensed();
     await h.pool.query(`UPDATE buyer_organizations SET status = 'suspended' WHERE id = $1`, [suspended.orgId]);
     expect((await download(suspended.buyer.token, suspended.licenseId).expect(403)).body.code).toBe('forbidden_scope');
+  });
+
+  // ADR 0114: خروج الحقوق من sellable ووسم الحساسية كانا يتركان الترخيص فاعلًا ورابط التنزيل 200
+  it('rights leaving sellable revoke the material licenses as rights_withdrawn in the same transition, notify the buyer by license number, and stop downloads', async () => {
+    const a = await licensed();
+    const colleague = await buyer(a.orgId, 'buyer_member');
+    const materialId = (await h.pool.query<{ material_id: string }>(`SELECT material_id FROM licenses WHERE id = $1`, [a.licenseId])).rows[0]!.material_id;
+    await download(a.buyer.token, a.licenseId).expect(200);
+    await post(rights.token, `/materials/${materialId}/transitions`, { track: 'rights', to: 'withdrawn', reason: 'contract ended' }).expect(200);
+    const license = (await http().get(`/v1/licenses/${a.licenseId}`).set(as(a.buyer.token)).expect(200)).body;
+    expect(license).toMatchObject({ status: 'revoked', revoked_reason: 'rights_withdrawn' });
+    expect((await download(a.buyer.token, a.licenseId).expect(409)).body.code).toBe('license_not_active');
+    const { rows: events } = await h.pool.query(`SELECT payload FROM outbox_events WHERE type = 'license.revoked' AND aggregate_id = $1`, [a.licenseId]);
+    expect(events).toEqual([{ payload: { license_id: a.licenseId, organization_id: a.orgId, material_id: materialId, revoked_reason: 'rights_withdrawn' } }]);
+    await drainOutbox(h);
+    for (const member of [a.buyer, colleague]) {
+      const inbox = (await http().get('/v1/notifications?limit=100').set(as(member.token)).expect(200)).body.items as Array<{ type: string; title: string; material_id: string | null }>;
+      const alert = inbox.filter((n) => n.type === 'license.revoked');
+      expect(alert).toHaveLength(1);
+      expect(alert[0]!.title).toContain(license.license_number);
+      expect(alert[0]!.material_id).toBeNull();
+    }
+  });
+
+  it('tagging the material sensitive revokes its licenses too; a license still active on a material that is no longer sellable gets no link', async () => {
+    const a = await licensed();
+    const materialId = (await h.pool.query<{ material_id: string }>(`SELECT material_id FROM licenses WHERE id = $1`, [a.licenseId])).rows[0]!.material_id;
+    const editor = await loginAs(h, [{ role: 'editor_in_chief' }]);
+    await http()
+      .patch(`/v1/materials/${materialId}`)
+      .set(as(editor.token))
+      .set('Idempotency-Key', randomUUID())
+      .send({ sensitivity: { minors: false, injured: true, graphic: false } })
+      .expect(200);
+    expect((await http().get(`/v1/licenses/${a.licenseId}`).set(as(a.buyer.token)).expect(200)).body).toMatchObject({ status: 'revoked', revoked_reason: 'rights_withdrawn' });
+
+    // ترخيص فاعل من قبل الإصلاح على مادة لم تعد قابلة للبيع: لا رابط وإن لم يُبطَل
+    const b = await licensed();
+    const other = (await h.pool.query<{ material_id: string }>(`SELECT material_id FROM licenses WHERE id = $1`, [b.licenseId])).rows[0]!.material_id;
+    await download(b.buyer.token, b.licenseId).expect(200);
+    await h.pool.query(`UPDATE catalog_listings SET state = 'suspended', suspended_reason = 'manual' WHERE material_id = $1`, [other]);
+    await h.pool.query(`UPDATE materials SET rights_state = 'blocked' WHERE id = $1`, [other]);
+    expect((await http().get(`/v1/licenses/${b.licenseId}`).set(as(b.buyer.token)).expect(200)).body.status).toBe('active');
+    expect((await download(b.buyer.token, b.licenseId).expect(409)).body.code).toBe('license_not_active');
+    await h.pool.query(`UPDATE materials SET rights_state = 'sellable', sensitivity_graphic = true WHERE id = $1`, [other]);
+    expect((await download(b.buyer.token, b.licenseId).expect(409)).body.code).toBe('license_not_active');
+  });
+
+  it('a payment confirmed after the listed version lost editorial approval cancels the order (rights_changed) and issues no license', async () => {
+    const t = await template();
+    const { listingId, materialId } = await listed([t]);
+    const b = await buyer(await organization());
+    const created = (await post(b.token, '/orders', { items: [{ listing_id: listingId, license_template_id: t }] }).expect(201)).body;
+    const { ref: r } = await ref(b.token, created.id);
+    const editor = await loginAs(h, [{ role: 'editor_in_chief' }]);
+    await http().patch(`/v1/materials/${materialId}`).set(as(editor.token)).set('Idempotency-Key', randomUUID()).send({ title: 'Edited after approval' }).expect(200);
+    const listing = (await http().get(`/v1/materials/${materialId}/listing`).set(as(rights.token)).expect(200)).body;
+    expect(listing).toMatchObject({ state: 'suspended', suspended_reason: 'editorial_changed', material_version: 1 });
+    await pay(r);
+    expect(await order(b.token, created.id)).toMatchObject({ status: 'cancelled', cancel_reason: 'rights_changed' });
+    expect(await count(`SELECT count(*)::int AS n FROM licenses WHERE material_id = $1`, [materialId])).toBe(0);
+  });
+
+  it('CatalogItem.shot_list is empty for buyer roles at the API, and kept for staff', async () => {
+    const t = await template();
+    const { listingId } = await listed([t]);
+    await h.pool.query(`UPDATE catalog_listings SET shot_list = $2 WHERE id = $1`, [listingId, JSON.stringify([{ start_ms: 0, label: { ar: 'لقطة', en: 'Shot' } }])]);
+    const b = await buyer(await organization(), 'buyer_member');
+    expect((await http().get(`/v1/catalog/${listingId}`).set(as(b.token)).expect(200)).body.shot_list).toEqual([]);
+    const page = (await http().get('/v1/catalog?limit=100').set(as(b.token)).expect(200)).body.items as Array<{ listing_id: string; shot_list: unknown[] }>;
+    expect(page.find((i) => i.listing_id === listingId)?.shot_list).toEqual([]);
+    expect((await http().get(`/v1/catalog/${listingId}`).set(as(finance.token)).expect(200)).body.shot_list).toHaveLength(1);
   });
 
   it('the sandbox page returns the buyer to the configured web page only, with the outcome as a hint', async () => {
