@@ -3391,12 +3391,19 @@ paths:
       description: >-
         يعيد رابط صفحة الدفع المستضافة (ADR 0032): لا تمر بيانات بطاقة بخوادمنا ولا في أي عقد. يُعاد التحقق من الحجز
         الحصري والحقوق قبل إنشاء الجلسة. الطلب غير `pending_payment` أو المنتهي `409 order_state_conflict`، والحجز الذي ضاع
-        `409 exclusive_unavailable`. التكرار والجلسة صالحة يعيد الجلسة نفسها. العودة من صفحة المزوّد لا تؤكد الدفع: التأكيد
-        من الإشعار الموقّع وحده، والعميل يقرأ الطلب حتى `paid`.
+        `409 exclusive_unavailable`، والمادة التي خرجت حقوقها من `sellable` `409 rights_not_sellable`. التكرار والجلسة صالحة
+        يعيد الجلسة نفسها. العودة من صفحة المزوّد لا تؤكد الدفع: التأكيد من الإشعار الموقّع وحده، والعميل يقرأ الطلب حتى
+        `paid`. الجسم اختياري (`CheckoutRequest`، إضافي): `locale` لغة الويب التي بدأ منها المشتري، فتُعرض بها صفحة المزوّد
+        التجريبي ويعود منها إلى طلبه بلغته (`{locale}` في قالب العودة من إعداد الخادم)؛ بلا جسم أو بلا `locale` العربية.
       operationId: createOrderCheckout
       x-roles: [buyer_admin, buyer_member]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CheckoutRequest" }
       responses:
         "200":
           description: الجلسة
@@ -3733,7 +3740,8 @@ paths:
       x-internal: true
       description: >-
         تعرض المبلغ وأزرار النتيجة، ولا تطلب بطاقة ولا أي بيانات دفع. `checkout_url` في `CheckoutSession` يشير إليها حين
-        `provider = sandbox`. المرجع المجهول أو المنتهي `404`.
+        `provider = sandbox`. بلغة الجلسة (`locale` في `CheckoutRequest`، و`lang` و`dir` على الصفحة)، وعليها نص «لا مال حقيقي»
+        الثابت في المتجر ورابط العودة إلى الطلب حين يُضبط قالب العودة، وأزرار النتيجة بأسماء مفهومة. المرجع المجهول أو المنتهي `404`.
       operationId: getSandboxCheckout
       x-roles: []
       security: []
@@ -6896,6 +6904,19 @@ components:
           type: array
           items: { $ref: "#/components/schemas/Order" }
         next_cursor: { type: [string, "null"] }
+
+    CheckoutRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        طلب جلسة الدفع (إضافي على v0.3). كل حقل اختياري، و`{}` كالجسم الغائب. لا يغيّر الطلب ولا مبلغه، ولا يُحفظ معه.
+      properties:
+        locale:
+          type: string
+          enum: [ar, en]
+          description: >-
+            لغة صفحة المزوّد التجريبي (`lang` و`dir`) والعودة منها إلى `/{locale}/store/orders/{order_id}` في الويب؛ الافتراض `ar`.
+            قيمة من القائمة وحدها: الوجهة نفسها من إعداد الخادم لا من الطلب، فلا تحويل مفتوح.
 
     CheckoutSession:
       type: object
