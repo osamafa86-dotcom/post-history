@@ -18,7 +18,7 @@ test("editor in chief browses the bilingual catalog, opens an item with a waterm
   await expect(page.getByTestId("catalog-card")).toHaveCount(2);
   await page.getByLabel(ar.store.search, { exact: true }).fill("1"); await page.getByRole("button", { name: ar.store.browse.searchButton, exact: true }).click();
   await expect(page.getByTestId("catalog-card")).toHaveCount(1);
-  await expect(page.getByTestId("catalog-card")).toContainText("150.00");
+  await expect(page.getByTestId("catalog-card")).toContainText(ar.store.card.previewBadge); await expect(page.getByTestId("catalog-card")).not.toContainText("فلسطين بوست");
   await page.getByRole("link", { name: "لقطات اصطناعية 1" }).first().click();
   await expect(page.getByRole("heading", { name: "لقطات اصطناعية 1" })).toBeVisible();
   await expect(page.locator(".viewer-mark")).toHaveText("fixture@example.test");
@@ -29,7 +29,7 @@ test("editor in chief browses the bilingual catalog, opens an item with a waterm
   await expect(page.getByTestId("item-facts")).toContainText("3840×2160"); await expect(page.getByTestId("item-facts")).not.toContainText("13:45");
   await expect(page.locator("main")).not.toContainText("لقطة عامة"); await expect(page.getByTestId("buyer-preview")).toBeVisible();
   const body = await page.locator("body").textContent(); expect(body).not.toContain("never-display-canary");
-  const raw = await page.request.get("/api/bff/catalog"); expect(await raw.text()).not.toMatch(/never-display-canary|31\.5|"gps"|"lat"/);
+  const raw = await page.request.get("/api/bff/catalog"); expect(await raw.text()).not.toMatch(/never-display-canary|31\.5|"gps"|"lat"|فلسطين بوست/);
   expect(outgoing.every(url => url.startsWith("http://127.0.0.1:3100/"))).toBe(true);
 });
 

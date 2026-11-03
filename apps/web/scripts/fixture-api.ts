@@ -1,6 +1,6 @@
 // خادم بيانات اصطناعية للاختبار والقياس المحلي فقط؛ لا يدخل حزمة التطبيق.
 import { createServer } from "node:http";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { form, material, me, tokens } from "../tests/fixtures";
 import assets from "../tests/media-fixture.json";
 import { assignmentRead, assignmentWrite, resetAssignments, seedAssignments } from "./fixture-assignments";
@@ -95,9 +95,11 @@ const issued = new Map<string, Record<string, unknown> & { id: string; organizat
 function seedLicenses() {
   issued.clear();
   const terms = { type: "editorial_single", name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" }, terms: { ar: "استخدام تحريري واحد في نشرة إخبارية.", en: "One editorial use in a news bulletin." }, usage_media: ["tv", "web"], territory: { kind: "worldwide" }, term_days: null, exclusivity_hours: null, deliverables: ["original"], attribution: { ar: "فلسطين بوست", en: "Palestine Post" }, prohibitions: ["resale", "ai_training"] };
-  const base = { order_id: "92000000-0000-4000-8000-000000000001", organization_id: "90000000-0000-4000-8000-000000000001", listing_id: "71000000-0000-4000-8000-000000000001", material_version: 1, license_template_id: "70000000-0000-4000-8000-000000000001", license_version: 1, terms, delivery_contents: [{ deliverable: "produced", mime_type: "video/mp4", count: 1, duration_ms: 65000, width: 1920, height: 1080 }], delivery_size_bytes: 1048576, price: { amount_minor: 15000, currency: "USD" }, valid_from: "2026-10-26T10:00:00Z", valid_until: null, exclusive_until: null, issued_at: "2026-10-26T10:00:00Z", internal_note: "never-display-canary" };
+  const base = { order_id: "92000000-0000-4000-8000-000000000001", order_number: "ORD-2026-7K3M9Q2X", organization_id: "90000000-0000-4000-8000-000000000001", listing_id: "71000000-0000-4000-8000-000000000001", material_version: 1, license_template_id: "70000000-0000-4000-8000-000000000001", license_version: 1, terms, delivery_contents: [{ deliverable: "produced", mime_type: "video/mp4", count: 1, duration_ms: 65000, width: 1920, height: 1080 }], delivery_size_bytes: 1048576, price: { amount_minor: 15000, currency: "USD" }, valid_from: "2026-10-26T10:00:00Z", valid_until: null, exclusive_until: null, issued_at: "2026-10-26T10:00:00Z", internal_note: "never-display-canary" };
   issued.set("93000000-0000-4000-8000-000000000001", { ...base, id: "93000000-0000-4000-8000-000000000001", order_item_id: randomUUID(), license_number: "PH-2026-7K3M9Q2XRT", title: { ar: "لقطات اصطناعية 1", en: "Synthetic footage 1" }, status: "active", revoked_reason: null, delivery_ready: true, downloads: 3 });
   issued.set("93000000-0000-4000-8000-000000000002", { ...base, id: "93000000-0000-4000-8000-000000000002", order_item_id: randomUUID(), license_number: "PH-2026-4HJ8NP0WVZ", title: { ar: "لقطات اصطناعية 2", en: "Synthetic footage 2" }, status: "revoked", revoked_reason: "refunded", delivery_ready: true, downloads: 3 });
+  // ترخيص لمدة انتهت (S4: «انتهى» بتاريخه و«تجديد» إلى صفحة المادة)، من طلب أقدم بلا رقم مقروء في ردّه
+  issued.set("93000000-0000-4000-8000-000000000003", { ...base, id: "93000000-0000-4000-8000-000000000003", order_id: "92000000-0000-4000-8000-000000000003", order_number: undefined, order_item_id: randomUUID(), license_number: "PH-2026-9WQ3T6M1KD", listing_id: "71000000-0000-4000-8000-000000000002", title: { ar: "لقطات اصطناعية 2", en: "Synthetic footage 2" }, terms: { ...terms, type: "editorial_term", name: { ar: "تحريري لمدة", en: "Editorial term" }, term_days: 30 }, status: "expired", revoked_reason: null, valid_until: "2026-10-12T10:00:00Z", delivery_ready: true, downloads: 3 });
 }
 const conflicts: (Record<string, unknown> & { id: string; state: string })[] = [];
 function seedConflicts() {
@@ -135,11 +137,16 @@ function seedCommission() {
 // الطلبات والدفع التجريبي: أسعار عروض الكتالوج الاصطناعي، وصفحة مزوّد مستضافة تؤكد الدفع بعد العودة كما يفعل الإشعار الموقّع.
 const orders = new Map<string, Record<string, unknown> & { id: string; organization_id: string; status: string; created_by: string }>();
 const refunds = new Map<string, Record<string, unknown>[]>();
-// طلب مدفوع لمؤسسة أخرى غير مؤسسة المشتري الاصطناعي، كي تسترد منه المالية دون أن يظهر في طلبات المشتري.
+// طلب مدفوع لمؤسسة أخرى غير مؤسسة المشتري الاصطناعي، كي تسترد منه المالية دون أن يظهر في طلبات المشتري؛ وطلب المشتري المدفوع الذي صدر منه
+// ترخيصاه برقمه المقروء وأمر شرائه وفاتورته (ADR 0100).
+let invoiceCounter = 2;
+const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ", orderNumber = () => `ORD-${new Date().getUTCFullYear()}-${Array.from(randomBytes(8), b => crockford[b % 32]).join("")}`;
 function seedOrders() {
-  orders.clear(); refunds.clear();
+  orders.clear(); refunds.clear(); invoiceCounter = 2;
   const stamp = "2026-10-25T10:00:00Z", line = (n: number, amount: number) => ({ id: `95000000-0000-4000-8000-00000000000${n}`, listing_id: `71000000-0000-4000-8000-00000000000${n}`, material_version: 1, license_template_id: "70000000-0000-4000-8000-000000000001", license_version: 1, license_type: "editorial_single", license_name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" }, title: { ar: `لقطات اصطناعية ${n}`, en: `Synthetic footage ${n}` }, price: { amount_minor: amount, currency: "USD" }, license_id: randomUUID() });
-  orders.set("92000000-0000-4000-8000-000000000009", { id: "92000000-0000-4000-8000-000000000009", organization_id: "90000000-0000-4000-8000-000000000009", created_by: randomUUID(), status: "paid", cancel_reason: null, total: { amount_minor: 40000, currency: "USD" }, items: [line(1, 15000), line(2, 25000)], expires_at: stamp, paid_at: stamp, created_at: stamp, updated_at: stamp });
+  orders.set("92000000-0000-4000-8000-000000000009", { id: "92000000-0000-4000-8000-000000000009", order_number: "ORD-2026-4M8T2W6Z", purchase_order_number: null, invoice_number: "INV-2026-000001", organization_id: "90000000-0000-4000-8000-000000000009", created_by: randomUUID(), status: "paid", cancel_reason: null, total: { amount_minor: 40000, currency: "USD" }, items: [line(1, 15000), line(2, 25000)], expires_at: stamp, paid_at: stamp, created_at: stamp, updated_at: stamp });
+  const paidAt = "2026-10-26T10:00:00Z", own = [{ ...line(1, 15000), license_id: "93000000-0000-4000-8000-000000000001" }, { ...line(2, 15000), id: "95000000-0000-4000-8000-000000000012", license_id: "93000000-0000-4000-8000-000000000002" }];
+  orders.set("92000000-0000-4000-8000-000000000001", { id: "92000000-0000-4000-8000-000000000001", order_number: "ORD-2026-7K3M9Q2X", purchase_order_number: "PO-2026-1188", invoice_number: "INV-2026-000002", organization_id: "90000000-0000-4000-8000-000000000001", created_by: "91000000-0000-4000-8000-000000000002", status: "paid", cancel_reason: null, total: { amount_minor: 30000, currency: "USD" }, items: own, expires_at: paidAt, paid_at: paidAt, created_at: "2026-10-26T09:50:00Z", updated_at: paidAt });
 }
 const offerPrices: Record<string, { amount: number; type: string; name: { ar: string; en: string } }> = {
   "70000000-0000-4000-8000-000000000001": { amount: 15000, type: "editorial_single", name: { ar: "تحريري لاستخدام واحد", en: "Editorial single use" } },
@@ -181,7 +188,7 @@ const server = createServer(async (req, res) => {
   if (sandbox) {
     const order = orders.get(sandbox[2]); if (!order) return send({}, 404);
     if (sandbox[1] === "checkout") { res.setHeader("Content-Type", "text/html; charset=utf-8"); res.end(`<!doctype html><title>Sandbox checkout</title><h1>Sandbox provider</h1><a href="/sandbox/pay/${order.id}">Pay (sandbox)</a>`); return; }
-    setTimeout(() => { if (order.status === "pending_payment") Object.assign(order, { status: "paid", paid_at: new Date().toISOString(), updated_at: new Date().toISOString() }); }, 1500);
+    setTimeout(() => { if (order.status === "pending_payment") Object.assign(order, { status: "paid", paid_at: new Date().toISOString(), updated_at: new Date().toISOString(), invoice_number: `INV-${new Date().getUTCFullYear()}-${String(++invoiceCounter).padStart(6, "0")}` }); }, 1500);
     res.statusCode = 302; res.setHeader("Location", `http://127.0.0.1:3100/ar/store/orders/${order.id}?returned=1`); res.end(); return;
   }
   if (url.pathname === "/__test/state") return send({ writes, applied: applied.size, identitySetting, auditCount: permissionAudit.length });
@@ -391,7 +398,9 @@ const server = createServer(async (req, res) => {
         const total = items.reduce((sum, i) => sum + i.price.amount_minor, 0), expected = body.expected_total as { amount_minor: number } | undefined;
         if (expected && expected.amount_minor !== total) return send({ code: "price_changed" }, 409);
         const stamp = new Date().toISOString(), exclusive = items.some(i => i.license_type === "exclusive_temporary");
-        const order = { id: randomUUID(), organization_id: user.organization_id, created_by: user.user_id, status: "pending_payment", cancel_reason: null, total: { amount_minor: total, currency: "USD" }, items, expires_at: new Date(Date.now() + (exclusive ? 900000 : 86400000)).toISOString(), paid_at: null, created_at: stamp, updated_at: stamp };
+        const po = body.purchase_order_number;
+        if (po !== undefined && (typeof po !== "string" || !/^[A-Za-z0-9](?:[A-Za-z0-9 ._/#-]{0,62}[A-Za-z0-9])?$/.test(po))) return send({ code: "validation_failed" }, 422);
+        const order = { id: randomUUID(), order_number: orderNumber(), purchase_order_number: po ?? null, invoice_number: null, organization_id: user.organization_id, created_by: user.user_id, status: "pending_payment", cancel_reason: null, total: { amount_minor: total, currency: "USD" }, items, expires_at: new Date(Date.now() + (exclusive ? 900000 : 86400000)).toISOString(), paid_at: null, created_at: stamp, updated_at: stamp };
         orders.set(order.id, order); return commit(order, 201);
       }
       const order = orders.get(orderWrite[1]); if (!order || order.organization_id !== user.organization_id) return send({}, 404);
@@ -621,9 +630,12 @@ const server = createServer(async (req, res) => {
     const text = (ar: string, en: string) => ({ ar, en });
     const offer = (id: string, type: string, amount: number) => ({ license_template_id: `70000000-0000-4000-8000-00000000000${id}`, license_version: 1, type, name: text(type === "exclusive_temporary" ? "حصري 48 ساعة" : "تحريري لاستخدام واحد", type === "exclusive_temporary" ? "Exclusive 48 h" : "Editorial single use"), price: { amount_minor: amount, currency: "USD" }, terms: { type, name: text("شروط اصطناعية", "Synthetic terms"), terms: text("استخدام اصطناعي قبل الشراء", "Synthetic use before purchase"), usage_media: ["tv", "web"], territory: { kind: "worldwide" }, term_days: type === "exclusive_temporary" ? 365 : null, exclusivity_hours: type === "exclusive_temporary" ? 48 : null, deliverables: ["original"], attribution: text("شبكة اصطناعية", "Synthetic network"), prohibitions: ["resale"] } });
     const catalog = [1, 2].map(i => ({ listing_id: `71000000-0000-4000-8000-00000000000${i}`, material_version: 1, title: text(`لقطات اصطناعية ${i}`, `Synthetic footage ${i}`), description: text("وصف اصطناعي", "Synthetic description"),
-      shot_list: [{ start_ms: 0, label: text("لقطة عامة", "Wide shot") }, { start_ms: 65000, label: text("لقطة قريبة", "Close-up") }], material_types: ["raw_footage"], governorate: "غزة", shot_on: "2026-10-19T13:45:00Z", duration_ms: 125000, width: 3840, height: 2160,
+      shot_list: [{ start_ms: 0, label: text("لقطة عامة", "Wide shot") }, { start_ms: 65000, label: text("لقطة قريبة", "Close-up") }], material_types: ["raw_footage"], governorate: i === 1 ? "غزة" : "دير البلح", shot_on: "2026-10-19T13:45:00Z", duration_ms: 125000, width: 3840, height: 2160,
       verified_on: i === 1 ? "2026-10-21" : null, editorial_approved_on: i === 1 ? "2026-10-22" : null, exclusive_unavailable_until: i === 2 ? "2026-10-29T10:00:00Z" : null, credit: "فلسطين بوست", offers: [offer("1", "editorial_single", 15000), offer("2", "exclusive_temporary", 90000)], exclusive_available: i === 1, listed_at: "2026-10-21T10:00:00Z", reporter_id: "never-display-canary", city: "never-display-canary", gps: { lat: 31.5, lng: 34.4 } }));
-    if (url.pathname === "/v1/catalog") { const q = url.searchParams.get("q"); return send({ items: catalog.filter(item => !q || item.title.ar.includes(q) || item.title.en.toLowerCase().includes(q.toLowerCase())), next_cursor: null }); }
+    if (url.pathname === "/v1/catalog") {
+      const q = url.searchParams.get("q"), governorate = url.searchParams.get("governorate"), from = url.searchParams.get("shot_from");
+      return send({ items: catalog.filter(item => (!q || item.title.ar.includes(q) || item.title.en.toLowerCase().includes(q.toLowerCase())) && (!governorate || item.governorate === governorate) && (!from || item.shot_on.slice(0, 10) >= from)), next_cursor: null });
+    }
     const preview = /^\/v1\/catalog\/([^/]+)\/preview-url$/.exec(url.pathname), id = preview?.[1] ?? url.pathname.slice("/v1/catalog/".length), item = catalog.find(c => c.listing_id === id);
     if (!item) return send({ code: "not_found" }, 404);
     if (!preview) return send(item);

@@ -24,11 +24,13 @@ export type NavItem = { key: string; href: string; label: string; short: string;
 export function navItems(me: Me, locale: Locale, pathname: string): NavItem[] {
   const m = messages[locale], short = m.shell.short as Record<string, string>, path = pathname.replace(/^\/(ar|en)(?=\/|$)/, ""), ends = (page: string) => path === `/${page}` || path.startsWith(`/${page}/`);
   const item = (key: string, label: string, active: boolean, group: NavGroup, icon: IconName, page = key): NavItem => ({ key, href: `/${locale}/${page}`, label, short: short[key] ?? label, active, group, icon });
-  const store = /^\/store(\/|$)/.test(path), licenses = /^\/store\/licenses(\/|$)/.test(path), orders = /^\/store\/(orders|cart)(\/|$)/.test(path);
+  const store = /^\/store(\/|$)/.test(path), licenses = /^\/store\/licenses(\/|$)/.test(path);
+  // المشتري (S1–S4): المواد وتراخيصي والطلبات ومؤسسته؛ والسلة زرّ بعدّادها في الشريط نفسه لا وجهة هنا، فصفحتها لا تنشّط وجهة.
+  const buyerOrders = /^\/store\/orders(\/|$)/.test(path), cart = /^\/store\/cart(\/|$)/.test(path);
   if (isBuyer(me)) return [
-    item("store", m.store.title, store && !licenses && !orders, "library", "store"),
-    item("licenses", m.licenses.nav, licenses, "library", "license", "store/licenses"),
-    item("orders", m.orders.nav, orders, "library", "orders", "store/cart"),
+    item("store", m.store.nav.materials, store && !licenses && !buyerOrders && !cart, "library", "store"),
+    item("licenses", m.store.nav.licenses, licenses, "library", "license", "store/licenses"),
+    item("orders", m.store.nav.orders, buyerOrders, "library", "orders", "store/orders"),
     item("organization", m.buyers.myOrganization, ends("organization"), "admin", "org"),
   ];
   const has = (...roles: RoleName[]) => hasRole(me, ...roles);

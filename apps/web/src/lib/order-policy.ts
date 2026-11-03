@@ -1,4 +1,5 @@
 import type { components } from "@/generated/schema";
+import { invoiceNumberPattern, orderNumberPattern, purchaseOrderMax, purchaseOrderPattern } from "./store-format";
 
 // الطلبات والدفع التجريبي (v0.3، ADR 0025 الجزء 4، ADR 0032)؛ يطابقها contract-drift مع OpenAPI، وليست نماذج بديلة.
 export type Order = components["schemas"]["Order"];
@@ -18,8 +19,9 @@ const plain = (value: unknown): value is Record<string, unknown> => !!value && t
 
 /** طلب من السلة بقواعد العقد، أو null: بند لكل إدراج، وعملة واحدة يحكم فيها الخادم، والمجموع الذي رآه المشتري. */
 export function orderCreate(body: Record<string, unknown>): OrderCreate | null {
-  if (Object.keys(body).some(key => !["items", "expected_total"].includes(key))) return null;
-  const items = body.items, total = body.expected_total;
+  if (Object.keys(body).some(key => !["items", "expected_total", "purchase_order_number"].includes(key))) return null;
+  const items = body.items, total = body.expected_total, po = body.purchase_order_number;
+  if (po !== undefined && !validPurchaseOrder(po)) return null;
   if (!Array.isArray(items) || items.length < 1 || items.length > orderLimits.items) return null;
   if (!items.every(i => plain(i) && Object.keys(i).sort().join() === "license_template_id,listing_id" && typeof i.listing_id === "string" && uuid.test(i.listing_id) && typeof i.license_template_id === "string" && uuid.test(i.license_template_id))) return null;
   if (new Set(items.map(i => (i as Record<string, unknown>).listing_id)).size !== items.length) return null;
@@ -27,12 +29,21 @@ export function orderCreate(body: Record<string, unknown>): OrderCreate | null {
   return {
     items: (items as { listing_id: string; license_template_id: string }[]).map(i => ({ listing_id: i.listing_id, license_template_id: i.license_template_id })),
     ...(total ? { expected_total: { amount_minor: (total as { amount_minor: number }).amount_minor, currency: (total as { currency: "USD" | "ILS" }).currency } } : {}),
+    ...(po !== undefined ? { purchase_order_number: po as string } : {}),
   };
 }
+/** رقم أمر الشراء بقاعدة العقد (ADR 0100): 1–64 من الحروف اللاتينية والأرقام و« ._/#-»، يبدأ وينتهي بحرف أو رقم. */
+export const validPurchaseOrder = (value: unknown): value is string => typeof value === "string" && value.length <= purchaseOrderMax && purchaseOrderPattern.test(value);
+const matching = (value: unknown, pattern: RegExp) => typeof value === "string" && pattern.test(value) ? value : null;
 /** الطلب للمتصفح بقائمة بيضاء. */
 export function safeOrder(o: Order): Order {
   return {
-    id: o.id, organization_id: o.organization_id, created_by: o.created_by, status: o.status, cancel_reason: o.cancel_reason ?? null, total: { amount_minor: o.total.amount_minor, currency: o.total.currency },
+    id: o.id,
+    // الأرقام المقروءة (ADR 0100) بصيغها وحدها؛ ما خالفها لا يصل المتصفح
+    ...(matching(o.order_number, orderNumberPattern) ? { order_number: o.order_number } : {}),
+    purchase_order_number: validPurchaseOrder(o.purchase_order_number) ? o.purchase_order_number : null,
+    invoice_number: matching(o.invoice_number, invoiceNumberPattern),
+    organization_id: o.organization_id, created_by: o.created_by, status: o.status, cancel_reason: o.cancel_reason ?? null, total: { amount_minor: o.total.amount_minor, currency: o.total.currency },
     items: o.items.map(i => ({ id: i.id, listing_id: i.listing_id, material_version: i.material_version, license_template_id: i.license_template_id, license_version: i.license_version, license_type: i.license_type, license_name: { ar: i.license_name.ar, en: i.license_name.en }, title: { ar: i.title.ar, en: i.title.en }, price: { amount_minor: i.price.amount_minor, currency: i.price.currency }, license_id: i.license_id ?? null })),
     expires_at: o.expires_at, paid_at: o.paid_at ?? null, created_at: o.created_at, updated_at: o.updated_at,
   };

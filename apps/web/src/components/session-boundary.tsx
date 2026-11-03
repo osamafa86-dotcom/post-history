@@ -8,6 +8,7 @@ import { isBuyer } from "@/lib/buyer-policy";
 import { hasRole } from "@/lib/review";
 import { AccountActions, BottomBar, ShellState, ShellTopBar, Sidebar, useInboxBadge } from "./app-shell";
 import { navItems } from "./workspace-nav";
+import { CartProvider } from "./store/cart";
 
 const UserContext = createContext<Me | null>(null);
 export function useUser() { const me = useContext(UserContext); if (!me) throw new Error("Session required"); return me; }
@@ -58,7 +59,7 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
   const account = <AccountActions me={me} locale={locale} languageHref={pathname.replace(`/${locale}`, locale === "ar" ? "/en" : "/ar")} busy={busy} logout={() => void logout(false)} logoutAll={() => setConfirmAll(true)} />;
   // هيكل v2 (W1، M1، T1): الشريط الجانبي في جهة البداية، والشريط العلوي فوق المحتوى، والشريط السفلي على الجوال.
   // المشتري بلا شريط جانبي ولا سفلي (M4)، ووجه المتجر داكن صراحةً كما في إطارات S (`data-mode`).
-  return <UserContext.Provider value={me}><ShellState>{badge => <>
+  return <UserContext.Provider value={me}><CartProvider><ShellState>{badge => <>
     <a className="skip-link" href="#main-content">{m.skip}</a>
     <div className={`app-shell${buyer ? " buyer" : ""}`} data-mode={buyer ? "dark" : undefined}>
       {!buyer && <Sidebar items={items} locale={locale} brandHref={inboxHref} badge={badge} />}
@@ -69,7 +70,7 @@ export function SessionBoundary({ locale, children }: { locale: Locale; children
       {!buyer && <BottomBar items={items} locale={locale} badge={badge} account={account} />}
     </div>
     {confirmAll && <dialog className="modal" ref={node => { if (node && !node.open) node.showModal(); }} onCancel={() => setConfirmAll(false)} aria-labelledby="logout-title"><h2 id="logout-title">{m.logoutAll}</h2><p>{m.logoutAllWarning}</p><div className="actions"><button autoFocus className="secondary" disabled={busy} onClick={() => setConfirmAll(false)}>{m.cancel}</button><button className="danger" disabled={busy} onClick={() => void logout(true)}>{m.confirm}</button></div></dialog>}
-  </>}</ShellState></UserContext.Provider>;
+  </>}</ShellState></CartProvider></UserContext.Provider>;
 }
 
 /**

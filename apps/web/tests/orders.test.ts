@@ -4,7 +4,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { handle } from "../src/server/handler";
 import type { Me } from "../src/lib/types";
 import type { WebConfig } from "../src/server/config";
-import { allowedCheckout, orderCreate } from "../src/lib/order-policy";
+import { allowedCheckout, orderCreate, safeOrder, validPurchaseOrder, type Order } from "../src/lib/order-policy";
 import { MemoryStore } from "./memory-store";
 import { me, tokens } from "./fixtures";
 
@@ -26,6 +26,21 @@ describe("order input and checkout origin", () => {
   it("builds an order from the cart by the contract's rules", () => {
     expect(orderCreate(body)).toEqual(body); expect(orderCreate({ items: body.items })).toEqual({ items: body.items });
     for (const patch of [{ items: [] }, { items: [body.items[0], body.items[0]] }, { items: Array.from({ length: 21 }, () => ({ listing_id: randomUUID(), license_template_id: template })) }, { items: [{ listing_id: "x", license_template_id: template }] }, { items: [{ ...body.items[0], price: 1 }] }, { expected_total: { amount_minor: -1, currency: "USD" } }, { expected_total: { amount_minor: 1, currency: "EUR" } }, { extra: 1 }]) expect(orderCreate({ ...body, ...patch }), JSON.stringify(patch)).toBeNull();
+  });
+  it("carries the optional purchase order number by the contract's rule (ADR 0100)", () => {
+    expect(orderCreate({ ...body, purchase_order_number: "PO 2026/17-A" })).toEqual({ ...body, purchase_order_number: "PO 2026/17-A" });
+    expect(orderCreate({ ...body, purchase_order_number: "A".repeat(64) })).not.toBeNull();
+    for (const po of [" PO-1", "PO-1 ", "", "-PO", "PO\u200f1", "PO\n1", "أمر-1", "١٢٣", "A".repeat(65), 17, null]) {
+      expect(orderCreate({ ...body, purchase_order_number: po }), JSON.stringify(po)).toBeNull(); expect(validPurchaseOrder(po)).toBe(false);
+    }
+  });
+  it("passes the readable numbers to the browser by their contract formats only", () => {
+    const numbered = { ...order, order_number: "ORD-2026-7K3M9Q2X", purchase_order_number: "PO-2026-1188", invoice_number: "INV-2026-000012", provider_reference: "never-display-canary" } as unknown as Order;
+    const safe = safeOrder(numbered);
+    expect(safe).toMatchObject({ order_number: "ORD-2026-7K3M9Q2X", purchase_order_number: "PO-2026-1188", invoice_number: "INV-2026-000012" }); expect(JSON.stringify(safe)).not.toContain("canary");
+    const odd = safeOrder({ ...numbered, order_number: "ORD-2026-IIIIIIII", purchase_order_number: "\u202ePO", invoice_number: "INV-26-1" } as Order);
+    expect(odd).not.toHaveProperty("order_number"); expect(odd.purchase_order_number).toBeNull(); expect(odd.invoice_number).toBeNull();
+    expect(safeOrder(order as unknown as Order)).toMatchObject({ purchase_order_number: null, invoice_number: null });
   });
   it("only sends the browser to a configured provider origin", () => {
     expect(allowedCheckout("https://sandbox.pay.example.test/s/abc", config.checkoutOrigins!)).toBe(true);

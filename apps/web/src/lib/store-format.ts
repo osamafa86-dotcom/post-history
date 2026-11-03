@@ -45,3 +45,23 @@ export function formatDay(value: unknown, locale: Locale): string | null {
   const day = catalogDay(value);
   return day ? new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`)) : null;
 }
+
+/** يوم من العقد بتاريخ طويل («28 تشرين الأول 2026») بأرقام لاتينية وبلا ساعة، بالتسمية نفسها في `longDate`. */
+export function longDay(value: unknown, locale: Locale): string | null {
+  const day = catalogDay(typeof value === "string" ? value.slice(0, 10) : value);
+  return day ? new Intl.DateTimeFormat(locale === "ar" ? "ar-PS-u-nu-latn" : "en", { dateStyle: "long", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`)) : null;
+}
+
+/** المبلغ بمنزلتيه بلا رمز العملة، لخلايا عمود يحمل العملة في رأسه (S7). */
+export function formatAmount(price: Price, locale: Locale) {
+  return new Intl.NumberFormat(locale === "ar" ? "ar-u-nu-latn" : "en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(price.amount_minor / 100);
+}
+
+// أرقام الطلب المقروءة (ADR 0100) بصيغها في العقد؛ يطابقها contract-drift.
+export const orderNumberPattern = /^ORD-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{8}$/;
+export const invoiceNumberPattern = /^INV-[0-9]{4}-[0-9]{6,}$/;
+export const purchaseOrderPattern = /^[A-Za-z0-9](?:[A-Za-z0-9 ._/#-]{0,62}[A-Za-z0-9])?$/;
+export const purchaseOrderMax = 64;
+
+/** ما يعرّف الطلب للمشتري: رقمه المقروء، وإن غاب (ردّ لم يحمله) فأول ثمانية من معرّفه كما في S7 قبل الرقم. */
+export const orderLabel = (order: { id: string; order_number?: string | null }) => order.order_number ?? order.id.slice(0, 8).toUpperCase();

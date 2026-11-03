@@ -1,12 +1,13 @@
 "use client";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { Me } from "@/lib/types";
 import { messages, type Locale } from "@/lib/i18n";
 import { BrandMark, Icon } from "./icon";
 import { NotificationsPanel } from "./notifications-panel";
 import { bottomItems, initials, navGroups, userLine, type NavItem } from "./workspace-nav";
+import { useCartCount } from "./store/cart";
 
 /** بحث الشريط العلوي (`Web/Top bar`): يصل الوارد عبر هذا السياق، فالبحث داخل الصفحة المحمّلة كما كان (العقد بلا معامل بحث). */
 const SearchContext = createContext<{ query: string; setQuery: (value: string) => void }>({ query: "", setQuery: () => {} });
@@ -101,6 +102,7 @@ export function ShellTopBar({ me, locale, buyer, items, inboxHref, account }: { 
       <button type="button" className="icon-button search-toggle" aria-expanded={searching} aria-controls="shell-search" aria-label={t.searchOpen} onClick={() => setSearching(value => !value)}><Icon name="search" /></button>
     </>}
     <div className="topbar-end">
+      {buyer && <CartChip locale={locale} />}
       {!buyer && <div className="popover-anchor" ref={bellRef} onKeyDown={escape(bell, () => setBell(false))}>
         <button type="button" className="icon-button" aria-label={t.bell.open} aria-expanded={bell} aria-haspopup="dialog" onClick={() => { setBell(value => !value); setMenu(false); }}><Icon name="bell" /></button>
         {bell && <NotificationsPanel locale={locale} onClose={() => setBell(false)} />}
@@ -111,6 +113,14 @@ export function ShellTopBar({ me, locale, buyer, items, inboxHref, account }: { 
       </div>
     </div>
   </header>;
+}
+
+/** زرّ السلة في شريط المتجر (S1–S4، M4) بعدّاد بنودها؛ العدد في اسمه لقارئ الشاشة، والرقم الظاهر زخرفي. */
+function CartChip({ locale }: { locale: Locale }) {
+  const t = messages[locale].store.nav, count = useCartCount(), current = /^\/(ar|en)\/store\/cart(\/|$)/.test(usePathname() ?? "");
+  return <Link prefetch={false} className="cart-chip" href={`/${locale}/store/cart`} aria-current={current ? "page" : undefined} aria-label={t.cartCount.replace("{n}", String(count))} data-testid="cart-chip">
+    <Icon name="cart" /><span className="cart-chip-label">{t.cart}</span>{count > 0 && <span className="cart-chip-count" aria-hidden="true" dir="ltr">{count}</span>}
+  </Link>;
 }
 
 /** مزوّدا السياقين: البحث وعدّاد الوارد. */

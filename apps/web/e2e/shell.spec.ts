@@ -58,9 +58,10 @@ for (const locale of ["ar", "en"] as Locale[]) {
     await expect(page.getByTestId("sidebar")).toHaveCount(0); await expect(page.getByTestId("bottombar")).toHaveCount(0);
     await expect(page.locator(".app-shell")).toHaveAttribute("data-mode", "dark");
     const nav = page.getByRole("banner").getByRole("navigation", { name: m.workspace });
-    await expect(nav.getByRole("link")).toHaveText([m.store.title, m.licenses.nav, m.orders.nav, m.buyers.myOrganization]);
-    await expect(nav.locator("[aria-current='page']")).toHaveText(m.store.title);
-    await nav.getByRole("link", { name: m.licenses.nav }).click(); await expect(nav.locator("[aria-current='page']")).toHaveText(m.licenses.nav);
+    await expect(nav.getByRole("link")).toHaveText([m.store.nav.materials, m.store.nav.licenses, m.store.nav.orders, m.buyers.myOrganization]);
+    await expect(nav.locator("[aria-current='page']")).toHaveText(m.store.nav.materials);
+    await expect(page.getByTestId("cart-chip")).toHaveAccessibleName(m.store.nav.cartCount.replace("{n}", "0"));
+    await nav.getByRole("link", { name: m.store.nav.licenses }).click(); await expect(nav.locator("[aria-current='page']")).toHaveText(m.store.nav.licenses);
     await nav.getByRole("link", { name: m.buyers.myOrganization }).click(); await expect(nav.locator("[aria-current='page']")).toHaveText(m.buyers.myOrganization);
   });
 }
@@ -120,7 +121,7 @@ for (const locale of ["ar", "en"] as Locale[]) test(`no page scrolls sideways at
     ["admin", ["inbox", "board", "notifications", "form-preview", "store", "store/licenses", "store/orders", "license-templates", "admin", "forms", "notification-rules", "buyer-organizations", "payouts", "commission-rules", "invite-conflicts", "materials/20000000-0000-4000-8000-000000000001"]],
     ["reviewer", ["upload", "materials/20000000-0000-4000-8000-000000000005"]],
     ["reporter", ["my-materials", "earnings"]],
-    ["buyer", ["store", "store/licenses", "store/cart", "organization"]],
+    ["buyer", ["store", "store/71000000-0000-4000-8000-000000000001", "store/licenses", "store/cart", "store/orders", "store/orders/92000000-0000-4000-8000-000000000001", "store/orders/92000000-0000-4000-8000-000000000001/invoice", "organization"]],
   ];
   const wide: string[] = [];
   for (const [who, paths] of pages) {

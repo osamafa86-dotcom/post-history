@@ -5,7 +5,7 @@ import { fontFiles, tokensCss } from "../scripts/design-tokens.mjs";
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const tokens = JSON.parse(read("../../../docs/design/tokens.v2.json"));
 const generated = read("../src/generated/tokens.css");
-const styles = ["../src/app/globals.css", "../src/components/material-player.css"].map(read).join("\n");
+const styles = ["../src/app/globals.css", "../src/app/store.css", "../src/components/material-player.css"].map(read).join("\n");
 type Mode = "light" | "dark";
 
 /** قيمة الرمز الدلالي (`bg/base`…) بعد حل الإحالة في الوضع المطلوب. */
@@ -66,6 +66,9 @@ describe("design tokens v2 «Signal» are the web's single source (ADR 0085)", (
       for (const [fg, bg] of text) expect(contrast(color(fg, mode), color(bg, mode)), `${mode} ${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
       // الجدار ولوحة الدخول والمشغّل بوضع داكن صريح: نصّها على bg/raised وbg/base الداكنين.
       for (const [fg, bg] of [["text/on-store", "bg/store"], ["text/secondary", "bg/store"]] as [string, string][]) expect(contrast(color(fg, "dark"), color(bg, "dark")), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+      // المتجر (ADR 0101): الفعل الذهبي بنص bg/store في الوضعين، والشريحة المختارة معكوسة، والعنوان الذهبي على الوجه الداكن.
+      for (const [fg, bg] of [["bg/store", "action/store"], ["bg/base", "text/primary"], ["text/brand", "action/soft"], ["state/warn", "bg/raised"]] as [string, string][]) expect(contrast(color(fg, mode), color(bg, mode)), `${mode} ${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+      for (const [fg, bg] of [["action/store", "bg/base"], ["action/store", "bg/raised"]] as [string, string][]) expect(contrast(color(fg, "dark"), color(bg, "dark")), `dark ${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
       // حدود الحقول والحلقة والحدّ العاجل ≥ 3:1 (معيار 1.4.11).
       for (const [fg, bg] of [["border/edge", "bg/sunken"], ["action/primary", "bg/raised"], ["action/primary", "bg/base"], ["priority/urgent", "bg/raised"]] as [string, string][]) expect(contrast(color(fg, mode), color(bg, mode)), `${mode} ${fg} on ${bg}`).toBeGreaterThanOrEqual(3);
     }

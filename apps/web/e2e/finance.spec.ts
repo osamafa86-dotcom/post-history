@@ -34,7 +34,8 @@ test("finance reads the rules without adding versions; others do not see the pag
 test("finance refunds one item of a paid order, then the rest; the order becomes refunded", async ({ page }) => {
   const r = ar.refunds; await login(page, "finance");
   await page.getByRole("link", { name: ar.orders.staffNav, exact: true }).click();
-  await page.getByTestId("order-row").getByRole("link", { name: ar.orders.open }).click();
+  // الطلب برقمه المقروء (ADR 0100): الصفّ لطلب المؤسسة الأخرى المدفوع، والرابط رقمه
+  await page.getByTestId("order-row").filter({ hasText: "ORD-2026-4M8T2W6Z" }).getByRole("link", { name: "ORD-2026-4M8T2W6Z" }).click();
   const panel = page.getByRole("region", { name: r.title }); await expect(panel.getByText(r.empty)).toBeVisible();
   await expect(panel.getByRole("button", { name: r.submit })).toBeDisabled();
   await panel.getByLabel(/لقطات اصطناعية 2/).check(); await expect(page.getByTestId("refund-amount")).toContainText("250");
