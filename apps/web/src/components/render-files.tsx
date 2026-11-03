@@ -4,7 +4,7 @@ import { browserApi, dataOrThrow, RequestError } from "@/lib/browser-api";
 import { humanDuration, messages, shortTime, type Locale } from "@/lib/i18n";
 import type { Material, MaterialRender } from "@/lib/types";
 import { hasRole } from "@/lib/review";
-import { pollRenders, renderConditions, renderDetails, renderRoles, unfinished, type RenderCondition } from "@/lib/render-policy";
+import { byTemplate, pollRenders, renderConditions, renderDetails, renderRoles, unfinished, type RenderCondition } from "@/lib/render-policy";
 import { useUser } from "./session-boundary";
 import { Icon, type IconName } from "./icon";
 import { fill, RenderDialog, type RenderRefusal } from "./render-dialog";
@@ -18,8 +18,9 @@ const materialKey = (m: Material) => [m.version, m.row_version, m.updated_at, m.
 const ids = (items: MaterialRender[]) => unfinished(items).map(item => item.id).sort().join(",");
 
 /**
- * بطاقة «الملفات» (C1، C5–C7): الأصل والنسخة الخفيفة من `Material.files`، ونسخ قالب المتداول من `GET /materials/{id}/renders`
- * بحالاتها الأربع، وزرّ الطلب في آخرها. تظهر لأدوار الطلب وحدها، وتختفي كلها حين يردّ الخادم 404 (العلم مطفأ).
+ * بطاقة «الملفات» (C1، C5–C7): الأصل والنسخة الخفيفة من `Material.files`، ونسخ قالبَي المتداول من `GET /materials/{id}/renders`
+ * بحالاتها الأربع، مجموعةً بقالبها («مواد متداولة» ثم «الشاهد»، ADR 0110)، وزرّ الطلب في آخرها. تظهر لأدوار الطلب وحدها،
+ * وتختفي كلها حين يردّ الخادم 404 (العلم مطفأ).
  */
 export function RenderFiles({ locale, material }: { locale: Locale; material: Material }) {
   const m = messages[locale], d = m.derivative, me = useUser(), allowed = hasRole(me, ...renderRoles);
@@ -69,8 +70,10 @@ export function RenderFiles({ locale, material }: { locale: Locale; material: Ma
       <div className="render-group-head"><h3>{d.group.title}</h3><span className="badge state muted"><Icon name="clock" size={14} />{d.group.internalBadge}</span></div>
       <p className="caption">{d.group.inherit}</p>
       {status !== 0 && <div className="notice error" role="alert"><p>{m.error}</p><button type="button" className="secondary small" onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></div>}
-      {list.length > 0 && <ul className="render-list">{list.map(item => {
-        const look = stateLook[item.state], aspect = d.row.aspect[item.aspect], failedHere = download?.id === item.id ? download.error : undefined;
+      {byTemplate(list).map(group => <div key={group.template} className="render-template-group" data-testid="render-template-group" data-template={group.template}>
+        <h4 id={`render-template-${group.template}`}>{fill(d.group.template, { template: d.templates[group.template] })}</h4>
+        <ul className="render-list" aria-labelledby={`render-template-${group.template}`}>{group.items.map(item => {
+        const look = stateLook[item.state], aspect = d.row.aspect[item.aspect], template = d.templates[item.template], failedHere = download?.id === item.id ? download.error : undefined;
         return <li key={item.id} className={`render-row state-${item.state}`} data-testid="render-row" data-state={item.state}>
           <span className={`aspect-shape ${item.aspect} tone-${look.tone}`} aria-hidden="true" />
           <span className="render-row-text"><strong>{aspect}</strong>
@@ -81,11 +84,12 @@ export function RenderFiles({ locale, material }: { locale: Locale; material: Ma
             {failedHere && <small className="danger-text" role="alert">{failedHere}</small>}
           </span>
           <span className={`badge state ${look.tone}`}><Icon name={look.icon} size={14} />{d.state[item.state]}</span>
-          {item.state === "ready" && item.file_id && <button type="button" className="secondary square-button" aria-label={d.row.downloadAria.replace("{aspect}", aspect)} title={d.row.download} disabled={download?.id === item.id && download.busy} onClick={() => void fetchLink(item)}><Icon name="download" /></button>}
+          {item.state === "ready" && item.file_id && <button type="button" className="secondary square-button" aria-label={d.row.downloadAria.replace("{template}", template).replace("{aspect}", aspect)} title={d.row.download} disabled={download?.id === item.id && download.busy} onClick={() => void fetchLink(item)}><Icon name="download" /></button>}
           {item.state === "failed" && <button type="button" className="secondary small" onClick={() => setDialog({ from: item })}>{d.newRequest}</button>}
           {item.state === "rendering" && <span className="render-progress" role="progressbar" aria-label={d.row.renderingAria}><span /></span>}
         </li>;
-      })}</ul>}
+      })}</ul>
+      </div>)}
     </div>
     <div className="render-entry">
       <button type="button" className="secondary render-action" disabled={reasons.length > 0} aria-describedby={reasons.length ? "render-blocked" : undefined} onClick={() => setDialog({})}>{d.template.action}</button>

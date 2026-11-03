@@ -735,6 +735,9 @@ p.alert.urgent { display: block; padding: var(--v2-space-4); }
 .render-row-text small.danger-text { color: var(--v2-c-state-danger); }
 .render-group, .render-entry { display: grid; gap: var(--v2-space-3); padding-block-start: var(--v2-space-4); border-block-start: var(--v2-border-hairline) solid var(--v2-c-border-line); }
 .render-group-head { display: flex; align-items: center; justify-content: space-between; gap: var(--v2-space-3); }
+/* النسخ بقالبها (ADR 0110): مجموعة لكل قالب بعنوانها، والصفوف كما هي. */
+.render-template-group { display: grid; gap: var(--v2-space-3); }
+.render-template-group h4 { margin: 0; color: var(--v2-c-text-secondary); font-size: var(--v2-font-caption-size); line-height: var(--v2-font-caption-line); font-weight: 700; }
 .render-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "shape text state action" "shape bar bar bar"; align-items: center; gap: var(--v2-space-2) var(--v2-space-3); }
 .render-row > .aspect-shape { grid-area: shape; align-self: start; margin-block-start: 4px; }
 .render-row-text { grid-area: text; }
@@ -785,6 +788,22 @@ button.sheet-close { flex: none; border-radius: var(--v2-radius-chip); }
 .render-line .field-error { display: flex; align-items: flex-start; gap: var(--v2-space-2); margin: 0; }
 .render-line .field-error .icon { flex: none; margin-block-start: 3px; }
 .render-lines > .link-button { justify-self: start; }
+/* اختيار القالب (ADR 0110): بطاقتان كبطاقات المقاس، وعلامة مصغّرة لكل قالب. هدف اللمس البطاقة كلها. */
+.template-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--v2-space-3); }
+.template-option { display: flex; align-items: center; gap: var(--v2-space-3); min-block-size: var(--v2-size-touch-min); padding: var(--v2-space-3) var(--v2-space-4); border: var(--v2-border-field) solid var(--v2-c-border-line); border-radius: var(--v2-radius-sm); background: var(--v2-c-bg-raised); font-weight: 400; cursor: pointer; }
+.template-option.selected { border-width: 2px; border-color: var(--v2-c-action-primary); background: var(--v2-c-action-soft); }
+.template-option.selected strong { color: var(--v2-c-text-brand); }
+.template-option:has(input:focus-visible) { outline: 2px solid var(--v2-c-action-primary); outline-offset: 2px; }
+.template-text { display: grid; min-inline-size: 0; }
+.template-text strong { font-size: var(--v2-font-label-size); line-height: var(--v2-font-label-line); }
+.template-text small { color: var(--v2-c-text-secondary); font-size: var(--v2-font-caption-size); line-height: var(--v2-font-caption-line); }
+.template-swatch { position: relative; flex: none; inline-size: 28px; block-size: 36px; border-radius: 4px; background: var(--v2-c-bg-store); }
+.template-swatch.circulated i { position: absolute; inset-inline: 4px; block-size: 5px; background: color-mix(in srgb, var(--v2-c-text-on-store) 80%, transparent); }
+.template-swatch.circulated i:first-child { inset-block-end: 12px; inset-inline-end: 10px; background: var(--v2-c-action-store); }
+.template-swatch.circulated i:last-child { inset-block-end: 5px; }
+.template-swatch.witness i { position: absolute; inline-size: 8px; block-size: 8px; border: 2px solid color-mix(in srgb, var(--v2-c-action-primary) 55%, var(--v2-c-text-on-store)); }
+.template-swatch.witness i:first-child { inset-block-start: 4px; inset-inline-start: 4px; border-inline-end: 0; border-block-end: 0; }
+.template-swatch.witness i:last-child { inset-block-end: 4px; inset-inline-end: 4px; border-inline-start: 0; border-block-start: 0; }
 .aspect-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--v2-space-3); }
 .aspect-option { display: grid; justify-items: center; align-content: start; gap: var(--v2-space-1); min-block-size: var(--v2-size-touch-min); padding: var(--v2-space-4) var(--v2-space-3); border: var(--v2-border-field) solid var(--v2-c-border-line); border-radius: var(--v2-radius-sm); background: var(--v2-c-bg-raised); text-align: center; font-weight: 400; cursor: pointer; }
 .aspect-option .aspect-shape { margin-block-end: var(--v2-space-2); }
@@ -828,6 +847,22 @@ input.switch:disabled { opacity: .5; }
 .preview-tag { padding: 1px 5px; background: var(--v2-c-action-store); color: var(--v2-c-bg-store); font-size: 8px; font-weight: 700; line-height: 1.5; }
 .preview-line { max-inline-size: 100%; overflow: hidden; padding: 1px 5px; background: color-mix(in srgb, var(--v2-c-bg-store) 78%, transparent); font-size: 10px; font-weight: 700; line-height: 1.5; white-space: nowrap; }
 .preview-location { max-inline-size: 100%; overflow: hidden; margin-block-start: 2px; padding: 0 6px; border: 1px solid color-mix(in srgb, var(--v2-c-text-on-store) 50%, transparent); border-radius: var(--v2-radius-full); font-size: 8px; line-height: 1.6; white-space: nowrap; }
+/* «الشاهد» مصغّرًا: أربع زوايا، والوسم كبسولة ذهبية أعلى البداية، والعنوان بلا ألواح وسطره الأول فيروزي، والمكان بلا كبسولة. */
+.preview-corners i { position: absolute; inline-size: 14%; aspect-ratio: 1; border: 2px solid color-mix(in srgb, var(--v2-c-action-primary) 55%, var(--v2-c-text-on-store)); }
+.preview-corners i:nth-child(1) { inset-block-start: 9%; inset-inline-start: 6%; border-inline-end: 0; border-block-end: 0; }
+.preview-corners i:nth-child(2) { inset-block-start: 9%; inset-inline-end: 6%; border-inline-start: 0; border-block-end: 0; }
+.preview-corners i:nth-child(3) { inset-block-end: 28%; inset-inline-start: 6%; border-inline-end: 0; border-block-start: 0; }
+.preview-corners i:nth-child(4) { inset-block-end: 28%; inset-inline-end: 6%; border-inline-start: 0; border-block-start: 0; }
+.render-preview.horizontal .preview-corners i { inline-size: 9%; }
+.render-preview.horizontal .preview-corners i:nth-child(n+3), .render-preview.square .preview-corners i:nth-child(n+3) { inset-block-end: 9%; }
+/* المعاينة عربية دائمًا (`dir="rtl"`)، فالشعار في جهة النهاية (يسارًا) والوسم في جهة البداية (يمينًا) كما في القالب. */
+.render-preview.witness .preview-logo { inset-block-start: 12%; inset-inline: auto 10%; }
+.preview-pill { position: absolute; inset-block-start: 12%; inset-inline-start: 10%; padding: 1px 6px; border-radius: var(--v2-radius-full); background: var(--v2-c-action-store); color: var(--v2-c-bg-store); font-size: 7px; font-weight: 700; line-height: 1.5; white-space: nowrap; }
+.render-preview.witness .preview-block { inset-inline: 14% 10%; inset-block-end: 18%; }
+.render-preview.witness.horizontal .preview-block, .render-preview.witness.square .preview-block { inset-block-end: 14%; }
+.render-preview.witness .preview-line { padding: 0; background: none; text-shadow: 0 1px 3px var(--v2-c-bg-store); }
+.render-preview.witness .preview-line:first-child { color: color-mix(in srgb, var(--v2-c-action-primary) 55%, var(--v2-c-text-on-store)); }
+.render-preview.witness .preview-location { border: 0; padding: 0; }
 .render-dialog .notice { margin: 0 var(--v2-space-7) var(--v2-space-4); }
 .render-foot { display: flex; align-items: center; gap: var(--v2-space-4); padding: var(--v2-space-4) var(--v2-space-7); border-block-start: var(--v2-border-hairline) solid var(--v2-c-border-line); background: var(--v2-c-bg-sunken); }
 .render-foot p { flex: 1; font-size: var(--v2-font-caption-size); line-height: var(--v2-font-caption-line); }
@@ -843,6 +878,7 @@ input.switch:disabled { opacity: .5; }
   .render-preview-panel { order: -1; grid-template-columns: minmax(0, 1fr) 104px; grid-template-areas: "title preview" "caption preview"; align-items: start; }
   .preview-title { grid-area: title; } .render-preview { grid-area: preview; } .preview-caption { grid-area: caption; }
   .aspect-options { gap: var(--v2-space-2); }
+  .template-options { gap: var(--v2-space-2); }
   .label-options { grid-template-columns: minmax(0, 1fr); }
   .render-dialog .notice { margin-inline: var(--v2-space-5); }
   .render-foot { padding: var(--v2-space-4) var(--v2-space-5) calc(var(--v2-space-4) + env(safe-area-inset-bottom)); }

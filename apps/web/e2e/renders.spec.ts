@@ -2,7 +2,8 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 import ar from "../messages/ar.json" with { type: "json" };
 import en from "../messages/en.json" with { type: "json" };
 
-// نسخ قالب «مواد متداولة» (ADR 0091، C1–C12): نقاط النسخ في الـBFF مُحاكاة في المتصفح، والمادة بنص محايد وحده.
+// نسخ قالبَي المتداول («مواد متداولة» ADR 0091، و«الشاهد» ADR 0110؛ C1–C12): نقاط النسخ في الـBFF مُحاكاة في المتصفح، والمادة
+// بنص محايد وحده.
 const id = "20000000-0000-4000-8000-000000000002", fileId = "70000000-0000-4000-8000-000000000001", signed = "/__render-copy?signature=synthetic";
 const base = { material_id: id, material_version: 1, source_file_id: "50000000-0000-4000-8000-000000000002", template: "circulated", title_lines: ["عنوان تجريبي"], show_location: true, location_text: "مدينة، محافظة", label: "none", file_id: null, failure_reason: null, requested_by: "10000000-0000-4000-8000-000000000001", requested_at: "2026-11-03T14:50:00Z", started_at: null, completed_at: null };
 const row = (n: number, patch: Record<string, unknown>) => ({ ...base, id: `60000000-0000-4000-8000-00000000000${n}`, ...patch });
@@ -36,6 +37,8 @@ async function setup(page: Page, items: Record<string, unknown>[], material: Rec
 }
 const open = async (page: Page, locale: "ar" | "en" = "ar") => { await page.goto(`/${locale}/materials/${id}`); await expect(page.getByTestId("render-files")).toBeVisible(); };
 const action = (page: Page, m = ar) => page.getByTestId("render-files").getByRole("button", { name: m.derivative.template.action, exact: true });
+const downloadName = (m: typeof ar | typeof en, aspect: "vertical" | "horizontal" | "square", template: "circulated" | "witness" = "circulated") =>
+  m.derivative.row.downloadAria.replace("{template}", m.derivative.templates[template]).replace("{aspect}", m.derivative.row.aspect[aspect]);
 
 test("feature off (404) or a role outside the request roles hides the whole render UI", async ({ page }) => {
   await login(page);
@@ -63,7 +66,7 @@ test("the four states, a click-time download link and polling that stops", async
   await expect(rows.nth(3)).toContainText(d.state.failed); await expect(rows.nth(3)).toContainText(d.failure.title_overflow);
   expect(await page.locator(`[href*="signature"], [src*="signature"]`).count()).toBe(0); expect(links).toBe(0);
   const download = page.waitForEvent("download");
-  await rows.nth(0).getByRole("button", { name: d.row.downloadAria.replace("{aspect}", d.row.aspect.vertical), exact: true }).click(); await download; expect(links).toBe(1);
+  await rows.nth(0).getByRole("button", { name: downloadName(ar, "vertical"), exact: true }).click(); await download; expect(links).toBe(1);
   // الاستطلاع كل عشر ثوانٍ ما دامت نسخة غير منتهية، ويقف حين لا تبقى.
   const before = mock.gets; await page.clock.runFor(10500); await expect.poll(() => mock.gets).toBe(before + 1);
   mock.items = mock.items.map(item => (["rendering", "requested"].includes(String(item.state)) ? { ...item, state: "ready", file_id: fileId, completed_at: "2026-11-03T15:00:00Z" } : item));
@@ -84,6 +87,7 @@ test("request: code-point counter, required label, sensitive location default an
   const location = dialog.getByRole("switch", { name: t.showLocation }); await expect(location).not.toBeChecked();
   await expect(dialog).toContainText(t.locationOffSensitive); await expect(dialog).toContainText(t.noteSensitive); await expect(dialog).toContainText(t.chooseLabelFirst);
   await expect(dialog.getByRole("radio", { name: t.labelWith })).not.toBeChecked(); await expect(dialog.getByRole("radio", { name: t.labelNone })).not.toBeChecked(); await expect(submit).toBeDisabled();
+  await expect(dialog.getByRole("radio", { name: ar.derivative.templates.circulated })).toBeChecked();
   await line(2).fill("عنوان تجريبي طويل للمادة"); await expect(dialog.getByTestId("line-count").nth(1)).toHaveText("24/22"); await expect(line(2)).toHaveAttribute("aria-invalid", "true"); await expect(dialog).toContainText(ar.derivative.blocked.line);
   await dialog.getByRole("radio", { name: t.labelNone }).check(); await expect(submit).toBeDisabled();
   // 22 نقطة ترميز طولها بوحدات UTF-16 أكثر من 22 تُقبل.
@@ -121,7 +125,7 @@ test("errors: not allowed with reasons, the duration only when sent, the queue l
   mock.items = [...four().slice(0, 3), row(5, { aspect: "square", state: "requested" })]; await page.reload();
   await expect(action(page)).toBeDisabled(); await expect(page.getByTestId("render-blocked")).toContainText(d.blocked.limit);
   await page.route(`**/api/bff/materials/${id}/files/${fileId}/download-url`, route => route.fulfill({ status: 409, json: { code: "render_not_allowed", details: { failed: ["rights_state"] } } }));
-  await page.getByTestId("render-row").first().getByRole("button", { name: d.row.downloadAria.replace("{aspect}", d.row.aspect.vertical), exact: true }).click();
+  await page.getByTestId("render-row").first().getByRole("button", { name: downloadName(ar, "vertical"), exact: true }).click();
   await expect(page.getByTestId("render-row").first().getByRole("alert")).toHaveText(d.blocked.rights_state);
 });
 
@@ -129,7 +133,7 @@ test("phone sheet in English: LTR chrome, Arabic title lines and 44px touch targ
   await login(page, "reviewer", "en"); await page.setViewportSize({ width: 390, height: 844 }); await setup(page, four()); const t = en.derivative.template;
   await open(page, "en"); const card = page.getByTestId("render-files");
   expect(await page.evaluate(() => document.documentElement.dir)).toBe("ltr");
-  for (const target of [card.getByRole("button", { name: en.derivative.row.downloadAria.replace("{aspect}", en.derivative.row.aspect.vertical), exact: true }), card.getByRole("button", { name: en.derivative.newRequest, exact: true }), action(page, en)]) {
+  for (const target of [card.getByRole("button", { name: downloadName(en, "vertical"), exact: true }), card.getByRole("button", { name: en.derivative.newRequest, exact: true }), action(page, en)]) {
     const box = (await target.boundingBox())!; expect(box.height).toBeGreaterThanOrEqual(44); expect(box.width).toBeGreaterThanOrEqual(44);
   }
   await action(page, en).click(); const dialog = page.getByRole("dialog", { name: t.title }); await expect(dialog).toBeVisible();
@@ -140,4 +144,65 @@ test("phone sheet in English: LTR chrome, Arabic title lines and 44px touch targ
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: ".artifacts/renders-phone-en.png" });
+});
+
+// «الشاهد» (ADR 0110): القالب خيار في الحوار نفسه وفي الورقة، والطلب يحمله، والنسخ بقالبها في بطاقة الملفات.
+const mixed = () => [
+  row(1, { aspect: "vertical", state: "ready", file_id: fileId, started_at: "2026-11-03T14:51:00Z", completed_at: "2026-11-03T14:52:00Z" }),
+  row(2, { template: "witness", aspect: "vertical", state: "ready", file_id: "70000000-0000-4000-8000-000000000002", started_at: "2026-11-03T14:53:00Z", completed_at: "2026-11-03T14:54:00Z" }),
+  row(3, { template: "witness", aspect: "square", state: "failed", label: "circulated_footage", failure_reason: "title_overflow", title_lines: ["عنوان تجريبي طويل"], completed_at: "2026-11-03T14:56:00Z" }),
+];
+
+test("Witness at 1280: the template choice drives the preview and the body, and the files card groups copies by template", async ({ page }) => {
+  await login(page); const mock = await setup(page, mixed()), d = ar.derivative, t = d.template;
+  expect(page.viewportSize()?.width).toBe(1280);
+  await open(page);
+  const groups = page.getByTestId("render-template-group");
+  await expect(groups).toHaveCount(2);
+  await expect(groups.nth(0)).toHaveAttribute("data-template", "circulated"); await expect(groups.nth(1)).toHaveAttribute("data-template", "witness");
+  await expect(groups.nth(0).getByRole("heading", { name: d.group.template.replace("{template}", d.templates.circulated) })).toBeVisible();
+  await expect(groups.nth(1).getByRole("heading", { name: d.group.template.replace("{template}", d.templates.witness) })).toBeVisible();
+  await expect(groups.nth(0).getByTestId("render-row")).toHaveCount(1); await expect(groups.nth(1).getByTestId("render-row")).toHaveCount(2);
+  // اسم زرّ التنزيل يفرّق بين نسختين عموديتين بقالبيهما
+  await expect(groups.nth(0).getByRole("button", { name: downloadName(ar, "vertical", "circulated"), exact: true })).toBeVisible();
+  await expect(groups.nth(1).getByRole("button", { name: downloadName(ar, "vertical", "witness"), exact: true })).toBeVisible();
+  // «طلب جديد» من نسخة «الشاهد» الفاشلة يعيد الحوار على «الشاهد» ومعاملاتها
+  await groups.nth(1).getByRole("button", { name: d.newRequest, exact: true }).click();
+  let dialog = page.getByRole("dialog", { name: t.title });
+  await expect(dialog.getByRole("radio", { name: d.templates.witness })).toBeChecked(); await expect(dialog.getByRole("radio", { name: t.aspect.square })).toBeChecked();
+  await expect(dialog).toContainText(t.witnessTitleHint); await expect(dialog.getByTestId("render-preview")).toHaveClass(/witness/);
+  await dialog.getByRole("button", { name: t.cancel, exact: true }).click(); await expect(page.getByRole("dialog")).toHaveCount(0);
+  // طلب جديد: يُفتح على «مواد متداولة»، ثم «الشاهد» يبدّل المعاينة ويُرسل في الجسم وحده
+  await action(page).click(); dialog = page.getByRole("dialog", { name: t.title });
+  const preview = dialog.getByTestId("render-preview");
+  await expect(dialog.getByRole("radio", { name: d.templates.circulated })).toBeChecked(); await expect(preview).toHaveClass(/circulated/); await expect(dialog).not.toContainText(t.witnessTitleHint);
+  await dialog.getByText(d.templates.witness, { exact: true }).click();
+  await expect(dialog.getByRole("radio", { name: d.templates.witness })).toBeChecked(); await expect(preview).toHaveClass(/witness/); await expect(preview.locator(".preview-corners i")).toHaveCount(4);
+  await dialog.getByRole("radio", { name: t.labelWith }).check(); await expect(preview.locator(".preview-pill")).toHaveText(t.previewTag); await expect(preview.locator(".preview-tag")).toHaveCount(0);
+  const options = dialog.locator(".template-option");
+  for (let i = 0; i < 2; i++) { const box = (await options.nth(i).boundingBox())!; expect(box.height).toBeGreaterThanOrEqual(44); }
+  await dialog.getByRole("button", { name: t.submit, exact: true }).click(); await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(mock.posts.at(-1)!.body).toEqual({ template: "witness", aspect: "vertical", title_lines: ["عنوان تجريبي"], show_location: true, label: "circulated_footage" });
+  await expect(groups.nth(1).getByTestId("render-row")).toHaveCount(3); await expect(groups.nth(1).getByTestId("render-row").first()).toContainText(d.row.requestedSub);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: ".artifacts/renders-witness-1280.png", fullPage: true });
+});
+
+test("Witness at 375 in the phone sheet, Arabic then English: both templates reachable, 44px targets and no horizontal scroll", async ({ page }) => {
+  for (const locale of ["ar", "en"] as const) {
+    const m = locale === "ar" ? ar : en, d = m.derivative, t = d.template;
+    await page.context().clearCookies(); await page.setViewportSize({ width: 1280, height: 720 }); await login(page, "reviewer", locale); await page.setViewportSize({ width: 375, height: 812 }); await setup(page, mixed());
+    await open(page, locale); expect(await page.evaluate(() => document.documentElement.dir)).toBe(locale === "ar" ? "rtl" : "ltr");
+    await expect(page.getByTestId("render-template-group")).toHaveCount(2);
+    await action(page, m).click(); const dialog = page.getByRole("dialog", { name: t.title }); await expect(dialog).toBeVisible();
+    const sheet = (await dialog.boundingBox())!; expect(Math.round(sheet.width)).toBe(375); expect(Math.round(sheet.y + sheet.height)).toBe(812);
+    const options = dialog.locator(".template-option");
+    await expect(options).toHaveCount(2);
+    for (let i = 0; i < 2; i++) { await options.nth(i).scrollIntoViewIfNeeded(); const box = (await options.nth(i).boundingBox())!; expect(box.height).toBeGreaterThanOrEqual(44); expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(375); }
+    await dialog.getByText(d.templates.witness, { exact: true }).click(); await expect(dialog.getByRole("radio", { name: d.templates.witness })).toBeChecked();
+    await expect(dialog.getByTestId("render-preview")).toHaveClass(/witness/); await expect(dialog).toContainText(t.witnessTitleHint);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: `.artifacts/renders-witness-375-${locale}.png` });
+    await dialog.getByRole("button", { name: t.close, exact: true }).click(); await expect(page.getByRole("dialog")).toHaveCount(0);
+  }
 });
