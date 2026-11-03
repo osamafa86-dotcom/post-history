@@ -11,6 +11,7 @@ import { PasskeysService } from './passkeys.service';
 import { JWT_OPTIONS, SessionService } from './session.service';
 import { RateLimitsService } from './rate-limits.service';
 import { InlineResetTokenDelivery, RESET_TOKEN_DELIVERY } from './reset-token-delivery';
+import { UserRolesController, UserRolesService } from './user-roles.controller';
 import { UsersDirectoryController, UsersDirectoryService } from './users-directory.controller';
 
 @Module({
@@ -29,6 +30,7 @@ import { UsersDirectoryController, UsersDirectoryService } from './users-directo
     UserStatusController,
     UserWorkNameController,
     UsersDirectoryController,
+    UserRolesController,
     UserPasswordResetLinksController,
     PasskeyAuthController,
     MyPasskeysController,
@@ -40,6 +42,7 @@ import { UsersDirectoryController, UsersDirectoryService } from './users-directo
     PasskeysService,
     RateLimitsService,
     UsersDirectoryService,
+    UserRolesService,
     { provide: RESET_TOKEN_DELIVERY, useClass: InlineResetTokenDelivery },
     { provide: APP_GUARD, useClass: AuthGuard },
   ],

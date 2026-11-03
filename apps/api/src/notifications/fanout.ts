@@ -44,6 +44,8 @@ export async function fanOut(tx: Tx, event: OutboxRow, opts: FanOutOptions): Pro
   // تقدّم الرفع للوحة وحدها (ADR 0024): لا إشعار ولا قاعدة تنبيه
   if (event.type === 'upload.progress') return 0;
   const payload = event.payload as Record<string, unknown>;
+  // رفع النسخة المُنتَجة لا يصير إشعارًا ولا يطلق قاعدة تنبيه (ADR 0104): التسليم يُعلَم بانتقال المهمة
+  if (event.type.startsWith('upload.') && payload.kind === 'produced') return 0;
   if (event.type === 'auth.recovery_requested') return recoveryRequested(tx, event, payload, opts);
   if (event.type === 'auth.recovery_completed') return ownerAlert(tx, event, 'auth.recovery_completed', opts);
   // تغيّر وسائل الدخول (ADR 0107): صاحب الحساب يُنبَّه على أجهزته، والعنوان قالب ثابت بلا معرّف

@@ -19,8 +19,8 @@ import { plural, type PluralForms } from "@/lib/i18n";
 import { formatMoney } from "@/lib/store-format";
 import { plainAmount, type BuyerPurchaseTotal, type BuyerPurchaseTotalsPage } from "@/lib/finance-reports";
 
-type Status = typeof organizationStatuses[number];
-const statusTone = { active: { tone: "ok", icon: "check" }, pending_verification: { tone: "warn", icon: "pencil" }, suspended: { tone: "danger", icon: "alert" } } as const;
+type Status = Organization["status"];
+const statusTone = { active: { tone: "ok", icon: "check" }, pending_verification: { tone: "warn", icon: "pencil" }, suspended: { tone: "danger", icon: "alert" }, rejected: { tone: "danger", icon: "alert" } } as const;
 export function OrganizationStatus({ status, locale, testId }: { status: Status | undefined; locale: Locale; testId?: string }) {
   const value = status ?? "pending_verification", { tone, icon } = statusTone[value];
   return <ToneBadge tone={tone} icon={icon} testId={testId}>{messages[locale].buyers.statuses[value]}</ToneBadge>;
@@ -152,7 +152,7 @@ function ProfileFields<T extends OrganizationInput>({ locale, value, set, admin 
     <div className="rule-row"><label>{t.country}<input dir="ltr" maxLength={2} value={value.country} onChange={e => set("country", e.target.value.toUpperCase())} /><small className="muted">{t.countryHelp}</small></label>
       <label>{t.billingEmail}<input type="email" dir="ltr" maxLength={organizationLimits.email} value={value.billing_email} onChange={e => set("billing_email", e.target.value)} /></label></div>
     <div className="rule-row"><label>{t.seats}<input type="number" min={organizationLimits.seatsMin} max={organizationLimits.seatsMax} value={value.seats} disabled={!admin} onChange={e => set("seats", Number(e.target.value))} /></label>
-      {value.status !== undefined && <label>{t.status}<select value={value.status} disabled={!admin} onChange={e => set("status", e.target.value as Status)}>{organizationStatuses.map(s => <option key={s} value={s}>{t.statuses[s]}</option>)}</select></label>}</div>
+      {value.status !== undefined && <label>{t.status}<select value={value.status} disabled={!admin} onChange={e => set("status", e.target.value as Status)}>{organizationStatuses.filter(s => s !== "rejected" || value.status === "rejected").map(s => <option key={s} value={s}>{t.statuses[s]}</option>)}</select></label>}</div>
     {!admin && <small className="muted">{t.adminOnly}</small>}
   </>;
 }

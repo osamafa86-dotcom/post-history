@@ -19,6 +19,7 @@ public struct MaterialFile: Sendable, Codable, Hashable {
         case transcript = "transcript"
         case captions = "captions"
         case shotList = "shot_list"
+        case produced = "produced"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
     public enum State: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
@@ -40,7 +41,7 @@ public struct MaterialFile: Sendable, Codable, Hashable {
     public static let heightRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     public static let receiptNumberRule = StringRule(minLength: nil, maxLength: nil, pattern: "^R-[0-9]{6}-[0-9]{6}$")
     public var id: UUID
-    /** الأصل لا يُمس؛ كل معالجة تنتج ملفًا جديدًا */
+    /** الأصل لا يُمس؛ كل معالجة تنتج ملفًا جديدًا. `produced` النسخة المُنتَجة (ADR 0104، أُضيف بعد v0.3): يرفعها المونتير المسنَدة إليه المادة، أو يشتقها عامل الوسائط للتسليم؛ تظهر لأدوار الإنتاج وحدها (`producer` و`supervisor` و`editor_in_chief` و`system_admin`). */
     public var kind: Kind
     public var state: State
     /** وضع النسخة الخفيفة */

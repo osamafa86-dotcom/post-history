@@ -12,6 +12,8 @@ const RECEIVED_EVENT: Record<string, OutboxEventType> = {
   original: 'upload.original_received',
   proxy: 'upload.proxy_received',
   voice_note: 'upload.original_received',
+  // النسخة المُنتَجة (ADR 0104): الحدث نفسه بنوعها كالملاحظة الصوتية، فيتحقق منها عامل الوسائط ولا يبني لها نسخة خفيفة
+  produced: 'upload.original_received',
 };
 
 /**

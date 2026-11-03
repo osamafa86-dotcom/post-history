@@ -1,5 +1,5 @@
 import { bytea } from "../bytea"
-import { pgTable, uuid, text, timestamp, index, foreignKey, unique, check, integer, jsonb, bigint, uniqueIndex, time, boolean, type AnyPgColumn, smallint, real, primaryKey, numeric, pgSequence } from "drizzle-orm/pg-core"
+import { pgTable, uuid, text, timestamp, index, foreignKey, unique, check, integer, jsonb, bigint, uniqueIndex, time, boolean, smallint, type AnyPgColumn, real, primaryKey, numeric, pgSequence } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 
@@ -196,7 +196,7 @@ export const uploadSessions = pgTable("upload_sessions", {
 	check("upload_sessions_filename_len", sql`(char_length(filename) >= 1) AND (char_length(filename) <= 255)`),
 	check("upload_sessions_fingerprint_is_object", sql`(client_fingerprint IS NULL) OR (jsonb_typeof(client_fingerprint) = 'object'::text)`),
 	check("upload_sessions_hook_reserved_created_only", sql`(hook_reserved_until IS NULL) OR (state = 'created'::text)`),
-	check("upload_sessions_kind_check", sql`kind = ANY (ARRAY['original'::text, 'proxy'::text, 'voice_note'::text])`),
+	check("upload_sessions_kind_check", sql`kind = ANY (ARRAY['original'::text, 'proxy'::text, 'voice_note'::text, 'produced'::text])`),
 	check("upload_sessions_part_size_min", sql`part_size_bytes >= 1048576`),
 	check("upload_sessions_proxy_mode_check", sql`(proxy_mode IS NULL) OR (proxy_mode = ANY (ARRAY['urgent'::text, 'normal'::text]))`),
 	check("upload_sessions_proxy_mode_only_proxy", sql`(proxy_mode IS NULL) OR (kind = 'proxy'::text)`),
@@ -456,6 +456,7 @@ export const materialAssignments = pgTable("material_assignments", {
 	acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true, mode: 'string' }),
 	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }),
 	closedAt: timestamp("closed_at", { withTimezone: true, mode: 'string' }),
+	producedFileId: uuid("produced_file_id"),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("material_assignments_assignee_closed_idx").using("btree", table.assigneeId.asc().nullsLast().op("uuid_ops"), table.closedAt.desc().nullsFirst().op("uuid_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")).where(sql`(state = ANY (ARRAY['done'::text, 'returned'::text]))`),
@@ -482,6 +483,12 @@ export const materialAssignments = pgTable("material_assignments", {
 			foreignColumns: [users.id],
 			name: "material_assignments_returned_by_fkey"
 		}),
+	foreignKey({
+			columns: [table.materialId, table.producedFileId],
+			foreignColumns: [materialFiles.id, materialFiles.materialId],
+			name: "material_assignments_produced_file_fkey"
+		}),
+	check("material_assignments_produced_file_done_check", sql`(produced_file_id IS NULL) OR (state = 'done'::text)`),
 	check("material_assignments_state_check", sql`state = ANY (ARRAY['assigned'::text, 'acknowledged'::text, 'in_progress'::text, 'done'::text, 'returned'::text])`),
 	check("material_assignments_due_after_created", sql`due_at > created_at`),
 	check("material_assignments_note_valid", sql`(note IS NULL) OR render_text_valid(note, 500)`),
@@ -595,8 +602,8 @@ export const materialFiles = pgTable("material_files", {
 	licenseId: uuid("license_id"),
 }, (table) => [
 	uniqueIndex("material_files_delivery_license_key").using("btree", table.derivedFromId.asc().nullsLast().op("uuid_ops"), table.licenseId.asc().nullsLast().op("uuid_ops")).where(sql`(kind = 'delivery'::text)`),
-	uniqueIndex("material_files_derived_kind_key").using("btree", table.derivedFromId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("uuid_ops")).where(sql`((derived_from_id IS NOT NULL) AND (kind <> ALL (ARRAY['delivery'::text, 'circulated_render'::text])))`),
-	index("material_files_material_kind_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("text_ops")),
+	uniqueIndex("material_files_derived_kind_key").using("btree", table.derivedFromId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("uuid_ops")).where(sql`((derived_from_id IS NOT NULL) AND (kind <> ALL (ARRAY['delivery'::text, 'circulated_render'::text])))`),
+	index("material_files_material_kind_idx").using("btree", table.materialId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("uuid_ops")),
 	index("material_files_recent_receipts_idx").using("btree", table.verifiedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`((receipt_number IS NOT NULL) AND (verified_at IS NOT NULL))`),
 	uniqueIndex("material_files_receipt_number_key").using("btree", table.receiptNumber.asc().nullsLast().op("text_ops")).where(sql`(receipt_number IS NOT NULL)`),
 	index("material_files_sha256_idx").using("btree", table.sha256.asc().nullsLast().op("bytea_ops")).where(sql`(sha256 IS NOT NULL)`),
@@ -616,6 +623,7 @@ export const materialFiles = pgTable("material_files", {
 			foreignColumns: [materials.id],
 			name: "material_files_material_id_fkey"
 		}).onDelete("cascade"),
+	unique("material_files_id_material_key").on(table.id, table.materialId),
 	check("material_files_alignment_check", sql`((alignment_original_file_id IS NULL) AND (alignment_offset_ms IS NULL) AND (alignment_confidence IS NULL) AND (alignment_margin IS NULL) AND (alignment_reliable IS NULL) AND (aligned_at IS NULL)) OR ((kind = 'proxy'::text) AND (alignment_original_file_id IS NOT NULL) AND (alignment_reliable IS NOT NULL) AND (aligned_at IS NOT NULL) AND ((alignment_offset_ms >= '-3600000'::integer) AND (alignment_offset_ms <= 3600000)) AND ((alignment_confidence >= (0)::double precision) AND (alignment_confidence <= (1)::double precision)) AND ((alignment_margin >= (0)::double precision) AND (alignment_margin <= (1)::double precision)))`),
 	check("material_files_delivery_license_check", sql`(kind = 'delivery'::text) = (license_id IS NOT NULL)`),
 	check("material_files_dims_positive", sql`((width IS NULL) OR (width > 0)) AND ((height IS NULL) OR (height > 0))`),
@@ -800,12 +808,12 @@ export const outboxEvents = pgTable("outbox_events", {
 			name: "outbox_events_actor_id_fkey"
 		}),
 	unique("outbox_events_idempotency_key_key").on(table.idempotencyKey),
-	check("outbox_events_aggregate_type_check", sql`aggregate_type = ANY (ARRAY['material'::text, 'upload'::text, 'notification'::text, 'form'::text, 'user'::text, 'listing'::text, 'license'::text, 'order'::text, 'payout'::text])`),
+	check("outbox_events_aggregate_type_check", sql`aggregate_type = ANY (ARRAY['material'::text, 'upload'::text, 'notification'::text, 'form'::text, 'user'::text, 'listing'::text, 'license'::text, 'order'::text, 'payout'::text, 'organization'::text])`),
 	check("outbox_events_attempts_nonneg", sql`attempts >= 0`),
 	check("outbox_events_idempotency_key_len", sql`(char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 200)`),
 	check("outbox_events_payload_is_object", sql`jsonb_typeof(payload) = 'object'::text`),
 	check("outbox_events_payload_whitelisted", sql`CHECK (outbox_payload_is_whitelisted(type, payload`),
-	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text, 'license.revoked'::text, 'payout.status_changed'::text, 'render.requested'::text, 'render.started'::text, 'render.completed'::text, 'render.failed'::text, 'assignment.created'::text, 'assignment.state_changed'::text, 'tag.suggestions_changed'::text, 'tag.rewritten'::text, 'platform_settings.changed'::text, 'auth.passkey_added'::text, 'auth.passkey_revoked'::text, 'auth.recovery_codes_generated'::text])`),
+	check("outbox_events_type_check", sql`type = ANY (ARRAY['material.created'::text, 'material.urgent_received'::text, 'material.updated'::text, 'material.version_created'::text, 'material.technical_transition'::text, 'material.editorial_transition'::text, 'material.rights_transition'::text, 'material.acknowledged'::text, 'material.change_requested'::text, 'material.accepted_for_production'::text, 'material.reserved'::text, 'material.released'::text, 'material.contributors_set'::text, 'material.published'::text, 'upload.started'::text, 'upload.progress'::text, 'upload.proxy_received'::text, 'upload.original_received'::text, 'upload.verified'::text, 'upload.deduplicated'::text, 'upload.failed'::text, 'form.published'::text, 'ai.draft_ready'::text, 'notification.escalated'::text, 'auth.recovery_requested'::text, 'auth.recovery_approved'::text, 'user.status_changed'::text, 'auth.recovery_completed'::text, 'export.requested'::text, 'setting.changed'::text, 'catalog.listing_changed'::text, 'license.delivery_requested'::text, 'order.status_changed'::text, 'license.issued'::text, 'license.revoked'::text, 'payout.status_changed'::text, 'render.requested'::text, 'render.started'::text, 'render.completed'::text, 'render.failed'::text, 'assignment.created'::text, 'assignment.state_changed'::text, 'tag.suggestions_changed'::text, 'tag.rewritten'::text, 'platform_settings.changed'::text, 'user.roles_changed'::text, 'buyer_organization.status_changed'::text, 'auth.passkey_added'::text, 'auth.passkey_revoked'::text, 'auth.recovery_codes_generated'::text])`),
 ]);
 
 export const recoveryCodes = pgTable("recovery_codes", {
@@ -1064,15 +1072,17 @@ export const buyerOrganizations = pgTable("buyer_organizations", {
 	status: text().default('pending_verification').notNull(),
 	verifiedAt: timestamp("verified_at", { withTimezone: true, mode: 'string' }),
 	verifiedBy: uuid("verified_by"),
+	rejectionReason: text("rejection_reason"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("buyer_organizations_list_idx").using("btree", table.createdAt.desc().nullsFirst().op("timestamptz_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")),
 	check("buyer_organizations_country_check", sql`country ~ '^[A-Z]{2}$'::text`),
 	check("buyer_organizations_seats_check", sql`(seats >= 1) AND (seats <= 1000)`),
-	check("buyer_organizations_status_check", sql`status = ANY (ARRAY['pending_verification'::text, 'active'::text, 'suspended'::text])`),
+	check("buyer_organizations_rejection_reason_check", sql`((status = 'rejected'::text) = (rejection_reason IS NOT NULL)) AND ((rejection_reason IS NULL) OR (rejection_reason = ANY (ARRAY['commercial_registry'::text, 'institutional_email'::text, 'license_agreement'::text, 'duplicate_organization'::text, 'other'::text])))`),
+	check("buyer_organizations_status_check", sql`status = ANY (ARRAY['pending_verification'::text, 'active'::text, 'suspended'::text, 'rejected'::text])`),
 	check("buyer_organizations_text_len", sql`((char_length(legal_name) >= 1) AND (char_length(legal_name) <= 200)) AND ((char_length(display_name_ar) >= 1) AND (char_length(display_name_ar) <= 4000)) AND ((char_length(display_name_en) >= 1) AND (char_length(display_name_en) <= 4000)) AND ((char_length(billing_email) >= 3) AND (char_length(billing_email) <= 254))`),
-	check("buyer_organizations_verified_check", sql`((status = 'pending_verification'::text) OR (verified_at IS NOT NULL)) AND ((verified_at IS NULL) = (verified_by IS NULL))`),
+	check("buyer_organizations_verified_check", sql`((status = ANY (ARRAY['pending_verification'::text, 'rejected'::text])) OR (verified_at IS NOT NULL)) AND ((verified_at IS NULL) = (verified_by IS NULL))`),
 ]);
 
 export const ledgerAccounts = pgTable("ledger_accounts", {

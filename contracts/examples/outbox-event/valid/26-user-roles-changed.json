@@ -1,0 +1,14 @@
+{
+  "id": "3501",
+  "type": "user.roles_changed",
+  "aggregate_type": "user",
+  "aggregate_id": "2f3e4d5c-6b7a-4899-8a7b-6c5d4e3f2a1b",
+  "occurred_at": "2026-11-03T15:00:00Z",
+  "idempotency_key": "user.roles_changed:2f3e4d5c-6b7a-4899-8a7b-6c5d4e3f2a1b:1",
+  "actor_id": "3a4b5c6d-7e8f-4a9b-8c0d-1e2f3a4b5c6d",
+  "payload": {
+    "user_id": "2f3e4d5c-6b7a-4899-8a7b-6c5d4e3f2a1b"
+  },
+  "published_at": null,
+  "attempts": 0
+}

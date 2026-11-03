@@ -1202,6 +1202,58 @@ open class CommerceAPI {
     }
 
     /**
+     رفض طلب انضمام مؤسسة قيد التحقق (A5، ADR 0104)
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter orgId: (path) معرّف المؤسسة المشترية 
+     - parameter buyerOrganizationRejection: (body)  
+     - parameter ifMatch: (header) قيمة &#x60;ETag&#x60; الأخيرة التي رآها العميل (&#x60;\&quot;&lt;row_version&gt;\&quot;&#x60; للمادة، &#x60;\&quot;&lt;version&gt;\&quot;&#x60; للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ &#x60;412 precondition_failed&#x60; دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. (optional)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: BuyerOrganization
+     */
+    open class func rejectBuyerOrganization(idempotencyKey: String, orgId: UUID, buyerOrganizationRejection: BuyerOrganizationRejection, ifMatch: String? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> BuyerOrganization {
+        return try await rejectBuyerOrganizationWithRequestBuilder(idempotencyKey: idempotencyKey, orgId: orgId, buyerOrganizationRejection: buyerOrganizationRejection, ifMatch: ifMatch, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     رفض طلب انضمام مؤسسة قيد التحقق (A5، ADR 0104)
+     - POST /buyer-organizations/{org_id}/rejection
+     - من `pending_verification` وحدها إلى `rejected`، وغيرها `409 invalid_transition`. السبب رمز من قائمة مغلقة بلا نص حرّ، ويعود في `rejection_reason`. المرفوضة لا تتصفح ولا تشتري ولا تنزّل. `PUT` المؤسسة لا يضع `rejected` ويملك إعادتها إلى غيرها فيُمحى السبب. في معاملة واحدة: الحالة، وحدث `buyer_organization.status_changed` بالمعرّف والحالتين والسبب، وتدقيق `buyer_organization.status_changed` بالمفاتيح نفسها.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - responseHeaders: [ETag(String)]
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter orgId: (path) معرّف المؤسسة المشترية 
+     - parameter buyerOrganizationRejection: (body)  
+     - parameter ifMatch: (header) قيمة &#x60;ETag&#x60; الأخيرة التي رآها العميل (&#x60;\&quot;&lt;row_version&gt;\&quot;&#x60; للمادة، &#x60;\&quot;&lt;version&gt;\&quot;&#x60; للنموذج الحالي). إن لم تطابق الحالة الراهنة يُرفض الطلب بـ &#x60;412 precondition_failed&#x60; دون أثر. اختيارية في v0.1 للتوافق مع عملاء v0. (optional)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<BuyerOrganization> 
+     */
+    open class func rejectBuyerOrganizationWithRequestBuilder(idempotencyKey: String, orgId: UUID, buyerOrganizationRejection: BuyerOrganizationRejection, ifMatch: String? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<BuyerOrganization> {
+        var localVariablePath = "/buyer-organizations/{org_id}/rejection"
+        let orgIdPreEscape = "\(APIHelper.mapValueToPathItem(orgId))"
+        let orgIdPostEscape = orgIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{org_id}", with: orgIdPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters = JSONEncodingHelper.encodingParameters(forEncodableObject: buyerOrganizationRejection, codableHelper: apiConfiguration.codableHelper)
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+            "If-Match": ifMatch?.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<BuyerOrganization>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      تعديل ملف المؤسسة
      
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
@@ -1218,7 +1270,7 @@ open class CommerceAPI {
     /**
      تعديل ملف المؤسسة
      - PUT /buyer-organizations/{org_id}
-     - `buyer_admin` يعدّل ملف مؤسسته (الأسماء وبريد الفوترة والبلد). الحالة لمدير النظام وحده؛ تغييرها من غيره `403 forbidden_role`. التعليق يوقف الشراء والتنزيل الجديد، ولا يمس تراخيص سابقة.
+     - `buyer_admin` يعدّل ملف مؤسسته (الأسماء وبريد الفوترة والبلد). الحالة لمدير النظام وحده؛ تغييرها من غيره `403 forbidden_role`. التعليق يوقف الشراء والتنزيل الجديد، ولا يمس تراخيص سابقة. `rejected` لا تُوضع من هنا (`422 validation_failed` على `/status`؛ الرفض بسببه من `/rejection`)، والخروج منها إلى غيرها يمحو `rejection_reason` (حالة مقروءة كـ `verified_at`، فلا تُرسل في الجسم). كل تغيير حالة يكتب `buyer_organization.status_changed` (ADR 0104).
      - Bearer Token:
        - type: http
        - name: bearerAuth

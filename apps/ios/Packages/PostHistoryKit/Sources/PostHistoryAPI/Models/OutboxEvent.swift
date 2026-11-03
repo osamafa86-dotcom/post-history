@@ -56,6 +56,8 @@ public struct OutboxEvent: Sendable, Codable, Hashable {
         case tagPeriodSuggestionsChanged = "tag.suggestions_changed"
         case tagPeriodRewritten = "tag.rewritten"
         case platformSettingsPeriodChanged = "platform_settings.changed"
+        case userPeriodRolesChanged = "user.roles_changed"
+        case buyerOrganizationPeriodStatusChanged = "buyer_organization.status_changed"
         case authPeriodPasskeyAdded = "auth.passkey_added"
         case authPeriodPasskeyRevoked = "auth.passkey_revoked"
         case authPeriodRecoveryCodesGenerated = "auth.recovery_codes_generated"
@@ -71,6 +73,7 @@ public struct OutboxEvent: Sendable, Codable, Hashable {
         case license = "license"
         case order = "order"
         case payout = "payout"
+        case organization = "organization"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
     public static let idRule = StringRule(minLength: nil, maxLength: nil, pattern: "^[0-9]{1,19}$")

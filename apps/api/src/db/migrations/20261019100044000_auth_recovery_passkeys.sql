@@ -1,7 +1,7 @@
 -- Up Migration
 -- استعادة الحساب بلا مزوّد بريد ومفاتيح المرور (ADR 0107): وقت توليد الرموز الاحتياطية، ومفاتيح المرور (WebAuthn) بمفتاحها العام
 -- وعدّادها، وتحدياتها لمرة واحدة ببصمتها وحدها، وثلاثة أحداث بمعرّفات وأعداد وحدها. رابط إعادة التعيين من مدير النظام طلبُ استعادة
--- معتمد في recovery_requests القائم، فلا جدول له. لا دالة جديدة.
+-- معتمد في recovery_requests القائم، فلا جدول له. لا دالة جديدة. يلي 043 (ADR 0104): القائمتان هنا قائمتاه وإضافات هذا الترحيل.
 
 -- 1. الرموز الاحتياطية: متى وُلّدت المجموعة الحالية (GET /auth/recovery-codes)
 ALTER TABLE recovery_codes ADD COLUMN created_at timestamptz NOT NULL DEFAULT now();
@@ -69,6 +69,7 @@ ALTER TABLE outbox_events ADD CONSTRAINT outbox_events_type_check CHECK (type IN
     'assignment.created', 'assignment.state_changed',
     'tag.suggestions_changed', 'tag.rewritten',
     'platform_settings.changed',
+    'user.roles_changed', 'buyer_organization.status_changed',
     'auth.passkey_added', 'auth.passkey_revoked', 'auth.recovery_codes_generated'));
 
 -- الحمولة معرّفات وأعداد (ADR SEC-03): لا معرّف اعتماد ولا اسم مفتاح ولا رمز
@@ -111,6 +112,8 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     WHEN event_type = 'tag.suggestions_changed' THEN ARRAY['suggestions_version']
     WHEN event_type = 'tag.rewritten'           THEN ARRAY['tag_rewrite_id', 'mode', 'materials_updated']
     WHEN event_type = 'platform_settings.changed' THEN ARRAY['settings_version', 'changed_fields']
+    WHEN event_type = 'user.roles_changed'      THEN ARRAY['user_id']
+    WHEN event_type = 'buyer_organization.status_changed' THEN ARRAY['organization_id', 'from', 'to', 'reason_code']
     WHEN event_type IN ('auth.passkey_added', 'auth.passkey_revoked') THEN ARRAY['passkey_id']
     WHEN event_type = 'auth.recovery_codes_generated' THEN ARRAY['codes_count']
     ELSE ARRAY[]::text[]
@@ -179,6 +182,8 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     WHEN event_type = 'tag.suggestions_changed' THEN ARRAY['suggestions_version']
     WHEN event_type = 'tag.rewritten'           THEN ARRAY['tag_rewrite_id', 'mode', 'materials_updated']
     WHEN event_type = 'platform_settings.changed' THEN ARRAY['settings_version', 'changed_fields']
+    WHEN event_type = 'user.roles_changed'      THEN ARRAY['user_id']
+    WHEN event_type = 'buyer_organization.status_changed' THEN ARRAY['organization_id', 'from', 'to', 'reason_code']
     ELSE ARRAY[]::text[]
   END
 $$;
@@ -202,7 +207,8 @@ ALTER TABLE outbox_events ADD CONSTRAINT outbox_events_type_check CHECK (type IN
     'render.requested', 'render.started', 'render.completed', 'render.failed',
     'assignment.created', 'assignment.state_changed',
     'tag.suggestions_changed', 'tag.rewritten',
-    'platform_settings.changed'));
+    'platform_settings.changed',
+    'user.roles_changed', 'buyer_organization.status_changed'));
 
 DROP TABLE webauthn_challenges;
 DROP TABLE passkeys;
