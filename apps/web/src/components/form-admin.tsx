@@ -2,7 +2,7 @@
 import { NoAccess } from "./empty-state";
 import { useEffect, useRef, useState } from "react";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
-import { fieldTypes, formBodyLimit, formReaders, formWriters, newField, nextForm, publishBody, validForm, type FormSummary } from "@/lib/form-admin";
+import { fieldTypes, formBodyLimit, formReaders, formWriters, newField, nextForm, publishBody, storeBlocked, urgentLocked, validForm, withToggles, type FormSummary } from "@/lib/form-admin";
 import { formatDate, messages, type Locale } from "@/lib/i18n";
 import { materialTypes } from "@/lib/query";
 import { hasRole } from "@/lib/review";
@@ -115,7 +115,7 @@ export function FormAdmin({ locale }: { locale: Locale }) {
         {!fields.length ? <p className="empty">{t.noFields}</p> : <ol className="field-rows">{fields.map((item, i) => <li key={i} className={`field-row${i === index ? " selected" : ""}`} data-testid="field-row">
           <button type="button" className="field-select" aria-pressed={i === index} onClick={() => setActive(i)}><span className="field-icon"><Icon name={typeIcons[item.type]} size={16} /></span>
             <span className="field-text"><strong>{item.label[locale] || item.key || fill(t.untitled, { n: i + 1 })}</strong><small className="muted">{t.types[item.type]} · <bdi dir="ltr">{item.key}</bdi></small></span></button>
-          <span className="field-badges">{item.searchable && <span className="badge state brand"><Icon name="search" size={14} />{t.searchable}</span>}<RequiredBadge locale={locale} required={item.required} /></span>
+          <span className="field-badges">{item.searchable && <span className="badge state brand"><Icon name="search" size={14} />{t.searchable}</span>}<ToggleBadges locale={locale} field={item} /><RequiredBadge locale={locale} required={item.required} /></span>
           {draft && <span className="row-buttons"><button type="button" className="icon-button small-icon" disabled={i === 0 || mutation.busy} aria-label={fill(t.moveUpField, { field: item.key })} onClick={() => move(i, -1)}><Icon name="chevron" size={16} /></button><button type="button" className="icon-button small-icon down" disabled={i === fields.length - 1 || mutation.busy} aria-label={fill(t.moveDownField, { field: item.key })} onClick={() => move(i, 1)}><Icon name="chevron" size={16} /></button></span>}
         </li>)}</ol>}
         {draft && <button type="button" className="quiet add-field" disabled={mutation.busy} onClick={() => add("short_text")}><Icon name="plus" size={16} /> {t.addField}</button>}
@@ -146,6 +146,13 @@ export function FormAdmin({ locale }: { locale: Locale }) {
   </>;
 }
 
+/** شارتا المفتاحين في صف الحقل: ما خرج من العاجل وما يُرسل إلى المتجر؛ الافتراضيان بلا شارة. */
+function ToggleBadges({ locale, field }: { locale: Locale; field: Field }) {
+  const t = messages[locale].formsAdmin.toggles;
+  return <>{field.show_in_urgent === false && <span className="badge state muted" data-testid="badge-out-of-urgent"><Icon name="bolt" size={14} />{t.outOfUrgent}</span>}
+    {field.send_to_store === true && <span className="badge state brand" data-testid="badge-to-store"><Icon name="store" size={14} />{t.storeBadge}</span>}</>;
+}
+
 function RequiredBadge({ locale, required }: { locale: Locale; required: boolean }) {
   const t = messages[locale].formsAdmin;
   return required ? <span className="badge state ok"><Icon name="check" size={14} />{t.required}</span> : <span className="badge state muted"><Icon name="clock" size={14} />{t.optional}</span>;
@@ -154,7 +161,8 @@ function RequiredBadge({ locale, required }: { locale: Locale; required: boolean
 /** إعدادات الحقل للقراءة (الإصدار المنشور أو دور القراءة): التسمية باللغتين والنوع والمفتاح والإلزام والشرط. */
 function FieldSummary({ locale, field }: { locale: Locale; field: Field }) {
   const m = messages[locale], t = m.formsAdmin;
-  const rows: [string, React.ReactNode][] = [[t.label, <>{field.label.ar} · <bdi>{field.label.en}</bdi></>], [t.type, t.types[field.type]], [t.key, <bdi dir="ltr" key="key">{field.key}</bdi>], [t.required, field.required ? m.yes : m.no], [t.searchable, field.searchable ? m.yes : m.no]];
+  const rows: [string, React.ReactNode][] = [[t.label, <>{field.label.ar} · <bdi>{field.label.en}</bdi></>], [t.type, t.types[field.type]], [t.key, <bdi dir="ltr" key="key">{field.key}</bdi>], [t.required, field.required ? m.yes : m.no], [t.searchable, field.searchable ? m.yes : m.no],
+    [t.toggles.inUrgent, field.show_in_urgent === false ? m.no : m.yes], [t.toggles.toStore, field.send_to_store === true ? m.yes : m.no]];
   if (field.help) rows.splice(1, 0, [t.help, <>{field.help.ar} · <bdi>{field.help.en}</bdi></>]);
   if (field.condition) rows.push([t.condition, <><bdi dir="ltr">{field.condition.field}</bdi> = <bdi dir="ltr">{String(field.condition.equals)}</bdi></>]);
   return <dl className="metadata field-summary">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
@@ -170,17 +178,23 @@ function Bilingual({ locale, legend, value, change }: { locale: Locale; legend: 
 }
 function FieldEditor({ locale, field, index, fields, change, remove, move }: { locale: Locale; field: Field; index: number; fields: Field[]; change: (field: Field) => void; remove: () => void; move: (delta: number) => void }) {
   const m = messages[locale], t = m.formsAdmin;
-  const set = <K extends keyof Field>(key: K, value: Field[K]) => { const next = { ...field, [key]: value }; if (value === undefined) delete next[key]; change(next); };
+  const set = <K extends keyof Field>(key: K, value: Field[K]) => { const next = { ...field, [key]: value }; if (value === undefined) delete next[key]; change(withToggles(next)); };
   const v = field.validation ?? {}, options = v.options ?? [];
   const rule = <K extends keyof NonNullable<Field["validation"]>>(key: K, value: NonNullable<Field["validation"]>[K]) => { const next = { ...v, [key]: value }; if (value === undefined) delete next[key]; set("validation", next); };
   const numeric = (key: "min_length" | "max_length" | "min" | "max" | "min_items" | "max_items" | "max_size_bytes") => <label key={key}>{t.rules[key]}<input type="number" step={field.type === "number" ? "any" : "1"} value={v[key] ?? ""} onChange={e => rule(key, e.target.value === "" ? undefined : e.target.valueAsNumber)} /></label>;
   const select = field.type === "select" || field.type === "multi_select";
   return <fieldset className="form-field-editor" data-testid="field-editor"><legend>{t.field} {index + 1}</legend>
     <div className="rule-row"><label>{t.key}<input aria-label={t.key} aria-describedby={`form-key-help-${index}`} dir="ltr" maxLength={64} value={field.key} onChange={e => set("key", e.target.value)} /><small id={`form-key-help-${index}`} className="muted">{t.keyHelp}</small></label>
-      <label>{t.type}<select aria-label={t.type} aria-describedby={`form-type-help-${index}`} value={field.type} onChange={e => { const type = e.target.value as Field["type"], next = { ...field, type, validation: newField(type, field.key).validation }; delete next.default; if (!["select", "multi_select", "attachment"].includes(next.type)) delete next.validation; change(next); }}>{fieldTypes.map(type => <option key={type} value={type} disabled={type === "location"}>{t.types[type]}</option>)}</select><small id={`form-type-help-${index}`} className="muted">{t.typeHelp}</small></label></div>
+      <label>{t.type}<select aria-label={t.type} aria-describedby={`form-type-help-${index}`} value={field.type} onChange={e => { const type = e.target.value as Field["type"], next = { ...field, type, validation: newField(type, field.key).validation }; delete next.default; if (!["select", "multi_select", "attachment"].includes(next.type)) delete next.validation; change(withToggles(next)); }}>{fieldTypes.map(type => <option key={type} value={type} disabled={type === "location"}>{t.types[type]}</option>)}</select><small id={`form-type-help-${index}`} className="muted">{t.typeHelp}</small></label></div>
     <Bilingual locale={locale} legend={t.label} value={field.label} change={v => set("label", v)} />
     <Bilingual locale={locale} legend={t.help} value={field.help} change={v => set("help", !v.ar && !v.en ? undefined : v)} />
     <div className="actions"><label className="check"><input type="checkbox" checked={field.required} onChange={e => set("required", e.target.checked)} />{t.required}</label><label className="check"><input type="checkbox" checked={field.searchable ?? false} onChange={e => set("searchable", e.target.checked)} />{t.searchable}</label></div>
+    <div className="field-toggles" data-testid="field-toggles">
+      <label className="check"><input type="checkbox" data-testid="toggle-urgent" checked={field.show_in_urgent !== false} disabled={urgentLocked(field)} aria-describedby={`form-urgent-help-${index}`} onChange={e => set("show_in_urgent", e.target.checked)} />{t.toggles.inUrgent}</label>
+      <small id={`form-urgent-help-${index}`} className="muted">{t.toggles.inUrgentHelp}</small>
+      <label className="check"><input type="checkbox" data-testid="toggle-store" checked={field.send_to_store === true} disabled={storeBlocked(field)} aria-describedby={`form-store-help-${index}`} onChange={e => set("send_to_store", e.target.checked)} />{t.toggles.toStore}</label>
+      <small id={`form-store-help-${index}`} className="muted">{t.toggles.toStoreHelp}</small>
+    </div>
     <MaterialChecks locale={locale} value={field.material_types ?? []} change={v => set("material_types", v)} />
     <fieldset className="check-group"><legend>{t.condition}</legend><p className="muted">{t.conditionHelp}</p><label>{t.conditionField}<select value={field.condition?.field ?? ""} onChange={e => set("condition", e.target.value ? { field: e.target.value, equals: "" } : undefined)}><option value="">{t.always}</option>{fields.filter(f => f.key !== field.key).map((f, i) => <option key={i} value={f.key}>{f.label[locale] || f.key}</option>)}</select></label>
       {field.condition && <><label>{t.valueType}<select value={typeof field.condition.equals} onChange={e => set("condition", { ...field.condition!, equals: e.target.value === "boolean" ? true : e.target.value === "number" ? 0 : "" })}>{(["string", "number", "boolean"] as const).map(type => <option key={type} value={type}>{t.valueTypes[type]}</option>)}</select></label>

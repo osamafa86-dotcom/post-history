@@ -23,6 +23,8 @@ export const transitionRoles = ["supervisor", "producer", "editor_in_chief"] as 
 export const myTaskRoles = ["producer"] as const satisfies readonly RoleName[];
 /** حزمة التصدير («الرشزات»): بأدوار تنزيل الأصل في العقد، فالمشرف لا ينزّلها. */
 export const exportRoles = ["producer", "editor_in_chief", "rights_officer", "system_admin"] as const satisfies readonly RoleName[];
+/** النسخة المُنتَجة (ADR 0104): تظهر وتُنزَّل لأدوار الإنتاج وحدها، والمشرف في نطاقه يحكم فيه الخادم. */
+export const producedReaders = ["producer", "supervisor", "editor_in_chief", "system_admin"] as const satisfies readonly RoleName[];
 export const assignmentStates = ["assigned", "acknowledged", "in_progress", "done", "returned"] as const satisfies readonly AssignmentState[];
 export const openStates = ["assigned", "acknowledged", "in_progress"] as const satisfies readonly AssignmentState[];
 export const transitionTargets = ["acknowledged", "in_progress", "done", "returned"] as const satisfies readonly AssignmentTransition["to"][];
@@ -97,7 +99,8 @@ export function safeAssignment(item: MaterialAssignment, internal: boolean): Mat
   return { id: item.id, material_id: item.material_id, priority: item.priority, assignee_id: item.assignee_id, assigned_by: item.assigned_by,
     ...(internal ? { assignee_name: workName(item.assignee_name), assigned_by_name: workName(item.assigned_by_name) } : {}),
     state: item.state, due_at: item.due_at, overdue: item.overdue, note: note ?? null, returned_by: returnedBy ?? null, return_note: returnNote ?? null,
-    created_at: item.created_at, acknowledged_at: acknowledged ?? null, started_at: started ?? null, closed_at: closed ?? null, updated_at: item.updated_at };
+    created_at: item.created_at, acknowledged_at: acknowledged ?? null, started_at: started ?? null, closed_at: closed ?? null,
+    ...(item.state === "done" && isId(item.produced_file_id) ? { produced_file_id: item.produced_file_id } : {}), updated_at: item.updated_at };
 }
 export function safeCandidate(item: AssignmentCandidate): AssignmentCandidate | null {
   if (!isId(item.user_id) || ![item.open_count, item.urgent_open_count, item.overdue_count].every(count)) return null;
@@ -122,11 +125,12 @@ export function assignmentInput(body: Record<string, unknown>, now = Date.now())
   if (due <= now || due - now > maxDueDays * 86400000 || (body.note !== undefined && !validNote(body.note))) return null;
   return { assignee_id: body.assignee_id, due_at: body.due_at as string, ...(body.note !== undefined ? { note: body.note as string } : {}) };
 }
-/** جسم الانتقال: `to` من القائمة، والملاحظة مع `returned` وحدها. */
+/** جسم الانتقال: `to` من القائمة، والملاحظة مع `returned` وحدها، والنسخة المُنتَجة مع `done` وحدها (ADR 0104). */
 export function transitionInput(body: Record<string, unknown>): AssignmentTransition | null {
-  if (Object.keys(body).some(key => !["to", "note"].includes(key)) || !(transitionTargets as readonly unknown[]).includes(body.to)) return null;
+  if (Object.keys(body).some(key => !["to", "note", "produced_file_id"].includes(key)) || !(transitionTargets as readonly unknown[]).includes(body.to)) return null;
   if (body.note !== undefined && (body.to !== "returned" || !validNote(body.note))) return null;
-  return { to: body.to as AssignmentTransition["to"], ...(body.note !== undefined ? { note: body.note as string } : {}) };
+  if (body.produced_file_id !== undefined && (body.to !== "done" || !isId(body.produced_file_id))) return null;
+  return { to: body.to as AssignmentTransition["to"], ...(body.note !== undefined ? { note: body.note as string } : {}), ...(body.produced_file_id !== undefined ? { produced_file_id: body.produced_file_id as string } : {}) };
 }
 
 /** تفاصيل رموز الإسناد الآلية وحدها: الشرط الفاشل من قائمته، ومعرّف المهمة المفتوحة، وحالتا الانتقال المرفوض. */

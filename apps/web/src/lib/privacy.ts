@@ -3,6 +3,7 @@ import { sensitivityState } from "./sensitivity";
 import { workName } from "./work-name";
 import { uuid, states } from "./query";
 import { knownType } from "./notification-kind";
+import { validMaterialTags } from "./tag-policy";
 
 export function mayReadField(field: Field, permissions: Permission[]) {
   return (!field.sensitive || permissions.includes("protected_source:read")) &&
@@ -43,6 +44,9 @@ export function safeMaterial(material: Material, permissions: Permission[], form
     files: material.files.map(f => ({ id: f.id, kind: f.kind, state: f.state, mime_type: f.mime_type, size_bytes: Number.isSafeInteger(f.size_bytes) ? f.size_bytes : null, duration_ms: f.duration_ms,
       width: f.width, height: f.height, receipt_number: f.receipt_number, created_at: f.created_at, verified_at: f.verified_at })),
     redacted_field_keys: material.redacted_field_keys ?? [],
+    // الوسوم بقاعدة العقد وحدها (ADR 0086)، والمصغّرة معرّف ملف يجلبه الـBFF من مساره (ADR 0104، 0105)؛ غير ذلك لا يمر.
+    ...(validMaterialTags(material.tags) ? { tags: [...material.tags] } : {}),
+    thumbnail_file_id: typeof material.thumbnail_file_id === "string" && uuid.test(material.thumbnail_file_id) && material.files.some(f => f.id === material.thumbnail_file_id && f.kind === "thumbnail" && f.state === "verified") ? material.thumbnail_file_id : null,
   };
 }
 /** الإشعار بقائمة بيضاء: العنوان الحرّ محذوف (ADR 0090)، والنوع فئة من قائمة Outbox المغلقة وحدها وإلا فارغ (ADR 0103). */

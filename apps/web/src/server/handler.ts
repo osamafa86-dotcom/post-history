@@ -8,7 +8,8 @@ import { safeDashboard, safeForm, safeMaterial, safeMe, safeNotification, safeTr
 import { materialQuery, materialTypes, uuid } from "@/lib/query";
 import type { components } from "@/generated/schema";
 import type { MaterialType } from "@/lib/types";
-import { streamDerivative } from "./media";
+import { producedLink, streamDerivative } from "./media";
+import { producedReaders } from "@/lib/assignment-policy";
 import { renderDownload, renderRead } from "./renders";
 import { assignmentPath, assignmentRead } from "./assignments";
 import { actionPath, reviewAction } from "./review-actions";
@@ -130,6 +131,16 @@ export async function handle(request: NextRequest, path: string, deps?: { config
       }
       const media = /^materials\/([^/]+)\/files\/([^/]+)\/content$/.exec(path);
       if (media && uuid.test(media[1]) && uuid.test(media[2]) && !request.nextUrl.search) return streamDerivative(request, api, config!, media[1], media[2], transport);
+      // رابط النسخة المُنتَجة (ADR 0104، 0105): مسار للـBFF وحده كمسار `content`، كي لا يمسّ مسار نسخ القالب؛ لأدوار الإنتاج وحدها.
+      const produced = /^materials\/([^/]+)\/files\/([^/]+)\/produced-url$/.exec(path);
+      if (produced) {
+        if (!uuid.test(produced[1]) || !uuid.test(produced[2])) throw new WebError(404, "request_failed");
+        if (request.nextUrl.search) throw new WebError(400, "request_failed");
+        if (!hasRole(me, ...producedReaders)) throw new WebError(403, "request_failed");
+        const link = await producedLink(api, config!, produced[1], produced[2]);
+        if (!link) throw new WebError(404, "request_failed");
+        return json(link);
+      }
       if (path === "materials") {
         let query;
         try { query = materialQuery(request.nextUrl.searchParams); } catch { throw new WebError(400, "request_failed"); }

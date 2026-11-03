@@ -6,7 +6,7 @@
 // يُمسح كل شيء عند الخروج أو الإبطال (clear-private-state).
 export type PendingUpload = {
   key: string; material_id: string; idempotency_key: string;
-  create: { material_id: string; kind: "original"; size_bytes: number; client_sha256: string; client_fingerprint?: { size_bytes: number; head_sha256: string; tail_sha256: string } };
+  create: { material_id: string; kind: "original" | "produced"; size_bytes: number; client_sha256: string; client_fingerprint?: { size_bytes: number; head_sha256: string; tail_sha256: string } };
   session_id?: string; upload_url?: string; endpoint?: string; expires_at?: string; updated_at: number;
   tus?: { part_size: number; ingest: boolean };
 };

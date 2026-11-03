@@ -55,9 +55,9 @@ export function materialInput(body: Record<string, unknown>): MaterialCreate {
 }
 
 export function uploadInput(body: Record<string, unknown>): UploadSessionCreate {
-  // الويب يرفع الأصل وحده: لا نسخة خفيفة تُنتج في المتصفح.
+  // الويب يرفع الأصل، والنسخة المُنتَجة للمسنَد إليه المادة (ADR 0104، 0105) والخادم يحكم في المهمة: لا نسخة خفيفة تُنتج في المتصفح.
   keys(body, ["material_id", "kind", "size_bytes", "filename", "mime_type", "client_sha256", "client_fingerprint"], ["material_id", "kind", "size_bytes", "filename", "client_sha256"]);
-  if (typeof body.material_id !== "string" || !uuid.test(body.material_id) || body.kind !== "original" || !Number.isSafeInteger(body.size_bytes) || Number(body.size_bytes) < 1) throw new WebError(422, "request_failed");
+  if (typeof body.material_id !== "string" || !uuid.test(body.material_id) || (body.kind !== "original" && body.kind !== "produced") || !Number.isSafeInteger(body.size_bytes) || Number(body.size_bytes) < 1) throw new WebError(422, "request_failed");
   if (!text(body.filename, 1, 255) || /[\u0000-\u001f/\\]/.test(body.filename) || typeof body.client_sha256 !== "string" || !sha256Hex.test(body.client_sha256)) throw new WebError(422, "request_failed");
   if (body.mime_type !== undefined && body.mime_type !== null && (typeof body.mime_type !== "string" || !/^[\w.+-]+\/[\w.+-]+$/.test(body.mime_type) || body.mime_type.length > 127)) throw new WebError(422, "request_failed");
   const fingerprint = body.client_fingerprint;
@@ -65,7 +65,7 @@ export function uploadInput(body: Record<string, unknown>): UploadSessionCreate 
     if (!plain(fingerprint) || Object.keys(fingerprint).some(key => !["size_bytes", "head_sha256", "tail_sha256"].includes(key)) || fingerprint.size_bytes !== body.size_bytes || typeof fingerprint.head_sha256 !== "string" || !sha256Hex.test(fingerprint.head_sha256) || typeof fingerprint.tail_sha256 !== "string" || !sha256Hex.test(fingerprint.tail_sha256)) throw new WebError(422, "request_failed");
   }
   return {
-    material_id: body.material_id, kind: "original", size_bytes: body.size_bytes as number, filename: body.filename,
+    material_id: body.material_id, kind: body.kind, size_bytes: body.size_bytes as number, filename: body.filename,
     mime_type: typeof body.mime_type === "string" ? body.mime_type : null, client_sha256: body.client_sha256,
     ...(plain(fingerprint) ? { client_fingerprint: { size_bytes: fingerprint.size_bytes as number, head_sha256: fingerprint.head_sha256 as string, tail_sha256: fingerprint.tail_sha256 as string } } : {}),
   };
@@ -77,6 +77,8 @@ export function safeUploadSession(session: UploadSession) {
     id: session.id, material_id: session.material_id, kind: session.kind, state: session.state, size_bytes: session.size_bytes,
     bytes_received: session.bytes_received, failure_reason: session.failure_reason ?? null, receipt_number: session.receipt_number ?? null,
     expires_at: session.expires_at, created_at: session.created_at,
+    // معرّف ملف المادة الناتج، لتُسلَّم به المهمة (ADR 0105)؛ معرّف لا اسم
+    file_id: typeof session.file_id === "string" && uuid.test(session.file_id) ? session.file_id : null,
   };
 }
 

@@ -20,6 +20,18 @@ export async function getDerivativeUrl(api: Api, config: WebConfig, materialId: 
   return { file, link };
 }
 
+/**
+ * رابط النسخة المُنتَجة (ADR 0104، 0105): الملف `produced` متحقق من هذه المادة كما يعيدها الخادم لهذا المستدعي (الخادم يحصرها في
+ * أدوار الإنتاج)، فلا يصير المسار بابًا لروابط ملفات أخرى. الرابط يُطلب عند النقر ولا يُخزَّن، ومن أصول التخزين وبعمر ≤ 10 دقائق.
+ * null إن لم يكن الملف نسخة مُنتَجة متحقَّقة من هذه المادة.
+ */
+export async function producedLink(api: Api, config: WebConfig, materialId: string, fileId: string) {
+  const material = requireOk(await api.GET("/materials/{id}", { params: { path: { id: materialId } } }));
+  if (!material.files.some(file => file.id === fileId && file.kind === "produced" && file.state === "verified")) return null;
+  const link = checkLink(requireOk(await api.GET("/materials/{id}/files/{file_id}/download-url", { params: { path: { id: materialId, file_id: fileId } } })), config);
+  return { url: link.url, expires_at: link.expires_at };
+}
+
 export async function streamDerivative(request: Request, api: Api, config: WebConfig, materialId: string, fileId: string, transport: typeof fetch = fetch) {
   const range = request.headers.get("range");
   if (range && !/^bytes=(?:\d{1,16}-\d{0,16}|-\d{1,16})$/.test(range)) throw new WebError(416, "request_failed");

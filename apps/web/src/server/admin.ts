@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import type { Me } from "@/lib/types";
 import { hasRole } from "@/lib/review";
-import { safeStaffPage, staffQuery, staffReaders } from "@/lib/staff-policy";
+import { roleEditors, rolesInput, safeStaffPage, safeStaffRoles, staffQuery, staffReaders } from "@/lib/staff-policy";
+import { uuid } from "@/lib/query";
 import { rewriteInput, safeRewrite, safeSuggestions, safeTagUsagePage, suggestionReaders, suggestionsInput, tagAdmins, tagUsageQuery } from "@/lib/tag-policy";
 import { platformAdmins, platformInput, safePlatformSettings } from "@/lib/platform-policy";
 import { contributorQuery, purchaseQuery, reportReaders, safeContributorPage, safePurchasePage } from "@/lib/finance-reports";
@@ -17,8 +18,10 @@ const json = (value: unknown, status = 200, version?: number) => {
 };
 const readPaths = ["users", "tag-suggestions", "tags", "platform-settings", "contributor-earnings", "buyer-purchase-totals"];
 const writePaths: Record<string, string> = { "tag-suggestions": "PUT", "tag-rewrites": "POST", "platform-settings": "PUT" };
-export const adminReadPath = (path: string) => readPaths.includes(path);
-export const adminWritePath = (path: string, method: string) => writePaths[path] === method;
+// أدوار حساب الطاقم بمعرّفه (ADR 0104، 0105): قراءة واستبدال
+const rolesPath = (path: string) => { const match = /^users\/([^/]+)\/roles$/.exec(path); return match && uuid.test(match[1]) ? match[1] : null; };
+export const adminReadPath = (path: string) => readPaths.includes(path) || rolesPath(path) !== null;
+export const adminWritePath = (path: string, method: string) => writePaths[path] === method || (rolesPath(path) !== null && method === "PUT");
 function role(me: Me, ...roles: Parameters<typeof hasRole>[1][]) { if (!hasRole(me, ...roles)) throw new WebError(403, "request_failed"); }
 function parsed<T>(read: () => T): T { try { return read(); } catch { throw new WebError(400, "request_failed"); } }
 /** ردّ الخادم المخالف للعقد لا يصل المتصفح. */
@@ -30,6 +33,12 @@ function checked<T>(read: () => T): T { try { return read(); } catch { throw new
  */
 export async function adminRead(request: Request, path: string, api: Api, me: Me) {
   const search = new URL(request.url).searchParams;
+  const rolesOf = rolesPath(path);
+  if (rolesOf) {
+    role(me, ...roleEditors); if (search.size) throw new WebError(400, "request_failed");
+    const data = requireOk(await api.GET("/users/{id}/roles", { params: { path: { id: rolesOf } } }));
+    return json(checked(() => safeStaffRoles(data)));
+  }
   if (path === "users") {
     role(me, ...staffReaders); const query = parsed(() => staffQuery(search));
     const page = requireOk(await api.GET("/users", { params: { query } }));
@@ -70,6 +79,14 @@ export async function adminRead(request: Request, path: string, api: Api, me: Me
  * `If-Match` لأن الخادم يحسم الوضع في معاملته. كل طلب بمفتاح المتصفح نفسه، والجسم يُعاد بناؤه من حقول العقد وحدها.
  */
 export async function adminWrite(path: string, api: Api, me: Me, body: Record<string, unknown>, header: { "Idempotency-Key": string }, versioned: () => { "Idempotency-Key": string; "If-Match": string }) {
+  const rolesOf = rolesPath(path);
+  if (rolesOf) {
+    // الاستبدال كامل بلا If-Match: لا إصدار للأدوار في العقد، والقائمة نفسها لا تكتب شيئًا. system_admin يرده الخادم 403.
+    role(me, ...roleEditors); const input = rolesInput(body); if (!input) throw new WebError(422, "request_failed");
+    if (rolesOf === me.user_id) throw new WebError(403, "request_failed");
+    const data = requireOk(await api.PUT("/users/{id}/roles", { params: { path: { id: rolesOf }, header }, body: input }));
+    return json(checked(() => safeStaffRoles(data)));
+  }
   if (path === "tag-suggestions") {
     role(me, ...tagAdmins); const input = suggestionsInput(body); if (!input) throw new WebError(422, "request_failed");
     const data = requireOk(await api.PUT("/tag-suggestions", { params: { header: versioned() }, body: input }));

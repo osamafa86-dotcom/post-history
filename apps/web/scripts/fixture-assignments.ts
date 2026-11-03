@@ -58,8 +58,13 @@ export function assignmentWrite(path: string, user: Me, body: Record<string, unk
     const to = String(body.to);
     if (!table[task.state].includes(to)) return { status: 409, value: { code: "invalid_transition", details: { from: task.state, to } } };
     if (task.assignee_id !== user.user_id && !(to === "returned" && has("supervisor", "editor_in_chief"))) return { status: 403, value: { code: "forbidden_scope" } };
+    // النسخة المُنتَجة مع «تم» وحدها، وملفًا `produced` متحقَّقًا على المادة نفسها (ADR 0104).
+    if (body.produced_file_id !== undefined) {
+      const file = materials.find(m => m.id === task.material_id)?.files.find(f => f.id === body.produced_file_id && f.kind === "produced" && f.state === "verified");
+      if (to !== "done" || !file) return { status: 422, value: { code: "validation_failed", details: { fields: ["/produced_file_id"] } } };
+    }
     const stamp = new Date().toISOString();
-    Object.assign(task, { state: to, updated_at: stamp, ...(to === "acknowledged" || (to === "in_progress" && !task.acknowledged_at) ? { acknowledged_at: stamp } : {}), ...(to === "in_progress" ? { started_at: stamp } : {}),
+    Object.assign(task, { state: to, updated_at: stamp, ...(to === "done" ? { produced_file_id: typeof body.produced_file_id === "string" ? body.produced_file_id : null } : {}), ...(to === "acknowledged" || (to === "in_progress" && !task.acknowledged_at) ? { acknowledged_at: stamp } : {}), ...(to === "in_progress" ? { started_at: stamp } : {}),
       ...(to === "done" || to === "returned" ? { closed_at: stamp } : {}), ...(to === "returned" ? { returned_by: user.user_id, return_note: typeof body.note === "string" ? body.note : null } : {}) });
     return { status: 200, value: view(task) };
   }

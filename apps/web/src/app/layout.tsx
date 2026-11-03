@@ -4,6 +4,7 @@ import "@/generated/tokens.css";
 import "./globals.css";
 import "./store.css";
 import "./pages.css";
+import "./desk-tools.css";
 export const dynamic = "force-dynamic";
 export async function generateMetadata() {
   const value = (await headers()).get("x-web-locale") ?? "ar", locale = isLocale(value) ? value : "ar";

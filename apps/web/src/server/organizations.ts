@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { Me } from "@/lib/types";
 import { hasRole } from "@/lib/review";
 import { uuid } from "@/lib/query";
-import { inviteToken, isBuyer, memberInvite, memberManagers, memberUpdate, organizationAdmins, organizationCreate, organizationEditors, organizationInput, organizationReaders, organizationStatuses, safeMember, safeOrganization } from "@/lib/buyer-policy";
+import { inviteToken, isBuyer, memberInvite, memberManagers, memberUpdate, organizationAdmins, organizationCreate, organizationEditors, organizationInput, organizationReaders, organizationRejecters, organizationStatuses, rejectionInput, safeMember, safeOrganization } from "@/lib/buyer-policy";
 import { requireOk, type Api } from "./auth";
 import { WebError } from "./errors";
 
@@ -41,6 +41,16 @@ export async function organizationRead(request: Request, id: string | undefined,
 
 /** الكتابة: الإنشاء لمدير النظام، والملف لمديري المؤسسة بـ If-Match، والدعوة والتعديل لمديري الأعضاء. الحالة والمقاعد والمقاعد المستنفدة يحكم فيها الخادم. */
 export async function organizationWrite(request: Request, path: string, api: Api, me: Me, body: Record<string, unknown>, header: { "Idempotency-Key": string }, versioned: () => { "Idempotency-Key": string; "If-Match": string }) {
+  const rejection = /^buyer-organizations\/([^/]+)\/rejection$/.exec(path);
+  if (rejection) {
+    // رفض طلب الانضمام بسببه المرمّز وIf-Match من ETag المؤسسة (ADR 0104، 0105)؛ 412 يعود كما هو فيعيد المتصفح التحميل.
+    ownOrganization(me, rejection[1]);
+    if (request.method !== "POST") throw new WebError(405, "request_failed");
+    if (!hasRole(me, ...organizationRejecters)) throw new WebError(403, "request_failed");
+    const input = rejectionInput(body); if (!input) throw new WebError(422, "request_failed");
+    const result = await api.POST("/buyer-organizations/{org_id}/rejection", { params: { path: { org_id: rejection[1] }, header: versioned() }, body: input });
+    return json(safeOrganization(requireOk(result)), 200, result.response.headers.get("ETag"));
+  }
   const match = /^buyer-organizations(?:\/([^/]+)(?:\/members(?:\/([^/]+))?)?)?$/.exec(path), members = path.includes("/members");
   if (!match) throw new WebError(405, "request_failed");
   const [, id, user] = match;

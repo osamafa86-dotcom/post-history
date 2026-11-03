@@ -22,6 +22,7 @@ import { ruleInput, safeRule } from "@/lib/notification-policy";
 import { safeTemplate, templateInput, templateWriters } from "@/lib/license-policy";
 import { listingInput, listingWriters, safeListing } from "@/lib/listing-policy";
 import { adminWrite, adminWritePath } from "./admin";
+import { materialTagEditors, materialTagsInput } from "@/lib/tag-policy";
 
 const privateHeaders = { "Cache-Control": "private, no-store, max-age=0", "Pragma": "no-cache", "Vary": "Cookie" };
 export const actionRoutes = [
@@ -63,6 +64,9 @@ export const actionRoutes = [
   { path: "/tag-suggestions", methods: ["put"] },
   { path: "/tag-rewrites", methods: ["post"] },
   { path: "/platform-settings", methods: ["put"] },
+  { path: "/users/{id}/roles", methods: ["put"] },
+  { path: "/buyer-organizations/{org_id}/rejection", methods: ["post"] },
+  { path: "/materials/{id}/tags", methods: ["put"] },
 ] as const;
 const routePatterns = actionRoutes.map(route => ({ ...route, pattern: new RegExp(`^${route.path.slice(1).replaceAll(/\{[^}]+\}/g, "[^/]+")}$`) }));
 export const actionPath = (path: string, method: string) => routePatterns.some(route => route.pattern.test(path) && (route.methods as readonly string[]).includes(method.toLowerCase()));
@@ -117,6 +121,15 @@ export async function reviewAction(request: Request, path: string, api: Api, me:
       requireRole(me, "producer", "supervisor", "editor_in_chief", "system_admin"); keys(body, []);
       requireOk(await api.DELETE("/materials/{id}/reservation", { params: { path: { id }, header } })); return done();
     }
+  }
+  // وسوم المادة من المكتب (W2، ADR 0104، 0105): If-Match من row_version إلزامي (428 بدونه)، و412 يعود كما هو فيعيد المتصفح التحميل.
+  const tagsPath = /^materials\/([^/]+)\/tags$/.exec(path);
+  if (tagsPath && uuid.test(tagsPath[1]) && request.method === "PUT") {
+    requireRole(me, ...materialTagEditors); const input = materialTagsInput(body); if (!input) throw new WebError(422, "request_failed");
+    const result = await api.PUT("/materials/{id}/tags", { params: { path: { id: tagsPath[1] }, header: versioned() }, body: input });
+    const data = requireOk(result), response = NextResponse.json(safeMaterial(data, me.permissions, undefined, internalNames(me)), { headers: privateHeaders });
+    if (Number.isSafeInteger(data.row_version)) response.headers.set("ETag", `"${data.row_version}"`);
+    return response;
   }
   // نسخة بقالب «مواد متداولة» (ADR 0091): طلب جديد لكل مفتاح، بلا If-Match لأن الحالات الثلاث لا تتغيّر.
   const renderPath = /^materials\/([^/]+)\/renders$/.exec(path);

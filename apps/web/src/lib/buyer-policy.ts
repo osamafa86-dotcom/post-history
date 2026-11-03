@@ -55,9 +55,18 @@ export function memberUpdate(body: Record<string, unknown>): MemberUpdate | null
   if (!plain(body) || Object.keys(body).sort().join() !== "role,status" || !(buyerRoles as readonly unknown[]).includes(body.role) || !(memberStatuses as readonly unknown[]).includes(body.status)) return null;
   return { role: body.role as MemberUpdate["role"], status: body.status as MemberUpdate["status"] };
 }
-/** المؤسسة للمتصفح بقائمة بيضاء. */
+// رفض طلب الانضمام (A5، ADR 0104، 0105): لمدير النظام وحده كما في `x-roles`، وبسبب من القائمة المغلقة.
+export type OrganizationRejection = components["schemas"]["BuyerOrganizationRejection"];
+export type RejectionReason = components["schemas"]["BuyerOrganizationRejectionReason"];
+export const organizationRejecters = ["system_admin"] as const satisfies readonly Role[];
+export const rejectionReasons = ["commercial_registry", "institutional_email", "license_agreement", "duplicate_organization", "other"] as const satisfies readonly RejectionReason[];
+export function rejectionInput(body: Record<string, unknown>): OrganizationRejection | null {
+  return Object.keys(body).join() === "reason_code" && (rejectionReasons as readonly unknown[]).includes(body.reason_code) ? { reason_code: body.reason_code as RejectionReason } : null;
+}
+/** المؤسسة للمتصفح بقائمة بيضاء؛ السبب مع `rejected` وحدها، ومن القائمة المغلقة وحدها. */
 export function safeOrganization(o: Organization): Organization {
-  return { id: o.id, legal_name: o.legal_name, display_name: { ar: o.display_name.ar, en: o.display_name.en }, country: o.country, billing_email: o.billing_email, seats: o.seats, status: o.status, active_members: o.active_members, verified_at: o.verified_at ?? null, created_at: o.created_at, updated_at: o.updated_at };
+  const reason = o.status === "rejected" && (rejectionReasons as readonly unknown[]).includes(o.rejection_reason) ? { rejection_reason: o.rejection_reason } : {};
+  return { id: o.id, legal_name: o.legal_name, display_name: { ar: o.display_name.ar, en: o.display_name.en }, country: o.country, billing_email: o.billing_email, seats: o.seats, status: o.status, active_members: o.active_members, verified_at: o.verified_at ?? null, ...reason, created_at: o.created_at, updated_at: o.updated_at };
 }
 export function safeMember(m: Member): Member {
   return { user_id: m.user_id, email: m.email, role: m.role, status: m.status, totp_enabled: m.totp_enabled, created_at: m.created_at };

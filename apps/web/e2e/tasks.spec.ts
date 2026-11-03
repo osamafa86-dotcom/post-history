@@ -110,7 +110,9 @@ test("W6: the editor's note, the rushes and their package, and the task moves th
   await actions.getByRole("button", { name: ar.task.act.acknowledged }).click(); await expect(page.getByTestId("task-meta").getByTestId("task-state")).toHaveText(ar.tasks.state.acknowledged);
   await actions.getByRole("button", { name: ar.task.act.in_progress }).click(); await expect(page.getByTestId("task-meta").getByTestId("task-state")).toHaveText(ar.tasks.state.in_progress);
   await expect(actions).toContainText(ar.task.doneHint);
-  await actions.getByRole("button", { name: ar.task.act.done }).click(); await expect(actions.getByTestId("task-closed")).toContainText(ar.task.closedDone.split("{time}")[0].trim());
+  await actions.getByRole("button", { name: ar.task.act.done }).click();
+  const confirm = page.getByTestId("confirm-done"); await expect(confirm).toContainText(ar.task.produced.effectWithout); await confirm.getByRole("button", { name: ar.task.act.done }).click();
+  await expect(actions.getByTestId("task-closed")).toContainText(ar.task.closedDone.split("{time}")[0].trim());
   await expect(actions.getByRole("button")).toHaveCount(0);
   const moves = (await writes(page)).filter(w => w.path.endsWith("/transitions") && w.path.startsWith("/v1/assignments/")).map(w => w.body); expect(moves).toEqual([{ to: "acknowledged" }, { to: "in_progress" }, { to: "done" }]);
 });
