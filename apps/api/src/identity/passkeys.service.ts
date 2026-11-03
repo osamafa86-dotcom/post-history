@@ -74,7 +74,7 @@ export class PasskeysService {
   // ---------- التسجيل ----------
 
   /**
-   * إعادة التحقق (كلمة المرور ثم TOTP إن فُعّل، بعدّادي الفشل لكل حساب نفسيهما في الدخول ورمز يحجز خطوته، ADR 0113) ثم خيارات
+   * إعادة التحقق (كلمة المرور ثم TOTP إن فُعّل، بعدّادي الفشل لكل حساب نفسيهما في الدخول ورمز يحجز خطوته، ADR 0117) ثم خيارات
    * الإنشاء بتحدٍّ لهذا المستخدم.
    */
   async registrationOptions(userId: string, body: components['schemas']['PasskeyStepUp']): Promise<PasskeyChallenge> {

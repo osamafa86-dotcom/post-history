@@ -116,7 +116,7 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     const material = async (label) => {
       const r = await http.call(tokens.reporter, "POST", "/materials", { body: materialBody(form.version, `sp-${label}-${uniq}`) });
       if (r.status !== 201) throw new Error(`fixture material answered ${r.status}`);
-      // the three independent sale conditions (ADR 0114): sellable rights, the current version published, a verified original
+      // the three independent sale conditions (ADR 0118): sellable rights, the current version published, a verified original
       await db.query(`UPDATE materials SET rights_state = 'sellable', editorial_state = 'published', technical_state = 'verified' WHERE id = $1`, [r.body.id]);
       await db.query(`INSERT INTO material_files (material_id, kind, state, size_bytes, sha256, storage_key, verified_at) VALUES ($1, 'original', 'verified', 100, $2, $3, now())`, [r.body.id, randomBytes(32), `tus/${randomUUID()}`]);
       return r.body.id;

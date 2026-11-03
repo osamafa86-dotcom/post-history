@@ -133,7 +133,7 @@ const usedTotpSteps = new Map<string, Set<number>>();
 
 /**
  * رمز TOTP لخطوة لم يقدّمها الاختبار بعد لهذا الحساب: الخادم يحجز (المستخدم، الخطوة) أيًّا كان السر، ولا يقبل الخطوة مرتين
- * (ADR 0113). الحالية ثم التالية ثم السابقة، وكلها في نافذة القبول؛ أكثر من ثلاثة في خطوة واحدة خطأ في الاختبار.
+ * (ADR 0117). الحالية ثم التالية ثم السابقة، وكلها في نافذة القبول؛ أكثر من ثلاثة في خطوة واحدة خطأ في الاختبار.
  */
 export function freshTotp(userId: string, secret: Buffer, nowMs = Date.now()): string {
   const used = usedTotpSteps.get(userId) ?? new Set<number>();
@@ -145,7 +145,7 @@ export function freshTotp(userId: string, secret: Buffer, nowMs = Date.now()): s
   return totp(secret, step * 30_000);
 }
 
-/** مادة تستوفي شروط البيع الثلاثة (ADR 0114): حقوق sellable، والإصدار الحالي published، وأصل متحقق فنيًّا. */
+/** مادة تستوفي شروط البيع الثلاثة (ADR 0118): حقوق sellable، والإصدار الحالي published، وأصل متحقق فنيًّا. */
 export async function makeSaleable(h: Harness, materialId: string): Promise<void> {
   await h.pool.query(`UPDATE materials SET rights_state = 'sellable', editorial_state = 'published', technical_state = 'verified' WHERE id = $1`, [materialId]);
 }

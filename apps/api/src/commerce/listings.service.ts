@@ -23,7 +23,7 @@ export interface ListingWithTag {
 
 /**
  * إدراج المادة في الكتالوج (v0.3، ADR 0025): واحد لكل مادة، يثبّت إصدارها الحالي، وحالته مستقلة عن الحالات الثلاث.
- * `listed` يلزمه الشروط الثلاثة (assertListable، ADR 0114). الإذن التجاري وعروضه لمدير النظام وحده.
+ * `listed` يلزمه الشروط الثلاثة (assertListable، ADR 0118). الإذن التجاري وعروضه لمدير النظام وحده.
  */
 @Injectable()
 export class ListingsService {
@@ -205,7 +205,7 @@ async function audited(tx: Tx, actorId: string, action: string, row: ListingRow)
 }
 
 /**
- * شروط العرض، الثلاثة المستقلة في الخطة (ADR 0114، تعديل 0025): حقوق قابلة للبيع (409 rights_not_sellable)، واعتماد تحريري
+ * شروط العرض، الثلاثة المستقلة في الخطة (ADR 0118، تعديل 0025): حقوق قابلة للبيع (409 rights_not_sellable)، واعتماد تحريري
  * للإصدار المعروض (published، والإدراج يثبّت الإصدار الحالي) وأصل متحقق (technical_state = verified) وإلا 409
  * listing_conditions_unmet بما فشل، ومادة غير موسومة بالحساسية (422 على /state؛ threat-model-commercial). ومحفّزات القاعدة تعيدها
  * كلها (020 و027 و047).

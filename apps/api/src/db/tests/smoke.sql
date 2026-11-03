@@ -661,7 +661,7 @@ SELECT pg_temp.expect_error($q$
   INSERT INTO listing_offers (listing_id, license_template_id, price_override_minor)
   VALUES ('00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000602', 100) $q$, '23514');
 UPDATE materials SET rights_state = 'sellable' WHERE id = '00000000-0000-4000-8000-000000000101';
--- والشرطان الآخران (ADR 0114): اعتماد تحريري للإصدار المعروض (published بالإصدار نفسه) وأصل متحقق، من الجهتين
+-- والشرطان الآخران (ADR 0118): اعتماد تحريري للإصدار المعروض (published بالإصدار نفسه) وأصل متحقق، من الجهتين
 SELECT pg_temp.expect_error($q$
   UPDATE catalog_listings SET state = 'listed', listed_at = now() WHERE id = '00000000-0000-4000-8000-000000000611' $q$, '23514');
 UPDATE materials SET editorial_state = 'published', technical_state = 'verified' WHERE id = '00000000-0000-4000-8000-000000000101';
@@ -734,7 +734,7 @@ SELECT pg_temp.expect_error($q$
   UPDATE users SET organization_id = NULL WHERE id = '00000000-0000-4000-8000-000000000711' $q$, '23514');
 SELECT pg_temp.expect_error($q$
   UPDATE users SET office_id = '00000000-0000-4000-8000-000000000001' WHERE id = '00000000-0000-4000-8000-000000000711' $q$, '23514');
--- عضوية المؤسسة مستقلة عن حالة الحساب (ADR 0114)، ولحساب مشترٍ وحده
+-- عضوية المؤسسة مستقلة عن حالة الحساب (ADR 0118)، ولحساب مشترٍ وحده
 UPDATE users SET membership_suspended = true WHERE id = '00000000-0000-4000-8000-000000000711';
 UPDATE users SET membership_suspended = false WHERE id = '00000000-0000-4000-8000-000000000711';
 SELECT pg_temp.expect_error($q$
@@ -863,7 +863,7 @@ SELECT pg_temp.expect_error($q$
   VALUES ('00000000-0000-4000-8000-000000000c02', '00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000101',
           1, '00000000-0000-4000-8000-000000000602', 1, 'exclusive_temporary', 150000, 'USD', 'ع', 'T') $q$, '23514');
 UPDATE materials SET rights_state = 'sellable' WHERE id = '00000000-0000-4000-8000-000000000101';
--- والاعتماد التحريري للإصدار المبيع والحساسية يُعاد فحصهما عند التأكيد (ADR 0114)
+-- والاعتماد التحريري للإصدار المبيع والحساسية يُعاد فحصهما عند التأكيد (ADR 0118)
 UPDATE materials SET editorial_state = 'final_review' WHERE id = '00000000-0000-4000-8000-000000000101';
 SELECT pg_temp.expect_error($q$
   INSERT INTO licenses (license_number, order_item_id, organization_id, material_id, license_type, valid_from)

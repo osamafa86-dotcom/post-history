@@ -88,7 +88,7 @@ export class AccountService {
   }
 
   /**
-   * المستخدم يبطل جلساته؛ مشرف نطاق صاحبها يبطلها بعد بلاغ فقد الهاتف لحساب مراسل وحده، ومدير النظام لأي حساب (ADR 0113)، ويُسجَّل في
+   * المستخدم يبطل جلساته؛ مشرف نطاق صاحبها يبطلها بعد بلاغ فقد الهاتف لحساب مراسل وحده، ومدير النظام لأي حساب (ADR 0117)، ويُسجَّل في
    * التدقيق. ما ليس للمستدعي أن يبطله غير موجود بالنسبة إليه (404).
    */
   async revokeSession(p: Principal, sessionId: string): Promise<void> {
@@ -185,7 +185,7 @@ export class AccountService {
         .for('update', { of: recoveryRequests });
       if (!r) throw ApiError.notFound();
       const targetRoles = await rolesOf(tx, r.userId);
-      // المشرف يعتمد استعادة حساب مراسل في نطاقه وحده؛ المشتري والطاقم بغير دور المراسل لمدير النظام (ADR 0113)
+      // المشرف يعتمد استعادة حساب مراسل في نطاقه وحده؛ المشتري والطاقم بغير دور المراسل لمدير النظام (ADR 0117)
       if (!hasRole(p, 'system_admin') && !(supervisesUser(p, r) && isReporterAccount(targetRoles, r.organizationId))) throw ApiError.notFound();
       if (targetRoles.includes('system_admin')) throw adminQuorumRequired();
       await assertHierarchy(tx, p, r.userId);
@@ -233,7 +233,7 @@ export class AccountService {
 
   /**
    * عشرة رموز جديدة تُعاد مرة واحدة وتُخزَّن ببصماتها، وكل رمز سابق للحساب يبطل في المعاملة نفسها. إعادة تحقق قبلها (كلمة المرور ثم
-   * TOTP، ADR 0113) كما قبل تسجيل مفتاح المرور، فجلسة مسروقة وحدها لا تأخذ رموزًا ولا تبطل رموز صاحبها. كل توليد يُعد في حد المعدل لكل
+   * TOTP، ADR 0117) كما قبل تسجيل مفتاح المرور، فجلسة مسروقة وحدها لا تأخذ رموزًا ولا تبطل رموز صاحبها. كل توليد يُعد في حد المعدل لكل
    * حساب. التدقيق بالعدد وحده، والحدث بلا رمز ينبّه صاحب الحساب (رمز في يد غيره يبدأ استعادة تنتظر اعتماد المشرف، لا أكثر).
    */
   async generateRecoveryCodes(userId: string, stepUp: components['schemas']['PasskeyStepUp'] | undefined): Promise<components['schemas']['RecoveryCodes']> {

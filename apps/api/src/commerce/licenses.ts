@@ -86,7 +86,7 @@ export class LicensesService {
       const [org] = await tx.select({ status: buyerOrganizations.status }).from(buyerOrganizations).where(eq(buyerOrganizations.id, l.organizationId));
       if (org?.status !== 'active') throw new ApiError(403, 'forbidden_scope', 'The organization cannot download until it is active.');
       const lapsed = l.validUntil !== null && Date.parse(iso(l.validUntil)!) <= Date.now();
-      // لا رابط إلا والترخيص فاعل وحقوق مادته sellable وهي غير موسومة بالحساسية (ADR 0114)، ولو لم يُبطَل الترخيص بعد
+      // لا رابط إلا والترخيص فاعل وحقوق مادته sellable وهي غير موسومة بالحساسية (ADR 0118)، ولو لم يُبطَل الترخيص بعد
       const [m] = await tx
         .select({
           rightsState: materials.rightsState,

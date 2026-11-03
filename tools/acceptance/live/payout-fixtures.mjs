@@ -43,7 +43,7 @@ export function fixtures({ http, tokens, db, root, secret }) {
     const form = (await http.get(tokens.reporter, "/forms/current")).body;
     const m = await http.call(tokens.reporter, "POST", "/materials", { body: materialBody(form.version, `po-${label}-${uniq}`) });
     if (m.status !== 201) throw new Error(`fixture material answered ${m.status}`);
-    // the three independent sale conditions (ADR 0114): sellable rights, the current version published, a verified original
+    // the three independent sale conditions (ADR 0118): sellable rights, the current version published, a verified original
     await db.query(`UPDATE materials SET rights_state = 'sellable', editorial_state = 'published', technical_state = 'verified' WHERE id = $1`, [m.body.id]);
     await db.query(`INSERT INTO material_files (material_id, kind, state, size_bytes, sha256, storage_key, verified_at) VALUES ($1, 'original', 'verified', 100, $2, $3, now())`, [m.body.id, randomBytes(32), `tus/${randomUUID()}`]);
     const tpl = await http.call(tokens.rights_officer, "POST", "/license-templates", { body: {

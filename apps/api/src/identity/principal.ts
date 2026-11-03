@@ -71,7 +71,7 @@ export function supervisesUser(p: Principal, user: { officeId: string | null; go
 }
 
 /**
- * حساب مراسل (ADR 0113): دور `reporter` وحده بأي نطاق، وليس حساب مشترٍ. المشرف يعتمد استعادته ويبطل جلساته في نطاقه؛ وكل حساب
+ * حساب مراسل (ADR 0117): دور `reporter` وحده بأي نطاق، وليس حساب مشترٍ. المشرف يعتمد استعادته ويبطل جلساته في نطاقه؛ وكل حساب
  * غيره (المشترون، والإنتاج والمالية والحقوق، والمشرف فما فوق، وحساب بلا دور) لمدير النظام وحده.
  */
 export function isReporterAccount(roles: readonly string[], organizationId: string | null): boolean {

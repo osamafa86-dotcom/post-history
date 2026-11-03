@@ -56,7 +56,7 @@ export class AuthService {
 
   /**
    * `ip` سلة العنوان (rateLimitBucket: IPv6 على /64). فوق حدَّي العنوان و(البريد، العنوان)، عدّادا فشل لكل حساب مستقلان عن العنوان
-   * لكلمة المرور ولرمز TOTP بتأخير متضاعف (ADR 0113)، يُفحصان قبل أي تحقق؛ والبريد غير الموجود يُعدّ ويُؤخَّر كالموجود، فلا يكشف
+   * لكلمة المرور ولرمز TOTP بتأخير متضاعف (ADR 0117)، يُفحصان قبل أي تحقق؛ والبريد غير الموجود يُعدّ ويُؤخَّر كالموجود، فلا يكشف
    * 429 وجود حساب. رمز TOTP المقبول يحجز خطوته لهذا الحساب قبل قبوله.
    */
   async login(body: LoginRequest, ip: string): Promise<Session> {
@@ -95,7 +95,7 @@ export class AuthService {
     const passwordOk = await argon2Verify(user?.passwordHash ?? (await this.dummyHash), body.password).catch(() => false);
     // في «إعادة التعيين الإلزامية» لا دخول عاديًا: الطريق /auth/recovery/complete ثم /auth/totp/confirm (الرد نفسه
     // فلا يُكشف أن الحساب في استعادة)
-    // العضوية المعلّقة في المؤسسة كالحساب المعلّق (ADR 0114)
+    // العضوية المعلّقة في المؤسسة كالحساب المعلّق (ADR 0118)
     if (!user || !passwordOk || user.status !== 'active' || user.membershipSuspended || user.credentialResetRequired) await fail('password');
 
     if (user!.totpEnabled) {
@@ -258,7 +258,7 @@ export class AuthService {
       .from(users)
       .where(eq(users.id, userId));
     if (!u?.resetRequired || !u.pending) throw notPending();
-    // الرمز يحجز خطوته قبل القبول (ADR 0113)، والخاطئ يُعد في عدّاد TOTP لكل حساب
+    // الرمز يحجز خطوته قبل القبول (ADR 0117)، والخاطئ يُعد في عدّاد TOTP لكل حساب
     if (!(await this.attempts.acceptTotp(userId, this.fieldKeys.decrypt(u.pending), code))) {
       await Promise.all([this.confirmByUser.record(userId), this.attempts.totpFailed(userId)]);
       throw ApiError.unauthorized();

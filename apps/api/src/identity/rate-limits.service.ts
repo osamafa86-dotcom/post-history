@@ -48,7 +48,7 @@ export class RateLimitsService {
       : new MemoryRateLimiter(max, windowMs);
   }
 
-  /** عدّاد فشل بتأخير متضاعف (ADR 0113)، بالاحتياط نفسه في الذاكرة عند تعطل Redis. */
+  /** عدّاد فشل بتأخير متضاعف (ADR 0117)، بالاحتياط نفسه في الذاكرة عند تعطل Redis. */
   backoff(name: string, policy: BackoffPolicy): RateLimiter {
     return this.redis
       ? new ResilientRateLimiter(new RedisBackoffLimiter(this.redis, name, policy, this.keyMaterial), new MemoryBackoffLimiter(policy), this.health)

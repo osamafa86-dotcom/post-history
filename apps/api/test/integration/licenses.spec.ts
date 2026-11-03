@@ -235,7 +235,7 @@ describe('licenses (/v1/licenses) and the sandbox return', () => {
     expect((await download(suspended.buyer.token, suspended.licenseId).expect(403)).body.code).toBe('forbidden_scope');
   });
 
-  // ADR 0114: خروج الحقوق من sellable ووسم الحساسية كانا يتركان الترخيص فاعلًا ورابط التنزيل 200
+  // ADR 0118: خروج الحقوق من sellable ووسم الحساسية كانا يتركان الترخيص فاعلًا ورابط التنزيل 200
   it('rights leaving sellable revoke the material licenses as rights_withdrawn in the same transition, notify the buyer by license number, and stop downloads', async () => {
     const a = await licensed();
     const colleague = await buyer(a.orgId, 'buyer_member');

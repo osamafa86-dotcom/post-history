@@ -1,7 +1,7 @@
 import { totp, totpStep, verifyTotp } from '../../src/common/crypto';
 import { backoffDelayMs, MemoryBackoffLimiter } from '../../src/identity/rate-limiter';
 
-// ADR 0113: عدّاد الفشل لكل حساب بتأخير متضاعف، ورقم خطوة TOTP الذي يُحجز قبل قبول الرمز
+// ADR 0117: عدّاد الفشل لكل حساب بتأخير متضاعف، ورقم خطوة TOTP الذي يُحجز قبل قبول الرمز
 describe('per-account backoff', () => {
   const policy = { free: 3, baseMs: 1000, maxMs: 8000, forgetMs: 60_000 };
 

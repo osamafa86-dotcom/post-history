@@ -41,7 +41,7 @@ export async function writeListingEvent(tx: Tx, listing: ListingRow, actorId: st
 
 /**
  * ما يعلّق الإدراج المعروض آليًا: خروج الحقوق من `sellable`، أو وسم المادة بالحساسية (threat-model-commercial)، أو سقوط الاعتماد
- * التحريري للإصدار المعروض (إصدار جديد بتعديل بعد الاعتماد، أو خروج من `published`، ADR 0114).
+ * التحريري للإصدار المعروض (إصدار جديد بتعديل بعد الاعتماد، أو خروج من `published`، ADR 0118).
  */
 export type AutoSuspendReason = 'rights_changed' | 'sensitive_flagged' | 'editorial_changed';
 
@@ -59,7 +59,7 @@ export async function suspendListing(tx: Tx, materialId: string, reason: AutoSus
 }
 
 /**
- * خروج حقوق المادة من `sellable` (حجب أو سحب) ووسمها بالحساسية يبطلان تراخيصها الفاعلة في المعاملة نفسها (ADR 0114): الحالة
+ * خروج حقوق المادة من `sellable` (حجب أو سحب) ووسمها بالحساسية يبطلان تراخيصها الفاعلة في المعاملة نفسها (ADR 0118): الحالة
  * `revoked` بسبب `rights_withdrawn` (القيمة في العقد والقاعدة)، فيتوقف التنزيل، و`license.revoked` لكل ترخيص بالمعرّفات وحدها ينبّه
  * المشتري. يعيد عدد التراخيص المبطَلة.
  */

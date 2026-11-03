@@ -288,12 +288,12 @@ export async function applyTransition(
   const column = STATE_COLUMN[t.track];
   const from = m[column];
   // إدراج معروض يُعلَّق قبل أن تخرج حقوق مادته من sellable، في المعاملة نفسها (محفّز القاعدة يرفض العكس)، وتبطل تراخيصها الفاعلة
-  // (ADR 0114)
+  // (ADR 0118)
   if (t.track === 'rights' && from === 'sellable' && t.to !== 'sellable') {
     await suspendListing(tx, m.id, 'rights_changed', t.actorId);
     await revokeMaterialLicenses(tx, m.id, t.actorId);
   }
-  // وخروج المادة من published يسقط الاعتماد التحريري للإصدار المعروض (ADR 0114)
+  // وخروج المادة من published يسقط الاعتماد التحريري للإصدار المعروض (ADR 0118)
   if (t.track === 'editorial' && from === 'published' && t.to !== 'published') await suspendListing(tx, m.id, 'editorial_changed', t.actorId);
   // «اطّلعت» (v0.2): من نقل المادة من inbox إلى acknowledged ومتى، فيراه المراسل
   const seen = t.track === 'editorial' && t.to === 'acknowledged' && t.actorId ? { acknowledgedBy: t.actorId, acknowledgedAt: sql`now()` } : {};

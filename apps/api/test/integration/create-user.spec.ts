@@ -54,7 +54,7 @@ describe('account creation on a real host (cli:create-user, ADR 0030)', () => {
     const secret = base32Decode(completed.body.totp_enrollment.secret_base32);
     await request(h.app.getHttpServer()).post('/v1/auth/totp/confirm').set('Authorization', `Bearer ${completed.body.session.access_token}`).send({ totp_code: freshTotp(done.userId, secret) }).expect(200);
     await login(e, newPassword).expect(401); // الرمز الثاني مطلوب الآن
-    // خطوة لم تُقدَّم بعد: الخادم لا يقبل الخطوة نفسها مرتين لحساب واحد (ADR 0113)
+    // خطوة لم تُقدَّم بعد: الخادم لا يقبل الخطوة نفسها مرتين لحساب واحد (ADR 0117)
     await request(h.app.getHttpServer()).post('/v1/auth/login').send({ email: e, password: newPassword, totp_code: freshTotp(done.userId, secret) }).expect(200);
     // الرمز لمرة واحدة
     await request(h.app.getHttpServer()).post('/v1/auth/recovery/complete').send({ reset_token: done.setupToken, new_password: newPassword }).expect(401);

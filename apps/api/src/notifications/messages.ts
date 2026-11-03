@@ -38,7 +38,7 @@ export const NOTIFICATION_TITLES: Record<string, Record<Locale, string>> = {
     ar: 'نسختك من المادة #{ref} على قالب «مواد متداولة» جاهزة',
     en: 'Your circulated-template copy of material #{ref} is ready',
   },
-  // ترخيص أُبطل لأن حقوق مادته سُحبت أو حُجبت أو وُسمت بالحساسية (ADR 0114): رقم الترخيص وحده، لا السبب ولا عنوان المادة
+  // ترخيص أُبطل لأن حقوق مادته سُحبت أو حُجبت أو وُسمت بالحساسية (ADR 0118): رقم الترخيص وحده، لا السبب ولا عنوان المادة
   'license.revoked': {
     ar: 'أُبطل الترخيص {ref} وتوقف تنزيله؛ لم تعد حقوق المادة تسمح باستعماله',
     en: 'License {ref} was revoked and its download stopped; the rights of the material no longer allow its use',

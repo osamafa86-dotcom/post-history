@@ -98,7 +98,7 @@ const schema = z.object({
   LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(10),
   LOGIN_RATE_LIMIT_IP_MAX: z.coerce.number().int().min(1).default(100),
   LOGIN_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).default(900),
-  // عدّادا فشل لكل حساب مستقلان عن العنوان، لكلمة المرور ولرمز TOTP (ADR 0113): محاولات مجانية ثم تأخير يتضاعف من الأساس حتى
+  // عدّادا فشل لكل حساب مستقلان عن العنوان، لكلمة المرور ولرمز TOTP (ADR 0117): محاولات مجانية ثم تأخير يتضاعف من الأساس حتى
   // السقف، ويُنسى العدّاد بعد مدة بلا فشل. البريد غير الموجود يُعدّ كالموجود.
   LOGIN_BACKOFF_FREE_ATTEMPTS: z.coerce.number().int().min(1).max(100).default(5),
   LOGIN_BACKOFF_BASE_SECONDS: z.coerce.number().int().min(1).max(3600).default(1),

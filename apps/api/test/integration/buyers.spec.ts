@@ -107,7 +107,7 @@ describe('buyer organizations (/v1/buyer-organizations)', () => {
     expect(active.body).toMatchObject({ status: 'active', verified_at: expect.any(String) });
   });
 
-  // ADR 0114: ما تحقق منه مدير النظام (الاسم القانوني والبلد) لا يتغيّر بعد التحقق دون تحقق جديد
+  // ADR 0118: ما تحقق منه مدير النظام (الاسم القانوني والبلد) لا يتغيّر بعد التحقق دون تحقق جديد
   it('a buyer admin changing the legal name or country of a verified organization sends it back to pending_verification; billing email changes are audited', async () => {
     const o = await created();
     const owner = await buyer(o.id, 'buyer_admin');
@@ -141,7 +141,7 @@ describe('buyer organizations (/v1/buyer-organizations)', () => {
     expect(byAdmin.body).toMatchObject({ status: 'active', legal_name: 'Corrected LLC' });
   });
 
-  // ADR 0114: عضوية المؤسسة مستقلة عن تعليق الحساب على المنصة، والتعليق بأي طريق يبطل كل الوصول
+  // ADR 0118: عضوية المؤسسة مستقلة عن تعليق الحساب على المنصة، والتعليق بأي طريق يبطل كل الوصول
   it('a buyer admin suspends the membership (access revoked at once) but never lifts a platform suspension', async () => {
     const o = await created({ seats: 10 });
     const owner = await buyer(o.id, 'buyer_admin');

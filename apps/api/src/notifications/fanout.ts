@@ -175,7 +175,7 @@ async function audience(
 
 /**
  * طلب استعادة: مهمة لمن يملك اعتماده بمعرّف الطلب، وتنبيه لصاحب الحساب على أجهزته القائمة. بلا مادة.
- * من يملك الاعتماد (ADR 0113): مشرفو نطاق صاحب الحساب إن كان حساب مراسل وحده، وإلا (مشترٍ، أو طاقم بأي دور غير المراسل) مديرو
+ * من يملك الاعتماد (ADR 0117): مشرفو نطاق صاحب الحساب إن كان حساب مراسل وحده، وإلا (مشترٍ، أو طاقم بأي دور غير المراسل) مديرو
  * النظام وحدهم (غير صاحب الحساب نفسه)، كما يقرر `approveRecovery`.
  */
 async function recoveryRequested(tx: Tx, event: OutboxRow, payload: Record<string, unknown>, opts: FanOutOptions): Promise<number> {
@@ -214,7 +214,7 @@ async function recoveryRequested(tx: Tx, event: OutboxRow, payload: Record<strin
 }
 
 /**
- * ترخيص أبطله سحب حقوق المادة أو حجبها أو وسمها بالحساسية (ADR 0114): أعضاء مؤسسته الفاعلون يُنبَّهون داخل المنصة برقم الترخيص
+ * ترخيص أبطله سحب حقوق المادة أو حجبها أو وسمها بالحساسية (ADR 0118): أعضاء مؤسسته الفاعلون يُنبَّهون داخل المنصة برقم الترخيص
  * وحده، بلا المادة ولا السبب ولا دفع. إبطال الاسترداد (`refunded`) يعرفه المشتري من طلبه فلا يُنبَّه هنا.
  */
 async function licenseRevoked(tx: Tx, event: OutboxRow, payload: Record<string, unknown>, opts: FanOutOptions): Promise<number> {

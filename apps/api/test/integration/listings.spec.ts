@@ -59,7 +59,7 @@ describe('material listing (/v1/materials/{id}/listing)', () => {
     state: 'draft',
     ...over,
   });
-  // الشرطان التحريري والفني مستوفيان افتراضيًا (ADR 0114)، والحقوق تمر بالانتقالات
+  // الشرطان التحريري والفني مستوفيان افتراضيًا (ADR 0118)، والحقوق تمر بالانتقالات
   const material = async (approved = true) => {
     const id = (await seedUploadSession(h, reporterId)).materialId;
     if (approved) await h.pool.query(`UPDATE materials SET editorial_state = 'published', technical_state = 'verified' WHERE id = $1`, [id]);
@@ -136,7 +136,7 @@ describe('material listing (/v1/materials/{id}/listing)', () => {
     expect((await write(rights, 'put', `/materials/${id}/listing`, listing({ state: 'listed' })).expect(409)).body.code).toBe('rights_not_sellable');
   });
 
-  // ADR 0114 (تعديل 0025): الشروط الثلاثة المستقلة في الخطة، لا الحقوق وحدها
+  // ADR 0118 (تعديل 0025): الشروط الثلاثة المستقلة في الخطة، لا الحقوق وحدها
   it('listed needs editorial approval of the listed version and a verified original too (409 listing_conditions_unmet), from the database side as well', async () => {
     const id = await material(false);
     await rightsTo(id, 'documented', 'sellable');

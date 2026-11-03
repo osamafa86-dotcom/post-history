@@ -111,7 +111,7 @@ export class BuyersService {
       if (!admin && ((input.status ?? org.status) !== org.status || seats !== org.seats)) {
         throw new ApiError(403, 'forbidden_role', 'Only a system administrator changes the organization status or seats.');
       }
-      // الاسم القانوني والبلد هما ما تحقق منه مدير النظام (ADR 0114): تغييرهما من مدير المؤسسة بعد التحقق يعيدها إلى
+      // الاسم القانوني والبلد هما ما تحقق منه مدير النظام (ADR 0118): تغييرهما من مدير المؤسسة بعد التحقق يعيدها إلى
       // pending_verification ويمحو verified_at في المعاملة نفسها، والمعلّقة لا تغيّرهما. مدير النظام هو المتحقق فتعديله لا يعيدها
       const identityChanged = input.legal_name !== org.legalName || input.country !== org.country;
       if (!admin && identityChanged && org.status === 'suspended') {
@@ -223,7 +223,7 @@ export class BuyersService {
       if (!org) throw ApiError.notFound();
       const [current] = (await memberRows(tx, orgId)).filter((m) => m.id === userId);
       if (!current) throw ApiError.notFound();
-      // العضوية مستقلة عن حالة الحساب على المنصة (ADR 0114): هذا المسار لا يرفع تعليقًا وضعه مدير النظام على الحساب
+      // العضوية مستقلة عن حالة الحساب على المنصة (ADR 0118): هذا المسار لا يرفع تعليقًا وضعه مدير النظام على الحساب
       if (current.platformSuspended && input.status === 'active') {
         throw new ApiError(403, 'forbidden_role', 'A platform suspension is lifted by a system administrator through the account status only.');
       }

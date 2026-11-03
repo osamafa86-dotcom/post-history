@@ -80,7 +80,7 @@ export class SessionService {
       })
       .from(users)
       .where(eq(users.id, claims.sub));
-    // حالة المنصة وعضوية المؤسسة معًا (ADR 0114)
+    // حالة المنصة وعضوية المؤسسة معًا (ADR 0118)
     if (user?.status !== 'active' || user.membershipSuspended) return null;
     // الجلسة المقيّدة تنتهي بانتهاء مهلة رمز إعادة التعيين، ولو بقي في رمز الوصول عمر
     if (user.credentialResetRequired && !user.resetWindowOpen) return null;

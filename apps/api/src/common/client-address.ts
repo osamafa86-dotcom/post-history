@@ -36,7 +36,7 @@ export function rateLimitBucket(address: string): string {
 }
 
 /**
- * سلة حد المعدل لعنوان العميل (clientAddress ثم rateLimitBucket): ما تأخذه كل حدود العنوان في الهوية والتراخيص (ADR 0113)،
+ * سلة حد المعدل لعنوان العميل (clientAddress ثم rateLimitBucket): ما تأخذه كل حدود العنوان في الهوية والتراخيص (ADR 0117)،
  * فلا يدور عميل IPv6 على شبكته /64 ليتجاوز الحد.
  */
 export function clientBucket(req: Request, bff: BlockList): string {

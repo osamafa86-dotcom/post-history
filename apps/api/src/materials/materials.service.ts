@@ -219,7 +219,7 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
         const flagged = { sensitivityMinors: body.sensitivity.minors, sensitivityInjured: body.sensitivity.injured, sensitivityGraphic: body.sensitivity.graphic };
         if (isSensitive(flagged)) {
           await suspendListing(tx, m.id, 'sensitive_flagged', p.userId);
-          // وتراخيصها الفاعلة تبطل (ADR 0114): المادة الحسّاسة لا تُنزَّل بترخيص سابق
+          // وتراخيصها الفاعلة تبطل (ADR 0118): المادة الحسّاسة لا تُنزَّل بترخيص سابق
           await revokeMaterialLicenses(tx, m.id, p.userId);
         }
       }
@@ -230,7 +230,7 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
       // تعديل إصدار معتمد: version + 1 وعودة إلى final_review لأن ما يُعتمد إصدار محدد (العقد)
       const approved = (APPROVED_STATES as readonly string[]).includes(m.editorialState);
       if (approved) changes.version = m.version + 1;
-      // إصدار جديد بلا اعتماد: الإدراج المعروض بالإصدار السابق يُعلَّق قبل رفع الإصدار، في المعاملة نفسها (ADR 0114)
+      // إصدار جديد بلا اعتماد: الإدراج المعروض بالإصدار السابق يُعلَّق قبل رفع الإصدار، في المعاملة نفسها (ADR 0118)
       if (approved) await suspendListing(tx, m.id, 'editorial_changed', p.userId);
       const [saved] = await tx.update(materials).set(changes).where(eq(materials.id, m.id)).returning();
       let current: MaterialRow = { ...saved!, officeGovernorate: m.officeGovernorate };

@@ -82,7 +82,7 @@ describe('account: sessions and recovery', () => {
       const otherAdmin = await loginAs(h, [{ role: 'system_admin' }]);
       const firstSession = async (a: Actor) => (await sessions(a.token).expect(200)).body.items[0].id as string;
 
-      // ADR 0113: المشرف يقرر في حساب المراسل وحده، فجلسة غيره كالمفقودة بالنسبة إليه
+      // ADR 0117: المشرف يقرر في حساب المراسل وحده، فجلسة غيره كالمفقودة بالنسبة إليه
       expect((await revoke(sup.token, await firstSession(editor)).expect(404)).body.code).toBe('not_found');
       await revoke(sup.token, await firstSession(admin)).expect(404);
       await revoke(sup.token, await firstSession(peer)).expect(404);
@@ -231,7 +231,7 @@ describe('account: sessions and recovery', () => {
       expect((await tasks(otherAdmin)).some((t) => t?.includes(adminReq.id))).toBe(true);
       expect((await tasks(admin)).some((t) => t?.includes(adminReq.id))).toBe(false);
 
-      // ADR 0113: طلب حساب غير المراسل كالمفقود للمشرف
+      // ADR 0117: طلب حساب غير المراسل كالمفقود للمشرف
       expect((await approve(sup, editorReq.id).expect(404)).body.code).toBe('not_found');
       await approve(sup, adminReq.id).expect(404);
       await approve(sup, peerReq.id).expect(404);
@@ -243,7 +243,7 @@ describe('account: sessions and recovery', () => {
       await approve(admin, editorReq.id).expect(200);
     });
 
-    // ADR 0113 (تعديل 0107): نطاق «all» يغطي المشترين وطاقم المالية والحقوق والإنتاج؛ المشرف يقرر في حساب المراسل وحده
+    // ADR 0117 (تعديل 0107): نطاق «all» يغطي المشترين وطاقم المالية والحقوق والإنتاج؛ المشرف يقرر في حساب المراسل وحده
     it('a supervisor of every scope decides for reporter accounts only; buyers and non-reporter staff go to system admins alone', async () => {
       const sup = await loginAs(h, [{ role: 'supervisor', scopeKind: 'all', scopeId: '' }]);
       const admin = await loginAs(h, [{ role: 'system_admin' }]);

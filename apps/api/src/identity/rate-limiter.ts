@@ -41,7 +41,7 @@ export class RedisRateLimiter implements RateLimiter {
   }
 }
 
-/** سياسة التأخير المتضاعف لعدّاد فشل (ADR 0113). */
+/** سياسة التأخير المتضاعف لعدّاد فشل (ADR 0117). */
 export interface BackoffPolicy {
   /** فشل بلا تأخير قبل أن يبدأ التضاعف */
   free: number;
@@ -80,7 +80,7 @@ if left < 0 then return 0 end
 return left`;
 
 /**
- * عدّاد فشل بتأخير متضاعف (ADR 0113)، لكل حساب لا لكل عنوان: لا يغلق الحساب بل يؤخر المحاولة التالية بعد المجاني، والسقف
+ * عدّاد فشل بتأخير متضاعف (ADR 0117)، لكل حساب لا لكل عنوان: لا يغلق الحساب بل يؤخر المحاولة التالية بعد المجاني، والسقف
  * يحدّ ما يملكه مهاجم من إبقاء صاحب الحساب خارجه. المفاتيح HMAC كبقية المحدّدات.
  */
 export class RedisBackoffLimiter implements RateLimiter {

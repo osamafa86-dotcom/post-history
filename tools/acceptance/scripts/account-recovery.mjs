@@ -27,7 +27,7 @@ export const setLogSource = (fn) => { logSource = fn; };
 
 // the RFC 4648 alphabet: A–Z then 2–7
 const BASE32 = String.fromCharCode(...Array.from({ length: 26 }, (_, i) => 65 + i)) + "234567";
-// ADR 0113: the server claims (account, time step) for every accepted code, so each use here takes a step not used yet
+// ADR 0117: the server claims (account, time step) for every accepted code, so each use here takes a step not used yet
 const usedSteps = new Set();
 function freshTotp(secretHex) {
   const now = totpStep();
@@ -97,7 +97,7 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
   check("confirming the new TOTP gives a full session", confirm.status === 200 && typeof full === "string", `status ${confirm.status}`);
 
   // ---------- 2. backup codes ----------
-  // ADR 0113: the password and TOTP again before codes are generated, as before a passkey
+  // ADR 0117: the password and TOTP again before codes are generated, as before a passkey
   const gen = full && secretHex
     ? await http.call(full, "POST", "/auth/recovery-codes", { body: { password, totp_code: freshTotp(secretHex) }, key: null })
     : { status: 0 };

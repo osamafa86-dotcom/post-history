@@ -122,7 +122,7 @@ export function verifyTotp(secret: Buffer, code: string, nowMs = Date.now()): bo
 
 /**
  * رقم الخطوة الزمنية (عدّاد RFC 6238) التي يطابقها الرمز، في الخطوة الحالية أو المجاورة لها، وإلا null. المقارنات الثلاث كلها
- * بزمن ثابت. يحجز المستدعي (المستخدم، الخطوة) قبل قبول الرمز فلا يُعاد في نافذته (ADR 0113).
+ * بزمن ثابت. يحجز المستدعي (المستخدم، الخطوة) قبل قبول الرمز فلا يُعاد في نافذته (ADR 0117).
  */
 export function totpStep(secret: Buffer, code: string, nowMs = Date.now()): number | null {
   let step: number | null = null;
