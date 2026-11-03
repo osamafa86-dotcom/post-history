@@ -8,7 +8,8 @@
 - ذروة الذاكرة: `memory.peak` للحاوية إن قُرئ، وأكبر RSS لعملية فرعية؛ وذروة القرص المؤقت (المصدر والطبقة والناتج).
 - اللون: `yuv420p` بنطاق tv وBT.709 في كل الحالات، ومنها النطاق الكامل وHLG. المعدل 25 للمصدر 25 وإلا 30.
 - المدة ± إطار، والتزامن ≤ 40 ms، والإطارات بعدّها، وصفر من القيم المزروعة في بايتات الناتج.
-- التكافؤ عند 25 و30 لكل قالب: الطبقة المجمّعة (دخول ودورة مكرّرة وخروج) مطابقة لرسم كامل إطارًا بإطار (`framemd5`).
+- التكافؤ عند 25 و30 لكل قالب: الطبقة المجمّعة (دخول ودورة مكرّرة وخروج) مطابقة لرسم كامل إطارًا بإطار (`framemd5`)، بعنوان
+  يحتاج تصغيرًا وأربع صفحات متوازية، فيكشف أيضًا قياسًا قبل تحميل الخط (ADR 0111).
   «الشاهد» بدخوله ودورته (4.8 ث و1.2 ث، `media_worker.circulated.WITNESS`).
 - VMAF (إن حوته نسخة ffmpeg): نسخة ضابطة بلا طبقة بالملاءمة والترميز نفسهما مقابل السلسلة نفسها بلا فقد (≥ 93).
 
@@ -27,7 +28,7 @@ import os
 import resource
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,6 +44,10 @@ from media_worker.probe import probe
 PLANTED = {"com.apple.quicktime.location.ISO6709": "+00.0001+000.0001+000.000/",
            "com.apple.quicktime.make": "BenchMaker", "com.apple.quicktime.model": "BenchPhone 9"}
 TITLE = ["عنوان تجريبي", "للمادة المتداولة"]
+# التكافؤ بعنوان يحتاج تصغيرًا في صندوق كل قالب (0.817 في «مواد متداولة» و0.882 في «الشاهد» عموديًا، ADR 0111)، فيمرّ القياس
+# بـ `measureText` الذي يحفظ أول عرض في الصفحة، وبأربع صفحات متوازية: صفحة قاست قبل الخط ترسم نسبة أخرى، فيظهر الفرق إطارًا بإطار
+PARITY_TITLE = {"circulated": ("ششش ضضض صصص سسس ضضض",), "witness": ("سطر تجريبي طويل للنسخة",)}
+PARITY_CONCURRENCY = 4
 
 
 @dataclass(frozen=True)
@@ -200,7 +205,8 @@ def parity(renderer: OverlayRenderer, fps: int, seconds: int, work: Path, templa
     d.mkdir(exist_ok=True)
     short = plan_overlay(seconds * 1000, fps, template_of(template))
     full = OverlayPlan(fps, short.frames, (Piece(0, short.frames - 1),), short.min_composition_s)
-    job = job_for("vertical", template)
+    job = replace(job_for("vertical", template), title_lines=PARITY_TITLE[template])
+    renderer = replace(renderer, concurrency=PARITY_CONCURRENCY)
     pieces = renderer.render(job, short, d, timeout_s=1800)
     # التجميع نفسه الذي يركّبه العامل: الدورة من الذاكرة بين الدخول والخروج. البصمات أولًا ثم تُحذف القطع، فلا تجتمع
     # الطبقتان على القرص
