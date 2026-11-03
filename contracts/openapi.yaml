@@ -55,6 +55,10 @@ info:
       `Ingest-Token: <JWT>` على كل طلب tus مع `Authorization: Bearer <upload token>`. ردود البوابة بلا جسم: `401` (مفقود
       أو تالف أو منتهٍ: رمز جديد ثم HEAD)، `403` (رمز لجلسة أخرى)، `429` (حد المعدل).
     - **الأحجام** بالبايت في الحقول، وحيث يُذكر «ميغابايت» فالمقصود MiB = 1,048,576 بايت.
+    - **لا محارف تحكّم في النصوص المدخلة (ADR 0115):** كل نص في جسم طلب أو معامل استعلام يُرفض بـ `422 validation_failed`
+      (أو `400 bad_request` للاستعلام) إن حمل محرفًا من C0 (`U+0000`–`U+001F`) غير الجدولة (`U+0009`) والسطر الجديد
+      (`U+000A`) وعودة العربة (`U+000D`)، أو `U+007F`. هذه الثلاثة مقبولة حيث لا يمنعها نمط الحقل نفسه. والقيمة التي ترفضها
+      القاعدة نفسها لعدم صلاحها للترميز ترد `422` لا `500`، ولا تدخل قيمة مدخلة سجلات الخادم.
 
     ## الأخطاء
 
@@ -106,7 +110,10 @@ paths:
         المصادقة الثنائية إلزامية لكل الطاقم بعد التفعيل؛ غياب `totp_code` لحساب مفعَّل يعيد
         `401 totp_required` (لا يُعاد إلا بعد التحقق من كلمة المرور وضمن حد المعدل). البريد غير الموجود
         وكلمة المرور الخاطئة يعيدان `401 unauthorized` نفسه بالرسالة نفسها. الجلسة تحمل رمز وصول قصير العمر
-        ورمز تحديث.
+        ورمز تحديث. حدود المعدل (ADR 0113): بالعنوان (IPv6 مجمَّعًا على `/64`)، وبعدّادَي فشل لكل حساب مستقلين عن
+        العنوان، واحد لكلمة المرور وآخر لرمز TOTP، بتأخير يتضاعف بعد عدد من المحاولات المجانية حتى سقف؛ والبريد غير
+        الموجود يُعدّ ويُؤخَّر كالموجود فلا يُستدل بـ `429` على وجود حساب. رمز TOTP المقبول لا يُقبل ثانية في خطوته الزمنية
+        لهذا الحساب (يُرفض كالخاطئ).
       operationId: login
       x-roles: []
       security: []
@@ -219,8 +226,9 @@ paths:
       summary: إبطال جلسة عن بُعد (فقد الهاتف)
       description: >-
         يبطل رمز التحديث ويُسقط رمز الوصول المرتبط عند أول طلب تالٍ (الإبطال يُفحص عند كل طلب).
-        المستخدم يبطل جلساته، ومشرف النطاق أو مدير النظام يبطل جلسات مراسل في نطاقه بعد بلاغ فقد الهاتف؛
-        يُسجَّل في سجل التدقيق.
+        المستخدم يبطل جلساته، ومشرف النطاق يبطل جلسات **حساب مراسل** في نطاقه بعد بلاغ فقد الهاتف، ومدير النظام
+        جلسات أي حساب آخر؛ يُسجَّل في سجل التدقيق. حساب المشتري وحساب الطاقم بأي دور غير المراسل لمدير النظام وحده
+        (ADR 0113): جلسته `404` للمشرف بشكل الجلسة المفقودة.
       operationId: revokeSession
       x-roles: [authenticated, supervisor, system_admin]
       responses:
@@ -278,7 +286,9 @@ paths:
         المستعاد. لا `Idempotency-Key` هنا (مسارات `/auth/*`) كي لا يُحفظ الرمز في جدول المفاتيح؛ إعادة اعتماد طلب معتمد ترد `409 recovery_state_conflict` ولا تعيد الرمز. الحساب في حالة
         «إعادة تعيين إلزامية» حتى `/auth/recovery/complete` و`/auth/totp/confirm`، والاعتماد يُسجَّل في التدقيق.
         حساب مدير نظام لا يُعتمد من هنا أبدًا: `403 admin_quorum_required` (إجراء الشخصين من سطر الأوامر، ADR 0005
-        ودليل التشغيل). حساب مساوٍ لدور المقرِّر أو أعلى: `403 forbidden_scope`.
+        ودليل التشغيل). حساب مساوٍ لدور المقرِّر أو أعلى: `403 forbidden_scope`. **المشرف يعتمد استعادة حساب المراسل في
+        نطاقه وحده** (ADR 0113): استعادة حساب المشتري وحساب الطاقم بأي دور غير المراسل (الإنتاج والمالية والحقوق والمشرف
+        فما فوق) لمدير النظام وحده، والطلب `404` للمشرف، ومهمته تصل مديري النظام وحدهم.
       operationId: approveRecovery
       x-roles: [supervisor, system_admin]
       requestBody:
@@ -386,9 +396,17 @@ paths:
         في المعاملة نفسها. الرمز يبدأ استعادة الحساب في `POST /auth/recovery` ولا يكفي وحده: الطلب ينتظر اعتماد المشرف أو مدير النظام
         بعد التحقق من الهوية خارج النظام. لا `Idempotency-Key` هنا (مسارات `/auth/*`) كي لا تُحفظ الرموز في جدول المفاتيح؛ التكرار يولّد
         مجموعة جديدة تبطل ما قبلها. حد معدل لكل حساب. التدقيق بعدد الرموز وحده، وحدث `auth.recovery_codes_generated` بلا رمز ينبّه
-        صاحب الحساب على أجهزته.
+        صاحب الحساب على أجهزته. **إعادة تحقق قبل التوليد (ADR 0113)** كما قبل تسجيل مفتاح المرور: كلمة المرور، ورمز TOTP إن كانت
+        المصادقة الثنائية مفعّلة (غيابه بعد كلمة مرور صحيحة `401 totp_required`)، فجلسة مسروقة وحدها لا تبطل رموز صاحب الحساب ولا
+        تأخذ رموزًا جديدة. الجسم الغائب أو كلمة المرور أو الرمز الخاطئ `401`، وتُعدّ في عدّادَي الفشل لكل حساب نفسيهما في الدخول.
+        الجسم اختياري في المخطط كي يبقى العميل القائم يُبنى حتى يضيف إعادة التحقق، لكن الخادم يرفض الطلب بلاه.
       operationId: generateRecoveryCodes
       x-roles: [authenticated]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasskeyStepUp" }
       responses:
         "200":
           description: الرموز الجديدة (تُعرض مرة واحدة)
@@ -397,6 +415,7 @@ paths:
               schema: { $ref: "#/components/schemas/RecoveryCodes" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
 
   /auth/passkeys/registration-options:
@@ -409,7 +428,7 @@ paths:
         WebAuthn Level 3 (`PublicKeyCredentialCreationOptionsJSON`): مفتاح قابل للاكتشاف، والتحقق من المستخدم إلزامي، وبلا شهادة
         (`none`)، ومفاتيح الحساب القائمة مستثناة. نطاق الطرف المعتمد (RP ID) ومصادره المسموحة من بيئة الخادم، لا نطاق مكتوبًا في
         الشفرة؛ غير مضبوطة = مفاتيح المرور معطّلة و`404`. التحدي لمرة واحدة ومربوط بالمستخدم، ويُخزَّن ببصمته وحدها. حد معدل لكل حساب
-        على إعادة التحقق الفاشلة وعلى عدد التحديات. لا `Idempotency-Key` (مسارات `/auth/*`). الحساب الذي بلغ عشرة مفاتيح
+        على إعادة التحقق الفاشلة (عدّادا الفشل لكل حساب نفساهما في الدخول، ADR 0113) وعلى عدد التحديات. لا `Idempotency-Key` (مسارات `/auth/*`). الحساب الذي بلغ عشرة مفاتيح
         `409 passkey_limit_reached`.
       operationId: createPasskeyRegistrationOptions
       x-roles: [authenticated]
@@ -1638,6 +1657,8 @@ paths:
         مسندة إليه على المادة، لا لمنشئها؛ المادة خارج نطاقه `404`، وفي نطاقه بلا مهمة له `403 forbidden_scope`. ملف جديد من نوع
         `produced` والأصل لا يُمس: لا إيصال ولا انتقال في المسار الفني. اكتمالها `upload.original_received` بـ `kind: produced`،
         وأحداثها لا تصير إشعارًا ولا تظهر في «الوارد الآن».
+        **الحدود (ADR 0115):** الملف ≤ 2 GiB (`size_bytes`)، وحصة لكل مستخدم من الجلسات المفتوحة (`created` و`in_progress`)
+        ومن مجموع بايتاتها المنتظرة؛ تجاوز الحصة `429 rate_limited` بـ `Retry-After`، ويُفسح المكان باكتمال الرفع أو إلغائه أو انتهائه.
       operationId: createUploadSession
       x-roles: [reporter, supervisor, producer, editor_in_chief]
       parameters:
@@ -1658,6 +1679,7 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
 
   /uploads/{id}:
     parameters:
@@ -2877,8 +2899,11 @@ paths:
       tags: [commerce]
       summary: إدراج مادة في الكتالوج
       description: >-
-        إدراج واحد لكل مادة، يثبّت إصدارها الحالي (`material_version`). الحالة `listed` تلزمها `rights_state = sellable`، وإلا
-        `409 rights_not_sellable`. الحالات الثلاث للمادة لا تتغير بالإدراج. `commercial_allowed` ومعه عرض بترخيص `commercial`
+        إدراج واحد لكل مادة، يثبّت إصدارها الحالي (`material_version`). الحالة `listed` تلزمها الشروط الثلاثة المستقلة (ADR 0114):
+        `rights_state = sellable` وإلا `409 rights_not_sellable`، واعتماد تحريري للإصدار المعروض (`editorial_state = published`
+        والإصدار المثبّت هو الحالي) وأصل متحقق (`technical_state = verified`) وإلا `409 listing_conditions_unmet` بـ
+        `details.failed` (`editorial_state` و/أو `technical_state`)، ومادة غير موسومة بالحساسية وإلا `422`. والقاعدة تعيد الشروط
+        كلها بمحفّز. الحالات الثلاث للمادة لا تتغير بالإدراج. `commercial_allowed` ومعه عرض بترخيص `commercial`
         لمدير النظام وحده (`403 forbidden_role`). يُكتب `catalog.listing_changed` في المعاملة نفسها.
       operationId: createMaterialListing
       x-roles: [system_admin, rights_officer]
@@ -2909,7 +2934,10 @@ paths:
         يعيد تثبيت `material_version` على إصدار المادة الحالي. القيود نفسها في الإنشاء. حين تخرج حقوق المادة من `sellable`
         يعلّق الخادم الإدراج في معاملة الانتقال نفسها (`state = suspended`، `suspended_reason = rights_changed`)، ولا يعود
         `listed` إلا بطلب صريح. وحين تُوسم المادة بالحساسية (قاصرون أو مصابون أو مشاهد صادمة) يعلّقه بـ
-        `sensitive_flagged` في معاملة الوسم نفسها، ويُرفض `listed` لمادة موسومة بـ `422`.
+        `sensitive_flagged` في معاملة الوسم نفسها، ويُرفض `listed` لمادة موسومة بـ `422`. وحين يسقط الاعتماد التحريري للإصدار
+        المعروض (إصدار جديد بتعديل بعد الاعتماد، أو خروج المادة من `published`) يعلّقه بـ `editorial_changed` في المعاملة نفسها
+        (ADR 0114)، ويعود `listed` بطلب صريح يثبّت الإصدار المعتمد الجديد. وفي معاملة خروج الحقوق من `sellable` ومعاملة وسم
+        الحساسية تُبطَل تراخيص المادة الفاعلة (`revoked_reason = rights_withdrawn`) ويُكتب `license.revoked` لكل ترخيص.
       operationId: replaceMaterialListing
       x-roles: [system_admin, rights_officer]
       parameters:
@@ -3124,6 +3152,9 @@ paths:
         (`422 validation_failed` على `/status`؛ الرفض بسببه من `/rejection`)، والخروج منها إلى غيرها يمحو `rejection_reason`
         (حالة مقروءة كـ `verified_at`، فلا تُرسل في الجسم).
         كل تغيير حالة يكتب `buyer_organization.status_changed` (ADR 0104).
+        **إعادة التحقق (ADR 0114):** تغيير `legal_name` أو `country` من `buyer_admin` بعد التحقق يعيد المؤسسة إلى
+        `pending_verification` ويمحو `verified_at` في المعاملة نفسها (فيتوقف الشراء والتنزيل حتى يعيد مدير النظام تفعيلها)،
+        ويُكتب `buyer_organization.status_changed`. وتغيير `billing_email` مسموح ويُدقَّق بلا قيمته.
       operationId: replaceBuyerOrganization
       x-roles: [system_admin, buyer_admin]
       parameters:
@@ -3245,7 +3276,11 @@ paths:
     put:
       tags: [commerce]
       summary: تغيير دور العضو أو تعليقه
-      description: لا تبقى مؤسسة `active` بلا `buyer_admin` نشط واحد على الأقل (`409 last_buyer_admin`).
+      description: >-
+        لا تبقى مؤسسة `active` بلا `buyer_admin` نشط واحد على الأقل (`409 last_buyer_admin`). `status` هنا عضوية المؤسسة
+        مستقلة عن حالة الحساب على المنصة (ADR 0114): التعليق يبطل كل وصول العضو فورًا (الجلسات ومفاتيح المرور تبقى مسجّلة لكنها لا
+        تدخل)، وإعادة العضوية لا تعيد شيئًا منه ولا ترفع تعليقًا وضعه مدير النظام على الحساب (`PUT /users/{id}/status`): العضو
+        المعلّق على المنصة يبقى `suspended` في القائمة، وطلب `active` له من `buyer_admin` يرد `403 forbidden_role`.
       operationId: updateBuyerMember
       x-roles: [system_admin, buyer_admin]
       parameters:
@@ -3568,7 +3603,8 @@ paths:
         مشتق `delivery` لهذا الترخيص وحده (بمواصفات قالبه، بلا تفريغ؛ R11)، برابط موقّع صالح ≤ 24 ساعة. كل طلب منحة تُحصى
         بقفل صف الترخيص، والحد في `downloads_remaining` (`409 download_limit_reached`). الترخيص غير `active` `409
         license_not_active`، والحزمة قبل جاهزيتها `409 delivery_not_ready`، والمؤسسة المعلّقة `403 forbidden_scope`. الرابط
-        لا يُسجَّل ولا يدخل حدثًا أو إشعارًا.
+        لا يُسجَّل ولا يدخل حدثًا أو إشعارًا. ولا رابط إلا والترخيص `active` وحقوق مادته `sellable` وهي غير موسومة بالحساسية
+        (ADR 0114)؛ غير ذلك `409 license_not_active`، فخروج الحقوق أو وسم الحساسية يوقف التنزيل فورًا ولو لم يُبطَل الترخيص بعد.
       operationId: createLicenseDownloadUrl
       x-roles: [buyer_admin, buyer_member]
       parameters:
@@ -4419,6 +4455,7 @@ components:
             - assignee_not_eligible
             - passkey_exists
             - passkey_limit_reached
+            - listing_conditions_unmet
             - internal_error
         message: { type: string }
         request_id: { type: string, description: لتتبع الطلب في السجلات }
@@ -4601,6 +4638,7 @@ components:
 
     PasskeyStepUp:
       type: object
+      description: إعادة التحقق قبل تسجيل مفتاح مرور وقبل توليد الرموز الاحتياطية (ADR 0107، 0113)
       additionalProperties: false
       required: [password]
       properties:
@@ -5025,6 +5063,8 @@ components:
               description: >-
                 المشتقات النصية (`transcript` و`captions` و`shot_list`) تظهر لأدوار تعديل المادة وحدها، وتُحذف من القائمة لغيرهم
                 فلا يُلمَّح إلى وجودها (threat-model §9.1). والنسخة المُنتَجة (`produced`) لأدوار الإنتاج وحدها (ADR 0104).
+                والنسخة الخفيفة التي رفعها الهاتف (`proxy` بلا مصدر على الخادم) لصاحب المادة وحده: لا تظهر هنا لغيره ولا تُعطى رابطًا،
+                فكل `proxy` يراه الطاقم صنعه عامل الوسائط من الأصل (ADR 0115).
                 وحزم تسليم التراخيص ومعاينات المتجر وحزمة التصدير ونسخ القالب لا تظهر هنا لأحد، فلكلٍّ رابطها.
               items: { $ref: "#/components/schemas/MaterialFile" }
             thumbnail_file_id:
@@ -5161,8 +5201,14 @@ components:
           type: string
           enum: [original, proxy, voice_note, produced]
           description: "`produced` النسخة المُنتَجة للمسنَد إليه المادة في مهمة مفتوحة (ADR 0104)"
-        size_bytes: { type: integer, minimum: 1 }
-        filename: { type: string, minLength: 1, maxLength: 255, description: اسم الملف على الجهاز؛ لا يُعرض خارج النطاق }
+        size_bytes:
+          type: integer
+          minimum: 1
+          maximum: 2147483648
+          description: >-
+            ≤ 2 GiB للملف الواحد (ADR 0023، 0115). الخادم يفرض حدًّا أضيق إن ضُبط في بيئته (`422` على `/size_bytes`)، وحصة لكل
+            مستخدم من الجلسات المفتوحة والبايتات المنتظرة (`429 rate_limited`).
+        filename: { type: string, minLength: 1, maxLength: 255, description: اسم الملف على الجهاز؛ لا يُعرض خارج النطاق، ويُمحى من الجلسة المنتهية بعد مدة الاحتفاظ (ADR 0116) }
         mime_type: { type: [string, "null"] }
         proxy_mode:
           type: [string, "null"]
@@ -6518,7 +6564,10 @@ components:
             id: { type: string, format: uuid }
             material_id: { type: string, format: uuid }
             material_version: { type: integer, minimum: 1, description: الإصدار المعروض للبيع؛ البيعة تجمّده }
-            suspended_reason: { type: [string, "null"], enum: [manual, rights_changed, sensitive_flagged, null] }
+            suspended_reason:
+              type: [string, "null"]
+              enum: [manual, rights_changed, sensitive_flagged, editorial_changed, null]
+              description: "`editorial_changed` سقوط الاعتماد التحريري للإصدار المعروض (ADR 0114، أُضيف بعد v0.3)"
             listed_at: { type: [string, "null"], format: date-time, description: أول انتقال إلى `listed` }
             created_at: { type: string, format: date-time }
             updated_at: { type: string, format: date-time }
@@ -6554,6 +6603,7 @@ components:
         description: { $ref: "#/components/schemas/LocalizedText" }
         shot_list:
           type: array
+          description: قائمة اللقطات لأدوار الطاقم؛ فارغة دائمًا لأدوار المشتري (`buyer_admin`، `buyer_member`) من الخادم نفسه (ADR 0115)
           items:
             type: object
             required: [start_ms, label]

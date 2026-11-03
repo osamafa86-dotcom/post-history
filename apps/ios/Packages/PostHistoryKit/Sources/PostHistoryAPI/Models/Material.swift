@@ -63,7 +63,7 @@ public struct Material: Sendable, Codable, Hashable {
     public var acknowledgedAt: Date?
     /** الاسم الحقيقي للمراسل (v0.2). الصلاحية التي تكشفه يحددها الإعداد الإداري `reporter_legal_name_access` (`/admin/settings/reporter-identity`، ADR 0021): `reporter_identity:read` حين يكون `separate` (الافتراضي)، و`protected_source:read` حين يكون `protected_source`. يغيب المفتاح عمّن لا يحمل الصلاحية الفعّالة. كل قراءة تُسجَّل في التدقيق (`material.sensitive_read`، `field_keys: [reporter_legal_name]`). لا يدخل إشعارًا ولا حدثًا ولا تصديرًا. `null` = غير مسجّل. */
     public var reporterLegalName: String?
-    /** المشتقات النصية (`transcript` و`captions` و`shot_list`) تظهر لأدوار تعديل المادة وحدها، وتُحذف من القائمة لغيرهم فلا يُلمَّح إلى وجودها (threat-model §9.1). والنسخة المُنتَجة (`produced`) لأدوار الإنتاج وحدها (ADR 0104). وحزم تسليم التراخيص ومعاينات المتجر وحزمة التصدير ونسخ القالب لا تظهر هنا لأحد، فلكلٍّ رابطها. */
+    /** المشتقات النصية (`transcript` و`captions` و`shot_list`) تظهر لأدوار تعديل المادة وحدها، وتُحذف من القائمة لغيرهم فلا يُلمَّح إلى وجودها (threat-model §9.1). والنسخة المُنتَجة (`produced`) لأدوار الإنتاج وحدها (ADR 0104). والنسخة الخفيفة التي رفعها الهاتف (`proxy` بلا مصدر على الخادم) لصاحب المادة وحده: لا تظهر هنا لغيره ولا تُعطى رابطًا، فكل `proxy` يراه الطاقم صنعه عامل الوسائط من الأصل (ADR 0115). وحزم تسليم التراخيص ومعاينات المتجر وحزمة التصدير ونسخ القالب لا تظهر هنا لأحد، فلكلٍّ رابطها. */
     public var files: [MaterialFile]
     /** أحدث مصغّرة (`thumbnail`) متحققة للمادة لصف الوارد (W1، ADR 0104)؛ `null` بلا مصغّرة متحققة. تُجلب برابطها من `/materials/{id}/files/{file_id}/download-url` ولا يحمل الرد رابطًا. أُضيف بعد v0.3 فقد يغيب */
     public var thumbnailFileId: UUID?
