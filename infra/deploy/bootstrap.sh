@@ -156,6 +156,11 @@ else
     echo "POSTGRES_PASSWORD=$(hex 32)"
     echo "REDIS_PASSWORD=$(hex 32)"
     echo "S3_SECRET_KEY=$(hex 32)"
+    # tusd والخادم بمستخدمين بأقل صلاحية في MinIO (infra/minio/init.sh)؛ الجذر أعلاه لـ minio-init وحده.
+    echo "S3_TUSD_ACCESS_KEY=tusd"
+    echo "S3_TUSD_SECRET_KEY=$(hex 32)"
+    echo "S3_API_ACCESS_KEY=api"
+    echo "S3_API_SECRET_KEY=$(hex 32)"
     echo "TUSD_HOOK_SECRET=$(hex 32)"
     echo "JWT_SECRET=$(hex 32)"
     echo "FIELD_ENCRYPTION_KEY=$(head -c 32 /dev/urandom | base64 -w0)"

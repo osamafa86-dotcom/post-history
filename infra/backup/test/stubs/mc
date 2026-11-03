@@ -1,0 +1,13 @@
+#!/bin/sh
+# Test stand-in (infra/backup/test/test-backup.sh): the real mc, except `mc cat src/<FAIL_CAT_KEY>`, which gives the first
+# KiB of the object and then fails (a read cut mid-stream); with FAIL_CAT_VANISH set the object is first removed with the
+# admin alias, as a cancelled upload's objects are between the listing and the read.
+if [ "${1:-}" = cat ] && [ -n "${FAIL_CAT_KEY:-}" ] && [ "${2:-}" = "src/$FAIL_CAT_KEY" ]; then
+  if [ -n "${FAIL_CAT_VANISH:-}" ]; then
+    /usr/local/bin/mc rm --quiet "admin/$FAIL_CAT_KEY" >/dev/null || exit 3
+    exec /usr/local/bin/mc cat "$2"
+  fi
+  /usr/local/bin/mc cat "$2" | head -c 1024
+  exit 1
+fi
+exec /usr/local/bin/mc "$@"

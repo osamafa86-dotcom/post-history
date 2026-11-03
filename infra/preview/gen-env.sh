@@ -4,6 +4,7 @@
 #   ./gen-env.sh --add-upload     # .env قائم من قبل الرفع: يضيف مفاتيح الرفع الناقصة وحدها ولا يمس الباقي
 #   ./gen-env.sh --add-media      # .env قائم من قبل عامل الوسائط (ADR 0092): يضيف كل مفتاح ناقص منها وحده ولا يمس الموجود
 #   ./gen-env.sh --add-render     # .env قائم من قبل نسخ القالب (ملحق ADR 0092): مستخدم media-render في MinIO وعنوانه، كذلك
+#   ./gen-env.sh --add-storage    # .env قائم من قبل مستخدمي tusd والخادم في MinIO (كانا بالجذر): مفاتيحهما الأربعة، كذلك
 # أسرار عشوائية بصلاحية 0600 لا تُطبع. يرفض الكتابة فوق .env قائم (الأسرار تُدار مرة، ولا تُستبدل بإعادة تشغيل).
 # الشهادة لاسم api.lib.internal وحده، من سلطة يُحذف مفتاحها بعد التوقيع، فلا تصدر شهادة ثانية منها.
 set -euo pipefail
@@ -33,6 +34,14 @@ render_env() {
   echo "S3_RENDER_SECRET_KEY=$(hex 24)"
   sed -n '/^PREVIEW_RENDER_IP=/p' preview.env.example
 }
+# مستخدما tusd والخادم في MinIO (minio-init.sh): tusd يقرأ ويكتب حاوية الرفع وحدها، والخادم يقرأ الحاويتين ويحذف كائنات tus،
+# والجذر (S3_ACCESS_KEY) لـ minio-init وحده.
+storage_env() {
+  echo "S3_TUSD_ACCESS_KEY=preview-tusd-$(hex 6)"
+  echo "S3_TUSD_SECRET_KEY=$(hex 24)"
+  echo "S3_API_ACCESS_KEY=preview-api-$(hex 6)"
+  echo "S3_API_SECRET_KEY=$(hex 24)"
+}
 # .env قائم: يضيف كل مفتاح ناقص (أو فارغ) من المجموعة وحده، ولا يمس الموجود ولا يطبع قيمة.
 add_keys() {
   local what="$1" gen="$2" added=0 line tmp
@@ -50,6 +59,7 @@ add_keys() {
 case "${1:-}" in
   --add-media) add_keys "media worker" media_env; exit 0 ;;
   --add-render) add_keys "media-render" render_env; exit 0 ;;
+  --add-storage) add_keys "tusd and API storage user" storage_env; exit 0 ;;
 esac
 if [ "${1:-}" = --add-upload ]; then
   [ -f .env ] || { echo "no .env here: run without --add-upload first" >&2; exit 1; }
@@ -81,6 +91,7 @@ ENV
   upload_env
   media_env
   render_env
+  storage_env
 } > .env.tmp
 mv .env.tmp .env
 

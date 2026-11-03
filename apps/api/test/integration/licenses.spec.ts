@@ -8,10 +8,14 @@ import { createHarness, type Harness, loginAs, seedUploadSession, seedUser } fro
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
 const SECRET = randomBytes(32).toString('hex');
+const WORKER = randomBytes(32).toString('base64url');
 
 class SigningStorage implements ObjectStorage {
-  async head() {
-    return null;
+  // مشتقات عامل الوسائط في حاوية media وحدها؛ ما ليس هنا غير موجود
+  sizes = new Map<string, number>();
+  async head(bucket: string, key: string) {
+    const size = bucket === 'media' ? this.sizes.get(key) : undefined;
+    return size === undefined ? null : { size };
   }
   async read() {
     return Readable.from([]);
@@ -28,6 +32,7 @@ describe('licenses (/v1/licenses) and the sandbox return', () => {
   let rights: Actor;
   let finance: Actor;
   let reporter: string;
+  const storage = new SigningStorage();
   beforeAll(async () => {
     h = await createHarness({
       env: {
@@ -38,8 +43,9 @@ describe('licenses (/v1/licenses) and the sandbox return', () => {
         LICENSE_DOWNLOAD_LIMIT: '2',
         LICENSE_DOWNLOAD_URL_SECONDS: '600',
         LICENSE_VERIFY_RATE_LIMIT_MAX: '6',
+        MEDIA_WORKER_TOKEN: WORKER,
       },
-      overrides: [[OBJECT_STORAGE, new SigningStorage()]],
+      overrides: [[OBJECT_STORAGE, storage]],
     });
     rights = await loginAs(h, [{ role: 'rights_officer' }]);
     finance = await loginAs(h, [{ role: 'finance' }]);
@@ -219,6 +225,42 @@ describe('licenses (/v1/licenses) and the sandbox return', () => {
     const other = await licensed();
     await download(other.buyer.token, a.licenseId).expect(404);
     await download(finance.token, a.licenseId).expect(403);
+  });
+
+  // الحلقة كما يمشيها عامل الوسائط (#252، ADR 0025 الجزء 9): حزمة التسليم تُسجَّل عبر النقطة الداخلية بـ license_id، فتجهز
+  // صفحة الترخيص ويعمل رابط التنزيل؛ لا إدراج بـ SQL هنا (كان الإدراج بلا license_id يكسر القيد فتبقى الصفحة «قيد التجهيز»)
+  it('the media worker registers the delivery package through /internal/media for its license only, idempotently', async () => {
+    const a = await licensed(false);
+    const { rows } = await h.pool.query<{ id: string; material_id: string }>(
+      `SELECT f.id, f.material_id FROM material_files f JOIN licenses l ON l.material_id = f.material_id WHERE l.id = $1 AND f.kind = 'original'`,
+      [a.licenseId],
+    );
+    const source = rows[0]!;
+    const derive = (fileId: string, body: object) =>
+      http().post(`/internal/media/files/${fileId}/derivatives`).set('Authorization', `Bearer ${WORKER}`).send(body);
+    const pkg = (licenseId: string, sha = randomBytes(32).toString('hex')) => {
+      const key = `derived/${source.material_id}/${source.id}/delivery/${licenseId}.zip`;
+      storage.sizes.set(key, 4096);
+      return { kind: 'delivery', license_id: licenseId, storage_key: key, sha256: sha, size_bytes: 4096, mime_type: 'application/zip', technical: { duration_ms: 1000, start_pts_us: 0 } };
+    };
+    const body = pkg(a.licenseId);
+    const first = await derive(source.id, body).expect(200);
+    expect((await derive(source.id, body).expect(200)).body.file_id).toBe(first.body.file_id);
+    const [file] = (await h.pool.query(`SELECT kind, license_id, derived_from_id, state FROM material_files WHERE id = $1`, [first.body.file_id])).rows;
+    expect(file).toEqual({ kind: 'delivery', license_id: a.licenseId, derived_from_id: source.id, state: 'verified' });
+    expect((await http().get(`/v1/licenses/${a.licenseId}`).set(as(a.buyer.token)).expect(200)).body.delivery_ready).toBe(true);
+    await download(a.buyer.token, a.licenseId).expect(200);
+    // حزمة مختلفة للترخيص نفسه 409، وبلا license_id 422
+    expect((await derive(source.id, { ...body, sha256: randomBytes(32).toString('hex') }).expect(409)).body.code).toBe('upload_state_conflict');
+    const { license_id: _omit, ...unlicensed } = body;
+    await derive(source.id, unlicensed).expect(422);
+    // ترخيص مادة أخرى، أو ترخيص مجهول: 422 على /license_id ولا صف
+    const other = await licensed(false);
+    for (const licenseId of [other.licenseId, randomUUID()]) {
+      const res = await derive(source.id, pkg(licenseId)).expect(422);
+      expect(res.body.details).toEqual({ fields: ['/license_id'] });
+    }
+    expect((await h.pool.query(`SELECT count(*)::int AS n FROM material_files WHERE kind = 'delivery' AND license_id = ANY($1)`, [[other.licenseId]])).rows[0].n).toBe(0);
   });
 
   it('download-url refuses a revoked license, a package not built yet, and a suspended organization', async () => {

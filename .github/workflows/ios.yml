@@ -2,7 +2,8 @@ name: ios
 
 on:
   pull_request:
-    paths: ["apps/ios/**", "contracts/**", "docs/design/tokens.v2.json", ".github/workflows/ios.yml"]
+    # tools/acceptance/form-conformance: the package job runs the shared 57-case oracle against the iOS form engine.
+    paths: ["apps/ios/**", "contracts/**", "docs/design/tokens.v2.json", "tools/acceptance/form-conformance/**", ".github/workflows/ios.yml"]
 
 permissions:
   contents: read

@@ -2,13 +2,20 @@ name: field-trial
 
 # Field trial environment (ADR 0013): the trial compose with both Caddy edges on 127.0.0.1 / 127.0.0.2 (local CA),
 # full tus uploads through each edge, monitoring (infra/observability) with injected failures, a log canary, an
-# encrypted backup, a restore drill, and the field-trial acceptance pack through the edge. Runs when infra or the database
-# schema changes (a migration can break restore: the 2026-10-20 drill found one).
+# encrypted backup, a restore drill, and the field-trial acceptance pack through the edge. Runs when infra, the API image's
+# inputs or the contract change (a migration can break restore: the 2026-10-20 drill found one).
 on:
   pull_request:
     paths:
       - "infra/**"
-      - "apps/api/src/db/**"
+      # The trial runs the API image built from this PR (infra/preview/api.Dockerfile): its source, lock file and build
+      # config, and the contract it serves and reads at run time.
+      - "apps/api/src/**"
+      - "apps/api/package.json"
+      - "apps/api/package-lock.json"
+      - "apps/api/tsconfig.json"
+      - "apps/api/tsconfig.build.json"
+      - "contracts/**"
       - "tools/acceptance/field/**"
       - "tools/acceptance/field-trial/**"
       - ".github/workflows/field-trial.yml"

@@ -86,13 +86,19 @@ export function syntheticClip(prefix, { seconds = 10, megabytes = 0 } = {}) {
   return { path: output, sha256, size, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
+/**
+ * اسم زر الدخول بكلمة المرور كاملًا (`signIn` في رسائل الويب). زر مفتاح المرور (ADR 0108) «الدخول بمفتاح المرور» /
+ * «Sign in with a passkey» يحمل الكلمة نفسها، فالتطابق الجزئي يلتقط الزرين ويرمي في الوضع الصارم لـ Playwright.
+ */
+export const PASSWORD_SUBMIT = /^\s*(?:دخول|Sign in)\s*$/i;
+
 export async function login(page, env, { email, password, locale = "ar" }) {
   await page.goto(url(env, `/${locale}/login`), { waitUntil: "domcontentloaded" });
   await page.getByLabel(/البريد الإلكتروني|Email/i).fill(email);
   await page.getByLabel(/كلمة المرور|Password/i).fill(password);
-  const totp = page.getByLabel(/رمز التحقق|TOTP|one-time/i).first();
+  const totp = page.getByLabel(/رمز التحقق|TOTP|one-time|Two-factor/i).first();
   if (await totp.count()) await totp.fill(env.ACCEPTANCE_TOTP ?? "");
-  await page.getByRole("button", { name: /دخول|Sign in|Login/i }).click();
+  await page.getByRole("button", { name: PASSWORD_SUBMIT }).click();
   await page.waitForURL(/\/((ar|en)\/)?(inbox|store)(?:\?|$)/, { timeout: Number(env.ACCEPTANCE_TIMEOUT_MS ?? 30000) });
 }
 
