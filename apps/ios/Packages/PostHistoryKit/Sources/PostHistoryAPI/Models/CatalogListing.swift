@@ -31,7 +31,7 @@ public struct CatalogListing: Sendable, Codable, Hashable {
     public var materialId: UUID
     /** الإصدار المعروض للبيع؛ البيعة تجمّده */
     public var materialVersion: Int
-    /** `editorial_changed` سقوط الاعتماد التحريري للإصدار المعروض (ADR 0114، أُضيف بعد v0.3) */
+    /** `editorial_changed` سقوط الاعتماد التحريري للإصدار المعروض (ADR 0118، أُضيف بعد v0.3) */
     public var suspendedReason: SuspendedReason?
     /** أول انتقال إلى `listed` */
     public var listedAt: Date?
