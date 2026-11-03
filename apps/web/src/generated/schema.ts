@@ -697,7 +697,7 @@ export interface paths {
         };
         /**
          * «مهامي» — المهام المسنَدة إليّ (ADR 0096)
-         * @description `open` (الافتراضي) بالأقرب موعدًا أولًا، فالمتأخر قبل غيره؛ و`closed` بالأحدث إغلاقًا. `summary` على كل مهام المستدعي لا على الصفحة. تفاصيل المادة (العنوان والملفات والحساسية) من `GET /materials/{id}` بقاعدة الحجب نفسها.
+         * @description `active` (الافتراضي) بالأقرب موعدًا أولًا، فالمتأخر قبل غيره؛ و`closed` بالأحدث إغلاقًا. `summary` على كل مهام المستدعي لا على الصفحة. لا `open`: كلمة محجوزة في Swift ومعدِّل في Kotlin يكسران العميلين المولَّدين. تفاصيل المادة (العنوان والملفات والحساسية) من `GET /materials/{id}` بقاعدة الحجب نفسها.
          */
         get: operations["listMyAssignments"];
         put?: never;
@@ -3322,9 +3322,9 @@ export interface components {
             next_cursor: string | null;
             /** @description على كل مهام المستدعي لا على الصفحة */
             summary: {
-                /** @description المفتوحة (`assigned` و`acknowledged` و`in_progress`) */
-                open: number;
-                /** @description المفتوحة التي تجاوزت موعدها */
+                /** @description الجارية (`assigned` و`acknowledged` و`in_progress`)؛ «قيد العمل» في W5 */
+                active: number;
+                /** @description الجارية التي تجاوزت موعدها */
                 overdue: number;
                 /** @description `done` في آخر 7 أيام (168 ساعة) حتى وقت الطلب */
                 done_last_7_days: number;
@@ -5798,8 +5798,8 @@ export interface operations {
     listMyAssignments: {
         parameters: {
             query?: {
-                /** @description المفتوحة (`assigned` و`acknowledged` و`in_progress`) أو المغلقة (`done` و`returned`) */
-                status?: "open" | "closed";
+                /** @description الجارية (`assigned` و`acknowledged` و`in_progress`) أو المغلقة (`done` و`returned`) */
+                status?: "active" | "closed";
                 /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
                 cursor?: components["parameters"]["Cursor"];
                 /** @description حجم الصفحة */

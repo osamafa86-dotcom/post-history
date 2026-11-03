@@ -10,24 +10,24 @@ import Foundation
 /** على كل مهام المستدعي لا على الصفحة */
 public struct MyAssignmentPageSummary: Sendable, Codable, Hashable {
 
-    public static let `open`Rule = NumericRule<Int>(minimum: 0, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
+    public static let activeRule = NumericRule<Int>(minimum: 0, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     public static let overdueRule = NumericRule<Int>(minimum: 0, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     public static let doneLast7DaysRule = NumericRule<Int>(minimum: 0, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
-    /** المفتوحة (`assigned` و`acknowledged` و`in_progress`) */
-    public var `open`: Int
-    /** المفتوحة التي تجاوزت موعدها */
+    /** الجارية (`assigned` و`acknowledged` و`in_progress`)؛ «قيد العمل» في W5 */
+    public var active: Int
+    /** الجارية التي تجاوزت موعدها */
     public var overdue: Int
     /** `done` في آخر 7 أيام (168 ساعة) حتى وقت الطلب */
     public var doneLast7Days: Int
 
-    public init(`open`: Int, overdue: Int, doneLast7Days: Int) {
-        self.`open` = `open`
+    public init(active: Int, overdue: Int, doneLast7Days: Int) {
+        self.active = active
         self.overdue = overdue
         self.doneLast7Days = doneLast7Days
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
-        case `open` = "open"
+        case active
         case overdue
         case doneLast7Days = "done_last_7_days"
     }
@@ -36,7 +36,7 @@ public struct MyAssignmentPageSummary: Sendable, Codable, Hashable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(`open`, forKey: .`open`)
+        try container.encode(active, forKey: .active)
         try container.encode(overdue, forKey: .overdue)
         try container.encode(doneLast7Days, forKey: .doneLast7Days)
     }

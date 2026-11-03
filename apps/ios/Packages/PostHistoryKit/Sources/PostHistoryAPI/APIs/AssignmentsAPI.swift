@@ -191,14 +191,14 @@ open class AssignmentsAPI {
      * enum for parameter status
      */
     public enum Status_listMyAssignments: String, Sendable, CaseIterable {
-        case &#x60;open&#x60; = "open"
+        case active = "active"
         case closed = "closed"
     }
 
     /**
      «مهامي» — المهام المسنَدة إليّ (ADR 0096)
      
-     - parameter status: (query) المفتوحة (&#x60;assigned&#x60; و&#x60;acknowledged&#x60; و&#x60;in_progress&#x60;) أو المغلقة (&#x60;done&#x60; و&#x60;returned&#x60;) (optional, default to .`open`)
+     - parameter status: (query) الجارية (&#x60;assigned&#x60; و&#x60;acknowledged&#x60; و&#x60;in_progress&#x60;) أو المغلقة (&#x60;done&#x60; و&#x60;returned&#x60;) (optional, default to .active)
      - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
      - parameter limit: (query) حجم الصفحة (optional, default to 50)
      - parameter apiConfiguration: The configuration for the http request.
@@ -211,11 +211,11 @@ open class AssignmentsAPI {
     /**
      «مهامي» — المهام المسنَدة إليّ (ADR 0096)
      - GET /me/assignments
-     - `open` (الافتراضي) بالأقرب موعدًا أولًا، فالمتأخر قبل غيره؛ و`closed` بالأحدث إغلاقًا. `summary` على كل مهام المستدعي لا على الصفحة. تفاصيل المادة (العنوان والملفات والحساسية) من `GET /materials/{id}` بقاعدة الحجب نفسها.
+     - `active` (الافتراضي) بالأقرب موعدًا أولًا، فالمتأخر قبل غيره؛ و`closed` بالأحدث إغلاقًا. `summary` على كل مهام المستدعي لا على الصفحة. لا `open`: كلمة محجوزة في Swift ومعدِّل في Kotlin يكسران العميلين المولَّدين. تفاصيل المادة (العنوان والملفات والحساسية) من `GET /materials/{id}` بقاعدة الحجب نفسها.
      - Bearer Token:
        - type: http
        - name: bearerAuth
-     - parameter status: (query) المفتوحة (&#x60;assigned&#x60; و&#x60;acknowledged&#x60; و&#x60;in_progress&#x60;) أو المغلقة (&#x60;done&#x60; و&#x60;returned&#x60;) (optional, default to .`open`)
+     - parameter status: (query) الجارية (&#x60;assigned&#x60; و&#x60;acknowledged&#x60; و&#x60;in_progress&#x60;) أو المغلقة (&#x60;done&#x60; و&#x60;returned&#x60;) (optional, default to .active)
      - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
      - parameter limit: (query) حجم الصفحة (optional, default to 50)
      - parameter apiConfiguration: The configuration for the http request.

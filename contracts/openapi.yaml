@@ -1171,15 +1171,15 @@ paths:
       tags: [assignments]
       summary: «مهامي» — المهام المسنَدة إليّ (ADR 0096)
       description: >-
-        `open` (الافتراضي) بالأقرب موعدًا أولًا، فالمتأخر قبل غيره؛ و`closed` بالأحدث إغلاقًا. `summary` على كل مهام المستدعي لا
-        على الصفحة. تفاصيل المادة (العنوان والملفات والحساسية) من `GET /materials/{id}` بقاعدة الحجب نفسها.
+        `active` (الافتراضي) بالأقرب موعدًا أولًا، فالمتأخر قبل غيره؛ و`closed` بالأحدث إغلاقًا. `summary` على كل مهام المستدعي لا
+        على الصفحة. لا `open`: كلمة محجوزة في Swift ومعدِّل في Kotlin يكسران العميلين المولَّدين. تفاصيل المادة (العنوان والملفات والحساسية) من `GET /materials/{id}` بقاعدة الحجب نفسها.
       operationId: listMyAssignments
       x-roles: [producer]
       parameters:
         - name: status
           in: query
-          description: المفتوحة (`assigned` و`acknowledged` و`in_progress`) أو المغلقة (`done` و`returned`)
-          schema: { type: string, enum: [open, closed], default: open }
+          description: الجارية (`assigned` و`acknowledged` و`in_progress`) أو المغلقة (`done` و`returned`)
+          schema: { type: string, enum: [active, closed], default: active }
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
       responses:
@@ -5096,11 +5096,11 @@ components:
         next_cursor: { type: [string, "null"] }
         summary:
           type: object
-          required: [open, overdue, done_last_7_days]
+          required: [active, overdue, done_last_7_days]
           description: على كل مهام المستدعي لا على الصفحة
           properties:
-            open: { type: integer, minimum: 0, description: المفتوحة (`assigned` و`acknowledged` و`in_progress`) }
-            overdue: { type: integer, minimum: 0, description: المفتوحة التي تجاوزت موعدها }
+            active: { type: integer, minimum: 0, description: الجارية (`assigned` و`acknowledged` و`in_progress`)؛ «قيد العمل» في W5 }
+            overdue: { type: integer, minimum: 0, description: الجارية التي تجاوزت موعدها }
             done_last_7_days: { type: integer, minimum: 0, description: "`done` في آخر 7 أيام (168 ساعة) حتى وقت الطلب" }
 
     AssignmentCandidate:
