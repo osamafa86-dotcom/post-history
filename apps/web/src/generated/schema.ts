@@ -2259,6 +2259,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sandbox/refunds/{refund_ref}/succeeded": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description مرجع الاسترداد عند المزوّد التجريبي (`sbr_…`)؛ يحفظه الخادم مع الاسترداد ولا تعيده الواجهة */
+                refund_ref: components["parameters"]["SandboxRefundRef"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * تأكيد الاسترداد في المزوّد التجريبي (يُرسل الإشعار الموقّع)
+         * @description للمزوّد التجريبي وحده (اختبار، لا مال حقيقي): يرسل إشعار `refund.succeeded` موقّعًا بـ `SANDBOX_WEBHOOK_SECRET` بمرجع الاسترداد ومبلغه إلى `/payments/webhooks/sandbox`، كما يؤكده المزوّد. لا يغيّر الاسترداد مباشرة؛ الأثر من الإشعار وحده (`createOrderRefund`). بلا المزوّد التجريبي `404`؛ والمزوّد التجريبي نفسه يرفض الخادم الإقلاع به مع `DEPLOY_STAGE=production` (ولا يُقبل في `NODE_ENV=production` إلا للتجربة بعلمين)، فلا وجود للمسار في الإنتاج. المرجع المجهول `404`. تشغّلها اختبارات التكامل والقبول بلا متصفح.
+         */
+        post: operations["completeSandboxRefund"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/buyer-purchase-totals": {
         parameters: {
             query?: never;
@@ -5451,6 +5474,8 @@ export interface components {
         OrderId: string;
         /** @description مرجع جلسة الدفع التجريبية */
         SandboxProviderRef: string;
+        /** @description مرجع الاسترداد عند المزوّد التجريبي (`sbr_…`)؛ يحفظه الخادم مع الاسترداد ولا تعيده الواجهة */
+        SandboxRefundRef: string;
         PayoutRequestId: string;
         LicenseId: string;
         /** @description معرّف نسخة القالب (`MaterialRender.id`) */
@@ -9336,6 +9361,28 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description أُرسل الإشعار أو جُدول */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    completeSandboxRefund: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description مرجع الاسترداد عند المزوّد التجريبي (`sbr_…`)؛ يحفظه الخادم مع الاسترداد ولا تعيده الواجهة */
+                refund_ref: components["parameters"]["SandboxRefundRef"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description أُرسل الإشعار */
             202: {
                 headers: {
                     [name: string]: unknown;
