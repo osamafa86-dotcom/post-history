@@ -7,6 +7,7 @@
 
 import Foundation
 
+/** الطلب بما جُمّد فيه. الأرقام المقروءة الثلاثة (ADR 0100) يرسلها الخادم دائمًا، وهي خارج &#x60;required&#x60; لأنها إضافة على v0.3 (القاعدة 12). لا مجموع فرعي ولا ضريبة ولا بيانات مُصدِر قانونية: &#x60;total&#x60; هو الإجمالي وحده حتى قرار الضريبة. */
 public struct Order: Sendable, Codable, Hashable {
 
     public enum CancelReason: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
@@ -15,8 +16,17 @@ public struct Order: Sendable, Codable, Hashable {
         case rightsChanged = "rights_changed"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
+    public static let orderNumberRule = StringRule(minLength: nil, maxLength: nil, pattern: "^ORD-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{8}$")
+    public static let purchaseOrderNumberRule = StringRule(minLength: nil, maxLength: 64, pattern: nil)
+    public static let invoiceNumberRule = StringRule(minLength: nil, maxLength: nil, pattern: "^INV-[0-9]{4}-[0-9]{6,}$")
     public static let itemsRule = ArrayRule(minItems: 1, maxItems: nil, uniqueItems: false)
     public var id: UUID
+    /** رقم الطلب المقروء: سنة الإنشاء ثم ثمانية محارف عشوائية من أبجدية Crockford (بلا I وL وO وU). فريد ولا يتغيّر، وليس متسلسلًا فلا يكشف عدد طلبات المتجر. لا يحل محل `id` في المسارات. */
+    public var orderNumber: String?
+    /** رقم أمر الشراء كما أرسله المشتري في `OrderCreate`، أو `null` */
+    public var purchaseOrderNumber: String?
+    /** رقم الفاتورة: سنة الدفع ثم تسلسل بلا فجوات في تلك السنة، يُعطى في معاملة تأكيد الدفع من الإشعار الموقّع نفسها، و`null` قبله. يبقى للطلب المسترد. الفاتورة مستند تجريبي ما دام المزوّد تجريبيًا (ADR 0032)، ولا صفحة تحقق عامة لها. */
+    public var invoiceNumber: String?
     public var organizationId: UUID
     public var createdBy: UUID
     public var status: OrderStatus
@@ -29,8 +39,11 @@ public struct Order: Sendable, Codable, Hashable {
     public var createdAt: Date
     public var updatedAt: Date
 
-    public init(id: UUID, organizationId: UUID, createdBy: UUID, status: OrderStatus, cancelReason: CancelReason?, total: Money, items: [OrderItem], expiresAt: Date, paidAt: Date?, createdAt: Date, updatedAt: Date) {
+    public init(id: UUID, orderNumber: String? = nil, purchaseOrderNumber: String? = nil, invoiceNumber: String? = nil, organizationId: UUID, createdBy: UUID, status: OrderStatus, cancelReason: CancelReason?, total: Money, items: [OrderItem], expiresAt: Date, paidAt: Date?, createdAt: Date, updatedAt: Date) {
         self.id = id
+        self.orderNumber = orderNumber
+        self.purchaseOrderNumber = purchaseOrderNumber
+        self.invoiceNumber = invoiceNumber
         self.organizationId = organizationId
         self.createdBy = createdBy
         self.status = status
@@ -45,6 +58,9 @@ public struct Order: Sendable, Codable, Hashable {
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case id
+        case orderNumber = "order_number"
+        case purchaseOrderNumber = "purchase_order_number"
+        case invoiceNumber = "invoice_number"
         case organizationId = "organization_id"
         case createdBy = "created_by"
         case status
@@ -62,6 +78,9 @@ public struct Order: Sendable, Codable, Hashable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(orderNumber, forKey: .orderNumber)
+        try container.encodeIfPresent(purchaseOrderNumber, forKey: .purchaseOrderNumber)
+        try container.encodeIfPresent(invoiceNumber, forKey: .invoiceNumber)
         try container.encode(organizationId, forKey: .organizationId)
         try container.encode(createdBy, forKey: .createdBy)
         try container.encode(status, forKey: .status)

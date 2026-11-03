@@ -2845,6 +2845,8 @@ paths:
         البند الحصري (`exclusive_temporary`) يحجز المادة في المعاملة نفسها بقفل صفها: حجز واحد لكل مادة بفهرس فريد جزئي،
         مدته 15 دقيقة هي مهلة الطلب (`expires_at`)، ولا حصرية لمادة سبق بيعها ولا بيع غير حصري تحت حجز ساري
         (`409 exclusive_unavailable`). المؤسسة غير `active` `403 forbidden_scope`. يُكتب `order.status_changed`.
+        للطلب رقم مقروء (`order_number`) عند إنشائه، و`purchase_order_number` إن أُرسل يُحفظ كما هو ولا يتغيّر بعده
+        (ADR 0100).
       operationId: createOrder
       x-roles: [buyer_admin, buyer_member]
       parameters:
@@ -6048,6 +6050,14 @@ components:
         expected_total:
           $ref: "#/components/schemas/Money"
           description: المجموع الذي رآه المشتري؛ إن لم يطابق `409 price_changed` بلا أثر
+        purchase_order_number:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[A-Za-z0-9](?:[A-Za-z0-9 ._/#-]{0,62}[A-Za-z0-9])?$"
+          description: >-
+            رقم أمر الشراء لدى المشتري، اختياري (ADR 0100): حروف لاتينية وأرقام و« ._/#-»، يبدأ وينتهي بحرف أو رقم، بلا محارف
+            تحكم أو اتجاه. يُحفظ مع الطلب ويظهر في فاتورته، ولا يتغيّر بعد الإنشاء. يُكتب ولا يدخل حدثًا ولا إشعارًا.
 
     OrderItem:
       type: object
@@ -6068,9 +6078,28 @@ components:
 
     Order:
       type: object
+      description: >-
+        الطلب بما جُمّد فيه. الأرقام المقروءة الثلاثة (ADR 0100) يرسلها الخادم دائمًا، وهي خارج `required` لأنها إضافة على v0.3
+        (القاعدة 12). لا مجموع فرعي ولا ضريبة ولا بيانات مُصدِر قانونية: `total` هو الإجمالي وحده حتى قرار الضريبة.
       required: [id, organization_id, created_by, status, cancel_reason, total, items, expires_at, paid_at, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }
+        order_number:
+          type: string
+          pattern: "^ORD-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{8}$"
+          description: >-
+            رقم الطلب المقروء: سنة الإنشاء ثم ثمانية محارف عشوائية من أبجدية Crockford (بلا I وL وO وU). فريد ولا يتغيّر، وليس
+            متسلسلًا فلا يكشف عدد طلبات المتجر. لا يحل محل `id` في المسارات.
+        purchase_order_number:
+          type: [string, "null"]
+          maxLength: 64
+          description: رقم أمر الشراء كما أرسله المشتري في `OrderCreate`، أو `null`
+        invoice_number:
+          type: [string, "null"]
+          pattern: "^INV-[0-9]{4}-[0-9]{6,}$"
+          description: >-
+            رقم الفاتورة: سنة الدفع ثم تسلسل بلا فجوات في تلك السنة، يُعطى في معاملة تأكيد الدفع من الإشعار الموقّع نفسها،
+            و`null` قبله. يبقى للطلب المسترد. الفاتورة مستند تجريبي ما دام المزوّد تجريبيًا (ADR 0032)، ولا صفحة تحقق عامة لها.
         organization_id: { type: string, format: uuid }
         created_by: { type: string, format: uuid }
         status: { $ref: "#/components/schemas/OrderStatus" }
@@ -6160,6 +6189,12 @@ components:
         id: { type: string, format: uuid }
         license_number: { type: string, pattern: "^PH-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{10}$" }
         order_id: { type: string, format: uuid }
+        order_number:
+          type: string
+          pattern: "^ORD-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{8}$"
+          description: >-
+            رقم طلب الترخيص المقروء (`Order.order_number`، ADR 0100)، ليعرّف المشتري طلبه من قائمة التراخيص ولو لم يكن هو منشئه.
+            يرسله الخادم دائمًا؛ خارج `required` لأنه إضافة على v0.3
         order_item_id: { type: string, format: uuid }
         organization_id: { type: string, format: uuid }
         listing_id: { type: string, format: uuid }

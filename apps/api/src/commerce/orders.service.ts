@@ -82,6 +82,8 @@ export class OrdersService {
             createdBy: p.userId,
             currency,
             totalMinor: sql`${total.toString()}::bigint` as unknown as number,
+            // رقم الطلب من افتراضي القاعدة، ورقم الفاتورة من محفّزها عند الدفع (ADR 0100)؛ أمر الشراء كما كتبه المشتري
+            purchaseOrderNumber: input.purchase_order_number ?? null,
             expiresAt: exclusive ? sql`now() + make_interval(mins => ${HOLD_MINUTES})` : sql`now() + make_interval(hours => ${ORDER_HOURS})`,
           })
           .returning();
@@ -500,6 +502,9 @@ async function read(executor: Executor, id: string): Promise<Order> {
     .orderBy(orderItems.id);
   return {
     id: o!.id,
+    order_number: o!.orderNumber,
+    purchase_order_number: o!.purchaseOrderNumber,
+    invoice_number: o!.invoiceNumber,
     organization_id: o!.organizationId,
     created_by: o!.createdBy,
     status: o!.status as Order['status'],

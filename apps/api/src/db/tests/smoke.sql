@@ -959,11 +959,11 @@ SELECT pg_temp.expect_error($q$
   VALUES ('license.issued', 'license', '00000000-0000-4000-8000-000000000c33', 'license.issued:smoke:2',
           '{"license_id": "00000000-0000-4000-8000-000000000c33", "buyer_name": "x"}') $q$, '23514');
 
--- الدوال تعمل بمسار بحث فارغ (الاستعادة): طلب ببنده وفحص مجموعه المؤجل
+-- الدوال تعمل بمسار بحث فارغ (الاستعادة): طلب ببنده وفحص مجموعه المؤجل، ورقمه من الافتراضي (ترحيل 042)
 SET LOCAL search_path = '';
-INSERT INTO public.orders (id, organization_id, created_by, currency, total_minor, expires_at)
+INSERT INTO public.orders (id, organization_id, created_by, currency, total_minor, expires_at, purchase_order_number)
 VALUES ('00000000-0000-4000-8000-000000000c05', '00000000-0000-4000-8000-000000000701', '00000000-0000-4000-8000-000000000711',
-        'USD', 150000, now() + interval '15 minutes');
+        'USD', 150000, now() + interval '15 minutes', 'PO 2026/17-A');
 INSERT INTO public.order_items (order_id, listing_id, material_id, material_version, license_template_id, license_version,
                                 license_type, price_minor, currency, title_ar, title_en)
 VALUES ('00000000-0000-4000-8000-000000000c05', '00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-000000000101',
@@ -1618,8 +1618,58 @@ SELECT pg_temp.expect_error($q$
   INSERT INTO audit_log (actor_id, action, target_type, target_id, details, hash)
   VALUES (NULL, 'tag.rewritten', 'tag_rewrite', NULL, '{"source": "مياة"}', '\x00') $q$, '23514');
 SET CONSTRAINTS ALL DEFERRED;
+
+-- ---------- أرقام الطلب (ADR 0100؛ ترحيل 042) ----------
+-- لكل طلب رقم عشوائي بصيغته وسنة إنشائه، فريد؛ وأمر الشراء كما كُتب
+SELECT pg_temp.assert((SELECT bool_and(order_number ~ '^ORD-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{8}$'
+                         AND split_part(order_number, '-', 2) = to_char(created_at AT TIME ZONE 'UTC', 'YYYY')) FROM orders),
+  'every order carries a readable number of its creation year');
+SELECT pg_temp.assert((SELECT count(DISTINCT order_number) = count(*) FROM orders), 'order numbers are unique');
+SELECT pg_temp.assert((SELECT purchase_order_number = 'PO 2026/17-A' FROM orders WHERE id = '00000000-0000-4000-8000-000000000c05'),
+  'the purchase order number is kept as written');
+-- الفاتورة للمدفوع (والمسترد) وحده، متسلسلة من 1 بلا فجوة في سنتها، والعدّاد عند آخرها
+SELECT pg_temp.assert((SELECT bool_and((paid_at IS NULL) = (invoice_number IS NULL)) FROM orders), 'paid orders alone carry an invoice number');
+SELECT pg_temp.assert((SELECT invoice_number IS NOT NULL FROM orders WHERE id = '00000000-0000-4000-8000-000000000c01' AND status = 'refunded'),
+  'a refunded order keeps its invoice number');
+SELECT pg_temp.assert(
+  (SELECT array_agg(split_part(invoice_number, '-', 3)::integer ORDER BY invoice_number) FROM orders WHERE invoice_number IS NOT NULL)
+  = (SELECT array_agg(i ORDER BY i) FROM invoice_counters c, generate_series(1, c.last_value) AS i),
+  'invoice numbers run from 1 without gaps up to the counter');
+SELECT pg_temp.assert((SELECT bool_and(invoice_number ~ '^INV-[0-9]{4}-[0-9]{6}$'
+                         AND split_part(invoice_number, '-', 2) = to_char(paid_at AT TIME ZONE 'UTC', 'YYYY'))
+                         FROM orders WHERE invoice_number IS NOT NULL),
+  'an invoice number carries the year of its payment and six digits');
+-- الأرقام لا تتغيّر، ولا يكتب رقمَ الفاتورة غيرُ المحفّز
+SELECT pg_temp.expect_error($q$ UPDATE orders SET order_number = 'ORD-2026-ABCDEFGH' WHERE id = '00000000-0000-4000-8000-000000000c01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE orders SET purchase_order_number = 'PO-1' WHERE id = '00000000-0000-4000-8000-000000000c02' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE orders SET purchase_order_number = NULL WHERE id = '00000000-0000-4000-8000-000000000c05' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE orders SET invoice_number = 'INV-2026-999999' WHERE id = '00000000-0000-4000-8000-000000000c01' $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE orders SET invoice_number = 'INV-2026-999999' WHERE id = '00000000-0000-4000-8000-000000000c05' $q$, '23514');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO orders (organization_id, created_by, currency, total_minor, expires_at, invoice_number)
+  VALUES ('00000000-0000-4000-8000-000000000701', '00000000-0000-4000-8000-000000000711', 'USD', 0, now() + interval '1 hour',
+          'INV-2026-999999') $q$, '23514');
+-- أمر الشراء: 1–64 من الحروف اللاتينية والأرقام و« ._/#-» يبدأ وينتهي بحرف أو رقم؛ لا مسافة في الطرفين ولا محارف اتجاه أو تحكم
+SELECT pg_temp.expect_error(format($q$
+  INSERT INTO orders (organization_id, created_by, currency, total_minor, expires_at, purchase_order_number)
+  VALUES ('00000000-0000-4000-8000-000000000701', '00000000-0000-4000-8000-000000000711', 'USD', 0, now() + interval '1 hour', %L) $q$, po), '23514')
+  FROM unnest(ARRAY[' PO-1', 'PO-1 ', '', '-PO', E'PO\u200f1', E'PO\n1', 'أمر-1', '١٢٣', repeat('A', 65)]) AS po;
+-- العدّاد يرتفع واحدًا ولا يُنقص ولا يُحذف
+SELECT pg_temp.expect_error($q$ UPDATE invoice_counters SET last_value = last_value - 1 $q$, '23514');
+SELECT pg_temp.expect_error($q$ UPDATE invoice_counters SET last_value = last_value + 2 $q$, '23514');
+SELECT pg_temp.expect_error($q$ DELETE FROM invoice_counters $q$, '23001');
+SET CONSTRAINTS ALL DEFERRED;
 -- الدوال تعمل بمسار بحث فارغ (الاستعادة)
 SET LOCAL search_path = '';
+SELECT pg_temp.assert(public.order_number_new(now()) ~ '^ORD-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{8}$', 'order numbers work with an empty search_path');
+-- الدفع يعطي رقم الفاتورة التالي من المحفّز بمسار بحث فارغ
+UPDATE public.orders SET provider = 'sandbox', provider_ref = 'sbx_c05', status = 'paid', paid_at = now()
+ WHERE id = '00000000-0000-4000-8000-000000000c05';
+SELECT pg_temp.assert((SELECT o.invoice_number = 'INV-' || c.invoice_year || '-' || lpad(c.last_value::text, 6, '0')
+                         FROM public.orders o, public.invoice_counters c
+                        WHERE o.id = '00000000-0000-4000-8000-000000000c05' AND c.invoice_year = extract(year FROM o.paid_at AT TIME ZONE 'UTC')),
+  'payment takes the next invoice number with an empty search_path');
+SELECT pg_temp.expect_error($q$ UPDATE public.invoice_counters SET last_value = 1 $q$, '23514');
 SELECT pg_temp.assert(public.tag_list_valid(ARRAY['نزوح'], 50) AND NOT public.tag_list_valid(ARRAY['نزوح', 'نزوح'], 50)
   AND NOT public.tag_list_valid(ARRAY[E'\u2066نزوح'], 50), 'tag list check works with an empty search_path');
 SELECT pg_temp.expect_error($q$ UPDATE public.tag_suggestions SET tags = ARRAY[' نزوح'] $q$, '23514');
