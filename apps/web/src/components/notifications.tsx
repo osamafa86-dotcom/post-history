@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
-import { formatDate, humanDuration, messages, type Locale } from "@/lib/i18n";
+import { formatDate, humanDuration, messages, plural, type Locale } from "@/lib/i18n";
 import type { Notification, NotificationPage } from "@/lib/types";
 import { notificationTarget } from "@/lib/assignment-policy";
 import { groupNotifications, type NotificationGroup } from "@/lib/editor";
@@ -77,7 +77,7 @@ export function Notifications({ locale }: { locale: Locale }) {
             </li>; })}</ul></li>)}</ul>
         <aside className="card notification-preview-panel" aria-live="polite" aria-label={t.previewTitle}>{current ? <>
           {current.needsAck ? <p className="alert urgent">{t.needsAck}</p> : <p className="muted">{b.kinds[notificationKind(current.head).word]}</p>}
-          <p>{formatDate(current.head.created_at, locale)}{current.items.length > 1 && <> · {t.grouped.replace("{n}", String(current.items.length))}</>}</p>
+          <p>{formatDate(current.head.created_at, locale)}{current.items.length > 1 && <> · {plural(current.items.length, t.grouped, locale)}</>}</p>
           <div className="actions">{notificationTarget(current.head, locale) && <Link prefetch={false} className="button secondary" href={notificationTarget(current.head, locale)!}>{current.head.assignment_id ? t.openTask : t.open}</Link>}
             {state(current.head) !== "acknowledged" && <button disabled={mutation.busy} onClick={() => void change(current, "ack")}>{t.ack}</button>}</div>
         </> : <p className="muted">{t.choose}</p>}</aside>

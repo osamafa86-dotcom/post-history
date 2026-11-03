@@ -1,7 +1,7 @@
 "use client";
 import { EmptyState, NoAccess } from "../empty-state";
 import { useEffect, useState } from "react";
-import { messages, type Locale } from "@/lib/i18n";
+import { messages, plural, type Locale } from "@/lib/i18n";
 import { hasRole } from "@/lib/review";
 import { materialTypes } from "@/lib/query";
 import type { CatalogItem } from "@/lib/store-format";
@@ -115,7 +115,7 @@ export function StoreCatalog({ locale }: { locale: Locale }) {
         <label className="store-check"><input type="checkbox" checked={filters.exclusive_available === "true"} onChange={e => set("exclusive_available", e.target.checked ? "true" : "")} />{s.exclusiveOnly}</label>
       </div>
     </details>
-    <p className="visually-hidden" role="status">{page ? b.count.replace("{n}", String(page.items.length)) : c.loading}</p>
+    <p className="visually-hidden" role="status">{page ? plural(page.items.length, b.count, locale) : c.loading}</p>
     {error ? <EmptyState icon="offline" role="alert" title={c.errorTitle} actions={<button className="secondary" onClick={() => setAttempt(n => n + 1)}>{m.retry}</button>}><p>{c.errorBody}</p></EmptyState>
       : !page ? <div className="store-grid" aria-hidden="true">{Array.from({ length: 8 }, (_, i) => <div key={i} className="store-card skeleton-card"><span className="store-card-cover" /><span className="skeleton-line" /><span className="skeleton-line short" /></div>)}</div>
       : !page.items.length ? <EmptyState icon="store" testId="store-empty" title={active.length ? c.emptyTitle.replace("{filters}", active.map(([key, value]) => label(key, value)).join(c.listSeparator)) : c.emptyNone}

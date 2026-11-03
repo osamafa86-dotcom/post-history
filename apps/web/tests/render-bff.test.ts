@@ -28,7 +28,8 @@ describe("circulated render BFF (ADR 0091)", () => {
     const { result } = await call(`materials/${item.id}/renders`, { upstream: () => Response.json({ items: [{ ...row, debug: "canary" }, { ...row, state: "paused" }] }) });
     expect(result.status).toBe(200); const text = await result.text(); expect(text).not.toContain("canary"); expect(JSON.parse(text).items).toHaveLength(1);
     expect(result.headers.get("Cache-Control")).toContain("no-store");
-    const off = await call(`materials/${item.id}/renders`, { upstream: () => Response.json({ code: "not_found" }, { status: 404 }) }); expect(off.result.status).toBe(404);
+    // العلم المطفأ حالة لا خطأ: 204 بلا جسم (لا «فشل تحميل مورد» في وحدة التحكم)، والواجهة تخفي البطاقة.
+    const off = await call(`materials/${item.id}/renders`, { upstream: () => Response.json({ code: "not_found" }, { status: 404 }) }); expect(off.result.status).toBe(204); expect(await off.result.text()).toBe("");
     const denied = await call(`materials/${item.id}/renders`, { user: admin }); expect(denied.result.status).toBe(403); expect(denied.calls).toHaveLength(0);
   });
   it("forwards the browser key with a rebuilt body and never a location text", async () => {

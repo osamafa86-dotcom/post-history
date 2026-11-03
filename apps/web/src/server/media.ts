@@ -3,6 +3,7 @@ import type { components } from "@/generated/schema";
 import { requireOk, type Api } from "./auth";
 import type { WebConfig } from "./config";
 import { WebError } from "./errors";
+import { serverMade } from "@/lib/preview-policy";
 
 type Link = components["schemas"]["FileDownloadUrl"];
 /** الرابط الموقّع مقبول من أصول تخزين المشروع وحدها وبعمر ≤ 10 دقائق. */
@@ -14,7 +15,8 @@ export function checkLink(link: Link, config: WebConfig) {
 
 export async function getDerivativeUrl(api: Api, config: WebConfig, materialId: string, fileId: string) {
   const material = requireOk(await api.GET("/materials/{id}", { params: { path: { id: materialId } } }));
-  const file = material.files.find(file => file.id === fileId && file.state === "verified" && (file.kind === "proxy" || file.kind === "thumbnail"));
+  // النسخة الخفيفة التي صنعها الخادم وحدها تُبث للطاقم (`serverMade`)، لا نسخة الهاتف المرفوعة؛ والمصغّرات لا يصنعها غيره.
+  const file = material.files.find(file => file.id === fileId && file.state === "verified" && ((file.kind === "proxy" && serverMade(file)) || file.kind === "thumbnail"));
   if (!file) throw new WebError(404, "request_failed");
   const link = checkLink(requireOk(await api.GET("/materials/{id}/files/{file_id}/download-url", { params: { path: { id: materialId, file_id: fileId } } })), config);
   return { file, link };

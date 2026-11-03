@@ -29,7 +29,8 @@ export function RenderFiles({ locale, material }: { locale: Locale; material: Ma
   const [download, setDownload] = useState<{ id: string; busy: boolean; error?: React.ReactNode } | null>(null);
   useEffect(() => {
     if (!allowed) return;
-    return pollRenders(signal => browserApi().GET("/materials/{id}/renders", { params: { path: { id: material.id } }, signal }).then(dataOrThrow).then(data => data.items),
+    // العلم المطفأ 204 من الـBFF: يُقرأ كـ404 القديم فتُخفى البطاقة ويقف الاستطلاع.
+    return pollRenders(signal => browserApi().GET("/materials/{id}/renders", { params: { path: { id: material.id } }, signal }).then(result => { if (result.response.status === 204) throw new RequestError(404); return dataOrThrow(result); }).then(data => data.items),
       result => { if ("items" in result) { setItems(result.items); setStatus(0); } else setStatus(result.status); }, error => (error instanceof RequestError ? error.status : 503));
   }, [allowed, material.id, attempt]);
   if (!allowed || [401, 403, 404].includes(status) || (items === null && !status)) return null;

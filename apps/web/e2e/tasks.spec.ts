@@ -22,7 +22,8 @@ test("W3 from W2: an accepted material is assigned by load, due and note; the ca
   await expect(dialog).toContainText(`«${title(2)}»`);
   const people = dialog.getByTestId("assign-candidate"); await expect(people).toHaveCount(3);
   await expect(people.nth(0)).toContainText("مونتير تجريبي ١"); await expect(people.nth(0)).toContainText(ar.assign.free); await expect(people.nth(0).getByRole("radio")).toBeChecked();
-  await expect(people.nth(1)).toContainText(ar.assign.unnamed);
+  // بلا اسم عمل: «حساب <أول 8 من المعرّف>» كما في الإدارة، لا «عضو في فريق الإنتاج» يتشابه به الجميع.
+  await expect(people.nth(1)).toContainText(ar.admin.unnamed.replace("{id}", "10000000"));
   await expect(people.nth(2)).toContainText("مونتير تجريبي ٢"); await expect(people.nth(2)).toContainText(ar.assign.openTasks.few.replace("{n}", "3")); await expect(people.nth(2)).toContainText(ar.assign.urgentTasks.replace("{n}", "1"));
   await expect(dialog).not.toContainText("never-display-canary");
   await expect(dialog.getByRole("radio", { name: ar.assign.presets["30m"] })).toBeChecked();
@@ -96,6 +97,8 @@ test("W6: the editor's note, the rushes and their package, and the task moves th
   await request.post(`${api}/__test/assignments`); await login(page, "reviewer");
   await page.goto("/ar/tasks"); await page.getByTestId("task-card").nth(1).getByRole("link", { name: ar.tasks.open }).click();
   await expect(page.getByRole("heading", { level: 1, name: title(5) })).toBeVisible();
+  // رابط الرجوع لفريق الإنتاج يقول وجهته (مهامي)، لا «العودة إلى الوارد».
+  await expect(page.getByRole("link", { name: ar.task.backToTasks, exact: true })).toHaveAttribute("href", "/ar/tasks"); await expect(page.getByRole("link", { name: ar.back, exact: true })).toHaveCount(0);
   await expect(page.getByTestId("task-meta")).toContainText(ar.states.priority.urgent); await expect(page.getByTestId("task-meta")).toContainText("محرر تجريبي ١");
   await expect(page.getByTestId("task-note")).toHaveText("تقرير عاجل 60 ثانية طولي، مع تمويه الوجوه");
   const rushes = page.getByTestId("rushes"); await expect(rushes.getByTestId("rush")).toHaveCount(3);

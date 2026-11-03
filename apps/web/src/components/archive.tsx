@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
-import { formatDate, longDate, messages, type Locale } from "@/lib/i18n";
+import { formatDate, longDate, messages, plural, type Locale } from "@/lib/i18n";
 import type { Material } from "@/lib/types";
 import { hasRole } from "@/lib/review";
 import { activeFilters, archiveGovernorates, archiveRoles, filterArchive, noFilters, type ArchiveFilters, type ArchivePeriod } from "@/lib/archive";
@@ -59,7 +59,7 @@ export function Archive({ locale }: { locale: Locale }) {
         : !items.length ? <EmptyState icon="film" testId="archive-empty" title={t.emptyTitle}><p>{t.emptyBody}</p></EmptyState>
         : !visible.length ? <EmptyState icon="search" testId="archive-no-results" title={filters.q ? t.noResultsFor.replace("{q}", filters.q) : t.noResults}
           actions={<button type="button" onClick={() => { setFilters(noFilters); setDraft(""); }}>{t.showAll.replace("{n}", String(items.length))}</button>}>
-          <p>{active.length > 1 ? t.noResultsHintMany.replace("{n}", String(active.length)) : t.noResultsHint} {t.noResultsCount.replace("{n}", String(items.length))}</p>
+          <p>{active.length > 1 ? t.noResultsHintMany.replace("{n}", String(active.length)) : t.noResultsHint} {t.noResultsCount.replace("{count}", plural(items.length, m.counts.materials, locale))}</p>
         </EmptyState>
         : <ul className="archive-grid">{visible.map(item => <ArchiveCard key={item.id} item={item} now={now} locale={locale} />)}</ul>}
       {items && cursor && <div className="pagination"><button type="button" className="secondary" disabled={more} onClick={() => void loadMore()}>{t.loadMore}</button></div>}

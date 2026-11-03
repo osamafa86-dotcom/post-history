@@ -103,6 +103,8 @@ test("S4 my licences: each tied to its readable order, download the delivery pac
   await expect(active.getByRole("link", { name: l.invoiceFor.replace("{id}", "ORD-2026-7K3M9Q2X") })).toHaveAttribute("href", "/ar/store/orders/92000000-0000-4000-8000-000000000001/invoice");
   await expect(revoked).toContainText(l.revokedShort); await expect(revoked.getByRole("button")).toHaveCount(0);
   await expect(ended).toContainText(l.endedOn.replace("{date}", "12 تشرين الأول 2026")); await expect(ended).toContainText("92000000");
+  // طلب الترخيص المنتهي ليس من طلبات هذا العضو: رقمه ظاهر بلا رابط فاتورة لا يفتحها.
+  await expect(ended.getByTestId("order-plain")).toHaveText("92000000"); await expect(ended.getByRole("link", { name: l.invoiceFor.replace("{id}", "92000000") })).toHaveCount(0);
   await expect(ended.getByRole("link", { name: l.renewFor.replace("{title}", "لقطات اصطناعية 2") })).toHaveAttribute("href", "/ar/store/71000000-0000-4000-8000-000000000002");
   await expect(ended.getByRole("button")).toHaveCount(0);
   await page.setViewportSize({ width: 1440, height: 900 }); await page.screenshot({ path: ".artifacts/s4-licences-ar.png", fullPage: true });
