@@ -66,7 +66,8 @@
         "assignment.created",
         "assignment.state_changed",
         "tag.suggestions_changed",
-        "tag.rewritten"
+        "tag.rewritten",
+        "platform_settings.changed"
       ]
     },
     "aggregate_type": {
@@ -1412,6 +1413,51 @@
               "materials_updated": {
                 "type": "integer",
                 "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "platform_settings.changed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "aggregate_type": {
+            "const": "user"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "تغيّرت هوية المنصة (ADR 0099): الإصدار وأسماء الحقول التي تغيّرت وحدها، بلا نص. تُقرأ القيم من GET /platform-settings. المجمّع مدير النظام الذي غيّرها، كما في setting.changed.",
+            "required": [
+              "settings_version",
+              "changed_fields"
+            ],
+            "properties": {
+              "settings_version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "changed_fields": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 3,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "platform_name",
+                    "app_name",
+                    "watermark_text"
+                  ]
+                }
               }
             }
           }

@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { buyerInviteConflicts, buyerOrganizations, catalogListings, commissionRules, deviceAttestationKeys, exclusiveHolds, idempotencyKeys, journalEntries, ledgerAccounts, licenseDownloadGrants, licenseTemplateVersions, licenseTemplates, licenses, listingOffers, materialAssignments, materialContributors, materialExports, materialFiles, materialRenders, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, orderItems, orders, outboxEvents, paymentEvents, payoutApprovals, payoutPolicies, payoutRequests, postings, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, refundItems, refunds, systemSettings, tagRewriteMaterials, tagRewrites, tagSuggestions, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
+import { buyerInviteConflicts, buyerOrganizations, catalogListings, commissionRules, deviceAttestationKeys, exclusiveHolds, idempotencyKeys, journalEntries, ledgerAccounts, licenseDownloadGrants, licenseTemplateVersions, licenseTemplates, licenses, listingOffers, materialAssignments, materialContributors, materialExports, materialFiles, materialRenders, materialTransitions, materials, notificationDeliveries, notificationRuleEscalations, notificationRules, notifications, offices, orderItems, orders, outboxEvents, paymentEvents, payoutApprovals, payoutPolicies, payoutRequests, platformSettings, postings, pushDevices, recoveryCodes, recoveryRequests, refreshTokens, refundItems, refunds, systemSettings, tagRewriteMaterials, tagRewrites, tagSuggestions, uploadForms, uploadSessions, userPermissions, userRoles, users } from "./schema";
 
 export const refreshTokensRelations = relations(refreshTokens, ({one, many}) => ({
 	refreshToken: one(refreshTokens, {
@@ -95,6 +95,7 @@ export const usersRelations = relations(users, ({one, many}) => ({
 	notifications: many(notifications),
 	tagSuggestions: many(tagSuggestions),
 	tagRewrites: many(tagRewrites),
+	platformSettings: many(platformSettings),
 	outboxEvents: many(outboxEvents),
 	recoveryCodes: many(recoveryCodes),
 	payoutApprovals: many(payoutApprovals),
@@ -761,5 +762,12 @@ export const tagRewriteMaterialsRelations = relations(tagRewriteMaterials, ({one
 	tagRewrite: one(tagRewrites, {
 		fields: [tagRewriteMaterials.tagRewriteId],
 		references: [tagRewrites.id]
+	}),
+}));
+
+export const platformSettingsRelations = relations(platformSettings, ({one}) => ({
+	user: one(users, {
+		fields: [platformSettings.updatedBy],
+		references: [users.id]
 	}),
 }));
