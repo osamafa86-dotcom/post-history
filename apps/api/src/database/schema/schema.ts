@@ -1165,10 +1165,15 @@ export const orders = pgTable("orders", {
 	paidAt: timestamp("paid_at", { withTimezone: true, mode: 'string' }),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	orderNumber: text("order_number").default(sql`order_number_new(now())`).notNull(),
+	purchaseOrderNumber: text("purchase_order_number"),
+	invoiceNumber: text("invoice_number"),
 }, (table) => [
-	index("orders_organization_idx").using("btree", table.organizationId.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("uuid_ops"), table.id.desc().nullsFirst().op("uuid_ops")),
+	index("orders_organization_idx").using("btree", table.organizationId.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops"), table.id.desc().nullsFirst().op("uuid_ops")),
 	index("orders_pending_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'pending_payment'::text)`),
 	uniqueIndex("orders_provider_ref_key").using("btree", table.provider.asc().nullsLast().op("text_ops"), table.providerRef.asc().nullsLast().op("text_ops")).where(sql`(provider_ref IS NOT NULL)`),
+	uniqueIndex("orders_invoice_number_key").using("btree", table.invoiceNumber.asc().nullsLast().op("text_ops")).where(sql`(invoice_number IS NOT NULL)`),
+	uniqueIndex("orders_order_number_key").using("btree", table.orderNumber.asc().nullsLast().op("text_ops")),
 	foreignKey({
 			columns: [table.organizationId],
 			foreignColumns: [buyerOrganizations.id],
@@ -1186,6 +1191,17 @@ export const orders = pgTable("orders", {
 	check("orders_paid_check", sql`(status = ANY (ARRAY['paid'::text, 'refunded'::text])) = (paid_at IS NOT NULL)`),
 	check("orders_expiry_check", sql`(expires_at > created_at) AND (expires_at <= (created_at + '24:00:00'::interval))`),
 	check("orders_provider_check", sql`((provider IS NULL) = (provider_ref IS NULL)) AND ((provider IS NULL) OR (provider = ANY (ARRAY['sandbox'::text, 'stripe'::text]))) AND ((provider_ref IS NULL) OR ((char_length(provider_ref) >= 1) AND (char_length(provider_ref) <= 128)))`),
+	check("orders_order_number_check", sql`order_number ~ '^ORD-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{8}$'::text`),
+	check("orders_purchase_order_number_check", sql`(purchase_order_number IS NULL) OR (purchase_order_number ~ '^[A-Za-z0-9](?:[A-Za-z0-9 ._/#-]{0,62}[A-Za-z0-9])?$'::text)`),
+	check("orders_invoice_number_check", sql`((paid_at IS NULL) = (invoice_number IS NULL)) AND ((invoice_number IS NULL) OR (invoice_number ~ '^INV-[0-9]{4}-[0-9]{6,}$'::text))`),
+]);
+
+export const invoiceCounters = pgTable("invoice_counters", {
+	invoiceYear: integer("invoice_year").primaryKey().notNull(),
+	lastValue: integer("last_value").notNull(),
+}, (table) => [
+	check("invoice_counters_value_check", sql`last_value >= 1`),
+	check("invoice_counters_year_check", sql`(invoice_year >= 2000) AND (invoice_year <= 9999)`),
 ]);
 
 export const orderItems = pgTable("order_items", {

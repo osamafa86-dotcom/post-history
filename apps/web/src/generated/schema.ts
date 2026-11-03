@@ -1746,7 +1746,7 @@ export interface paths {
         put?: never;
         /**
          * إنشاء طلب من عروض الكتالوج
-         * @description السلة حالة في العميل، والطلب يُنشأ منها مرة واحدة. كل بند يجمّد إصدار المادة المعروض، والإصدار الحالي لقالب الترخيص بشروطه، والسعر (الخاص أو الأساسي) — قيدًا في القاعدة. الطلب بعملة واحدة (`422 mixed_currency`)، وبند واحد لكل إدراج. الإدراج غير المعروض أو العرض الغائب أو القالب المعطّل `409 listing_unavailable`. `expected_total` إن أُرسل ولم يطابق المجموع `409 price_changed` بلا أثر. البند الحصري (`exclusive_temporary`) يحجز المادة في المعاملة نفسها بقفل صفها: حجز واحد لكل مادة بفهرس فريد جزئي، مدته 15 دقيقة هي مهلة الطلب (`expires_at`)، ولا حصرية لمادة سبق بيعها ولا بيع غير حصري تحت حجز ساري (`409 exclusive_unavailable`). المؤسسة غير `active` `403 forbidden_scope`. يُكتب `order.status_changed`.
+         * @description السلة حالة في العميل، والطلب يُنشأ منها مرة واحدة. كل بند يجمّد إصدار المادة المعروض، والإصدار الحالي لقالب الترخيص بشروطه، والسعر (الخاص أو الأساسي) — قيدًا في القاعدة. الطلب بعملة واحدة (`422 mixed_currency`)، وبند واحد لكل إدراج. الإدراج غير المعروض أو العرض الغائب أو القالب المعطّل `409 listing_unavailable`. `expected_total` إن أُرسل ولم يطابق المجموع `409 price_changed` بلا أثر. البند الحصري (`exclusive_temporary`) يحجز المادة في المعاملة نفسها بقفل صفها: حجز واحد لكل مادة بفهرس فريد جزئي، مدته 15 دقيقة هي مهلة الطلب (`expires_at`)، ولا حصرية لمادة سبق بيعها ولا بيع غير حصري تحت حجز ساري (`409 exclusive_unavailable`). المؤسسة غير `active` `403 forbidden_scope`. يُكتب `order.status_changed`. للطلب رقم مقروء (`order_number`) عند إنشائه، و`purchase_order_number` إن أُرسل يُحفظ كما هو ولا يتغيّر بعده (ADR 0100).
          */
         post: operations["createOrder"];
         delete?: never;
@@ -4085,6 +4085,8 @@ export interface components {
             items: components["schemas"]["OrderItemInput"][];
             /** @description المجموع الذي رآه المشتري؛ إن لم يطابق `409 price_changed` بلا أثر */
             expected_total?: components["schemas"]["Money"];
+            /** @description رقم أمر الشراء لدى المشتري، اختياري (ADR 0100): حروف لاتينية وأرقام و« ._/#-»، يبدأ وينتهي بحرف أو رقم، بلا محارف تحكم أو اتجاه. يُحفظ مع الطلب ويظهر في فاتورته، ولا يتغيّر بعد الإنشاء. يُكتب ولا يدخل حدثًا ولا إشعارًا. */
+            purchase_order_number?: string;
         };
         /** @description البند مجمّدًا كما وافق عليه المشتري. لا معرّف مادة ولا مراسل (كعرض الكتالوج)؛ العنوان نسخة من الإدراج لحظة الطلب. */
         OrderItem: {
@@ -4106,9 +4108,16 @@ export interface components {
              */
             license_id: string | null;
         };
+        /** @description الطلب بما جُمّد فيه. الأرقام المقروءة الثلاثة (ADR 0100) يرسلها الخادم دائمًا، وهي خارج `required` لأنها إضافة على v0.3 (القاعدة 12). لا مجموع فرعي ولا ضريبة ولا بيانات مُصدِر قانونية: `total` هو الإجمالي وحده حتى قرار الضريبة. */
         Order: {
             /** Format: uuid */
             id: string;
+            /** @description رقم الطلب المقروء: سنة الإنشاء ثم ثمانية محارف عشوائية من أبجدية Crockford (بلا I وL وO وU). فريد ولا يتغيّر، وليس متسلسلًا فلا يكشف عدد طلبات المتجر. لا يحل محل `id` في المسارات. */
+            order_number?: string;
+            /** @description رقم أمر الشراء كما أرسله المشتري في `OrderCreate`، أو `null` */
+            purchase_order_number?: string | null;
+            /** @description رقم الفاتورة: سنة الدفع ثم تسلسل بلا فجوات في تلك السنة، يُعطى في معاملة تأكيد الدفع من الإشعار الموقّع نفسها، و`null` قبله. يبقى للطلب المسترد. الفاتورة مستند تجريبي ما دام المزوّد تجريبيًا (ADR 0032)، ولا صفحة تحقق عامة لها. */
+            invoice_number?: string | null;
             /** Format: uuid */
             organization_id: string;
             /** Format: uuid */
@@ -4180,6 +4189,8 @@ export interface components {
             license_number: string;
             /** Format: uuid */
             order_id: string;
+            /** @description رقم طلب الترخيص المقروء (`Order.order_number`، ADR 0100)، ليعرّف المشتري طلبه من قائمة التراخيص ولو لم يكن هو منشئه. يرسله الخادم دائمًا؛ خارج `required` لأنه إضافة على v0.3 */
+            order_number?: string;
             /** Format: uuid */
             order_item_id: string;
             /** Format: uuid */

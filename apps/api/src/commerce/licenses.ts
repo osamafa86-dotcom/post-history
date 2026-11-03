@@ -7,7 +7,7 @@ import { validateQuery } from '../common/contract';
 import { ApiError } from '../common/errors';
 import { APP_CONFIG, type AppConfig, blockListOf } from '../config/config';
 import { DB, type Database, type Executor } from '../database/database.module';
-import { buyerOrganizations, licenseDownloadGrants, licenseTemplateVersions, licenses, materialFiles, orderItems } from '../database/schema/schema';
+import { buyerOrganizations, licenseDownloadGrants, licenseTemplateVersions, licenses, materialFiles, orderItems, orders } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import { Public } from '../identity/auth.guard';
 import { type Principal, Roles } from '../identity/principal';
@@ -108,12 +108,13 @@ export class LicensesService {
 
 async function read(executor: Executor, id: string): Promise<License> {
   const [r] = await executor
-    .select({ l: licenses, item: orderItems, v: licenseTemplateVersions })
+    .select({ l: licenses, item: orderItems, v: licenseTemplateVersions, orderNumber: orders.orderNumber })
     .from(licenses)
     .innerJoin(orderItems, eq(orderItems.id, licenses.orderItemId))
+    .innerJoin(orders, eq(orders.id, orderItems.orderId))
     .innerJoin(licenseTemplateVersions, and(eq(licenseTemplateVersions.templateId, orderItems.licenseTemplateId), eq(licenseTemplateVersions.version, orderItems.licenseVersion)))
     .where(eq(licenses.id, id));
-  const { l, item, v } = r!;
+  const { l, item, v, orderNumber } = r!;
   const [ready] = await executor
     .select({ id: materialFiles.id })
     .from(materialFiles)
@@ -123,6 +124,7 @@ async function read(executor: Executor, id: string): Promise<License> {
     id: l.id,
     license_number: l.licenseNumber,
     order_id: item.orderId,
+    order_number: orderNumber,
     order_item_id: item.id,
     organization_id: l.organizationId,
     listing_id: item.listingId,

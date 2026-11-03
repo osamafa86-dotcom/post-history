@@ -22,10 +22,12 @@ fix(
   /\tforeignKey\(\{\n\t+columns: \[table\.uploadSessionId\],\n\t+foreignColumns: \[uploadSessions\.id\],\n\t+name: "material_files_upload_session_fk"\n\t+\}\),\n/,
   '',
 );
+// 4) الافتراضي بدالة من الترحيل (رقم الطلب، ترحيل 042) يخرج نداءً عاريًا لا يُترجم؛ يُلفّ بـ sql
+fix('order-number-default', /\.default\(order_number_new\(now\(\)\)\)/, '.default(sql`order_number_new(now())`)');
 
 writeFileSync(file, src);
 
-// 4) ترتيب الأسماء في سطر استيراد relations.ts يتبع فهرس Postgres ويختلف بين قاعدتين؛ يُرتَّب أبجديًا
+// 5) ترتيب الأسماء في سطر استيراد relations.ts يتبع فهرس Postgres ويختلف بين قاعدتين؛ يُرتَّب أبجديًا
 if (relationsFile) {
   const rel = readFileSync(relationsFile, 'utf8');
   const sorted = rel.replace(/^import \{ ([^}]+) \} from "\.\/schema";$/m, (_, names) =>

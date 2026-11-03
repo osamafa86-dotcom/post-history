@@ -17,6 +17,7 @@ public struct License: Sendable, Codable, Hashable {
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
     public static let licenseNumberRule = StringRule(minLength: nil, maxLength: nil, pattern: "^PH-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{10}$")
+    public static let orderNumberRule = StringRule(minLength: nil, maxLength: nil, pattern: "^ORD-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{8}$")
     public static let materialVersionRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     public static let licenseVersionRule = NumericRule<Int>(minimum: 1, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     public static let deliveryContentsRule = ArrayRule(minItems: nil, maxItems: 10, uniqueItems: false)
@@ -24,6 +25,8 @@ public struct License: Sendable, Codable, Hashable {
     public var id: UUID
     public var licenseNumber: String
     public var orderId: UUID
+    /** رقم طلب الترخيص المقروء (`Order.order_number`، ADR 0100)، ليعرّف المشتري طلبه من قائمة التراخيص ولو لم يكن هو منشئه. يرسله الخادم دائمًا؛ خارج `required` لأنه إضافة على v0.3 */
+    public var orderNumber: String?
     public var orderItemId: UUID
     public var organizationId: UUID
     public var listingId: UUID
@@ -48,10 +51,11 @@ public struct License: Sendable, Codable, Hashable {
     /** حجم الحزمة؛ `null` قبل جاهزيتها. قد يغيب */
     public var deliverySizeBytes: Int?
 
-    public init(id: UUID, licenseNumber: String, orderId: UUID, orderItemId: UUID, organizationId: UUID, listingId: UUID, materialVersion: Int, title: LocalizedText, licenseTemplateId: UUID, licenseVersion: Int, terms: LicenseTerms, price: Money, status: LicenseStatus, revokedReason: RevokedReason?, validFrom: Date, validUntil: Date?, exclusiveUntil: Date?, issuedAt: Date, deliveryReady: Bool, deliveryContents: [LicenseDeliveryContent]? = nil, deliverySizeBytes: Int? = nil) {
+    public init(id: UUID, licenseNumber: String, orderId: UUID, orderNumber: String? = nil, orderItemId: UUID, organizationId: UUID, listingId: UUID, materialVersion: Int, title: LocalizedText, licenseTemplateId: UUID, licenseVersion: Int, terms: LicenseTerms, price: Money, status: LicenseStatus, revokedReason: RevokedReason?, validFrom: Date, validUntil: Date?, exclusiveUntil: Date?, issuedAt: Date, deliveryReady: Bool, deliveryContents: [LicenseDeliveryContent]? = nil, deliverySizeBytes: Int? = nil) {
         self.id = id
         self.licenseNumber = licenseNumber
         self.orderId = orderId
+        self.orderNumber = orderNumber
         self.orderItemId = orderItemId
         self.organizationId = organizationId
         self.listingId = listingId
@@ -76,6 +80,7 @@ public struct License: Sendable, Codable, Hashable {
         case id
         case licenseNumber = "license_number"
         case orderId = "order_id"
+        case orderNumber = "order_number"
         case orderItemId = "order_item_id"
         case organizationId = "organization_id"
         case listingId = "listing_id"
@@ -103,6 +108,7 @@ public struct License: Sendable, Codable, Hashable {
         try container.encode(id, forKey: .id)
         try container.encode(licenseNumber, forKey: .licenseNumber)
         try container.encode(orderId, forKey: .orderId)
+        try container.encodeIfPresent(orderNumber, forKey: .orderNumber)
         try container.encode(orderItemId, forKey: .orderItemId)
         try container.encode(organizationId, forKey: .organizationId)
         try container.encode(listingId, forKey: .listingId)

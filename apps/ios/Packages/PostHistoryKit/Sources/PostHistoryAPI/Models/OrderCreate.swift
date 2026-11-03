@@ -10,19 +10,24 @@ import Foundation
 public struct OrderCreate: Sendable, Codable, Hashable {
 
     public static let itemsRule = ArrayRule(minItems: 1, maxItems: 20, uniqueItems: false)
+    public static let purchaseOrderNumberRule = StringRule(minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9](?:[A-Za-z0-9 ._/#-]{0,62}[A-Za-z0-9])?$")
     /** بند واحد لكل إدراج */
     public var items: [OrderItemInput]
     /** المجموع الذي رآه المشتري؛ إن لم يطابق `409 price_changed` بلا أثر */
     public var expectedTotal: Money?
+    /** رقم أمر الشراء لدى المشتري، اختياري (ADR 0100): حروف لاتينية وأرقام و« ._/#-»، يبدأ وينتهي بحرف أو رقم، بلا محارف تحكم أو اتجاه. يُحفظ مع الطلب ويظهر في فاتورته، ولا يتغيّر بعد الإنشاء. يُكتب ولا يدخل حدثًا ولا إشعارًا. */
+    public var purchaseOrderNumber: String?
 
-    public init(items: [OrderItemInput], expectedTotal: Money? = nil) {
+    public init(items: [OrderItemInput], expectedTotal: Money? = nil, purchaseOrderNumber: String? = nil) {
         self.items = items
         self.expectedTotal = expectedTotal
+        self.purchaseOrderNumber = purchaseOrderNumber
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case items
         case expectedTotal = "expected_total"
+        case purchaseOrderNumber = "purchase_order_number"
     }
 
     // Encodable protocol methods
@@ -31,6 +36,7 @@ public struct OrderCreate: Sendable, Codable, Hashable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(items, forKey: .items)
         try container.encodeIfPresent(expectedTotal, forKey: .expectedTotal)
+        try container.encodeIfPresent(purchaseOrderNumber, forKey: .purchaseOrderNumber)
     }
 }
 
