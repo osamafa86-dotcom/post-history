@@ -18,7 +18,7 @@ import { newResult, finish, writeResult, parseArgs, banner } from "../lib/measur
 import { byName } from "../lib/catalog.mjs";
 import { client, eventsOfType } from "../lib/live.mjs";
 import { freshFetch } from "../lib/http.mjs";
-import { totp } from "../lib/totp.mjs";
+import { TOTP_STEP_MS, totp, totpStep } from "../lib/totp.mjs";
 import { SoftAuthenticator } from "../lib/webauthn-soft.mjs";
 
 let logSource = null;
@@ -27,6 +27,15 @@ export const setLogSource = (fn) => { logSource = fn; };
 
 // the RFC 4648 alphabet: A–Z then 2–7
 const BASE32 = String.fromCharCode(...Array.from({ length: 26 }, (_, i) => 65 + i)) + "234567";
+// ADR 0113: the server claims (account, time step) for every accepted code, so each use here takes a step not used yet
+const usedSteps = new Set();
+function freshTotp(secretHex) {
+  const now = totpStep();
+  const step = [now, now + 1, now - 1].find((s) => !usedSteps.has(s)) ?? now;
+  usedSteps.add(step);
+  return totp(secretHex, step * TOTP_STEP_MS);
+}
+
 /** RFC 4648 base32 (no padding) to hex, the form lib/totp.mjs takes. */
 export function base32ToHex(text) {
   let bits = 0, value = 0;
@@ -82,13 +91,16 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
   check("the same link a second time is 401", (await complete()).status === 401);
   const secretHex = typeof secretB32 === "string" ? base32ToHex(secretB32) : null;
   const confirm = secretHex
-    ? await http.call(done.body.session.access_token, "POST", "/auth/totp/confirm", { body: { totp_code: totp(secretHex) }, key: null })
+    ? await http.call(done.body.session.access_token, "POST", "/auth/totp/confirm", { body: { totp_code: freshTotp(secretHex) }, key: null })
     : { status: 0 };
   const full = confirm.body?.access_token;
   check("confirming the new TOTP gives a full session", confirm.status === 200 && typeof full === "string", `status ${confirm.status}`);
 
   // ---------- 2. backup codes ----------
-  const gen = full ? await http.call(full, "POST", "/auth/recovery-codes", { key: null }) : { status: 0 };
+  // ADR 0113: the password and TOTP again before codes are generated, as before a passkey
+  const gen = full && secretHex
+    ? await http.call(full, "POST", "/auth/recovery-codes", { body: { password, totp_code: freshTotp(secretHex) }, key: null })
+    : { status: 0 };
   const codes = Array.isArray(gen.body?.codes) ? gen.body.codes : [];
   secrets.push(...codes);
   check("ten backup codes are shown once", gen.status === 200 && codes.length === 10 && codes.every((c) => /^[A-Z2-7]{12}$/.test(c)), `status ${gen.status}`);
@@ -105,7 +117,7 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
   else if (!full || !secretHex) skip("passkeys", "no full session after the reset");
   else {
     const device = new SoftAuthenticator(env.ACCT_ORIGIN);
-    const options = await http.call(full, "POST", "/auth/passkeys/registration-options", { body: { password, totp_code: totp(secretHex) }, key: null });
+    const options = await http.call(full, "POST", "/auth/passkeys/registration-options", { body: { password, totp_code: freshTotp(secretHex) }, key: null });
     if (options.status === 404) skip("passkeys", "passkeys are off on this server (no WEBAUTHN_RP_ID)");
     else {
       const challenge = options.body?.public_key?.challenge;
