@@ -28,6 +28,7 @@ import { pageLimits } from "@/lib/admin-policy";
 import { safeRule } from "@/lib/notification-policy";
 import { manageForms } from "./form-admin";
 import { formBodyLimit } from "@/lib/form-admin";
+import { adminRead, adminReadPath } from "./admin";
 import { completeInvite, confirmInvite } from "./invite";
 
 const privateHeaders = { "Cache-Control": "private, no-store, max-age=0", "Pragma": "no-cache", "Vary": "Cookie" };
@@ -108,7 +109,8 @@ export async function handle(request: NextRequest, path: string, deps?: { config
       if (path === "forms") return manageForms(request, api, me, isPost ? await bodyOf(request, formBodyLimit) : undefined);
       if (isWrite && uploadPath(path, request.method)) return uploadAction(request, path, api, me, await bodyOf(request, uploadBodyLimit(path)), config!);
       // نصوص القالب ثنائية اللغة حتى 4000 حرف لكل حقل؛ أكبر من حد إجراءات المراجعة.
-      if (isWrite) return reviewAction(request, path, api, me, await bodyOf(request, path.startsWith("license-templates") ? 65536 : /^materials\/[0-9a-f-]{36}\/listing$/i.test(path) ? 262144 : 8192), config!);
+      // القائمة المقترحة حتى 50 وسمًا بأربعين نقطة ترميز (حتى 4 بايتات لكلٍّ منها) تتجاوز 8 KiB.
+      if (isWrite) return reviewAction(request, path, api, me, await bodyOf(request, path.startsWith("license-templates") ? 65536 : /^materials\/[0-9a-f-]{36}\/listing$/i.test(path) ? 262144 : path === "tag-suggestions" ? 16384 : 8192), config!);
       if (path === "auth/me") return json(safeMe(me));
       if (path === "admin/settings/reporter-identity") {
         if (!hasRole(me, "system_admin")) throw new WebError(403, "request_failed");
@@ -116,6 +118,7 @@ export async function handle(request: NextRequest, path: string, deps?: { config
         return json(safeIdentitySetting(requireOk(await api.GET("/admin/settings/reporter-identity"))));
       }
       if (earningsPath(path)) return earningsRead(request, path, api, me);
+      if (adminReadPath(path)) return adminRead(request, path, api, me);
       if (assignmentPath(path)) return assignmentRead(request, path, api, me, config!);
       const permissionHistory = /^users\/([^/]+)\/permissions\/history$/.exec(path);
       if (permissionHistory && uuid.test(permissionHistory[1])) {

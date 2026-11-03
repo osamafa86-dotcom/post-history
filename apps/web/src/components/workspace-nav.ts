@@ -11,6 +11,9 @@ import { templateRoles } from "@/lib/license-policy";
 import { formReaders } from "@/lib/form-admin";
 import { workName } from "@/lib/work-name";
 import { myTaskRoles } from "@/lib/assignment-policy";
+import { tagAdmins } from "@/lib/tag-policy";
+import { platformAdmins } from "@/lib/platform-policy";
+import { staffReaders } from "@/lib/staff-policy";
 import { archiveRoles } from "@/lib/archive";
 import type { IconName } from "./icon";
 
@@ -20,7 +23,8 @@ export type NavItem = { key: string; href: string; label: string; short: string;
 /**
  * وجهات التنقّل بحسب الدور (W1، `Web/Sidebar`): ثلاث مجموعات (غرفة الأخبار، المكتبة، الإدارة) بالصفحات القائمة وحدها، وبند واحد نشط
  * (`aria-current="page"`). الشريط لا يعرض ما لا يملكه الدور (E5)؛ وحساب المشتري لا يرى غير المتجر ومؤسسته.
- * لا تُضاف وجهة لصفحة لم تُبنَ (المحرر العاجل والوسوم: ADR 0090). «المهام» لفريق الإنتاج (W5، ADR 0097)، و«الأرشيف الجاهز» لطاقم غرفة الأخبار (W9، ADR 0103).
+ * لا تُضاف وجهة لصفحة لم تُبنَ (المحرر العاجل: ADR 0090). «المهام» لفريق الإنتاج (W5، ADR 0097)، و«الأرشيف الجاهز» لطاقم غرفة الأخبار (W9، ADR 0103).
+ * الإدارة بترتيب إطارات A1–A6: المستخدمون، الوسوم، النماذج، المال، الإعدادات، ثم المؤسسات والقواعد والعمولة والتعارض (ADR 0102).
  */
 export function navItems(me: Me, locale: Locale, pathname: string): NavItem[] {
   const m = messages[locale], short = m.shell.short as Record<string, string>, path = pathname.replace(/^\/(ar|en)(?=\/|$)/, ""), ends = (page: string) => path === `/${page}` || path.startsWith(`/${page}/`);
@@ -49,11 +53,13 @@ export function navItems(me: Me, locale: Locale, pathname: string): NavItem[] {
     ...(has("system_admin", "finance", "rights_officer") ? [item("licenses", m.licenses.nav, licenses, "library", "license", "store/licenses")] : []),
     ...(has("system_admin", "finance") ? [item("orders", m.orders.staffNav, /^\/store\/orders(\/|$)/.test(path), "library", "orders", "store/orders")] : []),
     ...(hasRole(me, ...templateRoles) ? [item("license-templates", m.templates.nav, ends("license-templates"), "library", "template")] : []),
-    ...(has("system_admin") ? [item("admin", m.admin.title, ends("admin"), "admin", "users")] : []),
-    ...(hasRole(me, ...formReaders) ? [item("forms", m.formsAdmin.title, ends("forms"), "admin", "form")] : []),
-    ...(has("system_admin", "editor_in_chief") ? [item("notification-rules", m.rules.title, ends("notification-rules"), "admin", "rules")] : []),
+    ...(hasRole(me, ...staffReaders) ? [item("admin", m.admin.nav, ends("admin"), "admin", "users")] : []),
+    ...(hasRole(me, ...tagAdmins) ? [item("tags", m.tags.nav, ends("tags"), "admin", "tag")] : []),
+    ...(hasRole(me, ...formReaders) ? [item("forms", m.formsAdmin.nav, ends("forms"), "admin", "form")] : []),
+    ...(hasRole(me, ...payoutStaff) ? [item("payouts", m.payouts.nav, ends("payouts"), "admin", "money")] : []),
+    ...(hasRole(me, ...platformAdmins) ? [item("settings", m.settings.nav, ends("settings"), "admin", "settings")] : []),
     ...(hasRole(me, ...organizationAdmins) ? [item("buyer-organizations", m.buyers.nav, ends("buyer-organizations"), "admin", "org")] : []),
-    ...(hasRole(me, ...payoutStaff) ? [item("payouts", m.payouts.nav, ends("payouts"), "admin", "payout")] : []),
+    ...(has("system_admin", "editor_in_chief") ? [item("notification-rules", m.rules.title, ends("notification-rules"), "admin", "rules")] : []),
     ...(hasRole(me, ...commissionReaders) ? [item("commission-rules", m.commission.nav, ends("commission-rules"), "admin", "percent")] : []),
     ...(hasRole(me, ...conflictRoles) ? [item("invite-conflicts", m.conflicts.nav, ends("invite-conflicts"), "admin", "conflict")] : []),
   ];

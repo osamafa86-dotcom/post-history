@@ -21,12 +21,12 @@ export function payoutWord(state: PayoutRequest["state"]): { tone: "ok" | "dange
 }
 
 /**
- * لافتة المال الثابتة (ADR 0103): نص بيئة الدفع التجريبية نفسه في المتجر (`store.cartPage.sandbox`)، وسطر A4 «لا صرف حقيقي قبل اعتماد تجربة
- * الصرف». لا تُخفى ولا تُغلق ما دام المزوّد تجريبيًا (قرار المالك 2026-10-21).
+ * لافتة المال الثابتة (ADR 0103): نصّ المتجر نفسه (`store.cartPage.sandbox`) ونصّ لوحة المال في الإدارة نفسه (`money.sandbox`، A4 في ADR 0102)،
+ * لا صياغة ثالثة. لا تُخفى ولا تُغلق ما دام المزوّد تجريبيًا (قرار المالك 2026-10-21).
  */
 export function SandboxBanner({ locale }: { locale: Locale }) {
   const m = messages[locale];
-  return <div className="notice attention sandbox-banner" role="note" data-testid="sandbox-banner"><strong>{m.store.cartPage.sandbox}</strong><p>{m.earnings.sandbox}</p></div>;
+  return <div className="notice attention sandbox-banner" role="note" data-testid="sandbox-banner"><strong>{m.store.cartPage.sandbox}</strong><p>{m.money.sandbox}</p></div>;
 }
 
 /** «أرباحي» (ADR 0033، وv2 في ADR 0103): الأرصدة من الدفتر مؤشّراتٍ، وطلب صرف تجريبي بلا بيانات حساب، وطلباتي والكشف بحصّة المراسل وحدها. */
@@ -65,7 +65,7 @@ export function EarningsPage({ locale }: { locale: Locale }) {
       : <>{!summary.balances.length ? <EmptyState icon="money" testId="earnings-empty" title={t.noBalance}><p>{t.noBalanceBody}</p></EmptyState> : <Balances locale={locale} summary={summary} />}
         <p className="caption earnings-formula">{t.formula}</p>
         <div className="earnings-columns">
-          <section className="card" aria-labelledby="payout-title"><h2 id="payout-title">{t.requestTitle}</h2>
+          <section className="card" aria-labelledby="payout-title"><h2 id="payout-title">{t.requestTitle}</h2><p className="caption">{t.sandbox}</p>
             {!summary.balances.length ? <p className="muted">{t.nothingToRequest}</p> : <form className="payout-form" noValidate onSubmit={e => { e.preventDefault(); void request(); }}>
               <div className="rule-row"><label>{t.currency}<select value={currency} onChange={e => setCurrency(e.target.value as Currency)}>{summary.balances.map(b => <option key={b.currency} value={b.currency}>{b.currency}</option>)}</select></label>
                 <label>{t.amount}<input type="number" min={0} step="0.01" dir="ltr" inputMode="decimal" value={amount} aria-invalid={invalid || undefined} aria-describedby="payout-limits" onChange={e => setAmount(e.target.value)} /></label></div>

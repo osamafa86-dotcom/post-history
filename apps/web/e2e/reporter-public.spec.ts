@@ -33,7 +33,7 @@ test("«موادي» is a gallery: cards with three separate states, coverage gr
 
 test("«أرباحي» carries the store's fixed trial wording and its tables become records on the phone", async ({ page }) => {
   await login(page, "reporter", "en"); await page.goto("/en/earnings");
-  const banner = page.getByTestId("sandbox-banner"); await expect(banner).toContainText(en.store.cartPage.sandbox); await expect(banner).toContainText(en.earnings.sandbox);
+  const banner = page.getByTestId("sandbox-banner"); await expect(banner).toContainText(en.store.cartPage.sandbox); await expect(banner).toContainText(en.money.sandbox);
   await expect(page.getByRole("region", { name: "USD" }).locator(".kpi")).toHaveCount(4); await expect(page.getByText(en.earnings.formula)).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 800 }); expect(await noSideScroll(page)).toBe(true);
   await page.setViewportSize({ width: 375, height: 812 }); expect(await noSideScroll(page)).toBe(true);

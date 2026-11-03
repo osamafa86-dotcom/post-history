@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import ar from "../messages/ar.json" with { type: "json" };
 import en from "../messages/en.json" with { type: "json" };
+const publishLabel = (t: typeof ar.formsAdmin, version: number) => t.publishVersion.replace("{version}", String(version));
 
 async function login(page: Page, role = "admin", locale: "ar" | "en" = "ar") {
   const m = locale === "ar" ? ar : en;
@@ -8,10 +9,10 @@ async function login(page: Page, role = "admin", locale: "ar" | "en" = "ar") {
   await expect(page.getByTestId("material-row")).toHaveCount(50); await page.goto(`/${locale}/forms`);
   if (["admin", "chief"].includes(role)) await expect(page.getByRole("combobox", { name: m.formsAdmin.version, exact: true })).toHaveValue("1");
 }
-async function publish(page: Page, locale: "ar" | "en" = "ar") {
+async function publish(page: Page, locale: "ar" | "en" = "ar", version = 2) {
   const m = locale === "ar" ? ar : en, t = m.formsAdmin;
   await page.getByRole("button", { name: t.preview, exact: true }).click();
-  await page.getByRole("button", { name: t.publish, exact: true }).click();
+  await page.getByRole("button", { name: publishLabel(t, version), exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: m.confirm, exact: true }).click();
 }
 test.beforeEach(async ({ request }) => { await request.post("http://127.0.0.1:3201/__test/reset"); });
@@ -34,14 +35,15 @@ test("publishes a searchable field after preview and preserves the original vers
   await expect(preview.getByLabel("Detail", { exact: false })).toHaveCount(0);
   await preview.getByLabel("Category", { exact: false }).selectOption("other");
   await expect(preview.getByLabel("Detail", { exact: false })).toBeVisible();
-  await page.getByRole("button", { name: t.publish, exact: true }).click();
+  await expect(page.getByTestId("core-field").filter({ hasText: t.core.location.label })).toContainText(t.encrypted);
+  await page.getByRole("button", { name: publishLabel(t, 2), exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: ar.confirm, exact: true }).click();
   await expect(page.getByRole("combobox", { name: t.version, exact: true })).toHaveValue("2");
   const snapshots = await page.evaluate(async () => ({ current: await (await fetch("/api/bff/forms/current")).json(), old: await (await fetch("/api/bff/forms/1")).json(), list: await (await fetch("/api/bff/forms")).json() }));
   expect(snapshots.current.fields[0].searchable).toBe(true); expect(snapshots.current.fields[0].label.en).toBe("New headline"); expect(JSON.stringify(snapshots)).not.toContain("PREVIEW_ONLY");
   expect(snapshots.old.fields[0].label.en).toBe("Headline"); expect(snapshots.list.items.map((i: { version: number }) => i.version)).toEqual([2, 1]);
   await page.getByRole("combobox", { name: t.version, exact: true }).selectOption("1"); await expect(page.getByRole("region", { name: t.preview }).getByLabel("Headline", { exact: false })).toBeVisible();
-  await page.getByRole("button", { name: t.clone }).click(); await expect(page.getByRole("heading", { name: `${t.draft} 3` })).toBeVisible();
+  await page.getByRole("button", { name: t.clone }).click(); await expect(page.getByRole("heading", { level: 1, name: t.titleDraft.replace("{title}", t.titleV2).replace("{version}", "3") })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -56,9 +58,10 @@ test("edits types and ordering, catches invalid schema, and requires a fresh pre
   await page.getByRole("button", { name: t.preview, exact: true }).click(); await expect(page.getByText(t.invalid, { exact: true })).toBeVisible();
   await labels.nth(1).getByLabel(t.arabic).fill("محلي"); await labels.nth(1).getByLabel(t.english).fill("Local");
   await field.getByLabel(t.searchable, { exact: true }).check(); await field.getByRole("button", { name: t.up, exact: true }).click();
-  const moved = page.getByTestId("field-editor").nth(12); await expect(moved.getByLabel(t.key, { exact: true })).toHaveValue("distribution");
-  await page.getByRole("button", { name: t.preview, exact: true }).click(); await expect(page.getByRole("button", { name: t.publish, exact: true })).toBeVisible();
-  await moved.getByLabel(t.searchable, { exact: true }).uncheck(); await expect(page.getByRole("button", { name: t.publish, exact: true })).toHaveCount(0);
+  const moved = page.getByTestId("field-editor"); await expect(moved.getByLabel(t.key, { exact: true })).toHaveValue("distribution");
+  await expect(page.getByTestId("field-row").nth(12)).toContainText("distribution"); await expect(page.getByTestId("field-row").nth(12)).toHaveAttribute("class", /selected/);
+  await page.getByRole("button", { name: t.preview, exact: true }).click(); await expect(page.getByRole("button", { name: publishLabel(t, 2), exact: true })).toBeVisible();
+  await moved.getByLabel(t.searchable, { exact: true }).uncheck(); await expect(page.getByRole("button", { name: publishLabel(t, 2), exact: true })).toHaveCount(0);
   await publish(page, "en"); await expect(page.getByRole("combobox", { name: t.version, exact: true })).toHaveValue("2");
   await page.screenshot({ path: ".artifacts/forms-admin-en.png", fullPage: true });
 });
@@ -67,7 +70,7 @@ test("a lost publication response reuses the same idempotency key without a seco
   await login(page); const t = ar.formsAdmin;
   await page.getByRole("button", { name: t.clone }).click(); await request.post("http://127.0.0.1:3201/__test/drop-write");
   await publish(page); await expect(page.getByText(ar.review.failed, { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: t.publish, exact: true }).click(); await page.getByRole("dialog").getByRole("button", { name: ar.confirm, exact: true }).dblclick();
+  await page.getByRole("button", { name: publishLabel(t, 2), exact: true }).click(); await page.getByRole("dialog").getByRole("button", { name: ar.confirm, exact: true }).dblclick();
   await expect(page.getByRole("combobox", { name: t.version, exact: true })).toHaveValue("2");
   const state = await (await request.get("http://127.0.0.1:3201/__test/state")).json();
   const writes = state.writes.filter((w: { path: string }) => w.path === "/v1/forms"); expect(writes).toHaveLength(2); expect(writes[0].key).toBe(writes[1].key);
@@ -83,7 +86,7 @@ test("concurrent publication keeps the stale draft; reload requires confirmation
   }); expect(status).toBe(201);
   await publish(page); await expect(page.getByText(ar.review.changed, { exact: true })).toBeVisible();
   await expect(page.getByTestId("field-editor").first().getByRole("group", { name: t.label, exact: true }).getByLabel(t.arabic)).toHaveValue("مسودة محفوظة");
-  await page.getByRole("button", { name: t.discard }).click(); await page.getByRole("dialog").getByRole("button", { name: ar.cancel, exact: true }).click(); await expect(page.getByTestId("field-editor")).toHaveCount(13);
+  await page.getByRole("button", { name: t.discard }).click(); await page.getByRole("dialog").getByRole("button", { name: ar.cancel, exact: true }).click(); await expect(page.getByTestId("field-row")).toHaveCount(13); await expect(page.getByTestId("field-editor")).toHaveCount(1);
   await page.getByRole("button", { name: t.discard }).click(); await page.getByRole("dialog").getByRole("button", { name: ar.confirm, exact: true }).click(); await expect(page.getByRole("combobox", { name: t.version, exact: true })).toHaveValue("2");
   await expect(page.locator("main")).not.toContainText("never-display-canary");
 });

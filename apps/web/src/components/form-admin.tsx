@@ -10,20 +10,36 @@ import type { Field, Form, MaterialType } from "@/lib/types";
 import { useMutation } from "@/lib/use-mutation";
 import { ActionStatus } from "./action-status";
 import { DynamicForm } from "./dynamic-form";
+import { ConfirmDialog } from "./admin-parts";
+import { Icon, type IconName } from "./icon";
+import { fill } from "@/lib/admin-text";
 import { useUser } from "./session-boundary";
 
+const typeIcons: Record<Field["type"], IconName> = { short_text: "text", long_text: "pencil", number: "hash", select: "check", multi_select: "list", datetime: "calendar", location: "pin", boolean: "toggle", staff_member: "user", attachment: "clip" };
+/** حقول العقد في إرسالة المراسل (`MaterialCreate`): تُعرض ثابتة لا تُحذف ولا تُعدَّل من هنا؛ نصّها في تطبيق المراسل. */
+const coreFields = [
+  { key: "title", icon: "text", required: true }, { key: "material_types", icon: "list", required: true }, { key: "tags", icon: "tag", required: true },
+  { key: "location", icon: "pin", required: true, encrypted: true }, { key: "shot_at", icon: "clock", required: false }, { key: "priority", icon: "bolt", required: true },
+  { key: "sensitivity", icon: "alert", required: true }, { key: "display_name", icon: "user", required: true },
+] as const satisfies readonly { key: string; icon: IconName; required: boolean; encrypted?: boolean }[];
+
+/**
+ * منشئ النماذج (A3): ثلاث لوحات كما في الإطار، أنواع الحقول ثم الحقول ثم إعدادات الحقل المحدد. حقول العقد ثابتة و«المكان» موسوم
+ * «مشفّر»، وحقول النموذج تُضاف من لوحة الأنواع وتُرتَّب بزرّين. الإصدار لقطة كاملة: «نشر الإصدار N» بعد المعاينة وبتأكيد، و`If-Match` من
+ * الإصدار السابق، والتغيير يسري على الإرسالات الجديدة وحدها. «يظهر في الإرسال العاجل» و«يُرسل إلى المتجر» ليسا في العقد فلا يُرسمان.
+ */
 export function FormAdmin({ locale }: { locale: Locale }) {
   const m = messages[locale], t = m.formsAdmin, me = useUser(), allowed = hasRole(me, ...formReaders), writer = hasRole(me, ...formWriters), mutation = useMutation();
   const [items, setItems] = useState<FormSummary[] | null>(null), [current, setCurrent] = useState<Form | null>(null), [selected, setSelected] = useState<Form | null>(null);
   const [attempt, setAttempt] = useState(0), [error, setError] = useState(false), [reading, setReading] = useState(false), sequence = useRef({ value: 0 });
   const [draft, setDraft] = useState<Form | null>(null), [preview, setPreview] = useState<Form | null>(null), [invalid, setInvalid] = useState(false), [oversize, setOversize] = useState(false);
-  const [confirm, setConfirm] = useState<"publish" | "discard" | null>(null);
+  const [confirm, setConfirm] = useState<"publish" | "discard" | null>(null), [active, setActive] = useState(0);
   const [previewType, setPreviewType] = useState<MaterialType>("report"), [previewLocale, setPreviewLocale] = useState<Locale>(locale);
   useEffect(() => {
     if (!allowed) return;
     const counter = sequence.current, controller = new AbortController(), seq = ++counter.value;
     void Promise.all([browserApi().GET("/forms", { signal: controller.signal }).then(dataOrThrow), browserApi().GET("/forms/current", { signal: controller.signal }).then(result => result.response.status === 404 ? null : dataOrThrow(result))])
-      .then(([list, latest]) => { if (!controller.signal.aborted && counter.value === seq) { setItems(list.items); setCurrent(latest); setSelected(latest); setError(false); } })
+      .then(([list, latest]) => { if (!controller.signal.aborted && counter.value === seq) { setItems(list.items); setCurrent(latest); setSelected(latest); setActive(0); setError(false); } })
       .catch(() => { if (!controller.signal.aborted && counter.value === seq) setError(true); });
     return () => { controller.abort(); counter.value++; };
   }, [allowed, attempt]);
@@ -33,7 +49,7 @@ export function FormAdmin({ locale }: { locale: Locale }) {
     const seq = ++sequence.current.value; setReading(true); setError(false);
     try {
       const value = dataOrThrow(await browserApi().GET("/forms/{version}", { params: { path: { version } } }));
-      if (sequence.current.value === seq) setSelected(value);
+      if (sequence.current.value === seq) { setSelected(value); setActive(0); }
     } catch { if (sequence.current.value === seq) setError(true); }
     finally { if (sequence.current.value === seq) setReading(false); }
   }
@@ -52,34 +68,69 @@ export function FormAdmin({ locale }: { locale: Locale }) {
       setDraft(null); setPreview(null); setItems(null); setSelected(null); setAttempt(n => n + 1);
     }
   }
-  const shown = draft ? preview : selected;
+  function add(type: Field["type"]) {
+    if (!draft) return;
+    let n = draft.fields.length + 1; while (draft.fields.some(f => f.key === `field_${n}`)) n++;
+    edit({ ...draft, fields: [...draft.fields, newField(type, `field_${n}`)] }); setActive(draft.fields.length);
+  }
+  function move(index: number, delta: number) {
+    if (!draft) return;
+    const fields = [...draft.fields]; [fields[index], fields[index + delta]] = [fields[index + delta], fields[index]];
+    edit({ ...draft, fields }); setActive(index + delta);
+  }
+  const form = draft ?? selected, shown = draft ? preview : selected, fields = form?.fields ?? [], index = Math.min(active, Math.max(0, fields.length - 1)), field = fields[index];
+  const version = draft ? draft.version : selected?.version;
   return <>
-    <div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p>{!writer && <p className="notice">{t.readOnly}</p>}</div>
-      {!draft && writer && items && !error && <button disabled={reading} onClick={() => { mutation.clearStatus(); edit(nextForm(selected, current?.version ?? 0)); }}>{selected ? t.clone : t.create}</button>}
-    </div>
+    <div className="page-head"><div><h1>{version ? fill(draft ? t.titleDraft : t.titleVersion, { title: t.titleV2, version }) : t.titleV2}</h1><p className="muted">{t.leadV2}</p>{!writer && <p className="notice">{t.readOnly}</p>}</div>
+      <div className="page-actions">
+        {!draft && writer && items && !error && <button type="button" disabled={reading} onClick={() => { mutation.clearStatus(); edit(nextForm(selected, current?.version ?? 0)); setActive(0); }}>{selected ? t.clone : t.create}</button>}
+        {draft && <><button type="button" className={preview ? "secondary" : undefined} disabled={mutation.busy} onClick={review}>{t.preview}</button>
+          {preview && <button type="button" disabled={mutation.busy || mutation.status === 409 || mutation.status === 412} onClick={() => setConfirm("publish")}>{fill(t.publishVersion, { version: draft.version })}</button>}
+          <button type="button" className="secondary" disabled={mutation.busy} onClick={() => setConfirm("discard")}>{t.discard}</button></>}
+      </div></div>
     <ActionStatus status={mutation.status} locale={locale} />
-    {error && <p className="notice error" role="alert">{m.error} <button disabled={!!draft} onClick={() => { setItems(null); setAttempt(n => n + 1); }}>{m.retry}</button></p>}
-    {!items && !error && <p role="status">{m.loading}</p>}
-    {items && !draft && <section className="card"><h2>{t.history}</h2>{items.length === 0 ? <p>{t.empty}</p> : <>
-      <label>{t.version}<select value={selected?.version ?? ""} disabled={reading} onChange={e => void select(Number(e.target.value))}>{items.map(item => <option key={item.version} value={item.version}>{item.version}{item.version === current?.version ? ` · ${t.current}` : ""}</option>)}</select></label>
-      {selected && <p className="muted">{t.fieldCount}: {selected.fields.length} · {t.publishedAt}: {formatDate(selected.published_at, locale)}</p>}
-      {reading && <p role="status">{m.loading}</p>}
-    </>}</section>}
-    {draft && <section className="card form-editor"><h2>{t.draft} {draft.version}</h2><p>{t.immutable}</p>
-      <fieldset disabled={mutation.busy} className="form-editor-controls">
-        <MaterialChecks locale={locale} value={draft.material_types ?? []} change={types => edit({ ...draft, material_types: types })} />
-        {draft.fields.map((field, index) => <FieldEditor key={index} locale={locale} field={field} index={index} fields={draft.fields}
-          change={next => edit({ ...draft, fields: draft.fields.map((f, i) => i === index ? next : f) })}
-          remove={() => edit({ ...draft, fields: draft.fields.filter((_, i) => i !== index) })}
-          move={delta => { const fields = [...draft.fields]; [fields[index], fields[index + delta]] = [fields[index + delta], fields[index]]; edit({ ...draft, fields }); }} />)}
-        <button className="secondary" onClick={() => { let n = draft.fields.length + 1; while (draft.fields.some(f => f.key === `field_${n}`)) n++; edit({ ...draft, fields: [...draft.fields, newField("short_text", `field_${n}`)] }); }}>{t.addField}</button>
-        <p className="muted">{t.v0}</p><p className="muted">{t.searchHelp}</p>
-        {invalid && <p className="notice error" role="alert">{t.invalid}</p>}
-        {oversize && <p className="notice error" role="alert">{t.tooLarge}</p>}
-        <div className="actions"><button onClick={review}>{t.preview}</button><button className="secondary" onClick={() => setConfirm("discard")}>{t.discard}</button></div>
-      </fieldset>
-      {(mutation.status === 409 || mutation.status === 412) && <p className="notice">{t.conflictHelp}</p>}
-    </section>}
+    {(mutation.status === 409 || mutation.status === 412) && <p className="notice">{t.conflictHelp}</p>}
+    {error && <p className="notice error" role="alert">{m.error} <button type="button" className="link-button" disabled={!!draft} onClick={() => { setItems(null); setAttempt(n => n + 1); }}>{m.retry}</button></p>}
+    {!items && !error && <p role="status" className="muted">{m.loading}</p>}
+    {items && !draft && <div className="form-history">{items.length === 0 ? <p className="muted">{t.empty}</p> : <>
+      <label className="inline-filter">{t.version}<select value={selected?.version ?? ""} disabled={reading} onChange={e => void select(Number(e.target.value))}>{items.map(item => <option key={item.version} value={item.version}>{item.version}{item.version === current?.version ? ` · ${t.current}` : ""}</option>)}</select></label>
+      {selected && <p className="caption">{t.fieldCount}: {selected.fields.length} · {t.publishedAt}: {formatDate(selected.published_at, locale)}</p>}
+      {reading && <p role="status" className="caption">{m.loading}</p>}
+    </>}</div>}
+    {draft && <p className="notice">{t.immutable}</p>}
+    {invalid && <p className="notice error" role="alert">{t.invalid}</p>}
+    {oversize && <p className="notice error" role="alert">{t.tooLarge}</p>}
+    {form && <div className="form-builder">
+      <section className="card palette" aria-labelledby="palette-title"><h2 id="palette-title">{t.palette}</h2>
+        <ul className="palette-list">{fieldTypes.map(type => <li key={type}><button type="button" className="palette-item" disabled={!draft || mutation.busy || type === "location"} aria-label={fill(t.addType, { type: t.types[type] })} onClick={() => add(type)}><Icon name={typeIcons[type]} size={16} /><span>{t.types[type]}</span></button></li>)}</ul>
+        {(draft || writer) && <p className="caption">{draft ? t.v0 : t.paletteHelp}</p>}
+      </section>
+      <section className="card fields-pane" aria-labelledby="fields-title"><h2 id="fields-title">{t.fieldsTitle}</h2>
+        <h3 className="pane-sub"><Icon name="lock" size={14} />{t.contractFields}</h3>
+        <ul className="field-rows core">{coreFields.map(core => <li key={core.key} className="field-row core" data-testid="core-field"><span className="field-icon"><Icon name={core.icon} size={16} /></span>
+          <span className="field-text"><strong>{t.core[core.key].label}</strong><small className="muted">{t.core[core.key].hint}</small></span>
+          <span className="field-badges">{"encrypted" in core && core.encrypted && <span className="badge state ok"><Icon name="lock" size={14} />{t.encrypted}</span>}<RequiredBadge locale={locale} required={core.required} /></span></li>)}</ul>
+        <p className="caption">{t.contractNote}</p>
+        <h3 className="pane-sub">{t.dynamicFields}</h3>
+        {!fields.length ? <p className="empty">{t.noFields}</p> : <ol className="field-rows">{fields.map((item, i) => <li key={i} className={`field-row${i === index ? " selected" : ""}`} data-testid="field-row">
+          <button type="button" className="field-select" aria-pressed={i === index} onClick={() => setActive(i)}><span className="field-icon"><Icon name={typeIcons[item.type]} size={16} /></span>
+            <span className="field-text"><strong>{item.label[locale] || item.key || fill(t.untitled, { n: i + 1 })}</strong><small className="muted">{t.types[item.type]} · <bdi dir="ltr">{item.key}</bdi></small></span></button>
+          <span className="field-badges">{item.searchable && <span className="badge state brand"><Icon name="search" size={14} />{t.searchable}</span>}<RequiredBadge locale={locale} required={item.required} /></span>
+          {draft && <span className="row-buttons"><button type="button" className="icon-button small-icon" disabled={i === 0 || mutation.busy} aria-label={fill(t.moveUpField, { field: item.key })} onClick={() => move(i, -1)}><Icon name="chevron" size={16} /></button><button type="button" className="icon-button small-icon down" disabled={i === fields.length - 1 || mutation.busy} aria-label={fill(t.moveDownField, { field: item.key })} onClick={() => move(i, 1)}><Icon name="chevron" size={16} /></button></span>}
+        </li>)}</ol>}
+        {draft && <button type="button" className="quiet add-field" disabled={mutation.busy} onClick={() => add("short_text")}><Icon name="plus" size={16} /> {t.addField}</button>}
+      </section>
+      <section className="card field-settings" aria-labelledby="settings-title"><h2 id="settings-title">{t.settingsTitle}</h2>
+        {!field ? <p className="muted">{t.selectField}</p>
+          : draft ? <fieldset disabled={mutation.busy} className="form-editor-controls"><FieldEditor key={index} locale={locale} field={field} index={index} fields={draft.fields}
+            change={next => edit({ ...draft, fields: draft.fields.map((f, i) => i === index ? next : f) })}
+            remove={() => { edit({ ...draft, fields: draft.fields.filter((_, i) => i !== index) }); setActive(Math.max(0, index - 1)); }}
+            move={delta => move(index, delta)} /></fieldset>
+          : <FieldSummary locale={locale} field={field} />}
+        {draft && <MaterialChecks locale={locale} value={draft.material_types ?? []} change={types => edit({ ...draft, material_types: types })} />}
+        {draft && <p className="caption">{t.searchHelp}</p>}
+      </section>
+    </div>}
     {shown && !reading && <section className="card form-admin-preview" aria-label={t.preview}>
       <h2>{t.preview} · {t.version} {shown.version}</h2><p className="muted">{t.previewHelp}</p>
       <div className="rule-row"><label>{t.previewLanguage}<select value={previewLocale} onChange={e => setPreviewLocale(e.target.value as Locale)}><option value="ar">{t.arabic}</option><option value="en">{t.english}</option></select></label>
@@ -87,11 +138,26 @@ export function FormAdmin({ locale }: { locale: Locale }) {
       <div lang={previewLocale} dir={previewLocale === "ar" ? "rtl" : "ltr"}>
         <DynamicForm key={`${JSON.stringify(shown)}:${previewType}:${previewLocale}`} schema={shown} type={previewType} permissions={[]} locale={previewLocale} />
       </div>
-      {draft && preview && <button disabled={mutation.busy || mutation.status === 409 || mutation.status === 412} onClick={() => setConfirm("publish")}>{t.publish}</button>}
     </section>}
-    {confirm && <dialog className="modal" ref={node => { if (node && !node.open) node.showModal(); }} onCancel={() => setConfirm(null)} aria-labelledby="form-confirm-title"><h2 id="form-confirm-title">{confirm === "publish" ? t.publish : t.discard}</h2><p>{confirm === "publish" ? t.publishWarning : t.discardWarning}</p>
-      <div className="actions"><button autoFocus className="secondary" onClick={() => setConfirm(null)}>{m.cancel}</button><button disabled={mutation.busy} onClick={() => { if (confirm === "publish") void publish(); else { setConfirm(null); setDraft(null); setPreview(null); mutation.clearStatus(); setItems(null); setAttempt(n => n + 1); } }}>{m.confirm}</button></div></dialog>}
+    {confirm && <ConfirmDialog locale={locale} testId="form-confirm" title={confirm === "publish" ? fill(t.publishVersion, { version: draft?.version ?? "" }) : t.discard} confirm={m.confirm} busy={mutation.busy} status={0} onCancel={() => setConfirm(null)}
+      onConfirm={() => { if (confirm === "publish") void publish(); else { setConfirm(null); setDraft(null); setPreview(null); mutation.clearStatus(); setItems(null); setAttempt(n => n + 1); } }}>
+      <p>{confirm === "publish" ? t.publishWarning : t.discardWarning}</p>
+    </ConfirmDialog>}
   </>;
+}
+
+function RequiredBadge({ locale, required }: { locale: Locale; required: boolean }) {
+  const t = messages[locale].formsAdmin;
+  return required ? <span className="badge state ok"><Icon name="check" size={14} />{t.required}</span> : <span className="badge state muted"><Icon name="clock" size={14} />{t.optional}</span>;
+}
+
+/** إعدادات الحقل للقراءة (الإصدار المنشور أو دور القراءة): التسمية باللغتين والنوع والمفتاح والإلزام والشرط. */
+function FieldSummary({ locale, field }: { locale: Locale; field: Field }) {
+  const m = messages[locale], t = m.formsAdmin;
+  const rows: [string, React.ReactNode][] = [[t.label, <>{field.label.ar} · <bdi>{field.label.en}</bdi></>], [t.type, t.types[field.type]], [t.key, <bdi dir="ltr" key="key">{field.key}</bdi>], [t.required, field.required ? m.yes : m.no], [t.searchable, field.searchable ? m.yes : m.no]];
+  if (field.help) rows.splice(1, 0, [t.help, <>{field.help.ar} · <bdi>{field.help.en}</bdi></>]);
+  if (field.condition) rows.push([t.condition, <><bdi dir="ltr">{field.condition.field}</bdi> = <bdi dir="ltr">{String(field.condition.equals)}</bdi></>]);
+  return <dl className="metadata field-summary">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
 }
 
 function MaterialChecks({ locale, value, change }: { locale: Locale; value: MaterialType[]; change: (value: MaterialType[]) => void }) {

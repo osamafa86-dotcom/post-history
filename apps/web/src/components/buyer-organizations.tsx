@@ -9,10 +9,28 @@ import { localized } from "@/lib/store-format";
 import { buyerRoles, emptyOrganization, inputOf, memberInvite, memberManagers, organizationAdmins, organizationCreate, organizationEditors, organizationInput, organizationLimits, organizationStatuses, type InviteToken, type Member, type Organization, type OrganizationCreate, type OrganizationInput } from "@/lib/buyer-policy";
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
+import { EmptyState } from "./empty-state";
+import { Avatar, ConfirmDialog, ToneBadge } from "./admin-parts";
+import { TableSkeleton } from "./users-admin";
+import { currencySymbol } from "./money-overview";
+import { Icon } from "./icon";
+import { fill } from "@/lib/admin-text";
+import { plural, type PluralForms } from "@/lib/i18n";
+import { formatMoney } from "@/lib/store-format";
+import { plainAmount, type BuyerPurchaseTotal, type BuyerPurchaseTotalsPage } from "@/lib/finance-reports";
 
 type Status = typeof organizationStatuses[number];
+const statusTone = { active: { tone: "ok", icon: "check" }, pending_verification: { tone: "warn", icon: "pencil" }, suspended: { tone: "danger", icon: "alert" } } as const;
+export function OrganizationStatus({ status, locale, testId }: { status: Status | undefined; locale: Locale; testId?: string }) {
+  const value = status ?? "pending_verification", { tone, icon } = statusTone[value];
+  return <ToneBadge tone={tone} icon={icon} testId={testId}>{messages[locale].buyers.statuses[value]}</ToneBadge>;
+}
 
-/** لوحة مؤسسات المشترين لمدير النظام (والمالية قراءة). */
+/**
+ * المؤسسات المشترية (A5): رقاقات الحالة، وجدول بالمؤسسة والبلد والمستخدمين ومشتريات السنة (`GET /buyer-purchase-totals`، ADR 0099)
+ * والحالة بكلمة، وبطاقة «طلب انضمام» لكل مؤسسة بانتظار التحقق: البنود الثلاثة معايير مكتوبة بلا حالة لكلٍّ منها (ليست في العقد)، و«تفعيل
+ * الحساب» بتأكيد يقول أثره. «رفض» لا يُرسم: لا حالة رفض في العقد. والمالية تقرأ وحدها.
+ */
 export function BuyerOrganizations({ locale }: { locale: Locale }) {
   const m = messages[locale], t = m.buyers, me = useUser(), admin = hasRole(me, "system_admin"), allowed = hasRole(me, ...organizationAdmins), mutation = useMutation();
   const [items, setItems] = useState<Organization[] | null>(null), [error, setError] = useState(false), [attempt, setAttempt] = useState(0), [status, setStatus] = useState<Status | "">("");
@@ -34,9 +52,10 @@ export function BuyerOrganizations({ locale }: { locale: Locale }) {
     const ok = await mutation.run(JSON.stringify(input), async header => { const result = await browserApi().POST("/buyer-organizations", { params: { header }, body: input }); token = { invite_token: result.data?.invite_token, invite_token_expires_at: result.data?.invite_token_expires_at }; return result; });
     if (ok) { setIssued({ token, email: input.first_admin_email }); setCreating(null); setAttempt(n => n + 1); }
   }
-  if (selected) return <><button className="quiet back-link" onClick={() => { setSelected(null); setAttempt(n => n + 1); }}>{t.back}</button><OrganizationPanel locale={locale} id={selected} /></>;
+  if (selected) return <><button className="quiet back-link" onClick={() => { setSelected(null); setAttempt(n => n + 1); }}><Icon name="chevron" /> {t.back}</button><OrganizationPanel locale={locale} id={selected} /></>;
   if (issued) return <OneTimeToken locale={locale} token={issued.token} email={issued.email} onDone={() => setIssued(null)} />;
-  return <><div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p>{!admin && <p className="notice">{t.readOnly}</p>}</div>{admin && !creating && <button onClick={() => { mutation.clearStatus(); setInvalid(false); setCreating(emptyOrganization()); }}>{t.new}</button>}</div>
+  const pending = (items ?? []).filter(item => item.status === "pending_verification");
+  return <><div className="page-head"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p>{!admin && <p className="notice">{t.readOnly}</p>}</div>{admin && !creating && <div className="page-actions"><button onClick={() => { mutation.clearStatus(); setInvalid(false); setCreating(emptyOrganization()); }}>{t.new}</button></div>}</div>
     {creating ? <form className="card form-card rule-form" noValidate onSubmit={e => { e.preventDefault(); void create(); }}>
       <ProfileFields locale={locale} value={creating} set={(key, value) => setCreating(c => c && { ...c, [key]: value })} admin />
       <label>{t.firstAdmin}<input type="email" dir="ltr" maxLength={organizationLimits.email} value={creating.first_admin_email} onChange={e => setCreating(c => c && { ...c, first_admin_email: e.target.value })} /><small className="muted">{t.firstAdminHelp}</small></label>
@@ -45,14 +64,78 @@ export function BuyerOrganizations({ locale }: { locale: Locale }) {
       <div className="actions"><button disabled={mutation.busy}>{t.create}</button><button type="button" className="secondary" disabled={mutation.busy} onClick={() => setCreating(null)}>{t.cancel}</button></div>
     </form> : <>
       <ActionStatus status={mutation.status} locale={locale} />
-      <label className="inline-filter">{t.status}<select value={status} onChange={e => { setItems(null); setStatus(e.target.value as Status | ""); }}><option value="">{m.all}</option>{organizationStatuses.map(s => <option key={s} value={s}>{t.statuses[s]}</option>)}</select></label>
-      {error ? <section className="center-state" role="alert"><p>{m.error}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></section>
-        : !items ? <p className="center-state" role="status">{m.loading}</p>
-        : !items.length ? <p className="empty">{t.empty}</p>
-        : <div className="table-panel"><div className="table-scroll"><table><thead><tr>{[t.displayName, t.country, t.status, t.members, t.createdAt, ""].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
-          <tbody>{items.map(item => <tr key={item.id} data-testid="organization-row"><td>{localized(item.display_name, locale)}</td><td dir="ltr">{item.country}</td><td><span className={`badge ${item.status === "active" ? "good" : item.status === "suspended" ? "bad" : ""}`}>{t.statuses[item.status ?? "pending_verification"]}</span></td><td>{item.active_members} / {item.seats}</td><td>{formatDate(item.created_at, locale)}</td><td><button className="secondary" onClick={() => setSelected(item.id)}>{t.open}</button></td></tr>)}</tbody></table></div></div>}
+      <nav className="quick-tabs filter-row" aria-label={t.filtersLabel}>{(["", ...organizationStatuses] as (Status | "")[]).map(value => <button key={value || "all"} type="button" className={status === value ? "chip active" : "chip"} aria-pressed={status === value} onClick={() => { if (value !== status) { setItems(null); setStatus(value); } }}>{value ? t.chips[value] : m.all}</button>)}</nav>
+      {error ? <p className="notice error" role="alert">{m.error} <button type="button" className="link-button" onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></p>
+        : !items ? <TableSkeleton columns={6} label={m.loading} />
+        : !items.length ? <EmptyState icon="org" testId="organizations-empty" title={status ? t.emptyFiltered : t.empty}><p>{t.emptyBody}</p></EmptyState>
+        : <OrganizationTable locale={locale} items={items} open={setSelected} />}
+      {pending.map(item => <JoinRequest key={item.id} locale={locale} organization={item} admin={admin} onOpen={() => setSelected(item.id)} onActivated={() => setAttempt(n => n + 1)} />)}
     </>}
   </>;
+}
+
+/** مشتريات السنة لكل مؤسسة (ADR 0099): العملة في رأس العمود حين تكون واحدة، وإلا يحمل كل مبلغ رمزه. */
+function OrganizationTable({ locale, items, open }: { locale: Locale; items: Organization[]; open: (id: string) => void }) {
+  const m = messages[locale], t = m.buyers, year = new Date().getUTCFullYear();
+  const [totals, setTotals] = useState<BuyerPurchaseTotal[] | null>(null), [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    async function load() {
+      const rows: BuyerPurchaseTotal[] = []; let cursor: string | null = null, pages = 0;
+      do { const page: BuyerPurchaseTotalsPage = dataOrThrow(await browserApi().GET("/buyer-purchase-totals", { params: { query: { year, limit: 100, ...(cursor ? { cursor } : {}) } }, signal: controller.signal })); rows.push(...page.items); cursor = page.next_cursor; pages++; } while (cursor && pages < 10);
+      return rows;
+    }
+    load().then(rows => { if (!controller.signal.aborted) { setTotals(rows); setFailed(false); } }).catch(() => { if (!controller.signal.aborted) setFailed(true); });
+    return () => controller.abort();
+  }, [year]);
+  const currencies = [...new Set((totals ?? []).map(row => row.currency))], single = currencies.length <= 1 ? currencies[0] ?? "USD" : null;
+  const symbol = single ? currencySymbol(single) : "";
+  const heading = fill(single ? t.purchasesIn : t.purchases, { year, cur: symbol });
+  return <div className="table-panel"><table className="admin-table organizations-table">
+    <thead><tr><th scope="col">{t.organization}</th><th scope="col">{t.country}</th><th scope="col" className="num">{t.members}</th><th scope="col" className="num">{heading}</th><th scope="col">{t.status}</th><th scope="col"><span className="visually-hidden">{t.open}</span></th></tr></thead>
+    <tbody>{items.map(item => {
+      const name = localized(item.display_name, locale), rows = (totals ?? []).filter(row => row.organization_id === item.id);
+      return <tr key={item.id} data-testid="organization-row">
+        <td className="cell-primary"><span className="person"><Avatar name={name} fallback="?" /><span className="person-name"><strong><bdi>{name}</bdi></strong><small className="muted">{formatDate(item.created_at, locale)}</small></span></span></td>
+        <td data-label={t.country}><span dir="ltr">{item.country}</span></td>
+        <td className="num" data-label={t.members}><span dir="ltr">{item.active_members} / {item.seats}</span></td>
+        <td className="num" data-label={heading} data-testid="organization-purchases">{failed ? <span className="muted">{m.notAvailable}</span> : !totals ? <span className="skeleton line" aria-hidden="true" /> : !rows.length ? <span className="muted" dir="ltr">{single ? "0.00" : "—"}</span>
+          : rows.map(row => <span key={row.currency} className="purchase"><span dir="ltr">{single ? plainAmount(row.paid, locale) : formatMoney(row.paid, locale)}</span><small className="muted">{plural(row.paid_orders, t.orders as PluralForms, locale)}{row.refunded.amount_minor > 0 && <> · {fill(t.refundedPart, { amount: formatMoney(row.refunded, locale) })}</>}</small></span>)}</td>
+        <td data-label={t.status}><OrganizationStatus status={item.status} locale={locale} /></td>
+        <td className="cell-action"><button type="button" className="secondary small" onClick={() => open(item.id)}>{t.open}</button></td>
+      </tr>;
+    })}</tbody>
+  </table>{failed && <p className="caption table-foot" role="alert">{t.purchasesFailed}</p>}</div>;
+}
+
+/** «طلب انضمام» (A5، S6): البنود الثلاثة معايير مكتوبة تراجعها الإدارة خارج المنصة، والتفعيل بحالة المؤسسة وحدها بتأكيد يقول أثره. */
+function JoinRequest({ locale, organization, admin, onOpen, onActivated }: { locale: Locale; organization: Organization; admin: boolean; onOpen: () => void; onActivated: () => void }) {
+  const m = messages[locale], t = m.buyers, mutation = useMutation(), [confirming, setConfirming] = useState(false), [stale, setStale] = useState(false), name = localized(organization.display_name, locale);
+  async function activate() {
+    setStale(false);
+    const box: { status?: number } = {};
+    const ok = await mutation.run(JSON.stringify(["activate", organization.id]), async header => {
+      // الملف كاملًا بإصداره الحالي (If-Match)، والحالة وحدها تتغيّر.
+      const read = await browserApi().GET("/buyer-organizations/{org_id}", { params: { path: { org_id: organization.id } } });
+      if (!read.data) { box.status = read.response.status; return read; }
+      const input = { ...inputOf(read.data), status: "active" as const };
+      const result = await browserApi().PUT("/buyer-organizations/{org_id}", { params: { path: { org_id: organization.id }, header: { ...header, "If-Match": read.response.headers.get("ETag") ?? "" } }, body: input });
+      box.status = result.response.status; return result;
+    });
+    if (ok) { setConfirming(false); onActivated(); }
+    else if (box.status === 412) { setConfirming(false); setStale(true); mutation.clearStatus(); onActivated(); }
+  }
+  return <section className="card join-card" aria-labelledby={`join-${organization.id}`} data-testid="join-request">
+    <div className="join-head"><div><h2 id={`join-${organization.id}`}>{fill(t.joinTitle, { name })}</h2><p className="muted">{t.joinLead}</p></div>
+      <div className="actions">{admin && <button type="button" disabled={mutation.busy} onClick={() => { mutation.clearStatus(); setConfirming(true); }}>{t.activate}</button>}<button type="button" className="secondary" onClick={onOpen}>{t.open}</button></div></div>
+    <ul className="join-checks">{(["registry", "email", "agreement"] as const).map(check => <li key={check}><Icon name="check" size={14} />{t.checks[check]}</li>)}</ul>
+    <p className="caption">{t.joinNote}</p>
+    {stale && <p className="notice attention" role="alert">{t.changedOrg}</p>}
+    {!confirming && mutation.status !== 0 && mutation.status !== 200 && <ActionStatus status={mutation.status} locale={locale} />}
+    {confirming && <ConfirmDialog locale={locale} testId="confirm-activate" title={t.activate} confirm={t.activate} busy={mutation.busy} status={mutation.status} onConfirm={() => void activate()} onCancel={() => setConfirming(false)}>
+      <p>{fill(t.activateEffect, { name })}</p>
+    </ConfirmDialog>}
+  </section>;
 }
 
 /** صفحة مؤسسة المشتري لأعضائها. */
@@ -97,7 +180,7 @@ function OrganizationPanel({ locale, id }: { locale: Locale; id: string }) {
   if (!loaded) return <p className="center-state" role="status">{m.loading}</p>;
   const o = loaded.organization;
   return <>
-    <div className="page-heading"><div><p className="eyebrow">{t.organization}</p><h1>{localized(o.display_name, locale)}</h1><p className="muted"><span className={`badge ${o.status === "active" ? "good" : o.status === "suspended" ? "bad" : ""}`} data-testid="organization-status">{t.statuses[o.status ?? "pending_verification"]}</span></p></div>
+    <div className="page-heading"><div><p className="eyebrow">{t.organization}</p><h1>{localized(o.display_name, locale)}</h1><p className="muted"><OrganizationStatus status={o.status} locale={locale} testId="organization-status" /></p></div>
       {editor && !draft && <button onClick={() => { mutation.clearStatus(); setInvalid(false); setDraft(inputOf(o)); }}>{t.edit}</button>}</div>
     {o.status === "pending_verification" && <p className="notice">{t.pendingHelp}</p>}
     {o.status === "suspended" && <p className="notice error">{t.suspendedHelp}</p>}

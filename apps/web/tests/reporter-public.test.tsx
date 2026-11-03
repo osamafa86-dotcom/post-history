@@ -156,9 +156,9 @@ describe("states as a word, an icon and a tone (upload U2, payouts, licence veri
 });
 
 describe("money and store cards", () => {
-  for (const [locale, m] of [["ar", ar], ["en", en]] as const) it(`carries the store's fixed trial wording on «أرباحي» (${locale})`, () => {
+  for (const [locale, m] of [["ar", ar], ["en", en]] as const) it(`carries the store's and the admin's fixed trial wording on «أرباحي» (${locale})`, () => {
     const html = renderToStaticMarkup(<SandboxBanner locale={locale} />);
-    expect(html).toContain(m.store.cartPage.sandbox); expect(html).toContain(m.earnings.sandbox);
+    expect(html).toContain(m.store.cartPage.sandbox); expect(html).toContain(m.money.sandbox);
   });
   it("tells a pending organization what is reviewed and what its admin can do, with no promise of a notification (S6)", () => {
     const html = renderToStaticMarkup(<OrgPending locale="ar" organization={{ status: "pending_verification", seats: 5, active_members: 1 }} canInvite />);
