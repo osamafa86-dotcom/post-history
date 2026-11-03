@@ -1,0 +1,5 @@
+#!/bin/sh
+# Test stand-in (infra/backup/test/test-backup.sh): the loop's first wait returns at once, so a backup runs now; every later
+# wait is long, so the test reads the result of exactly one run.
+if [ -e /tmp/slept-once ]; then exec /bin/sleep 3600; fi
+: > /tmp/slept-once

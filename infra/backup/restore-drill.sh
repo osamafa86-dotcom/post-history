@@ -8,6 +8,8 @@
 # DRILL_ENV (local أو اسم المضيف؛ يدخل في النتيجة)، DRILL_SOURCE (local أو second-provider: BACKUP_DIR نسخة سُحبت من
 # الحاوية المقفلة لدى المزوّد الثاني)، DRILL_TMP (مجلد العمل، الافتراضي /dev/shm)، وملف البيئة نفسه لـ
 # compose (S3_* و POSTGRES_*).
+# نسخة لا تُفك (مبتورة أو معدّلة)، أو نصها المفكوك بغير الحجم الذي سجّله النسخ (OUT.size)، أو تفريغ مبتور لا يكتمل
+# pg_restore عليه، أو ملف عدّ تالف: كلها نتيجة fail تُكتب، لا انهيار.
 # النتيجة partial أو fail ولا تكون pass أبدًا: معيار recovery في الخطة يشترط الاستعادة من النسخة المعزولة لدى المزوّد
 # الثاني، وفقدًا ≤ 15 دقيقة، واستعادة ≤ 4 ساعات، والتمرين يقرأ BACKUP_DIR على المضيف ولا يقيس فاصل النسخ.
 set -euo pipefail
@@ -43,28 +45,41 @@ dump_epoch="$(date -u -d "${ts:0:4}-${ts:4:2}-${ts:6:2}T${ts:9:2}:${ts:11:2}:${t
 install -m 600 "$KEY" "$WORK/key.pem"
 ME="$(id -u):$(id -g)"
 
-# فك التشفير بصورة النسخ نفسها (openssl فيها)، داخل مجلد عمل مؤقت يُحذف في النهاية.
+# فك التشفير بصورة النسخ نفسها (openssl فيها)، داخل مجلد عمل مؤقت يُحذف في النهاية. فشله نتيجة fail لا انهيار.
 t0=$(date +%s.%N)
+decrypted=true
 "${COMPOSE[@]}" run --rm --no-deps -T --user "$ME" -v "$BACKUP_DIR:/backups:ro" -v "$WORK:/work" --entrypoint sh backup -c \
-  "openssl cms -decrypt -binary -inform DER -inkey /work/key.pem -in /backups/pg/$ts.dump.cms -out /work/db.dump"
+  "openssl cms -decrypt -binary -inform DER -inkey /work/key.pem -in /backups/pg/$ts.dump.cms -out /work/db.dump" </dev/null \
+  || { decrypted=false; echo "the dump does not decrypt: truncated or altered" >&2; }
 t1=$(date +%s.%N)
+# الحجم الذي عدّه النسخ من الأنبوب نفسه (backup.sh يكتبه بجوار النسخة): نص مفكوك بحجم آخر ليس ما فُرّغ.
+size_match=not_recorded   # a dump from before the backup counted its size
+if $decrypted && [ -f "$BACKUP_DIR/pg/$ts.dump.cms.size" ]; then
+  if [ "$(wc -c < "$WORK/db.dump")" = "$(cat "$BACKUP_DIR/pg/$ts.dump.cms.size")" ]; then size_match=true
+  else size_match=false; echo "the decrypted dump is not the size the backup counted" >&2; fi
+fi
 
 pw="$(openssl rand -hex 16)"
 docker run -d --name "$NAME" -e POSTGRES_PASSWORD="$pw" -e POSTGRES_DB=drill -v "$WORK:/work:ro" "$PG_IMAGE" >/dev/null
 for _ in $(seq 1 60); do docker exec "$NAME" pg_isready -U postgres -d drill >/dev/null 2>&1 && break; sleep 1; done
 sleep 2
 # A failed restore is a drill result, not a crash: the errors are counted and the comparison still runs.
+# A truncated dump (pg_dump cut short, encrypted whole) ends pg_restore with "could not read from input file": an error too.
 restore_errors=0
-if ! docker exec "$NAME" pg_restore --no-owner --no-privileges -U postgres -d drill /work/db.dump 2> "$WORK/restore.err"; then
+if ! $decrypted; then
+  restore_errors=1
+elif ! docker exec "$NAME" pg_restore --no-owner --no-privileges -U postgres -d drill /work/db.dump 2> "$WORK/restore.err"; then
   restore_errors="$(sed -n 's/.*errors ignored on restore: \([0-9]*\).*/\1/p' "$WORK/restore.err")"
   restore_errors="${restore_errors:-1}"
-  grep 'pg_restore: error' "$WORK/restore.err" | head -5 >&2
+  { grep 'pg_restore: error' "$WORK/restore.err" || true; } | head -5 >&2
 fi
 t2=$(date +%s.%N)
 
-tables=0 mismatched=0 missing=0
+tables=0 mismatched=0 missing=0 malformed=0
 while read -r table counted; do
   [ -n "$table" ] || continue
+  # «جدول عدد» في كل سطر: سطر بلا عدد صحيح ملف عدّ تالف، لا مقارنة تمر بصمت.
+  case "$counted" in ''|*[!0-9]*) malformed=$((malformed + 1)); echo "malformed count line" >&2; continue ;; esac
   tables=$((tables + 1))
   got="$(docker exec "$NAME" psql -U postgres -d drill -XAtq -c "select count(*) from public.\"$table\"" 2>/dev/null || echo missing)"
   if [ "$got" = missing ]; then missing=$((missing + 1)); echo "missing table: $table" >&2
@@ -91,8 +106,8 @@ calc() { awk "BEGIN { printf \"%.2f\", $1 }"; }
 decrypt_s=$(calc "$t1 - $t0"); restore_s=$(calc "$t2 - $t1")
 rpo_h=$(calc "($(date -u +%s) - $dump_epoch) / 3600")
 result=pass
-[ "$tables" -gt 0 ] && [ "$restore_errors" -eq 0 ] && [ "$mismatched" -eq 0 ] && [ "$missing" -eq 0 ] \
-  && [ "$obj_mismatch" -eq 0 ] || result=fail
+[ "$tables" -gt 0 ] && $decrypted && [ "$size_match" != false ] && [ "$restore_errors" -eq 0 ] && [ "$mismatched" -eq 0 ] \
+  && [ "$missing" -eq 0 ] && [ "$malformed" -eq 0 ] && [ "$obj_mismatch" -eq 0 ] || result=fail
 mkdir -p "$(dirname "$OUT")"
 cat > "$OUT" <<EOF
 {
@@ -110,17 +125,20 @@ cat > "$OUT" <<EOF
     "pg_restore_s": $restore_s,
     "pg_restore_within_4h": $(awk "BEGIN { print ($restore_s <= 14400) ? \"true\" : \"false\" }"),
     "backup_age_h": $rpo_h,
+    "dump_decrypted": $decrypted,
+    "dump_plain_bytes_match": $( [ "$size_match" = not_recorded ] && echo "\"not_recorded\"" || echo "$size_match" ),
     "pg_restore_errors": $restore_errors,
     "tables_compared": $tables,
     "tables_missing": $missing,
     "tables_fewer_rows": $mismatched,
+    "counts_malformed": $malformed,
     "objects_sampled": $objects,
     "objects_mismatched": $obj_mismatch,
     "drill_passed": $( [ "$result" = pass ] && echo true || echo false ),
     "restored_from_second_provider": $( [ "${DRILL_SOURCE:-local}" = second-provider ] && echo true || echo false )
   },
-  "notes": "ADR 0013 restore drill: latest encrypted pg_dump decrypted with the offline recipient key, restored into a throwaway postgres:16-alpine, row counts compared with the counts taken at backup time (restored >= counted), and a sample of encrypted objects decrypted and compared by SHA-256 with the live objects. Restored >= counted: rows added between the count and the dump are allowed, so extra or duplicated rows are not checked. Source: ${DRILL_SOURCE:-local} (second-provider = a copy pulled back from the object-locked bucket). Never pass: the backup interval (loss <= 15 min) and a full-size restore time are not measured here. Environment: ${DRILL_ENV:-local}."
+  "notes": "ADR 0013 restore drill: latest encrypted pg_dump decrypted with the offline recipient key (a dump that does not decrypt, or decrypts to another size than the backup counted, fails), restored into a throwaway postgres:16-alpine, row counts compared with the counts taken at backup time (restored >= counted), and a sample of encrypted objects decrypted and compared by SHA-256 with the live objects. Restored >= counted: rows added between the count and the dump are allowed, so extra or duplicated rows are not checked. Source: ${DRILL_SOURCE:-local} (second-provider = a copy pulled back from the object-locked bucket). Never pass: the backup interval (loss <= 15 min) and a full-size restore time are not measured here. Environment: ${DRILL_ENV:-local}."
 }
 EOF
-echo "restore drill: $result, recorded as $( [ "$result" = pass ] && echo partial || echo fail) (restore_errors=$restore_errors tables=$tables missing=$missing fewer_rows=$mismatched objects=$objects mismatched=$obj_mismatch)"
+echo "restore drill: $result, recorded as $( [ "$result" = pass ] && echo partial || echo fail) (decrypted=$decrypted size_match=$size_match restore_errors=$restore_errors tables=$tables missing=$missing fewer_rows=$mismatched objects=$objects mismatched=$obj_mismatch)"
 [ "$result" = pass ]
