@@ -60,7 +60,10 @@ describe('Stripe test-mode adapter', () => {
     expect(() => verifyStripeSignature(WHSEC, body, good, now)).not.toThrow();
     // سر مدوَّر: توقيعان، أحدهما صحيح
     expect(() => verifyStripeSignature(WHSEC, body, `${good},v1=${'0'.repeat(64)}`, now)).not.toThrow();
-    for (const bad of [undefined, '', 't=1', good.replace(/v1=./, 'v1=0'), stripeSignatureHeader(`whsec_${randomBytes(16).toString('hex')}`, body, now)]) {
+    // التلاعب يغيّر أول رقم ستّ عشري دائمًا: استبداله بـ 0 لا يغيّر شيئًا حين يكون 0 أصلًا (مرة في 16 تشغيلًا، والسر عشوائي)
+    const tampered = good.replace(/v1=(.)/, (_, c: string) => `v1=${c === '0' ? '1' : '0'}`);
+    expect(tampered).not.toBe(good);
+    for (const bad of [undefined, '', 't=1', tampered, stripeSignatureHeader(`whsec_${randomBytes(16).toString('hex')}`, body, now)]) {
       expect(() => verifyStripeSignature(WHSEC, body, bad, now)).toThrow(WebhookSignatureError);
     }
     expect(() => verifyStripeSignature(WHSEC, body, good, new Date(now.getTime() + 6 * 60_000))).toThrow(/window/);
