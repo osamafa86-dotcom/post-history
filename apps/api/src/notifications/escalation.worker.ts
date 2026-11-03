@@ -1,13 +1,14 @@
 import { Inject, Injectable, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
-import { and, asc, eq, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, ne, sql } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { LOGGER } from '../common/logger';
 import { DB, type Database, type Tx } from '../database/database.module';
-import { materials, notificationRuleEscalations, notifications, offices, userRoles, users } from '../database/schema/schema';
+import { materialAssignments, materials, notificationRuleEscalations, notifications, offices, outboxEvents, userRoles, users } from '../database/schema/schema';
 import type { RoleName } from '../identity/principal';
 import { writeOutboxEvent } from '../outbox/outbox';
 import { ruleRecipients } from './rule-fanout';
+import { PRODUCTION_TYPES, RECEIPT_TYPES } from './task-closure';
 
 /**
  * سلم التصعيد: المهمة التي لم يُقرّ استلامها (المشرف أو المنتج) تُصعَّد إلى رئيس التحرير، ثم إلى مدير النظام.
@@ -38,21 +39,37 @@ export class EscalationWorker implements OnApplicationBootstrap, OnApplicationSh
 
   /**
    * يصعّد ما حان موعده ولم يُقرّ: يرفع escalation_level ويضبط الموعد التالي، ويكتب حدث notification.escalated
-   * لكل مستخدم نشط في الدرجة التالية (المُرسل يحوّله إلى إشعار). يعيد عدد الإشعارات المصعَّدة.
+   * لكل مستخدم نشط في الدرجة التالية (المُرسل يحوّله إلى إشعار). نسخ المهمة نفسها للمادة (كل مشرف أو كل منتج) تتقدم معًا
+   * بحدث واحد، فيُصعَّد كل درج مرة واحدة للمادة. والمهمة التي حُسمت خارج الإشعار (استُلمت المادة، أو أُسندت، أو أقرّ أحد
+   * المستلمين) تُغلق بلا تصعيد (assignment_state بلا موعد؛ acknowledged_at لمن أقرّ وحده). يعيد عدد المهام المصعَّدة.
    */
   async escalateDue(): Promise<number> {
     return this.db.transaction(async (tx) => {
       const due = await tx
         .select()
         .from(notifications)
-        .where(and(isNull(notifications.acknowledgedAt), lte(notifications.escalateAt, sql`now()`)))
+                // مهمة مفتوحة وحدها: المغلقة بحسم غيرها (assignment_state acknowledged) لا تعود إلى السلسلة ولو بقي لها موعد
+        .where(and(isNull(notifications.acknowledgedAt), eq(notifications.assignmentState, 'assigned'), lte(notifications.escalateAt, sql`now()`)))
         .orderBy(asc(notifications.escalateAt))
         .limit(100)
         .for('update', { skipLocked: true });
 
+      const seen = new Set<string>();
+      let escalated = 0;
       for (const n of due) {
+        if (seen.has(n.id)) continue;
+        const group = await siblings(tx, n);
+        for (const id of group) seen.add(id);
+        if (await settled(tx, n)) {
+          await tx
+            .update(notifications)
+            .set({ assignmentState: 'acknowledged', escalateAt: null })
+            .where(inArray(notifications.id, group));
+          continue;
+        }
+        escalated++;
         if (n.ruleId) {
-          await this.escalateByRule(tx, n);
+          await this.escalateByRule(tx, n, group);
           continue;
         }
         const level = n.escalationLevel + 1;
@@ -64,7 +81,7 @@ export class EscalationWorker implements OnApplicationBootstrap, OnApplicationSh
             escalationLevel: role ? level : n.escalationLevel,
             escalateAt: role && level < ESCALATION_LADDER.length ? sql`now() + make_interval(secs => ${delay})` : null,
           })
-          .where(eq(notifications.id, n.id));
+          .where(inArray(notifications.id, group));
         if (!role) continue;
         const targets = await tx
           .selectDistinct({ id: userRoles.userId })
@@ -87,7 +104,7 @@ export class EscalationWorker implements OnApplicationBootstrap, OnApplicationSh
           });
         }
       }
-      return due.length;
+      return escalated;
     });
   }
 
@@ -95,7 +112,7 @@ export class EscalationWorker implements OnApplicationBootstrap, OnApplicationSh
    * سلسلة قاعدة الإدارة (v0.2): المستوى التالي يصل أدواره ضمن نطاق المادة، وموعد المستوى بعده من الإشعار الأول
    * (after_seconds). بعد آخر مستوى لا تصعيد.
    */
-  private async escalateByRule(tx: Tx, n: typeof notifications.$inferSelect): Promise<void> {
+  private async escalateByRule(tx: Tx, n: typeof notifications.$inferSelect, group: string[]): Promise<void> {
     const level = n.escalationLevel + 1;
     const steps = await tx
       .select()
@@ -110,7 +127,7 @@ export class EscalationWorker implements OnApplicationBootstrap, OnApplicationSh
         escalationLevel: step ? level : n.escalationLevel,
         escalateAt: step && next ? sql`${notifications.createdAt} + make_interval(secs => ${next.afterSeconds})` : null,
       })
-      .where(eq(notifications.id, n.id));
+      .where(inArray(notifications.id, group));
     if (!step || !n.materialId) return;
     const [m] = await tx
       .select({
@@ -136,4 +153,68 @@ export class EscalationWorker implements OnApplicationBootstrap, OnApplicationSh
       });
     }
   }
+}
+
+type NotificationRow = typeof notifications.$inferSelect;
+
+/**
+ * نسخ المهمة نفسها للمادة: النوع والقاعدة نفساهما، مفتوحة وبموعد تصعيد، مقفولة لهذه المعاملة (مع الإشعار نفسه). المهمة
+ * بلا مادة (طلب الاستعادة) وحدها.
+ */
+async function siblings(tx: Tx, n: NotificationRow): Promise<string[]> {
+  if (!n.materialId) return [n.id];
+  const rows = await tx
+    .select({ id: notifications.id })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.materialId, n.materialId),
+        eq(notifications.type, n.type),
+        sql`${notifications.ruleId} IS NOT DISTINCT FROM ${n.ruleId}`,
+        isNull(notifications.acknowledgedAt),
+        eq(notifications.assignmentState, 'assigned'),
+        isNotNull(notifications.escalateAt),
+        ne(notifications.id, n.id),
+      ),
+    )
+    .for('update', { skipLocked: true });
+  return [n.id, ...rows.map((r) => r.id)];
+}
+
+/**
+ * حُسمت المهمة خارج الإشعار فلا تصعيد: أقرّ أحد مستلمي الحدث نفسه، أو خرجت المادة من inbox بعد «مادة واردة»، أو أُسندت
+ * (أو خرجت من accepted) بعد «قُبلت للإنتاج».
+ */
+async function settled(tx: Tx, n: NotificationRow): Promise<boolean> {
+  if (!n.materialId) return false;
+  const [acked] = await tx
+    .select({ id: notifications.id })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.materialId, n.materialId),
+        eq(notifications.eventId, n.eventId),
+        sql`${notifications.ruleId} IS NOT DISTINCT FROM ${n.ruleId}`,
+        isNotNull(notifications.acknowledgedAt),
+      ),
+    )
+    .limit(1);
+  if (acked) return true;
+  const receipt = RECEIPT_TYPES.includes(n.type);
+  const production = PRODUCTION_TYPES.includes(n.type);
+  if (!receipt && !production) return false;
+  const [m] = await tx
+    .select({ editorialState: materials.editorialState, acknowledgedAt: materials.acknowledgedAt })
+    .from(materials)
+    .where(eq(materials.id, n.materialId));
+  if (!m) return false;
+  if (receipt) return m.editorialState !== 'inbox' || m.acknowledgedAt !== null;
+  if (m.editorialState !== 'accepted') return true;
+  const [assigned] = await tx
+    .select({ id: materialAssignments.id })
+    .from(materialAssignments)
+    .innerJoin(outboxEvents, eq(outboxEvents.id, n.eventId))
+    .where(and(eq(materialAssignments.materialId, n.materialId), gte(materialAssignments.createdAt, outboxEvents.occurredAt)))
+    .limit(1);
+  return !!assigned;
 }

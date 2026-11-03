@@ -8,6 +8,8 @@ import { randomBytes } from "node:crypto";
 import { parseArgs } from "../lib/measurement.mjs";
 import { startApi } from "./stack.mjs";
 import { seed } from "./seed.mjs";
+import { seedTenantCommerce } from "./tenant-commerce.mjs";
+import { startFakeStripe } from "../lib/fake-stripe.mjs";
 import { setLogSource } from "../scripts/pii-leak.mjs";
 import { setLogSource as setRecoveryLogSource } from "../scripts/account-recovery.mjs";
 
@@ -27,7 +29,7 @@ function quorumCli(stack, s) {
   };
 }
 
-let stack, worst = 0;
+let stack, stripeStack, fakeStripe, worst = 0;
 // the internal sandbox payment provider (no real money; development mode only here): sandbox-purchase signs the notifications with this secret
 const sandboxSecret = randomBytes(32).toString("hex"), livePort = Number(args.port ?? 13000);
 try {
@@ -41,16 +43,33 @@ try {
     extraEnv: { PAYMENT_PROVIDER: "sandbox", PAYOUT_RELEASE_AFTER_DAYS: "0", PAYOUT_WORKER_INTERVAL_MS: "300", PAYOUT_DEFAULT_MINIMUM_MINOR: "1000", SANDBOX_WEBHOOK_SECRET: sandboxSecret, SANDBOX_CHECKOUT_BASE_URL: `http://127.0.0.1:${livePort}`,
       // passkeys (ADR 0107) for account-recovery: the software authenticator signs for this origin; no domain, localhost alone
       WEBAUTHN_RP_ID: "localhost", WEBAUTHN_ORIGINS: "http://localhost:3000" } });
+  // a second API on the same database with the Stripe test-mode adapter against a local stand-in for Stripe's API
+  // (duplicate-payment replays Stripe notifications too). Same JWT and field keys, so the seeded sessions work on both;
+  // its background workers stay off (the first API runs them)
+  fakeStripe = await startFakeStripe();
+  const stripeWebhookSecret = `whsec_${randomBytes(24).toString("hex")}`;
+  stripeStack = await startApi({ databaseUrl, port: livePort + 1, redisUrl: process.env.LIVE_REDIS_URL, s3,
+    extraEnv: { PAYMENT_PROVIDER: "stripe", STRIPE_TEST_SECRET_KEY: `sk_test_${randomBytes(24).toString("hex")}`, STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+      STRIPE_API_BASE: fakeStripe.url, JWT_SECRET: stack.cliEnv.JWT_SECRET, FIELD_ENCRYPTION_KEY: stack.fieldKey, TUSD_HOOK_SECRET: stack.hookToken,
+      OUTBOX_DISPATCHER_ENABLED: "false", UPLOAD_VERIFIER: "external" } });
   const coreOn = process.env.CORE_ACCEPTANCE === "1";
   const s = await seed({ databaseUrl, apiUrl: stack.apiUrl, fieldKey: coreOn ? stack.fieldKey : null });
   let sha = "unknown";
   try { sha = execFileSync("git", ["rev-parse", "--short", "HEAD"]).toString().trim(); } catch { /* not a checkout */ }
   const tokens = JSON.stringify(s.tokens);
+  // the second buyer organization's order, licence and a listing not on sale: tenant-isolation's organization cases
+  const tenantFixtures = { ...s.fixtures, ...(await seedTenantCommerce({ databaseUrl, apiUrl: stack.apiUrl, rootUrl: stack.baseUrl, tokens: s.allTokens })) };
   const common = {
     PII_BASE_URL: stack.apiUrl, PII_TOKENS: tokens,
     PII_CANARIES: JSON.stringify(s.canaries.coordinates), PII_CHANNEL_CANARIES: JSON.stringify(s.canaries.titles),
-    TENANT_BASE_URL: stack.apiUrl, TENANT_TOKENS: tokens, TENANT_FIXTURES: JSON.stringify(s.fixtures),
-    IDEM_BASE_URL: stack.apiUrl, IDEM_TOKENS: tokens,
+    TENANT_BASE_URL: stack.apiUrl, TENANT_TOKENS: tokens, TENANT_FIXTURES: JSON.stringify(tenantFixtures),
+    // duplicate-payment: sandbox on the first API, Stripe test mode on the second, one database
+    DP_API_URL: stack.apiUrl, DP_ROOT_URL: stack.baseUrl, DP_WEBHOOK_SECRET: sandboxSecret, DP_DATABASE_URL: databaseUrl,
+    DP_STRIPE_API_URL: stripeStack.apiUrl, DP_STRIPE_ROOT_URL: stripeStack.baseUrl, DP_STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+    DP_TOKENS: JSON.stringify({ reporter: s.allTokens.reporter, rights_officer: s.allTokens.rights_officer, buyer_admin: s.allTokens.buyer_admin }),
+    // rights-exclusivity: sandbox provider, buyers of both seeded organizations
+    RX_API_URL: stack.apiUrl, RX_ROOT_URL: stack.baseUrl, RX_DATABASE_URL: databaseUrl, RX_WEBHOOK_SECRET: sandboxSecret,
+    RX_TOKENS: JSON.stringify({ reporter: s.allTokens.reporter, rights_officer: s.allTokens.rights_officer, buyer_admin: s.allTokens.buyer_admin, buyer_member: s.allTokens.buyer_member, buyer_admin_b: s.allTokens.buyer_admin_b }),
     UPLOAD_CONTRACT_API_URL: stack.apiUrl, UPLOAD_CONTRACT_TOKENS: tokens,
     OUTBOX_API_URL: stack.apiUrl, OUTBOX_TOKENS: tokens, OUTBOX_DATABASE_URL: databaseUrl,
     STATE_API_URL: stack.apiUrl, STATE_TOKENS: tokens,
@@ -91,7 +110,7 @@ try {
   setRecoveryLogSource(() => stack.logs());
     // pii-leak reads the server logs of everything before it; dynamic-fields last: it publishes the shared form, which becomes the current form (with required fields) for every later material
   const core = process.env.CORE_ACCEPTANCE === "1" ? ["reporter-identity-access", "reservation-conflict", "optimistic-concurrency", "admin-quorum", "notification-delivery"] : [];
-  const names = ["tenant-isolation", "duplicate-payment", "invalid-file", "receipt-notification", "concurrent-load", "performance", ...core, "sandbox-purchase", "payout-concurrent", "refund-after-payout", "account-recovery", "pii-leak", "dynamic-fields"];
+  const names = ["tenant-isolation", "duplicate-payment", "invalid-file", "receipt-notification", "concurrent-load", "performance", ...core, "sandbox-purchase", "rights-exclusivity", "payout-concurrent", "refund-after-payout", "account-recovery", "pii-leak", "dynamic-fields"];
   const summary = [];
   names.splice(2, 0, "upload-contract", "outbox-transaction", "material-state-independence");
   const only = typeof args.only === "string" ? args.only.split(",") : null;
@@ -112,6 +131,8 @@ try {
   console.error(`ENVIRONMENT: ${e.message}`);
   worst = 2;
 } finally {
+  if (stripeStack) await stripeStack.stop();
+  if (fakeStripe) await fakeStripe.close();
   if (stack) await stack.stop();
 }
 process.exit(worst);

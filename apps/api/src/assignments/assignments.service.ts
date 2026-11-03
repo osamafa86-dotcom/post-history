@@ -8,6 +8,7 @@ import type { components } from '../generated/api';
 import type { Principal } from '../identity/principal';
 import { findScoped } from '../materials/material-store';
 import { PRODUCTION_VISIBLE_STATES } from '../materials/transitions';
+import { closeMaterialTasks, PRODUCTION_TYPES } from '../notifications/task-closure';
 import { writeOutboxEvent } from '../outbox/outbox';
 import {
   applyAssignmentTransition,
@@ -99,6 +100,8 @@ export class AssignmentsService {
         if (e.code === '23514' && e.constraint === 'material_assignments_due_after_created') throw ApiError.validation({ fields: ['/due_at'] });
         throw err;
       }
+      // الإسناد يحسم «قُبلت للإنتاج»: نسخ الإشعار عند بقية المنتجين وتصعيدها تُغلق، فلا تُصعَّد كل نسخة بعده
+      await closeMaterialTasks(tx, materialId, PRODUCTION_TYPES, p.userId);
       await writeOutboxEvent(tx, {
         type: 'assignment.created',
         aggregateType: 'material',
