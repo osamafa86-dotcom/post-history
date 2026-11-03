@@ -3,7 +3,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { formatDate, longDate, messages, plural, type Locale, type PluralForms } from "@/lib/i18n";
 import { cleanText, fill, stripHidden } from "@/lib/admin-text";
-import { passkeyLimits, validPasskeyName, type Passkey, type PasskeyChallenge } from "@/lib/passkey-policy";
+import { passkeyLimits, stepUpBody, stepUpProblem, stepUpRefusal, validPasskeyName, type Passkey, type PasskeyChallenge } from "@/lib/passkey-policy";
 import { ceremonyFailure, passkeysSupported, registerCeremony } from "@/lib/passkey-client";
 import { groupCode, type RecoveryCodes, type RecoveryCodeStatus } from "@/lib/recovery-policy";
 import { useMutation } from "@/lib/use-mutation";
@@ -14,8 +14,9 @@ type Notice = { tone: "good" | "attention"; text: string } | null;
 const still = () => () => {};
 
 /**
- * الأمان (ADR 0107، 0108): مفاتيح المرور (قائمة وإضافة بإعادة تحقق وإبطال بتأكيد) والرموز الاحتياطية (العدد الباقي، وتوليد عشرة جديدة
- * تبطل السابقة بتأكيد وتُعرض مرة). لكل حساب بجلسة، طاقمًا أو مشتريًا. كلمة المرور والرموز في ذاكرة المكوّن وحده وتُمحى بعد الاستعمال.
+ * الأمان (ADR 0107، 0108، 0120): مفاتيح المرور (قائمة وإضافة بإعادة تحقق وإبطال بتأكيد) والرموز الاحتياطية (العدد الباقي، وتوليد عشرة
+ * جديدة تبطل السابقة بإعادة التحقق نفسها وتُعرض مرة). لكل حساب بجلسة، طاقمًا أو مشتريًا. كلمة المرور والرموز في ذاكرة المكوّن وحده وتُمحى
+ * بعد الاستعمال.
  */
 export function AccountSecurity({ locale }: { locale: Locale }) {
   const t = messages[locale].security;
@@ -25,6 +26,15 @@ export function AccountSecurity({ locale }: { locale: Locale }) {
       <PasskeysCard locale={locale} />
       <BackupCodesCard locale={locale} />
     </div>
+  </>;
+}
+
+/** إعادة التحقق (ADR 0107، 0117): كلمة المرور ورمز تطبيق المصادقة، الحقلان أنفسهما قبل إضافة مفتاح المرور وقبل توليد الرموز الاحتياطية. */
+export function StepUpFields({ locale, password, code, checked, onPassword, onCode }: { locale: Locale; password: string; code: string; checked: boolean; onPassword: (value: string) => void; onCode: (value: string) => void }) {
+  const t = messages[locale].security, problem = checked ? stepUpProblem(password, code) : null;
+  return <>
+    <label>{t.password}<input name="password" type="password" dir="ltr" autoComplete="current-password" autoFocus maxLength={passkeyLimits.password} value={password} aria-invalid={problem === "passwordRequired" || undefined} onChange={event => onPassword(event.target.value)} /></label>
+    <label>{t.totp}<input name="totp" inputMode="numeric" dir="ltr" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} aria-invalid={problem === "totpInvalid" || undefined} onChange={event => onCode(event.target.value.replace(/\D/g, ""))} /></label>
   </>;
 }
 
@@ -46,15 +56,17 @@ function PasskeysCard({ locale }: { locale: Locale }) {
   function close() { setAdding(false); setPassword(""); setCode(""); setName(""); setChecked(false); setError(""); }
   async function add(event: React.FormEvent) {
     event.preventDefault(); setChecked(true); setError(""); setNotice(null);
-    if (!password || !nameOk || code && !/^[0-9]{6}$/.test(code)) return;
+    const problem = stepUpProblem(password, code);
+    if (problem) { setError(t[problem]); return; }
+    if (!nameOk) return;
     setBusy(true);
     try {
-      const options = await browserApi().POST("/auth/passkeys/registration-options", { body: { password, ...(code ? { totp_code: code } : {}) } });
-      const failure = (options.error as { code?: string } | undefined)?.code;
-      if (options.response.status === 422) { setError(failure === "totp_required" ? t.totpRequired : t.stepUpFailed); return; }
+      const options = await browserApi().POST("/auth/passkeys/registration-options", { body: stepUpBody(password, code) });
+      const refusal = stepUpRefusal(options.response.status, (options.error as { code?: string } | undefined)?.code);
+      if (refusal === "session") { window.dispatchEvent(new Event("session-revoked")); setError(m.revoked); return; }
+      if (refusal) { setError(t[refusal]); return; }
       if (options.response.status === 404) { close(); setState("off"); return; }
       if (options.response.status === 409) { setError(t.limit); return; }
-      if (options.response.status === 429) { setError(t.tooMany); return; }
       const challenge = dataOrThrow(options) as PasskeyChallenge;
       setPassword(""); setCode("");
       let credential;
@@ -94,8 +106,7 @@ function PasskeysCard({ locale }: { locale: Locale }) {
       {!supported ? <p className="notice" data-testid="passkeys-unsupported">{t.unsupported}</p> : full ? <p className="notice">{t.limit}</p>
         : adding ? <form className="invite-form security-form" noValidate onSubmit={event => void add(event)} data-testid="passkey-form">
           <h3>{t.stepUpTitle}</h3><p className="caption">{t.stepUpLead}</p>
-          <label>{t.password}<input name="password" type="password" dir="ltr" autoComplete="current-password" maxLength={passkeyLimits.password} value={password} aria-invalid={checked && !password || undefined} onChange={event => setPassword(event.target.value)} /></label>
-          <label>{t.totp}<input name="totp" inputMode="numeric" dir="ltr" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ""))} /></label>
+          <StepUpFields locale={locale} password={password} code={code} checked={checked} onPassword={setPassword} onCode={setCode} />
           <label>{t.name}<input name="passkey-name" maxLength={passkeyLimits.name * 2} value={name} aria-invalid={checked && !nameOk || undefined} aria-describedby="passkey-name-help" onChange={event => setName(stripHidden(event.target.value))} /></label>
           <small id="passkey-name-help" className="field-help">{checked && !nameOk ? t.nameInvalid : t.nameHelp} <LengthCounter value={label} max={passkeyLimits.name} /></small>
           {busy && <p className="caption" role="status">{t.waiting}</p>}
@@ -112,24 +123,33 @@ function PasskeysCard({ locale }: { locale: Locale }) {
 function BackupCodesCard({ locale }: { locale: Locale }) {
   const m = messages[locale], t = m.security;
   const [status, setStatus] = useState<RecoveryCodeStatus | null>(null), [failed, setFailed] = useState(false), [attempt, setAttempt] = useState(0);
-  const [confirming, setConfirming] = useState(false), [busy, setBusy] = useState(false), [actionStatus, setActionStatus] = useState(0), [codes, setCodes] = useState<RecoveryCodes | null>(null);
+  const [open, setOpen] = useState(false), [password, setPassword] = useState(""), [code, setCode] = useState(""), [checked, setChecked] = useState(false);
+  const [busy, setBusy] = useState(false), [error, setError] = useState(""), [codes, setCodes] = useState<RecoveryCodes | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     void browserApi().GET("/auth/recovery-codes", { signal: controller.signal }).then(result => { if (!controller.signal.aborted) { setStatus(dataOrThrow(result)); setFailed(false); } })
       .catch(() => { if (!controller.signal.aborted) setFailed(true); });
     return () => controller.abort();
   }, [attempt]);
-  // التوليد بلا مفتاح منع تكرار (مسار `/auth/*`): الرموز لا تُحفظ في جدول المفاتيح، فإعادة المحاولة تولّد مجموعة أخرى تبطل ما قبلها.
-  async function generate() {
-    setBusy(true); setActionStatus(0);
+  function close() { setOpen(false); setPassword(""); setCode(""); setChecked(false); setError(""); }
+  // إعادة التحقق قبل التوليد (ADR 0117): كلمة المرور ورمز TOTP في الجسم وحدهما، ويُمحيان بعد النجاح أو الإلغاء. بلا مفتاح منع تكرار
+  // (مسار `/auth/*`): الرموز لا تُحفظ في جدول المفاتيح، فإعادة المحاولة بعد النجاح تولّد مجموعة أخرى تبطل ما قبلها.
+  async function generate(event: React.FormEvent) {
+    event.preventDefault(); setChecked(true); setError("");
+    const problem = stepUpProblem(password, code);
+    if (problem) { setError(t[problem]); return; }
+    setBusy(true);
     try {
-      const result = await browserApi().POST("/auth/recovery-codes");
-      if (result.response.status === 401) window.dispatchEvent(new Event("session-revoked"));
-      if (!result.response.ok || !result.data) { setActionStatus(result.response.status); return; }
+      const result = await browserApi().POST("/auth/recovery-codes", { body: stepUpBody(password, code) });
+      const refusal = stepUpRefusal(result.response.status, (result.error as { code?: string } | undefined)?.code);
+      if (refusal === "session") { window.dispatchEvent(new Event("session-revoked")); setError(m.revoked); return; }
+      if (refusal) { setError(t[refusal]); return; }
+      if (!result.response.ok || !result.data) { setError(m.error); return; }
       const fresh = result.data;
-      setConfirming(false); setCodes(fresh); setStatus({ remaining: fresh.codes.length, generated_at: fresh.generated_at });
-    } catch { setActionStatus(503); } finally { setBusy(false); }
+      close(); setCodes(fresh); setStatus({ remaining: fresh.codes.length, generated_at: fresh.generated_at });
+    } catch { setError(m.error); } finally { setBusy(false); }
   }
+  const action = status?.generated_at ? t.regenerate : t.generate;
   return <section className="card security-card" aria-labelledby="codes-title" data-testid="backup-codes">
     <h2 id="codes-title"><Icon name="shield" />{t.codesTitle}</h2>
     <p className="muted">{t.codesLead}</p>
@@ -137,15 +157,19 @@ function BackupCodesCard({ locale }: { locale: Locale }) {
     {!status && !failed && <p className="muted" role="status">{m.loading}</p>}
     {codes ? <div className="one-time-link" data-testid="codes-once">
       <p className="notice" role="status">{t.codesOnce}</p>
-      <ol className="backup-code-list mono" dir="ltr">{codes.codes.map(code => <li key={code}>{groupCode(code)}</li>)}</ol>
+      <ol className="backup-code-list mono" dir="ltr">{codes.codes.map(item => <li key={item}>{groupCode(item)}</li>)}</ol>
       <div className="actions"><button type="button" className="secondary" onClick={() => setCodes(null)}>{t.codesDone}</button></div>
     </div> : status && <>
       <p data-testid="codes-status"><strong>{status.generated_at ? plural(status.remaining, t.codesLeft as PluralForms, locale) : t.codesNone}</strong>
         {status.generated_at && <span className="caption"> · {fill(t.codesGenerated, { date: longDate(status.generated_at, locale) })}</span>}</p>
-      <div className="actions"><button type="button" className={status.generated_at ? "secondary" : undefined} data-testid="generate-codes" onClick={() => { setActionStatus(0); setConfirming(true); }}>{status.generated_at ? t.regenerate : t.generate}</button></div>
+      {open ? <form className="invite-form security-form" noValidate onSubmit={event => void generate(event)} aria-labelledby="codes-form-title" data-testid="codes-form">
+        <h3 id="codes-form-title">{t.generateTitle}</h3>
+        <p className="notice attention">{t.generateEffect}</p>
+        <p className="caption">{t.codesStepUpLead}</p>
+        <StepUpFields locale={locale} password={password} code={code} checked={checked} onPassword={setPassword} onCode={setCode} />
+        {error && <p className="notice error" role="alert">{error}</p>}
+        <div className="actions"><button type="button" className="secondary" disabled={busy} onClick={close}>{m.cancel}</button><button disabled={busy}>{busy ? m.review.saving : action}</button></div>
+      </form> : <div className="actions"><button type="button" className={status.generated_at ? "secondary" : undefined} data-testid="generate-codes" onClick={() => { setError(""); setOpen(true); }}>{action}</button></div>}
     </>}
-    {confirming && <ConfirmDialog locale={locale} testId="confirm-generate-codes" title={t.generateTitle} confirm={status?.generated_at ? t.regenerate : t.generate} busy={busy} status={actionStatus} onConfirm={() => void generate()} onCancel={() => setConfirming(false)}>
-      <p>{t.generateEffect}</p>
-    </ConfirmDialog>}
   </section>;
 }

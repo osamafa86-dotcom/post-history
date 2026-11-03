@@ -88,14 +88,19 @@ function idempotency(request: Request) {
 }
 
 /**
- * الكتابات بجلسة. المستدعي معروف قبلها (`GET /auth/me` في المعالج)، فـ`401` من إعادة التحقق قبل تسجيل المفتاح كلمة مرور أو رمز خاطئ لا
- * جلسة منتهية: يعود `422` برمزه كي لا يُخرَج المستخدم.
+ * الكتابات بجلسة. المستدعي معروف قبلها (`GET /auth/me` في المعالج)، فـ`401` من إعادة التحقق قبل تسجيل المفتاح وقبل توليد الرموز
+ * الاحتياطية (ADR 0117) كلمة مرور أو رمز خاطئ لا جلسة منتهية: يعود `422` برمزه كي لا يُخرَج المستخدم ولا تُمحى جلسته.
  */
+const stepUpRefused = (code: string | undefined) => new WebError(422, code === "totp_required" ? "totp_required" : "step_up_failed");
 export async function accountWrite(request: Request, path: string, api: Api, me: Me, body: Record<string, unknown>) {
   if (new URL(request.url).search) throw new WebError(400, "request_failed");
   if (path === "auth/recovery-codes") {
-    if (Object.keys(body).length) throw new WebError(422, "request_failed");
-    const data = requireOk(await api.POST("/auth/recovery-codes"));
+    // كلمة المرور ورمز TOTP وحدهما، بقاعدة العقد قبل الإرسال؛ الجسم الناقص لا يصل الخادم فلا يُعدّ فشلًا على الحساب
+    const input = stepUpInput(body);
+    if (!input) throw new WebError(422, "request_failed");
+    const result = await api.POST("/auth/recovery-codes", { body: input });
+    if (result.response.status === 401) throw stepUpRefused(result.error?.code);
+    const data = requireOk(result);
     return json(checked(() => safeCodes(data)));
   }
   if (path === "auth/passkeys/registration-options") {
@@ -103,7 +108,7 @@ export async function accountWrite(request: Request, path: string, api: Api, me:
     if (!input) throw new WebError(422, "request_failed");
     const result = await api.POST("/auth/passkeys/registration-options", { body: input });
     const status = result.response.status, code = result.error?.code;
-    if (status === 401) throw new WebError(422, code === "totp_required" ? "totp_required" : "step_up_failed");
+    if (status === 401) throw stepUpRefused(code);
     if (status === 404) throw passkeysOff();
     if (status === 409) throw new WebError(409, code === "passkey_limit_reached" ? code : "request_failed");
     const data = requireOk(result);

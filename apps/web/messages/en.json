@@ -2125,6 +2125,8 @@
     "expired": "The request timed out. Start again.",
     "stepUpFailed": "The password or code is wrong.",
     "totpRequired": "Enter the authenticator app code too.",
+    "passwordRequired": "Enter your password.",
+    "totpInvalid": "The authenticator app code is six digits.",
     "tooMany": "Too many attempts in a row. Wait a little, then try again.",
     "synced": "Synced across your devices",
     "deviceOnly": "On one device",
@@ -2152,6 +2154,7 @@
     "regenerate": "Generate new codes",
     "generateTitle": "New backup codes",
     "generateEffect": "Ten new codes are generated and every earlier code stops working at once, used or not.",
+    "codesStepUpLead": "Before generating new codes we ask for your password, and the authenticator app code when it is enabled. Nothing changes until you confirm.",
     "codesOnce": "The codes are shown here once and we do not keep them. Write them down now and keep them away from this device; each code works once.",
     "codesDone": "Saved them, close"
   },
