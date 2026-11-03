@@ -81,10 +81,16 @@ data class UploadTask(
     val progress: Float get() = if (sizeBytes <= 0) 0f else (bytesConfirmed.toDouble() / sizeBytes).coerceIn(0.0, 1.0).toFloat()
 }
 
-/** Persistence for the queue. Room on Android; memory in tests. Every write must be durable before it returns. */
+/**
+ * Persistence for the queue. Room on Android; memory in tests. Every write must be durable before it returns.
+ *
+ * The engine only ever [update]s: the app queues a row, and a row the reporter cancelled (deleted) stays deleted, so a run still
+ * holding it never writes it back (ADR 0112).
+ */
 interface UploadStore {
     suspend fun get(id: String): UploadTask?
-    suspend fun save(task: UploadTask)
+    /** Writes over an existing row; false, writing nothing, when the row is gone. */
+    suspend fun update(task: UploadTask): Boolean
     /** Tasks that still need work, oldest first. */
     suspend fun pending(): List<UploadTask>
 }
@@ -92,8 +98,12 @@ interface UploadStore {
 class InMemoryUploadStore : UploadStore {
     private val tasks = LinkedHashMap<String, UploadTask>()
     override suspend fun get(id: String): UploadTask? = synchronized(tasks) { tasks[id] }
-    override suspend fun save(task: UploadTask) { synchronized(tasks) { tasks[task.id] = task } }
+    override suspend fun update(task: UploadTask): Boolean = synchronized(tasks) { if (task.id in tasks) { tasks[task.id] = task; true } else false }
     override suspend fun pending(): List<UploadTask> = synchronized(tasks) { tasks.values.filterNot { it.state.terminal }.sortedBy { it.createdAtEpochMs } }
+    /** Queues a row (or replaces it: tests set a row up in a given state). */
+    fun insert(task: UploadTask) { synchronized(tasks) { tasks[task.id] = task } }
+    /** The reporter's cancel or removal. */
+    fun delete(id: String) { synchronized(tasks) { tasks.remove(id) } }
 }
 
 /** Opens the picked file as a stream; a content URI on Android, a path in tests. */

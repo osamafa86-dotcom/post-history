@@ -10,9 +10,12 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.Update
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 import net.palpost.library.auth.KeystoreSealer
+import net.palpost.library.core.upload.AbortStore
+import net.palpost.library.core.upload.PendingAbort
 import net.palpost.library.core.upload.UploadFailure
 import net.palpost.library.core.upload.UploadState
 import net.palpost.library.core.upload.UploadStore
@@ -59,11 +62,69 @@ data class UploadTaskEntity(
 )
 
 /**
+ * The engine's columns of a queue row: what [RoomUploadStore.update] writes, over a row that exists and only then. The columns the
+ * app keeps (title, local copy, priority, owner) are not among them, so the engine's write never undoes the app's (ADR 0112).
+ */
+data class UploadTaskProgress(
+    val id: String,
+    val updatedAtEpochMs: Long,
+    val state: String,
+    val sha256: String?,
+    val headSha256: String?,
+    val tailSha256: String?,
+    val sessionId: String?,
+    val tusEndpoint: String?,
+    val tusUploadUrl: String?,
+    val sealedUploadToken: String?,
+    val tokenExpiresAtEpochMs: Long?,
+    val sessionExpiresAtEpochMs: Long?,
+    val partSizeBytes: Long?,
+    val ingestTokenRequired: Boolean,
+    val bytesConfirmed: Long,
+    val receiptNumber: String?,
+    val failure: String?,
+    val failureCode: String?,
+    val attempts: Int,
+)
+
+/**
+ * A cancelled row's server session still to end with `DELETE /uploads/{id}` (ADR 0112): the session id, the owner's opaque local id
+ * (the request goes in that account's name alone, ADR 0093) and the request's key. Cleared with every table by the emergency wipe.
+ */
+@Entity(tableName = "upload_aborts")
+data class UploadAbortEntity(
+    @PrimaryKey val sessionId: String,
+    val ownerAccount: String?,
+    val idempotencyKey: String,
+    val createdAtEpochMs: Long,
+)
+
+@Dao
+interface UploadAbortDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun add(entity: UploadAbortEntity): Long
+    @Query("SELECT * FROM upload_aborts ORDER BY createdAtEpochMs") suspend fun all(): List<UploadAbortEntity>
+    @Query("DELETE FROM upload_aborts WHERE sessionId = :sessionId") suspend fun remove(sessionId: String)
+}
+
+/** Core's kept aborts over Room. */
+class RoomAbortStore(private val dao: UploadAbortDao) : AbortStore {
+    override suspend fun add(abort: PendingAbort): Boolean {
+        dao.add(UploadAbortEntity(abort.sessionId, abort.ownerAccount, abort.idempotencyKey, abort.createdAtEpochMs))
+        return true
+    }
+    override suspend fun all(): List<PendingAbort> = dao.all().map { PendingAbort(it.sessionId, it.ownerAccount, it.idempotencyKey, it.createdAtEpochMs) }
+    override suspend fun remove(sessionId: String) = dao.remove(sessionId)
+}
+
+/**
  * A send draft kept on the phone only (`Save draft`, or what is left of a send that stopped part-way): the fields and the
  * picked originals' URIs as JSON, shown on the home screen until sent. Cleared with every table by the emergency wipe (SEC-01).
  *
  * [sealedGps]: the filming location of a send that stopped before all its materials were created, sealed with the Keystore
  * (ADR 0087): the rest of its files are created with it, then the row goes with the draft. A draft saved by hand has none.
+ *
+ * [ownerAccount]: the opaque local id of the account that saved it (ADR 0112, the follow-up of ADR 0093 and 0095): shown to and opened
+ * by that account alone, by the queue's own rule ([net.palpost.library.core.upload.AccountScope.owns]). Null for drafts before v6.
  */
 @Entity(tableName = "drafts")
 data class DraftEntity(
@@ -72,6 +133,7 @@ data class DraftEntity(
     val json: String,
     val updatedAtEpochMs: Long,
     val sealedGps: String? = null,
+    val ownerAccount: String? = null,
 )
 
 @Dao
@@ -90,7 +152,8 @@ interface UploadDao {
     @Query("SELECT * FROM upload_tasks WHERE id = :id") suspend fun get(id: String): UploadTaskEntity?
     @Query("SELECT * FROM upload_tasks WHERE id = :id") fun observe(id: String): Flow<UploadTaskEntity?>
     @Query("SELECT * FROM upload_tasks WHERE materialId = :materialId AND state IN ('VERIFIED','DEDUPLICATED') ORDER BY updatedAtEpochMs DESC LIMIT 1") suspend fun receiptFor(materialId: String): UploadTaskEntity?
-    @Upsert suspend fun upsert(entity: UploadTaskEntity)
+    /** The engine's write: an UPDATE by id, so a row the reporter cancelled (deleted) stays deleted. Returns the rows written (0 or 1). */
+    @Update(entity = UploadTaskEntity::class) suspend fun updateProgress(progress: UploadTaskProgress): Int
     /** Queues a row only if its id is new: a repeat of the same send never resets a row that has already progressed. Returns -1 when the row existed. */
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertIfAbsent(entity: UploadTaskEntity): Long
     /** Rows other than [exceptId] that still point at this content URI (the file is in use while one does). */
@@ -108,14 +171,15 @@ interface UploadDao {
     @Query("DELETE FROM upload_tasks WHERE id = :id") suspend fun delete(id: String)
 }
 
-@Database(entities = [UploadTaskEntity::class, DraftEntity::class], version = 5, exportSchema = false)
+@Database(entities = [UploadTaskEntity::class, DraftEntity::class, UploadAbortEntity::class], version = 6, exportSchema = false)
 abstract class UploadDatabase : RoomDatabase() {
     abstract fun uploads(): UploadDao
     abstract fun drafts(): DraftDao
+    abstract fun aborts(): UploadAbortDao
 
     companion object {
         fun open(context: Context): UploadDatabase =
-            Room.databaseBuilder(context.applicationContext, UploadDatabase::class.java, "uploads.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
+            Room.databaseBuilder(context.applicationContext, UploadDatabase::class.java, "uploads.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
 
         /** v2: sessions behind the ingest gate (SEC-07). Existing rows predate the gate. */
         val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
@@ -145,6 +209,14 @@ abstract class UploadDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE upload_tasks ADD COLUMN ownerAccount TEXT")
             }
         }
+
+        /** v6 (ADR 0112): each draft's owner (earlier drafts have none), and the cancelled sessions still to abort on the server. */
+        val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE drafts ADD COLUMN ownerAccount TEXT")
+                db.execSQL("CREATE TABLE IF NOT EXISTS upload_aborts (sessionId TEXT NOT NULL, ownerAccount TEXT, idempotencyKey TEXT NOT NULL, createdAtEpochMs INTEGER NOT NULL, PRIMARY KEY(sessionId))")
+            }
+        }
     }
 }
 
@@ -152,10 +224,15 @@ abstract class UploadDatabase : RoomDatabase() {
 class RoomUploadStore(private val dao: UploadDao, private val sealer: KeystoreSealer) : UploadStore {
     override suspend fun get(id: String): UploadTask? = dao.get(id)?.let { toTask(it) }
 
-    override suspend fun save(task: UploadTask) {
-        val existing = dao.get(task.id)
-        dao.upsert(toEntity(task, title = existing?.title ?: "", localCopyHandled = existing?.localCopyHandled ?: false, priority = existing?.priority))
-    }
+    override suspend fun update(task: UploadTask): Boolean = dao.updateProgress(progressOf(task)) > 0
+
+    private fun progressOf(t: UploadTask) = UploadTaskProgress(
+        id = t.id, updatedAtEpochMs = t.updatedAtEpochMs, state = t.state.name, sha256 = t.sha256, headSha256 = t.headSha256, tailSha256 = t.tailSha256,
+        sessionId = t.sessionId, tusEndpoint = t.tusEndpoint, tusUploadUrl = t.tusUploadUrl, sealedUploadToken = t.uploadToken?.let { sealer.sealString(it) },
+        tokenExpiresAtEpochMs = t.tokenExpiresAtEpochMs, sessionExpiresAtEpochMs = t.sessionExpiresAtEpochMs, partSizeBytes = t.partSizeBytes,
+        ingestTokenRequired = t.ingestTokenRequired, bytesConfirmed = t.bytesConfirmed, receiptNumber = t.receiptNumber, failure = t.failure?.name,
+        failureCode = t.failureCode, attempts = t.attempts,
+    )
 
     override suspend fun pending(): List<UploadTask> = dao.pending().map { toTask(it) }
 

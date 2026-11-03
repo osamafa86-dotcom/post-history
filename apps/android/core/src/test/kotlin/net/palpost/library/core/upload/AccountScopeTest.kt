@@ -68,7 +68,7 @@ class AccountScopeTest {
         mayAct = mayAct,
     )
 
-    private suspend fun queue(owner: String?) = store.save(
+    private suspend fun queue(owner: String?) = store.insert(
         UploadTask(id = "t1", materialId = "7b4a1f6e-3c2d-4e8f-9a1b-2c3d4e5f6a7b", kind = "original", fileUri = file.absolutePath, filename = "a.bin",
             mimeType = null, sizeBytes = file.length(), idempotencyKey = "idem-1", createdAtEpochMs = now, ownerAccount = owner),
     )

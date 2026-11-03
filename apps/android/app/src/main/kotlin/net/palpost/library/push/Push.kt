@@ -35,6 +35,7 @@ import net.palpost.library.ui.MainActivity
 import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import net.palpost.library.core.notifications.NotificationIds
 
 /**
  * FCM for the reporter's phone (contract v0.2: `PUT/DELETE /push-devices`). Firebase is initialised by hand from
@@ -45,7 +46,6 @@ object Push {
     val enabled: Boolean get() = listOf(BuildConfig.FCM_APP_ID, BuildConfig.FCM_API_KEY, BuildConfig.FCM_PROJECT_ID, BuildConfig.FCM_SENDER_ID).all { it.isNotBlank() }
 
     const val CHANNEL = "newsroom"
-    private const val NOTIFICATION_BASE_ID = 3000
 
     fun init(context: Context) {
         if (!enabled || FirebaseApp.getApps(context).isNotEmpty()) return
@@ -89,7 +89,7 @@ object Push {
      */
     fun show(context: Context, container: AppContainer, data: Map<String, String>) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
-        val id = NOTIFICATION_BASE_ID + ((data["notification_id"]?.hashCode() ?: 0) and 0xFFF)
+        val id = NotificationIds.push(data["notification_id"]) // a range of its own: never an upload receipt's id
         val link = NotificationLink(NotificationLinks.targetOf(data["type"], data["material_id"]), container.scope.value.current)
         val intent = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
         for ((k, v) in NotificationLinks.extras(link, container.settings.notificationLinkKey)) intent.putExtra(k, v)

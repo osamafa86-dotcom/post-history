@@ -65,7 +65,9 @@ data class HomeUiState(val me: Me? = null, val loading: Boolean = true, val erro
 class HomeViewModel(private val app: Application, private val container: AppContainer) : ViewModel() {
     private val _state = MutableStateFlow(HomeUiState())
     val state: StateFlow<HomeUiState> = _state
-    val drafts: StateFlow<List<DraftEntity>> = container.database.drafts().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /** The signed-in account's drafts alone, by the queue's rule (ADR 0112, 0093): another's stay on the phone with nothing shown. */
+    val drafts: StateFlow<List<DraftEntity>> = combine(container.database.drafts().observeAll(), container.scope) { rows, scope -> rows.filter { scope.owns(it.ownerAccount) } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     /** «Latest sends»: the signed-in account's rows alone (ADR 0093). */
     val uploads: StateFlow<List<UploadTaskEntity>> = combine(container.database.uploads().observeAll(), container.scope) { rows, scope -> rows.filter { scope.owns(it.ownerAccount) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

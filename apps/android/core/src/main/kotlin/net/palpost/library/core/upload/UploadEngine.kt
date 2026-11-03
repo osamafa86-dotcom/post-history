@@ -54,9 +54,19 @@ class UploadEngine(
      * session creation, gate token and receipt poll, so a sign-out mid-run is honoured at the next one.
      */
     private val mayAct: (UploadTask) -> Boolean = { true },
+    /**
+     * Has the reporter cancelled this row (ADR 0112)? Read before every step and every chunk, and before every write: a cancelled
+     * run stops where it is and writes nothing more, even before the row's deletion is seen.
+     */
+    private val isCancelled: (taskId: String) -> Boolean = { false },
+    /** Ends on the server the session of a row found cancelled or gone mid-run (ADR 0112); null where nothing is aborted (netlab). */
+    private val aborts: SessionAborts? = null,
 ) {
     /** Consecutive 401s from the gate per session; one fresh token is tried before the session counts as lost. */
     private val gateRejections = HashMap<String, Int>()
+
+    /** The row as each run last read or wrote it: what a cancelled row's session abort is sent from once the row is gone. */
+    private val lastKnown = java.util.concurrent.ConcurrentHashMap<String, UploadTask>()
 
     data class Config(
         val maxRequestPayloadBytes: Int = 16 * 1024 * 1024,
@@ -84,10 +94,40 @@ class UploadEngine(
     fun interface ProgressListener { fun onProgress(task: UploadTask, bytesSent: Long) }
 
     suspend fun run(taskId: String, shouldStop: () -> Boolean = { false }, listener: ProgressListener? = null): RunOutcome {
+        val stop = { shouldStop() || isCancelled(taskId) }
+        return try {
+            val outcome = steps(taskId, stop, listener)
+            if (isCancelled(taskId)) gone(taskId) else outcome
+        } catch (e: Gone) {
+            gone(taskId)
+        } finally {
+            lastKnown.remove(taskId)
+        }
+    }
+
+    /**
+     * The host's last line for a run that threw what no step expects (a provider's runtime error, a bug): the row fails with
+     * [UploadFailure.UNKNOWN], which the reporter can retry, instead of the exception taking the process down, and with it every
+     * later launch that resumes the queue.
+     */
+    suspend fun failUnexpected(taskId: String) {
+        val task = store.get(taskId) ?: return
+        if (task.state.terminal || isCancelled(taskId)) return
+        store.update(task.copy(state = UploadState.FAILED, failure = UploadFailure.UNKNOWN, failureCode = null, updatedAtEpochMs = clock()))
+    }
+
+    /** The row was cancelled or deleted under the run: nothing more is written, and its session, if it has one, is ended on the server. */
+    private suspend fun gone(taskId: String): RunOutcome {
+        lastKnown[taskId]?.let { aborts?.abort(it) }
+        return RunOutcome.Finished
+    }
+
+    private suspend fun steps(taskId: String, shouldStop: () -> Boolean, listener: ProgressListener?): RunOutcome {
         var transientFailures = 0
         var sizer: RequestSizer? = null
         while (true) {
-            val task = store.get(taskId) ?: return RunOutcome.Finished
+            val task = store.get(taskId) ?: throw Gone()
+            lastKnown[taskId] = task
             if (task.state.terminal) return RunOutcome.Finished
             if (shouldStop()) return RunOutcome.Stopped
             try {
@@ -119,7 +159,11 @@ class UploadEngine(
         }
     }
 
-    private suspend fun persist(task: UploadTask) = store.save(task.copy(updatedAtEpochMs = clock()))
+    /** Writes over the row; a row cancelled or gone is never written back (ADR 0112) and ends the run. */
+    private suspend fun persist(task: UploadTask) {
+        lastKnown[task.id] = task
+        if (isCancelled(task.id) || !store.update(task.copy(updatedAtEpochMs = clock()))) throw Gone()
+    }
 
     /** One sizer per run: the first request is the session's part size, later ones follow the link. */
     private fun sizerFor(task: UploadTask): RequestSizer {
@@ -232,12 +276,15 @@ class UploadEngine(
             return classify(current, e)
         } catch (e: FileNotFoundException) {
             fail(current, UploadFailure.FILE_UNAVAILABLE); return null
+        } catch (e: SecurityException) {
+            // The read grant on the picked file is gone (revoked, or the provider forgot it): the same as a file that is not there.
+            fail(current, UploadFailure.FILE_UNAVAILABLE); return null
         } catch (e: IOException) {
             sizer.failed()
             persist((store.get(current.id) ?: current).copy(attempts = current.attempts + 1))
             throw Transient(e)
         }
-        val fresh = store.get(current.id) ?: return RunOutcome.Finished
+        val fresh = store.get(current.id) ?: throw Gone()
         if (confirmed >= current.sizeBytes) {
             persist(fresh.copy(state = UploadState.AWAITING_RECEIPT, bytesConfirmed = current.sizeBytes))
             return null
@@ -336,6 +383,9 @@ class UploadEngine(
     }
 
     private class Transient(cause: Throwable) : Exception(cause)
+
+    /** The row was cancelled or deleted mid-run. No subtype of what the steps catch, so it reaches [run] from inside the transport too. */
+    private class Gone : Exception()
 
     companion object {
         const val INGEST_TOKEN_HEADER = "Ingest-Token"
