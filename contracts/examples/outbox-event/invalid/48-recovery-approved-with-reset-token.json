@@ -1,0 +1,13 @@
+{
+  "id": "4115",
+  "type": "auth.recovery_approved",
+  "aggregate_type": "user",
+  "aggregate_id": "3a4b5c6d-7e8f-4091-a2b3-c4d5e6f70812",
+  "occurred_at": "2026-11-03T13:15:00Z",
+  "idempotency_key": "auth.recovery_approved:smoke-token",
+  "actor_id": "2f3e4d5c-6b7a-4899-8a7b-6c5d4e3f2a1b",
+  "payload": {
+    "recovery_request_id": "0f0e0d0c-0b0a-4908-8706-050403020100",
+    "reset_token": "xxxxxxxxxxxxxxxx"
+  }
+}

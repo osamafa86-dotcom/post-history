@@ -201,6 +201,137 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/recovery-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * حال الرموز الاحتياطية للحساب (ADR 0107)
+         * @description كم رمزًا احتياطيًا غير مستعمل بقي ومتى وُلّدت المجموعة الحالية. لا رمز في الرد: الرموز تُعرض مرة واحدة عند توليدها.
+         */
+        get: operations["getRecoveryCodeStatus"];
+        put?: never;
+        /**
+         * توليد رموز احتياطية جديدة تبطل السابقة (ADR 0107)
+         * @description عشرة رموز base32 بطول 12 تُعرض **مرة واحدة** في هذا الرد وتُخزَّن ببصماتها وحدها، وكل رمز سابق للحساب (مستعملًا كان أو لا) يبطل في المعاملة نفسها. الرمز يبدأ استعادة الحساب في `POST /auth/recovery` ولا يكفي وحده: الطلب ينتظر اعتماد المشرف أو مدير النظام بعد التحقق من الهوية خارج النظام. لا `Idempotency-Key` هنا (مسارات `/auth/*`) كي لا تُحفظ الرموز في جدول المفاتيح؛ التكرار يولّد مجموعة جديدة تبطل ما قبلها. حد معدل لكل حساب. التدقيق بعدد الرموز وحده، وحدث `auth.recovery_codes_generated` بلا رمز ينبّه صاحب الحساب على أجهزته.
+         */
+        post: operations["generateRecoveryCodes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/passkeys/registration-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * خيارات تسجيل مفتاح مرور بعد إعادة التحقق (ADR 0107)
+         * @description إعادة تحقق قبل إضافة وسيلة دخول: كلمة المرور، ورمز TOTP إن كانت المصادقة الثنائية مفعّلة (غيابه بعد كلمة مرور صحيحة `401 totp_required`)، فجلسة مسروقة وحدها لا تضيف مفتاحًا. الرد خيارات `navigator.credentials.create()` بصيغة JSON من WebAuthn Level 3 (`PublicKeyCredentialCreationOptionsJSON`): مفتاح قابل للاكتشاف، والتحقق من المستخدم إلزامي، وبلا شهادة (`none`)، ومفاتيح الحساب القائمة مستثناة. نطاق الطرف المعتمد (RP ID) ومصادره المسموحة من بيئة الخادم، لا نطاق مكتوبًا في الشفرة؛ غير مضبوطة = مفاتيح المرور معطّلة و`404`. التحدي لمرة واحدة ومربوط بالمستخدم، ويُخزَّن ببصمته وحدها. حد معدل لكل حساب على إعادة التحقق الفاشلة وعلى عدد التحديات. لا `Idempotency-Key` (مسارات `/auth/*`). الحساب الذي بلغ عشرة مفاتيح `409 passkey_limit_reached`.
+         */
+        post: operations["createPasskeyRegistrationOptions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/passkeys/login-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * خيارات الدخول بمفتاح مرور (ADR 0107)
+         * @description خيارات `navigator.credentials.get()` بصيغة JSON من WebAuthn Level 3 (`PublicKeyCredentialRequestOptionsJSON`) بلا قائمة مفاتيح (المفتاح يُكتشف على الجهاز)، فلا يُسأل عن بريد ولا يُكشف وجود حساب. التحدي لمرة واحدة ويُخزَّن ببصمته. حد معدل لكل عنوان. معطّلة بلا إعداد البيئة: `404`.
+         */
+        post: operations["createPasskeyLoginOptions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/passkeys/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * الدخول بمفتاح مرور (ADR 0107)
+         * @description يتحقق الخادم بمكتبة WebAuthn مثبّتة الإصدار من التوقيع والتحدي والمصدر وبصمة RP ID وعلمي الحضور والتحقق من المستخدم والعدّاد. مفتاح المرور بالتحقق من المستخدم (بصمة أو رمز الجهاز) عاملان معًا، فيحلّ محل كلمة المرور ورمز TOTP ويصدر جلسة كاملة. المفتاح المجهول أو المبطَل، والتوقيع الخاطئ، وعدّاد تراجع، والحساب المعلّق أو في «إعادة تعيين إلزامية»: `401 unauthorized` واحد بالرسالة نفسها. التحدي المنتهي أو المستهلك `410 challenge_expired`. حد معدل على الفشل لكل عنوان. معرّف المفتاح والتحدي لا يدخلان سجلًا ولا تدقيقًا ولا حدثًا. لا `Idempotency-Key` (مسارات `/auth/*`).
+         */
+        post: operations["loginWithPasskey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/passkeys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * مفاتيح مروري الفاعلة (ADR 0107)
+         * @description الأحدث أولًا. لا معرّف اعتماد ولا مفتاح عام ولا جهاز في الرد؛ المعرّف مرجع داخلي للإبطال.
+         */
+        get: operations["listMyPasskeys"];
+        put?: never;
+        /**
+         * تسجيل مفتاح مرور برد المتصفح على التحدي (ADR 0107)
+         * @description `credential` هو `PublicKeyCredential.toJSON()` من `navigator.credentials.create()` (`RegistrationResponseJSON`). يتحقق الخادم من التحدي (لمرة واحدة، لهذا المستخدم، غير منتهٍ: وإلا `410 challenge_expired`) والمصدر وRP ID والتحقق من المستخدم والخوارزمية، ويحفظ المفتاح العام وعدّاده. رد لا يتحقق `422 validation_failed`، ومفتاح مسجَّل من قبل `409 passkey_exists`، وبلوغ عشرة مفاتيح `409 passkey_limit_reached`. معاملة واحدة: المفتاح، والتدقيق بمعرّفه الداخلي، وحدث `auth.passkey_added` بمعرّفه وحده ينبّه صاحب الحساب على أجهزته. الاسم اختياري يكتبه صاحب الحساب ليميّز مفاتيحه، ولا يدخل حدثًا ولا تدقيقًا.
+         */
+        post: operations["registerPasskey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/passkeys/{passkey_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description المعرّف الداخلي للمفتاح (`Passkey.id`) */
+                passkey_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * إبطال مفتاح مرور (ADR 0107)
+         * @description يبطل المفتاح فلا يدخل به أحد بعد الآن؛ الجلسات القائمة لا تتغيّر (`/auth/sessions` لإبطالها). مفتاح غير موجود أو لغير المستدعي أو مبطَل من قبل `404`. معاملة واحدة: الإبطال، والتدقيق، وحدث `auth.passkey_revoked` بمعرّفه وحده. اعتماد الاستعادة ورابط إعادة التعيين يبطلان كل مفاتيح الحساب (ADR 0107).
+         */
+        delete: operations["revokeMyPasskey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users": {
         parameters: {
             query?: never;
@@ -238,6 +369,29 @@ export interface paths {
          */
         put: operations["setUserStatus"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/password-reset-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المستخدم */
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * رابط إعادة تعيين لمرة واحدة يصدره مدير النظام (A1، ADR 0107)
+         * @description لا مزوّد بريد في هذه المرحلة: يتحقق المدير من الهوية خارج النظام، ثم يصدر هذا الرمز فيراه **مرة واحدة** ويسلّمه بيده. الرابط يبنيه العميل من مصدره هو (`/{locale}/reset-password#token=…`، والرمز في جزء الرابط فلا يصل إلى أي خادم ولا سجل)، ويُكمله صاحب الحساب بـ `POST /auth/recovery/complete` ثم `POST /auth/totp/confirm` كما في الاستعادة. صلاحيته قصيرة من بيئة الخادم (ساعة افتراضيًا، 24 ساعة على الأكثر)، ويُستهلك مرة واحدة، ويُخزَّن ببصمته وحدها. معاملة واحدة كاعتماد الاستعادة: يبطل كل جلسات الحساب ورموز رفعه وأجهزة إشعاره ومفاتيح مروره، ويضعه في «إعادة تعيين إلزامية»، ويُغلق كل طلب استعادة مفتوح له (المنتظر يُرفض، والمعتمد الذي لم يُكمَل يبطل رمزه)، ويكتب التدقيق بالسبب ومعرّف الطلب، وحدث `auth.recovery_approved` بمعرّفات وحدها. التكرار بالمفتاح نفسه يعيد الرد **بلا** `reset_token` (الرموز لا تُحفظ في جدول المفاتيح)، فالرمز لا يُعرض مرتين؛ وإصدار رابط جديد يبطل السابق. لا يصدر المدير رابطًا لحسابه (`403 forbidden_scope`) ولا لحساب مدير نظام (`403 admin_quorum_required`: إجراء الشخصين من سطر الأوامر)، والحساب المعلّق `409 recovery_state_conflict`. حد معدل لكل مدير.
+         */
+        post: operations["issuePasswordResetLink"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2431,7 +2585,7 @@ export interface components {
              * @description رمز ثابت يتفرّع عليه العميل؛ الرسالة للبشر فقط. قائمة مفتوحة؛ الرمز المجهول = خطأ عام
              * @enum {string}
              */
-            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "seats_exhausted" | "last_buyer_admin" | "listing_unavailable" | "exclusive_unavailable" | "mixed_currency" | "price_changed" | "order_state_conflict" | "license_not_active" | "delivery_not_ready" | "download_limit_reached" | "webhook_signature_invalid" | "already_refunded" | "commission_rule_exists" | "live_payments_disabled" | "payout_below_minimum" | "insufficient_available" | "payout_state_conflict" | "self_approval_forbidden" | "already_approved" | "payout_policy_exists" | "render_not_allowed" | "render_limit_reached" | "render_location_unusable" | "assignment_not_allowed" | "assignment_open" | "assignee_not_eligible" | "internal_error";
+            code: "bad_request" | "unauthorized" | "totp_required" | "forbidden_scope" | "not_found" | "rate_limited" | "validation_failed" | "dynamic_fields_invalid" | "shares_not_100" | "idempotency_key_reused" | "idempotency_in_progress" | "invalid_transition" | "already_reserved" | "upload_state_conflict" | "checksum_mismatch" | "form_version_conflict" | "sensitive_fields_not_supported_v0" | "recovery_state_conflict" | "precondition_failed" | "forbidden_role" | "admin_quorum_required" | "credential_reset_required" | "attestation_failed" | "challenge_expired" | "assertion_replay" | "attestation_key_conflict" | "attestation_unavailable" | "media_resource_gone" | "export_not_ready" | "rights_not_sellable" | "listing_exists" | "preview_not_ready" | "seats_exhausted" | "last_buyer_admin" | "listing_unavailable" | "exclusive_unavailable" | "mixed_currency" | "price_changed" | "order_state_conflict" | "license_not_active" | "delivery_not_ready" | "download_limit_reached" | "webhook_signature_invalid" | "already_refunded" | "commission_rule_exists" | "live_payments_disabled" | "payout_below_minimum" | "insufficient_available" | "payout_state_conflict" | "self_approval_forbidden" | "already_approved" | "payout_policy_exists" | "render_not_allowed" | "render_limit_reached" | "render_location_unusable" | "assignment_not_allowed" | "assignment_open" | "assignee_not_eligible" | "passkey_exists" | "passkey_limit_reached" | "internal_error";
             message: string;
             /** @description لتتبع الطلب في السجلات */
             request_id: string;
@@ -2562,6 +2716,105 @@ export interface components {
              * @description انتهاء صلاحية الطلب أو الرابط
              */
             expires_at?: string | null;
+        };
+        RecoveryCodeStatus: {
+            /** @description الرموز غير المستعملة من المجموعة الحالية */
+            remaining: number;
+            /**
+             * Format: date-time
+             * @description توليد المجموعة الحالية؛ `null` = لم تُولَّد رموز للحساب
+             */
+            generated_at: string | null;
+        };
+        RecoveryCodes: {
+            /** @description تُعرض مرة واحدة ولا تُخزَّن إلا ببصماتها، ولا تُسجَّل ولا تدخل حدثًا ولا إشعارًا. العميل يعرضها ولا يحفظها، ويقبل الرمز عند إدخاله في `POST /auth/recovery` بأحرف صغيرة أو بمسافات وشرطات فيطبّعه قبل الإرسال. */
+            codes: string[];
+            /** Format: date-time */
+            generated_at: string;
+        };
+        PasskeyStepUp: {
+            password: string;
+            /** @description مطلوب إن كانت المصادقة الثنائية مفعّلة للحساب */
+            totp_code?: string;
+        };
+        PasskeyChallenge: {
+            /** Format: uuid */
+            challenge_id: string;
+            /** @description خيارات WebAuthn بصيغة JSON من Level 3 كما تقبلها `PublicKeyCredential.parseCreationOptionsFromJSON()` أو `parseRequestOptionsFromJSON()`؛ تُمرَّر إلى المتصفح كما هي. فيها التحدي، فلا تُسجَّل ولا تُحفظ. */
+            public_key: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            expires_at: string;
+        };
+        /** @description `PublicKeyCredential.toJSON()` كما يعيده المتصفح (`RegistrationResponseJSON` أو `AuthenticationResponseJSON`). المعرّف والتوقيع وبيانات العميل لا تُسجَّل ولا تُعاد ولا تدخل تدقيقًا أو حدثًا. */
+        WebAuthnCredential: {
+            id: string;
+            rawId: string;
+            type: string;
+            response: {
+                clientDataJSON?: string;
+                attestationObject?: string;
+                authenticatorData?: string;
+                signature?: string;
+                userHandle?: string | null;
+            } & {
+                [key: string]: unknown;
+            };
+        } & {
+            [key: string]: unknown;
+        };
+        PasskeyAssertion: {
+            /** Format: uuid */
+            challenge_id: string;
+            credential: components["schemas"]["WebAuthnCredential"];
+        };
+        /** @description اسم يكتبه صاحب المفتاح ليميّز مفاتيحه، بقاعدة `MaterialTag` نفسها: 1–40 محرفًا بلا مسافة في الطرفين ولا محارف تحكم أو اتجاه (`passkeys_name_valid` في القاعدة). يُعرض لصاحبه وحده، ولا يدخل تدقيقًا ولا حدثًا. */
+        PasskeyName: string;
+        PasskeyRegistration: {
+            /** Format: uuid */
+            challenge_id: string;
+            credential: components["schemas"]["WebAuthnCredential"];
+            name?: components["schemas"]["PasskeyName"];
+        };
+        Passkey: {
+            /**
+             * Format: uuid
+             * @description مرجع داخلي؛ ليس معرّف الاعتماد
+             */
+            id: string;
+            name: components["schemas"]["PasskeyName"] | null;
+            /** @description مفتاح يُزامَن بين أجهزة صاحبه بحسب المصادِق؛ `false` = على جهاز واحد أو مفتاح أمان */
+            multi_device: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description آخر دخول به؛ `null` = لم يُستعمل بعد
+             */
+            last_used_at: string | null;
+        };
+        PasskeyList: {
+            items: components["schemas"]["Passkey"][];
+        };
+        /**
+         * @description لماذا أصدر المدير الرابط؛ يُسجَّل في التدقيق رمزًا لا نصًّا
+         * @enum {string}
+         */
+        PasswordResetReason: "forgot_password" | "lost_device" | "suspected_compromise";
+        PasswordResetLinkCreate: {
+            reason: components["schemas"]["PasswordResetReason"];
+        };
+        PasswordResetLink: {
+            /**
+             * Format: uuid
+             * @description طلب الاستعادة المعتمد الذي يحمل الرمز
+             */
+            recovery_request_id: string;
+            /** @description يُعاد مرة واحدة للمدير ليسلّمه بيده؛ لا يُسجَّل ولا يُخزَّن إلا ببصمته ولا يُحفظ في جدول مفاتيح منع التكرار، فلا يعود عند التكرار ولا حين تتولى قناة تسليم أخرى إيصاله. العميل يعرضه رابطًا مرة واحدة ولا يحفظه. */
+            reset_token?: string;
+            /** Format: date-time */
+            reset_token_expires_at: string;
         };
         /**
          * @description ماذا وصل — pending → proxy_received → original_received → verified؛ failed من أي حالة
@@ -5015,7 +5268,7 @@ export interface components {
             /** @description تسلسلي متزايد (رقم الصف في جدول Outbox) بصيغة نصية؛ يُستخدم مؤشرًا في `after` */
             id: string;
             /** @enum {string} */
-            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested" | "order.status_changed" | "license.issued" | "license.revoked" | "payout.status_changed" | "render.requested" | "render.started" | "render.completed" | "render.failed" | "assignment.created" | "assignment.state_changed" | "tag.suggestions_changed" | "tag.rewritten" | "platform_settings.changed" | "user.roles_changed" | "buyer_organization.status_changed";
+            type: "material.created" | "material.urgent_received" | "material.updated" | "material.version_created" | "material.technical_transition" | "material.editorial_transition" | "material.rights_transition" | "material.acknowledged" | "material.change_requested" | "material.accepted_for_production" | "material.reserved" | "material.released" | "material.contributors_set" | "material.published" | "upload.started" | "upload.progress" | "upload.proxy_received" | "upload.original_received" | "upload.verified" | "upload.deduplicated" | "upload.failed" | "form.published" | "ai.draft_ready" | "notification.escalated" | "auth.recovery_requested" | "auth.recovery_approved" | "user.status_changed" | "auth.recovery_completed" | "export.requested" | "setting.changed" | "catalog.listing_changed" | "license.delivery_requested" | "order.status_changed" | "license.issued" | "license.revoked" | "payout.status_changed" | "render.requested" | "render.started" | "render.completed" | "render.failed" | "assignment.created" | "assignment.state_changed" | "tag.suggestions_changed" | "tag.rewritten" | "platform_settings.changed" | "user.roles_changed" | "buyer_organization.status_changed" | "auth.passkey_added" | "auth.passkey_revoked" | "auth.recovery_codes_generated";
             /** @enum {string} */
             aggregate_type: "material" | "upload" | "notification" | "form" | "user" | "listing" | "license" | "order" | "payout" | "organization";
             /** Format: uuid */
@@ -5056,7 +5309,7 @@ export interface components {
                 /** @enum {string} */
                 organizationStatus: "pending_verification" | "active" | "suspended" | "rejected";
             };
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
     };
     responses: {
         /** @description طلب غير صالح (معاملات استعلام أو مؤشر غير مفهوم) */
@@ -5479,6 +5732,213 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
         };
     };
+    getRecoveryCodeStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الحال */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryCodeStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    generateRecoveryCodes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الرموز الجديدة (تُعرض مرة واحدة) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryCodes"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    createPasskeyRegistrationOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyStepUp"];
+            };
+        };
+        responses: {
+            /** @description التحدي وخيارات الإنشاء */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeyChallenge"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    createPasskeyLoginOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description التحدي وخيارات الطلب */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeyChallenge"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    loginWithPasskey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyAssertion"];
+            };
+        };
+        responses: {
+            /** @description جلسة */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listMyPasskeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description المفاتيح */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeyList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    registerPasskey: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyRegistration"];
+            };
+        };
+        responses: {
+            /** @description المفتاح المسجَّل */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Passkey"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    revokeMyPasskey: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description المعرّف الداخلي للمفتاح (`Passkey.id`) */
+                passkey_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description أُبطل */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listUsers: {
         parameters: {
             query?: {
@@ -5546,6 +6006,42 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    issuePasswordResetLink: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description معرّف المستخدم */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetLinkCreate"];
+            };
+        };
+        responses: {
+            /** @description الرمز (مرة واحدة) وانتهاؤه */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetLink"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     setUserWorkName: {

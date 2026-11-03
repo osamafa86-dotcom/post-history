@@ -46,6 +46,8 @@ export async function seed({ databaseUrl, apiUrl, fieldKey = null }) {
   users.system_admin_b = await user("system-admin-b", "system_admin");
   users.victim_reporter = await user("victim", "reporter", { officeId: officeA });
   users.system_admin_c = await user("system-admin-c", "system_admin");
+  // account-recovery (ADR 0107): a throwaway account the run resets (its sessions end, its password and TOTP change)
+  users.recovery_target = await user("recovery-target", "producer");
   // v0.3 buyers: an active synthetic organization with its admin and member, so the write matrix has a token for the /orders roles
   const org = (await q(
     `INSERT INTO buyer_organizations (legal_name, display_name_ar, display_name_en, country, billing_email, status, verified_at, verified_by)
@@ -137,7 +139,7 @@ export async function seed({ databaseUrl, apiUrl, fieldKey = null }) {
     }
   }
   await pool.end();
-  const { reporter_b: _b, supervisor_b: _sb, producer_b: _pb, system_admin_b: _ab, system_admin_c: _ac, victim_reporter: _vr, ...roleTokens } = tokens;
+  const { reporter_b: _b, supervisor_b: _sb, producer_b: _pb, system_admin_b: _ab, system_admin_c: _ac, victim_reporter: _vr, recovery_target: _rt, ...roleTokens } = tokens;
   return {
     tokens: roleTokens, allTokens: tokens, users, password, totp, legalName,
     fixtures: {

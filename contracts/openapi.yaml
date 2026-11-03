@@ -67,7 +67,9 @@ servers:
 
 tags:
   - name: auth
-    description: الهوية — الدخول بكلمة المرور ورمز TOTP، تحديث الجلسة، واستعادة الحساب بمساعدة المشرف.
+    description: >-
+      الهوية — الدخول بكلمة المرور ورمز TOTP أو بمفتاح مرور (WebAuthn)، تحديث الجلسة، واستعادة الحساب بالرمز الاحتياطي واعتماد
+      المشرف أو برابط إعادة تعيين يصدره مدير النظام (ADR 0107).
   - name: materials
     description: المواد بحالاتها الثلاث المستقلة، وسجل انتقالاتها، والمساهمون وحصصهم، وحجز الإنتاج.
   - name: uploads
@@ -361,6 +363,194 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
 
+  /auth/recovery-codes:
+    get:
+      tags: [auth]
+      summary: حال الرموز الاحتياطية للحساب (ADR 0107)
+      description: >-
+        كم رمزًا احتياطيًا غير مستعمل بقي ومتى وُلّدت المجموعة الحالية. لا رمز في الرد: الرموز تُعرض مرة واحدة عند توليدها.
+      operationId: getRecoveryCodeStatus
+      x-roles: [authenticated]
+      responses:
+        "200":
+          description: الحال
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecoveryCodeStatus" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [auth]
+      summary: توليد رموز احتياطية جديدة تبطل السابقة (ADR 0107)
+      description: >-
+        عشرة رموز base32 بطول 12 تُعرض **مرة واحدة** في هذا الرد وتُخزَّن ببصماتها وحدها، وكل رمز سابق للحساب (مستعملًا كان أو لا) يبطل
+        في المعاملة نفسها. الرمز يبدأ استعادة الحساب في `POST /auth/recovery` ولا يكفي وحده: الطلب ينتظر اعتماد المشرف أو مدير النظام
+        بعد التحقق من الهوية خارج النظام. لا `Idempotency-Key` هنا (مسارات `/auth/*`) كي لا تُحفظ الرموز في جدول المفاتيح؛ التكرار يولّد
+        مجموعة جديدة تبطل ما قبلها. حد معدل لكل حساب. التدقيق بعدد الرموز وحده، وحدث `auth.recovery_codes_generated` بلا رمز ينبّه
+        صاحب الحساب على أجهزته.
+      operationId: generateRecoveryCodes
+      x-roles: [authenticated]
+      responses:
+        "200":
+          description: الرموز الجديدة (تُعرض مرة واحدة)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecoveryCodes" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/passkeys/registration-options:
+    post:
+      tags: [auth]
+      summary: خيارات تسجيل مفتاح مرور بعد إعادة التحقق (ADR 0107)
+      description: >-
+        إعادة تحقق قبل إضافة وسيلة دخول: كلمة المرور، ورمز TOTP إن كانت المصادقة الثنائية مفعّلة (غيابه بعد كلمة مرور صحيحة
+        `401 totp_required`)، فجلسة مسروقة وحدها لا تضيف مفتاحًا. الرد خيارات `navigator.credentials.create()` بصيغة JSON من
+        WebAuthn Level 3 (`PublicKeyCredentialCreationOptionsJSON`): مفتاح قابل للاكتشاف، والتحقق من المستخدم إلزامي، وبلا شهادة
+        (`none`)، ومفاتيح الحساب القائمة مستثناة. نطاق الطرف المعتمد (RP ID) ومصادره المسموحة من بيئة الخادم، لا نطاق مكتوبًا في
+        الشفرة؛ غير مضبوطة = مفاتيح المرور معطّلة و`404`. التحدي لمرة واحدة ومربوط بالمستخدم، ويُخزَّن ببصمته وحدها. حد معدل لكل حساب
+        على إعادة التحقق الفاشلة وعلى عدد التحديات. لا `Idempotency-Key` (مسارات `/auth/*`). الحساب الذي بلغ عشرة مفاتيح
+        `409 passkey_limit_reached`.
+      operationId: createPasskeyRegistrationOptions
+      x-roles: [authenticated]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasskeyStepUp" }
+      responses:
+        "200":
+          description: التحدي وخيارات الإنشاء
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasskeyChallenge" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/passkeys/login-options:
+    post:
+      tags: [auth]
+      summary: خيارات الدخول بمفتاح مرور (ADR 0107)
+      description: >-
+        خيارات `navigator.credentials.get()` بصيغة JSON من WebAuthn Level 3 (`PublicKeyCredentialRequestOptionsJSON`) بلا قائمة
+        مفاتيح (المفتاح يُكتشف على الجهاز)، فلا يُسأل عن بريد ولا يُكشف وجود حساب. التحدي لمرة واحدة ويُخزَّن ببصمته. حد معدل لكل
+        عنوان. معطّلة بلا إعداد البيئة: `404`.
+      operationId: createPasskeyLoginOptions
+      x-roles: []
+      security: []
+      responses:
+        "200":
+          description: التحدي وخيارات الطلب
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasskeyChallenge" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/passkeys/login:
+    post:
+      tags: [auth]
+      summary: الدخول بمفتاح مرور (ADR 0107)
+      description: >-
+        يتحقق الخادم بمكتبة WebAuthn مثبّتة الإصدار من التوقيع والتحدي والمصدر وبصمة RP ID وعلمي الحضور والتحقق من المستخدم والعدّاد.
+        مفتاح المرور بالتحقق من المستخدم (بصمة أو رمز الجهاز) عاملان معًا، فيحلّ محل كلمة المرور ورمز TOTP ويصدر جلسة كاملة. المفتاح
+        المجهول أو المبطَل، والتوقيع الخاطئ، وعدّاد تراجع، والحساب المعلّق أو في «إعادة تعيين إلزامية»: `401 unauthorized` واحد بالرسالة
+        نفسها. التحدي المنتهي أو المستهلك `410 challenge_expired`. حد معدل على الفشل لكل عنوان. معرّف المفتاح والتحدي لا يدخلان سجلًا
+        ولا تدقيقًا ولا حدثًا. لا `Idempotency-Key` (مسارات `/auth/*`).
+      operationId: loginWithPasskey
+      x-roles: []
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasskeyAssertion" }
+      responses:
+        "200":
+          description: جلسة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "410": { $ref: "#/components/responses/Gone" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /me/passkeys:
+    get:
+      tags: [auth]
+      summary: مفاتيح مروري الفاعلة (ADR 0107)
+      description: الأحدث أولًا. لا معرّف اعتماد ولا مفتاح عام ولا جهاز في الرد؛ المعرّف مرجع داخلي للإبطال.
+      operationId: listMyPasskeys
+      x-roles: [authenticated]
+      responses:
+        "200":
+          description: المفاتيح
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasskeyList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [auth]
+      summary: تسجيل مفتاح مرور برد المتصفح على التحدي (ADR 0107)
+      description: >-
+        `credential` هو `PublicKeyCredential.toJSON()` من `navigator.credentials.create()` (`RegistrationResponseJSON`). يتحقق
+        الخادم من التحدي (لمرة واحدة، لهذا المستخدم، غير منتهٍ: وإلا `410 challenge_expired`) والمصدر وRP ID والتحقق من المستخدم
+        والخوارزمية، ويحفظ المفتاح العام وعدّاده. رد لا يتحقق `422 validation_failed`، ومفتاح مسجَّل من قبل `409 passkey_exists`،
+        وبلوغ عشرة مفاتيح `409 passkey_limit_reached`. معاملة واحدة: المفتاح، والتدقيق بمعرّفه الداخلي، وحدث `auth.passkey_added`
+        بمعرّفه وحده ينبّه صاحب الحساب على أجهزته. الاسم اختياري يكتبه صاحب الحساب ليميّز مفاتيحه، ولا يدخل حدثًا ولا تدقيقًا.
+      operationId: registerPasskey
+      x-roles: [authenticated]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasskeyRegistration" }
+      responses:
+        "201":
+          description: المفتاح المسجَّل
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Passkey" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { $ref: "#/components/responses/Gone" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /me/passkeys/{passkey_id}:
+    parameters:
+      - name: passkey_id
+        in: path
+        required: true
+        description: المعرّف الداخلي للمفتاح (`Passkey.id`)
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [auth]
+      summary: إبطال مفتاح مرور (ADR 0107)
+      description: >-
+        يبطل المفتاح فلا يدخل به أحد بعد الآن؛ الجلسات القائمة لا تتغيّر (`/auth/sessions` لإبطالها). مفتاح غير موجود أو لغير المستدعي
+        أو مبطَل من قبل `404`. معاملة واحدة: الإبطال، والتدقيق، وحدث `auth.passkey_revoked` بمعرّفه وحده. اعتماد الاستعادة ورابط
+        إعادة التعيين يبطلان كل مفاتيح الحساب (ADR 0107).
+      operationId: revokeMyPasskey
+      x-roles: [authenticated]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "204": { description: أُبطل }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /users:
     get:
       tags: [admin]
@@ -436,6 +626,48 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /users/{id}/password-reset-links:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: معرّف المستخدم
+        schema: { type: string, format: uuid }
+    post:
+      tags: [admin]
+      summary: رابط إعادة تعيين لمرة واحدة يصدره مدير النظام (A1، ADR 0107)
+      description: >-
+        لا مزوّد بريد في هذه المرحلة: يتحقق المدير من الهوية خارج النظام، ثم يصدر هذا الرمز فيراه **مرة واحدة** ويسلّمه بيده. الرابط
+        يبنيه العميل من مصدره هو (`/{locale}/reset-password#token=…`، والرمز في جزء الرابط فلا يصل إلى أي خادم ولا سجل)، ويُكمله صاحب
+        الحساب بـ `POST /auth/recovery/complete` ثم `POST /auth/totp/confirm` كما في الاستعادة. صلاحيته قصيرة من بيئة الخادم (ساعة
+        افتراضيًا، 24 ساعة على الأكثر)، ويُستهلك مرة واحدة، ويُخزَّن ببصمته وحدها. معاملة واحدة كاعتماد الاستعادة: يبطل كل جلسات الحساب
+        ورموز رفعه وأجهزة إشعاره ومفاتيح مروره، ويضعه في «إعادة تعيين إلزامية»، ويُغلق كل طلب استعادة مفتوح له (المنتظر يُرفض،
+        والمعتمد الذي لم يُكمَل يبطل رمزه)، ويكتب التدقيق بالسبب ومعرّف الطلب، وحدث `auth.recovery_approved` بمعرّفات وحدها. التكرار
+        بالمفتاح نفسه يعيد الرد **بلا** `reset_token` (الرموز لا تُحفظ في جدول المفاتيح)، فالرمز لا يُعرض مرتين؛ وإصدار رابط جديد يبطل
+        السابق. لا يصدر المدير رابطًا لحسابه (`403 forbidden_scope`) ولا لحساب مدير نظام (`403 admin_quorum_required`: إجراء الشخصين
+        من سطر الأوامر)، والحساب المعلّق `409 recovery_state_conflict`. حد معدل لكل مدير.
+      operationId: issuePasswordResetLink
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasswordResetLinkCreate" }
+      responses:
+        "201":
+          description: الرمز (مرة واحدة) وانتهاؤه
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasswordResetLink" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
 
   /users/{id}/work-name:
     parameters:
@@ -4182,6 +4414,8 @@ components:
             - assignment_not_allowed
             - assignment_open
             - assignee_not_eligible
+            - passkey_exists
+            - passkey_limit_reached
             - internal_error
         message: { type: string }
         request_id: { type: string, description: لتتبع الطلب في السجلات }
@@ -4339,6 +4573,150 @@ components:
         created_at: { type: string, format: date-time }
         approved_by: { type: [string, "null"], format: uuid }
         expires_at: { type: [string, "null"], format: date-time, description: انتهاء صلاحية الطلب أو الرابط }
+
+    RecoveryCodeStatus:
+      type: object
+      required: [remaining, generated_at]
+      properties:
+        remaining: { type: integer, minimum: 0, maximum: 10, description: الرموز غير المستعملة من المجموعة الحالية }
+        generated_at: { type: [string, "null"], format: date-time, description: توليد المجموعة الحالية؛ `null` = لم تُولَّد رموز للحساب }
+
+    RecoveryCodes:
+      type: object
+      required: [codes, generated_at]
+      properties:
+        codes:
+          type: array
+          minItems: 10
+          maxItems: 10
+          uniqueItems: true
+          description: >-
+            تُعرض مرة واحدة ولا تُخزَّن إلا ببصماتها، ولا تُسجَّل ولا تدخل حدثًا ولا إشعارًا. العميل يعرضها ولا يحفظها، ويقبل الرمز عند
+            إدخاله في `POST /auth/recovery` بأحرف صغيرة أو بمسافات وشرطات فيطبّعه قبل الإرسال.
+          items: { type: string, pattern: "^[A-Z2-7]{12}$" }
+        generated_at: { type: string, format: date-time }
+
+    PasskeyStepUp:
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
+        password: { type: string, minLength: 8, maxLength: 256, writeOnly: true }
+        totp_code:
+          type: string
+          pattern: "^[0-9]{6}$"
+          writeOnly: true
+          description: مطلوب إن كانت المصادقة الثنائية مفعّلة للحساب
+
+    PasskeyChallenge:
+      type: object
+      required: [challenge_id, public_key, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        public_key:
+          type: object
+          additionalProperties: true
+          description: >-
+            خيارات WebAuthn بصيغة JSON من Level 3 كما تقبلها `PublicKeyCredential.parseCreationOptionsFromJSON()` أو
+            `parseRequestOptionsFromJSON()`؛ تُمرَّر إلى المتصفح كما هي. فيها التحدي، فلا تُسجَّل ولا تُحفظ.
+        expires_at: { type: string, format: date-time }
+
+    WebAuthnCredential:
+      type: object
+      additionalProperties: true
+      required: [id, rawId, type, response]
+      description: >-
+        `PublicKeyCredential.toJSON()` كما يعيده المتصفح (`RegistrationResponseJSON` أو `AuthenticationResponseJSON`). المعرّف
+        والتوقيع وبيانات العميل لا تُسجَّل ولا تُعاد ولا تدخل تدقيقًا أو حدثًا.
+      properties:
+        id: { type: string, minLength: 1, maxLength: 1366, pattern: "^[A-Za-z0-9_-]+$", writeOnly: true }
+        rawId: { type: string, minLength: 1, maxLength: 1366, pattern: "^[A-Za-z0-9_-]+$", writeOnly: true }
+        type: { type: string, maxLength: 32 }
+        response:
+          type: object
+          additionalProperties: true
+          properties:
+            clientDataJSON: { type: string, maxLength: 8192 }
+            attestationObject: { type: string, maxLength: 32768 }
+            authenticatorData: { type: string, maxLength: 8192 }
+            signature: { type: string, maxLength: 8192 }
+            userHandle: { type: [string, "null"], maxLength: 128 }
+
+    PasskeyAssertion:
+      type: object
+      additionalProperties: false
+      required: [challenge_id, credential]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        credential: { $ref: "#/components/schemas/WebAuthnCredential" }
+
+    PasskeyName:
+      type: string
+      minLength: 1
+      maxLength: 40
+      pattern: "^[^\\s\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069](?:[^\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]*[^\\s\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069])?$"
+      description: >-
+        اسم يكتبه صاحب المفتاح ليميّز مفاتيحه، بقاعدة `MaterialTag` نفسها: 1–40 محرفًا بلا مسافة في الطرفين ولا محارف تحكم أو
+        اتجاه (`passkeys_name_valid` في القاعدة). يُعرض لصاحبه وحده، ولا يدخل تدقيقًا ولا حدثًا.
+
+    PasskeyRegistration:
+      type: object
+      additionalProperties: false
+      required: [challenge_id, credential]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        credential: { $ref: "#/components/schemas/WebAuthnCredential" }
+        name: { $ref: "#/components/schemas/PasskeyName" }
+
+    Passkey:
+      type: object
+      required: [id, name, multi_device, created_at, last_used_at]
+      properties:
+        id: { type: string, format: uuid, description: مرجع داخلي؛ ليس معرّف الاعتماد }
+        name:
+          oneOf:
+            - $ref: "#/components/schemas/PasskeyName"
+            - type: "null"
+        multi_device:
+          type: boolean
+          description: مفتاح يُزامَن بين أجهزة صاحبه بحسب المصادِق؛ `false` = على جهاز واحد أو مفتاح أمان
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: [string, "null"], format: date-time, description: آخر دخول به؛ `null` = لم يُستعمل بعد }
+
+    PasskeyList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 10
+          items: { $ref: "#/components/schemas/Passkey" }
+
+    PasswordResetReason:
+      type: string
+      description: لماذا أصدر المدير الرابط؛ يُسجَّل في التدقيق رمزًا لا نصًّا
+      enum: [forgot_password, lost_device, suspected_compromise]
+
+    PasswordResetLinkCreate:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { $ref: "#/components/schemas/PasswordResetReason" }
+
+    PasswordResetLink:
+      type: object
+      required: [recovery_request_id, reset_token_expires_at]
+      properties:
+        recovery_request_id: { type: string, format: uuid, description: طلب الاستعادة المعتمد الذي يحمل الرمز }
+        reset_token:
+          type: string
+          minLength: 32
+          maxLength: 256
+          description: >-
+            يُعاد مرة واحدة للمدير ليسلّمه بيده؛ لا يُسجَّل ولا يُخزَّن إلا ببصمته ولا يُحفظ في جدول مفاتيح منع التكرار، فلا يعود عند
+            التكرار ولا حين تتولى قناة تسليم أخرى إيصاله. العميل يعرضه رابطًا مرة واحدة ولا يحفظه.
+        reset_token_expires_at: { type: string, format: date-time }
 
     TechnicalState:
       type: string

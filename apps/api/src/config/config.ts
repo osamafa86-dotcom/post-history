@@ -104,6 +104,22 @@ const schema = z.object({
   // رمز إعادة التعيين الصادر عند الاعتماد (v0.1): صالح هذه المدة لإكمال الاستعادة، ومهلة تحديث الجلسة المقيّدة بعدها؛
   // القاعدة تفرض ألا تتجاوز 24 ساعة من الاعتماد
   RECOVERY_RESET_TOKEN_TTL_SECONDS: z.coerce.number().int().min(300).max(24 * 3600).default(12 * 3600),
+  // رابط إعادة التعيين الذي يصدره مدير النظام (ADR 0107): قصير العمر، ساعة افتراضيًا، والقاعدة تفرض 24 ساعة على الأكثر
+  PASSWORD_RESET_LINK_TTL_SECONDS: z.coerce.number().int().min(300).max(24 * 3600).default(3600),
+  // مفاتيح المرور (ADR 0107): نطاق الطرف المعتمد (RP ID) ومصادر الويب المسموحة (مفصولة بفاصلة) من البيئة، لا نطاق مكتوبًا في
+  // الشفرة. RP ID غير مضبوط = مفاتيح المرور معطّلة (404).
+  WEBAUTHN_RP_ID: z
+    .string()
+    .regex(/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/, 'a lower-case host name')
+    .optional(),
+  WEBAUTHN_RP_NAME: z.string().min(1).max(64).default('PostHistory'),
+  WEBAUTHN_ORIGINS: z
+    .string()
+    .transform((v) => v.split(',').map((s) => s.trim()).filter(Boolean))
+    .prefault(''),
+  PASSKEY_CHALLENGE_TTL_SECONDS: z.coerce.number().int().min(60).max(600).default(300),
+  // تحديات مفاتيح المرور لكل حساب (التسجيل) في نافذة LOGIN_RATE_LIMIT_WINDOW_SECONDS
+  PASSKEY_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(30),
   // مخرج الطوارئ (أمر CLI لاعتماد استعادة مدير النظام): بصمة SHA-256 (hex) لرمز التشغيل المحفوظ في الخزنة؛ الرمز نفسه لا
   // يوضع في البيئة. غير مضبوط = طريق الخزنة معطّل ويبقى طريق مديرَين
   BREAK_GLASS_TOKEN_SHA256: z
@@ -330,6 +346,36 @@ export function storageConfigured(c: { S3_ENDPOINT?: string; S3_ACCESS_KEY?: str
   return Boolean(c.S3_ENDPOINT && c.S3_ACCESS_KEY && c.S3_SECRET_KEY);
 }
 
+/**
+ * مصادر WebAuthn (ADR 0107): كل مصدر `https://<مضيف>[:منفذ]` بلا مسار، ومضيفه RP ID نفسه أو نطاق تحته (قاعدة WebAuthn)؛ و`http`
+ * لـ localhost وحده خارج الإنتاج. RP ID يلزمه مصدر واحد على الأقل، والمصادر بلا RP ID لا معنى لها.
+ */
+export function webauthnIssues(c: { NODE_ENV: string; WEBAUTHN_RP_ID?: string; WEBAUTHN_ORIGINS: string[] }): Array<{ path: string[]; message: string }> {
+  const issues: Array<{ path: string[]; message: string }> = [];
+  if (!c.WEBAUTHN_RP_ID) {
+    if (c.WEBAUTHN_ORIGINS.length) issues.push({ path: ['WEBAUTHN_RP_ID'], message: 'required with WEBAUTHN_ORIGINS' });
+    return issues;
+  }
+  if (!c.WEBAUTHN_ORIGINS.length) issues.push({ path: ['WEBAUTHN_ORIGINS'], message: 'required with WEBAUTHN_RP_ID' });
+  for (const origin of c.WEBAUTHN_ORIGINS) {
+    let url: URL | null = null;
+    try {
+      url = new URL(origin);
+    } catch {
+      url = null;
+    }
+    const host = url?.hostname ?? '';
+    const local = host === 'localhost' && c.NODE_ENV !== 'production';
+    const ok =
+      url !== null &&
+      url.origin === origin &&
+      (url.protocol === 'https:' || (url.protocol === 'http:' && local)) &&
+      (host === c.WEBAUTHN_RP_ID || host.endsWith(`.${c.WEBAUTHN_RP_ID}`));
+    if (!ok) issues.push({ path: ['WEBAUTHN_ORIGINS'], message: 'each origin is https://<host under WEBAUTHN_RP_ID> without a path' });
+  }
+  return issues;
+}
+
 const validated = schema.superRefine((c, ctx) => {
   if (Boolean(c.TUSD_HOOK_SECRET_PREVIOUS) !== Boolean(c.TUSD_HOOK_SECRET_PREVIOUS_UNTIL)) {
     ctx.addIssue({ code: 'custom', path: ['TUSD_HOOK_SECRET_PREVIOUS_UNTIL'], message: 'set together with TUSD_HOOK_SECRET_PREVIOUS' });
@@ -363,6 +409,7 @@ const validated = schema.superRefine((c, ctx) => {
     // وضع الاختبار لا يقبض مالًا، فلا مكان له في التشغيل الفعلي
     if (c.DEPLOY_STAGE === 'production') ctx.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'Stripe test mode is never allowed with DEPLOY_STAGE=production' });
   }
+  for (const issue of webauthnIssues(c)) ctx.addIssue({ code: 'custom', ...issue });
   if (c.PAYMENT_PROVIDER === 'sandbox' && !c.SANDBOX_WEBHOOK_SECRET) {
     ctx.addIssue({ code: 'custom', path: ['SANDBOX_WEBHOOK_SECRET'], message: 'required with PAYMENT_PROVIDER=sandbox' });
   }

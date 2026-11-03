@@ -261,7 +261,8 @@ export class AuthService {
     return this.toSession(userId, issued);
   }
 
-  private async toSession(userId: string, issued: IssuedTokens): Promise<Session> {
+  /** الجلسة بصيغة العقد من رموز صادرة (الدخول بكلمة المرور أو بمفتاح المرور، ADR 0107). */
+  async toSession(userId: string, issued: IssuedTokens): Promise<Session> {
     return {
       access_token: issued.accessToken,
       refresh_token: issued.refreshToken,

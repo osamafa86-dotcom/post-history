@@ -3,9 +3,11 @@ import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { AccountService } from './account.service';
-import { AuthController, UserStatusController, UserWorkNameController } from './auth.controller';
+import { AuthController, UserPasswordResetLinksController, UserStatusController, UserWorkNameController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
+import { MyPasskeysController, PasskeyAuthController } from './passkeys.controller';
+import { PasskeysService } from './passkeys.service';
 import { JWT_OPTIONS, SessionService } from './session.service';
 import { RateLimitsService } from './rate-limits.service';
 import { InlineResetTokenDelivery, RESET_TOKEN_DELIVERY } from './reset-token-delivery';
@@ -23,11 +25,21 @@ import { UsersDirectoryController, UsersDirectoryService } from './users-directo
       }),
     }),
   ],
-  controllers: [AuthController, UserStatusController, UserWorkNameController, UsersDirectoryController, UserRolesController],
+  controllers: [
+    AuthController,
+    UserStatusController,
+    UserWorkNameController,
+    UsersDirectoryController,
+    UserRolesController,
+    UserPasswordResetLinksController,
+    PasskeyAuthController,
+    MyPasskeysController,
+  ],
   providers: [
     SessionService,
     AuthService,
     AccountService,
+    PasskeysService,
     RateLimitsService,
     UsersDirectoryService,
     UserRolesService,
