@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, ne, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { ApiError } from '../common/errors';
 import { DB, type Database, type Tx } from '../database/database.module';
@@ -361,7 +361,10 @@ export class MediaService {
   private async replay(tx: Tx, s: UploadSessionRow, body: MediaVerificationBody): Promise<MediaVerificationResult> {
     if (s.state === 'verified' && body.result === 'verified') {
       const [file] = await tx.select({ sha256: materialFiles.sha256 }).from(materialFiles).where(eq(materialFiles.id, s.fileId!));
-      if (file?.sha256?.equals(Buffer.from(body.sha256!, 'hex'))) return this.result(tx, s.id);
+      if (file?.sha256?.equals(Buffer.from(body.sha256!, 'hex'))) {
+        await this.fillProbe(tx, s.fileId!, body.technical!);
+        return this.result(tx, s.id);
+      }
     } else if (s.state === 'failed') {
       // فشل قرره الخادم من بلاغ «verified» (حجم أو بصمة عميل) يعود بالنتيجة نفسها عند تكرار البلاغ، وكذلك جلسة أُلغيت
       // لإبطال وصول صاحبها (aborted) أيًّا كان البلاغ: لا شيء للعامل يغيّره فيها
@@ -370,6 +373,25 @@ export class MediaService {
       if (decidedByServer || body.result === s.failureReason) return this.result(tx, s.id);
     }
     throw conflict(`The upload session is ${s.state}.`);
+  }
+
+  /**
+   * المتحقق داخل الخادم (UPLOAD_VERIFIER=in_process، المعاينة الخفيفة، ADR 0092) يطابق البصمة ولا يفحص الملف، فلا بيانات
+   * فنية للأصل. تقرير العامل المطابق لجلسة متحققة (مسار الاستئناف) يملأ الفارغ منها، كل عمود وحده، ولا يستبدل قيمة مسجلة؛
+   * الحالة والبصمة والإيصال لا تتغير. شرط `source` لنسخ القالب (ADR 0091) يقرأ المدة و`video_codec` من هنا.
+   */
+  private async fillProbe(tx: Tx, fileId: string, technical: MediaTechnical): Promise<void> {
+    const { columns, json } = splitTechnical(technical);
+    await tx
+      .update(materialFiles)
+      .set({
+        durationMs: sql`coalesce(${materialFiles.durationMs}, ${columns.durationMs}::bigint)`,
+        startPtsUs: sql`coalesce(${materialFiles.startPtsUs}, ${columns.startPtsUs}::bigint)`,
+        width: sql`coalesce(${materialFiles.width}, ${columns.width}::integer)`,
+        height: sql`coalesce(${materialFiles.height}, ${columns.height}::integer)`,
+        technical: sql`coalesce(${materialFiles.technical}, ${JSON.stringify(json)}::jsonb)`,
+      })
+      .where(and(eq(materialFiles.id, fileId), or(isNull(materialFiles.technical), isNull(materialFiles.durationMs))));
   }
 
   private async result(tx: Tx, sessionId: string): Promise<MediaVerificationResult> {
