@@ -47,6 +47,13 @@ jobs:
       contents: write  # the preview-latest release assets, on main and by hand only
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The images and the 2160p clips leave the runner near the feeder's 8 GiB disk guard (6.3 GiB free on 2026-11-03), so
+      # the backfill step was refused for disk, not for the change under test. Toolchains this job never uses are removed first.
+      - name: Free runner disk for the images and the media clips
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift
+          df -h / | tail -1
       - name: Build the API, web, media worker and media-render images
         run: |
           docker build -q -f infra/preview/api.Dockerfile -t post-history-preview-api:latest .
@@ -83,7 +90,9 @@ jobs:
         env:
           MEASURE_HOST: GitHub-hosted runner (ubuntu-24.04, 4 vCPU)
           MEDIA_PROFILES: 1080p 2160p
-        run: infra/preview/smoke-preview.sh --json "$RUNNER_TEMP/preview-memory.json" --media-json "$RUNNER_TEMP/preview-media"
+        run: |
+          df -h / | tail -1
+          infra/preview/smoke-preview.sh --json "$RUNNER_TEMP/preview-memory.json" --media-json "$RUNNER_TEMP/preview-media"
       - name: Memory and media worker measurements
         if: always()
         run: |
