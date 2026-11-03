@@ -21,6 +21,7 @@ import { MyEarningsController, PayoutPoliciesController, PayoutRequestsControlle
 import { PayoutsService } from './payouts';
 import { StripeTestProvider } from './stripe-provider';
 import { RefundsController, RefundsService } from './refunds';
+import { FinanceReportsController, FinanceReportsService } from './finance-reports.controller';
 
 /** المرحلة التجارية (v0.3، ADR 0025) بمزوّد دفع تجريبي فقط: قوالب التراخيص، والإدراج، والكتالوج، والمشترون، والطلبات، والأرباح والصرف التجريبي (ADR 0033). */
 @Module({
@@ -29,11 +30,11 @@ import { RefundsController, RefundsService } from './refunds';
     LicenseTemplatesController, ListingsController, CatalogController, BuyersController,
     OrdersController, PaymentWebhooksController, SandboxCheckoutController, SandboxRefundsController, LicensesController, LicenseVerificationsController,
     RefundsController, CommissionRulesController, InviteConflictsController,
-    MyEarningsController, UserEarningsController, PayoutRequestsController, PayoutPoliciesController,
+    MyEarningsController, UserEarningsController, PayoutRequestsController, PayoutPoliciesController, FinanceReportsController,
   ],
   providers: [
     LicenseTemplatesService, ListingsService, CatalogService, BuyersService,
-    OrdersService, RefundsService, CommissionRulesService, LicensesService, InviteConflictsService, PayoutsService, PayoutWorker,
+    OrdersService, RefundsService, CommissionRulesService, LicensesService, InviteConflictsService, PayoutsService, PayoutWorker, FinanceReportsService,
     {
       provide: PAYMENT_PROVIDER,
       inject: [APP_CONFIG],

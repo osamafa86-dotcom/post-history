@@ -1,0 +1,15 @@
+{
+  "id": "3404",
+  "type": "platform_settings.changed",
+  "aggregate_type": "user",
+  "aggregate_id": "2f3e4d5c-6b7a-4899-8a7b-6c5d4e3f2a1b",
+  "occurred_at": "2026-11-03T12:00:00Z",
+  "idempotency_key": "platform_settings.changed:5",
+  "actor_id": "2f3e4d5c-6b7a-4899-8a7b-6c5d4e3f2a1b",
+  "payload": {
+    "settings_version": 5,
+    "changed_fields": []
+  },
+  "published_at": null,
+  "attempts": 0
+}

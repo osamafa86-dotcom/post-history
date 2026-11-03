@@ -309,6 +309,59 @@ open class EarningsAPI {
     }
 
     /**
+     مستحقات المساهمين في شهر (A4، ADR 0099)
+     
+     - parameter month: (query) الشهر بتوقيت UTC 
+     - parameter currency: (query)  (optional)
+     - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
+     - parameter limit: (query) حجم الصفحة (optional, default to 50)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: ContributorEarningsPage
+     */
+    open class func listContributorEarnings(month: String, currency: Currency? = nil, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> ContributorEarningsPage {
+        return try await listContributorEarningsWithRequestBuilder(month: month, currency: currency, cursor: cursor, limit: limit, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     مستحقات المساهمين في شهر (A4، ADR 0099)
+     - GET /contributor-earnings
+     - قراءة مجمّعة من دفتر الأستاذ لكل مساهم قُيّد له نصيب من بيعة في الشهر (UTC)، لكل عملة صف. البيعات عدد قيود البيع التي قُيّد له فيها، والمبيعات والرسوم والضرائب والصافي حصته منها بنسبة نصيبه من نصيب المساهمين في كل قيد، والنصيب ما قُيّد له، والمسترد ما رُدّ من نصيبه بقيود الاسترداد في الشهر نفسه. الرصيد الحالي (لا رصيد الشهر) لحالة الصرف. `totals` مجاميع الصفوف كلها لكل عملة، فالبطاقات مجاميع الجدول نفسه. المزوّد تجريبي (ADR 0032): لا رسوم ولا ضريبة بعد، ولا مال حقيقي. اسم العمل وحده، بلا بريد ولا اسم حقيقي ولا مشترٍ.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter month: (query) الشهر بتوقيت UTC 
+     - parameter currency: (query)  (optional)
+     - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
+     - parameter limit: (query) حجم الصفحة (optional, default to 50)
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<ContributorEarningsPage> 
+     */
+    open class func listContributorEarningsWithRequestBuilder(month: String, currency: Currency? = nil, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<ContributorEarningsPage> {
+        let localVariablePath = "/contributor-earnings"
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        var localVariableUrlComponents = URLComponents(string: localVariableURLString)
+        let localVariableQueryParameters: [String: (wrappedValue: (any Sendable)?, isExplode: Bool)] = [
+            "month": (wrappedValue: month.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "currency": (wrappedValue: currency?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "cursor": (wrappedValue: cursor?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "limit": (wrappedValue: limit?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+        ]
+        localVariableUrlComponents?.queryItems = APIHelper.mapValuesToQueryItems(localVariableQueryParameters)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<ContributorEarningsPage>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      كشف أرباحي (سطور القيود)
      
      - parameter currency: (query)  (optional)
