@@ -50,6 +50,8 @@ OUTRO_S = 0.6
 # القالب لا يقصر المقطع عن 3 ث (calculateMetadata)
 MIN_COMPOSITION_S = 3
 BT601 = {"smpte170m": "bt601-6-525", "bt470bg": "bt601-6-625"}
+# خصائص اللون على الإطارات نفسها: FFmpeg 8 يأخذ وسوم المرمّز من الإطار لا من خيارات سطر الأوامر وحدها
+TAG_FRAMES = "setparams=range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709"
 EXIT_TITLE_OVERFLOW = 3
 
 
@@ -259,7 +261,7 @@ def composite_graph(source: Probe, aspect: str, plan: OverlayPlan, overlay: bool
             f"[bg][fg]overlay={g['x']}:{g['y']},setsar=1[base]",
         ]
     if not overlay:
-        return ";".join(graph + ["[base]format=yuv420p[v]"])
+        return ";".join(graph + [f"[base]format=yuv420p,{TAG_FRAMES}[v]"])
     # كل قطعة تُفكّ وتُحوَّل مرة واحدة، والدورة تُكرَّر من الذاكرة (loop) لا بفكّ ProRes من جديد لكل دورة
     if plan.looped:
         period = plan.pieces[1].frames
@@ -270,7 +272,7 @@ def composite_graph(source: Probe, aspect: str, plan: OverlayPlan, overlay: bool
                   f"[intro][mid][outro]concat=n=3:v=1:a=0,setpts=N/{fps}/TB[ov]"]
     else:
         graph += [f"[1:v]format=yuva420p,setpts=N/{fps}/TB[ov]"]
-    graph += ["[base][ov]overlay=0:0:format=yuv420:eof_action=pass,format=yuv420p[v]"]
+    graph += [f"[base][ov]overlay=0:0:format=yuv420:eof_action=pass,format=yuv420p,{TAG_FRAMES}[v]"]
     return ";".join(graph)
 
 
