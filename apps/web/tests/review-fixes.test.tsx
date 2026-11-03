@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { NoAccess } from "../src/components/empty-state";
-import { navItems } from "../src/components/workspace-nav";
+import { bottomItems, navItems } from "../src/components/workspace-nav";
 import { candidateName } from "../src/components/assign-dialog";
 import { readCart, storedItem, type CartItem } from "../src/components/store/cart";
 import { TrialNotice } from "../src/components/store/trial-notice";
@@ -48,6 +48,8 @@ describe("each role lands on a page it can read (finance on payouts, E5)", () =>
     const keys = navItems(as("finance"), "en", "/en/payouts").map(i => i.key);
     expect(keys).not.toContain("inbox"); expect(keys).toContain("payouts"); expect(keys).toContain("notifications");
     expect(navItems(as("finance"), "en", "/en/payouts").filter(i => i.active).map(i => i.key)).toEqual(["payouts"]);
+    // على الجوال: الصرف بين الوجهات الأولى، لا في «المزيد» وحدها
+    expect(bottomItems(navItems(as("finance"), "en", "/en/payouts")).primary.map(i => i.key)).toEqual(["store", "payouts", "notifications"]);
   });
   it("sends finance back to payouts from the no-access state, not to the inbox it cannot read", () => {
     for (const locale of locales) {

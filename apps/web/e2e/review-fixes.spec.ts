@@ -22,6 +22,8 @@ test("finance lands on payouts, has no inbox in the bar, and a direct inbox link
   await expect(page.getByRole("heading", { level: 1, name: ar.money.title })).toBeVisible();
   const nav = page.getByRole("navigation", { name: ar.workspace });
   await expect(nav.getByRole("link", { name: ar.inbox, exact: true })).toHaveCount(0); await expect(nav.getByRole("link", { name: ar.payouts.nav, exact: true })).toBeVisible();
+  // ولا بحث في الشريط العلوي: البحث يعمل في الوارد الذي لا يقرؤه هذا الدور
+  await expect(page.getByRole("search")).toHaveCount(0);
   await page.goto("/ar/inbox");
   const state = page.getByTestId("no-access"); await expect(state).toBeVisible();
   await expect(state.getByRole("alert")).toHaveText(ar.shell.inbox.denied); await expect(page.getByTestId("inbox-skeleton")).toHaveCount(0); await expect(page.getByText(ar.error)).toHaveCount(0);

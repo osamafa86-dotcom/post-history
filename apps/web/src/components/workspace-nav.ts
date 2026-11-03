@@ -76,7 +76,7 @@ export function navGroups(items: NavItem[]): [NavGroup, NavItem[]][] {
  * والنشط في «المزيد» يجعلها هي النشطة (M5).
  */
 export function bottomItems(items: NavItem[]): { primary: NavItem[]; more: NavItem[] } {
-  const order = ["inbox", "tasks", "archive", "board", "my-materials", "store", "upload", "earnings"], notifications = items.find(item => item.key === "notifications");
+  const order = ["inbox", "tasks", "archive", "board", "my-materials", "store", "upload", "earnings", "payouts"], notifications = items.find(item => item.key === "notifications");
   const ranked = order.map(key => items.find(item => item.key === key)).filter((item): item is NavItem => !!item);
   const primary = [...ranked.slice(0, notifications ? 3 : 4), ...(notifications ? [notifications] : [])];
   return { primary, more: items.filter(item => !primary.includes(item)) };
