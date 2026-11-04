@@ -617,6 +617,10 @@ public actor UploadEngine: TusTransportDelegate {
             scheduleRetry(id)
         case UploadError.sourceTruncated, is CocoaError:
             setPhase(&rec, .failed(.sourceMissing))
+        case UploadAPIError.forbidden, IngestTokenError.notPermitted:
+            // الحساب لا يرفع من التطبيق (`403 forbidden_role`/`forbidden_scope` على الجلسة أو التحدي أو رمز البوابة): نهائي، وسببه
+            // الدور لا الجهاز، فلا يُقال «تعذّر إثبات الجهاز».
+            setPhase(&rec, .failed(.notPermitted))
         case IngestTokenError.unsupported, IngestTokenError.attestationRejected:
             setPhase(&rec, .failed(.deviceNotAttested))
         case TusError.authenticationRequired where consumeIngestRefresh(rec):

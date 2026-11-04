@@ -95,6 +95,9 @@ public actor AppAttestIngestTokenProvider: IngestTokenProvider {
     static func classify(_ error: any Error) -> IngestTokenError {
         switch error {
         case let e as IngestTokenError: return e
+        case AttestationAPIError.forbidden:
+            // الدور لا الجهاز: لا يُقال «تعذّر إثبات الجهاز»، ولا يُمس المفتاح.
+            return .notPermitted
         case AppAttestBackendError.unsupported: return .unsupported
         case AppAttestBackendError.invalidKey, AttestationAPIError.attestationFailed, AttestationAPIError.keyConflict,
              AttestationAPIError.notFound, AttestationAPIError.status:

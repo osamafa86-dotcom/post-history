@@ -1,5 +1,6 @@
 import Foundation
 import PostHistoryAPI
+import UploadCore
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -28,6 +29,9 @@ public struct IngestTokenValue: Sendable, Equatable {
 public enum AttestationAPIError: Error, Equatable, Sendable {
     /// `403 attestation_failed`: الشهادة أو التأكيد مرفوضان (ومنه مفتاح لا يعرفه الخادم).
     case attestationFailed
+    /// `403 forbidden_role`/`forbidden_scope`: الحساب لا يملك العملية (التحدي ورمز البوابة `@Roles('reporter')`). لا عيب في الجهاز
+    /// ولا في مفتاحه، فلا إعادة تسجيل ولا «تعذّر إثبات الجهاز».
+    case forbidden
     /// `409 attestation_key_conflict`: المفتاح مسجَّل لحساب آخر أو مبطَل.
     case keyConflict
     /// `409 assertion_replay`: عدّاد التأكيد لم يتزايد.
@@ -45,9 +49,10 @@ public enum AttestationAPIError: Error, Equatable, Sendable {
 
     public static func map(_ error: any Error) -> AttestationAPIError {
         guard case let ErrorResponse.error(status, data, _, _) = error else { return .transport }
-        let code = data.flatMap { try? JSONDecoder().decode(ModelError.self, from: $0) }?.code.rawValue
+        let code = ServerErrorCode.of(data)
         switch (status, code) {
         case (403, "attestation_failed"): return .attestationFailed
+        case (403, let forbidden) where ServerErrorCode.isForbidden(forbidden): return .forbidden
         case (409, "attestation_key_conflict"): return .keyConflict
         case (409, "assertion_replay"): return .replay
         case (410, _): return .challengeExpired

@@ -473,19 +473,6 @@ extension UploadPhase {
 }
 
 extension UploadFailure {
-    /// مفتاح النص في `Localizable.xcstrings`.
-    var textKey: String {
-        switch self {
-        case .checksumMismatch: return "upload.failure.checksumMismatch"
-        case .invalidFile: return "upload.failure.invalidFile"
-        case .expired: return "upload.failure.expired"
-        case .aborted: return "upload.failure.aborted"
-        case .storageError: return "upload.failure.storageError"
-        case .sourceMissing: return "upload.failure.sourceMissing"
-        case .rejected: return "upload.failure.rejected"
-        case .deviceNotAttested: return "upload.failure.deviceNotAttested"
-        }
-    }
-
+    /// مفتاح النص في `Localizable.xcstrings` (`textKey` في MaterialsCore، مختبر بالعربية والإنجليزية).
     var labelKey: LocalizedStringKey { LocalizedStringKey(textKey) }
 }

@@ -171,7 +171,8 @@ struct UploadsScreen: View {
             HStack(spacing: VL.Space.s3) {
                 if failure == .sourceMissing {
                     Button("upload.repick") { repickTarget = rec }.buttonStyle(VLButtonStyle(kind: .solid, size: .small))
-                } else {
+                } else if failure != .notPermitted {
+                    // الحساب لا يرفع من التطبيق: إعادة المحاولة ترفض بالسبب نفسه، فلا تُعرض.
                     Button("upload.retry") { Task { await queue.retry(rec) } }.buttonStyle(VLButtonStyle(kind: .solid, size: .small))
                 }
                 Button("upload.removeShort") { removeTarget = rec }.buttonStyle(VLButtonStyle(kind: .outline, size: .small))

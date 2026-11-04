@@ -10,6 +10,7 @@ import UploadCore
 struct MaterialDetailView: View {
     let materialId: UUID
 
+    @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var model: MyMaterialsModel
     @EnvironmentObject private var queue: UploadQueueModel
     @Environment(\.scenePhase) private var scenePhase
@@ -374,7 +375,8 @@ struct MaterialDetailView: View {
     // MARK: الإجراءات
 
     @ViewBuilder private func actions(_ m: PostHistoryAPI.Material, kind: MediaKind) -> some View {
-        let replace = m.editorialState == .needsChanges || m.technicalState == .failed
+        // «رفع لقطة بديلة» رفعٌ من التطبيق: للمراسلين وحدهم (`SendAccess`)، فلا يراه مشرف يتصفح مواد مكتبه.
+        let replace = app.canSend && (m.editorialState == .needsChanges || m.technicalState == .failed)
         let receipt = m.technicalState == .verified || m.technicalState == .originalReceived
         VStack(spacing: VL.Space.s3) {
             if kind == .video, player.canPlay {

@@ -27,6 +27,9 @@ final class MyMaterialsModel: ObservableObject {
     /// أو في الطابور. الجيل يمنع مهمة ألغاها المسح من محو مهمة بعده.
     private var pageTask: Task<Void, Never>?
     private var pageGeneration = 0
+    /// الظهور والاستطلاع يمرّان بباب واحد (`RefreshGate`، مختبر): طلب واحد في الطريق يشترك فيه من طلب أثناءه، ولا طلب والنتيجة
+    /// طازجة (ولو كانت القائمة فارغة، كحساب بلا مواد)، ومهلة متزايدة بعد كل فشل. ظهور الرئيسية المتكرر لا يعيد `GET /materials`.
+    private let gate = RefreshGate()
     private let transitions: @Sendable (UUID) async throws -> [TransitionRecord]
     /// رابط قراءة موقّع لمشتق (`getMaterialFileDownloadUrl`، ≤ 10 دقائق): يُطلب قبيل الاستعمال، ولا يُحفظ ولا يُسجَّل (ADR 0089).
     let downloadURL: @Sendable (_ materialId: UUID, _ fileId: UUID) async throws -> FileDownloadUrl
@@ -38,32 +41,47 @@ final class MyMaterialsModel: ObservableObject {
         self.downloadURL = downloadURL
     }
 
-    /// السحب للتحديث: من الأول، وتسقط الصفحات المحمّلة.
+    /// السحب للتحديث: من الأول، وتسقط الصفحات المحمّلة. طلب المراسل نفسه، فلا ينتظر طزاجة ولا مهلة.
     func refresh() async {
-        await update { try await $0.refresh() }
+        _ = try? await update(head: false)
     }
 
-    /// الاستطلاع: الصفحة الأولى تُدمج فوق ما حُمّل (`MaterialsFeed.refreshHead`)، فلا يعود المعرض إلى أوله ولا تُعاد صفحاته.
+    /// الاستطلاع الدوري: الصفحة الأولى تُدمج فوق ما حُمّل (`MaterialsFeed.refreshHead`)، فلا يعود المعرض إلى أوله ولا تُعاد صفحاته.
+    /// بعد فشل ينتظر مهلته.
     func poll() async {
-        await update { try await $0.refreshHead() }
+        await gate.run(.poll) { [weak self] in
+            guard let self else { return }
+            try await self.update(head: true)
+        }
     }
 
-    /// الظهور (أول مرة، أو الرجوع من التفاصيل): لا طلب إن كان آخر تحديث قريبًا، وإلا استطلاع لا يمس موضع المراسل.
-    func refreshIfStale(maxAge: TimeInterval = 30) async {
-        if let lastUpdated, !items.isEmpty, Date().timeIntervalSince(lastUpdated) < maxAge { return }
-        await poll()
+    /// الظهور (أول مرة، أو الرجوع من التفاصيل، أو عودة الرئيسية): لا طلب والنتيجة طازجة أو بعد فشل قريب، وإلا استطلاع لا يمس موضع
+    /// المراسل. كان الشرط `!items.isEmpty`، فقائمة فارغة لا تُعدّ طازجة أبدًا ويُطلب في كل ظهور.
+    func refreshIfStale() async {
+        await gate.run(.ifStale) { [weak self] in
+            guard let self else { return }
+            try await self.update(head: true)
+        }
     }
 
-    private func update(_ fetch: (MaterialsFeed) async throws -> [PostHistoryAPI.Material]) async {
+    /// يرمي إن فشل الطلب (بعد أن تُطبَّق النتيجة) ليحسب الباب مهلته؛ الإلغاء يُرمى كما هو ولا يُعدّ فشلًا (`LoadOutcome`).
+    private func update(head: Bool) async throws {
         let ticket = list.ticket()
-        loading = true
-        defer { loading = false }
+        setLoading(true)
+        defer { setLoading(false) }
         do {
-            let fresh = try await fetch(feed)
+            let fresh: [PostHistoryAPI.Material]
+            if head { fresh = try await feed.refreshHead() } else { fresh = try await feed.refresh() }
             await settle(ticket, .success(fresh), stamp: true)
         } catch {
             await settle(ticket, .failure(error))
+            throw error
         }
+    }
+
+    /// ما لم يتغيّر لا يُنشر: كل نشر يعيد رسم الرئيسية و«موادي».
+    private func setLoading(_ value: Bool) {
+        if loading != value { loading = value }
     }
 
     /// آخر المعرض ظهر، أو تقدّمت صفحاته وهو ظاهر (فلتر يخفي ما حُمّل): الصفحة التالية إن أرادها `PageProgress.wantsNextPage`،
@@ -127,6 +145,8 @@ final class MyMaterialsModel: ObservableObject {
         pageTask?.cancel()
         pageTask = nil
         await feed.clear()
+        // لا طزاجة ولا مهلة تُورَث لمن يدخل بعده.
+        await gate.reset()
     }
 }
 
@@ -139,6 +159,8 @@ struct MyMaterialsView: View {
     @EnvironmentObject private var queue: UploadQueueModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    /// الحساب يرسل من التطبيق (`SendAccess`): حساب بلا دور مراسل لا يرى زرّ الإرسال في «موادي» الفارغة بل سبب غيابه.
+    var canSend = true
     var onNewMaterial: () -> Void = {}
 
     @AppStorage("materials.grouping") private var groupingRaw = GalleryGrouping.coverage.rawValue
@@ -228,15 +250,20 @@ struct MyMaterialsView: View {
         }
     }
 
-    /// 07b: مراسل بلا مواد يرى ما سيظهر هنا وزرّ الإرسال؛ ومع فلتر لا يطابق شيئًا يُقال ذلك ويُعرض مسحه، لكن بعد أن ينتهي التحميل
-    /// وتُجلب كل الصفحات (أو يتعذّر الجلب)، لا والصفحات التالية في الطريق.
+    /// 07b: مراسل بلا مواد يرى ما سيظهر هنا وزرّ الإرسال (وحساب بلا دور مراسل يرى أنه لا يرفع من التطبيق)؛ ومع فلتر لا يطابق
+    /// شيئًا يُقال ذلك ويُعرض مسحه، لكن بعد أن ينتهي التحميل وتُجلب كل الصفحات (أو يتعذّر الجلب)، لا والصفحات التالية في الطريق.
     @ViewBuilder private var empty: some View {
         if model.loading || model.loadingMore {
             EmptyView()
         } else if model.items.isEmpty {
             if !model.failed {
-                VLEmptyState(title: "mine.empty.title", message: "mine.empty") {
-                    Button("home.send", action: onNewMaterial).buttonStyle(.vlPrimary)
+                if canSend {
+                    VLEmptyState(title: "mine.empty.title", message: "mine.empty") {
+                        Button("home.send", action: onNewMaterial).buttonStyle(.vlPrimary)
+                    }
+                } else {
+                    // لا «أرسل مادتك الأولى» لحساب لا يرفع من التطبيق.
+                    VLEmptyState(title: "send.notReporter.title", message: "send.notReporter")
                 }
             }
         } else if model.reachedEnd || model.failed {

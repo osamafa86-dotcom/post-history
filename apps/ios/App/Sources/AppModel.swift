@@ -14,8 +14,17 @@ final class AppModel: ObservableObject {
     enum Phase: Equatable { case loading, signedOut, signedIn(StoredSession), revoked(at: Date, report: WipeReport), wiped(WipeReport) }
 
     @Published private(set) var phase: Phase = .loading
-    /// اسم العمل للتحية في الرئيسية (`GET /me`)؛ يبقى في الذاكرة وحدها ولا يُكتب على القرص.
+    /// اسم العمل للتحية في الرئيسية (`GET /auth/me`)؛ يبقى في الذاكرة وحدها ولا يُكتب على القرص.
     @Published private(set) var workName: String?
+    /// من يرسل من التطبيق (`SendAccess`، الخطة وADR 0011 و0088): أدوار الداخل من `GET /auth/me`، وقبل وصوله من الجلسة المحفوظة
+    /// (أدوارها من الخادم). `nil` بلا دخول. حساب بلا دور مراسل لا تُعرض له شاشة الإرسال، بل سطر يقول ذلك.
+    @Published private(set) var sendAccess: SendAccess?
+    /// `GET /auth/me` بباب واحد (`RefreshGate`، مختبر): طلب واحد في الطريق، ولا طلب والنتيجة طازجة، ومهلة متزايدة بعد كل فشل.
+    /// ظهور الرئيسية المتكرر لا يعيد الطلب (بناء TestFlight 13: نحو 76 زوجًا مع `GET /materials` في ثانية).
+    private let profileGate = RefreshGate()
+
+    /// الإرسال معروض للداخل. قبل أن تُعرف أدواره (لا يحدث وهو داخل: الجلسة تحملها) يبقى معروضًا، والخادم يرفض بالرمز.
+    var canSend: Bool { sendAccess?.canSend ?? true }
 
     let auth: AuthSession
     /// إعداد العميل لكل المسارات المصادَق عليها (يضيف Bearer ويحدّث عند 401).
@@ -64,7 +73,10 @@ final class AppModel: ObservableObject {
     }
 
     func restore() async {
-        phase = await auth.session.map(Phase.signedIn) ?? .signedOut
+        let session = await auth.session
+        // الأدوار قبل الرئيسية: لا يظهر زرّ الإرسال لحظةً لحساب لا يرسل.
+        sendAccess = session.map { SendAccess(roles: $0.roles.map(\.name)) }
+        phase = session.map(Phase.signedIn) ?? .signedOut
         // النطاق قبل أن تستأنف النواة السجلات: لا طلب باسم غير صاحبه من أول خطوة.
         await applyAccountScope(signedIn: signedInAccount)
         if case .signedIn = phase { uploads.start(); await startPush() }
@@ -164,6 +176,8 @@ final class AppModel: ObservableObject {
         let report = await EmergencyWipe(steps: steps).run()
         ThumbnailCache.shared.clear()
         workName = nil
+        sendAccess = nil
+        await profileGate.reset()
         services.recreateProtectedDirectories()
         settings.reload()
         lock.reset()
@@ -180,10 +194,26 @@ final class AppModel: ObservableObject {
 
     func acknowledgeAndSignIn() { phase = .signedOut }
 
-    /// اسم التحية؛ بلا شبكة تبقى التحية بلا اسم.
+    /// اسم التحية وأدوار الداخل عند ظهور الرئيسية، بباب واحد (`profileGate`): ظهورٌ متكرر لا يعيد الطلب ما دامت النتيجة طازجة، ولا
+    /// يرسله في مهلة بعد فشل. كان كل ظهور يطلب ثم يكتب `workName` (ولو لم يتغيّر، و`nil` لطلب أُلغي)، والكتابة تعيد رسم الرئيسية التي
+    /// تطلب من جديد. بلا شبكة تبقى التحية بلا اسم والأدوار من الجلسة.
     func loadProfile() async {
         guard case .signedIn = phase else { return }
-        workName = (try? await AuthAPI.getMe(apiConfiguration: api))?.workName.flatMap { $0.isEmpty ? nil : $0 }
+        await profileGate.run(.ifStale) { [weak self] in
+            guard let self else { return }
+            try await self.fetchProfile()
+        }
+    }
+
+    /// يرمي إن فشل الطلب (للمهلة)، ولا يكتب إلا ما تغيّر: كل نشر يعيد رسم الرئيسية.
+    private func fetchProfile() async throws {
+        let me = try await AuthAPI.getMe(apiConfiguration: api)
+        // ردّ وصل بعد الخروج أو بعد دخول حساب آخر لا يُكتب لغير صاحبه.
+        guard case .signedIn(let session) = phase, session.userId == me.userId else { return }
+        let name = me.workName.flatMap { $0.isEmpty ? nil : $0 }
+        if workName != name { workName = name }
+        let access = SendAccess(roles: me.roles.map(\.name))
+        if sendAccess != access { sendAccess = access }
     }
 
     /// بعد الدخول: الإذن ثم APNs، والتسجيل لدى الخادم حين يصل الرمز.
@@ -194,6 +224,9 @@ final class AppModel: ObservableObject {
 
     func login(email: String, password: String, totpCode: String) async throws {
         let session = try await auth.login(email: email, password: password, totpCode: totpCode.isEmpty ? nil : totpCode)
+        // حساب جديد يطلب ملفه الآن: لا طزاجة ولا مهلة من حساب قبله.
+        await profileGate.reset()
+        sendAccess = SendAccess(roles: session.roles.map(\.name))
         phase = .signedIn(session)
         await applyAccountScope(signedIn: session.userId)
         uploads.start()
@@ -215,6 +248,8 @@ final class AppModel: ObservableObject {
         uploads.forgetBatches()
         ThumbnailCache.shared.clear()
         workName = nil
+        sendAccess = nil
+        await profileGate.reset()
         await materials.clear()
         await notifications.clear()
         await NotificationTraceWiper.wipe(SystemNotificationCenterTraces())

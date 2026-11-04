@@ -26,8 +26,7 @@ struct HomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: VL.Space.s6) {
                     header
-                    Button { sending = true } label: { Label("home.send", systemImage: "bolt.fill") }
-                        .buttonStyle(VLButtonStyle(kind: .primary, size: .hero))
+                    sendEntry
                     draftsSection
                     recentSection
                     Button("materials.title") { path.append(.materials) }.buttonStyle(.vlOutline)
@@ -39,7 +38,7 @@ struct HomeView: View {
             .navigationDestination(for: HomeRoute.self) { route in
                 switch route {
                 case .uploads: UploadsScreen()
-                case .materials: MyMaterialsView { sending = true }
+                case .materials: MyMaterialsView(canSend: app.canSend) { openSend() }
                 case .material(let id): MaterialDetailView(materialId: id)
                 case .notifications: NotificationsView()
                 case .settings: SettingsScreen()
@@ -73,6 +72,8 @@ struct HomeView: View {
             guard let id else { return }
             path = [.materials, .material(id)]
         }
+        // كل ظهور للرئيسية (ومنه عودتها بعد غطاء الإرسال) يمرّ بالباب نفسه (`RefreshGate`): لا طلب والنتيجة طازجة، ولا تكرار وطلب
+        // في الطريق، ومهلة بعد الفشل. بدونه أطلقت المهمة نفسها مع ما تنشره نحو 76 زوجًا في ثانية (بناء TestFlight 13).
         .task {
             await app.loadProfile()
             // حساسية «آخر الإرسالات» من المواد على الخادم حين تُعرف (وإلا من الإرسالة على الهاتف، وإلا تُحجب).
@@ -82,11 +83,28 @@ struct HomeView: View {
 
     private func showUploads() { path = [.uploads] }
 
+    /// شاشة الإرسال للمراسلين وحدهم: كل مدخل إليها (الزرّ، «موادي» الفارغة، «إرسال آخر»، مسودة) يمر من هنا.
+    private func openSend() {
+        guard app.canSend else { return }
+        sending = true
+    }
+
     /// «إرسال آخر» من الإيصال: تُفتح شاشة الإرسال بعد أن تُغلق ورقة الإيصال.
     private func sendAfterSheet() {
         Task {
             try? await Task.sleep(for: .milliseconds(450))
-            sending = true
+            openSend()
+        }
+    }
+
+    /// «إرسال من الميدان» للمراسلين (الخطة؛ ADR 0011 و0088). حساب بلا دور مراسل (مشرف، منتج…) لا تُعرض له شاشة الإرسال، بل سطر
+    /// بكلمات لا تقنية؛ فلا يختار ملفًا ثم يرى «تعذّر إثبات الجهاز» عند 0%.
+    @ViewBuilder private var sendEntry: some View {
+        if app.canSend {
+            Button { openSend() } label: { Label("home.send", systemImage: "bolt.fill") }
+                .buttonStyle(VLButtonStyle(kind: .primary, size: .hero))
+        } else {
+            VLNote(tone: .muted, systemImage: "info.circle", text: Text("send.notReporter"))
         }
     }
 
@@ -132,7 +150,8 @@ struct HomeView: View {
                 VLSectionHeader("drafts.title")
                 ForEach(queue.drafts) { draft in
                     HStack(spacing: VL.Space.s2) {
-                        Button { editingDraft = draft } label: {
+                        // المسودة تُفتح في شاشة الإرسال، فلا تُفتح لحساب لا يرسل؛ وحذفها يبقى متاحًا.
+                        Button { if app.canSend { editingDraft = draft } } label: {
                             HStack(spacing: VL.Space.s3) {
                                 Image(systemName: "doc.text").foregroundStyle(Color.vl.textSecondary).accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: VL.Space.s1) {
@@ -146,6 +165,7 @@ struct HomeView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .disabled(!app.canSend)
                         Button(role: .destructive) { draftToDelete = draft } label: {
                             Image(systemName: "trash").frame(width: VL.Size.touchMin, height: VL.Size.touchMin)
                         }
