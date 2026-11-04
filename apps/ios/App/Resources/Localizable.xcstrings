@@ -1617,6 +1617,57 @@
         }
       }
     },
+    "upload.failure.notPermitted": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "هذا الحساب لا يرفع مواد؛ الرفع من التطبيق لحسابات المراسلين."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This account doesn't upload materials; uploading from the app is for reporter accounts."
+          }
+        }
+      }
+    },
+    "send.notReporter": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "هذا الحساب لا يرفع مواد؛ الرفع من التطبيق لحسابات المراسلين."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This account doesn't upload materials; uploading from the app is for reporter accounts."
+          }
+        }
+      }
+    },
+    "send.notReporter.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا رفع من هذا الحساب"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No uploads from this account"
+          }
+        }
+      }
+    },
     "settings.localCopies": {
       "extractionState": "manual",
       "localizations": {

@@ -33,12 +33,17 @@ final class FakeAttestationAPI: AttestationAPI, @unchecked Sendable {
     /// أخطاء رمز ingest بالترتيب قبل النجاح.
     var tokenErrors: [AttestationAPIError] = []
     var registerError: AttestationAPIError?
+    /// ردّ التحدي نفسه (مثل `403 forbidden_role` لحساب بلا دور مراسل).
+    var challengeError: AttestationAPIError?
+    var challengeAttempts = 0
     var knownKeys: Set<String> = []
     var issued = 0
     var tokenLifetime: TimeInterval = 900
 
     func challenge() async throws -> AttestationChallengeValue {
-        lock.withLock {
+        try lock.withLock {
+            challengeAttempts += 1
+            if let e = challengeError { throw e }
             let c = AttestationChallengeValue(id: UUID(), bytes: Data((0..<32).map { _ in UInt8.random(in: 0...255) }), expiresAt: Date().addingTimeInterval(300))
             challenges.append(c); return c
         }
@@ -192,5 +197,45 @@ final class AppAttestIngestTokenProviderTests: XCTestCase {
         XCTAssertEqual(AttestationAPIError.map(ErrorResponse.error(503, body("attestation_unavailable"), nil, E())), .unavailable)
         XCTAssertEqual(AttestationAPIError.map(ErrorResponse.error(403, body("forbidden"), nil, E())), .status(403))
         XCTAssertEqual(Base64URL.decode("AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8")?.count, 32)
+    }
+
+    /// حارس الأدوار (`@Roles('reporter')`) يردّ `403 forbidden_role`، والنطاق `forbidden_scope`: رمزان غير `attestation_failed`.
+    func testForbiddenRoleAndScopeMapApartFromAttestationFailed() {
+        func body(_ code: String) -> Data { Data(#"{"code":"\#(code)","message":"m","request_id":"r"}"#.utf8) }
+        struct E: Error {}
+        XCTAssertEqual(AttestationAPIError.map(ErrorResponse.error(403, body("forbidden_role"), nil, E())), .forbidden)
+        XCTAssertEqual(AttestationAPIError.map(ErrorResponse.error(403, body("forbidden_scope"), nil, E())), .forbidden)
+        XCTAssertEqual(AttestationAPIError.map(ErrorResponse.error(403, body("attestation_failed"), nil, E())), .attestationFailed)
+        XCTAssertEqual(AttestationAPIError.map(ErrorResponse.error(403, nil, nil, E())), .status(403), "no body is not a role answer")
+        XCTAssertEqual(AppAttestIngestTokenProvider.classify(AttestationAPIError.forbidden), .notPermitted)
+        XCTAssertEqual(AppAttestIngestTokenProvider.classify(AttestationAPIError.attestationFailed), .attestationRejected)
+        XCTAssertFalse(AppAttestIngestTokenProvider.needsNewKey(AttestationAPIError.forbidden), "the key is fine; the account is not a reporter")
+    }
+
+    /// بناء TestFlight 13: حساب المشرف التجريبي أرسل فيديو، و`POST /device-attestations/challenge` ردّ `403 forbidden_role`. لا
+    /// شهادة تُحاول ولا مفتاح يُستبدل، والخطأ «الحساب لا يرفع» لا «تعذّر إثبات الجهاز».
+    func testAChallengeForbiddenForTheRoleIsNotPermittedAndKeepsTheKey() async throws {
+        let api = FakeAttestationAPI()
+        api.challengeError = .forbidden
+        let keys = InMemoryAttestationKeyStore(keyId: "registered-key")
+        let (p, backend, _, _) = make(api: api, keys: keys)
+        do { _ = try await p.ingestToken(uploadSessionId: session, forceRefresh: false); XCTFail("expected a role refusal") }
+        catch { XCTAssertEqual(error as? IngestTokenError, .notPermitted) }
+        XCTAssertEqual(api.challengeAttempts, 1, "a role answer is final: no second challenge, no re-registration")
+        XCTAssertEqual(backend.generated, 0)
+        XCTAssertTrue(backend.assertionHashes.isEmpty, "no assertion is attempted")
+        XCTAssertEqual(try keys.keyId(), "registered-key", "the device key is kept")
+        XCTAssertTrue(api.registered.isEmpty)
+    }
+
+    /// والرمز نفسه على `POST /uploads/{id}/ingest-token` بعد تحدٍّ نجح.
+    func testAnIngestTokenForbiddenForTheRoleIsNotPermitted() async throws {
+        let api = FakeAttestationAPI()
+        api.tokenErrors = [.forbidden]
+        let (p, _, _, keys) = make(api: api)
+        do { _ = try await p.ingestToken(uploadSessionId: session, forceRefresh: false); XCTFail("expected a role refusal") }
+        catch { XCTAssertEqual(error as? IngestTokenError, .notPermitted) }
+        XCTAssertEqual(api.tokenRequests.count, 1)
+        XCTAssertNotNil(try keys.keyId())
     }
 }

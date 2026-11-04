@@ -16,8 +16,7 @@ final class LocalCopyPolicyTests: XCTestCase {
 
     /// كل حالات الرفع، والفاشل بكل أسبابه.
     private var unverified: [UploadPhase] {
-        let failures: [UploadFailure] = [.checksumMismatch, .invalidFile, .expired, .aborted, .storageError, .sourceMissing, .rejected,
-                                         .deviceNotAttested]
+        let failures = UploadFailure.allCases
         return [.hashing, .creatingSession, .creatingUpload, .transferring, .completing, .awaitingReceipt, .cancelled] + failures.map { .failed($0) }
     }
 

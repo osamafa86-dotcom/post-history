@@ -12,8 +12,11 @@ public protocol IngestTokenProvider: Sendable {
 public enum IngestTokenError: Error, Equatable, Sendable {
     /// الجهاز لا يدعم App Attest (أجهزة قديمة، محاكي) أو لا مصدر للرمز: لا رفع خلف البوابة.
     case unsupported
-    /// الخادم رفض شهادة الجهاز نهائيًا بعد إعادة التسجيل.
+    /// الخادم رفض شهادة الجهاز نهائيًا بعد إعادة التسجيل (`attestation_failed`).
     case attestationRejected
+    /// الحساب لا يملك شهادة الجهاز ولا رمز البوابة (`403 forbidden_role`/`forbidden_scope`): الرفع من التطبيق لحسابات المراسلين.
+    /// نهائي، والمفتاح يبقى (لا عيب فيه)، ولا يُخلط بـ `attestationRejected`.
+    case notPermitted
     /// عطل مؤقت (Apple أو الشبكة أو `429`/`503`): يُعاد بعد مهلة.
     case temporarilyUnavailable
 }

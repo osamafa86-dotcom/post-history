@@ -27,7 +27,7 @@ public enum UploadPhase: Codable, Equatable, Sendable {
     }
 }
 
-public enum UploadFailure: String, Codable, Equatable, Sendable {
+public enum UploadFailure: String, Codable, Equatable, Sendable, CaseIterable {
     /// بصمة الخادم تخالف البصمة المحلية (أو ملف غير صالح).
     case checksumMismatch = "checksum_mismatch"
     case invalidFile = "invalid_file"
@@ -40,8 +40,11 @@ public enum UploadFailure: String, Codable, Equatable, Sendable {
     case sourceMissing = "source_missing"
     /// رفض نهائي من الخادم (4xx غير قابل للإعادة).
     case rejected = "rejected"
-    /// الجلسة خلف بوابة ingest والجهاز لا يستطيع إثبات نفسه (لا App Attest، أو رفض الخادم الشهادة مرارًا).
+    /// الجلسة خلف بوابة ingest والجهاز لا يستطيع إثبات نفسه (لا App Attest، أو رفض الخادم الشهادة مرارًا: `attestation_failed`).
     case deviceNotAttested = "device_not_attested"
+    /// الحساب لا يرفع من التطبيق: الخادم ردّ `403 forbidden_role` (أو `forbidden_scope`) على إنشاء الجلسة أو تحدي الشهادة أو رمز
+    /// البوابة. الرفع من التطبيق لحسابات المراسلين (الخطة، ADR 0011 و0088). سبب غير `deviceNotAttested` ولا يُخلط به.
+    case notPermitted = "not_permitted"
 }
 
 /// جزء مُجهَّز على القرص بانتظار إرساله: موضعه وطوله. لا بصمة لكل جزء (قرار ADR 0009: tusd لا يدعم امتداد checksum؛ السلامة ببصمة الملف كاملًا).
