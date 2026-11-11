@@ -1029,8 +1029,9 @@ SELECT pg_temp.assert(
   NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexdef ILIKE '%USING gin%'),
   'no GIN index anywhere (dynamic fields are JSONB without a blanket GIN)');
 SELECT pg_temp.assert(
-  (SELECT count(*) = 4 FROM pg_indexes WHERE schemaname = 'public' AND indexname IN
-    ('materials_board_idx', 'materials_reporter_idx', 'materials_governorate_shot_idx', 'materials_technical_inflight_idx')),
+  (SELECT count(*) = 5 FROM pg_indexes WHERE schemaname = 'public' AND indexname IN
+    ('materials_board_idx', 'materials_reporter_idx', 'materials_governorate_shot_idx', 'materials_technical_inflight_idx',
+     'materials_office_state_created_idx')),
   'composite B-tree indexes on high-frequency material columns exist');
 SELECT pg_temp.assert(
   (SELECT count(*) = 1 FROM pg_indexes WHERE indexname = 'outbox_events_pending_idx' AND indexdef ILIKE '%WHERE (published_at IS NULL)%'),

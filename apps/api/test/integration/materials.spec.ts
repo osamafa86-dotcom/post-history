@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import type { Pool } from 'pg';
 import request from 'supertest';
 import { schemaValidator } from '../../src/common/contract';
+import { PG_POOL } from '../../src/database/database.module';
 import { MaterialsService } from '../../src/materials/materials.service';
 import { createHarness, currentFormVersion, type Harness, loginAs } from './harness';
 
@@ -316,6 +318,85 @@ describe('materials (/v1/materials)', () => {
         .write('put', `/v1/materials/${m.id}/contributors`, { contributors: [{ user_id: reporterA.id, role: 'reporter', share_percent: 100 }] })
         .expect(403);
       expect((await events(m.id)).map((e) => e.type)).toContain('material.contributors_set');
+    });
+  });
+
+  describe('supervisor inbox', () => {
+    let office: string;
+    let elsewhere: string;
+    let supervisor: Actor;
+    let expected: string[];
+    beforeAll(async () => {
+      const newOffice = async () =>
+        (await h.pool.query<{ id: string }>(`INSERT INTO offices (name_ar, name_en, governorate) VALUES ('م', 'o', 'rafah') RETURNING id`)).rows[0]!.id;
+      office = await newOffice();
+      elsewhere = await newOffice();
+      const reporter = await loginAs(h, [{ role: 'reporter' }], { officeId: office });
+      supervisor = await loginAs(h, [{ role: 'supervisor', scopeKind: 'office', scopeId: office }], { officeId: office });
+      const ids: string[] = [];
+      for (const a of [reporter, supervisor, reporter, supervisor, reporter]) ids.push((await create(a)).id);
+      // مادة أنشأها المشرف خارج مكتبه: يراها لأنه منشئها، لا لأنها في نطاقه
+      await h.pool.query(`UPDATE materials SET office_id = $2 WHERE id = $1`, [ids[3], elsewhere]);
+      expected = [...ids].reverse();
+    });
+
+    it('lists the office and what the supervisor created outside it as one ordered list, paged without repeats', async () => {
+      const all = (await as(supervisor).get('/v1/materials?limit=50').expect(200)).body;
+      expect(all.items.map((m: { id: string }) => m.id)).toEqual(expected);
+      const paged: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const page: { items: Array<{ id: string }>; next_cursor: string | null } = (
+          await as(supervisor).get(`/v1/materials?limit=2${cursor ? `&cursor=${cursor}` : ''}`).expect(200)
+        ).body;
+        paged.push(...page.items.map((m) => m.id));
+        cursor = page.next_cursor;
+      } while (cursor);
+      expect(paged).toEqual(expected);
+      // والتصفية تسري على الفرعين
+      const received = (await as(supervisor).get('/v1/materials?editorial_state=inbox&sort=created_asc').expect(200)).body;
+      expect(received.items.map((m: { id: string }) => m.id)).toEqual([...expected].reverse());
+      // وكل ترتيب يعيد المجموعة نفسها مرة واحدة، صفحة صفحة
+      for (const sort of ['shot_desc', 'updated_desc']) {
+        const seen: string[] = [];
+        let next: string | null = null;
+        do {
+          const page: { items: Array<{ id: string }>; next_cursor: string | null } = (
+            await as(supervisor).get(`/v1/materials?sort=${sort}&limit=2${next ? `&cursor=${next}` : ''}`).expect(200)
+          ).body;
+          seen.push(...page.items.map((m) => m.id));
+          next = page.next_cursor;
+        } while (next);
+        expect([...seen].sort()).toEqual([...expected].sort());
+      }
+    });
+
+    it('reads the office part of the inbox through an index condition on the office', async () => {
+      const pool = h.app.get<Pool>(PG_POOL);
+      const query = pool.query;
+      const seen: Array<{ text: string; values: unknown[] }> = [];
+      pool.query = ((...args: unknown[]) => {
+        const config = args[0] as { text?: string } | string;
+        seen.push({ text: typeof config === 'string' ? config : (config.text ?? ''), values: (args[1] as unknown[]) ?? [] });
+        return (query as (...a: unknown[]) => unknown).apply(pool, args);
+      }) as Pool['query'];
+      try {
+        await as(supervisor).get('/v1/materials?editorial_state=inbox&limit=50').expect(200);
+      } finally {
+        pool.query = query;
+      }
+      const inbox = seen.find((q) => /from "materials"/.test(q.text) && /order by/.test(q.text))!;
+      // الجدول صغير في الاختبار فيُمنع المسح التتابعي: المطلوب أن الشرط نفسه قابل للفهرسة
+      const client = await h.pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SET LOCAL enable_seqscan = off');
+        const plan = JSON.stringify((await client.query({ text: `EXPLAIN (FORMAT JSON) ${inbox.text}`, values: inbox.values })).rows[0]);
+        await client.query('ROLLBACK');
+        expect(plan).toMatch(/"Index Cond":"[^"]*office_id = /);
+      } finally {
+        client.release();
+      }
     });
   });
 
