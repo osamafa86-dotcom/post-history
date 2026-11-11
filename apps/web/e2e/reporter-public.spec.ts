@@ -17,7 +17,7 @@ test("«موادي» is a gallery: cards with three separate states, coverage gr
   const card = page.getByTestId("mine-row").first();
   await expect(card.locator("[data-track]")).toHaveCount(3);
   await expect(page.getByTestId("mine-kpis").locator("[data-kpi='action'] strong")).toHaveText("1");
-  await expect(page.locator(".mine-group").first().locator("header p")).toContainText(/·/);
+  await expect(page.getByTestId("mine-section").first().locator("header p")).toHaveText(/\S/);
   await page.getByRole("button", { name: t.groupBy.type }).click(); await expect(page.getByRole("button", { name: t.groupBy.type })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("navigation", { name: t.filtersLabel }).getByRole("button", { name: t.filters.urgent }).click();
   const urgent = await page.getByTestId("mine-row").count(); expect(urgent).toBeLessThan(100);

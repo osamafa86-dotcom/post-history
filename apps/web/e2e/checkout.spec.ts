@@ -12,13 +12,22 @@ test("a buyer adds a license to the cart, pays at the sandbox provider, sees the
   await page.goto("/ar/store/71000000-0000-4000-8000-000000000001");
   await expect(page.getByRole("button", { name: s.addToCart })).toBeDisabled();
   await page.getByRole("radio").first().check(); await page.getByRole("button", { name: s.browse.addFor.replace("{price}", "") }).click();
-  await page.getByRole("link", { name: s.inCart }).click(); await expect(page).toHaveURL(/\/ar\/store\/cart$/);
+  // بعد الإضافة: الفعل الأساسي «اذهب إلى السلة» بعدّها، وإضافة ترخيص آخر ثانوية، وتأكيد الإضافة لا يطفو فوق النص.
+  const next = page.getByTestId("go-to-cart"); await expect(next).toHaveText(s.goToCart.replace("{n}", "1")); await expect(next).toHaveClass(/store/);
+  await expect(page.getByRole("button", { name: s.browse.addAnother, exact: true })).toHaveClass(/secondary/);
+  expect(await page.getByRole("status").filter({ hasText: s.browse.added }).evaluate(node => getComputedStyle(node).position)).toBe("static");
+  expect((await next.boundingBox())!.y).toBeLessThan((await page.getByRole("button", { name: s.browse.addAnother, exact: true }).boundingBox())!.y);
+  await next.click(); await expect(page).toHaveURL(/\/ar\/store\/cart$/);
   await expect(page.getByTestId("cart-line")).toHaveCount(1); await expect(page.getByTestId("cart-total")).toContainText("150");
   await page.getByLabel(c.poLabel).fill("PO-77/A");
   await page.getByRole("button", { name: c.checkout }).click();
   await expect(page).toHaveURL(/127\.0\.0\.1:3201\/sandbox\/checkout\//); await page.getByRole("link", { name: "Pay (sandbox)" }).click();
   await expect(page).toHaveURL(/\/ar\/store\/orders\/[0-9a-f-]{36}\?returned=1$/);
   await expect(page.getByTestId("order-status")).toHaveText(o.statuses.paid, { timeout: 15000 }); await expect(page.getByText(o.paidHelp)).toBeVisible();
+  // بعد الدفع: بطاقة تقول ما تمّ، وفعلها الأساسي «تراخيصي» والفاتورة ثانوية، ولا زر فاتورة مكرّر في الرأس.
+  const paid = page.getByTestId("order-paid"); await expect(paid.getByRole("heading")).toHaveText(o.paidTitle);
+  await expect(paid.getByRole("link", { name: ar.store.nav.licenses, exact: true })).toHaveClass(/button store/); await expect(paid.getByRole("link", { name: ar.store.nav.licenses, exact: true })).toHaveAttribute("href", "/ar/store/licenses");
+  await expect(page.getByRole("link", { name: o.invoice, exact: true })).toHaveCount(await paid.getByRole("link", { name: o.invoice, exact: true }).count());
   await expect(page.locator("main")).not.toContainText("never-display-canary");
   await expect(page.getByTestId("cart-chip")).toHaveAccessibleName(s.nav.cartCount.replace("{n}", "0"));
   await page.getByRole("link", { name: o.invoice, exact: true }).click();
@@ -34,7 +43,7 @@ test("checkout follows the buyer's language: the sandbox page and the return to 
   await page.goto("/en/login"); await page.getByLabel(en.email).fill("buyer@example.test"); await page.getByLabel(en.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(en.totp, { exact: true }).fill("123456"); await page.getByRole("button", { name: en.signIn, exact: true }).click();
   await expect(page).toHaveURL(/\/en\/store$/); await page.goto("/en/store/71000000-0000-4000-8000-000000000001");
   await page.getByRole("radio").first().check(); await page.getByRole("button", { name: e.browse.addFor.replace("{price}", "") }).click();
-  await page.getByRole("link", { name: e.inCart }).click(); await expect(page).toHaveURL(/\/en\/store\/cart$/);
+  await page.getByTestId("go-to-cart").click(); await expect(page).toHaveURL(/\/en\/store\/cart$/);
   const session = page.waitForRequest(r => /\/api\/bff\/orders\/[0-9a-f-]{36}\/checkout$/.test(r.url()));
   await page.getByRole("button", { name: e.cartPage.checkout }).click();
   expect((await session).postDataJSON()).toEqual({ locale: "en" });
@@ -53,7 +62,7 @@ test("a buyer cancels an unpaid order, and staff cannot buy", async ({ page, con
   await page.getByRole("button", { name: c.checkout }).click();
   await expect(page).toHaveURL(/127\.0\.0\.1:3201\/sandbox\/checkout\//);
   await page.goto(`/ar/store/orders/${page.url().split("/").pop()}`);
-  await expect(page.getByTestId("order-status")).toHaveText(o.statuses.pending_payment); await expect(page.getByText(o.sandbox)).toBeVisible();
+  await expect(page.getByTestId("order-status")).toHaveText(o.statuses.pending_payment); await expect(page.getByTestId("trial-notice")).toHaveCount(1);
   await page.getByRole("button", { name: o.cancel }).click(); await expect(page.getByTestId("order-status")).toHaveText(o.statuses.cancelled);
   await expect(page.getByRole("button", { name: o.pay })).toHaveCount(0);
   await context.clearCookies(); await login(page, "reviewer"); await expect(page.getByTestId("material-row")).toHaveCount(50);

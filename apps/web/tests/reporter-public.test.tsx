@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { handle } from "../src/server/handler";
 import type { WebConfig } from "../src/server/config";
 import type { Material, Notification } from "../src/lib/types";
-import { arabicFold, cardMedia, coverageTitle, dayKind, durationLabel, groupMaterials, matchesFilter, mineCounts, needsAction } from "../src/lib/my-materials";
+import { arabicFold, cardMedia, coverageTitle, dayKind, durationLabel, groupMaterials, matchesFilter, mineCounts, monthName, needsAction, timeSections, type MineGroup } from "../src/lib/my-materials";
 import { inTab, knownType, notificationKind, notificationTypes } from "../src/lib/notification-kind";
 import { safeNotification } from "../src/lib/privacy";
 import { archiveGovernorates, filterArchive, noFilters } from "../src/lib/archive";
@@ -165,5 +165,20 @@ describe("money and store cards", () => {
     expect(html).toContain(ar.store.org.pendingTitle); expect(html).toContain(ar.store.org.checkAgreement); expect(html).toContain("1 من 5"); expect(html).toContain('href="/ar/organization"');
     const member = renderToStaticMarkup(<OrgPending locale="en" organization={{ status: "suspended", seats: 5, active_members: 1 }} canInvite={false} />);
     expect(member).toContain(en.store.org.suspendedTitle); expect(member).not.toContain(en.store.org.invite);
+  });
+});
+
+describe("my materials in one grid", () => {
+  const group = (key: string, newest: string, count = 1): MineGroup => ({ key, title: key, type: null, newest, items: Array.from({ length: count }, () => material()) });
+  it("sections by time: today, this week, then month by month, however many coverages there are", () => {
+    const now = new Date(2026, 10, 11, 15, 0), at = (y: number, m: number, d: number) => new Date(y, m, d, 9, 0).toISOString();
+    const groups = [group("a", at(2026, 10, 11)), group("b", at(2026, 10, 11), 4), group("c", at(2026, 10, 8)), group("d", at(2026, 10, 5)), group("e", at(2026, 10, 2)), group("f", at(2026, 9, 20)), group("g", at(2026, 9, 3)), group("h", "not a date")];
+    const sections = timeSections(groups, now);
+    expect(sections.map(section => [section.kind, section.month, section.groups.map(g => g.key).join("")])).toEqual([["today", null, "ab"], ["week", null, "cd"], ["month", "2026-11", "e"], ["month", "2026-10", "fg"], ["month", null, "h"]]);
+    // مئة تغطية بمادة واحدة في الشهر نفسه قسم واحد، لا مئة.
+    expect(timeSections(Array.from({ length: 100 }, (_, i) => group(`k${i}`, at(2026, 8, 1 + (i % 28)))), now)).toHaveLength(1);
+  });
+  it("names a month in the interface language with Latin digits", () => {
+    expect(monthName("2026-10", "ar")).toBe("تشرين الأول 2026"); expect(monthName("2026-10", "en")).toBe("October 2026");
   });
 });

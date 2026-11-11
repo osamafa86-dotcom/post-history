@@ -85,7 +85,8 @@ test("S3 cart: the summary is the total alone, an optional purchase order number
   const id = page.url().split("/").pop()!;
   // العودة لا تؤكد الدفع: صفحة الطلب بحجز الحصرية وعدّاده، ولا فاتورة قبل التأكيد
   await page.goto(`/ar/store/orders/${id}`);
-  await expect(page.getByRole("status").filter({ hasText: o.sandboxTitle })).toBeVisible();
+  // لافتة تجريبية واحدة في الصفحة.
+  await expect(page.getByTestId("trial-notice")).toHaveCount(1); await expect(page.locator(".sandbox-banner")).toHaveCount(0);
   await expect(page.getByTestId("hold-timer")).toContainText(/حجز الحصرية ينتهي خلال \d\d:\d\d/);
   await expect(page.locator(".order-summary")).toContainText("PO 2026/17-A"); await expect(page.locator(".order-summary")).toContainText(/ORD-\d{4}-[0-9A-HJKMNP-TV-Z]{8}/);
   await expect(page.getByRole("link", { name: o.invoice, exact: true })).toHaveCount(0); await expect(page.getByText(o.noInvoice)).toBeVisible();

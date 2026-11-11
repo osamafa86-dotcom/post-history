@@ -53,6 +53,28 @@ export function groupMaterials(items: Material[], by: MineGrouping): MineGroup[]
   return [...groups.values()];
 }
 
+export type MineSection = { key: string; kind: "today" | "week" | "month"; month: string | null; groups: MineGroup[] };
+/**
+ * أقسام الشبكة المتصلة بالزمن بدل قسم لكل تغطية: اليوم، ثم هذا الأسبوع (الأيام الستة السابقة بالتقويم المحلي)، ثم شهر بعد شهر.
+ * المجموعة تقع في قسم أحدث موادها، وترتيب المجموعات كما وصل (الأحدث أولًا).
+ */
+export function timeSections(groups: MineGroup[], now: Date): MineSection[] {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(), week = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6).getTime();
+  const sections = new Map<string, MineSection>();
+  for (const group of groups) {
+    const at = new Date(group.newest), known = Number.isFinite(at.getTime()), day = known ? new Date(at.getFullYear(), at.getMonth(), at.getDate()).getTime() : 0;
+    const kind = day >= today ? "today" : day >= week ? "week" : "month", month = kind === "month" && known ? `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}` : null;
+    const key = kind === "month" ? `m:${month ?? ""}` : kind, section = sections.get(key) ?? { key, kind, month, groups: [] };
+    section.groups.push(group); sections.set(key, section);
+  }
+  return [...sections.values()];
+}
+/** اسم الشهر والسنة لعنوان القسم («تشرين الأول 2026») بأرقام لاتينية. */
+export function monthName(month: string, locale: "ar" | "en") {
+  const [year, value] = month.split("-").map(Number);
+  return new Intl.DateTimeFormat(locale === "ar" ? "ar-PS-u-nu-latn" : "en", { month: "long", year: "numeric" }).format(new Date(year, value - 1, 1));
+}
+
 /** مدة الفيديو من أطول ملف يحمل مدة؛ بلا ملف فلا مدة. */
 export function materialDuration(material: Material) {
   const values = material.files.map(file => file.duration_ms ?? 0).filter(ms => Number.isSafeInteger(ms) && ms > 0);

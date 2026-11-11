@@ -101,7 +101,16 @@ label.license-option.blocked { cursor: not-allowed; }
 .license-price { font-family: var(--v2-font-family-num); font-size: 18px; font-variant-numeric: tabular-nums; }
 .offer-terms summary { padding-inline: var(--v2-space-5); color: var(--v2-c-text-brand); font-size: var(--v2-font-caption-size); cursor: pointer; }
 .store-buy { display: grid; gap: var(--v2-space-3); }
-.store-buy button.store { inline-size: 100%; min-block-size: var(--v2-size-cta-min); font-size: 16px; }
+.store-buy button, .store-buy a.button { inline-size: 100%; min-block-size: var(--v2-size-cta-min); font-size: 16px; }
+/* تأكيد الإضافة سطر داخل منطقة الشراء، لا لافتة عائمة تغطي ما تحتها. */
+.store-buy .toast { position: static; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; text-align: center; animation: none; }
+/* بطاقة ما بعد الدفع: ما تمّ، ثم الفعل الأساسي والفاتورة. */
+.order-paid { display: flex; flex-wrap: wrap; align-items: center; gap: var(--v2-space-4) var(--v2-space-5); margin-block-end: var(--v2-space-6); border-color: var(--v2-c-state-ok); }
+.order-paid .empty-icon { flex: none; color: var(--v2-c-state-ok); }
+.order-paid > div:not(.actions) { flex: 1 1 240px; min-inline-size: 0; }
+.order-paid h2 { margin: 0; font-size: var(--v2-font-headline-size); line-height: var(--v2-font-headline-line); }
+.order-paid p { margin: 0; color: var(--v2-c-text-secondary); }
+.order-paid .actions { flex-wrap: wrap; }
 
 /* S3 السلة والدفع. */
 .cart-v2 { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: var(--v2-space-7); align-items: start; }

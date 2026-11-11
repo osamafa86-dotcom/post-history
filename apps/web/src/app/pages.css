@@ -30,6 +30,14 @@
 .mine-states { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--v2-space-1); }
 .mine-card .supervisor-note { margin: 0; font-size: var(--v2-font-caption-size); }
 .mine-card .skeleton.media { aspect-ratio: 9 / 16; }
+/* غلاف التغطية في الشبكة المتصلة: زر بحجم البطاقة وعدّ موادها؛ موادها حين تُفتح تتبعه في الشبكة بحدّ يدل على انتمائها. */
+button.mine-media, button.mine-media:hover { inline-size: 100%; block-size: auto; min-block-size: 0; padding: 0; border: 0; background: var(--v2-c-bg-store); color: var(--v2-c-text-on-store); cursor: pointer; }
+.mine-cover .mine-media { box-shadow: var(--v2-space-2) calc(-1 * var(--v2-space-2)) 0 0 var(--v2-c-border-edge); }
+.mine-cover.open .mine-media { outline: var(--v2-border-field) solid var(--v2-c-action-primary); outline-offset: 2px; }
+/* عنوان التغطية على الغلاف سطران على الأكثر، وينكسر ولو بلا مسافات. */
+.mine-cover .mine-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-inline-size: 0; overflow-wrap: anywhere; }
+.mine-count { position: absolute; inset-block-end: var(--v2-space-3); inset-inline-start: var(--v2-space-3); padding: var(--v2-space-1) var(--v2-space-3); border-radius: var(--v2-radius-chip); background: var(--v2-c-bg-raised); color: var(--v2-c-text-primary); font-size: var(--v2-font-caption-size); line-height: var(--v2-font-caption-line); font-weight: 700; }
+.mine-card.in-cover .mine-media { outline: var(--v2-border-hairline) solid var(--v2-c-action-primary); outline-offset: 2px; }
 @media (max-width: 767px) {
   .mine-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--v2-space-5) var(--v2-space-4); }
   .mine-tools { flex-direction: column; align-items: stretch; }
