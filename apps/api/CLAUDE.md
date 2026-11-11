@@ -4,7 +4,7 @@
 
 ## التقنية
 
-- TypeScript + NestJS، خادم واحد بوحدات: `identity`، `materials`، `uploads`، `workflow`، `notifications`، `integrations`.
+- TypeScript + NestJS، خادم واحد بوحدات تحت `src/`: `identity`، `permissions`، `attestation`، `materials`، `uploads`، `verification`، `media`، `forms`، `tags`، `assignments`، `dashboard`، `notifications`، `push`، `push-devices`، `events`، `outbox`، `idempotency`، `commerce`، `retention`، `settings`.
 - PostgreSQL: الترحيلات SQL خام عبر node-pg-migrate والوصول عبر Drizzle بأنواع مستبطَنة من المخطط (ADR 0001). Redis للطابور.
 - يُبنى ضد `contracts/openapi.yaml`؛ أنواع الطلبات والاستجابات تُولَّد منه ولا تُكتب يدويًا.
 
