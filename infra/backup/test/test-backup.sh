@@ -75,10 +75,13 @@ grep -q 'postgres dump failed' "$WORK/1.log" || failog 1 "a cut pg_dump is not r
   || fail "a cut pg_dump left a dump, row counts or a success behind (once)"
 ok "a pg_dump cut short leaves nothing and fails (once)"
 "${C[@]}" run -d --no-deps --name ph-backup-test-loop -e FAIL_PG_DUMP=1 backup loop >/dev/null
-loop_failed() { [ -e "$B/last-failure.json" ] && docker logs ph-backup-test-loop 2>&1 | grep -q '"backup failed"'; }
+# The log is read whole before it is matched: under pipefail, `docker logs | grep -q` fails when grep leaves at its
+# first match while the log is still being written, so a line that is there reads as missing.
+loop_logged() { grep -q -- "$1" <<<"$(docker logs ph-backup-test-loop 2>&1)"; }
+loop_failed() { [ -e "$B/last-failure.json" ] && loop_logged '"backup failed"'; }
 for _ in $(seq 1 60); do loop_failed && break; sleep 1; done
 loop_failed || fail "loop: no last-failure.json and no failure logged after a cut pg_dump"
-if docker logs ph-backup-test-loop 2>&1 | grep -q '"backup ok"'; then fail "loop: a cut pg_dump logged as a success"; fi
+if loop_logged '"backup ok"'; then fail "loop: a cut pg_dump logged as a success"; fi
 [ "$(dumps)" = 0 ] && [ ! -e "$B/last-success.json" ] || fail "loop: a cut pg_dump left a dump or a success behind"
 docker rm -f ph-backup-test-loop >/dev/null
 ok "a pg_dump cut short leaves nothing and fails (loop, the image's default)"

@@ -784,7 +784,7 @@ if ((await upload(id, process.env.CLIP, `${process.env.MARK}-measure.mov`, "vide
 }
 say(`MATERIAL=${id}`);
 JS
-)")" || { echo "$mout"; api_state; fail "the $prof measurement upload"; }
+)")" || { echo "$mout"; tusd_state; api_state; fail "the $prof measurement upload"; }
   mid="$(sed -n 's/^MATERIAL=//p' <<<"$mout")"
   MEASURED+=("$prof:$mid")
   # A fresh cgroup for the worker, so memory.peak is this job's.
@@ -859,6 +859,16 @@ PY
 # large upload its restarts, OOM flag and cgroup memory.peak are printed (kept for the --json file), and a restart fails.
 api_peak_mb=0
 MEASURED=()
+# What tusd looked like when an upload through it failed. Printed for the reader of the log; never a verdict of its own.
+tusd_state() {
+  local tid tcg
+  tid="$("${C[@]}" ps -a -q tusd 2>/dev/null || true)"
+  [ -n "$tid" ] || { echo "tusd: no container"; return 0; }
+  echo "tusd: $(docker inspect -f '{{.State.Status}}, restarts {{.RestartCount}}, last exit OOM-killed {{.State.OOMKilled}}, exit code {{.State.ExitCode}}, started {{.State.StartedAt}}' "$tid" 2>/dev/null || echo "cannot be inspected")"
+  tcg="$(cgdir "$tid" 2>/dev/null || true)"
+  if [ -n "$tcg" ] && [ -r "$tcg/memory.events" ]; then echo "tusd memory.events: $(tr '\n' ' ' < "$tcg/memory.events")"; fi
+  return 0
+}
 api_state() {
   local aid acg s r o pk
   aid="$("${C[@]}" ps -q api)"
@@ -945,7 +955,8 @@ fi
 # The feeder as a service: back on, it logs that it started and nothing else while there is nothing to do.
 started="$("${C[@]}" up -d --no-deps media-feeder 2>&1)" || { echo "$started" | tail -5; fail "media-feeder does not start"; }
 sleep 12
-"${C[@]}" logs --no-color media-feeder 2>&1 | grep -q '"msg":"media feeder started"' || fail "media-feeder did not start its loop"
+# Read whole, then matched (pipefail: grep -q leaving at its first match fails the pipe while the log is still written).
+grep -q '"msg":"media feeder started"' <<<"$("${C[@]}" logs --no-color media-feeder 2>&1)" || fail "media-feeder did not start its loop"
 [ "$(docker inspect -f '{{.State.Running}}' "$("${C[@]}" ps -q media-feeder)")" = true ] || fail "media-feeder is not running"
 
 # No title, file name, location or device in what the worker and the feeder log (CLAUDE.md §5), and only counts from the feeder.

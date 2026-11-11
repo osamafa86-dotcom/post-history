@@ -4,13 +4,13 @@
 
 ## التقنية
 
-- TypeScript + NestJS، خادم واحد بوحدات: `identity`، `materials`، `uploads`، `workflow`، `notifications`، `integrations`.
+- TypeScript + NestJS، خادم واحد بوحدات تحت `src/`: `identity`، `permissions`، `attestation`، `materials`، `uploads`، `verification`، `media`، `forms`، `tags`، `assignments`، `dashboard`، `notifications`، `push`، `push-devices`، `events`، `outbox`، `idempotency`، `commerce`، `retention`، `settings`.
 - PostgreSQL: الترحيلات SQL خام عبر node-pg-migrate والوصول عبر Drizzle بأنواع مستبطَنة من المخطط (ADR 0001). Redis للطابور.
 - يُبنى ضد `contracts/openapi.yaml`؛ أنواع الطلبات والاستجابات تُولَّد منه ولا تُكتب يدويًا.
 
 ## قواعد الحزمة
 
-1. كل كتابة تمر بـ `Idempotency-Key`؛ التكرار يعيد الاستجابة الأولى نفسها.
+1. كل كتابة تمر بـ `Idempotency-Key`؛ التكرار يعيد الاستجابة الأولى نفسها. الكتابة تلتزم مع علامة مفتاحها فلا تنفَّذ مرتين (ADR 0005)، فاكتب عبر `DB` المحقون وحده (معاملة أو جملة مباشرة)، لا عبر اتصال خام من المجمّع.
 2. كل تغيير حالة يكتب حدثًا في جدول Outbox **داخل المعاملة نفسها**، ومُرسل مستقل يقرأ الجدول.
 3. الحالات الثلاث مستقلة؛ انتقالات كل مسار جدول صريح في الكود، وما ليس فيه يُرفض بـ 409.
 4. نطاقات الأدوار تُطبَّق في طبقة الاستعلام لا في الواجهة.

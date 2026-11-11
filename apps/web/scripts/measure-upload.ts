@@ -56,7 +56,10 @@ async function main() {
   await page.waitForURL(/\/ar\/inbox/); await page.goto("http://127.0.0.1:3100/ar/upload");
   await page.getByLabel(ar.upload.choose).setInputFiles(source);
   await page.getByLabel(ar.upload.titleLabel).fill("قياس رفع اصطناعي"); await page.getByLabel(ar.governorate, { exact: true }).fill("اختبار"); await page.getByLabel(ar.upload.city).fill("اختبار");
+  await page.getByRole("group", { name: ar.upload.types }).getByRole("button", { name: ar.types.raw_footage, exact: true }).click();
   await page.locator("#field-headline").fill("قياس"); await page.locator("#field-category").selectOption("news"); await page.locator("#field-consent").selectOption("true");
+  await page.getByLabel(ar.shell.material.tagEditor.add).fill("قياس"); await page.getByRole("button", { name: ar.shell.material.tagEditor.addButton, exact: true }).click();
+  await page.getByRole("group", { name: ar.upload.sensitivityQuestion, exact: true }).getByLabel(ar.no, { exact: true }).check();
   const clicked = Date.now();
   await page.getByRole("button", { name: ar.upload.start }).click();
   const row = page.getByTestId("upload-row");
