@@ -4,7 +4,7 @@ import request from 'supertest';
 import { schemaValidator } from '../../src/common/contract';
 import { Readable } from 'node:stream';
 import { OBJECT_STORAGE, type ObjectStorage } from '../../src/verification/object-storage';
-import { createHarness, drainOutbox, type Harness, loginAs, makeSaleable, seedUploadSession, seedUser } from './harness';
+import { createHarness, drainOutbox, type Harness, loginAs, makeSaleable, seedUploadSession, seedUser, statementsDuring } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
 const SECRET = randomBytes(32).toString('hex');
@@ -197,6 +197,29 @@ describe('licenses (/v1/licenses) and the sandbox return', () => {
     const staff = (await http().get(`/v1/licenses?organization_id=${other.orgId}`).set(as(finance.token)).expect(200)).body.items;
     expect(staff.map((l: { id: string }) => l.id)).toEqual([other.licenseId]);
     await http().get(`/v1/licenses/${a.licenseId}`).set(as(rights.token)).expect(200);
+  });
+
+  it('lists a page of licenses in a fixed number of statements, each item equal to its own read', async () => {
+    const t = await template();
+    const b = await buyer(await organization());
+    const listings = [await listed([t]), await listed([t]), await listed([t])];
+    const created = (await post(b.token, '/orders', { items: listings.map((l) => ({ listing_id: l.listingId, license_template_id: t })) }).expect(201)).body;
+    await pay((await ref(b.token, created.id)).ref);
+    // حزمة التسليم جاهزة لترخيص واحد من الثلاثة
+    const first = (await order(b.token, created.id)).items.find((i: { listing_id: string }) => i.listing_id === listings[0]!.listingId);
+    const { rows } = await h.pool.query<{ id: string }>(`SELECT id FROM material_files WHERE material_id = $1 AND kind = 'original'`, [listings[0]!.materialId]);
+    await h.pool.query(
+      `INSERT INTO material_files (material_id, kind, state, size_bytes, sha256, storage_key, verified_at, derived_from_id, license_id)
+       VALUES ($1, 'delivery', 'verified', 100, $2, $3, now(), $4, $5)`,
+      [listings[0]!.materialId, randomBytes(32), `delivery/${first.license_id}/package.zip`, rows[0]!.id, first.license_id],
+    );
+    const list = (limit: number) => http().get(`/v1/licenses?limit=${limit}`).set(as(b.token)).expect(200);
+    const page = (await list(3)).body;
+    expect(page.items).toHaveLength(3);
+    for (const item of page.items) expect(item).toEqual((await http().get(`/v1/licenses/${item.id}`).set(as(b.token)).expect(200)).body);
+    expect(page.items.filter((l: { delivery_ready: boolean }) => l.delivery_ready).map((l: { id: string }) => l.id)).toEqual([first.license_id]);
+    // صفحة من ثلاثة لا تزيد جملة واحدة على صفحة من واحد
+    expect(await statementsDuring(h, () => list(3))).toBe(await statementsDuring(h, () => list(1)));
   });
 
   it('download-url: a short-lived signed link per grant, counted to the limit, never stored, and only for the own active license', async () => {

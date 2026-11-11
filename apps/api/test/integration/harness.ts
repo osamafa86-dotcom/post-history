@@ -8,6 +8,7 @@ import { AppModule, configureApp } from '../../src/app.module';
 import { createLogger } from '../../src/common/logger';
 import { randomToken, sha256, totp } from '../../src/common/crypto';
 import { type AppConfig, fieldKeyring, loadConfig } from '../../src/config/config';
+import { PG_POOL } from '../../src/database/database.module';
 import { OutboxDispatcher } from '../../src/outbox/outbox.dispatcher';
 
 export interface Harness {
@@ -170,5 +171,30 @@ export async function drainOutbox(h: Harness, timeoutMs = 10_000): Promise<void>
     if (rows[0]!.n === 0) return;
     if (Date.now() > deadline) throw new Error(`outbox not drained: ${rows[0]!.n} events pending`);
     await new Promise((r) => setTimeout(r, 25));
+  }
+}
+
+/**
+ * عدد الجمل التي ينفّذها الخادم على مجمّعه خارج المعاملات أثناء `run` (مسارات القراءة لا تفتح معاملة). يُؤخذ الأدنى من ثلاث مرات،
+ * فلا تدخل العدَّ جملةٌ عابرة من مهمة خلفية.
+ */
+export async function statementsDuring(h: Harness, run: () => PromiseLike<unknown>): Promise<number> {
+  const pool = h.app.get<Pool>(PG_POOL);
+  const query = pool.query;
+  let n = 0;
+  pool.query = ((...args: unknown[]) => {
+    n += 1;
+    return (query as (...a: unknown[]) => unknown).apply(pool, args);
+  }) as Pool['query'];
+  try {
+    const counts: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      n = 0;
+      await run();
+      counts.push(n);
+    }
+    return Math.min(...counts);
+  } finally {
+    pool.query = query;
   }
 }
