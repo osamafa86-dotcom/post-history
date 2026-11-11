@@ -112,7 +112,7 @@ function OfflineShell({ locale, me, pathname, languageHref, busy, retry, logout 
         </header>
         <main id="main-content" className="main-content">
           <div className="page-head"><div><h1>{title}</h1></div></div>
-          <EmptyState icon="offline" role="status" testId="offline-state" title={t.title} actions={<button onClick={retry}>{t.retry}</button>}><p>{t.body}</p></EmptyState>
+          <EmptyState icon="offline" role="status" testId="offline-state" title={t.title} actions={<button onClick={retry}>{m.retry}</button>}><p>{t.body}</p></EmptyState>
         </main>
       </div>
       {me && !buyer && <BottomBar items={items} locale={locale} badge={null} account={<button type="button" className="menu-item" disabled={busy} onClick={logout}><Icon name="logout" />{m.logout}</button>} />}

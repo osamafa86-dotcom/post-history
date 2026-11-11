@@ -9,10 +9,10 @@ test.beforeEach(async ({ request }) => { await request.post("http://127.0.0.1:32
 
 test("the inbox leads with unseen urgent material and the newsroom counters", async ({ page }) => {
   await login(page); const alert = page.getByTestId("urgent-alert");
-  await expect(alert).toBeVisible(); await expect(alert).toContainText(ar.editor.urgentMany.few.replace("{n}", "10")); await expect(alert.getByTestId("urgent-since")).toHaveText(/\S/); await expect(alert.getByTestId("urgent-since")).not.toContainText(":");
+  await expect(alert).toBeVisible(); await expect(alert.getByTestId("urgent-count")).toHaveText("40"); await expect(alert.getByRole("heading")).toContainText(ar.shell.inbox.kpiUrgent); await expect(alert.getByTestId("urgent-since")).toHaveText(/\S/); await expect(alert.getByTestId("urgent-since")).not.toContainText(":");
   await expect(page.getByTestId("stat-urgent")).toBeVisible();
   await alert.getByRole("button", { name: ar.editor.showUrgent }).click(); await expect(page.getByTestId("material-row")).toHaveCount(40); await expect(page.getByTestId("material-row").filter({ hasText: ar.states.priority.urgent })).toHaveCount(40);
-  await expect(page.locator(".filter-panel")).not.toHaveAttribute("open");
+  await expect(page.locator(".filter-panel")).toBeHidden();
   await page.screenshot({ path: ".artifacts/editor-inbox-ar.png" });
 });
 
@@ -91,7 +91,7 @@ test("ADR 0035 read-all sends one stable request and cutoff across a lost respon
 
 test("the inbox follows W1: summary, chips with counts, top-bar search and rows with three separate state badges, in RTL and LTR", async ({ page }) => {
   await login(page); await page.setViewportSize({ width: 1440, height: 900 }); const w = ar.shell.inbox;
-  await expect(page.locator(".inbox-head h1")).toHaveText(ar.inbox); await expect(page.locator(".inbox-summary")).toContainText(/^200 مادة: 40 عاجلة مفتوحة/);
+  await expect(page.locator(".inbox-head h1")).toHaveText(ar.inbox); await expect(page.locator(".inbox-summary")).toHaveCount(0);
   await expect(page.getByTestId("kpis").locator(".kpi")).toHaveCount(4); await expect(page.getByTestId("stat-urgent")).toContainText(w.kpiUrgent);
   const tabs = page.getByRole("navigation", { name: ar.inboxTabs.label }), tab = (label: string) => tabs.getByRole("button", { name: new RegExp(`^${label}`) });
   await expect(tabs.getByRole("button")).toHaveCount(6); await expect(tab(ar.inboxTabs.all)).toHaveAttribute("aria-pressed", "true"); await expect(tab(ar.inboxTabs.all)).toContainText("200"); await expect(tab(ar.inboxTabs.urgent)).toContainText("40");
@@ -113,13 +113,13 @@ test("the inbox follows W1: summary, chips with counts, top-bar search and rows 
   await expect(none).toContainText(w.noResultsFor.replace("{q}", "zzz")); await expect(none.getByRole("button", { name: w.showWithoutSearch.replace("{n}", "50") })).toBeVisible();
   await page.getByRole("list", { name: w.activeFilters }).getByRole("button", { name: w.removeFilter.replace("{filter}", "«zzz»") }).click();
   await expect(page.getByTestId("material-row")).toHaveCount(50); await expect(page.getByLabel(ar.inboxSearch.label)).toHaveValue("");
-  await expect(page.locator(".filter-panel")).not.toHaveAttribute("open");
+  await expect(page.locator(".filter-panel")).toBeHidden();
   await page.screenshot({ path: ".artifacts/inbox-w1-ar.png" });
   await page.goto("/en/inbox"); await expect(page.getByTestId("material-row")).toHaveCount(50); await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
   const row = page.getByTestId("material-row").first(), x = async (selector: string) => (await row.locator(selector).boundingBox())!.x;
   expect(await x(".row-thumb")).toBeLessThan(await x(".row-states")); expect(await x(".row-main")).toBeLessThan(await x(".row-actions"));
   await expect(row.locator("[data-track='technical_state']")).toHaveText(en.states.technical_state.verified);
-  await expect(page.locator(".inbox-summary")).toContainText(/^200 items: 40 urgent open/);
+  await expect(page.getByRole("navigation", { name: en.inboxTabs.label }).getByRole("button", { name: new RegExp(`^${en.inboxTabs.all}`) })).toContainText("200");
 });
 
 test("the inbox shows skeletons while loading, keeps the last rows with disabled actions offline, and says when it is empty (E1–E3)", async ({ page, context }) => {

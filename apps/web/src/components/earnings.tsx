@@ -1,5 +1,5 @@
 "use client";
-import { EmptyState, NoAccess } from "./empty-state";
+import { EmptyState, ErrorState, NoAccess } from "./empty-state";
 import { useEffect, useState } from "react";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { formatDate, messages, type Locale } from "@/lib/i18n";
@@ -11,6 +11,7 @@ import { cancellable, earnerRoles, payableStates, payoutCreate, type EarningsEnt
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
 import { Icon, type IconName } from "./icon";
+import { fillNodes, Money } from "./money";
 
 type Currency = (typeof currencies)[number];
 type PayableState = (typeof payableStates)[number];
@@ -60,7 +61,7 @@ export function EarningsPage({ locale }: { locale: Locale }) {
   return <>
     <div className="page-head"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p></div></div>
     <SandboxBanner locale={locale} />
-    {error ? <EmptyState icon="offline" role="alert" title={t.errorTitle} actions={<button type="button" onClick={() => setAttempt(n => n + 1)}>{m.retry}</button>}><p>{t.errorBody}</p></EmptyState>
+    {error ? <ErrorState locale={locale} title={t.errorTitle} retry={() => setAttempt(n => n + 1)}><p>{t.errorBody}</p></ErrorState>
       : !summary || !payouts ? <><p className="visually-hidden" role="status">{m.loading}</p><div className="kpis" aria-hidden="true">{[0, 1, 2, 3].map(i => <article key={i} className="kpi"><span className="skeleton num" /><span className="skeleton line" /></article>)}</div><span className="skeleton card" aria-hidden="true" /></>
       : <>{!summary.balances.length ? <EmptyState icon="money" testId="earnings-empty" title={t.noBalance}><p>{t.noBalanceBody}</p></EmptyState> : <Balances locale={locale} summary={summary} />}
         <p className="caption earnings-formula">{t.formula}</p>
@@ -69,14 +70,14 @@ export function EarningsPage({ locale }: { locale: Locale }) {
             {!summary.balances.length ? <p className="muted">{t.nothingToRequest}</p> : <form className="payout-form" noValidate onSubmit={e => { e.preventDefault(); void request(); }}>
               <div className="rule-row"><label>{t.currency}<select value={currency} onChange={e => setCurrency(e.target.value as Currency)}>{summary.balances.map(b => <option key={b.currency} value={b.currency}>{b.currency}</option>)}</select></label>
                 <label>{t.amount}<input type="number" min={0} step="0.01" dir="ltr" inputMode="decimal" value={amount} aria-invalid={invalid || undefined} aria-describedby="payout-limits" onChange={e => setAmount(e.target.value)} /></label></div>
-              {balance && <p className="muted" id="payout-limits" data-testid="payout-limits">{t.limits.replace("{min}", formatMoney(balance.minimum, locale)).replace("{max}", formatMoney(balance.requestable, locale))}</p>}
+              {balance && <p className="muted" id="payout-limits" data-testid="payout-limits">{fillNodes(t.limits, { min: <Money price={balance.minimum} locale={locale} />, max: <Money price={balance.requestable} locale={locale} /> })}</p>}
               {invalid && <p className="notice error" role="alert">{t.invalid}</p>}
               <ActionStatus status={mutation.status} locale={locale} />{mutation.status === 422 && <p className="notice error">{t.rejected}</p>}
               <div className="actions"><button disabled={mutation.busy || !amount}>{mutation.busy ? m.review.saving : t.request}</button></div>
             </form>}</section>
           <section className="card" aria-labelledby="my-payouts"><h2 id="my-payouts">{t.myRequests}</h2>
-            {!payouts.length ? <p className="muted">{t.noRequests}</p> : <div className="list-table"><table><thead><tr>{[t.requestedAt, t.amount, t.state, t.approvals, t.actions].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
-              <tbody>{payouts.map(p => { const word = payoutWord(p.state); return <tr key={p.id} data-testid="my-payout-row"><td data-label={t.requestedAt}>{formatDate(p.requested_at, locale)}</td><td data-label={t.amount}><bdi dir="ltr" className="ref">{formatMoney(p.amount, locale)}</bdi></td>
+            {!payouts.length ? <p className="muted">{t.noRequests}</p> : <div className="list-table"><table><thead><tr>{[t.requestedAt, t.amount, t.state, t.approvals, t.actions].map(label => <th scope="col" key={label} className={label === t.amount ? "num" : undefined}>{label}</th>)}</tr></thead>
+              <tbody>{payouts.map(p => { const word = payoutWord(p.state); return <tr key={p.id} data-testid="my-payout-row"><td data-label={t.requestedAt}>{formatDate(p.requested_at, locale)}</td><td data-label={t.amount} className="num"><bdi dir="ltr" className="ref">{formatMoney(p.amount, locale)}</bdi></td>
                 <td data-label={t.state}><span className={`badge state ${word.tone}`}><Icon name={word.icon} size={14} />{t.states[p.state]}</span>{p.reason_code && <small className="muted"> {t.reasons[p.reason_code]}</small>}</td>
                 <td data-label={t.approvals}><bdi dir="ltr" className="ref">{p.approvals.length}/{p.approvals_required}</bdi></td><td data-label={t.actions} className="cell-action">{cancellable(p) ? <button className="secondary small" disabled={mutation.busy} onClick={() => void cancel(p.id)}>{t.cancel}</button> : <span className="muted" aria-hidden="true">{m.notAvailable}</span>}</td></tr>; })}</tbody></table></div>}
           </section>
@@ -98,14 +99,14 @@ export function Balances({ locale, summary }: { locale: Locale; summary: Earning
 
 function Entries({ locale, attempt }: { locale: Locale; attempt: number }) {
   const m = messages[locale], t = m.earnings;
-  const [items, setItems] = useState<EarningsEntry[] | null>(null), [cursor, setCursor] = useState<string | null>(null), [error, setError] = useState(false);
+  const [items, setItems] = useState<EarningsEntry[] | null>(null), [cursor, setCursor] = useState<string | null>(null), [error, setError] = useState(false), [again, setAgain] = useState(0);
   const [currency, setCurrency] = useState<Currency | "">(""), [state, setState] = useState<PayableState | "">("");
   const filters = { ...(currency ? { currency } : {}), ...(state ? { state } : {}) };
   useEffect(() => {
     const controller = new AbortController();
     void browserApi().GET("/me/earnings/entries", { params: { query: { ...(currency ? { currency } : {}), ...(state ? { state } : {}) } }, signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setItems(data.items); setCursor(data.next_cursor); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
-  }, [currency, state, attempt]);
+  }, [currency, state, attempt, again]);
   async function more() {
     if (!cursor) return;
     try { const data = dataOrThrow(await browserApi().GET("/me/earnings/entries", { params: { query: { ...filters, cursor } } })); setItems(list => [...(list ?? []), ...data.items]); setCursor(data.next_cursor); } catch { setError(true); }
@@ -113,9 +114,9 @@ function Entries({ locale, attempt }: { locale: Locale; attempt: number }) {
   return <section className="card" aria-labelledby="entries-title"><h2 id="entries-title">{t.entries}</h2><p className="muted">{t.entriesLead}</p>
     <div className="rule-row"><label>{t.currency}<select value={currency} onChange={e => { setItems(null); setCurrency(e.target.value as Currency | ""); }}><option value="">{m.all}</option>{currencies.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
       <label>{t.state}<select value={state} onChange={e => { setItems(null); setState(e.target.value as PayableState | ""); }}><option value="">{m.all}</option>{payableStates.map(s => <option key={s} value={s}>{t.payable[s]}</option>)}</select></label></div>
-    {error ? <p className="notice error" role="alert">{m.error}</p> : !items ? <><p className="visually-hidden" role="status">{m.loading}</p><span className="skeleton block" aria-hidden="true" /><span className="skeleton block" aria-hidden="true" /></> : !items.length ? <p className="muted">{t.noEntries}</p>
-      : <><div className="list-table"><table><thead><tr>{[t.occurredAt, t.kind, t.state, t.amount].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
-        <tbody>{items.map(e => <tr key={e.id} data-testid="entry-row"><td data-label={t.occurredAt}>{formatDate(e.occurred_at, locale)}</td><td data-label={t.kind}>{t.kinds[e.kind]}</td><td data-label={t.state}>{t.payable[e.state]}</td><td data-label={t.amount}><bdi dir="ltr" className="ref">{formatMoney(e.amount, locale)}</bdi></td></tr>)}</tbody></table></div>
+    {error ? <ErrorState locale={locale} testId="entries-error" title={t.entriesFailed} retry={() => { setError(false); setItems(null); setAgain(n => n + 1); }} /> : !items ? <><p className="visually-hidden" role="status">{m.loading}</p><span className="skeleton block" aria-hidden="true" /><span className="skeleton block" aria-hidden="true" /></> : !items.length ? <p className="muted">{t.noEntries}</p>
+      : <><div className="list-table"><table><thead><tr>{[t.occurredAt, t.kind, t.state, t.amount].map(label => <th scope="col" key={label} className={label === t.amount ? "num" : undefined}>{label}</th>)}</tr></thead>
+        <tbody>{items.map(e => <tr key={e.id} data-testid="entry-row"><td data-label={t.occurredAt}>{formatDate(e.occurred_at, locale)}</td><td data-label={t.kind}>{t.kinds[e.kind]}</td><td data-label={t.state}>{t.payable[e.state]}</td><td data-label={t.amount} className="num"><bdi dir="ltr" className="ref">{formatMoney(e.amount, locale)}</bdi></td></tr>)}</tbody></table></div>
         {cursor && <div className="pagination"><button className="secondary" onClick={() => void more()}>{m.next}</button></div>}</>}
   </section>;
 }

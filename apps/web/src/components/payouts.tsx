@@ -1,5 +1,5 @@
 "use client";
-import { NoAccess } from "./empty-state";
+import { EmptyState, ErrorState, NoAccess } from "./empty-state";
 import { useCallback, useEffect, useState } from "react";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { formatDate, messages, type Locale } from "@/lib/i18n";
@@ -27,7 +27,7 @@ export function PayoutsPage({ locale }: { locale: Locale }) {
   const [month, setMonth] = useState(currentMonth), [names, setNames] = useState<Record<string, string>>({});
   const remember = useCallback((found: Record<string, string>) => setNames(old => ({ ...old, ...found })), []);
   const [state, setState] = useState<State | "">("requested"), [items, setItems] = useState<PayoutRequest[] | null>(null), [cursor, setCursor] = useState<string | null>(null);
-  const [error, setError] = useState(false), [attempt, setAttempt] = useState(0), [reasons, setReasons] = useState<Record<string, Reason | "">>({});
+  const [error, setError] = useState(false), [attempt, setAttempt] = useState(0), [asking, setAsking] = useState<{ kind: "approve" | "reject"; request: PayoutRequest } | null>(null), [reason, setReason] = useState<Reason | "">("");
   const [balances, setBalances] = useState<EarningsSummary | null>(null);
   useEffect(() => {
     if (!allowed) return;
@@ -41,15 +41,19 @@ export function PayoutsPage({ locale }: { locale: Locale }) {
     if (!cursor) return;
     try { const data = dataOrThrow(await browserApi().GET("/payout-requests", { params: { query: { ...(state ? { state } : {}), cursor } } })); setItems(list => [...(list ?? []), ...data.items]); setCursor(data.next_cursor); } catch { setError(true); }
   }
-  async function approve(id: string) {
-    const ok = await mutation.run(`approve:${id}`, header => browserApi().POST("/payout-requests/{payout_request_id}/approve", { params: { path: { payout_request_id: id }, header } }));
-    if (ok) setAttempt(n => n + 1);
+  // الاعتماد والرفض يمرّان بحوار يسمّي الفعل والمبلغ والمساهم؛ لا ضغطة واحدة في الصف تصرف مالًا.
+  function ask(kind: "approve" | "reject", request: PayoutRequest) { mutation.clearStatus(); setReason(""); setAsking({ kind, request }); }
+  const close = () => { if (!mutation.busy) setAsking(null); };
+  async function confirm() {
+    if (!asking) return; const id = asking.request.id;
+    if (asking.kind === "reject" && !reason) return;
+    const ok = asking.kind === "approve"
+      ? await mutation.run(`approve:${id}`, header => browserApi().POST("/payout-requests/{payout_request_id}/approve", { params: { path: { payout_request_id: id }, header } }))
+      : await mutation.run(`reject:${id}:${reason}`, header => browserApi().POST("/payout-requests/{payout_request_id}/reject", { params: { path: { payout_request_id: id }, header }, body: { reason_code: reason as Reason } }));
+    if (ok) { setAsking(null); setAttempt(n => n + 1); }
   }
-  async function reject(id: string) {
-    const reason = reasons[id]; if (!reason) return;
-    const ok = await mutation.run(`reject:${id}:${reason}`, header => browserApi().POST("/payout-requests/{payout_request_id}/reject", { params: { path: { payout_request_id: id }, header }, body: { reason_code: reason } }));
-    if (ok) setAttempt(n => n + 1);
-  }
+  const who = (id: string) => names[id] ? <bdi>{names[id]}</bdi> : <bdi dir="ltr">{id.slice(0, 8)}</bdi>;
+  const sentence = (text: string, request: PayoutRequest) => text.split(/(\{amount\}|\{name\})/).map((part, i) => part === "{amount}" ? <bdi key={i} dir="ltr" className="amount">{formatMoney(request.amount, locale)}</bdi> : part === "{name}" ? <span key={i}>{who(request.user_id)}</span> : part);
   async function showBalances(user: string) {
     setBalances(null);
     try { setBalances(dataOrThrow(await browserApi().GET("/users/{id}/earnings", { params: { path: { id: user } } }))); } catch { setError(true); }
@@ -60,19 +64,29 @@ export function PayoutsPage({ locale }: { locale: Locale }) {
     <section className="money-requests" aria-labelledby="payout-requests-title"><div className="card-head"><div><h2 id="payout-requests-title">{t.title}</h2><p className="muted">{t.lead}</p></div></div>
     <ActionStatus status={mutation.status} locale={locale} />{mutation.status === 409 && <p className="notice error">{t.conflict}</p>}
     <label className="inline-filter">{e.state}<select value={state} onChange={ev => { setItems(null); setState(ev.target.value as State | ""); }}><option value="">{m.all}</option>{payoutStates.map(s => <option key={s} value={s}>{e.states[s]}</option>)}</select></label>
-    {error ? <section className="center-state" role="alert"><p>{m.error}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></section>
-      : !items ? <p className="center-state" role="status">{m.loading}</p> : !items.length ? <p className="empty">{t.empty}</p>
-      : <><div className="table-panel"><div className="table-scroll"><table><thead><tr>{[e.requestedAt, t.contributor, e.amount, e.state, e.approvals, ""].map((label, i) => <th scope="col" key={i}>{label}</th>)}</tr></thead>
-        <tbody>{items.map(p => <tr key={p.id} data-testid="payout-row"><td>{formatDate(p.requested_at, locale)}</td>
-          <td><button className="quiet" onClick={() => void showBalances(p.user_id)}>{names[p.user_id] ? <bdi>{names[p.user_id]}</bdi> : <bdi dir="ltr">{p.user_id.slice(0, 8)}</bdi>} · {t.balances}</button></td>
-          <td dir="ltr">{formatMoney(p.amount, locale)}</td><td><span className={`badge ${payoutTone(p.state)}`}>{e.states[p.state]}</span>{p.reason_code && <small className="muted"> {e.reasons[p.reason_code]}</small>}</td>
-          <td>{p.approvals.length}/{p.approvals_required}{p.approvals_required === 2 && <small className="muted"> {t.dual}</small>}</td>
-          <td><div className="actions">{approvable(p, me.user_id) && <button disabled={mutation.busy} onClick={() => void approve(p.id)}>{t.approve}</button>}
+    {error ? <ErrorState locale={locale} testId="payouts-error" title={t.loadFailed} retry={() => setAttempt(n => n + 1)} />
+      : !items ? <p className="center-state" role="status">{m.loading}</p>
+      : !items.length ? (state ? <EmptyState icon="filter" testId="payouts-empty" title={t.emptyFiltered} actions={<button type="button" className="secondary" onClick={() => { setItems(null); setState(""); }}>{t.showAll}</button>} />
+        : <EmptyState icon="payout" testId="payouts-empty" title={t.emptyTitle}><p>{t.emptyBody}</p></EmptyState>)
+      : <><div className="table-panel"><table className="admin-table payouts-table" aria-label={t.title}>
+        <thead><tr><th scope="col">{e.requestedAt}</th><th scope="col">{t.contributor}</th><th scope="col" className="num">{e.amount}</th><th scope="col">{e.state}</th><th scope="col" className="num">{e.approvals}</th><th scope="col"><span className="visually-hidden">{e.actions}</span></th></tr></thead>
+        <tbody>{items.map(p => <tr key={p.id} data-testid="payout-row"><td data-label={e.requestedAt}>{formatDate(p.requested_at, locale)}</td>
+          <td data-label={t.contributor}><button className="quiet small" onClick={() => void showBalances(p.user_id)}>{who(p.user_id)} · {t.balances}</button></td>
+          <td data-label={e.amount} className="num lead">{formatMoney(p.amount, locale)}</td><td data-label={e.state} className="lead"><span className={`badge ${payoutTone(p.state)}`}>{e.states[p.state]}</span>{p.reason_code && <small className="muted"> {e.reasons[p.reason_code]}</small>}</td>
+          <td data-label={e.approvals} className="num">{p.approvals.length}/{p.approvals_required}{p.approvals_required === 2 && <small className="muted" dir="auto"> {t.dual}</small>}</td>
+          <td className="cell-actions">{approvable(p, me.user_id) && <button className="small" disabled={mutation.busy} onClick={() => ask("approve", p)}>{t.approve}</button>}
             {p.user_id === me.user_id && p.state === "requested" && <small className="muted">{t.ownRequest}</small>}
-            {rejectable(p) && <><select aria-label={t.reason} value={reasons[p.id] ?? ""} onChange={ev => setReasons(r => ({ ...r, [p.id]: ev.target.value as Reason | "" }))}><option value="">{t.reason}</option>{payoutReasons.map(code => <option key={code} value={code}>{e.reasons[code]}</option>)}</select>
-              <button className="danger" disabled={mutation.busy || !reasons[p.id]} onClick={() => void reject(p.id)}>{t.reject}</button></>}</div></td></tr>)}</tbody></table></div></div>
+            {rejectable(p) && <button className="secondary small" disabled={mutation.busy} onClick={() => ask("reject", p)}>{t.reject}</button>}</td></tr>)}</tbody></table></div>
         {cursor && <button className="secondary" onClick={() => void more()}>{m.next}</button>}</>}
     </section>
+    {asking && <dialog className="modal" data-testid="payout-dialog" ref={node => { if (node && !node.open) node.showModal(); }} onCancel={event => { if (mutation.busy) event.preventDefault(); else setAsking(null); }} aria-labelledby="payout-ask-title">
+      <form noValidate onSubmit={event => { event.preventDefault(); void confirm(); }}>
+        <h2 id="payout-ask-title">{sentence(asking.kind === "approve" ? t.approveTitle : t.rejectTitle, asking.request)}</h2>
+        {asking.kind === "approve" && asking.request.approvals_required > 1 && <p data-testid="approval-step">{fill(t.approvalStep, { n: String(asking.request.approvals.length + 1), of: String(asking.request.approvals_required) })}</p>}
+        {asking.kind === "reject" && <label>{t.reason}<select autoFocus value={reason} onChange={event => setReason(event.target.value as Reason | "")}><option value="">{t.chooseReason}</option>{payoutReasons.map(code => <option key={code} value={code}>{e.reasons[code]}</option>)}</select></label>}
+        {mutation.status === 409 ? <p className="notice error" role="alert">{t.conflict}</p> : <ActionStatus status={mutation.status} locale={locale} />}
+        <div className="actions"><button type="button" className="secondary" autoFocus={asking.kind === "approve"} disabled={mutation.busy} onClick={close}>{t.back}</button><button className={asking.kind === "reject" ? "danger" : ""} disabled={mutation.busy || (asking.kind === "reject" && !reason)}>{asking.kind === "approve" ? t.confirmApprove : t.confirmReject}</button></div>
+      </form></dialog>}
     {balances && <section className="card" aria-labelledby="contributor-balances"><h2 id="contributor-balances">{t.balancesOf} <bdi dir="ltr">{balances.user_id.slice(0, 8)}</bdi></h2>
       {balances.balances.length ? <Balances locale={locale} summary={balances} /> : <p className="muted">{e.noBalance}</p>}</section>}
     <PayoutPolicies locale={locale} />
@@ -102,9 +116,10 @@ function PayoutPolicies({ locale }: { locale: Locale }) {
   const current = new Set(currencies.map(c => (items ?? []).filter(p => p.currency === c && Date.parse(p.effective_from) <= checkedAt).sort((a, b) => Date.parse(b.effective_from) - Date.parse(a.effective_from))[0]?.id).filter(Boolean));
   return <section className="card" aria-labelledby="policies-title"><h2 id="policies-title">{t.policies}</h2><p className="muted">{t.policiesLead}</p>
     {error ? <p role="alert">{m.error}</p> : !items ? <p role="status">{m.loading}</p> : !items.length ? <p className="muted">{t.noPolicies}</p>
-      : <div className="table-scroll"><table><thead><tr>{[t.currency, t.minimum, t.dualAbove, t.reserve, t.effectiveFrom, ""].map((label, i) => <th scope="col" key={i}>{label}</th>)}</tr></thead>
-        <tbody>{items.map(p => <tr key={p.id} data-testid="policy-row"><td>{p.currency}</td><td dir="ltr">{formatMoney(p.minimum, locale)}</td><td dir="ltr">{formatMoney(p.dual_approval_above, locale)}</td><td>{p.reserve_bps / 100}%</td><td>{formatDate(p.effective_from, locale)}</td>
-          <td><span className={`badge ${current.has(p.id) ? "good" : ""}`}>{current.has(p.id) ? t.current : Date.parse(p.effective_from) > checkedAt ? t.scheduled : t.superseded}</span></td></tr>)}</tbody></table></div>}
+      : <div className="table-panel"><table className="admin-table" aria-label={t.policies}>
+        <thead><tr><th scope="col">{t.currency}</th><th scope="col" className="num">{t.minimum}</th><th scope="col" className="num">{t.dualAbove}</th><th scope="col" className="num">{t.reserve}</th><th scope="col">{t.effectiveFrom}</th><th scope="col">{m.earnings.state}</th></tr></thead>
+        <tbody>{items.map(p => <tr key={p.id} data-testid="policy-row"><td data-label={t.currency}>{p.currency}</td><td data-label={t.minimum} className="num">{formatMoney(p.minimum, locale)}</td><td data-label={t.dualAbove} className="num">{formatMoney(p.dual_approval_above, locale)}</td><td data-label={t.reserve} className="num">{p.reserve_bps / 100}%</td><td data-label={t.effectiveFrom}>{formatDate(p.effective_from, locale)}</td>
+          <td data-label={m.earnings.state}><span className={`badge ${current.has(p.id) ? "good" : ""}`}>{current.has(p.id) ? t.current : Date.parse(p.effective_from) > checkedAt ? t.scheduled : t.superseded}</span></td></tr>)}</tbody></table></div>}
     {!writer ? <p className="muted">{t.policyReadOnly}</p> : !draft ? <button className="secondary" onClick={() => { mutation.clearStatus(); setInvalid(false); setDraft({ currency: "USD", minimum: "50", dual: "1000", reserve: "10", from: "" }); }}>{t.newPolicy}</button>
       : <form className="rule-form" noValidate onSubmit={ev => { ev.preventDefault(); void save(); }}><p className="notice">{t.appendOnly}</p>
         <div className="rule-row"><label>{t.currency}<select value={draft.currency} onChange={ev => setDraft({ ...draft, currency: ev.target.value as (typeof currencies)[number] })}>{currencies.map(c => <option key={c} value={c}>{c}</option>)}</select></label>

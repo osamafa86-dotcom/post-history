@@ -59,6 +59,9 @@ const paths = {
   plus: "M12 5v14M5 12h14",
   grip: "M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01",
   archive: "M3 4h18v5H3zM5 9v11h14V9M10 13h4",
+  refresh: "M20 11a8 8 0 0 0-14.5-4M4 4v4h4M4 13a8 8 0 0 0 14.5 4M20 20v-4h-4",
+  sound: "M4 9v6h4l5 4V5L8 9zM16.5 8.5a5 5 0 0 1 0 7",
+  mute: "M4 9v6h4l5 4V5L8 9zM16 9.5l5 5M21 9.5l-5 5",
 } as const;
 
 export type IconName = keyof typeof paths;

@@ -244,6 +244,8 @@ html:has(.public-shell.store-face), body:has(.public-shell.store-face) { backgro
 .list-table table { min-width: 0; inline-size: 100%; }
 .list-table td .badge.state { white-space: normal; }
 .list-table .cell-action { text-align: end; }
+/* عمود المبلغ ورأسه إلى اليمين في الاتجاهين على الشاشة العريضة، كي تتراصّ الآحاد. */
+@media (min-width: 768px) { .list-table .num { text-align: right; white-space: nowrap; } }
 @media (max-width: 999px) { .earnings-columns { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 767px) {
   .list-table thead { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }

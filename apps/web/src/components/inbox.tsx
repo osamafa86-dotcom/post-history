@@ -10,7 +10,7 @@ import { materialQuery, materialTypes, states } from "@/lib/query";
 import { isSensitive } from "@/lib/render-policy";
 import { photographer, StateBadge, type StateTrack } from "./states";
 import { Icon } from "./icon";
-import { EmptyState, NoAccess } from "./empty-state";
+import { EmptyState, ErrorState, NoAccess } from "./empty-state";
 import { useInboxBadge, useShellSearch } from "./app-shell";
 import { activeTab, inboxTabs, isOpenUrgent, matchesSearch, matchesType, rowThumb, tabCounts, tabQuery, type InboxTab } from "@/lib/inbox-tabs";
 import { urgentUnacknowledged } from "@/lib/editor";
@@ -28,15 +28,21 @@ type Messages = (typeof messages)[Locale];
 
 type Sort = "shot_at" | "governorate" | "reporter_id" | StateTrack;
 /**
- * الوارد (W1، والجوال M1، واللوح T1): رأس بحالة الاتصال، ومؤشّرات اللقطة، وتصفية سريعة برقاقات، وصفوف بمصغّرة وشارات الحالات الثلاث منفصلة،
- * والعاجل أولًا (شريط التنبيه فوق كل شيء، وتبويب «عاجلة»). الحالات: E1 فارغ، E2 هياكل، E3 انقطاع (آخر بيانات كما هي وأفعالها معطّلة)، E4 بلا نتائج.
+ * العاجل الذي لم يُستلم في نطاق المستخدم كله، لا في الصفحة المحمّلة: هو الاستعلام نفسه الذي يصدره زر «عرض العاجل»، فيطابق عدّ الشريط والمؤشّر ما يعرضه الزر.
+ * `urgent_open` في اللقطة عدّ آخر (العاجل الذي لم يُنشر ولم يُرفض، ومنه المستلَم)، وله اسمه: تبويب «عاجلة» وشارة الشريط الجانبي.
+ */
+const urgentWaiting = { limit: 50, priority: "urgent", editorial_state: "inbox" } as const satisfies MaterialQuery;
+/**
+ * الوارد (W1، والجوال M1، واللوح T1): رأس بحالة الاتصال، ومؤشّرات اللقطة، وصف رقاقات واحد (التبويبات ثم الأنواع)، والترتيب والمرشحات خلف «تصفية»،
+ * وصفوف بمصغّرة وشارات الحالات الثلاث منفصلة، والعاجل أولًا (شريط التنبيه فوق كل شيء، وتبويب «عاجلة»).
+ * الحالات: E1 فارغ، E2 هياكل، E3 انقطاع (آخر بيانات كما هي وأفعالها معطّلة)، E4 بلا نتائج، وتعذّر التحميل في موضع القائمة.
  * البحث في الشريط العلوي، داخل الصفحة المحمّلة كما كان (العقد بلا معامل بحث).
  */
 export function Inbox({ locale }: { locale: Locale }) {
   const m = messages[locale], w = m.shell.inbox, [query, setQuery] = useState<MaterialQuery>({ limit: 50 }), [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const [page, setPage] = useState<MaterialPage | null>(null), [error, setError] = useState(false), [invalid, setInvalid] = useState(false), [offline, setOffline] = useState(false), [unread, setUnread] = useState(0), [updated, setUpdated] = useState("");
   const [refresh, setRefresh] = useState(0), [sort, setSort] = useState<Sort>("shot_at"), [descending, setDescending] = useState(true), [formKey, setFormKey] = useState(0);
-  const [type, setType] = useState("");
+  const [type, setType] = useState(""), [filtersOpen, setFiltersOpen] = useState(false), [waiting, setWaiting] = useState<MaterialPage | null>(null);
   const { query: needle, setQuery: setNeedle } = useShellSearch(), setBadge = useInboxBadge();
   const me = useUser(), staff = hasRole(me, ...dashboardRoles), [snapshot, setSnapshot] = useState<NewsroomDashboard | null>(null), [now, setNow] = useState(0);
   // E5: الوارد لمن يقرأ المواد وحده، و403 من الخادم (نطاق تغيّر) يقول السبب بدل «تعذّر التحميل».
@@ -58,7 +64,8 @@ export function Inbox({ locale }: { locale: Locale }) {
         // الاستطلاع تسلسلي؛ لا تتراكم طلبات عند البطء ولا تُحفظ حمولة الإشعار في الواجهة.
         const notification = dataOrThrow(await browserApi().GET("/notifications", { signal: controller.signal }));
         const data = dataOrThrow(await browserApi().GET("/materials", { params: { query }, signal: controller.signal }));
-        if (!disposed) { setPage(data); setUnread(notification.unread_count); setError(false); setOffline(false); setUpdated(new Date().toISOString()); }
+        const urgent = staff ? dataOrThrow(await browserApi().GET("/materials", { params: { query: urgentWaiting }, signal: controller.signal })) : null;
+        if (!disposed) { setPage(data); setWaiting(urgent); setUnread(notification.unread_count); setError(false); setOffline(false); setUpdated(new Date().toISOString()); }
       } catch (e) {
         if (disposed || controller.signal.aborted) return;
         if (e instanceof RequestError && e.status === 403) { stopped = true; setForbidden(true); } else setError(true);
@@ -69,7 +76,7 @@ export function Inbox({ locale }: { locale: Locale }) {
     const lost = () => setOffline(true);
     window.addEventListener("online", online); window.addEventListener("offline", lost); void poll();
     return () => { disposed = true; controller.abort(); clearTimeout(timer); window.removeEventListener("online", online); window.removeEventListener("offline", lost); };
-  }, [query, refresh, reader]);
+  }, [query, refresh, reader, staff]);
   const rows = useMemo(() => [...(page?.items ?? [])].sort((a, b) => {
     const av = a[sort] ?? "", bv = b[sort] ?? "";
     const result = sort === "shot_at" ? (Date.parse(av) || 0) - (Date.parse(bv) || 0) : av.localeCompare(bv, locale);
@@ -90,7 +97,7 @@ export function Inbox({ locale }: { locale: Locale }) {
     const stack = next ? [...cursors, page?.next_cursor ?? undefined] : cursors.slice(0, -1);
     setCursors(stack); setQuery({ ...query, cursor: stack.at(-1) }); setPage(null);
   }
-  const summary = counts && m.inboxSummary.replace("{total}", String(counts.all)).replace("{urgent}", String(counts.urgent)).replace("{inbox}", String(counts.inbox)).replace("{reviewing}", String(counts.reviewing)).replace("{accepted}", String(counts.accepted)).replace("{stopped}", String(counts.stopped));
+  const retry = () => setRefresh(n => n + 1), unreceived = useMemo(() => waiting ? urgentUnacknowledged(waiting.items) : [], [waiting]), beyond = !!waiting?.next_cursor;
   // E3: آخر بيانات معروضة كما هي، ووقت آخر تحديث، والأفعال معطّلة حتى يعود الاتصال.
   const disconnected = offline || (error && !!page);
   const active = filterKeys.filter(key => query[key] !== undefined && !(tab && key in tabQuery[tab]));
@@ -103,8 +110,8 @@ export function Inbox({ locale }: { locale: Locale }) {
   ];
   const lastArrival = snapshot?.recent_receipts[0]?.verified_at;
   let list: React.ReactNode;
-  if (!page) list = error ? null : <><p className="visually-hidden" role="status">{m.loading}</p><ul className="inbox-rows" aria-hidden="true" data-testid="inbox-skeleton">{[0, 1, 2, 3, 4].map(i => <li key={i} className="inbox-row skeleton-row"><span className="skeleton thumb" /><span className="row-main"><span className="skeleton line wide" /><span className="skeleton line" /></span><span className="skeleton pill" /></li>)}</ul></>;
-  else if (visible.length) list = <ul className="inbox-rows">{visible.map(material => <MaterialRow key={material.id} material={material} locale={locale} now={now} disabled={disconnected} done={() => setRefresh(n => n + 1)} />)}</ul>;
+  if (!page) list = error || offline ? <ErrorState locale={locale} testId="inbox-error" title={w.loadFailed} retry={retry}><p>{offline ? m.offline : w.loadFailedBody}</p></ErrorState> : <><p className="visually-hidden" role="status">{m.loading}</p><ul className="inbox-rows" aria-hidden="true" data-testid="inbox-skeleton">{[0, 1, 2, 3, 4].map(i => <li key={i} className="inbox-row skeleton-row"><span className="skeleton thumb" /><span className="row-main"><span className="skeleton line wide" /><span className="skeleton line" /></span><span className="skeleton pill" /></li>)}</ul></>;
+  else if (visible.length) list = <ul className="inbox-rows">{visible.map(material => <MaterialRow key={material.id} material={material} locale={locale} now={now} disabled={disconnected} done={retry} />)}</ul>;
   else if (chips.length || cursors.length > 1) list = <EmptyState icon="search" testId="inbox-no-results" title={search ? w.noResultsFor.replace("{q}", search) : m.empty}
     actions={search && tabbed.length ? <button type="button" onClick={() => setNeedle("")}>{w.showWithoutSearch.replace("{n}", String(tabbed.length))}</button> : chips.length ? <button type="button" className="secondary" onClick={clearAll}>{w.clearAll}</button> : null}>
     <p>{search ? (tabbed.length ? w.noResultsHint.replace("{count}", plural(tabbed.length, m.counts.materials, locale)) : w.noResultsNone) : w.noFilterResults}</p></EmptyState>;
@@ -112,31 +119,31 @@ export function Inbox({ locale }: { locale: Locale }) {
     <p>{w.emptyBody}{lastArrival && now ? <> {w.lastArrival.replace("{time}", humanDuration(now - Date.parse(lastArrival), locale))}</> : null}</p></EmptyState>;
   if (!reader || forbidden) return <NoAccess locale={locale} me={me} title={m.inbox} denied={w.denied} />;
   return <>
-    {page && staff && <UrgentAlert locale={locale} items={urgentUnacknowledged(page.items)} now={now} disabled={disconnected} done={() => setRefresh(n => n + 1)} showAll={() => { setQuery({ limit: 50, priority: "urgent", editorial_state: "inbox" }); setPage(null); setCursors([undefined]); }} />}
+    {staff && waiting && <UrgentAlert locale={locale} items={unreceived} beyond={beyond} now={now} disabled={disconnected} done={retry} showAll={() => { setQuery(urgentWaiting); setPage(null); setCursors([undefined]); }} />}
     <div className="page-head inbox-head">
-      <div><h1>{m.inbox}</h1>
-        <p className={`live-line${disconnected ? " stale" : ""}`} aria-live="polite"><span className="live-dot" aria-hidden="true" />{disconnected ? <>{m.updated} <bdi dir="ltr">{updated ? shortTime(updated) : m.notAvailable}</bdi></> : <>{w.live} · {m.live}</>}{!disconnected && unread > 0 && <> · {m.notifications}: <b dir="ltr">{unread}</b></>}</p>
-        {summary && <p className="inbox-summary">{summary}</p>}</div>
-      <div className="page-actions">{staff && <Link prefetch={false} className="button secondary" href={`/${locale}/board?display=1`}>{w.openWall}</Link>}<button className="secondary" onClick={() => setRefresh(n => n + 1)}>{m.refresh}</button></div>
+      <div className="inbox-title"><h1>{m.inbox}</h1>
+        <p className={`live-line${disconnected ? " stale" : ""}`} aria-live="polite"><span className="live-dot" aria-hidden="true" />{disconnected ? <>{m.updated} <bdi dir="ltr">{updated ? shortTime(updated) : m.notAvailable}</bdi></> : <>{w.live}<span className="live-detail"> · {m.live}</span></>}{!disconnected && unread > 0 && <> · {m.notifications}: <b dir="ltr">{unread}</b></>}</p></div>
+      <div className="page-actions"><button type="button" className="secondary filter-toggle" aria-expanded={filtersOpen} aria-controls="inbox-filters" onClick={() => setFiltersOpen(open => !open)}><Icon name="filter" size={18} />{m.filters}</button>
+        {staff && <Link prefetch={false} className="button secondary" href={`/${locale}/board?display=1`}>{w.openWall}</Link>}<button type="button" className="secondary refresh" aria-label={m.refresh} onClick={retry}><Icon name="refresh" size={18} /><span>{m.refresh}</span></button></div>
     </div>
-    {disconnected && <section className="offline-banner" role="status" data-testid="offline-banner"><Icon name="offline" size={22} /><div><h2>{w.offlineTitle}</h2><p>{offline ? m.offline : w.offlineBody}</p></div><button className="secondary" onClick={() => setRefresh(n => n + 1)}>{w.retryNow}</button></section>}
-    {error && !page && <p className="notice error" role="alert">{m.error}</p>}
-    {staff ? <div className="kpis" data-testid="kpis">{!snapshot || !counts ? [0, 1, 2, 3].map(i => <article key={i} className="kpi" aria-hidden="true"><span className="skeleton num" /><span className="skeleton line" /></article>) : <>
+    {disconnected && page && <section className="offline-banner" role="status" data-testid="offline-banner"><Icon name="offline" size={22} /><div><h2>{w.offlineTitle}</h2><p>{offline ? m.offline : w.offlineBody}</p></div><button className="secondary" onClick={retry}>{m.retry}</button></section>}
+    {staff ? <div className="kpis inbox-kpis" data-testid="kpis">{!snapshot || !counts ? [0, 1, 2, 3].map(i => <article key={i} className="kpi" aria-hidden="true"><span className="skeleton num" /><span className="skeleton line" /></article>) : <>
       <article className="kpi"><strong dir="ltr">{counts.inbox}</strong><span>{w.kpiInbox}</span></article>
-      <article className={`kpi${snapshot.urgent_open ? " urgent" : ""}`} data-testid="stat-urgent"><strong dir="ltr">{snapshot.urgent_open}</strong><span>{w.kpiUrgent}</span></article>
+      <article className={`kpi${unreceived.length ? " urgent" : ""}`} data-testid="stat-urgent"><strong dir="ltr">{waiting ? `${unreceived.length}${beyond ? "+" : ""}` : "—"}</strong><span>{w.kpiUrgent}</span></article>
       <article className="kpi"><strong dir="ltr">{counts.accepted}</strong><span>{w.kpiProducer}</span></article>
       <article className={`kpi${snapshot.overdue_acknowledgements ? " attention" : ""}`}><strong dir="ltr">{snapshot.overdue_acknowledgements}</strong><span>{m.editor.overdue}</span></article></>}</div>
-    : <div className="kpis three"><article className="kpi"><strong dir="ltr">{page?.items.length ?? "—"}</strong><span>{m.visibleCount}</span></article><article className="kpi"><strong dir="ltr">{page?.items.filter(x => x.technical_state === "pending").length ?? "—"}</strong><span>{m.pendingCount}</span></article><article className="kpi"><strong dir="ltr">{page?.items.filter(x => x.priority === "urgent").length ?? "—"}</strong><span>{m.urgentCount}</span></article></div>}
+    : <div className="kpis three inbox-kpis"><article className="kpi"><strong dir="ltr">{page?.items.length ?? "—"}</strong><span>{m.visibleCount}</span></article><article className="kpi"><strong dir="ltr">{page?.items.filter(x => x.technical_state === "pending").length ?? "—"}</strong><span>{m.pendingCount}</span></article><article className="kpi"><strong dir="ltr">{page?.items.filter(x => x.priority === "urgent").length ?? "—"}</strong><span>{m.urgentCount}</span></article></div>}
     <div className="inbox-tools">
       <nav className="quick-tabs" aria-label={m.inboxTabs.label}>{inboxTabs.map(item => <button key={item} type="button" className={tab === item ? "chip active" : "chip"} aria-pressed={tab === item} onClick={() => choose(item)}>{item === "urgent" && <Icon name="bolt" size={14} />}{m.inboxTabs[item]}{counts && <> <span className="tab-count" dir="ltr">{counts[item]}</span></>}</button>)}</nav>
-      <div className="sort-tools"><label>{m.sort}<select value={sort} onChange={e => setSort(e.target.value as Sort)}>{([["shot_at", m.shotAt], ["governorate", m.governorate], ["reporter_id", m.reporterId], ["technical_state", m.technical], ["editorial_state", m.editorial], ["rights_state", m.rights]] as [Sort, string][]).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><button className="secondary small" onClick={() => setDescending(!descending)}>{descending ? m.descending : m.ascending}</button></div>
+      <nav className="quick-tabs type-chips" aria-label={w.typeFilter.label} aria-describedby="type-filter-hint" data-testid="type-chips">{(["", ...materialTypes] as string[]).map(value => <button key={value || "all"} type="button" className={type === value ? "chip active" : "chip"} aria-pressed={type === value} onClick={() => setType(value)}>{value ? (m.types as Record<string, string>)[value] : w.typeFilter.all}</button>)}</nav>
     </div>
-    <nav className="quick-tabs type-chips" aria-label={w.typeFilter.label} aria-describedby="type-filter-hint" data-testid="type-chips">{(["", ...materialTypes] as string[]).map(value => <button key={value || "all"} type="button" className={type === value ? "chip active" : "chip"} aria-pressed={type === value} onClick={() => setType(value)}>{value ? (m.types as Record<string, string>)[value] : w.typeFilter.all}</button>)}</nav>
     <p id="type-filter-hint" className="caption visually-hidden">{w.typeFilter.hint}</p>
-    <details className="filter-panel"><summary>{m.filters}</summary><form key={formKey} onSubmit={filter} className="filters">
-      {(Object.keys(states) as (keyof typeof states)[]).map(key => <label key={key}>{filterLabel(key, m)}<select name={key} defaultValue={query[key] ?? ""}><option value="">{m.all}</option>{states[key].map(state => <option key={state} value={state}>{(m.states[key] as Record<string, string>)[state]}</option>)}</select></label>)}
-      <label>{m.governorate}<input name="governorate" maxLength={64} defaultValue={query.governorate ?? ""} /></label><label>{m.reporterId}<input name="reporter_id" dir="ltr" defaultValue={query.reporter_id ?? ""} /></label><label>{m.shotAfter}<input type="datetime-local" name="shot_after" /></label><label>{m.shotBefore}<input type="datetime-local" name="shot_before" /></label><div className="actions"><button>{m.apply}</button><button type="reset" className="quiet" onClick={() => { setPage(null); setQuery({ limit: 50 }); setCursors([undefined]); setInvalid(false); }}>{m.reset}</button></div>
-    </form>{invalid && <p className="notice error" role="alert">{m.invalidFilters}</p>}</details>
+    <div id="inbox-filters" className="filter-panel" hidden={!filtersOpen}>
+      <div className="sort-tools"><label>{m.sort}<select value={sort} onChange={e => setSort(e.target.value as Sort)}>{([["shot_at", m.shotAt], ["governorate", m.governorate], ["reporter_id", m.reporterId], ["technical_state", m.technical], ["editorial_state", m.editorial], ["rights_state", m.rights]] as [Sort, string][]).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><button type="button" className="secondary small" onClick={() => setDescending(!descending)}>{descending ? m.descending : m.ascending}</button></div>
+      <form key={formKey} onSubmit={filter} className="filters">
+        {(Object.keys(states) as (keyof typeof states)[]).map(key => <label key={key}>{filterLabel(key, m)}<select name={key} defaultValue={query[key] ?? ""}><option value="">{m.all}</option>{states[key].map(state => <option key={state} value={state}>{(m.states[key] as Record<string, string>)[state]}</option>)}</select></label>)}
+        <label>{m.governorate}<input name="governorate" maxLength={64} defaultValue={query.governorate ?? ""} /></label><label>{m.reporterId}<input name="reporter_id" dir="ltr" defaultValue={query.reporter_id ?? ""} /></label><label>{m.shotAfter}<input type="datetime-local" name="shot_after" /></label><label>{m.shotBefore}<input type="datetime-local" name="shot_before" /></label><div className="actions"><button>{m.apply}</button><button type="reset" className="quiet" onClick={() => { setPage(null); setQuery({ limit: 50 }); setCursors([undefined]); setInvalid(false); }}>{m.reset}</button></div>
+      </form>{invalid && <p className="notice error" role="alert">{m.invalidFilters}</p>}</div>
     {chips.length > 0 && <ul className="filter-chips" aria-label={w.activeFilters}>{chips.map(chip => <li key={chip.key}><button type="button" className="chip removable" onClick={chip.remove} aria-label={w.removeFilter.replace("{filter}", chip.label)}>{chip.label}<Icon name="x" size={14} /></button></li>)}<li><button type="button" className="link-button" onClick={clearAll}>{w.clearAll}</button></li></ul>}
     <section className="inbox-list" aria-label={m.inbox} aria-busy={!page}>
       {list}
@@ -195,9 +202,12 @@ function RowReceive({ material, locale, disabled, done }: { material: Material; 
   return <><button className="secondary small" disabled={disabled || mutation.busy} onClick={() => void receive()} aria-label={`${m.shell.inbox.receive}: ${material.title}`}><Icon name="check" size={16} />{m.shell.inbox.receive}</button>{mutation.status && mutation.status !== 200 ? <ActionStatus status={mutation.status} locale={locale} /> : null}</>;
 }
 
-/** التنبيه العاجل (B1): ما دامت مادة عاجلة بلا اطّلاع، بعدّاد منذ وصولها وزر «اطّلعت»؛ وصوت مرة لكل مادة جديدة ما لم يُكتم على هذا الجهاز. */
-function UrgentAlert({ locale, items, now, disabled, done, showAll }: { locale: Locale; items: Material[]; now: number; disabled: boolean; done: () => void; showAll: () => void }) {
-  const m = messages[locale], t = m.editor, me = useUser(), mutation = useMutation(), heard = useRef(new Set<string>());
+/**
+ * التنبيه العاجل (B1): شريط من سطر ما دامت مادة عاجلة لم تُستلم، بعدّها وبعمر أقدمها وزر واحد؛ وصوت مرة لكل مادة جديدة ما لم يُكتم على هذا الجهاز.
+ * العدّ من استعلام العاجل غير المستلَم كله (`urgentWaiting`)، وهو ما يعرضه المؤشّر بالاسم نفسه. الواحدة تُستلم من الشريط نفسه.
+ */
+function UrgentAlert({ locale, items, beyond, now, disabled, done, showAll }: { locale: Locale; items: Material[]; beyond: boolean; now: number; disabled: boolean; done: () => void; showAll: () => void }) {
+  const m = messages[locale], t = m.editor, w = m.shell.inbox, me = useUser(), mutation = useMutation(), heard = useRef(new Set<string>());
   const [muted, setMuted] = useState(() => { try { return localStorage.getItem("ph-urgent-muted") === "1"; } catch { return false; } });
   useEffect(() => {
     const fresh = items.filter(item => !heard.current.has(item.id));
@@ -206,7 +216,7 @@ function UrgentAlert({ locale, items, now, disabled, done, showAll }: { locale: 
     beep();
   }, [items, muted]);
   if (!items.length) return null;
-  const first = items[0], single = items.length === 1, tag = Number.isSafeInteger(first.row_version) ? `"${first.row_version}"` : null;
+  const first = items[0], single = items.length === 1 && !beyond, tag = Number.isSafeInteger(first.row_version) ? `"${first.row_version}"` : null;
   const canAck = single && !!tag && transitionOptions(first, me, "editorial").includes("acknowledged");
   async function acknowledge() {
     if (!tag) return;
@@ -214,13 +224,13 @@ function UrgentAlert({ locale, items, now, disabled, done, showAll }: { locale: 
     if (await mutation.run(`${first.id}:ack:${tag}`, header => browserApi().POST("/materials/{id}/transitions", { params: { path: { id: first.id }, header: { ...header, "If-Match": tag } }, body }))) done();
   }
   const due = first.acknowledgement_due_at ? Date.parse(first.acknowledgement_due_at) : NaN, escalation = !single || !Number.isFinite(due) ? null : due > now ? t.escalatesIn.replace("{time}", humanDuration(due - now, locale)) : t.escalationDue;
+  const [before, after] = (single ? w.since : w.urgentOldest).split("{time}");
   return <section className="alert urgent" role="alert" aria-labelledby="urgent-title" data-testid="urgent-alert">
-    <span className="alert-icon" aria-hidden="true"><Icon name="bolt" size={20} /></span>
-    <div><h2 id="urgent-title">{single ? t.urgentOne : plural(items.length, t.urgentMany, locale)} {t.since} <span data-testid="urgent-since">{humanDuration(now - Date.parse(first.created_at), locale)}</span></h2>
-      {escalation && <p data-testid="urgent-escalation">{escalation}</p>}
-      {single ? <p><Link prefetch={false} href={`/${locale}/materials/${first.id}`}>{first.title}</Link></p> : <p>{t.urgentManyHelp}</p>}</div>
-    <div className="actions">{canAck && <button onClick={() => void acknowledge()} disabled={disabled || mutation.busy}>{t.ack}</button>}{!single && <button className="secondary" onClick={showAll}>{t.showUrgent}</button>}
-      <label className="check"><input type="checkbox" checked={muted} onChange={e => { setMuted(e.target.checked); try { localStorage.setItem("ph-urgent-muted", e.target.checked ? "1" : "0"); } catch { /* تفضيل محلي اختياري */ } }} />{t.mute}</label></div>
+    <span className="alert-icon" aria-hidden="true"><Icon name="bolt" size={18} /></span>
+    <div className="alert-text"><h2 id="urgent-title"><span dir="ltr" data-testid="urgent-count">{items.length}{beyond ? "+" : ""}</span> {w.kpiUrgent}</h2>
+      <p>{single && <><Link prefetch={false} href={`/${locale}/materials/${first.id}`}>{first.title}</Link> · </>}{before}<span data-testid="urgent-since">{humanDuration(now - Date.parse(first.created_at), locale)}</span>{after}{escalation && <> · <span data-testid="urgent-escalation">{escalation}</span></>}</p></div>
+    <div className="actions">{canAck && <button onClick={() => void acknowledge()} disabled={disabled || mutation.busy}>{w.receive}</button>}{!single && <button className="secondary" onClick={showAll}>{t.showUrgent}</button>}
+      <label className="check mute-toggle"><input type="checkbox" checked={muted} onChange={e => { setMuted(e.target.checked); try { localStorage.setItem("ph-urgent-muted", e.target.checked ? "1" : "0"); } catch { /* تفضيل محلي اختياري */ } }} /><Icon name={muted ? "mute" : "sound"} size={20} /><span>{t.mute}</span></label></div>
     <ActionStatus status={mutation.status} locale={locale} />
   </section>;
 }

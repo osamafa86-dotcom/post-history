@@ -3,6 +3,7 @@ import { readConfig, type WebConfig } from "./config";
 import { clientAddress, requireOk, upstream, withSession, assertSession } from "./auth";
 import { WebError } from "./errors";
 import { sessionStore, validSessionId, type SessionStore } from "./sessions";
+import { newRequestId, withRequestId } from "./request-id";
 import { internalNames } from "@/lib/work-name";
 import { safeDashboard, safeForm, safeMaterial, safeMe, safeNotification, safeTransition, reporterNote } from "@/lib/privacy";
 import { materialQuery, materialTypes, uuid } from "@/lib/query";
@@ -65,7 +66,17 @@ async function bodyOf(request: Request, limit = 8192): Promise<Record<string, un
   } catch { throw new WebError(400, "request_failed"); }
 }
 
-export async function handle(request: NextRequest, path: string, deps?: { config: WebConfig; store: SessionStore; fetch?: typeof fetch }): Promise<NextResponse> {
+type Deps = { config: WebConfig; store: SessionStore; fetch?: typeof fetch };
+
+/** كل طلب يأخذ معرّف ترابط جديدًا: يُرسل مع نداءات الخادم كلها ويعود في ترويسة الرد. معرّف يرسله المتصفح لا يُقرأ. */
+export async function handle(request: NextRequest, path: string, deps?: Deps): Promise<NextResponse> {
+  const id = newRequestId();
+  const response = await withRequestId(id, () => respond(request, path, deps));
+  response.headers.set("X-Request-Id", id);
+  return response;
+}
+
+async function respond(request: NextRequest, path: string, deps?: Deps): Promise<NextResponse> {
   let config: WebConfig | undefined;
   try {
     config = deps?.config ?? readConfig();

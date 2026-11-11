@@ -53,9 +53,10 @@ export function LicenseTemplates({ locale }: { locale: Locale }) {
       : error ? <section className="center-state" role="alert"><p>{m.error}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></section>
       : !items ? <p className="center-state" role="status">{m.loading}</p>
       : !items.length ? <p className="empty">{t.empty}</p>
-      : <div className="table-panel"><div className="table-scroll"><table><thead><tr>{[t.name, t.type, t.price, t.version, t.enabledLabel, ""].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
-        <tbody>{items.map(item => <tr key={item.id} data-testid="template-row"><td>{localized(item.name, locale)}</td><td>{m.store.licenseTypes[item.type]}</td><td dir="ltr">{formatMoney(item.base_price, locale)}</td><td>{item.version}</td><td><span className={`badge ${item.enabled ? "good" : ""}`}>{item.enabled ? t.enabled : t.disabled}</span></td>
-          <td>{writer && <button className="secondary" onClick={() => void open(item)}>{t.edit}</button>}</td></tr>)}</tbody></table></div></div>}
+      : <div className="table-panel"><table className="admin-table" aria-label={t.title}>
+        <thead><tr><th scope="col">{t.name}</th><th scope="col">{t.type}</th><th scope="col" className="num">{t.price}</th><th scope="col" className="num">{t.version}</th><th scope="col">{t.enabledLabel}</th><th scope="col"><span className="visually-hidden">{m.earnings.actions}</span></th></tr></thead>
+        <tbody>{items.map(item => <tr key={item.id} data-testid="template-row"><td className="cell-primary"><strong><bdi>{localized(item.name, locale)}</bdi></strong></td><td data-label={t.type}>{m.store.licenseTypes[item.type]}</td><td data-label={t.price} className="num">{formatMoney(item.base_price, locale)}</td><td data-label={t.version} className="num">{item.version}</td><td data-label={t.enabledLabel}><span className={`badge ${item.enabled ? "good" : ""}`}>{item.enabled ? t.enabled : t.disabled}</span></td>
+          <td className="cell-actions">{writer && <button className="secondary small" onClick={() => void open(item)}>{t.edit}</button>}</td></tr>)}</tbody></table></div>}
   </>;
 }
 

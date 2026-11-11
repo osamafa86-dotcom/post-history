@@ -13,6 +13,7 @@ import { LicensePicker } from "./license-picker";
 import { WatermarkedPreview } from "./watermarked-preview";
 import { catalogRoles } from "./store-catalog";
 import { useCart } from "./cart";
+import { governorateName } from "@/lib/format";
 
 // صفحة المادة (S2): المعاينة بعلامة مائية وجودة أقل وهوية المشاهد، و«صُوّر» بيوم التصوير، والمحافظة وحدها، والتراخيص بسعر كلٍّ منها،
 // وفعل أساسي واحد. لا اسم مراسل ولا نسب ولا مصدر، ولا بصمة ولا معرّف تقني، ولا قائمة لقطات (قرار الأمن: shot_list للمحرر وحده، والـBFF يفرغها).
@@ -57,7 +58,7 @@ export function StoreItem({ locale, id }: { locale: Locale; id: string }) {
         <div className="store-title-row"><h1>{title}</h1>{!buyer && <span className="badge" data-testid="buyer-preview">{b.previewAsBuyer}</span>}</div>
         <ul className="store-facts" data-testid="item-facts">
           <li><Icon name="clock" />{day ? it.shot.replace("{date}", day) : it.noDate}</li>
-          {item.governorate && <li><Icon name="pin" />{item.governorate}</li>}
+          {item.governorate && <li><Icon name="pin" />{governorateName(item.governorate, m.governorates)}</li>}
           <li><Icon name="film" /><span>{[item.material_types.map(t => m.types[t]).join(m.shell.listSeparator), duration, size].filter((part): part is string => !!part).map((part, i) => <span key={i}>{i > 0 && s.catalog.listSeparator}{i ? <bdi dir="ltr">{part}</bdi> : part}</span>)}</span></li>
           {item.exclusive_available && <li><span className="badge rights">{b.exclusive}</span></li>}
         </ul>

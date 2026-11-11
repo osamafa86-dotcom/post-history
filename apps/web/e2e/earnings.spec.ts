@@ -25,11 +25,22 @@ test("a reporter reads balances and statement, requests a sandbox payout and can
 test("finance approves, rejects with a coded reason, reads balances; only the admin adds a policy", async ({ page, context }) => {
   const t = ar.payouts, e = ar.earnings; await login(page, "finance"); await page.getByRole("link", { name: t.nav, exact: true }).click();
   const rows = page.getByTestId("payout-row"); await expect(rows).toHaveCount(2); await expect(page.locator("main")).not.toContainText("never-display-canary");
-  const dual = rows.filter({ hasText: t.dual }); await dual.getByRole("button", { name: t.approve }).click(); await expect(dual).toContainText("1/2");
-  await expect(dual.getByRole("button", { name: t.approve })).toHaveCount(0);
-  const single = rows.filter({ hasNotText: t.dual }); await expect(single.getByRole("button", { name: t.reject })).toBeDisabled();
-  await single.getByLabel(t.reason).selectOption("documents_missing"); await single.getByRole("button", { name: t.reject }).click();
-  await expect(rows).toHaveCount(1);
+  // الاعتماد لا يُرسل من الصف: حوار يسمّي المبلغ والمساهم وأيّ الاعتمادين هذا، و«تراجع» لا يرسل شيئًا.
+  const dual = rows.filter({ hasText: t.dual }), dialog = page.getByTestId("payout-dialog"), sent: string[] = [];
+  page.on("request", request => { if (request.method() === "POST" && /payout-requests\/[^/]+\/(approve|reject)$/.test(request.url())) sent.push(request.url()); });
+  await dual.getByRole("button", { name: t.approve, exact: true }).click(); await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("heading")).toContainText((await dual.locator("td.num").first().innerText()).trim());
+  await expect(dialog.getByTestId("approval-step")).toHaveText(t.approvalStep.replace("{n}", "1").replace("{of}", "2"));
+  await dialog.getByRole("button", { name: t.back, exact: true }).click(); await expect(dialog).toHaveCount(0); await expect(dual).toContainText("0/2"); expect(sent).toEqual([]);
+  await dual.getByRole("button", { name: t.approve, exact: true }).click(); await dialog.getByRole("button", { name: t.confirmApprove, exact: true }).click();
+  await expect(dialog).toHaveCount(0); await expect(dual).toContainText("1/2"); expect(sent).toHaveLength(1);
+  await expect(dual.getByRole("button", { name: t.approve, exact: true })).toHaveCount(0);
+  // الرفض حوار بسبب مرمّز، لا قائمة داخل الصف: الصف سطر واحد من الأزرار.
+  const single = rows.filter({ hasNotText: t.dual }); await expect(single.locator("select")).toHaveCount(0);
+  await single.getByRole("button", { name: t.reject, exact: true }).click(); await expect(dialog.getByTestId("approval-step")).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: t.confirmReject, exact: true })).toBeDisabled();
+  await dialog.getByLabel(t.reason).selectOption("documents_missing"); await dialog.getByRole("button", { name: t.confirmReject, exact: true }).click();
+  await expect(rows).toHaveCount(1); expect(sent).toHaveLength(2);
   await page.getByLabel(e.state).selectOption("rejected"); await expect(rows).toContainText(e.reasons.documents_missing);
   await rows.getByRole("button", { name: new RegExp(t.balances) }).click(); await expect(page.getByRole("region", { name: new RegExp(t.balancesOf) })).toContainText(e.noBalance);
   const policies = page.getByRole("region", { name: t.policies }); await expect(policies.getByTestId("policy-row")).toHaveCount(3);
