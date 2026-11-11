@@ -88,5 +88,15 @@ describe('GET /materials/{id}/files/{file_id}/download-url (v0.1)', () => {
     expect((await url(supervisor.token, phone).expect(404)).body.code).toBe('not_found');
     const staff = await url(supervisor.token, server).expect(200);
     expect(new URL(staff.body.url).pathname).toContain(`/${h.config.S3_BUCKET_MEDIA}/`);
+
+    // ADR 0119: الملف يحمل معرّف مصدره على الخادم، و`null` للمرفوع؛ به يعرض العميل نسخة الخادم وحدها معاينةً. في القراءة والقائمة.
+    type Listed = { id: string; files: Array<{ id: string; derived_from_id: string | null }> };
+    const sources = (m: Listed) => Object.fromEntries(m.files.map((f) => [f.id, f.derived_from_id]));
+    const read = async (token: string, path: string) => (await request(h.app.getHttpServer()).get(path).set('Authorization', `Bearer ${token}`).expect(200)).body;
+    expect(sources(await read(reporter.token, `/v1/materials/${materialId}`))).toMatchObject({ [phone]: null, [original]: null, [server]: original });
+    expect(sources(await read(supervisor.token, `/v1/materials/${materialId}`))).toMatchObject({ [original]: null, [server]: original });
+    const listed = ((await read(supervisor.token, '/v1/materials')).items as Listed[]).find((m) => m.id === materialId)!;
+    expect(sources(listed)).toMatchObject({ [server]: original });
+    expect(sources(listed)).not.toHaveProperty(phone);
   });
 });
