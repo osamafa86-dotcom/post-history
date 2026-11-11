@@ -182,6 +182,11 @@ jobs:
         run: |
           grep -E "^reference 57/57; platforms: web 57/57$" "$RUNNER_TEMP/live.log"
           grep -E "^dynamic-fields +partial$" "$RUNNER_TEMP/live.log"
+      # The run fails on a criterion that fails, not on a script that is no longer in its list: this line says the commercial invariant was
+      # measured here (two synthetic materials listed through the sale gate on this job's database, ADR 0118) and held.
+      - name: sensitive-material-visibility was measured in the live run and passed
+        if: github.event_name == 'pull_request'
+        run: grep -E "^sensitive-material-visibility +pass$" "$RUNNER_TEMP/live.log"
       - name: upload-resume against tusd on S3 with downloads disabled (hash read from MinIO, as in compose)
         if: github.event_name == 'pull_request'
         working-directory: tools/acceptance
