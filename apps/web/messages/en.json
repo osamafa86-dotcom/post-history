@@ -1849,7 +1849,8 @@
       "dismissed": "The conflict is closed for good and its seat is released. This cannot be undone."
     },
     "totpRejected": "The verification code is wrong or expired. Enter the current code.",
-    "conflict": "The conflict's state changed. Refresh the list."
+    "conflict": "The conflict's state changed. Refresh the list.",
+    "organizationUnknown": "Organization {id}"
   },
   "earnings": {
     "nav": "My earnings",
@@ -1953,6 +1954,13 @@
     "appendOnly": "Policies are never edited or deleted: saving adds a version with its effective date, and earlier requests keep their approval count.",
     "invalid": "Complete the fields: two non-negative amounts, a reserve between 0 and 50%, and an effective date.",
     "savePolicy": "Add version",
+    "approveTitle": "Approve a payout of {amount} to {name}?",
+    "rejectTitle": "Reject the payout request of {amount} from {name}?",
+    "approvalStep": "Approval {n} of {of}",
+    "confirmApprove": "Approve payout",
+    "confirmReject": "Reject request",
+    "back": "Go back",
+    "chooseReason": "Choose a reason",
     "loadFailed": "Payout requests could not be loaded",
     "emptyTitle": "No payout requests yet",
     "emptyBody": "A request appears here when a contributor asks to be paid their balance.",
@@ -2780,7 +2788,8 @@
       "other": "{n} sales"
     },
     "lineSale": "Sales {gross} · Net {net}",
-    "readyNote": "“Ready to pay out” comes from the current balance, not the month: what can be requested after the reserve has reached the minimum. A payout is a request from the reporter and an approval from finance, under “Payout requests” below."
+    "readyNote": "“Ready to pay out” comes from the current balance, not the month: what can be requested after the reserve has reached the minimum. A payout is a request from the reporter and an approval from finance, under “Payout requests” below.",
+    "formulaTitle": "How the share is calculated"
   },
   "publicPage": {
     "languageNav": "Page language"

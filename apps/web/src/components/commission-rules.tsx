@@ -48,11 +48,12 @@ export function CommissionRules({ locale }: { locale: Locale }) {
         {error ? <section className="center-state" role="alert"><p>{m.error}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></section>
           : !items ? <p className="center-state" role="status">{m.loading}</p>
           : !items.length ? <p className="empty">{t.empty}</p>
-          : <div className="table-panel"><div className="table-scroll"><table><thead><tr>{[t.scope, t.target, t.licenseType, t.platformShare, t.effectiveFrom, t.state, ""].map((label, i) => <th scope="col" key={i}>{label}</th>)}</tr></thead>
-            <tbody>{items.map(rule => <tr key={rule.id} data-testid="commission-row"><td>{t.scopes[rule.scope]}</td><td><bdi dir={rule.scope === "material" || rule.scope === "reporter" ? "ltr" : undefined}>{target(rule)}</bdi></td>
-              <td>{rule.license_type ? m.store.licenseTypes[rule.license_type] : t.allTypes}</td><td>{percent(rule.platform_basis_points, locale)}</td><td>{formatDate(rule.effective_from, locale)}</td>
-              <td><span className={`badge ${current.has(rule.id) ? "good" : ""}`}>{current.has(rule.id) ? t.current : Date.parse(rule.effective_from) > checkedAt ? t.scheduled : t.superseded}</span></td>
-              <td>{writer && <button className="secondary" onClick={() => start(rule)}>{t.newVersion}</button>}</td></tr>)}</tbody></table></div></div>}</>}
+          : <div className="table-panel"><table className="admin-table" aria-label={t.title}>
+            <thead><tr><th scope="col">{t.scope}</th><th scope="col">{t.target}</th><th scope="col">{t.licenseType}</th><th scope="col" className="num">{t.platformShare}</th><th scope="col">{t.effectiveFrom}</th><th scope="col">{t.state}</th><th scope="col"><span className="visually-hidden">{m.earnings.actions}</span></th></tr></thead>
+            <tbody>{items.map(rule => <tr key={rule.id} data-testid="commission-row"><td data-label={t.scope}>{t.scopes[rule.scope]}</td><td data-label={t.target}><bdi dir={rule.scope === "material" || rule.scope === "reporter" ? "ltr" : undefined}>{target(rule)}</bdi></td>
+              <td data-label={t.licenseType}>{rule.license_type ? m.store.licenseTypes[rule.license_type] : t.allTypes}</td><td data-label={t.platformShare} className="num lead">{percent(rule.platform_basis_points, locale)}</td><td data-label={t.effectiveFrom}>{formatDate(rule.effective_from, locale)}</td>
+              <td data-label={t.state} className="lead"><span className={`badge ${current.has(rule.id) ? "good" : ""}`}>{current.has(rule.id) ? t.current : Date.parse(rule.effective_from) > checkedAt ? t.scheduled : t.superseded}</span></td>
+              <td className="cell-actions">{writer && <button className="secondary small" onClick={() => start(rule)}>{t.newVersion}</button>}</td></tr>)}</tbody></table></div>}</>}
   </>;
 }
 

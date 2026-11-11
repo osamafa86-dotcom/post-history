@@ -251,11 +251,11 @@ function Members({ locale, id, seats }: { locale: Locale; id: string; seats: num
     <ActionStatus status={mutation.status} locale={locale} />
     {mutation.status === 409 && <p className="notice error">{t.memberConflict}</p>}
     {error ? <p role="alert">{m.error}</p> : !items ? <p role="status">{m.loading}</p> : !items.length ? <p className="muted">{t.noMembers}</p>
-      : <div className="table-scroll"><table><thead><tr>{[t.email, t.role, t.status, t.totp, ""].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
-        <tbody>{items.map(member => <tr key={member.user_id} data-testid="member-row"><td dir="ltr">{member.email}</td>
-          <td><select aria-label={t.role} value={member.role} disabled={mutation.busy || member.status === "invited"} onChange={e => void update(member, e.target.value as Member["role"], member.status === "suspended" ? "suspended" : "active")}>{buyerRoles.map(r => <option key={r} value={r}>{t.roles[r]}</option>)}</select></td>
-          <td>{t.memberStatuses[member.status]}</td><td>{member.totp_enabled ? t.yes : t.no}</td>
-          <td>{member.status !== "invited" && <button className="secondary" disabled={mutation.busy} onClick={() => void update(member, member.role, member.status === "suspended" ? "active" : "suspended")}>{member.status === "suspended" ? t.reactivate : t.suspend}</button>}</td></tr>)}</tbody></table></div>}
+      : <div className="table-panel"><table className="admin-table members-table" aria-label={t.members}><thead><tr><th scope="col">{t.email}</th><th scope="col">{t.role}</th><th scope="col">{t.status}</th><th scope="col">{t.totp}</th><th scope="col"><span className="visually-hidden">{m.earnings.actions}</span></th></tr></thead>
+        <tbody>{items.map(member => <tr key={member.user_id} data-testid="member-row"><td className="cell-primary"><strong><bdi dir="ltr">{member.email}</bdi></strong></td>
+          <td data-label={t.role}><select aria-label={t.role} value={member.role} disabled={mutation.busy || member.status === "invited"} onChange={e => void update(member, e.target.value as Member["role"], member.status === "suspended" ? "suspended" : "active")}>{buyerRoles.map(r => <option key={r} value={r}>{t.roles[r]}</option>)}</select></td>
+          <td data-label={t.status}>{t.memberStatuses[member.status]}</td><td data-label={t.totp}>{member.totp_enabled ? t.yes : t.no}</td>
+          <td className="cell-actions">{member.status !== "invited" && <button className="secondary small" disabled={mutation.busy} onClick={() => void update(member, member.role, member.status === "suspended" ? "active" : "suspended")}>{member.status === "suspended" ? t.reactivate : t.suspend}</button>}</td></tr>)}</tbody></table></div>}
     <form className="rule-row invite-form" noValidate onSubmit={e => { e.preventDefault(); void send(); }}>
       <label>{t.inviteEmail}<input type="email" dir="ltr" maxLength={organizationLimits.email} value={invite.email} onChange={e => setInvite(v => ({ ...v, email: e.target.value }))} /></label>
       <label>{t.role}<select value={invite.role} onChange={e => setInvite(v => ({ ...v, role: e.target.value as typeof buyerRoles[number] }))}>{buyerRoles.map(r => <option key={r} value={r}>{t.roles[r]}</option>)}</select></label>

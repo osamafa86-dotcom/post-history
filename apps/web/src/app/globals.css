@@ -1045,7 +1045,9 @@ a.button.quiet, a.button.quiet:hover { background: transparent; border-color: tr
 table.admin-table { min-width: 0; }
 .admin-table td, .admin-table th { padding: var(--v2-space-4) var(--v2-space-5); }
 @media (hover: hover) and (pointer: fine) { .admin-table tbody tr:hover { background: color-mix(in srgb, var(--v2-c-bg-sunken) 50%, transparent); } }
-.admin-table .num { text-align: end; font-family: var(--v2-font-family-num); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* الخلية الرقمية ورأسها: إلى اليمين في الاتجاهين (الأرقام تُكتب من اليسار، فاليمين وحده يضع الآحاد تحت الآحاد)، وباتجاه ltr كي لا تنقلب العملة والإشارة، وبأرقام جدولية. */
+.admin-table .num { text-align: right; font-family: var(--v2-font-family-num); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.admin-table td.num { direction: ltr; }
 .admin-table th.num { font-family: inherit; }
 .admin-table .strong, .admin-table tfoot { font-weight: 700; }
 .admin-table tfoot th, .admin-table tfoot td { background: var(--v2-c-bg-sunken); border-top: var(--v2-border-hairline) solid var(--v2-c-border-edge); }
@@ -1143,6 +1145,21 @@ html[dir="rtl"] .month-switch .next .icon, html[dir="ltr"] .month-switch button:
 .narrow-text { display: none; }
 .formula { margin: 0 0 var(--v2-space-6); padding: var(--v2-space-4) var(--v2-space-5); border-radius: var(--v2-radius-md); background: var(--v2-c-bg-sunken); font-size: var(--v2-font-label-size); line-height: var(--v2-font-label-line); font-weight: 600; }
 .money-table { margin-block-end: var(--v2-space-4); }
+.money-table .card-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--v2-space-2) var(--v2-space-5); }
+/* معادلة النصيب مطويّة في رأس الجدول: سطر يُفتح عند الحاجة، كي يبدأ الجدول أعلى. */
+.formula-fold { margin-inline-start: auto; font-size: var(--v2-font-label-size); line-height: var(--v2-font-label-line); color: var(--v2-c-text-secondary); }
+.formula-fold[open] { flex-basis: 100%; margin-inline-start: 0; }
+.formula-fold summary { display: inline-flex; align-items: center; min-block-size: 36px; cursor: pointer; color: var(--v2-c-text-brand); font-weight: 600; }
+.formula-fold p { margin: var(--v2-space-2) 0 0; padding: var(--v2-space-4) var(--v2-space-5); border-radius: var(--v2-radius-chip); background: var(--v2-c-bg-sunken); color: var(--v2-c-text-primary); }
+/* مؤشّرات المال على الشاشة العريضة شريط مضغوط: الرقم وتسميته على سطر حين يتّسعان. */
+@media (min-width: 768px) {
+  .money-kpis { gap: var(--v2-space-4); margin-block-end: var(--v2-space-5); }
+  .money-kpis .kpi { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 var(--v2-space-3); padding: var(--v2-space-3) var(--v2-space-6); }
+  .money-kpis .kpi strong { font-size: 22px; line-height: 30px; }
+}
+.payouts-table .cell-actions > * + * { margin-inline-start: var(--v2-space-3); }
+.payouts-table td button.quiet { flex-wrap: wrap; justify-content: flex-start; padding-inline: 0; text-align: start; }
+.modal h2 .amount { font-family: var(--v2-font-family-num); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .money-table .card-head h3 { font-size: var(--v2-font-headline-size); line-height: var(--v2-font-headline-line); }
 .money-requests { margin-block-start: var(--v2-space-9); }
 .money-requests .card-head { margin-block-end: var(--v2-space-4); }
@@ -1207,6 +1224,11 @@ html[dir="rtl"] .field-row.selected { box-shadow: inset -3px 0 0 var(--v2-c-acti
   .admin-table td, .admin-table th { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-inline-size: 0; height: auto; padding: 0; border: 0; background: transparent; text-align: start; }
   .admin-table td[data-label]::before { content: attr(data-label); color: var(--v2-c-text-secondary); font-size: var(--v2-font-caption-size); line-height: var(--v2-font-caption-line); font-weight: 400; font-family: var(--v2-font-family-text); }
   .admin-table .num { text-align: start; }
+  /* الخلية الرقمية المتكدّسة تبقى ltr لقيمتها، وتصطفّ مع بقية الخلايا في بداية السطر، وتسميتها باتجاه الصفحة. */
+  [dir="rtl"] .admin-table td.num { align-items: flex-end; }
+  [dir="rtl"] .admin-table td.num[data-label]::before { direction: rtl; }
+  /* المبلغ والحالة في السطر الأول من بطاقة الصف. */
+  .admin-table .lead { order: -1; }
   .admin-table .cell-primary { grid-column: 1 / -1; flex-direction: row; align-items: center; flex-wrap: wrap; padding-inline-end: 52px; }
   .admin-table .cell-action { position: absolute; inset-block-start: var(--v2-space-3); inset-inline-end: var(--v2-space-4); }
   .admin-table .cell-action .button, .admin-table .cell-action button.small { min-block-size: var(--v2-size-touch-min); }
