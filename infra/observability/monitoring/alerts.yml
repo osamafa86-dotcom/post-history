@@ -1,0 +1,45 @@
+# قواعد تنبيه لمقاييس الخادم التي تصل المجمّع بـ OTLP (ADR 0027، تعديل 2026-11-11). يقيّمها Prometheus كل 30 ثانية،
+# وتظهر في ALERTS وفي Grafana. نص كل تنبيه ثابت وقيمته رقم، وكل تعبير مجمَّع بلا تسميات: لا مسار ولا معرّف ولا اسم
+# في أي تسمية أو وصف (CLAUDE.md §5). الدخان (smoke-monitoring.sh) يفحص الصياغة ويثبت أن أسماء المقاييس هنا هي ما يصل فعلًا.
+groups:
+  - name: post-history-server
+    rules:
+      # حدث تجاوز عدد محاولات النشر وخرج من الطابور (ADR 0005): لا يعود إلا يدويًا بعد إصلاح السبب.
+      - alert: OutboxDeadEvents
+        expr: max(outbox_events_dead) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "أحداث ميتة في Outbox"
+          description: "عدد الأحداث الميتة: {{ $value }}. تُعاد يدويًا بعد إصلاح سبب فشل النشر."
+      # المُرسل يفرغ الطابور كل ثانية؛ حدث معلّق منذ أكثر من خمس دقائق يعني أن النشر متوقف أو يفشل.
+      - alert: OutboxOldestPendingAge
+        expr: max(outbox_events_oldest_pending_age_seconds) > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "حدث معلّق في Outbox منذ أكثر من خمس دقائق"
+          description: "عمر أقدم حدث معلّق بالثواني: {{ $value }}."
+      # أكثر من 5% من الطلبات تنتهي بخطأ خادم، على حركة لا تقل عن طلب كل عشر ثوانٍ.
+      - alert: ServerErrorRatio
+        expr: |
+          sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
+            / sum(rate(http_server_request_duration_seconds_count[5m])) > 0.05
+          and sum(rate(http_server_request_duration_seconds_count[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "نسبة أخطاء الخادم (5xx) فوق 5%"
+          description: "نسبة الطلبات المنتهية بخطأ خادم في خمس دقائق: {{ $value | humanizePercentage }}."
+      # طلبات تنتظر اتصالًا من مجمّع القاعدة: المجمّع مستنفد.
+      - alert: DatabasePoolExhausted
+        expr: max(db_client_connection_pending_requests) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "مجمّع اتصالات القاعدة مستنفد"
+          description: "عدد الطلبات المنتظرة لاتصال: {{ $value }}."

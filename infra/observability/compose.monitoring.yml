@@ -2,6 +2,9 @@
 # compose مستقل عن البيئة (لا يسقط معها ولا تسقط معه):
 #   docker compose -f infra/observability/compose.monitoring.yml --env-file <ملف فيه GRAFANA_ADMIN_PASSWORD> up -d --wait
 # لا منفذ عام: Grafana وحده على 127.0.0.1:${GRAFANA_PORT:-3300} للوصول بنفق SSH، والباقي على الشبكة الداخلية monitoring.
+# مقاييس التطبيقات: المجمّع وحده على شبكتين داخليتين باسمين ثابتين (post-history-telemetry-api و-workers)، يلتحق بهما
+# الخادم والعاملون من مشروع التجربة عبر compose.telemetry.yml (trial.sh يضيفه حين تكون الشبكتان قائمتين). وقواعد التنبيه
+# في monitoring/alerts.yml يقيّمها Prometheus.
 # السجلات: المجمّع يقرأ ملفات json-file لـ Docker (الوسم tag = اسم الحاوية، daemon.json) وينقّيها قبل Loki.
 # الفحوص الصحية: healthcheck.sh --prom يكتب post_history_check_ok في مجلد textfile يقرؤه node-exporter.
 # كل خدمة محدودة الذاكرة بلا swap؛ المجموع 1072 MB، والاستهلاك الفعلي مقيس في docs/measurements/infra/.
@@ -21,6 +24,7 @@ services:
               "--storage.tsdb.retention.time=15d", "--storage.tsdb.retention.size=2GB", "--web.listen-address=:9090"]
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus-data:/prometheus
     read_only: true
     mem_limit: 384m
@@ -60,6 +64,8 @@ services:
       - ./monitoring/otel-collector.yaml:/etc/otelcol/config.yaml:ro
       - ${DOCKER_CONTAINERS_DIR:-/var/lib/docker/containers}:/var/lib/docker/containers:ro
     read_only: true
+    # على شبكتَي المقاييس أيضًا: التطبيقات تبلغ المجمّع وحده، لا Prometheus ولا Loki ولا Grafana.
+    networks: [monitoring, telemetry-api, telemetry-workers]
     depends_on:
       loki:
         condition: service_healthy
@@ -125,6 +131,14 @@ networks:
   monitoring:
     internal: true
   published: {}
+  # OTLP من التطبيقات إلى المجمّع (ADR 0027). داخليتان بلا خروج، وباسمين ثابتين ليلتحق بهما مشروع التجربة. شبكة للخادم وأخرى
+  # للعاملين: لو تشاركا شبكة ثالثة لحلّ اسم الخادم عند العامل إلى عنوان غير الذي يقبل منه الخادم نداءات /internal.
+  telemetry-api:
+    name: post-history-telemetry-api
+    internal: true
+  telemetry-workers:
+    name: post-history-telemetry-workers
+    internal: true
 
 volumes:
   prometheus-data:
