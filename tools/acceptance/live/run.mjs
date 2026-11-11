@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Runs every server-backed acceptance script against a freshly started API and a throwaway seeded database.
-//   DATABASE_URL=postgres://… (migrated)  node live/run.mjs [--dry-run] [--port=13000]
+//   DATABASE_URL=postgres://… (migrated)  node live/run.mjs [--dry-run] [--port=13000] [--only=a,b]
 // Prerequisite: apps/api is built (npm ci && npm run build) and src/db/migrate.sh up has run against DATABASE_URL.
 // Exit: 0 nothing failed, 1 a criterion failed, 2 environment problem.
 import { execFileSync } from "node:child_process";
@@ -15,6 +15,19 @@ import { setLogSource } from "../scripts/pii-leak.mjs";
 import { setLogSource as setRecoveryLogSource } from "../scripts/account-recovery.mjs";
 
 const args = parseArgs(process.argv.slice(2));
+// pii-leak reads the server logs of everything before it; dynamic-fields last: it publishes the shared form, which becomes the current form (with required fields) for every later material
+const CORE = ["reporter-identity-access", "reservation-conflict", "optimistic-concurrency", "admin-quorum", "notification-delivery"];
+const coreOn = process.env.CORE_ACCEPTANCE === "1";
+const names = ["tenant-isolation", "duplicate-payment", "upload-contract", "outbox-transaction", "material-state-independence", "invalid-file", "receipt-notification", "concurrent-load", "performance", ...(coreOn ? CORE : []), "sandbox-purchase", "rights-exclusivity", "payout-concurrent", "refund-after-payout", "sensitive-material-visibility", "account-recovery", "pii-leak", "dynamic-fields"];
+const only = typeof args.only === "string" ? args.only.split(",") : null;
+// a name that is not in this run would select nothing and exit 0, and a row delegated here by name (lib/delegate.mjs) would pass unmeasured:
+// refused before anything starts
+const stray = (only ?? []).filter((n) => !names.includes(n));
+if (stray.length) {
+  const gated = stray.some((n) => CORE.includes(n)) ? " (the core-gate scripts need CORE_ACCEPTANCE=1)" : "";
+  console.error(`ENVIRONMENT: --only: not in this run: ${stray.join(", ")}${gated}; nothing measured\nthis run has: ${names.join(", ")}`);
+  process.exit(2);
+}
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) { console.error("DATABASE_URL is required"); process.exit(2); }
 
@@ -53,7 +66,6 @@ try {
     extraEnv: { PAYMENT_PROVIDER: "stripe", STRIPE_TEST_SECRET_KEY: `sk_test_${randomBytes(24).toString("hex")}`, STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
       STRIPE_API_BASE: fakeStripe.url, JWT_SECRET: stack.cliEnv.JWT_SECRET, FIELD_ENCRYPTION_KEY: stack.fieldKey, TUSD_HOOK_SECRET: stack.hookToken,
       OUTBOX_DISPATCHER_ENABLED: "false", UPLOAD_VERIFIER: "external" } });
-  const coreOn = process.env.CORE_ACCEPTANCE === "1";
   const s = await seed({ databaseUrl, apiUrl: stack.apiUrl, fieldKey: coreOn ? stack.fieldKey : null });
   let sha = "unknown";
   try { sha = execFileSync("git", ["rev-parse", "--short", "HEAD"]).toString().trim(); } catch { /* not a checkout */ }
@@ -112,12 +124,7 @@ try {
   const passthrough = args["dry-run"] ? ["--dry-run"] : [];
   setLogSource(() => stack.logs());
   setRecoveryLogSource(() => stack.logs());
-    // pii-leak reads the server logs of everything before it; dynamic-fields last: it publishes the shared form, which becomes the current form (with required fields) for every later material
-  const core = process.env.CORE_ACCEPTANCE === "1" ? ["reporter-identity-access", "reservation-conflict", "optimistic-concurrency", "admin-quorum", "notification-delivery"] : [];
-  const names = ["tenant-isolation", "duplicate-payment", "invalid-file", "receipt-notification", "concurrent-load", "performance", ...core, "sandbox-purchase", "rights-exclusivity", "payout-concurrent", "refund-after-payout", "sensitive-material-visibility", "account-recovery", "pii-leak", "dynamic-fields"];
   const summary = [];
-  names.splice(2, 0, "upload-contract", "outbox-transaction", "material-state-independence");
-  const only = typeof args.only === "string" ? args.only.split(",") : null;
   // the payout scripts judge their reporter's balance to the unit: each sells its own contributor's material, so no other script's
   // sale is released into that balance while it counts (the payout worker releases every due sale a moment after it is paid)
   const spTokens = JSON.parse(common.SP_TOKENS);
