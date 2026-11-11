@@ -140,7 +140,7 @@ test("admin-quorum: a command that never started is not a refusal", async () => 
 
 import { checkTranscript, checkWebvtt, readerListing, run as transcriptDraft } from "../scripts/transcript-draft.mjs";
 
-const RLM_ = "‏";
+const RLM_ = "\u200F";
 const goodTranscript = () => ({
   format_version: 1, status: "draft", language: "ar", route: "local", duration_s: 45.02, start_pts_us: 0, source: { file_id: "f", from: "proxy-480p.mp4" }, engine: { name: "faster-whisper" },
   segments: [{ start: 0.5, end: 4, text: "نص", words: [{ start: 0.5, end: 1, text: "نص" }] }, { start: 5, end: 9, text: "آخر", words: [{ start: 5, end: 6, text: "آخر" }] }],

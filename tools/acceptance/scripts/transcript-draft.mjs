@@ -33,7 +33,7 @@ import { EXIT_PENDING } from "../lib/pending.mjs";
 import { freshFetch } from "../lib/http.mjs";
 import { isPinnedSpeech } from "../lib/speech-pin.mjs";
 
-const RLM = "‏";
+const RLM = "\u200F";
 const TIMING = /^(\d{2}):(\d{2}):(\d{2})\.(\d{3}) --> (\d{2}):(\d{2}):(\d{2})\.(\d{3})$/;
 const seconds = (h, m, s, ms) => Number(h) * 3600 + Number(m) * 60 + Number(s) + Number(ms) / 1000;
 const TEXT = "هذه نشرة تجريبية لاختبار التفريغ المحلي. تتحدث النشرة عن الطقس في المدن الساحلية وعن حركة الأسواق صباح اليوم وعن موعد افتتاح المكتبة العامة.";
