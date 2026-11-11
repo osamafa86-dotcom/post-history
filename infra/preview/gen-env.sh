@@ -5,8 +5,10 @@
 #   ./gen-env.sh --add-media      # .env قائم من قبل عامل الوسائط (ADR 0092): يضيف كل مفتاح ناقص منها وحده ولا يمس الموجود
 #   ./gen-env.sh --add-render     # .env قائم من قبل نسخ القالب (ملحق ADR 0092): مستخدم media-render في MinIO وعنوانه، كذلك
 #   ./gen-env.sh --add-storage    # .env قائم من قبل مستخدمي tusd والخادم في MinIO (كانا بالجذر): مفاتيحهما الأربعة، كذلك
+#   ./gen-env.sh --add-media-tls  # tls/ قائم من قبل معاينات الويب (ملحق ADR 0092): شهادة الحافة لاسم المعاينة نفسه، ولا يمس الموجود
 # أسرار عشوائية بصلاحية 0600 لا تُطبع. يرفض الكتابة فوق .env قائم (الأسرار تُدار مرة، ولا تُستبدل بإعادة تشغيل).
-# الشهادة لاسم api.lib.internal وحده، من سلطة يُحذف مفتاحها بعد التوقيع، فلا تصدر شهادة ثانية منها.
+# شهادة api.lib.internal من سلطة يُحذف مفتاحها بعد التوقيع، فلا تصدر شهادة ثانية منها. وشهادة اسم المعاينة (media_tls) من سلطة
+# ثانية يُحذف مفتاحها كذلك، وtls/ca.crt يحمل السلطتين.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 umask 077
@@ -42,6 +44,39 @@ storage_env() {
   echo "S3_API_ACCESS_KEY=preview-api-$(hex 6)"
   echo "S3_API_SECRET_KEY=$(hex 24)"
 }
+# شهادة الحافة لاسم المعاينة نفسه على الشبكة الداخلية (ملحق ADR 0092): تطبيق الويب يقرأ الرابط الموقّع كما وقّعه الخادم
+# (https://<النطاق>/…) من الحافة لا من الإنترنت. سلطتها ثانية يُحذف مفتاحها بعد التوقيع، وتُكتب في tls/ca.crt بعد سلطة
+# api.lib.internal (الشهادة الأولى فيه دائمًا) التي لا تُمس، فلا ينقطع الـBFF عن الخادم. تُعاد بأمان: شهادة قائمة تطابق الاسم
+# وتتحقق من tls/ca.crt تبقى كما هي، وغير ذلك تُصدر من جديد وتحل سلطتها محل السابقة.
+media_tls() {
+  local domain="$1" tmp
+  [ -s tls/ca.crt ] && [ -s tls/api.crt ] || { echo "no tls/ here: run gen-env.sh without options first" >&2; exit 1; }
+  if [ -s tls/media.crt ] && [ -s tls/media.key ] \
+    && openssl x509 -in tls/media.crt -noout -checkhost "$domain" 2>/dev/null | grep -q "does match" \
+    && openssl verify -CAfile tls/ca.crt tls/media.crt >/dev/null 2>&1; then
+    echo "edge certificate for the preview's own name: exists, not changed"; return 0
+  fi
+  tmp="$(mktemp -d tls/.media.XXXXXX)"
+  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 825 -subj "/CN=post-history preview media CA" \
+    -keyout "$tmp/ca.key" -out "$tmp/ca.crt" 2>/dev/null
+  openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -subj "/CN=post-history preview media" \
+    -keyout "$tmp/media.key" -out "$tmp/media.csr" 2>/dev/null
+  printf 'subjectAltName=DNS:%s\nextendedKeyUsage=serverAuth\n' "$domain" > "$tmp/ext"
+  openssl x509 -req -in "$tmp/media.csr" -CA "$tmp/ca.crt" -CAkey "$tmp/ca.key" -CAcreateserial -days 825 -extfile "$tmp/ext" \
+    -out "$tmp/media.crt" 2>/dev/null
+  # The bundle: the API's authority (always the first certificate in ca.crt) and this one. Both chains must verify before anything moves.
+  { sed -n '1,/-----END CERTIFICATE-----/p' tls/ca.crt; cat "$tmp/ca.crt"; } > "$tmp/bundle.crt"
+  if ! { openssl verify -CAfile "$tmp/bundle.crt" tls/api.crt && openssl verify -CAfile "$tmp/bundle.crt" "$tmp/media.crt"; } >/dev/null 2>&1; then
+    rm -rf "$tmp"; echo "the new certificate bundle does not verify: tls/ left as it was" >&2; exit 1
+  fi
+  chmod 0644 "$tmp/bundle.crt" "$tmp/media.crt"
+  if [ "$(id -u)" = 0 ]; then chown 101:101 "$tmp/media.key"; chmod 0400 "$tmp/media.key"; else chmod 0644 "$tmp/media.key"; fi
+  mv -f "$tmp/media.key" tls/media.key
+  mv -f "$tmp/media.crt" tls/media.crt
+  mv -f "$tmp/bundle.crt" tls/ca.crt
+  rm -rf "$tmp"
+  echo "edge certificate for the preview's own name: written (no value printed)"
+}
 # .env قائم: يضيف كل مفتاح ناقص (أو فارغ) من المجموعة وحده، ولا يمس الموجود ولا يطبع قيمة.
 add_keys() {
   local what="$1" gen="$2" added=0 line tmp
@@ -60,6 +95,11 @@ case "${1:-}" in
   --add-media) add_keys "media worker" media_env; exit 0 ;;
   --add-render) add_keys "media-render" render_env; exit 0 ;;
   --add-storage) add_keys "tusd and API storage user" storage_env; exit 0 ;;
+  --add-media-tls)
+    [ -f .env ] || { echo "no .env here: run gen-env.sh without options first" >&2; exit 1; }
+    domain="$(sed -n 's/^PREVIEW_DOMAIN=//p' .env | tail -1)"
+    [[ "$domain" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "PREVIEW_DOMAIN in .env must be a bare host name" >&2; exit 2; }
+    media_tls "$domain"; exit 0 ;;
 esac
 if [ "${1:-}" = --add-upload ]; then
   [ -f .env ] || { echo "no .env here: run without --add-upload first" >&2; exit 1; }
@@ -107,4 +147,5 @@ rm -f tls/ca.key tls/ca.srl tls/api.csr tls/ext
 chmod 0644 tls/ca.crt tls/api.crt
 if [ "$(id -u)" = 0 ]; then chown 101:101 tls/api.key; chmod 0400 tls/api.key; else chmod 0644 tls/api.key; fi
 chmod 0755 tls
-echo "preview .env and internal certificate written (no value printed)"
+media_tls "$PREVIEW_DOMAIN" >/dev/null
+echo "preview .env and internal certificates written (no value printed)"

@@ -4,7 +4,8 @@
 # هنا). على الخادم، من هذا المجلد:
 #   ./gen-env.sh            # مرة: .env بأسرار عشوائية وشهادة داخلية في tls/، لا يطبع شيئًا سريًا
 #                           # (.env قائم: --add-upload لمفاتيح الرفع، و--add-media لمفاتيح عامل الوسائط، و--add-render
-#                           # لمستخدم media-render في MinIO وعنوانه، و--add-storage لمستخدمي tusd والخادم في MinIO)
+#                           # لمستخدم media-render في MinIO وعنوانه، و--add-storage لمستخدمي tusd والخادم في MinIO،
+#                           # و--add-media-tls لشهادة الحافة باسم المعاينة نفسه: tls/ قائم من قبل معاينات الويب)
 #   ./fetch-images.sh       # الصور الأربع من الإصدار preview-latest (تُتحقق ببصمة sha256 أولًا) ثم docker load
 #   docker compose -f docker-compose.preview.yml up -d --wait
 #   ./seed-preview.sh       # مرة: حسابات تجريبية ومواد اصطناعية؛ كلمات السر في .env لا في المخرج
@@ -258,6 +259,9 @@ services:
       WEB_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       # The browser uploads to /files/ on the preview's own origin (the web edge, then the ingest gate and tusd).
       WEB_TUS_ORIGINS: https://${PREVIEW_DOMAIN}
+      # Derived files in the workspace (addendum to ADR 0092): the BFF reads the link the API signed for the preview's own
+      # origin, and that name resolves here to the edge's listener on the internal network (alias on "web"), not to the internet.
+      WEB_MEDIA_ORIGINS: https://${PREVIEW_DOMAIN}
       # Privacy-policy contact email: read at request time, set in .env only (never in the repository); empty keeps the page banner.
       PRIVACY_CONTACT_EMAIL: ${PRIVACY_CONTACT_EMAIL:-}
     volumes:
@@ -543,7 +547,8 @@ services:
         ipv4_address: ${PREVIEW_RENDER_IP:-10.211.47.15}
 
   # The only service on the shared server's network: X-Robots-Tag noindex, the "preview" banner, and the internal TLS
-  # listener the BFF needs for the API (bound to its address on the internal network alone).
+  # listeners the BFF needs (bound to its address on the internal network alone): one for the API, and one under the
+  # preview's own name for the signed links of derived files (addendum to ADR 0092).
   web:
     <<: *hardened
     image: nginx:1.28.3-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
@@ -555,6 +560,9 @@ services:
     user: "101:101"
     read_only: true
     tmpfs: ["/tmp:size=8m"]
+    # The signed link carries no port, so the listener for it is 443: nginx binds it as uid 101 with no capability.
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "0"
     environment:
       PREVIEW_EDGE_IP: ${PREVIEW_EDGE_IP:-10.211.47.10}
       PREVIEW_MEDIA_BUCKET: ${S3_BUCKET_MEDIA:?}
@@ -564,6 +572,9 @@ services:
       - ./edge/edge.conf.in:/etc/nginx/edge.conf.in:ro
       - ./tls/api.crt:/tls/api.crt:ro
       - ./tls/api.key:/tls/api.key:ro
+      # From gen-env.sh (--add-media-tls on a tls/ from before it). A missing file stops "up" here: it is never made a directory.
+      - { type: bind, source: ./tls/media.crt, target: /tls/media.crt, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ./tls/media.key, target: /tls/media.key, read_only: true, bind: { create_host_path: false } }
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/robots.txt"]
       interval: 10s
@@ -575,7 +586,8 @@ services:
     networks:
       internal:
         ipv4_address: ${PREVIEW_EDGE_IP:-10.211.47.10}
-        aliases: [api.lib.internal]
+        # The preview's own name too, on this network alone: the BFF's read of a signed link ends at the edge.
+        aliases: [api.lib.internal, "${PREVIEW_DOMAIN}"]
       public-api: {}
       deploy_default:
         aliases: [lib-web]
