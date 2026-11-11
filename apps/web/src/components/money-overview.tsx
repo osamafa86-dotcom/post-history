@@ -81,10 +81,10 @@ export function MoneyOverview({ locale, month, onMonth, onNames }: { locale: Loc
           <article className="kpi"><strong dir="ltr" data-testid="kpi-share">{money(total.share.amount_minor)}</strong><span>{t.kpiShare}</span></article>
           <article className="kpi"><strong dir="ltr" data-testid="kpi-ready">{money(ready)}</strong><span>{t.kpiReady}</span></article>
         </div>
-        <p className="formula" data-testid="money-formula">{fill(t.formula, { pct: pct ? fill(t.formulaPct, { pct }) : "" })}{!pct && <> {t.formulaMixed}</>}</p>
         <div className="table-panel money-table">
-          <div className="card-head"><h3>{t.tableTitle}</h3>{current.partial && <small className="caption">{t.partial}</small>}</div>
-          <table className="admin-table earnings-table">
+          <div className="card-head"><h3>{t.tableTitle}</h3>{current.partial && <small className="caption">{t.partial}</small>}
+            <details className="formula-fold" data-testid="money-formula"><summary>{t.formulaTitle}</summary><p>{fill(t.formula, { pct: pct ? fill(t.formulaPct, { pct }) : "" })}{!pct && <> {t.formulaMixed}</>}</p></details></div>
+          <table className="admin-table earnings-table" aria-label={t.tableTitle}>
             <thead><tr><th scope="col">{t.columns.contributor}</th><th scope="col" className="num">{t.columns.sales}</th><th scope="col" className="num">{fill(t.columns.gross, { cur: symbol })}</th><th scope="col" className="num">{fill(t.columns.fees, { cur: symbol })}</th><th scope="col" className="num">{fill(t.columns.net, { cur: symbol })}</th><th scope="col" className="num">{fill(t.columns.share, { pct: pct ?? "", cur: symbol })}</th>{refunded && <th scope="col" className="num">{fill(t.columns.refunded, { cur: symbol })}</th>}<th scope="col">{t.columns.status}</th></tr></thead>
             <tbody>{rows.map(row => {
               const state = readiness(row.balance), tone = readyTone[state];
