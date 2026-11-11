@@ -30,6 +30,25 @@ export function blockListOf(cidrs: string[]): BlockList {
   return list;
 }
 
+// الشبكات المحلية والخاصة في IPv4 (RFC 1918 والعنوان المحلي). عنوان IPv6 للمجمّع غير مقبول: يُضبط باسم الخدمة
+const PRIVATE_NETWORKS = blockListOf(['127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']);
+
+/**
+ * عنوان المجمّع لا يكون مزوّدًا خارجيًا (ADR 0027): `http` إلى اسم خدمة داخلي بلا نقطة، أو إلى عنوان محلي أو خاص، وبلا مسار ولا بيانات دخول.
+ */
+function selfHostedCollector(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'http:' || url.origin !== value) return false;
+  const host = url.hostname;
+  if (host.startsWith('[')) return false;
+  return isIP(host) ? addressAllowed(PRIVATE_NETWORKS, host) : !host.includes('.');
+}
+
 const cidrList = z
   .string()
   .transform((v) => v.split(',').map((s) => s.trim()).filter(Boolean))
@@ -367,6 +386,9 @@ const schema = z.object({
   OUTBOX_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(50),
   // حدث يفشل نشره هذا العدد من المرات يُعلَّم ميتًا ويخرج من الطابور (ADR 0005). بالتراجع القائم (حتى 300 ث) العشرون نحو ساعة من الفشل المتصل
   OUTBOX_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(20),
+
+  // عنوان مجمّع المقاييس المستضاف ذاتيًا (ADR 0027). غيابه = لا مقاييس تخرج من الخادم
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.string().refine(selfHostedCollector).optional(),
 });
 
 export type AppConfig = z.infer<typeof validated>;
