@@ -921,7 +921,7 @@ export const idempotencyKeys = pgTable("idempotency_keys", {
 	primaryKey({ columns: [table.userId, table.key], name: "idempotency_keys_pkey"}),
 	check("idempotency_keys_completed_has_response", sql`(state <> 'completed'::text) OR (response_status IS NOT NULL)`),
 	check("idempotency_keys_key_len", sql`(char_length(key) >= 8) AND (char_length(key) <= 128)`),
-	check("idempotency_keys_state_check", sql`state = ANY (ARRAY['in_progress'::text, 'completed'::text])`),
+	check("idempotency_keys_state_check", sql`state = ANY (ARRAY['in_progress'::text, 'committed'::text, 'completed'::text])`),
 ]);
 
 export const notificationDeliveries = pgTable("notification_deliveries", {

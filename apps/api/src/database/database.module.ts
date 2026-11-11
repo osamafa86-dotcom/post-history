@@ -2,6 +2,7 @@ import { Global, Inject, Module, type OnApplicationShutdown } from '@nestjs/comm
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { APP_CONFIG, type AppConfig } from '../config/config';
+import { withCommitMarker } from '../idempotency/commit-marker';
 import * as schema from './schema/schema';
 
 export type Database = NodePgDatabase<typeof schema>;
@@ -24,7 +25,8 @@ export const DB = Symbol('DB');
     {
       provide: DB,
       inject: [PG_POOL],
-      useFactory: (pool: Pool): Database => drizzle(pool, { schema }),
+      // كتابة الطلب الحامل لـ Idempotency-Key تلتزم مع علامة مفتاحه (ADR 0005)
+      useFactory: (pool: Pool): Database => withCommitMarker(drizzle(pool, { schema }), pool),
     },
   ],
   exports: [PG_POOL, DB],
