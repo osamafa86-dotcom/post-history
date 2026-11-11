@@ -39,4 +39,19 @@ describe("styles hold on a touch phone", () => {
     const small = all.filter(rule => !miniature.test(rule.selector)).flatMap(rule => [...rule.body.matchAll(/font-size:\s*([\d.]+)px/g)].filter(m => Number(m[1]) < 12).map(m => `${rule.selector} ${m[1]}px`));
     expect(small).toEqual([]);
   });
+  it("answers a press with one shared rule, and no control waits for a double tap", () => {
+    const pressed = all.filter(rule => rule.selector.includes(":active"));
+    expect(pressed.map(rule => rule.selector)).toEqual(["button:not(:disabled):active, a.button:active"]);
+    const instant = all.filter(rule => /touch-action:\s*manipulation/.test(rule.body)).flatMap(rule => rule.selector.split(",").map(s => s.trim()));
+    for (const control of ["button", "a", "input", "select", "textarea", "summary", "label"]) expect(instant).toContain(control);
+  });
+  it("takes the browser bar colour from the design tokens, for the light and the dark mode", async () => {
+    const { themeColor } = await import("../src/lib/theme-color");
+    const tokens = readFileSync(new URL("../src/generated/tokens.css", import.meta.url), "utf8"), dark = tokens.indexOf("@media (prefers-color-scheme: dark)");
+    const raised = (css: string) => /--v2-c-bg-raised:\s*(#[0-9A-Fa-f]{6})/.exec(css)?.[1];
+    expect(dark).toBeGreaterThan(0);
+    expect(themeColor.light).toBe(raised(tokens.slice(0, dark))); expect(themeColor.dark).toBe(raised(tokens.slice(dark)));
+    const layout = readFileSync(new URL("../src/app/layout.tsx", import.meta.url), "utf8");
+    expect(layout).toContain("themeColor.light"); expect(layout).toContain("themeColor.dark"); expect(layout).not.toContain("viewportFit");
+  });
 });

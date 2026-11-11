@@ -101,7 +101,7 @@ function OrganizationTable({ locale, items, open }: { locale: Locale; items: Org
         <td data-label={t.country}><span dir="ltr">{item.country}</span></td>
         <td className="num" data-label={t.members}><span dir="auto" data-testid="seats-pair">{fill(t.seatsPair, { active: String(item.active_members), seats: String(item.seats) })}</span></td>
         <td className="num" data-label={heading} data-testid="organization-purchases">{failed ? <span className="muted">{m.notAvailable}</span> : !totals ? <span className="skeleton line" aria-hidden="true" /> : !rows.length ? <span className="muted" dir="ltr">{single ? "0.00" : "—"}</span>
-          : rows.map(row => <span key={row.currency} className="purchase"><span dir="ltr">{single ? plainAmount(row.paid, locale) : formatMoney(row.paid, locale)}</span><small className="muted">{plural(row.paid_orders, t.orders as PluralForms, locale)}{row.refunded.amount_minor > 0 && <> · <span data-testid="refunded-part">{fillNodes(t.refundedPart, { amount: <Money price={row.refunded} locale={locale} /> })}</span></>}</small></span>)}</td>
+          : rows.map(row => <span key={row.currency} className="purchase"><span dir="ltr">{single ? plainAmount(row.paid, locale) : formatMoney(row.paid, locale)}</span><small className="muted" dir={locale === "ar" ? "rtl" : "ltr"} data-testid="purchase-line"><span data-testid="orders-part">{plural(row.paid_orders, t.orders as PluralForms, locale)}</span>{row.refunded.amount_minor > 0 && <> · <span data-testid="refunded-part">{fillNodes(t.refundedPart, { amount: <Money price={row.refunded} locale={locale} /> })}</span></>}</small></span>)}</td>
         <td data-label={t.status}><OrganizationStatus status={item.status} locale={locale} /></td>
         <td className="cell-action"><button type="button" className="secondary small" onClick={() => open(item.id)}>{t.open}</button></td>
       </tr>;
@@ -202,10 +202,12 @@ function OrganizationPanel({ locale, id }: { locale: Locale; id: string }) {
   }
   if (error) return <section className="center-state" role="alert"><p>{m.error}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></section>;
   if (!loaded) return <p className="center-state" role="status">{m.loading}</p>;
+  // في وجه المشتري («مؤسستي») الفعل الأساسي بنمط المتجر الذهبي (`store`) كما «أضف إلى السلة»؛ ومدير النظام يراه بنمط مساحة العمل.
+  const primary = admin ? undefined : "store";
   const o = loaded.organization;
   return <>
     <div className="page-heading"><div><p className="eyebrow">{t.organization}</p><h1>{localized(o.display_name, locale)}</h1><p className="muted"><OrganizationStatus status={o.status} locale={locale} testId="organization-status" /></p></div>
-      {editor && !draft && <button onClick={() => { mutation.clearStatus(); setInvalid(false); setDraft(inputOf(o)); }}>{t.edit}</button>}</div>
+      {editor && !draft && <button className={primary} onClick={() => { mutation.clearStatus(); setInvalid(false); setDraft(inputOf(o)); }}>{t.edit}</button>}</div>
     {o.status === "pending_verification" && <p className="notice">{t.pendingHelp}</p>}
     {o.status === "suspended" && <p className="notice error">{t.suspendedHelp}</p>}
     {o.status === "rejected" && <p className="notice error" data-testid="organization-rejected">{admin ? fill(t.reject.help, { reason: t.reject.reasons[o.rejection_reason ?? "other"] }) : fill(m.store.org.rejected.body, { reason: m.store.org.rejected.reasons[o.rejection_reason ?? "other"] })}</p>}
@@ -215,13 +217,13 @@ function OrganizationPanel({ locale, id }: { locale: Locale; id: string }) {
       <ActionStatus status={mutation.status} locale={locale} />
       <div className="actions"><button disabled={mutation.busy}>{t.save}</button><button type="button" className="secondary" disabled={mutation.busy} onClick={() => setDraft(null)}>{t.cancel}</button></div>
     </form> : <section className="card"><ActionStatus status={mutation.status} locale={locale} /><dl className="metadata" data-testid="organization-profile">{[
-      [t.legalName, o.legal_name], [t.country, o.country], [t.billingEmail, o.billing_email], [t.members, `${o.active_members} / ${o.seats}`], [t.verifiedAt, formatDate(o.verified_at, locale)],
+      [t.legalName, o.legal_name], [t.country, o.country], [t.billingEmail, o.billing_email], [t.members, fill(t.seatsPair, { active: String(o.active_members), seats: String(o.seats) })], [t.verifiedAt, formatDate(o.verified_at, locale)],
     ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>}
-    {hasRole(me, ...memberManagers) && <Members locale={locale} id={id} seats={o.seats ?? 0} />}
+    {hasRole(me, ...memberManagers) && <Members locale={locale} id={id} seats={o.seats ?? 0} primary={primary} />}
   </>;
 }
 
-function Members({ locale, id, seats }: { locale: Locale; id: string; seats: number }) {
+function Members({ locale, id, seats, primary }: { locale: Locale; id: string; seats: number; primary?: string }) {
   const m = messages[locale], t = m.buyers, mutation = useMutation();
   const [items, setItems] = useState<Member[] | null>(null), [error, setError] = useState(false), [attempt, setAttempt] = useState(0);
   const [invite, setInvite] = useState<{ email: string; role: typeof buyerRoles[number] }>({ email: "", role: "buyer_member" }), [invalid, setInvalid] = useState(false);
@@ -259,7 +261,7 @@ function Members({ locale, id, seats }: { locale: Locale; id: string; seats: num
     <form className="rule-row invite-form" noValidate onSubmit={e => { e.preventDefault(); void send(); }}>
       <label>{t.inviteEmail}<input type="email" dir="ltr" maxLength={organizationLimits.email} value={invite.email} onChange={e => setInvite(v => ({ ...v, email: e.target.value }))} /></label>
       <label>{t.role}<select value={invite.role} onChange={e => setInvite(v => ({ ...v, role: e.target.value as typeof buyerRoles[number] }))}>{buyerRoles.map(r => <option key={r} value={r}>{t.roles[r]}</option>)}</select></label>
-      <div className="actions"><button disabled={mutation.busy || !items || active >= seats}>{t.invite}</button></div>
+      <div className="actions"><button className={primary} disabled={mutation.busy || !items || active >= seats}>{t.invite}</button></div>
     </form>
     {items && active >= seats && <p className="muted">{t.seatsFull}</p>}
     {invalid && <p className="notice error" role="alert">{t.inviteInvalid}</p>}

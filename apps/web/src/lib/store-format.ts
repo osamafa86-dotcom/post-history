@@ -42,6 +42,17 @@ export function catalogDay(value: unknown): string | null {
   const parsed = new Date(`${value}T00:00:00Z`);
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : null;
 }
+/**
+ * نوع الملف بكلمات القارئ بدل رمز MIME: صنفه (فيديو، صورة، صوت، ملف) واسم صيغته المعروف إن وُجد. ما لا يُعرف صنفه «ملف» بلا اسم.
+ */
+const formatNames: Record<string, string> = {
+  "video/mp4": "MP4", "video/quicktime": "MOV", "video/webm": "WebM", "image/jpeg": "JPEG", "image/png": "PNG", "image/webp": "WebP",
+  "audio/mpeg": "MP3", "audio/mp4": "M4A", "audio/wav": "WAV", "application/pdf": "PDF", "application/zip": "ZIP",
+};
+export function fileFormat(mime: string | null | undefined): { kind: "video" | "image" | "audio" | "file"; name: string | null } {
+  const type = (mime ?? "").trim().toLowerCase().split(";")[0], family = type.split("/")[0];
+  return { kind: family === "video" || family === "image" || family === "audio" ? family : "file", name: formatNames[type] ?? null };
+}
 export function formatDay(value: unknown, locale: Locale): string | null {
   const day = catalogDay(value);
   return day ? new Intl.DateTimeFormat(dateLocale(locale), { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`)) : null;
