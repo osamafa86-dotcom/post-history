@@ -74,6 +74,9 @@ try {
     UPLOAD_CONTRACT_API_URL: stack.apiUrl, UPLOAD_CONTRACT_TOKENS: tokens,
     OUTBOX_API_URL: stack.apiUrl, OUTBOX_TOKENS: tokens, OUTBOX_DATABASE_URL: databaseUrl,
     STATE_API_URL: stack.apiUrl, STATE_TOKENS: tokens,
+    // sensitive-material-visibility: the role tokens (the buyer admin's organization is seeded active), and this run's database for the
+    // two sale conditions no API path reaches in this stack (ADR 0118: the published version and the verified original)
+    SENSITIVE_API_URL: stack.apiUrl, SENSITIVE_TOKENS: tokens, SENSITIVE_DATABASE_URL: databaseUrl,
     HOOK_BASE_URL: stack.baseUrl, HOOK_TOKEN: stack.hookToken, HOOK_SESSIONS: JSON.stringify(s.uploads.hookSessions),
     INVALID_API_URL: stack.apiUrl, INVALID_TOKENS: tokens, DYN_API_URL: stack.apiUrl, DYN_TOKENS: tokens,
     HOOK_OBJECT_PREFIX: stack.objectPrefix, HOOK_BUCKET: stack.bucket,
@@ -111,7 +114,7 @@ try {
   setRecoveryLogSource(() => stack.logs());
     // pii-leak reads the server logs of everything before it; dynamic-fields last: it publishes the shared form, which becomes the current form (with required fields) for every later material
   const core = process.env.CORE_ACCEPTANCE === "1" ? ["reporter-identity-access", "reservation-conflict", "optimistic-concurrency", "admin-quorum", "notification-delivery"] : [];
-  const names = ["tenant-isolation", "duplicate-payment", "invalid-file", "receipt-notification", "concurrent-load", "performance", ...core, "sandbox-purchase", "rights-exclusivity", "payout-concurrent", "refund-after-payout", "account-recovery", "pii-leak", "dynamic-fields"];
+  const names = ["tenant-isolation", "duplicate-payment", "invalid-file", "receipt-notification", "concurrent-load", "performance", ...core, "sandbox-purchase", "rights-exclusivity", "payout-concurrent", "refund-after-payout", "sensitive-material-visibility", "account-recovery", "pii-leak", "dynamic-fields"];
   const summary = [];
   names.splice(2, 0, "upload-contract", "outbox-transaction", "material-state-independence");
   const only = typeof args.only === "string" ? args.only.split(",") : null;
