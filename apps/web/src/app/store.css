@@ -5,12 +5,12 @@
 .ref { font-family: var(--v2-font-family-num); font-variant-numeric: tabular-nums; }
 
 button.store, a.button.store { background: var(--v2-c-action-store); border-color: var(--v2-c-action-store); color: var(--v2-c-bg-store); }
-button.store:hover, a.button.store:hover { background: color-mix(in srgb, var(--v2-c-action-store) 86%, var(--v2-c-text-on-store)); border-color: color-mix(in srgb, var(--v2-c-action-store) 86%, var(--v2-c-text-on-store)); }
+@media (hover: hover) and (pointer: fine) { button.store:hover, a.button.store:hover { background: color-mix(in srgb, var(--v2-c-action-store) 86%, var(--v2-c-text-on-store)); border-color: color-mix(in srgb, var(--v2-c-action-store) 86%, var(--v2-c-text-on-store)); } }
 button.store .icon, a.button.store .icon { color: inherit; }
 
 /* شريط المتجر (M4): زرّ السلة بعدّادها بجانب الحساب، والوجهة النشطة بخطّ ذهبي. */
 .cart-chip { display: inline-flex; align-items: center; gap: var(--v2-space-3); min-block-size: var(--v2-size-touch-min); padding: 0 var(--v2-space-5); border-radius: var(--v2-radius-full); background: var(--v2-c-bg-sunken); color: var(--v2-c-text-primary); font-size: var(--v2-font-label-size); font-weight: 700; white-space: nowrap; }
-.cart-chip:hover { background: var(--v2-c-border-line); }
+@media (hover: hover) and (pointer: fine) { .cart-chip:hover { background: var(--v2-c-border-line); } }
 .cart-chip[aria-current="page"] { box-shadow: inset 0 0 0 var(--v2-border-field) var(--v2-c-action-store); }
 .cart-chip-count { display: grid; place-items: center; min-inline-size: 22px; block-size: 22px; padding: 0 var(--v2-space-2); border-radius: var(--v2-radius-full); background: var(--v2-c-action-store); color: var(--v2-c-bg-store); font-family: var(--v2-font-family-num); font-size: var(--v2-font-caption-size); font-weight: 700; }
 .app-shell.buyer .topbar-nav a[aria-current="page"]::after { background: var(--v2-c-action-store); }
@@ -18,11 +18,11 @@ button.store .icon, a.button.store .icon { color: inherit; }
 html:has(.app-shell.buyer), body:has(.app-shell.buyer) { background: var(--v2-c-bg-store); }
 
 /* مسار التنقّل (S2، S7). */
-.breadcrumb ol { list-style: none; margin: 0 0 var(--v2-space-5); padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--v2-space-3); font-size: var(--v2-font-label-size); line-height: var(--v2-font-label-line); color: var(--v2-c-text-secondary); }
+.breadcrumb ol { list-style: none; margin: 0 0 var(--v2-space-5); padding: 0; min-inline-size: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--v2-space-3); font-size: var(--v2-font-label-size); line-height: var(--v2-font-label-line); color: var(--v2-c-text-secondary); }
 .breadcrumb li + li::before { content: "‹"; margin-inline-end: var(--v2-space-3); }
 [dir="ltr"] .breadcrumb li + li::before { content: "›"; }
 .breadcrumb a { display: inline-flex; align-items: center; min-block-size: 24px; color: var(--v2-c-text-secondary); }
-.breadcrumb a:hover { color: var(--v2-c-text-primary); }
+@media (hover: hover) and (pointer: fine) { .breadcrumb a:hover { color: var(--v2-c-text-primary); } }
 .breadcrumb [aria-current="page"] { color: var(--v2-c-text-primary); font-weight: 600; }
 
 /* S1 الكتالوج. */
@@ -39,7 +39,7 @@ html:has(.app-shell.buyer), body:has(.app-shell.buyer) { background: var(--v2-c-
 .store-search-icon { position: absolute; inset-inline-start: var(--v2-space-5); inset-block-start: 50%; translate: 0 -50%; display: flex; color: var(--v2-c-text-secondary); pointer-events: none; }
 .store-chips { display: flex; flex-wrap: wrap; gap: var(--v2-space-3); }
 button.store-chip { min-block-size: var(--v2-size-touch-min); padding: 0 var(--v2-space-5); border: var(--v2-border-hairline) solid var(--v2-c-border-edge); border-radius: var(--v2-radius-full); background: transparent; color: var(--v2-c-text-primary); font-size: var(--v2-font-label-size); font-weight: 600; }
-button.store-chip:hover { background: var(--v2-c-bg-sunken); border-color: var(--v2-c-border-edge); }
+@media (hover: hover) and (pointer: fine) { button.store-chip:hover { background: var(--v2-c-bg-sunken); border-color: var(--v2-c-border-edge); } }
 button.store-chip[aria-pressed="true"] { background: var(--v2-c-text-primary); border-color: var(--v2-c-text-primary); color: var(--v2-c-bg-base); }
 .store-more { padding: 0 var(--v2-space-5); border: var(--v2-border-hairline) solid var(--v2-c-border-line); border-radius: var(--v2-radius-md); background: var(--v2-c-bg-raised); }
 .store-more summary { display: flex; align-items: center; min-block-size: var(--v2-size-touch-min); cursor: pointer; font-size: var(--v2-font-label-size); font-weight: 600; }
