@@ -671,7 +671,6 @@
     "resolution": "Resolution",
     "checkoutLater": "Cart and hosted checkout arrive with the orders contract.",
     "addToCart": "Add to cart",
-    "inCart": "In your cart; go to it",
     "buyersOnly": "Buying is for buyer organization accounts.",
     "browse": {
       "trustLabel": "Why you can trust this footage",
@@ -738,7 +737,8 @@
       "family": {
         "editorial": "Editorial"
       },
-      "startsAt": "Starts at"
+      "startsAt": "Starts at",
+      "addAnother": "Add another license"
     },
     "exclusiveUntil": "Exclusivity reserved until {date}",
     "termDaysLabel": "License term (days)",
@@ -905,7 +905,8 @@
           "other": "Another reason"
         }
       }
-    }
+    },
+    "goToCart": "Go to cart ({n})"
   },
   "board": {
     "title": "Newsroom board",
@@ -1145,7 +1146,13 @@
     "clearFilter": "Clear filters",
     "staleTitle": "Couldn't refresh my materials",
     "staleBody": "What you see is from the last update ({time}); we retry automatically every 30 seconds.",
-    "errorBody": "Your materials couldn't be loaded. We retry automatically, or try again now."
+    "errorBody": "Your materials couldn't be loaded. We retry automatically, or try again now.",
+    "sections": {
+      "week": "This week",
+      "undated": "No date",
+      "coverClosed": "Open the coverage to see its materials",
+      "coverOpen": "Its materials follow this card"
+    }
   },
   "templates": {
     "nav": "License templates",
@@ -1637,9 +1644,8 @@
     "cancel": "Cancel order",
     "payBy": "Pay before",
     "paidAt": "Paid at",
-    "sandbox": "Test payment: no real money. The payment page is the provider's (the sandbox, or Stripe in test mode); card details never pass through us.",
     "awaiting": "Confirming the payment with the gateway…",
-    "paidHelp": "The order is paid and the licenses are issued.",
+    "paidHelp": "Each license and its certificate are under My licenses.",
     "expiredHelp": "The payment window has passed; create a new order.",
     "conflict": "Could not proceed: the price changed, the material is no longer listed, the exclusivity is held, or the order changed. Review the cart or the order.",
     "providerBlocked": "The payment link is outside the allowed origins and was not opened.",
@@ -1662,14 +1668,13 @@
     },
     "stillWaiting": "We are still waiting for the bank's confirmation; we will email you once it arrives.",
     "orderNumber": "Order number",
-    "sandboxTitle": "Test mode — no real money",
     "holdEnds": "Exclusivity hold ends in {time}",
     "payWithin": "Payment window ends in {time}",
     "holdExpired": "The hold has ended — try again with a new order.",
     "holdSoon": "Less than two minutes left in the payment window.",
     "provider": "Pay with the provider",
     "secure": "Secure connection",
-    "providerHelp": "The payment page is hosted by the provider; card details never pass through us and we do not imitate its fields.",
+    "providerHelp": "The payment page is hosted by the provider, and card data does not pass through us.",
     "backToCart": "Back to cart",
     "summary": "Order summary",
     "purchaseOrder": "Purchase order",
@@ -1678,7 +1683,8 @@
     "noInvoice": "The invoice is issued after the signed gateway confirmation.",
     "colOrder": "Order",
     "emptyTitle": "No orders yet",
-    "emptyBody": "An order is created from the cart with “Proceed to payment” and shows here with its status."
+    "emptyBody": "An order is created from the cart with “Proceed to payment” and shows here with its status.",
+    "paidTitle": "Payment received and licenses issued"
   },
   "refunds": {
     "title": "Refunds",

@@ -135,11 +135,13 @@ export function OrderPage({ locale, id, returned }: { locale: Locale; id: string
       : <><span className="spinner" aria-hidden="true" /><p role="status">{o.awaiting}</p></>}
     <p className="caption">{o.orderNumber} <bdi className="ref" dir="ltr">{label}</bdi></p></section></>;
   return <>{crumbs(label)}
-    {buyer && pending && <div className="notice attention sandbox-banner" role="status"><strong>{o.sandboxTitle}</strong><p>{o.sandbox}</p></div>}
     <div className="page-heading"><div><p className="eyebrow">{o.order} <bdi className="ref" dir="ltr">{label}</bdi></p><h1 dir="ltr" className="ref">{formatMoney(order.total, locale)}</h1>
       <p><OrderStatus status={order.status} locale={locale} testId="order-status" />{order.cancel_reason && <small className="muted"> {o.reasons[order.cancel_reason]}</small>}</p></div>
-      {order.invoice_number && <Link prefetch={false} className="button secondary" href={`/${locale}/store/orders/${order.id}/invoice`}>{o.invoice}</Link>}</div>
-    {order.status === "paid" && <div className="notice good" role="status"><p>{o.paidHelp}</p><Link prefetch={false} href={`/${locale}/store/licenses`}>{m.store.nav.licenses}</Link></div>}
+      {order.invoice_number && order.status !== "paid" && <Link prefetch={false} className="button secondary" href={`/${locale}/store/orders/${order.id}/invoice`}>{o.invoice}</Link>}</div>
+    {/* بعد الدفع: بطاقة تقول ما تمّ وأين الملف، بفعل أساسي واحد («تراخيصي») والفاتورة ثانوية. */}
+    {order.status === "paid" && <section className="card order-paid" role="status" data-testid="order-paid" aria-labelledby="order-paid-title"><span className="empty-icon"><Icon name="check" size={24} /></span>
+      <div><h2 id="order-paid-title">{o.paidTitle}</h2><p>{o.paidHelp}</p></div>
+      <div className="actions"><Link prefetch={false} className="button store" href={`/${locale}/store/licenses`}>{m.store.nav.licenses}</Link>{order.invoice_number && <Link prefetch={false} className="button secondary" href={`/${locale}/store/orders/${order.id}/invoice`}>{o.invoice}</Link>}</div></section>}
     {pending && !expired && <p className={`badge ${late ? "bad" : "attention"} hold-timer`} data-testid="hold-timer" aria-live="off">{(exclusive ? o.holdEnds : o.payWithin).split("{time}")[0]}<span className="mono" dir="ltr">{clock(new Date(now - left).toISOString(), now)}</span></p>}
     {pending && late && <p className="visually-hidden" role="status">{expired ? o.holdExpired : o.holdSoon}</p>}
     <div className="checkout-layout">

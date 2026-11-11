@@ -42,10 +42,11 @@ export function StoreItem({ locale, id }: { locale: Locale; id: string }) {
     setToast(true);
   }
   const action = buyer ? <div className="store-buy">
-    <button className="store" disabled={!chosen} onClick={add} aria-describedby="buy-note">{chosen ? <>{b.addFor.split("{price}")[0]}<bdi dir="ltr">{formatMoney(chosen.price, locale)}</bdi>{b.addFor.split("{price}")[1]}</> : s.addToCart}</button>
+    {/* بعد الإضافة: الخطوة التالية هي الفعل الأساسي («اذهب إلى السلة» بعدّها)، وإضافة ترخيص آخر تصير ثانوية. */}
+    {inCart && <Link prefetch={false} className="button store" data-testid="go-to-cart" href={`/${locale}/store/cart`}>{s.goToCart.replace("{n}", String(cart.items.length))}</Link>}
+    <button className={inCart ? "secondary" : "store"} disabled={!chosen} onClick={add} aria-describedby="buy-note">{inCart ? b.addAnother : chosen ? <>{b.addFor.split("{price}")[0]}<bdi dir="ltr">{formatMoney(chosen.price, locale)}</bdi>{b.addFor.split("{price}")[1]}</> : s.addToCart}</button>
     {!chosen && <small className="muted">{it.choose}</small>}
     {toast && <p className="toast" role="status">{b.added}</p>}
-    {inCart && <Link prefetch={false} href={`/${locale}/store/cart`}>{s.inCart}</Link>}
   </div> : <p className="notice">{s.buyersOnly}</p>;
   return <>
     {crumbs(title)}
