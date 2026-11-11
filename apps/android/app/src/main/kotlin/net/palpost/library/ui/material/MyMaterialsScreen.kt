@@ -69,6 +69,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -351,7 +352,7 @@ private fun SectionHeader(section: net.palpost.library.core.materials.GallerySec
     val count = pluralStringResource(R.plurals.receipt_items, section.materials.size, section.materials.size)
     Column(Modifier.padding(top = VlSpace.s3), verticalArrangement = Arrangement.spacedBy(VlSpace.s1)) {
         val title = if (grouping == GalleryGrouping.COVERAGE) section.coverage.orEmpty() else section.type?.let { materialTypeLabel(it) } ?: stringResource(R.string.gallery_type_other)
-        Text(title, style = Vl.text.headline, color = Vl.colors.textPrimary, maxLines = 2, modifier = Modifier.semantics { heading() })
+        Text(title, style = Vl.text.headline, color = Vl.colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.semantics { heading() })
         val sub = listOfNotNull(if (grouping == GalleryGrouping.COVERAGE) section.primaryType?.let { materialTypeLabel(it) } else null, day, count)
         Text(sub.joinToString(" · "), style = Vl.text.caption, color = Vl.colors.textSecondary)
     }
@@ -385,7 +386,7 @@ private fun MediaCard(container: AppContainer, m: Material, preview: PreviewSour
             }
             if (sensitive) SensitiveMark(Modifier.align(Alignment.Center))
         }
-        if (showTitle) Text(m.title, style = Vl.text.caption, color = Vl.colors.textPrimary, maxLines = 2)
+        if (showTitle) Text(m.title, style = Vl.text.caption, color = Vl.colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         TrackBadge(Track.TECHNICAL, MaterialTimeline.technicalTone(m.technicalState.value), tech, stringResource(R.string.material_state_technical))
         TrackBadge(Track.EDITORIAL, MaterialTimeline.editorialTone(m.editorialState.value), ed, stringResource(R.string.material_state_editorial))
         TrackBadge(Track.RIGHTS, MaterialTimeline.rightsTone(m.rightsState.value), rt, stringResource(R.string.material_state_rights))
@@ -397,7 +398,7 @@ private fun MediaCard(container: AppContainer, m: Material, preview: PreviewSour
 fun SensitiveMark(modifier: Modifier = Modifier) {
     Column(modifier.padding(VlSpace.s2), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(VlSpace.s1)) {
         Icon(Icons.Outlined.Shield, contentDescription = null, tint = Color.White, modifier = Modifier.size(VlIcon.md))
-        Text(stringResource(R.string.sensitive_no_cloud), style = Vl.text.caption, color = Color.White, maxLines = 3)
+        Text(stringResource(R.string.sensitive_no_cloud), style = Vl.text.caption, color = Color.White, maxLines = 3, overflow = TextOverflow.Ellipsis)
     }
 }
 

@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -164,7 +165,7 @@ private fun DraftRow(d: DraftEntity, onOpen: () -> Unit) {
     VlCard(modifier = Modifier.heightIn(min = MinTouchTarget).clickable(onClick = onOpen), gap = VlSpace.s2, padding = VlSpace.s4) {
         Row(horizontalArrangement = Arrangement.spacedBy(VlSpace.s3), verticalAlignment = Alignment.CenterVertically) {
             StateBadge(stringResource(R.string.a2_draft_badge), Signal.MUTED)
-            Text(d.title.ifBlank { stringResource(R.string.a2_draft_untitled) }, style = Vl.text.headline, color = Vl.colors.textPrimary, maxLines = 1)
+            Text(d.title.ifBlank { stringResource(R.string.a2_draft_untitled) }, style = Vl.text.headline, color = Vl.colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -176,7 +177,7 @@ private fun RecentRow(t: UploadTaskEntity, onOpen: () -> Unit) {
     val failed = t.state == net.palpost.library.core.upload.UploadState.FAILED.name
     VlCard(modifier = Modifier.fillMaxWidth().heightIn(min = MinTouchTarget).clickable(onClick = onOpen), gap = VlSpace.s1, padding = VlSpace.s4) {
         Row(horizontalArrangement = Arrangement.spacedBy(VlSpace.s3), verticalAlignment = Alignment.CenterVertically) {
-            Text(t.title.ifBlank { stringResource(R.string.a3_untitled) }, style = Vl.text.headline, color = Vl.colors.textPrimary, maxLines = 1, modifier = Modifier.weight(1f))
+            Text(t.title.ifBlank { stringResource(R.string.a3_untitled) }, style = Vl.text.headline, color = Vl.colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             StateBadge(stageWord(t), if (done) Signal.OK else if (failed) Signal.DANGER else Signal.BRAND)
         }
     }

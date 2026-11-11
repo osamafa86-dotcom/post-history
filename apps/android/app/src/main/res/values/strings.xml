@@ -126,15 +126,15 @@
     <string name="uploads_delete_in_gallery">تعذّر الحذف من هنا؛ احذف الملف من تطبيق المعرض أو الملفات.</string>
     <string name="upload_state_uploading">جارٍ الرفع</string>
     <string name="upload_state_failed">توقف</string>
-    <string name="upload_failure_session_expired">انتهت جلسة الرفع قبل اكتماله.</string>
-    <string name="upload_failure_checksum">بصمة الملف على الخادم لا تطابق بصمته على الجهاز.</string>
-    <string name="upload_failure_invalid_file">رفض الخادم الملف.</string>
-    <string name="upload_failure_rejected">رفض الخادم إنشاء جلسة الرفع.</string>
-    <string name="upload_failure_file_unavailable">لم يعد الملف متاحًا على الجهاز.</string>
-    <string name="upload_failure_storage">خلل في التخزين على الخادم.</string>
-    <string name="upload_failure_aborted">أُلغي الرفع.</string>
-    <string name="upload_failure_device_not_trusted">لم تتمكن خدمات Google Play من التحقق من هذا التطبيق أو الجهاز، والرفع لا يمر بدونها. ثبّت التطبيق من Google Play وحدّث خدمات Google Play ثم أعد المحاولة.</string>
-    <string name="upload_failure_unknown">توقف الرفع لسبب غير معروف.</string>
+    <string name="upload_failure_session_expired">انتهت مهلة هذا الرفع قبل أن يكتمل. أعد المحاولة ليبدأ من جديد.</string>
+    <string name="upload_failure_checksum">لم يطابق ما وصل الملفَّ المرسَل، فلم نحفظه. غالبًا انقطع جزء أثناء النقل، والخطأ ليس منك. أعد المحاولة.</string>
+    <string name="upload_failure_invalid_file">هذا الملف ليس فيديو أو صورة نقبلها. اختر ملفًا آخر.</string>
+    <string name="upload_failure_rejected">لم يُقبل هذا الرفع، وتكرار المحاولة نفسها لن ينفع. أرسل الملف من جديد، وإن تكرّر فأخبر مشرفك.</string>
+    <string name="upload_failure_file_unavailable">لم نعد نجد الملف على هذا الهاتف؛ ربما حُذف أو نُقل. اختره من جديد وأرسله.</string>
+    <string name="upload_failure_storage">تعذّر حفظ الملف عندنا، والخطأ ليس منك. أعد المحاولة بعد قليل.</string>
+    <string name="upload_failure_aborted">أُلغي هذا الرفع وحُذف ما وصل منه. أعد المحاولة إن أردت إرسال الملف.</string>
+    <string name="upload_failure_device_not_trusted">تعذّر التحقق من هذا التطبيق أو الهاتف عبر خدمات Google Play، فلا يمكن الإرسال منه الآن، والخطأ ليس في الملف. ثبّت التطبيق من Google Play وحدّث خدمات Google Play ثم أعد المحاولة.</string>
+    <string name="upload_failure_unknown">توقّف الرفع ولم نعرف السبب. أعد المحاولة، وإن تكرّر فأخبر مشرفك.</string>
 
     <!-- تهيئة قاتلات المهام -->
     <string name="setup_title">تهيئة الرفع في الخلفية</string>
