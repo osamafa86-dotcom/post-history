@@ -1,6 +1,8 @@
 import { NewsroomBoard } from "@/components/newsroom-board";
 import { BoardDisplay } from "@/components/board-display";
 import { isLocale } from "@/lib/i18n";
+import { pageMetadata } from "@/lib/page-titles";
+export const generateMetadata = pageMetadata("board");
 // ‎?display=1 وضع الشاشة الكبيرة (التدفق ج)، و‎&theme=light للوضع الفاتح؛ بدونه وضع المكتب.
 export default async function BoardPage({ params, searchParams }: { params: Promise<{ locale: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { locale } = await params, query = await searchParams, safe = isLocale(locale) ? locale : "ar";

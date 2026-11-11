@@ -66,11 +66,12 @@ export function SettingsAdmin({ locale }: { locale: Locale }) {
           {!loaded || !draft ? (failed ? <p className="notice error" role="alert">{m.error} <button type="button" className="link-button" onClick={() => { setFailed(false); setAttempt(n => n + 1); }}>{m.retry}</button></p> : <p role="status" className="muted">{m.loading}</p>)
             : <form id="platform-form" className="platform-form" noValidate onSubmit={event => { event.preventDefault(); void save(); }}>
               {platformFields.map(field => {
-                const value = cleaned![field], bad = invalid.includes(field);
+                // اسم المنصة ونص العلامة المائية لا يُقرآن بعد حيث يُعرضان: للقراءة فقط حتى يُفعَّلا، فلا يُظنّ أن تغييرهما سرى.
+                const value = cleaned![field], bad = invalid.includes(field), inactive = field !== "app_name";
                 return <div key={field} className="field">
                   <label htmlFor={`platform-${field}`}>{t.fields[field]}</label>
-                  <input id={`platform-${field}`} value={draft[field]} maxLength={platformLimits[field] * 2} disabled={mutation.busy} autoComplete="off" aria-invalid={bad ? true : undefined} aria-describedby={`platform-${field}-help`} onChange={event => { setNotice(null); setDraft({ ...draft, [field]: stripHidden(event.target.value) }); }} />
-                  <div className="field-foot"><small id={`platform-${field}-help`} className={bad ? "caption danger-text" : "caption"}>{bad ? fill(t.invalidField, { max: platformLimits[field] }) : t.help[field]}</small><LengthCounter value={value} max={platformLimits[field]} /></div>
+                  <input id={`platform-${field}`} value={draft[field]} maxLength={platformLimits[field] * 2} disabled={mutation.busy} readOnly={inactive} autoComplete="off" aria-invalid={bad ? true : undefined} aria-describedby={`platform-${field}-help`} onChange={event => { setNotice(null); setDraft({ ...draft, [field]: stripHidden(event.target.value) }); }} />
+                  <div className="field-foot"><small id={`platform-${field}-help`} className={bad ? "caption danger-text" : "caption"}>{bad ? fill(t.invalidField, { max: platformLimits[field] }) : inactive ? t.notActive : t.help[field]}</small>{!inactive && <LengthCounter value={value} max={platformLimits[field]} />}</div>
                 </div>;
               })}
               <p className="caption">{fill(t.version, { version: loaded.value.version, date: formatDate(loaded.value.updated_at, locale) })}</p>

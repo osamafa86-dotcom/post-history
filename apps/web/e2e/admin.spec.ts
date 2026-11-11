@@ -112,6 +112,9 @@ test("A6 saves the platform identity with If-Match, reloads a newer version on 4
   await login(page); await page.getByRole("link", { name: ar.settings.nav, exact: true }).click();
   const app = page.getByLabel(ar.settings.fields.app_name), save = page.getByRole("button", { name: ar.settings.save, exact: true });
   await expect(app).toHaveValue("ميدان بوست"); await expect(save).toBeDisabled();
+  // اسم المنصة ونص العلامة المائية للقراءة فقط وبسطر يقول إنهما غير مفعّلين بعد؛ اسم التطبيق يُحرَّر
+  for (const field of ["platform_name", "watermark_text"] as const) { await expect(page.getByLabel(ar.settings.fields[field])).toHaveAttribute("readonly", ""); await expect(page.locator(`#platform-${field}-help`)).toHaveText(ar.settings.notActive); }
+  await expect(app).not.toHaveAttribute("readonly", "");
   await app.fill("ميدان بوست التجريبي");
   const put = page.waitForRequest(r => r.url().endsWith("/platform-settings") && r.method() === "PUT"); await save.click(); const sent = await put;
   expect(sent.headers()["if-match"]).toBe('"1"'); expect(sent.headers()["idempotency-key"]).toMatch(key);

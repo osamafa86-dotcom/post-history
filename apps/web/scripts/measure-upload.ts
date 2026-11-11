@@ -53,7 +53,7 @@ async function main() {
   await page.goto("http://127.0.0.1:3100/ar/login");
   await page.getByLabel(ar.email).fill("reporter@example.test"); await page.getByLabel(ar.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(ar.totp, { exact: true }).fill("123456");
   await page.getByRole("button", { name: ar.signIn, exact: true }).click();
-  await page.waitForURL(/\/ar\/inbox/); await page.goto("http://127.0.0.1:3100/ar/upload");
+  await page.waitForURL(/\/ar\/my-materials/); await page.goto("http://127.0.0.1:3100/ar/upload");
   await page.getByLabel(ar.upload.choose).setInputFiles(source);
   await page.getByLabel(ar.upload.titleLabel).fill("قياس رفع اصطناعي"); await page.getByLabel(ar.governorate, { exact: true }).fill("اختبار"); await page.getByLabel(ar.upload.city).fill("اختبار");
   await page.getByRole("group", { name: ar.upload.types }).getByRole("button", { name: ar.types.raw_footage, exact: true }).click();

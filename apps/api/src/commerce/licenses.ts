@@ -1,5 +1,5 @@
 import { Controller, Get, Header, HttpCode, Inject, Injectable, Param, Post, Query, Req } from '@nestjs/common';
-import { and, count, desc, eq, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Request } from 'express';
 import type { BlockList } from 'node:net';
 import { clientBucket } from '../common/client-address';
@@ -63,7 +63,10 @@ export class LicensesService {
     const page = rows.slice(0, limit);
     const last = page[page.length - 1];
     return {
-      items: await Promise.all(page.map((r) => read(this.db, r.id))),
+      items: await readMany(
+        this.db,
+        page.map((r) => r.id),
+      ),
       next_cursor: rows.length > limit && last ? Buffer.from(JSON.stringify([last.at, last.id])).toString('base64url') : null,
     };
   }
@@ -119,41 +122,50 @@ export class LicensesService {
 }
 
 async function read(executor: Executor, id: string): Promise<License> {
-  const [r] = await executor
+  return (await readMany(executor, [id]))[0]!;
+}
+
+/** التراخيص بترتيب `ids`، في جملتين مهما كان عددها: صفحة القائمة لا تنفّذ جملة لكل صف. */
+async function readMany(executor: Executor, ids: string[]): Promise<License[]> {
+  if (ids.length === 0) return [];
+  const rows = await executor
     .select({ l: licenses, item: orderItems, v: licenseTemplateVersions, orderNumber: orders.orderNumber })
     .from(licenses)
     .innerJoin(orderItems, eq(orderItems.id, licenses.orderItemId))
     .innerJoin(orders, eq(orders.id, orderItems.orderId))
     .innerJoin(licenseTemplateVersions, and(eq(licenseTemplateVersions.templateId, orderItems.licenseTemplateId), eq(licenseTemplateVersions.version, orderItems.licenseVersion)))
-    .where(eq(licenses.id, id));
-  const { l, item, v, orderNumber } = r!;
-  const [ready] = await executor
-    .select({ id: materialFiles.id })
+    .where(inArray(licenses.id, ids));
+  const delivered = await executor
+    .selectDistinct({ licenseId: materialFiles.licenseId })
     .from(materialFiles)
-    .where(and(eq(materialFiles.licenseId, l.id), eq(materialFiles.kind, 'delivery'), eq(materialFiles.state, 'verified')))
-    .limit(1);
-  return {
-    id: l.id,
-    license_number: l.licenseNumber,
-    order_id: item.orderId,
-    order_number: orderNumber,
-    order_item_id: item.id,
-    organization_id: l.organizationId,
-    listing_id: item.listingId,
-    material_version: item.materialVersion,
-    title: { ar: item.titleAr, en: item.titleEn },
-    license_template_id: item.licenseTemplateId,
-    license_version: item.licenseVersion,
-    terms: licenseTerms(v),
-    price: { amount_minor: item.priceMinor, currency: item.currency as Currency },
-    status: l.status as LicenseStatus,
-    revoked_reason: l.revokedReason as License['revoked_reason'],
-    valid_from: iso(l.validFrom)!,
-    valid_until: iso(l.validUntil),
-    exclusive_until: iso(l.exclusiveUntil),
-    issued_at: iso(l.issuedAt)!,
-    delivery_ready: !!ready,
-  };
+    .where(and(inArray(materialFiles.licenseId, ids), eq(materialFiles.kind, 'delivery'), eq(materialFiles.state, 'verified')));
+  const ready = new Set(delivered.map((d) => d.licenseId));
+  const byId = new Map(rows.map((r) => [r.l.id, r]));
+  return ids.map((id) => {
+    const { l, item, v, orderNumber } = byId.get(id)!;
+    return {
+      id: l.id,
+      license_number: l.licenseNumber,
+      order_id: item.orderId,
+      order_number: orderNumber,
+      order_item_id: item.id,
+      organization_id: l.organizationId,
+      listing_id: item.listingId,
+      material_version: item.materialVersion,
+      title: { ar: item.titleAr, en: item.titleEn },
+      license_template_id: item.licenseTemplateId,
+      license_version: item.licenseVersion,
+      terms: licenseTerms(v),
+      price: { amount_minor: item.priceMinor, currency: item.currency as Currency },
+      status: l.status as LicenseStatus,
+      revoked_reason: l.revokedReason as License['revoked_reason'],
+      valid_from: iso(l.validFrom)!,
+      valid_until: iso(l.validUntil),
+      exclusive_until: iso(l.exclusiveUntil),
+      issued_at: iso(l.issuedAt)!,
+      delivery_ready: ready.has(l.id),
+    };
+  });
 }
 
 function decodeCursor(cursor: string): { at: string; id: string } {

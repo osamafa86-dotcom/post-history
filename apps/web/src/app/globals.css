@@ -13,6 +13,8 @@ small { font-size: max(.8em, var(--v2-font-caption-size)); }
    والنص النائب الذي لم يعد يسعه الحقل ينتهي بعلامة الحذف لا بحرف مقطوع. */
 @media (pointer: coarse) { input, select, textarea { font-size: 16px !important; } input { text-overflow: ellipsis; } }
 a { color: inherit; text-decoration: none; }
+/* تلميح اختصارات لوحة المفاتيح لا يُعرض حيث لا لوحة مفاتيح: على اللمس */
+@media (hover: none) and (pointer: coarse) { .keyboard-hint { display: none; } }
 /* العنوان نص حرّ يكتبه المراسل (وسم بشرطات سفلية، اسم ملف ملصوق): ينكسر داخل عرضه ولا يوسّع الصفحة. `anywhere` لا `break-word`: يصغّر أدنى
    عرضٍ للعنصر أيضًا، فلا يمدّ العنوانُ عمودَ الشبكة أو صفّ flex الذي يحمله. */
 h1, h2, h3 { overflow-wrap: anywhere; }
@@ -1114,6 +1116,8 @@ html[dir="ltr"] .back-link .icon { transform: scaleX(-1); }
 .settings-side { grid-column: 2; grid-row: 1; }
 .settings-main > .card, .settings-side > .card { margin: 0; }
 .platform-form { display: grid; gap: var(--v2-space-5); }
+/* حقل للقراءة فقط يُرى كذلك: سطح غائر ونص ثانوي */
+.platform-form input[readonly] { background: var(--v2-c-bg-sunken); color: var(--v2-c-text-secondary); }
 .platform-form .field { display: grid; gap: var(--v2-space-2); }
 .platform-form input { min-block-size: var(--v2-size-touch-min); border-radius: var(--v2-radius-full); }
 .platform-form .notice { margin: 0; }

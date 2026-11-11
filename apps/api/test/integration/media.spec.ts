@@ -407,7 +407,8 @@ describe('media worker interface (/internal/media/*, ADR 0006)', () => {
       await drainOutbox(h);
       const { rows } = await h.pool.query<{ id: string }>(`SELECT id::text FROM outbox_events WHERE aggregate_id = $1 AND type = 'upload.original_received'`, [s.id]);
       const entries = await redis.xrevrange(MEDIA_STREAM, '+', '-', 'COUNT', 2000);
-      const mine = entries.filter(([, fields]) => fields[1] === rows[0]!.id);
+      // معرّف الحدث رقم يبدأ من جديد مع كل قاعدة، وRedis قد يحمل مدخلات قاعدة سابقة بالرقم نفسه: المطابقة بالرقم وبجلسة هذا الاختبار
+      const mine = entries.filter(([, fields]) => fields[1] === rows[0]!.id && (JSON.parse(fields[3]!) as { aggregate_id: string }).aggregate_id === s.id);
       expect(mine).toHaveLength(1);
       const [, fields] = mine[0]!;
       expect(fields[0]).toBe('event_id');

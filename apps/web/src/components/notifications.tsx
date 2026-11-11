@@ -56,7 +56,7 @@ export function Notifications({ locale }: { locale: Locale }) {
     <div className="notice-tools">
       <nav className="quick-tabs" aria-label={t.tabsLabel}>{panelTabs.map(which => <button key={which} type="button" className={tab === which ? "chip active" : "chip"} aria-pressed={tab === which} onClick={() => { setTab(which); setSelected(null); }}>{t.pageTabs[which]}{data ? <span className="tab-count" dir="ltr">{count(which)}</span> : null}</button>)}</nav>
       <label className="checkbox-label"><input type="checkbox" checked={unread} onChange={e => { setUnread(e.target.checked); setCursors([undefined]); setData(null); }} />{t.unread}</label>
-      <p className="caption">{t.unreadCount}: <bdi dir="ltr">{data?.unread_count ?? m.notAvailable}</bdi> · {t.shortcuts}</p>
+      <p className="caption">{t.unreadCount}: <bdi dir="ltr">{data?.unread_count ?? m.notAvailable}</bdi><span className="keyboard-hint"> · {t.shortcuts}</span></p>
     </div>
     {failed && data && <section className="offline-banner" role="status"><Icon name="offline" size={22} /><div><h2>{t.staleTitle}</h2><p>{t.staleBody}</p></div><button className="secondary" onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></section>}
     <ActionStatus status={mutation.status} locale={locale} />

@@ -4,7 +4,7 @@ import en from "../messages/en.json" with { type: "json" };
 const first = "20000000-0000-4000-8000-000000000001";
 async function login(page: Page, role: string, locale: "ar" | "en" = "ar") {
   const m = locale === "ar" ? ar : en;
-  await page.goto(`/${locale}/login`); await page.getByLabel(m.email).fill(`${role}@example.test`); await page.getByLabel(m.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(m.totp, { exact: true }).fill("123456"); await page.getByRole("button", { name: m.signIn, exact: true }).click(); await expect(page.getByTestId("material-row")).toHaveCount(50);
+  await page.goto(`/${locale}/login`); await page.getByLabel(m.email).fill(`${role}@example.test`); await page.getByLabel(m.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(m.totp, { exact: true }).fill("123456"); await page.getByRole("button", { name: m.signIn, exact: true }).click(); await page.waitForURL(/\/(inbox|my-materials)$/); if (!page.url().endsWith("/inbox")) await page.goto(page.url().replace(/[^/]+$/, "inbox")); await expect(page.getByTestId("material-row")).toHaveCount(50);
 }
 test.beforeEach(async ({ request }) => { await request.post("http://127.0.0.1:3201/__test/reset"); await request.post("http://127.0.0.1:3201/__test/request-changes"); });
 
