@@ -1510,7 +1510,8 @@
       "effect": "The request of “{name}” will be rejected: it cannot browse the catalog or buy, and its members see the reason. You can restore it later from its profile.",
       "done": "The join request was rejected.",
       "help": "The join request was rejected: {reason}. It cannot browse or buy until you return it to “Pending verification” or activate it from its profile."
-    }
+    },
+    "seatsPair": "{active} of {seats}"
   },
   "licenses": {
     "nav": "Licenses",
@@ -1568,7 +1569,7 @@
     "revokedHelp": "This license is revoked ({reason}): new use and downloads stop.",
     "filesNote": "Delivered files are stripped of precise location and device data; the raw original is never delivered.",
     "deliveryContents": "Delivery contents",
-    "deliverySize": "Package size: {size} MiB",
+    "deliverySize": "Package size: {size} MB",
     "mine": "My licenses",
     "colMaterial": "Footage",
     "colOrder": "Order",
@@ -2865,5 +2866,25 @@
       "other": "{n} materials"
     }
   },
-  "errorBody": "The server did not respond, and nothing changed."
+  "errorBody": "The server did not respond, and nothing changed.",
+  "governorates": {
+    "القدس": "Jerusalem",
+    "رام الله والبيرة": "Ramallah and Al-Bireh",
+    "رام الله": "Ramallah",
+    "بيت لحم": "Bethlehem",
+    "الخليل": "Hebron",
+    "أريحا والأغوار": "Jericho and the Jordan Valley",
+    "أريحا": "Jericho",
+    "نابلس": "Nablus",
+    "جنين": "Jenin",
+    "طولكرم": "Tulkarm",
+    "قلقيلية": "Qalqilya",
+    "سلفيت": "Salfit",
+    "طوباس": "Tubas",
+    "شمال غزة": "North Gaza",
+    "غزة": "Gaza",
+    "دير البلح": "Deir al-Balah",
+    "خان يونس": "Khan Yunis",
+    "رفح": "Rafah"
+  }
 }

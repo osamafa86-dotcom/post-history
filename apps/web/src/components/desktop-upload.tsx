@@ -14,6 +14,7 @@ import { DynamicForm } from "./dynamic-form";
 import { NoAccess } from "./empty-state";
 import { Icon, type IconName } from "./icon";
 import { TagEntry } from "./tag-entry";
+import { numberLocale } from "@/lib/format";
 
 type Row = { key: string; record: string; name: string; materialId: string; update: UploadUpdate; control?: UploadControl; verifiedAt?: number };
 type Base = { title: string; types: MaterialType[]; tags: string[]; governorate: string; city: string; shot_at: string; priority: Material["priority"]; sensitivity: SensitivityAnswers; mode: Material["display_name"]["mode"]; pseudonym: string };
@@ -242,5 +243,5 @@ function UploadRow({ row, online, locale, pick }: { row: Row; online: boolean; l
 function bytes(value: number, locale: Locale) {
   const units = ["B", "KB", "MB", "GB", "TB"]; let index = 0, size = value;
   while (size >= 1024 && index < units.length - 1) { size /= 1024; index++; }
-  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(size)} ${units[index]}`;
+  return `${new Intl.NumberFormat(numberLocale(locale), { maximumFractionDigits: 1 }).format(size)} ${units[index]}`;
 }

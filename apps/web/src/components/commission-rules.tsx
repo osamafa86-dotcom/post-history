@@ -11,9 +11,10 @@ import { licenseTypes } from "@/lib/license-policy";
 import { basisPointsMax, commissionInput, commissionReaders, commissionScopes, commissionWriters, currentRules, emptyRule, type CommissionRule, type CommissionRuleInput } from "@/lib/commission-policy";
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
+import { numberLocale } from "@/lib/format";
 
 type Scope = CommissionRuleInput["scope"];
-const percent = (points: number, locale: Locale) => new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 2 }).format(points / 10000);
+const percent = (points: number, locale: Locale) => new Intl.NumberFormat(numberLocale(locale), { style: "percent", maximumFractionDigits: 2 }).format(points / 10000);
 
 /** قواعد العمولة للمالية: سجل إصدارات لا يُعدَّل؛ مدير النظام يضيف إصدارًا بتاريخ سريان. */
 export function CommissionRules({ locale }: { locale: Locale }) {
