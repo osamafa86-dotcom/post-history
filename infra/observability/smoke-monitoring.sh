@@ -4,11 +4,14 @@
 # يثبت:
 #   - سجل حاوية يصل إلى Loki باسمها (الوسم tag)، وما فيه من عنوان ورمز ومعرّف رفع وإحداثيات وجهاز منقّى قبل التخزين؛
 #   - تتبّع OTLP يصير مقياس طلبات في Prometheus، ومقياس OTLP يصل كما هو؛
+#   - مُصدِّر الخادم ومُصدِّر عامل الوسائط كما هما في المستودع يبلغان المجمّع على شبكتَي المقاييس، ومقاييسهما تُقرأ من Prometheus
+#     بالأسماء التي تستعملها قواعد التنبيه، والقواعد محمّلة وتنطلق على قيمها؛
 #   - مقاييس المضيف والفحوص الصحية (healthcheck.sh --prom) في Prometheus؛
 #   - Grafana بمصدريه ولوحته، وعلى 127.0.0.1 وحده، ولا منفذ آخر منشور؛
 #   - كل خدمة محدودة الذاكرة بلا swap، والاستهلاك الفعلي تحت الحدود.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$HERE/../.." && pwd)"
 JSON=""
 [ "${1:-}" = --json ] && JSON="$2"
 WORK="$(mktemp -d)"
@@ -86,6 +89,84 @@ echo "OTLP span to request metrics and OTLP metric in Prometheus: ok"
 until_ok 20 'has node_memory_MemAvailable_bytes' || fail "no host metric in Prometheus"
 until_ok 20 'has post_history_checks_failed' || fail "no health check metric in Prometheus (healthcheck.sh --prom)"
 echo "host metrics and health checks in Prometheus: ok"
+
+# ---- Application metrics (ADR 0027, amendment 2026-11-11) ----
+# The collector is alone on the two telemetry networks, both internal: applications reach it and nothing else of this stack.
+collector="$(docker inspect -f '{{.Name}}' "$("${C[@]}" ps -q otel-collector)")"
+for net in post-history-telemetry-api post-history-telemetry-workers; do
+  on="$(docker network inspect "$net" -f '{{.Internal}}{{range .Containers}} /{{.Name}}{{end}}')" || fail "no network $net"
+  [ "$on" = "true $collector" ] || fail "$net is not an internal network with the collector alone on it: $on"
+done
+# The address the trial's override gives the server and the workers, read from the override itself with its default host.
+ENDPOINT="$(sed -n 's/^ *OTEL_EXPORTER_OTLP_ENDPOINT: *//p' "$HERE/compose.telemetry.yml" | sort -u)"
+ENDPOINT="${ENDPOINT/\$\{TELEMETRY_COLLECTOR_HOST:-otel-collector\}/otel-collector}"
+[ "$ENDPOINT" = http://otel-collector:4318 ] || fail "compose.telemetry.yml does not point at the collector's OTLP port: $ENDPOINT"
+NODE_IMAGE="$(sed -n 's/^ *image: \(node:[^ ]*\)$/\1/p' "$ROOT/infra/compose/docker-compose.yml" | head -1)"
+PY_IMAGE="$(sed -n 's/^FROM \(python:[^ ]*\) AS base$/\1/p' "$ROOT/workers/media/Dockerfile" | head -1)"
+[ -n "$NODE_IMAGE" ] && [ -n "$PY_IMAGE" ] || fail "cannot find the pinned node and python images in the repository"
+# The server's own exporter (apps/api/src/metrics/otlp.ts, no imports) on the api telemetry network: two requests, a full
+# database pool with waiting requests, and an outbox with a dead event and an old pending one.
+docker run --rm --network post-history-telemetry-api --user 65534:65534 --read-only --cap-drop ALL \
+  -v "$ROOT/apps/api/src/metrics/otlp.ts:/m/otlp.ts:ro" --entrypoint node "$NODE_IMAGE" --no-warnings --input-type=module -e '
+import { RequestDurations, metricsPayload, pushMetrics, unixNano } from "/m/otlp.ts";
+const durations = new RequestDurations();
+durations.record("GET", "/v1/smoke", 200, 0.02);
+durations.record("GET", "/v1/smoke", 500, 0.2);
+const now = unixNano();
+const payload = metricsPayload({ started: now, at: now, requests: durations.series(),
+  pool: { idle: 0, used: 10, max: 10, pending: 2 }, outbox: { pending: 3, dead: 1, oldest: 3600 } });
+const status = await pushMetrics(process.argv[1], payload, 5000);
+if (status !== 200) { console.error(`the collector answered ${status}`); process.exit(1); }' "$ENDPOINT" \
+  || fail "the server exporter did not reach the collector on the api telemetry network"
+# The media worker's own exporter (workers/media/src/media_worker/metrics.py, standard library only) on the workers network.
+docker run --rm --network post-history-telemetry-workers --user 65534:65534 --read-only --cap-drop ALL \
+  -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/src -v "$ROOT/workers/media/src:/src:ro" --entrypoint python "$PY_IMAGE" -c '
+import sys
+from media_worker.metrics import Metrics
+metrics = Metrics(sys.argv[1], "media-worker", interval_s=0)
+metrics.event("media:events", "upload.verified", "done", 1.5)
+sys.exit(0 if metrics.flush_if_due() else 1)' "$ENDPOINT" \
+  || fail "the media worker exporter did not reach the collector on the workers telemetry network"
+# Read back from Prometheus under the names and labels the alert rules use.
+app_names() { get "http://127.0.0.1:9090/api/v1/label/__name__/values" | tr ',' '\n' | tr -d '"[]{}' | grep -E '^(http_server|db_client|outbox|media_worker)' | tr '\n' ' '; }
+for m in 'http_server_request_duration_seconds_count{http_request_method="GET",http_route="/v1/smoke",http_response_status_code="500"}' \
+         'db_client_connection_count{db_client_connection_state="used"}' db_client_connection_max db_client_connection_pending_requests \
+         outbox_events_pending outbox_events_dead outbox_events_oldest_pending_age_seconds \
+         'media_worker_events_total{queue="media:events",event_type="upload.verified",outcome="done"}' media_worker_event_duration_seconds_count; do
+  until_ok 40 "has '$m'" || fail "an application metric did not reach Prometheus: $m (present: $(app_names))"
+done
+echo "server and media worker exporters reach the collector, their metrics read from Prometheus: ok"
+# Alert rules: loaded, and the three whose condition the values above meet are raised (pending counts: 'for' has not elapsed).
+rules="$(get http://127.0.0.1:9090/api/v1/rules)"
+for a in OutboxDeadEvents OutboxOldestPendingAge ServerErrorRatio DatabasePoolExhausted; do
+  grep -q "\"name\":\"$a\"" <<<"$rules" || fail "alert rule $a is not loaded"
+done
+if grep -q '"health":"err"' <<<"$rules"; then fail "an alert rule fails to evaluate"; fi
+for a in OutboxDeadEvents OutboxOldestPendingAge DatabasePoolExhausted; do
+  until_ok 40 "has 'ALERTS{alertname=\"$a\"}'" || fail "alert $a is not raised by the server's metrics"
+done
+echo "alert rules loaded, raised by a dead outbox event, an old pending event and an exhausted pool: ok"
+# The override renders over the base compose (its .env is written by CI and by a local setup) and wires what it says.
+if [ -f "$ROOT/infra/compose/.env" ]; then
+  docker compose -f "$ROOT/infra/compose/docker-compose.yml" -f "$HERE/compose.telemetry.yml" --profile api --profile media \
+    config --format json > "$WORK/telemetry.json" 2> "$WORK/telemetry.err" \
+    || { cat "$WORK/telemetry.err" >&2; fail "compose.telemetry.yml does not render over the base compose"; }
+  python3 - "$WORK/telemetry.json" "$ENDPOINT" <<'PY' || fail "compose.telemetry.yml does not wire the server and the media worker as it says"
+import json, sys
+services = json.load(open(sys.argv[1]))["services"]
+want = {"api": "telemetry-api", "media-worker": "telemetry-workers"}
+bad = [name for name, net in want.items()
+       if services[name]["environment"].get("OTEL_EXPORTER_OTLP_ENDPOINT") != sys.argv[2] or net not in services[name]["networks"]
+       or any(other in services[name]["networks"] for other in want.values() if other != net)]
+# the media worker stays on its internal network plus the telemetry one, nothing else
+if sorted(services["media-worker"]["networks"]) != ["media", "telemetry-workers"]:
+    bad.append("media-worker networks")
+print(", ".join(bad)); sys.exit(1 if bad else 0)
+PY
+  echo "telemetry override over the base compose: server and media worker wired, each on its own network: ok"
+else
+  echo "telemetry override render: skipped (no infra/compose/.env on this host)"
+fi
 
 g() { curl -sS --max-time 10 -u "admin:$GPW" "http://127.0.0.1:$GRAFANA_PORT$1"; }
 [ "$(g /api/datasources | python3 -c 'import json,sys; print(sorted(d["type"] for d in json.load(sys.stdin)))')" = "['loki', 'prometheus']" ] \

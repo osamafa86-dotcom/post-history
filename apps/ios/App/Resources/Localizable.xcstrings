@@ -1487,13 +1487,13 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "بصمة الخادم تخالف بصمة الملف؛ أعد الرفع."
+            "value": "لم يطابق ما وصل الملفَّ المرسَل، فلم نحفظه. غالبًا انقطع جزء أثناء النقل، والخطأ ليس منك. أعد المحاولة."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The server fingerprint differs from the file's; upload again."
+            "value": "What arrived did not match the file you sent, so we did not keep it. A part was most likely lost on the way, and it is not your mistake. Try again."
           }
         }
       }
@@ -1504,13 +1504,13 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "الخادم رفض الملف."
+            "value": "هذا الملف ليس فيديو أو صورة نقبلها. اختر ملفًا آخر."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The server rejected the file."
+            "value": "This file is not a video or photo we accept. Choose another file."
           }
         }
       }
@@ -1521,13 +1521,13 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "تعذّر إثبات الجهاز للخادم، فلا يمكن الرفع من هذا الجهاز الآن."
+            "value": "تعذّر التحقق من هذا الهاتف، فلا يمكن الإرسال منه الآن، والخطأ ليس في الملف. أعد المحاولة لاحقًا، وإن تكرّر فأخبر مشرفك."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This device could not be verified with the server, so it cannot upload right now."
+            "value": "This phone could not be verified, so it cannot send right now; the file is not the problem. Try again later, and tell your supervisor if it happens again."
           }
         }
       }
@@ -1538,13 +1538,64 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "انتهت جلسة الرفع؛ ابدأ رفعًا جديدًا."
+            "value": "انتهت مهلة هذا الرفع قبل أن يكتمل. أعد المحاولة ليبدأ من جديد."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The upload session expired; start a new upload."
+            "value": "This upload ran out of time before it finished. Try again to start it afresh."
+          }
+        }
+      }
+    },
+    "upload.announce.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر رفع ملف. السبب في شاشة الرفع."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A file could not be uploaded. The reason is on the uploads screen."
+          }
+        }
+      }
+    },
+    "upload.announce.paused": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "توقّف رفع ملف مؤقتًا."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An upload is paused."
+          }
+        }
+      }
+    },
+    "upload.announce.arrived": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "وصل ملف."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A file has arrived."
           }
         }
       }
@@ -1555,13 +1606,13 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "أُسقط الرفع على الخادم."
+            "value": "أُلغي هذا الرفع وحُذف ما وصل منه. أعد المحاولة إن أردت إرسال الملف."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The upload was dropped on the server."
+            "value": "This upload was cancelled and what had arrived was deleted. Try again if you still want to send the file."
           }
         }
       }
@@ -1572,13 +1623,13 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "خطأ في التخزين على الخادم."
+            "value": "تعذّر حفظ الملف عندنا، والخطأ ليس منك. أعد المحاولة بعد قليل."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A storage error occurred on the server."
+            "value": "We could not save the file on our side, and it is not your mistake. Try again in a little while."
           }
         }
       }
@@ -1589,13 +1640,13 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "الملف المحلي لم يعد موجودًا."
+            "value": "لم نعد نجد الملف على هذا الهاتف؛ ربما حُذف أو نُقل. اختره من جديد وأرسله."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The local file no longer exists."
+            "value": "We can no longer find the file on this phone; it may have been deleted or moved. Choose it again and send it."
           }
         }
       }
@@ -1606,13 +1657,13 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "رفض الخادم الطلب."
+            "value": "لم يُقبل هذا الرفع، وتكرار المحاولة نفسها لن ينفع. أرسل الملف من جديد، وإن تكرّر فأخبر مشرفك."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The server rejected the request."
+            "value": "This upload was not accepted, and repeating the same attempt will not help. Send the file again, and tell your supervisor if it happens again."
           }
         }
       }

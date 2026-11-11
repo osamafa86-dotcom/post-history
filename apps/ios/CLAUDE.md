@@ -19,6 +19,7 @@
 - الإرسال للمراسلين وحدهم (الخطة؛ ADR 0011 و0088): `SendAccess` في `MaterialsCore` من أدوار `GET /auth/me` (وقبله الجلسة المحفوظة)؛ حساب بلا دور مراسل لا يرى شاشة الإرسال بل `send.notReporter`. ورفض الدور `403 forbidden_role`/`forbidden_scope` على الجلسة أو التحدي أو رمز البوابة `UploadFailure.notPermitted`، غير `deviceNotAttested` (`attestation_failed`)؛ لا يُخلطان.
 - تحديث يطلبه ظهور شاشة يمر بـ `RefreshGate` (`MaterialsCore`): طلب واحد في الطريق، ولا طلب والنتيجة طازجة، ومهلة متزايدة بعد الفشل. لا `.task` يطلب في كل ظهور بلا باب، ولا نشر لقيمة لم تتغيّر (بناء TestFlight 13: نحو 76 زوجًا من `/auth/me` و`/materials` في ثانية).
 - شاشة الإرسال الواحدة في `App/Sources/Send/` ومنطقها الصرف (الوسوم بقاعدة العقد، وسبب تعطيل الإرسال، وسؤال الحساسية، والمكان المتذكَّر، والإرسالات) في `MaterialsCore` مختبر على Linux.
+- فشل الرفع يُقال بكلمات المراسل (`upload.failure.*`: ما حدث ثم الخطوة، بلا «خادم» ولا «بصمة» ولا «جلسة»، والنصوص نفسها في أندرويد). وتغيّر حالة الرفع يُعلَن لقارئ الشاشة مرة عند الانتقال إلى «تعذّر» أو «متوقف» أو «وصل» (`UploadAnnouncement` في `MaterialsCore`، ويرسله `UploadQueueModel.publishVisible`)، بنص عام بلا عنوان ولا اسم ملف، ولا إعلان لكل نسبة.
 - الاختبارات: `cd Packages/PostHistoryKit && swift test` (مع `TUSD_URL=http://127.0.0.1:8080/files/` يُشغَّل تكامل tusd الحي). النصوص في `App/Resources/Localizable.xcstrings` (ar/en).
 
 ## التقنية

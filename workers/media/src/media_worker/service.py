@@ -27,15 +27,17 @@ import signal
 import socket
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import redis
 
-from .api import ApiAuthError, ApiConflict, ApiGone, ApiRejected, InternalApi
+from .api import REQUEST_ID, ApiAuthError, ApiConflict, ApiGone, ApiRejected, InternalApi
 from .c2pa import Signing, signing_from_env
 from .circulated import OverlayRenderer
 from .jobs import Buckets, Jobs
+from .metrics import Metrics
 from .probe import InvalidMediaError
 from .proxy import ProxyTimingError
 from .storage import S3Storage
@@ -100,6 +102,8 @@ class Config:
     watermark_key: bytes = field(default=b"", repr=False)
     # توقيع C2PA (ADR 0060) خلف MEDIA_ENABLE_C2PA؛ الإعداد الناقص يرفض الإقلاع
     c2pa: Signing | None = None
+    # عنوان المجمّع المستضاف ذاتيًا (ADR 0027)؛ غيابه = لا مقاييس تخرج من العامل
+    otlp_endpoint: str | None = None
 
     @classmethod
     def from_env(cls) -> Config:
@@ -124,14 +128,17 @@ class Config:
             enable_renders=e.get("MEDIA_ENABLE_RENDERS", "false").lower() == "true",
             watermark_key=e.get("MEDIA_WATERMARK_KEY", "").encode(),
             c2pa=signing_from_env(dict(e)),
+            otlp_endpoint=e.get("OTEL_EXPORTER_OTLP_ENDPOINT") or None,
         )
 
 
 class Service:
     def __init__(self, r: redis.Redis, jobs: Jobs, consumer: str, block_ms: int = 5000,
                  claim_idle_ms: int = 15 * 60 * 1000, max_deliveries: int = 5, auth_backoff_max_s: float = 300.0,
-                 sleep=time.sleep, auth_isolate_after_s: float = 1800.0, stream: str = STREAM, group: str = GROUP):
+                 sleep=time.sleep, auth_isolate_after_s: float = 1800.0, stream: str = STREAM, group: str = GROUP,
+                 metrics: Metrics | None = None):
         self.r = r
+        self.metrics = metrics
         self.stream = stream
         self.group = group
         self.auth_backoff_max_s = auth_backoff_max_s
@@ -213,14 +220,23 @@ class Service:
             return self._dead_letter(entry_id, fields, event, "max_deliveries", "storage_error")
         if not isinstance(event, dict):
             return self._dead_letter(entry_id, fields, event, "malformed_event", "storage_error")
+        # معرّف ترابط عشوائي لهذا التسليم (ADR 0027): يُرسل مع نداءات الخادم الداخلية ويُكتب في سطر النتيجة هنا
+        request_id = f"media-{uuid.uuid4().hex}"
+        token = REQUEST_ID.set(request_id)
         release_claim = self._keep_claim(entry_id)
+        started = time.monotonic()
         try:
             done, outcome = self._attempt(entry_id, fields, event)
         finally:
             release_claim()
+            REQUEST_ID.reset(token)
         if done:
             self.r.xack(self.stream, self.group, entry_id)
-            log.info("event done entry=%s type=%s outcome=%s", entry_id, event.get("type"), outcome)
+            log.info("event done entry=%s type=%s outcome=%s request_id=%s", entry_id, event.get("type"), outcome, request_id)
+        else:
+            log.warning("event not done entry=%s outcome=%s request_id=%s", entry_id, outcome.split(":")[0], request_id)
+        if self.metrics:
+            self.metrics.event(self.stream, event.get("type"), "done" if done else outcome.split(":")[0], time.monotonic() - started)
         return outcome
 
     def _attempt(self, entry_id: str, fields: dict, event: dict) -> tuple[bool, str]:
@@ -286,6 +302,8 @@ class Service:
         self.ensure_group()
         while not self.stopped:
             self.run_once()
+            if self.metrics:
+                self.metrics.flush_if_due()
 
 
 def requeue_main(reason: str, queue: str = "events") -> None:
@@ -319,7 +337,8 @@ def main(queue: str = "events") -> None:
                 enable_renders=cfg.enable_renders and queue == "renders", renderer=renderer)
     svc = Service(redis.Redis.from_url(cfg.redis_url, decode_responses=True), jobs, cfg.consumer, cfg.block_ms,
                   cfg.claim_idle_ms, cfg.max_deliveries, cfg.auth_backoff_max_s,
-                  auth_isolate_after_s=cfg.auth_isolate_after_s, stream=stream, group=group)
+                  auth_isolate_after_s=cfg.auth_isolate_after_s, stream=stream, group=group,
+                  metrics=Metrics(cfg.otlp_endpoint, "media-worker"))
 
     def stop(*_):
         svc.stopped = True
