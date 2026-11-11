@@ -3169,6 +3169,11 @@ export interface components {
              * @enum {string|null}
              */
             proxy_mode?: "urgent" | "normal" | null;
+            /**
+             * Format: uuid
+             * @description معرّف الملف الذي اشتق الخادم هذا الملف منه (أُضيف بعد v0.3، ADR 0119)؛ `null` لملف مرفوع: الأصل، ونسخة الهاتف الخفيفة. به يميّز العميل النسخة الخفيفة التي صنعها الخادم من الأصل عن نسخة الهاتف المرفوعة، وهي لصاحب المادة وحده ولا تُعرض معاينةً للطاقم. غيابه يُعامل كـ `null`.
+             */
+            derived_from_id?: string | null;
             /** @description لـ `proxy` وحده (v0.3)؛ `null` أو غائب قبل القياس أو لغير النسخة الخفيفة */
             alignment?: components["schemas"]["MediaAlignment"] | null;
             size_bytes?: number | null;

@@ -5200,6 +5200,13 @@ components:
           enum: [original, proxy, hls, audio, thumbnail, voice_note, transcript, captions, shot_list, produced]
         state: { type: string, enum: [uploading, received, verified, failed] }
         proxy_mode: { type: [string, "null"], enum: [urgent, normal, null], description: وضع النسخة الخفيفة }
+        derived_from_id:
+          type: [string, "null"]
+          format: uuid
+          description: >-
+            معرّف الملف الذي اشتق الخادم هذا الملف منه (أُضيف بعد v0.3، ADR 0119)؛ `null` لملف مرفوع: الأصل، ونسخة الهاتف الخفيفة.
+            به يميّز العميل النسخة الخفيفة التي صنعها الخادم من الأصل عن نسخة الهاتف المرفوعة، وهي لصاحب المادة وحده ولا تُعرض
+            معاينةً للطاقم. غيابه يُعامل كـ `null`.
         alignment:
           description: لـ `proxy` وحده (v0.3)؛ `null` أو غائب قبل القياس أو لغير النسخة الخفيفة
           oneOf:
