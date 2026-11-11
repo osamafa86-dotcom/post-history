@@ -1,5 +1,5 @@
 "use client";
-import { NoAccess } from "./empty-state";
+import { EmptyState, ErrorState, NoAccess } from "./empty-state";
 import { useEffect, useState } from "react";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { messages, type Locale } from "@/lib/i18n";
@@ -54,12 +54,12 @@ export function NotificationRules({ locale }: { locale: Locale }) {
   }
   const set = <K extends keyof RuleInput>(key: K, value: RuleInput[K]) => setDraft(current => current && { ...current, rule: { ...current.rule, [key]: value } });
 
-  return <><div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p>{!admin && <p className="notice">{t.readOnly}</p>}</div>{admin && !draft && <button onClick={() => { mutation.clearStatus(); setInvalid(false); setDraft({ id: null, tag: null, rule: emptyRule() }); }}>{t.new}</button>}</div>
+  return <><div className="page-heading"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p>{!admin && <p className="notice">{t.readOnly}</p>}</div>{admin && !draft && !(rules && !rules.length) && <button onClick={() => { mutation.clearStatus(); setInvalid(false); setDraft({ id: null, tag: null, rule: emptyRule() }); }}>{t.new}</button>}</div>
     {!draft && <ActionStatus status={mutation.status} locale={locale} />}
     {draft ? <RuleForm locale={locale} rule={draft.rule} set={set} busy={mutation.busy} onSave={() => void save()} onCancel={() => setDraft(null)} invalid={invalid} status={mutation.status} />
-      : error ? <section className="center-state" role="alert"><p>{m.error}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></section>
+      : error ? <ErrorState locale={locale} testId="rules-error" title={t.loadFailed} retry={() => setAttempt(n => n + 1)} />
       : !rules ? <p className="center-state" role="status">{m.loading}</p>
-      : !rules.length ? <p className="empty">{t.empty}</p>
+      : !rules.length ? <EmptyState icon="rules" testId="rules-empty" title={t.emptyTitle} actions={admin ? <button type="button" onClick={() => { mutation.clearStatus(); setInvalid(false); setDraft({ id: null, tag: null, rule: emptyRule() }); }}>{t.new}</button> : null}><p>{admin ? t.emptyBody : t.emptyReadOnly}</p></EmptyState>
       : <div className="table-panel"><div className="table-scroll"><table><thead><tr>{[t.name, t.event, t.channels, t.levels, t.enabled, ""].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
         <tbody>{rules.map(rule => <tr key={rule.id} data-testid="rule-row"><td>{rule.name}</td><td>{t.events[rule.event_type]}</td><td>{rule.channels.map(c => t.channelNames[c]).join(" · ")}</td><td>{rule.escalation?.length ?? 0}</td><td><span className={`badge ${rule.enabled ? "good" : ""}`}>{rule.enabled ? t.enabled : t.disabled}</span></td>
           <td>{admin && <div className="actions"><button className="secondary" onClick={() => void open(rule)}>{t.edit}</button><button className="quiet" onClick={() => { mutation.clearStatus(); setRemoving(rule); }}>{t.delete}</button></div>}</td></tr>)}</tbody></table></div></div>}

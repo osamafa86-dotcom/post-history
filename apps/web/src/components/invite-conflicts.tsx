@@ -8,6 +8,8 @@ import { useMutation } from "@/lib/use-mutation";
 import { conflictRoles, conflictStates, nextStates, type InviteConflict, type InviteConflictResolve } from "@/lib/invite-conflict-policy";
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
+import { fill } from "@/lib/admin-text";
+import { localized } from "@/lib/store-format";
 
 type State = InviteConflict["state"];
 type Pending = { conflict: InviteConflict; state: InviteConflictResolve["state"] };
@@ -16,13 +18,20 @@ type Pending = { conflict: InviteConflict; state: InviteConflictResolve["state"]
 export function InviteConflicts({ locale }: { locale: Locale }) {
   const m = messages[locale], t = m.conflicts, me = useUser(), allowed = hasRole(me, ...conflictRoles), mutation = useMutation();
   const [state, setState] = useState<State | "">("pending"), [items, setItems] = useState<InviteConflict[] | null>(null), [cursor, setCursor] = useState<string | null>(null);
-  const [error, setError] = useState(false), [attempt, setAttempt] = useState(0), [pending, setPending] = useState<Pending | null>(null), [code, setCode] = useState("");
+  const [error, setError] = useState(false), [attempt, setAttempt] = useState(0), [pending, setPending] = useState<Pending | null>(null), [code, setCode] = useState(""), [organizations, setOrganizations] = useState<Record<string, string>>({});
   useEffect(() => {
     if (!allowed) return;
     const controller = new AbortController();
     void browserApi().GET("/buyer-invite-conflicts", { params: { query: state ? { state } : {} }, signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setItems(data.items); setCursor(data.next_cursor); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [allowed, state, attempt]);
+  // اسم المؤسسة بدل معرّفها: من قائمة المؤسسات القائمة. إن تعذّرت بقي أول المعرّف، والمعرّف كاملًا في التلميح.
+  useEffect(() => {
+    if (!allowed) return;
+    const controller = new AbortController();
+    void browserApi().GET("/buyer-organizations", { params: { query: {} }, signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) setOrganizations(Object.fromEntries(data.items.map(item => [item.id, localized(item.display_name, locale)]))); }).catch(() => { /* يبقى أول المعرّف */ });
+    return () => controller.abort();
+  }, [allowed, locale]);
   if (!allowed) return <NoAccess locale={locale} me={me} title={t.title} denied={t.denied} />;
 
   async function more() {
@@ -47,11 +56,13 @@ export function InviteConflicts({ locale }: { locale: Locale }) {
     {error ? <section className="center-state" role="alert"><p>{m.error}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></section>
       : !items ? <p className="center-state" role="status">{m.loading}</p>
       : !items.length ? <p className="empty">{t.empty}</p>
-      : <><div className="table-panel"><div className="table-scroll"><table><thead><tr>{[t.email, t.organization, t.role, t.state, t.created, t.expires, ""].map((label, i) => <th scope="col" key={i}>{label}</th>)}</tr></thead>
-        <tbody>{items.map(item => <tr key={item.id} data-testid="conflict-row"><td><bdi dir="ltr">{item.email}</bdi></td><td><bdi dir="ltr">{item.organization_id}</bdi></td><td>{m.buyers.roles[item.role]}</td>
-          <td><span className={`badge ${item.state === "pending" ? "" : item.state === "dismissed" ? "good" : "bad"}`}>{t.states[item.state]}</span>{item.resolved_at && <small className="muted"> {formatDate(item.resolved_at, locale)}</small>}</td>
-          <td>{formatDate(item.created_at, locale)}</td><td>{formatDate(item.invite_expires_at, locale)}</td>
-          <td><div className="actions">{nextStates(item.state).map(next => <button key={next} className={next === "dismissed" ? "danger" : "secondary"} onClick={() => { mutation.clearStatus(); setCode(""); setPending({ conflict: item, state: next }); }}>{t.actions[next]}</button>)}</div></td></tr>)}</tbody></table></div></div>
+      : <><div className="table-panel"><table className="admin-table" aria-label={t.title}>
+        <thead><tr><th scope="col">{t.email}</th><th scope="col">{t.organization}</th><th scope="col">{t.role}</th><th scope="col">{t.state}</th><th scope="col">{t.created}</th><th scope="col">{t.expires}</th><th scope="col"><span className="visually-hidden">{m.earnings.actions}</span></th></tr></thead>
+        <tbody>{items.map(item => <tr key={item.id} data-testid="conflict-row"><td className="cell-primary"><strong><bdi dir="ltr">{item.email}</bdi></strong></td>
+          <td data-label={t.organization} data-testid="conflict-organization">{organizations[item.organization_id] ? <bdi>{organizations[item.organization_id]}</bdi> : <span title={item.organization_id}>{fill(t.organizationUnknown, { id: item.organization_id.slice(0, 8) })}</span>}</td><td data-label={t.role}>{m.buyers.roles[item.role]}</td>
+          <td data-label={t.state}><span className={`badge ${item.state === "pending" ? "" : item.state === "dismissed" ? "good" : "bad"}`}>{t.states[item.state]}</span>{item.resolved_at && <small className="muted"> {formatDate(item.resolved_at, locale)}</small>}</td>
+          <td data-label={t.created}>{formatDate(item.created_at, locale)}</td><td data-label={t.expires}>{formatDate(item.invite_expires_at, locale)}</td>
+          <td className="cell-actions">{nextStates(item.state).map(next => <button key={next} className={next === "dismissed" ? "danger small" : "secondary small"} onClick={() => { mutation.clearStatus(); setCode(""); setPending({ conflict: item, state: next }); }}>{t.actions[next]}</button>)}</td></tr>)}</tbody></table></div>
         {cursor && <button className="secondary" onClick={() => void more()}>{m.next}</button>}</>}
     {pending && <dialog className="modal" ref={node => { if (node && !node.open) node.showModal(); }} onCancel={close} aria-labelledby="conflict-title">
       <form noValidate onSubmit={e => { e.preventDefault(); void resolve(); }}>

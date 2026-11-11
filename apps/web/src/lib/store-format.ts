@@ -1,6 +1,7 @@
 import type { Locale } from "./i18n";
 
 import type { components } from "@/generated/schema";
+import { dateLocale } from "./format";
 // عرض المتجر (#203 بندا 27–29): أنواع عقد v0.3 المولَّدة.
 export type Localized = components["schemas"]["LocalizedText"];
 export type Price = components["schemas"]["Money"];
@@ -43,7 +44,7 @@ export function catalogDay(value: unknown): string | null {
 }
 export function formatDay(value: unknown, locale: Locale): string | null {
   const day = catalogDay(value);
-  return day ? new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`)) : null;
+  return day ? new Intl.DateTimeFormat(dateLocale(locale), { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`)) : null;
 }
 
 /** يوم من العقد بتاريخ طويل («28 تشرين الأول 2026») بأرقام لاتينية وبلا ساعة، بالتسمية نفسها في `longDate`. */

@@ -9,6 +9,7 @@ import { EmptyState } from "./empty-state";
 import { Avatar, ToneBadge } from "./admin-parts";
 import { TableSkeleton } from "./users-admin";
 import { Icon } from "./icon";
+import { fillNodes, Ltr } from "./money";
 
 type Currency = ContributorEarnings["currency"];
 const readyTone: Record<PayoutReadiness, { tone: "ok" | "brand" | "muted"; icon: "check" | "payout" | "clock" }> = { ready: { tone: "ok", icon: "check" }, in_payout: { tone: "brand", icon: "payout" }, below_minimum: { tone: "muted", icon: "clock" } };
@@ -81,15 +82,15 @@ export function MoneyOverview({ locale, month, onMonth, onNames }: { locale: Loc
           <article className="kpi"><strong dir="ltr" data-testid="kpi-share">{money(total.share.amount_minor)}</strong><span>{t.kpiShare}</span></article>
           <article className="kpi"><strong dir="ltr" data-testid="kpi-ready">{money(ready)}</strong><span>{t.kpiReady}</span></article>
         </div>
-        <p className="formula" data-testid="money-formula">{fill(t.formula, { pct: pct ? fill(t.formulaPct, { pct }) : "" })}{!pct && <> {t.formulaMixed}</>}</p>
         <div className="table-panel money-table">
-          <div className="card-head"><h3>{t.tableTitle}</h3>{current.partial && <small className="caption">{t.partial}</small>}</div>
-          <table className="admin-table earnings-table">
+          <div className="card-head"><h3>{t.tableTitle}</h3>{current.partial && <small className="caption">{t.partial}</small>}
+            <details className="formula-fold" data-testid="money-formula"><summary>{t.formulaTitle}</summary><p>{fill(t.formula, { pct: pct ? fill(t.formulaPct, { pct }) : "" })}{!pct && <> {t.formulaMixed}</>}</p></details></div>
+          <table className="admin-table earnings-table" aria-label={t.tableTitle}>
             <thead><tr><th scope="col">{t.columns.contributor}</th><th scope="col" className="num">{t.columns.sales}</th><th scope="col" className="num">{fill(t.columns.gross, { cur: symbol })}</th><th scope="col" className="num">{fill(t.columns.fees, { cur: symbol })}</th><th scope="col" className="num">{fill(t.columns.net, { cur: symbol })}</th><th scope="col" className="num">{fill(t.columns.share, { pct: pct ?? "", cur: symbol })}</th>{refunded && <th scope="col" className="num">{fill(t.columns.refunded, { cur: symbol })}</th>}<th scope="col">{t.columns.status}</th></tr></thead>
             <tbody>{rows.map(row => {
               const state = readiness(row.balance), tone = readyTone[state];
               return <tr key={row.user_id} data-testid="earnings-row">
-                <td className="cell-primary"><span className="person"><Avatar name={row.work_name} fallback="?" /><strong><bdi>{nameOf(row, locale)}</bdi></strong></span><span className="row-money narrow-only" dir="ltr">{formatMoney(row.share, locale)}</span><span className="row-sub narrow-only">{fill(t.lineSale, { gross: plainAmount(row.gross, locale), net: plainAmount(row.net, locale) })}</span></td>
+                <td className="cell-primary"><span className="person"><Avatar name={row.work_name} fallback="?" /><strong><bdi>{nameOf(row, locale)}</bdi></strong></span><span className="row-money narrow-only" dir="ltr">{formatMoney(row.share, locale)}</span><span className="row-sub narrow-only">{fillNodes(t.lineSale, { gross: <Ltr>{plainAmount(row.gross, locale)}</Ltr>, net: <Ltr>{plainAmount(row.net, locale)}</Ltr> })}</span></td>
                 <td className="phone-hide num" data-label={t.columns.sales}><span dir="ltr">{row.sales}</span></td>
                 <td className="phone-hide num" data-label={fill(t.columns.gross, { cur: symbol })}><span dir="ltr">{plainAmount(row.gross, locale)}</span></td>
                 <td className="phone-hide num" data-label={fill(t.columns.fees, { cur: symbol })}><span dir="ltr">{plainAmount(row.fees_and_taxes, locale)}</span></td>

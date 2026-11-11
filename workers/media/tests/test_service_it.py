@@ -176,17 +176,19 @@ def test_end_to_end_verify_and_proxy(env, tmp_path: Path):
 def test_transient_failures_end_in_dead_letter(env, tmp_path: Path):
     r, storage, buckets = env
     server = FakeServer({}, fail_with=503)
+    waits: list[float] = []
     try:
         svc = Service(r, Jobs(InternalApi(server.url, TOKEN), storage, buckets, tmp_path), "it", block_ms=200,
-                      claim_idle_ms=0, max_deliveries=2)
+                      claim_idle_ms=0, max_deliveries=2, sleep=waits.append)
         svc.ensure_group()
         _publish(r, "upload.original_received", str(uuid.uuid4()), str(uuid.uuid4()))
         for _ in range(4):
             svc.run_once()
         assert r.xlen(DEAD) == 1
         assert r.xpending(STREAM, GROUP)["pending"] == 0
-        # محاولتان، ثم بلاغ فشل للخادم (رُد بـ 503 أيضًا) ثم نقل دون محاولة ثالثة
-        assert [m for m, _, _ in server.calls] == ["GET", "GET", "POST"]
+        # تسليمان، في كل منهما محاولة وثلاث إعادات قصيرة (1 و5 و30 ث)، ثم بلاغ فشل للخادم (رُد بـ 503 أيضًا) ثم نقل دون تسليم ثالث
+        assert [m for m, _, _ in server.calls] == ["GET"] * 8 + ["POST"]
+        assert sum(waits) == pytest.approx(2 * (1 + 5 + 30))
         assert server.calls[-1][2] == {"result": "storage_error"}
         [(_, dead)] = r.xrange(DEAD)
         assert dead["reason"] == "max_deliveries" and dead["reported"] == "report-failed:ApiError"
