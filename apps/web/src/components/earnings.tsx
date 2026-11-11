@@ -11,6 +11,7 @@ import { cancellable, earnerRoles, payableStates, payoutCreate, type EarningsEnt
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
 import { Icon, type IconName } from "./icon";
+import { fillNodes, Money } from "./money";
 
 type Currency = (typeof currencies)[number];
 type PayableState = (typeof payableStates)[number];
@@ -69,7 +70,7 @@ export function EarningsPage({ locale }: { locale: Locale }) {
             {!summary.balances.length ? <p className="muted">{t.nothingToRequest}</p> : <form className="payout-form" noValidate onSubmit={e => { e.preventDefault(); void request(); }}>
               <div className="rule-row"><label>{t.currency}<select value={currency} onChange={e => setCurrency(e.target.value as Currency)}>{summary.balances.map(b => <option key={b.currency} value={b.currency}>{b.currency}</option>)}</select></label>
                 <label>{t.amount}<input type="number" min={0} step="0.01" dir="ltr" inputMode="decimal" value={amount} aria-invalid={invalid || undefined} aria-describedby="payout-limits" onChange={e => setAmount(e.target.value)} /></label></div>
-              {balance && <p className="muted" id="payout-limits" data-testid="payout-limits">{t.limits.replace("{min}", formatMoney(balance.minimum, locale)).replace("{max}", formatMoney(balance.requestable, locale))}</p>}
+              {balance && <p className="muted" id="payout-limits" data-testid="payout-limits">{fillNodes(t.limits, { min: <Money price={balance.minimum} locale={locale} />, max: <Money price={balance.requestable} locale={locale} /> })}</p>}
               {invalid && <p className="notice error" role="alert">{t.invalid}</p>}
               <ActionStatus status={mutation.status} locale={locale} />{mutation.status === 422 && <p className="notice error">{t.rejected}</p>}
               <div className="actions"><button disabled={mutation.busy || !amount}>{mutation.busy ? m.review.saving : t.request}</button></div>

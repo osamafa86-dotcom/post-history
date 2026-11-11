@@ -4,6 +4,7 @@ import { createApiClient } from "@/generated/client";
 import type { Session } from "@/lib/types";
 import type { WebConfig } from "./config";
 import { WebError } from "./errors";
+import { requestId } from "./request-id";
 import type { SessionStore } from "./sessions";
 
 /**
@@ -23,6 +24,8 @@ export function upstream(config: WebConfig, token?: string, transport: typeof fe
     headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(client ? { "X-Client-Address": client } : {}) },
     fetch: (request: Request) => {
       if (!["GET", "HEAD"].includes(request.method) && !request.headers.has("Idempotency-Key")) request.headers.set("Idempotency-Key", randomUUID());
+      // معرّف الترابط يُكتب هنا دائمًا: لا يمرّ إلى الخادم معرّف من أي مصدر آخر (ADR 0027)
+      request.headers.set("X-Request-Id", requestId());
       return transport(new Request(request, { signal: AbortSignal.timeout(8000) }));
     },
   });
