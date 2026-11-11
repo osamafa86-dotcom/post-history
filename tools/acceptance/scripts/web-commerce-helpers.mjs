@@ -20,7 +20,7 @@ export async function step(label, fn) {
   try { return await fn(); } catch (error) { throw error?.safe ? error : new StepError(label, error); }
 }
 
-/** "‏100.01 US$" or "100.01 USD" -> "10001": the digits of an amount, comparable across how each page formats it. */
+/** "\u200F100.01 US$" or "100.01 USD" -> "10001": the digits of an amount, comparable across how each page formats it. */
 export function amountDigits(text) {
   const m = /([0-9٠-٩]+(?:[.,٫][0-9٠-٩]{1,2})?)/.exec(String(text ?? ""));
   if (!m) return null;

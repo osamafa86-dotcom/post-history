@@ -36,7 +36,7 @@ test("a step failure carries the step's label and the error class only, never it
 });
 
 test("amounts compare by digits across formats; licence numbers and remaining counts are read in both digit systems", () => {
-  assert.equal(amountDigits("‏100.01 US$"), amountDigits("100.01 USD"));
+  assert.equal(amountDigits("\u200F100.01 US$"), amountDigits("100.01 USD"));
   assert.notEqual(amountDigits("100.01 USD"), amountDigits("100.02 USD"));
   assert.equal(licenseNumberIn("الرقم PH-2026-DJHACWS5CP ساري"), "PH-2026-DJHACWS5CP");
   assert.equal(licenseNumberIn("PH-2026-0000"), null);

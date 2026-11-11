@@ -389,7 +389,7 @@ export const WitnessTemplate: React.FC<WitnessProps> = ({
                   }}
                 >
                   {word}
-                  {wi < arr.length - 1 ? ' ' : ''}
+                  {wi < arr.length - 1 ? '\u00A0' : ''}
                 </span>
               );
             })}
