@@ -113,3 +113,48 @@ describe('5xx logs carry no bound query values', () => {
     expect(lines.slice(before).join('\n')).not.toContain(marker);
   });
 });
+
+// ADR 0027 (تعديل 2026-11-11): معرّف الترابط الوارد من مصدر داخلي يُحمل في السجل والرد، فيُتتبَّع الطلب عبر الخدمات
+describe('request id correlation', () => {
+  const lines: string[] = [];
+  let h: Harness;
+  beforeAll(async () => {
+    const logger = pino({ level: 'info' }, { write: (line: string) => void lines.push(line) });
+    h = await createHarness({ logger });
+  });
+  afterAll(() => h.close());
+  const requestLine = (id: string) =>
+    lines.map((l) => JSON.parse(l) as Record<string, unknown>).find((l) => l.msg === 'request' && l.request_id === id);
+
+  it('keeps a well-formed X-Request-Id sent by an internal source, in the response and in the log', async () => {
+    const id = `media-${'a'.repeat(32)}`;
+    const res = await request(h.app.getHttpServer()).get('/health').set('X-Request-Id', id).expect(200);
+    expect(res.headers['x-request-id']).toBe(id);
+    expect(requestLine(id)).toMatchObject({ method: 'GET', path: '/health', status: 200 });
+    // وخطأ الطلب نفسه يحمله في جسمه
+    const missing = await request(h.app.getHttpServer()).get('/v1/materials').set('X-Request-Id', id).expect(401);
+    expect(missing.body.request_id).toBe(id);
+  });
+
+  it('replaces an id that is malformed, too short or too long with its own', async () => {
+    for (const bad of ['short', 'has space inside it', 'a'.repeat(65), 'line\tbreak-inside-the-id']) {
+      const res = await request(h.app.getHttpServer()).get('/health').set('X-Request-Id', bad).expect(200);
+      expect(res.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
+      expect(requestLine(bad)).toBeUndefined();
+    }
+  });
+
+  it('ignores the header from a source that is not internal', async () => {
+    // لا مصدر داخلي يطابق عنوان الاختبار: المعرّف الوارد لا يدخل السجل
+    const outside = await createHarness({ env: { INTERNAL_ALLOWED_CIDRS: '192.0.2.1/32' } });
+    try {
+      const id = `client-${'b'.repeat(32)}`;
+      const res = await request(outside.app.getHttpServer()).get('/health').set('X-Request-Id', id).expect(200);
+      expect(res.headers['x-request-id']).not.toBe(id);
+      expect(res.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
+    } finally {
+      await outside.close();
+    }
+  }, 30_000);
+});
+
