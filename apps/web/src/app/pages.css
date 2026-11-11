@@ -75,7 +75,8 @@
 .upload-step h2 { display: flex; align-items: center; gap: var(--v2-space-3); }
 .step-number { display: inline-grid; place-items: center; inline-size: 28px; block-size: 28px; border-radius: var(--v2-radius-full); background: var(--v2-c-action-soft); color: var(--v2-c-text-brand); font-family: var(--v2-font-family-num); font-size: var(--v2-font-label-size); font-weight: 700; }
 .drop-zone { position: relative; display: grid; justify-items: center; gap: var(--v2-space-2); padding: var(--v2-space-8) var(--v2-space-6); text-align: center; border: var(--v2-border-field) dashed var(--v2-c-border-edge); border-radius: var(--v2-radius-md); background: var(--v2-c-bg-sunken); color: var(--v2-c-text-primary); cursor: pointer; }
-.drop-zone:hover, .drop-zone:focus-within { border-color: var(--v2-c-action-primary); }
+.drop-zone:focus-within { border-color: var(--v2-c-action-primary); }
+@media (hover: hover) and (pointer: fine) { .drop-zone:hover { border-color: var(--v2-c-action-primary); } }
 .drop-zone .icon { color: var(--v2-c-text-brand); }
 .drop-zone small { color: var(--v2-c-text-secondary); font-size: var(--v2-font-label-size); max-inline-size: 36rem; }
 .drop-zone input[type="file"] { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; opacity: 0; cursor: pointer; }
@@ -132,7 +133,7 @@ html:has(.public-shell.store-face), body:has(.public-shell.store-face) { backgro
 .public-brand { display: inline-flex; align-items: center; gap: var(--v2-space-3); font-family: var(--v2-font-family-display); font-weight: 700; font-size: var(--v2-font-headline-size); }
 .public-brand .brand-mark { color: var(--v2-c-action-primary); }
 .public-locale { display: inline-flex; align-items: center; min-block-size: var(--v2-size-touch-min); color: var(--v2-c-text-secondary); font-size: var(--v2-font-label-size); font-weight: 600; }
-.public-locale:hover { color: var(--v2-c-text-primary); }
+@media (hover: hover) and (pointer: fine) { .public-locale:hover { color: var(--v2-c-text-primary); } }
 .public-main { padding: var(--v2-space-9) var(--v2-space-5) var(--v2-space-11); }
 .public-card { inline-size: min(440px, 100%); margin-inline: auto; padding: var(--v2-space-7); }
 
@@ -200,7 +201,7 @@ html:has(.public-shell.store-face), body:has(.public-shell.store-face) { backgro
 .privacy-toc { position: sticky; inset-block-start: var(--v2-space-7); padding: var(--v2-space-5); background: var(--v2-c-bg-raised); border: var(--v2-border-hairline) solid var(--v2-c-border-line); border-radius: var(--v2-radius-md); }
 .privacy-toc ol { margin: 0; padding-inline-start: var(--v2-space-6); display: grid; gap: var(--v2-space-3); font-size: var(--v2-font-label-size); line-height: 20px; }
 .privacy-toc a { color: var(--v2-c-text-secondary); }
-.privacy-toc a:hover { color: var(--v2-c-text-brand); }
+@media (hover: hover) and (pointer: fine) { .privacy-toc a:hover { color: var(--v2-c-text-brand); } }
 .privacy-body { counter-reset: privacy; display: grid; gap: var(--v2-space-5); }
 .privacy-section { padding: var(--v2-space-6) var(--v2-space-7); background: var(--v2-c-bg-raised); border: var(--v2-border-hairline) solid var(--v2-c-border-line); border-radius: var(--v2-radius-md); scroll-margin-block-start: var(--v2-space-7); }
 .privacy-section h2 { display: flex; align-items: center; gap: var(--v2-space-3); margin: 0 0 var(--v2-space-4); font-size: var(--v2-font-headline-size); line-height: 26px; }

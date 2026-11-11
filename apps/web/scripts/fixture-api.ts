@@ -12,6 +12,8 @@ const writes: { path: string; method: string; key: string; body: Record<string, 
 const applied = new Map<string, { fingerprint: string; value: unknown; status: number }>();
 const formVersions = new Map<number, Form>();
 let dropNextWrite = false, extraUploadsInProgress = 0;
+// عنوان واحد يحلّ محل كل عنوان في الردود حتى الإعادة (`/__test/titles`): لاختبار أسوأ نص حرّ يكتبه المراسل، كعنوان بلا مسافات.
+let titleOverride: string | null = null;
 const consumedInvites = new Set<string>();
 let identitySetting: ReporterIdentitySetting, historyUnavailable = false, auditSequence = 21;
 const permissionAudit: { target: string | null; entry: PermissionHistoryEntry }[] = [];
@@ -23,7 +25,7 @@ function reset() {
   // نسخة الهاتف الخفيفة وحدها (مرفوعة لا مشتقة): المادة 30 بملصقها، و31 بلا ملصق؛ معاينة الطاقم لا تعرضها.
   for (const [index, poster] of [[29, true], [30, false]] as const) materials[index].files = materials[index].files.filter(f => f.kind === "original" || (poster && f.kind === "thumbnail")).concat({ id: `31000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, kind: "proxy", state: "verified", mime_type: "video/mp4", proxy_mode: "urgent", created_at: "2026-10-19T12:00:00Z" });
   notifications.splice(0, notifications.length, ...Array.from({ length: 3 }, (_, i) => ({ id: `60000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`, type: "never-display-canary", title: "never-display-canary", material_id: materials[i].id, priority: "normal" as const, state: "sent" as const, created_at: "2026-10-20T12:00:00Z" })));
-  history.clear(); writes.length = 0; applied.clear(); dropNextWrite = false; extraUploadsInProgress = 0;
+  history.clear(); writes.length = 0; applied.clear(); dropNextWrite = false; extraUploadsInProgress = 0; titleOverride = null;
   identitySetting = { access: "separate", updated_at: "2026-10-21T10:00:00Z", updated_by: null }; historyUnavailable = false; auditSequence = 21;
   permissionAudit.splice(0, permissionAudit.length, ...Array.from({ length: 21 }, (_, i) => ({ target: "10000000-0000-4000-8000-000000000002", entry: { id: String(21 - i), kind: i % 2 ? "permission_revoked" as const : "permission_granted" as const, permission: "reporter_identity:read" as const, actor_id: me.user_id, occurred_at: new Date(Date.parse(identitySetting.updated_at) - i * 1000).toISOString(), reason_code: null } })));
 }
@@ -187,7 +189,8 @@ function session(user: Me) {
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   res.setHeader("Content-Type", "application/json"); res.setHeader("Cache-Control", "no-store");
-  const send = (value: unknown, status = 200) => { res.statusCode = status; res.end(status === 204 ? "" : JSON.stringify(value)); };
+  const retitle = (key: string, value: unknown) => key !== "title" || value == null ? value : typeof value === "string" ? titleOverride : { ar: titleOverride, en: titleOverride };
+  const send = (value: unknown, status = 200) => { res.statusCode = status; res.end(status === 204 ? "" : JSON.stringify(value, titleOverride ? retitle : undefined)); };
   if (url.pathname === "/health") return send({ ok: true });
   const delivery = /^\/delivery\/([^/]+)$/.exec(url.pathname);
   if (delivery) { res.setHeader("Content-Type", "application/zip"); res.setHeader("Content-Disposition", `attachment; filename="delivery-${delivery[1].slice(0, 8)}.zip"`); res.end("synthetic delivery package"); return; }
@@ -245,6 +248,7 @@ const server = createServer(async (req, res) => {
     return send({ ok: true });
   }
   if (url.pathname === "/__test/history-unavailable" && req.method === "POST") { historyUnavailable = true; return send({ ok: true }); }
+  if (url.pathname === "/__test/titles" && req.method === "POST") { titleOverride = url.searchParams.get("title"); return send({ ok: true }); }
   if (url.pathname === "/__test/bump-rule" && req.method === "POST") { for (const rule of rules.values()) rule.row_version++; return send({ ok: true }); }
   if (url.pathname === "/__test/bump" && req.method === "POST") { materials[0].row_version!++; return send({ ok: true }); }
   if (url.pathname === "/__test/drop-write" && req.method === "POST") { dropNextWrite = true; return send({ ok: true }); }

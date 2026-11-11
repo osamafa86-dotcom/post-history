@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import ar from "../messages/ar.json" with { type: "json" };
 import en from "../messages/en.json" with { type: "json" };
 type Locale = "ar" | "en";
@@ -113,6 +113,22 @@ test("a page outside the role says so, names the role and leads back (E5)", asyn
 const luminance = (rgb: string) => { const [r, g, b] = rgb.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(v => v / 255).map(c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
 const ratio = (a: string, b: string) => { const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
 
+/** الصفحات التي يتجاوز عرض مستندها عرض المنظر بعد اكتمال الخطوط؛ `shows` نص يجب أن يُرى في كل صفحة، فلا تمرّ صفحة لا تعرض ما يُختبر. */
+async function sideways(page: Page, context: BrowserContext, locale: Locale, visits: [string | null, string[]][], shows?: string) {
+  const wide: string[] = [];
+  for (const [who, paths] of visits) {
+    await context.clearCookies(); if (who) await login(page, who, locale);
+    for (const path of paths) {
+      await page.goto(`/${locale}/${path}`); await page.waitForLoadState("networkidle").catch(() => {});
+      await page.evaluate(() => document.fonts.ready.then(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))));
+      if (shows) await expect(page.getByText(shows).first(), path).toBeVisible();
+      const [scroll, width] = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
+      if (scroll > width) wide.push(`${path} ${scroll}`);
+    }
+  }
+  return wide;
+}
+
 // لا تمرير أفقي للصفحة على عرض 390 في أي صفحة، بالعربية والإنجليزية (ملاحظة المراجعة على /en/forms).
 for (const locale of ["ar", "en"] as Locale[]) test(`no page scrolls sideways at 390px (${locale})`, async ({ page, context }) => {
   test.setTimeout(180000); await page.setViewportSize({ width: 390, height: 844 });
@@ -123,17 +139,101 @@ for (const locale of ["ar", "en"] as Locale[]) test(`no page scrolls sideways at
     ["reporter", ["my-materials", "earnings"]],
     ["buyer", ["store", "store/71000000-0000-4000-8000-000000000001", "store/licenses", "store/cart", "store/orders", "store/orders/92000000-0000-4000-8000-000000000001", "store/orders/92000000-0000-4000-8000-000000000001/invoice", "organization", "security"]],
   ];
-  const wide: string[] = [];
-  for (const [who, paths] of pages) {
-    await context.clearCookies(); if (who) await login(page, who, locale);
-    for (const path of paths) {
-      await page.goto(`/${locale}/${path}`); await page.waitForLoadState("networkidle").catch(() => {});
-      await page.evaluate(() => document.fonts.ready.then(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))));
-      const [scroll, width] = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
-      if (scroll > width) wide.push(`${path} ${scroll}`);
+  expect(await sideways(page, context, locale, pages)).toEqual([]);
+});
+
+// العنوان نص حرّ من 5 إلى 80 محرفًا: وسم بشرطات سفلية أو اسم ملف ملصوق لا مسافة فيه، فلا ينكسر عند كلمة. لا يوسّع صفحة الهاتف حيث يظهر.
+const UNBROKEN_TITLE = "VID_20261019_093000_تغطية_ميدانية_بلا_مسافات_من_الميدان_final_v2";
+for (const locale of ["ar", "en"] as Locale[]) test(`a title with no spaces does not widen the phone page (${locale})`, async ({ page, context, request }) => {
+  test.setTimeout(120000); await page.setViewportSize({ width: 390, height: 844 });
+  await request.post(`http://127.0.0.1:3201/__test/titles?title=${encodeURIComponent(UNBROKEN_TITLE)}`);
+  expect(await sideways(page, context, locale, [
+    ["reviewer", ["inbox", "materials/20000000-0000-4000-8000-000000000005"]],
+    ["reporter", ["my-materials"]],
+    ["buyer", ["store", "store/71000000-0000-4000-8000-000000000001", "store/orders/92000000-0000-4000-8000-000000000001", "store/licenses", "store/licenses/93000000-0000-4000-8000-000000000001"]],
+  ], UNBROKEN_TITLE)).toEqual([]);
+});
+
+// هاتف باللمس كما يراه CSS: لا تحويم ومؤشّر خشن (`hover: none`، `pointer: coarse`).
+test.describe("on a touch phone", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const background = (locator: Locator) => locator.evaluate(el => getComputedStyle(el).backgroundColor);
+
+  /**
+   * ما يخرج من حبر التسمية عن صندوق قصّها، بالبكسل، في كل جهة تقصّ فيها (صفر حيث لا قصّ). قياس هندسي لا لقطة: امتداد الحبر من مقاييس الخط
+   * نفسه (`measureText`) حول خط الأساس وبداية النص كما وضعهما المتصفح، فلا يتغيّر بتغيّر رسم الحروف بين بيئة وأخرى.
+   */
+  const inkBeyondClip = (label: Locator) => label.evaluate(el => {
+    const style = getComputedStyle(el), box = el.getBoundingClientRect(), range = document.createRange();
+    range.selectNodeContents(el); const text = range.getBoundingClientRect();
+    // خط الأساس: الحافة السفلى لعنصر inline-block فارغ يوضع في السطر نفسه
+    const probe = document.createElement("span"); probe.style.cssText = "display:inline-block;inline-size:0;block-size:0"; el.append(probe);
+    const baseline = probe.getBoundingClientRect().bottom; probe.remove();
+    const pen = document.createElement("canvas").getContext("2d")!;
+    pen.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`; pen.direction = style.direction as CanvasDirection; pen.textAlign = "left";
+    const ink = pen.measureText(el.textContent!), inline = style.overflowX !== "visible", block = style.overflowY !== "visible";
+    return {
+      size: parseFloat(style.fontSize), drift: Math.abs(ink.width - text.width),
+      beyond: { start: inline ? box.left - (text.left - ink.actualBoundingBoxLeft) : 0, end: inline ? text.left + ink.actualBoundingBoxRight - box.right : 0, above: block ? box.top - (baseline - ink.actualBoundingBoxAscent) : 0, below: block ? baseline + ink.actualBoundingBoxDescent - box.bottom : 0 },
+    };
+  });
+
+  test("the bottom bar labels are set in the caption role and no part of a label is cut off", async ({ page }) => {
+    await login(page, "reporter", "ar"); const bar = page.getByTestId("bottombar");
+    // في شريط المراسل «موادي»: ياء أخيرة نقطتاها تحت السطر
+    await expect(bar.locator(".nav-short", { hasText: ar.shell.short["my-materials"] })).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    for (const label of await bar.locator(".nav-short, .nav-more").all()) {
+      const text = (await label.textContent())!, measured = await inkBeyondClip(label);
+      expect(measured.size, text).toBeGreaterThanOrEqual(12);
+      // القياس على النص نفسه بالخط نفسه: عرضه في الصفحة هو عرضه في القياس
+      expect(measured.drift, text).toBeLessThan(0.5);
+      for (const [side, beyond] of Object.entries(measured.beyond)) expect(beyond, `${text}: ink beyond the clip box, ${side}`).toBeLessThanOrEqual(0.05);
     }
-  }
-  expect(wide).toEqual([]);
+  });
+
+  test("fields are 16px or more, so the phone browser does not zoom the page when one takes focus", async ({ page, context }) => {
+    const visits: [string | null, string[]][] = [[null, ["login", "forgot-password"]], ["reviewer", ["inbox", "upload", "notifications"]], ["reporter", ["earnings"]], ["admin", ["settings", "admin", "forms"]], ["buyer", ["store", "organization"]]];
+    const small: string[] = [];
+    for (const [who, paths] of visits) {
+      await context.clearCookies(); if (who) await login(page, who, "ar");
+      for (const path of paths) {
+        await page.goto(`/ar/${path}`); await page.waitForLoadState("networkidle").catch(() => {});
+        small.push(...await page.evaluate(at => [...document.querySelectorAll<HTMLElement>("input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]), select, textarea")]
+          .map(el => [el, parseFloat(getComputedStyle(el).fontSize)] as const).filter(([, size]) => size < 16).map(([el, size]) => `${at} ${el.tagName.toLowerCase()}[${el.getAttribute("name") ?? el.id}] ${size}px`), path));
+      }
+    }
+    expect(small).toEqual([]);
+  });
+
+  test("no visible text is smaller than the caption role (12px) on the main pages", async ({ page, context }) => {
+    const visits: [string, string[]][] = [["reviewer", ["inbox", "board", "notifications", "materials/20000000-0000-4000-8000-000000000005"]], ["reporter", ["my-materials", "earnings"]], ["buyer", ["store"]]];
+    const small: string[] = [];
+    for (const [who, paths] of visits) {
+      await context.clearCookies(); await login(page, who, "ar");
+      for (const path of paths) {
+        await page.goto(`/ar/${path}`); await page.waitForLoadState("networkidle").catch(() => {});
+        small.push(...await page.evaluate(at => [...document.querySelectorAll<HTMLElement>("body *")].filter(el => {
+          const box = el.getBoundingClientRect(), style = getComputedStyle(el);
+          return box.width > 1 && box.height > 1 && style.visibility !== "hidden" && !el.closest(".visually-hidden") && [...el.childNodes].some(node => node.nodeType === 3 && node.textContent!.trim()) && parseFloat(style.fontSize) < 12;
+        }).map(el => `${at} ${el.tagName.toLowerCase()}.${el.className} ${getComputedStyle(el).fontSize}`), path));
+      }
+    }
+    expect([...new Set(small)]).toEqual([]);
+  });
+
+  test("a tap leaves no hover style behind on a button", async ({ page }) => {
+    expect(await page.evaluate(() => matchMedia("(hover: none) and (pointer: coarse)").matches)).toBe(true);
+    await page.goto("/ar/login"); const button = page.getByRole("button", { name: ar.signIn, exact: true });
+    const rest = await background(button); await button.hover();
+    expect(await background(button)).toBe(rest);
+  });
+});
+
+test("a mouse still gets the hover style of a button", async ({ page }) => {
+  await page.goto("/ar/login"); const button = page.getByRole("button", { name: ar.signIn, exact: true });
+  const rest = await button.evaluate(el => getComputedStyle(el).backgroundColor); await button.hover();
+  expect(await button.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(rest);
 });
 
 test("touch layouts give the sort controls, chips, «clear all», filter fields, the breadcrumb back link and the reload button 44px or more", async ({ page }) => {
