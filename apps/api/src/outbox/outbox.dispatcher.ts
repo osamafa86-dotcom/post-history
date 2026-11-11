@@ -75,11 +75,16 @@ export class OutboxDispatcher implements OnApplicationBootstrap, OnApplicationSh
 
   /** يعالج دفعة واحدة؛ يعيد عدد الأحداث المنشورة. */
   async dispatchBatch(limit = this.config.OUTBOX_BATCH_SIZE): Promise<number> {
+    return (await this.runBatch(limit)).published;
+  }
+
+  /** دفعة واحدة: ما طولب به وما نُشر منه. الطابور ما لم يُنشر ولم يمت وحان موعده، بترتيب الوصول (فهرس outbox_events_claim_idx). */
+  private async runBatch(limit: number): Promise<{ claimed: number; published: number }> {
     return this.db.transaction(async (tx) => {
       const batch = await tx
         .select()
         .from(outboxEvents)
-        .where(and(isNull(outboxEvents.publishedAt), lte(outboxEvents.nextAttemptAt, sql`now()`)))
+        .where(and(isNull(outboxEvents.publishedAt), isNull(outboxEvents.deadAt), lte(outboxEvents.nextAttemptAt, sql`now()`)))
         .orderBy(asc(outboxEvents.id))
         .limit(limit)
         .for('update', { skipLocked: true });
@@ -95,28 +100,35 @@ export class OutboxDispatcher implements OnApplicationBootstrap, OnApplicationSh
           published += 1;
         } catch (err) {
           await tx.execute(sql`ROLLBACK TO SAVEPOINT outbox_event`);
+          const attempts = event.attempts + 1;
           const backoff = Math.min(2 ** event.attempts, MAX_BACKOFF_SECONDS);
+          // اسم الخطأ فقط: رسائل الأخطاء قد تحمل بيانات
+          const errName = err instanceof Error ? err.name : 'Error';
+          // بلغ حدّ المحاولات: يموت الحدث ويخرج من الطابور، فلا يُعاد بلا نهاية؛ صفّه يبقى بسببه ليُفحص ويُحيا يدويًا
+          const dead = attempts >= this.config.OUTBOX_MAX_ATTEMPTS;
           await tx
             .update(outboxEvents)
-            .set({
-              attempts: event.attempts + 1,
-              nextAttemptAt: sql`now() + make_interval(secs => ${backoff})`,
-              // اسم الخطأ فقط: رسائل الأخطاء قد تحمل بيانات
-              lastError: err instanceof Error ? err.name : 'Error',
-            })
+            .set({ attempts, nextAttemptAt: sql`now() + make_interval(secs => ${backoff})`, lastError: errName, deadAt: dead ? sql`now()` : null })
             .where(eq(outboxEvents.id, event.id));
+          if (dead) this.logger.error({ event_id: event.id, type: event.type, attempts, err_name: errName }, 'outbox event dead');
         }
       }
-      return published;
+      return { claimed: batch.length, published };
     });
   }
 
-  private schedule(): void {
+  /** الدفعة الممتلئة تتبعها التالية فورًا (طابور متراكم)، وغيرها بعد مهلة الاستطلاع. */
+  private schedule(delayMs = this.config.OUTBOX_POLL_INTERVAL_MS): void {
     if (this.stopped) return;
     this.timer = setTimeout(() => {
-      this.running = this.dispatchBatch()
+      const limit = this.config.OUTBOX_BATCH_SIZE;
+      let full = false;
+      this.running = this.runBatch(limit)
+        .then(({ claimed }) => {
+          full = claimed >= limit;
+        })
         .catch((err: unknown) => this.logger.error({ err_name: (err as Error)?.name }, 'outbox dispatch failed'))
-        .finally(() => this.schedule());
-    }, this.config.OUTBOX_POLL_INTERVAL_MS);
+        .finally(() => this.schedule(full ? 0 : this.config.OUTBOX_POLL_INTERVAL_MS));
+    }, delayMs);
   }
 }

@@ -803,8 +803,10 @@ export const outboxEvents = pgTable("outbox_events", {
 	attempts: integer().default(0).notNull(),
 	nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	lastError: text("last_error"),
+	deadAt: timestamp("dead_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("outbox_events_aggregate_idx").using("btree", table.aggregateType.asc().nullsLast().op("int8_ops"), table.aggregateId.asc().nullsLast().op("uuid_ops"), table.id.asc().nullsLast().op("int8_ops")),
+	index("outbox_events_claim_idx").using("btree", table.id.asc().nullsLast().op("int8_ops")).where(sql`((published_at IS NULL) AND (dead_at IS NULL))`),
 	index("outbox_events_pending_idx").using("btree", table.nextAttemptAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("timestamptz_ops")).where(sql`(published_at IS NULL)`),
 	index("outbox_events_type_idx").using("btree", table.type.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
 	foreignKey({
