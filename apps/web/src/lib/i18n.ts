@@ -2,16 +2,19 @@ import ar from "../../messages/ar.json";
 import en from "../../messages/en.json";
 export type Locale = "ar" | "en";
 export const isLocale = (s: string): s is Locale => s === "ar" || s === "en";
+import { dateLocale, numberLocale } from "./format";
 export const messages = { ar, en };
 export function formatDate(value: string | null | undefined, locale: Locale) {
   if (!value || !Number.isFinite(Date.parse(value))) return messages[locale].notAvailable;
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+  // صيغة واحدة للتاريخ والوقت في الجداول والتفاصيل: «19 تشرين الأول 2026، 12:00» بأرقام لاتينية وساعة من 24.
+  const at = new Date(value), time = new Intl.DateTimeFormat(dateLocale(locale), { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(at);
+  return `${new Intl.DateTimeFormat(dateLocale(locale), { dateStyle: "long" }).format(at)}${messages[locale].shell.listSeparator}${time}`;
 }
 
 /** التاريخ الطويل بأرقام لاتينية كما في تصاميم Figma («26 تشرين الأول 2026»)؛ العربية بتسمية الشام. */
 export function longDate(value: string | null | undefined, locale: Locale) {
   if (!value || !Number.isFinite(Date.parse(value))) return messages[locale].notAvailable;
-  return new Intl.DateTimeFormat(locale === "ar" ? "ar-PS-u-nu-latn" : "en", { dateStyle: "long" }).format(new Date(value));
+  return new Intl.DateTimeFormat(dateLocale(locale), { dateStyle: "long" }).format(new Date(value));
 }
 
 /** الساعة والدقيقة (24 ساعة) بتوقيت الجهاز، أرقام لاتينية. */
@@ -30,6 +33,6 @@ export function humanDuration(ms: number, locale: Locale) {
 export type PluralForms = Record<"zero" | "one" | "two" | "few" | "many" | "other", string>;
 /** العدد بصيغة الجمع في لغته (العربية ست صيغ: «ملف واحد»، «ملفان»، «3 ملفات»، «11 ملفًا»)؛ أرقام لاتينية. */
 export function plural(n: number, forms: PluralForms, locale: Locale) {
-  const rule = new Intl.PluralRules(locale).select(n) as keyof PluralForms;
+  const rule = new Intl.PluralRules(numberLocale(locale)).select(n) as keyof PluralForms;
   return (forms[rule] ?? forms.other).replace("{n}", String(n));
 }

@@ -11,6 +11,7 @@ import { CatalogCard } from "./catalog-card";
 import { OrgPending } from "./org-pending";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import type { components } from "@/generated/schema";
+import { governorateName } from "@/lib/format";
 type Organization = components["schemas"]["BuyerOrganization"];
 
 // أدوار المشترين (#192) تتصفح الكتالوج كما في x-roles.
@@ -101,7 +102,7 @@ export function StoreCatalog({ locale }: { locale: Locale }) {
     <nav className="store-chips" aria-label={c.chipsLabel}>
       <button type="button" className="store-chip" aria-pressed={plain} onClick={() => update({ ...filters, governorate: "", period: "" })}>{c.all}</button>
       <button type="button" className="store-chip" aria-pressed={filters.period === "week"} onClick={() => set("period", filters.period === "week" ? "" : "week")}>{c.week}</button>
-      {chips.map(name => <button key={name} type="button" className="store-chip" aria-pressed={filters.governorate === name} onClick={() => set("governorate", filters.governorate === name ? "" : name)}>{name}</button>)}
+      {chips.map(name => <button key={name} type="button" className="store-chip" aria-pressed={filters.governorate === name} onClick={() => set("governorate", filters.governorate === name ? "" : name)}>{governorateName(name, m.governorates)}</button>)}
     </nav>
     <details className="store-more">
       <summary>{c.moreFilters}{more ? ` (${more})` : ""}</summary>

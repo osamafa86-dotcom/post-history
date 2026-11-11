@@ -9,6 +9,7 @@ import { EmptyState } from "./empty-state";
 import { Avatar, ToneBadge } from "./admin-parts";
 import { TableSkeleton } from "./users-admin";
 import { Icon } from "./icon";
+import { fillNodes, Ltr } from "./money";
 
 type Currency = ContributorEarnings["currency"];
 const readyTone: Record<PayoutReadiness, { tone: "ok" | "brand" | "muted"; icon: "check" | "payout" | "clock" }> = { ready: { tone: "ok", icon: "check" }, in_payout: { tone: "brand", icon: "payout" }, below_minimum: { tone: "muted", icon: "clock" } };
@@ -89,7 +90,7 @@ export function MoneyOverview({ locale, month, onMonth, onNames }: { locale: Loc
             <tbody>{rows.map(row => {
               const state = readiness(row.balance), tone = readyTone[state];
               return <tr key={row.user_id} data-testid="earnings-row">
-                <td className="cell-primary"><span className="person"><Avatar name={row.work_name} fallback="?" /><strong><bdi>{nameOf(row, locale)}</bdi></strong></span><span className="row-money narrow-only" dir="ltr">{formatMoney(row.share, locale)}</span><span className="row-sub narrow-only">{fill(t.lineSale, { gross: plainAmount(row.gross, locale), net: plainAmount(row.net, locale) })}</span></td>
+                <td className="cell-primary"><span className="person"><Avatar name={row.work_name} fallback="?" /><strong><bdi>{nameOf(row, locale)}</bdi></strong></span><span className="row-money narrow-only" dir="ltr">{formatMoney(row.share, locale)}</span><span className="row-sub narrow-only">{fillNodes(t.lineSale, { gross: <Ltr>{plainAmount(row.gross, locale)}</Ltr>, net: <Ltr>{plainAmount(row.net, locale)}</Ltr> })}</span></td>
                 <td className="phone-hide num" data-label={t.columns.sales}><span dir="ltr">{row.sales}</span></td>
                 <td className="phone-hide num" data-label={fill(t.columns.gross, { cur: symbol })}><span dir="ltr">{plainAmount(row.gross, locale)}</span></td>
                 <td className="phone-hide num" data-label={fill(t.columns.fees, { cur: symbol })}><span dir="ltr">{plainAmount(row.fees_and_taxes, locale)}</span></td>
