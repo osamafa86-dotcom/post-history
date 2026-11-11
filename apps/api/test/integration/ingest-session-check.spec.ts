@@ -4,6 +4,8 @@ import { AppAttestFixtures } from '../support/app-attest-fixtures';
 import { createHarness, type Harness, loginAs, seedUploadSession } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
+// الاختبار الذي يبني تطبيقًا ثانيًا بإعداد آخر يحتاج أكثر من مهلة jest الافتراضية (5 ث) حين يُقاس مع التغطية
+const SECOND_APP_TIMEOUT_MS = 30_000;
 const claims = (jwt: string) => JSON.parse(Buffer.from(jwt.split('.')[1]!, 'base64url').toString('utf8')) as Record<string, unknown>;
 
 describe('ingest gateway: web ingest tokens and the session check', () => {
@@ -61,7 +63,7 @@ describe('ingest gateway: web ingest tokens and the session check', () => {
     } finally {
       await direct.close();
     }
-  });
+  }, SECOND_APP_TIMEOUT_MS);
 
   it('the session check accepts a live session and refuses within one call of any revocation', async () => {
     const s = await seedUploadSession(h, reporter.id);
@@ -114,7 +116,7 @@ describe('ingest gateway: web ingest tokens and the session check', () => {
     } finally {
       await gated.close();
     }
-  });
+  }, SECOND_APP_TIMEOUT_MS);
 
   it('key_class=qa passes only for the configured acceptance account, and is always refused without one', async () => {
     const acceptance = await loginAs(h, [{ role: 'reporter' }]);
@@ -138,7 +140,7 @@ describe('ingest gateway: web ingest tokens and the session check', () => {
     const live = await seedUploadSession(h, acceptance.id);
     await http().get(`/internal/ingest/session-status?sid=${live.id}&key_class=qa`).expect(403);
     await http().get(`/internal/ingest/session-status?sid=${live.id}`).expect(204);
-  });
+  }, SECOND_APP_TIMEOUT_MS);
 
   it('the session check is internal only', async () => {
     const outside = await createHarness({ env: { ...env, INTERNAL_ALLOWED_CIDRS: '192.0.2.1/32' } });
@@ -149,5 +151,5 @@ describe('ingest gateway: web ingest tokens and the session check', () => {
     } finally {
       await outside.close();
     }
-  });
+  }, SECOND_APP_TIMEOUT_MS);
 });

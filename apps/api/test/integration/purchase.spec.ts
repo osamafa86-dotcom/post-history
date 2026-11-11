@@ -149,7 +149,9 @@ describe('sandbox purchase (/v1/orders, /payments/webhooks/sandbox)', () => {
   });
 
   it('the webhook verifies the raw body before anything: a bad or stale signature is 400, an unknown provider 404, an unknown reference 200 without effect', async () => {
-    const body = Buffer.from(JSON.stringify({ event_id: `e_${randomUUID()}`, type: 'payment.succeeded', provider_ref: 'sbx_unknown', amount: { amount_minor: 1, currency: 'USD' }, occurred_at: new Date().toISOString() }));
+    // مرجع فريد لكل تشغيل: الملف يُعاد على القاعدة نفسها، وصفوف التشغيل السابق لا تدخل العدّ
+    const unknown = `sbx_unknown_${randomUUID()}`;
+    const body = Buffer.from(JSON.stringify({ event_id: `e_${randomUUID()}`, type: 'payment.succeeded', provider_ref: unknown, amount: { amount_minor: 1, currency: 'USD' }, occurred_at: new Date().toISOString() }));
     const send = (b: Buffer, ts: number, key = SECRET, provider = 'sandbox') =>
       http().post(`/payments/webhooks/${provider}`).set('Content-Type', 'application/json').set('X-Timestamp', String(ts)).set('X-Signature', `v1=${signWebhook(key, ts, b)}`).send(b.toString('utf8'));
     const now = Math.floor(Date.now() / 1000);
@@ -157,7 +159,7 @@ describe('sandbox purchase (/v1/orders, /payments/webhooks/sandbox)', () => {
     expect((await send(body, now - 600).expect(400)).body.code).toBe('webhook_signature_invalid');
     await send(body, now, SECRET, 'stripe').expect(404);
     expect((await send(body, now).expect(200)).body).toEqual({ received: true });
-    const { rows } = await h.pool.query(`SELECT outcome, order_id FROM payment_events WHERE provider_ref = 'sbx_unknown'`);
+    const { rows } = await h.pool.query(`SELECT outcome, order_id FROM payment_events WHERE provider_ref = $1`, [unknown]);
     expect(rows).toEqual([{ outcome: 'ignored', order_id: null }]);
   });
 
