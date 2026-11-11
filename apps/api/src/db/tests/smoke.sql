@@ -1036,6 +1036,10 @@ SELECT pg_temp.assert(
 SELECT pg_temp.assert(
   (SELECT count(*) = 1 FROM pg_indexes WHERE indexname = 'outbox_events_pending_idx' AND indexdef ILIKE '%WHERE (published_at IS NULL)%'),
   'outbox dispatcher partial index exists');
+SELECT pg_temp.assert(
+  (SELECT count(*) = 1 FROM pg_indexes WHERE indexname = 'outbox_events_claim_idx'
+    AND indexdef ILIKE '%(id) WHERE ((published_at IS NULL) AND (dead_at IS NULL))%'),
+  'outbox claim index covers pending, non-dead events in claim order');
 
 -- المحاذاة الصوتية على النسخة الخفيفة وحدها، كاملة أو غائبة
 UPDATE material_files SET alignment_original_file_id = '00000000-0000-4000-8000-000000000301', alignment_offset_ms = 120,
