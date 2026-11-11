@@ -76,6 +76,10 @@ const schema = z.object({
   // Redis مشترك بين نسخ الخادم (حد المعدل الآن، الطوابير لاحقًا). مطلوب في الإنتاج؛ غيابه خارجه = حدود في الذاكرة
   REDIS_URL: z.string().min(1).optional(),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).default(10),
+  // مهلة الاستعلام الواحد ومهلة المعاملة المفتوحة بلا استعلام، بالمللي ثانية، تُضبطان على كل اتصال في المجمّع (ADR 0028).
+  // 0 = لا مهلة من الخادم (تبقى قيمة القاعدة). ما يتجاوزهما يُلغى ويرد الطلب 503
+  DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).default(30_000),
+  DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS: z.coerce.number().int().min(0).default(60_000),
 
   JWT_SECRET: z.string().min(32),
   // SEC-02: رمز الوصول لا يتجاوز 15 دقيقة

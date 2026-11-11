@@ -1,7 +1,7 @@
 import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException, Inject } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import type { Logger } from 'pino';
-import { pgError } from './db-errors';
+import { databaseUnavailable, pgError } from './db-errors';
 import { ApiError, type ErrorBody, type ErrorCode, StoredResponse } from './errors';
 import { LOGGER, redactPath } from './logger';
 
@@ -24,11 +24,14 @@ const CODE_BY_STATUS: Record<number, ErrorCode> = {
  */
 const INVALID_INPUT_CODES = new Set(['22001', '22003', '22007', '22008', '22019', '22021', '22025', '2201B', '22P02', '22P05']);
 
-export function toErrorResponse(exception: unknown, requestId: string): { status: number; body: ErrorBody } {
+/** ثوانٍ يُنصح العميل بانتظارها حين لا تُبلَغ القاعدة أو يتجاوز الطلب مهلتها (ADR 0028). */
+const UNAVAILABLE_RETRY_AFTER_SECONDS = 5;
+
+export function toErrorResponse(exception: unknown, requestId: string): { status: number; body: ErrorBody; headers?: Record<string, string> } {
   if (exception instanceof ApiError) {
     const body: ErrorBody = { code: exception.code, message: exception.message, request_id: requestId };
     if (exception.details) body.details = exception.details;
-    return { status: exception.status, body };
+    return { status: exception.status, body, ...(exception.headers ? { headers: exception.headers } : {}) };
   }
   if (exception instanceof HttpException) {
     const status = exception.getStatus();
@@ -39,6 +42,14 @@ export function toErrorResponse(exception: unknown, requestId: string): { status
   const { code } = pgError(exception);
   if (code && INVALID_INPUT_CODES.has(code)) {
     return { status: 422, body: { code: 'validation_failed', message: 'Request validation failed.', request_id: requestId } };
+  }
+  // القاعدة لا تُبلَغ أو تجاوز الطلب مهلتها: عطل مؤقت جوابه «أعد بعد قليل» لا 500 (ADR 0028). الرمز يبقى internal_error
+  if (databaseUnavailable(exception)) {
+    return {
+      status: 503,
+      body: { code: 'internal_error', message: 'Service temporarily unavailable.', request_id: requestId },
+      headers: { 'Retry-After': String(UNAVAILABLE_RETRY_AFTER_SECONDS) },
+    };
   }
   return { status: 500, body: { code: 'internal_error', message: 'Internal error.', request_id: requestId } };
 }
@@ -73,13 +84,11 @@ export class ErrorFilter implements ExceptionFilter {
       return;
     }
 
-    const { status, body } = toErrorResponse(exception, req.id ?? '');
+    const { status, body, headers } = toErrorResponse(exception, req.id ?? '');
     if (status >= 500) {
       this.logger.error({ request_id: req.id, path: redactPath(req.originalUrl), ...errorLogFields(exception) }, 'unhandled error');
     }
-    if (exception instanceof ApiError && exception.headers) {
-      for (const [k, v] of Object.entries(exception.headers)) res.setHeader(k, v);
-    }
+    for (const [k, v] of Object.entries(headers ?? {})) res.setHeader(k, v);
     res.status(status).json(body);
   }
 }

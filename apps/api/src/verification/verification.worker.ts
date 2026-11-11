@@ -59,6 +59,9 @@ export class VerificationWorker implements OnApplicationBootstrap, OnApplication
         .limit(1)
         .for('update', { skipLocked: true });
       if (!session) return false;
+      // المعاملة تبقى مفتوحة بلا استعلام ما دامت البصمة تُحسب (دقائق لملف كبير): مهلة المعاملة الخاملة تُرفع عن هذه المعاملة وحدها،
+      // وإلا قطعتها القاعدة وأُعيد الحساب بلا نهاية (ADR 0028). قفل الجلسة يزول بانقطاع الاتصال كما كان
+      await tx.execute(sql`SET LOCAL idle_in_transaction_session_timeout = 0`);
       let outcome;
       try {
         this.pool ??= new HashPool(this.config.VERIFY_HASH_THREADS);
