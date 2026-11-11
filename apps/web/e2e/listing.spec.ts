@@ -4,7 +4,7 @@ import en from "../messages/en.json" with { type: "json" };
 const l = ar.listing, first = "20000000-0000-4000-8000-000000000001";
 async function login(page: Page, role: string, locale: "ar" | "en" = "ar") {
   const m = locale === "ar" ? ar : en;
-  await page.goto(`/${locale}/login`); await page.getByLabel(m.email).fill(`${role}@example.test`); await page.getByLabel(m.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(m.totp, { exact: true }).fill("123456"); await page.getByRole("button", { name: m.signIn, exact: true }).click(); await expect(page.getByTestId("material-row")).toHaveCount(50);
+  await page.goto(`/${locale}/login`); await page.getByLabel(m.email).fill(`${role}@example.test`); await page.getByLabel(m.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(m.totp, { exact: true }).fill("123456"); await page.getByRole("button", { name: m.signIn, exact: true }).click(); await page.waitForURL(/\/(inbox|my-materials)$/); if (!page.url().endsWith("/inbox")) await page.goto(page.url().replace(/[^/]+$/, "inbox")); await expect(page.getByTestId("material-row")).toHaveCount(50);
 }
 /** يفتح حوار التحويل إن لم يكن مفتوحًا ويختار المسار والهدف والسبب؛ زر التأكيد يُسمّى بالحالة الهدف. */
 async function choose(page: Page, to: string, reason: string, track?: "editorial" | "rights" | "technical") {

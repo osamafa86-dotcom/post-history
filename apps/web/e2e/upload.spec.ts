@@ -10,7 +10,7 @@ async function login(page: Page) {
   await page.goto("/ar/login");
   await page.getByLabel(ar.email).fill("reporter@example.test"); await page.getByLabel(ar.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(ar.totp, { exact: true }).fill("123456");
   await page.getByRole("button", { name: ar.signIn, exact: true }).click();
-  await expect(page.getByTestId("material-row")).toHaveCount(50);
+  await expect(page).toHaveURL(/\/ar\/my-materials$/);
   await page.getByRole("link", { name: ar.upload.nav }).click();
   await expect(page.getByRole("heading", { name: ar.upload.title })).toBeVisible();
 }

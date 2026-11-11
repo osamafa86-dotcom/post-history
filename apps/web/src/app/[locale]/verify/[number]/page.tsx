@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { isLocale } from "@/lib/i18n";
 import { LicenseVerify } from "@/components/store/license-verify";
+import { pageMetadata } from "@/lib/page-titles";
+export const generateMetadata = pageMetadata("verify/[number]");
 
 // صفحة التحقق العامة من ترخيص (التدفق د، D5): بلا تسجيل دخول.
 export default async function VerifyPage({ params }: { params: Promise<{ locale: string; number: string }> }) {

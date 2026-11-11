@@ -1,6 +1,7 @@
 import type { Me, RoleName } from "@/lib/types";
 import { messages, type Locale } from "@/lib/i18n";
 import { hasRole, materialReaders } from "@/lib/review";
+import { reporterOnly } from "@/lib/home-page";
 import { catalogRoles } from "./store/store-catalog";
 import { uploadRoles } from "@/lib/upload-policy";
 import { isBuyer, organizationAdmins } from "@/lib/buyer-policy";
@@ -40,8 +41,8 @@ export function navItems(me: Me, locale: Locale, pathname: string): NavItem[] {
   ];
   const has = (...roles: RoleName[]) => hasRole(me, ...roles);
   return [
-    // الوارد لمن يقرأ قائمة المواد وحده (المالية خارجها، فبدايتها الصرف)؛ لا بند يقود إلى 403.
-    ...(hasRole(me, ...materialReaders) ? [item("inbox", m.inbox, ends("inbox") || ends("materials"), "newsroom", "inbox")] : []),
+    // الوارد لمكتب المواد (المالية خارجه، فبدايتها الصرف، والمراسل وحده في «موادي»)؛ لا بند يقود إلى 403.
+    ...(hasRole(me, ...materialReaders) && !reporterOnly(me) ? [item("inbox", m.inbox, ends("inbox") || ends("materials"), "newsroom", "inbox")] : []),
     ...(has("supervisor", "producer", "editor_in_chief", "rights_officer", "system_admin") ? [item("board", m.board.title, ends("board"), "newsroom", "wall")] : []),
     ...(hasRole(me, ...myTaskRoles) ? [item("tasks", m.tasks.nav, ends("tasks"), "newsroom", "tasks")] : []),
     ...(has("reporter") ? [item("my-materials", m.mine.nav, ends("my-materials"), "newsroom", "mine")] : []),
