@@ -5,7 +5,7 @@ import { type AccountRef, postEntry } from '../../src/commerce/ledger';
 import { type Currency, money } from '../../src/commerce/money';
 import { schemaValidator } from '../../src/common/contract';
 import { DB, type Database } from '../../src/database/database.module';
-import { createHarness, type Harness, loginAs } from './harness';
+import { createHarness, type Harness, loginAs, statementsDuring } from './harness';
 
 // الأرباح وطلبات الصرف التجريبية (العقد #359، ADR 0033): التحرير بعد فترة الاسترداد، والأرصدة والكشف، والطلب بحجزه، والاعتماد
 // الثنائي، والقناة التجريبية، والرفض والإلغاء بالإعادة، والسياسات. فترة الاسترداد صفر هنا فيتحرر ما بيع للتو.
@@ -149,6 +149,21 @@ describe('earnings and sandbox payouts', () => {
     // ثلاثة قيود payout مرجعها الطلب: الحجز والإعادة
     const entries = await h.pool.query(`SELECT count(*)::int AS n FROM journal_entries WHERE kind = 'payout' AND reference_type = 'payout_request' AND reference_id = $1`, [created.id]);
     expect(entries.rows[0].n).toBe(2);
+  });
+
+  it('lists a page of payout requests in a fixed number of statements, each item equal to its own read', async () => {
+    const r = await funded(50_000n);
+    const ids: string[] = [];
+    for (const amount of [2_000, 2_001, 2_002]) {
+      ids.push((await post(r.token, '/me/payout-requests', { amount: { amount_minor: amount, currency: 'USD' }, channel: 'sandbox' }).expect(201)).body.id);
+    }
+    const list = (limit: number) => get(r.token, `/me/payout-requests?limit=${limit}`).expect(200);
+    const page = (await list(3)).body;
+    expect(page.items.map((p: { id: string }) => p.id)).toEqual([...ids].reverse());
+    expect(page.items.map((p: { amount: { amount_minor: number } }) => p.amount.amount_minor)).toEqual([2_002, 2_001, 2_000]);
+    for (const item of page.items) expect(item).toEqual((await get(r.token, `/payout-requests/${item.id}`).expect(200)).body);
+    // صفحة من ثلاثة لا تزيد جملة واحدة على صفحة من واحد
+    expect(await statementsDuring(h, () => list(3))).toBe(await statementsDuring(h, () => list(1)));
   });
 
   it('above the dual-approval limit two different approvers are needed, never the owner; the sandbox channel then pays it', async () => {

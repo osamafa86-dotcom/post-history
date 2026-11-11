@@ -150,4 +150,24 @@ public enum UploadEvent: Equatable, Sendable {
     case phaseChanged(id: UUID, phase: UploadPhase)
     case progress(id: UUID, confirmedOffset: Int64, sizeBytes: Int64)
     case retryScheduled(id: UUID, attempt: Int, after: TimeInterval)
+    /// تغيّر ما يقوله `UploadEngine.storageHealth()`: سجل لم يُقرأ عند الإطلاق، أو حفظ فشل، أو حفظ عاد ينجح.
+    case storageHealthChanged
+}
+
+/// ما لم يستطع التخزين المحلي قراءته أو كتابته (ADR 0113، تعديل 2026-11-11). أعداد وحدها: لا مسار ولا اسم ملف ولا معرّف.
+public struct UploadStorageHealth: Equatable, Sendable {
+    /// سجلات على القرص لم تُقرأ ملفاتها عند الإطلاق (الهاتف مقفل قبل أول فتح، أو عطل قراءة). تبقى في مكانها.
+    public var unreadableRecords: Int
+    /// سجلات قُرئت ملفاتها ولم يُفك ترميزها (شكل أقدم أو ملف تالف). تبقى في مكانها ولا تدخل الطابور.
+    public var undecodableRecords: Int
+    /// سجلات في الطابور لم يصل آخر تغيير لها إلى القرص. تُعاد كتابتها حتى تنجح.
+    public var unsavedRecords: Int
+
+    public init(unreadableRecords: Int = 0, undecodableRecords: Int = 0, unsavedRecords: Int = 0) {
+        self.unreadableRecords = unreadableRecords
+        self.undecodableRecords = undecodableRecords
+        self.unsavedRecords = unsavedRecords
+    }
+
+    public var isHealthy: Bool { unreadableRecords == 0 && undecodableRecords == 0 && unsavedRecords == 0 }
 }

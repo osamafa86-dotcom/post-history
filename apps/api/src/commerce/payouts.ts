@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lte, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { pgError } from '../common/db-errors';
 import { ApiError } from '../common/errors';
@@ -110,15 +110,29 @@ export class PayoutsService {
   async entries(userId: string, q: { currency?: Currency; state?: PayableState; cursor?: string; limit?: number }): Promise<EarningsEntryPage> {
     const limit = q.limit ?? 50;
     if (q.cursor !== undefined && !/^[0-9]{1,19}$/.test(q.cursor)) throw new ApiError(400, 'bad_request', 'The cursor is invalid.');
+    // حسابات المساهم أولًا (بضعة صفوف)، ثم سطورها وحدها: الكلفة بعدد سطوره لا بحجم الدفتر كله
+    const accounts = await this.db
+      .select({ id: ledgerAccounts.id })
+      .from(ledgerAccounts)
+      .where(
+        and(
+          eq(ledgerAccounts.kind, 'contributor_payable'),
+          eq(ledgerAccounts.ownerId, userId),
+          q.currency ? eq(ledgerAccounts.currency, q.currency) : undefined,
+          q.state ? eq(ledgerAccounts.payableState, q.state) : undefined,
+        ),
+      );
+    if (accounts.length === 0) return { items: [], next_cursor: null };
     const rows = await this.db.execute<{ id: string; entry_id: string; kind: string; state: string; amount: string; currency: Currency; reference_type: string; reference_id: string; occurred_at: string }>(sql`
       SELECT p.id::text AS id, j.id AS entry_id, j.kind, a.payable_state AS state, (-p.amount_minor)::text AS amount, p.currency,
              j.reference_type, j.reference_id, j.occurred_at::text AS occurred_at
         FROM postings p
         JOIN ledger_accounts a ON a.id = p.account_id
         JOIN journal_entries j ON j.id = p.entry_id
-       WHERE a.kind = 'contributor_payable' AND a.owner_id = ${userId}
-         ${q.currency ? sql`AND p.currency = ${q.currency}` : sql``}
-         ${q.state ? sql`AND a.payable_state = ${q.state}` : sql``}
+       WHERE p.account_id IN (${sql.join(
+         accounts.map((a) => sql`${a.id}::uuid`),
+         sql`, `,
+       )})
          ${q.cursor ? sql`AND p.id < ${q.cursor}::bigint` : sql``}
        ORDER BY p.id DESC
        LIMIT ${limit + 1}`);
@@ -365,27 +379,43 @@ export class PayoutsService {
     const page = rows.slice(0, limit);
     const last = page[page.length - 1];
     return {
-      items: await Promise.all(page.map((r) => this.dto(this.db, r.row, owner))),
+      items: await this.dtos(
+        this.db,
+        page.map((r) => r.row),
+        owner,
+      ),
       next_cursor: rows.length > limit && last ? Buffer.from(JSON.stringify([last.at, last.row.id])).toString('base64url') : null,
     };
   }
 
-  /** المعتمدون بمعرّفاتهم للمالية والإدارة، وبأوقاتهم وحدها لصاحب الطلب. */
   private async dto(executor: Executor, r: RequestRow, owner: boolean): Promise<PayoutRequest> {
-    const approvals = await executor.select().from(payoutApprovals).where(eq(payoutApprovals.payoutRequestId, r.id)).orderBy(asc(payoutApprovals.approvedAt));
-    return {
+    return (await this.dtos(executor, [r], owner))[0]!;
+  }
+
+  /**
+   * الطلبات بترتيبها، في جملتين مهما كان عددها: صفحة القائمة لا تنفّذ جملة لكل صف. المعتمدون بمعرّفاتهم للمالية والإدارة، وبأوقاتهم
+   * وحدها لصاحب الطلب.
+   */
+  private async dtos(executor: Executor, rows: RequestRow[], owner: boolean): Promise<PayoutRequest[]> {
+    if (rows.length === 0) return [];
+    const ids = rows.map((r) => r.id);
+    const approvals = await executor.select().from(payoutApprovals).where(inArray(payoutApprovals.payoutRequestId, ids)).orderBy(asc(payoutApprovals.approvedAt));
+    const amounts = await amountsOf(executor, ids);
+    return rows.map((r) => ({
       id: r.id,
       user_id: r.userId,
-      amount: toContract(money(await amountOf(executor, r.id), r.currency as Currency)),
+      amount: toContract(money(amounts.get(r.id)!, r.currency as Currency)),
       channel: r.channel as PayoutRequest['channel'],
       state: r.state as PayoutState,
       reason_code: (r.reasonCode as PayoutReason | null) ?? null,
       approvals_required: r.approvalsRequired as 1 | 2,
-      approvals: approvals.map((a) => (owner ? { approved_at: iso(a.approvedAt)! } : { approver_id: a.approverId, approved_at: iso(a.approvedAt)! })),
+      approvals: approvals
+        .filter((a) => a.payoutRequestId === r.id)
+        .map((a) => (owner ? { approved_at: iso(a.approvedAt)! } : { approver_id: a.approverId, approved_at: iso(a.approvedAt)! })),
       requested_at: iso(r.requestedAt)!,
       decided_at: iso(r.decidedAt),
       completed_at: iso(r.completedAt),
-    };
+    }));
   }
 
   private async policyDto(executor: Executor, r: PolicyRow): Promise<PayoutPolicy> {
@@ -408,8 +438,16 @@ export class PayoutsService {
 
 /** مبلغ الطلب نصًا من القاعدة إلى bigint، فلا يمر برقم JavaScript. */
 export async function amountOf(executor: Executor, id: string): Promise<bigint> {
-  const res = await executor.execute<{ amount: string }>(sql`SELECT amount_minor::text AS amount FROM payout_requests WHERE id = ${id}`);
-  return BigInt(res.rows[0]!.amount);
+  return (await amountsOf(executor, [id])).get(id)!;
+}
+
+/** مبالغ الطلبات نصًّا من القاعدة (bigint لا يمر برقم JavaScript)، في جملة واحدة. */
+async function amountsOf(executor: Executor, ids: string[]): Promise<Map<string, bigint>> {
+  const res = await executor
+    .select({ id: payoutRequests.id, amount: sql<string>`${payoutRequests.amountMinor}::text` })
+    .from(payoutRequests)
+    .where(inArray(payoutRequests.id, ids));
+  return new Map(res.map((r) => [r.id, BigInt(r.amount)]));
 }
 
 export async function writePayoutEvent(tx: Tx, row: RequestRow): Promise<void> {

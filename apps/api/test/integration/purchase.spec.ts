@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { schemaValidator } from '../../src/common/contract';
 import { signWebhook } from '../../src/commerce/payment-provider';
-import { createHarness, type Harness, loginAs, makeSaleable, seedUploadSession, seedUser } from './harness';
+import { createHarness, type Harness, loginAs, makeSaleable, seedUploadSession, seedUser, statementsDuring } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
 const SECRET = randomBytes(32).toString('hex');
@@ -149,7 +149,9 @@ describe('sandbox purchase (/v1/orders, /payments/webhooks/sandbox)', () => {
   });
 
   it('the webhook verifies the raw body before anything: a bad or stale signature is 400, an unknown provider 404, an unknown reference 200 without effect', async () => {
-    const body = Buffer.from(JSON.stringify({ event_id: `e_${randomUUID()}`, type: 'payment.succeeded', provider_ref: 'sbx_unknown', amount: { amount_minor: 1, currency: 'USD' }, occurred_at: new Date().toISOString() }));
+    // مرجع فريد لكل تشغيل: الملف يُعاد على القاعدة نفسها، وصفوف التشغيل السابق لا تدخل العدّ
+    const unknown = `sbx_unknown_${randomUUID()}`;
+    const body = Buffer.from(JSON.stringify({ event_id: `e_${randomUUID()}`, type: 'payment.succeeded', provider_ref: unknown, amount: { amount_minor: 1, currency: 'USD' }, occurred_at: new Date().toISOString() }));
     const send = (b: Buffer, ts: number, key = SECRET, provider = 'sandbox') =>
       http().post(`/payments/webhooks/${provider}`).set('Content-Type', 'application/json').set('X-Timestamp', String(ts)).set('X-Signature', `v1=${signWebhook(key, ts, b)}`).send(b.toString('utf8'));
     const now = Math.floor(Date.now() / 1000);
@@ -157,7 +159,7 @@ describe('sandbox purchase (/v1/orders, /payments/webhooks/sandbox)', () => {
     expect((await send(body, now - 600).expect(400)).body.code).toBe('webhook_signature_invalid');
     await send(body, now, SECRET, 'stripe').expect(404);
     expect((await send(body, now).expect(200)).body).toEqual({ received: true });
-    const { rows } = await h.pool.query(`SELECT outcome, order_id FROM payment_events WHERE provider_ref = 'sbx_unknown'`);
+    const { rows } = await h.pool.query(`SELECT outcome, order_id FROM payment_events WHERE provider_ref = $1`, [unknown]);
     expect(rows).toEqual([{ outcome: 'ignored', order_id: null }]);
   });
 
@@ -204,6 +206,22 @@ describe('sandbox purchase (/v1/orders, /payments/webhooks/sandbox)', () => {
     const outsider = await buyer(await organization());
     await http().get(`/v1/orders/${mine.body.id}`).set(as(outsider.token)).expect(404);
     await post(outsider.token, `/orders/${mine.body.id}/checkout`).expect(404);
+  });
+
+  it('lists a page of orders in a fixed number of statements, each item equal to its own read', async () => {
+    const t = await template();
+    const b = await buyer(await organization());
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const { listingId } = await listed([t]);
+      ids.push((await post(b.token, '/orders', { items: [{ listing_id: listingId, license_template_id: t }] }).expect(201)).body.id);
+    }
+    const list = (limit: number) => http().get(`/v1/orders?limit=${limit}`).set(as(b.token)).expect(200);
+    const page = (await list(3)).body;
+    expect(page.items.map((o: { id: string }) => o.id)).toEqual([...ids].reverse());
+    for (const item of page.items) expect(item).toEqual(await order(b.token, item.id));
+    // صفحة من ثلاثة لا تزيد جملة واحدة على صفحة من واحد
+    expect(await statementsDuring(h, () => list(3))).toBe(await statementsDuring(h, () => list(1)));
   });
 
   it('a payment for a material flagged sensitive after the order issues no license and posts no sale', async () => {

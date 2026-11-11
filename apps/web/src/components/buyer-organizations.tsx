@@ -18,6 +18,7 @@ import { fill } from "@/lib/admin-text";
 import { plural, type PluralForms } from "@/lib/i18n";
 import { formatMoney } from "@/lib/store-format";
 import { plainAmount, type BuyerPurchaseTotal, type BuyerPurchaseTotalsPage } from "@/lib/finance-reports";
+import { fillNodes, Money } from "./money";
 
 type Status = Organization["status"];
 const statusTone = { active: { tone: "ok", icon: "check" }, pending_verification: { tone: "warn", icon: "pencil" }, suspended: { tone: "danger", icon: "alert" }, rejected: { tone: "danger", icon: "alert" } } as const;
@@ -98,9 +99,9 @@ function OrganizationTable({ locale, items, open }: { locale: Locale; items: Org
       return <tr key={item.id} data-testid="organization-row">
         <td className="cell-primary"><span className="person"><Avatar name={name} fallback="?" /><span className="person-name"><strong><bdi>{name}</bdi></strong><small className="muted">{formatDate(item.created_at, locale)}</small></span></span></td>
         <td data-label={t.country}><span dir="ltr">{item.country}</span></td>
-        <td className="num" data-label={t.members}><span dir="ltr">{item.active_members} / {item.seats}</span></td>
+        <td className="num" data-label={t.members}><span dir="auto" data-testid="seats-pair">{fill(t.seatsPair, { active: String(item.active_members), seats: String(item.seats) })}</span></td>
         <td className="num" data-label={heading} data-testid="organization-purchases">{failed ? <span className="muted">{m.notAvailable}</span> : !totals ? <span className="skeleton line" aria-hidden="true" /> : !rows.length ? <span className="muted" dir="ltr">{single ? "0.00" : "—"}</span>
-          : rows.map(row => <span key={row.currency} className="purchase"><span dir="ltr">{single ? plainAmount(row.paid, locale) : formatMoney(row.paid, locale)}</span><small className="muted">{plural(row.paid_orders, t.orders as PluralForms, locale)}{row.refunded.amount_minor > 0 && <> · {fill(t.refundedPart, { amount: formatMoney(row.refunded, locale) })}</>}</small></span>)}</td>
+          : rows.map(row => <span key={row.currency} className="purchase"><span dir="ltr">{single ? plainAmount(row.paid, locale) : formatMoney(row.paid, locale)}</span><small className="muted">{plural(row.paid_orders, t.orders as PluralForms, locale)}{row.refunded.amount_minor > 0 && <> · <span data-testid="refunded-part">{fillNodes(t.refundedPart, { amount: <Money price={row.refunded} locale={locale} /> })}</span></>}</small></span>)}</td>
         <td data-label={t.status}><OrganizationStatus status={item.status} locale={locale} /></td>
         <td className="cell-action"><button type="button" className="secondary small" onClick={() => open(item.id)}>{t.open}</button></td>
       </tr>;

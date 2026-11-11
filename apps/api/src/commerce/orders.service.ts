@@ -123,7 +123,10 @@ export class OrdersService {
     const page = rows.slice(0, limit);
     const last = page[page.length - 1];
     return {
-      items: await Promise.all(page.map((r) => read(this.db, r.id))),
+      items: await readMany(
+        this.db,
+        page.map((r) => r.id),
+      ),
       next_cursor: rows.length > limit && last ? Buffer.from(JSON.stringify([last.at, last.id])).toString('base64url') : null,
     };
   }
@@ -521,41 +524,53 @@ async function statusEvent(tx: Tx, o: OrderRow): Promise<void> {
 }
 
 async function read(executor: Executor, id: string): Promise<Order> {
-  const [o] = await executor.select().from(orders).where(eq(orders.id, id));
+  return (await readMany(executor, [id]))[0]!;
+}
+
+/** الطلبات ببنودها بترتيب `ids`، في جملتين مهما كان عددها: صفحة القائمة لا تنفّذ جملة لكل صف. */
+async function readMany(executor: Executor, ids: string[]): Promise<Order[]> {
+  if (ids.length === 0) return [];
+  const rows = await executor.select().from(orders).where(inArray(orders.id, ids));
   const items = await executor
     .select({ item: orderItems, nameAr: licenseTemplateVersions.nameAr, nameEn: licenseTemplateVersions.nameEn, licenseId: licenses.id })
     .from(orderItems)
     .innerJoin(licenseTemplateVersions, and(eq(licenseTemplateVersions.templateId, orderItems.licenseTemplateId), eq(licenseTemplateVersions.version, orderItems.licenseVersion)))
     .leftJoin(licenses, eq(licenses.orderItemId, orderItems.id))
-    .where(eq(orderItems.orderId, id))
+    .where(inArray(orderItems.orderId, ids))
     .orderBy(orderItems.id);
-  return {
-    id: o!.id,
-    order_number: o!.orderNumber,
-    purchase_order_number: o!.purchaseOrderNumber,
-    invoice_number: o!.invoiceNumber,
-    organization_id: o!.organizationId,
-    created_by: o!.createdBy,
-    status: o!.status as Order['status'],
-    cancel_reason: o!.cancelReason as Order['cancel_reason'],
-    total: { amount_minor: o!.totalMinor, currency: o!.currency as Currency },
-    items: items.map((r) => ({
-      id: r.item.id,
-      listing_id: r.item.listingId,
-      material_version: r.item.materialVersion,
-      license_template_id: r.item.licenseTemplateId,
-      license_version: r.item.licenseVersion,
-      license_type: r.item.licenseType as Order['items'][number]['license_type'],
-      license_name: { ar: r.nameAr, en: r.nameEn },
-      title: { ar: r.item.titleAr, en: r.item.titleEn },
-      price: { amount_minor: r.item.priceMinor, currency: r.item.currency as Currency },
-      license_id: r.licenseId,
-    })),
-    expires_at: iso(o!.expiresAt)!,
-    paid_at: iso(o!.paidAt),
-    created_at: iso(o!.createdAt)!,
-    updated_at: iso(o!.updatedAt)!,
-  };
+  const byId = new Map(rows.map((o) => [o.id, o]));
+  return ids.map((id) => {
+    const o = byId.get(id)!;
+    return {
+      id: o.id,
+      order_number: o.orderNumber,
+      purchase_order_number: o.purchaseOrderNumber,
+      invoice_number: o.invoiceNumber,
+      organization_id: o.organizationId,
+      created_by: o.createdBy,
+      status: o.status as Order['status'],
+      cancel_reason: o.cancelReason as Order['cancel_reason'],
+      total: { amount_minor: o.totalMinor, currency: o.currency as Currency },
+      items: items
+        .filter((r) => r.item.orderId === id)
+        .map((r) => ({
+          id: r.item.id,
+          listing_id: r.item.listingId,
+          material_version: r.item.materialVersion,
+          license_template_id: r.item.licenseTemplateId,
+          license_version: r.item.licenseVersion,
+          license_type: r.item.licenseType as Order['items'][number]['license_type'],
+          license_name: { ar: r.nameAr, en: r.nameEn },
+          title: { ar: r.item.titleAr, en: r.item.titleEn },
+          price: { amount_minor: r.item.priceMinor, currency: r.item.currency as Currency },
+          license_id: r.licenseId,
+        })),
+      expires_at: iso(o.expiresAt)!,
+      paid_at: iso(o.paidAt),
+      created_at: iso(o.createdAt)!,
+      updated_at: iso(o.updatedAt)!,
+    };
+  });
 }
 
 function decodeCursor(cursor: string): { at: string; id: string } {

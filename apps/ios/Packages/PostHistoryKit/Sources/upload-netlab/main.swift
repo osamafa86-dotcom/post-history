@@ -107,6 +107,7 @@ Task {
         switch event {
         case .progress(_, let offset, _): log("progress \(offset)/\(size)")
         case .retryScheduled(_, let attempt, let after): log("retry \(attempt) in \(after)s")
+        case .storageHealthChanged: log("storage health changed")
         case .phaseChanged(_, let phase):
             log("phase \(phase)")
             if phase.isTerminal { finalPhase = phase; break }

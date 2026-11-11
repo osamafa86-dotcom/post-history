@@ -365,6 +365,8 @@ const schema = z.object({
     .transform((v) => v === 'true'),
   OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().min(50).default(1000),
   OUTBOX_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(50),
+  // حدث يفشل نشره هذا العدد من المرات يُعلَّم ميتًا ويخرج من الطابور (ADR 0005). بالتراجع القائم (حتى 300 ث) العشرون نحو ساعة من الفشل المتصل
+  OUTBOX_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(20),
 });
 
 export type AppConfig = z.infer<typeof validated>;
