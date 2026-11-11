@@ -9,7 +9,7 @@ import { hasRole } from "@/lib/review";
 import { activeFilters, archiveGovernorates, archiveRoles, filterArchive, noFilters, type ArchiveFilters, type ArchivePeriod } from "@/lib/archive";
 import { cardMedia, durationLabel, materialDuration } from "@/lib/my-materials";
 import { useUser } from "./session-boundary";
-import { EmptyState, NoAccess } from "./empty-state";
+import { EmptyState, ErrorState, NoAccess } from "./empty-state";
 import { Icon } from "./icon";
 
 /**
@@ -52,9 +52,9 @@ export function Archive({ locale }: { locale: Locale }) {
     </nav>
     {active.length > 0 && <ul className="filter-chips" aria-label={m.shell.inbox.activeFilters}>{active.map(([key, value]) => <li key={key}><button type="button" className="chip removable" aria-label={m.shell.inbox.removeFilter.replace("{filter}", label(key, value))} onClick={() => { set({ [key]: "" }); if (key === "q") setDraft(""); }}><bdi>{label(key, value)}</bdi><Icon name="x" size={14} /></button></li>)}
       <li><button type="button" className="link-button" onClick={() => { setFilters(noFilters); setDraft(""); }}>{m.shell.inbox.clearAll}</button></li></ul>}
-    {failed && items && <section className="offline-banner" role="status"><Icon name="offline" size={22} /><div><h2>{m.shell.inbox.offlineTitle}</h2><p>{t.staleBody.replace("{time}", formatDate(updated, locale))}</p></div><button className="secondary" onClick={() => setAttempt(n => n + 1)}>{m.shell.inbox.retryNow}</button></section>}
+    {failed && items && <section className="offline-banner" role="status"><Icon name="offline" size={22} /><div><h2>{m.shell.inbox.offlineTitle}</h2><p>{t.staleBody.replace("{time}", formatDate(updated, locale))}</p></div><button className="secondary" onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></section>}
     <section aria-label={t.title} aria-busy={!items}>
-      {!items ? failed ? <EmptyState icon="offline" role="alert" title={m.shell.inbox.offlineTitle} actions={<button onClick={() => setAttempt(n => n + 1)}>{m.shell.inbox.retryNow}</button>}><p>{t.errorBody}</p></EmptyState>
+      {!items ? failed ? <ErrorState locale={locale} title={m.shell.inbox.offlineTitle} retry={() => setAttempt(n => n + 1)}><p>{t.errorBody}</p></ErrorState>
         : <><p className="visually-hidden" role="status">{m.loading}</p><ul className="archive-grid" aria-hidden="true">{[0, 1, 2, 3, 4, 5, 6, 7].map(i => <li key={i} className="archive-card"><span className="skeleton media" /><span className="skeleton line wide" /><span className="skeleton line" /></li>)}</ul></>
         : !items.length ? <EmptyState icon="film" testId="archive-empty" title={t.emptyTitle}><p>{t.emptyBody}</p></EmptyState>
         : !visible.length ? <EmptyState icon="search" testId="archive-no-results" title={filters.q ? t.noResultsFor.replace("{q}", filters.q) : t.noResults}

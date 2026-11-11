@@ -1,5 +1,5 @@
 "use client";
-import { EmptyState, NoAccess } from "./empty-state";
+import { EmptyState, ErrorState, NoAccess } from "./empty-state";
 import { useEffect, useState } from "react";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { formatDate, messages, type Locale } from "@/lib/i18n";
@@ -60,7 +60,7 @@ export function EarningsPage({ locale }: { locale: Locale }) {
   return <>
     <div className="page-head"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p></div></div>
     <SandboxBanner locale={locale} />
-    {error ? <EmptyState icon="offline" role="alert" title={t.errorTitle} actions={<button type="button" onClick={() => setAttempt(n => n + 1)}>{m.retry}</button>}><p>{t.errorBody}</p></EmptyState>
+    {error ? <ErrorState locale={locale} title={t.errorTitle} retry={() => setAttempt(n => n + 1)}><p>{t.errorBody}</p></ErrorState>
       : !summary || !payouts ? <><p className="visually-hidden" role="status">{m.loading}</p><div className="kpis" aria-hidden="true">{[0, 1, 2, 3].map(i => <article key={i} className="kpi"><span className="skeleton num" /><span className="skeleton line" /></article>)}</div><span className="skeleton card" aria-hidden="true" /></>
       : <>{!summary.balances.length ? <EmptyState icon="money" testId="earnings-empty" title={t.noBalance}><p>{t.noBalanceBody}</p></EmptyState> : <Balances locale={locale} summary={summary} />}
         <p className="caption earnings-formula">{t.formula}</p>
@@ -98,14 +98,14 @@ export function Balances({ locale, summary }: { locale: Locale; summary: Earning
 
 function Entries({ locale, attempt }: { locale: Locale; attempt: number }) {
   const m = messages[locale], t = m.earnings;
-  const [items, setItems] = useState<EarningsEntry[] | null>(null), [cursor, setCursor] = useState<string | null>(null), [error, setError] = useState(false);
+  const [items, setItems] = useState<EarningsEntry[] | null>(null), [cursor, setCursor] = useState<string | null>(null), [error, setError] = useState(false), [again, setAgain] = useState(0);
   const [currency, setCurrency] = useState<Currency | "">(""), [state, setState] = useState<PayableState | "">("");
   const filters = { ...(currency ? { currency } : {}), ...(state ? { state } : {}) };
   useEffect(() => {
     const controller = new AbortController();
     void browserApi().GET("/me/earnings/entries", { params: { query: { ...(currency ? { currency } : {}), ...(state ? { state } : {}) } }, signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setItems(data.items); setCursor(data.next_cursor); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
-  }, [currency, state, attempt]);
+  }, [currency, state, attempt, again]);
   async function more() {
     if (!cursor) return;
     try { const data = dataOrThrow(await browserApi().GET("/me/earnings/entries", { params: { query: { ...filters, cursor } } })); setItems(list => [...(list ?? []), ...data.items]); setCursor(data.next_cursor); } catch { setError(true); }
@@ -113,7 +113,7 @@ function Entries({ locale, attempt }: { locale: Locale; attempt: number }) {
   return <section className="card" aria-labelledby="entries-title"><h2 id="entries-title">{t.entries}</h2><p className="muted">{t.entriesLead}</p>
     <div className="rule-row"><label>{t.currency}<select value={currency} onChange={e => { setItems(null); setCurrency(e.target.value as Currency | ""); }}><option value="">{m.all}</option>{currencies.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
       <label>{t.state}<select value={state} onChange={e => { setItems(null); setState(e.target.value as PayableState | ""); }}><option value="">{m.all}</option>{payableStates.map(s => <option key={s} value={s}>{t.payable[s]}</option>)}</select></label></div>
-    {error ? <p className="notice error" role="alert">{m.error}</p> : !items ? <><p className="visually-hidden" role="status">{m.loading}</p><span className="skeleton block" aria-hidden="true" /><span className="skeleton block" aria-hidden="true" /></> : !items.length ? <p className="muted">{t.noEntries}</p>
+    {error ? <ErrorState locale={locale} testId="entries-error" title={t.entriesFailed} retry={() => { setError(false); setItems(null); setAgain(n => n + 1); }} /> : !items ? <><p className="visually-hidden" role="status">{m.loading}</p><span className="skeleton block" aria-hidden="true" /><span className="skeleton block" aria-hidden="true" /></> : !items.length ? <p className="muted">{t.noEntries}</p>
       : <><div className="list-table"><table><thead><tr>{[t.occurredAt, t.kind, t.state, t.amount].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
         <tbody>{items.map(e => <tr key={e.id} data-testid="entry-row"><td data-label={t.occurredAt}>{formatDate(e.occurred_at, locale)}</td><td data-label={t.kind}>{t.kinds[e.kind]}</td><td data-label={t.state}>{t.payable[e.state]}</td><td data-label={t.amount}><bdi dir="ltr" className="ref">{formatMoney(e.amount, locale)}</bdi></td></tr>)}</tbody></table></div>
         {cursor && <div className="pagination"><button className="secondary" onClick={() => void more()}>{m.next}</button></div>}</>}

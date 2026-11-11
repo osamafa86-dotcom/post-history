@@ -239,10 +239,10 @@ test("a mouse still gets the hover style of a button", async ({ page }) => {
 test("touch layouts give the sort controls, chips, «clear all», filter fields, the breadcrumb back link and the reload button 44px or more", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 }); await login(page, "reviewer", "ar");
   const height = async (locator: import("@playwright/test").Locator) => (await locator.boundingBox())!.height;
+  await page.getByRole("button", { name: ar.filters, exact: true }).click();
   expect(await height(page.locator(".sort-tools select"))).toBeGreaterThanOrEqual(44); expect(await height(page.locator(".sort-tools button"))).toBeGreaterThanOrEqual(44);
   await page.getByLabel(ar.inboxSearch.label).fill("050"); const chips = page.getByRole("list", { name: ar.shell.inbox.activeFilters });
   expect(await height(chips.locator(".chip.removable"))).toBeGreaterThanOrEqual(44); expect(await height(chips.getByRole("button", { name: ar.shell.inbox.clearAll }))).toBeGreaterThanOrEqual(44);
-  await page.getByText(ar.filters, { exact: true }).click();
   for (const field of await page.locator(".filters input, .filters select").all()) expect(await height(field)).toBeGreaterThanOrEqual(44);
   await page.goto("/ar/materials/20000000-0000-4000-8000-000000000005");
   expect(await height(page.getByRole("link", { name: ar.back }))).toBeGreaterThanOrEqual(44);

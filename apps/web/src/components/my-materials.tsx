@@ -9,7 +9,7 @@ import { timecode } from "@/lib/editor";
 import { cardMedia, dayKind, durationLabel, groupMaterials, materialDuration, matchesFilter, mineCounts, mineFilters, needsAction, type MineFilter, type MineGroup, type MineGrouping } from "@/lib/my-materials";
 import { useUser } from "./session-boundary";
 import { StateBadge } from "./states";
-import { EmptyState } from "./empty-state";
+import { EmptyState, ErrorState } from "./empty-state";
 import { Icon } from "./icon";
 
 export { needsAction };
@@ -52,17 +52,17 @@ export function MyMaterials({ locale }: { locale: Locale }) {
   const action = items?.filter(needsAction) ?? [], visible = items?.filter(item => matchesFilter(item, filter)) ?? [], counts = items ? mineCounts(items) : null;
   return <>
     <div className="page-head"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p></div><div className="page-actions"><button type="button" className="secondary" onClick={() => setRefresh(n => n + 1)}>{m.refresh}</button></div></div>
-    {error && <section className="offline-banner" role="status" data-testid="mine-stale"><Icon name="offline" size={22} /><div><h2>{items ? t.staleTitle : m.error}</h2><p>{items && updated ? t.staleBody.replace("{time}", formatDate(updated, locale)) : t.errorBody}</p></div><button type="button" className="secondary" onClick={() => setRefresh(n => n + 1)}>{m.shell.inbox.retryNow}</button></section>}
+    {error && items && <section className="offline-banner" role="status" data-testid="mine-stale"><Icon name="offline" size={22} /><div><h2>{t.staleTitle}</h2><p>{t.staleBody.replace("{time}", updated ? formatDate(updated, locale) : m.notAvailable)}</p></div><button type="button" className="secondary" onClick={() => setRefresh(n => n + 1)}>{m.retry}</button></section>}
     <div className="kpis" data-testid="mine-kpis" aria-label={t.counts}>{counts ? (["all", "action", "reviewing", "approved"] as const).map(key =>
       <article key={key} className={`kpi${key === "action" && counts.action ? " attention" : ""}`} data-kpi={key}><strong dir="ltr">{counts[key]}</strong><span>{t.kpi[key]}</span></article>)
       : [0, 1, 2, 3].map(i => <article key={i} className="kpi" aria-hidden="true"><span className="skeleton num" /><span className="skeleton line" /></article>)}</div>
-    {!items ? !error && <><p className="visually-hidden" role="status">{m.loading}</p><ul className="mine-grid" aria-hidden="true">{[0, 1, 2, 3, 4, 5].map(i => <li key={i} className="mine-card"><span className="skeleton media" /><span className="skeleton line wide" /><span className="skeleton line" /></li>)}</ul></> : <>
+    {!items ? error ? <ErrorState locale={locale} testId="mine-error" title={t.loadFailed} retry={() => setRefresh(n => n + 1)}><p>{t.errorBody}</p></ErrorState> : <><p className="visually-hidden" role="status">{m.loading}</p><ul className="mine-grid" aria-hidden="true">{[0, 1, 2, 3, 4, 5].map(i => <li key={i} className="mine-card"><span className="skeleton media" /><span className="skeleton line wide" /><span className="skeleton line" /></li>)}</ul></> : <>
       {action.length > 0 && <section className="card mine-action" aria-labelledby="mine-action"><h2 id="mine-action"><Icon name="alert" size={18} />{t.action}</h2><ul className="mine-list">{action.map(item => <li key={item.id} data-testid="mine-action">
         <Link className="material-link" prefetch={false} href={`/${locale}/materials/${item.id}`}>{item.title}</Link>
         <p>{item.technical_state === "failed" ? t.uploadFailed : t.changesRequested}</p>
         <Note note={notes[item.id]} locale={locale} />
       </li>)}</ul></section>}
-      {!items.length ? <EmptyState icon="mine" testId="mine-empty" title={t.emptyTitle}><p>{t.emptyBody}</p></EmptyState> : <>
+      {!items.length ? <EmptyState icon="mine" testId="mine-empty" title={t.emptyTitle} actions={<Link prefetch={false} className="button" href={`/${locale}/upload`}>{m.upload.nav}</Link>}><p>{t.emptyBody}</p></EmptyState> : <>
         <div className="mine-tools">
           <nav className="quick-tabs" aria-label={t.filtersLabel}>{mineFilters.map(which => <button key={which} type="button" className={filter === which ? "chip active" : "chip"} aria-pressed={filter === which} onClick={() => setFilter(which)}>{t.filters[which]}</button>)}</nav>
           <div className="segmented" role="group" aria-label={t.groupLabel}>{(["coverage", "type"] as MineGrouping[]).map(which => <button key={which} type="button" className={grouping === which ? "chip active" : "chip"} aria-pressed={grouping === which} onClick={() => group(which)}>{t.groupBy[which]}</button>)}</div>

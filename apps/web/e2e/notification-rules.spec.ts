@@ -12,7 +12,7 @@ test.beforeEach(async ({ request }) => { await request.post(`${api}/__test/reset
 test("admin creates a rule with escalation, edits it with the current revision and deletes it", async ({ page, request }) => {
   await login(page, "admin@example.test");
   await page.getByRole("link", { name: ar.rules.title }).click();
-  await expect(page.getByText(ar.rules.empty)).toBeVisible();
+  await expect(page.getByTestId("rules-empty")).toContainText(ar.rules.emptyTitle);
   await page.getByRole("button", { name: ar.rules.new }).click();
   await page.getByLabel(ar.rules.name).fill("عاجل غزة");
   await page.getByLabel(ar.rules.assignment).check();
@@ -40,7 +40,7 @@ test("admin creates a rule with escalation, edits it with the current revision a
 
   await page.getByRole("button", { name: ar.rules.delete }).click();
   await page.getByRole("dialog").getByRole("button", { name: ar.rules.delete }).click();
-  await expect(page.getByText(ar.rules.empty)).toBeVisible();
+  await expect(page.getByTestId("rules-empty")).toContainText(ar.rules.emptyTitle);
 });
 
 test("an incomplete rule is not sent", async ({ page, request }) => {

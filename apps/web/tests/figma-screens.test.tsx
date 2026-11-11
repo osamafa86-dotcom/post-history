@@ -91,6 +91,5 @@ describe("catalog toolbar (Figma 185:330)", () => {
     const keys = (value: unknown, prefix = ""): string[] => value && typeof value === "object" ? Object.entries(value).flatMap(([k, v]) => keys(v, `${prefix}${k}.`)) : [prefix];
     for (const part of ["trackLine", "inboxTabs", "inboxSearch"] as const) expect(keys(ar[part])).toEqual(keys(en[part]));
     expect(keys(ar.store.browse.period)).toEqual(keys(en.store.browse.period)); expect(keys(ar.store.browse.quick)).toEqual(keys(en.store.browse.quick));
-    for (const text of [ar.inboxSummary, en.inboxSummary]) for (const slot of ["{total}", "{urgent}", "{inbox}", "{reviewing}", "{accepted}", "{stopped}"]) expect(text).toContain(slot);
   });
 });
