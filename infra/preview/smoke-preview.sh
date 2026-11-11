@@ -945,7 +945,8 @@ fi
 # The feeder as a service: back on, it logs that it started and nothing else while there is nothing to do.
 started="$("${C[@]}" up -d --no-deps media-feeder 2>&1)" || { echo "$started" | tail -5; fail "media-feeder does not start"; }
 sleep 12
-"${C[@]}" logs --no-color media-feeder 2>&1 | grep -q '"msg":"media feeder started"' || fail "media-feeder did not start its loop"
+# Read whole, then matched (pipefail: grep -q leaving at its first match fails the pipe while the log is still written).
+grep -q '"msg":"media feeder started"' <<<"$("${C[@]}" logs --no-color media-feeder 2>&1)" || fail "media-feeder did not start its loop"
 [ "$(docker inspect -f '{{.State.Running}}' "$("${C[@]}" ps -q media-feeder)")" = true ] || fail "media-feeder is not running"
 
 # No title, file name, location or device in what the worker and the feeder log (CLAUDE.md §5), and only counts from the feeder.
