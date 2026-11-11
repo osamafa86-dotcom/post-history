@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # غلاف ترحيلات قاعدة البيانات (ADR 0001): ملفات SQL خام في migrations/ يشغّلها node-pg-migrate.
 # الاستخدام:  apps/api/src/db/migrate.sh up | down [count] | create <name>
-# يقرأ DATABASE_URL من البيئة (أو من infra/compose/.env محليًا عبر المتغيرات نفسها).
+# يقرأ DATABASE_URL من البيئة (أو من infra/compose/.env محليًا عبر المتغيرات نفسها)، وMIGRATE_LOCK_TIMEOUT لمهلة القفل (افتراضي 5s).
 # node-pg-migrate من node_modules (اعتمادية مقفلة في package-lock.json بعد npm ci)، لا npx: لا جلب من سجل npm وقت التشغيل.
 set -euo pipefail
 
@@ -21,6 +21,9 @@ action="${1:-up}"
 shift || true
 case "$action" in
   up|down|redo)
+    # مهلة القفل: ترحيل ينتظر قفلًا تمسكه معاملة أخرى يفشل بعدها، ولا يقف خلفه كل ما يطلب الجدول. يُعاد تشغيله بعد زوال المعاملة.
+    # MIGRATE_LOCK_TIMEOUT بصيغة Postgres (افتراضي 5s؛ 0 يلغي المهلة)
+    export PGOPTIONS="${PGOPTIONS:+$PGOPTIONS }-c lock_timeout=${MIGRATE_LOCK_TIMEOUT:-5s}"
     exec "$MIGRATE" "$action" "$@" -m "$DIR" -t schema_migrations --check-order --verbose=false
     ;;
   create)
