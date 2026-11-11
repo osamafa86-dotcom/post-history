@@ -239,6 +239,39 @@ describe('upload sessions (/v1/uploads)', () => {
     const post = (url: string, body?: object) =>
       request(direct.app.getHttpServer()).post(url).set('Authorization', `Bearer ${owner.token}`).set('Idempotency-Key', randomUUID()).send(body);
 
+    it('refuses completion by anyone but the creator of the session (404) and leaves it open', async () => {
+      const materialId = (
+        await post('/v1/materials', {
+          title: 'Direct upload by its owner',
+          material_types: ['report'],
+          governorate: 'gaza',
+          city: 'gaza',
+          priority: 'normal',
+          sensitivity: { minors: false, injured: false, graphic: false },
+          display_name: { mode: 'network' },
+          form_version: 1,
+          dynamic_fields: {},
+        }).expect(201)
+      ).body.id;
+      const s = (await post('/v1/uploads', { material_id: materialId, kind: 'original', ...file(10), filename: 'f' }).expect(201)).body;
+      const before = (await direct.pool.query(`SELECT state, storage_key FROM upload_sessions WHERE id = $1`, [s.id])).rows[0];
+
+      // مراسل آخر من المكتب نفسه: ليس منشئ الجلسة
+      const peer = await loginAs(direct, [{ role: 'reporter' }], { officeId: office });
+      await request(direct.app.getHttpServer())
+        .post(`/v1/uploads/${s.id}/complete`)
+        .set('Authorization', `Bearer ${peer.token}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({})
+        .expect(404);
+
+      const { rows } = await direct.pool.query(`SELECT state, storage_key FROM upload_sessions WHERE id = $1`, [s.id]);
+      expect(rows[0]).toEqual(before);
+      expect(rows[0].state).not.toBe('completed');
+      const { rows: ev } = await direct.pool.query(`SELECT type FROM outbox_events WHERE aggregate_id = $1 ORDER BY id`, [s.id]);
+      expect(ev.map((e) => e.type)).toEqual(['upload.started']);
+    });
+
     it('completes once (repeat is 202), derives the storage key, and rejects a mismatching reported checksum', async () => {
       const materialId = (
         await post('/v1/materials', {

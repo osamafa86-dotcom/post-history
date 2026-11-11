@@ -1,6 +1,6 @@
 # 0027 — المراقبة ذاتية الاستضافة على المضيف: Prometheus وGrafana وLoki ومجمّع OpenTelemetry
 
-- الحالة: مقترح (مقيس في `infra/observability/smoke-monitoring.sh` محليًا وفي CI)
+- الحالة: مقبول (موافقة المنسّق 2026-11-11؛ منفَّذ ومدموج، مقيس في `infra/observability/smoke-monitoring.sh` محليًا وفي CI)
 - التاريخ: 2026-10-21
 - المسؤول: وكيل الرفع والبنية (البنية والتنقية)، ووكيل الخادم (أدوات القياس في التطبيقات)
 - بند ملحق القرارات: — (الخطة: «المراقبة: OpenTelemetry وPrometheus وGrafana وLoki وSentry»؛ #149 البند ج)

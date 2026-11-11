@@ -1,5 +1,6 @@
 import { Inject, Injectable, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
 import { getTableColumns, and, asc, desc, eq, isNotNull, lt, sql, type SQL } from 'drizzle-orm';
+import { unionAll } from 'drizzle-orm/pg-core';
 import { randomUUID } from 'node:crypto';
 import type { Logger } from 'pino';
 import { APP_CONFIG, type AppConfig, fieldKeyring } from '../config/config';
@@ -28,7 +29,7 @@ import {
   type MaterialDto,
   type MaterialRow,
   roleCovers,
-  scopeCondition,
+  scopeParts,
   toMaterialDtos,
 } from './material-store';
 import { APPROVED_STATES, transitionOwners, STATE_COLUMN, type Track } from './transitions';
@@ -94,7 +95,7 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
 
   async list(p: Principal, q: ListQuery): Promise<{ items: MaterialDto[]; next_cursor: string | null }> {
     const limit = q.limit ?? 50;
-    const where: SQL[] = [scopeCondition(p)];
+    const where: SQL[] = [];
     if (q.editorial_state) where.push(eq(materials.editorialState, q.editorial_state));
     if (q.technical_state) where.push(eq(materials.technicalState, q.technical_state));
     if (q.rights_state) where.push(eq(materials.rightsState, q.rights_state));
@@ -105,13 +106,25 @@ export class MaterialsService implements OnApplicationBootstrap, OnApplicationSh
     if (q.shot_before) where.push(sql`${materials.shotAt} < ${q.shot_before}::timestamptz`);
     const sort = q.sort ?? 'created_desc';
     if (q.cursor) where.push(afterCursor(sort, decodeCursor(q.cursor, sort)));
-    const rows = (await this.db
-      .select(materialSelection)
-      .from(materials)
-      .leftJoin(offices, eq(offices.id, materials.officeId))
-      .where(and(...where))
-      .orderBy(...SORT_ORDER[sort])
-      .limit(limit + 1)) as MaterialRow[];
+    const branch = (scope?: SQL) =>
+      this.db
+        .select(materialSelection)
+        .from(materials)
+        .leftJoin(offices, eq(offices.id, materials.officeId))
+        .where(and(scope, ...where))
+        .orderBy(...SORT_ORDER[sort])
+        .limit(limit + 1);
+    // نطاق من أكثر من جزء (ما أنشأه المستخدم، ونطاق دوره): فرع لكل جزء بترتيبه وحدّه يقرؤه بفهرسه، ثم تُدمج الفروع. شرط واحد بـ OR
+    // بين عمودين لا يخدمه فهرس، فكانت صفحة الوارد تمسح الجدول. كل فرع يستثني ما سبقه كي لا تتكرر مادة تطابق جزأين
+    const parts = scopeParts(p);
+    const branches =
+      parts === 'all' ? [branch()] : parts.length === 0 ? [branch(sql`false`)] : parts.map((part, i) => branch(and(part, ...parts.slice(0, i).map((earlier) => sql`(${earlier}) IS NOT TRUE`))));
+    const [first, second, ...rest] = branches;
+    const rows = (await (second
+      ? unionAll(first!, second, ...rest)
+          .orderBy(...SORT_ORDER[sort])
+          .limit(limit + 1)
+      : first!)) as MaterialRow[];
     const page = rows.slice(0, limit);
     const last = page[page.length - 1];
     return {

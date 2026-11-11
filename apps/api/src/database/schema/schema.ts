@@ -343,6 +343,7 @@ export const materials = pgTable("materials", {
 	tags: text().array().default([""]).notNull(),
 }, (table) => [
 	index("materials_board_idx").using("btree", table.officeId.asc().nullsLast().op("uuid_ops"), table.editorialState.asc().nullsLast().op("timestamptz_ops"), table.priority.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("materials_office_state_created_idx").using("btree", table.officeId.asc().nullsLast().op("uuid_ops"), table.editorialState.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops"), table.id.desc().nullsFirst().op("uuid_ops")),
 	index("materials_cursor_idx").using("btree", table.createdAt.desc().nullsFirst().op("uuid_ops"), table.id.desc().nullsFirst().op("timestamptz_ops")),
 	index("materials_governorate_shot_idx").using("btree", table.governorate.asc().nullsLast().op("timestamptz_ops"), table.shotAt.desc().nullsFirst().op("text_ops")),
 	index("materials_reporter_idx").using("btree", table.reporterId.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),

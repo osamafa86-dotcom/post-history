@@ -206,6 +206,39 @@ describe('sandbox purchase (/v1/orders, /payments/webhooks/sandbox)', () => {
     await post(outsider.token, `/orders/${mine.body.id}/checkout`).expect(404);
   });
 
+  it('a payment for a material flagged sensitive after the order issues no license and posts no sale', async () => {
+    const t = await template();
+    const { listingId, materialId } = await listed([t]);
+    const b = await buyer(await organization());
+    const o = await post(b.token, '/orders', { items: [{ listing_id: listingId, license_template_id: t }] }).expect(201);
+    const { ref: r } = await ref(b.token, o.body.id);
+    // الوسم وحده يتغيّر بعد فتح جلسة الدفع (القاعدة تشترط تعليق الإدراج قبله): الحقوق والاعتماد والتحقق والإصدار كما كانت عند الطلب
+    await h.pool.query(`UPDATE catalog_listings SET state = 'suspended', suspended_reason = 'sensitive_flagged' WHERE id = $1`, [listingId]);
+    await h.pool.query(`UPDATE materials SET sensitivity_graphic = true WHERE id = $1`, [materialId]);
+    await pay(r);
+    expect(await order(b.token, o.body.id)).toMatchObject({ status: 'cancelled', cancel_reason: 'rights_changed', paid_at: null });
+    expect(await count(`SELECT count(*)::int AS n FROM licenses l JOIN order_items i ON i.id = l.order_item_id WHERE i.order_id = $1`, [o.body.id])).toBe(0);
+    expect(await count(`SELECT count(*)::int AS n FROM journal_entries WHERE reference_id = $1`, [o.body.id])).toBe(0);
+  });
+
+  it('a non-exclusive order paid while another buyer holds the material exclusively issues no license and leaves the hold', async () => {
+    const ex = await template('exclusive_temporary');
+    const plain = await template();
+    const { listingId } = await listed([ex, plain]);
+    const a = await buyer(await organization());
+    const b = await buyer(await organization());
+    const open = await post(a.token, '/orders', { items: [{ listing_id: listingId, license_template_id: plain }] }).expect(201);
+    const { ref: r } = await ref(a.token, open.body.id);
+    // حجز حصري لمشترٍ آخر بعد فتح جلسة الدفع للطلب غير الحصري
+    const held = await post(b.token, '/orders', { items: [{ listing_id: listingId, license_template_id: ex }] }).expect(201);
+    await pay(r);
+    expect(await order(a.token, open.body.id)).toMatchObject({ status: 'cancelled', cancel_reason: 'exclusivity_lost', paid_at: null });
+    expect(await count(`SELECT count(*)::int AS n FROM licenses l JOIN order_items i ON i.id = l.order_item_id WHERE i.order_id = $1`, [open.body.id])).toBe(0);
+    expect(await count(`SELECT count(*)::int AS n FROM journal_entries WHERE reference_id = $1`, [open.body.id])).toBe(0);
+    const { rows } = await h.pool.query(`SELECT state FROM exclusive_holds h JOIN order_items i ON i.id = h.order_item_id WHERE i.order_id = $1`, [held.body.id]);
+    expect(rows).toEqual([{ state: 'held' }]);
+  });
+
   it('a payment for the wrong amount, or after the rights changed, issues no license and is kept for review', async () => {
     const t = await template();
     const a = await listed([t]);
