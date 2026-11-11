@@ -18,6 +18,15 @@ export function EmptyState({ icon, title, children, actions, role, testId }: { i
 }
 
 /**
+ * تعذّر التحميل: نمط الحالات نفسه بعنوان يسمّي ما تعذّر، وجملة تقول ما بقي سليمًا وما سيحدث، وزر واحد بصيغة واحدة («أعد المحاولة»).
+ * يأخذ موضع القائمة التي تعذّرت، كي لا تُقرأ الصفحة فارغة.
+ */
+export function ErrorState({ locale, title, children, retry, testId }: { locale: Locale; title: React.ReactNode; children?: React.ReactNode; retry: () => void; testId?: string }) {
+  const m = messages[locale];
+  return <EmptyState icon="offline" role="alert" testId={testId} title={title} actions={<button type="button" onClick={retry}>{m.retry}</button>}>{children ?? <p>{m.errorBody}</p>}</EmptyState>;
+}
+
+/**
  * لا صلاحية (E5): يقول الدور وما يملكه، ويعيد إلى صفحة بدايته (`homePage`). «اطلب الوصول» خارج الخطة والعقد فلا يُبنى (web-v2.md E5).
  * نص الرفض الخاص بالصفحة يبقى بدور `alert` كما كان.
  */

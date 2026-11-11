@@ -1,5 +1,5 @@
 "use client";
-import { NoAccess } from "./empty-state";
+import { EmptyState, ErrorState, NoAccess } from "./empty-state";
 import { useCallback, useEffect, useState } from "react";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { formatDate, messages, type Locale } from "@/lib/i18n";
@@ -60,8 +60,10 @@ export function PayoutsPage({ locale }: { locale: Locale }) {
     <section className="money-requests" aria-labelledby="payout-requests-title"><div className="card-head"><div><h2 id="payout-requests-title">{t.title}</h2><p className="muted">{t.lead}</p></div></div>
     <ActionStatus status={mutation.status} locale={locale} />{mutation.status === 409 && <p className="notice error">{t.conflict}</p>}
     <label className="inline-filter">{e.state}<select value={state} onChange={ev => { setItems(null); setState(ev.target.value as State | ""); }}><option value="">{m.all}</option>{payoutStates.map(s => <option key={s} value={s}>{e.states[s]}</option>)}</select></label>
-    {error ? <section className="center-state" role="alert"><p>{m.error}</p><button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></section>
-      : !items ? <p className="center-state" role="status">{m.loading}</p> : !items.length ? <p className="empty">{t.empty}</p>
+    {error ? <ErrorState locale={locale} testId="payouts-error" title={t.loadFailed} retry={() => setAttempt(n => n + 1)} />
+      : !items ? <p className="center-state" role="status">{m.loading}</p>
+      : !items.length ? (state ? <EmptyState icon="filter" testId="payouts-empty" title={t.emptyFiltered} actions={<button type="button" className="secondary" onClick={() => { setItems(null); setState(""); }}>{t.showAll}</button>} />
+        : <EmptyState icon="payout" testId="payouts-empty" title={t.emptyTitle}><p>{t.emptyBody}</p></EmptyState>)
       : <><div className="table-panel"><div className="table-scroll"><table><thead><tr>{[e.requestedAt, t.contributor, e.amount, e.state, e.approvals, ""].map((label, i) => <th scope="col" key={i}>{label}</th>)}</tr></thead>
         <tbody>{items.map(p => <tr key={p.id} data-testid="payout-row"><td>{formatDate(p.requested_at, locale)}</td>
           <td><button className="quiet" onClick={() => void showBalances(p.user_id)}>{names[p.user_id] ? <bdi>{names[p.user_id]}</bdi> : <bdi dir="ltr">{p.user_id.slice(0, 8)}</bdi>} · {t.balances}</button></td>

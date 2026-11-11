@@ -15,7 +15,7 @@ import { Contributors, ReviewActions } from "./review-actions";
 import { ListingPanel } from "./listing-panel";
 import { RenderFiles } from "./render-files";
 import { AssignmentCard } from "./assignment-card";
-import { EmptyState } from "./empty-state";
+import { EmptyState, ErrorState } from "./empty-state";
 import { Icon } from "./icon";
 import { MaterialTags, type TagNotice } from "./material-tags";
 import { materialTag } from "@/lib/review";
@@ -54,7 +54,8 @@ export function MaterialDetail({ locale, id }: { locale: Locale; id: string }) {
   }, [id, attempt]);
 
   const crumbs = (title?: string) => <nav className="breadcrumb" aria-label={w.breadcrumb}><Link prefetch={false} className="back-link" href={`/${locale}/inbox`} aria-label={m.back}>{m.inbox}</Link>{title && <><span className="breadcrumb-sep"><Icon name="chevron" size={14} /></span><span aria-current="page">{title}</span></>}</nav>;
-  if (error) return <>{crumbs()}<EmptyState icon={error === 403 ? "key" : error === 404 ? "search" : "alert"} role="alert" title={error === 404 ? m.notFound : error === 403 ? m.material.outOfScope : m.error} actions={<button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button>} /></>;
+  if (error) return <>{crumbs()}{error === 403 || error === 404 ? <EmptyState icon={error === 403 ? "key" : "search"} role="alert" title={error === 404 ? m.notFound : m.material.outOfScope} actions={<button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button>} />
+    : <ErrorState locale={locale} testId="material-error" title={m.material.loadFailed} retry={() => setAttempt(n => n + 1)} />}</>;
   if (!material) return <>{crumbs()}<p className="visually-hidden" role="status">{m.loading}</p><div className="material-layout" aria-hidden="true"><div className="material-main"><span className="skeleton media" /><span className="skeleton line wide" /><span className="skeleton line" /></div><div className="material-side"><span className="skeleton card" /><span className="skeleton card" /></div></div></>;
   const receipt = material.files.find(f => f.receipt_number)?.receipt_number, last = lastEvents(records ?? []), names = { technical: m.technical, editorial: m.editorial, rights: m.rights };
   const files = material.files.filter(f => f.kind === "original").length, time = shortTime(material.shot_at);
