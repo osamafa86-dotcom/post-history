@@ -112,7 +112,7 @@ export function Inbox({ locale }: { locale: Locale }) {
     <p>{w.emptyBody}{lastArrival && now ? <> {w.lastArrival.replace("{time}", humanDuration(now - Date.parse(lastArrival), locale))}</> : null}</p></EmptyState>;
   if (!reader || forbidden) return <NoAccess locale={locale} me={me} title={m.inbox} denied={w.denied} />;
   return <>
-    {page && <UrgentAlert locale={locale} items={urgentUnacknowledged(page.items)} now={now} disabled={disconnected} done={() => setRefresh(n => n + 1)} showAll={() => { setQuery({ limit: 50, priority: "urgent", editorial_state: "inbox" }); setPage(null); setCursors([undefined]); }} />}
+    {page && staff && <UrgentAlert locale={locale} items={urgentUnacknowledged(page.items)} now={now} disabled={disconnected} done={() => setRefresh(n => n + 1)} showAll={() => { setQuery({ limit: 50, priority: "urgent", editorial_state: "inbox" }); setPage(null); setCursors([undefined]); }} />}
     <div className="page-head inbox-head">
       <div><h1>{m.inbox}</h1>
         <p className={`live-line${disconnected ? " stale" : ""}`} aria-live="polite"><span className="live-dot" aria-hidden="true" />{disconnected ? <>{m.updated} <bdi dir="ltr">{updated ? shortTime(updated) : m.notAvailable}</bdi></> : <>{w.live} · {m.live}</>}{!disconnected && unread > 0 && <> · {m.notifications}: <b dir="ltr">{unread}</b></>}</p>

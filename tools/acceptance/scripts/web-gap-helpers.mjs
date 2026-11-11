@@ -96,7 +96,7 @@ export const PASSWORD_SUBMIT = /^\s*(?:دخول|Sign in)\s*$/i;
  * صفحات البداية بعد الدخول (`HomePage` في apps/web/src/lib/home-page.ts، #517): المشتري في المتجر، ومن يقرأ المواد في الوارد،
  * والمالية في الصرف، والباقي في التنبيهات. الدخول ينتهي حين يصل المتصفح إلى أيٍّ منها؛ الاختبار الذاتي يطابقها بمصدر الويب.
  */
-export const HOME_PAGES = Object.freeze(["store", "inbox", "payouts", "notifications"]);
+export const HOME_PAGES = Object.freeze(["store", "my-materials", "inbox", "payouts", "notifications"]);
 export const LANDING = new RegExp(`/((ar|en)/)?(${HOME_PAGES.join("|")})(?:[?#]|$)`);
 
 export async function login(page, env, { email, password, locale = "ar" }) {

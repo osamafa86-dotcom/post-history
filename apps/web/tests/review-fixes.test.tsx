@@ -40,8 +40,10 @@ describe("privacy policy states capture location as ADR 0087/0094/0112 build it"
 });
 
 describe("each role lands on a page it can read (finance on payouts, E5)", () => {
-  it("lands buyers in the store, material readers in the inbox, finance in payouts, the rest in notifications", () => {
-    expect(homePage(as("buyer_member"))).toBe("store"); expect(homePage(as("reporter"))).toBe("inbox"); expect(homePage(as("supervisor"))).toBe("inbox");
+  it("lands buyers in the store, a reporter on their own materials, the desk in the inbox, finance in payouts, the rest in notifications", () => {
+    expect(homePage(as("buyer_member"))).toBe("store"); expect(homePage(as("reporter"))).toBe("my-materials"); expect(homePage(as("supervisor"))).toBe("inbox");
+    // مراسل يحمل دورًا من أدوار المكتب أيضًا يبدأ من الوارد
+    expect(homePage(as("reporter", "supervisor"))).toBe("inbox"); expect(homePage(as("reporter", "producer"))).toBe("inbox");
     expect(homePage(as("finance"))).toBe("payouts"); expect(homePage(as("finance", "rights_officer"))).toBe("inbox"); expect(homePage(as())).toBe("notifications");
   });
   it("hides the inbox from finance and keeps every other destination finance can read", () => {

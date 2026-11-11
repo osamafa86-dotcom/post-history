@@ -222,6 +222,11 @@ test.describe("on a touch phone", () => {
     expect([...new Set(small)]).toEqual([]);
   });
 
+  test("the keyboard shortcuts hint is not shown where there is no keyboard", async ({ page }) => {
+    await login(page, "reviewer", "ar"); await page.goto("/ar/notifications");
+    await expect(page.getByText(ar.notice.unreadCount).first()).toBeVisible(); await expect(page.getByText(ar.notice.shortcuts)).toBeHidden();
+  });
+
   test("a tap leaves no hover style behind on a button", async ({ page }) => {
     expect(await page.evaluate(() => matchMedia("(hover: none) and (pointer: coarse)").matches)).toBe(true);
     await page.goto("/ar/login"); const button = page.getByRole("button", { name: ar.signIn, exact: true });
@@ -230,10 +235,50 @@ test.describe("on a touch phone", () => {
   });
 });
 
+test("a keyboard user reads the shortcuts hint on the notifications page", async ({ page }) => {
+  await login(page, "reviewer", "ar"); await page.goto("/ar/notifications"); await expect(page.getByText(ar.notice.shortcuts)).toBeVisible();
+});
+
 test("a mouse still gets the hover style of a button", async ({ page }) => {
   await page.goto("/ar/login"); const button = page.getByRole("button", { name: ar.signIn, exact: true });
   const rest = await button.evaluate(el => getComputedStyle(el).backgroundColor); await button.hover();
   expect(await button.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(rest);
+});
+
+test("a reporter starts on «my materials»: the desk inbox is not in their navigation, and its urgent alert is not shown to them", async ({ page }) => {
+  await login(page, "reporter", "ar"); await expect(page).toHaveURL(/\/ar\/my-materials$/);
+  const nav = page.getByRole("navigation", { name: ar.workspace });
+  await expect(nav.locator("[aria-current='page']")).toHaveAccessibleName(ar.mine.nav); await expect(nav.getByRole("link", { name: ar.inbox, exact: true })).toHaveCount(0);
+  // وارد المكتب ما زال مقروءًا له بعنوانه، بلا إنذار المشرف وصوته
+  await page.goto("/ar/inbox"); await expect(page.getByTestId("material-row").first()).toBeVisible(); await expect(page.getByTestId("urgent-alert")).toHaveCount(0);
+  // الضابط: المشرف يبدأ من الوارد ويرى الإنذار فيه. الصفحة تُترك أولًا كي لا يسابق خروجُها التلقائي عند زوال الجلسة الانتقالَ التالي
+  await page.goto("about:blank"); await page.context().clearCookies(); await login(page, "reviewer", "ar");
+  await expect(page).toHaveURL(/\/ar\/inbox$/); await expect(page.getByTestId("urgent-alert")).toBeVisible();
+});
+
+test("each page has its own browser title, by its fixed name and never by a material's title", async ({ page }) => {
+  await login(page, "reviewer", "ar");
+  const titles: string[] = [];
+  for (const [path, name] of [["inbox", ar.inbox], ["board", ar.board.title], ["notifications", ar.notice.title], ["materials/20000000-0000-4000-8000-000000000005", ar.pageTitles.material]] as const) {
+    await page.goto(`/ar/${path}`); await expect(page).toHaveTitle(`${name} · ${ar.product}`); titles.push(await page.title());
+  }
+  expect(new Set(titles).size).toBe(titles.length);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(/\S/); expect(await page.title()).not.toContain((await page.getByRole("heading", { level: 1 }).innerText()).trim());
+  // التنقّل داخل التطبيق يبدّل العنوان أيضًا
+  await page.getByRole("navigation", { name: ar.workspace }).getByRole("link", { name: ar.board.title, exact: true }).click(); await expect(page).toHaveTitle(`${ar.board.title} · ${ar.product}`);
+  await page.goto("/en/inbox"); await expect(page).toHaveTitle(`${en.inbox} · ${en.product}`);
+  await page.goto("about:blank"); await page.context().clearCookies(); await page.goto("/en/login"); await expect(page).toHaveTitle(`${en.pageTitles.login} · ${en.product}`);
+});
+
+for (const locale of ["ar", "en"] as Locale[]) test(`a missing page says so in the page's language and leads to the role's start page (${locale})`, async ({ page }) => {
+  const t = dict[locale].pageNotFound;
+  await page.goto(`/${locale}/no-such-page`); const missing = page.getByTestId("page-not-found");
+  await expect(missing.getByRole("heading", { level: 1 })).toHaveText(t.title); await expect(page.locator("html")).toHaveAttribute("lang", locale);
+  await expect(missing).not.toContainText(dict[locale].notFound);
+  // غير الداخل إلى صفحة الدخول، والداخل إلى صفحة دوره
+  await expect(missing.getByRole("link", { name: t.action })).toHaveAttribute("href", `/${locale}/login`);
+  await login(page, "reporter", locale); await page.goto(`/${locale}/no-such-page`);
+  await expect(page.getByTestId("page-not-found").getByRole("link", { name: t.action })).toHaveAttribute("href", `/${locale}/my-materials`);
 });
 
 test("touch layouts give the sort controls, chips, «clear all», filter fields, the breadcrumb back link and the reload button 44px or more", async ({ page }) => {

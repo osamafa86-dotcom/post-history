@@ -48,8 +48,8 @@ for (const locale of ["ar", "en"] as const) test(`${locale}: local controls, key
 test("navigation destroys playback and does not duplicate controls on return", async ({ page }) => {
   await openPlayer(page);
   await page.locator("video").evaluate((v: HTMLVideoElement) => { (window as unknown as { oldVideo: HTMLVideoElement }).oldVideo = v; v.muted = true; return v.play(); });
-  await page.getByRole("link", { name: ar.inbox, exact: true }).click();
-  await expect(page.getByTestId("material-row")).toHaveCount(50);
+  await page.getByRole("link", { name: ar.mine.nav, exact: true }).click();
+  await expect(page.locator(".mine-card .material-link").first()).toBeVisible();
   await expect.poll(() => page.evaluate(() => { const v = (window as unknown as { oldVideo: HTMLVideoElement }).oldVideo; return !v.isConnected && v.paused && !v.getAttribute("src"); })).toBe(true);
   await page.locator(".material-link").first().click(); await expect(page.locator(".shaka-controls-container")).toHaveCount(1);
 });

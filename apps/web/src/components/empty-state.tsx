@@ -24,7 +24,7 @@ export function EmptyState({ icon, title, children, actions, role, testId }: { i
 export function NoAccess({ locale, me, title, denied }: { locale: Locale; me: Me | null; title: string; denied: string }) {
   const m = messages[locale], t = m.shell.noAccess, roles = m.topbar.roles as Record<string, string>;
   const names = me?.roles.map(role => roles[role.name]).filter(Boolean) ?? [], home = me ? homePage(me) : "inbox";
-  const back = { store: t.backStore, inbox: t.backInbox, payouts: t.backPayouts, notifications: t.backNotifications }[home];
+  const back = { store: t.backStore, "my-materials": t.backMine, inbox: t.backInbox, payouts: t.backPayouts, notifications: t.backNotifications }[home];
   return <section className="no-access" data-testid="no-access"><h1>{title}</h1>
     <EmptyState icon="key" title={t.title} actions={<Link prefetch={false} className="button secondary" href={`/${locale}/${home}`}>{back}</Link>}>
       <p role="alert">{denied}</p>

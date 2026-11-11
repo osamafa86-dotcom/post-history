@@ -4,6 +4,8 @@ import { isLocale, messages } from "@/lib/i18n";
 import { privacyContactEmail } from "@/server/privacy-contact";
 import { PublicFrame } from "@/components/public-frame";
 import { Icon } from "@/components/icon";
+import { pageMetadata } from "@/lib/page-titles";
+export const generateMetadata = pageMetadata("privacy");
 
 // البريد يُقرأ من بيئة الخادم عند كل طلب (لا تجميد وقت البناء، ولا NEXT_PUBLIC).
 export const dynamic = "force-dynamic";

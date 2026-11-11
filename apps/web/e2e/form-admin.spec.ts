@@ -6,7 +6,7 @@ const publishLabel = (t: typeof ar.formsAdmin, version: number) => t.publishVers
 async function login(page: Page, role = "admin", locale: "ar" | "en" = "ar") {
   const m = locale === "ar" ? ar : en;
   await page.goto(`/${locale}/login`); await page.getByLabel(m.email).fill(`${role}@example.test`); await page.getByLabel(m.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(m.totp, { exact: true }).fill("123456"); await page.getByRole("button", { name: m.signIn, exact: true }).click();
-  await expect(page.getByTestId("material-row")).toHaveCount(50); await page.goto(`/${locale}/forms`);
+  await page.waitForURL(/\/(inbox|my-materials)$/); if (!page.url().endsWith("/inbox")) await page.goto(page.url().replace(/[^/]+$/, "inbox")); await expect(page.getByTestId("material-row")).toHaveCount(50); await page.goto(`/${locale}/forms`);
   if (["admin", "chief"].includes(role)) await expect(page.getByRole("combobox", { name: m.formsAdmin.version, exact: true })).toHaveValue("1");
 }
 async function publish(page: Page, locale: "ar" | "en" = "ar", version = 2) {

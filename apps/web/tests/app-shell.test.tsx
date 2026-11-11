@@ -26,6 +26,10 @@ describe("v2 newsroom shell (W1, T1, M1; ADR 0085, web-v2.md)", () => {
     // الأرشيف الجاهز (W9) في «المكتبة» لطاقم غرفة الأخبار، ولا يراه المراسل ولا المشتري.
     expect(navItems(as("supervisor"), "ar", "/ar/archive").filter(i => i.active).map(i => i.key)).toEqual(["archive"]);
     expect(navItems(as("reporter"), "ar", "/ar/inbox").map(i => i.key)).not.toContain("archive");
+    // المراسل وحده يرى مواده لا وارد المكتب؛ ومن يحمل دور مكتب معه يرى الاثنين
+    expect(navItems(as("reporter"), "ar", "/ar/my-materials").map(i => i.key).slice(0, 2)).toEqual(["my-materials", "earnings"]);
+    expect(navItems(as("reporter"), "ar", "/ar/my-materials").map(i => i.key)).not.toContain("inbox");
+    expect(navItems(as("reporter", "supervisor"), "ar", "/ar/inbox").map(i => i.key)).toEqual(expect.arrayContaining(["inbox", "my-materials"]));
     const admin = navItems(as("system_admin"), "ar", "/ar/store/licenses");
     expect(navGroups(admin).map(([group]) => group)).toEqual(["newsroom", "library", "admin"]);
     expect(admin.filter(i => i.active).map(i => i.key)).toEqual(["licenses"]);
