@@ -33,4 +33,22 @@ fi
 echo "== migrate up again (re-entrancy)"
 "$DB/migrate.sh" up
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$DB/tests/smoke.sql"
+echo "== lock timeout"
+# جلسة أخرى تمسك قفلًا على سجل الترحيلات: الترحيل لا ينتظرها بلا حد، بل يفشل عند مهلة القفل، ثم يعمل كعادته بعد تحريره
+psql "$DATABASE_URL" -q -c "BEGIN; LOCK TABLE schema_migrations IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(6);" > /dev/null &
+holder=$!
+sleep 1
+started="$(date +%s)"
+if MIGRATE_LOCK_TIMEOUT=1s "$DB/migrate.sh" up > /dev/null 2>&1; then
+  wait "$holder"
+  echo "!! migrate.sh waited behind a held lock instead of failing at the lock timeout" >&2
+  exit 1
+fi
+elapsed="$(( $(date +%s) - started ))"
+wait "$holder"
+if [ "$elapsed" -ge 4 ]; then
+  echo "!! migrate.sh took ${elapsed}s to give up on a held lock (lock timeout 1s)" >&2
+  exit 1
+fi
+"$DB/migrate.sh" up
 echo "db check OK"

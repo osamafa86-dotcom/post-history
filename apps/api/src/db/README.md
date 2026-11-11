@@ -7,9 +7,9 @@
 | المسار | المحتوى |
 | --- | --- |
 | `migrations/*.sql` | ملفات SQL خام، كل ملف قسمان `-- Up Migration` و`-- Down Migration` (ADR 0001) |
-| `migrate.sh` | غلاف `node-pg-migrate`: `up`، `down [n]`، `redo`، `create <name>` |
+| `migrate.sh` | غلاف `node-pg-migrate`: `up`، `down [n]`، `redo`، `create <name>`. يضبط `lock_timeout` على جلسة الترحيل (`MIGRATE_LOCK_TIMEOUT`، افتراضي `5s`) |
 | `tests/smoke.sql` | اختبار دخاني يثبت كل قيد ومحفّز؛ يعمل داخل معاملة تُرجَع |
-| `scripts/check.sh` | up → اختبار → down كامل (يجب أن يفرغ المخطط) → up → اختبار؛ يعمل محليًا وفي CI |
+| `scripts/check.sh` | up → اختبار → down كامل (يجب أن يفرغ المخطط) → up → اختبار → مهلة القفل؛ يعمل محليًا وفي CI |
 
 ## التشغيل محليًا
 
@@ -48,6 +48,8 @@ apps/api/src/db/migrate.sh create add_material_comments   # ينشئ migrations/
 ```
 
 اكتب القسمين، ثم شغّل `scripts/check.sh` على قاعدة اختبار، وأضف إلى `tests/smoke.sql` ما يثبت القيد الجديد.
+
+**مهلة القفل.** `ALTER TABLE` أو `CREATE INDEX` ينتظر خلف أي معاملة مفتوحة على الجدول، وكل ما يطلب الجدول بعده ينتظر خلفه. لذلك يفشل الترحيل الذي لا يحصل على قفله خلال `MIGRATE_LOCK_TIMEOUT` (افتراضي `5s`، و`0` يلغيها) بخطأ `55P03`، ومعاملته تتراجع كلها فلا يبقى أثر. العلاج إعادة التشغيل بعد زوال المعاملة المانعة، لا رفع المهلة.
 
 ## ما يُؤجَّل إلى المرحلة التجارية
 
