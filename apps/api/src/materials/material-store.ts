@@ -246,6 +246,8 @@ export async function toMaterialDtos(
           kind: f.kind as 'original',
           state: f.state as 'received',
           proxy_mode: f.proxyMode as 'normal' | null,
+          // مصدر المشتق على الخادم (ADR 0119): به يميّز العميل نسخة الخادم الخفيفة من نسخة الهاتف المرفوعة (null)
+          derived_from_id: f.derivedFromId,
           ...(f.kind === 'proxy' ? { alignment: alignmentOf(f) } : {}),
           size_bytes: f.sizeBytes,
           sha256: f.sha256 ? f.sha256.toString('hex') : null,
