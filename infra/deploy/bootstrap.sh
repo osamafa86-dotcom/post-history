@@ -212,6 +212,8 @@ run "$APP/infra/field-trial/preflight.sh"
 say start
 run "$APP/infra/field-trial/trial.sh" up -d --wait
 run "$APP/infra/observability/stack.sh" monitoring up -d --wait
+# شبكتا المقاييس قامتا الآن: الخادم وعامل الوسائط يلتحقان بهما ويبدآن إرسال مقاييسهما إلى المجمّع (ADR 0027).
+run "$APP/infra/field-trial/trial.sh" up -d --no-deps --wait api media-worker
 run "$APP/infra/observability/stack.sh" errors up -d --wait
 
 say systemd

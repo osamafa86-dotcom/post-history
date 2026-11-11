@@ -57,6 +57,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -442,7 +443,7 @@ private fun Event(r: TransitionRecord, last: Boolean) {
         }
         Column(verticalArrangement = Arrangement.spacedBy(VlSpace.s1), modifier = Modifier.padding(bottom = VlSpace.s4)) {
             Text(label, style = Vl.text.body, color = Vl.colors.textPrimary)
-            if (track == Track.EDITORIAL && r.reason.isNotBlank()) Text(r.reason, style = Vl.text.caption, color = Vl.colors.textSecondary, maxLines = 3)
+            if (track == Track.EDITORIAL && r.reason.isNotBlank()) Text(r.reason, style = Vl.text.caption, color = Vl.colors.textSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) { Text(dateTime(r.occurredAt), style = Vl.text.num, color = Vl.colors.textSecondary) }
         }
     }

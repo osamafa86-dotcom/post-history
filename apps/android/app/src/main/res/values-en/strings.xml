@@ -113,15 +113,15 @@
     <string name="uploads_delete_in_gallery">Could not delete from here; delete the file from the gallery or files app.</string>
     <string name="upload_state_uploading">Uploading</string>
     <string name="upload_state_failed">Stopped</string>
-    <string name="upload_failure_session_expired">The upload session lapsed before it finished.</string>
-    <string name="upload_failure_checksum">The server’s fingerprint does not match the file on the device.</string>
-    <string name="upload_failure_invalid_file">The server rejected the file.</string>
-    <string name="upload_failure_rejected">The server refused to create the upload session.</string>
-    <string name="upload_failure_file_unavailable">The file is no longer available on the device.</string>
-    <string name="upload_failure_storage">Storage problem on the server.</string>
-    <string name="upload_failure_aborted">The upload was aborted.</string>
-    <string name="upload_failure_device_not_trusted">Google Play could not verify this app or device, and uploads need it. Install the app from Google Play, update Google Play services, then retry.</string>
-    <string name="upload_failure_unknown">The upload stopped for an unknown reason.</string>
+    <string name="upload_failure_session_expired">This upload ran out of time before it finished. Try again to start it afresh.</string>
+    <string name="upload_failure_checksum">What arrived did not match the file you sent, so we did not keep it. A part was most likely lost on the way, and it is not your mistake. Try again.</string>
+    <string name="upload_failure_invalid_file">This file is not a video or photo we accept. Choose another file.</string>
+    <string name="upload_failure_rejected">This upload was not accepted, and repeating the same attempt will not help. Send the file again, and tell your supervisor if it happens again.</string>
+    <string name="upload_failure_file_unavailable">We can no longer find the file on this phone; it may have been deleted or moved. Choose it again and send it.</string>
+    <string name="upload_failure_storage">We could not save the file on our side, and it is not your mistake. Try again in a little while.</string>
+    <string name="upload_failure_aborted">This upload was cancelled and what had arrived was deleted. Try again if you still want to send the file.</string>
+    <string name="upload_failure_device_not_trusted">Google Play could not verify this app or phone, so it cannot send right now; the file is not the problem. Install the app from Google Play, update Google Play services, then try again.</string>
+    <string name="upload_failure_unknown">The upload stopped and we could not tell why. Try again, and tell your supervisor if it happens again.</string>
 
     <string name="setup_title">Background upload setup</string>
     <string name="setup_intro">On %1$s devices the battery manager stops apps after the screen locks, and uploads stop with them. The steps below exempt this app. The app asks for no permission; you change the settings yourself.</string>

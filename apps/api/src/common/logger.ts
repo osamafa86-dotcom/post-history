@@ -21,9 +21,17 @@ declare module 'express' {
   }
 }
 
-export function requestLogging(logger: Logger) {
+/** معرّف ترابط وارد يُقبل بهذا الشكل وحده: لا مسافات ولا محارف تحكّم، فلا يُحقن به سطر سجل. */
+const INBOUND_REQUEST_ID = /^[A-Za-z0-9._-]{8,64}$/;
+
+/**
+ * معرّف الطلب يظهر في سطر السجل وفي ترويسة الرد وفي جسم الخطأ. يُولَّد لكل طلب، إلا إن أرسله مصدر داخلي (`isInternal`: الـBFF
+ * والعاملون) بشكل سليم: يُحمل كما هو فيُتتبَّع الطلب نفسه عبر الخدمات (ADR 0027). معرّف يرسله أي مصدر آخر يُتجاهل.
+ */
+export function requestLogging(logger: Logger, isInternal: (address: string | undefined) => boolean = () => false) {
   return (req: Request, res: Response, next: NextFunction): void => {
-    req.id = randomUUID();
+    const inbound = req.headers['x-request-id'];
+    req.id = typeof inbound === 'string' && INBOUND_REQUEST_ID.test(inbound) && isInternal(req.socket.remoteAddress) ? inbound : randomUUID();
     res.setHeader('X-Request-Id', req.id);
     const started = process.hrtime.bigint();
     res.on('finish', () => {

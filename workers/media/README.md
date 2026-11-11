@@ -46,4 +46,6 @@ docker build --target render --build-context template=docs/design/redesign-2026-
   -t media-worker:render workers/media      # CMD: serve --queue renders
 ```
 
+المقاييس (ADR 0027): حين يُضبط `OTEL_EXPORTER_OTLP_ENDPOINT` على عنوان المجمّع المستضاف ذاتيًا يرسل العامل كل 30 ثانية عدد الأحداث ومدتها بالطابور ونوع الحدث والنتيجة، لا غير. بلا قيمة لا يخرج شيء. وكل حدث يحمل معرّف ترابط عشوائيًا (`X-Request-Id`) في نداءاته الداخلية وفي سطر نتيجته.
+
 صورة `render` = `runtime` + Node 22.22.0 (أرشيف nodejs.org ببصمته) + `render/` (`@remotion/renderer` 4.0.537 بقفله، و`overlay.mjs`) + حزمة القالب مجمّعة وقت البناء + Chrome Headless Shell 157.0.8080.0 ببصمته في `/opt`. لا تنزيل وقت التشغيل ولا مفتاح ترخيص (`licenseKey: null`، قرار المالك 2026-11-02)، ونقص أي منها يمنع الإقلاع والعلم مفعّل. الإعداد: `MEDIA_ENABLE_RENDERS` (مطفأ)، و`MEDIA_RENDER_CONCURRENCY` (افتراض Remotion)، ومسارات `MEDIA_RENDER_{NODE,SCRIPT,BUNDLE,BROWSER}` لغير الصورة. الميزانية: حجم الأصل + 1 GiB حرة في `/scratch` قبل الالتقاط، وإلا يعود الحدث لاحقًا.

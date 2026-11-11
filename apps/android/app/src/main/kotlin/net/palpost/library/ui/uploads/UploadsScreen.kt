@@ -45,9 +45,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -73,6 +76,7 @@ import net.palpost.library.core.materials.LocalOriginal
 import net.palpost.library.core.materials.MediaKind
 import net.palpost.library.core.materials.PlaybackSourcePolicy
 import net.palpost.library.core.materials.PreviewSource
+import net.palpost.library.core.upload.UploadAnnouncement
 import net.palpost.library.core.upload.UploadFailure
 import net.palpost.library.core.upload.UploadState
 import net.palpost.library.data.UploadTaskEntity
@@ -271,13 +275,16 @@ private fun UploadRow(
         Row(horizontalArrangement = Arrangement.spacedBy(VlSpace.s3), verticalAlignment = Alignment.CenterVertically) {
             Thumb(container, t, concealed)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(VlSpace.s1)) {
-                Text(t.title.ifBlank { stringResource(R.string.a3_untitled) }, style = Vl.text.headline, color = c.textPrimary, maxLines = 2)
+                Text(t.title.ifBlank { stringResource(R.string.a3_untitled) }, style = Vl.text.headline, color = c.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(FieldInput.describeBytes(t.sizeBytes), style = Vl.text.num, color = c.textSecondary)
             }
+            // Arrived, failed and paused are told to a screen reader when the row turns to them (a polite live region on the
+            // status word); a percentage or a waiting word is not a live region, so progress announces nothing.
+            val announced = UploadAnnouncement.of(done = done, failed = state == UploadState.FAILED, paused = paused)
             val (icon, word, color) = when {
-                done -> Triple(Icons.Outlined.Check, stringResource(R.string.upload_stage_original), c.stateOk)
-                state == UploadState.FAILED -> Triple(Icons.Outlined.ErrorOutline, stringResource(R.string.upload_state_failed), c.stateDanger)
-                paused -> Triple(Icons.Outlined.Pause, stringResource(R.string.a2_paused), c.stateWarn)
+                announced == UploadAnnouncement.ARRIVED -> Triple(Icons.Outlined.Check, stringResource(R.string.upload_stage_original), c.stateOk)
+                announced == UploadAnnouncement.FAILED -> Triple(Icons.Outlined.ErrorOutline, stringResource(R.string.upload_state_failed), c.stateDanger)
+                announced == UploadAnnouncement.PAUSED -> Triple(Icons.Outlined.Pause, stringResource(R.string.a2_paused), c.stateWarn)
                 !online -> Triple(Icons.Outlined.CloudOff, stringResource(R.string.a2_waiting_network), c.stateWarn)
                 state == UploadState.UPLOADING -> Triple(null, "${(t.progressFraction() * 100).roundToInt()}%", c.textBrand)
                 state == UploadState.AWAITING_RECEIPT -> Triple(Icons.Outlined.Schedule, stringResource(R.string.a2_awaiting_digest), c.stateMuted)
@@ -286,7 +293,7 @@ private fun UploadRow(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(VlSpace.s2)) {
                 if (icon != null) Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(VlIcon.sm))
                 CompositionLocalProvider(LocalLayoutDirection provides if (icon == null) LayoutDirection.Ltr else LocalLayoutDirection.current) {
-                    Text(word, style = Vl.text.label, color = color)
+                    Text(word, style = Vl.text.label, color = color, modifier = if (announced != null) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier)
                 }
             }
         }

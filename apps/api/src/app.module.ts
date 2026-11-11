@@ -1,7 +1,7 @@
 import { type DynamicModule, type INestApplication, Module, RequestMethod } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import type { Logger } from 'pino';
-import { APP_CONFIG, type AppConfig, blockListOf, sandboxBootWarning } from './config/config';
+import { addressAllowed, APP_CONFIG, type AppConfig, blockListOf, sandboxBootWarning } from './config/config';
 import { internalOnly } from './common/internal-only';
 import { EtagInterceptor } from './common/preconditions';
 import { ErrorFilter } from './common/error.filter';
@@ -29,6 +29,7 @@ import { SettingsModule } from './settings/settings.module';
 import { AssignmentsModule } from './assignments/assignments.module';
 import { TagsModule } from './tags/tags.module';
 import { RetentionModule } from './retention/retention.worker';
+import { MetricsModule, requestMetrics, ServerMetrics } from './metrics/server-metrics';
 
 @Module({})
 export class AppModule {
@@ -36,7 +37,7 @@ export class AppModule {
     return {
       module: AppModule,
       global: true,
-      imports: [DatabaseModule, RedisModule, IdentityModule, OutboxModule, UploadsModule, FormsModule, MaterialsModule, NotificationsModule, EventsModule, PushDevicesModule, VerificationModule, PermissionsModule, MediaModule, AttestationModule, PushModule, DashboardModule, SettingsModule, CommerceModule, AssignmentsModule, TagsModule, RetentionModule],
+      imports: [DatabaseModule, RedisModule, MetricsModule, IdentityModule, OutboxModule, UploadsModule, FormsModule, MaterialsModule, NotificationsModule, EventsModule, PushDevicesModule, VerificationModule, PermissionsModule, MediaModule, AttestationModule, PushModule, DashboardModule, SettingsModule, CommerceModule, AssignmentsModule, TagsModule, RetentionModule],
       controllers: [HealthController],
       providers: [
         { provide: APP_CONFIG, useValue: config },
@@ -58,9 +59,15 @@ export function configureApp(app: INestApplication, config: AppConfig, logger: L
   express.set('etag', false);
   // X-Forwarded-For يُقبل من الوكلاء الموثوقين وحدهم (نطاقات Cloudflare)؛ وإلا req.ip = عنوان المقبس
   express.set('trust proxy', config.TRUSTED_PROXY_CIDRS.length > 0 ? config.TRUSTED_PROXY_CIDRS : false);
+  // مقاييس الطلبات والخادم إلى المجمّع المستضاف ذاتيًا حين يُضبط عنوانه (ADR 0027)
+  const metrics = app.get(ServerMetrics);
+  app.use(requestMetrics(metrics));
+  metrics.start();
   const sandbox = sandboxBootWarning(config);
   if (sandbox) logger.warn(sandbox);
-  app.use(requestLogging(logger));
+  // معرّف الترابط الوارد يُقبل من المصادر الداخلية وحدها: شبكة /internal وعنوان الـBFF (ADR 0027)
+  const correlationSources = blockListOf([...config.INTERNAL_ALLOWED_CIDRS, ...config.BFF_SOURCE_ADDRESSES]);
+  app.use(requestLogging(logger, (address) => addressAllowed(correlationSources, address)));
   // كل استجابة من /v1 لا تُخزَّن في ذاكرة مؤقتة (متصفح أو وكيل أو حافة): فيها بيانات مصادَق عليها أو رموز
   app.use('/v1', (_req: unknown, res: { setHeader(name: string, value: string): void }, next: () => void) => {
     res.setHeader('Cache-Control', 'no-store');

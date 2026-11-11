@@ -60,9 +60,11 @@ extension UploadFailure {
 public enum TextKeys {
     /// كل مفتاح تبنيه الواجهة من قيمة تعداد؛ يُفحص وجوده في الكتالوج بالعربية والإنجليزية.
     public static var all: [String] {
-        GalleryQuickFilter.allCases.map(\.textKey) + MediaKind.allCases.map(\.textKey)
+        let screens: [String] = GalleryQuickFilter.allCases.map(\.textKey) + MediaKind.allCases.map(\.textKey)
             + GalleryGrouping.allCases.map(\.textKey) + GalleryDateRange.allCases.map(\.textKey)
             + GalleryStateFilter.allCases.map(\.textKey) + MaterialStatus.Track.allCases.map(\.detailKey)
             + MaterialType.allCases.map(\.textKey) + UploadFailure.allCases.map(\.textKey) + SendAccess.textKeys
+        let announcements: [String] = UploadAnnouncement.allCases.map(\.textKey)
+        return screens + announcements
     }
 }

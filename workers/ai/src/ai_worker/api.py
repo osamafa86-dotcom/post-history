@@ -6,12 +6,15 @@
 
 from __future__ import annotations
 
+import contextvars
 import json
 import urllib.error
 import urllib.request
 
 # اتصال مباشر: متغيرات HTTP(S)_PROXY في البيئة لا تمرّر الرمز عبر وسيط
 DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+# معرّف الترابط للحدث الجاري (ADR 0027): يُرسل مع كل نداء داخلي، فيظهر الحدث نفسه في سجل الخادم وسجل العامل. عشوائي لا يحمل بيانًا.
+REQUEST_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("ai_request_id", default=None)
 
 
 class ApiError(RuntimeError):
@@ -43,11 +46,10 @@ class InternalApi:
         self.timeout_s = timeout_s
 
     def _call(self, method: str, path: str, body: dict) -> dict:
-        req = urllib.request.Request(
-            f"{self.base}{path}", data=json.dumps(body).encode(), method=method,
-            headers={"Authorization": f"Bearer {self._token}", "Content-Type": "application/json",
-                     "Accept": "application/json"},
-        )
+        headers = {"Authorization": f"Bearer {self._token}", "Content-Type": "application/json", "Accept": "application/json"}
+        if request_id := REQUEST_ID.get():
+            headers["X-Request-Id"] = request_id
+        req = urllib.request.Request(f"{self.base}{path}", data=json.dumps(body).encode(), method=method, headers=headers)
         try:
             with DIRECT.open(req, timeout=self.timeout_s) as resp:  # noqa: S310 (عنوان داخلي من الإعداد)
                 raw = resp.read()
