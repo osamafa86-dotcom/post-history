@@ -44,7 +44,7 @@
   "confirm": "Confirm sign out",
   "cancel": "Cancel",
   "loading": "Loading…",
-  "error": "Could not load data. Please try again.",
+  "error": "Could not load data. Try again.",
   "notFound": "This material is not available within your account's scope.",
   "retry": "Try again",
   "refresh": "Refresh now",
@@ -115,7 +115,7 @@
   "attachmentHelp": "Files are selected locally for validation only; nothing is uploaded.",
   "locationUnavailable": "Location fields are unavailable in this version.",
   "selectedFiles": "Selected file count",
-  "unexpected": "Could not open this page. Please try again.",
+  "unexpected": "Could not open this page. Try again.",
   "states": {
     "technical_state": {
       "pending": "Awaiting files",
@@ -548,7 +548,6 @@
     "lead": "Who is notified of which event, on which channel, and when unacknowledged work escalates. External channels carry the redacted payload only.",
     "denied": "This page is for the system admin and editor in chief.",
     "readOnly": "Read only; editing is for the system admin.",
-    "empty": "No rules yet.",
     "new": "New rule",
     "edit": "Edit",
     "delete": "Delete",
@@ -633,7 +632,11 @@
       "office": "Office",
       "governorate": "Governorate"
     },
-    "otherRole": "Other role"
+    "otherRole": "Other role",
+    "loadFailed": "The rules could not be loaded",
+    "emptyTitle": "No rules yet",
+    "emptyBody": "A rule sets who is notified, on which channel, and when unreceived work escalates.",
+    "emptyReadOnly": "The system administrator adds rules; they appear here to read."
   },
   "store": {
     "credit": "Credit",
@@ -973,7 +976,7 @@
       "title": "Wall",
       "lead": "Urgent first, then newest",
       "inbox": "In the inbox",
-      "urgent": "Urgent not received",
+      "urgent": "Open urgent",
       "overdue": "Overdue acknowledgement",
       "since": "{time} ago",
       "notReceived": "Not received",
@@ -1059,7 +1062,6 @@
     "pause": "Pause",
     "resume": "Resume",
     "cancel": "Cancel",
-    "retry": "Retry",
     "open": "Open material",
     "receipt": "Receipt number",
     "receiptTitle": "The file arrived and its fingerprint was verified",
@@ -1145,7 +1147,8 @@
     "clearFilter": "Clear filters",
     "staleTitle": "Couldn't refresh my materials",
     "staleBody": "What you see is from the last update ({time}); we retry automatically every 30 seconds.",
-    "errorBody": "Your materials couldn't be loaded. We retry automatically, or try again now."
+    "errorBody": "The server did not respond. We retry automatically every 30 seconds.",
+    "loadFailed": "Your materials could not be loaded"
   },
   "templates": {
     "nav": "License templates",
@@ -1917,14 +1920,14 @@
     "errorTitle": "Your earnings couldn't be loaded",
     "errorBody": "The server didn't respond. Nothing changed in your balance; try again.",
     "formula": "Your share = (sale price − gateway fees − taxes) × commission rate × your share among contributors, under the rule in force when the payment was confirmed.",
-    "actions": "Action"
+    "actions": "Action",
+    "entriesFailed": "The entries could not be loaded"
   },
   "payouts": {
     "nav": "Money",
     "title": "Payout requests",
     "lead": "Contributors' requests, longest waiting first. Each approver approves once, and nobody approves their own request; above the policy threshold two approvers are needed.",
     "denied": "This page is for finance and system administrators.",
-    "empty": "No requests in this state.",
     "contributor": "Contributor",
     "balances": "balances",
     "balancesOf": "Contributor balances",
@@ -1956,24 +1959,17 @@
     "confirmApprove": "Approve payout",
     "confirmReject": "Reject request",
     "back": "Go back",
-    "chooseReason": "Choose a reason"
+    "chooseReason": "Choose a reason",
+    "loadFailed": "Payout requests could not be loaded",
+    "emptyTitle": "No payout requests yet",
+    "emptyBody": "A request appears here when a contributor asks to be paid their balance.",
+    "emptyFiltered": "No requests in this state",
+    "showAll": "Show every state"
   },
   "editor": {
     "urgentOpen": "Urgent open",
     "overdue": "Overdue acknowledgement",
     "reserved": "Reserved for production",
-    "urgentOne": "Urgent material arrived and has not been seen",
-    "urgentMany": {
-      "zero": "{n} urgent materials have not been seen",
-      "one": "{n} urgent material has not been seen",
-      "two": "{n} urgent materials have not been seen",
-      "few": "{n} urgent materials have not been seen",
-      "many": "{n} urgent materials have not been seen",
-      "other": "{n} urgent materials have not been seen"
-    },
-    "urgentManyHelp": "Show them filtered and start with the oldest.",
-    "since": "for",
-    "ack": "Seen",
     "ackReason": "Seen from the live inbox",
     "showUrgent": "Show urgent",
     "mute": "Mute the sound alert on this device",
@@ -1986,7 +1982,8 @@
     "noEvent": "No events yet",
     "allTracks": "Show all tracks",
     "system": "System",
-    "neutralActor": "Internal actor or system"
+    "neutralActor": "Internal actor or system",
+    "loadFailed": "The material could not be loaded"
   },
   "trackLine": {
     "tracks": {
@@ -2017,7 +2014,6 @@
     "legendLabel": "Track colour legend",
     "column": "Tracks"
   },
-  "inboxSummary": "{total} items: {urgent} urgent open, {inbox} incoming, {reviewing} under review, {accepted} accepted, {stopped} stopped technically.",
   "inboxTabs": {
     "label": "Quick filter",
     "all": "All",
@@ -2238,7 +2234,7 @@
     "bottomNav": "Main destinations",
     "more": "More",
     "account": "My account",
-    "urgentBadge": "{n} urgent not received",
+    "urgentBadge": "{n} open urgent",
     "listSeparator": ", ",
     "bell": {
       "open": "Notifications",
@@ -2278,7 +2274,6 @@
       "openWall": "Open wall",
       "offlineTitle": "Lost connection to the server",
       "offlineBody": "We retry automatically. What you see below is from the last update, and its actions are disabled until the connection returns.",
-      "retryNow": "Try again now",
       "kpiInbox": "In the inbox now",
       "kpiUrgent": "Urgent, not received",
       "kpiProducer": "Waiting for a producer",
@@ -2311,7 +2306,10 @@
         "hint": "The type filters the loaded page.",
         "sensitive": "Sensitive"
       },
-      "denied": "The inbox is for the newsroom team and reporters: it lists materials, which your role does not read."
+      "denied": "The inbox is for the newsroom team and reporters: it lists materials, which your role does not read.",
+      "loadFailed": "The inbox could not be loaded",
+      "loadFailedBody": "The server did not respond. We retry automatically every 15 seconds, and your filters are kept.",
+      "urgentOldest": "Oldest: {time} ago"
     },
     "material": {
       "breadcrumb": "Breadcrumb",
@@ -2347,8 +2345,7 @@
     "searchOpen": "Open the search field",
     "offline": {
       "title": "Can't reach the server",
-      "body": "Your session is kept. We retry automatically every 15 seconds and when the network returns; the page content appears once the connection is back.",
-      "retry": "Try again now"
+      "body": "Your session is kept. We retry automatically every 15 seconds and when the network returns; the page content appears once the connection is back."
     }
   },
   "derivative": {
@@ -2821,7 +2818,7 @@
     "noResultsCount": "The loaded archive has {count} without filters.",
     "showAll": "Show all materials ({n})",
     "staleBody": "What you see is from the last update ({time}). Try again when the connection is back.",
-    "errorBody": "The archive couldn't be loaded. Nothing changed; try again now."
+    "errorBody": "The server did not respond, and nothing changed in the archive."
   },
   "previewPreparing": "The server is preparing the preview; it appears here once ready.",
   "timeUnits": {
@@ -2867,5 +2864,6 @@
       "many": "{n} materials",
       "other": "{n} materials"
     }
-  }
+  },
+  "errorBody": "The server did not respond, and nothing changed."
 }

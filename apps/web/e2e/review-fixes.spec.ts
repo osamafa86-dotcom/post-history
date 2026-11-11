@@ -103,6 +103,6 @@ test("with the API down the page keeps its shell and says it is offline (E3)", a
   // تحميل كامل والخادم منقطع: الهيكل بلا شريط (لا حساب معروف)، والخروج واللغة وحالة الانقطاع
   await page.reload(); await expect(shell).toBeVisible(); await expect(shell.getByRole("heading", { level: 1 })).toHaveText(ar.product);
   await expect(shell.getByRole("link", { name: ar.language })).toBeVisible(); await expect(shell.getByRole("button", { name: ar.logout })).toBeVisible();
-  await page.unroute("**/api/bff/auth/me"); await shell.getByRole("button", { name: ar.shell.offline.retry }).click();
+  await page.unroute("**/api/bff/auth/me"); await shell.getByRole("button", { name: ar.retry, exact: true }).click();
   await expect(page.getByTestId("offline-shell")).toHaveCount(0); await expect(page.getByTestId("material-row")).toHaveCount(50);
 });

@@ -10,7 +10,7 @@ import { groupNotifications, type NotificationGroup } from "@/lib/editor";
 import { inTab, notificationKind, panelTabs, type PanelTab } from "@/lib/notification-kind";
 import { useMutation } from "@/lib/use-mutation";
 import { ActionStatus } from "./action-status";
-import { EmptyState } from "./empty-state";
+import { EmptyState, ErrorState } from "./empty-state";
 import { Icon } from "./icon";
 
 const state = (n: Notification) => n.acknowledged_at || n.state === "acknowledged" ? "acknowledged" : n.read_at || n.state === "read" ? "read" : "unread";
@@ -58,9 +58,9 @@ export function Notifications({ locale }: { locale: Locale }) {
       <label className="checkbox-label"><input type="checkbox" checked={unread} onChange={e => { setUnread(e.target.checked); setCursors([undefined]); setData(null); }} />{t.unread}</label>
       <p className="caption">{t.unreadCount}: <bdi dir="ltr">{data?.unread_count ?? m.notAvailable}</bdi><span className="keyboard-hint"> · {t.shortcuts}</span></p>
     </div>
-    {failed && data && <section className="offline-banner" role="status"><Icon name="offline" size={22} /><div><h2>{t.staleTitle}</h2><p>{t.staleBody}</p></div><button className="secondary" onClick={() => setAttempt(n => n + 1)}>{m.shell.inbox.retryNow}</button></section>}
+    {failed && data && <section className="offline-banner" role="status"><Icon name="offline" size={22} /><div><h2>{t.staleTitle}</h2><p>{t.staleBody}</p></div><button className="secondary" onClick={() => setAttempt(n => n + 1)}>{m.retry}</button></section>}
     <ActionStatus status={mutation.status} locale={locale} />
-    {!data ? failed ? <EmptyState icon="offline" role="alert" title={m.error} actions={<button onClick={() => setAttempt(n => n + 1)}>{m.retry}</button>}><p>{t.staleBody}</p></EmptyState>
+    {!data ? failed ? <ErrorState locale={locale} title={t.staleTitle} retry={() => setAttempt(n => n + 1)}><p>{t.staleBody}</p></ErrorState>
       : <><p className="visually-hidden" role="status">{m.loading}</p><ul className="notice-list" aria-hidden="true">{[0, 1, 2].map(i => <li key={i} className="notice-item skeleton-row"><span className="skeleton circle" /><span className="row-main"><span className="skeleton line wide" /><span className="skeleton line" /></span></li>)}</ul></>
       : !data.items.length ? <EmptyState icon="bell" testId="notifications-empty" title={t.emptyTitle}><p>{t.emptyBody}</p></EmptyState>
       : !groups.length ? <EmptyState icon="filter" title={t.emptyTab} actions={<button type="button" className="secondary" onClick={() => setTab("all")}>{t.pageTabs.all}</button>} />
@@ -82,6 +82,6 @@ export function Notifications({ locale }: { locale: Locale }) {
             {state(current.head) !== "acknowledged" && <button disabled={mutation.busy} onClick={() => void change(current, "ack")}>{t.ack}</button>}</div>
         </> : <p className="muted">{t.choose}</p>}</aside>
       </div>}
-    <div className="pagination"><button className="secondary" disabled={cursors.length === 1 || mutation.busy} onClick={() => { setData(null); setCursors(old => old.slice(0, -1)); }}>{m.previous}</button><span>{m.page} <bdi dir="ltr">{cursors.length}</bdi></span><button className="secondary" disabled={!data?.next_cursor || mutation.busy} onClick={() => { setCursors(old => [...old, data!.next_cursor!]); setData(null); }}>{m.next}</button></div>
+    {(cursors.length > 1 || data?.next_cursor) && <div className="pagination"><button className="secondary" disabled={cursors.length === 1 || mutation.busy} onClick={() => { setData(null); setCursors(old => old.slice(0, -1)); }}>{m.previous}</button><span>{m.page} <bdi dir="ltr">{cursors.length}</bdi></span><button className="secondary" disabled={!data?.next_cursor || mutation.busy} onClick={() => { setCursors(old => [...old, data!.next_cursor!]); setData(null); }}>{m.next}</button></div>}
   </>;
 }

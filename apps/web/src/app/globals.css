@@ -60,8 +60,6 @@ h2 { font-size: var(--v2-font-headline-size); line-height: var(--v2-font-headlin
 .stats article:last-child { border: 0; }
 .stats span { font-size: 12px; color: var(--v2-c-text-secondary); }
 .stats strong { font-family: var(--v2-font-family-num); font-size: 29px; color: var(--v2-c-text-brand); }
-.filter-panel { padding: 18px 20px; background: var(--v2-c-bg-sunken); border: 1px solid var(--v2-c-border-line); border-radius: 8px; margin-bottom: 25px; }
-.filter-panel summary { font-weight: 700; cursor: pointer; font-size: 13px; }
 .filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 19px; }
 .filters label { font-size: var(--v2-font-caption-size); }
 .filters input, .filters select { font-size: 12px; min-height: 39px; padding: 7px; }
@@ -536,7 +534,11 @@ html.board-display .main-content { max-width: none; padding: 0; }
 .live-line { display: flex; align-items: center; flex-wrap: wrap; gap: var(--v2-space-2) var(--v2-space-3); margin-block-start: var(--v2-space-2); color: var(--v2-c-text-secondary); font-size: var(--v2-font-label-size); line-height: var(--v2-font-label-line); }
 .live-dot { display: inline-block; flex: none; inline-size: 8px; block-size: 8px; border-radius: var(--v2-radius-full); background: var(--v2-c-state-ok); }
 .live-line.stale .live-dot { background: var(--v2-c-state-muted); }
-.inbox-summary { margin-block-start: var(--v2-space-2); color: var(--v2-c-text-secondary); font-size: var(--v2-font-label-size); line-height: var(--v2-font-label-line); max-inline-size: 80ch; }
+/* رأس الوارد سطر واحد: العنوان وحالة الاتصال، ثم «تصفية» و«تحديث». الأعداد في المؤشّرات والرقاقات وحدها. */
+.inbox-head { align-items: center; gap: var(--v2-space-4); margin-block-end: var(--v2-space-4); }
+.inbox-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--v2-space-1) var(--v2-space-5); min-inline-size: 0; }
+.inbox-title .live-line { margin-block-start: 0; }
+.filter-toggle[aria-expanded="true"], .filter-toggle[aria-expanded="true"]:hover { background: var(--v2-c-bg-sunken); }
 .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--v2-space-5); margin-block-end: var(--v2-space-7); }
 .kpis.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .kpi { display: grid; gap: var(--v2-space-1); align-content: start; padding: var(--v2-space-5) var(--v2-space-6); background: var(--v2-c-bg-raised); border: var(--v2-border-hairline) solid var(--v2-c-border-line); border-radius: var(--v2-radius-md); }
@@ -544,7 +546,14 @@ html.board-display .main-content { max-width: none; padding: 0; }
 .kpi span { color: var(--v2-c-text-secondary); font-size: var(--v2-font-label-size); line-height: var(--v2-font-label-line); }
 .kpi.urgent strong { color: var(--v2-c-priority-urgent); }
 .kpi.attention strong { color: var(--v2-c-state-warn); }
-.inbox-tools { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--v2-space-4); margin-block-end: var(--v2-space-4); }
+/* مؤشّرات الوارد شريط مضغوط: الرقم وتسميته على سطر، كي تبدأ القائمة في أعلى الشاشة. */
+.inbox-kpis { gap: var(--v2-space-4); margin-block-end: var(--v2-space-4); }
+.inbox-kpis .kpi { display: flex; align-items: baseline; gap: var(--v2-space-3); padding: var(--v2-space-3) var(--v2-space-6); }
+.inbox-kpis .kpi strong { font-size: 24px; line-height: 32px; }
+/* صف الرقاقات: التبويبات ثم الأنواع. على الشاشة العريضة يلتفّ، وعلى الهاتف صف واحد بالتمرير الأفقي. */
+.inbox-tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--v2-space-3); margin-block-end: var(--v2-space-4); }
+.inbox-tools .type-chips { margin-block: 0; }
+.inbox-tools .chip, .inbox-tools .chip:hover { min-block-size: 36px; }
 .quick-tabs { display: flex; flex-wrap: wrap; gap: var(--v2-space-3); }
 /* `Chip`: المحدَّد بحبر داكن ووزن، لا بلون وحده. */
 .chip, .chip:hover { min-block-size: var(--v2-size-touch-min); padding: 0 var(--v2-space-5); gap: var(--v2-space-2); border: var(--v2-border-field) solid var(--v2-c-border-edge); border-radius: var(--v2-radius-chip); background: var(--v2-c-bg-raised); color: var(--v2-c-text-primary); font-weight: 600; font-size: 14px; }
@@ -554,9 +563,10 @@ html.board-display .main-content { max-width: none; padding: 0; }
 .sort-tools { display: flex; align-items: center; gap: var(--v2-space-3); }
 .sort-tools label { display: flex; align-items: center; gap: var(--v2-space-3); font-size: var(--v2-font-label-size); color: var(--v2-c-text-secondary); }
 .sort-tools select { inline-size: auto; min-block-size: 36px; padding-block: 4px; }
-.filter-panel { margin-block-end: var(--v2-space-5); padding: 0; background: transparent; border: 0; }
-.filter-panel summary { display: inline-flex; align-items: center; min-block-size: var(--v2-size-touch-min); padding: 0 var(--v2-space-5); border: var(--v2-border-field) solid var(--v2-c-border-edge); border-radius: var(--v2-radius-chip); background: var(--v2-c-bg-raised); font-size: 14px; font-weight: 600; cursor: pointer; }
-.filter-panel[open] .filters { margin-block-start: var(--v2-space-4); padding: var(--v2-space-6); background: var(--v2-c-bg-raised); border: var(--v2-border-hairline) solid var(--v2-c-border-line); border-radius: var(--v2-radius-md); }
+/* لوح «تصفية»: الترتيب والمرشحات، يفتحه زر الرأس (`aria-expanded`) ويبقى مطويًا حتى يُطلب. */
+.filter-panel { display: grid; gap: var(--v2-space-5); margin-block-end: var(--v2-space-5); padding: var(--v2-space-5) var(--v2-space-6); background: var(--v2-c-bg-raised); border: var(--v2-border-hairline) solid var(--v2-c-border-line); border-radius: var(--v2-radius-md); }
+.filter-panel[hidden] { display: none; }
+.filter-panel .filters { margin-block-start: 0; }
 .filter-chips { list-style: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: var(--v2-space-3); margin: 0 0 var(--v2-space-5); padding: 0; }
 .chip.removable, .chip.removable:hover { min-block-size: 36px; background: var(--v2-c-bg-sunken); border-color: var(--v2-c-border-edge); }
 .inbox-list { display: grid; gap: var(--v2-space-4); }
@@ -564,7 +574,7 @@ html.board-display .main-content { max-width: none; padding: 0; }
 .inbox-row { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto auto auto; grid-template-areas: "thumb main time states actions"; align-items: center; gap: var(--v2-space-4) var(--v2-space-6); padding: var(--v2-space-4) var(--v2-space-5); background: var(--v2-c-bg-raised); border: var(--v2-border-hairline) solid var(--v2-c-border-line); border-radius: var(--v2-radius-md); }
 .inbox-row.urgent { border: var(--v2-border-field) solid var(--v2-c-priority-urgent); border-inline-start-width: 6px; }
 .row-thumb { grid-area: thumb; display: grid; place-items: center; inline-size: 56px; block-size: 72px; border-radius: var(--v2-radius-chip); background: var(--v2-c-bg-store); color: var(--v2-c-text-on-store); }
-.row-main { grid-area: main; display: grid; gap: var(--v2-space-2); min-inline-size: 0; }
+.row-main { grid-area: main; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--v2-space-2); min-inline-size: 0; }
 .row-title, .material-title { display: flex; align-items: center; flex-wrap: wrap; gap: var(--v2-space-3); margin: 0; }
 .inbox-row .material-link { font-size: var(--v2-font-headline-size); line-height: var(--v2-font-headline-line); font-weight: 700; color: var(--v2-c-text-primary); overflow-wrap: anywhere; display: inline; min-inline-size: 0; max-inline-size: none; }
 @media (hover: hover) and (pointer: fine) { .material-link:hover { text-decoration: underline; text-underline-offset: 4px; } }
@@ -572,7 +582,12 @@ html.board-display .main-content { max-width: none; padding: 0; }
 .priority-pill.urgent { background: var(--v2-c-priority-urgent); color: var(--v2-c-text-on-brand); }
 .priority-pill.important { background: var(--v2-c-action-soft); color: var(--v2-c-text-brand); }
 .row-meta, .material-meta { display: flex; flex-wrap: wrap; align-items: baseline; margin: 0; color: var(--v2-c-text-secondary); font-size: var(--v2-font-label-size); line-height: var(--v2-font-label-line); }
-.row-meta > * + *::before, .material-meta > * + *::before { content: "·"; margin-inline: var(--v2-space-3); }
+.material-meta > * + *::before { content: "·"; margin-inline: var(--v2-space-3); }
+/* سطر بيانات الصف: كل جزء قطعة لا تنكسر وفاصلها قبلها في شريط بعرض ثابت؛ والشريط الأول في كل سطر خارج حدّ القصّ، فلا يبدأ سطر بفاصلة. */
+.row-meta { --meta-sep: 20px; margin-inline-start: calc(-1 * var(--meta-sep)); clip-path: inset(0 0 0 var(--meta-sep)); }
+[dir="rtl"] .row-meta { clip-path: inset(0 var(--meta-sep) 0 0); }
+.row-meta > * { position: relative; max-inline-size: 100%; padding-inline-start: var(--meta-sep); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-meta > *::before { content: "·"; position: absolute; inset-inline-start: 0; inline-size: var(--meta-sep); text-align: center; }
 .row-meta .receipt, .material-meta .receipt { font-family: var(--v2-font-family-mono); font-size: 12px; }
 .tag-list { list-style: none; display: flex; flex-wrap: wrap; gap: var(--v2-space-2); margin: 0; padding: 0; }
 .tag-list li { padding: 0 var(--v2-space-3); border-radius: var(--v2-radius-chip); background: var(--v2-c-bg-sunken); color: var(--v2-c-text-secondary); font-size: var(--v2-font-caption-size); line-height: 22px; }
@@ -590,13 +605,17 @@ html.board-display .main-content { max-width: none; padding: 0; }
 .inbox-list .pagination { border: 0; padding: var(--v2-space-3) 0; }
 
 /* شريط العاجل (B1) بنمط v2: حدّ وأيقونة وكلمة، لا لوح أحمر يغلب الصفحة. */
-.alert.urgent { display: flex; flex-wrap: wrap; align-items: center; gap: var(--v2-space-5); padding: var(--v2-space-5) var(--v2-space-6); margin-block-end: var(--v2-space-6); background: var(--v2-c-bg-raised); color: var(--v2-c-text-primary); border: var(--v2-border-field) solid var(--v2-c-priority-urgent); border-inline-start-width: 6px; border-radius: var(--v2-radius-md); animation: vl-enter var(--v2-motion-slow) cubic-bezier(.2, 0, 0, 1); }
-.alert.urgent > div:not(.actions) { flex: 1 1 320px; min-inline-size: 0; }
-.alert-icon { display: grid; place-items: center; flex: none; inline-size: 40px; block-size: 40px; border-radius: var(--v2-radius-full); background: var(--v2-c-priority-urgent); color: var(--v2-c-text-on-brand); }
+.alert.urgent { display: flex; flex-wrap: wrap; align-items: center; gap: var(--v2-space-2) var(--v2-space-5); padding: var(--v2-space-3) var(--v2-space-6); margin-block-end: var(--v2-space-4); background: var(--v2-c-bg-raised); color: var(--v2-c-text-primary); border: var(--v2-border-field) solid var(--v2-c-priority-urgent); border-inline-start-width: 6px; border-radius: var(--v2-radius-md); animation: vl-enter var(--v2-motion-slow) cubic-bezier(.2, 0, 0, 1); }
+.alert.urgent > div:not(.actions) { flex: 1 1 240px; min-inline-size: 0; }
+.alert.urgent > .alert-text { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 var(--v2-space-5); }
+.alert.urgent > .notice { flex: 1 0 100%; margin: 0; }
+.alert-icon { display: grid; place-items: center; flex: none; inline-size: 32px; block-size: 32px; border-radius: var(--v2-radius-full); background: var(--v2-c-priority-urgent); color: var(--v2-c-text-on-brand); }
 .alert.urgent h2 { margin: 0; font-size: var(--v2-font-headline-size); line-height: var(--v2-font-headline-line); }
-.alert.urgent p { margin-block-start: var(--v2-space-1); font-size: var(--v2-font-label-size); color: var(--v2-c-text-secondary); }
+.alert.urgent p { margin: 0; font-size: var(--v2-font-label-size); line-height: var(--v2-font-label-line); color: var(--v2-c-text-secondary); overflow-wrap: anywhere; }
 .alert.urgent a { color: var(--v2-c-text-primary); text-decoration: underline; }
 .alert.urgent .check { font-size: var(--v2-font-label-size); font-weight: 500; }
+.alert.urgent .actions button { min-block-size: 36px; }
+.mute-toggle .icon { display: none; }
 p.alert.urgent { display: block; padding: var(--v2-space-4); }
 
 /* الحالات (E1–E6): أيقونة في دائرة، عنوان، سبب وخطوة تالية، وفعل أو اثنان. */
@@ -682,7 +701,7 @@ p.alert.urgent { display: block; padding: var(--v2-space-4); }
 /* الوارد على اللوح والجوال (T1، M1): الأفعال بارتفاع 44 لأن الجهاز لمسي؛ والصف على الجوال بطاقة: مصغّرة، والعنوان على سطرين، ثم الوقت، ثم المراسل والمحافظة. */
 @media (max-width: 1199px) { .kpis { gap: var(--v2-space-4); } }
 @media (max-width: 1199px), (pointer: coarse) {
-  .row-actions button, button.small, a.button.small, .sort-tools select, .chip.removable, .chip.removable:hover, .filters input, .filters select { min-block-size: var(--v2-size-touch-min); }
+  .row-actions button, button.small, a.button.small, .sort-tools select, .chip.removable, .chip.removable:hover, .filters input, .filters select, .inbox-tools .chip, .inbox-tools .chip:hover, .alert.urgent .actions button { min-block-size: var(--v2-size-touch-min); }
   .filter-chips button.link-button, .breadcrumb .back-link { display: inline-flex; align-items: center; min-block-size: var(--v2-size-touch-min); }
 }
 @media (max-width: 999px) { .inbox-row { grid-template-columns: 56px minmax(0, 1fr) auto auto; grid-template-areas: "thumb main time actions" "thumb states states actions"; } .row-states { display: flex; flex-wrap: wrap; gap: var(--v2-space-2) var(--v2-space-5); } }
@@ -691,10 +710,42 @@ p.alert.urgent { display: block; padding: var(--v2-space-4); }
   .page-head { margin-block-end: var(--v2-space-5); }
   .page-actions .button { display: none; }
   .kpis { display: none; }
-  .inbox-tools { gap: var(--v2-space-3); }
   .quick-tabs { flex-wrap: nowrap; overflow-x: auto; max-inline-size: 100%; padding-block-end: var(--v2-space-1); }
   .quick-tabs .chip { flex: none; }
+  /* الوارد على الهاتف (M1): العنوان و«تصفية» و«تحديث» في سطر، وحالة الاتصال تحته، ثم صف رقاقات واحد، فتبدأ القائمة في الشاشة الأولى. */
+  .inbox-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title actions" "live live"; gap: var(--v2-space-2) var(--v2-space-3); margin-block-end: var(--v2-space-3); }
+  .inbox-title { display: contents; }
+  .inbox-title h1 { grid-area: title; align-self: center; }
+  .inbox-title .live-line { grid-area: live; }
+  .inbox-head .page-actions { grid-area: actions; flex-wrap: nowrap; }
+  .inbox-head .refresh { inline-size: var(--v2-size-touch-min); padding-inline: 0; }
+  .inbox-head .refresh span, .live-detail { display: none; }
+  .inbox-tools { flex-wrap: nowrap; overflow-x: auto; margin-block-end: var(--v2-space-3); padding: var(--v2-space-1); margin-inline: calc(-1 * var(--v2-space-1)); }
+  .inbox-tools .chip:focus-visible { outline-offset: 0; }
+  .inbox-tools .quick-tabs { flex: none; overflow: visible; max-inline-size: none; padding-block-end: 0; }
+  .inbox-tools .type-chips { padding-inline-start: var(--v2-space-3); border-inline-start: var(--v2-border-hairline) solid var(--v2-c-border-edge); }
+  /* شريط العاجل سطر: العدّ وعمر الأقدم، ثم الزر، وكتم الصوت زرّ بأيقونة (اسمه نص التسمية نفسه). */
+  .alert.urgent { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--v2-space-2) var(--v2-space-3); padding: var(--v2-space-3) var(--v2-space-4); margin-block-end: var(--v2-space-3); }
+  .alert.urgent > .alert-icon { display: none; }
+  .alert.urgent > .alert-text { display: block; }
+  .alert.urgent > .notice { grid-column: 1 / -1; }
+  .alert.urgent h2 { font-size: 15px; line-height: 20px; }
+  .alert.urgent p { font-size: var(--v2-font-caption-size); line-height: var(--v2-font-caption-line); }
+  .alert.urgent .actions { flex-wrap: nowrap; gap: var(--v2-space-2); }
+  .alert.urgent .actions button { padding-inline: var(--v2-space-3); }
+  .mute-toggle { position: relative; justify-content: center; flex: none; inline-size: var(--v2-size-touch-min); block-size: var(--v2-size-touch-min); border: var(--v2-border-field) solid var(--v2-c-border-edge); border-radius: var(--v2-radius-chip); }
+  .mute-toggle:has(input:checked) { background: var(--v2-c-bg-sunken); }
+  .mute-toggle:has(input:focus-visible) { outline: 2px solid var(--v2-c-action-primary); outline-offset: 2px; }
+  .mute-toggle input { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; margin: 0; opacity: 0; }
+  .mute-toggle .icon { display: block; }
+  .mute-toggle span { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .inbox-row { grid-template-columns: 72px minmax(0, 1fr) auto; grid-template-areas: "thumb main actions" "thumb time actions"; gap: var(--v2-space-2) var(--v2-space-4); padding: var(--v2-space-4); }
+  /* صف المادة على الهاتف: العنوان بجانب الفعل، ثم سطر البيانات والوقت بعرض البطاقة كله تحت العنوان، فيكفيه سطران. */
+  .inbox-row:not(.skeleton-row) { grid-template-areas: "thumb title actions" "thumb meta meta" "thumb time time"; align-items: start; }
+  .inbox-row:not(.skeleton-row) > .row-main { display: contents; }
+  .inbox-row .row-title { grid-area: title; }
+  .inbox-row .row-meta { grid-area: meta; }
+  .inbox-row .row-thumb { align-self: center; }
   .row-thumb, .skeleton.thumb { inline-size: 72px; block-size: 72px; }
   .inbox-row .material-link { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .row-states, .tag-list:not(.large), .row-meta .receipt { display: none; }
