@@ -3,14 +3,17 @@ import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
 import { ModuleRef, Reflector } from '@nestjs/core';
 import { and, eq, sql } from 'drizzle-orm';
 import type { Request } from 'express';
+import type { Logger } from 'pino';
 import { catchError, from, mergeMap, type Observable, throwError } from 'rxjs';
 import { canonicalJson } from '../common/canonical-json';
 import { sha256 } from '../common/crypto';
 import { ApiError, StoredResponse } from '../common/errors';
-import { toErrorResponse } from '../common/error.filter';
+import { errorLogFields, toErrorResponse } from '../common/error.filter';
+import { LOGGER } from '../common/logger';
 import { DB, type Database } from '../database/database.module';
 import { idempotencyKeys } from '../database/schema/schema';
 import { MaterialsService } from '../materials/materials.service';
+import { idempotencySlot, type IdempotencySlot } from './commit-marker';
 import { REPLAY_KEY, type ReplayRehydrator } from './replay';
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -26,7 +29,10 @@ export function requiresIdempotencyKey(method: string, path: string): boolean {
 /**
  * منع التكرار بدلالات العقد: المفتاح مقيّد بالمستخدم 24 ساعة؛ التكرار بالجسم نفسه يعيد الاستجابة الأولى
  * (الحالة والجسم)، وبجسم مختلف 422 idempotency_key_reused، وما زال قيد التنفيذ 409 idempotency_in_progress.
- * الاستجابات 4xx تُحفظ كما هي؛ 5xx تحرر المفتاح ليعيد العميل المحاولة.
+ * الاستجابات 4xx تُحفظ كما هي؛ 5xx تحرر المفتاح ليعيد العميل المحاولة ما لم تلتزم للطلب كتابة.
+ *
+ * مرة واحدة على الأكثر (ADR 0005، تعديل 2026-11-11): كتابة المعالج تلتزم مع علامة مفتاحه (`commit-marker.ts`)، فالمفتاح الملتزَم
+ * (`committed`) لا يُحرَّر ولا يتولاه تكرار. إن لم يُحفظ له رد (فشل المعالج بعد الالتزام، أو تعذّر الحفظ) فالإعادة عليه 409 ولا تنفّذ.
  */
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
@@ -34,6 +40,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
     @Inject(DB) private readonly db: Database,
     private readonly reflector: Reflector,
     private readonly moduleRef: ModuleRef,
+    @Inject(LOGGER) private readonly logger: Logger,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
@@ -68,26 +75,43 @@ export class IdempotencyInterceptor implements NestInterceptor {
             )
           : throwError(() => err);
       }),
-      mergeMap(() =>
-        next.handle().pipe(
-          mergeMap(async (body) => {
-            await this.complete(userId, key, successStatus, body ?? null);
-            return body;
-          }),
-          catchError((err: unknown) => {
-            // المعالج يرمي StoredResponse ليرد بحالة نجاح غير حالته الافتراضية (200 لطلب تصدير قائم بدل 202): تُحفظ كما هي
-            if (err instanceof StoredResponse) {
-              return from(this.complete(userId, key, err.status, err.body).catch(() => undefined)).pipe(mergeMap(() => throwError(() => err)));
-            }
-            const { status, body } = toErrorResponse(err, req.id ?? '');
-            const settle =
-              status < 500 && (err instanceof ApiError || err instanceof HttpException)
-                ? this.complete(userId, key, status, body)
-                : this.release(userId, key);
-            return from(settle.catch(() => undefined)).pipe(mergeMap(() => throwError(() => err)));
-          }),
-        ),
-      ),
+      mergeMap(() => {
+        // المعالج وحده ينفّذ داخل خانة المفتاح: كتابته تلتزم مع علامته، وما يكتبه المعترض بعده ليس منها
+        const slot: IdempotencySlot = { userId, key, state: 'open' };
+        // تعذّر حفظ نتيجة طلب نجح: الرد يُعاد لصاحبه، والمفتاح يُستهلك (إن لم تستهلكه كتابة المعالج) فلا تنفّذه إعادة
+        const settleFailed = (err: unknown) => this.logger.error({ request_id: req.id, ...errorLogFields(err) }, 'idempotency settle failed');
+        const store = (status: number, body: unknown) =>
+          this.complete(userId, key, status, body).catch(async (err: unknown) => {
+            settleFailed(err);
+            await this.spend(userId, key).catch(() => undefined);
+          });
+        return idempotencySlot
+          .run(slot, () => next.handle())
+          .pipe(
+            mergeMap(async (body) => {
+              slot.state = 'closed';
+              await store(successStatus, body ?? null);
+              return body;
+            }),
+            catchError((err: unknown) => {
+              slot.state = 'closed';
+              // المعالج يرمي StoredResponse ليرد بحالة نجاح غير حالته الافتراضية (200 لطلب تصدير قائم بدل 202): تُحفظ كما هي
+              if (err instanceof StoredResponse) {
+                return from(store(err.status, err.body)).pipe(mergeMap(() => throwError(() => err)));
+              }
+              const { status, body } = toErrorResponse(err, req.id ?? '');
+              // الرفض (4xx) يُحفظ كما هو. وما عداه يحرّر المفتاح إن لم تلتزم للطلب كتابة؛ المفتاح الملتزَم يبقى، فالإعادة عليه 409
+              const settle =
+                status < 500 && (err instanceof ApiError || err instanceof HttpException)
+                  ? this.complete(userId, key, status, body).catch((failure: unknown) => {
+                      settleFailed(failure);
+                      return this.release(userId, key);
+                    })
+                  : this.release(userId, key);
+              return from(settle.catch(() => undefined)).pipe(mergeMap(() => throwError(() => err)));
+            }),
+          );
+      }),
     );
   }
 
@@ -134,9 +158,18 @@ export class IdempotencyInterceptor implements NestInterceptor {
       .where(and(eq(idempotencyKeys.userId, userId), eq(idempotencyKeys.key, key)));
   }
 
+  /** يحذف الحجز الذي لم تلتزم له كتابة؛ المفتاح الملتزَم لا يمسّه. */
   private async release(userId: string, key: string): Promise<void> {
     await this.db
       .delete(idempotencyKeys)
+      .where(and(eq(idempotencyKeys.userId, userId), eq(idempotencyKeys.key, key), eq(idempotencyKeys.state, 'in_progress')));
+  }
+
+  /** يستهلك المفتاح بلا رد محفوظ: الإعادة عليه 409 ولا تنفّذ. */
+  private async spend(userId: string, key: string): Promise<void> {
+    await this.db
+      .update(idempotencyKeys)
+      .set({ state: 'committed' })
       .where(and(eq(idempotencyKeys.userId, userId), eq(idempotencyKeys.key, key), eq(idempotencyKeys.state, 'in_progress')));
   }
 }

@@ -31,7 +31,7 @@ DATABASE_URL=postgres://posthistory:<password>@localhost:5432/posthistory_test a
 4. **الحالات الثلاث أعمدة مستقلة** (`technical_state`، `editorial_state`، `rights_state`) بقيود CHECK، وجدول الانتقالات المسموحة في كود الخادم (العقد يوثّقه). ما ليس فيه يُرفض بـ 409.
 5. **الفهرسة** (ADR 0002): الحقول عالية التردد أعمدة صريحة بفهارس B-Tree مركبة؛ `dynamic_fields` JSONB **بلا GIN** (الاختبار الدخاني يفشل إن ظهر GIN). الحقل الموسوم «مرشّح بحث» يُرقَّى بترحيل يضيف فهرسًا تعبيريًا على `dynamic_fields ->> 'key'`.
 6. **Outbox داخل المعاملة.** كل تغيير حالة يكتب صفًا في `outbox_events` في معاملة الحفظ نفسها، و`idempotency_key` فريد. المُرسل يقرأ: `SELECT … FROM outbox_events WHERE published_at IS NULL AND next_attempt_at <= now() ORDER BY id FOR UPDATE SKIP LOCKED`.
-7. **مفاتيح منع التكرار** في `idempotency_keys` بمفتاح `(user_id, key)` وبصمة الطلب؛ تُكنس بعد `expires_at`.
+7. **مفاتيح منع التكرار** في `idempotency_keys` بمفتاح `(user_id, key)` وبصمة الطلب؛ تُكنس بعد `expires_at`. الحالات ثلاث: `in_progress` (محجوز)، `committed` (كتابة الطلب التزمت ورده لم يُحفظ، يكتبها الخادم في معاملة الكتابة نفسها، ADR 0005)، `completed` (الرد محفوظ).
 8. **حصص المساهمين = 100.00** قيد مؤجل (`DEFERRABLE INITIALLY DEFERRED`) حتى يمر الاستبدال الكامل داخل معاملة واحدة. الخادم يحوّل `23514` باسم القيد `material_contributors_sum_100` إلى `422 shares_not_100`.
 9. **رقم الإيصال** `R-YYYYMM-NNNNNN` يسنده محفّز عند تحوّل ملف `original` إلى `verified` ولا يتغير بعدها.
 10. **سجل التدقيق** إلحاقي بسلسلة تجزئة: لا UPDATE ولا DELETE ولا TRUNCATE (محفّزات ترفع `42501`).

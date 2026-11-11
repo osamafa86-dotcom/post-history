@@ -330,6 +330,12 @@ SELECT pg_temp.expect_error($q$
 SELECT pg_temp.expect_error($q$
   INSERT INTO idempotency_keys (user_id, key, request_fingerprint, state)
   VALUES ('00000000-0000-4000-8000-000000000011', 'another-key-0001', sha256('x'::bytea), 'completed') $q$, '23514');
+-- committed: كتابة الطلب التُزمت ورده لم يُحفظ بعد (بلا رد)؛ وما عدا الحالات الثلاث مرفوض
+INSERT INTO idempotency_keys (user_id, key, request_fingerprint, state)
+VALUES ('00000000-0000-4000-8000-000000000011', 'another-key-0002', sha256('x'::bytea), 'committed');
+SELECT pg_temp.expect_error($q$
+  INSERT INTO idempotency_keys (user_id, key, request_fingerprint, state)
+  VALUES ('00000000-0000-4000-8000-000000000011', 'another-key-0003', sha256('x'::bytea), 'done') $q$, '23514');
 
 -- ---------- audit log: hash chain + append-only ----------
 INSERT INTO audit_log (actor_id, action, target_type, target_id, details)
