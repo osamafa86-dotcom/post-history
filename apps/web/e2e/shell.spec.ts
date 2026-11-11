@@ -159,17 +159,36 @@ test.describe("on a touch phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   const background = (locator: Locator) => locator.evaluate(el => getComputedStyle(el).backgroundColor);
 
+  /**
+   * ما يخرج من حبر التسمية عن صندوق قصّها، بالبكسل، في كل جهة تقصّ فيها (صفر حيث لا قصّ). قياس هندسي لا لقطة: امتداد الحبر من مقاييس الخط
+   * نفسه (`measureText`) حول خط الأساس وبداية النص كما وضعهما المتصفح، فلا يتغيّر بتغيّر رسم الحروف بين بيئة وأخرى.
+   */
+  const inkBeyondClip = (label: Locator) => label.evaluate(el => {
+    const style = getComputedStyle(el), box = el.getBoundingClientRect(), range = document.createRange();
+    range.selectNodeContents(el); const text = range.getBoundingClientRect();
+    // خط الأساس: الحافة السفلى لعنصر inline-block فارغ يوضع في السطر نفسه
+    const probe = document.createElement("span"); probe.style.cssText = "display:inline-block;inline-size:0;block-size:0"; el.append(probe);
+    const baseline = probe.getBoundingClientRect().bottom; probe.remove();
+    const pen = document.createElement("canvas").getContext("2d")!;
+    pen.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`; pen.direction = style.direction as CanvasDirection; pen.textAlign = "left";
+    const ink = pen.measureText(el.textContent!), inline = style.overflowX !== "visible", block = style.overflowY !== "visible";
+    return {
+      size: parseFloat(style.fontSize), drift: Math.abs(ink.width - text.width),
+      beyond: { start: inline ? box.left - (text.left - ink.actualBoundingBoxLeft) : 0, end: inline ? text.left + ink.actualBoundingBoxRight - box.right : 0, above: block ? box.top - (baseline - ink.actualBoundingBoxAscent) : 0, below: block ? baseline + ink.actualBoundingBoxDescent - box.bottom : 0 },
+    };
+  });
+
   test("the bottom bar labels are set in the caption role and no part of a label is cut off", async ({ page }) => {
     await login(page, "reporter", "ar"); const bar = page.getByTestId("bottombar");
     // في شريط المراسل «موادي»: ياء أخيرة نقطتاها تحت السطر
     await expect(bar.locator(".nav-short", { hasText: ar.shell.short["my-materials"] })).toBeVisible();
-    for (const item of await bar.getByRole("listitem").all()) {
-      const label = item.locator(".nav-short, .nav-more"), text = await label.textContent();
-      expect(await label.evaluate(el => parseFloat(getComputedStyle(el).fontSize)), text!).toBeGreaterThanOrEqual(12);
-      // لو قُصّ من التسمية شيء لظهر حين يُرفع القصّ عنها، فتختلف اللقطتان
-      const drawn = await item.screenshot();
-      await label.evaluate(el => el.style.setProperty("overflow", "visible", "important"));
-      expect((await item.screenshot()).equals(drawn), text!).toBe(true);
+    await page.evaluate(() => document.fonts.ready);
+    for (const label of await bar.locator(".nav-short, .nav-more").all()) {
+      const text = (await label.textContent())!, measured = await inkBeyondClip(label);
+      expect(measured.size, text).toBeGreaterThanOrEqual(12);
+      // القياس على النص نفسه بالخط نفسه: عرضه في الصفحة هو عرضه في القياس
+      expect(measured.drift, text).toBeLessThan(0.5);
+      for (const [side, beyond] of Object.entries(measured.beyond)) expect(beyond, `${text}: ink beyond the clip box, ${side}`).toBeLessThanOrEqual(0.05);
     }
   });
 

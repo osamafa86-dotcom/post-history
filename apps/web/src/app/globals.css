@@ -516,8 +516,9 @@ html.board-display .main-content { max-width: none; padding: 0; }
   .bottombar ul { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
   .bottombar .nav-item { flex-direction: column; justify-content: center; gap: var(--v2-space-1); min-block-size: 56px; padding: var(--v2-space-2) var(--v2-space-1); font-size: var(--v2-font-caption-size); line-height: var(--v2-font-caption-line); text-align: center; }
   .bottombar .nav-label { position: absolute; inline-size: 1px; block-size: 1px; margin: 0; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  /* القصّ أفقي وحده: `overflow: hidden` كان يقصّ ما تحت السطر، فتُقرأ «موادي» بلا نقطتَي يائها */
-  .bottombar .nav-short, .bottombar .nav-more { display: block; max-inline-size: 100%; overflow-x: clip; text-overflow: ellipsis; white-space: nowrap; }
+  /* القصّ أفقي وحده: `overflow: hidden` كان يقصّ ما تحت السطر، فتُقرأ «موادي» بلا نقطتَي يائها. والحشو الأفقي يبعد حدّ القصّ عن حافة الحرف،
+     فلا يُقتطع من حافته شيء حين يقع الحدّ في منتصف بكسل. */
+  .bottombar .nav-short, .bottombar .nav-more { display: block; max-inline-size: 100%; padding-inline: var(--v2-space-1); overflow-x: clip; text-overflow: ellipsis; white-space: nowrap; }
   .bottombar .nav-item[aria-current="page"] { background: transparent; }
   .bottombar .nav-badge { position: absolute; inset-block-start: 2px; inset-inline-end: calc(50% - 22px); margin: 0; min-inline-size: 18px; block-size: 18px; font-size: var(--v2-font-caption-size); padding: 0 var(--v2-space-2); }
   .more-sheet { display: block; position: fixed; inset-inline: var(--v2-space-3); inset-block-end: calc(var(--shell-bottombar) + var(--v2-space-5) + env(safe-area-inset-bottom)); z-index: 26; max-block-size: 70vh; overflow-y: auto; padding: var(--v2-space-3); background: var(--v2-c-bg-raised); border: var(--v2-border-hairline) solid var(--v2-c-border-line); border-radius: var(--v2-radius-lg); box-shadow: 0 -12px 40px color-mix(in srgb, var(--v2-c-bg-store) 22%, transparent); }
