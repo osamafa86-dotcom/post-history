@@ -10,6 +10,8 @@ public actor UploadEngine: TusTransportDelegate {
         /// أقصى انتظار لأصل خلف النسخ الخفيفة (ADR 0075): نسخة عالقة لا تؤخر الأصول بلا حد. يبدأ من أول توقف للأصل
         /// في هذا التشغيل للتطبيق.
         public var proxyPriorityWindow: TimeInterval = 15 * 60
+        /// بعد كم ثانية تُعاد كتابة سجل فشل حفظه على القرص (ADR 0113).
+        public var unsavedRetryInterval: TimeInterval = 5
         public var sleep: @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) }
         public init() {}
     }
@@ -66,6 +68,11 @@ public actor UploadEngine: TusTransportDelegate {
     private var waitingForSlot: Set<UUID> = []
     /// سجلات توقفت لأن قرص الهاتف امتلأ أثناء تجهيز جزء؛ تُعاد بعد مهلة، وتخرج من هنا بأول جزء يُجهَّز.
     private var outOfSpace: Set<UUID> = []
+    /// ما لم يستطع المخزن قراءته عند الإطلاق، وسجلات لم يصل آخر تغيير لها إلى القرص (ADR 0113، تعديل 2026-11-11).
+    private var storeUnreadable = 0
+    private var storeUndecodable = 0
+    private var unsaved: Set<UUID> = []
+    private var unsavedRetry: Task<Void, Never>?
     /// جلسات سجلات ألغاها المراسل ولم يصل إجهاضها الخادم بعد (ADR 0113).
     private let aborts: any AbortStore
     private var drainingAborts = false
@@ -99,6 +106,10 @@ public actor UploadEngine: TusTransportDelegate {
     private func removeSubscriber(_ id: UUID) { subscribers[id] = nil }
 
     public func allRecords() -> [UploadRecord] { records.values.sorted { $0.createdAt < $1.createdAt } }
+    /// حال التخزين المحلي بالأعداد: ما لم يُقرأ عند الإطلاق، وما لم يُكتب بعد. يتغيّر مع `UploadEvent.storageHealthChanged`.
+    public func storageHealth() -> UploadStorageHealth {
+        UploadStorageHealth(unreadableRecords: storeUnreadable, undecodableRecords: storeUndecodable, unsavedRecords: unsaved.count)
+    }
     public func record(_ id: UUID) -> UploadRecord? { records[id] }
 
     /// يضيف ملفًا إلى الطابور ويبدأ دفعه. `sourcePath` نسبي إلى مجلد المستندات أو مطلق.
@@ -126,7 +137,17 @@ public actor UploadEngine: TusTransportDelegate {
     /// عند الإطلاق: يحمّل السجلات ويستأنف غير المكتمل. مهمة PATCH ما زالت في النظام لا تُعاد بل يُنتظر حدثها.
     public func resumeAll() async {
         await transport.setDelegate(self)
-        for r in (try? store.loadAll()) ?? [] { records[r.id] = r }
+        // ما لم يُقرأ لا يُسقط صامتًا: يُعدّ ويُعلَن، وملفه باقٍ في مكانه. مجلد لم يُقرأ كله يُعدّ سجلًا واحدًا على الأقل.
+        let snapshot: UploadStoreSnapshot
+        do {
+            snapshot = try store.loadSnapshot()
+        } catch {
+            snapshot = UploadStoreSnapshot(records: [], unreadable: 1)
+        }
+        for r in snapshot.records { records[r.id] = r }
+        storeUnreadable = snapshot.unreadable
+        storeUndecodable = snapshot.undecodable
+        if snapshot.unreadable + snapshot.undecodable > 0 { emit(.storageHealthChanged) }
         // تحضير النسخة الخفيفة لا ينجو من إنهاء التطبيق: أصل ينتظر نسخة لم تصل الطابور يُرفع بلا نسخة خفيفة.
         for rec in records.values where isHeldForProxy(rec) { releaseHold(rec.materialId) }
         let active = await transport.activePatchKeys()
@@ -339,6 +360,11 @@ public actor UploadEngine: TusTransportDelegate {
         transferSlots.removeAll()
         waitingForSlot.removeAll()
         outOfSpace.removeAll()
+        unsavedRetry?.cancel()
+        unsavedRetry = nil
+        unsaved.removeAll()
+        storeUnreadable = 0
+        storeUndecodable = 0
         // لا إجهاض ينتظر بعد المسح: لا يبقى أثر لجلسة على الهاتف (والمسح الطارئ يبطل الجلسات على الخادم بأفضل جهد).
         try? aborts.removeAll()
         for (id, rec) in wiped {
@@ -348,6 +374,8 @@ public actor UploadEngine: TusTransportDelegate {
             try? secrets.removeToken(for: id)
             try? store.remove(id: id)
         }
+        // وما لم يدخل الطابور لأنه لم يُقرأ أو لم يُفك ترميزه: ملفه يحمل رابط رفع، فلا يبقى بعد المسح.
+        try? store.removeAll()
         return wiped.count
     }
 
@@ -774,7 +802,56 @@ public actor UploadEngine: TusTransportDelegate {
         }
         r.updatedAt = env.now()
         records[r.id] = r
-        try? store.save(r)
+        persist(r)
+    }
+
+    /// يكتب السجل على القرص. فشل الكتابة (قرص ممتلئ أو مقفل) لا يُبتلع: التغيير باقٍ في الذاكرة، والسجل يُعلَّم «لم يُحفظ» ويُعلَن
+    /// للواجهة، وتُعاد كتابته مع كل حفظ تالٍ وبعد `unsavedRetryInterval` حتى تنجح. لا يُسجَّل شيء: الخطأ قد يحمل مسارًا.
+    private func persist(_ r: UploadRecord) {
+        let before = unsaved
+        do {
+            try store.save(r)
+            unsaved.remove(r.id)
+        } catch {
+            unsaved.insert(r.id)
+        }
+        writeUnsaved(except: r.id)
+        if unsaved != before { emit(.storageHealthChanged) }
+        scheduleUnsavedRetry()
+    }
+
+    /// يعيد كتابة ما لم يُحفظ بأحدث نسخة له في الذاكرة. سجل خرج من الطابور (حُذف أو مُسح) لا يُكتب.
+    private func writeUnsaved(except skipped: UUID? = nil) {
+        for id in unsaved where id != skipped {
+            guard let pending = records[id] else {
+                unsaved.remove(id)
+                continue
+            }
+            do {
+                try store.save(pending)
+                unsaved.remove(id)
+            } catch {
+                continue
+            }
+        }
+    }
+
+    private func scheduleUnsavedRetry() {
+        guard unsavedRetry == nil, !unsaved.isEmpty else { return }
+        let delay = timing.unsavedRetryInterval
+        let sleep = timing.sleep
+        unsavedRetry = Task { [weak self] in
+            try? await sleep(delay)
+            await self?.retryUnsaved()
+        }
+    }
+
+    private func retryUnsaved() {
+        unsavedRetry = nil
+        let before = unsaved
+        writeUnsaved()
+        if unsaved != before { emit(.storageHealthChanged) }
+        scheduleUnsavedRetry()
     }
 
     private func emit(_ event: UploadEvent) { subscribers.values.forEach { $0.yield(event) } }

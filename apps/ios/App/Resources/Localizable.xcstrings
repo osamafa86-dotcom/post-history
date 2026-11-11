@@ -10245,6 +10245,40 @@
           }
         }
       }
+    },
+    "upload.note.notSaved": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر حفظ آخر تغيير في الطابور على هذا الهاتف. ما وصل محفوظ، والتطبيق يعيد الحفظ وحده. أبقِه مفتوحًا، وأفرغ مساحة إن امتلأ الهاتف."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The latest change to the queue could not be saved on this phone. What arrived is safe, and the app keeps trying to save. Keep it open, and free some space if the phone is full."
+          }
+        }
+      }
+    },
+    "upload.note.unreadableRecords": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّرت قراءة بعض سجلات الرفع المحفوظة على هذا الهاتف، فلا تظهر في الطابور. لم يُحذف شيء منها ولا من ملفاتك."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some saved upload records on this phone could not be read, so they are not in the queue. Nothing was deleted, neither the records nor your files."
+          }
+        }
+      }
     }
   }
 }
