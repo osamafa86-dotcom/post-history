@@ -1,3 +1,4 @@
+import Accessibility
 import Foundation
 import MaterialsCore
 import MediaCore
@@ -126,10 +127,20 @@ final class UploadQueueModel: ObservableObject {
 
     /// ما تراه الشاشات من سجلات الطابور وإرسالاته ومسوداته: للحساب الداخل وحده (`AccountScope`).
     private func publishVisible() {
+        let before = records.map { item($0) }
         records = scope.visible(allRecords)
         localCopies = Set(records.filter { UploadServices.shared.localCopyExists(relativePath: $0.sourcePath) }.map(\.id))
         batches = scope.visible(ledger.batches)
         drafts = scope.visible(allDrafts)
+        announce(UploadAnnouncement.changes(from: before, to: records.map { item($0) }))
+    }
+
+    /// يقول لقارئ الشاشة أن رفعًا تعذّر أو توقف أو وصل، مرة عند الانتقال (`UploadAnnouncement`)، ولا يقول شيئًا لكل نسبة.
+    /// النص عام من الكتالوج: لا عنوان مادة ولا اسم ملف ولا رقم إيصال. بلا قارئ شاشة لا يحدث شيء.
+    private func announce(_ changes: [UploadAnnouncement]) {
+        for change in changes {
+            AccessibilityNotification.Announcement(String(localized: String.LocalizationValue(change.textKey))).post()
+        }
     }
 
     /// الدخول والخروج وبدء التشغيل (ADR 0093): النواة تطلب باسم الداخل وحده، والشاشات ترى سجلاته وحده. الإيصال المعروض لغيره
