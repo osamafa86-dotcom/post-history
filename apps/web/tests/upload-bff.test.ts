@@ -21,7 +21,7 @@ const created = {
   file_id: null, duplicate_of_file_id: null, failure_reason: null, receipt_number: null,
 };
 const uploadBody = { material_id: item.id, kind: "original", size_bytes: 4096, filename: "A001C002.MOV", mime_type: "video/quicktime", client_sha256: sha, client_fingerprint: { size_bytes: 4096, head_sha256: sha, tail_sha256: sha } };
-const materialBody = { title: "مادة من الحاسوب", material_types: ["raw_footage"], governorate: "غزة", city: "خان يونس", priority: "normal", sensitivity: { minors: false, injured: false, graphic: false }, display_name: { mode: "network" }, form_version: form.version, dynamic_fields: {} };
+const materialBody = { title: "مادة من الحاسوب", material_types: ["raw_footage", "interview"], tags: ["مؤتمر", "دير البلح"], governorate: "غزة", city: "خان يونس", priority: "normal", sensitivity: { minors: false, injured: false, graphic: false }, display_name: { mode: "network" }, form_version: form.version, dynamic_fields: {} };
 
 async function call(path: string, options: { method?: string; body?: unknown; user?: Me; headers?: Record<string, string>; upstream?: (r: Request) => Response | Promise<Response>; cfg?: WebConfig } = {}) {
   const store = new MemoryStore(), id = await store.create(tokens()), calls: Request[] = [];
@@ -41,6 +41,13 @@ describe("desktop upload BFF", () => {
     for (const extra of [{ gps: { lat: 1, lng: 2 } }, { contributors: [] }, { title: "abc" }, { material_types: ["unknown"] }, { display_name: { mode: "pseudonym" } }]) {
       const rejected = await call("materials", { body: { ...materialBody, ...extra } });
       expect(rejected.result.status).toBe(422); expect(rejected.calls).toHaveLength(0);
+    }
+    // الوسوم إلزامية من واجهة المراسل (وسم واحد على الأقل، حتى 12، بلا تكرار)، والحساسية ثلاثة أجوبة صريحة
+    const untagged = Object.fromEntries(Object.entries(materialBody).filter(([key]) => key !== "tags"));
+    for (const body of [untagged, { ...materialBody, tags: [] }, { ...materialBody, tags: ["مكرر", "مكرر"] }, { ...materialBody, tags: [" بمسافة"] }, { ...materialBody, tags: Array.from({ length: 13 }, (_, i) => `وسم ${i}`) },
+      { ...materialBody, sensitivity: { minors: false, injured: false } }, { ...materialBody, sensitivity: { minors: false, injured: false, graphic: null } }]) {
+      const rejected = await call("materials", { body });
+      expect(rejected.result.status, JSON.stringify(body).slice(0, 80)).toBe(422); expect(rejected.calls).toHaveLength(0);
     }
   });
   it("is open to the contract upload roles and closed to others", async () => {

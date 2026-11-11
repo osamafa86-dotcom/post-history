@@ -33,3 +33,32 @@ export function acceptedFile(name: string): boolean {
   const lower = name.toLowerCase();
   return cameraExtensions.some(extension => lower.endsWith(extension));
 }
+
+// سؤال الحساسية كما في تطبيقَي المراسل (reporter-v2.md 04 و04b و04c): سؤال واحد بلا جواب مسبق؛ «لا» تعني الأعلام الثلاثة `false` لأن السؤال
+// يسمّيها، و«نعم» تفتح الثلاثة ولكلٍّ جواب صريح. لا يُنشأ طلب قبل اكتمال الجواب.
+export const sensitivityFlagNames = ["minors", "injured", "graphic"] as const;
+export type SensitivityFlag = typeof sensitivityFlagNames[number];
+export type SensitivityAnswers = { gate: "no" | "yes" | null } & Record<SensitivityFlag, boolean | null>;
+export const noSensitivityAnswer: SensitivityAnswers = { gate: null, minors: null, injured: null, graphic: null };
+
+/** إعادة اختيار الجواب نفسه لا تمحو شيئًا؛ تغييره يبدأ من جديد. */
+export function answerSensitivity(current: SensitivityAnswers, gate: "no" | "yes"): SensitivityAnswers {
+  if (current.gate === gate) return current;
+  const each = gate === "no" ? false : null;
+  return { gate, minors: each, injured: each, graphic: each };
+}
+export const answerFollowup = (current: SensitivityAnswers, flag: SensitivityFlag, value: boolean): SensitivityAnswers => ({ ...current, gate: "yes", [flag]: value });
+
+/** أعلام العقد حين يكتمل الجواب، وإلا `null`. */
+export function sensitivityFlags(answers: SensitivityAnswers): Record<SensitivityFlag, boolean> | null {
+  const { minors, injured, graphic } = answers;
+  return answers.gate !== null && minors !== null && injured !== null && graphic !== null ? { minors, injured, graphic } : null;
+}
+
+/** أول ما ينقص قبل إنشاء المادة، بترتيب النموذج: النوع ثم الوسوم ثم جواب الحساسية ثم أسئلته الثلاثة. */
+export function uploadNeed({ types, tags, sensitivity }: { types: readonly string[]; tags: readonly string[]; sensitivity: SensitivityAnswers }): "type" | "tags" | "sensitivity" | "followups" | null {
+  if (!types.length) return "type";
+  if (!tags.length) return "tags";
+  if (sensitivity.gate === null) return "sensitivity";
+  return sensitivityFlags(sensitivity) ? null : "followups";
+}

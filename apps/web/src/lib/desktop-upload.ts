@@ -13,7 +13,8 @@ type IngestToken = components["schemas"]["IngestToken"];
 
 export type UploadPhase = "hashing" | "creating" | "uploading" | "paused" | "processing" | "done" | "failed";
 export type UploadFailure = "session_revoked" | "not_accepted" | "rejected" | "network" | "hash" | "checksum_mismatch" | "invalid_file" | "expired" | "storage_error" | "aborted";
-export type UploadUpdate = { phase: UploadPhase; hashed: number; sent: number; total: number; resumed: boolean; session?: SessionView; failure?: UploadFailure };
+/** `sha`: بصمة الملف التي حسبها المتصفح، تُعرض أوائلها في الإيصال ولا تُرسل إلى غير جلسة الرفع. */
+export type UploadUpdate = { phase: UploadPhase; hashed: number; sent: number; total: number; resumed: boolean; session?: SessionView; failure?: UploadFailure; sha?: string };
 
 export class BffError extends Error { constructor(readonly status: number) { super("Request failed"); } }
 async function bff<T>(method: "GET" | "POST" | "DELETE", path: string, body?: unknown, key?: string): Promise<T> {
@@ -58,9 +59,10 @@ export function startUpload(file: File, materialId: string, report: (update: Upl
   async function prepare(): Promise<PendingUpload> {
     key = await keyed;
     const known = await findUpload(key);
-    if (known && known.material_id === materialId && known.create.kind === kind) { emit({ hashed: file.size, resumed: true }); return known; }
+    if (known && known.material_id === materialId && known.create.kind === kind) { emit({ hashed: file.size, resumed: true, sha: known.create.client_sha256 }); return known; }
     // البصمة الكاملة قبل إنشاء الجلسة: العقد يلزم client_sha256 عند POST /uploads.
     const sha = await hashFile(file, hashed => emit({ hashed }), controller.signal);
+    emit({ sha });
     const pending: PendingUpload = {
       key, material_id: materialId, idempotency_key: crypto.randomUUID(), updated_at: Date.now(),
       create: { material_id: materialId, kind, size_bytes: file.size, client_sha256: sha, client_fingerprint: await fileFingerprint(file) },

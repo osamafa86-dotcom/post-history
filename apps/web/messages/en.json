@@ -986,10 +986,24 @@
     "city": "City",
     "shotAt": "Shot at",
     "priority": "Priority",
-    "sensitivity": "Sensitivity",
     "minors": "Minors appear",
     "injured": "Injured people appear",
     "graphic": "Graphic scenes",
+    "typesHelp": "Choose all that apply.",
+    "tags": "Tags",
+    "tagsHelp": "At least one tag, up to 12. Tags are how the material is found in the archive.",
+    "sensitivityQuestion": "Does it include minors, injured people or graphic scenes?",
+    "followups": {
+      "minors": "Are minors visible?",
+      "injured": "Are injured people visible?",
+      "graphic": "Does it show graphic scenes?"
+    },
+    "need": {
+      "type": "Choose the material type",
+      "tags": "Add at least one tag",
+      "sensitivity": "Answer the sensitivity question",
+      "followups": "Answer the three questions"
+    },
     "displayName": "Display name",
     "displayModes": {
       "network": "Network name",
@@ -997,7 +1011,7 @@
       "real_name": "Real name"
     },
     "pseudonym": "Pseudonym",
-    "invalid": "Check the required fields: a 5–80 character title, governorate, city and type.",
+    "invalid": "Check the required fields: a 5–80 character title, governorate and city.",
     "start": "Create material and start upload",
     "creating": "Creating material…",
     "createFailed": "Could not create the material. Try again with the same attempt.",
@@ -1029,6 +1043,11 @@
     "retry": "Retry",
     "open": "Open material",
     "receipt": "Receipt number",
+    "receiptTitle": "The file arrived and its fingerprint was verified",
+    "receiptTime": "Verified at",
+    "receiptSize": "Size",
+    "receiptHash": "Fingerprint starts",
+    "uploadAnother": "Upload another",
     "progress": "Progress of {name}",
     "leaveWarning": "An upload is in progress. Leaving stops it; you can resume by choosing the file again.",
     "abort": "Cancel upload",

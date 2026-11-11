@@ -6,10 +6,13 @@ export type ValidationCode = "required" | "type" | "min_length" | "max_length" |
 export type ValidationResult = { valid: boolean; errors: { field: string; code: ValidationCode }[] };
 const empty = (v: unknown) => v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
 
-export function visibleFields(form: Form, type: MaterialType, values: Values, permissions: Permission[] = []): Field[] {
-  const visible = new Set<string>();
+/** نوع واحد، أو أنواع المادة كلها: الحقل يظهر إن طابق أحدها، كما يتحقق الخادم من `dynamic_fields`. */
+export type FormTypes = MaterialType | readonly MaterialType[];
+
+export function visibleFields(form: Form, type: FormTypes, values: Values, permissions: Permission[] = []): Field[] {
+  const visible = new Set<string>(), types: readonly MaterialType[] = typeof type === "string" ? [type] : type;
   return form.fields.filter(field => {
-    if (!mayReadField(field, permissions) || (field.material_types?.length && !field.material_types.includes(type))) return false;
+    if (!mayReadField(field, permissions) || (field.material_types?.length && !field.material_types.some(candidate => types.includes(candidate)))) return false;
     if (field.condition) {
       if (!visible.has(field.condition.field)) return false;
       const control: unknown = values[field.condition.field];
@@ -66,7 +69,7 @@ function rule(field: Field, value: unknown): ValidationCode | null {
   }
 }
 
-export function validate(form: Form, type: MaterialType, values: Values, permissions: Permission[] = []): ValidationResult {
+export function validate(form: Form, type: FormTypes, values: Values, permissions: Permission[] = []): ValidationResult {
   const errors: ValidationResult["errors"] = [];
   for (const field of visibleFields(form, type, values, permissions)) {
     const code = rule(field, values[field.key]);
