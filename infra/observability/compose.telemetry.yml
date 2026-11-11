@@ -1,0 +1,32 @@
+# وصل الخادم والعاملين بمجمّع المراقبة (ADR 0027، تعديل 2026-11-11). ليس مشروعًا: ملف إضافي فوق compose التجربة،
+# يضيفه infra/field-trial/trial.sh حين تكون شبكتا المقاييس قائمتين (ينشئهما مشروع المراقبة). بلا المراقبة تعمل التجربة
+# كما هي ولا يخرج منها مقياس. الشبكتان داخليتان، وعليهما المجمّع وحده من مشروع المراقبة.
+# الخادم على شبكة والعاملون على أخرى: العامل يحلّ اسم الخادم على شبكة الوسائط وحدها، فيبقى عنوانه عند الخادم ثابتًا.
+x-collector: &collector
+  # OTLP/HTTP إلى خدمة المجمّع باسمها على شبكتَي المقاييس. TELEMETRY_COLLECTOR_HOST يغيّر الاسم إن سُمّيت الخدمة بغيره.
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://${TELEMETRY_COLLECTOR_HOST:-otel-collector}:4318
+
+services:
+  api:
+    environment:
+      <<: *collector
+    networks:
+      telemetry-api: {}
+  media-worker:
+    environment:
+      <<: *collector
+    networks:
+      telemetry-workers: {}
+  ai-worker:
+    environment:
+      <<: *collector
+    networks:
+      telemetry-workers: {}
+
+networks:
+  telemetry-api:
+    name: post-history-telemetry-api
+    external: true
+  telemetry-workers:
+    name: post-history-telemetry-workers
+    external: true
