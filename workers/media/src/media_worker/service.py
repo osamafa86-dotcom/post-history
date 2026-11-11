@@ -25,16 +25,19 @@ import os
 import shutil
 import signal
 import socket
+import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import redis
 
-from .api import ApiAuthError, ApiConflict, ApiGone, ApiRejected, InternalApi
+from .api import REQUEST_ID, ApiAuthError, ApiConflict, ApiGone, ApiRejected, InternalApi
 from .c2pa import Signing, signing_from_env
 from .circulated import OverlayRenderer
 from .jobs import Buckets, Jobs
+from .metrics import Metrics
 from .probe import InvalidMediaError
 from .proxy import ProxyTimingError
 from .storage import S3Storage
@@ -54,6 +57,9 @@ PERMANENT = (ApiRejected, ApiConflict, InvalidMediaError, ProxyTimingError, Valu
 # نتيجة الفشل التي تُبلَّغ للخادم: الملف نفسه غير صالح، أو تعذّرت معالجته عندنا
 FILE_FAULTS = (InvalidMediaError, ProxyTimingError)
 AUTH_BACKOFF_FIRST_S = 1.0
+# العطل المؤقت (تخزين، شبكة، 5xx) يُعاد في مكانه بهذه المهل قبل أن يُترك الحدث معلّقًا لمهلة الأخذ (ADR 0006، تعديل 2026-11-11):
+# انقطاع ثوانٍ لا يؤخر المعاينة ربع ساعة. المهام قابلة للإعادة، والأصل لا يُمس في أي محاولة.
+TRANSIENT_RETRY_DELAYS_S = (1.0, 5.0, 30.0)
 
 
 def clean_scratch(scratch: Path) -> int:
@@ -96,6 +102,8 @@ class Config:
     watermark_key: bytes = field(default=b"", repr=False)
     # توقيع C2PA (ADR 0060) خلف MEDIA_ENABLE_C2PA؛ الإعداد الناقص يرفض الإقلاع
     c2pa: Signing | None = None
+    # عنوان المجمّع المستضاف ذاتيًا (ADR 0027)؛ غيابه = لا مقاييس تخرج من العامل
+    otlp_endpoint: str | None = None
 
     @classmethod
     def from_env(cls) -> Config:
@@ -120,14 +128,17 @@ class Config:
             enable_renders=e.get("MEDIA_ENABLE_RENDERS", "false").lower() == "true",
             watermark_key=e.get("MEDIA_WATERMARK_KEY", "").encode(),
             c2pa=signing_from_env(dict(e)),
+            otlp_endpoint=e.get("OTEL_EXPORTER_OTLP_ENDPOINT") or None,
         )
 
 
 class Service:
     def __init__(self, r: redis.Redis, jobs: Jobs, consumer: str, block_ms: int = 5000,
                  claim_idle_ms: int = 15 * 60 * 1000, max_deliveries: int = 5, auth_backoff_max_s: float = 300.0,
-                 sleep=time.sleep, auth_isolate_after_s: float = 1800.0, stream: str = STREAM, group: str = GROUP):
+                 sleep=time.sleep, auth_isolate_after_s: float = 1800.0, stream: str = STREAM, group: str = GROUP,
+                 metrics: Metrics | None = None):
         self.r = r
+        self.metrics = metrics
         self.stream = stream
         self.group = group
         self.auth_backoff_max_s = auth_backoff_max_s
@@ -174,6 +185,29 @@ class Service:
             self.sleep(step)
             left -= step
 
+    def _keep_claim(self, entry_id: str):
+        """نبض يجدّد خمول الحدث الجاري كل ثلث مهلة الأخذ ما دام هذا المستهلك يعمل عليه، فلا يأخذه مستهلك ثانٍ ومهمته
+        الطويلة ما زالت تعمل. JUSTID لا يزيد عدد التسليم. يتوقف النبض مع صاحبه: حدث مات مستهلكه يؤخذ بعد المهلة كما كان.
+        يعيد دالة توقفه."""
+        stop = threading.Event()
+        interval = max(self.claim_idle_ms / 3000.0, 0.05)
+
+        def beat() -> None:
+            while not stop.wait(interval):
+                try:
+                    self.r.xclaim(self.stream, self.group, self.consumer, min_idle_time=0, message_ids=[entry_id], justid=True)
+                except redis.RedisError as err:
+                    log.warning("claim renewal failed entry=%s error=%s", entry_id, type(err).__name__)
+
+        thread = threading.Thread(target=beat, name="media-claim-heartbeat", daemon=True)
+        thread.start()
+
+        def done() -> None:
+            stop.set()
+            thread.join(timeout=5)
+
+        return done
+
     def _parse(self, fields: dict) -> object:
         try:
             return json.loads(fields.get("event", "{}"))
@@ -186,17 +220,37 @@ class Service:
             return self._dead_letter(entry_id, fields, event, "max_deliveries", "storage_error")
         if not isinstance(event, dict):
             return self._dead_letter(entry_id, fields, event, "malformed_event", "storage_error")
-        delay, waited = AUTH_BACKOFF_FIRST_S, 0.0
+        # معرّف ترابط عشوائي لهذا التسليم (ADR 0027): يُرسل مع نداءات الخادم الداخلية ويُكتب في سطر النتيجة هنا
+        request_id = f"media-{uuid.uuid4().hex}"
+        token = REQUEST_ID.set(request_id)
+        release_claim = self._keep_claim(entry_id)
+        started = time.monotonic()
+        try:
+            done, outcome = self._attempt(entry_id, fields, event)
+        finally:
+            release_claim()
+            REQUEST_ID.reset(token)
+        if done:
+            self.r.xack(self.stream, self.group, entry_id)
+            log.info("event done entry=%s type=%s outcome=%s request_id=%s", entry_id, event.get("type"), outcome, request_id)
+        else:
+            log.warning("event not done entry=%s outcome=%s request_id=%s", entry_id, outcome.split(":")[0], request_id)
+        if self.metrics:
+            self.metrics.event(self.stream, event.get("type"), "done" if done else outcome.split(":")[0], time.monotonic() - started)
+        return outcome
+
+    def _attempt(self, entry_id: str, fields: dict, event: dict) -> tuple[bool, str]:
+        """ينفّذ المهمة بمحاولاتها. يعيد (نجحت؟، النتيجة): نتيجة المهمة حين تنجح، وإلا نتيجة العزل أو التأجيل."""
+        delay, waited, transient = AUTH_BACKOFF_FIRST_S, 0.0, 0
         while True:
             try:
-                outcome = self.jobs.handle(event)
-                break
+                return True, self.jobs.handle(event)
             except ApiAuthError:
                 if self.stopped:
-                    return "deferred:auth"
+                    return False, "deferred:auth"
                 if waited >= self.auth_isolate_after_s:
                     # خطأ تهيئة طويل لا يسد الطابور: يُعزل الحدث بلا حكم على الملف، ويُعاد لاحقًا بـ requeue-dead
-                    return self._dead_letter(entry_id, fields, event, "config_error", None)
+                    return False, self._dead_letter(entry_id, fields, event, "config_error", None)
                 # الحدث يبقى عند هذا المستهلك: يُجدَّد خموله (JUSTID لا يزيد عدد التسليم) فلا يأخذه غيره
                 log.warning("internal API refused the worker token; retrying entry=%s in %.0fs", entry_id, delay)
                 self._wait(delay)
@@ -204,16 +258,19 @@ class Service:
                 self.r.xclaim(self.stream, self.group, self.consumer, min_idle_time=0, message_ids=[entry_id], justid=True)
                 delay = min(delay * 2, self.auth_backoff_max_s)
             except ApiGone:
-                return self._dead_letter(entry_id, fields, event, "gone", None)
+                return False, self._dead_letter(entry_id, fields, event, "gone", None)
             except PERMANENT as err:
                 result = "invalid_file" if isinstance(err, FILE_FAULTS) else "storage_error"
-                return self._dead_letter(entry_id, fields, event, type(err).__name__, result)
-            except Exception as err:  # عطل مؤقت (تخزين، شبكة، 5xx، ffmpeg): يبقى معلّقًا ويُستعاد لاحقًا
-                log.warning("event deferred entry=%s error=%s", entry_id, type(err).__name__)
-                return f"deferred:{type(err).__name__}"
-        self.r.xack(self.stream, self.group, entry_id)
-        log.info("event done entry=%s type=%s outcome=%s", entry_id, event.get("type"), outcome)
-        return outcome
+                return False, self._dead_letter(entry_id, fields, event, type(err).__name__, result)
+            except Exception as err:  # عطل مؤقت (تخزين، شبكة، 5xx، ffmpeg)
+                if self.stopped or transient >= len(TRANSIENT_RETRY_DELAYS_S):
+                    # استُنفدت المحاولات القصيرة: يبقى معلّقًا بلا تأكيد، ويُستعاد بعد مهلة الأخذ بتسليم جديد
+                    log.warning("event deferred entry=%s error=%s", entry_id, type(err).__name__)
+                    return False, f"deferred:{type(err).__name__}"
+                pause = TRANSIENT_RETRY_DELAYS_S[transient]
+                transient += 1
+                log.warning("transient failure entry=%s error=%s; retry %d in %.0fs", entry_id, type(err).__name__, transient, pause)
+                self._wait(pause)
 
     def next_entries(self) -> list[tuple[str, dict]]:
         claimed = self.r.xautoclaim(self.stream, self.group, self.consumer, min_idle_time=self.claim_idle_ms,
@@ -245,6 +302,8 @@ class Service:
         self.ensure_group()
         while not self.stopped:
             self.run_once()
+            if self.metrics:
+                self.metrics.flush_if_due()
 
 
 def requeue_main(reason: str, queue: str = "events") -> None:
@@ -278,7 +337,8 @@ def main(queue: str = "events") -> None:
                 enable_renders=cfg.enable_renders and queue == "renders", renderer=renderer)
     svc = Service(redis.Redis.from_url(cfg.redis_url, decode_responses=True), jobs, cfg.consumer, cfg.block_ms,
                   cfg.claim_idle_ms, cfg.max_deliveries, cfg.auth_backoff_max_s,
-                  auth_isolate_after_s=cfg.auth_isolate_after_s, stream=stream, group=group)
+                  auth_isolate_after_s=cfg.auth_isolate_after_s, stream=stream, group=group,
+                  metrics=Metrics(cfg.otlp_endpoint, "media-worker"))
 
     def stop(*_):
         svc.stopped = True

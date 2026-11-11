@@ -26,13 +26,15 @@ import shutil
 import signal
 import socket
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import redis
 
-from .api import ApiAuthError, ApiError, ApiGone, InternalApi
+from .api import REQUEST_ID, ApiAuthError, ApiError, ApiGone, InternalApi
 from .jobs import Jobs, SourceNotReady
+from .metrics import Metrics
 from .storage import S3Storage, StorageError
 from .transcribe import NoAudioError
 
@@ -99,6 +101,8 @@ class Config:
     max_deliveries: int = 5
     auth_backoff_max_s: float = 300.0
     auth_isolate_after_s: float = 1800.0
+    # عنوان المجمّع المستضاف ذاتيًا (ADR 0027)؛ غيابه = لا مقاييس تخرج من العامل
+    otlp_endpoint: str | None = None
 
     @classmethod
     def from_env(cls) -> Config:
@@ -118,6 +122,7 @@ class Config:
             max_deliveries=int(e.get("AI_MAX_DELIVERIES", 5)),
             auth_backoff_max_s=float(e.get("AI_AUTH_BACKOFF_MAX_S", 300)),
             auth_isolate_after_s=float(e.get("AI_AUTH_ISOLATE_AFTER_S", 1800)),
+            otlp_endpoint=e.get("OTEL_EXPORTER_OTLP_ENDPOINT") or None,
         )
 
 
@@ -125,8 +130,9 @@ class Service:
     def __init__(self, r: redis.Redis, jobs: Jobs, consumer: str, block_ms: int = 5000,
                  claim_idle_ms: int = 30 * 60 * 1000, max_deliveries: int = 5, auth_backoff_max_s: float = 300.0,
                  sleep=time.sleep, auth_isolate_after_s: float = 1800.0, source_wait_s: float = 3600.0,
-                 clock=time.time):
+                 clock=time.time, metrics: Metrics | None = None):
         self.r = r
+        self.metrics = metrics
         self.jobs = jobs
         self.consumer = consumer
         self.block_ms = block_ms
@@ -190,6 +196,26 @@ class Service:
             event = json.loads(fields.get("event", "{}"))
         except ValueError:
             event = None
+        # معرّف ترابط عشوائي لهذا التسليم (ADR 0027): يُرسل مع نداءات الخادم الداخلية ويُكتب في سطر النتيجة هنا
+        request_id = f"ai-{uuid.uuid4().hex}"
+        token = REQUEST_ID.set(request_id)
+        started = time.monotonic()
+        try:
+            outcome = self._attempt(entry_id, fields, event)
+        finally:
+            REQUEST_ID.reset(token)
+        kind = outcome.split(":")[0]
+        result = "dead" if kind == "dead" else "deferred" if kind in ("deferred", "retry") else "done"
+        event_type = event.get("type") if isinstance(event, dict) else None
+        if result != "done":
+            log.warning("event not done entry=%s outcome=%s request_id=%s", entry_id, kind, request_id)
+        elif outcome != "ignored":
+            log.info("event done entry=%s type=%s outcome=%s request_id=%s", entry_id, event_type, outcome, request_id)
+        if self.metrics:
+            self.metrics.event(STREAM, event_type, result, time.monotonic() - started)
+        return outcome
+
+    def _attempt(self, entry_id: str, fields: dict, event: object) -> str:
         if not isinstance(event, dict):
             return self._dead_letter(entry_id, fields, "malformed_event")
         if entry_id != RETRY_ENTRY and self._deliveries(entry_id) > self.max_deliveries:
@@ -224,8 +250,6 @@ class Service:
                 log.warning("event deferred entry=%s error=%s%s", entry_id, type(err).__name__, detail)
                 return f"deferred:{type(err).__name__}"
         self._ack(entry_id)
-        if outcome != "ignored":
-            log.info("event done entry=%s type=%s outcome=%s", entry_id, event.get("type"), outcome)
         return outcome
 
     def _due_retry(self) -> dict | None:
@@ -255,6 +279,8 @@ class Service:
         self.ensure_group()
         while not self.stopped:
             self.run_once()
+            if self.metrics:
+                self.metrics.flush_if_due()
 
 
 def build(cfg: Config) -> Service:
@@ -268,7 +294,8 @@ def build(cfg: Config) -> Service:
                 enabled=cfg.enabled, weights=read_manifest(cfg.models_dir, cfg.model), shots_enabled=cfg.shots_enabled)
     return Service(redis.Redis.from_url(cfg.redis_url, decode_responses=True), jobs, cfg.consumer, cfg.block_ms,
                    cfg.claim_idle_ms, cfg.max_deliveries, cfg.auth_backoff_max_s,
-                   auth_isolate_after_s=cfg.auth_isolate_after_s, source_wait_s=cfg.source_wait_s)
+                   auth_isolate_after_s=cfg.auth_isolate_after_s, source_wait_s=cfg.source_wait_s,
+                   metrics=Metrics(cfg.otlp_endpoint, "ai-worker"))
 
 
 def main() -> None:
