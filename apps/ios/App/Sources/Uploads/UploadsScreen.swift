@@ -141,6 +141,12 @@ struct UploadsScreen: View {
         } else if items.contains(where: \.waitingForSpace) {
             // الهاتف ممتلئ: ما وصل باقٍ والرفع يُستأنف وحده حين تتوفر مساحة (ADR 0113).
             VLNote(tone: .warn, systemImage: "externaldrive.badge.exclamationmark", text: Text("upload.note.storageFull"))
+        } else if queue.storageHealth.unsavedRecords > 0 {
+            // آخر تغيير في الطابور لم يُكتب على الهاتف: يُقال للمراسل، والنواة تعيد الحفظ وحدها (ADR 0113).
+            VLNote(tone: .danger, systemImage: "externaldrive.badge.exclamationmark", text: Text("upload.note.notSaved"))
+        } else if queue.storageHealth.unreadableRecords + queue.storageHealth.undecodableRecords > 0 {
+            // سجلات على الهاتف لم تُقرأ فلا تظهر في الطابور: لا تختفي صامتةً، ولم يُحذف منها شيء.
+            VLNote(tone: .warn, systemImage: "exclamationmark.triangle", text: Text("upload.note.unreadableRecords"))
         } else if !online, ringState != .done {
             VLNote(tone: .warn, systemImage: "wifi.slash", text: Text("upload.offline"))
         } else if ringState == .done {

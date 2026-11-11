@@ -23,8 +23,31 @@ public enum UploadFileProtection {
 /// يحمل رابط رفع tus (قدرة بحد ذاتها بعد `pre-create`)، فالمجلد يُستثنى من النسخ الاحتياطي في التطبيق ولا يُنسخ خارج الجهاز.
 public protocol UploadStateStore: Sendable {
     func loadAll() throws -> [UploadRecord]
+    /// السجلات المقروءة، وعدد ما لم يُقرأ ملفه وما لم يُفك ترميزه: النواة تعلنهما ولا تُسقطهما صامتةً (ADR 0113).
+    func loadSnapshot() throws -> UploadStoreSnapshot
     func save(_ record: UploadRecord) throws
     func remove(id: UUID) throws
+    /// يحذف كل ما في المخزن، ومنه ما لم يُقرأ أو لم يُفك ترميزه: المسح الطارئ لا يُبقي رابط رفع على الهاتف.
+    func removeAll() throws
+}
+
+/// ما وجده المخزن عند القراءة. الأعداد وحدها تخرج منه: لا مسار ولا اسم ملف.
+public struct UploadStoreSnapshot: Sendable {
+    public var records: [UploadRecord]
+    public var unreadable: Int
+    public var undecodable: Int
+
+    public init(records: [UploadRecord], unreadable: Int = 0, undecodable: Int = 0) {
+        self.records = records
+        self.unreadable = unreadable
+        self.undecodable = undecodable
+    }
+}
+
+public extension UploadStateStore {
+    /// مخزن لا يميّز ما لم يقرأه: كل ما يعيده `loadAll`.
+    func loadSnapshot() throws -> UploadStoreSnapshot { try UploadStoreSnapshot(records: loadAll()) }
+    func removeAll() throws { for record in try loadAll() { try remove(id: record.id) } }
 }
 
 /// رمز الرفع القصير لكل سجل؛ على الجهاز في Keychain، لا في ملف الحالة.
@@ -69,9 +92,29 @@ public final class FileUploadStateStore: UploadStateStore, @unchecked Sendable {
 
     /// كل سجل يُقرأ وحده: ملف لا يُقرأ (الهاتف مقفل قبل أول فتح منذ التشغيل، أو ملف تالف) يُترك ولا يُخفي غيره. كان ملف واحد كذلك
     /// يرمي القراءة كلها، فتبدأ النواة بطابور فارغ في الذاكرة: لا رفع يُستأنف، ولا ترى «موادي» أصلًا على الهاتف (بناء 1.0 (11)).
-    public func loadAll() throws -> [UploadRecord] {
-        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).filter { $0.pathExtension == "json" }
-        return files.compactMap { try? decoder.decode(UploadRecord.self, from: Data(contentsOf: $0)) }.sorted { $0.createdAt < $1.createdAt }
+    public func loadAll() throws -> [UploadRecord] { try loadSnapshot().records }
+
+    /// ما لم يُقرأ وما لم يُفك ترميزه يُعدّ ويبقى ملفه في مكانه: قد يقرؤه فتح لاحق للهاتف أو إصدار لاحق، ولا يُحذف إلا بالمسح.
+    public func loadSnapshot() throws -> UploadStoreSnapshot {
+        var records: [UploadRecord] = []
+        var unreadable = 0
+        var undecodable = 0
+        for file in try recordFiles() {
+            guard let data = try? Data(contentsOf: file) else {
+                unreadable += 1
+                continue
+            }
+            if let record = try? decoder.decode(UploadRecord.self, from: data) {
+                records.append(record)
+            } else {
+                undecodable += 1
+            }
+        }
+        return UploadStoreSnapshot(records: records.sorted { $0.createdAt < $1.createdAt }, unreadable: unreadable, undecodable: undecodable)
+    }
+
+    private func recordFiles() throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).filter { $0.pathExtension == "json" }
     }
 
     public func save(_ record: UploadRecord) throws {
@@ -81,6 +124,10 @@ public final class FileUploadStateStore: UploadStateStore, @unchecked Sendable {
     public func remove(id: UUID) throws {
         let u = url(id)
         if FileManager.default.fileExists(atPath: u.path) { try FileManager.default.removeItem(at: u) }
+    }
+
+    public func removeAll() throws {
+        for file in try recordFiles() { try FileManager.default.removeItem(at: file) }
     }
 }
 

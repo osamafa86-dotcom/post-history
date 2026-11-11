@@ -23,6 +23,8 @@ final class UploadQueueModel: ObservableObject {
     /// سجلات تنتظر دورها في الطابور، وسجلات توقفت لأن مساحة الهاتف ممتلئة (ADR 0113).
     @Published private(set) var queuedForTransfer: Set<UUID> = []
     @Published private(set) var waitingForSpace: Set<UUID> = []
+    /// ما لم يستطع التخزين المحلي قراءته أو حفظه (ADR 0113): أعداد وحدها، تعرضها ملاحظة شاشة الرفع.
+    @Published private(set) var storageHealth = UploadStorageHealth()
     /// الشبكة كما تراها بطاقة الرفع (المواصفة A2): بلا شبكة، أو بانتظار Wi‑Fi حين يكون «Wi‑Fi فقط» مفعّلًا.
     enum NetworkState: Equatable { case online, offline, waitingForWifi }
     @Published private(set) var networkState: NetworkState = .online
@@ -103,6 +105,9 @@ final class UploadQueueModel: ObservableObject {
                     etaSeconds[id] = networkState == .online ? estimators[id]?.secondsRemaining(sizeBytes: size, confirmedOffset: confirmed) : nil
                 case .retryScheduled:
                     break
+                case .storageHealthChanged:
+                    // القيمة نفسها تُقرأ في `refresh()` أدناه؛ لا يُسجَّل شيء.
+                    break
                 }
                 await refresh()
             }
@@ -114,6 +119,8 @@ final class UploadQueueModel: ObservableObject {
         waitingForProxy = await engine.waitingForProxy()
         queuedForTransfer = await engine.waitingForTransferSlot()
         waitingForSpace = await engine.waitingForSpace()
+        let health = await engine.storageHealth()
+        if health != storageHealth { storageHealth = health }
         publishVisible()
     }
 
