@@ -41,7 +41,8 @@ export function originAllowed(url, allowed) { try { return allowed.includes(new 
 /** The page's own labels: each pattern must match the text the web app really shows (a unit test compares them with apps/web/messages). */
 export const LABELS = {
   addToCart: /^(أضف إلى السلة|Add to cart)$/,
-  goToCart: /^(في السلة، انتقل إليها|In your cart; go to it)$/,
+  // The link carries the cart's count: the message is a template ("… ({n})") and the page shows the number.
+  goToCart: /^(اذهب إلى السلة|Go to cart) \((\{n\}|\d+)\)$/,
   placeOrder: /^(إنشاء الطلب|Create order)$/,
   paySandbox: /^(الدفع لدى المزوّد( التجريبي)?|Pay at the (sandbox )?provider)$/,
   orderPaid: /^(مدفوع|Paid)$/,
