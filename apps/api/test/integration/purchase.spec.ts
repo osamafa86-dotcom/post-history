@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { schemaValidator } from '../../src/common/contract';
 import { signWebhook } from '../../src/commerce/payment-provider';
-import { createHarness, type Harness, loginAs, makeSaleable, seedUploadSession, seedUser } from './harness';
+import { createHarness, type Harness, loginAs, makeSaleable, seedUploadSession, seedUser, statementsDuring } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
 const SECRET = randomBytes(32).toString('hex');
@@ -204,6 +204,22 @@ describe('sandbox purchase (/v1/orders, /payments/webhooks/sandbox)', () => {
     const outsider = await buyer(await organization());
     await http().get(`/v1/orders/${mine.body.id}`).set(as(outsider.token)).expect(404);
     await post(outsider.token, `/orders/${mine.body.id}/checkout`).expect(404);
+  });
+
+  it('lists a page of orders in a fixed number of statements, each item equal to its own read', async () => {
+    const t = await template();
+    const b = await buyer(await organization());
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const { listingId } = await listed([t]);
+      ids.push((await post(b.token, '/orders', { items: [{ listing_id: listingId, license_template_id: t }] }).expect(201)).body.id);
+    }
+    const list = (limit: number) => http().get(`/v1/orders?limit=${limit}`).set(as(b.token)).expect(200);
+    const page = (await list(3)).body;
+    expect(page.items.map((o: { id: string }) => o.id)).toEqual([...ids].reverse());
+    for (const item of page.items) expect(item).toEqual(await order(b.token, item.id));
+    // صفحة من ثلاثة لا تزيد جملة واحدة على صفحة من واحد
+    expect(await statementsDuring(h, () => list(3))).toBe(await statementsDuring(h, () => list(1)));
   });
 
   it('a payment for the wrong amount, or after the rights changed, issues no license and is kept for review', async () => {
