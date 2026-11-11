@@ -341,6 +341,21 @@ describe('materials (/v1/materials)', () => {
       expect(types).toContain('material.released');
     });
 
+    it('only the producer holding the reservation moves the material out of production', async () => {
+      const m = await create(reporterA);
+      await setEditorial(m.id, 'accepted');
+      await as(producer).write('post', `/v1/materials/${m.id}/reservation`).expect(200);
+      for (const to of ['final_review', 'accepted']) {
+        const refused = await as(producer2)
+          .write('post', `/v1/materials/${m.id}/transitions`, { track: 'editorial', to, reason: 'not the holder' })
+          .expect(403);
+        expect(refused.body.code).toBe('forbidden_scope');
+      }
+      expect((await as(producer).get(`/v1/materials/${m.id}`).expect(200)).body).toMatchObject({ editorial_state: 'in_production', reserved_by: producer.id });
+      const log = await as(producer).get(`/v1/materials/${m.id}/transitions`).expect(200);
+      expect(log.body.items.at(-1)).toMatchObject({ to: 'in_production' });
+    });
+
     it('an idle reservation is free to take over and is released by the sweep', async () => {
       const m = await create(reporterA);
       await setEditorial(m.id, 'accepted');
