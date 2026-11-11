@@ -1,7 +1,7 @@
 import { type DynamicModule, type INestApplication, Module, RequestMethod } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import type { Logger } from 'pino';
-import { APP_CONFIG, type AppConfig, blockListOf, sandboxBootWarning } from './config/config';
+import { addressAllowed, APP_CONFIG, type AppConfig, blockListOf, sandboxBootWarning } from './config/config';
 import { internalOnly } from './common/internal-only';
 import { EtagInterceptor } from './common/preconditions';
 import { ErrorFilter } from './common/error.filter';
@@ -60,7 +60,9 @@ export function configureApp(app: INestApplication, config: AppConfig, logger: L
   express.set('trust proxy', config.TRUSTED_PROXY_CIDRS.length > 0 ? config.TRUSTED_PROXY_CIDRS : false);
   const sandbox = sandboxBootWarning(config);
   if (sandbox) logger.warn(sandbox);
-  app.use(requestLogging(logger));
+  // معرّف الترابط الوارد يُقبل من المصادر الداخلية وحدها: شبكة /internal وعنوان الـBFF (ADR 0027)
+  const correlationSources = blockListOf([...config.INTERNAL_ALLOWED_CIDRS, ...config.BFF_SOURCE_ADDRESSES]);
+  app.use(requestLogging(logger, (address) => addressAllowed(correlationSources, address)));
   // كل استجابة من /v1 لا تُخزَّن في ذاكرة مؤقتة (متصفح أو وكيل أو حافة): فيها بيانات مصادَق عليها أو رموز
   app.use('/v1', (_req: unknown, res: { setHeader(name: string, value: string): void }, next: () => void) => {
     res.setHeader('Cache-Control', 'no-store');
