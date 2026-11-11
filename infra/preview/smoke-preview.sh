@@ -82,6 +82,22 @@ if [ "$created_env" = 1 ]; then
   [ "$(grep -E "$STORAGE_KEYS" "$HERE/.env" | sha256sum)" != "$storage" ] || fail "gen-env.sh --add-storage reused old values"
   [ "$(stat -c %a "$HERE/.env")" = 600 ] || fail ".env is not 0600 after --add-storage"
   echo "gen-env.sh --add-storage: adds the tusd and API MinIO users to an older .env, leaves the rest, and is repeatable: ok"
+  # A tls/ from before the workspace showed derived files (addendum to ADR 0092): --add-media-tls issues the edge's certificate
+  # for the preview's own name from an authority of its own, and leaves the API's authority and certificate as they were.
+  first_ca() { sed -n '1,/-----END CERTIFICATE-----/p' "$HERE/tls/ca.crt"; }
+  api_chain="$(first_ca | cat - "$HERE/tls/api.crt" | sha256sum)"
+  rm -f "$HERE/tls/media.crt" "$HERE/tls/media.key"
+  first_ca > "$work/ca" && cat "$work/ca" > "$HERE/tls/ca.crt"
+  "$HERE/gen-env.sh" --add-media-tls | grep -q "written" || fail "gen-env.sh --add-media-tls did not issue the edge certificate"
+  issued="$(sha256sum < "$HERE/tls/media.crt")"
+  "$HERE/gen-env.sh" --add-media-tls | grep -q "not changed" || fail "gen-env.sh --add-media-tls is not repeatable"
+  [ "$(sha256sum < "$HERE/tls/media.crt")" = "$issued" ] || fail "gen-env.sh --add-media-tls issued a second certificate"
+  [ "$(first_ca | cat - "$HERE/tls/api.crt" | sha256sum)" = "$api_chain" ] || fail "gen-env.sh --add-media-tls changed the API's authority or certificate"
+  [ "$(grep -c 'BEGIN CERTIFICATE' "$HERE/tls/ca.crt")" = 2 ] || fail "tls/ca.crt does not hold exactly the two authorities"
+  openssl verify -CAfile "$HERE/tls/ca.crt" "$HERE/tls/api.crt" "$HERE/tls/media.crt" >/dev/null 2>&1 || fail "a certificate does not verify against tls/ca.crt"
+  openssl x509 -in "$HERE/tls/media.crt" -noout -checkhost "$DOMAIN" | grep -q "does match" || fail "the edge certificate is not for the preview's own name"
+  [ ! -e "$HERE/tls/ca.key" ] && [ -z "$(find "$HERE/tls" -mindepth 1 ! -name ca.crt ! -name 'api.*' ! -name 'media.*')" ] || fail "an authority key or a work file is left in tls/"
+  echo "gen-env.sh --add-media-tls: issues the edge certificate for the preview's own name on an older tls/, keeps the API's chain, leaves no authority key, and is repeatable: ok"
 fi
 
 # Synthetic media only (CLAUDE.md §5): a short clip carrying planted location, device and title tags (a coordinate built at
@@ -320,11 +336,11 @@ if (items.length < 3) die(`materials through the web: ${list.status}, ${items.le
 say(`demo login through the web sees ${items.length} synthetic materials: ok`);
 const bad = await req("POST", "/api/bff/auth/login", json, JSON.stringify({ email: process.env.EMAIL, password: "wrong-password-123" }));
 if (bad.status !== 401) die(`a wrong password: ${bad.status}`);
-for (const url of ["http://ph-preview-api:3000/health", "https://lib-web:8443/health", "http://lib-web:8443/health"]) {
+for (const url of ["http://ph-preview-api:3000/health", "https://lib-web:8443/health", "http://lib-web:8443/health", "https://lib-web/", "http://lib-web:443/"]) {
   const r = await fetch(url, { signal: AbortSignal.timeout(3000) }).then((x) => x.status, () => "unreachable");
   if (r !== "unreachable") die(`${url} answers from the shared network (${r})`);
 }
-say("the API is not reachable from the shared network: ok");
+say("the API and the edge's listener for signed links are not reachable from the shared network: ok");
 
 // Desktop upload as the browser does it (#202): a session and a web ingest token through the BFF, then tus to /files/ on
 // the preview's own origin, through the edge, the ingest gate and tusd. The first PATCH is cut mid-body and resumed
@@ -616,6 +632,20 @@ if (ranged.status !== 206 || ranged.buf.length !== 100) die(`a ranged GET of the
 const t = await req("GET", await link(thumb));
 if (t.status !== 200 || !/^image\/jpeg/.test(t.headers["content-type"] ?? "") || t.buf.length !== thumb.size_bytes) die(`signed thumbnail link: ${t.status}`);
 say("signed proxy and thumbnail links from public /v1, read through the edge: video/mp4 (ranges too) and image/jpeg, no-store, no planted tag: ok");
+// The same two files as the workspace shows them (addendum to ADR 0092): the BFF reads the signed link itself, at the edge's
+// listener under the preview's own name on the internal network, and streams it from the web's own origin to its session alone.
+const viaWeb = (f, headers = {}) => req("GET", `/api/bff/materials/${mid}/files/${f.id}/content`, headers);
+const wp = await viaWeb(proxy, { cookie });
+if (wp.status !== 200 || !/^video\/mp4/.test(wp.headers["content-type"] ?? "")) die(`the proxy through the web: ${wp.status} ${wp.headers["content-type"]}`);
+if (createHash("sha256").update(wp.buf).digest("hex") !== proxy.sha256) die("the proxy read through the web is not the registered file");
+if (!/no-store/.test(wp.headers["cache-control"] ?? "") || !/noindex/.test(wp.headers["x-robots-tag"] ?? "")) die("the web's media answer is cacheable or indexable");
+const wr = await viaWeb(proxy, { cookie, range: "bytes=0-99" });
+if (wr.status !== 206 || wr.buf.length !== 100) die(`a ranged GET of the proxy through the web (the player seeks): ${wr.status}`);
+const wt = await viaWeb(thumb, { cookie });
+if (wt.status !== 200 || !/^image\/jpeg/.test(wt.headers["content-type"] ?? "") || wt.buf.length !== thumb.size_bytes) die(`the thumbnail through the web: ${wt.status}`);
+const anon = await viaWeb(proxy);
+if (anon.status !== 401) die(`a derived file through the web with no session: ${anon.status} (want 401)`);
+say("the proxy (ranges too) and the thumbnail through the web's own origin, as the workspace shows them, and 401 with no session: ok");
 const sig = proxyPath.match(/X-Amz-Signature=([0-9a-f]+)/)[1];
 const tampered = proxyPath.replace(sig, sig.slice(0, -1) + (sig.endsWith("0") ? "1" : "0"));
 for (const [what, method, p] of [["a tampered signature", "GET", tampered], ["no signature", "GET", proxyPath.split("?")[0]],
@@ -632,6 +662,22 @@ if (!photo) die("no material took the photo upload");
 say("a photo original is verified by the API itself: ok");
 JS
 )")" || { echo "$out"; fail "the worker's output through the edge"; }
+echo "$out"
+
+# The edge's listener under the preview's own name (addendum to ADR 0092), as the BFF reaches it: on the internal network, with a
+# certificate the BFF's bundle verifies, and the derived path alone behind it (an unsigned read ends at MinIO's refusal).
+out="$(docker run --rm --network post-history-preview_internal -v "$HERE/tls/ca.crt:/ca.crt:ro" -e NODE_EXTRA_CA_CERTS=/ca.crt \
+  -e DOMAIN="$DOMAIN" -e BUCKET="$(val S3_BUCKET_MEDIA)" --entrypoint node post-history-preview-api:latest --input-type=module -e '
+const at = (path, init) => fetch(`https://${process.env.DOMAIN}${path}`, { signal: AbortSignal.timeout(5000), redirect: "error", ...init })
+  .then((r) => r.status, (e) => `unreachable (${e.cause?.code ?? e.message})`);
+const file = `/${process.env.BUCKET}/derived/00000000-0000-4000-8000-000000000000/00000000-0000-4000-8000-000000000001/poster.jpg`;
+const want = [["/", {}, 404], ["/api/bff/auth/me", {}, 404], ["/v1/health", {}, 404], ["/files/", {}, 404], [file, {}, 403], [file, { method: "PUT", body: "x" }, 403]];
+for (const [path, init, status] of want) {
+  const got = await at(path, init);
+  if (got !== status) { console.log(`FAIL ${init.method ?? "GET"} ${path.startsWith("/" + process.env.BUCKET) ? "a derived path" : path}: ${got} (want ${status})`); process.exit(1); }
+}
+console.log("the edge listener for signed links: verified by the BFF bundle on the internal network, 404 outside the derived path, 403 for an unsigned read or a write: ok");
+')" || { echo "$out"; fail "the edge's listener for signed links"; }
 echo "$out"
 
 # Re-running the backfill changes nothing: the clip is done and the photo is not the worker's.

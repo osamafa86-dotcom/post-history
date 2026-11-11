@@ -80,6 +80,30 @@ server {
     }
 }
 
+# روابط المشتقات الموقّعة كما يقرؤها الـBFF (ملحق ADR 0092): الخادم يوقّع الرابط لأصل المعاينة نفسه، واسمه يُحل على الشبكة
+# الداخلية إلى هذه الحاوية، فيقرؤه الـBFF من هنا بـTLS وبلا خروج إلى الإنترنت. على عنوان الشبكة الداخلية وحده لا على
+# deploy_default، ولمسار المشتقات وحده: الطلب يمر كما وصل (المسار والاستعلام والمضيف، فالتوقيع يبقى صالحًا) إلى القاعدة الصارمة
+# نفسها في المستمع الأول، فلا تُكتب قاعدة المسارات مرتين. ما سواه 404.
+server {
+    listen @EDGE_IP@:443 ssl;
+    ssl_certificate /tls/media.crt;
+    ssl_certificate_key /tls/media.key;
+    ssl_protocols TLSv1.3;
+    location /@MEDIA_BUCKET@/derived/ {
+        limit_except GET { deny all; }
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header Authorization "";
+        proxy_set_header Cookie "";
+        proxy_buffering off;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 60s;
+    }
+    location / { return 404; }
+}
+
 # الخادم للـBFF وحده: TLS داخلي (الـBFF يشترط https إلى الخادم)، على عنوان الشبكة الداخلية لا على deploy_default.
 server {
     listen @EDGE_IP@:8443 ssl;
