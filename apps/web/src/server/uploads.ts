@@ -5,6 +5,7 @@ import { hasRole } from "@/lib/review";
 import { safeMaterial } from "@/lib/privacy";
 import { materialTypes, states, uuid, dateTime } from "@/lib/query";
 import { allowedTusEndpoint, sha256Hex, uploadRoles } from "@/lib/upload-policy";
+import { validMaterialTags } from "@/lib/tag-policy";
 import { requireOk, type Api } from "./auth";
 import type { WebConfig } from "./config";
 import { WebError } from "./errors";
@@ -35,8 +36,10 @@ const plain = (value: unknown): value is Record<string, unknown> => !!value && t
 
 export function materialInput(body: Record<string, unknown>): MaterialCreate {
   // لا gps ولا مساهمين ولا ملاحظة صوتية من الويب: الموقع الدقيق لا يُجمع هنا (SEC-04)، والحصص لمسؤول الحقوق.
-  keys(body, ["title", "material_types", "governorate", "city", "shot_at", "priority", "sensitivity", "display_name", "form_version", "dynamic_fields"], ["title", "material_types", "governorate", "city", "priority", "sensitivity", "display_name", "form_version", "dynamic_fields"]);
-  const types = body.material_types, sensitivity = body.sensitivity, display = body.display_name;
+  // الوسوم اختيارية في العقد حفاظًا على عملاء v0، وإلزامية من واجهة المراسل (وسم واحد على الأقل، قرار المالك 2026-11-01، ADR 0086).
+  keys(body, ["title", "material_types", "tags", "governorate", "city", "shot_at", "priority", "sensitivity", "display_name", "form_version", "dynamic_fields"], ["title", "material_types", "tags", "governorate", "city", "priority", "sensitivity", "display_name", "form_version", "dynamic_fields"]);
+  const types = body.material_types, tags = body.tags, sensitivity = body.sensitivity, display = body.display_name;
+  if (!validMaterialTags(tags) || tags.length < 1) throw new WebError(422, "request_failed");
   if (!text(body.title, 5, 80) || !text(body.governorate, 1, 64) || !text(body.city, 1, 64)) throw new WebError(422, "request_failed");
   if (!Array.isArray(types) || types.length < 1 || new Set(types).size !== types.length || types.some(type => !(materialTypes as readonly unknown[]).includes(type))) throw new WebError(422, "request_failed");
   if (!(states.priority as readonly unknown[]).includes(body.priority)) throw new WebError(422, "request_failed");
@@ -46,7 +49,7 @@ export function materialInput(body: Record<string, unknown>): MaterialCreate {
   if (display.mode === "pseudonym" ? !text(display.pseudonym, 1, 80) : display.pseudonym !== undefined && display.pseudonym !== null) throw new WebError(422, "request_failed");
   if (!Number.isSafeInteger(body.form_version) || Number(body.form_version) < 1 || !plain(body.dynamic_fields)) throw new WebError(422, "request_failed");
   return {
-    title: body.title, material_types: types as MaterialCreate["material_types"], governorate: body.governorate, city: body.city,
+    title: body.title, material_types: types as MaterialCreate["material_types"], tags: [...tags], governorate: body.governorate, city: body.city,
     ...(typeof body.shot_at === "string" ? { shot_at: body.shot_at } : {}), priority: body.priority as MaterialCreate["priority"],
     sensitivity: { minors: sensitivity.minors as boolean, injured: sensitivity.injured as boolean, graphic: sensitivity.graphic as boolean },
     display_name: display.mode === "pseudonym" ? { mode: "pseudonym", pseudonym: display.pseudonym as string } : { mode: display.mode as "real_name" | "network" },

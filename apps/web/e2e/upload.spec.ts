@@ -15,10 +15,18 @@ async function login(page: Page) {
   await expect(page.getByRole("heading", { name: ar.upload.title })).toBeVisible();
 }
 function camera(size: number, name = "A001C003_261021.MOV") { const buffer = randomBytes(size); return { file: { name, mimeType: "video/quicktime", buffer }, sha: createHash("sha256").update(buffer).digest("hex") }; }
-async function describe(page: Page) {
+const question = (page: Page, name = ar.upload.sensitivityQuestion) => page.getByRole("group", { name, exact: true });
+/** كل ما في النموذج عدا النوع والوسوم وجواب الحساسية. */
+async function fields(page: Page) {
   await page.getByLabel(ar.upload.titleLabel).fill("لقطات من بطاقة الكاميرا"); await page.getByLabel(ar.governorate, { exact: true }).fill("غزة"); await page.getByLabel(ar.upload.city).fill("دير البلح");
   await page.getByLabel("العنوان", { exact: false }).and(page.locator("#field-headline")).fill("لقطات خام");
   await page.locator("#field-category").selectOption("news"); await page.locator("#field-consent").selectOption("true");
+}
+async function tag(page: Page, text: string) { await page.getByLabel(ar.shell.material.tagEditor.add).fill(text); await page.getByRole("button", { name: ar.shell.material.tagEditor.addButton, exact: true }).click(); }
+async function describe(page: Page) {
+  await page.getByRole("group", { name: ar.upload.types }).getByRole("button", { name: ar.types.raw_footage, exact: true }).click();
+  await fields(page); await tag(page, "كاميرا");
+  await question(page).getByLabel(ar.no, { exact: true }).check();
   await page.getByRole("button", { name: ar.upload.start }).click();
 }
 
@@ -32,11 +40,15 @@ test("uploads a camera file in parts with a refreshed ingest token and a dropped
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   // أول PATCH يرده الحاجز بـ 401 (رمز منتهٍ) فيُطلب رمز جديد، والتالي يُقطع اتصاله بعد 64 KiB.
   await request.post(`${api}/__test/tus?reject_ingest=1&cut=1`);
-  const { file } = camera(3 * 1048576 + 4321);
+  const { file, sha } = camera(3 * 1048576 + 4321);
   await page.getByLabel(ar.upload.choose).setInputFiles(file);
   await describe(page);
   await expect(page.getByTestId("upload-row")).toHaveAttribute("data-phase", "done", { timeout: 20000 });
   await expect(page.getByTestId("upload-receipt")).toHaveText(/^R-\d{6}-\d{6}$/);
+  // الإيصال بطاقة لا سطر: رقمه وحجم الملف وأول بصمته التي حسبها المتصفح وطابقها الخادم، ومنها «رفع آخر»
+  const card = page.getByTestId("upload-receipt-card"); await expect(card.getByRole("heading", { name: ar.upload.receiptTitle })).toBeVisible();
+  await expect(card).toContainText(sha.slice(0, 8)); await expect(card).not.toContainText(sha.slice(0, 12)); await expect(card).toContainText("MB");
+  await expect(page.getByTestId("upload-row").getByRole("button", { name: ar.upload.uploadAnother })).toBeVisible();
   const [state] = await uploads(page);
   // بعد القطع قد يصل PATCH بإزاحة قديمة فيرد 409 ويعيد العميل HEAD؛ ما يُحفظ بعدها يبدأ من إزاحة الخادم.
   expect(state).toMatchObject({ state: "verified", offset: file.buffer.length, length: file.buffer.length });
@@ -48,6 +60,33 @@ test("uploads a camera file in parts with a refreshed ingest token and a dropped
   expect(outgoing.every(url => url.startsWith("http://127.0.0.1:3100/") || url.startsWith(`${api}/files/`))).toBe(true);
   expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
   await page.screenshot({ path: ".artifacts/upload-desktop.png", fullPage: true });
+});
+
+test("no material is created until the sensitivity question is answered: nothing is assumed, and «yes» asks each of the three", async ({ page, request }) => {
+  const created = async () => ((await (await request.get(`${api}/__test/state`)).json()).writes as { path: string; method: string; body: Record<string, unknown> }[]).filter(w => w.path === "/v1/materials" && w.method === "POST");
+  await login(page); await page.getByLabel(ar.upload.choose).setInputFiles(camera(70000).file); await fields(page);
+  const start = page.getByRole("button", { name: ar.upload.start }), need = page.getByTestId("upload-need"), types = page.getByRole("group", { name: ar.upload.types });
+  // لا نوع ولا جواب مسبق
+  await expect(types.locator("[aria-pressed='true']")).toHaveCount(0); await expect(question(page).getByRole("radio", { checked: true })).toHaveCount(0);
+  await expect(start).toBeDisabled(); await expect(need).toHaveText(ar.upload.need.type);
+  // حقل المقابلة في نموذج المكتب يظهر حين تُختار نوعًا ثانيًا، وما كُتب في النموذج قبل اختيار النوع باقٍ
+  await types.getByRole("button", { name: ar.types.report, exact: true }).click(); await expect(page.locator("#field-interview_guest")).toHaveCount(0);
+  await types.getByRole("button", { name: ar.types.interview, exact: true }).click(); await page.locator("#field-interview_guest").fill("ضيف اصطناعي");
+  await expect(page.locator("#field-headline")).toHaveValue("لقطات خام");
+  await expect(need).toHaveText(ar.upload.need.tags); await tag(page, "مؤتمر");
+  await expect(start).toBeDisabled(); await expect(need).toHaveText(ar.upload.need.sensitivity);
+  // Enter في حقل لا يرسل النموذج من وراء الزر المعطّل
+  await page.getByLabel(ar.upload.titleLabel).press("Enter"); expect(await created()).toHaveLength(0);
+  await question(page).getByLabel(ar.yes, { exact: true }).check();
+  await expect(start).toBeDisabled(); await expect(need).toHaveText(ar.upload.need.followups);
+  for (const flag of ["minors", "injured", "graphic"] as const) await expect(question(page, ar.upload.followups[flag]).getByRole("radio", { checked: true })).toHaveCount(0);
+  await question(page, ar.upload.followups.minors).getByLabel(ar.yes, { exact: true }).check(); await question(page, ar.upload.followups.injured).getByLabel(ar.no, { exact: true }).check();
+  await expect(start).toBeDisabled();
+  await question(page, ar.upload.followups.graphic).getByLabel(ar.no, { exact: true }).check();
+  await expect(need).toHaveCount(0); await start.click();
+  await expect(page.getByTestId("upload-row")).toHaveAttribute("data-phase", "done", { timeout: 20000 });
+  const [material, ...more] = await created(); expect(more).toHaveLength(0);
+  expect(material.body).toMatchObject({ sensitivity: { minors: true, injured: false, graphic: false }, material_types: ["report", "interview"], tags: ["مؤتمر"] });
 });
 
 test("resumes from the server offset after the tab is closed and the same file is chosen again", async ({ page, request, context }, info) => {

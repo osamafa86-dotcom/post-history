@@ -100,6 +100,20 @@
 .upload-stage.warn .icon, .upload-stage.brand .icon, .upload-stage.muted .icon { color: var(--v2-c-text-brand); }
 .upload-note { margin: 0; font-size: var(--v2-font-label-size); color: var(--v2-c-text-secondary); }
 .upload-card .actions { flex-wrap: wrap; }
+/* الرفع من الحاسوب نسخة الإرسال نفسها (reporter-v2.md): رقاقات النوع بلا اختيار مسبق، والوسوم، وسؤال الحساسية بجواب صريح، ثم الإيصال بطاقة. */
+.upload-types { display: grid; gap: var(--v2-space-3); min-inline-size: 0; margin: 0 0 var(--v2-space-5); padding: 0; border: 0; }
+.upload-types legend { padding: 0; font-size: var(--v2-font-label-size); font-weight: 600; }
+.upload-types .field-help { margin: 0; }
+.upload-types .chip-row { display: flex; flex-wrap: wrap; gap: var(--v2-space-3); }
+.upload-base .upload-tags, .upload-base .upload-question { grid-column: 1 / -1; }
+.answer-pair { display: flex; flex-wrap: wrap; gap: var(--v2-space-2) var(--v2-space-7); }
+.answer-pair .check { min-block-size: var(--v2-size-touch-min); }
+.upload-base .upload-followup { padding: 0; border: 0; gap: 0; }
+.upload-receipt { display: grid; gap: var(--v2-space-4); padding: var(--v2-space-5); border: var(--v2-border-hairline) solid var(--v2-c-state-ok); border-radius: var(--v2-radius-md); background: color-mix(in srgb, var(--v2-c-state-ok) 8%, var(--v2-c-bg-raised)); }
+.upload-receipt h3 { display: flex; align-items: center; gap: var(--v2-space-3); margin: 0; font-size: var(--v2-font-headline-size); line-height: var(--v2-font-headline-line); color: var(--v2-c-state-ok); }
+.upload-receipt dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--v2-space-4) var(--v2-space-6); margin: 0; }
+.upload-receipt dt { font-size: var(--v2-font-caption-size); line-height: var(--v2-font-caption-line); color: var(--v2-c-text-secondary); }
+.upload-receipt dd { margin: 0; font-family: var(--v2-font-family-num); font-size: var(--v2-font-num-size); line-height: var(--v2-font-num-line); font-variant-numeric: tabular-nums; }
 
 /* صفحة الإشعارات الكاملة (W10 على مساحة الصفحة): تبويبات ورقاقة «غير المقروءة»، وأقسام، وبند بأيقونة في دائرة وكلمة نوعه وحالته. */
 .notice-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--v2-space-4) var(--v2-space-6); margin-block-end: var(--v2-space-6); }

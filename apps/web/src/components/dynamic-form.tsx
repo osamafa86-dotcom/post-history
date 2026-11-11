@@ -1,8 +1,8 @@
 "use client";
 import { useState } from "react";
-import type { Field, Form, MaterialType, Permission, Values } from "@/lib/types";
+import type { Field, Form, Permission, Values } from "@/lib/types";
 import { messages, type Locale } from "@/lib/i18n";
-import { validate, visibleFields } from "@/lib/forms";
+import { validate, visibleFields, type FormTypes } from "@/lib/forms";
 
 function dateInput(value: unknown) {
   if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) return "";
@@ -23,7 +23,7 @@ function FieldInput({ field, value, change, locale, invalid }: { field: Field; v
   }
 }
 
-export function DynamicForm({ schema, type, permissions, locale, initialValues, readOnly = false, onSubmit, submitLabel, disabled = false, children }: { schema: Form; type: MaterialType; permissions: Permission[]; locale: Locale; initialValues?: Values; readOnly?: boolean; onSubmit?: (values: Values) => void; submitLabel?: string; disabled?: boolean; children?: React.ReactNode }) {
+export function DynamicForm({ schema, type, permissions, locale, initialValues, readOnly = false, onSubmit, submitLabel, disabled = false, children }: { schema: Form; type: FormTypes; permissions: Permission[]; locale: Locale; initialValues?: Values; readOnly?: boolean; onSubmit?: (values: Values) => void; submitLabel?: string; disabled?: boolean; children?: React.ReactNode }) {
   const m = messages[locale];
   const [values, setValues] = useState<Values>(() => initialValues ?? Object.fromEntries(schema.fields.filter(f => f.default !== undefined).map(f => [f.key, f.default])));
   const [submitted, setSubmitted] = useState(false);
