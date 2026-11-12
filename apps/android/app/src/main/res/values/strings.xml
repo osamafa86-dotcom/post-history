@@ -459,8 +459,8 @@
     <string name="upload_show_receipt">الإيصال</string>
     <string name="receipt_title">وصلت المواد</string>
     <string name="receipt_title_one">وصلت المادة</string>
-    <string name="receipt_body">استلم المحرّرون %1$s بعنوان «%2$s».</string>
-    <string name="receipt_body_one">استلم المحرّرون مادتك بعنوان «%1$s».</string>
+    <string name="receipt_body">وصلت %1$s بعنوان «%2$s» إلى المكتبة وحُفظت. نخبرك حين يطّلع عليها المحرّر.</string>
+    <string name="receipt_body_one">وصلت مادتك «%1$s» إلى المكتبة وحُفظت. نخبرك حين يطّلع عليها المحرّر.</string>
     <string name="receipt_close">إغلاق الإيصال</string>
     <string name="receipt_done_a11y">وصل كل شيء</string>
     <string name="receipt_row_time">الوقت</string>
@@ -499,7 +499,7 @@
     <plurals name="receipt_items">
         <item quantity="zero">لا مواد</item>
         <item quantity="one">مادة واحدة</item>
-        <item quantity="two">مادتين</item>
+        <item quantity="two">مادتان</item>
         <item quantity="few">%d مواد</item>
         <item quantity="many">%d مادة</item>
         <item quantity="other">%d مادة</item>
