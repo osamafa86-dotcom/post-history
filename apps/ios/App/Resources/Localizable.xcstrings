@@ -5935,13 +5935,13 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "استلم المحرّرون %1$@ بعنوان «%2$@»."
+            "value": "وصلت %1$@ بعنوان «%2$@» إلى المكتبة وحُفظت. نخبرك حين يطّلع عليها المحرّر."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Editors received %1$@ titled “%2$@”."
+            "value": "%1$@ titled “%2$@” reached the library and are saved. We will tell you when an editor has seen them."
           }
         }
       }
@@ -5952,13 +5952,13 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "استلم المحرّرون مادتك «%@»."
+            "value": "وصلت مادتك «%@» إلى المكتبة وحُفظت. نخبرك حين يطّلع عليها المحرّر."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Editors received your item “%@”."
+            "value": "Your item “%@” reached the library and is saved. We will tell you when an editor has seen it."
           }
         }
       }
@@ -7967,7 +7967,7 @@
               "two": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "مادتين"
+                  "value": "مادتان"
                 }
               },
               "few": {
