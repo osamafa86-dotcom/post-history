@@ -444,8 +444,8 @@
     <string name="upload_show_receipt">Receipt</string>
     <string name="receipt_title">Delivered</string>
     <string name="receipt_title_one">Delivered</string>
-    <string name="receipt_body">Editors received %1$s titled “%2$s”.</string>
-    <string name="receipt_body_one">Editors received your item titled “%1$s”.</string>
+    <string name="receipt_body">%1$s titled “%2$s” reached the library and are saved. We will tell you when an editor has seen them.</string>
+    <string name="receipt_body_one">Your item “%1$s” reached the library and is saved. We will tell you when an editor has seen it.</string>
     <string name="receipt_close">Close the receipt</string>
     <string name="receipt_done_a11y">Everything arrived</string>
     <string name="receipt_row_time">Time</string>
