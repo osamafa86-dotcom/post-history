@@ -19,11 +19,15 @@ a { color: inherit; text-decoration: none; }
    عرضٍ للعنصر أيضًا، فلا يمدّ العنوانُ عمودَ الشبكة أو صفّ flex الذي يحمله. */
 h1, h2, h3 { overflow-wrap: anywhere; }
 button, a { -webkit-tap-highlight-color: transparent; }
+/* عناصر التحكم لا تنتظر النقر المزدوج للتكبير: اللمس عليها ضغطة فورية. */
+button, a, input, select, textarea, summary, label { touch-action: manipulation; }
 /* `Button`: Solid للفعل الرئيسي، Outline للثانوي (`secondary`)، والهادئ (`quiet`) لما يشبه الرابط. ارتفاع اللمس 44 فأكثر. */
 button, a.button { display: inline-flex; align-items: center; justify-content: center; gap: var(--v2-space-3); min-block-size: var(--v2-size-touch-min); padding: 0 var(--v2-space-6); border: var(--v2-border-field) solid var(--v2-c-action-primary); background: var(--v2-c-action-primary); color: var(--v2-c-text-on-brand); border-radius: var(--v2-radius-sm); cursor: pointer; font-weight: 700; font-size: 14px; line-height: 20px; text-decoration: none; transition: background-color var(--v2-motion-fast) ease, border-color var(--v2-motion-fast) ease; }
 /* أنماط التحويم للفأرة وحدها (`hover: hover` و`pointer: fine`): على اللمس يبقى نمط التحويم ملتصقًا بالعنصر بعد النقر. */
 @media (hover: hover) and (pointer: fine) { button:hover, a.button:hover { background: color-mix(in srgb, var(--v2-c-action-primary) 86%, var(--v2-c-text-primary)); border-color: color-mix(in srgb, var(--v2-c-action-primary) 86%, var(--v2-c-text-primary)); } }
 button:disabled { opacity: .5; cursor: not-allowed; }
+/* استجابة الضغط: قاعدة واحدة لكل الأزرار بأنواعها (الأساسي والثانوي والهادئ وزر المتجر)، بتعتيم خفيف لا بلون لكل نوع. */
+button:not(:disabled):active, a.button:active { filter: brightness(.92); }
 button.secondary, a.button.secondary { color: var(--v2-c-text-primary); border-color: var(--v2-c-border-edge); background: var(--v2-c-bg-raised); }
 @media (hover: hover) and (pointer: fine) { button.secondary:hover, a.button.secondary:hover { background: var(--v2-c-bg-sunken); border-color: var(--v2-c-border-edge); } }
 button.quiet, button.quiet:hover { background: transparent; border-color: transparent; color: var(--v2-c-text-brand); }

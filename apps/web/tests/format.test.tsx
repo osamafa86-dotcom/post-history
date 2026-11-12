@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { fillNodes, Ltr, Money } from "../src/components/money";
 import { dateLocale, governorateName, numberLocale } from "../src/lib/format";
 import { formatDate, longDate } from "../src/lib/i18n";
+import { fileFormat } from "../src/lib/store-format";
 import ar from "../messages/ar.json";
 import en from "../messages/en.json";
 
@@ -52,5 +53,14 @@ describe("a governorate in the store", () => {
     expect(governorateName("غزة", ar.governorates)).toBe("غزة"); expect(governorateName("محافظة تجريبية", en.governorates)).toBe("محافظة تجريبية");
     expect(Object.keys(en.governorates)).toEqual(Object.keys(ar.governorates));
     for (const name of ["القدس", "رام الله والبيرة", "بيت لحم", "الخليل", "أريحا والأغوار", "نابلس", "جنين", "طولكرم", "قلقيلية", "سلفيت", "طوباس", "شمال غزة", "غزة", "دير البلح", "خان يونس", "رفح"]) expect(en.governorates[name as keyof typeof en.governorates]).toMatch(/^[A-Z][A-Za-z\- ]+$/);
+  });
+});
+
+describe("a delivered file", () => {
+  it("is named by its kind and format in the reader's words, never by its MIME type", () => {
+    expect(fileFormat("video/mp4")).toEqual({ kind: "video", name: "MP4" }); expect(fileFormat("video/quicktime")).toEqual({ kind: "video", name: "MOV" });
+    expect(fileFormat("image/jpeg; charset=binary")).toEqual({ kind: "image", name: "JPEG" }); expect(fileFormat("audio/x-unknown")).toEqual({ kind: "audio", name: null });
+    expect(fileFormat("application/octet-stream")).toEqual({ kind: "file", name: null }); expect(fileFormat(null)).toEqual({ kind: "file", name: null });
+    for (const m of [ar, en]) { expect(Object.keys(m.licenses.formats)).toEqual(["video", "image", "audio", "file"]); expect(m.licenses.formatNamed).toContain("{kind}"); expect(m.licenses.formatNamed).toContain("{name}"); }
   });
 });

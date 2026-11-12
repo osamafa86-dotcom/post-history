@@ -1592,7 +1592,14 @@
     "footnote": "Each license is tied to its order. Downloads use a short-lived signed link while the license is active, a limited number of times; renewing means buying a new license from the footage page.",
     "emptyTitle": "No licenses yet",
     "emptyBody": "A license is issued after the signed gateway confirmation and shows here with its order.",
-    "invoiceFor": "Invoice for order {id}"
+    "invoiceFor": "Invoice for order {id}",
+    "formats": {
+      "video": "video",
+      "image": "image",
+      "audio": "audio",
+      "file": "file"
+    },
+    "formatNamed": "{name} {kind}"
   },
   "commission": {
     "nav": "Commission rules",
