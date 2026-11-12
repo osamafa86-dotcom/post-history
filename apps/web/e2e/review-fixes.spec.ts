@@ -33,6 +33,25 @@ test("finance lands on payouts, has no inbox in the bar, and a direct inbox link
   await switchUser(page); await login(page, "buyer"); await expect(page).toHaveURL(/\/ar\/store$/);
 });
 
+test("the player's frame follows the clip on a phone: a portrait clip is tall, and its thumbnail stays a small strip", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page, "reviewer");
+  const box = async () => (await page.getByTestId("material-player").boundingBox())!;
+  await page.goto(`/ar/materials/${material(28)}`);
+  await expect(page.getByTestId("material-player")).toHaveAttribute("data-shape", "portrait");
+  const tall = await box();
+  expect(tall.height).toBeGreaterThan(tall.width * 1.2);
+  // أدوات التحكم تبقى فوق شريط الأفعال الثابت: الإطار لا يتجاوز 60% من ارتفاع النافذة
+  expect(tall.height).toBeLessThanOrEqual(844 * 0.6 + 1);
+  const strip = page.locator(".thumbnails img");
+  await expect(strip).toHaveCount(1);
+  expect((await strip.boundingBox())!.height).toBeLessThanOrEqual(96);
+  await page.goto(`/ar/materials/${material(1)}`);
+  await expect(page.getByTestId("material-player")).toHaveAttribute("data-shape", "landscape");
+  const wide = await box();
+  expect(Math.abs(wide.width / wide.height - 16 / 9)).toBeLessThan(0.05);
+});
+
 test("the staff preview never plays the phone's light copy: the poster and «being prepared» instead", async ({ page }) => {
   await login(page, "reviewer");
   await page.goto(`/ar/materials/${material(1)}`); await expect(page.locator(".preview-panel video")).toHaveCount(1);
