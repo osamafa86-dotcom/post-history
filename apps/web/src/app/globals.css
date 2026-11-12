@@ -107,9 +107,12 @@ td { font-size: 14px; padding: var(--v2-space-4) var(--v2-space-5); height: 48px
 .video-wrap { position: relative; }
 .video-wrap video { width: 100%; }
 .thumbnails { display: flex; gap: 12px; padding: 12px; overflow-x: auto; }
-.thumbnails .video-wrap { flex: 0 0 240px; }
-.thumbnails img { width: 100%; height: auto; object-fit: contain; }
-.thumbnails .watermark { font-size: var(--v2-font-caption-size); right: 8px; top: 8px; }
+/* شريط المصغّرات بارتفاع واحد والعرض من نسبة الصورة: المصغّرة الطولية لا تصير صورة كبيرة تحت المشغّل. */
+.thumbnails .video-wrap { flex: 0 0 auto; height: 96px; }
+.thumbnails img { width: auto; height: 100%; object-fit: contain; }
+.thumbnails .watermark { font-size: var(--v2-font-caption-size); right: 4px; top: 4px; max-width: calc(100% - 8px); padding: 2px 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* الملصق مكان المشغّل (النسخة قيد التحضير): بنسبته هو، لا بمقاس ثابت يمطّه. */
+.preview-empty .video-wrap img { width: auto; height: auto; max-width: 100%; max-height: 300px; object-fit: contain; }
 .watermark { position: absolute; top: 18px; right: 18px; color: var(--v2-c-text-on-store); background: color-mix(in srgb, var(--v2-c-bg-store) 65%, transparent); padding: 4px 9px; font-size: 12px; pointer-events: none; }
 .metadata, .dynamic-values { display: grid; gap: 12px; }
 .metadata div { display: flex; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--v2-c-border-line); padding-bottom: 10px; font-size: 12px; }

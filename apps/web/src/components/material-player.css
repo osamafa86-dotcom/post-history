@@ -1,6 +1,9 @@
-.material-player{position:relative;width:100%;aspect-ratio:16/9;background:var(--v2-c-bg-store);overflow:hidden;--shaka-font-family:system-ui}
+/* الإطار يتبع شكل المقطع (data-shape): الطولي لا يُحشر في إطار عرضي. والارتفاع محدود كي تبقى أدوات التحكم فوق شريط الأفعال الثابت. */
+.material-player{position:relative;width:100%;aspect-ratio:16/9;max-height:min(60vh,640px);background:var(--v2-c-bg-store);overflow:hidden;--shaka-font-family:system-ui}
+.material-player[data-shape="portrait"]{aspect-ratio:9/16}
+.material-player[data-shape="square"]{aspect-ratio:1}
 .material-player video{width:100%;height:100%;object-fit:contain}
-.material-player:fullscreen{width:100%;height:100%;aspect-ratio:auto}
+.material-player:fullscreen{width:100%;height:100%;aspect-ratio:auto;max-height:none}
 .material-player .watermark{z-index:2;pointer-events:none}
 .material-player .shaka-current-time{direction:ltr;unicode-bidi:isolate}
 .material-player .shaka-text-container span{unicode-bidi:plaintext}

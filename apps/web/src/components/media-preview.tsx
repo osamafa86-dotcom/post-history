@@ -5,7 +5,7 @@ import { MaterialPlayer } from "./material-player";
 import { messages, type Locale } from "@/lib/i18n";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import type { Material, MaterialFile } from "@/lib/types";
-import { staffPreview } from "@/lib/preview-policy";
+import { previewShape, staffPreview } from "@/lib/preview-policy";
 
 function PreviewAsset({ locale, materialId, file }: { locale: Locale; materialId: string; file: MaterialFile }) {
   const m = messages[locale], [attempt, setAttempt] = useState(0), [failed, setFailed] = useState(false);
@@ -20,7 +20,7 @@ function PreviewAsset({ locale, materialId, file }: { locale: Locale; materialId
   }
   const source = `/api/bff/materials/${materialId}/files/${file.id}/content`;
   if (failed) return <div className="preview-empty" role="status"><p>{m.previewUnavailable}</p><button className="secondary" onClick={() => { setAttempt(0); setFailed(false); }}>{m.retry}</button></div>;
-  if (file.kind === "proxy") return <MaterialPlayer key={attempt} source={source} locale={locale} onUnavailable={() => void unavailable()} />;
+  if (file.kind === "proxy") return <MaterialPlayer key={attempt} source={source} locale={locale} onUnavailable={() => void unavailable()} shape={file.width && file.height ? previewShape(file.width, file.height) : undefined} />;
   return <div className="video-wrap" key={attempt}>
     <Image unoptimized src={source} width={320} height={180} alt={m.thumbnail} onError={() => void unavailable()} />
     <span className="watermark">{m.watermark}</span>

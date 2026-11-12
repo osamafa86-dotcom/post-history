@@ -7,7 +7,7 @@ import { readCart, storedItem, type CartItem } from "../src/components/store/car
 import { TrialNotice } from "../src/components/store/trial-notice";
 import { ScrollRegion } from "../src/components/scroll-region";
 import { homePage } from "../src/lib/home-page";
-import { serverMade, staffPreview } from "../src/lib/preview-policy";
+import { previewShape, serverMade, staffPreview } from "../src/lib/preview-policy";
 import { safeMaterial } from "../src/lib/privacy";
 import { accountName } from "../src/lib/work-name";
 import { humanDuration, messages, plural, type Locale } from "../src/lib/i18n";
@@ -76,6 +76,13 @@ describe("staff preview uses server-made light copies only", () => {
     const base = material(1), files = [file({ derived_from_id: original }), file({ derived_from_id: null }), file({ derived_from_id: "x<script>" } as never)];
     const safe = safeMaterial({ ...base, files }, []).files as (MaterialFile & { derived_from_id?: unknown })[];
     expect(safe.map(f => f.derived_from_id)).toEqual([original, null, undefined]); expect(Object.hasOwn(safe[2], "derived_from_id")).toBe(false);
+  });
+  it("the player's frame follows the clip: phone footage is portrait, and unknown dimensions stay landscape", () => {
+    expect(previewShape(480, 854)).toBe("portrait");
+    expect(previewShape(854, 480)).toBe("landscape");
+    expect(previewShape(480, 480)).toBe("square");
+    expect(previewShape(480, 520)).toBe("square");
+    for (const [w, h] of [[undefined, undefined], [null, 854], [480, 0], [0, 0], [-1, 5]] as const) expect(previewShape(w, h)).toBe("landscape");
   });
 });
 
