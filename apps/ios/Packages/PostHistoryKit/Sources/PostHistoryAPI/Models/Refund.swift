@@ -25,8 +25,10 @@ public struct Refund: Sendable, Codable, Hashable {
     public var createdBy: UUID
     public var createdAt: Date
     public var completedAt: Date?
+    /** المزوّد الذي يحمل الاسترداد (مزوّد دفع الطلب). مع `sandbox` يُؤكَّد المعلّق بـ `confirmSandboxRefund`. أُضيف بعد v0.3، قد يغيب */
+    public var provider: PaymentProvider?
 
-    public init(id: UUID, orderId: UUID, orderItemIds: [UUID], amount: Money, reasonCode: RefundReason, status: Status, createdBy: UUID, createdAt: Date, completedAt: Date?) {
+    public init(id: UUID, orderId: UUID, orderItemIds: [UUID], amount: Money, reasonCode: RefundReason, status: Status, createdBy: UUID, createdAt: Date, completedAt: Date?, provider: PaymentProvider? = nil) {
         self.id = id
         self.orderId = orderId
         self.orderItemIds = orderItemIds
@@ -36,6 +38,7 @@ public struct Refund: Sendable, Codable, Hashable {
         self.createdBy = createdBy
         self.createdAt = createdAt
         self.completedAt = completedAt
+        self.provider = provider
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -48,6 +51,7 @@ public struct Refund: Sendable, Codable, Hashable {
         case createdBy = "created_by"
         case createdAt = "created_at"
         case completedAt = "completed_at"
+        case provider
     }
 
     // Encodable protocol methods
@@ -63,6 +67,7 @@ public struct Refund: Sendable, Codable, Hashable {
         try container.encode(createdBy, forKey: .createdBy)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(completedAt, forKey: .completedAt)
+        try container.encodeIfPresent(provider, forKey: .provider)
     }
 }
 
@@ -73,6 +78,7 @@ extension Refund: UnknownCaseCheckable {
     public var containsUnknownDefaultOpenApiCase: Bool {
         if reasonCode == .unknownDefaultOpenApi { return true }
         if status == .unknownDefaultOpenApi { return true }
+        if provider == .unknownDefaultOpenApi { return true }
         return false
     }
 }

@@ -7,7 +7,7 @@ async function login(page: Page, email: string, locale: "ar" | "en" = "ar") {
   await page.goto(`/${locale}/login`);
   await page.getByLabel(m.email).fill(email); await page.getByLabel(m.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(m.totp, { exact: true }).fill("123456");
   await page.getByRole("button", { name: m.signIn, exact: true }).click();
-  await page.waitForURL(/\/(inbox|my-materials)$/); if (!page.url().endsWith("/inbox")) await page.goto(page.url().replace(/[^/]+$/, "inbox")); await expect(page.getByTestId("material-row")).toHaveCount(50);
+  await page.waitForURL(/\/(inbox|my-materials)$/); if (page.url().endsWith("/inbox")) await expect(page.getByTestId("material-row")).toHaveCount(50); else await expect(page.getByTestId("mine-row").first()).toBeVisible();
 }
 test.beforeEach(async ({ request }) => { await request.post(`${api}/__test/reset`); });
 
@@ -38,8 +38,9 @@ test("exclusivity that is taken cannot be chosen, in English too", async ({ page
   await page.goto("/en/store/71000000-0000-4000-8000-000000000002");
   await expect(page.getByRole("heading", { name: "Synthetic footage 2" })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
-  await expect(page.getByRole("radio", { name: /Exclusive 48 h/ })).toBeDisabled();
-  await expect(page.getByText(en.store.exclusiveUntil.split("{date}")[0], { exact: false })).toBeVisible();
+  // حصرية نشطة على المادة: لا يُباع عليها ترخيص قبل نهايتها، فالعروض كلها معطّلة والمهلة مكتوبة
+  await expect(page.getByRole("radio", { name: /Exclusive 48 h/ })).toBeDisabled(); await expect(page.getByRole("radio", { name: /Editorial single use/ })).toBeDisabled();
+  await expect(page.getByTestId("exclusive-held")).toContainText(en.store.heldUntil.split("{date}")[0]);
 });
 
 test("reporters do not see the catalog and the BFF refuses them", async ({ page }) => {

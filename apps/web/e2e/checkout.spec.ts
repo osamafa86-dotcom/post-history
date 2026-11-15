@@ -12,11 +12,11 @@ test("a buyer adds a license to the cart, pays at the sandbox provider, sees the
   await page.goto("/ar/store/71000000-0000-4000-8000-000000000001");
   await expect(page.getByRole("button", { name: s.addToCart })).toBeDisabled();
   await page.getByRole("radio").first().check(); await page.getByRole("button", { name: s.browse.addFor.replace("{price}", "") }).click();
-  // بعد الإضافة: الفعل الأساسي «اذهب إلى السلة» بعدّها، وإضافة ترخيص آخر ثانوية، وتأكيد الإضافة لا يطفو فوق النص.
+  // بعد الإضافة: الفعل الأساسي «اذهب إلى السلة» بعدّها، والزر الثانوي يقول إن الترخيص المختار في السلة، وتأكيد الإضافة لا يطفو فوق النص.
   const next = page.getByTestId("go-to-cart"); await expect(next).toHaveText(s.goToCart.replace("{n}", "1")); await expect(next).toHaveClass(/store/);
-  await expect(page.getByRole("button", { name: s.browse.addAnother, exact: true })).toHaveClass(/secondary/);
+  const again = page.getByTestId("add-to-cart"); await expect(again).toHaveText(s.browse.inCart); await expect(again).toHaveClass(/secondary/); await expect(again).toBeDisabled();
   expect(await page.getByRole("status").filter({ hasText: s.browse.added }).evaluate(node => getComputedStyle(node).position)).toBe("static");
-  expect((await next.boundingBox())!.y).toBeLessThan((await page.getByRole("button", { name: s.browse.addAnother, exact: true }).boundingBox())!.y);
+  expect((await next.boundingBox())!.y).toBeLessThan((await again.boundingBox())!.y);
   await next.click(); await expect(page).toHaveURL(/\/ar\/store\/cart$/);
   await expect(page.getByTestId("cart-line")).toHaveCount(1); await expect(page.getByTestId("cart-total")).toContainText("150");
   await page.getByLabel(c.poLabel).fill("PO-77/A");
@@ -55,7 +55,8 @@ test("checkout follows the buyer's language: the sandbox page and the return to 
 
 test("a buyer cancels an unpaid order, and staff cannot buy", async ({ page, context }) => {
   await login(page, "buyeradmin"); await expect(page).toHaveURL(/\/ar\/store$/);
-  await page.goto("/ar/store/71000000-0000-4000-8000-000000000002"); await page.getByRole("radio").first().check(); await page.getByRole("button", { name: s.browse.addFor.replace("{price}", "") }).click();
+  // المادة الأولى: الثانية عليها حصرية نشطة في البيانات الاصطناعية، فلا يُباع عليها ترخيص
+  await page.goto("/ar/store/71000000-0000-4000-8000-000000000001"); await page.getByRole("radio").first().check(); await page.getByRole("button", { name: s.browse.addFor.replace("{price}", "") }).click();
   // السلة في هذا التبويب باسم صاحبها: التحميل الكامل للصفحة لا يفرغها (ADR 0119)
   await expect(page.getByTestId("cart-chip")).toHaveAccessibleName(s.nav.cartCount.replace("{n}", "1"));
   await page.goto("/ar/store/cart"); await expect(page.getByTestId("cart-line")).toHaveCount(1);

@@ -21,6 +21,12 @@ describe('buyer invite conflicts (/v1/buyer-invite-conflicts)', () => {
   const as = (t: string) => ({ Authorization: `Bearer ${t}` });
   // الرمز المقبول لا يُعاد في نافذته، فالحسمان المتتاليان برمزي خطوتين متجاورتين (كلاهما مقبول)
   const code = (step = 0) => totp(admin.totpSecret!, Date.now() + step * 30_000);
+  // مدير نظام بسرّ TOTP خاص به: ما يستعمله اختبار من رموز لا يكون قد استعمله اختبار قبله، ولو عبرت الساعة حدّ نافذة بينهما
+  const freshAdmin = async () => {
+    const u = await seedUser(h, { totp: true, roles: [{ role: 'system_admin' }] });
+    const token = (await http().post('/v1/auth/login').send({ email: u.email, password: u.password, totp_code: totp(u.totpSecret!, Date.now()) }).expect(200)).body.access_token as string;
+    return { ...u, token };
+  };
   const resolve = (id: string, body: object, t = admin.token) => http().post(`/v1/buyer-invite-conflicts/${id}/resolve`).set(as(t)).set('Idempotency-Key', randomUUID()).send(body);
   // مؤسسة بمديرها، ودعوة ببريد حساب قائم خارجها، فيصير تعارضًا
   const conflicted = async () => {
@@ -89,21 +95,21 @@ describe('buyer invite conflicts (/v1/buyer-invite-conflicts)', () => {
   });
 
   it('a code that already resolved is refused within its window, and repeated wrong codes answer 429', async () => {
+    const first = await freshAdmin();
     const c = await conflicted();
-    const used = code(-1);
-    await resolve(c.conflictId, { state: 'suspended', totp_code: used }).expect(200);
+    const used = totp(first.totpSecret!, Date.now());
+    await resolve(c.conflictId, { state: 'suspended', totp_code: used }, first.token).expect(200);
     const again = await conflicted();
-    expect((await resolve(again.conflictId, { state: 'dismissed', totp_code: used }).expect(401)).body.code).toBe('totp_required');
+    expect((await resolve(again.conflictId, { state: 'dismissed', totp_code: used }, first.token).expect(401)).body.code).toBe('totp_required');
     expect((await http().get('/v1/buyer-invite-conflicts?state=pending&limit=100').set(as(admin.token)).expect(200)).body.items.map((x: { id: string }) => x.id)).toContain(again.conflictId);
 
     // مدير آخر: المحاولات الفاشلة تُعد له وحده، وبعد الحد 429 بـ Retry-After حتى للرمز الصحيح
-    const u = await seedUser(h, { totp: true, roles: [{ role: 'system_admin' }] });
-    const t = (await http().post('/v1/auth/login').send({ email: u.email, password: u.password, totp_code: totp(u.totpSecret!, Date.now()) }).expect(200)).body.access_token as string;
-    for (let i = 0; i < 5; i++) await resolve(again.conflictId, { state: 'dismissed', totp_code: '000000' }, t).expect(401);
-    const limited = await resolve(again.conflictId, { state: 'dismissed', totp_code: totp(u.totpSecret!, Date.now() + 30_000) }, t).expect(429);
+    const u = await freshAdmin();
+    for (let i = 0; i < 5; i++) await resolve(again.conflictId, { state: 'dismissed', totp_code: '000000' }, u.token).expect(401);
+    const limited = await resolve(again.conflictId, { state: 'dismissed', totp_code: totp(u.totpSecret!, Date.now() + 30_000) }, u.token).expect(429);
     expect(limited.body.code).toBe('rate_limited');
     expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
     // والمدير الأول لم يُحدّ: رمزه الخاطئ 401 لا 429
-    expect((await resolve(again.conflictId, { state: 'dismissed', totp_code: '000000' }).expect(401)).body.code).toBe('totp_required');
+    expect((await resolve(again.conflictId, { state: 'dismissed', totp_code: '000000' }, first.token).expect(401)).body.code).toBe('totp_required');
   });
 });

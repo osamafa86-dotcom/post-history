@@ -104,6 +104,9 @@ describe('license templates (/v1/license-templates)', () => {
     await field(template({ type: 'exclusive_temporary', term_days: 30, exclusivity_hours: null }), '/exclusivity_hours');
     await field(template({ exclusivity_hours: 48 }), '/exclusivity_hours');
     await post(rights, template({ name: { ar: 'فقط' } })).expect(422);
+    // النسخة المنتجة لا تُسلَّم قبل نوعها في العقد (#278): قالب لا يسلّم غيرها يبيع ترخيصًا بلا حزمة
+    await field(template({ deliverables: ['produced'] }), '/deliverables');
+    await post(rights, template({ deliverables: ['produced', 'original'] })).expect(201);
     await post(rights, template({ type: 'exclusive_temporary', term_days: 30, exclusivity_hours: 48, territory: { kind: 'countries', countries: ['PS', 'JO'] } })).expect(201);
   });
 
