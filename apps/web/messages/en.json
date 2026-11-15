@@ -35,7 +35,19 @@
   "signIn": "Sign in",
   "signingIn": "Signing in…",
   "loginFailed": "Could not sign in. Check your credentials.",
+  "loginThrottled": "Too many attempts. Wait {wait}, then try again.",
+  "loginThrottledSoon": "Too many attempts. Wait a little, then try again.",
+  "loginUnavailable": "The server could not be reached. Your details were not checked; try again shortly.",
+  "loginWait": {
+    "seconds": { "zero": "a moment", "one": "{n} second", "two": "{n} seconds", "few": "{n} seconds", "many": "{n} seconds", "other": "{n} seconds" },
+    "minutes": { "zero": "a moment", "one": "{n} minute", "two": "{n} minutes", "few": "{n} minutes", "many": "{n} minutes", "other": "{n} minutes" }
+  },
   "totpRequired": "Enter your two-factor code.",
+  "resetIncomplete": {
+    "title": "Account setup is not finished",
+    "body": "The password is set, but the authenticator app was not linked; the account cannot sign in yet, and this is not about your role's permissions.",
+    "next": "The earlier link no longer works and the secret is not shown twice. Ask whoever gave you the first link for a new one, then finish both steps without closing the page."
+  },
   "revoked": "Your session was revoked",
   "signedOut": "You have signed out",
   "logout": "Sign out",
@@ -870,6 +882,7 @@
       "totpLead": "Add an account in your authenticator app with the secret below, then enter the six-digit code it shows.",
       "secret": "Secret for manual entry",
       "secretOnce": "The secret is shown here once and we don't keep it. Don't copy it anywhere else, and don't share it.",
+      "keepOpen": "Do not close or reload this page before entering the code. If the secret is lost before you confirm, ask your organization's admin for a new code.",
       "openApp": "Open in authenticator app",
       "code": "Code from the app",
       "codeInvalid": "Enter the six-digit code.",
@@ -2130,6 +2143,7 @@
       "totpLead": "Add an account in your authenticator app with the secret below, then enter the six-digit code it shows.",
       "secret": "Secret to add by hand",
       "secretOnce": "The secret is shown here once and we do not keep it. Do not copy it anywhere else, and do not share it.",
+      "keepOpen": "Do not close or reload this page before entering the code. If the secret is lost before you confirm, you will need a new link.",
       "openApp": "Open in authenticator app",
       "code": "Code from the app",
       "codeInvalid": "Enter the six-digit code.",

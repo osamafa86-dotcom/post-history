@@ -172,7 +172,8 @@ test("signing out and opening the sign-in page clear unfinished-upload records o
   expect(await count()).toBe(1);
   // سجل يبقى من تبويب أُغلق دون خروج: صفحة الدخول تمحوه.
   await page.goto("/ar/inbox"); expect(await count()).toBe(1);
-  await page.context().clearCookies(); await page.goto("/ar/login"); await expect(page.getByLabel(ar.email)).toBeVisible();
+  // الصفحة تُترك أولًا (تبويب أُغلق): خروجها التلقائي عند زوال الجلسة لا يسابق فتح صفحة الدخول.
+  await page.goto("about:blank"); await page.context().clearCookies(); await page.goto("/ar/login"); await expect(page.getByLabel(ar.email)).toBeVisible();
   await expect.poll(count).toBe(0);
   await request.post(`${api}/__test/tus`);
 });
@@ -278,9 +279,11 @@ test("the form survives a revoked session for its owner, and an explicit sign-ou
   // الجلسة تُبطَل عند الخادم؛ الإرسال يعيد إلى الدخول
   await request.post(`${api}/__test/revoke`);
   await page.getByRole("button", { name: ar.upload.start }).click();
-  await expect(page).toHaveURL(/\/ar\/login\?reason=revoked$/);
+  await expect(page).toHaveURL(/\/ar\/login\?reason=revoked&next=%2Far%2Fupload$/);
   await request.post(`${api}/__test/reset`);
-  await login(page);
+  // الدخول من جديد يعيده إلى صفحة الرفع نفسها، وفيها ما كتبه
+  await page.getByLabel(ar.email).fill("reporter@example.test"); await page.getByLabel(ar.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(ar.totp, { exact: true }).fill("123456");
+  await page.getByRole("button", { name: ar.signIn, exact: true }).click(); await expect(page).toHaveURL(/\/ar\/upload$/);
   await expect(page.getByTestId("upload-draft")).toHaveText(ar.upload.draftRestored);
   await page.getByLabel(ar.upload.choose).setInputFiles(camera(2048).file);
   await expect(page.getByLabel(ar.upload.titleLabel)).toHaveValue("مسودة قبل انقطاع الجلسة"); await expect(page.getByLabel(ar.upload.city)).toHaveValue("رفح");

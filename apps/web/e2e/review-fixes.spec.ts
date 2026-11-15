@@ -114,7 +114,8 @@ test("with the API down the page keeps its shell and says it is offline (E3)", a
   await login(page, "reviewer");
   // انقطاع بعد أن عُرف الحساب: الشريط باقٍ بما يملكه، والعنوان عنوان الصفحة
   await page.route("**/api/bff/auth/me", route => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ code: "temporarily_unavailable" }) }));
-  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  // العودة إلى التبويب لا تمحو الصفحة (ADR 0014، تعديل 2026-11-15)؛ ما يمحوها ويعيد التحقق رسالة قناة التبويبات (حساب دخل في تبويب آخر).
+  await page.evaluate(() => { const channel = new BroadcastChannel("web-session"); channel.postMessage("signed-in"); channel.close(); });
   const shell = page.getByTestId("offline-shell"); await expect(shell).toBeVisible();
   await expect(shell.getByRole("heading", { level: 1 })).toHaveText(ar.inbox); await expect(shell.getByTestId("offline-state")).toContainText(ar.shell.offline.title);
   await expect(shell.getByRole("navigation", { name: ar.workspace }).getByRole("link", { name: ar.inbox, exact: true })).toBeVisible();
