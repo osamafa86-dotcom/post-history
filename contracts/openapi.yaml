@@ -274,6 +274,34 @@ paths:
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
 
+  /auth/recovery/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: معرّف طلب الاستعادة
+        schema: { type: string, format: uuid }
+    get:
+      tags: [auth]
+      summary: قراءة طلب استعادة حساب لمن يملك اعتماده
+      description: >-
+        ما يحتاجه المعتمِد ليعرف أي حساب يعتمد استعادته قبل أن يعتمد: اسم العمل والأدوار والمكتب، وحالة الطلب ووقته وانتهاؤه.
+        **بلا بريد وبلا اسم قانوني** ولا أي وسيلة اتصال: التحقق من الهوية يجري خارج النظام. الصلاحية صلاحية الاعتماد نفسها
+        (`POST /auth/recovery/{id}/approve`): المشرف يقرأ طلب حساب مراسل في نطاقه وحده، ومدير النظام يقرأ ما عداه؛ وما ليس
+        للمتصل `404` كما في الاعتماد، فلا يُعرف وجود الطلب. الطلب المعتمَد أو المنتهي أو المرفوض يُقرأ بحاله. طلب بانتظار
+        الاعتماد فات موعده يُقرأ `expired`. القراءة لا تغيّر شيئًا ولا تعيد رمز إعادة التعيين أبدًا.
+      operationId: getRecoveryRequest
+      x-roles: [supervisor, system_admin]
+      responses:
+        "200":
+          description: الطلب والحساب الذي يخصه
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecoveryRequestDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /auth/recovery/{id}/approve:
     parameters:
       - name: id
@@ -4764,6 +4792,38 @@ components:
         created_at: { type: string, format: date-time }
         approved_by: { type: [string, "null"], format: uuid }
         expires_at: { type: [string, "null"], format: date-time, description: انتهاء صلاحية الطلب أو الرابط }
+
+    RecoveryRequestDetail:
+      description: طلب استعادة كما يقرؤه من يملك اعتماده، ومعه ما يعرّف الحساب داخليًا. لا بريد ولا اسم قانوني ولا رمز.
+      allOf:
+        - $ref: "#/components/schemas/RecoveryRequest"
+        - type: object
+          required: [account]
+          properties:
+            account:
+              type: object
+              additionalProperties: false
+              required: [user_id, work_name, roles, office_id, office_name]
+              properties:
+                user_id: { type: string, format: uuid, description: معرّف الحساب؛ يُعرض مختصرًا حين لا اسم عمل له }
+                work_name:
+                  oneOf:
+                    - $ref: "#/components/schemas/WorkName"
+                    - type: "null"
+                  description: اسم العمل الداخلي (ADR 0035)؛ `null` = لم يُعيَّن
+                roles:
+                  type: array
+                  uniqueItems: true
+                  items: { $ref: "#/components/schemas/RoleName" }
+                office_id: { type: [string, "null"], format: uuid, description: مكتب الحساب }
+                office_name:
+                  type: [object, "null"]
+                  additionalProperties: false
+                  required: [ar, en]
+                  description: اسم المكتب باللغتين؛ `null` لحساب بلا مكتب
+                  properties:
+                    ar: { type: string }
+                    en: { type: string }
 
     RecoveryCodeStatus:
       type: object
