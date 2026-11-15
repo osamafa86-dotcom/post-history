@@ -1931,7 +1931,7 @@ export interface paths {
         put?: never;
         /**
          * دعوة عضو إلى المؤسسة
-         * @description يُنشأ حساب مشترٍ مرتبط بالمؤسسة وحدها، يعيّن كلمة مروره برمز دعوة يُسلَّم كرمز الاستعادة، ويُفعِّل TOTP عند أول دخول. البريد المستخدم لحساب آخر `409 conflict`، بلا تفريق بين طاقم ومشترٍ. حد المقاعد `seats` يُفرض هنا (`409 seats_exhausted`).
+         * @description يُنشأ حساب مشترٍ مرتبط بالمؤسسة وحدها، يعيّن كلمة مروره برمز دعوة يُسلَّم كرمز الاستعادة، ويُفعِّل TOTP عند أول دخول. البريد المستخدم لحساب آخر `409 conflict`، بلا تفريق بين طاقم ومشترٍ. حد المقاعد `seats` يُفرض هنا (`409 seats_exhausted`). بريد عضو في المؤسسة نفسها لم يُكمل قبول دعوته، أو أُلغيت دعوته، ليس تعارضًا: تُعاد دعوته برمز جديد يُبطل السابق (`201` كالدعوة الأولى، قرار المنسّق 2026-11-15).
          */
         post: operations["inviteBuyerMember"];
         delete?: never;
@@ -1959,6 +1959,34 @@ export interface paths {
         put: operations["updateBuyerMember"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/buyer-organizations/{org_id}/members/{user_id}/invitation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المؤسسة المشترية */
+                org_id: components["parameters"]["OrganizationId"];
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * إعادة إصدار رمز دعوة عضو لم يُكمل قبولها
+         * @description قرار المنسّق 2026-11-15: لعضو حالته `invited` وحده (`409 invalid_transition` لغيره). يُبطَل الرمز السابق ويصدر رمز جديد يُسلَّم كالأول (في الرد مرة واحدة، أو بقناة التسليم)، ولو كان المدعو قد استعمل رمزه الأول ولم يُكمل ربط التحقق بخطوتين: يبدأ من جديد بالرمز الجديد. سرّ التحقق المعلّق لا يُعرض ثانية. لا مقعد إضافي. يُسجَّل في التدقيق بلا البريد.
+         */
+        post: operations["reissueBuyerMemberInvitation"];
+        /**
+         * إلغاء دعوة لم يُكمل قبولها
+         * @description قرار المنسّق 2026-11-15: لعضو حالته `invited` وحده (`409 invalid_transition` لغيره). يُبطَل رمز الدعوة ويتحرر المقعد ويخرج المدعو من قائمة الأعضاء؛ ودعوة البريد نفسه لاحقًا دعوة جديدة. يُسجَّل في التدقيق بلا البريد.
+         */
+        delete: operations["cancelBuyerMemberInvitation"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4440,6 +4468,8 @@ export interface components {
         BuyerOrganizationState: {
             /** Format: uuid */
             id: string;
+            /** @description المدعوون الذين لم يُكملوا القبول، ومنهم الدعوات المتعارضة القائمة؛ يشغلون مقاعد مع النشطين (`active_members`). أُضيف بعد v0.3، قد يغيب */
+            invited_members?: number;
             active_members: number;
             /**
              * Format: date-time
@@ -8955,6 +8985,66 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    reissueBuyerMemberInvitation: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description معرّف المؤسسة المشترية */
+                org_id: components["parameters"]["OrganizationId"];
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description العضو برمز دعوته الجديد */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyerMemberCreated"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    cancelBuyerMemberInvitation: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description معرّف المؤسسة المشترية */
+                org_id: components["parameters"]["OrganizationId"];
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description أُلغيت الدعوة */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     listOrders: {
