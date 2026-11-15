@@ -247,6 +247,12 @@ const server = createServer(async (req, res) => {
     Object.assign(materials[13], { editorial_state: "published" });                                          // خارج اللوحة
     return send({ ok: true });
   }
+  if (url.pathname === "/__test/review-load" && req.method === "POST") {
+    // تبويب «قيد المراجعة» بأكثر من صفحة: 60 اطّلع عليها و5 قيد المراجعة، فوق صفحة الحالة الواحدة (50).
+    for (let i = 20; i < 80; i++) materials[i].editorial_state = "acknowledged";
+    for (let i = 80; i < 85; i++) materials[i].editorial_state = "reviewing";
+    return send({ ok: true });
+  }
   if (url.pathname === "/__test/board-cap" && req.method === "POST") {
     // أكثر من 500 مادة في حالة فنية واحدة غير مكتملة (سقف جلب اللوحة): 560 واردة قيد الاستلام، وخمس جلسات رفع جارية (ثلاث خانات ثم «n أخرى»).
     materials.push(...Array.from({ length: 560 }, (_, i) => ({ ...material(1001 + i), technical_state: "pending" as const, row_version: 17, reserved_by: null, reserved_at: null, contributors: [{ user_id: me.user_id, role: "reporter" as const, share_percent: 100 }] })));

@@ -45,8 +45,8 @@ describe("track line (Figma 166:89, 193:590)", () => {
 describe("inbox quick filters (Figma 193:620)", () => {
   const snapshot = { editorial: [{ state: "inbox", count: 7 }, { state: "reviewing", count: 3 }, { state: "accepted", count: 2 }, { state: "published", count: 5 }], technical: [{ state: "failed", count: 1 }, { state: "pending", count: 4 }], urgent_open: 3 } as unknown as NewsroomDashboard;
   it("counts only what the dashboard returns", () => {
-    expect(tabCounts(snapshot)).toEqual({ all: 17, urgent: 3, inbox: 7, reviewing: 3, accepted: 2, stopped: 1 });
-    expect(tabCounts({ ...snapshot, editorial: [], technical: [], urgent_open: 0 })).toEqual({ all: 0, urgent: 0, inbox: 0, reviewing: 0, accepted: 0, stopped: 0 });
+    expect(tabCounts(snapshot)).toEqual({ all: 17, urgent: 3, inbox: 7, reviewing: 3, accepted: 2, final_review: 0, stopped: 1 });
+    expect(tabCounts({ ...snapshot, editorial: [], technical: [], urgent_open: 0 })).toEqual({ all: 0, urgent: 0, inbox: 0, reviewing: 0, accepted: 0, final_review: 0, stopped: 0 });
   });
   it("recognises the tab that equals the current query and nothing for a custom filter", () => {
     for (const tab of inboxTabs) expect(activeTab({ limit: 50, ...tabQuery[tab] })).toBe(tab);

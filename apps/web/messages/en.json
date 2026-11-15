@@ -926,7 +926,7 @@
   },
   "board": {
     "title": "Newsroom board",
-    "lead": "Materials in four columns: incoming, under verification, ready to publish and stalled; plus open urgent items and overdue acknowledgements. The snapshot refreshes every five seconds.",
+    "lead": "Materials in four columns: fully received, under verification, ready to publish and stalled; plus open urgent items and overdue acknowledgements. The snapshot refreshes every five seconds.",
     "denied": "This board is for supervisors, production and management.",
     "urgentOpen": "Open urgent",
     "overdue": "Overdue acknowledgements",
@@ -972,12 +972,12 @@
     "overdueAge": "Overdue {time}",
     "oldestOverdue": "Oldest {time}",
     "columns": {
-      "incoming": "Incoming",
+      "incoming": "Fully received",
       "checking": "Under verification",
       "ready": "Ready to publish",
       "stalled": "Stalled"
     },
-    "countCapped": "More than {n} materials are still being received technically in a single state, so no exact count is claimed: counts followed by + are minimums (the real figure may be higher), and what was not fetched is not placed in Incoming or Ready to publish.",
+    "countCapped": "More than {n} materials are still being received technically in a single state, so no exact count is claimed: counts followed by + are minimums (the real figure may be higher), and what was not fetched is not placed in Fully received or Ready to publish.",
     "atLeast": "at least",
     "columnHelp": {
       "incoming": "Fully received, nobody has looked yet",
@@ -2048,6 +2048,7 @@
     "inbox": "Incoming",
     "reviewing": "Under review",
     "accepted": "Accepted",
+    "final_review": "Final review",
     "stopped": "Stopped"
   },
   "inboxSearch": {

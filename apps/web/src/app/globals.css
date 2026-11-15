@@ -322,7 +322,9 @@ html.board-display body { background: var(--v2-c-bg-base); }
 .tile-top { font-size: 22px; line-height: 30px; font-weight: 700; }
 .tile-age { color: var(--v2-c-text-secondary); }
 .tile-age.danger-text { color: var(--v2-c-state-danger); }
-.tile-title { font-size: 32px; line-height: 44px; font-weight: 700; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* الياء الأخيرة تنزل تحت السطر نصف حجم الخط: سطر 52 وحشو سفلي 2 يسعان نقطتيها، فلا تُقرأ «ميداني» بلا نقط. والحشو أصغر من أن يُظهر رأس
+   همزة السطر الثالث المقصوص. */
+.tile-title { font-size: 32px; line-height: 52px; padding-block-end: 2px; font-weight: 700; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tile-meta { font-size: 20px; line-height: 28px; color: var(--v2-c-text-secondary); }
 .tile-meta.danger-text { color: var(--v2-c-state-danger); }
 .wall-empty { display: grid; justify-items: center; gap: var(--v2-space-3); padding: var(--v2-space-11) 0; text-align: center; }
