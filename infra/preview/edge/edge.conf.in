@@ -76,7 +76,9 @@ server {
         proxy_read_timeout 120s;
         add_header X-Robots-Tag "noindex, nofollow" always;
         sub_filter_once on;
-        sub_filter '</body>' '<div role="status" lang="ar" dir="rtl" style="position:fixed;inset-block-end:0;inset-inline:0;z-index:2147483647;padding:4px 8px;background:#7a1f1f;color:#fff;font:600 13px/1.4 system-ui,sans-serif;text-align:center">معاينة: بيانات وحسابات تجريبية فقط، ومعالجة محدودة (نسخة خفيفة ومصغّرة) · <span lang="en" dir="ltr">Preview: test data and accounts only; limited processing (light copy and thumbnail)</span></div></body>';
+        # الشريط ثابت أسفل النافذة على الشاشات العريضة. تحت 768px للويب شريط تنقّل سفلي ثابت (65px)، والشريط الثابت فوقه كان يغطيه كله فلا
+        # تنقّل من الهاتف: هناك يصير الشريط سطرًا في آخر الصفحة، وبهامش يرفعه فوق شريط التنقّل حيث يوجد. المقاسان من أنماط الويب.
+        sub_filter '</body>' '<style>#ph-preview-note{position:fixed;inset-inline:0;inset-block-end:0;z-index:2147483647;padding:4px 8px;background:#7a1f1f;color:#fff;font:600 13px/1.4 system-ui,sans-serif;text-align:center}@media (max-width:767px){#ph-preview-note{position:static;font-size:11px;padding:6px 8px}body:has(.bottombar) #ph-preview-note{margin-block-end:calc(65px + env(safe-area-inset-bottom))}}</style><div id="ph-preview-note" role="status" lang="ar" dir="rtl">معاينة: بيانات وحسابات تجريبية فقط، ومعالجة محدودة (نسخة خفيفة ومصغّرة) · <span lang="en" dir="ltr">Preview: test data and accounts only; limited processing (light copy and thumbnail)</span></div></body>';
     }
 }
 
