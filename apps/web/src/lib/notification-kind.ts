@@ -31,14 +31,30 @@ export function panelOrder(items: Notification[]): Notification[] {
   return [...items].sort((a, b) => Number(b.priority === "urgent") - Number(a.priority === "urgent") || Number(unread(b)) - Number(unread(a)) || Date.parse(b.created_at) - Date.parse(a.created_at));
 }
 
-export type KindWord = "urgent" | "task" | "store" | "money" | "upload" | "account" | "update";
-/** كلمة البند وأيقونته (لا لون وحده): العاجل، ثم طلب استعادة الحساب (ADR 0108)، ثم المهمة، ثم المتجر والمال والرفع بنوع الحدث، وإلا «تحديث على مادة». */
-export function notificationKind(n: Notification): { word: KindWord; icon: IconName } {
-  if (n.priority === "urgent") return { word: "urgent", icon: "bolt" };
-  if (n.recovery_request_id || n.type.startsWith("auth.recovery_")) return { word: "account", icon: "key" };
-  if (n.assignment_state || n.assignment_id || n.type.startsWith("assignment.")) return { word: "task", icon: "tasks" };
-  if (isStore(n)) return { word: "store", icon: "store" };
-  if (n.type.startsWith("payout.")) return { word: "money", icon: "money" };
-  if (n.type.startsWith("upload.")) return { word: "upload", icon: "upload" };
-  return { word: "update", icon: "inbox" };
+export type KindWord = "seen" | "changes" | "rejected" | "accepted" | "published" | "received" | "incoming" | "resubmitted" | "production" | "escalated" | "task" | "store" | "money" | "upload" | "account" | "update";
+/** كلمة لكل نوع حدث له معنى واحد عند قارئه (ADR 0121): ما يصل صاحب المادة، وما يصل الطاقم عن مادة واردة أو معادة أو مقبولة للإنتاج أو مصعَّدة. */
+const byType: Record<string, { word: KindWord; icon: IconName }> = {
+  "material.acknowledged": { word: "seen", icon: "preview" }, "material.change_requested": { word: "changes", icon: "pencil" }, "material.rejected": { word: "rejected", icon: "ban" },
+  "material.accepted": { word: "accepted", icon: "check" }, "material.published": { word: "published", icon: "globe" }, "upload.verified": { word: "received", icon: "upload" },
+  "material.created": { word: "incoming", icon: "inbox" }, "material.urgent_received": { word: "incoming", icon: "inbox" }, "material.resubmitted": { word: "resubmitted", icon: "refresh" },
+  "material.accepted_for_production": { word: "production", icon: "film" }, "notification.escalated": { word: "escalated", icon: "alert" },
+};
+/** ما يصل صاحب المادة خبرًا عن مادته: لا يُطلب منه إقرار ولو كانت عاجلة. */
+export const ownerNews = ["material.acknowledged", "material.change_requested", "material.rejected", "material.accepted", "material.published", "upload.verified"] as const;
+/** هل يُعرض «إقرار الاطّلاع»: لا لخبر صاحب المادة، ولا لما أُقرّ. */
+export const asksAck = (n: Pick<Notification, "type" | "state" | "acknowledged_at">) => !(ownerNews as readonly string[]).includes(n.type) && !n.acknowledged_at && n.state !== "acknowledged";
+/**
+ * كلمة البند وأيقونته (لا لون وحده): طلب استعادة الحساب (ADR 0108)، ثم مهمة المونتير، ثم كلمة النوع، ثم المهمة من قاعدة، ثم المتجر والمال والرفع بنوع
+ * الحدث، وإلا «تحديث على مادة». العاجل علَم بجانب الكلمة لا بديل عنها: «طُلب تعديل على مادتك» تبقى كذلك في مادة عاجلة.
+ */
+export function notificationKind(n: Notification): { word: KindWord; icon: IconName; urgent: boolean } {
+  const urgent = n.priority === "urgent", kind = (word: KindWord, icon: IconName) => ({ word, icon, urgent });
+  if (n.recovery_request_id || n.type.startsWith("auth.recovery_")) return kind("account", "key");
+  if (n.assignment_id || n.type.startsWith("assignment.")) return kind("task", "tasks");
+  if (byType[n.type]) return { ...byType[n.type], urgent };
+  if (n.assignment_state) return kind("task", "tasks");
+  if (isStore(n)) return kind("store", "store");
+  if (n.type.startsWith("payout.")) return kind("money", "money");
+  if (n.type.startsWith("upload.")) return kind("upload", "upload");
+  return kind("update", "inbox");
 }
