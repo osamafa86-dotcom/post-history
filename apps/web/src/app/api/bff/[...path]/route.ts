@@ -7,3 +7,4 @@ export async function GET(request: NextRequest, context: Context) { return handl
 export async function POST(request: NextRequest, context: Context) { return handle(request, (await context.params).path.join("/")); }
 export async function PUT(request: NextRequest, context: Context) { return handle(request, (await context.params).path.join("/")); }
 export async function DELETE(request: NextRequest, context: Context) { return handle(request, (await context.params).path.join("/")); }
+export async function PATCH(request: NextRequest, context: Context) { return handle(request, (await context.params).path.join("/")); }

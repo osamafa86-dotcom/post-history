@@ -1,24 +1,32 @@
 import Link from "next/link";
-import { messages, type Locale } from "@/lib/i18n";
+import { formatDate, messages, type Locale } from "@/lib/i18n";
 import { formatMoney, localized, totals, type LicenseType, type Localized, type Price } from "@/lib/store-format";
+import { blocking, type CartChange } from "@/lib/cart-policy";
 import { EmptyState } from "../empty-state";
+import { fillNodes, Money } from "../money";
 import { Icon } from "../icon";
 
-export type CartLine = { id: string; title: Localized; license: Localized; licenseType?: LicenseType; price: Price; href?: string };
+export type CartLine = { id: string; title: Localized; license: Localized; licenseType?: LicenseType; price: Price; href?: string; change?: CartChange | null };
 
 /**
  * السلة (S3): بند لكل مادة بترخيصه وسعره وزرّ إزالة، والملخّص بجانبها هو الإجمالي (`total`) وحده، بلا مجموع فرعي ولا ضريبة (ADR 0100).
- * عملتان لا تُجمعان: لكلٍّ مجموعها، والطلب بعملة واحدة. الدفع عند المزوّد المستضاف لا هنا.
+ * عملتان لا تُجمعان: لكلٍّ مجموعها، والطلب بعملة واحدة. الدفع عند المزوّد المستضاف لا هنا. البند الذي تغيّر منذ أُضيف يقول ما تغيّر (`change`):
+ * سعر جديد يُعرض ويُدفع به، وما لم يعد يُشترى يبقى ظاهرًا بسببه حتى يُزال. والسلة الفارغة تدلّ على طلب ما زال ينتظر الدفع (`pending`).
  */
-export function CartSummary({ locale, lines, onRemove, checkout, catalogHref }: { locale: Locale; lines: CartLine[]; onRemove?: (id: string) => void; checkout?: React.ReactNode; catalogHref?: string }) {
+export function CartSummary({ locale, lines, onRemove, checkout, catalogHref, pending }: { locale: Locale; lines: CartLine[]; onRemove?: (id: string) => void; checkout?: React.ReactNode; catalogHref?: string; pending?: { href: string; label: string }[] }) {
   const s = messages[locale].store, c = s.cartPage, b = s.browse, sums = totals(lines.map(line => line.price));
-  if (!lines.length) return <EmptyState icon="cart" title={c.emptyTitle} actions={catalogHref && <Link prefetch={false} className="button store" href={catalogHref}>{c.browse}</Link>}><p>{c.emptyBody}</p></EmptyState>;
+  // السعران داخل الجملة معزولا الاتجاه (`Money`)، فلا ينقلب رمز العملة في السياق العربي.
+  const note = (change: CartChange) => change.kind === "price" ? fillNodes(c.priceChanged, { from: <Money price={change.from} locale={locale} />, to: <Money price={change.to} locale={locale} /> })
+    : change.kind === "gone" ? c.gone : change.until ? c.held.replace("{date}", formatDate(change.until, locale)) : c.exclusiveTaken;
+  if (!lines.length) return <EmptyState icon="cart" title={c.emptyTitle} actions={catalogHref && <Link prefetch={false} className="button store" href={catalogHref}>{c.browse}</Link>}><p>{c.emptyBody}</p>
+    {pending?.map(order => <p key={order.href} className="notice attention cart-pending" data-testid="pending-order">{c.pendingOrder.split("{order}")[0]}<bdi dir="ltr" className="ref">{order.label}</bdi>{c.pendingOrder.split("{order}")[1]} <Link prefetch={false} href={order.href}>{c.resumePayment}</Link></p>)}</EmptyState>;
   return <div className="cart-v2">
     <ul className="cart-v2-lines" aria-label={s.cart}>{lines.map(line => {
       const title = localized(line.title, locale);
-      return <li key={line.id} className="cart-v2-line" data-testid="cart-line">
+      return <li key={line.id} className="cart-v2-line" data-testid="cart-line" data-blocked={blocking(line.change) || undefined}>
         <span className="cart-v2-thumb" aria-hidden="true"><Icon name="play" size={16} /></span>
         <span className="cart-v2-text"><strong>{title}</strong><small>{[...new Set([localized(line.license, locale), line.licenseType ? s.licenseTypes[line.licenseType] : null])].filter(Boolean).join(s.catalog.listSeparator)}</small>
+          {line.change && <small className={blocking(line.change) ? "field-error" : "cart-v2-note"} data-testid="cart-change">{note(line.change)}</small>}
           {line.href && <Link prefetch={false} className="cart-v2-change" href={line.href}>{b.changeLicense}</Link>}</span>
         <strong className="cart-v2-price" dir="ltr">{formatMoney(line.price, locale)}</strong>
         {onRemove && <button type="button" className="icon-button cart-v2-remove" aria-label={c.removeFor.replace("{title}", title)} onClick={() => onRemove(line.id)}><Icon name="x" /></button>}

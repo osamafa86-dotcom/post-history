@@ -30,7 +30,7 @@ describe("earnings inputs", () => {
     expect(payoutReject({ reason_code: "policy" })).toEqual({ reason_code: "policy" }); expect(payoutReject({ reason_code: "policy", note: "x" })).toBeNull(); expect(payoutReject({ reason_code: "whim" })).toBeNull();
     const policy = { currency: "USD", minimum: usd(5000), dual_approval_above: usd(100000), reserve_bps: 1000, effective_from: "2026-11-01T00:00:00.000Z" };
     expect(policyInput(policy)).toEqual(policy);
-    for (const patch of [{ minimum: { amount_minor: 1, currency: "ILS" } }, { reserve_bps: 5001 }, { effective_from: "tomorrow" }, { extra: 1 }]) expect(policyInput({ ...policy, ...patch }), JSON.stringify(patch)).toBeNull();
+    for (const patch of [{ minimum: { amount_minor: 1, currency: "ILS" } }, { minimum: usd(0) }, { reserve_bps: 5001 }, { effective_from: "tomorrow" }, { extra: 1 }]) expect(policyInput({ ...policy, ...patch }), JSON.stringify(patch)).toBeNull();
   });
   it("never offers self-approval or a second approval by the same person", () => {
     expect(approvable(payout({ user_id: randomUUID() }), me.user_id)).toBe(true);

@@ -15,10 +15,10 @@ test("the system admin dismisses a pending conflict with a present code; a wrong
   await expect(page.locator("main")).not.toContainText("never-display-canary");
   await rows.getByRole("button", { name: c.actions.dismissed }).click();
   const dialog = page.getByRole("dialog", { name: c.actions.dismissed }); await expect(dialog).toContainText(c.effects.dismissed);
-  await expect(dialog.getByRole("button", { name: en.confirm })).toBeDisabled();
-  await dialog.getByLabel(en.totp).fill("000000"); await dialog.getByRole("button", { name: en.confirm }).click();
+  await expect(dialog.getByRole("button", { name: c.confirms.dismissed })).toBeDisabled();
+  await dialog.getByLabel(en.totp).fill("000000"); await dialog.getByRole("button", { name: c.confirms.dismissed }).click();
   await expect(dialog.getByText(c.totpRejected)).toBeVisible(); await expect(dialog.getByLabel(en.totp)).toHaveValue("");
-  await dialog.getByLabel(en.totp).fill("123456"); await dialog.getByRole("button", { name: en.confirm }).click();
+  await dialog.getByLabel(en.totp).fill("123456"); await dialog.getByRole("button", { name: c.confirms.dismissed }).click();
   await expect(dialog).toHaveCount(0); await expect(page.getByText(c.empty)).toBeVisible();
   await page.getByLabel(c.state).selectOption("suspended"); await expect(rows).toHaveCount(1);
   await expect(rows.getByRole("button", { name: c.actions.suspended })).toHaveCount(0); await expect(rows.getByRole("button", { name: c.actions.dismissed })).toBeVisible();

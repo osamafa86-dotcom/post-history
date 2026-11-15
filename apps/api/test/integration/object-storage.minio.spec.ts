@@ -48,4 +48,11 @@ describeMinio('S3ObjectStorage against MinIO', () => {
     for await (const chunk of await storage.read(bucket, key)) hash.update(chunk as Buffer);
     expect(hash.digest('hex')).toBe(createHash('sha256').update(body).digest('hex'));
   });
+
+  it('a signed link with a download name is served as an attachment under that name', async () => {
+    const res = await fetch(storage.presignGet(bucket, key, 60, new Date(), 'circulated-vertical-1a2b3c4d.mp4'));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-disposition')).toBe('attachment; filename="circulated-vertical-1a2b3c4d.mp4"');
+    expect(Buffer.from(await res.arrayBuffer()).length).toBe(body.length);
+  });
 });

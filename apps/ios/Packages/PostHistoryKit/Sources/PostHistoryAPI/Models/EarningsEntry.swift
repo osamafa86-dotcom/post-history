@@ -30,8 +30,11 @@ public struct EarningsEntry: Sendable, Codable, Hashable {
     public var referenceType: String
     public var referenceId: UUID
     public var occurredAt: Date
+    public var sale: EarningsEntrySale?
+    /** لسطر بيعة في `pending` وحده: موعد تحريره إلى `available` بعد فترة الاسترداد (ADR 0033). `null` لغيره. أُضيف بعد v0.3، قد يغيب */
+    public var releasesAt: Date?
 
-    public init(id: String, entryId: UUID, kind: Kind, state: PayableState, amount: SignedMoney, referenceType: String, referenceId: UUID, occurredAt: Date) {
+    public init(id: String, entryId: UUID, kind: Kind, state: PayableState, amount: SignedMoney, referenceType: String, referenceId: UUID, occurredAt: Date, sale: EarningsEntrySale? = nil, releasesAt: Date? = nil) {
         self.id = id
         self.entryId = entryId
         self.kind = kind
@@ -40,6 +43,8 @@ public struct EarningsEntry: Sendable, Codable, Hashable {
         self.referenceType = referenceType
         self.referenceId = referenceId
         self.occurredAt = occurredAt
+        self.sale = sale
+        self.releasesAt = releasesAt
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -51,6 +56,8 @@ public struct EarningsEntry: Sendable, Codable, Hashable {
         case referenceType = "reference_type"
         case referenceId = "reference_id"
         case occurredAt = "occurred_at"
+        case sale
+        case releasesAt = "releases_at"
     }
 
     // Encodable protocol methods
@@ -65,6 +72,8 @@ public struct EarningsEntry: Sendable, Codable, Hashable {
         try container.encode(referenceType, forKey: .referenceType)
         try container.encode(referenceId, forKey: .referenceId)
         try container.encode(occurredAt, forKey: .occurredAt)
+        try container.encodeIfPresent(sale, forKey: .sale)
+        try container.encodeIfPresent(releasesAt, forKey: .releasesAt)
     }
 }
 

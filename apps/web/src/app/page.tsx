@@ -1,2 +1,3 @@
 import { redirect } from "next/navigation";
-export default function Home() { redirect("/ar/inbox"); }
+// جذر الموقع إلى جذر اللغة، وهو يقود كل دور إلى صفحة بدايته (والزائر إلى الدخول).
+export default function Home() { redirect("/ar"); }

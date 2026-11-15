@@ -18,7 +18,8 @@
     "forgot": "Password recovery",
     "reset": "New password",
     "invite": "Accept the invitation",
-    "verify": "License verification"
+    "verify": "License verification",
+    "verifyLookup": "Enter a license number to verify"
   },
   "workspace": "Newsroom",
   "inbox": "Inbox",
@@ -707,7 +708,7 @@
     "cartEmpty": "Your cart is empty.",
     "remove": "Remove",
     "total": "Total",
-    "currencies": "Currencies are not combined; each total is paid separately.",
+    "currencies": "The cart holds two currencies, and an order is in one. Remove the items of one currency, and pay for them in an order after this one.",
     "eyebrow": "Store (sandbox)",
     "title": "Catalog",
     "lead": "Every item here came from a known reporter, has a receipt and a fingerprint, and was not altered after it arrived. The license is chosen at purchase.",
@@ -766,7 +767,7 @@
       "verifyNote": "Every license is proven by a public verification page for its number, not by showing fingerprints or technical identifiers.",
       "addFor": "Add to cart — {price}",
       "deliveryTitle": "Delivery specifications",
-      "deliveryText": "Ready formats are delivered with descriptive metadata, stripped of precise location and device data; the raw original is never delivered.",
+      "deliveryText": "Delivered at full resolution with descriptive metadata, stripped of precise location and device data; the raw file as it arrived from the field is never delivered.",
       "holdNote": "Held for 15 minutes once payment starts.",
       "changeLicense": "Change license",
       "summary": "Order summary",
@@ -791,9 +792,15 @@
         "editorial": "Editorial"
       },
       "startsAt": "Starts at",
-      "addAnother": "Add another license"
+      "replaceInCart": "Replace the license in the cart",
+      "replaced": "The license in the cart was replaced.",
+      "inCart": "This license is in the cart",
+      "otherCurrency": "Your cart holds items in {have}, and an order is in one currency. Pay for them or remove them from the cart, then add this license priced in {want}."
     },
-    "exclusiveUntil": "Exclusivity reserved until {date}",
+    "heldUntil": "This item is under an exclusive license until {date}, so no license is sold on it before then.",
+    "heldByYou": "Your organization holds the exclusive license on this item until {date}, so no other license is sold on it before then.",
+    "offerHeld": "Not available until {date}",
+    "ownedLicense": "You hold an active license of this kind: {number}",
     "termDaysLabel": "License term (days)",
     "exclusivityHoursLabel": "Exclusivity duration (hours)",
     "heading": "Verified footage from the field",
@@ -828,7 +835,8 @@
       "previewBadge": "Preview · watermark",
       "shot": "Shot {date}",
       "cta": "Licenses and prices",
-      "ctaFor": "Licenses and prices: {title}"
+      "ctaFor": "Licenses and prices: {title}",
+      "heldUntil": "Exclusive until {date}"
     },
     "item": {
       "breadcrumb": "Breadcrumb",
@@ -862,7 +870,16 @@
       "emptyBody": "Pick footage and a license from the catalog to see it here. The cart lives in this tab only and is cleared when you sign out.",
       "browse": "Browse footage",
       "checkoutFailed": "The order was created but the payment page didn't open. Continue from the order page.",
-      "openOrder": "Open the order"
+      "openOrder": "Open the order",
+      "checking": "Checking the current prices of the items in the cart",
+      "changed": "Something in the cart changed since you added its items. Review the new total, then proceed to payment.",
+      "priceChanged": "The price changed from {from} to {to}.",
+      "gone": "This item is no longer offered with this license. Remove it to continue.",
+      "held": "This item is under an exclusive license until {date}. Remove it to continue.",
+      "exclusiveTaken": "The exclusive license on this item is no longer available. Remove it to continue.",
+      "blocked": "An item in the cart cannot be bought now. Remove it to continue.",
+      "pendingOrder": "You have an order awaiting payment: {order}",
+      "resumePayment": "Complete the payment"
     },
     "invoice": {
       "title": "Invoice",
@@ -879,8 +896,6 @@
       "colLicenceNo": "License number",
       "colPrice": "Price ({currency})",
       "total": "Total ({currency})",
-      "breadcrumbHome": "My licenses",
-      "breadcrumbCurrent": "Invoice for order {id}",
       "issuerPending": "Legal name, address and tax number: added after legal review",
       "orderNumber": "Order number {id}",
       "purchaseOrder": "Purchase order {po}",
@@ -894,7 +909,10 @@
       "notFoundTitle": "We couldn't find this invoice",
       "notFoundBody": "Invoices are for whoever placed the order, the organization's admin and finance. If a colleague placed it, ask your organization's admin.",
       "licencePending": "Issued after confirmation",
-      "linesLabel": "Invoice lines"
+      "linesLabel": "Invoice lines",
+      "lineRefunded": "Refunded",
+      "refundedTotal": "Refunded ({currency})",
+      "netTotal": "Net after refunds ({currency})"
     },
     "invite": {
       "badge": "Store invitation",
@@ -1145,8 +1163,19 @@
       "verified": "Received and fingerprint verified.",
       "duplicate": "We already have this file, so there's no need to upload it again.",
       "failed": "The upload failed.",
-      "failedHint": "Part of it was probably lost in transfer. Please upload it again."
-    }
+      "failedHint": "Part of it was probably lost in transfer. Please upload it again.",
+      "incompleteUnknown": "Incomplete upload"
+    },
+    "errors": {
+      "title": "The title is 5 to 80 characters.",
+      "governorate": "Enter the governorate.",
+      "city": "Enter the city.",
+      "shot_at": "The shooting time cannot be in the future.",
+      "pseudonym": "Enter the pseudonym, or choose another display name."
+    },
+    "requiresUnavailable": "This form requires “{fields}”, which cannot be filled on the web yet, so this material cannot be sent from here. Send it from the phone app, or ask the form administrators to make it optional.",
+    "reselectUnknown": "The browser doesn't keep the file after closing. Choose the same file to continue from where it stopped. A different file starts a new upload.",
+    "draftRestored": "We kept what you had typed before the session ended. Choose the files again to continue."
   },
   "mine": {
     "nav": "My materials",
@@ -1156,7 +1185,7 @@
     "firstPage": "Only your latest 100 materials are shown.",
     "action": "Needs your action",
     "noAction": "Nothing is waiting on you.",
-    "uploadFailed": "Upload failed; upload the file again from the material page.",
+    "uploadFailed": "Its file failed to upload. Upload it from the material's page.",
     "changesRequested": "Your supervisor asked for changes; reply from the material page.",
     "openForNote": "Open the material to read the note.",
     "at": "at",
@@ -1164,7 +1193,8 @@
       "all": "All my materials",
       "action": "Need your action",
       "reviewing": "In review",
-      "approved": "Approved"
+      "approved": "Approved",
+      "rejected": "Rejected"
     },
     "filtersLabel": "Filter the gallery",
     "filters": {
@@ -1206,7 +1236,9 @@
       "coverClosed": "Open the coverage to see its materials",
       "coverOpen": "Its materials follow this card"
     },
-    "loadFailed": "Your materials could not be loaded"
+    "loadFailed": "Your materials could not be loaded",
+    "awaitingFile": "Its file has not arrived yet. If the upload stopped, finish it from the material's page.",
+    "back": "Back to my materials"
   },
   "templates": {
     "nav": "License templates",
@@ -1252,7 +1284,7 @@
     "exclusivity": "Exclusivity in hours (24–168)",
     "deliverables": "Deliverables",
     "deliverableNames": {
-      "original": "Original",
+      "original": "Full-resolution copy",
       "produced": "Produced cut",
       "audio": "Audio",
       "stills": "Stills"
@@ -1451,10 +1483,13 @@
     "offersHelp": "From enabled license templates, ten at most. Leave the price empty to use the template's.",
     "noTemplates": "No enabled templates; create them on the license templates page.",
     "priceOverride": "Price for this material",
+    "priceOverrideFor": "Price for this material: {name}",
     "commercialAllowed": "The material's contract allows commercial licensing",
     "commercialAdmin": "Set by the system admin only.",
     "notSellable": "Listing for sale requires the material's rights to be sellable.",
-    "invalid": "Complete the title and description in both languages and choose at least one offer."
+    "invalid": "Complete the title and description in both languages and choose at least one offer.",
+    "conditions": {"title": "Conditions to show it in the catalog", "rights_state": "Rights set to licensable", "editorial_state": "Editorial approval of this version (published)", "technical_state": "Verified original", "sensitivity": "Not tagged as sensitive", "met": "Met", "unmet": "Not met"},
+    "droppedOffers": "Offers of disabled templates were dropped from the form ({n}), so they are not saved with the listing."
   },
   "buyers": {
     "nav": "Buyer organizations",
@@ -1476,7 +1511,6 @@
     "legalName": "Legal name",
     "displayName": "Display name",
     "country": "Country",
-    "countryHelp": "Two-letter code such as QA or JO.",
     "billingEmail": "Billing email",
     "seats": "Seats",
     "status": "Status",
@@ -1494,8 +1528,7 @@
     "adminOnly": "Seats and status are set by the system admin.",
     "pendingHelp": "The organization is pending verification and cannot buy until it is active.",
     "suspendedHelp": "The organization is suspended: new purchases and downloads are stopped; earlier licenses remain.",
-    "invalid": "Complete the legal name, the display name in both languages, a two-letter country code, a valid email and 1–1000 seats.",
-    "seatsUsed": "{active} of {seats} seats in use.",
+    "invalid": "Complete the legal name, the display name in both languages, choose the country, and enter a valid email and 1–1000 seats.",
     "seatsFull": "All seats are in use; ask the system admin for more.",
     "noMembers": "No members yet.",
     "email": "Email",
@@ -1514,6 +1547,16 @@
     "no": "Off",
     "suspend": "Suspend",
     "reactivate": "Reactivate",
+    "reissue": "Reissue code",
+    "cancelInvitation": "Cancel invitation",
+    "reissueTitle": "Reissue the invitation code",
+    "reissueEffect": "A new code is issued for {email} and the previous one stops working. If they had started accepting with the previous code, they start again with the new one.",
+    "reissueConfirm": "Reissue code",
+    "cancelTitle": "Cancel the invitation",
+    "cancelEffect": "The invitation for {email} is cancelled: its code stops working and its seat is freed. You can invite them again later.",
+    "cancelConfirm": "Cancel the invitation",
+    "invitationGone": "This is no longer a pending invitation: it was accepted or cancelled. The list has been refreshed.",
+    "tokenReplaced": "The previous code no longer works.",
     "inviteEmail": "Invitee's email",
     "invite": "Invite member",
     "inviteInvalid": "Enter a valid email and choose a role.",
@@ -1522,8 +1565,8 @@
     "tokenTitle": "Invitation code",
     "tokenFor": "For:",
     "tokenExpires": "Expires",
-    "tokenOnce": "This code is shown once and is not saved. Hand it to the invitee yourself outside the system; if it is lost, invite them again.",
-    "tokenMissing": "The invitation was created, but the code is not shown because the request was repeated. If the invitee did not get it, invite them again.",
+    "tokenOnce": "This code is shown once and is not saved. Hand it to the invitee yourself outside the system; if it is lost, reissue it from the invitee's row in the users list.",
+    "tokenMissing": "The code was issued, but it is not shown because the request was repeated. If the invitee did not get it, reissue it from their row in the users list.",
     "done": "I have handed it over; hide it",
     "filtersLabel": "Filter organizations",
     "chips": {
@@ -1572,7 +1615,10 @@
       "done": "The join request was rejected.",
       "help": "The join request was rejected: {reason}. It cannot browse or buy until you return it to “Pending verification” or activate it from its profile."
     },
-    "seatsPair": "{active} of {seats}"
+    "seatsPair": "{active} of {seats}",
+    "seatsDetail": "{used} of {seats} seats in use: {active} active, {invited} invited",
+    "seatsSplit": "{active} active, {invited} invited",
+    "duplicateLegalName": "An organization with the same legal name exists ({name}). Make sure this is not a duplicate before creating it."
   },
   "licenses": {
     "nav": "Licenses",
@@ -1613,9 +1659,17 @@
       "title": "License verification",
       "notFound": "We couldn't find a license with this number",
       "tooMany": "Too many attempts in a row",
-      "scope": "This page confirms only that the number belongs to an existing license, with its status and end. It doesn't show the material, license type, organization, price or reporter.",
+      "scope": "This page shows only the status and end of the license with this number. It doesn't show the material, license type, organization, price or reporter.",
       "link": "Verification page",
-      "lead": "This number belongs to an existing license issued by Palestine Post.",
+      "lead": "This number belongs to a valid license issued by Palestine Post.",
+      "leadRevoked": "This license was revoked and is no longer valid.",
+      "leadExpired": "This license has expired and is no longer valid.",
+      "ended": "Ended on",
+      "formLead": "Enter the license number as it appears on the certificate to see its status.",
+      "formHelp": "For example PH-2026-0123456789. Upper and lower case are read the same.",
+      "formSubmit": "Verify",
+      "formInvalid": "This is not a license number. A number starts with PH, then the year, then ten characters, for example PH-2026-0123456789.",
+      "another": "Verify another number",
       "number": "License number",
       "status": "Status",
       "ends": "Ends",
@@ -1632,6 +1686,7 @@
     "deliveryContents": "Delivery contents",
     "deliverySize": "Package size: {size} MB",
     "mine": "My licenses",
+    "issued": "Issued licenses",
     "colMaterial": "Footage",
     "colOrder": "Order",
     "colLicence": "License",
@@ -1642,6 +1697,10 @@
     "renewFor": "Renew {title}: buy a new license",
     "downloadFor": "Download the delivery package: {title}",
     "preparingShort": "Package being prepared",
+    "licensee": "Licensee",
+    "issuer": "Issuer",
+    "late": "The delivery package is taking longer than usual. Your license is valid and its terms apply; if the wait continues, contact the store administration with the license number.",
+    "lateShort": "Preparation delayed",
     "revokedShort": "Revoked",
     "footnote": "Each license is tied to its order. Downloads use a short-lived signed link while the license is active, a limited number of times; renewing means buying a new license from the footage page.",
     "emptyTitle": "No licenses yet",
@@ -1694,6 +1753,9 @@
     "title": "My orders",
     "nav": "Cart and orders",
     "lead": "Your organization's orders and their status. Licenses are issued once payment is confirmed.",
+    "staffLead": "Orders of the buyer organizations and their status. A license is issued once the payment is confirmed.",
+    "memberLead": "Your own orders and their status; your organization's admin sees the other members' orders. Licenses are issued once payment is confirmed.",
+    "paidHelpStaff": "The order's licenses are issued; find them in Issued licenses.",
     "cartLead": "One line per material, in one currency. The price is fixed when the order is created.",
     "denied": "This page is for buyers, finance and the system admin.",
     "empty": "No orders yet.",
@@ -1731,7 +1793,7 @@
       "sandbox": "Taking you to the sandbox provider's page…",
       "stripe": "Taking you to Stripe in test mode; use a Stripe test card only…"
     },
-    "stillWaiting": "We are still waiting for the bank's confirmation; we will email you once it arrives.",
+    "stillWaiting": "The gateway has not confirmed the payment yet. If you completed it, reload this page shortly; if you did not, pay from here or cancel the order.",
     "orderNumber": "Order number",
     "holdEnds": "Exclusivity hold ends in {time}",
     "payWithin": "Payment window ends in {time}",
@@ -1749,7 +1811,9 @@
     "colOrder": "Order",
     "emptyTitle": "No orders yet",
     "emptyBody": "An order is created from the cart with “Proceed to payment” and shows here with its status.",
-    "paidTitle": "Payment received and licenses issued"
+    "paidTitle": "Payment received and licenses issued",
+    "paymentFailed": "The payment did not go through, and nothing was charged. The order still awaits payment: try again or cancel it.",
+    "orderAgain": "Order again"
   },
   "refunds": {
     "title": "Refunds",
@@ -1780,7 +1844,9 @@
       "exclusivity_lost": "Exclusivity lost",
       "other": "Other"
     },
-    "historyLabel": "Refund history"
+    "historyLabel": "Refund history",
+    "sandboxConfirm": "Confirm refund (sandbox)",
+    "sandboxHelp": "Sandbox payments: the sandbox provider does not confirm a refund on its own. \"Confirm refund (sandbox)\" sends its signed notice as the provider would."
   },
   "privacy": {
     "title": "Privacy policy",
@@ -1916,6 +1982,13 @@
       "dismissed": "The conflict is closed for good and its seat is released. This cannot be undone."
     },
     "totpRejected": "The verification code is wrong or expired. Enter the current code.",
+    "confirms": {
+      "suspended": "Suspend",
+      "dismissed": "Close permanently"
+    },
+    "totpNeeded": "Enable two-step verification first: resolving asks for a code from your authenticator app, and your account has no two-step verification.",
+    "totpHow": "The authenticator app is linked when an account recovery completes: request one, and once it is approved set a new password and link the app.",
+    "totpStart": "Request account recovery",
     "conflict": "The conflict's state changed. Refresh the list.",
     "organizationUnknown": "Organization {id}"
   },
@@ -1987,8 +2060,12 @@
     "noBalanceBody": "Your share appears here after the first sale of a material you contributed to, computed from the ledger.",
     "errorTitle": "Your earnings couldn't be loaded",
     "errorBody": "The server didn't respond. Nothing changed in your balance; try again.",
-    "formula": "Your share = (sale price − gateway fees − taxes) × commission rate × your share among contributors, under the rule in force when the payment was confirmed.",
-    "actions": "Action",
+    "formula": "Your share = (sale price − gateway fees − taxes) × the contributors' share after the platform's share × your share among the contributors, under the rule in force when the payment was confirmed.",
+    "releasesOn": "Released on {date}",
+    "belowMinimum": "Requestable now is {max}, below the minimum of {min}; no payout request before it reaches it.",
+    "twoDecimals": "Write the amount with two decimals at most; we do not round it for you.",
+    "fromState": "from “{state}”",
+    "soldOn": "Sold on {date}",    "actions": "Action",
     "entriesFailed": "The entries could not be loaded"
   },
   "payouts": {
@@ -2019,7 +2096,8 @@
     "policyReadOnly": "Adding versions is for system administrators.",
     "newPolicy": "New policy version",
     "appendOnly": "Policies are never edited or deleted: saving adds a version with its effective date, and earlier requests keep their approval count.",
-    "invalid": "Complete the fields: two non-negative amounts, a reserve between 0 and 50%, and an effective date.",
+    "invalid": "Complete the fields: a minimum above zero, a non-negative dual-approval limit, a reserve between 0 and 50%, and an effective date.",
+    "minimumAboveDual": "The minimum is above the dual-approval limit, so every payout request will need two approvers.",
     "savePolicy": "Add version",
     "approveTitle": "Approve a payout of {amount} to {name}?",
     "rejectTitle": "Reject the payout request of {amount} from {name}?",
@@ -2410,7 +2488,8 @@
       "denied": "The inbox is for the newsroom team and reporters: it lists materials, which your role does not read.",
       "loadFailed": "The inbox could not be loaded",
       "loadFailedBody": "The server did not respond. We retry automatically every 15 seconds, and your filters are kept.",
-      "urgentOldest": "Oldest: {time} ago"
+      "urgentOldest": "Oldest: {time} ago",
+      "deniedReporter": "The inbox is for newsroom staff. Your materials are in “My materials”."
     },
     "material": {
       "breadcrumb": "Breadcrumb",
@@ -2861,6 +2940,11 @@
     "kpiGross": "Sales this month",
     "kpiNet": "Net after fees and taxes",
     "kpiShare": "Reporters' share",
+    "kpiNetAfter": "Net after refunds",
+    "kpiNetBefore": "before them {amount}",
+    "kpiRefunded": "Refunded to buyers",
+    "kpiBorneLine": "the platform bore {amount} of it",
+    "kpiBorne": "Borne by the platform from the refund reserve",
     "kpiReady": "Ready to pay out now",
     "formula": "Reporter share = (sale price − gateway fees − taxes) × commission rate{pct} × their share among contributors. The rule in force when payment is confirmed is frozen in the sale record.",
     "formulaPct": " ({pct})",
@@ -2991,5 +3075,62 @@
     "دير البلح": "Deir al-Balah",
     "خان يونس": "Khan Yunis",
     "رفح": "Rafah"
+  },
+  "validationLimits": {
+    "min_length": "Too short. Minimum length: {n} characters.",
+    "max_length": "Too long. Maximum length: {n} characters.",
+    "min": "Too low. Minimum value: {n}.",
+    "max": "Too high. Maximum value: {n}.",
+    "min_items": "Choose more. Minimum number of items: {n}.",
+    "max_items": "Choose fewer. Maximum number of items: {n}.",
+    "not_before": "Too early. Earliest date: {date}.",
+    "not_after": "Too late. Latest date: {date}.",
+    "max_size_bytes": "File too large. Maximum size: {n} MB."
+  },
+  "fieldUnavailable": "Not available on the web yet.",
+  "previewNoFile": "No file has arrived yet.",
+  "owner": {
+    "title": "Your part in this material",
+    "changesTitle": "The supervisor asked for changes",
+    "resubmit": "Send back for review",
+    "resubmitLead": "The material goes back to the supervisor as “In review”.",
+    "whatChanged": "What did you change?",
+    "whatChangedHelp": "Say briefly what you changed. Do not include a precise location or a protected source name.",
+    "minChars": "At least five characters.",
+    "send": "Send for review",
+    "noFileTitle": "This material's file has not arrived yet",
+    "noFileBody": "If the upload stopped or was cancelled, upload the file here to complete the material, without creating a new one.",
+    "failedTitle": "This material's file failed to upload",
+    "failedBody": "Upload the file again to resume receiving the material.",
+    "uploadHere": "Upload the file for this material",
+    "retryReason": "Re-uploading the file from the material page",
+    "share": "Your share of this material: {share}",
+    "edit": "Edit the material's details",
+    "editLead": "Title, place and type. The states do not change, and the file is not touched.",
+    "save": "Save changes"
+  },
+  "staffFilters": {
+    "organization": "Organization",
+    "status": "Status"
+  },
+  "refusals": {
+    "listing_conditions_unmet": "The item is not shown before these are met: {conditions}.",
+    "listing_sensitive": "The item is tagged as sensitive, so it is not offered for sale.",
+    "rights_not_sellable": "The item's rights are not set to licensable, so it is neither shown nor sold before then.",
+    "price_changed": "The price changed since it was shown to you. Review the cart at the new price, then proceed to payment.",
+    "listing_unavailable": "One of the items is no longer offered with this license. Remove it from the cart, then proceed to payment.",
+    "exclusive_unavailable": "The exclusive license on one of the items is held or sold. Remove it or choose another license for it.",
+    "order_state_conflict": "The order's status changed since you opened it. Reload the page.",
+    "mixed_currency": "An order is in one currency. Remove the items of one currency, then proceed to payment.",
+    "email_taken": "This email already has an account in your organization or a pending invitation to it.",
+    "seats_exhausted": "The organization has no free seat. Suspend a member, or ask the store administration for more seats.",
+    "last_buyer_admin": "This is the organization's last active administrator. Make another member an administrator first."
+  },
+  "watermarkShort": "Internal",
+  "playerSeek": "Seek bar",
+  "clips": {
+    "title": "Clips in this material",
+    "counter": "Clip {n} of {total}",
+    "open": "Play clip {n} of {total}"
   }
 }

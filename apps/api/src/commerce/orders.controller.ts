@@ -41,6 +41,13 @@ export class OrdersController {
     return this.orders.checkout(req.principal!, id, input.locale ?? 'ar');
   }
 
+  @Post(':orderId/refunds/:refundId/sandbox-confirmation')
+  @HttpCode(200)
+  @Roles('system_admin', 'finance')
+  confirmSandboxRefund(@Param('orderId') orderId: string, @Param('refundId') refundId: string, @Req() req: Request): Promise<components['schemas']['Refund']> {
+    return this.orders.confirmSandboxRefund(req.principal!, orderId, refundId);
+  }
+
   @Post(':orderId/cancel')
   @Roles('buyer_admin', 'buyer_member')
   @HttpCode(200)
@@ -138,7 +145,8 @@ export class SandboxCheckoutController {
 
 /**
  * تأكيد الاسترداد في المزوّد التجريبي: يرسل إشعار `refund.succeeded` الموقّع نفسه إلى معالج الإشعار. بلا المزوّد التجريبي
- * 404، ووجوده نفسه تحرسه الإعدادات عند الإقلاع (كصفحة الدفع، #341).
+ * 404، ووجوده نفسه تحرسه الإعدادات عند الإقلاع (كصفحة الدفع، #341). المرجع ومبلغه من سجل الاسترداد في القاعدة لا من ذاكرة
+ * المزوّد (ADR 0032، تعديل 2026-11-15)، فاسترداد طُلب قبل إعادة تشغيل الخادم يُؤكَّد بعدها.
  */
 @Controller('sandbox/refunds')
 export class SandboxRefundsController {
@@ -152,8 +160,9 @@ export class SandboxRefundsController {
   @HttpCode(202)
   async succeed(@Param('ref') ref: string): Promise<void> {
     if (!(this.provider instanceof SandboxPaymentProvider)) throw new NotFoundException();
-    const n = this.provider.settleRefund(ref);
-    if (!n) throw ApiError.notFound();
+    const amount = await this.orders.refundAmountByProviderRef(ref);
+    if (!amount) throw ApiError.notFound();
+    const n = this.provider.settleRefund(ref, amount);
     await this.orders.webhook(this.provider.name, n.body, n.headers);
   }
 }

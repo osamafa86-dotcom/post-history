@@ -37,7 +37,7 @@ describe('buyer organization rejection (/v1/buyer-organizations/{org_id}/rejecti
     write('post', admin.token, `/buyer-organizations/${id}/rejection`, { reason_code: reason }, extra);
   const putStatus = async (id: string, status: string, expected: number) => {
     const current = await get(admin.token, `/buyer-organizations/${id}`).expect(200);
-    const { id: _i, active_members: _a, verified_at: _v, created_at: _c, updated_at: _u, rejection_reason: _r, ...fields } = current.body;
+    const { id: _i, active_members: _a, invited_members: _n, verified_at: _v, created_at: _c, updated_at: _u, rejection_reason: _r, ...fields } = current.body;
     return write('put', admin.token, `/buyer-organizations/${id}`, { ...fields, status }, { ifMatch: current.headers.etag }).expect(expected);
   };
   const eventsOf = async (id: string) =>
