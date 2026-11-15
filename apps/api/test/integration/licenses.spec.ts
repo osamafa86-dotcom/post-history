@@ -20,8 +20,8 @@ class SigningStorage implements ObjectStorage {
   async read() {
     return Readable.from([]);
   }
-  presignGet(bucket: string, key: string, expiresSeconds: number) {
-    return `https://storage.test/${bucket}/${key}?X-Amz-Expires=${expiresSeconds}&X-Amz-Signature=sig`;
+  presignGet(bucket: string, key: string, expiresSeconds: number, _now?: Date, download?: string) {
+    return `https://storage.test/${bucket}/${key}?X-Amz-Expires=${expiresSeconds}&X-Amz-Signature=sig${download ? `&response-content-disposition=${encodeURIComponent(download)}` : ''}`;
   }
 }
 
@@ -229,6 +229,9 @@ describe('licenses (/v1/licenses) and the sandbox return', () => {
     const valid = schemaValidator('LicenseDownloadUrl');
     expect(valid(first.body) ? [] : valid.errors).toEqual([]);
     expect(first.body).toMatchObject({ url: expect.stringContaining('X-Amz-Expires=600'), downloads_remaining: 1 });
+    // الحزمة تُحفظ باسم رقم الترخيص
+    const number = (await http().get(`/v1/licenses/${a.licenseId}`).set(as(a.buyer.token)).expect(200)).body.license_number as string;
+    expect(new URL(first.body.url).searchParams.get('response-content-disposition')).toBe(`${number}.zip`);
     const ttl = Date.parse(first.body.expires_at) - Date.now();
     expect(ttl).toBeGreaterThan(9 * 60_000);
     expect(ttl).toBeLessThanOrEqual(10 * 60_000);
