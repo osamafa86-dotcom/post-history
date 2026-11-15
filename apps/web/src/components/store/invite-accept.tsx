@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { messages, type Locale } from "@/lib/i18n";
 import { cleanToken, groupSecret, passwordMin, tokenFromHash, validPassword, validToken } from "@/lib/invite-policy";
@@ -35,6 +35,14 @@ export function InviteAccept({ locale, kind = "invite" }: { locale: Locale; kind
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null), [code, setCode] = useState(""), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [checked, setChecked] = useState(false);
   // الرمز وبيانات الربط في ذاكرة الصفحة وحدها؛ تُنسى عند المغادرة.
   useEffect(() => () => { captured = undefined; }, []);
+  // خطوة الربط: السرّ يُعرض مرة واحدة والرابط استُهلك، فمغادرة الصفحة قبل التأكيد تقفل الحساب حتى رابط جديد. المتصفح يسأل قبل الإغلاق
+  // أو إعادة التحميل؛ والانتقال بعد التأكيد الناجح لا يسأل.
+  const confirmed = useRef(false), linking = step === "totp" && !!enrollment;
+  useEffect(() => {
+    if (!linking) return;
+    const warn = (event: BeforeUnloadEvent) => { if (!confirmed.current) event.preventDefault(); };
+    window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn);
+  }, [linking]);
   const tokenOk = validToken(cleanToken(token)), passwordOk = validPassword(password), same = password === repeat;
   async function setPasswordStep(event: React.FormEvent) {
     event.preventDefault(); setChecked(true); setError(null);
@@ -55,7 +63,7 @@ export function InviteAccept({ locale, kind = "invite" }: { locale: Locale; kind
     try {
       const result = await post("totp/confirm", { totp_code: code });
       if (result.status === 200) {
-        setEnrollment(null);
+        confirmed.current = true; setEnrollment(null);
         if ("BroadcastChannel" in window) { const channel = new BroadcastChannel("web-session"); channel.postMessage("signed-in"); channel.close(); }
         window.location.replace(`/${locale}/${reset ? "inbox" : "store"}`); return;
       }
@@ -91,6 +99,7 @@ export function InviteAccept({ locale, kind = "invite" }: { locale: Locale; kind
             <div className="totp-secret"><span className="caption">{t.secret}</span><output className="mono" dir="ltr" data-testid="totp-secret">{groupSecret(enrollment.secret_base32)}</output>
               <a className="button secondary" href={enrollment.otpauth_uri}>{t.openApp}</a></div>
             <p className="caption">{t.secretOnce}</p>
+            <p className="notice" data-testid="keep-open"><Icon name="alert" size={16} /> {t.keepOpen}</p>
             <label>{t.code}<input name="totp" inputMode="numeric" dir="ltr" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ""))} /></label>
             {error && <p className="notice error" role="alert">{error}</p>}
             <button className={reset ? "full-width" : "store full-width"} disabled={busy}>{busy ? m.review.saving : t.confirm}</button>
