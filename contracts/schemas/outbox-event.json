@@ -37,6 +37,9 @@
         "material.released",
         "material.contributors_set",
         "material.published",
+        "material.rejected",
+        "material.accepted",
+        "material.resubmitted",
         "upload.started",
         "upload.progress",
         "upload.proxy_received",
@@ -210,7 +213,10 @@
               "material.reserved",
               "material.released",
               "material.contributors_set",
-              "material.published"
+              "material.published",
+              "material.rejected",
+              "material.accepted",
+              "material.resubmitted"
             ]
           }
         }

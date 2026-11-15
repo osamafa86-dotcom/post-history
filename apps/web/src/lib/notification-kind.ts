@@ -8,7 +8,7 @@ import type { IconName } from "@/components/icon";
 export const notificationTypes = [
   "material.created", "material.urgent_received", "material.updated", "material.version_created", "material.technical_transition", "material.editorial_transition",
   "material.rights_transition", "material.acknowledged", "material.change_requested", "material.accepted_for_production", "material.reserved", "material.released",
-  "material.contributors_set", "material.published", "upload.started", "upload.progress", "upload.proxy_received", "upload.original_received", "upload.verified",
+  "material.contributors_set", "material.published", "material.rejected", "material.accepted", "material.resubmitted", "upload.started", "upload.progress", "upload.proxy_received", "upload.original_received", "upload.verified",
   "upload.deduplicated", "upload.failed", "form.published", "ai.draft_ready", "notification.escalated", "auth.recovery_requested", "auth.recovery_approved",
   "user.status_changed", "auth.recovery_completed", "export.requested", "setting.changed", "catalog.listing_changed", "license.delivery_requested",
   "order.status_changed", "license.issued", "license.revoked", "payout.status_changed", "render.requested", "render.started", "render.completed", "render.failed",
