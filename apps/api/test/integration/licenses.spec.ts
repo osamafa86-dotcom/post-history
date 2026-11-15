@@ -322,6 +322,88 @@ describe('licenses (/v1/licenses) and the sandbox return', () => {
     }
   });
 
+  // قرار المنسّق 2026-11-15: حوار سحب الحقوق يقول ما سيُبطله، والمالية تقرأ ما أُبطل لسبب حقوقي ولم يُردّ ثمنه
+  it('counts the active licenses on a material and their organizations before the rights leave sellable; finance lists what was revoked for rights and not refunded', async () => {
+    const a = await licensed();
+    const materialId = (await h.pool.query<{ material_id: string }>(`SELECT material_id FROM licenses WHERE id = $1`, [a.licenseId])).rows[0]!.material_id;
+    const t = (await h.pool.query<{ id: string }>(`SELECT license_template_id AS id FROM order_items WHERE order_id = $1`, [a.orderId])).rows[0]!.id;
+    // مؤسسة ثانية تشتري المادة نفسها، وزميل في الأولى يشتريها مرة أخرى: ثلاثة تراخيص لمؤسستين
+    const purchase = async (b: { token: string }) => {
+      const created = (await post(b.token, '/orders', { items: [{ listing_id: a.listingId, license_template_id: t }] }).expect(201)).body;
+      await pay((await ref(b.token, created.id)).ref);
+      return { orderId: created.id as string, item: (await order(b.token, created.id)).items[0] as { id: string; license_id: string } };
+    };
+    const second = await purchase(await buyer(await organization()));
+    const third = await purchase(await buyer(a.orgId, 'buyer_member'));
+    const exposure = () => http().get(`/v1/materials/${materialId}/active-licenses`);
+    const valid = schemaValidator('MaterialActiveLicenses');
+    const before = await exposure().set(as(rights.token)).expect(200);
+    expect(valid(before.body) ? [] : valid.errors).toEqual([]);
+    expect(before.body).toEqual({ active_licenses: 3, organizations: 2 });
+    await exposure().set(as(finance.token)).expect(200);
+    await exposure().set(as(a.buyer.token)).expect(403);
+    await http().get(`/v1/materials/${randomUUID()}/active-licenses`).set(as(rights.token)).expect(404);
+    await http().get('/v1/materials/not-a-uuid/active-licenses').set(as(rights.token)).expect(404);
+
+    // استرداد أحد البنود يبطل ترخيصه بسبب الاسترداد: يخرج من العدّ
+    await post(finance.token, `/orders/${third.orderId}/refunds`, { order_item_ids: [third.item.id], reason_code: 'duplicate' }).expect(201);
+    expect((await exposure().set(as(rights.token)).expect(200)).body).toEqual({ active_licenses: 2, organizations: 2 });
+
+    await post(rights.token, `/materials/${materialId}/transitions`, { track: 'rights', to: 'blocked', reason: 'dispute' }).expect(200);
+    expect((await exposure().set(as(rights.token)).expect(200)).body).toEqual({ active_licenses: 0, organizations: 0 });
+
+    // المالية: ما أُبطل لسبب حقوقي ولم يُردّ ثمنه، ثم يخرج من القائمة حين يُطلب استرداده
+    const unrefunded = async () =>
+      ((await http().get('/v1/licenses?status=revoked&revoked_reason=rights_withdrawn&refunded=false&limit=100').set(as(finance.token)).expect(200)).body.items as Array<{ id: string; order_id: string; revoked_reason: string }>)
+        .filter((l) => [a.licenseId, second.item.license_id, third.item.license_id].includes(l.id));
+    expect((await unrefunded()).map((l) => l.id).sort()).toEqual([a.licenseId, second.item.license_id].sort());
+    const byRefund = (await http().get('/v1/licenses?revoked_reason=refunded&refunded=true&limit=100').set(as(finance.token)).expect(200)).body.items as Array<{ id: string }>;
+    expect(byRefund.map((l) => l.id)).toContain(third.item.license_id);
+    expect(byRefund.map((l) => l.id)).not.toContain(a.licenseId);
+    const firstItem = (await order(a.buyer.token, a.orderId)).items[0].id as string;
+    await post(finance.token, `/orders/${a.orderId}/refunds`, { order_item_ids: [firstItem], reason_code: 'rights_withdrawn' }).expect(201);
+    expect((await unrefunded()).map((l) => l.id)).toEqual([second.item.license_id]);
+    // المشتري يصفّي داخل مؤسسته وحدها، والقيمة المجهولة 400
+    const own = (await http().get('/v1/licenses?revoked_reason=rights_withdrawn&limit=100').set(as(a.buyer.token)).expect(200)).body.items as Array<{ organization_id: string }>;
+    expect(own.length).toBeGreaterThan(0);
+    expect(new Set(own.map((l) => l.organization_id))).toEqual(new Set([a.orgId]));
+    await http().get('/v1/licenses?revoked_reason=other').set(as(finance.token)).expect(400);
+  });
+
+  // قرار المنسّق 2026-11-15: المشتري يُنبَّه داخل المنصة حين تتغيّر حالة طلبه بغير يده (تأكيد الدفع، الاسترداد، الإلغاء الآلي)
+  it('notifies the buyer who placed an order when its status changes by other hands, by order number alone; their own cancellation does not', async () => {
+    const a = await licensed(false);
+    const colleague = await buyer(a.orgId, 'buyer_member');
+    const number = (await order(a.buyer.token, a.orderId)).order_number as string;
+    const inbox = async (token: string) =>
+      ((await http().get('/v1/notifications?limit=100').set(as(token)).expect(200)).body.items as Array<{ type: string; title: string; material_id: string | null; priority: string }>).filter((n) => n.type === 'order.status_changed');
+    await drainOutbox(h);
+    // تأكيد الدفع وصل صاحب الطلب وحده، برقم الطلب، بلا مادة ولا مبلغ
+    const paid = await inbox(a.buyer.token);
+    expect(paid).toHaveLength(1);
+    expect(paid[0]).toMatchObject({ material_id: null, priority: 'normal' });
+    expect(paid[0]!.title).toContain(number);
+    expect(paid[0]!.title).not.toMatch(/\d+\.\d{2}|USD|ILS/);
+    expect(await inbox(colleague.token)).toHaveLength(0);
+
+    // الاسترداد الكامل يغيّر الحالة: تنبيه ثانٍ
+    const item = (await order(a.buyer.token, a.orderId)).items[0].id as string;
+    const refund = (await post(finance.token, `/orders/${a.orderId}/refunds`, { order_item_ids: [item], reason_code: 'duplicate' }).expect(201)).body;
+    await post(finance.token, `/orders/${a.orderId}/refunds/${refund.id}/sandbox-confirmation`).expect(200);
+    await drainOutbox(h);
+    expect(await inbox(a.buyer.token)).toHaveLength(2);
+    await drainOutbox(h);
+    expect(await inbox(a.buyer.token)).toHaveLength(2);
+
+    // إلغاء المشتري طلبه بيده لا يُنبَّه به
+    const t = (await h.pool.query<{ id: string }>(`SELECT license_template_id AS id FROM order_items WHERE order_id = $1`, [a.orderId])).rows[0]!.id;
+    const other = await buyer(await organization());
+    const mine = (await post(other.token, '/orders', { items: [{ listing_id: a.listingId, license_template_id: t }] }).expect(201)).body;
+    await post(other.token, `/orders/${mine.id}/cancel`).expect(200);
+    await drainOutbox(h);
+    expect(await inbox(other.token)).toHaveLength(0);
+  });
+
   it('tagging the material sensitive revokes its licenses too; a license still active on a material that is no longer sellable gets no link', async () => {
     const a = await licensed();
     const materialId = (await h.pool.query<{ material_id: string }>(`SELECT material_id FROM licenses WHERE id = $1`, [a.licenseId])).rows[0]!.material_id;
