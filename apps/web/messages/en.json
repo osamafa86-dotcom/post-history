@@ -716,7 +716,7 @@
       "verifyNote": "Every license is proven by a public verification page for its number, not by showing fingerprints or technical identifiers.",
       "addFor": "Add to cart — {price}",
       "deliveryTitle": "Delivery specifications",
-      "deliveryText": "Ready formats are delivered with descriptive metadata, stripped of precise location and device data; the raw original is never delivered.",
+      "deliveryText": "Delivered at full resolution with descriptive metadata, stripped of precise location and device data; the raw file as it arrived from the field is never delivered.",
       "holdNote": "Held for 15 minutes once payment starts.",
       "changeLicense": "Change license",
       "summary": "Order summary",
@@ -1217,7 +1217,7 @@
     "exclusivity": "Exclusivity in hours (24–168)",
     "deliverables": "Deliverables",
     "deliverableNames": {
-      "original": "Original",
+      "original": "Full-resolution copy",
       "produced": "Produced cut",
       "audio": "Audio",
       "stills": "Stills"
@@ -1416,7 +1416,9 @@
     "commercialAllowed": "The material's contract allows commercial licensing",
     "commercialAdmin": "Set by the system admin only.",
     "notSellable": "Listing for sale requires the material's rights to be sellable.",
-    "invalid": "Complete the title and description in both languages and choose at least one offer."
+    "invalid": "Complete the title and description in both languages and choose at least one offer.",
+    "conditions": {"title": "Conditions to show it in the catalog", "rights_state": "Rights set to licensable", "editorial_state": "Editorial approval of this version (published)", "technical_state": "Verified original", "sensitivity": "Not tagged as sensitive", "met": "Met", "unmet": "Not met"},
+    "droppedOffers": "Offers of disabled templates were dropped from the form ({n}), so they are not saved with the listing."
   },
   "buyers": {
     "nav": "Buyer organizations",
@@ -2917,5 +2919,18 @@
     "دير البلح": "Deir al-Balah",
     "خان يونس": "Khan Yunis",
     "رفح": "Rafah"
+  },
+  "refusals": {
+    "listing_conditions_unmet": "The item is not shown before these are met: {conditions}.",
+    "listing_sensitive": "The item is tagged as sensitive, so it is not offered for sale.",
+    "rights_not_sellable": "The item's rights are not set to licensable, so it is neither shown nor sold before then.",
+    "price_changed": "The price changed since it was shown to you. Review the cart at the new price, then proceed to payment.",
+    "listing_unavailable": "One of the items is no longer offered with this license. Remove it from the cart, then proceed to payment.",
+    "exclusive_unavailable": "The exclusive license on one of the items is held or sold. Remove it or choose another license for it.",
+    "order_state_conflict": "The order's status changed since you opened it. Reload the page.",
+    "mixed_currency": "An order is in one currency. Remove the items of one currency, then proceed to payment.",
+    "email_taken": "This email already has an account in your organization or a pending invitation to it.",
+    "seats_exhausted": "The organization has no free seat. Suspend a member, or ask the store administration for more seats.",
+    "last_buyer_admin": "This is the organization's last active administrator. Make another member an administrator first."
   }
 }

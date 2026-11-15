@@ -33,8 +33,9 @@ test("the organization admin edits the profile and manages members within the se
   await members.getByRole("button", { name: b.done }).click(); await expect(members.getByTestId("invite-token")).toHaveCount(0);
   await page.reload(); await expect(members.getByTestId("member-row")).toHaveCount(3); await expect(page.getByTestId("invite-token")).toHaveCount(0);
   await expect(members.getByRole("button", { name: b.invite })).toBeDisabled(); await expect(members.getByText(b.seatsFull)).toBeVisible();
+  // آخر مدير: الرفض بسببه نفسه لا بالرسالة العامة (قرار المنسّق 2026-11-15)
   await members.getByTestId("member-row").filter({ hasText: "buyeradmin@" }).getByRole("button", { name: b.suspend }).click();
-  await expect(members.getByText(b.memberConflict)).toBeVisible();
+  await expect(members.locator("[data-refusal='last_buyer_admin']")).toHaveText(ar.refusals.last_buyer_admin); await expect(members.getByText(b.memberConflict)).toHaveCount(0);
   await members.getByTestId("member-row").filter({ hasText: "buyer@example" }).getByRole("button", { name: b.suspend }).click();
   await expect(members.getByTestId("member-row").filter({ hasText: "buyer@example" })).toContainText(b.memberStatuses.suspended);
   await expect(page.locator("main")).not.toContainText("never-display-canary");

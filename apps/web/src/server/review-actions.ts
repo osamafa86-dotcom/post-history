@@ -6,6 +6,7 @@ import { hasRole, validContributors } from "@/lib/review";
 import { states, uuid } from "@/lib/query";
 import { safeMaterial } from "@/lib/privacy";
 import { requireOk, type Api } from "./auth";
+import { refusalOk } from "./refusals";
 import { WebError } from "./errors";
 import type { WebConfig } from "./config";
 import { organizationWrite } from "./organizations";
@@ -199,7 +200,7 @@ export async function reviewAction(request: Request, path: string, api: Api, me:
     requireRole(me, ...listingWriters); const input = listingInput(body); if (!input) throw new WebError(422, "request_failed");
     const params = { path: { id: listingPath[1] } };
     const result = request.method === "PUT" ? await api.PUT("/materials/{id}/listing", { params: { ...params, header: versioned() }, body: input }) : await api.POST("/materials/{id}/listing", { params: { ...params, header }, body: input });
-    const response = NextResponse.json(safeListing(requireOk(result)), { status: request.method === "PUT" ? 200 : 201, headers: privateHeaders }), tag = result.response.headers.get("ETag");
+    const response = NextResponse.json(safeListing(refusalOk(result, { listing: true })), { status: request.method === "PUT" ? 200 : 201, headers: privateHeaders }), tag = result.response.headers.get("ETag");
     if (tag && /^"[0-9]{1,19}"$/.test(tag)) response.headers.set("ETag", tag);
     return response;
   }

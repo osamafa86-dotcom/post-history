@@ -93,8 +93,8 @@ export function CartPage({ locale }: { locale: Locale }) {
         <input id="purchase-order" value={po} maxLength={purchaseOrderMax} dir="ltr" autoComplete="off" spellCheck={false} aria-invalid={touched && !poValid} aria-describedby="purchase-order-help" onChange={e => setPo(e.target.value)} onBlur={() => setTouched(true)} />
         <small id="purchase-order-help" className={touched && !poValid ? "field-error" : "caption"}>{touched && !poValid ? c.poInvalid : c.poHelp}</small>
       </div>
-      <ActionStatus status={create.status === 200 ? 0 : create.status} locale={locale} />
-      {create.status === 409 && !changed && <p className="notice error">{o.conflict}</p>}
+      <ActionStatus status={create.status === 200 ? 0 : create.status} locale={locale} refusal={create.refusal} />
+      {create.status === 409 && !changed && !create.refusal && <p className="notice error">{o.conflict}</p>}
       <button className="store" disabled={busy || checking || stuck || sums.length !== 1} onClick={() => void proceed()}>{c.checkout}</button>
       <p className="store-sandbox-line" data-testid="sandbox-line"><Icon name="shield" size={14} />{c.sandbox}</p>
     </>} />
@@ -190,7 +190,7 @@ export function OrderPage({ locale, id, returned, failed = false }: { locale: Lo
     {pending && late && <p className="visually-hidden" role="status">{expired ? o.holdExpired : o.holdSoon}</p>}
     <div className="checkout-layout">
       {buyer && open && <section className="card provider-card"><h2>{o.provider} <span className="badge good">{o.secure}</span></h2>
-        <p className="caption">{o.providerHelp}</p>{redirecting && <p className="notice" role="status">{o.redirecting[redirecting]}</p>}<ActionStatus status={mutation.status === 200 ? 0 : mutation.status} locale={locale} />{mutation.status === 409 && <p className="notice error">{o.conflict}</p>}{mutation.status === 502 && <p className="notice error">{o.providerBlocked}</p>}
+        <p className="caption">{o.providerHelp}</p>{redirecting && <p className="notice" role="status">{o.redirecting[redirecting]}</p>}<ActionStatus status={mutation.status === 200 ? 0 : mutation.status} locale={locale} refusal={mutation.refusal} />{mutation.status === 409 && !mutation.refusal && <p className="notice error">{o.conflict}</p>}{mutation.status === 502 && <p className="notice error">{o.providerBlocked}</p>}
         <div className="actions"><button className="store" disabled={mutation.busy} onClick={() => void pay()}>{o.pay} <bdi dir="ltr">{formatMoney(order.total, locale)}</bdi></button><button className="secondary" disabled={mutation.busy} onClick={() => void cancel()}>{o.cancel}</button></div></section>}
       {/* مضت المهلة: لا دفع ولا إلغاء لطلب منتهٍ، والطريق طلب جديد من الكتالوج. */}
       {buyer && expired && <section className="card provider-card" data-testid="order-expired"><p className="notice error" role="status">{o.expiredHelp}</p>
