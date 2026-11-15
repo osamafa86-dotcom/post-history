@@ -4,6 +4,7 @@ import { randomToken, sha256 } from '../common/crypto';
 import { auditLog, passkeys, recoveryCodes, recoveryRequests, users } from '../database/schema/schema';
 import { writeOutboxEvent } from '../outbox/outbox';
 import { revokeAllAccess } from './session.service';
+import { closeRecoveryTasks } from '../notifications/task-closure';
 
 type RecoveryRow = typeof recoveryRequests.$inferSelect;
 
@@ -37,6 +38,8 @@ export async function recordRecoveryApproval(
     })
     .where(eq(recoveryRequests.id, request.id))
     .returning();
+  // مهمة الطلب تُغلق عند كل من وصلته: أحدٌ اعتمده
+  await closeRecoveryTasks(tx, request.id, approverId);
   const passkeysRevoked = await resetCredentials(tx, request.userId);
   await audit(tx, approverId, 'auth.recovery_approved', request.userId, {
     recovery_request_id: request.id,

@@ -181,6 +181,63 @@ describe('account: sessions and recovery', () => {
       expect(JSON.stringify(notes)).not.toContain('office line');
     });
 
+    it('the approver reads which account a request belongs to, with no email and no legal name, and its tasks close on approval', async () => {
+      const reporter = await loginAs(h, [{ role: 'reporter' }], { officeId: officeA });
+      await h.pool.query(`UPDATE users SET work_name = 'مراسل الجنوب' WHERE id = $1`, [reporter.id]);
+      const sup = await loginAs(h, [{ role: 'supervisor', scopeKind: 'office', scopeId: officeA }]);
+      const colleague = await loginAs(h, [{ role: 'supervisor', scopeKind: 'office', scopeId: officeA }]);
+      const outside = await loginAs(h, [{ role: 'supervisor', scopeKind: 'office', scopeId: officeB }]);
+      const producer = await loginAs(h, [{ role: 'producer' }]);
+      await seedCode(reporter.id, 'READREQUEST234');
+      await start(reporter.email, 'READREQUEST234').expect(202);
+      await drainOutbox(h);
+      const [req] = await requests(reporter.id);
+      const read = (a: Actor) => http().get(`/v1/auth/recovery/${req.id}`).set('Authorization', `Bearer ${a.token}`);
+
+      const res = await read(sup).expect(200);
+      expect(res.body).toEqual({
+        id: req.id,
+        state: 'pending_approval',
+        created_at: expect.any(String),
+        approved_by: null,
+        expires_at: expect.any(String),
+        account: { user_id: reporter.id, work_name: 'مراسل الجنوب', roles: ['reporter'], office_id: officeA, office_name: { ar: 'م', en: 'o' } },
+      });
+      const valid = schemaValidator('RecoveryRequestDetail');
+      expect(valid(res.body) ? [] : valid.errors).toEqual([]);
+      const raw = JSON.stringify(res.body);
+      expect(raw).not.toContain(reporter.email);
+      // الرد قائمة مغلقة (toEqual أعلاه): لا اسم قانوني ولا وسيلة اتصال
+      // الصلاحية صلاحية الاعتماد: خارج النطاق 404، وغير المشرف والمدير 403، ومعرّف ليس UUID 404
+      await read(outside).expect(404);
+      await read(producer).expect(403);
+      await read(reporter).expect(403);
+      await http().get('/v1/auth/recovery/not-a-uuid').set('Authorization', `Bearer ${sup.token}`).expect(404);
+      // القراءة لا تكتب تدقيقًا ولا تغيّر الحالة
+      expect((await requests(reporter.id))[0].state).toBe('pending_approval');
+
+      const open = async (a: Actor) =>
+        (await h.pool.query(`SELECT assignment_state, escalate_at FROM notifications WHERE user_id = $1 AND recovery_request_id = $2`, [a.id, req.id])).rows;
+      expect(await open(colleague)).toEqual([{ assignment_state: 'assigned', escalate_at: null }]);
+      await http().post(`/v1/auth/recovery/${req.id}/approve`).set('Authorization', `Bearer ${sup.token}`).send({ verification_note: 'called the office line' }).expect(200);
+      // مهمة الطلب تُغلق عند كل من وصلته، فلا تبقى «لم يُقرّ»
+      for (const a of [sup, colleague]) expect(await open(a)).toEqual([{ assignment_state: 'acknowledged', escalate_at: null }]);
+      expect((await read(colleague).expect(200)).body).toMatchObject({ state: 'approved', approved_by: sup.id });
+      expect(JSON.stringify((await read(colleague)).body)).not.toContain('reset_token');
+    });
+
+    it('a pending request past its deadline reads as expired without being changed', async () => {
+      const reporter = await loginAs(h, [{ role: 'reporter' }], { officeId: officeA });
+      const admin = await loginAs(h, [{ role: 'system_admin' }]);
+      await seedCode(reporter.id, 'READEXPIRED234');
+      await start(reporter.email, 'READEXPIRED234').expect(202);
+      const [req] = await requests(reporter.id);
+      await h.pool.query(`UPDATE recovery_requests SET expires_at = now() - interval '1 second' WHERE id = $1`, [req.id]);
+      const res = await http().get(`/v1/auth/recovery/${req.id}`).set('Authorization', `Bearer ${admin.token}`).expect(200);
+      expect(res.body).toMatchObject({ state: 'expired', account: { user_id: reporter.id, work_name: null } });
+      expect((await requests(reporter.id))[0].state).toBe('pending_approval');
+    });
+
     it('an expired request is 409 and becomes expired', async () => {
       const reporter = await loginAs(h, [{ role: 'reporter' }], { officeId: officeA });
       const admin = await loginAs(h, [{ role: 'system_admin' }]);

@@ -79,6 +79,12 @@ export class AuthController {
     return { accepted: true };
   }
 
+  @Get('recovery/:id')
+  @Roles('supervisor', 'system_admin')
+  readRecovery(@Param('id') id: string, @Req() req: Request): Promise<components['schemas']['RecoveryRequestDetail']> {
+    return this.account.readRecovery(req.principal!, id);
+  }
+
   @Post('recovery/:id/approve')
   @HttpCode(200)
   @Roles('supervisor', 'system_admin')

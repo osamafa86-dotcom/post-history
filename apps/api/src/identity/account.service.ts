@@ -164,6 +164,54 @@ export class AccountService {
    * من الواجهة أبدًا (403 admin_quorum_required: إجراء الشخصين من سطر الأوامر). الطلب المعتمد أو المرفوض أو المنتهي
    * = 409 recovery_state_conflict، فإعادة الاعتماد لا تعيد الرمز أبدًا (ولا Idempotency-Key على /auth/*).
    */
+  /**
+   * قراءة طلب الاستعادة لمن يملك اعتماده (ADR 0117، تعديل 2026-11-15): الصلاحية صلاحية الاعتماد نفسها، وما ليس للمتصل 404.
+   * يعيد ما يعرّف الحساب داخليًا (المعرّف واسم العمل والأدوار والمكتب) وحالة الطلب؛ لا بريد ولا اسم قانوني ولا رمز. لا يغيّر شيئًا:
+   * طلب بانتظار الاعتماد فات موعده يُقرأ `expired` ويبقى صفّه كما هو حتى يثبّته الاعتماد أو الكنس.
+   */
+  async readRecovery(p: Principal, id: string): Promise<components['schemas']['RecoveryRequestDetail']> {
+    if (!UUID.test(id)) throw ApiError.notFound();
+    const [r] = await this.db
+      .select({
+        id: recoveryRequests.id,
+        userId: recoveryRequests.userId,
+        state: recoveryRequests.state,
+        createdAt: recoveryRequests.createdAt,
+        expiresAt: recoveryRequests.expiresAt,
+        approvedBy: recoveryRequests.approvedBy,
+        officeId: users.officeId,
+        organizationId: users.organizationId,
+        governorate: offices.governorate,
+        workName: users.workName,
+        officeAr: offices.nameAr,
+        officeEn: offices.nameEn,
+      })
+      .from(recoveryRequests)
+      .innerJoin(users, eq(users.id, recoveryRequests.userId))
+      .leftJoin(offices, eq(offices.id, users.officeId))
+      .where(eq(recoveryRequests.id, id));
+    if (!r) throw ApiError.notFound();
+    const targetRoles = await rolesOf(this.db, r.userId);
+    if (!hasRole(p, 'system_admin') && !(supervisesUser(p, r) && isReporterAccount(targetRoles, r.organizationId))) throw ApiError.notFound();
+    if (targetRoles.includes('system_admin')) throw adminQuorumRequired();
+    await assertHierarchy(this.db, p, r.userId);
+    const lapsed = r.state === 'pending_approval' && new Date(r.expiresAt) <= new Date();
+    return {
+      id: r.id,
+      state: (lapsed ? 'expired' : r.state) as components['schemas']['RecoveryRequest']['state'],
+      created_at: iso(r.createdAt)!,
+      approved_by: r.approvedBy,
+      expires_at: iso(r.expiresAt),
+      account: {
+        user_id: r.userId,
+        work_name: r.workName,
+        roles: [...new Set(targetRoles)] as components['schemas']['RoleName'][],
+        office_id: r.officeId,
+        office_name: r.officeId && r.officeAr !== null && r.officeEn !== null ? { ar: r.officeAr, en: r.officeEn } : null,
+      },
+    };
+  }
+
   async approveRecovery(p: Principal, id: string, verificationNote: string): Promise<RecoveryApproval> {
     if (!UUID.test(id)) throw ApiError.notFound();
     const result = await this.db.transaction(async (tx) => {
