@@ -34,6 +34,10 @@ public struct MaterialFile: Sendable, Codable, Hashable {
         case normal = "normal"
         case unknownDefaultOpenApi = "unknown_default_open_api"
     }
+    public enum MediaCheck: String, Sendable, Codable, CaseIterable, CaseIterableDefaultsLast {
+        case invalid = "invalid"
+        case unknownDefaultOpenApi = "unknown_default_open_api"
+    }
     public static let sizeBytesRule = NumericRule<Int>(minimum: 0, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
     public static let sha256Rule = StringRule(minLength: nil, maxLength: nil, pattern: "^[0-9a-f]{64}$")
     public static let durationMsRule = NumericRule<Int>(minimum: 0, exclusiveMinimum: false, maximum: nil, exclusiveMaximum: false, multipleOf: nil)
@@ -48,6 +52,8 @@ public struct MaterialFile: Sendable, Codable, Hashable {
     public var proxyMode: ProxyMode?
     /** معرّف الملف الذي اشتق الخادم هذا الملف منه (أُضيف بعد v0.3، ADR 0119)؛ `null` لملف مرفوع: الأصل، ونسخة الهاتف الخفيفة. به يميّز العميل النسخة الخفيفة التي صنعها الخادم من الأصل عن نسخة الهاتف المرفوعة، وهي لصاحب المادة وحده ولا تُعرض معاينةً للطاقم. غيابه يُعامل كـ `null`. */
     public var derivedFromId: UUID?
+    /** نتيجة فحص عامل الوسائط لمحتوى أصل تحقّق الخادم من بصمته (أُضيف بعد v0.3، ملحق ADR 0092 بتاريخ 2026-11-15)؛ `null` أو غائب: لم يُفحص بعد، أو فُحص فقُرئ، أو لا ينطبق (غير الأصل). `invalid`: الملف ليس وسائط يقرؤها العامل (ملف ليس وسائط أو تالف)، فلا معاينة له ولا مشتقات. حقيقة مستقلة على الملف: `state` يبقى `verified` (البصمة صحيحة) والحالة الفنية للمادة لا تتغيّر. العميل يقولها على الملف نفسه لصاحبه وللطاقم، ولا ينتظر معاينة له. */
+    public var mediaCheck: MediaCheck?
     /** لـ `proxy` وحده (v0.3)؛ `null` أو غائب قبل القياس أو لغير النسخة الخفيفة */
     public var alignment: MediaAlignment?
     public var sizeBytes: Int?
@@ -64,12 +70,13 @@ public struct MaterialFile: Sendable, Codable, Hashable {
     public var createdAt: Date
     public var verifiedAt: Date?
 
-    public init(id: UUID, kind: Kind, state: State, proxyMode: ProxyMode? = nil, derivedFromId: UUID? = nil, alignment: MediaAlignment? = nil, sizeBytes: Int? = nil, sha256: String? = nil, mimeType: String? = nil, durationMs: Int? = nil, startPtsUs: Int? = nil, width: Int? = nil, height: Int? = nil, receiptNumber: String? = nil, createdAt: Date, verifiedAt: Date? = nil) {
+    public init(id: UUID, kind: Kind, state: State, proxyMode: ProxyMode? = nil, derivedFromId: UUID? = nil, mediaCheck: MediaCheck? = nil, alignment: MediaAlignment? = nil, sizeBytes: Int? = nil, sha256: String? = nil, mimeType: String? = nil, durationMs: Int? = nil, startPtsUs: Int? = nil, width: Int? = nil, height: Int? = nil, receiptNumber: String? = nil, createdAt: Date, verifiedAt: Date? = nil) {
         self.id = id
         self.kind = kind
         self.state = state
         self.proxyMode = proxyMode
         self.derivedFromId = derivedFromId
+        self.mediaCheck = mediaCheck
         self.alignment = alignment
         self.sizeBytes = sizeBytes
         self.sha256 = sha256
@@ -89,6 +96,7 @@ public struct MaterialFile: Sendable, Codable, Hashable {
         case state
         case proxyMode = "proxy_mode"
         case derivedFromId = "derived_from_id"
+        case mediaCheck = "media_check"
         case alignment
         case sizeBytes = "size_bytes"
         case sha256
@@ -111,6 +119,7 @@ public struct MaterialFile: Sendable, Codable, Hashable {
         try container.encode(state, forKey: .state)
         try container.encodeIfPresent(proxyMode, forKey: .proxyMode)
         try container.encodeIfPresent(derivedFromId, forKey: .derivedFromId)
+        try container.encodeIfPresent(mediaCheck, forKey: .mediaCheck)
         try container.encodeIfPresent(alignment, forKey: .alignment)
         try container.encodeIfPresent(sizeBytes, forKey: .sizeBytes)
         try container.encodeIfPresent(sha256, forKey: .sha256)
@@ -133,6 +142,7 @@ extension MaterialFile: UnknownCaseCheckable {
         if kind == .unknownDefaultOpenApi { return true }
         if state == .unknownDefaultOpenApi { return true }
         if proxyMode == .unknownDefaultOpenApi { return true }
+        if mediaCheck == .unknownDefaultOpenApi { return true }
         return false
     }
 }
