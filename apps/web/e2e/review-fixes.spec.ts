@@ -85,13 +85,19 @@ test("the trial notice stands on every store page and on commission rules, in th
   await expect(page.getByTestId("commission-row").first()).toBeVisible(); await expect(page.getByTestId("trial-notice")).toHaveText(en.store.cartPage.sandbox);
 });
 
-test("the invoice and refund tables are named regions the keyboard reaches at 375", async ({ page }) => {
+test("at 375 the refund history reads as labelled cards with no side scroll, and the invoice lines are a named region the keyboard reaches", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 800 }); await login(page, "finance");
   await page.goto("/ar/store/orders/92000000-0000-4000-8000-000000000009");
   const panel = page.getByRole("region", { name: ar.refunds.title }); await panel.getByLabel(/لقطات اصطناعية 2/).check();
   await panel.getByLabel(ar.refunds.reason).selectOption("duplicate"); await panel.getByRole("button", { name: ar.refunds.submit }).click();
-  const refunds = page.getByRole("region", { name: ar.refunds.historyLabel, exact: true }); await expect(refunds).toHaveAttribute("tabindex", "0");
-  await refunds.focus(); await expect(refunds).toBeFocused();
+  // سجل الاسترداد بطاقات على الهاتف: منطقة مسمّاة بلا تمرير جانبي فيها ولا في الصفحة (فلا تحتاج تركيزًا لتُمرَّر)، وكل خانة تُقرأ بتسمية عمودها.
+  const refunds = page.getByRole("region", { name: ar.refunds.historyLabel, exact: true }), row = refunds.getByTestId("refund-row");
+  await expect(row).toHaveCount(1); await expect(row).toContainText(ar.refunds.reasons.duplicate);
+  expect(await refunds.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const cells = await row.locator("td").evaluateAll(cells => cells.map(cell => ({ label: cell.getAttribute("data-label"), shown: getComputedStyle(cell, "::before").content, block: getComputedStyle(cell.parentElement!).display })));
+  expect(cells.map(cell => cell.label)).toEqual([ar.refunds.created, ar.refunds.items, ar.refunds.amount, ar.refunds.reason, ar.refunds.status]);
+  for (const cell of cells) { expect(cell.shown).toBe(`"${cell.label}"`); expect(cell.block).toBe("block"); }
   await page.goto("/ar/store/orders/92000000-0000-4000-8000-000000000009/invoice");
   const lines = page.getByRole("region", { name: ar.store.invoice.linesLabel, exact: true }); await expect(lines).toHaveAttribute("tabindex", "0");
   await lines.focus(); await expect(lines).toBeFocused();

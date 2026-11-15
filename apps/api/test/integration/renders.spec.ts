@@ -20,8 +20,8 @@ class FakeStorage implements ObjectStorage {
   async read(): Promise<never> {
     throw new Error('not used');
   }
-  presignGet(bucket: string, key: string): string {
-    return `https://storage.test/${bucket}/${key}?X-Amz-Expires=600`;
+  presignGet(bucket: string, key: string, _ttl?: number, _now?: Date, download?: string): string {
+    return `https://storage.test/${bucket}/${key}?X-Amz-Expires=600${download ? `&response-content-disposition=${encodeURIComponent(download)}` : ''}`;
   }
 }
 
@@ -434,6 +434,8 @@ describe('circulated-template renders', () => {
     expect((await as(supervisor).get(`/materials/${m.id}/renders`).expect(200)).body.items[1]).toMatchObject({ id: w.id, template: 'witness', state: 'ready', file_id: file });
     const link = await as(producer).get(`/materials/${m.id}/files/${file}/download-url`).expect(200);
     expect(link.body.url).toContain(`/media/derived/${m.id}/${m.source}/renders/${w.id}/witness-vertical.mp4`);
+    // زرّ التنزيل يحفظ الملف باسم القالب والمقاس والمادة، ولا يفتحه مكان الصفحة
+    expect(new URL(link.body.url).searchParams.get('response-content-disposition')).toBe(`witness-vertical-${m.id.replace(/-/g, '').slice(0, 8)}.mp4`);
     await as(reporter).get(`/materials/${m.id}/files/${file}/download-url`).expect(404);
     await worker.post(`/renders/${c.id}/failure`, { reason: 'title_overflow' }).expect(204);
 

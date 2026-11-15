@@ -11,11 +11,11 @@ public struct PayoutPolicy: Sendable, Codable, Hashable {
 
     public static let reserveBpsRule = NumericRule<Int>(minimum: 0, exclusiveMinimum: false, maximum: 5000, exclusiveMaximum: false, multipleOf: nil)
     public var currency: Currency
-    /** أدنى مبلغ طلب، بعملة السياسة */
+    /** أدنى مبلغ طلب، بعملة السياسة. أكبر من صفر، وإلا `422` بالحقل `/minimum/amount_minor` (قرار المنسّق 2026-11-15) */
     public var minimum: Money
     /** ما فوقه يلزمه معتمدان */
     public var dualApprovalAbove: Money
-    /** الاحتياطي من المتاح بنقاط أساس */
+    /** الاحتياطي بنقاط أساس، من المتاح وما في الصرف وما صُرف خلال فترة الاسترداد، ويُحتجز من المتاح (ADR 0031، تعديل 2026-11-15) */
     public var reserveBps: Int
     public var effectiveFrom: Date
     public var id: UUID

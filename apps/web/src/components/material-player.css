@@ -4,7 +4,8 @@
 .material-player[data-shape="square"]{aspect-ratio:1}
 .material-player video{width:100%;height:100%;object-fit:contain}
 .material-player:fullscreen{width:100%;height:100%;aspect-ratio:auto;max-height:none}
-.material-player .watermark{z-index:2;pointer-events:none}
+/* العلامة داخل مساحة الصورة (--picture-*: إزاحتها وعرضها من المشغّل) وبحجم يتبع عرضها، فلا تقع على الشريط الأسود بجانب مقطع طولي ولا تبقى صغيرة في ملء الشاشة. */
+.material-player .watermark{z-index:2;pointer-events:none;top:calc(var(--picture-y,0px) + var(--picture-w,480px)*.025);right:calc(var(--picture-x,0px) + var(--picture-w,480px)*.025);max-width:calc(var(--picture-w,100%) - var(--picture-w,480px)*.05);padding:.3em .7em;font-size:clamp(var(--v2-font-caption-size),calc(var(--picture-w,480px)*.026),32px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .material-player .shaka-current-time{direction:ltr;unicode-bidi:isolate}
 .material-player .shaka-text-container span{unicode-bidi:plaintext}
 .material-player .shaka-text-container:lang(ar) span{direction:rtl}

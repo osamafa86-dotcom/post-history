@@ -17,9 +17,9 @@ test("the history tells staff who moved the material and why, and names the read
   await expect(history.locator("li").first()).toContainText(ar.admin.unnamed.replace("{id}", "10000000")); await expect(history).not.toContainText(ar.material.neutralActor);
   // صاحب المادة يعيد إرسالها بسببه: سطره «أنت» وسببه ظاهر له، وسبب «اطّلعت» الداخلي لا يصله
   await page.context().clearCookies(); await signIn(page, "reporter"); await page.goto(`/ar/materials/${first}`);
-  await page.getByRole("button", { name: r.open, exact: true }).click(); const dialog = page.getByRole("dialog");
-  await dialog.getByRole("radio").first().check(); await dialog.getByLabel(r.reason, { exact: true }).fill("أعدت تصوير اللقطة الافتتاحية");
-  await dialog.locator("button:not([type=button])").click();
+  // صاحب المادة بلا دور مكتب يعيدها من شريطه أعلى الصفحة (لا بطاقة «الخطوة التالية» بلغة الطاقم)
+  await page.getByTestId("owner-changes").getByRole("button", { name: ar.owner.resubmit }).click(); const dialog = page.getByRole("dialog");
+  await dialog.getByLabel(ar.owner.whatChanged).fill("أعدت تصوير اللقطة الافتتاحية"); await dialog.getByRole("button", { name: ar.owner.send }).click();
   await expect(history.locator("li")).toHaveCount(3); await expect(history.locator("li").first()).toContainText("أعدت تصوير اللقطة الافتتاحية"); await expect(history.locator("li").first()).toContainText(ar.material.actorYou);
   await expect(history).toContainText("أعد اللقطة الافتتاحية بإضاءة أفضل"); await expect(history).not.toContainText("اطّلعت عليها والمصدر قيد التحقق");
   await expect(history).not.toContainText(ar.admin.unnamed.replace("{id}", "10000000"));

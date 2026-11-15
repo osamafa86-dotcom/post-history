@@ -140,6 +140,8 @@ export class UploadsService implements ReplayRehydrator {
     const limit = q.limit ?? 50;
     const states = q.state?.length ? q.state : ['created', 'in_progress', 'completed'];
     const where: SQL[] = [eq(uploadSessions.createdBy, p.userId), inArray(uploadSessions.state, states)];
+    // جلسة لم تكتمل وانتهت مهلتها لا تقبل بايتًا ولا تُستأنف: لا تُعرض، كما لا تُعدّ في الحصة (assertQuota). المكتملة تبقى حتى يُتحقق منها.
+    where.push(sql`(${uploadSessions.state} NOT IN ('created', 'in_progress') OR ${uploadSessions.expiresAt} > now())`);
     if (q.material_id) where.push(eq(uploadSessions.materialId, q.material_id));
     if (q.cursor) {
       const c = decodeCursor(q.cursor);

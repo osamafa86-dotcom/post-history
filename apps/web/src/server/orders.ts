@@ -4,6 +4,7 @@ import { hasRole } from "@/lib/review";
 import { uuid } from "@/lib/query";
 import { allowedCheckout, checkoutRequest, orderCreate, orderReaders, orderStatuses, orderWriters, safeOrder } from "@/lib/order-policy";
 import { requireOk, type Api } from "./auth";
+import { refusalOk } from "./refusals";
 import type { WebConfig } from "./config";
 import { WebError } from "./errors";
 
@@ -30,18 +31,18 @@ export async function orderWrite(request: Request, path: string, api: Api, me: M
   if (!hasRole(me, ...orderWriters)) throw new WebError(403, "request_failed");
   if (path === "orders" && request.method === "POST") {
     const input = orderCreate(body); if (!input) throw new WebError(422, "request_failed");
-    return json(safeOrder(requireOk(await api.POST("/orders", { params: { header }, body: input }))), 201);
+    return json(safeOrder(refusalOk(await api.POST("/orders", { params: { header }, body: input }))), 201);
   }
   const action = /^orders\/([^/]+)\/(checkout|cancel)$/.exec(path);
   if (!action || !uuid.test(action[1]) || request.method !== "POST") throw new WebError(action ? 422 : 405, "request_failed");
   const params = { path: { order_id: action[1] }, header };
   if (action[2] === "cancel") {
     if (Object.keys(body).length) throw new WebError(422, "request_failed");
-    return json(safeOrder(requireOk(await api.POST("/orders/{order_id}/cancel", { params }))));
+    return json(safeOrder(refusalOk(await api.POST("/orders/{order_id}/cancel", { params }))));
   }
   // الجلسة بلغة الويب التي بدأ منها المشتري (`CheckoutRequest`): `locale` من القائمة وحده، والوجهة من إعداد الخادم لا من الطلب.
   const input = checkoutRequest(body); if (!input) throw new WebError(422, "request_failed");
-  const session = requireOk(await api.POST("/orders/{order_id}/checkout", { params, body: input }));
+  const session = refusalOk(await api.POST("/orders/{order_id}/checkout", { params, body: input }));
   // الرابط يذهب إلى المتصفح ليُوجَّه إليه؛ لا إلى أصل خارج قائمة الإعداد، ولا يُسجَّل.
   if (!allowedCheckout(session.checkout_url, config.checkoutOrigins ?? [], session.provider)) throw new WebError(502, "temporarily_unavailable");
   return json({ checkout_url: session.checkout_url, provider: session.provider, expires_at: session.expires_at });

@@ -6,7 +6,7 @@ import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { formatDate, longDate, messages, plural, type Locale } from "@/lib/i18n";
 import type { Material, TransitionRecord } from "@/lib/types";
 import { timecode } from "@/lib/editor";
-import { cardMedia, dayKind, durationLabel, groupMaterials, materialDuration, matchesFilter, mineCounts, mineFilters, needsAction, type MineFilter, type MineGroup, type MineGrouping, monthName, timeSections, type MineSection } from "@/lib/my-materials";
+import { cardMedia, dayKind, durationLabel, groupMaterials, materialDuration, matchesFilter, mineCounts, mineFilters, mineBucket, mineBuckets, type MineFilter, type MineGroup, type MineGrouping, monthName, timeSections, type MineSection, needsAction } from "@/lib/my-materials";
 import { useUser } from "./session-boundary";
 import { StateBadge } from "./states";
 import { EmptyState, ErrorState } from "./empty-state";
@@ -49,18 +49,18 @@ export function MyMaterials({ locale }: { locale: Locale }) {
     return () => { disposed = true; controller.abort(); clearTimeout(timer); };
   }, [me.user_id, refresh]);
   function group(next: MineGrouping) { setGrouping(next); try { window.localStorage.setItem(groupingKey, next); } catch { /* تفضيل اختياري */ } }
-  const action = items?.filter(needsAction) ?? [], visible = items?.filter(item => matchesFilter(item, filter)) ?? [], counts = items ? mineCounts(items) : null;
+  const action = items?.filter(item => mineBucket(item) === "action") ?? [], visible = items?.filter(item => matchesFilter(item, filter)) ?? [], counts = items ? mineCounts(items) : null;
   return <>
     <div className="page-head"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p></div><div className="page-actions"><button type="button" className="secondary" onClick={() => setRefresh(n => n + 1)}>{m.refresh}</button></div></div>
     {error && items && <section className="offline-banner" role="status" data-testid="mine-stale"><Icon name="offline" size={22} /><div><h2>{t.staleTitle}</h2><p>{t.staleBody.replace("{time}", updated ? formatDate(updated, locale) : m.notAvailable)}</p></div><button type="button" className="secondary" onClick={() => setRefresh(n => n + 1)}>{m.retry}</button></section>}
-    <div className="kpis" data-testid="mine-kpis" aria-label={t.counts}>{counts ? (["all", "action", "reviewing", "approved"] as const).map(key =>
+    <div className="kpis" data-testid="mine-kpis" aria-label={t.counts}>{counts ? mineBuckets.map(key =>
       <article key={key} className={`kpi${key === "action" && counts.action ? " attention" : ""}`} data-kpi={key}><strong dir="ltr">{counts[key]}</strong><span>{t.kpi[key]}</span></article>)
       : [0, 1, 2, 3].map(i => <article key={i} className="kpi" aria-hidden="true"><span className="skeleton num" /><span className="skeleton line" /></article>)}</div>
     {!items ? error ? <ErrorState locale={locale} testId="mine-error" title={t.loadFailed} retry={() => setRefresh(n => n + 1)}><p>{t.errorBody}</p></ErrorState> : <><p className="visually-hidden" role="status">{m.loading}</p><ul className="mine-grid" aria-hidden="true">{[0, 1, 2, 3, 4, 5].map(i => <li key={i} className="mine-card"><span className="skeleton media" /><span className="skeleton line wide" /><span className="skeleton line" /></li>)}</ul></> : <>
       {action.length > 0 && <section className="card mine-action" aria-labelledby="mine-action"><h2 id="mine-action"><Icon name="alert" size={18} />{t.action}</h2><ul className="mine-list">{action.map(item => <li key={item.id} data-testid="mine-action">
         <Link className="material-link" prefetch={false} href={`/${locale}/materials/${item.id}`}>{item.title}</Link>
-        <p>{item.technical_state === "failed" ? t.uploadFailed : t.changesRequested}</p>
-        <Note note={notes[item.id]} locale={locale} />
+        <p>{item.editorial_state === "needs_changes" ? t.changesRequested : item.technical_state === "failed" ? t.uploadFailed : t.awaitingFile}</p>
+        {item.editorial_state === "needs_changes" && <Note note={notes[item.id]} locale={locale} />}
       </li>)}</ul></section>}
       {!items.length ? <EmptyState icon="mine" testId="mine-empty" title={t.emptyTitle} actions={<Link prefetch={false} className="button" href={`/${locale}/upload`}>{m.upload.nav}</Link>}><p>{t.emptyBody}</p></EmptyState> : <>
         <div className="mine-tools">
@@ -138,5 +138,5 @@ function Card({ item, note, locale, nested }: { item: Material; note: Transition
 function Note({ note, locale }: { note: TransitionRecord | null | undefined; locale: Locale }) {
   const t = messages[locale].mine;
   if (!note) return <p className="muted">{t.openForNote}</p>;
-  return <blockquote className="supervisor-note" data-testid="supervisor-note"><p>{note.reason}</p><footer>{note.note_timecode_ms != null && <span>{t.at} <bdi dir="ltr">{timecode(note.note_timecode_ms)}</bdi> · </span>}{formatDate(note.occurred_at, locale)}</footer></blockquote>;
+  return <blockquote className="supervisor-note" data-testid="supervisor-note"><p><bdi dir="auto">{note.reason}</bdi></p><footer>{note.note_timecode_ms != null && <span>{t.at} <bdi dir="ltr">{timecode(note.note_timecode_ms)}</bdi> · </span>}{formatDate(note.occurred_at, locale)}</footer></blockquote>;
 }

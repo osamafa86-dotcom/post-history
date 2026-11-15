@@ -109,12 +109,15 @@ export function AccountActions({ me, locale, languageHref, busy, logout, logoutA
 export function ShellTopBar({ me, locale, buyer, items, inboxHref, account }: { me: Me; locale: Locale; buyer: boolean; items: NavItem[]; inboxHref: string; account: React.ReactNode }) {
   const m = messages[locale], t = m.shell, router = useRouter(), { query, setQuery } = useShellSearch();
   const [bell, setBell] = useState(false), [menu, setMenu] = useState(false), [searching, setSearching] = useState(false);
-  const unread = useUnreadCount(!buyer);
+  // الجرس للمشتري أيضًا (قرار المنسّق 2026-11-15): إبطال ترخيص وتغيّر حالة طلب يصلانه في ترويسة المتجر.
+  const unread = useUnreadCount(true);
   const bellRef = useDismiss(bell, () => setBell(false)), menuRef = useDismiss(menu, () => setMenu(false)), onInbox = items.some(item => item.key === "inbox" && item.active);
   // البحث يعمل في الوارد؛ من لا يقرأ المواد (المالية) لا يُعرض له بحث يقود إلى صفحة لا يملكها.
   const searchable = items.some(item => item.key === "inbox");
   // Escape يغلق المنبثقة من أي عنصر فيها أو من زرّها، ويعيد التركيز إلى الزرّ.
   const escape = (open: boolean, close: () => void) => (event: React.KeyboardEvent<HTMLDivElement>) => { if (event.key === "Escape" && open) { close(); event.currentTarget.querySelector<HTMLButtonElement>("button")?.focus(); } };
+  // خروج التركيز من قائمة الحساب (Tab بعد آخر بنودها) يغلقها، كما يغلقها النقر خارجها؛ فلا تبقى مفتوحة خلف ما صار فيه التركيز.
+  const leave = (close: () => void) => (event: React.FocusEvent<HTMLDivElement>) => { if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) close(); };
   return <header className={`topbar workspace${buyer ? " store" : ""}`} data-testid="topbar">
     {buyer ? <>
       <Link prefetch={false} className="topbar-brand" href={`/${locale}/store`}><BrandMark /><span>{m.product}</span></Link>
@@ -131,13 +134,14 @@ export function ShellTopBar({ me, locale, buyer, items, inboxHref, account }: { 
     </>}
     <div className="topbar-end">
       {buyer && <CartChip locale={locale} />}
-      {!buyer && <div className="popover-anchor" ref={bellRef} onKeyDown={escape(bell, () => setBell(false))}>
+      <div className="popover-anchor" ref={bellRef} onKeyDown={escape(bell, () => setBell(false))}>
         <button type="button" className="icon-button bell-button" aria-label={t.bell.open} aria-describedby={unread ? "bell-unread" : undefined} aria-expanded={bell} aria-haspopup="dialog" onClick={() => { setBell(value => !value); setMenu(false); }}><Icon name="bell" />{unread > 0 && <span className="bell-count" data-testid="bell-count" dir="ltr" aria-hidden="true">{unread > 99 ? "99+" : unread}</span>}</button>
         {unread > 0 && <span id="bell-unread" className="visually-hidden">{m.notice.unreadCount}: {unread}</span>}
-        {bell && <NotificationsPanel locale={locale} onClose={() => setBell(false)} />}
-      </div>}
-      <div className="popover-anchor account" ref={menuRef} onKeyDown={escape(menu, () => setMenu(false))}>
-        <button type="button" className="avatar" aria-label={`${t.account}: ${userLine(me, locale)}`} aria-expanded={menu} aria-controls="account-menu" onClick={() => { setMenu(value => !value); setBell(false); }}><span aria-hidden="true">{initials(me, locale)}</span></button>
+        {bell && <NotificationsPanel locale={locale} buyer={buyer} onClose={() => setBell(false)} />}
+      </div>
+      <div className="popover-anchor account" ref={menuRef} onKeyDown={escape(menu, () => setMenu(false))} onBlur={leave(() => setMenu(false))}>
+        {/* الاسم يبدأ بالحرفين الظاهرين (WCAG 2.5.3): من يقرأ الزرّ أو يناديه بالصوت يجد ما يراه */}
+        <button type="button" className="avatar" aria-label={`${initials(me, locale)} · ${t.account}: ${userLine(me, locale)}`} aria-expanded={menu} aria-controls="account-menu" onClick={() => { setMenu(value => !value); setBell(false); }}><span aria-hidden="true">{initials(me, locale)}</span></button>
         {menu && <div className="account-menu" id="account-menu">{account}</div>}
       </div>
     </div>

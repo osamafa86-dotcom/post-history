@@ -37,14 +37,41 @@ export function LicenseVerify({ locale, number }: { locale: Locale; number: stri
           {status === 404 && valid && <p className="mono verify-number" dir="ltr">{number}</p>}
         </div> : <>
           <div className="verify-head"><span className={`verify-seal ${word?.tone ?? ""}`}><Icon name={word?.icon ?? "license"} size={22} /></span>
-            <div><h1 id="verify-title">{v.title}</h1><p className="muted">{result ? v.lead : m.loading}</p></div></div>
+            <div><h1 id="verify-title">{v.title}</h1><p className="muted" data-testid="verification-lead">{!result ? m.loading : result.status === "active" ? v.lead : result.status === "revoked" ? v.leadRevoked : v.leadExpired}</p></div></div>
           {!result ? <p className="visually-hidden" role="status">{m.loading}</p> : <dl className="verify-fields">
             <div><dt>{v.number}</dt><dd className="mono" dir="ltr">{result.license_number}</dd></div>
             <div><dt>{v.status}</dt><dd><span className={`badge state ${word!.tone}`} data-testid="verification-status"><Icon name={word!.icon} size={14} />{t.statuses[result.status]}</span></dd></div>
-            <div><dt>{v.ends}</dt><dd className="ref">{result.valid_until ? longDate(result.valid_until, locale) : v.noExpiry}</dd></div>
+            {/* المُبطل لا نهاية تُقرأ له، والمنتهي يُقال متى انتهى: سطر «ينتهي» للساري وحده */}
+            {result.status === "active" ? <div><dt>{v.ends}</dt><dd className="ref">{result.valid_until ? longDate(result.valid_until, locale) : v.noExpiry}</dd></div>
+              : result.status === "expired" && result.valid_until ? <div><dt>{v.ended}</dt><dd className="ref">{longDate(result.valid_until, locale)}</dd></div> : null}
           </dl>}
           <p className="verify-scope"><Icon name="shield" size={16} /><span>{v.scope}</span></p>
         </>}
+        <p className="verify-another"><a href={`/${locale}/verify`} data-testid="verify-another">{v.another}</a></p>
+      </section>
+    </main>
+  </PublicFrame>;
+}
+
+/**
+ * إدخال رقم الترخيص (صفحة `/verify`): حقل واحد في نموذج GET، فيعمل بلا سكربت ويقبل الرقم كما يُكتب من ورقة. الرقم الذي لا يصير بصيغة العقد
+ * بعد التطبيع يُقال عنه هنا ولا يُرسل إلى الخادم.
+ */
+export function LicenseLookup({ locale, typed, invalid }: { locale: Locale; typed: string; invalid: boolean }) {
+  const m = messages[locale], v = m.licenses.verify, other = locale === "ar" ? "en" : "ar";
+  return <PublicFrame locale={locale} switchHref={`/${other}/verify`}>
+    <main className="public-main verify-main" dir={locale === "ar" ? "rtl" : "ltr"} lang={locale}>
+      <section className="card verify-card" aria-labelledby="verify-title" data-testid="verification-lookup">
+        <div className="verify-head"><span className="verify-seal"><Icon name="license" size={22} /></span>
+          <div><h1 id="verify-title">{v.title}</h1><p className="muted">{v.formLead}</p></div></div>
+        <form method="get" action={`/${locale}/verify`} className="verify-form">
+          <label htmlFor="verify-number">{v.number}</label>
+          <input id="verify-number" name="number" className="mono" dir="ltr" defaultValue={typed} required maxLength={40} autoComplete="off" autoCapitalize="characters" spellCheck={false} aria-describedby="verify-help" aria-invalid={invalid || undefined} />
+          <small id="verify-help" className="muted">{v.formHelp}</small>
+          {invalid && <p className="notice error" role="alert" data-testid="verification-invalid">{v.formInvalid}</p>}
+          <div className="actions"><button>{v.formSubmit}</button></div>
+        </form>
+        <p className="verify-scope"><Icon name="shield" size={16} /><span>{v.scope}</span></p>
       </section>
     </main>
   </PublicFrame>;

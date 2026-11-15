@@ -66,10 +66,15 @@ export function rejectionInput(body: Record<string, unknown>): OrganizationRejec
 /** المؤسسة للمتصفح بقائمة بيضاء؛ السبب مع `rejected` وحدها، ومن القائمة المغلقة وحدها. */
 export function safeOrganization(o: Organization): Organization {
   const reason = o.status === "rejected" && (rejectionReasons as readonly unknown[]).includes(o.rejection_reason) ? { rejection_reason: o.rejection_reason } : {};
-  return { id: o.id, legal_name: o.legal_name, display_name: { ar: o.display_name.ar, en: o.display_name.en }, country: o.country, billing_email: o.billing_email, seats: o.seats, status: o.status, active_members: o.active_members, verified_at: o.verified_at ?? null, ...reason, created_at: o.created_at, updated_at: o.updated_at };
+  return { id: o.id, legal_name: o.legal_name, display_name: { ar: o.display_name.ar, en: o.display_name.en }, country: o.country, billing_email: o.billing_email, seats: o.seats, status: o.status, active_members: o.active_members, ...(Number.isSafeInteger(o.invited_members) && o.invited_members! >= 0 ? { invited_members: o.invited_members } : {}), verified_at: o.verified_at ?? null, ...reason, created_at: o.created_at, updated_at: o.updated_at };
 }
 export function safeMember(m: Member): Member {
   return { user_id: m.user_id, email: m.email, role: m.role, status: m.status, totp_enabled: m.totp_enabled, created_at: m.created_at };
+}
+/** المقاعد المشغولة: النشطون والمدعوون معًا. `invited` غائب حين لا يرسله الخادم، فيبقى العدّ بالنشطين وحدهم. */
+export function seatsOf(o: Pick<Organization, "seats" | "active_members" | "invited_members">): { used: number; active: number; invited: number | null; seats: number } {
+  const active = o.active_members ?? 0, invited = typeof o.invited_members === "number" ? o.invited_members : null;
+  return { used: active + (invited ?? 0), active, invited, seats: o.seats ?? 0 };
 }
 export const inputOf = (o: Organization): OrganizationInput => ({ legal_name: o.legal_name, display_name: o.display_name, country: o.country, billing_email: o.billing_email, seats: o.seats, status: o.status });
 export const emptyOrganization = (): OrganizationCreate => ({ legal_name: "", display_name: { ar: "", en: "" }, country: "", billing_email: "", seats: 5, first_admin_email: "" });

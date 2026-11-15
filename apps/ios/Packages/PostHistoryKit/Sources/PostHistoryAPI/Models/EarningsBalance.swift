@@ -14,7 +14,7 @@ public struct EarningsBalance: Sendable, Codable, Hashable {
     public var available: Money
     public var inPayout: Money
     public var paid: Money
-    /** الجزء المحتجز من المتاح بنسبة السياسة */
+    /** المحتجز من المتاح: نسبة السياسة من المتاح وما في الصرف وما صُرف خلال فترة الاسترداد (ADR 0031، تعديل 2026-11-15) */
     public var reserve: Money
     /** المتاح بعد الاحتياطي */
     public var requestable: Money
