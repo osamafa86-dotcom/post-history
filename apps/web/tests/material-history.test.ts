@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { historyRecord } from "../src/lib/privacy";
-import { actorLabel } from "../src/lib/editor";
+import { actorLabel, historyNote } from "../src/lib/editor";
 import type { TransitionRecord } from "../src/lib/types";
 import ar from "../messages/ar.json";
 import en from "../messages/en.json";
@@ -43,5 +43,27 @@ describe("the material history says who and why to those who read the material",
     expect(actorLabel(record({ actor_id: reporter, actor_name: null }), { id: reporter, staff: false }, "ar")).toBe(ar.material.actorYou);
     expect(actorLabel(record({ actor_name: null }), { id: reporter, staff: false }, "ar")).toBe(ar.material.neutralActor);
     expect(ar.material.actorYou).toBe("أنت"); expect(en.material.actorYou).toBeTruthy(); expect(ar.material.systemActor).toBeTruthy();
+  });
+});
+
+describe("the reasons the server itself writes are read in the page's language", () => {
+  // النصوص الثابتة كما يكتبها الخادم اليوم في سجل الحالات
+  const written = ["original upload received", "proxy upload received", "produced upload received", "original checksum verified", "original checksum_mismatch", "original invalid_file",
+    "original storage_error", "original aborted: access revoked", "original upload cancelled by its owner", "edited after approval", "reserved for production", "acknowledged from notification"];
+  it("words every fixed reason in both languages, each with its own sentence", () => {
+    for (const [locale, m] of [["ar", ar], ["en", en]] as const) {
+      const shown = written.map(reason => historyNote(reason, locale));
+      expect(new Set(shown).size).toBe(written.length);
+      expect(shown.sort()).toEqual(Object.values(m.review.systemNotes).sort());
+      for (const reason of written) expect(historyNote(reason, locale)).not.toBe(reason);
+    }
+    expect(historyNote("original checksum verified", "ar")).toBe(ar.review.systemNotes.checksumVerified);
+    expect(Object.keys(ar.review.systemNotes)).toEqual(Object.keys(en.review.systemNotes));
+  });
+  it("leaves what a person wrote, and a fixed reason it does not know, as written", () => {
+    expect(historyNote("seen, source to be checked", "ar")).toBe("seen, source to be checked");
+    expect(historyNote("Original checksum verified", "ar")).toBe("Original checksum verified");
+    expect(historyNote("toString", "en")).toBe("toString");
+    expect(historyNote("", "en")).toBe("");
   });
 });

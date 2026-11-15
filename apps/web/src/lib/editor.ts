@@ -45,6 +45,21 @@ export function actorLabel(record: Pick<TransitionRecord, "actor_id" | "actor_na
   return record.actor_id ? accountName(record.actor_id, record.actor_name, locale) : m.material.systemActor;
 }
 
+/**
+ * أسباب يكتبها الخادم نفسه في السجل بنص ثابت (وصول الملف، التحقق من بصمته، الحجز، الإقرار من التنبيه): تُعرض بلغة الصفحة. ما كتبه إنسان يبقى
+ * كما كتبه، وسبب ثابت لا نعرفه بعدُ يظهر بنصّه.
+ */
+const SYSTEM_NOTES = {
+  "original upload received": "originalReceived", "proxy upload received": "proxyReceived", "produced upload received": "producedReceived",
+  "original checksum verified": "checksumVerified", "original checksum_mismatch": "checksumMismatch", "original invalid_file": "invalidFile", "original storage_error": "storageError",
+  "original aborted: access revoked": "accessRevoked", "original upload cancelled by its owner": "cancelledByOwner",
+  "edited after approval": "editedAfterApproval", "reserved for production": "reservedForProduction", "acknowledged from notification": "acknowledgedFromNotification",
+} as const;
+export function historyNote(reason: string, locale: Locale): string {
+  const key = Object.hasOwn(SYSTEM_NOTES, reason) ? SYSTEM_NOTES[reason as keyof typeof SYSTEM_NOTES] : null;
+  return key ? messages[locale].review.systemNotes[key] : reason;
+}
+
 export type NotificationGroup = { key: string; items: Notification[]; head: Notification; needsAck: boolean; unread: boolean };
 export type Section = "needsAck" | "today" | "yesterday" | "older";
 // خبر صاحب المادة عن مادته لا يحتاج إقرارًا ولو كانت عاجلة (`asksAck`)

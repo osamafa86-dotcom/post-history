@@ -232,6 +232,20 @@
       "fixer": "منسق ميداني"
     },
     "note": "ملاحظة",
+    "systemNotes": {
+      "originalReceived": "اكتمل وصول الملف الأصلي إلى التخزين",
+      "proxyReceived": "اكتمل وصول النسخة الخفيفة إلى التخزين",
+      "producedReceived": "اكتمل وصول النسخة المنتَجة إلى التخزين",
+      "checksumVerified": "طابقت بصمة الملف الأصلي ما أُرسل عند الرفع",
+      "checksumMismatch": "بصمة الملف الأصلي لا تطابق ما أُرسل عند الرفع",
+      "invalidFile": "حجم الملف الأصلي لا يطابق ما أُعلن عند الرفع",
+      "storageError": "تعذّرت قراءة الملف الأصلي من التخزين",
+      "accessRevoked": "أُوقف الرفع لأن وصول صاحبه أُبطل",
+      "cancelledByOwner": "ألغى صاحب المادة رفع الملف الأصلي",
+      "editedAfterApproval": "عُدّلت بياناتها بعد الاعتماد",
+      "reservedForProduction": "حُجزت للإنتاج",
+      "acknowledgedFromNotification": "إقرار اطّلاع من التنبيه"
+    },
     "open": "تحويل الحالة",
     "dialogTitle": "تحويل الحالة",
     "chooseTarget": "اختر الحالة الهدف",

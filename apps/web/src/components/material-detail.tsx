@@ -7,7 +7,7 @@ import { browserApi, dataOrThrow, RequestError } from "@/lib/browser-api";
 import { formatDate, messages, plural, shortTime, type Locale } from "@/lib/i18n";
 import type { Form, Material, TransitionRecord } from "@/lib/types";
 import { internalNames } from "@/lib/work-name";
-import { actorLabel, lastEvents, timecode, timeline, type Track } from "@/lib/editor";
+import { actorLabel, historyNote, lastEvents, timecode, timeline, type Track } from "@/lib/editor";
 import { hasRole, stateColumn, tracks } from "@/lib/review";
 import { useUser } from "./session-boundary";
 import { photographer, StateBadge } from "./states";
@@ -117,7 +117,7 @@ function Timeline({ viewer, locale, records, failed, filter, clear }: { viewer: 
       : <ol className="history-list">{items.map(item => <li key={item.id} className={`track-${item.track}`}>
         <span className="timeline-dot" aria-hidden="true" />
         <p><strong>{names[item.track as Track] ?? item.track}</strong>: {label(item, item.from)} {locale === "ar" ? "←" : "→"} {label(item, item.to)}{item.note_timecode_ms != null && <span className="time-chip" dir="ltr">{timecode(item.note_timecode_ms)}</span>}</p>
-        {item.reason && <blockquote className="supervisor-note"><p>{m.review.note}: «<bdi dir="auto">{item.reason}</bdi>»</p></blockquote>}
+        {item.reason && <blockquote className="supervisor-note"><p>{m.review.note}: «<bdi dir="auto">{historyNote(item.reason, locale)}</bdi>»</p></blockquote>}
         <p className="caption">{formatDate(item.occurred_at, locale)} · {m.review.actor}: <bdi>{actorLabel(item, viewer, locale)}</bdi></p></li>)}</ol>}
   </section>;
 }
