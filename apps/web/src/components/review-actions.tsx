@@ -11,18 +11,19 @@ import { accountName, workName } from "@/lib/work-name";
 import { uuid } from "@/lib/query";
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
-import { TransitionDialog } from "./transition-dialog";
+import { TransitionDialog, type TransitionDraft } from "./transition-dialog";
 
-type Props = { locale: Locale; material: Material; tag: string | null; editing: () => void; reload: () => void; notify?: (label: string) => void };
+/** `draft`: ما كُتب في حوار التحويل قبل «تحميل التغييرات»؛ يُفتح به الحوار ثانية إن بقي هدفه متاحًا بعد التحميل، وإلا يُهمل. */
+type Props = { locale: Locale; material: Material; tag: string | null; editing: () => void; reload: () => void; notify?: (label: string) => void; draft?: TransitionDraft | null; keepDraft?: (draft: TransitionDraft | null) => void };
 export function ReviewActions(props: Props) {
-  const { locale, material, tag, editing, reload, notify } = props, m = messages[locale], t = m.review, me = useUser();
+  const { locale, material, tag, editing, reload, notify, draft, keepDraft } = props, m = messages[locale], t = m.review, me = useUser();
   const available = tracks.filter(track => transitionOptions(material, me, track).length);
-  const reservation = useMutation(), receive = useMutation(), [open, setOpen] = useState(false), opener = useRef<HTMLButtonElement>(null);
+  const reservation = useMutation(), receive = useMutation(), kept = draft && transitionOptions(material, me, draft.track).includes(draft.to) ? draft : null, [open, setOpen] = useState(!!kept), opener = useRef<HTMLButtonElement>(null);
   const mayReserve = hasRole(me, "producer", "editor_in_chief") && ["accepted", "in_production"].includes(material.editorial_state) && material.reserved_by === null;
   const mayRelease = !!material.reserved_by && (hasRole(me, "supervisor", "editor_in_chief", "system_admin") || hasRole(me, "producer") && material.reserved_by === me.user_id);
   // «استلام» (W2، M2): انتقال `inbox → acknowledged` الذي يبلّغ المراسل أن المحرر رأى مادته؛ وبقية الانتقالات في حوار «تحويل الحالة».
   const mayReceive = !!tag && transitionOptions(material, me, "editorial").includes("acknowledged");
-  const close = () => { setOpen(false); opener.current?.focus(); };
+  const close = () => { keepDraft?.(null); setOpen(false); opener.current?.focus(); };
   // نتيجة الإجراء تحت أزراره: على الجوال الأزرار مثبَّتة أسفل الشاشة، فلا يُرسم خطؤها في البطاقة خارج الرؤية.
   const actions = mayReceive || available.length > 0, status = <ActionStatus status={receive.status || reservation.status} locale={locale} />;
   return <>
@@ -44,7 +45,7 @@ export function ReviewActions(props: Props) {
         {status}
       </div>}
     </section>
-    {open && <TransitionDialog locale={locale} material={material} tag={tag} editing={editing} reload={() => { setOpen(false); reload(); }} onClose={close} onDone={label => { setOpen(false); notify?.(label); }} />}
+    {open && <TransitionDialog locale={locale} material={material} tag={tag} initial={kept} keep={keepDraft ?? undefined} editing={editing} reload={() => { setOpen(false); reload(); }} onClose={close} onDone={label => { keepDraft?.(null); setOpen(false); notify?.(label); }} />}
   </>;
 }
 type Person = { id: string; name: string };
@@ -95,6 +96,8 @@ export function Contributors({ locale, material, tag, editing, reload }: Omit<Pr
     </div>}
     {editable && directory.limited && <p className="caption">{t.peopleLimited}</p>}
     {editable && directory.failed && <p className="notice error" role="alert">{t.peopleFailed}</p>}
+    {/* من لا يحرّر المساهمين يقرؤهم نصًّا: حقول معطّلة بمظهر الحقول الفعّالة توحي بفعل لا يملكه */}
+    {!editable ? (rows.length ? <ul className="contributor-list" data-testid="contributor-list">{rows.map(row => <li key={row.user_id}><bdi>{directory.name(row.user_id)}</bdi> · {t.roles[row.role]} · <bdi dir="ltr">{row.share_percent}%</bdi></li>)}</ul> : <p className="muted">{t.noContributors}</p>) :
     <form className="action-form" onSubmit={async event => { event.preventDefault(); editing(); if (!tag || !valid) return;
       const body = { contributors: rows }; if (await mutation.run(JSON.stringify([material.id, tag, body]), header => browserApi().PUT("/materials/{id}/contributors", { params: { path: { id: material.id }, header: { ...header, "If-Match": tag } }, body }))) reload();
     }}><fieldset disabled={!editable || !tag || mutation.busy || mutation.status === 412}>
@@ -109,5 +112,5 @@ export function Contributors({ locale, material, tag, editing, reload }: Omit<Pr
       })}
       {!rows.length && <p className="muted">{t.noContributors}</p>}
       {editable && <><p className="notice">{t.shareHelp}</p><div className="actions"><button type="button" className="secondary" onClick={() => { editing(); setRows(old => [...old, { user_id: directory.people.find(person => !old.some(row => row.user_id === person.id))?.id ?? "", role: "photographer", share_percent: 0 }]); }}>{t.add}</button><button disabled={!valid}>{t.saveContributors}</button></div></>}
-    </fieldset></form><ActionStatus status={mutation.status} locale={locale} /></section>;
+    </fieldset></form>}<ActionStatus status={mutation.status} locale={locale} /></section>;
 }

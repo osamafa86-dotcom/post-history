@@ -175,9 +175,19 @@ describe("supervisor notes for the reporter", () => {
     expect(items[0]).toMatchObject({ reason: "أعد التصوير من زاوية أخرى", note_timecode_ms: 42000 });
     expect(items[1].reason).toBe(""); expect(JSON.stringify(items)).not.toContain("canary");
   });
-  it.each([["another reporter's material", reporter, target], ["a supervisor", supervisor, me.user_id]] as const)("hides every reason from %s", async (_, user, owner) => {
-    const { result } = await action(`materials/${item.id}/transitions`, { method: "GET", user, upstream: upstream(owner) });
+  it("hides every reason from a reporter who does not own the material", async () => {
+    const { result } = await action(`materials/${item.id}/transitions`, { method: "GET", user: reporter, upstream: upstream(target) });
     expect((await result.json()).items.map((i: { reason: string }) => i.reason)).toEqual(["", ""]);
+  });
+  // قرار المنسّق 2026-11-15: الطاقم الذي يقرأ المادة يرى سبب كل انتقال، منقّى، وبلا سؤال ثانٍ عن المادة
+  it("gives staff who read the material the reason of every transition", async () => {
+    const { result, calls } = await action(`materials/${item.id}/transitions`, { method: "GET", user: supervisor, upstream: upstream(me.user_id) });
+    expect((await result.json()).items.map((i: { reason: string }) => i.reason)).toEqual(["أعد التصوير من زاوية أخرى", "internal canary"]);
+    expect(calls.filter((r: Request) => !r.url.endsWith("/auth/me"))).toHaveLength(1);
+  });
+  it("passes the server's refusal to a reader outside the material's scope", async () => {
+    const { result } = await action(`materials/${item.id}/transitions`, { method: "GET", user: supervisor, upstream: r => r.url.endsWith("/transitions") ? Response.json({ code: "forbidden_scope" }, { status: 403 }) : Response.json(item) });
+    expect(result.status).toBe(403); expect(await result.text()).not.toContain("canary");
   });
 });
 
