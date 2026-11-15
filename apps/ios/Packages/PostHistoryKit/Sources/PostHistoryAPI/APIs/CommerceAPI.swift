@@ -743,6 +743,49 @@ open class CommerceAPI {
     }
 
     /**
+     عدد التراخيص الفاعلة على المادة ومؤسساتها
+     
+     - parameter id: (path)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: MaterialActiveLicenses
+     */
+    open class func getMaterialActiveLicenses(id: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> MaterialActiveLicenses {
+        return try await getMaterialActiveLicensesWithRequestBuilder(id: id, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     عدد التراخيص الفاعلة على المادة ومؤسساتها
+     - GET /materials/{id}/active-licenses
+     - ما يُبطله خروج حقوق المادة من `sellable` أو وسمها بالحساسية (ADR 0118): عدد التراخيص الفاعلة (`active`) الصادرة على المادة، وعدد المؤسسات التي تحملها. عددان وحدهما، بلا مؤسسة ولا ترخيص بعينه؛ يعرضهما حوار تحويل الحقوق قبل التأكيد (قرار المنسّق 2026-11-15).
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter id: (path)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<MaterialActiveLicenses> 
+     */
+    open class func getMaterialActiveLicensesWithRequestBuilder(id: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<MaterialActiveLicenses> {
+        var localVariablePath = "/materials/{id}/active-licenses"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<MaterialActiveLicenses>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      إدراج المادة في الكتالوج (للطاقم)
      
      - parameter id: (path)  
@@ -1156,17 +1199,28 @@ open class CommerceAPI {
     }
 
     /**
+     * enum for parameter revokedReason
+     */
+    public enum RevokedReason_listLicenses: String, Sendable, CaseIterable {
+        case refunded = "refunded"
+        case rightsWithdrawn = "rights_withdrawn"
+        case manual = "manual"
+    }
+
+    /**
      التراخيص الصادرة (ADR 0025 الجزءان 4 و9)
      
      - parameter status: (query)  (optional)
      - parameter organizationId: (query) للطاقم وحده؛ يُتجاهل للمشتري (optional)
+     - parameter revokedReason: (query) التراخيص المُبطلة بهذا السبب وحده (optional)
+     - parameter refunded: (query) &#x60;false&#x60;: التراخيص التي لا استرداد لبندها (ما أُبطل لسبب حقوقي ولم يُردّ ثمنه، للمالية، قرار المنسّق 2026-11-15)؛ &#x60;true&#x60;: ما لبنده استرداد. الاسترداد الفاشل لا يُحسب استردادًا. غيابه &#x3D; الكل (optional)
      - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
      - parameter limit: (query) حجم الصفحة (optional, default to 50)
      - parameter apiConfiguration: The configuration for the http request.
      - returns: LicensePage
      */
-    open class func listLicenses(status: LicenseStatus? = nil, organizationId: UUID? = nil, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> LicensePage {
-        return try await listLicensesWithRequestBuilder(status: status, organizationId: organizationId, cursor: cursor, limit: limit, apiConfiguration: apiConfiguration).execute().body
+    open class func listLicenses(status: LicenseStatus? = nil, organizationId: UUID? = nil, revokedReason: RevokedReason_listLicenses? = nil, refunded: Bool? = nil, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> LicensePage {
+        return try await listLicensesWithRequestBuilder(status: status, organizationId: organizationId, revokedReason: revokedReason, refunded: refunded, cursor: cursor, limit: limit, apiConfiguration: apiConfiguration).execute().body
     }
 
     /**
@@ -1178,12 +1232,14 @@ open class CommerceAPI {
        - name: bearerAuth
      - parameter status: (query)  (optional)
      - parameter organizationId: (query) للطاقم وحده؛ يُتجاهل للمشتري (optional)
+     - parameter revokedReason: (query) التراخيص المُبطلة بهذا السبب وحده (optional)
+     - parameter refunded: (query) &#x60;false&#x60;: التراخيص التي لا استرداد لبندها (ما أُبطل لسبب حقوقي ولم يُردّ ثمنه، للمالية، قرار المنسّق 2026-11-15)؛ &#x60;true&#x60;: ما لبنده استرداد. الاسترداد الفاشل لا يُحسب استردادًا. غيابه &#x3D; الكل (optional)
      - parameter cursor: (query) مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في &#x60;next_cursor&#x60; (optional)
      - parameter limit: (query) حجم الصفحة (optional, default to 50)
      - parameter apiConfiguration: The configuration for the http request.
      - returns: RequestBuilder<LicensePage> 
      */
-    open class func listLicensesWithRequestBuilder(status: LicenseStatus? = nil, organizationId: UUID? = nil, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<LicensePage> {
+    open class func listLicensesWithRequestBuilder(status: LicenseStatus? = nil, organizationId: UUID? = nil, revokedReason: RevokedReason_listLicenses? = nil, refunded: Bool? = nil, cursor: String? = nil, limit: Int? = nil, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<LicensePage> {
         let localVariablePath = "/licenses"
         let localVariableURLString = apiConfiguration.basePath + localVariablePath
         let localVariableParameters: [String: any Sendable]? = nil
@@ -1192,6 +1248,8 @@ open class CommerceAPI {
         let localVariableQueryParameters: [String: (wrappedValue: (any Sendable)?, isExplode: Bool)] = [
             "status": (wrappedValue: status?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
             "organization_id": (wrappedValue: organizationId?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "revoked_reason": (wrappedValue: revokedReason?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
+            "refunded": (wrappedValue: refunded?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
             "cursor": (wrappedValue: cursor?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
             "limit": (wrappedValue: limit?.asParameter(codableHelper: apiConfiguration.codableHelper), isExplode: true),
         ]
