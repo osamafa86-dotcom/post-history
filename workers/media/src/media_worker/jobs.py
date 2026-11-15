@@ -227,6 +227,10 @@ class Jobs:
 
             # الفشل يُبلَّغ بلا بصمة ولا بيانات فنية: لا شيء منه يُخزَّن
             if digest.size_bytes != session.size_bytes:
+                if resume:
+                    # الخادم تحقّق من هذا الحجم وبصمته؛ اختلافه الآن خلل في التخزين لا حكم على المحتوى، فلا يُبلَّغ «غير صالح»
+                    log.warning("stored size differs from the verified session session=%s", session_id)
+                    return "skip:size-changed-after-verify"
                 self.api.report_verification(session_id, {"result": "invalid_file"})
                 return "invalid_file"
             still = None
@@ -236,6 +240,8 @@ class Jobs:
                 # ما ليس وسائط زمنية قد يكون صورة ثابتة: أصلٌ يُفحص بمساره وقائمته (stills.py)، وما سواه يُرفض
                 found = self._still(session, local)
                 if found is None:
+                    # لأصل تحقّق الخادم من بصمته (مسار الاستئناف) يحفظ الخادم هذه النتيجة على الملف (`media_check`) ولا يغيّر
+                    # حالته؛ ولجلسة لم يُقضَ فيها يفشّلها (ملحق (ب) على ADR 0092). القناة نفسها والحمولة نفسها.
                     self.api.report_verification(session_id, {"result": "invalid_file"})
                     return "invalid_file"
                 info, still = found

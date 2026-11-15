@@ -49,6 +49,7 @@ class FakeApi:
         self.sha256: str | None = None
         self.files: dict[str, FileRef] = {}  # ملفات أخرى للمادة يعيدها get_file (المحاذاة)
         self.alignments: list[tuple[str, dict]] = []
+        self.media_check: str | None = None  # نتيجة فحص العامل المحفوظة على ملف الأصل (ملحق (ب) على ADR 0092)
 
     def get_session(self, session_id: str) -> Session:
         assert session_id == self.session.id
@@ -59,8 +60,12 @@ class FakeApi:
         if body["result"] != "verified":
             # the server's schema forbids a hash or technical data on a failure report
             assert "sha256" not in body and "technical" not in body
-        if self.session.state == "verified":
+        if self.session.state == "verified" and body["result"] == "invalid_file" and self.session.kind == "original":
+            # الخادم يحفظ النتيجة على الملف ويعيد النتيجة المسجلة: الجلسة تبقى verified
+            self.media_check = "invalid"
+        elif self.session.state == "verified":
             assert body.get("sha256") == self.sha256, "replay must match"
+            self.media_check = None
         elif body["result"] == "verified":
             self.sha256 = body["sha256"]
             self.session = replace(self.session, state="verified")

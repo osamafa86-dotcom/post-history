@@ -287,3 +287,26 @@ def test_a_broadcast_mxf_original_is_verified_and_proxied(tmp_path: Path):
     assert jobs.handle(_event()) == "verified+waveform+proxy+thumbnails"
     assert api.verifications[0]["technical"]["container"] == "mxf"
     assert ("media", proxy_key(MID, FakeApi.FILE_ID)) in storage.puts
+
+
+# --- أصل تحقّق الخادم من بصمته ثم لم يقرأه العامل (ملحق (ب) على ADR 0092) ---
+
+def test_a_file_the_server_verified_that_is_not_media_is_reported_and_stays_verified():
+    """المتحقّق داخل الخادم يطابق البصمة وحدها؛ العامل في مسار الاستئناف يبلّغ بالقناة نفسها، والخادم يحفظها على الملف."""
+    data = b"plain text saved under a video name\n" * 400
+    api, storage, jobs = _setup(data, state="verified")
+    api.sha256 = hashlib.sha256(data).hexdigest()
+    assert jobs.handle(_event()) == "invalid_file"
+    assert api.verifications == [{"result": "invalid_file"}]  # معرّف الجلسة والنتيجة وحدهما: لا بصمة ولا بيانات فنية
+    assert api.session.state == "verified" and api.media_check == "invalid"
+    assert api.derivatives == [] and storage.puts == []
+    # إعادة التسليم تعيد البلاغ نفسه بلا أثر جديد
+    assert jobs.handle(_event()) == "invalid_file" and api.media_check == "invalid"
+
+
+def test_a_verified_original_whose_stored_size_changed_is_not_called_invalid_media(tagged_clip: bytes):
+    """اختلاف حجم الكائن عن الجلسة بعد التحقق خلل تخزين لا حكم على المحتوى: لا بلاغ."""
+    api, _storage, jobs = _setup(tagged_clip, state="verified", size=len(tagged_clip) + 1)
+    api.sha256 = hashlib.sha256(tagged_clip).hexdigest()
+    assert jobs.handle(_event()) == "skip:size-changed-after-verify"
+    assert api.verifications == [] and api.media_check is None

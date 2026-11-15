@@ -44,7 +44,8 @@ const say = (fields) => console.log(JSON.stringify({ logger: "media_feeder", ...
 // أصل متحقق لمادة، ملفه verified، فيديو أو بلا نوع معلن أو صورة JPEG أو PNG (مسار الصور في العامل، ملحق ADR 0092: مصغّرة
 // واحدة بلا نسخة خفيفة)، وليس له مشتقّه المتحقق من الخادم: النسخة الخفيفة للفيديو، والمصغّرة للصورة (`has_proxy` يحمل
 // المعنيين)؛ أو له ولا بيانات فنية له (probe). ما بلا مشتق أولًا، ثم العاجل (ADR 0075)، ثم الأقدم تحققًا. بقية الصور (HEIC وRAW)
-// أصول بلا معاينة لا تُعطى للعامل.
+// أصول بلا معاينة لا تُعطى للعامل. وأصل فحصه العامل فلم يقرأه (`media_check = 'invalid'`، ملحق (ب) على ADR 0092) لا يُعطى له
+// من جديد: لا مشتق سيُصنع له.
 const ELIGIBLE = `
   SELECT * FROM (
     SELECT us.id AS session_id, us.material_id, m.priority, f.verified_at,
@@ -56,6 +57,7 @@ const ELIGIBLE = `
     JOIN material_files f ON f.id = us.file_id AND f.state = 'verified'
     JOIN materials m ON m.id = us.material_id
     WHERE us.kind = 'original' AND us.state = 'verified'
+      AND f.media_check IS NULL
       AND (f.mime_type IS NULL OR f.mime_type LIKE 'video/%' OR f.mime_type IN ('image/jpeg', 'image/png'))
   ) x
   WHERE NOT has_proxy OR unprobed
