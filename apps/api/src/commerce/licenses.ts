@@ -7,7 +7,7 @@ import { validateQuery } from '../common/contract';
 import { ApiError } from '../common/errors';
 import { APP_CONFIG, type AppConfig, blockListOf } from '../config/config';
 import { DB, type Database, type Executor } from '../database/database.module';
-import { buyerOrganizations, licenseDownloadGrants, licenseTemplateVersions, licenses, materialFiles, materials, orderItems, orders } from '../database/schema/schema';
+import { buyerOrganizations, licenseDownloadGrants, licenseTemplateVersions, licenses, materialFiles, materials, orderItems, orders, refundItems, refunds } from '../database/schema/schema';
 import type { components } from '../generated/api';
 import { Public } from '../identity/auth.guard';
 import { type Principal, Roles } from '../identity/principal';
@@ -44,9 +44,14 @@ export class LicensesService {
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
   ) {}
 
-  async list(p: Principal, q: { status?: LicenseStatus; organization_id?: string; cursor?: string; limit?: number }): Promise<components['schemas']['LicensePage']> {
+  async list(
+    p: Principal,
+    q: { status?: LicenseStatus; organization_id?: string; revoked_reason?: NonNullable<License['revoked_reason']>; refunded?: boolean; cursor?: string; limit?: number },
+  ): Promise<components['schemas']['LicensePage']> {
     const limit = q.limit ?? 50;
     const after = q.cursor ? decodeCursor(q.cursor) : null;
+    // بند الترخيص له استرداد قائم أو مكتمل؛ الفاشل لا يُحسب (قائمة المالية: ما أُبطل لسبب حقوقي ولم يُردّ ثمنه)
+    const refunded = sql`EXISTS (SELECT 1 FROM ${refundItems} ri JOIN ${refunds} r ON r.id = ri.refund_id WHERE ri.order_item_id = ${licenses.orderItemId} AND r.status <> 'failed')`;
     const rows = await this.db
       .select({ id: licenses.id, at: sql<string>`${licenses.issuedAt}::text` })
       .from(licenses)
@@ -55,6 +60,8 @@ export class LicensesService {
           scope(p),
           !isBuyer(p) && q.organization_id ? eq(licenses.organizationId, q.organization_id) : undefined,
           q.status ? eq(licenses.status, q.status) : undefined,
+          q.revoked_reason ? eq(licenses.revokedReason, q.revoked_reason) : undefined,
+          q.refunded === undefined ? undefined : q.refunded ? refunded : sql`NOT ${refunded}`,
           after ? sql`(${licenses.issuedAt}, ${licenses.id}) < (${after.at}::timestamptz, ${after.id}::uuid)` : undefined,
         ),
       )
@@ -69,6 +76,21 @@ export class LicensesService {
       ),
       next_cursor: rows.length > limit && last ? Buffer.from(JSON.stringify([last.at, last.id])).toString('base64url') : null,
     };
+  }
+
+  /**
+   * ما يُبطله خروج حقوق المادة من `sellable` (ADR 0118): عدد تراخيصها الفاعلة وعدد مؤسساتها، بالشرط نفسه الذي يُبطل به
+   * `revokeMaterialLicenses`. عددان وحدهما، لأدوار على مستوى المؤسسة كلها (حارس الدور قبل البحث بالمعرّف).
+   */
+  async activeOnMaterial(materialId: string): Promise<components['schemas']['MaterialActiveLicenses']> {
+    if (!UUID.test(materialId)) throw ApiError.notFound();
+    const [material] = await this.db.select({ id: materials.id }).from(materials).where(eq(materials.id, materialId));
+    if (!material) throw ApiError.notFound();
+    const [r] = await this.db
+      .select({ n: count(), organizations: sql<string>`count(DISTINCT ${licenses.organizationId})` })
+      .from(licenses)
+      .where(and(eq(licenses.materialId, materialId), eq(licenses.status, 'active')));
+    return { active_licenses: Number(r?.n ?? 0), organizations: Number(r?.organizations ?? 0) };
   }
 
   async get(p: Principal, id: string): Promise<License> {
@@ -114,9 +136,10 @@ export class LicensesService {
         .insert(licenseDownloadGrants)
         .values({ licenseId: l.id, issuedTo: p.userId, expiresAt: sql`now() + make_interval(secs => ${ttl})` })
         .returning({ expiresAt: licenseDownloadGrants.expiresAt });
-      return { storageKey: file.storageKey, expiresAt: iso(grant!.expiresAt)!, remaining: max - Number(n) - 1 };
+      return { storageKey: file.storageKey, number: l.licenseNumber, expiresAt: iso(grant!.expiresAt)!, remaining: max - Number(n) - 1 };
     });
-    const url = this.storage.presignGet(this.config.S3_BUCKET_MEDIA, granted.storageKey, ttl);
+    // الحزمة تُحفظ باسم رقم الترخيص الذي يعرفه المشتري ويتحقق منه (`PH-…`)
+    const url = this.storage.presignGet(this.config.S3_BUCKET_MEDIA, granted.storageKey, ttl, undefined, `${granted.number}.zip`);
     return { url, expires_at: granted.expiresAt, downloads_remaining: granted.remaining };
   }
 }
@@ -176,6 +199,18 @@ function decodeCursor(cursor: string): { at: string; id: string } {
     // يقع إلى 400 أدناه
   }
   throw new ApiError(400, 'bad_request', 'Invalid cursor.', { params: ['cursor'] });
+}
+
+/** ما على المادة من تراخيص فاعلة، لحوار تحويل الحقوق وللمالية (قرار المنسّق 2026-11-15). الأدوار كما في x-roles بالعقد. */
+@Controller('materials/:id/active-licenses')
+export class MaterialLicensesController {
+  constructor(private readonly licensesService: LicensesService) {}
+
+  @Get()
+  @Roles('system_admin', 'editor_in_chief', 'rights_officer', 'finance')
+  get(@Param('id') id: string): Promise<components['schemas']['MaterialActiveLicenses']> {
+    return this.licensesService.activeOnMaterial(id);
+  }
 }
 
 @Controller('licenses')

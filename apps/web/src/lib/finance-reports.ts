@@ -61,7 +61,9 @@ export function safeContributor(row: ContributorEarnings): ContributorEarnings |
 }
 export function safeTotals(row: ContributorEarningsTotals): ContributorEarningsTotals | null {
   if (!isCurrency(row.currency) || !count(row.contributors) || !count(row.sales) || moneyKeys.some(key => !money(row[key], row.currency))) return null;
-  return { currency: row.currency, contributors: row.contributors, sales: row.sales, gross: copy(row.gross), fees_and_taxes: copy(row.fees_and_taxes), net: copy(row.net), share: copy(row.share), refunded: copy(row.refunded), share_basis_points: basis(row.share_basis_points) };
+  // ما رُدّ للمشترين في الشهر وما تحمّلته المنصة منه (قرار المنسّق 2026-11-15)؛ يغيبان من خادم أقدم
+  const after = (["refunded_to_buyers", "borne_by_platform"] as const).filter(key => money(row[key], row.currency));
+  return { currency: row.currency, contributors: row.contributors, sales: row.sales, gross: copy(row.gross), fees_and_taxes: copy(row.fees_and_taxes), net: copy(row.net), share: copy(row.share), refunded: copy(row.refunded), share_basis_points: basis(row.share_basis_points), ...Object.fromEntries(after.map(key => [key, copy(row[key]!)])) };
 }
 export function safeContributorPage(value: ContributorEarningsPage): ContributorEarningsPage {
   if (!monthPattern.test(value.month)) throw new Error("Invalid month");

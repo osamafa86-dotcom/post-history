@@ -200,3 +200,90 @@ def test_voice_note_gets_a_tagless_mono_16k_copy(tmp_path: Path):
     # إعادة التسليم: لا ترميز ولا رفع جديد، والتسجيل نفسه
     assert jobs.handle(_event(kind="voice_note")) == "verified+audio-existing"
     assert len(storage.puts) == 1 and api.derivatives[-1][1]["sha256"] == body["sha256"]
+
+
+# --- الصور الثابتة: أصل يُتحقق منه بمساره، ومصغّرة واحدة بلا وسوم ---
+
+def _photo(tmp_path: Path, name: str = "IMG_0001.JPG", orientation: int = 6) -> bytes:
+    from test_stills import _image, _with_exif
+    return _with_exif(_image(tmp_path / "plain.jpg", "800x600"), tmp_path / name, orientation=orientation).read_bytes()
+
+
+def test_a_photo_is_verified_and_gets_one_tagless_thumbnail(tmp_path: Path):
+    from test_stills import MAKER, MODEL, PLACE
+    data = _photo(tmp_path)
+    api, storage, jobs = _setup(data)
+    assert jobs.handle(_event()) == "verified+thumbnails"
+    [body] = api.verifications
+    assert body["sha256"] == hashlib.sha256(data).hexdigest()
+    t = body["technical"]
+    assert (t["container"], t["video_codec"], t["width"], t["height"], t["duration_ms"], t["rotation"]) == \
+        ("jpeg", "mjpeg", 800, 600, 0, 270)
+    assert "perceptual_hash" not in body
+    for planted in (MAKER, MODEL, PLACE):
+        assert planted.decode() not in json.dumps(body)
+    key = poster_key(MID, FakeApi.FILE_ID)
+    assert storage.puts == [("media", key)]  # لا نسخة خفيفة ولا موجة ولا صفيحة لصورة
+    [(fid, thumb)] = api.derivatives
+    assert fid == FakeApi.FILE_ID and thumb["kind"] == "thumbnail" and thumb["mime_type"] == "image/jpeg"
+    assert thumb["technical"] == {"duration_ms": 0, "start_pts_us": 0, "width": 600, "height": 800,
+                                  "container": "jpeg", "video_codec": "mjpeg"}
+    stored = storage.objects[("media", key)]
+    assert hashlib.sha256(stored).hexdigest() == thumb["sha256"] and len(stored) == thumb["size_bytes"]
+    for planted in (MAKER, MODEL, PLACE, b"Exif"):
+        assert planted not in stored
+    assert storage.objects[("uploads", "tus/1")] == data  # الأصل لا يُمس
+
+
+def test_a_photo_the_server_already_verified_gets_its_thumbnail_on_the_resume_path(tmp_path: Path):
+    """المتحقق داخل الخادم (المعاينة) يطابق البصمة وحدها؛ الموزّع يعيد الأصل إلى العامل فيملأ بياناته ويصنع مصغّرته."""
+    data = _photo(tmp_path, orientation=1)
+    api, storage, jobs = _setup(data, state="verified")
+    api.sha256 = hashlib.sha256(data).hexdigest()
+    assert jobs.handle(_event()) == "verified+thumbnails"
+    assert [d["kind"] for _, d in api.derivatives] == ["thumbnail"]
+    # إعادة التسليم تعيد المصغّرة نفسها بمفتاحها نفسه
+    assert jobs.handle(_event()) == "verified+thumbnails"
+    assert api.derivatives[0][1]["sha256"] == api.derivatives[1][1]["sha256"]
+
+
+def test_a_photo_thumbnail_that_cannot_be_made_does_not_undo_the_verification(tmp_path: Path, monkeypatch):
+    data = _photo(tmp_path)
+    api, storage, jobs = _setup(data)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("encoder died")
+    monkeypatch.setattr("media_worker.jobs.still_thumbnail", boom)
+    assert jobs.handle(_event()) == "verified+thumbnails-failed"
+    assert api.session.state == "verified" and api.derivatives == [] and storage.puts == []
+
+
+def test_heic_and_raw_originals_are_verified_without_a_preview(tmp_path: Path):
+    data = b"\0\0\0\x18ftypheic\0\0\0\0mif1heic" + b"\x01" * 4096
+    api, storage, jobs = _setup(data)
+    assert jobs.handle(_event()) == "verified+no-preview"
+    [body] = api.verifications
+    assert body["result"] == "verified" and body["technical"]["container"] == "heif"
+    assert body["technical"]["width"] is None and body["technical"]["duration_ms"] == 0
+    assert api.derivatives == [] and storage.puts == []
+
+
+def test_only_an_original_may_be_a_still(tmp_path: Path):
+    """نسخة الهاتف الخفيفة والملاحظة الصوتية وسائط زمنية: صورة مكانهما ملف غير صالح."""
+    data = _photo(tmp_path)
+    for kind, event in (("proxy", "upload.proxy_received"), ("voice_note", "upload.original_received")):
+        api, _storage, jobs = _setup(data, kind=kind)
+        assert jobs.handle(_event(event, kind)) == "invalid_file"
+        assert api.verifications == [{"result": "invalid_file"}]
+
+
+def test_a_broadcast_mxf_original_is_verified_and_proxied(tmp_path: Path):
+    from media_worker.ffmpeg import FFMPEG, run
+    src = tmp_path / "C0001.MXF"
+    run([FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+         "testsrc2=size=1280x720:rate=25:duration=2", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=2",
+         "-c:v", "mpeg2video", "-b:v", "4M", "-pix_fmt", "yuv420p", "-c:a", "pcm_s16le", "-f", "mxf", str(src)], timeout_s=60)
+    api, storage, jobs = _setup(src.read_bytes())
+    assert jobs.handle(_event()) == "verified+waveform+proxy+thumbnails"
+    assert api.verifications[0]["technical"]["container"] == "mxf"
+    assert ("media", proxy_key(MID, FakeApi.FILE_ID)) in storage.puts

@@ -1,6 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { Tx } from '../database/database.module';
-import { licenses, materialAssignments, materialRenders, materials, notificationRuleEscalations, notifications, offices, userRoles, users } from '../database/schema/schema';
+import { licenses, materialAssignments, materialRenders, materials, notificationRuleEscalations, notifications, offices, orders, userRoles, users } from '../database/schema/schema';
 import { isReporterAccount } from '../identity/principal';
 import type { OutboxRow } from '../outbox/outbox.dispatcher';
 import { enqueuePush } from '../push/push-delivery.worker';
@@ -56,6 +56,7 @@ export async function fanOut(tx: Tx, event: OutboxRow, opts: FanOutOptions): Pro
   if (event.type === 'auth.passkey_added' || event.type === 'auth.recovery_codes_generated') return ownerAlert(tx, event, event.type, opts);
   if (event.type === 'setting.changed') return settingChanged(tx, event, opts);
   if (event.type === 'license.revoked') return licenseRevoked(tx, event, payload, opts);
+  if (event.type === 'order.status_changed') return orderStatusChanged(tx, event, payload, opts);
   if (event.type === 'render.completed' || event.type === 'render.failed') return renderFinished(tx, event, payload, opts);
   if (event.type === 'assignment.created' || event.type === 'assignment.state_changed') return assignmentEvent(tx, event, payload, opts);
   const materialId = typeof payload.material_id === 'string' ? payload.material_id : undefined;
@@ -242,6 +243,28 @@ async function licenseRevoked(tx: Tx, event: OutboxRow, payload: Record<string, 
   const inserted = await tx
     .insert(notifications)
     .values(members.map((m) => ({ userId: m.userId, eventId: event.id, type: event.type, materialId: null, title, priority: 'important', assignmentState: null })))
+    .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
+    .returning({ id: notifications.id });
+  return inserted.length;
+}
+
+/**
+ * حالة طلب تغيّرت بغير يد صاحبه (قرار المنسّق 2026-11-15): تأكيد الدفع من البوابة، والاسترداد، والإلغاء الآلي وانتهاء المهلة. يُنبَّه من أنشأ
+ * الطلب وحده إن بقي عضوًا فاعلًا في مؤسسته، داخل المنصة برقم الطلب وحده، بلا الحالة ولا المبلغ ولا المادة.
+ */
+async function orderStatusChanged(tx: Tx, event: OutboxRow, payload: Record<string, unknown>, opts: FanOutOptions): Promise<number> {
+  // ما فعله صاحب الطلب بيده لا يُنبَّه به: إنشاء الطلب وإلغاؤه
+  if (payload.status === 'pending_payment' || (payload.status === 'cancelled' && payload.cancel_reason === 'buyer')) return 0;
+  const [o] = await tx
+    .select({ number: orders.orderNumber, userId: users.id })
+    .from(orders)
+    .innerJoin(users, eq(users.id, orders.createdBy))
+    .where(and(eq(orders.id, event.aggregateId), eq(users.organizationId, orders.organizationId), eq(users.status, 'active'), eq(users.membershipSuspended, false)));
+  if (!o) return 0;
+  const title = notificationTitle('order.status_changed', opts.locale, { ref: o.number });
+  const inserted = await tx
+    .insert(notifications)
+    .values({ userId: o.userId, eventId: event.id, type: event.type, materialId: null, title, priority: 'normal', assignmentState: null })
     .onConflictDoNothing({ target: [notifications.userId, notifications.eventId] })
     .returning({ id: notifications.id });
   return inserted.length;

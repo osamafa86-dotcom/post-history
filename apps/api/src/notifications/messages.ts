@@ -47,6 +47,11 @@ export const NOTIFICATION_TITLES: Record<string, Record<Locale, string>> = {
     ar: 'أُبطل الترخيص {ref} وتوقف تنزيله؛ لم تعد حقوق المادة تسمح باستعماله',
     en: 'License {ref} was revoked and its download stopped; the rights of the material no longer allow its use',
   },
+  // حالة طلب تغيّرت بغير يد صاحبه (تأكيد الدفع، الاسترداد، الإلغاء الآلي): رقم الطلب وحده، لا الحالة ولا المبلغ ولا المادة
+  'order.status_changed': {
+    ar: 'تغيّرت حالة الطلب {ref}',
+    en: 'The status of order {ref} changed',
+  },
   'render.failed': {
     ar: 'تعذّر إنتاج نسختك من المادة #{ref} على قالب «مواد متداولة»',
     en: 'Your circulated-template copy of material #{ref} could not be made',

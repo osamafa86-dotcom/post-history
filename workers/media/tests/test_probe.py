@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from conftest import LEAKY_TAGS, rotated, synth
+from media_worker.ffmpeg import FFMPEG, run
 from media_worker.probe import InvalidMediaError, probe
 
 
@@ -86,3 +87,14 @@ def test_truncated_file_rejected(tmp_path: Path, basic_clip: Path):
     f.write_bytes(data[: len(data) // 2])
     with pytest.raises(InvalidMediaError):
         probe(f)
+
+
+def test_broadcast_camera_mxf_is_read(tmp_path: Path):
+    """MXF من كاميرات البث (MPEG-2 وصوت PCM) في القائمة البيضاء للفيديو."""
+    src = tmp_path / "C0001.MXF"
+    run([FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+         "testsrc2=size=1280x720:rate=25:duration=2", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=2",
+         "-c:v", "mpeg2video", "-b:v", "4M", "-pix_fmt", "yuv420p", "-c:a", "pcm_s16le", "-f", "mxf", str(src)], timeout_s=60)
+    p = probe(src)
+    assert p.container == "mxf" and p.video_codec == "mpeg2video" and p.audio_codec == "pcm_s16le"
+    assert (p.width, p.height) == (1280, 720) and 1900 <= p.duration_ms <= 2100

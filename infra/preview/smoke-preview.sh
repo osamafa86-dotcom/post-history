@@ -112,10 +112,21 @@ gen -f lavfi -i "testsrc2=size=1280x720:rate=30:duration=6" -f lavfi -i "sine=fr
   -vf "noise=alls=20:allf=t" -c:v libx264 -preset veryfast -b:v 10M -maxrate 10M -bufsize 20M -pix_fmt yuv420p \
   -c:a aac -b:a 96k "${TAGS[@]}" /out/smoke.mov || fail "could not make the synthetic clip"
 gen -f lavfi -i "testsrc2=size=640x480" -frames:v 1 /out/photo.jpg || fail "could not make the synthetic photo"
+# The photo carries the same planted location and device strings, in a JPEG comment segment after the start marker.
+python3 - "$work/photo.jpg" "$GPS" "$MARK-device" <<'PY' || fail "could not plant the strings in the synthetic photo"
+import struct, sys
+path, *marks = sys.argv[1:]
+data = open(path, "rb").read()
+assert data[:2] == b"\xff\xd8"
+body = " ".join(marks).encode()
+open(path, "wb").write(data[:2] + b"\xff\xfe" + struct.pack(">H", len(body) + 2) + body + data[2:])
+PY
+grep -qaF -- "$MARK-device" "$work/photo.jpg" && grep -qaF -- "$GPS" "$work/photo.jpg" || fail "the planted strings are not in the synthetic photo"
 [ "$(stat -c %s "$work/smoke.mov")" -gt $((4 * 1048576)) ] || fail "the synthetic clip is under 4 MiB (the upload is cut at 3 MiB)"
 src_tags="$(ff ffprobe -v error -show_entries format_tags -of json /out/smoke.mov)"
 grep -qF "$MARK-device" <<<"$src_tags" && grep -qF "$GPS" <<<"$src_tags" || fail "the planted tags are not in the synthetic clip"
-# Why the API stays the verifier here (ADR 0092): the worker's probe refuses a still photo, so as the verifier it would fail them.
+# The worker's media probe still refuses a still photo: a photo goes through the still path alone (its own allowlist, addendum to
+# ADR 0092), never through the video one.
 ff python -c 'import sys
 from media_worker.probe import InvalidMediaError, probe
 try:
@@ -656,7 +667,7 @@ for (const [what, method, p] of [["a tampered signature", "GET", tampered], ["no
   if (r.status !== 403) die(`${what} on a derived file through the edge: ${r.status} (want 403)`);
 }
 say("a tampered or missing signature, a PUT and a DELETE on a derived file are refused (403): ok");
-// A photo original: the API verifies it as before, and the worker is never given it (it makes no light copy of a still).
+// A photo original: the API verifies it as before. The next feeder cycle gives it to the worker (checked after this block).
 const list = JSON.parse((await pub("GET", "/materials", bearer)).body).items.filter((x) => x.id !== mid);
 let photo;
 for (const x of list) if ((await upload(x.id, "/clip/photo.jpg", `${process.env.MARK}-photo.jpg`, "image/jpeg")).status === 201) { photo = x.id; break; }
@@ -682,7 +693,24 @@ console.log("the edge listener for signed links: verified by the BFF bundle on t
 ')" || { echo "$out"; fail "the edge's listener for signed links"; }
 echo "$out"
 
-# Re-running the backfill changes nothing: the clip is done and the photo is not the worker's.
+# The photo is the worker's too (the still path, addendum to ADR 0092): the next cycle gives it the photo original, and the
+# worker makes one re-encoded thumbnail that carries none of the strings planted in the photo, and no light copy of a still.
+bf="$("$HERE/backfill-media.sh" 2>/dev/null)" || fail "backfill-media.sh failed for the photo"
+[ "$(field "$bf" eligible)" = 1 ] && [ "$(field "$bf" enqueued)" = 1 ] || fail "the photo was not given to the worker: $bf"
+photo_thumb="FROM material_files t JOIN material_files o ON o.id = t.derived_from_id WHERE o.kind = 'original' AND o.mime_type = 'image/jpeg' AND t.kind = 'thumbnail' AND t.state = 'verified'"
+for _ in $(seq 1 90); do [ "$(sql "SELECT count(*) $photo_thumb")" = 1 ] && break; sleep 1; done
+[ "$(sql "SELECT count(*) $photo_thumb")" = 1 ] || fail "the worker made no thumbnail for the photo"
+[ "$(sql "SELECT count(*) FROM material_files p JOIN material_files o ON o.id = p.derived_from_id WHERE o.mime_type = 'image/jpeg' AND p.kind = 'proxy'")" = 0 ] \
+  || fail "the worker made a light copy of a still"
+photo_key="$(sql "SELECT t.storage_key $photo_thumb")"
+mcx "mc --config-dir /tmp/mc cat local/\$S3_BUCKET_MEDIA/$photo_key" > "$work/photo-thumb.jpg" || fail "could not read the photo thumbnail"
+[ "$(head -c 3 "$work/photo-thumb.jpg" | od -An -tx1 | tr -d ' \n')" = ffd8ff ] || fail "the photo thumbnail is not a JPEG"
+for planted in "$MARK" "$GPS" Exif; do
+  if grep -qaF -- "$planted" "$work/photo-thumb.jpg"; then fail "a planted location or device string reached the photo thumbnail"; fi
+done
+echo "the worker made one re-encoded thumbnail for the photo, with no planted string and no light copy: ok"
+
+# Re-running the backfill changes nothing: the clip and the photo are done.
 bf="$("$HERE/backfill-media.sh" 2>/dev/null)" || fail "backfill-media.sh failed on a second run"
 [ "$(field "$bf" eligible)" = 0 ] && [ "$(field "$bf" enqueued)" = 0 ] || fail "a second backfill: $bf"
 [ "$(rx XLEN media:dead)" = 0 ] || fail "the worker dead-lettered an event"

@@ -1,5 +1,5 @@
 import { Controller, Get, Inject, Injectable, Query } from '@nestjs/common';
-import { sql } from 'drizzle-orm';
+import { type SQL, sql } from 'drizzle-orm';
 import { validateQuery } from '../common/contract';
 import { ApiError } from '../common/errors';
 import { DB, type Database } from '../database/database.module';
@@ -7,7 +7,7 @@ import type { components } from '../generated/api';
 import { Roles } from '../identity/principal';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { type Currency, money, toContract } from './money';
-import { activePolicy, reserveOf } from './payouts';
+import { activePolicy, paidWithinRefundWindow, reserveAndRequestable } from './payouts';
 
 type ContributorEarnings = components['schemas']['ContributorEarnings'];
 type ContributorEarningsTotals = components['schemas']['ContributorEarningsTotals'];
@@ -30,7 +30,7 @@ export interface EarningsRow {
   refunded: bigint;
   shareBasisPoints: number | null;
   /** الرصيد الحالي بهذه العملة لكل حالة، موجبًا لصاحبه. */
-  balance?: { pending: bigint; available: bigint; inPayout: bigint; paid: bigint };
+  balance?: { pending: bigint; available: bigint; inPayout: bigint; paid: bigint; paidRecently: bigint };
 }
 
 /**
@@ -155,9 +155,10 @@ export class FinanceReportsService {
       FROM ledger_accounts a LEFT JOIN postings p ON p.account_id = a.id
       WHERE a.kind = 'contributor_payable' AND a.owner_id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})
       GROUP BY a.owner_id, a.currency, a.payable_state`);
+    const recent = await paidWithinRefundWindow(this.db, this.config, ids);
     for (const r of rows) {
       const of = (state: string) => BigInt(lines.find((l) => l.owner_id === r.userId && l.currency === r.currency && l.state === state)?.total ?? '0');
-      r.balance = { pending: of('pending'), available: of('available'), inPayout: of('in_payout'), paid: of('paid') };
+      r.balance = { pending: of('pending'), available: of('available'), inPayout: of('in_payout'), paid: of('paid'), paidRecently: recent.get(`${r.userId}:${r.currency}`) ?? 0n };
     }
   }
 
@@ -191,9 +192,35 @@ export class FinanceReportsService {
     return {
       month: q.month,
       items,
-      totals: earningsTotals(all),
+      totals: await this.withRefunds(earningsTotals(all), q.month, q.currency),
       next_cursor: rest.length > limit && last ? Buffer.from(JSON.stringify([last.share.toString(), last.userId, last.currency])).toString('base64url') : null,
     };
+  }
+
+  /**
+   * مجاميع الشهر بعد الاسترداد (قرار المنسّق 2026-11-15): ما رُدّ للمشترين باستردادات نجحت في الشهر كله، وما دفعته المنصة منه من
+   * `refund_reserve` لأن حصة المساهم كانت قد صُرفت. عملة فيها استرداد بلا بيعة في الشهر تظهر بمجاميع صفرية.
+   */
+  private async withRefunds(totals: ContributorEarningsTotals[], month: string, currency?: Currency): Promise<ContributorEarningsTotals[]> {
+    const [start, end] = monthRange(month);
+    const only = (column: SQL) => (currency ? sql`AND ${column} = ${currency}` : sql``);
+    const back = await this.db.execute<{ currency: Currency; total: string }>(sql`
+      SELECT r.currency, sum(r.amount_minor)::text AS total FROM refunds r
+       WHERE r.status = 'succeeded' AND r.completed_at >= ${start}::timestamptz AND r.completed_at < ${end}::timestamptz ${only(sql`r.currency`)}
+       GROUP BY r.currency`);
+    const borne = await this.db.execute<{ currency: Currency; total: string }>(sql`
+      SELECT p.currency, sum(p.amount_minor)::text AS total FROM postings p
+        JOIN ledger_accounts a ON a.id = p.account_id JOIN journal_entries j ON j.id = p.entry_id
+       WHERE a.kind = 'refund_reserve' AND j.kind = 'refund' AND j.occurred_at >= ${start}::timestamptz AND j.occurred_at < ${end}::timestamptz ${only(sql`p.currency`)}
+       GROUP BY p.currency`);
+    const of = (rows: Array<{ currency: Currency; total: string }>, c: Currency) => BigInt(rows.find((r) => r.currency === c)?.total ?? '0');
+    const zero = (c: Currency): ContributorEarningsTotals => ({ ...earningsTotals([{ userId: '', workName: null, currency: c, sales: 0, gross: 0n, net: 0n, share: 0n, refunded: 0n, shareBasisPoints: null }])[0]!, contributors: 0 });
+    const missing = [...new Set([...back.rows, ...borne.rows].map((r) => r.currency))].filter((c) => !totals.some((t) => t.currency === c));
+    return [...totals, ...missing.map(zero)].map((t) => ({
+      ...t,
+      refunded_to_buyers: toContract(money(of(back.rows, t.currency), t.currency)),
+      borne_by_platform: toContract(money(of(borne.rows, t.currency), t.currency)),
+    }));
   }
 
   /** الطلبات المدفوعة في السنة لكل مؤسسة وعملة، والمسترد منها. */
@@ -233,10 +260,10 @@ export class FinanceReportsService {
   }
 }
 
-/** الرصيد بصيغة العقد بسياسة العملة، كما يحسبه `PayoutsService.summary`: الاحتياطي من المتاح، والقابل للطلب ما بعده. */
+/** الرصيد بصيغة العقد بسياسة العملة، كما يحسبه `PayoutsService.summary`: الاحتياطي والقابل للطلب بالدالة نفسها. */
 function balanceOf(r: EarningsRow, policy: Awaited<ReturnType<typeof activePolicy>>): EarningsBalance {
   const b = r.balance!;
-  const reserve = reserveOf(b.available, policy.reserveBps);
+  const { reserve, requestable } = reserveAndRequestable(b, policy.reserveBps);
   const m = (v: bigint) => toContract(money(v, r.currency));
   return {
     currency: r.currency,
@@ -245,7 +272,7 @@ function balanceOf(r: EarningsRow, policy: Awaited<ReturnType<typeof activePolic
     in_payout: m(b.inPayout),
     paid: m(b.paid),
     reserve: m(reserve),
-    requestable: m(b.available > reserve ? b.available - reserve : 0n),
+    requestable: m(requestable),
     minimum: m(policy.minimum),
   };
 }

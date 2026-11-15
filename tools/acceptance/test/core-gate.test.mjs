@@ -129,6 +129,15 @@ test("download-url: links carry ids only and signature parameters", () => {
   assert.deepEqual(inspectLink(ok, { filenameStems: ["dl-1234"] }), []);
   assert.ok(inspectLink("https://s3.example/derived/dl-1234-clip.mov?X-Amz-Signature=a", { filenameStems: ["dl-1234"] }).length);
   assert.ok(inspectLink(`${ok}&filename=clip`).length, "an unexpected query parameter is flagged");
+  // a signed download name is allowed only as a fixed word, the material's id prefix and an extension
+  const named = (name) => `${ok}&response-content-disposition=${encodeURIComponent(`attachment; filename="${name}"`)}`, material = "1b9e1f4e-2c3d-4e5f-8a7b-9c0d1e2f3a4b";
+  assert.deepEqual(inspectLink(named("proxy-480p-1b9e1f4e.mp4"), { filenameStems: ["dl-1234"], materialId: material }), []);
+  assert.deepEqual(inspectLink(named("thumbnail-1b9e1f4e"), { materialId: material }), [], "no extension is fine");
+  assert.ok(inspectLink(named("proxy-480p-0a0a0a0a.mp4"), { materialId: material }).length, "another material's id prefix is flagged");
+  assert.ok(inspectLink(named("Field Report Final.mp4"), { materialId: material }).length, "free text is flagged");
+  assert.ok(inspectLink(named("dl-1234-a-1b9e1f4e.mov"), { filenameStems: ["dl-1234"], materialId: material }).length, "the upload's own filename is flagged");
+  assert.ok(inspectLink(`${ok}&response-content-disposition=inline`, { materialId: material }).length, "inline is not a download name");
+  assert.ok(inspectLink(`${named("proxy-480p-1b9e1f4e.mp4")}&response-content-type=text%2Fhtml`, { materialId: material }).length, "no other response override rides along");
 });
 
 test("admin-quorum: a command that never started is not a refusal", async () => {

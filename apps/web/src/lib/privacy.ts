@@ -66,9 +66,19 @@ export function safeMaterial(material: Material, permissions: Permission[], form
     thumbnail_file_id: typeof material.thumbnail_file_id === "string" && uuid.test(material.thumbnail_file_id) && material.files.some(f => f.id === material.thumbnail_file_id && f.kind === "thumbnail" && f.state === "verified") ? material.thumbnail_file_id : null,
   };
 }
-/** الإشعار بقائمة بيضاء: العنوان الحرّ محذوف (ADR 0090)، والنوع فئة من قائمة Outbox المغلقة وحدها وإلا فارغ (ADR 0103). */
+/**
+ * مرجع إشعار المتجر للمشتري (قرار المنسّق 2026-11-15): رقم الترخيص المُبطل أو رقم الطلب الذي تغيّرت حالته، مستخرجًا من عنوان الخادم بصيغة
+ * العقد وحدها. لا يمرّ من العنوان نص غيره، ولا مرجع لأي نوع آخر (ADR 0090).
+ */
+export function storeReference(item: Pick<Notification, "type" | "title">): string {
+  const title = typeof item.title === "string" ? item.title : "";
+  if (item.type === "license.revoked") return /PH-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{10}/.exec(title)?.[0] ?? "";
+  if (item.type === "order.status_changed") return /ORD-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{8}/.exec(title)?.[0] ?? "";
+  return "";
+}
+/** الإشعار بقائمة بيضاء: العنوان الحرّ محذوف (ADR 0090) إلا مرجع المتجر بصيغته، والنوع فئة من قائمة Outbox المغلقة وحدها وإلا فارغ (ADR 0103). */
 export function safeNotification(item: Notification): Notification {
-  return { id: item.id, type: knownType(item.type), title: "", material_id: item.material_id && uuid.test(item.material_id) ? item.material_id : null,
+  return { id: item.id, type: knownType(item.type), title: storeReference(item), material_id: item.material_id && uuid.test(item.material_id) ? item.material_id : null,
     priority: item.priority, state: item.state, escalation_level: item.escalation_level, assignment_state: item.assignment_state,
     ...(item.assignment_id && uuid.test(item.assignment_id) ? { assignment_id: item.assignment_id } : {}),
     // طلب الاستعادة الذي ينتظر اعتماد المستلِم (ADR 0108): معرّفه وحده يفتح صفحة الاعتماد

@@ -19,13 +19,16 @@ export const pageNames = {
   "notification-rules": (m: Messages) => m.rules.title, "commission-rules": (m: Messages) => m.commission.nav, "invite-conflicts": (m: Messages) => m.conflicts.nav,
   "recovery-requests/[id]": (m: Messages) => m.pageTitles.recovery, security: (m: Messages) => m.security.title,
   login: (m: Messages) => m.pageTitles.login, "forgot-password": (m: Messages) => m.pageTitles.forgot, "reset-password": (m: Messages) => m.pageTitles.reset, invite: (m: Messages) => m.pageTitles.invite,
-  privacy: (m: Messages) => m.privacy.title, "verify/[number]": (m: Messages) => m.pageTitles.verify,
+  privacy: (m: Messages) => m.privacy.title, "verify/[number]": (m: Messages) => m.pageTitles.verify, verify: (m: Messages) => m.pageTitles.verifyLookup,
 };
 export type PageName = keyof typeof pageNames;
 
 export const pageTitle = (locale: Locale, page: PageName) => `${pageNames[page](messages[locale])} · ${messages[locale].product}`;
 
+/** عنوان صفحة غير موجودة؛ ومنها مسار بلغة لا نعرفها (`/fr/login`)، فلا يحمل اسم الصفحة التي لم تُعرض. */
+export const missingTitle = (locale: Locale) => `${messages[locale].pageNotFound.title} · ${messages[locale].product}`;
+
 /** `generateMetadata` لصفحة: `export const generateMetadata = pageMetadata("inbox");` */
 export function pageMetadata(page: PageName) {
-  return async ({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> => { const { locale } = await params; return { title: pageTitle(isLocale(locale) ? locale : "ar", page) }; };
+  return async ({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> => { const { locale } = await params; return { title: isLocale(locale) ? pageTitle(locale, page) : missingTitle("ar") }; };
 }

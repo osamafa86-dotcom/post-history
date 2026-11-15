@@ -8,7 +8,7 @@ import { CatalogController } from './catalog.controller';
 import { CatalogService } from './catalog.service';
 import { LicenseTemplatesController } from './license-templates.controller';
 import { InviteConflictsController, InviteConflictsService } from './invite-conflicts.controller';
-import { LicensesController, LicensesService, LicenseVerificationsController } from './licenses';
+import { LicensesController, LicensesService, LicenseVerificationsController, MaterialLicensesController } from './licenses';
 import { LicenseTemplatesService } from './license-templates.service';
 import { ListingsController } from './listings.controller';
 import { ListingsService } from './listings.service';
@@ -28,7 +28,7 @@ import { FinanceReportsController, FinanceReportsService } from './finance-repor
   imports: [VerificationModule, IdentityModule],
   controllers: [
     LicenseTemplatesController, ListingsController, CatalogController, BuyersController,
-    OrdersController, PaymentWebhooksController, SandboxCheckoutController, SandboxRefundsController, LicensesController, LicenseVerificationsController,
+    OrdersController, PaymentWebhooksController, SandboxCheckoutController, SandboxRefundsController, LicensesController, MaterialLicensesController, LicenseVerificationsController,
     RefundsController, CommissionRulesController, InviteConflictsController,
     MyEarningsController, UserEarningsController, PayoutRequestsController, PayoutPoliciesController, FinanceReportsController,
   ],

@@ -40,6 +40,7 @@ from .proxy import make_proxy
 from .render import Segment, render
 from .hls import make_hls
 from .phash import video_phash
+from .stills import opaque_probe, opaque_still, probe_still, still_format, still_thumbnail
 from .thumbnails import contact_sheet, poster, timeline_sprite
 from .waveform import write_waveform
 from .storage import DERIVED_PREFIX, ObjectMissing
@@ -228,14 +229,19 @@ class Jobs:
             if digest.size_bytes != session.size_bytes:
                 self.api.report_verification(session_id, {"result": "invalid_file"})
                 return "invalid_file"
+            still = None
             try:
                 info: Probe = probe(local)
             except InvalidMediaError:
-                self.api.report_verification(session_id, {"result": "invalid_file"})
-                return "invalid_file"
+                # ما ليس وسائط زمنية قد يكون صورة ثابتة: أصلٌ يُفحص بمساره وقائمته (stills.py)، وما سواه يُرفض
+                found = self._still(session, local)
+                if found is None:
+                    self.api.report_verification(session_id, {"result": "invalid_file"})
+                    return "invalid_file"
+                info, still = found
 
             body = {"result": "verified", "sha256": digest.sha256, **digest.fingerprint(), "technical": info.to_dict()}
-            if self.enable_phash and info.video_codec:
+            if self.enable_phash and info.video_codec and still is None:
                 try:  # غير مانعة: فشل البصمة لا يُفشل التحقق، والحقل يُترك خارج الجسم
                     body["perceptual_hash"] = video_phash(local)
                 except Exception as err:  # noqa: BLE001
@@ -251,6 +257,8 @@ class Jobs:
             if session.kind != "original":
                 return "verified"
             file_id, outcome = result["file_id"], "verified"
+            if still is not None:
+                return outcome + self._still_thumbnail(session, file_id, local, still, info)
             if not resume:
                 if info.audio_codec:
                     outcome += self._waveform(session, file_id, local, info)
@@ -272,6 +280,40 @@ class Jobs:
                 # بعد النسخة الخفيفة: القياس لا يؤخر جاهزية المعاينة
                 outcome += self._align(session, local, session.proxy_file_id, file_id, proxy_side=False)
             return outcome
+
+    @staticmethod
+    def _still(session: Session, local: Path) -> tuple[Probe, str] | None:
+        """صورة الأصل الثابتة: JPEG أو PNG تُفحص وتُصغَّر، وHEIC وRAW تُقبل بلا فك (`opaque`). لغير الأصل لا صورة."""
+        if session.kind != "original":
+            return None
+        kind = still_format(local)
+        if kind:
+            try:
+                return probe_still(local, kind), kind
+            except InvalidMediaError:
+                return None
+        container = opaque_still(local)
+        return (opaque_probe(container), "opaque") if container else None
+
+    def _still_thumbnail(self, session: Session, file_id: str, local: Path, kind: str, info: Probe) -> str:
+        """مصغّرة الصورة مسجّلةً مشتقًا من أصلها بمفتاح ملصق الفيديو نفسه. غير مانعة: أي فشل يُسجَّل ويُترك."""
+        if kind == "opaque":
+            return "+no-preview"
+        key = poster_key(session.material_id, file_id)
+        try:
+            thumb = still_thumbnail(local, local.with_name("poster.jpg"), kind, info)
+            d = digest_file(thumb.path)
+            self.storage.put_file(self.buckets.derived, key, thumb.path, d.sha256, "image/jpeg")
+        except Exception as err:  # noqa: BLE001
+            log.warning("still thumbnail skipped file=%s error=%s", file_id, type(err).__name__)
+            return "+thumbnails-failed"
+        ok = self._register(file_id, {
+            "kind": "thumbnail", "storage_key": key, "sha256": d.sha256, "size_bytes": d.size_bytes,
+            "mime_type": "image/jpeg",
+            "technical": {"duration_ms": 0, "start_pts_us": 0, "width": thumb.width, "height": thumb.height,
+                          "container": "jpeg", "video_codec": "mjpeg"},
+        })
+        return "+thumbnails" if ok else "+thumbnails-unregistered"
 
     def _align(self, session: Session, local: Path, proxy_file_id: str, original_file_id: str,
                proxy_side: bool) -> str:

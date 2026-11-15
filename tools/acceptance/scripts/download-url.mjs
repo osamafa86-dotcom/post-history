@@ -2,7 +2,8 @@
 //   DL_API_URL  DL_TUS_URL  DL_TOKENS {reporter, reporter_b}  DL_TIMEOUT_S (240)  DL_WAIT_EXPIRY=1 (wait for the link to expire and check it stops working)
 // A synthetic phone clip is uploaded (original only); the worker's proxy appears in the material's files. Then:
 //   proxy file      -> 200 {url, expires_at}, Cache-Control: no-store, expires_at within 10 minutes (and X-Amz-Expires when the link is an S3 signature)
-//   the link        -> its path holds ids only (no original filename, no planted revealing value, no query beyond the signature); the bytes it serves hash to the proxy's sha256
+//   the link        -> its path holds ids only (no original filename, no planted revealing value, no query beyond the signature and a signed neutral
+//                      download name: a fixed word, the first eight of the material id, the extension); the bytes it serves hash to the proxy's sha256
 //                      (when the link is reachable from here; otherwise said, not failed)
 //   original file   -> 404, the same body as a file that does not exist, another material's file, and another reporter's request (no telling them apart); no token -> 401
 // `pass` needs the link to have been fetched and, with DL_WAIT_EXPIRY=1, refused after it expired; otherwise partial.
@@ -23,14 +24,27 @@ import { readFileSync } from "node:fs";
 
 const ID_SEGMENT = /^(derived|uploads|[0-9a-f-]{36}|[A-Za-z0-9_-]{1,40}\.(mp4|jpg|json|m3u8|m4s))$/;
 
+/**
+ * The one parameter beyond the signature a link may carry: a signed `response-content-disposition` that makes the browser save the file instead of
+ * opening it, under a neutral name built from fixed words and ids only (`proxy-480p-1b9e1f4e.mp4`). Anything else in it (free text, a title, a
+ * place, an upload's own filename) is a problem: the name travels in the link.
+ */
+export function neutralDownloadName(value, materialId) {
+  const m = /^attachment; filename="([a-z0-9]+(?:-[a-z0-9]+)*)-([0-9a-f]{8})(\.[a-z0-9]{2,5})?"$/.exec(value ?? "");
+  return Boolean(m) && (!materialId || m[2] === String(materialId).replace(/-/g, "").slice(0, 8));
+}
+
 /** What a link may and may not carry; returns the problems. */
-export function inspectLink(link, { filenameStems = [] } = {}) {
+export function inspectLink(link, { filenameStems = [], materialId = null } = {}) {
   const u = new URL(link), problems = [];
   const segs = u.pathname.split("/").filter(Boolean);
   if (segs.slice(1).some((s) => !ID_SEGMENT.test(s))) problems.push(`path segments are not ids: ${u.pathname}`);
   for (const stem of [...filenameStems, ...LEAK_VALUES]) if (stem && link.toLowerCase().includes(String(stem).toLowerCase())) problems.push("a name or planted value is in the link");
   const keys = [...u.searchParams.keys()];
-  if (keys.some((k) => !/^(x-amz-|signature|expires|key-pair-id|token|policy|sig|se|sp|sv|sr|sip|spr|st)/i.test(k))) problems.push(`unexpected query parameters: ${keys.join(",")}`);
+  const extra = keys.filter((k) => !/^(x-amz-|signature|expires|key-pair-id|token|policy|sig|se|sp|sv|sr|sip|spr|st)/i.test(k));
+  const named = extra.filter((k) => k.toLowerCase() === "response-content-disposition");
+  if (extra.length > named.length || named.length > 1) problems.push(`unexpected query parameters: ${keys.join(",")}`);
+  else if (named.length && !neutralDownloadName(u.searchParams.get(named[0]), materialId)) problems.push("the download name is not a fixed word and the material's id prefix");
   return problems;
 }
 
@@ -76,8 +90,8 @@ export async function run(argv = process.argv.slice(2), env = process.env, deps 
     if (link) {
       const amz = link.searchParams.get("X-Amz-Expires");
       if (amz) check("X-Amz-Expires is 600 s at most", Number(amz) <= 600, amz);
-      const problems = inspectLink(g.body.url, { filenameStems: [stem] });
-      check("the link carries ids only: no filename, no planted value, only signature parameters", problems.length === 0, problems.join("; "));
+      const problems = inspectLink(g.body.url, { filenameStems: [stem], materialId: a.mat.id });
+      check("the link carries ids only: no upload filename, no planted value, only signature parameters and a neutral download name", problems.length === 0, problems.join("; "));
       try {
         const res = await (deps.fetchImpl ?? freshFetch)(g.body.url);
         if (res.status === 200) {

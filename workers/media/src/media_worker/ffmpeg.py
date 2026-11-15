@@ -11,7 +11,8 @@ FFPROBE = os.environ.get("FFPROBE_BIN", "ffprobe")
 
 # الملفات من المراسلين غير موثوقة: يُقبل من الحاويات ما تنتجه الهواتف والكاميرات فقط، ولا بروتوكول غير الملف المحلي.
 # قائمة HLS أو concat متنكرة بامتداد .mp4 تستطيع وإلا أن تقرأ ملفات العامل (/proc/self/environ) وتضمّنها في المخرج.
-ALLOWED_DEMUXERS = ("mov", "matroska", "mpegts", "aac", "wav", "ogg", "mp3")
+# `mxf` لكاميرات البث (حاوية مادة مغلقة في ملف واحد). الصور الثابتة ليست هنا: لها مسارها وقائمتها (`stills.py`).
+ALLOWED_DEMUXERS = ("mov", "matroska", "mpegts", "mxf", "aac", "wav", "ogg", "mp3")
 INPUT_GUARD = ["-format_whitelist", ",".join(ALLOWED_DEMUXERS), "-protocol_whitelist", "file"]
 # العملية الفرعية لا ترث بيئة العامل (رمز الخادم، مفاتيح التخزين)
 CHILD_ENV = {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"), "LC_ALL": "C"}
