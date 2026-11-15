@@ -2,7 +2,8 @@ import { hash } from '@node-rs/argon2';
 import { randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { schemaValidator } from '../../src/common/contract';
-import { signWebhook } from '../../src/commerce/payment-provider';
+import { money } from '../../src/commerce/money';
+import { PAYMENT_PROVIDER, type PaymentProvider, signWebhook } from '../../src/commerce/payment-provider';
 import { createHarness, type Harness, loginAs, makeSaleable, seedUploadSession, seedUser, statementsDuring } from './harness';
 
 type Actor = Awaited<ReturnType<typeof loginAs>>;
@@ -279,5 +280,156 @@ describe('sandbox purchase (/v1/orders, /payments/webhooks/sandbox)', () => {
     await pay(r2);
     expect(await order(b.token, changed.body.id)).toMatchObject({ status: 'cancelled', cancel_reason: 'rights_changed' });
     expect(await count(`SELECT count(*)::int AS n FROM licenses l JOIN order_items i ON i.id = l.order_item_id WHERE i.order_id = $1`, [changed.body.id])).toBe(0);
+  });
+  // ---- دفع بلا ترخيص (ADR 0032، تعديل 2026-11-15): يُسجَّل للمراجعة ويُطلب استرداده من المزوّد، ولا يُتجاهل ----
+  const notice = (r: string, amount = 10_000) => {
+    const eventId = `e_${randomUUID()}`;
+    const body = Buffer.from(JSON.stringify({ event_id: eventId, type: 'payment.succeeded', provider_ref: r, amount: { amount_minor: amount, currency: 'USD' }, occurred_at: new Date().toISOString() }));
+    const ts = Math.floor(Date.now() / 1000);
+    const sent = http().post('/payments/webhooks/sandbox').set('Content-Type', 'application/json').set('X-Timestamp', String(ts)).set('X-Signature', `v1=${signWebhook(SECRET, ts, body)}`).send(body.toString('utf8')).expect(200);
+    return { eventId, sent };
+  };
+  const refundSpy = () => jest.spyOn(h.app.get<PaymentProvider>(PAYMENT_PROVIDER), 'refund');
+  const unlicensed = async (orderId: string) =>
+    (await h.pool.query(`SELECT details FROM audit_log WHERE action = 'payment.unlicensed_refund' AND target_type = 'order' AND target_id = $1 ORDER BY id`, [orderId])).rows.map((r) => r.details);
+  const nothingIssued = async (orderId: string) => {
+    expect(await count(`SELECT count(*)::int AS n FROM licenses l JOIN order_items i ON i.id = l.order_item_id WHERE i.order_id = $1`, [orderId])).toBe(0);
+    expect(await count(`SELECT count(*)::int AS n FROM journal_entries WHERE reference_id = $1`, [orderId])).toBe(0);
+  };
+  const outcomes = async (orderId: string) => (await h.pool.query(`SELECT type, outcome FROM payment_events WHERE order_id = $1 ORDER BY received_at`, [orderId])).rows;
+  // مهلة الطلب مضت (الطلب لا تُعدَّل مهلته، فيُعطَّل حارسه في الاختبار وحده)، وحجزه الحصري معها
+  const lapse = async (orderId: string) => {
+    await h.pool.query(`ALTER TABLE orders DISABLE TRIGGER orders_guard`);
+    try {
+      await h.pool.query(`UPDATE orders SET created_at = now() - interval '2 hours', expires_at = now() - interval '1 hour' WHERE id = $1`, [orderId]);
+    } finally {
+      await h.pool.query(`ALTER TABLE orders ENABLE TRIGGER orders_guard`);
+    }
+    await h.pool.query(`ALTER TABLE exclusive_holds DISABLE TRIGGER exclusive_holds_guard`);
+    try {
+      await h.pool.query(
+        `UPDATE exclusive_holds h SET created_at = now() - interval '70 minutes', held_until = now() - interval '1 hour' FROM order_items i WHERE i.id = h.order_item_id AND i.order_id = $1`,
+        [orderId],
+      );
+    } finally {
+      await h.pool.query(`ALTER TABLE exclusive_holds ENABLE TRIGGER exclusive_holds_guard`);
+    }
+  };
+
+  it('a suspended organization opens no payment session; a payment that still arrives for its order issues no license and is refunded', async () => {
+    const t = await template();
+    const { listingId } = await listed([t]);
+    const orgId = await organization();
+    const b = await buyer(orgId);
+    const o = (await post(b.token, '/orders', { items: [{ listing_id: listingId, license_template_id: t }] }).expect(201)).body;
+    const { ref: r } = await ref(b.token, o.id);
+    await h.pool.query(`UPDATE buyer_organizations SET status = 'suspended' WHERE id = $1`, [orgId]);
+    expect((await post(b.token, `/orders/${o.id}/checkout`).expect(403)).body.code).toBe('forbidden_scope');
+
+    const refund = refundSpy();
+    await pay(r);
+    await nothingIssued(o.id);
+    expect(await outcomes(o.id)).toEqual([{ type: 'payment.succeeded', outcome: 'review' }]);
+    expect(refund).toHaveBeenCalledTimes(1);
+    expect(refund).toHaveBeenCalledWith(expect.objectContaining({ providerRef: r, amount: money(10_000, 'USD') }));
+    expect(await unlicensed(o.id)).toEqual([{ organization_id: orgId, reason_code: 'organization_inactive', result: 'requested' }]);
+    // الطلب لا يُلغى (لا سبب إلغاء له في العقد): يبقى حتى تنتهي مهلته
+    expect((await h.pool.query(`SELECT status FROM orders WHERE id = $1`, [o.id])).rows[0].status).toBe('pending_payment');
+    refund.mockRestore();
+  });
+
+  it('cancelling an order closes its sandbox session; a payment that still arrives is kept for review and refunded, once per notice', async () => {
+    const t = await template();
+    const { listingId } = await listed([t]);
+    const orgId = await organization();
+    const b = await buyer(orgId);
+    const o = (await post(b.token, '/orders', { items: [{ listing_id: listingId, license_template_id: t }] }).expect(201)).body;
+    const { ref: r } = await ref(b.token, o.id);
+    await http().get(`/sandbox/checkout/${r}`).expect(200);
+    await post(b.token, `/orders/${o.id}/cancel`).expect(200);
+    await http().get(`/sandbox/checkout/${r}`).expect(404);
+    await http().post(`/sandbox/checkout/${r}/succeeded`).expect(404);
+
+    // مزوّد قبض الدفعة قبل أن يصله الإلغاء: إشعاره الموقّع يصل للطلب الملغى
+    const refund = refundSpy();
+    const first = notice(r);
+    await first.sent;
+    expect(await order(b.token, o.id)).toMatchObject({ status: 'cancelled', cancel_reason: 'buyer', paid_at: null });
+    await nothingIssued(o.id);
+    expect(await outcomes(o.id)).toEqual([{ type: 'payment.succeeded', outcome: 'review' }]);
+    expect(refund.mock.calls.map(([input]) => input)).toEqual([{ providerRef: r, amount: money(10_000, 'USD'), idempotencyKey: `unlicensed:${first.eventId}` }]);
+    expect(await unlicensed(o.id)).toEqual([{ organization_id: orgId, reason_code: 'order_cancelled', result: 'requested' }]);
+    refund.mockRestore();
+  });
+
+  it('a provider that refuses the refund of an unlicensed payment leaves it recorded as failed, and the notice is still accepted', async () => {
+    const t = await template();
+    const { listingId } = await listed([t]);
+    const orgId = await organization();
+    const b = await buyer(orgId);
+    const o = (await post(b.token, '/orders', { items: [{ listing_id: listingId, license_template_id: t }] }).expect(201)).body;
+    const { ref: r } = await ref(b.token, o.id);
+    await post(b.token, `/orders/${o.id}/cancel`).expect(200);
+    const refund = refundSpy().mockRejectedValueOnce(new Error('provider down'));
+    await notice(r).sent;
+    expect(await outcomes(o.id)).toEqual([{ type: 'payment.succeeded', outcome: 'review' }]);
+    expect(await unlicensed(o.id)).toEqual([{ organization_id: orgId, reason_code: 'order_cancelled', result: 'failed' }]);
+    refund.mockRestore();
+  });
+
+  it('a late payment for an order whose time ran out is accepted while the offer is still available', async () => {
+    const t = await template();
+    const { listingId } = await listed([t]);
+    const b = await buyer(await organization());
+    const o = (await post(b.token, '/orders', { items: [{ listing_id: listingId, license_template_id: t }] }).expect(201)).body;
+    const { ref: r } = await ref(b.token, o.id);
+    await lapse(o.id);
+    // لمس الطلب يُنهيه: لا جلسة دفع جديدة له
+    expect((await post(b.token, `/orders/${o.id}/checkout`).expect(409)).body.code).toBe('order_state_conflict');
+    expect((await order(b.token, o.id)).status).toBe('expired');
+    const refund = refundSpy();
+    await pay(r);
+    expect((await order(b.token, o.id)).status).toBe('paid');
+    expect(await count(`SELECT count(*)::int AS n FROM licenses l JOIN order_items i ON i.id = l.order_item_id WHERE i.order_id = $1`, [o.id])).toBe(1);
+    expect(refund).not.toHaveBeenCalled();
+    refund.mockRestore();
+  });
+
+  it('a late payment for an expired exclusive order whose exclusivity went to another buyer issues no license and is refunded', async () => {
+    const ex = await template('exclusive_temporary');
+    const { listingId } = await listed([ex]);
+    const orgA = await organization();
+    const a = await buyer(orgA);
+    const b = await buyer(await organization());
+    const late = (await post(a.token, '/orders', { items: [{ listing_id: listingId, license_template_id: ex }] }).expect(201)).body;
+    const { ref: r } = await ref(a.token, late.id);
+    await lapse(late.id);
+    const taken = (await post(b.token, '/orders', { items: [{ listing_id: listingId, license_template_id: ex }] }).expect(201)).body;
+    await pay((await ref(b.token, taken.id)).ref);
+    expect((await order(b.token, taken.id)).status).toBe('paid');
+
+    const refund = refundSpy();
+    await pay(r);
+    expect((await order(a.token, late.id)).status).toBe('expired');
+    await nothingIssued(late.id);
+    expect(await outcomes(late.id)).toEqual([{ type: 'payment.succeeded', outcome: 'review' }]);
+    expect(refund).toHaveBeenCalledWith(expect.objectContaining({ providerRef: r, amount: money(10_000, 'USD') }));
+    expect(await unlicensed(late.id)).toEqual([{ organization_id: orgA, reason_code: 'exclusivity_lost', result: 'requested' }]);
+    refund.mockRestore();
+  });
+
+  it('a second notice for an order already paid stays without effect and is not refunded', async () => {
+    const t = await template();
+    const { listingId } = await listed([t]);
+    const b = await buyer(await organization());
+    const o = (await post(b.token, '/orders', { items: [{ listing_id: listingId, license_template_id: t }] }).expect(201)).body;
+    const { ref: r } = await ref(b.token, o.id);
+    await pay(r);
+    const refund = refundSpy();
+    await notice(r).sent;
+    expect(await outcomes(o.id)).toEqual([{ type: 'payment.succeeded', outcome: 'applied' }, { type: 'payment.succeeded', outcome: 'ignored' }]);
+    expect(refund).not.toHaveBeenCalled();
+    expect(await unlicensed(o.id)).toEqual([]);
+    refund.mockRestore();
   });
 });

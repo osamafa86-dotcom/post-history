@@ -33,8 +33,9 @@ test("the organization admin edits the profile and manages members within the se
   await members.getByRole("button", { name: b.done }).click(); await expect(members.getByTestId("invite-token")).toHaveCount(0);
   await page.reload(); await expect(members.getByTestId("member-row")).toHaveCount(3); await expect(page.getByTestId("invite-token")).toHaveCount(0);
   await expect(members.getByRole("button", { name: b.invite })).toBeDisabled(); await expect(members.getByText(b.seatsFull)).toBeVisible();
+  // آخر مدير: الرفض بسببه نفسه لا بالرسالة العامة (قرار المنسّق 2026-11-15)
   await members.getByTestId("member-row").filter({ hasText: "buyeradmin@" }).getByRole("button", { name: b.suspend }).click();
-  await expect(members.getByText(b.memberConflict)).toBeVisible();
+  await expect(members.locator("[data-refusal='last_buyer_admin']")).toHaveText(ar.refusals.last_buyer_admin); await expect(members.getByText(b.memberConflict)).toHaveCount(0);
   await members.getByTestId("member-row").filter({ hasText: "buyer@example" }).getByRole("button", { name: b.suspend }).click();
   await expect(members.getByTestId("member-row").filter({ hasText: "buyer@example" })).toContainText(b.memberStatuses.suspended);
   await expect(page.locator("main")).not.toContainText("never-display-canary");
@@ -47,7 +48,7 @@ test("the system admin creates and activates an organization; finance reads only
   await page.getByRole("button", { name: e.new }).click();
   await page.getByLabel(e.legalName).fill("Synthetic Press LLC");
   const name = page.getByRole("group", { name: e.displayName }); await name.getByLabel(en.templates.arabic).fill("صحافة اصطناعية"); await name.getByLabel(en.templates.english).fill("Synthetic Press");
-  await page.getByLabel(e.country).fill("jo"); await page.getByLabel(e.billingEmail).fill("billing@press.example.test");
+  await page.getByLabel(e.country).selectOption({ label: "Jordan" }); await page.getByLabel(e.billingEmail).fill("billing@press.example.test");
   await page.getByRole("button", { name: e.create }).click(); await expect(page.getByRole("alert").filter({ hasText: e.invalid })).toBeVisible();
   await page.getByLabel(e.firstAdmin).fill("admin@press.example.test"); await page.getByRole("button", { name: e.create }).click();
   await expect(page.getByTestId("invite-token")).toHaveText("synthetic-invite-token-organization-0001"); await expect(page.getByText(e.tokenOnce)).toBeVisible();

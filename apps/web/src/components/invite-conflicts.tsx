@@ -1,6 +1,7 @@
 "use client";
 import { NoAccess } from "./empty-state";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { browserApi, dataOrThrow } from "@/lib/browser-api";
 import { formatDate, messages, type Locale } from "@/lib/i18n";
 import { hasRole } from "@/lib/review";
@@ -12,6 +13,12 @@ import { fill } from "@/lib/admin-text";
 import { localized } from "@/lib/store-format";
 
 type State = InviteConflict["state"];
+
+/** الحسم يطلب رمز تطبيق المصادقة: من لا تحقق بخطوتين له يُقال له ذلك وطريق تفعيله (استعادة الحساب تربط التطبيق)، لا «رمز خاطئ». */
+export function TotpNeeded({ locale }: { locale: Locale }) {
+  const t = messages[locale].conflicts;
+  return <div className="notice attention" role="alert" data-testid="totp-needed"><p>{t.totpNeeded}</p><p>{t.totpHow} <Link prefetch={false} href={`/${locale}/forgot-password`}>{t.totpStart}</Link></p></div>;
+}
 type Pending = { conflict: InviteConflict; state: InviteConflictResolve["state"] };
 
 /** طابور تعارض الدعوات لمدير النظام: الحسم بالحالة وحدها وبرمز TOTP حاضر، ولا نص حر. الرمز في الذاكرة حتى الإرسال ثم يُمحى. */
@@ -68,11 +75,11 @@ export function InviteConflicts({ locale }: { locale: Locale }) {
       <form noValidate onSubmit={e => { e.preventDefault(); void resolve(); }}>
         <h2 id="conflict-title">{t.actions[pending.state]}</h2>
         <p><bdi dir="ltr">{pending.conflict.email}</bdi></p><p className="muted">{t.effects[pending.state]}</p>
-        <label>{m.totp}<input autoFocus inputMode="numeric" dir="ltr" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ""))} /></label>
+        {me.totp_enabled === false ? <TotpNeeded locale={locale} /> : <label>{m.totp}<input autoFocus inputMode="numeric" dir="ltr" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ""))} /></label>}
         {mutation.status === 422 && <p className="notice error" role="alert">{t.totpRejected}</p>}
         {mutation.status === 409 && <p className="notice error" role="alert">{t.conflict}</p>}
         {![0, 409, 422].includes(mutation.status) && <ActionStatus status={mutation.status} locale={locale} />}
-        <div className="actions"><button type="button" className="secondary" disabled={mutation.busy} onClick={close}>{m.cancel}</button><button className={pending.state === "dismissed" ? "danger" : ""} disabled={mutation.busy || code.length !== 6}>{mutation.busy ? m.review.saving : m.confirm}</button></div>
+        <div className="actions"><button type="button" className="secondary" disabled={mutation.busy} onClick={close}>{m.cancel}</button><button className={pending.state === "dismissed" ? "danger" : ""} data-testid="conflict-confirm" disabled={mutation.busy || code.length !== 6 || me.totp_enabled === false}>{mutation.busy ? m.review.saving : t.confirms[pending.state]}</button></div>
       </form>
     </dialog>}
   </>;

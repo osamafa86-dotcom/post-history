@@ -1,4 +1,5 @@
 import type { components } from "@/generated/schema";
+import { isCountry } from "./countries";
 
 // قيم قوالب التراخيص (v0.3، ADR 0025)؛ يطابقها contract-drift مع OpenAPI، وليست نماذج بديلة.
 export type TemplateInput = components["schemas"]["LicenseTemplateInput"];
@@ -14,6 +15,10 @@ export const prohibitions = ["resale", "advertising", "ai_training", "re_editing
 export const currencies = ["USD", "ILS"] as const satisfies readonly components["schemas"]["Currency"][];
 export const termRequired: readonly LicenseType[] = ["editorial_term", "exclusive_temporary"];
 export const templateLimits = { text: 4000, countries: 250, termMin: 1, termMax: 3650, hoursMin: 24, hoursMax: 168, amountMax: 100000000000 } as const;
+/** حدّ الكتابة في النموذج لاسم القالب وعنوان الإدراج: يظهران في بطاقة وسطر جدول. حدّ الواجهة وحدها؛ العقد يقبل حتى `templateLimits.text`. */
+export const shortTextMax = 120;
+/** ما يُسلَّم فعلًا من بنود القالب: النسخة المنتجة لا تُسلَّم قبل نوعها في العقد (#278)، فلا تُكتب للمشتري ولا تُعرض في النموذج لقالب جديد. */
+export const delivered = <T extends string>(list: readonly T[]) => list.filter(item => item !== "produced");
 
 const keys = ["type", "name", "terms", "usage_media", "territory", "term_days", "exclusivity_hours", "deliverables", "attribution", "prohibitions", "base_price", "enabled"];
 const subset = <T>(value: unknown, allowed: readonly T[], min = 0): value is T[] => Array.isArray(value) && value.length >= min && new Set(value).size === value.length && value.every(v => (allowed as readonly unknown[]).includes(v));
@@ -31,7 +36,7 @@ export function templateInput(body: Record<string, unknown>): TemplateInput | nu
   if (!(b.prohibitions as string[]).includes("ai_training")) return null;
   const territory = b.territory;
   if (!plain(territory) || Object.keys(territory).some(key => !["kind", "countries"].includes(key))) return null;
-  if (territory.kind === "worldwide" ? territory.countries !== undefined : territory.kind !== "countries" || !Array.isArray(territory.countries) || territory.countries.length < 1 || territory.countries.length > templateLimits.countries || new Set(territory.countries).size !== territory.countries.length || !territory.countries.every(c => typeof c === "string" && /^[A-Z]{2}$/.test(c))) return null;
+  if (territory.kind === "worldwide" ? territory.countries !== undefined : territory.kind !== "countries" || !Array.isArray(territory.countries) || territory.countries.length < 1 || territory.countries.length > templateLimits.countries || new Set(territory.countries).size !== territory.countries.length || !territory.countries.every(isCountry)) return null;
   const term = b.term_days ?? null, hours = b.exclusivity_hours ?? null;
   if (term !== null && !int(term, templateLimits.termMin, templateLimits.termMax) || termRequired.includes(b.type as LicenseType) && term === null) return null;
   if (b.type === "exclusive_temporary" ? !int(hours, templateLimits.hoursMin, templateLimits.hoursMax) : hours !== null) return null;

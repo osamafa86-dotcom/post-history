@@ -1,12 +1,13 @@
 "use client";
 import { governorateName } from "@/lib/format";
 import { useEffect, useRef, useState } from "react";
+import type { TransitionDraft } from "./transition-dialog";
 import Link from "next/link";
 import { browserApi, dataOrThrow, RequestError } from "@/lib/browser-api";
 import { formatDate, messages, plural, shortTime, type Locale } from "@/lib/i18n";
 import type { Form, Material, TransitionRecord } from "@/lib/types";
 import { internalNames } from "@/lib/work-name";
-import { lastEvents, timecode, timeline, type Track } from "@/lib/editor";
+import { actorLabel, lastEvents, timecode, timeline, type Track } from "@/lib/editor";
 import { hasRole, stateColumn, tracks } from "@/lib/review";
 import { useUser } from "./session-boundary";
 import { photographer, StateBadge } from "./states";
@@ -33,6 +34,8 @@ export function MaterialDetail({ locale, id }: { locale: Locale; id: string }) {
   const m = messages[locale], w = m.shell.material, me = useUser(), [material, setMaterial] = useState<Material | null>(null), [schema, setSchema] = useState<Form | null>(null), [error, setError] = useState(0), [attempt, setAttempt] = useState(0);
   const editing = useRef(false), [tag, setTag] = useState<string | null>(null), [tagNotice, setTagNotice] = useState<TagNotice>("");
   const [toast, setToast] = useState(""), [records, setRecords] = useState<TransitionRecord[] | null>(null), [historyFailed, setHistoryFailed] = useState(false), [filter, setFilter] = useState<Track | null>(null);
+  // ما كُتب في حوار التحويل يبقى عبر «تحميل التغييرات» بعد تعارض (`ReviewActions`)
+  const [transitionDraft, setTransitionDraft] = useState<TransitionDraft | null>(null);
   function reload() { editing.current = false; setMaterial(null); setAttempt(n => n + 1); }
   useEffect(() => {
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
@@ -88,10 +91,10 @@ export function MaterialDetail({ locale, id }: { locale: Locale; id: string }) {
             <StateBadge track={stateColumn[track]} value={material[stateColumn[track]]} locale={locale} /></button>)}</div>
           <p className="caption">{w.statesHelp}</p></section>
         {/* المراسل بلا دور مكتب: أفعاله في شريط صاحب المادة أعلى الصفحة، فلا بطاقة «الخطوة التالية» بلغة الطاقم. */}
-        {!staffless && <ReviewActions key={`${material.id}:${tag}`} locale={locale} material={material} tag={tag} editing={() => { editing.current = true; }} reload={reload} notify={setToast} />}
+        {!staffless && <ReviewActions key={`${material.id}:${tag}`} locale={locale} material={material} tag={tag} editing={() => { editing.current = true; }} reload={reload} notify={setToast} draft={transitionDraft} keepDraft={setTransitionDraft} />}
         <AssignmentCard key={`${material.id}:assignments:${material.editorial_state}`} locale={locale} material={material} />
         <RenderFiles key={`${material.id}:renders`} locale={locale} material={material} />
-        <Timeline internal={internalNames(me)} locale={locale} records={records} failed={historyFailed} filter={filter} clear={() => setFilter(null)} />
+        <Timeline viewer={{ id: me.user_id, staff: internalNames(me) }} locale={locale} records={records} failed={historyFailed} filter={filter} clear={() => setFilter(null)} />
       </div>
     </div>
   </>;
@@ -104,8 +107,8 @@ function OwnShare({ locale, material, userId }: { locale: Locale; material: Mate
   return <p className="owner-share" data-testid="owner-share">{o.share.split("{share}")[0]}<bdi dir="ltr">{mine.share_percent}%</bdi>{o.share.split("{share}")[1]}</p>;
 }
 
-/** السجل: الأحداث تنازليًا، كل حدث بلون مساره؛ السبب يظهر لمن يعيده الـBFF وحده (صاحب المادة). */
-function Timeline({ internal, locale, records, failed, filter, clear }: { internal: boolean; locale: Locale; records: TransitionRecord[] | null; failed: boolean; filter: Track | null; clear: () => void }) {
+/** السجل: الأحداث تنازليًا، كل حدث بلون مساره؛ السبب لمن يعيده الـBFF له (الطاقم، وصاحب المادة لما يصله وما كتبه)، والمنفّذ باسمه لقارئه. */
+function Timeline({ viewer, locale, records, failed, filter, clear }: { viewer: { id: string; staff: boolean }; locale: Locale; records: TransitionRecord[] | null; failed: boolean; filter: Track | null; clear: () => void }) {
   const m = messages[locale], names = { technical: m.technical, editorial: m.editorial, rights: m.rights };
   const label = (record: TransitionRecord, value: string) => (m.states[stateColumn[record.track as Track]] as Record<string, string>)[value] ?? value;
   const items = records ? timeline(records, filter) : null;
@@ -115,6 +118,6 @@ function Timeline({ internal, locale, records, failed, filter, clear }: { intern
         <span className="timeline-dot" aria-hidden="true" />
         <p><strong>{names[item.track as Track] ?? item.track}</strong>: {label(item, item.from)} {locale === "ar" ? "←" : "→"} {label(item, item.to)}{item.note_timecode_ms != null && <span className="time-chip" dir="ltr">{timecode(item.note_timecode_ms)}</span>}</p>
         {item.reason && <blockquote className="supervisor-note"><p>{m.review.note}: «<bdi dir="auto">{item.reason}</bdi>»</p></blockquote>}
-        <p className="caption">{formatDate(item.occurred_at, locale)} · {m.review.actor}: <bdi>{internal && item.actor_name ? item.actor_name : m.material.neutralActor}</bdi></p></li>)}</ol>}
+        <p className="caption">{formatDate(item.occurred_at, locale)} · {m.review.actor}: <bdi>{actorLabel(item, viewer, locale)}</bdi></p></li>)}</ol>}
   </section>;
 }

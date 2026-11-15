@@ -9,7 +9,7 @@ import { EmptyState } from "./empty-state";
 import { Avatar, ToneBadge } from "./admin-parts";
 import { TableSkeleton } from "./users-admin";
 import { Icon } from "./icon";
-import { fillNodes, Ltr } from "./money";
+import { fillNodes, Ltr, Money } from "./money";
 
 type Currency = ContributorEarnings["currency"];
 const readyTone: Record<PayoutReadiness, { tone: "ok" | "brand" | "muted"; icon: "check" | "payout" | "clock" }> = { ready: { tone: "ok", icon: "check" }, in_payout: { tone: "brand", icon: "payout" }, below_minimum: { tone: "muted", icon: "clock" } };
@@ -50,12 +50,16 @@ export function MoneyOverview({ locale, month, onMonth, onNames }: { locale: Loc
   const ready = rows.filter(row => readiness(row.balance) === "ready").reduce((sum, row) => sum + row.balance.requestable.amount_minor, 0);
   const pct = basisPercent(total?.share_basis_points ?? null, locale), symbol = currencySymbol(active), refunded = rows.some(row => row.refunded.amount_minor > 0);
   const money = (amount: number) => formatMoney({ amount_minor: amount, currency: active }, locale);
+  // بعد الاسترداد (قرار المنسّق 2026-11-15): ما رُدّ للمشترين في الشهر، وما تحمّلته المنصة منه من احتياطي الاسترداد
+  const back = total?.refunded_to_buyers?.amount_minor ?? 0, borne = total?.borne_by_platform?.amount_minor ?? 0;
   const label = monthLabel(month, locale), future = month >= currentMonth();
   function exportCsv() {
     if (!total) return;
     const header = [t.columns.contributor, t.columns.sales, fill(t.columns.gross, { cur: active }), fill(t.columns.fees, { cur: active }), fill(t.columns.net, { cur: active }), fill(t.columns.share, { pct: pct ?? "", cur: active }), fill(t.columns.refunded, { cur: active }), t.columns.status];
     const amount = (value: { amount_minor: number }) => (value.amount_minor / 100).toFixed(2);
-    const lines = [header, ...rows.map(row => [nameOf(row, locale), String(row.sales), amount(row.gross), amount(row.fees_and_taxes), amount(row.net), amount(row.share), amount(row.refunded), t.readiness[readiness(row.balance)]]), [t.total, String(total.sales), amount(total.gross), amount(total.fees_and_taxes), amount(total.net), amount(total.share), amount(total.refunded), ""]];
+    const lines = [header, ...rows.map(row => [nameOf(row, locale), String(row.sales), amount(row.gross), amount(row.fees_and_taxes), amount(row.net), amount(row.share), amount(row.refunded), t.readiness[readiness(row.balance)]]), [t.total, String(total.sales), amount(total.gross), amount(total.fees_and_taxes), amount(total.net), amount(total.share), amount(total.refunded), ""],
+      // ما رُدّ للمشترين وما تحمّلته المنصة منه، والصافي بعد الاسترداد، كما في البطاقات
+      [t.kpiRefunded, "", "", "", amount({ amount_minor: back }), "", "", ""], [t.kpiBorne, "", "", "", amount({ amount_minor: borne }), "", "", ""], [t.kpiNetAfter, "", "", "", amount({ amount_minor: total.net.amount_minor - back }), "", "", ""]];
     // صيغة CSV تُفتح في جداول البيانات؛ العلامة الأولى تجعلها تقرأ العربية بترميزها، والخلايا المبدوءة بمحرف صيغة تُسبق بفاصلة عليا.
     const cell = (value: string) => `"${(/^[=+\-@]/.test(value) ? `'${value}` : value).replaceAll('"', '""')}"`;
     const blob = new Blob(["\uFEFF" + lines.map(line => line.map(cell).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
@@ -77,8 +81,9 @@ export function MoneyOverview({ locale, month, onMonth, onNames }: { locale: Loc
       : !total || !rows.length ? <EmptyState icon="money" testId="money-empty" title={fill(t.emptyTitle, { month: label })}><p>{t.emptyBody}</p></EmptyState>
       : <>
         <div className="kpis money-kpis" data-testid="money-kpis">
-          <article className="kpi wide-only-kpi"><strong dir="ltr">{money(total.gross.amount_minor)}</strong><span>{t.kpiGross}</span></article>
-          <article className="kpi wide-only-kpi"><strong dir="ltr">{money(total.net.amount_minor)}</strong><span>{t.kpiNet}</span></article>
+          <article className="kpi"><strong dir="ltr">{money(total.gross.amount_minor)}</strong><span>{t.kpiGross}</span></article>
+          <article className="kpi"><strong dir="ltr" data-testid="kpi-net-after">{money(total.net.amount_minor - back)}</strong><span>{t.kpiNetAfter}</span><small className="caption">{fillNodes(t.kpiNetBefore, { amount: <Money price={{ amount_minor: total.net.amount_minor, currency: active }} locale={locale} /> })}</small></article>
+          <article className="kpi"><strong dir="ltr" data-testid="kpi-refunded">{money(back)}</strong><span>{t.kpiRefunded}</span><small className="caption" data-testid="kpi-borne">{fillNodes(t.kpiBorneLine, { amount: <Money price={{ amount_minor: borne, currency: active }} locale={locale} /> })}</small></article>
           <article className="kpi"><strong dir="ltr" data-testid="kpi-share">{money(total.share.amount_minor)}</strong><span>{t.kpiShare}</span></article>
           <article className="kpi"><strong dir="ltr" data-testid="kpi-ready">{money(ready)}</strong><span>{t.kpiReady}</span></article>
         </div>
@@ -96,7 +101,7 @@ export function MoneyOverview({ locale, month, onMonth, onNames }: { locale: Loc
                 <td className="phone-hide num" data-label={fill(t.columns.fees, { cur: symbol })}><span dir="ltr">{plainAmount(row.fees_and_taxes, locale)}</span></td>
                 <td className="phone-hide num" data-label={fill(t.columns.net, { cur: symbol })}><span dir="ltr">{plainAmount(row.net, locale)}</span></td>
                 <td className="phone-hide num strong" data-label={fill(t.columns.share, { pct: pct ?? "", cur: symbol })}><span dir="ltr">{plainAmount(row.share, locale)}</span></td>
-                {refunded && <td className="phone-hide num" data-label={fill(t.columns.refunded, { cur: symbol })}><span dir="ltr">{plainAmount(row.refunded, locale)}</span></td>}
+                {refunded && <td className="num" data-label={fill(t.columns.refunded, { cur: symbol })}><span dir="ltr">{plainAmount(row.refunded, locale)}</span></td>}
                 <td data-label={t.columns.status}><ToneBadge tone={tone.tone} icon={tone.icon} testId="readiness">{t.readiness[state]}</ToneBadge></td>
               </tr>;
             })}</tbody>

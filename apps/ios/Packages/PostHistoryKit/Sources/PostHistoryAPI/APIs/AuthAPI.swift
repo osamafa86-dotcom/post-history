@@ -321,6 +321,49 @@ open class AuthAPI {
     }
 
     /**
+     قراءة طلب استعادة حساب لمن يملك اعتماده
+     
+     - parameter id: (path) معرّف طلب الاستعادة 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RecoveryRequestDetail
+     */
+    open class func getRecoveryRequest(id: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> RecoveryRequestDetail {
+        return try await getRecoveryRequestWithRequestBuilder(id: id, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     قراءة طلب استعادة حساب لمن يملك اعتماده
+     - GET /auth/recovery/{id}
+     - ما يحتاجه المعتمِد ليعرف أي حساب يعتمد استعادته قبل أن يعتمد: اسم العمل والأدوار والمكتب، وحالة الطلب ووقته وانتهاؤه. **بلا بريد وبلا اسم قانوني** ولا أي وسيلة اتصال: التحقق من الهوية يجري خارج النظام. الصلاحية صلاحية الاعتماد نفسها (`POST /auth/recovery/{id}/approve`): المشرف يقرأ طلب حساب مراسل في نطاقه وحده، ومدير النظام يقرأ ما عداه؛ وما ليس للمتصل `404` كما في الاعتماد، فلا يُعرف وجود الطلب. الطلب المعتمَد أو المنتهي أو المرفوض يُقرأ بحاله. طلب بانتظار الاعتماد فات موعده يُقرأ `expired`. القراءة لا تغيّر شيئًا ولا تعيد رمز إعادة التعيين أبدًا.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter id: (path) معرّف طلب الاستعادة 
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<RecoveryRequestDetail> 
+     */
+    open class func getRecoveryRequestWithRequestBuilder(id: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<RecoveryRequestDetail> {
+        var localVariablePath = "/auth/recovery/{id}"
+        let idPreEscape = "\(APIHelper.mapValueToPathItem(id))"
+        let idPostEscape = idPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{id}", with: idPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            :
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<RecoveryRequestDetail>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "GET", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      منح صلاحية مستقلة لمستخدم بعينه (مدير النظام)
      
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 

@@ -65,16 +65,18 @@ test("below 768px the inbox rows become cards with the time and place, and the b
   await page.screenshot({ path: ".artifacts/editor-inbox-phone-ar.png" });
 });
 
-for (const locale of ["ar", "en"] as const) test(`ADR 0035 timeline uses work names and neutral null actors (${locale})`, async ({ page }) => {
+for (const locale of ["ar", "en"] as const) test(`the timeline names staff by work name, an unnamed account by its number, and the system (${locale})`, async ({ page }) => {
   const m = locale === "ar" ? ar : en;
   await login(page, "reviewer", locale);
   await page.route("**/api/bff/materials/*/transitions", route => route.fulfill({ json: { items: [
     { id: "one", track: "editorial", from: "inbox", to: "reviewing", reason: "", actor_id: "10000000-0000-4000-8000-000000000002", actor_name: "Synthetic staff", occurred_at: "2026-10-27T10:00:00Z" },
     { id: "two", track: "editorial", from: "reviewing", to: "accepted", reason: "", actor_id: "10000000-0000-4000-8000-000000000003", actor_name: null, occurred_at: "2026-10-27T10:01:00Z" },
+    { id: "three", track: "technical", from: "original_received", to: "verified", reason: "", actor_id: null, actor_name: null, occurred_at: "2026-10-27T09:00:00Z" },
   ] } }));
   await page.goto(`/${locale}/materials/20000000-0000-4000-8000-000000000001`);
-  await expect(page.locator(".history-list")).toContainText("Synthetic staff"); await expect(page.locator(".history-list")).toContainText(m.material.neutralActor);
-  await expect(page.locator(".history-list")).not.toContainText("10000000");
+  // قرار المنسّق 2026-11-15: الطاقم يقرأ اسم العمل، وإلا «حساب <أول 8>»، و«النظام» لما لا منفّذ له؛ لا وصف مبهم
+  await expect(page.locator(".history-list")).toContainText("Synthetic staff"); await expect(page.locator(".history-list")).toContainText(m.admin.unnamed.replace("{id}", "10000000"));
+  await expect(page.locator(".history-list")).toContainText(m.material.systemActor); await expect(page.locator(".history-list")).not.toContainText(m.material.neutralActor);
 });
 
 test("ADR 0035 read-all sends one stable request and cutoff across a lost response", async ({ page }) => {

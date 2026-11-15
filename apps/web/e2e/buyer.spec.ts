@@ -186,7 +186,7 @@ test("ADR 0035 buyer sees proof days and offer terms, with null proof and dated 
   const terms = page.locator(".offer-terms").first(); await terms.locator("summary").click(); await expect(terms).toContainText("استخدام اصطناعي قبل الشراء"); await expect(terms).toContainText(ar.templates.worldwide);
   await page.goto("/ar/store/71000000-0000-4000-8000-000000000002");
   await expect(page.getByRole("region", { name: b.authenticity })).not.toContainText(b.verifiedOn.split("{date}")[0]);
-  await expect(page.locator(".license-picker")).toContainText(s.exclusiveUntil.split("{date}")[0]);
+  await expect(page.locator(".license-picker")).toContainText(s.heldUntil.split("{date}")[0]);
   await expect(page.locator("main")).not.toContainText(/work_name|actor_name|sha256|never-display-canary/);
   await page.route("**/api/bff/catalog/71000000-0000-4000-8000-000000000002", async route => { const response = await route.fetch(), data = await response.json(); data.exclusive_unavailable_until = null; await route.fulfill({ response, json: data }); });
   await page.reload(); await expect(page.getByText(s.exclusiveTaken, { exact: true })).toBeVisible();

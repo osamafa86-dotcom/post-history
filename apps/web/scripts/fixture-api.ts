@@ -207,6 +207,20 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/__test/login-throttle" && req.method === "POST") { loginThrottle = Number(url.searchParams.get("seconds") ?? 30); return send({ ok: true }); }
   if (url.pathname === "/__test/auth") return send(authState());
   if (url.pathname === "/__test/passkeys-off" && req.method === "POST") { setPasskeysOff(true); return send({ ok: true }); }
+  if (url.pathname === "/__test/notices" && req.method === "POST") {
+    // تنبيهات بأنواعها (ADR 0121): ما يصل صاحب المادة (ومنه عاجل)، أو ما يصل الطاقم (مادة واردة، عاجلة، معادة، ومادة لا يقرؤها المتصل).
+    const at = (minutes: number) => new Date(Date.now() - minutes * 60000).toISOString();
+    const row = (n: number, type: string, material: string, extra: Partial<Notification> = {}): Notification => ({ id: `60000000-0000-4000-8000-0000000001${String(n).padStart(2, "0")}`, type, title: "never-display-canary", material_id: material, priority: "normal", state: "sent", created_at: at(n), ...extra } as Notification);
+    notifications.splice(0, notifications.length, ...(url.searchParams.get("for") === "reporter" ? [
+      row(1, "material.change_requested", materials[0].id, { priority: "urgent" }), row(2, "material.rejected", materials[1].id), row(3, "material.accepted", materials[2].id),
+      row(4, "upload.verified", materials[3].id), row(5, "material.acknowledged", materials[4].id), row(6, "material.published", materials[5].id),
+    ] : [
+      row(1, "material.urgent_received", materials[0].id, { priority: "urgent", assignment_state: "assigned" }), row(2, "material.created", materials[1].id, { assignment_state: "assigned" }),
+      row(3, "material.resubmitted", materials[2].id), row(4, "material.created", "2fffffff-0000-4000-8000-000000000001", { assignment_state: "assigned" }),
+      ...(url.searchParams.get("for") === "chief" ? [row(5, "notification.escalated", materials[3].id, { priority: "urgent", assignment_state: "assigned", escalation_level: 1 })] : []),
+    ]));
+    return send({ ok: true });
+  }
   if (url.pathname === "/__test/recovery-notice" && req.method === "POST") {
     notifications.unshift({ id: "60000000-0000-4000-8000-000000000099", type: "auth.recovery_requested", title: "never-display-canary", material_id: null, recovery_request_id: recoveryRequestId(Number(url.searchParams.get("n") ?? 1)), priority: "normal", state: "sent", created_at: new Date().toISOString() });
     return send({ ok: true });
@@ -240,10 +254,10 @@ const server = createServer(async (req, res) => {
   // مادة لصاحبها لم يصل ملفها (أُلغي رفعها أو لم يبدأ): بلا ملفات، والمسار الفني ينتظر.
   if (url.pathname === "/__test/no-file" && req.method === "POST") { Object.assign(materials[3], { technical_state: "pending", files: [], thumbnail_file_id: null }); return send({ id: materials[3].id }); }
   if (url.pathname === "/__test/request-changes" && req.method === "POST") {
-    // مادة بطلب تعديل وأخرى مرفوضة وثالثة فشل رفعها، وسبب داخلي لا يصل المراسل.
+    // مادة بطلب تعديل وأخرى مرفوضة وثالثة فشل رفعها، وسبب «اطّلعت» داخلي: يراه الطاقم في السجل ولا يصل المراسل.
     const supervisor = "10000000-0000-4000-8000-000000000002", stamp = "2026-10-21T10:00:00Z";
     Object.assign(materials[0], { editorial_state: "needs_changes" }); Object.assign(materials[1], { editorial_state: "rejected" }); Object.assign(materials[2], { technical_state: "failed" });
-    history.set(materials[0].id, [{ id: randomUUID(), track: "editorial", from: "inbox", to: "acknowledged", reason: "never-display-canary", note_timecode_ms: null, actor_id: supervisor, occurred_at: "2026-10-21T09:00:00Z" }, { id: randomUUID(), track: "editorial", from: "reviewing", to: "needs_changes", reason: "أعد اللقطة الافتتاحية بإضاءة أفضل", note_timecode_ms: 42000, actor_id: supervisor, occurred_at: stamp }]);
+    history.set(materials[0].id, [{ id: randomUUID(), track: "editorial", from: "inbox", to: "acknowledged", reason: "اطّلعت عليها والمصدر قيد التحقق", note_timecode_ms: null, actor_id: supervisor, occurred_at: "2026-10-21T09:00:00Z" }, { id: randomUUID(), track: "editorial", from: "reviewing", to: "needs_changes", reason: "أعد اللقطة الافتتاحية بإضاءة أفضل", note_timecode_ms: 42000, actor_id: supervisor, occurred_at: stamp }]);
     history.set(materials[1].id, [{ id: randomUUID(), track: "editorial", from: "reviewing", to: "rejected", reason: "مكررة مع مادة سابقة", note_timecode_ms: null, actor_id: supervisor, occurred_at: stamp }]);
     return send({ ok: true });
   }
@@ -262,6 +276,17 @@ const server = createServer(async (req, res) => {
     Object.assign(materials[10], { editorial_state: "accepted", technical_state: "failed" });                // مقبولة وفشل فني: متوقفة
     Object.assign(materials[11], { editorial_state: "in_production" }); Object.assign(materials[12], { editorial_state: "final_review" });
     Object.assign(materials[13], { editorial_state: "published" });                                          // خارج اللوحة
+    return send({ ok: true });
+  }
+  if (url.pathname === "/__test/final-sensitive" && req.method === "POST") {
+    // مادة موسومة بالحساسية تنتظر النشر، بلا نسخة مُنتَجة: حوار التحويل يسمّي الوسم ويطلب التأكيد.
+    Object.assign(materials[0], { editorial_state: "final_review", sensitivity: { minors: false, injured: true, graphic: false } });
+    return send({ ok: true });
+  }
+  if (url.pathname === "/__test/review-load" && req.method === "POST") {
+    // تبويب «قيد المراجعة» بأكثر من صفحة: 60 اطّلع عليها و5 قيد المراجعة، فوق صفحة الحالة الواحدة (50).
+    for (let i = 20; i < 80; i++) materials[i].editorial_state = "acknowledged";
+    for (let i = 80; i < 85; i++) materials[i].editorial_state = "reviewing";
     return send({ ok: true });
   }
   if (url.pathname === "/__test/board-cap" && req.method === "POST") {
@@ -408,9 +433,9 @@ const server = createServer(async (req, res) => {
       const stamp = new Date().toISOString();
       if (match[2] === "transitions") {
         const track = body.track as "technical" | "editorial" | "rights", column = `${track}_state` as const;
-        // صاحب المادة يعيدها من «تحتاج تعديلًا» إلى المراجعة (`reporter_owner` في جدول الانتقالات)
+        // كجدول الانتقالات عند الخادم: رئيس التحرير ينشر، وصاحب المادة يعيدها من «تحتاج تعديلًا» إلى المراجعة (`reporter_owner`)
         const resubmits = track === "editorial" && has("reporter") && item.reporter_id === user.user_id && item.editorial_state === "needs_changes" && body.to === "reviewing";
-        if (track === "editorial" && !resubmits && !has("supervisor", "producer") || track === "rights" && !has("rights_officer") || track === "technical" && !has("reporter")) return send({}, 403);
+        if (track === "editorial" && !resubmits && !has("supervisor", "producer", "editor_in_chief") || track === "rights" && !has("rights_officer") || track === "technical" && !has("reporter")) return send({}, 403);
         const from = item[column]; Object.assign(item, { [column]: body.to }); item.row_version!++;
         history.set(item.id, [...(history.get(item.id) ?? []), { id: randomUUID(), track, from, to: String(body.to), reason: String(body.reason), note_timecode_ms: typeof body.note_timecode_ms === "number" ? body.note_timecode_ms : null, actor_id: user.user_id, actor_name: has("reporter") ? null : "Synthetic staff", occurred_at: stamp }]);
         return commit(item, 200);
@@ -544,6 +569,19 @@ const server = createServer(async (req, res) => {
       const next = { ...current, status: "rejected", rejection_reason: String(body.reason_code), row: current.row + 1, updated_at: new Date().toISOString() }; organizations.set(current.id, next);
       res.setHeader("ETag", `"${next.row}"`); return commit({ ...Object.fromEntries(Object.entries(next).filter(([key]) => key !== "row")), active_members: members.get(current.id)!.filter(m => m.status === "active").length }, 200);
     }
+    // إعادة إصدار رمز دعوة لم يكتمل قبولها (POST) وإلغاؤها (DELETE): للمدعو وحده، والإلغاء يخرجه من القائمة والمقاعد.
+    const invitation = /^\/v1\/buyer-organizations\/([^/]+)\/members\/([^/]+)\/invitation$/.exec(path);
+    if (invitation && (req.method === "POST" || req.method === "DELETE")) {
+      if (!has("system_admin", "buyer_admin")) return send({ code: "forbidden_role" }, 403);
+      const current = organizations.get(invitation[1]); if (!current || (user.organization_id && user.organization_id !== invitation[1])) return send({}, 404);
+      const list = members.get(invitation[1])!, target = list.find(m => m.user_id === invitation[2]); if (!target) return send({}, 404);
+      if (target.status !== "invited") return send({ code: "invalid_transition", message: "never-display-canary" }, 409);
+      if (req.method === "DELETE") {
+        if (current.status === "active" && !list.some(m => m !== target && m.role === "buyer_admin" && m.status !== "suspended")) return send({ code: "last_buyer_admin" }, 409);
+        list.splice(list.indexOf(target), 1); return commit(null);
+      }
+      return commit({ ...target, invite_token: "synthetic-invite-token-reissued-00000002", invite_token_expires_at: new Date(Date.now() + 86400000).toISOString() }, 200);
+    }
     const orgWrite = /^\/v1\/buyer-organizations(?:\/([^/]+)(\/members)?(?:\/([^/]+))?)?$/.exec(path);
     if (orgWrite) {
       const [, id, isMembers, userId] = orgWrite, mine = (orgId: string) => !user.organization_id || user.organization_id === orgId;
@@ -564,6 +602,9 @@ const server = createServer(async (req, res) => {
       if (!has("system_admin", "buyer_admin")) return send({}, 403);
       const list = members.get(id)!, active = list.filter(m => m.status !== "suspended").length;
       if (!userId) {
+        // بريد لم يكتمل قبول دعوته: إعادة إصدار بالعضو نفسه لا تعارض
+        const pending = list.find(m => String(m.email).toLowerCase() === String(body.email).toLowerCase() && m.status === "invited");
+        if (pending) { pending.role = String(body.role); return commit({ ...pending, invite_token: "synthetic-invite-token-reissued-00000002", invite_token_expires_at: new Date(Date.now() + 86400000).toISOString() }, 201); }
         if (list.some(m => m.email === body.email)) return send({ code: "conflict" }, 409);
         if (active >= current.seats) return send({ code: "seats_exhausted" }, 409);
         const added = { user_id: randomUUID(), email: String(body.email), role: String(body.role), status: "invited", totp_enabled: false, created_at: new Date().toISOString() }; list.push(added);
@@ -711,7 +752,7 @@ const server = createServer(async (req, res) => {
   const orgRead = /^\/v1\/buyer-organizations(?:\/([^/]+)(\/members)?)?$/.exec(url.pathname);
   if (orgRead) {
     const [, id, isMembers] = orgRead, roles = (...names: string[]) => user.roles.some(role => names.includes(role.name));
-    const view = (o: Record<string, unknown>) => ({ ...Object.fromEntries(Object.entries(o).filter(([key]) => key !== "row")), active_members: members.get(String(o.id))!.filter(m => m.status === "active").length });
+    const view = (o: Record<string, unknown>) => ({ ...Object.fromEntries(Object.entries(o).filter(([key]) => key !== "row")), active_members: members.get(String(o.id))!.filter(m => m.status === "active").length, invited_members: members.get(String(o.id))!.filter(m => m.status === "invited").length });
     if (!id) { if (!roles("system_admin", "finance")) return send({}, 403); const status = url.searchParams.get("status"); return send({ items: [...organizations.values()].filter(o => !status || o.status === status).map(view), next_cursor: null }); }
     const found = organizations.get(id); if (!found || (user.organization_id && user.organization_id !== id)) return send({}, 404);
     if (isMembers) { if (!roles("system_admin", "buyer_admin")) return send({}, 403); return send({ items: members.get(id)!.map(m => ({ ...m, password_hash: "never-display-canary" })) }); }
