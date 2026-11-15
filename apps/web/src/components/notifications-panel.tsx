@@ -8,6 +8,7 @@ import { notificationTarget } from "@/lib/assignment-policy";
 import { useMutation } from "@/lib/use-mutation";
 import { Icon } from "./icon";
 import { inTab, notificationKind, panelOrder, panelTabs, unread, type PanelTab } from "@/lib/notification-kind";
+import { untilVisible } from "@/lib/visibility";
 
 export { inTab, panelOrder, type PanelTab };
 /**
@@ -21,6 +22,7 @@ export function NotificationsPanel({ locale, onClose }: { locale: Locale; onClos
   useEffect(() => {
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
     async function load() {
+      await untilVisible(controller.signal); if (controller.signal.aborted) return;
       const startedAt = Date.now();
       try { const data = dataOrThrow(await browserApi().GET("/notifications", { params: { query: { limit: 20 } }, signal: controller.signal })); if (!controller.signal.aborted) { setItems(data.items); setCheckedAt(startedAt); setNow(Date.now()); setFailed(false); } }
       catch { if (!controller.signal.aborted) setFailed(true); }

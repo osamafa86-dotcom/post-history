@@ -172,7 +172,8 @@ test("signing out and opening the sign-in page clear unfinished-upload records o
   expect(await count()).toBe(1);
   // سجل يبقى من تبويب أُغلق دون خروج: صفحة الدخول تمحوه.
   await page.goto("/ar/inbox"); expect(await count()).toBe(1);
-  await page.context().clearCookies(); await page.goto("/ar/login"); await expect(page.getByLabel(ar.email)).toBeVisible();
+  // الصفحة تُترك أولًا (تبويب أُغلق): خروجها التلقائي عند زوال الجلسة لا يسابق فتح صفحة الدخول.
+  await page.goto("about:blank"); await page.context().clearCookies(); await page.goto("/ar/login"); await expect(page.getByLabel(ar.email)).toBeVisible();
   await expect.poll(count).toBe(0);
   await request.post(`${api}/__test/tus`);
 });
@@ -197,4 +198,102 @@ test("the upload center lists unfinished sessions from the server and cancels th
   await expect(page.getByTestId("pending-upload")).toHaveCount(0);
   expect((await uploads(page))[0].state).toBe("failed");
   await request.post(`${api}/__test/tus`);
+});
+
+test("one attempt marks every wrong field with its own message and moves focus to the first", async ({ page }) => {
+  await login(page);
+  await page.getByLabel(ar.upload.choose).setInputFiles(camera(2048).file);
+  await page.getByRole("group", { name: ar.upload.types }).getByRole("button", { name: ar.types.raw_footage, exact: true }).click();
+  await tag(page, "كاميرا"); await question(page).getByLabel(ar.no, { exact: true }).check();
+  const title = page.getByLabel(ar.upload.titleLabel), city = page.getByLabel(ar.upload.city);
+  await title.fill("abcd"); await page.getByLabel(ar.upload.displayName).selectOption("pseudonym");
+  await page.getByRole("button", { name: ar.upload.start }).click();
+  // الأساسية والديناميكية معًا في المحاولة نفسها، ولكل حقل رسالته وaria-invalid
+  await expect(title).toHaveAttribute("aria-invalid", "true"); await expect(title).toBeFocused();
+  await expect(page.getByText(ar.upload.errors.title)).toBeVisible(); await expect(page.getByText(ar.upload.errors.governorate)).toBeVisible();
+  await expect(city).toHaveAttribute("aria-invalid", "true"); await expect(page.getByText(ar.upload.errors.city)).toBeVisible();
+  await expect(page.getByText(ar.upload.errors.pseudonym)).toBeVisible();
+  await expect(page.locator("#field-headline")).toHaveAttribute("aria-invalid", "true"); await expect(page.locator("#field-headline-error")).toHaveText(ar.validation.required);
+  await expect(page.getByTestId("upload-row")).toHaveCount(0);
+  // التصحيح يزيل رسالة الحقل وحده، والمحاولة التالية تنقل التركيز إلى أول ما بقي
+  await title.fill("لقطات من بطاقة الكاميرا"); await expect(title).toHaveAttribute("aria-invalid", "false"); await expect(page.getByText(ar.upload.errors.title)).toHaveCount(0);
+  await page.getByRole("button", { name: ar.upload.start }).click();
+  await expect(page.getByLabel(ar.governorate, { exact: true })).toBeFocused();
+  // المحافظة باقتراح من جدول المحافظات، ووقت التصوير لا يقبل المستقبل
+  await expect(page.locator("#upload-governorates option")).toHaveCount(Object.keys(ar.governorates).length);
+  expect(await page.getByLabel(ar.upload.shotAt).getAttribute("max")).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+});
+
+test("a server fault while creating the session reads as ours, and the file keeps one resumable card", async ({ page, request }, info) => {
+  await login(page);
+  const path = info.outputPath("A005C001.MOV"); writeFileSync(path, randomBytes(2 * 1048576));
+  await request.post(`${api}/__test/tus?fail_create=1`);
+  await page.getByLabel(ar.upload.choose).setInputFiles(path);
+  await describe(page);
+  const row = page.getByTestId("upload-row");
+  await expect(row).toHaveAttribute("data-phase", "failed"); await expect(row).toContainText(ar.upload.failure.storage_error); await expect(row).not.toContainText(ar.upload.failure.rejected);
+  // الجلسة أُنشئت على الخادم والسجل المحلي لم يأخذ معرّفها: بطاقة واحدة تُستأنف، لا «بدأ على جهاز آخر» بجانب «متوقف مؤقتًا»
+  await page.reload();
+  await expect(page.getByTestId("pending-upload")).toHaveCount(1);
+  await expect(page.getByTestId("pending-upload")).toHaveAttribute("data-resumable", "true");
+  await expect(page.getByText(ar.upload.otherDevice)).toHaveCount(0);
+  // الخادم لا يعرف بعد ما وصل: لا «0%»
+  await expect(page.getByTestId("pending-upload")).toContainText(ar.upload.reselectUnknown); await expect(page.getByTestId("pending-upload")).not.toContainText("0%");
+  // الملف نفسه يكمل إلى المادة نفسها بلا نموذج جديد
+  await page.getByLabel(ar.upload.choose).setInputFiles(path);
+  await expect(page.getByTestId("upload-row")).toHaveAttribute("data-phase", "done", { timeout: 20000 });
+  expect((await uploads(page)).filter(u => u.state === "verified")).toHaveLength(1);
+});
+
+test("cancelling a running upload leaves no unhandled error and no «resumed» badge on the cancelled card", async ({ page, request }, info) => {
+  const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+  await login(page);
+  const path = info.outputPath("A006C001.MOV"); writeFileSync(path, randomBytes(3 * 1048576));
+  await request.post(`${api}/__test/tus?fail_patches=1000`);
+  await page.getByLabel(ar.upload.choose).setInputFiles(path);
+  await describe(page);
+  await expect.poll(async () => (await uploads(page))[0]?.offset ?? 0).toBeGreaterThan(0);
+  page.removeAllListeners("dialog"); page.on("dialog", dialog => void dialog.accept());
+  await page.reload();
+  await page.getByLabel(ar.upload.choose).setInputFiles(path);
+  const row = page.getByTestId("upload-row");
+  await expect(row.getByText(ar.upload.resumed)).toBeVisible();
+  // النقل جارٍ (الخادم يردّ كل جزء بـ503): الإلغاء يُنهي رفع tus ثم يلغي الجلسة
+  await expect(row).toHaveAttribute("data-phase", "uploading");
+  await row.getByRole("button", { name: ar.upload.cancel, exact: true }).click();
+  await expect(row).toHaveAttribute("data-phase", "failed"); await expect(row).toContainText(ar.upload.failure.aborted);
+  await expect(row.getByText(ar.upload.resumed)).toHaveCount(0);
+  await expect.poll(async () => (await uploads(page))[0].state).toBe("failed");
+  await page.waitForTimeout(1500);
+  expect(errors).toEqual([]);
+  await request.post(`${api}/__test/tus`);
+});
+
+test("the form survives a revoked session for its owner, and an explicit sign-out clears it", async ({ page, request }) => {
+  await login(page);
+  await page.getByLabel(ar.upload.choose).setInputFiles(camera(2048).file);
+  await page.getByRole("group", { name: ar.upload.types }).getByRole("button", { name: ar.types.raw_footage, exact: true }).click();
+  await page.getByLabel(ar.upload.titleLabel).fill("مسودة قبل انقطاع الجلسة"); await page.getByLabel(ar.governorate, { exact: true }).fill("غزة"); await page.getByLabel(ar.upload.city).fill("رفح");
+  await tag(page, "كاميرا"); await question(page).getByLabel(ar.no, { exact: true }).check();
+  await page.locator("#field-headline").fill("لقطات خام"); await page.locator("#field-category").selectOption("news"); await page.locator("#field-consent").selectOption("true");
+  // الجلسة تُبطَل عند الخادم؛ الإرسال يعيد إلى الدخول
+  await request.post(`${api}/__test/revoke`);
+  await page.getByRole("button", { name: ar.upload.start }).click();
+  await expect(page).toHaveURL(/\/ar\/login\?reason=revoked&next=%2Far%2Fupload$/);
+  await request.post(`${api}/__test/reset`);
+  // الدخول من جديد يعيده إلى صفحة الرفع نفسها، وفيها ما كتبه
+  await page.getByLabel(ar.email).fill("reporter@example.test"); await page.getByLabel(ar.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(ar.totp, { exact: true }).fill("123456");
+  await page.getByRole("button", { name: ar.signIn, exact: true }).click(); await expect(page).toHaveURL(/\/ar\/upload$/);
+  await expect(page.getByTestId("upload-draft")).toHaveText(ar.upload.draftRestored);
+  await page.getByLabel(ar.upload.choose).setInputFiles(camera(2048).file);
+  await expect(page.getByLabel(ar.upload.titleLabel)).toHaveValue("مسودة قبل انقطاع الجلسة"); await expect(page.getByLabel(ar.upload.city)).toHaveValue("رفح");
+  await expect(page.getByRole("group", { name: ar.upload.types }).getByRole("button", { name: ar.types.raw_footage, exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("كاميرا", { exact: true })).toBeVisible();
+  // جواب الحساسية لا يُحفظ: يُسأل من جديد
+  await expect(question(page).getByLabel(ar.yes, { exact: true })).not.toBeChecked(); await expect(question(page).getByLabel(ar.no, { exact: true })).not.toBeChecked();
+  // الخروج الصريح يمحو المسودة
+  await page.getByTestId("topbar").getByRole("button", { name: new RegExp(`^${ar.topbar.account}`) }).click();
+  await page.getByRole("button", { name: ar.logout, exact: true }).click();
+  await expect(page).toHaveURL(/\/ar\/login\?reason=signed-out$/);
+  expect(await page.evaluate(() => sessionStorage.getItem("upload-draft"))).toBeNull();
 });

@@ -10,6 +10,7 @@ import { materialQuery, materialTypes, uuid } from "@/lib/query";
 import type { components } from "@/generated/schema";
 import type { MaterialType } from "@/lib/types";
 import { producedLink, streamDerivative } from "./media";
+import { listMaterials } from "./material-list";
 import { producedReaders } from "@/lib/assignment-policy";
 import { renderDownload, renderRead } from "./renders";
 import { assignmentPath, assignmentRead } from "./assignments";
@@ -25,6 +26,7 @@ import { safeTemplate, templateRoles } from "@/lib/license-policy";
 import { listingReaders, safeListing } from "@/lib/listing-policy";
 import { listUploads, readUpload, uploadAction, uploadBodyLimit, uploadPath } from "./uploads";
 import { catalogRead } from "./catalog";
+import { materialEdit, materialEditPath } from "./material-edit";
 import { safeIdentitySetting, safePermissionHistory } from "@/lib/admin-privacy";
 import { pageLimits } from "@/lib/admin-policy";
 import { safeRule } from "@/lib/notification-policy";
@@ -66,6 +68,12 @@ async function bodyOf(request: Request, limit = 8192): Promise<Record<string, un
   } catch { throw new WebError(400, "request_failed"); }
 }
 
+/** مهلة `Retry-After` من الخادم بالثواني: عدد صحيح موجب حتى يوم واحد، وإلا لا شيء (لا تاريخ، ولا قيمة لا تُقرأ). */
+function retryAfter(response: Response): number | null {
+  const value = response.headers.get("Retry-After") ?? "";
+  return /^[1-9]\d{0,4}$/.test(value) && Number(value) <= 86400 ? Number(value) : null;
+}
+
 type Deps = { config: WebConfig; store: SessionStore; fetch?: typeof fetch };
 
 /** كل طلب يأخذ معرّف ترابط جديدًا: يُرسل مع نداءات الخادم كلها ويعود في ترويسة الرد. معرّف يرسله المتصفح لا يُقرأ. */
@@ -83,10 +91,10 @@ async function respond(request: NextRequest, path: string, deps?: Deps): Promise
     const store = deps?.store ?? sessionStore(config), transport = deps?.fetch;
     const id = request.cookies.get(config.cookieName)?.value ?? "";
     const isPost = request.method === "POST";
-    const isWrite = ["POST", "PUT", "DELETE"].includes(request.method);
+    const isWrite = ["POST", "PUT", "DELETE", "PATCH"].includes(request.method);
     if (isWrite) assertSameOrigin(request, config);
     if (request.method !== "GET" && !isWrite) throw new WebError(405, "request_failed");
-    if (isWrite && !(isPost && ["auth/login", "auth/logout", "auth/recovery/complete", "auth/totp/confirm", "forms", ...publicAccountPaths].includes(path)) && !actionPath(path, request.method) && !uploadPath(path, request.method) && !accountWritePath(path, request.method)) throw new WebError(405, "request_failed");
+    if (isWrite && !(isPost && ["auth/login", "auth/logout", "auth/recovery/complete", "auth/totp/confirm", "forms", ...publicAccountPaths].includes(path)) && !actionPath(path, request.method) && !uploadPath(path, request.method) && !materialEditPath(path, request.method) && !accountWritePath(path, request.method)) throw new WebError(405, "request_failed");
 
     if (path === "auth/login" && isPost) {
       const input = await bodyOf(request);
@@ -94,6 +102,8 @@ async function respond(request: NextRequest, path: string, deps?: Deps): Promise
       const body: components["schemas"]["LoginRequest"] = { email: input.email, password: input.password, ...(input.totp_code ? { totp_code: input.totp_code as string } : {}) };
       const result = await upstream(config, undefined, transport, clientAddress(request, config)).POST("/auth/login", { body });
       if (result.response.status === 401) throw new WebError(401, result.error?.code === "totp_required" ? "totp_required" : "login_failed");
+      // حدّ المعدّل ليس «بيانات خاطئة»: يصل المتصفح باسمه وبمهلته إن كانت عددًا معقولًا من الثواني، ولا شيء آخر من ردّ الخادم.
+      if (result.response.status === 429) { const wait = retryAfter(result.response); throw new WebError(429, "too_many_attempts", wait ? { retry_after_seconds: wait } : undefined); }
       requireOk(result); assertSession(result.data);
       const newId = await store.create(result.data);
       if (validSessionId(id)) await store.locked(id, () => store.remove(id));
@@ -111,6 +121,8 @@ async function respond(request: NextRequest, path: string, deps?: Deps): Promise
     const verification = /^license-verifications\/([^/]+)$/.exec(path);
     if (verification && request.method === "GET") return await licenseVerify(request, verification[1], config, transport);
 
+    // بلا كوكي جلسة أصلًا: زائر لم يدخل، لا جلسة أُبطلت؛ فلا تُقال له «أُبطلت الجلسة» ولا يُمحى ما ليس موجودًا.
+    if (!id) throw new WebError(401, "signed_out");
     if (!validSessionId(id)) throw new WebError(401, "session_revoked");
     const response = await withSession(id, store, config, async api => {
       if (path === "auth/logout" && isPost) {
@@ -122,6 +134,8 @@ async function respond(request: NextRequest, path: string, deps?: Deps): Promise
       }
       const me = requireOk(await api.GET("/auth/me"));
       if (path === "forms") return manageForms(request, api, me, isPost ? await bodyOf(request, formBodyLimit) : undefined);
+      // تعديل صاحب المادة لحقولها الوصفية (PATCH وحده)
+      if (materialEditPath(path, request.method)) return materialEdit(request, path, api, me, await bodyOf(request));
       if (isWrite && uploadPath(path, request.method)) return uploadAction(request, path, api, me, await bodyOf(request, uploadBodyLimit(path)), config!);
       // الرموز الاحتياطية ومفاتيح المرور ورابط إعادة التعيين واعتماد الاستعادة؛ رد المصادِق عند التسجيل أكبر من 8 KiB
       if (isWrite && accountWritePath(path, request.method)) return accountWrite(request, path, api, me, await bodyOf(request, path === "me/passkeys" ? 65536 : 8192));
@@ -161,7 +175,7 @@ async function respond(request: NextRequest, path: string, deps?: Deps): Promise
       if (path === "materials") {
         let query;
         try { query = materialQuery(request.nextUrl.searchParams); } catch { throw new WebError(400, "request_failed"); }
-        const page = requireOk(await api.GET("/materials", { params: { query } }));
+        const page = await listMaterials(api, query);
         return json({ items: page.items.map(m => safeMaterial(m, me.permissions, undefined, internalNames(me))), next_cursor: page.next_cursor });
       }
       const renders = /^materials\/([^/]+)\/renders$/.exec(path);
@@ -257,6 +271,7 @@ async function respond(request: NextRequest, path: string, deps?: Deps): Promise
     const known = error instanceof WebError ? error : new WebError(503, "temporarily_unavailable");
     const response = json({ code: known.code, ...(known.details ? { details: known.details } : {}) }, known.status);
     if (known.status === 401 && config && known.code === "session_revoked") setSession(response, config, "");
+    if (known.status === 429 && typeof known.details?.retry_after_seconds === "number") response.headers.set("Retry-After", String(known.details.retry_after_seconds));
     return response;
   }
 }
