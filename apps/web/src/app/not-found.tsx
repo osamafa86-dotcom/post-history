@@ -3,13 +3,13 @@ import { headers } from "next/headers";
 import { EmptyState } from "@/components/empty-state";
 import { HomeLink } from "@/components/home-link";
 import { isLocale, messages } from "@/lib/i18n";
+import { missingTitle } from "@/lib/page-titles";
 
 const pageLocale = async () => { const value = (await headers()).get("x-web-locale") ?? "ar"; return isLocale(value) ? value : "ar"; };
 
 /** عنوان التبويب بالنمط الموحّد («اسم الصفحة · المكتبة المرئية»، `page-titles.ts`)، لا عنوان الموقع العام ولا عنوان الصفحة التي لم توجد. */
 export async function generateMetadata(): Promise<Metadata> {
-  const m = messages[await pageLocale()];
-  return { title: `${m.pageNotFound.title} · ${m.product}` };
+  return { title: missingTitle(await pageLocale()) };
 }
 
 /** صفحة غير موجودة، بلغة العنوان المطلوب: تقول ما حدث وتقود إلى صفحة بداية الدور. لا تسمّي مادة ولا نطاقًا: لا تعرف ما طُلب. */
