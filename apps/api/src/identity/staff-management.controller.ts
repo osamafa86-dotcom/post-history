@@ -23,7 +23,7 @@ type StaffUser = components['schemas']['StaffUser'];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** نص يُعرض: بلا مسافة في طرفيه ولا محارف تحكم أو اتجاه (قاعدة اسم العمل نفسها). */
-const displayText = (value: string) => value === value.trim() && !/[\u0000-\u001f\u007f‪-‮⁦-⁩]/.test(value);
+const displayText = (value: string) => value === value.trim() && !/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/.test(value);
 const invalid = (field: string) => ApiError.validation({ fields: [`/${field}`] });
 const rateLimited = (wait: number) => new ApiError(429, 'rate_limited', 'Too many attempts.', undefined, { 'Retry-After': String(wait) });
 /** الأدوار التي ينشئها مدير النظام من الواجهة: الطاقم والمراسل. مدير النظام بإجراء الشخصين من سطر الأوامر، والمشتري بدعوة مؤسسته. */
