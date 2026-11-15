@@ -1754,6 +1754,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/materials/{id}/active-licenses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * عدد التراخيص الفاعلة على المادة ومؤسساتها
+         * @description ما يُبطله خروج حقوق المادة من `sellable` أو وسمها بالحساسية (ADR 0118): عدد التراخيص الفاعلة (`active`) الصادرة على المادة، وعدد المؤسسات التي تحملها. عددان وحدهما، بلا مؤسسة ولا ترخيص بعينه؛ يعرضهما حوار تحويل الحقوق قبل التأكيد (قرار المنسّق 2026-11-15).
+         */
+        get: operations["getMaterialActiveLicenses"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/materials/{id}/listing": {
         parameters: {
             query?: never;
@@ -4706,6 +4728,12 @@ export interface components {
              * @default 1
              */
             count: number;
+        };
+        MaterialActiveLicenses: {
+            /** @description التراخيص الفاعلة الصادرة على المادة */
+            active_licenses: number;
+            /** @description المؤسسات التي تحمل ترخيصًا فاعلًا منها */
+            organizations: number;
         };
         LicensePage: {
             items: components["schemas"]["License"][];
@@ -8532,6 +8560,31 @@ export interface operations {
             422: components["responses"]["UnprocessableEntity"];
         };
     };
+    getMaterialActiveLicenses: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description العددان */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterialActiveLicenses"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     getMaterialListing: {
         parameters: {
             query?: never;
@@ -9353,6 +9406,10 @@ export interface operations {
                 status?: components["schemas"]["LicenseStatus"];
                 /** @description للطاقم وحده؛ يُتجاهل للمشتري */
                 organization_id?: string;
+                /** @description التراخيص المُبطلة بهذا السبب وحده */
+                revoked_reason?: "refunded" | "rights_withdrawn" | "manual";
+                /** @description `false`: التراخيص التي لا استرداد لبندها (ما أُبطل لسبب حقوقي ولم يُردّ ثمنه، للمالية، قرار المنسّق 2026-11-15)؛ `true`: ما لبنده استرداد. الاسترداد الفاشل لا يُحسب استردادًا. غيابه = الكل */
+                refunded?: boolean;
                 /** @description مؤشر الصفحة التالية كما أعادته الاستجابة السابقة في `next_cursor` */
                 cursor?: components["parameters"]["Cursor"];
                 /** @description حجم الصفحة */

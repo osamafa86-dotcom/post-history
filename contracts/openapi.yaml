@@ -2878,6 +2878,30 @@ paths:
         "412": { $ref: "#/components/responses/PreconditionFailed" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
+  /materials/{id}/active-licenses:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [commerce]
+      summary: عدد التراخيص الفاعلة على المادة ومؤسساتها
+      description: >-
+        ما يُبطله خروج حقوق المادة من `sellable` أو وسمها بالحساسية (ADR 0118): عدد التراخيص الفاعلة (`active`) الصادرة على المادة، وعدد
+        المؤسسات التي تحملها. عددان وحدهما، بلا مؤسسة ولا ترخيص بعينه؛ يعرضهما حوار تحويل الحقوق قبل التأكيد (قرار المنسّق 2026-11-15).
+      operationId: getMaterialActiveLicenses
+      x-roles: [system_admin, editor_in_chief, rights_officer, finance]
+      responses:
+        "200":
+          description: العددان
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MaterialActiveLicenses" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /materials/{id}/listing:
     parameters:
       - name: id
@@ -3650,6 +3674,16 @@ paths:
           in: query
           description: للطاقم وحده؛ يُتجاهل للمشتري
           schema: { type: string, format: uuid }
+        - name: revoked_reason
+          in: query
+          description: التراخيص المُبطلة بهذا السبب وحده
+          schema: { type: string, enum: [refunded, rights_withdrawn, manual] }
+        - name: refunded
+          in: query
+          description: >-
+            `false`: التراخيص التي لا استرداد لبندها (ما أُبطل لسبب حقوقي ولم يُردّ ثمنه، للمالية، قرار المنسّق 2026-11-15)؛ `true`: ما لبنده
+            استرداد. الاسترداد الفاشل لا يُحسب استردادًا. غيابه = الكل
+          schema: { type: boolean }
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
       responses:
@@ -7144,6 +7178,14 @@ components:
         width: { type: [integer, "null"], minimum: 1 }
         height: { type: [integer, "null"], minimum: 1 }
         count: { type: integer, minimum: 1, default: 1, description: عدد الملفات من هذا التسليم (الصور الثابتة) }
+
+    MaterialActiveLicenses:
+      type: object
+      additionalProperties: false
+      required: [active_licenses, organizations]
+      properties:
+        active_licenses: { type: integer, minimum: 0, description: التراخيص الفاعلة الصادرة على المادة }
+        organizations: { type: integer, minimum: 0, description: المؤسسات التي تحمل ترخيصًا فاعلًا منها }
 
     LicensePage:
       type: object
