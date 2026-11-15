@@ -606,6 +606,7 @@ export const materialFiles = pgTable("material_files", {
 	alignmentReliable: boolean("alignment_reliable"),
 	alignedAt: timestamp("aligned_at", { withTimezone: true, mode: 'string' }),
 	licenseId: uuid("license_id"),
+	mediaCheck: text("media_check"),
 }, (table) => [
 	uniqueIndex("material_files_delivery_license_key").using("btree", table.derivedFromId.asc().nullsLast().op("uuid_ops"), table.licenseId.asc().nullsLast().op("uuid_ops")).where(sql`(kind = 'delivery'::text)`),
 	uniqueIndex("material_files_derived_kind_key").using("btree", table.derivedFromId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("uuid_ops")).where(sql`((derived_from_id IS NOT NULL) AND (kind <> ALL (ARRAY['delivery'::text, 'circulated_render'::text])))`),
@@ -649,6 +650,8 @@ export const materialFiles = pgTable("material_files", {
 	check("material_files_technical_whitelisted", sql`(technical IS NULL) OR material_file_technical_is_whitelisted(technical)`),
 	check("material_files_verified_consistent", sql`(state = 'verified'::text) = (verified_at IS NOT NULL)`),
 	check("material_files_verified_has_sha", sql`(state <> 'verified'::text) OR (sha256 IS NOT NULL)`),
+	check("material_files_media_check_check", sql`(media_check IS NULL) OR (media_check = 'invalid'::text)`),
+	check("material_files_media_check_only_original", sql`(media_check IS NULL) OR (kind = 'original'::text)`),
 ]);
 
 export const materialRenders = pgTable("material_renders", {

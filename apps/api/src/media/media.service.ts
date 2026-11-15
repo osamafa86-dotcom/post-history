@@ -402,14 +402,22 @@ export class MediaService {
     return { result: 'verified', sha256, sizeBytes: body.size_bytes };
   }
 
-  /** الجلسة قُضي فيها: الطلب المكرر الموافق للنتيجة المسجلة = 200 بها، والمخالف = 409. */
+  /**
+   * الجلسة قُضي فيها: الطلب المكرر الموافق للنتيجة المسجلة = 200 بها، والمخالف = 409. استثناء واحد (ملحق (ب) على ADR 0092):
+   * أصل تحقّق الخادم من بصمته ثم لم يقرأه العامل (`invalid_file`) تبقى جلسته وحالة ملفه وإيصاله ومسارات مادته كما هي، وتُحفظ
+   * نتيجة الفحص على الملف (`media_check`) بلا حدث ولا تدقيق؛ وبلاغ `verified` المطابق بعده يمحوها.
+   */
   private async replay(tx: Tx, s: UploadSessionRow, body: MediaVerificationBody): Promise<MediaVerificationResult> {
     if (s.state === 'verified' && body.result === 'verified') {
       const [file] = await tx.select({ sha256: materialFiles.sha256 }).from(materialFiles).where(eq(materialFiles.id, s.fileId!));
       if (file?.sha256?.equals(Buffer.from(body.sha256!, 'hex'))) {
         await this.fillProbe(tx, s.fileId!, body.technical!);
+        await tx.update(materialFiles).set({ mediaCheck: null }).where(and(eq(materialFiles.id, s.fileId!), eq(materialFiles.mediaCheck, 'invalid')));
         return this.result(tx, s.id);
       }
+    } else if (s.state === 'verified' && body.result === 'invalid_file' && s.kind === 'original' && s.fileId) {
+      await tx.update(materialFiles).set({ mediaCheck: 'invalid' }).where(and(eq(materialFiles.id, s.fileId), eq(materialFiles.kind, 'original'), isNull(materialFiles.mediaCheck)));
+      return this.result(tx, s.id);
     } else if (s.state === 'failed') {
       // فشل قرره الخادم من بلاغ «verified» (حجم أو بصمة عميل) يعود بالنتيجة نفسها عند تكرار البلاغ، وكذلك جلسة أُلغيت
       // لإبطال وصول صاحبها (aborted) أيًّا كان البلاغ: لا شيء للعامل يغيّره فيها
