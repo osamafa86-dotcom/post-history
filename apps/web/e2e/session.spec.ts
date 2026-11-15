@@ -11,7 +11,7 @@ async function fill(page: Page, role: string, locale: "ar" | "en" = "ar") {
 async function signIn(page: Page, role = "reviewer", locale: "ar" | "en" = "ar") { await page.goto(`/${locale}/login`); await fill(page, role, locale); await page.waitForURL(url => !url.pathname.endsWith("/login")); }
 /** ما يفعله المتصفح عند تبديل التبويب: الحالة ثم الحدث. المتصفح بلا واجهة لا يبدّل تبويبًا فعلًا. */
 const tab = (page: Page, state: "hidden" | "visible") => page.evaluate(value => { Object.defineProperty(document, "visibilityState", { value, configurable: true }); document.dispatchEvent(new Event("visibilitychange")); }, state);
-const menu = (page: Page, m = ar) => page.getByRole("button", { name: new RegExp(`^${m.shell.account}`) });
+const menu = (page: Page, m = ar) => page.getByRole("button", { name: new RegExp(m.shell.account) });
 test.beforeEach(async ({ request }) => { await request.post(`${api}/__test/reset`); });
 
 test("switching to another tab and back keeps what the user was doing", async ({ page }) => {

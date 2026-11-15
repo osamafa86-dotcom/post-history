@@ -1954,7 +1954,7 @@ export interface paths {
         put?: never;
         /**
          * دعوة عضو إلى المؤسسة
-         * @description يُنشأ حساب مشترٍ مرتبط بالمؤسسة وحدها، يعيّن كلمة مروره برمز دعوة يُسلَّم كرمز الاستعادة، ويُفعِّل TOTP عند أول دخول. البريد المستخدم لحساب آخر `409 conflict`، بلا تفريق بين طاقم ومشترٍ. حد المقاعد `seats` يُفرض هنا (`409 seats_exhausted`).
+         * @description يُنشأ حساب مشترٍ مرتبط بالمؤسسة وحدها، يعيّن كلمة مروره برمز دعوة يُسلَّم كرمز الاستعادة، ويُفعِّل TOTP عند أول دخول. البريد المستخدم لحساب آخر `409 conflict`، بلا تفريق بين طاقم ومشترٍ. حد المقاعد `seats` يُفرض هنا (`409 seats_exhausted`). بريد عضو في المؤسسة نفسها لم يُكمل قبول دعوته، أو أُلغيت دعوته، ليس تعارضًا: تُعاد دعوته برمز جديد يُبطل السابق (`201` كالدعوة الأولى، قرار المنسّق 2026-11-15).
          */
         post: operations["inviteBuyerMember"];
         delete?: never;
@@ -1982,6 +1982,34 @@ export interface paths {
         put: operations["updateBuyerMember"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/buyer-organizations/{org_id}/members/{user_id}/invitation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description معرّف المؤسسة المشترية */
+                org_id: components["parameters"]["OrganizationId"];
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * إعادة إصدار رمز دعوة عضو لم يُكمل قبولها
+         * @description قرار المنسّق 2026-11-15: لعضو حالته `invited` وحده (`409 invalid_transition` لغيره). يُبطَل الرمز السابق ويصدر رمز جديد يُسلَّم كالأول (في الرد مرة واحدة، أو بقناة التسليم)، ولو كان المدعو قد استعمل رمزه الأول ولم يُكمل ربط التحقق بخطوتين: يبدأ من جديد بالرمز الجديد. سرّ التحقق المعلّق لا يُعرض ثانية. لا مقعد إضافي. يُسجَّل في التدقيق بلا البريد.
+         */
+        post: operations["reissueBuyerMemberInvitation"];
+        /**
+         * إلغاء دعوة لم يُكمل قبولها
+         * @description قرار المنسّق 2026-11-15: لعضو حالته `invited` وحده (`409 invalid_transition` لغيره). يُبطَل رمز الدعوة ويتحرر المقعد ويخرج المدعو من قائمة الأعضاء؛ ودعوة البريد نفسه لاحقًا دعوة جديدة. يُسجَّل في التدقيق بلا البريد.
+         */
+        delete: operations["cancelBuyerMemberInvitation"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2097,6 +2125,29 @@ export interface paths {
          * @description للطلب `paid` وحده (`409 order_state_conflict`). المبلغ مجموع أسعار البنود المجمّدة بعملة الطلب، قيدًا في القاعدة، ولا مبلغ حر. البند لا يُسترد مرتين ما لم يفشل استرداده السابق (`409 already_refunded`). في المعاملة نفسها تُبطَل تراخيص البنود (`revoked_reason = refunded`) فيتوقف التنزيل، ويُكتب `license.revoked` لكل ترخيص. ويُطلب الاسترداد من المزوّد بمفتاح منع التكرار نفسه. النجاح من إشعار `refund.succeeded` الموقّع وحده: يُكتب قيد `refund` يعكس حصص البيعة بنسبتها (ADR 0031)، من `refund_reserve` إن صُرف المستحق. حين تُسترد كل البنود يصير الطلب `refunded` ويُكتب `order.status_changed`. يُسجَّل في التدقيق.
          */
         post: operations["createOrderRefund"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orders/{order_id}/refunds/{refund_id}/sandbox-confirmation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: components["parameters"]["OrderId"];
+                refund_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * تأكيد استرداد معلّق في المزوّد التجريبي (للمالية، لا مال حقيقي)
+         * @description قرار المنسّق 2026-11-15: مع المزوّد التجريبي وحده (`Refund.provider = sandbox`) تؤكد المالية الاسترداد المعلّق كما يؤكده المزوّد: يُرسل إشعار `refund.succeeded` الموقّع نفسه بمرجع الاسترداد ومبلغه من سجله، ويُطبَّق كأي إشعار (قيد `refund` ثم `succeeded`). لا تأكيد آلي. بلا المزوّد التجريبي أو لاسترداد طلب آخر `404`، ولغير المعلّق `409 invalid_transition`. يُسجَّل في التدقيق.
+         */
+        post: operations["confirmSandboxRefund"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4463,6 +4514,8 @@ export interface components {
         BuyerOrganizationState: {
             /** Format: uuid */
             id: string;
+            /** @description المدعوون الذين لم يُكملوا القبول، ومنهم الدعوات المتعارضة القائمة؛ يشغلون مقاعد مع النشطين (`active_members`). أُضيف بعد v0.3، قد يغيب */
+            invited_members?: number;
             active_members: number;
             /**
              * Format: date-time
@@ -4814,6 +4867,8 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             completed_at: string | null;
+            /** @description المزوّد الذي يحمل الاسترداد (مزوّد دفع الطلب). مع `sandbox` يُؤكَّد المعلّق بـ `confirmSandboxRefund`. أُضيف بعد v0.3، قد يغيب */
+            provider?: components["schemas"]["PaymentProvider"];
         };
         /** @enum {string} */
         CommissionScope: "material" | "reporter" | "material_type" | "default";
@@ -4891,7 +4946,7 @@ export interface components {
             available: components["schemas"]["Money"];
             in_payout: components["schemas"]["Money"];
             paid: components["schemas"]["Money"];
-            /** @description الجزء المحتجز من المتاح بنسبة السياسة */
+            /** @description المحتجز من المتاح: نسبة السياسة من المتاح وما في الصرف وما صُرف خلال فترة الاسترداد (ADR 0031، تعديل 2026-11-15) */
             reserve: components["schemas"]["Money"];
             /** @description المتاح بعد الاحتياطي */
             requestable: components["schemas"]["Money"];
@@ -4921,6 +4976,27 @@ export interface components {
             reference_id: string;
             /** Format: date-time */
             occurred_at: string;
+            /** @description لسطر قيد `sale` أو `refund` وحده (قرار المنسّق 2026-11-15): ما بيع أو استُرد من مواد صاحب الحساب في الطلب، لكل بند معرّف المادة وعنوانها كما في «موادي» ونوع الترخيص وحصته هو منه، ويوم البيع. لا مشترٍ ولا مؤسسة ولا سعر بيع ولا قاعدة عمولة. `null` لغير ذلك. أُضيف بعد v0.3، قد يغيب */
+            sale?: {
+                /**
+                 * Format: date-time
+                 * @description لحظة تأكيد الدفع
+                 */
+                sold_at: string;
+                items: {
+                    /** Format: uuid */
+                    material_id: string;
+                    title: string;
+                    license_type: components["schemas"]["LicenseType"];
+                    /** @description حصته من البند كما جُمّدت في قيد البيعة (ADR 0031)؛ `null` لقيد كُتب قبل تسجيل الحصص */
+                    share: components["schemas"]["Money"] | null;
+                }[];
+            } | null;
+            /**
+             * Format: date-time
+             * @description لسطر بيعة في `pending` وحده: موعد تحريره إلى `available` بعد فترة الاسترداد (ADR 0033). `null` لغيره. أُضيف بعد v0.3، قد يغيب
+             */
+            releases_at?: string | null;
         };
         EarningsEntryPage: {
             items: components["schemas"]["EarningsEntry"][];
@@ -4974,11 +5050,11 @@ export interface components {
         };
         PayoutPolicyFields: {
             currency: components["schemas"]["Currency"];
-            /** @description أدنى مبلغ طلب، بعملة السياسة */
+            /** @description أدنى مبلغ طلب، بعملة السياسة. أكبر من صفر، وإلا `422` بالحقل `/minimum/amount_minor` (قرار المنسّق 2026-11-15) */
             minimum: components["schemas"]["Money"];
             /** @description ما فوقه يلزمه معتمدان */
             dual_approval_above: components["schemas"]["Money"];
-            /** @description الاحتياطي من المتاح بنقاط أساس */
+            /** @description الاحتياطي بنقاط أساس، من المتاح وما في الصرف وما صُرف خلال فترة الاسترداد، ويُحتجز من المتاح (ADR 0031، تعديل 2026-11-15) */
             reserve_bps: number;
             /** Format: date-time */
             effective_from: string;
@@ -5118,6 +5194,10 @@ export interface components {
             share: components["schemas"]["Money"];
             refunded: components["schemas"]["Money"];
             share_basis_points: number | null;
+            /** @description ما رُدّ للمشترين باستردادات نجحت في الشهر بهذه العملة، كله (حصة المنصة وحصص المساهمين وما تحمّلته المنصة). أُضيف بعد v0.3، قد يغيب */
+            refunded_to_buyers?: components["schemas"]["Money"];
+            /** @description ما دفعته المنصة من `refund_reserve` في استردادات الشهر لأن حصة المساهم كانت قد صُرفت (ADR 0031). أُضيف بعد v0.3، قد يغيب */
+            borne_by_platform?: components["schemas"]["Money"];
         };
         ContributorEarningsPage: {
             month: string;
@@ -8979,6 +9059,66 @@ export interface operations {
             422: components["responses"]["UnprocessableEntity"];
         };
     };
+    reissueBuyerMemberInvitation: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description معرّف المؤسسة المشترية */
+                org_id: components["parameters"]["OrganizationId"];
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description العضو برمز دعوته الجديد */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyerMemberCreated"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    cancelBuyerMemberInvitation: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description معرّف المؤسسة المشترية */
+                org_id: components["parameters"]["OrganizationId"];
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description أُلغيت الدعوة */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     listOrders: {
         parameters: {
             query?: {
@@ -9189,6 +9329,36 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    confirmSandboxRefund: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على `/auth/*`: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                order_id: components["parameters"]["OrderId"];
+                refund_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description الاسترداد بعد تطبيق الإشعار */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refund"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     listCommissionRules: {

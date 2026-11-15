@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { messages, plural, type Locale } from "@/lib/i18n";
 import { hasRole } from "@/lib/review";
 import { materialTypes } from "@/lib/query";
+import { durationKeys, filtersFromSearch, filtersSearch, heights, licenseTypes, periods, type Filters } from "@/lib/catalog-filters";
 import type { CatalogItem } from "@/lib/store-format";
 import { useUser } from "../session-boundary";
 import { Icon } from "../icon";
@@ -14,15 +15,12 @@ import type { components } from "@/generated/schema";
 import { governorateName } from "@/lib/format";
 type Organization = components["schemas"]["BuyerOrganization"];
 
+export { licenseTypes, periods, type Filters };
 // أدوار المشترين (#192) تتصفح الكتالوج كما في x-roles.
 export const catalogRoles = ["system_admin", "rights_officer", "editor_in_chief", "finance", "buyer_admin", "buyer_member"] as const;
-export const licenseTypes = ["editorial_single", "editorial_term", "exclusive_temporary", "commercial"] as const;
 type Page = { items: CatalogItem[]; next_cursor: string | null };
 // المدة والدقة إلى معاملات العقد (min/max_duration_ms، min_height).
-const durations = { short: { max_duration_ms: "60000" }, medium: { min_duration_ms: "60000", max_duration_ms: "300000" }, long: { min_duration_ms: "300000" } } as const;
-const heights = ["720", "1080", "2160"] as const;
-export const periods = ["recent", "week", "month"] as const;
-export type Filters = Partial<Record<"q" | "material_type" | "governorate" | "shot_from" | "shot_to" | "period" | "duration" | "min_height" | "license_type" | "exclusive_available", string>>;
+const durations = { short: { max_duration_ms: "60000" }, medium: { min_duration_ms: "60000", max_duration_ms: "300000" }, long: { min_duration_ms: "300000" } } as const satisfies Record<typeof durationKeys[number], object>;
 // يوم التصوير في العقد تاريخ بلا ساعة (`shot_on`)، فالفترات بالأيام: «آخر 7 أيام» لا «هذا الأسبوع» (بداية الأسبوع تختلف بين الإعدادات، كما في ADR 0096).
 const periodDays = { recent: 1, week: 6, month: 29 } as const;
 export function periodStart(period: string, now = new Date()) {
@@ -52,10 +50,13 @@ export function governorateChips(seen: Map<string, string>, active?: string) {
   return active && !ranked.includes(active) ? [...ranked, active] : ranked;
 }
 
-/** الكتالوج (S1، M4): البحث بالحدث والمكان والتاريخ، وشرائح المحافظة والفترة، والمرشحات الأخرى مطوية، وبطاقات `Web/Store card`، وE6 حين لا نتيجة. */
-export function StoreCatalog({ locale }: { locale: Locale }) {
+/**
+ * الكتالوج (S1، M4): البحث بالحدث والمكان والتاريخ، وشرائح المحافظة والفترة، والمرشحات الأخرى مطوية، وبطاقات `Web/Store card`، وE6 حين لا نتيجة.
+ * المرشحات تبدأ من رابط الصفحة (`initial`) وتُكتب فيه عند كل تغيير، فالرجوع من مادة وإعادة التحميل يعيدان البحث نفسه.
+ */
+export function StoreCatalog({ locale, initial = {} }: { locale: Locale; initial?: Filters }) {
   const m = messages[locale], s = m.store, b = s.browse, c = s.catalog, me = useUser(), allowed = hasRole(me, ...catalogRoles);
-  const [filters, setFilters] = useState<Filters>({}), [cursors, setCursors] = useState<(string | null)[]>([null]), [page, setPage] = useState<Page | null>(null), [error, setError] = useState(false), [attempt, setAttempt] = useState(0);
+  const [filters, setFilters] = useState<Filters>(initial), [cursors, setCursors] = useState<(string | null)[]>([null]), [page, setPage] = useState<Page | null>(null), [error, setError] = useState(false), [attempt, setAttempt] = useState(0);
   const [seen, setSeen] = useState<Map<string, string>>(() => new Map()), [held, setHeld] = useState<Organization | null>(null);
   const cursor = cursors.at(-1) ?? null, query = catalogParams(filters).toString();
   useEffect(() => {
@@ -81,7 +82,13 @@ export function StoreCatalog({ locale }: { locale: Locale }) {
   }, [allowed, query, cursor, attempt, me.organization_id]);
   if (!allowed) return <NoAccess locale={locale} me={me} title={s.title} denied={s.denied} />;
   if (held) return <div className="store-page org-pending-page"><OrgPending locale={locale} organization={held} canInvite={hasRole(me, "buyer_admin")} /></div>;
-  const update = (next: Filters) => { setPage(null); setCursors([null]); setFilters(next); };
+  // ما لا يغيّر المرشحات (بحث بمسافات وحدها، أو القيمة نفسها) لا يمسّ القائمة: لا تحميل يبدأ فلا ينتهي.
+  const update = (next: Filters) => {
+    const search = filtersSearch(next);
+    if (search === filtersSearch(filters)) return;
+    setPage(null); setCursors([null]); setFilters(filtersFromSearch(new URLSearchParams(search)));
+    window.history.replaceState(null, "", `${window.location.pathname}${search ? `?${search}` : ""}`);
+  };
   const set = (key: keyof Filters, value: string) => update({ ...filters, [key]: value });
   const active = (Object.entries(filters) as [keyof Filters, string][]).filter(([, value]) => value);
   const label = (key: keyof Filters, value: string) => key === "q" ? value : key === "material_type" ? m.types[value as keyof typeof m.types] : key === "license_type" ? s.licenseTypes[value as keyof typeof s.licenseTypes]
@@ -91,7 +98,7 @@ export function StoreCatalog({ locale }: { locale: Locale }) {
   return <div className="store-page">
     <header className="store-hero">
       <div className="store-hero-text"><h1>{c.heading} <span className="store-accent">{c.headingAccent}</span></h1><p className="store-lead">{c.lead}</p></div>
-      <form className="store-search" role="search" onSubmit={e => { e.preventDefault(); set("q", String(new FormData(e.currentTarget).get("q") ?? "").trim()); }}>
+      <form className="store-search" role="search" onSubmit={e => { e.preventDefault(); const field = e.currentTarget.elements.namedItem("q") as HTMLInputElement, q = field.value.trim().slice(0, 200); field.value = q; set("q", q); }}>
         <label htmlFor="catalog-q" className="visually-hidden">{s.search}</label>
         <span className="store-search-icon"><Icon name="search" /></span>
         <input id="catalog-q" key={filters.q ?? ""} name="q" type="search" maxLength={200} defaultValue={filters.q ?? ""} placeholder={c.searchPlaceholder} aria-describedby="search-help" autoComplete="off" />
@@ -124,7 +131,7 @@ export function StoreCatalog({ locale }: { locale: Locale }) {
         <p>{c.emptyWhy} {c.emptyNext}</p>
         {active.length > 0 && <ul className="filter-chips">{active.map(([key, value]) => <li key={key}><button className="quiet" aria-label={b.removeFilter.replace("{filter}", label(key, value))} onClick={() => set(key, "")}>{label(key, value)} <span aria-hidden="true">×</span></button></li>)}</ul>}
       </EmptyState>
-      : <div className="store-grid">{page.items.map(item => <CatalogCard key={item.listing_id} locale={locale} item={{ href: `/${locale}/store/${item.listing_id}`, title: item.title, governorate: item.governorate, shotOn: item.shot_on, durationMs: item.duration_ms, exclusive: item.exclusive_available }} />)}</div>}
+      : <div className="store-grid">{page.items.map(item => <CatalogCard key={item.listing_id} locale={locale} item={{ href: `/${locale}/store/${item.listing_id}`, title: item.title, governorate: item.governorate, shotOn: item.shot_on, durationMs: item.duration_ms, exclusive: item.exclusive_available, heldUntil: item.exclusive_unavailable_until }} />)}</div>}
     {(cursors.length > 1 || page?.next_cursor) && <div className="pagination"><button className="secondary" disabled={cursors.length < 2} onClick={() => { setPage(null); setCursors(list => list.slice(0, -1)); }}>{m.previous}</button><button className="secondary" disabled={!page?.next_cursor} onClick={() => { setPage(null); setCursors(list => [...list, page!.next_cursor]); }}>{m.next}</button></div>}
   </div>;
 }

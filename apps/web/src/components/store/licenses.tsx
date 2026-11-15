@@ -8,11 +8,15 @@ import { hasRole } from "@/lib/review";
 import { useMutation } from "@/lib/use-mutation";
 import { fileFormat, formatDuration, formatMoney, localized, orderLabel } from "@/lib/store-format";
 import { licenseDownloaders, licenseReaders, type IssuedLicense } from "@/lib/issued-licenses";
+import { delivered } from "@/lib/license-policy";
 import { useUser } from "../session-boundary";
 import { ActionStatus } from "../action-status";
 import { Icon } from "../icon";
 import { licenseTone } from "./license-verify";
 import { numberLocale } from "@/lib/format";
+import { isBuyer } from "@/lib/buyer-policy";
+import { licenseStatuses } from "@/lib/issued-licenses";
+import { organizationLabel, StaffFilters, useOrganizationNames } from "./staff-filters";
 
 
 /** عرض الترخيص في الجدول: المنتهي بتاريخه (وإن لم يحدّث الخادم حالته بعد)، والمبطل، والساري بحزمته جاهزة أو قيد التجهيز. */
@@ -33,12 +37,14 @@ export function LicensesPage({ locale }: { locale: Locale }) {
   const [now] = useState(() => Date.now()), clicks = useRef(0);
   // عضو المؤسسة يرى تراخيص مؤسسته كلها، لكن طلباته وحدها (العقد): رابط الفاتورة لطلب يفتحه وحده، وغيره رقم بلا رابط.
   const member = hasRole(me, "buyer_member") && !hasRole(me, "buyer_admin"), [ownOrders, setOwnOrders] = useState<Set<string> | null>(null);
+  // الطاقم: «التراخيص الصادرة» لكل المؤسسات بعمودها ومرشّحيها (T3-17)
+  const staff = allowed && !isBuyer(me), names = useOrganizationNames(staff), [filter, setFilter] = useState<{ organization: string; status: IssuedLicense["status"] | "" }>({ organization: "", status: "" });
   useEffect(() => {
     if (!allowed) return;
     const controller = new AbortController();
-    void browserApi().GET("/licenses", { signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setItems(data.items); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
+    void browserApi().GET("/licenses", { params: { query: { ...(filter.organization ? { organization_id: filter.organization } : {}), ...(filter.status ? { status: filter.status } : {}) } }, signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setItems(data.items); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
-  }, [allowed, attempt]);
+  }, [allowed, attempt, filter]);
   useEffect(() => {
     if (!allowed || !member) return;
     const controller = new AbortController();
@@ -63,16 +69,18 @@ export function LicensesPage({ locale }: { locale: Locale }) {
   }
   if (!allowed) return <NoAccess locale={locale} me={me} title={t.mine} denied={t.denied} />;
   return <>
-    <div className="page-heading"><h1>{t.mine}</h1></div>
+    <div className="page-heading"><h1>{staff ? t.issued : t.mine}</h1></div>
+    {staff && <StaffFilters locale={locale} names={names} organization={filter.organization} status={filter.status} statuses={licenseStatuses} statusLabel={s => t.statuses[s]} onChange={next => { setItems(null); setFilter(next); }} />}
     {mutation.status && mutation.status !== 200 ? <><ActionStatus status={mutation.status} locale={locale} />{mutation.status === 409 && <p className="notice error">{t.downloadConflict}</p>}</> : null}
     {error ? <EmptyState icon="offline" role="alert" title={m.error} actions={<button className="secondary" onClick={() => setAttempt(n => n + 1)}>{m.retry}</button>} />
       : !items ? <p className="center-state" role="status">{m.loading}</p>
       : !items.length ? <EmptyState icon="license" title={t.emptyTitle} actions={<Link prefetch={false} className="button store" href={`/${locale}/store`}>{m.store.cartPage.browse}</Link>}><p>{t.emptyBody}</p></EmptyState>
-      : <div className="store-table licenses-table"><table><thead><tr>{[t.colMaterial, t.colOrder, t.colLicence, t.colEnds, t.colAction].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+      : <div className="store-table licenses-table"><table><thead><tr>{[t.colMaterial, ...(staff ? [m.staffFilters.organization] : []), t.colOrder, t.colLicence, t.colEnds, t.colAction].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
         <tbody>{items.map(l => {
           const title = localized(l.title, locale), view = licenseView(l, now), order = orderLabel({ id: l.order_id, order_number: l.order_number });
           return <tr key={l.id} data-testid="license-row" data-view={view}>
             <td data-label={t.colMaterial}><strong>{title}</strong><small className="license-number-line"><Link prefetch={false} href={`/${locale}/store/licenses/${l.id}`}><bdi dir="ltr" className="mono">{l.license_number}</bdi></Link></small></td>
+            {staff && <td data-label={m.staffFilters.organization} data-testid="license-organization"><bdi>{organizationLabel(names, l.organization_id)}</bdi></td>}
             <td data-label={t.colOrder}>{opens(l.order_id) ? <Link prefetch={false} href={`/${locale}/store/orders/${l.order_id}/invoice`} aria-label={t.invoiceFor.replace("{id}", order)}><bdi dir="ltr" className="ref">{order}</bdi></Link> : <bdi dir="ltr" className="ref" data-testid="order-plain">{order}</bdi>}</td>
             <td data-label={t.colLicence}>{localized(l.terms.name, locale)}</td>
             <td data-label={t.colEnds}>{view === "ended" ? <span className="state-word warn"><Icon name="alert" size={14} />{t.endedOn.replace("{date}", longDate(l.valid_until, locale))}</span> : l.valid_until ? longDate(l.valid_until, locale) : t.noExpiry}</td>
@@ -117,7 +125,7 @@ export function LicenseCertificate({ locale, id }: { locale: Locale; id: string 
       <p><span className={`badge ${licenseTone(license.status)}`} data-testid="license-status">{t.statuses[license.status]}</span>{license.revoked_reason && <small className="muted"> {t.reasons[license.revoked_reason]}</small>}</p>
       <dl className="metadata">{[
         [t.number, <bdi dir="ltr" key="n">{license.license_number}</bdi>], [m.orders.orderNumber, <bdi dir="ltr" key="o" className="ref">{orderLabel({ id: license.order_id, order_number: license.order_number })}</bdi>], [t.type, typeLine],
-        [tp.usage, terms.usage_media.map(u => tp.usageNames[u]).join("، ")], [tp.territory, territory], [tp.deliverables, terms.deliverables.map(d => tp.deliverableNames[d]).join("، ")],
+        [tp.usage, terms.usage_media.map(u => tp.usageNames[u]).join("، ")], [tp.territory, territory], [tp.deliverables, delivered(terms.deliverables).map(d => tp.deliverableNames[d]).join("، ")],
         [tp.prohibitions, terms.prohibitions.map(p => tp.prohibitionNames[p]).join("، ") || "—"], [tp.attribution, localized(terms.attribution, locale)],
         [t.validFrom, formatDate(license.valid_from, locale)], [t.validUntil, license.valid_until ? formatDate(license.valid_until, locale) : t.noExpiry],
         ...(license.exclusive_until ? [[t.exclusiveUntil, formatDate(license.exclusive_until, locale)]] : []), [t.price, <bdi dir="ltr" key="p">{formatMoney(license.price, locale)}</bdi>], [t.issuedAt, formatDate(license.issued_at, locale)], [t.verify.link, <a key="v" href={verifyPath} data-testid="verify-url"><bdi dir="ltr" className="mono">{`${window.location.origin}${verifyPath}`}</bdi></a>],

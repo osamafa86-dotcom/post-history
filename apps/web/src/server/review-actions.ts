@@ -6,11 +6,12 @@ import { hasRole, validContributors } from "@/lib/review";
 import { states, uuid } from "@/lib/query";
 import { safeMaterial } from "@/lib/privacy";
 import { requireOk, type Api } from "./auth";
+import { refusalOk } from "./refusals";
 import { WebError } from "./errors";
 import type { WebConfig } from "./config";
 import { organizationWrite } from "./organizations";
 import { licenseDownload } from "./licenses";
-import { commissionWrite, refundWrite } from "./finance";
+import { commissionWrite, refundWrite, sandboxRefundConfirm } from "./finance";
 import { conflictWrite } from "./invite-conflicts";
 import { earningsPath, earningsWrite } from "./earnings";
 import { orderWrite } from "./orders";
@@ -53,6 +54,7 @@ export const actionRoutes = [
   { path: "/orders/{order_id}/checkout", methods: ["post"] },
   { path: "/orders/{order_id}/cancel", methods: ["post"] },
   { path: "/orders/{order_id}/refunds", methods: ["post"] },
+  { path: "/orders/{order_id}/refunds/{refund_id}/sandbox-confirmation", methods: ["post"] },
   { path: "/buyer-organizations", methods: ["post"] },
   { path: "/buyer-organizations/{org_id}", methods: ["put"] },
   { path: "/buyer-organizations/{org_id}/members", methods: ["post"] },
@@ -199,7 +201,7 @@ export async function reviewAction(request: Request, path: string, api: Api, me:
     requireRole(me, ...listingWriters); const input = listingInput(body); if (!input) throw new WebError(422, "request_failed");
     const params = { path: { id: listingPath[1] } };
     const result = request.method === "PUT" ? await api.PUT("/materials/{id}/listing", { params: { ...params, header: versioned() }, body: input }) : await api.POST("/materials/{id}/listing", { params: { ...params, header }, body: input });
-    const response = NextResponse.json(safeListing(requireOk(result)), { status: request.method === "PUT" ? 200 : 201, headers: privateHeaders }), tag = result.response.headers.get("ETag");
+    const response = NextResponse.json(safeListing(refusalOk(result, { listing: true })), { status: request.method === "PUT" ? 200 : 201, headers: privateHeaders }), tag = result.response.headers.get("ETag");
     if (tag && /^"[0-9]{1,19}"$/.test(tag)) response.headers.set("ETag", tag);
     return response;
   }
@@ -211,6 +213,8 @@ export async function reviewAction(request: Request, path: string, api: Api, me:
   if (path === "commission-rules") return commissionWrite(request, api, me, body, header);
   const refundPath = /^orders\/([^/]+)\/refunds$/.exec(path);
   if (refundPath) return refundWrite(request, refundPath[1], api, me, body, header);
+  const confirmPath = /^orders\/([^/]+)\/refunds\/([^/]+)\/sandbox-confirmation$/.exec(path);
+  if (confirmPath) return sandboxRefundConfirm(request, confirmPath[1], confirmPath[2], api, me, header);
   if (path === "orders" || path.startsWith("orders/")) return orderWrite(request, path, api, me, body, header, config ?? { checkoutOrigins: [] } as unknown as WebConfig);
   if (path.startsWith("buyer-organizations")) return organizationWrite(request, path, api, me, body, header, versioned);
   const notificationPath = /^notifications\/([^/]+)\/(read|ack)$/.exec(path);

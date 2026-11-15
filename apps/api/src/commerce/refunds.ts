@@ -12,6 +12,7 @@ import { iso } from '../materials/material-store';
 import { writeOutboxEvent } from '../outbox/outbox';
 import { type AccountRef, lockPayables, payable, type PayableState, postEntry } from './ledger';
 import { allocate, type Currency, money } from './money';
+import { type ItemShares, itemSharesFromDetails, splitItem, totalShares } from './sale-shares';
 import { PAYMENT_PROVIDER, type PaymentProvider, type ProviderEvent } from './payment-provider';
 
 type Refund = components['schemas']['Refund'];
@@ -152,11 +153,11 @@ export async function applyRefundSucceeded(
   if (r.status !== 'pending') return { orderId: r.orderId, outcome: 'ignored' };
   if (event.amount.currency !== r.currency || event.amount.amountMinor !== BigInt(r.amountMinor)) return { orderId: r.orderId, outcome: 'review' };
   const [sale] = await tx
-    .select({ id: journalEntries.id })
+    .select({ id: journalEntries.id, details: journalEntries.details })
     .from(journalEntries)
     .where(and(eq(journalEntries.kind, 'sale'), eq(journalEntries.referenceType, 'order'), eq(journalEntries.referenceId, r.orderId)));
   if (!sale) return { orderId: r.orderId, outcome: 'review' };
-  const entryId = await postRefund(tx, r, sale.id);
+  const entryId = await postRefund(tx, r, sale);
   await tx.update(refunds).set({ status: 'succeeded', entryId, completedAt: sql`now()` }).where(eq(refunds.id, r.id));
 
   const [{ left }] = (await tx.execute(sql`
@@ -178,32 +179,32 @@ export async function applyRefundSucceeded(
 }
 
 /**
- * قيد الاسترداد: دائن المزوّد بالمبلغ، ومدين كل سطر دائن في البيعة (إيراد المنصة ومستحق كل مساهم) بحصته من المبلغ
- * بالقسمة بالباقي الأكبر على أوزان البيعة. حصة المساهم تُؤخذ من مستحقه المعلّق ثم المتاح، وما صُرف منه من `refund_reserve`.
+ * قيد الاسترداد: دائن المزوّد بالمبلغ، ومدين إيراد المنصة ومستحق مساهمي **البنود المستردة وحدها** بحصصها المجمّدة في البيعة
+ * (ADR 0031، تعديل 2026-11-15). حصة المساهم تُؤخذ من مستحقه المعلّق ثم المتاح، وما صُرف منه من `refund_reserve`.
  */
-async function postRefund(tx: Tx, r: RefundRow, saleId: string): Promise<string> {
+async function postRefund(tx: Tx, r: RefundRow, sale: { id: string; details: unknown }): Promise<string> {
   const currency = r.currency as Currency;
   const lines = await tx
     .select({ kind: ledgerAccounts.kind, ownerId: ledgerAccounts.ownerId, amount: sql<string>`${postings.amountMinor}::text` })
     .from(postings)
     .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, postings.accountId))
-    .where(and(eq(postings.entryId, saleId), sql`${postings.amountMinor} < 0`))
+    .where(and(eq(postings.entryId, sale.id), sql`${postings.amountMinor} < 0`))
     .orderBy(postings.id);
-  const weights = lines.map((l, i) => ({ key: String(i), weight: -BigInt(l.amount) }));
-  const shares = allocate(money(BigInt(r.amountMinor), currency), weights);
+  const credited: SaleLine[] = lines.map((l) => ({ kind: l.kind as SaleLine['kind'], ownerId: l.ownerId, amount: -BigInt(l.amount) }));
+  const shares = await refundedShares(tx, r, sale.details, credited);
   const out: Array<{ account: AccountRef; amount: ReturnType<typeof money> }> = [{ account: { kind: 'provider_clearing', currency }, amount: money(-BigInt(r.amountMinor), currency) }];
   let reserve = 0n;
-  const owners = [...new Set(lines.filter((l) => l.kind === 'contributor_payable').map((l) => l.ownerId!))].sort();
+  const owners = [...new Set(shares.filter((l) => l.kind === 'contributor_payable').map((l) => l.ownerId!))].sort();
   // أقفال حسابات المساهمين بالترتيب الواحد قبل قراءة الأرصدة (lockPayables)
   await lockPayables(
     tx,
     owners.flatMap((owner) => (['pending', 'available'] as PayableState[]).map((state) => ({ kind: 'contributor_payable' as const, ownerId: owner, state, currency }))),
   );
-  for (const [i, l] of lines.entries()) {
-    let share = shares.get(String(i))!.amountMinor;
+  for (const l of shares) {
+    let share = l.amount;
     if (share === 0n) continue;
     if (l.kind !== 'contributor_payable') {
-      out.push({ account: { kind: l.kind as 'platform_revenue', currency }, amount: money(share, currency) });
+      out.push({ account: { kind: 'platform_revenue', currency }, amount: money(share, currency) });
       continue;
     }
     for (const state of ['pending', 'available'] as PayableState[]) {
@@ -223,17 +224,69 @@ async function postRefund(tx: Tx, r: RefundRow, saleId: string): Promise<string>
     referenceId: r.orderId,
     details: { refund_id: r.id },
     idempotencyKey: `refund:${r.id}`,
-    reversesEntryId: saleId,
+    reversesEntryId: sale.id,
     actorId: null,
     postings: out,
   });
   return entryId;
 }
 
-async function toDtos(executor: Executor, rows: RefundRow[]): Promise<Refund[]> {
+/** سطر دائن في قيد البيعة أو حصة تُعاد منه: إيراد المنصة أو مستحق مساهم، بمبلغ موجب. */
+interface SaleLine {
+  kind: 'platform_revenue' | 'contributor_payable';
+  ownerId: string | null;
+  amount: bigint;
+}
+
+/**
+ * ما يعيده الاسترداد من كل سطر دائن في البيعة: حصص البنود المستردة كما سُجّلت في تفاصيل القيد. القيد الأقدم (بلا `item_shares`)
+ * تُعاد حصص بنوده من نقاط كل بند المجمّدة ومساهمي مادته، ولا يُعتمد عليها إلا إن طابق مجموعها قيد البيعة سطرًا سطرًا (المساهمون
+ * لم يتغيّروا منذ البيع)؛ وإلا تبقى القسمة بنسبة سطور البيعة كلها، وهي أحسن ما يُعرف عن قيد لم تُحفظ حصص بنوده.
+ */
+async function refundedShares(tx: Tx, r: RefundRow, details: unknown, credited: SaleLine[]): Promise<SaleLine[]> {
+  const currency = r.currency as Currency;
+  const refunded = new Set((await tx.select({ id: refundItems.orderItemId }).from(refundItems).where(eq(refundItems.refundId, r.id))).map((i) => i.id));
+  const perItem = itemSharesFromDetails(details) ?? (await recomputedShares(tx, r.orderId, details, credited, currency));
+  const picked = perItem?.filter((i) => refunded.has(i.orderItemId));
+  if (picked && picked.length === refunded.size) {
+    const total = totalShares(picked);
+    const sum = total.platform + [...total.contributors.values()].reduce((a, b) => a + b, 0n);
+    if (sum === BigInt(r.amountMinor)) {
+      return [
+        { kind: 'platform_revenue', ownerId: null, amount: total.platform },
+        ...[...total.contributors].sort(([a], [b]) => (a < b ? -1 : 1)).map(([ownerId, amount]): SaleLine => ({ kind: 'contributor_payable', ownerId, amount })),
+      ];
+    }
+  }
+  const shares = allocate(
+    money(BigInt(r.amountMinor), currency),
+    credited.map((l, i) => ({ key: String(i), weight: l.amount })),
+  );
+  return credited.map((l, i) => ({ ...l, amount: shares.get(String(i))!.amountMinor }));
+}
+
+/** حصص بنود قيد أقدم محسوبة من جديد، أو null إن لم تطابق قيد البيعة. */
+async function recomputedShares(tx: Tx, orderId: string, details: unknown, credited: SaleLine[], currency: Currency): Promise<ItemShares[] | null> {
+  const points = (details as { item_basis_points?: unknown } | null)?.item_basis_points;
+  const items = await tx.select({ id: orderItems.id, materialId: orderItems.materialId, priceMinor: orderItems.priceMinor }).from(orderItems).where(eq(orderItems.orderId, orderId)).orderBy(orderItems.id);
+  if (!Array.isArray(points) || points.length !== items.length || points.some((p) => typeof p !== 'number' || !Number.isInteger(p) || p < 0 || p > 10_000)) return null;
+  const computed: ItemShares[] = [];
+  for (const [i, item] of items.entries()) computed.push(await splitItem(tx, item, currency, points[i] as number));
+  const total = totalShares(computed);
+  const platform = credited.filter((l) => l.kind === 'platform_revenue').reduce((a, l) => a + l.amount, 0n);
+  const owners = credited.filter((l) => l.kind === 'contributor_payable');
+  const nonZero = [...total.contributors].filter(([, amount]) => amount > 0n);
+  const same = platform === total.platform && nonZero.length === owners.length && owners.every((l) => total.contributors.get(l.ownerId!) === l.amount);
+  return same ? computed : null;
+}
+
+/** الاستردادات بصيغة العقد، ومزوّد كلٍّ منها (مزوّد دفع طلبه). */
+export async function toDtos(executor: Executor, rows: RefundRow[]): Promise<Refund[]> {
   if (rows.length === 0) return [];
   const items = await executor.select().from(refundItems).where(inArray(refundItems.refundId, rows.map((r) => r.id)));
+  const providers = await executor.select({ id: orders.id, provider: orders.provider }).from(orders).where(inArray(orders.id, [...new Set(rows.map((r) => r.orderId))]));
   return rows.map((r) => ({
+    ...((p) => (p === 'sandbox' || p === 'stripe' ? { provider: p } : {}))(providers.find((o) => o.id === r.orderId)?.provider),
     id: r.id,
     order_id: r.orderId,
     order_item_ids: items.filter((i) => i.refundId === r.id).map((i) => i.orderItemId).sort(),

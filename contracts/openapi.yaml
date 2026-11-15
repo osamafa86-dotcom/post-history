@@ -3277,7 +3277,8 @@ paths:
       description: >-
         يُنشأ حساب مشترٍ مرتبط بالمؤسسة وحدها، يعيّن كلمة مروره برمز دعوة يُسلَّم كرمز الاستعادة، ويُفعِّل TOTP عند أول دخول.
         البريد المستخدم لحساب آخر `409 conflict`، بلا تفريق بين طاقم ومشترٍ. حد المقاعد `seats` يُفرض هنا
-        (`409 seats_exhausted`).
+        (`409 seats_exhausted`). بريد عضو في المؤسسة نفسها لم يُكمل قبول دعوته، أو أُلغيت دعوته، ليس تعارضًا: تُعاد دعوته
+        برمز جديد يُبطل السابق (`201` كالدعوة الأولى، قرار المنسّق 2026-11-15).
       operationId: inviteBuyerMember
       x-roles: [system_admin, buyer_admin]
       parameters:
@@ -3334,6 +3335,51 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /buyer-organizations/{org_id}/members/{user_id}/invitation:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - name: user_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [commerce]
+      summary: إعادة إصدار رمز دعوة عضو لم يُكمل قبولها
+      description: >-
+        قرار المنسّق 2026-11-15: لعضو حالته `invited` وحده (`409 invalid_transition` لغيره). يُبطَل الرمز السابق ويصدر رمز جديد
+        يُسلَّم كالأول (في الرد مرة واحدة، أو بقناة التسليم)، ولو كان المدعو قد استعمل رمزه الأول ولم يُكمل ربط التحقق بخطوتين:
+        يبدأ من جديد بالرمز الجديد. سرّ التحقق المعلّق لا يُعرض ثانية. لا مقعد إضافي. يُسجَّل في التدقيق بلا البريد.
+      operationId: reissueBuyerMemberInvitation
+      x-roles: [system_admin, buyer_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: العضو برمز دعوته الجديد
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BuyerMemberCreated" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [commerce]
+      summary: إلغاء دعوة لم يُكمل قبولها
+      description: >-
+        قرار المنسّق 2026-11-15: لعضو حالته `invited` وحده (`409 invalid_transition` لغيره). يُبطَل رمز الدعوة ويتحرر المقعد
+        ويخرج المدعو من قائمة الأعضاء؛ ودعوة البريد نفسه لاحقًا دعوة جديدة. يُسجَّل في التدقيق بلا البريد.
+      operationId: cancelBuyerMemberInvitation
+      x-roles: [system_admin, buyer_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "204": { description: أُلغيت الدعوة }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /orders:
     get:
@@ -3531,6 +3577,35 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /orders/{order_id}/refunds/{refund_id}/sandbox-confirmation:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+      - name: refund_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [commerce]
+      summary: تأكيد استرداد معلّق في المزوّد التجريبي (للمالية، لا مال حقيقي)
+      description: >-
+        قرار المنسّق 2026-11-15: مع المزوّد التجريبي وحده (`Refund.provider = sandbox`) تؤكد المالية الاسترداد المعلّق كما يؤكده المزوّد:
+        يُرسل إشعار `refund.succeeded` الموقّع نفسه بمرجع الاسترداد ومبلغه من سجله، ويُطبَّق كأي إشعار (قيد `refund` ثم `succeeded`).
+        لا تأكيد آلي. بلا المزوّد التجريبي أو لاسترداد طلب آخر `404`، ولغير المعلّق `409 invalid_transition`. يُسجَّل في التدقيق.
+      operationId: confirmSandboxRefund
+      x-roles: [system_admin, finance]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: الاسترداد بعد تطبيق الإشعار
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Refund" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /commission-rules:
     get:
@@ -6821,6 +6896,11 @@ components:
       required: [id, status, seats, active_members, verified_at, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }
+        invited_members:
+          type: integer
+          minimum: 0
+          description: >-
+            المدعوون الذين لم يُكملوا القبول، ومنهم الدعوات المتعارضة القائمة؛ يشغلون مقاعد مع النشطين (`active_members`). أُضيف بعد v0.3، قد يغيب
         active_members: { type: integer, minimum: 0 }
         verified_at: { type: [string, "null"], format: date-time, description: أول انتقال إلى `active` }
         rejection_reason:
@@ -7276,6 +7356,10 @@ components:
         created_by: { type: string, format: uuid }
         created_at: { type: string, format: date-time }
         completed_at: { type: [string, "null"], format: date-time }
+        provider:
+          $ref: "#/components/schemas/PaymentProvider"
+          description: >-
+            المزوّد الذي يحمل الاسترداد (مزوّد دفع الطلب). مع `sandbox` يُؤكَّد المعلّق بـ `confirmSandboxRefund`. أُضيف بعد v0.3، قد يغيب
 
     CommissionScope:
       type: string
@@ -7380,7 +7464,10 @@ components:
         available: { $ref: "#/components/schemas/Money" }
         in_payout: { $ref: "#/components/schemas/Money" }
         paid: { $ref: "#/components/schemas/Money" }
-        reserve: { $ref: "#/components/schemas/Money", description: الجزء المحتجز من المتاح بنسبة السياسة }
+        reserve:
+          $ref: "#/components/schemas/Money"
+          description: >-
+            المحتجز من المتاح: نسبة السياسة من المتاح وما في الصرف وما صُرف خلال فترة الاسترداد (ADR 0031، تعديل 2026-11-15)
         requestable: { $ref: "#/components/schemas/Money", description: المتاح بعد الاحتياطي }
         minimum: { $ref: "#/components/schemas/Money", description: أدنى مبلغ طلب صرف بهذه العملة }
 
@@ -7407,6 +7494,37 @@ components:
         reference_type: { type: string, pattern: "^[a-z_]{1,32}$", description: "`order` أو `refund` أو `payout_request` …" }
         reference_id: { type: string, format: uuid }
         occurred_at: { type: string, format: date-time }
+        sale:
+          type: [object, "null"]
+          description: >-
+            لسطر قيد `sale` أو `refund` وحده (قرار المنسّق 2026-11-15): ما بيع أو استُرد من مواد صاحب الحساب في الطلب، لكل بند معرّف المادة
+            وعنوانها كما في «موادي» ونوع الترخيص وحصته هو منه، ويوم البيع. لا مشترٍ ولا مؤسسة ولا سعر بيع ولا قاعدة عمولة. `null` لغير ذلك.
+            أُضيف بعد v0.3، قد يغيب
+          additionalProperties: false
+          required: [sold_at, items]
+          properties:
+            sold_at: { type: string, format: date-time, description: لحظة تأكيد الدفع }
+            items:
+              type: array
+              maxItems: 20
+              items:
+                type: object
+                additionalProperties: false
+                required: [material_id, title, license_type, share]
+                properties:
+                  material_id: { type: string, format: uuid }
+                  title: { type: string, maxLength: 4000 }
+                  license_type: { $ref: "#/components/schemas/LicenseType" }
+                  share:
+                    oneOf:
+                      - $ref: "#/components/schemas/Money"
+                      - type: "null"
+                    description: حصته من البند كما جُمّدت في قيد البيعة (ADR 0031)؛ `null` لقيد كُتب قبل تسجيل الحصص
+        releases_at:
+          type: [string, "null"]
+          format: date-time
+          description: >-
+            لسطر بيعة في `pending` وحده: موعد تحريره إلى `available` بعد فترة الاسترداد (ADR 0033). `null` لغيره. أُضيف بعد v0.3، قد يغيب
 
     EarningsEntryPage:
       type: object
@@ -7487,9 +7605,16 @@ components:
       required: [currency, minimum, dual_approval_above, reserve_bps, effective_from]
       properties:
         currency: { $ref: "#/components/schemas/Currency" }
-        minimum: { $ref: "#/components/schemas/Money", description: أدنى مبلغ طلب، بعملة السياسة }
+        minimum:
+          $ref: "#/components/schemas/Money"
+          description: أدنى مبلغ طلب، بعملة السياسة. أكبر من صفر، وإلا `422` بالحقل `/minimum/amount_minor` (قرار المنسّق 2026-11-15)
         dual_approval_above: { $ref: "#/components/schemas/Money", description: ما فوقه يلزمه معتمدان }
-        reserve_bps: { type: integer, minimum: 0, maximum: 5000, description: الاحتياطي من المتاح بنقاط أساس }
+        reserve_bps:
+          type: integer
+          minimum: 0
+          maximum: 5000
+          description: >-
+            الاحتياطي بنقاط أساس، من المتاح وما في الصرف وما صُرف خلال فترة الاسترداد، ويُحتجز من المتاح (ADR 0031، تعديل 2026-11-15)
         effective_from: { type: string, format: date-time }
 
     PayoutPolicyInput:
@@ -7664,6 +7789,14 @@ components:
         share: { $ref: "#/components/schemas/Money" }
         refunded: { $ref: "#/components/schemas/Money" }
         share_basis_points: { type: [integer, "null"], minimum: 0, maximum: 10000 }
+        refunded_to_buyers:
+          $ref: "#/components/schemas/Money"
+          description: >-
+            ما رُدّ للمشترين باستردادات نجحت في الشهر بهذه العملة، كله (حصة المنصة وحصص المساهمين وما تحمّلته المنصة). أُضيف بعد v0.3، قد يغيب
+        borne_by_platform:
+          $ref: "#/components/schemas/Money"
+          description: >-
+            ما دفعته المنصة من `refund_reserve` في استردادات الشهر لأن حصة المساهم كانت قد صُرفت (ADR 0031). أُضيف بعد v0.3، قد يغيب
 
     ContributorEarningsPage:
       type: object
