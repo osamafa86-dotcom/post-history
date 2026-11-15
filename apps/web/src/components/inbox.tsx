@@ -1,4 +1,6 @@
 "use client";
+import { reporterOnly } from "@/lib/home-page";
+import { governorateName } from "@/lib/format";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -119,7 +121,8 @@ export function Inbox({ locale }: { locale: Locale }) {
     <p>{search ? (tabbed.length ? w.noResultsHint.replace("{count}", plural(tabbed.length, m.counts.materials, locale)) : w.noResultsNone) : w.noFilterResults}</p></EmptyState>;
   else list = <EmptyState icon="inbox" testId="inbox-empty" title={w.emptyTitle} actions={staff ? <Link prefetch={false} className="button" href={`/${locale}/board`}>{m.board.title}</Link> : null}>
     <p>{w.emptyBody}{lastArrival && now ? <> {w.lastArrival.replace("{time}", humanDuration(now - Date.parse(lastArrival), locale))}</> : null}</p></EmptyState>;
-  if (!reader || forbidden) return <NoAccess locale={locale} me={me} title={m.inbox} denied={w.denied} />;
+  // المراسل بلا دور مكتب صفحته «موادي»: وارد الطاقم ليس له ولو قرأ موادّه من القائمة نفسها.
+  if (!reader || reporterOnly(me) || forbidden) return <NoAccess locale={locale} me={me} title={m.inbox} denied={reporterOnly(me) ? w.deniedReporter : w.denied} />;
   return <>
     {/* الشريط الأحمر وصوته لمن يملك الاستلام (المشرف) وحده؛ غيره يرى العدّاد في المؤشّرات، وتنبيه التصعيد يقول له المطلوب */}
     {staff && waiting && hasRole(me, "supervisor") && <UrgentAlert locale={locale} items={unreceived} beyond={beyond} now={now} disabled={disconnected} done={retry} showAll={() => { setQuery(urgentWaiting); setPage(null); setCursors([undefined]); }} />}
@@ -185,7 +188,7 @@ function MaterialRow({ material, locale, now, disabled, done }: { material: Mate
       : <span className="row-thumb" aria-hidden="true"><Icon name={material.material_types.includes("photos") ? "preview" : "play"} /></span>}
     <div className="row-main">
       <p className="row-title"><Link className="material-link" prefetch={false} href={`/${locale}/materials/${material.id}`}>{material.title}</Link>{material.priority !== "normal" && <span className={`priority-pill ${material.priority}`}>{urgent && <Icon name="bolt" size={12} />}{m.states.priority[material.priority]}</span>}</p>
-      <p className="row-meta"><span>{photographer(material, locale)}</span><span>{material.governorate}</span>{type && <span>{type}</span>}{files > 0 && <span>{plural(files, w.files, locale)}</span>}<span className="receipt"><bdi dir="ltr">{receipt ?? m.noReceipt}</bdi></span></p>
+      <p className="row-meta"><span>{photographer(material, locale)}</span><span>{governorateName(material.governorate, m.governorates)}</span>{type && <span>{type}</span>}{files > 0 && <span>{plural(files, w.files, locale)}</span>}<span className="receipt"><bdi dir="ltr">{receipt ?? m.noReceipt}</bdi></span></p>
       {material.tags?.length ? <ul className="tag-list" aria-label={w.tags}>{material.tags.map(tag => <li key={tag}><bdi>{tag}</bdi></li>)}</ul> : null}
     </div>
     <p className={`row-time${urgent ? " urgent" : ""}`}>{now ? w.since.replace("{time}", humanDuration(now - Date.parse(material.created_at), locale)) : longDate(material.created_at, locale)}</p>

@@ -8,10 +8,12 @@ import { Icon, type IconName } from "./icon";
  * نمط الحالات (E1–E6، `Empty state`): أيقونة في دائرة، وعنوان يقول ما يحدث، وجملة تقول السبب والخطوة التالية، وفعل أو اثنان.
  * لا شاشة بيضاء ولا «حدث خطأ» بلا سبب.
  */
-export function EmptyState({ icon, title, children, actions, role, testId }: { icon: IconName; title: React.ReactNode; children?: React.ReactNode; actions?: React.ReactNode; role?: "status" | "alert"; testId?: string }) {
+export function EmptyState({ icon, title, children, actions, role, testId, level = 2 }: { icon: IconName; title: React.ReactNode; children?: React.ReactNode; actions?: React.ReactNode; role?: "status" | "alert"; testId?: string; level?: 1 | 2 }) {
+  // صفحة كاملة (404) عنوانها `h1` نفسه، لا `h1` داخل `h2`: المحلّل يغلق الثاني عند الأول فيختلف DOM عن الخادم (React #418).
+  const Heading = level === 1 ? "h1" : "h2";
   return <section className="empty-state" role={role} data-testid={testId}>
     <span className="empty-icon"><Icon name={icon} size={24} /></span>
-    <h2>{title}</h2>
+    <Heading>{title}</Heading>
     {children && <div className="empty-body">{children}</div>}
     {actions && <div className="actions">{actions}</div>}
   </section>;

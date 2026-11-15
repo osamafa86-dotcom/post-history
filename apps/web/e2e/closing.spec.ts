@@ -37,7 +37,8 @@ test("my organization counts seats in words, and its primary actions are the sto
   await signIn(page, "buyeradmin"); await page.goto("/ar/store/71000000-0000-4000-8000-000000000001");
   await page.getByRole("radio").first().check(); const gold = await background(page.locator(".store-buy button.store"));
   await page.goto("/ar/organization"); const profile = page.getByTestId("organization-profile"); await expect(profile).toBeVisible();
-  await expect(profile).toContainText(/\d+ من \d+/); await expect(profile).not.toContainText(/\d+ \/ \d+/);
+  // عدّاد المقاعد واحد: فوق قائمة الأعضاء لمن يديرها، بالكلمات لا بالشرطة
+  const seats = page.getByTestId("seats-counter"); await expect(seats).toContainText(/\d+ من \d+/); await expect(seats).not.toContainText(/\d+ \/ \d+/); await expect(profile).not.toContainText(/\d+ \/ \d+/);
   const edit = page.getByRole("button", { name: ar.buyers.edit, exact: true }), invite = page.getByRole("button", { name: ar.buyers.invite, exact: true });
   await expect(edit).toHaveClass(/store/); await expect(invite).toHaveClass(/store/);
   expect(await background(edit)).toBe(gold);

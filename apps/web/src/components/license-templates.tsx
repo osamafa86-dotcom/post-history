@@ -6,7 +6,7 @@ import { messages, type Locale } from "@/lib/i18n";
 import { hasRole } from "@/lib/review";
 import { useMutation } from "@/lib/use-mutation";
 import { formatMoney, localized } from "@/lib/store-format";
-import { currencies, deliverables, emptyTemplate, inputOf, licenseTypes, prohibitions, templateInput, templateLimits, templateRoles, templateWriters, termRequired, usageMedia, type Template, type TemplateInput } from "@/lib/license-policy";
+import { currencies, deliverables, emptyTemplate, inputOf, licenseTypes, prohibitions, shortTextMax, templateInput, templateLimits, templateRoles, templateWriters, termRequired, usageMedia, type Template, type TemplateInput } from "@/lib/license-policy";
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
 
@@ -55,7 +55,7 @@ export function LicenseTemplates({ locale }: { locale: Locale }) {
       : !items.length ? <p className="empty">{t.empty}</p>
       : <div className="table-panel"><table className="admin-table" aria-label={t.title}>
         <thead><tr><th scope="col">{t.name}</th><th scope="col">{t.type}</th><th scope="col" className="num">{t.price}</th><th scope="col" className="num">{t.version}</th><th scope="col">{t.enabledLabel}</th><th scope="col"><span className="visually-hidden">{m.earnings.actions}</span></th></tr></thead>
-        <tbody>{items.map(item => <tr key={item.id} data-testid="template-row"><td className="cell-primary"><strong><bdi>{localized(item.name, locale)}</bdi></strong></td><td data-label={t.type}>{m.store.licenseTypes[item.type]}</td><td data-label={t.price} className="num">{formatMoney(item.base_price, locale)}</td><td data-label={t.version} className="num">{item.version}</td><td data-label={t.enabledLabel}><span className={`badge ${item.enabled ? "good" : ""}`}>{item.enabled ? t.enabled : t.disabled}</span></td>
+        <tbody>{items.map(item => <tr key={item.id} data-testid="template-row"><td className="cell-primary template-name"><strong><bdi>{localized(item.name, locale)}</bdi></strong></td><td data-label={t.type}>{m.store.licenseTypes[item.type]}</td><td data-label={t.price} className="num">{formatMoney(item.base_price, locale)}</td><td data-label={t.version} className="num">{item.version}</td><td data-label={t.enabledLabel}><span className={`badge ${item.enabled ? "good" : ""}`}>{item.enabled ? t.enabled : t.disabled}</span></td>
           <td className="cell-actions">{writer && <button className="secondary small" onClick={() => void open(item)}>{t.edit}</button>}</td></tr>)}</tbody></table></div>}
   </>;
 }
@@ -64,10 +64,10 @@ function Checks<T extends string>({ legend, values, selected, label, change, nam
   return <fieldset className="check-group"><legend>{legend}</legend>{values.map(value => <label key={value} className="check"><input type="checkbox" name={name} value={value} disabled={locked.includes(value)} checked={selected.includes(value)} onChange={() => change(toggle(selected, value))} />{label(value)}</label>)}</fieldset>;
 }
 
-function Bilingual({ legend, value, change, area, names }: { names: { ar: string; en: string }; legend: string; value: { ar: string; en: string }; change: (next: { ar: string; en: string }) => void; area?: boolean }) {
+function Bilingual({ legend, value, change, area, names, max = templateLimits.text }: { names: { ar: string; en: string }; legend: string; value: { ar: string; en: string }; change: (next: { ar: string; en: string }) => void; area?: boolean; max?: number }) {
   return <fieldset className="check-group bilingual"><legend>{legend}</legend>{(["ar", "en"] as const).map(lang => <label key={lang}>{names[lang]}{area
     ? <textarea lang={lang} dir={lang === "ar" ? "rtl" : "ltr"} rows={4} maxLength={templateLimits.text} value={value[lang]} onChange={e => change({ ...value, [lang]: e.target.value })} />
-    : <input lang={lang} dir={lang === "ar" ? "rtl" : "ltr"} maxLength={templateLimits.text} value={value[lang]} onChange={e => change({ ...value, [lang]: e.target.value })} />}</label>)}</fieldset>;
+    : <input lang={lang} dir={lang === "ar" ? "rtl" : "ltr"} maxLength={max} value={value[lang]} onChange={e => change({ ...value, [lang]: e.target.value })} />}</label>)}</fieldset>;
 }
 
 function TemplateForm({ locale, template, editing, set, busy, onSave, onCancel, invalid, status }: { locale: Locale; template: TemplateInput; editing: boolean; set: <K extends keyof TemplateInput>(key: K, value: TemplateInput[K]) => void; busy: boolean; onSave: () => void; onCancel: () => void; invalid: boolean; status: number }) {
@@ -77,7 +77,7 @@ function TemplateForm({ locale, template, editing, set, busy, onSave, onCancel, 
     {editing && <p className="notice">{t.newVersion}</p>}
     <label>{t.type}<select value={template.type} disabled={editing} onChange={e => { const type = e.target.value as TemplateInput["type"]; set("type", type); set("exclusivity_hours", type === "exclusive_temporary" ? 48 : null); if (termRequired.includes(type) && !template.term_days) set("term_days", 365); }}>{licenseTypes.map(type => <option key={type} value={type}>{m.store.licenseTypes[type]}</option>)}</select></label>
     {template.type === "commercial" && <p className="muted">{t.commercialHelp}</p>}
-    <Bilingual names={{ ar: t.arabic, en: t.english }} legend={t.name} value={template.name} change={v => set("name", v)} />
+    <Bilingual names={{ ar: t.arabic, en: t.english }} legend={t.name} value={template.name} change={v => set("name", v)} max={shortTextMax} />
     <Bilingual names={{ ar: t.arabic, en: t.english }} legend={t.terms} value={template.terms} change={v => set("terms", v)} area />
     <Bilingual names={{ ar: t.arabic, en: t.english }} legend={t.attribution} value={template.attribution} change={v => set("attribution", v)} />
     <Checks legend={t.usage} name="usage" values={usageMedia} selected={template.usage_media} label={v => t.usageNames[v]} change={next => set("usage_media", next)} />
@@ -85,7 +85,7 @@ function TemplateForm({ locale, template, editing, set, busy, onSave, onCancel, 
       {template.territory.kind === "countries" && <label>{t.countryCodes}<input dir="ltr" value={countries.join(", ")} onChange={e => set("territory", { kind: "countries", countries: e.target.value.toUpperCase().split(/[\s,]+/).filter(Boolean) })} /><small className="muted">{t.countryHelp}</small></label>}</div>
     <div className="rule-row"><label>{t.term}<input type="number" min={templateLimits.termMin} max={templateLimits.termMax} value={template.term_days ?? ""} onChange={e => set("term_days", number(e.target.value))} /><small className="muted">{termRequired.includes(template.type) ? t.termRequired : t.termHelp}</small></label>
       {template.type === "exclusive_temporary" && <label>{t.exclusivity}<input type="number" min={templateLimits.hoursMin} max={templateLimits.hoursMax} value={template.exclusivity_hours ?? ""} onChange={e => set("exclusivity_hours", number(e.target.value))} /></label>}</div>
-    <Checks legend={t.deliverables} name="deliverables" values={deliverables} selected={template.deliverables} label={v => t.deliverableNames[v]} change={next => set("deliverables", next)} />
+    <Checks legend={t.deliverables} name="deliverables" values={deliverables.filter(d => d !== "produced" || template.deliverables.includes("produced"))} selected={template.deliverables} label={v => t.deliverableNames[v]} change={next => set("deliverables", next)} />
     <Checks legend={t.prohibitions} name="prohibitions" values={prohibitions} locked={["ai_training"]} selected={template.prohibitions} label={v => t.prohibitionNames[v]} change={next => set("prohibitions", next)} />
     <small className="muted">{t.aiHelp}</small>
     <div className="rule-row"><label>{t.price}<input type="number" min={0} step="0.01" dir="ltr" value={template.base_price.amount_minor / 100} onChange={e => set("base_price", { ...template.base_price, amount_minor: Math.round(Number(e.target.value) * 100) })} /></label>

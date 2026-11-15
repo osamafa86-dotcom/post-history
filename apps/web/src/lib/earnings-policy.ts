@@ -42,6 +42,8 @@ export function policyInput(body: Record<string, unknown>): PayoutPolicyInput | 
   if (Object.keys(body).sort().join() !== "currency,dual_approval_above,effective_from,minimum,reserve_bps") return null;
   const currency = body.currency as Currency;
   if (!(currencies as readonly unknown[]).includes(currency) || !money(body.minimum, currency) || !money(body.dual_approval_above, currency) || !dateTime(body.effective_from)) return null;
+  // الحد الأدنى أكبر من صفر (قرار المنسّق 2026-11-15): طلب صرف بلا مبلغ لا معنى له، والخادم يرفضه 422
+  if ((body.minimum as { amount_minor: number }).amount_minor < 1) return null;
   if (!Number.isSafeInteger(body.reserve_bps) || (body.reserve_bps as number) < 0 || (body.reserve_bps as number) > earningsLimits.reserveMax) return null;
   return { currency, minimum: copy(body.minimum), dual_approval_above: copy(body.dual_approval_above), reserve_bps: body.reserve_bps as number, effective_from: body.effective_from };
 }
@@ -49,9 +51,25 @@ export function policyInput(body: Record<string, unknown>): PayoutPolicyInput | 
 export function safeSummary(s: EarningsSummary): EarningsSummary {
   return { user_id: s.user_id, as_of: s.as_of, balances: s.balances.map(b => ({ currency: b.currency, pending: copy(b.pending), available: copy(b.available), in_payout: copy(b.in_payout), paid: copy(b.paid), reserve: copy(b.reserve), requestable: copy(b.requestable), minimum: copy(b.minimum) })) };
 }
+/** سطر الكشف بقائمة بيضاء: ما بيع (المادة وعنوانها ونوع الترخيص والحصة) ويوم البيع وموعد التحرير وحدها، بلا مشترٍ ولا مؤسسة ولا سعر. */
 export function safeEntry(e: EarningsEntry): EarningsEntry {
-  return { id: e.id, entry_id: e.entry_id, kind: e.kind, state: e.state, amount: { amount_minor: e.amount.amount_minor, currency: e.amount.currency }, reference_type: e.reference_type, reference_id: e.reference_id, occurred_at: e.occurred_at };
+  const sale = e.sale && Array.isArray(e.sale.items) ? { sold_at: e.sale.sold_at, items: e.sale.items.slice(0, 20).map(i => ({ material_id: i.material_id, title: String(i.title).slice(0, 4000), license_type: i.license_type, share: i.share ? { amount_minor: i.share.amount_minor, currency: i.share.currency } : null })) } : null;
+  return { id: e.id, entry_id: e.entry_id, kind: e.kind, state: e.state, amount: { amount_minor: e.amount.amount_minor, currency: e.amount.currency }, reference_type: e.reference_type, reference_id: e.reference_id, occurred_at: e.occurred_at, sale, releases_at: typeof e.releases_at === "string" ? e.releases_at : null };
 }
+/** حركة واحدة في الكشف: سطور القيد الواحد معًا. النقل بين حالتين سطر واحد بوجهته ومصدره؛ وغيره مجموع سطوره بحالة أكبرها. */
+export type Movement = EarningsEntry & { from: EarningsEntry["state"] | null };
+export function movements(lines: readonly EarningsEntry[]): Movement[] {
+  const groups = new Map<string, EarningsEntry[]>();
+  for (const l of lines) groups.set(l.entry_id, [...(groups.get(l.entry_id) ?? []), l]);
+  return [...groups.values()].map(group => {
+    const up = group.filter(l => l.amount.amount_minor > 0), down = group.filter(l => l.amount.amount_minor < 0);
+    if (up.length === 1 && down.length === 1 && up[0].amount.amount_minor === -down[0].amount.amount_minor) return { ...up[0], from: down[0].state };
+    const total = group.reduce((sum, l) => sum + l.amount.amount_minor, 0), main = [...group].sort((a, b) => Math.abs(b.amount.amount_minor) - Math.abs(a.amount.amount_minor))[0];
+    return { ...main, sale: group.find(l => l.sale)?.sale ?? null, releases_at: group.find(l => l.releases_at)?.releases_at ?? null, amount: { amount_minor: total, currency: main.amount.currency }, from: null };
+  });
+}
+/** مبلغ طلب الصرف كما كُتب: رقم موجب بمنزلتين عشريتين على الأكثر؛ ما زاد يُرفض ولا يُقرَّب صامتًا. */
+export const twoDecimals = (value: string) => /^\d+(\.\d{1,2})?$/.test(value.trim());
 /** الطلب بقائمة بيضاء؛ معرّفات المعتمدين للمالية والإدارة، وصاحب الطلب يرى عددهم وحده (العقد). */
 export function safePayout(p: PayoutRequest, staff: boolean): PayoutRequest {
   return {

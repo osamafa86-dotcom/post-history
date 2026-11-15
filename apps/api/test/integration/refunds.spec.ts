@@ -130,7 +130,7 @@ describe('refunds and commission rules (/v1/orders/{id}/refunds, /v1/commission-
     (
       await h.pool.query(
         `SELECT a.kind, a.owner_id, a.payable_state, p.amount_minor::text AS amount FROM refunds r JOIN postings p ON p.entry_id = r.entry_id
-           JOIN ledger_accounts a ON a.id = p.account_id WHERE r.id = $1 ORDER BY a.kind, a.payable_state`,
+           JOIN ledger_accounts a ON a.id = p.account_id WHERE r.id = $1 ORDER BY a.kind, a.payable_state, a.owner_id`,
         [refundId],
       )
     ).rows;
@@ -166,6 +166,81 @@ describe('refunds and commission rules (/v1/orders/{id}/refunds, /v1/commission-
     expect(await count(`SELECT count(*)::int AS n FROM journal_entries WHERE kind = 'refund' AND reverses_entry_id = (SELECT id FROM journal_entries WHERE kind = 'sale' AND reference_id = $1)`, [o.id])).toBe(2);
   });
 
+  // طلب مدفوع ببندين لمادتين لمساهمَين مختلفين (10000 لكل بند)، وبنداه بترتيب المساهمَين
+  const twoOwners = async () => {
+    const t = await template();
+    const shared = reporter;
+    const owners = [(await seedUser(h)).id, (await seedUser(h)).id];
+    const listings = [];
+    for (const owner of owners) {
+      reporter = owner;
+      listings.push(await listed([t]));
+    }
+    reporter = shared;
+    const b = await buyer(await organization());
+    const created = (await post(b.token, '/orders', { items: listings.map((l) => ({ listing_id: l.listingId, license_template_id: t })) }).expect(201)).body;
+    return { t, owners, listings, buyer: b, orderId: created.id as string };
+  };
+  const itemOf = (o: { items: Array<{ id: string; listing_id: string }> }, listingId: string) => o.items.find((i) => i.listing_id === listingId)!.id;
+  const settled = async (orderId: string, itemId: string) => {
+    const r = await refund(orderId, [itemId]).expect(201);
+    await confirm(r.body.id);
+    return lines(r.body.id);
+  };
+  const contributorLine = (owner: string, amount: string) => ({ kind: 'contributor_payable', owner_id: owner, payable_state: 'pending', amount });
+  const platformLine = (amount: string) => ({ kind: 'platform_revenue', owner_id: null, payable_state: null, amount });
+  const clearingLine = (amount: string) => ({ kind: 'provider_clearing', owner_id: null, payable_state: null, amount });
+
+  it('refunding one item of an order takes its share back from that item\'s contributors alone', async () => {
+    const { owners, listings, buyer: b, orderId } = await twoOwners();
+    await pay((await ref(b.token, orderId)).ref);
+    const o = await order(b.token, orderId);
+    expect(await settled(orderId, itemOf(o, listings[0]!.listingId))).toEqual([contributorLine(owners[0]!, '7000'), platformLine('3000'), clearingLine('-10000')]);
+    expect(await settled(orderId, itemOf(o, listings[1]!.listingId))).toEqual([contributorLine(owners[1]!, '7000'), platformLine('3000'), clearingLine('-10000')]);
+    for (const owner of owners) {
+      expect(await count(`SELECT COALESCE(sum(p.amount_minor), 0)::int AS n FROM postings p JOIN ledger_accounts a ON a.id = p.account_id WHERE a.kind = 'contributor_payable' AND a.owner_id = $1`, [owner])).toBe(0);
+    }
+  });
+
+  it('each refunded item returns the platform and contributor shares frozen for that item, when the items sold under different commissions', async () => {
+    const { owners, listings, buyer: b, orderId } = await twoOwners();
+    await post(admin.token, '/commission-rules', { scope: 'material', scope_id: listings[0]!.materialId, license_type: null, platform_basis_points: 5000, effective_from: new Date(Date.now() - 60_000).toISOString() }).expect(201);
+    await pay((await ref(b.token, orderId)).ref);
+    const o = await order(b.token, orderId);
+    expect(await settled(orderId, itemOf(o, listings[1]!.listingId))).toEqual([contributorLine(owners[1]!, '7000'), platformLine('3000'), clearingLine('-10000')]);
+    expect(await settled(orderId, itemOf(o, listings[0]!.listingId))).toEqual([contributorLine(owners[0]!, '5000'), platformLine('5000'), clearingLine('-10000')]);
+  });
+
+  // قيود بيعة كُتبت قبل تسجيل حصص البنود في تفاصيلها: الدفتر لا يُعدَّل، فيُحذف المفتاح هنا بتعطيل محفّزه في الاختبار وحده
+  const withoutItemShares = async (orderId: string) => {
+    await h.pool.query(`ALTER TABLE journal_entries DISABLE TRIGGER journal_entries_append_only`);
+    try {
+      await h.pool.query(`UPDATE journal_entries SET details = details - 'item_shares' WHERE kind = 'sale' AND reference_id = $1`, [orderId]);
+    } finally {
+      await h.pool.query(`ALTER TABLE journal_entries ENABLE TRIGGER journal_entries_append_only`);
+    }
+  };
+
+  it('a sale entry written before item shares were recorded is refunded per item from its frozen commission and the contributors', async () => {
+    const { owners, listings, buyer: b, orderId } = await twoOwners();
+    await pay((await ref(b.token, orderId)).ref);
+    await withoutItemShares(orderId);
+    const o = await order(b.token, orderId);
+    expect(await settled(orderId, itemOf(o, listings[0]!.listingId))).toEqual([contributorLine(owners[0]!, '7000'), platformLine('3000'), clearingLine('-10000')]);
+  });
+
+  it('such an older entry whose contributors changed since the sale falls back to the proportion of the whole sale', async () => {
+    const { owners, listings, buyer: b, orderId } = await twoOwners();
+    await pay((await ref(b.token, orderId)).ref);
+    await withoutItemShares(orderId);
+    // المساهمون تغيّروا بعد البيعة: إعادة الحساب لا تطابق قيد البيعة، فلا يُعتمد عليها
+    const other = (await seedUser(h)).id;
+    await h.pool.query(`INSERT INTO material_contributors (material_id, user_id, role, share_percent) VALUES ($1, $2, 'reporter', 100)`, [listings[0]!.materialId, other]);
+    const o = await order(b.token, orderId);
+    const both = owners.map((owner) => contributorLine(owner, '3500')).sort((x, y) => (x.owner_id < y.owner_id ? -1 : 1));
+    expect(await settled(orderId, itemOf(o, listings[0]!.listingId))).toEqual([...both, platformLine('3000'), clearingLine('-10000')]);
+  });
+
   it('a refund notice carrying the payment reference settles the oldest pending refund of that amount; the entry references the order', async () => {
     const { order: o, buyer: b } = await paidOrder(1);
     const r = await refund(o.id, [o.items[0].id]).expect(201);
@@ -178,8 +253,75 @@ describe('refunds and commission rules (/v1/orders/{id}/refunds, /v1/commission-
     expect((await order(b.token, o.id)).status).toBe('refunded');
   });
 
+  it('the sandbox confirms a refund from its stored record: a reference the running provider never issued still settles, an unknown one is 404', async () => {
+    const { order: o, buyer: b } = await paidOrder(1);
+    const created = (await refund(o.id, [o.items[0].id]).expect(201)).body;
+    // مرجع أُصدر قبل إعادة تشغيل الخادم: لا يعرفه المزوّد الجاري إلا من سجل الاسترداد
+    const stored = `sbr_${randomBytes(16).toString('hex')}`;
+    await h.pool.query(`UPDATE refunds SET provider_refund_ref = $2 WHERE id = $1`, [created.id, stored]);
+    await http().post(`/sandbox/refunds/${stored}/succeeded`).expect(202);
+    expect((await http().get(`/v1/orders/${o.id}/refunds`).set(as(b.token)).expect(200)).body.items[0]).toMatchObject({ id: created.id, status: 'succeeded' });
+    expect((await order(b.token, o.id)).status).toBe('refunded');
+    await http().post(`/sandbox/refunds/sbr_${randomBytes(16).toString('hex')}/succeeded`).expect(404);
+  });
+
+  // كشف المراسل (قرار المنسّق 2026-11-15): سطر البيعة والاسترداد يقول ما بيع وحصته منه، والمعلّق متى يتحرر؛ ولا مشترٍ أبدًا
+  it('the reporter statement says what each sale and refund line sold and when a pending share is released, never the buyer', async () => {
+    const t = await template(), shared = reporter, r = await loginAs(h, [{ role: 'reporter' }]);
+    reporter = r.id;
+    const a = await listed([t]), c = await listed([t]);
+    reporter = shared;
+    const b = await buyer(await organization());
+    const created = (await post(b.token, '/orders', { items: [a, c].map((l) => ({ listing_id: l.listingId, license_template_id: t })) }).expect(201)).body;
+    await pay((await ref(b.token, created.id)).ref);
+    const o = await order(b.token, created.id);
+    const titles = (await h.pool.query<{ id: string; title: string }>(`SELECT id, title FROM materials WHERE id = ANY($1)`, [[a.materialId, c.materialId]])).rows;
+    const item = (m: { materialId: string }, share: number) => ({ material_id: m.materialId, title: titles.find((x) => x.id === m.materialId)!.title, license_type: 'editorial_single', share: { amount_minor: share, currency: 'USD' } });
+    const statement = async () => (await http().get('/v1/me/earnings/entries?limit=100').set(as(r.token)).expect(200)).body;
+    const before = await statement();
+    const valid = schemaValidator('EarningsEntryPage');
+    expect(valid(before) ? [] : valid.errors).toEqual([]);
+    const sale = before.items.find((i: { kind: string }) => i.kind === 'sale');
+    expect(sale.sale).toEqual({ sold_at: o.paid_at, items: expect.arrayContaining([item(a, 7000), item(c, 7000)]) });
+    expect(sale.sale.items).toHaveLength(2);
+    // فترة الاسترداد هنا صفر: يتحرر لحظة البيع
+    expect(sale.releases_at).toBe(sale.occurred_at);
+    await confirm((await refund(o.id, [itemOf(o, a.listingId)]).expect(201)).body.id);
+    const after = await statement();
+    const back = after.items.find((i: { kind: string }) => i.kind === 'refund');
+    expect(back.sale).toEqual({ sold_at: o.paid_at, items: [item(a, 7000)] });
+    expect(back.releases_at).toBeNull();
+    expect(JSON.stringify(after)).not.toContain(b.id);
+    expect(JSON.stringify(after)).not.toContain(o.organization_id);
+  });
+
+  it('finance confirms a pending sandbox refund; the month shows what went back to buyers', async () => {
+    const { order: o, buyer: b } = await paidOrder(1);
+    const month = o.paid_at.slice(0, 7);
+    const totals = async () => (await http().get(`/v1/contributor-earnings?month=${month}&currency=USD&limit=1`).set(as(finance.token)).expect(200)).body.totals.find((t: { currency: string }) => t.currency === 'USD');
+    const start = await totals();
+    const created = (await refund(o.id, [o.items[0].id]).expect(201)).body;
+    expect(created).toMatchObject({ status: 'pending', provider: 'sandbox' });
+    const confirmUrl = (orderId: string, refundId: string) => `/orders/${orderId}/refunds/${refundId}/sandbox-confirmation`;
+    await post(b.token, confirmUrl(o.id, created.id)).expect(403);
+    await post(finance.token, confirmUrl(o.id, randomUUID())).expect(404);
+    const other = (await paidOrder(1)).order;
+    await post(finance.token, confirmUrl(other.id, created.id)).expect(404);
+    const done = (await post(finance.token, confirmUrl(o.id, created.id)).expect(200)).body;
+    const valid = schemaValidator('Refund');
+    expect(valid(done) ? [] : valid.errors).toEqual([]);
+    expect(done).toMatchObject({ id: created.id, status: 'succeeded', provider: 'sandbox' });
+    expect((await post(finance.token, confirmUrl(o.id, created.id)).expect(409)).body.code).toBe('invalid_transition');
+    expect((await order(b.token, o.id)).status).toBe('refunded');
+    const end = await totals();
+    expect(end.refunded_to_buyers.amount_minor - start.refunded_to_buyers.amount_minor).toBe(10_000);
+    expect(end.borne_by_platform.amount_minor - start.borne_by_platform.amount_minor).toBe(0);
+  });
+
   it('after the contributor was paid out, the refund takes the share from refund_reserve; the balance never goes below zero', async () => {
     const { order: o } = await paidOrder(1);
+    const totals = async () => (await http().get(`/v1/contributor-earnings?month=${o.paid_at.slice(0, 7)}&currency=USD&limit=1`).set(as(finance.token)).expect(200)).body.totals.find((t: { currency: string }) => t.currency === 'USD');
+    const start = await totals();
     const db = h.app.get<Database>(DB);
     await db.transaction((tx) =>
       movePayable(tx, { ownerId: reporter, from: 'pending', to: 'paid', amount: money(7000n, 'USD'), kind: 'payout', referenceType: 'payout', referenceId: o.id, idempotencyKey: `test-payout:${o.id}`, actorId: null }),
@@ -192,6 +334,10 @@ describe('refunds and commission rules (/v1/orders/{id}/refunds, /v1/commission-
     const reserve = got.filter((l) => l.kind === 'refund_reserve').reduce((s, l) => s + Number(l.amount), 0);
     expect(pendingTaken + reserve).toBe(7000);
     expect(pendingTaken).toBeLessThanOrEqual(-before);
+    // ما تحمّلته المنصة من refund_reserve يظهر في مجاميع الشهر
+    const end = await totals();
+    expect(end.borne_by_platform.amount_minor - start.borne_by_platform.amount_minor).toBe(reserve);
+    expect(end.refunded_to_buyers.amount_minor - start.refunded_to_buyers.amount_minor).toBe(10_000);
     const after = await count(`SELECT COALESCE(sum(p.amount_minor), 0)::int AS n FROM postings p JOIN ledger_accounts a ON a.id = p.account_id WHERE a.kind = 'contributor_payable' AND a.owner_id = $1 AND a.payable_state = 'pending'`, [reporter]);
     expect(after).toBeLessThanOrEqual(0);
   });
@@ -238,7 +384,16 @@ describe('refunds and commission rules (/v1/orders/{id}/refunds, /v1/commission-
          FROM journal_entries e WHERE e.kind = 'sale' AND e.reference_id = $1`,
       [created.id],
     );
-    expect(rows[0]).toEqual({ details: { platform_basis_points: 5000, commission_rules: [material.id], item_basis_points: [5000] }, platform: '-5000' });
+    expect(rows[0]).toEqual({
+      details: {
+        platform_basis_points: 5000,
+        commission_rules: [material.id],
+        item_basis_points: [5000],
+        // حصص كل بند بمعرّفه، فيعكس استرداده حصصه هو
+        item_shares: [{ order_item_id: created.items[0].id, platform_minor: 5000, contributors: [{ user_id: reporter, amount_minor: 5000 }] }],
+      },
+      platform: '-5000',
+    });
   });
 
   // Issue #389: إشعار الاسترداد وعامل التحرير على مستحق المساهم نفسه في اللحظة نفسها. قبل ترتيب الأقفال كان أحدهما يقفل «المعلّق»
