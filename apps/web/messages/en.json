@@ -3038,5 +3038,12 @@
     "email_taken": "This email already has an account in your organization or a pending invitation to it.",
     "seats_exhausted": "The organization has no free seat. Suspend a member, or ask the store administration for more seats.",
     "last_buyer_admin": "This is the organization's last active administrator. Make another member an administrator first."
+  },
+  "watermarkShort": "Internal",
+  "playerSeek": "Seek bar",
+  "clips": {
+    "title": "Clips in this material",
+    "counter": "Clip {n} of {total}",
+    "open": "Play clip {n} of {total}"
   }
 }
