@@ -7,7 +7,10 @@ import { formatDate, humanDuration, messages, plural, type Locale } from "@/lib/
 import type { Notification, NotificationPage } from "@/lib/types";
 import { notificationTarget } from "@/lib/assignment-policy";
 import { groupNotifications, type NotificationGroup } from "@/lib/editor";
-import { inTab, notificationKind, panelTabs, type PanelTab } from "@/lib/notification-kind";
+import { asksAck, inTab, notificationKind, panelTabs, type PanelTab } from "@/lib/notification-kind";
+import { useMaterialTitles } from "@/lib/use-material-titles";
+import { hasRole, materialReaders } from "@/lib/review";
+import { useUser } from "./session-boundary";
 import { useMutation } from "@/lib/use-mutation";
 import { ActionStatus } from "./action-status";
 import { EmptyState, ErrorState } from "./empty-state";
@@ -21,7 +24,7 @@ const state = (n: Notification) => n.acknowledged_at || n.state === "acknowledge
  * وأقدم، والبنود مجمّعة بالمادة خلال 24 ساعة، لكلٍّ أيقونة وكلمة نوعه وحالته؛ والمعاينة بجانبها على المكتب. j/k للتنقل وEnter للفتح وa للإقرار.
  */
 export function Notifications({ locale }: { locale: Locale }) {
-  const m = messages[locale], t = m.notice, b = m.shell.bell, mutation = useMutation(), list = useRef<HTMLUListElement>(null), router = useRouter();
+  const m = messages[locale], t = m.notice, b = m.shell.bell, mutation = useMutation(), list = useRef<HTMLUListElement>(null), router = useRouter(), me = useUser();
   const [data, setData] = useState<NotificationPage | null>(null), [failed, setFailed] = useState(false), [unread, setUnread] = useState(false), [cursors, setCursors] = useState<(string | undefined)[]>([undefined]), [attempt, setAttempt] = useState(0);
   const [selected, setSelected] = useState<string | null>(null), [checkedAt, setCheckedAt] = useState(0), [tab, setTab] = useState<PanelTab>("all");
   const cursor = cursors.at(-1), bulkBefore = useRef<string | null>(null);
@@ -32,7 +35,7 @@ export function Notifications({ locale }: { locale: Locale }) {
   }, [cursor, unread, attempt]);
   async function change(group: NotificationGroup, action: "read" | "ack") {
     // إقرار المجموعة وقراءتها موضعيًا؛ القراءة العامة تستخدم read-all وحده.
-    const targets = group.items.filter(n => action === "ack" ? state(n) !== "acknowledged" : state(n) === "unread");
+    const targets = group.items.filter(n => action === "ack" ? asksAck(n) : state(n) === "unread");
     for (const n of targets) if (!await mutation.run(`${n.id}:${action}`, header => action === "read" ? browserApi().POST("/notifications/{id}/read", { params: { path: { id: n.id }, header } }) : browserApi().POST("/notifications/{id}/ack", { params: { path: { id: n.id }, header } }))) break;
     setAttempt(n => n + 1);
   }
@@ -44,10 +47,13 @@ export function Notifications({ locale }: { locale: Locale }) {
     }
   }
   const visibleItems = data ? data.items.filter(n => inTab(n, tab)) : [], sections = data ? groupNotifications(visibleItems, checkedAt) : [], groups = sections.flatMap(s => s.groups), current = groups.find(g => g.key === selected) ?? null;
+  // عنوان المادة من المادة نفسها بصلاحية المتصل (ADR 0090): من لا يقرأ المادة يرى كلمة النوع وحدها
+  const titles = useMaterialTitles(groups.map(g => g.head.material_id), hasRole(me, ...materialReaders));
+  const titleOf = (n: Notification) => n.material_id ? titles[n.material_id] : undefined;
   function keys(event: React.KeyboardEvent) {
     const index = groups.findIndex(g => g.key === selected);
     if (event.key === "j" || event.key === "k") { const next = groups[Math.min(groups.length - 1, Math.max(0, index + (event.key === "j" ? 1 : -1)))]; if (next) { setSelected(next.key); list.current?.querySelector<HTMLElement>(`[data-key="${next.key}"]`)?.focus(); } event.preventDefault(); }
-    if (event.key === "a" && current?.needsAck) { void change(current, "ack"); event.preventDefault(); }
+    if (event.key === "a" && current?.items.some(asksAck)) { void change(current, "ack"); event.preventDefault(); }
   }
   const count = (which: PanelTab) => data?.items.filter(n => inTab(n, which)).length ?? 0;
   const ago = (n: Notification) => checkedAt ? t.ago.replace("{time}", humanDuration(Math.max(0, checkedAt - Date.parse(n.created_at)), locale)) : formatDate(n.created_at, locale);
@@ -68,19 +74,20 @@ export function Notifications({ locale }: { locale: Locale }) {
       : <div className="notification-grid">
         <ul className="notice-sections" ref={list} onKeyDown={keys}>{sections.map(section => <li key={section.name} className="notification-section"><h2 className="overline">{t.sections[section.name]}</h2><ul className="notice-list">
           {section.groups.map(group => { const head = group.head, status = state(head), kind = notificationKind(head);
-            return <li key={group.key} data-key={group.key} data-testid="notification" tabIndex={0} className={`notice-item notification-row ${kind.word}${selected === group.key ? " selected" : ""}${group.unread ? " unread" : ""}`} onFocus={() => setSelected(group.key)} onClick={() => setSelected(group.key)} onKeyDown={e => { const target = notificationTarget(head, locale); if (e.key === "Enter" && target) router.push(target); }}>
-              <span className={`bell-icon ${kind.word}`}><Icon name={kind.icon} /></span>
-              <span className="notice-text"><strong>{b.kinds[kind.word]}{group.items.length > 1 && <span className="muted"> <bdi dir="ltr">+{group.items.length - 1}</bdi></span>}</strong>
+            return <li key={group.key} data-key={group.key} data-testid="notification" tabIndex={0} className={`notice-item notification-row ${kind.urgent ? "urgent" : kind.word}${selected === group.key ? " selected" : ""}${group.unread ? " unread" : ""}`} onFocus={() => setSelected(group.key)} onClick={() => setSelected(group.key)} onKeyDown={e => { const target = notificationTarget(head, locale); if (e.key === "Enter" && target) router.push(target); }}>
+              <span className={`bell-icon ${kind.urgent ? "urgent" : kind.word}`}><Icon name={kind.icon} /></span>
+              <span className="notice-text"><strong>{b.kinds[kind.word]}{kind.urgent && <> <span className="badge urgent" data-testid="notice-urgent">{m.states.priority.urgent}</span></>}{group.items.length > 1 && <span className="muted"> <bdi dir="ltr">+{group.items.length - 1}</bdi></span>}</strong>
+                {titleOf(head) && <span className="notice-title" data-testid="notice-title"><bdi>{titleOf(head)}</bdi></span>}
                 <small className="muted">{ago(head)}{head.escalation_level ? ` · ${t.escalation}: ${head.escalation_level}` : ""}</small></span>
               <span className={`badge state ${status === "acknowledged" ? "ok" : status === "read" ? "muted" : "brand"}`}><Icon name={status === "acknowledged" ? "check" : status === "read" ? "preview" : "bell"} size={14} />{status === "acknowledged" ? t.acknowledged : status === "read" ? t.readState : t.unreadState}</span>
               <span className="actions">{group.unread && <button className="secondary small" disabled={mutation.busy} onClick={e => { e.stopPropagation(); void change(group, "read"); }}>{t.read}</button>}
-                {status !== "acknowledged" && <button className="small" disabled={mutation.busy} onClick={e => { e.stopPropagation(); void change(group, "ack"); }}>{t.ack}</button>}</span>
+                {group.items.some(asksAck) && <button className="small" disabled={mutation.busy} onClick={e => { e.stopPropagation(); void change(group, "ack"); }}>{t.ack}</button>}</span>
             </li>; })}</ul></li>)}</ul>
         <aside className="card notification-preview-panel" aria-live="polite" aria-label={t.previewTitle}>{current ? <>
-          {current.needsAck ? <p className="alert urgent">{t.needsAck}</p> : <p className="muted">{b.kinds[notificationKind(current.head).word]}</p>}
+          {current.needsAck && <p className="alert urgent">{t.needsAck}</p>}<p><strong>{b.kinds[notificationKind(current.head).word]}</strong></p>{titleOf(current.head) && <p><bdi>{titleOf(current.head)}</bdi></p>}
           <p>{formatDate(current.head.created_at, locale)}{current.items.length > 1 && <> · {plural(current.items.length, t.grouped, locale)}</>}</p>
-          <div className="actions">{notificationTarget(current.head, locale) && <Link prefetch={false} className="button secondary" href={notificationTarget(current.head, locale)!}>{current.head.assignment_id ? t.openTask : t.open}</Link>}
-            {state(current.head) !== "acknowledged" && <button disabled={mutation.busy} onClick={() => void change(current, "ack")}>{t.ack}</button>}</div>
+          <div className="actions">{notificationTarget(current.head, locale) && <Link prefetch={false} className="button secondary" href={notificationTarget(current.head, locale)!}>{current.head.assignment_id ? t.openTask : !current.head.material_id && current.head.recovery_request_id ? t.openRequest : t.open}</Link>}
+            {current.items.some(asksAck) && <button disabled={mutation.busy} onClick={() => void change(current, "ack")}>{t.ack}</button>}</div>
         </> : <p className="muted">{t.choose}</p>}</aside>
       </div>}
     {(cursors.length > 1 || data?.next_cursor) && <div className="pagination"><button className="secondary" disabled={cursors.length === 1 || mutation.busy} onClick={() => { setData(null); setCursors(old => old.slice(0, -1)); }}>{m.previous}</button><span>{m.page} <bdi dir="ltr">{cursors.length}</bdi></span><button className="secondary" disabled={!data?.next_cursor || mutation.busy} onClick={() => { setCursors(old => [...old, data!.next_cursor!]); setData(null); }}>{m.next}</button></div>}

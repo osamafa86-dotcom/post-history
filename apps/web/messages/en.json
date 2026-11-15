@@ -237,6 +237,7 @@
     "pinTime": "Pin the note to the player's current second",
     "previewTitle": "What the reporter receives",
     "previewText": "Your material moved to “{state}”.",
+    "reasonStays": "The reason for this transition is kept in the material's history and is not sent to the reporter.",
     "confirmTo": "Confirm: {state}",
     "confirmReject": "Confirm rejection for good",
     "rejectHelp": "Rejection sends the material to the internal archive; press again within five seconds to confirm.",
@@ -541,6 +542,7 @@
     },
     "choose": "Choose an alert to preview it.",
     "openTask": "Open task",
+    "openRequest": "Open the request",
     "tabsLabel": "Filter notifications",
     "pageTabs": {
       "all": "All",
@@ -648,7 +650,39 @@
     "loadFailed": "The rules could not be loaded",
     "emptyTitle": "No rules yet",
     "emptyBody": "A rule sets who is notified, on which channel, and when unreceived work escalates.",
-    "emptyReadOnly": "The system administrator adds rules; they appear here to read."
+    "emptyReadOnly": "The system administrator adds rules; they appear here to read.",
+    "replacesDefault": "A rule on “{event}” replaces the default routing of that event for the materials it matches: whoever the rule does not name is not notified.",
+    "notYet": "Not active yet",
+    "notYetHelp": "Nothing is sent on the channels marked “Not active yet”, and the periodic digest is not active.",
+    "defaults": {
+      "title": "Default routing",
+      "lead": "What is sent with no rule at all. A rule you add on an event replaces its line here for the materials it matches.",
+      "event": "Event",
+      "audience": "Reaches",
+      "kind": "Kind",
+      "task": "Task to acknowledge, escalates",
+      "news": "News",
+      "fixed": "Fixed, no rule changes it",
+      "audiences": {
+        "supervisors": "Supervisors in the material's scope",
+        "reporter": "The reporter who owns the material",
+        "producers": "The production team",
+        "chain": "The next in the escalation chain"
+      },
+      "events": {
+        "material.created": "Incoming material",
+        "material.urgent_received": "Urgent incoming material",
+        "material.acknowledged": "Material seen",
+        "material.change_requested": "Changes requested",
+        "material.rejected": "Material rejected",
+        "material.accepted": "Material accepted",
+        "material.resubmitted": "Material resubmitted after changes",
+        "material.accepted_for_production": "Accepted for production",
+        "material.published": "Material published",
+        "upload.verified": "File arrived and receipt issued",
+        "notification.escalated": "Task not acknowledged in time"
+      }
+    }
   },
   "store": {
     "credit": "Credit",
@@ -2276,7 +2310,16 @@
       },
       "empty": "No notifications here right now.",
       "kinds": {
-        "urgent": "Urgent item",
+        "seen": "Your material was seen",
+        "changes": "Changes requested on your material",
+        "rejected": "Your material was rejected",
+        "accepted": "Your material was accepted",
+        "published": "Your material was published",
+        "received": "Your file arrived",
+        "incoming": "Incoming material",
+        "resubmitted": "Material resubmitted after changes",
+        "production": "Material accepted for production",
+        "escalated": "Escalation: material not acknowledged",
         "task": "Task assigned to you",
         "account": "Account recovery request",
         "update": "Update on an item",

@@ -1,5 +1,6 @@
 import type { Material, Notification, TransitionRecord } from "./types";
 import { tracks } from "./review";
+import { asksAck } from "./notification-kind";
 
 // مساعدات عرض لتدفق المحرر (#385، docs/design/specs/editor.md)؛ لا تقرر صلاحية ولا حالة، الخادم هو الحكم.
 export type Track = (typeof tracks)[number];
@@ -33,7 +34,8 @@ export const timeline = (records: TransitionRecord[], track: Track | null) => re
 
 export type NotificationGroup = { key: string; items: Notification[]; head: Notification; needsAck: boolean; unread: boolean };
 export type Section = "needsAck" | "today" | "yesterday" | "older";
-const needsAck = (n: Notification) => n.priority === "urgent" && !n.acknowledged_at && n.state !== "acknowledged";
+// خبر صاحب المادة عن مادته لا يحتاج إقرارًا ولو كانت عاجلة (`asksAck`)
+const needsAck = (n: Notification) => n.priority === "urgent" && asksAck(n);
 const unread = (n: Notification) => !n.read_at && (n.state === "sent" || n.state === "delivered");
 
 /** إشعارات المادة نفسها خلال 24 ساعة صف واحد بعدّاد، والأقسام: يحتاج إقرارًا ثم اليوم وأمس وأقدم. */

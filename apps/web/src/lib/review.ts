@@ -25,6 +25,8 @@ export function transitionOptions(material: Material, me: Me, track: Transition[
   if (hasRole(me, "editor_in_chief")) return material.editorial_state === "final_review" ? ["published", "in_production"] : material.editorial_state === "published" ? ["final_review"] : [];
   return [];
 }
+/** هل يصل سبب هذا الانتقال صاحب المادة: طلب التعديل والرفض في المسار التحريري وحدهما (`reporterNote`). ما عداهما يبقى في سجل المادة. */
+export const reasonReaches = (track: Transition["track"], to: string) => track === "editorial" && (to === "needs_changes" || to === "rejected");
 export const contributorRoles = ["photographer", "reporter", "editor", "fixer"] as const satisfies readonly Contributor["role"][];
 export function validContributors(value: unknown): value is Contributor[] {
   if (!Array.isArray(value) || value.length === 0) return false;

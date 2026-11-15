@@ -8,7 +8,7 @@ import { materialTypes, states } from "@/lib/query";
 import { permissions } from "@/lib/admin-policy";
 import { permissionLabel } from "@/lib/admin-labels";
 import { useMutation } from "@/lib/use-mutation";
-import { channels, emptyRule, inputOf, roleLabel, roles, ruleEvents, ruleInput, scopeKinds, type Rule, type RuleInput } from "@/lib/notification-policy";
+import { defaultFanout, pendingChannels, channels, emptyRule, inputOf, roleLabel, roles, ruleEvents, ruleInput, scopeKinds, type Rule, type RuleInput } from "@/lib/notification-policy";
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
 
@@ -63,30 +63,46 @@ export function NotificationRules({ locale }: { locale: Locale }) {
       : <div className="table-panel"><div className="table-scroll"><table><thead><tr>{[t.name, t.event, t.channels, t.levels, t.enabled, ""].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
         <tbody>{rules.map(rule => <tr key={rule.id} data-testid="rule-row"><td>{rule.name}</td><td>{t.events[rule.event_type]}</td><td>{rule.channels.map(c => t.channelNames[c]).join(" · ")}</td><td>{rule.escalation?.length ?? 0}</td><td><span className={`badge ${rule.enabled ? "good" : ""}`}>{rule.enabled ? t.enabled : t.disabled}</span></td>
           <td>{admin && <div className="actions"><button className="secondary" onClick={() => void open(rule)}>{t.edit}</button><button className="quiet" onClick={() => { mutation.clearStatus(); setRemoving(rule); }}>{t.delete}</button></div>}</td></tr>)}</tbody></table></div></div>}
+    {!draft && <DefaultRouting locale={locale} />}
     {removing && <dialog className="modal" ref={node => { if (node && !node.open) node.showModal(); }} aria-labelledby="delete-rule-title" onCancel={event => { if (mutation.busy) event.preventDefault(); else setRemoving(null); }}><h2 id="delete-rule-title">{t.delete}</h2><p>{t.confirmDelete}</p><p><strong>{removing.name}</strong></p>
       <ActionStatus status={mutation.status} locale={locale} /><div className="actions"><button autoFocus className="secondary" disabled={mutation.busy} onClick={() => setRemoving(null)}>{t.cancel}</button><button className="danger" disabled={mutation.busy} onClick={() => void remove(removing)}>{t.delete}</button></div></dialog>}
   </>;
 }
 
-function Checks<T extends string>({ legend, values, selected, label, change, name }: { legend: string; values: readonly T[]; selected: T[]; label: (value: T) => string; change: (next: T[]) => void; name: string }) {
-  return <fieldset className="check-group"><legend>{legend}</legend>{values.map(value => <label key={value} className="check"><input type="checkbox" name={name} value={value} checked={selected.includes(value)} onChange={() => change(toggle(selected, value))} />{label(value)}</label>)}</fieldset>;
+/** `pending`: قيم لا تعمل بعد. تُعرض معطّلة بوسمها؛ والمختار منها في قاعدة محفوظة يبقى قابلًا للإزالة. */
+function Checks<T extends string>({ legend, values, selected, label, change, name, pending = [], pendingLabel }: { legend: string; values: readonly T[]; selected: T[]; label: (value: T) => string; change: (next: T[]) => void; name: string; pending?: readonly T[]; pendingLabel?: string }) {
+  return <fieldset className="check-group"><legend>{legend}</legend>{values.map(value => { const off = pending.includes(value);
+    return <label key={value} className={off ? "check pending" : "check"}><input type="checkbox" name={name} value={value} checked={selected.includes(value)} disabled={off && !selected.includes(value)} onChange={() => change(toggle(selected, value))} />{label(value)}{off && <span className="badge" data-testid="not-yet">{pendingLabel}</span>}</label>; })}</fieldset>;
+}
+
+/** التوزيع الافتراضي للقراءة: ما يصل بلا أي قاعدة، ومن يصله، وهل هو مهمة. يراه المدير قبل أن يضيف قاعدة تحلّ محل سطر منه. */
+function DefaultRouting({ locale }: { locale: Locale }) {
+  const t = messages[locale].rules, d = t.defaults;
+  return <section className="default-routing" aria-labelledby="default-routing-title" data-testid="default-routing"><h2 id="default-routing-title">{d.title}</h2><p className="muted">{d.lead}</p>
+    <div className="table-panel"><div className="table-scroll"><table><thead><tr>{[d.event, d.audience, d.kind].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+      <tbody>{defaultFanout.map(row => <tr key={row.event} data-testid="default-row"><td data-label={d.event}>{(d.events as Record<string, string>)[row.event]}</td><td data-label={d.audience}>{d.audiences[row.audience]}</td>
+        <td data-label={d.kind}>{row.task ? d.task : d.news}{!row.ruleable && <> · <span className="muted">{d.fixed}</span></>}</td></tr>)}</tbody></table></div></div></section>;
 }
 
 function RuleForm({ locale, rule, set, busy, onSave, onCancel, invalid, status }: { locale: Locale; rule: RuleInput; set: <K extends keyof RuleInput>(key: K, value: RuleInput[K]) => void; busy: boolean; onSave: () => void; onCancel: () => void; invalid: boolean; status: number }) {
   const m = messages[locale], t = m.rules, steps = rule.escalation ?? [];
   const number = (value: string) => value === "" ? null : Number(value);
+  // قاعدة على حدث له توزيع افتراضي تحلّ محله في المواد التي تنطبق عليها: يُقال ذلك قبل الحفظ
+  const replaced = defaultFanout.find(row => row.ruleable && row.event === rule.event_type);
   return <form className="card form-card rule-form" noValidate onSubmit={e => { e.preventDefault(); onSave(); }}>
     <label>{t.name}<input value={rule.name} maxLength={120} onChange={e => set("name", e.target.value)} /><small className="muted">{t.nameHelp}</small></label>
     <label>{t.event}<select value={rule.event_type} onChange={e => set("event_type", e.target.value as RuleInput["event_type"])}>{ruleEvents.map(event => <option key={event} value={event}>{t.events[event]}</option>)}</select></label>
+    {replaced && <p className="notice" role="note" data-testid="replaces-default">{t.replacesDefault.replace("{event}", t.events[rule.event_type])} <span className="muted">{t.defaults.title}: {t.defaults.audiences[replaced.audience]}.</span></p>}
     <Checks legend={t.priorities} name="priorities" values={states.priority} selected={rule.priorities ?? []} label={p => m.states.priority[p]} change={next => set("priorities", next.length ? next : null)} />
     <Checks legend={t.types} name="types" values={materialTypes} selected={rule.material_types ?? []} label={type => m.types[type]} change={next => set("material_types", next.length ? next : null)} />
     <div className="rule-row"><label>{t.scope}<select value={rule.scope_kind} onChange={e => { set("scope_kind", e.target.value as RuleInput["scope_kind"]); if (e.target.value === "all") set("scope_id", ""); }}>{scopeKinds.map(kind => <option key={kind} value={kind}>{t.scopes[kind]}</option>)}</select></label>
       {rule.scope_kind !== "all" && <label>{t.scopeId}<input value={rule.scope_id ?? ""} maxLength={200} onChange={e => set("scope_id", e.target.value)} /></label>}</div>
     <Checks legend={t.roles} name="roles" values={roles} selected={rule.recipient_roles ?? []} label={role => roleLabel(t.roleNames, role, t.otherRole)} change={next => set("recipient_roles", next)} />
     <Checks legend={t.permissions} name="permissions" values={permissions} selected={rule.recipient_permissions ?? []} label={p => permissionLabel(p, locale)} change={next => set("recipient_permissions", next)} />
-    <Checks legend={t.channels} name="channels" values={channels} selected={rule.channels} label={c => t.channelNames[c]} change={next => set("channels", next)} />
+    <Checks legend={t.channels} name="channels" values={channels} selected={rule.channels} label={c => t.channelNames[c]} change={next => set("channels", next)} pending={pendingChannels} pendingLabel={t.notYet} />
+    <p className="caption muted">{t.notYetHelp}</p>
     <div className="rule-row"><label>{t.delay}<input type="number" min={0} max={86400} value={rule.delay_seconds ?? 0} onChange={e => set("delay_seconds", Number(e.target.value) || 0)} /></label>
-      <label>{t.digest}<input type="number" min={15} max={1440} value={rule.digest_interval_minutes ?? ""} onChange={e => set("digest_interval_minutes", number(e.target.value))} /></label></div>
+      <label>{t.digest} <span className="badge" data-testid="not-yet">{t.notYet}</span><input type="number" min={15} max={1440} value={rule.digest_interval_minutes ?? ""} disabled={rule.digest_interval_minutes == null} onChange={e => set("digest_interval_minutes", number(e.target.value))} /></label></div>
     <fieldset className="check-group"><legend>{t.quiet}</legend><small className="muted">{t.quietHelp}</small>
       <label className="check"><input type="checkbox" checked={!!rule.quiet_hours} onChange={e => set("quiet_hours", e.target.checked ? { start: "22:00", end: "07:00", timezone: "Asia/Gaza" } : null)} />{t.enabled}</label>
       {rule.quiet_hours && <div className="rule-row">{(["start", "end"] as const).map(key => <label key={key}>{key === "start" ? t.quietStart : t.quietEnd}<input type="time" value={rule.quiet_hours![key]} onChange={e => set("quiet_hours", { ...rule.quiet_hours!, [key]: e.target.value })} /></label>)}
@@ -96,7 +112,7 @@ function RuleForm({ locale, rule, set, busy, onSave, onCancel, invalid, status }
       {steps.map((step, index) => <div key={index} className="escalation-step" data-testid="escalation-step"><strong>{t.level} {step.level}</strong>
         <label>{t.after}<input type="number" min={1} max={1440} value={Math.round(step.after_seconds / 60)} onChange={e => set("escalation", steps.map((s, i) => i === index ? { ...s, after_seconds: Math.round(Number(e.target.value) * 60) } : s))} /></label>
         <Checks legend={t.roles} name={`step-${index}-roles`} values={roles} selected={step.recipient_roles} label={role => roleLabel(t.roleNames, role, t.otherRole)} change={next => set("escalation", steps.map((s, i) => i === index ? { ...s, recipient_roles: next } : s))} />
-        <Checks legend={t.channels} name={`step-${index}-channels`} values={channels} selected={step.channels} label={c => t.channelNames[c]} change={next => set("escalation", steps.map((s, i) => i === index ? { ...s, channels: next } : s))} />
+        <Checks legend={t.channels} name={`step-${index}-channels`} values={channels} selected={step.channels} label={c => t.channelNames[c]} change={next => set("escalation", steps.map((s, i) => i === index ? { ...s, channels: next } : s))} pending={pendingChannels} pendingLabel={t.notYet} />
         <button type="button" className="quiet" onClick={() => set("escalation", steps.filter((_, i) => i !== index).map((s, i) => ({ ...s, level: i + 1 })))}>{t.removeStep}</button></div>)}
       {steps.length < 5 && <button type="button" className="secondary" disabled={!rule.assignment} onClick={() => set("escalation", [...steps, { level: steps.length + 1, after_seconds: ((steps.at(-1)?.after_seconds ?? 0) + 600), recipient_roles: ["supervisor"], channels: ["in_app"] }])}>{t.addStep}</button>}</fieldset>
     <label className="check"><input type="checkbox" checked={rule.enabled ?? true} onChange={e => set("enabled", e.target.checked)} />{t.enabled}</label>
