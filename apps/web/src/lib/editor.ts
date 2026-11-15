@@ -1,5 +1,8 @@
 import type { Material, Notification, TransitionRecord } from "./types";
 import { tracks } from "./review";
+import { asksAck } from "./notification-kind";
+import { messages, type Locale } from "./i18n";
+import { accountName } from "./work-name";
 
 // مساعدات عرض لتدفق المحرر (#385، docs/design/specs/editor.md)؛ لا تقرر صلاحية ولا حالة، الخادم هو الحكم.
 export type Track = (typeof tracks)[number];
@@ -31,9 +34,21 @@ export function lastEvents(records: TransitionRecord[]) {
 /** الخط الزمني تنازليًا، مصفّى بمسار واحد إن طُلب؛ المسارات لا تُدمج. */
 export const timeline = (records: TransitionRecord[], track: Track | null) => records.filter(r => !track || r.track === track).sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at));
 
+/**
+ * منفّذ سطر السجل كما يُسمّى لقارئه: «أنت» لما فعله القارئ؛ وللطاقم اسم العمل وإلا «حساب <أول 8>»، و«النظام» لما لا منفّذ له؛ ولغير الطاقم
+ * الوصف المحايد، فلا يرى المراسل معرّف حساب من الطاقم.
+ */
+export function actorLabel(record: Pick<TransitionRecord, "actor_id" | "actor_name">, viewer: { id: string; staff: boolean }, locale: Locale): string {
+  const m = messages[locale];
+  if (record.actor_id && record.actor_id === viewer.id) return m.material.actorYou;
+  if (!viewer.staff) return m.material.neutralActor;
+  return record.actor_id ? accountName(record.actor_id, record.actor_name, locale) : m.material.systemActor;
+}
+
 export type NotificationGroup = { key: string; items: Notification[]; head: Notification; needsAck: boolean; unread: boolean };
 export type Section = "needsAck" | "today" | "yesterday" | "older";
-const needsAck = (n: Notification) => n.priority === "urgent" && !n.acknowledged_at && n.state !== "acknowledged";
+// خبر صاحب المادة عن مادته لا يحتاج إقرارًا ولو كانت عاجلة (`asksAck`)
+const needsAck = (n: Notification) => n.priority === "urgent" && asksAck(n);
 const unread = (n: Notification) => !n.read_at && (n.state === "sent" || n.state === "delivered");
 
 /** إشعارات المادة نفسها خلال 24 ساعة صف واحد بعدّاد، والأقسام: يحتاج إقرارًا ثم اليوم وأمس وأقدم. */

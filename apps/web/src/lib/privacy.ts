@@ -83,12 +83,22 @@ export function safeTransition(item: TransitionRecord, internal = false): Transi
 
 /** ما يصل المراسل من ملاحظة المشرف على مادته: سبب طلب التعديل أو الرفض وتوقيته، ولا سبب غيرهما. */
 export const reporterNoteStates = ["needs_changes", "rejected"] as const;
+const reachesReporter = (item: TransitionRecord) => item.track === "editorial" && (reporterNoteStates as readonly string[]).includes(item.to);
+/** نص السبب كما يُعرض: بلا محارف تحكم (السطر الجديد يبقى) وبحدّ 2000 حرف. */
+const noteText = (value: unknown) => typeof value === "string" ? Array.from(value.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")).slice(0, 2000).join("") : "";
+const withNote = (safe: TransitionRecord, item: TransitionRecord): TransitionRecord =>
+  ({ ...safe, reason: noteText(item.reason), note_timecode_ms: Number.isSafeInteger(item.note_timecode_ms) && Number(item.note_timecode_ms) >= 0 ? item.note_timecode_ms : null });
 export function reporterNote(item: TransitionRecord): TransitionRecord {
   const safe = safeTransition(item);
-  if (safe.track !== "editorial" || !(reporterNoteStates as readonly string[]).includes(safe.to)) return safe;
-  const reason = typeof item.reason === "string" ? Array.from(item.reason.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")).slice(0, 2000).join("") : "";
-  const timecode = Number.isSafeInteger(item.note_timecode_ms) && Number(item.note_timecode_ms) >= 0 ? item.note_timecode_ms : null;
-  return { ...safe, reason, note_timecode_ms: timecode };
+  return reachesReporter(safe) ? withNote(safe, item) : safe;
+}
+/**
+ * سطر سجل المادة لقارئه (قرار المنسّق 2026-11-15، ADR 0103): الطاقم الذي يقرأ المادة يرى سبب كل انتقال واسم عمل منفّذه؛ وصاحب المادة يرى ما
+ * كان يصله (طلب التعديل والرفض) وأسباب انتقالاته هو؛ وغيرهما بلا سبب. الخادم حكم قبل ذلك أن القارئ يقرأ المادة.
+ */
+export function historyRecord(item: TransitionRecord, viewer: { id: string; staff: boolean; owner: boolean }): TransitionRecord {
+  const safe = safeTransition(item, viewer.staff);
+  return viewer.staff || (viewer.owner && (reachesReporter(safe) || safe.actor_id === viewer.id)) ? withNote(safe, item) : safe;
 }
 
 /** لقطة غرفة الأخبار بقائمة بيضاء: معرّفات وأرقام وحالات فقط، والحالات من قوائم العقد وحدها. */

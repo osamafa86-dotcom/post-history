@@ -110,7 +110,14 @@ td { font-size: 14px; padding: var(--v2-space-4) var(--v2-space-5); height: 48px
 /* شريط المصغّرات بارتفاع واحد والعرض من نسبة الصورة: المصغّرة الطولية لا تصير صورة كبيرة تحت المشغّل. */
 .thumbnails .video-wrap { flex: 0 0 auto; height: 96px; }
 .thumbnails img { width: auto; height: 100%; object-fit: contain; }
-.thumbnails .watermark { font-size: var(--v2-font-caption-size); right: 4px; top: 4px; max-width: calc(100% - 8px); padding: 2px 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thumbnails .watermark { font-size: var(--v2-font-caption-size); right: 4px; top: 4px; padding: 2px 5px; white-space: nowrap; }
+/* مادة بعدة مقاطع: مصغّرة كل مقطع زرّ يبدّل المشغّل إليه، والمختار بإطار ظاهر على الخلفية الداكنة. */
+.clip-counter { margin: 0; padding: var(--v2-space-3) var(--v2-space-4) 0; font-size: var(--v2-font-caption-size); }
+.thumbnails .clip-button { flex: 0 0 auto; block-size: 96px; min-inline-size: 54px; min-block-size: 0; padding: 0; overflow: hidden; border: var(--v2-border-field) solid transparent; border-radius: var(--v2-radius-sm); background: transparent; color: var(--v2-c-text-on-store); }
+.thumbnails .clip-button[aria-pressed="true"] { border-color: var(--v2-c-text-on-store); }
+.thumbnails .clip-button:focus-visible { outline-color: var(--v2-c-text-on-store); }
+.thumbnails .clip-button .video-wrap { display: block; block-size: 100%; }
+.clip-number { display: grid; place-items: center; inline-size: 54px; block-size: 100%; font-family: var(--v2-font-family-num); font-size: var(--v2-font-label-size); }
 /* الملصق مكان المشغّل (النسخة قيد التحضير): بنسبته هو، لا بمقاس ثابت يمطّه. */
 .preview-empty .video-wrap img { width: auto; height: auto; max-width: 100%; max-height: 300px; object-fit: contain; }
 .watermark { position: absolute; top: 18px; right: 18px; color: var(--v2-c-text-on-store); background: color-mix(in srgb, var(--v2-c-bg-store) 65%, transparent); padding: 4px 9px; font-size: 12px; pointer-events: none; }
@@ -297,6 +304,8 @@ dd { margin: 0; overflow-wrap: anywhere; }
   .table-panel thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .table-panel tr { padding: var(--v2-space-4) var(--v2-space-5); border-top: var(--v2-border-hairline) solid var(--v2-c-border-line); }
   .table-panel td { border: 0; padding: var(--v2-space-1) 0; height: auto; }
+  /* البطاقة على الهاتف بلا رأس أعمدة: كل خلية تحمل تسمية عمودها، فلا تُقرأ «1» وحدها */
+  .rules-table td[data-label]::before { content: attr(data-label); display: block; color: var(--v2-c-text-secondary); font-size: var(--v2-font-caption-size); line-height: var(--v2-font-caption-line); }
   .editor-stats { grid-template-columns: 1fr; }
   .state-grid { grid-template-columns: 1fr; }
   .material-heading .actions button, .card > .actions button { width: 100%; }
@@ -452,6 +461,11 @@ html.board-display body { background: var(--v2-c-bg-base); }
 @media (hover: hover) and (pointer: fine) { .icon-button:hover { background: var(--v2-c-border-line); border-color: transparent; } }
 .avatar, .avatar:hover { background: var(--v2-c-action-soft); border-color: transparent; color: var(--v2-c-text-brand); font-family: var(--v2-font-family-num); font-size: 14px; }
 .popover-anchor { position: relative; }
+.bell-button { position: relative; }
+.bell-count { position: absolute; inset-block-start: 2px; inset-inline-end: 2px; display: grid; place-items: center; min-inline-size: 18px; block-size: 18px; padding: 0 var(--v2-space-2); border-radius: var(--v2-radius-full); background: var(--v2-c-priority-urgent); color: var(--v2-c-text-on-brand); font-size: var(--v2-font-caption-size); line-height: 1; font-weight: 700; }
+.notice-title, .bell-title { display: block; overflow-wrap: anywhere; }
+.contributor-list { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--v2-space-2); }
+.notice-text .badge.urgent, .bell-item .badge.urgent { vertical-align: middle; }
 .account-menu, .bell-panel { position: absolute; inset-block-start: calc(100% + var(--v2-space-3)); inset-inline-end: 0; z-index: 30; min-inline-size: 260px; background: var(--v2-c-bg-raised); border: var(--v2-border-hairline) solid var(--v2-c-border-line); border-radius: var(--v2-radius-md); box-shadow: 0 16px 40px color-mix(in srgb, var(--v2-c-bg-store) 22%, transparent); }
 .account-menu { display: grid; gap: var(--v2-space-1); padding: var(--v2-space-3); }
 .account-line { margin: 0; padding: var(--v2-space-3) var(--v2-space-4) var(--v2-space-4); border-block-end: var(--v2-border-hairline) solid var(--v2-c-border-line); color: var(--v2-c-text-secondary); font-size: var(--v2-font-label-size); }

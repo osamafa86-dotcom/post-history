@@ -124,7 +124,8 @@ export function Inbox({ locale }: { locale: Locale }) {
   // المراسل بلا دور مكتب صفحته «موادي»: وارد الطاقم ليس له ولو قرأ موادّه من القائمة نفسها.
   if (!reader || reporterOnly(me) || forbidden) return <NoAccess locale={locale} me={me} title={m.inbox} denied={reporterOnly(me) ? w.deniedReporter : w.denied} />;
   return <>
-    {staff && waiting && <UrgentAlert locale={locale} items={unreceived} beyond={beyond} now={now} disabled={disconnected} done={retry} showAll={() => { setQuery(urgentWaiting); setPage(null); setCursors([undefined]); }} />}
+    {/* الشريط الأحمر وصوته لمن يملك الاستلام (المشرف) وحده؛ غيره يرى العدّاد في المؤشّرات، وتنبيه التصعيد يقول له المطلوب */}
+    {staff && waiting && hasRole(me, "supervisor") && <UrgentAlert locale={locale} items={unreceived} beyond={beyond} now={now} disabled={disconnected} done={retry} showAll={() => { setQuery(urgentWaiting); setPage(null); setCursors([undefined]); }} />}
     <div className="page-head inbox-head">
       <div className="inbox-title"><h1>{m.inbox}</h1>
         <p className={`live-line${disconnected ? " stale" : ""}`} aria-live="polite"><span className="live-dot" aria-hidden="true" />{disconnected ? <>{m.updated} <bdi dir="ltr">{updated ? shortTime(updated) : m.notAvailable}</bdi></> : <>{w.live}<span className="live-detail"> · {m.live}</span></>}{!disconnected && unread > 0 && <> · {m.notifications}: <b dir="ltr">{unread}</b></>}</p></div>
