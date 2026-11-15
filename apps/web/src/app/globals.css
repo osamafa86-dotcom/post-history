@@ -110,7 +110,14 @@ td { font-size: 14px; padding: var(--v2-space-4) var(--v2-space-5); height: 48px
 /* شريط المصغّرات بارتفاع واحد والعرض من نسبة الصورة: المصغّرة الطولية لا تصير صورة كبيرة تحت المشغّل. */
 .thumbnails .video-wrap { flex: 0 0 auto; height: 96px; }
 .thumbnails img { width: auto; height: 100%; object-fit: contain; }
-.thumbnails .watermark { font-size: var(--v2-font-caption-size); right: 4px; top: 4px; max-width: calc(100% - 8px); padding: 2px 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thumbnails .watermark { font-size: var(--v2-font-caption-size); right: 4px; top: 4px; padding: 2px 5px; white-space: nowrap; }
+/* مادة بعدة مقاطع: مصغّرة كل مقطع زرّ يبدّل المشغّل إليه، والمختار بإطار ظاهر على الخلفية الداكنة. */
+.clip-counter { margin: 0; padding: var(--v2-space-3) var(--v2-space-4) 0; font-size: var(--v2-font-caption-size); }
+.thumbnails .clip-button { flex: 0 0 auto; block-size: 96px; min-inline-size: 54px; min-block-size: 0; padding: 0; overflow: hidden; border: var(--v2-border-field) solid transparent; border-radius: var(--v2-radius-sm); background: transparent; color: var(--v2-c-text-on-store); }
+.thumbnails .clip-button[aria-pressed="true"] { border-color: var(--v2-c-text-on-store); }
+.thumbnails .clip-button:focus-visible { outline-color: var(--v2-c-text-on-store); }
+.thumbnails .clip-button .video-wrap { display: block; block-size: 100%; }
+.clip-number { display: grid; place-items: center; inline-size: 54px; block-size: 100%; font-family: var(--v2-font-family-num); font-size: var(--v2-font-label-size); }
 /* الملصق مكان المشغّل (النسخة قيد التحضير): بنسبته هو، لا بمقاس ثابت يمطّه. */
 .preview-empty .video-wrap img { width: auto; height: auto; max-width: 100%; max-height: 300px; object-fit: contain; }
 .watermark { position: absolute; top: 18px; right: 18px; color: var(--v2-c-text-on-store); background: color-mix(in srgb, var(--v2-c-bg-store) 65%, transparent); padding: 4px 9px; font-size: 12px; pointer-events: none; }

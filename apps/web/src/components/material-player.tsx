@@ -2,8 +2,8 @@
 import { useEffect, useRef } from "react";
 import type shaka from "shaka-player/dist/shaka-player.ui";
 import { messages, type Locale } from "@/lib/i18n";
-import { allowPlayerRequest, playerControls, playerSource } from "@/lib/player-policy";
-import { previewShape, type PreviewShape } from "@/lib/preview-policy";
+import { allowPlayerRequest, playerControls, playerSource, playerType } from "@/lib/player-policy";
+import { pictureBox, previewShape, type PreviewShape } from "@/lib/preview-policy";
 import "@/generated/player.css";
 import "./material-player.css";
 
@@ -18,8 +18,11 @@ export function MaterialPlayer({ source, locale, onUnavailable, shape }: { sourc
     let player: shaka.Player | undefined, ui: shaka.ui.Overlay | undefined;
     const fail = () => { if (!disposed && !notified) { notified = true; unavailable.current(); } };
     media.addEventListener("error", fail);
-    const measured = () => { if (!shape) container.dataset.shape = previewShape(media.videoWidth, media.videoHeight); };
+    // العلامة المائية على مساحة الصورة نفسها: تُحسب من أبعاد المقطع والإطار، وتُعاد عند تغيّر أحدهما (ملء الشاشة، تدوير الهاتف).
+    const place = () => { const box = pictureBox(container.clientWidth, container.clientHeight, media.videoWidth, media.videoHeight); for (const key of ["x", "y", "w"] as const) container.style.setProperty(`--picture-${key}`, `${box[key]}px`); };
+    const measured = () => { if (!shape) container.dataset.shape = previewShape(media.videoWidth, media.videoHeight); place(); };
     media.addEventListener("loadedmetadata", measured);
+    const frame = typeof ResizeObserver === "function" ? new ResizeObserver(place) : null; frame?.observe(container);
     const start = async () => {
       const library = (await import("shaka-player/dist/shaka-player.ui")).default;
       if (disposed) return;
@@ -37,12 +40,13 @@ export function MaterialPlayer({ source, locale, onUnavailable, shape }: { sourc
       ui = new library.ui.Overlay(player, container, media);
       ui.configure(playerControls);
       player.configure({ textDisplayFactory: (p: shaka.Player) => new library.text.UITextDisplayer(p), textDisplayer: { fontFamily: "system-ui" } });
-      ui.getControls()?.getLocalization()?.changeLocale([locale]);
-      await player.load(url, 0, "video/mp4");
+      // اسم شريط التقدّم من نصوصنا: ترجمة المكتبة العربية له لا تُفهم لقارئ الشاشة.
+      const words = ui.getControls()?.getLocalization(); words?.insert(locale, new Map([["SEEK", messages[locale].playerSeek]])); words?.changeLocale([locale]);
+      await player.load(url, 0, playerType(type => media.canPlayType(type)));
     };
     void start().catch(fail);
     return () => {
-      disposed = true; media.removeEventListener("error", fail); media.removeEventListener("loadedmetadata", measured);
+      disposed = true; frame?.disconnect(); media.removeEventListener("error", fail); media.removeEventListener("loadedmetadata", measured);
       void (ui ? ui.destroy() : player?.destroy())?.catch(() => {});
     };
   }, [source, locale, shape]);

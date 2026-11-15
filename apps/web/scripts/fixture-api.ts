@@ -222,6 +222,14 @@ const server = createServer(async (req, res) => {
     res.statusCode = 302; res.setHeader("Location", `http://127.0.0.1:3100/${lang}/store/orders/${order.id}?returned=1`); res.end(); return;
   }
   if (url.pathname === "/__test/state") return send({ writes, applied: applied.size, identitySetting, auditCount: permissionAudit.length });
+  // مادة بملفَّي فيديو: لكل أصل نسخته الخفيفة ومصغّرته المشتقتان منه (`derived_from_id`)، والثاني طولي.
+  if (url.pathname === "/__test/two-clips" && req.method === "POST") {
+    const item = materials[0], first = item.files.find(file => file.kind === "original")!.id, second = "51000000-0000-4000-8000-000000000001", made = { state: "verified", created_at: "2026-10-19T12:05:00Z" } as const;
+    for (const file of item.files) if (file.kind === "thumbnail") Object.assign(file, { derived_from_id: first });
+    const proxy = { ...made, id: "32000000-0000-4000-8000-000000000001", kind: "proxy", mime_type: "video/mp4", width: 480, height: 854, derived_from_id: second }, thumbnail = { ...made, id: "41000000-0000-4000-8000-000000000001", kind: "thumbnail", mime_type: "image/png", derived_from_id: second };
+    item.files.push({ ...made, id: second, kind: "original", mime_type: "video/mp4" }, proxy as typeof item.files[number], thumbnail as typeof item.files[number]);
+    return send({ id: item.id, clips: [item.files.find(file => file.kind === "proxy")!.id, proxy.id] });
+  }
   // مادة لصاحبها لم يصل ملفها (أُلغي رفعها أو لم يبدأ): بلا ملفات، والمسار الفني ينتظر.
   if (url.pathname === "/__test/no-file" && req.method === "POST") { Object.assign(materials[3], { technical_state: "pending", files: [], thumbnail_file_id: null }); return send({ id: materials[3].id }); }
   if (url.pathname === "/__test/request-changes" && req.method === "POST") {
