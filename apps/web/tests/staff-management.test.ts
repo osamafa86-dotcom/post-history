@@ -25,7 +25,7 @@ describe("what the administrator may create from the page", () => {
   });
   it("takes an office by two names and a governorate, and shows one by a closed list", () => {
     expect(officeInput({ name_ar: "مكتب الشمال", name_en: "North office", governorate: "north_gaza" })).toEqual({ name_ar: "مكتب الشمال", name_en: "North office", governorate: "north_gaza" });
-    for (const bad of [{ name_ar: " مكتب ", name_en: "o", governorate: "g" }, { name_ar: "م", name_en: "a‮b", governorate: "g" }, { name_ar: "م", name_en: "o" }, { name_ar: "م", name_en: "o", governorate: "g", id: office }]) expect(officeInput(bad as never)).toBeNull();
+    for (const bad of [{ name_ar: " مكتب ", name_en: "o", governorate: "g" }, { name_ar: "م", name_en: "a\u202eb", governorate: "g" }, { name_ar: "م", name_en: "o" }, { name_ar: "م", name_en: "o", governorate: "g", id: office }]) expect(officeInput(bad as never)).toBeNull();
     expect(safeOffice({ id: office, name_ar: "مكتب غزة", name_en: "Gaza office", governorate: "gaza", address: "never" } as never)).toEqual({ id: office, name_ar: "مكتب غزة", name_en: "Gaza office", governorate: "gaza" });
     expect(safeOffice({ id: "x", name_ar: "م", name_en: "o", governorate: "g" } as never)).toBeNull();
   });

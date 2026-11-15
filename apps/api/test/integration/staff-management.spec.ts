@@ -44,7 +44,7 @@ describe('staff management from the UI (/v1/offices, POST /v1/users)', () => {
       expect(row).toEqual({ actor_id: admin.id, details: { scope_kind: 'office', scope_id: created.body.id } });
       // الاسم المستعمل، والجسم المخالف، ومن ليس مدير نظام
       expect((await post(admin, '/v1/offices', { ...name, name_en: 'Another' }).expect(409)).body.code).toBe('office_exists');
-      for (const bad of [{ ...name, name_ar: ' مكتب ' }, { ...name, name_en: 'a‮b' }, { ...name, governorate: '' }, { name_ar: 'م' }, { ...name, extra: 1 }]) await post(admin, '/v1/offices', bad).expect(422);
+      for (const bad of [{ ...name, name_ar: ' مكتب ' }, { ...name, name_en: 'a\u202eb' }, { ...name, governorate: '' }, { name_ar: 'م' }, { ...name, extra: 1 }]) await post(admin, '/v1/offices', bad).expect(422);
       for (const other of [supervisor, chief]) {
         await get(other, '/v1/offices').expect(403);
         await post(other, '/v1/offices', { ...name, name_ar: 'مكتب آخر', name_en: 'Other office' }).expect(403);
