@@ -47,7 +47,7 @@ for (const locale of ["ar", "en"] as Locale[]) {
     // نص العنصر النائب في البحث ≥ 4.5:1 على خلفية الحقل (الوضع الفاتح).
     const field = await bar.getByRole("searchbox").evaluate(el => [getComputedStyle(el, "::placeholder").color, getComputedStyle(el).backgroundColor]);
     expect(ratio(field[0], field[1])).toBeGreaterThanOrEqual(4.5);
-    const account = bar.getByRole("button", { name: new RegExp(`^${m.shell.account}`) }); await account.click();
+    const account = bar.getByRole("button", { name: new RegExp(m.shell.account) }); await account.click();
     await expect(page.getByTestId("topbar-user")).toHaveText(/\S/); await expect(page.getByTestId("topbar-user")).not.toContainText("@");
     await expect(page.getByRole("button", { name: m.logout, exact: true })).toBeVisible(); await expect(page.getByRole("link", { name: m.language, exact: true })).toBeVisible();
     await page.keyboard.press("Escape"); await expect(page.getByRole("button", { name: m.logout, exact: true })).toHaveCount(0);

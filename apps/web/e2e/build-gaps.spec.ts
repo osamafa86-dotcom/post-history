@@ -81,7 +81,7 @@ test("A3: the two toggles are field properties on the new version; required keep
   await editor.getByRole("group", { name: t.label, exact: true }).getByLabel(t.arabic).fill("عدد الوجوه"); await editor.getByRole("group", { name: t.label, exact: true }).getByLabel(t.english).fill("Faces");
   await editor.getByLabel(t.key, { exact: true }).fill("faces");
   await page.getByRole("button", { name: t.preview, exact: true }).click();
-  await page.getByRole("button", { name: fill(t.publishVersion, { version: 2 }), exact: true }).click(); await page.getByRole("dialog").getByRole("button", { name: ar.confirm, exact: true }).click();
+  await page.getByRole("button", { name: fill(t.publishVersion, { version: 2 }), exact: true }).click(); await page.getByRole("dialog").getByRole("button", { name: fill(t.confirmPublish, { version: 2 }), exact: true }).click();
   await expect(page.getByRole("combobox", { name: t.version, exact: true })).toHaveValue("2");
   const current = await page.evaluate(async () => (await fetch("/api/bff/forms/current")).json());
   const faces = current.fields.find((f: { key: string }) => f.key === "faces"); expect(faces).toMatchObject({ show_in_urgent: false, send_to_store: true });

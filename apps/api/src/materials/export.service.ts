@@ -7,7 +7,7 @@ import { auditLog, materialExports, materialFiles } from '../database/schema/sch
 import type { components } from '../generated/api';
 import type { Principal } from '../identity/principal';
 import { writeOutboxEvent } from '../outbox/outbox';
-import { OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
+import { downloadName, OBJECT_STORAGE, type ObjectStorage } from '../verification/object-storage';
 import { findScoped, iso } from './material-store';
 
 type MaterialExport = components['schemas']['MaterialExport'];
@@ -77,7 +77,7 @@ export class ExportService {
       throw new ApiError(409, 'export_not_ready', 'The export package is not ready.');
     }
     const now = new Date();
-    const url = this.storage.presignGet(this.config.S3_BUCKET_MEDIA, row.storageKey, TTL_SECONDS, now);
+    const url = this.storage.presignGet(this.config.S3_BUCKET_MEDIA, row.storageKey, TTL_SECONDS, now, downloadName(row.storageKey, 'export', materialId, 'application/zip'));
     await this.db.insert(auditLog).values({
       actorId: p.userId,
       action: 'material_export.download_url_issued',

@@ -136,9 +136,10 @@ export class LicensesService {
         .insert(licenseDownloadGrants)
         .values({ licenseId: l.id, issuedTo: p.userId, expiresAt: sql`now() + make_interval(secs => ${ttl})` })
         .returning({ expiresAt: licenseDownloadGrants.expiresAt });
-      return { storageKey: file.storageKey, expiresAt: iso(grant!.expiresAt)!, remaining: max - Number(n) - 1 };
+      return { storageKey: file.storageKey, number: l.licenseNumber, expiresAt: iso(grant!.expiresAt)!, remaining: max - Number(n) - 1 };
     });
-    const url = this.storage.presignGet(this.config.S3_BUCKET_MEDIA, granted.storageKey, ttl);
+    // الحزمة تُحفظ باسم رقم الترخيص الذي يعرفه المشتري ويتحقق منه (`PH-…`)
+    const url = this.storage.presignGet(this.config.S3_BUCKET_MEDIA, granted.storageKey, ttl, undefined, `${granted.number}.zip`);
     return { url, expires_at: granted.expiresAt, downloads_remaining: granted.remaining };
   }
 }

@@ -116,6 +116,8 @@ export function ShellTopBar({ me, locale, buyer, items, inboxHref, account }: { 
   const searchable = items.some(item => item.key === "inbox");
   // Escape يغلق المنبثقة من أي عنصر فيها أو من زرّها، ويعيد التركيز إلى الزرّ.
   const escape = (open: boolean, close: () => void) => (event: React.KeyboardEvent<HTMLDivElement>) => { if (event.key === "Escape" && open) { close(); event.currentTarget.querySelector<HTMLButtonElement>("button")?.focus(); } };
+  // خروج التركيز من قائمة الحساب (Tab بعد آخر بنودها) يغلقها، كما يغلقها النقر خارجها؛ فلا تبقى مفتوحة خلف ما صار فيه التركيز.
+  const leave = (close: () => void) => (event: React.FocusEvent<HTMLDivElement>) => { if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) close(); };
   return <header className={`topbar workspace${buyer ? " store" : ""}`} data-testid="topbar">
     {buyer ? <>
       <Link prefetch={false} className="topbar-brand" href={`/${locale}/store`}><BrandMark /><span>{m.product}</span></Link>
@@ -137,8 +139,9 @@ export function ShellTopBar({ me, locale, buyer, items, inboxHref, account }: { 
         {unread > 0 && <span id="bell-unread" className="visually-hidden">{m.notice.unreadCount}: {unread}</span>}
         {bell && <NotificationsPanel locale={locale} buyer={buyer} onClose={() => setBell(false)} />}
       </div>
-      <div className="popover-anchor account" ref={menuRef} onKeyDown={escape(menu, () => setMenu(false))}>
-        <button type="button" className="avatar" aria-label={`${t.account}: ${userLine(me, locale)}`} aria-expanded={menu} aria-controls="account-menu" onClick={() => { setMenu(value => !value); setBell(false); }}><span aria-hidden="true">{initials(me, locale)}</span></button>
+      <div className="popover-anchor account" ref={menuRef} onKeyDown={escape(menu, () => setMenu(false))} onBlur={leave(() => setMenu(false))}>
+        {/* الاسم يبدأ بالحرفين الظاهرين (WCAG 2.5.3): من يقرأ الزرّ أو يناديه بالصوت يجد ما يراه */}
+        <button type="button" className="avatar" aria-label={`${initials(me, locale)} · ${t.account}: ${userLine(me, locale)}`} aria-expanded={menu} aria-controls="account-menu" onClick={() => { setMenu(value => !value); setBell(false); }}><span aria-hidden="true">{initials(me, locale)}</span></button>
         {menu && <div className="account-menu" id="account-menu">{account}</div>}
       </div>
     </div>

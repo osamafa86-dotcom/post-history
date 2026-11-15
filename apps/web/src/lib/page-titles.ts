@@ -25,7 +25,10 @@ export type PageName = keyof typeof pageNames;
 
 export const pageTitle = (locale: Locale, page: PageName) => `${pageNames[page](messages[locale])} · ${messages[locale].product}`;
 
+/** عنوان صفحة غير موجودة؛ ومنها مسار بلغة لا نعرفها (`/fr/login`)، فلا يحمل اسم الصفحة التي لم تُعرض. */
+export const missingTitle = (locale: Locale) => `${messages[locale].pageNotFound.title} · ${messages[locale].product}`;
+
 /** `generateMetadata` لصفحة: `export const generateMetadata = pageMetadata("inbox");` */
 export function pageMetadata(page: PageName) {
-  return async ({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> => { const { locale } = await params; return { title: pageTitle(isLocale(locale) ? locale : "ar", page) }; };
+  return async ({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> => { const { locale } = await params; return { title: isLocale(locale) ? pageTitle(locale, page) : missingTitle("ar") }; };
 }
