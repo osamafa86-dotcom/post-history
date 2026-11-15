@@ -644,6 +644,93 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+    post:
+      tags: [admin]
+      summary: إنشاء حساب طاقم أو مراسل (مدير النظام)
+      description: >-
+        ينشئ مدير النظام حسابًا بدور واحد من الطاقم أو المراسلين: البريد، واسم العمل (للطاقم وحده، ADR 0035)، والدور ونطاقه
+        (للمشرف: كل المكاتب، أو مكتب، أو محافظة)، ومكتب المراسل. **لا ينشئ مدير نظام ولا يمنح دوره** (`422 validation_failed`):
+        ذاك بإجراء الشخصين من سطر الأوامر (ADR 0030). ولا ينشئ حساب مشترٍ (تلك بدعوة مؤسسته). الحساب يولد **بلا كلمة سر**
+        تصلح للدخول وفي «إعادة تعيين إلزامية»: يفعّله صاحبه برابط إعادة التعيين الذي يصدره مدير النظام بالنقطة القائمة
+        (`POST /users/{id}/password-reset-links`، مرة واحدة، مع ربط المصادقة الثنائية الإلزامي). الرد لا يحمل البريد ولا أي رمز.
+        البريد المستعمل `409 email_taken`. المكتب أو النطاق غير الموجود `422 validation_failed`. يُسجَّل في التدقيق
+        (`user.created`: `target_user_id` و`role` و`scope_kind` و`scope_id` و`reason_code`، بلا البريد). حد معدل لكل مدير
+        (`429 rate_limited`).
+      operationId: createUser
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StaffAccountInput" }
+      responses:
+        "201":
+          description: الحساب الجديد كما يظهر في قائمة الحسابات
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /offices:
+    get:
+      tags: [admin]
+      summary: المكاتب لمدير النظام
+      description: >-
+        كل المكاتب مرتبة باسمها العربي: المعرّف والاسمان والمحافظة. تُختار منها نطاقات المشرفين ومكتب المراسل في إدارة
+        الحسابات بدل كتابة معرّف. لا عناوين ولا مواقع ولا أسماء أشخاص.
+      operationId: listOffices
+      x-roles: [system_admin]
+      responses:
+        "200":
+          description: المكاتب كلها
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Office" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [admin]
+      summary: إنشاء مكتب (مدير النظام)
+      description: >-
+        مكتب باسمين (عربي وإنجليزي) ومحافظة. الاسم العربي أو الإنجليزي المستعمل في مكتب آخر `409 office_exists`. يُسجَّل
+        في التدقيق (`office.created`: `scope_kind: office` و`scope_id` معرّف المكتب، بلا الاسم). حد معدل لكل مدير
+        (`429 rate_limited`). لا تعديل ولا حذف في هذه الدورة.
+      operationId: createOffice
+      x-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OfficeInput" }
+      responses:
+        "201":
+          description: المكتب الجديد
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Office" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
   /users/{id}/status:
     parameters:
       - name: id
@@ -4592,6 +4679,8 @@ components:
             - form_version_conflict
             - sensitive_fields_not_supported_v0
             - recovery_state_conflict
+            - email_taken
+            - office_exists
             - precondition_failed
             - forbidden_role
             - admin_quorum_required
@@ -7680,6 +7769,46 @@ components:
       type: string
       description: "`recovery` في استعادة حساب جارية"
       enum: [active, suspended, recovery]
+
+    Office:
+      type: object
+      additionalProperties: false
+      required: [id, name_ar, name_en, governorate]
+      properties:
+        id: { type: string, format: uuid }
+        name_ar: { type: string, minLength: 1, maxLength: 120 }
+        name_en: { type: string, minLength: 1, maxLength: 120 }
+        governorate: { type: string, minLength: 1, maxLength: 64 }
+
+    OfficeInput:
+      type: object
+      additionalProperties: false
+      required: [name_ar, name_en, governorate]
+      properties:
+        name_ar: { type: string, minLength: 1, maxLength: 120, description: بلا مسافة في طرفيه ولا محارف تحكم أو اتجاه }
+        name_en: { type: string, minLength: 1, maxLength: 120 }
+        governorate: { type: string, minLength: 1, maxLength: 64, description: رمز المحافظة كما في نطاقات المشرفين }
+
+    StaffAccountInput:
+      type: object
+      additionalProperties: false
+      required: [email, role]
+      description: >-
+        حساب جديد بدور واحد. `scope_kind`/`scope_id` للمشرف وحده (الافتراضي `all`)؛ `office_id` إلزامي للمراسل واختياري لغيره؛
+        `work_name` للطاقم وحده، لا للمراسل. مخالفة ذلك `422 validation_failed`.
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        role:
+          type: string
+          enum: [editor_in_chief, supervisor, producer, finance, rights_officer, reporter]
+          description: كل أدوار الطاقم والمراسل، إلا مدير النظام (بإجراء الشخصين من سطر الأوامر) وأدوار المشترين
+        work_name:
+          oneOf:
+            - $ref: "#/components/schemas/WorkName"
+            - type: "null"
+        scope_kind: { type: string, enum: [all, office, governorate], default: all }
+        scope_id: { type: string, maxLength: 200, default: "", description: معرّف المكتب أو رمز المحافظة؛ فارغ مع `all` }
+        office_id: { type: [string, "null"], format: uuid, description: مكتب الحساب؛ إلزامي للمراسل }
 
     StaffUser:
       type: object
