@@ -245,6 +245,29 @@
     "confirmTo": "Confirm: {state}",
     "confirmReject": "Confirm rejection for good",
     "rejectHelp": "Rejection sends the material to the internal archive; press again within five seconds to confirm.",
+    "revokeCounting": "Counting the paid licenses on this material…",
+    "revokeEffect": "This transition will revoke {licenses} held by {organizations}.",
+    "revokeLicenses": {
+      "zero": "no paid license",
+      "one": "{n} paid license",
+      "two": "{n} paid licenses",
+      "few": "{n} paid licenses",
+      "many": "{n} paid licenses",
+      "other": "{n} paid licenses"
+    },
+    "revokeOrganizations": {
+      "zero": "no organization",
+      "one": "{n} organization",
+      "two": "{n} organizations",
+      "few": "{n} organizations",
+      "many": "{n} organizations",
+      "other": "{n} organizations"
+    },
+    "revokeFinal": "Revocation is final: returning the rights to «sellable» does not restore them, and nothing is refunded automatically. Finance sees these licenses to review refunds.",
+    "revokeNone": "No active paid licenses on this material: nothing will be revoked.",
+    "revokeUnknown": "The paid licenses could not be counted. This transition permanently revokes every active paid license on the material, and nothing is refunded automatically.",
+    "confirmRevoke": "Confirm permanent revocation: {state}",
+    "revokeHelp": "Press again within five seconds to confirm revoking the licenses.",
     "reloadChanges": "Load the changes",
     "transitioned": "Moved to “{state}”.",
     "releaseMine": "Release reservation — yours",
@@ -259,8 +282,8 @@
       "in_production": "It goes back to production.",
       "documented": "Rights are documented.",
       "sellable": "It can be listed in the catalog.",
-      "blocked": "It is blocked from sale.",
-      "withdrawn": "It is withdrawn from the catalog.",
+      "blocked": "It is blocked from sale, and its paid licenses are revoked for good.",
+      "withdrawn": "It is withdrawn from the catalog, and its paid licenses are revoked for good.",
       "pending": "The technical track runs again."
     },
     "person": "Person",
@@ -1702,6 +1725,10 @@
     "late": "The delivery package is taking longer than usual. Your license is valid and its terms apply; if the wait continues, contact the store administration with the license number.",
     "lateShort": "Preparation delayed",
     "revokedShort": "Revoked",
+    "unrefundedRights": "Revoked for rights, not refunded",
+    "unrefundedLead": "Licenses revoked by a rights withdrawal, a block or a sensitivity flag, with no refund requested for their items. Open the order to decide on a refund.",
+    "unrefundedEmpty": "No licenses revoked for rights are awaiting a refund.",
+    "openOrder": "Open the order",
     "footnote": "Each license is tied to its order. Downloads use a short-lived signed link while the license is active, a limited number of times; renewing means buying a new license from the footage page.",
     "emptyTitle": "No licenses yet",
     "emptyBody": "A license is issued after the signed gateway confirmation and shows here with its order.",
@@ -2415,6 +2442,14 @@
         "upload": "Upload update"
       },
       "ago": "{time} ago",
+      "buyer": {
+        "licenseRevoked": "License {number} was revoked",
+        "licenseRevokedPlain": "A license of your organization was revoked",
+        "licenseRevokedText": "Its download stopped: the rights of the material no longer allow its use",
+        "orderChanged": "The status of order {number} changed",
+        "orderChangedPlain": "The status of one of your orders changed",
+        "orderChangedText": "Open the order to see its status"
+      },
       "all": "All notifications and settings"
     },
     "noAccess": {

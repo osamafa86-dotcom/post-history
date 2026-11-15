@@ -17,7 +17,7 @@ import { assignmentPath, assignmentRead } from "./assignments";
 import { actionPath, reviewAction } from "./review-actions";
 import { hasRole, materialTag } from "@/lib/review";
 import { organizationRead } from "./organizations";
-import { licenseRead, licenseVerify } from "./licenses";
+import { licenseRead, licenseVerify, materialActiveLicenses } from "./licenses";
 import { commissionRead, refundRead } from "./finance";
 import { conflictRead } from "./invite-conflicts";
 import { earningsPath, earningsRead } from "./earnings";
@@ -191,6 +191,8 @@ async function respond(request: NextRequest, path: string, deps?: Deps): Promise
         const tag = materialTag(result.response, material); if (tag) response.headers.set("ETag", tag);
         return response;
       }
+      const activeLicenses = /^materials\/([^/]+)\/active-licenses$/.exec(path);
+      if (activeLicenses) return await materialActiveLicenses(request, activeLicenses[1], api, me);
       const listing = /^materials\/([^/]+)\/listing$/.exec(path);
       if (listing && uuid.test(listing[1])) {
         if (!hasRole(me, ...listingReaders) || request.nextUrl.search) throw new WebError(403, "request_failed");

@@ -47,6 +47,18 @@ export function allowedDownload(value: unknown, origins: readonly string[]) {
   try { const url = new URL(value); return origins.includes(url.origin) && !url.username && !url.password; } catch { return false; }
 }
 
+/** من يقرأ عدد التراخيص الفاعلة على مادة قبل خروج حقوقها من `sellable` (حوار تحويل الحقوق، والمالية)؛ كما في `x-roles`. */
+export const activeLicenseReaders = ["system_admin", "editor_in_chief", "rights_officer", "finance"] as const satisfies readonly components["schemas"]["RoleName"][];
+export type ActiveLicenses = components["schemas"]["MaterialActiveLicenses"];
+/** العددان وحدهما، صحيحين غير سالبين؛ غير ذلك لا يُعرض. */
+export function safeActiveLicenses(value: ActiveLicenses): ActiveLicenses | null {
+  const count = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) >= 0;
+  return count(value?.active_licenses) && count(value?.organizations) ? { active_licenses: value.active_licenses, organizations: value.organizations } : null;
+}
+/** أسباب الإبطال التي يصفّي بها العقد قائمة التراخيص. */
+export const revokedReasons = ["refunded", "rights_withdrawn", "manual"] as const satisfies readonly NonNullable<IssuedLicense["revoked_reason"]>[];
+/** من يرى قائمة «أُبطلت لسبب حقوقي ولم تُسترد»: من يقرّر الاسترداد. */
+export const refundReviewers = ["system_admin", "finance"] as const satisfies readonly components["schemas"]["RoleName"][];
 /** صيغة رقم الترخيص كما في العقد؛ أي رقم آخر لا يُرسل إلى الخادم. */
 export const licenseNumberPattern = /^PH-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{10}$/;
 /**
