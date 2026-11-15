@@ -35,9 +35,9 @@ function reset() {
 type FixtureUpload = { session: Record<string, unknown> & { id: string; material_id: string; kind: string; state: string; size_bytes: number; bytes_received: number; receipt_number: string | null; failure_reason: string | null }; sha: string; token: string; tus?: string };
 const uploads = new Map<string, FixtureUpload>(), tusFiles = new Map<string, { sid: string; length: number; offset: number; hash: ReturnType<typeof createHash>; patches: number; resent: number; cuts: number }>();
 const ingestTokens = new Map<string, { sid: string; expires: number }>();
-const tusFaults = { rejectIngest: 0, failPatches: 0, cutNext: false, revoked: false };
+const tusFaults = { failCreate: 0, rejectIngest: 0, failPatches: 0, cutNext: false, revoked: false };
 const webOrigin = process.env.WEB_ORIGIN ?? "http://127.0.0.1:3100", fixtureOrigin = `http://127.0.0.1:${process.env.WEB_FIXTURE_PORT ?? 3201}`;
-function resetUploads() { uploads.clear(); tusFiles.clear(); ingestTokens.clear(); Object.assign(tusFaults, { rejectIngest: 0, failPatches: 0, cutNext: false, revoked: false }); }
+function resetUploads() { uploads.clear(); tusFiles.clear(); ingestTokens.clear(); Object.assign(tusFaults, { failCreate: 0, rejectIngest: 0, failPatches: 0, cutNext: false, revoked: false }); }
 function finishUpload(upload: FixtureUpload, digest: string) {
   const item = materials.find(m => m.id === upload.session.material_id);
   if (digest !== upload.sha) { Object.assign(upload.session, { state: "failed", failure_reason: "checksum_mismatch" }); if (item) item.technical_state = "failed"; return; }
@@ -200,7 +200,7 @@ const server = createServer(async (req, res) => {
   const delivery = /^\/delivery\/([^/]+)$/.exec(url.pathname);
   if (delivery) { res.setHeader("Content-Type", "application/zip"); res.setHeader("Content-Disposition", `attachment; filename="delivery-${delivery[1].slice(0, 8)}.zip"`); res.end("synthetic delivery package"); return; }
   if (url.pathname.startsWith("/files/")) { res.removeHeader("Content-Type"); return tus(req, res, url); }
-  if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
+  if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { failCreate: Number(query.get("fail_create") ?? 0), rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
   if (url.pathname === "/__test/uploads") return send([...uploads.values()].map(u => ({ state: u.session.state, receipt: u.session.receipt_number, ingest_tokens: [...ingestTokens.values()].filter(t => t.sid === u.session.id).length, ...(u.tus ? (({ length, offset, patches, resent, cuts }) => ({ length, offset, patches, resent, cuts }))(tusFiles.get(u.tus) ?? { length: 0, offset: 0, patches: 0, resent: 0, cuts: 0 }) : {}) })));
   if (url.pathname === "/__test/reset" && req.method === "POST") { loginThrottle = 0; consumedInvites.clear(); rules.clear(); listings.clear(); seedOrders(); seedLicenses(); seedTemplates(); seedOrganizations(); seedCommission(); seedConflicts(); seedEarnings(); reset(); resetUploads(); resetAssignments(); resetAdmin(); resetAuth(profile("reviewer@example.test")); return send({ ok: true }); }
   // الاستعادة ومفاتيح المرور (ADR 0108): حالة للتحقق، وإيقاف المفاتيح على الخادم، وتنبيه طلب استعادة ينتظر المشرف.
@@ -236,6 +236,8 @@ const server = createServer(async (req, res) => {
     res.statusCode = 302; res.setHeader("Location", `http://127.0.0.1:3100/${lang}/store/orders/${order.id}?returned=1`); res.end(); return;
   }
   if (url.pathname === "/__test/state") return send({ writes, applied: applied.size, identitySetting, auditCount: permissionAudit.length });
+  // مادة لصاحبها لم يصل ملفها (أُلغي رفعها أو لم يبدأ): بلا ملفات، والمسار الفني ينتظر.
+  if (url.pathname === "/__test/no-file" && req.method === "POST") { Object.assign(materials[3], { technical_state: "pending", files: [], thumbnail_file_id: null }); return send({ id: materials[3].id }); }
   if (url.pathname === "/__test/request-changes" && req.method === "POST") {
     // مادة بطلب تعديل وأخرى مرفوضة وثالثة فشل رفعها، وسبب «اطّلعت» داخلي: يراه الطاقم في السجل ولا يصل المراسل.
     const supervisor = "10000000-0000-4000-8000-000000000002", stamp = "2026-10-21T10:00:00Z";
@@ -311,7 +313,7 @@ const server = createServer(async (req, res) => {
     res.setHeader("Content-Length", end - start + 1); return res.end(bytes.subarray(start, end + 1));
   }
   let body: Record<string, unknown> = {};
-  if (["POST", "PUT", "DELETE"].includes(req.method ?? "")) {
+  if (["POST", "PUT", "DELETE", "PATCH"].includes(req.method ?? "")) {
     let raw = ""; for await (const chunk of req) { raw += chunk; if (raw.length > 65536) return send({}, 413); }
     try { body = JSON.parse(raw || "{}"); } catch { return send({}, 400); }
     if (!req.headers["idempotency-key"]) return send({ code: "missing_idempotency_key" }, 400);
@@ -368,7 +370,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/v1/auth/logout" && req.method === "POST") { if (body.all_sessions) { access.clear(); refresh.clear(); } else access.delete(token); return send(null, 204); }
   const user = access.get(token)!;
   if (url.pathname === "/v1/auth/me") return send(user);
-  const isWrite = ["POST", "PUT", "DELETE"].includes(req.method ?? "");
+  const isWrite = ["POST", "PUT", "DELETE", "PATCH"].includes(req.method ?? "");
   if (isWrite) {
     const path = decodeURIComponent(url.pathname), key = String(req.headers["idempotency-key"]), fingerprint = JSON.stringify([path, req.method, body]);
     writes.push({ path, method: req.method!, key, body });
@@ -400,6 +402,15 @@ const server = createServer(async (req, res) => {
       item.tags = [...tags]; item.row_version!++; item.updated_at = new Date().toISOString();
       res.setHeader("ETag", `"${item.row_version}"`); return commit(item, 200);
     }
+    // تعديل الحقول الوصفية (updateMaterial): صاحبها المراسل، و`If-Match` من row_version.
+    const edit = /^\/v1\/materials\/([^/]+)$/.exec(path);
+    if (edit && req.method === "PATCH") {
+      const item = materials.find(m => m.id === edit[1]); if (!item) return send({}, 404);
+      if (!(has("reporter") && item.reporter_id === user.user_id) && !has("supervisor", "editor_in_chief", "system_admin")) return send({}, 403);
+      if (req.headers["if-match"] !== `"${item.row_version}"`) return send({}, 412);
+      Object.assign(item, body, { updated_at: new Date().toISOString() }); item.row_version!++;
+      res.setHeader("ETag", `"${item.row_version}"`); return commit(item, 200);
+    }
     const match = /^\/v1\/materials\/([^/]+)\/(transitions|reservation|contributors)$/.exec(path);
     if (match) {
       const item = materials.find(m => m.id === match[1]); if (!item) return send({}, 404);
@@ -407,9 +418,9 @@ const server = createServer(async (req, res) => {
       const stamp = new Date().toISOString();
       if (match[2] === "transitions") {
         const track = body.track as "technical" | "editorial" | "rights", column = `${track}_state` as const;
-        // كجدول الانتقالات عند الخادم: رئيس التحرير ينشر، والمراسل صاحب المادة يعيد إرسالها بعد طلب التعديل
-        const resubmit = has("reporter") && item.reporter_id === user.user_id && item.editorial_state === "needs_changes" && body.to === "reviewing";
-        if (track === "editorial" && !has("supervisor", "producer", "editor_in_chief") && !resubmit || track === "rights" && !has("rights_officer") || track === "technical" && !has("reporter")) return send({}, 403);
+        // كجدول الانتقالات عند الخادم: رئيس التحرير ينشر، وصاحب المادة يعيدها من «تحتاج تعديلًا» إلى المراجعة (`reporter_owner`)
+        const resubmits = track === "editorial" && has("reporter") && item.reporter_id === user.user_id && item.editorial_state === "needs_changes" && body.to === "reviewing";
+        if (track === "editorial" && !resubmits && !has("supervisor", "producer", "editor_in_chief") || track === "rights" && !has("rights_officer") || track === "technical" && !has("reporter")) return send({}, 403);
         const from = item[column]; Object.assign(item, { [column]: body.to }); item.row_version!++;
         history.set(item.id, [...(history.get(item.id) ?? []), { id: randomUUID(), track, from, to: String(body.to), reason: String(body.reason), note_timecode_ms: typeof body.note_timecode_ms === "number" ? body.note_timecode_ms : null, actor_id: user.user_id, actor_name: has("reporter") ? null : "Synthetic staff", occurred_at: stamp }]);
         return commit(item, 200);
@@ -454,6 +465,8 @@ const server = createServer(async (req, res) => {
         tus_metadata: { upload_session_id: id, filename: String(body.filename) }, part_size_bytes: Number(process.env.FIXTURE_PART_SIZE ?? 1048576), bytes_received: 0, ingest_token_required: !process.env.FIXTURE_TUS_ENDPOINT,
         ietf_resumable: false, checksum_algorithm: "sha256", expires_at: new Date(now + 86400000).toISOString(), file_id: null, duplicate_of_file_id: null, failure_reason: null, receipt_number: null, created_at: new Date(now).toISOString() };
       const token = randomUUID(); uploads.set(id, { session, sha: String(body.client_sha256), token });
+      // عطل بعد إنشاء الجلسة: الجلسة قائمة على الخادم والردّ 503، كما يحدث حين يضيع الردّ.
+      if (tusFaults.failCreate > 0) { tusFaults.failCreate--; return send({ code: "temporarily_unavailable" }, 503); }
       return commit({ ...session, upload_token: token, upload_token_expires_at: new Date(now + 3600000).toISOString() }, 201);
     }
     const abortPath = /^\/v1\/uploads\/([^/]+)$/.exec(path);

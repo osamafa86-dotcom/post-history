@@ -4,9 +4,9 @@ import en from "../messages/en.json" with { type: "json" };
 async function login(page: Page, locale: "ar" | "en" = "ar") {
   const m = locale === "ar" ? ar : en;
   await page.goto(`/${locale}/login`);
-  await page.getByLabel(m.email).fill("fixture@example.test"); await page.getByLabel(m.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(m.totp, { exact: true }).fill("123456");
+  await page.getByLabel(m.email).fill("reviewer@example.test"); await page.getByLabel(m.password, { exact: true }).fill("synthetic-password"); await page.getByLabel(m.totp, { exact: true }).fill("123456");
   await page.getByRole("button", { name: m.signIn, exact: true }).click();
-  await page.waitForURL(/\/(inbox|my-materials)$/); if (!page.url().endsWith("/inbox")) await page.goto(page.url().replace(/[^/]+$/, "inbox")); await expect(page.getByTestId("material-row")).toHaveCount(50);
+  await page.waitForURL(/\/(inbox|my-materials)$/); if (page.url().endsWith("/inbox")) await expect(page.getByTestId("material-row")).toHaveCount(50); else await expect(page.getByTestId("mine-row").first()).toBeVisible();
 }
 test("Arabic RTL inbox, independent states, explicit filters, pagination and detail", async ({ page }) => {
   const outgoing: string[] = []; page.on("request", r => outgoing.push(r.url()));

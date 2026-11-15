@@ -157,6 +157,17 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .mine-list { padding: 0; list-style: none; display: grid; gap: 14px; }
 .mine-list li { display: grid; gap: 6px; padding-bottom: 14px; border-bottom: 1px solid var(--v2-c-border-line); }
 .supervisor-note { margin: 0; padding: 10px 14px; border-inline-start: 3px solid var(--v2-c-action-primary); background: var(--v2-c-bg-sunken); white-space: pre-wrap; overflow-wrap: anywhere; }
+.owner-panel { display: grid; gap: var(--v2-space-5); margin-block-end: var(--v2-space-6); }
+.owner-notice { display: grid; gap: var(--v2-space-4); padding: var(--v2-space-5) var(--v2-space-6); background: var(--v2-c-bg-raised); border: var(--v2-border-field) solid var(--v2-c-state-warn); border-radius: var(--v2-radius-md); }
+.owner-notice.danger { border-color: var(--v2-c-state-danger); }
+.owner-notice h2 { display: flex; align-items: center; gap: var(--v2-space-3); margin: 0; font-size: 16px; }
+.owner-notice.warn h2 .icon { color: var(--v2-c-state-warn); }
+.owner-notice.danger h2 .icon { color: var(--v2-c-state-danger); }
+.owner-notice p { margin: 0; }
+.owner-share { margin: 0; color: var(--v2-c-text-secondary); }
+.modal.owner-dialog { inline-size: min(560px, calc(100vw - 32px)); max-width: none; max-block-size: calc(100dvh - 32px); overflow: auto; }
+.owner-dialog form { display: grid; gap: var(--v2-space-4); }
+.owner-dialog textarea { min-block-size: 96px; }
 .supervisor-note footer { font-size: 12px; color: var(--v2-c-text-secondary); }
 .offer-row { display: grid; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--v2-c-border-line); }
 .one-time-token .token-value { display: block; padding: 12px; font-family: var(--v2-font-family-mono); overflow-wrap: anywhere; background: var(--v2-c-bg-sunken); border: 1px dashed var(--v2-c-border-line); }
@@ -205,6 +216,7 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .upload-selection, .upload-pending ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: 12px; }
 .upload-pending h3 { font-size: 14px; margin: 6px 0; }
 .upload-base { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 8px; }
+.upload-field { display: grid; gap: 6px; align-content: start; }
 .upload-base fieldset { border: 1px solid var(--v2-c-border-line); border-radius: 6px; display: grid; gap: 8px; padding: 10px 12px; }
 .upload-base legend { font-size: 13px; font-weight: 600; }
 .upload-base .check { display: flex; gap: 8px; align-items: center; font-weight: 400; }
