@@ -1,4 +1,5 @@
 "use client";
+import { governorateName } from "@/lib/format";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -184,7 +185,7 @@ function MaterialRow({ material, locale, now, disabled, done }: { material: Mate
       : <span className="row-thumb" aria-hidden="true"><Icon name={material.material_types.includes("photos") ? "preview" : "play"} /></span>}
     <div className="row-main">
       <p className="row-title"><Link className="material-link" prefetch={false} href={`/${locale}/materials/${material.id}`}>{material.title}</Link>{material.priority !== "normal" && <span className={`priority-pill ${material.priority}`}>{urgent && <Icon name="bolt" size={12} />}{m.states.priority[material.priority]}</span>}</p>
-      <p className="row-meta"><span>{photographer(material, locale)}</span><span>{material.governorate}</span>{type && <span>{type}</span>}{files > 0 && <span>{plural(files, w.files, locale)}</span>}<span className="receipt"><bdi dir="ltr">{receipt ?? m.noReceipt}</bdi></span></p>
+      <p className="row-meta"><span>{photographer(material, locale)}</span><span>{governorateName(material.governorate, m.governorates)}</span>{type && <span>{type}</span>}{files > 0 && <span>{plural(files, w.files, locale)}</span>}<span className="receipt"><bdi dir="ltr">{receipt ?? m.noReceipt}</bdi></span></p>
       {material.tags?.length ? <ul className="tag-list" aria-label={w.tags}>{material.tags.map(tag => <li key={tag}><bdi>{tag}</bdi></li>)}</ul> : null}
     </div>
     <p className={`row-time${urgent ? " urgent" : ""}`}>{now ? w.since.replace("{time}", humanDuration(now - Date.parse(material.created_at), locale)) : longDate(material.created_at, locale)}</p>

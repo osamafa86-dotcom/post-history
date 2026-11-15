@@ -35,7 +35,7 @@ function reset() {
 type FixtureUpload = { session: Record<string, unknown> & { id: string; material_id: string; kind: string; state: string; size_bytes: number; bytes_received: number; receipt_number: string | null; failure_reason: string | null }; sha: string; token: string; tus?: string };
 const uploads = new Map<string, FixtureUpload>(), tusFiles = new Map<string, { sid: string; length: number; offset: number; hash: ReturnType<typeof createHash>; patches: number; resent: number; cuts: number }>();
 const ingestTokens = new Map<string, { sid: string; expires: number }>();
-const tusFaults = { rejectIngest: 0, failPatches: 0, cutNext: false, revoked: false };
+const tusFaults = { failCreate: 0, rejectIngest: 0, failPatches: 0, cutNext: false, revoked: false };
 const webOrigin = process.env.WEB_ORIGIN ?? "http://127.0.0.1:3100", fixtureOrigin = `http://127.0.0.1:${process.env.WEB_FIXTURE_PORT ?? 3201}`;
 function resetUploads() { uploads.clear(); tusFiles.clear(); ingestTokens.clear(); Object.assign(tusFaults, { rejectIngest: 0, failPatches: 0, cutNext: false, revoked: false }); }
 function finishUpload(upload: FixtureUpload, digest: string) {
@@ -200,7 +200,7 @@ const server = createServer(async (req, res) => {
   const delivery = /^\/delivery\/([^/]+)$/.exec(url.pathname);
   if (delivery) { res.setHeader("Content-Type", "application/zip"); res.setHeader("Content-Disposition", `attachment; filename="delivery-${delivery[1].slice(0, 8)}.zip"`); res.end("synthetic delivery package"); return; }
   if (url.pathname.startsWith("/files/")) { res.removeHeader("Content-Type"); return tus(req, res, url); }
-  if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
+  if (url.pathname === "/__test/tus" && req.method === "POST") { const query = url.searchParams; Object.assign(tusFaults, { failCreate: Number(query.get("fail_create") ?? 0), rejectIngest: Number(query.get("reject_ingest") ?? 0), failPatches: Number(query.get("fail_patches") ?? 0), cutNext: query.get("cut") === "1", revoked: tusFaults.revoked }); return send({ ok: true }); }
   if (url.pathname === "/__test/uploads") return send([...uploads.values()].map(u => ({ state: u.session.state, receipt: u.session.receipt_number, ingest_tokens: [...ingestTokens.values()].filter(t => t.sid === u.session.id).length, ...(u.tus ? (({ length, offset, patches, resent, cuts }) => ({ length, offset, patches, resent, cuts }))(tusFiles.get(u.tus) ?? { length: 0, offset: 0, patches: 0, resent: 0, cuts: 0 }) : {}) })));
   if (url.pathname === "/__test/reset" && req.method === "POST") { loginThrottle = 0; consumedInvites.clear(); rules.clear(); listings.clear(); seedOrders(); seedLicenses(); seedTemplates(); seedOrganizations(); seedCommission(); seedConflicts(); seedEarnings(); reset(); resetUploads(); resetAssignments(); resetAdmin(); resetAuth(profile("reviewer@example.test")); return send({ ok: true }); }
   // الاستعادة ومفاتيح المرور (ADR 0108): حالة للتحقق، وإيقاف المفاتيح على الخادم، وتنبيه طلب استعادة ينتظر المشرف.
@@ -433,6 +433,8 @@ const server = createServer(async (req, res) => {
         tus_metadata: { upload_session_id: id, filename: String(body.filename) }, part_size_bytes: Number(process.env.FIXTURE_PART_SIZE ?? 1048576), bytes_received: 0, ingest_token_required: !process.env.FIXTURE_TUS_ENDPOINT,
         ietf_resumable: false, checksum_algorithm: "sha256", expires_at: new Date(now + 86400000).toISOString(), file_id: null, duplicate_of_file_id: null, failure_reason: null, receipt_number: null, created_at: new Date(now).toISOString() };
       const token = randomUUID(); uploads.set(id, { session, sha: String(body.client_sha256), token });
+      // عطل بعد إنشاء الجلسة: الجلسة قائمة على الخادم والردّ 503، كما يحدث حين يضيع الردّ.
+      if (tusFaults.failCreate > 0) { tusFaults.failCreate--; return send({ code: "temporarily_unavailable" }, 503); }
       return commit({ ...session, upload_token: token, upload_token_expires_at: new Date(now + 3600000).toISOString() }, 201);
     }
     const abortPath = /^\/v1\/uploads\/([^/]+)$/.exec(path);

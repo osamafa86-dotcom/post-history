@@ -2,7 +2,7 @@ import Uppy from "@uppy/core";
 import Tus from "@uppy/tus";
 import type { components } from "@/generated/schema";
 import { fileFingerprint, hashFile } from "./file-hash";
-import { fileKey, ingestRefreshMarginMs, withinEndpoint } from "./upload-policy";
+import { createFailure, fileKey, ingestRefreshMarginMs, withinEndpoint } from "./upload-policy";
 import { findUpload, forgetUpload, recordKey, rememberUpload, type PendingUpload } from "./upload-store";
 
 type Created = components["schemas"]["UploadSessionCreated"];
@@ -53,8 +53,9 @@ export function startUpload(file: File, materialId: string, report: (update: Upl
   const controller = new AbortController(), keyed = recordKey(fileKey(file));
   let key = "";
   let update: UploadUpdate = { phase: "hashing", hashed: 0, sent: 0, total: file.size, resumed: false };
-  const emit = (patch: Partial<UploadUpdate>) => { update = { ...update, ...patch }; if (!controller.signal.aborted || patch.phase === "failed") report(update); return update; };
-  let uppy: Uppy | undefined, fileId: string | undefined;
+  // الفشل (ومنه الإلغاء) يُسقط شارة «استئناف»: لم يعد في البطاقة ما يُستأنف.
+  const emit = (patch: Partial<UploadUpdate>) => { update = { ...update, ...patch, ...(patch.phase === "failed" ? { resumed: false } : {}) }; if (!controller.signal.aborted || patch.phase === "failed") report(update); return update; };
+  let uppy: Uppy | undefined, fileId: string | undefined, terminated: (() => void) | undefined, cancelled = false;
 
   async function prepare(): Promise<PendingUpload> {
     key = await keyed;
@@ -92,7 +93,12 @@ export function startUpload(file: File, materialId: string, report: (update: Upl
       }
     } catch (error) {
       if (error instanceof BffError && error.status === 404) await forgetUpload(key);
-      return emit({ phase: "failed", failure: error instanceof BffError ? error.status === 401 ? "session_revoked" : error.status === 409 || error.status === 404 ? "not_accepted" : "rejected" : "network" });
+      return emit({ phase: "failed", failure: error instanceof BffError ? createFailure(error.status) : "network" });
+    }
+    // أُلغي أو أُوقف والجلسة تُجهَّز: لا نقل يبدأ من وراء البطاقة. الإلغاء يُنهي الجلسة على الخادم، والإيقاف يبقيها للاستئناف.
+    if (controller.signal.aborted) {
+      if (cancelled && !["verified", "deduplicated", "failed"].includes(session.state)) void abortUpload(session.id).catch(() => undefined);
+      return emit({ phase: "failed", session: session as SessionView, failure: "aborted" });
     }
     const tus = pending.tus;
     if (!tus || !pending.endpoint || !pending.session_id) { await forgetUpload(key); return emit({ phase: "failed", failure: "rejected" }); }
@@ -128,6 +134,8 @@ export function startUpload(file: File, materialId: string, report: (update: Upl
         if (url !== endpoint && !withinEndpoint(url, endpoint)) { stopped = "rejected"; throw new Error("Unexpected upload URL"); }
         if (tus.ingest) request.setHeader("Ingest-Token", await ingestToken());
       },
+      // إنهاء رفع tus (DELETE) عند الإلغاء: إلغاء الجلسة ينتظر جوابه (`cancel`).
+      onAfterResponse(request) { if (request.getMethod() === "DELETE") terminated?.(); },
       onShouldRetry(error, attempt, _options, next) {
         if (stopped && stopped !== "network") return false;
         const decision = retryDecision((error as { originalResponse?: { getStatus(): number } | null }).originalResponse?.getStatus());
@@ -180,9 +188,13 @@ export function startUpload(file: File, materialId: string, report: (update: Upl
     // stop: يوقف النقل ويبقي سجل الاستئناف وبيانات الخادم. cancel: قرار المستخدم، فيُنهى رفع tus ويُنسى السجل.
     stop() { controller.abort(); uppy?.pauseAll(); },
     cancel() {
-      controller.abort(); uppy?.cancelAll();
-      const id = update.session?.id;
-      if (id && !["verified", "deduplicated", "failed"].includes(update.session!.state)) void abortUpload(id).catch(() => undefined);
+      cancelled = true; controller.abort();
+      const id = update.session?.id, open = !!id && !["verified", "deduplicated", "failed"].includes(update.session!.state);
+      // إنهاء رفع tus يسبق إلغاء الجلسة: البوابة ترفض كل طلب لجلسة ملغاة، فإن سبق الإلغاءُ رُدّ الإنهاء 403 وبقي في المتصفح خطأ بلا مُمسك.
+      // ينتظر الإلغاء جواب الإنهاء ثلاث ثوانٍ على الأكثر؛ وبلا رفع tus قائم يذهب فورًا.
+      const ended = uppy && fileId && uppy.getFile(fileId)?.tus?.uploadUrl ? new Promise<void>(resolve => { terminated = resolve; setTimeout(resolve, 3000); }) : Promise.resolve();
+      uppy?.cancelAll();
+      void ended.then(() => { if (open) void abortUpload(id!).catch(() => undefined); });
       void keyed.then(forgetUpload);
     },
     done: run(),
