@@ -55,6 +55,56 @@ open class CommerceAPI {
     }
 
     /**
+     تأكيد استرداد معلّق في المزوّد التجريبي (للمالية، لا مال حقيقي)
+     
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter orderId: (path)  
+     - parameter refundId: (path)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: Refund
+     */
+    open class func confirmSandboxRefund(idempotencyKey: String, orderId: UUID, refundId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) async throws(ErrorResponse) -> Refund {
+        return try await confirmSandboxRefundWithRequestBuilder(idempotencyKey: idempotencyKey, orderId: orderId, refundId: refundId, apiConfiguration: apiConfiguration).execute().body
+    }
+
+    /**
+     تأكيد استرداد معلّق في المزوّد التجريبي (للمالية، لا مال حقيقي)
+     - POST /orders/{order_id}/refunds/{refund_id}/sandbox-confirmation
+     - قرار المنسّق 2026-11-15: مع المزوّد التجريبي وحده (`Refund.provider = sandbox`) تؤكد المالية الاسترداد المعلّق كما يؤكده المزوّد: يُرسل إشعار `refund.succeeded` الموقّع نفسه بمرجع الاسترداد ومبلغه من سجله، ويُطبَّق كأي إشعار (قيد `refund` ثم `succeeded`). لا تأكيد آلي. بلا المزوّد التجريبي أو لاسترداد طلب آخر `404`، ولغير المعلّق `409 invalid_transition`. يُسجَّل في التدقيق.
+     - Bearer Token:
+       - type: http
+       - name: bearerAuth
+     - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
+     - parameter orderId: (path)  
+     - parameter refundId: (path)  
+     - parameter apiConfiguration: The configuration for the http request.
+     - returns: RequestBuilder<Refund> 
+     */
+    open class func confirmSandboxRefundWithRequestBuilder(idempotencyKey: String, orderId: UUID, refundId: UUID, apiConfiguration: PostHistoryAPIAPIConfiguration = PostHistoryAPIAPIConfiguration.shared) -> RequestBuilder<Refund> {
+        var localVariablePath = "/orders/{order_id}/refunds/{refund_id}/sandbox-confirmation"
+        let orderIdPreEscape = "\(APIHelper.mapValueToPathItem(orderId))"
+        let orderIdPostEscape = orderIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{order_id}", with: orderIdPostEscape, options: .literal, range: nil)
+        let refundIdPreEscape = "\(APIHelper.mapValueToPathItem(refundId))"
+        let refundIdPostEscape = refundIdPreEscape.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        localVariablePath = localVariablePath.replacingOccurrences(of: "{refund_id}", with: refundIdPostEscape, options: .literal, range: nil)
+        let localVariableURLString = apiConfiguration.basePath + localVariablePath
+        let localVariableParameters: [String: any Sendable]? = nil
+
+        let localVariableUrlComponents = URLComponents(string: localVariableURLString)
+
+        let localVariableNillableHeaders: [String: (any Sendable)?] = [
+            "Idempotency-Key": idempotencyKey.asParameter(codableHelper: apiConfiguration.codableHelper),
+        ]
+
+        let localVariableHeaderParameters = APIHelper.rejectNilHeaders(localVariableNillableHeaders)
+
+        let localVariableRequestBuilder: RequestBuilder<Refund>.Type = apiConfiguration.requestBuilderFactory.getBuilder()
+
+        return localVariableRequestBuilder.init(method: "POST", URLString: (localVariableUrlComponents?.string ?? localVariableURLString), parameters: localVariableParameters, headers: localVariableHeaderParameters, requiresAuthentication: true, apiConfiguration: apiConfiguration)
+    }
+
+    /**
      إنشاء مؤسسة مشترية
      
      - parameter idempotencyKey: (header) مفتاح منع التكرار؛ يولّده العميل مرة واحدة لكل عملية ويعيد استخدامه عند إعادة المحاولة. انظر «القواعد الحاكمة». غير مقبول على &#x60;/auth/_*&#x60;: استجابات الهوية تحمل رموزًا ولا تُحفظ في جدول المفاتيح أبدًا. 
