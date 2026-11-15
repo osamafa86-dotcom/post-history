@@ -28,6 +28,8 @@ public struct ModelError: Sendable, Codable, Hashable {
         case formVersionConflict = "form_version_conflict"
         case sensitiveFieldsNotSupportedV0 = "sensitive_fields_not_supported_v0"
         case recoveryStateConflict = "recovery_state_conflict"
+        case emailTaken = "email_taken"
+        case officeExists = "office_exists"
         case preconditionFailed = "precondition_failed"
         case forbiddenRole = "forbidden_role"
         case adminQuorumRequired = "admin_quorum_required"

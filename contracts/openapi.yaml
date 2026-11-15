@@ -4570,6 +4570,8 @@ components:
             - form_version_conflict
             - sensitive_fields_not_supported_v0
             - recovery_state_conflict
+            - email_taken
+            - office_exists
             - precondition_failed
             - forbidden_role
             - admin_quorum_required
