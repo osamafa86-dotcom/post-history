@@ -4,6 +4,7 @@ import { hasRole } from "@/lib/review";
 import { uuid } from "@/lib/query";
 import { inviteToken, isBuyer, memberInvite, memberManagers, memberUpdate, organizationAdmins, organizationCreate, organizationEditors, organizationInput, organizationReaders, organizationRejecters, organizationStatuses, rejectionInput, safeMember, safeOrganization } from "@/lib/buyer-policy";
 import { requireOk, type Api } from "./auth";
+import { refusalOk } from "./refusals";
 import { WebError } from "./errors";
 
 const privateHeaders = { "Cache-Control": "private, no-store, max-age=0", "Pragma": "no-cache", "Vary": "Cookie" };
@@ -72,12 +73,12 @@ export async function organizationWrite(request: Request, path: string, api: Api
   if (!hasRole(me, ...memberManagers)) throw new WebError(403, "request_failed");
   if (!user && request.method === "POST") {
     const input = memberInvite(body); if (!input) throw new WebError(422, "request_failed");
-    const data = requireOk(await api.POST("/buyer-organizations/{org_id}/members", { params: { path: { org_id: id }, header }, body: input }));
+    const data = refusalOk(await api.POST("/buyer-organizations/{org_id}/members", { params: { path: { org_id: id }, header }, body: input }));
     return json({ ...safeMember(data), ...inviteToken(data) }, 201);
   }
   if (user && uuid.test(user) && request.method === "PUT") {
     const input = memberUpdate(body); if (!input) throw new WebError(422, "request_failed");
-    return json(safeMember(requireOk(await api.PUT("/buyer-organizations/{org_id}/members/{user_id}", { params: { path: { org_id: id, user_id: user }, header }, body: input }))));
+    return json(safeMember(refusalOk(await api.PUT("/buyer-organizations/{org_id}/members/{user_id}", { params: { path: { org_id: id, user_id: user }, header }, body: input }))));
   }
   throw new WebError(405, "request_failed");
 }
