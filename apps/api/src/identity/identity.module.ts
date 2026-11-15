@@ -15,6 +15,8 @@ import { InlineResetTokenDelivery, RESET_TOKEN_DELIVERY } from './reset-token-de
 import { UserRolesController, UserRolesService } from './user-roles.controller';
 import { UsersDirectoryController, UsersDirectoryService } from './users-directory.controller';
 
+import { StaffManagementController, StaffManagementService } from './staff-management.controller';
+
 @Module({
   imports: [
     JwtModule.registerAsync({
@@ -31,6 +33,7 @@ import { UsersDirectoryController, UsersDirectoryService } from './users-directo
     UserStatusController,
     UserWorkNameController,
     UsersDirectoryController,
+    StaffManagementController,
     UserRolesController,
     UserPasswordResetLinksController,
     PasskeyAuthController,
@@ -43,6 +46,7 @@ import { UsersDirectoryController, UsersDirectoryService } from './users-directo
     PasskeysService,
     CredentialAttempts,
     RateLimitsService,
+    StaffManagementService,
     UsersDirectoryService,
     UserRolesService,
     { provide: RESET_TOKEN_DELIVERY, useClass: InlineResetTokenDelivery },

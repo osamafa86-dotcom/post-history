@@ -119,6 +119,8 @@ const schema = z.object({
 
   // محاولات الدخول لكل بريد ولكل عنوان IP (عنوان واحد قد يجمع مكتبًا كاملًا خلف NAT)
   LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(10),
+  // إدارة الطاقم من الواجهة (ADR 0122): حسابات ومكاتب ينشئها مدير نظام واحد في نافذة حد المعدل
+  STAFF_CREATE_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(30),
   LOGIN_RATE_LIMIT_IP_MAX: z.coerce.number().int().min(1).default(100),
   LOGIN_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).default(900),
   // عدّادا فشل لكل حساب مستقلان عن العنوان، لكلمة المرور ولرمز TOTP (ADR 0117): محاولات مجانية ثم تأخير يتضاعف من الأساس حتى
