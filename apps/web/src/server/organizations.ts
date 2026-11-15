@@ -52,6 +52,25 @@ export async function organizationWrite(request: Request, path: string, api: Api
     const result = await api.POST("/buyer-organizations/{org_id}/rejection", { params: { path: { org_id: rejection[1] }, header: versioned() }, body: input });
     return json(safeOrganization(requireOk(result)), 200, result.response.headers.get("ETag"));
   }
+  const invitation = /^buyer-organizations\/([^/]+)\/members\/([^/]+)\/invitation$/.exec(path);
+  if (invitation) {
+    // إعادة إصدار رمز دعوة لم يكتمل قبولها (POST) وإلغاؤها (DELETE) لمديري الأعضاء؛ بلا جسم. الرمز الجديد في الرد مرة واحدة كرمز الدعوة.
+    const [, org, user] = invitation;
+    ownOrganization(me, org);
+    if (!uuid.test(user)) throw new WebError(404, "request_failed");
+    if (!hasRole(me, ...memberManagers)) throw new WebError(403, "request_failed");
+    if (Object.keys(body).length) throw new WebError(422, "request_failed");
+    const params = { path: { org_id: org, user_id: user }, header };
+    if (request.method === "POST") {
+      const data = refusalOk(await api.POST("/buyer-organizations/{org_id}/members/{user_id}/invitation", { params }));
+      return json({ ...safeMember(data), ...inviteToken(data) });
+    }
+    if (request.method === "DELETE") {
+      refusalOk(await api.DELETE("/buyer-organizations/{org_id}/members/{user_id}/invitation", { params }));
+      return new NextResponse(null, { status: 204, headers: privateHeaders });
+    }
+    throw new WebError(405, "request_failed");
+  }
   const match = /^buyer-organizations(?:\/([^/]+)(?:\/members(?:\/([^/]+))?)?)?$/.exec(path), members = path.includes("/members");
   if (!match) throw new WebError(405, "request_failed");
   const [, id, user] = match;

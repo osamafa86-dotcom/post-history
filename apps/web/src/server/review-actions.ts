@@ -59,6 +59,7 @@ export const actionRoutes = [
   { path: "/buyer-organizations/{org_id}", methods: ["put"] },
   { path: "/buyer-organizations/{org_id}/members", methods: ["post"] },
   { path: "/buyer-organizations/{org_id}/members/{user_id}", methods: ["put"] },
+  { path: "/buyer-organizations/{org_id}/members/{user_id}/invitation", methods: ["post", "delete"] },
   { path: "/materials/{id}/renders", methods: ["post"] },
   { path: "/materials/{id}/assignments", methods: ["post"] },
   { path: "/assignments/{assignment_id}/transitions", methods: ["post"] },

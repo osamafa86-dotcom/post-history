@@ -6,7 +6,7 @@ import { formatDate, messages, type Locale } from "@/lib/i18n";
 import { hasRole } from "@/lib/review";
 import { useMutation } from "@/lib/use-mutation";
 import { localized } from "@/lib/store-format";
-import { buyerRoles, emptyOrganization, inputOf, memberInvite, memberManagers, organizationAdmins, organizationCreate, organizationEditors, organizationInput, organizationLimits, organizationStatuses, rejectionReasons, type InviteToken, type Member, type Organization, type OrganizationCreate, type OrganizationInput, type RejectionReason } from "@/lib/buyer-policy";
+import { buyerRoles, emptyOrganization, inputOf, seatsOf, memberInvite, memberManagers, organizationAdmins, organizationCreate, organizationEditors, organizationInput, organizationLimits, organizationStatuses, rejectionReasons, type InviteToken, type Member, type Organization, type OrganizationCreate, type OrganizationInput, type RejectionReason } from "@/lib/buyer-policy";
 import { useUser } from "./session-boundary";
 import { ActionStatus } from "./action-status";
 import { EmptyState } from "./empty-state";
@@ -19,6 +19,8 @@ import { plural, type PluralForms } from "@/lib/i18n";
 import { formatMoney } from "@/lib/store-format";
 import { plainAmount, type BuyerPurchaseTotal, type BuyerPurchaseTotalsPage } from "@/lib/finance-reports";
 import { fillNodes, Money } from "./money";
+import { countryName, countryOptions, isCountry } from "@/lib/countries";
+import { refusalFromBody } from "@/lib/refusal-policy";
 
 type Status = Organization["status"];
 const statusTone = { active: { tone: "ok", icon: "check" }, pending_verification: { tone: "warn", icon: "pencil" }, suspended: { tone: "danger", icon: "alert" }, rejected: { tone: "danger", icon: "alert" } } as const;
@@ -36,7 +38,15 @@ export function BuyerOrganizations({ locale }: { locale: Locale }) {
   const m = messages[locale], t = m.buyers, me = useUser(), admin = hasRole(me, "system_admin"), allowed = hasRole(me, ...organizationAdmins), mutation = useMutation();
   const [items, setItems] = useState<Organization[] | null>(null), [error, setError] = useState(false), [attempt, setAttempt] = useState(0), [status, setStatus] = useState<Status | "">("");
   const [creating, setCreating] = useState<OrganizationCreate | null>(null), [invalid, setInvalid] = useState(false), [selected, setSelected] = useState<string | null>(null);
-  const [issued, setIssued] = useState<{ token: InviteToken; email: string } | null>(null);
+  const [issued, setIssued] = useState<{ token: InviteToken; email: string } | null>(null), [legalNames, setLegalNames] = useState<string[]>([]);
+  const adding = creating !== null;
+  // تنبيه الاسم القانوني المكرر عند الإنشاء: من المؤسسات القائمة بكل حالاتها، لا من القائمة المصفّاة. إن تعذّرت فلا تنبيه، والإنشاء كما هو.
+  useEffect(() => {
+    if (!adding) return;
+    const controller = new AbortController();
+    void browserApi().GET("/buyer-organizations", { params: { query: { limit: 100 } }, signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) setLegalNames(data.items.map(item => item.legal_name)); }).catch(() => { /* بلا تنبيه */ });
+    return () => controller.abort();
+  }, [adding]);
   useEffect(() => {
     if (!allowed) return;
     const controller = new AbortController();
@@ -58,7 +68,7 @@ export function BuyerOrganizations({ locale }: { locale: Locale }) {
   const pending = (items ?? []).filter(item => item.status === "pending_verification");
   return <><div className="page-head"><div><h1>{t.title}</h1><p className="muted">{t.lead}</p>{!admin && <p className="notice">{t.readOnly}</p>}</div>{admin && !creating && <div className="page-actions"><button onClick={() => { mutation.clearStatus(); setInvalid(false); setCreating(emptyOrganization()); }}>{t.new}</button></div>}</div>
     {creating ? <form className="card form-card rule-form" noValidate onSubmit={e => { e.preventDefault(); void create(); }}>
-      <ProfileFields locale={locale} value={creating} set={(key, value) => setCreating(c => c && { ...c, [key]: value })} admin />
+      <ProfileFields locale={locale} value={creating} set={(key, value) => setCreating(c => c && { ...c, [key]: value })} admin legalNames={legalNames} />
       <label>{t.firstAdmin}<input type="email" dir="ltr" maxLength={organizationLimits.email} value={creating.first_admin_email} onChange={e => setCreating(c => c && { ...c, first_admin_email: e.target.value })} /><small className="muted">{t.firstAdminHelp}</small></label>
       {invalid && <p className="notice error" role="alert">{t.invalid}</p>}
       <ActionStatus status={mutation.status} locale={locale} />
@@ -95,11 +105,11 @@ function OrganizationTable({ locale, items, open }: { locale: Locale; items: Org
   return <div className="table-panel"><table className="admin-table organizations-table">
     <thead><tr><th scope="col">{t.organization}</th><th scope="col">{t.country}</th><th scope="col" className="num">{t.members}</th><th scope="col" className="num">{heading}</th><th scope="col">{t.status}</th><th scope="col"><span className="visually-hidden">{t.open}</span></th></tr></thead>
     <tbody>{items.map(item => {
-      const name = localized(item.display_name, locale), rows = (totals ?? []).filter(row => row.organization_id === item.id);
+      const name = localized(item.display_name, locale), rows = (totals ?? []).filter(row => row.organization_id === item.id), seat = seatsOf(item);
       return <tr key={item.id} data-testid="organization-row">
         <td className="cell-primary"><span className="person"><Avatar name={name} fallback="?" /><span className="person-name"><strong><bdi>{name}</bdi></strong><small className="muted">{formatDate(item.created_at, locale)}</small></span></span></td>
-        <td data-label={t.country}><span dir="ltr">{item.country}</span></td>
-        <td className="num" data-label={t.members}><span dir="auto" data-testid="seats-pair">{fill(t.seatsPair, { active: String(item.active_members), seats: String(item.seats) })}</span></td>
+        <td data-label={t.country}><bdi data-testid="organization-country">{countryName(item.country, locale)}</bdi></td>
+        <td className="num" data-label={t.members}><span dir="auto" data-testid="seats-pair">{fill(t.seatsPair, { active: seat.used, seats: seat.seats })}</span>{!!seat.invited && <small className="muted" data-testid="seats-split">{fill(t.seatsSplit, { active: seat.active, invited: seat.invited })}</small>}</td>
         <td className="num" data-label={heading} data-testid="organization-purchases">{failed ? <span className="muted">{m.notAvailable}</span> : !totals ? <span className="skeleton line" aria-hidden="true" /> : !rows.length ? <span className="muted" dir="ltr">{single ? "0.00" : "—"}</span>
           : rows.map(row => <span key={row.currency} className="purchase"><span dir="ltr">{single ? plainAmount(row.paid, locale) : formatMoney(row.paid, locale)}</span><small className="muted" dir={locale === "ar" ? "rtl" : "ltr"} data-testid="purchase-line"><span data-testid="orders-part">{plural(row.paid_orders, t.orders as PluralForms, locale)}</span>{row.refunded.amount_minor > 0 && <> · <span data-testid="refunded-part">{fillNodes(t.refundedPart, { amount: <Money price={row.refunded} locale={locale} /> })}</span></>}</small></span>)}</td>
         <td data-label={t.status}><OrganizationStatus status={item.status} locale={locale} /></td>
@@ -168,12 +178,17 @@ export function MyOrganization({ locale }: { locale: Locale }) {
   return me.organization_id ? <OrganizationPanel locale={locale} id={me.organization_id} /> : <section className="center-state"><p role="alert">{t.noOrganization}</p></section>;
 }
 
-function ProfileFields<T extends OrganizationInput>({ locale, value, set, admin }: { locale: Locale; value: T; set: <K extends keyof OrganizationInput>(key: K, value: OrganizationInput[K]) => void; admin: boolean }) {
-  const t = messages[locale].buyers, names = { ar: messages[locale].templates.arabic, en: messages[locale].templates.english };
+function ProfileFields<T extends OrganizationInput>({ locale, value, set, admin, legalNames }: { locale: Locale; value: T; set: <K extends keyof OrganizationInput>(key: K, value: OrganizationInput[K]) => void; admin: boolean; legalNames?: string[] }) {
+  const m = messages[locale], t = m.buyers, names = { ar: m.templates.arabic, en: m.templates.english };
+  const same = (text: string) => text.trim().toLocaleLowerCase(locale), typed = same(value.legal_name), twin = typed ? legalNames?.find(name => same(name) === typed) : undefined;
   return <>
     <label>{t.legalName}<input maxLength={organizationLimits.legalName} value={value.legal_name} onChange={e => set("legal_name", e.target.value)} /></label>
+    {twin && <p className="notice attention" role="status" data-testid="duplicate-legal-name">{fill(t.duplicateLegalName, { name: twin })}</p>}
     <fieldset className="check-group bilingual"><legend>{t.displayName}</legend>{(["ar", "en"] as const).map(lang => <label key={lang}>{names[lang]}<input lang={lang} dir={lang === "ar" ? "rtl" : "ltr"} maxLength={4000} value={value.display_name[lang]} onChange={e => set("display_name", { ...value.display_name, [lang]: e.target.value })} /></label>)}</fieldset>
-    <div className="rule-row"><label>{t.country}<input dir="ltr" maxLength={2} value={value.country} onChange={e => set("country", e.target.value.toUpperCase())} /><small className="muted">{t.countryHelp}</small></label>
+    <div className="rule-row"><label>{t.country}<select data-testid="organization-country-select" value={value.country} onChange={e => set("country", e.target.value)}><option value="" disabled>{m.choose}</option>
+      {/* رمز قديم خارج القائمة يبقى خيارًا حتى يُصحَّح، فلا يتغيّر البلد بفتح النموذج */}
+      {!!value.country && !isCountry(value.country) && <option value={value.country}>{value.country}</option>}
+      {countryOptions(locale).map(country => <option key={country.code} value={country.code}>{country.name}</option>)}</select></label>
       <label>{t.billingEmail}<input type="email" dir="ltr" maxLength={organizationLimits.email} value={value.billing_email} onChange={e => set("billing_email", e.target.value)} /></label></div>
     <div className="rule-row"><label>{t.seats}<input type="number" min={organizationLimits.seatsMin} max={organizationLimits.seatsMax} value={value.seats} disabled={!admin} onChange={e => set("seats", Number(e.target.value))} /></label>
       {value.status !== undefined && <label>{t.status}<select value={value.status} disabled={!admin} onChange={e => set("status", e.target.value as Status)}>{organizationStatuses.filter(s => s !== "rejected" || value.status === "rejected").map(s => <option key={s} value={s}>{t.statuses[s]}</option>)}</select></label>}</div>
@@ -204,7 +219,7 @@ function OrganizationPanel({ locale, id }: { locale: Locale; id: string }) {
   if (!loaded) return <p className="center-state" role="status">{m.loading}</p>;
   // في وجه المشتري («مؤسستي») الفعل الأساسي بنمط المتجر الذهبي (`store`) كما «أضف إلى السلة»؛ ومدير النظام يراه بنمط مساحة العمل.
   const primary = admin ? undefined : "store";
-  const o = loaded.organization;
+  const o = loaded.organization, seat = seatsOf(o), manages = hasRole(me, ...memberManagers);
   return <>
     <div className="page-heading"><div><p className="eyebrow">{t.organization}</p><h1>{localized(o.display_name, locale)}</h1><p className="muted"><OrganizationStatus status={o.status} locale={locale} testId="organization-status" /></p></div>
       {editor && !draft && <button className={primary} onClick={() => { mutation.clearStatus(); setInvalid(false); setDraft(inputOf(o)); }}>{t.edit}</button>}</div>
@@ -217,9 +232,10 @@ function OrganizationPanel({ locale, id }: { locale: Locale; id: string }) {
       <ActionStatus status={mutation.status} locale={locale} />
       <div className="actions"><button disabled={mutation.busy}>{t.save}</button><button type="button" className="secondary" disabled={mutation.busy} onClick={() => setDraft(null)}>{t.cancel}</button></div>
     </form> : <section className="card"><ActionStatus status={mutation.status} locale={locale} /><dl className="metadata" data-testid="organization-profile">{[
-      [t.legalName, o.legal_name], [t.country, o.country], [t.billingEmail, o.billing_email], [t.members, fill(t.seatsPair, { active: String(o.active_members), seats: String(o.seats) })], [t.verifiedAt, formatDate(o.verified_at, locale)],
+      [t.legalName, o.legal_name], [t.country, countryName(o.country, locale)], [t.billingEmail, o.billing_email],
+      ...(manages ? [] : [[t.seats, seat.invited === null ? fill(t.seatsPair, { active: seat.active, seats: seat.seats }) : fill(t.seatsDetail, { ...seat, invited: seat.invited })]]), [t.verifiedAt, formatDate(o.verified_at, locale)],
     ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>}
-    {hasRole(me, ...memberManagers) && <Members locale={locale} id={id} seats={o.seats ?? 0} primary={primary} />}
+    {manages && <Members locale={locale} id={id} seats={o.seats ?? 0} primary={primary} />}
   </>;
 }
 
@@ -227,7 +243,8 @@ function Members({ locale, id, seats, primary }: { locale: Locale; id: string; s
   const m = messages[locale], t = m.buyers, mutation = useMutation();
   const [items, setItems] = useState<Member[] | null>(null), [error, setError] = useState(false), [attempt, setAttempt] = useState(0);
   const [invite, setInvite] = useState<{ email: string; role: typeof buyerRoles[number] }>({ email: "", role: "buyer_member" }), [invalid, setInvalid] = useState(false);
-  const [issued, setIssued] = useState<{ token: InviteToken; email: string } | null>(null);
+  const [issued, setIssued] = useState<{ token: InviteToken; email: string; replaced?: boolean } | null>(null);
+  const [asking, setAsking] = useState<{ member: Member; kind: "reissue" | "cancel" } | null>(null), [gone, setGone] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     void browserApi().GET("/buyer-organizations/{org_id}/members", { params: { path: { org_id: id } }, signal: controller.signal }).then(dataOrThrow).then(data => { if (!controller.signal.aborted) { setItems(data.items); setError(false); } }).catch(() => { if (!controller.signal.aborted) setError(true); });
@@ -236,32 +253,58 @@ function Members({ locale, id, seats, primary }: { locale: Locale; id: string; s
   async function send() {
     const input = memberInvite(invite);
     if (!input) { setInvalid(true); return; }
-    setInvalid(false);
+    setInvalid(false); setGone(false);
     let token: InviteToken = {};
+    const again = reinvite;
     const ok = await mutation.run(JSON.stringify(["invite", id, input]), async header => { const result = await browserApi().POST("/buyer-organizations/{org_id}/members", { params: { path: { org_id: id }, header }, body: input }); token = { invite_token: result.data?.invite_token, invite_token_expires_at: result.data?.invite_token_expires_at }; return result; });
-    if (ok) { setIssued({ token, email: input.email }); setInvite({ email: "", role: "buyer_member" }); setAttempt(n => n + 1); }
+    if (ok) { setIssued({ token, email: input.email, replaced: again }); setInvite({ email: "", role: "buyer_member" }); setAttempt(n => n + 1); }
   }
   async function update(member: Member, role: Member["role"], status: "active" | "suspended") {
     const ok = await mutation.run(JSON.stringify(["update", id, member.user_id, role, status]), header => browserApi().PUT("/buyer-organizations/{org_id}/members/{user_id}", { params: { path: { org_id: id, user_id: member.user_id }, header }, body: { role, status } }));
     if (ok) setAttempt(n => n + 1);
   }
-  // المدعو يشغل مقعدًا حتى يُعلَّق؛ العدّ من القائمة نفسها حتى لا يتأخر عن الدعوة.
-  const active = items?.filter(member => member.status !== "suspended").length ?? 0;
+  // إعادة إصدار رمز دعوة لم يكتمل قبولها، أو إلغاؤها (قرار المنسّق 2026-11-15). الدعوة التي قُبلت أو أُلغيت في جلسة أخرى تردّ 409 أو 404:
+  // تُحدَّث القائمة ويُقال ذلك؛ والرفض المسمّى (آخر مدير) يظهر بنصه.
+  async function decide() {
+    if (!asking) return;
+    const { member, kind } = asking, params = { path: { org_id: id, user_id: member.user_id } }, box: { status?: number; named?: boolean } = {};
+    let token: InviteToken = {};
+    setGone(false);
+    const ok = await mutation.run(JSON.stringify([kind, id, member.user_id]), async header => {
+      const result = kind === "reissue" ? await browserApi().POST("/buyer-organizations/{org_id}/members/{user_id}/invitation", { params: { ...params, header } }) : await browserApi().DELETE("/buyer-organizations/{org_id}/members/{user_id}/invitation", { params: { ...params, header } });
+      if (kind === "reissue" && "data" in result && result.data) token = { invite_token: result.data.invite_token, invite_token_expires_at: result.data.invite_token_expires_at };
+      box.status = result.response.status; box.named = !!refusalFromBody(result.error); return result;
+    });
+    if (ok && kind === "reissue") setIssued({ token, email: member.email, replaced: true });
+    if (!ok && !box.named && (box.status === 409 || box.status === 404)) { setGone(true); mutation.clearStatus(); }
+    if (ok || box.status === 409 || box.status === 404) { setAsking(null); setAttempt(n => n + 1); }
+  }
+  // دعوة بريد لم يكتمل قبوله إعادة إصدار لرمزه بلا مقعد جديد، فلا يقفلها امتلاء المقاعد.
+  const typed = invite.email.trim().toLowerCase(), reinvite = !!typed && !!items?.some(member => member.status === "invited" && member.email.toLowerCase() === typed);
+  // المدعو يشغل مقعدًا حتى يُعلَّق أو تُلغى دعوته؛ العدّ من القائمة نفسها حتى لا يتأخر عن الدعوة.
+  const active = items?.filter(member => member.status !== "suspended").length ?? 0, invited = items?.filter(member => member.status === "invited").length ?? 0;
   return <section className="card" aria-labelledby="members-title"><h2 id="members-title">{t.members}</h2>
-    {issued && <OneTimeToken locale={locale} token={issued.token} email={issued.email} onDone={() => setIssued(null)} />}
-    <p className="muted">{t.seatsUsed.replace("{active}", String(active)).replace("{seats}", String(seats))}</p>
-    <ActionStatus status={mutation.status} locale={locale} refusal={mutation.refusal} />
-    {mutation.status === 409 && !mutation.refusal && <p className="notice error">{t.memberConflict}</p>}
+    {issued && <OneTimeToken locale={locale} token={issued.token} email={issued.email} replaced={issued.replaced} onDone={() => setIssued(null)} />}
+    <p className="muted" data-testid="seats-counter">{fill(t.seatsDetail, { used: active, active: active - invited, invited, seats })}</p>
+    {!asking && <ActionStatus status={mutation.status} locale={locale} refusal={mutation.refusal} />}
+    {gone && <p className="notice attention" role="status" data-testid="invitation-gone">{t.invitationGone}</p>}
+    {!asking && mutation.status === 409 && !mutation.refusal && <p className="notice error">{t.memberConflict}</p>}
     {error ? <p role="alert">{m.error}</p> : !items ? <p role="status">{m.loading}</p> : !items.length ? <p className="muted">{t.noMembers}</p>
       : <div className="table-panel"><table className="admin-table members-table" aria-label={t.members}><thead><tr><th scope="col">{t.email}</th><th scope="col">{t.role}</th><th scope="col">{t.status}</th><th scope="col">{t.totp}</th><th scope="col"><span className="visually-hidden">{m.earnings.actions}</span></th></tr></thead>
         <tbody>{items.map(member => <tr key={member.user_id} data-testid="member-row"><td className="cell-primary"><strong><bdi dir="ltr">{member.email}</bdi></strong></td>
           <td data-label={t.role}><select aria-label={t.role} value={member.role} disabled={mutation.busy || member.status === "invited"} onChange={e => void update(member, e.target.value as Member["role"], member.status === "suspended" ? "suspended" : "active")}>{buyerRoles.map(r => <option key={r} value={r}>{t.roles[r]}</option>)}</select></td>
           <td data-label={t.status}>{t.memberStatuses[member.status]}</td><td data-label={t.totp}>{member.totp_enabled ? t.yes : t.no}</td>
-          <td className="cell-actions">{member.status !== "invited" && <button className="secondary small" disabled={mutation.busy} onClick={() => void update(member, member.role, member.status === "suspended" ? "active" : "suspended")}>{member.status === "suspended" ? t.reactivate : t.suspend}</button>}</td></tr>)}</tbody></table></div>}
+          <td className="cell-actions">{member.status === "invited"
+            ? <><button className="secondary small" data-testid="reissue-invitation" disabled={mutation.busy} onClick={() => { mutation.clearStatus(); setGone(false); setAsking({ member, kind: "reissue" }); }}>{t.reissue}</button>
+              <button className="secondary small" data-testid="cancel-invitation" disabled={mutation.busy} onClick={() => { mutation.clearStatus(); setGone(false); setAsking({ member, kind: "cancel" }); }}>{t.cancelInvitation}</button></>
+            : <button className="secondary small" disabled={mutation.busy} onClick={() => void update(member, member.role, member.status === "suspended" ? "active" : "suspended")}>{member.status === "suspended" ? t.reactivate : t.suspend}</button>}</td></tr>)}</tbody></table></div>}
+    {asking && <ConfirmDialog locale={locale} testId={`confirm-${asking.kind}`} title={asking.kind === "reissue" ? t.reissueTitle : t.cancelTitle} confirm={asking.kind === "reissue" ? t.reissueConfirm : t.cancelConfirm} danger={asking.kind === "cancel"} busy={mutation.busy} status={mutation.status} onConfirm={() => void decide()} onCancel={() => { setAsking(null); mutation.clearStatus(); }}>
+      <p>{fillNodes(asking.kind === "reissue" ? t.reissueEffect : t.cancelEffect, { email: <bdi dir="ltr">{asking.member.email}</bdi> })}</p>
+    </ConfirmDialog>}
     <form className="rule-row invite-form" noValidate onSubmit={e => { e.preventDefault(); void send(); }}>
       <label>{t.inviteEmail}<input type="email" dir="ltr" maxLength={organizationLimits.email} value={invite.email} onChange={e => setInvite(v => ({ ...v, email: e.target.value }))} /></label>
       <label>{t.role}<select value={invite.role} onChange={e => setInvite(v => ({ ...v, role: e.target.value as typeof buyerRoles[number] }))}>{buyerRoles.map(r => <option key={r} value={r}>{t.roles[r]}</option>)}</select></label>
-      <div className="actions"><button className={primary} disabled={mutation.busy || !items || active >= seats}>{t.invite}</button></div>
+      <div className="actions"><button className={primary} disabled={mutation.busy || !items || active >= seats && !reinvite}>{reinvite ? t.reissue : t.invite}</button></div>
     </form>
     {items && active >= seats && <p className="muted">{t.seatsFull}</p>}
     {invalid && <p className="notice error" role="alert">{t.inviteInvalid}</p>}
@@ -270,13 +313,14 @@ function Members({ locale, id, seats, primary }: { locale: Locale; id: string; s
 }
 
 /** رمز الدعوة يُعرض مرة واحدة: في الذاكرة وحدها، بلا زر نسخ ولا حفظ، ويزول بالإغلاق أو مغادرة الصفحة. */
-function OneTimeToken({ locale, token, email, onDone }: { locale: Locale; token: InviteToken; email: string; onDone: () => void }) {
+function OneTimeToken({ locale, token, email, replaced, onDone }: { locale: Locale; token: InviteToken; email: string; replaced?: boolean; onDone: () => void }) {
   const t = messages[locale].buyers;
   if (!token.invite_token) return <section className="notice" role="status"><p>{t.tokenMissing}</p><button className="secondary" onClick={onDone}>{t.done}</button></section>;
   return <section className="card one-time-token" role="alert" aria-labelledby="token-title"><h2 id="token-title">{t.tokenTitle}</h2>
     <p>{t.tokenFor} <bdi dir="ltr">{email}</bdi></p>
     <output className="token-value" dir="ltr" data-testid="invite-token">{token.invite_token}</output>
     <p className="muted">{t.tokenExpires} {formatDate(token.invite_token_expires_at, locale)}</p>
+    {replaced && <p className="notice attention" data-testid="token-replaced">{t.tokenReplaced}</p>}
     <p className="notice">{t.tokenOnce}</p>
     <button onClick={onDone}>{t.done}</button></section>;
 }

@@ -6,6 +6,7 @@ import { longDate, messages, shortTime, type Locale } from "@/lib/i18n";
 import { formatAmount, localized, orderLabel } from "@/lib/store-format";
 import type { Order } from "@/lib/order-policy";
 import type { Organization } from "@/lib/buyer-policy";
+import { countryName } from "@/lib/countries";
 import type { components } from "@/generated/schema";
 import { EmptyState } from "../empty-state";
 import { Icon } from "../icon";
@@ -37,19 +38,20 @@ export function InvoicePage({ locale, id }: { locale: Locale; id: string }) {
     }
     void load(); return () => controller.abort();
   }, [id, attempt]);
-  const crumbs = (current?: string) => <nav className="breadcrumb no-print" aria-label={m.store.item.breadcrumb}><ol><li><Link prefetch={false} href={`/${locale}/store/licenses`}>{v.breadcrumbHome}</Link></li>{current && <li aria-current="page">{current}</li>}</ol></nav>;
+  // الفاتورة فرع من طلبها: الأثر «الطلبات ← الطلب ← الفاتورة» أيًّا كان الباب الذي دخل منه القارئ.
+  const crumbs = (current?: string, order?: { id: string; label: string }) => <nav className="breadcrumb no-print" aria-label={m.store.item.breadcrumb}><ol><li><Link prefetch={false} href={`/${locale}/store/orders`}>{m.store.nav.orders}</Link></li>{order && <li><Link prefetch={false} href={`/${locale}/store/orders/${order.id}`} data-testid="invoice-order-crumb"><bdi dir="ltr">{order.label}</bdi></Link></li>}{current && <li aria-current="page">{current}</li>}</ol></nav>;
   if (status) return <>{crumbs()}{status === 404 || status === 403 ? <EmptyState icon="orders" role="alert" title={v.notFoundTitle}><p>{v.notFoundBody}</p></EmptyState>
     : <EmptyState icon="offline" role="alert" title={m.error} actions={<button className="secondary" onClick={() => setAttempt(n => n + 1)}>{m.retry}</button>} />}</>;
   if (!loaded) return <>{crumbs()}<p className="center-state" role="status">{m.loading}</p></>;
   const { order, organization, licenses, refunds } = loaded, label = orderLabel(order), currency = order.total.currency;
   const refundedItems = new Set(refunds.flatMap(r => r.order_item_ids)), refundedTotal = refunds.reduce((sum, r) => sum + r.amount.amount_minor, 0);
-  if (!order.invoice_number || !order.paid_at) return <>{crumbs(v.breadcrumbCurrent.replace("{id}", label))}
+  if (!order.invoice_number || !order.paid_at) return <>{crumbs(v.title, { id: order.id, label })}
     <EmptyState icon="clock" title={v.notPaidTitle} actions={<Link prefetch={false} className="button secondary" href={`/${locale}/store/orders/${order.id}`}>{m.store.cartPage.openOrder}</Link>}><p>{v.notPaidBody}</p></EmptyState></>;
   // الأرقام والمعرّفات معزولة الاتجاه: رقم الترخيص بالخط الأحادي (ADR 0090)، وغيره بأرقام Rubik.
   const mono = (value: string) => <bdi dir="ltr" className="mono">{value}</bdi>, ref = (value: string) => <bdi dir="ltr" className="ref">{value}</bdi>;
   const fill = (text: string, slot: string, value: React.ReactNode) => { const [before, after] = text.split(slot); return <>{before}{value}{after}</>; };
   return <>
-    <div className="invoice-bar no-print">{crumbs(v.breadcrumbCurrent.replace("{id}", label))}<button className="store" onClick={() => window.print()}><Icon name="printer" />{v.print}</button></div>
+    <div className="invoice-bar no-print">{crumbs(v.title, { id: order.id, label })}<button className="store" onClick={() => window.print()}><Icon name="printer" />{v.print}</button></div>
     <article className="invoice-paper" data-mode="light" data-testid="invoice" aria-labelledby="invoice-title">
       <header className="invoice-head">
         <div className="invoice-issuer"><p className="invoice-brand">{m.brand} · {m.product}</p><p className="caption" data-testid="issuer-pending">{v.issuerPending}</p></div>
@@ -57,7 +59,7 @@ export function InvoicePage({ locale, id }: { locale: Locale; id: string }) {
       </header>
       <p className="invoice-sandbox" role="note" data-testid="invoice-sandbox"><Icon name="alert" size={16} />{v.sandbox}</p>
       <div className="invoice-parties">
-        <section><h2>{v.billedTo}</h2>{organization ? <><p><strong>{organization.legal_name}</strong></p><p>{ref(organization.country)}</p><p><bdi dir="ltr">{organization.billing_email}</bdi></p></> : <p>{m.notAvailable}</p>}</section>
+        <section><h2>{v.billedTo}</h2>{organization ? <><p><strong>{organization.legal_name}</strong></p><p><bdi data-testid="invoice-country">{countryName(organization.country, locale)}</bdi></p><p><bdi dir="ltr">{organization.billing_email}</bdi></p></> : <p>{m.notAvailable}</p>}</section>
         <section><h2>{v.orderBlock}</h2><p>{fill(v.orderNumber, "{id}", ref(label))}</p>
           {order.purchase_order_number && <p data-testid="invoice-po">{fill(v.purchaseOrder, "{po}", ref(order.purchase_order_number))}</p>}
           <p>{v.paidAt.replace("{date}", longDate(order.paid_at, locale))}</p></section>

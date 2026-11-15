@@ -1,4 +1,5 @@
 import type { components } from "@/generated/schema";
+import { isCountry } from "./countries";
 
 // قيم قوالب التراخيص (v0.3، ADR 0025)؛ يطابقها contract-drift مع OpenAPI، وليست نماذج بديلة.
 export type TemplateInput = components["schemas"]["LicenseTemplateInput"];
@@ -35,7 +36,7 @@ export function templateInput(body: Record<string, unknown>): TemplateInput | nu
   if (!(b.prohibitions as string[]).includes("ai_training")) return null;
   const territory = b.territory;
   if (!plain(territory) || Object.keys(territory).some(key => !["kind", "countries"].includes(key))) return null;
-  if (territory.kind === "worldwide" ? territory.countries !== undefined : territory.kind !== "countries" || !Array.isArray(territory.countries) || territory.countries.length < 1 || territory.countries.length > templateLimits.countries || new Set(territory.countries).size !== territory.countries.length || !territory.countries.every(c => typeof c === "string" && /^[A-Z]{2}$/.test(c))) return null;
+  if (territory.kind === "worldwide" ? territory.countries !== undefined : territory.kind !== "countries" || !Array.isArray(territory.countries) || territory.countries.length < 1 || territory.countries.length > templateLimits.countries || new Set(territory.countries).size !== territory.countries.length || !territory.countries.every(isCountry)) return null;
   const term = b.term_days ?? null, hours = b.exclusivity_hours ?? null;
   if (term !== null && !int(term, templateLimits.termMin, templateLimits.termMax) || termRequired.includes(b.type as LicenseType) && term === null) return null;
   if (b.type === "exclusive_temporary" ? !int(hours, templateLimits.hoursMin, templateLimits.hoursMax) : hours !== null) return null;

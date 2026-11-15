@@ -125,7 +125,7 @@ export function OrdersPage({ locale }: { locale: Locale }) {
   }, [allowed, attempt, filter]);
   if (!allowed) return <NoAccess locale={locale} me={me} title={o.title} denied={o.denied} />;
   return <>
-    <div className="page-heading"><div><h1>{m.store.nav.orders}</h1><p className="muted">{staff ? o.staffLead : o.lead}</p></div></div>
+    <div className="page-heading"><div><h1>{m.store.nav.orders}</h1><p className="muted" data-testid="orders-lead">{staff ? o.staffLead : hasRole(me, "buyer_admin") ? o.lead : o.memberLead}</p></div></div>
     {staff && <StaffFilters locale={locale} names={names} organization={filter.organization} status={filter.status} statuses={orderStatuses} statusLabel={s => o.statuses[s]} onChange={next => { setItems(null); setFilter(next); }} />}
     {error ? <EmptyState icon="offline" role="alert" title={m.error} actions={<button className="secondary" onClick={() => setAttempt(n => n + 1)}>{m.retry}</button>} />
       : !items ? <p className="center-state" role="status">{m.loading}</p>

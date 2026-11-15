@@ -48,7 +48,7 @@ test("the system admin creates and activates an organization; finance reads only
   await page.getByRole("button", { name: e.new }).click();
   await page.getByLabel(e.legalName).fill("Synthetic Press LLC");
   const name = page.getByRole("group", { name: e.displayName }); await name.getByLabel(en.templates.arabic).fill("صحافة اصطناعية"); await name.getByLabel(en.templates.english).fill("Synthetic Press");
-  await page.getByLabel(e.country).fill("jo"); await page.getByLabel(e.billingEmail).fill("billing@press.example.test");
+  await page.getByLabel(e.country).selectOption({ label: "Jordan" }); await page.getByLabel(e.billingEmail).fill("billing@press.example.test");
   await page.getByRole("button", { name: e.create }).click(); await expect(page.getByRole("alert").filter({ hasText: e.invalid })).toBeVisible();
   await page.getByLabel(e.firstAdmin).fill("admin@press.example.test"); await page.getByRole("button", { name: e.create }).click();
   await expect(page.getByTestId("invite-token")).toHaveText("synthetic-invite-token-organization-0001"); await expect(page.getByText(e.tokenOnce)).toBeVisible();
