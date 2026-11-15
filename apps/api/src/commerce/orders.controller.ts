@@ -41,6 +41,13 @@ export class OrdersController {
     return this.orders.checkout(req.principal!, id, input.locale ?? 'ar');
   }
 
+  @Post(':orderId/refunds/:refundId/sandbox-confirmation')
+  @HttpCode(200)
+  @Roles('system_admin', 'finance')
+  confirmSandboxRefund(@Param('orderId') orderId: string, @Param('refundId') refundId: string, @Req() req: Request): Promise<components['schemas']['Refund']> {
+    return this.orders.confirmSandboxRefund(req.principal!, orderId, refundId);
+  }
+
   @Post(':orderId/cancel')
   @Roles('buyer_admin', 'buyer_member')
   @HttpCode(200)

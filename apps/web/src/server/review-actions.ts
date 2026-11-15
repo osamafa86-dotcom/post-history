@@ -11,7 +11,7 @@ import { WebError } from "./errors";
 import type { WebConfig } from "./config";
 import { organizationWrite } from "./organizations";
 import { licenseDownload } from "./licenses";
-import { commissionWrite, refundWrite } from "./finance";
+import { commissionWrite, refundWrite, sandboxRefundConfirm } from "./finance";
 import { conflictWrite } from "./invite-conflicts";
 import { earningsPath, earningsWrite } from "./earnings";
 import { orderWrite } from "./orders";
@@ -54,6 +54,7 @@ export const actionRoutes = [
   { path: "/orders/{order_id}/checkout", methods: ["post"] },
   { path: "/orders/{order_id}/cancel", methods: ["post"] },
   { path: "/orders/{order_id}/refunds", methods: ["post"] },
+  { path: "/orders/{order_id}/refunds/{refund_id}/sandbox-confirmation", methods: ["post"] },
   { path: "/buyer-organizations", methods: ["post"] },
   { path: "/buyer-organizations/{org_id}", methods: ["put"] },
   { path: "/buyer-organizations/{org_id}/members", methods: ["post"] },
@@ -212,6 +213,8 @@ export async function reviewAction(request: Request, path: string, api: Api, me:
   if (path === "commission-rules") return commissionWrite(request, api, me, body, header);
   const refundPath = /^orders\/([^/]+)\/refunds$/.exec(path);
   if (refundPath) return refundWrite(request, refundPath[1], api, me, body, header);
+  const confirmPath = /^orders\/([^/]+)\/refunds\/([^/]+)\/sandbox-confirmation$/.exec(path);
+  if (confirmPath) return sandboxRefundConfirm(request, confirmPath[1], confirmPath[2], api, me, header);
   if (path === "orders" || path.startsWith("orders/")) return orderWrite(request, path, api, me, body, header, config ?? { checkoutOrigins: [] } as unknown as WebConfig);
   if (path.startsWith("buyer-organizations")) return organizationWrite(request, path, api, me, body, header, versioned);
   const notificationPath = /^notifications\/([^/]+)\/(read|ack)$/.exec(path);
